@@ -10,6 +10,7 @@ import (
 
 func newRemoveCmd() *cobra.Command {
 	var me bool
+	var meAt string
 	cmd := &cobra.Command{
 		Use:     "remove <type>/<work>",
 		Aliases: []string{"rm"},
@@ -25,6 +26,9 @@ func newRemoveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if meAt != "" {
+				return commands.RemoveAt(ctx, meAt, cmd.OutOrStdout())
+			}
 			if me {
 				cwd, err := os.Getwd()
 				if err != nil {
@@ -39,5 +43,7 @@ func newRemoveCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&me, "me", false, "remove the worktree you are standing in")
+	cmd.Flags().StringVar(&meAt, "me-at", "", "remove the worktree at this path (used by wt_rm_me)")
+	_ = cmd.Flags().MarkHidden("me-at")
 	return cmd
 }
