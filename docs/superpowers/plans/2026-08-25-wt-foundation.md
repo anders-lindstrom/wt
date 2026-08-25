@@ -1243,7 +1243,10 @@ func (r *Repo) DetectMainBranch() string {
 			return branch
 		}
 	}
-	if out, err := git.Run(r.MainRoot, "rev-parse", "--abbrev-ref", "HEAD"); err == nil && out != "HEAD" {
+	// symbolic-ref, not rev-parse --abbrev-ref: the latter fails outright on a
+	// repository whose HEAD is unborn, which is exactly the state a freshly
+	// initialised repo is in.
+	if out, err := git.Run(r.MainRoot, "symbolic-ref", "--short", "HEAD"); err == nil && out != "" {
 		return out
 	}
 	return "main"
