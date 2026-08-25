@@ -28,6 +28,7 @@ func newRootCmd() *cobra.Command {
 		newBranchStripCmd(),
 		newListCmd(),
 		newStatusCmd(),
+		newSetupCmd(),
 	)
 	return root
 }
