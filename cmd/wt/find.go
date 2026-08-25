@@ -22,7 +22,13 @@ func newFindCmd() *cobra.Command {
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Not being in a repository is fine: the search falls back to roots.
-			ctx, _ := openContext()
+			// A repository with a broken config is also fine, but must not
+			// silently lose repo-first — OpenLenient reports the problem.
+			cwd, err := os.Getwd()
+			if err != nil {
+				return err
+			}
+			ctx := commands.OpenLenient(cwd, os.Stderr)
 			matches, err := commands.Find(ctx, args[0])
 			if err != nil {
 				return err

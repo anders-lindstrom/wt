@@ -2,6 +2,8 @@
 package commands
 
 import (
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -37,4 +39,25 @@ func (c *Context) HasProvisionScript() bool {
 // loadFor loads another repository's configuration without building a Context.
 func loadFor(r *repo.Repo) (*config.Config, error) {
 	return config.Load(r.MainRoot, r.DetectMainBranch())
+}
+
+// OpenLenient builds a Context for read-only lookups, falling back to default
+// configuration when the repository's own does not load — and saying so on w
+// rather than swallowing it.
+//
+// This exists for `wt find`: a repository with a stale or invalid worktree.conf
+// still has worktrees worth searching, and silently dropping to a repo-less
+// search makes it return a match from somewhere else with no hint why. Returns
+// nil only when cwd is not in a repository at all.
+func OpenLenient(cwd string, w io.Writer) *Context {
+	r, err := repo.Discover(cwd)
+	if err != nil {
+		return nil
+	}
+	c, err := config.Load(r.MainRoot, r.DetectMainBranch())
+	if err != nil {
+		fmt.Fprintf(w, "wt: using defaults for %s: %v\n", r.Name, err)
+		c, _ = config.FromRaw(nil, r.DetectMainBranch())
+	}
+	return &Context{Repo: r, Config: c}
 }

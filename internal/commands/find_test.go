@@ -3,6 +3,7 @@ package commands
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -116,5 +117,67 @@ func TestFindNoMatch(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Errorf("want no matches, got %+v", got)
+	}
+}
+
+// A repository whose configuration does not load still has worktrees worth
+// searching. Losing repo-first silently — which is what happens if the caller
+// just discards the config error — makes wt find return a surprising answer
+// with no hint why.
+func TestOpenLenientSurvivesInvalidConfig(t *testing.T) {
+	main := committedRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\nAWS_SETUP_ENABLED=true\n")
+	if _, err := Open(main); err == nil {
+		t.Fatal("this fixture is supposed to have an invalid config")
+	}
+
+	var warn strings.Builder
+	ctx := OpenLenient(main, &warn)
+	if ctx == nil {
+		t.Fatal("OpenLenient must still produce a context")
+	}
+	if ctx.Repo.Name != "demo" {
+		t.Errorf("repo = %q", ctx.Repo.Name)
+	}
+	if ctx.Config.TypeSuffix != "_wt" {
+		t.Errorf("want the default suffix, got %q", ctx.Config.TypeSuffix)
+	}
+	if !strings.Contains(warn.String(), "AWS_SETUP_ENABLED") {
+		t.Errorf("the config problem must be reported, not swallowed:\n%s", warn.String())
+	}
+}
+
+// With a broken local config, a strong local hit must still beat a match in
+// another repository.
+func TestFindKeepsRepoFirstWithInvalidLocalConfig(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("WT_ROOTS", root)
+
+	other := committedRepoIn(t, root, "other", minimalConf)
+	octx, _ := Open(other)
+	if _, err := New(octx, "feat/webkey", NewOptions{NoSetup: true}, os.Stderr); err != nil {
+		t.Fatal(err)
+	}
+
+	local := committedRepoIn(t, root, "local", minimalConf)
+	lctx, _ := Open(local)
+	if _, err := New(lctx, "feat/webkey_infra", NewOptions{NoSetup: true}, os.Stderr); err != nil {
+		t.Fatal(err)
+	}
+	// Now break the local config the way an unmigrated repo is broken.
+	if err := os.WriteFile(filepath.Join(local, "bin", "worktree", "worktree.conf"),
+		[]byte(minimalConf+"AWS_SETUP_ENABLED=true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var warn strings.Builder
+	got, err := Find(OpenLenient(local, &warn), "webkey")
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	if len(got) != 1 || got[0].Work != "webkey_infra" {
+		t.Errorf("the local prefix match must win, got %+v", got)
 	}
 }
