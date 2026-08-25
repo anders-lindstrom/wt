@@ -33,3 +33,8 @@ func (c *Context) HasProvisionScript() bool {
 	info, err := os.Stat(filepath.Join(c.Repo.MainRoot, "bin", "worktree", "provision.sh"))
 	return err == nil && !info.IsDir() && info.Mode()&0o111 != 0
 }
+
+// loadFor loads another repository's configuration without building a Context.
+func loadFor(r *repo.Repo) (*config.Config, error) {
+	return config.Load(r.MainRoot, r.DetectMainBranch())
+}
