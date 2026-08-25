@@ -26,6 +26,8 @@ func newRootCmd() *cobra.Command {
 		newPathCmd(),
 		newBranchCmd(),
 		newBranchStripCmd(),
+		newListCmd(),
+		newStatusCmd(),
 	)
 	return root
 }
