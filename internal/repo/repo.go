@@ -4,6 +4,8 @@
 package repo
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -102,4 +104,95 @@ func (r *Repo) DetectMainBranch() string {
 		return out
 	}
 	return "main"
+}
+
+// BranchAt reports the branch checked out at path, or "" when the worktree is
+// detached or unreadable. remove reads the branch from the worktree rather than
+// rebuilding it from the work name: once the type varies, the name no longer
+// determines the branch, and a reconstructed name may belong to an unrelated
+// branch that would then be deleted.
+func (r *Repo) BranchAt(path string) string {
+	out, err := git.Run(path, "symbolic-ref", "--short", "HEAD")
+	if err != nil || out == "HEAD" {
+		return ""
+	}
+	return out
+}
+
+// BranchExists reports whether a local branch of that name exists.
+func (r *Repo) BranchExists(name string) bool {
+	_, err := git.Run(r.MainRoot, "show-ref", "--verify", "--quiet", "refs/heads/"+name)
+	return err == nil
+}
+
+// IsMerged reports whether branch is fully contained in base.
+func (r *Repo) IsMerged(branch, base string) bool {
+	out, err := git.Run(r.MainRoot, "branch", "--merged", base, "--format=%(refname:short)")
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.TrimSpace(line) == branch {
+			return true
+		}
+	}
+	return false
+}
+
+// AddWorktree creates a worktree at path on a new branch cut from base.
+func (r *Repo) AddWorktree(path, branch, base string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	_, err := git.Run(r.MainRoot, "worktree", "add", "-b", branch, path, base)
+	return err
+}
+
+// RemoveWorktree deletes a worktree checkout. A worktree containing submodules
+// cannot be removed by git worktree remove, so it is deleted directly and the
+// registration pruned — the same manual path the bash implementation took.
+func (r *Repo) RemoveWorktree(path string) error {
+	if r.HasSubmodules(path) {
+		if err := os.RemoveAll(path); err != nil {
+			return err
+		}
+		return r.Prune()
+	}
+	if _, err := git.Run(r.MainRoot, "worktree", "remove", path); err != nil {
+		return fmt.Errorf("%w (uncommitted changes? try removing it by hand)", err)
+	}
+	return nil
+}
+
+// Prune clears stale worktree registrations.
+func (r *Repo) Prune() error {
+	_, err := git.Run(r.MainRoot, "worktree", "prune")
+	return err
+}
+
+// MoveWorktree relocates a worktree checkout.
+func (r *Repo) MoveWorktree(from, to string) error {
+	if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil {
+		return err
+	}
+	_, err := git.Run(r.MainRoot, "worktree", "move", from, to)
+	return err
+}
+
+// DeleteBranch deletes a branch, refusing when it is not merged.
+func (r *Repo) DeleteBranch(name string) error {
+	_, err := git.Run(r.MainRoot, "branch", "-d", name)
+	return err
+}
+
+// RenameBranch renames a branch.
+func (r *Repo) RenameBranch(from, to string) error {
+	_, err := git.Run(r.MainRoot, "branch", "-m", from, to)
+	return err
+}
+
+// HasSubmodules reports whether the checkout at path declares submodules.
+func (r *Repo) HasSubmodules(path string) bool {
+	_, err := os.Stat(filepath.Join(path, ".gitmodules"))
+	return err == nil
 }
