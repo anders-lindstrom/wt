@@ -1,0 +1,29 @@
+version: 2
+
+builds:
+  - id: wt
+    main: ./cmd/wt
+    binary: wt
+    env: [CGO_ENABLED=0]
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - formats: [tar.gz]
+    # The shell and compat layers ship with the binary: without them the Herdr
+    # skills and wt_cd do not work.
+    files:
+      - shell/wt.sh
+      - compat/worktree_functions.sh
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude: ["^docs:", "^test:", "^chore:"]
