@@ -64,9 +64,11 @@ The disease is *copying*, not bash.
   and the agent-owned `~/.superset/worktrees/<repo>/<name>` and
   `<repo>/.claude/worktrees/<name>`. One worktree is nested *inside* its own
   main checkout.
-- **Superset provisions nothing.** It creates worktrees in its own directory and
-  never runs the repo's setup, so they lack gitignored config, decrypted secrets
-  and installed dependencies.
+- **Superset's integration is a sixth surface.** Each Telcred repo carries a
+  `.superset/config.json` whose `setup` step runs
+  `./bin/worktree/setup.sh "$SUPERSET_ROOT_PATH"`. Superset *is* properly
+  integrated — but that is one more consumer hard-coding the
+  `bin/worktree/*.sh` paths, and one more file per repo to keep consistent.
 - **Telcred concepts leak into a generic tool.** `AWS_SETUP_ENABLED` is a config
   key in repos that have nothing to do with AWS.
 - **The built-in defaults are server-shaped.** `MAIN_BRANCH` defaults to
@@ -78,7 +80,8 @@ The disease is *copying*, not bash.
 1. One implementation. Drift becomes structurally impossible.
 2. Per-repo behaviour stays declared in the repo, as config.
 3. Works for manual use and for every agent: Claude Code, Herdr (skills *and*
-   plugin), Superset.
+   plugin), and Superset (both its repo `.superset/config.json` and its own
+   worktree creation).
 4. Installable by colleagues later without restructuring.
 5. Misconfiguration produces an error, not silence.
 
@@ -170,6 +173,10 @@ tool and becomes what it always was: repo-declared behaviour.
 
 ### Shims
 
+Four independent consumers hard-code these paths — manual use, the Herdr plugin's
+`-x` checks, the Herdr skills' detection rule, and each repo's
+`.superset/config.json` — so the shims must stay executable at exactly these names.
+
 `bin/worktree/{new,remove,remove_me,list,status,switch,checkout,setup,setup_precheck}.sh`
 each become a one-line executable that `exec`s the corresponding `wt`
 subcommand. **~10 lines per repo instead of ~1,580.** They must stay executable
@@ -247,14 +254,24 @@ Five consumers, not four:
 | Claude Code | `bash ./bin/hooks/worktree-create.sh`, 3 variants | `wt hook claude-create` in `.claude/settings.json`; per-repo hook scripts deleted |
 | Herdr skills | `source bin/worktree_functions.sh` | same path, now a shim → compat layer. **No skill edits** |
 | Herdr plugin `lindstrom.worktree-setup` | `-x` checks on `bin/worktree/{new,remove,setup}.sh`, sources `worktree_functions.sh` | unchanged — the shims satisfy it exactly |
-| Superset | bypasses everything; leaves unprovisioned checkouts | `wt adopt` |
+| Superset (provisioning) | `.superset/config.json` runs `./bin/worktree/setup.sh "$SUPERSET_ROOT_PATH"` | unchanged — the shim satisfies it, so **no `.superset/config.json` is edited** |
+| Superset (creation) | creates worktrees at `<repo>_wt/<repo>/<type>_wt/<work>`, its own hardcoded shape | left alone; resolved via git like any other shape, `wt adopt --relocate` normalises on demand |
 
-**Superset cannot be integrated at creation time.** Its hook directory contains
-only per-agent notification hooks (copilot, cursor, gemini, opencode); there is
-no worktree lifecycle event to register against. `wt adopt` is therefore the
-deliberate answer, not a workaround: any worktree created by any tool, now or
-in future, can be provisioned after the fact by one command. It also covers
-Claude Code's detached `.claude/worktrees/` checkouts.
+**Superset provisions correctly already**, through the repo's own
+`.superset/config.json`. Because that file names `./bin/worktree/setup.sh`, the
+shim keeps it working with no edit — a fourth independent consumer validating
+the decision to leave executable shims at the exact legacy paths.
+
+What Superset does *not* consult is the repo's layout config: it created nested
+worktrees inside five repos that are all configured `flat`. Its path shape,
+`<repo>_wt/<repo>/<type>_wt/<work>`, is hardcoded and is the origin of what the
+audit called the mystery fourth shape — 12 of the 13 rows in its `worktrees`
+table are `created_by_superset=1` at exactly that shape. This is independent
+confirmation that a repo-level `WORKTREE_LAYOUT` key served nobody.
+
+`wt adopt` therefore stands on its own narrower merit: worktrees made by plain
+`git worktree add`, Claude Code's detached `.claude/worktrees/` checkouts, and
+anything created before a repo was migrated.
 
 ## Resolving the rival fixes
 

@@ -714,8 +714,10 @@ func FromRaw(r map[string]Value, mainBranchFallback string) (*Config, error) {
 		TestCommand:          str(r, "TEST_COMMAND", ""),
 	}
 
+	// Build init defaults to "on if a command was given". Defaulting it to true
+	// while BUILD_INIT_COMMAND has no default would make an empty config invalid.
 	var err error
-	if c.BuildInitEnabled, err = boolean(r, "BUILD_INIT_ENABLED", true); err != nil {
+	if c.BuildInitEnabled, err = boolean(r, "BUILD_INIT_ENABLED", c.BuildInitCommand != ""); err != nil {
 		problems = append(problems, err.Error())
 	}
 	if c.RunTestsBeforeRemove, err = boolean(r, "RUN_TESTS_BEFORE_REMOVE", false); err != nil {
@@ -789,8 +791,9 @@ func contains(haystack []string, needle string) bool {
 
 Run: `go test ./internal/config/ -v`
 Expected: every test passes **except** `TestAllSevenRealConfigsValidate`, which
-fails with "AWS_SETUP_ENABLED is retired" for all seven and additionally
-"REPO_NAME is retired" for accessmanager. That failure is the validator working:
+fails with "AWS_SETUP_ENABLED is retired" for all seven, plus "REPO_NAME is
+retired" for accessmanager and "WORKTREE_LAYOUT is retired" for longhaul and
+recipus. That failure is the validator working:
 it is the migration signal Plan 3 acts on. Step 5 moves the fixtures to the
 post-migration state.
 
@@ -801,13 +804,13 @@ record why in a `testdata/README.md`:
 
 ```bash
 cd ~/programmering/private/wt
-sed -i '' '/^AWS_SETUP_ENABLED=/d; /^REPO_NAME=/d' internal/config/testdata/*.conf
+sed -i '' '/^AWS_SETUP_ENABLED=/d; /^REPO_NAME=/d; /^WORKTREE_LAYOUT=/d' internal/config/testdata/*.conf
 cat > internal/config/testdata/README.md <<'EOF'
 Copies of the seven real worktree.conf files, used as parser and validator
 conformance fixtures.
 
-AWS_SETUP_ENABLED and REPO_NAME lines are stripped: both are retired keys that
-the validator now rejects by design. The repos themselves are migrated in
+AWS_SETUP_ENABLED, REPO_NAME and WORKTREE_LAYOUT lines are stripped: all three
+are retired keys that the validator now rejects by design. The repos themselves are migrated in
 Plan 3; these fixtures represent the post-migration state.
 EOF
 go test ./internal/config/ -v
@@ -1243,7 +1246,10 @@ func (r *Repo) DetectMainBranch() string {
 			return branch
 		}
 	}
-	if out, err := git.Run(r.MainRoot, "rev-parse", "--abbrev-ref", "HEAD"); err == nil && out != "HEAD" {
+	// symbolic-ref, not rev-parse --abbrev-ref: the latter fails outright on a
+	// repository whose HEAD is unborn, which is exactly the state a freshly
+	// initialised repo is in.
+	if out, err := git.Run(r.MainRoot, "symbolic-ref", "--short", "HEAD"); err == nil && out != "" {
 		return out
 	}
 	return "main"
