@@ -118,3 +118,25 @@ func mustRead(t *testing.T, p string) string {
 	}
 	return strings.TrimSpace(string(b))
 }
+
+// A config entry that escapes the worktree must be refused, not silently
+// written outside it.
+func TestSetupRefusesConfigEntriesThatEscapeTheWorktree(t *testing.T) {
+	main := fixtureRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\n"+
+		"DEVELOPER_CONFIG_FILES=(\"../escaped.env\")\n")
+	mustWrite(t, filepath.Join(filepath.Dir(main), "escaped.env"), "SECRET=1")
+
+	target := filepath.Join(t.TempDir(), "wt")
+	mustMkdir(t, target)
+	ctx, _ := Open(main)
+	var buf bytes.Buffer
+	if err := Setup(ctx, target, SetupOptions{Source: main}, &buf); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(target), "escaped.env")); err == nil {
+		t.Error("Setup wrote outside the worktree")
+	}
+	if !strings.Contains(buf.String(), "escapes the worktree") {
+		t.Errorf("want a refusal message:\n%s", buf.String())
+	}
+}

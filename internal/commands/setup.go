@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/anders-lindstrom/wt/internal/git"
 )
@@ -46,9 +47,25 @@ func Setup(ctx *Context, target string, opts SetupOptions, w io.Writer) error {
 	return nil
 }
 
+// within reports whether candidate stays inside base. A config entry like
+// "../../etc/thing" would otherwise have Setup write outside the worktree it
+// is provisioning — a typo in worktree.conf silently escaping is a real bug,
+// not merely a lint finding.
+func within(base, candidate string) bool {
+	rel, err := filepath.Rel(base, candidate)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
 func copyConfigDirs(ctx *Context, src, target string, w io.Writer) {
 	for _, d := range ctx.Config.DeveloperConfigDirs {
 		from, to := filepath.Join(src, d), filepath.Join(target, d)
+		if !within(target, to) {
+			fmt.Fprintf(w, " ! %s escapes the worktree, refusing to copy it\n", d)
+			continue
+		}
 		if _, err := os.Stat(from); err != nil {
 			fmt.Fprintf(w, " - %s not in source, skipping\n", d)
 			continue
@@ -68,6 +85,10 @@ func copyConfigDirs(ctx *Context, src, target string, w io.Writer) {
 func copyConfigFiles(ctx *Context, src, target string, w io.Writer) {
 	for _, f := range ctx.Config.DeveloperConfigFiles {
 		from, to := filepath.Join(src, f), filepath.Join(target, f)
+		if !within(target, to) {
+			fmt.Fprintf(w, " ! %s escapes the worktree, refusing to copy it\n", f)
+			continue
+		}
 		if st, err := os.Stat(from); err != nil || st.IsDir() {
 			fmt.Fprintf(w, " - %s not in source, skipping\n", f)
 			continue
@@ -150,6 +171,10 @@ func copyFile(from, to string) error {
 	if err != nil {
 		return err
 	}
+	// #nosec G703 -- callers guard the destination with within(), which keeps
+	// it inside the worktree being provisioned. gosec's taint analysis cannot
+	// see that guard across the call. Covered by
+	// TestSetupRefusesConfigEntriesThatEscapeTheWorktree.
 	return os.WriteFile(to, b, st.Mode().Perm())
 }
 

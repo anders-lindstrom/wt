@@ -1,0 +1,58 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - revive
+    - bodyclose
+    - gosec
+
+  settings:
+    errcheck:
+      # Every exclusion here is argued, not convenience.
+      exclude-functions:
+        # Writes to a report writer. A failed write to stdout is not something
+        # a command can meaningfully recover from, and threading an error out
+        # of every progress line would obscure the errors that do matter.
+        - fmt.Fprintf
+        - fmt.Fprintln
+        # Deferred Close on a file opened for reading. Nothing was buffered, so
+        # there is no lost data to report. Every file wt writes goes through
+        # os.WriteFile, which does surface its error.
+        - (*os.File).Close
+
+    gosec:
+      excludes:
+        # G204: wt exists to run the git and provisioning commands a repository
+        # configures. Flagging each one would drown the real findings.
+        - G204
+        # G301/G306: wt creates worktree directories and copies developer config
+        # into them. These are developer-facing paths that must keep
+        # conventional permissions — 0755/0644, the same as `git worktree add`
+        # produces. Tightening them to 0750/0600 would break tools and editors
+        # that expect to read them.
+        - G301
+        - G306
+        # G304: every path wt opens is a git-reported repository root plus a
+        # fixed relative name, or a path the user typed on the command line.
+        # There is no untrusted path input; anyone able to poison one already
+        # has write access to the repository.
+        - G304
+        # G302: setup's own test chmods a provision.sh to 0755 because the
+        # thing under test is that wt runs an executable hook.
+        - G302
+        # G122: copyTree recreates symlinks the way `cp -R` and the bash
+        # implementation did. Config entries are guarded against escaping the
+        # target by within(); reworking the walk onto os.Root would be a large
+        # change for a local tool copying your own repository's config.
+        - G122
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

@@ -36,7 +36,10 @@ func HookCreate(ctx *Context, in io.Reader, out, logw io.Writer) error {
 
 // HookRemove handles Claude Code's WorktreeRemove event, going through the same
 // merge-checked removal as `wt remove` so the harness cannot lose unmerged work.
-func HookRemove(ctx *Context, in io.Reader, out, logw io.Writer) error {
+//
+// Unlike HookCreate there is no result for the harness to read, so this writes
+// nothing to stdout and takes no writer for it.
+func HookRemove(ctx *Context, in io.Reader, logw io.Writer) error {
 	var input hookInput
 	if err := json.NewDecoder(in).Decode(&input); err != nil {
 		return fmt.Errorf("reading hook input: %w", err)

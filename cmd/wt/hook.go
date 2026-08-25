@@ -36,7 +36,7 @@ func newHookCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return commands.HookRemove(ctx, cmd.InOrStdin(), cmd.OutOrStdout(), os.Stderr)
+				return commands.HookRemove(ctx, cmd.InOrStdin(), os.Stderr)
 			},
 		},
 	)

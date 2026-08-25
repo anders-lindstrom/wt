@@ -38,7 +38,7 @@ func TestHookRemoveIsMergeChecked(t *testing.T) {
 	}
 	path := strings.TrimSpace(out.String())
 	out.Reset()
-	if err := HookRemove(ctx, strings.NewReader(`{"path":"`+path+`"}`), &out, &logw); err != nil {
+	if err := HookRemove(ctx, strings.NewReader(`{"path":"`+path+`"}`), &logw); err != nil {
 		t.Fatalf("HookRemove: %v", err)
 	}
 	if ctx.Repo.BranchExists("feat_wt/gone") {
