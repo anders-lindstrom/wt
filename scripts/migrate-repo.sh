@@ -29,57 +29,8 @@ else
 fi
 cd "$wtdir"
 
-write_shim() {
-    local f="$1"; shift
-    cat > "$f" <<EOF
-#!/usr/bin/env bash
-# Shim. The implementation lives in github.com/anders-lindstrom/wt.
-# This file exists so muscle memory, .superset/config.json, the Herdr plugin's
-# executability checks and .claude hooks keep working unchanged.
-set -euo pipefail
-command -v wt >/dev/null 2>&1 || {
-    echo "worktree tooling requires 'wt' on PATH — see https://github.com/anders-lindstrom/wt" >&2
-    exit 1
-}
-exec wt $* "\$@"
-EOF
-    chmod +x "$f"
-}
-
-write_shim bin/worktree/new.sh            new
-write_shim bin/worktree/remove.sh         remove
-write_shim bin/worktree/remove_me.sh      remove --me
-write_shim bin/worktree/list.sh           list
-write_shim bin/worktree/status.sh         status
-write_shim bin/worktree/setup.sh          setup
-write_shim bin/worktree/setup_precheck.sh doctor
-write_shim bin/worktree/checkout.sh       checkout
-
-cat > bin/worktree/switch.sh <<'EOF'
-#!/usr/bin/env bash
-# Shim. See github.com/anders-lindstrom/wt.
-# Spawns a shell in the worktree, as this script always has. To change the
-# directory of your *current* shell, use the wt_cd function instead.
-set -euo pipefail
-command -v wt >/dev/null 2>&1 || {
-    echo "worktree tooling requires 'wt' on PATH — see https://github.com/anders-lindstrom/wt" >&2
-    exit 1
-}
-cd "$(wt path "$1")" && exec "${SHELL:-/bin/sh}"
-EOF
-chmod +x bin/worktree/switch.sh
-
-cat > bin/worktree_functions.sh <<'EOF'
-# Shim. The worktree function contract lives in
-# github.com/anders-lindstrom/wt/compat/worktree_functions.sh.
-# Sourced by name by the Herdr skills and the lindstrom.worktree-setup plugin.
-if [[ -f "$HOME/.local/share/wt/worktree_functions.sh" ]]; then
-    source "$HOME/.local/share/wt/worktree_functions.sh"
-else
-    echo "worktree tooling requires wt — see https://github.com/anders-lindstrom/wt" >&2
-    return 1 2>/dev/null || exit 1
-fi
-EOF
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib-shims.sh"
+write_shims
 
 [ -f bin/worktree/remove_me_function.sh ] && git rm -q bin/worktree/remove_me_function.sh
 for h in bin/hooks/worktree-create.sh bin/hooks/worktree-remove.sh; do
@@ -143,10 +94,7 @@ while i < len(lines):
 text = "".join(out)
 if os.environ["NOTE_PROVISION"] != "none":
     text = text.replace("# Worktree configuration file\n",
-        "# Worktree configuration file\n"
-        "#\n"
-        "# This repository's own setup step lives in bin/worktree/provision.sh,\n"
-        "# which `wt setup` runs in the new worktree. It replaced AWS_SETUP_ENABLED.\n")
+        "# Worktree configuration file — see README.md\n")
 p.write_text(re.sub(r"\n{3,}", "\n\n", text))
 PY
 
