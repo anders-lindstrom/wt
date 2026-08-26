@@ -18,7 +18,8 @@ func newFindCmd() *cobra.Command {
 			"searched first and wins ties, but a weak local match still lets other\n" +
 			"repositories under $WT_ROOTS compete.\n\n" +
 			"Prints one path. When several candidates tie, exits non-zero and lists\n" +
-			"them on stderr, so nothing runs in a worktree you did not mean.",
+			"them on stderr, so nothing runs in a worktree you did not mean.\n\n" +
+			"A pattern of \".\" means this repository's main checkout.",
 		Args: needArgs(1, "<pattern>", "wt find webkey"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Not being in a repository is fine: the search falls back to roots.

@@ -74,3 +74,46 @@ setup() {
     [ "$PWD" = "$REPO" ]
     [ ! -d "$REPO/../demo_wt/fix_wt/login-crash" ]
 }
+
+@test "wt cd changes the calling shell's directory" {
+    wt cd login-crash
+    [[ "$PWD" == */demo_wt/fix_wt/login-crash ]]
+}
+
+@test "wt cd . returns to the repository's main checkout" {
+    wt cd login-crash
+    wt cd .
+    [ "$PWD" = "$REPO" ]
+}
+
+@test "wt cd with no argument also returns to the main checkout" {
+    wt cd login-crash
+    wt cd
+    [ "$PWD" = "$REPO" ]
+}
+
+@test "wt exec runs in a worktree and leaves the shell put" {
+    before="$PWD"
+    run wt exec login-crash pwd
+    [ "$status" -eq 0 ]
+    [[ "$output" == */demo_wt/fix_wt/login-crash ]]
+    [ "$PWD" = "$before" ]
+}
+
+@test "wt passes every other subcommand to the binary" {
+    run wt list
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"fix_wt/login-crash"* ]]
+}
+
+@test "wt --help still reaches the binary" {
+    run wt --help
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"worktree"* ]]
+}
+
+@test "the binary alone explains that cd needs the shell function" {
+    run command wt cd foo
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"wt.sh"* ]]
+}

@@ -46,14 +46,20 @@ A binary cannot change its caller's directory. These do:
 
 | | |
 |---|---|
-| `wt_cd <pattern>` | cd to a worktree, in this shell |
+| `wt cd [pattern]` | cd to a worktree, in this shell; bare or `.` returns to the main checkout |
+| `wt exec <pattern> <cmd>…` | run a command there, in a subshell |
+| `wt_cd <pattern>` | the same as `wt cd`, if you prefer the underscore form |
 | `wt_exec <pattern> <cmd>…` | run a command there, in a subshell; your shell stays put |
 | `wt_dir <pattern>` | print the path (stdout is path-only) |
 | `wt_ls [pattern]` | list worktrees, or show what a pattern matches |
 | `wt_rm_me` | remove the worktree you are standing in |
 
+`wt cd` and `wt exec` are the same functions under a nicer name: `wt` is itself a
+shell function that handles those two and passes everything else to the binary,
+because a process cannot change its caller's directory.
+
 They are thin wrappers over `wt find`; the matching itself lives in the binary
-where it is tested.
+where it is tested. A pattern of `.` means the repository's main checkout.
 
 ## Layout
 

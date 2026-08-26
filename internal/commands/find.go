@@ -50,6 +50,25 @@ func Roots() []string {
 func Find(ctx *Context, pattern string) ([]find.Scored, error) {
 	var scored []find.Scored
 
+	// "." is the repository you are in — its main checkout. Jumping back to the
+	// base repo is the most common move there is, and naming the repo for it is
+	// friction; this also means `wt cd` with no argument has somewhere to go.
+	if pattern == "." || pattern == "" {
+		if ctx == nil {
+			return nil, nil
+		}
+		return []find.Scored{{
+			Candidate: find.Candidate{
+				Work:   ctx.Repo.Name,
+				Branch: ctx.Repo.BranchAt(ctx.Repo.MainRoot),
+				Repo:   ctx.Repo.Name,
+				Path:   ctx.Repo.MainRoot,
+				Local:  true,
+			},
+			Tier: find.TierExactWork,
+		}}, nil
+	}
+
 	if ctx != nil {
 		local, err := candidates(ctx.Repo, ctx.Config.TypeSuffix, true)
 		if err != nil {

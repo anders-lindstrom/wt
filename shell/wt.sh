@@ -5,6 +5,7 @@
 # lives in the binary (`wt find`) where it is tested — this file must never grow
 # a second implementation of it.
 #
+#   wt      cd|exec ...            the subcommands that must run in your shell
 #   wt_dir  <pattern>              print a worktree's path
 #   wt_cd   <pattern>              cd there, in this shell
 #   wt_exec <pattern> <cmd> [...]  run a command there, in a subshell
@@ -105,4 +106,25 @@ wt_rm_me() {
     fi
     cd "$main" || return 1
     wt remove --me-at "$here"
+}
+
+# `wt cd` and `wt exec` cannot live in the binary: a process cannot change its
+# caller's directory. This wrapper handles those two and passes everything else
+# to the real wt, so there is one command to remember rather than two families.
+#
+# A bare `wt cd`, or `wt cd .`, returns to the repository's main checkout.
+wt() {
+    case "${1:-}" in
+        cd)
+            shift
+            wt_cd "${1:-.}"
+            ;;
+        exec)
+            shift
+            wt_exec "$@"
+            ;;
+        *)
+            command wt "$@"
+            ;;
+    esac
 }

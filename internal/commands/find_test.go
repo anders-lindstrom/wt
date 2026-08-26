@@ -181,3 +181,39 @@ func TestFindKeepsRepoFirstWithInvalidLocalConfig(t *testing.T) {
 		t.Errorf("the local prefix match must win, got %+v", got)
 	}
 }
+
+// "." means the repository you are in — its main checkout. Getting back to the
+// base repo is the most common jump there is, and it should not need the repo's
+// name.
+func TestFindDotResolvesToTheMainCheckout(t *testing.T) {
+	t.Setenv("WT_ROOTS", t.TempDir())
+	main := committedRepo(t, minimalConf)
+	ctx, _ := Open(main)
+	if _, err := New(ctx, "feat/somewhere", NewOptions{NoSetup: true}, os.Stderr); err != nil {
+		t.Fatal(err)
+	}
+
+	// From inside a linked worktree, "." must still mean the main checkout.
+	inner, err := Open(filepath.Join(ctx.Repo.Parent, "demo_wt", "feat_wt", "somewhere"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Find(inner, ".")
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	if len(got) != 1 || got[0].Path != main {
+		t.Fatalf("want the main checkout %q, got %+v", main, got)
+	}
+}
+
+func TestFindDotOutsideARepoIsNotAMatch(t *testing.T) {
+	t.Setenv("WT_ROOTS", t.TempDir())
+	got, err := Find(nil, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Errorf("want no match outside a repository, got %+v", got)
+	}
+}

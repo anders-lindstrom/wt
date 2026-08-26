@@ -43,6 +43,7 @@ func newRootCmd() *cobra.Command {
 		newHookCmd(),
 		newFindCmd(),
 		newCheckoutCmd(),
+		newCdCmd(),
 	)
 	return root
 }
@@ -55,6 +56,22 @@ func newVersionCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			fmt.Fprintln(cmd.OutOrStdout(), version)
 			return nil
+		},
+	}
+}
+
+// newCdCmd exists only to explain itself. Changing the caller's directory is
+// impossible from a child process, so `wt cd` is a shell function; reaching the
+// binary means the shell layer was never sourced.
+func newCdCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:    "cd [pattern]",
+		Short:  "Change directory to a worktree (needs the shell layer)",
+		Hidden: true,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return fmt.Errorf("`wt cd` is a shell function, because a program cannot " +
+				"change your shell's directory.\n  Add this to your shell rc: " +
+				"source ~/.local/share/wt/wt.sh")
 		},
 	}
 }
