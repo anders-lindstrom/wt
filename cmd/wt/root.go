@@ -44,6 +44,7 @@ func newRootCmd() *cobra.Command {
 		newFindCmd(),
 		newCheckoutCmd(),
 		newCdCmd(),
+		newExecCmd(),
 	)
 	return root
 }
@@ -60,20 +61,39 @@ func newVersionCmd() *cobra.Command {
 	}
 }
 
-// newCdCmd exists only to explain itself. Changing the caller's directory is
-// impossible from a child process, so `wt cd` is a shell function; reaching the
-// binary means the shell layer was never sourced.
-func newCdCmd() *cobra.Command {
+// cd and exec are real commands, implemented in the shell layer because a child
+// process cannot change its caller's directory. They are listed in help like
+// any other command — hiding the two most-used ones would make them
+// undiscoverable — and reaching these implementations means the shell layer was
+// never sourced, so they say how to fix that.
+func newShellCmd(use, short, long string) *cobra.Command {
 	return &cobra.Command{
-		Use:    "cd [pattern]",
-		Short:  "Change directory to a worktree (needs the shell layer)",
-		Hidden: true,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			return fmt.Errorf("`wt cd` is a shell function, because a program cannot " +
-				"change your shell's directory.\n  Add this to your shell rc: " +
-				"source ~/.local/share/wt/wt.sh")
+		Use:   use,
+		Short: short,
+		Long: long + "\n\n" +
+			"Implemented in wt's shell layer: a program cannot change its caller's\n" +
+			"directory, so this one has to run inside your shell. Enable it with:\n" +
+			"    source ~/.local/share/wt/wt.sh",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return fmt.Errorf("`wt %s` needs wt's shell layer, which is not loaded.\n"+
+				"  Add to your shell rc:  source ~/.local/share/wt/wt.sh",
+				cmd.Name())
 		},
 	}
+}
+
+func newCdCmd() *cobra.Command {
+	return newShellCmd("cd [pattern]", "Change directory to a worktree (shell)",
+		"Change your shell's directory to a worktree.\n\n"+
+			"With no pattern, or \".\", returns to the repository's main checkout.")
+}
+
+func newExecCmd() *cobra.Command {
+	return newShellCmd("exec <pattern> <command> [args...]",
+		"Run a command inside a worktree (shell)",
+		"Run a command with a worktree as its working directory, in a subshell,\n"+
+			"so your own shell stays where it is and the command's exit code is\n"+
+			"what you get back.")
 }
 
 // needArgs validates argument count with a message that names what is missing

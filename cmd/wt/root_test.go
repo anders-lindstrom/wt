@@ -105,3 +105,43 @@ func TestTooManyArgsIsAlsoExplained(t *testing.T) {
 		t.Errorf("got %v", err)
 	}
 }
+
+// cd and exec are real commands — they just happen to be implemented in the
+// shell layer. Hiding them from help means the two most-used commands are
+// undiscoverable.
+func TestHelpListsTheShellCommands(t *testing.T) {
+	out, err := runCmd(t, "--help")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"cd", "exec"} {
+		if !strings.Contains(out, "\n  "+want+" ") {
+			t.Errorf("--help does not list %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestShellCommandsSayWhereTheyLive(t *testing.T) {
+	for _, name := range []string{"cd", "exec"} {
+		out, err := runCmd(t, name, "--help")
+		if err != nil {
+			t.Fatalf("%s --help: %v", name, err)
+		}
+		if !strings.Contains(out, "wt.sh") {
+			t.Errorf("%s --help does not say how to enable it:\n%s", name, out)
+		}
+	}
+}
+
+// Reaching the binary means the shell layer was never sourced; say so.
+func TestShellCommandsExplainThemselvesWhenRunFromTheBinary(t *testing.T) {
+	for _, name := range []string{"cd", "exec"} {
+		_, err := runCmd(t, name, "something")
+		if err == nil {
+			t.Fatalf("%s: want an error from the binary", name)
+		}
+		if !strings.Contains(err.Error(), "wt.sh") {
+			t.Errorf("%s: error does not point at the shell layer: %v", name, err)
+		}
+	}
+}
