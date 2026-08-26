@@ -87,8 +87,13 @@ func Doctor(ctx *Context, w io.Writer) (int, error) {
 
 	if problems == 0 {
 		fmt.Fprintln(w, "No problems found.")
-	} else {
-		fmt.Fprintf(w, "%d problem(s) found.\n", problems)
+		return problems, nil
+	}
+	fmt.Fprintf(w, "%d problem(s) found.\n", problems)
+	if ctx.ConfigError != nil {
+		// Mutating commands stay strict about configuration, so advising a
+		// migrate that will refuse would send you round in a circle.
+		fmt.Fprintln(w, "Fix the configuration first — the migrate commands above need it.")
 	}
 	return problems, nil
 }

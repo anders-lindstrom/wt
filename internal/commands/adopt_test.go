@@ -261,3 +261,22 @@ func TestMigrateRefusesWhenDestinationOccupied(t *testing.T) {
 		t.Error("the destination must be left alone on refusal")
 	}
 }
+
+// doctor must not advise a command that will refuse to run. Mutating commands
+// stay strict about configuration, so when the config is broken doctor has to
+// say which order to do the work in.
+func TestDoctorOrdersTheWorkWhenConfigIsBroken(t *testing.T) {
+	main := committedRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\nAWS_SETUP_ENABLED=true\n")
+	ctx := OpenLenient(main, io.Discard)
+	legacy := filepath.Join(ctx.Repo.Parent, "demo-legacy")
+	gitIn(t, main, "worktree", "add", "-q", "-b", "fix_wt/legacy", legacy)
+
+	var buf bytes.Buffer
+	if _, err := Doctor(ctx, &buf); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "Fix the configuration first") {
+		t.Errorf("doctor advises migrate without saying config must come first:\n%s", out)
+	}
+}
