@@ -19,8 +19,10 @@ bash -c 'source ./bin/worktree_functions.sh && load_worktree_config \
 
 git status --porcelain .superset/ 2>/dev/null | grep -q . && { echo "  ✗ .superset edited"; fail=1; } || echo "  ✓ .superset untouched"
 
-diff <(grep -v wt-migration "/tmp/$name.worktrees.before") \
-     <(git worktree list | grep -v wt-migration) >/dev/null \
+# Compare fields, not formatting: `git worktree list` pads the path column to
+# the longest path, so adding the migration worktree re-pads every other line.
+norm() { grep -v wt-migration | awk '{print $1, $2, $3}' | sort; }
+diff <(norm < "/tmp/$name.worktrees.before") <(git worktree list | norm) >/dev/null \
   && echo "  ✓ no worktree moved" || { echo "  ✗ WORKTREES CHANGED"; fail=1; }
 
 exit $fail
