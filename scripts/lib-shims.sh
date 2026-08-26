@@ -51,6 +51,8 @@ so a fix lands once instead of being copied into seven.
 
 ```sh
 ./bin/worktree/new.sh fix/login-crash     # same as: wt new fix/login-crash
+wt cd fix/login-crash                     # jump there
+wt cd .                                   # back to this checkout
 wt --help                                 # everything else
 ```
 
@@ -70,7 +72,8 @@ exists for tools that source it by name.
 ## Notes
 
 `switch.sh` spawns a *new* shell in the worktree, as it always has. To change
-your current shell's directory use the `wt_cd` function that ships with `wt`.
+your current shell's directory use `wt cd <name>`, or `wt cd .` to come back
+here — those run in your shell rather than in a child process.
 
 ## Install
 
