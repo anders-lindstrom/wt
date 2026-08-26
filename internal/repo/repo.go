@@ -171,12 +171,24 @@ func (r *Repo) Prune() error {
 }
 
 // MoveWorktree relocates a worktree checkout.
+//
+// `git worktree move` behaves like mv: given a destination that already exists
+// it moves the worktree *inside* it, so the checkout silently lands one level
+// deeper than asked and the caller reports a path that is not where it went.
+// Refuse that outright — a non-empty destination means something is already
+// there, and quietly nesting a worktree carrying real work is worse than
+// failing.
 func (r *Repo) MoveWorktree(from, to string) error {
+	if entries, err := os.ReadDir(to); err == nil && len(entries) > 0 {
+		return fmt.Errorf("%s already exists and is not empty; refusing to move %s into it", to, from)
+	}
 	if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil {
 		return err
 	}
-	_, err := git.Run(r.MainRoot, "worktree", "move", from, to)
-	return err
+	if _, err := git.Run(r.MainRoot, "worktree", "move", from, to); err != nil {
+		return err
+	}
+	return nil
 }
 
 // DeleteBranch deletes a branch, refusing when it is not merged.

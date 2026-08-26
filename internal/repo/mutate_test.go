@@ -81,3 +81,45 @@ func TestHasSubmodules(t *testing.T) {
 		t.Error("should detect .gitmodules")
 	}
 }
+
+// git worktree move behaves like mv: given an existing destination directory it
+// moves the worktree *inside* it, silently landing somewhere other than the
+// caller asked for. Refuse instead — a wrong-path move that reports success is
+// how a worktree carrying real work ends up somewhere nobody looks.
+func TestMoveWorktreeRefusesExistingDestination(t *testing.T) {
+	parent, main := fixture(t)
+	r, _ := Discover(main)
+	src := filepath.Join(parent, "demo_wt", "feat_wt", "thing")
+	dst := filepath.Join(parent, "occupied")
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dst, "other.txt"), []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := r.MoveWorktree(src, dst)
+	if err == nil {
+		t.Fatal("want a refusal when the destination exists")
+	}
+	if _, statErr := os.Stat(filepath.Join(src, ".git")); statErr != nil {
+		t.Error("the source worktree must be left where it was")
+	}
+	if _, statErr := os.Stat(filepath.Join(dst, "demo_wt")); statErr == nil {
+		t.Error("nothing should have been moved into the destination")
+	}
+}
+
+// An empty directory at the destination is harmless — MkdirAll may have made it.
+func TestMoveWorktreeAllowsEmptyDestination(t *testing.T) {
+	parent, main := fixture(t)
+	r, _ := Discover(main)
+	src := filepath.Join(parent, "demo_wt", "feat_wt", "thing")
+	dst := filepath.Join(parent, "empty-dest")
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.MoveWorktree(src, dst); err != nil {
+		t.Fatalf("an empty destination should be fine: %v", err)
+	}
+}
