@@ -22,6 +22,24 @@ func Doctor(ctx *Context, w io.Writer) (int, error) {
 
 	fmt.Fprintf(w, "Repository: %s (%s)\n", ctx.Repo.Name, ctx.Repo.MainRoot)
 
+	// A broken configuration is a finding, not a reason to stop: diagnosing it
+	// is the whole point of this command. Everything below is still checked
+	// against defaults so one bad key does not hide the rest.
+	fmt.Fprintln(w, "Configuration:")
+	if ctx.ConfigError != nil {
+		for _, line := range strings.Split(strings.TrimSpace(ctx.ConfigError.Error()), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasSuffix(line, ":") {
+				continue
+			}
+			report("%s", strings.TrimPrefix(line, "- "))
+		}
+		fmt.Fprintln(w, "  (checking the rest against the values that did parse)")
+	} else {
+		fmt.Fprintf(w, "  ✓ main branch %s, default type %s\n",
+			ctx.Config.MainBranch, ctx.Config.DefaultType)
+	}
+
 	fmt.Fprintln(w, "Required tools:")
 	if len(ctx.Config.RequiredBins) == 0 {
 		fmt.Fprintln(w, "  - none declared")

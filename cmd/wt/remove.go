@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -22,6 +23,10 @@ func newRemoveCmd() *cobra.Command {
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if !me && meAt == "" && len(args) != 1 {
+				return fmt.Errorf("needs <type>/<work>, or --me to remove the " +
+					"worktree you are in — for example: wt remove fix/login-crash")
+			}
 			ctx, err := openContext()
 			if err != nil {
 				return err
@@ -35,9 +40,6 @@ func newRemoveCmd() *cobra.Command {
 					return err
 				}
 				return commands.RemoveAt(ctx, cwd, cmd.OutOrStdout())
-			}
-			if len(args) != 1 {
-				return cmd.Usage()
 			}
 			return commands.Remove(ctx, args[0], cmd.OutOrStdout())
 		},

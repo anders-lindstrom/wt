@@ -17,8 +17,14 @@ func newRootCmd() *cobra.Command {
 		Short: "Git worktree tooling: one implementation, per-repo configuration",
 		Long: "wt manages git worktrees from a single implementation, reading each\n" +
 			"repository's own bin/worktree/worktree.conf for how that repo works.",
-		SilenceUsage:  true,
 		SilenceErrors: true,
+		// Usage is silenced only once a command starts doing work. Cobra
+		// validates arguments before PersistentPreRun, so an argument mistake
+		// still prints usage — which is exactly when it helps — while a runtime
+		// failure does not bury its message under it.
+		PersistentPreRun: func(cmd *cobra.Command, _ []string) {
+			cmd.SilenceUsage = true
+		},
 	}
 	root.AddCommand(
 		newVersionCmd(),
@@ -49,6 +55,23 @@ func newVersionCmd() *cobra.Command {
 			fmt.Fprintln(cmd.OutOrStdout(), version)
 			return nil
 		},
+	}
+}
+
+// needArgs validates argument count with a message that names what is missing
+// and shows an example, rather than cobra's "accepts 1 arg(s), received 0".
+// An argument mistake is the moment a user most needs telling what to type.
+func needArgs(n int, what, example string) cobra.PositionalArgs {
+	return func(_ *cobra.Command, args []string) error {
+		switch {
+		case len(args) == n:
+			return nil
+		case len(args) < n:
+			return fmt.Errorf("needs %s — for example: %s", what, example)
+		default:
+			return fmt.Errorf("takes %d argument(s), got %d — for example: %s",
+				n, len(args), example)
+		}
 	}
 }
 

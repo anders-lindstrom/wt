@@ -16,7 +16,7 @@ func newNewCmd() *cobra.Command {
 		Long: "Create <type>_wt/<work> from the repository's main branch, place the\n" +
 			"worktree at the canonical path, and provision it. A bare <work> takes\n" +
 			"the repository's default type.",
-		Args: cobra.ExactArgs(1),
+		Args: needArgs(1, "<type>/<work>", "wt new fix/login-crash"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := openContext()
 			if err != nil {

@@ -40,7 +40,7 @@ func newPathCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:               "path <type>/<work>",
 		Short:             "Print the path of a worktree",
-		Args:              cobra.ExactArgs(1),
+		Args:              needArgs(1, "<type>/<work>", "wt path fix/login-crash"),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := openContext()
@@ -61,7 +61,7 @@ func newBranchCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:               "branch <type>/<work>",
 		Short:             "Print the branch name for a piece of work",
-		Args:              cobra.ExactArgs(1),
+		Args:              needArgs(1, "<type>/<work>", "wt branch fix/login-crash"),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := openContext()
@@ -82,7 +82,7 @@ func newBranchStripCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:    "branch-strip <branch>",
 		Short:  "Strip the worktree type prefix from a branch name",
-		Args:   cobra.ExactArgs(1),
+		Args:   needArgs(1, "<branch>", "wt branch-strip fix_wt/login-crash"),
 		Hidden: true, // compat surface for strip_worktree_prefix
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := openContext()

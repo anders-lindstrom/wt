@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -130,5 +131,53 @@ func TestDoctorReportsMissingRequiredBin(t *testing.T) {
 	}
 	if problems == 0 || !strings.Contains(buf.String(), "definitely-not-a-real-binary-xyz") {
 		t.Errorf("missing REQUIRED_BINS not reported:\n%s", buf.String())
+	}
+}
+
+// doctor is the command whose entire job is diagnosing a repository. Refusing
+// to run because the configuration is the thing that is wrong makes it useless
+// exactly when it is needed.
+func TestDoctorReportsConfigProblemsInsteadOfRefusing(t *testing.T) {
+	main := committedRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\nAWS_SETUP_ENABLED=true\n")
+	if _, err := Open(main); err == nil {
+		t.Fatal("fixture is supposed to have an invalid config")
+	}
+
+	var warn strings.Builder
+	ctx := OpenLenient(main, &warn)
+	var buf bytes.Buffer
+	problems, err := Doctor(ctx, &buf)
+	if err != nil {
+		t.Fatalf("Doctor must still run: %v", err)
+	}
+	out := buf.String()
+	if problems == 0 {
+		t.Errorf("the config problem must count:\n%s", out)
+	}
+	if !strings.Contains(out, "AWS_SETUP_ENABLED") {
+		t.Errorf("the config problem must be named:\n%s", out)
+	}
+	if !strings.Contains(out, "provision.sh") {
+		t.Errorf("the remedy must be shown:\n%s", out)
+	}
+	// It must keep going and check everything else it still can.
+	if !strings.Contains(out, "Worktrees:") {
+		t.Errorf("doctor stopped early:\n%s", out)
+	}
+}
+
+// Falling back to defaults must not discard the keys that did parse: a retired
+// key should not blind doctor to REQUIRED_BINS, or it reports "none declared"
+// about a repository that declares two.
+func TestDoctorKeepsValidKeysWhenConfigIsInvalid(t *testing.T) {
+	main := committedRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\n"+
+		"REQUIRED_BINS=\"definitely-not-a-real-binary-xyz\"\nAWS_SETUP_ENABLED=true\n")
+	ctx := OpenLenient(main, io.Discard)
+	var buf bytes.Buffer
+	if _, err := Doctor(ctx, &buf); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "definitely-not-a-real-binary-xyz") {
+		t.Errorf("REQUIRED_BINS was discarded along with the invalid key:\n%s", buf.String())
 	}
 }

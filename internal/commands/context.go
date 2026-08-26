@@ -15,6 +15,9 @@ import (
 type Context struct {
 	Repo   *repo.Repo
 	Config *config.Config
+	// ConfigError records why Config fell back to defaults, when it did.
+	// Only OpenLenient sets it; Open fails outright instead.
+	ConfigError error
 }
 
 // Open discovers the repository containing cwd and loads its configuration.
@@ -56,8 +59,13 @@ func OpenLenient(cwd string, w io.Writer) *Context {
 	}
 	c, err := config.Load(r.MainRoot, r.DetectMainBranch())
 	if err != nil {
-		fmt.Fprintf(w, "wt: using defaults for %s: %v\n", r.Name, err)
-		c, _ = config.FromRaw(nil, r.DetectMainBranch())
+		// Keep whatever did parse: a single retired key should not hide the
+		// repository's REQUIRED_BINS, branch prefix and the rest.
+		if c == nil {
+			c, _ = config.FromRaw(nil, r.DetectMainBranch())
+		}
+		fmt.Fprintf(w, "wt: using partial configuration for %s: %v\n", r.Name, err)
+		return &Context{Repo: r, Config: c, ConfigError: err}
 	}
 	return &Context{Repo: r, Config: c}
 }

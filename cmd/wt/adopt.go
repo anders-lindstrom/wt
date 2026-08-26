@@ -16,7 +16,7 @@ func newAdoptCmd() *cobra.Command {
 		Long: "Provision a worktree made outside wt — plain `git worktree add`, an\n" +
 			"agent's own checkout, or one created before this repo was migrated.\n" +
 			"With --relocate it is also moved to the canonical path.",
-		Args: cobra.ExactArgs(1),
+		Args: needArgs(1, "<path>", "wt adopt ../server-oldshape"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := openContext()
 			if err != nil {
@@ -40,7 +40,7 @@ func newMigrateCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:               "migrate <type>/<work>",
 		Short:             "Move a worktree to the canonical path",
-		Args:              cobra.ExactArgs(1),
+		Args:              needArgs(1, "<type>/<work>", "wt migrate feat/webkey"),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := openContext()

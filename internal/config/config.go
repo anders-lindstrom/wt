@@ -49,6 +49,10 @@ var known = map[string]bool{
 
 // FromRaw validates parsed assignments into a Config, reporting every problem
 // at once rather than stopping at the first.
+//
+// The Config is returned even when there are problems. Callers that must have a
+// valid configuration check the error and discard it; `wt doctor` deliberately
+// keeps it, so one retired key does not hide every other value in the file.
 func FromRaw(r map[string]Value, mainBranchFallback string) (*Config, error) {
 	var problems []string
 
@@ -103,7 +107,7 @@ func FromRaw(r map[string]Value, mainBranchFallback string) (*Config, error) {
 	}
 
 	if len(problems) > 0 {
-		return nil, fmt.Errorf("worktree.conf:\n  - %s", strings.Join(problems, "\n  - "))
+		return c, fmt.Errorf("worktree.conf:\n  - %s", strings.Join(problems, "\n  - "))
 	}
 	return c, nil
 }

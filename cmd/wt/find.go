@@ -19,7 +19,7 @@ func newFindCmd() *cobra.Command {
 			"repositories under $WT_ROOTS compete.\n\n" +
 			"Prints one path. When several candidates tie, exits non-zero and lists\n" +
 			"them on stderr, so nothing runs in a worktree you did not mean.",
-		Args: cobra.ExactArgs(1),
+		Args: needArgs(1, "<pattern>", "wt find webkey"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Not being in a repository is fine: the search falls back to roots.
 			// A repository with a broken config is also fine, but must not
