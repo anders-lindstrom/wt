@@ -105,3 +105,31 @@ func TestDiscoverOutsideRepo(t *testing.T) {
 		t.Error("want error outside a repository")
 	}
 }
+
+// The original bash resolved worktree.conf against `git rev-parse --show-toplevel`
+// — the current worktree — so a branch that changes the configuration was
+// honoured where it was checked out. Root must therefore be the worktree you
+// are standing in, not the main checkout.
+func TestDiscoverRecordsCurrentWorktreeRoot(t *testing.T) {
+	parent, main := fixture(t)
+	linked := filepath.Join(parent, "demo_wt", "feat_wt", "thing")
+
+	r, err := Discover(linked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Root != linked {
+		t.Errorf("Root = %q, want the current worktree %q", r.Root, linked)
+	}
+	if r.MainRoot != main {
+		t.Errorf("MainRoot = %q, want %q", r.MainRoot, main)
+	}
+
+	rm, err := Discover(main)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rm.Root != main || rm.MainRoot != main {
+		t.Errorf("from the main checkout both should be %q, got %q / %q", main, rm.Root, rm.MainRoot)
+	}
+}

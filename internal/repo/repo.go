@@ -23,7 +23,14 @@ type Worktree struct {
 
 // Repo is the repository containing some directory.
 type Repo struct {
-	Name     string
+	Name string
+	// Root is the worktree the caller is standing in. Configuration is read
+	// from here, matching the bash implementation's
+	// BASE_DIR=$(git rev-parse --show-toplevel): a branch that changes
+	// worktree.conf is honoured where it is checked out.
+	Root string
+	// MainRoot is the repository's primary checkout — the source of the repo
+	// name, and where branch and worktree operations run.
 	MainRoot string
 	Parent   string
 }
@@ -45,8 +52,13 @@ func Discover(cwd string) (*Repo, error) {
 	if main == "" {
 		return nil, git.ErrNotRepo
 	}
+	root, err := git.Run(cwd, "rev-parse", "--show-toplevel")
+	if err != nil || root == "" {
+		root = main
+	}
 	return &Repo{
 		Name:     filepath.Base(main),
+		Root:     root,
 		MainRoot: main,
 		Parent:   filepath.Dir(main),
 	}, nil

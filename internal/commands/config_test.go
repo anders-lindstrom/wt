@@ -90,3 +90,28 @@ func TestConfigShellQuotesSafely(t *testing.T) {
 		t.Errorf("apostrophe not escaped:\n%s", buf.String())
 	}
 }
+
+// A worktree whose branch changes worktree.conf must be read from that
+// worktree, matching what the bash implementation did.
+func TestOpenReadsConfigFromTheCurrentWorktree(t *testing.T) {
+	main := fixtureRepo(t, minimalConf)
+	gitIn(t, main, "config", "user.email", "t@example.com")
+	gitIn(t, main, "config", "user.name", "T")
+	gitIn(t, main, "add", "-A")
+	gitIn(t, main, "commit", "-qm", "init")
+
+	linked := filepath.Join(filepath.Dir(main), "demo_wt", "feat_wt", "changed")
+	gitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/changed", linked)
+	if err := os.WriteFile(filepath.Join(linked, "bin", "worktree", "worktree.conf"),
+		[]byte("MAIN_BRANCH=\"from-the-worktree\"\nBUILD_INIT_ENABLED=false\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, err := Open(linked)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if ctx.Config.MainBranch != "from-the-worktree" {
+		t.Errorf("MainBranch = %q, want the worktree's own value", ctx.Config.MainBranch)
+	}
+}

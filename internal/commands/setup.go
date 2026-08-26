@@ -117,7 +117,7 @@ func runProvision(ctx *Context, target string, w io.Writer) error {
 	if !ctx.HasProvisionScript() {
 		return nil
 	}
-	script := filepath.Join(ctx.Repo.MainRoot, "bin", "worktree", "provision.sh")
+	script := filepath.Join(ctx.Repo.Root, "bin", "worktree", "provision.sh")
 	fmt.Fprintln(w, "Running bin/worktree/provision.sh...")
 	cmd := exec.Command(script)
 	cmd.Dir = target

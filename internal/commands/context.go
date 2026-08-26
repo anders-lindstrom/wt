@@ -2,6 +2,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -26,7 +27,7 @@ func Open(cwd string) (*Context, error) {
 	if err != nil {
 		return nil, err
 	}
-	c, err := config.Load(r.MainRoot, r.DetectMainBranch())
+	c, err := loadFor(r)
 	if err != nil {
 		return nil, err
 	}
@@ -35,13 +36,19 @@ func Open(cwd string) (*Context, error) {
 
 // HasProvisionScript reports whether the repo declares its own setup step.
 func (c *Context) HasProvisionScript() bool {
-	info, err := os.Stat(filepath.Join(c.Repo.MainRoot, "bin", "worktree", "provision.sh"))
+	info, err := os.Stat(filepath.Join(c.Repo.Root, "bin", "worktree", "provision.sh"))
 	return err == nil && !info.IsDir() && info.Mode()&0o111 != 0
 }
 
-// loadFor loads another repository's configuration without building a Context.
+// loadFor loads a repository's configuration, preferring the worktree the
+// caller is standing in and falling back to the main checkout when that
+// worktree carries none.
 func loadFor(r *repo.Repo) (*config.Config, error) {
-	return config.Load(r.MainRoot, r.DetectMainBranch())
+	c, err := config.Load(r.Root, r.DetectMainBranch())
+	if errors.Is(err, config.ErrNoConfig) && r.Root != r.MainRoot {
+		return config.Load(r.MainRoot, r.DetectMainBranch())
+	}
+	return c, err
 }
 
 // OpenLenient builds a Context for read-only lookups, falling back to default
@@ -57,7 +64,7 @@ func OpenLenient(cwd string, w io.Writer) *Context {
 	if err != nil {
 		return nil
 	}
-	c, err := config.Load(r.MainRoot, r.DetectMainBranch())
+	c, err := loadFor(r)
 	if err != nil {
 		// Keep whatever did parse: a single retired key should not hide the
 		// repository's REQUIRED_BINS, branch prefix and the rest.
