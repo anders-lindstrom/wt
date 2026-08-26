@@ -208,3 +208,13 @@ func (r *Repo) HasSubmodules(path string) bool {
 	_, err := os.Stat(filepath.Join(path, ".gitmodules"))
 	return err == nil
 }
+
+// AddExistingWorktree puts a worktree at path on a branch that already exists.
+// Unlike AddWorktree it never creates a branch.
+func (r *Repo) AddExistingWorktree(path, branch string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	_, err := git.Run(r.MainRoot, "worktree", "add", path, branch)
+	return err
+}
