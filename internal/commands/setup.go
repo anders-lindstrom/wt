@@ -37,12 +37,21 @@ func Setup(ctx *Context, target string, opts SetupOptions, w io.Writer) error {
 		copyConfigFiles(ctx, src, target, w)
 	}
 
-	if err := runProvision(ctx, target, w); err != nil {
-		return err
-	}
+	// A failed provision step is reported but does not abort the rest: stopping
+	// here would leave a worktree with no submodules and no dependencies
+	// either, which is strictly less usable than one that merely lacks
+	// secrets. The error still surfaces, so nothing treats this as success.
+	provisionErr := runProvision(ctx, target, w)
 	initSubmodules(target, w)
 	runBuildInit(ctx, target, opts, w)
 
+	if provisionErr != nil {
+		fmt.Fprintln(w, "")
+		fmt.Fprintf(w, "! %v\n", provisionErr)
+		fmt.Fprintln(w, "  The worktree is otherwise set up. Fix the cause and finish it with:")
+		fmt.Fprintf(w, "      cd %s && wt setup\n", target)
+		return provisionErr
+	}
 	fmt.Fprintln(w, "✓ Worktree setup complete")
 	return nil
 }

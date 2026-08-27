@@ -140,3 +140,80 @@ func TestSetupRefusesConfigEntriesThatEscapeTheWorktree(t *testing.T) {
 		t.Errorf("want a refusal message:\n%s", buf.String())
 	}
 }
+
+// Modelled on server's real configuration: nested paths, and declared files
+// that do not exist in the source. Everything present must arrive; everything
+// absent must be skipped without failing the setup.
+func TestSetupCopiesServerShapedConfig(t *testing.T) {
+	main := committedRepo(t, `MAIN_BRANCH="main"
+BUILD_INIT_ENABLED=false
+DEVELOPER_CONFIG_DIRS=(.cursor .claude .run .vscode .idea)
+DEVELOPER_CONFIG_FILES=(
+    "override.properties"
+    "accessmanagement/override.properties"
+    "webapp/override.properties"
+    "etc/ai-tooling/local-overrides/config.yaml"
+    "accessmanagement/src/main/resources/application-local-secret.yaml"
+)
+`)
+	// Present in the source — must be copied, including four levels deep.
+	present := []string{
+		"accessmanagement/override.properties",
+		"webapp/override.properties",
+		"etc/ai-tooling/local-overrides/config.yaml",
+		"accessmanagement/src/main/resources/application-local-secret.yaml",
+	}
+	for _, f := range present {
+		mustWrite(t, filepath.Join(main, f), "value-of-"+f)
+	}
+	mustWrite(t, filepath.Join(main, ".claude", "settings.json"), "{}")
+	// "override.properties" is deliberately absent, as it is in the real repo.
+
+	target := t.TempDir()
+	ctx, err := Open(main)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := Setup(ctx, target, SetupOptions{Source: main}, &buf); err != nil {
+		t.Fatalf("a declared-but-absent file must not fail setup: %v", err)
+	}
+	for _, f := range present {
+		if got := mustRead(t, filepath.Join(target, f)); got != "value-of-"+f {
+			t.Errorf("%s: got %q", f, got)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(target, "override.properties")); err == nil {
+		t.Error("a file absent from the source must not be invented")
+	}
+	if _, err := os.Stat(filepath.Join(target, ".claude", "settings.json")); err != nil {
+		t.Errorf("config dir not copied: %v", err)
+	}
+}
+
+// A failing provision step must not cost you the rest of the provisioning.
+// Stopping early leaves a worktree with no dependencies either, which is
+// strictly less usable than one that merely lacks secrets.
+func TestSetupContinuesAfterProvisionFailure(t *testing.T) {
+	main := committedRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_COMMAND=\"touch built.txt\"\n")
+	p := filepath.Join(main, "bin", "worktree", "provision.sh")
+	mustWrite(t, p, "#!/bin/sh\necho 'no AWS credentials' >&2\nexit 1\n")
+	if err := os.Chmod(p, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := t.TempDir()
+	ctx, _ := Open(main)
+
+	var buf bytes.Buffer
+	err := Setup(ctx, target, SetupOptions{Source: main}, &buf)
+	if err == nil {
+		t.Fatal("a failed provision must still be reported as an error")
+	}
+	if _, statErr := os.Stat(filepath.Join(target, "built.txt")); statErr != nil {
+		t.Error("build initialisation should still have run")
+	}
+	out := buf.String()
+	if !strings.Contains(out, "wt setup") {
+		t.Errorf("output must say how to finish provisioning:\n%s", out)
+	}
+}
