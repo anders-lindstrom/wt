@@ -461,6 +461,14 @@ git commit -m "feat(conflict): resolve openapi version conflicts in application.
 - Consumes: `lib.sh` from Task 1; `semver_max_plus_patch` for `info.version`.
 - Produces: an executable claiming `etc/openapi/apidocs/*.json`. Task 5 lists it in `.wt-sync.yaml`.
 
+**A refusal here is load-bearing.** Under the revised spec, a resolver refusing
+is one of the three signals that classify a branch `divergent` — a branch where
+the ground has moved and a rebase is the wrong frame entirely. So the refusal
+message must name *what* collided (the conflicting keys), not merely that it
+gave up. `feat_wt/spring-boot-4-jackson-3` is the case: 13 conflicting paths and
+28 conflicting schema keys, because the framework upgrade rewrote the
+generator's own output.
+
 **Why this shape:** the spec is a ~950 KB generated document. Merging it key by key resolves the real cases in milliseconds; regenerating it costs 1–2 minutes of Gradle and would run once per conflicting commit. Measured across the five conflicting server branches, **four collide on nothing but `info.version`**; the fifth (`feat_wt/spring-boot-4-jackson-3`, a framework upgrade that rewrites the generator's output) collides on 28 real keys and must be refused.
 
 The merged sections are `paths`, `components.schemas`, and `tags` (keyed by `.name`), plus `info.version` by rule. Everything else must be identical between base and branch — verified true for all four resolvable branches, where the remainder hashes identically across base, branch and trunk.
@@ -625,8 +633,7 @@ spec_merge() {
     # section this resolver does not merge, and the guard above proved the
     # branch did not touch any of them.
     jq -f <(cat "$DIR/merge3.jq"; echo '
-        . as $skeleton
-        | .paths              = (merge3($b[0].paths // {}; $t[0].paths // {}; $br[0].paths // {}) | .result)
+          .paths              = (merge3($b[0].paths // {}; $t[0].paths // {}; $br[0].paths // {}) | .result)
         | .components.schemas = (merge3($b[0].components.schemas // {}; $t[0].components.schemas // {}; $br[0].components.schemas // {}) | .result)
         | .tags               = (merge3($b[0].tags|by_name; $t[0].tags|by_name; $br[0].tags|by_name) | .result | to_tags)
         | .info.version       = $newv') \
@@ -852,9 +859,12 @@ setup() {
 
 teardown() { rm -rf "$REPO"; }
 
-@test "an explicit version is applied without prompting" {
-    run bash -c "cd '$BATS_TEST_DIRNAME/../../..' && ./bin/bump_openapi.sh --help 2>&1 || true"
-    [[ "$output" == *"bump_openapi.sh <version>"* || "$output" == *"Usage"* ]]
+@test "the non-interactive explicit-version path is still reachable" {
+    # The script takes `<version>` and `<api> <version>` with no prompting.
+    # Losing that during the refactor would break publish_api_snapshot.sh,
+    # which drives it non-interactively.
+    grep -qE '^\s*2\)|\$#\s*-eq\s*2|\$#\s*==\s*2' "$SCRIPT"
+    grep -q 'generateOpenApi' "$SCRIPT"
 }
 
 @test "the resolver is what collapses a conflicted version line" {
@@ -901,6 +911,17 @@ defer:
 # mode, a spec that was never regenerated, in about two seconds.
 verify:
   - git diff --exit-code etc/openapi/apidocs
+
+# Which paths mean "this branch changes the dependency graph". A branch touching
+# any of these is a signal that it may be divergent rather than merely behind —
+# trunk's code has been written against a different set of libraries.
+# feat_wt/spring-boot-4-jackson-3 touches nine of them; feat_wt/state_stats
+# touches none.
+dependency_graph:
+  - gradle/libs.versions.toml
+  - build.gradle
+  - "*/build.gradle"
+  - gradle.properties
 ```
 
 - [ ] **Step 4: Delegate from `bump_openapi.sh`**
@@ -1045,7 +1066,7 @@ PKG='@telcred/spec-telcredv2-typescript-axios'
 pinned() { jq -r --arg p "$PKG" '.dependencies[$p] // .devDependencies[$p] // empty' "$1"; }
 
 resolved() {
-    local file=$1 base trunk branch bv tv blank_t blank_b
+    local file=$1 base trunk branch bv tv blank blank_t blank_b
     base=$(mktemp) trunk=$(mktemp) branch=$(mktemp)
     # shellcheck disable=SC2064
     trap "rm -f '$base' '$trunk' '$branch'" RETURN
@@ -1059,10 +1080,10 @@ resolved() {
 
     # With the pin blanked, the two sides must be identical. Anything else is a
     # real manifest disagreement.
-    blank_t=$(jq -S --arg p "$PKG" '(.dependencies[$p] //= null | .devDependencies[$p] //= null)
-                                     | (.dependencies[$p]? = "X") | (.devDependencies[$p]? = "X")' "$trunk")
-    blank_b=$(jq -S --arg p "$PKG" '(.dependencies[$p] //= null | .devDependencies[$p] //= null)
-                                     | (.dependencies[$p]? = "X") | (.devDependencies[$p]? = "X")' "$branch")
+    local blank='if .dependencies[$p]    then .dependencies[$p]    = "X" else . end
+               | if .devDependencies[$p] then .devDependencies[$p] = "X" else . end'
+    blank_t=$(jq -S --arg p "$PKG" "$blank" "$trunk")
+    blank_b=$(jq -S --arg p "$PKG" "$blank" "$branch")
     [[ $blank_t == "$blank_b" ]] || refuse "$file: the two sides differ by more than the $PKG pin"
 
     if [[ $bv == *-snapshot.* ]]; then
@@ -1285,6 +1306,12 @@ defer:
 
 verify:
   - git diff --exit-code pnpm-lock.yaml
+
+# See server/.wt-sync.yaml. A pin change is routine; anything else in a manifest
+# means the branch is building against different libraries than trunk.
+dependency_graph:
+  - pnpm-lock.yaml
+  - "**/package.json"
 ```
 
 `generate-git-info` embeds the HEAD hash, branch and timestamp, so every rebase invalidates it. It is keyed on `head-changed` because that is literally when it goes stale.
@@ -1324,6 +1351,7 @@ git commit -m "feat(conflict): declare wt sync config and delegate the pin colla
 
 ## What this plan leaves for the next one
 
-`wt sync` itself — triage over `git merge-tree`, the classification table, rebase execution with `--no-update-refs --no-gpg-sign --rerere-autoupdate`, safety refs and retention, the worktree lock, ordered stack rebasing (`perf_wt/pruning_keyset_index` → `feat_wt/pruning_cron` is live today), the plan file, the read-only table, the fzf picker, `wt sync keep`, and the negotiation protocol. Then the `wt-sync` skill and the `api-bump` amendment.
+`wt sync` itself — triage over `git merge-tree`, the classification table
+including the `divergent` class and `wt sync campaign`, rebase execution with `--no-update-refs --no-gpg-sign --rerere-autoupdate`, safety refs and retention, the worktree lock, ordered stack rebasing (`perf_wt/pruning_keyset_index` → `feat_wt/pruning_cron` is live today), the plan file, the read-only table, the fzf picker, `wt sync keep`, and the negotiation protocol. Then the `wt-sync` skill and the `api-bump` amendment.
 
 Nothing in that list changes the resolver contract, which is why the resolvers can land and be used by hand first.
