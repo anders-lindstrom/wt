@@ -1,10 +1,11 @@
 # wt sync — keeping worktrees on trunk
 
-Design, 2026-09-05.
+Design, 2026-09-05. Revised the same day after an adversarial review against the
+live repositories; the findings that changed it are noted inline.
 
 ## The problem
 
-Twenty-three live worktrees across `server` and `accessmanager`, several of them
+Twenty-four worktrees across `server` and `accessmanager`, several of them
 hundreds of commits behind trunk. Bringing one up to date is mechanical almost
 every time, but the mechanical part is invisible until someone looks, and
 looking costs a model. The branches that are genuinely hard to rebase are a
@@ -18,20 +19,22 @@ and to knock before rewriting somebody's history.
 
 ## What the fleet actually looks like
 
-Measured 2026-09-05 across all 23 worktrees of `server` (trunk `development`)
-and `accessmanager` (trunk `main`), with `git merge-tree --write-tree`, which
-performs the whole merge in the object store without touching a working tree.
+Measured 2026-09-05 with `git merge-tree --write-tree`, which performs the whole
+merge in the object store without touching a working tree. `server` (trunk
+`development`) has 15 worktrees; `accessmanager` (trunk `main`) has 9, one of
+which is **detached** — `.claude/worktrees/nostalgic-mcnulty-7b0146`, left by an
+earlier agent session. Twenty-four physical worktrees, twenty-three with a
+branch.
 
 | class | count | meaning |
 |---|---|---|
 | current | 4 | behind 0 |
 | stale | 6 | behind 24–718, **ahead 0** — nothing of their own |
-| clean | 4 | no conflict |
-| recipe-only | 2 | conflicts are entirely in paths a script owns |
+| clean | 4 | no conflict at the endpoint |
+| recipe-only | 2 | conflicts fall entirely in paths a resolver claims |
 | contested | 7 | some real source overlap |
 
-After the resolvers in this design, the recipe paths drop out of the contested
-set too:
+After the resolvers in this design:
 
 | branch | conflicts | left for a person |
 |---|---|---|
@@ -42,21 +45,35 @@ set too:
 | `feat_wt/axis_acc` | 7 | 3 |
 | `feat_wt/state_stats` | 7 | 4 |
 | `feat_wt/arch` | 4 | 4 |
-| `spring-boot-4-jackson-3` | 7 | 7 — the spec resolver refuses here (see §2) |
+| `feat_wt/spring-boot-4-jackson-3` | 7 | 7 — the spec resolver refuses here (§2) |
 | `april-fools` | 5 | 5 (756 behind, likely dead) |
 
-**Seventeen of twenty-three are fully mechanical.** That ratio is the design.
+### State the ratio honestly
+
+**Seventeen of the twenty-three branch-attached worktrees need no judgement.**
+That is the number that matters for a fleet sweep, but it is not a statement
+about rebases: ten of the seventeen need no rebase at all — four are current, six
+are stale and are never rebased.
+
+Of the **thirteen worktrees that actually need a rebase, seven are predicted
+mechanical**. That is the honest figure for "how often does `wt sync` do work
+without a model", and it is the one to quote when arguing about cost.
+
+Both numbers are real; using the first where the second belongs overstates the
+case. Review finding 13.
 
 ## Design principles
 
-1. **Negotiation is the exception.** Same principle as `devports`, but computed
-   rather than declared: the class is derived from git, not from a config field
-   someone has to keep honest.
-2. **No component ever merges content by reasoning.** A resolver either owns a
-   file shape completely or refuses. There is no "usually right" strategy.
+1. **Negotiation is the exception.** As in `devports`, but computed rather than
+   declared: the class comes from git, not from a config field someone has to
+   keep honest.
+2. **No component ever merges content by reasoning.** A resolver owns a file
+   shape completely or refuses. There is no "usually right" strategy.
 3. **Resolvers are fast and never regenerate.** Regeneration is deferred and
    runs once per rebase, not once per conflicting commit.
-4. **A model is involved only where judgement is genuinely required**, and when
+4. **Mutation is opt-in.** A repository with no `.wt-sync.yaml` is reported, never
+   rebased.
+5. **A model is involved only where judgement is genuinely required**, and when
    it is, it is handed a written plan rather than a repository to investigate.
 
 ---
@@ -74,90 +91,136 @@ agent     = claude agents --json, matched on .cwd
 conflicts = git merge-tree --write-tree --name-only origin/<trunk> <branch>
 ```
 
-`claude agents --json` lists interactive sessions as well as background ones,
-each with `cwd`, `name`, `sessionId`, `pid` and idle/busy. There is no need to
-read process environments the way `devports` does, and therefore no
-unknown-versus-gone ambiguity to get wrong.
+**A worktree with no branch is classified `detached` and skipped** before any
+branch-based command runs. One exists today. Review finding 14.
 
 | class | condition | action |
 |---|---|---|
+| `detached` | no branch | skipped; reported |
 | `current` | behind 0 | nothing; not printed |
-| `stale` | ahead 0 | **never rebased.** Reported once: nothing of its own, N behind, consider `wt remove` |
+| `stale` | ahead 0 | not rebased by default (§7) |
 | `clean` | merge-tree exits 0 | rebase |
-| `recipe` | every conflicting path is claimed by a resolver | rebase; resolvers handle it |
-| `contested` | some conflicting path is claimed by none | rebase; resolvers strip the noise; hand the residue over |
+| `recipe` | every conflicting path is *claimed* by a resolver | rebase; resolvers attempt it |
+| `contested` | some conflicting path is claimed by none | rebase; resolvers strip what they can; hand the residue over |
 
 Two modifiers override the class:
 
 - **dirty → never touched.** Not rebased, not stashed. The stash stack is shared
-  across every worktree of a repo, so a tool that stashes is a tool that can
-  eat another session's work.
+  across every worktree of a repo, so a tool that stashes is a tool that can eat
+  another session's work.
 - **agent busy → deferred silently.** No message, no rebase.
 
-`merge-tree` tests a *merge*; a rebase replays each commit and can conflict at
-an intermediate step the endpoint does not. Triage is a screen, not a promise.
-A `clean` prediction that conflicts in reality aborts, restores from the safety
-ref, and reclassifies as `contested`. It never leaves a worktree mid-rebase
-without a plan on disk.
+### Triage is a screen, not a promise
+
+`merge-tree` tests a *merge*; a rebase replays each commit and can conflict at an
+intermediate step the endpoint does not. Two consequences, both deliberate:
+
+- A `clean` prediction that conflicts in reality aborts, restores from the safety
+  ref, and reclassifies as `contested`. It never leaves a worktree mid-rebase
+  without a plan on disk.
+- The `recipe` class is **provisional**. Triage only knows that a resolver
+  *claims* the path; whether it can actually resolve that particular conflict is
+  known only when the conflict exists. A resolver that refuses at rebase time
+  reclassifies the worktree to `contested`. Review finding 6.
+
+On the four currently-clean branches, replay was checked against the trunk-side
+changes and **none of the four is predicted to conflict during replay** —
+`pruning_keyset_index` and `setting_pin` have no path overlap at all;
+`controller_stats` and `pruning_cron` have single-commit overlaps that merge
+cleanly. The screen is adequate for today's fleet.
+
+### Agent detection, and what it does not cover
+
+`claude agents --json` lists interactive sessions as well as background ones,
+with `cwd`, `id`, `kind`, `name`, `sessionId`, `startedAt` and `state`. There is
+**no `pid` field** and no explicit idle/busy flag — `state` carries values like
+`blocked`. It is enough to answer "is a Claude session living in this worktree",
+which removes the `devports` process-environment scan and its
+unknown-versus-gone ambiguity.
+
+It does **not** see Codex, a dev server, a running test, or an IDE build in an
+otherwise clean worktree. `wt sync` therefore treats "no Claude session" as
+"nobody to ask", never as "nothing is happening", and the dirty check remains the
+real guard. Review finding 10.
 
 ## 2. Conflict resolvers
 
-A resolver is a script in the repo that owns exactly one conflict shape. It
-lives in `bin/conflict/`, matching the existing `bin/github/`, `bin/sqs/` and
-`bin/worktree/` convention.
+A resolver is a script in the repo that owns exactly one conflict shape, living
+in `bin/conflict/` alongside the existing `bin/github/`, `bin/sqs/` and
+`bin/worktree/`.
 
 ### Contract
 
 ```
-bin/conflict/<name> --check   <file>    exit 0 = this file is mine
-                                        exit 1 = not mine
-bin/conflict/<name> --resolve <file>    resolve in place and `git add` it
-                                        exit 0 = resolved
-                                        exit 2 = refuse; one line of reason on stderr
+bin/conflict/<name> --claims               print the path globs this resolver owns
+bin/conflict/<name> --check   <file>       0 = I can resolve this conflict
+                                           1 = not mine
+bin/conflict/<name> --resolve <file>       resolve in place and `git add` it
+                                           0 = resolved
+                                           2 = refuse; one line of reason on stderr
 ```
 
-`--check` must be cheap and must not write. `--resolve` must be deterministic
-and must never invoke a build. A resolver that cannot resolve **refuses**; it
-never guesses. `wt sync` needs no per-script knowledge beyond the list.
+`--claims` is what triage uses, because at triage time the file on disk is clean
+and the base/ours/theirs blobs exist only inside `merge-tree` output. `--check`
+and `--resolve` are valid only against a genuinely conflicted file, mid-rebase,
+where the three stages are in the index. Splitting these two was the fix for
+review finding 6: a single path-matching `--check` would over-claim — a
+`package.json` conflict that is *not* the spec pin would be silently mishandled.
 
-Resolvers are useful on their own: a person hitting the conflict by hand runs
-the same script.
+A resolver that cannot resolve **refuses**; it never guesses.
 
 ### `server`
 
-| script | shape | today | after |
-|---|---|---|---|
-| `bin/conflict/openapi-version` | `application.yaml`, inside the `openapi:` block | ~60 lines of awk embedded in `bump_openapi.sh` | extracted, milliseconds |
-| `bin/conflict/openapi-spec` | `etc/openapi/apidocs/*.json` | `./gradlew webapp:generateOpenApi` per hit | structural 3-way, milliseconds |
-| `bin/conflict/gradle-includes` | `settings.gradle` `include` list | by hand | union of the inline list |
+| script | shape |
+|---|---|
+| `bin/conflict/openapi-version` | `application.yaml`, inside the `openapi:` block |
+| `bin/conflict/openapi-spec` | `etc/openapi/apidocs/*.json` |
+| `bin/conflict/gradle-includes` | `settings.gradle` `include` list |
 
 ### `accessmanager`
 
-| script | shape | today | after |
-|---|---|---|---|
-| `bin/conflict/spec-client-version` | `**/package.json`, the `@telcred/spec-telcredv2-typescript-axios` pin | `pnpm i` per hit | version rule only, milliseconds |
-| `bin/conflict/pnpm-lock` | `pnpm-lock.yaml` | `pnpm i` per hit | mark for the one deferred install |
+| script | shape |
+|---|---|
+| `bin/conflict/spec-client-version` | `**/package.json`, the `@telcred/spec-telcredv2-typescript-axios` pin |
+| `bin/conflict/pnpm-lock` | `pnpm-lock.yaml` |
 
-### Why extraction is worth doing regardless of `wt sync`
+### Extraction changes the bump scripts' shape, not just their location
 
-`bump_openapi.sh` already parses conflict markers in the `openapi:` block and
-collapses them. `bump_axios_client.sh` already refuses on leftover markers, runs
-`pnpm i` to reconcile the lock, and prints the `git add … && git rebase
---continue`. Both were written for this case; the capability exists but is
-locked inside a larger script that also does network calls and builds.
+`bump_openapi.sh` already parses normal and diff3 markers in the `openapi:`
+block, refuses when the two sides differ by more than the version line, and runs
+`./gradlew webapp:generateOpenApi`. `bump_axios_client.sh` already collapses
+pin-only manifest conflicts, refuses on leftover markers in its target
+manifests, runs `pnpm i`, and conditionally prints the stage-and-continue lines.
 
-After extraction the bump scripts **call the resolvers**. One owner per fact,
-in code rather than prose, and both scripts get shorter.
+But the extraction is **not behaviour-preserving**, and the spec should not
+pretend otherwise. Review finding 5:
 
-### `openapi-spec`: how it resolves without Gradle
+- Both scripts take a version from the user or from a tag listing. A resolver
+  gets no version argument, so version *selection* is a separate concern from
+  conflict *resolution* and must stay in the bump scripts.
+- Neither script stages anything today; a resolver must `git add`.
+- `bump_axios_client.sh` rewrites all five manifests in one pass. A per-file
+  resolver loses that grouping, so the resolver must be given the whole set or
+  the caller must iterate and the deferred install must run once.
 
-The generated spec is a 950 KB JSON document, and it is where the cost is. The
-resolver performs a three-way merge over **top-level keys** — each entry under
-`paths` and under `components.schemas`, plus `info.version` — taking whichever
-side changed a key, and resolving `info.version` by the version rule below.
+So the split is: **resolvers are pure content transformations over a conflicted
+file; orchestration, version choice, staging policy, installation and rebase
+continuation stay outside them.** The bump scripts call the resolvers for the
+marker handling they already do, and keep the rest.
 
-Measured over the five conflicting server branches, comparing base→ours and
-base→trunk key by key:
+### `openapi-spec`: resolving a 950 KB generated file without Gradle
+
+The resolver performs a three-way merge over top-level keys — each entry under
+`paths`, under `components.schemas`, **and under `tags`** — plus `info.version`.
+
+`tags` was missing from the first draft of this design and is a real third
+mutable section: on `feat_wt/webkey` the branch adds `Web-key` and `WebKeys`
+while trunk adds `Host State Stream`, `Housekeeping` and `State Stream`. The
+additions are disjoint, so a union by tag name resolves them, but a resolver
+limited to paths and schemas would have had to discard one side's tags. Review
+finding 4.
+
+Measured over the five conflicting server branches on `openapi_v3.json`:
 
 | branch | ours changed | trunk changed | keys both touched |
 |---|---|---|---|
@@ -165,44 +228,48 @@ base→trunk key by key:
 | `feat_wt/state_stats` | 22 | 22 | **1** — `info.version` |
 | `feat_wt/sync_skipped` | 2 | 7 | **1** — `info.version` |
 | `axis_acc` | 15 | 35 | **1** — `info.version` |
-| `spring-boot-4-jackson-3` | 124 | 238 | 28 real keys |
+| `feat_wt/spring-boot-4-jackson-3` | 124 | 238 | 28 real keys |
 
 Four of five collide on nothing but the version, which is decided by rule. The
 fifth is a Spring Boot 4 / Jackson 3 upgrade that rewrites the generator's own
-output shape; the resolver **detects the real key overlap and refuses**, which
-is the signal you want rather than a case to force.
+output shape; the resolver **detects the real overlap and refuses**, which is the
+signal you want rather than a case to force.
 
-**Honest limit.** springdoc emits `paths` and `components.schemas` in
-registration order, not sorted, so a structural merge cannot guarantee
-byte-identical output to what Gradle would produce. The resolver's job is to
-unblock the rebase, not to produce the final artifact. The authoritative bytes
-come from the deferred regeneration (§4), and CI's own `git diff --exit-code`
-over `etc/openapi/apidocs` remains the backstop.
+**Honest limit.** springdoc emits `paths` and `components.schemas` unsorted —
+`springdoc.writer-with-order-by-keys` is not enabled — so a structural merge
+cannot guarantee byte-identical output to Gradle's. The resolver unblocks the
+rebase; it does not produce the final artifact. That comes from the deferred
+regeneration (§3).
 
 ### Version rules
 
-Two, both deterministic, both checked against live cases.
-
 **`max-plus-patch`** (server, `openapi.<api>.version`). Take the higher of ours
-and trunk's; if that is trunk's, bump one patch, because the branch still needs
-a version of its own. Branch claimed 2.38.3, trunk moved to 2.38.5 → branch
-takes 2.38.6.
+and trunk's; if that is trunk's, bump one patch, because the branch still needs a
+version of its own. Branch claimed 2.38.3, trunk moved to 2.38.5 → 2.38.6.
 
-**`prefer-release`** (accessmanager, the spec client pin). If ours is a
-snapshot and trunk's is a release whose version is greater than or equal to the
-snapshot's base version, the server change has landed: take trunk's. Otherwise
-keep the snapshot. Live case: ours `2.36.0-snapshot.20260831123245`, trunk
-`2.37.1` ≥ 2.36.0 → take `2.37.1`.
+**Never move a client off a snapshot automatically.** On a spec-client pin
+conflict, **keep ours** and report that the branch is still pinned to a snapshot.
 
-That second rule performs step 10 of the `api-bump` loop — moving a client off
-a snapshot — automatically, as a side effect of rebasing. It is the step the
-skill documents as the one everybody forgets.
+The first draft had a `prefer-release` rule — if trunk's release version is
+greater than or equal to the snapshot's base, assume the server change landed and
+take trunk's. **That rule is wrong, and the live case proves it.**
+`feat_wt/extract_webaccess` pins `2.36.0-snapshot.20260831123245` and imports
+`WebKeysApi` in five files. That API comes from server `feat_wt/webkey`, which is
+**not merged**: trunk's spec at 2.38.2 contains zero web-key paths, while
+`feat_wt/webkey` contains eleven. Moving the client to `2.37.1` because 2.37.1 >
+2.36.0 would silently select a client without the API the branch depends on, and
+break the build. A higher version number is not evidence that a *particular*
+branch's server change landed. Review finding 1 — the most valuable finding of
+the review.
+
+Moving off a snapshot is `api-bump` step 10: a deliberate act performed once the
+server side merges, not a side effect of rebasing. `wt sync` surfaces it and
+stops there.
 
 ## 3. `.wt-sync.yaml`
 
 Committed at the top of each repo, like `.dev-ports.yaml`: the quirk is a fact
-about the repo, not a personal preference. Resolvers are self-describing via
-`--check`, so the file is a thin map.
+about the repo, not a personal preference.
 
 ```yaml
 resolvers:
@@ -212,116 +279,190 @@ resolvers:
 
 defer:
   - run: ./gradlew webapp:generateOpenApi
-    when: openapi-spec
+    when: paths-changed(etc/openapi/apidocs/**)
 
 verify:
   - git diff --exit-code etc/openapi/apidocs
 ```
 
-`defer` is what makes a long rebase affordable. Measured cost today, per rebase:
+### The config and the resolvers are read from trunk, not from the branch
 
-| branch | commits | Gradle regenerates | `pnpm i` runs |
-|---|---|---|---|
-| `axis_acc` | 86 | **4** | — |
-| `feat_wt/webkey` | 27 | **2** | — |
-| `feat_wt/state_stats` | 12 | 1 | — |
-| `feat_wt/extract_webaccess` | 23 | — | **5** |
+`.wt-sync.yaml` names commands and `bin/conflict/*` are executable. `wt` today
+reads a repo's configuration from the caller's checked-out branch, and both main
+checkouts are currently sitting on `chore/devports` rather than trunk. If `wt
+sync` inherited that, a feature branch could change `defer.run` or a resolver and
+watch mode would execute branch-authored code unattended.
 
-With deferral each becomes exactly one, run after the last commit is replayed,
-and committed as a final regeneration commit.
+**Both the config and the resolver scripts are read from the fetched trunk**
+(`origin/<trunk>:.wt-sync.yaml`, and resolvers extracted from that tree to a
+temporary directory) rather than from the working tree of the branch being
+rebased. Review finding 3.
+
+### `defer` is keyed on what changed, not on what conflicted
+
+A deferred step runs when the rebase changes the paths it depends on — comparing
+old HEAD to new HEAD — **not** only when a resolver fired. `feat_wt/arch` and
+`april-fools` take trunk-side lockfile changes with no lock conflict at all; a
+defer keyed on conflicts would leave `node_modules` stale. Review finding 11.
+
+`accessmanager` needs a second deferred step for the same reason:
+`pnpm run generate-git-info` embeds the HEAD hash, branch and timestamp, and
+every rebase invalidates it.
+
+```yaml
+defer:
+  - run: pnpm install
+    when: paths-changed(pnpm-lock.yaml, '**/package.json')
+  - run: pnpm run generate-git-info
+    when: head-changed
+```
+
+### What deferral is worth
+
+`./gradlew webapp:generateOpenApi` takes **1–2 minutes** (measured). Commits
+touching the spec, per branch:
+
+| branch | commits | commits touching the deferred paths |
+|---|---|---|
+| `axis_acc` | 86 | 4 |
+| `feat_wt/webkey` | 27 | 2 |
+| `feat_wt/state_stats` | 12 | 1 |
+
+So `axis_acc` goes from roughly six minutes of Gradle spread across four stops to
+one run at the end.
+
+The first draft claimed `feat_wt/extract_webaccess` needed five `pnpm i` runs.
+**That was overcounted** — it counted commits touching a manifest, but four of
+them touch the branch-new `apps/webaccess/package.json`, which cannot conflict
+with trunk. One commit changes the five existing manifests together and the bump
+script already resolves them before a single install. The real figure is one
+install, possibly two if the lock needs a second reconciliation. Review finding
+15. The server rows above were checked and are sound.
 
 `verify` is deliberately **not** `worktree.conf`'s `TEST_COMMAND` — that is
-`./gradlew test` and `pnpm test`, both far too slow to run per rebase. The
-`git diff --exit-code etc/openapi/apidocs` line is lifted from `test_pr.yaml`;
-it is CI's own guard and it catches the real failure mode — a spec that was
-never regenerated — in about two seconds.
+`./gradlew test` and `pnpm test`, far too slow to run per rebase. The
+`git diff --exit-code etc/openapi/apidocs` line is lifted from `test_pr.yaml`; it
+is CI's own guard and catches the real failure mode in about two seconds.
 
-A repo with no `.wt-sync.yaml` still triages and still rebases. It simply has no
-resolvers, so more lands in `contested`.
+**A repo with no `.wt-sync.yaml` is triaged and reported, never rebased.** The
+default `$WT_ROOTS` reaches many repositories that never opted into any of this —
+`private/anygame` alone has 14 worktrees — and `--all` must not rewrite history
+in them. Review finding 2.
 
 ## 4. Rebase execution
 
 ### Command
 
 ```
-git -C <worktree> rebase --update-refs origin/<trunk>
+git -C <worktree> rebase --no-update-refs --no-gpg-sign origin/<trunk>
 ```
+
+### `--update-refs` cannot do the job here — the first draft had this backwards
+
+The first draft claimed `--update-refs` would silently advance a branch checked
+out in another worktree, and built a gate around preventing that. **That claim is
+false.** `git-rebase(1)` states plainly: *"Any branches that are checked out in a
+worktree are not updated in this way."* Confirmed by direct experiment on git
+2.55 — a dependent branch checked out elsewhere kept its old SHA and gained no
+reflog entry, while the same branch with no worktree was force-updated. Review
+finding 7, independently reproduced.
+
+The truth is less convenient. Two real consequences:
+
+1. **The branches that matter are precisely the ones git will not touch.** Every
+   feature branch here lives in a worktree, so `--update-refs` does nothing for
+   them, and a dependent branch is left pointing at abandoned commits. This is
+   the staleness the flag was supposed to prevent.
+2. **The branches git *would* update are ones nobody asked about.** `server` has
+   84 local branches and only 15 in worktrees — **69 branches with no worktree**,
+   mostly dead, any of which pointing inside a rebase range would be
+   force-updated without a word.
+
+So `wt sync` passes `--no-update-refs` and handles every dependent ref
+explicitly: worktree-attached dependents are rebased in their own worktrees, in
+topological order; worktree-less refs inside the range are **reported**, with an
+opt-in to advance them.
+
+### Stacks are in scope, because one already exists
+
+The first draft said no stacks existed. It was wrong — the detection script had a
+bug. **`perf_wt/pruning_keyset_index` (3 ahead of trunk) is an ancestor of
+`feat_wt/pruning_cron` (6 further commits), and both are checked out.** Review
+finding 8, independently reproduced.
+
+Both are class `clean`, so a naive `wt sync` would rebase each onto trunk
+independently and split the stack: the three shared commits would exist twice
+under different SHAs and `pruning_cron` would no longer have `pruning_keyset_index`
+as an ancestor. That is a live hazard today, not a hypothetical.
+
+Therefore, in v1:
+
+- Compute the ancestor relation across all branch-attached worktrees before
+  touching anything.
+- Rebase parents first; rebase a child onto its **new** parent, not onto trunk.
+- If any participant is dirty or has a busy agent, **defer the whole stack.**
+  Never half-apply.
+- `--undo` restores every ref the operation changed, not only the primary.
+
+### Signing
+
+Global git config enables SSH commit signing through the 1Password signer. The
+agent launcher injects `commit.gpgSign=false` into agent processes, but a
+standalone `wt sync --watch` will not necessarily inherit it, and an interactive
+signing prompt per rewritten commit would hang the run.
+
+The eligible fleet contains **18 signed commits** — 11 on the Spring Boot branch,
+3 on `deployprocess`, 2 on `april-fools`, 2 on `setting_pin`. A signature cannot
+survive rewriting either way, so the choice is explicit: **`wt sync` passes
+`--no-gpg-sign`**, and reports how many signatures a rebase dropped. Review
+finding 9.
 
 ### Safety ref, and why it is not a branch
 
 Before every rebase, `refs/wt-sync/<work>/<epoch>` is written at the old tip.
-`wt sync --undo <work>` resets to the most recent one. They are never pruned
-automatically.
+`wt sync --undo <work>` resets to the most recent.
 
-The marker is a plain ref, deliberately outside `refs/heads/`. Two reasons:
+The marker is a plain ref, deliberately outside `refs/heads/`: in a repo with
+fifteen worktrees the branch namespace is contended, and a branch cannot be
+checked out twice. It is also immune to `--update-refs`, which matters if that
+flag is ever enabled for the worktree-less case.
 
-1. In a repo with fifteen worktrees the branch namespace is contended, and a
-   branch cannot be checked out in two worktrees.
-2. `--update-refs` advances refs under `refs/heads/` that point inside the
-   rebased range. `rebase-latest-commit` uses `safe/pre-rebase-…` as a branch
-   and must therefore pass `--no-update-refs` to protect it. Keeping the marker
-   out of `refs/heads/` is exactly what lets `wt sync` use `--update-refs`.
+**Retention:** safety refs pin abandoned history and block garbage collection, so
+they are not kept forever. Keep the newest per work item plus anything younger
+than 30 days; `wt sync doctor` reports what would be dropped and drops it on
+request. Review finding 20.
 
-`rebase.updateRefs` is unset at system, global and local scope on this machine
-(git's default is `false`), so the flag is passed explicitly rather than relied
-upon.
+### rerere needs one more flag than it looks
 
-### Dependent refs are participants, not bystanders
+`rerere.enabled` is `true` in `server` with **97 cached resolutions**; it is unset
+in `accessmanager`, `personal-v` and `infrastructure`, whose caches are empty. The
+cache lives in the *common* git dir, so all fifteen `server` worktrees share it: a
+conflict resolved carefully once resolves itself in the other fourteen.
 
-`--update-refs` will move a branch **checked out in another worktree with a live
-agent in it**, silently. That is the exact failure this tool exists to prevent,
-so dependent refs get the same treatment as the primary:
+But `rerere.autoupdate` is unset, so rerere restores the content and leaves the
+index unmerged — the rebase still stops. `wt sync` passes `--rerere-autoupdate`
+and still validates the staged result before continuing. Review finding 16.
 
-- Before touching anything, compute every ref under `refs/heads/` that falls
-  inside the rebase range.
-- Triage each: dirty? live agent? busy?
-- If any participant is dirty or has a busy agent, **defer the whole rebase.**
-  Never half-apply, leaving a stack split across two bases.
-- Order topologically: parents before children, and rebase a child onto its
-  **new** parent, not onto trunk. Rebasing a child directly onto trunk replays
-  the parent's commits a second time.
-
-No stacks exist in `server` today — every worktree branch pair was checked — so
-this is prevention rather than a current fix.
-
-**Behaviour to verify during implementation:** what git actually does when
-`--update-refs` would advance a branch that is checked out in another worktree.
-It may refuse, skip, or update. The gate above must hold whichever it is.
-
-### Tags are detected, never moved
-
-`--update-refs` does not move tags, and it should not: a tag is a fixed label,
-and silently re-pointing it rewrites what history claims. `server` has 110 tags
-and none currently falls inside a feature-branch range. When one does, `wt sync`
-reports it — *"v2.38.1 points inside this range and will refer to abandoned
-commits after the rebase"* — and leaves the decision to a person.
-
-### rerere is the compounding lever
-
-`rerere.enabled` is `true` in `server` only, with **97 cached resolutions**. It
-is unset in `accessmanager`, `personal-v` and `infrastructure`, whose caches are
-empty. The cache lives in the *common* git dir, so all fifteen `server`
-worktrees share it: a conflict resolved carefully once resolves itself in the
-other fourteen.
-
-`wt sync doctor` enables it where missing. The skill states the consequence:
-resolve it well once, the fleet inherits it. This converts the expensive class
-from per-worktree to per-conflict-shape.
-
-Note the contrast with `rebase-latest-commit`, which passes
-`-c rerere.enabled=false` for its interactive autosquash rebase. Different job,
-opposite need.
+`wt sync doctor` enables `rerere.enabled` where missing. The skill states the
+consequence: resolve it well once, the fleet inherits it.
 
 ### Lock
 
-`.git/worktrees/<name>/wt-sync.lock`, created `O_EXCL` holding pid, start time
-and owner. Thirty-minute expiry, released on exit. The watcher respects it. Two
-`wt sync` runs cannot collide on one worktree.
+`.git/worktrees/<name>/wt-sync.lock`, created `O_EXCL` holding pid, start time and
+owner. Thirty-minute expiry, released on exit. The watcher respects it.
+
+### Hooks, submodules, LFS
+
+Neither repo has an active `pre-rebase` or `post-rewrite` hook today, and neither
+has submodules or tracked LFS paths. Both have an active `commit-msg` hook, so the
+deferred regeneration commit needs a conforming message. `wt sync doctor`
+preflights all of these, because any of them appearing later changes what an
+unattended rebase does. Review findings 21 and 22.
 
 ## 5. The protocol
 
-Generated by `wt`, relayed verbatim by an agent, never composed by hand. One
-free field, 60 characters, **rejected rather than truncated**. Prefix `wt:`.
+Generated by `wt`, relayed verbatim, never composed by hand. One free field, 60
+characters, **rejected rather than truncated**. Prefix `wt:`.
 
 ```
 →  wt: rebase state_stats on development? +90 commits, 4 conflicts. lands: pins, statepush, api
@@ -337,27 +478,39 @@ wt: state_stats rebased on development (+90). yours to check: SyncWorker.java, C
 wt: state_stats needs you. 4 left after resolvers: SyncWorker.java +3 · wt sync state_stats --resume
 ```
 
-**Where `lands:` comes from, without spending a token.** Trunk is composed
-entirely of merge commits — 60 of the last 60 in `server` — so
-`git log --first-parent <base>..origin/<trunk>` is the landing list, and it
-works identically when someone commits straight to trunk with no PR at all.
-There is no no-PR special case. The field is the top conventional-commit
-*scopes* by count: `feat(pins)×6, fix(statepush)×4, chore(api)×2` becomes
-`pins, statepush, api`. Computed, never written. A model reads the actual log
-only on `wt sync --explain <work>`, and a PR body only when that is not enough.
+### Where `lands:` comes from
 
-**Reply discipline.** Say yes unless a build or test is running against that
-tree right now. Wanting to rebase later, or having started first, is not a
-reason. Same rule as `dev-ports`, same reasoning.
+`git log --first-parent <base>..origin/<trunk>` is the landing list. The first
+draft claimed trunk was 60 merge commits out of 60; **it is 40 merges and 20
+direct commits** — the check behind that claim asked for the last 60 *merges*
+rather than the merges among the last 60. Review finding 12, and the correction
+matters:
 
-Neither side rewords a message. Both ends are generated, which is what stops
-the format drifting and makes brevity structural rather than a rule someone has
-to remember.
+- A **direct** commit carries a conventional subject, so its scope is read
+  straight off it.
+- A **merge** commit's subject is `Merge pull request #N from Telcred/<branch>`,
+  which has no scope. Its scopes come from `git log --format=%s <sha>^1..<sha>^2`
+  — the merged range's own commits.
+
+Both are local, both are cheap, and no PR body is fetched. The field is the top
+scopes by count: `feat(pins)×6, fix(statepush)×4, chore(api)×2` becomes
+`pins, statepush, api`. Computed, never written. A model reads the real log only
+on `wt sync --explain <work>`.
+
+The "no special case for direct-to-trunk commits" claim survives, but inverted:
+direct commits are the easy ones, and it is merge commits that need the extra
+step.
+
+### Reply discipline
+
+Say yes unless a build or test is running against that tree right now. Wanting to
+rebase later, or having started first, is not a reason. Neither side rewords a
+message.
 
 ## 6. The plan file
 
 `wt sync` writes `.git/worktrees/<name>/wt-sync-plan.md` before handing a
-contested rebase over. Every section removes a specific expense.
+contested rebase over.
 
 ```markdown
 # rebase state_stats onto development
@@ -379,20 +532,21 @@ etc/openapi/apidocs/*.json  ->  bin/conflict/openapi-spec
 pnpm-lock.yaml              ->  the deferred install owns it
 
 ## deferred, runs when the rebase completes
-./gradlew webapp:generateOpenApi
+./gradlew webapp:generateOpenApi        (1–2 min)
 
 ## verify — narrow, not the suite
 git diff --exit-code etc/openapi/apidocs
 ```
 
+Each section removes a specific expense:
+
 - **`scopes:`** — no `git log` to read.
 - **"do not re-open"** — the largest saving. Without it, an agent seeing a
-  regenerated 950 KB `openapi_v3.json` staged in the rebase will try to review
-  it.
+  regenerated 950 KB `openapi_v3.json` staged in the rebase will try to review it.
 - **Per-file trunk-side subject** — `git log --oneline <base>..<trunk> -- <file>`,
-  free. This answers "why did trunk change this" without opening a PR or a diff.
-- **`additive only`** — computed from the conflict hunks; marks the files that
-  are a five-second read.
+  free. Answers "why did trunk change this" without opening a PR or a diff.
+- **`additive only`** — computed from the conflict hunks; marks the five-second
+  reads.
 - **Narrow verify** — replaces "typecheck, then tests, then format".
 
 ## 7. Surfaces
@@ -402,67 +556,73 @@ git diff --exit-code etc/openapi/apidocs
 | `wt sync` | triage this repo; act on the safe classes, print the rest |
 | `wt sync <work>` | one worktree |
 | `wt sync --pick` | fzf over the triage table; act on the marked rows |
-| `wt sync --all` | every repo under `$WT_ROOTS` |
+| `wt sync --all` | every configured repo under `$WT_ROOTS` |
 | `wt sync --dry-run` | the table, change nothing |
 | `wt sync --watch` | the daemon: fetch on an interval, rebase the safe classes, queue asks |
 | `wt sync --queue` | pending asks, as lines to relay |
 | `wt sync --resume <work>` | continue a contested rebase after resolution |
-| `wt sync --undo <work>` | reset to the safety ref |
+| `wt sync --undo <work>` | reset every ref the last sync changed |
 | `wt sync --explain <work>` | the full first-parent log of what landed |
-| `wt sync doctor` | rerere, resolver presence, `.wt-sync.yaml` validity |
+| `wt sync doctor` | rerere, resolvers, config validity, hooks, submodules, LFS, safety-ref retention |
+
+`--all` iterates repositories one directory level deep under each root — which is
+what `wt`'s discovery does today; it is not recursive, and the design does not
+assume it is. Review finding 23.
+
+### Stale branches are a lifecycle question, not an inference
+
+Six branches are ahead 0, up to 718 behind. Ahead 0 proves the tip is reachable
+from trunk and that no committed branch-only work would be lost. It does **not**
+prove the checkout is unused, and `wt remove` may delete ignored provisioned
+files — the copied `override.properties`, decrypted secrets and `.env.local`
+files that let a worktree work without an AWS session.
+
+So `stale` is reported with two offers rather than one inference: fast-forward it
+to trunk (safe, keeps the provisioned checkout) or remove it. Neither happens
+automatically. Review finding 19.
 
 ### Watch mode spends nothing
 
-`--watch` is a pure binary. It fetches, triages, and rebases the classes that
-need no conversation — seventeen of twenty-three — and **queues** anything
-needing an ask. It never invokes a model, because it cannot: `SendMessage` is an
-agent tool and a binary cannot call it. A model drains the queue later, when one
-is present. Overnight the mechanical work still happens; only the conversations
-wait.
+`--watch` is a pure binary. It fetches, triages, and rebases the classes that need
+no conversation, and **queues** anything needing an ask. It never invokes a model,
+because it cannot: `SendMessage` is an agent tool and a binary cannot call it. A
+model drains the queue later, when one is present.
 
 ## 8. Skills
 
 ### `wt-sync`, new, in `anders-lindstrom/skills`
 
-At `skills/wt-sync/SKILL.md`, unprefixed and standalone, per that repo's own
-rule: promote to a `skills/wt/` domain only when a second skill joins, since
-renaming changes the slash command. Added to `skills.sh.json` in a grouping
-alongside `dev-ports` — the same shape of problem, agents contending over a
-shared thing and negotiating in generated messages.
+At `skills/wt-sync/SKILL.md`, unprefixed and standalone, per that repo's rule:
+promote to a `skills/wt/` domain only when a second skill joins, since renaming
+changes the slash command. Added to `skills.sh.json` in a grouping alongside
+`dev-ports` — the same shape of problem.
 
-**Noticed in passing: `dev-ports` is absent from `skills.sh.json`**, which
-violates that repo's rule 6. Fix it in the same change.
+**`dev-ports` is currently absent from `skills.sh.json`**, violating that repo's
+rule 6. Fix it in the same change.
 
 The skill covers driving `wt sync`, the four reply shapes, and the resolution
-discipline. It does **not** restate the resolvers — those are executable data
-that no model reads, and prose describing them would be a second copy of a fact
+discipline. It does **not** restate the resolvers — those are executable data no
+model reads, and prose describing them would be a second copy of a fact
 `.wt-sync.yaml` owns.
 
 Its description must be sharp enough to win against `resolving-merge-conflicts`
 (mattpocock, upstream, unmodifiable), whose steps are the two expensive things
-this design removes:
-
-> 2. Find the primary sources for each conflict. Understand deeply why each
->    change was made … read the commit messages, check the PRs, check original
->    issues/tickets.
-> 4. Discover the project's automated checks and run them, typically typecheck,
->    then tests, then format.
-
-The skill states plainly: in a wt-managed worktree this replaces that one — do
-not run the deep-investigation steps, the plan file already answers them.
+this design removes — deep investigation of each conflict's origin, and running
+the full check suite. The skill says plainly: in a wt-managed worktree this
+replaces that one; the plan file already answers those questions.
 
 ### `api-bump`, amended, in `Telcred/telcred-skills`
 
-One new section: what to do when a rebase conflicts on API-version paths, and a
-pointer to `bin/conflict/`. A pointer, not a copy — `api-bump` keeps ownership
-of the four-repo loop, snapshot-versus-release semantics and step 10.
+One new section: what a rebase conflict on API-version paths means, that
+`bin/conflict/` owns the mechanics, and — the important part — that **a rebase
+never moves a client off a snapshot**, so step 10 remains a deliberate act.
 
 ## Ownership map
 
 | layer | owns | lives |
 |---|---|---|
-| `bin/conflict/*` | resolving one conflict shape | each repo, committed |
-| `.wt-sync.yaml` | which resolvers, what to defer, how to verify | each repo, committed |
+| `bin/conflict/*` | resolving one conflict shape | each repo, committed, read from trunk |
+| `.wt-sync.yaml` | which resolvers, what to defer, how to verify | each repo, committed, read from trunk |
 | `wt sync` | triage, rebase mechanics, refs, locks, protocol | `wt` |
 | `wt-sync-plan.md` | *this* rebase | generated, `.git/worktrees/<n>/` |
 | `wt-sync` skill | driving the tool and the reply discipline | `anders-lindstrom/skills` |
@@ -472,44 +632,65 @@ of the four-repo loop, snapshot-versus-release semantics and step 10.
 
 | situation | tokens |
 |---|---|
-| watch mode; trunk moves; 17 of 23 mechanical | **0** |
+| watch mode; trunk moves; the mechanical classes | **0** |
 | `wt sync` on a normal day | **0** — the tool prints, no model reads |
 | a rebase needing an ask | one line out, one line back |
 | a contested rebase | only the residual files; resolvers already gone |
 
+Seven of the thirteen worktrees that currently need a rebase are predicted to
+complete with no model involvement.
+
 ## Out of scope
 
-- **Automatic ordered multi-branch stack rebasing.** v1 detects dependent refs
-  and refuses to proceed when a participant is unsafe. Full ordered stack
-  rebasing follows once stacks actually exist locally. `gh-stack` and
-  `ops-stacked-prs` own the PR-level story either way.
-- **Moving tags.** Detected and reported only.
-- **Rebasing `stale` branches.** Resetting an ahead-0 branch onto trunk is
-  meaningless; six are in that state and are probably dead. Reported with a
-  `wt remove` suggestion.
+- **Moving tags.** Detected and reported only; `--update-refs` does not move them
+  and neither does `wt sync`.
+- **Automatically rebasing or removing `stale` branches.**
 - **Touching a dirty worktree**, including stashing it.
-- **Merge-conflict resolution by reasoning inside `wt`.** A resolver owns a
-  shape completely or refuses.
+- **Merge resolution by reasoning inside `wt`.** A resolver owns a shape
+  completely or refuses.
+- **Moving a client off a snapshot.** Reported, never performed.
+
+## Known trade-offs accepted
+
+**Intermediate commits carry a structurally-merged spec, not a generator-produced
+one.** `test_pr.yaml` runs the tests and its `git diff --exit-code` guard at the
+PR tip, so a final regeneration commit satisfies CI. But a bisect that runs the
+same guard, or per-commit CI if it is ever introduced, can report a false failure
+on an intermediate commit. This is accepted deliberately: the alternative is one
+to two minutes of Gradle at every conflicting commit. Review finding 17.
+
+**`bin/` can collide with build output.** `wt`'s own `Makefile` builds to `bin/wt`
+and its `.gitignore` had `bin/`, which is why `wt` could not read a config from
+`bin/worktree/`. Any repo adopting `bin/conflict/` needs the same check. Fixed
+for `wt` in this branch.
 
 ## Verification plan
 
-- Triage output for all 23 worktrees matches the table in this document.
-- `bin/conflict/openapi-spec` resolves `sync_skipped`, `webkey`, `state_stats`
-  and `axis_acc`, and **refuses** `spring-boot-4-jackson-3`.
-- `bin/conflict/spec-client-version` picks `2.37.1` for `extract_webaccess`.
-- `bump_openapi.sh` and `bump_axios_client.sh` behave identically after
-  delegating to the extracted resolvers.
-- A rebase with `--update-refs` and a dependent branch checked out in another
-  worktree does the documented thing; if git's behaviour differs, the gate
-  changes, not the guarantee.
-- `wt sync --undo` restores the pre-rebase tip exactly.
+- Triage output for all 24 worktrees matches the tables here, including the
+  detached one.
+- `bin/conflict/openapi-spec` resolves `sync_skipped`, `webkey`, `state_stats` and
+  `axis_acc` — tags included — and **refuses** `spring-boot-4-jackson-3`.
+- `bin/conflict/spec-client-version` **keeps** `2.36.0-snapshot.20260831123245` on
+  `extract_webaccess` and reports the snapshot rather than moving to `2.37.1`.
+- `bump_openapi.sh` and `bump_axios_client.sh` behave identically after delegating
+  their marker handling.
+- Rebasing `perf_wt/pruning_keyset_index` and `feat_wt/pruning_cron` leaves the
+  stack intact, with the parent still an ancestor of the child.
+- A rebase over the 11 signed commits on the Spring Boot branch completes without
+  a signing prompt and reports the dropped signatures.
+- `wt sync --undo` restores every ref the operation changed.
+- `wt sync --all` in a repo with no `.wt-sync.yaml` reports and changes nothing.
+- A `.wt-sync.yaml` modified on a feature branch has no effect on that branch's
+  own rebase.
 - `wt sync --watch` over a simulated trunk move touches nothing dirty, messages
   nobody, and queues the asks it should.
 
 ## Open questions
 
-1. How long `./gradlew webapp:generateOpenApi` actually takes. It sets the value
-   of deferral, which is assumed large and has not been measured.
-2. Whether `wt` should refuse to run at all in a repo whose `.wt-sync.yaml`
-   names a resolver that is missing, or degrade to `contested`. Leaning refuse,
-   since a silently-absent resolver looks like a hard conflict.
+1. Whether `wt sync` should refuse outright when `.wt-sync.yaml` names a missing
+   resolver, or degrade that worktree to `contested`. Leaning refuse: a silently
+   absent resolver looks exactly like a hard conflict.
+2. Whether the deferred `pnpm install` should use `--frozen-lockfile` as
+   `worktree.conf` does. It cannot, when the lockfile is what is being
+   reconciled — so the deferred install and the provisioning install are not the
+   same command, and the difference should be stated somewhere better than here.
