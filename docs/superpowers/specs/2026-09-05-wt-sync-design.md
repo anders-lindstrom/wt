@@ -32,7 +32,8 @@ branch.
 | stale | 6 | behind 24–718, **ahead 0** — nothing of their own |
 | clean | 4 | no conflict at the endpoint |
 | recipe-only | 2 | conflicts fall entirely in paths a resolver claims |
-| contested | 7 | some real source overlap |
+| contested | 6 | some real source overlap |
+| divergent | 1 | `spring-boot-4-jackson-3` — the ground moved (§1) |
 
 After the resolvers in this design:
 
@@ -45,7 +46,7 @@ After the resolvers in this design:
 | `feat_wt/axis_acc` | 7 | 3 |
 | `feat_wt/state_stats` | 7 | 4 |
 | `feat_wt/arch` | 4 | 4 |
-| `feat_wt/spring-boot-4-jackson-3` | 7 | 7 — the spec resolver refuses here (§2) |
+| `feat_wt/spring-boot-4-jackson-3` | 7 | **not a rebase** — `divergent`, opens a campaign (§1) |
 | `april-fools` | 5 | 5 (756 behind, likely dead) |
 
 ### State the ratio honestly
@@ -104,6 +105,7 @@ branch-based command runs. One exists today. Review finding 14.
 | `clean` | merge-tree exits 0 | rebase |
 | `recipe` | every conflicting path is *claimed* by a resolver | rebase; resolvers attempt it |
 | `contested` | some conflicting path is claimed by none | rebase; resolvers strip what they can; hand the residue over |
+| `divergent` | the branch and trunk have moved apart structurally (below) | **never rebased automatically.** Opens a campaign |
 
 Two modifiers override the class:
 
@@ -130,6 +132,69 @@ changes and **none of the four is predicted to conflict during replay** —
 `pruning_keyset_index` and `setting_pin` have no path overlap at all;
 `controller_stats` and `pruning_cron` have single-commit overlaps that merge
 cleanly. The screen is adequate for today's fleet.
+
+### `divergent`: when a rebase is not a rebase
+
+Some branches have not merely fallen behind — the ground has moved under them.
+`feat_wt/spring-boot-4-jackson-3` is 284 behind, touches nine build files
+including `gradle/libs.versions.toml`, has **49 files where both sides moved**,
+and makes the spec resolver refuse because the framework upgrade rewrites the
+generator's own output. Nothing about that is mechanical. Handing it a plan file
+saying "7 conflicts, good luck" would be the tool lying about the size of the
+job.
+
+Compare `feat_wt/state_stats`: 90 behind, 15 files where both sides moved, **no**
+build files, and the resolvers absorb three of its seven conflicts. That is a
+rebase.
+
+The class is computed from three signals, any one of which is enough:
+
+| signal | why it means "not mechanical" |
+|---|---|
+| a resolver **refuses** (as opposed to no resolver claiming the path) | a shape that is normally deterministic has genuinely diverged |
+| the branch changes the dependency graph — `gradle/libs.versions.toml`, any `build.gradle`, `package.json` beyond a pin | trunk's code has been written against a different set of libraries |
+| both sides moved more than 30 of the same files | the branch is being replayed onto code it no longer recognises |
+
+Thresholds are tunable and are wrong at first. What matters is that the tool
+**names the difference** rather than presenting a six-week workstream as a
+rebase with seven conflicts.
+
+#### What `wt sync` does with one
+
+It never rebases it, never queues it, and never asks an agent for permission —
+there is nothing to permit yet. It offers a **campaign**, and the brief it
+produces is the opposite of the terse plan file a contested rebase gets:
+
+- **What landed, in full.** Every first-parent commit between the two bases,
+  grouped by scope, with the merged ranges expanded — not the 60-character
+  `lands:` summary.
+- **What moved underneath.** For each subsystem the branch touches, the
+  trunk-side changes to that same subsystem. This is the actual work: not
+  "resolve this conflict" but "trunk's serialization layer changed; the branch's
+  16 commits assume the old one".
+- **Where the branch will have to change rather than merge.** The both-moved
+  file list, with each side's commit subjects.
+- **An honest size estimate**, in commits and files, stated as a workstream.
+
+#### Staged rebase
+
+A 284-commit gap should not be crossed in one jump. `wt sync campaign` proposes
+**intermediate bases** — trunk merge commits at intervals across the gap — and
+rebases to each in turn. Each stage has a comprehensible amount of change to
+reason about, each stage's resolutions are cached by rerere for the next, and a
+stage that goes badly is undone without losing the ones before it.
+
+This is why rerere matters more here than anywhere else: the same conflict shape
+recurs at every stage, and paying for it once is the difference between a
+tractable campaign and an intractable one.
+
+#### It is allowed to be a big piece of work
+
+A campaign is not a `wt sync` operation that happens to take longer. It is a
+separate workstream with its own branch, its own budget and possibly its own
+plan, and the tool's job is to set it up honestly and then get out of the way.
+The alternative — quietly leaving `spring-boot-4-jackson-3` out of the fleet
+sweep because it is inconvenient — is how a branch gets to 284 behind.
 
 ### Agent detection, and what it does not cover
 
@@ -566,8 +631,10 @@ Each section removes a specific expense:
 
 | acting | |
 |---|---|
+| `wt sync watch` | the live table: mark rows, act on what you marked |
 | `wt sync run <work>...` | rebase the named worktrees |
-| `wt sync run --pick` | fzf multi-select over the same table; rebase what you mark |
+| `wt sync run --pick` | fzf multi-select, for a pipeline or a quick one-off |
+| `wt sync campaign <work>` | open a workstream on a `divergent` branch |
 | `wt sync run --safe` | every worktree whose class needs no conversation |
 | `wt sync resume <work>` | continue a contested rebase after resolution |
 | `wt sync undo <work>` | reset every ref the last run changed |
@@ -578,21 +645,26 @@ Every acting form prints what it is about to touch and, for more than one
 worktree, asks once before starting. `--yes` skips that; `wt sync keep` implies
 it, which is why `keep` acts only on classes that need no conversation.
 
-### The picker
+### Selecting what to run
 
-`run --pick` pipes the triage table through `fzf --multi`, one worktree per row,
-with the class, counts and agent in the line so the choice is informed. A preview
-pane shows what would land (`explain`, truncated) for the row under the cursor.
+`wt sync watch` is the primary way to choose, and it is `devports watch` in a
+different domain: a live table that re-fetches on an interval, marks rows with
+space, and acts on the marked set. `devports/internal/tui` is 306 lines of Bubble
+Tea doing exactly this, so it is a port rather than an invention, and `wt` takes
+the same two dependencies.
 
-It is a one-shot multi-select, so fzf is the right tool. A **live** table is not:
-fzf 0.74 has no timer event, so refreshing one means `--listen` and a background
-poker. `devports` hit this and used Bubble Tea instead. A live `wt sync` table is
-worth having for the same reason, but it is a new dependency for `wt` and is
-deliberately left out of v1.
+It has to be a real TUI rather than fzf for the reason `devports` already hit:
+**fzf 0.74 has no timer event**, so a self-refreshing table there means running
+it with `--listen` and poking it from a background process. Bubble Tea just
+ticks — and the table wants to tick, because trunk moves and an agent's state
+changes while you are looking at it.
 
-`--all` iterates repositories one directory level deep under each root — which is
-what `wt`'s discovery does today; it is not recursive, and the design does not
-assume it is. Review finding 23.
+`run --pick` keeps fzf for the one-shot case: piping the table through
+`fzf --multi` when you already know what you want, or when something else is
+driving. It is the lighter path, not the main one.
+
+A `divergent` row is shown in the table but cannot be marked for `run`. Marking
+it offers `campaign` instead.
 
 ### Stale branches are a lifecycle question, not an inference
 
@@ -674,6 +746,9 @@ complete with no model involvement.
 - **Merge resolution by reasoning inside `wt`.** A resolver owns a shape
   completely or refuses.
 - **Moving a client off a snapshot.** Reported, never performed.
+- **Finishing a campaign.** `wt sync` sets one up and stages the rebase; the
+  work of adapting a branch to a framework it was not written against is a
+  workstream, not a tool feature.
 
 ## Known trade-offs accepted
 
@@ -705,6 +780,13 @@ for `wt` in this branch.
   a signing prompt and reports the dropped signatures.
 - `wt sync undo` restores every ref the operation changed.
 - `wt sync` with no verb changes nothing, in any repo, in any class.
+- `feat_wt/spring-boot-4-jackson-3` classifies `divergent`, and `wt sync run`
+  refuses it while `wt sync campaign` produces a brief naming the 49 both-moved
+  files and the nine build files.
+- `feat_wt/state_stats` classifies `contested`, not `divergent`, on the same
+  thresholds.
+- A staged campaign across the 284-commit gap reaches trunk, and rerere's cache
+  grows between stages rather than the same conflict being resolved twice.
 - `wt sync run --all` in a repo with no `.wt-sync.yaml` reports and changes nothing.
 - A `.wt-sync.yaml` modified on a feature branch has no effect on that branch's
   own rebase.
