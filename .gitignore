@@ -1,2 +1,7 @@
-bin/
+# The Makefile builds to bin/wt, so bin/ is output — except for the worktree
+# configuration wt itself looks for at bin/worktree/, which has to be tracked.
+# Git will not descend into an ignored directory, so this has to be bin/*
+# rather than bin/ for the negation below to be reachable.
+bin/*
+!bin/worktree/
 .migration-baseline/
