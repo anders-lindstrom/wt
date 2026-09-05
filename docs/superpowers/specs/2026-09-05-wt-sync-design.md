@@ -71,9 +71,11 @@ case. Review finding 13.
    shape completely or refuses. There is no "usually right" strategy.
 3. **Resolvers are fast and never regenerate.** Regeneration is deferred and
    runs once per rebase, not once per conflicting commit.
-4. **Mutation is opt-in.** A repository with no `.wt-sync.yaml` is reported, never
-   rebased.
-5. **A model is involved only where judgement is genuinely required**, and when
+4. **Read-only by default.** `wt sync` shows; it never changes anything. A verb
+   performs, and it names what it will touch first.
+5. **Mutation is opt-in per repo.** A repository with no `.wt-sync.yaml` is
+   reported, never rebased.
+6. **A model is involved only where judgement is genuinely required**, and when
    it is, it is handed a written plan rather than a repository to investigate.
 
 ---
@@ -94,7 +96,7 @@ conflicts = git merge-tree --write-tree --name-only origin/<trunk> <branch>
 **A worktree with no branch is classified `detached` and skipped** before any
 branch-based command runs. One exists today. Review finding 14.
 
-| class | condition | action |
+| class | condition | what `wt sync run` would do |
 |---|---|---|
 | `detached` | no branch | skipped; reported |
 | `current` | behind 0 | nothing; not printed |
@@ -402,13 +404,13 @@ Therefore, in v1:
 - Rebase parents first; rebase a child onto its **new** parent, not onto trunk.
 - If any participant is dirty or has a busy agent, **defer the whole stack.**
   Never half-apply.
-- `--undo` restores every ref the operation changed, not only the primary.
+- `undo` restores every ref the operation changed, not only the primary.
 
 ### Signing
 
 Global git config enables SSH commit signing through the 1Password signer. The
 agent launcher injects `commit.gpgSign=false` into agent processes, but a
-standalone `wt sync --watch` will not necessarily inherit it, and an interactive
+standalone `wt sync keep` will not necessarily inherit it, and an interactive
 signing prompt per rewritten commit would hang the run.
 
 The eligible fleet contains **18 signed commits** — 11 on the Spring Boot branch,
@@ -420,7 +422,7 @@ finding 9.
 ### Safety ref, and why it is not a branch
 
 Before every rebase, `refs/wt-sync/<work>/<epoch>` is written at the old tip.
-`wt sync --undo <work>` resets to the most recent.
+`wt sync undo <work>` resets to the most recent.
 
 The marker is a plain ref, deliberately outside `refs/heads/`: in a repo with
 fifteen worktrees the branch namespace is contended, and a branch cannot be
@@ -475,7 +477,7 @@ After the fact:
 
 ```
 wt: state_stats rebased on development (+90). yours to check: SyncWorker.java, CommonPersistence.java
-wt: state_stats needs you. 4 left after resolvers: SyncWorker.java +3 · wt sync state_stats --resume
+wt: state_stats needs you. 4 left after resolvers: SyncWorker.java +3 · wt sync resume state_stats
 ```
 
 ### Where `lands:` comes from
@@ -495,7 +497,7 @@ matters:
 Both are local, both are cheap, and no PR body is fetched. The field is the top
 scopes by count: `feat(pins)×6, fix(statepush)×4, chore(api)×2` becomes
 `pins, statepush, api`. Computed, never written. A model reads the real log only
-on `wt sync --explain <work>`.
+on `wt sync explain <work>`.
 
 The "no special case for direct-to-trunk commits" claim survives, but inverted:
 direct commits are the easy ones, and it is merge commits that need the extra
@@ -551,19 +553,42 @@ Each section removes a specific expense:
 
 ## 7. Surfaces
 
-| | |
+`wt sync` **shows**. Changing anything takes a verb. The split follows
+`devports`, where the bare command lists and `kill` acts.
+
+| looking | |
 |---|---|
-| `wt sync` | triage this repo; act on the safe classes, print the rest |
-| `wt sync <work>` | one worktree |
-| `wt sync --pick` | fzf over the triage table; act on the marked rows |
-| `wt sync --all` | every configured repo under `$WT_ROOTS` |
-| `wt sync --dry-run` | the table, change nothing |
-| `wt sync --watch` | the daemon: fetch on an interval, rebase the safe classes, queue asks |
-| `wt sync --queue` | pending asks, as lines to relay |
-| `wt sync --resume <work>` | continue a contested rebase after resolution |
-| `wt sync --undo <work>` | reset every ref the last sync changed |
-| `wt sync --explain <work>` | the full first-parent log of what landed |
+| `wt sync` | the table: every worktree, its class, behind/ahead, who is in it, and what `run` would do |
+| `wt sync --all` | the same across every configured repo under `$WT_ROOTS` |
+| `wt sync <work>` | one worktree, in full |
+| `wt sync explain <work>` | the first-parent log of what landed, for when the scopes are not enough |
 | `wt sync doctor` | rerere, resolvers, config validity, hooks, submodules, LFS, safety-ref retention |
+
+| acting | |
+|---|---|
+| `wt sync run <work>...` | rebase the named worktrees |
+| `wt sync run --pick` | fzf multi-select over the same table; rebase what you mark |
+| `wt sync run --safe` | every worktree whose class needs no conversation |
+| `wt sync resume <work>` | continue a contested rebase after resolution |
+| `wt sync undo <work>` | reset every ref the last run changed |
+| `wt sync keep` | the background keeper: fetch on an interval, run the safe classes, queue asks |
+| `wt sync queue` | pending asks, as lines to relay |
+
+Every acting form prints what it is about to touch and, for more than one
+worktree, asks once before starting. `--yes` skips that; `wt sync keep` implies
+it, which is why `keep` acts only on classes that need no conversation.
+
+### The picker
+
+`run --pick` pipes the triage table through `fzf --multi`, one worktree per row,
+with the class, counts and agent in the line so the choice is informed. A preview
+pane shows what would land (`explain`, truncated) for the row under the cursor.
+
+It is a one-shot multi-select, so fzf is the right tool. A **live** table is not:
+fzf 0.74 has no timer event, so refreshing one means `--listen` and a background
+poker. `devports` hit this and used Bubble Tea instead. A live `wt sync` table is
+worth having for the same reason, but it is a new dependency for `wt` and is
+deliberately left out of v1.
 
 `--all` iterates repositories one directory level deep under each root — which is
 what `wt`'s discovery does today; it is not recursive, and the design does not
@@ -581,9 +606,9 @@ So `stale` is reported with two offers rather than one inference: fast-forward i
 to trunk (safe, keeps the provisioned checkout) or remove it. Neither happens
 automatically. Review finding 19.
 
-### Watch mode spends nothing
+### The keeper spends nothing
 
-`--watch` is a pure binary. It fetches, triages, and rebases the classes that need
+`wt sync keep` is a pure binary. It fetches, triages, and rebases the classes that need
 no conversation, and **queues** anything needing an ask. It never invokes a model,
 because it cannot: `SendMessage` is an agent tool and a binary cannot call it. A
 model drains the queue later, when one is present.
@@ -632,8 +657,8 @@ never moves a client off a snapshot**, so step 10 remains a deliberate act.
 
 | situation | tokens |
 |---|---|
-| watch mode; trunk moves; the mechanical classes | **0** |
-| `wt sync` on a normal day | **0** — the tool prints, no model reads |
+| `wt sync keep`; trunk moves; the mechanical classes | **0** |
+| `wt sync` on a normal day | **0** — it only prints, and no model reads it |
 | a rebase needing an ask | one line out, one line back |
 | a contested rebase | only the residual files; resolvers already gone |
 
@@ -678,11 +703,12 @@ for `wt` in this branch.
   stack intact, with the parent still an ancestor of the child.
 - A rebase over the 11 signed commits on the Spring Boot branch completes without
   a signing prompt and reports the dropped signatures.
-- `wt sync --undo` restores every ref the operation changed.
-- `wt sync --all` in a repo with no `.wt-sync.yaml` reports and changes nothing.
+- `wt sync undo` restores every ref the operation changed.
+- `wt sync` with no verb changes nothing, in any repo, in any class.
+- `wt sync run --all` in a repo with no `.wt-sync.yaml` reports and changes nothing.
 - A `.wt-sync.yaml` modified on a feature branch has no effect on that branch's
   own rebase.
-- `wt sync --watch` over a simulated trunk move touches nothing dirty, messages
+- `wt sync keep` over a simulated trunk move touches nothing dirty, messages
   nobody, and queues the asks it should.
 
 ## Open questions
