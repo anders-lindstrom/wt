@@ -20,10 +20,47 @@ Then in your shell rc:
 source ~/.local/share/wt/wt.sh
 ```
 
+## Setting up a repository
+
+```sh
+cd your-repo
+wt init          # writes bin/worktree/worktree.conf
+wt doctor        # check it
+```
+
+`wt init` asks for the three keys a repository actually varies, offering
+detected values as the defaults:
+
+```
+main branch [main]:
+branch prefix [feat_wt]:
+build command (blank for none): make build
+```
+
+Every other key is written **commented at its default**, so the file is this
+repository's reference for what it may set — uncommenting a line as it stands
+changes nothing. An answer that would not validate is rejected at the prompt,
+not written and then discovered by the next command:
+
+```
+  ! WORKTREE_BRANCH_PREFIX="wip_wt" yields default type "wip", which is not in
+    WORKTREE_TYPES; set WORKTREE_DEFAULT_TYPE to choose one of: feat fix docs …
+```
+
+With `--yes`, or with no terminal to answer from, the detected values are
+written without asking — so a script, a hook or an agent gets the same result
+without hanging on a prompt. `--force` replaces a configuration already there;
+without it, an existing file is an error rather than something to overwrite.
+
+If the config lands somewhere git ignores — a repo ignoring `bin/` for its
+build output also ignores `bin/worktree/` — `wt init` says so, because that
+configuration would work for you and for nobody who clones the repo.
+
 ## Commands
 
 | | |
 |---|---|
+| `wt init` | create this repository's `worktree.conf` (`--yes` to skip the prompts) |
 | `wt new <type>/<work>` | create a branch and worktree, then provision it |
 | `wt list` | every worktree, in any layout; `!` marks one off the canonical path |
 | `wt status` | each worktree's branch and whether it is clean |
@@ -83,7 +120,7 @@ doctor` lists them and `wt migrate` moves one when you want.
 
 ## What a repository keeps
 
-Only configuration and one-line shims:
+Only configuration and one-line shims, the first of which `wt init` writes:
 
 ```
 bin/worktree/worktree.conf     how this repo works
