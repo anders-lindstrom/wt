@@ -49,11 +49,12 @@ func HookRemove(ctx *Context, in io.Reader, logw io.Writer) error {
 		if input.Name == "" {
 			return errors.New("'path' or 'name' is required in the hook input")
 		}
-		p, err := Path(ctx, input.Name)
+		wt, err := Locate(ctx, input.Name)
 		if err != nil {
 			return err
 		}
-		target = p
+		target = wt.Path
 	}
-	return RemoveAt(ctx, target, logw)
+	// The harness has no terminal to answer a prompt on, so it never confirms.
+	return RemoveAt(ctx, target, RemoveOptions{}, logw)
 }

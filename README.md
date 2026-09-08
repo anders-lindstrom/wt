@@ -27,7 +27,7 @@ source ~/.local/share/wt/wt.sh
 | `wt new <type>/<work>` | create a branch and worktree, then provision it |
 | `wt list` | every worktree, in any layout; `!` marks one off the canonical path |
 | `wt status` | each worktree's branch and whether it is clean |
-| `wt remove <type>/<work>` | remove a worktree; delete its branch only when merged |
+| `wt remove <work>` | remove a worktree; delete its branch only when merged (`--yes` to skip the prompt) |
 | `wt setup <source-dir>` | provision the current worktree |
 | `wt adopt <path>` | provision a worktree another tool created (`--relocate` to move it) |
 | `wt migrate <type>/<work>` | move a worktree to the canonical path |
@@ -123,6 +123,40 @@ its own step — decrypting secrets, checking a cloud identity — instead of th
 tool carrying a flag for it.
 
 ## Removing a worktree is careful
+
+**Anything `wt list` prints is a valid argument** — the work name, the branch, or
+the path — as is `<type>/<work>`:
+
+```sh
+wt remove wt-migration                       # WORK column
+wt remove chore_wt/wt-migration              # BRANCH column
+wt remove ~/src/repo_wt/chore_wt/wt-migration  # PATH column
+wt remove chore/wt-migration                 # <type>/<work>
+```
+
+Matching is exact and stays inside this repository. `wt cd` may guess at a name;
+a wrong guess there costs a directory change, and here it costs a checkout — so
+a work name used under two types must be disambiguated by its type, and there is
+no fallback to the repository's default type. (`wt new` still has one: it names
+a worktree that does not exist yet.)
+
+**What the removal will do is printed before it does it:**
+
+```
+  path    /Users/you/src/repo_wt/chore_wt/wt-migration
+  branch  chore_wt/wt-migration — not merged into main
+  state   clean
+
+  the checkout will be deleted
+  the branch will be kept as "wt-migration"
+
+Remove it? [y/N]
+```
+
+In a terminal you are asked to confirm; `--yes` skips the question, and a script,
+hook or agent with no terminal is never asked. Git refuses to remove a checkout
+with uncommitted changes, which is why the plan reports `state` before you
+answer rather than after.
 
 `wt remove` reads the branch **from the worktree**, never rebuilding it from the
 name: once the type can vary, a reconstructed name may belong to an unrelated

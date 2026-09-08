@@ -1,10 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
 )
@@ -12,40 +16,82 @@ import (
 func newRemoveCmd() *cobra.Command {
 	var me bool
 	var meAt string
+	var yes bool
 	cmd := &cobra.Command{
-		Use:     "remove <type>/<work>",
+		Use:     "remove <work>",
 		Aliases: []string{"rm"},
 		Short:   "Remove a worktree, deleting its branch only when merged",
 		Long: "Remove the worktree and decide what happens to its branch: delete it\n" +
 			"when it is merged into the main branch, otherwise rename it out of the\n" +
 			"<type>_wt/ prefix so unmerged work is never lost. A branch this tooling\n" +
-			"did not create is never touched.",
+			"did not create is never touched.\n\n" +
+			"The worktree can be named by anything `wt list` prints — the work name,\n" +
+			"the branch, or the path — or by <type>/<work>. Matching is exact and\n" +
+			"stays inside this repository; a work name used under two types has to be\n" +
+			"disambiguated by its type.\n\n" +
+			"What the removal will do is printed before it does it. In a terminal you\n" +
+			"are then asked to confirm; --yes skips the question, and a script or hook\n" +
+			"with no terminal is never asked.",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !me && meAt == "" && len(args) != 1 {
-				return fmt.Errorf("needs <type>/<work>, or --me to remove the " +
-					"worktree you are in — for example: wt remove fix/login-crash")
+				return fmt.Errorf("needs the worktree to remove, or --me to remove the " +
+					"one you are in — for example: wt remove login-crash")
 			}
 			ctx, err := openContext()
 			if err != nil {
 				return err
 			}
+			opts := commands.RemoveOptions{}
+			if !yes && isTerminal(os.Stdin) {
+				opts.Confirm = confirmRemoval(cmd.InOrStdin(), cmd.OutOrStdout())
+			}
 			if meAt != "" {
-				return commands.RemoveAt(ctx, meAt, cmd.OutOrStdout())
+				return commands.RemoveAt(ctx, meAt, opts, cmd.OutOrStdout())
 			}
 			if me {
 				cwd, err := os.Getwd()
 				if err != nil {
 					return err
 				}
-				return commands.RemoveAt(ctx, cwd, cmd.OutOrStdout())
+				return commands.RemoveAt(ctx, cwd, opts, cmd.OutOrStdout())
 			}
-			return commands.Remove(ctx, args[0], cmd.OutOrStdout())
+			return commands.Remove(ctx, args[0], opts, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().BoolVar(&me, "me", false, "remove the worktree you are standing in")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask for confirmation")
 	cmd.Flags().StringVar(&meAt, "me-at", "", "remove the worktree at this path (used by wt_rm_me)")
 	_ = cmd.Flags().MarkHidden("me-at")
 	return cmd
+}
+
+// confirmRemoval asks the question, defaulting to no. The plan has already been
+// printed by the time this runs, so the prompt itself stays one line.
+func confirmRemoval(in io.Reader, out io.Writer) func(commands.Plan) (bool, error) {
+	return func(commands.Plan) (bool, error) {
+		_, _ = fmt.Fprint(out, "Remove it? [y/N] ")
+		line, err := bufio.NewReader(in).ReadString('\n')
+		if err != nil {
+			// EOF on a terminal is ^D: the user declined rather than answered.
+			return false, nil
+		}
+		switch strings.ToLower(strings.TrimSpace(line)) {
+		case "y", "yes":
+			return true, nil
+		}
+		return false, nil
+	}
+}
+
+// isTerminal reports whether f is an interactive terminal, which is the whole
+// of the question "is there anyone here to answer a prompt".
+//
+// This asks the kernel rather than reading the file mode. The usual
+// ModeCharDevice test is wrong in exactly the case that matters: /dev/null is a
+// character device, so a script or an agent redirecting stdin from it would be
+// asked a question with nobody there to answer.
+func isTerminal(f *os.File) bool {
+	return term.IsTerminal(int(f.Fd()))
 }
