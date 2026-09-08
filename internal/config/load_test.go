@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -46,5 +47,13 @@ func TestLoadPrefersToml(t *testing.T) {
 func TestLoadMissingConfig(t *testing.T) {
 	if _, err := Load(t.TempDir(), "main"); !errors.Is(err, ErrNoConfig) {
 		t.Errorf("got %v, want ErrNoConfig", err)
+	}
+}
+
+// The message for a missing configuration is the one a first-time user hits,
+// and for a long time it named the problem without naming any way out.
+func TestErrNoConfigNamesTheCommandThatFixesIt(t *testing.T) {
+	if !strings.Contains(ErrNoConfig.Error(), "wt init") {
+		t.Errorf("ErrNoConfig does not point at wt init: %q", ErrNoConfig)
 	}
 }

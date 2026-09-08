@@ -9,8 +9,12 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// ErrNoConfig means the repository declares no worktree configuration.
-var ErrNoConfig = errors.New("no bin/worktree/worktree.conf or worktree.toml")
+// ErrNoConfig means the repository declares no worktree configuration. The
+// message names the way out: this is the one error a repository that has never
+// used wt is guaranteed to hit, and every other command refuses to run until
+// it is gone.
+var ErrNoConfig = errors.New(
+	"no bin/worktree/worktree.conf or worktree.toml — run `wt init` to create one")
 
 // tomlConfig mirrors Config with snake_case keys. It exists so a repo can opt
 // into a typed format without the bash-subset parser, which stays the default

@@ -1,11 +1,13 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
 	"strings"
 
+	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/naming"
 )
 
@@ -34,7 +36,11 @@ func Doctor(ctx *Context, w io.Writer) (int, error) {
 			}
 			report("%s", strings.TrimPrefix(line, "- "))
 		}
-		fmt.Fprintln(w, "  (checking the rest against the values that did parse)")
+		if errors.Is(ctx.ConfigError, config.ErrNoConfig) {
+			fmt.Fprintln(w, "  (checking the rest against wt's defaults)")
+		} else {
+			fmt.Fprintln(w, "  (checking the rest against the values that did parse)")
+		}
 	} else {
 		fmt.Fprintf(w, "  ✓ main branch %s, default type %s\n",
 			ctx.Config.MainBranch, ctx.Config.DefaultType)
@@ -90,7 +96,12 @@ func Doctor(ctx *Context, w io.Writer) (int, error) {
 		return problems, nil
 	}
 	fmt.Fprintf(w, "%d problem(s) found.\n", problems)
-	if ctx.ConfigError != nil {
+	switch {
+	case errors.Is(ctx.ConfigError, config.ErrNoConfig):
+		// Nothing above suggested a migrate: without a configuration there is
+		// no canonical path to be off, so name the one command that helps.
+		fmt.Fprintln(w, "Run `wt init` to create it, then run this again.")
+	case ctx.ConfigError != nil:
 		// Mutating commands stay strict about configuration, so advising a
 		// migrate that will refuse would send you round in a circle.
 		fmt.Fprintln(w, "Fix the configuration first — the migrate commands above need it.")
