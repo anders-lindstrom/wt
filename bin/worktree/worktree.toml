@@ -1,0 +1,28 @@
+# wt's own worktree configuration.
+#
+# Without this file config.Load returns ErrNoConfig and every command that
+# builds the normal repository context refuses — so wt could not make or list
+# its own worktrees. It uses the typed format it prefers over the bash subset.
+
+main_branch = "main"
+
+worktree_branch_prefix = "feat_wt"
+worktree_default_type = "feat"
+
+# A Go module needs no decrypted secrets or local override files, so there is
+# nothing to copy into a new worktree. Editor and agent directories are the
+# defaults; they are listed so the absence of the rest is deliberate rather
+# than an omission.
+developer_config_dirs = [".claude", ".vscode", ".idea"]
+developer_config_files = []
+
+# `go build` resolves the module cache itself, so a new worktree is usable
+# immediately. Running it anyway makes a broken checkout fail at creation
+# rather than at first use.
+build_init_enabled = true
+build_init_command = "go build ./..."
+
+test_command = "go test ./..."
+run_tests_before_remove = false
+
+required_bins = ["go", "git"]
