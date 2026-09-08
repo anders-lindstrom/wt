@@ -1,5 +1,37 @@
 # wt sync — Conflict Resolvers Implementation Plan
 
+> **Status: executed 2026-09-08.** The code landed on branch
+> `feat_wt/conflict-resolvers` in `server` (7 commits, 44 bats tests) and in
+> `accessmanager` (4 commits, 27 bats tests), unpushed. **The code blocks below
+> are the plan as written, not what landed** — the branches are the truth. Read
+> the corrections first; every one was found by running the code, several only
+> against live branches.
+>
+> ## Corrections found in execution
+>
+> | where | what was wrong | what landed |
+> |---|---|---|
+> | Task 1 `helper.bash` | `printf '%s'` with `"base\n"` wrote a literal backslash-n; the first test could never pass | tests pass real newlines (`$'base\n'`) |
+> | Task 1 `conflict_main` | `$claims` unquoted: run from the root, `--claims` printed the three real spec files instead of the glob | `set -f` in `lib.sh`; a test proves the glob survives when files match it |
+> | Task 1 contract | `git show :2:<path>` is root-relative, `git add` is cwd-relative; nothing entered the root | resolvers enter the root; absolute paths inside the checkout are rewritten (tested, including macOS `/var` vs `/private/var`) |
+> | Task 2 awk | `printf "%%s\n"` prints a literal `%s`; the whole awk-calls-bash construction was fragile | a bash walker over `git merge-file --diff3` output, shared in `lib.sh` as `merge_stages` + `walk_conflicts` |
+> | Tasks 2, 4, 6 | git folds an adjacent edit into the same conflict block, so "exactly one line per side" refused `axis_acc`'s `settings.gradle` and would refuse manifests | `collapse_owned_line` in `lib.sh`: keep the side that alone changed the other lines, judged against the diff3 base |
+> | Task 3 live check | verified only `openapi_v3.json`; `webkey`'s first stop conflicts on `openapi_remote_v3.json` | all three files verified at replay stops and at the endpoint |
+> | Task 4 rule | assumed one `include` line; `axis_acc` has two | any number of include lines, union within the block, quoted names validated |
+> | Task 6 rule | "blank the pin, the manifests must be identical" **refused the live case**: trunk had added two exports to `packages/shared/package.json`; the plan's own tests passed | merge with git, collapse the pin-only block; a test pins trunk's other manifest changes |
+> | Task 6 `resolve_it` | copied a temp file the `RETURN` trap had already deleted | rewritten on `merge_stages` |
+> | Tasks 5, 8 delegation | index-based resolvers cannot see a person's partial resolution; delegating from the bump scripts would have regressed them | **dropped**; the bump scripts are unchanged (spec §2) |
+> | Tasks 5, 8 tests | grep-based characterisation tests; `setup()` copied the whole repository per test | gone with the delegation |
+> | Task 5 `.wt-sync.yaml` | `when: paths-changed(...)` mini-DSL; `verify:` tautological after the regen commit; no note that `generateOpenApi` needs Docker | plain `paths:`; no `verify:`; Docker and compile-check documented (spec §3) |
+> | Task 8 `.wt-sync.yaml` | `commit:` on `generate-git-info`, whose output is gitignored | no commit for that step |
+> | Task 7 test | asserted the lockfile shows in `git diff --cached`; it equals HEAD mid-rebase and never does | asserts the path is no longer unmerged |
+>
+> Added beyond the plan: `bin/conflict/test/live-check.sh` in both repos, which
+> replays a real branch to its first stop (or takes the endpoint) and runs the
+> resolvers against those exact three stages in a throwaway repository. It is
+> the reference for the Go triage.
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Give `server` and `accessmanager` a `bin/conflict/` directory of single-purpose scripts that resolve the repo's recurring rebase conflicts deterministically, with no build and no reasoning.
