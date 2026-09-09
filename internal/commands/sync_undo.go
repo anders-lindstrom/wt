@@ -40,10 +40,10 @@ func SyncUndo(ctx *Context, work string, opts UndoOptions, w io.Writer) error {
 	if now == nil {
 		now = time.Now
 	}
+	// Undo can fail partway through the second (apply) phase, after some
+	// branches are already back at their safety tip: those still get
+	// reported, so a partial restore is visible rather than silent.
 	restored, err := wtsync.Undo(ctx.Repo.MainRoot, worktrees, agents, target.Branch, now())
-	if err != nil {
-		return err
-	}
 	for _, r := range restored {
 		name := workName(ctx, r.Branch)
 		if r.From == r.To {
@@ -52,5 +52,5 @@ func SyncUndo(ctx *Context, work string, opts UndoOptions, w io.Writer) error {
 		}
 		fmt.Fprintf(w, "%s  %s → %s  (%s)\n", name, short(r.From), short(r.To), r.Ref)
 	}
-	return nil
+	return err
 }

@@ -84,7 +84,7 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 	}
 	var out []Restored
 	for _, s := range run {
-		from, err := gitEnv(mainRoot, nil, nil, "rev-parse", "--verify", s.Branch)
+		from, err := gitEnv(mainRoot, nil, nil, "rev-parse", "--verify", "refs/heads/"+s.Branch)
 		if err != nil {
 			return out, err
 		}

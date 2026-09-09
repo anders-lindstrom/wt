@@ -24,9 +24,10 @@ func newSyncCmd() *cobra.Command {
 			"first for a current picture.\n" +
 			"\n" +
 			"The flow is look, act, finish. This command is the look. Acting on a\n" +
-			"row (wt sync run <work>), finishing a contested one (resume), backing\n" +
-			"out (undo) and checking preconditions (doctor) are not built yet; until\n" +
-			"they are, act on a row by rebasing that worktree by hand.\n" +
+			"row (wt sync run <work>) and backing out (wt sync undo <work>) exist\n" +
+			"now. Finishing a contested one (resume) and checking preconditions\n" +
+			"(doctor) are not built yet; until they are, resolve a contested row by\n" +
+			"rebasing that worktree by hand.\n" +
 			"\n" +
 			"Classes:\n" +
 			"  clean      rebases without a conflict\n" +
