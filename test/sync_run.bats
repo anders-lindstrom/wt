@@ -57,3 +57,21 @@ setup() {
     [ "$status" -eq 0 ]
     [[ "$output" == *"bump"*"recipe"* ]]
 }
+
+# The same flow with the fetch left in. The demo repo is its own origin, so
+# `git fetch origin main` is a local, deterministic no-op that still proves
+# the fetch path runs and does not change the outcome.
+@test "sync run fetches trunk first and rebases the same worktree" {
+    run wt sync run bump
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"fetched origin/main"* ]]
+    [[ "$output" == *"rebased 1 commit"* ]]
+
+    run wt sync
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"bump"* ]]
+
+    run wt sync undo bump
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"→"* ]]
+}
