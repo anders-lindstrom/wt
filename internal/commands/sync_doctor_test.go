@@ -4,14 +4,17 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
 
 // doctorFixture is a main checkout that is its own origin, declaring v.txt
 // owned-line max-plus-patch, with core.hooksPath pinned to its own hooks dir
-// (so an ambient global hooks path cannot make the hooks check fail) and, if
-// rerereOn, rerere.enabled set.
+// (so an ambient global hooks path cannot make the hooks check fail) and
+// rerere.enabled explicitly set, local, to rerereOn: rerereCheck reads the
+// effective config value, so an ambient global rerere.enabled=true must not
+// be able to leak into a fixture that means to be testing "off".
 func doctorFixture(t *testing.T, rerereOn bool) *Context {
 	t.Helper()
 	main := committedRepo(t, minimalConf)
@@ -25,9 +28,7 @@ func doctorFixture(t *testing.T, rerereOn bool) *Context {
 	gitIn(t, main, "add", "-A")
 	gitIn(t, main, "commit", "-q", "-m", "declare")
 	gitIn(t, main, "config", "core.hooksPath", filepath.Join(main, ".git", "hooks"))
-	if rerereOn {
-		gitIn(t, main, "config", "rerere.enabled", "true")
-	}
+	gitIn(t, main, "config", "rerere.enabled", strconv.FormatBool(rerereOn))
 	gitIn(t, main, "remote", "add", "origin", main)
 	gitIn(t, main, "fetch", "-q", "origin")
 	ctx, err := Open(main)

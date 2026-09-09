@@ -112,8 +112,11 @@ func scriptsCheck(mainRoot, onto string, cfg *Config) Check {
 		if r.Strategy != "script" {
 			continue
 		}
-		switch mode, ok := lsTreeMode(mainRoot, onto, r.Run); {
-		case !ok:
+		mode, found, err := lsTreeMode(mainRoot, onto, r.Run)
+		switch {
+		case err != nil:
+			bad = append(bad, r.Run+" ("+err.Error()+")")
+		case !found:
 			bad = append(bad, r.Run+" (missing)")
 		case mode != "100755":
 			bad = append(bad, r.Run+" (not executable)")
@@ -126,17 +129,23 @@ func scriptsCheck(mainRoot, onto string, cfg *Config) Check {
 }
 
 // lsTreeMode returns the mode `git ls-tree` reports for path at ref, and
-// whether the path exists there at all.
-func lsTreeMode(mainRoot, onto, path string) (string, bool) {
+// whether the path exists there at all. err is set only when ref itself
+// could not be read: ls-tree exits 0 with empty output when ref resolves
+// fine but path is simply not in it, so that case reports found=false with
+// a nil error rather than being folded into "missing".
+func lsTreeMode(mainRoot, onto, path string) (mode string, found bool, err error) {
 	out, err := git.Run(mainRoot, "ls-tree", onto, "--", path)
-	if err != nil || out == "" {
-		return "", false
+	if err != nil {
+		return "", false, err
+	}
+	if out == "" {
+		return "", false, nil
 	}
 	fields := strings.Fields(out)
 	if len(fields) == 0 {
-		return "", false
+		return "", false, nil
 	}
-	return fields[0], true
+	return fields[0], true, nil
 }
 
 // rerereCheck reports whether rerere.enabled is on. A run passes
@@ -224,28 +233,55 @@ func activeHook(dir, name string) bool {
 	return info.Mode()&0o111 != 0
 }
 
+// refResolves reports whether ref names something in the object store.
+// `git cat-file -e <ref>:<path>` exits non-zero both when path is missing
+// from a good ref and when ref itself is bad (128 either way on the git
+// version this was tested against, not the 1-vs-other split the naive
+// reading suggests, and distinguishable only by parsing the stderr text) so
+// ref is checked on its own first instead.
+func refResolves(mainRoot, ref string) bool {
+	cmd := exec.Command("git", "rev-parse", "--verify", "--quiet", ref)
+	cmd.Dir = mainRoot
+	return cmd.Run() == nil
+}
+
 // treeFileCheck fails when path exists on trunk, for checks (like
-// submodules) that are pass/fail on presence alone.
+// submodules) that are pass/fail on presence alone. onto not resolving is
+// reported as its own failure rather than as "path absent".
 func treeFileCheck(mainRoot, onto, path, name, detail string) Check {
+	if !refResolves(mainRoot, onto) {
+		return Check{Name: name, OK: false, Detail: onto + " does not resolve; run git fetch origin"}
+	}
 	cmd := exec.Command("git", "cat-file", "-e", onto+":"+path)
 	cmd.Dir = mainRoot
 	if cmd.Run() == nil {
 		return Check{Name: name, OK: false, Detail: detail}
 	}
+	// onto is known good, so any failure here means path is absent from it.
 	return Check{Name: name, OK: true}
 }
 
 // lfsCheck flags any .gitattributes on trunk (root or nested) that declares
-// an LFS filter: run does not handle LFS-tracked content.
+// an LFS filter: run does not handle LFS-tracked content. onto not
+// resolving is reported as its own failure rather than as "no match".
 func lfsCheck(mainRoot, onto string) Check {
+	if !refResolves(mainRoot, onto) {
+		return Check{Name: "lfs", OK: false, Detail: onto + " does not resolve; run git fetch origin"}
+	}
 	cmd := exec.Command("git", "grep", "-l", "-e", "filter=lfs", onto, "--", ".gitattributes", "**/.gitattributes")
 	cmd.Dir = mainRoot
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	// A non-zero exit with no output means no match, not an error.
-	_ = cmd.Run()
-	text := strings.TrimSpace(out.String())
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
+	if errText := strings.TrimSpace(stderr.String()); err != nil && errText != "" {
+		// onto is known good, so output on stderr here is a real failure (a
+		// bad pathspec, say), not silence-because-nothing-matched.
+		return Check{Name: "lfs", OK: false, Detail: errText}
+	}
+	text := strings.TrimSpace(stdout.String())
 	if text == "" {
+		// err != nil with empty stdout and empty stderr is grep -l's "no
+		// match"; err == nil never comes with empty stdout for -l.
 		return Check{Name: "lfs", OK: true}
 	}
 	var files []string

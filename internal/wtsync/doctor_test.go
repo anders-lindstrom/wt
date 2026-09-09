@@ -59,6 +59,11 @@ func TestDoctorOnAHealthyRepoIsAllOK(t *testing.T) {
 
 func TestDoctorFlagsRerereOffWithAFix(t *testing.T) {
 	dir, wt, _ := runRepo(t, nil, nil)
+	// Set explicitly, local: rerereCheck reads the effective config value
+	// (what a rebase actually honours), so an ambient global
+	// rerere.enabled=true on the developer's machine must not be able to
+	// mask the "off" state this test asserts.
+	gitIn(t, dir, "config", "rerere.enabled", "false")
 	checks, err := Doctor(dir, "main", []repo.Worktree{{Path: wt, Branch: "feature"}}, DoctorOptions{Now: time.Now(), Keep: 30 * 24 * time.Hour, Docker: func() error { return nil }})
 	if err != nil {
 		t.Fatal(err)
@@ -273,5 +278,25 @@ func TestDoctorFlagsSubmodulesAndLFSOnTrunk(t *testing.T) {
 	}
 	if !strings.Contains(lfs.Detail, "sub/.gitattributes") {
 		t.Fatalf("detail %q does not name sub/.gitattributes", lfs.Detail)
+	}
+}
+
+// TestDoctorFlagsLFSAsAnErrorWhenTrunkDoesNotResolve pins down that an
+// unresolvable origin/<trunk> is reported as a failure by the lfs check,
+// not silently folded into "no LFS paths found". The trunk check is also
+// !OK here; that is expected, not a competing assertion.
+func TestDoctorFlagsLFSAsAnErrorWhenTrunkDoesNotResolve(t *testing.T) {
+	dir := repoWith(t, map[string]string{"a.txt": "a\n"}, nil, nil)
+	// No origin remote at all, so origin/main cannot resolve.
+	checks, err := Doctor(dir, "main", nil, DoctorOptions{Now: time.Now(), Keep: 30 * 24 * time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lfs := findCheck(t, checks, "lfs")
+	if lfs.OK {
+		t.Fatal("expected lfs !OK when origin/main does not resolve")
+	}
+	if lfs.Detail == "" {
+		t.Fatal("expected lfs detail to carry the error text")
 	}
 }
