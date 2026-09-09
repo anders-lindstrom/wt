@@ -19,6 +19,10 @@ type Worktree struct {
 	Detached bool
 	Bare     bool
 	IsMain   bool
+	// Rebasing is set when git reports the worktree as detached only
+	// because a rebase is in progress. Branch then names the branch the
+	// sequencer will put HEAD back on, read from its own head-name.
+	Rebasing bool
 }
 
 // Repo is the repository containing some directory.
@@ -97,7 +101,60 @@ func (r *Repo) Worktrees() ([]Worktree, error) {
 		}
 	}
 	flush()
+
+	for i := range list {
+		if !list[i].Detached || list[i].Branch != "" {
+			continue
+		}
+		if branch := rebaseHeadName(list[i].Path); branch != "" {
+			list[i].Branch, list[i].Detached, list[i].Rebasing = branch, false, true
+		}
+	}
+
 	return list, nil
+}
+
+// rebaseHeadName reads the branch a stopped rebase will return HEAD to, from
+// the sequencer's own bookkeeping. A rebase detaches HEAD, so git reports
+// the worktree as detached while it runs; head-name is how git itself
+// remembers where it came from. Empty when no rebase is in progress or the
+// bookkeeping cannot be read.
+func rebaseHeadName(wtPath string) string {
+	dir, err := gitDirOf(wtPath)
+	if err != nil {
+		return ""
+	}
+	for _, name := range []string{"rebase-merge", "rebase-apply"} {
+		b, err := os.ReadFile(filepath.Join(dir, name, "head-name"))
+		if err != nil {
+			continue
+		}
+		return strings.TrimPrefix(strings.TrimSpace(string(b)), "refs/heads/")
+	}
+	return ""
+}
+
+// gitDirOf resolves a checkout's git dir without a subprocess: a linked
+// worktree's .git is a file holding "gitdir: <path>", the main checkout's is
+// the directory itself.
+func gitDirOf(wtPath string) (string, error) {
+	p := filepath.Join(wtPath, ".git")
+	info, err := os.Stat(p)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		return p, nil
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return "", err
+	}
+	dir := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(string(data)), "gitdir:"))
+	if dir == "" {
+		return "", fmt.Errorf("%s names no git dir", p)
+	}
+	return dir, nil
 }
 
 // DetectMainBranch reads origin/HEAD, falling back to the checked-out branch.

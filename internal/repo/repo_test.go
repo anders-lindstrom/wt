@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -97,6 +98,106 @@ func TestDetectMainBranchSurvivesUnbornHead(t *testing.T) {
 	}
 	if got := r.DetectMainBranch(); got != "trunk" {
 		t.Errorf("got %q, want trunk", got)
+	}
+}
+
+// runIgnoringFailure runs git and discards a non-zero exit, for commands like
+// `git rebase` that are expected to stop with a conflict.
+func runIgnoringFailure(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	_, _ = cmd.CombinedOutput()
+}
+
+func TestWorktreesNameTheBranchOfAStoppedRebase(t *testing.T) {
+	// main + a linked worktree on feature, with a conflict between them.
+	parent := resolved(t, t.TempDir())
+	main := filepath.Join(parent, "demo")
+	run(t, parent, "init", "-q", "-b", "main", "demo")
+	run(t, main, "config", "user.email", "t@example.com")
+	run(t, main, "config", "user.name", "T")
+	run(t, main, "commit", "-q", "--allow-empty", "-m", "init")
+	writeFile(t, filepath.Join(main, "v.txt"), "1\n")
+	run(t, main, "add", "v.txt")
+	run(t, main, "commit", "-q", "-m", "add v.txt")
+
+	wtPath := filepath.Join(parent, "demo_wt", "feature")
+	run(t, main, "worktree", "add", "-q", "-b", "feature", wtPath)
+
+	writeFile(t, filepath.Join(main, "v.txt"), "2\n")
+	run(t, main, "commit", "-q", "-am", "trunk")
+
+	writeFile(t, filepath.Join(wtPath, "v.txt"), "3\n")
+	run(t, wtPath, "commit", "-q", "-am", "branch")
+
+	// Start the rebase in the worktree and let it stop.
+	runIgnoringFailure(t, wtPath, "rebase", "main")
+
+	r, err := Discover(main)
+	if err != nil {
+		t.Fatal(err)
+	}
+	list, err := r.Worktrees()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wt Worktree
+	for _, w := range list {
+		if !w.IsMain {
+			wt = w
+		}
+	}
+	if wt.Branch != "feature" {
+		t.Fatalf("Branch = %q, want feature: git says detached during a rebase", wt.Branch)
+	}
+	if wt.Detached {
+		t.Fatal("Detached = true: a worktree whose branch we can name is not detached")
+	}
+	if !wt.Rebasing {
+		t.Fatal("Rebasing = false, want true")
+	}
+}
+
+func TestWorktreesLeaveAGenuinelyDetachedWorktreeAlone(t *testing.T) {
+	// A worktree checked out at a bare SHA, no rebase.
+	parent, main := fixture(t)
+	r, err := Discover(main)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(parent, "detached")
+	run(t, main, "worktree", "add", "-q", "--detach", dst)
+
+	list, err := r.Worktrees()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wt Worktree
+	found := false
+	for _, w := range list {
+		if w.Path == resolved(t, dst) {
+			wt, found = w, true
+		}
+	}
+	if !found {
+		t.Fatal("detached worktree not found in list")
+	}
+	if wt.Branch != "" {
+		t.Fatalf("Branch = %q, want empty for a genuinely detached worktree", wt.Branch)
+	}
+	if !wt.Detached {
+		t.Fatal("Detached = false, want true")
+	}
+	if wt.Rebasing {
+		t.Fatal("Rebasing = true, want false: no rebase is in progress")
+	}
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 
