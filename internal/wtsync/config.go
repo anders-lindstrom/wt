@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -97,6 +99,9 @@ func Parse(data []byte) (*Config, error) {
 			if r.Line == "" || r.Rule == "" {
 				return nil, fmt.Errorf("%s: conflicts[%d]: owned-line needs line and rule", ConfigFile, i)
 			}
+			if _, err := regexp.Compile(r.Line); err != nil {
+				return nil, fmt.Errorf("%s: conflicts[%d]: bad line regex %q: %w", ConfigFile, i, r.Line, err)
+			}
 		case "openapi":
 			if r.Rule == "" {
 				r.Rule = "max-plus-patch"
@@ -105,12 +110,18 @@ func Parse(data []byte) (*Config, error) {
 			if r.Line == "" {
 				return nil, fmt.Errorf("%s: conflicts[%d]: list-union needs line", ConfigFile, i)
 			}
+			if _, err := regexp.Compile(r.Line); err != nil {
+				return nil, fmt.Errorf("%s: conflicts[%d]: bad line regex %q: %w", ConfigFile, i, r.Line, err)
+			}
 			if r.Delimiter == "" {
 				r.Delimiter = ","
 			}
 		case "script":
 			if r.Run == "" {
 				return nil, fmt.Errorf("%s: conflicts[%d]: script needs run", ConfigFile, i)
+			}
+			if path.IsAbs(r.Run) || escapesRoot(r.Run) {
+				return nil, fmt.Errorf("%s: conflicts[%d]: script run %q must be relative to the root, with no parent-directory segments", ConfigFile, i, r.Run)
 			}
 		}
 		if r.Rule != "" && !valueRules[r.Rule] {
@@ -123,6 +134,17 @@ func Parse(data []byte) (*Config, error) {
 		}
 	}
 	return &cfg, nil
+}
+
+// escapesRoot reports whether p contains a ".." segment, which would let a
+// script strategy reach outside the repository root.
+func escapesRoot(p string) bool {
+	for _, seg := range strings.Split(p, "/") {
+		if seg == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 // RuleFor returns the first rule claiming path.

@@ -105,6 +105,8 @@ func TestParseRejectsUnknownStrategyAndMissingParameters(t *testing.T) {
 		"a rule needs paths":      "conflicts:\n  - strategy: take-trunk\n",
 		"defer needs run":         "defer:\n  - paths: [a]\n",
 		"unknown key is an error": "conflicts:\n  - paths: [a]\n    strategy: take-trunk\n    when: always\n",
+		"bad line regex":          "conflicts:\n  - paths: [a]\n    strategy: owned-line\n    line: '('\n    rule: keep-branch\n",
+		"script escapes the root": "conflicts:\n  - paths: [a]\n    strategy: script\n    run: ../evil\n",
 	}
 	for name, yaml := range cases {
 		t.Run(name, func(t *testing.T) {
