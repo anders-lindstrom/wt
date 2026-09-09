@@ -299,6 +299,11 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 		if p.head, err = git.Run(p.wt.Path, "rev-parse", "HEAD"); err != nil {
 			return err
 		}
+		// The run is done for this branch: pin where it left it, so undo can
+		// tell its own work from commits made afterwards.
+		if err := wtsync.WriteResult(ctx.Repo.MainRoot, b, p.head, epoch); err != nil {
+			return err
+		}
 		release(b)
 		fmt.Fprintf(w, "  push: git -C %s push --force-with-lease\n", p.wt.Path)
 	}

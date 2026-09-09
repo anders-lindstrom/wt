@@ -86,3 +86,36 @@ func TestDeleteSafetyRemovesTheRef(t *testing.T) {
 		t.Fatalf("still listed: %+v", all)
 	}
 }
+
+func TestResultTipReadsWhatARunLeftAndIsAbsentUntilWritten(t *testing.T) {
+	dir := linearRepo(t, nil, []map[string]string{{"a.txt": "a2\n"}})
+	tip := gitIn(t, dir, "rev-parse", "feature")
+	if _, ok, err := ResultTip(dir, "feature", 5); err != nil || ok {
+		t.Fatalf("ok %v err %v", ok, err)
+	}
+	if err := WriteResult(dir, "feature", tip, 5); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := ResultTip(dir, "feature", 5)
+	if err != nil || !ok || got != tip {
+		t.Fatalf("got %q ok %v err %v", got, ok, err)
+	}
+}
+
+func TestDeleteSafetyAlsoDropsTheRunsResultRef(t *testing.T) {
+	dir := linearRepo(t, nil, []map[string]string{{"a.txt": "a2\n"}})
+	tip := gitIn(t, dir, "rev-parse", "feature")
+	s, err := WriteSafety(dir, "feature", tip, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteResult(dir, "feature", tip, 5); err != nil {
+		t.Fatal(err)
+	}
+	if err := DeleteSafety(dir, s); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := ResultTip(dir, "feature", 5); err != nil || ok {
+		t.Fatalf("result ref survived: ok %v err %v", ok, err)
+	}
+}

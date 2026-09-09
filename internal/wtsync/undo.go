@@ -17,8 +17,12 @@ type Restored struct {
 // Undo resets every ref the newest run touching branch moved: all safety
 // refs sharing that run's epoch. Every checkout involved, the main one
 // included, is locked and checked (clean, not mid-rebase, no agent) before
-// anything is reset.
-func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch string, now time.Time) ([]Restored, error) {
+// anything is reset, and every branch is checked against where the run left
+// it: a branch that has moved since is refused rather than rewound, because
+// the reset would discard commits the run never made. force turns that
+// refusal into a fresh safety ref at the current tip, so the forced undo is
+// itself undoable; a branch with a later run is refused either way.
+func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch string, now time.Time, force bool) ([]Restored, error) {
 	latest, ok, err := LatestSafety(mainRoot, branch)
 	if err != nil {
 		return nil, err
@@ -82,12 +86,47 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 			return nil, fmt.Errorf("%s is mid-rebase; nothing undone", s.Branch)
 		}
 	}
+	// Where each branch is now, read once under the locks and reused by the
+	// apply loop below: nothing may move between the check and the reset.
+	tips := map[string]string{}
+	forceEpoch := now.UnixNano()
+	for _, s := range run {
+		for _, other := range all {
+			if other.Branch == s.Branch && other.Epoch > s.Epoch {
+				return nil, fmt.Errorf("%s has a later run (%d); undo that first", s.Branch, other.Epoch)
+			}
+		}
+		tip, err := gitEnv(mainRoot, nil, nil, "rev-parse", "--verify", "refs/heads/"+s.Branch)
+		if err != nil {
+			return nil, err
+		}
+		tips[s.Branch] = tip
+		if tip == s.Tip {
+			continue // already back at the old tip; nothing to discard
+		}
+		// The run's own result is where the branch should still be. Without
+		// one the run never finished for this branch, so any movement at all
+		// is somebody else's.
+		want, ok, err := ResultTip(mainRoot, s.Branch, s.Epoch)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			want = s.Tip
+		}
+		if tip == want {
+			continue
+		}
+		if !force {
+			return nil, fmt.Errorf("%s has moved since that run (%s commits ahead of it); undo would discard them", s.Branch, aheadCount(mainRoot, want, tip))
+		}
+		if _, err := WriteSafety(mainRoot, s.Branch, tip, forceEpoch); err != nil {
+			return nil, err
+		}
+	}
 	var out []Restored
 	for _, s := range run {
-		from, err := gitEnv(mainRoot, nil, nil, "rev-parse", "--verify", "refs/heads/"+s.Branch)
-		if err != nil {
-			return out, err
-		}
+		from := tips[s.Branch]
 		r := Restored{Branch: s.Branch, From: from, To: s.Tip, Ref: s.Ref}
 		if wt, ok := byBranch[s.Branch]; ok {
 			r.Path = wt.Path
@@ -104,4 +143,15 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 		out = append(out, r)
 	}
 	return out, nil
+}
+
+// aheadCount is how many commits tip carries beyond base, as text, so a
+// refusal can say what it would have discarded. A count git cannot produce
+// is reported as unknown rather than guessed at.
+func aheadCount(mainRoot, base, tip string) string {
+	out, err := gitEnv(mainRoot, nil, nil, "rev-list", "--count", base+".."+tip)
+	if err != nil || out == "" {
+		return "unknown"
+	}
+	return out
 }

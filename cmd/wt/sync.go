@@ -97,6 +97,7 @@ func newSyncCmd() *cobra.Command {
 	run.Flags().BoolVar(&yes, "yes", false, "do not ask before rebasing more than one worktree")
 	sync.AddCommand(run)
 
+	var force bool
 	undo := &cobra.Command{
 		Use:   "undo <work>",
 		Short: "Put back every ref the last run on this worktree moved",
@@ -104,8 +105,12 @@ func newSyncCmd() *cobra.Command {
 			"branch that run rewrote back to its safety ref, restoring a stack as a\n" +
 			"whole rather than one branch at a time.\n\n" +
 			"Refused, and nothing undone: a checkout involved is dirty, mid-rebase,\n" +
-			"or has a Claude session in it. Running it again after it already\n" +
-			"restored a branch reports that branch already at its old tip.",
+			"or has a Claude session in it; a branch that has moved since the run,\n" +
+			"whose commits the reset would discard (--force pins those at a fresh\n" +
+			"safety ref and rewinds anyway); a branch with a later run, which has to\n" +
+			"be undone first and which --force does not override. Running it again\n" +
+			"after it already restored a branch reports that branch already at its\n" +
+			"old tip.",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -113,9 +118,10 @@ func newSyncCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return commands.SyncUndo(ctx, args[0], commands.UndoOptions{}, cmd.OutOrStdout())
+			return commands.SyncUndo(ctx, args[0], commands.UndoOptions{Force: force}, cmd.OutOrStdout())
 		},
 	}
+	undo.Flags().BoolVar(&force, "force", false, "undo a branch that has moved since the run, pinning its tip first")
 	sync.AddCommand(undo)
 
 	var fix, prune bool

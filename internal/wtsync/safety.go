@@ -14,6 +14,14 @@ import (
 // is invisible to --update-refs (spec §4).
 const SafetyPrefix = "refs/wt-sync/"
 
+// ResultPrefix is where a run pins the tip a branch ended at, once its
+// rebase and its deferred steps are done. Undo compares the branch against
+// it: a branch that has moved on since the run is work the run did not
+// make, and resetting to the safety ref would throw it away. A restored or
+// failed rebase writes none, so "no result ref" means the run never
+// finished for that branch.
+const ResultPrefix = "refs/wt-sync-result/"
+
 // Safety is one pinned tip: the branch it belonged to, the run that pinned it
 // (Epoch, nanoseconds; every ref of one run shares it), and where.
 type Safety struct {
@@ -104,8 +112,45 @@ func Prunable(all []Safety, now time.Time, keep time.Duration) []Safety {
 	return out
 }
 
-// DeleteSafety drops one safety ref.
+// resultRef names the result ref of one branch in one run.
+func resultRef(branch string, epoch int64) string {
+	return ResultPrefix + branch + "/" + strconv.FormatInt(epoch, 10)
+}
+
+// WriteResult pins where branch ended up in the run epoch. Unlike a safety
+// ref it overwrites: the run owns this ref for the whole of its own epoch.
+func WriteResult(mainRoot, branch, tip string, epoch int64) error {
+	ref := resultRef(branch, epoch)
+	if _, err := gitEnv(mainRoot, nil, nil, "update-ref", ref, tip); err != nil {
+		return fmt.Errorf("result ref %s: %w", ref, err)
+	}
+	return nil
+}
+
+// ResultTip reads the result ref of one branch in one run. for-each-ref
+// exits zero with empty output for a ref that is not there, so an absent
+// ref is not confused with a git failure.
+func ResultTip(mainRoot, branch string, epoch int64) (string, bool, error) {
+	out, err := gitEnv(mainRoot, nil, nil, "for-each-ref", "--format=%(objectname)", resultRef(branch, epoch))
+	if err != nil {
+		return "", false, err
+	}
+	if out == "" {
+		return "", false, nil
+	}
+	return out, true, nil
+}
+
+// DeleteSafety drops one safety ref, and the result ref of the same run when
+// there is one: they pin the two ends of history the same run superseded.
 func DeleteSafety(mainRoot string, s Safety) error {
-	_, err := gitEnv(mainRoot, nil, nil, "update-ref", "-d", s.Ref, s.Tip)
+	if _, err := gitEnv(mainRoot, nil, nil, "update-ref", "-d", s.Ref, s.Tip); err != nil {
+		return err
+	}
+	tip, ok, err := ResultTip(mainRoot, s.Branch, s.Epoch)
+	if err != nil || !ok {
+		return err
+	}
+	_, err = gitEnv(mainRoot, nil, nil, "update-ref", "-d", resultRef(s.Branch, s.Epoch), tip)
 	return err
 }

@@ -46,3 +46,35 @@ func TestSyncUndoPutsBackWhatSyncRunMoved(t *testing.T) {
 		t.Fatalf("second undo out %s", undoOut.String())
 	}
 }
+
+func TestSyncUndoRefusesAWorktreeCommittedToSinceTheRun(t *testing.T) {
+	ctx, bump := runFixture(t, true)
+	var out bytes.Buffer
+	if err := SyncRun(ctx, []string{"bump"}, noAgents(), &out); err != nil {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	gitIn(t, bump, "commit", "-q", "--allow-empty", "-m", "after the run")
+	after := gitOut(t, bump, "rev-parse", "HEAD")
+
+	var undoOut bytes.Buffer
+	err := SyncUndo(ctx, "bump", noAgentsUndo(), &undoOut)
+	if err == nil || !strings.Contains(err.Error(), "moved since that run") {
+		t.Fatalf("err %v\n%s", err, undoOut.String())
+	}
+	if gitOut(t, bump, "rev-parse", "HEAD") != after {
+		t.Fatal("HEAD moved despite the refusal")
+	}
+
+	forced := noAgentsUndo()
+	forced.Force = true
+	undoOut.Reset()
+	if err := SyncUndo(ctx, "bump", forced, &undoOut); err != nil {
+		t.Fatalf("forced undo err %v\n%s", err, undoOut.String())
+	}
+	if gitOut(t, bump, "rev-parse", "HEAD") == after {
+		t.Fatal("forced undo did not rewind")
+	}
+	if gitOut(t, ctx.Repo.MainRoot, "rev-parse", wtsync.SafetyPrefix+"feat_wt/bump/100") != after {
+		t.Fatal("forced undo did not pin the tip it discarded")
+	}
+}

@@ -14,6 +14,9 @@ type UndoOptions struct {
 	// an empty slice means there are none.
 	Agents []wtsync.Agent
 	Now    func() time.Time
+	// Force undoes a branch that has moved since the run, pinning a fresh
+	// safety ref at the tip it discards first.
+	Force bool
 }
 
 // SyncUndo puts back every ref the newest run touching work's branch moved:
@@ -43,7 +46,7 @@ func SyncUndo(ctx *Context, work string, opts UndoOptions, w io.Writer) error {
 	// Undo can fail partway through the second (apply) phase, after some
 	// branches are already back at their safety tip: those still get
 	// reported, so a partial restore is visible rather than silent.
-	restored, err := wtsync.Undo(ctx.Repo.MainRoot, worktrees, agents, target.Branch, now())
+	restored, err := wtsync.Undo(ctx.Repo.MainRoot, worktrees, agents, target.Branch, now(), opts.Force)
 	for _, r := range restored {
 		name := workName(ctx, r.Branch)
 		if r.From == r.To {
