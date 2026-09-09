@@ -228,21 +228,26 @@ Compare `feat_wt/state_stats`: 90 behind, 15 files where both sides moved, **no*
 build files, and the resolvers absorb three of its seven conflicts. That is a
 rebase.
 
-The class is computed from two signals, either of which is enough:
+The class is computed from one signal:
 
 | signal | why it means "not mechanical" |
 |---|---|
 | the **`openapi` strategy refuses at the endpoint** — generated output that no longer merges key by key | the framework rewrote the generator's own output; the branch's API surface and trunk's no longer describe the same program |
-| **both** trunk and the branch change the dependency graph — the `dependency_graph` paths in `.wt-sync.yaml`: `gradle/libs.versions.toml`, any `build.gradle`, `package.json` beyond a pin | trunk's code has been written against a different set of libraries than the branch's |
 
-Two corrections from the plan review of 2026-09-09. The first draft counted
-*any* strategy's refusal at the endpoint, which contradicted this document's
-own table: `state_stats` is refused by `openapi-version` on an ordinary
-configuration block and is meant to stay `contested`. An owned-line refusal
-is a normal conflict for a person; only a generated document that no longer
-merges says the ground moved. And the first draft counted the branch alone
-changing the dependency graph, which makes every branch that adds one
-library a "workstream"; the signal is both sides moving it.
+Two demotions, both from measuring. The first draft counted *any* strategy's
+refusal at the endpoint, which contradicted this document's own table:
+`state_stats` is refused on an ordinary configuration block and is meant to
+stay `contested`; an owned-line refusal is a normal conflict for a person.
+The first draft also counted the branch changing the dependency graph
+(`dependency_graph` in `.wt-sync.yaml`); a second draft required both sides
+to. Execution finding, 2026-09-09, running the Go triage over the live fleet:
+both versions fire on `webkey` and `axis_acc`, because over a hundred trunk
+commits always touch some `build.gradle`, while **no branch — not even Spring
+Boot — conflicts on a dependency-graph file at the endpoint**. A signal that
+fires on every long-lived branch is not a signal. The dependency-graph check
+is now an **advisory note** on the row ("both sides changed the dependency
+graph: …"), like the file count, so a person sees it; it does not classify.
+With that, the live fleet classifies exactly as the tables above say.
 
 The first draft had a third signal, "both sides moved more than 30 of the same
 files", tuned on a sample of two. Execution finding: it is not needed for the

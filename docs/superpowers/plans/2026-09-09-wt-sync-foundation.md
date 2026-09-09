@@ -3250,7 +3250,7 @@ The classes, from spec §1:
 | `clean` | every commit replays without conflict |
 | `recipe` | the first stop's every file is resolved by a strategy |
 | `contested` | some file at the first stop is unclaimed or refused |
-| `divergent` | at the **endpoint**, the `openapi` strategy refuses a file it claims (generated output that no longer merges); or **both** trunk and the branch changed a `dependency_graph` path beyond an owned line |
+| `divergent` | at the **endpoint**, the `openapi` strategy refuses a file it claims (generated output that no longer merges). The dependency-graph check (both sides changed a `dependency_graph` path beyond an owned line) is an advisory `Notes` entry, not a classifier — demoted after the live-fleet run in the task's fix round; the `divergence` code below predates that |
 
 `dirty` (tracked changes only) and the agent are modifiers on the assessment, not classes.
 
