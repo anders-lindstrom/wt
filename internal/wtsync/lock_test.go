@@ -64,6 +64,35 @@ func TestAcquireRefusesALiveLockAndReplacesAnExpiredOne(t *testing.T) {
 	}
 }
 
+func TestAcquireDoesNotTakeOverAnUnreadableLock(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores file modes")
+	}
+	dir := t.TempDir()
+	now := time.Unix(1_700_000_000, 0)
+	l, err := Acquire(dir, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(l.Path, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(l.Path, 0o644)
+	})
+	_, err = Acquire(dir, now.Add(LockExpiry+time.Hour))
+	if err == nil {
+		t.Fatal("expected an error for an unreadable lock")
+	}
+	var held *LockHeld
+	if errors.As(err, &held) {
+		t.Fatalf("unreadable lock reported as LockHeld: %v", err)
+	}
+	if _, statErr := os.Stat(l.Path); statErr != nil {
+		t.Fatalf("unreadable lock was removed: %v", statErr)
+	}
+}
+
 func TestGitDirOfAWorktreeIsItsOwnDirectoryUnderTheMainGitDir(t *testing.T) {
 	dir := linearRepo(t, nil, []map[string]string{{"a.txt": "a2\n"}})
 	wt := featureWorktree(t, dir)

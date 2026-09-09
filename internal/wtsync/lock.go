@@ -72,9 +72,9 @@ func Acquire(gitDir string, now time.Time) (*Lock, error) {
 		if ok && now.Sub(existing.Started) < LockExpiry {
 			return nil, &LockHeld{*existing}
 		}
-		// Expired, or unreadable: take it over. Rename is atomic, so of two
-		// contenders exactly one succeeds here; the other retries and finds
-		// the winner's fresh lock.
+		// Expired, or gone between the link and the read: take it over.
+		// Rename is atomic, so of two contenders exactly one succeeds here;
+		// the other retries and finds the winner's fresh lock.
 		stale := fmt.Sprintf("%s.stale.%d", path, l.PID)
 		if err := os.Rename(path, stale); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
