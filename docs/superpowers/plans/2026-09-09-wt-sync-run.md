@@ -1246,6 +1246,9 @@ func runRepo(t *testing.T, trunkEdits, branchEdits []map[string]string) (dir str
 	gitIn(t, dir, "commit", "-q", "-m", "declare")
 	gitIn(t, dir, "remote", "add", "origin", dir)
 	gitIn(t, dir, "fetch", "-q", "origin")
+	// Pin the hooks dir so a global core.hooksPath on the developer's machine
+	// can neither run its hooks against the fixture nor hide a test hook.
+	gitIn(t, dir, "config", "core.hooksPath", filepath.Join(dir, ".git", "hooks"))
 	cfg, err := LoadFromTrunk(dir, "main")
 	if err != nil {
 		t.Fatal(err)
@@ -1437,10 +1440,7 @@ func TestRebaseGivesUpWhenContinueDoesNotAdvance(t *testing.T) {
 	dir, wt, cfg := runRepo(t,
 		[]map[string]string{{"v.txt": "1.0.5\n"}},
 		[]map[string]string{{"v.txt": "1.0.1\n"}})
-	hooks := gitIn(t, wt, "rev-parse", "--git-path", "hooks")
-	if !filepath.IsAbs(hooks) {
-		hooks = filepath.Join(wt, hooks)
-	}
+	hooks := filepath.Join(dir, ".git", "hooks") // what runRepo set core.hooksPath to
 	if err := os.MkdirAll(hooks, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -1489,7 +1489,7 @@ func TestPreflightOrdersItsReasons(t *testing.T) {
 }
 ```
 
-Note on the hook test: a linked worktree's hooks dir is the main repository's `.git/hooks` (hooks are shared), so the file lands there; `t.TempDir` cleans it up. `core.hooksPath` may be set globally on the developer's machine: the fixture must `git config core.hooksPath` to the repo's own hooks dir explicitly before writing the hook, in `runRepo`, so the test is independent of the ambient configuration. The `--no-verify` flag is **not** passed by `run`: a repository's hooks are part of what a rebase does (spec §4 says doctor preflights them), and this test proves the loop cannot spin when one fails.
+Note on the hook test: a linked worktree's hooks dir is the main repository's `.git/hooks` (hooks are shared), so the file lands there; `t.TempDir` cleans it up. `runRepo` pins `core.hooksPath` to that directory so a global `core.hooksPath` on the developer's machine is neither run against the fixture nor able to hide the test hook. The `--no-verify` flag is **not** passed by `run`: a repository's hooks are part of what a rebase does (spec §4 says doctor preflights them), and this test proves the loop cannot spin when one fails.
 
 - [ ] **Step 2: Run to verify failure**
 
