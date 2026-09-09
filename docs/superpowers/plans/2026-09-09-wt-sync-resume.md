@@ -320,15 +320,29 @@ Add to `internal/wtsync/script_test.go`:
 
 ```go
 func TestGitEnvAllowReturnsTheAllowedExitStatus(t *testing.T) {
-	dir := repoWith(t, map[string]string{"a.txt": "a\n"}, nil, nil)
-	// merge-base --is-ancestor exits 1 for "no", which is an answer, not a
-	// failure. Anything else is still an error.
-	out, code, err := gitEnvAllow(dir, nil, nil, 1, "merge-base", "--is-ancestor", "HEAD", "HEAD")
-	if err != nil || code != 0 || out != "" {
-		t.Fatalf("same commit: %q, %d, %v; want 0", out, code, err)
+	// main and feature have diverged, so neither is the other's ancestor.
+	dir := repoWith(t,
+		map[string]string{"a.txt": "a\n"},
+		[]map[string]string{{"a.txt": "trunk\n"}},
+		[]map[string]string{{"a.txt": "branch\n"}})
+
+	// The allowed status is an answer, not a failure: this is the whole
+	// point of the function, so it is what the test must exercise.
+	out, code, err := gitEnvAllow(dir, nil, nil, 1, "merge-base", "--is-ancestor", "main", "feature")
+	if err != nil || code != 1 || out != "" {
+		t.Fatalf("diverged: %q, %d, %v; want code 1 and no error", out, code, err)
 	}
+	// A true answer still exits 0.
+	if _, code, err := gitEnvAllow(dir, nil, nil, 1, "merge-base", "--is-ancestor", "main", "main"); err != nil || code != 0 {
+		t.Fatalf("same commit: %d, %v; want code 0", code, err)
+	}
+	// Any other status is still an error (cat-file exits 128 here).
 	if _, _, err := gitEnvAllow(dir, nil, nil, 1, "cat-file", "-p", "notacommit"); err == nil {
 		t.Fatal("an unexpected exit status must still be an error")
+	}
+	// allow < 0 tolerates nothing: that is gitEnv's contract.
+	if _, _, err := gitEnvAllow(dir, nil, nil, -1, "merge-base", "--is-ancestor", "main", "feature"); err == nil {
+		t.Fatal("allow -1 must not tolerate exit 1")
 	}
 }
 ```
@@ -414,7 +428,7 @@ func catFileRaw(mainRoot, oid string) ([]byte, error) {
 }
 ```
 
-and add `gitEnvRaw` next to `gitEnvAllow` in `script.go`, identical to it but returning `stdout.Bytes()` untrimmed and allowing nothing. A blob's trailing newline is content: trimming it would corrupt every strategy's input, so this is not optional.
+and add `gitEnvRaw` next to `gitEnvAllow` in `script.go`, returning `stdout.Bytes()` untrimmed and allowing nothing. The two must NOT be copies of each other: put the context deadline, the `runScript` call, the deadline-exceeded check and the stderr formatting in one unexported core (`runGit(dir, env, stdin, args...) (stdout []byte, stderrMsg string, err error)` or similar), and let `gitEnvAllow` and `gitEnvRaw` add only their own trimming and exit-status handling on top. A blob's trailing newline is content: trimming it would corrupt every strategy's input, so this is not optional.
 
 - [ ] **Step 4: Run the tests**
 
