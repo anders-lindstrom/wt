@@ -182,6 +182,28 @@ func TestDoctorKeepsValidKeysWhenConfigIsInvalid(t *testing.T) {
 	}
 }
 
+// Superset stores the absolute path of every workspace it makes, so a migrate
+// silently breaks the workspace. The warning has to arrive before the move —
+// and therefore during a dry run, which is where it is read.
+func TestMigrateWarnsBeforeMovingASupersetWorktree(t *testing.T) {
+	main := committedRepo(t, minimalConf)
+	ctx, _ := Open(main)
+	superset := filepath.Join(ctx.Repo.Parent, "demo_wt", "demo", "fix_wt", "legacy")
+	gitIn(t, main, "worktree", "add", "-q", "-b", "fix_wt/legacy", superset)
+
+	var buf bytes.Buffer
+	if _, err := Migrate(ctx, "fix/legacy", MigrateOptions{DryRun: true}, &buf); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "Superset") {
+		t.Errorf("want the workspace warning:\n%s", out)
+	}
+	if strings.Index(out, "Superset") > strings.Index(out, "would move") {
+		t.Errorf("the warning must come before what it warns about:\n%s", out)
+	}
+}
+
 // --dry-run must show exactly what would happen and change nothing. This is the
 // safety valve for worktrees carrying real work: you look before you leap.
 func TestMigrateDryRunChangesNothing(t *testing.T) {

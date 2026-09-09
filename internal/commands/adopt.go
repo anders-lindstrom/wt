@@ -79,6 +79,16 @@ func relocate(ctx *Context, path string, opts MigrateOptions, w io.Writer) (stri
 		fmt.Fprintf(w, "- %s is already at the canonical path\n", path)
 		return path, nil
 	}
+	// Before the move, and therefore during a dry run — after it, the warning
+	// is a post-mortem. Superset stores the absolute path of every workspace
+	// it makes, so a migrate leaves that workspace pointing at nothing.
+	if naming.Classify(path, ctx.Repo.Parent, ctx.Repo.Name, typ, work, ctx.Config.TypeSuffix) == naming.Superset {
+		fmt.Fprintln(w, "! this is Superset's layout: its workspace holds this path and will")
+		fmt.Fprintln(w, "  not follow the move. Re-point or recreate the workspace afterwards.")
+	}
+	fmt.Fprintln(w, "  note: tools holding the old absolute path (IDE workspaces, running dev")
+	fmt.Fprintln(w, "  servers) will need to be pointed at the new one.")
+
 	if opts.DryRun {
 		fmt.Fprintf(w, "would move %s\n        -> %s\n", path, want)
 		fmt.Fprintln(w, "  (nothing has changed; drop --dry-run to do it)")
@@ -100,8 +110,6 @@ func relocate(ctx *Context, path string, opts MigrateOptions, w io.Writer) (stri
 	if actual != want {
 		return actual, fmt.Errorf("asked git to move to %s but it landed at %s", want, actual)
 	}
-	fmt.Fprintln(w, "  note: tools holding the old absolute path (Superset, IDE workspaces,")
-	fmt.Fprintln(w, "  running dev servers) will need to be pointed at the new one.")
 	return want, nil
 }
 
