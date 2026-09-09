@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/about"
 )
 
 func runCmd(t *testing.T, args ...string) (string, error) {
@@ -143,5 +145,32 @@ func TestShellCommandsExplainThemselvesWhenRunFromTheBinary(t *testing.T) {
 		if !strings.Contains(err.Error(), "wt.sh") {
 			t.Errorf("%s: error does not point at the shell layer: %v", name, err)
 		}
+	}
+}
+
+// `wt about` is the human surface: the version, and what landed recently.
+func TestAboutPrintsTheVersionAndWhatIsNew(t *testing.T) {
+	out, err := runCmd(t, "about")
+	if err != nil {
+		t.Fatalf("about: %v", err)
+	}
+	if !strings.Contains(out, version) {
+		t.Errorf("about does not print the version %q:\n%s", version, out)
+	}
+	if !strings.Contains(out, about.NewestHeading()) {
+		t.Errorf("about does not print the what's-new heading %q:\n%s",
+			about.NewestHeading(), out)
+	}
+}
+
+// `wt version` is the machine surface, and stays one bare line so a script can
+// read it.
+func TestVersionStaysOneBareLine(t *testing.T) {
+	out, err := runCmd(t, "version")
+	if err != nil {
+		t.Fatalf("version: %v", err)
+	}
+	if strings.TrimSpace(out) != version {
+		t.Errorf("version printed %q, want just %q", out, version)
 	}
 }

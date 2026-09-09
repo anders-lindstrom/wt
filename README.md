@@ -76,6 +76,7 @@ configuration would work for you and for nobody who clones the repo.
 | `wt doctor` | check config, required tools and worktree health |
 | `wt path` / `wt branch` | resolve one piece of work |
 | `wt config [--shell]` | the resolved configuration, typed or eval-able |
+| `wt about` | which build this is, and the newest entry from its what's-new notes |
 | `wt completion zsh` | shell completion, including live work names |
 
 A bare `<work>` takes the repository's default type, so `wt new thing` creates

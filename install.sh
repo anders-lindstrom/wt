@@ -18,7 +18,7 @@ mkdir -p "$BIN_DIR" "$SHARE_DIR"
 
 echo "Building wt..."
 ( cd "$SRC_DIR" && go build \
-    -ldflags "-X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
+    -ldflags "-X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo dev) -X main.buildDate=$(date -u +%Y-%m-%d)" \
     -o "$BIN_DIR/wt" ./cmd/wt )
 
 install -m 0644 "$SRC_DIR/shell/wt.sh" "$SHARE_DIR/wt.sh"
