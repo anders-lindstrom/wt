@@ -461,8 +461,13 @@ is a mid-branch commit, and for the **remote** spec (`openapi_remote_v3.json`),
 which `webkey` conflicts on at commit 6 of 27 and which the first draft never
 measured. All three spec files resolve on `sync_skipped`, `webkey`, `state_stats`
 and `axis_acc`, and both `openapi_v3*.json` refuse on Spring Boot, naming the
-paths. The resolver writes two-space JSON with no trailing newline, which is
-what springdoc writes, so the deferred regeneration diffs as little as possible.
+paths. The strategy writes the document the way the generator does — Jackson's
+pretty printer: `"key" : value` with a space on both sides of the colon, inline
+arrays (`[ "id" ]`, `[ {` … `}, {` … `} ]`), `{ }` and `[ ]` for empties, two-space
+indentation, no trailing newline — so the deferred regeneration diffs on key
+order alone. (The bash prototype and the first Go draft wrote `encoding/json`
+style and would have diffed on every line; verified against the live file on
+2026-09-09.)
 
 **Honest limit.** springdoc emits `paths` and `components.schemas` unsorted —
 `springdoc.writer-with-order-by-keys` is not enabled — so a structural merge
