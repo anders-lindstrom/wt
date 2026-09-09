@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/naming"
 )
 
 // SetupOptions controls provisioning.
@@ -53,7 +54,28 @@ func Setup(ctx *Context, target string, opts SetupOptions, w io.Writer) error {
 		return provisionErr
 	}
 	fmt.Fprintln(w, "✓ Worktree setup complete")
+	reportLayout(ctx, target, w)
 	return nil
+}
+
+// reportLayout names the directory that was provisioned, and the layout it is
+// in when that is not wt's own. Setup never moves a worktree — it provisions
+// whatever it is pointed at, where it stands — but saying nothing left the
+// caller of `wt setup` from a Superset workspace with a path they had not
+// chosen and no explanation of who chose it.
+func reportLayout(ctx *Context, target string, w io.Writer) {
+	fmt.Fprintf(w, "  %s\n", target)
+	typ, work, ok := naming.ParseBranch(ctx.Repo.BranchAt(target), ctx.Config.TypeSuffix)
+	if !ok {
+		return
+	}
+	switch naming.Classify(target, ctx.Repo.Parent, ctx.Repo.Name, typ, work, ctx.Config.TypeSuffix) {
+	case naming.Superset:
+		fmt.Fprintln(w, "  Superset's layout — provisioned where Superset put it; setup never moves a worktree")
+	case naming.Foreign:
+		fmt.Fprintf(w, "  not a layout wt recognises — provisioned where it is; `wt migrate %s/%s` moves it\n",
+			typ, work)
+	}
 }
 
 // within reports whether candidate stays inside base. A config entry like

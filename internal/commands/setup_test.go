@@ -95,6 +95,48 @@ func TestSetupSkipBuild(t *testing.T) {
 	}
 }
 
+// Superset runs `wt setup "$SUPERSET_ROOT_PATH"` from the workspace it has
+// already created, one segment off the canonical path. Setup provisions it
+// where it stands — and has to say so, because a silent success there reads as
+// a worktree that ended up somewhere nobody chose.
+func TestSetupProvisionsASupersetWorktreeWhereItStands(t *testing.T) {
+	main := committedRepo(t, minimalConf)
+	ctx, _ := Open(main)
+	superset := filepath.Join(ctx.Repo.Parent, "demo_wt", "demo", "feat_wt", "thing")
+	gitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/thing", superset)
+
+	var buf bytes.Buffer
+	if err := Setup(ctx, superset, SetupOptions{Source: main}, &buf); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	if _, err := os.Stat(superset); err != nil {
+		t.Fatalf("setup moved the worktree: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, superset) {
+		t.Errorf("setup does not say where it provisioned:\n%s", out)
+	}
+	if !strings.Contains(out, "Superset") {
+		t.Errorf("want the layout named, so the path is not a surprise:\n%s", out)
+	}
+}
+
+func TestSetupNamesTheWorktreeItProvisioned(t *testing.T) {
+	main := committedRepo(t, minimalConf)
+	ctx, _ := Open(main)
+	var buf bytes.Buffer
+	path, err := New(ctx, "feat/thing", NewOptions{}, &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), path) {
+		t.Errorf("want the provisioned path reported:\n%s", buf.String())
+	}
+	if strings.Contains(buf.String(), "Superset") {
+		t.Errorf("a canonical worktree needs no layout note:\n%s", buf.String())
+	}
+}
+
 func mustMkdir(t *testing.T, p string) {
 	t.Helper()
 	if err := os.MkdirAll(p, 0o755); err != nil {
