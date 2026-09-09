@@ -12,10 +12,8 @@ import (
 // than be lifted to "2.38.6-SNAPSHOT". Group 1 is the version.
 var semverRE = regexp.MustCompile(`(?:^|[^A-Za-z0-9.-])(\d+\.\d+\.\d+)(?:[^A-Za-z0-9.-]|$)`)
 
-// exactSemverRE matches a bare X.Y.Z and nothing else. Unused until a later
-// task's strategy needs to validate a whole-file bare version.
-//
-//nolint:unused // part of this task's declared interface; consumed by a later task
+// exactSemverRE matches a bare X.Y.Z and nothing else, used to validate
+// info.version, which carries no surrounding punctuation to anchor against.
 var exactSemverRE = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
 
 // findSemver returns the version token in a line, or "".

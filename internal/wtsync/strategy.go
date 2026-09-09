@@ -35,6 +35,11 @@ func FromRule(r Rule, _ string) (Strategy, error) {
 			return nil, fmt.Errorf("list-union: bad line regex %q: %w", r.Line, err)
 		}
 		return ListUnion{Line: re, Delimiter: r.Delimiter}, nil
+	case "openapi":
+		if _, err := RuleNamed(r.Rule); err != nil {
+			return nil, err
+		}
+		return OpenAPI{Rule: r.Rule}, nil
 	}
 	return nil, fmt.Errorf("unknown strategy %q", r.Strategy)
 }
