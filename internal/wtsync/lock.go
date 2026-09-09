@@ -50,7 +50,11 @@ func Acquire(gitDir string, now time.Time) (*Lock, error) {
 	if u, err := user.Current(); err == nil {
 		owner = u.Username
 	}
-	l := &Lock{Path: path, PID: os.Getpid(), Started: now, Owner: owner}
+	// Started is truncated to the second the file records. Release compares
+	// it against what ReadLock parses back, so keeping the caller's
+	// nanoseconds here would make every release a silent no-op and leave
+	// the lock behind for LockExpiry.
+	l := &Lock{Path: path, PID: os.Getpid(), Started: time.Unix(now.Unix(), 0), Owner: owner}
 	tmp := fmt.Sprintf("%s.%d", path, l.PID)
 	body := fmt.Sprintf("pid=%d\nstart=%d\nowner=%s\n", l.PID, now.Unix(), owner)
 	if err := os.WriteFile(tmp, []byte(body), 0o644); err != nil {

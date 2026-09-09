@@ -105,3 +105,19 @@ func TestGitDirOfAWorktreeIsItsOwnDirectoryUnderTheMainGitDir(t *testing.T) {
 		t.Fatalf("git dir %s, want %s", got, want)
 	}
 }
+
+// A real run passes time.Now(), whose nanoseconds the lock file cannot
+// record. Release must still recognise its own lock.
+func TestReleaseRemovesALockAcquiredWithSubSecondPrecision(t *testing.T) {
+	dir := t.TempDir()
+	l, err := Acquire(dir, time.Unix(1_700_000_000, 123_456_789))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Release(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := ReadLock(dir); ok {
+		t.Fatal("lock survived release")
+	}
+}
