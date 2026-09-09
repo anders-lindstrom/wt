@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"errors"
+	"fmt"
+	"io"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -10,7 +14,7 @@ import (
 )
 
 func newSyncCmd() *cobra.Command {
-	return &cobra.Command{
+	sync := &cobra.Command{
 		Use:   "sync",
 		Short: "Show what rebasing each worktree onto trunk would do",
 		Long: "Simulate rebasing every worktree onto origin/<trunk> in the object store\n" +
@@ -52,5 +56,59 @@ func newSyncCmd() *cobra.Command {
 			}
 			return commands.Sync(ctx, cmd.OutOrStdout())
 		},
+	}
+
+	var noFetch, yes bool
+	run := &cobra.Command{
+		Use:   "run <work>...",
+		Short: "Rebase the named worktrees onto trunk with the declared strategies",
+		Long: "Fetch trunk once, then for each named worktree (and the rest of any\n" +
+			"stack it belongs to, parents first): pin the old tip under\n" +
+			"refs/wt-sync/<branch>/<epoch>, rebase with --no-update-refs --no-gpg-sign,\n" +
+			"apply the declared strategy at every stop, and run the deferred steps\n" +
+			"once at the end, committing their output when it changes tracked files.\n" +
+			"A stop no strategy resolves aborts the rebase and restores the worktree;\n" +
+			"a failed deferred step is reported as owed and never undoes the rebase.\n\n" +
+			"Refused, and never touched: a worktree with tracked changes, one a Claude\n" +
+			"session is in (Codex sessions are not detected), class divergent, class\n" +
+			"contested (rebase those by hand; resume is not built yet), and any\n" +
+			"repository whose trunk declares no .wt-sync.yaml. When more than one\n" +
+			"worktree would be rebased you are asked once; --yes skips that. Nothing\n" +
+			"is pushed: the last line per worktree is the push command to run.",
+		Args:              cobra.MinimumNArgs(1),
+		ValidArgsFunction: completeWork,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, err := openContext()
+			if err != nil {
+				return err
+			}
+			opts := commands.RunOptions{NoFetch: noFetch, Yes: yes}
+			if !yes && isTerminal(os.Stdin) {
+				opts.Confirm = confirmRun(cmd.InOrStdin(), cmd.OutOrStdout())
+			}
+			return commands.SyncRun(ctx, args, opts, cmd.OutOrStdout())
+		},
+	}
+	run.Flags().BoolVar(&noFetch, "no-fetch", false, "rebase onto origin/<trunk> as last fetched")
+	run.Flags().BoolVar(&yes, "yes", false, "do not ask before rebasing more than one worktree")
+	sync.AddCommand(run)
+	return sync
+}
+
+// confirmRun asks the one question a multi-worktree run gets, defaulting to
+// no. The branches have already been listed by the time this runs.
+func confirmRun(in io.Reader, out io.Writer) func([]string) (bool, error) {
+	return func(works []string) (bool, error) {
+		_, _ = fmt.Fprintf(out, "rebase these %d worktrees? [y/N] ", len(works))
+		line, err := bufio.NewReader(in).ReadString('\n')
+		if err != nil {
+			// EOF on a terminal is ^D: the user declined rather than answered.
+			return false, nil
+		}
+		switch strings.ToLower(strings.TrimSpace(line)) {
+		case "y", "yes":
+			return true, nil
+		}
+		return false, nil
 	}
 }
