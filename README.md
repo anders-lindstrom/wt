@@ -71,7 +71,7 @@ configuration would work for you and for nobody who clones the repo.
 | `wt remove <work>` | remove a worktree; delete its branch only when merged (`--yes` to skip the prompt) |
 | `wt setup <source-dir>` | provision the current worktree |
 | `wt adopt <path>` | provision a worktree another tool created (`--relocate` to move it) |
-| `wt migrate <type>/<work>` | move a worktree to the canonical path |
+| `wt migrate <worktree> [<type>/<name>]` | move a worktree where it belongs, renaming or retyping it on the way (`--dry-run`); also `wt move` |
 | `wt find <pattern>` | resolve a worktree by fuzzy name, across repositories |
 | `wt doctor` | check config, required tools and worktree health |
 | `wt path` / `wt branch` | resolve one piece of work |
@@ -141,6 +141,32 @@ and `wt list` marks it `s`. Only `!` — a layout nothing owns, such as a
 pre-migration `<repo>-<work>` checkout — is a `wt migrate` candidate, because
 Superset stores the absolute path of every workspace and a move leaves that
 workspace pointing at nothing. `wt migrate` says so before it moves.
+
+## Moving a worktree
+
+`wt migrate` takes a worktree the way `wt list` prints it — the work name, the
+branch or the path — and puts it at the path this layout gives it. A second
+argument changes the type, the name, or both, and the branch is renamed to
+match, because below `<repo>_wt/` the path *is* the branch:
+
+```
+wt migrate webkey                                  # just fit it to the layout
+wt migrate ../server-controller_stats              # by path
+wt migrate fix/idiotthings fix/local-gecko         # rename as it moves
+wt migrate stats chore/stats                       # keep the name, change the type
+```
+
+With no second argument the branch decides: one already in the convention
+keeps its name, `fix/idiotthings` is missing only the type suffix, and a bare
+`axis_acc` is a name under the repository's default type. A branch that says
+neither is asked about rather than guessed at.
+
+It prints the plan first — where it goes, what the branch becomes, whether the
+checkout is dirty — and `--dry-run` stops there. Uncommitted work is no reason
+to refuse: the move is git's own, so it travels. A branch that is already
+checked out somewhere, a worktree already at the destination or an agent
+session living in the directory are reasons, and it says which (`--force`
+moves past the session).
 
 ## What a repository keeps
 

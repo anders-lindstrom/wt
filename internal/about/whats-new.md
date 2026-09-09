@@ -4,6 +4,15 @@ Newest first. `wt about` prints the top section, so keep each entry to a few
 lines a human would want read out to them; the full story is in git history and
 in `docs/superpowers/plans/`.
 
+## 2026-09-09 — migrate takes any worktree, and can rename it
+
+- `wt migrate <worktree> [<type>/<name>]` takes a work name, a branch or a path
+  and puts that worktree where the layout says it belongs. Also `wt move`.
+- A destination changes the type, the name or both, renaming the branch to
+  match; with none, the branch decides.
+- It prints the plan first and says what is in the way when it refuses. A dirty
+  checkout is not in the way: git's own move carries the work.
+
 ## 2026-09-09 — Superset's layout, and types read from a name
 
 - Superset's `<repo>_wt/<repo>/<type>_wt/<work>` is now a layout wt endorses:
