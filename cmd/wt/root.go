@@ -35,6 +35,7 @@ func newRootCmd() *cobra.Command {
 		newBranchStripCmd(),
 		newListCmd(),
 		newStatusCmd(),
+		newSyncCmd(),
 		newSetupCmd(),
 		newNewCmd(),
 		newRemoveCmd(),

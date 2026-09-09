@@ -193,7 +193,10 @@ func gitEnv(dir string, env []string, stdin io.Reader, args ...string) (string, 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
-		return "", errors.New(strings.TrimSpace(stderr.String()))
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return "", fmt.Errorf("%s (%s)", msg, err)
+		}
+		return "", err
 	}
 	return strings.TrimRight(stdout.String(), "\n"), nil
 }

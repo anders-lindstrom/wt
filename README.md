@@ -64,6 +64,7 @@ configuration would work for you and for nobody who clones the repo.
 | `wt new <type>/<work>` | create a branch and worktree, then provision it |
 | `wt list` | every worktree, in any layout; `!` marks one off the canonical path |
 | `wt status` | each worktree's branch and whether it is clean |
+| `wt sync` | what rebasing each worktree onto trunk would do, simulated; changes nothing |
 | `wt remove <work>` | remove a worktree; delete its branch only when merged (`--yes` to skip the prompt) |
 | `wt setup <source-dir>` | provision the current worktree |
 | `wt adopt <path>` | provision a worktree another tool created (`--relocate` to move it) |
