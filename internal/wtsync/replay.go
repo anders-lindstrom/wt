@@ -8,6 +8,10 @@ import (
 	"strings"
 )
 
+// messagesPath stands in for a conflict merge-tree reports only in its
+// messages, with no three blobs of its own to show.
+const messagesPath = "(see messages)"
+
 // Stop is the first commit at which a rebase would stop, with the three
 // blobs of every file it conflicts on.
 type Stop struct {
@@ -96,7 +100,7 @@ func Endpoint(mainRoot, onto, branch string) ([]Conflict, error) {
 		return nil, nil
 	}
 	if len(conflicts) == 0 && messages != "" {
-		conflicts = []Conflict{{Path: "(see messages)", Incomplete: messages}}
+		conflicts = []Conflict{{Path: messagesPath, Incomplete: messages}}
 	}
 	return conflicts, nil
 }

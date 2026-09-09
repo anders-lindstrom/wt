@@ -150,10 +150,8 @@ func escapesRoot(p string) bool {
 // RuleFor returns the first rule claiming path.
 func (c *Config) RuleFor(path string) (Rule, bool) {
 	for _, r := range c.Conflicts {
-		for _, p := range r.Paths {
-			if MatchGlob(p, path) {
-				return r, true
-			}
+		if matchesAny(r.Paths, path) {
+			return r, true
 		}
 	}
 	return Rule{}, false
@@ -164,6 +162,16 @@ func (c *Config) RuleFor(path string) (Rule, bool) {
 // matched, never expanded against the disk.
 func MatchGlob(pattern, path string) bool {
 	return matchSegments(strings.Split(pattern, "/"), strings.Split(path, "/"))
+}
+
+// matchesAny reports whether path matches any of patterns.
+func matchesAny(patterns []string, path string) bool {
+	for _, p := range patterns {
+		if MatchGlob(p, path) {
+			return true
+		}
+	}
+	return false
 }
 
 func matchSegments(pat, segs []string) bool {
