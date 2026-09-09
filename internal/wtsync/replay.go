@@ -1,9 +1,7 @@
 package wtsync
 
 import (
-	"errors"
 	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
 )
@@ -136,21 +134,16 @@ func mergeTree(mainRoot, mergeBase, onto, commit string) (tree string, clean boo
 		args = append(args, "--merge-base="+mergeBase)
 	}
 	args = append(args, "--", onto, commit)
-	cmd := exec.Command("git", args...)
-	cmd.Dir = mainRoot
-	out, runErr := cmd.Output()
-	if runErr != nil {
-		var exit *exec.ExitError
-		if !errors.As(runErr, &exit) || exit.ExitCode() != 1 {
-			return "", false, nil, "", fmt.Errorf("git merge-tree: %v: %s", runErr, stderrOf(runErr))
-		}
+	out, code, err := gitEnvAllow(mainRoot, nil, nil, 1, args...)
+	if err != nil {
+		return "", false, nil, "", fmt.Errorf("git merge-tree: %w", err)
 	}
 	// With -z the output is NUL-separated: the tree, then for a conflict one
 	// record per index entry ("<mode> <oid> <stage>\t<path>"), then an empty
 	// record ending the section, then the informational messages.
-	records := strings.Split(string(out), "\x00")
+	records := strings.Split(out, "\x00")
 	tree = strings.TrimSpace(records[0])
-	if runErr == nil {
+	if code == 0 {
 		return tree, true, nil, "", nil
 	}
 	stages := map[string]*Conflict{}
@@ -244,21 +237,13 @@ func parseMessages(records []string) string {
 	return strings.Join(msgs, "\n")
 }
 
-// catFileRaw reads a blob without trimming.
+// catFileRaw reads a blob. Trailing newlines are preserved: gitEnv trims
+// them, so this goes through the same deadline and process group by asking
+// for the raw bytes with gitEnvRaw instead.
 func catFileRaw(mainRoot, oid string) ([]byte, error) {
-	cmd := exec.Command("git", "cat-file", "blob", oid)
-	cmd.Dir = mainRoot
-	out, err := cmd.Output()
+	out, err := gitEnvRaw(mainRoot, "cat-file", "blob", oid)
 	if err != nil {
-		return nil, fmt.Errorf("git cat-file blob %s: %v: %s", oid, err, stderrOf(err))
+		return nil, fmt.Errorf("git cat-file blob %s: %w", oid, err)
 	}
 	return out, nil
-}
-
-func stderrOf(err error) string {
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
-		return strings.TrimSpace(string(exit.Stderr))
-	}
-	return ""
 }

@@ -275,3 +275,16 @@ func TestKillRunningTakesDownARegisteredProcessGroup(t *testing.T) {
 		t.Fatal("the command outlived the kill")
 	}
 }
+
+func TestGitEnvAllowReturnsTheAllowedExitStatus(t *testing.T) {
+	dir := repoWith(t, map[string]string{"a.txt": "a\n"}, nil, nil)
+	// merge-base --is-ancestor exits 1 for "no", which is an answer, not a
+	// failure. Anything else is still an error.
+	out, code, err := gitEnvAllow(dir, nil, nil, 1, "merge-base", "--is-ancestor", "HEAD", "HEAD")
+	if err != nil || code != 0 || out != "" {
+		t.Fatalf("same commit: %q, %d, %v; want 0", out, code, err)
+	}
+	if _, _, err := gitEnvAllow(dir, nil, nil, 1, "cat-file", "-p", "notacommit"); err == nil {
+		t.Fatal("an unexpected exit status must still be an error")
+	}
+}

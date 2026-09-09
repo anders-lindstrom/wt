@@ -50,6 +50,16 @@ func ListAgents() ([]Agent, error) {
 	return ParseAgents(out)
 }
 
+// stderrOf extracts a command's captured stderr from its exec error, empty
+// when err carries none.
+func stderrOf(err error) string {
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		return strings.TrimSpace(string(exit.Stderr))
+	}
+	return ""
+}
+
 // AgentAt returns a session whose working directory is the worktree at path
 // or a directory inside it, preferring the shallowest match. The returned
 // pointer aliases the caller's slice.

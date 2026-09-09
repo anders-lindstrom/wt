@@ -342,13 +342,15 @@ func hashObject(root string, data []byte) (string, error) {
 // a run that waits on it holds its locks the whole time.
 const GitTimeout = 10 * time.Minute
 
-// gitEnv runs git in dir with extra environment and optional stdin, returning
-// trimmed stdout. internal/git.Run has no place for either.
+// gitEnvAllow runs git in dir with extra environment and optional stdin,
+// returning trimmed stdout and the exit status. A status equal to allow is
+// an answer, not a failure: merge-base --is-ancestor and merge-tree both
+// use one. Every other non-zero status is an error. allow < 0 allows none.
 //
 // GIT_TERMINAL_PROMPT=0 goes in first so a repository wanting credentials
 // fails rather than blocking on a prompt no unattended run can answer; the
 // deadline and the process group come from runScript.
-func gitEnv(dir string, env []string, stdin io.Reader, args ...string) (string, error) {
+func gitEnvAllow(dir string, env []string, stdin io.Reader, allow int, args ...string) (string, int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), GitTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", args...)
@@ -360,14 +362,49 @@ func gitEnv(dir string, env []string, stdin io.Reader, args ...string) (string, 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := runScript(cmd)
+	out := strings.TrimRight(stdout.String(), "\n")
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return "", fmt.Errorf("git %s: timed out after %s", strings.Join(args, " "), GitTimeout)
+		return "", 0, fmt.Errorf("git %s: timed out after %s", strings.Join(args, " "), GitTimeout)
+	}
+	if err != nil {
+		var exit *exec.ExitError
+		if allow >= 0 && errors.As(err, &exit) && exit.ExitCode() == allow {
+			return out, allow, nil
+		}
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return "", 0, fmt.Errorf("%s (%w)", msg, err)
+		}
+		return "", 0, err
+	}
+	return out, 0, nil
+}
+
+// gitEnv runs git and treats every non-zero status as a failure.
+func gitEnv(dir string, env []string, stdin io.Reader, args ...string) (string, error) {
+	out, _, err := gitEnvAllow(dir, env, stdin, -1, args...)
+	return out, err
+}
+
+// gitEnvRaw is gitEnvAllow without trimming: a blob's trailing newline is
+// content, and gitEnv/gitEnvAllow's trailing-newline trim would corrupt it.
+// It allows nothing.
+func gitEnvRaw(dir string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), GitTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = dir
+	cmd.Env = withEnv("GIT_TERMINAL_PROMPT=0")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := runScript(cmd)
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return nil, fmt.Errorf("git %s: timed out after %s", strings.Join(args, " "), GitTimeout)
 	}
 	if err != nil {
 		if msg := strings.TrimSpace(stderr.String()); msg != "" {
-			return "", fmt.Errorf("%s (%w)", msg, err)
+			return nil, fmt.Errorf("%s (%w)", msg, err)
 		}
-		return "", err
+		return nil, err
 	}
-	return strings.TrimRight(stdout.String(), "\n"), nil
+	return stdout.Bytes(), nil
 }
