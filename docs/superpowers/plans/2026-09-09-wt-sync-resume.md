@@ -715,37 +715,37 @@ func TestSimulateWithoutAConfigStopsAtTheFirst(t *testing.T) {
 	}
 }
 
-// The chained content is what the next commit sees. Trunk is 2.0.0, so the
-// first stop resolves max-plus-patch(branch 1.1.0, trunk 2.0.0) to 2.0.1;
-// the second branch commit conflicts on the same file, and its resolution
-// must be computed against 2.0.1 — proving the resolved blob, not trunk's,
-// was carried forward. Against trunk's 2.0.0 the answer would be 2.0.1
-// again, so the assertion is on 2.0.2.
+// The resolved bytes must be what the NEXT commit replays against. Trunk
+// is 2.0.0, so stop 1 resolves max-plus-patch(branch 1.1.0, trunk 2.0.0) to
+// 2.0.1. The second branch commit touches v.txt again AND a file nothing
+// claims, so the replay stops there and keeps that stop's blobs — and the
+// trunk side of its v.txt conflict is the proof: 2.0.1 means the resolved
+// blob was carried forward, 2.0.0 means it was not. (Unchained, the second
+// resolution would come out 2.0.1 instead of 2.0.2, so asserting on the
+// blob is both simpler and stricter than asserting on the version.)
 func TestSimulateChainsTheResolvedContent(t *testing.T) {
 	dir := linearRepo(t,
-		[]map[string]string{{"v.txt": "2.0.0\n"}},
-		[]map[string]string{{"v.txt": "1.1.0\n"}, {"v.txt": "1.1.1\n"}},
+		[]map[string]string{{"v.txt": "2.0.0\n", "a.txt": "trunk\n"}},
+		[]map[string]string{{"v.txt": "1.1.0\n"}, {"v.txt": "1.1.1\n", "a.txt": "branch\n"}},
 	)
 	r, err := SimulateRebase(dir, "main", "feature", ownedLineConfig(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Stop != nil {
-		t.Fatalf("Stop = %+v, want nil", r.Stop)
+	if r.Stop == nil || r.Stop.Index != 2 {
+		t.Fatalf("Stop = %+v, want the second commit", r.Stop)
 	}
-	if len(r.Stops) != 2 {
-		t.Fatalf("Stops = %d, want 2", len(r.Stops))
+	var got string
+	for _, c := range r.Stop.Conflicts {
+		if c.Path == "v.txt" {
+			got = string(c.Trunk)
+		}
 	}
-	// The second stop's own resolution is the proof: read it back from the
-	// simulated chain by resolving the same conflict the replay did.
-	// (Assert on the outcome the replay recorded, and additionally that the
-	// version the second stop resolved to is 2.0.2 — write the assertion
-	// against whatever Resolution the strategy produced, exposed through
-	// r.Stops[1].Files[0].)
+	if got != "2.0.1\n" {
+		t.Fatalf("v.txt trunk side at stop 2 = %q, want %q: the resolved blob was not chained", got, "2.0.1\n")
+	}
 }
 ```
-
-Write that last assertion concretely: the simplest honest form is to have `Stop` also record `Values map[string]string` — **do not add a field for a test**. Instead assert it end to end: run the same simulation with a config whose `rule` is `keep-branch`, where the chained value is unambiguous, or assert on the final simulated tree. Pick one and write it; the requirement is that the test fails if the resolved bytes are not chained.
 
 Add to `internal/wtsync/triage_test.go`:
 
