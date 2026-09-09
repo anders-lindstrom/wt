@@ -286,23 +286,28 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 		fmt.Fprintln(w, line)
 		// w, not nil: RunDeferred announces each step as it starts, so a
 		// long one is not silence until printDeferred reports the result.
-		results, err := wtsync.RunDeferred(p.wt.Path, cfg.Defer, res.OldTip, res.NewTip, w)
-		if err != nil {
-			return err
-		}
-		for _, d := range results {
-			printDeferred(w, d)
-			if d.Err != nil {
-				failures = append(failures, p.work+" (owed: "+d.Step.Run+")")
+		results, derr := wtsync.RunDeferred(p.wt.Path, cfg.Defer, res.OldTip, res.NewTip, w)
+		if derr == nil {
+			for _, d := range results {
+				printDeferred(w, d)
+				if d.Err != nil {
+					failures = append(failures, p.work+" (owed: "+d.Step.Run+")")
+				}
+			}
+			// The run is done for this branch: pin where it left it, so
+			// undo can tell its own work from commits made afterwards.
+			if p.head, derr = git.Run(p.wt.Path, "rev-parse", "HEAD"); derr == nil {
+				derr = wtsync.WriteResult(ctx.Repo.MainRoot, b, p.head, epoch)
 			}
 		}
-		if p.head, err = git.Run(p.wt.Path, "rev-parse", "HEAD"); err != nil {
-			return err
-		}
-		// The run is done for this branch: pin where it left it, so undo can
-		// tell its own work from commits made afterwards.
-		if err := wtsync.WriteResult(ctx.Repo.MainRoot, b, p.head, epoch); err != nil {
-			return err
+		// The rebase itself stands; only this branch and what sits on it
+		// lose their footing, so the rest of the run carries on.
+		if derr != nil {
+			fmt.Fprintf(w, "  failed: %v\n", derr)
+			failures = append(failures, p.work+" (failed)")
+			poisonAbove(b, p.work+" failed")
+			release(b)
+			continue
 		}
 		release(b)
 		fmt.Fprintf(w, "  push: git -C %s push --force-with-lease\n", p.wt.Path)

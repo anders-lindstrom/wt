@@ -135,3 +135,48 @@ func TestRunDeferredAStepThatDirtiesTrackedFilesWithoutACommitIsReported(t *test
 		t.Fatalf("rs %+v err %v", rs, err)
 	}
 }
+
+func TestRunDeferredACommitAHookRefusesIsOwedAndLeavesTheOutputBehind(t *testing.T) {
+	wt, old, _ := deferRepo(t)
+	// gen/out.txt must be tracked for `add -u` to pick it up.
+	if err := os.WriteFile(filepath.Join(wt, "gen", "out.txt"), []byte("stale\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, wt, "add", "-A")
+	gitIn(t, wt, "commit", "-q", "-m", "track out")
+	cur := gitIn(t, wt, "rev-parse", "HEAD")
+	// A pre-commit hook that refuses everything, pinned so no ambient
+	// core.hooksPath decides this test either way.
+	hooks := t.TempDir()
+	if err := os.WriteFile(filepath.Join(hooks, "pre-commit"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, wt, "config", "core.hooksPath", hooks)
+
+	steps := []Deferred{
+		{Run: "cp gen/in.txt gen/out.txt", Paths: []string{"gen/**"}, Commit: "chore: regenerate"},
+		{Run: "echo later", Commit: "chore: later"},
+	}
+	rs, err := RunDeferred(wt, steps, old, cur, nil)
+	if err != nil {
+		t.Fatalf("a refused commit must not be a returned error: %v", err)
+	}
+	if len(rs) != 2 {
+		t.Fatalf("results %+v", rs)
+	}
+	if !rs[0].Ran || rs[0].Err == nil || !strings.Contains(rs[0].Err.Error(), "commit failed") {
+		t.Fatalf("first step %+v", rs[0])
+	}
+	if rs[1].Ran {
+		t.Fatalf("a later step ran after a failure: %+v", rs[1])
+	}
+	if got := gitIn(t, wt, "rev-parse", "HEAD"); got != cur {
+		t.Fatal("HEAD moved despite the refused commit")
+	}
+	if err := gitCmd(wt, "diff", "--cached", "--quiet").Run(); err != nil {
+		t.Fatalf("index not left clean: %v", err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(wt, "gen", "out.txt")); string(got) != "trunk\n" {
+		t.Fatalf("the step's output is not in the worktree: %q", got)
+	}
+}
