@@ -148,9 +148,16 @@ func Rebase(mainRoot string, cfg *Config, req Request, log io.Writer) (Result, e
 		_, _ = git("rebase", "--abort")
 		if busy, _ := RebaseInProgress(req.Path); busy {
 			_, _ = git("rebase", "--quit")
-			// --quit leaves HEAD detached where the rebase stopped; the
-			// verification below wants the branch checked out again, and
-			// the reset then moves the branch rather than only HEAD.
+			// --quit drops the sequencer's state and nothing else: HEAD is
+			// left detached where the rebase stopped, the conflict is still
+			// in the index, and the branch ref never moved. So reset first,
+			// unconditionally, while HEAD is still detached (the guarded
+			// reset below compares HEAD with the branch's own tip, which
+			// re-attaching first would make equal and skip), and only then
+			// put HEAD back on the branch.
+			if _, err := git("reset", "--hard", res.Safety.Ref); err != nil {
+				return fmt.Errorf("not restored: reset failed: %w; the old tip is %s", err, res.Safety.Ref)
+			}
 			_, _ = git("symbolic-ref", "HEAD", "refs/heads/"+req.Branch)
 		}
 		if head, _ := git("rev-parse", "HEAD"); head != old {

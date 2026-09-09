@@ -147,6 +147,30 @@ func ResultTip(mainRoot, branch string, epoch int64) (string, bool, error) {
 	return out, true, nil
 }
 
+// Pin is one branch's pair of refs for a run: where the branch was before
+// it (Safety) and where the run left it (Result).
+type Pin struct{ Branch, Safety, Result string }
+
+// WriteRun writes every pin's safety and result ref for one epoch in a
+// single update-ref transaction, so a failure part way through cannot leave
+// a stray safety ref pinning a tip nothing will ever restore. create
+// refuses a ref that already exists, the same guard WriteSafety makes on
+// its own.
+func WriteRun(mainRoot string, epoch int64, pins []Pin) error {
+	if len(pins) == 0 {
+		return nil
+	}
+	var b strings.Builder
+	for _, p := range pins {
+		fmt.Fprintf(&b, "create %s %s\n", SafetyRef(p.Branch, epoch), p.Safety)
+		fmt.Fprintf(&b, "create %s %s\n", resultRef(p.Branch, epoch), p.Result)
+	}
+	if _, err := gitEnv(mainRoot, nil, strings.NewReader(b.String()), "update-ref", "--stdin"); err != nil {
+		return fmt.Errorf("safety refs for run %d: %w", epoch, err)
+	}
+	return nil
+}
+
 // DeleteSafety drops one safety ref, and the result ref of the same run when
 // there is one: they pin the two ends of history the same run superseded.
 func DeleteSafety(mainRoot string, s Safety) error {

@@ -265,3 +265,60 @@ func TestPreflightOrdersItsReasons(t *testing.T) {
 		}
 	}
 }
+
+// abortProofRepo is a repository whose declared strategy breaks the rebase
+// state before refusing: with rebase-merge/orig-head gone `git rebase
+// --abort` fails, which is the only way to reach restore's --quit fallback.
+func abortProofRepo(t *testing.T) (dir string, wt string, cfg *Config) {
+	t.Helper()
+	dir = repoWith(t, map[string]string{"f.txt": "base\n"},
+		[]map[string]string{{"f.txt": "trunk\n"}},
+		[]map[string]string{{"f.txt": "branch\n"}})
+	script := "#!/bin/sh\n" +
+		"rm -f \"$(git rev-parse --absolute-git-dir)/rebase-merge/orig-head\"\n" +
+		"echo sabotage >&2\nexit 2\n"
+	if err := os.MkdirAll(filepath.Join(dir, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bin", "refuse"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	yaml := "conflicts:\n  - paths: [f.txt]\n    strategy: script\n    run: bin/refuse\n"
+	if err := os.WriteFile(filepath.Join(dir, ".wt-sync.yaml"), []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, dir, "add", "-A")
+	gitIn(t, dir, "commit", "-q", "-m", "declare")
+	gitIn(t, dir, "remote", "add", "origin", dir)
+	gitIn(t, dir, "fetch", "-q", "origin")
+	gitIn(t, dir, "config", "core.hooksPath", filepath.Join(dir, ".git", "hooks"))
+	var err error
+	if cfg, err = LoadFromTrunk(dir, "main"); err != nil {
+		t.Fatal(err)
+	}
+	return dir, featureWorktree(t, dir).Path, cfg
+}
+
+func TestRebaseRestoresThroughQuitWhenAbortCannotWork(t *testing.T) {
+	dir, wt, cfg := abortProofRepo(t)
+	old := gitIn(t, wt, "rev-parse", "HEAD")
+	res, err := Rebase(dir, cfg, trunkReq(wt, 11), nil)
+	if err != nil {
+		t.Fatalf("restore failed: %v", err)
+	}
+	if !res.Restored {
+		t.Fatalf("expected a restore, got %+v", res)
+	}
+	if busy, _ := RebaseInProgress(wt); busy {
+		t.Fatal("a rebase is still in progress")
+	}
+	if ref := gitIn(t, wt, "symbolic-ref", "--quiet", "HEAD"); ref != "refs/heads/feature" {
+		t.Fatalf("HEAD is %q, not the branch", ref)
+	}
+	if got := gitIn(t, wt, "rev-parse", "HEAD"); got != old {
+		t.Fatalf("HEAD is %s, want %s", got, old)
+	}
+	if out := gitIn(t, wt, "status", "--porcelain", "--untracked-files=no"); out != "" {
+		t.Fatalf("the unmerged index survived: %q", out)
+	}
+}

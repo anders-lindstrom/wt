@@ -81,3 +81,36 @@ func TestRunNamesTheCommandAndExitCodeWhenGitSaysNothing(t *testing.T) {
 		t.Fatalf("err %q: an empty error reads as success", err)
 	}
 }
+
+func TestKillRunningTakesDownARunningGit(t *testing.T) {
+	dir := newRepo(t)
+	done := make(chan error, 1)
+	go func() {
+		_, err := RunTimeout(dir, time.Minute, "-c", "alias.slow=!sleep 30", "slow")
+		done <- err
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		groups.Lock()
+		n := len(groups.pids)
+		groups.Unlock()
+		if n > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("RunTimeout registered no process group")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if n := KillRunning(); n < 1 {
+		t.Fatal("KillRunning signalled nothing")
+	}
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("a killed git must report an error")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the git outlived the kill")
+	}
+}

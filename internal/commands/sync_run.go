@@ -294,6 +294,9 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 			line += fmt.Sprintf(", %d signature%s dropped", res.SignaturesDropped, plural(res.SignaturesDropped))
 		}
 		fmt.Fprintln(w, line)
+		// The rebase is done; from here an interrupt cannot abort it, only
+		// leave the deferred steps and the result ref undone.
+		tracker.set(&rebaseInFlight{work: p.work, path: p.wt.Path, rebased: true})
 		// w, not nil: RunDeferred announces each step as it starts, so a
 		// long one is not silence until printDeferred reports the result.
 		results, derr := wtsync.RunDeferred(p.wt.Path, cfg.Defer, res.OldTip, res.NewTip, w)
@@ -310,6 +313,7 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 				derr = wtsync.WriteResult(ctx.Repo.MainRoot, b, p.head, epoch)
 			}
 		}
+		tracker.set(nil)
 		// The rebase itself stands; only this branch and what sits on it
 		// lose their footing, so the rest of the run carries on.
 		if derr != nil {

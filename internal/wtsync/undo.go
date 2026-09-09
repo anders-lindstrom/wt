@@ -89,6 +89,11 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 	// Where each branch is now, read once under the locks and reused by the
 	// apply loop below: nothing may move between the check and the reset.
 	tips := map[string]string{}
+	// What a forced undo will pin. Collected here and written only once
+	// every branch has passed: a refusal raised by a later branch of the
+	// same run must not leave a stray safety ref behind, which would make
+	// every later plain undo report "already at" and strand the run.
+	var pins []Pin
 	forceEpoch := now.UnixNano()
 	for _, s := range run {
 		for _, other := range all {
@@ -120,9 +125,14 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 		if !force {
 			return nil, fmt.Errorf("%s has moved since that run (%s commits ahead of it); undo would discard them", s.Branch, aheadCount(mainRoot, want, tip))
 		}
-		if _, err := WriteSafety(mainRoot, s.Branch, tip, forceEpoch); err != nil {
-			return nil, err
-		}
+		// The forced undo is itself a run: it moves the branch from tip to
+		// s.Tip, so those are its safety and its result. Pinning the result
+		// too is what lets a plain undo of the forced undo see the branch
+		// where it was left and put the discarded commits back.
+		pins = append(pins, Pin{Branch: s.Branch, Safety: tip, Result: s.Tip})
+	}
+	if err := WriteRun(mainRoot, forceEpoch, pins); err != nil {
+		return nil, err
 	}
 	var out []Restored
 	for _, s := range run {

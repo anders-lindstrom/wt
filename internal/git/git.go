@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -26,6 +27,29 @@ const GitTimeout = 10 * time.Minute
 // has killed the process group, for the rare child that detaches from the
 // group before the kill reaches it and keeps the pipe open.
 const waitDelay = 2 * time.Second
+
+// groups is the process group of every git RunTimeout is waiting on. A
+// signal handler runs on its own goroutine and has no other way to reach
+// them; without this a Ctrl-C during a fetch orphans it.
+var groups = struct {
+	sync.Mutex
+	pids map[int]bool
+}{pids: map[int]bool{}}
+
+// KillRunning sends SIGKILL to the process group of every git still running,
+// and reports how many it signalled. Best effort: a group that has already
+// exited is not an error.
+func KillRunning() int {
+	groups.Lock()
+	defer groups.Unlock()
+	n := 0
+	for pid := range groups.pids {
+		if err := syscall.Kill(-pid, syscall.SIGKILL); err == nil {
+			n++
+		}
+	}
+	return n
+}
 
 // Run executes git in dir under GitTimeout and returns trimmed stdout.
 func Run(dir string, args ...string) (string, error) {
@@ -50,7 +74,7 @@ func RunTimeout(dir string, d time.Duration, args ...string) (string, error) {
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	err := cmd.Run()
+	err := run(cmd)
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return "", fmt.Errorf("git %s: timed out after %s", strings.Join(args, " "), d)
 	}
@@ -65,11 +89,33 @@ func RunTimeout(dir string, d time.Duration, args ...string) (string, error) {
 		// error reads as success wherever it is printed.
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
-			return "", fmt.Errorf("git %s: exit %d", strings.Join(args, " "), exit.ExitCode())
+			// A process killed by a signal has no exit code (-1); say what
+			// actually happened to it instead of printing that.
+			if code := exit.ExitCode(); code >= 0 {
+				return "", fmt.Errorf("git %s: exit %d", strings.Join(args, " "), code)
+			}
+			return "", fmt.Errorf("git %s: %s", strings.Join(args, " "), exit.ProcessState)
 		}
 		return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
 	}
 	return strings.TrimRight(stdout.String(), "\n"), nil
+}
+
+// run starts cmd, registers its process group while it runs, and waits.
+func run(cmd *exec.Cmd) error {
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	pid := cmd.Process.Pid
+	groups.Lock()
+	groups.pids[pid] = true
+	groups.Unlock()
+	defer func() {
+		groups.Lock()
+		delete(groups.pids, pid)
+		groups.Unlock()
+	}()
+	return cmd.Wait()
 }
 
 // Lines runs git and splits stdout into lines, dropping a trailing blank.

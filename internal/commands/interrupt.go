@@ -8,6 +8,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -17,7 +18,13 @@ const interruptStatus = 130
 // rebaseInFlight is the worktree a run is in the middle of rebasing: what an
 // interrupt has to tell the user about, since killing git there leaves the
 // rebase stopped rather than finished.
-type rebaseInFlight struct{ work, path, safety string }
+type rebaseInFlight struct {
+	work, path, safety string
+	// rebased is set once the rebase itself has finished and the deferred
+	// steps are running: the worktree is not stopped mid-rebase any more,
+	// it is rebased, and putting it back is undo's job rather than git's.
+	rebased bool
+}
 
 // rebaseTracker carries that across goroutines: the command sets it, the
 // signal handler reads it. A nil tracker is one that never rebases, which is
@@ -51,19 +58,25 @@ func (t *rebaseTracker) get() *rebaseInFlight {
 // how to put back a worktree left mid-rebase. Everything is best effort; the
 // process exits straight after.
 func onInterrupt(w io.Writer, locks []*wtsync.Lock, at *rebaseInFlight) {
-	// The group dies first: nothing may still be writing to a worktree
+	// The groups die first: nothing may still be writing to a worktree
 	// whose lock we are about to drop.
 	wtsync.KillRunning()
+	git.KillRunning()
 	for _, l := range locks {
 		if l != nil {
 			_ = l.Release()
 		}
 	}
-	if at != nil {
+	switch {
+	case at == nil:
+		fmt.Fprintln(w, "\ninterrupted")
+	case at.rebased:
+		// The run never got to pin where it left the branch, so a plain
+		// undo would refuse it as moved since the run.
+		fmt.Fprintf(w, "\ninterrupted after rebasing %s: the rebase stands; wt sync undo --force %s puts it back\n", at.work, at.work)
+	default:
 		fmt.Fprintf(w, "\ninterrupted while rebasing %s: git -C %s rebase --abort restores it; the old tip is %s\n", at.work, at.path, at.safety)
-		return
 	}
-	fmt.Fprintln(w, "\ninterrupted")
 }
 
 // watchSignals handles Ctrl-C and SIGTERM for the length of one command,

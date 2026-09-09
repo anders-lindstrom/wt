@@ -224,3 +224,72 @@ func TestUndoRefusesABranchWithALaterRun(t *testing.T) {
 		t.Fatalf("err %v", err)
 	}
 }
+
+func TestUndoForcedLeavesNoSafetyRefWhenALaterBranchRefuses(t *testing.T) {
+	// One run pinned two branches; the second has a later run of its own, so
+	// the whole undo is refused. The first branch had moved and would have
+	// been force-pinned: that pin must not survive the refusal, or every
+	// later plain undo reports "already at" and the run is stranded.
+	dir, wt, cfg := runRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"b.txt": "b2\n"}})
+	if _, err := Rebase(dir, cfg, trunkReq(wt, 5), nil); err != nil {
+		t.Fatal(err)
+	}
+	completed(t, dir, wt, "feature", 5)
+	gitIn(t, wt, "commit", "-q", "--allow-empty", "-m", "after the run")
+
+	gitIn(t, dir, "branch", "second", "main")
+	if _, err := WriteSafety(dir, "second", gitIn(t, dir, "rev-parse", "second"), 5); err != nil {
+		t.Fatal(err)
+	}
+	completed(t, dir, dir, "second", 5)
+	// second's later run, which is what refuses the undo.
+	if _, err := WriteSafety(dir, "second", gitIn(t, dir, "rev-parse", "second"), 8); err != nil {
+		t.Fatal(err)
+	}
+
+	before, err := ListSafety(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = Undo(dir, []repo.Worktree{{Path: wt, Branch: "feature"}}, nil, "feature", time.Unix(0, 4321), true)
+	if err == nil || !strings.Contains(err.Error(), "later run") {
+		t.Fatalf("err %v", err)
+	}
+	after, err := ListSafety(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after) != len(before) {
+		t.Fatalf("the refusal left %d safety refs, was %d", len(after), len(before))
+	}
+	if out := gitIn(t, dir, "for-each-ref", "--format=%(refname)", SafetyRef("feature", 4321)); out != "" {
+		t.Fatalf("a forced pin survived the refusal: %s", out)
+	}
+}
+
+func TestAForcedUndoIsItselfUndoneByAPlainUndo(t *testing.T) {
+	dir, wt, cfg := runRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"b.txt": "b2\n"}})
+	old := gitIn(t, wt, "rev-parse", "HEAD")
+	if _, err := Rebase(dir, cfg, trunkReq(wt, 5), nil); err != nil {
+		t.Fatal(err)
+	}
+	completed(t, dir, wt, "feature", 5)
+	gitIn(t, wt, "commit", "-q", "--allow-empty", "-m", "after the run")
+	discarded := gitIn(t, wt, "rev-parse", "HEAD")
+
+	wts := []repo.Worktree{{Path: wt, Branch: "feature"}}
+	if _, err := Undo(dir, wts, nil, "feature", time.Unix(0, 4321), true); err != nil {
+		t.Fatal(err)
+	}
+	if got := gitIn(t, wt, "rev-parse", "HEAD"); got != old {
+		t.Fatalf("forced undo left HEAD at %s, want %s", got, old)
+	}
+	// The plain undo puts back what the forced one discarded.
+	got, err := Undo(dir, wts, nil, "feature", time.Now(), false)
+	if err != nil {
+		t.Fatalf("a forced undo must be undoable without --force: %v", err)
+	}
+	if len(got) != 1 || gitIn(t, wt, "rev-parse", "HEAD") != discarded {
+		t.Fatalf("got %+v; HEAD %s want %s", got, gitIn(t, wt, "rev-parse", "HEAD"), discarded)
+	}
+}
