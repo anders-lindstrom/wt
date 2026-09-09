@@ -82,13 +82,20 @@ func Doctor(ctx *Context, w io.Writer) (int, error) {
 			fmt.Fprintf(w, "  - %s is on %q, not managed by wt\n", wt.Path, wt.Branch)
 			continue
 		}
-		want := naming.WorktreeDir(ctx.Repo.Parent, ctx.Repo.Name, typ, work, ctx.Config.TypeSuffix)
-		if wt.Path != want {
+		switch naming.Classify(wt.Path, ctx.Repo.Parent, ctx.Repo.Name, typ, work, ctx.Config.TypeSuffix) {
+		case naming.Canonical:
+			fmt.Fprintf(w, "  ✓ %s\n", wt.Path)
+		case naming.Superset:
+			// Not a problem: Superset puts every workspace here and stores the
+			// absolute path, so the migrate this used to prescribe would have
+			// broken the workspace it was aimed at.
+			fmt.Fprintf(w, "  ✓ %s (Superset's layout)\n", wt.Path)
+		default:
 			report("%s is not at its canonical path (%s); run: wt migrate %s/%s",
-				wt.Path, want, typ, work)
-			continue
+				wt.Path,
+				naming.WorktreeDir(ctx.Repo.Parent, ctx.Repo.Name, typ, work, ctx.Config.TypeSuffix),
+				typ, work)
 		}
-		fmt.Fprintf(w, "  ✓ %s\n", wt.Path)
 	}
 
 	if problems == 0 {
