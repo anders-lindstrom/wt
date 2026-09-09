@@ -51,7 +51,8 @@ func List(ctx *Context, w io.Writer) error {
 		fmt.Fprintln(w, "s  Superset's layout — its workspace holds this path; leave it where it is")
 	}
 	if seen[naming.Foreign] {
-		fmt.Fprintln(w, "!  not a layout wt recognises — `wt migrate <work>` moves it to the canonical path")
+		fmt.Fprintln(w, "!  not a layout wt recognises — `wt migrate <work|branch|path>` moves it to the")
+		fmt.Fprintln(w, "   canonical path; add a destination to rename or retype it as it goes")
 	}
 	return nil
 }
