@@ -16,18 +16,21 @@ import (
 func newSyncCmd() *cobra.Command {
 	sync := &cobra.Command{
 		Use:   "sync",
-		Short: "Show what rebasing each worktree onto trunk would do",
+		Short: "Show what rebasing each worktree onto trunk would do; run, undo, doctor act",
 		Long: "Simulate rebasing every worktree onto origin/<trunk> in the object store\n" +
 			"and print the outcome: the class, how far behind, the first commit a\n" +
 			"rebase would stop at, and whether the repository's declared strategies\n" +
 			"resolve it. Nothing is fetched and nothing is changed: run git fetch\n" +
 			"first for a current picture.\n" +
 			"\n" +
-			"The flow is look, act, finish. This command is the look. Acting on a\n" +
-			"row (wt sync run <work>), backing out (wt sync undo <work>) and\n" +
-			"checking preconditions (wt sync doctor) exist now. Finishing a\n" +
-			"contested one (resume) is not built yet; until it is, resolve a\n" +
-			"contested row by rebasing that worktree by hand.\n" +
+			"The flow is look, act, finish.\n" +
+			"  look    wt sync                 this table; read-only\n" +
+			"  act     wt sync run <work>...   rebase; safety ref, strategies at each stop, deferred steps;\n" +
+			"                                  asks once when more than one worktree is involved (--yes skips)\n" +
+			"  finish  push with --force-with-lease; wt sync undo <work> puts every ref back\n" +
+			"          wt sync doctor          what a run needs, and --fix / --prune\n" +
+			"A contested worktree is refused by run until resume exists: rebase it by hand.\n" +
+			"Only Claude sessions are detected in WHO; a Codex session is not seen.\n" +
 			"\n" +
 			"Classes:\n" +
 			"  clean      rebases without a conflict\n" +
