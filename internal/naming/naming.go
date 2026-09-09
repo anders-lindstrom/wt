@@ -46,6 +46,54 @@ func WorktreeDir(parent, repoName, typ, work, suffix string) string {
 	return filepath.Join(parent, repoName+suffix, typ+suffix, work)
 }
 
+// SupersetDir returns the path Superset builds for a piece of work. It differs
+// from the canonical one by a repeated repository name, because Superset joins
+// its per-project worktree base directory with <repo>/<branch> and that base is
+// already <parent>/<repo><suffix>. No setting on either side removes the extra
+// segment, so the two tools cannot be made to agree on one path.
+func SupersetDir(parent, repoName, typ, work, suffix string) string {
+	return filepath.Join(parent, repoName+suffix, repoName, typ+suffix, work)
+}
+
+// Layout names the shape a worktree's path follows.
+type Layout int
+
+const (
+	// Foreign is a path wt does not recognise: a pre-migration <repo>-<work>
+	// checkout, or a plain `git worktree add` anywhere at all. Nothing holds
+	// these paths, so `wt migrate` is free to move them.
+	Foreign Layout = iota
+	// Canonical is the path wt itself creates.
+	Canonical
+	// Superset is the path Superset creates. It is hardcoded in that tool,
+	// which also stores the absolute path of every workspace, so moving one of
+	// these breaks the workspace that owns it.
+	Superset
+)
+
+func (l Layout) String() string {
+	switch l {
+	case Canonical:
+		return "canonical"
+	case Superset:
+		return "superset"
+	default:
+		return "foreign"
+	}
+}
+
+// Classify reports which layout path follows for the given piece of work.
+func Classify(path, parent, repoName, typ, work, suffix string) Layout {
+	switch path {
+	case WorktreeDir(parent, repoName, typ, work, suffix):
+		return Canonical
+	case SupersetDir(parent, repoName, typ, work, suffix):
+		return Superset
+	default:
+		return Foreign
+	}
+}
+
 // ParseSpec reads a "<type>/<work>" argument, or a bare "<work>" which takes
 // defaultType so that every pre-existing invocation stays valid.
 func ParseSpec(spec, defaultType string) (typ, work string, err error) {

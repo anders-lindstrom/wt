@@ -5,6 +5,34 @@ import (
 	"testing"
 )
 
+func TestSupersetDirInsertsTheRepositoryName(t *testing.T) {
+	got := SupersetDir("/src", "demo", "feat", "login", "_wt")
+	want := "/src/demo_wt/demo/feat_wt/login"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestClassifyNamesTheLayoutAPathFollows(t *testing.T) {
+	cases := []struct {
+		name string
+		path string
+		want Layout
+	}{
+		{"canonical", "/src/demo_wt/feat_wt/login", Canonical},
+		{"superset", "/src/demo_wt/demo/feat_wt/login", Superset},
+		{"pre-migration", "/src/demo-login", Foreign},
+		{"unrelated", "/elsewhere/login", Foreign},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := Classify(c.path, "/src", "demo", "feat", "login", "_wt"); got != c.want {
+				t.Errorf("Classify(%q) = %v, want %v", c.path, got, c.want)
+			}
+		})
+	}
+}
+
 func TestBranchName(t *testing.T) {
 	if got := BranchName("fix", "login-crash", "_wt"); got != "fix_wt/login-crash" {
 		t.Errorf("got %q", got)
