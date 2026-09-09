@@ -1,0 +1,133 @@
+package wtsync
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"os/user"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// LockName is the file a run holds in the worktree's own git dir
+// (.git/worktrees/<name>/), so a second run, or the watcher, sees it.
+const LockName = "wt-sync.lock"
+
+// LockExpiry is how long a lock is believed. A run that died without
+// releasing must not block its worktree forever.
+const LockExpiry = 30 * time.Minute
+
+// Lock is a held or observed lock.
+type Lock struct {
+	Path    string
+	PID     int
+	Started time.Time
+	Owner   string
+}
+
+// LockHeld is the error for a live lock held by someone else.
+type LockHeld struct{ Lock }
+
+func (e *LockHeld) Error() string {
+	return fmt.Sprintf("locked by pid %d (%s) since %s", e.PID, e.Owner, e.Started.Format(time.RFC3339))
+}
+
+// GitDir is the worktree's own git dir, absolute.
+func GitDir(wtPath string) (string, error) {
+	return gitEnv(wtPath, nil, nil, "rev-parse", "--absolute-git-dir")
+}
+
+// Acquire takes the lock atomically: the content is written to a private
+// temp file and hard-linked into place, so a contender never sees a
+// half-written lock. An existing lock younger than LockExpiry is respected;
+// an older one is renamed aside (atomic, so only one contender wins) and
+// removed.
+func Acquire(gitDir string, now time.Time) (*Lock, error) {
+	path := filepath.Join(gitDir, LockName)
+	owner := "?"
+	if u, err := user.Current(); err == nil {
+		owner = u.Username
+	}
+	l := &Lock{Path: path, PID: os.Getpid(), Started: now, Owner: owner}
+	tmp := fmt.Sprintf("%s.%d", path, l.PID)
+	body := fmt.Sprintf("pid=%d\nstart=%d\nowner=%s\n", l.PID, now.Unix(), owner)
+	if err := os.WriteFile(tmp, []byte(body), 0o644); err != nil {
+		return nil, err
+	}
+	defer os.Remove(tmp) //nolint:errcheck // best effort: the temp file is ours alone
+	for attempt := 0; attempt < 2; attempt++ {
+		err := os.Link(tmp, path)
+		if err == nil {
+			return l, nil
+		}
+		if !errors.Is(err, os.ErrExist) {
+			return nil, err
+		}
+		existing, ok, rerr := ReadLock(gitDir)
+		if rerr != nil {
+			return nil, rerr
+		}
+		if ok && now.Sub(existing.Started) < LockExpiry {
+			return nil, &LockHeld{*existing}
+		}
+		// Expired, or unreadable: take it over. Rename is atomic, so of two
+		// contenders exactly one succeeds here; the other retries and finds
+		// the winner's fresh lock.
+		stale := fmt.Sprintf("%s.stale.%d", path, l.PID)
+		if err := os.Rename(path, stale); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return nil, err
+		}
+		_ = os.Remove(stale)
+	}
+	return nil, fmt.Errorf("could not acquire %s", path)
+}
+
+// Release removes the lock, but only while it is still this acquisition's: a
+// displaced owner must not delete its replacement's lock. PID alone is not
+// enough to tell the two apart when the same process re-acquires its own
+// expired lock, so Started (set once, at Acquire) is compared too.
+func (l *Lock) Release() error {
+	cur, ok, err := ReadLock(filepath.Dir(l.Path))
+	if err != nil {
+		return err
+	}
+	if !ok || cur.PID != l.PID || !cur.Started.Equal(l.Started) {
+		return nil
+	}
+	err = os.Remove(l.Path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
+// ReadLock parses an existing lock file; ok is false when there is none.
+func ReadLock(gitDir string) (*Lock, bool, error) {
+	path := filepath.Join(gitDir, LockName)
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	l := &Lock{Path: path}
+	for _, line := range strings.Split(string(data), "\n") {
+		k, v, _ := strings.Cut(line, "=")
+		switch k {
+		case "pid":
+			l.PID, _ = strconv.Atoi(v)
+		case "start":
+			sec, _ := strconv.ParseInt(v, 10, 64)
+			l.Started = time.Unix(sec, 0)
+		case "owner":
+			l.Owner = v
+		}
+	}
+	return l, true, nil
+}
