@@ -5,3 +5,6 @@
 bin/*
 !bin/worktree/
 .migration-baseline/
+
+# scratch for subagent-driven plan execution
+.superpowers/
