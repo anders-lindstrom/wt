@@ -127,13 +127,14 @@ func newSyncCmd() *cobra.Command {
 	var fix, prune bool
 	doctor := &cobra.Command{
 		Use:   "doctor",
-		Short: "Check what a run needs: trunk, declaration, scripts, rerere, hooks, submodules, LFS, Docker, safety refs, locks",
+		Short: "Check what a run needs: trunk, declaration, scripts, rerere, hooks, submodules, LFS, Docker, safety refs, locks, rebases",
 		Long: "Check what wt sync run needs before the first run in a repository and\n" +
 			"after anything changes: origin/<trunk> is fetched, .wt-sync.yaml parses,\n" +
 			"every script strategy's run exists and is executable on trunk, no\n" +
 			"pre-rebase or post-rewrite hook is active, no submodules or LFS paths\n" +
 			"are declared, Docker answers when a deferred step needs it, and nothing\n" +
-			"is left behind by an earlier run.\n" +
+			"is left behind by an earlier run: no stale safety ref, no expired lock,\n" +
+			"no worktree stopped mid-rebase.\n" +
 			"\n" +
 			"Never fixes anything on its own. --fix turns on rerere.enabled and\n" +
 			"removes expired locks; --prune deletes safety refs old runs no longer\n" +

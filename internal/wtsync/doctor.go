@@ -76,7 +76,40 @@ func Doctor(mainRoot, trunk string, worktrees []repo.Worktree, opts DoctorOption
 	}
 	checks = append(checks, locks)
 
+	rebases, err := rebasesCheck(worktrees)
+	if err != nil {
+		return nil, err
+	}
+	checks = append(checks, rebases)
+
 	return checks, nil
+}
+
+// rebasesCheck flags every worktree sitting mid-rebase: run refuses those,
+// and one left behind by an interrupted run has to be finished or aborted
+// by hand. The main checkout is not a rebase target, so it is not checked.
+func rebasesCheck(worktrees []repo.Worktree) (Check, error) {
+	var stuck []string
+	for _, wt := range worktrees {
+		if wt.IsMain {
+			continue
+		}
+		busy, err := RebaseInProgress(wt.Path)
+		if err != nil {
+			return Check{}, err
+		}
+		if busy {
+			label := wt.Branch
+			if label == "" {
+				label = wt.Path
+			}
+			stuck = append(stuck, fmt.Sprintf("%s (git -C %s rebase --abort)", label, wt.Path))
+		}
+	}
+	if len(stuck) == 0 {
+		return Check{Name: "rebases", OK: true}, nil
+	}
+	return Check{Name: "rebases", OK: false, Detail: strings.Join(stuck, "; ")}, nil
 }
 
 // trunkCheck reports whether origin/<trunk> resolves in the object store.
@@ -148,20 +181,21 @@ func lsTreeMode(mainRoot, onto, path string) (mode string, found bool, err error
 	return fields[0], true, nil
 }
 
-// rerereCheck reports whether rerere.enabled is on. A run passes
-// --rerere-autoupdate on every rebase regardless of this setting; what it
-// buys is resolutions recorded across runs rather than replayed from
-// scratch each time.
+// rerereCheck reports whether rerere.enabled is on. A run never passes
+// --rerere-autoupdate and never consults a recorded resolution: it decides
+// every stop from the conflict's three stages and the declaration. Turning
+// rerere on is still worth it for the rebases a run refuses and hands back,
+// which is why the failing case keeps a Fix.
 func rerereCheck(mainRoot string) Check {
 	out, err := git.Run(mainRoot, "config", "--get", "rerere.enabled")
 	on := err == nil && out == "true"
 	if on {
-		return Check{Name: "rerere", OK: true, Detail: "on (a run passes --rerere-autoupdate itself either way)"}
+		return Check{Name: "rerere", OK: true, Detail: "on; a run recomputes every stop from its three stages and does not pass --rerere-autoupdate, so recorded resolutions never decide a stop"}
 	}
 	return Check{
 		Name:   "rerere",
 		OK:     false,
-		Detail: "off: a run still passes --rerere-autoupdate per rebase, but nothing is recorded to reuse next time",
+		Detail: "off; a run does not use rerere; enabling it records the resolutions of the rebases you do by hand (the ones run refuses)",
 		Fix: func() error {
 			_, err := git.Run(mainRoot, "config", "rerere.enabled", "true")
 			return err
@@ -171,9 +205,9 @@ func rerereCheck(mainRoot string) Check {
 
 // hooksCheck reports any active pre-rebase or post-rewrite hook, which a
 // rebase would run unasked. commit-msg and pre-commit are noted, not
-// blocking: the deferred commit must satisfy them and a failure there turns
-// into a "did not advance" restore, but that is the run's business, not
-// doctor's to refuse over.
+// blocking: the deferred commit must satisfy them, and a failure there
+// leaves the step owed with its output unstaged in the worktree, never
+// undoing the rebase — the run's business, not doctor's to refuse over.
 func hooksCheck(mainRoot string) Check {
 	dir, err := hooksDir(mainRoot)
 	if err != nil {

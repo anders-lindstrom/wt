@@ -51,7 +51,7 @@ func TestDoctorOnAHealthyRepoIsAllOK(t *testing.T) {
 	for _, c := range checks {
 		names = append(names, c.Name)
 	}
-	want := []string{"trunk", "declaration", "scripts", "rerere", "hooks", "submodules", "lfs", "safety-refs", "locks"} // docker only with defer steps
+	want := []string{"trunk", "declaration", "scripts", "rerere", "hooks", "submodules", "lfs", "safety-refs", "locks", "rebases"} // docker only with defer steps
 	if !reflect.DeepEqual(names, want) {
 		t.Fatalf("checks %v", names)
 	}
@@ -298,5 +298,26 @@ func TestDoctorFlagsLFSAsAnErrorWhenTrunkDoesNotResolve(t *testing.T) {
 	}
 	if lfs.Detail == "" {
 		t.Fatal("expected lfs detail to carry the error text")
+	}
+}
+
+func TestDoctorFlagsAWorktreeLeftMidRebase(t *testing.T) {
+	dir, wt, _ := runRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"a.txt": "a3\n"}})
+	if err := gitCmd(wt, "rebase", "--no-update-refs", "--no-gpg-sign", "main").Run(); err == nil {
+		t.Fatal("rebase did not stop; the test is vacuous")
+	}
+	checks, err := Doctor(dir, "main", []repo.Worktree{{Path: dir, Branch: "main", IsMain: true}, {Path: wt, Branch: "feature"}}, DoctorOptions{Now: time.Now(), Keep: 30 * 24 * time.Hour, Docker: func() error { return nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := findCheck(t, checks, "rebases")
+	if c.OK {
+		t.Fatal("expected rebases !OK")
+	}
+	if !strings.Contains(c.Detail, "feature") || !strings.Contains(c.Detail, "rebase --abort") {
+		t.Fatalf("detail %q", c.Detail)
+	}
+	if c.Fix != nil {
+		t.Fatal("rebases must not offer a fix")
 	}
 }

@@ -49,15 +49,15 @@ func doctorRows(t *testing.T, out string) []string {
 	return lines[1:]
 }
 
-func TestSyncDoctorPrintsNineOKRowsForAHealthyFixture(t *testing.T) {
+func TestSyncDoctorPrintsTenOKRowsForAHealthyFixture(t *testing.T) {
 	ctx := doctorFixture(t, true)
 	var out bytes.Buffer
 	if err := SyncDoctor(ctx, DoctorOptions{}, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	rows := doctorRows(t, out.String())
-	if len(rows) != 9 {
-		t.Fatalf("got %d rows, want 9:\n%s", len(rows), out.String())
+	if len(rows) != 10 {
+		t.Fatalf("got %d rows, want 10:\n%s", len(rows), out.String())
 	}
 	for _, row := range rows {
 		fields := strings.Fields(row)
