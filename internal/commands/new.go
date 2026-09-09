@@ -22,7 +22,7 @@ func New(ctx *Context, spec string, opts NewOptions, w io.Writer) (string, error
 	if err != nil {
 		return "", err
 	}
-	typ, work, err := naming.ParseSpec(spec, ctx.Config.DefaultType)
+	typ, work, err := naming.ParseSpec(spec, ctx.Config.DefaultType, ctx.Config.Types)
 	if err != nil {
 		return "", err
 	}

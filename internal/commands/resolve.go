@@ -10,7 +10,7 @@ import (
 // Branch returns the branch name for a work spec, validating the type against
 // the repository's WORKTREE_TYPES.
 func Branch(ctx *Context, spec string) (string, error) {
-	typ, work, err := naming.ParseSpec(spec, ctx.Config.DefaultType)
+	typ, work, err := naming.ParseSpec(spec, ctx.Config.DefaultType, ctx.Config.Types)
 	if err != nil {
 		return "", err
 	}
@@ -40,7 +40,18 @@ func Path(ctx *Context, spec string) (string, error) {
 			return w.Path, nil
 		}
 	}
-	typ, work, _ := naming.ParseSpec(spec, ctx.Config.DefaultType)
+	// Nothing on the branch the spec implies. A worktree Superset made carries
+	// that tool's one fixed prefix, so reading a type out of the name looks
+	// past it: "fix_dev-123" is on feat_wt/fix_dev-123. Try the name as typed
+	// before falling back to a path that does not exist yet.
+	typ, work, _ := naming.ParseSpec(spec, ctx.Config.DefaultType, ctx.Config.Types)
+	if literal := naming.BranchName(ctx.Config.DefaultType, spec, ctx.Config.TypeSuffix); literal != branch {
+		for _, w := range worktrees {
+			if w.Branch == literal {
+				return w.Path, nil
+			}
+		}
+	}
 	return naming.WorktreeDir(ctx.Repo.Parent, ctx.Repo.Name, typ, work, ctx.Config.TypeSuffix), nil
 }
 

@@ -5,6 +5,56 @@ import (
 	"testing"
 )
 
+func TestInferTypeReadsTheTypeOutOfTheWorkName(t *testing.T) {
+	types := []string{"feat", "fix", "docs", "chore", "test"}
+	cases := []struct {
+		work     string
+		typ      string
+		rest     string
+		inferred bool
+	}{
+		{"fix_dev-123", "fix", "dev-123", true},
+		{"fix-login-crash", "fix", "login-crash", true},
+		{"chore_cleanup", "chore", "cleanup", true},
+		{"test", "", "", false},            // the whole name, with nothing left over
+		{"fix_", "", "", false},            // ditto, with a separator
+		{"review_sentry", "", "", false},   // "review" is not a type
+		{"spring-boot-4", "", "", false},   // nor is "spring"
+		{"webkey", "", "", false},          // no separator at all
+		{"statepush_scope", "", "", false}, // a real work name that must survive
+	}
+	for _, c := range cases {
+		t.Run(c.work, func(t *testing.T) {
+			typ, rest, ok := InferType(c.work, types)
+			if ok != c.inferred || typ != c.typ || rest != c.rest {
+				t.Errorf("InferType(%q) = %q %q %v, want %q %q %v",
+					c.work, typ, rest, ok, c.typ, c.rest, c.inferred)
+			}
+		})
+	}
+}
+
+func TestParseSpecPrefersAnExplicitTypeOverTheName(t *testing.T) {
+	types := []string{"feat", "fix"}
+	typ, work, err := ParseSpec("feat/fix_dev-123", "feat", types)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if typ != "feat" || work != "fix_dev-123" {
+		t.Errorf("an explicit type must win: got %q %q", typ, work)
+	}
+}
+
+func TestParseSpecInfersTheTypeFromABareName(t *testing.T) {
+	typ, work, err := ParseSpec("fix_dev-123", "feat", []string{"feat", "fix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if typ != "fix" || work != "dev-123" {
+		t.Errorf("got %q %q, want fix dev-123", typ, work)
+	}
+}
+
 func TestSupersetDirInsertsTheRepositoryName(t *testing.T) {
 	got := SupersetDir("/src", "demo", "feat", "login", "_wt")
 	want := "/src/demo_wt/demo/feat_wt/login"
@@ -80,18 +130,18 @@ func TestWorktreeDirTailEqualsBranch(t *testing.T) {
 }
 
 func TestParseSpec(t *testing.T) {
-	typ, work, err := ParseSpec("fix/login-crash", "feat")
+	typ, work, err := ParseSpec("fix/login-crash", "feat", []string{"feat", "fix"})
 	if err != nil || typ != "fix" || work != "login-crash" {
 		t.Errorf("typed spec: got %q %q %v", typ, work, err)
 	}
-	typ, work, err = ParseSpec("login-crash", "feat")
+	typ, work, err = ParseSpec("login-crash", "feat", []string{"feat", "fix"})
 	if err != nil || typ != "feat" || work != "login-crash" {
 		t.Errorf("bare spec should take the default type: got %q %q %v", typ, work, err)
 	}
-	if _, _, err := ParseSpec("", "feat"); err == nil {
+	if _, _, err := ParseSpec("", "feat", []string{"feat", "fix"}); err == nil {
 		t.Error("empty spec should error")
 	}
-	if _, _, err := ParseSpec("a/b/c", "feat"); err == nil {
+	if _, _, err := ParseSpec("a/b/c", "feat", []string{"feat", "fix"}); err == nil {
 		t.Error("two slashes should error")
 	}
 }

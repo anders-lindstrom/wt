@@ -94,9 +94,10 @@ func Classify(path, parent, repoName, typ, work, suffix string) Layout {
 	}
 }
 
-// ParseSpec reads a "<type>/<work>" argument, or a bare "<work>" which takes
-// defaultType so that every pre-existing invocation stays valid.
-func ParseSpec(spec, defaultType string) (typ, work string, err error) {
+// ParseSpec reads a "<type>/<work>" argument, or a bare "<work>" whose type is
+// read out of the name when it starts with one, and is defaultType otherwise.
+// An explicit type always wins over the name.
+func ParseSpec(spec, defaultType string, types []string) (typ, work string, err error) {
 	spec = strings.TrimSpace(spec)
 	if spec == "" {
 		return "", "", errors.New("no work name given")
@@ -110,5 +111,30 @@ func ParseSpec(spec, defaultType string) (typ, work string, err error) {
 		}
 		return head, rest, nil
 	}
+	if t, rest, ok := InferType(spec, types); ok {
+		return t, rest, nil
+	}
 	return defaultType, spec, nil
+}
+
+// InferType splits a leading "<type>_" or "<type>-" off a work name, when that
+// prefix is one of the repository's types and something is left after it.
+//
+// The type is a judgement about the work, and the two tools that create
+// worktrees here cannot both be told it: Superset mints every branch from one
+// fixed prefix, so the only place the type can travel is inside the name a
+// person types. "fix_dev-123" is a fix, not a feature called "fix_dev-123".
+func InferType(work string, types []string) (typ, rest string, ok bool) {
+	for _, sep := range []string{"_", "-"} {
+		head, tail, found := strings.Cut(work, sep)
+		if !found || head == "" || tail == "" {
+			continue
+		}
+		for _, t := range types {
+			if head == t {
+				return head, tail, true
+			}
+		}
+	}
+	return "", "", false
 }
