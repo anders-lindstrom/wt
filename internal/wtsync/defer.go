@@ -89,22 +89,33 @@ func runDeferredWithTimeout(wtPath string, steps []Deferred, oldTip, newTip stri
 		cancel()
 		r.Elapsed = time.Since(start)
 		r.Output = strings.TrimSpace(out.String())
-		if errors.Is(runErr, exec.ErrWaitDelay) {
-			// The step itself exited zero; only a background child it left
-			// running kept stdio open past the wait delay. That is not a
-			// failure of the step.
-			runErr = nil
-		}
-		if runErr != nil {
-			var exit *exec.ExitError
-			switch {
-			case errors.Is(ctx.Err(), context.DeadlineExceeded):
-				r.Err = fmt.Errorf("timed out after %s", timeout)
-			case errors.As(runErr, &exit):
-				r.Err = fmt.Errorf("exit %d", exit.ExitCode())
-			default:
-				r.Err = runErr
+		// Check the deadline before ErrWaitDelay: a step that finished
+		// cleanly but left a child detached in its own process group (so our
+		// group kill can't reach it) still holding stdout/stderr open past
+		// the wait delay comes back as exec.ErrWaitDelay, which looks like
+		// success — but by the time Wait returns, ctx may already be past
+		// its deadline. The deadline must win over that appearance of
+		// success (script.go's order), or the step is reported as a clean
+		// success despite running past its deadline.
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			r.Err = fmt.Errorf("timed out after %s", timeout)
+		} else {
+			if errors.Is(runErr, exec.ErrWaitDelay) {
+				// The step itself exited zero; only a background child it
+				// left running kept stdio open past the wait delay. That is
+				// not a failure of the step.
+				runErr = nil
 			}
+			if runErr != nil {
+				var exit *exec.ExitError
+				if errors.As(runErr, &exit) {
+					r.Err = fmt.Errorf("exit %d", exit.ExitCode())
+				} else {
+					r.Err = runErr
+				}
+			}
+		}
+		if r.Err != nil {
 			failed = true
 			results = append(results, r)
 			continue

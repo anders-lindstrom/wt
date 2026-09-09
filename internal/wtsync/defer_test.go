@@ -2,6 +2,7 @@ package wtsync
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -93,6 +94,37 @@ func TestRunDeferredTimesOut(t *testing.T) {
 	rs, err := runDeferredWithTimeout(wt, []Deferred{{Run: "sleep 5"}}, old, cur, nil, 300*time.Millisecond)
 	if err != nil || rs[0].Err == nil || !strings.Contains(rs[0].Err.Error(), "timed out") {
 		t.Fatalf("rs %+v err %v", rs, err)
+	}
+}
+
+// TestRunDeferredTimesOutEvenWhenAnOrphanedChildMakesTheStepLookClean covers
+// a step whose own process exits 0 quickly but leaves a child detached into
+// its own process group (so our group kill can't reach it) still holding
+// stdout/stderr open past the wait delay: exec reports that as
+// exec.ErrWaitDelay, which looks like success, but ctx already timed out by
+// the time Wait returns. The deadline must win over that appearance of
+// success (script.go's proven order), or the step is silently reported as a
+// clean success even though it ran past its deadline.
+//
+// setsid isn't on macOS, so a perl one-liner stands in for it: it calls
+// setpgrp(0,0) to leave the shell's process group before exec'ing sleep.
+func TestRunDeferredTimesOutEvenWhenAnOrphanedChildMakesTheStepLookClean(t *testing.T) {
+	if _, err := exec.LookPath("perl"); err != nil {
+		t.Skip("perl not on PATH")
+	}
+	wt, old, cur := deferRepo(t)
+	timeout := 300 * time.Millisecond
+	start := time.Now()
+	rs, err := runDeferredWithTimeout(wt, []Deferred{{Run: `perl -e 'setpgrp(0,0); exec "sleep", "5"' & true`}}, old, cur, nil, timeout)
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rs[0].Err == nil || !strings.Contains(rs[0].Err.Error(), "timed out") {
+		t.Fatalf("rs[0] %+v", rs[0])
+	}
+	if bound := timeout + scriptWaitDelay + time.Second; elapsed > bound {
+		t.Fatalf("elapsed %s exceeds bound %s", elapsed, bound)
 	}
 }
 
