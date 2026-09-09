@@ -24,10 +24,10 @@ func newSyncCmd() *cobra.Command {
 			"first for a current picture.\n" +
 			"\n" +
 			"The flow is look, act, finish. This command is the look. Acting on a\n" +
-			"row (wt sync run <work>) and backing out (wt sync undo <work>) exist\n" +
-			"now. Finishing a contested one (resume) and checking preconditions\n" +
-			"(doctor) are not built yet; until they are, resolve a contested row by\n" +
-			"rebasing that worktree by hand.\n" +
+			"row (wt sync run <work>), backing out (wt sync undo <work>) and\n" +
+			"checking preconditions (wt sync doctor) exist now. Finishing a\n" +
+			"contested one (resume) is not built yet; until it is, resolve a\n" +
+			"contested row by rebasing that worktree by hand.\n" +
 			"\n" +
 			"Classes:\n" +
 			"  clean      rebases without a conflict\n" +
@@ -114,6 +114,36 @@ func newSyncCmd() *cobra.Command {
 		},
 	}
 	sync.AddCommand(undo)
+
+	var fix, prune bool
+	doctor := &cobra.Command{
+		Use:   "doctor",
+		Short: "Check what a run needs: trunk, declaration, scripts, rerere, hooks, submodules, LFS, Docker, safety refs, locks",
+		Long: "Check what wt sync run needs before the first run in a repository and\n" +
+			"after anything changes: origin/<trunk> is fetched, .wt-sync.yaml parses,\n" +
+			"every script strategy's run exists and is executable on trunk, no\n" +
+			"pre-rebase or post-rewrite hook is active, no submodules or LFS paths\n" +
+			"are declared, Docker answers when a deferred step needs it, and nothing\n" +
+			"is left behind by an earlier run.\n" +
+			"\n" +
+			"Never fixes anything on its own. --fix turns on rerere.enabled and\n" +
+			"removes expired locks; --prune deletes safety refs old runs no longer\n" +
+			"need. A finding that would make a run refuse outright (a missing\n" +
+			"trunk, declaration or script) makes this command exit non-zero; the\n" +
+			"rest is advisory.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx, err := openContext()
+			if err != nil {
+				return err
+			}
+			return commands.SyncDoctor(ctx, commands.DoctorOptions{Fix: fix, Prune: prune}, cmd.OutOrStdout())
+		},
+	}
+	doctor.Flags().BoolVar(&fix, "fix", false, "turn on rerere.enabled and remove expired locks")
+	doctor.Flags().BoolVar(&prune, "prune", false, "delete prunable safety refs")
+	sync.AddCommand(doctor)
+
 	return sync
 }
 
