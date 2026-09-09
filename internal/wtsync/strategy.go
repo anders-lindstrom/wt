@@ -29,6 +29,12 @@ func FromRule(r Rule, _ string) (Strategy, error) {
 		return OwnedLine{Line: re, Rule: rule}, nil
 	case "take-trunk":
 		return TakeTrunk{}, nil
+	case "list-union":
+		re, err := regexp.Compile(r.Line)
+		if err != nil {
+			return nil, fmt.Errorf("list-union: bad line regex %q: %w", r.Line, err)
+		}
+		return ListUnion{Line: re, Delimiter: r.Delimiter}, nil
 	}
 	return nil, fmt.Errorf("unknown strategy %q", r.Strategy)
 }
