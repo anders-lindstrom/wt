@@ -18,7 +18,7 @@ type Resolution struct {
 // The error return is for things going wrong — a strategy that cannot be
 // built, a script that cannot run — as opposed to a refusal, which is a
 // normal outcome carried in the Note.
-func resolveConflict(mainRoot, onto string, cfg *Config, c Conflict, wtPath string) (Resolution, error) { //nolint:revive // wtPath is part of the signature future tasks need; a script strategy (Task 4) starts using it to resolve in place
+func resolveConflict(mainRoot, onto string, cfg *Config, c Conflict, wtPath string) (Resolution, error) {
 	r := Resolution{Outcome: FileOutcome{Path: c.Path, Note: "unclaimed"}}
 	if c.Incomplete != "" {
 		r.Outcome.Note = c.Incomplete
@@ -36,6 +36,18 @@ func resolveConflict(mainRoot, onto string, cfg *Config, c Conflict, wtPath stri
 	if err != nil {
 		r.Outcome.Note = err.Error()
 		return r, fmt.Errorf("%s: %w", c.Path, err)
+	}
+	if sc, ok := s.(Script); ok && wtPath != "" {
+		if err := sc.ResolveInWorktree(wtPath, c.Path); err != nil {
+			if ref := refusalOf(err); ref != nil {
+				r.Outcome.Note = ref.Reason
+				return r, nil
+			}
+			r.Outcome.Note = err.Error()
+			return r, fmt.Errorf("%s: %w", c.Path, err)
+		}
+		r.Outcome.Resolved, r.Outcome.Note, r.InPlace = true, "", true
+		return r, nil
 	}
 	content, err := s.Resolve(c)
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeScript commits an executable to origin's main that answers the
@@ -104,5 +105,94 @@ func TestFromRuleBuildsScript(t *testing.T) {
 	s, err := FromRule(Rule{Strategy: "script", Run: "bin/conflict/x"}, "/repo", "origin/main")
 	if err != nil || s.Name() != "script" {
 		t.Errorf("FromRule = %v, %v", s, err)
+	}
+}
+
+// stoppedRebaseWithScript builds a repository whose trunk declares run as a
+// script strategy for v.txt (trunk 1.0.5, branch 1.0.1, so a rebase always
+// stops on it), fetches it into an "origin" remote pointing at the same
+// repository the way commands.syncRepo does, and stops a rebase of the
+// feature worktree onto main.
+func stoppedRebaseWithScript(t *testing.T, script string) (dir, wt string) {
+	t.Helper()
+	dir = linearRepo(t,
+		[]map[string]string{{"v.txt": "1.0.5\n"}},
+		[]map[string]string{{"v.txt": "1.0.1\n"}})
+	full := filepath.Join(dir, "bin", "resolve")
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(full, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	conf := "conflicts:\n  - paths: [v.txt]\n    strategy: script\n    run: bin/resolve\n"
+	if err := os.WriteFile(filepath.Join(dir, ".wt-sync.yaml"), []byte(conf), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, dir, "add", "-A")
+	gitIn(t, dir, "commit", "-q", "-m", "declare the script")
+	gitIn(t, dir, "remote", "add", "origin", dir)
+	gitIn(t, dir, "fetch", "-q", "origin")
+	w := featureWorktree(t, dir)
+	if err := gitCmd(w.Path, "rebase", "--no-update-refs", "--no-gpg-sign", "main").Run(); err == nil {
+		t.Fatal("rebase did not stop")
+	}
+	return dir, w.Path
+}
+
+func TestResolveInWorktreeRunsTheScriptAgainstTheRealIndex(t *testing.T) {
+	// A script that resolves by taking the branch side (stage 3) and staging it.
+	script := "#!/bin/sh\ncase \"$1\" in\n--resolve) git show \":3:$2\" > \"$2\" && git add -- \"$2\" ;;\n*) exit 1 ;;\nesac\n"
+	dir, wt := stoppedRebaseWithScript(t, script) // fixture: trunk declares v.txt -> script bin/resolve; rebase stopped on v.txt
+	s := Script{Root: dir, Trunk: "origin/main", Run: "bin/resolve"}
+	if err := s.ResolveInWorktree(wt, "v.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if out := gitIn(t, wt, "ls-files", "-u", "--", "v.txt"); out != "" {
+		t.Fatalf("still unmerged: %s", out)
+	}
+	if got, _ := os.ReadFile(filepath.Join(wt, "v.txt")); string(got) != "1.0.1\n" {
+		t.Fatalf("content %q", got)
+	}
+}
+
+func TestResolveInWorktreeExitTwoIsARefusalWithTheReason(t *testing.T) {
+	script := "#!/bin/sh\necho 'not my shape' >&2; exit 2\n"
+	dir, wt := stoppedRebaseWithScript(t, script)
+	s := Script{Root: dir, Trunk: "origin/main", Run: "bin/resolve"}
+	err := s.ResolveInWorktree(wt, "v.txt")
+	if !IsRefusal(err) || !strings.Contains(err.Error(), "not my shape") {
+		t.Fatalf("err %v", err)
+	}
+}
+
+func TestResolveInWorktreeAScriptThatExitsZeroWithoutStagingIsAnError(t *testing.T) {
+	script := "#!/bin/sh\nexit 0\n"
+	dir, wt := stoppedRebaseWithScript(t, script)
+	s := Script{Root: dir, Trunk: "origin/main", Run: "bin/resolve"}
+	err := s.ResolveInWorktree(wt, "v.txt")
+	if err == nil || IsRefusal(err) || !strings.Contains(err.Error(), "left v.txt unmerged") {
+		t.Fatalf("err %v", err)
+	}
+}
+
+func TestScriptTimesOutInsteadOfHanging(t *testing.T) {
+	script := "#!/bin/sh\nsleep 5\n"
+	dir, wt := stoppedRebaseWithScript(t, script)
+	s := Script{Root: dir, Trunk: "origin/main", Run: "bin/resolve", Timeout: 300 * time.Millisecond}
+	err := s.ResolveInWorktree(wt, "v.txt")
+	if err == nil || IsRefusal(err) || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("err %v", err)
+	}
+}
+
+func TestResolveConflictInAWorktreeUsesTheScriptInPlace(t *testing.T) {
+	script := "#!/bin/sh\ncase \"$1\" in\n--resolve) git show \":3:$2\" > \"$2\" && git add -- \"$2\" ;;\n*) exit 1 ;;\nesac\n"
+	dir, wt := stoppedRebaseWithScript(t, script)
+	cfg, _ := Parse([]byte("conflicts:\n  - paths: [v.txt]\n    strategy: script\n    run: bin/resolve\n"))
+	cs, _ := StagedConflicts(wt)
+	r, err := resolveConflict(dir, "origin/main", cfg, cs[0], wt)
+	if err != nil || !r.Outcome.Resolved || !r.InPlace || r.Content != nil {
+		t.Fatalf("resolution %+v err %v", r, err)
 	}
 }

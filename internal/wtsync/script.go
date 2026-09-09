@@ -2,6 +2,7 @@ package wtsync
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -9,7 +10,23 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 )
+
+// ScriptTimeout is the deadline a script gets when its rule sets no Timeout,
+// for both --check and --resolve. A script that runs past it is treated as
+// an error, never as a refusal: it did not answer the contract at all.
+const ScriptTimeout = 60 * time.Second
+
+// scriptWaitDelay bounds how long runScript waits for the script's stdio to
+// close once the deadline has killed it. A shell script's last command often
+// runs as a forked child rather than replacing the shell, so killing only
+// the shell can leave that child holding the stderr pipe open; runScript
+// kills the whole process group to take it down too, and this is the
+// fallback for the rare process that detaches from the group before that
+// happens.
+const scriptWaitDelay = 2 * time.Second
 
 // Script is the escape hatch: an executable in the repository answering the
 // three-verb contract. Its directory is materialised from trunk into a
@@ -19,16 +36,40 @@ import (
 // script sees exactly those blobs and nothing else of a rebase (no HEAD, no
 // other index entries, mode 100644), which is the contract's limit. Resolve
 // therefore returns nil bytes on success: the content is produced by
-// --resolve during a real rebase, which the next plan performs. A script is
-// trusted code from trunk; nothing here sandboxes it.
+// --resolve in the worktree during a real run (ResolveInWorktree), against
+// the worktree's real index. Both --check and --resolve run under a
+// deadline. A script is trusted code from trunk; nothing here sandboxes it.
 type Script struct {
-	Root  string // the main checkout, where git runs
-	Trunk string // the ref the script is read from, e.g. origin/main
-	Run   string // the executable's path inside the repository
+	Root    string        // the main checkout, where git runs
+	Trunk   string        // the ref the script is read from, e.g. origin/main
+	Run     string        // the executable's path inside the repository
+	Timeout time.Duration // zero means ScriptTimeout
 }
 
 // Name identifies this strategy in errors and reports.
 func (Script) Name() string { return "script" }
+
+// timeout returns the deadline for a script invocation: the rule's Timeout
+// if set, otherwise ScriptTimeout.
+func (s Script) timeout() time.Duration {
+	if s.Timeout > 0 {
+		return s.Timeout
+	}
+	return ScriptTimeout
+}
+
+// runScript runs cmd, which must already carry a context deadline from
+// exec.CommandContext, in its own process group so that a timeout kills any
+// process the script forked, not just the script's own interpreter; see
+// scriptWaitDelay for why that matters.
+func runScript(cmd *exec.Cmd) error {
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+	cmd.WaitDelay = scriptWaitDelay
+	return cmd.Run()
+}
 
 // Resolve checks the conflict against the script, through a temporary index
 // holding only the conflict's three stages. See the type comment.
@@ -44,12 +85,17 @@ func (s Script) Resolve(c Conflict) ([]byte, error) {
 	}
 	defer cleanup()
 
-	cmd := exec.Command(exe, "--check", c.Path)
+	ctx, cancel := context.WithTimeout(context.Background(), s.timeout())
+	defer cancel()
+	cmd := exec.CommandContext(ctx, exe, "--check", c.Path)
 	cmd.Dir = s.Root
 	cmd.Env = withEnv("GIT_INDEX_FILE=" + index)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	err = cmd.Run()
+	err = runScript(cmd)
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return nil, fmt.Errorf("%s --check %s: timed out after %s", s.Run, c.Path, s.timeout())
+	}
 	var exit *exec.ExitError
 	switch {
 	case err == nil:
@@ -64,6 +110,49 @@ func (s Script) Resolve(c Conflict) ([]byte, error) {
 		return nil, Refuse(c.Path, "%s", reason)
 	default:
 		return nil, fmt.Errorf("%s --check %s: %v: %s", s.Run, c.Path, err, strings.TrimSpace(stderr.String()))
+	}
+}
+
+// ResolveInWorktree runs `<script> --resolve <path>` in the worktree, against
+// its real index, for a stopped rebase. The script is still read from trunk.
+// Exit 0 means the script wrote and staged the file, which is verified; exit
+// 2 is a refusal carrying stderr; anything else is an error.
+func (s Script) ResolveInWorktree(wtPath, path string) error {
+	exe, cleanup, err := materialise(s.Root, s.Trunk, s.Run)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	ctx, cancel := context.WithTimeout(context.Background(), s.timeout())
+	defer cancel()
+	cmd := exec.CommandContext(ctx, exe, "--resolve", path)
+	cmd.Dir = wtPath
+	cmd.Env = withEnv("GIT_EDITOR=true")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	err = runScript(cmd)
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return fmt.Errorf("%s --resolve %s: timed out after %s", s.Run, path, s.timeout())
+	}
+	var exit *exec.ExitError
+	switch {
+	case err == nil:
+		out, lerr := gitEnv(wtPath, nil, nil, "ls-files", "-u", "--", path)
+		if lerr != nil {
+			return lerr
+		}
+		if out != "" {
+			return fmt.Errorf("%s --resolve exited 0 but left %s unmerged", s.Run, path)
+		}
+		return nil
+	case errors.As(err, &exit) && exit.ExitCode() == 2:
+		reason := strings.TrimSpace(stderr.String())
+		if reason == "" {
+			reason = "refused without a reason"
+		}
+		return Refuse(path, "%s", reason)
+	default:
+		return fmt.Errorf("%s --resolve %s: %v: %s", s.Run, path, err, strings.TrimSpace(stderr.String()))
 	}
 }
 
