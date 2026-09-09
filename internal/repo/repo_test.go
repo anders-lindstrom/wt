@@ -194,6 +194,65 @@ func TestWorktreesLeaveAGenuinelyDetachedWorktreeAlone(t *testing.T) {
 	}
 }
 
+// A rebase started from a HEAD that was already detached (not on any
+// branch) records the literal "detached HEAD" in head-name, not a ref: there
+// is no branch to recover, and the worktree must be left genuinely detached.
+func TestWorktreesIgnoreADetachedHeadRebase(t *testing.T) {
+	parent := resolved(t, t.TempDir())
+	main := filepath.Join(parent, "demo")
+	run(t, parent, "init", "-q", "-b", "main", "demo")
+	run(t, main, "config", "user.email", "t@example.com")
+	run(t, main, "config", "user.name", "T")
+	run(t, main, "commit", "-q", "--allow-empty", "-m", "init")
+	writeFile(t, filepath.Join(main, "v.txt"), "1\n")
+	run(t, main, "add", "v.txt")
+	run(t, main, "commit", "-q", "-m", "add v.txt")
+
+	// Worktree checked out detached at the current tip of main.
+	wtPath := filepath.Join(parent, "demo_wt", "detached")
+	run(t, main, "worktree", "add", "-q", "--detach", wtPath)
+
+	// Trunk moves on.
+	writeFile(t, filepath.Join(main, "v.txt"), "2\n")
+	run(t, main, "commit", "-q", "-am", "trunk")
+
+	// The detached worktree also moves on, so it diverges from trunk.
+	writeFile(t, filepath.Join(wtPath, "v.txt"), "3\n")
+	run(t, wtPath, "commit", "-q", "-am", "branch")
+
+	// Rebase onto trunk from the already-detached HEAD; let it stop on the
+	// conflict.
+	runIgnoringFailure(t, wtPath, "rebase", "main")
+
+	r, err := Discover(main)
+	if err != nil {
+		t.Fatal(err)
+	}
+	list, err := r.Worktrees()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wt Worktree
+	found := false
+	for _, w := range list {
+		if w.Path == resolved(t, wtPath) {
+			wt, found = w, true
+		}
+	}
+	if !found {
+		t.Fatal("detached worktree not found in list")
+	}
+	if wt.Branch != "" {
+		t.Fatalf("Branch = %q, want empty: rebase from a detached HEAD names no branch", wt.Branch)
+	}
+	if !wt.Detached {
+		t.Fatal("Detached = false, want true")
+	}
+	if wt.Rebasing {
+		t.Fatal("Rebasing = true, want false: there is no branch to resume")
+	}
+}
+
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {

@@ -129,7 +129,15 @@ func rebaseHeadName(wtPath string) string {
 		if err != nil {
 			continue
 		}
-		return strings.TrimPrefix(strings.TrimSpace(string(b)), "refs/heads/")
+		// A rebase started from an already-detached HEAD records the
+		// literal "detached HEAD" here, not a ref: there is no branch to
+		// name, and treating that string as one would invent a branch
+		// called "detached HEAD" (verified against git 2.55).
+		head := strings.TrimSpace(string(b))
+		if !strings.HasPrefix(head, "refs/heads/") {
+			continue
+		}
+		return strings.TrimPrefix(head, "refs/heads/")
 	}
 	return ""
 }
