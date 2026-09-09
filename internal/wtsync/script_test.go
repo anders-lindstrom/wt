@@ -177,12 +177,62 @@ func TestResolveInWorktreeAScriptThatExitsZeroWithoutStagingIsAnError(t *testing
 }
 
 func TestScriptTimesOutInsteadOfHanging(t *testing.T) {
-	script := "#!/bin/sh\nsleep 5\n"
+	// Echoes on every tick rather than once before a single sleep, so the
+	// marker is captured regardless of scheduling jitter in when the script
+	// actually starts running under test load, and the script would hang
+	// forever without the deadline actually killing it.
+	script := "#!/bin/sh\nwhile :; do\n  echo 'still working' >&2\n  sleep 0.1\ndone\n"
 	dir, wt := stoppedRebaseWithScript(t, script)
 	s := Script{Root: dir, Trunk: "origin/main", Run: "bin/resolve", Timeout: 300 * time.Millisecond}
+	start := time.Now()
 	err := s.ResolveInWorktree(wt, "v.txt")
+	elapsed := time.Since(start)
 	if err == nil || IsRefusal(err) || !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("err %v", err)
+	}
+	if !strings.Contains(err.Error(), "still working") {
+		t.Errorf("err %v, want the stderr captured before the kill", err)
+	}
+	// Bounds real wall-clock time: without a real kill, the loop runs forever
+	// and this test would hang past its Timeout instead of returning.
+	if bound := s.Timeout + scriptWaitDelay; elapsed > bound {
+		t.Fatalf("took %s, want under Timeout+scriptWaitDelay (%s): the process group was not actually killed", elapsed, bound)
+	}
+}
+
+// TestResolveInWorktreeAcceptsAScriptThatBackgroundsAJob covers a script that
+// resolves the conflict, then backgrounds a job that outlives it (a
+// daemonising build tool, say). The direct process exits 0, but the
+// backgrounded child keeps holding the stderr pipe past scriptWaitDelay, so
+// Wait returns exec.ErrWaitDelay for an otherwise-successful run: that must
+// still be treated as exit 0, not a failure.
+func TestResolveInWorktreeAcceptsAScriptThatBackgroundsAJob(t *testing.T) {
+	script := "#!/bin/sh\ncase \"$1\" in\n" +
+		"--resolve) git show \":3:$2\" > \"$2\" && git add -- \"$2\"; sleep 3 & ;;\n" +
+		"*) exit 1 ;;\nesac\n"
+	dir, wt := stoppedRebaseWithScript(t, script)
+	s := Script{Root: dir, Trunk: "origin/main", Run: "bin/resolve"}
+	if err := s.ResolveInWorktree(wt, "v.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if out := gitIn(t, wt, "ls-files", "-u", "--", "v.txt"); out != "" {
+		t.Fatalf("still unmerged: %s", out)
+	}
+}
+
+func TestScriptCheckTimesOutInsteadOfHanging(t *testing.T) {
+	script := "#!/bin/sh\nsleep 5\n"
+	dir, _ := stoppedRebaseWithScript(t, script)
+	s := Script{Root: dir, Trunk: "origin/main", Run: "bin/resolve", Timeout: 300 * time.Millisecond}
+	c := Conflict{Path: "v.txt", Base: []byte("1.0.0\n"), Trunk: []byte("1.0.5\n"), Branch: []byte("1.0.1\n")}
+	start := time.Now()
+	_, err := s.Resolve(c)
+	elapsed := time.Since(start)
+	if err == nil || IsRefusal(err) || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("err %v", err)
+	}
+	if bound := s.Timeout + scriptWaitDelay; elapsed > bound {
+		t.Fatalf("took %s, want under Timeout+scriptWaitDelay (%s): the process group was not actually killed", elapsed, bound)
 	}
 }
 

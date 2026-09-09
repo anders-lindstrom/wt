@@ -71,6 +71,17 @@ func runScript(cmd *exec.Cmd) error {
 	return cmd.Run()
 }
 
+// timeoutError formats a deadline-exceeded error, appending the script's
+// stderr captured before it was killed when there is any; the buffer is
+// quiescent once Wait has returned, so reading it here is safe.
+func timeoutError(run, verb, path string, d time.Duration, stderr string) error {
+	msg := fmt.Sprintf("%s %s %s: timed out after %s", run, verb, path, d)
+	if reason := strings.TrimSpace(stderr); reason != "" {
+		msg += ": " + reason
+	}
+	return errors.New(msg)
+}
+
 // Resolve checks the conflict against the script, through a temporary index
 // holding only the conflict's three stages. See the type comment.
 func (s Script) Resolve(c Conflict) ([]byte, error) {
@@ -94,7 +105,13 @@ func (s Script) Resolve(c Conflict) ([]byte, error) {
 	cmd.Stderr = &stderr
 	err = runScript(cmd)
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return nil, fmt.Errorf("%s --check %s: timed out after %s", s.Run, c.Path, s.timeout())
+		return nil, timeoutError(s.Run, "--check", c.Path, s.timeout(), stderr.String())
+	}
+	if errors.Is(err, exec.ErrWaitDelay) {
+		// The script itself exited 0; only a background child it left
+		// running kept stderr open past scriptWaitDelay. That is not a
+		// failure of --check.
+		err = nil
 	}
 	var exit *exec.ExitError
 	switch {
@@ -132,7 +149,13 @@ func (s Script) ResolveInWorktree(wtPath, path string) error {
 	cmd.Stderr = &stderr
 	err = runScript(cmd)
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return fmt.Errorf("%s --resolve %s: timed out after %s", s.Run, path, s.timeout())
+		return timeoutError(s.Run, "--resolve", path, s.timeout(), stderr.String())
+	}
+	if errors.Is(err, exec.ErrWaitDelay) {
+		// The script itself exited 0; only a background child it left
+		// running kept stderr open past scriptWaitDelay. Let the ls-files
+		// check below decide whether --resolve actually did its job.
+		err = nil
 	}
 	var exit *exec.ExitError
 	switch {
