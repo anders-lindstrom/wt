@@ -3,50 +3,10 @@ package commands
 import (
 	"bytes"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
-
-func TestMigrateRelocatesToCanonicalPath(t *testing.T) {
-	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
-	legacy := filepath.Join(ctx.Repo.Parent, "demo-legacy")
-	gitIn(t, main, "worktree", "add", "-q", "-b", "fix_wt/legacy", legacy)
-
-	var buf bytes.Buffer
-	got, err := Migrate(ctx, "fix/legacy", MigrateOptions{}, &buf)
-	if err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
-	want := filepath.Join(ctx.Repo.Parent, "demo_wt", "fix_wt", "legacy")
-	if got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-	if _, err := os.Stat(want); err != nil {
-		t.Errorf("worktree not at canonical path: %v", err)
-	}
-	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
-		t.Error("legacy path should be gone")
-	}
-}
-
-func TestMigrateIsANoOpWhenAlreadyCanonical(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
-	var buf bytes.Buffer
-	path, err := New(ctx, "fix/already", NewOptions{NoSetup: true}, &buf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := Migrate(ctx, "fix/already", MigrateOptions{}, &buf)
-	if err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
-	if got != path {
-		t.Errorf("got %q, want unchanged %q", got, path)
-	}
-}
 
 func TestAdoptProvisionsAnExternallyCreatedWorktree(t *testing.T) {
 	main := committedRepo(t, minimalConf)
@@ -179,108 +139,6 @@ func TestDoctorKeepsValidKeysWhenConfigIsInvalid(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "definitely-not-a-real-binary-xyz") {
 		t.Errorf("REQUIRED_BINS was discarded along with the invalid key:\n%s", buf.String())
-	}
-}
-
-// Superset stores the absolute path of every workspace it makes, so a migrate
-// silently breaks the workspace. The warning has to arrive before the move —
-// and therefore during a dry run, which is where it is read.
-func TestMigrateWarnsBeforeMovingASupersetWorktree(t *testing.T) {
-	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
-	superset := filepath.Join(ctx.Repo.Parent, "demo_wt", "demo", "fix_wt", "legacy")
-	gitIn(t, main, "worktree", "add", "-q", "-b", "fix_wt/legacy", superset)
-
-	var buf bytes.Buffer
-	if _, err := Migrate(ctx, "fix/legacy", MigrateOptions{DryRun: true}, &buf); err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
-	out := buf.String()
-	if !strings.Contains(out, "Superset") {
-		t.Errorf("want the workspace warning:\n%s", out)
-	}
-	if strings.Index(out, "Superset") > strings.Index(out, "would move") {
-		t.Errorf("the warning must come before what it warns about:\n%s", out)
-	}
-}
-
-// --dry-run must show exactly what would happen and change nothing. This is the
-// safety valve for worktrees carrying real work: you look before you leap.
-func TestMigrateDryRunChangesNothing(t *testing.T) {
-	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
-	legacy := filepath.Join(ctx.Repo.Parent, "demo-legacy")
-	gitIn(t, main, "worktree", "add", "-q", "-b", "fix_wt/legacy", legacy)
-	mustWrite(t, filepath.Join(legacy, "precious.txt"), "real work")
-
-	var buf bytes.Buffer
-	got, err := Migrate(ctx, "fix/legacy", MigrateOptions{DryRun: true}, &buf)
-	if err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
-	want := filepath.Join(ctx.Repo.Parent, "demo_wt", "fix_wt", "legacy")
-	if got != want {
-		t.Errorf("dry run should still report the destination: %q", got)
-	}
-	if _, err := os.Stat(filepath.Join(legacy, "precious.txt")); err != nil {
-		t.Error("dry run moved the worktree")
-	}
-	if _, err := os.Stat(want); err == nil {
-		t.Error("dry run created the destination")
-	}
-	if !strings.Contains(buf.String(), "would move") {
-		t.Errorf("dry run should say what it would do:\n%s", buf.String())
-	}
-}
-
-// A move must be verified against git afterwards, not assumed from the argument.
-func TestMigrateReportsWhereTheWorktreeActuallyWent(t *testing.T) {
-	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
-	legacy := filepath.Join(ctx.Repo.Parent, "demo-legacy")
-	gitIn(t, main, "worktree", "add", "-q", "-b", "fix_wt/legacy", legacy)
-
-	var buf bytes.Buffer
-	got, err := Migrate(ctx, "fix/legacy", MigrateOptions{}, &buf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	worktrees, err := ctx.Repo.Worktrees()
-	if err != nil {
-		t.Fatal(err)
-	}
-	found := false
-	for _, wt := range worktrees {
-		if wt.Branch == "fix_wt/legacy" {
-			found = true
-			if wt.Path != got {
-				t.Errorf("reported %q but git says %q", got, wt.Path)
-			}
-		}
-	}
-	if !found {
-		t.Error("git lost track of the worktree")
-	}
-}
-
-func TestMigrateRefusesWhenDestinationOccupied(t *testing.T) {
-	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
-	legacy := filepath.Join(ctx.Repo.Parent, "demo-legacy")
-	gitIn(t, main, "worktree", "add", "-q", "-b", "fix_wt/legacy", legacy)
-	mustWrite(t, filepath.Join(legacy, "precious.txt"), "real work")
-	occupied := filepath.Join(ctx.Repo.Parent, "demo_wt", "fix_wt", "legacy")
-	mustWrite(t, filepath.Join(occupied, "someone-elses.txt"), "do not clobber")
-
-	var buf bytes.Buffer
-	if _, err := Migrate(ctx, "fix/legacy", MigrateOptions{}, &buf); err == nil {
-		t.Fatal("want a refusal")
-	}
-	if _, err := os.Stat(filepath.Join(legacy, "precious.txt")); err != nil {
-		t.Error("the worktree must be left alone on refusal")
-	}
-	if got := mustRead(t, filepath.Join(occupied, "someone-elses.txt")); got != "do not clobber" {
-		t.Error("the destination must be left alone on refusal")
 	}
 }
 

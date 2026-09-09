@@ -35,31 +35,3 @@ func newAdoptCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&skipBuild, "skip-build", false, "skip build initialisation")
 	return cmd
 }
-
-func newMigrateCmd() *cobra.Command {
-	var opts commands.MigrateOptions
-	cmd := &cobra.Command{
-		Use:   "migrate <type>/<work>",
-		Short: "Move a worktree to the canonical path",
-		Long: "Move a worktree to the canonical path. The move is git's own, so\n" +
-			"commits, stashes, uncommitted changes and ignored files all travel\n" +
-			"with it — but tools holding the old absolute path will not follow.\n\n" +
-			"Use --dry-run first on a worktree carrying work that matters.",
-		Args:              needArgs(1, "<type>/<work>", "wt migrate feat/webkey"),
-		ValidArgsFunction: completeWork,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, err := openContext()
-			if err != nil {
-				return err
-			}
-			path, err := commands.Migrate(ctx, args[0], opts, cmd.ErrOrStderr())
-			if err != nil {
-				return err
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), path)
-			return nil
-		},
-	}
-	cmd.Flags().BoolVar(&opts.DryRun, "dry-run", false, "show what would happen, change nothing")
-	return cmd
-}

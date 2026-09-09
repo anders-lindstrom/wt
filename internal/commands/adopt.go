@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-
-	"github.com/anders-lindstrom/wt/internal/naming"
 )
 
 // Adopt provisions a worktree somebody else created — plain `git worktree add`,
@@ -45,86 +43,4 @@ func Adopt(ctx *Context, path string, relocate bool, opts SetupOptions, w io.Wri
 		return abs, err
 	}
 	return abs, nil
-}
-
-// MigrateOptions controls relocation.
-type MigrateOptions struct {
-	// DryRun reports what would happen and changes nothing. Worth reaching for
-	// on a worktree carrying work you cannot afford to lose.
-	DryRun bool
-}
-
-// Migrate moves a worktree to the canonical path without reprovisioning it.
-func Migrate(ctx *Context, spec string, opts MigrateOptions, w io.Writer) (string, error) {
-	path, err := Path(ctx, spec)
-	if err != nil {
-		return "", err
-	}
-	return relocate(ctx, path, opts, w)
-}
-
-func relocateWorktree(ctx *Context, path string, w io.Writer) (string, error) {
-	return relocate(ctx, path, MigrateOptions{}, w)
-}
-
-func relocate(ctx *Context, path string, opts MigrateOptions, w io.Writer) (string, error) {
-	branch := ctx.Repo.BranchAt(path)
-	typ, work, ok := naming.ParseBranch(branch, ctx.Config.TypeSuffix)
-	if !ok {
-		return "", fmt.Errorf("%s is on %q, which is not a worktree branch; nothing to migrate to",
-			path, branch)
-	}
-	want := naming.WorktreeDir(ctx.Repo.Parent, ctx.Repo.Name, typ, work, ctx.Config.TypeSuffix)
-	if want == path {
-		fmt.Fprintf(w, "- %s is already at the canonical path\n", path)
-		return path, nil
-	}
-	// Before the move, and therefore during a dry run — after it, the warning
-	// is a post-mortem. Superset stores the absolute path of every workspace
-	// it makes, so a migrate leaves that workspace pointing at nothing.
-	if naming.Classify(path, ctx.Repo.Parent, ctx.Repo.Name, typ, work, ctx.Config.TypeSuffix) == naming.Superset {
-		fmt.Fprintln(w, "! this is Superset's layout: its workspace holds this path and will")
-		fmt.Fprintln(w, "  not follow the move. Re-point or recreate the workspace afterwards.")
-	}
-	fmt.Fprintln(w, "  note: tools holding the old absolute path (IDE workspaces, running dev")
-	fmt.Fprintln(w, "  servers) will need to be pointed at the new one.")
-
-	if opts.DryRun {
-		fmt.Fprintf(w, "would move %s\n        -> %s\n", path, want)
-		fmt.Fprintln(w, "  (nothing has changed; drop --dry-run to do it)")
-		return want, nil
-	}
-
-	fmt.Fprintf(w, "Moving %s -> %s\n", path, want)
-	if err := ctx.Repo.MoveWorktree(path, want); err != nil {
-		return "", err
-	}
-
-	// Verify against git rather than trusting the argument: `git worktree move`
-	// has surprising destination semantics, and reporting a path the worktree
-	// is not actually at is how one goes missing.
-	actual, err := worktreePathFor(ctx, ctx.Repo.BranchAt(want))
-	if err != nil || actual == "" {
-		return want, fmt.Errorf("moved %s, but git no longer reports a worktree there — check `wt list`", path)
-	}
-	if actual != want {
-		return actual, fmt.Errorf("asked git to move to %s but it landed at %s", want, actual)
-	}
-	return want, nil
-}
-
-func worktreePathFor(ctx *Context, branch string) (string, error) {
-	if branch == "" {
-		return "", nil
-	}
-	worktrees, err := ctx.Repo.Worktrees()
-	if err != nil {
-		return "", err
-	}
-	for _, wt := range worktrees {
-		if wt.Branch == branch {
-			return wt.Path, nil
-		}
-	}
-	return "", nil
 }
