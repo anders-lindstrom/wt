@@ -52,7 +52,21 @@ func WorktreeDir(parent, repoName, typ, work, suffix string) string {
 // already <parent>/<repo><suffix>. No setting on either side removes the extra
 // segment, so the two tools cannot be made to agree on one path.
 func SupersetDir(parent, repoName, typ, work, suffix string) string {
-	return filepath.Join(parent, repoName+suffix, repoName, typ+suffix, work)
+	return filepath.Join(SupersetRoot(parent, repoName, suffix), typ+suffix, work)
+}
+
+// SupersetRoot is the directory Superset puts every worktree of a repository
+// under.
+func SupersetRoot(parent, repoName, suffix string) string {
+	return filepath.Join(parent, repoName+suffix, repoName)
+}
+
+// UnderSuperset reports whether a path lies inside Superset's tree. Classify
+// answers the same question for one piece of work; this one needs no work
+// name, so it also recognises the worktrees whose branch wt cannot parse.
+func UnderSuperset(path, parent, repoName, suffix string) bool {
+	root := SupersetRoot(parent, repoName, suffix)
+	return strings.HasPrefix(filepath.Clean(path), root+string(filepath.Separator))
 }
 
 // Layout names the shape a worktree's path follows.

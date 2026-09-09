@@ -145,3 +145,25 @@ func TestParseSpec(t *testing.T) {
 		t.Error("two slashes should error")
 	}
 }
+
+// A worktree in Superset's tree has to be recognised by where it sits, not by
+// the work it holds: Superset also mints names wt cannot parse, and those are
+// exactly the ones somebody wants to migrate.
+func TestUnderSuperset(t *testing.T) {
+	const parent, repo, suffix = "/p", "server", "_wt"
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"/p/server_wt/server/feat_wt/webkey", true},
+		{"/p/server_wt/server/feat_wt/dedd5f22/local-gecko", true},
+		{"/p/server_wt/feat_wt/webkey", false},
+		{"/p/server-webkey", false},
+		{"/p/server_wt/server", false},
+	}
+	for _, c := range cases {
+		if got := UnderSuperset(c.path, parent, repo, suffix); got != c.want {
+			t.Errorf("UnderSuperset(%q) = %v, want %v", c.path, got, c.want)
+		}
+	}
+}
