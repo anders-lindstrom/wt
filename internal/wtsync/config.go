@@ -67,7 +67,13 @@ var (
 // working tree: the file names executables, and a feature branch must not be
 // able to change what runs unattended.
 func LoadFromTrunk(mainRoot, trunk string) (*Config, error) {
-	ref := "origin/" + trunk
+	return LoadFromRef(mainRoot, "origin/"+trunk)
+}
+
+// LoadFromRef reads the declaration from any ref. A run passes the SHA it
+// pinned, so the declaration comes from the same trunk as every rebase
+// target even when someone else fetches underneath it mid-run.
+func LoadFromRef(mainRoot, ref string) (*Config, error) {
 	out, err := git.Run(mainRoot, "show", ref+":"+ConfigFile)
 	if err != nil {
 		if strings.Contains(err.Error(), "does not exist") || strings.Contains(err.Error(), "exists on disk, but not in") {

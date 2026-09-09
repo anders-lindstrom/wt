@@ -42,7 +42,7 @@ func Locate(ctx *Context, arg string) (repo.Worktree, error) {
 				continue
 			}
 			if wt.IsMain {
-				return repo.Worktree{}, errors.New("refusing to remove the main checkout")
+				return repo.Worktree{}, errors.New("the main checkout is not a worktree; name a worktree (see wt list)")
 			}
 			return wt, nil
 		}
@@ -59,7 +59,7 @@ func Locate(ctx *Context, arg string) (repo.Worktree, error) {
 		return matches[0], nil
 	case 0:
 		if arg == ctx.Repo.Name {
-			return repo.Worktree{}, errors.New("refusing to remove the main checkout")
+			return repo.Worktree{}, errors.New("the main checkout is not a worktree; name a worktree (see wt list)")
 		}
 		return repo.Worktree{}, fmt.Errorf(
 			"no worktree %q in %s — run `wt list` to see them", arg, ctx.Repo.Name)

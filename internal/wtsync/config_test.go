@@ -221,3 +221,16 @@ func TestLoadFromTrunkReportsWhenTheRefItselfIsMissing(t *testing.T) {
 		t.Errorf("err = %v, want it to name origin/main and suggest git fetch origin", err)
 	}
 }
+
+func TestLoadFromRefReadsAPinnedSHA(t *testing.T) {
+	local, origin := repoWithOrigin(t)
+	commitOnOrigin(t, local, origin, ".wt-sync.yaml", "conflicts:\n  - paths: [lock]\n    strategy: take-trunk\n")
+	sha := gitIn(t, local, "rev-parse", "--verify", "origin/main")
+	cfg, err := LoadFromRef(local, sha)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Conflicts) != 1 || cfg.Conflicts[0].Strategy != "take-trunk" {
+		t.Errorf("read the wrong config: %+v", cfg.Conflicts)
+	}
+}

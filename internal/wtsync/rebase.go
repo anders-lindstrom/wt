@@ -148,6 +148,10 @@ func Rebase(mainRoot string, cfg *Config, req Request, log io.Writer) (Result, e
 		_, _ = git("rebase", "--abort")
 		if busy, _ := RebaseInProgress(req.Path); busy {
 			_, _ = git("rebase", "--quit")
+			// --quit leaves HEAD detached where the rebase stopped; the
+			// verification below wants the branch checked out again, and
+			// the reset then moves the branch rather than only HEAD.
+			_, _ = git("symbolic-ref", "HEAD", "refs/heads/"+req.Branch)
 		}
 		if head, _ := git("rev-parse", "HEAD"); head != old {
 			if _, err := git("reset", "--hard", res.Safety.Ref); err != nil {

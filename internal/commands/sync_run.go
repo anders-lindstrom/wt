@@ -59,7 +59,7 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("%s is not known here; run git fetch origin", onto)
 	}
-	cfg, err := wtsync.LoadFromTrunk(ctx.Repo.MainRoot, trunk)
+	cfg, err := wtsync.LoadFromRef(ctx.Repo.MainRoot, trunkSHA)
 	if errors.Is(err, wtsync.ErrNoConfig) {
 		return fmt.Errorf("%s declares no %s on %s: nothing is rebased", ctx.Repo.Name, wtsync.ConfigFile, onto)
 	}
