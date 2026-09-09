@@ -129,10 +129,21 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 		p.verdict, p.reason = wtsync.Preflight(p.a)
 		parts[b] = p
 	}
-	// A refused member poisons its stack: never half-apply (spec §4).
+	// A member refused before anything has moved poisons its whole stack:
+	// never half-apply (spec §4).
 	poisoned := map[string]string{}
 	poison := func(b, why string) {
 		for _, m := range wtsync.Members(parents, b) {
+			if poisoned[m] == "" {
+				poisoned[m] = why
+			}
+		}
+	}
+	// A rebase that failed or was restored is different: the branch is back
+	// where it was and its parent and siblings are untouched, so only what
+	// sits on top of it loses its base.
+	poisonAbove := func(b, why string) {
+		for _, m := range wtsync.Descendants(parents, b) {
 			if poisoned[m] == "" {
 				poisoned[m] = why
 			}
@@ -194,13 +205,24 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 			continue
 		}
 		p.lock = lock
-		if busy, err := wtsync.RebaseInProgress(p.wt.Path); err != nil || busy {
+		// A check that cannot be run is not a passed check: this fails
+		// closed, the way the restore check in wtsync does. It says so,
+		// rather than reporting the state it never managed to read.
+		busy, err := wtsync.RebaseInProgress(p.wt.Path)
+		if err != nil {
+			poison(b, p.work+": changed since triage: could not check: "+err.Error())
+			continue
+		}
+		if busy {
 			poison(b, p.work+": changed since triage: a rebase is in progress")
 			continue
 		}
-		// A status that cannot be read is not a clean status: this fails
-		// closed, the way the restore check in wtsync does.
-		if status, err := git.Run(p.wt.Path, "--no-optional-locks", "status", "--porcelain", "--untracked-files=no"); err != nil || status != "" {
+		status, err := git.Run(p.wt.Path, "--no-optional-locks", "status", "--porcelain", "--untracked-files=no")
+		if err != nil {
+			poison(b, p.work+": changed since triage: could not check: "+err.Error())
+			continue
+		}
+		if status != "" {
 			poison(b, p.work+": changed since triage: tracked changes")
 			continue
 		}
@@ -238,8 +260,8 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 		}
 		if rerr != nil {
 			fmt.Fprintf(w, "  failed: %v\n", rerr)
-			failures = append(failures, p.work)
-			poison(b, p.work+" failed")
+			failures = append(failures, p.work+" (failed)")
+			poisonAbove(b, p.work+" failed")
 			release(b)
 			continue
 		}
@@ -252,8 +274,8 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 				}
 			}
 			fmt.Fprintf(w, "  restored: %s at %d/%d not resolved; rebase by hand\n", strings.Join(files, ", "), last.Index, last.Total)
-			failures = append(failures, p.work)
-			poison(b, p.work+" was restored")
+			failures = append(failures, p.work+" (restored)")
+			poisonAbove(b, p.work+" was restored")
 			release(b)
 			continue
 		}
@@ -262,7 +284,9 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 			line += fmt.Sprintf(", %d signature%s dropped", res.SignaturesDropped, plural(res.SignaturesDropped))
 		}
 		fmt.Fprintln(w, line)
-		results, err := wtsync.RunDeferred(p.wt.Path, cfg.Defer, res.OldTip, res.NewTip, nil)
+		// w, not nil: RunDeferred announces each step as it starts, so a
+		// long one is not silence until printDeferred reports the result.
+		results, err := wtsync.RunDeferred(p.wt.Path, cfg.Defer, res.OldTip, res.NewTip, w)
 		if err != nil {
 			return err
 		}

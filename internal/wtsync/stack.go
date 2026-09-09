@@ -144,3 +144,31 @@ func Order(parents map[string]string, branches []string) []string {
 	})
 	return out
 }
+
+// Descendants is everything above a branch in its stack — its children,
+// their children, and so on — in the order Members uses, without the branch
+// itself. A rebase that failed or was restored invalidates only what sits on
+// top of it: its parent and its siblings are untouched and still rebase.
+func Descendants(parents map[string]string, branch string) []string {
+	children := map[string][]string{}
+	for c, p := range parents {
+		children[p] = append(children[p], c)
+	}
+	var out []string
+	seen := map[string]bool{branch: true}
+	var walk func(string)
+	walk = func(b string) {
+		kids := children[b]
+		sort.Strings(kids)
+		for _, k := range kids {
+			if seen[k] {
+				continue
+			}
+			seen[k] = true
+			out = append(out, k)
+			walk(k)
+		}
+	}
+	walk(branch)
+	return out
+}

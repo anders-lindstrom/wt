@@ -315,3 +315,65 @@ func TestSyncRunRestoresAndReportsALaterUnclaimedStop(t *testing.T) {
 		t.Fatal("the safety ref, the undo target, is missing")
 	}
 }
+
+// twoChildFixture puts two independent children on feat_wt/bump and moves
+// a.txt on trunk, so the child that also touches a.txt hits an unclaimed
+// conflict on its own commit while its sibling replays cleanly. The names
+// put the conflicted one first in the run order, so a whole-stack poison
+// would visibly reach the sibling.
+func twoChildFixture(t *testing.T, ctx *Context, main string) (conflicted, clean string) {
+	t.Helper()
+	var buf bytes.Buffer
+	child := func(spec, file, content string) string {
+		t.Helper()
+		path, err := New(ctx, spec, NewOptions{NoSetup: true, Base: "feat_wt/bump"}, &buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(path, file), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		gitOut(t, path, "add", "-A")
+		gitOut(t, path, "commit", "-q", "-m", spec)
+		return path
+	}
+	conflicted = child("feat/alpha", "a.txt", "alpha\n")
+	clean = child("feat/zulu", "c.txt", "c\n")
+	if err := os.WriteFile(filepath.Join(main, "a.txt"), []byte("trunk\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitOut(t, main, "add", "-A")
+	gitOut(t, main, "commit", "-q", "-m", "a on trunk")
+	gitOut(t, main, "fetch", "-q", "origin")
+	return conflicted, clean
+}
+
+func TestSyncRunARestoredChildDoesNotStopItsSibling(t *testing.T) {
+	ctx, bump := runFixture(t, false)
+	conflicted, clean := twoChildFixture(t, ctx, ctx.Repo.MainRoot)
+	oldConflicted := gitOut(t, conflicted, "rev-parse", "HEAD")
+	var out bytes.Buffer
+	err := SyncRun(ctx, []string{"bump"}, noAgents(), &out)
+	s := out.String()
+	if err == nil {
+		t.Fatalf("a restored branch is a failure:\n%s", s)
+	}
+	if !strings.Contains(s, "restored: a.txt") {
+		t.Fatalf("out %s", s)
+	}
+	// The sibling rebased onto the parent's tip; the restored one did not move.
+	parentTip := gitOut(t, bump, "rev-parse", "HEAD")
+	if gitOut(t, clean, "rev-parse", "HEAD~1") != parentTip {
+		t.Fatalf("the sibling was not rebased onto the parent:\n%s", s)
+	}
+	if gitOut(t, conflicted, "rev-parse", "HEAD") != oldConflicted {
+		t.Fatal("the restored branch moved")
+	}
+	if strings.Contains(s, "alpha was restored") {
+		t.Fatalf("the sibling was poisoned:\n%s", s)
+	}
+	// The closing error names the restored branch and nothing else.
+	if !strings.Contains(err.Error(), "alpha (restored)") || strings.Contains(err.Error(), "zulu") {
+		t.Fatalf("err %v", err)
+	}
+}

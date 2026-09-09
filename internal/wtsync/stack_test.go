@@ -102,3 +102,27 @@ func TestMembersAndOrder(t *testing.T) {
 		t.Fatalf("order %v", got)
 	}
 }
+
+func TestDescendantsReturnsOneSubtreeNotTheWholeStack(t *testing.T) {
+	// root -> a, b; a -> a1. A failure of a must not reach b or root.
+	parents := map[string]string{"a": "root", "b": "root", "a1": "a"}
+	for _, tc := range []struct {
+		branch string
+		want   []string
+	}{
+		{"root", []string{"a", "a1", "b"}},
+		{"a", []string{"a1"}},
+		{"b", nil},
+		{"a1", nil},
+	} {
+		got := Descendants(parents, tc.branch)
+		if len(got) != len(tc.want) {
+			t.Fatalf("Descendants(%q) = %v, want %v", tc.branch, got, tc.want)
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Fatalf("Descendants(%q) = %v, want %v", tc.branch, got, tc.want)
+			}
+		}
+	}
+}
