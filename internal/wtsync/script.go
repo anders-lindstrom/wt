@@ -342,15 +342,19 @@ func hashObject(root string, data []byte) (string, error) {
 // a run that waits on it holds its locks the whole time.
 const GitTimeout = 10 * time.Minute
 
-// gitEnvAllow runs git in dir with extra environment and optional stdin,
-// returning trimmed stdout and the exit status. A status equal to allow is
-// an answer, not a failure: merge-base --is-ancestor and merge-tree both
-// use one. Every other non-zero status is an error. allow < 0 allows none.
+// runGit is the machinery shared by every git invocation in this file: the
+// deadline, the runScript call under it, the timed-out error and the
+// stderr-annotated failure. internal/git.Run has no place for any of this —
+// it takes neither extra environment nor stdin. Errors keep %w wrapping so
+// errors.As can still find the underlying *exec.ExitError (isExit in
+// stack.go depends on this). Callers decide what "failure" means: gitEnv and
+// gitEnvAllow trim stdout and tolerate one exit status, gitEnvRaw trims
+// nothing and tolerates none.
 //
 // GIT_TERMINAL_PROMPT=0 goes in first so a repository wanting credentials
 // fails rather than blocking on a prompt no unattended run can answer; the
 // deadline and the process group come from runScript.
-func gitEnvAllow(dir string, env []string, stdin io.Reader, allow int, args ...string) (string, int, error) {
+func runGit(dir string, env []string, stdin io.Reader, args ...string) (stdout []byte, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), GitTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", args...)
@@ -359,24 +363,36 @@ func gitEnvAllow(dir string, env []string, stdin io.Reader, allow int, args ...s
 	if stdin != nil {
 		cmd.Stdin = stdin
 	}
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	err := runScript(cmd)
-	out := strings.TrimRight(stdout.String(), "\n")
+	var out, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &stderr
+	runErr := runScript(cmd)
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return "", 0, fmt.Errorf("git %s: timed out after %s", strings.Join(args, " "), GitTimeout)
+		return nil, fmt.Errorf("git %s: timed out after %s", strings.Join(args, " "), GitTimeout)
 	}
+	if runErr != nil {
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			runErr = fmt.Errorf("%s (%w)", msg, runErr)
+		}
+		return out.Bytes(), runErr
+	}
+	return out.Bytes(), nil
+}
+
+// gitEnvAllow runs git in dir with extra environment and optional stdin,
+// returning trimmed stdout and the exit status. A status equal to allow is
+// an answer, not a failure: merge-base --is-ancestor and merge-tree both
+// use one. Every other non-zero status is an error. allow < 0 allows none.
+func gitEnvAllow(dir string, env []string, stdin io.Reader, allow int, args ...string) (string, int, error) {
+	out, err := runGit(dir, env, stdin, args...)
+	trimmed := strings.TrimRight(string(out), "\n")
 	if err != nil {
 		var exit *exec.ExitError
 		if allow >= 0 && errors.As(err, &exit) && exit.ExitCode() == allow {
-			return out, allow, nil
-		}
-		if msg := strings.TrimSpace(stderr.String()); msg != "" {
-			return "", 0, fmt.Errorf("%s (%w)", msg, err)
+			return trimmed, allow, nil
 		}
 		return "", 0, err
 	}
-	return out, 0, nil
+	return trimmed, 0, nil
 }
 
 // gitEnv runs git and treats every non-zero status as a failure.
@@ -389,22 +405,9 @@ func gitEnv(dir string, env []string, stdin io.Reader, args ...string) (string, 
 // content, and gitEnv/gitEnvAllow's trailing-newline trim would corrupt it.
 // It allows nothing.
 func gitEnvRaw(dir string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), GitTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = dir
-	cmd.Env = withEnv("GIT_TERMINAL_PROMPT=0")
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	err := runScript(cmd)
-	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return nil, fmt.Errorf("git %s: timed out after %s", strings.Join(args, " "), GitTimeout)
-	}
+	out, err := runGit(dir, nil, nil, args...)
 	if err != nil {
-		if msg := strings.TrimSpace(stderr.String()); msg != "" {
-			return nil, fmt.Errorf("%s (%w)", msg, err)
-		}
 		return nil, err
 	}
-	return stdout.Bytes(), nil
+	return out, nil
 }
