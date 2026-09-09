@@ -3754,7 +3754,7 @@ git push origin main
 - Modify: `README.md` (one row in the commands table)
 
 **Interfaces:**
-- Consumes: `Context` (`ctx.Repo.MainRoot`, `ctx.Repo.Worktrees()`, `ctx.Config.MainBranch`, `ctx.Config.TypeSuffix`); `naming.ParseBranch`; `wtsync.LoadFromTrunk`, `ErrNoConfig`, `ListAgents`, `Assess`, the `Assessment` fields.
+- Consumes: `Context` (`ctx.Repo.MainRoot`, `ctx.Repo.Worktrees()`, `ctx.Config.MainBranch`, `ctx.Config.TypeSuffix`); `naming.ParseBranch`; `wtsync.LoadFromTrunk`, `ErrNoConfig`, `ListAgents`, `Assess`, the `Assessment` fields — including `Notes []string` (advisory, e.g. both sides changed the dependency graph) and the `Unknown` class (zero value; an assessment that failed before a class was decided, always with `Err` set), both added in Task 10's fix round.
 - Produces: `func Sync(ctx *Context, w io.Writer) error`.
 
 The table (spec §7): every worktree except the main checkout, its class, behind/ahead, the first stop, who is in it, and what would need a person. `current` rows are not printed (spec §1). It never changes anything. One `git fetch` per repository would serve every worktree, but this plan does not fetch: the table is computed against whatever `origin/<trunk>` is, and says so in its header; fetching belongs to `run` and `keep`.
@@ -3849,6 +3849,29 @@ func TestSyncPrintsTheTriageAndChangesNothing(t *testing.T) {
 	}
 	if !strings.Contains(out, "bump") || !strings.Contains(out, "v.txt✓") {
 		t.Errorf("the stop column names the stopping commit and the resolved file:\n%s", out)
+	}
+}
+
+func TestSyncPrintsAnUnknownRowWithItsError(t *testing.T) {
+	ctx := syncRepo(t)
+	// break one worktree: its directory is gone, so status fails before a class is decided
+	wts, err := ctx.Repo.Worktrees()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, wt := range wts {
+		if strings.HasSuffix(wt.Branch, "/bump") {
+			if err := os.RemoveAll(wt.Path); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	var buf bytes.Buffer
+	if err := Sync(ctx, &buf); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if !strings.Contains(buf.String(), "unknown") || !strings.Contains(buf.String(), "error:") {
+		t.Errorf("a failed assessment is printed as unknown with its error, never dropped:\n%s", buf.String())
 	}
 }
 
@@ -3985,6 +4008,7 @@ func noteColumn(a wtsync.Assessment) string {
 		}
 	}
 	notes = append(notes, a.Divergent...)
+	notes = append(notes, a.Notes...)
 	if a.NoConfig && a.Class != wtsync.Detached {
 		notes = append(notes, "no declaration")
 	}
