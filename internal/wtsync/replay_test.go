@@ -11,12 +11,23 @@ import (
 // from base with the given per-commit edits. Each edit is path -> content.
 func linearRepo(t *testing.T, trunkEdits []map[string]string, branchEdits []map[string]string) string {
 	t.Helper()
+	return repoWith(t, map[string]string{"a.txt": "a\n", "b.txt": "b\n", "v.txt": "1.0.0\n"}, trunkEdits, branchEdits)
+}
+
+// repoWith builds: base (the given files) -> main moves on (trunk edits) ;
+// feature branches from base with the given per-commit edits. Each edit is
+// path -> content. The repository's identity is configured explicitly so a
+// production-path commit made in it does not depend on the ambient identity.
+func repoWith(t *testing.T, base map[string]string, trunkEdits []map[string]string, branchEdits []map[string]string) string {
+	t.Helper()
 	dir, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	gitIn(t, dir, "init", "-q", "-b", "main")
 	gitIn(t, dir, "config", "commit.gpgsign", "false")
+	gitIn(t, dir, "config", "user.name", "t")
+	gitIn(t, dir, "config", "user.email", "t@example.com")
 	write := func(edits map[string]string) {
 		for p, c := range edits {
 			full := filepath.Join(dir, p)
@@ -28,7 +39,7 @@ func linearRepo(t *testing.T, trunkEdits []map[string]string, branchEdits []map[
 			}
 		}
 	}
-	write(map[string]string{"a.txt": "a\n", "b.txt": "b\n", "v.txt": "1.0.0\n"})
+	write(base)
 	gitIn(t, dir, "add", "-A")
 	gitIn(t, dir, "commit", "-q", "-m", "base")
 	gitIn(t, dir, "branch", "feature")

@@ -146,43 +146,6 @@ func classifyStop(files []FileOutcome, messages string) (Class, []FileOutcome) {
 	return Recipe, files
 }
 
-// tryStrategy asks the declared strategy whether it resolves the conflict.
-// A conflict without three regular blobs is refused before any strategy sees
-// it. The error return is for things going wrong — a strategy that cannot be
-// built, a script that cannot run — as opposed to a refusal, which is a
-// normal outcome carried in the Note.
-func tryStrategy(mainRoot, onto string, cfg *Config, c Conflict) (FileOutcome, error) {
-	f := FileOutcome{Path: c.Path, Note: "unclaimed"}
-	if c.Incomplete != "" {
-		f.Note = c.Incomplete
-		return f, nil
-	}
-	if cfg == nil {
-		return f, nil
-	}
-	rule, ok := cfg.RuleFor(c.Path)
-	if !ok {
-		return f, nil
-	}
-	f.Strategy = rule.Strategy
-	s, err := FromRule(rule, mainRoot, onto)
-	if err != nil {
-		f.Note = err.Error()
-		return f, fmt.Errorf("%s: %w", c.Path, err)
-	}
-	if _, err := s.Resolve(c); err != nil {
-		if r := refusalOf(err); r != nil {
-			f.Note = r.Reason
-			f.Keys = r.Keys
-			return f, nil
-		}
-		f.Note = err.Error()
-		return f, fmt.Errorf("%s: %w", c.Path, err)
-	}
-	f.Resolved, f.Note = true, ""
-	return f, nil
-}
-
 // divergence returns the reasons a branch is a workstream rather than a
 // rebase (spec §1) — the openapi strategy refusing at the endpoint, generated
 // output that no longer merges — and separately any notes worth a person's

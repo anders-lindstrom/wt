@@ -24,6 +24,17 @@ func gitIn(t *testing.T, dir string, args ...string) string {
 	return strings.TrimRight(string(out), "\n")
 }
 
+// gitCmd builds a git command with gitIn's environment but leaves it unrun,
+// so the caller can inspect a non-zero exit instead of failing the test.
+func gitCmd(dir string, args ...string) *exec.Cmd {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
+		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com")
+	return cmd
+}
+
 // repoWithOrigin makes a repository whose origin/main exists, so
 // LoadFromTrunk has something to read. The "origin" is a second repository
 // on disk; origin/main is fetched from it.
