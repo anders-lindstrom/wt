@@ -22,8 +22,8 @@ const (
 	Current                // behind 0: nothing to do
 	Stale                  // ahead 0: nothing of its own; a lifecycle question
 	Clean                  // every commit replays without conflict
-	Recipe                 // the first stop is entirely resolved by strategies
-	Contested              // something at the first stop is a person's
+	Recipe                 // every stop the replay reached is resolved by strategies
+	Contested              // something at the first stop nothing resolves is a person's
 	Divergent              // the openapi strategy refuses at the endpoint: a workstream, not a rebase
 )
 
@@ -57,7 +57,13 @@ type Assessment struct {
 	Divergent []string // why the class is divergent
 	Notes     []string // observations that do not affect the class
 	NoConfig  bool
-	Err       error
+	// Unverified means the replay could not be carried to the end: a script
+	// claims a path, and a script can only be checked before a run. The
+	// class is what the replay earned up to that point.
+	Unverified bool
+	// Paused is a worktree a run left mid-rebase with a handover in it.
+	Paused bool
+	Err    error
 }
 
 // Assess classifies one worktree against onto, the ref it would be rebased
@@ -99,33 +105,39 @@ func Assess(mainRoot, onto string, cfg *Config, wt repo.Worktree, agents []Agent
 		return a
 	}
 
-	a.Replay, err = SimulateRebase(mainRoot, onto, wt.Branch)
+	a.Replay, err = SimulateRebase(mainRoot, onto, wt.Branch, cfg)
 	if err != nil {
 		a.Err = err
 		return a
 	}
-	if a.Replay.Stop == nil {
-		a.Class = Clean
-	} else {
-		for _, c := range a.Replay.Stop.Conflicts {
-			f, err := tryStrategy(mainRoot, onto, cfg, c)
-			a.Err = errors.Join(a.Err, err)
-			a.Files = append(a.Files, f)
-		}
+	a.Err = errors.Join(a.Err, a.Replay.Err)
+	a.Unverified = a.Replay.Truncated
+	switch {
+	case a.Replay.Stop != nil:
+		a.Files = a.Replay.Stop.Files
 		a.Class, a.Files = classifyStop(a.Files, a.Replay.Stop.Messages)
+	case len(a.Replay.Stops) > 0:
+		// Every stop reached was resolved by a strategy.
+		a.Class = Recipe
+		a.Files = a.Replay.Stops[0].Files
+	default:
+		a.Class = Clean
 	}
 
 	reasons, notes, err := divergence(mainRoot, onto, cfg, wt.Branch)
 	a.Err = errors.Join(a.Err, err)
 	a.Divergent = reasons
 	a.Notes = notes
+	if a.Replay.Truncated {
+		a.Notes = append(a.Notes, a.Replay.Why)
+	}
 	if len(a.Divergent) > 0 {
 		a.Class = Divergent
 	}
 	return a
 }
 
-// classifyStop decides the class of a rebase's first stop from the files a
+// classifyStop decides the class of the stop that decides it, from the files a
 // person would see and merge-tree's own messages. A stop with no files at
 // all has nothing to show: it gets a synthetic FileOutcome so the report
 // still names something, distinguishing "merge-tree said nothing useful"

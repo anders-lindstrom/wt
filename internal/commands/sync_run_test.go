@@ -60,6 +60,32 @@ func runFixture(t *testing.T, withDefer bool) (ctx *Context, bump string) {
 	return ctx, bump
 }
 
+// declareScript hands v.txt to a script on trunk instead of the owned line.
+// A script can only be asked whether it claims a path, never for the bytes,
+// so the simulation truncates its replay at that stop and cannot see what
+// comes after it: triage reports recipe? and the run proceeds. That is the
+// one way left for a run to discover a later unclaimed stop for itself, so
+// it is what the restore tests below are built on.
+func declareScript(t *testing.T, ctx *Context) {
+	t.Helper()
+	main := ctx.Repo.MainRoot
+	dir := filepath.Join(main, "bin", "conflict")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "#!/bin/sh\ncase \"$1\" in\n--check) exit 0 ;;\n--resolve) git show \":3:$2\" > \"$2\" && git add -- \"$2\" ;;\n*) exit 1 ;;\nesac\n"
+	if err := os.WriteFile(filepath.Join(dir, "vbump"), []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	yaml := "conflicts:\n  - paths: [v.txt]\n    strategy: script\n    run: bin/conflict/vbump\n"
+	if err := os.WriteFile(filepath.Join(main, ".wt-sync.yaml"), []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitOut(t, main, "add", "-A")
+	gitOut(t, main, "commit", "-q", "-m", "declare a script for v.txt")
+	gitOut(t, main, "fetch", "-q", "origin")
+}
+
 // gitAncestor reports whether a is an ancestor of b; exit 1 is a plain no.
 func gitAncestor(t *testing.T, dir, a, b string) bool {
 	t.Helper()
@@ -287,9 +313,15 @@ func TestSyncRunAsksOnceForMoreThanOneWorktreeAndStopsOnNo(t *testing.T) {
 }
 
 func TestSyncRunRestoresAndReportsALaterUnclaimedStop(t *testing.T) {
-	// First stop is recipe (v.txt), so triage says recipe and run starts;
-	// the branch's second commit conflicts on a.txt, which nobody claims.
+	// The first stop is a script's (v.txt), which truncates the simulation
+	// there, so triage says recipe? and the run starts; the branch's second
+	// commit conflicts on a.txt, which nobody claims. Without the script the
+	// simulation would replay to that second stop itself and the run would
+	// refuse before touching anything - which is the point of doing it this
+	// way round: this pins what happens when a run, not triage, is the one
+	// that finds the unclaimed stop.
 	ctx, bump := runFixture(t, false)
+	declareScript(t, ctx)
 	main := ctx.Repo.MainRoot
 	if err := os.WriteFile(filepath.Join(bump, "a.txt"), []byte("branch\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -350,6 +382,9 @@ func twoChildFixture(t *testing.T, ctx *Context, main string) (conflicted, clean
 
 func TestSyncRunARestoredChildDoesNotStopItsSibling(t *testing.T) {
 	ctx, bump := runFixture(t, false)
+	// As above: the script truncates the simulation at v.txt, so triage
+	// cannot foresee the child's unclaimed a.txt and the run reaches it.
+	declareScript(t, ctx)
 	conflicted, clean := twoChildFixture(t, ctx, ctx.Repo.MainRoot)
 	oldConflicted := gitOut(t, conflicted, "rev-parse", "HEAD")
 	var out bytes.Buffer

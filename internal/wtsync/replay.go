@@ -1,6 +1,7 @@
 package wtsync
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -10,21 +11,45 @@ import (
 // messages, with no three blobs of its own to show.
 const messagesPath = "(see messages)"
 
-// Stop is the first commit at which a rebase would stop, with the three
-// blobs of every file it conflicts on.
+// Stop is one commit at which a rebase stops, with what the declared
+// strategies answered for every file it conflicts on.
 type Stop struct {
-	Index     int // 1-based position among the commits the rebase replays
-	Total     int
-	Commit    string
-	Subject   string
+	Index   int // 1-based position among the commits the rebase replays
+	Total   int
+	Commit  string
+	Subject string
+	// Conflicts carries the three blobs of each conflicted file. It is kept
+	// only for the stop that stops the replay: a long branch can stop
+	// dozens of times on a megabyte file, and holding every stop's blobs
+	// would make one assessment cost hundreds of megabytes for bytes
+	// nothing reads again.
 	Conflicts []Conflict
 	Messages  string
+	// Files is one outcome per conflict, in the same order. Empty when
+	// merge-tree reported a conflict with no blobs of its own.
+	Files []FileOutcome
+	// Resolved is true when every conflict here was answered by a strategy.
+	Resolved bool
 }
 
-// Replay is the outcome of simulating a rebase commit by commit.
+// Replay is the outcome of simulating a rebase commit by commit, with the
+// declared strategies applied at every stop.
 type Replay struct {
 	Commits int
-	Stop    *Stop // nil when every commit replays cleanly
+	// Stops is every stop the replay reached, in order.
+	Stops []Stop
+	// Stop is the first stop the strategies did not resolve — the one a
+	// person owns. nil when every stop resolved, or there was none.
+	Stop *Stop
+	// Truncated is set when the replay could not carry past a stop it
+	// resolved: a script claimed a path, and a script can only be checked
+	// in the object store, never asked for bytes. Why says which.
+	Truncated bool
+	Why       string
+	// Err collects strategy failures — a script that would not run, a
+	// declaration that will not build. A file whose strategy failed is not
+	// resolved, so the class fails closed; this carries the reason.
+	Err error
 }
 
 // simEnv makes the throwaway commits deterministic and free of any signing
@@ -36,37 +61,84 @@ var simEnv = []string{
 }
 
 // SimulateRebase replays branch onto `onto` inside the object store, the way
-// `git rebase onto` would, and reports the first commit that conflicts. No
-// ref, index or working tree is touched; the only objects created are
-// unreachable blobs, trees and commits.
-func SimulateRebase(mainRoot, onto, branch string) (Replay, error) {
+// `git rebase onto` would, applying cfg's declared strategies at every stop
+// and carrying their answers forward. It reports every stop it reached and
+// the first one the strategies did not resolve. No ref, index or working
+// tree is touched; the only objects created are unreachable blobs, trees and
+// commits. A nil cfg claims nothing, so the first stop is the last.
+func SimulateRebase(mainRoot, onto, branch string, cfg *Config) (Replay, error) {
+	var rep Replay
 	// The same selection and order the rebase sequencer uses: right side
 	// only, patch-equivalent commits dropped, merges flattened, topological.
 	out, err := gitEnv(mainRoot, nil, nil, "rev-list", "--reverse", "--topo-order", "--right-only", "--cherry-pick", "--no-merges", onto+"..."+branch, "--")
 	if err != nil {
-		return Replay{}, err
+		return rep, err
 	}
 	var commits []string
 	if out != "" {
 		commits = strings.Split(out, "\n")
 	}
+	rep.Commits = len(commits)
 	base, err := gitEnv(mainRoot, nil, nil, "rev-parse", "--verify", onto+"^{commit}", "--")
 	if err != nil {
-		return Replay{}, err
+		return rep, err
 	}
 	for i, c := range commits {
 		tree, clean, conflicts, messages, err := mergeTree(mainRoot, c+"^", base, c)
 		if err != nil {
-			return Replay{}, err
+			return rep, err
 		}
 		if !clean {
 			subject, err := gitEnv(mainRoot, nil, nil, "log", "-1", "--format=%s", c, "--")
 			if err != nil {
-				return Replay{}, err
+				return rep, err
 			}
-			return Replay{Commits: len(commits), Stop: &Stop{
-				Index: i + 1, Total: len(commits), Commit: c, Subject: subject, Conflicts: conflicts, Messages: messages,
-			}}, nil
+			stop := Stop{
+				Index: i + 1, Total: len(commits), Commit: c, Subject: subject,
+				Conflicts: conflicts, Messages: messages,
+			}
+			resolved := map[string][]byte{}
+			script := ""
+			// A conflict merge-tree reports only in its messages has no
+			// blobs to put to a strategy, so it is nobody's but a person's.
+			stop.Resolved = len(conflicts) > 0
+			for _, cf := range conflicts {
+				r, rerr := resolveConflict(mainRoot, onto, cfg, cf, "")
+				rep.Err = errors.Join(rep.Err, rerr)
+				stop.Files = append(stop.Files, r.Outcome)
+				if !r.Outcome.Resolved {
+					stop.Resolved = false
+					continue
+				}
+				if r.Outcome.Strategy == "script" {
+					// --check said the script owns it, which is all a
+					// script can say here: it resolves against a real
+					// index in a worktree, never in the object store.
+					if rule, ok := cfg.RuleFor(cf.Path); ok && script == "" {
+						script = fmt.Sprintf("%s owns %s and can only be checked before a run", rule.Run, cf.Path)
+					}
+					continue
+				}
+				resolved[cf.Path] = r.Content
+			}
+			if !stop.Resolved {
+				rep.Stops = append(rep.Stops, stop)
+				last := rep.Stops[len(rep.Stops)-1]
+				rep.Stop = &last
+				return rep, nil
+			}
+			// Past here the stop is resolved and nothing reads its bytes
+			// again: keep the outcomes, drop the blobs.
+			stop.Conflicts = nil
+			rep.Stops = append(rep.Stops, stop)
+			if script != "" {
+				rep.Truncated = true
+				rep.Why = fmt.Sprintf("replayed to stop %d/%d only: %s", stop.Index, stop.Total, script)
+				return rep, nil
+			}
+			if tree, err = resolvedTree(mainRoot, tree, resolved); err != nil {
+				return rep, err
+			}
 		}
 		// A commit whose changes are already present replays to the same
 		// tree; rebase drops it, so no simulated commit is made for it.
@@ -77,17 +149,17 @@ func SimulateRebase(mainRoot, onto, branch string) (Replay, error) {
 		// corrupt this comparison.
 		baseTree, err := gitEnv(mainRoot, nil, nil, "rev-parse", base+"^{tree}")
 		if err != nil {
-			return Replay{}, err
+			return rep, err
 		}
 		if baseTree == tree {
 			continue
 		}
 		base, err = gitEnv(mainRoot, simEnv, nil, "commit-tree", tree, "-p", base, "-m", "wt sync simulation")
 		if err != nil {
-			return Replay{}, err
+			return rep, err
 		}
 	}
-	return Replay{Commits: len(commits)}, nil
+	return rep, nil
 }
 
 // Endpoint merges the two tips and returns the conflicts, nil when clean. A

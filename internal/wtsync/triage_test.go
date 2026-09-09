@@ -295,6 +295,59 @@ func TestAssessWithoutConfigClaimsNothing(t *testing.T) {
 	}
 }
 
+func TestAssessRecipeMeansEveryStop(t *testing.T) {
+	dir := linearRepo(t,
+		[]map[string]string{{"v.txt": "2.0.0\n"}},
+		[]map[string]string{{"v.txt": "1.1.0\n"}, {"v.txt": "1.2.0\n"}},
+	)
+	a := Assess(dir, "main", ownedLineConfig(t), featureWorktree(t, dir), nil)
+	if a.Err != nil {
+		t.Fatal(a.Err)
+	}
+	if a.Class != Recipe {
+		t.Fatalf("class = %s, want recipe", a.Class)
+	}
+	if len(a.Replay.Stops) != 2 {
+		t.Fatalf("Stops = %d, want 2", len(a.Replay.Stops))
+	}
+}
+
+func TestAssessContestedAtALaterStop(t *testing.T) {
+	dir := linearRepo(t,
+		[]map[string]string{{"v.txt": "2.0.0\n", "a.txt": "trunk\n"}},
+		[]map[string]string{{"v.txt": "1.1.0\n"}, {"a.txt": "branch\n"}},
+	)
+	a := Assess(dir, "main", ownedLineConfig(t), featureWorktree(t, dir), nil)
+	if a.Class != Contested {
+		t.Fatalf("class = %s, want contested", a.Class)
+	}
+	if a.Replay.Stop == nil || a.Replay.Stop.Index != 2 {
+		t.Fatalf("stop = %+v, want 2/2", a.Replay.Stop)
+	}
+	if len(a.Files) != 1 || a.Files[0].Path != "a.txt" {
+		t.Fatalf("files = %+v, want a.txt", a.Files)
+	}
+}
+
+// A truncated replay earns its class only up to where it stopped: the class
+// stands, and Unverified plus a note say how far the evidence goes.
+func TestAssessUnverifiedWhenAScriptTruncatesTheReplay(t *testing.T) {
+	dir := linearRepo(t,
+		[]map[string]string{{"v.txt": "2.0.0\n", "a.txt": "trunk\n"}},
+		[]map[string]string{{"v.txt": "1.1.0\n"}, {"a.txt": "branch\n"}},
+	)
+	a := Assess(dir, "main", scriptClaimingV(t, dir), featureWorktree(t, dir), nil)
+	if a.Err != nil {
+		t.Fatal(a.Err)
+	}
+	if a.Class != Recipe || !a.Unverified {
+		t.Fatalf("class = %s, unverified = %v, want recipe and unverified", a.Class, a.Unverified)
+	}
+	if len(a.Notes) != 1 || !strings.Contains(a.Notes[0], "replayed to stop 1/2 only") {
+		t.Fatalf("notes = %+v, want the truncation named", a.Notes)
+	}
+}
+
 func TestAssessReportsUnknownWhenTheWorktreePathDoesNotExist(t *testing.T) {
 	// Every early error return must leave Class at its zero value, Unknown,
 	// rather than reading as some specific (wrong) class - Detached used to

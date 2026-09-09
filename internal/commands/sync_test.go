@@ -38,6 +38,10 @@ func syncRepo(t *testing.T) *Context {
 	}
 	write(".wt-sync.yaml", "conflicts:\n  - paths: [v.txt]\n    strategy: owned-line\n    line: '^\\d'\n    rule: max-plus-patch\n")
 	write("v.txt", "1.0.0\n")
+	// a.txt is claimed by nothing and touched by nobody here; it is in the
+	// base so a test can make both sides edit it and get a real
+	// modify/modify conflict rather than an add/add.
+	write("a.txt", "base\n")
 	gitIn(t, main, "add", "-A")
 	gitIn(t, main, "commit", "-q", "-m", "declare")
 	ctx, err := Open(main)
@@ -91,6 +95,60 @@ func TestSyncPrintsTheTriageAndChangesNothing(t *testing.T) {
 	}
 }
 
+// The STOP column names the stop that decides the class, not the first one
+// the rebase reaches. Here stop 1 is the declared owned line, which the
+// strategy resolves, and stop 2 is a file nothing claims: 2/2 is what a
+// person needs, and the resolved stop is a note, not the headline.
+func TestSyncNamesTheDecidingStopNotTheFirstOne(t *testing.T) {
+	ctx := syncRepo(t)
+	main := ctx.Repo.MainRoot
+	wts, err := ctx.Repo.Worktrees()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bump := ""
+	for _, wt := range wts {
+		if strings.HasSuffix(wt.Branch, "/bump") {
+			bump = wt.Path
+		}
+	}
+	if bump == "" {
+		t.Fatal("no bump worktree in the fixture")
+	}
+	// a second branch commit on a file nothing claims, against a trunk that
+	// changed the same file: the replay's second stop, and its last.
+	if err := os.WriteFile(filepath.Join(bump, "a.txt"), []byte("branch\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, bump, "commit", "-q", "-am", "branch edits a")
+	if err := os.WriteFile(filepath.Join(main, "a.txt"), []byte("trunk\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, main, "commit", "-q", "-am", "trunk edits a")
+	gitIn(t, main, "fetch", "-q", "origin")
+
+	var buf bytes.Buffer
+	if err := Sync(ctx, &buf); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "contested") {
+		t.Errorf("a later unclaimed stop is contested:\n%s", out)
+	}
+	if !strings.Contains(out, "2/2") {
+		t.Errorf("expected the deciding stop 2/2:\n%s", out)
+	}
+	if strings.Contains(out, "1/2") {
+		t.Errorf("the first stop resolved, so it must not be the one named:\n%s", out)
+	}
+	if !strings.Contains(out, "a.txt✗") {
+		t.Errorf("expected the unclaimed file marked unresolved:\n%s", out)
+	}
+	if !strings.Contains(out, "1 earlier stop resolved") {
+		t.Errorf("expected the note counting the stops already resolved:\n%s", out)
+	}
+}
+
 func TestSyncPrintsAnUnknownRowWithItsError(t *testing.T) {
 	ctx := syncRepo(t)
 	// break one worktree: its directory is gone, so status fails before a class is decided
@@ -129,6 +187,19 @@ func TestSyncSaysWhenTrunkDeclaresNothing(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "no .wt-sync.yaml") {
 		t.Errorf("expected the no-config notice:\n%s", buf.String())
+	}
+}
+
+// `recipe?` is not `recipe`: the replay could not be carried to the end, so
+// the class is what it earned up to the stop it stopped at.
+func TestClassColumnMarksAnUnverifiedReplayWithAQuestionMark(t *testing.T) {
+	a := wtsync.Assessment{Class: wtsync.Recipe}
+	if got := classColumn(a); got != "recipe" {
+		t.Errorf("verified: got %q, want recipe", got)
+	}
+	a.Unverified = true
+	if got := classColumn(a); got != "recipe?" {
+		t.Errorf("unverified: got %q, want recipe?", got)
 	}
 }
 

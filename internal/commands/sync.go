@@ -46,7 +46,7 @@ func Sync(ctx *Context, w io.Writer) error {
 			continue
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%d\t%d\t%s\t%s\t%s\n",
-			workName(ctx, wt.Branch), a.Class, a.Behind, a.Ahead, stopColumn(a), whoColumn(a), noteColumn(a))
+			workName(ctx, wt.Branch), classColumn(a), a.Behind, a.Ahead, stopColumn(a), whoColumn(a), noteColumn(a))
 	}
 	return tw.Flush()
 }
@@ -61,19 +61,37 @@ func workName(ctx *Context, branch string) string {
 	return branch
 }
 
-// stopColumn is the first commit the rebase stops at, its subject, and what
-// happens to its files: `2/12 "record every sync run" SyncWorker.java✗`.
-func stopColumn(a wtsync.Assessment) string {
-	if a.Replay.Stop == nil {
-		return "-"
+// classColumn is the class, with a question mark when the replay could not
+// be carried to the end. `recipe?` is not `recipe`: a script owns a path,
+// and all the simulation could ask it was whether it claims the file.
+func classColumn(a wtsync.Assessment) string {
+	if a.Unverified {
+		return a.Class.String() + "?"
 	}
-	parts := []string{fmt.Sprintf("%d/%d %q", a.Replay.Stop.Index, a.Replay.Stop.Total, truncate(oneLine(a.Replay.Stop.Subject), 32))}
+	return a.Class.String()
+}
+
+// stopColumn is the stop that decides the class — the first one a person
+// owns, or the first of a run that resolves throughout — its subject, and
+// what happens to its files: `2/12 "record every sync run" SyncWorker.java✗`.
+func stopColumn(a wtsync.Assessment) string {
+	stop := a.Replay.Stop
+	if stop == nil {
+		if len(a.Replay.Stops) == 0 {
+			return "-"
+		}
+		stop = &a.Replay.Stops[0]
+	}
+	parts := []string{fmt.Sprintf("%d/%d %q", stop.Index, stop.Total, truncate(oneLine(stop.Subject), 32))}
 	for _, f := range a.Files {
 		mark := "✗"
 		if f.Resolved {
 			mark = "✓"
 		}
 		parts = append(parts, shortPath(f.Path)+mark)
+	}
+	if a.Replay.Stop == nil && len(a.Replay.Stops) > 1 {
+		parts = append(parts, fmt.Sprintf("+%d more", len(a.Replay.Stops)-1))
 	}
 	return strings.Join(parts, " ")
 }
@@ -118,6 +136,12 @@ func noteColumn(a wtsync.Assessment) string {
 		if !f.Resolved && f.Note != "" && f.Note != "unclaimed" {
 			notes = append(notes, oneLine(shortPath(f.Path)+": "+f.Note))
 		}
+	}
+	if a.Paused {
+		notes = append(notes, "left mid-rebase by wt sync run: wt sync resume")
+	}
+	if n := len(a.Replay.Stops) - 1; a.Replay.Stop != nil && n > 0 {
+		notes = append(notes, fmt.Sprintf("%d earlier stop%s resolved", n, plural(n)))
 	}
 	for _, d := range a.Divergent {
 		notes = append(notes, oneLine(d))

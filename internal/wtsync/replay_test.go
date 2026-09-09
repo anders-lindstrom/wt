@@ -62,7 +62,7 @@ func TestSimulateRebaseReplaysDisjointCommitsCleanly(t *testing.T) {
 	dir := linearRepo(t,
 		[]map[string]string{{"a.txt": "a2\n"}},
 		[]map[string]string{{"b.txt": "b2\n"}, {"b.txt": "b3\n"}})
-	r, err := SimulateRebase(dir, "main", "feature")
+	r, err := SimulateRebase(dir, "main", "feature", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestSimulateRebaseStopsAtTheFirstConflictingCommitWithItsStages(t *testing.
 	dir := linearRepo(t,
 		[]map[string]string{{"v.txt": "1.0.5\n"}},
 		[]map[string]string{{"b.txt": "b2\n"}, {"v.txt": "1.0.1\n"}, {"v.txt": "1.0.2\n"}})
-	r, err := SimulateRebase(dir, "main", "feature")
+	r, err := SimulateRebase(dir, "main", "feature", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestSimulateRebaseSkipsCommitsAlreadyOnTrunkLikeRebaseDoes(t *testing.T) {
 	trunkTip := gitIn(t, dir, "rev-parse", "main")
 	gitIn(t, dir, "cherry-pick", trunkTip)
 	gitIn(t, dir, "checkout", "-q", "main")
-	r, err := SimulateRebase(dir, "main", "feature")
+	r, err := SimulateRebase(dir, "main", "feature", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestSimulateRebaseLeavesEveryRefAlone(t *testing.T) {
 	beforeRefs := gitIn(t, dir, "for-each-ref")
 	beforeHead := gitIn(t, dir, "rev-parse", "HEAD")
 	beforeSymbolic := gitIn(t, dir, "symbolic-ref", "HEAD")
-	r, err := SimulateRebase(dir, "main", "feature")
+	r, err := SimulateRebase(dir, "main", "feature", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,7 @@ func TestSimulateRebaseMarksAModifyDeleteConflictIncomplete(t *testing.T) {
 	}
 	gitIn(t, dir, "commit", "-q", "-am", "branch edits a")
 	gitIn(t, dir, "checkout", "-q", "main")
-	r, err := SimulateRebase(dir, "main", "feature")
+	r, err := SimulateRebase(dir, "main", "feature", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func TestSimulateRebaseMarksAnAddAddConflictAsBothSidesAddedIt(t *testing.T) {
 	dir := linearRepo(t,
 		[]map[string]string{{"new.txt": "trunk\n"}},
 		[]map[string]string{{"b.txt": "b2\n"}, {"new.txt": "branch\n"}})
-	r, err := SimulateRebase(dir, "main", "feature")
+	r, err := SimulateRebase(dir, "main", "feature", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +243,7 @@ func TestSimulateRebaseMarksANonRegularModeConflictIncomplete(t *testing.T) {
 	gitIn(t, dir, "commit", "-q", "-am", "branch repoints the symlink")
 	gitIn(t, dir, "checkout", "-q", "main")
 
-	r, err := SimulateRebase(dir, "main", "feature")
+	r, err := SimulateRebase(dir, "main", "feature", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,5 +253,163 @@ func TestSimulateRebaseMarksANonRegularModeConflictIncomplete(t *testing.T) {
 	c := r.Stop.Conflicts[0]
 	if c.Path != "link" || c.Incomplete == "" {
 		t.Errorf("conflict = %+v, want Incomplete set for the non-regular mode", c)
+	}
+}
+
+func ownedLineConfig(t *testing.T) *Config {
+	t.Helper()
+	cfg, err := Parse([]byte("conflicts:\n  - paths: [v.txt]\n    strategy: owned-line\n    line: '^\\d'\n    rule: max-plus-patch\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg
+}
+
+// Two commits both conflict on the claimed file. Before this change the
+// replay stopped at the first; now it resolves both and reports recipe.
+func TestSimulateResolvesEveryStop(t *testing.T) {
+	dir := linearRepo(t,
+		[]map[string]string{{"v.txt": "2.0.0\n"}},
+		[]map[string]string{{"v.txt": "1.1.0\n"}, {"v.txt": "1.2.0\n"}},
+	)
+	r, err := SimulateRebase(dir, "main", "feature", ownedLineConfig(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Stop != nil {
+		t.Fatalf("Stop = %+v, want nil: both stops are resolved", r.Stop)
+	}
+	if len(r.Stops) != 2 {
+		t.Fatalf("Stops = %d, want 2", len(r.Stops))
+	}
+	for i, s := range r.Stops {
+		if !s.Resolved {
+			t.Fatalf("stop %d not resolved: %+v", i+1, s.Files)
+		}
+		if len(s.Conflicts) != 0 {
+			t.Fatalf("stop %d kept its blobs; only the deciding stop may", i+1)
+		}
+	}
+	if r.Err != nil {
+		t.Fatalf("Err = %v", r.Err)
+	}
+}
+
+// The first stop resolves; the second is a file nothing claims. The replay
+// must reach the second and name it, which is the whole point of Part 1.
+func TestSimulateStopsAtTheFirstUnclaimedStopWhereverItIs(t *testing.T) {
+	dir := linearRepo(t,
+		[]map[string]string{{"v.txt": "2.0.0\n", "a.txt": "trunk\n"}},
+		[]map[string]string{{"v.txt": "1.1.0\n"}, {"a.txt": "branch\n"}},
+	)
+	r, err := SimulateRebase(dir, "main", "feature", ownedLineConfig(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Stop == nil {
+		t.Fatal("Stop = nil, want the second commit")
+	}
+	if r.Stop.Index != 2 || r.Stop.Total != 2 {
+		t.Fatalf("Stop at %d/%d, want 2/2", r.Stop.Index, r.Stop.Total)
+	}
+	if len(r.Stop.Files) != 1 || r.Stop.Files[0].Path != "a.txt" || r.Stop.Files[0].Resolved {
+		t.Fatalf("Stop.Files = %+v, want a.txt unresolved", r.Stop.Files)
+	}
+	if len(r.Stop.Conflicts) != 1 || len(r.Stop.Conflicts[0].Trunk) == 0 {
+		t.Fatalf("the deciding stop must keep its blobs: %+v", r.Stop.Conflicts)
+	}
+	if len(r.Stops) != 2 || !r.Stops[0].Resolved {
+		t.Fatalf("Stops = %+v, want the first one resolved", r.Stops)
+	}
+}
+
+// With no declaration nothing is claimed, so the first stop still stops the
+// replay: the behaviour every existing caller had.
+func TestSimulateWithoutAConfigStopsAtTheFirst(t *testing.T) {
+	dir := linearRepo(t,
+		[]map[string]string{{"v.txt": "2.0.0\n"}},
+		[]map[string]string{{"v.txt": "1.1.0\n"}, {"v.txt": "1.2.0\n"}},
+	)
+	r, err := SimulateRebase(dir, "main", "feature", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Stop == nil || r.Stop.Index != 1 {
+		t.Fatalf("Stop = %+v, want 1/2", r.Stop)
+	}
+}
+
+// The resolved bytes must be what the NEXT commit replays against. Trunk
+// is 2.0.0, so stop 1 resolves max-plus-patch(branch 1.1.0, trunk 2.0.0) to
+// 2.0.1. The second branch commit touches v.txt again AND a file nothing
+// claims, so the replay stops there and keeps that stop's blobs — and the
+// trunk side of its v.txt conflict is the proof: 2.0.1 means the resolved
+// blob was carried forward, 2.0.0 means it was not. (Unchained, the second
+// resolution would come out 2.0.1 instead of 2.0.2, so asserting on the
+// blob is both simpler and stricter than asserting on the version.)
+func TestSimulateChainsTheResolvedContent(t *testing.T) {
+	dir := linearRepo(t,
+		[]map[string]string{{"v.txt": "2.0.0\n", "a.txt": "trunk\n"}},
+		[]map[string]string{{"v.txt": "1.1.0\n"}, {"v.txt": "1.1.1\n", "a.txt": "branch\n"}},
+	)
+	r, err := SimulateRebase(dir, "main", "feature", ownedLineConfig(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Stop == nil || r.Stop.Index != 2 {
+		t.Fatalf("Stop = %+v, want the second commit", r.Stop)
+	}
+	var got string
+	for _, c := range r.Stop.Conflicts {
+		if c.Path == "v.txt" {
+			got = string(c.Trunk)
+		}
+	}
+	if got != "2.0.1\n" {
+		t.Fatalf("v.txt trunk side at stop 2 = %q, want %q: the resolved blob was not chained", got, "2.0.1\n")
+	}
+}
+
+// scriptClaimingV commits an executable on trunk that claims v.txt and
+// returns a declaration pointing at it. It cannot go through repoWith's
+// edits, which write mode 0644.
+func scriptClaimingV(t *testing.T, dir string) *Config {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(dir, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "#!/bin/sh\ncase \"$1\" in\n--check) exit 0 ;;\n*) exit 1 ;;\nesac\n"
+	if err := os.WriteFile(filepath.Join(dir, "bin", "claim"), []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, dir, "add", "-A")
+	gitIn(t, dir, "commit", "-q", "-m", "trunk declares a script")
+	cfg, err := Parse([]byte("conflicts:\n  - paths: [v.txt]\n    strategy: script\n    run: bin/claim\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg
+}
+
+// A script proves it owns a path but yields no bytes in the object store, so
+// there is nothing to chain the next commit onto: the replay stops there and
+// says so rather than pretending it reached the end.
+func TestSimulateTruncatesAtAScriptStop(t *testing.T) {
+	dir := linearRepo(t,
+		[]map[string]string{{"v.txt": "2.0.0\n", "a.txt": "trunk\n"}},
+		[]map[string]string{{"v.txt": "1.1.0\n"}, {"a.txt": "branch\n"}},
+	)
+	r, err := SimulateRebase(dir, "main", "feature", scriptClaimingV(t, dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Stop != nil {
+		t.Fatalf("Stop = %+v, want nil: the script claims the only stop reached", r.Stop)
+	}
+	if !r.Truncated || !strings.Contains(r.Why, "bin/claim owns v.txt") {
+		t.Fatalf("Truncated = %v, Why = %q", r.Truncated, r.Why)
+	}
+	if len(r.Stops) != 1 || !r.Stops[0].Resolved || len(r.Stops[0].Conflicts) != 0 {
+		t.Fatalf("Stops = %+v, want one resolved stop with its blobs dropped", r.Stops)
 	}
 }
