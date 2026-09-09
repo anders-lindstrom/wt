@@ -161,9 +161,16 @@ func Rebase(mainRoot string, cfg *Config, req Request, log io.Writer) (Result, e
 			return fmt.Errorf("not restored: HEAD is %q, not %s; the old tip is %s", ref, req.Branch, res.Safety.Ref)
 		}
 		if head, _ := git("rev-parse", "HEAD"); head != old {
-			return fmt.Errorf("not restored: HEAD is %s, not %s; the old tip is %s", head, short(old), res.Safety.Ref)
+			return fmt.Errorf("not restored: HEAD is %s, not %s; the old tip is %s", short(head), short(old), res.Safety.Ref)
 		}
-		if status, _ := git("--no-optional-locks", "status", "--porcelain", "--untracked-files=no"); status != "" {
+		// A status that cannot be read is not a clean status: this check
+		// fails closed, since its whole job is to prove the worktree is
+		// untouched.
+		status, serr := git("--no-optional-locks", "status", "--porcelain", "--untracked-files=no")
+		if serr != nil {
+			return fmt.Errorf("not restored: status could not be read: %w; the old tip is %s", serr, res.Safety.Ref)
+		}
+		if status != "" {
 			return fmt.Errorf("not restored: tracked changes remain; the old tip is %s", res.Safety.Ref)
 		}
 		return nil
@@ -180,6 +187,7 @@ func Rebase(mainRoot string, cfg *Config, req Request, log io.Writer) (Result, e
 	}
 	_, err = git(args...)
 	lastIndex, lastUnmerged := -1, ""
+	stops, limit := 0, 0
 	for err != nil {
 		busy, perr := RebaseInProgress(req.Path)
 		if perr != nil {
@@ -196,6 +204,19 @@ func Rebase(mainRoot string, cfg *Config, req Request, log io.Writer) (Result, e
 		if cerr != nil {
 			return fail(cerr)
 		}
+		// The guard below compares one stop with the one before it, which an
+		// alternating unmerged set would walk straight past; this cap bounds
+		// the loop whatever the sequencer does. Two stops per commit plus
+		// slack, or a flat 64 when the sequencer reports no total.
+		stops++
+		if limit == 0 {
+			if limit = 2*p.Total + 2; p.Total == 0 {
+				limit = 64
+			}
+		}
+		if stops > limit {
+			return fail(fmt.Errorf("rebase did not converge after %d stops", limit))
+		}
 		unmerged := pathsOf(conflicts)
 		if p.Index == lastIndex && (len(conflicts) == 0 || unmerged == lastUnmerged) {
 			return fail(fmt.Errorf("rebase did not advance at %d/%d: %w", p.Index, p.Total, err))
@@ -207,6 +228,7 @@ func Rebase(mainRoot string, cfg *Config, req Request, log io.Writer) (Result, e
 			r, rerr := resolveConflict(mainRoot, req.Trunk, cfg, c, req.Path)
 			if rerr != nil {
 				stop.Files = append(stop.Files, r.Outcome)
+				logStop(log, stop)
 				res.Stops = append(res.Stops, stop)
 				return fail(rerr)
 			}
@@ -235,15 +257,30 @@ func Rebase(mainRoot string, cfg *Config, req Request, log io.Writer) (Result, e
 		}
 		_, err = git("rebase", "--continue")
 	}
+	// The command reported success, so the sequencer must be finished. If it
+	// is not, the rebase did not complete and the worktree goes back.
+	busy, perr := RebaseInProgress(req.Path)
+	if perr != nil {
+		return fail(perr)
+	}
+	if busy {
+		return fail(errors.New("rebase reported success but is still in progress"))
+	}
+	// Past this point the rewrite happened and is what the branch now is.
+	// Failing to read it back is a reporting failure, not a reason to throw
+	// the work away, so nothing below restores.
+	unread := func(err error) (Result, error) {
+		return res, fmt.Errorf("rebased but could not read the result: %w; the old tip is %s", err, res.Safety.Ref)
+	}
 	if res.NewTip, err = git("rev-parse", "HEAD"); err != nil {
-		return fail(err)
+		return unread(err)
 	}
 	count, err := git("rev-list", "--count", req.Onto+"..HEAD")
 	if err != nil {
-		return fail(err)
+		return unread(err)
 	}
 	if res.Replayed, err = strconv.Atoi(count); err != nil {
-		return fail(err)
+		return unread(err)
 	}
 	return res, nil
 }
