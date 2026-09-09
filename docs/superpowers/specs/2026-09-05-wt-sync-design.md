@@ -249,6 +249,15 @@ is now an **advisory note** on the row ("both sides changed the dependency
 graph: …"), like the file count, so a person sees it; it does not classify.
 With that, the live fleet classifies exactly as the tables above say.
 
+Two precisions from the final review of the foundation (2026-09-09). Only a
+**key collision** counts — the `openapi` strategy also refuses when the branch
+edited the document outside the merged sections, when a section is absent, or
+when the version is not bare semver, and those are ordinary refusals that
+leave the worktree `contested`. And the endpoint check runs **whether or not
+the replay is clean**: a branch whose commits replay one by one can still meet
+trunk with a rewritten spec at its tip, and that is the case the class exists
+for.
+
 The first draft had a third signal, "both sides moved more than 30 of the same
 files", tuned on a sample of two. Execution finding: it is not needed for the
 one live case (`spring-boot-4-jackson-3` trips both other signals: `openapi-spec`
