@@ -85,6 +85,30 @@ func TestOwnedLineResolvesABlockGitFoldedAroundTheLine(t *testing.T) {
 	}
 }
 
+func TestCollapseOwnedDistinguishesNoOwnedLineFromBothSidesChangingOtherLines(t *testing.T) {
+	line := regexp.MustCompile(`^version:`)
+	rule, _ := RuleNamed("max-plus-patch")
+	// the branch's side of the block holds no owned line at all
+	_, err := collapseOwned(Block{
+		Branch: []string{"unrelated"},
+		Trunk:  []string{"version: 1.0.5"},
+		Base:   []string{"version: 1.0.0"},
+	}, line, rule, "f.txt")
+	if !IsRefusal(err) || !strings.Contains(err.Error(), "no owned line on one side, or more than one") {
+		t.Errorf("err = %v", err)
+	}
+	// both sides changed a different, non-owned line: a real disagreement,
+	// distinct wording from the no-owned-line case above
+	_, err = collapseOwned(Block{
+		Branch: []string{"version: 1.0.2", "branch-note"},
+		Trunk:  []string{"version: 1.0.5", "trunk-note"},
+		Base:   []string{"version: 1.0.0", "base-note"},
+	}, line, rule, "f.txt")
+	if !IsRefusal(err) || !strings.Contains(err.Error(), "the two sides differ by more than the owned line") {
+		t.Errorf("err = %v", err)
+	}
+}
+
 func TestOwnedLineRefusesWhenBothSidesChangedOtherLines(t *testing.T) {
 	withc := func(c, v string) string { return "openapi:\n  main:\n    # " + c + "\n    version: " + v + "\n" }
 	_, err := ownedVersion(t).Resolve(conflict(withc("old", "2.38.0"), withc("trunk", "2.38.5"), withc("branch", "2.38.3")))

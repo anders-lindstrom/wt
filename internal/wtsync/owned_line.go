@@ -36,11 +36,11 @@ func (s OwnedLine) Resolve(c Conflict) ([]byte, error) {
 func collapseOwned(b Block, line *regexp.Regexp, rule ValueRule, path string) ([]string, error) {
 	branchLine, branchRest, ok := splitOwned(b.Branch, line)
 	if !ok {
-		return nil, Refuse(path, "the two sides differ by more than the owned line")
+		return nil, Refuse(path, "no owned line on one side, or more than one")
 	}
 	trunkLine, trunkRest, ok := splitOwned(b.Trunk, line)
 	if !ok {
-		return nil, Refuse(path, "the two sides differ by more than the owned line")
+		return nil, Refuse(path, "no owned line on one side, or more than one")
 	}
 	_, baseRest, _ := splitOwned(b.Base, line)
 

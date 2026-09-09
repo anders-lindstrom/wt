@@ -202,7 +202,12 @@ func mergeTree(mainRoot, mergeBase, onto, commit string) (tree string, clean boo
 	for _, p := range order {
 		c := stages[p]
 		if c.Incomplete == "" && (!seenStage[p][1] || !seenStage[p][2] || !seenStage[p][3]) {
-			c.Incomplete = "one side deleted or renamed it"
+			switch {
+			case !seenStage[p][1] && seenStage[p][2] && seenStage[p][3]:
+				c.Incomplete = "both sides added it"
+			default:
+				c.Incomplete = "one side deleted or renamed it"
+			}
 		}
 		conflicts = append(conflicts, *c)
 	}

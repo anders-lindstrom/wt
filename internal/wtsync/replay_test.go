@@ -170,7 +170,7 @@ func TestSimulateRebaseMarksAModifyDeleteConflictIncomplete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Stop == nil || len(r.Stop.Conflicts) != 1 || r.Stop.Conflicts[0].Incomplete == "" {
+	if r.Stop == nil || len(r.Stop.Conflicts) != 1 || r.Stop.Conflicts[0].Incomplete != "one side deleted or renamed it" {
 		t.Fatalf("stop = %+v", r.Stop)
 	}
 	if !strings.Contains(r.Stop.Messages, "CONFLICT (modify/delete)") {
@@ -178,6 +178,23 @@ func TestSimulateRebaseMarksAModifyDeleteConflictIncomplete(t *testing.T) {
 	}
 	if r.Stop.Messages != "" && r.Stop.Messages[0] >= '0' && r.Stop.Messages[0] <= '9' {
 		t.Errorf("messages = %q, starts with a bare digit: the path-count record leaked into it", r.Stop.Messages)
+	}
+}
+
+// TestSimulateRebaseMarksAnAddAddConflictAsBothSidesAddedIt covers the other
+// shape of a missing stage: no base at all, with both trunk and branch
+// present (an add/add), which is a materially different situation from a
+// modify/delete and must say so.
+func TestSimulateRebaseMarksAnAddAddConflictAsBothSidesAddedIt(t *testing.T) {
+	dir := linearRepo(t,
+		[]map[string]string{{"new.txt": "trunk\n"}},
+		[]map[string]string{{"b.txt": "b2\n"}, {"new.txt": "branch\n"}})
+	r, err := SimulateRebase(dir, "main", "feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Stop == nil || len(r.Stop.Conflicts) != 1 || r.Stop.Conflicts[0].Incomplete != "both sides added it" {
+		t.Fatalf("stop = %+v", r.Stop)
 	}
 }
 
