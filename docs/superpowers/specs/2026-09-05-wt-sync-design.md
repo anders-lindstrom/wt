@@ -192,6 +192,28 @@ commits are unreachable and garbage-collected. Consequences:
 command line, against a throwaway repository per file; it is how the resolvers
 were verified and is the reference for the Go implementation.
 
+#### What "exact" means, stated as a contract
+
+The simulation replays what `git rebase <onto>` replays under the flags §4
+fixes (`--no-update-refs --no-gpg-sign --rerere-autoupdate`, the default
+flattening backend): the commits of `rev-list --reverse --topo-order
+--right-only --cherry-pick --no-merges`, each cherry-picked onto the previous
+result, commits that become empty dropped. Where the two can differ, the
+simulation errs towards reporting a stop:
+
+- **rerere** may resolve, at rebase time, a conflict the simulation reports.
+  The simulation does not consult the cache, so a `recipe` or `contested`
+  prediction can turn out `clean`; never the reverse.
+- **Untracked files** colliding with incoming ones make a real rebase refuse
+  where the simulation saw nothing; that refusal aborts and restores like any
+  other failure (§1, dirty).
+- A repository configured for `rebase.rebaseMerges`, `rebase.autoStash` or a
+  `pre-rebase` hook is not what the simulation models; `wt sync` passes its
+  flags explicitly so user config does not apply, and `doctor` reports the
+  hook.
+- Every `git status` the tool runs uses `--no-optional-locks`: a plain status
+  may rewrite the index, and "read-only" is a promise about the index too.
+
 ### `divergent`: when a rebase is not a rebase
 
 Some branches have not merely fallen behind — the ground has moved under them.
@@ -210,8 +232,17 @@ The class is computed from two signals, either of which is enough:
 
 | signal | why it means "not mechanical" |
 |---|---|
-| a resolver **refuses at the endpoint** (as opposed to no resolver claiming the path) | a shape that is normally deterministic has genuinely diverged |
-| the branch changes the dependency graph — the `dependency_graph` paths in `.wt-sync.yaml`: `gradle/libs.versions.toml`, any `build.gradle`, `package.json` beyond a pin | trunk's code has been written against a different set of libraries |
+| the **`openapi` strategy refuses at the endpoint** — generated output that no longer merges key by key | the framework rewrote the generator's own output; the branch's API surface and trunk's no longer describe the same program |
+| **both** trunk and the branch change the dependency graph — the `dependency_graph` paths in `.wt-sync.yaml`: `gradle/libs.versions.toml`, any `build.gradle`, `package.json` beyond a pin | trunk's code has been written against a different set of libraries than the branch's |
+
+Two corrections from the plan review of 2026-09-09. The first draft counted
+*any* strategy's refusal at the endpoint, which contradicted this document's
+own table: `state_stats` is refused by `openapi-version` on an ordinary
+configuration block and is meant to stay `contested`. An owned-line refusal
+is a normal conflict for a person; only a generated document that no longer
+merges says the ground moved. And the first draft counted the branch alone
+changing the dependency graph, which makes every branch that adds one
+library a "workstream"; the signal is both sides moving it.
 
 The first draft had a third signal, "both sides moved more than 30 of the same
 files", tuned on a sample of two. Execution finding: it is not needed for the
@@ -336,7 +367,13 @@ implementation and all carried into the Go port as tests:
 - A strategy can be **checked without a rebase**: the three blobs of a conflict
   are loaded into a temporary index (`GIT_INDEX_FILE`, `git update-index
   --index-info`) and the strategy is asked whether it would resolve. Triage
-  uses this (§1).
+  uses this (§1). For a `script`, that index is all it sees — one file, three
+  stages, mode 100644, no `HEAD` and no other entries — which is the limit of
+  what `--check` can promise; a script that reads more than the three stages
+  can answer differently mid-rebase.
+- A conflict that does not carry three regular blobs — a side deleted or
+  renamed the file, a submodule, a symlink — is refused before any strategy
+  sees it. It is a person's call.
 
 ### The `script` escape hatch
 
@@ -350,9 +387,12 @@ executable of its own:
                              0 = resolved; 2 = refuse, one line of reason on stderr
 ```
 
-It is read from trunk like everything else in the file (§3). No repository
-needs one today; the contract exists so that the day one does, it is not a
-reason to put logic back into `wt`.
+It is read from trunk like everything else in the file (§3): the script's
+directory is materialised from `origin/<trunk>` into a temporary directory and
+run from there, so a feature branch cannot change what runs. A script is
+trusted code from trunk; nothing sandboxes it. No repository needs one today;
+the contract exists so that the day one does, it is not a reason to put logic
+back into `wt`.
 
 ### What each repository declares
 

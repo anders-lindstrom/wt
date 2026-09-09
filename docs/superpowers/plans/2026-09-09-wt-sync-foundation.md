@@ -6,13 +6,13 @@
 
 **Architecture:** A new package `internal/wtsync` holds the per-repo `.wt-sync.yaml` (read from trunk), the conflict strategies as pure functions over the three blobs of a conflict, the commit-by-commit replay simulation over `git merge-tree` + `git commit-tree`, and the classification. `internal/commands/sync.go` renders the table; `cmd/wt/sync.go` wires the verb. Nothing in this plan changes a repository: `run`, safety refs, `undo` and `doctor` are the next plan.
 
-**Tech Stack:** Go 1.26, cobra (already a dependency), `gopkg.in/yaml.v3` (new), git ≥ 2.38 for `merge-tree --write-tree`. Tests are `go test` with throwaway repositories built the way `internal/commands/*_test.go` builds them.
+**Tech Stack:** Go 1.26, cobra (already a dependency), `gopkg.in/yaml.v3` (new), git ≥ 2.40 for `merge-tree --write-tree --merge-base`. Tests are `go test` with throwaway repositories built the way `internal/commands/*_test.go` builds them.
 
 **Spec:** `docs/superpowers/specs/2026-09-05-wt-sync-design.md` — §1 (triage, the simulation, `divergent`, agent detection), §2 (strategies and their guarantees), §3 (`.wt-sync.yaml`). The bash reference implementation these strategies port is on `Telcred/server` branch `feat_wt/conflict-resolvers` (`bin/conflict/`, 44 bats cases) and `Telcred/accessmanager` same branch (27 cases); their fixture shapes reappear below as Go tests.
 
 ## Global Constraints
 
-- **Read-only.** Nothing in this plan writes to a working tree, an index that a worktree uses, or a ref under `refs/heads`. The only objects created are unreachable trees and commits from the simulation, which `git gc` reclaims.
+- **Read-only.** Nothing in this plan writes to a working tree, an index that a worktree uses, or a ref under `refs/heads`. Every `git status` runs with `--no-optional-locks`, because a plain status may rewrite the index. The only objects created are unreachable blobs, trees and commits from the simulation and the temporary index, which `git gc` reclaims.
 - **The config is read from `origin/<trunk>`**, never from a working tree: it names executables (spec §3).
 - **A strategy refuses rather than guesses**, and a refusal names what collided (spec §2).
 - **Never say "ours" or "theirs".** Stage 2 of a rebase conflict is **trunk**, stage 3 is **the replayed commit**. Types and fields are `Base`, `Trunk`, `Branch`.
@@ -20,6 +20,10 @@
 - **No fleet fact in code or tests.** Branch names, counts and versions from the spec are illustrations.
 - Commits follow Conventional Commits, imperative, lowercase, under 72 characters, no AI attribution trailer of any kind. Work on `main`, push after every commit (Anders, 2026-09-09).
 - `gofmt`, `go vet ./...` and `golangci-lint run ./...` clean before every commit.
+
+## Revision, 2026-09-09
+
+A read-only Codex review (thread `01a08471-2104-7643-8370-cd0521f8648c`) found two compile errors, several tests that would pass while the behaviour was wrong, and one contradiction inside the spec. The rulings are in the SDD ledger; the tasks below carry them. The most consequential: `divergent` counts only an `openapi` refusal at the endpoint (not an owned-line refusal on ordinary config) and needs **both** sides to have moved the dependency graph; `git status` always runs with `--no-optional-locks`; scripts are materialised from trunk, not run from the checkout.
 
 ## File Structure
 
@@ -630,11 +634,16 @@ import (
 // for it. Trunk is the side being rebased onto (stage 2 during a rebase) and
 // Branch is the commit being replayed (stage 3); the ambiguous words "ours"
 // and "theirs" are not used anywhere in this package.
+//
+// Incomplete is set when the conflict does not carry three regular blobs — a
+// side deleted or renamed the file, or an entry is a submodule or symlink.
+// No strategy owns such a conflict; it is a person's call.
 type Conflict struct {
-	Path   string
-	Base   []byte
-	Trunk  []byte
-	Branch []byte
+	Path       string
+	Base       []byte
+	Trunk      []byte
+	Branch     []byte
+	Incomplete string
 }
 
 // Refusal is a strategy declining a conflict it does not own completely. It
@@ -841,7 +850,7 @@ git push origin main
   - `type ValueRule interface { Apply(branch, trunk string) (string, error) }` — given the branch's and trunk's *line*, return the line the branch keeps.
   - `func RuleNamed(name string) (ValueRule, error)` — `max-plus-patch`, `keep-branch`, `keep-trunk`.
   - `func MaxPlusPatch(branchV, trunkV string) string` — the semver rule on bare versions (spec §2).
-  - `var semverRE = regexp.MustCompile(`\d+\.\d+\.\d+`)`
+  - `var semverRE`, `var exactSemverRE`, `func findSemver(line string) string` — the version token in a line (not followed by `-`, `.` or an alphanumeric), and a bare `X.Y.Z` matcher.
   - `type Strategy interface { Name() string; Resolve(c Conflict) ([]byte, error) }` — resolved bytes, or a `*Refusal`, or another error.
   - `func FromRule(r Rule, root string) (Strategy, error)` — constructs the strategy a rule names. Tasks 4–7 add their cases to its switch; until then unknown strategies return an error.
   - `type TakeTrunk struct{}`
@@ -886,10 +895,12 @@ func TestRuleNamedAppliesToTheVersionInsideALine(t *testing.T) {
 	}
 }
 
-func TestRuleNamedRefusesALineWithoutAVersion(t *testing.T) {
+func TestRuleNamedRefusesALineWithoutAWholeVersionToken(t *testing.T) {
 	r, _ := RuleNamed("max-plus-patch")
-	if _, err := r.Apply("    version: SNAPSHOT", "    version: 2.38.5"); err == nil {
-		t.Error("expected an error for a line with no X.Y.Z")
+	for _, line := range []string{"    version: SNAPSHOT", "    version: 2.38.3-SNAPSHOT", "    version: 2.38.3.1"} {
+		if _, err := r.Apply(line, "    version: 2.38.5"); err == nil {
+			t.Errorf("expected an error for %q", line)
+		}
 	}
 }
 
@@ -956,8 +967,22 @@ import (
 	"strings"
 )
 
-// semverRE finds the X.Y.Z inside a line.
-var semverRE = regexp.MustCompile(`\d+\.\d+\.\d+`)
+// semverRE finds the X.Y.Z inside a line, as a whole token: "2.38.3-SNAPSHOT"
+// and "2.38.3.1" are not versions this rule knows, and must refuse rather
+// than be lifted to "2.38.6-SNAPSHOT". Group 1 is the version.
+var semverRE = regexp.MustCompile(`(?:^|[^A-Za-z0-9.-])(\d+\.\d+\.\d+)(?:[^A-Za-z0-9.-]|$)`)
+
+// exactSemverRE matches a bare X.Y.Z and nothing else.
+var exactSemverRE = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
+
+// findSemver returns the version token in a line, or "".
+func findSemver(line string) string {
+	m := semverRE.FindStringSubmatch(line)
+	if m == nil {
+		return ""
+	}
+	return m[1]
+}
 
 // ValueRule decides which line the branch keeps when both sides changed the
 // one line a strategy owns. It sees whole lines so that indentation and
@@ -989,8 +1014,8 @@ func (keepTrunk) Apply(_, trunk string) (string, error)   { return trunk, nil }
 // Apply rewrites the version inside the branch's line to MaxPlusPatch of the
 // two versions, keeping everything else on the line as the branch wrote it.
 func (maxPlusPatch) Apply(branch, trunk string) (string, error) {
-	bv := semverRE.FindString(branch)
-	tv := semverRE.FindString(trunk)
+	bv := findSemver(branch)
+	tv := findSemver(trunk)
 	if bv == "" || tv == "" {
 		return "", fmt.Errorf("max-plus-patch needs an X.Y.Z version on both sides, got %q and %q",
 			strings.TrimSpace(branch), strings.TrimSpace(trunk))
@@ -1119,8 +1144,9 @@ import (
 	"testing"
 )
 
-// yaml is the shape of server's openapi: block.
-func yaml(main string, extra string) string {
+// yamlDoc is the shape of server's openapi: block. (Not "yaml": that is the
+// package's import name.)
+func yamlDoc(main string, extra string) string {
 	return "server:\n  port: 8080\nopenapi:\n  main:\n    name: Backend API\n    # update when the spec changes\n    version: " + main + "\n    public-only: false\n  remote:\n    name: Remote API\n    version: 1.5.1\n" + extra
 }
 
@@ -1134,7 +1160,7 @@ func ownedVersion(t *testing.T) OwnedLine {
 }
 
 func TestOwnedLineLiftsAVersionOnlyConflictAboveTrunk(t *testing.T) {
-	out, err := ownedVersion(t).Resolve(conflict(yaml("2.38.0", ""), yaml("2.38.5", ""), yaml("2.38.3", "")))
+	out, err := ownedVersion(t).Resolve(conflict(yamlDoc("2.38.0", ""), yamlDoc("2.38.5", ""), yamlDoc("2.38.3", "")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1147,7 +1173,7 @@ func TestOwnedLineLiftsAVersionOnlyConflictAboveTrunk(t *testing.T) {
 }
 
 func TestOwnedLineKeepsABranchVersionAlreadyAboveTrunk(t *testing.T) {
-	out, err := ownedVersion(t).Resolve(conflict(yaml("2.38.0", ""), yaml("2.38.5", ""), yaml("2.39.0", "")))
+	out, err := ownedVersion(t).Resolve(conflict(yamlDoc("2.38.0", ""), yamlDoc("2.38.5", ""), yamlDoc("2.39.0", "")))
 	if err != nil || !strings.Contains(string(out), "version: 2.39.0\n") {
 		t.Errorf("out = %q, err = %v", out, err)
 	}
@@ -1165,7 +1191,7 @@ func TestOwnedLineResolvesTwoOwnedLinesInSeparateBlocks(t *testing.T) {
 }
 
 func TestOwnedLineKeepsTheRestAsGitMergedIt(t *testing.T) {
-	out, err := ownedVersion(t).Resolve(conflict(yaml("2.38.0", ""), yaml("2.38.5", "  extra: trunk\n"), yaml("2.38.3", "")))
+	out, err := ownedVersion(t).Resolve(conflict(yamlDoc("2.38.0", ""), yamlDoc("2.38.5", "  extra: trunk\n"), yamlDoc("2.38.3", "")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1204,14 +1230,14 @@ func TestOwnedLineRefusesWhenBothSidesChangedOtherLines(t *testing.T) {
 }
 
 func TestOwnedLineRefusesAConflictElsewhere(t *testing.T) {
-	_, err := ownedVersion(t).Resolve(conflict(yaml("2.38.0", ""), yaml("2.38.5", "  extra: trunk\n"), yaml("2.38.3", "  extra: branch\n")))
+	_, err := ownedVersion(t).Resolve(conflict(yamlDoc("2.38.0", ""), yamlDoc("2.38.5", "  extra: trunk\n"), yamlDoc("2.38.3", "  extra: branch\n")))
 	if !IsRefusal(err) {
 		t.Errorf("err = %v", err)
 	}
 }
 
 func TestOwnedLineRefusesAVersionThatIsNotSemver(t *testing.T) {
-	_, err := ownedVersion(t).Resolve(conflict(yaml("2.38.0", ""), yaml("2.38.5", ""), yaml("2.38.3-SNAPSHOT", "")))
+	_, err := ownedVersion(t).Resolve(conflict(yamlDoc("2.38.0", ""), yamlDoc("2.38.5", ""), yamlDoc("2.38.3-SNAPSHOT", "")))
 	if !IsRefusal(err) {
 		t.Errorf("err = %v", err)
 	}
@@ -1343,6 +1369,9 @@ func splitOwned(side []string, line *regexp.Regexp) (owned string, rest []string
 }
 
 func equalLines(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
 	return strings.Join(a, "\n") == strings.Join(b, "\n")
 }
 ```
@@ -1364,16 +1393,23 @@ Add to `FromRule` in `internal/wtsync/strategy.go`, before the `take-trunk` case
 
 and add `"regexp"` to that file's imports.
 
+Also make `Parse` (Task 1, `config.go`) validate what `FromRule` would otherwise reject at first use: compile `Line` for `owned-line` and `list-union` with `regexp.Compile` and return an error naming the rule index on failure; for `script`, require `Run` to be relative, without `..` segments. Add these two cases to `TestParseRejectsUnknownStrategyAndMissingParameters`:
+
+```go
+		"bad line regex":          "conflicts:\n  - paths: [a]\n    strategy: owned-line\n    line: '('\n    rule: keep-branch\n",
+		"script escapes the root": "conflicts:\n  - paths: [a]\n    strategy: script\n    run: ../evil\n",
+```
+
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `go test ./internal/wtsync/ -run 'OwnedLine' -v 2>&1 | grep -E '^(--- |ok|FAIL)'`
+Run: `go test ./internal/wtsync/ -run 'OwnedLine|Parse' -v 2>&1 | grep -E '^(--- |ok|FAIL)'`
 Expected: all `--- PASS`. `TestOwnedLineResolvesABlockGitFoldedAroundTheLine` is the one that fails if the base comparison is against the wrong side; the second case in it fails if `keep` picks trunk when only the branch added a line.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 gofmt -l internal/ ; go vet ./... && golangci-lint run ./...
-git add internal/wtsync/owned_line.go internal/wtsync/owned_line_test.go internal/wtsync/strategy.go
+git add internal/wtsync/owned_line.go internal/wtsync/owned_line_test.go internal/wtsync/strategy.go internal/wtsync/config.go internal/wtsync/config_test.go
 git commit -m "feat(sync): the owned-line strategy"
 git push origin main
 ```
@@ -1830,9 +1866,30 @@ func TestOpenAPIWritesTwoSpaceJSONWithNoTrailingNewlineAndTrunksKeyOrder(t *test
 }
 
 func TestOpenAPIRefusesInvalidJSON(t *testing.T) {
-	c := conflict(spec("2.38.0", `{}`, `{}`, `[]`), spec("2.38.5", `{}`, `{}`, `[]`), `{not json`)
-	if _, err := (OpenAPI{Rule: "max-plus-patch"}).Resolve(c); !IsRefusal(err) {
-		t.Errorf("err = %v", err)
+	good := spec("2.38.5", `{"/t":{"get":{}}}`, `{}`, `[]`)
+	for name, bad := range map[string]string{
+		"syntax":          `{not json`,
+		"truncated":       strings.TrimSuffix(good, "}"),
+		"trailing":        good + `{"x":1}`,
+		"paths not object": strings.Replace(good, `"paths":{"/t":{"get":{}}}`, `"paths":[1]`, 1),
+		"tag without name": strings.Replace(good, `"tags":[]`, `"tags":[{"x":1}]`, 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := conflict(spec("2.38.0", `{}`, `{}`, `[]`), bad, spec("2.38.3", `{"/b":{"get":{}}}`, `{}`, `[]`))
+			if _, err := (OpenAPI{Rule: "max-plus-patch"}).Resolve(c); !IsRefusal(err) {
+				t.Errorf("err = %v", err)
+			}
+		})
+	}
+}
+
+func TestOpenAPIComparesNumbersExactly(t *testing.T) {
+	c := conflict(spec("2.38.0", `{"/a":{"max":9007199254740992}}`, `{}`, `[]`),
+		spec("2.38.5", `{"/a":{"max":9007199254740993}}`, `{}`, `[]`),
+		spec("2.38.3", `{"/a":{"max":9007199254740994}}`, `{}`, `[]`))
+	_, err := (OpenAPI{Rule: "max-plus-patch"}).Resolve(c)
+	if !IsRefusal(err) {
+		t.Errorf("two large integers differing in the last digit must not compare equal: %v", err)
 	}
 }
 
@@ -1860,6 +1917,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"reflect"
 	"sort"
 	"strings"
@@ -1899,9 +1957,13 @@ func (s OpenAPI) Resolve(c Conflict) ([]byte, error) {
 		return nil, Refuse(c.Path, "the branch changed the document outside paths, schemas, tags and version")
 	}
 
-	paths, pathConflicts := merge3Keys(base.section("paths"), trunk.section("paths"), branch.section("paths"))
-	schemas, schemaConflicts := merge3Keys(base.schemas(), trunk.schemas(), branch.schemas())
-	tags, tagConflicts := merge3Keys(base.tagsByName(), trunk.tagsByName(), branch.tagsByName())
+	sections, err := loadSections(c.Path, base, trunk, branch)
+	if err != nil {
+		return nil, err
+	}
+	paths, pathConflicts := merge3Keys(sections.paths[0], sections.paths[1], sections.paths[2])
+	schemas, schemaConflicts := merge3Keys(sections.schemas[0], sections.schemas[1], sections.schemas[2])
+	tags, tagConflicts := merge3Keys(sections.tags[0], sections.tags[1], sections.tags[2])
 	var bad []string
 	if len(pathConflicts) > 0 {
 		bad = append(bad, "paths: "+strings.Join(pathConflicts, ", "))
@@ -1926,14 +1988,46 @@ func (s OpenAPI) Resolve(c Conflict) ([]byte, error) {
 	// branch did not touch any of them.
 	out := trunk
 	out.set("paths", paths.raw())
-	components := trunk.components()
+	components, err := trunk.components()
+	if err != nil {
+		return nil, Refuse(c.Path, "trunk: %v", err)
+	}
 	components.set("schemas", schemas.raw())
 	out.set("components", components.raw())
 	out.set("tags", tags.values())
-	info := out.info()
+	info, err := out.info()
+	if err != nil {
+		return nil, Refuse(c.Path, "trunk: %v", err)
+	}
 	info.set("version", mustRaw(version))
 	out.set("info", info.raw())
 	return format(out.raw())
+}
+
+// merged holds the three mergeable sections of base, trunk and branch, in
+// that order.
+type merged struct {
+	paths, schemas, tags [3]*omap
+}
+
+// loadSections parses every section the merge touches, on every side, and
+// refuses the file on the first malformed one.
+func loadSections(path string, sides ...doc) (merged, error) {
+	var m merged
+	for i, d := range sides {
+		side := [...]string{"base", "trunk", "branch"}[i]
+		var err error
+		if m.paths[i], err = d.section("paths"); err != nil {
+			return m, Refuse(path, "%s: %v", side, err)
+		}
+		if m.schemas[i], err = d.schemas(); err != nil {
+			return m, Refuse(path, "%s: %v", side, err)
+		}
+		if m.tags[i], err = d.tagsByName(); err != nil {
+			return m, Refuse(path, "%s: %v", side, err)
+		}
+	}
+	return m, nil
 }
 
 func (s OpenAPI) version(path, branchV, trunkV string) (string, error) {
@@ -1943,7 +2037,7 @@ func (s OpenAPI) version(path, branchV, trunkV string) (string, error) {
 	case "keep-trunk":
 		return trunkV, nil
 	case "max-plus-patch", "":
-		if !semverRE.MatchString(branchV) || !semverRE.MatchString(trunkV) {
+		if !exactSemverRE.MatchString(branchV) || !exactSemverRE.MatchString(trunkV) {
 			return "", Refuse(path, "info.version is not X.Y.Z on both sides (%q, %q)", branchV, trunkV)
 		}
 		return MaxPlusPatch(branchV, trunkV), nil
@@ -2025,6 +2119,14 @@ func parseOmap(data json.RawMessage) (*omap, error) {
 		}
 		o.set(k, v)
 	}
+	// The object must close, and nothing may follow it: a truncated or
+	// trailing-garbage document is not one to rewrite.
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('}') {
+		return nil, fmt.Errorf("object not closed")
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, fmt.Errorf("trailing data after the document")
+	}
 	return o, nil
 }
 
@@ -2039,40 +2141,49 @@ func parseDoc(path, side string, data []byte) (doc, error) {
 	return doc{o}, nil
 }
 
-func (d doc) section(name string) *omap {
+// section parses one object-valued key; a malformed section is an error,
+// never an empty map, because an empty map would merge as "everything
+// deleted".
+func (d doc) section(name string) (*omap, error) {
 	o, err := parseOmap(d.get(name))
 	if err != nil {
-		return newOmap()
+		return nil, fmt.Errorf("%s: %v", name, err)
 	}
-	return o
+	return o, nil
 }
 
-func (d doc) components() *omap { return d.section("components") }
-func (d doc) info() *omap       { return d.section("info") }
+func (d doc) components() (*omap, error) { return d.section("components") }
+func (d doc) info() (*omap, error)       { return d.section("info") }
 
-func (d doc) schemas() *omap {
-	o, err := parseOmap(d.components().get("schemas"))
+func (d doc) schemas() (*omap, error) {
+	c, err := d.components()
 	if err != nil {
-		return newOmap()
+		return nil, err
 	}
-	return o
+	o, err := parseOmap(c.get("schemas"))
+	if err != nil {
+		return nil, fmt.Errorf("components.schemas: %v", err)
+	}
+	return o, nil
 }
 
 // tagsByName keys the tags array by each tag's name, so it merges like a map.
-func (d doc) tagsByName() *omap {
+func (d doc) tagsByName() (*omap, error) {
 	o := newOmap()
 	var tags []json.RawMessage
 	if err := json.Unmarshal(orNull(d.get("tags")), &tags); err != nil {
-		return o
+		return nil, fmt.Errorf("tags: %v", err)
 	}
 	for _, t := range tags {
 		var named struct {
 			Name string `json:"name"`
 		}
-		_ = json.Unmarshal(t, &named)
+		if err := json.Unmarshal(t, &named); err != nil || named.Name == "" {
+			return nil, fmt.Errorf("tags: an entry has no name")
+		}
 		o.set(named.Name, t)
 	}
-	return o
+	return o, nil
 }
 
 func (d doc) version() string {
@@ -2086,8 +2197,8 @@ func (d doc) version() string {
 // remainder is the document with the merged sections and the version
 // blanked, as a structure, for order-insensitive comparison.
 func remainder(d doc) any {
-	var v map[string]any
-	_ = json.Unmarshal(d.raw(), &v)
+	decoded, _ := decodeExact(d.raw())
+	v, _ := decoded.(map[string]any)
 	delete(v, "paths")
 	delete(v, "tags")
 	if comp, ok := v["components"].(map[string]any); ok {
@@ -2136,16 +2247,30 @@ func merge3Keys(base, trunk, branch *omap) (*omap, []string) {
 	return out, conflicts
 }
 
-// jsonEqual compares two raw values structurally; nil means absent.
+// jsonEqual compares two raw values structurally; nil means absent. Numbers
+// are compared as their literal text (UseNumber), not as float64, so two
+// large integers that differ in the last digit are not "equal".
 func jsonEqual(a, b json.RawMessage) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
 	}
-	var va, vb any
-	if json.Unmarshal(a, &va) != nil || json.Unmarshal(b, &vb) != nil {
+	va, errA := decodeExact(a)
+	vb, errB := decodeExact(b)
+	if errA != nil || errB != nil {
 		return bytes.Equal(a, b)
 	}
 	return reflect.DeepEqual(va, vb)
+}
+
+// decodeExact decodes into generic values with numbers kept as json.Number.
+func decodeExact(data []byte) (any, error) {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return nil, err
+	}
+	return v, nil
 }
 
 func orNull(r json.RawMessage) json.RawMessage {
@@ -2205,9 +2330,9 @@ git push origin main
 - Modify: `internal/wtsync/strategy.go` (add the `script` case)
 
 **Interfaces:**
-- Consumes: `Conflict`, `Refuse` (Task 2); `git.Run` semantics but with an environment, so this task adds `func gitEnv(dir string, env []string, args ...string) (string, error)` to `internal/wtsync/script.go` (a thin `exec.Command` wrapper; `internal/git.Run` has no env parameter).
+- Consumes: `Conflict`, `Refuse` (Task 2); `git.Run` semantics but with an environment and stdin, so this task adds `func gitEnv(dir string, env []string, stdin io.Reader, args ...string) (string, error)` to `internal/wtsync/script.go` (a thin `exec.Command` wrapper; `internal/git.Run` has neither). It also changes `FromRule` to `FromRule(r Rule, root, trunk string)`.
 - Produces:
-  - `type Script struct { Root, Run string }` — `Run` relative to `Root`.
+  - `type Script struct { Root, Trunk, Run string }` — `Root` is the main checkout (where git runs), `Trunk` the ref the script is read from (`origin/<trunk>`), `Run` the path of the executable inside the repository. The script's whole directory is materialised from `Trunk` into a temporary directory with `git archive`, so a script may source siblings, and **nothing is ever run from a working tree** (spec §3).
   - `func (s Script) Resolve(c Conflict) ([]byte, error)` — builds a temporary index holding the three stages of `c.Path`, invokes `<run> --check <path>` with `GIT_INDEX_FILE` pointing at it. Exit 0 means the script would resolve it; the resolved bytes are not available at triage time, so `Resolve` returns `nil, nil` meaning "resolvable, content produced by `--resolve` during a real rebase". This plan only classifies; the next plan's `run` invokes `--resolve` against the real index.
 
 The contract, from spec §2: `--claims` (path globs), `--check <file>` (0 resolvable, 1 not mine), `--resolve <file>` (0 resolved and staged, 2 refused with a reason on stderr). Exit 2 from `--check` is a refusal too.
@@ -2226,15 +2351,13 @@ import (
 	"testing"
 )
 
-// fakeScript writes an executable that answers the contract by inspecting
-// the index it was given: it exits 0 when stage 2 of the file contains "ok",
-// 2 with a reason otherwise, and 1 for a path outside its claim.
-func fakeScript(t *testing.T, root string) string {
+// fakeScript commits an executable to origin's main that answers the
+// contract by inspecting the index it was given: it exits 0 when stage 2 of
+// the file contains "ok", 2 with a reason otherwise, and 1 for a path
+// outside its claim. It is committed, not written into the checkout, because
+// scripts are read from trunk.
+func fakeScript(t *testing.T, local, origin string) string {
 	t.Helper()
-	dir := filepath.Join(root, "bin", "conflict")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
 	body := `#!/usr/bin/env bash
 case $1 in
 --claims) echo 'special/*.txt' ;;
@@ -2246,19 +2369,25 @@ case $1 in
   echo "trunk side is not ok" >&2; exit 2 ;;
 esac
 `
-	path := filepath.Join(dir, "special")
-	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
+	full := filepath.Join(origin, "bin", "conflict", "special")
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(full, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, origin, "add", "bin/conflict/special")
+	gitIn(t, origin, "commit", "-q", "-m", "add the special resolver")
+	gitIn(t, local, "fetch", "-q", "origin")
 	return "bin/conflict/special"
 }
 
 func TestScriptChecksThroughATemporaryIndexWithoutTouchingTheRealOne(t *testing.T) {
-	local, _ := repoWithOrigin(t)
-	run := fakeScript(t, local)
-	before := gitIn(t, local, "status", "--porcelain")
+	local, origin := repoWithOrigin(t)
+	run := fakeScript(t, local, origin)
+	before := gitIn(t, local, "--no-optional-locks", "status", "--porcelain")
 
-	s := Script{Root: local, Run: run}
+	s := Script{Root: local, Trunk: "origin/main", Run: run}
 	c := Conflict{Path: "special/a.txt", Base: []byte("base\n"), Trunk: []byte("ok\n"), Branch: []byte("branch\n")}
 	if _, err := s.Resolve(c); err != nil {
 		t.Fatalf("expected the script to accept, got %v", err)
@@ -2270,7 +2399,7 @@ func TestScriptChecksThroughATemporaryIndexWithoutTouchingTheRealOne(t *testing.
 		t.Errorf("err = %v", err)
 	}
 
-	if after := gitIn(t, local, "status", "--porcelain"); after != before {
+	if after := gitIn(t, local, "--no-optional-locks", "status", "--porcelain"); after != before {
 		t.Errorf("the real index changed: %q -> %q", before, after)
 	}
 	if entries := gitIn(t, local, "ls-files", "-u"); entries != "" {
@@ -2278,10 +2407,28 @@ func TestScriptChecksThroughATemporaryIndexWithoutTouchingTheRealOne(t *testing.
 	}
 }
 
+func TestScriptRunsTrunksCopyNotTheCheckouts(t *testing.T) {
+	local, origin := repoWithOrigin(t)
+	run := fakeScript(t, local, origin)
+	// a different, always-accepting script in the working tree must be ignored
+	full := filepath.Join(local, run)
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(full, []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s := Script{Root: local, Trunk: "origin/main", Run: run}
+	c := Conflict{Path: "special/a.txt", Base: []byte("base\n"), Trunk: []byte("nope\n"), Branch: []byte("branch\n")}
+	if _, err := s.Resolve(c); !IsRefusal(err) {
+		t.Errorf("trunk's script refuses this; the checkout's copy must not have run: %v", err)
+	}
+}
+
 func TestScriptNotMineIsARefusalThatSaysSo(t *testing.T) {
-	local, _ := repoWithOrigin(t)
-	run := fakeScript(t, local)
-	s := Script{Root: local, Run: run}
+	local, origin := repoWithOrigin(t)
+	run := fakeScript(t, local, origin)
+	s := Script{Root: local, Trunk: "origin/main", Run: run}
 	_, err := s.Resolve(Conflict{Path: "other/a.txt", Base: []byte("b"), Trunk: []byte("ok"), Branch: []byte("r")})
 	if !IsRefusal(err) || !strings.Contains(err.Error(), "does not claim") {
 		t.Errorf("err = %v", err)
@@ -2290,7 +2437,7 @@ func TestScriptNotMineIsARefusalThatSaysSo(t *testing.T) {
 
 func TestScriptMissingExecutableIsAnErrorNotARefusal(t *testing.T) {
 	local, _ := repoWithOrigin(t)
-	s := Script{Root: local, Run: "bin/conflict/missing"}
+	s := Script{Root: local, Trunk: "origin/main", Run: "bin/conflict/missing"}
 	_, err := s.Resolve(Conflict{Path: "x", Base: []byte("b"), Trunk: []byte("t"), Branch: []byte("r")})
 	if err == nil || IsRefusal(err) {
 		t.Errorf("err = %v, want a hard error", err)
@@ -2298,7 +2445,7 @@ func TestScriptMissingExecutableIsAnErrorNotARefusal(t *testing.T) {
 }
 
 func TestFromRuleBuildsScript(t *testing.T) {
-	s, err := FromRule(Rule{Strategy: "script", Run: "bin/conflict/x"}, "/repo")
+	s, err := FromRule(Rule{Strategy: "script", Run: "bin/conflict/x"}, "/repo", "origin/main")
 	if err != nil || s.Name() != "script" {
 		t.Errorf("FromRule = %v, %v", s, err)
 	}
@@ -2329,23 +2476,29 @@ import (
 )
 
 // Script is the escape hatch: an executable in the repository answering the
-// three-verb contract. At triage time it is asked --check against a temporary
-// index holding the conflict's three stages, so the real index is never
-// touched and no rebase has to be running. Resolve therefore returns nil
-// bytes on success: the content is produced by --resolve during a real
-// rebase, which the next plan performs.
+// three-verb contract. Its directory is materialised from trunk into a
+// temporary directory, never run from a working tree, because a feature
+// branch must not be able to change what runs. At triage time it is asked
+// --check against a temporary index holding the conflict's three stages: the
+// script sees exactly those blobs and nothing else of a rebase (no HEAD, no
+// other index entries, mode 100644), which is the contract's limit. Resolve
+// therefore returns nil bytes on success: the content is produced by
+// --resolve during a real rebase, which the next plan performs. A script is
+// trusted code from trunk; nothing here sandboxes it.
 type Script struct {
-	Root string
-	Run  string
+	Root  string // the main checkout, where git runs
+	Trunk string // the ref the script is read from, e.g. origin/main
+	Run   string // the executable's path inside the repository
 }
 
 func (Script) Name() string { return "script" }
 
 func (s Script) Resolve(c Conflict) ([]byte, error) {
-	exe := filepath.Join(s.Root, s.Run)
-	if info, err := os.Stat(exe); err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
-		return nil, fmt.Errorf("script %s is not an executable in %s", s.Run, s.Root)
+	exe, cleanupExe, err := materialise(s.Root, s.Trunk, s.Run)
+	if err != nil {
+		return nil, err
 	}
+	defer cleanupExe()
 	index, cleanup, err := tempIndex(s.Root, c)
 	if err != nil {
 		return nil, err
@@ -2371,6 +2524,48 @@ func (s Script) Resolve(c Conflict) ([]byte, error) {
 	}
 }
 
+// materialise extracts the directory holding run from trunk into a temporary
+// directory with git archive, so the script and any sibling it sources come
+// from trunk. It returns the executable's path.
+func materialise(root, trunk, run string) (exe string, cleanup func(), err error) {
+	dir, err := os.MkdirTemp("", "wtsync-script-")
+	if err != nil {
+		return "", nil, err
+	}
+	cleanup = func() { _ = os.RemoveAll(dir) }
+	scriptDir := filepath.Dir(run)
+	archive := exec.Command("git", "archive", "--format=tar", trunk, scriptDir)
+	archive.Dir = root
+	tar := exec.Command("tar", "-x", "-C", dir)
+	pipe, err := archive.StdoutPipe()
+	if err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	tar.Stdin = pipe
+	var stderr bytes.Buffer
+	archive.Stderr, tar.Stderr = &stderr, &stderr
+	if err := tar.Start(); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	if err := archive.Run(); err != nil {
+		_ = tar.Wait()
+		cleanup()
+		return "", nil, fmt.Errorf("script %s is not on %s: %s", run, trunk, strings.TrimSpace(stderr.String()))
+	}
+	if err := tar.Wait(); err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("extracting %s from %s: %s", scriptDir, trunk, strings.TrimSpace(stderr.String()))
+	}
+	exe = filepath.Join(dir, run)
+	if info, err := os.Stat(exe); err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
+		cleanup()
+		return "", nil, fmt.Errorf("script %s is not an executable on %s", run, trunk)
+	}
+	return exe, cleanup, nil
+}
+
 // tempIndex writes a private index holding the three stages of the conflict
 // and nothing else. The blobs are written to the object store, which is the
 // only side effect, and one git already tolerates.
@@ -2379,7 +2574,7 @@ func tempIndex(root string, c Conflict) (index string, cleanup func(), err error
 	if err != nil {
 		return "", nil, err
 	}
-	cleanup = func() { os.RemoveAll(dir) }
+	cleanup = func() { _ = os.RemoveAll(dir) }
 	index = filepath.Join(dir, "index")
 	var info strings.Builder
 	for stage, data := range map[int][]byte{1: c.Base, 2: c.Trunk, 3: c.Branch} {
@@ -2420,11 +2615,11 @@ func gitEnv(dir string, env []string, stdin io.Reader, args ...string) (string, 
 }
 ```
 
-Add to `FromRule`:
+`FromRule` grows a third parameter for this: `func FromRule(r Rule, root, trunk string) (Strategy, error)`. Update its definition and every existing call in tests (`FromRule(Rule{...}, "")` becomes `FromRule(Rule{...}, "", "")`), and add:
 
 ```go
 	case "script":
-		return Script{Root: root, Run: r.Run}, nil
+		return Script{Root: root, Trunk: trunk, Run: r.Run}, nil
 ```
 
 - [ ] **Step 4: Run the tests to verify they pass**
@@ -2452,7 +2647,8 @@ git push origin main
 **Interfaces:**
 - Consumes: `Conflict` (Task 2); `gitEnv` (Task 7).
 - Produces:
-  - `type Stop struct { Index, Total int; Commit, Subject string; Conflicts []Conflict }` — the first commit a rebase would stop at, 1-based, with the three blobs of every conflicted file.
+  - `type Stop struct { Index, Total int; Commit, Subject string; Conflicts []Conflict; Messages string }` — the first commit a rebase would stop at, 1-based, with the three blobs of every conflicted file, and merge-tree's own messages for conflicts that carry no three blobs (a rename, a mode change, a submodule).
+  - `Conflict` gains `Incomplete string`: non-empty when a side is missing (modify/delete) or an entry is not a regular blob; `Assess` refuses such a conflict before any strategy sees it.
   - `type Replay struct { Commits int; Stop *Stop }` — `Stop == nil` means every commit replays cleanly.
   - `func SimulateRebase(mainRoot, onto, branch string) (Replay, error)` — the object-store simulation of spec §1.
   - `func Endpoint(mainRoot, onto, branch string) ([]Conflict, error)` — the conflicts of merging the two tips; nil when clean.
@@ -2651,7 +2847,9 @@ var simEnv = []string{
 // ref, index or working tree is touched; the only objects created are
 // unreachable trees and commits.
 func SimulateRebase(mainRoot, onto, branch string) (Replay, error) {
-	out, err := gitEnv(mainRoot, nil, nil, "rev-list", "--reverse", "--right-only", "--cherry-pick", "--no-merges", onto+"..."+branch)
+	// The same selection and order the rebase sequencer uses: right side
+	// only, patch-equivalent commits dropped, merges flattened, topological.
+	out, err := gitEnv(mainRoot, nil, nil, "rev-list", "--reverse", "--topo-order", "--right-only", "--cherry-pick", "--no-merges", onto+"..."+branch)
 	if err != nil {
 		return Replay{}, err
 	}
@@ -2664,15 +2862,20 @@ func SimulateRebase(mainRoot, onto, branch string) (Replay, error) {
 		return Replay{}, err
 	}
 	for i, c := range commits {
-		tree, conflicts, err := mergeTree(mainRoot, c+"^", base, c)
+		tree, conflicts, messages, err := mergeTree(mainRoot, c+"^", base, c)
 		if err != nil {
 			return Replay{}, err
 		}
-		if conflicts != nil {
+		if conflicts != nil || messages != "" {
 			subject, _ := gitEnv(mainRoot, nil, nil, "log", "-1", "--format=%s", c)
 			return Replay{Commits: len(commits), Stop: &Stop{
-				Index: i + 1, Total: len(commits), Commit: c, Subject: subject, Conflicts: conflicts,
+				Index: i + 1, Total: len(commits), Commit: c, Subject: subject, Conflicts: conflicts, Messages: messages,
 			}}, nil
+		}
+		// A commit whose changes are already present replays to the same
+		// tree; rebase drops it, so no simulated commit is made for it.
+		if baseTree, _ := gitEnv(mainRoot, nil, nil, "rev-parse", base+"^{tree}"); baseTree == tree {
+			continue
 		}
 		base, err = gitEnv(mainRoot, simEnv, nil, "commit-tree", tree, "-p", base, "-m", "wt sync simulation")
 		if err != nil {
@@ -2682,10 +2885,19 @@ func SimulateRebase(mainRoot, onto, branch string) (Replay, error) {
 	return Replay{Commits: len(commits)}, nil
 }
 
-// Endpoint merges the two tips and returns the conflicts, nil when clean.
+// Endpoint merges the two tips and returns the conflicts, nil when clean. A
+// conflict merge-tree reports only in its messages (no three blobs) comes
+// back as one Conflict with Incomplete set and the message as its path
+// description.
 func Endpoint(mainRoot, onto, branch string) ([]Conflict, error) {
-	_, conflicts, err := mergeTree(mainRoot, "", onto, branch)
-	return conflicts, err
+	_, conflicts, messages, err := mergeTree(mainRoot, "", onto, branch)
+	if err != nil {
+		return nil, err
+	}
+	if len(conflicts) == 0 && messages != "" {
+		conflicts = []Conflict{{Path: "(see messages)", Incomplete: messages}}
+	}
+	return conflicts, nil
 }
 
 // BehindAhead counts the commits branch lacks from onto, and onto from branch.
@@ -2705,33 +2917,37 @@ func BehindAhead(mainRoot, onto, branch string) (behind, ahead int, err error) {
 
 // mergeTree runs one merge in the object store. mergeBase may be "" to let
 // git find it. It returns the merged tree and, on conflict, every conflicted
-// file with its three blobs.
-func mergeTree(mainRoot, mergeBase, ours, theirs string) (tree string, conflicts []Conflict, err error) {
+// file with its blobs (a missing stage or a non-blob entry marks the conflict
+// Incomplete) and merge-tree's informational messages.
+func mergeTree(mainRoot, mergeBase, onto, commit string) (tree string, conflicts []Conflict, messages string, err error) {
 	args := []string{"merge-tree", "--write-tree", "-z"}
 	if mergeBase != "" {
 		args = append(args, "--merge-base="+mergeBase)
 	}
-	args = append(args, ours, theirs)
+	args = append(args, onto, commit)
 	cmd := exec.Command("git", args...)
 	cmd.Dir = mainRoot
 	out, runErr := cmd.Output()
 	if runErr != nil {
 		var exit *exec.ExitError
 		if !errors.As(runErr, &exit) || exit.ExitCode() != 1 {
-			return "", nil, fmt.Errorf("git merge-tree: %v: %s", runErr, stderrOf(runErr))
+			return "", nil, "", fmt.Errorf("git merge-tree: %v: %s", runErr, stderrOf(runErr))
 		}
 	}
 	// With -z the output is NUL-separated: the tree, then for a conflict one
-	// record per file ("<mode> <oid> <stage>\t<path>"), then an empty record
-	// ending the section, then messages.
+	// record per index entry ("<mode> <oid> <stage>\t<path>"), then an empty
+	// record ending the section, then the informational messages.
 	records := strings.Split(string(out), "\x00")
 	tree = strings.TrimSpace(records[0])
 	if runErr == nil {
-		return tree, nil, nil
+		return tree, nil, "", nil
 	}
 	stages := map[string]*Conflict{}
+	seenStage := map[string]map[int]bool{}
 	var order []string
-	for _, rec := range records[1:] {
+	i := 1
+	for ; i < len(records); i++ {
+		rec := records[i]
 		if rec == "" {
 			break
 		}
@@ -2748,11 +2964,17 @@ func mergeTree(mainRoot, mergeBase, ours, theirs string) (tree string, conflicts
 		if !seen {
 			c = &Conflict{Path: path}
 			stages[path] = c
+			seenStage[path] = map[int]bool{}
 			order = append(order, path)
+		}
+		seenStage[path][stage] = true
+		if fields[0] != "100644" && fields[0] != "100755" {
+			c.Incomplete = "not a regular file (mode " + fields[0] + ")"
+			continue
 		}
 		data, err := catFileRaw(mainRoot, fields[1])
 		if err != nil {
-			return "", nil, err
+			return "", nil, "", err
 		}
 		switch stage {
 		case 1:
@@ -2763,15 +2985,17 @@ func mergeTree(mainRoot, mergeBase, ours, theirs string) (tree string, conflicts
 			c.Branch = data
 		}
 	}
+	if i+1 < len(records) {
+		messages = strings.TrimSpace(strings.Join(records[i+1:], "\n"))
+	}
 	for _, p := range order {
-		conflicts = append(conflicts, *stages[p])
+		c := stages[p]
+		if c.Incomplete == "" && !(seenStage[p][1] && seenStage[p][2] && seenStage[p][3]) {
+			c.Incomplete = "one side deleted or renamed it"
+		}
+		conflicts = append(conflicts, *c)
 	}
-	if conflicts == nil {
-		// exit 1 with no conflicted entries: a modify/delete or similar that
-		// carries no three blobs; report it as a conflict with empty stages.
-		conflicts = []Conflict{}
-	}
-	return tree, conflicts, nil
+	return tree, conflicts, messages, nil
 }
 
 // catFileRaw reads a blob without trimming.
@@ -2792,7 +3016,33 @@ func stderrOf(err error) string {
 
 `catFileRaw` exists because `gitEnv` trims trailing newlines and a blob's ending matters to every strategy.
 
-A modify/delete conflict has fewer than three stages; the `Conflict` then has an empty side, and every strategy refuses such a conflict because the missing side matches nothing. That is the right answer: a file one side deleted is a person's call.
+A modify/delete conflict has fewer than three stages and a rename or submodule conflict carries no usable blobs; both come back with `Incomplete` set, and Task 10 refuses them before any strategy runs. That is the right answer: a file one side deleted is a person's call.
+
+Add this test to `replay_test.go`:
+
+```go
+func TestSimulateRebaseMarksAModifyDeleteConflictIncomplete(t *testing.T) {
+	dir := linearRepo(t,
+		[]map[string]string{{"a.txt": "a2\n"}},
+		[]map[string]string{{"b.txt": "b2\n"}})
+	// trunk deletes a.txt after editing it; the branch edits it: modify/delete
+	gitIn(t, dir, "rm", "-q", "a.txt")
+	gitIn(t, dir, "commit", "-q", "-m", "trunk drops a")
+	gitIn(t, dir, "checkout", "-q", "feature")
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a3\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, dir, "commit", "-q", "-am", "branch edits a")
+	gitIn(t, dir, "checkout", "-q", "main")
+	r, err := SimulateRebase(dir, "main", "feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Stop == nil || len(r.Stop.Conflicts) != 1 || r.Stop.Conflicts[0].Incomplete == "" {
+		t.Errorf("stop = %+v", r.Stop)
+	}
+}
+```
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
@@ -2988,7 +3238,7 @@ git push origin main
   - `type Class int` with `Detached, Current, Stale, Clean, Recipe, Contested, Divergent` and `String()` giving the lowercase names of spec §1.
   - `type FileOutcome struct { Path, Strategy, Note string; Resolved bool }` — one conflicted file at the first stop.
   - `type Assessment struct { Path, Branch string; Class Class; Behind, Ahead int; Dirty bool; Agent *Agent; Replay Replay; Files []FileOutcome; Divergent []string; NoConfig bool; Err error }`
-  - `func Assess(mainRoot, onto string, cfg *Config, wt repo.Worktree, agents []Agent) Assessment` — `onto` is the ref to rebase onto (`origin/<trunk>` in production; a plain branch in tests). `cfg` may be nil: the worktree is still classified, nothing is claimed, and `NoConfig` is set.
+  - `func Assess(mainRoot, onto string, cfg *Config, wt repo.Worktree, agents []Agent) Assessment` — `onto` is the ref to rebase onto (`origin/<trunk>` in production; a plain branch in tests); it is also the ref scripts are read from. `cfg` may be nil: the worktree is still classified, nothing is claimed, and `NoConfig` is set. Anything that goes wrong (a status that fails, a strategy that cannot be built, a missing script, a failed endpoint merge) lands in `Err`; it is never silently degraded.
 
 The classes, from spec §1:
 
@@ -3000,7 +3250,7 @@ The classes, from spec §1:
 | `clean` | every commit replays without conflict |
 | `recipe` | the first stop's every file is resolved by a strategy |
 | `contested` | some file at the first stop is unclaimed or refused |
-| `divergent` | at the **endpoint**, a strategy refuses a file it claims; or the branch changes a `dependency_graph` path beyond an owned line |
+| `divergent` | at the **endpoint**, the `openapi` strategy refuses a file it claims (generated output that no longer merges); or **both** trunk and the branch changed a `dependency_graph` path beyond an owned line |
 
 `dirty` (tracked changes only) and the agent are modifiers on the assessment, not classes.
 
@@ -3014,6 +3264,7 @@ package wtsync
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -3039,10 +3290,11 @@ func triageCfg(t *testing.T) *Config {
 	return cfg
 }
 
-// featureWorktree adds a worktree for the feature branch and returns it.
+// featureWorktree adds a worktree for the feature branch and returns it. The
+// path is a sibling named after the repository, unique per fixture.
 func featureWorktree(t *testing.T, dir string) repo.Worktree {
 	t.Helper()
-	path := filepath.Join(filepath.Dir(dir), "feature-wt")
+	path := dir + "-wt"
 	gitIn(t, dir, "worktree", "add", "-q", path, "feature")
 	return repo.Worktree{Path: path, Branch: "feature"}
 }
@@ -3083,29 +3335,87 @@ func TestAssessClassifiesCleanRecipeAndContested(t *testing.T) {
 	}
 }
 
-func TestAssessDivergentWhenAStrategyRefusesAtTheEndpoint(t *testing.T) {
-	// the first stop is fine (v.txt only) but by the endpoint the branch also
-	// changed the line next to the version while trunk changed it too
+func TestAssessDivergentWhenTheOpenAPIStrategyRefusesAtTheEndpoint(t *testing.T) {
+	cfg, err := Parse([]byte("conflicts:\n  - paths: [spec.json]\n    strategy: openapi\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// the first stop resolves (disjoint paths); at the endpoint both sides
+	// changed the same path differently, which the strategy refuses
+	docWith := func(v, paths string) string {
+		return `{"openapi":"3.1.0","info":{"title":"T","version":"` + v + `"},"tags":[],"paths":` + paths + `,"components":{"schemas":{}}}`
+	}
 	dir := linearRepo(t,
-		[]map[string]string{{"v.txt": "1.0.5\ntrunk-note\n"}},
-		[]map[string]string{{"v.txt": "1.0.1\n"}, {"v.txt": "1.0.2\nbranch-note\n"}})
-	a := Assess(dir, "main", triageCfg(t), featureWorktree(t, dir), nil)
-	if a.Class != Divergent || len(a.Divergent) == 0 {
+		[]map[string]string{{"spec.json": docWith("1.0.5", `{"/a":{"get":{"x":1}},"/t":{"get":{}}}`)}},
+		[]map[string]string{{"spec.json": docWith("1.0.1", `{"/a":{"get":{}},"/b":{"get":{}}}`)}, {"spec.json": docWith("1.0.2", `{"/a":{"get":{"x":2}},"/b":{"get":{}}}`)}})
+	gitIn(t, dir, "checkout", "-q", "feature")
+	gitIn(t, dir, "checkout", "-q", "main")
+	a := Assess(dir, "main", cfg, featureWorktree(t, dir), nil)
+	if a.Class != Divergent || len(a.Divergent) != 1 || !strings.Contains(a.Divergent[0], "openapi refuses spec.json") {
 		t.Errorf("divergent: %+v", a)
 	}
 }
 
-func TestAssessDivergentWhenTheBranchChangesTheDependencyGraph(t *testing.T) {
-	dir := linearRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"build.gradle": "deps\n"}})
+func TestAssessAnOwnedLineRefusalIsContestedNotDivergent(t *testing.T) {
+	cfg, err := Parse([]byte("conflicts:\n  - paths: [v.txt]\n    strategy: owned-line\n    line: '^\\d'\n    rule: max-plus-patch\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := linearRepo(t,
+		[]map[string]string{{"v.txt": "1.0.5\ntrunk-note\n"}},
+		[]map[string]string{{"v.txt": "1.0.1\nbranch-note\n"}})
+	a := Assess(dir, "main", cfg, featureWorktree(t, dir), nil)
+	if a.Class != Contested || len(a.Divergent) != 0 {
+		t.Errorf("an ordinary refusal is contested: %+v", a)
+	}
+}
+
+func TestAssessDivergentWhenBothSidesChangeTheDependencyGraph(t *testing.T) {
+	// both sides touch build.gradle (a dependency_graph path)
+	dir := linearRepo(t, []map[string]string{{"build.gradle": "trunk deps\n"}, {"a.txt": "a2\n"}}, []map[string]string{{"build.gradle": "branch deps\n"}})
 	a := Assess(dir, "main", triageCfg(t), featureWorktree(t, dir), nil)
-	if a.Class != Divergent || len(a.Divergent) != 1 {
+	if a.Class != Divergent || len(a.Divergent) != 1 || !strings.Contains(a.Divergent[0], "both sides") {
 		t.Errorf("divergent: %+v", a)
 	}
-	// an owned line inside a dependency-graph file is routine, not divergence
-	dir = linearRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"v.txt": "1.0.1\n"}})
+	// the branch alone changing it is routine
+	dir = linearRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"build.gradle": "deps\n"}})
+	a = Assess(dir, "main", triageCfg(t), featureWorktree(t, dir), nil)
+	if a.Class == Divergent {
+		t.Errorf("one side alone is not divergence: %+v", a)
+	}
+	// an owned line inside a dependency-graph file is routine even when trunk moved the graph
+	dir = linearRepo(t, []map[string]string{{"build.gradle": "trunk deps\n"}}, []map[string]string{{"v.txt": "1.0.1\n"}})
 	a = Assess(dir, "main", triageCfg(t), featureWorktree(t, dir), nil)
 	if a.Class == Divergent {
 		t.Errorf("a version bump alone is not divergence: %+v", a)
+	}
+}
+
+func TestAssessRefusesAnIncompleteConflictBeforeAnyStrategy(t *testing.T) {
+	dir := linearRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"b.txt": "b2\n"}})
+	gitIn(t, dir, "rm", "-q", "v.txt")
+	gitIn(t, dir, "commit", "-q", "-m", "trunk drops v")
+	gitIn(t, dir, "checkout", "-q", "feature")
+	if err := os.WriteFile(filepath.Join(dir, "v.txt"), []byte("1.0.1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, dir, "commit", "-q", "-am", "branch bumps v")
+	gitIn(t, dir, "checkout", "-q", "main")
+	a := Assess(dir, "main", triageCfg(t), featureWorktree(t, dir), nil)
+	if a.Class != Contested || len(a.Files) != 1 || a.Files[0].Resolved || !strings.Contains(a.Files[0].Note, "deleted") {
+		t.Errorf("modify/delete must be a person's call: %+v", a)
+	}
+}
+
+func TestAssessReportsAMissingScriptAsAnError(t *testing.T) {
+	cfg, err := Parse([]byte("conflicts:\n  - paths: [v.txt]\n    strategy: script\n    run: bin/conflict/missing\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := linearRepo(t, []map[string]string{{"v.txt": "1.0.5\n"}}, []map[string]string{{"v.txt": "1.0.1\n"}})
+	a := Assess(dir, "main", cfg, featureWorktree(t, dir), nil)
+	if a.Err == nil || a.Class != Contested {
+		t.Errorf("a missing script is an error, not a silent unclaimed: %+v", a)
 	}
 }
 
@@ -3211,9 +3521,14 @@ func Assess(mainRoot, onto string, cfg *Config, wt repo.Worktree, agents []Agent
 		a.Class = Detached
 		return a
 	}
-	if out, err := gitEnv(wt.Path, nil, nil, "status", "--porcelain", "--untracked-files=no"); err == nil && out != "" {
-		a.Dirty = true
+	// --no-optional-locks: a plain status may refresh and rewrite the index,
+	// and this command must not touch a worktree.
+	out, err := gitEnv(wt.Path, nil, nil, "--no-optional-locks", "status", "--porcelain", "--untracked-files=no")
+	if err != nil {
+		a.Err = fmt.Errorf("status: %w", err)
+		return a
 	}
+	a.Dirty = out != ""
 	behind, ahead, err := BehindAhead(mainRoot, onto, wt.Branch)
 	if err != nil {
 		a.Err = err
@@ -3239,15 +3554,26 @@ func Assess(mainRoot, onto string, cfg *Config, wt repo.Worktree, agents []Agent
 	} else {
 		a.Class = Recipe
 		for _, c := range a.Replay.Stop.Conflicts {
-			f := tryStrategy(mainRoot, cfg, c)
+			f, err := tryStrategy(mainRoot, onto, cfg, c)
+			if err != nil {
+				a.Err = err
+			}
 			if !f.Resolved {
 				a.Class = Contested
 			}
 			a.Files = append(a.Files, f)
 		}
+		if a.Replay.Stop.Messages != "" && len(a.Files) == 0 {
+			a.Class = Contested
+			a.Files = append(a.Files, FileOutcome{Path: "(see messages)", Note: a.Replay.Stop.Messages})
+		}
 	}
 
-	a.Divergent = divergence(mainRoot, onto, cfg, wt.Branch)
+	reasons, err := divergence(mainRoot, onto, cfg, wt.Branch)
+	if err != nil && a.Err == nil {
+		a.Err = err
+	}
+	a.Divergent = reasons
 	if len(a.Divergent) > 0 {
 		a.Class = Divergent
 	}
@@ -3255,73 +3581,109 @@ func Assess(mainRoot, onto string, cfg *Config, wt repo.Worktree, agents []Agent
 }
 
 // tryStrategy asks the declared strategy whether it resolves the conflict.
-func tryStrategy(mainRoot string, cfg *Config, c Conflict) FileOutcome {
+// A conflict without three regular blobs is refused before any strategy sees
+// it. The error return is for things going wrong — a strategy that cannot be
+// built, a script that cannot run — as opposed to a refusal, which is a
+// normal outcome carried in the Note.
+func tryStrategy(mainRoot, onto string, cfg *Config, c Conflict) (FileOutcome, error) {
 	f := FileOutcome{Path: c.Path, Note: "unclaimed"}
+	if c.Incomplete != "" {
+		f.Note = c.Incomplete
+		return f, nil
+	}
 	if cfg == nil {
-		return f
+		return f, nil
 	}
 	rule, ok := cfg.RuleFor(c.Path)
 	if !ok {
-		return f
+		return f, nil
 	}
 	f.Strategy = rule.Strategy
-	s, err := FromRule(rule, mainRoot)
+	s, err := FromRule(rule, mainRoot, onto)
 	if err != nil {
 		f.Note = err.Error()
-		return f
+		return f, fmt.Errorf("%s: %w", c.Path, err)
 	}
 	if _, err := s.Resolve(c); err != nil {
 		var r *Refusal
 		if errors.As(err, &r) {
 			f.Note = r.Reason
-		} else {
-			f.Note = err.Error()
+			return f, nil
 		}
-		return f
+		f.Note = err.Error()
+		return f, fmt.Errorf("%s: %w", c.Path, err)
 	}
 	f.Resolved, f.Note = true, ""
-	return f
+	return f, nil
 }
 
 // divergence returns the reasons a branch is a workstream rather than a
-// rebase: a strategy refusing at the endpoint, or the branch changing the
-// dependency graph beyond a line a strategy owns.
-func divergence(mainRoot, onto string, cfg *Config, branch string) []string {
-	var reasons []string
+// rebase (spec §1): the openapi strategy refusing at the endpoint — generated
+// output that no longer merges — or both sides having changed the dependency
+// graph beyond a line a strategy owns. An owned-line refusal on ordinary
+// configuration is a normal conflict, not divergence.
+func divergence(mainRoot, onto string, cfg *Config, branch string) ([]string, error) {
 	if cfg == nil {
-		return nil
+		return nil, nil
 	}
+	var reasons []string
 	conflicts, err := Endpoint(mainRoot, onto, branch)
-	if err == nil {
-		for _, c := range conflicts {
-			f := tryStrategy(mainRoot, cfg, c)
-			if f.Strategy != "" && !f.Resolved {
-				reasons = append(reasons, fmt.Sprintf("%s refuses %s at the endpoint: %s", f.Strategy, c.Path, f.Note))
-			}
+	if err != nil {
+		return nil, fmt.Errorf("endpoint: %w", err)
+	}
+	for _, c := range conflicts {
+		f, err := tryStrategy(mainRoot, onto, cfg, c)
+		if err != nil {
+			return nil, err
+		}
+		if f.Strategy == "openapi" && !f.Resolved {
+			reasons = append(reasons, fmt.Sprintf("openapi refuses %s at the endpoint: %s", c.Path, f.Note))
 		}
 	}
 	if len(cfg.DependencyGraph) == 0 {
-		return reasons
+		return reasons, nil
 	}
 	base, err := gitEnv(mainRoot, nil, nil, "merge-base", onto, branch)
 	if err != nil {
-		return reasons
+		return nil, fmt.Errorf("merge-base: %w", err)
 	}
-	changed, err := gitEnv(mainRoot, nil, nil, "diff", "--name-only", base, branch)
-	if err != nil || changed == "" {
-		return reasons
+	branchTouched, err := dependencyChanges(mainRoot, cfg, base, branch)
+	if err != nil {
+		return nil, err
+	}
+	trunkTouched, err := dependencyChanges(mainRoot, cfg, base, onto)
+	if err != nil {
+		return nil, err
+	}
+	if len(branchTouched) > 0 && len(trunkTouched) > 0 {
+		reasons = append(reasons, fmt.Sprintf("both sides changed the dependency graph: branch %s; trunk %s",
+			strings.Join(branchTouched, ", "), strings.Join(trunkTouched, ", ")))
+	}
+	return reasons, nil
+}
+
+// dependencyChanges lists the dependency_graph paths changed between base
+// and rev beyond lines an owned-line rule declares. Paths are read
+// NUL-separated so quoted names are not missed.
+func dependencyChanges(mainRoot string, cfg *Config, base, rev string) ([]string, error) {
+	changed, err := gitEnv(mainRoot, nil, nil, "diff", "--name-only", "-z", base, rev)
+	if err != nil {
+		return nil, fmt.Errorf("diff %s..%s: %w", base, rev, err)
 	}
 	var touched []string
-	for _, path := range strings.Split(changed, "\n") {
-		if !matchesAny(cfg.DependencyGraph, path) || onlyOwnedLines(mainRoot, cfg, base, branch, path) {
+	for _, path := range strings.Split(changed, "\x00") {
+		if path == "" || !matchesAny(cfg.DependencyGraph, path) {
 			continue
 		}
-		touched = append(touched, path)
+		only, err := onlyOwnedLines(mainRoot, cfg, base, rev, path)
+		if err != nil {
+			return nil, err
+		}
+		if !only {
+			touched = append(touched, path)
+		}
 	}
-	if len(touched) > 0 {
-		reasons = append(reasons, "changes the dependency graph: "+strings.Join(touched, ", "))
-	}
-	return reasons
+	return touched, nil
 }
 
 func matchesAny(patterns []string, path string) bool {
@@ -3333,33 +3695,36 @@ func matchesAny(patterns []string, path string) bool {
 	return false
 }
 
-// onlyOwnedLines reports whether every line the branch changed in path is
-// one an owned-line rule declares for it: a version bump in a manifest is
-// routine, a new dependency is not.
-func onlyOwnedLines(mainRoot string, cfg *Config, base, branch, path string) bool {
+// onlyOwnedLines reports whether every line changed in path between base
+// and rev is one an owned-line rule declares for it: a version bump in a
+// manifest is routine, a new dependency is not. A change with no textual
+// lines at all (binary, mode only) is not "only owned lines".
+func onlyOwnedLines(mainRoot string, cfg *Config, base, rev, path string) (bool, error) {
 	rule, ok := cfg.RuleFor(path)
 	if !ok || rule.Strategy != "owned-line" {
-		return false
+		return false, nil
 	}
 	re, err := regexp.Compile(rule.Line)
 	if err != nil {
-		return false
+		return false, fmt.Errorf("%s: bad line regex: %w", path, err)
 	}
-	diff, err := gitEnv(mainRoot, nil, nil, "diff", "-U0", base, branch, "--", path)
+	diff, err := gitEnv(mainRoot, nil, nil, "diff", "-U0", base, rev, "--", path)
 	if err != nil {
-		return false
+		return false, fmt.Errorf("diff %s: %w", path, err)
 	}
+	textual := 0
 	for _, l := range strings.Split(diff, "\n") {
 		if strings.HasPrefix(l, "+++") || strings.HasPrefix(l, "---") {
 			continue
 		}
 		if strings.HasPrefix(l, "+") || strings.HasPrefix(l, "-") {
+			textual++
 			if !re.MatchString(l[1:]) {
-				return false
+				return false, nil
 			}
 		}
 	}
-	return true
+	return textual > 0, nil
 }
 ```
 
@@ -3404,6 +3769,7 @@ package commands
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -3413,6 +3779,18 @@ import (
 // exists, with a declaration on main and two feature worktrees: one that
 // conflicts on the declared owned line, and one cut after trunk's last
 // commit, so it is current.
+// gitOut runs git and returns its stdout; the package's gitIn returns nothing.
+func gitOut(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v: %s", args, err, out)
+	}
+	return strings.TrimRight(string(out), "\n")
+}
+
 func syncRepo(t *testing.T) *Context {
 	t.Helper()
 	main := committedRepo(t, minimalConf)
@@ -3451,7 +3829,7 @@ func syncRepo(t *testing.T) *Context {
 
 func TestSyncPrintsTheTriageAndChangesNothing(t *testing.T) {
 	ctx := syncRepo(t)
-	before := gitIn(t, ctx.Repo.MainRoot, "for-each-ref", "refs/heads")
+	before := gitOut(t, ctx.Repo.MainRoot, "for-each-ref", "refs/heads")
 	var buf bytes.Buffer
 	if err := Sync(ctx, &buf); err != nil {
 		t.Fatalf("Sync: %v", err)
@@ -3466,8 +3844,11 @@ func TestSyncPrintsTheTriageAndChangesNothing(t *testing.T) {
 	if !strings.Contains(out, "1/1") {
 		t.Errorf("expected the first stop 1/1:\n%s", out)
 	}
-	if after := gitIn(t, ctx.Repo.MainRoot, "for-each-ref", "refs/heads"); after != before {
+	if after := gitOut(t, ctx.Repo.MainRoot, "for-each-ref", "refs/heads"); after != before {
 		t.Error("sync changed a ref")
+	}
+	if !strings.Contains(out, "bump") || !strings.Contains(out, "v.txt✓") {
+		t.Errorf("the stop column names the stopping commit and the resolved file:\n%s", out)
 	}
 }
 
@@ -3559,13 +3940,13 @@ func workName(ctx *Context, branch string) string {
 	return branch
 }
 
-// stopColumn is the first commit the rebase stops at and what happens to its
-// files: "2/12 v.txt✓ a.txt✗".
+// stopColumn is the first commit the rebase stops at, its subject, and what
+// happens to its files: `2/12 "record every sync run" SyncWorker.java✗`.
 func stopColumn(a wtsync.Assessment) string {
 	if a.Replay.Stop == nil {
 		return "-"
 	}
-	parts := []string{fmt.Sprintf("%d/%d", a.Replay.Stop.Index, a.Replay.Stop.Total)}
+	parts := []string{fmt.Sprintf("%d/%d %q", a.Replay.Stop.Index, a.Replay.Stop.Total, truncate(a.Replay.Stop.Subject, 32))}
 	for _, f := range a.Files {
 		mark := "✗"
 		if f.Resolved {
@@ -3574,6 +3955,13 @@ func stopColumn(a wtsync.Assessment) string {
 		parts = append(parts, shortPath(f.Path)+mark)
 	}
 	return strings.Join(parts, " ")
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n-1] + "…"
 }
 
 func whoColumn(a wtsync.Assessment) string {
@@ -3590,6 +3978,11 @@ func noteColumn(a wtsync.Assessment) string {
 	}
 	if a.Dirty {
 		notes = append(notes, "dirty")
+	}
+	for _, f := range a.Files {
+		if !f.Resolved && f.Note != "" && f.Note != "unclaimed" {
+			notes = append(notes, shortPath(f.Path)+": "+f.Note)
+		}
 	}
 	notes = append(notes, a.Divergent...)
 	if a.NoConfig && a.Class != wtsync.Detached {
@@ -3615,6 +4008,9 @@ Create `cmd/wt/sync.go`:
 package main
 
 import (
+	"errors"
+	"os"
+
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
@@ -3630,9 +4026,15 @@ func newSyncCmd() *cobra.Command {
 			"resolve it. Nothing is fetched and nothing is changed.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx, err := openContext()
+			// Lenient: a repository without worktree.conf still has worktrees
+			// worth reporting on, and the trunk name falls back to origin/HEAD.
+			cwd, err := os.Getwd()
 			if err != nil {
 				return err
+			}
+			ctx := commands.OpenLenient(cwd, cmd.ErrOrStderr())
+			if ctx == nil {
+				return errors.New("not inside a git repository")
 			}
 			return commands.Sync(ctx, cmd.OutOrStdout())
 		},
