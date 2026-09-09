@@ -201,6 +201,12 @@ func withEnv(extra ...string) []string {
 	return append(out, extra...)
 }
 
+// isExit reports whether err is an *exec.ExitError with the given exit code.
+func isExit(err error, code int) bool {
+	var exitErr *exec.ExitError
+	return errors.As(err, &exitErr) && exitErr.ExitCode() == code
+}
+
 // combineErr joins two processes' stderr into one message, archive's first,
 // dropping either side that is empty.
 func combineErr(archiveErr, tarErr *bytes.Buffer) string {
@@ -306,7 +312,7 @@ func gitEnv(dir string, env []string, stdin io.Reader, args ...string) (string, 
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
 		if msg := strings.TrimSpace(stderr.String()); msg != "" {
-			return "", fmt.Errorf("%s (%s)", msg, err)
+			return "", fmt.Errorf("%s (%w)", msg, err)
 		}
 		return "", err
 	}
