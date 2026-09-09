@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -25,6 +26,26 @@ type Lock struct {
 	PID     int
 	Started time.Time
 	Owner   string
+}
+
+// held is every lock this process has acquired and not yet released. A
+// signal handler runs on its own goroutine with no access to the caller's
+// bookkeeping, so the locks are tracked here instead of being threaded
+// through every caller down to it.
+var held = struct {
+	sync.Mutex
+	locks map[string]*Lock
+}{locks: map[string]*Lock{}}
+
+// HeldLocks is every lock this process currently holds, in no order.
+func HeldLocks() []*Lock {
+	held.Lock()
+	defer held.Unlock()
+	out := make([]*Lock, 0, len(held.locks))
+	for _, l := range held.locks {
+		out = append(out, l)
+	}
+	return out
 }
 
 // LockHeld is the error for a live lock held by someone else.
@@ -64,6 +85,9 @@ func Acquire(gitDir string, now time.Time) (*Lock, error) {
 	for attempt := 0; attempt < 2; attempt++ {
 		err := os.Link(tmp, path)
 		if err == nil {
+			held.Lock()
+			held.locks[path] = l
+			held.Unlock()
 			return l, nil
 		}
 		if !errors.Is(err, os.ErrExist) {
@@ -96,6 +120,11 @@ func Acquire(gitDir string, now time.Time) (*Lock, error) {
 // enough to tell the two apart when the same process re-acquires its own
 // expired lock, so Started (set once, at Acquire) is compared too.
 func (l *Lock) Release() error {
+	held.Lock()
+	if held.locks[l.Path] == l {
+		delete(held.locks, l.Path)
+	}
+	held.Unlock()
 	cur, ok, err := ReadLock(filepath.Dir(l.Path))
 	if err != nil {
 		return err

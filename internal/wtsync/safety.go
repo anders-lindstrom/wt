@@ -35,12 +35,18 @@ type Safety struct {
 // an existing ref of the same name: two runs in one second would otherwise
 // silently share one undo point.
 func WriteSafety(mainRoot, branch, tip string, epoch int64) (Safety, error) {
-	s := Safety{Branch: branch, Epoch: epoch, Tip: tip, Ref: SafetyPrefix + branch + "/" + strconv.FormatInt(epoch, 10)}
+	s := Safety{Branch: branch, Epoch: epoch, Tip: tip, Ref: SafetyRef(branch, epoch)}
 	// The zero-oid old value makes update-ref fail if the ref already exists.
 	if _, err := gitEnv(mainRoot, nil, nil, "update-ref", s.Ref, tip, "0000000000000000000000000000000000000000"); err != nil {
 		return Safety{}, fmt.Errorf("safety ref %s: %w", s.Ref, err)
 	}
 	return s, nil
+}
+
+// SafetyRef names the safety ref of one branch in one run. A run can say
+// where the old tip will be before it has pinned it there.
+func SafetyRef(branch string, epoch int64) string {
+	return SafetyPrefix + branch + "/" + strconv.FormatInt(epoch, 10)
 }
 
 // ListSafety returns every safety ref, newest epoch first.

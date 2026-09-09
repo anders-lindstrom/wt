@@ -78,7 +78,10 @@ func newSyncCmd() *cobra.Command {
 			"contested (rebase those by hand; resume is not built yet), and any\n" +
 			"repository whose trunk declares no .wt-sync.yaml. When more than one\n" +
 			"worktree would be rebased you are asked once; --yes skips that. Nothing\n" +
-			"is pushed: the last line per worktree is the push command to run.",
+			"is pushed: the last line per worktree is the push command to run.\n\n" +
+			"Ctrl-C releases every lock the run holds and kills the step it was\n" +
+			"running; a worktree caught mid-rebase is named along with the command\n" +
+			"that puts it back.",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {

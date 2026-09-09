@@ -47,6 +47,9 @@ type participant struct {
 // at the end. Anything refused, restored, failed or owed is reported and
 // makes the returned error non-nil, so a script sees it.
 func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
+	tracker := &rebaseTracker{}
+	defer watchSignals(w, tracker)()
+
 	trunk := ctx.Config.MainBranch
 	onto := "origin/" + trunk
 	if opts.NoFetch {
@@ -258,7 +261,9 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 				req.Onto, req.Upstream, ontoLabel = pp.head, pp.result.OldTip, pp.work
 			}
 		}
+		tracker.set(&rebaseInFlight{work: p.work, path: p.wt.Path, safety: wtsync.SafetyRef(b, epoch)})
 		res, rerr := wtsync.Rebase(ctx.Repo.MainRoot, cfg, req, w)
+		tracker.set(nil)
 		p.result = &res
 		if res.Safety.Ref != "" {
 			fmt.Fprintf(w, "  safety %s = %s\n", res.Safety.Ref, short(res.OldTip))

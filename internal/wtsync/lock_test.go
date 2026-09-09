@@ -121,3 +121,21 @@ func TestReleaseRemovesALockAcquiredWithSubSecondPrecision(t *testing.T) {
 		t.Fatal("lock survived release")
 	}
 }
+
+func TestHeldLocksTracksWhatThisProcessHoldsUntilReleased(t *testing.T) {
+	dir := t.TempDir()
+	before := len(HeldLocks())
+	l, err := Acquire(dir, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(HeldLocks()) != before+1 {
+		t.Fatalf("Acquire did not register the lock: %d, was %d", len(HeldLocks()), before)
+	}
+	if err := l.Release(); err != nil {
+		t.Fatal(err)
+	}
+	if len(HeldLocks()) != before {
+		t.Fatalf("Release did not forget the lock: %d, want %d", len(HeldLocks()), before)
+	}
+}

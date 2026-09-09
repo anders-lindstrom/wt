@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -58,17 +59,54 @@ func (s Script) timeout() time.Duration {
 	return ScriptTimeout
 }
 
+// groups is the process group of every command runScript still has in
+// flight. A signal handler runs on its own goroutine and has no other way
+// to reach them; without this a Ctrl-C leaves a script, a deferred step or
+// a rebase running after wt has exited.
+var groups = struct {
+	sync.Mutex
+	pids map[int]bool
+}{pids: map[int]bool{}}
+
+// KillRunning sends SIGKILL to the process group of every command runScript
+// is waiting on, and reports how many it signalled. Best effort: a group
+// that has already exited is not an error.
+func KillRunning() int {
+	groups.Lock()
+	defer groups.Unlock()
+	n := 0
+	for pid := range groups.pids {
+		if err := syscall.Kill(-pid, syscall.SIGKILL); err == nil {
+			n++
+		}
+	}
+	return n
+}
+
 // runScript runs cmd, which must already carry a context deadline from
 // exec.CommandContext, in its own process group so that a timeout kills any
 // process the script forked, not just the script's own interpreter; see
-// scriptWaitDelay for why that matters.
+// scriptWaitDelay for why that matters. The group is registered while it
+// runs, so an interrupt can take it down the same way.
 func runScript(cmd *exec.Cmd) error {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
 		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 	}
 	cmd.WaitDelay = scriptWaitDelay
-	return cmd.Run()
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	pid := cmd.Process.Pid
+	groups.Lock()
+	groups.pids[pid] = true
+	groups.Unlock()
+	defer func() {
+		groups.Lock()
+		delete(groups.pids, pid)
+		groups.Unlock()
+	}()
+	return cmd.Wait()
 }
 
 // timeoutError formats a deadline-exceeded error, appending the script's

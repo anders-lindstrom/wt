@@ -22,6 +22,9 @@ type UndoOptions struct {
 // SyncUndo puts back every ref the newest run touching work's branch moved:
 // the run's whole set of safety refs, restored together.
 func SyncUndo(ctx *Context, work string, opts UndoOptions, w io.Writer) error {
+	// Undo never rebases, so an interrupt has only the locks to release.
+	defer watchSignals(w, nil)()
+
 	target, err := Locate(ctx, work)
 	if err != nil {
 		return err

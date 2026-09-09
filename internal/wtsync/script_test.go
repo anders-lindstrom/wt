@@ -1,7 +1,9 @@
 package wtsync
 
 import (
+	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -244,5 +246,32 @@ func TestResolveConflictInAWorktreeUsesTheScriptInPlace(t *testing.T) {
 	r, err := resolveConflict(dir, "origin/main", cfg, cs[0], wt)
 	if err != nil || !r.Outcome.Resolved || !r.InPlace || r.Content != nil {
 		t.Fatalf("resolution %+v err %v", r, err)
+	}
+}
+
+func TestKillRunningTakesDownARegisteredProcessGroup(t *testing.T) {
+	cmd := exec.CommandContext(context.Background(), "sleep", "30")
+	done := make(chan error, 1)
+	go func() { done <- runScript(cmd) }()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		groups.Lock()
+		n := len(groups.pids)
+		groups.Unlock()
+		if n > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("runScript registered no process group")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if n := KillRunning(); n < 1 {
+		t.Fatal("KillRunning signalled nothing")
+	}
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the command outlived the kill")
 	}
 }
