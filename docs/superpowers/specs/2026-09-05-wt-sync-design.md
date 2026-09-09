@@ -6,6 +6,19 @@ finding N". Revised again 2026-09-08 after the resolver plan was executed and
 every rebase in the fleet was simulated commit by commit; those changes are
 marked "execution finding".
 
+## What changed on 2026-09-09, in one place
+
+- **The merge logic moves into `wt`.** The resolvers built on 2026-09-08 put a
+  three-way OpenAPI merge, an owned-line rule and a list union into two
+  application repositories, each with its own copy of `lib.sh` and 71 tests of
+  logic that has nothing to do with access control. That is the drift `wt` was
+  written to end, and it contradicts the tool's own first line: one
+  implementation, per-repo configuration. Strategies are built into `wt`; a
+  repository **declares** its conflict shapes in `.wt-sync.yaml` and owns no
+  code (§2, §3). The executable contract survives only as the `script` escape
+  hatch. The bash implementation stays on the draft PRs `Telcred/server#584`
+  and `Telcred/accessmanager#224` as the reference and oracle for the Go port.
+
 ## What changed on 2026-09-08, in one place
 
 - **Triage is a promise, not a screen.** Every rebase is simulated commit by
@@ -278,69 +291,97 @@ otherwise clean worktree. `wt sync` therefore treats "no Claude session" as
 "nobody to ask", never as "nothing is happening", and the dirty check remains the
 real guard. Review finding 10.
 
-## 2. Conflict resolvers
+## 2. Conflict strategies
 
-A resolver is a script in the repo that owns exactly one conflict shape, living
-in `bin/conflict/` alongside the existing `bin/github/`, `bin/sqs/` and
-`bin/worktree/`.
+A **strategy** is a way of resolving one conflict shape, built into `wt`. A
+repository does not own any of them; it **declares** which files have which
+shape, with the one or two parameters that vary, in `.wt-sync.yaml`. This is
+`wt`'s thesis applied to conflicts: one implementation, per-repo configuration.
 
-### Contract
+The first version of this section had each repository carrying the logic as
+scripts in `bin/conflict/`. It was built, tested and verified on the live fleet
+(the 2026-09-08 findings below all still hold) and then rejected on 2026-09-09
+for the reason stated at the top: `server` should no more own a JSON three-way
+merge than it owned its worktree scripts.
 
-```
-bin/conflict/<name> --claims               print the path globs this resolver owns
-bin/conflict/<name> --check   <file>       0 = I can resolve this conflict
-                                           1 = not mine
-bin/conflict/<name> --resolve <file>       resolve in place and `git add` it
-                                           0 = resolved
-                                           2 = refuse; one line of reason on stderr
-```
+### The strategies
 
-`--claims` is what triage uses, because at triage time the file on disk is clean
-and the base/ours/theirs blobs exist only inside `merge-tree` output. `--check`
-and `--resolve` are valid only against a genuinely conflicted file, mid-rebase,
-where the three stages are in the index. Splitting these two was the fix for
-review finding 6: a single path-matching `--check` would over-claim — a
-`package.json` conflict that is *not* the spec pin would be silently mishandled.
+| strategy | what it does | parameters |
+|---|---|---|
+| `owned-line` | one line matching a regex is the only thing both sides may change; a rule decides its value; anything else in the block that only one side changed is kept | `line` (regex), `rule` |
+| `openapi` | three-way merge of a generated OpenAPI document over `paths`, `components.schemas` and `tags` by key, `info.version` by rule; refuses naming the keys both sides changed; never regenerates | `rule` (default `max-plus-patch`) |
+| `list-union` | one line holding a delimited list: union, trunk's order first, then the branch's additions; refuses a removal | `line` (regex), `delimiter` (default `,`) |
+| `take-trunk` | trunk's copy of the file, wholesale; a deferred step reconciles it | — |
+| `script` | an executable in the repository answering the contract below | `run` |
 
-A resolver that cannot resolve **refuses**; it never guesses, and it leaves the
-file exactly as it found it: still three-staged, markers intact.
+Rules for a value: `max-plus-patch` (the higher semver, lifted one patch when
+trunk's is higher), `keep-branch`, `keep-trunk`.
 
-Execution findings on the contract, all now in `lib.sh` and its tests:
+Every strategy shares the same guarantees, all execution findings from the bash
+implementation and all carried into the Go port as tests:
 
-- **Paths are repository-root relative.** `git show :2:<path>` only understands
-  root-relative paths while `git add` is cwd-relative, so every resolver enters
-  the root first; an absolute path inside the checkout is accepted and rewritten.
-- **Claims are patterns, never expanded against the disk.** Run from the root,
-  an unquoted `etc/openapi/apidocs/*.json` would print the three real files.
+- A strategy that cannot resolve **refuses**, never guesses, and leaves the file
+  exactly as it found it: still three-staged, markers intact. A refusal names
+  what collided.
+- Paths are repository-root relative in the index (`git show :2:<path>`) while
+  `git add` is cwd-relative; the tool works from the root.
+- Path patterns are matched, never expanded against the disk.
 - **git folds an adjacent edit into the same conflict block.** A version line
   whose neighbouring comment trunk rewrote, or a manifest pin next to a
-  dependency trunk bumped, arrives as one block with two lines on one side. The
-  text-shape resolvers resolve such a block when only one side touched the other
-  lines (compared against the diff3 base section) and refuse when both did.
-  `axis_acc`'s `settings.gradle` and every `extract_webaccess` manifest are
-  that shape on the live fleet.
+  dependency trunk bumped, arrives as one block with two lines on one side. A
+  text-shape strategy resolves that block when only one side touched the other
+  lines, judged against the diff3 base section, and refuses when both did.
+  `axis_acc`'s `settings.gradle` and every `extract_webaccess` manifest are that
+  shape on the live fleet.
+- A strategy can be **checked without a rebase**: the three blobs of a conflict
+  are loaded into a temporary index (`GIT_INDEX_FILE`, `git update-index
+  --index-info`) and the strategy is asked whether it would resolve. Triage
+  uses this (§1).
 
-### `server`
+### The `script` escape hatch
 
-| script | shape |
-|---|---|
-| `bin/conflict/openapi-version` | `application.yaml`, inside the `openapi:` block |
-| `bin/conflict/openapi-spec` | `etc/openapi/apidocs/*.json` |
-| `bin/conflict/gradle-includes` | `settings.gradle` `include` list |
+For a shape none of the built-in strategies fits, a repository may point at an
+executable of its own:
 
-### `accessmanager`
+```
+<run> --claims               print the path globs it owns
+<run> --check   <file>       0 = I can resolve this conflict; 1 = not mine
+<run> --resolve <file>       resolve in place and `git add` it
+                             0 = resolved; 2 = refuse, one line of reason on stderr
+```
 
-| script | shape |
-|---|---|
-| `bin/conflict/spec-client-version` | `**/package.json`, the `@telcred/spec-telcredv2-typescript-axios` pin |
-| `bin/conflict/pnpm-lock` | `pnpm-lock.yaml` |
+It is read from trunk like everything else in the file (§3). No repository
+needs one today; the contract exists so that the day one does, it is not a
+reason to put logic back into `wt`.
 
-### The bump scripts do not delegate to the resolvers
+### What each repository declares
+
+`server`:
+
+| path | strategy | parameters |
+|---|---|---|
+| `accessmanagement/src/main/resources/application.yaml` | `owned-line` | `line: '^\s*version:'`, `rule: max-plus-patch` |
+| `etc/openapi/apidocs/*.json` | `openapi` | |
+| `settings.gradle` | `list-union` | `line: '^include '` |
+
+`accessmanager`:
+
+| path | strategy | parameters |
+|---|---|---|
+| `package.json`, `apps/*/package.json`, `packages/*/package.json` | `owned-line` | `line: '"@telcred/spec-telcredv2-typescript-axios":'`, `rule: keep-branch` |
+| `pnpm-lock.yaml` | `take-trunk` | |
+
+The `keep-branch` rule on the SDK pin is the `prefer-release` correction from
+the first review, unchanged: a higher number on trunk is not evidence that the
+branch's server change landed. The tool says so when the kept pin is a
+snapshot.
+
+### The bump scripts do not delegate to the strategies
 
 The first draft had `bump_openapi.sh` and `bump_axios_client.sh` call the
 resolvers for the marker handling they already do, so that a conflict resolved
 by hand and one resolved by the tool came out identical. Execution finding: they
-must not. The resolvers read the **index stages** and recompute the merge, which
+must not. The strategies read the **index stages** and recompute the merge, which
 is what `wt sync` needs. The bump scripts read the **working file's markers**,
 which is what a person needs: after resolving the real conflict in a file by
 hand and leaving only the version block, the resolver would recompute from the
@@ -348,7 +389,7 @@ stages, reintroduce the resolved conflict and refuse. The two are different
 tools for different moments. The bump scripts stay as they are; the only
 overlap is the version rule, and `bump_openapi.sh` lets the person choose.
 
-### `openapi-spec`: resolving a 950 KB generated file without Gradle
+### The `openapi` strategy: resolving a 950 KB generated file without Gradle
 
 The resolver performs a three-way merge over top-level keys — each entry under
 `paths`, under `components.schemas`, **and under `tags`** — plus `info.version`.
@@ -429,10 +470,16 @@ Committed at the top of each repo, like `.dev-ports.yaml`: the quirk is a fact
 about the repo, not a personal preference.
 
 ```yaml
-resolvers:
-  - bin/conflict/openapi-version
-  - bin/conflict/openapi-spec
-  - bin/conflict/gradle-includes
+conflicts:
+  - paths: [accessmanagement/src/main/resources/application.yaml]
+    strategy: owned-line
+    line: '^\s*version:'
+    rule: max-plus-patch
+  - paths: [etc/openapi/apidocs/*.json]
+    strategy: openapi
+  - paths: [settings.gradle]
+    strategy: list-union
+    line: '^include '
 
 defer:
   - run: ./gradlew webapp:generateOpenApi
@@ -449,8 +496,9 @@ dependency_graph:
 The first draft wrote `when: paths-changed(...)` and `when: head-changed`, a
 mini-DSL with no parser. Execution finding: plain keys say the same. A step with
 `paths` runs when the rebase changed any of them; a step without runs after
-every rebase, which is all `head-changed` ever meant. The files as committed
-are `server/.wt-sync.yaml` and `accessmanager/.wt-sync.yaml`.
+every rebase, which is all `head-changed` ever meant. The files on the draft
+branches still use the earlier `resolvers:` key and will be rewritten to this
+shape when `wt sync` can read it; nothing reads them until then.
 
 ### What `commit:` means, stated rather than assumed
 
@@ -483,7 +531,7 @@ structural merge and the generator disagree by design. The regeneration *is*
 the verification; the size of its diff is reported, because a large one means
 the merge was wrong.
 
-### The config and the resolvers are read from trunk, not from the branch
+### The config, and any `script`, are read from trunk, not from the branch
 
 `.wt-sync.yaml` names commands and `bin/conflict/*` are executable. `wt` today
 reads a repo's configuration from the caller's checked-out branch, and both main
@@ -508,6 +556,14 @@ defer keyed on conflicts would leave `node_modules` stale. Review finding 11.
 every rebase invalidates it.
 
 ```yaml
+conflicts:
+  - paths: [package.json, apps/*/package.json, packages/*/package.json]
+    strategy: owned-line
+    line: '"@telcred/spec-telcredv2-typescript-axios":'
+    rule: keep-branch
+  - paths: [pnpm-lock.yaml]
+    strategy: take-trunk
+
 defer:
   - run: pnpm install
     paths: [pnpm-lock.yaml, "**/package.json"]
@@ -860,8 +916,9 @@ never moves a client off a snapshot**, so step 10 remains a deliberate act.
 
 | layer | owns | lives |
 |---|---|---|
-| `bin/conflict/*` | resolving one conflict shape | each repo, committed, read from trunk; `lib.sh` is a byte-identical copy in every repo and `wt sync doctor` reports drift between them |
-| `.wt-sync.yaml` | which resolvers, what to defer, how to verify | each repo, committed, read from trunk |
+| strategies | resolving one conflict shape each | `wt`, `internal/sync`, with the bash cases ported as tests |
+| `bin/conflict/<script>` | a bespoke shape via the `script` escape hatch | a repo, only if it ever needs one; read from trunk |
+| `.wt-sync.yaml` | which files have which shape, what to defer | each repo, committed, read from trunk |
 | `wt sync` | triage, rebase mechanics, refs, locks, protocol | `wt` |
 | `wt-sync-plan.md` | *this* rebase | generated, `.git/worktrees/<n>/` |
 | `wt-sync` skill | driving the tool and the reply discipline | `anders-lindstrom/skills` |
@@ -942,6 +999,10 @@ tests (44 in `server`, 27 in `accessmanager`):
 - Every resolver leaves a refused file three-staged and unmodified.
 
 Still to do, for the Go command:
+
+- Every bats case on the draft branches has a Go counterpart, run against the
+  same fixture shapes, and `live-check.sh`'s replay and endpoint results are
+  reproduced by `wt sync` on the fleet.
 
 - Triage output for every worktree matches the simulation, including the
   detached one.
