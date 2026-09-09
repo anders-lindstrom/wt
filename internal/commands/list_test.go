@@ -73,6 +73,73 @@ func TestListMarksCanonicalWorktreeCleanly(t *testing.T) {
 	}
 }
 
+// Superset builds <repo>_wt/<repo>/<type>_wt/<work> and stores that absolute
+// path in its own database, so the shape is deliberate and moving one breaks
+// the workspace. It gets its own mark rather than the "!" that invites a
+// migrate.
+func TestListMarksSupersetLayoutApartFromForeignOnes(t *testing.T) {
+	main, _ := repoWithWorktree(t, func(parent string) string {
+		return filepath.Join(parent, "demo_wt", "demo", "feat_wt", "thing")
+	})
+
+	ctx, _ := Open(main)
+	var buf bytes.Buffer
+	if err := List(ctx, &buf); err != nil {
+		t.Fatal(err)
+	}
+	line := lineContaining(t, buf.String(), "feat_wt/thing")
+	if strings.HasPrefix(line, "!") {
+		t.Errorf("Superset's layout must not be marked as unrecognised: %q", line)
+	}
+	if !strings.HasPrefix(line, "s") {
+		t.Errorf("want the Superset mark: %q", line)
+	}
+	if !strings.Contains(buf.String(), "Superset") {
+		t.Errorf("want a legend explaining the mark:\n%s", buf.String())
+	}
+}
+
+func TestListExplainsTheForeignMark(t *testing.T) {
+	main, _ := repoWithWorktree(t, func(parent string) string {
+		return filepath.Join(parent, "demo-legacy")
+	})
+
+	ctx, _ := Open(main)
+	var buf bytes.Buffer
+	if err := List(ctx, &buf); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "wt migrate") {
+		t.Errorf("want a legend naming the command that fixes it:\n%s", buf.String())
+	}
+}
+
+func TestListPrintsNoLegendWhenEverythingIsCanonical(t *testing.T) {
+	main, _ := repoWithWorktree(t, func(parent string) string {
+		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
+	})
+
+	ctx, _ := Open(main)
+	var buf bytes.Buffer
+	if err := List(ctx, &buf); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(buf.String(), "wt migrate") {
+		t.Errorf("nothing is marked, so nothing needs explaining:\n%s", buf.String())
+	}
+}
+
+func lineContaining(t *testing.T, out, needle string) string {
+	t.Helper()
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, needle) {
+			return line
+		}
+	}
+	t.Fatalf("no line containing %q in:\n%s", needle, out)
+	return ""
+}
+
 func TestStatusReportsCleanliness(t *testing.T) {
 	main, _ := repoWithWorktree(t, func(parent string) string {
 		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")

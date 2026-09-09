@@ -10,9 +10,9 @@ import (
 )
 
 // List prints every worktree of the repository, in whatever layout it is in.
-// A worktree outside the canonical path is marked "!", because worktrees made
-// by other tools — Superset's shape, or anything created before migration —
-// stay valid but are candidates for `wt migrate`.
+// Anything not at the canonical path is marked, and the two marks mean
+// different things: "s" is Superset's layout, which is deliberate and must be
+// left alone, while "!" is a layout nothing owns and `wt migrate` can move.
 func List(ctx *Context, w io.Writer) error {
 	worktrees, err := ctx.Repo.Worktrees()
 	if err != nil {
@@ -20,6 +20,7 @@ func List(ctx *Context, w io.Writer) error {
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "\tWORK\tBRANCH\tPATH")
+	var seen [3]bool
 	for _, wt := range worktrees {
 		work, branch := "(main)", wt.Branch
 		if branch == "" {
@@ -27,19 +28,43 @@ func List(ctx *Context, w io.Writer) error {
 		}
 		mark := ""
 		if !wt.IsMain {
+			layout := naming.Foreign
 			if typ, name, ok := naming.ParseBranch(wt.Branch, ctx.Config.TypeSuffix); ok {
 				work = name
-				if wt.Path != naming.WorktreeDir(ctx.Repo.Parent, ctx.Repo.Name, typ, name, ctx.Config.TypeSuffix) {
-					mark = "!"
-				}
+				layout = naming.Classify(wt.Path, ctx.Repo.Parent, ctx.Repo.Name,
+					typ, name, ctx.Config.TypeSuffix)
 			} else {
 				work = "-"
-				mark = "!"
 			}
+			seen[layout] = true
+			mark = layoutMark(layout)
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", mark, work, branch, wt.Path)
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	if seen[naming.Superset] || seen[naming.Foreign] {
+		fmt.Fprintln(w, "")
+	}
+	if seen[naming.Superset] {
+		fmt.Fprintln(w, "s  Superset's layout — its workspace holds this path; leave it where it is")
+	}
+	if seen[naming.Foreign] {
+		fmt.Fprintln(w, "!  not a layout wt recognises — `wt migrate <work>` moves it to the canonical path")
+	}
+	return nil
+}
+
+func layoutMark(l naming.Layout) string {
+	switch l {
+	case naming.Superset:
+		return "s"
+	case naming.Foreign:
+		return "!"
+	default:
+		return ""
+	}
 }
 
 // Status prints each worktree's branch and whether its checkout is clean.
