@@ -4,7 +4,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func newRepo(t *testing.T) string {
@@ -54,5 +56,28 @@ func TestLinesDropsTrailingBlank(t *testing.T) {
 	}
 	if len(lines) != 1 {
 		t.Errorf("got %d lines %q, want 1", len(lines), lines)
+	}
+}
+
+func TestRunTimeoutReportsADeadlineRatherThanWaiting(t *testing.T) {
+	dir := newRepo(t)
+	start := time.Now()
+	_, err := RunTimeout(dir, 100*time.Millisecond, "-c", "alias.slow=!sleep 5", "slow")
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("err %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 4*time.Second {
+		t.Fatalf("waited %s: the deadline did not take the forked child down", elapsed)
+	}
+}
+
+func TestRunNamesTheCommandAndExitCodeWhenGitSaysNothing(t *testing.T) {
+	dir := newRepo(t)
+	_, err := Run(dir, "-c", "alias.fail=!exit 3", "fail")
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	if !strings.Contains(err.Error(), "fail") || !strings.Contains(err.Error(), "exit 3") {
+		t.Fatalf("err %q: an empty error reads as success", err)
 	}
 }

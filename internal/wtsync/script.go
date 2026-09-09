@@ -299,18 +299,33 @@ func hashObject(root string, data []byte) (string, error) {
 	return gitEnv(root, nil, bytes.NewReader(data), "hash-object", "-w", "--stdin")
 }
 
+// GitTimeout is the deadline one git invocation gets here. Nothing wtsync
+// runs is interactive: a git still going after this is stuck, not slow, and
+// a run that waits on it holds its locks the whole time.
+const GitTimeout = 10 * time.Minute
+
 // gitEnv runs git in dir with extra environment and optional stdin, returning
 // trimmed stdout. internal/git.Run has no place for either.
+//
+// GIT_TERMINAL_PROMPT=0 goes in first so a repository wanting credentials
+// fails rather than blocking on a prompt no unattended run can answer; the
+// deadline and the process group come from runScript.
 func gitEnv(dir string, env []string, stdin io.Reader, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+	ctx, cancel := context.WithTimeout(context.Background(), GitTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
-	cmd.Env = withEnv(env...)
+	cmd.Env = withEnv(append([]string{"GIT_TERMINAL_PROMPT=0"}, env...)...)
 	if stdin != nil {
 		cmd.Stdin = stdin
 	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	if err := cmd.Run(); err != nil {
+	err := runScript(cmd)
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return "", fmt.Errorf("git %s: timed out after %s", strings.Join(args, " "), GitTimeout)
+	}
+	if err != nil {
 		if msg := strings.TrimSpace(stderr.String()); msg != "" {
 			return "", fmt.Errorf("%s (%w)", msg, err)
 		}

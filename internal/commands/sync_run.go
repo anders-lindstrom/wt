@@ -12,6 +12,11 @@ import (
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
+// fetchTimeout bounds the one call in a run that reaches the network. It is
+// shorter than the default git deadline: a fetch that has not finished by
+// now is not going to, and every worktree in the run is waiting on it.
+const fetchTimeout = 5 * time.Minute
+
 // RunOptions tunes SyncRun for callers and tests.
 type RunOptions struct {
 	NoFetch bool
@@ -47,7 +52,7 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 	if opts.NoFetch {
 		fmt.Fprintf(w, "against %s (not fetched)\n", onto)
 	} else {
-		if _, err := git.Run(ctx.Repo.MainRoot, "fetch", "--quiet", "origin", trunk); err != nil {
+		if _, err := git.RunTimeout(ctx.Repo.MainRoot, fetchTimeout, "fetch", "--quiet", "origin", trunk); err != nil {
 			return fmt.Errorf("fetch: %w", err)
 		}
 		fmt.Fprintf(w, "fetched %s\n", onto)
