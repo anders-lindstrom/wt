@@ -494,9 +494,18 @@ func TestWorktreesLeaveAGenuinelyDetachedWorktreeAlone(t *testing.T) {
 	// A worktree checked out at a bare SHA, no rebase.
 	// Assert Branch == "", Detached == true, Rebasing == false.
 }
+
+// A rebase started from an already-detached HEAD writes the literal
+// "detached HEAD" into head-name. There is no branch to recover, so the
+// worktree must stay detached rather than acquire a branch by that name.
+func TestWorktreesIgnoreADetachedHeadRebase(t *testing.T) {
+	// git worktree add --detach, commit on the detached HEAD, start a
+	// conflicting rebase, let it stop.
+	// Assert Branch == "", Detached == true, Rebasing == false.
+}
 ```
 
-Write both in full.
+Write all three in full.
 
 - [ ] **Step 2: Run and watch fail**
 
@@ -545,7 +554,15 @@ func rebaseHeadName(wtPath string) string {
 		if err != nil {
 			continue
 		}
-		return strings.TrimPrefix(strings.TrimSpace(string(b)), "refs/heads/")
+		// A rebase started from an already-detached HEAD records the
+		// literal "detached HEAD" here, not a ref: there is no branch to
+		// name, and treating that string as one would invent a branch
+		// called "detached HEAD" (verified against git 2.55).
+		head := strings.TrimSpace(string(b))
+		if !strings.HasPrefix(head, "refs/heads/") {
+			continue
+		}
+		return strings.TrimPrefix(head, "refs/heads/")
 	}
 	return ""
 }
