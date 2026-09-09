@@ -14,11 +14,11 @@ func TestTakeTrunkReturnsTrunksBlobUnchanged(t *testing.T) {
 }
 
 func TestFromRuleBuildsTakeTrunkAndRejectsTheUnknown(t *testing.T) {
-	s, err := FromRule(Rule{Strategy: "take-trunk"}, "")
+	s, err := FromRule(Rule{Strategy: "take-trunk"}, "", "")
 	if err != nil || s.Name() != "take-trunk" {
 		t.Errorf("FromRule take-trunk = %v, %v", s, err)
 	}
-	if _, err := FromRule(Rule{Strategy: "magic"}, ""); err == nil {
+	if _, err := FromRule(Rule{Strategy: "magic"}, "", ""); err == nil {
 		t.Error("unknown strategy must be an error")
 	}
 }

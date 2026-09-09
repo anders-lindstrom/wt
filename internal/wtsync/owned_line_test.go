@@ -129,11 +129,11 @@ func TestOwnedLineKeepsTheBranchPinAndItsFormatting(t *testing.T) {
 }
 
 func TestFromRuleBuildsOwnedLine(t *testing.T) {
-	s, err := FromRule(Rule{Strategy: "owned-line", Line: `^\s*version:`, Rule: "keep-trunk"}, "")
+	s, err := FromRule(Rule{Strategy: "owned-line", Line: `^\s*version:`, Rule: "keep-trunk"}, "", "")
 	if err != nil || s.Name() != "owned-line" {
 		t.Errorf("FromRule = %v, %v", s, err)
 	}
-	if _, err := FromRule(Rule{Strategy: "owned-line", Line: `(`, Rule: "keep-trunk"}, ""); err == nil {
+	if _, err := FromRule(Rule{Strategy: "owned-line", Line: `(`, Rule: "keep-trunk"}, "", ""); err == nil {
 		t.Error("a bad regex must be an error")
 	}
 }

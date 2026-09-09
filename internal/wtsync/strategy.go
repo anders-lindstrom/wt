@@ -13,9 +13,10 @@ type Strategy interface {
 	Resolve(c Conflict) ([]byte, error)
 }
 
-// FromRule builds the strategy a declaration names. root is the repository
-// root, needed only by script strategies.
-func FromRule(r Rule, _ string) (Strategy, error) {
+// FromRule builds the strategy a declaration names. root and trunk are
+// needed only by script strategies: root is the repository root where git
+// runs, trunk is the ref the script is read from.
+func FromRule(r Rule, root, trunk string) (Strategy, error) {
 	switch r.Strategy {
 	case "owned-line":
 		re, err := regexp.Compile(r.Line)
@@ -40,6 +41,8 @@ func FromRule(r Rule, _ string) (Strategy, error) {
 			return nil, err
 		}
 		return OpenAPI{Rule: r.Rule}, nil
+	case "script":
+		return Script{Root: root, Trunk: trunk, Run: r.Run}, nil
 	}
 	return nil, fmt.Errorf("unknown strategy %q", r.Strategy)
 }

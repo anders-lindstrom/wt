@@ -249,7 +249,7 @@ func TestWriteJacksonRoundTripsTheGeneratorsStyle(t *testing.T) {
 }
 
 func TestFromRuleBuildsOpenAPI(t *testing.T) {
-	s, err := FromRule(Rule{Strategy: "openapi", Rule: "max-plus-patch"}, "")
+	s, err := FromRule(Rule{Strategy: "openapi", Rule: "max-plus-patch"}, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

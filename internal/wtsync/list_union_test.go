@@ -105,7 +105,7 @@ func TestListUnionRefusesAnItemItCannotParse(t *testing.T) {
 }
 
 func TestFromRuleBuildsListUnion(t *testing.T) {
-	s, err := FromRule(Rule{Strategy: "list-union", Line: "^include ", Delimiter: ","}, "")
+	s, err := FromRule(Rule{Strategy: "list-union", Line: "^include ", Delimiter: ","}, "", "")
 	if err != nil || s.Name() != "list-union" {
 		t.Errorf("FromRule = %v, %v", s, err)
 	}
