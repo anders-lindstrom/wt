@@ -62,7 +62,7 @@ configuration would work for you and for nobody who clones the repo.
 |---|---|
 | `wt init` | create this repository's `worktree.conf` (`--yes` to skip the prompts) |
 | `wt new <type>/<work>` | create a branch and worktree, then provision it |
-| `wt list` | every worktree, in any layout; `!` marks one off the canonical path |
+| `wt list` | every worktree, in any layout; `s` marks Superset's, `!` one nothing owns |
 | `wt status` | each worktree's branch and whether it is clean |
 | `wt sync` | what rebasing each worktree onto trunk would do, simulated; changes nothing |
 | `wt sync run <work>...` | rebase the named worktrees onto trunk with the declared strategies (`--no-fetch`, `--yes`) |
@@ -118,10 +118,29 @@ programmering/telcred/
 The path tail below `<repo>_wt/` is character-for-character the branch name, so
 the two convert with no rules to remember.
 
+The type comes from the spec — `wt new fix/login-crash` — or, for a bare name,
+is read out of the name itself: `wt new fix_dev-123` creates `fix_wt/dev-123`.
+A name whose first word is not a type is left whole, and an explicit
+`<type>/<work>` always wins. This is what lets the type survive a tool that has
+nowhere to enter one; Superset mints every branch from a single fixed prefix.
+
 **Worktrees in other layouts keep working.** Every lookup goes through
 `git worktree list`, never the shape of a path, so worktrees made by Superset,
-by plain `git worktree add`, or before a repo was migrated all resolve. `wt
-doctor` lists them and `wt migrate` moves one when you want.
+by plain `git worktree add`, or before a repo was migrated all resolve.
+
+### Superset's layout
+
+Superset builds `<parent>/<repo>_wt/<repo>/<type>_wt/<work>` — the canonical
+path with the repository name repeated, because it joins its per-project
+worktree base directory with `<repo>/<branch>`. No setting on either side
+removes that segment.
+
+wt treats it as a layout of its own rather than a fault. `wt setup` provisions
+a Superset workspace where it stands and never moves it, `wt doctor` passes it,
+and `wt list` marks it `s`. Only `!` — a layout nothing owns, such as a
+pre-migration `<repo>-<work>` checkout — is a `wt migrate` candidate, because
+Superset stores the absolute path of every workspace and a move leaves that
+workspace pointing at nothing. `wt migrate` says so before it moves.
 
 ## What a repository keeps
 
