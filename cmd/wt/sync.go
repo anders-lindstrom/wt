@@ -92,6 +92,27 @@ func newSyncCmd() *cobra.Command {
 	run.Flags().BoolVar(&noFetch, "no-fetch", false, "rebase onto origin/<trunk> as last fetched")
 	run.Flags().BoolVar(&yes, "yes", false, "do not ask before rebasing more than one worktree")
 	sync.AddCommand(run)
+
+	undo := &cobra.Command{
+		Use:   "undo <work>",
+		Short: "Put back every ref the last run on this worktree moved",
+		Long: "Find the newest run that touched this worktree's branch and reset every\n" +
+			"branch that run rewrote back to its safety ref, restoring a stack as a\n" +
+			"whole rather than one branch at a time.\n\n" +
+			"Refused, and nothing undone: a checkout involved is dirty, mid-rebase,\n" +
+			"or has a Claude session in it. Running it again after it already\n" +
+			"restored a branch reports that branch already at its old tip.",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeWork,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, err := openContext()
+			if err != nil {
+				return err
+			}
+			return commands.SyncUndo(ctx, args[0], commands.UndoOptions{}, cmd.OutOrStdout())
+		},
+	}
+	sync.AddCommand(undo)
 	return sync
 }
 
