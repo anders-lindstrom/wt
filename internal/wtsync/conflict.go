@@ -14,6 +14,12 @@ type Conflict struct {
 	Base   []byte
 	Trunk  []byte
 	Branch []byte
+
+	// Incomplete is non-empty when a side is missing (a modify/delete
+	// conflict) or an entry is not a regular blob (a rename, a mode change,
+	// a submodule). Assess refuses such a conflict before any strategy sees
+	// it: a file one side deleted or renamed is a person's call.
+	Incomplete string
 }
 
 // Refusal is a strategy declining a conflict it does not own completely. It
