@@ -52,11 +52,19 @@ func Merge3(c Conflict) ([]Segment, error) {
 		filepath.Join(dir, "branch"), filepath.Join(dir, "base"), filepath.Join(dir, "trunk"))
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	// merge-file exits with the number of conflicts, or negative on error.
+	// merge-file exits with the number of conflicts, or negative on error;
+	// on a binary blob it exits outside that range with a specific message.
 	if err := cmd.Run(); err != nil {
 		var exit *exec.ExitError
 		if !errors.As(err, &exit) || exit.ExitCode() < 0 || exit.ExitCode() > 127 {
-			return nil, errors.New(strings.TrimSpace(stderr.String()))
+			msg := strings.TrimSpace(stderr.String())
+			if strings.Contains(msg, "Cannot merge binary files") {
+				return nil, Refuse(c.Path, "binary file; a person's call")
+			}
+			if msg == "" {
+				return nil, err
+			}
+			return nil, errors.New(msg)
 		}
 	}
 	segs, err := split(stdout.String())

@@ -33,6 +33,16 @@ func TestRuleNamedAppliesToTheVersionInsideALine(t *testing.T) {
 	}
 }
 
+func TestRuleNamedReplacesAtTheMatchedOffsetNotTheFirstOccurrence(t *testing.T) {
+	// "1.2.3.4" contains the literal substring "1.2.3": a plain string
+	// replace would corrupt it instead of touching the trailing version.
+	r, _ := RuleNamed("max-plus-patch")
+	got, err := r.Apply("pin 1.2.3.4 to 1.2.3", "pin 1.2.3.4 to 1.2.5")
+	if err != nil || got != "pin 1.2.3.4 to 1.2.6" {
+		t.Errorf("got %q, %v", got, err)
+	}
+}
+
 func TestRuleNamedRefusesALineWithoutAWholeVersionToken(t *testing.T) {
 	r, _ := RuleNamed("max-plus-patch")
 	for _, line := range []string{"    version: SNAPSHOT", "    version: 2.38.3-SNAPSHOT", "    version: 2.38.3.1"} {

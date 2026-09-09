@@ -97,7 +97,13 @@ func whoColumn(a wtsync.Assessment) string {
 	if a.Agent == nil {
 		return "-"
 	}
-	return a.Agent.Name
+	if a.Agent.Name != "" {
+		return a.Agent.Name
+	}
+	if a.Agent.Kind != "" {
+		return a.Agent.Kind
+	}
+	return "?"
 }
 
 func noteColumn(a wtsync.Assessment) string {

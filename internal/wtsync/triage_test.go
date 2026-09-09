@@ -38,6 +38,38 @@ func featureWorktree(t *testing.T, dir string) repo.Worktree {
 	return repo.Worktree{Path: path, Branch: "feature"}
 }
 
+func TestClassifyStopNoFilesNoMessagesIsContestedWithASyntheticNote(t *testing.T) {
+	class, files := classifyStop(nil, "")
+	if class != Contested || len(files) != 1 || files[0].Path != messagesPath ||
+		files[0].Note != "merge-tree reported a conflict with no details" {
+		t.Errorf("class = %v, files = %+v", class, files)
+	}
+}
+
+func TestClassifyStopNoFilesWithMessagesIsContestedWithTheMessagesAsTheNote(t *testing.T) {
+	class, files := classifyStop(nil, "CONFLICT (modify/delete): a.txt")
+	if class != Contested || len(files) != 1 || files[0].Path != messagesPath ||
+		files[0].Note != "CONFLICT (modify/delete): a.txt" {
+		t.Errorf("class = %v, files = %+v", class, files)
+	}
+}
+
+func TestClassifyStopAllResolvedIsRecipe(t *testing.T) {
+	files := []FileOutcome{{Path: "a", Resolved: true}, {Path: "b", Resolved: true}}
+	class, got := classifyStop(files, "")
+	if class != Recipe || len(got) != 2 {
+		t.Errorf("class = %v, files = %+v", class, got)
+	}
+}
+
+func TestClassifyStopAnyUnresolvedIsContested(t *testing.T) {
+	files := []FileOutcome{{Path: "a", Resolved: true}, {Path: "b", Resolved: false, Note: "unclaimed"}}
+	class, got := classifyStop(files, "")
+	if class != Contested || len(got) != 2 {
+		t.Errorf("class = %v, files = %+v", class, got)
+	}
+}
+
 func TestAssessClassifiesCurrentStaleAndDetached(t *testing.T) {
 	dir := linearRepo(t, nil, []map[string]string{{"b.txt": "b2\n"}})
 	wt := featureWorktree(t, dir)
@@ -122,6 +154,50 @@ func TestAssessDivergentWhenTheOpenAPIStrategyRefusesAtTheEndpoint(t *testing.T)
 	a := Assess(dir, "main", cfg, featureWorktree(t, dir), nil)
 	if a.Class != Divergent || len(a.Divergent) != 1 || !strings.Contains(a.Divergent[0], "openapi refuses spec.json") {
 		t.Errorf("divergent: %+v", a)
+	}
+}
+
+// TestAssessASectionGuardRefusalIsContestedNotDivergent covers the other half
+// of the openapi refusal: the branch changing info.title is a section-guard
+// refusal, not a key-by-key collision, so it must carry no Keys (openapi.go)
+// and must not promote the class to Divergent (triage.go's divergence).
+func TestAssessASectionGuardRefusalIsContestedNotDivergent(t *testing.T) {
+	cfg, err := Parse([]byte("conflicts:\n  - paths: [spec.json]\n    strategy: openapi\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	docWithTitle := func(v, title, paths string) string {
+		return `{"openapi":"3.1.0","info":{"title":"` + title + `","version":"` + v + `"},"tags":[],"paths":` + paths + `,"components":{"schemas":{}}}`
+	}
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, dir, "init", "-q", "-b", "main")
+	gitIn(t, dir, "config", "commit.gpgsign", "false")
+	writeSpec := func(v, title, paths string) {
+		if err := os.WriteFile(filepath.Join(dir, "spec.json"), []byte(docWithTitle(v, title, paths)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeSpec("1.0.0", "T", `{"/a":{"get":{}}}`)
+	gitIn(t, dir, "add", "-A")
+	gitIn(t, dir, "commit", "-q", "-m", "base")
+	gitIn(t, dir, "branch", "feature")
+
+	writeSpec("1.0.5", "T", `{"/a":{"get":{}},"/t":{"get":{}}}`)
+	gitIn(t, dir, "add", "-A")
+	gitIn(t, dir, "commit", "-q", "-m", "trunk 1")
+
+	gitIn(t, dir, "checkout", "-q", "feature")
+	writeSpec("1.0.1", "Changed", `{"/a":{"get":{}},"/b":{"get":{}}}`) // title changed: outside the merged sections
+	gitIn(t, dir, "add", "-A")
+	gitIn(t, dir, "commit", "-q", "-m", "branch 1")
+	gitIn(t, dir, "checkout", "-q", "main")
+
+	a := Assess(dir, "main", cfg, featureWorktree(t, dir), nil)
+	if a.Class != Contested || len(a.Divergent) != 0 {
+		t.Errorf("a section-guard refusal is contested, not divergent: %+v", a)
 	}
 }
 

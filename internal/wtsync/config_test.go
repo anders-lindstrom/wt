@@ -190,3 +190,23 @@ func TestLoadFromTrunkReportsNoConfig(t *testing.T) {
 		t.Errorf("err = %v, want ErrNoConfig", err)
 	}
 }
+
+func TestLoadFromTrunkReportsWhenTheRefItselfIsMissing(t *testing.T) {
+	// A repository with no origin remote at all: origin/main is not merely
+	// missing the file, the ref itself does not exist, and that must read
+	// as a distinct, actionable error rather than ErrNoConfig.
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, dir, "init", "-q", "-b", "main")
+	gitIn(t, dir, "config", "commit.gpgsign", "false")
+	gitIn(t, dir, "commit", "-q", "--allow-empty", "-m", "init")
+	_, err = LoadFromTrunk(dir, "main")
+	if err == nil || errors.Is(err, ErrNoConfig) {
+		t.Fatalf("err = %v, want a distinct error naming the missing ref", err)
+	}
+	if !strings.Contains(err.Error(), "origin/main") || !strings.Contains(err.Error(), "git fetch origin") {
+		t.Errorf("err = %v, want it to name origin/main and suggest git fetch origin", err)
+	}
+}

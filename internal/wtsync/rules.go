@@ -54,14 +54,19 @@ func (keepTrunk) Apply(_, trunk string) (string, error)   { return trunk, nil }
 
 // Apply rewrites the version inside the branch's line to MaxPlusPatch of the
 // two versions, keeping everything else on the line as the branch wrote it.
+// The replacement happens at the regex match's own offset, not by a plain
+// string replace of the version text: a line like "pin 1.2.3.4 to 1.2.3"
+// contains the target version "1.2.3" as a substring of "1.2.3.4" too, and a
+// plain replace would corrupt the wrong occurrence.
 func (maxPlusPatch) Apply(branch, trunk string) (string, error) {
-	bv := findSemver(branch)
+	loc := semverRE.FindStringSubmatchIndex(branch)
 	tv := findSemver(trunk)
-	if bv == "" || tv == "" {
+	if loc == nil || tv == "" {
 		return "", fmt.Errorf("max-plus-patch needs an X.Y.Z version on both sides, got %q and %q",
 			strings.TrimSpace(branch), strings.TrimSpace(trunk))
 	}
-	return strings.Replace(branch, bv, MaxPlusPatch(bv, tv), 1), nil
+	bv := branch[loc[2]:loc[3]]
+	return branch[:loc[2]] + MaxPlusPatch(bv, tv) + branch[loc[3]:], nil
 }
 
 // MaxPlusPatch is the version a branch keeps after trunk moved: the higher of

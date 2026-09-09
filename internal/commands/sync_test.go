@@ -138,3 +138,22 @@ func TestNoteColumnFlattensAMultilineNote(t *testing.T) {
 		t.Errorf("expected a single-line note, got %q", got)
 	}
 }
+
+func TestWhoColumnFallsBackToKindThenAQuestionMark(t *testing.T) {
+	a := wtsync.Assessment{Agent: &wtsync.Agent{Name: "busy"}}
+	if got := whoColumn(a); got != "busy" {
+		t.Errorf("named agent: got %q, want busy", got)
+	}
+	a = wtsync.Assessment{Agent: &wtsync.Agent{Kind: "codex"}}
+	if got := whoColumn(a); got != "codex" {
+		t.Errorf("unnamed agent: got %q, want its Kind codex", got)
+	}
+	a = wtsync.Assessment{Agent: &wtsync.Agent{}}
+	if got := whoColumn(a); got != "?" {
+		t.Errorf("no name and no kind: got %q, want ?", got)
+	}
+	a = wtsync.Assessment{}
+	if got := whoColumn(a); got != "-" {
+		t.Errorf("no agent: got %q, want -", got)
+	}
+}

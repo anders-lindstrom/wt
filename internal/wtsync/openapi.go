@@ -55,17 +55,22 @@ func (s OpenAPI) Resolve(c Conflict) ([]byte, error) {
 	schemas, schemaConflicts := merge3Keys(sections.schemas[0], sections.schemas[1], sections.schemas[2])
 	tags, tagConflicts := merge3Keys(sections.tags[0], sections.tags[1], sections.tags[2])
 	var bad []string
+	var keys []string
 	if len(pathConflicts) > 0 {
 		bad = append(bad, "paths: "+strings.Join(pathConflicts, ", "))
+		keys = append(keys, pathConflicts...)
 	}
 	if len(schemaConflicts) > 0 {
 		bad = append(bad, "schemas: "+strings.Join(schemaConflicts, ", "))
+		keys = append(keys, schemaConflicts...)
 	}
 	if len(tagConflicts) > 0 {
 		bad = append(bad, "tags: "+strings.Join(tagConflicts, ", "))
+		keys = append(keys, tagConflicts...)
 	}
 	if len(bad) > 0 {
-		return nil, Refuse(c.Path, "both sides changed %s", strings.Join(bad, "; "))
+		sort.Strings(keys)
+		return nil, &Refusal{Path: c.Path, Reason: fmt.Sprintf("both sides changed %s", strings.Join(bad, "; ")), Keys: keys}
 	}
 
 	version, err := s.version(c.Path, branch.version(), trunk.version())
@@ -124,8 +129,14 @@ func loadSections(path string, base, trunk, branch doc) (merged, error) {
 func (s OpenAPI) version(path, branchV, trunkV string) (string, error) {
 	switch s.Rule {
 	case "keep-branch":
+		if branchV == "" {
+			return "", Refuse(path, "info.version missing")
+		}
 		return branchV, nil
 	case "keep-trunk":
+		if trunkV == "" {
+			return "", Refuse(path, "info.version missing")
+		}
 		return trunkV, nil
 	case "max-plus-patch", "":
 		if !exactSemverRE.MatchString(branchV) || !exactSemverRE.MatchString(trunkV) {

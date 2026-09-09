@@ -84,6 +84,13 @@ func TestRenderReplacesBlocksAndPreservesTheEnding(t *testing.T) {
 	}
 }
 
+func TestMerge3RefusesBinaryBlobsAsAPersonsCall(t *testing.T) {
+	_, err := Merge3(conflict("base\x00stuff", "trunk\x00stuff", "branch\x00stuff"))
+	if !IsRefusal(err) || !strings.Contains(err.Error(), "binary") {
+		t.Errorf("err = %v, want a refusal mentioning binary", err)
+	}
+}
+
 func TestRenderPropagatesARefusal(t *testing.T) {
 	segs, _ := Merge3(conflict("base\n", "trunk\n", "branch\n"))
 	_, err := Render(segs, func(b Block) ([]string, error) { return nil, Refuse("f.txt", "not mine: %d lines", len(b.Branch)) })

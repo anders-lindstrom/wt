@@ -67,11 +67,14 @@ func (s ListUnion) collapse(path string, b Block) ([]string, error) {
 	}
 	var prefix string
 	for _, l := range append(append([]string{}, b.Branch...), b.Trunk...) {
-		m := s.Line.FindString(l)
-		if m == "" {
+		loc := s.Line.FindStringIndex(l)
+		if loc == nil {
 			return nil, Refuse(path, "the conflict is not on the list line")
 		}
-		prefix = m
+		if loc[0] != 0 {
+			return nil, Refuse(path, "list line regex must match at the start")
+		}
+		prefix = l[:loc[1]]
 	}
 	branchItems, err := s.items(path, b.Branch)
 	if err != nil {

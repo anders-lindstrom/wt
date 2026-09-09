@@ -44,7 +44,7 @@ var simEnv = []string{
 func SimulateRebase(mainRoot, onto, branch string) (Replay, error) {
 	// The same selection and order the rebase sequencer uses: right side
 	// only, patch-equivalent commits dropped, merges flattened, topological.
-	out, err := gitEnv(mainRoot, nil, nil, "rev-list", "--reverse", "--topo-order", "--right-only", "--cherry-pick", "--no-merges", onto+"..."+branch)
+	out, err := gitEnv(mainRoot, nil, nil, "rev-list", "--reverse", "--topo-order", "--right-only", "--cherry-pick", "--no-merges", onto+"..."+branch, "--")
 	if err != nil {
 		return Replay{}, err
 	}
@@ -52,7 +52,7 @@ func SimulateRebase(mainRoot, onto, branch string) (Replay, error) {
 	if out != "" {
 		commits = strings.Split(out, "\n")
 	}
-	base, err := gitEnv(mainRoot, nil, nil, "rev-parse", "--verify", onto+"^{commit}")
+	base, err := gitEnv(mainRoot, nil, nil, "rev-parse", "--verify", onto+"^{commit}", "--")
 	if err != nil {
 		return Replay{}, err
 	}
@@ -62,7 +62,7 @@ func SimulateRebase(mainRoot, onto, branch string) (Replay, error) {
 			return Replay{}, err
 		}
 		if !clean {
-			subject, err := gitEnv(mainRoot, nil, nil, "log", "-1", "--format=%s", c)
+			subject, err := gitEnv(mainRoot, nil, nil, "log", "-1", "--format=%s", c, "--")
 			if err != nil {
 				return Replay{}, err
 			}
@@ -72,6 +72,11 @@ func SimulateRebase(mainRoot, onto, branch string) (Replay, error) {
 		}
 		// A commit whose changes are already present replays to the same
 		// tree; rebase drops it, so no simulated commit is made for it.
+		// base is always a SHA computed above (verified, or a commit-tree
+		// result), never a user-supplied ref, so it carries no path
+		// ambiguity; no "--" here, since plain (non-`--verify`) `rev-parse`
+		// echoes a trailing "--" back as a second output line, which would
+		// corrupt this comparison.
 		baseTree, err := gitEnv(mainRoot, nil, nil, "rev-parse", base+"^{tree}")
 		if err != nil {
 			return Replay{}, err
@@ -107,7 +112,7 @@ func Endpoint(mainRoot, onto, branch string) ([]Conflict, error) {
 
 // BehindAhead counts the commits branch lacks from onto, and onto from branch.
 func BehindAhead(mainRoot, onto, branch string) (behind, ahead int, err error) {
-	out, err := gitEnv(mainRoot, nil, nil, "rev-list", "--left-right", "--count", onto+"..."+branch)
+	out, err := gitEnv(mainRoot, nil, nil, "rev-list", "--left-right", "--count", onto+"..."+branch, "--")
 	if err != nil {
 		return 0, 0, err
 	}
@@ -130,7 +135,7 @@ func mergeTree(mainRoot, mergeBase, onto, commit string) (tree string, clean boo
 	if mergeBase != "" {
 		args = append(args, "--merge-base="+mergeBase)
 	}
-	args = append(args, onto, commit)
+	args = append(args, "--", onto, commit)
 	cmd := exec.Command("git", args...)
 	cmd.Dir = mainRoot
 	out, runErr := cmd.Output()

@@ -67,10 +67,14 @@ var (
 // working tree: the file names executables, and a feature branch must not be
 // able to change what runs unattended.
 func LoadFromTrunk(mainRoot, trunk string) (*Config, error) {
-	out, err := git.Run(mainRoot, "show", "origin/"+trunk+":"+ConfigFile)
+	ref := "origin/" + trunk
+	out, err := git.Run(mainRoot, "show", ref+":"+ConfigFile)
 	if err != nil {
 		if strings.Contains(err.Error(), "does not exist") || strings.Contains(err.Error(), "exists on disk, but not in") {
 			return nil, ErrNoConfig
+		}
+		if strings.Contains(err.Error(), "invalid object name") || strings.Contains(err.Error(), "unknown revision") {
+			return nil, fmt.Errorf("%s is not known here; run git fetch origin", ref)
 		}
 		return nil, err
 	}

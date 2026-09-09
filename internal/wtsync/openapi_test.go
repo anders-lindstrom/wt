@@ -2,6 +2,7 @@ package wtsync
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -155,6 +156,42 @@ func TestOpenAPIRefusesWhenTheBranchChangedOutsideTheMergedSections(t *testing.T
 		strings.Replace(spec("2.38.3", `{}`, `{}`, `[]`), `"title":"T"`, `"title":"Changed"`, 1))
 	_, err := (OpenAPI{Rule: "max-plus-patch"}).Resolve(c)
 	if !IsRefusal(err) || !strings.Contains(err.Error(), "outside") {
+		t.Errorf("err = %v", err)
+	}
+	var r *Refusal
+	if !errors.As(err, &r) || len(r.Keys) != 0 {
+		t.Errorf("a section-guard refusal must carry no Keys: %+v", r)
+	}
+}
+
+func TestOpenAPIRefusalCarriesTheSortedConflictingKeys(t *testing.T) {
+	c := conflict(spec("2.38.0", `{"/a":{"get":{}}}`, `{"S":{"a":1}}`, `[]`),
+		spec("2.38.5", `{"/a":{"get":{"x":1}}}`, `{"S":{"a":2}}`, `[]`),
+		spec("2.38.3", `{"/a":{"get":{"x":2}}}`, `{"S":{"a":3}}`, `[]`))
+	_, err := (OpenAPI{Rule: "max-plus-patch"}).Resolve(c)
+	var r *Refusal
+	if !errors.As(err, &r) {
+		t.Fatalf("err = %v", err)
+	}
+	if got := strings.Join(r.Keys, ","); got != "/a,S" {
+		t.Errorf("keys = %q, want the sorted conflicting keys \"/a,S\"", got)
+	}
+}
+
+func TestOpenAPIKeepBranchRefusesAnEmptyVersion(t *testing.T) {
+	c := conflict(spec("2.38.0", `{}`, `{}`, `[]`), spec("2.38.5", `{"/t":{"get":{}}}`, `{}`, `[]`),
+		spec("", `{"/b":{"get":{}}}`, `{}`, `[]`))
+	_, err := (OpenAPI{Rule: "keep-branch"}).Resolve(c)
+	if !IsRefusal(err) || !strings.Contains(err.Error(), "info.version missing") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestOpenAPIKeepTrunkRefusesAnEmptyVersion(t *testing.T) {
+	c := conflict(spec("2.38.0", `{}`, `{}`, `[]`), spec("", `{"/t":{"get":{}}}`, `{}`, `[]`),
+		spec("2.38.3", `{"/b":{"get":{}}}`, `{}`, `[]`))
+	_, err := (OpenAPI{Rule: "keep-trunk"}).Resolve(c)
+	if !IsRefusal(err) || !strings.Contains(err.Error(), "info.version missing") {
 		t.Errorf("err = %v", err)
 	}
 }

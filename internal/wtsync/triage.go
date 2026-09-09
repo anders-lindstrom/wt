@@ -37,6 +37,9 @@ type FileOutcome struct {
 	Strategy string // "" when unclaimed
 	Resolved bool
 	Note     string // "unclaimed", or the refusal's reason
+	// Keys is the refusal's Keys, when the strategy refused: non-empty only
+	// for a genuine key-by-key collision, never for an ordinary refusal.
+	Keys []string
 }
 
 // Assessment is everything wt sync knows about one worktree, computed with
@@ -104,19 +107,12 @@ func Assess(mainRoot, onto string, cfg *Config, wt repo.Worktree, agents []Agent
 	if a.Replay.Stop == nil {
 		a.Class = Clean
 	} else {
-		a.Class = Recipe
 		for _, c := range a.Replay.Stop.Conflicts {
 			f, err := tryStrategy(mainRoot, onto, cfg, c)
 			a.Err = errors.Join(a.Err, err)
-			if !f.Resolved {
-				a.Class = Contested
-			}
 			a.Files = append(a.Files, f)
 		}
-		if a.Replay.Stop.Messages != "" && len(a.Files) == 0 {
-			a.Class = Contested
-			a.Files = append(a.Files, FileOutcome{Path: messagesPath, Note: a.Replay.Stop.Messages})
-		}
+		a.Class, a.Files = classifyStop(a.Files, a.Replay.Stop.Messages)
 	}
 
 	reasons, notes, err := divergence(mainRoot, onto, cfg, wt.Branch)
@@ -127,6 +123,27 @@ func Assess(mainRoot, onto string, cfg *Config, wt repo.Worktree, agents []Agent
 		a.Class = Divergent
 	}
 	return a
+}
+
+// classifyStop decides the class of a rebase's first stop from the files a
+// person would see and merge-tree's own messages. A stop with no files at
+// all has nothing to show: it gets a synthetic FileOutcome so the report
+// still names something, distinguishing "merge-tree said nothing useful"
+// from "merge-tree explained itself in messages".
+func classifyStop(files []FileOutcome, messages string) (Class, []FileOutcome) {
+	if len(files) == 0 {
+		note := messages
+		if note == "" {
+			note = "merge-tree reported a conflict with no details"
+		}
+		return Contested, append(files, FileOutcome{Path: messagesPath, Note: note})
+	}
+	for _, f := range files {
+		if !f.Resolved {
+			return Contested, files
+		}
+	}
+	return Recipe, files
 }
 
 // tryStrategy asks the declared strategy whether it resolves the conflict.
@@ -154,9 +171,9 @@ func tryStrategy(mainRoot, onto string, cfg *Config, c Conflict) (FileOutcome, e
 		return f, fmt.Errorf("%s: %w", c.Path, err)
 	}
 	if _, err := s.Resolve(c); err != nil {
-		var r *Refusal
-		if errors.As(err, &r) {
+		if r := refusalOf(err); r != nil {
 			f.Note = r.Reason
+			f.Keys = r.Keys
 			return f, nil
 		}
 		f.Note = err.Error()
@@ -174,6 +191,10 @@ func tryStrategy(mainRoot, onto string, cfg *Config, c Conflict) (FileOutcome, e
 // a long-lived branch and does not by itself discriminate a workstream from
 // an ordinary rebase, so it is a note, never a reason. An owned-line refusal
 // on ordinary configuration is a normal conflict, not divergence either.
+// Nor is every openapi refusal: only a genuine key-by-key collision (Refusal
+// carries Keys) is generated output that no longer merges; the strategy's
+// other refusals — a section guard, a missing section, a malformed
+// document, a non-semver version — are ordinary conflicts.
 func divergence(mainRoot, onto string, cfg *Config, branch string) (reasons, notes []string, err error) {
 	if cfg == nil {
 		return nil, nil, nil
@@ -185,14 +206,14 @@ func divergence(mainRoot, onto string, cfg *Config, branch string) (reasons, not
 	for _, c := range conflicts {
 		f, ferr := tryStrategy(mainRoot, onto, cfg, c)
 		err = errors.Join(err, ferr)
-		if f.Strategy == "openapi" && !f.Resolved {
+		if f.Strategy == "openapi" && !f.Resolved && len(f.Keys) > 0 {
 			reasons = append(reasons, fmt.Sprintf("openapi refuses %s at the endpoint: %s", c.Path, f.Note))
 		}
 	}
 	if len(cfg.DependencyGraph) == 0 {
 		return reasons, notes, err
 	}
-	base, berr := gitEnv(mainRoot, nil, nil, "merge-base", onto, branch)
+	base, berr := gitEnv(mainRoot, nil, nil, "merge-base", onto, branch, "--")
 	if berr != nil {
 		return reasons, notes, errors.Join(err, fmt.Errorf("merge-base: %w", berr))
 	}
@@ -211,7 +232,7 @@ func divergence(mainRoot, onto string, cfg *Config, branch string) (reasons, not
 // and rev beyond lines an owned-line rule declares. Paths are read
 // NUL-separated so quoted names are not missed.
 func dependencyChanges(mainRoot string, cfg *Config, base, rev string) ([]string, error) {
-	changed, err := gitEnv(mainRoot, nil, nil, "diff", "--name-only", "-z", base, rev)
+	changed, err := gitEnv(mainRoot, nil, nil, "diff", "--name-only", "-z", base, rev, "--")
 	if err != nil {
 		return nil, fmt.Errorf("diff %s..%s: %w", base, rev, err)
 	}

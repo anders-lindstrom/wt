@@ -69,6 +69,22 @@ func TestListUnionUnionsIntoAnEmptyBaseList(t *testing.T) {
 	}
 }
 
+func TestListUnionRefusesWhenTheLineRegexMatchesMidLine(t *testing.T) {
+	// An unanchored regex can match partway through a line that merely
+	// mentions the keyword; the prefix must come from a match at the very
+	// start of the line, or this is refused rather than silently taking the
+	// wrong prefix.
+	s := ListUnion{Line: regexp.MustCompile(`include `), Delimiter: ","}
+	b := Block{
+		Branch: []string{"xx include 'a'"},
+		Trunk:  []string{"include 'b'"},
+	}
+	_, err := s.collapse("f.txt", b)
+	if !IsRefusal(err) || !strings.Contains(err.Error(), "match at the start") {
+		t.Errorf("err = %v", err)
+	}
+}
+
 func TestListUnionRefusesAConflictOffTheListLine(t *testing.T) {
 	_, err := includes().Resolve(conflict("rootProject.name = 'a'\ninclude 'x'\n", "rootProject.name = 'b'\ninclude 'x'\n", "rootProject.name = 'c'\ninclude 'x'\n"))
 	if !IsRefusal(err) {
