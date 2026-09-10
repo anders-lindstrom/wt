@@ -40,8 +40,8 @@ func Adopt(ctx *Context, path string, relocate bool, opts SetupOptions, w io.Wri
 		}
 		abs = moved
 	}
-	if opts.Source == "" {
-		opts.Source = ctx.Repo.MainRoot
+	if opts.SourceDir == "" {
+		opts.SourceDir = ctx.Repo.MainRoot
 	}
 	if err := Setup(ctx, abs, opts, w); err != nil {
 		return abs, err

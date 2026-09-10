@@ -21,7 +21,7 @@ func TestSetupCopiesConfigDirsAndFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	if err := Setup(ctx, target, SetupOptions{Source: main}, &buf); err != nil {
+	if err := Setup(ctx, target, SetupOptions{SourceDir: main}, &buf); err != nil {
 		t.Fatalf("Setup: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(target, ".vscode", "settings.json")); err != nil {
@@ -41,7 +41,7 @@ func TestSetupNeverOverwritesExistingFiles(t *testing.T) {
 
 	ctx, _ := Open(main)
 	var buf bytes.Buffer
-	if err := Setup(ctx, target, SetupOptions{Source: main}, &buf); err != nil {
+	if err := Setup(ctx, target, SetupOptions{SourceDir: main}, &buf); err != nil {
 		t.Fatal(err)
 	}
 	if got := mustRead(t, filepath.Join(target, "app.env")); got != "MINE=keep" {
@@ -59,7 +59,7 @@ func TestSetupRunsProvisionScript(t *testing.T) {
 	target := t.TempDir()
 	ctx, _ := Open(main)
 	var buf bytes.Buffer
-	if err := Setup(ctx, target, SetupOptions{Source: main}, &buf); err != nil {
+	if err := Setup(ctx, target, SetupOptions{SourceDir: main}, &buf); err != nil {
 		t.Fatalf("Setup: %v", err)
 	}
 	if got := mustRead(t, filepath.Join(target, "provisioned.txt")); !strings.Contains(got, "provisioned") {
@@ -74,7 +74,7 @@ func TestSetupBuildFailureIsAWarningNotAnError(t *testing.T) {
 	target := t.TempDir()
 	ctx, _ := Open(main)
 	var buf bytes.Buffer
-	if err := Setup(ctx, target, SetupOptions{Source: main}, &buf); err != nil {
+	if err := Setup(ctx, target, SetupOptions{SourceDir: main}, &buf); err != nil {
 		t.Fatalf("build failure should not be fatal: %v", err)
 	}
 	if !strings.Contains(buf.String(), "Warning") {
@@ -87,11 +87,32 @@ func TestSetupSkipBuild(t *testing.T) {
 	target := t.TempDir()
 	ctx, _ := Open(main)
 	var buf bytes.Buffer
-	if err := Setup(ctx, target, SetupOptions{Source: main, SkipBuild: true}, &buf); err != nil {
+	if err := Setup(ctx, target, SetupOptions{SourceDir: main, SkipBuild: true}, &buf); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(target, "built.txt")); err == nil {
 		t.Error("build ran despite --skip-build")
+	}
+}
+
+func TestSetupPrintsItsSourceOnlyWhenGiven(t *testing.T) {
+	main := fixtureRepo(t, minimalConf)
+	ctx, _ := Open(main)
+
+	var named bytes.Buffer
+	if err := Setup(ctx, t.TempDir(), SetupOptions{SourceDir: main, Source: "superset"}, &named); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(named.String(), "Setup run by superset") {
+		t.Errorf("source not printed:\n%s", named.String())
+	}
+
+	var bare bytes.Buffer
+	if err := Setup(ctx, t.TempDir(), SetupOptions{SourceDir: main}, &bare); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(bare.String(), "run by") {
+		t.Errorf("no source given, yet one was printed:\n%s", bare.String())
 	}
 }
 
@@ -106,7 +127,7 @@ func TestSetupProvisionsASupersetWorktreeWhereItStands(t *testing.T) {
 	gitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/thing", superset)
 
 	var buf bytes.Buffer
-	if err := Setup(ctx, superset, SetupOptions{Source: main}, &buf); err != nil {
+	if err := Setup(ctx, superset, SetupOptions{SourceDir: main}, &buf); err != nil {
 		t.Fatalf("Setup: %v", err)
 	}
 	if _, err := os.Stat(superset); err != nil {
@@ -172,7 +193,7 @@ func TestSetupRefusesConfigEntriesThatEscapeTheWorktree(t *testing.T) {
 	mustMkdir(t, target)
 	ctx, _ := Open(main)
 	var buf bytes.Buffer
-	if err := Setup(ctx, target, SetupOptions{Source: main}, &buf); err != nil {
+	if err := Setup(ctx, target, SetupOptions{SourceDir: main}, &buf); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(filepath.Dir(target), "escaped.env")); err == nil {
@@ -217,7 +238,7 @@ DEVELOPER_CONFIG_FILES=(
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	if err := Setup(ctx, target, SetupOptions{Source: main}, &buf); err != nil {
+	if err := Setup(ctx, target, SetupOptions{SourceDir: main}, &buf); err != nil {
 		t.Fatalf("a declared-but-absent file must not fail setup: %v", err)
 	}
 	for _, f := range present {
@@ -247,7 +268,7 @@ func TestSetupContinuesAfterProvisionFailure(t *testing.T) {
 	ctx, _ := Open(main)
 
 	var buf bytes.Buffer
-	err := Setup(ctx, target, SetupOptions{Source: main}, &buf)
+	err := Setup(ctx, target, SetupOptions{SourceDir: main}, &buf)
 	if err == nil {
 		t.Fatal("a failed provision must still be reported as an error")
 	}

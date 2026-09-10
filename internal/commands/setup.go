@@ -14,8 +14,12 @@ import (
 
 // SetupOptions controls provisioning.
 type SetupOptions struct {
-	Source    string
+	// SourceDir is where developer config is copied from; empty means the
+	// repository's main checkout.
+	SourceDir string
 	SkipBuild bool
+	// Source names what ran setup, such as "superset". Only printed for now.
+	Source string
 }
 
 // Setup provisions a worktree: developer config, the repo's own provision.sh,
@@ -26,7 +30,10 @@ type SetupOptions struct {
 // because every agent that provisions a worktree would otherwise start failing
 // on a transient dependency problem.
 func Setup(ctx *Context, target string, opts SetupOptions, w io.Writer) error {
-	src := opts.Source
+	if opts.Source != "" {
+		fmt.Fprintf(w, "Setup run by %s\n", opts.Source)
+	}
+	src := opts.SourceDir
 	if src == "" {
 		src = ctx.Repo.MainRoot
 	}

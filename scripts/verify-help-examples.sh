@@ -161,6 +161,7 @@ check worktrees myrepo_wt/fix_wt/login-crash "" 'wt adopt . --skip-build'
 check worktrees myrepo_wt/fix_wt/login-crash "" 'wt setup'
 check worktrees myrepo-login-crash           "" 'wt setup ../myrepo'
 check worktrees myrepo_wt/fix_wt/login-crash "" 'wt setup --skip-build'
+check worktrees myrepo_wt/fix_wt/login-crash "" 'wt setup --source superset'
 
 check worktrees "" "" 'wt remove fix/login-crash'
 check worktrees "" "" 'wt remove login-crash --yes'

@@ -57,7 +57,7 @@ func Checkout(ctx *Context, branch, work string, opts NewOptions, w io.Writer) (
 		return path, nil
 	}
 	if err := Setup(ctx, path, SetupOptions{
-		Source:    ctx.Repo.MainRoot,
+		SourceDir: ctx.Repo.MainRoot,
 		SkipBuild: opts.SkipBuild,
 	}, w); err != nil {
 		return path, err

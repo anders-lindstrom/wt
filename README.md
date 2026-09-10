@@ -94,7 +94,7 @@ examples: `wt <command> --help`.
 |---|---|
 | `wt migrate <worktree> [<type>/<name>]` | move a worktree where it belongs, renaming or retyping it on the way (`--dry-run`, `--force`); also `wt move` |
 | `wt adopt <path>` | provision a worktree another tool created (`--relocate`, `--skip-build`) |
-| `wt setup [<source-dir>]` | provision the worktree you are in (`--skip-build`) |
+| `wt setup [<source-dir>]` | provision the worktree you are in (`--skip-build`, `--source` to name what ran it) |
 | `wt remove <work>` | remove a worktree; delete its branch when merged, keep it when not (`--yes`, `--me`, `--force` for a locked one) |
 
 **This repository, and this build**
