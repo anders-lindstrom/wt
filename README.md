@@ -94,7 +94,7 @@ examples: `wt <command> --help`.
 | `wt migrate <worktree> [<type>/<name>]` | move a worktree where it belongs, renaming or retyping it on the way (`--dry-run`, `--force`); also `wt move` |
 | `wt adopt <path>` | provision a worktree another tool created (`--relocate`, `--skip-build`) |
 | `wt setup [<source-dir>]` | provision the worktree you are in (`--skip-build`) |
-| `wt remove <work>` | remove a worktree; delete its branch when merged, keep it when not (`--yes`, `--me`) |
+| `wt remove <work>` | remove a worktree; delete its branch when merged, keep it when not (`--yes`, `--me`, `--force` for a locked one) |
 
 **This repository, and this build**
 
@@ -270,6 +270,15 @@ In a terminal you are asked to confirm; `--yes` skips the question, and a script
 hook or agent with no terminal is never asked. Git refuses to remove a checkout
 with uncommitted changes, which is why the plan reports `state` before you
 answer rather than after.
+
+**A locked worktree is read, not repeated back at you.** An agent session takes
+a git worktree lock on the directory it works in, naming itself and its pid in
+the reason. wt reads that reason: if the process has exited the lock is litter,
+so the plan says `stale`, releases it and carries on. If it is still running,
+removal stops before the question is asked — and `--force` (`-f`) is how you
+say you mean it anyway. A lock with no pid in it falls back to the sessions wt
+can see. git's own advice, `remove -f -f`, never reaches you: it is not a
+command that exists here.
 
 `wt remove` reads the branch **from the worktree**, never rebuilding it from the
 name: once the type can vary, a reconstructed name may belong to an unrelated

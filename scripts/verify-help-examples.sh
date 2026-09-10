@@ -145,8 +145,8 @@ check worktrees myrepo-login-crash           "" 'wt setup ../myrepo'
 check worktrees myrepo_wt/fix_wt/login-crash "" 'wt setup --skip-build'
 
 check worktrees "" "" 'wt remove fix/login-crash'
-check worktrees "" "" 'wt remove ../myrepo-old'
 check worktrees "" "" 'wt remove login-crash --yes'
+check worktrees "" "" 'wt remove login-crash --force'
 check worktrees myrepo_wt/fix_wt/login-crash "" 'wt remove --me'
 
 check noconf "" "" 'wt init'

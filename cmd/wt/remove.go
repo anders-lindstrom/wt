@@ -16,7 +16,7 @@ import (
 func newRemoveCmd() *cobra.Command {
 	var me bool
 	var meAt string
-	var yes bool
+	var yes, force bool
 	cmd := &cobra.Command{
 		Use:     "remove <work>",
 		Aliases: []string{"rm"},
@@ -36,12 +36,16 @@ func newRemoveCmd() *cobra.Command {
 			"type as well.\n\n" +
 			"What the removal will do is printed before it does it. In a terminal you\n" +
 			"are then asked to confirm; --yes skips the question, and a script or hook\n" +
-			"with no terminal is never asked.",
-		Example: "  wt remove login-crash        # say where the branch stands, then ask\n" +
-			"  wt remove fix/login-crash    # when two types share a work name\n" +
-			"  wt remove ../myrepo-old      # by path\n" +
-			"  wt remove login-crash --yes  # do not ask (scripts, hooks)\n" +
-			"  wt remove --me               # the worktree you are standing in",
+			"with no terminal is never asked.\n\n" +
+			"A worktree can carry a git lock — an agent session takes one for the\n" +
+			"directory it works in. A lock whose process has exited is released and\n" +
+			"the removal goes ahead; one whose holder is still running stops it before\n" +
+			"the question is asked, and --force is how you say you mean it anyway.",
+		Example: "  wt remove login-crash          # say where the branch stands, then ask\n" +
+			"  wt remove fix/login-crash      # when two types share a work name\n" +
+			"  wt remove login-crash --yes    # do not ask (scripts, hooks)\n" +
+			"  wt remove login-crash --force  # break a lock a session still holds\n" +
+			"  wt remove --me                 # the worktree you are standing in",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -53,7 +57,7 @@ func newRemoveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			opts := commands.RemoveOptions{}
+			opts := commands.RemoveOptions{Force: force}
 			if !yes && isTerminal(os.Stdin) {
 				opts.Confirm = confirmRemoval(cmd.InOrStdin(), cmd.OutOrStdout())
 			}
@@ -71,6 +75,8 @@ func newRemoveCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&me, "me", false, "remove the worktree you are standing in")
+	cmd.Flags().BoolVarP(&force, "force", "f", false,
+		"break a git worktree lock whose holder is still running")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask for confirmation")
 	cmd.Flags().StringVar(&meAt, "me-at", "", "remove the worktree at this path (used by wt_rm_me)")
 	_ = cmd.Flags().MarkHidden("me-at")
