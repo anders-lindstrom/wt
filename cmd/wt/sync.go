@@ -16,7 +16,7 @@ import (
 func newSyncCmd() *cobra.Command {
 	sync := &cobra.Command{
 		Use:   "sync",
-		Short: "Show what rebasing each worktree onto trunk would do; run, undo, doctor act",
+		Short: "Show what a rebase onto trunk would do to each worktree",
 		Long: "Simulate rebasing every worktree onto origin/<trunk> in the object store\n" +
 			"and print the outcome: the class, how far behind, the first commit a\n" +
 			"rebase would stop at, and whether the repository's declared strategies\n" +
@@ -46,6 +46,10 @@ func newSyncCmd() *cobra.Command {
 			"STOP is the first commit a rebase would stop at and the files in\n" +
 			"conflict there. WHO names an agent session sitting in the worktree:\n" +
 			"leave those alone. NOTE is advisory and never changes the class.",
+		Example: "  wt sync                   # the table above; reads, changes nothing\n" +
+			"  wt sync run login-crash   # act on one of its rows\n" +
+			"  wt sync undo login-crash  # put back every ref that run moved\n" +
+			"  wt sync doctor            # what a run needs before the first one",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// Lenient: a repository without worktree.conf still has worktrees
@@ -82,6 +86,10 @@ func newSyncCmd() *cobra.Command {
 			"Ctrl-C releases every lock the run holds and kills the step it was\n" +
 			"running; a worktree caught mid-rebase is named along with the command\n" +
 			"that puts it back.",
+		Example: "  wt sync run login-crash             # fetch trunk, then rebase it\n" +
+			"  wt sync run login-crash api-tidy   # both, and their stacks\n" +
+			"  wt sync run login-crash --no-fetch  # trunk as last fetched\n" +
+			"  wt sync run login-crash api-tidy --yes  # do not ask first",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -114,6 +122,8 @@ func newSyncCmd() *cobra.Command {
 			"be undone first and which --force does not override. Running it again\n" +
 			"after it already restored a branch reports that branch already at its\n" +
 			"old tip.",
+		Example: "  wt sync undo login-crash          # back to the safety refs\n" +
+			"  wt sync undo login-crash --force  # even if the branch moved since",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -130,7 +140,7 @@ func newSyncCmd() *cobra.Command {
 	var fix, prune bool
 	doctor := &cobra.Command{
 		Use:   "doctor",
-		Short: "Check what a run needs: trunk, declaration, scripts, rerere, hooks, submodules, LFS, Docker, safety refs, locks, rebases",
+		Short: "Check what a run needs, and clear up what old runs left behind",
 		Long: "Check what wt sync run needs before the first run in a repository and\n" +
 			"after anything changes: origin/<trunk> is fetched, .wt-sync.yaml parses,\n" +
 			"every script strategy's run exists and is executable on trunk, no\n" +
@@ -144,6 +154,9 @@ func newSyncCmd() *cobra.Command {
 			"need. A finding that would make a run refuse outright (a missing\n" +
 			"trunk, declaration or script) makes this command exit non-zero; the\n" +
 			"rest is advisory.",
+		Example: "  wt sync doctor          # what a run needs; changes nothing\n" +
+			"  wt sync doctor --fix    # turn on rerere, remove expired locks\n" +
+			"  wt sync doctor --prune  # delete safety refs no run needs now",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, err := openContext()
