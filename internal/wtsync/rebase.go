@@ -58,8 +58,8 @@ func Preflight(a Assessment) (Verdict, string) {
 		return RefuseRun, "no declaration on trunk"
 	case a.Dirty:
 		return RefuseRun, "tracked changes in the worktree"
-	case a.Agent != nil:
-		return RefuseRun, "an agent session is in it: " + agentLabel(a.Agent)
+	case len(a.Sessions) > 0:
+		return RefuseRun, "an agent session is in it: " + a.Sessions.Label(agentLabel)
 	}
 	switch a.Class {
 	case Current:

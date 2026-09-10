@@ -251,7 +251,7 @@ func TestPreflightOrdersItsReasons(t *testing.T) {
 	}{
 		{Assessment{Class: Clean, Dirty: true}, RefuseRun, "tracked changes"},
 		{Assessment{Class: Current, Dirty: true}, RefuseRun, "tracked changes"},
-		{Assessment{Class: Recipe, Agent: &Agent{Name: "x-1"}}, RefuseRun, "x-1"},
+		{Assessment{Class: Recipe, Sessions: Sessions{{Name: "x-1"}}}, RefuseRun, "x-1"},
 		{Assessment{Class: Recipe, NoConfig: true}, RefuseRun, "no declaration"},
 		{Assessment{Class: Current}, SkipRun, "already on trunk"},
 		{Assessment{Class: Stale}, SkipRun, "nothing ahead"},

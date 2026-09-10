@@ -256,7 +256,7 @@ func TestSyncSaysWhenTrunkDeclaresNothing(t *testing.T) {
 }
 
 func TestSyncGroupsAWorktreeByWhatToDoAboutIt(t *testing.T) {
-	agent := &wtsync.Agent{Name: "busy"}
+	busy := wtsync.Sessions{{Name: "busy"}}
 	for _, tc := range []struct {
 		name string
 		a    wtsync.Assessment
@@ -269,8 +269,8 @@ func TestSyncGroupsAWorktreeByWhatToDoAboutIt(t *testing.T) {
 		{"dirty recipe", wtsync.Assessment{Class: wtsync.Recipe, Dirty: true}, sectionNeedsYou},
 		{"handed over", wtsync.Assessment{Class: wtsync.Contested, Paused: true}, sectionNeedsYou},
 		{"not assessed", wtsync.Assessment{Err: errors.New("boom")}, sectionNeedsYou},
-		{"session in a recipe", wtsync.Assessment{Class: wtsync.Recipe, Agent: agent}, sectionSkipped},
-		{"session in a dirty contested", wtsync.Assessment{Class: wtsync.Contested, Dirty: true, Agent: agent}, sectionSkipped},
+		{"session in a recipe", wtsync.Assessment{Class: wtsync.Recipe, Sessions: busy}, sectionSkipped},
+		{"session in a dirty contested", wtsync.Assessment{Class: wtsync.Contested, Dirty: true, Sessions: busy}, sectionSkipped},
 		{"stale", wtsync.Assessment{Class: wtsync.Stale}, sectionSkipped},
 		{"detached", wtsync.Assessment{Class: wtsync.Detached}, sectionSkipped},
 	} {
@@ -365,21 +365,25 @@ func TestSummaryLinesFlattenAMultilineNote(t *testing.T) {
 	}
 }
 
-func TestHeldByNamesTheSessionByNameThenKindThenAQuestionMark(t *testing.T) {
-	a := wtsync.Assessment{Agent: &wtsync.Agent{Name: "busy"}}
-	if got := heldBy(a); got != "session busy" {
-		t.Errorf("named agent: got %q, want session busy", got)
-	}
-	a = wtsync.Assessment{Agent: &wtsync.Agent{Kind: "codex"}}
-	if got := heldBy(a); got != "session codex" {
-		t.Errorf("unnamed agent: got %q, want its Kind codex", got)
-	}
-	a = wtsync.Assessment{Agent: &wtsync.Agent{}}
-	if got := heldBy(a); got != "an unnamed session" {
-		t.Errorf("no name and no kind: got %q, want an unnamed session", got)
-	}
-	a = wtsync.Assessment{Dirty: true}
-	if got := heldBy(a); got != "dirty" {
-		t.Errorf("no agent, tracked changes: got %q, want dirty", got)
+func TestHeldByNamesTheSessionsInTheWorktree(t *testing.T) {
+	parked := wtsync.Sessions{{Name: "parked-1", Kind: "interactive", Status: "idle"}}
+	for _, tc := range []struct {
+		name string
+		a    wtsync.Assessment
+		want string
+	}{
+		{"named", wtsync.Assessment{Sessions: wtsync.Sessions{{Name: "busy"}}}, "session busy"},
+		{"kind only", wtsync.Assessment{Sessions: wtsync.Sessions{{Kind: "codex"}}}, "session codex"},
+		{"nothing to call it", wtsync.Assessment{Sessions: wtsync.Sessions{{}}}, "an unnamed session"},
+		{"dirty, nobody in it", wtsync.Assessment{Dirty: true}, "dirty"},
+		{"idle", wtsync.Assessment{Sessions: parked}, "session parked-1 (idle)"},
+		{"two idle", wtsync.Assessment{Sessions: append(wtsync.Sessions{{Name: "old-1", Kind: "interactive", Status: "idle"}}, parked...)}, "session old-1 (idle) +1"},
+		{"a busy one leads", wtsync.Assessment{Sessions: append(wtsync.Sessions{{Name: "new-2", Status: "busy"}}, parked...)}, "session new-2 +1"},
+		{"idle and dirty", wtsync.Assessment{Dirty: true, Sessions: parked}, "session parked-1 (idle)  dirty"},
+		{"busy and dirty", wtsync.Assessment{Dirty: true, Sessions: wtsync.Sessions{{Name: "busy"}}}, "session busy"},
+	} {
+		if got := heldBy(tc.a); got != tc.want {
+			t.Errorf("%s: got %q, want %q", tc.name, got, tc.want)
+		}
 	}
 }

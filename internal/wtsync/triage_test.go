@@ -280,8 +280,8 @@ func TestAssessReportsDirtyTrackedChangesAndTheAgent(t *testing.T) {
 	if a.Dirty {
 		t.Error("an untracked file is not dirty")
 	}
-	if a.Agent == nil || a.Agent.Name != "busy" {
-		t.Errorf("agent = %+v", a.Agent)
+	if len(a.Sessions) != 1 || a.Sessions[0].Name != "busy" {
+		t.Errorf("sessions = %+v", a.Sessions)
 	}
 	if err := os.WriteFile(filepath.Join(wt.Path, "b.txt"), []byte("edited"), 0o644); err != nil {
 		t.Fatal(err)
