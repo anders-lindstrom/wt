@@ -86,6 +86,28 @@ func declareScript(t *testing.T, ctx *Context) {
 	gitOut(t, main, "fetch", "-q", "origin")
 }
 
+// contestedFixture is runFixture's repository with one more file in play:
+// the branch's single commit also touches a.txt, which the declaration does
+// not claim, and trunk moves a.txt too. Triage sees the whole stop, so the
+// class is contested and the run walks into it knowingly.
+func contestedFixture(t *testing.T) (ctx *Context, bump string) {
+	t.Helper()
+	ctx, bump = runFixture(t, false)
+	main := ctx.Repo.MainRoot
+	if err := os.WriteFile(filepath.Join(bump, "a.txt"), []byte("branch\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitOut(t, bump, "add", "-A")
+	gitOut(t, bump, "commit", "-q", "--amend", "--no-edit")
+	if err := os.WriteFile(filepath.Join(main, "a.txt"), []byte("trunk\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitOut(t, main, "add", "-A")
+	gitOut(t, main, "commit", "-q", "-m", "a on trunk")
+	gitOut(t, main, "fetch", "-q", "origin")
+	return ctx, bump
+}
+
 // gitAncestor reports whether a is an ancestor of b; exit 1 is a plain no.
 func gitAncestor(t *testing.T, dir, a, b string) bool {
 	t.Helper()
@@ -312,14 +334,143 @@ func TestSyncRunAsksOnceForMoreThanOneWorktreeAndStopsOnNo(t *testing.T) {
 	}
 }
 
-func TestSyncRunRestoresAndReportsALaterUnclaimedStop(t *testing.T) {
+// A contested stop is no longer refused: the run rebases up to it, stages
+// what the strategies resolved, leaves the rebase in place and writes the
+// handover.
+func TestSyncRunHandsAContestedStopOver(t *testing.T) {
+	ctx, bump := contestedFixture(t)
+	branch := "feat_wt/bump"
+	old := gitOut(t, ctx.Repo.MainRoot, "rev-parse", branch)
+	var out bytes.Buffer
+	err := SyncRun(ctx, []string{"bump"}, noAgents(), &out)
+	if err == nil {
+		t.Fatalf("err = nil, want the run reported as not completed:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "contested at 1/1: the run stops there and writes a plan") {
+		t.Fatalf("output does not say what is coming:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "needs you") {
+		t.Fatalf("output has no needs-you line:\n%s", out.String())
+	}
+	gitDir, err := wtsync.GitDir(bump)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := os.ReadFile(wtsync.PlanPath(gitDir))
+	if err != nil {
+		t.Fatalf("no plan file: %v", err)
+	}
+	for _, want := range []string{"## already resolved", "## yours", "wt sync resume"} {
+		if !strings.Contains(string(plan), want) {
+			t.Fatalf("plan is missing %q:\n%s", want, plan)
+		}
+	}
+	st, ok, err := wtsync.ReadState(gitDir)
+	if err != nil || !ok {
+		t.Fatalf("ReadState = %v, %v", ok, err)
+	}
+	if st.Epoch == 0 || st.Safety == "" || len(st.Resolved) == 0 || st.Lock.PID == 0 {
+		t.Fatalf("state = %+v", st)
+	}
+	if st.Strategy["v.txt"] != "owned-line" || len(st.Left) != 1 || st.Left[0] != "a.txt" {
+		t.Fatalf("state = %+v", st)
+	}
+	if _, ok, err := wtsync.ReadLock(gitDir); err != nil || !ok {
+		t.Fatalf("ReadLock = %v, %v; want the lock kept", ok, err)
+	}
+	if busy, err := wtsync.RebaseInProgress(bump); err != nil || !busy {
+		t.Fatalf("RebaseInProgress = %v, %v; want the rebase left in place", busy, err)
+	}
+	if got := gitOut(t, ctx.Repo.MainRoot, "rev-parse", branch); got != old {
+		t.Fatal("the branch moved before the rebase finished")
+	}
+	// No result ref: the run did not finish for this branch.
+	if _, ok, err := wtsync.ResultTip(ctx.Repo.MainRoot, branch, st.Epoch); err != nil || ok {
+		t.Fatalf("ResultTip = %v, %v; a handed-over run pins no result", ok, err)
+	}
+}
+
+// A second run refuses a worktree waiting on a person, and leaves both the
+// rebase and the handover exactly as the first run left them.
+func TestSyncRunRefusesAWorktreeWaitingOnAPerson(t *testing.T) {
+	ctx, bump := contestedFixture(t)
+	var first bytes.Buffer
+	if err := SyncRun(ctx, []string{"bump"}, noAgents(), &first); err == nil {
+		t.Fatalf("the first run should have handed over:\n%s", first.String())
+	}
+	gitDir, err := wtsync.GitDir(bump)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(wtsync.PlanPath(gitDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := gitOut(t, bump, "rev-parse", "HEAD")
+
+	var out bytes.Buffer
+	if err := SyncRun(ctx, []string{"bump"}, noAgents(), &out); err == nil {
+		t.Fatalf("a second run must not touch a worktree somebody is finishing:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "refused:") {
+		t.Fatalf("out %s", out.String())
+	}
+	if busy, err := wtsync.RebaseInProgress(bump); err != nil || !busy {
+		t.Fatalf("RebaseInProgress = %v, %v; the second run disturbed the rebase", busy, err)
+	}
+	if gitOut(t, bump, "rev-parse", "HEAD") != head {
+		t.Fatal("the second run moved HEAD")
+	}
+	after, err := os.ReadFile(wtsync.PlanPath(gitDir))
+	if err != nil || string(after) != string(before) {
+		t.Fatalf("the plan file was rewritten or removed: %v", err)
+	}
+	if _, ok, err := wtsync.ReadState(gitDir); err != nil || !ok {
+		t.Fatalf("ReadState = %v, %v; the sidecar is gone", ok, err)
+	}
+}
+
+// A stack parent may not be left waiting: its children would be stranded on
+// a base that is about to be rewritten, so its stop is put back instead.
+func TestSyncRunPutsAStackParentBackInsteadOfHandingItOver(t *testing.T) {
+	ctx, bump := contestedFixture(t)
+	child := stackFixture(t, ctx)
+	oldBump, oldChild := gitOut(t, bump, "rev-parse", "HEAD"), gitOut(t, child, "rev-parse", "HEAD")
+	var out bytes.Buffer
+	err := SyncRun(ctx, []string{"bump"}, noAgents(), &out)
+	s := out.String()
+	if err == nil {
+		t.Fatalf("a restored branch is a failure:\n%s", s)
+	}
+	if !strings.Contains(s, "a stack parent cannot be left waiting") {
+		t.Fatalf("output does not say why it will not hand over:\n%s", s)
+	}
+	if !strings.Contains(s, "restored: a.txt at 1/1") {
+		t.Fatalf("out %s", s)
+	}
+	if busy, err := wtsync.RebaseInProgress(bump); err != nil || busy {
+		t.Fatalf("RebaseInProgress = %v, %v; the parent was left mid-rebase", busy, err)
+	}
+	gitDir, err := wtsync.GitDir(bump)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if has, err := wtsync.HasPlan(gitDir); err != nil || has {
+		t.Fatalf("HasPlan = %v, %v; a restored run hands nothing over", has, err)
+	}
+	if gitOut(t, bump, "rev-parse", "HEAD") != oldBump || gitOut(t, child, "rev-parse", "HEAD") != oldChild {
+		t.Fatal("a stack member moved")
+	}
+}
+
+func TestSyncRunHandsOverALaterUnclaimedStop(t *testing.T) {
 	// The first stop is a script's (v.txt), which truncates the simulation
 	// there, so triage says recipe? and the run starts; the branch's second
 	// commit conflicts on a.txt, which nobody claims. Without the script the
-	// simulation would replay to that second stop itself and the run would
-	// refuse before touching anything - which is the point of doing it this
-	// way round: this pins what happens when a run, not triage, is the one
-	// that finds the unclaimed stop.
+	// simulation would replay to that second stop itself and triage would
+	// call it contested - which is the point of doing it this way round:
+	// this pins what happens when a run, not triage, is the one that finds
+	// the unclaimed stop.
 	ctx, bump := runFixture(t, false)
 	declareScript(t, ctx)
 	main := ctx.Repo.MainRoot
@@ -334,14 +485,28 @@ func TestSyncRunRestoresAndReportsALaterUnclaimedStop(t *testing.T) {
 	gitOut(t, main, "add", "-A")
 	gitOut(t, main, "commit", "-q", "-m", "a on trunk")
 	gitOut(t, main, "fetch", "-q", "origin")
-	old := gitOut(t, bump, "rev-parse", "HEAD")
+	old := gitOut(t, main, "rev-parse", "feat_wt/bump")
 	var out bytes.Buffer
 	err := SyncRun(ctx, []string{"bump"}, noAgents(), &out)
-	if err == nil || !strings.Contains(out.String(), "restored: a.txt at 2/2") {
+	if err == nil || !strings.Contains(out.String(), "needs you") {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != old {
-		t.Fatal("HEAD moved")
+	if gitOut(t, main, "rev-parse", "feat_wt/bump") != old {
+		t.Fatal("the branch moved before the rebase finished")
+	}
+	if busy, err := wtsync.RebaseInProgress(bump); err != nil || !busy {
+		t.Fatalf("RebaseInProgress = %v, %v; want the rebase left in place", busy, err)
+	}
+	gitDir, err := wtsync.GitDir(bump)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, ok, err := wtsync.ReadState(gitDir)
+	if err != nil || !ok {
+		t.Fatalf("ReadState = %v, %v", ok, err)
+	}
+	if st.Stop != 2 || st.Total != 2 || len(st.Left) != 1 || st.Left[0] != "a.txt" {
+		t.Fatalf("state = %+v", st)
 	}
 	if !strings.Contains(gitOut(t, main, "for-each-ref", "--format=%(refname)", "refs/wt-sync/"), "feat_wt/bump/99") {
 		t.Fatal("the safety ref, the undo target, is missing")
@@ -380,35 +545,41 @@ func twoChildFixture(t *testing.T, ctx *Context, main string) (conflicted, clean
 	return conflicted, clean
 }
 
-func TestSyncRunARestoredChildDoesNotStopItsSibling(t *testing.T) {
+func TestSyncRunAHandedOverChildDoesNotStopItsSibling(t *testing.T) {
 	ctx, bump := runFixture(t, false)
 	// As above: the script truncates the simulation at v.txt, so triage
-	// cannot foresee the child's unclaimed a.txt and the run reaches it.
+	// cannot foresee the child's unclaimed a.txt and the run reaches it. A
+	// leaf has no descendants, so its stop is handed over, not put back.
 	declareScript(t, ctx)
 	conflicted, clean := twoChildFixture(t, ctx, ctx.Repo.MainRoot)
-	oldConflicted := gitOut(t, conflicted, "rev-parse", "HEAD")
+	main := ctx.Repo.MainRoot
+	oldConflicted := gitOut(t, main, "rev-parse", "feat_wt/alpha")
 	var out bytes.Buffer
 	err := SyncRun(ctx, []string{"bump"}, noAgents(), &out)
 	s := out.String()
 	if err == nil {
-		t.Fatalf("a restored branch is a failure:\n%s", s)
+		t.Fatalf("a handed-over branch is a failure:\n%s", s)
 	}
-	if !strings.Contains(s, "restored: a.txt") {
+	if !strings.Contains(s, "needs you") {
 		t.Fatalf("out %s", s)
 	}
-	// The sibling rebased onto the parent's tip; the restored one did not move.
+	// The sibling rebased onto the parent's tip; the handed-over one did not
+	// move: its rebase is still in flight.
 	parentTip := gitOut(t, bump, "rev-parse", "HEAD")
 	if gitOut(t, clean, "rev-parse", "HEAD~1") != parentTip {
 		t.Fatalf("the sibling was not rebased onto the parent:\n%s", s)
 	}
-	if gitOut(t, conflicted, "rev-parse", "HEAD") != oldConflicted {
-		t.Fatal("the restored branch moved")
+	if gitOut(t, main, "rev-parse", "feat_wt/alpha") != oldConflicted {
+		t.Fatal("the handed-over branch moved")
 	}
-	if strings.Contains(s, "alpha was restored") {
+	if busy, berr := wtsync.RebaseInProgress(conflicted); berr != nil || !busy {
+		t.Fatalf("RebaseInProgress = %v, %v; want the rebase left in place", busy, berr)
+	}
+	if strings.Contains(s, "alpha is waiting for you") {
 		t.Fatalf("the sibling was poisoned:\n%s", s)
 	}
-	// The closing error names the restored branch and nothing else.
-	if !strings.Contains(err.Error(), "alpha (restored)") || strings.Contains(err.Error(), "zulu") {
+	// The closing error names the handed-over branch and nothing else.
+	if !strings.Contains(err.Error(), "alpha (needs you)") || strings.Contains(err.Error(), "zulu") {
 		t.Fatalf("err %v", err)
 	}
 }

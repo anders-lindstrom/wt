@@ -222,7 +222,11 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 			continue
 		}
 		if busy {
-			poison(b, p.work+": changed since triage: a rebase is in progress")
+			why := p.work + ": changed since triage: a rebase is in progress"
+			if has, herr := wtsync.HasPlan(gitDir); herr == nil && has {
+				why = p.work + ": left mid-rebase by an earlier run: wt sync resume " + p.work
+			}
+			poison(b, why)
 			continue
 		}
 		status, err := git.Run(p.wt.Path, "--no-optional-locks", "status", "--porcelain", "--untracked-files=no")
@@ -255,11 +259,19 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 			continue
 		}
 		req := wtsync.Request{Path: p.wt.Path, Branch: b, Trunk: trunkSHA, Onto: trunkSHA, Epoch: epoch}
+		req.Stacked = len(wtsync.Descendants(parents, b)) > 0
 		ontoLabel := onto
 		if parent, ok := parents[b]; ok {
 			if pp := parts[parent]; pp != nil && pp.result != nil && !pp.result.Restored && pp.head != "" {
 				req.Onto, req.Upstream, ontoLabel = pp.head, pp.result.OldTip, pp.work
 			}
+		}
+		if p.a.Class == wtsync.Contested && p.a.Replay.Stop != nil {
+			what := "the run stops there and writes a plan"
+			if req.Stacked {
+				what = "the run stops there and puts the branch back: a stack parent cannot be left waiting"
+			}
+			fmt.Fprintf(w, "  contested at %d/%d: %s\n", p.a.Replay.Stop.Index, p.a.Replay.Stop.Total, what)
 		}
 		tracker.set(&rebaseInFlight{work: p.work, path: p.wt.Path, safety: wtsync.SafetyRef(b, epoch)})
 		res, rerr := wtsync.Rebase(ctx.Repo.MainRoot, cfg, req, w)
@@ -270,9 +282,28 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 		}
 		if rerr != nil {
 			fmt.Fprintf(w, "  failed: %v\n", rerr)
+			clearHandover(w, p.wt.Path)
 			failures = append(failures, p.work+" (failed)")
 			poisonAbove(b, p.work+" failed")
 			release(b)
+			continue
+		}
+		if res.Left != nil {
+			if err := handOver(ctx, w, handoverInput{
+				Work: p.work, Branch: b, Path: p.wt.Path, TrunkRef: onto, TrunkSHA: trunkSHA,
+				Onto: req.Onto, Upstream: req.Upstream, Epoch: epoch, Cfg: cfg, Res: res, Lock: p.lock,
+			}); err != nil {
+				fmt.Fprintf(w, "  failed: %v\n", err)
+				failures = append(failures, p.work+" (failed)")
+				release(b)
+				poisonAbove(b, p.work+" failed")
+				continue
+			}
+			// The lock is left behind on purpose; dropping the handle here
+			// keeps the deferred release from removing the file.
+			p.lock = nil
+			failures = append(failures, p.work+" (needs you)")
+			poisonAbove(b, p.work+" is waiting for you")
 			continue
 		}
 		if res.Restored {
@@ -284,6 +315,7 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 				}
 			}
 			fmt.Fprintf(w, "  restored: %s at %d/%d not resolved; rebase by hand\n", strings.Join(files, ", "), last.Index, last.Total)
+			clearHandover(w, p.wt.Path)
 			failures = append(failures, p.work+" (restored)")
 			poisonAbove(b, p.work+" was restored")
 			release(b)
@@ -297,23 +329,12 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 		// The rebase is done; from here an interrupt cannot abort it, only
 		// leave the deferred steps and the result ref undone.
 		tracker.set(&rebaseInFlight{work: p.work, path: p.wt.Path, rebased: true})
-		// w, not nil: RunDeferred announces each step as it starts, so a
-		// long one is not silence until printDeferred reports the result.
-		results, derr := wtsync.RunDeferred(p.wt.Path, cfg.Defer, res.OldTip, res.NewTip, w)
-		if derr == nil {
-			for _, d := range results {
-				printDeferred(w, d)
-				if d.Err != nil {
-					failures = append(failures, p.work+" (owed: "+d.Step.Run+")")
-				}
-			}
-			// The run is done for this branch: pin where it left it, so
-			// undo can tell its own work from commits made afterwards.
-			if p.head, derr = git.Run(p.wt.Path, "rev-parse", "HEAD"); derr == nil {
-				derr = wtsync.WriteResult(ctx.Repo.MainRoot, b, p.head, epoch)
-			}
-		}
+		head, owed, derr := completeRun(ctx, w, cfg, completeInput{
+			Work: p.work, Branch: b, Path: p.wt.Path, Epoch: epoch, Res: res,
+		})
 		tracker.set(nil)
+		p.head = head
+		failures = append(failures, owed...)
 		// The rebase itself stands; only this branch and what sits on it
 		// lose their footing, so the rest of the run carries on.
 		if derr != nil {
@@ -324,7 +345,6 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 			continue
 		}
 		release(b)
-		fmt.Fprintf(w, "  push: git -C %s push --force-with-lease\n", p.wt.Path)
 	}
 	if len(failures) > 0 {
 		return fmt.Errorf("not completed: %s", strings.Join(failures, ", "))
