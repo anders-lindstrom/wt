@@ -113,9 +113,14 @@ func SimulateRebase(mainRoot, onto, branch string, cfg *Config) (Replay, error) 
 				if r.Outcome.Strategy == "script" {
 					// --check said the script owns it, which is all a
 					// script can say here: it resolves against a real
-					// index in a worktree, never in the object store.
-					if rule, ok := cfg.RuleFor(cf.Path); ok && script == "" {
-						script = fmt.Sprintf("%s owns %s and can only be checked before a run", rule.Run, cf.Path)
+					// index in a worktree, never in the object store. The
+					// truncation is unconditional; RuleFor only enriches
+					// Why with which script owns the path.
+					if script == "" {
+						script = fmt.Sprintf("a script owns %s and can only be checked before a run", cf.Path)
+						if rule, ok := cfg.RuleFor(cf.Path); ok {
+							script = fmt.Sprintf("%s owns %s and can only be checked before a run", rule.Run, cf.Path)
+						}
 					}
 					continue
 				}
