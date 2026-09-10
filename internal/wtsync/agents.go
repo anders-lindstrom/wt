@@ -1,12 +1,21 @@
 package wtsync
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 )
+
+// agentsDeadline bounds claude agents --json, the one CLI other than git on
+// every acting path. A claude that has not answered by then is stuck, and a
+// run that cannot tell who is in a worktree refuses rather than waits.
+var agentsDeadline = 10 * time.Second
 
 // Agent is a Claude session, from `claude agents --json`. It is enough to
 // answer "is a session living in this worktree"; it says nothing about
@@ -36,14 +45,23 @@ func ParseAgents(data []byte) ([]Agent, error) {
 }
 
 // ListAgents asks claude for its sessions. No claude on the PATH means no
-// sessions, not an error: "nobody to ask" is a normal state.
+// sessions, not an error: "nobody to ask" is a normal state. It runs in its
+// own process group, so the deadline takes down whatever it forked.
 func ListAgents() ([]Agent, error) {
 	exe, err := exec.LookPath("claude")
 	if err != nil {
 		return nil, nil
 	}
-	cmd := exec.Command(exe, "agents", "--json")
+	ctx, cancel := context.WithTimeout(context.Background(), agentsDeadline)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, exe, "agents", "--json")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.WaitDelay = 2 * time.Second
 	out, err := cmd.Output()
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return nil, fmt.Errorf("claude agents --json did not answer within %s", agentsDeadline)
+	}
 	if err != nil {
 		return nil, errors.New("claude agents --json failed: " + stderrOf(err))
 	}

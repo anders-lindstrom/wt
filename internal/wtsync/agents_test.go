@@ -1,6 +1,59 @@
 package wtsync
 
-import "testing"
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"syscall"
+	"testing"
+	"time"
+)
+
+// A claude that never answers must not hold a run hostage. The stub's sleep
+// is a child of sh that holds the output pipe, so the deadline has to take
+// down the whole process group, not just sh.
+func TestListAgentsGivesUpOnAClaudeThatDoesNotAnswer(t *testing.T) {
+	stub := t.TempDir()
+	pidFile := filepath.Join(stub, "sleep.pid")
+	script := "#!/bin/sh\n[ \"$1\" = warm ] && exit 0\nsleep 30 &\necho $! > " + pidFile + "\nwait\necho '[]'\n"
+	claude := filepath.Join(stub, "claude")
+	if err := os.WriteFile(claude, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The first exec of a new file can be slow (macOS vets it), and a stub
+	// killed before it started proves nothing about the process group.
+	if err := exec.Command(claude, "warm").Run(); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", stub+string(os.PathListSeparator)+os.Getenv("PATH"))
+	old := agentsDeadline
+	agentsDeadline = 500 * time.Millisecond
+	t.Cleanup(func() { agentsDeadline = old })
+	start := time.Now()
+	_, err := ListAgents()
+	if err == nil || !strings.Contains(err.Error(), "did not answer within") {
+		t.Fatalf("err = %v", err)
+	}
+	if took := time.Since(start); took > 5*time.Second {
+		t.Fatalf("took %s; the deadline did not hold", took)
+	}
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatalf("the stub never started its sleep, so the group kill is unproven: %v", err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for gone := time.Now().Add(2 * time.Second); syscall.Kill(pid, 0) == nil; time.Sleep(20 * time.Millisecond) {
+		if time.Now().After(gone) {
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+			t.Fatalf("sleep %d outlived the deadline: only sh was killed", pid)
+		}
+	}
+}
 
 const agentsJSON = `[
  {"id":"a1","cwd":"/repo_wt/feat_wt/one","kind":"background","name":"fix it","state":"blocked"},
