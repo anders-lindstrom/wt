@@ -241,6 +241,89 @@ func (r *Repo) CommitsAhead(branch, base string) (n int, ok bool) {
 	return n, true
 }
 
+// Branch is one local branch as for-each-ref reports it.
+type Branch struct {
+	Name     string
+	Tip      string
+	Upstream string // refs/remotes/..., "" when none is configured
+	// Gone is an upstream that is configured but whose ref is missing: as of
+	// the last fetch --prune, the remote branch was deleted.
+	Gone    bool
+	Date    string // the tip's committer date, relative
+	Subject string
+}
+
+// Branches lists every local branch. Names are read with lstrip=2 because
+// refname:short turns into heads/<name> when a tag shares the name.
+func (r *Repo) Branches() ([]Branch, error) {
+	lines, err := git.Lines(r.MainRoot, "for-each-ref",
+		"--format=%(refname:lstrip=2)%00%(objectname)%00%(upstream)%00%(upstream:track)%00%(committerdate:relative)%00%(contents:subject)",
+		"refs/heads")
+	if err != nil {
+		return nil, err
+	}
+	var out []Branch
+	for _, line := range lines {
+		f := strings.Split(line, "\x00")
+		if len(f) != 6 {
+			continue
+		}
+		out = append(out, Branch{Name: f[0], Tip: f[1], Upstream: f[2],
+			Gone: f[3] == "[gone]", Date: f[4], Subject: f[5]})
+	}
+	return out, nil
+}
+
+// MergedInto lists the local branches whose tips are reachable from commit.
+func (r *Repo) MergedInto(commit string) ([]string, error) {
+	return git.Lines(r.MainRoot, "for-each-ref", "--merged="+commit,
+		"--format=%(refname:lstrip=2)", "refs/heads")
+}
+
+// ResolveRef returns the commit a ref names, and false when it names none.
+func (r *Repo) ResolveRef(ref string) (string, bool) {
+	out, err := git.Run(r.MainRoot, "rev-parse", "--verify", "--quiet", ref+"^{commit}")
+	if err != nil || out == "" {
+		return "", false
+	}
+	return out, true
+}
+
+// HasRemote reports whether a remote of that name is configured.
+func (r *Repo) HasRemote(name string) bool {
+	_, err := git.Run(r.MainRoot, "remote", "get-url", name)
+	return err == nil
+}
+
+// OriginHead names the branch origin's HEAD points at. It reads the symref
+// without resolving it, so a HEAD whose target has been pruned still says
+// which branch is trunk, and reads the full ref name, which a local branch or
+// tag called origin/<x> cannot make ambiguous the way --short's can.
+func (r *Repo) OriginHead() (string, bool) {
+	out, err := git.Run(r.MainRoot, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD")
+	if err != nil {
+		return "", false
+	}
+	branch, ok := strings.CutPrefix(out, "refs/remotes/origin/")
+	return branch, ok && branch != ""
+}
+
+// DeleteBranchAt deletes a branch only while it still points at tip: git's
+// own compare-and-delete, so a commit that lands after the caller last looked
+// is never deleted with it.
+//
+// Unlike `git branch -D` it does not refuse a branch a worktree has checked
+// out; the caller checks that. The branch's config section is removed after
+// the ref, as `git branch -D` would.
+func (r *Repo) DeleteBranchAt(name, tip string) error {
+	if _, err := git.Run(r.MainRoot, "update-ref", "-d", "refs/heads/"+name, tip); err != nil {
+		return err
+	}
+	// A branch with no config has no section to remove; that is not a failure.
+	_, _ = git.Run(r.MainRoot, "config", "--remove-section", "branch."+name)
+	return nil
+}
+
 // AddWorktree creates a worktree at path on a new branch cut from base.
 func (r *Repo) AddWorktree(path, branch, base string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
