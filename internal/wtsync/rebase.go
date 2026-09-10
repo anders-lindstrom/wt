@@ -106,6 +106,23 @@ type StopResult struct {
 	Files        []FileOutcome
 }
 
+// Handover is a stop the run left for a person: where the rebase is, the
+// three blobs of every conflict there, what the strategies answered, the
+// blob each resolved path was staged with, the paths a strategy resolved by
+// deleting, and the paths a person owns. Staged and Deleted are what resume
+// compares against to prove nothing was hand-merged where a strategy owns
+// the file.
+type Handover struct {
+	Index, Total int
+	Commit       string
+	Subject      string
+	Conflicts    []Conflict
+	Files        []FileOutcome
+	Staged       map[string]string
+	Deleted      []string
+	Left         []string
+}
+
 // Result is what a rebase did.
 type Result struct {
 	Branch, OldTip, NewTip string
