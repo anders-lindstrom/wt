@@ -73,7 +73,7 @@ func classColumn(a wtsync.Assessment) string {
 
 // stopColumn is the stop that decides the class — the first one a person
 // owns, or the first of a run that resolves throughout — its subject, and
-// what happens to its files: `2/12 "record every sync run" SyncWorker.java✗`.
+// what happens to its files: `2/12 "record every sync run" LoginHandler.java✗`.
 func stopColumn(a wtsync.Assessment) string {
 	stop := a.Replay.Stop
 	if stop == nil {

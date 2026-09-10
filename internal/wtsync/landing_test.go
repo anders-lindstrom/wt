@@ -25,7 +25,7 @@ func TestLandingListCountsDirectAndMergedScopes(t *testing.T) {
 	gitIn(t, dir, "checkout", "-q", "-b", "side")
 	write("c.txt", "c\n")
 	gitIn(t, dir, "add", "-A")
-	gitIn(t, dir, "commit", "-qm", "fix(statepush): count endings by reason")
+	gitIn(t, dir, "commit", "-qm", "fix(auth): count endings by reason")
 	write("c.txt", "c2\n")
 	gitIn(t, dir, "commit", "-qam", "feat(pins): pin quality again")
 	gitIn(t, dir, "checkout", "-q", "main")
@@ -38,8 +38,8 @@ func TestLandingListCountsDirectAndMergedScopes(t *testing.T) {
 	if l.Commits != 2 {
 		t.Fatalf("Commits = %d, want 2 first-parent commits", l.Commits)
 	}
-	if got := l.ScopeLine(); got != "pins ×2, statepush ×1" {
-		t.Fatalf("ScopeLine = %q, want %q", got, "pins ×2, statepush ×1")
+	if got := l.ScopeLine(); got != "pins ×2, auth ×1" {
+		t.Fatalf("ScopeLine = %q, want %q", got, "pins ×2, auth ×1")
 	}
 }
 

@@ -235,7 +235,7 @@ func commitOf(dir, rev string) (string, error) {
 //     throwing away the resolution. This is refused wherever the rebase is.
 //   - At the recorded stop, something still unmerged means the person is not
 //     done — unless a strategy resolved it, in which case merging it is not
-//     theirs to do and they are pointed at undo instead.
+//     the person's to do and they are pointed at undo instead.
 //   - At the recorded stop, a different blob under a strategy's name means a
 //     file the brief said never to hand-merge was hand-merged.
 //
@@ -277,18 +277,18 @@ func verifyHandover(wtPath string, st wtsync.State, w io.Writer) error {
 		return err
 	}
 	if len(unmerged) > 0 {
-		var owned, theirs []string
+		var owned, yours []string
 		for _, c := range unmerged {
 			if s := st.Strategy[c.Path]; s != "" {
 				owned = append(owned, c.Path+" ("+s+")")
 			} else {
-				theirs = append(theirs, c.Path)
+				yours = append(yours, c.Path)
 			}
 		}
 		if len(owned) > 0 {
 			return fmt.Errorf("unmerged again after a strategy resolved it: %s; that is not yours to merge, wt sync undo %s and start again", strings.Join(owned, ", "), st.Work)
 		}
-		return fmt.Errorf("still unmerged: %s; resolve them, git add them, then resume", strings.Join(theirs, ", "))
+		return fmt.Errorf("still unmerged: %s; resolve them, git add them, then resume", strings.Join(yours, ", "))
 	}
 	var changed []string
 	for path := range st.Resolved {

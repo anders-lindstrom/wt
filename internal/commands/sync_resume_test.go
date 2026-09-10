@@ -112,7 +112,7 @@ func assertUntouched(t *testing.T, bump, gitDir string, st wtsync.State) {
 
 func TestSyncResumeFinishesAHandedOverRebase(t *testing.T) {
 	ctx, bump, gitDir, st := handedOver(t)
-	// The person does what the plan file asks: resolve what is theirs and
+	// The person does what the plan file asks: resolve what is left to them and
 	// stage it. Nothing else in the worktree is touched.
 	writeFile(t, bump, "a.txt", "merged by hand\n")
 	gitOut(t, bump, "add", "--", "a.txt")
@@ -156,7 +156,7 @@ func TestSyncResumeFinishesAHandedOverRebase(t *testing.T) {
 
 func TestSyncResumeRefusesAHandMergedOwnedFile(t *testing.T) {
 	ctx, bump, gitDir, st := handedOver(t)
-	// What is theirs is resolved, but so is what is not: v.txt belongs to
+	// What is left to the person is resolved, but so is what is not: v.txt belongs to
 	// the owned-line strategy and the plan file says never to touch it.
 	writeFile(t, bump, "a.txt", "merged by hand\n")
 	writeFile(t, bump, "v.txt", "9.9.9\n")

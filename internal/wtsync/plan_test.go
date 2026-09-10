@@ -53,9 +53,9 @@ func TestRenderPlanHasEverySection(t *testing.T) {
 	gitIn(t, dir, "commit", "-qam", "feat(pins): trunk moves a.txt")
 
 	out, err := RenderPlan(PlanInput{
-		MainRoot: dir, Work: "state_stats", Branch: "feat_wt/state_stats", TrunkRef: "origin/main",
+		MainRoot: dir, Work: "login-crash", Branch: "feat_wt/login-crash", TrunkRef: "origin/main",
 		Base: base, Trunk: "main",
-		Landing: Landing{Commits: 90, Scopes: []ScopeCount{{"pins", 6}, {"statepush", 4}}},
+		Landing: Landing{Commits: 90, Scopes: []ScopeCount{{"pins", 6}, {"auth", 4}}},
 		Config:  planConfig(t),
 		Handover: Handover{
 			Index: 2, Total: 12, Subject: "record every sync run",
@@ -75,8 +75,8 @@ func TestRenderPlanHasEverySection(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"# rebase state_stats onto origin/main",
-		"90 landed. scopes: pins ×6, statepush ×4",
+		"# rebase login-crash onto origin/main",
+		"90 landed. scopes: pins ×6, auth ×4",
 		"stopped at stop 2/12",
 		"## already resolved — do not re-open",
 		"owned-line",
@@ -87,7 +87,7 @@ func TestRenderPlanHasEverySection(t *testing.T) {
 		"openapi",
 		"the deferred `./gradlew generateOpenApi` owns it",
 		"## deferred, runs when the rebase completes",
-		"wt sync resume state_stats",
+		"wt sync resume login-crash",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("plan is missing %q:\n%s", want, out)
@@ -317,8 +317,8 @@ func TestReadStateReturnsWritableMapsAndSlices(t *testing.T) {
 }
 
 func TestNeedsYouLine(t *testing.T) {
-	got := NeedsYouLine("state_stats", []string{"src/SyncWorker.java", "a", "b", "c"})
-	want := "wt: state_stats needs you. 4 left after resolvers: SyncWorker.java +3 · wt sync resume state_stats"
+	got := NeedsYouLine("login-crash", []string{"src/LoginHandler.java", "a", "b", "c"})
+	want := "wt: login-crash needs you. 4 left after resolvers: LoginHandler.java +3 · wt sync resume login-crash"
 	if got != want {
 		t.Fatalf("line = %q, want %q", got, want)
 	}
