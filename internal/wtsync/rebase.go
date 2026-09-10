@@ -322,19 +322,23 @@ func (d *driver) verifyFinished() error {
 func VerifyFinished(wtPath, branch, work, onto, old string) error {
 	ref, err := gitEnv(wtPath, rebaseEnv, nil, "symbolic-ref", "--quiet", "HEAD")
 	if err != nil || ref != "refs/heads/"+branch {
-		return fmt.Errorf("HEAD is %q, not %s: this is not the rebase that was left here", ref, branch)
+		return fmt.Errorf("HEAD is %q, not %s: this is not the rebase that was left here; wt sync undo %s clears its plan", ref, branch, work)
 	}
 	head, err := gitEnv(wtPath, rebaseEnv, nil, "rev-parse", "HEAD")
 	if err != nil {
 		return err
 	}
 	if head == old {
-		return fmt.Errorf("%s is back at the tip the run started from: the rebase was aborted, not finished; run wt sync run again", branch)
+		// A run refuses while the plan is there, so wt sync run alone is not
+		// a way out: undo clears the plan first.
+		return fmt.Errorf("%s is back at the tip the run started from: the rebase was aborted, not finished; wt sync undo %s clears its plan, then wt sync run starts again", branch, work)
 	}
 	if _, code, err := gitEnvAllow(wtPath, rebaseEnv, nil, 1, "merge-base", "--is-ancestor", onto, "HEAD"); err != nil {
 		return err
 	} else if code == 1 {
-		return fmt.Errorf("%s is not on top of what the run was rebasing onto: the rebase did not finish as this run", branch)
+		// HEAD is on the branch and off the old tip, and the run pinned no
+		// result, so a plain undo would refuse the moved branch.
+		return fmt.Errorf("%s is not on top of what the run was rebasing onto: the rebase did not finish as this run; wt sync undo --force %s puts the run's tip back and keeps what is there now under a safety ref", branch, work)
 	}
 	// A rebase that finishes moves the branch once, from the tip it started
 	// at, so the reflog entry before HEAD is that tip. Anything else — a

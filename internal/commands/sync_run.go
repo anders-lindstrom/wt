@@ -224,7 +224,7 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 		if busy {
 			why := p.work + ": changed since triage: a rebase is in progress"
 			if has, herr := wtsync.HasPlan(gitDir); herr == nil && has {
-				why = p.work + ": left mid-rebase by an earlier run: wt sync resume " + p.work
+				why = p.work + ": left mid-rebase by an earlier run: wt sync resume " + p.work + ", or wt sync undo " + p.work
 			}
 			poison(b, why)
 			continue

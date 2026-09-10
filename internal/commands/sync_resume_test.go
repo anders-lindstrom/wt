@@ -504,3 +504,38 @@ func TestSyncUndoPutsBackWhatAResumeFinished(t *testing.T) {
 		t.Fatalf("HasPlan = %v, %v", has, err)
 	}
 }
+
+// A handover aborted by hand is stale: there is nothing to resume, and a run
+// refuses while its plan is there. Resume must name the command that clears
+// it, that command must work, and a run must then start again.
+func TestSyncResumeSendsAnAbortedHandoverToUndo(t *testing.T) {
+	ctx, bump, gitDir, _ := handedOver(t)
+	gitOut(t, bump, "rebase", "--abort")
+
+	var out bytes.Buffer
+	err := SyncResume(ctx, "bump", noResumeAgents(), &out)
+	if err == nil || !strings.Contains(err.Error(), "wt sync undo bump") {
+		t.Fatalf("err %v, want it to name wt sync undo bump\n%s", err, out.String())
+	}
+
+	var undoOut bytes.Buffer
+	if err := SyncUndo(ctx, "bump", noAgentsUndo(), &undoOut); err != nil {
+		t.Fatalf("undo: %v\n%s", err, undoOut.String())
+	}
+	if has, err := wtsync.HasPlan(gitDir); err != nil || has {
+		t.Fatalf("HasPlan = %v, %v; undo left the stale handover", has, err)
+	}
+
+	// A later run, with an epoch of its own, is no longer refused as waiting
+	// on a person: it walks into the contested stop and hands it over again.
+	opts := noAgents()
+	opts.Now = func() time.Time { return time.Unix(0, 200) }
+	var runOut bytes.Buffer
+	_ = SyncRun(ctx, []string{"bump"}, opts, &runOut)
+	if strings.Contains(runOut.String(), "left mid-rebase") {
+		t.Fatalf("the run still refuses the cleared handover:\n%s", runOut.String())
+	}
+	if st2, ok, err := wtsync.ReadState(gitDir); err != nil || !ok || st2.Epoch != 200 {
+		t.Fatalf("ReadState = %+v, %v, %v; the run did not get past preflight to a fresh handover\n%s", st2, ok, err, runOut.String())
+	}
+}
