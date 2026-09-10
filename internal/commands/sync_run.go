@@ -25,6 +25,11 @@ type RunOptions struct {
 	// Confirm never asks: a script or a hook with no terminal is not a
 	// person who can answer.
 	Confirm func(works []string) (bool, error)
+	// Push is what happens at the end to the worktrees that finished with
+	// nothing owed. Under PushAsk, ConfirmPush is asked once; a nil
+	// ConfirmPush prints the push command instead, for Confirm's reason.
+	Push        PushMode
+	ConfirmPush func(works []string) (bool, error)
 	// Agents are the sessions to check against. Nil asks `claude agents`;
 	// an empty slice means there are none.
 	Agents []wtsync.Agent
@@ -52,13 +57,12 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 
 	trunk := ctx.Config.MainBranch
 	onto := "origin/" + trunk
-	if opts.NoFetch {
-		fmt.Fprintf(w, "against %s (not fetched)\n", onto)
-	} else {
+	fetched := "not fetched"
+	if !opts.NoFetch {
 		if _, err := git.RunTimeout(ctx.Repo.MainRoot, fetchTimeout, "fetch", "--quiet", "origin", trunk); err != nil {
 			return fmt.Errorf("fetch: %w", err)
 		}
-		fmt.Fprintf(w, "fetched %s\n", onto)
+		fetched = "fetched"
 	}
 	// One SHA for the whole run: the declaration, the scripts and every
 	// rebase target are the same trunk, whatever someone else fetches
@@ -67,6 +71,7 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("%s is not known here; run git fetch origin", onto)
 	}
+	fmt.Fprintf(w, "wt sync run  onto %s %s (%s)\n", onto, short(trunkSHA), fetched)
 	cfg, err := wtsync.LoadFromRef(ctx.Repo.MainRoot, trunkSHA)
 	if errors.Is(err, wtsync.ErrNoConfig) {
 		return fmt.Errorf("%s declares no %s on %s: nothing is rebased", ctx.Repo.Name, wtsync.ConfigFile, onto)
@@ -246,16 +251,29 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 	}
 
 	var failures []string
+	// What each worktree came to, for the summary a run of more than one
+	// ends with: a count per outcome, and a line for each that did not finish.
+	outcomes := map[string]int{}
+	var unfinished []string
+	settle := func(outcome, line string) {
+		outcomes[outcome]++
+		if line != "" {
+			unfinished = append(unfinished, "  "+line)
+		}
+	}
+	var pushable []pushTarget
 	for _, b := range branches {
 		p := parts[b]
-		fmt.Fprintf(w, "%s  %s  %d behind, %d ahead\n", p.work, b, p.a.Behind, p.a.Ahead)
+		fmt.Fprintf(w, "\n%s  %s  %d behind · %d ahead\n", p.work, b, p.a.Behind, p.a.Ahead)
 		if why, ok := poisoned[b]; ok {
-			fmt.Fprintf(w, "  refused: %s\n", why)
+			fmt.Fprintf(w, "  ✗ refused: %s\n", why)
 			failures = append(failures, p.work)
+			settle("refused", "✗ "+p.work+"  refused: "+why)
 			continue
 		}
 		if p.verdict == wtsync.SkipRun {
-			fmt.Fprintf(w, "  skipped: %s\n", p.reason)
+			fmt.Fprintf(w, "  ⏭ skipped: %s\n", p.reason)
+			settle("skipped", "")
 			continue
 		}
 		req := wtsync.Request{Path: p.wt.Path, Branch: b, Trunk: trunkSHA, Onto: trunkSHA, Epoch: epoch, Work: p.work}
@@ -271,19 +289,17 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 			if req.Stacked {
 				what = "the run stops there and puts the branch back: a stack parent cannot be left waiting"
 			}
-			fmt.Fprintf(w, "  contested at %d/%d: %s\n", p.a.Replay.Stop.Index, p.a.Replay.Stop.Total, what)
+			fmt.Fprintf(w, "  ⚠ contested at %d/%d: %s\n", p.a.Replay.Stop.Index, p.a.Replay.Stop.Total, what)
 		}
 		tracker.set(&rebaseInFlight{work: p.work, path: p.wt.Path, safety: wtsync.SafetyRef(b, epoch)})
 		res, rerr := wtsync.Rebase(ctx.Repo.MainRoot, cfg, req, w)
 		tracker.set(nil)
 		p.result = &res
-		if res.Safety.Ref != "" {
-			fmt.Fprintf(w, "  safety %s = %s\n", res.Safety.Ref, short(res.OldTip))
-		}
 		if rerr != nil {
-			fmt.Fprintf(w, "  failed: %v\n", rerr)
+			fmt.Fprintf(w, "  ✗ failed: %v\n", rerr)
 			clearHandover(w, p.wt.Path)
 			failures = append(failures, p.work+" (failed)")
+			settle("failed", fmt.Sprintf("✗ %s  failed: %v", p.work, rerr))
 			poisonAbove(b, p.work+" failed")
 			release(b)
 			continue
@@ -293,7 +309,7 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 				Work: p.work, Branch: b, Path: p.wt.Path, TrunkRef: onto, TrunkSHA: trunkSHA,
 				Onto: req.Onto, Upstream: req.Upstream, Epoch: epoch, Cfg: cfg, Res: res, Lock: p.lock,
 			}); err != nil {
-				fmt.Fprintf(w, "  failed: %v\n", err)
+				fmt.Fprintf(w, "  ✗ failed: %v\n", err)
 				// The rebase is still in the worktree and there is now no
 				// plan file to explain it, so say the two things a person
 				// cannot see for themselves. Any half-written brief goes:
@@ -304,8 +320,10 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 				// Not wt sync undo: it refuses a mid-rebase worktree, and
 				// there is no handover here for it to abort. The branch ref
 				// never moved, so the abort is the whole of putting it back.
-				fmt.Fprintf(w, "  %s is left mid-rebase with no plan: finish it by hand, or put it back with git -C %s rebase --abort\n", p.work, p.wt.Path)
+				abort := fmt.Sprintf("git -C %s rebase --abort", p.wt.Path)
+				fmt.Fprintf(w, "  ⚠ %s is left mid-rebase with no plan: finish it by hand, or put it back with %s\n", p.work, abort)
 				failures = append(failures, p.work+" (failed)")
+				settle("failed", "✗ "+p.work+"  left mid-rebase with no plan: "+abort)
 				release(b)
 				poisonAbove(b, p.work+" failed")
 				continue
@@ -314,6 +332,7 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 			// keeps the deferred release from removing the file.
 			p.lock = nil
 			failures = append(failures, p.work+" (needs you)")
+			settle("needs you", "⚠ "+p.work+"  needs you: wt sync resume "+p.work)
 			poisonAbove(b, p.work+" is waiting for you")
 			continue
 		}
@@ -325,14 +344,16 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 					files = append(files, f.Path)
 				}
 			}
-			fmt.Fprintf(w, "  restored: %s at %d/%d not resolved; rebase by hand\n", strings.Join(files, ", "), last.Index, last.Total)
+			restored := fmt.Sprintf("restored: %s at %d/%d not resolved; rebase by hand", strings.Join(files, ", "), last.Index, last.Total)
+			fmt.Fprintf(w, "  ✗ %s\n", restored)
 			clearHandover(w, p.wt.Path)
 			failures = append(failures, p.work+" (restored)")
+			settle("restored", "✗ "+p.work+"  "+restored)
 			poisonAbove(b, p.work+" was restored")
 			release(b)
 			continue
 		}
-		line := fmt.Sprintf("  rebased %d commit%s onto %s", res.Replayed, plural(res.Replayed), ontoLabel)
+		line := fmt.Sprintf("  ✓ rebased %d commit%s onto %s", res.Replayed, plural(res.Replayed), ontoLabel)
 		if res.SignaturesDropped > 0 {
 			line += fmt.Sprintf(", %d signature%s dropped", res.SignaturesDropped, plural(res.SignaturesDropped))
 		}
@@ -349,14 +370,42 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 		// The rebase itself stands; only this branch and what sits on it
 		// lose their footing, so the rest of the run carries on.
 		if derr != nil {
-			fmt.Fprintf(w, "  failed: %v\n", derr)
+			fmt.Fprintf(w, "  ✗ failed: %v\n", derr)
 			failures = append(failures, p.work+" (failed)")
+			settle("failed", fmt.Sprintf("✗ %s  failed: %v", p.work, derr))
 			poisonAbove(b, p.work+" failed")
 			release(b)
 			continue
 		}
+		if len(owed) > 0 {
+			var steps []string
+			for _, o := range owed {
+				steps = append(steps, strings.TrimSuffix(strings.TrimPrefix(o, p.work+" (owed: "), ")"))
+			}
+			settle("rebased", "✗ "+p.work+"  owed: "+strings.Join(steps, ", ")+"; run it by hand, then push")
+		} else {
+			settle("rebased", "")
+			pushable = append(pushable, pushTarget{Work: p.work, Branch: b, Path: p.wt.Path})
+		}
 		release(b)
 	}
+	if len(branches) > 1 {
+		var counts []string
+		for _, outcome := range []string{"rebased", "skipped", "needs you", "refused", "restored", "failed"} {
+			if n := outcomes[outcome]; n > 0 {
+				counts = append(counts, fmt.Sprintf("%d %s", n, outcome))
+			}
+		}
+		fmt.Fprintf(w, "\n%s\n", strings.Join(counts, " · "))
+		for _, line := range unfinished {
+			fmt.Fprintln(w, line)
+		}
+	}
+	pushFailed, err := offerPush(w, opts.Push, opts.ConfirmPush, pushable)
+	if err != nil {
+		return err
+	}
+	failures = append(failures, pushFailed...)
 	if len(failures) > 0 {
 		return fmt.Errorf("not completed: %s", strings.Join(failures, ", "))
 	}
@@ -366,16 +415,16 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 func printDeferred(w io.Writer, d wtsync.DeferredResult) {
 	switch {
 	case !d.Ran:
-		fmt.Fprintf(w, "  defer %s  skipped: %s\n", d.Step.Run, d.Why)
+		fmt.Fprintf(w, "  ⏭ %s  %s\n", d.Step.Run, d.Why)
 	case d.Err != nil:
-		fmt.Fprintf(w, "  defer %s  %s  OWED: %v\n", d.Step.Run, d.Elapsed.Round(time.Second), d.Err)
+		fmt.Fprintf(w, "  ✗ %s  %s  owed: %v\n", d.Step.Run, d.Elapsed.Round(time.Second), d.Err)
 		for _, l := range lastLines(d.Output, 20) {
 			fmt.Fprintf(w, "    %s\n", l)
 		}
 	case d.Commit != "":
-		fmt.Fprintf(w, "  defer %s  %s  committed %d file%s (+%d −%d) as %s\n", d.Step.Run, d.Elapsed.Round(time.Second), d.Files, plural(d.Files), d.Insertions, d.Deletions, d.Commit)
+		fmt.Fprintf(w, "  ✓ %s  %s  committed %d file%s (+%d −%d) as %s\n", d.Step.Run, d.Elapsed.Round(time.Second), d.Files, plural(d.Files), d.Insertions, d.Deletions, d.Commit)
 	default:
-		fmt.Fprintf(w, "  defer %s  %s\n", d.Step.Run, d.Elapsed.Round(time.Second))
+		fmt.Fprintf(w, "  ✓ %s  %s\n", d.Step.Run, d.Elapsed.Round(time.Second))
 	}
 }
 

@@ -309,7 +309,7 @@ func TestSyncResumeTakesALaterStopThroughTheStrategies(t *testing.T) {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	s := out.String()
-	if !strings.Contains(s, "v.txt✓ owned-line") {
+	if !strings.Contains(s, "✓ v.txt owned-line") {
 		t.Fatalf("the strategy did not take the later stop:\n%s", s)
 	}
 	if !strings.Contains(s, "not re-checked: v.txt (owned-line)") {

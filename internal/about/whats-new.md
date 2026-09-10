@@ -5,6 +5,15 @@ Newest first, each heading stamped with the local date and time of the change
 lines a human would want read out to them; the full story is in git history and
 in `docs/superpowers/plans/`.
 
+## 2026-09-10 19:03 — sync run reads at a glance, and pushes when done
+
+- `wt sync run` and `wt sync resume` mark each line ✓ ✗ ⏭ ⚠, print the undo
+  command instead of the safety ref, and end a run of several worktrees with
+  a count and a line for each one that did not finish.
+- A worktree that finished with nothing owed is pushed at the end with
+  `--force-with-lease --force-if-includes`: asked once on a terminal, and
+  Enter pushes. `--push` skips the question; `--no-push` prints the command.
+
 ## 2026-09-10 15:57 — an empty worktree is no stack parent
 
 - `wt sync run` no longer takes a worktree with no commits of its own, left on
