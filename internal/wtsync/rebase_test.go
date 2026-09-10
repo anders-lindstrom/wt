@@ -255,7 +255,7 @@ func TestPreflightOrdersItsReasons(t *testing.T) {
 		{Assessment{Class: Recipe, NoConfig: true}, RefuseRun, "no declaration"},
 		{Assessment{Class: Current}, SkipRun, "already on trunk"},
 		{Assessment{Class: Stale}, SkipRun, "nothing ahead"},
-		{Assessment{Class: Divergent, Divergent: []string{"openapi refuses spec.json"}}, RefuseRun, "openapi refuses"},
+		{Assessment{Class: Divergent, Divergent: []Collision{{Path: "spec.json", Groups: []KeyGroup{{Section: "paths", Keys: []string{"/a"}}}}}}, RefuseRun, "openapi refuses spec.json at the endpoint: both sides changed 1 path"},
 		{Assessment{Class: Contested, Replay: Replay{Stop: &Stop{Index: 2, Total: 5}}, Files: []FileOutcome{{Path: "x.java", Note: "unclaimed"}}}, Proceed, ""},
 		{Assessment{Class: Contested, Paused: true, Dirty: true}, RefuseRun, "resume"},
 		{Assessment{Class: Contested, Paused: true, Err: errors.New("behind/ahead failed")}, RefuseRun, "assessment failed"},

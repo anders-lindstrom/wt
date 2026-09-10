@@ -5,6 +5,14 @@ Newest first, each heading stamped with the local date and time of the change
 lines a human would want read out to them; the full story is in git history and
 in `docs/superpowers/plans/`.
 
+## 2026-09-10 20:39 — wt sync groups worktrees by what to do
+
+- `wt sync` files each worktree under ready, needs you or skipped, one short
+  row each, with the stop, collisions and dependency overlap on lines beneath
+  and every long list cut to a count.
+- `wt sync <work>` prints one worktree in full: every stop and its files,
+  every colliding key, every dependency file, one per line under a heading.
+
 ## 2026-09-10 19:03 — sync run reads at a glance, and pushes when done
 
 - `wt sync run` and `wt sync resume` mark each line ✓ ✗ ⏭ ⚠, print the undo

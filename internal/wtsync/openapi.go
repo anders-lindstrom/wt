@@ -56,21 +56,22 @@ func (s OpenAPI) Resolve(c Conflict) ([]byte, error) {
 	tags, tagConflicts := merge3Keys(sections.tags[0], sections.tags[1], sections.tags[2])
 	var bad []string
 	var keys []string
-	if len(pathConflicts) > 0 {
-		bad = append(bad, "paths: "+strings.Join(pathConflicts, ", "))
-		keys = append(keys, pathConflicts...)
-	}
-	if len(schemaConflicts) > 0 {
-		bad = append(bad, "schemas: "+strings.Join(schemaConflicts, ", "))
-		keys = append(keys, schemaConflicts...)
-	}
-	if len(tagConflicts) > 0 {
-		bad = append(bad, "tags: "+strings.Join(tagConflicts, ", "))
-		keys = append(keys, tagConflicts...)
+	var groups []KeyGroup
+	for _, g := range []KeyGroup{
+		{Section: "paths", Keys: pathConflicts},
+		{Section: "schemas", Keys: schemaConflicts},
+		{Section: "tags", Keys: tagConflicts},
+	} {
+		if len(g.Keys) == 0 {
+			continue
+		}
+		bad = append(bad, g.Section+": "+strings.Join(g.Keys, ", "))
+		keys = append(keys, g.Keys...)
+		groups = append(groups, g)
 	}
 	if len(bad) > 0 {
 		sort.Strings(keys)
-		return nil, &Refusal{Path: c.Path, Reason: fmt.Sprintf("both sides changed %s", strings.Join(bad, "; ")), Keys: keys}
+		return nil, &Refusal{Path: c.Path, Reason: fmt.Sprintf("both sides changed %s", strings.Join(bad, "; ")), Keys: keys, Groups: groups}
 	}
 
 	version, err := s.version(c.Path, branch.version(), trunk.version())

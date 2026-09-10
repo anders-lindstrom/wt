@@ -15,22 +15,27 @@ import (
 
 func newSyncCmd() *cobra.Command {
 	sync := &cobra.Command{
-		Use:   "sync",
+		Use:   "sync [<work>]",
 		Short: "Show what a rebase onto trunk would do to each worktree",
 		Long: "Simulate rebasing every worktree onto origin/<trunk> in the object store,\n" +
 			"applying the repository's declared strategies at every stop, and print\n" +
-			"the outcome: the class, how far behind, and the stop that decides the\n" +
-			"class. Nothing is fetched and nothing is changed: run git fetch first\n" +
-			"for a current picture.\n" +
+			"the outcome grouped by what to do about it. Nothing is fetched and\n" +
+			"nothing is changed: run git fetch first for a current picture.\n" +
 			"\n" +
 			"The flow is look, act, finish.\n" +
-			"  look    wt sync                 this table; read-only\n" +
+			"  look    wt sync                 every worktree, grouped; read-only\n" +
+			"          wt sync <work>          one worktree in full: every stop, file and key\n" +
 			"  act     wt sync run <work>...   rebase; safety ref, strategies at each stop, deferred steps;\n" +
 			"                                  asks once when more than one worktree is involved (--yes skips)\n" +
 			"  finish  wt sync resume <work>   continue a rebase run left at a conflict that is yours\n" +
 			"          push with --force-with-lease; wt sync undo <work> puts every ref back\n" +
 			"          wt sync doctor          what a run needs, and --fix / --prune\n" +
-			"Only Claude sessions are detected in WHO; a Codex session is not seen.\n" +
+			"Only Claude sessions are detected; a Codex session is not seen.\n" +
+			"\n" +
+			"Groups:\n" +
+			"  ready      clean or recipe, with nothing in the way: wt sync run <work>\n" +
+			"  needs you  contested, divergent, dirty, handed over, or not assessed\n" +
+			"  skipped    a session is in it, nothing is ahead of trunk, or no branch\n" +
 			"\n" +
 			"Classes:\n" +
 			"  clean      rebases without a conflict\n" +
@@ -48,18 +53,20 @@ func newSyncCmd() *cobra.Command {
 			"  stale      nothing ahead of trunk; skipped\n" +
 			"  current    already on trunk; not printed\n" +
 			"\n" +
-			"STOP is the stop that decides the class \u2014 the first one that is yours, or\n" +
-			"the first of a run that resolves throughout \u2014 and the files in conflict\n" +
-			"there, marked \u2713 resolved or \u2717 yours. A worktree a run already handed\n" +
-			"over reads contested with STOP -, and its NOTE names wt sync resume, or\n" +
-			"wt sync undo. WHO names an agent session sitting in the worktree:\n" +
-			"leave those alone. NOTE is advisory and never changes the class.",
-		Example: "  wt sync                   # the table above; reads, changes nothing\n" +
-			"  wt sync run login-crash   # act on one of its rows\n" +
+			"Under each worktree: the stop that decides the class \u2014 the first one\n" +
+			"that is yours, or the first of a run that resolves throughout \u2014 with its\n" +
+			"files marked \u2713 resolved or \u2717 yours, then anything else worth knowing,\n" +
+			"every list cut to a count. wt sync <work> prints the lists, one item per\n" +
+			"line. A session named on a row is an agent in that worktree: leave it\n" +
+			"alone. The lines under a row are advisory and never change the class.",
+		Example: "  wt sync                   # every worktree, grouped; reads, changes nothing\n" +
+			"  wt sync login-crash       # that worktree in full\n" +
+			"  wt sync run login-crash   # act on it\n" +
 			"  wt sync undo login-crash  # put back every ref that run moved\n" +
 			"  wt sync doctor            # what a run needs before the first one",
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeWork,
+		RunE: func(cmd *cobra.Command, args []string) error {
 			// Lenient: a repository without worktree.conf still has worktrees
 			// worth reporting on, and the trunk name falls back to origin/HEAD.
 			cwd, err := os.Getwd()
@@ -69,6 +76,9 @@ func newSyncCmd() *cobra.Command {
 			ctx := commands.OpenLenient(cwd, cmd.ErrOrStderr())
 			if ctx == nil {
 				return errors.New("not inside a git repository")
+			}
+			if len(args) == 1 {
+				return commands.SyncWorktree(ctx, args[0], cmd.OutOrStdout())
 			}
 			return commands.Sync(ctx, cmd.OutOrStdout())
 		},

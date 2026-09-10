@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,6 +28,28 @@ func gitOut(t *testing.T, dir string, args ...string) string {
 	return strings.TrimRight(string(out), "\n")
 }
 
+// syncBlock is a worktree's row in the wt sync overview and the lines under it.
+func syncBlock(t *testing.T, out, work string) string {
+	t.Helper()
+	var block []string
+	in := false
+	for _, line := range strings.Split(out, "\n") {
+		switch {
+		case strings.HasPrefix(line, "  "+work+" "):
+			in = true
+		case in && !strings.HasPrefix(line, "    "):
+			in = false
+		}
+		if in {
+			block = append(block, line)
+		}
+	}
+	if len(block) == 0 {
+		t.Fatalf("no row for %s in:\n%s", work, out)
+	}
+	return strings.Join(block, "\n")
+}
+
 // A handed-over worktree's staged resolutions are what a person is
 // finishing, not dirt: its row says it is waiting, and nothing else.
 func TestSyncShowsAHandedOverWorktreeWithoutCallingItDirty(t *testing.T) {
@@ -36,19 +59,17 @@ func TestSyncShowsAHandedOverWorktreeWithoutCallingItDirty(t *testing.T) {
 	if err := Sync(ctx, &buf); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
-	var row string
-	for _, line := range strings.Split(buf.String(), "\n") {
-		if strings.HasPrefix(line, "bump ") {
-			row = line
-		}
-	}
+	block := syncBlock(t, buf.String(), "bump")
 	// Both commands, as Preflight and doctor name them: resume refuses a
 	// handover the person aborted by hand, and undo ends that one.
-	if !strings.Contains(row, "contested") || !strings.Contains(row, "left mid-rebase by wt sync run: wt sync resume, or wt sync undo") {
-		t.Fatalf("bump row %q:\n%s", row, buf.String())
+	if !strings.Contains(block, "contested") || !strings.Contains(block, "left mid-rebase by wt sync run: wt sync resume, or wt sync undo") {
+		t.Fatalf("bump block %q:\n%s", block, buf.String())
 	}
-	if strings.Contains(row, "dirty") {
-		t.Fatalf("a handover is called dirty: %q", row)
+	if strings.Contains(block, "dirty") {
+		t.Fatalf("a handover is called dirty: %q", block)
+	}
+	if strings.Index(buf.String(), "needs you") > strings.Index(buf.String(), "  bump ") {
+		t.Errorf("a handover is filed under needs you:\n%s", buf.String())
 	}
 }
 
@@ -100,30 +121,31 @@ func TestSyncPrintsTheTriageAndChangesNothing(t *testing.T) {
 		t.Fatalf("Sync: %v", err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "bump") || !strings.Contains(out, "recipe") {
+	block := syncBlock(t, out, "bump")
+	if !strings.Contains(block, "recipe") {
 		t.Errorf("expected the bump worktree as recipe:\n%s", out)
+	}
+	if strings.Index(out, "ready · wt sync run") > strings.Index(out, "  bump ") {
+		t.Errorf("a recipe worktree nothing holds is filed under ready:\n%s", out)
 	}
 	if strings.Contains(out, "other") {
 		t.Errorf("a current worktree is not printed:\n%s", out)
 	}
-	if !strings.Contains(out, "1/1") {
-		t.Errorf("expected the first stop 1/1:\n%s", out)
+	if !strings.Contains(block, "1/1") || !strings.Contains(block, "v.txt✓") {
+		t.Errorf("the stop line names the stop and the resolved file:\n%s", out)
 	}
 	if after := gitOut(t, ctx.Repo.MainRoot, "for-each-ref", "refs/heads"); after != before {
 		t.Error("sync changed a ref")
-	}
-	if !strings.Contains(out, "bump") || !strings.Contains(out, "v.txt✓") {
-		t.Errorf("the stop column names the stopping commit and the resolved file:\n%s", out)
 	}
 	if !strings.Contains(out, "not fetched") {
 		t.Errorf("expected the header to say it never fetched:\n%s", out)
 	}
 }
 
-// The STOP column names the stop that decides the class, not the first one
+// The stop line names the stop that decides the class, not the first one
 // the rebase reaches. Here stop 1 is the declared owned line, which the
 // strategy resolves, and stop 2 is a file nothing claims: 2/2 is what a
-// person needs, and the resolved stop is a note, not the headline.
+// person needs, and the resolved stop is a count, not the headline.
 func TestSyncNamesTheDecidingStopNotTheFirstOne(t *testing.T) {
 	ctx := syncRepo(t)
 	main := ctx.Repo.MainRoot
@@ -170,7 +192,25 @@ func TestSyncNamesTheDecidingStopNotTheFirstOne(t *testing.T) {
 		t.Errorf("expected the unclaimed file marked unresolved:\n%s", out)
 	}
 	if !strings.Contains(out, "1 earlier stop resolved") {
-		t.Errorf("expected the note counting the stops already resolved:\n%s", out)
+		t.Errorf("expected the line counting the stops already resolved:\n%s", out)
+	}
+
+	// wt sync <work> lists both stops in full, and says which one is yours.
+	buf.Reset()
+	if err := SyncWorktree(ctx, "bump", &buf); err != nil {
+		t.Fatalf("SyncWorktree: %v", err)
+	}
+	out = buf.String()
+	for _, want := range []string{
+		"\n  1/2  bump\n",
+		"\n    ✓ v.txt  resolved by owned-line\n",
+		"\n  2/2  branch edits a  ← yours\n",
+		"\n    ✗ a.txt  yours: no strategy claims it\n",
+		"  run     wt sync run bump rebases up to 2/2 and hands that stop to you\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("want %q in:\n%s", want, out)
+		}
 	}
 }
 
@@ -197,7 +237,7 @@ func TestSyncPrintsAnUnknownRowWithItsError(t *testing.T) {
 		t.Errorf("a failed assessment is printed as unknown with its error, never dropped:\n%s", out)
 	}
 	if !strings.Contains(out, "no such file") {
-		t.Errorf("expected the chdir error's own text in the note, not an empty message:\n%s", out)
+		t.Errorf("expected the chdir error's own text, not an empty message:\n%s", out)
 	}
 }
 
@@ -215,41 +255,131 @@ func TestSyncSaysWhenTrunkDeclaresNothing(t *testing.T) {
 	}
 }
 
+func TestSyncGroupsAWorktreeByWhatToDoAboutIt(t *testing.T) {
+	agent := &wtsync.Agent{Name: "busy"}
+	for _, tc := range []struct {
+		name string
+		a    wtsync.Assessment
+		want syncSection
+	}{
+		{"clean", wtsync.Assessment{Class: wtsync.Clean}, sectionReady},
+		{"recipe", wtsync.Assessment{Class: wtsync.Recipe}, sectionReady},
+		{"contested", wtsync.Assessment{Class: wtsync.Contested}, sectionNeedsYou},
+		{"divergent", wtsync.Assessment{Class: wtsync.Divergent}, sectionNeedsYou},
+		{"dirty recipe", wtsync.Assessment{Class: wtsync.Recipe, Dirty: true}, sectionNeedsYou},
+		{"handed over", wtsync.Assessment{Class: wtsync.Contested, Paused: true}, sectionNeedsYou},
+		{"not assessed", wtsync.Assessment{Err: errors.New("boom")}, sectionNeedsYou},
+		{"session in a recipe", wtsync.Assessment{Class: wtsync.Recipe, Agent: agent}, sectionSkipped},
+		{"session in a dirty contested", wtsync.Assessment{Class: wtsync.Contested, Dirty: true, Agent: agent}, sectionSkipped},
+		{"stale", wtsync.Assessment{Class: wtsync.Stale}, sectionSkipped},
+		{"detached", wtsync.Assessment{Class: wtsync.Detached}, sectionSkipped},
+	} {
+		if got := sectionOf(tc.a); got != tc.want {
+			t.Errorf("%s: section %d, want %d", tc.name, got, tc.want)
+		}
+	}
+}
+
+// The overview counts what wt sync <work> lists.
+func TestSyncSummaryCutsListsToCounts(t *testing.T) {
+	a := wtsync.Assessment{
+		Class: wtsync.Divergent,
+		Divergent: []wtsync.Collision{{Path: "etc/openapi_v3.json", Groups: []wtsync.KeyGroup{
+			{Section: "paths", Keys: []string{"/a", "/b"}},
+			{Section: "schemas", Keys: []string{"S"}},
+		}}},
+		Graph: &wtsync.GraphOverlap{Branch: []string{"core/build.gradle", "build.gradle"}, Trunk: []string{"build.gradle"}},
+	}
+	got := strings.Join(summaryLines(a), "\n")
+	for _, want := range []string{
+		"openapi_v3.json: both sides changed 2 paths, 1 schema",
+		"dependency graph changed on both sides: 2 files on branch, 1 on trunk",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("want %q in:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "/a") || strings.Contains(got, "core/build.gradle") {
+		t.Errorf("the overview lists what it should count:\n%s", got)
+	}
+}
+
+func TestSyncSummaryNamesAFewFilesYoursFirst(t *testing.T) {
+	a := wtsync.Assessment{
+		Class:  wtsync.Contested,
+		Replay: wtsync.Replay{Stop: &wtsync.Stop{Index: 2, Total: 5, Subject: "s"}},
+		Files: []wtsync.FileOutcome{
+			{Path: "x/A.java", Resolved: true}, {Path: "x/B.java"}, {Path: "C.java", Resolved: true}, {Path: "D.java"},
+		},
+	}
+	if got := summaryLines(a)[0]; got != `2/5 "s"  B.java✗ D.java✗ +2 more` {
+		t.Errorf("stop line = %q", got)
+	}
+}
+
+// wt sync <work> is the untruncated view, and still meant to be read: every
+// key and file on a line of its own, under what it belongs to.
+func TestSyncDetailListsEveryKeyAndFileOnItsOwnLine(t *testing.T) {
+	a := wtsync.Assessment{
+		Branch: "feat_wt/api", Path: "/src/demo_wt/feat_wt/api", Class: wtsync.Divergent, Behind: 3, Ahead: 2,
+		Divergent: []wtsync.Collision{{Path: "etc/openapi_v3.json", Groups: []wtsync.KeyGroup{
+			{Section: "paths", Keys: []string{"/a", "/b"}},
+			{Section: "schemas", Keys: []string{"S"}},
+		}}},
+		Graph: &wtsync.GraphOverlap{Branch: []string{"core/build.gradle", "build.gradle"}, Trunk: []string{"pins/build.gradle"}},
+	}
+	var buf bytes.Buffer
+	printDetail(&buf, "api", a)
+	out := buf.String()
+	for _, want := range []string{
+		"\napi  divergent  3 behind  2 ahead\n",
+		"\n  run     refused: divergent: openapi refuses etc/openapi_v3.json at the endpoint: both sides changed 2 paths, 1 schema\n",
+		"\n  etc/openapi_v3.json\n    paths (2)\n      /a\n      /b\n    schemas (1)\n      S\n",
+		"\n  on the branch (2)\n    core/build.gradle\n    build.gradle\n  on trunk (1)\n    pins/build.gradle\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("want %q in:\n%s", want, out)
+		}
+	}
+}
+
 // `recipe?` is not `recipe`: the replay could not be carried to the end, so
 // the class is what it earned up to the stop it stopped at.
-func TestClassColumnMarksAnUnverifiedReplayWithAQuestionMark(t *testing.T) {
+func TestClassLabelMarksAnUnverifiedReplayWithAQuestionMark(t *testing.T) {
 	a := wtsync.Assessment{Class: wtsync.Recipe}
-	if got := classColumn(a); got != "recipe" {
+	if got := classLabel(a); got != "recipe" {
 		t.Errorf("verified: got %q, want recipe", got)
 	}
 	a.Unverified = true
-	if got := classColumn(a); got != "recipe?" {
+	if got := classLabel(a); got != "recipe?" {
 		t.Errorf("unverified: got %q, want recipe?", got)
 	}
 }
 
-func TestNoteColumnFlattensAMultilineNote(t *testing.T) {
+func TestSummaryLinesFlattenAMultilineNote(t *testing.T) {
 	a := wtsync.Assessment{Files: []wtsync.FileOutcome{{Path: "x", Note: "line one\nline two"}}}
-	if got := noteColumn(a); strings.Contains(got, "\n") {
-		t.Errorf("expected a single-line note, got %q", got)
+	for _, line := range summaryLines(a) {
+		if strings.Contains(line, "\n") {
+			t.Errorf("expected single-line notes, got %q", line)
+		}
 	}
 }
 
-func TestWhoColumnFallsBackToKindThenAQuestionMark(t *testing.T) {
+func TestHeldByNamesTheSessionByNameThenKindThenAQuestionMark(t *testing.T) {
 	a := wtsync.Assessment{Agent: &wtsync.Agent{Name: "busy"}}
-	if got := whoColumn(a); got != "busy" {
-		t.Errorf("named agent: got %q, want busy", got)
+	if got := heldBy(a); got != "session busy" {
+		t.Errorf("named agent: got %q, want session busy", got)
 	}
 	a = wtsync.Assessment{Agent: &wtsync.Agent{Kind: "codex"}}
-	if got := whoColumn(a); got != "codex" {
+	if got := heldBy(a); got != "session codex" {
 		t.Errorf("unnamed agent: got %q, want its Kind codex", got)
 	}
 	a = wtsync.Assessment{Agent: &wtsync.Agent{}}
-	if got := whoColumn(a); got != "?" {
-		t.Errorf("no name and no kind: got %q, want ?", got)
+	if got := heldBy(a); got != "an unnamed session" {
+		t.Errorf("no name and no kind: got %q, want an unnamed session", got)
 	}
-	a = wtsync.Assessment{}
-	if got := whoColumn(a); got != "-" {
-		t.Errorf("no agent: got %q, want -", got)
+	a = wtsync.Assessment{Dirty: true}
+	if got := heldBy(a); got != "dirty" {
+		t.Errorf("no agent, tracked changes: got %q, want dirty", got)
 	}
 }

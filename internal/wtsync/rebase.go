@@ -69,7 +69,7 @@ func Preflight(a Assessment) (Verdict, string) {
 	case Divergent:
 		reason := "divergent"
 		if len(a.Divergent) > 0 {
-			reason += ": " + a.Divergent[0]
+			reason += ": " + a.Divergent[0].String()
 		}
 		return RefuseRun, reason
 	case Contested:
