@@ -2,10 +2,14 @@ package commands
 
 import (
 	"bytes"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // 5. A merged branch is deleted.
@@ -423,7 +427,7 @@ func TestRemoveDoesNotDeleteABranchThatGainedWorkAfterThePlan(t *testing.T) {
 	ctx, _ := Open(main)
 	dst := foreignWorktree(t, ctx, main, "someones-work", 0)
 
-	plan := planFor(ctx, dst)
+	plan := planFor(ctx, dst, RemoveOptions{Agents: []wtsync.Agent{}})
 	if plan.Outcome != BranchDeleted {
 		t.Fatalf("precondition: want a merged branch, got outcome %v", plan.Outcome)
 	}
@@ -452,7 +456,7 @@ func TestRemoveDoesNotDeleteWhenTheMainBranchDisappears(t *testing.T) {
 	main := committedRepo(t, minimalConf)
 	ctx, _ := Open(main)
 	dst := foreignWorktree(t, ctx, main, "someones-work", 0)
-	plan := planFor(ctx, dst)
+	plan := planFor(ctx, dst, RemoveOptions{Agents: []wtsync.Agent{}})
 
 	gitIn(t, main, "branch", "-m", "main", "renamed-trunk")
 
@@ -463,5 +467,162 @@ func TestRemoveDoesNotDeleteWhenTheMainBranchDisappears(t *testing.T) {
 	}
 	if !ctx.Repo.BranchExists("someones-work") {
 		t.Fatal("the branch was deleted on an answer nobody could check")
+	}
+}
+
+// deadPid returns a pid that has certainly exited: a process run to
+// completion. Nothing else can be assumed dead, and inventing a number risks
+// naming somebody else's process.
+func deadPid(t *testing.T) int {
+	t.Helper()
+	cmd := exec.Command("true")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("running true: %v", err)
+	}
+	return cmd.Process.Pid
+}
+
+func lockedWorktree(t *testing.T, ctx *Context, main, work, reason string) string {
+	t.Helper()
+	var buf bytes.Buffer
+	path, err := New(ctx, work, NewOptions{NoSetup: true}, &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, main, "worktree", "lock", "--reason", reason, path)
+	return path
+}
+
+// Claude Code locks the worktree its session lives in and names the session
+// and its pid in the reason. Once that session is over the lock is litter,
+// and nobody should have to learn `git worktree unlock` to get past it.
+func TestRemoveReleasesAStaleLockAndRemoves(t *testing.T) {
+	main := committedRepo(t, minimalConf)
+	ctx, _ := Open(main)
+	pid := deadPid(t)
+	reason := fmt.Sprintf("claude session gone (pid %d start Thu Sep 10 04:58:38 2026)", pid)
+	path := lockedWorktree(t, ctx, main, "fix/gone", reason)
+
+	var buf bytes.Buffer
+	if err := RemoveAt(ctx, path, RemoveOptions{Agents: []wtsync.Agent{}}, &buf); err != nil {
+		t.Fatalf("RemoveAt: %v\n%s", err, buf.String())
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("the worktree should be gone")
+	}
+	out := buf.String()
+	if !strings.Contains(out, "stale") || !strings.Contains(out, reason) {
+		t.Errorf("the plan must show the lock and call it stale:\n%s", out)
+	}
+	if !strings.Contains(out, fmt.Sprintf("pid %d is gone", pid)) {
+		t.Errorf("the plan must say how it knows:\n%s", out)
+	}
+}
+
+// A lock whose holder is still running is the one case where the answer is
+// no — before any question is asked, because the answer does not depend on it.
+func TestRemoveRefusesALockHeldByARunningProcess(t *testing.T) {
+	main := committedRepo(t, minimalConf)
+	ctx, _ := Open(main)
+	reason := fmt.Sprintf("claude session live (pid %d start Thu Sep 10 04:58:38 2026)", os.Getpid())
+	path := lockedWorktree(t, ctx, main, "fix/live", reason)
+
+	asked := false
+	opts := RemoveOptions{
+		Agents:  []wtsync.Agent{},
+		Confirm: func(Plan) (bool, error) { asked = true; return true, nil },
+	}
+	var buf bytes.Buffer
+	err := RemoveAt(ctx, path, opts, &buf)
+	if err == nil {
+		t.Fatal("want a refusal while the holder is running")
+	}
+	if asked {
+		t.Error("nothing should be asked when the answer is already no")
+	}
+	if !strings.Contains(err.Error(), "--force") {
+		t.Errorf("the refusal must name the way past it: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Error("the worktree must still be there")
+	}
+	if !strings.Contains(buf.String(), reason) {
+		t.Errorf("the plan must show whose lock it is:\n%s", buf.String())
+	}
+}
+
+func TestRemoveForceBreaksALockHeldByARunningProcess(t *testing.T) {
+	main := committedRepo(t, minimalConf)
+	ctx, _ := Open(main)
+	reason := fmt.Sprintf("claude session live (pid %d)", os.Getpid())
+	path := lockedWorktree(t, ctx, main, "fix/live", reason)
+
+	var buf bytes.Buffer
+	opts := RemoveOptions{Force: true, Agents: []wtsync.Agent{}}
+	if err := RemoveAt(ctx, path, opts, &buf); err != nil {
+		t.Fatalf("RemoveAt --force: %v\n%s", err, buf.String())
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("--force should have removed it")
+	}
+	if !strings.Contains(buf.String(), "broke the lock") {
+		t.Errorf("--force must say what it overrode:\n%s", buf.String())
+	}
+}
+
+// A lock with no pid in it says nothing about who holds it, so the sessions
+// wt can see are the second opinion.
+func TestRemoveTreatsALockWithAnAgentInTheWorktreeAsHeld(t *testing.T) {
+	main := committedRepo(t, minimalConf)
+	ctx, _ := Open(main)
+	path := lockedWorktree(t, ctx, main, "fix/agented", "held by something")
+	resolved, _ := filepath.EvalSymlinks(path)
+
+	var buf bytes.Buffer
+	opts := RemoveOptions{Agents: []wtsync.Agent{{Name: "agented-7", Cwd: resolved}}}
+	err := RemoveAt(ctx, path, opts, &buf)
+	if err == nil {
+		t.Fatal("want a refusal: a session is living in it")
+	}
+	if !strings.Contains(buf.String(), "agented-7") {
+		t.Errorf("the plan must name the session it found:\n%s", buf.String())
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Error("the worktree must still be there")
+	}
+}
+
+// A lock nobody claims and nothing explains is still a lock somebody took on
+// purpose: assume it is held.
+func TestRemoveRefusesALockNothingExplains(t *testing.T) {
+	main := committedRepo(t, minimalConf)
+	ctx, _ := Open(main)
+	path := lockedWorktree(t, ctx, main, "fix/mystery", "reasons")
+
+	var buf bytes.Buffer
+	if err := RemoveAt(ctx, path, RemoveOptions{Agents: []wtsync.Agent{}}, &buf); err == nil {
+		t.Fatal("want a refusal")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Error("the worktree must still be there")
+	}
+}
+
+// git's own answer for a locked worktree tells the reader to run
+// `remove -f -f`, which is not a wt command and not what they should type.
+func TestRemoveNeverRepeatsGitsAdviceAboutMinusFMinusF(t *testing.T) {
+	main := committedRepo(t, minimalConf)
+	ctx, _ := Open(main)
+	reason := fmt.Sprintf("claude session live (pid %d)", os.Getpid())
+	path := lockedWorktree(t, ctx, main, "fix/live", reason)
+
+	var buf bytes.Buffer
+	err := RemoveAt(ctx, path, RemoveOptions{Agents: []wtsync.Agent{}}, &buf)
+	said := buf.String()
+	if err != nil {
+		said += err.Error()
+	}
+	if strings.Contains(said, "-f -f") {
+		t.Errorf("git's advice must not reach the user:\n%s", said)
 	}
 }
