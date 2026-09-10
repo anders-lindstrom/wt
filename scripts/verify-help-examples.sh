@@ -71,6 +71,23 @@ make_sync() {
     git -C "$d" fetch -q origin
     echo "$d"
 }
+# make_sync, plus a file nothing in the declaration claims that moved on both
+# sides: the run resolves v.txt, stops on a.txt and hands the worktree over.
+# The resolution is already staged, so `wt sync resume` has something to
+# continue.
+make_resume() {
+    local d w; d=$(make_sync "$1"); w=$1/myrepo_wt/fix_wt/login-crash
+    printf 'branch\n' > "$w/a.txt"
+    git -C "$w" add -A
+    git -C "$w" -c commit.gpgsign=false -c user.email=t@e.com -c user.name=T commit -qm "a on the branch"
+    printf 'trunk\n' > "$d/a.txt"
+    git -C "$d" add -A; git -C "$d" -c commit.gpgsign=false commit -qm "a on trunk"
+    git -C "$d" fetch -q origin
+    (cd "$d" && "$WT" sync run login-crash --yes >/dev/null 2>&1)
+    printf 'resolved\n' > "$w/a.txt"
+    git -C "$w" add -- a.txt
+    echo "$d"
+}
 
 # check <mode> <cwd-under-case-dir|""> <prereq|""> <example verbatim>
 check() {
@@ -83,6 +100,7 @@ check() {
         noconf) repo=$(make_noconf "$dir");;
         worktrees) repo=$(make_worktrees "$dir");;
         sync) repo=$(make_sync "$dir");;
+        resume) repo=$(make_resume "$dir");;
         branch) repo=$(make_plain "$dir"); git -C "$repo" branch fix_wt/login-crash;;
     esac
     local cwd=$repo
@@ -168,6 +186,8 @@ check sync "" "" 'wt sync run login-crash'
 check sync "" "" 'wt sync run login-crash api-tidy'
 check sync "" "" 'wt sync run login-crash --no-fetch'
 check sync "" "" 'wt sync run login-crash api-tidy --yes'
+check resume "" "" 'wt sync resume login-crash'
+check resume "" "" 'wt sync resume fix/login-crash'
 check sync "" 'wt sync run login-crash --yes' 'wt sync undo login-crash'
 check sync "" 'wt sync run login-crash --yes' 'wt sync undo login-crash --force'
 check sync "" "" 'wt sync doctor'
@@ -186,7 +206,7 @@ for f in "${FAILED[@]:-}"; do [ -n "$f" ] && echo "  FAILED: $f"; done
 # Coverage: every example the binary prints must appear above, verbatim.
 echo
 missing=0
-for cmdpath in "" new checkout cd exec list status find sync "sync run" "sync undo" \
+for cmdpath in "" new checkout cd exec list status find sync "sync run" "sync resume" "sync undo" \
     "sync doctor" migrate adopt setup remove init config doctor path branch about version \
     hook "hook claude-create" "hook claude-remove"; do
     while IFS= read -r line; do

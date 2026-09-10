@@ -27,9 +27,11 @@ func newSyncCmd() *cobra.Command {
 			"  look    wt sync                 this table; read-only\n" +
 			"  act     wt sync run <work>...   rebase; safety ref, strategies at each stop, deferred steps;\n" +
 			"                                  asks once when more than one worktree is involved (--yes skips)\n" +
-			"  finish  push with --force-with-lease; wt sync undo <work> puts every ref back\n" +
+			"  finish  wt sync resume <work>   continue a rebase run left at a conflict that is yours\n" +
+			"          push with --force-with-lease; wt sync undo <work> puts every ref back\n" +
 			"          wt sync doctor          what a run needs, and --fix / --prune\n" +
-			"A contested worktree is refused by run until resume exists: rebase it by hand.\n" +
+			"A contested worktree is rebased up to the conflict and handed to you with a\n" +
+			"plan file; wt sync resume finishes it.\n" +
 			"Only Claude sessions are detected in WHO; a Codex session is not seen.\n" +
 			"\n" +
 			"Classes:\n" +
@@ -75,14 +77,15 @@ func newSyncCmd() *cobra.Command {
 			"refs/wt-sync/<branch>/<epoch>, rebase with --no-update-refs --no-gpg-sign,\n" +
 			"apply the declared strategy at every stop, and run the deferred steps\n" +
 			"once at the end, committing their output when it changes tracked files.\n" +
-			"A stop no strategy resolves aborts the rebase and restores the worktree;\n" +
-			"a failed deferred step is reported as owed and never undoes the rebase.\n\n" +
+			"A stop no strategy resolves is left in place with a plan file naming what\n" +
+			"is yours, for wt sync resume to finish; a failed deferred step is reported\n" +
+			"as owed and never undoes the rebase.\n\n" +
 			"Refused, and never touched: a worktree with tracked changes, one a Claude\n" +
-			"session is in (Codex sessions are not detected), class divergent, class\n" +
-			"contested (rebase those by hand; resume is not built yet), and any\n" +
-			"repository whose trunk declares no .wt-sync.yaml. When more than one\n" +
-			"worktree would be rebased you are asked once; --yes skips that. Nothing\n" +
-			"is pushed: the last line per worktree is the push command to run.\n\n" +
+			"session is in (Codex sessions are not detected), class divergent, one an\n" +
+			"earlier run already left waiting on you, and any repository whose trunk\n" +
+			"declares no .wt-sync.yaml. When more than one worktree would be rebased\n" +
+			"you are asked once; --yes skips that. Nothing is pushed: the last line\n" +
+			"per worktree is the push command to run.\n\n" +
 			"Ctrl-C releases every lock the run holds and kills the step it was\n" +
 			"running; a worktree caught mid-rebase is named along with the command\n" +
 			"that puts it back.",
@@ -107,6 +110,37 @@ func newSyncCmd() *cobra.Command {
 	run.Flags().BoolVar(&noFetch, "no-fetch", false, "rebase onto origin/<trunk> as last fetched")
 	run.Flags().BoolVar(&yes, "yes", false, "do not ask before rebasing more than one worktree")
 	sync.AddCommand(run)
+
+	resume := &cobra.Command{
+		Use:   "resume <work>",
+		Short: "Continue the rebase a run left at a conflict that was yours",
+		Long: "Pick up the rebase wt sync run left in this worktree. The plan file in\n" +
+			".git/worktrees/<name>/wt-sync-plan.md says what landed, what the declared\n" +
+			"strategies already resolved and must not be re-opened, and what is yours.\n" +
+			"Resolve those, git add them, then run this.\n\n" +
+			"Before continuing it checks that nothing is unmerged, that nothing tracked\n" +
+			"is changed but unstaged, and that no file a strategy resolved was\n" +
+			"hand-merged. Any of those is a refusal that changes nothing: this command\n" +
+			"never resets the worktree, because your own work is in it. Then it drives\n" +
+			"the rest of the rebase, runs the deferred steps, pins the result ref and\n" +
+			"prints the push command. A later conflict that is yours is handed over\n" +
+			"again with a fresh plan file.\n\n" +
+			"A rebase you finished yourself with git rebase --continue is fine: this\n" +
+			"notices and runs only what comes after it. wt sync undo <work> aborts a\n" +
+			"handed-over rebase and puts the branch back instead.",
+		Example: "  wt sync resume login-crash      # continue what the run handed you\n" +
+			"  wt sync resume fix/login-crash  # the same worktree, by branch\n",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeWork,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, err := openContext()
+			if err != nil {
+				return err
+			}
+			return commands.SyncResume(ctx, args[0], commands.ResumeOptions{}, cmd.OutOrStdout())
+		},
+	}
+	sync.AddCommand(resume)
 
 	var force bool
 	undo := &cobra.Command{
