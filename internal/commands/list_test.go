@@ -221,11 +221,33 @@ func TestStatusReportsCleanliness(t *testing.T) {
 
 	ctx, _ := Open(main)
 	var buf bytes.Buffer
-	if err := Status(ctx, &buf); err != nil {
+	if err := Status(ctx, &buf, 0); err != nil {
 		t.Fatalf("Status: %v", err)
 	}
 	if !strings.Contains(buf.String(), "clean") {
 		t.Errorf("want a cleanliness report:\n%s", buf.String())
+	}
+}
+
+func TestStatusFitsPathsToTheTerminalWidth(t *testing.T) {
+	main, _ := repoWithWorktree(t, func(parent string) string {
+		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
+	})
+	ctx, _ := Open(main)
+
+	const width = 60
+	var buf bytes.Buffer
+	if err := Status(ctx, &buf, width); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(strings.TrimRight(buf.String(), "\n"), "\n") {
+		if n := len([]rune(line)); n > width {
+			t.Errorf("%d columns, want at most %d: %q", n, width, line)
+		}
+	}
+	line := lineContaining(t, buf.String(), "feat_wt/thing")
+	if !strings.Contains(line, "…/") || !strings.HasSuffix(line, "/demo_wt/feat_wt/thing") {
+		t.Errorf("want the path shortened from the left, its tail intact: %q", line)
 	}
 }
 

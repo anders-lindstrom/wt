@@ -23,16 +23,12 @@ const minPathWidth = 24
 // Anything not at the canonical path is marked, and the two marks mean
 // different things: "s" is Superset's layout, which is deliberate and must be
 // left alone, while "!" is a layout nothing owns and `wt migrate` can move.
-//
-// width is the terminal's column count, or 0 when output is not a terminal.
-// Above 0, paths are shown from ~ and shortened from the left so each row fits;
-// at 0 they are printed whole, because a printed path is an argument to wt.
 func List(ctx *Context, w io.Writer, width int) error {
 	worktrees, err := ctx.Repo.Worktrees()
 	if err != nil {
 		return err
 	}
-	rows := [][4]string{{"", "WORK", "BRANCH", "PATH"}}
+	rows := [][]string{{"", "WORK", "BRANCH", "PATH"}}
 	var seen [3]bool
 	for _, wt := range worktrees {
 		work, branch := "(main)", wt.Branch
@@ -52,16 +48,9 @@ func List(ctx *Context, w io.Writer, width int) error {
 			seen[layout] = true
 			mark = layoutMark(layout)
 		}
-		rows = append(rows, [4]string{mark, work, branch, wt.Path})
+		rows = append(rows, []string{mark, work, branch, wt.Path})
 	}
-	if width > 0 {
-		fitPaths(rows, width)
-	}
-	tw := tabwriter.NewWriter(w, 0, 0, listPadding, ' ', 0)
-	for _, r := range rows {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", r[0], r[1], r[2], r[3])
-	}
-	if err := tw.Flush(); err != nil {
+	if err := printPathTable(w, rows, width); err != nil {
 		return err
 	}
 	if seen[naming.Superset] || seen[naming.Foreign] {
@@ -77,12 +66,63 @@ func List(ctx *Context, w io.Writer, width int) error {
 	return nil
 }
 
-// fitPaths shortens the PATH cell of every row after the header so the table
-// fits in width columns. The other columns stay whole: they are what a reader
+func layoutMark(l naming.Layout) string {
+	switch l {
+	case naming.Superset:
+		return "s"
+	case naming.Foreign:
+		return "!"
+	default:
+		return ""
+	}
+}
+
+// Status prints each worktree's branch and whether its checkout is clean.
+func Status(ctx *Context, w io.Writer, width int) error {
+	worktrees, err := ctx.Repo.Worktrees()
+	if err != nil {
+		return err
+	}
+	rows := [][]string{{"BRANCH", "STATE", "PATH"}}
+	for _, wt := range worktrees {
+		branch := wt.Branch
+		if branch == "" {
+			branch = "(detached)"
+		}
+		state := "clean"
+		if out, err := git.Run(wt.Path, "status", "--porcelain"); err != nil {
+			state = "unreadable"
+		} else if out != "" {
+			state = "dirty"
+		}
+		rows = append(rows, []string{branch, state, wt.Path})
+	}
+	return printPathTable(w, rows, width)
+}
+
+// printPathTable writes rows as aligned columns: the first row is the header
+// and the last column of every row is a path. width is the terminal's column
+// count, or 0 when output is not a terminal. Above 0, paths are shown from ~
+// and shortened from the left so each row fits; at 0 they are printed whole,
+// because a printed path is an argument to wt.
+func printPathTable(w io.Writer, rows [][]string, width int) error {
+	if width > 0 {
+		fitPaths(rows, width)
+	}
+	tw := tabwriter.NewWriter(w, 0, 0, listPadding, ' ', 0)
+	for _, r := range rows {
+		fmt.Fprintln(tw, strings.Join(r, "\t"))
+	}
+	return tw.Flush()
+}
+
+// fitPaths shortens the path in every row after the header so the table fits
+// in width columns. The other columns stay whole: they are what a reader
 // types back into wt.
-func fitPaths(rows [][4]string, width int) {
+func fitPaths(rows [][]string, width int) {
+	last := len(rows[0]) - 1
 	lead := 0
-	for col := range 3 {
+	for col := range last {
 		widest := 0
 		for _, r := range rows {
 			widest = max(widest, utf8.RuneCountInString(r[col]))
@@ -91,8 +131,8 @@ func fitPaths(rows [][4]string, width int) {
 	}
 	room := max(width-lead, minPathWidth)
 	home, _ := os.UserHomeDir()
-	for i := 1; i < len(rows); i++ {
-		rows[i][3] = elideLeft(abbreviateHome(rows[i][3], home), room)
+	for _, r := range rows[1:] {
+		r[last] = elideLeft(abbreviateHome(r[last], home), room)
 	}
 }
 
@@ -128,39 +168,4 @@ func elideLeft(path string, limit int) string {
 	}
 	r := []rune(path)
 	return "…" + string(r[len(r)-(limit-1):])
-}
-
-func layoutMark(l naming.Layout) string {
-	switch l {
-	case naming.Superset:
-		return "s"
-	case naming.Foreign:
-		return "!"
-	default:
-		return ""
-	}
-}
-
-// Status prints each worktree's branch and whether its checkout is clean.
-func Status(ctx *Context, w io.Writer) error {
-	worktrees, err := ctx.Repo.Worktrees()
-	if err != nil {
-		return err
-	}
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "BRANCH\tSTATE\tPATH")
-	for _, wt := range worktrees {
-		branch := wt.Branch
-		if branch == "" {
-			branch = "(detached)"
-		}
-		state := "clean"
-		if out, err := git.Run(wt.Path, "status", "--porcelain"); err != nil {
-			state = "unreadable"
-		} else if out != "" {
-			state = "dirty"
-		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\n", branch, state, wt.Path)
-	}
-	return tw.Flush()
 }

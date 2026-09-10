@@ -53,7 +53,9 @@ func newStatusCmd() *cobra.Command {
 		Use:   "status",
 		Short: "Show each worktree's branch and whether it is clean",
 		Long: "Print each worktree's branch and whether its checkout is clean, dirty\n" +
-			"or unreadable — the one question `wt list` does not answer.",
+			"or unreadable — the one question `wt list` does not answer.\n\n" +
+			"On a terminal, paths are shown from ~ and shortened from the left to fit\n" +
+			"its width. Piped, they are printed whole.",
 		Example: "  wt status               # branch and state for every worktree\n" +
 			"  wt status | grep dirty  # only the ones with uncommitted changes",
 		Args: cobra.NoArgs,
@@ -62,7 +64,8 @@ func newStatusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return commands.Status(ctx, cmd.OutOrStdout())
+			out := cmd.OutOrStdout()
+			return commands.Status(ctx, out, terminalWidth(out))
 		},
 	}
 }
