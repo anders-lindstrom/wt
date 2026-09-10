@@ -2,6 +2,7 @@ package wtsync
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -62,10 +63,28 @@ type State struct {
 }
 
 // writeAtomic writes data to a temp file in the same directory and renames
-// it into place, so a crash or a full disk cannot leave half a handover.
+// it into place, so a crash or a full disk cannot leave half a handover. The
+// temp file is fsynced before the rename: without that the rename can reach
+// the disk before the bytes do, and a power loss then leaves a zero-length
+// sidecar that ReadState rejects as malformed JSON.
 func writeAtomic(path string, data []byte) error {
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {
@@ -90,7 +109,11 @@ func WriteState(gitDir string, s State) error {
 	return writeAtomic(StatePath(gitDir), append(data, '\n'))
 }
 
-// ReadState reads the sidecar; ok is false when there is none.
+// ReadState reads the sidecar; ok is false when there is none. The maps and
+// slices come back non-nil even when the JSON carried null or omitted them,
+// so a caller continuing a run can write to them without checking first: a
+// nil map assignment panics, and the sidecar is exactly the place a resume
+// records what it resolved.
 func ReadState(gitDir string) (State, bool, error) {
 	data, err := os.ReadFile(StatePath(gitDir))
 	if os.IsNotExist(err) {
@@ -102,6 +125,18 @@ func ReadState(gitDir string) (State, bool, error) {
 	var s State
 	if err := json.Unmarshal(data, &s); err != nil {
 		return State{}, false, fmt.Errorf("%s: %w", StatePath(gitDir), err)
+	}
+	if s.Resolved == nil {
+		s.Resolved = map[string]string{}
+	}
+	if s.Strategy == nil {
+		s.Strategy = map[string]string{}
+	}
+	if s.Deleted == nil {
+		s.Deleted = []string{}
+	}
+	if s.Left == nil {
+		s.Left = []string{}
 	}
 	return s, true, nil
 }
@@ -122,13 +157,19 @@ func HasPlan(gitDir string) (bool, error) {
 // write left. A run that ends — completed, undone, or restored — has nothing
 // left to hand over, and a stale marker would report the worktree as waiting
 // on somebody forever.
+//
+// The sidecar goes first, mirroring the write order that puts the marker
+// last, and every path is attempted: a markdown file an editor has locked or
+// a read-only mount holds must not be able to leave the marker behind. The
+// errors are joined so the caller still hears about what would not go.
 func RemovePlan(gitDir string) error {
-	for _, p := range []string{PlanPath(gitDir), StatePath(gitDir), PlanPath(gitDir) + ".tmp", StatePath(gitDir) + ".tmp"} {
+	var errs []error
+	for _, p := range []string{StatePath(gitDir), PlanPath(gitDir), StatePath(gitDir) + ".tmp", PlanPath(gitDir) + ".tmp"} {
 		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
-			return err
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // PlanHolders lists the worktrees holding a handover. The main checkout is
@@ -204,12 +245,35 @@ func RenderPlan(in PlanInput) (string, error) {
 	for _, c := range in.Handover.Conflicts {
 		conflicts[c.Path] = c
 	}
-	var resolved, left []FileOutcome
+	outcomes := map[string]FileOutcome{}
+	var resolved []FileOutcome
 	for _, f := range in.Handover.Files {
+		outcomes[f.Path] = f
 		if f.Resolved {
 			resolved = append(resolved, f)
-		} else {
+		}
+	}
+
+	// Left is the set of paths handed to a person, and NeedsYouLine counts
+	// the same field: deriving this section from Files instead would let the
+	// file say "2 files" while the terminal says "3 left". A path Left names
+	// that Files has no outcome for is listed by name alone — a handover must
+	// not fail because two lists disagree. An empty Left falls back to the
+	// unresolved outcomes, for a caller that does not set it.
+	var left []FileOutcome
+	if len(in.Handover.Left) > 0 {
+		for _, p := range in.Handover.Left {
+			f, ok := outcomes[p]
+			if !ok {
+				f = FileOutcome{Path: p}
+			}
 			left = append(left, f)
+		}
+	} else {
+		for _, f := range in.Handover.Files {
+			if !f.Resolved {
+				left = append(left, f)
+			}
 		}
 	}
 
@@ -234,7 +298,9 @@ func RenderPlan(in PlanInput) (string, error) {
 				note = shapeOf(in.MainRoot, c)
 			}
 		}
-		fmt.Fprintf(&b, "%-40s %s\n", f.Path, note)
+		// A path Left names but Files does not describe has no note at all,
+		// and a line of padding with nothing after it is noise.
+		b.WriteString(strings.TrimRight(fmt.Sprintf("%-40s %s", f.Path, note), " ") + "\n")
 		subject, err := trunkSubject(in.MainRoot, in.Base, in.Trunk, f.Path)
 		if err != nil {
 			return "", err

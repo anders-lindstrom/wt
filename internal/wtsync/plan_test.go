@@ -3,9 +3,26 @@ package wtsync
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+// yoursSection is the "## yours" block of a rendered plan, up to the next
+// heading, so a test can assert what is in it without matching the rest of
+// the file.
+func yoursSection(t *testing.T, plan string) string {
+	t.Helper()
+	i := strings.Index(plan, "## yours")
+	if i < 0 {
+		t.Fatalf("plan has no yours section:\n%s", plan)
+	}
+	rest := plan[i:]
+	if j := strings.Index(rest[1:], "\n## "); j >= 0 {
+		rest = rest[:j+1]
+	}
+	return rest
+}
 
 func planConfig(t *testing.T) *Config {
 	t.Helper()
@@ -130,6 +147,84 @@ func TestRenderPlanMarksAnAdditiveConflict(t *testing.T) {
 	}
 }
 
+// Left is what the terminal line counts, so it is what the brief lists. If
+// the two were derived separately the terminal could say "2 left" while the
+// file says "## yours — 1 file", and nothing would fail.
+func TestRenderPlanFollowsLeftNotTheUnresolvedFiles(t *testing.T) {
+	dir := repoWith(t, map[string]string{"a.txt": "a\n", "b.txt": "b\n"}, nil, nil)
+	base := gitIn(t, dir, "rev-parse", "HEAD")
+	cfg, err := Parse([]byte("conflicts:\n  - paths: [a.txt, c.txt]\n    strategy: openapi\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := RenderPlan(PlanInput{
+		MainRoot: dir, Work: "w", Branch: "feat_wt/w", TrunkRef: "origin/main", Base: base, Trunk: "main",
+		Config: cfg,
+		Handover: Handover{
+			Index: 1, Total: 1,
+			Files: []FileOutcome{
+				{Path: "a.txt", Note: "unclaimed"},
+				{Path: "b.txt", Strategy: "openapi", Note: "both sides added the same key"},
+			},
+			// Disagrees with the unresolved set of Files on both sides:
+			// a.txt is unresolved but not handed over, c.txt is handed over
+			// with no outcome at all.
+			Left: []string{"b.txt", "c.txt"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	yours := yoursSection(t, out)
+	if !strings.Contains(yours, "## yours — 2 files") {
+		t.Fatalf("the count does not follow Left:\n%s", out)
+	}
+	if !strings.Contains(yours, "b.txt") || !strings.Contains(yours, "openapi refused it") {
+		t.Fatalf("a handed-over path lost its outcome detail:\n%s", out)
+	}
+	if !strings.Contains(yours, "c.txt") {
+		t.Fatalf("a handed-over path with no outcome was dropped:\n%s", out)
+	}
+	if strings.Contains(yours, "a.txt") {
+		t.Fatalf("a path Left does not name was listed as a person's:\n%s", out)
+	}
+	// The suppression rule follows the same set: c.txt is asked for, so its
+	// declaration is not also forbidden; a.txt is not asked for, so it is.
+	forbidden := out[strings.Index(out, "## never hand-merge here"):]
+	if strings.Contains(forbidden, "c.txt") {
+		t.Fatalf("a handed-over path is also listed as never-hand-merge:\n%s", out)
+	}
+	if !strings.Contains(forbidden, "a.txt") {
+		t.Fatalf("a declaration nobody was asked about is missing:\n%s", out)
+	}
+}
+
+// A caller that never sets Left still gets the brief it always got.
+func TestRenderPlanFallsBackToFilesWhenLeftIsEmpty(t *testing.T) {
+	dir := repoWith(t, map[string]string{"a.txt": "a\n", "v.txt": "1.0.0\n"}, nil, nil)
+	base := gitIn(t, dir, "rev-parse", "HEAD")
+	out, err := RenderPlan(PlanInput{
+		MainRoot: dir, Work: "w", Branch: "feat_wt/w", TrunkRef: "origin/main", Base: base, Trunk: "main",
+		Handover: Handover{
+			Index: 1, Total: 1,
+			Files: []FileOutcome{
+				{Path: "v.txt", Strategy: "owned-line", Resolved: true},
+				{Path: "a.txt", Note: "unclaimed"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	yours := yoursSection(t, out)
+	if !strings.Contains(yours, "## yours — 1 file\n") {
+		t.Fatalf("the fallback count is not the unresolved set:\n%s", out)
+	}
+	if !strings.Contains(yours, "a.txt") || strings.Contains(yours, "v.txt") {
+		t.Fatalf("the fallback listed the wrong files:\n%s", out)
+	}
+}
+
 func TestStateRoundTripsAndIsTheMarker(t *testing.T) {
 	dir := t.TempDir()
 	if has, err := HasPlan(dir); err != nil || has {
@@ -137,7 +232,8 @@ func TestStateRoundTripsAndIsTheMarker(t *testing.T) {
 	}
 	want := State{
 		Branch: "feat_wt/w", Work: "w", Trunk: "abc", TrunkRef: "origin/main", Onto: "abc",
-		Epoch: 42, Safety: "refs/wt-sync/feat_wt/w/42", OldTip: "def", Stop: 2, Total: 12,
+		Upstream: "origin/feat_wt/parent",
+		Epoch:    42, Safety: "refs/wt-sync/feat_wt/w/42", OldTip: "def", Stop: 2, Total: 12,
 		Resolved: map[string]string{"v.txt": "cafe"}, Strategy: map[string]string{"v.txt": "owned-line"},
 		Deleted: []string{"gone.txt"}, Left: []string{"a.txt"}, Lock: LeftLock{PID: 7, Started: 99},
 	}
@@ -152,7 +248,9 @@ func TestStateRoundTripsAndIsTheMarker(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("ReadState = %v, %v", ok, err)
 	}
-	if got.Epoch != want.Epoch || got.Resolved["v.txt"] != "cafe" || got.Lock.PID != 7 || len(got.Deleted) != 1 {
+	// The whole struct, not a few fields: four later tasks read this file,
+	// and a duplicated or mistyped JSON tag would drop a field silently.
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("State = %+v, want %+v", got, want)
 	}
 	if err := RemovePlan(dir); err != nil {
@@ -160,6 +258,61 @@ func TestStateRoundTripsAndIsTheMarker(t *testing.T) {
 	}
 	if has, _ := HasPlan(dir); has {
 		t.Fatal("RemovePlan left the marker")
+	}
+}
+
+// The sidecar is the marker, so it goes first and nothing that will not go
+// can keep it in place: a marker left behind reports the worktree as waiting
+// on somebody forever.
+func TestRemovePlanClearsTheMarkerEvenWhenTheBriefWillNotGo(t *testing.T) {
+	dir := t.TempDir()
+	if err := WriteState(dir, State{Work: "w", Branch: "feat_wt/w"}); err != nil {
+		t.Fatal(err)
+	}
+	// A non-empty directory is what os.Remove cannot take away on any
+	// platform — standing in for the markdown an editor lock or a read-only
+	// mount pins in place.
+	if err := os.MkdirAll(filepath.Join(PlanPath(dir), "held"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	leftover := StatePath(dir) + ".tmp"
+	if err := os.WriteFile(leftover, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RemovePlan(dir); err == nil {
+		t.Fatal("RemovePlan swallowed the brief it could not remove")
+	}
+	has, err := HasPlan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if has {
+		t.Fatal("RemovePlan left the marker because the brief would not go")
+	}
+	if _, err := os.Stat(leftover); !os.IsNotExist(err) {
+		t.Fatalf("RemovePlan stopped short of the temp leftover: %v", err)
+	}
+}
+
+// A sidecar whose maps are null must not hand back nil maps: the first
+// consumer to record a resolution into one would panic.
+func TestReadStateReturnsWritableMapsAndSlices(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(StatePath(dir), []byte(`{"branch":"feat_wt/w","resolved":null,"deleted":null}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := ReadState(dir)
+	if err != nil || !ok {
+		t.Fatalf("ReadState = %v, %v", ok, err)
+	}
+	if got.Resolved == nil || got.Strategy == nil || got.Deleted == nil || got.Left == nil {
+		t.Fatalf("ReadState handed back nil collections: %+v", got)
+	}
+	got.Resolved["v.txt"] = "cafe"
+	got.Strategy["v.txt"] = "owned-line"
+	if got.Resolved["v.txt"] != "cafe" || got.Strategy["v.txt"] != "owned-line" {
+		t.Fatalf("the returned maps are not writable: %+v", got)
 	}
 }
 
