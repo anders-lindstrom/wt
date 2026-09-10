@@ -5,6 +5,12 @@ Newest first, each heading stamped with the local date and time of the change
 lines a human would want read out to them; the full story is in git history and
 in `docs/superpowers/plans/`.
 
+## 2026-09-10 15:57 — an empty worktree is no stack parent
+
+- `wt sync run` no longer takes a worktree with no commits of its own, left on
+  an older trunk commit, for the parent of every branch cut after it. It pulled
+  unrelated worktrees into one stack, and an agent in it refused them all.
+
 ## 2026-09-10 12:44 — setup takes --source
 
 - `wt setup --source <name>` says what ran setup, such as `superset`. Setup
