@@ -293,3 +293,26 @@ func TestDiscoverRecordsCurrentWorktreeRoot(t *testing.T) {
 		t.Errorf("from the main checkout both should be %q, got %q / %q", main, rm.Root, rm.MainRoot)
 	}
 }
+
+// "not merged" says nothing about what is at stake; the count does.
+func TestCommitsAhead(t *testing.T) {
+	parent, main := fixture(t)
+	r, err := Discover(main)
+	if err != nil {
+		t.Fatal(err)
+	}
+	thing := filepath.Join(parent, "demo_wt", "feat_wt", "thing")
+
+	if n, ok := r.CommitsAhead("feat_wt/thing", "main"); !ok || n != 0 {
+		t.Errorf("a branch level with main is 0 ahead, got %d (ok=%v)", n, ok)
+	}
+	run(t, thing, "commit", "-q", "--allow-empty", "-m", "one")
+	run(t, thing, "commit", "-q", "--allow-empty", "-m", "two")
+	if n, ok := r.CommitsAhead("feat_wt/thing", "main"); !ok || n != 2 {
+		t.Errorf("got %d ahead (ok=%v), want 2", n, ok)
+	}
+	// A ref that is not there is unknown, which is not the same as zero.
+	if _, ok := r.CommitsAhead("no-such-branch", "main"); ok {
+		t.Error("an unreadable ref must report not-ok, not a count")
+	}
+}

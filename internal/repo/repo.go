@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/anders-lindstrom/wt/internal/git"
@@ -214,6 +215,20 @@ func (r *Repo) IsMerged(branch, base string) bool {
 		}
 	}
 	return false
+}
+
+// CommitsAhead counts the commits branch has that base does not. ok is false
+// when either ref is unreadable, which is a different answer from zero.
+func (r *Repo) CommitsAhead(branch, base string) (n int, ok bool) {
+	out, err := git.Run(r.MainRoot, "rev-list", "--count", base+".."+branch)
+	if err != nil {
+		return 0, false
+	}
+	n, err = strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		return 0, false
+	}
+	return n, true
 }
 
 // AddWorktree creates a worktree at path on a new branch cut from base.
