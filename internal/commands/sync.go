@@ -99,7 +99,7 @@ func syncInputs(ctx *Context, w io.Writer) (onto string, cfg *wtsync.Config, age
 		fmt.Fprintf(w, "%s declares no %s on %s: reported only, never rebased.\n\n",
 			ctx.Repo.Name, wtsync.ConfigFile, onto)
 	}
-	agents, aerr := wtsync.ListAgents()
+	agents, aerr := wtsync.ListOtherAgents()
 	if aerr != nil {
 		fmt.Fprintf(w, "note: %v\n", aerr)
 	}

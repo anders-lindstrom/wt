@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -31,6 +32,7 @@ type Agent struct {
 	State  string `json:"state"`
 	Kind   string `json:"kind"`
 	Status string `json:"status"`
+	PID    int    `json:"pid"`
 }
 
 // Idle is an interactive session waiting for its person: status idle and no
@@ -186,4 +188,62 @@ func (s Sessions) Arrived(since Sessions) Sessions {
 		}
 	}
 	return arrived
+}
+
+// WithoutCaller drops the sessions wt is itself running under: a session
+// whose pid is an ancestor of this process. An agent resolving a handed-over
+// worktree runs wt sync resume from inside it and is busy while it does;
+// counting it would make it refuse itself.
+func WithoutCaller(agents []Agent, ancestors map[int]bool) []Agent {
+	var others []Agent
+	for _, a := range agents {
+		if a.PID > 1 && ancestors[a.PID] {
+			continue
+		}
+		others = append(others, a)
+	}
+	return others
+}
+
+// Ancestors is the pid of every process above this one, read from one ps
+// under the same deadline as claude agents.
+func Ancestors() (map[int]bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), agentsDeadline)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "ps", "-A", "-o", "pid=", "-o", "ppid=").Output()
+	if err != nil {
+		return nil, fmt.Errorf("ps: %w", err)
+	}
+	parent := map[int]int{}
+	for _, line := range strings.Split(string(out), "\n") {
+		f := strings.Fields(line)
+		if len(f) != 2 {
+			continue
+		}
+		pid, perr := strconv.Atoi(f[0])
+		ppid, qerr := strconv.Atoi(f[1])
+		if perr == nil && qerr == nil {
+			parent[pid] = ppid
+		}
+	}
+	ancestors := map[int]bool{}
+	for pid := os.Getppid(); pid > 1 && !ancestors[pid]; pid = parent[pid] {
+		ancestors[pid] = true
+	}
+	return ancestors, nil
+}
+
+// ListOtherAgents is ListAgents without the session wt runs under. When the
+// process tree cannot be read nobody is dropped: the caller then counts like
+// any other session, which refuses rather than rebases.
+func ListOtherAgents() ([]Agent, error) {
+	agents, err := ListAgents()
+	if err != nil || len(agents) == 0 {
+		return agents, err
+	}
+	ancestors, aerr := Ancestors()
+	if aerr != nil {
+		return agents, nil
+	}
+	return WithoutCaller(agents, ancestors), nil
 }

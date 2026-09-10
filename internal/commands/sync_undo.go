@@ -38,7 +38,7 @@ func SyncUndo(ctx *Context, work string, opts UndoOptions, w io.Writer) error {
 	}
 	agents := opts.Agents
 	if agents == nil {
-		if agents, err = wtsync.ListAgents(); err != nil {
+		if agents, err = wtsync.ListOtherAgents(); err != nil {
 			return fmt.Errorf("cannot list agent sessions (%v); nothing undone", err)
 		}
 	}

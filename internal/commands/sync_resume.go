@@ -85,7 +85,7 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 	}
 	agents := opts.Agents
 	if agents == nil {
-		if agents, err = wtsync.ListAgents(); err != nil {
+		if agents, err = wtsync.ListOtherAgents(); err != nil {
 			return fmt.Errorf("cannot list agent sessions (%v); nothing is resumed", err)
 		}
 	}

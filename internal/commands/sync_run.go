@@ -131,7 +131,7 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 
 	agents := opts.Agents
 	if agents == nil {
-		if agents, err = wtsync.ListAgents(); err != nil {
+		if agents, err = wtsync.ListOtherAgents(); err != nil {
 			return fmt.Errorf("cannot list agent sessions (%v); nothing is rebased", err)
 		}
 	}

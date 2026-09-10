@@ -179,3 +179,21 @@ func TestArrivedIsWhatNobodyWasToldAbout(t *testing.T) {
 		t.Errorf("arrived = %+v", got)
 	}
 }
+
+func TestWithoutCallerDropsTheSessionWtRunsUnder(t *testing.T) {
+	agents := []Agent{{Name: "me", PID: 100}, {Name: "other", PID: 200}, {Name: "no-pid"}}
+	got := WithoutCaller(agents, map[int]bool{100: true})
+	if len(got) != 2 || got[0].Name != "other" || got[1].Name != "no-pid" {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestAncestorsIncludeTheParentButNotThisProcess(t *testing.T) {
+	a, err := Ancestors()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !a[os.Getppid()] || a[os.Getpid()] {
+		t.Fatalf("ancestors %v; parent %d, self %d", a, os.Getppid(), os.Getpid())
+	}
+}
