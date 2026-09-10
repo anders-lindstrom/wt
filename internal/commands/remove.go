@@ -171,6 +171,26 @@ func mergeStanding(ctx *Context, branch string) (MergeState, int) {
 	return Unmerged, ahead
 }
 
+// stillMerged asks the merged question once more, in the moment before the
+// branch is destroyed. It is a guard, not a decision: the plan decided this
+// and nothing here can change the outcome, only stop it.
+//
+// A confirmed removal already re-reads the whole plan under the prompt, but
+// --yes, a script and a hook go straight from the plan to the delete, and the
+// delete is -D: it will not refuse on wt's behalf.
+func stillMerged(ctx *Context, p Plan) error {
+	merge, ahead := mergeStanding(ctx, p.Branch)
+	if merge == Merged {
+		return nil
+	}
+	found := "cannot be compared with it any more — one of the two has gone"
+	if merge == Unmerged {
+		found = "is " + (Plan{Ahead: ahead, MainBranch: p.MainBranch}).aheadOfMain()
+	}
+	return fmt.Errorf("branch %s was merged into %s when the plan was made and %s now; "+
+		"nothing was deleted", p.Branch, p.MainBranch, found)
+}
+
 func branchIsOurs(ctx *Context, branch string) bool {
 	_, _, ok := naming.ParseBranch(branch, ctx.Config.TypeSuffix)
 	return ok
@@ -244,6 +264,10 @@ func (p Plan) apply(ctx *Context, w io.Writer) error {
 	}
 	switch p.Outcome {
 	case BranchDeleted:
+		if err := stillMerged(ctx, p); err != nil {
+			fmt.Fprintln(w, "✓ worktree removed")
+			return err
+		}
 		if err := ctx.Repo.DeleteBranch(p.Branch); err != nil {
 			// The merge check has already passed against the main branch, so
 			// this is a real failure — a locked ref, a broken repository — not

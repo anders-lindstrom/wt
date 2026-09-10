@@ -413,3 +413,55 @@ func TestRemoveStillKeepsUnmergedWorkWhenTheMainCheckoutIsElsewhere(t *testing.T
 		t.Fatal("two commits of somebody else's work were deleted")
 	}
 }
+
+// A confirmed removal re-reads the whole plan before acting; --yes and a hook
+// go straight from the plan to the delete, and the delete no longer asks git
+// for a second opinion. So the merged answer is checked once more, in the
+// window where it can go stale, before a branch is destroyed.
+func TestRemoveDoesNotDeleteABranchThatGainedWorkAfterThePlan(t *testing.T) {
+	main := committedRepo(t, minimalConf)
+	ctx, _ := Open(main)
+	dst := foreignWorktree(t, ctx, main, "someones-work", 0)
+
+	plan := planFor(ctx, dst)
+	if plan.Outcome != BranchDeleted {
+		t.Fatalf("precondition: want a merged branch, got outcome %v", plan.Outcome)
+	}
+	// Another session lands a commit in the window the plan cannot see.
+	gitIn(t, dst, "commit", "-q", "--allow-empty", "-m", "landed in the window")
+
+	var buf bytes.Buffer
+	err := plan.apply(ctx, &buf)
+	if err == nil {
+		t.Fatal("want a refusal once the branch is no longer merged")
+	}
+	if !ctx.Repo.BranchExists("someones-work") {
+		t.Fatal("a commit that landed after the plan was deleted with the branch")
+	}
+	if !strings.Contains(err.Error(), "1 commit ahead of main") {
+		t.Errorf("the message must say what it found instead: %v", err)
+	}
+	if !strings.Contains(buf.String(), "worktree removed") {
+		t.Errorf("the worktree did go by then; say so:\n%s", buf.String())
+	}
+}
+
+// The other half of the guard: the main branch itself can move out from under
+// a run, and a comparison that cannot be made is not a merge.
+func TestRemoveDoesNotDeleteWhenTheMainBranchDisappears(t *testing.T) {
+	main := committedRepo(t, minimalConf)
+	ctx, _ := Open(main)
+	dst := foreignWorktree(t, ctx, main, "someones-work", 0)
+	plan := planFor(ctx, dst)
+
+	gitIn(t, main, "branch", "-m", "main", "renamed-trunk")
+
+	var buf bytes.Buffer
+	err := plan.apply(ctx, &buf)
+	if err == nil {
+		t.Fatal("want a refusal when the comparison cannot be made")
+	}
+	if !ctx.Repo.BranchExists("someones-work") {
+		t.Fatal("the branch was deleted on an answer nobody could check")
+	}
+}
