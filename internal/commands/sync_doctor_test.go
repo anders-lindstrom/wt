@@ -107,7 +107,7 @@ func TestSyncDoctorReportsAWorktreeWaitingOnAPerson(t *testing.T) {
 			plan = row
 		}
 	}
-	if fields := strings.Fields(plan); len(fields) < 2 || fields[1] != "warn" || !strings.Contains(plan, "bump: wt sync resume bump") {
+	if fields := strings.Fields(plan); len(fields) < 2 || fields[1] != "warn" || !strings.Contains(plan, "bump: wt sync resume bump, or wt sync undo bump") {
 		t.Fatalf("plan row %q:\n%s", plan, out.String())
 	}
 }

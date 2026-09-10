@@ -373,6 +373,11 @@ func TestAssessReportsAHandedOverWorktreeAsPaused(t *testing.T) {
 	if !a.Paused || a.Class != Contested {
 		t.Fatalf("paused = %v, class = %s; want paused and contested", a.Paused, a.Class)
 	}
+	// The handover's staged resolutions make status non-empty; they are what
+	// a person is finishing, not dirt.
+	if a.Dirty {
+		t.Fatal("dirty = true for a handover's own staged resolutions")
+	}
 	if v, why := Preflight(a); v != RefuseRun || !strings.Contains(why, "wt sync resume") {
 		t.Fatalf("Preflight = %v %q; want a refusal naming wt sync resume", v, why)
 	}

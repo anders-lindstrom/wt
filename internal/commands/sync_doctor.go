@@ -37,7 +37,9 @@ func SyncDoctor(ctx *Context, opts DoctorOptions, w io.Writer) error {
 		var lines []string
 		for _, wt := range holders {
 			name := workName(ctx, wt.Branch)
-			lines = append(lines, name+": wt sync resume "+name)
+			// Both, as Preflight names them: resume refuses a handover the
+			// person aborted by hand, and undo is what ends that one.
+			lines = append(lines, name+": wt sync resume "+name+", or wt sync undo "+name)
 		}
 		plan.Detail = strings.Join(lines, "; ")
 	}

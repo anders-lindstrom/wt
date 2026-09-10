@@ -27,6 +27,29 @@ func gitOut(t *testing.T, dir string, args ...string) string {
 	return strings.TrimRight(string(out), "\n")
 }
 
+// A handed-over worktree's staged resolutions are what a person is
+// finishing, not dirt: its row says it is waiting, and nothing else.
+func TestSyncShowsAHandedOverWorktreeWithoutCallingItDirty(t *testing.T) {
+	ctx, bump := contestedFixture(t)
+	handOverNow(t, ctx, bump)
+	var buf bytes.Buffer
+	if err := Sync(ctx, &buf); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	var row string
+	for _, line := range strings.Split(buf.String(), "\n") {
+		if strings.HasPrefix(line, "bump ") {
+			row = line
+		}
+	}
+	if !strings.Contains(row, "contested") || !strings.Contains(row, "left mid-rebase by wt sync run") {
+		t.Fatalf("bump row %q:\n%s", row, buf.String())
+	}
+	if strings.Contains(row, "dirty") {
+		t.Fatalf("a handover is called dirty: %q", row)
+	}
+}
+
 func syncRepo(t *testing.T) *Context {
 	t.Helper()
 	main := committedRepo(t, minimalConf)

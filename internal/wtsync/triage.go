@@ -98,7 +98,10 @@ func Assess(mainRoot, onto string, cfg *Config, wt repo.Worktree, agents []Agent
 		a.Err = fmt.Errorf("status: %w", err)
 		return a
 	}
-	a.Dirty = out != ""
+	// A handover's staged resolutions always make status non-empty; they are
+	// what a person is finishing, not dirt. Every reader of Dirty checks
+	// Paused first, so nothing that refuses a handover relies on Dirty.
+	a.Dirty = out != "" && !a.Paused
 	behind, ahead, err := BehindAhead(mainRoot, onto, wt.Branch)
 	if err != nil {
 		a.Err = err

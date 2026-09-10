@@ -110,3 +110,34 @@ func TestSyncUndoAbortsWhatSyncRunHandedOver(t *testing.T) {
 		t.Fatalf("ReadLock = %v, %v; the run's lock outlived the undo", ok, err)
 	}
 }
+
+// A forced undo of a handed-over branch that moved since the run does more
+// than abort: it rewinds past the moved commits, and the output has to say
+// from where.
+func TestSyncUndoForcedPastAMovedHandoverSaysWhatItRewound(t *testing.T) {
+	ctx, bump := contestedFixture(t)
+	old := gitOut(t, bump, "rev-parse", "HEAD")
+	handOverNow(t, ctx, bump)
+	main := ctx.Repo.MainRoot
+	gitOut(t, main, "update-ref", "refs/heads/feat_wt/bump", "main")
+	moved := gitOut(t, main, "rev-parse", "feat_wt/bump")
+	if moved == old {
+		t.Fatal("the branch did not move; the test is vacuous")
+	}
+
+	forced := noAgentsUndo()
+	forced.Force = true
+	var out bytes.Buffer
+	if err := SyncUndo(ctx, "bump", forced, &out); err != nil {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	if want := "bump  aborted the rebase; " + short(moved) + " → " + short(old); !strings.Contains(out.String(), want) {
+		t.Fatalf("output lacks %q:\n%s", want, out.String())
+	}
+	if gitOut(t, bump, "rev-parse", "HEAD") != old {
+		t.Fatal("HEAD is not back at the pre-run tip")
+	}
+	if gitOut(t, main, "rev-parse", wtsync.SafetyPrefix+"feat_wt/bump/100") != moved {
+		t.Fatal("the forced undo did not pin the tip it discarded")
+	}
+}

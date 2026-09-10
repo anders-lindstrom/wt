@@ -432,3 +432,74 @@ func TestUndoTakesOverTheLockAHandoverLeft(t *testing.T) {
 		t.Fatalf("ReadLock = %v, %v; the lock outlived the run it belonged to", ok, err)
 	}
 }
+
+func TestUndoRefusesAHandoverItCannotRead(t *testing.T) {
+	// Without the sidecar the kept lock cannot be recognised as the
+	// handover's: the refusal has to name the sidecar, not the lock, and
+	// displace nothing.
+	dir, wt, gitDir, _ := handedOverRepo(t, 5, true)
+	before, ok, err := ReadLock(gitDir)
+	if err != nil || !ok {
+		t.Fatalf("ReadLock = %v, %v; the fixture kept no lock", ok, err)
+	}
+	if err := os.WriteFile(StatePath(gitDir), []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	staged := gitIn(t, wt, "rev-parse", ":v.txt")
+
+	_, err = Undo(dir, []repo.Worktree{{Path: wt, Branch: "feature", Rebasing: true}}, nil, "feature", time.Now(), false)
+	if err == nil || !strings.Contains(err.Error(), StatePath(gitDir)) || !strings.Contains(err.Error(), "nothing undone") || strings.Contains(err.Error(), "locked by") {
+		t.Fatalf("err %v; want the unreadable sidecar named", err)
+	}
+	if busy, err := RebaseInProgress(wt); err != nil || !busy {
+		t.Fatalf("RebaseInProgress = %v, %v; the refusal aborted the rebase", busy, err)
+	}
+	if got := gitIn(t, wt, "rev-parse", ":v.txt"); got != staged {
+		t.Fatalf("v.txt is staged as %s, was %s", got, staged)
+	}
+	after, ok, err := ReadLock(gitDir)
+	if err != nil || !ok || after.PID != before.PID || !after.Started.Equal(before.Started) {
+		t.Fatalf("lock after = %+v, %v, %v; was %+v: the refusal displaced it", after, ok, err, before)
+	}
+}
+
+func TestUndoReportsWhatItAbortedBeforeALaterAbortFailed(t *testing.T) {
+	// One run handed over feature and later; later's abort cannot work.
+	// feature is already put back by then and must still be reported.
+	dir, wt, gitDir, old := handedOverRepo(t, 5, false)
+	gitIn(t, dir, "branch", "later", old)
+	later := dir + "-later"
+	gitIn(t, dir, "worktree", "add", "-q", later, "later")
+	if _, err := WriteSafety(dir, "later", old, 5); err != nil {
+		t.Fatal(err)
+	}
+	if err := gitCmd(later, "rebase", "--no-update-refs", "--no-gpg-sign", "origin/main").Run(); err == nil {
+		t.Fatal("later's rebase did not stop; the test is vacuous")
+	}
+	laterGitDir, err := GitDir(later)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteState(laterGitDir, State{Branch: "later", Epoch: 5}); err != nil {
+		t.Fatal(err)
+	}
+	// With orig-head gone, git rebase --abort cannot put the branch back.
+	if err := os.Remove(filepath.Join(laterGitDir, "rebase-merge", "orig-head")); err != nil {
+		t.Fatal(err)
+	}
+
+	wts := []repo.Worktree{{Path: wt, Branch: "feature", Rebasing: true}, {Path: later, Branch: "later", Rebasing: true}}
+	got, err := Undo(dir, wts, nil, "feature", time.Now(), false)
+	if err == nil || !strings.Contains(err.Error(), "later: rebase --abort") {
+		t.Fatalf("err %v; want later's abort to fail", err)
+	}
+	if len(got) != 1 || got[0].Branch != "feature" || !got[0].Aborted || got[0].To != old {
+		t.Fatalf("restored %+v; the abort that worked went unreported", got)
+	}
+	if busy, err := RebaseInProgress(wt); err != nil || busy {
+		t.Fatalf("RebaseInProgress = %v, %v; feature was not aborted", busy, err)
+	}
+	if has, err := HasPlan(gitDir); err != nil || has {
+		t.Fatalf("HasPlan = %v, %v; feature's handover survived its abort", has, err)
+	}
+}
