@@ -123,3 +123,24 @@ func TestMoveWorktreeAllowsEmptyDestination(t *testing.T) {
 		t.Fatalf("an empty destination should be fine: %v", err)
 	}
 }
+
+// `git branch -d` refuses a branch that is not merged into whatever HEAD is
+// on, which in a worktree layout is usually not the branch anyone cares
+// about. The merge question belongs to the caller, which asks it against the
+// repository's main branch; this method carries out the answer.
+func TestDeleteBranchIgnoresWhereTheCheckoutStands(t *testing.T) {
+	_, main := fixture(t)
+	r, _ := Discover(main)
+	run(t, main, "branch", "sidetrack")
+	run(t, main, "commit", "-q", "--allow-empty", "-m", "second")
+	run(t, main, "branch", "merged-into-main")
+	// HEAD moves behind the branch, which is what makes `git branch -d` balk.
+	run(t, main, "switch", "-q", "sidetrack")
+
+	if err := r.DeleteBranch("merged-into-main"); err != nil {
+		t.Fatalf("DeleteBranch: %v", err)
+	}
+	if r.BranchExists("merged-into-main") {
+		t.Error("branch should be deleted")
+	}
+}

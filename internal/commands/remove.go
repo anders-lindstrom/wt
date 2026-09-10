@@ -111,8 +111,9 @@ func RemoveAt(ctx *Context, path string, opts RemoveOptions, w io.Writer) error 
 			return nil
 		}
 		// The prompt can stay open for a while, and another session can land
-		// commits meanwhile: a branch shown as merged may no longer be, and
-		// `git branch -d` would still delete it if its upstream has the new
+		// commits meanwhile: a branch shown as merged may no longer be. The
+		// delete does not re-ask that question — it carries out the plan — so
+		// this re-read is what stands between a stale answer and somebody's
 		// commits. The plan the user confirmed is the plan that runs, or
 		// nothing runs.
 		if fresh := planFor(ctx, path); fresh != plan {
@@ -168,15 +169,6 @@ func mergeStanding(ctx *Context, branch string) (MergeState, int) {
 	}
 	ahead, _ := ctx.Repo.CommitsAhead(branch, ctx.Config.MainBranch)
 	return Unmerged, ahead
-}
-
-// headOf names what the main checkout is standing on, for a message that has
-// to explain git's answer rather than repeat it.
-func headOf(ctx *Context) string {
-	if head := ctx.Repo.BranchAt(ctx.Repo.MainRoot); head != "" {
-		return head
-	}
-	return "a detached HEAD"
 }
 
 func branchIsOurs(ctx *Context, branch string) bool {
@@ -253,16 +245,13 @@ func (p Plan) apply(ctx *Context, w io.Writer) error {
 	switch p.Outcome {
 	case BranchDeleted:
 		if err := ctx.Repo.DeleteBranch(p.Branch); err != nil {
-			// `git branch -d` measures merged against whatever the main
-			// checkout is standing on, which is not always the main branch.
-			// wt compared against the main branch itself and the worktree is
-			// already gone, so say which command finishes the job rather than
-			// handing over git's refusal.
+			// The merge check has already passed against the main branch, so
+			// this is a real failure — a locked ref, a broken repository — not
+			// git second-guessing the decision. The worktree is gone by then,
+			// so say so before the reason.
 			fmt.Fprintln(w, "✓ worktree removed")
-			return fmt.Errorf("branch %s is merged into %s, but git would not delete it: "+
-				"`git branch -d` compares against %s, which is what the main checkout has "+
-				"checked out.\n  Delete it with: git branch -D %s",
-				p.Branch, ctx.Config.MainBranch, headOf(ctx), p.Branch)
+			return fmt.Errorf("branch %s is merged into %s, but deleting it failed: %w",
+				p.Branch, ctx.Config.MainBranch, err)
 		}
 		fmt.Fprintf(w, "✓ worktree removed; branch %s was merged into %s and has been deleted\n",
 			p.Branch, ctx.Config.MainBranch)

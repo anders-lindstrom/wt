@@ -370,30 +370,46 @@ func TestRemoveRefusesWhenFactsChangedDuringConfirmation(t *testing.T) {
 }
 
 // `git branch -d` measures "merged" against whatever the main checkout is
-// standing on, which is not always the main branch — so it can refuse a branch
-// wt has already verified is merged into main. The worktree is gone by then, so
-// the message has to say what happened and what to type.
-func TestRemoveExplainsWhenGitRefusesToDeleteAMergedBranch(t *testing.T) {
+// standing on, which in this layout is rarely the main branch — so it refuses
+// branches that are merged into the branch that matters. wt has already asked
+// the right question by the time it deletes, so the plan is carried out rather
+// than second-guessed by a comparison against an unrelated branch.
+func TestRemoveDeletesAMergedBranchWithTheMainCheckoutElsewhere(t *testing.T) {
 	main := committedRepo(t, minimalConf)
 	ctx, _ := Open(main)
 	gitIn(t, main, "branch", "sidetrack")
 	gitIn(t, main, "commit", "-q", "--allow-empty", "-m", "on main")
 	dst := foreignWorktree(t, ctx, main, "someones-work", 0)
-	// The main checkout moves off main, behind the branch being removed.
+	// The main checkout moves off main, behind the branch being removed, which
+	// is what makes `git branch -d` refuse.
 	gitIn(t, main, "switch", "-q", "sidetrack")
 
 	var buf bytes.Buffer
-	err := RemoveAt(ctx, dst, RemoveOptions{}, &buf)
-	if err == nil {
-		t.Fatal("want the refusal reported, not swallowed")
+	if err := RemoveAt(ctx, dst, RemoveOptions{}, &buf); err != nil {
+		t.Fatalf("RemoveAt: %v\n%s", err, buf.String())
 	}
-	if !strings.Contains(err.Error(), "git branch -D someones-work") {
-		t.Errorf("the message must name the command that finishes the job: %v", err)
-	}
-	if !strings.Contains(buf.String(), "worktree removed") {
-		t.Errorf("the worktree did go; say so:\n%s", buf.String())
+	if ctx.Repo.BranchExists("someones-work") {
+		t.Error("the branch was merged into main; the plan said it would go")
 	}
 	if _, err := os.Stat(dst); !os.IsNotExist(err) {
 		t.Error("the worktree should be gone")
+	}
+}
+
+// An unmerged branch is never on this path: the plan reaches BranchDeleted
+// only after wt has compared it against the main branch itself.
+func TestRemoveStillKeepsUnmergedWorkWhenTheMainCheckoutIsElsewhere(t *testing.T) {
+	main := committedRepo(t, minimalConf)
+	ctx, _ := Open(main)
+	gitIn(t, main, "branch", "sidetrack")
+	dst := foreignWorktree(t, ctx, main, "someones-work", 2)
+	gitIn(t, main, "switch", "-q", "sidetrack")
+
+	var buf bytes.Buffer
+	if err := RemoveAt(ctx, dst, RemoveOptions{}, &buf); err != nil {
+		t.Fatalf("RemoveAt: %v", err)
+	}
+	if !ctx.Repo.BranchExists("someones-work") {
+		t.Fatal("two commits of somebody else's work were deleted")
 	}
 }

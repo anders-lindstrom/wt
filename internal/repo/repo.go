@@ -283,9 +283,16 @@ func (r *Repo) MoveWorktree(from, to string) error {
 	return nil
 }
 
-// DeleteBranch deletes a branch, refusing when it is not merged.
+// DeleteBranch deletes a branch, whether or not git considers it merged.
+//
+// Deliberately -D, not -d. `git branch -d` measures "merged" against whatever
+// the main checkout happens to have checked out, which in a worktree layout is
+// rarely the branch anyone cares about — so it refuses branches that are
+// merged into trunk and, worse, would accept one that is not. The merge
+// question belongs to the caller, which asks it against the repository's own
+// main branch; this carries out the answer.
 func (r *Repo) DeleteBranch(name string) error {
-	_, err := git.Run(r.MainRoot, "branch", "-d", name)
+	_, err := git.Run(r.MainRoot, "branch", "-D", name)
 	return err
 }
 
