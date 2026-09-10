@@ -26,6 +26,11 @@ type Lock struct {
 	PID     int
 	Started time.Time
 	Owner   string
+	// kept is set by Keep and read by Release, both under held's mutex. A
+	// kept lock is the run's deliberate leftover, so Release must leave the
+	// file alone however the caller reaches it — a deferred release two
+	// call frames up included.
+	kept bool
 }
 
 // held is every lock this process has acquired and not yet released. A
@@ -120,9 +125,14 @@ func Acquire(gitDir string, now time.Time) (*Lock, error) {
 // does not start where somebody has to finish first. It is not a forever
 // lock — LockExpiry still frees it — and the sidecar, not this, is the
 // durable marker that a run is waiting.
+//
+// A kept lock is also proof against Release: a caller that keeps a lock and
+// then releases it, or that keeps one under a defer it did not write, must
+// not silently delete the file the next run has to respect.
 func (l *Lock) Keep() {
 	held.Lock()
 	delete(held.locks, l.Path)
+	l.kept = true
 	held.Unlock()
 }
 
@@ -158,13 +168,18 @@ func TakeOver(gitDir string, now time.Time, prev LeftLock) (*Lock, error) {
 // Release removes the lock, but only while it is still this acquisition's: a
 // displaced owner must not delete its replacement's lock. PID alone is not
 // enough to tell the two apart when the same process re-acquires its own
-// expired lock, so Started (set once, at Acquire) is compared too.
+// expired lock, so Started (set once, at Acquire) is compared too. A lock
+// Keep was called on is never removed.
 func (l *Lock) Release() error {
 	held.Lock()
 	if held.locks[l.Path] == l {
 		delete(held.locks, l.Path)
 	}
+	kept := l.kept
 	held.Unlock()
+	if kept {
+		return nil
+	}
 	cur, ok, err := ReadLock(filepath.Dir(l.Path))
 	if err != nil {
 		return err

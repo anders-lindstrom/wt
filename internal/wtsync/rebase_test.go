@@ -441,14 +441,55 @@ func TestResumeNeverRestores(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := Resume(dir, cfg, req, res.OldTip, res.Safety, nil); err == nil {
+	_, err = Resume(dir, cfg, req, res.OldTip, res.Safety, nil)
+	if err == nil {
 		t.Fatal("Resume = nil error, want the refusal git made")
+	}
+	// The message points at undo by the name a person uses, and does not
+	// claim the worktree is untouched: a resume may have applied a
+	// strategy's answer before it failed.
+	if !strings.Contains(err.Error(), "wt sync undo feature") || strings.Contains(err.Error(), "untouched") {
+		t.Fatalf("err = %v", err)
 	}
 	if busy, _ := RebaseInProgress(wt); !busy {
 		t.Fatal("the rebase was thrown away; a resume must never restore")
 	}
 	if got, _ := os.ReadFile(filepath.Join(wt, "a.txt")); string(got) != "unstaged\n" {
 		t.Fatalf("a.txt = %q; the person's work was overwritten", got)
+	}
+}
+
+// Stacked forbids a handover, and on a run it means restore. On a resume it
+// may not: the reset would discard a person's own resolution, which is the
+// one thing a resume must never do. It refuses and leaves everything alone.
+func TestResumeNeverRestoresAStackParent(t *testing.T) {
+	dir, wt, cfg := runRepo(t,
+		[]map[string]string{{"v.txt": "1.0.5\n", "a.txt": "trunk\n"}},
+		[]map[string]string{{"v.txt": "1.0.1\n", "a.txt": "branch\n"}})
+	req := trunkReq(wt, 1)
+	req.Work = "feat"
+	res, err := Rebase(dir, cfg, req, nil)
+	if err != nil || res.Left == nil {
+		t.Fatalf("Rebase = %+v, %v", res, err)
+	}
+	// The branch grew a descendant in the run between the two calls, and
+	// a.txt is still nobody's: the resume reaches the same stop.
+	req.Stacked = true
+	out, err := Resume(dir, cfg, req, res.OldTip, res.Safety, nil)
+	if err == nil {
+		t.Fatalf("Resume = %+v, want a refusal", out)
+	}
+	if !strings.Contains(err.Error(), "descendants") || !strings.Contains(err.Error(), "wt sync undo feat") {
+		t.Fatalf("err = %v", err)
+	}
+	if out.Restored {
+		t.Fatal("Restored = true; a resume must never restore")
+	}
+	if busy, _ := RebaseInProgress(wt); !busy {
+		t.Fatal("the rebase was thrown away")
+	}
+	if got, _ := os.ReadFile(filepath.Join(wt, "v.txt")); string(got) != "1.0.6\n" {
+		t.Fatalf("v.txt = %q; the strategy's answer was reset away", got)
 	}
 }
 

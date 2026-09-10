@@ -167,7 +167,40 @@ func TestTakeOverRespectsSomebodyElsesLock(t *testing.T) {
 	}
 	defer func() { _ = l.Release() }()
 
-	if _, err := TakeOver(dir, now, LeftLock{PID: l.PID + 1, Started: l.Started.Unix()}); err == nil {
-		t.Fatal("TakeOver took a lock that is not the run's")
+	// Both halves of the comparison have to hold. A different pid is the
+	// obvious case; the same pid with a different start time is the one that
+	// matters after a process id has been reused, or after the same process
+	// acquired again.
+	for _, prev := range []LeftLock{
+		{PID: l.PID + 1, Started: l.Started.Unix()},
+		{PID: l.PID, Started: l.Started.Unix() + 1},
+		{PID: l.PID, Started: l.Started.Unix() - 1},
+	} {
+		if _, err := TakeOver(dir, now, prev); err == nil {
+			t.Fatalf("TakeOver took a lock that is not the run's: %+v", prev)
+		}
+	}
+}
+
+// Keep is the whole protection, not a note in a doc comment: a caller that
+// releases a kept lock — or a defer it did not write — must not delete the
+// file the next run has to respect.
+func TestAKeptLockSurvivesRelease(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	l, err := Acquire(dir, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.Keep()
+	if err := l.Release(); err != nil {
+		t.Fatal(err)
+	}
+	cur, ok, err := ReadLock(dir)
+	if err != nil || !ok {
+		t.Fatalf("ReadLock = %v, %v; Release deleted a kept lock", ok, err)
+	}
+	if cur.PID != l.PID {
+		t.Fatalf("lock %+v is not the one that was kept", cur)
 	}
 }

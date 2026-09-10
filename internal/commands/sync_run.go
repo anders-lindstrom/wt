@@ -258,7 +258,7 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 			fmt.Fprintf(w, "  skipped: %s\n", p.reason)
 			continue
 		}
-		req := wtsync.Request{Path: p.wt.Path, Branch: b, Trunk: trunkSHA, Onto: trunkSHA, Epoch: epoch}
+		req := wtsync.Request{Path: p.wt.Path, Branch: b, Trunk: trunkSHA, Onto: trunkSHA, Epoch: epoch, Work: p.work}
 		req.Stacked = len(wtsync.Descendants(parents, b)) > 0
 		ontoLabel := onto
 		if parent, ok := parents[b]; ok {
@@ -294,6 +294,14 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 				Onto: req.Onto, Upstream: req.Upstream, Epoch: epoch, Cfg: cfg, Res: res, Lock: p.lock,
 			}); err != nil {
 				fmt.Fprintf(w, "  failed: %v\n", err)
+				// The rebase is still in the worktree and there is now no
+				// plan file to explain it, so say the two things a person
+				// cannot see for themselves. Any half-written brief goes:
+				// the sidecar is the marker and it was never written, so
+				// nothing acts on what is left, and a stale markdown would
+				// describe a stop that is not this one.
+				clearHandover(w, p.wt.Path)
+				fmt.Fprintf(w, "  %s is left mid-rebase with no plan: finish it by hand, or wt sync undo %s puts it back\n", p.work, p.work)
 				failures = append(failures, p.work+" (failed)")
 				release(b)
 				poisonAbove(b, p.work+" failed")

@@ -430,6 +430,41 @@ func TestSyncRunRefusesAWorktreeWaitingOnAPerson(t *testing.T) {
 	}
 }
 
+// A handover that cannot be written leaves the rebase in the worktree with
+// nothing to explain it. The run cannot put that right — a restore here
+// would be the one thing the handover exists to avoid — but it must say
+// where the worktree is and what puts it back.
+func TestSyncRunSaysWhereAFailedHandoverLeftTheWorktree(t *testing.T) {
+	ctx, bump := contestedFixture(t)
+	gitDir, err := wtsync.GitDir(bump)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A directory where writeAtomic wants its temp file: the brief cannot be
+	// written, and nothing else in the run touches this name.
+	if err := os.Mkdir(wtsync.PlanPath(gitDir)+".tmp", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	err = SyncRun(ctx, []string{"bump"}, noAgents(), &out)
+	s := out.String()
+	if err == nil || !strings.Contains(err.Error(), "bump (failed)") {
+		t.Fatalf("err %v\n%s", err, s)
+	}
+	if !strings.Contains(s, "bump is left mid-rebase with no plan") || !strings.Contains(s, "wt sync undo bump") {
+		t.Fatalf("the run did not say where it left the worktree:\n%s", s)
+	}
+	if busy, berr := wtsync.RebaseInProgress(bump); berr != nil || !busy {
+		t.Fatalf("RebaseInProgress = %v, %v; the run put the rebase back", busy, berr)
+	}
+	if has, herr := wtsync.HasPlan(gitDir); herr != nil || has {
+		t.Fatalf("HasPlan = %v, %v; a handover that failed leaves no marker", has, herr)
+	}
+	if _, err := os.Stat(wtsync.PlanPath(gitDir)); !os.IsNotExist(err) {
+		t.Fatalf("a half-written brief survived: %v", err)
+	}
+}
+
 // A stack parent may not be left waiting: its children would be stranded on
 // a base that is about to be rewritten, so its stop is put back instead.
 func TestSyncRunPutsAStackParentBackInsteadOfHandingItOver(t *testing.T) {

@@ -98,6 +98,10 @@ type Request struct {
 	Onto     string // what to rebase onto: Trunk, or a stack parent's new tip
 	Upstream string // "" for a plain rebase; the parent's old tip for a stack child
 	Epoch    int64
+	// Work is what a person calls this worktree, for the messages a run puts
+	// in front of them: every other line of wt sync names the work, not the
+	// branch. Empty falls back to the branch.
+	Work string
 	// Stacked says this branch has descendants in the same run. A stop a
 	// person owns is then restored rather than handed over: a parent left
 	// mid-rebase strands every child on a base that is about to be
@@ -211,9 +215,21 @@ func (d *driver) restore() error {
 	return nil
 }
 
+// work is the name to put in front of a person: the caller's, or the branch
+// when the caller named none.
+func (d *driver) work() string {
+	if d.req.Work != "" {
+		return d.req.Work
+	}
+	return d.req.Branch
+}
+
 func (d *driver) fail(err error) (Result, error) {
 	if d.keep {
-		return d.res, fmt.Errorf("%w; the worktree is untouched, wt sync undo %s puts it back", err, d.req.Branch)
+		// Not "untouched": a resume that reached a stop may already have
+		// applied a strategy's answer before it failed. What is true is
+		// that nothing was put back, which is the whole point.
+		return d.res, fmt.Errorf("%w; the rebase is left where it stopped, wt sync undo %s puts it back", err, d.work())
 	}
 	rerr := d.restore()
 	if rerr == nil {
@@ -381,6 +397,13 @@ func (d *driver) drive(err error) (Result, error) {
 		d.res.Stops = append(d.res.Stops, stop)
 		if unresolved {
 			if d.req.Stacked {
+				// A resume never restores, and a stack parent is no
+				// exception: the reset would throw away a person's own
+				// resolution, which is worse than the stranded children the
+				// restore exists to prevent. Say so and leave it alone.
+				if d.keep {
+					return d.fail(errors.New("this branch has descendants in the run, and resuming into a stop nobody claims cannot put it back without discarding your work"))
+				}
 				d.res.Restored = true
 				return d.res, d.restore()
 			}

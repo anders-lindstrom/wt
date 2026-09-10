@@ -29,8 +29,10 @@ type handoverInput struct {
 // sidecar resume and undo verify against, the lock left behind, and the §5
 // line. The brief is written first and the sidecar second, both atomically:
 // the sidecar is the marker, so a crash between them leaves a brief nothing
-// acts on rather than a marker with no brief. The caller must not release
-// the lock afterwards — Keep has already taken it off this process's books.
+// acts on rather than a marker with no brief. Keep is called only once the
+// sidecar exists, and a kept lock ignores Release, so a caller that releases
+// it — or a defer it did not write — cannot delete the file the next run has
+// to respect.
 func handOver(ctx *Context, w io.Writer, in handoverInput) error {
 	if in.Res.Left == nil {
 		return fmt.Errorf("%s: nothing to hand over", in.Work)
