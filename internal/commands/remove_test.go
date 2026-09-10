@@ -63,13 +63,12 @@ func TestRemoveDetachedTouchesNoBranch(t *testing.T) {
 	}
 }
 
-// 3. A branch this tooling does not own is never deleted or renamed.
-func TestRemoveLeavesForeignBranchAlone(t *testing.T) {
+// 3. A branch this tooling does not own, carrying work of its own, is never
+// deleted or renamed.
+func TestRemoveLeavesAnUnmergedForeignBranchAlone(t *testing.T) {
 	main := committedRepo(t, minimalConf)
 	ctx, _ := Open(main)
-	gitIn(t, main, "branch", "someones-work")
-	dst := filepath.Join(ctx.Repo.Parent, "foreign")
-	gitIn(t, main, "worktree", "add", "-q", dst, "someones-work")
+	dst := foreignWorktree(t, ctx, main, "someones-work", 3)
 
 	var buf bytes.Buffer
 	if err := RemoveAt(ctx, dst, RemoveOptions{}, &buf); err != nil {
@@ -77,6 +76,63 @@ func TestRemoveLeavesForeignBranchAlone(t *testing.T) {
 	}
 	if !ctx.Repo.BranchExists("someones-work") {
 		t.Fatal("a branch this tooling did not create must survive removal")
+	}
+	if !strings.Contains(buf.String(), "3 commits ahead of main") {
+		t.Errorf("the plan must say how much work is on it:\n%s", buf.String())
+	}
+}
+
+// foreignWorktree makes a worktree on a branch outside the convention, with
+// ahead commits of its own on top of the main branch.
+func foreignWorktree(t *testing.T, ctx *Context, main, branch string, ahead int) string {
+	t.Helper()
+	gitIn(t, main, "branch", branch)
+	dst := filepath.Join(ctx.Repo.Parent, branch)
+	gitIn(t, main, "worktree", "add", "-q", dst, branch)
+	for i := 0; i < ahead; i++ {
+		gitIn(t, dst, "commit", "-q", "--allow-empty", "-m", "theirs")
+	}
+	return dst
+}
+
+// Merged means nothing is lost, whoever made the branch — and `git branch -d`
+// refuses anything else anyway. Leaving a merged branch behind because wt did
+// not create it just leaves litter nobody will ever clean up.
+func TestRemoveDeletesAMergedBranchWhoeverMadeIt(t *testing.T) {
+	main := committedRepo(t, minimalConf)
+	ctx, _ := Open(main)
+	dst := foreignWorktree(t, ctx, main, "someones-work", 0)
+
+	var buf bytes.Buffer
+	if err := RemoveAt(ctx, dst, RemoveOptions{}, &buf); err != nil {
+		t.Fatalf("RemoveAt: %v", err)
+	}
+	if ctx.Repo.BranchExists("someones-work") {
+		t.Error("a merged branch should have been deleted")
+	}
+	if !strings.Contains(buf.String(), "merged into main") {
+		t.Errorf("the plan must say why it may be deleted:\n%s", buf.String())
+	}
+}
+
+// The merge state is the fact a removal turns on, so it is stated for every
+// branch — not only for the ones wt made.
+func TestRemovePlanStatesTheMergeStateOfAForeignBranch(t *testing.T) {
+	main := committedRepo(t, minimalConf)
+	ctx, _ := Open(main)
+	dst := foreignWorktree(t, ctx, main, "someones-work", 1)
+
+	var buf bytes.Buffer
+	opts := RemoveOptions{Confirm: func(Plan) (bool, error) { return false, nil }}
+	if err := RemoveAt(ctx, dst, opts, &buf); err != nil {
+		t.Fatalf("RemoveAt: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "not merged: 1 commit ahead of main") {
+		t.Errorf("want the merge state and the count, singular:\n%s", out)
+	}
+	if strings.Contains(out, "1 commits") {
+		t.Errorf("one commit is not 1 commits:\n%s", out)
 	}
 }
 
@@ -162,7 +218,8 @@ func TestRemovePlanNamesUnmergedBranchOutcome(t *testing.T) {
 		t.Fatalf("Remove: %v", err)
 	}
 	out := buf.String()
-	for _, want := range []string{path, "fix_wt/unmerged-plan", "not merged into main", "unmerged-plan"} {
+	for _, want := range []string{path, "fix_wt/unmerged-plan",
+		"not merged: 1 commit ahead of main", "unmerged-plan"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("plan should mention %q:\n%s", want, out)
 		}
@@ -258,9 +315,7 @@ func TestRemoveConfirmReceivesThePlan(t *testing.T) {
 func TestRemovePlanNamesForeignBranch(t *testing.T) {
 	main := committedRepo(t, minimalConf)
 	ctx, _ := Open(main)
-	gitIn(t, main, "branch", "someones-work")
-	dst := filepath.Join(ctx.Repo.Parent, "foreign")
-	gitIn(t, main, "worktree", "add", "-q", dst, "someones-work")
+	dst := foreignWorktree(t, ctx, main, "someones-work", 2)
 
 	var got Plan
 	var buf bytes.Buffer
@@ -274,8 +329,11 @@ func TestRemovePlanNamesForeignBranch(t *testing.T) {
 	if got.Outcome != BranchUntouched {
 		t.Errorf("plan outcome = %v, want BranchUntouched", got.Outcome)
 	}
-	if !strings.Contains(buf.String(), "someones-work — not created by wt") {
+	if !strings.Contains(buf.String(), "not created by wt and not merged") {
 		t.Errorf("rendered plan should name the branch and the reason, got:\n%s", buf.String())
+	}
+	if !strings.Contains(buf.String(), "someones-work — not merged: 2 commits ahead of main") {
+		t.Errorf("rendered plan should state the merge state, got:\n%s", buf.String())
 	}
 }
 
@@ -308,5 +366,34 @@ func TestRemoveRefusesWhenFactsChangedDuringConfirmation(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "Nothing was removed.") {
 		t.Errorf("should say nothing was removed, got:\n%s", buf.String())
+	}
+}
+
+// `git branch -d` measures "merged" against whatever the main checkout is
+// standing on, which is not always the main branch — so it can refuse a branch
+// wt has already verified is merged into main. The worktree is gone by then, so
+// the message has to say what happened and what to type.
+func TestRemoveExplainsWhenGitRefusesToDeleteAMergedBranch(t *testing.T) {
+	main := committedRepo(t, minimalConf)
+	ctx, _ := Open(main)
+	gitIn(t, main, "branch", "sidetrack")
+	gitIn(t, main, "commit", "-q", "--allow-empty", "-m", "on main")
+	dst := foreignWorktree(t, ctx, main, "someones-work", 0)
+	// The main checkout moves off main, behind the branch being removed.
+	gitIn(t, main, "switch", "-q", "sidetrack")
+
+	var buf bytes.Buffer
+	err := RemoveAt(ctx, dst, RemoveOptions{}, &buf)
+	if err == nil {
+		t.Fatal("want the refusal reported, not swallowed")
+	}
+	if !strings.Contains(err.Error(), "git branch -D someones-work") {
+		t.Errorf("the message must name the command that finishes the job: %v", err)
+	}
+	if !strings.Contains(buf.String(), "worktree removed") {
+		t.Errorf("the worktree did go; say so:\n%s", buf.String())
+	}
+	if _, err := os.Stat(dst); !os.IsNotExist(err) {
+		t.Error("the worktree should be gone")
 	}
 }

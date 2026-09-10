@@ -25,14 +25,32 @@ type RemoveOptions struct {
 type BranchOutcome int
 
 const (
-	// BranchUntouched covers a detached HEAD and a branch this tooling did not
-	// create. Both keep their branch and lose only the checkout.
+	// BranchUntouched covers a detached HEAD, a branch already gone, and an
+	// unmerged branch this tooling did not create. All keep their branch, or
+	// what is left of it, and lose only the checkout.
 	BranchUntouched BranchOutcome = iota
-	// BranchDeleted is a branch already merged into the main branch.
+	// BranchDeleted is a branch already merged into the main branch, whoever
+	// created it: merged means nothing is lost.
 	BranchDeleted
 	// BranchKept renames an unmerged branch out of the <type>_wt/ prefix, so
 	// unfinished work survives its worktree.
 	BranchKept
+)
+
+// MergeState is what is known about a branch's relation to the main branch.
+// It is the fact a removal turns on, so it is read for every branch — a
+// branch nobody here created still has a merge state, and a user reading the
+// plan wants it whoever made the branch.
+type MergeState int
+
+const (
+	// MergeUnknown is a detached HEAD, a branch already deleted, or a
+	// repository with no main branch to compare against.
+	MergeUnknown MergeState = iota
+	// Merged is a branch the main branch already contains.
+	Merged
+	// Unmerged is a branch carrying commits the main branch does not have.
+	Unmerged
 )
 
 // Plan is what a removal is about to do, assembled before anything is touched.
@@ -48,6 +66,11 @@ type Plan struct {
 	KeepAs  string // the name BranchKept will rename the branch to
 	Reason  string // why an outcome of BranchUntouched was reached
 	Dirty   bool   // the checkout has uncommitted changes
+	// Merge and Ahead are the branch's standing against the main branch:
+	// Ahead is how many commits it carries that the main branch does not,
+	// and is meaningful only when Merge is Unmerged.
+	Merge MergeState
+	Ahead int
 	// MainBranch is carried on the plan so rendering needs nothing but the
 	// plan itself.
 	MainBranch string
@@ -109,21 +132,51 @@ func planFor(ctx *Context, path string) Plan {
 		p.Dirty = true
 	}
 
+	p.Merge, p.Ahead = mergeStanding(ctx, p.Branch)
+
 	switch {
 	case p.Branch == "":
 		p.Reason = "detached HEAD"
-	case !branchIsOurs(ctx, p.Branch):
-		p.Reason = "not created by wt"
 	case !ctx.Repo.BranchExists(p.Branch):
 		p.Reason = "already gone"
-	case ctx.Repo.BranchExists(ctx.Config.MainBranch) &&
-		ctx.Repo.IsMerged(p.Branch, ctx.Config.MainBranch):
+	case p.Merge == Merged:
+		// Merged first, and whoever created the branch: nothing is lost, and
+		// leaving it behind because wt did not make it only leaves litter.
 		p.Outcome = BranchDeleted
+	case p.Merge == MergeUnknown && !branchIsOurs(ctx, p.Branch):
+		p.Reason = "not created by wt, and there is no " + ctx.Config.MainBranch +
+			" branch here to compare it with"
+	case !branchIsOurs(ctx, p.Branch):
+		p.Reason = "not created by wt and not merged"
 	default:
 		p.Outcome = BranchKept
 		p.KeepAs = naming.StripPrefix(p.Branch, ctx.Config.TypeSuffix)
 	}
 	return p
+}
+
+// mergeStanding reads where a branch stands against the main branch. The
+// count comes from git rather than from "is it merged", because "not merged"
+// on its own does not say whether one commit or thirty are at stake.
+func mergeStanding(ctx *Context, branch string) (MergeState, int) {
+	if branch == "" || !ctx.Repo.BranchExists(branch) ||
+		!ctx.Repo.BranchExists(ctx.Config.MainBranch) {
+		return MergeUnknown, 0
+	}
+	if ctx.Repo.IsMerged(branch, ctx.Config.MainBranch) {
+		return Merged, 0
+	}
+	ahead, _ := ctx.Repo.CommitsAhead(branch, ctx.Config.MainBranch)
+	return Unmerged, ahead
+}
+
+// headOf names what the main checkout is standing on, for a message that has
+// to explain git's answer rather than repeat it.
+func headOf(ctx *Context) string {
+	if head := ctx.Repo.BranchAt(ctx.Repo.MainRoot); head != "" {
+		return head
+	}
+	return "a detached HEAD"
 }
 
 func branchIsOurs(ctx *Context, branch string) bool {
@@ -138,16 +191,9 @@ func (p Plan) Render(w io.Writer) {
 	if p.Dirty {
 		state = "uncommitted changes"
 	}
-	branch := "(none)"
+	branch := "(none) — detached HEAD"
 	if p.Branch != "" {
-		branch = p.Branch
-	}
-	if p.Reason != "" {
-		branch += " — " + p.Reason
-	} else if p.Outcome == BranchDeleted {
-		branch += " — merged into " + p.MainBranch
-	} else {
-		branch += " — not merged into " + p.MainBranch
+		branch = p.Branch + " — " + p.standing()
 	}
 
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
@@ -160,13 +206,42 @@ func (p Plan) Render(w io.Writer) {
 	fmt.Fprintln(w, "  the checkout will be deleted")
 	switch p.Outcome {
 	case BranchDeleted:
-		fmt.Fprintf(w, "  the branch will be deleted\n")
+		fmt.Fprintf(w, "  the branch will be deleted (merged into %s)\n", p.MainBranch)
 	case BranchKept:
-		fmt.Fprintf(w, "  the branch will be kept as %q\n", p.KeepAs)
+		fmt.Fprintf(w, "  the branch will be kept as %q (%s)\n", p.KeepAs, p.aheadOfMain())
 	default:
-		fmt.Fprintln(w, "  no branch will be touched")
+		fmt.Fprintf(w, "  no branch will be touched: %s\n", p.Reason)
 	}
 	fmt.Fprintln(w)
+}
+
+// standing is the branch's merge state in words, which the plan states for
+// every branch: it is the fact that decides what removal costs.
+func (p Plan) standing() string {
+	switch {
+	case p.Branch == "":
+		return "detached HEAD"
+	case p.Reason == "already gone":
+		return "already gone"
+	case p.Merge == Merged:
+		return "merged into " + p.MainBranch
+	case p.Merge == Unmerged:
+		return "not merged: " + p.aheadOfMain()
+	}
+	return "no " + p.MainBranch + " branch here to compare with"
+}
+
+// aheadOfMain counts the work at stake. A branch with no count read — git
+// could not answer — says only that it is unmerged, rather than claiming a
+// zero it does not know.
+func (p Plan) aheadOfMain() string {
+	switch p.Ahead {
+	case 0:
+		return "not merged into " + p.MainBranch
+	case 1:
+		return "1 commit ahead of " + p.MainBranch
+	}
+	return fmt.Sprintf("%d commits ahead of %s", p.Ahead, p.MainBranch)
 }
 
 // apply carries out the plan. Every decision was already made in planFor, so
@@ -178,7 +253,16 @@ func (p Plan) apply(ctx *Context, w io.Writer) error {
 	switch p.Outcome {
 	case BranchDeleted:
 		if err := ctx.Repo.DeleteBranch(p.Branch); err != nil {
-			return err
+			// `git branch -d` measures merged against whatever the main
+			// checkout is standing on, which is not always the main branch.
+			// wt compared against the main branch itself and the worktree is
+			// already gone, so say which command finishes the job rather than
+			// handing over git's refusal.
+			fmt.Fprintln(w, "✓ worktree removed")
+			return fmt.Errorf("branch %s is merged into %s, but git would not delete it: "+
+				"`git branch -d` compares against %s, which is what the main checkout has "+
+				"checked out.\n  Delete it with: git branch -D %s",
+				p.Branch, ctx.Config.MainBranch, headOf(ctx), p.Branch)
 		}
 		fmt.Fprintf(w, "✓ worktree removed; branch %s was merged into %s and has been deleted\n",
 			p.Branch, ctx.Config.MainBranch)
