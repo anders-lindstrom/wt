@@ -6,6 +6,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
@@ -198,4 +199,162 @@ func branchCount(n int) string {
 		return "1 branch"
 	}
 	return fmt.Sprintf("%d branches", n)
+}
+
+// SweepOptions carries the caller's fetch and confirmation policy.
+type SweepOptions struct {
+	NoFetch bool
+	// Yes deletes without asking. Without it Confirm asks, and with neither
+	// the plan is printed and nothing is deleted: a bulk delete does not
+	// happen because nobody was there to say no.
+	Yes     bool
+	Confirm func(SweepPlan) (bool, error)
+}
+
+// Sweep deletes the local branches trunk already contains.
+func Sweep(ctx *Context, opts SweepOptions, w io.Writer) error {
+	if err := sweepGuard(ctx); err != nil {
+		return err
+	}
+	if err := sweepFetch(ctx, opts.NoFetch, w); err != nil {
+		return err
+	}
+	bases, err := sweepBases(ctx)
+	if err != nil {
+		return err
+	}
+	plan, err := planSweep(ctx, bases)
+	if err != nil {
+		return err
+	}
+	plan.Render(w)
+	if len(plan.Delete) == 0 {
+		return nil
+	}
+
+	switch {
+	case opts.Yes:
+	case opts.Confirm != nil:
+		ok, err := opts.Confirm(plan)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			fmt.Fprintln(w, "Nothing was deleted.")
+			return nil
+		}
+	default:
+		fmt.Fprintf(w, "Nothing was deleted: there is no terminal to ask. Pass --yes to delete %s.\n",
+			branchCount(len(plan.Delete)))
+		return nil
+	}
+	return plan.apply(ctx, w)
+}
+
+// sweepGuard refuses before anything is fetched or deleted: sweep acts on the
+// whole repository, so it runs from its main checkout, which has to be a
+// checkout, against a trunk somebody named.
+func sweepGuard(ctx *Context) error {
+	if !samePath(ctx.Repo.Root, ctx.Repo.MainRoot) {
+		return fmt.Errorf("wt sweep deletes branches across the whole repository, so it runs "+
+			"only from the main checkout, %s\n  wt cd . gets you there", ctx.Repo.MainRoot)
+	}
+	worktrees, err := ctx.Repo.Worktrees()
+	if err != nil {
+		return fmt.Errorf("could not list worktrees: %w", err)
+	}
+	if len(worktrees) == 0 || worktrees[0].Bare {
+		return fmt.Errorf("wt sweep runs from a main checkout, and %s is a bare repository", ctx.Repo.MainRoot)
+	}
+	// Without either, MainBranch is only what the main checkout has checked
+	// out, and a feature branch taken for trunk makes everything cut from it
+	// look merged.
+	if head, _ := ctx.Repo.OriginHead(); !ctx.Config.MainBranchSet && head != ctx.Config.MainBranch {
+		return fmt.Errorf("wt sweep cannot tell which branch is trunk: MAIN_BRANCH is not set in "+
+			"bin/worktree/worktree.conf and origin's HEAD does not name %s\n"+
+			"  set MAIN_BRANCH, or run git remote set-head origin --auto", ctx.Config.MainBranch)
+	}
+	return nil
+}
+
+// sweepFetch brings origin up to date and prunes the remote branches deleted
+// there, which is what makes an upstream show as gone.
+//
+// The refspec is explicit and the refmap empty, so the fetch writes and
+// prunes only refs/remotes/origin/* whatever remote.origin.fetch maps: a
+// mapping into refs/heads would otherwise prune local branches before
+// anything was asked (verified against git 2.55). --no-prune-tags overrides
+// fetch.pruneTags, --no-tags stops tags being followed in, and
+// --no-recurse-submodules keeps the prune out of submodules.
+func sweepFetch(ctx *Context, noFetch bool, w io.Writer) error {
+	switch {
+	case !ctx.Repo.HasRemote("origin"):
+		fmt.Fprintln(w, "no origin remote: comparing with local branches only")
+	case noFetch:
+		fmt.Fprintln(w, "not fetched: comparing with origin as last fetched")
+	default:
+		if _, err := git.RunTimeout(ctx.Repo.MainRoot, fetchTimeout, "fetch", "--quiet", "--prune",
+			"--no-prune-tags", "--no-tags", "--no-recurse-submodules", "--refmap=",
+			"origin", "+refs/heads/*:refs/remotes/origin/*"); err != nil {
+			return fmt.Errorf("fetch: %w\n  --no-fetch compares with origin as last fetched", err)
+		}
+		fmt.Fprintln(w, "fetched origin")
+	}
+	return nil
+}
+
+// apply deletes the planned branches. Trunk and the branches are read again
+// first, and a branch that moved or is no longer deletable is kept. Each
+// delete then asks once more whether a worktree has the branch, and deletes
+// only at the tip the plan showed, so the plan that was shown is the plan
+// that runs, branch by branch.
+func (p SweepPlan) apply(ctx *Context, w io.Writer) error {
+	bases, err := sweepBases(ctx)
+	if err != nil {
+		return fmt.Errorf("could not re-read trunk before deleting, so nothing was deleted: %w", err)
+	}
+	fresh, err := planSweep(ctx, bases)
+	if err != nil {
+		return fmt.Errorf("could not re-read the branches before deleting, so nothing was deleted: %w", err)
+	}
+	still := map[string]string{}
+	for _, b := range fresh.Delete {
+		still[b.Name] = b.Tip
+	}
+
+	kept := 0
+	for _, b := range p.Delete {
+		if tip, ok := still[b.Name]; !ok || tip != b.Tip {
+			fmt.Fprintf(w, "- kept %s: it changed after the plan was made\n", b.Name)
+			kept++
+			continue
+		}
+		// update-ref does not refuse a checked-out branch the way branch -D
+		// does, so this is asked as close to the delete as it gets.
+		inUse, err := checkedOut(ctx)
+		if err != nil {
+			fmt.Fprintf(w, "- kept %s: %v\n", b.Name, err)
+			kept++
+			continue
+		}
+		if inUse[b.Name] != "" {
+			fmt.Fprintf(w, "- kept %s: it was checked out after the plan was made\n", b.Name)
+			kept++
+			continue
+		}
+		if err := ctx.Repo.DeleteBranchAt(b.Name, b.Tip); err != nil {
+			fmt.Fprintf(w, "- kept %s: %s\n", b.Name, gitSaid(err))
+			kept++
+			continue
+		}
+		short := b.Tip
+		if len(short) > 12 {
+			short = short[:12]
+		}
+		fmt.Fprintf(w, "✓ deleted %s; git branch %s %s restores its commits\n", b.Name, b.Name, short)
+	}
+	if kept > 0 {
+		return fmt.Errorf("%d of %s kept; run wt sweep again to see why", kept, branchCount(len(p.Delete)))
+	}
+	return nil
 }
