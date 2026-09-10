@@ -433,8 +433,9 @@ func (d *driver) drive(err error) (Result, error) {
 				if d.keep {
 					return d.fail(errors.New("this branch has descendants in the run, and resuming into a stop nobody claims cannot put it back without discarding your work"))
 				}
-				d.res.Restored = true
-				return d.res, d.restore()
+				rerr := d.restore()
+				d.res.Restored = rerr == nil
+				return d.res, rerr
 			}
 			h, herr := d.handover(stop, conflicts)
 			if herr != nil {
