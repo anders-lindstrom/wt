@@ -9,11 +9,12 @@ import (
 // Parents computes the stack relation across branch-attached worktrees: for
 // each branch, the nearest other worktree branch that is its ancestor. A
 // branch at the very same commit as another is neither parent nor child of
-// it. A branch whose ancestors do not form a chain is ambiguous and gets no
-// parent. --update-refs cannot do this for branches checked out in
-// worktrees (spec §4), which is every branch here, so the relation is
-// explicit.
-func Parents(mainRoot string, worktrees []repo.Worktree) (map[string]string, map[string][]string, error) {
+// it. A branch trunk already contains is left out: every branch cut from
+// trunk after it contains it too, without being built on it. A branch whose
+// ancestors do not form a chain is ambiguous and gets no parent.
+// --update-refs cannot do this for branches checked out in worktrees
+// (spec §4), which is every branch here, so the relation is explicit.
+func Parents(mainRoot, trunk string, worktrees []repo.Worktree) (map[string]string, map[string][]string, error) {
 	var branches []string
 	tips := map[string]string{}
 	for _, wt := range worktrees {
@@ -22,6 +23,13 @@ func Parents(mainRoot string, worktrees []repo.Worktree) (map[string]string, map
 		}
 		tip, err := gitEnv(mainRoot, nil, nil, "rev-parse", "--verify", wt.Branch)
 		if err != nil {
+			return nil, nil, err
+		}
+		_, err = gitEnv(mainRoot, nil, nil, "merge-base", "--is-ancestor", tip, trunk)
+		if err == nil {
+			continue
+		}
+		if !isExit(err, 1) {
 			return nil, nil, err
 		}
 		branches = append(branches, wt.Branch)

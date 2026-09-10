@@ -33,7 +33,7 @@ func stackRepo(t *testing.T) (string, []repo.Worktree) {
 
 func TestParentsFindsTheNearestAncestorAmongWorktrees(t *testing.T) {
 	dir, wts := stackRepo(t)
-	got, amb, err := Parents(dir, wts)
+	got, amb, err := Parents(dir, "main", wts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestParentsReportsAMergeOfTwoBranchesAsAmbiguous(t *testing.T) {
 	gitIn(t, dir, "worktree", "add", "-q", path, "m")
 	gitIn(t, path, "merge", "-q", "--no-edit", "--no-gpg-sign", "p")
 	wts = append(wts, repo.Worktree{Path: path, Branch: "m"})
-	got, amb, err := Parents(dir, wts)
+	got, amb, err := Parents(dir, "main", wts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestParentsIgnoresABranchAtTheSameCommit(t *testing.T) {
 	gitIn(t, dir, "branch", "twin", "p")
 	gitIn(t, dir, "worktree", "add", "-q", dir+"-twin", "twin")
 	wts = append(wts, repo.Worktree{Path: dir + "-twin", Branch: "twin"})
-	got, amb, err := Parents(dir, wts)
+	got, amb, err := Parents(dir, "main", wts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,6 +82,37 @@ func TestParentsIgnoresABranchAtTheSameCommit(t *testing.T) {
 	// lexically smaller name wins, and the shape is not ambiguous.
 	if got["c"] != "p" || len(amb) != 0 {
 		t.Fatalf("c's parent %q ambiguous %v", got["c"], amb)
+	}
+}
+
+func TestParentsLeavesOutABranchWithNoCommitsOffTrunk(t *testing.T) {
+	// old sits on main with nothing of its own, then main moves on: every
+	// branch cut from main contains old, but none is built on it.
+	dir, wts := stackRepo(t)
+	gitIn(t, dir, "branch", "old", "main")
+	gitIn(t, dir, "worktree", "add", "-q", dir+"-old", "old")
+	wts = append(wts, repo.Worktree{Path: dir + "-old", Branch: "old"})
+	gitIn(t, dir, "commit", "-q", "--allow-empty", "-m", "trunk moves on")
+	got, amb, err := Parents(dir, "main", wts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"c": "p", "d": "c"}
+	if !reflect.DeepEqual(got, want) || len(amb) != 0 {
+		t.Fatalf("parents %v ambiguous %v, want %v", got, amb, want)
+	}
+}
+
+func TestParentsDropsAParentThatLandedOnTrunk(t *testing.T) {
+	dir, wts := stackRepo(t)
+	gitIn(t, dir, "merge", "-q", "--no-edit", "--no-gpg-sign", "p")
+	got, amb, err := Parents(dir, "main", wts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"d": "c"}
+	if !reflect.DeepEqual(got, want) || len(amb) != 0 {
+		t.Fatalf("parents %v ambiguous %v, want %v", got, amb, want)
 	}
 }
 

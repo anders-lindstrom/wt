@@ -714,6 +714,8 @@ Therefore, in v1:
 
 - Compute the ancestor relation across all branch-attached worktrees before
   touching anything.
+- A branch whose tip trunk already contains is no branch's parent: it has no
+  commits of its own, and every branch cut from trunk after it contains it.
 - Rebase parents first; rebase a child onto its **new** parent, not onto trunk.
 - If any participant is dirty or has a busy agent, **defer the whole stack.**
   Never half-apply.

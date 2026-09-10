@@ -95,7 +95,7 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 		}
 		named = append(named, wt.Branch)
 	}
-	parents, ambiguous, err := wtsync.Parents(ctx.Repo.MainRoot, worktrees)
+	parents, ambiguous, err := wtsync.Parents(ctx.Repo.MainRoot, trunkSHA, worktrees)
 	if err != nil {
 		return err
 	}

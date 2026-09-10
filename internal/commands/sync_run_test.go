@@ -306,6 +306,35 @@ func TestSyncRunARefusedStackMemberDefersTheWholeStack(t *testing.T) {
 	}
 }
 
+// An empty worktree on an older trunk commit is in the history of every
+// branch cut after it, yet nothing is built on it: naming bump syncs bump
+// alone, and an agent in the empty worktree does not hold it back.
+func TestSyncRunIgnoresAnEmptyWorktreeBehindTrunk(t *testing.T) {
+	ctx, _ := runFixture(t, false)
+	var buf bytes.Buffer
+	stale, err := New(ctx, "feat/stale", NewOptions{NoSetup: true, Base: "main~1"}, &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, _ := filepath.EvalSymlinks(stale)
+	old := gitOut(t, stale, "rev-parse", "HEAD")
+	opts := noAgents()
+	opts.Agents = []wtsync.Agent{{Name: "stale-1", Cwd: resolved}}
+	var out bytes.Buffer
+	if err := SyncRun(ctx, []string{"bump"}, opts, &out); err != nil {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	if s := out.String(); strings.Contains(s, "is a stack with") || strings.Contains(s, "stale-1") {
+		t.Fatalf("stale was pulled in:\n%s", s)
+	}
+	if !gitAncestor(t, ctx.Repo.MainRoot, "origin/main", "feat_wt/bump") {
+		t.Fatalf("bump not rebased:\n%s", out.String())
+	}
+	if gitOut(t, stale, "rev-parse", "HEAD") != old {
+		t.Fatal("stale moved")
+	}
+}
+
 func TestSyncRunAsksOnceForMoreThanOneWorktreeAndStopsOnNo(t *testing.T) {
 	ctx, bump := runFixture(t, false)
 	stackFixture(t, ctx)
