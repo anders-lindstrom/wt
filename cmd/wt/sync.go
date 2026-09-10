@@ -86,10 +86,10 @@ func newSyncCmd() *cobra.Command {
 			"Ctrl-C releases every lock the run holds and kills the step it was\n" +
 			"running; a worktree caught mid-rebase is named along with the command\n" +
 			"that puts it back.",
-		Example: "  wt sync run login-crash             # fetch trunk, then rebase it\n" +
-			"  wt sync run login-crash api-tidy   # both, and their stacks\n" +
-			"  wt sync run login-crash --no-fetch  # trunk as last fetched\n" +
-			"  wt sync run login-crash api-tidy --yes  # do not ask first",
+		Example: "  wt sync run login-crash                # fetch trunk, then rebase it\n" +
+			"  wt sync run login-crash api-tidy       # both, and their stacks\n" +
+			"  wt sync run login-crash --no-fetch     # trunk as last fetched\n" +
+			"  wt sync run login-crash api-tidy --yes # do not ask first",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {

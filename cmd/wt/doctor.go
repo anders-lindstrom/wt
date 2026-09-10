@@ -19,8 +19,8 @@ func newDoctorCmd() *cobra.Command {
 			"and says something sensible, that the tools it requires are on the\n" +
 			"PATH, and that no worktree is nested, missing or in a layout nothing\n" +
 			"owns. It changes nothing, and exits non-zero when it found something.",
-		Example: "  wt doctor        # check this repository\n" +
-			"  wt doctor; echo $?   # 0 when clean, 1 when it found problems",
+		Example: "  wt doctor          # check this repository\n" +
+			"  wt doctor; echo $? # 0 when clean, 1 when it found problems",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// Lenient on purpose: a repository whose configuration is the

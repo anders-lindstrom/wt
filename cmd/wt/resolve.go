@@ -45,8 +45,8 @@ func newPathCmd() *cobra.Command {
 			"tools made too; otherwise it prints the path `wt new` would use.\n\n" +
 			"The path alone goes to stdout, so `cd \"$(wt path fix/login-crash)\"`\n" +
 			"works — which is what `wt cd` does for you.",
-		Example: "  wt path fix/login-crash     # where that worktree is, or would go\n" +
-			"  wt path login-crash        # bare name: the default type",
+		Example: "  wt path fix/login-crash # where that worktree is, or would go\n" +
+			"  wt path login-crash     # bare name: the default type",
 		Args:              needArgs(1, "<type>/<work>", "wt path fix/login-crash"),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
