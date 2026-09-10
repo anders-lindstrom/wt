@@ -23,6 +23,8 @@ type handoverInput struct {
 	Cfg      *wtsync.Config
 	Res      wtsync.Result
 	Lock     *wtsync.Lock
+	// Earlier is the paths the run's earlier handovers stopped on.
+	Earlier []string
 }
 
 // handOver leaves the worktree mid-rebase for a person: the §6 brief, the
@@ -66,6 +68,7 @@ func handOver(ctx *Context, w io.Writer, in handoverInput) error {
 		Stop: in.Res.Left.Index, Total: in.Res.Left.Total,
 		Resolved: in.Res.Left.Staged, Strategy: map[string]string{},
 		Deleted: in.Res.Left.Deleted, Left: in.Res.Left.Left,
+		Stopped: pathsOnce(in.Earlier, wtsync.StopPaths(in.Res.Stops)),
 	}
 	for _, f := range in.Res.Left.Files {
 		if f.Resolved {

@@ -7,6 +7,7 @@ import (
 	"io"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,6 +25,11 @@ type ResumeOptions struct {
 	// once the rebase finishes with nothing owed.
 	Push        PushMode
 	ConfirmPush func(works []string) (bool, error)
+	// Yes, Confirm and Relist are RunOptions' own. Resume asks only when idle
+	// sessions are in the worktree; a nil Confirm never asks.
+	Yes     bool
+	Confirm func(works []string) (bool, error)
+	Relist  func() ([]wtsync.Agent, error)
 }
 
 // SyncResume continues the rebase a run left at a stop a person owned. It
@@ -89,12 +95,40 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 			return fmt.Errorf("cannot list agent sessions (%v); nothing is resumed", err)
 		}
 	}
-	agentPath := target.Path
-	if resolved, rerr := filepath.EvalSymlinks(target.Path); rerr == nil {
-		agentPath = resolved
+	sessions := wtsync.SessionsAt(agents, target.Path)
+	if len(sessions.Busy()) > 0 {
+		return fmt.Errorf("an agent session is busy in %s: %s; nothing is resumed", name, sessions.Label(sessionLabel))
 	}
-	if a := wtsync.AgentAt(agents, agentPath); a != nil {
-		return fmt.Errorf("an agent session is in %s: %s; nothing is resumed", name, sessionLabel(a))
+	// An idle session is named and asked about before the handover is
+	// verified: a person can go on editing while the question waits, so the
+	// verification has to see what they left after answering.
+	var landed int
+	if len(sessions) > 0 {
+		count, err := git.Run(ctx.Repo.MainRoot, "rev-list", "--count", st.OldTip+".."+st.Trunk)
+		if err == nil {
+			landed, err = strconv.Atoi(count)
+		}
+		if err != nil {
+			return fmt.Errorf("%s: counting what landed: %w; nothing is resumed", name, err)
+		}
+		fmt.Fprintln(w, idleNotice(name, sessions))
+		if opts.Confirm != nil && !opts.Yes {
+			ok, err := opts.Confirm([]string{name})
+			if err != nil {
+				return err
+			}
+			if !ok {
+				fmt.Fprintln(w, "nothing resumed")
+				return nil
+			}
+			fresh, err := listAgain(opts.Agents, opts.Relist)
+			if err != nil {
+				return fmt.Errorf("cannot list agent sessions again (%v); nothing is resumed", err)
+			}
+			if why := sessionsChanged(sessions, wtsync.SessionsAt(fresh, target.Path)); why != "" {
+				return fmt.Errorf("%s: %s; nothing is resumed", name, why)
+			}
+		}
 	}
 	// The run's trunk, not today's: a resume that read a newer declaration
 	// would apply strategies the stopped rebase was never planned with.
@@ -169,6 +203,7 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 		if err := handOver(ctx, w, handoverInput{
 			Work: name, Branch: st.Branch, Path: target.Path, TrunkRef: st.TrunkRef, TrunkSHA: st.Trunk,
 			Onto: st.Onto, Upstream: st.Upstream, Epoch: st.Epoch, Cfg: cfg, Res: res, Lock: lock,
+			Earlier: st.Stopped,
 		}); err != nil {
 			return err
 		}
@@ -177,8 +212,15 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 	}
 	fmt.Fprintf(w, "  ✓ rebased %d commit%s\n", res.Replayed, plural(res.Replayed))
 	tracker.set(&rebaseInFlight{work: name, path: target.Path, rebased: true})
+	resolved := make([]string, 0, len(st.Resolved))
+	for p := range st.Resolved {
+		resolved = append(resolved, p)
+	}
+	sort.Strings(resolved)
 	_, owed, cerr := completeRun(ctx, w, cfg, completeInput{
 		Work: name, Branch: st.Branch, Path: target.Path, Epoch: st.Epoch, Res: res,
+		Tell: sessions, Trunk: strings.TrimPrefix(st.TrunkRef, "origin/"), Landed: landed,
+		Check: pathsOnce(st.Stopped, st.Left, resolved, st.Deleted, wtsync.StopPaths(res.Stops)),
 	})
 	tracker.set(nil)
 	if cerr != nil {

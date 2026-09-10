@@ -59,7 +59,10 @@ type State struct {
 	Strategy map[string]string `json:"strategy"`
 	Deleted  []string          `json:"deleted"`
 	Left     []string          `json:"left"`
-	Lock     LeftLock          `json:"lock"`
+	// Stopped is every path the rebase stopped on up to this handover,
+	// across every earlier handover of the same run.
+	Stopped []string `json:"stopped"`
+	Lock    LeftLock `json:"lock"`
 }
 
 // writeAtomic writes data to a temp file in the same directory and renames

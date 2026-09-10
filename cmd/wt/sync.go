@@ -158,13 +158,17 @@ func newSyncCmd() *cobra.Command {
 			"Before continuing it checks that the rebase in progress is the one the run\n" +
 			"left, that nothing is unmerged, that nothing tracked is changed but\n" +
 			"unstaged, that no file a strategy resolved was hand-merged, and that no\n" +
-			"Claude session is in the worktree. Any of those is a refusal that changes\n" +
+			"busy Claude session is in the worktree. Any of those is a refusal that changes\n" +
 			"nothing: this command never resets the worktree, because your own work is\n" +
 			"in it, and a file a strategy owns is never yours to merge: that refusal\n" +
 			"points at wt sync undo. Then it drives the rest of the rebase, runs the\n" +
 			"deferred steps, pins the result ref and ends with the push, asked or not\n" +
 			"as for wt sync run (--push, --no-push). A later conflict that is yours is\n" +
-			"handed over again with a fresh plan file.\n\n" +
+			"handed over again with a fresh plan file. A Claude session idle in the\n" +
+			"worktree is named first and you are asked (--yes skips; with no terminal\n" +
+			"it goes ahead) before anything is verified, and the finish ends with a\n" +
+			"wt: line to pass on to it. The session wt itself runs under is not\n" +
+			"counted.\n\n" +
 			"Carrying on yourself with git rebase --continue is fine: a later stop you\n" +
 			"left it at goes through the strategies, and a rebase you finished runs\n" +
 			"only what comes after it, naming the strategy-resolved files it could not\n" +
@@ -174,7 +178,8 @@ func newSyncCmd() *cobra.Command {
 		Example: "  wt sync resume login-crash            # continue what the run handed you\n" +
 			"  wt sync resume fix/login-crash        # the same worktree, by branch\n" +
 			"  wt sync resume login-crash --push     # then push, without asking\n" +
-			"  wt sync resume login-crash --no-push  # then print the push command",
+			"  wt sync resume login-crash --no-push  # then print the push command\n" +
+			"  wt sync resume login-crash --yes      # not asked about an idle session",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -182,17 +187,21 @@ func newSyncCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			opts := commands.ResumeOptions{Push: pushMode(push, noPush)}
+			opts := commands.ResumeOptions{Yes: yes, Push: pushMode(push, noPush)}
 			if isTerminal(os.Stdin) {
+				if !yes {
+					opts.Confirm = confirmAsk(cmd.InOrStdin(), cmd.OutOrStdout(), "resume")
+				}
 				opts.ConfirmPush = confirmPush(cmd.InOrStdin(), cmd.OutOrStdout())
 			}
 			return commands.SyncResume(ctx, args[0], opts, cmd.OutOrStdout())
 		},
 	}
-	// run's variables: only one of the two commands parses flags in any
-	// one invocation.
+	// run's variables: only one of these commands parses flags in any one
+	// invocation.
 	resume.Flags().BoolVar(&push, "push", false, "push when done, without asking")
 	resume.Flags().BoolVar(&noPush, "no-push", false, "neither push nor ask; print the push command")
+	resume.Flags().BoolVar(&yes, "yes", false, "do not ask first when a session is idle in the worktree")
 	resume.MarkFlagsMutuallyExclusive("push", "no-push")
 	sync.AddCommand(resume)
 
