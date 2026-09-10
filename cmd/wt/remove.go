@@ -21,10 +21,15 @@ func newRemoveCmd() *cobra.Command {
 		Use:     "remove <work>",
 		Aliases: []string{"rm"},
 		Short:   "Remove a worktree, deleting its branch only when merged",
-		Long: "Remove the worktree and decide what happens to its branch: delete it\n" +
-			"when it is merged into the main branch, otherwise rename it out of the\n" +
-			"<type>_wt/ prefix so unmerged work is never lost. A branch this tooling\n" +
-			"did not create is never touched.\n\n" +
+		Long: "Remove the worktree and decide what happens to its branch. A branch\n" +
+			"merged into the main branch is deleted, whoever created it: merged\n" +
+			"means nothing is lost. An unmerged branch wt made is renamed out of\n" +
+			"the <type>_wt/ prefix, so the work survives its worktree; an unmerged\n" +
+			"branch wt did not make is left exactly as it is.\n\n" +
+			"The plan says where the branch stands either way — merged, or how many\n" +
+			"commits ahead of the main branch it is — because that is the fact the\n" +
+			"whole decision turns on. \"clean\" is about the checkout, not the branch:\n" +
+			"it means nothing is uncommitted.\n\n" +
 			"The worktree can be named by anything `wt list` prints — the work name,\n" +
 			"the branch, or the path. Matching is exact and stays inside this\n" +
 			"repository; a work name used under two types has to be named by its\n" +
@@ -32,7 +37,7 @@ func newRemoveCmd() *cobra.Command {
 			"What the removal will do is printed before it does it. In a terminal you\n" +
 			"are then asked to confirm; --yes skips the question, and a script or hook\n" +
 			"with no terminal is never asked.",
-		Example: "  wt remove login-crash        # print the plan, then ask\n" +
+		Example: "  wt remove login-crash        # say where the branch stands, then ask\n" +
 			"  wt remove fix/login-crash    # when two types share a work name\n" +
 			"  wt remove ../myrepo-old      # by path\n" +
 			"  wt remove login-crash --yes  # do not ask (scripts, hooks)\n" +
