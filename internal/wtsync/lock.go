@@ -115,6 +115,46 @@ func Acquire(gitDir string, now time.Time) (*Lock, error) {
 	return nil, fmt.Errorf("could not acquire %s", path)
 }
 
+// Keep detaches the lock from this process without removing the file: a run
+// that leaves a worktree mid-rebase leaves its lock behind, so a second run
+// does not start where somebody has to finish first. It is not a forever
+// lock — LockExpiry still frees it — and the sidecar, not this, is the
+// durable marker that a run is waiting.
+func (l *Lock) Keep() {
+	held.Lock()
+	delete(held.locks, l.Path)
+	held.Unlock()
+}
+
+// TakeOver acquires the lock, displacing the one a run left behind when it
+// handed a stop over. It tries an ordinary Acquire first and only displaces
+// a lock whose pid and start time are exactly what the run recorded in its
+// sidecar, so a live run, or any lock that is not this handover's, is
+// respected the way Acquire respects it.
+//
+// The window Acquire's expiry path already has is not closed here: between
+// reading the lock and renaming it aside, another process continuing the
+// same handover could acquire, and would then be displaced. Two concurrent
+// resumes of one worktree is a user error, and both would be driving the
+// same rebase; nothing else can reach this path, because nothing else knows
+// the recorded pid.
+func TakeOver(gitDir string, now time.Time, prev LeftLock) (*Lock, error) {
+	l, err := Acquire(gitDir, now)
+	if err == nil {
+		return l, nil
+	}
+	var busy *LockHeld
+	if !errors.As(err, &busy) || prev.PID == 0 || busy.PID != prev.PID || busy.Started.Unix() != prev.Started {
+		return nil, err
+	}
+	stale := fmt.Sprintf("%s.stale.%d", busy.Path, os.Getpid())
+	if rerr := os.Rename(busy.Path, stale); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
+		return nil, rerr
+	}
+	_ = os.Remove(stale)
+	return Acquire(gitDir, now)
+}
+
 // Release removes the lock, but only while it is still this acquisition's: a
 // displaced owner must not delete its replacement's lock. PID alone is not
 // enough to tell the two apart when the same process re-acquires its own

@@ -109,7 +109,10 @@ func TestRebaseDropsACommitTheResolutionMadeEmpty(t *testing.T) {
 	}
 }
 
-func TestRebaseAbortsAndRestoresOnAnUnclaimedStop(t *testing.T) {
+func TestRebaseHandsOverAnUnclaimedStop(t *testing.T) {
+	// Nothing at this stop is claimed, so the handover stages nothing and
+	// names the one file a person owns. The branch ref has not moved: the
+	// rewrite only lands when the rebase completes.
 	dir, wt, cfg := runRepo(t,
 		[]map[string]string{{"a.txt": "trunk\n"}},
 		[]map[string]string{{"a.txt": "branch\n"}})
@@ -118,42 +121,42 @@ func TestRebaseAbortsAndRestoresOnAnUnclaimedStop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !res.Restored || len(res.Stops) != 1 || res.Stops[0].Files[0].Resolved || res.Stops[0].Files[0].Note != "unclaimed" {
+	if res.Restored || res.Left == nil || len(res.Stops) != 1 || res.Stops[0].Files[0].Resolved || res.Stops[0].Files[0].Note != "unclaimed" {
 		t.Fatalf("result %+v", res)
 	}
-	if gitIn(t, wt, "rev-parse", "HEAD") != old || gitIn(t, wt, "rev-parse", "feature") != old {
-		t.Fatal("not restored to the old tip")
+	if got := res.Left.Left; len(got) != 1 || got[0] != "a.txt" {
+		t.Fatalf("Left.Left = %v, want [a.txt]", got)
 	}
-	if gitIn(t, wt, "symbolic-ref", "HEAD") != "refs/heads/feature" {
-		t.Fatal("HEAD is detached after restore")
+	if len(res.Left.Staged) != 0 || len(res.Left.Deleted) != 0 {
+		t.Fatalf("nothing was resolved here, yet Staged = %v, Deleted = %v", res.Left.Staged, res.Left.Deleted)
 	}
-	if ok, _ := RebaseInProgress(wt); ok {
-		t.Fatal("rebase left in progress")
+	if gitIn(t, wt, "rev-parse", "feature") != old {
+		t.Fatal("the branch moved before the rebase finished")
 	}
-	if out := gitIn(t, wt, "status", "--porcelain"); out != "" {
-		t.Fatalf("worktree not clean: %q", out)
+	if ok, _ := RebaseInProgress(wt); !ok {
+		t.Fatal("the rebase was not left in place")
 	}
 }
 
-func TestRebaseRestoresOnASecondUnclaimedStop(t *testing.T) {
-	// First stop resolves (v.txt, owned-line); second is unclaimed (a.txt).
-	// The first stop's resolution must not survive the restore.
+func TestRebaseHandsOverASecondStopAndKeepsTheFirstsWork(t *testing.T) {
+	// First stop resolves (v.txt, owned-line) and is replayed; the second is
+	// unclaimed (a.txt) and is handed over. The handover is the second stop,
+	// and the first stop's resolution is still in the worktree.
 	dir, wt, cfg := runRepo(t,
 		[]map[string]string{{"v.txt": "1.0.5\n"}, {"a.txt": "trunk\n"}},
 		[]map[string]string{{"v.txt": "1.0.1\n"}, {"a.txt": "branch\n"}})
-	old := gitIn(t, wt, "rev-parse", "HEAD")
 	res, err := Rebase(dir, cfg, trunkReq(wt, 8), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !res.Restored || len(res.Stops) != 2 || !res.Stops[0].Files[0].Resolved || res.Stops[1].Files[0].Resolved {
+	if res.Restored || res.Left == nil || len(res.Stops) != 2 || !res.Stops[0].Files[0].Resolved || res.Stops[1].Files[0].Resolved {
 		t.Fatalf("result %+v", res)
 	}
-	if gitIn(t, wt, "rev-parse", "HEAD") != old {
-		t.Fatal("not restored")
+	if res.Left.Index != 2 || res.Left.Total != 2 {
+		t.Fatalf("handover is at %d/%d, want the second stop", res.Left.Index, res.Left.Total)
 	}
-	if got, _ := os.ReadFile(filepath.Join(wt, "v.txt")); string(got) != "1.0.1\n" {
-		t.Fatalf("v.txt after restore %q", got)
+	if got, _ := os.ReadFile(filepath.Join(wt, "v.txt")); string(got) != "1.0.6\n" {
+		t.Fatalf("v.txt = %q, want the first stop's resolution", got)
 	}
 }
 
@@ -252,7 +255,8 @@ func TestPreflightOrdersItsReasons(t *testing.T) {
 		{Assessment{Class: Current}, SkipRun, "already on trunk"},
 		{Assessment{Class: Stale}, SkipRun, "nothing ahead"},
 		{Assessment{Class: Divergent, Divergent: []string{"openapi refuses spec.json"}}, RefuseRun, "openapi refuses"},
-		{Assessment{Class: Contested, Replay: Replay{Stop: &Stop{Index: 2, Total: 5}}, Files: []FileOutcome{{Path: "x.java", Note: "unclaimed"}}}, RefuseRun, "2/5"},
+		{Assessment{Class: Contested, Replay: Replay{Stop: &Stop{Index: 2, Total: 5}}, Files: []FileOutcome{{Path: "x.java", Note: "unclaimed"}}}, Proceed, ""},
+		{Assessment{Class: Contested, Paused: true, Dirty: true}, RefuseRun, "resume"},
 		{Assessment{Class: Recipe}, Proceed, ""},
 		{Assessment{Class: Clean}, Proceed, ""},
 		{Assessment{Class: Detached}, RefuseRun, "no branch"},
@@ -267,8 +271,10 @@ func TestPreflightOrdersItsReasons(t *testing.T) {
 }
 
 // abortProofRepo is a repository whose declared strategy breaks the rebase
-// state before refusing: with rebase-merge/orig-head gone `git rebase
+// state and then fails: with rebase-merge/orig-head gone `git rebase
 // --abort` fails, which is the only way to reach restore's --quit fallback.
+// Exit 3 is a failure, not a refusal (which is 2): a refusal would be handed
+// over, and only a failure still restores.
 func abortProofRepo(t *testing.T) (dir string, wt string, cfg *Config) {
 	t.Helper()
 	dir = repoWith(t, map[string]string{"f.txt": "base\n"},
@@ -276,14 +282,14 @@ func abortProofRepo(t *testing.T) (dir string, wt string, cfg *Config) {
 		[]map[string]string{{"f.txt": "branch\n"}})
 	script := "#!/bin/sh\n" +
 		"rm -f \"$(git rev-parse --absolute-git-dir)/rebase-merge/orig-head\"\n" +
-		"echo sabotage >&2\nexit 2\n"
+		"echo sabotage >&2\nexit 3\n"
 	if err := os.MkdirAll(filepath.Join(dir, "bin"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "bin", "refuse"), []byte(script), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "bin", "break"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	yaml := "conflicts:\n  - paths: [f.txt]\n    strategy: script\n    run: bin/refuse\n"
+	yaml := "conflicts:\n  - paths: [f.txt]\n    strategy: script\n    run: bin/break\n"
 	if err := os.WriteFile(filepath.Join(dir, ".wt-sync.yaml"), []byte(yaml), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -303,10 +309,13 @@ func TestRebaseRestoresThroughQuitWhenAbortCannotWork(t *testing.T) {
 	dir, wt, cfg := abortProofRepo(t)
 	old := gitIn(t, wt, "rev-parse", "HEAD")
 	res, err := Rebase(dir, cfg, trunkReq(wt, 11), nil)
-	if err != nil {
+	if err == nil || !strings.Contains(err.Error(), "sabotage") {
+		t.Fatalf("err = %v, want the strategy's failure", err)
+	}
+	if strings.Contains(err.Error(), "not restored") {
 		t.Fatalf("restore failed: %v", err)
 	}
-	if !res.Restored {
+	if !res.Restored || res.Left != nil {
 		t.Fatalf("expected a restore, got %+v", res)
 	}
 	if busy, _ := RebaseInProgress(wt); busy {
@@ -320,5 +329,178 @@ func TestRebaseRestoresThroughQuitWhenAbortCannotWork(t *testing.T) {
 	}
 	if out := gitIn(t, wt, "status", "--porcelain", "--untracked-files=no"); out != "" {
 		t.Fatalf("the unmerged index survived: %q", out)
+	}
+}
+
+// A stop nothing claims is left in place, not aborted: the rebase is still
+// in progress, the strategy's answer for the claimed file is staged, and the
+// handover names what is left.
+func TestRebaseLeavesAContestedStopInPlace(t *testing.T) {
+	dir, wt, cfg := runRepo(t,
+		[]map[string]string{{"v.txt": "1.0.5\n", "a.txt": "trunk\n"}},
+		[]map[string]string{{"v.txt": "1.0.1\n", "a.txt": "branch\n"}})
+	res, err := Rebase(dir, cfg, trunkReq(wt, 1), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Left == nil {
+		t.Fatalf("Left = nil, want a handover; Restored = %v", res.Restored)
+	}
+	if res.Restored {
+		t.Fatal("Restored = true, want the rebase left in place")
+	}
+	if got := res.Left.Left; len(got) != 1 || got[0] != "a.txt" {
+		t.Fatalf("Left.Left = %v, want [a.txt]", got)
+	}
+	if res.Left.Staged["v.txt"] == "" {
+		t.Fatal("Staged has no oid for v.txt")
+	}
+	if busy, err := RebaseInProgress(wt); err != nil || !busy {
+		t.Fatalf("RebaseInProgress = %v, %v; want true", busy, err)
+	}
+	unmerged, err := StagedConflicts(wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(unmerged) != 1 || unmerged[0].Path != "a.txt" {
+		t.Fatalf("unmerged = %+v, want only a.txt", unmerged)
+	}
+}
+
+// A branch with children in the same run may not be left mid-rebase: the
+// children would be stranded on a base that no longer exists, which is the
+// half-applied stack the spec forbids.
+func TestRebaseRestoresAContestedStopOnAStackParent(t *testing.T) {
+	dir, wt, cfg := runRepo(t,
+		[]map[string]string{{"v.txt": "1.0.5\n", "a.txt": "trunk\n"}},
+		[]map[string]string{{"v.txt": "1.0.1\n", "a.txt": "branch\n"}})
+	old := gitIn(t, wt, "rev-parse", "HEAD")
+	req := trunkReq(wt, 1)
+	req.Stacked = true
+	res, err := Rebase(dir, cfg, req, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Left != nil || !res.Restored {
+		t.Fatalf("res = %+v, want restored with no handover", res)
+	}
+	if gitIn(t, wt, "rev-parse", "HEAD") != old {
+		t.Fatal("not restored to the old tip")
+	}
+}
+
+// Resume drives the same loop: with the unclaimed file resolved by hand and
+// staged, the rebase finishes and the branch moves.
+func TestResumeFinishesTheRebase(t *testing.T) {
+	dir, wt, cfg := runRepo(t,
+		[]map[string]string{{"v.txt": "1.0.5\n", "a.txt": "trunk\n"}},
+		[]map[string]string{{"v.txt": "1.0.1\n", "a.txt": "branch\n"}})
+	req := trunkReq(wt, 1)
+	res, err := Rebase(dir, cfg, req, nil)
+	if err != nil || res.Left == nil {
+		t.Fatalf("Rebase = %+v, %v", res, err)
+	}
+	if err := os.WriteFile(filepath.Join(wt, "a.txt"), []byte("by hand\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, wt, "add", "a.txt")
+
+	out, err := Resume(dir, cfg, req, res.OldTip, res.Safety, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Left != nil {
+		t.Fatalf("Left = %+v, want nil", out.Left)
+	}
+	if busy, _ := RebaseInProgress(wt); busy {
+		t.Fatal("still mid-rebase")
+	}
+	if out.NewTip == "" || out.NewTip == out.OldTip {
+		t.Fatalf("NewTip = %q, OldTip = %q", out.NewTip, out.OldTip)
+	}
+}
+
+// A resume never resets the worktree: a failure there would throw away a
+// person's own resolution. An unstaged tracked change makes git refuse to
+// continue; the loop must report that and leave everything alone.
+func TestResumeNeverRestores(t *testing.T) {
+	dir, wt, cfg := runRepo(t,
+		[]map[string]string{{"v.txt": "1.0.5\n", "a.txt": "trunk\n"}},
+		[]map[string]string{{"v.txt": "1.0.1\n", "a.txt": "branch\n"}})
+	req := trunkReq(wt, 1)
+	res, err := Rebase(dir, cfg, req, nil)
+	if err != nil || res.Left == nil {
+		t.Fatalf("Rebase = %+v, %v", res, err)
+	}
+	// Staged, then changed again in the working tree: git refuses.
+	if err := os.WriteFile(filepath.Join(wt, "a.txt"), []byte("staged\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, wt, "add", "a.txt")
+	if err := os.WriteFile(filepath.Join(wt, "a.txt"), []byte("unstaged\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Resume(dir, cfg, req, res.OldTip, res.Safety, nil); err == nil {
+		t.Fatal("Resume = nil error, want the refusal git made")
+	}
+	if busy, _ := RebaseInProgress(wt); !busy {
+		t.Fatal("the rebase was thrown away; a resume must never restore")
+	}
+	if got, _ := os.ReadFile(filepath.Join(wt, "a.txt")); string(got) != "unstaged\n" {
+		t.Fatalf("a.txt = %q; the person's work was overwritten", got)
+	}
+}
+
+// Someone ran git rebase --continue themselves and it finished: resume
+// accepts that and reports the finished rebase rather than failing.
+func TestResumeToleratesAFinishedRebase(t *testing.T) {
+	dir, wt, cfg := runRepo(t,
+		[]map[string]string{{"v.txt": "1.0.5\n", "a.txt": "trunk\n"}},
+		[]map[string]string{{"v.txt": "1.0.1\n", "a.txt": "branch\n"}})
+	req := trunkReq(wt, 1)
+	res, err := Rebase(dir, cfg, req, nil)
+	if err != nil || res.Left == nil {
+		t.Fatalf("Rebase = %+v, %v", res, err)
+	}
+	if err := os.WriteFile(filepath.Join(wt, "a.txt"), []byte("by hand\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, wt, "add", "a.txt")
+	gitIn(t, wt, "-c", "core.editor=true", "rebase", "--continue")
+
+	out, err := Resume(dir, cfg, req, res.OldTip, res.Safety, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Left != nil || out.NewTip == "" {
+		t.Fatalf("Resume = %+v", out)
+	}
+}
+
+// A rebase somebody aborted is not this run's result. Certifying it would
+// let a later undo discard commits the run never made.
+func TestResumeRefusesARebaseThatWasAborted(t *testing.T) {
+	dir, wt, cfg := runRepo(t,
+		[]map[string]string{{"v.txt": "1.0.5\n", "a.txt": "trunk\n"}},
+		[]map[string]string{{"v.txt": "1.0.1\n", "a.txt": "branch\n"}})
+	req := trunkReq(wt, 1)
+	res, err := Rebase(dir, cfg, req, nil)
+	if err != nil || res.Left == nil {
+		t.Fatalf("Rebase = %+v, %v", res, err)
+	}
+	gitIn(t, wt, "rebase", "--abort")
+
+	if _, err := Resume(dir, cfg, req, res.OldTip, res.Safety, nil); err == nil {
+		t.Fatal("Resume accepted an aborted rebase as finished")
+	}
+}
+
+func TestPreflightLetsContestedProceedAndRefusesPaused(t *testing.T) {
+	if v, why := Preflight(Assessment{Class: Contested, Files: []FileOutcome{{Path: "a.txt"}}}); v != Proceed {
+		t.Fatalf("contested = %v (%s), want Proceed", v, why)
+	}
+	if v, why := Preflight(Assessment{Class: Contested, Paused: true}); v != RefuseRun || !strings.Contains(why, "resume") {
+		t.Fatalf("paused = %v (%s), want a refusal naming resume", v, why)
 	}
 }

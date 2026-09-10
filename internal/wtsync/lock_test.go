@@ -139,3 +139,35 @@ func TestHeldLocksTracksWhatThisProcessHoldsUntilReleased(t *testing.T) {
 		t.Fatalf("Release did not forget the lock: %d, want %d", len(HeldLocks()), before)
 	}
 }
+
+func TestTakeOverReclaimsTheRunsOwnLock(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	l, err := Acquire(dir, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.Keep() // the run left it behind on purpose
+
+	got, err := TakeOver(dir, now, LeftLock{PID: l.PID, Started: l.Started.Unix()})
+	if err != nil {
+		t.Fatalf("TakeOver = %v, want the lock", err)
+	}
+	if err := got.Release(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTakeOverRespectsSomebodyElsesLock(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	l, err := Acquire(dir, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = l.Release() }()
+
+	if _, err := TakeOver(dir, now, LeftLock{PID: l.PID + 1, Started: l.Started.Unix()}); err == nil {
+		t.Fatal("TakeOver took a lock that is not the run's")
+	}
+}
