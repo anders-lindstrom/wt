@@ -359,3 +359,21 @@ func TestAssessReportsUnknownWhenTheWorktreePathDoesNotExist(t *testing.T) {
 		t.Errorf("missing worktree: %+v", a)
 	}
 }
+
+func TestAssessReportsAHandedOverWorktreeAsPaused(t *testing.T) {
+	dir, wt, _, _ := handedOverRepo(t, 5, false)
+	cfg, err := LoadFromTrunk(dir, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := Assess(dir, "origin/main", cfg, repo.Worktree{Path: wt, Branch: "feature", Rebasing: true}, nil)
+	if a.Err != nil {
+		t.Fatal(a.Err)
+	}
+	if !a.Paused || a.Class != Contested {
+		t.Fatalf("paused = %v, class = %s; want paused and contested", a.Paused, a.Class)
+	}
+	if v, why := Preflight(a); v != RefuseRun || !strings.Contains(why, "wt sync resume") {
+		t.Fatalf("Preflight = %v %q; want a refusal naming wt sync resume", v, why)
+	}
+}

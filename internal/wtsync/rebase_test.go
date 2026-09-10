@@ -2,6 +2,7 @@ package wtsync
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -257,6 +258,7 @@ func TestPreflightOrdersItsReasons(t *testing.T) {
 		{Assessment{Class: Divergent, Divergent: []string{"openapi refuses spec.json"}}, RefuseRun, "openapi refuses"},
 		{Assessment{Class: Contested, Replay: Replay{Stop: &Stop{Index: 2, Total: 5}}, Files: []FileOutcome{{Path: "x.java", Note: "unclaimed"}}}, Proceed, ""},
 		{Assessment{Class: Contested, Paused: true, Dirty: true}, RefuseRun, "resume"},
+		{Assessment{Class: Contested, Paused: true, Err: errors.New("behind/ahead failed")}, RefuseRun, "assessment failed"},
 		{Assessment{Class: Recipe}, Proceed, ""},
 		{Assessment{Class: Clean}, Proceed, ""},
 		{Assessment{Class: Detached}, RefuseRun, "no branch"},

@@ -26,6 +26,22 @@ func SyncDoctor(ctx *Context, opts DoctorOptions, w io.Writer) error {
 	if err != nil {
 		return err
 	}
+	// The plan row is built here rather than in wtsync: it names the resume
+	// command, and only this package knows a worktree's work name.
+	holders, err := wtsync.PlanHolders(worktrees)
+	if err != nil {
+		return err
+	}
+	plan := wtsync.Check{Name: "plan", OK: len(holders) == 0, Detail: "no worktree is waiting on a person"}
+	if len(holders) > 0 {
+		var lines []string
+		for _, wt := range holders {
+			name := workName(ctx, wt.Branch)
+			lines = append(lines, name+": wt sync resume "+name)
+		}
+		plan.Detail = strings.Join(lines, "; ")
+	}
+	checks = append(checks, plan)
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "CHECK\tSTATE\tDETAIL")
 	var blocking []string

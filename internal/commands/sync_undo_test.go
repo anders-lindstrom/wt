@@ -78,3 +78,35 @@ func TestSyncUndoRefusesAWorktreeCommittedToSinceTheRun(t *testing.T) {
 		t.Fatal("forced undo did not pin the tip it discarded")
 	}
 }
+
+// The plan file tells a person wt sync undo puts everything back. It has to,
+// on the worktree exactly as the run left it: the rebase in progress, the
+// strategies' answers staged, and the run's lock still in the git dir.
+func TestSyncUndoAbortsWhatSyncRunHandedOver(t *testing.T) {
+	ctx, bump := contestedFixture(t)
+	old := gitOut(t, bump, "rev-parse", "HEAD")
+	gitDir, _ := handOverNow(t, ctx, bump)
+	if _, ok, err := wtsync.ReadLock(gitDir); err != nil || !ok {
+		t.Fatalf("ReadLock = %v, %v; the run kept no lock and the test is vacuous", ok, err)
+	}
+
+	var out bytes.Buffer
+	if err := SyncUndo(ctx, "bump", noAgentsUndo(), &out); err != nil {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "bump  aborted the rebase; back at "+short(old)) {
+		t.Fatalf("out %s", out.String())
+	}
+	if busy, err := wtsync.RebaseInProgress(bump); err != nil || busy {
+		t.Fatalf("RebaseInProgress = %v, %v; undo left the rebase in place", busy, err)
+	}
+	if gitOut(t, bump, "rev-parse", "HEAD") != old {
+		t.Fatal("HEAD is not back at the pre-run tip")
+	}
+	if has, err := wtsync.HasPlan(gitDir); err != nil || has {
+		t.Fatalf("HasPlan = %v, %v; undo ends the handover", has, err)
+	}
+	if _, ok, err := wtsync.ReadLock(gitDir); err != nil || ok {
+		t.Fatalf("ReadLock = %v, %v; the run's lock outlived the undo", ok, err)
+	}
+}

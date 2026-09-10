@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // doctorFixture is a main checkout that is its own origin, declaring v.txt
@@ -49,15 +51,15 @@ func doctorRows(t *testing.T, out string) []string {
 	return lines[1:]
 }
 
-func TestSyncDoctorPrintsTenOKRowsForAHealthyFixture(t *testing.T) {
+func TestSyncDoctorPrintsElevenOKRowsForAHealthyFixture(t *testing.T) {
 	ctx := doctorFixture(t, true)
 	var out bytes.Buffer
 	if err := SyncDoctor(ctx, DoctorOptions{}, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	rows := doctorRows(t, out.String())
-	if len(rows) != 10 {
-		t.Fatalf("got %d rows, want 10:\n%s", len(rows), out.String())
+	if len(rows) != 11 {
+		t.Fatalf("got %d rows, want 11:\n%s", len(rows), out.String())
 	}
 	for _, row := range rows {
 		fields := strings.Fields(row)
@@ -78,5 +80,34 @@ func TestSyncDoctorFixesRerereOffWithFixFlag(t *testing.T) {
 	}
 	if got := gitOut(t, ctx.Repo.MainRoot, "config", "--get", "rerere.enabled"); got != "true" {
 		t.Fatalf("rerere.enabled = %q", got)
+	}
+}
+
+func TestSyncDoctorReportsAWorktreeWaitingOnAPerson(t *testing.T) {
+	ctx := doctorFixture(t, true)
+	var buf bytes.Buffer
+	bump, err := New(ctx, "feat/bump", NewOptions{NoSetup: true}, &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gitDir, err := wtsync.GitDir(bump)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wtsync.WriteState(gitDir, wtsync.State{Branch: "feat_wt/bump", Work: "bump"}); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := SyncDoctor(ctx, DoctorOptions{}, &out); err != nil {
+		t.Fatalf("a worktree waiting on a person does not block a run elsewhere: %v\n%s", err, out.String())
+	}
+	var plan string
+	for _, row := range doctorRows(t, out.String()) {
+		if strings.HasPrefix(row, "plan ") {
+			plan = row
+		}
+	}
+	if fields := strings.Fields(plan); len(fields) < 2 || fields[1] != "warn" || !strings.Contains(plan, "bump: wt sync resume bump") {
+		t.Fatalf("plan row %q:\n%s", plan, out.String())
 	}
 }

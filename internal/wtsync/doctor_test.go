@@ -321,3 +321,16 @@ func TestDoctorFlagsAWorktreeLeftMidRebase(t *testing.T) {
 		t.Fatal("rebases must not offer a fix")
 	}
 }
+
+func TestDoctorLeavesAHandedOverRebaseToThePlanRow(t *testing.T) {
+	// git rebase --abort on a handover would leave its sidecar behind and the
+	// branch reported as waiting forever; the plan row names resume instead.
+	dir, wt, _, _ := handedOverRepo(t, 5, false)
+	checks, err := Doctor(dir, "main", []repo.Worktree{{Path: dir, Branch: "main", IsMain: true}, {Path: wt, Branch: "feature", Rebasing: true}}, DoctorOptions{Now: time.Now(), Keep: 30 * 24 * time.Hour, Docker: func() error { return nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := findCheck(t, checks, "rebases"); !c.OK || strings.Contains(c.Detail, "rebase --abort") {
+		t.Fatalf("rebases = %+v; a handed-over rebase is not stuck", c)
+	}
+}

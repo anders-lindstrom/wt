@@ -293,3 +293,142 @@ func TestAForcedUndoIsItselfUndoneByAPlainUndo(t *testing.T) {
 		t.Fatalf("got %+v; HEAD %s want %s", got, gitIn(t, wt, "rev-parse", "HEAD"), discarded)
 	}
 }
+
+// handedOverRepo is runRepo left the way a run leaves a stop nobody's
+// strategy claims: the rebase in progress in the worktree, v.txt staged by
+// owned-line and a.txt a person's, and the plan file and sidecar written the
+// way the run's handover writes them. keepLock also takes a lock, records it
+// in the sidecar and keeps it, as a handover keeps the run's. old is the
+// branch tip before the run.
+func handedOverRepo(t *testing.T, epoch int64, keepLock bool) (dir, wt, gitDir, old string) {
+	t.Helper()
+	dir, wt, cfg := runRepo(t,
+		[]map[string]string{{"v.txt": "1.0.5\n", "a.txt": "trunk\n"}},
+		[]map[string]string{{"v.txt": "1.0.1\n", "a.txt": "branch\n"}})
+	old = gitIn(t, wt, "rev-parse", "HEAD")
+	res, err := Rebase(dir, cfg, trunkReq(wt, epoch), nil)
+	if err != nil || res.Left == nil {
+		t.Fatalf("Rebase = %+v, %v; want a handover", res, err)
+	}
+	gitDir, err = GitDir(wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := State{
+		Branch: "feature", Work: "feature", Trunk: gitIn(t, dir, "rev-parse", "origin/main"), TrunkRef: "origin/main",
+		Onto: "origin/main", Epoch: epoch, Safety: res.Safety.Ref, OldTip: res.OldTip,
+		Stop: res.Left.Index, Total: res.Left.Total,
+		Resolved: res.Left.Staged, Strategy: map[string]string{"v.txt": "owned-line"},
+		Deleted: res.Left.Deleted, Left: res.Left.Left,
+	}
+	var lock *Lock
+	if keepLock {
+		if lock, err = Acquire(gitDir, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		st.Lock = LeftLock{PID: lock.PID, Started: lock.Started.Unix()}
+	}
+	if err := WritePlanFile(gitDir, "# feature needs you\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteState(gitDir, st); err != nil {
+		t.Fatal(err)
+	}
+	if lock != nil {
+		lock.Keep()
+	}
+	return dir, wt, gitDir, old
+}
+
+func TestUndoAbortsAHandedOverRebase(t *testing.T) {
+	dir, wt, gitDir, old := handedOverRepo(t, 5, false)
+	got, err := Undo(dir, []repo.Worktree{{Path: wt, Branch: "feature", Rebasing: true}}, nil, "feature", time.Now(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if busy, err := RebaseInProgress(wt); err != nil || busy {
+		t.Fatalf("RebaseInProgress = %v, %v; undo left the rebase in place", busy, err)
+	}
+	if gitIn(t, wt, "rev-parse", "HEAD") != old || gitIn(t, wt, "symbolic-ref", "HEAD") != "refs/heads/feature" {
+		t.Fatal("HEAD is not back on feature at the safety tip")
+	}
+	if gitIn(t, wt, "status", "--porcelain", "--untracked-files=no") != "" {
+		t.Fatal("the abort left tracked changes")
+	}
+	if has, err := HasPlan(gitDir); err != nil || has {
+		t.Fatalf("HasPlan = %v, %v; undo ends the handover", has, err)
+	}
+	if _, err := os.Stat(PlanPath(gitDir)); !os.IsNotExist(err) {
+		t.Fatalf("the plan file survived the undo: %v", err)
+	}
+	if len(got) != 1 || !got[0].Aborted || got[0].To != old || got[0].Path != wt {
+		t.Fatalf("restored %+v", got)
+	}
+}
+
+func TestUndoStillRefusesAForeignRebase(t *testing.T) {
+	// A rebase somebody started by hand carries no handover: undo has no
+	// business discarding it.
+	dir, wt, _ := runRepo(t, []map[string]string{{"a.txt": "trunk\n"}}, []map[string]string{{"a.txt": "branch\n"}})
+	if _, err := WriteSafety(dir, "feature", gitIn(t, wt, "rev-parse", "HEAD"), 5); err != nil {
+		t.Fatal(err)
+	}
+	if err := gitCmd(wt, "rebase", "--no-update-refs", "--no-gpg-sign", "main").Run(); err == nil {
+		t.Fatal("rebase did not stop; the test is vacuous")
+	}
+	_, err := Undo(dir, []repo.Worktree{{Path: wt, Branch: "feature", Rebasing: true}}, nil, "feature", time.Now(), false)
+	if err == nil || !strings.Contains(err.Error(), "mid-rebase") {
+		t.Fatalf("err %v", err)
+	}
+	if busy, err := RebaseInProgress(wt); err != nil || !busy {
+		t.Fatalf("RebaseInProgress = %v, %v; the refusal aborted somebody's rebase", busy, err)
+	}
+}
+
+func TestUndoChecksEverythingBeforeAborting(t *testing.T) {
+	// One run pinned two branches: feature was handed over, second has moved
+	// on since. The moved-since refusal must come before feature's rebase is
+	// aborted, or "nothing undone" throws away a staged resolution.
+	dir, wt, gitDir, _ := handedOverRepo(t, 5, false)
+	gitIn(t, dir, "branch", "second", "main")
+	if _, err := WriteSafety(dir, "second", gitIn(t, dir, "rev-parse", "second"), 5); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, dir, "update-ref", "refs/heads/second", "feature")
+	moved := gitIn(t, dir, "rev-parse", "second")
+	staged := gitIn(t, wt, "rev-parse", ":v.txt")
+
+	_, err := Undo(dir, []repo.Worktree{{Path: wt, Branch: "feature", Rebasing: true}}, nil, "feature", time.Now(), false)
+	if err == nil || !strings.Contains(err.Error(), "second has moved since that run") {
+		t.Fatalf("err %v", err)
+	}
+	if busy, err := RebaseInProgress(wt); err != nil || !busy {
+		t.Fatalf("RebaseInProgress = %v, %v; the refused undo aborted the handover", busy, err)
+	}
+	if got := gitIn(t, wt, "rev-parse", ":v.txt"); got != staged {
+		t.Fatalf("v.txt is staged as %s, was %s", got, staged)
+	}
+	if has, err := HasPlan(gitDir); err != nil || !has {
+		t.Fatalf("HasPlan = %v, %v; the refused undo removed the handover", has, err)
+	}
+	if gitIn(t, dir, "rev-parse", "second") != moved {
+		t.Fatal("second was reset despite the refusal")
+	}
+}
+
+func TestUndoTakesOverTheLockAHandoverLeft(t *testing.T) {
+	dir, wt, gitDir, old := handedOverRepo(t, 5, true)
+	if _, ok, err := ReadLock(gitDir); err != nil || !ok {
+		t.Fatalf("ReadLock = %v, %v; the fixture kept no lock", ok, err)
+	}
+	got, err := Undo(dir, []repo.Worktree{{Path: wt, Branch: "feature", Rebasing: true}}, nil, "feature", time.Now(), false)
+	if err != nil {
+		t.Fatalf("undo refused the lock its own handover left: %v", err)
+	}
+	if len(got) != 1 || !got[0].Aborted || gitIn(t, wt, "rev-parse", "HEAD") != old {
+		t.Fatalf("restored %+v", got)
+	}
+	if _, ok, err := ReadLock(gitDir); err != nil || ok {
+		t.Fatalf("ReadLock = %v, %v; the lock outlived the run it belonged to", ok, err)
+	}
+}

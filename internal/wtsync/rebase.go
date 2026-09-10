@@ -45,10 +45,13 @@ var rebaseConfig = []string{
 // worktree is refused for its dirt whatever its class.
 func Preflight(a Assessment) (Verdict, string) {
 	switch {
-	case a.Paused:
-		return RefuseRun, "left mid-rebase by an earlier run: wt sync resume, or wt sync undo"
 	case a.Err != nil:
 		return RefuseRun, "assessment failed: " + a.Err.Error()
+	// Below the error, so the resume advice cannot hide a failed
+	// assessment; above the dirt, because a handover's staged conflicts
+	// are what a person is finishing, not dirt.
+	case a.Paused:
+		return RefuseRun, "left mid-rebase by an earlier run: wt sync resume, or wt sync undo"
 	case a.Class == Detached:
 		return RefuseRun, "no branch"
 	case a.NoConfig:

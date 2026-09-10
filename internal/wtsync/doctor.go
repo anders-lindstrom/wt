@@ -88,10 +88,24 @@ func Doctor(mainRoot, trunk string, worktrees []repo.Worktree, opts DoctorOption
 // rebasesCheck flags every worktree sitting mid-rebase: run refuses those,
 // and one left behind by an interrupted run has to be finished or aborted
 // by hand. The main checkout is not a rebase target, so it is not checked.
+// Nor is a worktree holding a handover: git rebase --abort there would
+// leave the handover behind and the branch reported as waiting forever, so
+// the plan row SyncDoctor adds names those, with resume.
 func rebasesCheck(worktrees []repo.Worktree) (Check, error) {
+	holders := map[string]bool{}
+	held, err := PlanHolders(worktrees)
+	if err != nil {
+		return Check{}, err
+	}
+	for _, wt := range held {
+		holders[wt.Path] = true
+	}
 	var stuck []string
 	for _, wt := range worktrees {
 		if wt.IsMain {
+			continue
+		}
+		if holders[wt.Path] {
 			continue
 		}
 		busy, err := RebaseInProgress(wt.Path)

@@ -82,6 +82,15 @@ func Assess(mainRoot, onto string, cfg *Config, wt repo.Worktree, agents []Agent
 		a.Class = Detached
 		return a
 	}
+	gitDir, err := GitDir(wt.Path)
+	if err != nil {
+		a.Err = fmt.Errorf("git dir: %w", err)
+		return a
+	}
+	if a.Paused, err = HasPlan(gitDir); err != nil {
+		a.Err = err
+		return a
+	}
 	// --no-optional-locks: a plain status may refresh and rewrite the index,
 	// and this command must not touch a worktree.
 	out, err := gitEnv(wt.Path, nil, nil, "--no-optional-locks", "status", "--porcelain", "--untracked-files=no")
@@ -96,6 +105,13 @@ func Assess(mainRoot, onto string, cfg *Config, wt repo.Worktree, agents []Agent
 		return a
 	}
 	a.Behind, a.Ahead = behind, ahead
+	if a.Paused {
+		// A run stopped here and is waiting on a person. The worktree holds
+		// a half-finished rebase, so simulating another one would describe
+		// a state nobody is in; the plan file has the detail.
+		a.Class = Contested
+		return a
+	}
 	switch {
 	case behind == 0:
 		a.Class = Current

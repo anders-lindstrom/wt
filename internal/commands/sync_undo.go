@@ -52,6 +52,10 @@ func SyncUndo(ctx *Context, work string, opts UndoOptions, w io.Writer) error {
 	restored, err := wtsync.Undo(ctx.Repo.MainRoot, worktrees, agents, target.Branch, now(), opts.Force)
 	for _, r := range restored {
 		name := workName(ctx, r.Branch)
+		if r.Aborted {
+			fmt.Fprintf(w, "%s  aborted the rebase; back at %s\n", name, short(r.To))
+			continue
+		}
 		if r.From == r.To {
 			fmt.Fprintf(w, "%s  already at %s\n", name, short(r.To))
 			continue

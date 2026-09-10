@@ -148,14 +148,16 @@ func newSyncCmd() *cobra.Command {
 		Short: "Put back every ref the last run on this worktree moved",
 		Long: "Find the newest run that touched this worktree's branch and reset every\n" +
 			"branch that run rewrote back to its safety ref, restoring a stack as a\n" +
-			"whole rather than one branch at a time.\n\n" +
-			"Refused, and nothing undone: a checkout involved is dirty, mid-rebase,\n" +
-			"or has a Claude session in it; a branch that has moved since the run,\n" +
-			"whose commits the reset would discard (--force pins those at a fresh\n" +
-			"safety ref and rewinds anyway); a branch with a later run, which has to\n" +
-			"be undone first and which --force does not override. Running it again\n" +
-			"after it already restored a branch reports that branch already at its\n" +
-			"old tip.",
+			"whole rather than one branch at a time. A rebase wt sync run handed over\n" +
+			"is aborted and its plan file removed, which puts that branch back.\n\n" +
+			"Refused, and nothing undone: a checkout involved is dirty, has a Claude\n" +
+			"session in it, or is mid-rebase with no handover from wt sync run; a\n" +
+			"branch that has moved since the run, whose commits the reset would\n" +
+			"discard (--force pins those at a fresh safety ref and rewinds anyway); a\n" +
+			"branch with a later run, which has to be undone first and which --force\n" +
+			"does not override. Nothing is aborted until every branch has passed.\n" +
+			"Running it again after it already restored a branch reports that branch\n" +
+			"already at its old tip.",
 		Example: "  wt sync undo login-crash          # back to the safety refs\n" +
 			"  wt sync undo login-crash --force  # even if the branch moved since",
 		Args:              cobra.ExactArgs(1),

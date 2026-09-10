@@ -413,8 +413,8 @@ func TestSyncRunRefusesAWorktreeWaitingOnAPerson(t *testing.T) {
 	if err := SyncRun(ctx, []string{"bump"}, noAgents(), &out); err == nil {
 		t.Fatalf("a second run must not touch a worktree somebody is finishing:\n%s", out.String())
 	}
-	if !strings.Contains(out.String(), "refused:") {
-		t.Fatalf("out %s", out.String())
+	if !strings.Contains(out.String(), "refused:") || !strings.Contains(out.String(), "wt sync resume") {
+		t.Fatalf("the refusal does not name wt sync resume:\n%s", out.String())
 	}
 	if busy, err := wtsync.RebaseInProgress(bump); err != nil || !busy {
 		t.Fatalf("RebaseInProgress = %v, %v; the second run disturbed the rebase", busy, err)
