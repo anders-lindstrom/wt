@@ -94,7 +94,7 @@ examples: `wt <command> --help`.
 | `wt migrate <worktree> [<type>/<name>]` | move a worktree where it belongs, renaming or retyping it on the way (`--dry-run`, `--force`); also `wt move` |
 | `wt adopt <path>` | provision a worktree another tool created (`--relocate`, `--skip-build`) |
 | `wt setup [<source-dir>]` | provision the worktree you are in (`--skip-build`) |
-| `wt remove <work>` | remove a worktree; delete its branch only when merged (`--yes`, `--me`) |
+| `wt remove <work>` | remove a worktree; delete its branch when merged, keep it when not (`--yes`, `--me`) |
 
 **This repository, and this build**
 
@@ -257,11 +257,11 @@ a worktree that does not exist yet.)
 
 ```
   path    /Users/you/src/repo_wt/chore_wt/wt-migration
-  branch  chore_wt/wt-migration — not merged into main
+  branch  chore_wt/wt-migration — not merged: 2 commits ahead of main
   state   clean
 
   the checkout will be deleted
-  the branch will be kept as "wt-migration"
+  the branch will be kept as "wt-migration" (2 commits ahead of main)
 
 Remove it? [y/N]
 ```
@@ -273,10 +273,16 @@ answer rather than after.
 
 `wt remove` reads the branch **from the worktree**, never rebuilding it from the
 name: once the type can vary, a reconstructed name may belong to an unrelated
-branch. It touches no branch at all on a detached HEAD, or on a branch that does
-not follow the convention and so belongs to someone else. A merged branch is
-deleted; **an unmerged one is renamed out of the prefix, never deleted**, so work
-in progress cannot be lost.
+branch. The plan states where that branch stands — merged, or how many commits
+ahead of the main branch it is — for every branch, whoever created it, because
+that is the fact the whole decision turns on. (`state` is a separate question:
+it is about uncommitted changes in the checkout.)
+
+**A branch merged into the main branch is deleted**, whether or not wt created
+it: merged means nothing is lost. **An unmerged branch is never deleted** — one
+wt made is renamed out of the `<type>_wt/` prefix so the work survives its
+worktree, and one wt did not make is left exactly as it is. A detached HEAD has
+no branch to touch.
 
 ## Development
 
