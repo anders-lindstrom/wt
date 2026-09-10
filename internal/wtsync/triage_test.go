@@ -152,8 +152,11 @@ func TestAssessDivergentWhenTheOpenAPIStrategyRefusesAtTheEndpoint(t *testing.T)
 	gitIn(t, dir, "checkout", "-q", "main")
 
 	a := Assess(dir, "main", cfg, featureWorktree(t, dir), nil)
-	if a.Class != Divergent || len(a.Divergent) != 1 || !strings.Contains(a.Divergent[0], "openapi refuses spec.json") {
+	if a.Class != Divergent || len(a.Divergent) != 1 || !strings.Contains(a.Divergent[0].String(), "openapi refuses spec.json") {
 		t.Errorf("divergent: %+v", a)
+	}
+	if got := KeyCounts(a.Divergent[0].Groups); got != "1 path" {
+		t.Errorf("collision counts = %q, want \"1 path\"", got)
 	}
 }
 
@@ -221,19 +224,20 @@ func TestAssessNotesWhenBothSidesChangeTheDependencyGraph(t *testing.T) {
 	// workstream from an ordinary rebase, so it is a note, never a reason.
 	dir := linearRepo(t, []map[string]string{{"build.gradle": "trunk deps\n"}, {"a.txt": "a2\n"}}, []map[string]string{{"build.gradle": "branch deps\n"}})
 	a := Assess(dir, "main", triageCfg(t), featureWorktree(t, dir), nil)
-	if a.Class == Divergent || len(a.Notes) != 1 || !strings.Contains(a.Notes[0], "both sides") {
+	if a.Class == Divergent || a.Graph == nil ||
+		strings.Join(a.Graph.Branch, ",") != "build.gradle" || strings.Join(a.Graph.Trunk, ",") != "build.gradle" {
 		t.Errorf("noted, not divergent: %+v", a)
 	}
 	// the branch alone changing it is routine
 	dir = linearRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"build.gradle": "deps\n"}})
 	a = Assess(dir, "main", triageCfg(t), featureWorktree(t, dir), nil)
-	if len(a.Notes) != 0 {
+	if a.Graph != nil {
 		t.Errorf("one side alone is not worth a note: %+v", a)
 	}
 	// an owned line inside a dependency-graph file is routine even when trunk moved the graph
 	dir = linearRepo(t, []map[string]string{{"build.gradle": "trunk deps\n"}}, []map[string]string{{"v.txt": "1.0.1\n"}})
 	a = Assess(dir, "main", triageCfg(t), featureWorktree(t, dir), nil)
-	if len(a.Notes) != 0 {
+	if a.Graph != nil {
 		t.Errorf("a version bump alone is not worth a note: %+v", a)
 	}
 }

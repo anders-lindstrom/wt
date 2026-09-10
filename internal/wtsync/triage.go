@@ -40,6 +40,46 @@ type FileOutcome struct {
 	// Keys is the refusal's Keys, when the strategy refused: non-empty only
 	// for a genuine key-by-key collision, never for an ordinary refusal.
 	Keys []string
+	// Groups is Keys by section of the document.
+	Groups []KeyGroup
+}
+
+// KeyGroup is one section of a generated document and the keys in it that
+// both sides changed differently.
+type KeyGroup struct {
+	Section string // "paths", "schemas" or "tags"
+	Keys    []string
+}
+
+// KeyCounts counts keys by section: "13 paths, 15 schemas".
+func KeyCounts(groups []KeyGroup) string {
+	parts := make([]string, 0, len(groups))
+	for _, g := range groups {
+		noun := strings.TrimSuffix(g.Section, "s")
+		if len(g.Keys) != 1 {
+			noun = g.Section
+		}
+		parts = append(parts, fmt.Sprintf("%d %s", len(g.Keys), noun))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// Collision is a generated document the openapi strategy refuses at the
+// endpoint because both sides changed the same keys: why a branch is divergent.
+type Collision struct {
+	Path   string
+	Groups []KeyGroup
+}
+
+func (c Collision) String() string {
+	return fmt.Sprintf("openapi refuses %s at the endpoint: both sides changed %s", c.Path, KeyCounts(c.Groups))
+}
+
+// GraphOverlap is the dependency_graph paths the branch and trunk both changed
+// since they parted, beyond lines an owned-line rule declares.
+type GraphOverlap struct {
+	Branch []string
+	Trunk  []string
 }
 
 // Assessment is everything wt sync knows about one worktree, computed with
@@ -54,9 +94,12 @@ type Assessment struct {
 	Agent     *Agent
 	Replay    Replay
 	Files     []FileOutcome
-	Divergent []string // why the class is divergent
-	Notes     []string // observations that do not affect the class
-	NoConfig  bool
+	Divergent []Collision // why the class is divergent
+	// Graph is set when both sides changed the dependency graph. It is worth
+	// a person's attention and does not affect the class.
+	Graph    *GraphOverlap
+	Notes    []string // other observations that do not affect the class
+	NoConfig bool
 	// Unverified means the replay could not be carried to the end: a script
 	// claims a path, and a script can only be checked before a run. The
 	// class is what the replay earned up to that point.
@@ -143,10 +186,10 @@ func Assess(mainRoot, onto string, cfg *Config, wt repo.Worktree, agents []Agent
 		a.Class = Clean
 	}
 
-	reasons, notes, err := divergence(mainRoot, onto, cfg, wt.Branch)
+	collisions, graph, err := divergence(mainRoot, onto, cfg, wt.Branch)
 	a.Err = errors.Join(a.Err, err)
-	a.Divergent = reasons
-	a.Notes = notes
+	a.Divergent = collisions
+	a.Graph = graph
 	if a.Replay.Truncated {
 		a.Notes = append(a.Notes, a.Replay.Why)
 	}
@@ -177,19 +220,19 @@ func classifyStop(files []FileOutcome, messages string) (Class, []FileOutcome) {
 	return Recipe, files
 }
 
-// divergence returns the reasons a branch is a workstream rather than a
-// rebase (spec §1) — the openapi strategy refusing at the endpoint, generated
-// output that no longer merges — and separately any notes worth a person's
-// attention that do not themselves change the class. Both sides having
-// changed a dependency_graph path beyond a line a strategy owns is common on
-// a long-lived branch and does not by itself discriminate a workstream from
-// an ordinary rebase, so it is a note, never a reason. An owned-line refusal
-// on ordinary configuration is a normal conflict, not divergence either.
-// Nor is every openapi refusal: only a genuine key-by-key collision (Refusal
-// carries Keys) is generated output that no longer merges; the strategy's
-// other refusals — a section guard, a missing section, a malformed
-// document, a non-semver version — are ordinary conflicts.
-func divergence(mainRoot, onto string, cfg *Config, branch string) (reasons, notes []string, err error) {
+// divergence returns the collisions that make a branch a workstream rather
+// than a rebase (spec §1) — the openapi strategy refusing at the endpoint,
+// generated output that no longer merges — and separately the dependency
+// graph both sides changed, which is worth a person's attention and does not
+// itself change the class. That overlap is common on a long-lived branch and
+// does not by itself discriminate a workstream from an ordinary rebase, so it
+// is never a reason. An owned-line refusal on ordinary configuration is a
+// normal conflict, not divergence either. Nor is every openapi refusal: only
+// a genuine key-by-key collision (Refusal carries Keys) is generated output
+// that no longer merges; the strategy's other refusals — a section guard, a
+// missing section, a malformed document, a non-semver version — are ordinary
+// conflicts.
+func divergence(mainRoot, onto string, cfg *Config, branch string) (collisions []Collision, graph *GraphOverlap, err error) {
 	if cfg == nil {
 		return nil, nil, nil
 	}
@@ -201,25 +244,24 @@ func divergence(mainRoot, onto string, cfg *Config, branch string) (reasons, not
 		f, ferr := tryStrategy(mainRoot, onto, cfg, c)
 		err = errors.Join(err, ferr)
 		if f.Strategy == "openapi" && !f.Resolved && len(f.Keys) > 0 {
-			reasons = append(reasons, fmt.Sprintf("openapi refuses %s at the endpoint: %s", c.Path, f.Note))
+			collisions = append(collisions, Collision{Path: c.Path, Groups: f.Groups})
 		}
 	}
 	if len(cfg.DependencyGraph) == 0 {
-		return reasons, notes, err
+		return collisions, nil, err
 	}
 	base, berr := gitEnv(mainRoot, nil, nil, "merge-base", onto, branch, "--")
 	if berr != nil {
-		return reasons, notes, errors.Join(err, fmt.Errorf("merge-base: %w", berr))
+		return collisions, nil, errors.Join(err, fmt.Errorf("merge-base: %w", berr))
 	}
 	branchTouched, terr := dependencyChanges(mainRoot, cfg, base, branch)
 	err = errors.Join(err, terr)
 	trunkTouched, terr := dependencyChanges(mainRoot, cfg, base, onto)
 	err = errors.Join(err, terr)
 	if len(branchTouched) > 0 && len(trunkTouched) > 0 {
-		notes = append(notes, fmt.Sprintf("both sides changed the dependency graph: branch %s; trunk %s",
-			strings.Join(branchTouched, ", "), strings.Join(trunkTouched, ", ")))
+		graph = &GraphOverlap{Branch: branchTouched, Trunk: trunkTouched}
 	}
-	return reasons, notes, err
+	return collisions, graph, err
 }
 
 // dependencyChanges lists the dependency_graph paths changed between base

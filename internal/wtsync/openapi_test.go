@@ -176,6 +176,9 @@ func TestOpenAPIRefusalCarriesTheSortedConflictingKeys(t *testing.T) {
 	if got := strings.Join(r.Keys, ","); got != "/a,S" {
 		t.Errorf("keys = %q, want the sorted conflicting keys \"/a,S\"", got)
 	}
+	if len(r.Groups) != 2 || r.Groups[0].Section != "paths" || r.Groups[1].Section != "schemas" {
+		t.Errorf("groups = %+v, want the keys by section, paths then schemas", r.Groups)
+	}
 }
 
 func TestOpenAPIKeepBranchRefusesAnEmptyVersion(t *testing.T) {

@@ -79,7 +79,7 @@ func runDeferredWithTimeout(wtPath string, steps []Deferred, oldTip, newTip stri
 		}
 		r.Ran = true
 		if log != nil {
-			fmt.Fprintf(log, "  defer %s\n", step.Run)
+			fmt.Fprintf(log, "  ▸ %s\n", step.Run)
 		}
 		start := time.Now()
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)

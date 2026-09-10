@@ -27,11 +27,13 @@ type Conflict struct {
 // a person looks. Reason names what collided. Keys is set only when the
 // refusal is a genuine key-by-key collision (both sides changed the same
 // key differently) — the signal triage uses to tell a workstream from an
-// ordinary refusal; every other refusal leaves it nil.
+// ordinary refusal; every other refusal leaves it nil. Groups is the same
+// keys by section, for a report to count or list.
 type Refusal struct {
 	Path   string
 	Reason string
 	Keys   []string
+	Groups []KeyGroup
 }
 
 func (r *Refusal) Error() string { return r.Path + ": " + r.Reason }

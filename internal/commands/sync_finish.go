@@ -82,8 +82,8 @@ func handOver(ctx *Context, w io.Writer, in handoverInput) error {
 	if in.Lock != nil {
 		in.Lock.Keep()
 	}
-	fmt.Fprintf(w, "  plan %s\n", wtsync.PlanPath(gitDir))
-	fmt.Fprintf(w, "  %s\n", wtsync.NeedsYouLine(in.Work, in.Res.Left.Left))
+	fmt.Fprintf(w, "  ⚠ %s\n", wtsync.NeedsYouLine(in.Work, in.Res.Left.Left))
+	fmt.Fprintf(w, "    plan %s\n", wtsync.PlanPath(gitDir))
 	return nil
 }
 
@@ -96,8 +96,9 @@ type completeInput struct {
 
 // completeRun is what run and resume both do once a rebase has finished: the
 // deferred steps, the result ref that says where the run left the branch,
-// the handover removed, and the push line. owed names the deferred steps
-// that failed — the rebase stands regardless (spec §3).
+// the handover removed, and the undo line. owed names the deferred steps
+// that failed — the rebase stands regardless (spec §3). The push is the
+// caller's, once every worktree is done.
 func completeRun(ctx *Context, w io.Writer, cfg *wtsync.Config, in completeInput) (head string, owed []string, err error) {
 	// w, not nil: RunDeferred announces each step as it starts, so a long
 	// one is not silence until printDeferred reports the result.
@@ -124,7 +125,7 @@ func completeRun(ctx *Context, w io.Writer, cfg *wtsync.Config, in completeInput
 	if err := wtsync.RemovePlan(gitDir); err != nil {
 		return head, owed, err
 	}
-	fmt.Fprintf(w, "  push: git -C %s push --force-with-lease\n", in.Path)
+	fmt.Fprintf(w, "  ↩ wt sync undo %s puts it back (was %s)\n", in.Work, short(in.Res.OldTip))
 	return head, owed, nil
 }
 

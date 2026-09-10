@@ -64,8 +64,10 @@ setup() {
 @test "sync run fetches trunk first and rebases the same worktree" {
     run wt sync run bump
     [ "$status" -eq 0 ]
-    [[ "$output" == *"fetched origin/main"* ]]
+    [[ "$output" == *"onto origin/main"*"(fetched)"* ]]
     [[ "$output" == *"rebased 1 commit"* ]]
+    # bats gives the run no terminal: nothing is asked or pushed, the command is printed.
+    [[ "$output" == *"push: git -C"*"--force-with-lease --force-if-includes"* ]]
 
     run wt sync
     [ "$status" -eq 0 ]

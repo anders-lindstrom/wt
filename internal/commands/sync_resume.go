@@ -20,13 +20,17 @@ type ResumeOptions struct {
 	// an empty slice means there are none.
 	Agents []wtsync.Agent
 	Now    func() time.Time
+	// Push and ConfirmPush are RunOptions' own: what happens to the branch
+	// once the rebase finishes with nothing owed.
+	Push        PushMode
+	ConfirmPush func(works []string) (bool, error)
 }
 
 // SyncResume continues the rebase a run left at a stop a person owned. It
 // verifies the worktree is still what the run left, then drives the same
 // loop to the end: the strategies at any later stop, the deferred steps, the
-// result ref, the push line. A later stop a person owns is handed over
-// again, with a fresh plan file.
+// result ref, the push. A later stop a person owns is handed over again,
+// with a fresh plan file.
 //
 // A rebase somebody finished themselves with `git rebase --continue` is
 // tolerated: there is nothing to continue, so only what follows the rebase
@@ -151,6 +155,9 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 		Onto: st.Onto, Upstream: st.Upstream, Epoch: st.Epoch, Work: name,
 	}
 	safety := wtsync.Safety{Branch: st.Branch, Epoch: st.Epoch, Ref: st.Safety, Tip: st.OldTip}
+	if busy {
+		fmt.Fprintf(w, "%s  %s  resuming at %d/%d\n", name, st.Branch, st.Stop, st.Total)
+	}
 	tracker.set(&rebaseInFlight{work: name, path: target.Path, safety: st.Safety, resuming: true})
 	res, rerr := wtsync.Resume(ctx.Repo.MainRoot, cfg, req, st.OldTip, safety, w)
 	tracker.set(nil)
@@ -158,7 +165,7 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 		return fmt.Errorf("%s: %w", name, rerr)
 	}
 	if res.Left != nil {
-		fmt.Fprintf(w, "  stopped again at %d/%d\n", res.Left.Index, res.Left.Total)
+		fmt.Fprintf(w, "  ⚠ stopped again at %d/%d\n", res.Left.Index, res.Left.Total)
 		if err := handOver(ctx, w, handoverInput{
 			Work: name, Branch: st.Branch, Path: target.Path, TrunkRef: st.TrunkRef, TrunkSHA: st.Trunk,
 			Onto: st.Onto, Upstream: st.Upstream, Epoch: st.Epoch, Cfg: cfg, Res: res, Lock: lock,
@@ -168,7 +175,7 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 		lock = nil // kept on purpose
 		return fmt.Errorf("not completed: %s (needs you)", name)
 	}
-	fmt.Fprintf(w, "  rebased %d commit%s\n", res.Replayed, plural(res.Replayed))
+	fmt.Fprintf(w, "  ✓ rebased %d commit%s\n", res.Replayed, plural(res.Replayed))
 	tracker.set(&rebaseInFlight{work: name, path: target.Path, rebased: true})
 	_, owed, cerr := completeRun(ctx, w, cfg, completeInput{
 		Work: name, Branch: st.Branch, Path: target.Path, Epoch: st.Epoch, Res: res,
@@ -179,6 +186,13 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 	}
 	if len(owed) > 0 {
 		return fmt.Errorf("not completed: %s", strings.Join(owed, ", "))
+	}
+	failed, err := offerPush(w, opts.Push, opts.ConfirmPush, []pushTarget{{Work: name, Branch: st.Branch, Path: target.Path}})
+	if err != nil {
+		return err
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("not completed: %s", strings.Join(failed, ", "))
 	}
 	return nil
 }

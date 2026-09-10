@@ -54,6 +54,7 @@ func resolveConflict(mainRoot, onto string, cfg *Config, c Conflict, wtPath stri
 		if ref := refusalOf(err); ref != nil {
 			r.Outcome.Note = ref.Reason
 			r.Outcome.Keys = ref.Keys
+			r.Outcome.Groups = ref.Groups
 			return r, nil
 		}
 		r.Outcome.Note = err.Error()

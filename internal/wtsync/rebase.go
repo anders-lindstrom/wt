@@ -69,7 +69,7 @@ func Preflight(a Assessment) (Verdict, string) {
 	case Divergent:
 		reason := "divergent"
 		if len(a.Divergent) > 0 {
-			reason += ": " + a.Divergent[0]
+			reason += ": " + a.Divergent[0].String()
 		}
 		return RefuseRun, reason
 	case Contested:
@@ -542,7 +542,7 @@ func logStop(log io.Writer, s StopResult) {
 		if f.Resolved {
 			mark, note = "✓", f.Strategy
 		}
-		parts = append(parts, f.Path+mark+" "+note)
+		parts = append(parts, strings.TrimSpace(mark+" "+f.Path+" "+note))
 	}
 	fmt.Fprintln(log, strings.Join(parts, "  "))
 }
