@@ -75,3 +75,50 @@ setup() {
     [ "$status" -eq 0 ]
     [[ "$output" == *"→"* ]]
 }
+
+# A handover end to end: a.txt moved on both sides and nothing claims it, so
+# the run carries the v.txt stop, stops contested on the a.txt stop and leaves
+# the plan; the table reports the handover, and resume finishes the rebase
+# once the person's file is staged.
+@test "sync run hands a contested stop over and resume finishes it" {
+    printf 'branch\n' > "$BUMP/a.txt"
+    git -C "$BUMP" add a.txt
+    git -C "$BUMP" -c commit.gpgsign=false commit -qm "a on the branch"
+    printf 'trunk\n' > "$REPO/a.txt"
+    git -C "$REPO" add a.txt
+    git -C "$REPO" -c commit.gpgsign=false commit -qm "a on trunk"
+    git -C "$REPO" fetch -q origin
+
+    run wt sync
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"bump"*"contested"*"2/2"*"a.txt✗"* ]]
+
+    run wt sync run bump --no-fetch --yes
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"needs you"* ]]
+    GITDIR="$(git -C "$BUMP" rev-parse --absolute-git-dir)"
+    [ -d "$GITDIR/rebase-merge" ]
+    [ -f "$GITDIR/wt-sync-plan.md" ]
+    [ -f "$GITDIR/wt-sync-state.json" ]
+
+    run wt sync
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"bump"*"contested"*"wt sync resume, or wt sync undo"* ]]
+    [[ "$output" != *"dirty"* ]]
+
+    echo resolved > "$BUMP/a.txt"
+    git -C "$BUMP" add a.txt
+    run wt sync resume bump
+    [ "$status" -eq 0 ]
+    [ ! -d "$GITDIR/rebase-merge" ]
+    [ ! -f "$GITDIR/wt-sync-state.json" ]
+    [ ! -f "$GITDIR/wt-sync-plan.md" ]
+    [ "$(git -C "$BUMP" symbolic-ref HEAD)" = "refs/heads/feat_wt/bump" ]
+    [ "$(git -C "$BUMP" show HEAD:a.txt)" = "resolved" ]
+    [ "$(git -C "$BUMP" show HEAD:v.txt)" = "1.0.6" ]
+    git -C "$BUMP" merge-base --is-ancestor origin/main HEAD
+
+    run wt sync
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"bump"* ]]
+}

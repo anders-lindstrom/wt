@@ -5,6 +5,15 @@ Newest first, each heading stamped with the local date and time of the change
 lines a human would want read out to them; the full story is in git history and
 in `docs/superpowers/plans/`.
 
+## 2026-09-10 10:48 — a contested stop is handed to you, and resume finishes it
+
+- `wt sync run` no longer aborts at a conflict that is yours: it leaves the
+  rebase in place, what the strategies resolved staged, and a plan file.
+- `wt sync resume <work>` checks your work and finishes the rebase. Anything
+  unmerged, or a strategy's file hand-merged, is a refusal that changes nothing.
+- `wt sync undo <work>` aborts a handed-over rebase and puts the branch back;
+  `wt sync` and `wt sync doctor` both name a worktree waiting on you.
+
 ## 2026-09-09 23:12 — recipe means every stop resolves
 
 - `wt sync` now replays the whole rebase in the object store, applying the
