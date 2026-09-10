@@ -41,7 +41,7 @@ func TestListShowsWorktreesAndMarksNonCanonical(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	if err := List(ctx, &buf); err != nil {
+	if err := List(ctx, &buf, 0); err != nil {
 		t.Fatalf("List: %v", err)
 	}
 	out := buf.String()
@@ -63,7 +63,7 @@ func TestListMarksCanonicalWorktreeCleanly(t *testing.T) {
 
 	ctx, _ := Open(main)
 	var buf bytes.Buffer
-	if err := List(ctx, &buf); err != nil {
+	if err := List(ctx, &buf, 0); err != nil {
 		t.Fatal(err)
 	}
 	for _, line := range strings.Split(buf.String(), "\n") {
@@ -84,7 +84,7 @@ func TestListMarksSupersetLayoutApartFromForeignOnes(t *testing.T) {
 
 	ctx, _ := Open(main)
 	var buf bytes.Buffer
-	if err := List(ctx, &buf); err != nil {
+	if err := List(ctx, &buf, 0); err != nil {
 		t.Fatal(err)
 	}
 	line := lineContaining(t, buf.String(), "feat_wt/thing")
@@ -106,7 +106,7 @@ func TestListExplainsTheForeignMark(t *testing.T) {
 
 	ctx, _ := Open(main)
 	var buf bytes.Buffer
-	if err := List(ctx, &buf); err != nil {
+	if err := List(ctx, &buf, 0); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "wt migrate") {
@@ -121,11 +121,85 @@ func TestListPrintsNoLegendWhenEverythingIsCanonical(t *testing.T) {
 
 	ctx, _ := Open(main)
 	var buf bytes.Buffer
-	if err := List(ctx, &buf); err != nil {
+	if err := List(ctx, &buf, 0); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(buf.String(), "wt migrate") {
 		t.Errorf("nothing is marked, so nothing needs explaining:\n%s", buf.String())
+	}
+}
+
+// On a terminal every row fits its width: paths give way from the left, where
+// all worktrees of a repository share the same leading directories.
+func TestListFitsPathsToTheTerminalWidth(t *testing.T) {
+	main, _ := repoWithWorktree(t, func(parent string) string {
+		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
+	})
+	ctx, _ := Open(main)
+
+	const width = 60
+	var buf bytes.Buffer
+	if err := List(ctx, &buf, width); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(strings.TrimRight(buf.String(), "\n"), "\n") {
+		if n := len([]rune(line)); n > width {
+			t.Errorf("%d columns, want at most %d: %q", n, width, line)
+		}
+	}
+	line := lineContaining(t, buf.String(), "feat_wt/thing")
+	if !strings.Contains(line, "…/") || !strings.HasSuffix(line, "/demo_wt/feat_wt/thing") {
+		t.Errorf("want the path shortened from the left, its tail intact: %q", line)
+	}
+}
+
+// Piped, a path is an argument to other commands, so it is printed whole.
+func TestListPrintsWholePathsWithoutATerminal(t *testing.T) {
+	main, wt := repoWithWorktree(t, func(parent string) string {
+		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
+	})
+	ctx, _ := Open(main)
+
+	var buf bytes.Buffer
+	if err := List(ctx, &buf, 0); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), wt) {
+		t.Errorf("want the whole path %s:\n%s", wt, buf.String())
+	}
+}
+
+func TestListShowsPathsFromHomeOnATerminal(t *testing.T) {
+	main, _ := repoWithWorktree(t, func(parent string) string {
+		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
+	})
+	ctx, _ := Open(main)
+	t.Setenv("HOME", ctx.Repo.Parent)
+
+	var buf bytes.Buffer
+	if err := List(ctx, &buf, 500); err != nil {
+		t.Fatal(err)
+	}
+	if line := lineContaining(t, buf.String(), "feat_wt/thing"); !strings.HasSuffix(line, "  ~/demo_wt/feat_wt/thing") {
+		t.Errorf("want the path from ~: %q", line)
+	}
+}
+
+func TestElideLeft(t *testing.T) {
+	for _, tc := range []struct {
+		path  string
+		limit int
+		want  string
+	}{
+		{"~/src/repo_wt/feat_wt/thing", 40, "~/src/repo_wt/feat_wt/thing"},
+		{"~/src/repo_wt/feat_wt/thing", 27, "~/src/repo_wt/feat_wt/thing"},
+		{"~/src/repo_wt/feat_wt/thing", 23, "…/repo_wt/feat_wt/thing"},
+		{"~/src/repo_wt/feat_wt/thing", 20, "…/feat_wt/thing"},
+		{"/a/averyveryverylongname", 10, "…ylongname"},
+	} {
+		if got := elideLeft(tc.path, tc.limit); got != tc.want {
+			t.Errorf("elideLeft(%q, %d) = %q, want %q", tc.path, tc.limit, got, tc.want)
+		}
 	}
 }
 
@@ -147,11 +221,33 @@ func TestStatusReportsCleanliness(t *testing.T) {
 
 	ctx, _ := Open(main)
 	var buf bytes.Buffer
-	if err := Status(ctx, &buf); err != nil {
+	if err := Status(ctx, &buf, 0); err != nil {
 		t.Fatalf("Status: %v", err)
 	}
 	if !strings.Contains(buf.String(), "clean") {
 		t.Errorf("want a cleanliness report:\n%s", buf.String())
+	}
+}
+
+func TestStatusFitsPathsToTheTerminalWidth(t *testing.T) {
+	main, _ := repoWithWorktree(t, func(parent string) string {
+		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
+	})
+	ctx, _ := Open(main)
+
+	const width = 60
+	var buf bytes.Buffer
+	if err := Status(ctx, &buf, width); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(strings.TrimRight(buf.String(), "\n"), "\n") {
+		if n := len([]rune(line)); n > width {
+			t.Errorf("%d columns, want at most %d: %q", n, width, line)
+		}
+	}
+	line := lineContaining(t, buf.String(), "feat_wt/thing")
+	if !strings.Contains(line, "…/") || !strings.HasSuffix(line, "/demo_wt/feat_wt/thing") {
+		t.Errorf("want the path shortened from the left, its tail intact: %q", line)
 	}
 }
 
@@ -165,7 +261,7 @@ func TestListLegendNamesSomethingTheRowActuallyShows(t *testing.T) {
 		filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 
 	var buf bytes.Buffer
-	if err := List(ctx, &buf); err != nil {
+	if err := List(ctx, &buf, 0); err != nil {
 		t.Fatal(err)
 	}
 	legend := lineContaining(t, buf.String(), "wt migrate")
