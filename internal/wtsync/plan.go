@@ -209,6 +209,26 @@ func NeedsYouLine(work string, left []string) string {
 		work, len(left), files, work)
 }
 
+// RebasedLine is spec §5's after-the-fact line for a rebase that finished:
+// how many trunk commits it took in and, for a session whose picture of the
+// worktree is now out of date, the files the rebase stopped on.
+func RebasedLine(work, trunk string, landed int, check []string) string {
+	line := fmt.Sprintf("wt: %s rebased on %s (+%d)", work, trunk, landed)
+	if len(check) == 0 {
+		return line
+	}
+	shown := check[:min(len(check), 3)]
+	names := make([]string, len(shown))
+	for i, p := range shown {
+		names[i] = path.Base(p)
+	}
+	line += ". yours to check: " + strings.Join(names, ", ")
+	if n := len(check) - len(shown); n > 0 {
+		line += " +" + strconv.Itoa(n)
+	}
+	return line
+}
+
 // PlanInput is everything the brief is rendered from.
 type PlanInput struct {
 	MainRoot string

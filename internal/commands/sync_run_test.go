@@ -667,3 +667,121 @@ func TestSyncRunAHandedOverChildDoesNotStopItsSibling(t *testing.T) {
 		t.Fatalf("err %v", err)
 	}
 }
+
+// idleIn is one interactive session parked in path, as claude lists it: the
+// cwd resolved.
+func idleIn(t *testing.T, path, name string) []wtsync.Agent {
+	t.Helper()
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return []wtsync.Agent{{ID: name, Name: name, Cwd: resolved, Kind: "interactive", Status: "idle"}}
+}
+
+func TestSyncRunStillRefusesASessionThatIsNotIdle(t *testing.T) {
+	ctx, bump := runFixture(t, false)
+	resolved, _ := filepath.EvalSymlinks(bump)
+	old := gitOut(t, bump, "rev-parse", "HEAD")
+	for _, a := range []wtsync.Agent{
+		{Name: "bump-1", Cwd: resolved, Kind: "interactive", Status: "busy"},
+		{Name: "bump-1", Cwd: resolved, Kind: "background", State: "blocked", Status: "idle"},
+	} {
+		opts := noAgents()
+		opts.Agents = []wtsync.Agent{a}
+		var out bytes.Buffer
+		if err := SyncRun(ctx, []string{"bump"}, opts, &out); err == nil || !strings.Contains(out.String(), "busy in it: bump-1") {
+			t.Fatalf("%+v: err %v\n%s", a, err, out.String())
+		}
+	}
+	if gitOut(t, bump, "rev-parse", "HEAD") != old {
+		t.Fatal("HEAD moved under a busy session")
+	}
+}
+
+func TestSyncRunNamesAnIdleSessionInTheQuestionAndStopsOnNo(t *testing.T) {
+	ctx, bump := runFixture(t, false)
+	old := gitOut(t, bump, "rev-parse", "HEAD")
+	opts := noAgents()
+	opts.Agents = idleIn(t, bump, "bump-1")
+	var asked []string
+	opts.Confirm = func(works []string) (bool, error) { asked = works; return false, nil }
+	var out bytes.Buffer
+	if err := SyncRun(ctx, []string{"bump"}, opts, &out); err != nil {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	if len(asked) != 1 || asked[0] != "bump" {
+		t.Fatalf("asked %v; one worktree under an idle session is asked about", asked)
+	}
+	if s := out.String(); !strings.Contains(s, "⚠ bump: session bump-1 (idle) is in it") || !strings.Contains(s, "nothing rebased") {
+		t.Fatalf("out:\n%s", s)
+	}
+	if gitOut(t, bump, "rev-parse", "HEAD") != old {
+		t.Fatal("HEAD moved after no")
+	}
+}
+
+func TestSyncRunUnderAnIdleSessionWithNoTerminalSaysSoAndEndsWithALineToRelay(t *testing.T) {
+	ctx, bump := runFixture(t, false)
+	opts := noAgents()
+	opts.Agents = idleIn(t, bump, "bump-1")
+	var out bytes.Buffer
+	if err := SyncRun(ctx, []string{"bump"}, opts, &out); err != nil {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	s := out.String()
+	notice := strings.Index(s, "session bump-1 (idle) is in it")
+	rebased := strings.Index(s, "✓ rebased")
+	if notice < 0 || rebased < 0 || notice > rebased {
+		t.Fatalf("the notice must come before anything moves:\n%s", s)
+	}
+	if !strings.Contains(s, "⚠ tell bump-1, idle in it:\n    wt: bump rebased on main (+1). yours to check: v.txt\n") {
+		t.Fatalf("no relay line:\n%s", s)
+	}
+}
+
+func TestSyncRunYesSkipsTheIdleQuestionButNotTheNotice(t *testing.T) {
+	ctx, bump := runFixture(t, false)
+	opts := noAgents()
+	opts.Agents = idleIn(t, bump, "bump-1")
+	opts.Yes = true
+	opts.Confirm = func([]string) (bool, error) { t.Fatal("asked despite --yes"); return false, nil }
+	var out bytes.Buffer
+	if err := SyncRun(ctx, []string{"bump"}, opts, &out); err != nil {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "session bump-1 (idle) is in it") {
+		t.Fatalf("out:\n%s", out.String())
+	}
+}
+
+// Between triage and the lock a session can wake up, or a new one open. The
+// lock-time re-check lists them again and refuses either.
+func TestSyncRunRefusesASessionThatChangedSinceTriage(t *testing.T) {
+	ctx, bump := runFixture(t, false)
+	old := gitOut(t, bump, "rev-parse", "HEAD")
+	woke := idleIn(t, bump, "bump-1")
+	woke[0].Status = "busy"
+	for _, tc := range []struct {
+		name   string
+		before []wtsync.Agent
+		then   []wtsync.Agent
+		want   string
+	}{
+		{"became busy", idleIn(t, bump, "bump-1"), woke, "busy in it now: bump-1"},
+		{"arrived", idleIn(t, bump, "bump-1"), append(idleIn(t, bump, "bump-1"), idleIn(t, bump, "bump-2")...), "arrived since it was checked: bump-2 (idle)"},
+		{"arrived in an empty worktree", []wtsync.Agent{}, idleIn(t, bump, "bump-3"), "arrived since it was checked: bump-3 (idle)"},
+	} {
+		opts := noAgents()
+		opts.Agents = tc.before
+		then := tc.then
+		opts.Relist = func() ([]wtsync.Agent, error) { return then, nil }
+		var out bytes.Buffer
+		if err := SyncRun(ctx, []string{"bump"}, opts, &out); err == nil || !strings.Contains(out.String(), tc.want) {
+			t.Fatalf("%s: err %v\n%s", tc.name, err, out.String())
+		}
+		if gitOut(t, bump, "rev-parse", "HEAD") != old {
+			t.Fatalf("%s: HEAD moved", tc.name)
+		}
+	}
+}

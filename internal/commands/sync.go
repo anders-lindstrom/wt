@@ -127,14 +127,15 @@ const (
 	syncSections
 )
 
-// sectionOf follows wtsync.Preflight, except that a session in the worktree
-// outranks its state: whatever is in there is that session's to finish, so
-// the worktree is left be rather than put to you.
+// sectionOf follows wtsync.Preflight, except that a busy session in the
+// worktree outranks its state: whatever is in there is that session's to
+// finish, so the worktree is left be rather than put to you. An idle session
+// is filed by the class, like any other worktree.
 func sectionOf(a wtsync.Assessment) syncSection {
 	switch {
 	case a.Err != nil:
 		return sectionNeedsYou
-	case len(a.Sessions) > 0, a.Class == wtsync.Detached, a.Class == wtsync.Stale:
+	case len(a.Sessions.Busy()) > 0, a.Class == wtsync.Detached, a.Class == wtsync.Stale:
 		return sectionSkipped
 	case a.Class == wtsync.Clean && !a.Dirty && !a.Paused, a.Class == wtsync.Recipe && !a.Dirty && !a.Paused:
 		return sectionReady
@@ -378,10 +379,14 @@ func printDetail(w io.Writer, work string, a wtsync.Assessment) {
 func runVerdict(work string, a wtsync.Assessment) string {
 	switch v, why := wtsync.Preflight(a); v {
 	case wtsync.Proceed:
+		verdict := "wt sync run " + work
 		if stop := a.Replay.Stop; a.Class == wtsync.Contested && stop != nil {
-			return fmt.Sprintf("wt sync run %s rebases up to %d/%d and hands that stop to you", work, stop.Index, stop.Total)
+			verdict = fmt.Sprintf("wt sync run %s rebases up to %d/%d and hands that stop to you", work, stop.Index, stop.Total)
 		}
-		return "wt sync run " + work
+		if len(a.Sessions) > 0 {
+			verdict += "; asks first: " + whoLabel(a.Sessions) + " is in it"
+		}
+		return verdict
 	case wtsync.SkipRun:
 		return "skipped: " + why
 	default:

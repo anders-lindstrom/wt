@@ -21,9 +21,9 @@ const fetchTimeout = 5 * time.Minute
 type RunOptions struct {
 	NoFetch bool
 	Yes     bool
-	// Confirm is asked once before rebasing more than one worktree. A nil
-	// Confirm never asks: a script or a hook with no terminal is not a
-	// person who can answer.
+	// Confirm is asked once before rebasing more than one worktree, or any
+	// worktree an idle session is in. A nil Confirm never asks: a script or
+	// a hook with no terminal is not a person who can answer.
 	Confirm func(works []string) (bool, error)
 	// Push is what happens at the end to the worktrees that finished with
 	// nothing owed. Under PushAsk, ConfirmPush is asked once; a nil
@@ -33,6 +33,9 @@ type RunOptions struct {
 	// Agents are the sessions to check against. Nil asks `claude agents`;
 	// an empty slice means there are none.
 	Agents []wtsync.Agent
+	// Relist lists the sessions again at the lock. Nil lists them the way
+	// Agents did.
+	Relist func() ([]wtsync.Agent, error)
 	Now    func() time.Time
 }
 
@@ -168,12 +171,20 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 		}
 	}
 	var going []string
+	underIdle := false
 	for _, b := range branches {
-		if parts[b].verdict == wtsync.Proceed && poisoned[b] == "" {
-			going = append(going, parts[b].work)
+		p := parts[b]
+		if p.verdict != wtsync.Proceed || poisoned[b] != "" {
+			continue
+		}
+		going = append(going, p.work)
+		// Preflight lets sessions through only when every one is idle.
+		if len(p.a.Sessions) > 0 {
+			fmt.Fprintln(w, idleNotice(p.work, p.a.Sessions))
+			underIdle = true
 		}
 	}
-	if len(going) > 1 && opts.Confirm != nil && !opts.Yes {
+	if (len(going) > 1 || underIdle) && opts.Confirm != nil && !opts.Yes {
 		fmt.Fprintf(w, "about to rebase: %s\n", strings.Join(going, ", "))
 		ok, err := opts.Confirm(going)
 		if err != nil {
@@ -183,6 +194,12 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 			fmt.Fprintln(w, "nothing rebased")
 			return nil
 		}
+	}
+	// Listed again now: a question can sit unanswered for as long as it
+	// likes, and a triage over a large fleet takes a while.
+	fresh, err := listAgain(opts.Agents, opts.Relist)
+	if err != nil {
+		return fmt.Errorf("cannot list agent sessions again (%v); nothing is rebased", err)
 	}
 	now := opts.Now
 	if now == nil {
@@ -241,6 +258,10 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 		}
 		if status != "" {
 			poison(b, p.work+": changed since triage: tracked changes")
+			continue
+		}
+		if why := sessionsChanged(p.a.Sessions, wtsync.SessionsAt(fresh, p.wt.Path)); why != "" {
+			poison(b, p.work+": changed since triage: "+why)
 			continue
 		}
 	}
@@ -363,6 +384,7 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 		tracker.set(&rebaseInFlight{work: p.work, path: p.wt.Path, rebased: true})
 		head, owed, derr := completeRun(ctx, w, cfg, completeInput{
 			Work: p.work, Branch: b, Path: p.wt.Path, Epoch: epoch, Res: res,
+			Tell: p.a.Sessions, Trunk: trunk, Landed: p.a.Behind, Check: pathsOnce(wtsync.StopPaths(res.Stops)),
 		})
 		tracker.set(nil)
 		p.head = head

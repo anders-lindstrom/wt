@@ -257,6 +257,7 @@ func TestSyncSaysWhenTrunkDeclaresNothing(t *testing.T) {
 
 func TestSyncGroupsAWorktreeByWhatToDoAboutIt(t *testing.T) {
 	busy := wtsync.Sessions{{Name: "busy"}}
+	parked := wtsync.Sessions{{Name: "parked-1", Kind: "interactive", Status: "idle"}}
 	for _, tc := range []struct {
 		name string
 		a    wtsync.Assessment
@@ -271,6 +272,8 @@ func TestSyncGroupsAWorktreeByWhatToDoAboutIt(t *testing.T) {
 		{"not assessed", wtsync.Assessment{Err: errors.New("boom")}, sectionNeedsYou},
 		{"session in a recipe", wtsync.Assessment{Class: wtsync.Recipe, Sessions: busy}, sectionSkipped},
 		{"session in a dirty contested", wtsync.Assessment{Class: wtsync.Contested, Dirty: true, Sessions: busy}, sectionSkipped},
+		{"idle session in a recipe", wtsync.Assessment{Class: wtsync.Recipe, Sessions: parked}, sectionReady},
+		{"idle session in a contested", wtsync.Assessment{Class: wtsync.Contested, Sessions: parked}, sectionNeedsYou},
 		{"stale", wtsync.Assessment{Class: wtsync.Stale}, sectionSkipped},
 		{"detached", wtsync.Assessment{Class: wtsync.Detached}, sectionSkipped},
 	} {
@@ -384,6 +387,34 @@ func TestHeldByNamesTheSessionsInTheWorktree(t *testing.T) {
 	} {
 		if got := heldBy(tc.a); got != tc.want {
 			t.Errorf("%s: got %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestRunVerdictSaysItAsksFirstUnderAnIdleSession(t *testing.T) {
+	a := wtsync.Assessment{Class: wtsync.Clean, Sessions: wtsync.Sessions{{Name: "parked-1", Kind: "interactive", Status: "idle"}}}
+	if got := runVerdict("bump", a); got != "wt sync run bump; asks first: session parked-1 (idle) is in it" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestSessionsChangedNamesWhatIsNewOrBusy(t *testing.T) {
+	parked := wtsync.Agent{ID: "a1", Name: "parked-1", Cwd: "/w", Kind: "interactive", Status: "idle"}
+	busy := parked
+	busy.Status = "busy"
+	other := wtsync.Agent{ID: "a2", Name: "new-2", Cwd: "/w", Kind: "interactive", Status: "idle"}
+	told := wtsync.Sessions{parked}
+	for _, tc := range []struct {
+		now  wtsync.Sessions
+		want string
+	}{
+		{wtsync.Sessions{parked}, ""},
+		{nil, ""},
+		{wtsync.Sessions{busy}, "an agent session is busy in it now: parked-1"},
+		{wtsync.Sessions{parked, other}, "a session arrived since it was checked: new-2 (idle)"},
+	} {
+		if got := sessionsChanged(told, tc.now); got != tc.want {
+			t.Errorf("now %+v: got %q, want %q", tc.now, got, tc.want)
 		}
 	}
 }

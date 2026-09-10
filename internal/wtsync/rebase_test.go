@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -252,6 +253,9 @@ func TestPreflightOrdersItsReasons(t *testing.T) {
 		{Assessment{Class: Clean, Dirty: true}, RefuseRun, "tracked changes"},
 		{Assessment{Class: Current, Dirty: true}, RefuseRun, "tracked changes"},
 		{Assessment{Class: Recipe, Sessions: Sessions{{Name: "x-1"}}}, RefuseRun, "x-1"},
+		{Assessment{Class: Recipe, Sessions: Sessions{{Name: "x-1", Kind: "interactive", Status: "idle"}}}, Proceed, ""},
+		{Assessment{Class: Recipe, Sessions: Sessions{{Name: "x-1", Kind: "interactive", Status: "idle"}, {Name: "x-2", Status: "busy"}}}, RefuseRun, "busy in it: x-2 +1"},
+		{Assessment{Class: Recipe, Dirty: true, Sessions: Sessions{{Name: "x-1", Kind: "interactive", Status: "idle"}}}, RefuseRun, "tracked changes"},
 		{Assessment{Class: Recipe, NoConfig: true}, RefuseRun, "no declaration"},
 		{Assessment{Class: Current}, SkipRun, "already on trunk"},
 		{Assessment{Class: Stale}, SkipRun, "nothing ahead"},
@@ -569,5 +573,15 @@ func TestPreflightLetsContestedProceedAndRefusesPaused(t *testing.T) {
 	}
 	if v, why := Preflight(Assessment{Class: Contested, Paused: true}); v != RefuseRun || !strings.Contains(why, "resume") {
 		t.Fatalf("paused = %v (%s), want a refusal naming resume", v, why)
+	}
+}
+
+func TestStopPathsSkipsTheMessagesPlaceholder(t *testing.T) {
+	stops := []StopResult{
+		{Files: []FileOutcome{{Path: "v.txt"}, {Path: messagesPath}}},
+		{Files: []FileOutcome{{Path: "a.txt"}, {Path: "v.txt"}}},
+	}
+	if got := StopPaths(stops); !reflect.DeepEqual(got, []string{"v.txt", "a.txt", "v.txt"}) {
+		t.Errorf("got %v", got)
 	}
 }

@@ -26,7 +26,8 @@ func newSyncCmd() *cobra.Command {
 			"  look    wt sync                 every worktree, grouped; read-only\n" +
 			"          wt sync <work>          one worktree in full: every stop, file and key\n" +
 			"  act     wt sync run <work>...   rebase; safety ref, strategies at each stop, deferred steps;\n" +
-			"                                  asks once when more than one worktree is involved (--yes skips)\n" +
+			"                                  asks once when more than one worktree is involved or a\n" +
+			"                                  session is idle in one (--yes skips)\n" +
 			"  finish  wt sync resume <work>   continue a rebase run left at a conflict that is yours\n" +
 			"          push with --force-with-lease; wt sync undo <work> puts every ref back\n" +
 			"          wt sync doctor          what a run needs, and --fix / --prune\n" +
@@ -35,7 +36,7 @@ func newSyncCmd() *cobra.Command {
 			"Groups:\n" +
 			"  ready      clean or recipe, with nothing in the way: wt sync run <work>\n" +
 			"  needs you  contested, divergent, dirty, handed over, or not assessed\n" +
-			"  skipped    a session is in it, nothing is ahead of trunk, or no branch\n" +
+			"  skipped    a busy session is in it, nothing is ahead of trunk, or no branch\n" +
 			"\n" +
 			"Classes:\n" +
 			"  clean      rebases without a conflict\n" +
@@ -57,8 +58,11 @@ func newSyncCmd() *cobra.Command {
 			"that is yours, or the first of a run that resolves throughout \u2014 with its\n" +
 			"files marked \u2713 resolved or \u2717 yours, then anything else worth knowing,\n" +
 			"every list cut to a count. wt sync <work> prints the lists, one item per\n" +
-			"line. A session named on a row is an agent in that worktree: leave it\n" +
-			"alone. The lines under a row are advisory and never change the class.",
+			"line. A session named on a row is a Claude session in that worktree: a busy\n" +
+			"one keeps wt sync run off it. One marked (idle) is waiting for its person;\n" +
+			"wt sync run names it, asks first, and ends with a wt: line to pass on to\n" +
+			"it. +N counts the other sessions there. The lines under a row are advisory\n" +
+			"and never change the class.",
 		Example: "  wt sync                   # every worktree, grouped; reads, changes nothing\n" +
 			"  wt sync login-crash       # that worktree in full\n" +
 			"  wt sync run login-crash   # act on it\n" +
@@ -98,11 +102,15 @@ func newSyncCmd() *cobra.Command {
 			"finish. A branch with a stack above it in the same run is put back instead,\n" +
 			"so a stack is never half-applied. A failed deferred step is reported as\n" +
 			"owed and never undoes the rebase.\n\n" +
-			"Refused, and never touched: a worktree with tracked changes, one a Claude\n" +
-			"session is in (Codex sessions are not detected), class divergent, one an\n" +
-			"earlier run already left waiting on you, and any repository whose trunk\n" +
-			"declares no .wt-sync.yaml. When more than one worktree would be rebased\n" +
-			"you are asked once; --yes skips that.\n\n" +
+			"Refused, and never touched: a worktree with tracked changes, one a busy\n" +
+			"Claude session is in (Codex sessions are not detected), class divergent,\n" +
+			"one an earlier run already left waiting on you, and any repository whose\n" +
+			"trunk declares no .wt-sync.yaml. You are asked once when more than one\n" +
+			"worktree would be rebased or a Claude session is idle in one; --yes skips\n" +
+			"that. The idle session is named before anything moves either way, and a\n" +
+			"finished rebase ends with a wt: line to pass on to it. Sessions are listed\n" +
+			"again at the lock: one busy by then, or new since, is refused. The session\n" +
+			"wt itself runs under is not counted.\n\n" +
 			"A worktree whose rebase finished with nothing owed is pushed at the end\n" +
 			"with --force-with-lease --force-if-includes, which refuses to overwrite\n" +
 			"commits on origin the branch has not seen. On a terminal you are asked\n" +
@@ -126,7 +134,7 @@ func newSyncCmd() *cobra.Command {
 			opts := commands.RunOptions{NoFetch: noFetch, Yes: yes, Push: pushMode(push, noPush)}
 			if isTerminal(os.Stdin) {
 				if !yes {
-					opts.Confirm = confirmRun(cmd.InOrStdin(), cmd.OutOrStdout())
+					opts.Confirm = confirmAsk(cmd.InOrStdin(), cmd.OutOrStdout(), "rebase")
 				}
 				opts.ConfirmPush = confirmPush(cmd.InOrStdin(), cmd.OutOrStdout())
 			}
@@ -134,7 +142,7 @@ func newSyncCmd() *cobra.Command {
 		},
 	}
 	run.Flags().BoolVar(&noFetch, "no-fetch", false, "rebase onto origin/<trunk> as last fetched")
-	run.Flags().BoolVar(&yes, "yes", false, "do not ask before rebasing more than one worktree")
+	run.Flags().BoolVar(&yes, "yes", false, "do not ask first: several worktrees, or an idle session in one")
 	run.Flags().BoolVar(&push, "push", false, "push the worktrees that finish, without asking")
 	run.Flags().BoolVar(&noPush, "no-push", false, "neither push nor ask; print the push command")
 	run.MarkFlagsMutuallyExclusive("push", "no-push")
@@ -259,11 +267,11 @@ func newSyncCmd() *cobra.Command {
 	return sync
 }
 
-// confirmRun asks the one question a multi-worktree run gets, defaulting to
-// no. The branches have already been listed by the time this runs.
-func confirmRun(in io.Reader, out io.Writer) func([]string) (bool, error) {
+// confirmAsk asks the one question an acting command gets before it changes
+// anything, defaulting to no. What it is about has been printed by then.
+func confirmAsk(in io.Reader, out io.Writer, verb string) func([]string) (bool, error) {
 	return func(works []string) (bool, error) {
-		_, _ = fmt.Fprintf(out, "rebase these %d worktrees? [y/N] ", len(works))
+		_, _ = fmt.Fprintf(out, "%s %s? [y/N] ", verb, strings.Join(works, ", "))
 		line, err := bufio.NewReader(in).ReadString('\n')
 		if err != nil {
 			// EOF on a terminal is ^D: the user declined rather than answered.
