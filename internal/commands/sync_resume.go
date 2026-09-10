@@ -110,7 +110,7 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 			return err
 		}
 	} else {
-		if err := wtsync.VerifyFinished(target.Path, st.Branch, st.Onto, st.OldTip); err != nil {
+		if err := wtsync.VerifyFinished(target.Path, st.Branch, name, st.Onto, st.OldTip); err != nil {
 			return fmt.Errorf("%s: %w; nothing is resumed", name, err)
 		}
 		fmt.Fprintf(w, "%s  the rebase is already finished; running what is left\n", name)
@@ -184,12 +184,13 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 }
 
 // verifySequencer refuses a rebase in progress that is not the one the
-// handover describes: one moving another ref, or replaying onto another
-// commit — a person who aborted the run's rebase and started their own.
-// Continuing it would pin its result under the run's epoch. Both onto values
-// are resolved to commits before they are compared, so an abbreviated or
-// symbolic one can neither refuse the run's own rebase nor pass somebody
-// else's.
+// handover describes: one moving another ref, replaying onto another commit,
+// or started from another tip — a person who aborted the run's rebase and
+// started their own, perhaps after committing. Continuing it would pin its
+// result under the run's epoch, and a later undo would discard their commit.
+// The onto and orig-head values are resolved to commits before they are
+// compared, so an abbreviated or symbolic one can neither refuse the run's
+// own rebase nor pass somebody else's.
 func verifySequencer(wtPath string, st wtsync.State) error {
 	notOurs := func(why string) error {
 		return fmt.Errorf("the rebase in progress in %s is not the one wt sync run left: %s; nothing is resumed", st.Work, why)
@@ -210,6 +211,9 @@ func verifySequencer(wtPath string, st wtsync.State) error {
 	}
 	if got, err := commitOf(wtPath, t.Onto); err != nil || got != want {
 		return notOurs(fmt.Sprintf("it replays onto %s, not %s", short(t.Onto), short(want)))
+	}
+	if got, err := commitOf(wtPath, t.OrigHead); err != nil || got != st.OldTip {
+		return notOurs(fmt.Sprintf("it started from %s, not the tip the run started from (%s)", short(t.OrigHead), short(st.OldTip)))
 	}
 	return nil
 }

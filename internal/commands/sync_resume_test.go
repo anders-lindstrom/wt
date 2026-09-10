@@ -399,3 +399,108 @@ func TestSyncResumeSaysWhatAFinishedByHandRebaseDidNotRecheck(t *testing.T) {
 		t.Fatalf("HasPlan = %v, %v", has, err)
 	}
 }
+
+// restartedByHand is a person who aborted the handed-over rebase, committed
+// a fix of their own, and rebased onto the run's onto again. They resolve the
+// first stop exactly as the handover did: v.txt with the strategy's blob and
+// a.txt by hand. Every recorded check still matches. Only the tip the rebase
+// started from differs, and that tip carries a commit the run never made.
+func restartedByHand(t *testing.T, bump string, st wtsync.State) {
+	t.Helper()
+	gitOut(t, bump, "rebase", "--abort")
+	writeFile(t, bump, "x.txt", "mine\n")
+	gitOut(t, bump, "add", "--", "x.txt")
+	gitOut(t, bump, "commit", "-q", "-m", "a fix of my own")
+	gitTry(t, bump, "-c", "rebase.backend=merge", "rebase", st.Onto)
+	if p, err := wtsync.RebaseProgress(bump); err != nil || p.Index != st.Stop {
+		t.Fatalf("progress %+v, %v; the restarted rebase did not stop where the handover did", p, err)
+	}
+	writeFile(t, bump, "v.txt", "1.0.6\n")
+	writeFile(t, bump, "a.txt", "merged by hand\n")
+	gitOut(t, bump, "add", "--", "v.txt", "a.txt")
+	if staged := gitOut(t, bump, "rev-parse", ":0:v.txt"); staged != st.Resolved["v.txt"] {
+		t.Fatalf("v.txt staged %s, handover records %s; the test would be refused for the wrong reason", short(staged), short(st.Resolved["v.txt"]))
+	}
+}
+
+// A rebase restarted from another tip is not the run's, even onto the same
+// commit. Continuing it would pin a result that carries the person's own
+// commit under the run's epoch, and a later plain undo would discard that
+// commit without refusing.
+func TestSyncResumeRefusesARebaseRestartedFromAnotherTip(t *testing.T) {
+	ctx, bump, gitDir, st := handedOver(t)
+	restartedByHand(t, bump, st)
+
+	var out bytes.Buffer
+	err := SyncResume(ctx, "bump", noResumeAgents(), &out)
+	if err == nil || !strings.Contains(err.Error(), "not the one wt sync run left") || !strings.Contains(err.Error(), "started from") {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	assertUntouched(t, bump, gitDir, st)
+	if _, ok, rerr := wtsync.ResultTip(ctx.Repo.MainRoot, st.Branch, st.Epoch); rerr != nil || ok {
+		t.Fatalf("ResultTip = %v, %v; a restarted rebase was certified as the run's", ok, rerr)
+	}
+}
+
+// The same restarted rebase, finished by hand. No sequencer is left to read,
+// so the branch's reflog must show where the rebase started.
+func TestSyncResumeRefusesARebaseFinishedByHandFromAnotherTip(t *testing.T) {
+	ctx, bump, gitDir, st := handedOver(t)
+	restartedByHand(t, bump, st)
+	gitTry(t, bump, "rebase", "--continue")
+	if busy, err := wtsync.RebaseInProgress(bump); err != nil || busy {
+		t.Fatalf("RebaseInProgress = %v, %v; the hand continue did not finish", busy, err)
+	}
+	if gitOut(t, bump, "log", "-1", "--format=%s") != "a fix of my own" {
+		t.Fatal("the person's commit is not on the branch; the test is vacuous")
+	}
+	head := gitOut(t, bump, "rev-parse", "HEAD")
+
+	var out bytes.Buffer
+	err := SyncResume(ctx, "bump", noResumeAgents(), &out)
+	if err == nil || !strings.Contains(err.Error(), "wt sync undo --force bump") {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	if _, ok, rerr := wtsync.ResultTip(ctx.Repo.MainRoot, st.Branch, st.Epoch); rerr != nil || ok {
+		t.Fatalf("ResultTip = %v, %v; a rebase finished from another tip was certified as the run's", ok, rerr)
+	}
+	if gitOut(t, bump, "rev-parse", "HEAD") != head {
+		t.Fatal("HEAD moved")
+	}
+	if _, ok, rerr := wtsync.ReadState(gitDir); rerr != nil || !ok {
+		t.Fatalf("ReadState = %v, %v; the refusal removed the handover", ok, rerr)
+	}
+	if l, ok, lerr := wtsync.ReadLock(gitDir); lerr != nil || !ok || l.PID != st.Lock.PID || l.Started.Unix() != st.Lock.Started {
+		t.Fatalf("ReadLock = %+v, %v, %v; the refusal did not leave the lock the run kept", l, ok, lerr)
+	}
+}
+
+// The whole seam: a run hands over, resume finishes it under the run's epoch,
+// and a plain undo of that run puts the branch back where the run found it.
+func TestSyncUndoPutsBackWhatAResumeFinished(t *testing.T) {
+	ctx, bump, gitDir, st := handedOver(t)
+	writeFile(t, bump, "a.txt", "merged by hand\n")
+	gitOut(t, bump, "add", "--", "a.txt")
+
+	var out bytes.Buffer
+	if err := SyncResume(ctx, "bump", noResumeAgents(), &out); err != nil {
+		t.Fatalf("resume: %v\n%s", err, out.String())
+	}
+	if gitOut(t, bump, "rev-parse", "HEAD") == st.OldTip {
+		t.Fatal("resume did not move the branch; the test is vacuous")
+	}
+
+	var undoOut bytes.Buffer
+	if err := SyncUndo(ctx, "bump", noAgentsUndo(), &undoOut); err != nil {
+		t.Fatalf("undo: %v\n%s", err, undoOut.String())
+	}
+	if got := gitOut(t, ctx.Repo.MainRoot, "rev-parse", st.Branch); got != st.OldTip {
+		t.Fatalf("%s is at %s, want the run's old tip %s\n%s", st.Branch, short(got), short(st.OldTip), undoOut.String())
+	}
+	if gitOut(t, bump, "rev-parse", "HEAD") != st.OldTip {
+		t.Fatal("HEAD not restored to the run's old tip")
+	}
+	if has, err := wtsync.HasPlan(gitDir); err != nil || has {
+		t.Fatalf("HasPlan = %v, %v", has, err)
+	}
+}

@@ -521,6 +521,30 @@ func TestResumeToleratesAFinishedRebase(t *testing.T) {
 	}
 }
 
+// The reflog is the only record of where a finished rebase started. Without
+// it nothing proves the rebase is the run's, so resume refuses rather than
+// certifying it.
+func TestResumeRefusesAFinishedRebaseWithNoReflog(t *testing.T) {
+	dir, wt, cfg := runRepo(t,
+		[]map[string]string{{"v.txt": "1.0.5\n", "a.txt": "trunk\n"}},
+		[]map[string]string{{"v.txt": "1.0.1\n", "a.txt": "branch\n"}})
+	req := trunkReq(wt, 1)
+	res, err := Rebase(dir, cfg, req, nil)
+	if err != nil || res.Left == nil {
+		t.Fatalf("Rebase = %+v, %v", res, err)
+	}
+	if err := os.WriteFile(filepath.Join(wt, "a.txt"), []byte("by hand\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, wt, "add", "a.txt")
+	gitIn(t, wt, "-c", "core.editor=true", "rebase", "--continue")
+	gitIn(t, wt, "reflog", "expire", "--expire=now", "--all")
+
+	if _, err := Resume(dir, cfg, req, res.OldTip, res.Safety, nil); err == nil || !strings.Contains(err.Error(), "wt sync undo --force feature") {
+		t.Fatalf("Resume err = %v, want a refusal naming wt sync undo --force", err)
+	}
+}
+
 // A rebase somebody aborted is not this run's result. Certifying it would
 // let a later undo discard commits the run never made.
 func TestResumeRefusesARebaseThatWasAborted(t *testing.T) {

@@ -279,9 +279,10 @@ func Rebase(mainRoot string, cfg *Config, req Request, log io.Writer) (Result, e
 // Resume drives a rebase a previous run left stopped. The caller has already
 // verified the worktree against the run's sidecar. A rebase that is no
 // longer in progress is checked before it is believed finished: HEAD on the
-// branch, the run's onto an ancestor of it, and the tip moved. An aborted or
-// reset rebase is not this run's result, and certifying it would let a later
-// undo discard commits the run never made.
+// branch, the run's onto an ancestor of it, the tip moved, and moved from the
+// old tip. An aborted, reset or restarted rebase is not this run's result,
+// and certifying it would let a later undo discard commits the run never
+// made.
 func Resume(mainRoot string, cfg *Config, req Request, old string, safety Safety, log io.Writer) (Result, error) {
 	d := &driver{mainRoot: mainRoot, cfg: cfg, req: req, log: log, old: old, keep: true,
 		res: Result{Branch: req.Branch, OldTip: old, Safety: safety}}
@@ -308,14 +309,17 @@ func Resume(mainRoot string, cfg *Config, req Request, old string, safety Safety
 }
 
 func (d *driver) verifyFinished() error {
-	return VerifyFinished(d.req.Path, d.req.Branch, d.req.Onto, d.old)
+	return VerifyFinished(d.req.Path, d.req.Branch, d.work(), d.req.Onto, d.old)
 }
 
 // VerifyFinished proves a rebase nobody is in the middle of actually
 // completed, rather than having been aborted, quit or reset: HEAD on the
-// branch, onto an ancestor of HEAD, and HEAD moved off old. Resume checks it
+// branch, onto an ancestor of HEAD, HEAD moved off old, and the branch's
+// last move made from old. A rebase finished from any other tip carries
+// commits the run never made, and certifying it would let a later undo
+// discard them. work is the name the refusals give undo. Resume checks it
 // itself; a caller that must refuse before it takes a lock checks it first.
-func VerifyFinished(wtPath, branch, onto, old string) error {
+func VerifyFinished(wtPath, branch, work, onto, old string) error {
 	ref, err := gitEnv(wtPath, rebaseEnv, nil, "symbolic-ref", "--quiet", "HEAD")
 	if err != nil || ref != "refs/heads/"+branch {
 		return fmt.Errorf("HEAD is %q, not %s: this is not the rebase that was left here", ref, branch)
@@ -331,6 +335,18 @@ func VerifyFinished(wtPath, branch, onto, old string) error {
 		return err
 	} else if code == 1 {
 		return fmt.Errorf("%s is not on top of what the run was rebasing onto: the rebase did not finish as this run", branch)
+	}
+	// A rebase that finishes moves the branch once, from the tip it started
+	// at, so the reflog entry before HEAD is that tip. Anything else — a
+	// commit and a rebase of the person's own, a pull --rebase — carries
+	// commits the run never made. A reflog that cannot be read proves
+	// nothing, so it refuses too.
+	prev, err := gitEnv(wtPath, rebaseEnv, nil, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch+"@{1}")
+	if err != nil {
+		return fmt.Errorf("%s's reflog cannot show that the rebase started from the run's tip (%s); wt sync undo --force %s puts that tip back and keeps what is there now under a safety ref", branch, short(old), work)
+	}
+	if prev != old {
+		return fmt.Errorf("%s was last moved from %s, not from the tip the run started from (%s), so it carries commits the run never made; wt sync undo --force %s puts the run's tip back and keeps what is there now under a safety ref", branch, short(prev), short(old), work)
 	}
 	return nil
 }

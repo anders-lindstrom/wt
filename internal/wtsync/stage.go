@@ -154,15 +154,17 @@ func RebaseProgress(wtPath string) (Progress, error) {
 
 // RebaseTarget is what a merge-backend rebase in progress was started with,
 // as the sequencer recorded it: the ref it moves when it finishes
-// (head-name) and the commit it replays onto (onto).
+// (head-name), the commit it replays onto (onto), and the tip it started
+// from (orig-head).
 type RebaseTarget struct {
 	HeadName string
 	Onto     string
+	OrigHead string
 }
 
-// ReadRebaseTarget reads a merge-backend rebase's head-name and onto. ok is
-// false when there is no rebase-merge directory: no rebase at all, or one on
-// the apply backend, which no run ever starts.
+// ReadRebaseTarget reads a merge-backend rebase's head-name, onto and
+// orig-head. ok is false when there is no rebase-merge directory: no rebase
+// at all, or one on the apply backend, which no run ever starts.
 func ReadRebaseTarget(wtPath string) (RebaseTarget, bool, error) {
 	dir, err := rebaseDir(wtPath)
 	if err != nil {
@@ -188,6 +190,9 @@ func ReadRebaseTarget(wtPath string) (RebaseTarget, bool, error) {
 		return t, true, err
 	}
 	if t.Onto, err = read("onto"); err != nil {
+		return t, true, err
+	}
+	if t.OrigHead, err = read("orig-head"); err != nil {
 		return t, true, err
 	}
 	return t, true, nil
