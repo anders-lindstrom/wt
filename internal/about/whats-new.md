@@ -5,6 +5,14 @@ Newest first, each heading stamped with the local date and time of the change
 lines a human would want read out to them; the full story is in git history and
 in `docs/superpowers/plans/`.
 
+## 2026-09-10 21:59 — an idle session no longer blocks wt sync
+
+- `wt sync run`, `resume` and `undo` go ahead under an idle Claude session:
+  shown as `name (idle)`, asked first (`--yes` skips), and told what moved with
+  a `wt: …` line after. A busy one is still refused; several show `name +1`.
+- The session running the command does not count against its own worktree.
+- `claude agents --json` gets 10 s to answer; a timeout is a refusal.
+
 ## 2026-09-10 20:48 — wt sweep deletes merged branches
 
 - `wt sweep`, from the main checkout, deletes the local branches origin's
