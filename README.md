@@ -58,25 +58,53 @@ configuration would work for you and for nobody who clones the repo.
 
 ## Commands
 
+Grouped the way `wt --help` groups them. Every command carries worked
+examples: `wt <command> --help`.
+
+**Make a worktree**
+
 | | |
 |---|---|
-| `wt init` | create this repository's `worktree.conf` (`--yes` to skip the prompts) |
-| `wt new <type>/<work>` | create a branch and worktree, then provision it |
+| `wt new <type>/<work>` | create a branch and worktree, then provision it (`--base`, `--no-setup`, `--skip-build`) |
+| `wt checkout <branch> [work]` | put a worktree on a branch that already exists |
+
+**Get to your work**
+
+| | |
+|---|---|
+| `wt cd [pattern]` | cd to a worktree, in this shell; bare or `.` is the main checkout |
+| `wt exec <pattern> <cmd>…` | run a command there, in a subshell; your shell stays put |
 | `wt list` | every worktree, in any layout; `s` marks Superset's, `!` one nothing owns |
 | `wt status` | each worktree's branch and whether it is clean |
+| `wt find <pattern>` | resolve a worktree by fuzzy name, across repositories (`--candidates`) |
+
+**Keep up with trunk**
+
+| | |
+|---|---|
 | `wt sync` | what rebasing each worktree onto trunk would do, simulated; changes nothing |
 | `wt sync run <work>...` | rebase the named worktrees onto trunk with the declared strategies (`--no-fetch`, `--yes`) |
-| `wt sync undo <work>` | put back every ref the last `wt sync run` on this worktree moved |
+| `wt sync undo <work>` | put back every ref the last `wt sync run` on this worktree moved (`--force`) |
 | `wt sync doctor` | check what a run needs; `--fix` turns on rerere and removes expired locks, `--prune` deletes old safety refs |
-| `wt remove <work>` | remove a worktree; delete its branch only when merged (`--yes` to skip the prompt) |
-| `wt setup <source-dir>` | provision the current worktree |
-| `wt adopt <path>` | provision a worktree another tool created (`--relocate` to move it) |
-| `wt migrate <worktree> [<type>/<name>]` | move a worktree where it belongs, renaming or retyping it on the way (`--dry-run`); also `wt move` |
-| `wt find <pattern>` | resolve a worktree by fuzzy name, across repositories |
+
+**Put worktrees in their place**
+
+| | |
+|---|---|
+| `wt migrate <worktree> [<type>/<name>]` | move a worktree where it belongs, renaming or retyping it on the way (`--dry-run`, `--force`); also `wt move` |
+| `wt adopt <path>` | provision a worktree another tool created (`--relocate`, `--skip-build`) |
+| `wt setup [<source-dir>]` | provision the worktree you are in (`--skip-build`) |
+| `wt remove <work>` | remove a worktree; delete its branch only when merged (`--yes`, `--me`) |
+
+**This repository, and this build**
+
+| | |
+|---|---|
+| `wt init` | create this repository's `worktree.conf` (`--yes` to skip the prompts, `--force` to replace one) |
+| `wt config [--shell]` | the resolved configuration, typed or eval-able |
 | `wt doctor` | check config, required tools and worktree health |
 | `wt path` / `wt branch` | resolve one piece of work |
-| `wt config [--shell]` | the resolved configuration, typed or eval-able |
-| `wt about` | which build this is, and the newest entry from its what's-new notes |
+| `wt about` / `wt version` | which build this is and what changed; the version alone, for scripts |
 | `wt completion zsh` | shell completion, including live work names |
 
 A bare `<work>` takes the repository's default type, so `wt new thing` creates
@@ -88,8 +116,6 @@ A binary cannot change its caller's directory. These do:
 
 | | |
 |---|---|
-| `wt cd [pattern]` | cd to a worktree, in this shell; bare or `.` returns to the main checkout |
-| `wt exec <pattern> <cmd>…` | run a command there, in a subshell |
 | `wt_cd <pattern>` | the same as `wt cd`, if you prefer the underscore form |
 | `wt_exec <pattern> <cmd>…` | run a command there, in a subshell; your shell stays put |
 | `wt_dir <pattern>` | print the path (stdout is path-only) |
