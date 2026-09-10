@@ -206,6 +206,6 @@ func Apply(wtPath string, c Conflict, content []byte) error {
 	if err := os.WriteFile(full, content, 0o644); err != nil {
 		return err
 	}
-	_, err := gitEnv(wtPath, nil, nil, "add", "--", c.Path)
+	_, err := gitEnv(wtPath, nil, nil, "--literal-pathspecs", "add", "--", c.Path)
 	return err
 }

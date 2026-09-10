@@ -494,7 +494,9 @@ func (d *driver) handover(stop StopResult, conflicts []Conflict) (*Handover, err
 			h.Left = append(h.Left, f.Path)
 			continue
 		}
-		out, err := d.git("ls-files", "--stage", "-z", "--", f.Path)
+		// Literal: as a pathspec, a name like v[1].txt also matches v1.txt,
+		// and the first record would be the wrong file's blob.
+		out, err := d.git("--literal-pathspecs", "ls-files", "--stage", "-z", "--", f.Path)
 		if err != nil {
 			return nil, fmt.Errorf("%s: reading what %s staged: %w", f.Path, f.Strategy, err)
 		}

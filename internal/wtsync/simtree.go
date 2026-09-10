@@ -69,10 +69,10 @@ func resolvedTree(mainRoot, tree string, resolved map[string][]byte) (string, er
 }
 
 // indexModes reads the mode each path carries in the scratch index. Paths go
-// after "--" and come back NUL-separated, so a name with a space or a quote
-// in it survives.
+// after "--" as literal pathspecs and come back NUL-separated, so a name with
+// a space, a quote or a glob character in it survives.
 func indexModes(mainRoot string, env, paths []string) (map[string]string, error) {
-	args := append([]string{"ls-files", "--stage", "-z", "--"}, paths...)
+	args := append([]string{"--literal-pathspecs", "ls-files", "--stage", "-z", "--"}, paths...)
 	out, err := gitEnv(mainRoot, env, nil, args...)
 	if err != nil {
 		return nil, fmt.Errorf("ls-files --stage: %w", err)

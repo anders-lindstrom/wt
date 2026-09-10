@@ -405,7 +405,7 @@ func blobDiff(mainRoot string, from, to []byte) (added, removed int, err error) 
 // trunkSubject is why trunk changed this file: the newest subject in
 // base..trunk touching it (spec §6). Empty when trunk did not touch it.
 func trunkSubject(mainRoot, base, trunk, path string) (string, error) {
-	out, err := gitEnv(mainRoot, nil, nil, "log", "-1", "--format=%s", base+".."+trunk, "--", path)
+	out, err := gitEnv(mainRoot, nil, nil, "--literal-pathspecs", "log", "-1", "--format=%s", base+".."+trunk, "--", path)
 	if err != nil {
 		return "", fmt.Errorf("trunk subject for %s: %w", path, err)
 	}

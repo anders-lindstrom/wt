@@ -539,3 +539,61 @@ func TestSyncResumeSendsAnAbortedHandoverToUndo(t *testing.T) {
 		t.Fatalf("ReadState = %+v, %v, %v; the run did not get past preflight to a fresh handover\n%s", st2, ok, err, runOut.String())
 	}
 }
+
+// globFixture declares owned-line for v*.txt over two tracked files it
+// matches, v1.txt and v[1].txt. Read as a pathspec, v[1].txt also names
+// v1.txt. Only v[1].txt conflicts; a.txt, which nobody claims, makes the run
+// hand the stop over.
+func globFixture(t *testing.T) (ctx *Context, bump string) {
+	t.Helper()
+	main := committedRepo(t, minimalConf)
+	writeFile(t, main, ".wt-sync.yaml", "conflicts:\n  - paths: ['v*.txt']\n    strategy: owned-line\n    line: '^\\d'\n    rule: max-plus-patch\n")
+	writeFile(t, main, "v1.txt", "0.0.1\n")
+	writeFile(t, main, "v[1].txt", "1.0.0\n")
+	writeFile(t, main, "a.txt", "a\n")
+	gitOut(t, main, "add", "-A")
+	gitOut(t, main, "commit", "-q", "-m", "declare")
+	ctx, err := Open(main)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if bump, err = New(ctx, "feat/bump", NewOptions{NoSetup: true}, &buf); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, bump, "v[1].txt", "1.0.1\n")
+	writeFile(t, bump, "a.txt", "branch\n")
+	gitOut(t, bump, "commit", "-q", "-am", "bump")
+	writeFile(t, main, "v[1].txt", "1.0.5\n")
+	writeFile(t, main, "a.txt", "trunk\n")
+	gitOut(t, main, "commit", "-q", "-am", "trunk bump")
+	gitOut(t, main, "remote", "add", "origin", main)
+	gitOut(t, main, "fetch", "-q", "origin")
+	return ctx, bump
+}
+
+// A path with glob characters in it names exactly one file. The sidecar's
+// Resolved is the handover's Staged, so it must hold v[1].txt's own blob, not
+// v1.txt's, or resume would call the strategy's answer hand-merged.
+func TestSyncHandoverRecordsTheBlobOfTheFileItNames(t *testing.T) {
+	ctx, bump := globFixture(t)
+	_, st := handOverNow(t, ctx, bump)
+	own := gitOut(t, bump, "rev-parse", ":0:v[1].txt")
+	sibling := gitOut(t, bump, "rev-parse", ":0:v1.txt")
+	if own == sibling {
+		t.Fatal("v1.txt and v[1].txt stage the same blob; the test is vacuous")
+	}
+	if got := st.Resolved["v[1].txt"]; got != own {
+		t.Fatalf("handover records %s for v[1].txt; it stages %s (v1.txt is %s)", short(got), short(own), short(sibling))
+	}
+
+	writeFile(t, bump, "a.txt", "merged by hand\n")
+	gitOut(t, bump, "add", "--", "a.txt")
+	var out bytes.Buffer
+	if err := SyncResume(ctx, "bump", noResumeAgents(), &out); err != nil {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	if strings.Contains(out.String(), "hand-merged") {
+		t.Fatalf("resume called the strategy's answer hand-merged:\n%s", out.String())
+	}
+}
