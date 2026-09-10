@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -24,6 +25,10 @@ type Worktree struct {
 	// because a rebase is in progress. Branch then names the branch the
 	// sequencer will put HEAD back on, read from its own head-name.
 	Rebasing bool
+	// Holds names the branches this worktree's git operations still hold
+	// besides Branch: the branch a bisect started from, and the branches a
+	// stopped rebase --update-refs will move. git refuses to delete them.
+	Holds []string
 	// Locked is git's own worktree lock, which stops it being removed.
 	// LockReason is whatever text the locker left, empty when they left
 	// none — Claude Code writes its session name and pid in there.
@@ -121,8 +126,41 @@ func (r *Repo) Worktrees() ([]Worktree, error) {
 			list[i].Branch, list[i].Detached, list[i].Rebasing = branch, false, true
 		}
 	}
+	for i := range list {
+		list[i].Holds = heldBranches(list[i].Path)
+	}
 
 	return list, nil
+}
+
+// objectID matches a full SHA-1 or SHA-256 commit id.
+var objectID = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)
+
+// heldBranches reads, from a worktree's git dir, the branches an operation in
+// progress still holds: BISECT_START names the branch a bisect started from
+// (a commit id when it started detached, which holds no branch), and a
+// stopped rebase --update-refs lists each branch it will move on a
+// refs/heads/ line.
+func heldBranches(wtPath string) []string {
+	dir, err := gitDirOf(wtPath)
+	if err != nil {
+		return nil
+	}
+	var held []string
+	if b, err := os.ReadFile(filepath.Join(dir, "BISECT_START")); err == nil {
+		start := strings.TrimPrefix(strings.TrimSpace(string(b)), "refs/heads/")
+		if start != "" && !objectID.MatchString(start) {
+			held = append(held, start)
+		}
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, "rebase-merge", "update-refs")); err == nil {
+		for _, line := range strings.Split(string(b), "\n") {
+			if name, ok := strings.CutPrefix(strings.TrimSpace(line), "refs/heads/"); ok && name != "" {
+				held = append(held, name)
+			}
+		}
+	}
+	return held
 }
 
 // rebaseHeadName reads the branch a stopped rebase will return HEAD to, from
