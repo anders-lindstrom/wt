@@ -24,6 +24,11 @@ type Worktree struct {
 	// because a rebase is in progress. Branch then names the branch the
 	// sequencer will put HEAD back on, read from its own head-name.
 	Rebasing bool
+	// Locked is git's own worktree lock, which stops it being removed.
+	// LockReason is whatever text the locker left, empty when they left
+	// none — Claude Code writes its session name and pid in there.
+	Locked     bool
+	LockReason string
 }
 
 // Repo is the repository containing some directory.
@@ -99,6 +104,11 @@ func (r *Repo) Worktrees() ([]Worktree, error) {
 			cur.Detached = true
 		case line == "bare":
 			cur.Bare = true
+		case line == "locked":
+			cur.Locked = true
+		case strings.HasPrefix(line, "locked "):
+			cur.Locked = true
+			cur.LockReason = strings.TrimPrefix(line, "locked ")
 		}
 	}
 	flush()
@@ -254,6 +264,15 @@ func (r *Repo) RemoveWorktree(path string) error {
 		return fmt.Errorf("%w (uncommitted changes? try removing it by hand)", err)
 	}
 	return nil
+}
+
+// UnlockWorktree releases git's lock on a worktree. Removing a locked
+// worktree means releasing the lock first: `git worktree remove -f -f` does
+// both in one step, and one step is exactly what should not happen to a lock
+// somebody took on purpose.
+func (r *Repo) UnlockWorktree(path string) error {
+	_, err := git.Run(r.MainRoot, "worktree", "unlock", path)
+	return err
 }
 
 // Prune clears stale worktree registrations.

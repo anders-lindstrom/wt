@@ -316,3 +316,68 @@ func TestCommitsAhead(t *testing.T) {
 		t.Error("an unreadable ref must report not-ok, not a count")
 	}
 }
+
+// A locked worktree is one git will not remove, and the reason is the only
+// clue about who holds it — Claude Code writes its session name and pid in
+// there. Both have to survive the walk from porcelain to Worktree.
+func TestWorktreesReportTheLockAndItsReason(t *testing.T) {
+	parent, main := fixture(t)
+	r, _ := Discover(main)
+	thing := filepath.Join(parent, "demo_wt", "feat_wt", "thing")
+	const reason = "claude session thing (pid 4242 start Thu Sep 10 04:58:38 2026)"
+	run(t, main, "worktree", "lock", "--reason", reason, thing)
+
+	worktrees, err := r.Worktrees()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got Worktree
+	for _, w := range worktrees {
+		if w.Path == thing {
+			got = w
+		}
+	}
+	if !got.Locked {
+		t.Fatalf("worktree not reported as locked: %+v", got)
+	}
+	if got.LockReason != reason {
+		t.Errorf("LockReason = %q, want %q", got.LockReason, reason)
+	}
+	for _, w := range worktrees {
+		if w.Path != thing && w.Locked {
+			t.Errorf("%s is not locked but says it is", w.Path)
+		}
+	}
+}
+
+// git also allows a lock with no reason at all.
+func TestWorktreesReportALockWithNoReason(t *testing.T) {
+	parent, main := fixture(t)
+	r, _ := Discover(main)
+	thing := filepath.Join(parent, "demo_wt", "feat_wt", "thing")
+	run(t, main, "worktree", "lock", thing)
+
+	worktrees, _ := r.Worktrees()
+	for _, w := range worktrees {
+		if w.Path == thing && (!w.Locked || w.LockReason != "") {
+			t.Errorf("got Locked=%v reason=%q, want locked with no reason", w.Locked, w.LockReason)
+		}
+	}
+}
+
+func TestUnlockWorktreeLetsItBeRemoved(t *testing.T) {
+	parent, main := fixture(t)
+	r, _ := Discover(main)
+	thing := filepath.Join(parent, "demo_wt", "feat_wt", "thing")
+	run(t, main, "worktree", "lock", "--reason", "held", thing)
+
+	if err := r.RemoveWorktree(thing); err == nil {
+		t.Fatal("precondition: git should refuse to remove a locked worktree")
+	}
+	if err := r.UnlockWorktree(thing); err != nil {
+		t.Fatalf("UnlockWorktree: %v", err)
+	}
+	if err := r.RemoveWorktree(thing); err != nil {
+		t.Fatalf("RemoveWorktree after unlock: %v", err)
+	}
+}
