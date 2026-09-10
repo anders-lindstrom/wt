@@ -18,10 +18,14 @@ func Adopt(ctx *Context, path string, relocate bool, opts SetupOptions, w io.Wri
 	if err != nil {
 		return "", err
 	}
+	// samePath, not ==: the path a user types comes from their shell, and on
+	// macOS a checkout under /var is /private/var to git. Once matched, git's
+	// own spelling is the one that travels on, so setup and the printed path
+	// name the worktree the way every other command does.
 	known := false
 	for _, wt := range worktrees {
-		if wt.Path == abs {
-			known = true
+		if samePath(wt.Path, abs) {
+			abs, known = wt.Path, true
 			break
 		}
 	}

@@ -3,6 +3,7 @@ package commands
 import (
 	"bytes"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -158,5 +159,29 @@ func TestDoctorOrdersTheWorkWhenConfigIsBroken(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "Fix the configuration first") {
 		t.Errorf("doctor advises migrate without saying config must come first:\n%s", out)
+	}
+}
+
+// The path a user types is the path their shell hands over, symlinks and all:
+// on macOS a checkout under /var is /private/var to git. Comparing the two
+// literally makes adopt refuse a worktree it is standing next to.
+func TestAdoptAcceptsAPathThroughASymlink(t *testing.T) {
+	main := committedRepo(t, minimalConf)
+	ctx, _ := Open(main)
+	external := filepath.Join(ctx.Repo.Parent, "demo-spare")
+	gitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/spare", external)
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(ctx.Repo.Parent, link); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	got, err := Adopt(ctx, filepath.Join(link, "demo-spare"), false,
+		SetupOptions{Source: main}, &buf)
+	if err != nil {
+		t.Fatalf("Adopt through a symlink: %v", err)
+	}
+	if got != external {
+		t.Errorf("got %q, want the path git knows, %q", got, external)
 	}
 }
