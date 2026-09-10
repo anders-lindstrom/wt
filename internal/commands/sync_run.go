@@ -301,7 +301,10 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 				// nothing acts on what is left, and a stale markdown would
 				// describe a stop that is not this one.
 				clearHandover(w, p.wt.Path)
-				fmt.Fprintf(w, "  %s is left mid-rebase with no plan: finish it by hand, or wt sync undo %s puts it back\n", p.work, p.work)
+				// Not wt sync undo: it refuses a mid-rebase worktree, and
+				// there is no handover here for it to abort. The branch ref
+				// never moved, so the abort is the whole of putting it back.
+				fmt.Fprintf(w, "  %s is left mid-rebase with no plan: finish it by hand, or put it back with git -C %s rebase --abort\n", p.work, p.wt.Path)
 				failures = append(failures, p.work+" (failed)")
 				release(b)
 				poisonAbove(b, p.work+" failed")

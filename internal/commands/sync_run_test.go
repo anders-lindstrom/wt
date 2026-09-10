@@ -3,6 +3,7 @@ package commands
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -445,14 +446,21 @@ func TestSyncRunSaysWhereAFailedHandoverLeftTheWorktree(t *testing.T) {
 	if err := os.Mkdir(wtsync.PlanPath(gitDir)+".tmp", 0o755); err != nil {
 		t.Fatal(err)
 	}
+	old := gitOut(t, ctx.Repo.MainRoot, "rev-parse", "feat_wt/bump")
 	var out bytes.Buffer
 	err = SyncRun(ctx, []string{"bump"}, noAgents(), &out)
 	s := out.String()
 	if err == nil || !strings.Contains(err.Error(), "bump (failed)") {
 		t.Fatalf("err %v\n%s", err, s)
 	}
-	if !strings.Contains(s, "bump is left mid-rebase with no plan") || !strings.Contains(s, "wt sync undo bump") {
+	if !strings.Contains(s, "bump is left mid-rebase with no plan") || !strings.Contains(s, "rebase --abort") {
 		t.Fatalf("the run did not say where it left the worktree:\n%s", s)
+	}
+	// Not wt sync undo: it refuses a mid-rebase worktree, and there is no
+	// handover here for it to abort, so naming it would send the person to a
+	// command that answers "nothing undone".
+	if strings.Contains(s, "wt sync undo") {
+		t.Fatalf("the run named a command that will refuse:\n%s", s)
 	}
 	if busy, berr := wtsync.RebaseInProgress(bump); berr != nil || !busy {
 		t.Fatalf("RebaseInProgress = %v, %v; the run put the rebase back", busy, berr)
@@ -462,6 +470,18 @@ func TestSyncRunSaysWhereAFailedHandoverLeftTheWorktree(t *testing.T) {
 	}
 	if _, err := os.Stat(wtsync.PlanPath(gitDir)); !os.IsNotExist(err) {
 		t.Fatalf("a half-written brief survived: %v", err)
+	}
+	// The command the line names has to be the one that works. undo does not:
+	// it refuses a mid-rebase worktree outright.
+	if uerr := SyncUndo(ctx, "bump", UndoOptions{Agents: []wtsync.Agent{}}, io.Discard); uerr == nil {
+		t.Fatal("undo accepted a mid-rebase worktree; the old wording would have been true")
+	}
+	gitOut(t, bump, "rebase", "--abort")
+	if busy, berr := wtsync.RebaseInProgress(bump); berr != nil || busy {
+		t.Fatalf("RebaseInProgress = %v, %v after the abort the line names", busy, berr)
+	}
+	if got := gitOut(t, ctx.Repo.MainRoot, "rev-parse", "feat_wt/bump"); got != old {
+		t.Fatalf("the abort left %s at %s, not %s", "feat_wt/bump", got, old)
 	}
 }
 
