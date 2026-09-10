@@ -24,6 +24,11 @@ type rebaseInFlight struct {
 	// steps are running: the worktree is not stopped mid-rebase any more,
 	// it is rebased, and putting it back is undo's job rather than git's.
 	rebased bool
+	// resuming is set while wt sync resume drives a handed-over rebase. The
+	// worktree holds a person's own resolution, which an abort would
+	// discard, and the handover survives the interrupt, so resuming again is
+	// the way back.
+	resuming bool
 }
 
 // rebaseTracker carries that across goroutines: the command sets it, the
@@ -74,6 +79,8 @@ func onInterrupt(w io.Writer, locks []*wtsync.Lock, at *rebaseInFlight) {
 		// The run never got to pin where it left the branch, so a plain
 		// undo would refuse it as moved since the run.
 		fmt.Fprintf(w, "\ninterrupted after rebasing %s: the rebase stands; wt sync undo --force %s puts it back\n", at.work, at.work)
+	case at.resuming:
+		fmt.Fprintf(w, "\ninterrupted while resuming %s: the rebase and its plan are left as they are; wt sync resume %s picks it up again\n", at.work, at.work)
 	default:
 		fmt.Fprintf(w, "\ninterrupted while rebasing %s: git -C %s rebase --abort restores it; the old tip is %s\n", at.work, at.path, at.safety)
 	}

@@ -152,6 +152,47 @@ func RebaseProgress(wtPath string) (Progress, error) {
 	return p, nil
 }
 
+// RebaseTarget is what a merge-backend rebase in progress was started with,
+// as the sequencer recorded it: the ref it moves when it finishes
+// (head-name) and the commit it replays onto (onto).
+type RebaseTarget struct {
+	HeadName string
+	Onto     string
+}
+
+// ReadRebaseTarget reads a merge-backend rebase's head-name and onto. ok is
+// false when there is no rebase-merge directory: no rebase at all, or one on
+// the apply backend, which no run ever starts.
+func ReadRebaseTarget(wtPath string) (RebaseTarget, bool, error) {
+	dir, err := rebaseDir(wtPath)
+	if err != nil {
+		return RebaseTarget{}, false, err
+	}
+	if !filepath.IsAbs(dir) {
+		dir = filepath.Join(wtPath, dir)
+	}
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return RebaseTarget{}, false, nil
+	} else if err != nil {
+		return RebaseTarget{}, false, err
+	}
+	read := func(name string) (string, error) {
+		b, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			return "", fmt.Errorf("rebase %s: %w", name, err)
+		}
+		return strings.TrimSpace(string(b)), nil
+	}
+	var t RebaseTarget
+	if t.HeadName, err = read("head-name"); err != nil {
+		return t, true, err
+	}
+	if t.Onto, err = read("onto"); err != nil {
+		return t, true, err
+	}
+	return t, true, nil
+}
+
 // Apply writes a strategy's answer over the conflicted working file, leaving
 // the mode git merged, and stages it, which clears the unmerged entries.
 func Apply(wtPath string, c Conflict, content []byte) error {

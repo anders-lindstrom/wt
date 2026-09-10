@@ -44,3 +44,18 @@ func TestOnInterruptSaysHowToPutBackAWorktreeLeftMidRebase(t *testing.T) {
 		}
 	}
 }
+
+// A resume's rebase holds a person's own resolution: the abort that is the
+// right advice for a run would discard it. The sidecar and the rebase both
+// survive an interrupt, so the safe answer is to resume again.
+func TestOnInterruptDuringAResumePointsAtResumeNotAbort(t *testing.T) {
+	var out bytes.Buffer
+	onInterrupt(&out, nil, &rebaseInFlight{work: "bump", path: "/w/bump", safety: "refs/wt-sync/feat_wt/bump/99", resuming: true})
+	s := out.String()
+	if !strings.Contains(s, "interrupted while resuming bump") || !strings.Contains(s, "wt sync resume bump") {
+		t.Fatalf("out %q", s)
+	}
+	if strings.Contains(s, "rebase --abort") {
+		t.Fatalf("the interrupt advises the abort that discards the person's resolution: %q", s)
+	}
+}

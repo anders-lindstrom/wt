@@ -129,7 +129,7 @@ func newSyncCmd() *cobra.Command {
 			"notices and runs only what comes after it. wt sync undo <work> aborts a\n" +
 			"handed-over rebase and puts the branch back instead.",
 		Example: "  wt sync resume login-crash      # continue what the run handed you\n" +
-			"  wt sync resume fix/login-crash  # the same worktree, by branch\n",
+			"  wt sync resume fix/login-crash  # the same worktree, by branch",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {

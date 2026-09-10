@@ -304,24 +304,30 @@ func Resume(mainRoot string, cfg *Config, req Request, old string, safety Safety
 	return d.drive(cerr)
 }
 
-// verifyFinished proves a rebase nobody is in the middle of actually
-// completed, rather than having been aborted, quit or reset.
 func (d *driver) verifyFinished() error {
-	ref, err := d.git("symbolic-ref", "--quiet", "HEAD")
-	if err != nil || ref != "refs/heads/"+d.req.Branch {
-		return fmt.Errorf("HEAD is %q, not %s: this is not the rebase that was left here", ref, d.req.Branch)
+	return VerifyFinished(d.req.Path, d.req.Branch, d.req.Onto, d.old)
+}
+
+// VerifyFinished proves a rebase nobody is in the middle of actually
+// completed, rather than having been aborted, quit or reset: HEAD on the
+// branch, onto an ancestor of HEAD, and HEAD moved off old. Resume checks it
+// itself; a caller that must refuse before it takes a lock checks it first.
+func VerifyFinished(wtPath, branch, onto, old string) error {
+	ref, err := gitEnv(wtPath, rebaseEnv, nil, "symbolic-ref", "--quiet", "HEAD")
+	if err != nil || ref != "refs/heads/"+branch {
+		return fmt.Errorf("HEAD is %q, not %s: this is not the rebase that was left here", ref, branch)
 	}
-	head, err := d.git("rev-parse", "HEAD")
+	head, err := gitEnv(wtPath, rebaseEnv, nil, "rev-parse", "HEAD")
 	if err != nil {
 		return err
 	}
-	if head == d.old {
-		return fmt.Errorf("%s is back at the tip the run started from: the rebase was aborted, not finished; run wt sync run again", d.req.Branch)
+	if head == old {
+		return fmt.Errorf("%s is back at the tip the run started from: the rebase was aborted, not finished; run wt sync run again", branch)
 	}
-	if _, code, err := gitEnvAllow(d.req.Path, rebaseEnv, nil, 1, "merge-base", "--is-ancestor", d.req.Onto, "HEAD"); err != nil {
+	if _, code, err := gitEnvAllow(wtPath, rebaseEnv, nil, 1, "merge-base", "--is-ancestor", onto, "HEAD"); err != nil {
 		return err
 	} else if code == 1 {
-		return fmt.Errorf("%s is not on top of what the run was rebasing onto: the rebase did not finish as this run", d.req.Branch)
+		return fmt.Errorf("%s is not on top of what the run was rebasing onto: the rebase did not finish as this run", branch)
 	}
 	return nil
 }
