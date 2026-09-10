@@ -17,7 +17,7 @@ const fixture = `# What's new
 `
 
 func TestRenderNamesTheVersionAndTheNewestHeading(t *testing.T) {
-	out := render("71ed3e8", "2026-09-09", fixture)
+	out := render("71ed3e8", "2026-09-09T22:40", "", fixture)
 	if !strings.Contains(out, "wt 71ed3e8") {
 		t.Errorf("no version line:\n%s", out)
 	}
@@ -30,30 +30,37 @@ func TestRenderNamesTheVersionAndTheNewestHeading(t *testing.T) {
 }
 
 func TestRenderPrintsOnlyTheNewestSection(t *testing.T) {
-	out := render("71ed3e8", "2026-09-09", fixture)
+	out := render("71ed3e8", "2026-09-09T22:40", "", fixture)
 	if strings.Contains(out, "the older thing") {
 		t.Errorf("older section printed too:\n%s", out)
 	}
 }
 
 func TestRenderSaysWhenTheBuildCameFromAModifiedTree(t *testing.T) {
-	clean := render("71ed3e8", "2026-09-09", fixture)
-	if !strings.Contains(clean, "built 2026-09-09") {
+	clean := render("71ed3e8", "2026-09-09T22:40", "", fixture)
+	if !strings.Contains(clean, "built 2026-09-09 22:40") {
 		t.Errorf("no build date:\n%s", clean)
 	}
 	if strings.Contains(clean, "modified") {
 		t.Errorf("a clean build claimed to be modified:\n%s", clean)
 	}
-	dirty := render("71ed3e8-dirty", "2026-09-09", fixture)
+	dirty := render("71ed3e8-dirty", "2026-09-09T22:40", "", fixture)
 	if !strings.Contains(dirty, "modified working tree") {
 		t.Errorf("a -dirty build does not say so:\n%s", dirty)
+	}
+}
+
+func TestRenderNamesTheCommitTimeWhenKnown(t *testing.T) {
+	out := render("71ed3e8", "2026-09-10T06:55", "2026-09-09T23:12", fixture)
+	if !strings.Contains(out, "built 2026-09-10 06:55 from a commit of 2026-09-09 23:12") {
+		t.Errorf("no commit time, or the T survived:\n%s", out)
 	}
 }
 
 // A `go build` with no ldflags has no date to print; it should say nothing
 // rather than print an empty or bogus one.
 func TestRenderOmitsTheBuildLineWhenTheDateIsUnknown(t *testing.T) {
-	out := render("dev", "", fixture)
+	out := render("dev", "", "", fixture)
 	if strings.Contains(out, "built") {
 		t.Errorf("build line printed without a date:\n%s", out)
 	}

@@ -8,9 +8,13 @@ import (
 	"github.com/anders-lindstrom/wt/internal/about"
 )
 
-// buildDate is set by install.sh, like version. A plain `go build` leaves it
-// empty and `wt about` then says nothing about when it was built.
-var buildDate = ""
+// buildDate and commitDate are set by install.sh, like version. A plain
+// `go build` leaves them empty and `wt about` then says nothing about when
+// it was built.
+var (
+	buildDate  = ""
+	commitDate = ""
+)
 
 func newAboutCmd() *cobra.Command {
 	return &cobra.Command{
@@ -20,7 +24,7 @@ func newAboutCmd() *cobra.Command {
 			"what's-new notes. `wt version` prints the version alone, for scripts.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			fmt.Fprintln(cmd.OutOrStdout(), about.Text(version, buildDate))
+			fmt.Fprintln(cmd.OutOrStdout(), about.Text(version, buildDate, commitDate))
 			return nil
 		},
 	}

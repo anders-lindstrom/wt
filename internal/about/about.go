@@ -14,8 +14,8 @@ var whatsNew string
 
 // Text is what `wt about` prints, without a trailing newline: the version, how
 // this binary was built, and the newest what's-new entry.
-func Text(version, buildDate string) string {
-	return render(version, buildDate, whatsNew)
+func Text(version, buildDate, commitDate string) string {
+	return render(version, buildDate, commitDate, whatsNew)
 }
 
 // NewestHeading names the newest what's-new entry.
@@ -24,10 +24,10 @@ func NewestHeading() string {
 	return heading
 }
 
-func render(version, buildDate, md string) string {
+func render(version, buildDate, commitDate, md string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "wt %s\n", version)
-	if line := buildLine(version, buildDate); line != "" {
+	if line := buildLine(version, buildDate, commitDate); line != "" {
 		fmt.Fprintf(&b, "%s\n", line)
 	}
 	if section := newestSection(md); section != "" {
@@ -36,19 +36,30 @@ func render(version, buildDate, md string) string {
 	return b.String()
 }
 
-// buildLine says when the binary was built, and whether the tree it was built
-// from had uncommitted changes — which `git describe --dirty` already records
-// in the version. Without a date there is nothing honest to say, so it says
-// nothing: a plain `go build` sets no ldflags.
-func buildLine(version, buildDate string) string {
+// buildLine says when the binary was built, when the commit it was built
+// from was made, and whether the tree had uncommitted changes — which
+// `git describe --dirty` already records in the version. Several builds a day
+// are normal here, so both stamps carry the time. Without a build date there
+// is nothing honest to say, so it says nothing: a plain `go build` sets no
+// ldflags.
+func buildLine(version, buildDate, commitDate string) string {
 	if buildDate == "" {
 		return ""
 	}
-	line := "built " + buildDate
+	line := "built " + stamp(buildDate)
+	if commitDate != "" {
+		line += " from a commit of " + stamp(commitDate)
+	}
 	if strings.HasSuffix(version, "-dirty") {
 		line += ", from a modified working tree"
 	}
 	return line
+}
+
+// stamp turns the ldflags-safe 2006-01-02T15:04 into the 2006-01-02 15:04 a
+// person reads; a value in another shape is printed as it came.
+func stamp(s string) string {
+	return strings.Replace(s, "T", " ", 1)
 }
 
 // newestSection returns the first `## ` section of the what's-new file, with
