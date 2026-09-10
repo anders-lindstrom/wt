@@ -239,7 +239,8 @@ tool carrying a flag for it.
 ## Removing a worktree is careful
 
 **Anything `wt list` prints is a valid argument** — the work name, the branch, or
-the path — as is `<type>/<work>`:
+the path — as is `<type>/<work>`. On a narrow terminal `wt list` shortens paths
+with `…` to fit; `wt list | cat` prints them whole:
 
 ```sh
 wt remove wt-migration                       # WORK column
