@@ -5,6 +5,14 @@ Newest first, each heading stamped with the local date and time of the change
 lines a human would want read out to them; the full story is in git history and
 in `docs/superpowers/plans/`.
 
+## 2026-09-10 20:48 — wt sweep deletes merged branches
+
+- `wt sweep`, from the main checkout, deletes the local branches origin's
+  trunk or the local trunk already contains, after one question (`--yes`
+  skips it; without a terminal nothing is deleted).
+- Merged branches a worktree still holds are pointed at `wt remove`; branches
+  whose upstream is gone before trunk got their commits are listed and kept.
+
 ## 2026-09-10 20:39 — wt sync groups worktrees by what to do
 
 - `wt sync` files each worktree under ready, needs you or skipped, one short

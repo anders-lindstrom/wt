@@ -88,6 +88,13 @@ make_resume() {
     git -C "$w" add -- a.txt
     echo "$d"
 }
+# make_worktrees, plus a plain branch trunk already contains, so a sweep has
+# something to delete and checked-out branches to point at wt remove.
+make_sweep() {
+    local d; d=$(make_worktrees "$1")
+    git -C "$d" branch done-work
+    echo "$d"
+}
 
 # check <mode> <cwd-under-case-dir|""> <prereq|""> <example verbatim>
 check() {
@@ -101,6 +108,7 @@ check() {
         worktrees) repo=$(make_worktrees "$dir");;
         sync) repo=$(make_sync "$dir");;
         resume) repo=$(make_resume "$dir");;
+        sweep) repo=$(make_sweep "$dir");;
         branch) repo=$(make_plain "$dir"); git -C "$repo" branch fix_wt/login-crash;;
     esac
     local cwd=$repo
@@ -169,6 +177,10 @@ check worktrees "" "" 'wt remove login-crash --yes'
 check worktrees "" "" 'wt remove login-crash --force'
 check worktrees myrepo_wt/fix_wt/login-crash "" 'wt remove --me'
 
+check sweep "" "" 'wt sweep'
+check sweep "" "" 'wt sweep --no-fetch'
+check sweep "" "" 'wt sweep --yes'
+
 check noconf "" "" 'wt init'
 check noconf "" "" 'wt init --yes'
 check plain  "" "" 'wt init --force'
@@ -214,7 +226,7 @@ for f in "${FAILED[@]:-}"; do [ -n "$f" ] && echo "  FAILED: $f"; done
 echo
 missing=0
 for cmdpath in "" new checkout cd exec list status find sync "sync run" "sync resume" "sync undo" \
-    "sync doctor" migrate adopt setup remove init config doctor path branch about version \
+    "sync doctor" migrate adopt setup remove sweep init config doctor path branch about version \
     hook "hook claude-create" "hook claude-remove"; do
     while IFS= read -r line; do
         line=${line#  }
