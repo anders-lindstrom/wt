@@ -56,10 +56,10 @@ func TestListAgentsGivesUpOnAClaudeThatDoesNotAnswer(t *testing.T) {
 }
 
 const agentsJSON = `[
- {"id":"a1","cwd":"/repo_wt/feat_wt/one","kind":"background","name":"fix it","state":"blocked"},
- {"id":"a2","cwd":"/repo_wt/feat_wt/two","kind":"interactive","name":"two-3a","state":null},
- {"id":"a3","cwd":"/repo_wt/feat_wt/three","kind":"background","name":"finished","state":"done"},
- {"id":"a4","cwd":"/repo_wt/feat_wt/two/sub/dir","kind":"interactive","name":"deep","state":null}
+ {"id":"a1","pid":11,"cwd":"/repo_wt/feat_wt/one","kind":"background","name":"fix it","state":"blocked","status":"idle"},
+ {"id":"a2","pid":12,"cwd":"/repo_wt/feat_wt/two","kind":"interactive","name":"two-3a","status":"idle"},
+ {"id":"a3","pid":13,"cwd":"/repo_wt/feat_wt/three","kind":"background","name":"finished","state":"done","status":"idle"},
+ {"id":"a4","pid":14,"cwd":"/repo_wt/feat_wt/two/sub/dir","kind":"interactive","name":"deep","status":"busy"}
 ]`
 
 func TestParseAgentsDropsFinishedSessions(t *testing.T) {
@@ -107,5 +107,75 @@ func TestAgentAtPrefersFewerSegmentsNotShorterStrings(t *testing.T) {
 	a := AgentAt(agents, "/wt")
 	if a == nil || a.Name != "shallow" {
 		t.Errorf("expected shallow (1 segment), got %+v", a)
+	}
+}
+
+func TestIdleIsAnInteractiveSessionWithAnIdleStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		a    Agent
+		want bool
+	}{
+		{"interactive idle", Agent{Kind: "interactive", Status: "idle"}, true},
+		{"interactive busy", Agent{Kind: "interactive", Status: "busy"}, false},
+		{"background working", Agent{Kind: "background", State: "working", Status: "busy"}, false},
+		{"background blocked on a question", Agent{Kind: "background", State: "blocked", Status: "idle"}, false},
+		{"background with no state", Agent{Kind: "background", Status: "idle"}, false},
+		{"interactive with a state nobody has seen", Agent{Kind: "interactive", State: "blocked", Status: "idle"}, false},
+		{"no status from an older claude", Agent{Kind: "interactive"}, false},
+		{"a status nobody has seen", Agent{Kind: "interactive", Status: "starting"}, false},
+	} {
+		if got := tc.a.Idle(); got != tc.want {
+			t.Errorf("%s: Idle() = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestSessionsAtListsEverySessionInTheWorktreeShallowestFirst(t *testing.T) {
+	agents, err := ParseAgents([]byte(agentsJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := SessionsAt(agents, "/repo_wt/feat_wt/two")
+	if len(s) != 2 || s[0].Name != "two-3a" || s[1].Name != "deep" {
+		t.Fatalf("sessions = %+v", s)
+	}
+	if busy := s.Busy(); len(busy) != 1 || busy[0].Name != "deep" {
+		t.Errorf("busy = %+v", busy)
+	}
+	if got := s.Label(agentLabel); got != "deep +1" {
+		t.Errorf("a busy session leads the label: got %q", got)
+	}
+	parked := Sessions{{Name: "old-1", Kind: "interactive", Status: "idle"}, {Name: "new-2", Kind: "interactive", Status: "idle"}}
+	if got := parked.Label(agentLabel); got != "old-1 (idle) +1" {
+		t.Errorf("idle label = %q", got)
+	}
+	if got := (Sessions{}).Label(agentLabel); got != "" || (Sessions{}).Lead() != nil {
+		t.Errorf("empty label = %q", got)
+	}
+	if SessionsAt(agents, "/repo_wt/feat_wt/three") != nil {
+		t.Error("a done session is nobody")
+	}
+}
+
+func TestSessionsAtResolvesASymlinkedWorktreePath(t *testing.T) {
+	resolved, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(resolved, link); err != nil {
+		t.Fatal(err)
+	}
+	if s := SessionsAt([]Agent{{Name: "in-1", Cwd: resolved}}, link); len(s) != 1 {
+		t.Fatalf("sessions = %+v", s)
+	}
+}
+
+func TestArrivedIsWhatNobodyWasToldAbout(t *testing.T) {
+	told := Sessions{{ID: "a1", Name: "parked-1", Cwd: "/w"}, {Name: "no-id", Cwd: "/w"}}
+	now := Sessions{{ID: "a1", Name: "renamed", Cwd: "/w"}, {Name: "no-id", Cwd: "/w"}, {ID: "a9", Name: "new-9", Cwd: "/w"}}
+	if got := now.Arrived(told); len(got) != 1 || got[0].Name != "new-9" {
+		t.Errorf("arrived = %+v", got)
 	}
 }
