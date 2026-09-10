@@ -232,6 +232,16 @@ func RebasedLine(work, trunk string, landed int, check []string) string {
 	return line
 }
 
+// UndoneLine is the line for a session idle in a worktree wt sync undo put
+// back: its files moved again. An undo that aborted a handover but stopped
+// before rewinding it says where the branch still is.
+func UndoneLine(work, at string, rewound bool) string {
+	if !rewound {
+		return fmt.Sprintf("wt: %s undo stopped partway, still at %s", work, at)
+	}
+	return fmt.Sprintf("wt: %s undone, back at %s", work, at)
+}
+
 // PlanInput is everything the brief is rendered from.
 type PlanInput struct {
 	MainRoot string

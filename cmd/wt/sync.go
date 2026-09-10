@@ -59,10 +59,10 @@ func newSyncCmd() *cobra.Command {
 			"files marked \u2713 resolved or \u2717 yours, then anything else worth knowing,\n" +
 			"every list cut to a count. wt sync <work> prints the lists, one item per\n" +
 			"line. A session named on a row is a Claude session in that worktree: a busy\n" +
-			"one keeps wt sync run off it. One marked (idle) is waiting for its person;\n" +
-			"wt sync run names it, asks first, and ends with a wt: line to pass on to\n" +
-			"it. +N counts the other sessions there. The lines under a row are advisory\n" +
-			"and never change the class.",
+			"one keeps every verb off it. One marked (idle) is waiting for its person; a\n" +
+			"verb names it, asks first, and ends with a wt: line to pass on to it. +N\n" +
+			"counts the other sessions there. The session wt itself runs under is not\n" +
+			"counted. The lines under a row are advisory and never change the class.",
 		Example: "  wt sync                   # every worktree, grouped; reads, changes nothing\n" +
 			"  wt sync login-crash       # that worktree in full\n" +
 			"  wt sync run login-crash   # act on it\n" +
@@ -213,8 +213,8 @@ func newSyncCmd() *cobra.Command {
 			"branch that run rewrote back to its safety ref, restoring a stack as a\n" +
 			"whole rather than one branch at a time. A rebase wt sync run handed over\n" +
 			"is aborted and its plan file removed, which puts that branch back.\n\n" +
-			"Refused, and nothing undone: a checkout involved is dirty, has a Claude\n" +
-			"session in it, or is mid-rebase with no handover from wt sync run; a\n" +
+			"Refused, and nothing undone: a checkout involved is dirty, has a busy\n" +
+			"Claude session in it, or is mid-rebase with no handover from wt sync run; a\n" +
 			"branch that has moved since the run, whose commits the reset would\n" +
 			"discard (--force pins those at a fresh safety ref and rewinds anyway); a\n" +
 			"branch with a later run, which has to be undone first and which --force\n" +
@@ -223,9 +223,14 @@ func newSyncCmd() *cobra.Command {
 			"what it did put back; a handover aborted but not rewound says where the\n" +
 			"branch still is.\n" +
 			"Running it again after it already restored a branch reports that branch\n" +
-			"already at its old tip.",
+			"already at its old tip.\n\n" +
+			"A Claude session idle in a checkout is named and you are asked first\n" +
+			"(--yes skips; with no terminal it goes ahead), and each branch put back\n" +
+			"under one ends with a wt: line to pass on to it. The session wt itself\n" +
+			"runs under is not counted.",
 		Example: "  wt sync undo login-crash          # back to the safety refs\n" +
-			"  wt sync undo login-crash --force  # even if the branch moved since",
+			"  wt sync undo login-crash --force  # even if the branch moved since\n" +
+			"  wt sync undo login-crash --yes    # not asked about an idle session",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -233,10 +238,15 @@ func newSyncCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return commands.SyncUndo(ctx, args[0], commands.UndoOptions{Force: force}, cmd.OutOrStdout())
+			opts := commands.UndoOptions{Force: force, Yes: yes}
+			if isTerminal(os.Stdin) && !yes {
+				opts.Confirm = confirmAsk(cmd.InOrStdin(), cmd.OutOrStdout(), "undo")
+			}
+			return commands.SyncUndo(ctx, args[0], opts, cmd.OutOrStdout())
 		},
 	}
 	undo.Flags().BoolVar(&force, "force", false, "undo a branch that has moved since the run, pinning its tip first")
+	undo.Flags().BoolVar(&yes, "yes", false, "do not ask first when a session is idle in a checkout")
 	sync.AddCommand(undo)
 
 	var fix, prune bool

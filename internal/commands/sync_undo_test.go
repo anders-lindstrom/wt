@@ -154,3 +154,80 @@ func TestSyncUndoForcedPastAMovedHandoverSaysWhatItRewound(t *testing.T) {
 		t.Fatal("the forced undo did not pin the tip it discarded")
 	}
 }
+
+func TestSyncUndoUnderAnIdleSessionAsksThenTellsIt(t *testing.T) {
+	ctx, bump := runFixture(t, false)
+	old := gitOut(t, bump, "rev-parse", "HEAD")
+	var out bytes.Buffer
+	if err := SyncRun(ctx, []string{"bump"}, noAgents(), &out); err != nil {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	rebased := gitOut(t, bump, "rev-parse", "HEAD")
+
+	opts := noAgentsUndo()
+	opts.Agents = idleIn(t, bump, "bump-1")
+	var asked []string
+	opts.Confirm = func(works []string) (bool, error) { asked = works; return false, nil }
+	var no bytes.Buffer
+	if err := SyncUndo(ctx, "bump", opts, &no); err != nil {
+		t.Fatalf("err %v\n%s", err, no.String())
+	}
+	if len(asked) != 1 || asked[0] != "bump" || !strings.Contains(no.String(), "nothing undone") ||
+		!strings.Contains(no.String(), "⚠ bump: session bump-1 (idle) is in it") {
+		t.Fatalf("asked %v\n%s", asked, no.String())
+	}
+	if gitOut(t, bump, "rev-parse", "HEAD") != rebased {
+		t.Fatal("HEAD moved after no")
+	}
+
+	opts.Confirm = func([]string) (bool, error) { return true, nil }
+	var yes bytes.Buffer
+	if err := SyncUndo(ctx, "bump", opts, &yes); err != nil {
+		t.Fatalf("err %v\n%s", err, yes.String())
+	}
+	want := "⚠ tell bump-1, idle in it:\n    wt: bump undone, back at " + old[:7] + "\n"
+	if !strings.Contains(yes.String(), want) {
+		t.Fatalf("no relay line %q:\n%s", want, yes.String())
+	}
+}
+
+// A no to undo on a handed-over worktree must leave the handover's own lock:
+// the question comes before any lock is taken over.
+func TestSyncUndoNoLeavesAHandoverAndItsLock(t *testing.T) {
+	ctx, bump, gitDir, st := handedOver(t)
+	opts := noAgentsUndo()
+	opts.Agents = idleIn(t, bump, "bump-1")
+	opts.Confirm = func([]string) (bool, error) { return false, nil }
+	var out bytes.Buffer
+	if err := SyncUndo(ctx, "bump", opts, &out); err != nil {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	if has, _ := wtsync.HasPlan(gitDir); !has {
+		t.Fatal("the handover is gone after no")
+	}
+	if l, ok, err := wtsync.ReadLock(gitDir); err != nil || !ok || l.PID != st.Lock.PID || l.Started.Unix() != st.Lock.Started {
+		t.Fatalf("lock %+v %v %v; a no must leave the run's lock alone", l, ok, err)
+	}
+}
+
+func TestSyncUndoRefusesASessionThatWokeWhileAsked(t *testing.T) {
+	ctx, bump := runFixture(t, false)
+	var out bytes.Buffer
+	if err := SyncRun(ctx, []string{"bump"}, noAgents(), &out); err != nil {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	rebased := gitOut(t, bump, "rev-parse", "HEAD")
+	opts := noAgentsUndo()
+	opts.Agents = idleIn(t, bump, "bump-1")
+	opts.Confirm = func([]string) (bool, error) { return true, nil }
+	woke := idleIn(t, bump, "bump-1")
+	woke[0].Status = "busy"
+	opts.Relist = func() ([]wtsync.Agent, error) { return woke, nil }
+	var undoOut bytes.Buffer
+	if err := SyncUndo(ctx, "bump", opts, &undoOut); err == nil || !strings.Contains(err.Error(), "busy in it now: bump-1") {
+		t.Fatalf("err %v\n%s", err, undoOut.String())
+	}
+	if gitOut(t, bump, "rev-parse", "HEAD") != rebased {
+		t.Fatal("HEAD moved")
+	}
+}

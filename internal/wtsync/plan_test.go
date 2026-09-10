@@ -338,3 +338,12 @@ func TestRebasedLineNamesWhatToCheck(t *testing.T) {
 		}
 	}
 }
+
+func TestUndoneLineSaysWhereTheBranchIs(t *testing.T) {
+	if got := UndoneLine("bump", "abc1234", true); got != "wt: bump undone, back at abc1234" {
+		t.Errorf("got %q", got)
+	}
+	if got := UndoneLine("bump", "def5678", false); got != "wt: bump undo stopped partway, still at def5678" {
+		t.Errorf("got %q", got)
+	}
+}
