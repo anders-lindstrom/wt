@@ -26,6 +26,9 @@ func newInitCmd() *cobra.Command {
 			"the file is this repository's reference for what it may set.\n\n" +
 			"With --yes, or with nothing on stdin to answer with, the detected\n" +
 			"values are written without asking.",
+		Example: "  wt init          # ask three questions, detected values offered\n" +
+			"  wt init --yes    # write the detected values, ask nothing\n" +
+			"  wt init --force  # replace a configuration that is already there",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cwd, err := os.Getwd()

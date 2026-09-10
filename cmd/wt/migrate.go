@@ -21,16 +21,17 @@ func newMigrateCmd() *cobra.Command {
 			"name, or both — the branch is renamed to match, because in this layout the\n" +
 			"path and the branch are the same words.\n\n" +
 			"With no destination the branch decides: one already in the convention\n" +
-			"keeps its name, and one outside it (fix/idiotthings, axis_acc) is fitted\n" +
-			"to the convention.\n\n" +
+			"keeps its name, and one outside it (fix/login-crash, or a bare\n" +
+			"login-crash) is fitted to the convention.\n\n" +
 			"The move is git's own, so commits, stashes, uncommitted changes and\n" +
 			"ignored files all travel with it — but tools holding the old absolute\n" +
 			"path will not. Use --dry-run first on a worktree carrying work that\n" +
 			"matters.",
-		Example: "  wt migrate webkey                      # fit it to the layout\n" +
-			"  wt migrate fix/idiotthings fix/local-gecko\n" +
-			"  wt migrate ../server-controller_stats  # by path\n" +
-			"  wt migrate stats chore/stats           # keep the name, change the type",
+		Example: "  wt migrate login-crash                # fit it to the layout\n" +
+			"  wt migrate ../myrepo-login-crash      # name it by path instead\n" +
+			"  wt migrate fix/login-crash chore/tidy # rename and retype as it moves\n" +
+			"  wt migrate login-crash --dry-run      # look first, change nothing\n" +
+			"  wt migrate login-crash --force        # move it past an agent session",
 		Args:              migrateArgs,
 		ValidArgsFunction: completeMigrate,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -60,11 +61,11 @@ func newMigrateCmd() *cobra.Command {
 func migrateArgs(_ *cobra.Command, args []string) error {
 	switch {
 	case len(args) == 0:
-		return fmt.Errorf("needs a worktree — for example: wt migrate webkey, " +
-			"or wt migrate fix/idiotthings fix/local-gecko")
+		return fmt.Errorf("needs a worktree — for example: wt migrate login-crash, " +
+			"or wt migrate fix/login-crash chore/tidy")
 	case len(args) > 2:
 		return fmt.Errorf("takes a worktree and at most one destination, got %d arguments — "+
-			"for example: wt migrate fix/idiotthings fix/local-gecko", len(args))
+			"for example: wt migrate fix/login-crash chore/tidy", len(args))
 	}
 	return nil
 }

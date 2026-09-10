@@ -12,7 +12,7 @@ func TestMigrateHelpShowsTheDestination(t *testing.T) {
 	if err != nil {
 		t.Fatalf("migrate --help: %v", err)
 	}
-	for _, want := range []string{"[<type>/<name>]", "--dry-run", "wt migrate fix/idiotthings fix/local-gecko"} {
+	for _, want := range []string{"[<type>/<name>]", "--dry-run", "wt migrate fix/login-crash chore/tidy"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("help does not mention %q:\n%s", want, out)
 		}

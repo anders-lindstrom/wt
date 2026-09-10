@@ -11,9 +11,13 @@ func newConfigCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Print the repository's resolved worktree configuration",
-		Long: "Print the resolved configuration. With --shell, emit eval-able\n" +
-			"assignments using the legacy variable names that the Herdr skills\n" +
-			"and plugin expect from load_worktree_config.",
+		Long: "Print the configuration as every command sees it: the file's values,\n" +
+			"the defaults it did not set, and the main branch detected from origin.\n\n" +
+			"With --shell, emit eval-able assignments using the legacy variable\n" +
+			"names that the Herdr skills and plugin expect from\n" +
+			"load_worktree_config.",
+		Example: "  wt config          # the resolved configuration, typed\n" +
+			"  wt config --shell  # the same as shell assignments, for eval",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, err := openContext()

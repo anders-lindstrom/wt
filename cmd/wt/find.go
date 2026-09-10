@@ -20,7 +20,10 @@ func newFindCmd() *cobra.Command {
 			"Prints one path. When several candidates tie, exits non-zero and lists\n" +
 			"them on stderr, so nothing runs in a worktree you did not mean.\n\n" +
 			"A pattern of \".\" means this repository's main checkout.",
-		Args: needArgs(1, "<pattern>", "wt find webkey"),
+		Example: "  wt find login              # fuzzy match; prints one path\n" +
+			"  wt find .                  # this repository's main checkout\n" +
+			"  wt find login --candidates # every tied candidate, one per line",
+		Args: needArgs(1, "<pattern>", "wt find login-crash"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Not being in a repository is fine: the search falls back to roots.
 			// A repository with a broken config is also fine, but must not

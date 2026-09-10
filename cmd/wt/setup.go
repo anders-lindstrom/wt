@@ -13,9 +13,15 @@ func newSetupCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "setup <source-dir>",
 		Short: "Provision the current worktree from a source checkout",
-		Long: "Copy developer config from <source-dir>, run the repository's\n" +
-			"bin/worktree/provision.sh if it has one, initialise submodules and\n" +
-			"run build initialisation.",
+		Long: "Provision the worktree you are standing in: copy the developer config\n" +
+			"the repository declares, run its bin/worktree/provision.sh if it has\n" +
+			"one, initialise submodules, run build initialisation.\n\n" +
+			"<source-dir> is where the developer config is copied from, and\n" +
+			"defaults to the repository's main checkout. Run this to finish a\n" +
+			"worktree whose provisioning failed, or to provision one made by hand.",
+		Example: "  wt setup                # provision the worktree you are in\n" +
+			"  wt setup ../myrepo      # take developer config from there instead\n" +
+			"  wt setup --skip-build   # everything except build initialisation",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := openContext()
