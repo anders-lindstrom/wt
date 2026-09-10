@@ -138,7 +138,7 @@ func noteColumn(a wtsync.Assessment) string {
 		}
 	}
 	if a.Paused {
-		notes = append(notes, "left mid-rebase by wt sync run: wt sync resume")
+		notes = append(notes, "left mid-rebase by wt sync run: wt sync resume, or wt sync undo")
 	}
 	if n := len(a.Replay.Stops) - 1; a.Replay.Stop != nil && n > 0 {
 		notes = append(notes, fmt.Sprintf("%d earlier stop%s resolved", n, plural(n)))

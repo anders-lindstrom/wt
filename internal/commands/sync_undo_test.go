@@ -111,6 +111,19 @@ func TestSyncUndoAbortsWhatSyncRunHandedOver(t *testing.T) {
 	}
 }
 
+// An undo that stopped after aborting a handover it still had to rewind
+// must not print that rewind as done.
+func TestRestoredLineNeverClaimsARewindThatDidNotHappen(t *testing.T) {
+	r := wtsync.Restored{
+		Branch: "feat_wt/bump", From: strings.Repeat("a", 40), To: strings.Repeat("b", 40),
+		Ref: "refs/wt-sync/feat_wt/bump/99", Aborted: true, NotRewound: true,
+	}
+	line := restoredLine("bump", r)
+	if strings.Contains(line, "→") || !strings.Contains(line, "not rewound") || !strings.Contains(line, "still at "+short(r.From)) {
+		t.Fatalf("line %q claims a rewind or hides where the branch is", line)
+	}
+}
+
 // A forced undo of a handed-over branch that moved since the run does more
 // than abort: it rewinds past the moved commits, and the output has to say
 // from where.

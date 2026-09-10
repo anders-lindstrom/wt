@@ -51,21 +51,27 @@ func SyncUndo(ctx *Context, work string, opts UndoOptions, w io.Writer) error {
 	// reported, so a partial restore is visible rather than silent.
 	restored, err := wtsync.Undo(ctx.Repo.MainRoot, worktrees, agents, target.Branch, now(), opts.Force)
 	for _, r := range restored {
-		name := workName(ctx, r.Branch)
-		// A forced undo of a handover that moved both aborts and rewinds:
-		// the rewind is the part a person must see.
-		switch {
-		case r.From != r.To:
-			aborted := ""
-			if r.Aborted {
-				aborted = "aborted the rebase; "
-			}
-			fmt.Fprintf(w, "%s  %s%s → %s  (%s)\n", name, aborted, short(r.From), short(r.To), r.Ref)
-		case r.Aborted:
-			fmt.Fprintf(w, "%s  aborted the rebase; back at %s\n", name, short(r.To))
-		default:
-			fmt.Fprintf(w, "%s  already at %s\n", name, short(r.To))
-		}
+		fmt.Fprintln(w, restoredLine(workName(ctx, r.Branch), r))
 	}
 	return err
+}
+
+// restoredLine is what undo says it did to one branch.
+func restoredLine(name string, r wtsync.Restored) string {
+	// A forced undo of a handover that moved both aborts and rewinds:
+	// the rewind is the part a person must see.
+	switch {
+	case r.NotRewound:
+		return fmt.Sprintf("%s  aborted the rebase; not rewound: still at %s, not %s  (%s)", name, short(r.From), short(r.To), r.Ref)
+	case r.From != r.To:
+		aborted := ""
+		if r.Aborted {
+			aborted = "aborted the rebase; "
+		}
+		return fmt.Sprintf("%s  %s%s → %s  (%s)", name, aborted, short(r.From), short(r.To), r.Ref)
+	case r.Aborted:
+		return fmt.Sprintf("%s  aborted the rebase; back at %s", name, short(r.To))
+	default:
+		return fmt.Sprintf("%s  already at %s", name, short(r.To))
+	}
 }

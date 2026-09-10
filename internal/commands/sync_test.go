@@ -42,7 +42,9 @@ func TestSyncShowsAHandedOverWorktreeWithoutCallingItDirty(t *testing.T) {
 			row = line
 		}
 	}
-	if !strings.Contains(row, "contested") || !strings.Contains(row, "left mid-rebase by wt sync run") {
+	// Both commands, as Preflight and doctor name them: resume refuses a
+	// handover the person aborted by hand, and undo ends that one.
+	if !strings.Contains(row, "contested") || !strings.Contains(row, "left mid-rebase by wt sync run: wt sync resume, or wt sync undo") {
 		t.Fatalf("bump row %q:\n%s", row, buf.String())
 	}
 	if strings.Contains(row, "dirty") {

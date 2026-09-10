@@ -463,43 +463,98 @@ func TestUndoRefusesAHandoverItCannotRead(t *testing.T) {
 	}
 }
 
-func TestUndoReportsWhatItAbortedBeforeALaterAbortFailed(t *testing.T) {
-	// One run handed over feature and later; later's abort cannot work.
-	// feature is already put back by then and must still be reported.
-	dir, wt, gitDir, old := handedOverRepo(t, 5, false)
-	gitIn(t, dir, "branch", "later", old)
-	later := dir + "-later"
-	gitIn(t, dir, "worktree", "add", "-q", later, "later")
-	if _, err := WriteSafety(dir, "later", old, 5); err != nil {
+// unabortableHandover adds a worktree on a new branch "later" at tip,
+// pinned by the run at epoch, stopped mid-rebase onto origin/main with a
+// handover whose git rebase --abort cannot work: its orig-head is gone.
+func unabortableHandover(t *testing.T, dir, tip string, epoch int64) (path string) {
+	t.Helper()
+	gitIn(t, dir, "branch", "later", tip)
+	path = dir + "-later"
+	gitIn(t, dir, "worktree", "add", "-q", path, "later")
+	if _, err := WriteSafety(dir, "later", tip, epoch); err != nil {
 		t.Fatal(err)
 	}
-	if err := gitCmd(later, "rebase", "--no-update-refs", "--no-gpg-sign", "origin/main").Run(); err == nil {
+	if err := gitCmd(path, "rebase", "--no-update-refs", "--no-gpg-sign", "origin/main").Run(); err == nil {
 		t.Fatal("later's rebase did not stop; the test is vacuous")
 	}
-	laterGitDir, err := GitDir(later)
+	gitDir, err := GitDir(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteState(laterGitDir, State{Branch: "later", Epoch: 5}); err != nil {
+	if err := WriteState(gitDir, State{Branch: "later", Epoch: epoch}); err != nil {
 		t.Fatal(err)
 	}
-	// With orig-head gone, git rebase --abort cannot put the branch back.
-	if err := os.Remove(filepath.Join(laterGitDir, "rebase-merge", "orig-head")); err != nil {
+	if err := os.Remove(filepath.Join(gitDir, "rebase-merge", "orig-head")); err != nil {
 		t.Fatal(err)
 	}
+	return path
+}
+
+func TestUndoReportsWhatItAbortedBeforeALaterAbortFailed(t *testing.T) {
+	// One run moved base (a parent, say) and handed over feature and later;
+	// later's abort cannot work. feature is already put back by its abort
+	// and must be reported. base sorts first and needs a reset, but no
+	// branch may be reset while a handover is still mid-rebase: that would
+	// leave a leaf rebased onto a parent that has already been put back.
+	dir, wt, gitDir, old := handedOverRepo(t, 5, false)
+	gitIn(t, dir, "branch", "base", "main")
+	baseOld := gitIn(t, dir, "rev-parse", "base")
+	if _, err := WriteSafety(dir, "base", baseOld, 5); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, dir, "update-ref", "refs/heads/base", old)
+	if err := WriteResult(dir, "base", old, 5); err != nil {
+		t.Fatal(err)
+	}
+	later := unabortableHandover(t, dir, old, 5)
 
 	wts := []repo.Worktree{{Path: wt, Branch: "feature", Rebasing: true}, {Path: later, Branch: "later", Rebasing: true}}
 	got, err := Undo(dir, wts, nil, "feature", time.Now(), false)
 	if err == nil || !strings.Contains(err.Error(), "later: rebase --abort") {
 		t.Fatalf("err %v; want later's abort to fail", err)
 	}
-	if len(got) != 1 || got[0].Branch != "feature" || !got[0].Aborted || got[0].To != old {
-		t.Fatalf("restored %+v; the abort that worked went unreported", got)
+	if len(got) != 1 || got[0].Branch != "feature" || !got[0].Aborted || got[0].NotRewound || got[0].From != old || got[0].To != old {
+		t.Fatalf("restored %+v; want feature's abort reported, and nothing else", got)
 	}
 	if busy, err := RebaseInProgress(wt); err != nil || busy {
 		t.Fatalf("RebaseInProgress = %v, %v; feature was not aborted", busy, err)
 	}
 	if has, err := HasPlan(gitDir); err != nil || has {
 		t.Fatalf("HasPlan = %v, %v; feature's handover survived its abort", has, err)
+	}
+	if got := gitIn(t, dir, "rev-parse", "base"); got != old {
+		t.Fatalf("base was reset to %s while later is still mid-rebase; nothing may be reset", got)
+	}
+}
+
+func TestUndoDoesNotReportARewindItNeverReached(t *testing.T) {
+	// feature's handover was aborted by hand, given a commit and rebased
+	// again by hand, leaving the run's sidecar behind: its rebase is in
+	// progress from that commit. A forced undo's abort puts feature at that
+	// commit, not the safety tip, and later's abort then fails before any
+	// rewind. feature must be reported aborted and not rewound.
+	dir, wt, _, old := handedOverRepo(t, 5, false)
+	gitIn(t, wt, "rebase", "--abort")
+	if err := os.WriteFile(filepath.Join(wt, "c.txt"), []byte("c\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, wt, "add", "c.txt")
+	gitIn(t, wt, "commit", "-q", "-m", "by hand")
+	moved := gitIn(t, wt, "rev-parse", "HEAD")
+	if err := gitCmd(wt, "rebase", "--no-update-refs", "--no-gpg-sign", "origin/main").Run(); err == nil {
+		t.Fatal("feature's rebase did not stop; the test is vacuous")
+	}
+	later := unabortableHandover(t, dir, old, 5)
+
+	wts := []repo.Worktree{{Path: wt, Branch: "feature", Rebasing: true}, {Path: later, Branch: "later", Rebasing: true}}
+	got, err := Undo(dir, wts, nil, "feature", time.Now(), true)
+	if err == nil || !strings.Contains(err.Error(), "later: rebase --abort") {
+		t.Fatalf("err %v; want later's abort to fail", err)
+	}
+	if len(got) != 1 || got[0].Branch != "feature" || !got[0].Aborted || !got[0].NotRewound || got[0].From != moved || got[0].To != old {
+		t.Fatalf("restored %+v; want feature aborted, not rewound, at %s", got, moved)
+	}
+	if head := gitIn(t, wt, "rev-parse", "HEAD"); head != moved {
+		t.Fatalf("feature is at %s, want %s: the rewind was not to happen", head, moved)
 	}
 }

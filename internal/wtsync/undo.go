@@ -15,6 +15,10 @@ type Restored struct {
 	// Aborted is a branch whose handed-over rebase was aborted to put it
 	// back: the ref itself never moved during the run.
 	Aborted bool
+	// NotRewound is an aborted branch that still had to be rewound to To
+	// when a failure stopped the undo: From is where it is now, and the
+	// rewind never happened.
+	NotRewound bool
 }
 
 // Undo resets every ref the newest run touching branch moved: all safety
@@ -173,44 +177,63 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 	// Only now, with every branch of the run checked and the forced-undo
 	// pins written, does anything change: aborting is a mutation, and doing
 	// it earlier would let a refusal raised by a later branch leave an
-	// already-discarded resolution behind. From here a failure returns the
-	// rows already put back, so a partial restore is visible.
-	var out []Restored
+	// already-discarded resolution behind.
+	//
+	// The aborts are a pass of their own, before any branch is reset. A
+	// leaf handed over onto a parent the run rebased must never be left
+	// mid-rebase onto a parent that has already been put back, so if an
+	// abort fails the undo stops there, with nothing reset, and reports
+	// the aborts that did happen.
+	aborted := map[string]bool{}
 	for _, s := range run {
-		from := tips[s.Branch]
-		r := Restored{Branch: s.Branch, From: from, To: s.Tip, Ref: s.Ref}
-		wt, ok := byBranch[s.Branch]
-		if !ok {
-			if from != s.Tip {
-				if _, err := gitEnv(mainRoot, nil, nil, "update-ref", "refs/heads/"+s.Branch, s.Tip, from); err != nil {
-					return out, err
-				}
-			}
-			out = append(out, r)
+		if !aborting[s.Branch] {
 			continue
 		}
-		r.Path = wt.Path
-		if aborting[s.Branch] {
-			if err := abortHandover(wt); err != nil {
-				return out, err
-			}
-			r.Aborted = true
-		} else {
-			// A branch that was handed over may still have a stale handover
-			// even when no rebase is in progress: somebody finished or
-			// aborted it by hand. Undoing the run is the end of that
-			// handover either way.
-			gitDir, err := GitDir(wt.Path)
-			if err != nil {
-				return out, err
-			}
-			if err := RemovePlan(gitDir); err != nil {
-				return out, err
-			}
+		wt := byBranch[s.Branch]
+		if err := abortRebase(wt); err != nil {
+			return abortedRows(mainRoot, run, byBranch, tips, aborted), err
 		}
-		if from != s.Tip {
-			if _, err := gitEnv(wt.Path, rebaseEnv, nil, "reset", "--hard", s.Tip); err != nil {
-				return out, err
+		aborted[s.Branch] = true
+		gitDir, err := GitDir(wt.Path)
+		if err != nil {
+			return abortedRows(mainRoot, run, byBranch, tips, aborted), err
+		}
+		if err := RemovePlan(gitDir); err != nil {
+			return abortedRows(mainRoot, run, byBranch, tips, aborted), fmt.Errorf("%s: the rebase is aborted but its handover was not removed: %w", s.Branch, err)
+		}
+	}
+	// A branch that was handed over may still have a stale handover even
+	// when no rebase is in progress: somebody finished or aborted it by
+	// hand. Undoing the run is the end of that handover either way.
+	for _, s := range run {
+		wt, ok := byBranch[s.Branch]
+		if !ok || aborted[s.Branch] {
+			continue
+		}
+		gitDir, err := GitDir(wt.Path)
+		if err != nil {
+			return abortedRows(mainRoot, run, byBranch, tips, aborted), err
+		}
+		if err := RemovePlan(gitDir); err != nil {
+			return abortedRows(mainRoot, run, byBranch, tips, aborted), err
+		}
+	}
+	// A failure here returns the rows already put back, and every abort
+	// among the branches not reached yet, so a partial restore is visible.
+	var out []Restored
+	for i, s := range run {
+		from := tips[s.Branch]
+		r := Restored{Branch: s.Branch, From: from, To: s.Tip, Ref: s.Ref, Aborted: aborted[s.Branch]}
+		if wt, ok := byBranch[s.Branch]; ok {
+			r.Path = wt.Path
+			if from != s.Tip {
+				if _, err := gitEnv(wt.Path, rebaseEnv, nil, "reset", "--hard", s.Tip); err != nil {
+					return append(out, abortedRows(mainRoot, run[i:], byBranch, tips, aborted)...), err
+				}
+			}
+		} else if from != s.Tip {
+			if _, err := gitEnv(mainRoot, nil, nil, "update-ref", "refs/heads/"+s.Branch, s.Tip, from); err != nil {
+				return append(out, abortedRows(mainRoot, run[i:], byBranch, tips, aborted)...), err
 			}
 		}
 		out = append(out, r)
@@ -218,9 +241,8 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 	return out, nil
 }
 
-// abortHandover aborts the rebase a run handed over in wt and removes the
-// handover, but only once the abort is seen to have taken.
-func abortHandover(wt repo.Worktree) error {
+// abortRebase aborts the rebase in wt and checks the abort took.
+func abortRebase(wt repo.Worktree) error {
 	if _, err := gitEnv(wt.Path, rebaseEnv, nil, "rebase", "--abort"); err != nil {
 		return fmt.Errorf("%s: rebase --abort: %w", wt.Branch, err)
 	}
@@ -229,14 +251,35 @@ func abortHandover(wt repo.Worktree) error {
 	} else if busy {
 		return fmt.Errorf("%s is still mid-rebase after the abort", wt.Branch)
 	}
-	gitDir, err := GitDir(wt.Path)
-	if err != nil {
-		return err
-	}
-	if err := RemovePlan(gitDir); err != nil {
-		return fmt.Errorf("%s: the rebase is aborted but its handover was not removed: %w", wt.Branch, err)
-	}
 	return nil
+}
+
+// abortedRows reports the branches of run that were aborted when a failure
+// stopped the undo before their row was written. None of them has been
+// reset. A handover the run never moved is fully put back by its abort; one
+// a forced undo also had to rewind is reported from where it is now, as not
+// rewound, rather than as a rewind that never happened.
+func abortedRows(mainRoot string, run []Safety, byBranch map[string]repo.Worktree, tips map[string]string, aborted map[string]bool) []Restored {
+	var rows []Restored
+	for _, s := range run {
+		if !aborted[s.Branch] {
+			continue
+		}
+		r := Restored{Branch: s.Branch, From: tips[s.Branch], To: s.Tip, Ref: s.Ref, Path: byBranch[s.Branch].Path, Aborted: true}
+		if r.From != s.Tip {
+			// The abort itself moves the branch to where the rebase began,
+			// which is the old tip only if nobody restarted it from elsewhere.
+			cur, err := gitEnv(mainRoot, nil, nil, "rev-parse", "--verify", "refs/heads/"+s.Branch)
+			if err != nil || cur != s.Tip {
+				r.NotRewound = true
+				if err == nil {
+					r.From = cur
+				}
+			}
+		}
+		rows = append(rows, r)
+	}
+	return rows
 }
 
 // aheadCount is how many commits tip carries beyond base, as text, so a
