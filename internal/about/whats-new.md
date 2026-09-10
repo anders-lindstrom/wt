@@ -5,6 +5,12 @@ Newest first, each heading stamped with the local date and time of the change
 lines a human would want read out to them; the full story is in git history and
 in `docs/superpowers/plans/`.
 
+## 2026-09-10 12:44 — setup takes --source
+
+- `wt setup --source <name>` says what ran setup, such as `superset`. Setup
+  prints it and does nothing else with it yet, so a workspace's setup step can
+  pass it now and later behaviour can key on it without a config change.
+
 ## 2026-09-10 10:48 — a contested stop is handed to you, and resume finishes it
 
 - `wt sync run` no longer aborts at a conflict that is yours: it leaves the

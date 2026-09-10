@@ -17,7 +17,7 @@ func TestAdoptProvisionsAnExternallyCreatedWorktree(t *testing.T) {
 	gitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/outside", external)
 
 	var buf bytes.Buffer
-	got, err := Adopt(ctx, external, false, SetupOptions{Source: main}, &buf)
+	got, err := Adopt(ctx, external, false, SetupOptions{SourceDir: main}, &buf)
 	if err != nil {
 		t.Fatalf("Adopt: %v", err)
 	}
@@ -33,7 +33,7 @@ func TestAdoptRelocates(t *testing.T) {
 	gitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/moved", external)
 
 	var buf bytes.Buffer
-	got, err := Adopt(ctx, external, true, SetupOptions{Source: main}, &buf)
+	got, err := Adopt(ctx, external, true, SetupOptions{SourceDir: main}, &buf)
 	if err != nil {
 		t.Fatalf("Adopt: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestAdoptAcceptsAPathThroughASymlink(t *testing.T) {
 
 	var buf bytes.Buffer
 	got, err := Adopt(ctx, filepath.Join(link, "demo-spare"), false,
-		SetupOptions{Source: main}, &buf)
+		SetupOptions{SourceDir: main}, &buf)
 	if err != nil {
 		t.Fatalf("Adopt through a symlink: %v", err)
 	}
