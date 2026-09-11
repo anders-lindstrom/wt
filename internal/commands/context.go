@@ -30,7 +30,7 @@ func Open(cwd string) (*Context, error) {
 	if err != nil {
 		return nil, err
 	}
-	c, err := loadFor(r)
+	c, _, err := loadFor(r)
 	if err != nil {
 		return nil, err
 	}
@@ -45,13 +45,16 @@ func (c *Context) HasProvisionScript() bool {
 
 // loadFor loads a repository's configuration, preferring the worktree the
 // caller is standing in and falling back to the main checkout when that
-// worktree carries none.
-func loadFor(r *repo.Repo) (*config.Config, error) {
-	c, err := config.Load(r.Root, r.DetectMainBranch())
+// worktree carries none. The trunk it detected comes back with it: reading it
+// costs a git process, and everything that needs a fallback branch here needs
+// the same answer.
+func loadFor(r *repo.Repo) (*config.Config, string, error) {
+	trunk := r.DetectMainBranch()
+	c, err := config.Load(r.Root, trunk)
 	if errors.Is(err, config.ErrNoConfig) && r.Root != r.MainRoot {
-		return config.Load(r.MainRoot, r.DetectMainBranch())
+		c, err = config.Load(r.MainRoot, trunk)
 	}
-	return c, err
+	return c, trunk, err
 }
 
 // OpenLenient builds a Context for read-only lookups, falling back to default
@@ -67,12 +70,12 @@ func OpenLenient(cwd string, w io.Writer) *Context {
 	if err != nil {
 		return nil
 	}
-	c, err := loadFor(r)
+	c, trunk, err := loadFor(r)
 	if err != nil {
 		// Keep whatever did parse: a single retired key should not hide the
 		// repository's REQUIRED_BINS, branch prefix and the rest.
 		if c == nil {
-			c, _ = config.FromRaw(nil, r.DetectMainBranch())
+			c, _ = config.FromRaw(nil, trunk)
 		}
 		fmt.Fprintf(w, "wt: using partial configuration for %s: %v\n", r.Name, err)
 		return &Context{Repo: r, Config: c, ConfigError: err, Cwd: cwd}

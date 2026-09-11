@@ -250,10 +250,8 @@ func gitDirOf(wtPath string) (string, error) {
 // This replaces the old hardcoded "development" default, which was correct for
 // exactly one of the seven repositories.
 func (r *Repo) DetectMainBranch() string {
-	if out, err := git.Run(r.MainRoot, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"); err == nil {
-		if _, branch, ok := strings.Cut(out, "/"); ok && branch != "" {
-			return branch
-		}
+	if branch, ok := r.OriginHead(); ok {
+		return branch
 	}
 	// symbolic-ref, not rev-parse --abbrev-ref: the latter fails outright on a
 	// repository whose HEAD is unborn, which is exactly the state a freshly

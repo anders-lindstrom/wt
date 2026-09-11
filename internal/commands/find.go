@@ -106,7 +106,7 @@ func Find(ctx *Context, pattern string) ([]find.Scored, error) {
 // when it has no readable configuration — a repo wt does not manage still has
 // worktrees worth finding.
 func suffixFor(r *repo.Repo) string {
-	c, err := loadFor(r)
+	c, _, err := loadFor(r)
 	if err != nil {
 		return "_wt"
 	}
