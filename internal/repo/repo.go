@@ -281,20 +281,6 @@ func (r *Repo) BranchExists(name string) bool {
 	return err == nil
 }
 
-// IsMerged reports whether branch is fully contained in base.
-func (r *Repo) IsMerged(branch, base string) bool {
-	out, err := git.Run(r.MainRoot, "branch", "--merged", base, "--format=%(refname:short)")
-	if err != nil {
-		return false
-	}
-	for _, line := range strings.Split(out, "\n") {
-		if strings.TrimSpace(line) == branch {
-			return true
-		}
-	}
-	return false
-}
-
 // CommitsAhead counts the commits branch has that base does not. ok is false
 // when either ref is unreadable, which is a different answer from zero.
 func (r *Repo) CommitsAhead(branch, base string) (n int, ok bool) {
@@ -461,19 +447,6 @@ func (r *Repo) MoveWorktree(from, to string) error {
 		return err
 	}
 	return nil
-}
-
-// DeleteBranch deletes a branch, whether or not git considers it merged.
-//
-// Deliberately -D, not -d. `git branch -d` measures "merged" against whatever
-// the main checkout happens to have checked out, which in a worktree layout is
-// rarely the branch anyone cares about — so it refuses branches that are
-// merged into trunk and, worse, would accept one that is not. The merge
-// question belongs to the caller, which asks it against the repository's own
-// main branch; this carries out the answer.
-func (r *Repo) DeleteBranch(name string) error {
-	_, err := git.Run(r.MainRoot, "branch", "-D", name)
-	return err
 }
 
 // RenameBranch renames a branch.

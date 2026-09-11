@@ -374,13 +374,9 @@ func sessionIn(opts MigrateOptions, path string, w io.Writer) *wtsync.Agent {
 			return nil
 		}
 	}
-	// A worktree's path can carry a symlink (a macOS /tmp, a mounted home)
-	// that an agent's reported cwd has already resolved.
-	resolved := path
-	if r, err := filepath.EvalSymlinks(path); err == nil {
-		resolved = r
-	}
-	return wtsync.AgentAt(agents, resolved)
+	// AgentAt resolves the path itself, which is what a worktree behind a
+	// symlink (a macOS /tmp, a mounted home) needs.
+	return wtsync.AgentAt(agents, path)
 }
 
 func agentInTheWay(a *wtsync.Agent) string {

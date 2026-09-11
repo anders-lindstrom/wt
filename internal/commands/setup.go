@@ -50,7 +50,7 @@ func Setup(ctx *Context, target string, opts SetupOptions, w io.Writer) error {
 	// either, which is strictly less usable than one that merely lacks
 	// secrets. The error still surfaces, so nothing treats this as success.
 	provisionErr := runProvision(ctx, target, w)
-	initSubmodules(target, w)
+	initSubmodules(ctx, target, w)
 	runBuildInit(ctx, target, opts, w)
 
 	if provisionErr != nil {
@@ -163,8 +163,8 @@ func runProvision(ctx *Context, target string, w io.Writer) error {
 	return nil
 }
 
-func initSubmodules(target string, w io.Writer) {
-	if _, err := os.Stat(filepath.Join(target, ".gitmodules")); err != nil {
+func initSubmodules(ctx *Context, target string, w io.Writer) {
+	if !ctx.Repo.HasSubmodules(target) {
 		return
 	}
 	fmt.Fprintln(w, "Initializing git submodules...")
