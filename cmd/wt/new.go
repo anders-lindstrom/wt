@@ -33,7 +33,6 @@ func newNewCmd() *cobra.Command {
 		}),
 	}
 	cmd.Flags().StringVar(&opts.Base, "base", "", "branch to cut from (default: the configured main branch)")
-	cmd.Flags().BoolVar(&opts.SkipBuild, "skip-build", false, "skip build initialisation")
-	cmd.Flags().BoolVar(&opts.NoSetup, "no-setup", false, "create the worktree without provisioning it")
+	addProvisionFlags(cmd, &opts.SkipBuild, &opts.NoSetup)
 	return cmd
 }

@@ -111,14 +111,17 @@ func newShellCmd(use, short, long, example string) *cobra.Command {
 		Long: long + "\n\n" +
 			"Implemented in wt's shell layer: a program cannot change its caller's\n" +
 			"directory, so this one has to run inside your shell. Enable it with:\n" +
-			"    source ~/.local/share/wt/wt.sh",
+			"    " + sourceShellLayer,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return fmt.Errorf("`wt %s` needs wt's shell layer, which is not loaded.\n"+
-				"  Add to your shell rc:  source ~/.local/share/wt/wt.sh",
-				cmd.Name())
+				"  Add to your shell rc:  %s",
+				cmd.Name(), sourceShellLayer)
 		},
 	}
 }
+
+// sourceShellLayer is the line that loads wt's shell layer.
+const sourceShellLayer = "source ~/.local/share/wt/wt.sh"
 
 func newCdCmd() *cobra.Command {
 	return newShellCmd("cd [pattern]", "Change directory to a worktree (shell)",

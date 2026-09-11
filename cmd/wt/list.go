@@ -6,6 +6,10 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands"
 )
 
+// pathWidthHelp ends the help of the commands that print a path column.
+const pathWidthHelp = "On a terminal, paths are shown from ~ and shortened from the left to fit\n" +
+	"its width. Piped, they are printed whole."
+
 func newListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "list",
@@ -13,9 +17,7 @@ func newListCmd() *cobra.Command {
 		Short:   "List every worktree of this repository",
 		Long: "Print every worktree of this repository: its work name, its branch and\n" +
 			"its path. A worktree not at the path this layout gives it is marked,\n" +
-			"and the legend says what to do about it.\n\n" +
-			"On a terminal, paths are shown from ~ and shortened from the left to fit\n" +
-			"its width. Piped, they are printed whole.",
+			"and the legend says what to do about it.\n\n" + pathWidthHelp,
 		Example: "  wt list          # work name, branch and path for every worktree\n" +
 			"  wt ls            # the same, for the impatient\n" +
 			"  wt list | cat    # whole paths, however narrow the terminal",
@@ -32,9 +34,7 @@ func newStatusCmd() *cobra.Command {
 		Use:   "status",
 		Short: "Show each worktree's branch and whether it is clean",
 		Long: "Print each worktree's branch and whether its checkout is clean, dirty\n" +
-			"or unreadable — the one question `wt list` does not answer.\n\n" +
-			"On a terminal, paths are shown from ~ and shortened from the left to fit\n" +
-			"its width. Piped, they are printed whole.",
+			"or unreadable — the one question `wt list` does not answer.\n\n" + pathWidthHelp,
 		Example: "  wt status               # branch and state for every worktree\n" +
 			"  wt status | grep dirty  # only the ones with uncommitted changes",
 		Args: cobra.NoArgs,

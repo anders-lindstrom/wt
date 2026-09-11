@@ -30,7 +30,6 @@ func newCheckoutCmd() *cobra.Command {
 			return printLine(cmd, path, err)
 		}),
 	}
-	cmd.Flags().BoolVar(&opts.SkipBuild, "skip-build", false, "skip build initialisation")
-	cmd.Flags().BoolVar(&opts.NoSetup, "no-setup", false, "create the worktree without provisioning it")
+	addProvisionFlags(cmd, &opts.SkipBuild, &opts.NoSetup)
 	return cmd
 }

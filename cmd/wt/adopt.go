@@ -27,6 +27,6 @@ func newAdoptCmd() *cobra.Command {
 		}),
 	}
 	cmd.Flags().BoolVar(&relocate, "relocate", false, "also move it to the canonical path")
-	cmd.Flags().BoolVar(&skipBuild, "skip-build", false, "skip build initialisation")
+	addProvisionFlags(cmd, &skipBuild, nil)
 	return cmd
 }
