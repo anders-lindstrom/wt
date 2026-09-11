@@ -382,10 +382,20 @@ func (r *Repo) OriginHead() (string, bool) {
 // own compare-and-delete, so a commit that lands after the caller last looked
 // is never deleted with it.
 //
-// Unlike `git branch -D` it does not refuse a branch a worktree has checked
-// out; the caller checks that. The branch's config section is removed after
-// the ref, as `git branch -D` would.
+// A branch a worktree is using is refused with a *BranchInUseError: the delete
+// is update-ref's, which unlike `git branch -D` will take a branch out from
+// under a checkout, a bisect or a stopped rebase. A worktree list that cannot
+// be read is ErrWorktreesUnknown — not knowing is not the same answer as
+// nobody using it. The branch's config section is removed after the ref, as
+// `git branch -D` would.
 func (r *Repo) DeleteBranchAt(name, tip string) error {
+	users, err := r.BranchUsers()
+	if err != nil {
+		return err
+	}
+	if use, ok := users[name]; ok {
+		return &BranchInUseError{Path: use.Path, By: use.By}
+	}
 	if _, err := git.Run(r.MainRoot, "update-ref", "-d", "refs/heads/"+name, tip); err != nil {
 		return err
 	}

@@ -13,6 +13,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/naming"
+	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -465,20 +466,19 @@ func (p Plan) apply(ctx *Context, w io.Writer) error {
 			fmt.Fprintln(w, "✓ worktree removed")
 			return err
 		}
-		// The delete is update-ref's, which does not refuse a branch another
-		// worktree is using the way branch -D does, so that is asked here.
-		inUse, err := checkedOut(ctx)
-		if use := inUse[p.Branch]; err == nil && use.Path != "" {
-			err = fmt.Errorf("%s is using it", use.Path)
-		}
-		if err != nil {
-			fmt.Fprintln(w, "✓ worktree removed")
-			return fmt.Errorf("branch %s is merged into %s but was kept: %w", p.Branch, p.Base, err)
-		}
 		// Only at the tip the plan showed, so a commit that lands after the
-		// plan is never deleted with the branch.
+		// plan is never deleted with the branch. DeleteBranchAt refuses a
+		// branch another worktree is using, which update-ref would not.
 		if err := ctx.Repo.DeleteBranchAt(p.Branch, p.Tip); err != nil {
 			fmt.Fprintln(w, "✓ worktree removed")
+			var inUse *repo.BranchInUseError
+			switch {
+			case errors.As(err, &inUse):
+				return fmt.Errorf("branch %s is merged into %s but was kept: %s is using it",
+					p.Branch, p.Base, inUse.Path)
+			case errors.Is(err, repo.ErrWorktreesUnknown):
+				return fmt.Errorf("branch %s is merged into %s but was kept: %w", p.Branch, p.Base, err)
+			}
 			if now, ok := ctx.Repo.ResolveRef("refs/heads/" + p.Branch); ok && now != p.Tip {
 				return fmt.Errorf("branch %s was kept: it moved after the plan was made", p.Branch)
 			}

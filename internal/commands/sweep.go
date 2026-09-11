@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -78,7 +79,7 @@ func planSweep(ctx *Context, bases []TrunkBase) (SweepPlan, error) {
 			merged[n] = bases[i].Name
 		}
 	}
-	inUse, err := checkedOut(ctx)
+	inUse, err := ctx.Repo.BranchUsers()
 	if err != nil {
 		return SweepPlan{}, err
 	}
@@ -103,47 +104,6 @@ func planSweep(ctx *Context, bases []TrunkBase) (SweepPlan, error) {
 		}
 	}
 	return p, nil
-}
-
-// branchUse is the worktree using a branch, and how.
-type branchUse struct {
-	Path string
-	// By is the operation in Path holding the branch, "bisect" or "rebase";
-	// "" when Path simply has it checked out.
-	By string
-}
-
-// checkedOut maps each branch a worktree has in use to that worktree: the
-// branch it has checked out, and the branches its git operations still hold.
-// It reads the worktrees rather than for-each-ref's worktreepath, which is
-// empty for a branch mid-rebase, for the branch a bisect started from, and
-// for the branches a stopped rebase --update-refs will move: only the
-// operation's own files name those, and git refuses to delete them all the
-// same. A checkout mid-rebase counts as held by that rebase. A branch's own
-// checkout wins over a hold elsewhere.
-func checkedOut(ctx *Context) (map[string]branchUse, error) {
-	worktrees, err := ctx.Repo.Worktrees()
-	if err != nil {
-		return nil, fmt.Errorf("could not list worktrees, so cannot tell which branches are in use: %w", err)
-	}
-	m := map[string]branchUse{}
-	for _, wt := range worktrees {
-		if wt.Branch != "" {
-			use := branchUse{Path: wt.Path}
-			if wt.Rebasing {
-				use.By = "rebase"
-			}
-			m[wt.Branch] = use
-		}
-	}
-	for _, wt := range worktrees {
-		for _, h := range wt.Holds {
-			if _, ok := m[h.Branch]; !ok {
-				m[h.Branch] = branchUse{Path: wt.Path, By: h.By}
-			}
-		}
-	}
-	return m, nil
 }
 
 // protectedBranch names what sweep never deletes, merged or not: the trunks
@@ -402,21 +362,10 @@ func (p SweepPlan) apply(ctx *Context, w io.Writer) error {
 			kept++
 			continue
 		}
-		// update-ref does not refuse a checked-out branch the way branch -D
-		// does, so this is asked as close to the delete as it gets.
-		inUse, err := checkedOut(ctx)
-		if err != nil {
-			fmt.Fprintf(w, "- kept %s: %v\n", b.Name, err)
-			kept++
-			continue
-		}
-		if inUse[b.Name].Path != "" {
-			fmt.Fprintf(w, "- kept %s: it was checked out after the plan was made\n", b.Name)
-			kept++
-			continue
-		}
+		// DeleteBranchAt asks the worktrees again immediately before the
+		// delete, which is as close to it as that question gets.
 		if err := ctx.Repo.DeleteBranchAt(b.Name, b.Tip); err != nil {
-			fmt.Fprintf(w, "- kept %s: %s\n", b.Name, gitSaid(err))
+			fmt.Fprintf(w, "- kept %s: %s\n", b.Name, whyKept(err))
 			kept++
 			continue
 		}
@@ -426,4 +375,18 @@ func (p SweepPlan) apply(ctx *Context, w io.Writer) error {
 		return fmt.Errorf("%d of %s kept; run wt sweep again to see why", kept, branchCount(len(p.Delete)))
 	}
 	return nil
+}
+
+// whyKept says, in sweep's words, why a delete was refused: a worktree took
+// the branch while the plan was being carried out, the worktrees could not be
+// read at all, or git refused the ref itself.
+func whyKept(err error) string {
+	var inUse *repo.BranchInUseError
+	switch {
+	case errors.As(err, &inUse):
+		return "it was checked out after the plan was made"
+	case errors.Is(err, repo.ErrWorktreesUnknown):
+		return err.Error()
+	}
+	return gitSaid(err)
 }
