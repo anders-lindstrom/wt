@@ -49,18 +49,10 @@ func newPathCmd() *cobra.Command {
 			"  wt path login-crash     # bare name: the default type",
 		Args:              needArgs(1, "<type>/<work>", "wt path fix/login-crash"),
 		ValidArgsFunction: completeWork,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, err := openContext()
-			if err != nil {
-				return err
-			}
+		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
 			out, err := commands.Path(ctx, args[0])
-			if err != nil {
-				return err
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), out)
-			return nil
-		},
+			return printLine(cmd, out, err)
+		}),
 	}
 }
 
@@ -74,18 +66,10 @@ func newBranchCmd() *cobra.Command {
 			"  wt branch login-crash      # bare name: the default type",
 		Args:              needArgs(1, "<type>/<work>", "wt branch fix/login-crash"),
 		ValidArgsFunction: completeWork,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, err := openContext()
-			if err != nil {
-				return err
-			}
+		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
 			out, err := commands.Branch(ctx, args[0])
-			if err != nil {
-				return err
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), out)
-			return nil
-		},
+			return printLine(cmd, out, err)
+		}),
 	}
 }
 
@@ -95,13 +79,9 @@ func newBranchStripCmd() *cobra.Command {
 		Short:  "Strip the worktree type prefix from a branch name",
 		Args:   needArgs(1, "<branch>", "wt branch-strip fix_wt/login-crash"),
 		Hidden: true, // compat surface for strip_worktree_prefix
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, err := openContext()
-			if err != nil {
-				return err
-			}
+		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
 			fmt.Fprintln(cmd.OutOrStdout(), naming.StripPrefix(args[0], ctx.Config.TypeSuffix))
 			return nil
-		},
+		}),
 	}
 }

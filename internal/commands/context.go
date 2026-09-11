@@ -19,6 +19,9 @@ type Context struct {
 	// ConfigError records why Config fell back to defaults, when it did.
 	// Only OpenLenient sets it; Open fails outright instead.
 	ConfigError error
+	// Cwd is the directory the context was opened from: where the caller is
+	// standing.
+	Cwd string
 }
 
 // Open discovers the repository containing cwd and loads its configuration.
@@ -31,7 +34,7 @@ func Open(cwd string) (*Context, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Context{Repo: r, Config: c}, nil
+	return &Context{Repo: r, Config: c, Cwd: cwd}, nil
 }
 
 // HasProvisionScript reports whether the repo declares its own setup step.
@@ -72,7 +75,7 @@ func OpenLenient(cwd string, w io.Writer) *Context {
 			c, _ = config.FromRaw(nil, r.DetectMainBranch())
 		}
 		fmt.Fprintf(w, "wt: using partial configuration for %s: %v\n", r.Name, err)
-		return &Context{Repo: r, Config: c, ConfigError: err}
+		return &Context{Repo: r, Config: c, ConfigError: err, Cwd: cwd}
 	}
-	return &Context{Repo: r, Config: c}
+	return &Context{Repo: r, Config: c, Cwd: cwd}
 }

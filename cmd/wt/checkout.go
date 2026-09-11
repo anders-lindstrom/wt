@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
@@ -23,22 +21,14 @@ func newCheckoutCmd() *cobra.Command {
 			"  wt checkout release-2.1 --no-setup    # the worktree, nothing else\n" +
 			"  wt checkout release-2.1 --skip-build  # provision, but do not build",
 		Args: cobra.RangeArgs(1, 2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, err := openContext()
-			if err != nil {
-				return err
-			}
+		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
 			work := ""
 			if len(args) == 2 {
 				work = args[1]
 			}
 			path, err := commands.Checkout(ctx, args[0], work, opts, cmd.ErrOrStderr())
-			if err != nil {
-				return err
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), path)
-			return nil
-		},
+			return printLine(cmd, path, err)
+		}),
 	}
 	cmd.Flags().BoolVar(&opts.SkipBuild, "skip-build", false, "skip build initialisation")
 	cmd.Flags().BoolVar(&opts.NoSetup, "no-setup", false, "create the worktree without provisioning it")

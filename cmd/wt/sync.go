@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -72,11 +71,10 @@ func newSyncCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Lenient: a repository without worktree.conf still has worktrees
 			// worth reporting on, and the trunk name falls back to origin/HEAD.
-			cwd, err := os.Getwd()
+			ctx, err := openLenient(cmd.ErrOrStderr())
 			if err != nil {
 				return err
 			}
-			ctx := commands.OpenLenient(cwd, cmd.ErrOrStderr())
 			if ctx == nil {
 				return errors.New("not inside a git repository")
 			}
@@ -132,11 +130,7 @@ func newSyncRunCmd() *cobra.Command {
 			"  wt sync run login-crash --no-push      # print the push command instead",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: completeWork,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, err := openContext()
-			if err != nil {
-				return err
-			}
+		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
 			opts := commands.RunOptions{NoFetch: noFetch, Yes: yes, Push: push()}
 			if canAsk(cmd) {
 				// One prompter for both questions, so an answer typed ahead
@@ -148,7 +142,7 @@ func newSyncRunCmd() *cobra.Command {
 				opts.ConfirmPush = confirmPush(p)
 			}
 			return commands.SyncRun(ctx, args, opts, cmd.OutOrStdout())
-		},
+		}),
 	}
 	run.Flags().BoolVar(&noFetch, "no-fetch", false, "rebase onto origin/<trunk> as last fetched")
 	run.Flags().BoolVar(&yes, "yes", false, "do not ask first: several worktrees, or an idle session in one")
@@ -194,11 +188,7 @@ func newSyncResumeCmd() *cobra.Command {
 			"  wt sync resume login-crash --yes      # not asked about an idle session",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeWork,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, err := openContext()
-			if err != nil {
-				return err
-			}
+		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
 			opts := commands.ResumeOptions{Yes: yes, Push: push()}
 			if canAsk(cmd) {
 				p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
@@ -208,7 +198,7 @@ func newSyncResumeCmd() *cobra.Command {
 				opts.ConfirmPush = confirmPush(p)
 			}
 			return commands.SyncResume(ctx, args[0], opts, cmd.OutOrStdout())
-		},
+		}),
 	}
 	push = addPushFlags(resume, "push when done, without asking",
 		"neither push nor ask; print the push command")
@@ -245,17 +235,13 @@ func newSyncUndoCmd() *cobra.Command {
 			"  wt sync undo login-crash --yes    # not asked about an idle session",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeWork,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, err := openContext()
-			if err != nil {
-				return err
-			}
+		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
 			opts := commands.UndoOptions{Force: force, Yes: yes}
 			if canAsk(cmd) && !yes {
 				opts.Confirm = confirmAsk(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()), "undo")
 			}
 			return commands.SyncUndo(ctx, args[0], opts, cmd.OutOrStdout())
-		},
+		}),
 	}
 	undo.Flags().BoolVar(&force, "force", false, "undo a branch that has moved since the run, pinning its tip first")
 	undo.Flags().BoolVar(&yes, "yes", false, "do not ask first when a session is idle in a checkout")
@@ -285,13 +271,9 @@ func newSyncDoctorCmd() *cobra.Command {
 			"  wt sync doctor --fix    # turn on rerere, remove expired locks\n" +
 			"  wt sync doctor --prune  # delete safety refs no run needs now",
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx, err := openContext()
-			if err != nil {
-				return err
-			}
+		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
 			return commands.SyncDoctor(ctx, commands.DoctorOptions{Fix: fix, Prune: prune}, cmd.OutOrStdout())
-		},
+		}),
 	}
 	doctor.Flags().BoolVar(&fix, "fix", false, "turn on rerere.enabled and remove expired locks")
 	doctor.Flags().BoolVar(&prune, "prune", false, "delete prunable safety refs")

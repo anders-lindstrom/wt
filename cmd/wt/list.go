@@ -20,14 +20,10 @@ func newListCmd() *cobra.Command {
 			"  wt ls            # the same, for the impatient\n" +
 			"  wt list | cat    # whole paths, however narrow the terminal",
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx, err := openContext()
-			if err != nil {
-				return err
-			}
+		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
 			out := cmd.OutOrStdout()
 			return commands.List(ctx, out, terminalWidth(out))
-		},
+		}),
 	}
 }
 
@@ -42,13 +38,9 @@ func newStatusCmd() *cobra.Command {
 		Example: "  wt status               # branch and state for every worktree\n" +
 			"  wt status | grep dirty  # only the ones with uncommitted changes",
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx, err := openContext()
-			if err != nil {
-				return err
-			}
+		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
 			out := cmd.OutOrStdout()
 			return commands.Status(ctx, out, terminalWidth(out))
-		},
+		}),
 	}
 }

@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -65,11 +64,7 @@ func newRemoveCmd() *cobra.Command {
 				return commands.RemoveAt(ctx, meAt, opts, cmd.OutOrStdout())
 			}
 			if me {
-				cwd, err := os.Getwd()
-				if err != nil {
-					return err
-				}
-				return commands.RemoveAt(ctx, cwd, opts, cmd.OutOrStdout())
+				return commands.RemoveAt(ctx, ctx.Cwd, opts, cmd.OutOrStdout())
 			}
 			return commands.Remove(ctx, args[0], opts, cmd.OutOrStdout())
 		},

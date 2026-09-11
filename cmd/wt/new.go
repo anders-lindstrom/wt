@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
@@ -28,19 +26,11 @@ func newNewCmd() *cobra.Command {
 			"  wt new spike/idea --no-setup          # the worktree, nothing else\n" +
 			"  wt new fix/login-crash --skip-build   # provision, but do not build",
 		Args: needArgs(1, "<type>/<work>", "wt new fix/login-crash"),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, err := openContext()
-			if err != nil {
-				return err
-			}
+		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
 			path, err := commands.New(ctx, args[0], opts, cmd.ErrOrStderr())
-			if err != nil {
-				return err
-			}
 			// The path alone goes to stdout so `cd "$(wt new ...)"` works.
-			fmt.Fprintln(cmd.OutOrStdout(), path)
-			return nil
-		},
+			return printLine(cmd, path, err)
+		}),
 	}
 	cmd.Flags().StringVar(&opts.Base, "base", "", "branch to cut from (default: the configured main branch)")
 	cmd.Flags().BoolVar(&opts.SkipBuild, "skip-build", false, "skip build initialisation")

@@ -528,6 +528,8 @@ func TestMigrateSaysWhenYouAreStandingInIt(t *testing.T) {
 	ctx, _ := Open(main)
 	from := worktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 	t.Chdir(from)
+	// Opened from where you stand, as wt does.
+	ctx, _ = Open(from)
 
 	var buf bytes.Buffer
 	if _, err := Migrate(ctx, from, "", noSessions(), &buf); err != nil {

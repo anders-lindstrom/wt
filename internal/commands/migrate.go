@@ -67,7 +67,7 @@ func Migrate(ctx *Context, arg, dest string, opts MigrateOptions, w io.Writer) (
 		return "", err
 	}
 	plan.Agent = sessionIn(opts, plan.From, w)
-	plan.InCwd = standingIn(plan.From)
+	plan.InCwd = standingIn(ctx.Cwd, plan.From)
 
 	if plan.movesNothing() {
 		fmt.Fprintf(w, "- %s is already at the canonical path\n", plan.From)
@@ -400,13 +400,9 @@ func sessionLabel(a *wtsync.Agent) string {
 	return "an unnamed session"
 }
 
-// standingIn reports whether the caller's own working directory is inside the
-// worktree about to move.
-func standingIn(path string) bool {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return false
-	}
+// standingIn reports whether cwd, the caller's own working directory, is inside
+// the worktree about to move.
+func standingIn(cwd, path string) bool {
 	return samePath(cwd, path) || strings.HasPrefix(filepath.Clean(cwd),
 		filepath.Clean(path)+string(filepath.Separator))
 }

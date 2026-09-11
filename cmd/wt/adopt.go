@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
@@ -22,19 +20,11 @@ func newAdoptCmd() *cobra.Command {
 			"  wt adopt ../myrepo-login-crash --relocate  # and move it into place\n" +
 			"  wt adopt . --skip-build                    # this one, without a build",
 		Args: needArgs(1, "<path>", "wt adopt ../myrepo-login-crash"),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, err := openContext()
-			if err != nil {
-				return err
-			}
+		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
 			path, err := commands.Adopt(ctx, args[0], relocate,
 				commands.SetupOptions{SkipBuild: skipBuild}, cmd.ErrOrStderr())
-			if err != nil {
-				return err
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), path)
-			return nil
-		},
+			return printLine(cmd, path, err)
+		}),
 	}
 	cmd.Flags().BoolVar(&relocate, "relocate", false, "also move it to the canonical path")
 	cmd.Flags().BoolVar(&skipBuild, "skip-build", false, "skip build initialisation")

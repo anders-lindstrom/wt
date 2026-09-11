@@ -43,18 +43,14 @@ func newSweepCmd() *cobra.Command {
 			"  wt sweep --yes       # delete without asking (scripts)",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx, err := openContext()
-			if err != nil {
-				return err
-			}
+		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
 			opts := commands.SweepOptions{NoFetch: noFetch, Yes: yes,
 				Width: terminalWidth(cmd.OutOrStdout())}
 			if !yes && canAsk(cmd) {
 				opts.Confirm = confirmSweep(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()))
 			}
 			return commands.Sweep(ctx, opts, cmd.OutOrStdout())
-		},
+		}),
 	}
 	cmd.Flags().BoolVar(&noFetch, "no-fetch", false, "compare with origin as last fetched")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "delete without asking")

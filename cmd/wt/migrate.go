@@ -34,22 +34,14 @@ func newMigrateCmd() *cobra.Command {
 			"  wt migrate login-crash --force        # move it past an agent session",
 		Args:              migrateArgs,
 		ValidArgsFunction: completeMigrate,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, err := openContext()
-			if err != nil {
-				return err
-			}
+		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
 			dest := ""
 			if len(args) > 1 {
 				dest = args[1]
 			}
 			path, err := commands.Migrate(ctx, args[0], dest, opts, cmd.ErrOrStderr())
-			if err != nil {
-				return err
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), path)
-			return nil
-		},
+			return printLine(cmd, path, err)
+		}),
 	}
 	cmd.Flags().BoolVar(&opts.DryRun, "dry-run", false, "show what would happen, change nothing")
 	cmd.Flags().BoolVar(&opts.Force, "force", false, "move it even with an agent session working in it")
