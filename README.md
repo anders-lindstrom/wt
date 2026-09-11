@@ -144,7 +144,8 @@ programmering/telcred/
 ```
 
 The path tail below `<repo>_wt/` is character-for-character the branch name, so
-the two convert with no rules to remember.
+the two convert with no rules to remember. Why the layout is this shape, and the
+rules a tool building on it follows: [docs/worktree-conventions.md](docs/worktree-conventions.md).
 
 The type comes from the spec — `wt new fix/login-crash` — or, for a bare name,
 is read out of the name itself: `wt new fix_dev-123` creates `fix_wt/dev-123`.
