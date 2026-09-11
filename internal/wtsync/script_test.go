@@ -241,6 +241,14 @@ func TestResolveInWorktreeAScriptThatExitsZeroWithoutStagingIsAnError(t *testing
 	}
 }
 
+// hangTimeout is the Timeout the two hang tests give their script. The clock
+// starts once the script is materialised, so it only has to cover sh starting
+// and, for the looping script, its first stderr line, but it must do so under
+// -race with the rest of the suite running: 300 ms did not. The kill is still
+// proven, because a script that is not killed returns only after
+// Timeout+scriptWaitDelay, past the bound both tests check.
+const hangTimeout = 2 * time.Second
+
 func TestScriptTimesOutInsteadOfHanging(t *testing.T) {
 	// Echoes on every tick rather than once before a single sleep, so the
 	// marker is captured regardless of scheduling jitter in when the script
@@ -248,7 +256,7 @@ func TestScriptTimesOutInsteadOfHanging(t *testing.T) {
 	// forever without the deadline actually killing it.
 	script := "#!/bin/sh\nwhile :; do\n  echo 'still working' >&2\n  sleep 0.1\ndone\n"
 	dir, wt := stoppedRebaseWithScript(t, script)
-	s := Script{Root: dir, Trunk: "origin/main", Run: "bin/resolve", Timeout: 300 * time.Millisecond}
+	s := Script{Root: dir, Trunk: "origin/main", Run: "bin/resolve", Timeout: hangTimeout}
 	start := time.Now()
 	err := s.ResolveInWorktree(wt, "v.txt")
 	elapsed := time.Since(start)
@@ -288,7 +296,7 @@ func TestResolveInWorktreeAcceptsAScriptThatBackgroundsAJob(t *testing.T) {
 func TestScriptCheckTimesOutInsteadOfHanging(t *testing.T) {
 	script := "#!/bin/sh\nsleep 5\n"
 	dir, _ := stoppedRebaseWithScript(t, script)
-	s := Script{Root: dir, Trunk: "origin/main", Run: "bin/resolve", Timeout: 300 * time.Millisecond}
+	s := Script{Root: dir, Trunk: "origin/main", Run: "bin/resolve", Timeout: hangTimeout}
 	c := Conflict{Path: "v.txt", Base: []byte("1.0.0\n"), Trunk: []byte("1.0.5\n"), Branch: []byte("1.0.1\n")}
 	start := time.Now()
 	_, err := s.Resolve(c)
