@@ -321,14 +321,7 @@ func removalFailed(path string, err error) error {
 // gitSaid reduces a git failure to the sentence worth showing: its first real
 // line, without the "fatal:" and without git's advice to run something else.
 func gitSaid(err error) string {
-	for _, line := range strings.Split(err.Error(), "\n") {
-		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "fatal: "))
-		if line == "" || strings.HasPrefix(line, "use '") || strings.HasPrefix(line, "hint:") {
-			continue
-		}
-		return line
-	}
-	return err.Error()
+	return git.Reason(err, "use '", "hint:")
 }
 
 // stillMerged asks the merged question once more, in the moment before the

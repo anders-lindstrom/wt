@@ -76,11 +76,14 @@ func LoadFromTrunk(mainRoot, trunk string) (*Config, error) {
 func LoadFromRef(mainRoot, ref string) (*Config, error) {
 	out, err := git.Run(mainRoot, "show", ref+":"+ConfigFile)
 	if err != nil {
-		if strings.Contains(err.Error(), "does not exist") || strings.Contains(err.Error(), "exists on disk, but not in") {
-			return nil, ErrNoConfig
-		}
-		if strings.Contains(err.Error(), "invalid object name") || strings.Contains(err.Error(), "unknown revision") {
-			return nil, fmt.Errorf("%s is not known here; run git fetch origin", ref)
+		var gerr *git.Error
+		if errors.As(err, &gerr) && !gerr.TimedOut {
+			switch said := gerr.Stderr; {
+			case strings.Contains(said, "does not exist") || strings.Contains(said, "exists on disk, but not in"):
+				return nil, ErrNoConfig
+			case strings.Contains(said, "invalid object name") || strings.Contains(said, "unknown revision"):
+				return nil, fmt.Errorf("%s is not known here; run git fetch origin", ref)
+			}
 		}
 		return nil, err
 	}

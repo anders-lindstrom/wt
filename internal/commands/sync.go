@@ -186,15 +186,7 @@ func ago(d time.Duration) string {
 // fetchReason is the line of a failed fetch's error worth printing: ssh and
 // git can put warnings before the reason and hints after it.
 func fetchReason(err error) string {
-	for _, line := range strings.Split(err.Error(), "\n") {
-		line = strings.TrimSpace(line)
-		lower := strings.ToLower(line)
-		if line == "" || strings.HasPrefix(lower, "warning:") || strings.HasPrefix(lower, "hint:") {
-			continue
-		}
-		return truncate(strings.TrimPrefix(line, "fatal: "), noteWidth)
-	}
-	return truncate(oneLine(err.Error()), noteWidth)
+	return truncate(git.Reason(err, "warning:", "hint:"), noteWidth)
 }
 
 func workName(ctx *Context, branch string) string {

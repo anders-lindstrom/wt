@@ -58,7 +58,7 @@ func Merge3(c Conflict) ([]Segment, error) {
 	if err != nil {
 		var gerr *git.Error
 		if !errors.As(err, &gerr) || gerr.Code < 0 || gerr.Code > 127 {
-			if strings.Contains(err.Error(), "Cannot merge binary files") {
+			if gerr != nil && !gerr.TimedOut && strings.Contains(gerr.Stderr, "Cannot merge binary files") {
 				return nil, Refuse(c.Path, "binary file; a person's call")
 			}
 			return nil, err
