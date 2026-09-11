@@ -13,7 +13,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/anders-lindstrom/wt/internal/git"
-	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -193,7 +192,7 @@ func workName(ctx *Context, branch string) string {
 	if branch == "" {
 		return "(detached)"
 	}
-	if _, work, ok := naming.ParseBranch(branch, ctx.Config.TypeSuffix); ok {
+	if _, work, ok := ctx.Scheme().Parse(branch); ok {
 		return work
 	}
 	return branch

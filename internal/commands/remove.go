@@ -345,7 +345,7 @@ func stillMerged(ctx *Context, p Plan) error {
 }
 
 func branchIsOurs(ctx *Context, branch string) bool {
-	_, _, ok := naming.ParseBranch(branch, ctx.Config.TypeSuffix)
+	_, _, ok := ctx.Scheme().Parse(branch)
 	return ok
 }
 

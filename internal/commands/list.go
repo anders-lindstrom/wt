@@ -28,6 +28,7 @@ func List(ctx *Context, w io.Writer, width int) error {
 	if err != nil {
 		return err
 	}
+	sch := ctx.Scheme()
 	rows := [][]string{{"", "WORK", "BRANCH", "PATH"}}
 	var seen [3]bool
 	for _, n := range names {
@@ -37,13 +38,10 @@ func List(ctx *Context, w io.Writer, width int) error {
 		}
 		mark := ""
 		if !n.IsMain {
+			work = "-"
 			layout := naming.Foreign
-			if n.Work != "" {
-				work = n.Work
-				layout = naming.Classify(n.Path, ctx.Repo.Parent, ctx.Repo.Name,
-					n.Type, n.Work, ctx.Config.TypeSuffix)
-			} else {
-				work = "-"
+			if _, w, l, ok := sch.ClassifyBranch(n.Path, n.Branch); ok {
+				work, layout = w, l
 			}
 			seen[layout] = true
 			mark = layoutMark(layout)

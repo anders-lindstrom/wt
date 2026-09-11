@@ -101,13 +101,14 @@ func relocateWorktree(ctx *Context, path string, w io.Writer) (string, error) {
 // planMigrate reads every fact the migration depends on and refuses here,
 // before anything has moved, when one of them makes it impossible.
 func planMigrate(ctx *Context, wt repo.Worktree, dest string) (MigratePlan, error) {
+	sch := ctx.Scheme()
 	if wt.Branch == "" {
 		return MigratePlan{}, fmt.Errorf(
 			"%s has a detached HEAD: there is no branch to rename, and nothing to name a path from.\n"+
 				"  Put it on a branch first:  git -C %s switch -c %s\n"+
 				"  then run this again",
 			wt.Path, wt.Path,
-			naming.BranchName(ctx.Config.DefaultType, filepath.Base(wt.Path), ctx.Config.TypeSuffix))
+			sch.Branch(ctx.Config.DefaultType, filepath.Base(wt.Path)))
 	}
 	typ, work, err := migrateTarget(ctx, wt, dest)
 	if err != nil {
@@ -116,11 +117,11 @@ func planMigrate(ctx *Context, wt repo.Worktree, dest string) (MigratePlan, erro
 
 	p := MigratePlan{
 		From:      wt.Path,
-		To:        naming.WorktreeDir(ctx.Repo.Parent, ctx.Repo.Name, typ, work, ctx.Config.TypeSuffix),
+		To:        sch.Dir(typ, work),
 		Branch:    wt.Branch,
-		NewBranch: naming.BranchName(typ, work, ctx.Config.TypeSuffix),
+		NewBranch: sch.Branch(typ, work),
 		Work:      work,
-		Superset:  naming.UnderSuperset(wt.Path, ctx.Repo.Parent, ctx.Repo.Name, ctx.Config.TypeSuffix),
+		Superset:  naming.UnderSuperset(wt.Path, sch.Parent, sch.Repo, sch.Suffix),
 	}
 	if dirty, err := repo.Dirty(p.From, false); err == nil && dirty {
 		p.Dirty = true
@@ -168,7 +169,7 @@ func migrateTarget(ctx *Context, wt repo.Worktree, dest string) (typ, work strin
 // name under the repository's default type. Anything else is a guess, and a
 // guess here silently renames somebody's branch.
 func impliedTarget(ctx *Context, branch string) (typ, work string, ok bool) {
-	if typ, work, ok := naming.ParseBranch(branch, ctx.Config.TypeSuffix); ok {
+	if typ, work, ok := ctx.Scheme().Parse(branch); ok {
 		return typ, work, true
 	}
 	if head, rest, found := strings.Cut(branch, "/"); found {

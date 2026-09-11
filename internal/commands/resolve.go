@@ -18,7 +18,7 @@ func Branch(ctx *Context, spec string) (string, error) {
 		return "", fmt.Errorf("unknown worktree type %q; expected one of: %s",
 			typ, strings.Join(ctx.Config.Types, " "))
 	}
-	return naming.BranchName(typ, work, ctx.Config.TypeSuffix), nil
+	return ctx.Scheme().Branch(typ, work), nil
 }
 
 // Path returns where a piece of work lives. An existing worktree on that branch
@@ -42,13 +42,14 @@ func Path(ctx *Context, spec string) (string, error) {
 	// that tool's one fixed prefix, so reading a type out of the name looks
 	// past it: "fix_dev-123" is on feat_wt/fix_dev-123. Try the name as typed
 	// before falling back to a path that does not exist yet.
+	sch := ctx.Scheme()
 	typ, work, _ := naming.ParseSpec(spec, ctx.Config.DefaultType, ctx.Config.Types)
-	if literal := naming.BranchName(ctx.Config.DefaultType, spec, ctx.Config.TypeSuffix); literal != branch {
+	if literal := sch.Branch(ctx.Config.DefaultType, spec); literal != branch {
 		if w, ok := worktrees.ByBranch(literal); ok {
 			return w.Path, nil
 		}
 	}
-	return naming.WorktreeDir(ctx.Repo.Parent, ctx.Repo.Name, typ, work, ctx.Config.TypeSuffix), nil
+	return sch.Dir(typ, work), nil
 }
 
 func typeAllowed(ctx *Context, typ string) bool {

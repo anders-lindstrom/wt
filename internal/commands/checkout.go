@@ -43,8 +43,7 @@ func Checkout(ctx *Context, branch, work string, opts NewOptions, w io.Writer) (
 		}
 	}
 
-	path := naming.WorktreeDir(ctx.Repo.Parent, ctx.Repo.Name,
-		ctx.Config.DefaultType, work, ctx.Config.TypeSuffix)
+	path := ctx.Scheme().Dir(ctx.Config.DefaultType, work)
 	if _, err := os.Stat(path); err == nil {
 		return "", fmt.Errorf("%s already exists", path)
 	}

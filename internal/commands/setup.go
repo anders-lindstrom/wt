@@ -72,11 +72,11 @@ func Setup(ctx *Context, target string, opts SetupOptions, w io.Writer) error {
 // chosen and no explanation of who chose it.
 func reportLayout(ctx *Context, target string, w io.Writer) {
 	fmt.Fprintf(w, "  %s\n", target)
-	typ, work, ok := naming.ParseBranch(ctx.Repo.BranchAt(target), ctx.Config.TypeSuffix)
+	typ, work, layout, ok := ctx.Scheme().ClassifyBranch(target, ctx.Repo.BranchAt(target))
 	if !ok {
 		return
 	}
-	switch naming.Classify(target, ctx.Repo.Parent, ctx.Repo.Name, typ, work, ctx.Config.TypeSuffix) {
+	switch layout {
 	case naming.Superset:
 		fmt.Fprintln(w, "  Superset's layout — provisioned where Superset put it; setup never moves a worktree")
 	case naming.Foreign:

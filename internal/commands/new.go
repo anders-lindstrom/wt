@@ -30,7 +30,7 @@ func New(ctx *Context, spec string, opts NewOptions, w io.Writer) (string, error
 	if ctx.Repo.BranchExists(branch) {
 		return "", fmt.Errorf("branch %s already exists", branch)
 	}
-	path := naming.WorktreeDir(ctx.Repo.Parent, ctx.Repo.Name, typ, work, ctx.Config.TypeSuffix)
+	path := ctx.Scheme().Dir(typ, work)
 	if _, err := os.Stat(path); err == nil {
 		return "", fmt.Errorf("%s already exists", path)
 	}

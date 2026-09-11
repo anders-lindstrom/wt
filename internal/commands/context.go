@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/anders-lindstrom/wt/internal/config"
+	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
@@ -35,6 +36,13 @@ func Open(cwd string) (*Context, error) {
 		return nil, err
 	}
 	return &Context{Repo: r, Config: c, Cwd: cwd}, nil
+}
+
+// Scheme is how this repository spells its worktrees: the directory they sit
+// under, the repository's name and its type suffix. Every conversion between a
+// piece of work, its branch and its path is made through it.
+func (c *Context) Scheme() naming.Scheme {
+	return naming.Scheme{Parent: c.Repo.Parent, Repo: c.Repo.Name, Suffix: c.Config.TypeSuffix}
 }
 
 // HasProvisionScript reports whether the repo declares its own setup step.

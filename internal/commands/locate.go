@@ -7,7 +7,6 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
@@ -95,10 +94,11 @@ func WorkNames(ctx *Context) ([]WorkName, error) {
 	if err != nil {
 		return nil, err
 	}
+	sch := ctx.Scheme()
 	names := make([]WorkName, 0, len(worktrees))
 	for _, wt := range worktrees {
 		n := WorkName{Worktree: wt}
-		if typ, work, ok := naming.ParseBranch(wt.Branch, ctx.Config.TypeSuffix); ok {
+		if typ, work, ok := sch.Parse(wt.Branch); ok {
 			n.Type, n.Work = typ, work
 		}
 		names = append(names, n)
