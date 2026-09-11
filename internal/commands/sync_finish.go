@@ -138,7 +138,7 @@ func completeRun(ctx *Context, w io.Writer, cfg *wtsync.Config, in completeInput
 	if err := wtsync.RemovePlan(gitDir); err != nil {
 		return head, owed, err
 	}
-	fmt.Fprintf(w, "  ↩ wt sync undo %s puts it back (was %s)\n", in.Work, short(in.Res.OldTip))
+	fmt.Fprintf(w, "  ↩ wt sync undo %s puts it back (was %s)\n", in.Work, git.ShortID(in.Res.OldTip, 7))
 	return head, owed, nil
 }
 

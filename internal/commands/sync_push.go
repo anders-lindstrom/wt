@@ -70,7 +70,7 @@ func offerPush(w io.Writer, mode PushMode, confirm func(works []string) (bool, e
 	for _, t := range targets {
 		from := "new on origin"
 		if before, err := git.Run(t.Path, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+t.Branch); err == nil {
-			from = short(before)
+			from = git.ShortID(before, 7)
 		}
 		if _, err := git.RunTimeout(t.Path, fetchTimeout, pushArgs(t)...); err != nil {
 			fmt.Fprintf(w, "  ✗ push of %s failed: %s\n", t.Branch, pushReason(err))
@@ -81,7 +81,7 @@ func offerPush(w io.Writer, mode PushMode, confirm func(works []string) (bool, e
 		if err != nil {
 			return failed, err
 		}
-		fmt.Fprintf(w, "  ✓ pushed %s  %s → %s\n", t.Branch, from, short(to))
+		fmt.Fprintf(w, "  ✓ pushed %s  %s → %s\n", t.Branch, from, git.ShortID(to, 7))
 	}
 	return failed, nil
 }

@@ -138,7 +138,7 @@ func syncInputs(ctx *Context, opts SyncOptions, w io.Writer) (onto string, cfg *
 	if aerr != nil {
 		fmt.Fprintf(w, "note: %v\n", aerr)
 	}
-	ref := onto + " " + short(sha)
+	ref := onto + " " + git.ShortID(sha, 7)
 	switch {
 	case opts.NoFetch:
 		fmt.Fprintf(w, "against %s, %s\n", ref, asLast)

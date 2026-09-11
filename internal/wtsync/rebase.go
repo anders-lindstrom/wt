@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/anders-lindstrom/wt/internal/git"
 )
 
 // Verdict is Preflight's answer.
@@ -203,7 +205,7 @@ func (d *driver) restore() error {
 		return fmt.Errorf("not restored: HEAD is %q, not %s; the old tip is %s", ref, d.req.Branch, d.res.Safety.Ref)
 	}
 	if head, _ := d.git("rev-parse", "HEAD"); head != d.old {
-		return fmt.Errorf("not restored: HEAD is %s, not %s; the old tip is %s", short(head), short(d.old), d.res.Safety.Ref)
+		return fmt.Errorf("not restored: HEAD is %s, not %s; the old tip is %s", git.ShortID(head, 7), git.ShortID(d.old, 7), d.res.Safety.Ref)
 	}
 	// A status that cannot be read is not a clean status: this check
 	// fails closed, since its whole job is to prove the worktree is
@@ -348,10 +350,10 @@ func VerifyFinished(wtPath, branch, work, onto, old string) error {
 	// read proves nothing, so it refuses too.
 	prev, err := gitEnv(wtPath, rebaseEnv, nil, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch+"@{1}")
 	if err != nil {
-		return fmt.Errorf("%s's reflog cannot show that the rebase started from the run's tip (%s); wt sync undo --force %s puts that tip back and keeps what is there now under a safety ref", branch, short(old), work)
+		return fmt.Errorf("%s's reflog cannot show that the rebase started from the run's tip (%s); wt sync undo --force %s puts that tip back and keeps what is there now under a safety ref", branch, git.ShortID(old, 7), work)
 	}
 	if prev != old {
-		return fmt.Errorf("%s was last moved from %s, not from the tip the run started from (%s): something besides the rebase committed on it, a person or a deferred step on an earlier try, and resume cannot tell which; wt sync undo --force %s puts the run's tip back and keeps what is there now under a safety ref", branch, short(prev), short(old), work)
+		return fmt.Errorf("%s was last moved from %s, not from the tip the run started from (%s): something besides the rebase committed on it, a person or a deferred step on an earlier try, and resume cannot tell which; wt sync undo --force %s puts the run's tip back and keeps what is there now under a safety ref", branch, git.ShortID(prev, 7), git.ShortID(old, 7), work)
 	}
 	return nil
 }
@@ -524,13 +526,6 @@ func pathsOf(cs []Conflict) string {
 	}
 	sort.Strings(ps)
 	return strings.Join(ps, "\x00")
-}
-
-func short(sha string) string {
-	if len(sha) > 7 {
-		return sha[:7]
-	}
-	return sha
 }
 
 func logStop(log io.Writer, s StopResult) {

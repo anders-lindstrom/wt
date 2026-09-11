@@ -5,6 +5,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -111,9 +112,9 @@ func SyncUndo(ctx *Context, work string, opts UndoOptions, w io.Writer) error {
 		case r.From == r.To && !r.Aborted:
 			// Nothing moved under anybody.
 		case r.NotRewound:
-			tellIdle(w, told[r.Branch], wtsync.UndoneLine(rowWork, short(r.From), false))
+			tellIdle(w, told[r.Branch], wtsync.UndoneLine(rowWork, git.ShortID(r.From, 7), false))
 		default:
-			tellIdle(w, told[r.Branch], wtsync.UndoneLine(rowWork, short(r.To), true))
+			tellIdle(w, told[r.Branch], wtsync.UndoneLine(rowWork, git.ShortID(r.To, 7), true))
 		}
 	}
 	return err
@@ -125,16 +126,16 @@ func restoredLine(name string, r wtsync.Restored) string {
 	// the rewind is the part a person must see.
 	switch {
 	case r.NotRewound:
-		return fmt.Sprintf("%s  aborted the rebase; not rewound: still at %s, not %s  (%s)", name, short(r.From), short(r.To), r.Ref)
+		return fmt.Sprintf("%s  aborted the rebase; not rewound: still at %s, not %s  (%s)", name, git.ShortID(r.From, 7), git.ShortID(r.To, 7), r.Ref)
 	case r.From != r.To:
 		aborted := ""
 		if r.Aborted {
 			aborted = "aborted the rebase; "
 		}
-		return fmt.Sprintf("%s  %s%s → %s  (%s)", name, aborted, short(r.From), short(r.To), r.Ref)
+		return fmt.Sprintf("%s  %s%s → %s  (%s)", name, aborted, git.ShortID(r.From, 7), git.ShortID(r.To, 7), r.Ref)
 	case r.Aborted:
-		return fmt.Sprintf("%s  aborted the rebase; back at %s", name, short(r.To))
+		return fmt.Sprintf("%s  aborted the rebase; back at %s", name, git.ShortID(r.To, 7))
 	default:
-		return fmt.Sprintf("%s  already at %s", name, short(r.To))
+		return fmt.Sprintf("%s  already at %s", name, git.ShortID(r.To, 7))
 	}
 }

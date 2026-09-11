@@ -36,6 +36,15 @@ func RunTimeout(dir string, d time.Duration, args ...string) (string, error) {
 	return strings.TrimRight(string(out), "\n"), nil
 }
 
+// ShortID is a commit id as a person reads it: its first n characters, or
+// the whole thing when it is already shorter.
+func ShortID(sha string, n int) string {
+	if len(sha) > n {
+		return sha[:n]
+	}
+	return sha
+}
+
 // Lines runs git and splits stdout into lines, dropping a trailing blank.
 func Lines(dir string, args ...string) ([]string, error) {
 	out, err := Run(dir, args...)

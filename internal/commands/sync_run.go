@@ -76,7 +76,7 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("%s is not known here; run git fetch origin", onto)
 	}
-	fmt.Fprintf(w, "wt sync run  onto %s %s (%s)\n", onto, short(trunkSHA), fetched)
+	fmt.Fprintf(w, "wt sync run  onto %s %s (%s)\n", onto, git.ShortID(trunkSHA, 7), fetched)
 	cfg, err := wtsync.LoadFromRef(ctx.Repo.MainRoot, trunkSHA)
 	if errors.Is(err, wtsync.ErrNoConfig) {
 		return fmt.Errorf("%s declares no %s on %s: nothing is rebased", ctx.Repo.Name, wtsync.ConfigFile, onto)
@@ -476,11 +476,4 @@ func plural(n int) string {
 		return ""
 	}
 	return "s"
-}
-
-func short(sha string) string {
-	if len(sha) > 7 {
-		return sha[:7]
-	}
-	return sha
 }

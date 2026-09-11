@@ -37,6 +37,19 @@ func TestRunReturnsTrimmedOutput(t *testing.T) {
 	}
 }
 
+func TestShortIDKeepsAnIDShorterThanAsked(t *testing.T) {
+	const sha = "5f3c2e9f5d4054ae6727b1966e9ab16a37c1409e"
+	if got := ShortID(sha, 7); got != "5f3c2e9" {
+		t.Errorf("ShortID 7 = %q", got)
+	}
+	if got := ShortID(sha, 12); got != "5f3c2e9f5d40" {
+		t.Errorf("ShortID 12 = %q", got)
+	}
+	if got := ShortID("abc", 7); got != "abc" {
+		t.Errorf("ShortID of a short id = %q", got)
+	}
+}
+
 func TestRunOutsideRepoReturnsErrNotRepo(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := Run(dir, "rev-parse", "--show-toplevel"); err != ErrNotRepo {

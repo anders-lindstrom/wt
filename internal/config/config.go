@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -100,7 +101,7 @@ func FromRaw(r map[string]Value, mainBranchFallback string) (*Config, error) {
 	if c.DefaultType == "" {
 		c.DefaultType = strings.TrimSuffix(c.BranchPrefix, c.TypeSuffix)
 	}
-	if !contains(c.Types, c.DefaultType) {
+	if !slices.Contains(c.Types, c.DefaultType) {
 		problems = append(problems, fmt.Sprintf(
 			"WORKTREE_BRANCH_PREFIX=%q yields default type %q, which is not in WORKTREE_TYPES; set WORKTREE_DEFAULT_TYPE to choose one of: %s",
 			c.BranchPrefix, c.DefaultType, strings.Join(c.Types, " ")))
@@ -147,13 +148,4 @@ func boolean(r map[string]Value, key string, def bool) (bool, error) {
 		return def, fmt.Errorf("%s=%q is not a boolean", key, v.Scalar)
 	}
 	return b, nil
-}
-
-func contains(haystack []string, needle string) bool {
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
-	}
-	return false
 }

@@ -87,7 +87,7 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 		return fmt.Errorf("the safety ref %s is gone; nothing is resumed", st.Safety)
 	}
 	if tip != st.OldTip {
-		return fmt.Errorf("%s pins %s but the handover says %s; nothing is resumed", st.Safety, short(tip), short(st.OldTip))
+		return fmt.Errorf("%s pins %s but the handover says %s; nothing is resumed", st.Safety, git.ShortID(tip, 7), git.ShortID(st.OldTip, 7))
 	}
 	agents := opts.Agents
 	if agents == nil {
@@ -280,10 +280,10 @@ func verifySequencer(wtPath string, st wtsync.State) error {
 		return fmt.Errorf("the handover's onto %q is not a commit here: %w; nothing is resumed", st.Onto, err)
 	}
 	if got, err := commitOf(wtPath, t.Onto); err != nil || got != want {
-		return notOurs(fmt.Sprintf("it replays onto %s, not %s", short(t.Onto), short(want)))
+		return notOurs(fmt.Sprintf("it replays onto %s, not %s", git.ShortID(t.Onto, 7), git.ShortID(want, 7)))
 	}
 	if got, err := commitOf(wtPath, t.OrigHead); err != nil || got != st.OldTip {
-		return notOurs(fmt.Sprintf("it started from %s, not the tip the run started from (%s)", short(t.OrigHead), short(st.OldTip)))
+		return notOurs(fmt.Sprintf("it started from %s, not the tip the run started from (%s)", git.ShortID(t.OrigHead, 7), git.ShortID(st.OldTip, 7)))
 	}
 	return nil
 }

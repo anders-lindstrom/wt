@@ -420,11 +420,7 @@ func (p SweepPlan) apply(ctx *Context, w io.Writer) error {
 			kept++
 			continue
 		}
-		short := b.Tip
-		if len(short) > 12 {
-			short = short[:12]
-		}
-		fmt.Fprintf(w, "✓ deleted %s; git branch %s %s restores its commits\n", b.Name, b.Name, short)
+		fmt.Fprintf(w, "✓ deleted %s; git branch %s %s restores its commits\n", b.Name, b.Name, git.ShortID(b.Tip, 12))
 	}
 	if kept > 0 {
 		return fmt.Errorf("%d of %s kept; run wt sweep again to see why", kept, branchCount(len(p.Delete)))
