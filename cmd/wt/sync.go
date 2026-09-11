@@ -11,7 +11,7 @@ import (
 )
 
 func newSyncCmd() *cobra.Command {
-	var noFetch, yes, push, noPush bool
+	var noFetch bool
 	sync := &cobra.Command{
 		Use:   "sync [<work>]",
 		Short: "Show what a rebase onto trunk would do to each worktree",
@@ -87,9 +87,14 @@ func newSyncCmd() *cobra.Command {
 			return commands.Sync(ctx, opts, cmd.OutOrStdout())
 		},
 	}
-	// Shared with run: only one of the two parses flags in any one invocation.
 	sync.Flags().BoolVar(&noFetch, "no-fetch", false, "compare with origin/<trunk> as last fetched")
+	sync.AddCommand(newSyncRunCmd(), newSyncResumeCmd(), newSyncUndoCmd(), newSyncDoctorCmd())
+	return sync
+}
 
+func newSyncRunCmd() *cobra.Command {
+	var noFetch, yes bool
+	var push func() commands.PushMode
 	run := &cobra.Command{
 		Use:   "run <work>...",
 		Short: "Rebase the named worktrees onto trunk with the declared strategies",
@@ -132,7 +137,7 @@ func newSyncCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			opts := commands.RunOptions{NoFetch: noFetch, Yes: yes, Push: pushMode(push, noPush)}
+			opts := commands.RunOptions{NoFetch: noFetch, Yes: yes, Push: push()}
 			if canAsk(cmd) {
 				// One prompter for both questions, so an answer typed ahead
 				// for the push is not lost to the rebase question's reader.
@@ -147,11 +152,14 @@ func newSyncCmd() *cobra.Command {
 	}
 	run.Flags().BoolVar(&noFetch, "no-fetch", false, "rebase onto origin/<trunk> as last fetched")
 	run.Flags().BoolVar(&yes, "yes", false, "do not ask first: several worktrees, or an idle session in one")
-	run.Flags().BoolVar(&push, "push", false, "push the worktrees that finish, without asking")
-	run.Flags().BoolVar(&noPush, "no-push", false, "neither push nor ask; print the push command")
-	run.MarkFlagsMutuallyExclusive("push", "no-push")
-	sync.AddCommand(run)
+	push = addPushFlags(run, "push the worktrees that finish, without asking",
+		"neither push nor ask; print the push command")
+	return run
+}
 
+func newSyncResumeCmd() *cobra.Command {
+	var yes bool
+	var push func() commands.PushMode
 	resume := &cobra.Command{
 		Use:   "resume <work>",
 		Short: "Continue the rebase a run left at a conflict that was yours",
@@ -191,7 +199,7 @@ func newSyncCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			opts := commands.ResumeOptions{Yes: yes, Push: pushMode(push, noPush)}
+			opts := commands.ResumeOptions{Yes: yes, Push: push()}
 			if canAsk(cmd) {
 				p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
 				if !yes {
@@ -202,15 +210,14 @@ func newSyncCmd() *cobra.Command {
 			return commands.SyncResume(ctx, args[0], opts, cmd.OutOrStdout())
 		},
 	}
-	// run's variables: only one of these commands parses flags in any one
-	// invocation.
-	resume.Flags().BoolVar(&push, "push", false, "push when done, without asking")
-	resume.Flags().BoolVar(&noPush, "no-push", false, "neither push nor ask; print the push command")
+	push = addPushFlags(resume, "push when done, without asking",
+		"neither push nor ask; print the push command")
 	resume.Flags().BoolVar(&yes, "yes", false, "do not ask first when a session is idle in the worktree")
-	resume.MarkFlagsMutuallyExclusive("push", "no-push")
-	sync.AddCommand(resume)
+	return resume
+}
 
-	var force bool
+func newSyncUndoCmd() *cobra.Command {
+	var force, yes bool
 	undo := &cobra.Command{
 		Use:   "undo <work>",
 		Short: "Put back every ref the last run on this worktree moved",
@@ -252,8 +259,10 @@ func newSyncCmd() *cobra.Command {
 	}
 	undo.Flags().BoolVar(&force, "force", false, "undo a branch that has moved since the run, pinning its tip first")
 	undo.Flags().BoolVar(&yes, "yes", false, "do not ask first when a session is idle in a checkout")
-	sync.AddCommand(undo)
+	return undo
+}
 
+func newSyncDoctorCmd() *cobra.Command {
 	var fix, prune bool
 	doctor := &cobra.Command{
 		Use:   "doctor",
@@ -286,9 +295,7 @@ func newSyncCmd() *cobra.Command {
 	}
 	doctor.Flags().BoolVar(&fix, "fix", false, "turn on rerere.enabled and remove expired locks")
 	doctor.Flags().BoolVar(&prune, "prune", false, "delete prunable safety refs")
-	sync.AddCommand(doctor)
-
-	return sync
+	return doctor
 }
 
 // confirmAsk asks the one question an acting command gets before it changes
@@ -307,6 +314,16 @@ func confirmPush(p *prompter) func([]string) (bool, error) {
 	return func(works []string) (bool, error) {
 		return p.yesNo("push "+strings.Join(works, ", ")+" with --force-with-lease?", true), nil
 	}
+}
+
+// addPushFlags declares --push and --no-push on cmd, refused together, and
+// returns the choice they make once cmd has parsed its flags.
+func addPushFlags(cmd *cobra.Command, pushUsage, noPushUsage string) func() commands.PushMode {
+	var push, noPush bool
+	cmd.Flags().BoolVar(&push, "push", false, pushUsage)
+	cmd.Flags().BoolVar(&noPush, "no-push", false, noPushUsage)
+	cmd.MarkFlagsMutuallyExclusive("push", "no-push")
+	return func() commands.PushMode { return pushMode(push, noPush) }
 }
 
 // pushMode is --push and --no-push as one choice; cobra has already refused
