@@ -1,11 +1,11 @@
 #!/usr/bin/env bats
 
+load helpers
+
 setup() {
     export PATH="$BATS_TEST_DIRNAME/../bin:$PATH"
     REPO="$BATS_TEST_TMPDIR/demo"
-    git init -q -b main "$REPO"
-    mkdir -p "$REPO/bin/worktree"
-    printf 'MAIN_BRANCH="main"\nBUILD_INIT_ENABLED=false\n' > "$REPO/bin/worktree/worktree.conf"
+    make_repo "$REPO"
     cd "$REPO"
     source "$BATS_TEST_DIRNAME/../compat/worktree_functions.sh"
 }

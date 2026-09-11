@@ -1,5 +1,7 @@
 #!/usr/bin/env bats
 
+load helpers
+
 setup() {
     export PATH="$BATS_TEST_DIRNAME/../bin:$PATH"
     mkdir -p "$BATS_TEST_TMPDIR/roots"
@@ -8,11 +10,7 @@ setup() {
     WT_ROOTS="$(cd "$BATS_TEST_TMPDIR/roots" && pwd -P)"
     export WT_ROOTS
     REPO="$WT_ROOTS/demo"
-    git init -q -b main "$REPO"
-    mkdir -p "$REPO/bin/worktree"
-    printf 'MAIN_BRANCH="main"\nBUILD_INIT_ENABLED=false\n' > "$REPO/bin/worktree/worktree.conf"
-    git -C "$REPO" config user.email t@example.com
-    git -C "$REPO" config user.name T
+    make_repo "$REPO"
     git -C "$REPO" add -A
     git -C "$REPO" commit -qm init
     cd "$REPO"

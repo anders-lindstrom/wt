@@ -21,28 +21,28 @@ export PATH="$SRC/bin:$PATH"
 n=0; pass=0; fail=0
 FAILED=(); RAN=()
 
+# make_repo is the bats fixture's, so the examples run against the repository
+# the tests use.
+source "$SRC/test/helpers.bash"
+
 make_plain() {
     local d=$1/myrepo
-    mkdir -p "$d/bin/worktree"
-    git init -q -b main "$d"
-    git -C "$d" config user.email t@e.com; git -C "$d" config user.name T
-    git -C "$d" config core.hooksPath "$d/.git/hooks"
-    printf 'MAIN_BRANCH="main"\nBUILD_INIT_ENABLED=false\n' > "$d/bin/worktree/worktree.conf"
+    make_repo "$d"
     echo hello > "$d/README.md"
     printf 'test:\n\t@true\n' > "$d/Makefile"
-    git -C "$d" add -A; git -C "$d" -c commit.gpgsign=false commit -qm init
+    git -C "$d" add -A; git -C "$d" commit -qm init
     git -C "$d" branch release-2.1
     git -C "$d" tag v2.1
     git -C "$d" remote add origin "$d"; git -C "$d" fetch -q origin
     echo "$d"
 }
+# The same repository before it has a worktree.conf, for wt init.
 make_noconf() {
     local d=$1/myrepo
-    mkdir -p "$d"
-    git init -q -b main "$d"
-    git -C "$d" config user.email t@e.com; git -C "$d" config user.name T
+    make_repo "$d"
+    rm -r "$d/bin"
     echo hello > "$d/README.md"
-    git -C "$d" add -A; git -C "$d" -c commit.gpgsign=false commit -qm init
+    git -C "$d" add -A; git -C "$d" commit -qm init
     echo "$d"
 }
 make_worktrees() {
