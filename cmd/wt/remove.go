@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
 )
@@ -59,7 +58,7 @@ func newRemoveCmd() *cobra.Command {
 				return err
 			}
 			opts := commands.RemoveOptions{Force: force}
-			if !yes && isTerminal(os.Stdin) {
+			if !yes && canAsk(cmd) {
 				opts.Confirm = confirmRemoval(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()))
 			}
 			if meAt != "" {
@@ -88,15 +87,4 @@ func newRemoveCmd() *cobra.Command {
 // printed by the time this runs, so the prompt itself stays one line.
 func confirmRemoval(p *prompter) func(commands.Plan) (bool, error) {
 	return func(commands.Plan) (bool, error) { return p.yesNo("Remove it?", false), nil }
-}
-
-// isTerminal reports whether f is an interactive terminal, which is the whole
-// of the question "is there anyone here to answer a prompt".
-//
-// This asks the kernel rather than reading the file mode. The usual
-// ModeCharDevice test is wrong in exactly the case that matters: /dev/null is a
-// character device, so a script or an agent redirecting stdin from it would be
-// asked a question with nobody there to answer.
-func isTerminal(f *os.File) bool {
-	return term.IsTerminal(int(f.Fd()))
 }

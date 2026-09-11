@@ -1,11 +1,7 @@
 package main
 
 import (
-	"io"
-	"os"
-
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
 )
@@ -33,19 +29,6 @@ func newListCmd() *cobra.Command {
 			return commands.List(ctx, out, terminalWidth(out))
 		},
 	}
-}
-
-// terminalWidth is w's column count when w is a terminal, and 0 otherwise.
-func terminalWidth(w io.Writer) int {
-	f, ok := w.(*os.File)
-	if !ok || !isTerminal(f) {
-		return 0
-	}
-	width, _, err := term.GetSize(int(f.Fd()))
-	if err != nil {
-		return 0
-	}
-	return width
 }
 
 func newStatusCmd() *cobra.Command {

@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -51,7 +50,7 @@ func newSweepCmd() *cobra.Command {
 			}
 			opts := commands.SweepOptions{NoFetch: noFetch, Yes: yes,
 				Width: terminalWidth(cmd.OutOrStdout())}
-			if !yes && isTerminal(os.Stdin) {
+			if !yes && canAsk(cmd) {
 				opts.Confirm = confirmSweep(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()))
 			}
 			return commands.Sweep(ctx, opts, cmd.OutOrStdout())

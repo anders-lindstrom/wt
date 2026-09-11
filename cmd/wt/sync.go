@@ -133,7 +133,7 @@ func newSyncCmd() *cobra.Command {
 				return err
 			}
 			opts := commands.RunOptions{NoFetch: noFetch, Yes: yes, Push: pushMode(push, noPush)}
-			if isTerminal(os.Stdin) {
+			if canAsk(cmd) {
 				// One prompter for both questions, so an answer typed ahead
 				// for the push is not lost to the rebase question's reader.
 				p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
@@ -192,7 +192,7 @@ func newSyncCmd() *cobra.Command {
 				return err
 			}
 			opts := commands.ResumeOptions{Yes: yes, Push: pushMode(push, noPush)}
-			if isTerminal(os.Stdin) {
+			if canAsk(cmd) {
 				p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
 				if !yes {
 					opts.Confirm = confirmAsk(p, "resume")
@@ -244,7 +244,7 @@ func newSyncCmd() *cobra.Command {
 				return err
 			}
 			opts := commands.UndoOptions{Force: force, Yes: yes}
-			if isTerminal(os.Stdin) && !yes {
+			if canAsk(cmd) && !yes {
 				opts.Confirm = confirmAsk(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()), "undo")
 			}
 			return commands.SyncUndo(ctx, args[0], opts, cmd.OutOrStdout())

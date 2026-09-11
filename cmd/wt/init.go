@@ -40,7 +40,7 @@ func newInitCmd() *cobra.Command {
 				return err
 			}
 			opts := commands.InitOptions{Force: force}
-			if !yes && isTerminal(os.Stdin) {
+			if !yes && canAsk(cmd) {
 				opts.Ask = askAnswers(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()))
 			}
 			return commands.Init(r, opts, cmd.OutOrStdout())
