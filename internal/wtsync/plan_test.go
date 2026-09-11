@@ -323,3 +323,27 @@ func TestNeedsYouLine(t *testing.T) {
 		t.Fatalf("line = %q, want %q", got, want)
 	}
 }
+
+func TestRebasedLineNamesWhatToCheck(t *testing.T) {
+	for _, tc := range []struct {
+		check []string
+		want  string
+	}{
+		{nil, "wt: bump rebased on main (+3)"},
+		{[]string{"src/A.java", "b.txt"}, "wt: bump rebased on main (+3). yours to check: A.java, b.txt"},
+		{[]string{"a", "b", "c", "d", "e"}, "wt: bump rebased on main (+3). yours to check: a, b, c +2"},
+	} {
+		if got := RebasedLine("bump", "main", 3, tc.check); got != tc.want {
+			t.Errorf("got %q, want %q", got, tc.want)
+		}
+	}
+}
+
+func TestUndoneLineSaysWhereTheBranchIs(t *testing.T) {
+	if got := UndoneLine("bump", "abc1234", true); got != "wt: bump undone, back at abc1234" {
+		t.Errorf("got %q", got)
+	}
+	if got := UndoneLine("bump", "def5678", false); got != "wt: bump undo stopped partway, still at def5678" {
+		t.Errorf("got %q", got)
+	}
+}

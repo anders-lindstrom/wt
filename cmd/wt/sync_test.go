@@ -36,3 +36,25 @@ func TestConfirmPushDefaultsToYes(t *testing.T) {
 		t.Errorf("question %q", out.String())
 	}
 }
+
+func TestConfirmAskNamesTheWorktreesAndDefaultsToNo(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want bool
+	}{
+		{"\n", false},
+		{"y\n", true},
+		{"YES\n", true},
+		{"n\n", false},
+		{"", false}, // ^D declines
+	} {
+		var out bytes.Buffer
+		got, err := confirmAsk(strings.NewReader(tc.in), &out, "rebase")([]string{"a", "b"})
+		if err != nil || got != tc.want {
+			t.Errorf("answer %q: got %v, %v; want %v", tc.in, got, err, tc.want)
+		}
+		if !strings.Contains(out.String(), "rebase a, b? [y/N]") {
+			t.Errorf("question %q", out.String())
+		}
+	}
+}

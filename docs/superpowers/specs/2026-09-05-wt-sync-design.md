@@ -6,6 +6,16 @@ finding N". Revised again 2026-09-08 after the resolver plan was executed and
 every rebase in the fleet was simulated commit by commit; those changes are
 marked "execution finding".
 
+## What changed on 2026-09-10, in one place
+
+- **An idle session is no longer a refusal** (§1). `claude agents --json` now
+  reports `status`, and only a busy session keeps a verb off a worktree. An
+  idle one is named, asked about once, and told what moved with a §5 line. §5
+  gains the undo lines.
+- **The session wt runs under does not count** (§1). An agent resolving a
+  handover can run `wt sync resume` from inside the worktree.
+- **`claude agents --json` has a 10 s deadline**, and a timeout is a refusal.
+
 ## What changed on 2026-09-09, in one place
 
 - **The merge logic moves into `wt`.** The resolvers built on 2026-09-08 put a
@@ -149,7 +159,17 @@ Two modifiers override the class:
   rebase, and where one collides with an incoming file git refuses on its own,
   which aborts and restores like any other failure. Execution finding; today all
   22 worktrees are clean either way.
-- **agent busy → deferred silently.** No message, no rebase.
+- **agent busy → refused.** A session with `status: busy`, or any background
+  session that is not `done`, keeps `run`, `resume` and `undo` off the
+  worktree, and the table files it under skipped. **An idle session is not a
+  refusal** (2026-09-10). The table marks it `name (idle)`. A verb names it
+  before anything moves and asks once (`--yes` skips; with no terminal it
+  proceeds). It then lists the sessions again after the answer, and ends with
+  the §5 line to relay to that session. A status nobody has seen counts as
+  busy. Several sessions in one worktree show as `name +1`. The session wt
+  itself runs under is not counted: an agent resolving a handover runs
+  `wt sync resume` from inside the worktree. It is recognised by its `pid`
+  being an ancestor of the wt process.
 
 ### Triage is a promise: the rebase is simulated first
 
@@ -204,6 +224,14 @@ simulation errs towards reporting a stop:
 - **rerere** may resolve, at rebase time, a conflict the simulation reports.
   The simulation does not consult the cache, so a `recipe` or `contested`
   prediction can turn out `clean`; never the reverse.
+- **A path a `script` claims cannot be simulated past.** A script can only be
+  asked `--check` in the object store, never for the bytes, so the replay
+  stops at that stop and the class reads `recipe?`. A run may still stop
+  later, and hands over if it does.
+- **`resolvedTree` hashes the resolved bytes as they are.** A real rebase runs
+  clean filters and end-of-line normalisation on what a strategy writes. In a
+  repository whose filters rewrite resolver output, the real tree can differ
+  from the simulated one.
 - **Untracked files** colliding with incoming ones make a real rebase refuse
   where the simulation saw nothing; that refusal aborts and restores like any
   other failure (§1, dirty).
@@ -322,14 +350,31 @@ sweep because it is inconvenient — is how a branch gets to 284 behind.
 ### Agent detection, and what it does not cover
 
 `claude agents --json` lists interactive sessions as well as background ones,
-with `cwd`, `id`, `kind`, `name`, `sessionId`, `startedAt` and `state`. There is
-**no `pid` field** and no explicit idle/busy flag. Execution finding: `state` is
-`null` for every interactive session and `working`, `blocked` or `done` for
-background ones, and **finished background sessions stay in the list** with
-`state: done`. A `done` session is nobody; the tool filters it out or it will
-knock on empty rooms. It is enough to answer "is a Claude session living in this worktree",
-which removes the `devports` process-environment scan and its
-unknown-versus-gone ambiguity.
+with `cwd`, `id`, `kind`, `name`, `pid`, `sessionId`, `startedAt`, `state` and
+`status`. The first draft found no `pid` field and no idle/busy flag.
+
+Execution finding, 2026-09-10: **the CLI now reports `status`, `pid` and
+`waitingFor`**.
+- `status` is `idle` or `busy` on every session.
+- None of the 24 sessions listed that day carried `waitingFor`, so nothing
+  reads it.
+- `state` is absent for every interactive session, and `working`, `blocked` or
+  `done` for background ones.
+- A blocked background session reports `status: idle` while it waits on a
+  question. So idle alone does not mean parked, and only an interactive
+  session is ever idle.
+- **Finished background sessions stay in the list** with `state: done`. A
+  `done` session is nobody; the tool filters it out or it will knock on empty
+  rooms.
+- The call has a 10 s deadline, and a timeout is a refusal like any other
+  failure to list.
+
+It is enough to answer "is a Claude session living in this worktree, and is it
+doing anything". That removes the `devports` process-environment scan and its
+unknown-versus-gone ambiguity. `CLAUDE_CODE_SESSION_ID` is not used to
+recognise the caller, because an environment variable outlives its session in
+anything started from it, such as a tmux server. The `pid` ancestry is used
+instead.
 
 It does **not** see Codex, a dev server, a running test, or an IDE build in an
 otherwise clean worktree. `wt sync` therefore treats "no Claude session" as
@@ -793,7 +838,13 @@ After the fact:
 ```
 wt: state_stats rebased on development (+90). yours to check: SyncWorker.java, CommonPersistence.java
 wt: state_stats needs you. 4 left after resolvers: SyncWorker.java +3 · wt sync resume state_stats
+wt: state_stats undone, back at 3f2a9c1
+wt: state_stats undo stopped partway, still at 8d04e7b
 ```
+
+A finish or an undo under an idle session prints its line for relaying to that
+session. `yours to check` names every path the rebase stopped on, across
+every handover of the run.
 
 ### Where `lands:` comes from
 
@@ -875,6 +926,10 @@ Each section removes a specific expense:
 - **The deferred step, named** — replaces "typecheck, then tests, then format":
   the regeneration is the check.
 
+The `rr-cache` line in the example is not produced. A run passes
+`rerere.autoupdate=false` (§4), so a cached resolution is never staged, and
+`RenderPlan` has nothing to count.
+
 ## 7. Surfaces
 
 `wt sync` **shows**. Changing anything takes a verb. The split follows
@@ -900,8 +955,9 @@ Each section removes a specific expense:
 | `wt sync keep` | the background keeper: fetch on an interval, run the safe classes, queue asks |
 | `wt sync queue` | pending asks, as lines to relay |
 
-Every acting form prints what it is about to touch and, for more than one
-worktree, asks once before starting. `--yes` skips that; `wt sync keep` implies
+Every acting form prints what it is about to touch. It asks once before
+starting when `run` has more than one worktree, or when any verb has an idle
+session in one. `--yes` skips that; `wt sync keep` implies
 it, which is why `keep` acts only on classes that need no conversation.
 
 ### Selecting what to run

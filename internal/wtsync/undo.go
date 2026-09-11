@@ -2,7 +2,6 @@ package wtsync
 
 import (
 	"fmt"
-	"path/filepath"
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -23,7 +22,7 @@ type Restored struct {
 
 // Undo resets every ref the newest run touching branch moved: all safety
 // refs sharing that run's epoch. Every checkout involved, the main one
-// included, is locked and checked (clean, not mid-rebase, no agent) before
+// included, is locked and checked (clean, not mid-rebase, no busy session) before
 // anything is reset, and every branch is checked against where the run left
 // it: a branch that has moved since is refused rather than rewound, because
 // the reset would discard commits the run never made. force turns that
@@ -34,15 +33,11 @@ type Restored struct {
 // its lock is taken over rather than waited out, and the rebase is aborted
 // and its handover removed only after every branch has passed every check.
 // A rebase with no handover is still refused.
+//
+// An idle session is not a refusal here: naming it, and asking about it
+// before a single lock is taken, is the caller's.
 func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch string, now time.Time, force bool) ([]Restored, error) {
-	latest, ok, err := LatestSafety(mainRoot, branch)
-	if err != nil {
-		return nil, err
-	}
-	if !ok {
-		return nil, fmt.Errorf("no run to undo for %s", branch)
-	}
-	all, err := ListSafety(mainRoot)
+	run, all, err := newestRun(mainRoot, branch)
 	if err != nil {
 		return nil, err
 	}
@@ -50,12 +45,6 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 	for _, wt := range worktrees {
 		if wt.Branch != "" && !wt.Detached {
 			byBranch[wt.Branch] = wt
-		}
-	}
-	var run []Safety
-	for _, s := range all {
-		if s.Epoch == latest.Epoch {
-			run = append(run, s)
 		}
 	}
 	var locks []*Lock
@@ -93,12 +82,8 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 			return nil, fmt.Errorf("%s: %w; nothing undone", s.Branch, err)
 		}
 		locks = append(locks, lock)
-		agentPath := wt.Path
-		if resolved, err := filepath.EvalSymlinks(wt.Path); err == nil {
-			agentPath = resolved
-		}
-		if a := AgentAt(agents, agentPath); a != nil {
-			return nil, fmt.Errorf("%s: an agent session is in it: %s; nothing undone", s.Branch, agentLabel(a))
+		if sessions := SessionsAt(agents, wt.Path); len(sessions.Busy()) > 0 {
+			return nil, fmt.Errorf("%s: an agent session is busy in it: %s; nothing undone", s.Branch, sessions.Label(agentLabel))
 		}
 		busy, err := RebaseInProgress(wt.Path)
 		if err != nil {
@@ -291,4 +276,40 @@ func aheadCount(mainRoot, base, tip string) string {
 		return "unknown"
 	}
 	return out
+}
+
+// newestRun is the safety refs of the newest run that touched branch, and
+// every safety ref there is.
+func newestRun(mainRoot, branch string) (run, all []Safety, err error) {
+	latest, ok, err := LatestSafety(mainRoot, branch)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !ok {
+		return nil, nil, fmt.Errorf("no run to undo for %s", branch)
+	}
+	if all, err = ListSafety(mainRoot); err != nil {
+		return nil, nil, err
+	}
+	for _, s := range all {
+		if s.Epoch == latest.Epoch {
+			run = append(run, s)
+		}
+	}
+	return run, all, nil
+}
+
+// UndoBranches is every branch Undo would put back for branch: the branches
+// of the newest run that touched it. A caller names what it is about to
+// touch, and asks, before Undo takes a single lock.
+func UndoBranches(mainRoot, branch string) ([]string, error) {
+	run, _, err := newestRun(mainRoot, branch)
+	if err != nil {
+		return nil, err
+	}
+	branches := make([]string, len(run))
+	for i, s := range run {
+		branches[i] = s.Branch
+	}
+	return branches, nil
 }

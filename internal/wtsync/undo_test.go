@@ -3,6 +3,7 @@ package wtsync
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -556,5 +557,40 @@ func TestUndoDoesNotReportARewindItNeverReached(t *testing.T) {
 	}
 	if head := gitIn(t, wt, "rev-parse", "HEAD"); head != moved {
 		t.Fatalf("feature is at %s, want %s: the rewind was not to happen", head, moved)
+	}
+}
+
+func TestUndoPassesAnIdleSessionAndRefusesABusyOne(t *testing.T) {
+	dir, wt, cfg := runRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"b.txt": "b2\n"}})
+	old := gitIn(t, wt, "rev-parse", "HEAD")
+	if _, err := Rebase(dir, cfg, trunkReq(wt, 5), nil); err != nil {
+		t.Fatal(err)
+	}
+	completed(t, dir, wt, "feature", 5)
+	resolved, _ := filepath.EvalSymlinks(wt)
+	wts := []repo.Worktree{{Path: wt, Branch: "feature"}}
+	busy := []Agent{{Name: "f-1", Cwd: resolved, Kind: "interactive", Status: "idle"}, {Name: "f-2", Cwd: resolved, Kind: "interactive", Status: "busy"}}
+	if _, err := Undo(dir, wts, busy, "feature", time.Now(), false); err == nil || !strings.Contains(err.Error(), "busy in it: f-2 +1") {
+		t.Fatalf("err %v", err)
+	}
+	idle := busy[:1]
+	if _, err := Undo(dir, wts, idle, "feature", time.Now(), false); err != nil {
+		t.Fatal(err)
+	}
+	if gitIn(t, wt, "rev-parse", "HEAD") != old {
+		t.Fatal("not restored under an idle session")
+	}
+}
+
+func TestUndoBranchesNamesEveryBranchOfTheNewestRun(t *testing.T) {
+	dir, wt, cfg := runRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"b.txt": "b2\n"}})
+	if _, err := Rebase(dir, cfg, trunkReq(wt, 5), nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := UndoBranches(dir, "feature"); err != nil || !reflect.DeepEqual(got, []string{"feature"}) {
+		t.Fatalf("got %v, %v", got, err)
+	}
+	if _, err := UndoBranches(dir, "nothing-here"); err == nil || !strings.Contains(err.Error(), "no run to undo") {
+		t.Fatalf("err %v", err)
 	}
 }

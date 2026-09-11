@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -595,5 +596,135 @@ func TestSyncHandoverRecordsTheBlobOfTheFileItNames(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "hand-merged") {
 		t.Fatalf("resume called the strategy's answer hand-merged:\n%s", out.String())
+	}
+}
+
+// resolvedByHand is handedOver with the person's part done: a.txt merged and
+// staged, ready for resume.
+func resolvedByHand(t *testing.T) (ctx *Context, bump, gitDir string) {
+	t.Helper()
+	ctx, bump, gitDir, _ = handedOver(t)
+	writeFile(t, bump, "a.txt", "merged by hand\n")
+	gitOut(t, bump, "add", "--", "a.txt")
+	return ctx, bump, gitDir
+}
+
+func TestSyncResumeRefusesABusySession(t *testing.T) {
+	ctx, bump, gitDir := resolvedByHand(t)
+	opts := noResumeAgents()
+	opts.Agents = idleIn(t, bump, "bump-1")
+	opts.Agents[0].Status = "busy"
+	var out bytes.Buffer
+	err := SyncResume(ctx, "bump", opts, &out)
+	if err == nil || !strings.Contains(err.Error(), "busy in bump: bump-1") {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	if has, _ := wtsync.HasPlan(gitDir); !has {
+		t.Fatal("the refusal removed the handover")
+	}
+}
+
+func TestSyncResumeAsksBeforeFinishingUnderAnIdleSession(t *testing.T) {
+	ctx, bump, gitDir := resolvedByHand(t)
+	st, _, _ := wtsync.ReadState(gitDir)
+	opts := noResumeAgents()
+	opts.Agents = idleIn(t, bump, "bump-1")
+	var asked []string
+	opts.Confirm = func(works []string) (bool, error) { asked = works; return false, nil }
+	var out bytes.Buffer
+	if err := SyncResume(ctx, "bump", opts, &out); err != nil {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	if len(asked) != 1 || asked[0] != "bump" {
+		t.Fatalf("asked %v", asked)
+	}
+	if s := out.String(); !strings.Contains(s, "⚠ bump: session bump-1 (idle) is in it") || !strings.Contains(s, "nothing resumed") {
+		t.Fatalf("out:\n%s", s)
+	}
+	if busy, _ := wtsync.RebaseInProgress(bump); !busy {
+		t.Fatal("the rebase moved on after no")
+	}
+	if has, _ := wtsync.HasPlan(gitDir); !has {
+		t.Fatal("the handover is gone after no")
+	}
+	if l, ok, err := wtsync.ReadLock(gitDir); err != nil || !ok || l.PID != st.Lock.PID || l.Started.Unix() != st.Lock.Started {
+		t.Fatalf("lock %+v %v %v; a no must leave the run's lock alone", l, ok, err)
+	}
+}
+
+// A person can still be editing while the question waits: resume verifies
+// the handover after the answer, not before.
+func TestSyncResumeVerifiesTheHandoverAfterTheAnswer(t *testing.T) {
+	ctx, bump, _ := resolvedByHand(t)
+	opts := noResumeAgents()
+	opts.Agents = idleIn(t, bump, "bump-1")
+	opts.Confirm = func([]string) (bool, error) {
+		writeFile(t, bump, "a.txt", "changed while you were asked\n")
+		return true, nil
+	}
+	var out bytes.Buffer
+	err := SyncResume(ctx, "bump", opts, &out)
+	if err == nil || !strings.Contains(err.Error(), "changed but not staged: a.txt") {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+}
+
+func TestSyncResumeRefusesASessionThatWokeWhileAsked(t *testing.T) {
+	ctx, bump, gitDir := resolvedByHand(t)
+	opts := noResumeAgents()
+	opts.Agents = idleIn(t, bump, "bump-1")
+	opts.Confirm = func([]string) (bool, error) { return true, nil }
+	woke := idleIn(t, bump, "bump-1")
+	woke[0].Status = "busy"
+	opts.Relist = func() ([]wtsync.Agent, error) { return woke, nil }
+	var out bytes.Buffer
+	err := SyncResume(ctx, "bump", opts, &out)
+	if err == nil || !strings.Contains(err.Error(), "busy in it now: bump-1") {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	if has, _ := wtsync.HasPlan(gitDir); !has {
+		t.Fatal("the refusal removed the handover")
+	}
+}
+
+func TestSyncResumeUnderAnIdleSessionEndsWithALineToRelay(t *testing.T) {
+	ctx, bump, _ := resolvedByHand(t)
+	opts := noResumeAgents()
+	opts.Agents = idleIn(t, bump, "bump-1")
+	var out bytes.Buffer
+	if err := SyncResume(ctx, "bump", opts, &out); err != nil {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "⚠ tell bump-1, idle in it:\n    wt: bump rebased on main (+2). yours to check: a.txt, v.txt\n") {
+		t.Fatalf("no relay line:\n%s", out.String())
+	}
+}
+
+// The files of a stop the run resolved before it handed over are still the
+// session's to check once resume finishes: the sidecar carries them.
+func TestSyncResumeRelaysTheStopsBeforeTheHandoverToo(t *testing.T) {
+	ctx, bump := runFixture(t, false)
+	main := ctx.Repo.MainRoot
+	writeFile(t, bump, "a.txt", "branch\n")
+	gitOut(t, bump, "add", "-A")
+	gitOut(t, bump, "commit", "-q", "-m", "a on the branch")
+	writeFile(t, main, "a.txt", "trunk\n")
+	gitOut(t, main, "add", "-A")
+	gitOut(t, main, "commit", "-q", "-m", "a on trunk")
+	gitOut(t, main, "fetch", "-q", "origin")
+	_, st := handOverNow(t, ctx, bump)
+	if st.Stop != 2 || !reflect.DeepEqual(st.Stopped, []string{"v.txt", "a.txt"}) {
+		t.Fatalf("handed over at %d/%d with stopped %v; the fixture is not two stops", st.Stop, st.Total, st.Stopped)
+	}
+	writeFile(t, bump, "a.txt", "merged by hand\n")
+	gitOut(t, bump, "add", "--", "a.txt")
+	opts := noResumeAgents()
+	opts.Agents = idleIn(t, bump, "bump-1")
+	var out bytes.Buffer
+	if err := SyncResume(ctx, "bump", opts, &out); err != nil {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "wt: bump rebased on main (+2). yours to check: v.txt, a.txt\n") {
+		t.Fatalf("no earlier stop in the relay:\n%s", out.String())
 	}
 }

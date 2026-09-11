@@ -3,7 +3,6 @@ package wtsync
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -90,8 +89,8 @@ type Assessment struct {
 	Class     Class
 	Behind    int
 	Ahead     int
-	Dirty     bool // tracked changes; untracked files never block a rebase
-	Agent     *Agent
+	Dirty     bool     // tracked changes; untracked files never block a rebase
+	Sessions  Sessions // every live session in the worktree, shallowest first
 	Replay    Replay
 	Files     []FileOutcome
 	Divergent []Collision // why the class is divergent
@@ -113,14 +112,7 @@ type Assessment struct {
 // onto. A nil cfg means the repository declared nothing: it is still
 // classified, nothing is claimed, and NoConfig says so.
 func Assess(mainRoot, onto string, cfg *Config, wt repo.Worktree, agents []Agent) Assessment {
-	// A worktree's path in the fleet can carry a symlink (e.g. a macOS /tmp
-	// in tests, or a mounted home directory) that an agent's reported cwd
-	// has already resolved; matching them literally would miss the agent.
-	agentPath := wt.Path
-	if resolved, err := filepath.EvalSymlinks(wt.Path); err == nil {
-		agentPath = resolved
-	}
-	a := Assessment{Path: wt.Path, Branch: wt.Branch, NoConfig: cfg == nil, Agent: AgentAt(agents, agentPath)}
+	a := Assessment{Path: wt.Path, Branch: wt.Branch, NoConfig: cfg == nil, Sessions: SessionsAt(agents, wt.Path)}
 	if wt.Detached || wt.Branch == "" {
 		a.Class = Detached
 		return a

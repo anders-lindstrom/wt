@@ -59,7 +59,10 @@ type State struct {
 	Strategy map[string]string `json:"strategy"`
 	Deleted  []string          `json:"deleted"`
 	Left     []string          `json:"left"`
-	Lock     LeftLock          `json:"lock"`
+	// Stopped is every path the rebase stopped on up to this handover,
+	// across every earlier handover of the same run.
+	Stopped []string `json:"stopped"`
+	Lock    LeftLock `json:"lock"`
 }
 
 // writeAtomic writes data to a temp file in the same directory and renames
@@ -207,6 +210,36 @@ func NeedsYouLine(work string, left []string) string {
 	}
 	return fmt.Sprintf("wt: %s needs you. %d left after resolvers: %s · wt sync resume %s",
 		work, len(left), files, work)
+}
+
+// RebasedLine is spec §5's after-the-fact line for a rebase that finished:
+// how many trunk commits it took in and, for a session whose picture of the
+// worktree is now out of date, the files the rebase stopped on.
+func RebasedLine(work, trunk string, landed int, check []string) string {
+	line := fmt.Sprintf("wt: %s rebased on %s (+%d)", work, trunk, landed)
+	if len(check) == 0 {
+		return line
+	}
+	shown := check[:min(len(check), 3)]
+	names := make([]string, len(shown))
+	for i, p := range shown {
+		names[i] = path.Base(p)
+	}
+	line += ". yours to check: " + strings.Join(names, ", ")
+	if n := len(check) - len(shown); n > 0 {
+		line += " +" + strconv.Itoa(n)
+	}
+	return line
+}
+
+// UndoneLine is the line for a session idle in a worktree wt sync undo put
+// back: its files moved again. An undo that aborted a handover but stopped
+// before rewinding it says where the branch still is.
+func UndoneLine(work, at string, rewound bool) string {
+	if !rewound {
+		return fmt.Sprintf("wt: %s undo stopped partway, still at %s", work, at)
+	}
+	return fmt.Sprintf("wt: %s undone, back at %s", work, at)
 }
 
 // PlanInput is everything the brief is rendered from.

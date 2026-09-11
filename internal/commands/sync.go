@@ -99,7 +99,7 @@ func syncInputs(ctx *Context, w io.Writer) (onto string, cfg *wtsync.Config, age
 		fmt.Fprintf(w, "%s declares no %s on %s: reported only, never rebased.\n\n",
 			ctx.Repo.Name, wtsync.ConfigFile, onto)
 	}
-	agents, aerr := wtsync.ListAgents()
+	agents, aerr := wtsync.ListOtherAgents()
 	if aerr != nil {
 		fmt.Fprintf(w, "note: %v\n", aerr)
 	}
@@ -127,14 +127,15 @@ const (
 	syncSections
 )
 
-// sectionOf follows wtsync.Preflight, except that a session in the worktree
-// outranks its state: whatever is in there is that session's to finish, so
-// the worktree is left be rather than put to you.
+// sectionOf follows wtsync.Preflight, except that a busy session in the
+// worktree outranks its state: whatever is in there is that session's to
+// finish, so the worktree is left be rather than put to you. An idle session
+// is filed by the class, like any other worktree.
 func sectionOf(a wtsync.Assessment) syncSection {
 	switch {
 	case a.Err != nil:
 		return sectionNeedsYou
-	case a.Agent != nil, a.Class == wtsync.Detached, a.Class == wtsync.Stale:
+	case len(a.Sessions.Busy()) > 0, a.Class == wtsync.Detached, a.Class == wtsync.Stale:
 		return sectionSkipped
 	case a.Class == wtsync.Clean && !a.Dirty && !a.Paused, a.Class == wtsync.Recipe && !a.Dirty && !a.Paused:
 		return sectionReady
@@ -196,16 +197,28 @@ func classLabel(a wtsync.Assessment) string {
 	return a.Class.String()
 }
 
+// heldBy is who and what is in the worktree: its sessions, and its dirt
+// unless a busy session already keeps a run off it.
 func heldBy(a wtsync.Assessment) string {
-	switch {
-	case a.Agent != nil && a.Agent.Name == "" && a.Agent.Kind == "":
-		return sessionLabel(a.Agent)
-	case a.Agent != nil:
-		return "session " + sessionLabel(a.Agent)
-	case a.Dirty:
-		return "dirty"
+	var held []string
+	if len(a.Sessions) > 0 {
+		held = append(held, whoLabel(a.Sessions))
 	}
-	return ""
+	if a.Dirty && len(a.Sessions.Busy()) == 0 {
+		held = append(held, "dirty")
+	}
+	return strings.Join(held, "  ")
+}
+
+// whoLabel is the sessions in a worktree as a row names them: "session
+// parked-1 (idle) +1", or "an unnamed session" when there is nothing to
+// call the lead by.
+func whoLabel(s wtsync.Sessions) string {
+	label := s.Label(sessionLabel)
+	if lead := s.Lead(); lead != nil && (lead.Name != "" || lead.Kind != "") {
+		return "session " + label
+	}
+	return label
 }
 
 // summaryLines is the overview's detail under a row, one fact per line, with
@@ -366,10 +379,14 @@ func printDetail(w io.Writer, work string, a wtsync.Assessment) {
 func runVerdict(work string, a wtsync.Assessment) string {
 	switch v, why := wtsync.Preflight(a); v {
 	case wtsync.Proceed:
+		verdict := "wt sync run " + work
 		if stop := a.Replay.Stop; a.Class == wtsync.Contested && stop != nil {
-			return fmt.Sprintf("wt sync run %s rebases up to %d/%d and hands that stop to you", work, stop.Index, stop.Total)
+			verdict = fmt.Sprintf("wt sync run %s rebases up to %d/%d and hands that stop to you", work, stop.Index, stop.Total)
 		}
-		return "wt sync run " + work
+		if len(a.Sessions) > 0 {
+			verdict += "; asks first: " + whoLabel(a.Sessions) + " is in it"
+		}
+		return verdict
 	case wtsync.SkipRun:
 		return "skipped: " + why
 	default:
