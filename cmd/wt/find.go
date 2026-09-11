@@ -32,7 +32,7 @@ func newFindCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			ctx := commands.OpenLenient(cwd, os.Stderr)
+			ctx := commands.OpenLenient(cwd, cmd.ErrOrStderr())
 			matches, err := commands.Find(ctx, args[0])
 			if err != nil {
 				return err
@@ -49,9 +49,10 @@ func newFindCmd() *cobra.Command {
 				fmt.Fprintln(cmd.OutOrStdout(), matches[0].Path)
 				return nil
 			}
-			fmt.Fprintf(os.Stderr, "wt: %q is ambiguous:\n", args[0])
+			errw := cmd.ErrOrStderr()
+			fmt.Fprintf(errw, "wt: %q is ambiguous:\n", args[0])
 			for _, m := range matches {
-				fmt.Fprintf(os.Stderr, "  %-24s %-28s %s\n", m.Work, m.Repo, m.Path)
+				fmt.Fprintf(errw, "  %-24s %-28s %s\n", m.Work, m.Repo, m.Path)
 			}
 			return fmt.Errorf("%d candidates", len(matches))
 		},

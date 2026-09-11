@@ -1,8 +1,6 @@
 package main
 
 import (
-	"os"
-
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
@@ -33,7 +31,7 @@ func newHookCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return commands.HookCreate(ctx, cmd.InOrStdin(), cmd.OutOrStdout(), os.Stderr)
+				return commands.HookCreate(ctx, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 			},
 		},
 		&cobra.Command{
@@ -50,7 +48,7 @@ func newHookCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return commands.HookRemove(ctx, cmd.InOrStdin(), os.Stderr)
+				return commands.HookRemove(ctx, cmd.InOrStdin(), cmd.ErrOrStderr())
 			},
 		},
 	)
