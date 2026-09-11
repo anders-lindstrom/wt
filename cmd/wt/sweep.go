@@ -37,7 +37,9 @@ func newSweepCmd() *cobra.Command {
 			"plan and deletes nothing. A branch that moves or is checked out while\n" +
 			"the question is open is kept. Each deletion prints the commit the\n" +
 			"branch was at: `git branch <name> <commit>` restores its commits, not\n" +
-			"its upstream setting.",
+			"its upstream setting.\n\n" +
+			"On a terminal, commit subjects are cut to fit its width. Piped, they\n" +
+			"are printed whole.",
 		Example: "  wt sweep             # fetch, show what is merged, then ask\n" +
 			"  wt sweep --no-fetch  # compare with origin as last fetched\n" +
 			"  wt sweep --yes       # delete without asking (scripts)",
@@ -48,7 +50,8 @@ func newSweepCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			opts := commands.SweepOptions{NoFetch: noFetch, Yes: yes}
+			opts := commands.SweepOptions{NoFetch: noFetch, Yes: yes,
+				Width: terminalWidth(cmd.OutOrStdout())}
 			if !yes && isTerminal(os.Stdin) {
 				opts.Confirm = confirmSweep(cmd.InOrStdin(), cmd.OutOrStdout())
 			}

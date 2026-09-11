@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -164,8 +163,15 @@ func protectedBranch(name string, trunks ...string) bool {
 	return strings.HasPrefix(name, "release")
 }
 
-// Render writes the plan: what goes, and what stays with the reason.
-func (p SweepPlan) Render(w io.Writer) {
+// minSubjectWidth keeps a cut commit subject long enough to recognise; a
+// terminal narrower than that wraps the row instead.
+const minSubjectWidth = 20
+
+// Render writes the plan: what goes, and what stays with the reason. width is
+// the terminal's column count, or 0 when output is not a terminal. Above 0,
+// commit subjects are cut from the right so each row fits; at 0 they are
+// printed whole.
+func (p SweepPlan) Render(w io.Writer, width int) {
 	names := make([]string, len(p.Bases))
 	for i, b := range p.Bases {
 		names[i] = b.Name
@@ -176,29 +182,47 @@ func (p SweepPlan) Render(w io.Writer) {
 		fmt.Fprintln(w, "No merged branches to delete.")
 	} else {
 		fmt.Fprintf(w, "Will be deleted, %s:\n", branchCount(len(p.Delete)))
-		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+		var rows [][]string
 		for _, b := range p.Delete {
-			fmt.Fprintf(tw, "  %s\tmerged into %s\t%s\t%s\n", b.Name, b.MergedInto, b.Date, b.Subject)
+			rows = append(rows, []string{"  " + b.Name, "merged into " + b.MergedInto, b.Date, b.Subject})
 		}
-		_ = tw.Flush()
+		printSubjectTable(w, rows, width)
 	}
 	if len(p.CheckedOut) > 0 {
 		fmt.Fprintln(w, "\nMerged, but in use in a worktree, so kept:")
-		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+		var rows [][]string
 		for _, b := range p.CheckedOut {
-			fmt.Fprintf(tw, "  %s\t%s\n", b.Name, p.checkedOutAdvice(b))
+			rows = append(rows, []string{"  " + b.Name, p.checkedOutAdvice(b)})
 		}
-		_ = tw.Flush()
+		_ = printTable(w, rows)
 	}
 	if len(p.Gone) > 0 {
 		fmt.Fprintln(w, "\nUpstream gone, but not merged, so kept:")
-		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+		var rows [][]string
 		for _, b := range p.Gone {
-			fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\n", b.Name, aheadOf(b.Ahead, p.Bases[0].Name), b.Date, b.Subject)
+			rows = append(rows, []string{"  " + b.Name, aheadOf(b.Ahead, p.Bases[0].Name), b.Date, b.Subject})
 		}
-		_ = tw.Flush()
+		printSubjectTable(w, rows, width)
 	}
 	fmt.Fprintln(w)
+}
+
+// printSubjectTable writes rows whose last column is a commit subject, cut to
+// fit a terminal width columns wide; at width 0 the subject is left whole.
+func printSubjectTable(w io.Writer, rows [][]string, width int) {
+	if width > 0 {
+		fitLastColumn(rows, width, minSubjectWidth, elideRight)
+	}
+	_ = printTable(w, rows)
+}
+
+// elideRight shortens s to at most limit runes, keeping its start.
+func elideRight(s string, limit int) string {
+	r := []rune(s)
+	if len(r) <= limit {
+		return s
+	}
+	return string(r[:limit-1]) + "…"
 }
 
 // checkedOutAdvice says how to finish off a merged branch a worktree is using.
@@ -261,6 +285,8 @@ type SweepOptions struct {
 	// happen because nobody was there to say no.
 	Yes     bool
 	Confirm func(SweepPlan) (bool, error)
+	// Width is the terminal's column count, 0 when output is not a terminal.
+	Width int
 }
 
 // Sweep deletes the local branches trunk already contains.
@@ -279,7 +305,7 @@ func Sweep(ctx *Context, opts SweepOptions, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	plan.Render(w)
+	plan.Render(w, opts.Width)
 	if len(plan.Delete) == 0 {
 		return nil
 	}

@@ -95,7 +95,7 @@ func branchNames(bs []SweepBranch) []string {
 
 func rendered(p SweepPlan) string {
 	var buf bytes.Buffer
-	p.Render(&buf)
+	p.Render(&buf, 0)
 	return buf.String()
 }
 
@@ -370,6 +370,31 @@ func TestSweepPlanWithNoOriginComparesWithLocalTrunk(t *testing.T) {
 	}
 	if !slices.Equal(branchNames(p.Delete), []string{"done-work"}) || p.Delete[0].MergedInto != "main" {
 		t.Errorf("delete = %+v", p.Delete)
+	}
+}
+
+// Commit subjects run long. On a terminal they are cut so each row fits;
+// piped, they are printed whole.
+func TestSweepPlanFitsSubjectsToTheTerminal(t *testing.T) {
+	ctx, main, _ := sweepRepo(t)
+	subject := "a commit subject long enough to push its row past the edge of a narrow terminal"
+	tree := gitOut(t, main, "rev-parse", "main^{tree}")
+	gitIn(t, main, "branch", "done-work", gitOut(t, main, "commit-tree", "-p", "main", "-m", subject, tree))
+	gitIn(t, main, "merge", "-q", "--ff-only", "done-work")
+	p := planOf(t, ctx)
+
+	var buf bytes.Buffer
+	p.Render(&buf, 80)
+	for _, line := range strings.Split(buf.String(), "\n") {
+		if n := len([]rune(line)); n > 80 {
+			t.Errorf("a %d-column line on an 80-column terminal: %q", n, line)
+		}
+	}
+	if !strings.Contains(buf.String(), "done-work") || !strings.Contains(buf.String(), "…") {
+		t.Errorf("want the branch whole and its subject cut:\n%s", buf.String())
+	}
+	if out := rendered(p); !strings.Contains(out, subject) {
+		t.Errorf("piped, the subject is printed whole:\n%s", out)
 	}
 }
 

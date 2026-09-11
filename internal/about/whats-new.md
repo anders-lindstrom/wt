@@ -6,6 +6,11 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-11 22:34 — wt sweep fits the terminal
+
+- On a terminal, `wt sweep` cuts long commit subjects so each row of its plan
+  fits the width, as `wt list` and `wt status` do. Piped, they stay whole.
+
 ## 2026-09-11 22:29 — wt sweep says what holds a merged branch
 
 - A merged branch held by a bisect or rebase is listed as `held by the rebase
