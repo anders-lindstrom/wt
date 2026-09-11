@@ -96,6 +96,7 @@ examples: `wt <command> --help`.
 | `wt adopt <path>` | provision a worktree another tool created (`--relocate`, `--skip-build`) |
 | `wt setup [<source-dir>]` | provision the worktree you are in (`--skip-build`, `--source` to name what ran it) |
 | `wt remove <work>` | remove a worktree; delete its branch when merged, keep it when not (`--yes`, `--me`, `--force` for a locked one) |
+| `wt sweep` | delete local branches already merged into trunk; from the main checkout only (`--no-fetch`, `--yes`) |
 
 **This repository, and this build**
 

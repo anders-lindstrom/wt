@@ -20,6 +20,9 @@ type Config struct {
 	RequiredBins         []string
 	TestCommand          string
 	RunTestsBeforeRemove bool
+	// MainBranchSet says MAIN_BRANCH came from the configuration rather than
+	// from the fallback, which is only a guess from origin or the checkout.
+	MainBranchSet bool
 }
 
 // DefaultTypes is the Conventional Commits set plus the two exploratory kinds
@@ -77,6 +80,10 @@ func FromRaw(r map[string]Value, mainBranchFallback string) (*Config, error) {
 		RequiredBins:         list(r, "REQUIRED_BINS", nil),
 		BuildInitCommand:     str(r, "BUILD_INIT_COMMAND", ""),
 		TestCommand:          str(r, "TEST_COMMAND", ""),
+	}
+
+	if v, ok := r["MAIN_BRANCH"]; ok && v.Scalar != "" {
+		c.MainBranchSet = true
 	}
 
 	// Build init defaults to "on if a command was given". Defaulting it to true

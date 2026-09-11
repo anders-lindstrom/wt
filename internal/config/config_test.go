@@ -76,3 +76,20 @@ func TestAllSevenRealConfigsValidate(t *testing.T) {
 		})
 	}
 }
+
+// A MAIN_BRANCH nobody set is only a guess from the checkout, and a command
+// that deletes what trunk contains has to know the difference.
+func TestFromRawRecordsWhetherMainBranchWasSet(t *testing.T) {
+	set, _ := FromRaw(map[string]Value{"MAIN_BRANCH": {Scalar: "trunk"}}, "guessed")
+	if !set.MainBranchSet || set.MainBranch != "trunk" {
+		t.Errorf("set: %+v", set)
+	}
+	unset, _ := FromRaw(map[string]Value{}, "guessed")
+	if unset.MainBranchSet || unset.MainBranch != "guessed" {
+		t.Errorf("unset: %+v", unset)
+	}
+	empty, _ := FromRaw(map[string]Value{"MAIN_BRANCH": {Scalar: ""}}, "guessed")
+	if empty.MainBranchSet {
+		t.Errorf("an empty MAIN_BRANCH is not set: %+v", empty)
+	}
+}

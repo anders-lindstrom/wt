@@ -87,18 +87,23 @@ func newRemoveCmd() *cobra.Command {
 // printed by the time this runs, so the prompt itself stays one line.
 func confirmRemoval(in io.Reader, out io.Writer) func(commands.Plan) (bool, error) {
 	return func(commands.Plan) (bool, error) {
-		_, _ = fmt.Fprint(out, "Remove it? [y/N] ")
-		line, err := bufio.NewReader(in).ReadString('\n')
-		if err != nil {
-			// EOF on a terminal is ^D: the user declined rather than answered.
-			return false, nil
-		}
-		switch strings.ToLower(strings.TrimSpace(line)) {
-		case "y", "yes":
-			return true, nil
-		}
-		return false, nil
+		return askYesNo(in, out, "Remove it? [y/N] "), nil
 	}
+}
+
+// askYesNo prints question and reads one line, defaulting to no. EOF on a
+// terminal is ^D: the user declined rather than answered.
+func askYesNo(in io.Reader, out io.Writer, question string) bool {
+	_, _ = fmt.Fprint(out, question)
+	line, err := bufio.NewReader(in).ReadString('\n')
+	if err != nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(line)) {
+	case "y", "yes":
+		return true
+	}
+	return false
 }
 
 // isTerminal reports whether f is an interactive terminal, which is the whole
