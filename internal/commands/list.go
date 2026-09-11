@@ -8,8 +8,8 @@ import (
 	"text/tabwriter"
 	"unicode/utf8"
 
-	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/naming"
+	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
 // listPadding is the gap tabwriter leaves after every column but the last.
@@ -90,9 +90,9 @@ func Status(ctx *Context, w io.Writer, width int) error {
 			branch = "(detached)"
 		}
 		state := "clean"
-		if out, err := git.Run(wt.Path, "status", "--porcelain"); err != nil {
+		if dirty, err := repo.Dirty(wt.Path, false); err != nil {
 			state = "unreadable"
-		} else if out != "" {
+		} else if dirty {
 			state = "dirty"
 		}
 		rows = append(rows, []string{branch, state, wt.Path})

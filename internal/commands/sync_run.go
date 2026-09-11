@@ -253,12 +253,12 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 			poison(b, why)
 			continue
 		}
-		status, err := git.Run(p.wt.Path, "--no-optional-locks", "status", "--porcelain", "--untracked-files=no")
+		dirty, err := repo.Dirty(p.wt.Path, true)
 		if err != nil {
 			poison(b, p.work+": changed since triage: could not check: "+err.Error())
 			continue
 		}
-		if status != "" {
+		if dirty {
 			poison(b, p.work+": changed since triage: tracked changes")
 			continue
 		}

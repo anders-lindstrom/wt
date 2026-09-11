@@ -8,7 +8,6 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -123,7 +122,7 @@ func planMigrate(ctx *Context, wt repo.Worktree, dest string) (MigratePlan, erro
 		Work:      work,
 		Superset:  naming.UnderSuperset(wt.Path, ctx.Repo.Parent, ctx.Repo.Name, ctx.Config.TypeSuffix),
 	}
-	if out, err := git.Run(p.From, "status", "--porcelain"); err == nil && out != "" {
+	if dirty, err := repo.Dirty(p.From, false); err == nil && dirty {
 		p.Dirty = true
 	}
 	if err := p.checkBranchIsFree(ctx); err != nil {

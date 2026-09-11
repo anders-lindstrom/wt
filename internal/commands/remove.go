@@ -172,7 +172,7 @@ func planFor(ctx *Context, path string, opts RemoveOptions) Plan {
 	p := Plan{Path: path, Branch: ctx.Repo.BranchAt(path),
 		MainBranch: ctx.Config.MainBranch, Force: opts.Force}
 	p.readLock(ctx, opts)
-	if out, err := git.Run(path, "status", "--porcelain"); err == nil && out != "" {
+	if dirty, err := repo.Dirty(path, false); err == nil && dirty {
 		p.Dirty = true
 	}
 
