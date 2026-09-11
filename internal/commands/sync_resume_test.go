@@ -476,6 +476,78 @@ func TestSyncResumeRefusesARebaseFinishedByHandFromAnotherTip(t *testing.T) {
 	}
 }
 
+// A commit on top of the finished rebase is what a deferred step leaves when
+// an earlier resume committed and then failed to finish. Resume cannot tell
+// that from a person's commit, so it refuses, and the refusal must not claim
+// the commit is one the run never made.
+func TestSyncResumeRefusesACommitAfterTheRebaseWithoutBlamingAPerson(t *testing.T) {
+	ctx, bump, gitDir, _ := handedOver(t)
+	writeFile(t, bump, "a.txt", "merged by hand\n")
+	gitOut(t, bump, "add", "--", "a.txt")
+	gitTry(t, bump, "rebase", "--continue")
+	if busy, err := wtsync.RebaseInProgress(bump); err != nil || busy {
+		t.Fatalf("RebaseInProgress = %v, %v; the hand continue did not finish", busy, err)
+	}
+	writeFile(t, bump, "generated.txt", "regenerated\n")
+	gitOut(t, bump, "add", "--", "generated.txt")
+	gitOut(t, bump, "commit", "-q", "-m", "chore: regenerate")
+
+	var out bytes.Buffer
+	err := SyncResume(ctx, "bump", noResumeAgents(), &out)
+	if err == nil || !strings.Contains(err.Error(), "wt sync undo --force bump") || !strings.Contains(err.Error(), "a deferred step") {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	if strings.Contains(err.Error(), "never made") {
+		t.Fatalf("the refusal calls what may be the run's own commit one it never made: %v", err)
+	}
+	if _, ok, rerr := wtsync.ReadState(gitDir); rerr != nil || !ok {
+		t.Fatalf("ReadState = %v, %v; the refusal removed the handover", ok, rerr)
+	}
+}
+
+// A fresh handover that cannot be written leaves the rebase at its new stop,
+// and may leave a brief and a sidecar describing different stops. Resume says
+// what run says in the same place: where the worktree is, and what puts it
+// back.
+func TestSyncResumeSaysWhereAFailedHandoverLeftTheWorktree(t *testing.T) {
+	ctx, bump := laterStopFixture(t, true)
+	gitDir, st := handOverNow(t, ctx, bump)
+	writeFile(t, bump, "a.txt", "merged by hand\n")
+	gitOut(t, bump, "add", "--", "a.txt")
+	gitTry(t, bump, "rebase", "--continue")
+	// A directory where writeAtomic wants the sidecar's temp file: the fresh
+	// brief is written and the sidecar is not, the mismatched pair.
+	if err := os.Mkdir(wtsync.StatePath(gitDir)+".tmp", 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	err := SyncResume(ctx, st.Branch, noResumeAgents(), &out)
+	s := out.String()
+	if err == nil || !strings.Contains(err.Error(), "bump (failed)") {
+		t.Fatalf("err %v\n%s", err, s)
+	}
+	if !strings.Contains(s, "bump is left mid-rebase with no plan") || !strings.Contains(s, "rebase --abort") {
+		t.Fatalf("resume did not say where it left the worktree:\n%s", s)
+	}
+	if strings.Contains(s, "wt sync undo") {
+		t.Fatalf("resume named undo, which refuses a mid-rebase worktree:\n%s", s)
+	}
+	if busy, berr := wtsync.RebaseInProgress(bump); berr != nil || !busy {
+		t.Fatalf("RebaseInProgress = %v, %v; resume put the rebase back", busy, berr)
+	}
+	if has, herr := wtsync.HasPlan(gitDir); herr != nil || has {
+		t.Fatalf("HasPlan = %v, %v; the old sidecar survived next to a fresh brief", has, herr)
+	}
+	if _, err := os.Stat(wtsync.PlanPath(gitDir)); !os.IsNotExist(err) {
+		t.Fatalf("the brief survived without its sidecar: %v", err)
+	}
+	gitOut(t, bump, "rebase", "--abort")
+	if got := gitOut(t, bump, "rev-parse", "HEAD"); got != st.OldTip {
+		t.Fatalf("the abort the line names left HEAD at %s, not the run's old tip %s", short(got), short(st.OldTip))
+	}
+}
+
 // The whole seam: a run hands over, resume finishes it under the run's epoch,
 // and a plain undo of that run puts the branch back where the run found it.
 func TestSyncUndoPutsBackWhatAResumeFinished(t *testing.T) {

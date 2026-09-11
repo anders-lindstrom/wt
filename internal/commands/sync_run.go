@@ -316,7 +316,12 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 		}
 		tracker.set(&rebaseInFlight{work: p.work, path: p.wt.Path, safety: wtsync.SafetyRef(b, epoch)})
 		res, rerr := wtsync.Rebase(ctx.Repo.MainRoot, cfg, req, w)
-		tracker.set(nil)
+		// A stop being handed over is still a rebase stopped in the worktree,
+		// so the tracker stays set until the handover is written: an interrupt
+		// meanwhile still names the worktree and what puts it back.
+		if rerr != nil || res.Left == nil {
+			tracker.set(nil)
+		}
 		p.result = &res
 		if rerr != nil {
 			fmt.Fprintf(w, "  ✗ failed: %v\n", rerr)
@@ -328,11 +333,13 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 			continue
 		}
 		if res.Left != nil {
-			if err := handOver(ctx, w, handoverInput{
+			herr := handOver(ctx, w, handoverInput{
 				Work: p.work, Branch: b, Path: p.wt.Path, TrunkRef: onto, TrunkSHA: trunkSHA,
 				Onto: req.Onto, Upstream: req.Upstream, Epoch: epoch, Cfg: cfg, Res: res, Lock: p.lock,
-			}); err != nil {
-				fmt.Fprintf(w, "  ✗ failed: %v\n", err)
+			})
+			tracker.set(nil)
+			if herr != nil {
+				fmt.Fprintf(w, "  ✗ failed: %v\n", herr)
 				// The rebase is still in the worktree and there is now no
 				// plan file to explain it, so say the two things a person
 				// cannot see for themselves. Any half-written brief goes:

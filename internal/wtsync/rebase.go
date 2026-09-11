@@ -342,15 +342,16 @@ func VerifyFinished(wtPath, branch, work, onto, old string) error {
 	}
 	// A rebase that finishes moves the branch once, from the tip it started
 	// at, so the reflog entry before HEAD is that tip. Anything else — a
-	// commit and a rebase of the person's own, a pull --rebase — carries
-	// commits the run never made. A reflog that cannot be read proves
-	// nothing, so it refuses too.
+	// commit and a rebase of the person's own, a pull --rebase, or the commit
+	// of a deferred step on an earlier try whose finish failed — cannot be
+	// told apart from here, so none is certified. A reflog that cannot be
+	// read proves nothing, so it refuses too.
 	prev, err := gitEnv(wtPath, rebaseEnv, nil, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch+"@{1}")
 	if err != nil {
 		return fmt.Errorf("%s's reflog cannot show that the rebase started from the run's tip (%s); wt sync undo --force %s puts that tip back and keeps what is there now under a safety ref", branch, short(old), work)
 	}
 	if prev != old {
-		return fmt.Errorf("%s was last moved from %s, not from the tip the run started from (%s), so it carries commits the run never made; wt sync undo --force %s puts the run's tip back and keeps what is there now under a safety ref", branch, short(prev), short(old), work)
+		return fmt.Errorf("%s was last moved from %s, not from the tip the run started from (%s): something besides the rebase committed on it, a person or a deferred step on an earlier try, and resume cannot tell which; wt sync undo --force %s puts the run's tip back and keeps what is there now under a safety ref", branch, short(prev), short(old), work)
 	}
 	return nil
 }
