@@ -38,7 +38,7 @@ func Locate(ctx *Context, arg string) (repo.Worktree, error) {
 	// so a name that happens to look like one cannot pull the answer elsewhere.
 	if abs, ok := absPath(arg); ok {
 		for _, n := range names {
-			if !samePath(n.Path, abs) {
+			if !repo.SamePath(n.Path, abs) {
 				continue
 			}
 			if n.IsMain {
@@ -118,24 +118,6 @@ func absPath(arg string) (string, bool) {
 		return "", false
 	}
 	return abs, true
-}
-
-// samePath compares two paths, resolving symlinks only if the plain comparison
-// fails — macOS puts temporary directories behind /var -> /private/var, and git
-// and the shell do not always agree on which side of it a worktree lives.
-func samePath(a, b string) bool {
-	if filepath.Clean(a) == filepath.Clean(b) {
-		return true
-	}
-	ra, err := filepath.EvalSymlinks(a)
-	if err != nil {
-		return false
-	}
-	rb, err := filepath.EvalSymlinks(b)
-	if err != nil {
-		return false
-	}
-	return ra == rb
 }
 
 // ambiguous builds the error for a work name used under more than one type,

@@ -234,7 +234,7 @@ func (p SweepPlan) checkedOutAdvice(b SweepBranch) string {
 	switch {
 	case b.HeldBy != "":
 		return "held by the " + b.HeldBy + " in " + b.Worktree + "; finish or abort it there, then sweep again"
-	case samePath(b.Worktree, p.MainRoot):
+	case repo.SamePath(b.Worktree, p.MainRoot):
 		return "the main checkout is on it; switch it to trunk, then sweep again"
 	}
 	return "wt remove " + b.Name + " deletes it with its worktree"
@@ -333,7 +333,7 @@ func Sweep(ctx *Context, opts SweepOptions, w io.Writer) error {
 // whole repository, so it runs from its main checkout, which has to be a
 // checkout, against a trunk somebody named.
 func sweepGuard(ctx *Context) error {
-	if !samePath(ctx.Repo.Root, ctx.Repo.MainRoot) {
+	if !repo.SamePath(ctx.Repo.Root, ctx.Repo.MainRoot) {
 		return fmt.Errorf("wt sweep deletes branches across the whole repository, so it runs "+
 			"only from the main checkout, %s\n  wt cd . gets you there", ctx.Repo.MainRoot)
 	}

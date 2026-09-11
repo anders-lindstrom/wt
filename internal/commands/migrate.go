@@ -237,11 +237,9 @@ func (p MigratePlan) checkPathIsFree(ctx *Context) error {
 	if err != nil {
 		return err
 	}
-	for _, wt := range worktrees {
-		if samePath(wt.Path, p.To) {
-			return fmt.Errorf("%s is already the worktree of %s; move that one out of the way first",
-				p.To, wt.Branch)
-		}
+	if wt, ok := worktrees.ByPath(p.To); ok {
+		return fmt.Errorf("%s is already the worktree of %s; move that one out of the way first",
+			p.To, wt.Branch)
 	}
 	if entries, err := os.ReadDir(p.To); err == nil && len(entries) > 0 {
 		return fmt.Errorf("%s already exists and is not empty; move or delete it first", p.To)
@@ -403,7 +401,7 @@ func sessionLabel(a *wtsync.Agent) string {
 // standingIn reports whether cwd, the caller's own working directory, is inside
 // the worktree about to move.
 func standingIn(cwd, path string) bool {
-	return samePath(cwd, path) || strings.HasPrefix(filepath.Clean(cwd),
+	return repo.SamePath(cwd, path) || strings.HasPrefix(filepath.Clean(cwd),
 		filepath.Clean(path)+string(filepath.Separator))
 }
 
@@ -415,10 +413,8 @@ func worktreePathFor(ctx *Context, branch string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	for _, wt := range worktrees {
-		if wt.Branch == branch {
-			return wt.Path, nil
-		}
+	if wt, ok := worktrees.ByBranch(branch); ok {
+		return wt.Path, nil
 	}
 	return "", nil
 }

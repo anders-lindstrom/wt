@@ -35,10 +35,8 @@ func Path(ctx *Context, spec string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	for _, w := range worktrees {
-		if w.Branch == branch {
-			return w.Path, nil
-		}
+	if w, ok := worktrees.ByBranch(branch); ok {
+		return w.Path, nil
 	}
 	// Nothing on the branch the spec implies. A worktree Superset made carries
 	// that tool's one fixed prefix, so reading a type out of the name looks
@@ -46,10 +44,8 @@ func Path(ctx *Context, spec string) (string, error) {
 	// before falling back to a path that does not exist yet.
 	typ, work, _ := naming.ParseSpec(spec, ctx.Config.DefaultType, ctx.Config.Types)
 	if literal := naming.BranchName(ctx.Config.DefaultType, spec, ctx.Config.TypeSuffix); literal != branch {
-		for _, w := range worktrees {
-			if w.Branch == literal {
-				return w.Path, nil
-			}
+		if w, ok := worktrees.ByBranch(literal); ok {
+			return w.Path, nil
 		}
 	}
 	return naming.WorktreeDir(ctx.Repo.Parent, ctx.Repo.Name, typ, work, ctx.Config.TypeSuffix), nil

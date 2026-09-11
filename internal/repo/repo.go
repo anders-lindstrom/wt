@@ -79,14 +79,40 @@ func Discover(cwd string) (*Repo, error) {
 	}, nil
 }
 
+// Worktrees is every worktree of a repository, in the order git lists them.
+type Worktrees []Worktree
+
+// ByPath returns the worktree at p. Paths are compared with SamePath, because
+// the path a user types comes from their shell and on macOS a checkout under
+// /var is /private/var to git; git's own spelling is the one that comes back.
+func (w Worktrees) ByPath(p string) (Worktree, bool) {
+	for _, wt := range w {
+		if SamePath(wt.Path, p) {
+			return wt, true
+		}
+	}
+	return Worktree{}, false
+}
+
+// ByBranch returns the worktree branch is checked out in, the branch a stopped
+// rebase will return HEAD to included.
+func (w Worktrees) ByBranch(branch string) (Worktree, bool) {
+	for _, wt := range w {
+		if wt.Branch == branch {
+			return wt, true
+		}
+	}
+	return Worktree{}, false
+}
+
 // Worktrees lists every worktree of the repository, main first.
-func (r *Repo) Worktrees() ([]Worktree, error) {
+func (r *Repo) Worktrees() (Worktrees, error) {
 	out, err := git.Run(r.MainRoot, "worktree", "list", "--porcelain")
 	if err != nil {
 		return nil, err
 	}
 
-	var list []Worktree
+	var list Worktrees
 	var cur *Worktree
 	flush := func() {
 		if cur != nil {

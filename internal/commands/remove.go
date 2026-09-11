@@ -214,10 +214,8 @@ func (p *Plan) readLock(ctx *Context, opts RemoveOptions) {
 	if err != nil {
 		return
 	}
-	for _, wt := range worktrees {
-		if !samePath(wt.Path, p.Path) || !wt.Locked {
-			continue
-		}
+	wt, ok := worktrees.ByPath(p.Path)
+	if ok && wt.Locked {
 		p.Locked, p.LockReason, p.LockHeld = true, wt.LockReason, true
 		p.LockHolder = wt.LockReason
 		if p.LockHolder == "" {
