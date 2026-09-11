@@ -74,7 +74,7 @@ func goneUpstream(t *testing.T, main, branch string) {
 
 func planOf(t *testing.T, ctx *Context) SweepPlan {
 	t.Helper()
-	bases, err := sweepBases(ctx)
+	bases, err := trunkBases(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

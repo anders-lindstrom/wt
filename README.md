@@ -287,12 +287,15 @@ command that exists here.
 `wt remove` reads the branch **from the worktree**, never rebuilding it from the
 name: once the type can vary, a reconstructed name may belong to an unrelated
 branch. The plan states where that branch stands — merged, or how many commits
-ahead of the main branch it is — for every branch, whoever created it, because
+ahead of `origin/<trunk>` it is — for every branch, whoever created it, because
 that is the fact the whole decision turns on. (`state` is a separate question:
 it is about uncommitted changes in the checkout.)
 
-**A branch merged into the main branch is deleted**, whether or not wt created
-it: merged means nothing is lost. **An unmerged branch is never deleted** — one
+**A branch merged into trunk is deleted**, whether or not wt created it: merged
+means nothing is lost. Merged means reachable from `origin/<trunk>` as last
+fetched, or from the local trunk, so a pull request merged on GitHub counts even
+while the main checkout's trunk is behind; `wt remove` never fetches, and deletes
+the branch only at the commit the plan showed. **An unmerged branch is never deleted** — one
 wt made is renamed out of the `<type>_wt/` prefix so the work survives its
 worktree, and one wt did not make is left exactly as it is. A detached HEAD has
 no branch to touch.

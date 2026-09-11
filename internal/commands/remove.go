@@ -80,11 +80,16 @@ type Plan struct {
 	KeepAs  string // the name BranchKept will rename the branch to
 	Reason  string // why an outcome of BranchUntouched was reached
 	Dirty   bool   // the checkout has uncommitted changes
-	// Merge and Ahead are the branch's standing against the main branch:
-	// Ahead is how many commits it carries that the main branch does not,
-	// and is meaningful only when Merge is Unmerged.
+	// Merge, Ahead and Base are the branch's standing against trunk: Base is
+	// the ref the answer is about (the one containing it when merged, the one
+	// counted against otherwise), and Ahead is how many commits it carries
+	// that Base does not, meaningful only when Merge is Unmerged.
 	Merge MergeState
 	Ahead int
+	Base  string
+	// Tip is the commit the branch was at when the plan was made. A merged
+	// branch is deleted only while it is still there.
+	Tip string
 	// Locked is git's own lock on the checkout, which stops it being removed
 	// at all. LockReason is git's text for it, LockHolder names whoever wt
 	// could work out is behind it, and LockHeld says that holder is still
@@ -170,7 +175,8 @@ func planFor(ctx *Context, path string, opts RemoveOptions) Plan {
 		p.Dirty = true
 	}
 
-	p.Merge, p.Ahead = mergeStanding(ctx, p.Branch)
+	s := mergeStanding(ctx, p.Branch)
+	p.Merge, p.Ahead, p.Base, p.Tip = s.Merge, s.Ahead, s.Base, s.Tip
 
 	switch {
 	case p.Branch == "":
@@ -182,8 +188,8 @@ func planFor(ctx *Context, path string, opts RemoveOptions) Plan {
 		// leaving it behind because wt did not make it only leaves litter.
 		p.Outcome = BranchDeleted
 	case p.Merge == MergeUnknown && !branchIsOurs(ctx, p.Branch):
-		p.Reason = "not created by wt, and there is no " + ctx.Config.MainBranch +
-			" branch here to compare it with"
+		p.Reason = "not created by wt, and " + noTrunkHere(ctx.Config.MainBranch) +
+			" to compare it with"
 	case !branchIsOurs(ctx, p.Branch):
 		p.Reason = "not created by wt and not merged"
 	default:
@@ -252,19 +258,53 @@ func (p Plan) blockedByLock() bool {
 	return p.Locked && p.LockHeld && !p.Force
 }
 
-// mergeStanding reads where a branch stands against the main branch. The
-// count comes from git rather than from "is it merged", because "not merged"
-// on its own does not say whether one commit or thirty are at stake.
-func mergeStanding(ctx *Context, branch string) (MergeState, int) {
-	if branch == "" || !ctx.Repo.BranchExists(branch) ||
-		!ctx.Repo.BranchExists(ctx.Config.MainBranch) {
-		return MergeUnknown, 0
+// standing is where a branch stands against trunk, as mergeStanding read it.
+type standing struct {
+	Merge MergeState
+	Ahead int
+	Base  string
+	Tip   string
+}
+
+// mergeStanding reads where a branch stands against trunk. Merged means its
+// tip is reachable from origin/<trunk> as last fetched or from the local
+// trunk, the bases wt sweep uses: a pull request merged on GitHub counts even
+// while the main checkout's trunk is behind. Nothing is fetched, because
+// remove runs from hooks. The count comes from git rather than from "is it
+// merged", because "not merged" on its own does not say whether one commit or
+// thirty are at stake; it is taken against the first base, origin/<trunk>
+// when there is one.
+func mergeStanding(ctx *Context, branch string) standing {
+	s := standing{Base: ctx.Config.MainBranch}
+	if branch == "" {
+		return s
 	}
-	if ctx.Repo.IsMerged(branch, ctx.Config.MainBranch) {
-		return Merged, 0
+	tip, ok := ctx.Repo.ResolveRef("refs/heads/" + branch)
+	if !ok {
+		return s
 	}
-	ahead, _ := ctx.Repo.CommitsAhead(branch, ctx.Config.MainBranch)
-	return Unmerged, ahead
+	s.Tip = tip
+	bases, err := trunkBases(ctx)
+	if err != nil {
+		return s
+	}
+	s.Merge, s.Base = Unmerged, bases[0].Name
+	for i, b := range bases {
+		n, ok := ctx.Repo.CommitsAhead(tip, b.Tip)
+		if ok && n == 0 {
+			s.Merge, s.Ahead, s.Base = Merged, 0, b.Name
+			return s
+		}
+		if i == 0 {
+			s.Ahead = n
+		}
+	}
+	return s
+}
+
+// noTrunkHere says there is nothing to compare a branch with.
+func noTrunkHere(trunk string) string {
+	return "neither origin/" + trunk + " nor " + trunk + " is here"
 }
 
 // removalFailed turns git's answer into wt's. git's own advice for a locked
@@ -297,18 +337,19 @@ func gitSaid(err error) string {
 //
 // A confirmed removal already re-reads the whole plan under the prompt, but
 // --yes, a script and a hook go straight from the plan to the delete, and the
-// delete is -D: it will not refuse on wt's behalf.
+// delete does not ask whether the branch is merged: it only refuses a branch
+// that moved.
 func stillMerged(ctx *Context, p Plan) error {
-	merge, ahead := mergeStanding(ctx, p.Branch)
-	if merge == Merged {
+	now := mergeStanding(ctx, p.Branch)
+	if now.Merge == Merged {
 		return nil
 	}
 	found := "cannot be compared with it any more — one of the two has gone"
-	if merge == Unmerged {
-		found = "is " + (Plan{Ahead: ahead, MainBranch: p.MainBranch}).aheadOfMain()
+	if now.Merge == Unmerged {
+		found = "is " + aheadOf(now.Ahead, now.Base)
 	}
 	return fmt.Errorf("branch %s was merged into %s when the plan was made and %s now; "+
-		"nothing was deleted", p.Branch, p.MainBranch, found)
+		"nothing was deleted", p.Branch, p.Base, found)
 }
 
 func branchIsOurs(ctx *Context, branch string) bool {
@@ -346,9 +387,9 @@ func (p Plan) Render(w io.Writer) {
 	fmt.Fprintf(w, "  the checkout will be deleted%s\n", p.lockNote())
 	switch p.Outcome {
 	case BranchDeleted:
-		fmt.Fprintf(w, "  the branch will be deleted (merged into %s)\n", p.MainBranch)
+		fmt.Fprintf(w, "  the branch will be deleted (merged into %s)\n", p.Base)
 	case BranchKept:
-		fmt.Fprintf(w, "  the branch will be kept as %q (%s)\n", p.KeepAs, p.aheadOfMain())
+		fmt.Fprintf(w, "  the branch will be kept as %q (%s)\n", p.KeepAs, aheadOf(p.Ahead, p.Base))
 	default:
 		fmt.Fprintf(w, "  no branch will be touched: %s\n", p.Reason)
 	}
@@ -391,24 +432,24 @@ func (p Plan) standing() string {
 	case p.Reason == "already gone":
 		return "already gone"
 	case p.Merge == Merged:
-		return "merged into " + p.MainBranch
+		return "merged into " + p.Base
 	case p.Merge == Unmerged:
-		return "not merged: " + p.aheadOfMain()
+		return "not merged: " + aheadOf(p.Ahead, p.Base)
 	}
-	return "no " + p.MainBranch + " branch here to compare with"
+	return noTrunkHere(p.MainBranch) + " to compare with"
 }
 
-// aheadOfMain counts the work at stake. A branch with no count read — git
-// could not answer — says only that it is unmerged, rather than claiming a
-// zero it does not know.
-func (p Plan) aheadOfMain() string {
-	switch p.Ahead {
+// aheadOf counts the work at stake: n commits base does not have. A branch
+// with no count read — git could not answer — says only that it is unmerged,
+// rather than claiming a zero it does not know.
+func aheadOf(n int, base string) string {
+	switch n {
 	case 0:
-		return "not merged into " + p.MainBranch
+		return "not merged into " + base
 	case 1:
-		return "1 commit ahead of " + p.MainBranch
+		return "1 commit ahead of " + base
 	}
-	return fmt.Sprintf("%d commits ahead of %s", p.Ahead, p.MainBranch)
+	return fmt.Sprintf("%d commits ahead of %s", n, base)
 }
 
 // apply carries out the plan. Every decision was already made in planFor, so
@@ -433,25 +474,36 @@ func (p Plan) apply(ctx *Context, w io.Writer) error {
 			fmt.Fprintln(w, "✓ worktree removed")
 			return err
 		}
-		if err := ctx.Repo.DeleteBranch(p.Branch); err != nil {
-			// The merge check has already passed against the main branch, so
-			// this is a real failure — a locked ref, a broken repository — not
-			// git second-guessing the decision. The worktree is gone by then,
-			// so say so before the reason.
+		// The delete is update-ref's, which does not refuse a branch another
+		// worktree is using the way branch -D does, so that is asked here.
+		inUse, err := checkedOut(ctx)
+		if err == nil && inUse[p.Branch] != "" {
+			err = fmt.Errorf("%s is using it", inUse[p.Branch])
+		}
+		if err != nil {
 			fmt.Fprintln(w, "✓ worktree removed")
-			return fmt.Errorf("branch %s is merged into %s, but deleting it failed: %w",
-				p.Branch, ctx.Config.MainBranch, err)
+			return fmt.Errorf("branch %s is merged into %s but was kept: %w", p.Branch, p.Base, err)
+		}
+		// Only at the tip the plan showed, so a commit that lands after the
+		// plan is never deleted with the branch.
+		if err := ctx.Repo.DeleteBranchAt(p.Branch, p.Tip); err != nil {
+			fmt.Fprintln(w, "✓ worktree removed")
+			if now, ok := ctx.Repo.ResolveRef("refs/heads/" + p.Branch); ok && now != p.Tip {
+				return fmt.Errorf("branch %s was kept: it moved after the plan was made", p.Branch)
+			}
+			return fmt.Errorf("branch %s is merged into %s, but deleting it failed: %s",
+				p.Branch, p.Base, gitSaid(err))
 		}
 		fmt.Fprintf(w, "✓ worktree removed; branch %s was merged into %s and has been deleted\n",
-			p.Branch, ctx.Config.MainBranch)
+			p.Branch, p.Base)
 	case BranchKept:
 		if err := ctx.Repo.RenameBranch(p.Branch, p.KeepAs); err != nil {
-			fmt.Fprintf(w, "✓ worktree removed; keeping branch %s (not merged into %s)\n",
-				p.Branch, ctx.Config.MainBranch)
+			fmt.Fprintf(w, "✓ worktree removed; keeping branch %s (%s)\n",
+				p.Branch, aheadOf(p.Ahead, p.Base))
 			return nil
 		}
-		fmt.Fprintf(w, "✓ worktree removed; branch kept as %s (not merged into %s)\n",
-			p.KeepAs, ctx.Config.MainBranch)
+		fmt.Fprintf(w, "✓ worktree removed; branch kept as %s (%s)\n",
+			p.KeepAs, aheadOf(p.Ahead, p.Base))
 		fmt.Fprintf(w, "  delete it later with: git branch -d %s\n", p.KeepAs)
 	default:
 		fmt.Fprintln(w, "✓ worktree removed")

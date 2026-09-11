@@ -10,9 +10,9 @@ import (
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
-// SweepBase is a ref a branch can be merged into, and the commit it was at
+// TrunkBase is a ref a branch can be merged into, and the commit it was at
 // when it was read.
-type SweepBase struct {
+type TrunkBase struct {
 	Name string // "origin/main" or "main"
 	Tip  string
 }
@@ -27,7 +27,7 @@ type SweepBranch struct {
 
 // SweepPlan is what a sweep is about to do, assembled before anything changes.
 type SweepPlan struct {
-	Bases    []SweepBase
+	Bases    []TrunkBase
 	MainRoot string
 	// Delete is merged and checked out nowhere: it goes.
 	Delete []SweepBranch
@@ -37,19 +37,20 @@ type SweepPlan struct {
 	Gone []SweepBranch
 }
 
-// sweepBases resolves origin/<trunk>, then <trunk>, to commits. origin comes
-// first because merges happen on the remote and the main checkout's trunk is
-// often behind; the local trunk still counts, because commits on it are on
-// trunk too.
-func sweepBases(ctx *Context) ([]SweepBase, error) {
+// trunkBases resolves origin/<trunk> as last fetched, then <trunk>, to
+// commits: what wt sweep and wt remove call merged. origin comes first
+// because merges happen on the remote and the main checkout's trunk is often
+// behind; the local trunk still counts, because commits on it are on trunk
+// too. Nothing is fetched here.
+func trunkBases(ctx *Context) ([]TrunkBase, error) {
 	trunk := ctx.Config.MainBranch
-	var bases []SweepBase
+	var bases []TrunkBase
 	for _, b := range []struct{ name, ref string }{
 		{"origin/" + trunk, "refs/remotes/origin/" + trunk},
 		{trunk, "refs/heads/" + trunk},
 	} {
 		if tip, ok := ctx.Repo.ResolveRef(b.ref); ok {
-			bases = append(bases, SweepBase{Name: b.name, Tip: tip})
+			bases = append(bases, TrunkBase{Name: b.name, Tip: tip})
 		}
 	}
 	if len(bases) == 0 {
@@ -59,7 +60,7 @@ func sweepBases(ctx *Context) ([]SweepBase, error) {
 }
 
 // planSweep reads every fact a sweep depends on and sorts the branches.
-func planSweep(ctx *Context, bases []SweepBase) (SweepPlan, error) {
+func planSweep(ctx *Context, bases []TrunkBase) (SweepPlan, error) {
 	branches, err := ctx.Repo.Branches()
 	if err != nil {
 		return SweepPlan{}, fmt.Errorf("could not list branches: %w", err)
@@ -176,8 +177,7 @@ func (p SweepPlan) Render(w io.Writer) {
 		fmt.Fprintln(w, "\nUpstream gone, but not merged, so kept:")
 		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 		for _, b := range p.Gone {
-			ahead := (Plan{Ahead: b.Ahead, MainBranch: p.Bases[0].Name}).aheadOfMain()
-			fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\n", b.Name, ahead, b.Date, b.Subject)
+			fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\n", b.Name, aheadOf(b.Ahead, p.Bases[0].Name), b.Date, b.Subject)
 		}
 		_ = tw.Flush()
 	}
@@ -185,8 +185,9 @@ func (p SweepPlan) Render(w io.Writer) {
 }
 
 // checkedOutAdvice says how to finish off a merged branch a checkout holds.
-// It does not promise that wt remove deletes the branch: remove compares with
-// the local trunk only, and may keep one merged only into origin's.
+// wt remove reads the same bases as this plan, so it deletes such a branch
+// with its worktree; "sweep again" stays for the checkouts it leaves the
+// branch on, such as one stopped mid-rebase.
 func (p SweepPlan) checkedOutAdvice(b SweepBranch) string {
 	if samePath(b.Worktree, p.MainRoot) {
 		return "the main checkout is on it; switch it to trunk, then sweep again"
@@ -219,7 +220,7 @@ func Sweep(ctx *Context, opts SweepOptions, w io.Writer) error {
 	if err := sweepFetch(ctx, opts.NoFetch, w); err != nil {
 		return err
 	}
-	bases, err := sweepBases(ctx)
+	bases, err := trunkBases(ctx)
 	if err != nil {
 		return err
 	}
@@ -309,7 +310,7 @@ func sweepFetch(ctx *Context, noFetch bool, w io.Writer) error {
 // only at the tip the plan showed, so the plan that was shown is the plan
 // that runs, branch by branch.
 func (p SweepPlan) apply(ctx *Context, w io.Writer) error {
-	bases, err := sweepBases(ctx)
+	bases, err := trunkBases(ctx)
 	if err != nil {
 		return fmt.Errorf("could not re-read trunk before deleting, so nothing was deleted: %w", err)
 	}

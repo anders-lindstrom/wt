@@ -6,6 +6,15 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-11 22:23 — wt remove deletes a branch merged on origin
+
+- Behaviour change: `wt remove` now deletes a branch that `origin/main`
+  contains, as last fetched, instead of renaming it and leaving it behind for
+  `wt sweep`. That is what a pull request merged on GitHub looks like while the
+  main checkout's `main` is behind.
+- It still never fetches, and deletes the branch only at the commit the plan
+  showed: a branch that moves in the meantime is kept.
+
 ## 2026-09-11 07:40 — wt sync fetches trunk before it looks
 
 - `wt sync` and `wt sync <work>` fetch trunk first, so the header names the
