@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -262,27 +261,23 @@ func (p MigratePlan) actions() []string {
 // Render writes the plan: where the worktree goes, what its branch ends up
 // called, and what is in it.
 func (p MigratePlan) Render(w io.Writer) {
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(tw, "  from\t%s\n", p.From)
+	to := p.To
 	if p.To == p.From {
-		fmt.Fprintf(tw, "  to\t%s (already there)\n", p.To)
-	} else {
-		fmt.Fprintf(tw, "  to\t%s\n", p.To)
+		to += " (already there)"
 	}
 	branch := p.Branch
 	if p.NewBranch != p.Branch {
 		branch += " -> " + p.NewBranch
 	}
-	fmt.Fprintf(tw, "  branch\t%s\n", branch)
 	state := "clean"
 	if p.Dirty {
 		state = "uncommitted changes — the move carries them"
 	}
-	fmt.Fprintf(tw, "  state\t%s\n", state)
+	rows := [][]string{{"  from", p.From}, {"  to", to}, {"  branch", branch}, {"  state", state}}
 	if p.Agent != nil {
-		fmt.Fprintf(tw, "  session\t%s is working in it\n", sessionLabel(p.Agent))
+		rows = append(rows, []string{"  session", sessionLabel(p.Agent) + " is working in it"})
 	}
-	_ = tw.Flush()
+	_ = printTable(w, rows)
 	fmt.Fprintln(w)
 
 	// Before the move, and therefore during a dry run — after it, the warning

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
@@ -125,10 +124,10 @@ func absPath(arg string) (string, bool) {
 func ambiguous(arg string, matches []repo.Worktree) error {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%q matches %d worktrees; name one exactly:\n", arg, len(matches))
-	tw := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
+	rows := make([][]string, 0, len(matches))
 	for _, m := range matches {
-		fmt.Fprintf(tw, "  %s\t%s\n", m.Branch, m.Path)
+		rows = append(rows, []string{"  " + m.Branch, m.Path})
 	}
-	_ = tw.Flush()
+	_ = printTable(&b, rows)
 	return errors.New(strings.TrimRight(b.String(), "\n"))
 }

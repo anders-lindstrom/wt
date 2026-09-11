@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"text/tabwriter"
 
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/naming"
@@ -361,14 +360,11 @@ func (p Plan) Render(w io.Writer) {
 		branch = p.Branch + " — " + p.standing()
 	}
 
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(tw, "  path\t%s\n", p.Path)
-	fmt.Fprintf(tw, "  branch\t%s\n", branch)
-	fmt.Fprintf(tw, "  state\t%s\n", state)
+	rows := [][]string{{"  path", p.Path}, {"  branch", branch}, {"  state", state}}
 	if p.Locked {
-		fmt.Fprintf(tw, "  lock\t%s\n", p.lockLine())
+		rows = append(rows, []string{"  lock", p.lockLine()})
 	}
-	_ = tw.Flush()
+	_ = printTable(w, rows)
 	fmt.Fprintln(w)
 
 	// A held lock ends the plan: what would happen to the branch is beside
