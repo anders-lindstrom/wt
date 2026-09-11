@@ -25,12 +25,12 @@ func Parents(mainRoot, trunk string, worktrees []repo.Worktree) (map[string]stri
 		if err != nil {
 			return nil, nil, err
 		}
-		_, err = gitEnv(mainRoot, nil, nil, "merge-base", "--is-ancestor", tip, trunk)
-		if err == nil {
-			continue
-		}
-		if !isExit(err, 1) {
+		_, code, err := gitEnvAllow(mainRoot, nil, nil, 1, "merge-base", "--is-ancestor", tip, trunk)
+		if err != nil {
 			return nil, nil, err
+		}
+		if code == 0 {
+			continue
 		}
 		branches = append(branches, wt.Branch)
 		tips[wt.Branch] = tip
@@ -40,14 +40,8 @@ func Parents(mainRoot, trunk string, worktrees []repo.Worktree) (map[string]stri
 		if tips[a] == tips[b] {
 			return false, nil
 		}
-		_, err := gitEnv(mainRoot, nil, nil, "merge-base", "--is-ancestor", a, b)
-		if err == nil {
-			return true, nil
-		}
-		if isExit(err, 1) {
-			return false, nil
-		}
-		return false, err
+		_, code, err := gitEnvAllow(mainRoot, nil, nil, 1, "merge-base", "--is-ancestor", a, b)
+		return err == nil && code == 0, err
 	}
 	parents := map[string]string{}
 	ambiguous := map[string][]string{}

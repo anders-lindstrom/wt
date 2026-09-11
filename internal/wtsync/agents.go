@@ -1,8 +1,8 @@
 package wtsync
 
 import (
+	"bytes"
 	"cmp"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,8 +12,9 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
+
+	"github.com/anders-lindstrom/wt/internal/git"
 )
 
 // agentsDeadline bounds claude agents --json, the one CLI other than git on
@@ -60,37 +61,31 @@ func ParseAgents(data []byte) ([]Agent, error) {
 }
 
 // ListAgents asks claude for its sessions. No claude on the PATH means no
-// sessions, not an error: "nobody to ask" is a normal state. It runs in its
-// own process group, so the deadline takes down whatever it forked.
+// sessions, not an error: "nobody to ask" is a normal state. It runs through
+// git.RunBounded, so the deadline and an interrupt take down whatever it
+// forked.
 func ListAgents() ([]Agent, error) {
 	exe, err := exec.LookPath("claude")
 	if err != nil {
 		return nil, nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), agentsDeadline)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, exe, "agents", "--json")
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
-	cmd.WaitDelay = 2 * time.Second
-	out, err := cmd.Output()
-	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+	cmd := exec.Command(exe, "agents", "--json")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	timedOut, _, err := git.RunBounded(agentsDeadline, cmd)
+	if timedOut {
 		return nil, fmt.Errorf("claude agents --json did not answer within %s", agentsDeadline)
 	}
 	if err != nil {
-		return nil, errors.New("claude agents --json failed: " + stderrOf(err))
+		// Only a claude that ran and exited has a stderr worth quoting.
+		reason := ""
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			reason = strings.TrimSpace(stderr.String())
+		}
+		return nil, errors.New("claude agents --json failed: " + reason)
 	}
-	return ParseAgents(out)
-}
-
-// stderrOf extracts a command's captured stderr from its exec error, empty
-// when err carries none.
-func stderrOf(err error) string {
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
-		return strings.TrimSpace(string(exit.Stderr))
-	}
-	return ""
+	return ParseAgents(stdout.Bytes())
 }
 
 // Sessions are the live sessions in one worktree, shallowest working
@@ -208,14 +203,14 @@ func WithoutCaller(agents []Agent, ancestors map[int]bool) []Agent {
 // Ancestors is the pid of every process above this one, read from one ps
 // under the same deadline as claude agents.
 func Ancestors() (map[int]bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), agentsDeadline)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, "ps", "-A", "-o", "pid=", "-o", "ppid=").Output()
-	if err != nil {
+	cmd := exec.Command("ps", "-A", "-o", "pid=", "-o", "ppid=")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if _, _, err := git.RunBounded(agentsDeadline, cmd); err != nil {
 		return nil, fmt.Errorf("ps: %w", err)
 	}
 	parent := map[int]int{}
-	for _, line := range strings.Split(string(out), "\n") {
+	for _, line := range strings.Split(out.String(), "\n") {
 		f := strings.Fields(line)
 		if len(f) != 2 {
 			continue

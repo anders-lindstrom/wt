@@ -1,13 +1,14 @@
 package wtsync
 
 import (
-	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/anders-lindstrom/wt/internal/git"
 )
 
 // fakeScript commits an executable to origin's main that answers the
@@ -246,7 +247,7 @@ func TestResolveInWorktreeAScriptThatExitsZeroWithoutStagingIsAnError(t *testing
 // and, for the looping script, its first stderr line, but it must do so under
 // -race with the rest of the suite running: 300 ms did not. The kill is still
 // proven, because a script that is not killed returns only after
-// Timeout+scriptWaitDelay, past the bound both tests check.
+// Timeout+git.WaitDelay, past the bound both tests check.
 const hangTimeout = 2 * time.Second
 
 func TestScriptTimesOutInsteadOfHanging(t *testing.T) {
@@ -268,15 +269,15 @@ func TestScriptTimesOutInsteadOfHanging(t *testing.T) {
 	}
 	// Bounds real wall-clock time: without a real kill, the loop runs forever
 	// and this test would hang past its Timeout instead of returning.
-	if bound := s.Timeout + scriptWaitDelay; elapsed > bound {
-		t.Fatalf("took %s, want under Timeout+scriptWaitDelay (%s): the process group was not actually killed", elapsed, bound)
+	if bound := s.Timeout + git.WaitDelay; elapsed > bound {
+		t.Fatalf("took %s, want under Timeout+git.WaitDelay (%s): the process group was not actually killed", elapsed, bound)
 	}
 }
 
 // TestResolveInWorktreeAcceptsAScriptThatBackgroundsAJob covers a script that
 // resolves the conflict, then backgrounds a job that outlives it (a
 // daemonising build tool, say). The direct process exits 0, but the
-// backgrounded child keeps holding the stderr pipe past scriptWaitDelay, so
+// backgrounded child keeps holding the stderr pipe past git.WaitDelay, so
 // Wait returns exec.ErrWaitDelay for an otherwise-successful run: that must
 // still be treated as exit 0, not a failure.
 func TestResolveInWorktreeAcceptsAScriptThatBackgroundsAJob(t *testing.T) {
@@ -304,8 +305,8 @@ func TestScriptCheckTimesOutInsteadOfHanging(t *testing.T) {
 	if err == nil || IsRefusal(err) || !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("err %v", err)
 	}
-	if bound := s.Timeout + scriptWaitDelay; elapsed > bound {
-		t.Fatalf("took %s, want under Timeout+scriptWaitDelay (%s): the process group was not actually killed", elapsed, bound)
+	if bound := s.Timeout + git.WaitDelay; elapsed > bound {
+		t.Fatalf("took %s, want under Timeout+git.WaitDelay (%s): the process group was not actually killed", elapsed, bound)
 	}
 }
 
@@ -320,30 +321,39 @@ func TestResolveConflictInAWorktreeUsesTheScriptInPlace(t *testing.T) {
 	}
 }
 
-func TestKillRunningTakesDownARegisteredProcessGroup(t *testing.T) {
-	cmd := exec.CommandContext(context.Background(), "sleep", "30")
-	done := make(chan error, 1)
-	go func() { done <- runScript(cmd) }()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		groups.Lock()
-		n := len(groups.pids)
-		groups.Unlock()
-		if n > 0 {
-			break
+// waitForFile polls until path exists: the stub or script under test has
+// started, so a kill now proves something about it.
+func waitForFile(t *testing.T, path string) {
+	t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if _, err := os.Stat(path); err == nil {
+			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("runScript registered no process group")
+			t.Fatalf("%s never appeared: the process under test did not start", path)
 		}
-		time.Sleep(5 * time.Millisecond)
 	}
-	if n := KillRunning(); n < 1 {
-		t.Fatal("KillRunning signalled nothing")
+}
+
+// An interrupt takes down a running script: the script is in the registry
+// git.KillRunning kills, which is what wt's signal handler calls.
+func TestKillRunningTakesDownARunningScript(t *testing.T) {
+	started := filepath.Join(t.TempDir(), "started")
+	dir, wt := stoppedRebaseWithScript(t, "#!/bin/sh\ntouch "+started+"\nexec sleep 30\n")
+	s := Script{Root: dir, Trunk: "origin/main", Run: "bin/resolve", Timeout: time.Minute}
+	done := make(chan error, 1)
+	go func() { done <- s.ResolveInWorktree(wt, "v.txt") }()
+	waitForFile(t, started)
+	if n := git.KillRunning(); n < 1 {
+		t.Fatal("KillRunning signalled nothing: the script was not registered")
 	}
 	select {
-	case <-done:
+	case err := <-done:
+		if err == nil || IsRefusal(err) || strings.Contains(err.Error(), "timed out") {
+			t.Fatalf("err %v, want the killed script's failure", err)
+		}
 	case <-time.After(10 * time.Second):
-		t.Fatal("the command outlived the kill")
+		t.Fatal("the script outlived the kill")
 	}
 }
 
@@ -371,5 +381,22 @@ func TestGitEnvAllowReturnsTheAllowedExitStatus(t *testing.T) {
 	// allow < 0 tolerates nothing: that is gitEnv's contract.
 	if _, _, err := gitEnvAllow(dir, nil, nil, -1, "merge-base", "--is-ancestor", "main", "feature"); err == nil {
 		t.Fatal("allow -1 must not tolerate exit 1")
+	}
+}
+
+// A failing git reads as what it said with how it exited, or only how it
+// exited when it said nothing, and still carries its exit status.
+func TestGitEnvFailureSaysWhatGitSaidAndHowItExited(t *testing.T) {
+	dir := repoWith(t, map[string]string{"a.txt": "a\n"}, nil, nil)
+	_, err := gitEnv(dir, nil, nil, "rev-parse", "--verify", "nope")
+	if err == nil || err.Error() != "fatal: Needed a single revision (exit status 128)" {
+		t.Fatalf("err %v", err)
+	}
+	_, err = gitEnv(dir, nil, nil, "-c", "alias.fail=!exit 3", "fail")
+	if err == nil || err.Error() != "exit status 3" {
+		t.Fatalf("silent failure: err %v", err)
+	}
+	if code, aerr := git.Answer(err, 3); code != 3 || aerr != nil {
+		t.Fatalf("the exit status is lost: %d, %v", code, aerr)
 	}
 }

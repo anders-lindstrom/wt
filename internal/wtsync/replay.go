@@ -315,10 +315,9 @@ func parseMessages(records []string) string {
 }
 
 // catFileRaw reads a blob. Trailing newlines are preserved: gitEnv trims
-// them, so this goes through the same deadline and process group by asking
-// for the raw bytes with gitEnvRaw instead.
+// them, so this asks runGit for the raw bytes instead.
 func catFileRaw(mainRoot, oid string) ([]byte, error) {
-	out, err := gitEnvRaw(mainRoot, "cat-file", "blob", oid)
+	out, err := runGit(mainRoot, nil, nil, "cat-file", "blob", oid)
 	if err != nil {
 		return nil, fmt.Errorf("git cat-file blob %s: %w", oid, err)
 	}

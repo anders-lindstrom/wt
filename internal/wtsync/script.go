@@ -2,7 +2,6 @@ package wtsync
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -10,24 +9,15 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
-	"syscall"
 	"time"
+
+	"github.com/anders-lindstrom/wt/internal/git"
 )
 
 // ScriptTimeout is the deadline a script gets when its rule sets no Timeout,
 // for both --check and --resolve. A script that runs past it is treated as
 // an error, never as a refusal: it did not answer the contract at all.
 const ScriptTimeout = 60 * time.Second
-
-// scriptWaitDelay bounds how long runScript waits for the script's stdio to
-// close once the deadline has killed it. A shell script's last command often
-// runs as a forked child rather than replacing the shell, so killing only
-// the shell can leave that child holding the stderr pipe open; runScript
-// kills the whole process group to take it down too, and this is the
-// fallback for the rare process that detaches from the group before that
-// happens.
-const scriptWaitDelay = 2 * time.Second
 
 // Script is the escape hatch: an executable in the repository answering the
 // three-verb contract. Its directory is materialised from trunk into a
@@ -39,7 +29,9 @@ const scriptWaitDelay = 2 * time.Second
 // therefore returns nil bytes on success: the content is produced by
 // --resolve in the worktree during a real run (ResolveInWorktree), against
 // the worktree's real index. Both --check and --resolve run under a
-// deadline. A script is trusted code from trunk; nothing here sandboxes it.
+// deadline, through git.RunBounded, which kills the script's whole process
+// group when it fires. A script is trusted code from trunk; nothing here
+// sandboxes it.
 type Script struct {
 	Root    string        // the main checkout, where git runs
 	Trunk   string        // the ref the script is read from, e.g. origin/main
@@ -57,56 +49,6 @@ func (s Script) timeout() time.Duration {
 		return s.Timeout
 	}
 	return ScriptTimeout
-}
-
-// groups is the process group of every command runScript still has in
-// flight. A signal handler runs on its own goroutine and has no other way
-// to reach them; without this a Ctrl-C leaves a script, a deferred step or
-// a rebase running after wt has exited.
-var groups = struct {
-	sync.Mutex
-	pids map[int]bool
-}{pids: map[int]bool{}}
-
-// KillRunning sends SIGKILL to the process group of every command runScript
-// is waiting on, and reports how many it signalled. Best effort: a group
-// that has already exited is not an error.
-func KillRunning() int {
-	groups.Lock()
-	defer groups.Unlock()
-	n := 0
-	for pid := range groups.pids {
-		if err := syscall.Kill(-pid, syscall.SIGKILL); err == nil {
-			n++
-		}
-	}
-	return n
-}
-
-// runScript runs cmd, which must already carry a context deadline from
-// exec.CommandContext, in its own process group so that a timeout kills any
-// process the script forked, not just the script's own interpreter; see
-// scriptWaitDelay for why that matters. The group is registered while it
-// runs, so an interrupt can take it down the same way.
-func runScript(cmd *exec.Cmd) error {
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error {
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-	}
-	cmd.WaitDelay = scriptWaitDelay
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	pid := cmd.Process.Pid
-	groups.Lock()
-	groups.pids[pid] = true
-	groups.Unlock()
-	defer func() {
-		groups.Lock()
-		delete(groups.pids, pid)
-		groups.Unlock()
-	}()
-	return cmd.Wait()
 }
 
 // timeoutError formats a deadline-exceeded error, appending the script's
@@ -134,30 +76,27 @@ func (s Script) Resolve(c Conflict) ([]byte, error) {
 	}
 	defer cleanup()
 
-	ctx, cancel := context.WithTimeout(context.Background(), s.timeout())
-	defer cancel()
-	cmd := exec.CommandContext(ctx, exe, "--check", c.Path)
+	cmd := exec.Command(exe, "--check", c.Path)
 	cmd.Dir = s.Root
-	cmd.Env = withEnv("GIT_INDEX_FILE=" + index)
+	cmd.Env = git.Environ("GIT_INDEX_FILE=" + index)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	err = runScript(cmd)
-	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+	timedOut, code, err := git.RunBounded(s.timeout(), cmd)
+	if timedOut {
 		return nil, timeoutError(s.Run, "--check", c.Path, s.timeout(), stderr.String())
 	}
 	if errors.Is(err, exec.ErrWaitDelay) {
 		// The script itself exited 0; only a background child it left
-		// running kept stderr open past scriptWaitDelay. That is not a
+		// running kept stderr open past git.WaitDelay. That is not a
 		// failure of --check.
 		err = nil
 	}
-	var exit *exec.ExitError
 	switch {
 	case err == nil:
 		return nil, nil
-	case errors.As(err, &exit) && exit.ExitCode() == 1:
+	case code == 1:
 		return nil, Refuse(c.Path, "%s does not claim it", s.Run)
-	case errors.As(err, &exit) && exit.ExitCode() == 2:
+	case code == 2:
 		reason := strings.TrimSpace(stderr.String())
 		if reason == "" {
 			reason = "refused without a reason"
@@ -178,24 +117,21 @@ func (s Script) ResolveInWorktree(wtPath, path string) error {
 		return err
 	}
 	defer cleanup()
-	ctx, cancel := context.WithTimeout(context.Background(), s.timeout())
-	defer cancel()
-	cmd := exec.CommandContext(ctx, exe, "--resolve", path)
+	cmd := exec.Command(exe, "--resolve", path)
 	cmd.Dir = wtPath
-	cmd.Env = withEnv("GIT_EDITOR=true")
+	cmd.Env = git.Environ("GIT_EDITOR=true")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	err = runScript(cmd)
-	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+	timedOut, code, err := git.RunBounded(s.timeout(), cmd)
+	if timedOut {
 		return timeoutError(s.Run, "--resolve", path, s.timeout(), stderr.String())
 	}
 	if errors.Is(err, exec.ErrWaitDelay) {
 		// The script itself exited 0; only a background child it left
-		// running kept stderr open past scriptWaitDelay. Let the ls-files
+		// running kept stderr open past git.WaitDelay. Let the ls-files
 		// check below decide whether --resolve actually did its job.
 		err = nil
 	}
-	var exit *exec.ExitError
 	switch {
 	case err == nil:
 		out, lerr := gitEnv(wtPath, nil, nil, "ls-files", "-u", "--", path)
@@ -206,7 +142,7 @@ func (s Script) ResolveInWorktree(wtPath, path string) error {
 			return fmt.Errorf("%s --resolve exited 0 but left %s unmerged", s.Run, path)
 		}
 		return nil
-	case errors.As(err, &exit) && exit.ExitCode() == 2:
+	case code == 2:
 		reason := strings.TrimSpace(stderr.String())
 		if reason == "" {
 			reason = "refused without a reason"
@@ -215,34 +151,6 @@ func (s Script) ResolveInWorktree(wtPath, path string) error {
 	default:
 		return fmt.Errorf("%s --resolve %s: %v: %s", s.Run, path, err, strings.TrimSpace(stderr.String()))
 	}
-}
-
-// withEnv copies the process environment and appends extra, dropping any
-// existing entry for a key extra sets: some getenv implementations return the
-// first match, not the last, so a stale GIT_INDEX_FILE ahead of ours in
-// os.Environ() must not survive.
-func withEnv(extra ...string) []string {
-	keys := make(map[string]bool, len(extra))
-	for _, kv := range extra {
-		if i := strings.IndexByte(kv, '='); i >= 0 {
-			keys[kv[:i]] = true
-		}
-	}
-	env := os.Environ()
-	out := make([]string, 0, len(env)+len(extra))
-	for _, kv := range env {
-		if i := strings.IndexByte(kv, '='); i >= 0 && keys[kv[:i]] {
-			continue
-		}
-		out = append(out, kv)
-	}
-	return append(out, extra...)
-}
-
-// isExit reports whether err is an *exec.ExitError with the given exit code.
-func isExit(err error, code int) bool {
-	var exitErr *exec.ExitError
-	return errors.As(err, &exitErr) && exitErr.ExitCode() == code
 }
 
 // materialise extracts the directory holding run from trunk into a temporary
@@ -267,19 +175,18 @@ func materialise(root, trunk, run string) (exe string, cleanup func(), err error
 	}
 	if _, err := gitEnv(root, nil, nil, "archive", "--format=tar", "-o", archive, trunk, scriptDir); err != nil {
 		cleanup()
+		// A git that ran and exited, rather than one the deadline cut off.
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
 			return "", nil, fmt.Errorf("script %s is not on %s: %w", run, trunk, err)
 		}
 		return "", nil, fmt.Errorf("reading script %s from %s: %w", run, trunk, err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), gitDeadline)
-	defer cancel()
-	tar := exec.CommandContext(ctx, "tar", "-x", "-f", archive, "-C", tree)
+	tar := exec.Command("tar", "-x", "-f", archive, "-C", tree)
 	var tarErr bytes.Buffer
 	tar.Stderr = &tarErr
-	runErr := runScript(tar)
-	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+	timedOut, _, runErr := git.RunBounded(gitDeadline, tar)
+	if timedOut {
 		cleanup()
 		return "", nil, fmt.Errorf("extracting %s from %s: tar timed out after %s", scriptDir, trunk, gitDeadline)
 	}
@@ -335,40 +242,35 @@ const GitTimeout = 10 * time.Minute
 // shortened only by a test proving that a git which never answers is cut off.
 var gitDeadline = GitTimeout
 
-// runGit is the machinery shared by every git invocation in this file: the
-// deadline, the runScript call under it, the timed-out error and the
-// stderr-annotated failure. internal/git.Run has no place for any of this —
-// it takes neither extra environment nor stdin. Errors keep %w wrapping so
-// errors.As can still find the underlying *exec.ExitError (isExit in
-// stack.go depends on this). Callers decide what "failure" means: gitEnv and
-// gitEnvAllow trim stdout and tolerate one exit status, gitEnvRaw trims
-// nothing and tolerates none.
-//
-// GIT_TERMINAL_PROMPT=0 goes in first so a repository wanting credentials
-// fails rather than blocking on a prompt no unattended run can answer; the
-// deadline and the process group come from runScript.
-func runGit(dir string, env []string, stdin io.Reader, args ...string) (stdout []byte, err error) {
-	ctx, cancel := context.WithTimeout(context.Background(), gitDeadline)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = dir
-	cmd.Env = withEnv(append([]string{"GIT_TERMINAL_PROMPT=0"}, env...)...)
-	if stdin != nil {
-		cmd.Stdin = stdin
+// gitError is how a failed git reads in wtsync: what git said with how it
+// exited in parentheses, or only how it exited when it said nothing. A
+// deadline reads as git.Error words it. errors.As still reaches the
+// *git.Error underneath.
+type gitError struct{ err *git.Error }
+
+func (e gitError) Error() string {
+	if e.err.TimedOut {
+		return e.err.Error()
 	}
-	var out, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &stderr
-	runErr := runScript(cmd)
-	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return nil, fmt.Errorf("git %s: timed out after %s", strings.Join(args, " "), gitDeadline)
+	if msg := strings.TrimSpace(e.err.Stderr); msg != "" {
+		return msg + " (" + e.err.Err.Error() + ")"
 	}
-	if runErr != nil {
-		if msg := strings.TrimSpace(stderr.String()); msg != "" {
-			runErr = fmt.Errorf("%s (%w)", msg, runErr)
-		}
-		return out.Bytes(), runErr
+	return e.err.Err.Error()
+}
+
+func (e gitError) Unwrap() error { return e.err }
+
+// runGit runs git in dir through git.Exec under gitDeadline, with extra
+// environment and optional stdin, and returns stdout untrimmed: a blob's
+// trailing newline is content. A failure keeps the stdout git wrote before
+// it, for merge-file, whose exit status counts conflicts.
+func runGit(dir string, env []string, stdin io.Reader, args ...string) ([]byte, error) {
+	out, err := git.Exec(git.Opts{Dir: dir, Env: env, Stdin: stdin, Timeout: gitDeadline}, args...)
+	var gerr *git.Error
+	if errors.As(err, &gerr) {
+		return out, gitError{gerr}
 	}
-	return out.Bytes(), nil
+	return out, err
 }
 
 // gitEnvAllow runs git in dir with extra environment and optional stdin,
@@ -377,30 +279,15 @@ func runGit(dir string, env []string, stdin io.Reader, args ...string) (stdout [
 // use one. Every other non-zero status is an error. allow < 0 allows none.
 func gitEnvAllow(dir string, env []string, stdin io.Reader, allow int, args ...string) (string, int, error) {
 	out, err := runGit(dir, env, stdin, args...)
-	trimmed := strings.TrimRight(string(out), "\n")
+	code, err := git.Answer(err, allow)
 	if err != nil {
-		var exit *exec.ExitError
-		if allow >= 0 && errors.As(err, &exit) && exit.ExitCode() == allow {
-			return trimmed, allow, nil
-		}
 		return "", 0, err
 	}
-	return trimmed, 0, nil
+	return strings.TrimRight(string(out), "\n"), code, nil
 }
 
 // gitEnv runs git and treats every non-zero status as a failure.
 func gitEnv(dir string, env []string, stdin io.Reader, args ...string) (string, error) {
 	out, _, err := gitEnvAllow(dir, env, stdin, -1, args...)
 	return out, err
-}
-
-// gitEnvRaw is gitEnvAllow without trimming: a blob's trailing newline is
-// content, and gitEnv/gitEnvAllow's trailing-newline trim would corrupt it.
-// It allows nothing.
-func gitEnvRaw(dir string, args ...string) ([]byte, error) {
-	out, err := runGit(dir, nil, nil, args...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }

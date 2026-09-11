@@ -58,14 +58,13 @@ func (t *rebaseTracker) get() *rebaseInFlight {
 }
 
 // onInterrupt cleans up what a signal caught mid-flight: it kills every
-// process group wtsync still has running (a script, a deferred step, a git),
-// releases the locks so the next run is not blocked for LockExpiry, and says
-// how to put back a worktree left mid-rebase. Everything is best effort; the
-// process exits straight after.
+// process group still running (a git, a script, a deferred step, claude
+// agents), releases the locks so the next run is not blocked for LockExpiry,
+// and says how to put back a worktree left mid-rebase. Everything is best
+// effort; the process exits straight after.
 func onInterrupt(w io.Writer, locks []*wtsync.Lock, at *rebaseInFlight) {
 	// The groups die first: nothing may still be writing to a worktree
 	// whose lock we are about to drop.
-	wtsync.KillRunning()
 	git.KillRunning()
 	for _, l := range locks {
 		if l != nil {

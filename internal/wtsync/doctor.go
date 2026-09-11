@@ -1,7 +1,6 @@
 package wtsync
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -317,11 +316,11 @@ func treeFileCheck(mainRoot, onto, path, name, detail string) Check {
 		return c
 	}
 	_, err := gitEnv(mainRoot, nil, nil, "cat-file", "-e", onto+":"+path)
-	var exit *exec.ExitError
+	var gerr *git.Error
 	switch {
 	case err == nil:
 		return Check{Name: name, OK: false, Detail: detail}
-	case errors.As(err, &exit) && exit.ExitCode() > 0:
+	case errors.As(err, &gerr) && gerr.Code > 0:
 		// onto is known good, so git answering no means path is absent from it.
 		return Check{Name: name, OK: true}
 	default:
@@ -364,12 +363,11 @@ func lfsCheck(mainRoot, onto string) Check {
 func dockerCheck(probe func() error) Check {
 	if probe == nil {
 		probe = func() error {
-			ctx, cancel := context.WithTimeout(context.Background(), dockerDeadline)
-			defer cancel()
-			cmd := exec.CommandContext(ctx, "docker", "info")
+			cmd := exec.Command("docker", "info")
 			cmd.Stdout = io.Discard
 			cmd.Stderr = io.Discard
-			return cmd.Run()
+			_, _, err := git.RunBounded(dockerDeadline, cmd)
+			return err
 		}
 	}
 	if err := probe(); err != nil {

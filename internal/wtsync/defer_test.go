@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/anders-lindstrom/wt/internal/git"
 )
 
 func deferRepo(t *testing.T) (wt, oldTip, newTip string) {
@@ -123,7 +125,7 @@ func TestRunDeferredTimesOutEvenWhenAnOrphanedChildMakesTheStepLookClean(t *test
 	if rs[0].Err == nil || !strings.Contains(rs[0].Err.Error(), "timed out") {
 		t.Fatalf("rs[0] %+v", rs[0])
 	}
-	if bound := timeout + scriptWaitDelay + time.Second; elapsed > bound {
+	if bound := timeout + git.WaitDelay + time.Second; elapsed > bound {
 		t.Fatalf("elapsed %s exceeds bound %s", elapsed, bound)
 	}
 }

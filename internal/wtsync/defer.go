@@ -2,7 +2,6 @@ package wtsync
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/anders-lindstrom/wt/internal/git"
 )
 
 // DeferredResult is what one deferred step did.
@@ -82,41 +83,29 @@ func runDeferredWithTimeout(wtPath string, steps []Deferred, oldTip, newTip stri
 			fmt.Fprintf(log, "  ▸ %s\n", step.Run)
 		}
 		start := time.Now()
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-		cmd := exec.CommandContext(ctx, "sh", "-c", step.Run)
+		cmd := exec.Command("sh", "-c", step.Run)
 		cmd.Dir = wtPath
-		cmd.Env = withEnv(rebaseEnv...)
+		cmd.Env = git.Environ(rebaseEnv...)
 		var out bytes.Buffer
 		cmd.Stdout, cmd.Stderr = &out, &out
-		runErr := runScript(cmd)
-		cancel()
+		// timedOut wins over ErrWaitDelay: a step that finished cleanly but
+		// left a child detached in its own process group holding stdio open
+		// past the wait delay looks like success, yet ran past its deadline.
+		timedOut, code, runErr := git.RunBounded(timeout, cmd)
 		r.Elapsed = time.Since(start)
 		r.Output = strings.TrimSpace(out.String())
-		// Check the deadline before ErrWaitDelay: a step that finished
-		// cleanly but left a child detached in its own process group (so our
-		// group kill can't reach it) still holding stdout/stderr open past
-		// the wait delay comes back as exec.ErrWaitDelay, which looks like
-		// success — but by the time Wait returns, ctx may already be past
-		// its deadline. The deadline must win over that appearance of
-		// success (script.go's order), or the step is reported as a clean
-		// success despite running past its deadline.
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		var exit *exec.ExitError
+		switch {
+		case timedOut:
 			r.Err = fmt.Errorf("timed out after %s", timeout)
-		} else {
-			if errors.Is(runErr, exec.ErrWaitDelay) {
-				// The step itself exited zero; only a background child it
-				// left running kept stdio open past the wait delay. That is
-				// not a failure of the step.
-				runErr = nil
-			}
-			if runErr != nil {
-				var exit *exec.ExitError
-				if errors.As(runErr, &exit) {
-					r.Err = fmt.Errorf("exit %d", exit.ExitCode())
-				} else {
-					r.Err = runErr
-				}
-			}
+		case errors.Is(runErr, exec.ErrWaitDelay):
+			// The step itself exited zero; only a background child it left
+			// running kept stdio open past the wait delay. That is not a
+			// failure of the step.
+		case errors.As(runErr, &exit):
+			r.Err = fmt.Errorf("exit %d", code)
+		case runErr != nil:
+			r.Err = runErr
 		}
 		if r.Err != nil {
 			failed = true

@@ -9,7 +9,45 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/anders-lindstrom/wt/internal/git"
 )
+
+// An interrupt takes down a claude agents still running: it is in the
+// registry git.KillRunning kills, which is what wt's signal handler calls.
+func TestKillRunningTakesDownARunningClaudeAgents(t *testing.T) {
+	stub := t.TempDir()
+	started := filepath.Join(stub, "started")
+	claude := filepath.Join(stub, "claude")
+	script := "#!/bin/sh\n[ \"$1\" = warm ] && exit 0\ntouch " + started + "\nexec sleep 30\n"
+	if err := os.WriteFile(claude, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec.Command(claude, "warm").Run(); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", stub+string(os.PathListSeparator)+os.Getenv("PATH"))
+	old := agentsDeadline
+	agentsDeadline = time.Minute
+	t.Cleanup(func() { agentsDeadline = old })
+	done := make(chan error, 1)
+	go func() {
+		_, err := ListAgents()
+		done <- err
+	}()
+	waitForFile(t, started)
+	if n := git.KillRunning(); n < 1 {
+		t.Fatal("KillRunning signalled nothing: claude agents was not registered")
+	}
+	select {
+	case err := <-done:
+		if err == nil || strings.Contains(err.Error(), "did not answer") {
+			t.Fatalf("err %v, want the killed claude's failure", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("claude agents outlived the kill")
+	}
+}
 
 // A claude that never answers must not hold a run hostage. The stub's sleep
 // is a child of sh that holds the output pipe, so the deadline has to take
