@@ -225,23 +225,36 @@ echo
 echo "$pass/$n examples ran clean, $fail failed"
 for f in "${FAILED[@]:-}"; do [ -n "$f" ] && echo "  FAILED: $f"; done
 
-# Coverage: every example the binary prints must appear above, verbatim.
+# command_paths <path>: <path> and every command under it, one per line, as
+# the binary's own completion lists them. It runs from $BASE, outside any
+# repository, and keeps only completions with a description, so a work name
+# is never taken for a command.
+command_paths() {
+    local sub
+    printf '%s\n' "$1"
+    while IFS= read -r sub; do
+        case $sub in help|completion) continue;; esac
+        command_paths "${1:+$1 }$sub"
+    done < <(cd "$BASE" && $WT __complete $1 '' 2>/dev/null | awk -F'\t' 'NF > 1 {print $1}')
+}
+
+# Coverage: every example the binary prints must appear above, verbatim. The
+# commands are read from the binary too, so a new one is covered without being
+# listed here; hook is hidden from completion, so it is named.
 echo
 missing=0
-for cmdpath in "" new checkout cd exec list status find sync "sync run" "sync resume" "sync undo" \
-    "sync doctor" migrate adopt setup remove sweep init config doctor path branch about version \
-    hook "hook claude-create" "hook claude-remove"; do
+while IFS= read -r cmdpath; do
     while IFS= read -r line; do
-        line=${line#  }
-        line=$(echo "$line" | sed 's/[[:space:]]*#.*$//' | sed 's/[[:space:]]*$//')
-        [ -z "$line" ] && continue
         found=0
         for r in "${RAN[@]}"; do
             [ "$r" = "$line" ] && { found=1; break; }
             case "$r" in "$line"*) found=1; break;; esac
         done
         if [ $found -eq 0 ]; then echo "  NOT VERIFIED: $line"; missing=$((missing+1)); fi
-    done < <($WT $cmdpath --help 2>/dev/null | awk '/^Examples:/{f=1;next} f&&/^[^ ]/{f=0} f&&/^  wt /{print}')
-done
+    done < <($WT $cmdpath --help 2>/dev/null | awk '
+        /^Examples:/ {f=1; next}
+        f && /^[^ ]/ {f=0}
+        f && /^  wt / {sub(/^  /, ""); sub(/[[:space:]]*#.*$/, ""); sub(/[[:space:]]*$/, ""); print}')
+done < <(command_paths ""; command_paths hook)
 echo "$missing printed examples were not run verbatim"
 echo "fixtures under $BASE"
