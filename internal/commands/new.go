@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-
-	"github.com/anders-lindstrom/wt/internal/naming"
 )
 
 // NewOptions controls worktree creation.
@@ -18,15 +16,10 @@ type NewOptions struct {
 // New creates a branch and its worktree at the canonical path, then provisions
 // it. It returns the worktree path so a caller can cd there.
 func New(ctx *Context, spec string, opts NewOptions, w io.Writer) (string, error) {
-	branch, err := Branch(ctx, spec)
+	typ, work, branch, err := parseWork(ctx, spec)
 	if err != nil {
 		return "", err
 	}
-	typ, work, err := naming.ParseSpec(spec, ctx.Config.DefaultType, ctx.Config.Types)
-	if err != nil {
-		return "", err
-	}
-
 	if ctx.Repo.BranchExists(branch) {
 		return "", fmt.Errorf("branch %s already exists", branch)
 	}

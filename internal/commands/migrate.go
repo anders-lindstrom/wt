@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
@@ -173,7 +174,7 @@ func impliedTarget(ctx *Context, branch string) (typ, work string, ok bool) {
 		return typ, work, true
 	}
 	if head, rest, found := strings.Cut(branch, "/"); found {
-		if rest == "" || strings.Contains(rest, "/") || !typeAllowed(ctx, head) {
+		if rest == "" || strings.Contains(rest, "/") || !slices.Contains(ctx.Config.Types, head) {
 			return "", "", false
 		}
 		return head, rest, true
@@ -194,18 +195,10 @@ func stripTypeSuffix(ctx *Context, dest string) string {
 	if !found || ctx.Config.TypeSuffix == "" {
 		return dest
 	}
-	if base, cut := strings.CutSuffix(head, ctx.Config.TypeSuffix); cut && typeAllowed(ctx, base) {
+	if base, cut := strings.CutSuffix(head, ctx.Config.TypeSuffix); cut && slices.Contains(ctx.Config.Types, base) {
 		return base + "/" + rest
 	}
 	return dest
-}
-
-func checkType(ctx *Context, typ string) error {
-	if typeAllowed(ctx, typ) {
-		return nil
-	}
-	return fmt.Errorf("unknown worktree type %q; expected one of: %s",
-		typ, strings.Join(ctx.Config.Types, " "))
 }
 
 func lastSegment(branch string) string {
