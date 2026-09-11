@@ -6,6 +6,14 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-11 22:29 — wt sweep says what holds a merged branch
+
+- A merged branch held by a bisect or rebase is listed as `held by the rebase
+  in <path>; finish or abort it there`, not sent to `wt remove`, which would
+  find nothing to remove. A plain checkout's line says `wt remove` deletes it.
+- A branch kept at the last moment says why: it moved, was checked out, or
+  trunk no longer contains it.
+
 ## 2026-09-11 22:23 — wt remove deletes a branch merged on origin
 
 - Behaviour change: `wt remove` now deletes a branch that `origin/main`

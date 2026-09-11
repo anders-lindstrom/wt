@@ -21,8 +21,10 @@ func newSweepCmd() *cobra.Command {
 			"from the local trunk, so its commits are on trunk. A branch cut and\n" +
 			"never committed to counts as merged. Squash merges are not recognised.\n\n" +
 			"The plan has three parts:\n" +
-			"  deleted       merged, and checked out in no worktree\n" +
-			"  checked out   merged, but a worktree has it; wt remove it, sweep again\n" +
+			"  deleted       merged, and in use in no worktree\n" +
+			"  in use        merged, but a worktree has it checked out (wt remove\n" +
+			"                deletes it with the worktree), or a bisect or rebase there\n" +
+			"                holds it (finish or abort that, then sweep again)\n" +
 			"  kept          its upstream is gone, but trunk lacks its commits\n\n" +
 			"Trunk is MAIN_BRANCH, or origin's HEAD when that is not set; with\n" +
 			"neither, sweep refuses. Trunk, the branch origin's HEAD names and the\n" +

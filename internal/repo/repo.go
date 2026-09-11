@@ -28,7 +28,7 @@ type Worktree struct {
 	// Holds names the branches this worktree's git operations still hold
 	// besides Branch: the branch a bisect started from, and the branches a
 	// stopped rebase --update-refs will move. git refuses to delete them.
-	Holds []string
+	Holds []Hold
 	// Locked is git's own worktree lock, which stops it being removed.
 	// LockReason is whatever text the locker left, empty when they left
 	// none — Claude Code writes its session name and pid in there.
@@ -136,27 +136,33 @@ func (r *Repo) Worktrees() ([]Worktree, error) {
 // objectID matches a full SHA-1 or SHA-256 commit id.
 var objectID = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)
 
+// Hold is a branch a git operation in progress holds, and which operation.
+type Hold struct {
+	Branch string
+	By     string // "bisect" or "rebase"
+}
+
 // heldBranches reads, from a worktree's git dir, the branches an operation in
 // progress still holds: BISECT_START names the branch a bisect started from
 // (a commit id when it started detached, which holds no branch), and a
 // stopped rebase --update-refs lists each branch it will move on a
 // refs/heads/ line.
-func heldBranches(wtPath string) []string {
+func heldBranches(wtPath string) []Hold {
 	dir, err := gitDirOf(wtPath)
 	if err != nil {
 		return nil
 	}
-	var held []string
+	var held []Hold
 	if b, err := os.ReadFile(filepath.Join(dir, "BISECT_START")); err == nil {
 		start := strings.TrimPrefix(strings.TrimSpace(string(b)), "refs/heads/")
 		if start != "" && !objectID.MatchString(start) {
-			held = append(held, start)
+			held = append(held, Hold{Branch: start, By: "bisect"})
 		}
 	}
 	if b, err := os.ReadFile(filepath.Join(dir, "rebase-merge", "update-refs")); err == nil {
 		for _, line := range strings.Split(string(b), "\n") {
 			if name, ok := strings.CutPrefix(strings.TrimSpace(line), "refs/heads/"); ok && name != "" {
-				held = append(held, name)
+				held = append(held, Hold{Branch: name, By: "rebase"})
 			}
 		}
 	}

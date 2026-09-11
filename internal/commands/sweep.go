@@ -21,8 +21,11 @@ type TrunkBase struct {
 type SweepBranch struct {
 	repo.Branch
 	MergedInto string // the first base containing it, "" when none does
-	Worktree   string // the checkout it is on, "" when none
-	Ahead      int    // commits the first base lacks; read only for Gone
+	Worktree   string // the worktree using it, "" when none
+	// HeldBy is the operation in Worktree holding it, "bisect" or "rebase";
+	// "" when Worktree simply has it checked out.
+	HeldBy string
+	Ahead  int // commits the first base lacks; read only for Gone
 }
 
 // SweepPlan is what a sweep is about to do, assembled before anything changes.
@@ -31,7 +34,7 @@ type SweepPlan struct {
 	MainRoot string
 	// Delete is merged and checked out nowhere: it goes.
 	Delete []SweepBranch
-	// CheckedOut is merged but a checkout has it: kept until that checkout is gone.
+	// CheckedOut is merged but a worktree is using it: kept until that ends.
 	CheckedOut []SweepBranch
 	// Gone lost its upstream ref but trunk lacks its commits: shown, kept.
 	Gone []SweepBranch
@@ -87,7 +90,8 @@ func planSweep(ctx *Context, bases []TrunkBase) (SweepPlan, error) {
 		if protectedBranch(b.Name, ctx.Config.MainBranch, originHead) {
 			continue
 		}
-		sb := SweepBranch{Branch: b, MergedInto: merged[b.Name], Worktree: inUse[b.Name]}
+		use := inUse[b.Name]
+		sb := SweepBranch{Branch: b, MergedInto: merged[b.Name], Worktree: use.Path, HeldBy: use.By}
 		switch {
 		case sb.MergedInto != "" && sb.Worktree != "":
 			p.CheckedOut = append(p.CheckedOut, sb)
@@ -102,28 +106,41 @@ func planSweep(ctx *Context, bases []TrunkBase) (SweepPlan, error) {
 	return p, nil
 }
 
-// checkedOut maps each branch a worktree has in use to its path: the branch it
-// has checked out, and the branches its git operations still hold. It reads
-// the worktrees rather than for-each-ref's worktreepath, which is empty for a
-// branch mid-rebase, for the branch a bisect started from, and for the
-// branches a stopped rebase --update-refs will move: only the operation's own
-// files name those, and git refuses to delete them all the same. A branch's
-// own checkout wins over a hold.
-func checkedOut(ctx *Context) (map[string]string, error) {
+// branchUse is the worktree using a branch, and how.
+type branchUse struct {
+	Path string
+	// By is the operation in Path holding the branch, "bisect" or "rebase";
+	// "" when Path simply has it checked out.
+	By string
+}
+
+// checkedOut maps each branch a worktree has in use to that worktree: the
+// branch it has checked out, and the branches its git operations still hold.
+// It reads the worktrees rather than for-each-ref's worktreepath, which is
+// empty for a branch mid-rebase, for the branch a bisect started from, and
+// for the branches a stopped rebase --update-refs will move: only the
+// operation's own files name those, and git refuses to delete them all the
+// same. A checkout mid-rebase counts as held by that rebase. A branch's own
+// checkout wins over a hold elsewhere.
+func checkedOut(ctx *Context) (map[string]branchUse, error) {
 	worktrees, err := ctx.Repo.Worktrees()
 	if err != nil {
 		return nil, fmt.Errorf("could not list worktrees, so cannot tell which branches are in use: %w", err)
 	}
-	m := map[string]string{}
+	m := map[string]branchUse{}
 	for _, wt := range worktrees {
 		if wt.Branch != "" {
-			m[wt.Branch] = wt.Path
+			use := branchUse{Path: wt.Path}
+			if wt.Rebasing {
+				use.By = "rebase"
+			}
+			m[wt.Branch] = use
 		}
 	}
 	for _, wt := range worktrees {
-		for _, held := range wt.Holds {
-			if _, ok := m[held]; !ok {
-				m[held] = wt.Path
+		for _, h := range wt.Holds {
+			if _, ok := m[h.Branch]; !ok {
+				m[h.Branch] = branchUse{Path: wt.Path, By: h.By}
 			}
 		}
 	}
@@ -166,7 +183,7 @@ func (p SweepPlan) Render(w io.Writer) {
 		_ = tw.Flush()
 	}
 	if len(p.CheckedOut) > 0 {
-		fmt.Fprintln(w, "\nMerged, but checked out, so kept:")
+		fmt.Fprintln(w, "\nMerged, but in use in a worktree, so kept:")
 		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 		for _, b := range p.CheckedOut {
 			fmt.Fprintf(tw, "  %s\t%s\n", b.Name, p.checkedOutAdvice(b))
@@ -184,15 +201,49 @@ func (p SweepPlan) Render(w io.Writer) {
 	fmt.Fprintln(w)
 }
 
-// checkedOutAdvice says how to finish off a merged branch a checkout holds.
-// wt remove reads the same bases as this plan, so it deletes such a branch
-// with its worktree; "sweep again" stays for the checkouts it leaves the
-// branch on, such as one stopped mid-rebase.
+// checkedOutAdvice says how to finish off a merged branch a worktree is using.
+// wt remove reads the same bases as this plan, so for a plain checkout it
+// deletes the branch with the worktree. A branch a bisect or rebase holds is
+// not for wt remove: it finds no worktree on a branch held from elsewhere, and
+// on a checkout mid-rebase it throws the rebase away and leaves the branch.
 func (p SweepPlan) checkedOutAdvice(b SweepBranch) string {
-	if samePath(b.Worktree, p.MainRoot) {
+	switch {
+	case b.HeldBy != "":
+		return "held by the " + b.HeldBy + " in " + b.Worktree + "; finish or abort it there, then sweep again"
+	case samePath(b.Worktree, p.MainRoot):
 		return "the main checkout is on it; switch it to trunk, then sweep again"
 	}
-	return "wt remove " + b.Name + ", then sweep again"
+	return "wt remove " + b.Name + " deletes it with its worktree"
+}
+
+// changedFrom says what became, by the time of this fresh plan, of a branch an
+// earlier plan was going to delete; "" when it can still go at the same tip.
+func (p SweepPlan) changedFrom(ctx *Context, was SweepBranch) string {
+	for _, b := range p.Delete {
+		if b.Name == was.Name && b.Tip == was.Tip {
+			return ""
+		}
+	}
+	for _, b := range p.CheckedOut {
+		if b.Name != was.Name {
+			continue
+		}
+		if b.HeldBy != "" {
+			return fmt.Sprintf("the %s in %s took hold of it after the plan was made", b.HeldBy, b.Worktree)
+		}
+		return fmt.Sprintf("it was checked out in %s after the plan was made", b.Worktree)
+	}
+	now, exists := ctx.Repo.ResolveRef("refs/heads/" + was.Name)
+	head, _ := ctx.Repo.OriginHead()
+	switch {
+	case !exists:
+		return "it was deleted after the plan was made"
+	case now != was.Tip:
+		return "it moved after the plan was made"
+	case protectedBranch(was.Name, ctx.Config.MainBranch, head):
+		return "origin's HEAD names it now"
+	}
+	return "trunk no longer contains it: the merge was undone after the plan was made"
 }
 
 func branchCount(n int) string {
@@ -318,15 +369,10 @@ func (p SweepPlan) apply(ctx *Context, w io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("could not re-read the branches before deleting, so nothing was deleted: %w", err)
 	}
-	still := map[string]string{}
-	for _, b := range fresh.Delete {
-		still[b.Name] = b.Tip
-	}
-
 	kept := 0
 	for _, b := range p.Delete {
-		if tip, ok := still[b.Name]; !ok || tip != b.Tip {
-			fmt.Fprintf(w, "- kept %s: it changed after the plan was made\n", b.Name)
+		if why := fresh.changedFrom(ctx, b); why != "" {
+			fmt.Fprintf(w, "- kept %s: %s\n", b.Name, why)
 			kept++
 			continue
 		}
@@ -338,7 +384,7 @@ func (p SweepPlan) apply(ctx *Context, w io.Writer) error {
 			kept++
 			continue
 		}
-		if inUse[b.Name] != "" {
+		if inUse[b.Name].Path != "" {
 			fmt.Fprintf(w, "- kept %s: it was checked out after the plan was made\n", b.Name)
 			kept++
 			continue

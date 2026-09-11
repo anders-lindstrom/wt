@@ -477,8 +477,8 @@ func (p Plan) apply(ctx *Context, w io.Writer) error {
 		// The delete is update-ref's, which does not refuse a branch another
 		// worktree is using the way branch -D does, so that is asked here.
 		inUse, err := checkedOut(ctx)
-		if err == nil && inUse[p.Branch] != "" {
-			err = fmt.Errorf("%s is using it", inUse[p.Branch])
+		if use := inUse[p.Branch]; err == nil && use.Path != "" {
+			err = fmt.Errorf("%s is using it", use.Path)
 		}
 		if err != nil {
 			fmt.Fprintln(w, "✓ worktree removed")
