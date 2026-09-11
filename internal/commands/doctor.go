@@ -9,6 +9,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/naming"
+	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
 // Doctor reports configuration and worktree health, returning the number of
@@ -73,7 +74,7 @@ func Doctor(ctx *Context, w io.Writer) (int, error) {
 		}
 		// A worktree inside the main checkout pollutes the parent repo and
 		// breaks tooling that walks it.
-		if strings.HasPrefix(wt.Path, ctx.Repo.MainRoot+"/") {
+		if repo.Inside(ctx.Repo.MainRoot, wt.Path, false) {
 			report("%s is inside the main checkout", wt.Path)
 			continue
 		}

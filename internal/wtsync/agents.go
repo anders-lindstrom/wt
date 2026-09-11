@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
 // agentsDeadline bounds claude agents --json, the one CLI other than git on
@@ -100,12 +101,10 @@ func SessionsAt(agents []Agent, path string) Sessions {
 	if resolved, err := filepath.EvalSymlinks(path); err == nil {
 		path = resolved
 	}
-	root := filepath.Clean(path)
 	sep := string(filepath.Separator)
 	var in Sessions
 	for _, a := range agents {
-		cwd := filepath.Clean(a.Cwd)
-		if cwd == root || strings.HasPrefix(cwd, root+sep) {
+		if repo.Inside(path, a.Cwd, false) {
 			in = append(in, a)
 		}
 	}

@@ -352,7 +352,7 @@ func (p MigratePlan) apply(ctx *Context, w io.Writer) (string, error) {
 func pruneEmptyParents(dir, stopAt string) string {
 	stopAt = filepath.Clean(stopAt)
 	removed := ""
-	for dir = filepath.Clean(dir); dir != stopAt && strings.HasPrefix(dir, stopAt+string(filepath.Separator)); dir = filepath.Dir(dir) {
+	for dir = filepath.Clean(dir); dir != stopAt && repo.Inside(stopAt, dir, false); dir = filepath.Dir(dir) {
 		if os.Remove(dir) != nil {
 			break
 		}
@@ -400,8 +400,7 @@ func sessionLabel(a *wtsync.Agent) string {
 // standingIn reports whether cwd, the caller's own working directory, is inside
 // the worktree about to move.
 func standingIn(cwd, path string) bool {
-	return repo.SamePath(cwd, path) || strings.HasPrefix(filepath.Clean(cwd),
-		filepath.Clean(path)+string(filepath.Separator))
+	return repo.Inside(path, cwd, true)
 }
 
 func worktreePathFor(ctx *Context, branch string) (string, error) {

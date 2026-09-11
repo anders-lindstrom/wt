@@ -6,10 +6,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/naming"
+	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
 // SetupOptions controls provisioning.
@@ -90,11 +90,7 @@ func reportLayout(ctx *Context, target string, w io.Writer) {
 // is provisioning — a typo in worktree.conf silently escaping is a real bug,
 // not merely a lint finding.
 func within(base, candidate string) bool {
-	rel, err := filepath.Rel(base, candidate)
-	if err != nil {
-		return false
-	}
-	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	return repo.Inside(base, candidate, false)
 }
 
 func copyConfigDirs(ctx *Context, src, target string, w io.Writer) {
