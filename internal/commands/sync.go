@@ -4,14 +4,30 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
+	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
+
+// syncFetchTimeout bounds the fetch before the overview. The overview is an
+// interactive look, so a remote that has not answered by then is reported and
+// the overview goes on with trunk as last fetched.
+const syncFetchTimeout = 45 * time.Second
+
+// SyncOptions tunes Sync and SyncWorktree.
+type SyncOptions struct {
+	// NoFetch compares with origin/<trunk> as last fetched, without reaching
+	// the network.
+	NoFetch bool
+}
 
 // noteWidth caps a free-text note under a row of the overview; wt sync <work>
 // prints it whole.
@@ -23,9 +39,11 @@ const shownFiles = 3
 
 // Sync prints what a rebase onto trunk would do to every worktree, computed
 // by simulating each rebase in the object store, grouped by what to do about
-// it. It changes nothing; the verbs that do are separate commands.
-func Sync(ctx *Context, w io.Writer) error {
-	onto, cfg, agents, err := syncInputs(ctx, w)
+// it. Unless opts.NoFetch, it fetches trunk first, which moves only
+// origin/<trunk>; nothing else changes, and the verbs that do are separate
+// commands.
+func Sync(ctx *Context, opts SyncOptions, w io.Writer) error {
+	onto, cfg, agents, err := syncInputs(ctx, opts, w)
 	if err != nil {
 		return err
 	}
@@ -72,12 +90,12 @@ func Sync(ctx *Context, w io.Writer) error {
 // nothing cut short, one item per line: every stop the replay reached and its
 // files, every key a collision is made of, every dependency file both sides
 // changed.
-func SyncWorktree(ctx *Context, arg string, w io.Writer) error {
+func SyncWorktree(ctx *Context, arg string, opts SyncOptions, w io.Writer) error {
 	wt, err := Locate(ctx, arg)
 	if err != nil {
 		return err
 	}
-	onto, cfg, agents, err := syncInputs(ctx, w)
+	onto, cfg, agents, err := syncInputs(ctx, opts, w)
 	if err != nil {
 		return err
 	}
@@ -86,14 +104,31 @@ func SyncWorktree(ctx *Context, arg string, w io.Writer) error {
 	return nil
 }
 
-// syncInputs reads what every assessment needs and prints the header: the
-// ref compared against, and a notice when trunk declares nothing.
-func syncInputs(ctx *Context, w io.Writer) (onto string, cfg *wtsync.Config, agents []wtsync.Agent, err error) {
+// syncInputs fetches trunk unless opts.NoFetch, reads what every assessment
+// needs and prints the header: the ref compared against, and a notice when
+// trunk declares nothing. A failed fetch is reported and the overview goes on
+// with trunk as last fetched; only a trunk that is not there at all is an
+// error.
+func syncInputs(ctx *Context, opts SyncOptions, w io.Writer) (onto string, cfg *wtsync.Config, agents []wtsync.Agent, err error) {
 	trunk := ctx.Config.MainBranch
 	onto = "origin/" + trunk
+	// Read before fetching: git empties FETCH_HEAD as a fetch starts, so a
+	// fetch that fails has already lost the age of the last one that did not.
+	asLast := lastFetched(ctx.Repo.MainRoot, time.Now())
+	var fetchErr error
+	if !opts.NoFetch {
+		_, fetchErr = git.RunTimeout(ctx.Repo.MainRoot, syncFetchTimeout, "fetch", "--quiet", "origin", trunk)
+	}
 	cfg, err = wtsync.LoadFromTrunk(ctx.Repo.MainRoot, trunk)
 	if err != nil && !errors.Is(err, wtsync.ErrNoConfig) {
+		if fetchErr != nil {
+			fmt.Fprintf(w, "fetch failed: %s\n", fetchReason(fetchErr))
+		}
 		return "", nil, nil, err
+	}
+	sha, err := git.Run(ctx.Repo.MainRoot, "rev-parse", "--verify", onto)
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("%s is not known here; run git fetch origin", onto)
 	}
 	if cfg == nil {
 		fmt.Fprintf(w, "%s declares no %s on %s: reported only, never rebased.\n\n",
@@ -103,8 +138,63 @@ func syncInputs(ctx *Context, w io.Writer) (onto string, cfg *wtsync.Config, age
 	if aerr != nil {
 		fmt.Fprintf(w, "note: %v\n", aerr)
 	}
-	fmt.Fprintf(w, "against %s (not fetched)\n", onto)
+	ref := onto + " " + short(sha)
+	switch {
+	case opts.NoFetch:
+		fmt.Fprintf(w, "against %s, %s\n", ref, asLast)
+	case fetchErr != nil:
+		fmt.Fprintf(w, "fetch failed: %s; comparing with %s, %s\n", fetchReason(fetchErr), ref, asLast)
+	default:
+		fmt.Fprintf(w, "against %s\n", ref)
+	}
 	return onto, cfg, agents, nil
+}
+
+// lastFetched is "as last fetched" and how long ago, read from the mtime of
+// the repository's FETCH_HEAD, which every fetch writes. Without one there is
+// no age to give, and neither is there when it is empty: git 2.55 empties it
+// as a fetch starts, so an empty one was touched by a fetch that failed.
+func lastFetched(mainRoot string, now time.Time) string {
+	const phrase = "as last fetched"
+	path, err := git.Run(mainRoot, "rev-parse", "--git-path", "FETCH_HEAD")
+	if err != nil {
+		return phrase
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(mainRoot, path)
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Size() == 0 {
+		return phrase
+	}
+	return phrase + " " + ago(now.Sub(info.ModTime()))
+}
+
+// ago is a duration as a person reads an age: the largest whole unit.
+func ago(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d/time.Minute))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d/time.Hour))
+	}
+	return fmt.Sprintf("%dd ago", int(d/(24*time.Hour)))
+}
+
+// fetchReason is the line of a failed fetch's error worth printing: ssh and
+// git can put warnings before the reason and hints after it.
+func fetchReason(err error) string {
+	for _, line := range strings.Split(err.Error(), "\n") {
+		line = strings.TrimSpace(line)
+		lower := strings.ToLower(line)
+		if line == "" || strings.HasPrefix(lower, "warning:") || strings.HasPrefix(lower, "hint:") {
+			continue
+		}
+		return truncate(strings.TrimPrefix(line, "fatal: "), noteWidth)
+	}
+	return truncate(oneLine(err.Error()), noteWidth)
 }
 
 func workName(ctx *Context, branch string) string {

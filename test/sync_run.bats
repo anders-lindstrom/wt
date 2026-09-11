@@ -39,10 +39,17 @@ setup() {
 @test "sync run rebases a recipe worktree, sync goes quiet, undo puts it back" {
     run wt sync
     [ "$status" -eq 0 ]
+    [[ "$output" == *"against origin/main "* ]]
+    [[ "$output" != *"fetched"* ]]
     [[ "$output" == *"bump"*"recipe"* ]]
+
+    run wt sync --no-fetch
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"as last fetched"* ]]
 
     run wt sync run bump --no-fetch
     [ "$status" -eq 0 ]
+    [[ "$output" == *"(as last fetched"* ]]
     [[ "$output" == *"rebased 1 commit"* ]]
 
     run wt sync

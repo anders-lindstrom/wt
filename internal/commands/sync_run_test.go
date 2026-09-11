@@ -137,7 +137,7 @@ func TestSyncRunRebasesARecipeWorktreeAndRunsTheDeferredStep(t *testing.T) {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	s := out.String()
-	for _, want := range []string{"wt sync run  onto origin/main", "stop 1/1", "✓ v.txt owned-line", "✓ rebased 1 commit", "committed 1 file", "as ", "↩ wt sync undo bump puts it back", "push: git -C"} {
+	for _, want := range []string{"wt sync run  onto origin/main", "(as last fetched ", "stop 1/1", "✓ v.txt owned-line", "✓ rebased 1 commit", "committed 1 file", "as ", "↩ wt sync undo bump puts it back", "push: git -C"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("output lacks %q:\n%s", want, s)
 		}

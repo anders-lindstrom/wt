@@ -115,8 +115,10 @@ case. Review finding 13.
    shape completely or refuses. There is no "usually right" strategy.
 3. **Resolvers are fast and never regenerate.** Regeneration is deferred and
    runs once per rebase, not once per conflicting commit.
-4. **Read-only by default.** `wt sync` shows; it never changes anything. A verb
-   performs, and it names what it will touch first.
+4. **Read-only by default.** `wt sync` shows; it changes nothing of yours. It
+   fetches trunk first, which moves only the remote-tracking `origin/<trunk>`;
+   `--no-fetch` skips that. A verb performs, and it names what it will touch
+   first.
 5. **Mutation is opt-in per repo.** A repository with no `.wt-sync.yaml` is
    reported, never rebased.
 6. **A model is involved only where judgement is genuinely required**, and when
@@ -937,7 +939,7 @@ The `rr-cache` line in the example is not produced. A run passes
 
 | looking | |
 |---|---|
-| `wt sync` | the table: every worktree, its class, behind/ahead, who is in it, and what `run` would do |
+| `wt sync` | the table: every worktree, its class, behind/ahead, who is in it, and what `run` would do; fetches trunk first, moving only `origin/<trunk>` (`--no-fetch` skips it) |
 | `wt sync --all` | the same across every configured repo under `$WT_ROOTS` |
 | `wt sync <work>` | one worktree, in full |
 | `wt sync explain <work>` | the first-parent log of what landed, for when the scopes are not enough |
@@ -1130,7 +1132,8 @@ Still to do, for the Go command:
 - A rebase over the 11 signed commits on the Spring Boot branch completes without
   a signing prompt and reports the dropped signatures.
 - `wt sync undo` restores every ref the operation changed.
-- `wt sync` with no verb changes nothing, in any repo, in any class.
+- `wt sync` with no verb changes nothing but the `origin/<trunk>` its fetch
+  moves, in any repo, in any class.
 - `feat_wt/spring-boot-4-jackson-3` classifies `divergent`, and `wt sync run`
   refuses it while `wt sync campaign` produces a brief naming the 49 both-moved
   files and the nine build files.

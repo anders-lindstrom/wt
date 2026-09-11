@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -56,7 +57,7 @@ func TestSyncShowsAHandedOverWorktreeWithoutCallingItDirty(t *testing.T) {
 	ctx, bump := contestedFixture(t)
 	handOverNow(t, ctx, bump)
 	var buf bytes.Buffer
-	if err := Sync(ctx, &buf); err != nil {
+	if err := Sync(ctx, SyncOptions{NoFetch: true}, &buf); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
 	block := syncBlock(t, buf.String(), "bump")
@@ -117,7 +118,7 @@ func TestSyncPrintsTheTriageAndChangesNothing(t *testing.T) {
 	ctx := syncRepo(t)
 	before := gitOut(t, ctx.Repo.MainRoot, "for-each-ref", "refs/heads")
 	var buf bytes.Buffer
-	if err := Sync(ctx, &buf); err != nil {
+	if err := Sync(ctx, SyncOptions{NoFetch: true}, &buf); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
 	out := buf.String()
@@ -137,8 +138,183 @@ func TestSyncPrintsTheTriageAndChangesNothing(t *testing.T) {
 	if after := gitOut(t, ctx.Repo.MainRoot, "for-each-ref", "refs/heads"); after != before {
 		t.Error("sync changed a ref")
 	}
-	if !strings.Contains(out, "not fetched") {
-		t.Errorf("expected the header to say it never fetched:\n%s", out)
+	if !strings.Contains(out, "against origin/main ") || !strings.Contains(out, "as last fetched") {
+		t.Errorf("expected the header to name trunk as last fetched:\n%s", out)
+	}
+}
+
+// fetchHead is the fixture's FETCH_HEAD, whose mtime is the age --no-fetch
+// reports.
+func fetchHead(t *testing.T, main string) string {
+	t.Helper()
+	path := gitOut(t, main, "rev-parse", "--git-path", "FETCH_HEAD")
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(main, path)
+	}
+	return path
+}
+
+func ageFile(t *testing.T, path string, d time.Duration) {
+	t.Helper()
+	old := time.Now().Add(-d)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// wt sync fetches trunk before it looks: a trunk commit nobody fetched yet is
+// what the overview compares with, and the header names it with no warning.
+// The fetch moves origin/main and no branch.
+func TestSyncFetchesTrunkFirst(t *testing.T) {
+	ctx := syncRepo(t)
+	main := ctx.Repo.MainRoot
+	if err := os.WriteFile(filepath.Join(main, "a.txt"), []byte("trunk\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, main, "commit", "-q", "-am", "trunk edits a")
+	head := gitOut(t, main, "rev-parse", "HEAD")
+	before := gitOut(t, main, "for-each-ref", "refs/heads")
+
+	var buf bytes.Buffer
+	if err := Sync(ctx, SyncOptions{}, &buf); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "against origin/main "+head[:7]+"\n") {
+		t.Errorf("want the header to name the fetched trunk %s:\n%s", head[:7], out)
+	}
+	for _, not := range []string{"not fetched", "as last fetched", "fetch failed"} {
+		if strings.Contains(out, not) {
+			t.Errorf("a fetched header says %q:\n%s", not, out)
+		}
+	}
+	if got := gitOut(t, main, "rev-parse", "origin/main"); got != head {
+		t.Errorf("origin/main is %s after the fetch, want %s", got, head)
+	}
+	if after := gitOut(t, main, "for-each-ref", "refs/heads"); after != before {
+		t.Error("the fetch changed a branch")
+	}
+}
+
+// --no-fetch reaches nothing: the header names trunk as last fetched, with
+// the age of FETCH_HEAD, or no age when there is none.
+func TestSyncNoFetchComparesWithTrunkAsLastFetched(t *testing.T) {
+	ctx := syncRepo(t)
+	main := ctx.Repo.MainRoot
+	stale := gitOut(t, main, "rev-parse", "origin/main")
+	if err := os.WriteFile(filepath.Join(main, "a.txt"), []byte("trunk\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, main, "commit", "-q", "-am", "trunk edits a")
+	ageFile(t, fetchHead(t, main), 3*time.Hour+5*time.Minute)
+
+	var buf bytes.Buffer
+	if err := Sync(ctx, SyncOptions{NoFetch: true}, &buf); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if want := "against origin/main " + stale[:7] + ", as last fetched 3h ago\n"; !strings.Contains(buf.String(), want) {
+		t.Errorf("want %q in:\n%s", want, buf.String())
+	}
+	if got := gitOut(t, main, "rev-parse", "origin/main"); got != stale {
+		t.Error("--no-fetch moved origin/main")
+	}
+
+	if err := os.Remove(fetchHead(t, main)); err != nil {
+		t.Fatal(err)
+	}
+	buf.Reset()
+	if err := SyncWorktree(ctx, "bump", SyncOptions{NoFetch: true}, &buf); err != nil {
+		t.Fatalf("SyncWorktree: %v", err)
+	}
+	if want := "against origin/main " + stale[:7] + ", as last fetched\n"; !strings.Contains(buf.String(), want) {
+		t.Errorf("want %q with no FETCH_HEAD in:\n%s", want, buf.String())
+	}
+}
+
+// A fetch that fails does not cost the read-only view: one line says why and
+// what the overview compares with instead, then the table as usual.
+func TestSyncReportsAFailedFetchAndStillPrintsTheTable(t *testing.T) {
+	ctx := syncRepo(t)
+	main := ctx.Repo.MainRoot
+	sha := gitOut(t, main, "rev-parse", "origin/main")
+	gitIn(t, main, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone"))
+	ageFile(t, fetchHead(t, main), 3*time.Hour+5*time.Minute)
+
+	var buf bytes.Buffer
+	if err := Sync(ctx, SyncOptions{}, &buf); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "fetch failed: ") ||
+		!strings.Contains(out, "; comparing with origin/main "+sha[:7]+", as last fetched 3h ago\n") {
+		t.Errorf("want the fetch failure and trunk as last fetched:\n%s", out)
+	}
+	if strings.Count(out, "fetch failed") != 1 {
+		t.Errorf("want the failure on one line:\n%s", out)
+	}
+	if block := syncBlock(t, out, "bump"); !strings.Contains(block, "recipe") {
+		t.Errorf("want the table after a failed fetch:\n%s", out)
+	}
+
+	buf.Reset()
+	if err := SyncWorktree(ctx, "bump", SyncOptions{}, &buf); err != nil {
+		t.Fatalf("SyncWorktree: %v", err)
+	}
+	if !strings.Contains(buf.String(), "fetch failed: ") || !strings.Contains(buf.String(), "  run     wt sync run bump") {
+		t.Errorf("want the failure and the detail:\n%s", buf.String())
+	}
+
+	// The failed fetch emptied FETCH_HEAD, so its fresh mtime is no age.
+	buf.Reset()
+	if err := Sync(ctx, SyncOptions{NoFetch: true}, &buf); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if want := "against origin/main " + sha[:7] + ", as last fetched\n"; !strings.Contains(buf.String(), want) {
+		t.Errorf("want %q after a failed fetch in:\n%s", want, buf.String())
+	}
+}
+
+// With no origin/main even after trying, there is nothing to compare with:
+// that is still an error, with the reason the fetch gave printed first.
+func TestSyncWithNoTrunkAfterAFailedFetchIsAnError(t *testing.T) {
+	ctx := syncRepo(t)
+	main := ctx.Repo.MainRoot
+	gitIn(t, main, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone"))
+	gitIn(t, main, "update-ref", "-d", "refs/remotes/origin/main")
+
+	var buf bytes.Buffer
+	err := Sync(ctx, SyncOptions{}, &buf)
+	if err == nil || !strings.Contains(err.Error(), "origin/main is not known here") {
+		t.Fatalf("want origin/main not known, got %v\n%s", err, buf.String())
+	}
+	if !strings.Contains(buf.String(), "fetch failed: ") {
+		t.Errorf("want the fetch failure printed:\n%s", buf.String())
+	}
+}
+
+func TestAgoIsTheLargestWholeUnit(t *testing.T) {
+	for d, want := range map[time.Duration]string{
+		30 * time.Second:          "just now",
+		59 * time.Minute:          "59m ago",
+		3*time.Hour + time.Minute: "3h ago",
+		47 * time.Hour:            "47h ago",
+		50 * time.Hour:            "2d ago",
+	} {
+		if got := ago(d); got != want {
+			t.Errorf("ago(%s) = %q, want %q", d, got, want)
+		}
+	}
+}
+
+func TestFetchReasonSkipsWarningsAndHints(t *testing.T) {
+	err := errors.New("Warning: Identity file /tmp/key not accessible: No such file or directory.\n" +
+		"ssh: Could not resolve hostname github.com: nodename nor servname provided\n" +
+		"fatal: Could not read from remote repository.")
+	if got, want := fetchReason(err), "ssh: Could not resolve hostname github.com: nodename nor servname provided"; got != want {
+		t.Errorf("fetchReason = %q, want %q", got, want)
+	}
+	if got := fetchReason(errors.New("fatal: unable to access 'https://x/': Could not resolve host: x")); got != "unable to access 'https://x/': Could not resolve host: x" {
+		t.Errorf("fetchReason = %q", got)
 	}
 }
 
@@ -175,7 +351,7 @@ func TestSyncNamesTheDecidingStopNotTheFirstOne(t *testing.T) {
 	gitIn(t, main, "fetch", "-q", "origin")
 
 	var buf bytes.Buffer
-	if err := Sync(ctx, &buf); err != nil {
+	if err := Sync(ctx, SyncOptions{NoFetch: true}, &buf); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
 	out := buf.String()
@@ -197,7 +373,7 @@ func TestSyncNamesTheDecidingStopNotTheFirstOne(t *testing.T) {
 
 	// wt sync <work> lists both stops in full, and says which one is yours.
 	buf.Reset()
-	if err := SyncWorktree(ctx, "bump", &buf); err != nil {
+	if err := SyncWorktree(ctx, "bump", SyncOptions{NoFetch: true}, &buf); err != nil {
 		t.Fatalf("SyncWorktree: %v", err)
 	}
 	out = buf.String()
@@ -229,7 +405,7 @@ func TestSyncPrintsAnUnknownRowWithItsError(t *testing.T) {
 		}
 	}
 	var buf bytes.Buffer
-	if err := Sync(ctx, &buf); err != nil {
+	if err := Sync(ctx, SyncOptions{NoFetch: true}, &buf); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
 	out := buf.String()
@@ -247,7 +423,7 @@ func TestSyncSaysWhenTrunkDeclaresNothing(t *testing.T) {
 	gitIn(t, main, "fetch", "-q", "origin")
 	ctx, _ := Open(main)
 	var buf bytes.Buffer
-	if err := Sync(ctx, &buf); err != nil {
+	if err := Sync(ctx, SyncOptions{NoFetch: true}, &buf); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
 	if !strings.Contains(buf.String(), "no .wt-sync.yaml") {

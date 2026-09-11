@@ -6,6 +6,15 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-11 07:40 — wt sync fetches trunk before it looks
+
+- `wt sync` and `wt sync <work>` fetch trunk first, so the header names the
+  current `origin/main` and its SHA instead of warning `(not fetched)`. The
+  fetch moves only that remote-tracking ref.
+- `--no-fetch` skips it and says `as last fetched 3h ago`; a fetch that fails
+  says why and shows the overview the same way. `wt sync run --no-fetch` uses
+  the same words.
+
 ## 2026-09-11 07:21 — wt about shows the last few days
 
 - `wt about` lists the newest 5 what's-new entries, or every entry from the

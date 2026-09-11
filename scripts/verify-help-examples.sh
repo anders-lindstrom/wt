@@ -196,6 +196,7 @@ check plain "" "" 'wt branch login-crash'
 check plain "" "" 'wt about'
 check plain "" "" 'wt version'
 
+check sync "" "" 'wt sync --no-fetch'
 check sync "" "" 'wt sync login-crash'
 check sync "" "" 'wt sync run login-crash'
 check sync "" "" 'wt sync run login-crash api-tidy'

@@ -60,8 +60,10 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 
 	trunk := ctx.Config.MainBranch
 	onto := "origin/" + trunk
-	fetched := "not fetched"
-	if !opts.NoFetch {
+	var fetched string
+	if opts.NoFetch {
+		fetched = lastFetched(ctx.Repo.MainRoot, time.Now())
+	} else {
 		if _, err := git.RunTimeout(ctx.Repo.MainRoot, fetchTimeout, "fetch", "--quiet", "origin", trunk); err != nil {
 			return fmt.Errorf("fetch: %w", err)
 		}

@@ -14,16 +14,18 @@ import (
 )
 
 func newSyncCmd() *cobra.Command {
+	var noFetch, yes, push, noPush bool
 	sync := &cobra.Command{
 		Use:   "sync [<work>]",
 		Short: "Show what a rebase onto trunk would do to each worktree",
-		Long: "Simulate rebasing every worktree onto origin/<trunk> in the object store,\n" +
-			"applying the repository's declared strategies at every stop, and print\n" +
-			"the outcome grouped by what to do about it. Nothing is fetched and\n" +
-			"nothing is changed: run git fetch first for a current picture.\n" +
+		Long: "Fetch trunk, then simulate rebasing every worktree onto origin/<trunk> in\n" +
+			"the object store, applying the repository's declared strategies at every\n" +
+			"stop, and print the outcome grouped by what to do about it. The fetch moves\n" +
+			"only origin/<trunk>; nothing of yours is changed. --no-fetch compares with\n" +
+			"trunk as last fetched, and so does a fetch that fails, saying why.\n" +
 			"\n" +
 			"The flow is look, act, finish.\n" +
-			"  look    wt sync                 every worktree, grouped; read-only\n" +
+			"  look    wt sync                 every worktree, grouped; changes nothing of yours\n" +
 			"          wt sync <work>          one worktree in full: every stop, file and key\n" +
 			"  act     wt sync run <work>...   rebase; safety ref, strategies at each stop, deferred steps;\n" +
 			"                                  asks once when more than one worktree is involved or a\n" +
@@ -63,11 +65,11 @@ func newSyncCmd() *cobra.Command {
 			"verb names it, asks first, and ends with a wt: line to pass on to it. +N\n" +
 			"counts the other sessions there. The session wt itself runs under is not\n" +
 			"counted. The lines under a row are advisory and never change the class.",
-		Example: "  wt sync                   # every worktree, grouped; reads, changes nothing\n" +
+		Example: "  wt sync                   # fetch trunk, then every worktree, grouped\n" +
+			"  wt sync --no-fetch        # the same, against trunk as last fetched\n" +
 			"  wt sync login-crash       # that worktree in full\n" +
 			"  wt sync run login-crash   # act on it\n" +
-			"  wt sync undo login-crash  # put back every ref that run moved\n" +
-			"  wt sync doctor            # what a run needs before the first one",
+			"  wt sync undo login-crash  # put back every ref that run moved",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -81,14 +83,16 @@ func newSyncCmd() *cobra.Command {
 			if ctx == nil {
 				return errors.New("not inside a git repository")
 			}
+			opts := commands.SyncOptions{NoFetch: noFetch}
 			if len(args) == 1 {
-				return commands.SyncWorktree(ctx, args[0], cmd.OutOrStdout())
+				return commands.SyncWorktree(ctx, args[0], opts, cmd.OutOrStdout())
 			}
-			return commands.Sync(ctx, cmd.OutOrStdout())
+			return commands.Sync(ctx, opts, cmd.OutOrStdout())
 		},
 	}
+	// Shared with run: only one of the two parses flags in any one invocation.
+	sync.Flags().BoolVar(&noFetch, "no-fetch", false, "compare with origin/<trunk> as last fetched")
 
-	var noFetch, yes, push, noPush bool
 	run := &cobra.Command{
 		Use:   "run <work>...",
 		Short: "Rebase the named worktrees onto trunk with the declared strategies",
