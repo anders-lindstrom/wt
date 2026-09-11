@@ -245,24 +245,14 @@ func isExit(err error, code int) bool {
 	return errors.As(err, &exitErr) && exitErr.ExitCode() == code
 }
 
-// combineErr joins two processes' stderr into one message, archive's first,
-// dropping either side that is empty.
-func combineErr(archiveErr, tarErr *bytes.Buffer) string {
-	a := strings.TrimSpace(archiveErr.String())
-	t := strings.TrimSpace(tarErr.String())
-	switch {
-	case a != "" && t != "":
-		return a + ": " + t
-	case a != "":
-		return a
-	default:
-		return t
-	}
-}
-
 // materialise extracts the directory holding run from trunk into a temporary
 // directory with git archive, so the script and any sibling it sources come
 // from trunk. It returns the executable's path.
+//
+// The archive goes to a file and tar extracts that file, one after the
+// other, so each runs under gitDeadline in its own process group the way
+// every git here does. A deadline that fires is reported as one, never as a
+// script missing from trunk.
 func materialise(root, trunk, run string) (exe string, cleanup func(), err error) {
 	dir, err := os.MkdirTemp("", "wtsync-script-")
 	if err != nil {
@@ -270,35 +260,34 @@ func materialise(root, trunk, run string) (exe string, cleanup func(), err error
 	}
 	cleanup = func() { _ = os.RemoveAll(dir) }
 	scriptDir := filepath.Dir(run)
-	archive := exec.Command("git", "archive", "--format=tar", trunk, scriptDir)
-	archive.Dir = root
-	tar := exec.Command("tar", "-x", "-C", dir)
-	pipe, err := archive.StdoutPipe()
-	if err != nil {
+	archive, tree := filepath.Join(dir, "script.tar"), filepath.Join(dir, "tree")
+	if err := os.Mkdir(tree, 0o700); err != nil {
 		cleanup()
 		return "", nil, err
 	}
-	tar.Stdin = pipe
-	// archive and tar run concurrently (tar reads the pipe as archive writes
-	// it), each with its own exec.Cmd goroutine copying stderr: they must not
-	// share one buffer, or writes from both race on it.
-	var archiveErr, tarErr bytes.Buffer
-	archive.Stderr = &archiveErr
+	if _, err := gitEnv(root, nil, nil, "archive", "--format=tar", "-o", archive, trunk, scriptDir); err != nil {
+		cleanup()
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return "", nil, fmt.Errorf("script %s is not on %s: %w", run, trunk, err)
+		}
+		return "", nil, fmt.Errorf("reading script %s from %s: %w", run, trunk, err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), gitDeadline)
+	defer cancel()
+	tar := exec.CommandContext(ctx, "tar", "-x", "-f", archive, "-C", tree)
+	var tarErr bytes.Buffer
 	tar.Stderr = &tarErr
-	if err := tar.Start(); err != nil {
+	runErr := runScript(tar)
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		cleanup()
-		return "", nil, err
+		return "", nil, fmt.Errorf("extracting %s from %s: tar timed out after %s", scriptDir, trunk, gitDeadline)
 	}
-	if err := archive.Run(); err != nil {
-		_ = tar.Wait()
+	if runErr != nil {
 		cleanup()
-		return "", nil, fmt.Errorf("script %s is not on %s: %s", run, trunk, combineErr(&archiveErr, &tarErr))
+		return "", nil, fmt.Errorf("extracting %s from %s: %v: %s", scriptDir, trunk, runErr, strings.TrimSpace(tarErr.String()))
 	}
-	if err := tar.Wait(); err != nil {
-		cleanup()
-		return "", nil, fmt.Errorf("extracting %s from %s: %s", scriptDir, trunk, combineErr(&archiveErr, &tarErr))
-	}
-	exe = filepath.Join(dir, run)
+	exe = filepath.Join(tree, run)
 	if info, err := os.Stat(exe); err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
 		cleanup()
 		return "", nil, fmt.Errorf("script %s is not an executable on %s", run, trunk)
@@ -342,6 +331,10 @@ func hashObject(root string, data []byte) (string, error) {
 // a run that waits on it holds its locks the whole time.
 const GitTimeout = 10 * time.Minute
 
+// gitDeadline is the deadline runGit and materialise actually use: GitTimeout,
+// shortened only by a test proving that a git which never answers is cut off.
+var gitDeadline = GitTimeout
+
 // runGit is the machinery shared by every git invocation in this file: the
 // deadline, the runScript call under it, the timed-out error and the
 // stderr-annotated failure. internal/git.Run has no place for any of this —
@@ -355,7 +348,7 @@ const GitTimeout = 10 * time.Minute
 // fails rather than blocking on a prompt no unattended run can answer; the
 // deadline and the process group come from runScript.
 func runGit(dir string, env []string, stdin io.Reader, args ...string) (stdout []byte, err error) {
-	ctx, cancel := context.WithTimeout(context.Background(), GitTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), gitDeadline)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
@@ -367,7 +360,7 @@ func runGit(dir string, env []string, stdin io.Reader, args ...string) (stdout [
 	cmd.Stdout, cmd.Stderr = &out, &stderr
 	runErr := runScript(cmd)
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return nil, fmt.Errorf("git %s: timed out after %s", strings.Join(args, " "), GitTimeout)
+		return nil, fmt.Errorf("git %s: timed out after %s", strings.Join(args, " "), gitDeadline)
 	}
 	if runErr != nil {
 		if msg := strings.TrimSpace(stderr.String()); msg != "" {

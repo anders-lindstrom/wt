@@ -1,7 +1,6 @@
 package wtsync
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -286,50 +285,66 @@ func activeHook(dir, name string) bool {
 // from a good ref and when ref itself is bad (128 either way on the git
 // version this was tested against, not the 1-vs-other split the naive
 // reading suggests, and distinguishable only by parsing the stderr text) so
-// ref is checked on its own first instead.
-func refResolves(mainRoot, ref string) bool {
-	cmd := exec.Command("git", "rev-parse", "--verify", "--quiet", ref)
-	cmd.Dir = mainRoot
-	return cmd.Run() == nil
+// ref is checked on its own first instead. A git that gives no answer, one
+// the deadline cut off say, is an error rather than a ref that does not
+// resolve.
+func refResolves(mainRoot, ref string) (bool, error) {
+	_, code, err := gitEnvAllow(mainRoot, nil, nil, 1, "rev-parse", "--verify", "--quiet", ref)
+	if err != nil {
+		return false, err
+	}
+	return code == 0, nil
+}
+
+// ontoFailure is the failed check for an onto that does not resolve, or that
+// git could not be asked about; ok is false when onto resolves.
+func ontoFailure(mainRoot, onto, name string) (c Check, ok bool) {
+	resolves, err := refResolves(mainRoot, onto)
+	if err != nil {
+		return Check{Name: name, OK: false, Detail: err.Error()}, true
+	}
+	if !resolves {
+		return Check{Name: name, OK: false, Detail: onto + " does not resolve; run git fetch origin"}, true
+	}
+	return Check{}, false
 }
 
 // treeFileCheck fails when path exists on trunk, for checks (like
 // submodules) that are pass/fail on presence alone. onto not resolving is
 // reported as its own failure rather than as "path absent".
 func treeFileCheck(mainRoot, onto, path, name, detail string) Check {
-	if !refResolves(mainRoot, onto) {
-		return Check{Name: name, OK: false, Detail: onto + " does not resolve; run git fetch origin"}
+	if c, failed := ontoFailure(mainRoot, onto, name); failed {
+		return c
 	}
-	cmd := exec.Command("git", "cat-file", "-e", onto+":"+path)
-	cmd.Dir = mainRoot
-	if cmd.Run() == nil {
+	_, err := gitEnv(mainRoot, nil, nil, "cat-file", "-e", onto+":"+path)
+	var exit *exec.ExitError
+	switch {
+	case err == nil:
 		return Check{Name: name, OK: false, Detail: detail}
+	case errors.As(err, &exit) && exit.ExitCode() > 0:
+		// onto is known good, so git answering no means path is absent from it.
+		return Check{Name: name, OK: true}
+	default:
+		// No answer at all, such as a deadline that fired: that is not "absent".
+		return Check{Name: name, OK: false, Detail: err.Error()}
 	}
-	// onto is known good, so any failure here means path is absent from it.
-	return Check{Name: name, OK: true}
 }
 
 // lfsCheck flags any .gitattributes on trunk (root or nested) that declares
 // an LFS filter: run does not handle LFS-tracked content. onto not
 // resolving is reported as its own failure rather than as "no match".
 func lfsCheck(mainRoot, onto string) Check {
-	if !refResolves(mainRoot, onto) {
-		return Check{Name: "lfs", OK: false, Detail: onto + " does not resolve; run git fetch origin"}
+	if c, failed := ontoFailure(mainRoot, onto, "lfs"); failed {
+		return c
 	}
-	cmd := exec.Command("git", "grep", "-l", "-e", "filter=lfs", onto, "--", ".gitattributes", "**/.gitattributes")
-	cmd.Dir = mainRoot
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	err := cmd.Run()
-	if errText := strings.TrimSpace(stderr.String()); err != nil && errText != "" {
-		// onto is known good, so output on stderr here is a real failure (a
-		// bad pathspec, say), not silence-because-nothing-matched.
-		return Check{Name: "lfs", OK: false, Detail: errText}
+	out, code, err := gitEnvAllow(mainRoot, nil, nil, 1, "grep", "-l", "-e", "filter=lfs", onto, "--", ".gitattributes", "**/.gitattributes")
+	if err != nil {
+		// onto is known good and exit 1 is grep's "no match", so this is a real
+		// failure (a bad pathspec, a git the deadline cut off), not silence.
+		return Check{Name: "lfs", OK: false, Detail: err.Error()}
 	}
-	text := strings.TrimSpace(stdout.String())
-	if text == "" {
-		// err != nil with empty stdout and empty stderr is grep -l's "no
-		// match"; err == nil never comes with empty stdout for -l.
+	text := strings.TrimSpace(out)
+	if code == 1 || text == "" {
 		return Check{Name: "lfs", OK: true}
 	}
 	var files []string

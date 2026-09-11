@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 func conflict(base, trunk, branch string) Conflict {
@@ -82,6 +83,15 @@ func TestRenderReplacesBlocksAndPreservesTheEnding(t *testing.T) {
 	if string(out2) != "x\nr" {
 		t.Errorf("out2 = %q", out2)
 	}
+}
+
+// merge-file's exit status is a conflict count, so a merge-file the deadline
+// kills must come back as an error, not as a merge with some conflicts.
+func TestMerge3ReportsAMergeFileThatDoesNotAnswer(t *testing.T) {
+	hangOnPath(t, "git")
+	start := time.Now()
+	_, err := Merge3(conflict("keep\nbase\n", "keep\ntrunk\n", "keep\nbranch\n"))
+	cutOff(t, err, start)
 }
 
 func TestMerge3RefusesBinaryBlobsAsAPersonsCall(t *testing.T) {
