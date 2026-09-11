@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 )
@@ -22,34 +21,6 @@ var ErrNotRepo = errors.New("not a git repository")
 // none. Nothing here is interactive, so a git that has not answered by then
 // is stuck rather than slow, and wt must not sit on it forever.
 const GitTimeout = 10 * time.Minute
-
-// waitDelay bounds how long Run waits for stdio to close once the deadline
-// has killed the process group, for the rare child that detaches from the
-// group before the kill reaches it and keeps the pipe open.
-const waitDelay = 2 * time.Second
-
-// groups is the process group of every git RunTimeout is waiting on. A
-// signal handler runs on its own goroutine and has no other way to reach
-// them; without this a Ctrl-C during a fetch orphans it.
-var groups = struct {
-	sync.Mutex
-	pids map[int]bool
-}{pids: map[int]bool{}}
-
-// KillRunning sends SIGKILL to the process group of every git still running,
-// and reports how many it signalled. Best effort: a group that has already
-// exited is not an error.
-func KillRunning() int {
-	groups.Lock()
-	defer groups.Unlock()
-	n := 0
-	for pid := range groups.pids {
-		if err := syscall.Kill(-pid, syscall.SIGKILL); err == nil {
-			n++
-		}
-	}
-	return n
-}
 
 // Run executes git in dir under GitTimeout and returns trimmed stdout.
 func Run(dir string, args ...string) (string, error) {
@@ -70,7 +41,7 @@ func RunTimeout(dir string, d time.Duration, args ...string) (string, error) {
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
-	cmd.WaitDelay = waitDelay
+	cmd.WaitDelay = WaitDelay
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -106,15 +77,7 @@ func run(cmd *exec.Cmd) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	pid := cmd.Process.Pid
-	groups.Lock()
-	groups.pids[pid] = true
-	groups.Unlock()
-	defer func() {
-		groups.Lock()
-		delete(groups.pids, pid)
-		groups.Unlock()
-	}()
+	defer track(cmd.Process.Pid)()
 	return cmd.Wait()
 }
 
