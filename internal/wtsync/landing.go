@@ -89,7 +89,7 @@ func countScope(counts map[string]int, subject string) {
 	counts[m[1]]++
 }
 
-// ScopeLine renders the header's scopes: "pins ×6, statepush ×4, api ×2".
+// ScopeLine renders the header's scopes: "pins ×6, auth ×4, api ×2".
 func (l Landing) ScopeLine() string {
 	var parts []string
 	for _, s := range l.Scopes {

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -92,17 +94,34 @@ func TestEveryFlagAppearsInAnExample(t *testing.T) {
 	}
 }
 
+// fleet is names from the real fleet: worktrees, repositories, a Superset id.
+var fleet = []string{"webkey", "idiotthings", "local-gecko", "controller_stats",
+	"axis_acc", "new_vapix", "statepush", "telcred", "dedd5f22", "server_wt",
+	"accessmanager", "personal-v"}
+
 // Help is read by people who have never seen this fleet. Names from it teach
 // nothing and date badly.
 func TestHelpUsesIllustrativeNames(t *testing.T) {
-	fleet := []string{"webkey", "idiotthings", "local-gecko", "controller_stats",
-		"axis_acc", "new_vapix", "statepush", "telcred", "dedd5f22", "server_wt",
-		"accessmanager", "personal-v"}
 	for _, c := range reachable(newRootCmd()) {
 		text := strings.ToLower(c.Long + "\n" + c.Example + "\n" + c.Short)
 		for _, name := range fleet {
 			if strings.Contains(text, name) {
 				t.Errorf("%q: help names %q from the real fleet", c.CommandPath(), name)
+			}
+		}
+	}
+}
+
+// The README is read by the same people, and its examples date the same way.
+func TestReadmeUsesIllustrativeNames(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, line := range strings.Split(strings.ToLower(string(data)), "\n") {
+		for _, name := range fleet {
+			if strings.Contains(line, name) {
+				t.Errorf("README.md:%d names %q from the real fleet", i+1, name)
 			}
 		}
 	}

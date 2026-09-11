@@ -27,21 +27,21 @@ func worktreeAt(t *testing.T, main, branch, path string) string {
 func TestMigrateRetypesRenamesAndMovesInOneGo(t *testing.T) {
 	main := committedRepo(t, minimalConf)
 	ctx, _ := Open(main)
-	from := worktreeAt(t, main, "fix/idiotthings", filepath.Join(ctx.Repo.Parent,
-		"demo_wt", "feat_wt", "dedd5f22-fbb2-4014-986f-22941c470ac8", "local-gecko"))
+	from := worktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent,
+		"demo_wt", "feat_wt", "5f2c8e10-7d3a-4b6e-9c01-2a4f6b8d0e13", "local-cache"))
 	mustWrite(t, filepath.Join(from, "precious.txt"), "real work")
 
 	var buf bytes.Buffer
-	got, err := Migrate(ctx, from, "fix/local-gecko", noSessions(), &buf)
+	got, err := Migrate(ctx, from, "fix/local-cache", noSessions(), &buf)
 	if err != nil {
 		t.Fatalf("Migrate: %v\n%s", err, buf.String())
 	}
-	want := filepath.Join(ctx.Repo.Parent, "demo_wt", "fix_wt", "local-gecko")
+	want := filepath.Join(ctx.Repo.Parent, "demo_wt", "fix_wt", "local-cache")
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	if branch := ctx.Repo.BranchAt(want); branch != "fix_wt/local-gecko" {
-		t.Errorf("branch = %q, want fix_wt/local-gecko", branch)
+	if branch := ctx.Repo.BranchAt(want); branch != "fix_wt/local-cache" {
+		t.Errorf("branch = %q, want fix_wt/local-cache", branch)
 	}
 	if body := mustRead(t, filepath.Join(want, "precious.txt")); body != "real work" {
 		t.Errorf("the work did not travel: %q", body)
@@ -53,20 +53,20 @@ func TestMigrateRetypesRenamesAndMovesInOneGo(t *testing.T) {
 func TestMigrateFitsATypelessBranchToTheConvention(t *testing.T) {
 	main := committedRepo(t, minimalConf)
 	ctx, _ := Open(main)
-	worktreeAt(t, main, "axis_acc", filepath.Join(ctx.Repo.Parent,
-		"demo_wt", "demo", "feat_wt", "new_vapix"))
+	worktreeAt(t, main, "api_tidy", filepath.Join(ctx.Repo.Parent,
+		"demo_wt", "demo", "feat_wt", "new_parser"))
 
 	var buf bytes.Buffer
-	got, err := Migrate(ctx, "axis_acc", "", noSessions(), &buf)
+	got, err := Migrate(ctx, "api_tidy", "", noSessions(), &buf)
 	if err != nil {
 		t.Fatalf("Migrate: %v\n%s", err, buf.String())
 	}
-	want := filepath.Join(ctx.Repo.Parent, "demo_wt", "feat_wt", "axis_acc")
+	want := filepath.Join(ctx.Repo.Parent, "demo_wt", "feat_wt", "api_tidy")
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	if branch := ctx.Repo.BranchAt(want); branch != "feat_wt/axis_acc" {
-		t.Errorf("branch = %q, want feat_wt/axis_acc", branch)
+	if branch := ctx.Repo.BranchAt(want); branch != "feat_wt/api_tidy" {
+		t.Errorf("branch = %q, want feat_wt/api_tidy", branch)
 	}
 }
 
@@ -75,14 +75,14 @@ func TestMigrateFitsATypelessBranchToTheConvention(t *testing.T) {
 func TestMigrateReadsTheTypeOutOfANonConventionBranch(t *testing.T) {
 	main := committedRepo(t, minimalConf)
 	ctx, _ := Open(main)
-	worktreeAt(t, main, "fix/idiotthings", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
+	worktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 
 	var buf bytes.Buffer
-	got, err := Migrate(ctx, "fix/idiotthings", "", noSessions(), &buf)
+	got, err := Migrate(ctx, "fix/flaky-test", "", noSessions(), &buf)
 	if err != nil {
 		t.Fatalf("Migrate: %v\n%s", err, buf.String())
 	}
-	want := filepath.Join(ctx.Repo.Parent, "demo_wt", "fix_wt", "idiotthings")
+	want := filepath.Join(ctx.Repo.Parent, "demo_wt", "fix_wt", "flaky-test")
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -95,10 +95,10 @@ func TestMigrateAcceptsEveryWayAWorktreeIsPrinted(t *testing.T) {
 		t.Run(how, func(t *testing.T) {
 			main := committedRepo(t, minimalConf)
 			ctx, _ := Open(main)
-			path := worktreeAt(t, main, "feat_wt/controller_stats",
-				filepath.Join(ctx.Repo.Parent, "demo-controller_stats"))
+			path := worktreeAt(t, main, "feat_wt/cache_stats",
+				filepath.Join(ctx.Repo.Parent, "demo-cache_stats"))
 			arg := map[string]string{
-				"work": "controller_stats", "branch": "feat_wt/controller_stats", "path": path,
+				"work": "cache_stats", "branch": "feat_wt/cache_stats", "path": path,
 			}[how]
 
 			var buf bytes.Buffer
@@ -106,7 +106,7 @@ func TestMigrateAcceptsEveryWayAWorktreeIsPrinted(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Migrate: %v\n%s", err, buf.String())
 			}
-			want := filepath.Join(ctx.Repo.Parent, "demo_wt", "feat_wt", "controller_stats")
+			want := filepath.Join(ctx.Repo.Parent, "demo_wt", "feat_wt", "cache_stats")
 			if got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
@@ -119,10 +119,10 @@ func TestMigrateAcceptsEveryWayAWorktreeIsPrinted(t *testing.T) {
 func TestMigrateKeepsTheTypeWhenOnlyTheNameChanges(t *testing.T) {
 	main := committedRepo(t, minimalConf)
 	ctx, _ := Open(main)
-	worktreeAt(t, main, "perf_wt/statepush", filepath.Join(ctx.Repo.Parent, "demo-statepush"))
+	worktreeAt(t, main, "perf_wt/prefetch", filepath.Join(ctx.Repo.Parent, "demo-prefetch"))
 
 	var buf bytes.Buffer
-	got, err := Migrate(ctx, "statepush", "prefilter", noSessions(), &buf)
+	got, err := Migrate(ctx, "prefetch", "prefilter", noSessions(), &buf)
 	if err != nil {
 		t.Fatalf("Migrate: %v\n%s", err, buf.String())
 	}
@@ -139,14 +139,14 @@ func TestMigrateKeepsTheTypeWhenOnlyTheNameChanges(t *testing.T) {
 func TestMigrateAcceptsADestinationWrittenAsABranch(t *testing.T) {
 	main := committedRepo(t, minimalConf)
 	ctx, _ := Open(main)
-	worktreeAt(t, main, "feat_wt/webkey", filepath.Join(ctx.Repo.Parent, "demo-webkey"))
+	worktreeAt(t, main, "feat_wt/login", filepath.Join(ctx.Repo.Parent, "demo-login"))
 
 	var buf bytes.Buffer
-	got, err := Migrate(ctx, "webkey", "chore_wt/webkey", noSessions(), &buf)
+	got, err := Migrate(ctx, "login", "chore_wt/login", noSessions(), &buf)
 	if err != nil {
 		t.Fatalf("Migrate: %v\n%s", err, buf.String())
 	}
-	want := filepath.Join(ctx.Repo.Parent, "demo_wt", "chore_wt", "webkey")
+	want := filepath.Join(ctx.Repo.Parent, "demo_wt", "chore_wt", "login")
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -157,15 +157,15 @@ func TestMigrateAcceptsADestinationWrittenAsABranch(t *testing.T) {
 func TestMigratePrintsWhatItWillDoBeforeDoingIt(t *testing.T) {
 	main := committedRepo(t, minimalConf)
 	ctx, _ := Open(main)
-	from := worktreeAt(t, main, "fix/idiotthings", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
+	from := worktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 
 	var buf bytes.Buffer
-	if _, err := Migrate(ctx, from, "fix/local-gecko", noSessions(), &buf); err != nil {
+	if _, err := Migrate(ctx, from, "fix/local-cache", noSessions(), &buf); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
 	out := buf.String()
-	for _, want := range []string{from, "fix/idiotthings", "fix_wt/local-gecko",
-		filepath.Join(ctx.Repo.Parent, "demo_wt", "fix_wt", "local-gecko")} {
+	for _, want := range []string{from, "fix/flaky-test", "fix_wt/local-cache",
+		filepath.Join(ctx.Repo.Parent, "demo_wt", "fix_wt", "local-cache")} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the plan never mentions %q:\n%s", want, out)
 		}
@@ -214,10 +214,10 @@ func TestMigrateSaysWhatItLookedForWhenNothingMatches(t *testing.T) {
 func TestMigrateNeverBlamesAnEmptyBranch(t *testing.T) {
 	main := committedRepo(t, minimalConf)
 	ctx, _ := Open(main)
-	worktreeAt(t, main, "fix/idiotthings", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
+	worktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 
-	for _, arg := range []string{"local-gecko", "fix/idiotthings",
-		filepath.Join(ctx.Repo.Parent, "demo_wt", "feat_wt", "dedd5f22", "local-gecko")} {
+	for _, arg := range []string{"local-cache", "fix/flaky-test",
+		filepath.Join(ctx.Repo.Parent, "demo_wt", "feat_wt", "5f2c8e10", "local-cache")} {
 		var buf bytes.Buffer
 		_, err := Migrate(ctx, arg, "", noSessions(), &buf)
 		msg := buf.String()
@@ -251,18 +251,18 @@ func TestMigrateExplainsADetachedWorktree(t *testing.T) {
 func TestMigrateRefusesWhenTheTargetBranchIsTaken(t *testing.T) {
 	main := committedRepo(t, minimalConf)
 	ctx, _ := Open(main)
-	from := worktreeAt(t, main, "feat_wt/webkey", filepath.Join(ctx.Repo.Parent, "demo-webkey"))
-	worktreeAt(t, main, "fix_wt/webkey", filepath.Join(ctx.Repo.Parent, "demo-other"))
+	from := worktreeAt(t, main, "feat_wt/login", filepath.Join(ctx.Repo.Parent, "demo-login"))
+	worktreeAt(t, main, "fix_wt/login", filepath.Join(ctx.Repo.Parent, "demo-other"))
 
 	var buf bytes.Buffer
-	_, err := Migrate(ctx, "feat/webkey", "fix/webkey", noSessions(), &buf)
+	_, err := Migrate(ctx, "feat/login", "fix/login", noSessions(), &buf)
 	if err == nil {
 		t.Fatal("want a refusal")
 	}
-	if !strings.Contains(err.Error(), "fix_wt/webkey") {
+	if !strings.Contains(err.Error(), "fix_wt/login") {
 		t.Errorf("the refusal must name the branch in the way: %q", err)
 	}
-	if branch := ctx.Repo.BranchAt(from); branch != "feat_wt/webkey" {
+	if branch := ctx.Repo.BranchAt(from); branch != "feat_wt/login" {
 		t.Errorf("the branch was renamed anyway: %q", branch)
 	}
 }
@@ -270,12 +270,12 @@ func TestMigrateRefusesWhenTheTargetBranchIsTaken(t *testing.T) {
 func TestMigrateRefusesWhenAnotherWorktreeIsAtTheTarget(t *testing.T) {
 	main := committedRepo(t, minimalConf)
 	ctx, _ := Open(main)
-	worktreeAt(t, main, "fix/idiotthings", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
+	worktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 	occupied := worktreeAt(t, main, "fix_wt/taken",
 		filepath.Join(ctx.Repo.Parent, "demo_wt", "fix_wt", "taken"))
 
 	var buf bytes.Buffer
-	_, err := Migrate(ctx, "fix/idiotthings", "fix/taken", noSessions(), &buf)
+	_, err := Migrate(ctx, "fix/flaky-test", "fix/taken", noSessions(), &buf)
 	if err == nil {
 		t.Fatal("want a refusal")
 	}
@@ -289,7 +289,7 @@ func TestMigrateRefusesWhenAnotherWorktreeIsAtTheTarget(t *testing.T) {
 func TestMigrateRefusesWhenAnAgentSessionLivesThere(t *testing.T) {
 	main := committedRepo(t, minimalConf)
 	ctx, _ := Open(main)
-	from := worktreeAt(t, main, "fix/idiotthings", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
+	from := worktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 	resolved, _ := filepath.EvalSymlinks(from)
 	opts := MigrateOptions{Agents: []wtsync.Agent{{Name: "gecko-1", Cwd: resolved}}}
 
@@ -309,7 +309,7 @@ func TestMigrateRefusesWhenAnAgentSessionLivesThere(t *testing.T) {
 func TestMigrateForceMovesPastAnAgentSession(t *testing.T) {
 	main := committedRepo(t, minimalConf)
 	ctx, _ := Open(main)
-	from := worktreeAt(t, main, "fix/idiotthings", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
+	from := worktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 	resolved, _ := filepath.EvalSymlinks(from)
 	opts := MigrateOptions{Force: true, Agents: []wtsync.Agent{{Name: "gecko-1", Cwd: resolved}}}
 
@@ -318,7 +318,7 @@ func TestMigrateForceMovesPastAnAgentSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Migrate: %v\n%s", err, buf.String())
 	}
-	if got != filepath.Join(ctx.Repo.Parent, "demo_wt", "fix_wt", "idiotthings") {
+	if got != filepath.Join(ctx.Repo.Parent, "demo_wt", "fix_wt", "flaky-test") {
 		t.Errorf("got %q", got)
 	}
 	if !strings.Contains(buf.String(), "gecko-1") {
@@ -331,7 +331,7 @@ func TestMigrateForceMovesPastAnAgentSession(t *testing.T) {
 func TestMigratePutsTheBranchNameBackWhenTheMoveFails(t *testing.T) {
 	main := committedRepo(t, minimalConf)
 	ctx, _ := Open(main)
-	from := worktreeAt(t, main, "fix/idiotthings", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
+	from := worktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 	// A file where the type directory has to be: mkdir cannot make the
 	// destination, so the move fails after the rename.
 	mustWrite(t, filepath.Join(ctx.Repo.Parent, "demo_wt", "fix_wt"), "not a directory")
@@ -340,8 +340,8 @@ func TestMigratePutsTheBranchNameBackWhenTheMoveFails(t *testing.T) {
 	if _, err := Migrate(ctx, from, "", noSessions(), &buf); err == nil {
 		t.Fatal("want an error")
 	}
-	if branch := ctx.Repo.BranchAt(from); branch != "fix/idiotthings" {
-		t.Errorf("branch = %q, want the original fix/idiotthings back", branch)
+	if branch := ctx.Repo.BranchAt(from); branch != "fix/flaky-test" {
+		t.Errorf("branch = %q, want the original fix/flaky-test back", branch)
 	}
 }
 
@@ -366,19 +366,19 @@ func TestMigrateIsANoOpWhenAlreadyWhereItBelongs(t *testing.T) {
 func TestMigrateRenamesTheBranchWhenOnlyTheNameIsWrong(t *testing.T) {
 	main := committedRepo(t, minimalConf)
 	ctx, _ := Open(main)
-	at := filepath.Join(ctx.Repo.Parent, "demo_wt", "feat_wt", "axis_acc")
-	worktreeAt(t, main, "axis_acc", at)
+	at := filepath.Join(ctx.Repo.Parent, "demo_wt", "feat_wt", "api_tidy")
+	worktreeAt(t, main, "api_tidy", at)
 
 	var buf bytes.Buffer
-	got, err := Migrate(ctx, "axis_acc", "", noSessions(), &buf)
+	got, err := Migrate(ctx, "api_tidy", "", noSessions(), &buf)
 	if err != nil {
 		t.Fatalf("Migrate: %v\n%s", err, buf.String())
 	}
 	if got != at {
 		t.Errorf("got %q, want unchanged %q", got, at)
 	}
-	if branch := ctx.Repo.BranchAt(at); branch != "feat_wt/axis_acc" {
-		t.Errorf("branch = %q, want feat_wt/axis_acc", branch)
+	if branch := ctx.Repo.BranchAt(at); branch != "feat_wt/api_tidy" {
+		t.Errorf("branch = %q, want feat_wt/api_tidy", branch)
 	}
 }
 
@@ -492,10 +492,10 @@ func TestMigrateRefusesWhenDestinationOccupied(t *testing.T) {
 func TestMigrateRefusesAnUnknownType(t *testing.T) {
 	main := committedRepo(t, minimalConf)
 	ctx, _ := Open(main)
-	worktreeAt(t, main, "feat_wt/webkey", filepath.Join(ctx.Repo.Parent, "demo-webkey"))
+	worktreeAt(t, main, "feat_wt/login", filepath.Join(ctx.Repo.Parent, "demo-login"))
 
 	var buf bytes.Buffer
-	_, err := Migrate(ctx, "webkey", "wibble/webkey", noSessions(), &buf)
+	_, err := Migrate(ctx, "login", "wibble/login", noSessions(), &buf)
 	if err == nil {
 		t.Fatal("want an error")
 	}
@@ -509,7 +509,7 @@ func TestMigrateRefusesAnUnknownType(t *testing.T) {
 func TestMigrateDryRunReportsTheSessionItWouldRefuseFor(t *testing.T) {
 	main := committedRepo(t, minimalConf)
 	ctx, _ := Open(main)
-	from := worktreeAt(t, main, "fix/idiotthings", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
+	from := worktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 	resolved, _ := filepath.EvalSymlinks(from)
 	opts := MigrateOptions{DryRun: true, Agents: []wtsync.Agent{{Name: "gecko-1", Cwd: resolved}}}
 
@@ -526,14 +526,14 @@ func TestMigrateDryRunReportsTheSessionItWouldRefuseFor(t *testing.T) {
 func TestMigrateSaysWhenYouAreStandingInIt(t *testing.T) {
 	main := committedRepo(t, minimalConf)
 	ctx, _ := Open(main)
-	from := worktreeAt(t, main, "fix/idiotthings", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
+	from := worktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 	t.Chdir(from)
 
 	var buf bytes.Buffer
 	if _, err := Migrate(ctx, from, "", noSessions(), &buf); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	if !strings.Contains(buf.String(), "wt cd idiotthings") {
+	if !strings.Contains(buf.String(), "wt cd flaky-test") {
 		t.Errorf("no way back is offered:\n%s", buf.String())
 	}
 }
@@ -544,11 +544,11 @@ func TestMigrateSaysWhenYouAreStandingInIt(t *testing.T) {
 func TestMigrateClearsTheEmptyDirectoriesItLeavesBehind(t *testing.T) {
 	main := committedRepo(t, minimalConf)
 	ctx, _ := Open(main)
-	nest := filepath.Join(ctx.Repo.Parent, "demo_wt", "feat_wt", "dedd5f22-fbb2")
-	worktreeAt(t, main, "fix/idiotthings", filepath.Join(nest, "local-gecko"))
+	nest := filepath.Join(ctx.Repo.Parent, "demo_wt", "feat_wt", "5f2c8e10-7d3a")
+	worktreeAt(t, main, "fix/flaky-test", filepath.Join(nest, "local-cache"))
 
 	var buf bytes.Buffer
-	if _, err := Migrate(ctx, "fix/idiotthings", "fix/local-gecko", noSessions(), &buf); err != nil {
+	if _, err := Migrate(ctx, "fix/flaky-test", "fix/local-cache", noSessions(), &buf); err != nil {
 		t.Fatalf("Migrate: %v\n%s", err, buf.String())
 	}
 	if _, err := os.Stat(nest); !os.IsNotExist(err) {
@@ -564,12 +564,12 @@ func TestMigrateLeavesADirectoryThatStillHoldsSomething(t *testing.T) {
 	main := committedRepo(t, minimalConf)
 	ctx, _ := Open(main)
 	nest := filepath.Join(ctx.Repo.Parent, "demo_wt", "demo", "feat_wt")
-	worktreeAt(t, main, "axis_acc", filepath.Join(nest, "new_vapix"))
+	worktreeAt(t, main, "api_tidy", filepath.Join(nest, "new_parser"))
 	keep := filepath.Join(nest, "notes.txt")
 	mustWrite(t, keep, "somebody else's")
 
 	var buf bytes.Buffer
-	if _, err := Migrate(ctx, "axis_acc", "", noSessions(), &buf); err != nil {
+	if _, err := Migrate(ctx, "api_tidy", "", noSessions(), &buf); err != nil {
 		t.Fatalf("Migrate: %v\n%s", err, buf.String())
 	}
 	if _, err := os.Stat(keep); err != nil {

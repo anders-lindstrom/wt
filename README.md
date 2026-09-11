@@ -136,10 +136,10 @@ where it is tested. A pattern of `.` means the repository's main checkout.
 ```
 <parent>/<repo>_wt/<type>_wt/<work>          branch: <type>_wt/<work>
 
-programmering/telcred/
-├─ infrastructure/                            ← the repo
-└─ infrastructure_wt/
-   ├─ feat_wt/webkey_infra/                   branch: feat_wt/webkey_infra
+code/
+├─ myrepo/                                    ← the repo
+└─ myrepo_wt/
+   ├─ feat_wt/api-tidy/                       branch: feat_wt/api-tidy
    └─ fix_wt/login-crash/                     branch: fix_wt/login-crash
 ```
 
@@ -179,15 +179,15 @@ argument changes the type, the name, or both, and the branch is renamed to
 match, because below `<repo>_wt/` the path *is* the branch:
 
 ```
-wt migrate webkey                                  # just fit it to the layout
-wt migrate ../server-controller_stats              # by path
-wt migrate fix/idiotthings fix/local-gecko         # rename as it moves
+wt migrate login-crash                             # just fit it to the layout
+wt migrate ../myrepo-api-tidy                      # by path
+wt migrate fix/flaky-test fix/slow-test            # rename as it moves
 wt migrate stats chore/stats                       # keep the name, change the type
 ```
 
 With no second argument the branch decides: one already in the convention
-keeps its name, `fix/idiotthings` is missing only the type suffix, and a bare
-`axis_acc` is a name under the repository's default type. A branch that says
+keeps its name, `fix/flaky-test` is missing only the type suffix, and a bare
+`api-tidy` is a name under the repository's default type. A branch that says
 neither is asked about rather than guessed at.
 
 It prints the plan first — where it goes, what the branch becomes, whether the

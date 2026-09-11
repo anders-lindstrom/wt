@@ -133,10 +133,10 @@ func TestOwnedLineRefusesAVersionThatIsNotSemver(t *testing.T) {
 
 func TestOwnedLineKeepsTheBranchPinAndItsFormatting(t *testing.T) {
 	pkg := func(v, react string) string {
-		return "{\n  \"name\": \"app\",\n  \"dependencies\": {\n    \"@telcred/spec\": \"" + v + "\",\n    \"react\": \"" + react + "\"\n  }\n}\n"
+		return "{\n  \"name\": \"app\",\n  \"dependencies\": {\n    \"@acme/spec\": \"" + v + "\",\n    \"react\": \"" + react + "\"\n  }\n}\n"
 	}
 	rule, _ := RuleNamed("keep-branch")
-	s := OwnedLine{Line: regexp.MustCompile(`^\s*"@telcred/spec":`), Rule: rule}
+	s := OwnedLine{Line: regexp.MustCompile(`^\s*"@acme/spec":`), Rule: rule}
 	// trunk also bumped react on the adjacent line: git folds it into the block
 	out, err := s.Resolve(conflict(pkg("2.30.2", "19.0.0"), pkg("2.37.1", "19.1.0"), pkg("2.36.0-snapshot.20260831123245", "19.0.0")))
 	if err != nil {
