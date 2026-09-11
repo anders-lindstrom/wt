@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -41,6 +42,52 @@ func TestLoadPrefersToml(t *testing.T) {
 	}
 	if c.MainBranch != "from-toml" {
 		t.Errorf("MainBranch = %q, want from-toml", c.MainBranch)
+	}
+}
+
+// The two formats are one table with two spellings, so a repository that
+// converts must get the configuration it had. Every key is set here, because
+// the ones nobody sets are exactly where a wrong table row would hide.
+func TestTheTwoFormatsResolveToTheSameConfiguration(t *testing.T) {
+	tomlRoot := t.TempDir()
+	writeConf(t, tomlRoot, "worktree.toml", `main_branch = "trunk"
+worktree_branch_prefix = "fix_wt"
+worktree_type_suffix = "_wt"
+worktree_default_type = "fix"
+worktree_types = ["fix", "feat"]
+developer_config_dirs = [".idea"]
+developer_config_files = [".env"]
+build_init_enabled = true
+build_init_command = "make deps"
+required_bins = ["git"]
+test_command = "make test"
+run_tests_before_remove = true
+`)
+	bashRoot := t.TempDir()
+	writeConf(t, bashRoot, "worktree.conf", `MAIN_BRANCH="trunk"
+WORKTREE_BRANCH_PREFIX="fix_wt"
+WORKTREE_TYPE_SUFFIX="_wt"
+WORKTREE_DEFAULT_TYPE="fix"
+WORKTREE_TYPES=(fix feat)
+DEVELOPER_CONFIG_DIRS=(.idea)
+DEVELOPER_CONFIG_FILES=(.env)
+BUILD_INIT_ENABLED=true
+BUILD_INIT_COMMAND="make deps"
+REQUIRED_BINS=(git)
+TEST_COMMAND="make test"
+RUN_TESTS_BEFORE_REMOVE=true
+`)
+
+	fromTOML, err := Load(tomlRoot, "main")
+	if err != nil {
+		t.Fatalf("worktree.toml: %v", err)
+	}
+	fromBash, err := Load(bashRoot, "main")
+	if err != nil {
+		t.Fatalf("worktree.conf: %v", err)
+	}
+	if !reflect.DeepEqual(fromTOML, fromBash) {
+		t.Errorf("the formats disagree:\n toml %+v\n conf %+v", fromTOML, fromBash)
 	}
 }
 

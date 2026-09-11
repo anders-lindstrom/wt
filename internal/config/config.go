@@ -26,6 +26,64 @@ type Config struct {
 	MainBranchSet bool
 }
 
+// The keys a repository may set. They are named constants because `wt init`
+// writes some of them while the loader reads all of them, and a name spelled
+// differently in those two places is a key that quietly stops working.
+const (
+	KeyMainBranch           = "MAIN_BRANCH"
+	KeyBranchPrefix         = "WORKTREE_BRANCH_PREFIX"
+	KeyTypeSuffix           = "WORKTREE_TYPE_SUFFIX"
+	KeyDefaultType          = "WORKTREE_DEFAULT_TYPE"
+	KeyTypes                = "WORKTREE_TYPES"
+	KeyConfigDirs           = "DEVELOPER_CONFIG_DIRS"
+	KeyConfigFiles          = "DEVELOPER_CONFIG_FILES"
+	KeyBuildInitEnabled     = "BUILD_INIT_ENABLED"
+	KeyBuildInitCommand     = "BUILD_INIT_COMMAND"
+	KeyRequiredBins         = "REQUIRED_BINS"
+	KeyTestCommand          = "TEST_COMMAND"
+	KeyRunTestsBeforeRemove = "RUN_TESTS_BEFORE_REMOVE"
+)
+
+// kind is how a key's value is written.
+type kind int
+
+const (
+	kindString kind = iota
+	kindList
+	kindBool
+)
+
+// key is one configuration key: its name, the key worktree.toml uses for the
+// same setting, and how the value is written.
+type key struct {
+	Name string
+	TOML string
+	Kind kind
+}
+
+// keys is every key wt accepts, and the only list of them there is: the
+// unknown-key check and the TOML reader are both derived from it, so a new key
+// is a row here and the line in FromRaw that reads it.
+var keys = []key{
+	{KeyMainBranch, "main_branch", kindString},
+	{KeyBranchPrefix, "worktree_branch_prefix", kindString},
+	{KeyTypeSuffix, "worktree_type_suffix", kindString},
+	{KeyDefaultType, "worktree_default_type", kindString},
+	{KeyTypes, "worktree_types", kindList},
+	{KeyConfigDirs, "developer_config_dirs", kindList},
+	{KeyConfigFiles, "developer_config_files", kindList},
+	{KeyBuildInitEnabled, "build_init_enabled", kindBool},
+	{KeyBuildInitCommand, "build_init_command", kindString},
+	{KeyRequiredBins, "required_bins", kindList},
+	{KeyTestCommand, "test_command", kindString},
+	{KeyRunTestsBeforeRemove, "run_tests_before_remove", kindBool},
+}
+
+// isKnown reports whether a key is one wt reads.
+func isKnown(name string) bool {
+	return slices.ContainsFunc(keys, func(k key) bool { return k.Name == name })
+}
+
 // DefaultTypes is the Conventional Commits set plus the two exploratory kinds
 // that produce no feature, so a worktree's type and its commits share one
 // vocabulary.
@@ -43,14 +101,6 @@ var retired = map[string]string{
 	"WORKTREE_LAYOUT":   "WORKTREE_LAYOUT is retired; the worktree path shape is no longer configurable",
 }
 
-var known = map[string]bool{
-	"MAIN_BRANCH": true, "WORKTREE_BRANCH_PREFIX": true, "WORKTREE_TYPE_SUFFIX": true,
-	"WORKTREE_DEFAULT_TYPE": true, "WORKTREE_TYPES": true,
-	"DEVELOPER_CONFIG_DIRS": true, "DEVELOPER_CONFIG_FILES": true,
-	"BUILD_INIT_ENABLED": true, "BUILD_INIT_COMMAND": true,
-	"REQUIRED_BINS": true, "TEST_COMMAND": true, "RUN_TESTS_BEFORE_REMOVE": true,
-}
-
 // FromRaw validates parsed assignments into a Config, reporting every problem
 // at once rather than stopping at the first.
 //
@@ -60,44 +110,44 @@ var known = map[string]bool{
 func FromRaw(r map[string]Value, mainBranchFallback string) (*Config, error) {
 	var problems []string
 
-	for key := range r {
-		if msg, ok := retired[key]; ok {
+	for name := range r {
+		if msg, ok := retired[name]; ok {
 			problems = append(problems, msg)
 			continue
 		}
-		if !known[key] {
-			problems = append(problems, fmt.Sprintf("unknown key %q", key))
+		if !isKnown(name) {
+			problems = append(problems, fmt.Sprintf("unknown key %q", name))
 		}
 	}
 
 	c := &Config{
-		MainBranch:   str(r, "MAIN_BRANCH", mainBranchFallback),
-		BranchPrefix: str(r, "WORKTREE_BRANCH_PREFIX", "feat_wt"),
-		TypeSuffix:   str(r, "WORKTREE_TYPE_SUFFIX", "_wt"),
-		Types:        list(r, "WORKTREE_TYPES", DefaultTypes),
-		DeveloperConfigDirs: list(r, "DEVELOPER_CONFIG_DIRS",
+		MainBranch:   str(r, KeyMainBranch, mainBranchFallback),
+		BranchPrefix: str(r, KeyBranchPrefix, "feat_wt"),
+		TypeSuffix:   str(r, KeyTypeSuffix, "_wt"),
+		Types:        list(r, KeyTypes, DefaultTypes),
+		DeveloperConfigDirs: list(r, KeyConfigDirs,
 			[]string{".cursor", ".claude", ".run", ".vscode", ".idea"}),
-		DeveloperConfigFiles: list(r, "DEVELOPER_CONFIG_FILES", nil),
-		RequiredBins:         list(r, "REQUIRED_BINS", nil),
-		BuildInitCommand:     str(r, "BUILD_INIT_COMMAND", ""),
-		TestCommand:          str(r, "TEST_COMMAND", ""),
+		DeveloperConfigFiles: list(r, KeyConfigFiles, nil),
+		RequiredBins:         list(r, KeyRequiredBins, nil),
+		BuildInitCommand:     str(r, KeyBuildInitCommand, ""),
+		TestCommand:          str(r, KeyTestCommand, ""),
 	}
 
-	if v, ok := r["MAIN_BRANCH"]; ok && v.Scalar != "" {
+	if v, ok := r[KeyMainBranch]; ok && v.Scalar != "" {
 		c.MainBranchSet = true
 	}
 
 	// Build init defaults to "on if a command was given". Defaulting it to true
 	// while BUILD_INIT_COMMAND has no default would make an empty config invalid.
 	var err error
-	if c.BuildInitEnabled, err = boolean(r, "BUILD_INIT_ENABLED", c.BuildInitCommand != ""); err != nil {
+	if c.BuildInitEnabled, err = boolean(r, KeyBuildInitEnabled, c.BuildInitCommand != ""); err != nil {
 		problems = append(problems, err.Error())
 	}
-	if c.RunTestsBeforeRemove, err = boolean(r, "RUN_TESTS_BEFORE_REMOVE", false); err != nil {
+	if c.RunTestsBeforeRemove, err = boolean(r, KeyRunTestsBeforeRemove, false); err != nil {
 		problems = append(problems, err.Error())
 	}
 
-	c.DefaultType = str(r, "WORKTREE_DEFAULT_TYPE", "")
+	c.DefaultType = str(r, KeyDefaultType, "")
 	if c.DefaultType == "" {
 		c.DefaultType = strings.TrimSuffix(c.BranchPrefix, c.TypeSuffix)
 	}

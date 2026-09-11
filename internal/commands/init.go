@@ -140,11 +140,11 @@ func existingConfig(root string) (string, error) {
 // same table, is what keeps them honest.
 func resolve(a Answers) (*config.Config, error) {
 	raw := map[string]config.Value{
-		"MAIN_BRANCH":            {Scalar: a.MainBranch},
-		"WORKTREE_BRANCH_PREFIX": {Scalar: a.BranchPrefix},
+		config.KeyMainBranch:   {Scalar: a.MainBranch},
+		config.KeyBranchPrefix: {Scalar: a.BranchPrefix},
 	}
 	if a.BuildCommand != "" {
-		raw["BUILD_INIT_COMMAND"] = config.Value{Scalar: a.BuildCommand}
+		raw[config.KeyBuildInitCommand] = config.Value{Scalar: a.BuildCommand}
 	}
 	return config.FromRaw(raw, a.MainBranch)
 }
