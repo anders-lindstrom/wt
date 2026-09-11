@@ -66,7 +66,7 @@ func TestConfirmRemovalAnswers(t *testing.T) {
 		{"", false}, // ^D
 	} {
 		var out bytes.Buffer
-		got, err := confirmRemoval(strings.NewReader(tc.typed), &out)(commands.Plan{})
+		got, err := confirmRemoval(newPrompter(strings.NewReader(tc.typed), &out))(commands.Plan{})
 		if err != nil {
 			t.Fatalf("%q: %v", tc.typed, err)
 		}

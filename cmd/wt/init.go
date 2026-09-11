@@ -1,10 +1,8 @@
 package main
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 
@@ -43,7 +41,7 @@ func newInitCmd() *cobra.Command {
 			}
 			opts := commands.InitOptions{Force: force}
 			if !yes && isTerminal(os.Stdin) {
-				opts.Ask = askAnswers(cmd.InOrStdin(), cmd.OutOrStdout())
+				opts.Ask = askAnswers(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()))
 			}
 			return commands.Init(r, opts, cmd.OutOrStdout())
 		},
@@ -57,19 +55,17 @@ func newInitCmd() *cobra.Command {
 // or, on a re-ask, what was just rejected, so a correction is an edit rather
 // than a retype.
 //
-// One bufio.Reader spans every prompt and every re-ask: a reader built per
-// question — or per round — buffers past its own line and eats the answers
-// after it.
-func askAnswers(in io.Reader, out io.Writer) func(commands.Answers) (commands.Answers, error) {
-	r := bufio.NewReader(in)
+// The one prompter spans every prompt and every re-ask, so no round loses the
+// answers typed ahead for the next.
+func askAnswers(p *prompter) func(commands.Answers) (commands.Answers, error) {
 	return func(defaults commands.Answers) (commands.Answers, error) {
 		ask := func(label, def string) (string, error) {
 			if def != "" {
-				fmt.Fprintf(out, "%s [%s]: ", label, def)
+				fmt.Fprintf(p.out, "%s [%s]: ", label, def)
 			} else {
-				fmt.Fprintf(out, "%s: ", label)
+				fmt.Fprintf(p.out, "%s: ", label)
 			}
-			line, err := r.ReadString('\n')
+			line, err := p.r.ReadString('\n')
 			if err != nil && line == "" {
 				// ^D: the answers are abandoned, not confirmed. Returning the
 				// remaining defaults here would write a configuration nobody

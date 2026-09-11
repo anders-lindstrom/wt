@@ -1,10 +1,7 @@
 package main
 
 import (
-	"bufio"
 	"errors"
-	"fmt"
-	"io"
 	"os"
 	"strings"
 
@@ -137,10 +134,13 @@ func newSyncCmd() *cobra.Command {
 			}
 			opts := commands.RunOptions{NoFetch: noFetch, Yes: yes, Push: pushMode(push, noPush)}
 			if isTerminal(os.Stdin) {
+				// One prompter for both questions, so an answer typed ahead
+				// for the push is not lost to the rebase question's reader.
+				p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
 				if !yes {
-					opts.Confirm = confirmAsk(cmd.InOrStdin(), cmd.OutOrStdout(), "rebase")
+					opts.Confirm = confirmAsk(p, "rebase")
 				}
-				opts.ConfirmPush = confirmPush(cmd.InOrStdin(), cmd.OutOrStdout())
+				opts.ConfirmPush = confirmPush(p)
 			}
 			return commands.SyncRun(ctx, args, opts, cmd.OutOrStdout())
 		},
@@ -193,10 +193,11 @@ func newSyncCmd() *cobra.Command {
 			}
 			opts := commands.ResumeOptions{Yes: yes, Push: pushMode(push, noPush)}
 			if isTerminal(os.Stdin) {
+				p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
 				if !yes {
-					opts.Confirm = confirmAsk(cmd.InOrStdin(), cmd.OutOrStdout(), "resume")
+					opts.Confirm = confirmAsk(p, "resume")
 				}
-				opts.ConfirmPush = confirmPush(cmd.InOrStdin(), cmd.OutOrStdout())
+				opts.ConfirmPush = confirmPush(p)
 			}
 			return commands.SyncResume(ctx, args[0], opts, cmd.OutOrStdout())
 		},
@@ -244,7 +245,7 @@ func newSyncCmd() *cobra.Command {
 			}
 			opts := commands.UndoOptions{Force: force, Yes: yes}
 			if isTerminal(os.Stdin) && !yes {
-				opts.Confirm = confirmAsk(cmd.InOrStdin(), cmd.OutOrStdout(), "undo")
+				opts.Confirm = confirmAsk(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()), "undo")
 			}
 			return commands.SyncUndo(ctx, args[0], opts, cmd.OutOrStdout())
 		},
@@ -292,19 +293,9 @@ func newSyncCmd() *cobra.Command {
 
 // confirmAsk asks the one question an acting command gets before it changes
 // anything, defaulting to no. What it is about has been printed by then.
-func confirmAsk(in io.Reader, out io.Writer, verb string) func([]string) (bool, error) {
+func confirmAsk(p *prompter, verb string) func([]string) (bool, error) {
 	return func(works []string) (bool, error) {
-		_, _ = fmt.Fprintf(out, "%s %s? [y/N] ", verb, strings.Join(works, ", "))
-		line, err := bufio.NewReader(in).ReadString('\n')
-		if err != nil {
-			// EOF on a terminal is ^D: the user declined rather than answered.
-			return false, nil
-		}
-		switch strings.ToLower(strings.TrimSpace(line)) {
-		case "y", "yes":
-			return true, nil
-		}
-		return false, nil
+		return p.yesNo(verb+" "+strings.Join(works, ", ")+"?", false), nil
 	}
 }
 
@@ -312,19 +303,9 @@ func confirmAsk(in io.Reader, out io.Writer, verb string) func([]string) (bool, 
 // question before a rebase it defaults to yes: what it pushes finished with
 // nothing owed, and the lease still refuses to overwrite commits on origin
 // the branch never saw.
-func confirmPush(in io.Reader, out io.Writer) func([]string) (bool, error) {
+func confirmPush(p *prompter) func([]string) (bool, error) {
 	return func(works []string) (bool, error) {
-		_, _ = fmt.Fprintf(out, "push %s with --force-with-lease? [Y/n] ", strings.Join(works, ", "))
-		line, err := bufio.NewReader(in).ReadString('\n')
-		if err != nil {
-			// ^D declines, as it does for the rebase question.
-			return false, nil
-		}
-		switch strings.ToLower(strings.TrimSpace(line)) {
-		case "", "y", "yes":
-			return true, nil
-		}
-		return false, nil
+		return p.yesNo("push "+strings.Join(works, ", ")+" with --force-with-lease?", true), nil
 	}
 }
 

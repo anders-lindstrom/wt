@@ -1,11 +1,8 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
-	"io"
 	"os"
-	"strings"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -63,7 +60,7 @@ func newRemoveCmd() *cobra.Command {
 			}
 			opts := commands.RemoveOptions{Force: force}
 			if !yes && isTerminal(os.Stdin) {
-				opts.Confirm = confirmRemoval(cmd.InOrStdin(), cmd.OutOrStdout())
+				opts.Confirm = confirmRemoval(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()))
 			}
 			if meAt != "" {
 				return commands.RemoveAt(ctx, meAt, opts, cmd.OutOrStdout())
@@ -89,25 +86,8 @@ func newRemoveCmd() *cobra.Command {
 
 // confirmRemoval asks the question, defaulting to no. The plan has already been
 // printed by the time this runs, so the prompt itself stays one line.
-func confirmRemoval(in io.Reader, out io.Writer) func(commands.Plan) (bool, error) {
-	return func(commands.Plan) (bool, error) {
-		return askYesNo(in, out, "Remove it? [y/N] "), nil
-	}
-}
-
-// askYesNo prints question and reads one line, defaulting to no. EOF on a
-// terminal is ^D: the user declined rather than answered.
-func askYesNo(in io.Reader, out io.Writer, question string) bool {
-	_, _ = fmt.Fprint(out, question)
-	line, err := bufio.NewReader(in).ReadString('\n')
-	if err != nil {
-		return false
-	}
-	switch strings.ToLower(strings.TrimSpace(line)) {
-	case "y", "yes":
-		return true
-	}
-	return false
+func confirmRemoval(p *prompter) func(commands.Plan) (bool, error) {
+	return func(commands.Plan) (bool, error) { return p.yesNo("Remove it?", false), nil }
 }
 
 // isTerminal reports whether f is an interactive terminal, which is the whole
