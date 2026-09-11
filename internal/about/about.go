@@ -7,31 +7,46 @@ import (
 	_ "embed"
 	"fmt"
 	"strings"
+	"time"
 )
 
 //go:embed whats-new.md
 var whatsNew string
 
+const (
+	// newestCount entries are always shown, however old.
+	newestCount = 5
+	// recentWindow is how far back an entry still counts as recent; every
+	// recent entry is shown, even beyond newestCount.
+	recentWindow = 72 * time.Hour
+	// stampLayout is the local time that opens every heading.
+	stampLayout = "2006-01-02 15:04"
+)
+
 // Text is what `wt about` prints, without a trailing newline: the version, how
-// this binary was built, and the newest what's-new entry.
+// this binary was built, and the recent what's-new entries.
 func Text(version, buildDate, commitDate string) string {
-	return render(version, buildDate, commitDate, whatsNew)
+	return render(version, buildDate, commitDate, whatsNew, time.Now())
 }
 
 // NewestHeading names the newest what's-new entry.
 func NewestHeading() string {
-	heading, _, _ := strings.Cut(newestSection(whatsNew), "\n")
+	entries := sections(whatsNew)
+	if len(entries) == 0 {
+		return ""
+	}
+	heading, _, _ := strings.Cut(entries[0], "\n")
 	return heading
 }
 
-func render(version, buildDate, commitDate, md string) string {
+func render(version, buildDate, commitDate, md string, now time.Time) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "wt %s\n", version)
 	if line := buildLine(version, buildDate, commitDate); line != "" {
 		fmt.Fprintf(&b, "%s\n", line)
 	}
-	if section := newestSection(md); section != "" {
-		fmt.Fprintf(&b, "\n%s", section)
+	if entries := recent(sections(md), now); len(entries) > 0 {
+		fmt.Fprintf(&b, "\n%s", strings.Join(entries, "\n\n"))
 	}
 	return b.String()
 }
@@ -62,23 +77,55 @@ func stamp(s string) string {
 	return strings.Replace(s, "T", " ", 1)
 }
 
-// newestSection returns the first `## ` section of the what's-new file, with
-// the heading markers dropped: the file is read on GitHub as markdown and in a
-// terminal as plain text, and `##` helps only one of those.
-func newestSection(md string) string {
-	const marker = "## "
+// recent keeps the newest newestCount entries plus every entry stamped within
+// recentWindow of now, in file order. An entry without a parseable stamp still
+// counts toward the newest, but is never recent.
+func recent(entries []string, now time.Time) []string {
+	cutoff := now.Add(-recentWindow)
 	var out []string
-	for _, line := range strings.Split(md, "\n") {
-		if strings.HasPrefix(line, marker) {
-			if len(out) > 0 {
-				break
-			}
-			out = append(out, strings.TrimPrefix(line, marker))
+	for i, entry := range entries {
+		if i < newestCount {
+			out = append(out, entry)
 			continue
 		}
-		if len(out) > 0 {
-			out = append(out, line)
+		if at, ok := headingTime(entry, now.Location()); ok && !at.Before(cutoff) {
+			out = append(out, entry)
 		}
 	}
-	return strings.TrimRight(strings.Join(out, "\n"), "\n \t")
+	return out
+}
+
+// headingTime reads the local stamp that opens an entry's heading.
+func headingTime(entry string, loc *time.Location) (time.Time, bool) {
+	if len(entry) < len(stampLayout) {
+		return time.Time{}, false
+	}
+	at, err := time.ParseInLocation(stampLayout, entry[:len(stampLayout)], loc)
+	return at, err == nil
+}
+
+// sections splits the what's-new file into its `## ` entries, newest first,
+// with the heading markers dropped: the file is read on GitHub as markdown and
+// in a terminal as plain text, and `##` helps only one of those.
+func sections(md string) []string {
+	const marker = "## "
+	var entries []string
+	var current []string
+	flush := func() {
+		if current != nil {
+			entries = append(entries, strings.TrimRight(strings.Join(current, "\n"), "\n \t"))
+		}
+	}
+	for _, line := range strings.Split(md, "\n") {
+		if strings.HasPrefix(line, marker) {
+			flush()
+			current = []string{strings.TrimPrefix(line, marker)}
+			continue
+		}
+		if current != nil {
+			current = append(current, line)
+		}
+	}
+	flush()
+	return entries
 }

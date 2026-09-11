@@ -1,9 +1,15 @@
 # What's new
 
 Newest first, each heading stamped with the local date and time of the change
-(several land per day). `wt about` prints the top section, so keep each entry to a few
-lines a human would want read out to them; the full story is in git history and
-in `docs/superpowers/plans/`.
+(several land per day). `wt about` prints the newest 5 entries, or every entry from
+the last 3 days if that is more, so keep each entry to a few lines a human would
+want read out to them; the full story is in git history and in
+`docs/superpowers/plans/`.
+
+## 2026-09-11 07:21 — wt about shows the last few days
+
+- `wt about` lists the newest 5 what's-new entries, or every entry from the
+  last 3 days if that is more, instead of only the newest one.
 
 ## 2026-09-10 21:59 — an idle session no longer blocks wt sync
 
