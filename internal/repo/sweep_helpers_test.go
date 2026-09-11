@@ -2,36 +2,23 @@ package repo
 
 import (
 	"os/exec"
-	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 // sweepGit runs git in dir and returns trimmed stdout, failing the test on error.
 func sweepGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v: %s", args, err, out)
-	}
-	return strings.TrimSpace(string(out))
+	return gittest.Git(t, dir, args...)
 }
 
 // sweepFixture is a repository on main with one commit and a bare origin, fetched.
 func sweepFixture(t *testing.T) (*Repo, string) {
 	t.Helper()
-	dir := filepath.Join(t.TempDir(), "demo")
-	sweepGit(t, filepath.Dir(dir), "init", "-q", "-b", "main", dir)
-	sweepGit(t, dir, "config", "user.email", "t@example.com")
-	sweepGit(t, dir, "config", "user.name", "T")
-	sweepGit(t, dir, "commit", "-q", "--allow-empty", "-m", "init")
-	origin := filepath.Join(t.TempDir(), "origin.git")
-	sweepGit(t, dir, "clone", "-q", "--bare", dir, origin)
-	sweepGit(t, dir, "remote", "add", "origin", origin)
-	sweepGit(t, dir, "fetch", "-q", "origin")
+	dir := gittest.NewRepo(t, t.TempDir(), "demo")
+	gittest.WithOrigin(t, dir)
 	r, err := Discover(dir)
 	if err != nil {
 		t.Fatal(err)

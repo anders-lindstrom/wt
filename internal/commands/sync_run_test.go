@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -112,9 +113,7 @@ func contestedFixture(t *testing.T) (ctx *Context, bump string) {
 // gitAncestor reports whether a is an ancestor of b; exit 1 is a plain no.
 func gitAncestor(t *testing.T, dir, a, b string) bool {
 	t.Helper()
-	cmd := exec.Command("git", "merge-base", "--is-ancestor", a, b)
-	cmd.Dir = dir
-	err := cmd.Run()
+	_, err := gittest.Try(t, dir, "merge-base", "--is-ancestor", a, b)
 	if err == nil {
 		return true
 	}

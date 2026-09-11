@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 // linearRepo builds: base -> main moves on (trunk edits) ; feature branches
@@ -30,13 +32,7 @@ func repoWith(t *testing.T, base map[string]string, trunkEdits []map[string]stri
 	gitIn(t, dir, "config", "user.email", "t@example.com")
 	write := func(edits map[string]string) {
 		for p, c := range edits {
-			full := filepath.Join(dir, p)
-			if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(full, []byte(c), 0o644); err != nil {
-				t.Fatal(err)
-			}
+			gittest.WriteFile(t, filepath.Join(dir, p), c)
 		}
 	}
 	write(base)

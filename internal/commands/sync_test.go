@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -20,13 +20,7 @@ import (
 // gitOut runs git and returns its stdout; the package's gitIn returns nothing.
 func gitOut(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v: %s", args, err, out)
-	}
-	return strings.TrimRight(string(out), "\n")
+	return gittest.Git(t, dir, args...)
 }
 
 // syncBlock is a worktree's row in the wt sync overview and the lines under it.

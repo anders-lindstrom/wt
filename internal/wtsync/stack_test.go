@@ -1,11 +1,11 @@
 package wtsync
 
 import (
-	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
@@ -17,9 +17,7 @@ func stackRepo(t *testing.T) (string, []repo.Worktree) {
 		gitIn(t, dir, "branch", branch, from)
 		path := dir + "-" + branch
 		gitIn(t, dir, "worktree", "add", "-q", path, branch)
-		if err := os.WriteFile(filepath.Join(path, file), []byte(file+"\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		gittest.WriteFile(t, filepath.Join(path, file), file+"\n")
 		gitIn(t, path, "add", "-A")
 		gitIn(t, path, "commit", "-q", "-m", file)
 		return repo.Worktree{Path: path, Branch: branch}

@@ -3,10 +3,11 @@ package commands
 import (
 	"bytes"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 func fixtureRepo(t *testing.T, conf string) string {
@@ -16,11 +17,7 @@ func fixtureRepo(t *testing.T, conf string) string {
 		t.Fatal(err)
 	}
 	main := filepath.Join(parent, "demo")
-	cmd := exec.Command("git", "init", "-q", "-b", "main", "demo")
-	cmd.Dir = parent
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("%v: %s", err, out)
-	}
+	gittest.Git(t, parent, "init", "-q", "-b", "main", "demo")
 	dir := filepath.Join(main, "bin", "worktree")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)

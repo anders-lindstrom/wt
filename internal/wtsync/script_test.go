@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 // fakeScript commits an executable to origin's main that answers the
@@ -200,7 +201,7 @@ func stoppedRebaseWithScript(t *testing.T, script string) (dir, wt string) {
 	gitIn(t, dir, "remote", "add", "origin", dir)
 	gitIn(t, dir, "fetch", "-q", "origin")
 	w := featureWorktree(t, dir)
-	if err := gitCmd(w.Path, "rebase", "--no-update-refs", "--no-gpg-sign", "main").Run(); err == nil {
+	if _, err := gittest.Try(t, w.Path, "rebase", "--no-update-refs", "--no-gpg-sign", "main"); err == nil {
 		t.Fatal("rebase did not stop")
 	}
 	return dir, w.Path

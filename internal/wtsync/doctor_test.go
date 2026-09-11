@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
@@ -328,7 +329,7 @@ func TestDoctorTreeChecksReportAGitThatDoesNotAnswer(t *testing.T) {
 
 func TestDoctorFlagsAWorktreeLeftMidRebase(t *testing.T) {
 	dir, wt, _ := runRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"a.txt": "a3\n"}})
-	if err := gitCmd(wt, "rebase", "--no-update-refs", "--no-gpg-sign", "main").Run(); err == nil {
+	if _, err := gittest.Try(t, wt, "rebase", "--no-update-refs", "--no-gpg-sign", "main"); err == nil {
 		t.Fatal("rebase did not stop; the test is vacuous")
 	}
 	checks, err := Doctor(dir, "main", []repo.Worktree{{Path: dir, Branch: "main", IsMain: true}, {Path: wt, Branch: "feature"}}, DoctorOptions{Now: time.Now(), Keep: 30 * 24 * time.Hour, Docker: func() error { return nil }})

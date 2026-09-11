@@ -1,10 +1,10 @@
 package repo
 
 import (
-	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 // resolved mirrors what git reports: on macOS /var is a symlink to /private/var,
@@ -20,22 +20,14 @@ func resolved(t *testing.T, path string) string {
 
 func run(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v: %v: %s", args, err, out)
-	}
+	gittest.Git(t, dir, args...)
 }
 
 // fixture builds a repo with one commit and one linked worktree.
 func fixture(t *testing.T) (parent, main string) {
 	t.Helper()
 	parent = resolved(t, t.TempDir())
-	main = filepath.Join(parent, "demo")
-	run(t, parent, "init", "-q", "-b", "main", "demo")
-	run(t, main, "config", "user.email", "t@example.com")
-	run(t, main, "config", "user.name", "T")
-	run(t, main, "commit", "-q", "--allow-empty", "-m", "init")
+	main = gittest.NewRepo(t, parent, "demo")
 	run(t, main, "worktree", "add", "-q", "-b", "feat_wt/thing",
 		filepath.Join(parent, "demo_wt", "feat_wt", "thing"))
 	return parent, main
@@ -105,9 +97,7 @@ func TestDetectMainBranchSurvivesUnbornHead(t *testing.T) {
 // `git rebase` that are expected to stop with a conflict.
 func runIgnoringFailure(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	_, _ = cmd.CombinedOutput()
+	_, _ = gittest.Try(t, dir, args...)
 }
 
 func TestWorktreesNameTheBranchOfAStoppedRebase(t *testing.T) {
@@ -118,17 +108,17 @@ func TestWorktreesNameTheBranchOfAStoppedRebase(t *testing.T) {
 	run(t, main, "config", "user.email", "t@example.com")
 	run(t, main, "config", "user.name", "T")
 	run(t, main, "commit", "-q", "--allow-empty", "-m", "init")
-	writeFile(t, filepath.Join(main, "v.txt"), "1\n")
+	gittest.WriteFile(t, filepath.Join(main, "v.txt"), "1\n")
 	run(t, main, "add", "v.txt")
 	run(t, main, "commit", "-q", "-m", "add v.txt")
 
 	wtPath := filepath.Join(parent, "demo_wt", "feature")
 	run(t, main, "worktree", "add", "-q", "-b", "feature", wtPath)
 
-	writeFile(t, filepath.Join(main, "v.txt"), "2\n")
+	gittest.WriteFile(t, filepath.Join(main, "v.txt"), "2\n")
 	run(t, main, "commit", "-q", "-am", "trunk")
 
-	writeFile(t, filepath.Join(wtPath, "v.txt"), "3\n")
+	gittest.WriteFile(t, filepath.Join(wtPath, "v.txt"), "3\n")
 	run(t, wtPath, "commit", "-q", "-am", "branch")
 
 	// Start the rebase in the worktree and let it stop.
@@ -204,7 +194,7 @@ func TestWorktreesIgnoreADetachedHeadRebase(t *testing.T) {
 	run(t, main, "config", "user.email", "t@example.com")
 	run(t, main, "config", "user.name", "T")
 	run(t, main, "commit", "-q", "--allow-empty", "-m", "init")
-	writeFile(t, filepath.Join(main, "v.txt"), "1\n")
+	gittest.WriteFile(t, filepath.Join(main, "v.txt"), "1\n")
 	run(t, main, "add", "v.txt")
 	run(t, main, "commit", "-q", "-m", "add v.txt")
 
@@ -213,11 +203,11 @@ func TestWorktreesIgnoreADetachedHeadRebase(t *testing.T) {
 	run(t, main, "worktree", "add", "-q", "--detach", wtPath)
 
 	// Trunk moves on.
-	writeFile(t, filepath.Join(main, "v.txt"), "2\n")
+	gittest.WriteFile(t, filepath.Join(main, "v.txt"), "2\n")
 	run(t, main, "commit", "-q", "-am", "trunk")
 
 	// The detached worktree also moves on, so it diverges from trunk.
-	writeFile(t, filepath.Join(wtPath, "v.txt"), "3\n")
+	gittest.WriteFile(t, filepath.Join(wtPath, "v.txt"), "3\n")
 	run(t, wtPath, "commit", "-q", "-am", "branch")
 
 	// Rebase onto trunk from the already-detached HEAD; let it stop on the
@@ -250,13 +240,6 @@ func TestWorktreesIgnoreADetachedHeadRebase(t *testing.T) {
 	}
 	if wt.Rebasing {
 		t.Fatal("Rebasing = true, want false: there is no branch to resume")
-	}
-}
-
-func writeFile(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
 	}
 }
 

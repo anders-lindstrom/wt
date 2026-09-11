@@ -2,28 +2,16 @@ package git
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 func newRepo(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	for _, args := range [][]string{
-		{"init", "-q", "-b", "main"},
-		{"config", "user.email", "t@example.com"},
-		{"config", "user.name", "T"},
-		{"commit", "-q", "--allow-empty", "-m", "init"},
-	} {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, out)
-		}
-	}
-	return dir
+	return gittest.NewRepo(t, t.TempDir(), "demo")
 }
 
 func TestRunReturnsTrimmedOutput(t *testing.T) {

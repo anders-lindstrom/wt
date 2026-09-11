@@ -3,7 +3,6 @@ package commands
 import (
 	"bytes"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -75,9 +75,7 @@ func noResumeAgents() ResumeOptions {
 
 func writeFile(t *testing.T, dir, rel, content string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(dir, rel), []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteFile(t, filepath.Join(dir, rel), content)
 }
 
 // gitTry runs git where a non-zero exit is part of the scenario — a person's
@@ -85,11 +83,8 @@ func writeFile(t *testing.T, dir, rel, content string) {
 // editor. The caller asserts the state it was after.
 func gitTry(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_EDITOR=true")
-	out, _ := cmd.CombinedOutput()
-	return string(out)
+	out, _ := gittest.Try(t, dir, args...)
+	return out
 }
 
 // assertUntouched is what "a refusal changes nothing" means: the rebase is

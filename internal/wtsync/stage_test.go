@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 // stoppedRebase starts a real rebase of feature onto main in a worktree and
@@ -13,8 +15,7 @@ func stoppedRebase(t *testing.T, trunkEdits, branchEdits []map[string]string) (d
 	t.Helper()
 	dir = linearRepo(t, trunkEdits, branchEdits)
 	w := featureWorktree(t, dir)
-	cmd := gitCmd(w.Path, "rebase", "--no-update-refs", "--no-gpg-sign", "main")
-	if err := cmd.Run(); err == nil {
+	if _, err := gittest.Try(t, w.Path, "rebase", "--no-update-refs", "--no-gpg-sign", "main"); err == nil {
 		t.Fatal("rebase did not stop")
 	}
 	return dir, w.Path
@@ -42,7 +43,7 @@ func TestStagedConflictsMarksAModifyDeleteIncomplete(t *testing.T) {
 	w := featureWorktree(t, dir)
 	gitIn(t, w.Path, "rm", "-q", "v.txt")
 	gitIn(t, w.Path, "commit", "-q", "-m", "drop v")
-	if err := gitCmd(w.Path, "rebase", "--no-gpg-sign", "main").Run(); err == nil {
+	if _, err := gittest.Try(t, w.Path, "rebase", "--no-gpg-sign", "main"); err == nil {
 		t.Fatal("rebase did not stop")
 	}
 	cs, err := StagedConflicts(w.Path)

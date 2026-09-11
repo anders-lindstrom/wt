@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 // A direct commit carries its own scope; a merge commit's subject has none
@@ -14,9 +16,7 @@ func TestLandingListCountsDirectAndMergedScopes(t *testing.T) {
 	base := gitIn(t, dir, "rev-parse", "HEAD")
 	write := func(name, content string) {
 		t.Helper()
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		gittest.WriteFile(t, filepath.Join(dir, name), content)
 	}
 
 	write("a.txt", "a2\n")
