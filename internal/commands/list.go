@@ -24,31 +24,31 @@ const minPathWidth = 24
 // different things: "s" is Superset's layout, which is deliberate and must be
 // left alone, while "!" is a layout nothing owns and `wt migrate` can move.
 func List(ctx *Context, w io.Writer, width int) error {
-	worktrees, err := ctx.Repo.Worktrees()
+	names, err := WorkNames(ctx)
 	if err != nil {
 		return err
 	}
 	rows := [][]string{{"", "WORK", "BRANCH", "PATH"}}
 	var seen [3]bool
-	for _, wt := range worktrees {
-		work, branch := "(main)", wt.Branch
+	for _, n := range names {
+		work, branch := "(main)", n.Branch
 		if branch == "" {
 			branch = "(detached)"
 		}
 		mark := ""
-		if !wt.IsMain {
+		if !n.IsMain {
 			layout := naming.Foreign
-			if typ, name, ok := naming.ParseBranch(wt.Branch, ctx.Config.TypeSuffix); ok {
-				work = name
-				layout = naming.Classify(wt.Path, ctx.Repo.Parent, ctx.Repo.Name,
-					typ, name, ctx.Config.TypeSuffix)
+			if n.Work != "" {
+				work = n.Work
+				layout = naming.Classify(n.Path, ctx.Repo.Parent, ctx.Repo.Name,
+					n.Type, n.Work, ctx.Config.TypeSuffix)
 			} else {
 				work = "-"
 			}
 			seen[layout] = true
 			mark = layoutMark(layout)
 		}
-		rows = append(rows, []string{mark, work, branch, wt.Path})
+		rows = append(rows, []string{mark, work, branch, n.Path})
 	}
 	if err := printPathTable(w, rows, width); err != nil {
 		return err

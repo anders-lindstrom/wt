@@ -29,7 +29,7 @@ func Locate(ctx *Context, arg string) (repo.Worktree, error) {
 	if arg == "" {
 		return repo.Worktree{}, errors.New("no worktree given")
 	}
-	worktrees, err := ctx.Repo.Worktrees()
+	names, err := WorkNames(ctx)
 	if err != nil {
 		return repo.Worktree{}, err
 	}
@@ -37,21 +37,21 @@ func Locate(ctx *Context, arg string) (repo.Worktree, error) {
 	// A path is tried first and on its own: it identifies a worktree outright,
 	// so a name that happens to look like one cannot pull the answer elsewhere.
 	if abs, ok := absPath(arg); ok {
-		for _, wt := range worktrees {
-			if !samePath(wt.Path, abs) {
+		for _, n := range names {
+			if !samePath(n.Path, abs) {
 				continue
 			}
-			if wt.IsMain {
+			if n.IsMain {
 				return repo.Worktree{}, errors.New("the main checkout is not a worktree; name a worktree (see wt list)")
 			}
-			return wt, nil
+			return n.Worktree, nil
 		}
 	}
 
 	var matches []repo.Worktree
-	for _, wt := range worktrees {
-		if !wt.IsMain && matchesName(ctx, wt, arg) {
-			matches = append(matches, wt)
+	for _, n := range names {
+		if !n.IsMain && matchesName(n, arg) {
+			matches = append(matches, n.Worktree)
 		}
 	}
 	switch len(matches) {
@@ -70,15 +70,40 @@ func Locate(ctx *Context, arg string) (repo.Worktree, error) {
 
 // matchesName reports whether arg names this worktree by branch, by
 // <type>/<work>, or by the bare work name.
-func matchesName(ctx *Context, wt repo.Worktree, arg string) bool {
-	if wt.Branch == "" {
+func matchesName(n WorkName, arg string) bool {
+	if n.Branch == "" {
 		return false
 	}
-	if wt.Branch == arg {
+	if n.Branch == arg {
 		return true
 	}
-	typ, work, ok := naming.ParseBranch(wt.Branch, ctx.Config.TypeSuffix)
-	return ok && (work == arg || typ+"/"+work == arg)
+	return n.Work != "" && (n.Work == arg || n.Type+"/"+n.Work == arg)
+}
+
+// WorkName is a worktree with its branch read against the naming convention.
+// Type and Work are empty when the branch does not follow it, or there is no
+// branch.
+type WorkName struct {
+	repo.Worktree
+	Type, Work string
+}
+
+// WorkNames returns every worktree of the repository, the main checkout
+// included, in the order git lists them, each with its type and work name.
+func WorkNames(ctx *Context) ([]WorkName, error) {
+	worktrees, err := ctx.Repo.Worktrees()
+	if err != nil {
+		return nil, err
+	}
+	names := make([]WorkName, 0, len(worktrees))
+	for _, wt := range worktrees {
+		n := WorkName{Worktree: wt}
+		if typ, work, ok := naming.ParseBranch(wt.Branch, ctx.Config.TypeSuffix); ok {
+			n.Type, n.Work = typ, work
+		}
+		names = append(names, n)
+	}
+	return names, nil
 }
 
 // absPath reports the absolute form of an argument that could be a path. An

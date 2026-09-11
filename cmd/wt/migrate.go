@@ -6,7 +6,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
-	"github.com/anders-lindstrom/wt/internal/naming"
 )
 
 func newMigrateCmd() *cobra.Command {
@@ -66,35 +65,35 @@ func migrateArgs(_ *cobra.Command, args []string) error {
 // or by branch for the ones outside the convention, which are the whole point
 // of this command — and this repository's types for the second.
 func completeMigrate(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+	if len(args) > 1 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
 	ctx, err := openContext()
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	worktrees, err := ctx.Repo.Worktrees()
+	names, err := commands.WorkNames(ctx)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	if len(args) > 1 {
-		return nil, cobra.ShellCompDirectiveNoFileComp
-	}
 	var out []string
-	for _, w := range worktrees {
-		if w.IsMain || w.Branch == "" {
+	for _, n := range names {
+		if n.IsMain || n.Branch == "" {
 			continue
 		}
-		name := w.Branch
-		if typ, work, ok := naming.ParseBranch(w.Branch, ctx.Config.TypeSuffix); ok {
-			name = typ + "/" + work
+		name, work := n.Branch, n.Branch
+		if n.Work != "" {
+			name, work = n.Type+"/"+n.Work, n.Work
 		}
 		if len(args) == 0 {
 			out = append(out, name)
 			continue
 		}
-		if name != args[0] && w.Branch != args[0] {
+		if name != args[0] && n.Branch != args[0] {
 			continue
 		}
 		for _, t := range ctx.Config.Types {
-			out = append(out, t+"/"+naming.StripPrefix(w.Branch, ctx.Config.TypeSuffix))
+			out = append(out, t+"/"+work)
 		}
 	}
 	return out, cobra.ShellCompDirectiveNoFileComp

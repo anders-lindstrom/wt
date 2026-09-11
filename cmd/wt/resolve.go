@@ -20,20 +20,17 @@ func completeWork(_ *cobra.Command, args []string, _ string) ([]string, cobra.Sh
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	worktrees, err := ctx.Repo.Worktrees()
+	names, err := commands.WorkNames(ctx)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	var names []string
-	for _, w := range worktrees {
-		if w.IsMain || w.Branch == "" {
-			continue
-		}
-		if typ, work, ok := naming.ParseBranch(w.Branch, ctx.Config.TypeSuffix); ok {
-			names = append(names, typ+"/"+work)
+	var out []string
+	for _, n := range names {
+		if !n.IsMain && n.Work != "" {
+			out = append(out, n.Type+"/"+n.Work)
 		}
 	}
-	return names, cobra.ShellCompDirectiveNoFileComp
+	return out, cobra.ShellCompDirectiveNoFileComp
 }
 
 func newPathCmd() *cobra.Command {
