@@ -23,12 +23,9 @@ func SyncUndo(ctx *Context, work string, opts UndoOptions, w io.Writer) error {
 	// Undo never rebases, so an interrupt has only the locks to release.
 	defer watchSignals(w, nil)()
 
-	target, err := Locate(ctx, work)
+	target, err := locateBranch(ctx, work)
 	if err != nil {
 		return err
-	}
-	if target.Branch == "" {
-		return fmt.Errorf("%s has no branch", work)
 	}
 	worktrees, err := ctx.Repo.Worktrees()
 	if err != nil {

@@ -12,10 +12,11 @@ import (
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
-// fetchTimeout bounds the one call in a run that reaches the network. It is
-// shorter than the default git deadline: a fetch that has not finished by
-// now is not going to, and every worktree in the run is waiting on it.
-const fetchTimeout = 5 * time.Minute
+// networkTimeout bounds the calls that reach the network: a run's fetch, and
+// the push it ends with. It is shorter than the default git deadline: one
+// that has not finished by now is not going to, and every worktree in the run
+// is waiting on it.
+const networkTimeout = 5 * time.Minute
 
 // RunOptions tunes SyncRun for callers and tests.
 type RunOptions struct {
@@ -44,12 +45,11 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 	defer watchSignals(w, tracker)()
 
 	trunk := ctx.Config.MainBranch
-	onto := "origin/" + trunk
 	var fetched string
 	if opts.NoFetch {
-		fetched = lastFetched(ctx.Repo.MainRoot, time.Now())
+		fetched = lastFetched(ctx.Repo.MainRoot, opts.now())
 	} else {
-		if _, err := git.RunTimeout(ctx.Repo.MainRoot, fetchTimeout, "fetch", "--quiet", "origin", trunk); err != nil {
+		if _, err := git.RunTimeout(ctx.Repo.MainRoot, networkTimeout, "fetch", "--quiet", "origin", trunk); err != nil {
 			return fmt.Errorf("fetch: %w", err)
 		}
 		fetched = "fetched"
@@ -57,9 +57,9 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 	// One SHA for the whole run: the declaration, the scripts and every
 	// rebase target are the same trunk, whatever someone else fetches
 	// underneath us mid-run.
-	trunkSHA, err := git.Run(ctx.Repo.MainRoot, "rev-parse", "--verify", onto)
+	onto, trunkSHA, err := trunkTip(ctx)
 	if err != nil {
-		return fmt.Errorf("%s is not known here; run git fetch origin", onto)
+		return err
 	}
 	fmt.Fprintf(w, "wt sync run  onto %s %s (%s)\n", onto, git.ShortID(trunkSHA, 7), fetched)
 	cfg, err := wtsync.LoadFromRef(ctx.Repo.MainRoot, trunkSHA)
@@ -81,12 +81,9 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 	}
 	var named []string
 	for _, arg := range works {
-		wt, err := Locate(ctx, arg)
+		wt, err := locateBranch(ctx, arg)
 		if err != nil {
 			return err
-		}
-		if wt.Branch == "" {
-			return fmt.Errorf("%s has no branch", arg)
 		}
 		named = append(named, wt.Branch)
 	}

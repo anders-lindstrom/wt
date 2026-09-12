@@ -331,7 +331,7 @@ func sweepFetch(ctx *Context, noFetch bool, w io.Writer) error {
 	case noFetch:
 		fmt.Fprintln(w, "not fetched: comparing with origin as last fetched")
 	default:
-		if _, err := git.RunTimeout(ctx.Repo.MainRoot, fetchTimeout, "fetch", "--quiet", "--prune",
+		if _, err := git.RunTimeout(ctx.Repo.MainRoot, networkTimeout, "fetch", "--quiet", "--prune",
 			"--no-prune-tags", "--no-tags", "--no-recurse-submodules", "--refmap=",
 			"origin", "+refs/heads/*:refs/remotes/origin/*"); err != nil {
 			return fmt.Errorf("fetch: %w\n  --no-fetch compares with origin as last fetched", err)

@@ -38,12 +38,9 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 	tracker := &rebaseTracker{}
 	defer watchSignals(w, tracker)()
 
-	target, err := Locate(ctx, work)
+	target, err := locateBranch(ctx, work)
 	if err != nil {
 		return err
-	}
-	if target.Branch == "" {
-		return fmt.Errorf("%s has no branch", work)
 	}
 	gitDir, err := wtsync.GitDir(target.Path)
 	if err != nil {

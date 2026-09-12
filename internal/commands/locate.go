@@ -66,6 +66,19 @@ func Locate(ctx *Context, arg string) (repo.Worktree, error) {
 	}
 }
 
+// locateBranch is Locate for the verbs that act on a branch: one with none
+// is named and refused rather than worked on.
+func locateBranch(ctx *Context, arg string) (repo.Worktree, error) {
+	wt, err := Locate(ctx, arg)
+	if err != nil {
+		return repo.Worktree{}, err
+	}
+	if wt.Branch == "" {
+		return repo.Worktree{}, fmt.Errorf("%s has no branch", arg)
+	}
+	return wt, nil
+}
+
 // matchesName reports whether arg names this worktree by branch, by
 // <type>/<work>, or by the bare work name.
 func matchesName(n WorkName, arg string) bool {

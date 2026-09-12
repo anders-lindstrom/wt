@@ -72,7 +72,7 @@ func offerPush(w io.Writer, mode PushMode, confirm func(works []string) (bool, e
 		if before, err := git.Run(t.Path, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+t.Branch); err == nil {
 			from = git.ShortID(before, 7)
 		}
-		if _, err := git.RunTimeout(t.Path, fetchTimeout, pushArgs(t)...); err != nil {
+		if _, err := git.RunTimeout(t.Path, networkTimeout, pushArgs(t)...); err != nil {
 			fmt.Fprintf(w, "  ✗ push of %s failed: %s\n", t.Branch, pushReason(err))
 			failed = append(failed, t.Work+" (push failed)")
 			continue
