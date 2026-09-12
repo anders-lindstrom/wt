@@ -423,7 +423,7 @@ func (d *driver) drive(err error) (Result, error) {
 			// the sequencer stopped for a reason we do not handle. One
 			// --continue is the honest move; the guard above catches a
 			// second stop in the same place.
-			stop.Files = append(stop.Files, FileOutcome{Path: messagesPath, Note: "stopped with nothing unmerged"})
+			stop.Files = append(stop.Files, messagesOutcome("stopped with nothing unmerged"))
 		}
 		logStop(d.log, stop)
 		d.res.Stops = append(d.res.Stops, stop)

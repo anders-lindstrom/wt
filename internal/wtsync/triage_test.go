@@ -38,35 +38,19 @@ func featureWorktree(t *testing.T, dir string) repo.Worktree {
 	return repo.Worktree{Path: path, Branch: "feature"}
 }
 
-func TestClassifyStopNoFilesNoMessagesIsContestedWithASyntheticNote(t *testing.T) {
-	class, files := classifyStop(nil, "")
-	if class != Contested || len(files) != 1 || files[0].Path != messagesPath ||
-		files[0].Note != "merge-tree reported a conflict with no details" {
-		t.Errorf("class = %v, files = %+v", class, files)
+// A stop with no conflicted file of its own still names something: the
+// messages when merge-tree left any, and a note saying it did not otherwise.
+func TestMessagesOutcomeNamesAStopWithNoFilesOfItsOwn(t *testing.T) {
+	got := messagesOutcome("")
+	if got.Path != messagesPath || got.Note != "merge-tree reported a conflict with no details" {
+		t.Errorf("no messages: %+v", got)
 	}
-}
-
-func TestClassifyStopNoFilesWithMessagesIsContestedWithTheMessagesAsTheNote(t *testing.T) {
-	class, files := classifyStop(nil, "CONFLICT (modify/delete): a.txt")
-	if class != Contested || len(files) != 1 || files[0].Path != messagesPath ||
-		files[0].Note != "CONFLICT (modify/delete): a.txt" {
-		t.Errorf("class = %v, files = %+v", class, files)
+	if got.Resolved {
+		t.Errorf("the stand-in is nobody's resolution: %+v", got)
 	}
-}
-
-func TestClassifyStopAllResolvedIsRecipe(t *testing.T) {
-	files := []FileOutcome{{Path: "a", Resolved: true}, {Path: "b", Resolved: true}}
-	class, got := classifyStop(files, "")
-	if class != Recipe || len(got) != 2 {
-		t.Errorf("class = %v, files = %+v", class, got)
-	}
-}
-
-func TestClassifyStopAnyUnresolvedIsContested(t *testing.T) {
-	files := []FileOutcome{{Path: "a", Resolved: true}, {Path: "b", Resolved: false, Note: "unclaimed"}}
-	class, got := classifyStop(files, "")
-	if class != Contested || len(got) != 2 {
-		t.Errorf("class = %v, files = %+v", class, got)
+	got = messagesOutcome("CONFLICT (modify/delete): a.txt")
+	if got.Path != messagesPath || got.Note != "CONFLICT (modify/delete): a.txt" {
+		t.Errorf("with messages: %+v", got)
 	}
 }
 

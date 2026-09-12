@@ -167,8 +167,13 @@ func Assess(mainRoot, onto string, cfg *Config, wt repo.Worktree, agents []Agent
 	a.Unverified = a.Replay.Truncated
 	switch {
 	case a.Replay.Stop != nil:
-		a.Files = a.Replay.Stop.Files
-		a.Class, a.Files = classifyStop(a.Files, a.Replay.Stop.Messages)
+		// The replay reports a stop only when the strategies did not resolve
+		// it, so a reported stop is a person's by construction. A stop with
+		// no conflicted file of its own still has to name something.
+		a.Class, a.Files = Contested, a.Replay.Stop.Files
+		if len(a.Files) == 0 {
+			a.Files = []FileOutcome{messagesOutcome(a.Replay.Stop.Messages)}
+		}
 	case len(a.Replay.Stops) > 0:
 		// Every stop reached was resolved by a strategy.
 		a.Class = Recipe
@@ -188,27 +193,6 @@ func Assess(mainRoot, onto string, cfg *Config, wt repo.Worktree, agents []Agent
 		a.Class = Divergent
 	}
 	return a
-}
-
-// classifyStop decides the class of the stop that decides it, from the files a
-// person would see and merge-tree's own messages. A stop with no files at
-// all has nothing to show: it gets a synthetic FileOutcome so the report
-// still names something, distinguishing "merge-tree said nothing useful"
-// from "merge-tree explained itself in messages".
-func classifyStop(files []FileOutcome, messages string) (Class, []FileOutcome) {
-	if len(files) == 0 {
-		note := messages
-		if note == "" {
-			note = "merge-tree reported a conflict with no details"
-		}
-		return Contested, append(files, FileOutcome{Path: messagesPath, Note: note})
-	}
-	for _, f := range files {
-		if !f.Resolved {
-			return Contested, files
-		}
-	}
-	return Recipe, files
 }
 
 // divergence returns the collisions that make a branch a workstream rather

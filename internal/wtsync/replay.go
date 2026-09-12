@@ -11,6 +11,17 @@ import (
 // messages, with no three blobs of its own to show.
 const messagesPath = "(see messages)"
 
+// messagesOutcome is the stand-in for a stop with no conflicted file of its
+// own to name: merge-tree explained itself only in its messages, or the
+// sequencer stopped with nothing unmerged. note says which, and an empty one
+// distinguishes "merge-tree said nothing useful" from either.
+func messagesOutcome(note string) FileOutcome {
+	if note == "" {
+		note = "merge-tree reported a conflict with no details"
+	}
+	return FileOutcome{Path: messagesPath, Note: note}
+}
+
 // Stop is one commit at which a rebase stops, with what the declared
 // strategies answered for every file it conflicts on.
 type Stop struct {
