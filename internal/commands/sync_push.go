@@ -79,7 +79,14 @@ func offerPush(w io.Writer, mode PushMode, confirm func(works []string) (bool, e
 		}
 		to, err := git.Run(t.Path, "rev-parse", "--verify", t.Branch)
 		if err != nil {
-			return failed, err
+			// The push went through; only reading the tip to report it did
+			// not. Returning here would take the run's whole report with it
+			// — every worktree that did not finish would go unnamed — so
+			// this is named like any other push that did not come off and
+			// the loop carries on.
+			fmt.Fprintf(w, "  ✗ pushed %s, but its new tip could not be read: %s\n", t.Branch, pushReason(err))
+			failed = append(failed, t.Work+" (pushed, tip unread)")
+			continue
 		}
 		fmt.Fprintf(w, "  ✓ pushed %s  %s → %s\n", t.Branch, from, git.ShortID(to, 7))
 	}
