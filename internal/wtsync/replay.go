@@ -110,7 +110,7 @@ func SimulateRebase(mainRoot, onto, branch string, cfg *Config) (Replay, error) 
 					stop.Resolved = false
 					continue
 				}
-				if r.Outcome.Strategy == "script" {
+				if r.Outcome.Strategy == StrategyScript {
 					// --check said the script owns it, which is all a
 					// script can say here: it resolves against a real
 					// index in a worktree, never in the object store. The

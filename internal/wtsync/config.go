@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"path"
 	"regexp"
 	"strings"
 
@@ -38,6 +37,12 @@ type Rule struct {
 	Delimiter string `yaml:"delimiter"`
 	// Run is the executable of a script strategy, relative to the root.
 	Run string `yaml:"run"`
+
+	// line is Line compiled and value is Rule resolved, both filled in by
+	// Parse: a declaration is checked once, and nothing downstream compiles
+	// or re-resolves them. Both are nil on a Rule built by hand.
+	line  *regexp.Regexp
+	value ValueRule
 }
 
 // Deferred is work that runs once after the last commit is replayed.
@@ -56,12 +61,6 @@ type Config struct {
 	Defer           []Deferred `yaml:"defer"`
 	DependencyGraph []string   `yaml:"dependency_graph"`
 }
-
-// Strategies and value rules a declaration may name.
-var (
-	strategies = map[string]bool{"owned-line": true, "openapi": true, "list-union": true, "take-trunk": true, "script": true}
-	valueRules = map[string]bool{"max-plus-patch": true, "keep-branch": true, "keep-trunk": true}
-)
 
 // LoadFromTrunk reads the declaration from origin/<trunk>, never from a
 // working tree: the file names executables, and a feature branch must not be
@@ -104,41 +103,19 @@ func Parse(data []byte) (*Config, error) {
 		if len(r.Paths) == 0 {
 			return nil, fmt.Errorf("%s: conflicts[%d] has no paths", ConfigFile, i)
 		}
-		if !strategies[r.Strategy] {
+		k, ok := kinds[r.Strategy]
+		if !ok {
 			return nil, fmt.Errorf("%s: conflicts[%d]: unknown strategy %q", ConfigFile, i, r.Strategy)
 		}
-		switch r.Strategy {
-		case "owned-line":
-			if r.Line == "" || r.Rule == "" {
-				return nil, fmt.Errorf("%s: conflicts[%d]: owned-line needs line and rule", ConfigFile, i)
-			}
-			if _, err := regexp.Compile(r.Line); err != nil {
-				return nil, fmt.Errorf("%s: conflicts[%d]: bad line regex %q: %w", ConfigFile, i, r.Line, err)
-			}
-		case "openapi":
-			if r.Rule == "" {
-				r.Rule = "max-plus-patch"
-			}
-		case "list-union":
-			if r.Line == "" {
-				return nil, fmt.Errorf("%s: conflicts[%d]: list-union needs line", ConfigFile, i)
-			}
-			if _, err := regexp.Compile(r.Line); err != nil {
-				return nil, fmt.Errorf("%s: conflicts[%d]: bad line regex %q: %w", ConfigFile, i, r.Line, err)
-			}
-			if r.Delimiter == "" {
-				r.Delimiter = ","
-			}
-		case "script":
-			if r.Run == "" {
-				return nil, fmt.Errorf("%s: conflicts[%d]: script needs run", ConfigFile, i)
-			}
-			if path.IsAbs(r.Run) || escapesRoot(r.Run) {
-				return nil, fmt.Errorf("%s: conflicts[%d]: script run %q must be relative to the root, with no parent-directory segments", ConfigFile, i, r.Run)
-			}
+		if err := k.prepare(r); err != nil {
+			return nil, fmt.Errorf("%s: conflicts[%d]: %w", ConfigFile, i, err)
 		}
-		if r.Rule != "" && !valueRules[r.Rule] {
-			return nil, fmt.Errorf("%s: conflicts[%d]: unknown rule %q", ConfigFile, i, r.Rule)
+		if r.Rule != "" {
+			v, err := RuleNamed(r.Rule)
+			if err != nil {
+				return nil, fmt.Errorf("%s: conflicts[%d]: %w", ConfigFile, i, err)
+			}
+			r.value = v
 		}
 	}
 	for i, d := range cfg.Defer {

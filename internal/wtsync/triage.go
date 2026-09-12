@@ -3,7 +3,6 @@ package wtsync
 import (
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -235,7 +234,7 @@ func divergence(mainRoot, onto string, cfg *Config, branch string) (collisions [
 	for _, c := range conflicts {
 		f, ferr := tryStrategy(mainRoot, onto, cfg, c)
 		err = errors.Join(err, ferr)
-		if f.Strategy == "openapi" && !f.Resolved && len(f.Keys) > 0 {
+		if f.Strategy == StrategyOpenAPI && !f.Resolved && len(f.Keys) > 0 {
 			collisions = append(collisions, Collision{Path: c.Path, Groups: f.Groups})
 		}
 	}
@@ -286,10 +285,15 @@ func dependencyChanges(mainRoot string, cfg *Config, base, rev string) ([]string
 // lines at all (binary, mode only) is not "only owned lines".
 func onlyOwnedLines(mainRoot string, cfg *Config, base, rev, path string) (bool, error) {
 	rule, ok := cfg.RuleFor(path)
-	if !ok || rule.Strategy != "owned-line" {
+	if !ok || rule.Strategy != StrategyOwnedLine {
 		return false, nil
 	}
-	re, _ := regexp.Compile(rule.Line) // Parse already rejected a bad regex
+	// Parse compiled this onto the rule; a rule built by hand with a bad
+	// regex declares no owned line at all, which is the cautious answer.
+	re, rerr := rule.lineRE(StrategyOwnedLine)
+	if rerr != nil {
+		return false, nil
+	}
 	diff, err := gitEnv(mainRoot, nil, nil, "diff", "-U0", base, rev, "--", path)
 	if err != nil {
 		return false, fmt.Errorf("diff %s: %w", path, err)

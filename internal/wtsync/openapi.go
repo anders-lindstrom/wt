@@ -129,17 +129,17 @@ func loadSections(path string, base, trunk, branch doc) (merged, error) {
 
 func (s OpenAPI) version(path, branchV, trunkV string) (string, error) {
 	switch s.Rule {
-	case "keep-branch":
+	case RuleKeepBranch:
 		if branchV == "" {
 			return "", Refuse(path, "info.version missing")
 		}
 		return branchV, nil
-	case "keep-trunk":
+	case RuleKeepTrunk:
 		if trunkV == "" {
 			return "", Refuse(path, "info.version missing")
 		}
 		return trunkV, nil
-	case "max-plus-patch", "":
+	case RuleMaxPlusPatch, "":
 		if !exactSemverRE.MatchString(branchV) || !exactSemverRE.MatchString(trunkV) {
 			return "", Refuse(path, "info.version is not X.Y.Z on both sides (%q, %q)", branchV, trunkV)
 		}

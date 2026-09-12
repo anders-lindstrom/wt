@@ -32,14 +32,21 @@ type ValueRule interface {
 	Apply(branch, trunk string) (string, error)
 }
 
+// The value rules a declaration may name.
+const (
+	RuleMaxPlusPatch = "max-plus-patch"
+	RuleKeepBranch   = "keep-branch"
+	RuleKeepTrunk    = "keep-trunk"
+)
+
 // RuleNamed returns the rule a declaration names.
 func RuleNamed(name string) (ValueRule, error) {
 	switch name {
-	case "max-plus-patch":
+	case RuleMaxPlusPatch:
 		return maxPlusPatch{}, nil
-	case "keep-branch":
+	case RuleKeepBranch:
 		return keepBranch{}, nil
-	case "keep-trunk":
+	case RuleKeepTrunk:
 		return keepTrunk{}, nil
 	}
 	return nil, fmt.Errorf("unknown rule %q", name)

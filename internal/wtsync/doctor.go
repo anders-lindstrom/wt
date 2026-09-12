@@ -161,7 +161,7 @@ func scriptsCheck(mainRoot, onto string, cfg *Config) Check {
 	}
 	var bad []string
 	for _, r := range cfg.Conflicts {
-		if r.Strategy != "script" {
+		if r.Strategy != StrategyScript {
 			continue
 		}
 		mode, found, err := lsTreeMode(mainRoot, onto, r.Run)
