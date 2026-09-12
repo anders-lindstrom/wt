@@ -18,66 +18,14 @@ func StagedConflicts(wtPath string) ([]Conflict, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ls-files -u: %w", err)
 	}
-	type entry struct{ mode, oid string }
-	stages := map[string]map[int]entry{}
-	var order []string
-	for _, rec := range strings.Split(out, "\x00") {
-		if rec == "" {
-			continue
-		}
-		meta, path, ok := strings.Cut(rec, "\t")
-		if !ok {
-			continue
-		}
-		f := strings.Fields(meta)
-		if len(f) != 3 {
-			continue
-		}
-		stage, _ := strconv.Atoi(f[2])
-		if stages[path] == nil {
-			stages[path] = map[int]entry{}
-			order = append(order, path)
-		}
-		stages[path][stage] = entry{mode: f[0], oid: f[1]}
-	}
+	entries, _ := parseStages(strings.Split(out, "\x00"))
 	var cs []Conflict
-	for _, path := range order {
-		c := Conflict{Path: path}
-		s := stages[path]
-		missing := 0
-		for i := 1; i <= 3; i++ {
-			if _, ok := s[i]; !ok {
-				missing++
+	for _, sc := range conflictsFrom(entries) {
+		c := sc.Conflict
+		if c.Incomplete == "" {
+			if err := readStages(wtPath, &c, sc.OID); err != nil {
+				return nil, err
 			}
-		}
-		switch {
-		case missing > 0 && s[1].oid == "" && s[2].oid != "" && s[3].oid != "":
-			c.Incomplete = "both sides added it"
-		case missing > 0:
-			c.Incomplete = "one side deleted or renamed it"
-		}
-		for i := 1; i <= 3; i++ {
-			e, ok := s[i]
-			if !ok {
-				continue
-			}
-			if e.mode != "100644" && e.mode != "100755" {
-				c.Incomplete = "not a regular file (mode " + e.mode + ")"
-			}
-		}
-		if c.Incomplete != "" {
-			cs = append(cs, c)
-			continue
-		}
-		read := func(oid string) ([]byte, error) { return catFileRaw(wtPath, oid) }
-		if c.Base, err = read(s[1].oid); err != nil {
-			return nil, err
-		}
-		if c.Trunk, err = read(s[2].oid); err != nil {
-			return nil, err
-		}
-		if c.Branch, err = read(s[3].oid); err != nil {
-			return nil, err
 		}
 		cs = append(cs, c)
 	}

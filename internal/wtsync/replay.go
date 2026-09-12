@@ -223,63 +223,18 @@ func mergeTree(mainRoot, mergeBase, onto, commit string) (tree string, clean boo
 	if code == 0 {
 		return tree, true, nil, "", nil
 	}
-	stages := map[string]*Conflict{}
-	seenStage := map[string]map[int]bool{}
-	var order []string
-	i := 1
-	for ; i < len(records); i++ {
-		rec := records[i]
-		if rec == "" {
-			break
-		}
-		meta, path, ok := strings.Cut(rec, "\t")
-		if !ok {
-			continue
-		}
-		fields := strings.Fields(meta)
-		if len(fields) != 3 {
-			continue
-		}
-		stage, _ := strconv.Atoi(fields[2])
-		c, seen := stages[path]
-		if !seen {
-			c = &Conflict{Path: path}
-			stages[path] = c
-			seenStage[path] = map[int]bool{}
-			order = append(order, path)
-		}
-		seenStage[path][stage] = true
-		if fields[0] != "100644" && fields[0] != "100755" {
-			c.Incomplete = "not a regular file (mode " + fields[0] + ")"
-			continue
-		}
-		data, err := catFileRaw(mainRoot, fields[1])
-		if err != nil {
-			return "", false, nil, "", err
-		}
-		switch stage {
-		case 1:
-			c.Base = data
-		case 2:
-			c.Trunk = data
-		case 3:
-			c.Branch = data
-		}
+	entries, next := parseStages(records[1:])
+	if 1+next < len(records) {
+		messages = parseMessages(records[1+next:])
 	}
-	if i+1 < len(records) {
-		messages = parseMessages(records[i+1:])
-	}
-	for _, p := range order {
-		c := stages[p]
-		if c.Incomplete == "" && (!seenStage[p][1] || !seenStage[p][2] || !seenStage[p][3]) {
-			switch {
-			case !seenStage[p][1] && seenStage[p][2] && seenStage[p][3]:
-				c.Incomplete = "both sides added it"
-			default:
-				c.Incomplete = "one side deleted or renamed it"
+	for _, sc := range conflictsFrom(entries) {
+		c := sc.Conflict
+		if c.Incomplete == "" {
+			if err := readStages(mainRoot, &c, sc.OID); err != nil {
+				return "", false, nil, "", err
 			}
 		}
-		conflicts = append(conflicts, *c)
+		conflicts = append(conflicts, c)
 	}
 	return tree, false, conflicts, messages, nil
 }
