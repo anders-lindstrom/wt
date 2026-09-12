@@ -14,7 +14,6 @@ type UndoOptions struct {
 	// Force undoes a branch that has moved since the run, pinning a fresh
 	// safety ref at the tip it discards first.
 	Force bool
-	Yes   bool
 	verbOptions
 }
 
@@ -68,7 +67,7 @@ func SyncUndo(ctx *Context, work string, opts UndoOptions, w io.Writer) error {
 			fmt.Fprintln(w, idleNotice(workName(ctx, b), sessions))
 		}
 	}
-	if len(told) > 0 && opts.Confirm != nil && !opts.Yes {
+	if len(told) > 0 && opts.Confirm != nil {
 		ok, err := opts.Confirm([]string{name})
 		if err != nil {
 			return err

@@ -20,7 +20,6 @@ const fetchTimeout = 5 * time.Minute
 // RunOptions tunes SyncRun for callers and tests.
 type RunOptions struct {
 	NoFetch bool
-	Yes     bool
 	verbOptions
 	pushOptions
 }
@@ -170,7 +169,7 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 			underIdle = true
 		}
 	}
-	if (len(going) > 1 || underIdle) && opts.Confirm != nil && !opts.Yes {
+	if (len(going) > 1 || underIdle) && opts.Confirm != nil {
 		fmt.Fprintf(w, "about to rebase: %s\n", strings.Join(going, ", "))
 		ok, err := opts.Confirm(going)
 		if err != nil {

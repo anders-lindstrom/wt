@@ -17,7 +17,6 @@ import (
 // ResumeOptions tunes SyncResume for callers and tests. Resume asks only when
 // idle sessions are in the worktree.
 type ResumeOptions struct {
-	Yes bool
 	verbOptions
 	pushOptions
 }
@@ -100,7 +99,7 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 			return fmt.Errorf("%s: counting what landed: %w; nothing is resumed", name, err)
 		}
 		fmt.Fprintln(w, idleNotice(name, sessions))
-		if opts.Confirm != nil && !opts.Yes {
+		if opts.Confirm != nil {
 			ok, err := opts.Confirm([]string{name})
 			if err != nil {
 				return err

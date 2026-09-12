@@ -131,7 +131,7 @@ func newSyncRunCmd() *cobra.Command {
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
-			opts := commands.RunOptions{NoFetch: noFetch, Yes: yes}
+			opts := commands.RunOptions{NoFetch: noFetch}
 			opts.Push = push()
 			if canAsk(cmd) {
 				// One prompter for both questions, so an answer typed ahead
@@ -190,7 +190,7 @@ func newSyncResumeCmd() *cobra.Command {
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
-			opts := commands.ResumeOptions{Yes: yes}
+			var opts commands.ResumeOptions
 			opts.Push = push()
 			if canAsk(cmd) {
 				p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
@@ -238,7 +238,7 @@ func newSyncUndoCmd() *cobra.Command {
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
-			opts := commands.UndoOptions{Force: force, Yes: yes}
+			opts := commands.UndoOptions{Force: force}
 			if canAsk(cmd) && !yes {
 				opts.Confirm = confirmAsk(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()), "undo")
 			}

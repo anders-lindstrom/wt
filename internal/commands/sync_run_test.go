@@ -354,15 +354,15 @@ func TestSyncRunAsksOnceForMoreThanOneWorktreeAndStopsOnNo(t *testing.T) {
 	if gitOut(t, bump, "rev-parse", "HEAD") != old {
 		t.Fatal("HEAD moved after no")
 	}
-	// --yes never asks.
-	opts.Yes = true
+	// --yes, and a run with no terminal, arrive here as a nil Confirm.
+	opts.Confirm = nil
 	asked = nil
 	out.Reset()
 	if err := SyncRun(ctx, []string{"bump"}, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	if asked != nil {
-		t.Fatal("asked despite --yes")
+		t.Fatal("asked with nobody to ask")
 	}
 }
 
@@ -739,21 +739,6 @@ func TestSyncRunUnderAnIdleSessionWithNoTerminalSaysSoAndEndsWithALineToRelay(t 
 	}
 	if !strings.Contains(s, "⚠ tell bump-1, idle in it:\n    wt: bump rebased on main (+1). yours to check: v.txt\n") {
 		t.Fatalf("no relay line:\n%s", s)
-	}
-}
-
-func TestSyncRunYesSkipsTheIdleQuestionButNotTheNotice(t *testing.T) {
-	ctx, bump := runFixture(t, false)
-	opts := noAgents()
-	opts.Agents = idleIn(t, bump, "bump-1")
-	opts.Yes = true
-	opts.Confirm = func([]string) (bool, error) { t.Fatal("asked despite --yes"); return false, nil }
-	var out bytes.Buffer
-	if err := SyncRun(ctx, []string{"bump"}, opts, &out); err != nil {
-		t.Fatalf("err %v\n%s", err, out.String())
-	}
-	if !strings.Contains(out.String(), "session bump-1 (idle) is in it") {
-		t.Fatalf("out:\n%s", out.String())
 	}
 }
 
