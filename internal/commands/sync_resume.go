@@ -215,7 +215,7 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 		return cerr
 	}
 	if len(owed) > 0 {
-		return fmt.Errorf("not completed: %s", strings.Join(owed, ", "))
+		return fmt.Errorf("not completed: %s", strings.Join(owedBy(name, owed), ", "))
 	}
 	failed, err := offerPush(w, opts.Push, opts.ConfirmPush, []pushTarget{{Work: name, Branch: st.Branch, Path: target.Path}})
 	if err != nil {

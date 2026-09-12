@@ -257,14 +257,18 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 	}
 
 	var failures []string
-	// What each worktree came to, for the summary a run of more than one
-	// ends with: a count per outcome, and a line for each that did not finish.
+	// What each worktree came to: a count per outcome for the summary a run
+	// of more than one ends with, the line under it for each that did not
+	// finish, and how the closing error names it. Either string may be empty.
 	outcomes := map[string]int{}
 	var unfinished []string
-	settle := func(outcome, line string) {
+	settle := func(outcome, line, failure string) {
 		outcomes[outcome]++
 		if line != "" {
 			unfinished = append(unfinished, "  "+line)
+		}
+		if failure != "" {
+			failures = append(failures, failure)
 		}
 	}
 	var pushable []pushTarget
@@ -273,13 +277,12 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 		fmt.Fprintf(w, "\n%s  %s  %d behind · %d ahead\n", p.work, b, p.a.Behind, p.a.Ahead)
 		if why, ok := poisoned[b]; ok {
 			fmt.Fprintf(w, "  ✗ refused: %s\n", why)
-			failures = append(failures, p.work)
-			settle("refused", "✗ "+p.work+"  refused: "+why)
+			settle("refused", "✗ "+p.work+"  refused: "+why, p.work)
 			continue
 		}
 		if p.verdict == wtsync.SkipRun {
 			fmt.Fprintf(w, "  ⏭ skipped: %s\n", p.reason)
-			settle("skipped", "")
+			settle("skipped", "", "")
 			continue
 		}
 		req := wtsync.Request{Path: p.wt.Path, Branch: b, Trunk: trunkSHA, Onto: trunkSHA, Epoch: epoch, Work: p.work}
@@ -309,8 +312,7 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 		if rerr != nil {
 			fmt.Fprintf(w, "  ✗ failed: %v\n", rerr)
 			clearHandover(w, p.wt.Path)
-			failures = append(failures, p.work+" (failed)")
-			settle("failed", fmt.Sprintf("✗ %s  failed: %v", p.work, rerr))
+			settle("failed", fmt.Sprintf("✗ %s  failed: %v", p.work, rerr), p.work+" (failed)")
 			poisonAbove(b, p.work+" failed")
 			release(b)
 			continue
@@ -335,8 +337,7 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 				// never moved, so the abort is the whole of putting it back.
 				abort := fmt.Sprintf("git -C %s rebase --abort", p.wt.Path)
 				fmt.Fprintf(w, "  ⚠ %s is left mid-rebase with no plan: finish it by hand, or put it back with %s\n", p.work, abort)
-				failures = append(failures, p.work+" (failed)")
-				settle("failed", "✗ "+p.work+"  left mid-rebase with no plan: "+abort)
+				settle("failed", "✗ "+p.work+"  left mid-rebase with no plan: "+abort, p.work+" (failed)")
 				release(b)
 				poisonAbove(b, p.work+" failed")
 				continue
@@ -344,8 +345,7 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 			// The lock is left behind on purpose; dropping the handle here
 			// keeps the deferred release from removing the file.
 			p.lock = nil
-			failures = append(failures, p.work+" (needs you)")
-			settle("needs you", "⚠ "+p.work+"  needs you: wt sync resume "+p.work)
+			settle("needs you", "⚠ "+p.work+"  needs you: wt sync resume "+p.work, p.work+" (needs you)")
 			poisonAbove(b, p.work+" is waiting for you")
 			continue
 		}
@@ -360,8 +360,7 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 			restored := fmt.Sprintf("restored: %s at %d/%d not resolved; rebase by hand", strings.Join(files, ", "), last.Index, last.Total)
 			fmt.Fprintf(w, "  ✗ %s\n", restored)
 			clearHandover(w, p.wt.Path)
-			failures = append(failures, p.work+" (restored)")
-			settle("restored", "✗ "+p.work+"  "+restored)
+			settle("restored", "✗ "+p.work+"  "+restored, p.work+" (restored)")
 			poisonAbove(b, p.work+" was restored")
 			release(b)
 			continue
@@ -380,25 +379,20 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 		})
 		tracker.set(nil)
 		p.head = head
-		failures = append(failures, owed...)
+		failures = append(failures, owedBy(p.work, owed)...)
 		// The rebase itself stands; only this branch and what sits on it
 		// lose their footing, so the rest of the run carries on.
 		if derr != nil {
 			fmt.Fprintf(w, "  ✗ failed: %v\n", derr)
-			failures = append(failures, p.work+" (failed)")
-			settle("failed", fmt.Sprintf("✗ %s  failed: %v", p.work, derr))
+			settle("failed", fmt.Sprintf("✗ %s  failed: %v", p.work, derr), p.work+" (failed)")
 			poisonAbove(b, p.work+" failed")
 			release(b)
 			continue
 		}
 		if len(owed) > 0 {
-			var steps []string
-			for _, o := range owed {
-				steps = append(steps, strings.TrimSuffix(strings.TrimPrefix(o, p.work+" (owed: "), ")"))
-			}
-			settle("rebased", "✗ "+p.work+"  owed: "+strings.Join(steps, ", ")+"; run it by hand, then push")
+			settle("rebased", "✗ "+p.work+"  owed: "+strings.Join(owed, ", ")+"; run it by hand, then push", "")
 		} else {
-			settle("rebased", "")
+			settle("rebased", "", "")
 			pushable = append(pushable, pushTarget{Work: p.work, Branch: b, Path: p.wt.Path})
 		}
 		release(b)
