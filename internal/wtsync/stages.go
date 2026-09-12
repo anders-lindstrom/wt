@@ -1,6 +1,8 @@
 package wtsync
 
 import (
+	"bytes"
+	"fmt"
 	"strconv"
 	"strings"
 )
@@ -13,14 +15,6 @@ type stageEntry struct {
 	OID   string
 	Stage int
 	Path  string
-}
-
-// stagedConflict is one conflicted path: the Conflict as far as the index
-// describes it, and the blob id of each stage, indexed 1 to 3, empty where
-// the stage is absent.
-type stagedConflict struct {
-	Conflict Conflict
-	OID      [4]string
 }
 
 // parseStages reads the unmerged index records in records, stopping at the
@@ -47,54 +41,122 @@ func parseStages(records []string) (entries []stageEntry, next int) {
 }
 
 // conflictsFrom groups stage entries by path, in the order the paths first
-// appear, and marks the conflicts no strategy may see. A path is Incomplete
-// when an entry is not a regular blob (a rename, a mode change, a submodule),
-// or when a stage is missing: no base with both sides present is an add/add,
-// anything else is a delete or a rename. The mode reason wins, because it
-// describes the entry itself rather than the shape of the conflict.
-func conflictsFrom(entries []stageEntry) []stagedConflict {
+// appear, keeping git's own id for each stage, and marks the conflicts no
+// strategy may see. A path is Incomplete when an entry is not a regular blob
+// (a rename, a mode change, a submodule), or when a stage is missing: no base
+// with both sides present is an add/add, anything else is a delete or a
+// rename. The mode reason wins, because it describes the entry itself rather
+// than the shape of the conflict.
+func conflictsFrom(entries []stageEntry) []Conflict {
 	index := map[string]int{}
-	var out []stagedConflict
+	var out []Conflict
 	for _, e := range entries {
 		i, seen := index[e.Path]
 		if !seen {
 			i = len(out)
 			index[e.Path] = i
-			out = append(out, stagedConflict{Conflict: Conflict{Path: e.Path}})
+			out = append(out, Conflict{Path: e.Path})
 		}
-		sc := &out[i]
-		if e.Stage >= 1 && e.Stage <= 3 {
-			sc.OID[e.Stage] = e.OID
+		c := &out[i]
+		switch e.Stage {
+		case 1:
+			c.BaseOID = e.OID
+		case 2:
+			c.TrunkOID = e.OID
+		case 3:
+			c.BranchOID = e.OID
 		}
 		if e.Mode != "100644" && e.Mode != "100755" {
-			sc.Conflict.Incomplete = "not a regular file (mode " + e.Mode + ")"
+			c.Incomplete = "not a regular file (mode " + e.Mode + ")"
 		}
 	}
 	for i := range out {
-		sc := &out[i]
+		c := &out[i]
 		switch {
-		case sc.Conflict.Incomplete != "":
-		case sc.OID[1] != "" && sc.OID[2] != "" && sc.OID[3] != "":
-		case sc.OID[1] == "" && sc.OID[2] != "" && sc.OID[3] != "":
-			sc.Conflict.Incomplete = "both sides added it"
+		case c.Incomplete != "":
+		case c.BaseOID != "" && c.TrunkOID != "" && c.BranchOID != "":
+		case c.BaseOID == "" && c.TrunkOID != "" && c.BranchOID != "":
+			c.Incomplete = "both sides added it"
 		default:
-			sc.Conflict.Incomplete = "one side deleted or renamed it"
+			c.Incomplete = "one side deleted or renamed it"
 		}
 	}
 	return out
 }
 
-// readStages fills a complete conflict's three blobs. Only a complete
-// conflict is read: an Incomplete one is refused before any strategy sees it,
-// and nothing ever looks at its bytes.
-func readStages(dir string, c *Conflict, oid [4]string) error {
-	var err error
-	if c.Base, err = catFileRaw(dir, oid[1]); err != nil {
+// readBlobs fills in the three blobs of every complete conflict, with one
+// git for the whole stop rather than one per stage. An Incomplete conflict is
+// refused before any strategy sees it and nothing ever looks at its bytes, so
+// it is not read.
+func readBlobs(dir string, cs []Conflict) error {
+	var want []string
+	seen := map[string]bool{}
+	for _, c := range cs {
+		if c.Incomplete != "" {
+			continue
+		}
+		for _, oid := range [3]string{c.BaseOID, c.TrunkOID, c.BranchOID} {
+			if !seen[oid] {
+				seen[oid] = true
+				want = append(want, oid)
+			}
+		}
+	}
+	if len(want) == 0 {
+		return nil
+	}
+	blobs, err := catFileBatch(dir, want)
+	if err != nil {
 		return err
 	}
-	if c.Trunk, err = catFileRaw(dir, oid[2]); err != nil {
-		return err
+	for i := range cs {
+		c := &cs[i]
+		if c.Incomplete != "" {
+			continue
+		}
+		c.Base, c.Trunk, c.Branch = blobs[c.BaseOID], blobs[c.TrunkOID], blobs[c.BranchOID]
 	}
-	c.Branch, err = catFileRaw(dir, oid[3])
-	return err
+	return nil
+}
+
+// catFileBatch reads several blobs with one git. The request is one id per
+// line on stdin; the answer is a "<oid> <type> <size>" line, then exactly
+// size bytes, then a newline of git's own. The bytes come back as stored — a
+// blob's trailing newline is content, so nothing here trims.
+func catFileBatch(dir string, oids []string) (map[string][]byte, error) {
+	var req strings.Builder
+	for _, oid := range oids {
+		req.WriteString(oid)
+		req.WriteByte('\n')
+	}
+	out, err := runGit(dir, nil, strings.NewReader(req.String()), "cat-file", "--batch")
+	if err != nil {
+		return nil, fmt.Errorf("git cat-file --batch: %w", err)
+	}
+	blobs := make(map[string][]byte, len(oids))
+	for rest := out; len(rest) > 0; {
+		nl := bytes.IndexByte(rest, '\n')
+		if nl < 0 {
+			return nil, fmt.Errorf("git cat-file --batch: header without a newline")
+		}
+		header := string(rest[:nl])
+		rest = rest[nl+1:]
+		// Three fields is an object; anything else is git saying it has none
+		// ("<oid> missing"), which the caller asked for and must hear about.
+		f := strings.Fields(header)
+		if len(f) != 3 {
+			return nil, fmt.Errorf("git cat-file --batch: %s", header)
+		}
+		size, serr := strconv.Atoi(f[2])
+		if serr != nil || size > len(rest) {
+			return nil, fmt.Errorf("git cat-file --batch: bad size in %q", header)
+		}
+		// Capped, so a later append to the blob cannot write into the next one.
+		blobs[f[0]] = rest[:size:size]
+		rest = rest[size:]
+		if len(rest) > 0 && rest[0] == '\n' {
+			rest = rest[1:]
+		}
+	}
+	return blobs, nil
 }

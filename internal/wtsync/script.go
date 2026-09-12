@@ -213,13 +213,16 @@ func tempIndex(root string, c Conflict) (index string, cleanup func(), err error
 	cleanup = func() { _ = os.RemoveAll(dir) }
 	index = filepath.Join(dir, "index")
 	var info strings.Builder
-	for stage, data := range map[int][]byte{1: c.Base, 2: c.Trunk, 3: c.Branch} {
-		oid, err := hashObject(root, data)
+	for i, side := range [3]struct {
+		data []byte
+		oid  string
+	}{{c.Base, c.BaseOID}, {c.Trunk, c.TrunkOID}, {c.Branch, c.BranchOID}} {
+		oid, err := blobID(root, side.data, side.oid)
 		if err != nil {
 			cleanup()
 			return "", nil, err
 		}
-		fmt.Fprintf(&info, "100644 %s %d\t%s\n", oid, stage, c.Path)
+		fmt.Fprintf(&info, "100644 %s %d\t%s\n", oid, i+1, c.Path)
 	}
 	if _, err := gitEnv(root, []string{"GIT_INDEX_FILE=" + index}, strings.NewReader(info.String()), "update-index", "--index-info"); err != nil {
 		cleanup()
@@ -231,6 +234,16 @@ func tempIndex(root string, c Conflict) (index string, cleanup func(), err error
 // hashObject writes data to the object store and returns its id.
 func hashObject(root string, data []byte) (string, error) {
 	return gitEnv(root, nil, bytes.NewReader(data), "hash-object", "-w", "--stdin")
+}
+
+// blobID is git's id for these bytes: the one the index already printed when
+// there is one, and a hash-object otherwise, which is what a Conflict built
+// by hand — a test fixture — needs.
+func blobID(root string, data []byte, oid string) (string, error) {
+	if oid != "" {
+		return oid, nil
+	}
+	return hashObject(root, data)
 }
 
 // GitTimeout is the deadline one git invocation gets here. Nothing wtsync

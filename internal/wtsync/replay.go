@@ -227,14 +227,9 @@ func mergeTree(mainRoot, mergeBase, onto, commit string) (tree string, clean boo
 	if 1+next < len(records) {
 		messages = parseMessages(records[1+next:])
 	}
-	for _, sc := range conflictsFrom(entries) {
-		c := sc.Conflict
-		if c.Incomplete == "" {
-			if err := readStages(mainRoot, &c, sc.OID); err != nil {
-				return "", false, nil, "", err
-			}
-		}
-		conflicts = append(conflicts, c)
+	conflicts = conflictsFrom(entries)
+	if err := readBlobs(mainRoot, conflicts); err != nil {
+		return "", false, nil, "", err
 	}
 	return tree, false, conflicts, messages, nil
 }
@@ -267,14 +262,4 @@ func parseMessages(records []string) string {
 		i++
 	}
 	return strings.Join(msgs, "\n")
-}
-
-// catFileRaw reads a blob. Trailing newlines are preserved: gitEnv trims
-// them, so this asks runGit for the raw bytes instead.
-func catFileRaw(mainRoot, oid string) ([]byte, error) {
-	out, err := runGit(mainRoot, nil, nil, "cat-file", "blob", oid)
-	if err != nil {
-		return nil, fmt.Errorf("git cat-file blob %s: %w", oid, err)
-	}
-	return out, nil
 }

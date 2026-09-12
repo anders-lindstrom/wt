@@ -19,15 +19,9 @@ func StagedConflicts(wtPath string) ([]Conflict, error) {
 		return nil, fmt.Errorf("ls-files -u: %w", err)
 	}
 	entries, _ := parseStages(strings.Split(out, "\x00"))
-	var cs []Conflict
-	for _, sc := range conflictsFrom(entries) {
-		c := sc.Conflict
-		if c.Incomplete == "" {
-			if err := readStages(wtPath, &c, sc.OID); err != nil {
-				return nil, err
-			}
-		}
-		cs = append(cs, c)
+	cs := conflictsFrom(entries)
+	if err := readBlobs(wtPath, cs); err != nil {
+		return nil, err
 	}
 	return cs, nil
 }
