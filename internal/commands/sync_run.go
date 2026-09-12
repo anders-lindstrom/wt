@@ -375,7 +375,7 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 		tracker.set(&rebaseInFlight{work: p.work, path: p.wt.Path, rebased: true})
 		head, owed, derr := completeRun(ctx, w, cfg, completeInput{
 			Work: p.work, Branch: b, Path: p.wt.Path, Epoch: epoch, Res: res,
-			Tell: p.a.Sessions, Trunk: trunk, Landed: p.a.Behind, Check: pathsOnce(wtsync.StopPaths(res.Stops)),
+			Tell: p.a.Sessions, TrunkName: trunk, Landed: p.a.Behind, Check: pathsOnce(wtsync.StopPaths(res.Stops)),
 		})
 		tracker.set(nil)
 		p.head = head

@@ -7,7 +7,6 @@ import (
 	"io"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/anders-lindstrom/wt/internal/git"
@@ -91,13 +90,11 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 	// verification has to see what they left after answering.
 	var landed int
 	if len(sessions) > 0 {
-		count, err := git.Run(ctx.Repo.MainRoot, "rev-list", "--count", st.OldTip+".."+st.Trunk)
-		if err == nil {
-			landed, err = strconv.Atoi(count)
-		}
+		behind, _, err := wtsync.BehindAhead(ctx.Repo.MainRoot, st.Trunk, st.OldTip)
 		if err != nil {
 			return fmt.Errorf("%s: counting what landed: %w; nothing is resumed", name, err)
 		}
+		landed = behind
 		fmt.Fprintln(w, idleNotice(name, sessions))
 		told := []idle{{label: name, path: target.Path, sessions: sessions}}
 		ok, _, err := askIdle(w, opts.verbOptions, []string{name}, told, agents, resumedNothing)
@@ -200,15 +197,10 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 	tracker.set(nil)
 	fmt.Fprintf(w, "  ✓ rebased %d commit%s\n", res.Replayed, plural(res.Replayed))
 	tracker.set(&rebaseInFlight{work: name, path: target.Path, rebased: true})
-	resolved := make([]string, 0, len(st.Resolved))
-	for p := range st.Resolved {
-		resolved = append(resolved, p)
-	}
-	sort.Strings(resolved)
 	_, owed, cerr := completeRun(ctx, w, cfg, completeInput{
 		Work: name, Branch: st.Branch, Path: target.Path, Epoch: st.Epoch, Res: res,
-		Tell: sessions, Trunk: strings.TrimPrefix(st.TrunkRef, "origin/"), Landed: landed,
-		Check: pathsOnce(st.Stopped, st.Left, resolved, st.Deleted, wtsync.StopPaths(res.Stops)),
+		Tell: sessions, TrunkName: strings.TrimPrefix(st.TrunkRef, "origin/"), Landed: landed,
+		Check: pathsOnce(st.Stopped, st.Left, st.ResolvedPaths(), st.Deleted, wtsync.StopPaths(res.Stops)),
 	})
 	tracker.set(nil)
 	if cerr != nil {
@@ -377,11 +369,7 @@ func unmergedStatus(xy string) bool {
 // noteNotRechecked says, where the recorded stop is already committed, which
 // of the strategies' answers there resume can no longer compare.
 func noteNotRechecked(w io.Writer, where string, st wtsync.State) {
-	var ps []string
-	for p := range st.Resolved {
-		ps = append(ps, p)
-	}
-	ps = append(ps, st.Deleted...)
+	ps := append(st.ResolvedPaths(), st.Deleted...)
 	sort.Strings(ps)
 	line := "  note: " + where + "; what the strategies staged there is already committed and is not re-checked"
 	for i, p := range ps {

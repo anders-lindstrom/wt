@@ -65,6 +65,17 @@ type State struct {
 	Lock    LeftLock `json:"lock"`
 }
 
+// ResolvedPaths is the paths the strategies staged at the handover, sorted:
+// the order every caller that lists them or hands them on wants them in.
+func (s State) ResolvedPaths() []string {
+	paths := make([]string, 0, len(s.Resolved))
+	for p := range s.Resolved {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	return paths
+}
+
 // writeAtomic writes data to a temp file in the same directory and renames
 // it into place, so a crash or a full disk cannot leave half a handover. The
 // temp file is fsynced before the rename: without that the rename can reach
