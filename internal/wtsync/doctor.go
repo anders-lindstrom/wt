@@ -75,13 +75,24 @@ func Doctor(mainRoot, trunk string, worktrees []repo.Worktree, opts DoctorOption
 	}
 	checks = append(checks, safety)
 
-	locks, err := locksCheck(worktrees, opts.Now)
+	// One git dir per worktree: the lock check and the rebase check both need
+	// them, and asking git twice per worktree is the same answer twice.
+	gitDirs := make(map[string]string, len(worktrees))
+	for _, wt := range worktrees {
+		dir, err := GitDir(wt.Path)
+		if err != nil {
+			return nil, err
+		}
+		gitDirs[wt.Path] = dir
+	}
+
+	locks, err := locksCheck(worktrees, gitDirs, opts.Now)
 	if err != nil {
 		return nil, err
 	}
 	checks = append(checks, locks)
 
-	rebases, err := rebasesCheck(worktrees)
+	rebases, err := rebasesCheck(worktrees, gitDirs)
 	if err != nil {
 		return nil, err
 	}
@@ -96,21 +107,17 @@ func Doctor(mainRoot, trunk string, worktrees []repo.Worktree, opts DoctorOption
 // Nor is a worktree holding a handover: git rebase --abort there would
 // leave the handover behind and the branch reported as waiting forever, so
 // the plan row SyncDoctor adds names those, with resume.
-func rebasesCheck(worktrees []repo.Worktree) (Check, error) {
-	holders := map[string]bool{}
-	held, err := PlanHolders(worktrees)
-	if err != nil {
-		return Check{}, err
-	}
-	for _, wt := range held {
-		holders[wt.Path] = true
-	}
+func rebasesCheck(worktrees []repo.Worktree, gitDirs map[string]string) (Check, error) {
 	var stuck []string
 	for _, wt := range worktrees {
 		if wt.IsMain {
 			continue
 		}
-		if holders[wt.Path] {
+		held, err := HasPlan(gitDirs[wt.Path])
+		if err != nil {
+			return Check{}, err
+		}
+		if held {
 			continue
 		}
 		busy, err := RebaseInProgress(wt.Path)
@@ -417,7 +424,7 @@ func safetyCheck(mainRoot string, opts DoctorOptions) (Check, error) {
 // locksCheck flags every wt-sync.lock found in any worktree's git dir: an
 // expired one (older than LockExpiry) gets a Fix that removes it; a live one
 // is only named, since it belongs to a run that may still be in progress.
-func locksCheck(worktrees []repo.Worktree, now time.Time) (Check, error) {
+func locksCheck(worktrees []repo.Worktree, gitDirs map[string]string, now time.Time) (Check, error) {
 	type held struct {
 		label   string
 		gitDir  string
@@ -426,10 +433,7 @@ func locksCheck(worktrees []repo.Worktree, now time.Time) (Check, error) {
 	}
 	var found []held
 	for _, wt := range worktrees {
-		gitDir, err := GitDir(wt.Path)
-		if err != nil {
-			return Check{}, err
-		}
+		gitDir := gitDirs[wt.Path]
 		lock, ok, err := ReadLock(gitDir)
 		if err != nil {
 			return Check{}, err

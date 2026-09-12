@@ -47,6 +47,21 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 			byBranch[wt.Branch] = wt
 		}
 	}
+	// Each worktree's git dir, read once and reused: an undo asks for the
+	// same one at three points — to take the lock over, to remove an aborted
+	// handover, and to clear a stale one — and git answers the same each time.
+	gitDirs := map[string]string{}
+	gitDirOf := func(wt repo.Worktree) (string, error) {
+		if dir, ok := gitDirs[wt.Path]; ok {
+			return dir, nil
+		}
+		dir, err := GitDir(wt.Path)
+		if err != nil {
+			return "", err
+		}
+		gitDirs[wt.Path] = dir
+		return dir, nil
+	}
 	var locks []*Lock
 	defer func() {
 		for _, l := range locks {
@@ -61,7 +76,7 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 		if !ok {
 			continue
 		}
-		gitDir, err := GitDir(wt.Path)
+		gitDir, err := gitDirOf(wt)
 		if err != nil {
 			return nil, err
 		}
@@ -179,7 +194,7 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 			return abortedRows(mainRoot, run, byBranch, tips, aborted), err
 		}
 		aborted[s.Branch] = true
-		gitDir, err := GitDir(wt.Path)
+		gitDir, err := gitDirOf(wt)
 		if err != nil {
 			return abortedRows(mainRoot, run, byBranch, tips, aborted), err
 		}
@@ -195,7 +210,7 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 		if !ok || aborted[s.Branch] {
 			continue
 		}
-		gitDir, err := GitDir(wt.Path)
+		gitDir, err := gitDirOf(wt)
 		if err != nil {
 			return abortedRows(mainRoot, run, byBranch, tips, aborted), err
 		}
