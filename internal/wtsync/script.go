@@ -62,48 +62,76 @@ func timeoutError(run, verb, path string, d time.Duration, stderr string) error 
 	return errors.New(msg)
 }
 
+// scriptRun is what one invocation of a script answered: its exit status,
+// what it said on stderr, and what Wait reported, which is nil exactly when
+// the script exited 0.
+type scriptRun struct {
+	code   int
+	stderr string
+	err    error
+}
+
+// invoke runs `<script> <verb> <path>` in dir, with env set over the
+// environment, under the script's deadline and in its own process group. The
+// returned error is for the invocation never happening at all — the script
+// could not be read from trunk, or the deadline killed it — which is never a
+// refusal: the script did not answer the contract. How it exited when it did
+// answer is the caller's to read, since the verbs do not agree on what each
+// status means.
+func (s Script) invoke(dir string, env []string, verb, path string) (scriptRun, error) {
+	exe, cleanup, err := materialise(s.Root, s.Trunk, s.Run)
+	if err != nil {
+		return scriptRun{}, err
+	}
+	defer cleanup()
+	cmd := exec.Command(exe, verb, path)
+	cmd.Dir = dir
+	cmd.Env = git.Environ(env...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	timedOut, code, runErr := git.RunBounded(s.timeout(), cmd)
+	if timedOut {
+		return scriptRun{}, timeoutError(s.Run, verb, path, s.timeout(), stderr.String())
+	}
+	if errors.Is(runErr, exec.ErrWaitDelay) {
+		// The script itself exited 0; only a background child it left
+		// running kept stderr open past git.WaitDelay. That is not a failure.
+		runErr = nil
+	}
+	return scriptRun{code: code, stderr: strings.TrimSpace(stderr.String()), err: runErr}, nil
+}
+
+// refusedBy is a script's exit 2: it read the conflict and declined it, with
+// its stderr as the reason.
+func refusedBy(path, stderr string) error {
+	reason := stderr
+	if reason == "" {
+		reason = "refused without a reason"
+	}
+	return Refuse(path, "%s", reason)
+}
+
 // Resolve checks the conflict against the script, through a temporary index
 // holding only the conflict's three stages. See the type comment.
 func (s Script) Resolve(c Conflict) ([]byte, error) {
-	exe, cleanupExe, err := materialise(s.Root, s.Trunk, s.Run)
-	if err != nil {
-		return nil, err
-	}
-	defer cleanupExe()
 	index, cleanup, err := tempIndex(s.Root, c)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
-
-	cmd := exec.Command(exe, "--check", c.Path)
-	cmd.Dir = s.Root
-	cmd.Env = git.Environ("GIT_INDEX_FILE=" + index)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	timedOut, code, err := git.RunBounded(s.timeout(), cmd)
-	if timedOut {
-		return nil, timeoutError(s.Run, "--check", c.Path, s.timeout(), stderr.String())
-	}
-	if errors.Is(err, exec.ErrWaitDelay) {
-		// The script itself exited 0; only a background child it left
-		// running kept stderr open past git.WaitDelay. That is not a
-		// failure of --check.
-		err = nil
+	r, err := s.invoke(s.Root, []string{"GIT_INDEX_FILE=" + index}, "--check", c.Path)
+	if err != nil {
+		return nil, err
 	}
 	switch {
-	case err == nil:
+	case r.err == nil:
 		return nil, nil
-	case code == 1:
+	case r.code == 1:
 		return nil, Refuse(c.Path, "%s does not claim it", s.Run)
-	case code == 2:
-		reason := strings.TrimSpace(stderr.String())
-		if reason == "" {
-			reason = "refused without a reason"
-		}
-		return nil, Refuse(c.Path, "%s", reason)
+	case r.code == 2:
+		return nil, refusedBy(c.Path, r.stderr)
 	default:
-		return nil, fmt.Errorf("%s --check %s: %v: %s", s.Run, c.Path, err, strings.TrimSpace(stderr.String()))
+		return nil, fmt.Errorf("%s --check %s: %v: %s", s.Run, c.Path, r.err, r.stderr)
 	}
 }
 
@@ -112,28 +140,14 @@ func (s Script) Resolve(c Conflict) ([]byte, error) {
 // Exit 0 means the script wrote and staged the file, which is verified; exit
 // 2 is a refusal carrying stderr; anything else is an error.
 func (s Script) ResolveInWorktree(wtPath, path string) error {
-	exe, cleanup, err := materialise(s.Root, s.Trunk, s.Run)
+	r, err := s.invoke(wtPath, []string{"GIT_EDITOR=true"}, "--resolve", path)
 	if err != nil {
 		return err
 	}
-	defer cleanup()
-	cmd := exec.Command(exe, "--resolve", path)
-	cmd.Dir = wtPath
-	cmd.Env = git.Environ("GIT_EDITOR=true")
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	timedOut, code, err := git.RunBounded(s.timeout(), cmd)
-	if timedOut {
-		return timeoutError(s.Run, "--resolve", path, s.timeout(), stderr.String())
-	}
-	if errors.Is(err, exec.ErrWaitDelay) {
-		// The script itself exited 0; only a background child it left
-		// running kept stderr open past git.WaitDelay. Let the ls-files
-		// check below decide whether --resolve actually did its job.
-		err = nil
-	}
 	switch {
-	case err == nil:
+	case r.err == nil:
+		// Exit 0 is a claim, not proof: the index says whether --resolve
+		// actually did its job.
 		out, lerr := gitEnv(wtPath, nil, nil, "ls-files", "-u", "--", path)
 		if lerr != nil {
 			return lerr
@@ -142,14 +156,10 @@ func (s Script) ResolveInWorktree(wtPath, path string) error {
 			return fmt.Errorf("%s --resolve exited 0 but left %s unmerged", s.Run, path)
 		}
 		return nil
-	case code == 2:
-		reason := strings.TrimSpace(stderr.String())
-		if reason == "" {
-			reason = "refused without a reason"
-		}
-		return Refuse(path, "%s", reason)
+	case r.code == 2:
+		return refusedBy(path, r.stderr)
 	default:
-		return fmt.Errorf("%s --resolve %s: %v: %s", s.Run, path, err, strings.TrimSpace(stderr.String()))
+		return fmt.Errorf("%s --resolve %s: %v: %s", s.Run, path, r.err, r.stderr)
 	}
 }
 
