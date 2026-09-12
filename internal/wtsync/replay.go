@@ -70,16 +70,34 @@ func SimulateRebase(mainRoot, onto, branch string, cfg *Config) (Replay, error) 
 	var rep Replay
 	// The same selection and order the rebase sequencer uses: right side
 	// only, patch-equivalent commits dropped, merges flattened, topological.
-	out, err := gitEnv(mainRoot, nil, nil, "rev-list", "--reverse", "--topo-order", "--right-only", "--cherry-pick", "--no-merges", onto+"..."+branch, "--")
+	// The subject of every commit comes back with the list: a stop needs it,
+	// and asking for it at each stop is one more git process per stop.
+	out, err := gitEnv(mainRoot, nil, nil, "log", "--reverse", "--topo-order", "--right-only", "--cherry-pick", "--no-merges", "--format=%H%x00%s", onto+"..."+branch, "--")
 	if err != nil {
 		return rep, err
 	}
 	var commits []string
+	subjects := map[string]string{}
 	if out != "" {
-		commits = strings.Split(out, "\n")
+		for _, line := range strings.Split(out, "\n") {
+			sha, subject, _ := strings.Cut(line, "\x00")
+			commits = append(commits, sha)
+			subjects[sha] = subject
+		}
 	}
 	rep.Commits = len(commits)
 	base, err := gitEnv(mainRoot, nil, nil, "rev-parse", "--verify", onto+"^{commit}", "--")
+	if err != nil {
+		return rep, err
+	}
+	// The tree of base, carried alongside it rather than asked for once per
+	// commit: it is onto's tree to begin with, and the tree just committed
+	// after every stop. base is always a SHA computed here (verified, or a
+	// commit-tree result), never a user-supplied ref, so it carries no path
+	// ambiguity; no "--" here, since plain (non-`--verify`) `rev-parse`
+	// echoes a trailing "--" back as a second output line, which would
+	// corrupt the comparison below.
+	baseTree, err := gitEnv(mainRoot, nil, nil, "rev-parse", base+"^{tree}")
 	if err != nil {
 		return rep, err
 	}
@@ -89,12 +107,8 @@ func SimulateRebase(mainRoot, onto, branch string, cfg *Config) (Replay, error) 
 			return rep, err
 		}
 		if !clean {
-			subject, err := gitEnv(mainRoot, nil, nil, "log", "-1", "--format=%s", c, "--")
-			if err != nil {
-				return rep, err
-			}
 			stop := Stop{
-				Index: i + 1, Total: len(commits), Commit: c, Subject: subject,
+				Index: i + 1, Total: len(commits), Commit: c, Subject: subjects[c],
 				Conflicts: conflicts, Messages: messages,
 			}
 			resolved := map[string][]byte{}
@@ -147,15 +161,6 @@ func SimulateRebase(mainRoot, onto, branch string, cfg *Config) (Replay, error) 
 		}
 		// A commit whose changes are already present replays to the same
 		// tree; rebase drops it, so no simulated commit is made for it.
-		// base is always a SHA computed above (verified, or a commit-tree
-		// result), never a user-supplied ref, so it carries no path
-		// ambiguity; no "--" here, since plain (non-`--verify`) `rev-parse`
-		// echoes a trailing "--" back as a second output line, which would
-		// corrupt this comparison.
-		baseTree, err := gitEnv(mainRoot, nil, nil, "rev-parse", base+"^{tree}")
-		if err != nil {
-			return rep, err
-		}
 		if baseTree == tree {
 			continue
 		}
@@ -163,6 +168,8 @@ func SimulateRebase(mainRoot, onto, branch string, cfg *Config) (Replay, error) 
 		if err != nil {
 			return rep, err
 		}
+		// commit-tree was just given this tree, so it is the new base's.
+		baseTree = tree
 	}
 	return rep, nil
 }
