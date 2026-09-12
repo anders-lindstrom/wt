@@ -52,7 +52,8 @@ func SyncUndo(ctx *Context, work string, opts UndoOptions, w io.Writer) error {
 	// Every session is named and asked about here, before wtsync.Undo takes
 	// a single lock: taking over a handover's lock and then hearing no would
 	// release it.
-	told := map[string]wtsync.Sessions{}
+	var told []idle
+	anyIdle := false
 	for _, b := range branches {
 		path, ok := paths[b]
 		if !ok {
@@ -62,30 +63,24 @@ func SyncUndo(ctx *Context, work string, opts UndoOptions, w io.Writer) error {
 		if len(sessions.Busy()) > 0 {
 			return fmt.Errorf("%s: an agent session is busy in it: %s; nothing undone", b, sessions.Label(sessionLabel))
 		}
+		// Every checkout is listed for the re-check, not only the ones a
+		// session is in now: one arriving in an empty checkout while the
+		// question waits is exactly what the second listing is for.
+		told = append(told, idle{label: b, path: path, sessions: sessions})
 		if len(sessions) > 0 {
-			told[b] = sessions
+			anyIdle = true
 			fmt.Fprintln(w, idleNotice(workName(ctx, b), sessions))
 		}
 	}
-	if len(told) > 0 && opts.Confirm != nil {
-		ok, err := opts.Confirm([]string{name})
+	if anyIdle {
+		ok, fresh, err := askIdle(w, opts.verbOptions, []string{name}, told, agents, undidNothing)
 		if err != nil {
 			return err
 		}
 		if !ok {
-			fmt.Fprintln(w, "nothing undone")
 			return nil
 		}
-		if agents, err = opts.relist(undidNothing); err != nil {
-			return err
-		}
-		for _, b := range branches {
-			if path, ok := paths[b]; ok {
-				if why := sessionsChanged(told[b], wtsync.SessionsAt(agents, path)); why != "" {
-					return fmt.Errorf("%s: %s; nothing undone", b, why)
-				}
-			}
-		}
+		agents = fresh
 	}
 	// Undo can fail partway through the second (apply) phase, after some
 	// branches are already back at their safety tip: those still get
@@ -98,9 +93,9 @@ func SyncUndo(ctx *Context, work string, opts UndoOptions, w io.Writer) error {
 		case r.From == r.To && !r.Aborted:
 			// Nothing moved under anybody.
 		case r.NotRewound:
-			tellIdle(w, told[r.Branch], wtsync.UndoneLine(rowWork, git.ShortID(r.From, 7), false))
+			tellIdle(w, sessionsOf(told, r.Branch), wtsync.UndoneLine(rowWork, git.ShortID(r.From, 7), false))
 		default:
-			tellIdle(w, told[r.Branch], wtsync.UndoneLine(rowWork, git.ShortID(r.To, 7), true))
+			tellIdle(w, sessionsOf(told, r.Branch), wtsync.UndoneLine(rowWork, git.ShortID(r.To, 7), true))
 		}
 	}
 	return err

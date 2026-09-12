@@ -99,22 +99,13 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 			return fmt.Errorf("%s: counting what landed: %w; nothing is resumed", name, err)
 		}
 		fmt.Fprintln(w, idleNotice(name, sessions))
-		if opts.Confirm != nil {
-			ok, err := opts.Confirm([]string{name})
-			if err != nil {
-				return err
-			}
-			if !ok {
-				fmt.Fprintln(w, "nothing resumed")
-				return nil
-			}
-			fresh, err := opts.relist(resumedNothing)
-			if err != nil {
-				return err
-			}
-			if why := sessionsChanged(sessions, wtsync.SessionsAt(fresh, target.Path)); why != "" {
-				return fmt.Errorf("%s: %s; nothing is resumed", name, why)
-			}
+		told := []idle{{label: name, path: target.Path, sessions: sessions}}
+		ok, _, err := askIdle(w, opts.verbOptions, []string{name}, told, agents, resumedNothing)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return nil
 		}
 	}
 	// The run's trunk, not today's: a resume that read a newer declaration

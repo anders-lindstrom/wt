@@ -169,14 +169,18 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 			underIdle = true
 		}
 	}
-	if (len(going) > 1 || underIdle) && opts.Confirm != nil {
-		fmt.Fprintf(w, "about to rebase: %s\n", strings.Join(going, ", "))
-		ok, err := opts.Confirm(going)
+	if len(going) > 1 || underIdle {
+		if opts.Confirm != nil {
+			fmt.Fprintf(w, "about to rebase: %s\n", strings.Join(going, ", "))
+		}
+		// Nothing to re-check here: a run lists the sessions again at the
+		// lock below, whether or not anything was asked, and compares them
+		// there with the lock in hand.
+		ok, _, err := askIdle(w, opts.verbOptions, going, nil, agents, rebasedNothing)
 		if err != nil {
 			return err
 		}
 		if !ok {
-			fmt.Fprintln(w, "nothing rebased")
 			return nil
 		}
 	}

@@ -78,6 +78,61 @@ type pushOptions struct {
 	ConfirmPush func(works []string) (bool, error)
 }
 
+// idle is one checkout a verb is about to change, as its messages name it:
+// the label its refusals use — a work name, or undo's branch — where it is,
+// and the sessions the verb checked it against, which may be none.
+type idle struct {
+	label    string
+	path     string
+	sessions wtsync.Sessions
+}
+
+// sessionsOf is what a verb was told about the checkout label names.
+func sessionsOf(told []idle, label string) wtsync.Sessions {
+	for _, t := range told {
+		if t.label == label {
+			return t.sessions
+		}
+	}
+	return nil
+}
+
+// askIdle is the one question a verb asks before it changes files under an
+// idle session, and the check that makes the answer worth anything: a
+// question can sit unanswered for as long as it likes, so the sessions are
+// listed again once it is answered, and one that woke or arrived meanwhile
+// refuses rather than being worked around. A nil Confirm asks nobody and goes
+// ahead: a script or a hook with no terminal is not a person who can answer.
+//
+// A false ok is the answer no, which is not an error: the line saying so has
+// been printed and the verb returns having touched nothing. fresh is the
+// sessions to go on with — the second listing where there was one, agents
+// otherwise. told is empty for a run, whose re-check is the lock's instead.
+func askIdle(w io.Writer, opts verbOptions, works []string, told []idle, agents []wtsync.Agent, nothing nothingDone) (ok bool, fresh []wtsync.Agent, err error) {
+	if opts.Confirm == nil {
+		return true, agents, nil
+	}
+	if ok, err = opts.Confirm(works); err != nil {
+		return false, agents, err
+	}
+	if !ok {
+		fmt.Fprintln(w, nothing.line)
+		return false, agents, nil
+	}
+	if len(told) == 0 {
+		return true, agents, nil
+	}
+	if fresh, err = opts.relist(nothing); err != nil {
+		return false, agents, err
+	}
+	for _, t := range told {
+		if why := sessionsChanged(t.sessions, wtsync.SessionsAt(fresh, t.path)); why != "" {
+			return false, fresh, fmt.Errorf("%s: %s; %s", t.label, why, nothing.tail)
+		}
+	}
+	return true, fresh, nil
+}
+
 // idleNotice is said before anything moves under an idle session, whether or
 // not anybody is asked: a verb never changes files under one silently.
 func idleNotice(work string, s wtsync.Sessions) string {
