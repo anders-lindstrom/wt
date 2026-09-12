@@ -202,6 +202,43 @@ func TestAssessAnOwnedLineRefusalIsContestedNotDivergent(t *testing.T) {
 	}
 }
 
+// A removed line whose own text begins "-- ", or an added one beginning
+// "++ ", is a change like any other: only its position makes a line a diff
+// file header. Skipping them let a real change to a dependency-graph file
+// pass as "only the owned line moved", which hides an overlap with trunk.
+func TestOnlyOwnedLinesReadsAChangedLineThatLooksLikeAFileHeader(t *testing.T) {
+	cfg, err := Parse([]byte("conflicts:\n  - paths: [deps.txt]\n    strategy: owned-line\n    line: '^version '\n    rule: max-plus-patch\ndependency_graph:\n  - deps.txt\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := repoWith(t,
+		map[string]string{"deps.txt": "version 1.0.0\n-- old marker\n"},
+		nil,
+		[]map[string]string{{"deps.txt": "version 1.0.1\n++ new marker\n"}})
+	base := gitIn(t, dir, "rev-parse", "main")
+	only, err := onlyOwnedLines(dir, cfg, base, "feature", "deps.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if only {
+		t.Fatal("a changed line beginning -- or ++ was read as a file header, so a change that is not only owned lines passed as one")
+	}
+	// The owned line moving on its own is still routine, which is the whole
+	// point of the rule: the fix must not make every version bump an overlap.
+	dir = repoWith(t,
+		map[string]string{"deps.txt": "version 1.0.0\nkeep\n"},
+		nil,
+		[]map[string]string{{"deps.txt": "version 1.0.1\nkeep\n"}})
+	base = gitIn(t, dir, "rev-parse", "main")
+	only, err = onlyOwnedLines(dir, cfg, base, "feature", "deps.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !only {
+		t.Fatal("a bump of the owned line alone is not only owned lines")
+	}
+}
+
 func TestAssessNotesWhenBothSidesChangeTheDependencyGraph(t *testing.T) {
 	// both sides touch build.gradle (a dependency_graph path): on a
 	// long-lived branch this is common and does not by itself distinguish a

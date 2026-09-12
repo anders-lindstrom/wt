@@ -282,12 +282,22 @@ func onlyOwnedLines(mainRoot string, cfg *Config, base, rev, path string) (bool,
 	if err != nil {
 		return false, fmt.Errorf("diff %s: %w", path, err)
 	}
-	textual := 0
+	// A line is a file header because of where it sits, not because of what
+	// it starts with: "---" and "+++" head the part before the first hunk,
+	// and inside a hunk the same characters are a removed line whose own text
+	// begins "-- " or an added one beginning "++ ". Treating those as headers
+	// skipped real changes, and a change that is not only owned lines could
+	// then pass as one.
+	textual, inHunk := 0, false
 	for _, l := range strings.Split(diff, "\n") {
-		if strings.HasPrefix(l, "--- ") || strings.HasPrefix(l, "+++ ") {
-			continue
-		}
-		if strings.HasPrefix(l, "+") || strings.HasPrefix(l, "-") {
+		switch {
+		case strings.HasPrefix(l, "diff --git "):
+			inHunk = false
+		case strings.HasPrefix(l, "@@ "):
+			inHunk = true
+		case !inHunk:
+			// Still in the file header: --- , +++ , index, mode, and the rest.
+		case strings.HasPrefix(l, "+"), strings.HasPrefix(l, "-"):
 			textual++
 			if !re.MatchString(l[1:]) {
 				return false, nil
