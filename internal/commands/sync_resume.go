@@ -9,27 +9,17 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
-// ResumeOptions tunes SyncResume for callers and tests.
+// ResumeOptions tunes SyncResume for callers and tests. Resume asks only when
+// idle sessions are in the worktree.
 type ResumeOptions struct {
-	// Agents are the sessions to check against. Nil asks `claude agents`;
-	// an empty slice means there are none.
-	Agents []wtsync.Agent
-	Now    func() time.Time
-	// Push and ConfirmPush are RunOptions' own: what happens to the branch
-	// once the rebase finishes with nothing owed.
-	Push        PushMode
-	ConfirmPush func(works []string) (bool, error)
-	// Yes, Confirm and Relist are RunOptions' own. Resume asks only when idle
-	// sessions are in the worktree; a nil Confirm never asks.
-	Yes     bool
-	Confirm func(works []string) (bool, error)
-	Relist  func() ([]wtsync.Agent, error)
+	Yes bool
+	verbOptions
+	pushOptions
 }
 
 // SyncResume continues the rebase a run left at a stop a person owned. It
@@ -89,11 +79,9 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 	if tip != st.OldTip {
 		return fmt.Errorf("%s pins %s but the handover says %s; nothing is resumed", st.Safety, git.ShortID(tip, 7), git.ShortID(st.OldTip, 7))
 	}
-	agents := opts.Agents
-	if agents == nil {
-		if agents, err = wtsync.ListOtherAgents(); err != nil {
-			return fmt.Errorf("cannot list agent sessions (%v); nothing is resumed", err)
-		}
+	agents, err := opts.agents(resumedNothing)
+	if err != nil {
+		return err
 	}
 	sessions := wtsync.SessionsAt(agents, target.Path)
 	if len(sessions.Busy()) > 0 {
@@ -121,9 +109,9 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 				fmt.Fprintln(w, "nothing resumed")
 				return nil
 			}
-			fresh, err := listAgain(opts.Agents, opts.Relist)
+			fresh, err := opts.relist(resumedNothing)
 			if err != nil {
-				return fmt.Errorf("cannot list agent sessions again (%v); nothing is resumed", err)
+				return err
 			}
 			if why := sessionsChanged(sessions, wtsync.SessionsAt(fresh, target.Path)); why != "" {
 				return fmt.Errorf("%s: %s; nothing is resumed", name, why)
@@ -157,11 +145,7 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 		}
 	}
 
-	now := opts.Now
-	if now == nil {
-		now = time.Now
-	}
-	lock, err := wtsync.TakeOver(gitDir, now(), st.Lock)
+	lock, err := wtsync.TakeOver(gitDir, opts.now(), st.Lock)
 	if err != nil {
 		return fmt.Errorf("%s: %w; nothing is resumed", name, err)
 	}

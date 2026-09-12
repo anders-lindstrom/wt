@@ -21,22 +21,8 @@ const fetchTimeout = 5 * time.Minute
 type RunOptions struct {
 	NoFetch bool
 	Yes     bool
-	// Confirm is asked once before rebasing more than one worktree, or any
-	// worktree an idle session is in. A nil Confirm never asks: a script or
-	// a hook with no terminal is not a person who can answer.
-	Confirm func(works []string) (bool, error)
-	// Push is what happens at the end to the worktrees that finished with
-	// nothing owed. Under PushAsk, ConfirmPush is asked once; a nil
-	// ConfirmPush prints the push command instead, for Confirm's reason.
-	Push        PushMode
-	ConfirmPush func(works []string) (bool, error)
-	// Agents are the sessions to check against. Nil asks `claude agents`;
-	// an empty slice means there are none.
-	Agents []wtsync.Agent
-	// Relist lists the sessions again at the lock. Nil lists them the way
-	// Agents did.
-	Relist func() ([]wtsync.Agent, error)
-	Now    func() time.Time
+	verbOptions
+	pushOptions
 }
 
 type participant struct {
@@ -134,11 +120,9 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 	}
 	branches = wtsync.Order(parents, branches)
 
-	agents := opts.Agents
-	if agents == nil {
-		if agents, err = wtsync.ListOtherAgents(); err != nil {
-			return fmt.Errorf("cannot list agent sessions (%v); nothing is rebased", err)
-		}
+	agents, err := opts.agents(rebasedNothing)
+	if err != nil {
+		return err
 	}
 	parts := map[string]*participant{}
 	for _, b := range branches {
@@ -199,15 +183,11 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 	}
 	// Listed again now: a question can sit unanswered for as long as it
 	// likes, and a triage over a large fleet takes a while.
-	fresh, err := listAgain(opts.Agents, opts.Relist)
+	fresh, err := opts.relist(rebasedNothing)
 	if err != nil {
-		return fmt.Errorf("cannot list agent sessions again (%v); nothing is rebased", err)
+		return err
 	}
-	now := opts.Now
-	if now == nil {
-		now = time.Now
-	}
-	epoch := now().UnixNano()
+	epoch := opts.now().UnixNano()
 
 	// Lock every member of every proceeding stack before touching any, and
 	// re-check what triage saw: the lock is what makes the check hold.
@@ -231,7 +211,7 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 		if err != nil {
 			return err
 		}
-		lock, err := wtsync.Acquire(gitDir, now())
+		lock, err := wtsync.Acquire(gitDir, opts.now())
 		if err != nil {
 			poison(b, p.work+": locked: "+err.Error())
 			continue

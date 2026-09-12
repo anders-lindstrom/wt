@@ -126,7 +126,10 @@ func gitAncestor(t *testing.T, dir, a, b string) bool {
 }
 
 func noAgents() RunOptions {
-	return RunOptions{NoFetch: true, Agents: []wtsync.Agent{}, Now: func() time.Time { return time.Unix(0, 99) }}
+	return RunOptions{NoFetch: true, verbOptions: verbOptions{
+		Agents: []wtsync.Agent{},
+		Now:    func() time.Time { return time.Unix(0, 99) },
+	}}
 }
 
 func TestSyncRunRebasesARecipeWorktreeAndRunsTheDeferredStep(t *testing.T) {
@@ -501,7 +504,7 @@ func TestSyncRunSaysWhereAFailedHandoverLeftTheWorktree(t *testing.T) {
 	}
 	// The command the line names has to be the one that works. undo does not:
 	// it refuses a mid-rebase worktree outright.
-	if uerr := SyncUndo(ctx, "bump", UndoOptions{Agents: []wtsync.Agent{}}, io.Discard); uerr == nil {
+	if uerr := SyncUndo(ctx, "bump", UndoOptions{verbOptions: verbOptions{Agents: []wtsync.Agent{}}}, io.Discard); uerr == nil {
 		t.Fatal("undo accepted a mid-rebase worktree; the old wording would have been true")
 	}
 	gitOut(t, bump, "rebase", "--abort")

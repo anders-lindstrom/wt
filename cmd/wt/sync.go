@@ -131,7 +131,8 @@ func newSyncRunCmd() *cobra.Command {
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
-			opts := commands.RunOptions{NoFetch: noFetch, Yes: yes, Push: push()}
+			opts := commands.RunOptions{NoFetch: noFetch, Yes: yes}
+			opts.Push = push()
 			if canAsk(cmd) {
 				// One prompter for both questions, so an answer typed ahead
 				// for the push is not lost to the rebase question's reader.
@@ -189,7 +190,8 @@ func newSyncResumeCmd() *cobra.Command {
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
-			opts := commands.ResumeOptions{Yes: yes, Push: push()}
+			opts := commands.ResumeOptions{Yes: yes}
+			opts.Push = push()
 			if canAsk(cmd) {
 				p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
 				if !yes {

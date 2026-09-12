@@ -70,7 +70,10 @@ func laterStopFixture(t *testing.T, withUnclaimed bool) (ctx *Context, bump stri
 // clock a few seconds on, so the lock a resume takes is told apart from the
 // one the run kept without the run's expiring.
 func noResumeAgents() ResumeOptions {
-	return ResumeOptions{Agents: []wtsync.Agent{}, Now: func() time.Time { return time.Unix(5, 0) }}
+	return ResumeOptions{verbOptions: verbOptions{
+		Agents: []wtsync.Agent{},
+		Now:    func() time.Time { return time.Unix(5, 0) },
+	}}
 }
 
 func writeFile(t *testing.T, dir, rel, content string) {

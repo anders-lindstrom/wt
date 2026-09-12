@@ -11,7 +11,10 @@ import (
 )
 
 func noAgentsUndo() UndoOptions {
-	return UndoOptions{Agents: []wtsync.Agent{}, Now: func() time.Time { return time.Unix(0, 100) }}
+	return UndoOptions{verbOptions: verbOptions{
+		Agents: []wtsync.Agent{},
+		Now:    func() time.Time { return time.Unix(0, 100) },
+	}}
 }
 
 func TestSyncUndoPutsBackWhatSyncRunMoved(t *testing.T) {
