@@ -114,6 +114,15 @@ type Request struct {
 	Stacked bool
 }
 
+// base is what the rebase replays from: the parent's old tip for a stack
+// child, and the rebase target itself otherwise.
+func (r Request) base() string {
+	if r.Upstream != "" {
+		return r.Upstream
+	}
+	return r.Onto
+}
+
 // StopResult is one place the rebase stopped and what happened there.
 type StopResult struct {
 	Index, Total int
@@ -175,6 +184,16 @@ func (d *driver) git(args ...string) (string, error) {
 	return gitEnv(d.req.Path, rebaseEnv, nil, args...)
 }
 
+// resetToSafety puts the worktree back at the tip the run pinned before it
+// touched anything. A reset that will not go is the end of the restore: the
+// message names the tip, since nothing else will put it back.
+func (d *driver) resetToSafety() error {
+	if _, err := d.git("reset", "--hard", d.res.Safety.Ref); err != nil {
+		return fmt.Errorf("not restored: reset failed: %w; the old tip is %s", err, d.res.Safety.Ref)
+	}
+	return nil
+}
+
 // restore puts the worktree back where the run found it: no rebase in
 // progress, HEAD on the branch at the old tip, nothing left in the index.
 func (d *driver) restore() error {
@@ -188,14 +207,14 @@ func (d *driver) restore() error {
 		// reset below compares HEAD with the branch's own tip, which
 		// re-attaching first would make equal and skip), and only then
 		// put HEAD back on the branch.
-		if _, err := d.git("reset", "--hard", d.res.Safety.Ref); err != nil {
-			return fmt.Errorf("not restored: reset failed: %w; the old tip is %s", err, d.res.Safety.Ref)
+		if err := d.resetToSafety(); err != nil {
+			return err
 		}
 		_, _ = d.git("symbolic-ref", "HEAD", "refs/heads/"+d.req.Branch)
 	}
 	if head, _ := d.git("rev-parse", "HEAD"); head != d.old {
-		if _, err := d.git("reset", "--hard", d.res.Safety.Ref); err != nil {
-			return fmt.Errorf("not restored: reset failed: %w; the old tip is %s", err, d.res.Safety.Ref)
+		if err := d.resetToSafety(); err != nil {
+			return err
 		}
 	}
 	if busy, _ := RebaseInProgress(d.req.Path); busy {
@@ -261,11 +280,7 @@ func Rebase(mainRoot string, cfg *Config, req Request, log io.Writer) (Result, e
 	if d.res.Safety, err = WriteSafety(mainRoot, req.Branch, old, req.Epoch); err != nil {
 		return d.res, err
 	}
-	base := req.Upstream
-	if base == "" {
-		base = req.Onto
-	}
-	if d.res.SignaturesDropped, err = signedCount(req.Path, base, old); err != nil {
+	if d.res.SignaturesDropped, err = signedCount(req.Path, req.base(), old); err != nil {
 		return d.res, err
 	}
 	args := append(append([]string{}, rebaseConfig...), "rebase", "--no-update-refs", "--no-gpg-sign")
@@ -288,12 +303,8 @@ func Rebase(mainRoot string, cfg *Config, req Request, log io.Writer) (Result, e
 func Resume(mainRoot string, cfg *Config, req Request, old string, safety Safety, log io.Writer) (Result, error) {
 	d := &driver{mainRoot: mainRoot, cfg: cfg, req: req, log: log, old: old, keep: true,
 		res: Result{Branch: req.Branch, OldTip: old, Safety: safety}}
-	base := req.Upstream
-	if base == "" {
-		base = req.Onto
-	}
 	var err error
-	if d.res.SignaturesDropped, err = signedCount(req.Path, base, old); err != nil {
+	if d.res.SignaturesDropped, err = signedCount(req.Path, req.base(), old); err != nil {
 		return d.res, err
 	}
 	busy, err := RebaseInProgress(req.Path)

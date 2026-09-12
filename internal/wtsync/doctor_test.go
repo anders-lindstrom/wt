@@ -316,8 +316,8 @@ func TestDoctorTreeChecksReportAGitThatDoesNotAnswer(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			hangOnPath(t, "git", tc.passThrough...)
 			for _, c := range []Check{
-				treeFileCheck(dir, "main", ".gitmodules", "submodules", "submodules are not handled by run"),
-				lfsCheck(dir, "main"),
+				treeFileCheck(dir, "main", ontoAt(dir, "main"), ".gitmodules", "submodules", "submodules are not handled by run"),
+				lfsCheck(dir, "main", ontoAt(dir, "main")),
 			} {
 				if c.OK || !strings.Contains(c.Detail, "timed out") || strings.Contains(c.Detail, "does not resolve") {
 					t.Errorf("%s: %+v, want a failure naming the deadline", c.Name, c)

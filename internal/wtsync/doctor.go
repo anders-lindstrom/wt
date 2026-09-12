@@ -55,16 +55,19 @@ const dockerDeadline = 10 * time.Second
 // repository and after anything changes.
 func Doctor(mainRoot, trunk string, worktrees []repo.Worktree, opts DoctorOptions) ([]Check, error) {
 	onto := "origin/" + trunk
+	// Whether onto resolves is asked once: the trunk, submodules and lfs
+	// checks all need the answer, and it cannot change between them.
+	state := ontoAt(mainRoot, onto)
 
-	checks := []Check{trunkCheck(mainRoot, onto)}
+	checks := []Check{trunkCheck(onto, state)}
 
 	declCheck, cfg := declarationCheck(mainRoot, trunk, onto)
 	checks = append(checks, declCheck)
 	checks = append(checks, scriptsCheck(mainRoot, onto, cfg))
 	checks = append(checks, rerereCheck(mainRoot))
 	checks = append(checks, hooksCheck(mainRoot))
-	checks = append(checks, treeFileCheck(mainRoot, onto, ".gitmodules", "submodules", "submodules are not handled by run"))
-	checks = append(checks, lfsCheck(mainRoot, onto))
+	checks = append(checks, treeFileCheck(mainRoot, onto, state, ".gitmodules", "submodules", "submodules are not handled by run"))
+	checks = append(checks, lfsCheck(mainRoot, onto, state))
 	if cfg != nil && len(cfg.Defer) > 0 {
 		checks = append(checks, dockerCheck(opts.Docker))
 	}
@@ -138,9 +141,11 @@ func rebasesCheck(worktrees []repo.Worktree, gitDirs map[string]string) (Check, 
 	return Check{Name: "rebases", OK: false, Detail: strings.Join(stuck, "; ")}, nil
 }
 
-// trunkCheck reports whether origin/<trunk> resolves in the object store.
-func trunkCheck(mainRoot, onto string) Check {
-	if _, err := git.Run(mainRoot, "rev-parse", "--verify", onto); err != nil {
+// trunkCheck reports whether origin/<trunk> resolves in the object store. A
+// git that could not answer reads the same way as a ref that is not there:
+// either way the next move is a fetch.
+func trunkCheck(onto string, st ontoState) Check {
+	if st.err != nil || !st.resolves {
 		return Check{Name: "trunk", OK: false, Blocking: true, Detail: "run git fetch origin"}
 	}
 	return Check{Name: "trunk", OK: true, Blocking: true, Detail: onto + " resolves"}
@@ -309,14 +314,27 @@ func refResolves(mainRoot, ref string) (bool, error) {
 	return code == 0, nil
 }
 
+// ontoState is whether onto resolves in the object store, read once and
+// handed to every check that needs it. A git that gave no answer keeps its
+// error, which is not the same finding as a ref that is not there.
+type ontoState struct {
+	resolves bool
+	err      error
+}
+
+// ontoAt asks once whether onto resolves.
+func ontoAt(mainRoot, onto string) ontoState {
+	resolves, err := refResolves(mainRoot, onto)
+	return ontoState{resolves: resolves, err: err}
+}
+
 // ontoFailure is the failed check for an onto that does not resolve, or that
 // git could not be asked about; ok is false when onto resolves.
-func ontoFailure(mainRoot, onto, name string) (c Check, ok bool) {
-	resolves, err := refResolves(mainRoot, onto)
-	if err != nil {
-		return Check{Name: name, OK: false, Detail: err.Error()}, true
+func ontoFailure(onto, name string, st ontoState) (c Check, ok bool) {
+	if st.err != nil {
+		return Check{Name: name, OK: false, Detail: st.err.Error()}, true
 	}
-	if !resolves {
+	if !st.resolves {
 		return Check{Name: name, OK: false, Detail: onto + " does not resolve; run git fetch origin"}, true
 	}
 	return Check{}, false
@@ -325,8 +343,8 @@ func ontoFailure(mainRoot, onto, name string) (c Check, ok bool) {
 // treeFileCheck fails when path exists on trunk, for checks (like
 // submodules) that are pass/fail on presence alone. onto not resolving is
 // reported as its own failure rather than as "path absent".
-func treeFileCheck(mainRoot, onto, path, name, detail string) Check {
-	if c, failed := ontoFailure(mainRoot, onto, name); failed {
+func treeFileCheck(mainRoot, onto string, st ontoState, path, name, detail string) Check {
+	if c, failed := ontoFailure(onto, name, st); failed {
 		return c
 	}
 	_, err := gitEnv(mainRoot, nil, nil, "cat-file", "-e", onto+":"+path)
@@ -346,8 +364,8 @@ func treeFileCheck(mainRoot, onto, path, name, detail string) Check {
 // lfsCheck flags any .gitattributes on trunk (root or nested) that declares
 // an LFS filter: run does not handle LFS-tracked content. onto not
 // resolving is reported as its own failure rather than as "no match".
-func lfsCheck(mainRoot, onto string) Check {
-	if c, failed := ontoFailure(mainRoot, onto, "lfs"); failed {
+func lfsCheck(mainRoot, onto string, st ontoState) Check {
+	if c, failed := ontoFailure(onto, "lfs", st); failed {
 		return c
 	}
 	out, code, err := gitEnvAllow(mainRoot, nil, nil, 1, "grep", "-l", "-e", "filter=lfs", onto, "--", ".gitattributes", "**/.gitattributes")
