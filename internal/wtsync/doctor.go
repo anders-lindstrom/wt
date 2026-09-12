@@ -23,6 +23,13 @@ type Check struct {
 	// or fixing it is not Doctor's place (a missing declaration, a live
 	// lock held by someone else).
 	Fix func() error
+	// Blocking marks a check a run refuses over outright. One of these
+	// failing with no Fix is what makes wt sync doctor exit non-zero; every
+	// other finding is advisory.
+	Blocking bool
+	// Prune marks a check --prune clears up rather than --fix: it deletes
+	// what an old run left behind rather than repairing a setting.
+	Prune bool
 }
 
 // DoctorOptions tunes Doctor for callers and tests.
@@ -127,9 +134,9 @@ func rebasesCheck(worktrees []repo.Worktree) (Check, error) {
 // trunkCheck reports whether origin/<trunk> resolves in the object store.
 func trunkCheck(mainRoot, onto string) Check {
 	if _, err := git.Run(mainRoot, "rev-parse", "--verify", onto); err != nil {
-		return Check{Name: "trunk", OK: false, Detail: "run git fetch origin"}
+		return Check{Name: "trunk", OK: false, Blocking: true, Detail: "run git fetch origin"}
 	}
-	return Check{Name: "trunk", OK: true, Detail: onto + " resolves"}
+	return Check{Name: "trunk", OK: true, Blocking: true, Detail: onto + " resolves"}
 }
 
 // declarationCheck loads the declaration from trunk, returning it (nil on
@@ -137,12 +144,12 @@ func trunkCheck(mainRoot, onto string) Check {
 func declarationCheck(mainRoot, trunk, onto string) (Check, *Config) {
 	cfg, err := LoadFromTrunk(mainRoot, trunk)
 	if err == nil {
-		return Check{Name: "declaration", OK: true, Detail: ConfigFile + " on " + onto + " parses"}, cfg
+		return Check{Name: "declaration", OK: true, Blocking: true, Detail: ConfigFile + " on " + onto + " parses"}, cfg
 	}
 	if errors.Is(err, ErrNoConfig) {
-		return Check{Name: "declaration", OK: false, Detail: "no " + ConfigFile + " on " + onto + ": reported only, never rebased"}, nil
+		return Check{Name: "declaration", OK: false, Blocking: true, Detail: "no " + ConfigFile + " on " + onto + ": reported only, never rebased"}, nil
 	}
-	return Check{Name: "declaration", OK: false, Detail: err.Error()}, nil
+	return Check{Name: "declaration", OK: false, Blocking: true, Detail: err.Error()}, nil
 }
 
 // scriptsCheck confirms every script strategy's run exists on trunk with
@@ -150,7 +157,7 @@ func declarationCheck(mainRoot, trunk, onto string) (Check, *Config) {
 // the declaration check above already reports why.
 func scriptsCheck(mainRoot, onto string, cfg *Config) Check {
 	if cfg == nil {
-		return Check{Name: "scripts", OK: true}
+		return Check{Name: "scripts", OK: true, Blocking: true}
 	}
 	var bad []string
 	for _, r := range cfg.Conflicts {
@@ -168,9 +175,9 @@ func scriptsCheck(mainRoot, onto string, cfg *Config) Check {
 		}
 	}
 	if len(bad) > 0 {
-		return Check{Name: "scripts", OK: false, Detail: strings.Join(bad, ", ")}
+		return Check{Name: "scripts", OK: false, Blocking: true, Detail: strings.Join(bad, ", ")}
 	}
-	return Check{Name: "scripts", OK: true}
+	return Check{Name: "scripts", OK: true, Blocking: true}
 }
 
 // lsTreeMode returns the mode `git ls-tree` reports for path at ref, and
@@ -385,7 +392,7 @@ func safetyCheck(mainRoot string, opts DoctorOptions) (Check, error) {
 	}
 	prunable := Prunable(all, opts.Now, opts.Keep)
 	if len(prunable) == 0 {
-		return Check{Name: "safety-refs", OK: true}, nil
+		return Check{Name: "safety-refs", OK: true, Prune: true}, nil
 	}
 	var refs []string
 	for _, s := range prunable {
@@ -404,7 +411,7 @@ func safetyCheck(mainRoot string, opts DoctorOptions) (Check, error) {
 		suffix = ""
 	}
 	detail := fmt.Sprintf("%d ref%s pin old history (%s)", len(prunable), suffix, strings.Join(refs, ", "))
-	return Check{Name: "safety-refs", OK: false, Detail: detail, Fix: fix}, nil
+	return Check{Name: "safety-refs", OK: false, Prune: true, Detail: detail, Fix: fix}, nil
 }
 
 // locksCheck flags every wt-sync.lock found in any worktree's git dir: an

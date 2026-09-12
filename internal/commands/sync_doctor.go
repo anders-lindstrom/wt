@@ -51,7 +51,7 @@ func SyncDoctor(ctx *Context, opts DoctorOptions, w io.Writer) error {
 			state = "warn"
 		}
 		rows = append(rows, []string{c.Name, state, oneLine(c.Detail)})
-		if !c.OK && c.Fix == nil && (c.Name == "trunk" || c.Name == "declaration" || c.Name == "scripts") {
+		if !c.OK && c.Fix == nil && c.Blocking {
 			blocking = append(blocking, c.Name)
 		}
 	}
@@ -62,7 +62,7 @@ func SyncDoctor(ctx *Context, opts DoctorOptions, w io.Writer) error {
 		if c.OK || c.Fix == nil {
 			continue
 		}
-		want := (opts.Fix && c.Name != "safety-refs") || (opts.Prune && c.Name == "safety-refs")
+		want := (opts.Fix && !c.Prune) || (opts.Prune && c.Prune)
 		if !want {
 			continue
 		}
