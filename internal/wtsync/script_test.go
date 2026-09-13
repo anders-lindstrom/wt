@@ -41,6 +41,69 @@ esac
 	return "bin/conflict/special"
 }
 
+// hangOnPath puts a name first on the PATH that sleeps far past gitDeadline,
+// which it shortens for the test. passThrough lists git subcommands the stub
+// hands to the real git, for a test whose hang must come after them.
+func hangOnPath(t *testing.T, name string, passThrough ...string) {
+	t.Helper()
+	found, err := exec.LookPath(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := "#!/bin/sh\n[ \"$1\" = warm ] && exit 0\n"
+	for _, sub := range passThrough {
+		body += "[ \"$1\" = " + sub + " ] && exec " + found + " \"$@\"\n"
+	}
+	body += "exec sleep 30\n"
+	stub := t.TempDir()
+	path := filepath.Join(stub, name)
+	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The first exec of a new file can be slow (macOS vets it); a deadline
+	// that fires before the stub starts would prove nothing about the stub.
+	if err := exec.Command(path, "warm").Run(); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", stub+string(os.PathListSeparator)+os.Getenv("PATH"))
+	old := gitDeadline
+	gitDeadline = 500 * time.Millisecond
+	t.Cleanup(func() { gitDeadline = old })
+}
+
+// cutOff fails the test unless err reports a deadline and came well inside
+// the stub's 30-second sleep.
+func cutOff(t *testing.T, err error, start time.Time) {
+	t.Helper()
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("err = %v, want the deadline reported", err)
+	}
+	if took := time.Since(start); took > 10*time.Second {
+		t.Fatalf("took %s; the deadline did not cut the stub off", took)
+	}
+}
+
+// Both halves of materialising a script run under the deadline: a git
+// archive or a tar that never answers is reported, not waited on.
+func TestMaterialiseReportsAnArchiveOrTarThatDoesNotAnswer(t *testing.T) {
+	for _, name := range []string{"git", "tar"} {
+		t.Run(name, func(t *testing.T) {
+			local, origin := repoWithOrigin(t)
+			run := fakeScript(t, local, origin)
+			hangOnPath(t, name)
+			start := time.Now()
+			_, cleanup, err := materialise(local, "origin/main", run)
+			if cleanup != nil {
+				cleanup()
+			}
+			cutOff(t, err, start)
+			if strings.Contains(err.Error(), "is not on") {
+				t.Fatalf("err = %v; a deadline is not a missing script", err)
+			}
+		})
+	}
+}
+
 func TestScriptChecksThroughATemporaryIndexWithoutTouchingTheRealOne(t *testing.T) {
 	local, origin := repoWithOrigin(t)
 	run := fakeScript(t, local, origin)
@@ -178,6 +241,14 @@ func TestResolveInWorktreeAScriptThatExitsZeroWithoutStagingIsAnError(t *testing
 	}
 }
 
+// hangTimeout is the Timeout the two hang tests give their script. The clock
+// starts once the script is materialised, so it only has to cover sh starting
+// and, for the looping script, its first stderr line, but it must do so under
+// -race with the rest of the suite running: 300 ms did not. The kill is still
+// proven, because a script that is not killed returns only after
+// Timeout+scriptWaitDelay, past the bound both tests check.
+const hangTimeout = 2 * time.Second
+
 func TestScriptTimesOutInsteadOfHanging(t *testing.T) {
 	// Echoes on every tick rather than once before a single sleep, so the
 	// marker is captured regardless of scheduling jitter in when the script
@@ -185,7 +256,7 @@ func TestScriptTimesOutInsteadOfHanging(t *testing.T) {
 	// forever without the deadline actually killing it.
 	script := "#!/bin/sh\nwhile :; do\n  echo 'still working' >&2\n  sleep 0.1\ndone\n"
 	dir, wt := stoppedRebaseWithScript(t, script)
-	s := Script{Root: dir, Trunk: "origin/main", Run: "bin/resolve", Timeout: 300 * time.Millisecond}
+	s := Script{Root: dir, Trunk: "origin/main", Run: "bin/resolve", Timeout: hangTimeout}
 	start := time.Now()
 	err := s.ResolveInWorktree(wt, "v.txt")
 	elapsed := time.Since(start)
@@ -225,7 +296,7 @@ func TestResolveInWorktreeAcceptsAScriptThatBackgroundsAJob(t *testing.T) {
 func TestScriptCheckTimesOutInsteadOfHanging(t *testing.T) {
 	script := "#!/bin/sh\nsleep 5\n"
 	dir, _ := stoppedRebaseWithScript(t, script)
-	s := Script{Root: dir, Trunk: "origin/main", Run: "bin/resolve", Timeout: 300 * time.Millisecond}
+	s := Script{Root: dir, Trunk: "origin/main", Run: "bin/resolve", Timeout: hangTimeout}
 	c := Conflict{Path: "v.txt", Base: []byte("1.0.0\n"), Trunk: []byte("1.0.5\n"), Branch: []byte("1.0.1\n")}
 	start := time.Now()
 	_, err := s.Resolve(c)

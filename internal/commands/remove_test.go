@@ -626,3 +626,122 @@ func TestRemoveNeverRepeatsGitsAdviceAboutMinusFMinusF(t *testing.T) {
 		t.Errorf("git's advice must not reach the user:\n%s", said)
 	}
 }
+
+// A pull request merged on GitHub is in origin/main once fetched, while the
+// main checkout's own main is still behind. Its commits cannot be lost.
+func TestRemoveDeletesABranchMergedOnlyOnOrigin(t *testing.T) {
+	ctx, main, origin := sweepRepo(t)
+	var buf bytes.Buffer
+	path, err := New(ctx, "fix/landed", NewOptions{NoSetup: true}, &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, path, "commit", "-q", "--allow-empty", "-m", "landed work")
+	// To the path: a push by remote name would move origin/main without a fetch.
+	gitIn(t, main, "push", "-q", origin, "fix_wt/landed:main")
+	gitIn(t, main, "fetch", "-q", "origin")
+	buf.Reset()
+
+	if err := RemoveAt(ctx, path, RemoveOptions{Agents: []wtsync.Agent{}}, &buf); err != nil {
+		t.Fatalf("RemoveAt: %v\n%s", err, buf.String())
+	}
+	if ctx.Repo.BranchExists("fix_wt/landed") || ctx.Repo.BranchExists("landed") {
+		t.Error("a branch origin/main contains should be deleted, not kept")
+	}
+	if !strings.Contains(buf.String(), "merged into origin/main") {
+		t.Errorf("the plan must say which trunk contains it:\n%s", buf.String())
+	}
+}
+
+// Remove never fetches, so a merge origin has that this clone has not seen is
+// not a merge yet: the branch is kept under its stripped name, as before.
+func TestRemoveKeepsABranchOnlyAnUnreadOriginHas(t *testing.T) {
+	for name, hide := range map[string]func(t *testing.T, main string){
+		"origin never fetched": func(*testing.T, string) {},
+		"origin has no such ref": func(t *testing.T, main string) {
+			gitIn(t, main, "fetch", "-q", "origin")
+			gitIn(t, main, "update-ref", "-d", "refs/remotes/origin/main")
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			main := committedRepo(t, minimalConf)
+			origin := filepath.Join(t.TempDir(), "origin.git")
+			gitIn(t, main, "clone", "-q", "--bare", main, origin)
+			gitIn(t, main, "remote", "add", "origin", origin)
+			ctx, err := Open(main)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var buf bytes.Buffer
+			path, err := New(ctx, "fix/unseen", NewOptions{NoSetup: true}, &buf)
+			if err != nil {
+				t.Fatal(err)
+			}
+			gitIn(t, path, "commit", "-q", "--allow-empty", "-m", "unseen work")
+			gitIn(t, main, "push", "-q", origin, "fix_wt/unseen:main")
+			hide(t, main)
+			buf.Reset()
+
+			if err := RemoveAt(ctx, path, RemoveOptions{Agents: []wtsync.Agent{}}, &buf); err != nil {
+				t.Fatalf("RemoveAt: %v\n%s", err, buf.String())
+			}
+			if !ctx.Repo.BranchExists("unseen") {
+				t.Fatalf("the branch must be kept under its stripped name:\n%s", buf.String())
+			}
+			if !strings.Contains(buf.String(), "1 commit ahead of main") {
+				t.Errorf("with no origin/main to read, the count is against main:\n%s", buf.String())
+			}
+		})
+	}
+}
+
+// The delete names the tip the plan showed, so a branch that moves in the
+// window is kept even when its new tip is merged too.
+func TestRemoveDoesNotDeleteABranchThatMovedAfterThePlan(t *testing.T) {
+	main := committedRepo(t, minimalConf)
+	ctx, _ := Open(main)
+	dst := foreignWorktree(t, ctx, main, "someones-work", 0)
+	plan := planFor(ctx, dst, RemoveOptions{Agents: []wtsync.Agent{}})
+	if plan.Outcome != BranchDeleted {
+		t.Fatalf("precondition: want a merged branch, got outcome %v", plan.Outcome)
+	}
+
+	// main moves on, and the branch is moved to it: still merged, but no
+	// longer the commit the plan showed.
+	addWork(t, main, "main", 1)
+	gitIn(t, main, "update-ref", "refs/heads/someones-work", "main")
+
+	var buf bytes.Buffer
+	err := plan.apply(ctx, &buf)
+	if err == nil {
+		t.Fatal("want a refusal once the branch has moved")
+	}
+	if !ctx.Repo.BranchExists("someones-work") {
+		t.Fatal("a branch that moved after the plan was deleted")
+	}
+	if !strings.Contains(err.Error(), "moved after the plan") {
+		t.Errorf("say why it was kept: %v", err)
+	}
+}
+
+// branch -D refused a branch another worktree was using; update-ref does not,
+// so remove asks the worktrees itself.
+func TestRemoveKeepsAMergedBranchAnotherWorktreeIsUsing(t *testing.T) {
+	main := committedRepo(t, minimalConf)
+	ctx, _ := Open(main)
+	dst := foreignWorktree(t, ctx, main, "someones-work", 0)
+	twin := filepath.Join(ctx.Repo.Parent, "twin")
+	gitIn(t, main, "worktree", "add", "-q", "--force", twin, "someones-work")
+
+	var buf bytes.Buffer
+	err := RemoveAt(ctx, dst, RemoveOptions{Agents: []wtsync.Agent{}}, &buf)
+	if err == nil {
+		t.Fatal("want a refusal to delete a branch another worktree is on")
+	}
+	if !ctx.Repo.BranchExists("someones-work") {
+		t.Fatal("a branch another worktree is using was deleted")
+	}
+	if !strings.Contains(err.Error(), "twin") {
+		t.Errorf("name the worktree using it: %v", err)
+	}
+}

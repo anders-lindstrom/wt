@@ -194,22 +194,36 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 	}
 	tracker.set(&rebaseInFlight{work: name, path: target.Path, safety: st.Safety, resuming: true})
 	res, rerr := wtsync.Resume(ctx.Repo.MainRoot, cfg, req, st.OldTip, safety, w)
-	tracker.set(nil)
 	if rerr != nil {
+		tracker.set(nil)
 		return fmt.Errorf("%s: %w", name, rerr)
 	}
 	if res.Left != nil {
 		fmt.Fprintf(w, "  ⚠ stopped again at %d/%d\n", res.Left.Index, res.Left.Total)
-		if err := handOver(ctx, w, handoverInput{
+		// The tracker stays on resuming while the fresh handover is written:
+		// an interrupt meanwhile leaves the rebase and a handover that resume
+		// picks up again, and must say so.
+		herr := handOver(ctx, w, handoverInput{
 			Work: name, Branch: st.Branch, Path: target.Path, TrunkRef: st.TrunkRef, TrunkSHA: st.Trunk,
 			Onto: st.Onto, Upstream: st.Upstream, Epoch: st.Epoch, Cfg: cfg, Res: res, Lock: lock,
 			Earlier: st.Stopped,
-		}); err != nil {
-			return err
+		})
+		tracker.set(nil)
+		if herr != nil {
+			fmt.Fprintf(w, "  ✗ failed: %v\n", herr)
+			// As in run: a brief and a sidecar that may now describe different
+			// stops both go, and the person is told where the worktree is. The
+			// branch ref has not moved since the run, so the abort is the whole
+			// of putting it back; undo refuses a mid-rebase worktree.
+			clearHandover(w, target.Path)
+			abort := fmt.Sprintf("git -C %s rebase --abort", target.Path)
+			fmt.Fprintf(w, "  ⚠ %s is left mid-rebase with no plan: finish it by hand, or put it back with %s\n", name, abort)
+			return fmt.Errorf("not completed: %s (failed)", name)
 		}
 		lock = nil // kept on purpose
 		return fmt.Errorf("not completed: %s (needs you)", name)
 	}
+	tracker.set(nil)
 	fmt.Fprintf(w, "  ✓ rebased %d commit%s\n", res.Replayed, plural(res.Replayed))
 	tracker.set(&rebaseInFlight{work: name, path: target.Path, rebased: true})
 	resolved := make([]string, 0, len(st.Resolved))

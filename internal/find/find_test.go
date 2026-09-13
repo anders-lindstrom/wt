@@ -7,17 +7,17 @@ func cand(work, branch, repo, path string, local bool) Candidate {
 }
 
 func TestScoreTiers(t *testing.T) {
-	c := cand("webkey_infra", "feat_wt/webkey_infra", "infrastructure", "/x/infrastructure_wt/feat_wt/webkey_infra", true)
+	c := cand("login-crash", "feat_wt/login-crash", "infrastructure", "/x/infrastructure_wt/feat_wt/login-crash", true)
 	for _, tc := range []struct {
 		pattern string
 		want    int
 	}{
-		{"webkey_infra", 1},
-		{"feat_wt/webkey_infra", 2},
-		{"webkey", 3},
-		{"key_inf", 4},
+		{"login-crash", 1},
+		{"feat_wt/login-crash", 2},
+		{"login", 3},
+		{"gin-cr", 4},
 		{"infrastructure_wt", 5},
-		{"wki", 6},
+		{"lcr", 6},
 	} {
 		got, ok := Score(c, tc.pattern, "")
 		if !ok || got.Tier != tc.want {
@@ -32,27 +32,27 @@ func TestScoreTiers(t *testing.T) {
 // A two-character pattern must not fall through to subsequence matching, or
 // almost everything matches almost everything.
 func TestShortPatternsDoNotSubsequenceMatch(t *testing.T) {
-	c := cand("webkey_infra", "feat_wt/webkey_infra", "r", "/p", true)
-	if _, ok := Score(c, "wi", ""); ok {
+	c := cand("login-crash", "feat_wt/login-crash", "r", "/p", true)
+	if _, ok := Score(c, "lc", ""); ok {
 		t.Error("two-character subsequence should not match")
 	}
 }
 
 func TestScoreIsCaseInsensitive(t *testing.T) {
-	c := cand("WebKey", "feat_wt/WebKey", "r", "/p", true)
-	if got, ok := Score(c, "webkey", ""); !ok || got.Tier != 1 {
+	c := cand("LogIn", "feat_wt/LogIn", "r", "/p", true)
+	if got, ok := Score(c, "login", ""); !ok || got.Tier != 1 {
 		t.Errorf("got tier %d ok %v, want exact", got.Tier, ok)
 	}
 }
 
 func TestRepoPatternFiltersByRepo(t *testing.T) {
-	a := cand("arch", "feat_wt/arch", "accessmanager", "/a", false)
-	p := cand("arch", "feat_wt/arch", "personal-v", "/p", false)
+	a := cand("arch", "feat_wt/arch", "admin-portal", "/a", false)
+	p := cand("arch", "feat_wt/arch", "personal-site", "/p", false)
 	if _, ok := Score(a, "arch", "personal"); ok {
-		t.Error("accessmanager should be filtered out by repo pattern")
+		t.Error("admin-portal should be filtered out by repo pattern")
 	}
 	if _, ok := Score(p, "arch", "personal"); !ok {
-		t.Error("personal-v should survive the repo pattern")
+		t.Error("personal-site should survive the repo pattern")
 	}
 }
 
@@ -81,8 +81,8 @@ func TestBestPrefersLowerTierThenLocal(t *testing.T) {
 
 func TestBestReturnsEveryTiedCandidate(t *testing.T) {
 	scored := []Scored{
-		{cand("arch", "", "accessmanager", "/a", false), 1},
-		{cand("arch", "", "personal-v", "/p", false), 1},
+		{cand("arch", "", "admin-portal", "/a", false), 1},
+		{cand("arch", "", "personal-site", "/p", false), 1},
 	}
 	if best := Best(scored); len(best) != 2 {
 		t.Errorf("want both tied candidates, got %d", len(best))

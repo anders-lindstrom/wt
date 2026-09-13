@@ -157,13 +157,13 @@ func TestFindKeepsRepoFirstWithInvalidLocalConfig(t *testing.T) {
 
 	other := committedRepoIn(t, root, "other", minimalConf)
 	octx, _ := Open(other)
-	if _, err := New(octx, "feat/webkey", NewOptions{NoSetup: true}, os.Stderr); err != nil {
+	if _, err := New(octx, "feat/login", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
 	}
 
 	local := committedRepoIn(t, root, "local", minimalConf)
 	lctx, _ := Open(local)
-	if _, err := New(lctx, "feat/webkey_infra", NewOptions{NoSetup: true}, os.Stderr); err != nil {
+	if _, err := New(lctx, "feat/login-crash", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
 	}
 	// Now break the local config the way an unmigrated repo is broken.
@@ -173,11 +173,11 @@ func TestFindKeepsRepoFirstWithInvalidLocalConfig(t *testing.T) {
 	}
 
 	var warn strings.Builder
-	got, err := Find(OpenLenient(local, &warn), "webkey")
+	got, err := Find(OpenLenient(local, &warn), "login")
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
-	if len(got) != 1 || got[0].Work != "webkey_infra" {
+	if len(got) != 1 || got[0].Work != "login-crash" {
 		t.Errorf("the local prefix match must win, got %+v", got)
 	}
 }

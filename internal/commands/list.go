@@ -107,8 +107,16 @@ func Status(ctx *Context, w io.Writer, width int) error {
 // because a printed path is an argument to wt.
 func printPathTable(w io.Writer, rows [][]string, width int) error {
 	if width > 0 {
-		fitPaths(rows, width)
+		home, _ := os.UserHomeDir()
+		fitLastColumn(rows, width, minPathWidth, func(path string, limit int) string {
+			return elideLeft(abbreviateHome(path, home), limit)
+		})
 	}
+	return printTable(w, rows)
+}
+
+// printTable writes rows as aligned columns.
+func printTable(w io.Writer, rows [][]string) error {
 	tw := tabwriter.NewWriter(w, 0, 0, listPadding, ' ', 0)
 	for _, r := range rows {
 		fmt.Fprintln(tw, strings.Join(r, "\t"))
@@ -116,10 +124,14 @@ func printPathTable(w io.Writer, rows [][]string, width int) error {
 	return tw.Flush()
 }
 
-// fitPaths shortens the path in every row after the header so the table fits
-// in width columns. The other columns stay whole: they are what a reader
-// types back into wt.
-func fitPaths(rows [][]string, width int) {
+// fitLastColumn shortens the last column of every row with shorten so the
+// table fits in width columns, but never below floor. The other columns stay
+// whole: they are what a reader types back into wt. A header in the last
+// column is shorter than any floor, so shortening leaves it alone.
+func fitLastColumn(rows [][]string, width, floor int, shorten func(s string, limit int) string) {
+	if len(rows) == 0 {
+		return
+	}
 	last := len(rows[0]) - 1
 	lead := 0
 	for col := range last {
@@ -129,10 +141,9 @@ func fitPaths(rows [][]string, width int) {
 		}
 		lead += widest + listPadding
 	}
-	room := max(width-lead, minPathWidth)
-	home, _ := os.UserHomeDir()
-	for _, r := range rows[1:] {
-		r[last] = elideLeft(abbreviateHome(r[last], home), room)
+	room := max(width-lead, floor)
+	for _, r := range rows {
+		r[last] = shorten(r[last], room)
 	}
 }
 

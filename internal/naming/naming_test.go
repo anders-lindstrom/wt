@@ -16,12 +16,12 @@ func TestInferTypeReadsTheTypeOutOfTheWorkName(t *testing.T) {
 		{"fix_dev-123", "fix", "dev-123", true},
 		{"fix-login-crash", "fix", "login-crash", true},
 		{"chore_cleanup", "chore", "cleanup", true},
-		{"test", "", "", false},            // the whole name, with nothing left over
-		{"fix_", "", "", false},            // ditto, with a separator
-		{"review_sentry", "", "", false},   // "review" is not a type
-		{"spring-boot-4", "", "", false},   // nor is "spring"
-		{"webkey", "", "", false},          // no separator at all
-		{"statepush_scope", "", "", false}, // a real work name that must survive
+		{"test", "", "", false},           // the whole name, with nothing left over
+		{"fix_", "", "", false},           // ditto, with a separator
+		{"review_sentry", "", "", false},  // "review" is not a type
+		{"spring-boot-4", "", "", false},  // nor is "spring"
+		{"login", "", "", false},          // no separator at all
+		{"prefetch_scope", "", "", false}, // a work name that must survive whole
 	}
 	for _, c := range cases {
 		t.Run(c.work, func(t *testing.T) {
@@ -90,8 +90,8 @@ func TestBranchName(t *testing.T) {
 }
 
 func TestParseBranch(t *testing.T) {
-	typ, work, ok := ParseBranch("feat_wt/webkey_infra", "_wt")
-	if !ok || typ != "feat" || work != "webkey_infra" {
+	typ, work, ok := ParseBranch("feat_wt/api-tidy", "_wt")
+	if !ok || typ != "feat" || work != "api-tidy" {
 		t.Errorf("got %q %q %v", typ, work, ok)
 	}
 	if _, _, ok := ParseBranch("main", "_wt"); ok {
@@ -114,9 +114,9 @@ func TestStripPrefix(t *testing.T) {
 // The path tail below <repo>_wt/ must equal the branch, character for
 // character. That equality is the whole point of the layout.
 func TestWorktreeDirTailEqualsBranch(t *testing.T) {
-	parent := filepath.Join("/tmp", "telcred")
-	dir := WorktreeDir(parent, "infrastructure", "feat", "webkey_infra", "_wt")
-	want := filepath.Join(parent, "infrastructure_wt", "feat_wt", "webkey_infra")
+	parent := filepath.Join("/tmp", "code")
+	dir := WorktreeDir(parent, "infrastructure", "feat", "api-tidy", "_wt")
+	want := filepath.Join(parent, "infrastructure_wt", "feat_wt", "api-tidy")
 	if dir != want {
 		t.Fatalf("got %q, want %q", dir, want)
 	}
@@ -124,7 +124,7 @@ func TestWorktreeDirTailEqualsBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if branch := BranchName("feat", "webkey_infra", "_wt"); tail != branch {
+	if branch := BranchName("feat", "api-tidy", "_wt"); tail != branch {
 		t.Errorf("tail %q != branch %q", tail, branch)
 	}
 }
@@ -150,16 +150,16 @@ func TestParseSpec(t *testing.T) {
 // the work it holds: Superset also mints names wt cannot parse, and those are
 // exactly the ones somebody wants to migrate.
 func TestUnderSuperset(t *testing.T) {
-	const parent, repo, suffix = "/p", "server", "_wt"
+	const parent, repo, suffix = "/p", "myrepo", "_wt"
 	cases := []struct {
 		path string
 		want bool
 	}{
-		{"/p/server_wt/server/feat_wt/webkey", true},
-		{"/p/server_wt/server/feat_wt/dedd5f22/local-gecko", true},
-		{"/p/server_wt/feat_wt/webkey", false},
-		{"/p/server-webkey", false},
-		{"/p/server_wt/server", false},
+		{"/p/myrepo_wt/myrepo/feat_wt/login", true},
+		{"/p/myrepo_wt/myrepo/feat_wt/5f2c8e10/local-cache", true},
+		{"/p/myrepo_wt/feat_wt/login", false},
+		{"/p/myrepo-login", false},
+		{"/p/myrepo_wt/myrepo", false},
 	}
 	for _, c := range cases {
 		if got := UnderSuperset(c.path, parent, repo, suffix); got != c.want {

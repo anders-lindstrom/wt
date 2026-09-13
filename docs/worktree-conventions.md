@@ -66,7 +66,7 @@ carry are shims that call `wt`.
 4. **Remove with `wt remove`.** Deleting the folder or running `git worktree remove`
    leaves the branch behind with nothing deciding its fate. `wt remove` accepts a work
    name, branch or path; `--yes` skips the question, and without a terminal it never
-   asks.
+   asks. Merged branches left without a worktree are for `wt sweep`.
 5. **Move with `wt migrate`.** The move is git's own, so uncommitted work goes with
    it, but anything holding the old absolute path does not follow: IDE projects,
    running dev servers, terminal sessions, Herdr and Superset workspaces. Reopen those
@@ -79,6 +79,13 @@ carry are shims that call `wt`.
 8. **Rebase onto trunk with `wt sync`.** `wt sync` alone shows what would happen and
    changes nothing; `wt sync run <work>` does it, and `wt sync undo <work>` puts it
    back.
+9. **Clean up merged branches with `wt sweep`.** From the main checkout, `wt sweep`
+   fetches origin, lists the local branches trunk already contains, and deletes them
+   after one question (`--yes` for scripts; without a terminal it deletes nothing).
+   It never deletes trunk, a long-lived branch or a branch a worktree is using;
+   `wt remove` that worktree first, or finish the bisect or rebase that holds the
+   branch. Don't bulk-delete with `git branch --merged | xargs git branch -D`: it
+   compares with whatever the checkout has and takes long-lived branches with it.
 
 ## Layouts `wt list` recognises
 

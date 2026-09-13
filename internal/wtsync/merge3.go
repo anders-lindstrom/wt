@@ -47,27 +47,23 @@ func Merge3(c Conflict) ([]Segment, error) {
 			return nil, err
 		}
 	}
-	cmd := exec.Command("git", "merge-file", "-p", "--diff3",
-		"-L", "branch", "-L", "base", "-L", "trunk",
-		filepath.Join(dir, "branch"), filepath.Join(dir, "base"), filepath.Join(dir, "trunk"))
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	// merge-file exits with the number of conflicts, or negative on error;
 	// on a binary blob it exits outside that range with a specific message.
-	if err := cmd.Run(); err != nil {
+	// runGit gives it the deadline every git here has. A deadline that fires
+	// carries no exit status, so it is reported, never read as a count.
+	out, err := runGit(dir, nil, nil, "merge-file", "-p", "--diff3",
+		"-L", "branch", "-L", "base", "-L", "trunk",
+		filepath.Join(dir, "branch"), filepath.Join(dir, "base"), filepath.Join(dir, "trunk"))
+	if err != nil {
 		var exit *exec.ExitError
 		if !errors.As(err, &exit) || exit.ExitCode() < 0 || exit.ExitCode() > 127 {
-			msg := strings.TrimSpace(stderr.String())
-			if strings.Contains(msg, "Cannot merge binary files") {
+			if strings.Contains(err.Error(), "Cannot merge binary files") {
 				return nil, Refuse(c.Path, "binary file; a person's call")
 			}
-			if msg == "" {
-				return nil, err
-			}
-			return nil, errors.New(msg)
+			return nil, err
 		}
 	}
-	segs, err := split(stdout.String())
+	segs, err := split(string(out))
 	if err != nil {
 		return nil, err
 	}

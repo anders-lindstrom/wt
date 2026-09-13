@@ -6,6 +6,38 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-11 22:56 — wt sync: every git call has a deadline, and interrupted handovers say how to get back
+
+- `git merge-file`, the `git archive` and `tar` behind a conflict script, and
+  `wt sync doctor`'s trunk lookups get the same deadline as every other git in
+  `wt sync`. One that runs out says it timed out, not that a script is missing
+  or trunk does not resolve.
+- Ctrl-C while `wt sync run` or `resume` writes the plan names the worktree and
+  what puts it back, instead of only `interrupted`. A plan `resume` cannot write
+  says the worktree is left mid-rebase and `git rebase --abort` puts it back.
+
+## 2026-09-11 22:34 — wt sweep fits the terminal
+
+- On a terminal, `wt sweep` cuts long commit subjects so each row of its plan
+  fits the width, as `wt list` and `wt status` do. Piped, they stay whole.
+
+## 2026-09-11 22:29 — wt sweep says what holds a merged branch
+
+- A merged branch held by a bisect or rebase is listed as `held by the rebase
+  in <path>; finish or abort it there`, not sent to `wt remove`, which would
+  find nothing to remove. A plain checkout's line says `wt remove` deletes it.
+- A branch kept at the last moment says why: it moved, was checked out, or
+  trunk no longer contains it.
+
+## 2026-09-11 22:23 — wt remove deletes a branch merged on origin
+
+- Behaviour change: `wt remove` now deletes a branch that `origin/main`
+  contains, as last fetched, instead of renaming it and leaving it behind for
+  `wt sweep`. That is what a pull request merged on GitHub looks like while the
+  main checkout's `main` is behind.
+- It still never fetches, and deletes the branch only at the commit the plan
+  showed: a branch that moves in the meantime is kept.
+
 ## 2026-09-11 07:40 — wt sync fetches trunk before it looks
 
 - `wt sync` and `wt sync <work>` fetch trunk first, so the header names the

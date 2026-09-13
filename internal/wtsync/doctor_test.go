@@ -301,6 +301,31 @@ func TestDoctorFlagsLFSAsAnErrorWhenTrunkDoesNotResolve(t *testing.T) {
 	}
 }
 
+// A git that does not answer is reported as a failed check that says so,
+// never read as a trunk that does not resolve or as a path that is absent.
+func TestDoctorTreeChecksReportAGitThatDoesNotAnswer(t *testing.T) {
+	dir := repoWith(t, map[string]string{"a.txt": "a\n"}, nil, nil)
+	for _, tc := range []struct {
+		name        string
+		passThrough []string
+	}{
+		{"the ref check hangs", nil},
+		{"the lookup after it hangs", []string{"rev-parse"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hangOnPath(t, "git", tc.passThrough...)
+			for _, c := range []Check{
+				treeFileCheck(dir, "main", ".gitmodules", "submodules", "submodules are not handled by run"),
+				lfsCheck(dir, "main"),
+			} {
+				if c.OK || !strings.Contains(c.Detail, "timed out") || strings.Contains(c.Detail, "does not resolve") {
+					t.Errorf("%s: %+v, want a failure naming the deadline", c.Name, c)
+				}
+			}
+		})
+	}
+}
+
 func TestDoctorFlagsAWorktreeLeftMidRebase(t *testing.T) {
 	dir, wt, _ := runRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"a.txt": "a3\n"}})
 	if err := gitCmd(wt, "rebase", "--no-update-refs", "--no-gpg-sign", "main").Run(); err == nil {

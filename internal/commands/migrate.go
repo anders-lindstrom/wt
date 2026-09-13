@@ -165,7 +165,7 @@ func migrateTarget(ctx *Context, wt repo.Worktree, dest string) (typ, work strin
 
 // impliedTarget reads a type and a name out of a branch. Branches wt made
 // carry both; so, near enough, do the two shapes other tools leave behind —
-// "fix/idiotthings" is missing only the type suffix, and "axis_acc" is a bare
+// "fix/flaky-test" is missing only the type suffix, and "api_tidy" is a bare
 // name under the repository's default type. Anything else is a guess, and a
 // guess here silently renames somebody's branch.
 func impliedTarget(ctx *Context, branch string) (typ, work string, ok bool) {
@@ -188,7 +188,7 @@ func impliedTarget(ctx *Context, branch string) (typ, work string, ok bool) {
 }
 
 // stripTypeSuffix lets a destination be written the way the branch reads —
-// "fix_wt/webkey" as well as "fix/webkey".
+// "fix_wt/login-crash" as well as "fix/login-crash".
 func stripTypeSuffix(ctx *Context, dest string) string {
 	head, rest, found := strings.Cut(dest, "/")
 	if !found || ctx.Config.TypeSuffix == "" {

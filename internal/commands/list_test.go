@@ -257,7 +257,7 @@ func TestStatusFitsPathsToTheTerminalWidth(t *testing.T) {
 func TestListLegendNamesSomethingTheRowActuallyShows(t *testing.T) {
 	main := committedRepo(t, minimalConf)
 	ctx, _ := Open(main)
-	gitIn(t, main, "worktree", "add", "-q", "-b", "fix/idiotthings",
+	gitIn(t, main, "worktree", "add", "-q", "-b", "fix/flaky-test",
 		filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 
 	var buf bytes.Buffer

@@ -22,14 +22,18 @@ func newRemoveCmd() *cobra.Command {
 		Aliases: []string{"rm"},
 		Short:   "Remove a worktree, deleting its branch only when merged",
 		Long: "Remove the worktree and decide what happens to its branch. A branch\n" +
-			"merged into the main branch is deleted, whoever created it: merged\n" +
-			"means nothing is lost. An unmerged branch wt made is renamed out of\n" +
-			"the <type>_wt/ prefix, so the work survives its worktree; an unmerged\n" +
-			"branch wt did not make is left exactly as it is.\n\n" +
+			"merged into trunk is deleted, whoever created it: merged means nothing\n" +
+			"is lost. An unmerged branch wt made is renamed out of the <type>_wt/\n" +
+			"prefix, so the work survives its worktree; an unmerged branch wt did\n" +
+			"not make is left exactly as it is.\n\n" +
+			"Merged means the branch's tip is reachable from origin/<trunk> as last\n" +
+			"fetched, or from the local trunk, so a pull request merged on the\n" +
+			"remote counts even while the main checkout's trunk is behind. Remove\n" +
+			"never fetches. A branch that moves after the plan is kept.\n\n" +
 			"The plan says where the branch stands either way — merged, or how many\n" +
-			"commits ahead of the main branch it is — because that is the fact the\n" +
-			"whole decision turns on. \"clean\" is about the checkout, not the branch:\n" +
-			"it means nothing is uncommitted.\n\n" +
+			"commits ahead of origin/<trunk> (or trunk, without it) it is — because\n" +
+			"that is the fact the whole decision turns on. \"clean\" is about the\n" +
+			"checkout, not the branch: it means nothing is uncommitted.\n\n" +
 			"The worktree can be named by anything `wt list` prints — the work name,\n" +
 			"the branch, or the path. Matching is exact and stays inside this\n" +
 			"repository; a work name used under two types has to be named by its\n" +

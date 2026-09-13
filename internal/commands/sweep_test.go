@@ -74,7 +74,7 @@ func goneUpstream(t *testing.T, main, branch string) {
 
 func planOf(t *testing.T, ctx *Context) SweepPlan {
 	t.Helper()
-	bases, err := sweepBases(ctx)
+	bases, err := trunkBases(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func branchNames(bs []SweepBranch) []string {
 
 func rendered(p SweepPlan) string {
 	var buf bytes.Buffer
-	p.Render(&buf)
+	p.Render(&buf, 0)
 	return buf.String()
 }
 
@@ -206,6 +206,10 @@ func TestSweepPlanSeesABranchInTheMiddleOfARebase(t *testing.T) {
 	if !slices.Contains(branchNames(p.CheckedOut), "rebasing") {
 		t.Errorf("want rebasing in the checked-out group: %v", branchNames(p.CheckedOut))
 	}
+	// wt remove would throw the rebase away and leave the branch.
+	if out := rendered(p); !strings.Contains(out, "held by the rebase in "+dst+"; finish or abort it there, then sweep again") {
+		t.Errorf("the plan must send the reader to the rebase, not to wt remove:\n%s", out)
+	}
 }
 
 // A bisect detaches HEAD; git still counts the branch it started from as in
@@ -227,6 +231,10 @@ func TestSweepPlanSeesABranchABisectStartedFrom(t *testing.T) {
 	}
 	if !slices.Contains(branchNames(p.CheckedOut), "bisecting") {
 		t.Errorf("want bisecting in the checked-out group: %v", branchNames(p.CheckedOut))
+	}
+	// No worktree has bisecting checked out, so wt remove bisecting finds nothing.
+	if out := rendered(p); !strings.Contains(out, "held by the bisect in "+dst+"; finish or abort it there, then sweep again") {
+		t.Errorf("the plan must send the reader to the bisect, not to wt remove:\n%s", out)
 	}
 }
 
@@ -263,6 +271,9 @@ func TestSweepPlanSeesABranchARebaseWillUpdate(t *testing.T) {
 	}
 	if !slices.Contains(branchNames(p.CheckedOut), "lower") {
 		t.Errorf("want lower in the checked-out group: %v", branchNames(p.CheckedOut))
+	}
+	if out := rendered(p); !strings.Contains(out, "lower  held by the rebase in "+dst+"; finish or abort it there, then sweep again") {
+		t.Errorf("the plan must send the reader to the rebase, not to wt remove:\n%s", out)
 	}
 }
 
@@ -362,6 +373,31 @@ func TestSweepPlanWithNoOriginComparesWithLocalTrunk(t *testing.T) {
 	}
 }
 
+// Commit subjects run long. On a terminal they are cut so each row fits;
+// piped, they are printed whole.
+func TestSweepPlanFitsSubjectsToTheTerminal(t *testing.T) {
+	ctx, main, _ := sweepRepo(t)
+	subject := "a commit subject long enough to push its row past the edge of a narrow terminal"
+	tree := gitOut(t, main, "rev-parse", "main^{tree}")
+	gitIn(t, main, "branch", "done-work", gitOut(t, main, "commit-tree", "-p", "main", "-m", subject, tree))
+	gitIn(t, main, "merge", "-q", "--ff-only", "done-work")
+	p := planOf(t, ctx)
+
+	var buf bytes.Buffer
+	p.Render(&buf, 80)
+	for _, line := range strings.Split(buf.String(), "\n") {
+		if n := len([]rune(line)); n > 80 {
+			t.Errorf("a %d-column line on an 80-column terminal: %q", n, line)
+		}
+	}
+	if !strings.Contains(buf.String(), "done-work") || !strings.Contains(buf.String(), "…") {
+		t.Errorf("want the branch whole and its subject cut:\n%s", buf.String())
+	}
+	if out := rendered(p); !strings.Contains(out, subject) {
+		t.Errorf("piped, the subject is printed whole:\n%s", out)
+	}
+}
+
 func TestSweepPlanWithNothingMergedSaysSo(t *testing.T) {
 	ctx, _, _ := sweepRepo(t)
 	if out := rendered(planOf(t, ctx)); !strings.Contains(out, "No merged branches to delete.") {
@@ -420,7 +456,10 @@ func TestSweepRefusesABareRepository(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, _ := config.FromRaw(map[string]config.Value{"MAIN_BRANCH": {Scalar: "main"}}, "main")
+	c, err := config.FromRaw(map[string]config.Value{"MAIN_BRANCH": {Scalar: "main"}}, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	var buf bytes.Buffer
 	err = Sweep(&Context{Repo: r, Config: c}, SweepOptions{NoFetch: true, Yes: true}, &buf)
@@ -554,7 +593,7 @@ func TestSweepKeepsABranchThatMovedWhileThePromptWasOpen(t *testing.T) {
 	if ctx.Repo.BranchExists("also-done") {
 		t.Error("an unchanged branch should still have been deleted")
 	}
-	if !strings.Contains(buf.String(), "changed after the plan") {
+	if !strings.Contains(buf.String(), "- kept done-work: it moved after the plan was made") {
 		t.Errorf("say why it was kept:\n%s", buf.String())
 	}
 }
@@ -573,6 +612,9 @@ func TestSweepKeepsABranchCheckedOutWhileThePromptWasOpen(t *testing.T) {
 	}
 	if !ctx.Repo.BranchExists("done-work") {
 		t.Fatal("a branch checked out after the plan was deleted")
+	}
+	if !strings.Contains(buf.String(), "- kept done-work: it was checked out in ") {
+		t.Errorf("say why it was kept:\n%s", buf.String())
 	}
 }
 
@@ -632,6 +674,9 @@ func TestSweepKeepsABranchWhoseMergeWasUndoneWhileThePromptWasOpen(t *testing.T)
 	}
 	if !ctx.Repo.BranchExists("local-only") {
 		t.Fatal("a branch whose only merge was reset away was deleted")
+	}
+	if !strings.Contains(buf.String(), "- kept local-only: trunk no longer contains it") {
+		t.Errorf("say why it was kept:\n%s", buf.String())
 	}
 }
 
