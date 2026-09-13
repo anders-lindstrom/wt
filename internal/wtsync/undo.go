@@ -105,12 +105,18 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 			return nil, err
 		}
 		if busy {
-			has, herr := HasPlan(gitDir)
-			if herr != nil {
-				return nil, herr
-			}
-			if !has {
+			// The sidecar read above is the handover marker; a rebase
+			// without one is somebody's own.
+			if !stateOK {
 				return nil, fmt.Errorf("%s is mid-rebase; nothing undone", s.Branch)
+			}
+			// A sidecar beside a rebase does not make the rebase the run's:
+			// a person may have aborted the run's and started their own,
+			// from a commit of theirs, leaving the sidecar behind. Aborting
+			// that would discard the commit, and no pin covers it (the
+			// branch ref never moved), so force does not lift this refusal.
+			if err := VerifyLeft(wt.Path, st); err != nil {
+				return nil, fmt.Errorf("%s: %w; finish or abort that rebase yourself (git -C %s rebase --abort), then undo again; nothing undone", s.Branch, err, wt.Path)
 			}
 			// A rebase this tool left: aborting it is what undo is for, and
 			// its staged conflicts are not dirt. The abort happens later,

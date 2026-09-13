@@ -369,6 +369,52 @@ func VerifyFinished(wtPath, branch, work, onto, old string) error {
 	return nil
 }
 
+// VerifyLeft is VerifyFinished's twin for a rebase still in progress: it
+// proves the one in wtPath is the one the handover st describes — moving
+// st.Branch, replaying onto st.Onto, started from st.OldTip — and not a
+// person's own, started after aborting the run's, perhaps from a commit of
+// theirs. Continuing such a rebase would pin its result under the run's
+// epoch, and aborting it would discard that commit with nothing pinning it.
+// The onto and orig-head values are resolved to commits before they are
+// compared, so an abbreviated or symbolic one can neither refuse the run's
+// own rebase nor pass somebody else's. The error names what differs and
+// nothing else; the caller says what it did not do.
+func VerifyLeft(wtPath string, st State) error {
+	notOurs := func(why string) error {
+		return fmt.Errorf("the rebase in progress is not the one wt sync run left: %s", why)
+	}
+	t, ok, err := ReadRebaseTarget(wtPath)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return notOurs("it is not a merge-backend rebase")
+	}
+	if t.HeadName != "refs/heads/"+st.Branch {
+		return notOurs(fmt.Sprintf("it moves %s, not refs/heads/%s", t.HeadName, st.Branch))
+	}
+	want, err := commitOf(wtPath, st.Onto)
+	if err != nil {
+		return fmt.Errorf("the handover's onto %q is not a commit here: %w", st.Onto, err)
+	}
+	if got, err := commitOf(wtPath, t.Onto); err != nil || got != want {
+		return notOurs(fmt.Sprintf("it replays onto %s, not %s", git.ShortID(t.Onto, 7), git.ShortID(want, 7)))
+	}
+	if got, err := commitOf(wtPath, t.OrigHead); err != nil || got != st.OldTip {
+		return notOurs(fmt.Sprintf("it started from %s, not the tip the run started from (%s)", git.ShortID(t.OrigHead, 7), git.ShortID(st.OldTip, 7)))
+	}
+	return nil
+}
+
+// commitOf resolves rev to the commit it names in dir; an empty rev is an
+// error rather than HEAD.
+func commitOf(dir, rev string) (string, error) {
+	if rev == "" {
+		return "", errors.New("empty")
+	}
+	return gitEnv(dir, nil, nil, "rev-parse", "--verify", "--quiet", rev+"^{commit}")
+}
+
 // drive runs the stop-resolve-continue loop until the rebase finishes, fails
 // or reaches a stop a person owns. err is what the command that got the
 // rebase moving returned: nil means it is already finished.
