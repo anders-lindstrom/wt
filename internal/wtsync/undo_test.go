@@ -201,6 +201,9 @@ func TestUndoForcedPastAMovedBranchPinsWhatItDiscards(t *testing.T) {
 	if pinned := gitIn(t, dir, "rev-parse", SafetyPrefix+"feature/1234"); pinned != discarded {
 		t.Fatalf("fresh safety ref pins %s, want %s", pinned, discarded)
 	}
+	if got[0].Kept != SafetyPrefix+"feature/1234" || got[0].KeptTip != discarded {
+		t.Fatalf("row %+v; want the fresh safety ref and what it pins named", got[0])
+	}
 }
 
 func TestUndoRefusesABranchWithALaterRun(t *testing.T) {
@@ -304,9 +307,17 @@ func TestAForcedUndoIsItselfUndoneByAPlainUndo(t *testing.T) {
 // branch tip before the run.
 func handedOverRepo(t *testing.T, epoch int64, keepLock bool) (dir, wt, gitDir, old string) {
 	t.Helper()
-	dir, wt, cfg := runRepo(t,
+	return handedOverRepoWith(t, epoch, keepLock,
 		[]map[string]string{{"v.txt": "1.0.5\n", "a.txt": "trunk\n"}},
 		[]map[string]string{{"v.txt": "1.0.1\n", "a.txt": "branch\n"}})
+}
+
+// handedOverRepoWith is handedOverRepo with trunk's and the branch's
+// commits chosen by the caller; the rebase must stop at a file nobody's
+// strategy claims, or there is nothing to hand over.
+func handedOverRepoWith(t *testing.T, epoch int64, keepLock bool, trunkEdits, branchEdits []map[string]string) (dir, wt, gitDir, old string) {
+	t.Helper()
+	dir, wt, cfg := runRepo(t, trunkEdits, branchEdits)
 	old = gitIn(t, wt, "rev-parse", "HEAD")
 	res, err := Rebase(dir, cfg, trunkReq(wt, epoch), nil)
 	if err != nil || res.Left == nil {
@@ -319,9 +330,15 @@ func handedOverRepo(t *testing.T, epoch int64, keepLock bool) (dir, wt, gitDir, 
 	st := State{
 		Branch: "feature", Work: "feature", Trunk: gitIn(t, dir, "rev-parse", "origin/main"), TrunkRef: "origin/main",
 		Onto: "origin/main", Epoch: epoch, Safety: res.Safety.Ref, OldTip: res.OldTip,
+		Head: gitIn(t, wt, "rev-parse", "HEAD"),
 		Stop: res.Left.Index, Total: res.Left.Total,
-		Resolved: res.Left.Staged, Strategy: map[string]string{"v.txt": "owned-line"},
+		Resolved: res.Left.Staged, Strategy: map[string]string{},
 		Deleted: res.Left.Deleted, Left: res.Left.Left,
+	}
+	for _, f := range res.Left.Files {
+		if f.Resolved {
+			st.Strategy[f.Path] = f.Strategy
+		}
 	}
 	var lock *Lock
 	if keepLock {
@@ -461,6 +478,274 @@ func TestUndoRefusesARebaseThatIsNotTheRuns(t *testing.T) {
 	}
 }
 
+// resolveAndCommit does what a person may do at a handed-over stop instead
+// of leaving the resolution staged: resolves a.txt and commits it, inside
+// the rebase, on detached HEAD. The commit is theirs and nothing but HEAD's
+// reflog names it once the rebase is aborted.
+func resolveAndCommit(t *testing.T, wt string) (sha string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(wt, "a.txt"), []byte("merged by hand\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, wt, "add", "--", "a.txt")
+	gitIn(t, wt, "commit", "-q", "-m", "resolved by hand")
+	return gitIn(t, wt, "rev-parse", "HEAD")
+}
+
+func TestCommittedInsideSeesACommitAtTheStop(t *testing.T) {
+	_, wt, gitDir, _ := handedOverRepo(t, 5, false)
+	st, ok, err := ReadState(gitDir)
+	if err != nil || !ok {
+		t.Fatalf("ReadState = %v, %v", ok, err)
+	}
+	left := gitIn(t, wt, "rev-parse", "HEAD")
+	if st.Head != left {
+		t.Fatalf("the fixture's sidecar records %q, HEAD is %s", st.Head, left)
+	}
+	if got, err := CommittedInside(wt, st); err != nil || len(got.Commits) != 0 || got.Unproven || got.Head != left {
+		t.Fatalf("before any commit: %+v, %v", got, err)
+	}
+	sha := resolveAndCommit(t, wt)
+	want := Inside{Head: sha, Commits: []Commit{{SHA: sha, Subject: "resolved by hand"}}}
+	if got, err := CommittedInside(wt, st); err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("by head: %+v, %v; want %+v", got, err, want)
+	}
+	// An old sidecar that recorded no head: the same commit, but unproven,
+	// since nothing separates it from the run's own picks.
+	older := st
+	older.Head = ""
+	want.Unproven = true
+	if got, err := CommittedInside(wt, older); err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("by count: %+v, %v; want %+v", got, err, want)
+	}
+	// Recorded at the commit itself, as a resume that stopped there would:
+	// nothing is inside.
+	st.Head = sha
+	if got, err := CommittedInside(wt, st); err != nil || len(got.Commits) != 0 || got.Unproven {
+		t.Fatalf("at the recorded head: %+v, %v", got, err)
+	}
+	// An amend of the recorded head is a sibling of it: reported as inside,
+	// so a forced undo pins it rather than refusing.
+	gitIn(t, wt, "commit", "-q", "--amend", "-m", "resolved by hand, amended")
+	amended := gitIn(t, wt, "rev-parse", "HEAD")
+	if got, err := CommittedInside(wt, st); err != nil || !reflect.DeepEqual(got, Inside{Head: amended, Commits: []Commit{{SHA: amended, Subject: "resolved by hand, amended"}}}) {
+		t.Fatalf("after an amend: %+v, %v", got, err)
+	}
+	// HEAD reset to before the recorded head is behind the run's line.
+	gitIn(t, wt, "reset", "-q", "--hard", left)
+	if _, err := CommittedInside(wt, st); err == nil || !strings.Contains(err.Error(), "behind where the run left") {
+		t.Fatalf("err %v; want a HEAD behind the run's line refused", err)
+	}
+}
+
+// olderSidecar rewrites the handover in gitDir as a wt from before the head
+// was recorded would have written it.
+func olderSidecar(t *testing.T, gitDir string) {
+	t.Helper()
+	st, ok, err := ReadState(gitDir)
+	if err != nil || !ok {
+		t.Fatalf("ReadState = %v, %v", ok, err)
+	}
+	st.Head = ""
+	if err := WriteState(gitDir, st); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUndoRefusesAnOldHandoverWithACommitBehindADroppedPick(t *testing.T) {
+	// The branch's first commit makes a change trunk already made (with a
+	// different patch id, so the rebase still tries it): the merge backend
+	// drops it as empty and the stop is at 2/2 with HEAD still at onto. A
+	// count of picks would then say the stop has one pick before it, and a
+	// commit a person makes there would net to nothing. A sidecar with no
+	// recorded head cannot prove otherwise, so a plain undo refuses and a
+	// forced one pins HEAD.
+	dir, wt, gitDir, old := handedOverRepoWith(t, 5, false,
+		[]map[string]string{{"a.txt": "x\n", "c.txt": "c\n"}, {"b.txt": "trunk\n"}},
+		[]map[string]string{{"a.txt": "x\n"}, {"b.txt": "branch\n"}})
+	if p, err := RebaseProgress(wt); err != nil || p.Index != 2 {
+		t.Fatalf("progress %+v, %v; want the stop at 2/2 with the first pick dropped", p, err)
+	}
+	if gitIn(t, wt, "rev-parse", "HEAD") != gitIn(t, dir, "rev-parse", "origin/main") {
+		t.Fatal("HEAD is not at onto; the first pick was not dropped and the test is vacuous")
+	}
+	olderSidecar(t, gitDir)
+	if err := os.WriteFile(filepath.Join(wt, "b.txt"), []byte("merged by hand\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, wt, "add", "--", "b.txt")
+	gitIn(t, wt, "commit", "-q", "-m", "resolved by hand")
+	sha := gitIn(t, wt, "rev-parse", "HEAD")
+
+	wts := []repo.Worktree{{Path: wt, Branch: "feature", Rebasing: true}}
+	_, err := Undo(dir, wts, nil, "feature", time.Now(), false)
+	if err == nil || !strings.Contains(err.Error(), "did not record where it left HEAD") || !strings.Contains(err.Error(), "wt sync undo --force feature") || !strings.Contains(err.Error(), "1 commit on top") {
+		t.Fatalf("err %v; want the old handover refused", err)
+	}
+	if busy, err := RebaseInProgress(wt); err != nil || !busy {
+		t.Fatalf("RebaseInProgress = %v, %v; the refusal aborted the rebase", busy, err)
+	}
+	got, err := Undo(dir, wts, nil, "feature", time.Unix(0, 4321), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || !got[0].Aborted || gitIn(t, wt, "rev-parse", "HEAD") != old {
+		t.Fatalf("restored %+v; HEAD %s want %s", got, gitIn(t, wt, "rev-parse", "HEAD"), old)
+	}
+	if pinned := gitIn(t, dir, "rev-parse", SafetyRef("feature", 4321)); pinned != sha {
+		t.Fatalf("the forced undo pinned %s, want the commit behind the dropped pick %s", pinned, sha)
+	}
+	if _, err := Undo(dir, wts, nil, "feature", time.Now(), false); err != nil || gitIn(t, wt, "rev-parse", "HEAD") != sha {
+		t.Fatalf("plain undo of the forced undo: err %v, HEAD %s want %s", err, gitIn(t, wt, "rev-parse", "HEAD"), sha)
+	}
+}
+
+func TestUndoRefusesAnOldHandoverEvenWithNothingOnTopOfOnto(t *testing.T) {
+	// No commit on top of onto proves nothing for an old sidecar either: a
+	// pick dropped as empty and a commit made by hand cancel out. Refused
+	// plain; forced pins the detached HEAD, here onto itself.
+	dir, wt, gitDir, old := handedOverRepo(t, 5, false)
+	olderSidecar(t, gitDir)
+	head := gitIn(t, wt, "rev-parse", "HEAD")
+	wts := []repo.Worktree{{Path: wt, Branch: "feature", Rebasing: true}}
+	_, err := Undo(dir, wts, nil, "feature", time.Now(), false)
+	if err == nil || !strings.Contains(err.Error(), "did not record where it left HEAD") || strings.Contains(err.Error(), "on top of") {
+		t.Fatalf("err %v; want the old handover refused without a count", err)
+	}
+	if busy, err := RebaseInProgress(wt); err != nil || !busy {
+		t.Fatalf("RebaseInProgress = %v, %v; the refusal aborted the rebase", busy, err)
+	}
+	if _, err := Undo(dir, wts, nil, "feature", time.Unix(0, 4321), true); err != nil || gitIn(t, wt, "rev-parse", "HEAD") != old {
+		t.Fatalf("forced undo: err %v, HEAD %s want %s", err, gitIn(t, wt, "rev-parse", "HEAD"), old)
+	}
+	if pinned := gitIn(t, dir, "rev-parse", SafetyRef("feature", 4321)); pinned != head {
+		t.Fatalf("the forced undo pinned %s, want the detached HEAD %s", pinned, head)
+	}
+}
+
+func TestUndoRefusesACommitMadeInsideTheHandover(t *testing.T) {
+	dir, wt, gitDir, _ := handedOverRepo(t, 5, false)
+	sha := resolveAndCommit(t, wt)
+	_, err := Undo(dir, []repo.Worktree{{Path: wt, Branch: "feature", Rebasing: true}}, nil, "feature", time.Now(), false)
+	if err == nil || !strings.Contains(err.Error(), sha[:7]) || !strings.Contains(err.Error(), "wt sync undo --force feature") || !strings.Contains(err.Error(), "wt sync resume feature") {
+		t.Fatalf("err %v; want the commit named and both ways forward", err)
+	}
+	if busy, err := RebaseInProgress(wt); err != nil || !busy {
+		t.Fatalf("RebaseInProgress = %v, %v; the refusal aborted the rebase", busy, err)
+	}
+	if has, err := HasPlan(gitDir); err != nil || !has {
+		t.Fatalf("HasPlan = %v, %v; the refusal removed the handover", has, err)
+	}
+	if gitIn(t, wt, "rev-parse", "HEAD") != sha {
+		t.Fatal("HEAD moved despite the refusal")
+	}
+}
+
+func TestUndoRefusesAContinueThatStoppedAgain(t *testing.T) {
+	// Two branch commits; the person resolves stop 1 the way the plan file
+	// asks and runs git rebase --continue themselves, which commits pick 1
+	// and stops at 2/2 with the old sidecar still describing 1/2. Pick 1's
+	// commit carries their resolution; a plain undo names it and refuses.
+	dir, wt, gitDir, _ := handedOverRepoWith(t, 5, false,
+		[]map[string]string{{"v.txt": "1.0.5\n", "a.txt": "trunk\n"}},
+		[]map[string]string{{"v.txt": "1.0.1\n", "a.txt": "branch\n"}, {"v.txt": "1.0.2\n"}})
+	if err := os.WriteFile(filepath.Join(wt, "a.txt"), []byte("merged by hand\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, wt, "add", "--", "a.txt")
+	if _, err := gittest.Try(t, wt, "rebase", "--continue"); err == nil {
+		t.Fatal("the rebase did not stop again; the test is vacuous")
+	}
+	if p, err := RebaseProgress(wt); err != nil || p.Index != 2 {
+		t.Fatalf("progress %+v, %v; want a stop at 2/2", p, err)
+	}
+	picked := gitIn(t, wt, "rev-parse", "HEAD")
+	if gitIn(t, wt, "log", "-1", "--format=%s") != "branch 1" {
+		t.Fatalf("HEAD is %q, not the first pick", gitIn(t, wt, "log", "-1", "--format=%s"))
+	}
+	_, err := Undo(dir, []repo.Worktree{{Path: wt, Branch: "feature", Rebasing: true}}, nil, "feature", time.Now(), false)
+	if err == nil || !strings.Contains(err.Error(), picked[:7]) || !strings.Contains(err.Error(), "wt sync undo --force feature") {
+		t.Fatalf("err %v; want pick 1's commit named", err)
+	}
+	if busy, err := RebaseInProgress(wt); err != nil || !busy {
+		t.Fatalf("RebaseInProgress = %v, %v; the refusal aborted the rebase", busy, err)
+	}
+	if has, err := HasPlan(gitDir); err != nil || !has {
+		t.Fatalf("HasPlan = %v, %v; the refusal removed the handover", has, err)
+	}
+}
+
+func TestUndoForcedPastACommitInsideKeepsItUnderASafetyRef(t *testing.T) {
+	dir, wt, gitDir, old := handedOverRepo(t, 5, false)
+	sha := resolveAndCommit(t, wt)
+	wts := []repo.Worktree{{Path: wt, Branch: "feature", Rebasing: true}}
+	got, err := Undo(dir, wts, nil, "feature", time.Unix(0, 4321), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || !got[0].Aborted || got[0].NotRewound || got[0].From != old || got[0].To != old {
+		t.Fatalf("restored %+v; want feature aborted and back at %s", got, old)
+	}
+	if busy, err := RebaseInProgress(wt); err != nil || busy {
+		t.Fatalf("RebaseInProgress = %v, %v; the forced undo did not abort", busy, err)
+	}
+	if gitIn(t, wt, "rev-parse", "HEAD") != old || gitIn(t, wt, "symbolic-ref", "HEAD") != "refs/heads/feature" {
+		t.Fatal("HEAD is not back on feature at the old tip")
+	}
+	if has, err := HasPlan(gitDir); err != nil || has {
+		t.Fatalf("HasPlan = %v, %v; the forced undo left the handover", has, err)
+	}
+	if pinned := gitIn(t, dir, "rev-parse", SafetyRef("feature", 4321)); pinned != sha {
+		t.Fatalf("the forced undo pinned %s, want the discarded commit %s", pinned, sha)
+	}
+	if got[0].Kept != SafetyRef("feature", 4321) || got[0].KeptTip != sha {
+		t.Fatalf("row %+v; want the safety ref keeping the commit named: the branch never moved, so nothing else does", got[0])
+	}
+	if res, ok, err := ResultTip(dir, "feature", 4321); err != nil || !ok || res != old {
+		t.Fatalf("ResultTip = %s, %v, %v; want the tip the abort left, %s", res, ok, err, old)
+	}
+	// The forced undo is itself undone by a plain undo, which lands the
+	// branch on the person's commit: onto, the picks so far, their resolution.
+	got, err = Undo(dir, wts, nil, "feature", time.Now(), false)
+	if err != nil {
+		t.Fatalf("a forced undo must be undoable without --force: %v", err)
+	}
+	if len(got) != 1 || got[0].To != sha || gitIn(t, wt, "rev-parse", "HEAD") != sha {
+		t.Fatalf("got %+v; HEAD %s want %s", got, gitIn(t, wt, "rev-parse", "HEAD"), sha)
+	}
+	if gitIn(t, wt, "symbolic-ref", "HEAD") != "refs/heads/feature" || gitIn(t, wt, "status", "--porcelain", "--untracked-files=no") != "" {
+		t.Fatal("feature is not checked out clean at the kept commit")
+	}
+}
+
+func TestUndoRefusesAMovedBranchWithCommitsInsideEvenWhenForced(t *testing.T) {
+	// The branch ref was moved by hand while its handed-over rebase, which
+	// carries a person's commit, is still in progress: two things to keep,
+	// and a forced undo pins one. Refused, and nothing pinned.
+	dir, wt, gitDir, _ := handedOverRepo(t, 5, false)
+	sha := resolveAndCommit(t, wt)
+	gitIn(t, dir, "update-ref", "refs/heads/feature", "main")
+	moved := gitIn(t, dir, "rev-parse", "feature")
+	_, err := Undo(dir, []repo.Worktree{{Path: wt, Branch: "feature", Rebasing: true}}, nil, "feature", time.Unix(0, 4321), true)
+	// The abort it names discards the very commits it refuses to discard,
+	// so it has to say so.
+	if err == nil || !strings.Contains(err.Error(), "moved since that run and carries commits") || !strings.Contains(err.Error(), "rebase --abort) and lose those commits") {
+		t.Fatalf("err %v", err)
+	}
+	if busy, err := RebaseInProgress(wt); err != nil || !busy {
+		t.Fatalf("RebaseInProgress = %v, %v; the refusal aborted the rebase", busy, err)
+	}
+	if has, err := HasPlan(gitDir); err != nil || !has {
+		t.Fatalf("HasPlan = %v, %v; the refusal removed the handover", has, err)
+	}
+	if gitIn(t, wt, "rev-parse", "HEAD") != sha || gitIn(t, dir, "rev-parse", "feature") != moved {
+		t.Fatal("the refusal moved something")
+	}
+	if out := gitIn(t, dir, "for-each-ref", "--format=%(refname)", SafetyRef("feature", 4321)); out != "" {
+		t.Fatalf("a forced pin survived the refusal: %s", out)
+	}
+}
+
 func TestUndoChecksEverythingBeforeAborting(t *testing.T) {
 	// One run pinned two branches: feature was handed over, second has moved
 	// on since. The moved-since refusal must come before feature's rebase is
@@ -557,7 +842,8 @@ func laterHandover(t *testing.T, dir, tip string, epoch int64) (path, gitDir str
 	if err != nil {
 		t.Fatal(err)
 	}
-	st := State{Branch: "later", Work: "later", Epoch: epoch, Onto: "origin/main", OldTip: tip, Safety: SafetyRef("later", epoch), Stop: 1, Total: 1}
+	st := State{Branch: "later", Work: "later", Epoch: epoch, Onto: "origin/main", OldTip: tip, Safety: SafetyRef("later", epoch),
+		Head: gitIn(t, path, "rev-parse", "HEAD"), Stop: 1, Total: 1}
 	if err := WriteState(gitDir, st); err != nil {
 		t.Fatal(err)
 	}

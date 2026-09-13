@@ -406,6 +406,77 @@ func VerifyLeft(wtPath string, st State) error {
 	return nil
 }
 
+// Commit is one commit named to a person: its id and its subject.
+type Commit struct{ SHA, Subject string }
+
+// Inside is what a handed-over rebase carries that an abort would discard
+// and only HEAD's reflog would then name.
+type Inside struct {
+	// Head is the rebase's detached HEAD now: what an abort discards, and
+	// what a forced undo pins.
+	Head string
+	// Commits is what was committed inside the rebase since the handover,
+	// oldest first: a person's own commit of the stop's resolution, the
+	// pick their own git rebase --continue committed before stopping again,
+	// or an amend of the pick before the stop.
+	Commits []Commit
+	// Unproven says the sidecar predates the recorded head, so nothing
+	// separates the run's own picks from a person's commits. Commits is
+	// then every commit on top of onto, and even none of them proves
+	// nothing: a pick dropped as empty and a commit made by hand cancel
+	// out in a count. Undo treats an unproven handover as carrying
+	// somebody's work.
+	Unproven bool
+}
+
+// CommittedInside is what a handed-over rebase carries beyond the run's own
+// picks, by comparing HEAD with the head the handover st recorded. A HEAD
+// behind the recorded head on the run's own line (a reset backwards inside
+// the rebase) is an error: what is there is not known to be the run's
+// picks plus somebody's commits, so nothing can be pinned. An amend of the
+// pick before the stop is not that: the amended commit is a sibling of the
+// recorded head, not reachable from it, so it is reported as an inside
+// commit, pinned and restorable like any other.
+func CommittedInside(wtPath string, st State) (Inside, error) {
+	head, err := gitEnv(wtPath, nil, nil, "rev-parse", "HEAD")
+	if err != nil {
+		return Inside{}, err
+	}
+	in := Inside{Head: head}
+	if st.Head == "" {
+		in.Unproven = true
+		in.Commits, err = commitsIn(wtPath, st.Onto+"..HEAD")
+		return in, err
+	}
+	if head == st.Head {
+		return in, nil
+	}
+	if in.Commits, err = commitsIn(wtPath, st.Head+"..HEAD"); err != nil {
+		return Inside{}, err
+	}
+	if len(in.Commits) == 0 {
+		return Inside{}, fmt.Errorf("HEAD is at %s, behind where the run left the rebase (%s)", git.ShortID(head, 7), git.ShortID(st.Head, 7))
+	}
+	return in, nil
+}
+
+// commitsIn lists the commits of a revision range, oldest first.
+func commitsIn(wtPath, rng string) ([]Commit, error) {
+	out, err := gitEnv(wtPath, nil, nil, "log", "--reverse", "--format=%H %s", rng)
+	if err != nil {
+		return nil, err
+	}
+	var commits []Commit
+	for _, line := range strings.Split(out, "\n") {
+		if line == "" {
+			continue
+		}
+		sha, subject, _ := strings.Cut(line, " ")
+		commits = append(commits, Commit{SHA: sha, Subject: subject})
+	}
+	return commits, nil
+}
+
 // commitOf resolves rev to the commit it names in dir; an empty rev is an
 // error rather than HEAD.
 func commitOf(dir, rev string) (string, error) {

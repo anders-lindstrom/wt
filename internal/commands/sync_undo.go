@@ -102,18 +102,26 @@ func SyncUndo(ctx *Context, work string, opts UndoOptions, w io.Writer) error {
 func restoredLine(name string, r wtsync.Restored) string {
 	// A forced undo of a handover that moved both aborts and rewinds:
 	// the rewind is the part a person must see.
+	var line string
 	switch {
 	case r.NotRewound:
-		return fmt.Sprintf("%s  aborted the rebase; not rewound: still at %s, not %s  (%s)", name, git.ShortID(r.From, 7), git.ShortID(r.To, 7), r.Ref)
+		line = fmt.Sprintf("%s  aborted the rebase; not rewound: still at %s, not %s  (%s)", name, git.ShortID(r.From, 7), git.ShortID(r.To, 7), r.Ref)
 	case r.From != r.To:
 		aborted := ""
 		if r.Aborted {
 			aborted = "aborted the rebase; "
 		}
-		return fmt.Sprintf("%s  %s%s → %s  (%s)", name, aborted, git.ShortID(r.From, 7), git.ShortID(r.To, 7), r.Ref)
+		line = fmt.Sprintf("%s  %s%s → %s  (%s)", name, aborted, git.ShortID(r.From, 7), git.ShortID(r.To, 7), r.Ref)
 	case r.Aborted:
-		return fmt.Sprintf("%s  aborted the rebase; back at %s", name, git.ShortID(r.To, 7))
+		line = fmt.Sprintf("%s  aborted the rebase; back at %s", name, git.ShortID(r.To, 7))
 	default:
-		return fmt.Sprintf("%s  already at %s", name, git.ShortID(r.To, 7))
+		line = fmt.Sprintf("%s  already at %s", name, git.ShortID(r.To, 7))
 	}
+	// What a forced undo discarded is under its own safety ref, and the
+	// row is the one place that says where: for an aborted handover the
+	// branch never moved, so nothing above names the commit it kept.
+	if r.Kept != "" {
+		line += fmt.Sprintf("; %s kept under %s, wt sync undo %s puts it back", git.ShortID(r.KeptTip, 7), r.Kept, name)
+	}
+	return line
 }

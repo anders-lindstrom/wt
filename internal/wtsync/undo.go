@@ -1,9 +1,11 @@
 package wtsync
 
 import (
+	"cmp"
 	"fmt"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
@@ -18,6 +20,11 @@ type Restored struct {
 	// when a failure stopped the undo: From is where it is now, and the
 	// rewind never happened.
 	NotRewound bool
+	// Kept is the safety ref a forced undo wrote for this branch, pinning
+	// KeptTip: the tip it discarded, or the detached HEAD of the rebase it
+	// aborted. Ref never names it: Ref is the run's own ref, the one that
+	// supplied To. Empty for a plain undo.
+	Kept, KeptTip string
 }
 
 // Undo resets every ref the newest run touching branch moved: all safety
@@ -71,6 +78,9 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 	// The branches whose handed-over rebase is to be aborted, collected
 	// here and aborted only once every branch has passed every check.
 	aborting := map[string]bool{}
+	// Of those, the ones whose rebase carries commits a person made inside
+	// it, and the HEAD the abort will discard: a forced undo pins it.
+	insideHead := map[string]string{}
 	for _, s := range run {
 		wt, ok := byBranch[s.Branch]
 		if !ok {
@@ -118,6 +128,27 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 			if err := VerifyLeft(wt.Path, st); err != nil {
 				return nil, fmt.Errorf("%s: %w; finish or abort that rebase yourself (git -C %s rebase --abort), then undo again; nothing undone", s.Branch, err, wt.Path)
 			}
+			// The run's own rebase may still carry a person's commits: the
+			// stop's resolution committed by hand, or a pick their own
+			// rebase --continue made before stopping again. The abort would
+			// discard them and nothing but a reflog would name them, so a
+			// plain undo refuses and a forced one pins the HEAD it discards.
+			// A handover from before the head was recorded cannot prove
+			// there are none, and is treated as carrying some.
+			in, err := CommittedInside(wt.Path, st)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w; finish that rebase yourself, or abort it (git -C %s rebase --abort) and lose those commits, then undo again; nothing undone", s.Branch, err, wt.Path)
+			}
+			if len(in.Commits) > 0 || in.Unproven {
+				if !force {
+					work := cmp.Or(st.Work, s.Branch)
+					if in.Unproven {
+						return nil, unprovenRefusal(work, len(in.Commits))
+					}
+					return nil, insideRefusal(work, in.Commits)
+				}
+				insideHead[s.Branch] = in.Head
+			}
 			// A rebase this tool left: aborting it is what undo is for, and
 			// its staged conflicts are not dirt. The abort happens later,
 			// once every branch has passed every check.
@@ -153,7 +184,15 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 		}
 		tips[s.Branch] = tip
 		if tip == s.Tip {
-			continue // already back at the old tip; nothing to discard
+			// Already back at the old tip; nothing to discard — unless the
+			// abort will discard a person's commits inside the rebase. The
+			// forced undo then pins that HEAD as what it discards and s.Tip
+			// as where it leaves the branch, exactly as for a moved branch,
+			// so a plain undo of the forced undo puts those commits back.
+			if h := insideHead[s.Branch]; h != "" {
+				pins = append(pins, Pin{Branch: s.Branch, Safety: h, Result: s.Tip})
+			}
+			continue
 		}
 		// The run's own result is where the branch should still be. Without
 		// one the run never finished for this branch, so any movement at all
@@ -170,6 +209,11 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 		}
 		if !force {
 			return nil, fmt.Errorf("%s has moved since that run (%s commits ahead of it); undo would discard them", s.Branch, aheadCount(mainRoot, want, tip))
+		}
+		// A branch moved by hand whose rebase also carries a person's
+		// commits is two things to keep, and a forced undo pins one.
+		if insideHead[s.Branch] != "" {
+			return nil, fmt.Errorf("%s has moved since that run and carries commits made inside its handed-over rebase; one safety ref cannot keep both, so finish that rebase yourself, or abort it (git -C %s rebase --abort) and lose those commits, then undo again; nothing undone", s.Branch, byBranch[s.Branch].Path)
 		}
 		// The forced undo is itself a run: it moves the branch from tip to
 		// s.Tip, so those are its safety and its result. Pinning the result
@@ -226,10 +270,17 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 	}
 	// A failure here returns the rows already put back, and every abort
 	// among the branches not reached yet, so a partial restore is visible.
+	pinned := map[string]Pin{}
+	for _, p := range pins {
+		pinned[p.Branch] = p
+	}
 	var out []Restored
 	for i, s := range run {
 		from := tips[s.Branch]
 		r := Restored{Branch: s.Branch, From: from, To: s.Tip, Ref: s.Ref, Aborted: aborted[s.Branch]}
+		if p, ok := pinned[s.Branch]; ok {
+			r.Kept, r.KeptTip = SafetyRef(s.Branch, forceEpoch), p.Safety
+		}
 		if wt, ok := byBranch[s.Branch]; ok {
 			r.Path = wt.Path
 			if from != s.Tip {
@@ -245,6 +296,29 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 		out = append(out, r)
 	}
 	return out, nil
+}
+
+// insideRefusal is the plain undo's answer to commits made inside a
+// handed-over rebase: the commits, named, and both ways of keeping them.
+func insideRefusal(work string, inside []Commit) error {
+	first := fmt.Sprintf("%s %q", git.ShortID(inside[0].SHA, 7), inside[0].Subject)
+	what, them := fmt.Sprintf("1 commit made inside the handed-over rebase (%s)", first), "it"
+	if len(inside) > 1 {
+		what, them = fmt.Sprintf("%d commits made inside the handed-over rebase (first: %s)", len(inside), first), "them"
+	}
+	return fmt.Errorf("%s has %s; undo would discard %s. wt sync resume %s keeps %s and carries on; wt sync undo --force %s aborts and keeps %s under a safety ref", work, what, them, work, them, work, them)
+}
+
+// unprovenRefusal is the plain undo's answer to a handover written before
+// the sidecar recorded HEAD: it cannot tell the run's picks from a person's
+// commits, so it names both ways of keeping whatever is there. n is how
+// many commits sit on top of what the run rebased onto.
+func unprovenRefusal(work string, n int) error {
+	on := ""
+	if n > 0 {
+		on = fmt.Sprintf(" (%d commit%s on top of what it rebased onto)", n, pluralPlan(n))
+	}
+	return fmt.Errorf("%s was handed over by an older wt that did not record where it left HEAD; undo cannot tell whether commits were made inside the rebase%s. wt sync resume %s carries on; wt sync undo --force %s aborts and keeps what is at HEAD under a safety ref", work, on, work, work)
 }
 
 // abortRebase aborts the rebase in wt and checks the abort took.

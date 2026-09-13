@@ -59,6 +59,12 @@ type State struct {
 	Strategy map[string]string `json:"strategy"`
 	Deleted  []string          `json:"deleted"`
 	Left     []string          `json:"left"`
+	// Head is where HEAD was when the handover was written: detached, at
+	// the last pick before the stop. A commit a person makes inside the
+	// rebase moves HEAD off it, which is how undo knows to name that commit
+	// rather than abort it away. Empty in a sidecar written before this
+	// field existed; CommittedInside then falls back to counting.
+	Head string `json:"head"`
 	// Stopped is every path the rebase stopped on up to this handover,
 	// across every earlier handover of the same run.
 	Stopped []string `json:"stopped"`
