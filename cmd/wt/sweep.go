@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -45,18 +43,14 @@ func newSweepCmd() *cobra.Command {
 			"  wt sweep --yes       # delete without asking (scripts)",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx, err := openContext()
-			if err != nil {
-				return err
-			}
+		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
 			opts := commands.SweepOptions{NoFetch: noFetch, Yes: yes,
 				Width: terminalWidth(cmd.OutOrStdout())}
-			if !yes && isTerminal(os.Stdin) {
-				opts.Confirm = confirmSweep(cmd.InOrStdin(), cmd.OutOrStdout())
+			if !yes && canAsk(cmd) {
+				opts.Confirm = confirmSweep(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()))
 			}
 			return commands.Sweep(ctx, opts, cmd.OutOrStdout())
-		},
+		}),
 	}
 	cmd.Flags().BoolVar(&noFetch, "no-fetch", false, "compare with origin as last fetched")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "delete without asking")
@@ -64,12 +58,12 @@ func newSweepCmd() *cobra.Command {
 }
 
 // confirmSweep asks once for the whole plan, defaulting to no.
-func confirmSweep(in io.Reader, out io.Writer) func(commands.SweepPlan) (bool, error) {
-	return func(p commands.SweepPlan) (bool, error) {
-		q := fmt.Sprintf("Delete these %d branches? [y/N] ", len(p.Delete))
-		if len(p.Delete) == 1 {
-			q = "Delete this branch? [y/N] "
+func confirmSweep(p *prompter) func(commands.SweepPlan) (bool, error) {
+	return func(plan commands.SweepPlan) (bool, error) {
+		q := fmt.Sprintf("Delete these %d branches?", len(plan.Delete))
+		if len(plan.Delete) == 1 {
+			q = "Delete this branch?"
 		}
-		return askYesNo(in, out, q), nil
+		return p.yesNo(q, false), nil
 	}
 }

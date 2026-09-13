@@ -2,19 +2,16 @@ package commands
 
 import (
 	"bytes"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 func gitIn(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v: %v: %s", args, err, out)
-	}
+	gittest.Git(t, dir, args...)
 }
 
 // repoWithWorktree builds one repo and adds a worktree at the path returned by

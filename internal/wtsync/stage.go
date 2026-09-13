@@ -18,68 +18,10 @@ func StagedConflicts(wtPath string) ([]Conflict, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ls-files -u: %w", err)
 	}
-	type entry struct{ mode, oid string }
-	stages := map[string]map[int]entry{}
-	var order []string
-	for _, rec := range strings.Split(out, "\x00") {
-		if rec == "" {
-			continue
-		}
-		meta, path, ok := strings.Cut(rec, "\t")
-		if !ok {
-			continue
-		}
-		f := strings.Fields(meta)
-		if len(f) != 3 {
-			continue
-		}
-		stage, _ := strconv.Atoi(f[2])
-		if stages[path] == nil {
-			stages[path] = map[int]entry{}
-			order = append(order, path)
-		}
-		stages[path][stage] = entry{mode: f[0], oid: f[1]}
-	}
-	var cs []Conflict
-	for _, path := range order {
-		c := Conflict{Path: path}
-		s := stages[path]
-		missing := 0
-		for i := 1; i <= 3; i++ {
-			if _, ok := s[i]; !ok {
-				missing++
-			}
-		}
-		switch {
-		case missing > 0 && s[1].oid == "" && s[2].oid != "" && s[3].oid != "":
-			c.Incomplete = "both sides added it"
-		case missing > 0:
-			c.Incomplete = "one side deleted or renamed it"
-		}
-		for i := 1; i <= 3; i++ {
-			e, ok := s[i]
-			if !ok {
-				continue
-			}
-			if e.mode != "100644" && e.mode != "100755" {
-				c.Incomplete = "not a regular file (mode " + e.mode + ")"
-			}
-		}
-		if c.Incomplete != "" {
-			cs = append(cs, c)
-			continue
-		}
-		read := func(oid string) ([]byte, error) { return catFileRaw(wtPath, oid) }
-		if c.Base, err = read(s[1].oid); err != nil {
-			return nil, err
-		}
-		if c.Trunk, err = read(s[2].oid); err != nil {
-			return nil, err
-		}
-		if c.Branch, err = read(s[3].oid); err != nil {
-			return nil, err
-		}
-		cs = append(cs, c)
+	entries, _ := parseStages(strings.Split(out, "\x00"))
+	cs := conflictsFrom(entries)
+	if err := readBlobs(wtPath, cs); err != nil {
+		return nil, err
 	}
 	return cs, nil
 }
@@ -92,23 +34,55 @@ type Progress struct {
 	Subject string
 }
 
+// sequencerDirs resolves the sequencer's directories by name, in one git and
+// in the order given, each made absolute. Where they live is git's to say, so
+// they are asked for rather than built from the git dir: a worktree's
+// sequencer state does not sit where a plain join would put it.
+func sequencerDirs(wtPath string, names ...string) ([]string, error) {
+	args := []string{"rev-parse"}
+	for _, name := range names {
+		args = append(args, "--git-path", name)
+	}
+	out, err := gitEnv(wtPath, nil, nil, args...)
+	if err != nil {
+		return nil, err
+	}
+	dirs := strings.Split(out, "\n")
+	if len(dirs) != len(names) {
+		return nil, fmt.Errorf("rev-parse --git-path: %d paths for %d names", len(dirs), len(names))
+	}
+	for i, dir := range dirs {
+		if !filepath.IsAbs(dir) {
+			dirs[i] = filepath.Join(wtPath, dir)
+		}
+	}
+	return dirs, nil
+}
+
+// sequencerDir is sequencerDirs for one name.
+func sequencerDir(wtPath, name string) (string, error) {
+	dirs, err := sequencerDirs(wtPath, name)
+	if err != nil {
+		return "", err
+	}
+	return dirs[0], nil
+}
+
 func rebaseDir(wtPath string) (string, error) {
-	return gitEnv(wtPath, nil, nil, "rev-parse", "--git-path", "rebase-merge")
+	return sequencerDir(wtPath, "rebase-merge")
 }
 
 // RebaseInProgress reports whether the worktree is mid-rebase under either
 // backend: run forces the merge backend (rebase-merge), but a rebase someone
-// started by hand with the apply backend (rebase-apply) must block too.
+// started by hand with the apply backend (rebase-apply) must block too. The
+// drive loop asks this at every stop, so both names are resolved in one git.
 func RebaseInProgress(wtPath string) (bool, error) {
-	for _, name := range []string{"rebase-merge", "rebase-apply"} {
-		dir, err := gitEnv(wtPath, nil, nil, "rev-parse", "--git-path", name)
-		if err != nil {
-			return false, err
-		}
-		if !filepath.IsAbs(dir) {
-			dir = filepath.Join(wtPath, dir)
-		}
-		_, err = os.Stat(dir)
+	dirs, err := sequencerDirs(wtPath, "rebase-merge", "rebase-apply")
+	if err != nil {
+		return false, err
+	}
+	for _, dir := range dirs {
+		_, err := os.Stat(dir)
 		if err == nil {
 			return true, nil
 		}
@@ -125,9 +99,6 @@ func RebaseProgress(wtPath string) (Progress, error) {
 	dir, err := rebaseDir(wtPath)
 	if err != nil {
 		return Progress{}, err
-	}
-	if !filepath.IsAbs(dir) {
-		dir = filepath.Join(wtPath, dir)
 	}
 	readInt := func(name string) (int, error) {
 		b, err := os.ReadFile(filepath.Join(dir, name))
@@ -169,9 +140,6 @@ func ReadRebaseTarget(wtPath string) (RebaseTarget, bool, error) {
 	dir, err := rebaseDir(wtPath)
 	if err != nil {
 		return RebaseTarget{}, false, err
-	}
-	if !filepath.IsAbs(dir) {
-		dir = filepath.Join(wtPath, dir)
 	}
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		return RebaseTarget{}, false, nil

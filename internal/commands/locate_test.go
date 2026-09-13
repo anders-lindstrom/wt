@@ -162,3 +162,28 @@ func TestLocateUnknownNameIsAnError(t *testing.T) {
 		t.Errorf("error should quote the argument, got: %v", err)
 	}
 }
+
+// WorkNames lists the main checkout and every worktree, each read against the
+// convention: a branch outside it has no type and no work name.
+func TestWorkNamesReadsEachBranchAgainstTheConvention(t *testing.T) {
+	ctx := locatable(t, "fix/login-crash")
+	worktreeAt(t, ctx.Repo.MainRoot, "spare", filepath.Join(ctx.Repo.Parent, "demo-spare"))
+
+	names, err := WorkNames(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 3 || !names[0].IsMain {
+		t.Fatalf("names = %+v, want the main checkout and two worktrees", names)
+	}
+	got := map[string][2]string{}
+	for _, n := range names[1:] {
+		got[n.Branch] = [2]string{n.Type, n.Work}
+	}
+	if want := [2]string{"fix", "login-crash"}; got["fix_wt/login-crash"] != want {
+		t.Errorf("fix_wt/login-crash = %v, want %v", got["fix_wt/login-crash"], want)
+	}
+	if want := [2]string{"", ""}; got["spare"] != want {
+		t.Errorf("spare = %v, want %v", got["spare"], want)
+	}
+}

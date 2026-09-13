@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-
-	"github.com/anders-lindstrom/wt/internal/naming"
 )
 
 // NewOptions controls worktree creation.
@@ -18,40 +16,40 @@ type NewOptions struct {
 // New creates a branch and its worktree at the canonical path, then provisions
 // it. It returns the worktree path so a caller can cd there.
 func New(ctx *Context, spec string, opts NewOptions, w io.Writer) (string, error) {
-	branch, err := Branch(ctx, spec)
+	typ, work, branch, err := parseWork(ctx, spec)
 	if err != nil {
 		return "", err
 	}
-	typ, work, err := naming.ParseSpec(spec, ctx.Config.DefaultType, ctx.Config.Types)
-	if err != nil {
-		return "", err
-	}
-
 	if ctx.Repo.BranchExists(branch) {
 		return "", fmt.Errorf("branch %s already exists", branch)
 	}
-	path := naming.WorktreeDir(ctx.Repo.Parent, ctx.Repo.Name, typ, work, ctx.Config.TypeSuffix)
-	if _, err := os.Stat(path); err == nil {
-		return "", fmt.Errorf("%s already exists", path)
-	}
-
+	path := ctx.Scheme().Dir(typ, work)
 	base := opts.Base
 	if base == "" {
 		base = ctx.Config.MainBranch
 	}
-	fmt.Fprintf(w, "Creating %s at %s (from %s)\n", branch, path, base)
-	if err := ctx.Repo.AddWorktree(path, branch, base); err != nil {
+	return addAndProvision(ctx, path, func() error {
+		fmt.Fprintf(w, "Creating %s at %s (from %s)\n", branch, path, base)
+		return ctx.Repo.AddWorktree(path, branch, base)
+	}, opts, w)
+}
+
+// addAndProvision is the tail every worktree-creating command shares: a path
+// already taken is refused, add puts the worktree there, and it is provisioned
+// unless the caller asked for the checkout alone. add announces what it is
+// about to do, because only the caller knows what that is.
+//
+// Setup is left to default SourceDir to the main checkout, which is what these
+// callers each passed it by hand.
+func addAndProvision(ctx *Context, path string, add func() error, opts NewOptions, w io.Writer) (string, error) {
+	if _, err := os.Stat(path); err == nil {
+		return "", fmt.Errorf("%s already exists", path)
+	}
+	if err := add(); err != nil {
 		return "", err
 	}
-
 	if opts.NoSetup {
 		return path, nil
 	}
-	if err := Setup(ctx, path, SetupOptions{
-		SourceDir: ctx.Repo.MainRoot,
-		SkipBuild: opts.SkipBuild,
-	}, w); err != nil {
-		return path, err
-	}
-	return path, nil
+	return path, Setup(ctx, path, SetupOptions{SkipBuild: opts.SkipBuild}, w)
 }

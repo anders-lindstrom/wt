@@ -1,14 +1,9 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
-	"io"
-	"os"
-	"strings"
 
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
 )
@@ -62,18 +57,14 @@ func newRemoveCmd() *cobra.Command {
 				return err
 			}
 			opts := commands.RemoveOptions{Force: force}
-			if !yes && isTerminal(os.Stdin) {
-				opts.Confirm = confirmRemoval(cmd.InOrStdin(), cmd.OutOrStdout())
+			if !yes && canAsk(cmd) {
+				opts.Confirm = confirmRemoval(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()))
 			}
 			if meAt != "" {
 				return commands.RemoveAt(ctx, meAt, opts, cmd.OutOrStdout())
 			}
 			if me {
-				cwd, err := os.Getwd()
-				if err != nil {
-					return err
-				}
-				return commands.RemoveAt(ctx, cwd, opts, cmd.OutOrStdout())
+				return commands.RemoveAt(ctx, ctx.Cwd, opts, cmd.OutOrStdout())
 			}
 			return commands.Remove(ctx, args[0], opts, cmd.OutOrStdout())
 		},
@@ -89,34 +80,6 @@ func newRemoveCmd() *cobra.Command {
 
 // confirmRemoval asks the question, defaulting to no. The plan has already been
 // printed by the time this runs, so the prompt itself stays one line.
-func confirmRemoval(in io.Reader, out io.Writer) func(commands.Plan) (bool, error) {
-	return func(commands.Plan) (bool, error) {
-		return askYesNo(in, out, "Remove it? [y/N] "), nil
-	}
-}
-
-// askYesNo prints question and reads one line, defaulting to no. EOF on a
-// terminal is ^D: the user declined rather than answered.
-func askYesNo(in io.Reader, out io.Writer, question string) bool {
-	_, _ = fmt.Fprint(out, question)
-	line, err := bufio.NewReader(in).ReadString('\n')
-	if err != nil {
-		return false
-	}
-	switch strings.ToLower(strings.TrimSpace(line)) {
-	case "y", "yes":
-		return true
-	}
-	return false
-}
-
-// isTerminal reports whether f is an interactive terminal, which is the whole
-// of the question "is there anyone here to answer a prompt".
-//
-// This asks the kernel rather than reading the file mode. The usual
-// ModeCharDevice test is wrong in exactly the case that matters: /dev/null is a
-// character device, so a script or an agent redirecting stdin from it would be
-// asked a question with nobody there to answer.
-func isTerminal(f *os.File) bool {
-	return term.IsTerminal(int(f.Fd()))
+func confirmRemoval(p *prompter) func(commands.Plan) (bool, error) {
+	return func(commands.Plan) (bool, error) { return p.yesNo("Remove it?", false), nil }
 }

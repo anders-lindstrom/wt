@@ -6,10 +6,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/naming"
+	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
 // SetupOptions controls provisioning.
@@ -50,7 +50,7 @@ func Setup(ctx *Context, target string, opts SetupOptions, w io.Writer) error {
 	// either, which is strictly less usable than one that merely lacks
 	// secrets. The error still surfaces, so nothing treats this as success.
 	provisionErr := runProvision(ctx, target, w)
-	initSubmodules(target, w)
+	initSubmodules(ctx, target, w)
 	runBuildInit(ctx, target, opts, w)
 
 	if provisionErr != nil {
@@ -72,11 +72,11 @@ func Setup(ctx *Context, target string, opts SetupOptions, w io.Writer) error {
 // chosen and no explanation of who chose it.
 func reportLayout(ctx *Context, target string, w io.Writer) {
 	fmt.Fprintf(w, "  %s\n", target)
-	typ, work, ok := naming.ParseBranch(ctx.Repo.BranchAt(target), ctx.Config.TypeSuffix)
+	typ, work, layout, ok := ctx.Scheme().ClassifyBranch(target, ctx.Repo.BranchAt(target))
 	if !ok {
 		return
 	}
-	switch naming.Classify(target, ctx.Repo.Parent, ctx.Repo.Name, typ, work, ctx.Config.TypeSuffix) {
+	switch layout {
 	case naming.Superset:
 		fmt.Fprintln(w, "  Superset's layout — provisioned where Superset put it; setup never moves a worktree")
 	case naming.Foreign:
@@ -90,11 +90,7 @@ func reportLayout(ctx *Context, target string, w io.Writer) {
 // is provisioning — a typo in worktree.conf silently escaping is a real bug,
 // not merely a lint finding.
 func within(base, candidate string) bool {
-	rel, err := filepath.Rel(base, candidate)
-	if err != nil {
-		return false
-	}
-	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	return repo.Inside(base, candidate, false)
 }
 
 func copyConfigDirs(ctx *Context, src, target string, w io.Writer) {
@@ -167,8 +163,8 @@ func runProvision(ctx *Context, target string, w io.Writer) error {
 	return nil
 }
 
-func initSubmodules(target string, w io.Writer) {
-	if _, err := os.Stat(filepath.Join(target, ".gitmodules")); err != nil {
+func initSubmodules(ctx *Context, target string, w io.Writer) {
+	if !ctx.Repo.HasSubmodules(target) {
 		return
 	}
 	fmt.Fprintln(w, "Initializing git submodules...")

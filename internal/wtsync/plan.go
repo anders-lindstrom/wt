@@ -65,6 +65,17 @@ type State struct {
 	Lock    LeftLock `json:"lock"`
 }
 
+// ResolvedPaths is the paths the strategies staged at the handover, sorted:
+// the order every caller that lists them or hands them on wants them in.
+func (s State) ResolvedPaths() []string {
+	paths := make([]string, 0, len(s.Resolved))
+	for p := range s.Resolved {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	return paths
+}
+
 // writeAtomic writes data to a temp file in the same directory and renames
 // it into place, so a crash or a full disk cannot leave half a handover. The
 // temp file is fsynced before the rename: without that the rename can reach
@@ -398,24 +409,32 @@ func RenderPlan(in PlanInput) (string, error) {
 // added lines (a five-second read), or they overlap. A blob git will not
 // diff as text is reported as overlapping, which is the cautious answer.
 func shapeOf(mainRoot string, c Conflict) string {
-	tAdd, tDel, terr := blobDiff(mainRoot, c.Base, c.Trunk)
-	bAdd, bDel, berr := blobDiff(mainRoot, c.Base, c.Branch)
+	base := sideBlob{c.Base, c.BaseOID}
+	tAdd, tDel, terr := blobDiff(mainRoot, base, sideBlob{c.Trunk, c.TrunkOID})
+	bAdd, bDel, berr := blobDiff(mainRoot, base, sideBlob{c.Branch, c.BranchOID})
 	if terr != nil || berr != nil || tDel != 0 || bDel != 0 {
 		return "same hunk both sides"
 	}
 	return fmt.Sprintf("additive only (trunk +%d, ours +%d)", tAdd, bAdd)
 }
 
+// sideBlob is one side of a conflict: its bytes, and git's id for them when
+// the index already printed one.
+type sideBlob struct {
+	data []byte
+	oid  string
+}
+
 // blobDiff counts the lines added and removed between two blobs with git's
 // own numstat over objects it already holds. The output is
 // "<added>\t<removed>\t<oidA> => <oidB>" (verified 2026-09-09) and "-\t-\t…"
 // for a blob git treats as binary, which is reported as not textual.
-func blobDiff(mainRoot string, from, to []byte) (added, removed int, err error) {
-	a, err := hashObject(mainRoot, from)
+func blobDiff(mainRoot string, from, to sideBlob) (added, removed int, err error) {
+	a, err := blobID(mainRoot, from.data, from.oid)
 	if err != nil {
 		return 0, 0, err
 	}
-	b, err := hashObject(mainRoot, to)
+	b, err := blobID(mainRoot, to.data, to.oid)
 	if err != nil {
 		return 0, 0, err
 	}

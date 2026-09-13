@@ -3,36 +3,17 @@ package wtsync
 import (
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 // gitIn runs git in dir and fails the test on error.
 func gitIn(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(),
-		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
-		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v: %s", args, err, out)
-	}
-	return strings.TrimRight(string(out), "\n")
-}
-
-// gitCmd builds a git command with gitIn's environment but leaves it unrun,
-// so the caller can inspect a non-zero exit instead of failing the test.
-func gitCmd(dir string, args ...string) *exec.Cmd {
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(),
-		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
-		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com")
-	return cmd
+	return gittest.Git(t, dir, args...)
 }
 
 // repoWithOrigin makes a repository whose origin/main exists, so
@@ -44,11 +25,8 @@ func repoWithOrigin(t *testing.T) (local, origin string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	origin = filepath.Join(parent, "origin")
+	origin = gittest.NewRepo(t, parent, "origin")
 	local = filepath.Join(parent, "local")
-	gitIn(t, parent, "init", "-q", "-b", "main", "origin")
-	gitIn(t, origin, "config", "commit.gpgsign", "false")
-	gitIn(t, origin, "commit", "-q", "--allow-empty", "-m", "init")
 	gitIn(t, parent, "clone", "-q", origin, "local")
 	gitIn(t, local, "config", "commit.gpgsign", "false")
 	return local, origin

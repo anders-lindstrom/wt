@@ -9,10 +9,10 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"text/tabwriter"
 
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/naming"
+	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -114,7 +114,8 @@ func Remove(ctx *Context, arg string, opts RemoveOptions, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return RemoveAt(ctx, wt.Path, opts, w)
+	// Locate has just listed the worktrees; the plan wants the same entry.
+	return removeWorktree(ctx, wt, opts, w)
 }
 
 // RemoveAt removes the worktree at path.
@@ -126,10 +127,32 @@ func Remove(ctx *Context, arg string, opts RemoveOptions, w io.Writer) error {
 // lose only the checkout; the branch, if any, is named in the plan and left
 // alone.
 func RemoveAt(ctx *Context, path string, opts RemoveOptions, w io.Writer) error {
-	if _, err := os.Stat(path); err != nil {
-		return fmt.Errorf("no worktree at %s", path)
+	return removeWorktree(ctx, worktreeRecord(ctx, path), opts, w)
+}
+
+// worktreeRecord is git's record of the worktree at path — its lock above all.
+// The path stays as the caller spelled it, because that is the path every
+// message about this removal names. A path git knows nothing about, or a list
+// that cannot be read, leaves a record holding only the path: no lock, which
+// is what the removal would have concluded anyway.
+func worktreeRecord(ctx *Context, path string) repo.Worktree {
+	worktrees, err := ctx.Repo.Worktrees()
+	if err != nil {
+		return repo.Worktree{Path: path}
 	}
-	plan := planFor(ctx, path, opts)
+	wt, ok := worktrees.ByPath(path)
+	if !ok {
+		return repo.Worktree{Path: path}
+	}
+	wt.Path = path
+	return wt
+}
+
+func removeWorktree(ctx *Context, wt repo.Worktree, opts RemoveOptions, w io.Writer) error {
+	if _, err := os.Stat(wt.Path); err != nil {
+		return fmt.Errorf("no worktree at %s", wt.Path)
+	}
+	plan := planFor(ctx, wt, opts)
 	plan.Render(w)
 
 	// The lock is decided before the question, because the question does not
@@ -138,7 +161,7 @@ func RemoveAt(ctx *Context, path string, opts RemoveOptions, w io.Writer) error 
 	if plan.blockedByLock() {
 		return fmt.Errorf("%s is locked and its holder is still there: %s\n"+
 			"  Finish or stop it, or pass --force to break the lock",
-			path, plan.LockHolder)
+			wt.Path, plan.LockHolder)
 	}
 
 	if opts.Confirm != nil {
@@ -155,8 +178,9 @@ func RemoveAt(ctx *Context, path string, opts RemoveOptions, w io.Writer) error 
 		// delete does not re-ask that question — it carries out the plan — so
 		// this re-read is what stands between a stale answer and somebody's
 		// commits. The plan the user confirmed is the plan that runs, or
-		// nothing runs.
-		if fresh := planFor(ctx, path, opts); fresh != plan {
+		// nothing runs. git's record is read again too: a lock can be taken
+		// while the prompt is open, and that is a change to the plan.
+		if fresh := planFor(ctx, worktreeRecord(ctx, wt.Path), opts); fresh != plan {
 			fmt.Fprintln(w, "The worktree changed while the prompt was open. Removal would now do this:")
 			fresh.Render(w)
 			fmt.Fprintln(w, "Nothing was removed.")
@@ -167,11 +191,16 @@ func RemoveAt(ctx *Context, path string, opts RemoveOptions, w io.Writer) error 
 }
 
 // planFor reads every fact a removal depends on, before any of them change.
-func planFor(ctx *Context, path string, opts RemoveOptions) Plan {
-	p := Plan{Path: path, Branch: ctx.Repo.BranchAt(path),
+// wt is git's record of the worktree, which the caller has already read.
+//
+// The branch still comes from BranchAt rather than from wt.Branch: mid-rebase
+// those two differ, and the branch the sequencer will return HEAD to is not
+// the branch this checkout has.
+func planFor(ctx *Context, wt repo.Worktree, opts RemoveOptions) Plan {
+	p := Plan{Path: wt.Path, Branch: ctx.Repo.BranchAt(wt.Path),
 		MainBranch: ctx.Config.MainBranch, Force: opts.Force}
-	p.readLock(ctx, opts)
-	if out, err := git.Run(path, "status", "--porcelain"); err == nil && out != "" {
+	p.readLock(wt, opts)
+	if dirty, err := repo.Dirty(wt.Path, false); err == nil && dirty {
 		p.Dirty = true
 	}
 
@@ -181,7 +210,9 @@ func planFor(ctx *Context, path string, opts RemoveOptions) Plan {
 	switch {
 	case p.Branch == "":
 		p.Reason = "detached HEAD"
-	case !ctx.Repo.BranchExists(p.Branch):
+	case p.Tip == "":
+		// mergeStanding has just asked git for the branch's tip, and no tip is
+		// a branch that is not there.
 		p.Reason = "already gone"
 	case p.Merge == Merged:
 		// Merged first, and whoever created the branch: nothing is lost, and
@@ -209,32 +240,25 @@ var pidInReason = regexp.MustCompile(`\bpid (\d+)\b`)
 // A lock is held unless it can be shown stale. Somebody took it on purpose,
 // and the cost of being wrong runs one way: refusing costs a flag, breaking a
 // live session's ground costs its work.
-func (p *Plan) readLock(ctx *Context, opts RemoveOptions) {
-	worktrees, err := ctx.Repo.Worktrees()
-	if err != nil {
+func (p *Plan) readLock(wt repo.Worktree, opts RemoveOptions) {
+	if !wt.Locked {
 		return
 	}
-	for _, wt := range worktrees {
-		if !samePath(wt.Path, p.Path) || !wt.Locked {
-			continue
-		}
-		p.Locked, p.LockReason, p.LockHeld = true, wt.LockReason, true
-		p.LockHolder = wt.LockReason
-		if p.LockHolder == "" {
-			p.LockHolder = "a lock with no reason given"
-		}
-		if m := pidInReason.FindStringSubmatch(wt.LockReason); m != nil {
-			pid, _ := strconv.Atoi(m[1])
-			p.LockPid = pid
-			p.LockHeld = pidAlive(pid)
-			return
-		}
-		// No pid to ask about: the sessions wt can see are the second
-		// opinion, and finding one names the holder properly.
-		if a := sessionIn(MigrateOptions{Agents: opts.Agents}, p.Path, io.Discard); a != nil {
-			p.LockHolder = sessionLabel(a)
-		}
+	p.Locked, p.LockReason, p.LockHeld = true, wt.LockReason, true
+	p.LockHolder = wt.LockReason
+	if p.LockHolder == "" {
+		p.LockHolder = "a lock with no reason given"
+	}
+	if m := pidInReason.FindStringSubmatch(wt.LockReason); m != nil {
+		pid, _ := strconv.Atoi(m[1])
+		p.LockPid = pid
+		p.LockHeld = pidAlive(pid)
 		return
+	}
+	// No pid to ask about: the sessions wt can see are the second opinion, and
+	// finding one names the holder properly.
+	if a := sessionIn(MigrateOptions{Agents: opts.Agents}, p.Path, io.Discard); a != nil {
+		p.LockHolder = sessionLabel(a)
 	}
 }
 
@@ -321,14 +345,7 @@ func removalFailed(path string, err error) error {
 // gitSaid reduces a git failure to the sentence worth showing: its first real
 // line, without the "fatal:" and without git's advice to run something else.
 func gitSaid(err error) string {
-	for _, line := range strings.Split(err.Error(), "\n") {
-		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "fatal: "))
-		if line == "" || strings.HasPrefix(line, "use '") || strings.HasPrefix(line, "hint:") {
-			continue
-		}
-		return line
-	}
-	return err.Error()
+	return git.Reason(err, "use '", "hint:")
 }
 
 // stillMerged asks the merged question once more, in the moment before the
@@ -353,7 +370,7 @@ func stillMerged(ctx *Context, p Plan) error {
 }
 
 func branchIsOurs(ctx *Context, branch string) bool {
-	_, _, ok := naming.ParseBranch(branch, ctx.Config.TypeSuffix)
+	_, _, ok := ctx.Scheme().Parse(branch)
 	return ok
 }
 
@@ -369,14 +386,11 @@ func (p Plan) Render(w io.Writer) {
 		branch = p.Branch + " — " + p.standing()
 	}
 
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(tw, "  path\t%s\n", p.Path)
-	fmt.Fprintf(tw, "  branch\t%s\n", branch)
-	fmt.Fprintf(tw, "  state\t%s\n", state)
+	rows := [][]string{{"  path", p.Path}, {"  branch", branch}, {"  state", state}}
 	if p.Locked {
-		fmt.Fprintf(tw, "  lock\t%s\n", p.lockLine())
+		rows = append(rows, []string{"  lock", p.lockLine()})
 	}
-	_ = tw.Flush()
+	_ = printTable(w, rows)
 	fmt.Fprintln(w)
 
 	// A held lock ends the plan: what would happen to the branch is beside
@@ -474,20 +488,19 @@ func (p Plan) apply(ctx *Context, w io.Writer) error {
 			fmt.Fprintln(w, "✓ worktree removed")
 			return err
 		}
-		// The delete is update-ref's, which does not refuse a branch another
-		// worktree is using the way branch -D does, so that is asked here.
-		inUse, err := checkedOut(ctx)
-		if use := inUse[p.Branch]; err == nil && use.Path != "" {
-			err = fmt.Errorf("%s is using it", use.Path)
-		}
-		if err != nil {
-			fmt.Fprintln(w, "✓ worktree removed")
-			return fmt.Errorf("branch %s is merged into %s but was kept: %w", p.Branch, p.Base, err)
-		}
 		// Only at the tip the plan showed, so a commit that lands after the
-		// plan is never deleted with the branch.
+		// plan is never deleted with the branch. DeleteBranchAt refuses a
+		// branch another worktree is using, which update-ref would not.
 		if err := ctx.Repo.DeleteBranchAt(p.Branch, p.Tip); err != nil {
 			fmt.Fprintln(w, "✓ worktree removed")
+			var inUse *repo.BranchInUseError
+			switch {
+			case errors.As(err, &inUse):
+				return fmt.Errorf("branch %s is merged into %s but was kept: %s is using it",
+					p.Branch, p.Base, inUse.Path)
+			case errors.Is(err, repo.ErrWorktreesUnknown):
+				return fmt.Errorf("branch %s is merged into %s but was kept: %w", p.Branch, p.Base, err)
+			}
 			if now, ok := ctx.Repo.ResolveRef("refs/heads/" + p.Branch); ok && now != p.Tip {
 				return fmt.Errorf("branch %s was kept: it moved after the plan was made", p.Branch)
 			}

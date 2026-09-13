@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-	"text/tabwriter"
 
-	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
@@ -29,7 +27,7 @@ func Locate(ctx *Context, arg string) (repo.Worktree, error) {
 	if arg == "" {
 		return repo.Worktree{}, errors.New("no worktree given")
 	}
-	worktrees, err := ctx.Repo.Worktrees()
+	names, err := WorkNames(ctx)
 	if err != nil {
 		return repo.Worktree{}, err
 	}
@@ -37,21 +35,21 @@ func Locate(ctx *Context, arg string) (repo.Worktree, error) {
 	// A path is tried first and on its own: it identifies a worktree outright,
 	// so a name that happens to look like one cannot pull the answer elsewhere.
 	if abs, ok := absPath(arg); ok {
-		for _, wt := range worktrees {
-			if !samePath(wt.Path, abs) {
+		for _, n := range names {
+			if !repo.SamePath(n.Path, abs) {
 				continue
 			}
-			if wt.IsMain {
+			if n.IsMain {
 				return repo.Worktree{}, errors.New("the main checkout is not a worktree; name a worktree (see wt list)")
 			}
-			return wt, nil
+			return n.Worktree, nil
 		}
 	}
 
 	var matches []repo.Worktree
-	for _, wt := range worktrees {
-		if !wt.IsMain && matchesName(ctx, wt, arg) {
-			matches = append(matches, wt)
+	for _, n := range names {
+		if !n.IsMain && matchesName(n, arg) {
+			matches = append(matches, n.Worktree)
 		}
 	}
 	switch len(matches) {
@@ -68,17 +66,56 @@ func Locate(ctx *Context, arg string) (repo.Worktree, error) {
 	}
 }
 
+// locateBranch is Locate for the verbs that act on a branch: one with none
+// is named and refused rather than worked on.
+func locateBranch(ctx *Context, arg string) (repo.Worktree, error) {
+	wt, err := Locate(ctx, arg)
+	if err != nil {
+		return repo.Worktree{}, err
+	}
+	if wt.Branch == "" {
+		return repo.Worktree{}, fmt.Errorf("%s has no branch", arg)
+	}
+	return wt, nil
+}
+
 // matchesName reports whether arg names this worktree by branch, by
 // <type>/<work>, or by the bare work name.
-func matchesName(ctx *Context, wt repo.Worktree, arg string) bool {
-	if wt.Branch == "" {
+func matchesName(n WorkName, arg string) bool {
+	if n.Branch == "" {
 		return false
 	}
-	if wt.Branch == arg {
+	if n.Branch == arg {
 		return true
 	}
-	typ, work, ok := naming.ParseBranch(wt.Branch, ctx.Config.TypeSuffix)
-	return ok && (work == arg || typ+"/"+work == arg)
+	return n.Work != "" && (n.Work == arg || n.Type+"/"+n.Work == arg)
+}
+
+// WorkName is a worktree with its branch read against the naming convention.
+// Type and Work are empty when the branch does not follow it, or there is no
+// branch.
+type WorkName struct {
+	repo.Worktree
+	Type, Work string
+}
+
+// WorkNames returns every worktree of the repository, the main checkout
+// included, in the order git lists them, each with its type and work name.
+func WorkNames(ctx *Context) ([]WorkName, error) {
+	worktrees, err := ctx.Repo.Worktrees()
+	if err != nil {
+		return nil, err
+	}
+	sch := ctx.Scheme()
+	names := make([]WorkName, 0, len(worktrees))
+	for _, wt := range worktrees {
+		n := WorkName{Worktree: wt}
+		if typ, work, ok := sch.Parse(wt.Branch); ok {
+			n.Type, n.Work = typ, work
+		}
+		names = append(names, n)
+	}
+	return names, nil
 }
 
 // absPath reports the absolute form of an argument that could be a path. An
@@ -95,33 +132,15 @@ func absPath(arg string) (string, bool) {
 	return abs, true
 }
 
-// samePath compares two paths, resolving symlinks only if the plain comparison
-// fails — macOS puts temporary directories behind /var -> /private/var, and git
-// and the shell do not always agree on which side of it a worktree lives.
-func samePath(a, b string) bool {
-	if filepath.Clean(a) == filepath.Clean(b) {
-		return true
-	}
-	ra, err := filepath.EvalSymlinks(a)
-	if err != nil {
-		return false
-	}
-	rb, err := filepath.EvalSymlinks(b)
-	if err != nil {
-		return false
-	}
-	return ra == rb
-}
-
 // ambiguous builds the error for a work name used under more than one type,
 // which is the only ambiguity exact matching can produce.
 func ambiguous(arg string, matches []repo.Worktree) error {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%q matches %d worktrees; name one exactly:\n", arg, len(matches))
-	tw := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
+	rows := make([][]string, 0, len(matches))
 	for _, m := range matches {
-		fmt.Fprintf(tw, "  %s\t%s\n", m.Branch, m.Path)
+		rows = append(rows, []string{"  " + m.Branch, m.Path})
 	}
-	_ = tw.Flush()
+	_ = printTable(&b, rows)
 	return errors.New(strings.TrimRight(b.String(), "\n"))
 }

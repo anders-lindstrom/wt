@@ -96,23 +96,26 @@ type completeInput struct {
 	Epoch              int64
 	Res                wtsync.Result
 	// Tell are the idle sessions in the worktree. With any, the finish ends
-	// with the line to relay to them: Landed trunk commits on Trunk, and the
-	// Check files the rebase stopped on.
-	Tell   wtsync.Sessions
-	Trunk  string
-	Landed int
-	Check  []string
+	// with the line to relay to them: Landed trunk commits on TrunkName, and
+	// the Check files the rebase stopped on.
+	Tell wtsync.Sessions
+	// TrunkName is trunk as a person says it, "main" rather than a commit.
+	// Every other Trunk a sync verb passes around is a SHA.
+	TrunkName string
+	Landed    int
+	Check     []string
 }
 
 // completeRun is what run and resume both do once a rebase has finished: the
 // deferred steps, the result ref that says where the run left the branch,
-// the handover removed, and the undo line. owed names the deferred steps
-// that failed — the rebase stands regardless (spec §3). The push is the
-// caller's, once every worktree is done.
+// the handover removed, and the undo line. owed is the deferred steps that
+// failed, by name — the rebase stands regardless (spec §3), and whose they
+// are is the caller's to say. The push is the caller's too, once every
+// worktree is done.
 func completeRun(ctx *Context, w io.Writer, cfg *wtsync.Config, in completeInput) (head string, owed []string, err error) {
 	// Only ever called once a rebase has finished, so the files moved under
 	// the idle sessions however this returns.
-	defer tellIdle(w, in.Tell, wtsync.RebasedLine(in.Work, in.Trunk, in.Landed, in.Check))
+	defer tellIdle(w, in.Tell, wtsync.RebasedLine(in.Work, in.TrunkName, in.Landed, in.Check))
 	// w, not nil: RunDeferred announces each step as it starts, so a long
 	// one is not silence until printDeferred reports the result.
 	results, err := wtsync.RunDeferred(in.Path, cfg.Defer, in.Res.OldTip, in.Res.NewTip, w)
@@ -122,7 +125,7 @@ func completeRun(ctx *Context, w io.Writer, cfg *wtsync.Config, in completeInput
 	for _, d := range results {
 		printDeferred(w, d)
 		if d.Err != nil {
-			owed = append(owed, in.Work+" (owed: "+d.Step.Run+")")
+			owed = append(owed, d.Step.Run)
 		}
 	}
 	if head, err = git.Run(in.Path, "rev-parse", "HEAD"); err != nil {
@@ -138,8 +141,17 @@ func completeRun(ctx *Context, w io.Writer, cfg *wtsync.Config, in completeInput
 	if err := wtsync.RemovePlan(gitDir); err != nil {
 		return head, owed, err
 	}
-	fmt.Fprintf(w, "  ↩ wt sync undo %s puts it back (was %s)\n", in.Work, short(in.Res.OldTip))
+	fmt.Fprintf(w, "  ↩ wt sync undo %s puts it back (was %s)\n", in.Work, git.ShortID(in.Res.OldTip, 7))
 	return head, owed, nil
+}
+
+// owedBy names a finish's owed steps the way the closing error names them.
+func owedBy(work string, steps []string) []string {
+	named := make([]string, 0, len(steps))
+	for _, s := range steps {
+		named = append(named, work+" (owed: "+s+")")
+	}
+	return named
 }
 
 // clearHandover removes a handover after a rebase was put back rather than

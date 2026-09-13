@@ -9,6 +9,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/naming"
+	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
 // Doctor reports configuration and worktree health, returning the number of
@@ -67,22 +68,23 @@ func Doctor(ctx *Context, w io.Writer) (int, error) {
 	if err != nil {
 		return problems, err
 	}
+	sch := ctx.Scheme()
 	for _, wt := range worktrees {
 		if wt.IsMain {
 			continue
 		}
 		// A worktree inside the main checkout pollutes the parent repo and
 		// breaks tooling that walks it.
-		if strings.HasPrefix(wt.Path, ctx.Repo.MainRoot+"/") {
+		if repo.Inside(ctx.Repo.MainRoot, wt.Path, false) {
 			report("%s is inside the main checkout", wt.Path)
 			continue
 		}
-		typ, work, ok := naming.ParseBranch(wt.Branch, ctx.Config.TypeSuffix)
+		typ, work, layout, ok := sch.ClassifyBranch(wt.Path, wt.Branch)
 		if !ok {
 			fmt.Fprintf(w, "  - %s is on %q, not managed by wt\n", wt.Path, wt.Branch)
 			continue
 		}
-		switch naming.Classify(wt.Path, ctx.Repo.Parent, ctx.Repo.Name, typ, work, ctx.Config.TypeSuffix) {
+		switch layout {
 		case naming.Canonical:
 			fmt.Fprintf(w, "  ✓ %s\n", wt.Path)
 		case naming.Superset:
@@ -92,9 +94,7 @@ func Doctor(ctx *Context, w io.Writer) (int, error) {
 			fmt.Fprintf(w, "  ✓ %s (Superset's layout)\n", wt.Path)
 		default:
 			report("%s is not at its canonical path (%s); run: wt migrate %s/%s",
-				wt.Path,
-				naming.WorktreeDir(ctx.Repo.Parent, ctx.Repo.Name, typ, work, ctx.Config.TypeSuffix),
-				typ, work)
+				wt.Path, sch.Dir(typ, work), typ, work)
 		}
 	}
 

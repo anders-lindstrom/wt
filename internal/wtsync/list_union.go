@@ -2,6 +2,7 @@ package wtsync
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -42,10 +43,10 @@ func (s ListUnion) Resolve(c Conflict) ([]byte, error) {
 		return nil, err
 	}
 	for _, it := range baseItems {
-		if !contains(branchAll, it) {
+		if !slices.Contains(branchAll, it) {
 			return nil, Refuse(c.Path, "the branch removes %s; that is a decision, not a merge", it)
 		}
-		if !contains(trunkAll, it) {
+		if !slices.Contains(trunkAll, it) {
 			return nil, Refuse(c.Path, "trunk removes %s; that is a decision, not a merge", it)
 		}
 	}
@@ -86,7 +87,7 @@ func (s ListUnion) collapse(path string, b Block) ([]string, error) {
 	}
 	out := append([]string{}, trunkItems...)
 	for _, it := range branchItems {
-		if !contains(out, it) {
+		if !slices.Contains(out, it) {
 			out = append(out, it)
 		}
 	}
@@ -125,13 +126,4 @@ func (s ListUnion) items(path string, lines []string) ([]string, error) {
 		}
 	}
 	return out, nil
-}
-
-func contains(list []string, s string) bool {
-	for _, x := range list {
-		if x == s {
-			return true
-		}
-	}
-	return false
 }

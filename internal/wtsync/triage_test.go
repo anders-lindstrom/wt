@@ -38,35 +38,19 @@ func featureWorktree(t *testing.T, dir string) repo.Worktree {
 	return repo.Worktree{Path: path, Branch: "feature"}
 }
 
-func TestClassifyStopNoFilesNoMessagesIsContestedWithASyntheticNote(t *testing.T) {
-	class, files := classifyStop(nil, "")
-	if class != Contested || len(files) != 1 || files[0].Path != messagesPath ||
-		files[0].Note != "merge-tree reported a conflict with no details" {
-		t.Errorf("class = %v, files = %+v", class, files)
+// A stop with no conflicted file of its own still names something: the
+// messages when merge-tree left any, and a note saying it did not otherwise.
+func TestMessagesOutcomeNamesAStopWithNoFilesOfItsOwn(t *testing.T) {
+	got := messagesOutcome("")
+	if got.Path != messagesPath || got.Note != "merge-tree reported a conflict with no details" {
+		t.Errorf("no messages: %+v", got)
 	}
-}
-
-func TestClassifyStopNoFilesWithMessagesIsContestedWithTheMessagesAsTheNote(t *testing.T) {
-	class, files := classifyStop(nil, "CONFLICT (modify/delete): a.txt")
-	if class != Contested || len(files) != 1 || files[0].Path != messagesPath ||
-		files[0].Note != "CONFLICT (modify/delete): a.txt" {
-		t.Errorf("class = %v, files = %+v", class, files)
+	if got.Resolved {
+		t.Errorf("the stand-in is nobody's resolution: %+v", got)
 	}
-}
-
-func TestClassifyStopAllResolvedIsRecipe(t *testing.T) {
-	files := []FileOutcome{{Path: "a", Resolved: true}, {Path: "b", Resolved: true}}
-	class, got := classifyStop(files, "")
-	if class != Recipe || len(got) != 2 {
-		t.Errorf("class = %v, files = %+v", class, got)
-	}
-}
-
-func TestClassifyStopAnyUnresolvedIsContested(t *testing.T) {
-	files := []FileOutcome{{Path: "a", Resolved: true}, {Path: "b", Resolved: false, Note: "unclaimed"}}
-	class, got := classifyStop(files, "")
-	if class != Contested || len(got) != 2 {
-		t.Errorf("class = %v, files = %+v", class, got)
+	got = messagesOutcome("CONFLICT (modify/delete): a.txt")
+	if got.Path != messagesPath || got.Note != "CONFLICT (modify/delete): a.txt" {
+		t.Errorf("with messages: %+v", got)
 	}
 }
 
@@ -215,6 +199,43 @@ func TestAssessAnOwnedLineRefusalIsContestedNotDivergent(t *testing.T) {
 	a := Assess(dir, "main", cfg, featureWorktree(t, dir), nil)
 	if a.Class != Contested || len(a.Divergent) != 0 {
 		t.Errorf("an ordinary refusal is contested: %+v", a)
+	}
+}
+
+// A removed line whose own text begins "-- ", or an added one beginning
+// "++ ", is a change like any other: only its position makes a line a diff
+// file header. Skipping them let a real change to a dependency-graph file
+// pass as "only the owned line moved", which hides an overlap with trunk.
+func TestOnlyOwnedLinesReadsAChangedLineThatLooksLikeAFileHeader(t *testing.T) {
+	cfg, err := Parse([]byte("conflicts:\n  - paths: [deps.txt]\n    strategy: owned-line\n    line: '^version '\n    rule: max-plus-patch\ndependency_graph:\n  - deps.txt\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := repoWith(t,
+		map[string]string{"deps.txt": "version 1.0.0\n-- old marker\n"},
+		nil,
+		[]map[string]string{{"deps.txt": "version 1.0.1\n++ new marker\n"}})
+	base := gitIn(t, dir, "rev-parse", "main")
+	only, err := onlyOwnedLines(dir, cfg, base, "feature", "deps.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if only {
+		t.Fatal("a changed line beginning -- or ++ was read as a file header, so a change that is not only owned lines passed as one")
+	}
+	// The owned line moving on its own is still routine, which is the whole
+	// point of the rule: the fix must not make every version bump an overlap.
+	dir = repoWith(t,
+		map[string]string{"deps.txt": "version 1.0.0\nkeep\n"},
+		nil,
+		[]map[string]string{{"deps.txt": "version 1.0.1\nkeep\n"}})
+	base = gitIn(t, dir, "rev-parse", "main")
+	only, err = onlyOwnedLines(dir, cfg, base, "feature", "deps.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !only {
+		t.Fatal("a bump of the owned line alone is not only owned lines")
 	}
 }
 

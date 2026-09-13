@@ -1,7 +1,6 @@
 package wtsync
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -24,6 +23,13 @@ type Check struct {
 	// or fixing it is not Doctor's place (a missing declaration, a live
 	// lock held by someone else).
 	Fix func() error
+	// Blocking marks a check a run refuses over outright. One of these
+	// failing with no Fix is what makes wt sync doctor exit non-zero; every
+	// other finding is advisory.
+	Blocking bool
+	// Prune marks a check --prune clears up rather than --fix: it deletes
+	// what an old run left behind rather than repairing a setting.
+	Prune bool
 }
 
 // DoctorOptions tunes Doctor for callers and tests.
@@ -49,16 +55,19 @@ const dockerDeadline = 10 * time.Second
 // repository and after anything changes.
 func Doctor(mainRoot, trunk string, worktrees []repo.Worktree, opts DoctorOptions) ([]Check, error) {
 	onto := "origin/" + trunk
+	// Whether onto resolves is asked once: the trunk, submodules and lfs
+	// checks all need the answer, and it cannot change between them.
+	state := ontoAt(mainRoot, onto)
 
-	checks := []Check{trunkCheck(mainRoot, onto)}
+	checks := []Check{trunkCheck(onto, state)}
 
 	declCheck, cfg := declarationCheck(mainRoot, trunk, onto)
 	checks = append(checks, declCheck)
 	checks = append(checks, scriptsCheck(mainRoot, onto, cfg))
 	checks = append(checks, rerereCheck(mainRoot))
 	checks = append(checks, hooksCheck(mainRoot))
-	checks = append(checks, treeFileCheck(mainRoot, onto, ".gitmodules", "submodules", "submodules are not handled by run"))
-	checks = append(checks, lfsCheck(mainRoot, onto))
+	checks = append(checks, treeFileCheck(mainRoot, onto, state, ".gitmodules", "submodules", "submodules are not handled by run"))
+	checks = append(checks, lfsCheck(mainRoot, onto, state))
 	if cfg != nil && len(cfg.Defer) > 0 {
 		checks = append(checks, dockerCheck(opts.Docker))
 	}
@@ -69,13 +78,24 @@ func Doctor(mainRoot, trunk string, worktrees []repo.Worktree, opts DoctorOption
 	}
 	checks = append(checks, safety)
 
-	locks, err := locksCheck(worktrees, opts.Now)
+	// One git dir per worktree: the lock check and the rebase check both need
+	// them, and asking git twice per worktree is the same answer twice.
+	gitDirs := make(map[string]string, len(worktrees))
+	for _, wt := range worktrees {
+		dir, err := GitDir(wt.Path)
+		if err != nil {
+			return nil, err
+		}
+		gitDirs[wt.Path] = dir
+	}
+
+	locks, err := locksCheck(worktrees, gitDirs, opts.Now)
 	if err != nil {
 		return nil, err
 	}
 	checks = append(checks, locks)
 
-	rebases, err := rebasesCheck(worktrees)
+	rebases, err := rebasesCheck(worktrees, gitDirs)
 	if err != nil {
 		return nil, err
 	}
@@ -90,21 +110,17 @@ func Doctor(mainRoot, trunk string, worktrees []repo.Worktree, opts DoctorOption
 // Nor is a worktree holding a handover: git rebase --abort there would
 // leave the handover behind and the branch reported as waiting forever, so
 // the plan row SyncDoctor adds names those, with resume.
-func rebasesCheck(worktrees []repo.Worktree) (Check, error) {
-	holders := map[string]bool{}
-	held, err := PlanHolders(worktrees)
-	if err != nil {
-		return Check{}, err
-	}
-	for _, wt := range held {
-		holders[wt.Path] = true
-	}
+func rebasesCheck(worktrees []repo.Worktree, gitDirs map[string]string) (Check, error) {
 	var stuck []string
 	for _, wt := range worktrees {
 		if wt.IsMain {
 			continue
 		}
-		if holders[wt.Path] {
+		held, err := HasPlan(gitDirs[wt.Path])
+		if err != nil {
+			return Check{}, err
+		}
+		if held {
 			continue
 		}
 		busy, err := RebaseInProgress(wt.Path)
@@ -125,12 +141,14 @@ func rebasesCheck(worktrees []repo.Worktree) (Check, error) {
 	return Check{Name: "rebases", OK: false, Detail: strings.Join(stuck, "; ")}, nil
 }
 
-// trunkCheck reports whether origin/<trunk> resolves in the object store.
-func trunkCheck(mainRoot, onto string) Check {
-	if _, err := git.Run(mainRoot, "rev-parse", "--verify", onto); err != nil {
-		return Check{Name: "trunk", OK: false, Detail: "run git fetch origin"}
+// trunkCheck reports whether origin/<trunk> resolves in the object store. A
+// git that could not answer reads the same way as a ref that is not there:
+// either way the next move is a fetch.
+func trunkCheck(onto string, st ontoState) Check {
+	if st.err != nil || !st.resolves {
+		return Check{Name: "trunk", OK: false, Blocking: true, Detail: "run git fetch origin"}
 	}
-	return Check{Name: "trunk", OK: true, Detail: onto + " resolves"}
+	return Check{Name: "trunk", OK: true, Blocking: true, Detail: onto + " resolves"}
 }
 
 // declarationCheck loads the declaration from trunk, returning it (nil on
@@ -138,12 +156,12 @@ func trunkCheck(mainRoot, onto string) Check {
 func declarationCheck(mainRoot, trunk, onto string) (Check, *Config) {
 	cfg, err := LoadFromTrunk(mainRoot, trunk)
 	if err == nil {
-		return Check{Name: "declaration", OK: true, Detail: ConfigFile + " on " + onto + " parses"}, cfg
+		return Check{Name: "declaration", OK: true, Blocking: true, Detail: ConfigFile + " on " + onto + " parses"}, cfg
 	}
 	if errors.Is(err, ErrNoConfig) {
-		return Check{Name: "declaration", OK: false, Detail: "no " + ConfigFile + " on " + onto + ": reported only, never rebased"}, nil
+		return Check{Name: "declaration", OK: false, Blocking: true, Detail: "no " + ConfigFile + " on " + onto + ": reported only, never rebased"}, nil
 	}
-	return Check{Name: "declaration", OK: false, Detail: err.Error()}, nil
+	return Check{Name: "declaration", OK: false, Blocking: true, Detail: err.Error()}, nil
 }
 
 // scriptsCheck confirms every script strategy's run exists on trunk with
@@ -151,11 +169,11 @@ func declarationCheck(mainRoot, trunk, onto string) (Check, *Config) {
 // the declaration check above already reports why.
 func scriptsCheck(mainRoot, onto string, cfg *Config) Check {
 	if cfg == nil {
-		return Check{Name: "scripts", OK: true}
+		return Check{Name: "scripts", OK: true, Blocking: true}
 	}
 	var bad []string
 	for _, r := range cfg.Conflicts {
-		if r.Strategy != "script" {
+		if r.Strategy != StrategyScript {
 			continue
 		}
 		mode, found, err := lsTreeMode(mainRoot, onto, r.Run)
@@ -169,9 +187,9 @@ func scriptsCheck(mainRoot, onto string, cfg *Config) Check {
 		}
 	}
 	if len(bad) > 0 {
-		return Check{Name: "scripts", OK: false, Detail: strings.Join(bad, ", ")}
+		return Check{Name: "scripts", OK: false, Blocking: true, Detail: strings.Join(bad, ", ")}
 	}
-	return Check{Name: "scripts", OK: true}
+	return Check{Name: "scripts", OK: true, Blocking: true}
 }
 
 // lsTreeMode returns the mode `git ls-tree` reports for path at ref, and
@@ -296,14 +314,27 @@ func refResolves(mainRoot, ref string) (bool, error) {
 	return code == 0, nil
 }
 
+// ontoState is whether onto resolves in the object store, read once and
+// handed to every check that needs it. A git that gave no answer keeps its
+// error, which is not the same finding as a ref that is not there.
+type ontoState struct {
+	resolves bool
+	err      error
+}
+
+// ontoAt asks once whether onto resolves.
+func ontoAt(mainRoot, onto string) ontoState {
+	resolves, err := refResolves(mainRoot, onto)
+	return ontoState{resolves: resolves, err: err}
+}
+
 // ontoFailure is the failed check for an onto that does not resolve, or that
 // git could not be asked about; ok is false when onto resolves.
-func ontoFailure(mainRoot, onto, name string) (c Check, ok bool) {
-	resolves, err := refResolves(mainRoot, onto)
-	if err != nil {
-		return Check{Name: name, OK: false, Detail: err.Error()}, true
+func ontoFailure(onto, name string, st ontoState) (c Check, ok bool) {
+	if st.err != nil {
+		return Check{Name: name, OK: false, Detail: st.err.Error()}, true
 	}
-	if !resolves {
+	if !st.resolves {
 		return Check{Name: name, OK: false, Detail: onto + " does not resolve; run git fetch origin"}, true
 	}
 	return Check{}, false
@@ -312,16 +343,16 @@ func ontoFailure(mainRoot, onto, name string) (c Check, ok bool) {
 // treeFileCheck fails when path exists on trunk, for checks (like
 // submodules) that are pass/fail on presence alone. onto not resolving is
 // reported as its own failure rather than as "path absent".
-func treeFileCheck(mainRoot, onto, path, name, detail string) Check {
-	if c, failed := ontoFailure(mainRoot, onto, name); failed {
+func treeFileCheck(mainRoot, onto string, st ontoState, path, name, detail string) Check {
+	if c, failed := ontoFailure(onto, name, st); failed {
 		return c
 	}
 	_, err := gitEnv(mainRoot, nil, nil, "cat-file", "-e", onto+":"+path)
-	var exit *exec.ExitError
+	var gerr *git.Error
 	switch {
 	case err == nil:
 		return Check{Name: name, OK: false, Detail: detail}
-	case errors.As(err, &exit) && exit.ExitCode() > 0:
+	case errors.As(err, &gerr) && gerr.Code > 0:
 		// onto is known good, so git answering no means path is absent from it.
 		return Check{Name: name, OK: true}
 	default:
@@ -333,8 +364,8 @@ func treeFileCheck(mainRoot, onto, path, name, detail string) Check {
 // lfsCheck flags any .gitattributes on trunk (root or nested) that declares
 // an LFS filter: run does not handle LFS-tracked content. onto not
 // resolving is reported as its own failure rather than as "no match".
-func lfsCheck(mainRoot, onto string) Check {
-	if c, failed := ontoFailure(mainRoot, onto, "lfs"); failed {
+func lfsCheck(mainRoot, onto string, st ontoState) Check {
+	if c, failed := ontoFailure(onto, "lfs", st); failed {
 		return c
 	}
 	out, code, err := gitEnvAllow(mainRoot, nil, nil, 1, "grep", "-l", "-e", "filter=lfs", onto, "--", ".gitattributes", "**/.gitattributes")
@@ -364,12 +395,11 @@ func lfsCheck(mainRoot, onto string) Check {
 func dockerCheck(probe func() error) Check {
 	if probe == nil {
 		probe = func() error {
-			ctx, cancel := context.WithTimeout(context.Background(), dockerDeadline)
-			defer cancel()
-			cmd := exec.CommandContext(ctx, "docker", "info")
+			cmd := exec.Command("docker", "info")
 			cmd.Stdout = io.Discard
 			cmd.Stderr = io.Discard
-			return cmd.Run()
+			_, _, err := git.RunBounded(dockerDeadline, cmd)
+			return err
 		}
 	}
 	if err := probe(); err != nil {
@@ -387,7 +417,7 @@ func safetyCheck(mainRoot string, opts DoctorOptions) (Check, error) {
 	}
 	prunable := Prunable(all, opts.Now, opts.Keep)
 	if len(prunable) == 0 {
-		return Check{Name: "safety-refs", OK: true}, nil
+		return Check{Name: "safety-refs", OK: true, Prune: true}, nil
 	}
 	var refs []string
 	for _, s := range prunable {
@@ -406,13 +436,13 @@ func safetyCheck(mainRoot string, opts DoctorOptions) (Check, error) {
 		suffix = ""
 	}
 	detail := fmt.Sprintf("%d ref%s pin old history (%s)", len(prunable), suffix, strings.Join(refs, ", "))
-	return Check{Name: "safety-refs", OK: false, Detail: detail, Fix: fix}, nil
+	return Check{Name: "safety-refs", OK: false, Prune: true, Detail: detail, Fix: fix}, nil
 }
 
 // locksCheck flags every wt-sync.lock found in any worktree's git dir: an
 // expired one (older than LockExpiry) gets a Fix that removes it; a live one
 // is only named, since it belongs to a run that may still be in progress.
-func locksCheck(worktrees []repo.Worktree, now time.Time) (Check, error) {
+func locksCheck(worktrees []repo.Worktree, gitDirs map[string]string, now time.Time) (Check, error) {
 	type held struct {
 		label   string
 		gitDir  string
@@ -421,10 +451,7 @@ func locksCheck(worktrees []repo.Worktree, now time.Time) (Check, error) {
 	}
 	var found []held
 	for _, wt := range worktrees {
-		gitDir, err := GitDir(wt.Path)
-		if err != nil {
-			return Check{}, err
-		}
+		gitDir := gitDirs[wt.Path]
 		lock, ok, err := ReadLock(gitDir)
 		if err != nil {
 			return Check{}, err

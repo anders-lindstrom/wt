@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/anders-lindstrom/wt/internal/git"
 )
 
 // Block is one region git could not merge: the branch's lines, the base's,
@@ -55,9 +56,9 @@ func Merge3(c Conflict) ([]Segment, error) {
 		"-L", "branch", "-L", "base", "-L", "trunk",
 		filepath.Join(dir, "branch"), filepath.Join(dir, "base"), filepath.Join(dir, "trunk"))
 	if err != nil {
-		var exit *exec.ExitError
-		if !errors.As(err, &exit) || exit.ExitCode() < 0 || exit.ExitCode() > 127 {
-			if strings.Contains(err.Error(), "Cannot merge binary files") {
+		var gerr *git.Error
+		if !errors.As(err, &gerr) || gerr.Code < 0 || gerr.Code > 127 {
+			if gerr != nil && !gerr.TimedOut && strings.Contains(gerr.Stderr, "Cannot merge binary files") {
 				return nil, Refuse(c.Path, "binary file; a person's call")
 			}
 			return nil, err

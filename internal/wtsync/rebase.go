@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/anders-lindstrom/wt/internal/git"
 )
 
 // Verdict is Preflight's answer.
@@ -112,6 +114,15 @@ type Request struct {
 	Stacked bool
 }
 
+// base is what the rebase replays from: the parent's old tip for a stack
+// child, and the rebase target itself otherwise.
+func (r Request) base() string {
+	if r.Upstream != "" {
+		return r.Upstream
+	}
+	return r.Onto
+}
+
 // StopResult is one place the rebase stopped and what happened there.
 type StopResult struct {
 	Index, Total int
@@ -173,6 +184,16 @@ func (d *driver) git(args ...string) (string, error) {
 	return gitEnv(d.req.Path, rebaseEnv, nil, args...)
 }
 
+// resetToSafety puts the worktree back at the tip the run pinned before it
+// touched anything. A reset that will not go is the end of the restore: the
+// message names the tip, since nothing else will put it back.
+func (d *driver) resetToSafety() error {
+	if _, err := d.git("reset", "--hard", d.res.Safety.Ref); err != nil {
+		return fmt.Errorf("not restored: reset failed: %w; the old tip is %s", err, d.res.Safety.Ref)
+	}
+	return nil
+}
+
 // restore puts the worktree back where the run found it: no rebase in
 // progress, HEAD on the branch at the old tip, nothing left in the index.
 func (d *driver) restore() error {
@@ -186,14 +207,14 @@ func (d *driver) restore() error {
 		// reset below compares HEAD with the branch's own tip, which
 		// re-attaching first would make equal and skip), and only then
 		// put HEAD back on the branch.
-		if _, err := d.git("reset", "--hard", d.res.Safety.Ref); err != nil {
-			return fmt.Errorf("not restored: reset failed: %w; the old tip is %s", err, d.res.Safety.Ref)
+		if err := d.resetToSafety(); err != nil {
+			return err
 		}
 		_, _ = d.git("symbolic-ref", "HEAD", "refs/heads/"+d.req.Branch)
 	}
 	if head, _ := d.git("rev-parse", "HEAD"); head != d.old {
-		if _, err := d.git("reset", "--hard", d.res.Safety.Ref); err != nil {
-			return fmt.Errorf("not restored: reset failed: %w; the old tip is %s", err, d.res.Safety.Ref)
+		if err := d.resetToSafety(); err != nil {
+			return err
 		}
 	}
 	if busy, _ := RebaseInProgress(d.req.Path); busy {
@@ -203,7 +224,7 @@ func (d *driver) restore() error {
 		return fmt.Errorf("not restored: HEAD is %q, not %s; the old tip is %s", ref, d.req.Branch, d.res.Safety.Ref)
 	}
 	if head, _ := d.git("rev-parse", "HEAD"); head != d.old {
-		return fmt.Errorf("not restored: HEAD is %s, not %s; the old tip is %s", short(head), short(d.old), d.res.Safety.Ref)
+		return fmt.Errorf("not restored: HEAD is %s, not %s; the old tip is %s", git.ShortID(head, 7), git.ShortID(d.old, 7), d.res.Safety.Ref)
 	}
 	// A status that cannot be read is not a clean status: this check
 	// fails closed, since its whole job is to prove the worktree is
@@ -259,11 +280,7 @@ func Rebase(mainRoot string, cfg *Config, req Request, log io.Writer) (Result, e
 	if d.res.Safety, err = WriteSafety(mainRoot, req.Branch, old, req.Epoch); err != nil {
 		return d.res, err
 	}
-	base := req.Upstream
-	if base == "" {
-		base = req.Onto
-	}
-	if d.res.SignaturesDropped, err = signedCount(req.Path, base, old); err != nil {
+	if d.res.SignaturesDropped, err = signedCount(req.Path, req.base(), old); err != nil {
 		return d.res, err
 	}
 	args := append(append([]string{}, rebaseConfig...), "rebase", "--no-update-refs", "--no-gpg-sign")
@@ -286,12 +303,8 @@ func Rebase(mainRoot string, cfg *Config, req Request, log io.Writer) (Result, e
 func Resume(mainRoot string, cfg *Config, req Request, old string, safety Safety, log io.Writer) (Result, error) {
 	d := &driver{mainRoot: mainRoot, cfg: cfg, req: req, log: log, old: old, keep: true,
 		res: Result{Branch: req.Branch, OldTip: old, Safety: safety}}
-	base := req.Upstream
-	if base == "" {
-		base = req.Onto
-	}
 	var err error
-	if d.res.SignaturesDropped, err = signedCount(req.Path, base, old); err != nil {
+	if d.res.SignaturesDropped, err = signedCount(req.Path, req.base(), old); err != nil {
 		return d.res, err
 	}
 	busy, err := RebaseInProgress(req.Path)
@@ -348,10 +361,10 @@ func VerifyFinished(wtPath, branch, work, onto, old string) error {
 	// read proves nothing, so it refuses too.
 	prev, err := gitEnv(wtPath, rebaseEnv, nil, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch+"@{1}")
 	if err != nil {
-		return fmt.Errorf("%s's reflog cannot show that the rebase started from the run's tip (%s); wt sync undo --force %s puts that tip back and keeps what is there now under a safety ref", branch, short(old), work)
+		return fmt.Errorf("%s's reflog cannot show that the rebase started from the run's tip (%s); wt sync undo --force %s puts that tip back and keeps what is there now under a safety ref", branch, git.ShortID(old, 7), work)
 	}
 	if prev != old {
-		return fmt.Errorf("%s was last moved from %s, not from the tip the run started from (%s): something besides the rebase committed on it, a person or a deferred step on an earlier try, and resume cannot tell which; wt sync undo --force %s puts the run's tip back and keeps what is there now under a safety ref", branch, short(prev), short(old), work)
+		return fmt.Errorf("%s was last moved from %s, not from the tip the run started from (%s): something besides the rebase committed on it, a person or a deferred step on an earlier try, and resume cannot tell which; wt sync undo --force %s puts the run's tip back and keeps what is there now under a safety ref", branch, git.ShortID(prev, 7), git.ShortID(old, 7), work)
 	}
 	return nil
 }
@@ -421,7 +434,7 @@ func (d *driver) drive(err error) (Result, error) {
 			// the sequencer stopped for a reason we do not handle. One
 			// --continue is the honest move; the guard above catches a
 			// second stop in the same place.
-			stop.Files = append(stop.Files, FileOutcome{Path: messagesPath, Note: "stopped with nothing unmerged"})
+			stop.Files = append(stop.Files, messagesOutcome("stopped with nothing unmerged"))
 		}
 		logStop(d.log, stop)
 		d.res.Stops = append(d.res.Stops, stop)
@@ -524,13 +537,6 @@ func pathsOf(cs []Conflict) string {
 	}
 	sort.Strings(ps)
 	return strings.Join(ps, "\x00")
-}
-
-func short(sha string) string {
-	if len(sha) > 7 {
-		return sha[:7]
-	}
-	return sha
 }
 
 func logStop(log io.Writer, s StopResult) {

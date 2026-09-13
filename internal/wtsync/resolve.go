@@ -37,19 +37,17 @@ func resolveConflict(mainRoot, onto string, cfg *Config, c Conflict, wtPath stri
 		r.Outcome.Note = err.Error()
 		return r, fmt.Errorf("%s: %w", c.Path, err)
 	}
-	if sc, ok := s.(Script); ok && wtPath != "" {
-		if err := sc.ResolveInWorktree(wtPath, c.Path); err != nil {
-			if ref := refusalOf(err); ref != nil {
-				r.Outcome.Note = ref.Reason
-				return r, nil
-			}
-			r.Outcome.Note = err.Error()
-			return r, fmt.Errorf("%s: %w", c.Path, err)
-		}
-		r.Outcome.Resolved, r.Outcome.Note, r.InPlace = true, "", true
-		return r, nil
+	// A strategy that resolves in the worktree writes and stages the file
+	// itself, so it yields no bytes; every other one answers with the
+	// resolved file. Either way a refusal is a normal outcome and anything
+	// else is a failure, which is why both go through one set of branches.
+	var content []byte
+	inPlace := false
+	if w, ok := s.(inWorktree); ok && wtPath != "" {
+		err, inPlace = w.ResolveInWorktree(wtPath, c.Path), true
+	} else {
+		content, err = s.Resolve(c)
 	}
-	content, err := s.Resolve(c)
 	if err != nil {
 		if ref := refusalOf(err); ref != nil {
 			r.Outcome.Note = ref.Reason
@@ -61,7 +59,7 @@ func resolveConflict(mainRoot, onto string, cfg *Config, c Conflict, wtPath stri
 		return r, fmt.Errorf("%s: %w", c.Path, err)
 	}
 	r.Outcome.Resolved, r.Outcome.Note = true, ""
-	r.Content = content
+	r.Content, r.InPlace = content, inPlace
 	return r, nil
 }
 

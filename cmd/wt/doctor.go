@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -25,12 +24,11 @@ func newDoctorCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// Lenient on purpose: a repository whose configuration is the
 			// problem is exactly the one that needs diagnosing.
-			cwd, err := os.Getwd()
+			// io.Discard: doctor reports the configuration problem itself, below.
+			ctx, err := openLenient(io.Discard)
 			if err != nil {
 				return err
 			}
-			// io.Discard: doctor reports the configuration problem itself, below.
-			ctx := commands.OpenLenient(cwd, io.Discard)
 			if ctx == nil {
 				return errors.New("not a git repository")
 			}

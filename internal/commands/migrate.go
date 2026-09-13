@@ -5,10 +5,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
-	"text/tabwriter"
 
-	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -67,7 +66,7 @@ func Migrate(ctx *Context, arg, dest string, opts MigrateOptions, w io.Writer) (
 		return "", err
 	}
 	plan.Agent = sessionIn(opts, plan.From, w)
-	plan.InCwd = standingIn(plan.From)
+	plan.InCwd = standingIn(ctx.Cwd, plan.From)
 
 	if plan.movesNothing() {
 		fmt.Fprintf(w, "- %s is already at the canonical path\n", plan.From)
@@ -102,13 +101,14 @@ func relocateWorktree(ctx *Context, path string, w io.Writer) (string, error) {
 // planMigrate reads every fact the migration depends on and refuses here,
 // before anything has moved, when one of them makes it impossible.
 func planMigrate(ctx *Context, wt repo.Worktree, dest string) (MigratePlan, error) {
+	sch := ctx.Scheme()
 	if wt.Branch == "" {
 		return MigratePlan{}, fmt.Errorf(
 			"%s has a detached HEAD: there is no branch to rename, and nothing to name a path from.\n"+
 				"  Put it on a branch first:  git -C %s switch -c %s\n"+
 				"  then run this again",
 			wt.Path, wt.Path,
-			naming.BranchName(ctx.Config.DefaultType, filepath.Base(wt.Path), ctx.Config.TypeSuffix))
+			sch.Branch(ctx.Config.DefaultType, filepath.Base(wt.Path)))
 	}
 	typ, work, err := migrateTarget(ctx, wt, dest)
 	if err != nil {
@@ -117,13 +117,13 @@ func planMigrate(ctx *Context, wt repo.Worktree, dest string) (MigratePlan, erro
 
 	p := MigratePlan{
 		From:      wt.Path,
-		To:        naming.WorktreeDir(ctx.Repo.Parent, ctx.Repo.Name, typ, work, ctx.Config.TypeSuffix),
+		To:        sch.Dir(typ, work),
 		Branch:    wt.Branch,
-		NewBranch: naming.BranchName(typ, work, ctx.Config.TypeSuffix),
+		NewBranch: sch.Branch(typ, work),
 		Work:      work,
-		Superset:  naming.UnderSuperset(wt.Path, ctx.Repo.Parent, ctx.Repo.Name, ctx.Config.TypeSuffix),
+		Superset:  naming.UnderSuperset(wt.Path, sch.Parent, sch.Repo, sch.Suffix),
 	}
-	if out, err := git.Run(p.From, "status", "--porcelain"); err == nil && out != "" {
+	if dirty, err := repo.Dirty(p.From, false); err == nil && dirty {
 		p.Dirty = true
 	}
 	if err := p.checkBranchIsFree(ctx); err != nil {
@@ -169,11 +169,11 @@ func migrateTarget(ctx *Context, wt repo.Worktree, dest string) (typ, work strin
 // name under the repository's default type. Anything else is a guess, and a
 // guess here silently renames somebody's branch.
 func impliedTarget(ctx *Context, branch string) (typ, work string, ok bool) {
-	if typ, work, ok := naming.ParseBranch(branch, ctx.Config.TypeSuffix); ok {
+	if typ, work, ok := ctx.Scheme().Parse(branch); ok {
 		return typ, work, true
 	}
 	if head, rest, found := strings.Cut(branch, "/"); found {
-		if rest == "" || strings.Contains(rest, "/") || !typeAllowed(ctx, head) {
+		if rest == "" || strings.Contains(rest, "/") || !slices.Contains(ctx.Config.Types, head) {
 			return "", "", false
 		}
 		return head, rest, true
@@ -194,18 +194,10 @@ func stripTypeSuffix(ctx *Context, dest string) string {
 	if !found || ctx.Config.TypeSuffix == "" {
 		return dest
 	}
-	if base, cut := strings.CutSuffix(head, ctx.Config.TypeSuffix); cut && typeAllowed(ctx, base) {
+	if base, cut := strings.CutSuffix(head, ctx.Config.TypeSuffix); cut && slices.Contains(ctx.Config.Types, base) {
 		return base + "/" + rest
 	}
 	return dest
-}
-
-func checkType(ctx *Context, typ string) error {
-	if typeAllowed(ctx, typ) {
-		return nil
-	}
-	return fmt.Errorf("unknown worktree type %q; expected one of: %s",
-		typ, strings.Join(ctx.Config.Types, " "))
 }
 
 func lastSegment(branch string) string {
@@ -237,11 +229,9 @@ func (p MigratePlan) checkPathIsFree(ctx *Context) error {
 	if err != nil {
 		return err
 	}
-	for _, wt := range worktrees {
-		if samePath(wt.Path, p.To) {
-			return fmt.Errorf("%s is already the worktree of %s; move that one out of the way first",
-				p.To, wt.Branch)
-		}
+	if wt, ok := worktrees.ByPath(p.To); ok {
+		return fmt.Errorf("%s is already the worktree of %s; move that one out of the way first",
+			p.To, wt.Branch)
 	}
 	if entries, err := os.ReadDir(p.To); err == nil && len(entries) > 0 {
 		return fmt.Errorf("%s already exists and is not empty; move or delete it first", p.To)
@@ -271,27 +261,23 @@ func (p MigratePlan) actions() []string {
 // Render writes the plan: where the worktree goes, what its branch ends up
 // called, and what is in it.
 func (p MigratePlan) Render(w io.Writer) {
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(tw, "  from\t%s\n", p.From)
+	to := p.To
 	if p.To == p.From {
-		fmt.Fprintf(tw, "  to\t%s (already there)\n", p.To)
-	} else {
-		fmt.Fprintf(tw, "  to\t%s\n", p.To)
+		to += " (already there)"
 	}
 	branch := p.Branch
 	if p.NewBranch != p.Branch {
 		branch += " -> " + p.NewBranch
 	}
-	fmt.Fprintf(tw, "  branch\t%s\n", branch)
 	state := "clean"
 	if p.Dirty {
 		state = "uncommitted changes — the move carries them"
 	}
-	fmt.Fprintf(tw, "  state\t%s\n", state)
+	rows := [][]string{{"  from", p.From}, {"  to", to}, {"  branch", branch}, {"  state", state}}
 	if p.Agent != nil {
-		fmt.Fprintf(tw, "  session\t%s is working in it\n", sessionLabel(p.Agent))
+		rows = append(rows, []string{"  session", sessionLabel(p.Agent) + " is working in it"})
 	}
-	_ = tw.Flush()
+	_ = printTable(w, rows)
 	fmt.Fprintln(w)
 
 	// Before the move, and therefore during a dry run — after it, the warning
@@ -355,7 +341,7 @@ func (p MigratePlan) apply(ctx *Context, w io.Writer) (string, error) {
 func pruneEmptyParents(dir, stopAt string) string {
 	stopAt = filepath.Clean(stopAt)
 	removed := ""
-	for dir = filepath.Clean(dir); dir != stopAt && strings.HasPrefix(dir, stopAt+string(filepath.Separator)); dir = filepath.Dir(dir) {
+	for dir = filepath.Clean(dir); dir != stopAt && repo.Inside(stopAt, dir, false); dir = filepath.Dir(dir) {
 		if os.Remove(dir) != nil {
 			break
 		}
@@ -377,13 +363,9 @@ func sessionIn(opts MigrateOptions, path string, w io.Writer) *wtsync.Agent {
 			return nil
 		}
 	}
-	// A worktree's path can carry a symlink (a macOS /tmp, a mounted home)
-	// that an agent's reported cwd has already resolved.
-	resolved := path
-	if r, err := filepath.EvalSymlinks(path); err == nil {
-		resolved = r
-	}
-	return wtsync.AgentAt(agents, resolved)
+	// AgentAt resolves the path itself, which is what a worktree behind a
+	// symlink (a macOS /tmp, a mounted home) needs.
+	return wtsync.AgentAt(agents, path)
 }
 
 func agentInTheWay(a *wtsync.Agent) string {
@@ -400,15 +382,10 @@ func sessionLabel(a *wtsync.Agent) string {
 	return "an unnamed session"
 }
 
-// standingIn reports whether the caller's own working directory is inside the
-// worktree about to move.
-func standingIn(path string) bool {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return false
-	}
-	return samePath(cwd, path) || strings.HasPrefix(filepath.Clean(cwd),
-		filepath.Clean(path)+string(filepath.Separator))
+// standingIn reports whether cwd, the caller's own working directory, is inside
+// the worktree about to move.
+func standingIn(cwd, path string) bool {
+	return repo.Inside(path, cwd, true)
 }
 
 func worktreePathFor(ctx *Context, branch string) (string, error) {
@@ -419,10 +396,8 @@ func worktreePathFor(ctx *Context, branch string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	for _, wt := range worktrees {
-		if wt.Branch == branch {
-			return wt.Path, nil
-		}
+	if wt, ok := worktrees.ByBranch(branch); ok {
+		return wt.Path, nil
 	}
 	return "", nil
 }

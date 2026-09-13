@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/anders-lindstrom/wt/internal/config"
+	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
@@ -19,6 +20,9 @@ type Context struct {
 	// ConfigError records why Config fell back to defaults, when it did.
 	// Only OpenLenient sets it; Open fails outright instead.
 	ConfigError error
+	// Cwd is the directory the context was opened from: where the caller is
+	// standing.
+	Cwd string
 }
 
 // Open discovers the repository containing cwd and loads its configuration.
@@ -27,11 +31,18 @@ func Open(cwd string) (*Context, error) {
 	if err != nil {
 		return nil, err
 	}
-	c, err := loadFor(r)
+	c, _, err := loadFor(r)
 	if err != nil {
 		return nil, err
 	}
-	return &Context{Repo: r, Config: c}, nil
+	return &Context{Repo: r, Config: c, Cwd: cwd}, nil
+}
+
+// Scheme is how this repository spells its worktrees: the directory they sit
+// under, the repository's name and its type suffix. Every conversion between a
+// piece of work, its branch and its path is made through it.
+func (c *Context) Scheme() naming.Scheme {
+	return naming.Scheme{Parent: c.Repo.Parent, Repo: c.Repo.Name, Suffix: c.Config.TypeSuffix}
 }
 
 // HasProvisionScript reports whether the repo declares its own setup step.
@@ -42,13 +53,16 @@ func (c *Context) HasProvisionScript() bool {
 
 // loadFor loads a repository's configuration, preferring the worktree the
 // caller is standing in and falling back to the main checkout when that
-// worktree carries none.
-func loadFor(r *repo.Repo) (*config.Config, error) {
-	c, err := config.Load(r.Root, r.DetectMainBranch())
+// worktree carries none. The trunk it detected comes back with it: reading it
+// costs a git process, and everything that needs a fallback branch here needs
+// the same answer.
+func loadFor(r *repo.Repo) (*config.Config, string, error) {
+	trunk := r.DetectMainBranch()
+	c, err := config.Load(r.Root, trunk)
 	if errors.Is(err, config.ErrNoConfig) && r.Root != r.MainRoot {
-		return config.Load(r.MainRoot, r.DetectMainBranch())
+		c, err = config.Load(r.MainRoot, trunk)
 	}
-	return c, err
+	return c, trunk, err
 }
 
 // OpenLenient builds a Context for read-only lookups, falling back to default
@@ -64,15 +78,15 @@ func OpenLenient(cwd string, w io.Writer) *Context {
 	if err != nil {
 		return nil
 	}
-	c, err := loadFor(r)
+	c, trunk, err := loadFor(r)
 	if err != nil {
 		// Keep whatever did parse: a single retired key should not hide the
 		// repository's REQUIRED_BINS, branch prefix and the rest.
 		if c == nil {
-			c, _ = config.FromRaw(nil, r.DetectMainBranch())
+			c, _ = config.FromRaw(nil, trunk)
 		}
 		fmt.Fprintf(w, "wt: using partial configuration for %s: %v\n", r.Name, err)
-		return &Context{Repo: r, Config: c, ConfigError: err}
+		return &Context{Repo: r, Config: c, ConfigError: err, Cwd: cwd}
 	}
-	return &Context{Repo: r, Config: c}
+	return &Context{Repo: r, Config: c, Cwd: cwd}
 }

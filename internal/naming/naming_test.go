@@ -76,29 +76,50 @@ func TestClassifyNamesTheLayoutAPathFollows(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := Classify(c.path, "/src", "demo", "feat", "login", "_wt"); got != c.want {
+			sch := Scheme{Parent: "/src", Repo: "demo", Suffix: "_wt"}
+			if got := sch.Classify(c.path, "feat", "login"); got != c.want {
 				t.Errorf("Classify(%q) = %v, want %v", c.path, got, c.want)
 			}
 		})
 	}
 }
 
-func TestBranchName(t *testing.T) {
-	if got := BranchName("fix", "login-crash", "_wt"); got != "fix_wt/login-crash" {
+func TestSchemeBranch(t *testing.T) {
+	sch := Scheme{Suffix: "_wt"}
+	if got := sch.Branch("fix", "login-crash"); got != "fix_wt/login-crash" {
 		t.Errorf("got %q", got)
 	}
 }
 
-func TestParseBranch(t *testing.T) {
-	typ, work, ok := ParseBranch("feat_wt/api-tidy", "_wt")
+func TestSchemeParse(t *testing.T) {
+	sch := Scheme{Suffix: "_wt"}
+	typ, work, ok := sch.Parse("feat_wt/api-tidy")
 	if !ok || typ != "feat" || work != "api-tidy" {
 		t.Errorf("got %q %q %v", typ, work, ok)
 	}
-	if _, _, ok := ParseBranch("main", "_wt"); ok {
+	if _, _, ok := sch.Parse("main"); ok {
 		t.Error("plain branch should not parse as a worktree branch")
 	}
-	if _, _, ok := ParseBranch("feature/x", "_wt"); ok {
+	if _, _, ok := sch.Parse("feature/x"); ok {
 		t.Error("a slash alone is not the worktree convention")
+	}
+}
+
+// The pair every command that reports a worktree needs: what the branch says
+// the work is, and whether the path matches it.
+func TestClassifyBranchReadsBranchAndPathTogether(t *testing.T) {
+	sch := Scheme{Parent: "/src", Repo: "demo", Suffix: "_wt"}
+	typ, work, layout, ok := sch.ClassifyBranch("/src/demo_wt/feat_wt/login", "feat_wt/login")
+	if !ok || typ != "feat" || work != "login" || layout != Canonical {
+		t.Errorf("got %q %q %v %v", typ, work, layout, ok)
+	}
+	if _, _, layout, ok := sch.ClassifyBranch("/src/demo_wt/demo/feat_wt/login", "feat_wt/login"); !ok || layout != Superset {
+		t.Errorf("superset path: got %v %v", layout, ok)
+	}
+	// A branch outside the convention leaves the path nothing to be measured
+	// against, so it is not reported as misplaced.
+	if _, _, layout, ok := sch.ClassifyBranch("/elsewhere/login", "main"); ok || layout != Foreign {
+		t.Errorf("unparseable branch: got %v %v", layout, ok)
 	}
 }
 
@@ -115,7 +136,8 @@ func TestStripPrefix(t *testing.T) {
 // character. That equality is the whole point of the layout.
 func TestWorktreeDirTailEqualsBranch(t *testing.T) {
 	parent := filepath.Join("/tmp", "code")
-	dir := WorktreeDir(parent, "infrastructure", "feat", "api-tidy", "_wt")
+	sch := Scheme{Parent: parent, Repo: "infrastructure", Suffix: "_wt"}
+	dir := sch.Dir("feat", "api-tidy")
 	want := filepath.Join(parent, "infrastructure_wt", "feat_wt", "api-tidy")
 	if dir != want {
 		t.Fatalf("got %q, want %q", dir, want)
@@ -124,7 +146,7 @@ func TestWorktreeDirTailEqualsBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if branch := BranchName("feat", "api-tidy", "_wt"); tail != branch {
+	if branch := sch.Branch("feat", "api-tidy"); tail != branch {
 		t.Errorf("tail %q != branch %q", tail, branch)
 	}
 }

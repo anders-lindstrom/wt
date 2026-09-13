@@ -13,14 +13,60 @@ import (
 	"strings"
 )
 
-// BranchName builds the branch for a piece of work, e.g. fix_wt/login-crash.
-func BranchName(typ, work, suffix string) string {
-	return typ + suffix + "/" + work
+// Scheme is one repository's half of the layout: where its worktrees sit, what
+// it is called, and the suffix that marks a type. Every conversion between a
+// piece of work, its branch and its path needs all three, so they travel
+// together rather than as three strings a caller can swap by accident.
+type Scheme struct {
+	// Parent is the directory holding <Repo><Suffix>.
+	Parent string
+	// Repo is the repository's name.
+	Repo string
+	// Suffix marks a type in both a branch name and a path, e.g. "_wt".
+	Suffix string
 }
 
-// ParseBranch splits a worktree branch into its type and work name. ok is false
-// for any branch that does not follow the convention.
-func ParseBranch(branch, suffix string) (typ, work string, ok bool) {
+// Branch builds the branch for a piece of work, e.g. fix_wt/login-crash.
+func (s Scheme) Branch(typ, work string) string {
+	return typ + s.Suffix + "/" + work
+}
+
+// Parse splits a worktree branch into its type and work name. ok is false for
+// any branch that does not follow the convention.
+func (s Scheme) Parse(branch string) (typ, work string, ok bool) {
+	return parseBranch(branch, s.Suffix)
+}
+
+// Dir returns the canonical absolute path for a piece of work.
+func (s Scheme) Dir(typ, work string) string {
+	return filepath.Join(s.Parent, s.Repo+s.Suffix, typ+s.Suffix, work)
+}
+
+// Classify reports which layout path follows for the given piece of work.
+func (s Scheme) Classify(path, typ, work string) Layout {
+	switch path {
+	case s.Dir(typ, work):
+		return Canonical
+	case SupersetDir(s.Parent, s.Repo, typ, work, s.Suffix):
+		return Superset
+	default:
+		return Foreign
+	}
+}
+
+// ClassifyBranch reads a worktree's branch and path together: the type and work
+// name the branch carries, and the layout its path follows for them. ok is
+// false for a branch outside the convention, which leaves the path nothing to
+// be classified against.
+func (s Scheme) ClassifyBranch(path, branch string) (typ, work string, l Layout, ok bool) {
+	typ, work, ok = s.Parse(branch)
+	if !ok {
+		return "", "", Foreign, false
+	}
+	return typ, work, s.Classify(path, typ, work), true
+}
+
+func parseBranch(branch, suffix string) (typ, work string, ok bool) {
 	head, rest, found := strings.Cut(branch, "/")
 	if !found || rest == "" {
 		return "", "", false
@@ -33,17 +79,13 @@ func ParseBranch(branch, suffix string) (typ, work string, ok bool) {
 }
 
 // StripPrefix returns the work name, or the branch unchanged when it does not
-// follow the convention.
+// follow the convention. It takes a bare suffix because `wt find` reads the
+// branches of repositories it holds nothing else about.
 func StripPrefix(branch, suffix string) string {
-	if _, work, ok := ParseBranch(branch, suffix); ok {
+	if _, work, ok := parseBranch(branch, suffix); ok {
 		return work
 	}
 	return branch
-}
-
-// WorktreeDir returns the canonical absolute path for a piece of work.
-func WorktreeDir(parent, repoName, typ, work, suffix string) string {
-	return filepath.Join(parent, repoName+suffix, typ+suffix, work)
 }
 
 // SupersetDir returns the path Superset builds for a piece of work. It differs
@@ -93,18 +135,6 @@ func (l Layout) String() string {
 		return "superset"
 	default:
 		return "foreign"
-	}
-}
-
-// Classify reports which layout path follows for the given piece of work.
-func Classify(path, parent, repoName, typ, work, suffix string) Layout {
-	switch path {
-	case WorktreeDir(parent, repoName, typ, work, suffix):
-		return Canonical
-	case SupersetDir(parent, repoName, typ, work, suffix):
-		return Superset
-	default:
-		return Foreign
 	}
 }
 

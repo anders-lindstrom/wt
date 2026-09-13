@@ -3,7 +3,6 @@ package commands
 import (
 	"fmt"
 	"io"
-	"os"
 	"regexp"
 	"strings"
 
@@ -43,24 +42,9 @@ func Checkout(ctx *Context, branch, work string, opts NewOptions, w io.Writer) (
 		}
 	}
 
-	path := naming.WorktreeDir(ctx.Repo.Parent, ctx.Repo.Name,
-		ctx.Config.DefaultType, work, ctx.Config.TypeSuffix)
-	if _, err := os.Stat(path); err == nil {
-		return "", fmt.Errorf("%s already exists", path)
-	}
-
-	fmt.Fprintf(w, "Checking out %s at %s\n", branch, path)
-	if err := ctx.Repo.AddExistingWorktree(path, branch); err != nil {
-		return "", err
-	}
-	if opts.NoSetup {
-		return path, nil
-	}
-	if err := Setup(ctx, path, SetupOptions{
-		SourceDir: ctx.Repo.MainRoot,
-		SkipBuild: opts.SkipBuild,
-	}, w); err != nil {
-		return path, err
-	}
-	return path, nil
+	path := ctx.Scheme().Dir(ctx.Config.DefaultType, work)
+	return addAndProvision(ctx, path, func() error {
+		fmt.Fprintf(w, "Checking out %s at %s\n", branch, path)
+		return ctx.Repo.AddExistingWorktree(path, branch)
+	}, opts, w)
 }

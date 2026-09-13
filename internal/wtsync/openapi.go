@@ -54,22 +54,25 @@ func (s OpenAPI) Resolve(c Conflict) ([]byte, error) {
 	paths, pathConflicts := merge3Keys(sections.paths[0], sections.paths[1], sections.paths[2])
 	schemas, schemaConflicts := merge3Keys(sections.schemas[0], sections.schemas[1], sections.schemas[2])
 	tags, tagConflicts := merge3Keys(sections.tags[0], sections.tags[1], sections.tags[2])
-	var bad []string
-	var keys []string
 	var groups []KeyGroup
 	for _, g := range []KeyGroup{
 		{Section: "paths", Keys: pathConflicts},
 		{Section: "schemas", Keys: schemaConflicts},
 		{Section: "tags", Keys: tagConflicts},
 	} {
-		if len(g.Keys) == 0 {
-			continue
+		if len(g.Keys) > 0 {
+			groups = append(groups, g)
 		}
-		bad = append(bad, g.Section+": "+strings.Join(g.Keys, ", "))
-		keys = append(keys, g.Keys...)
-		groups = append(groups, g)
 	}
-	if len(bad) > 0 {
+	if len(groups) > 0 {
+		// The reason and the flat key list are both the groups, said twice
+		// over: once by section for a person, once sorted for triage.
+		bad := make([]string, 0, len(groups))
+		var keys []string
+		for _, g := range groups {
+			bad = append(bad, g.Section+": "+strings.Join(g.Keys, ", "))
+			keys = append(keys, g.Keys...)
+		}
 		sort.Strings(keys)
 		return nil, &Refusal{Path: c.Path, Reason: fmt.Sprintf("both sides changed %s", strings.Join(bad, "; ")), Keys: keys, Groups: groups}
 	}
@@ -129,17 +132,17 @@ func loadSections(path string, base, trunk, branch doc) (merged, error) {
 
 func (s OpenAPI) version(path, branchV, trunkV string) (string, error) {
 	switch s.Rule {
-	case "keep-branch":
+	case RuleKeepBranch:
 		if branchV == "" {
 			return "", Refuse(path, "info.version missing")
 		}
 		return branchV, nil
-	case "keep-trunk":
+	case RuleKeepTrunk:
 		if trunkV == "" {
 			return "", Refuse(path, "info.version missing")
 		}
 		return trunkV, nil
-	case "max-plus-patch", "":
+	case RuleMaxPlusPatch, "":
 		if !exactSemverRE.MatchString(branchV) || !exactSemverRE.MatchString(trunkV) {
 			return "", Refuse(path, "info.version is not X.Y.Z on both sides (%q, %q)", branchV, trunkV)
 		}
@@ -373,6 +376,11 @@ func merge3Keys(base, trunk, branch *omap) (*omap, []string) {
 func jsonEqual(a, b json.RawMessage) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
+	}
+	// The same bytes are the same value, and both sides of a generated
+	// document are mostly untouched: decoding twice to learn that is work.
+	if bytes.Equal(a, b) {
+		return true
 	}
 	va, errA := decodeExact(a)
 	vb, errB := decodeExact(b)

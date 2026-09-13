@@ -25,43 +25,46 @@ func Parents(mainRoot, trunk string, worktrees []repo.Worktree) (map[string]stri
 		if err != nil {
 			return nil, nil, err
 		}
-		_, err = gitEnv(mainRoot, nil, nil, "merge-base", "--is-ancestor", tip, trunk)
-		if err == nil {
-			continue
-		}
-		if !isExit(err, 1) {
+		_, code, err := gitEnvAllow(mainRoot, nil, nil, 1, "merge-base", "--is-ancestor", tip, trunk)
+		if err != nil {
 			return nil, nil, err
+		}
+		if code == 0 {
+			continue
 		}
 		branches = append(branches, wt.Branch)
 		tips[wt.Branch] = tip
 	}
 	sort.Strings(branches)
-	isAncestor := func(a, b string) (bool, error) {
-		if tips[a] == tips[b] {
-			return false, nil
+	// Every ancestry question, asked once, from the tips rather than the
+	// branch names the rest of this already works in. The nearest-ancestor
+	// search below asks about the same pairs the first pass did, and each
+	// question is a merge-base process: together that was n(n-1) plus the
+	// sum of |ancestors|² for a relation that only has n² answers.
+	ancestor := make(map[string]map[string]bool, len(branches))
+	for _, a := range branches {
+		ancestor[a] = make(map[string]bool, len(branches))
+	}
+	for _, a := range branches {
+		for _, b := range branches {
+			// A branch at the very same commit as another is neither its
+			// parent nor its child.
+			if a == b || tips[a] == tips[b] {
+				continue
+			}
+			_, code, err := gitEnvAllow(mainRoot, nil, nil, 1, "merge-base", "--is-ancestor", tips[a], tips[b])
+			if err != nil {
+				return nil, nil, err
+			}
+			ancestor[a][b] = code == 0
 		}
-		_, err := gitEnv(mainRoot, nil, nil, "merge-base", "--is-ancestor", a, b)
-		if err == nil {
-			return true, nil
-		}
-		if isExit(err, 1) {
-			return false, nil
-		}
-		return false, err
 	}
 	parents := map[string]string{}
 	ambiguous := map[string][]string{}
 	for _, b := range branches {
 		var ancestors []string
 		for _, a := range branches {
-			if a == b {
-				continue
-			}
-			ok, err := isAncestor(a, b)
-			if err != nil {
-				return nil, nil, err
-			}
-			if ok {
+			if a != b && ancestor[a][b] {
 				ancestors = append(ancestors, a)
 			}
 		}
@@ -77,11 +80,7 @@ func Parents(mainRoot, trunk string, worktrees []repo.Worktree) (map[string]stri
 				if other == cand || tips[other] == tips[cand] {
 					continue
 				}
-				ok, err := isAncestor(other, cand)
-				if err != nil {
-					return nil, nil, err
-				}
-				if !ok {
+				if !ancestor[other][cand] {
 					nearest = false
 					break
 				}

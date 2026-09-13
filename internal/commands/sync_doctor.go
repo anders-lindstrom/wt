@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -44,27 +43,26 @@ func SyncDoctor(ctx *Context, opts DoctorOptions, w io.Writer) error {
 		plan.Detail = strings.Join(lines, "; ")
 	}
 	checks = append(checks, plan)
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "CHECK\tSTATE\tDETAIL")
+	rows := [][]string{{"CHECK", "STATE", "DETAIL"}}
 	var blocking []string
 	for _, c := range checks {
 		state := "ok"
 		if !c.OK {
 			state = "warn"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\n", c.Name, state, oneLine(c.Detail))
-		if !c.OK && c.Fix == nil && (c.Name == "trunk" || c.Name == "declaration" || c.Name == "scripts") {
+		rows = append(rows, []string{c.Name, state, oneLine(c.Detail)})
+		if !c.OK && c.Fix == nil && c.Blocking {
 			blocking = append(blocking, c.Name)
 		}
 	}
-	if err := tw.Flush(); err != nil {
+	if err := printTable(w, rows); err != nil {
 		return err
 	}
 	for _, c := range checks {
 		if c.OK || c.Fix == nil {
 			continue
 		}
-		want := (opts.Fix && c.Name != "safety-refs") || (opts.Prune && c.Name == "safety-refs")
+		want := (opts.Fix && !c.Prune) || (opts.Prune && c.Prune)
 		if !want {
 			continue
 		}

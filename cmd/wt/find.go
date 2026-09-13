@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -28,11 +27,10 @@ func newFindCmd() *cobra.Command {
 			// Not being in a repository is fine: the search falls back to roots.
 			// A repository with a broken config is also fine, but must not
 			// silently lose repo-first — OpenLenient reports the problem.
-			cwd, err := os.Getwd()
+			ctx, err := openLenient(cmd.ErrOrStderr())
 			if err != nil {
 				return err
 			}
-			ctx := commands.OpenLenient(cwd, os.Stderr)
 			matches, err := commands.Find(ctx, args[0])
 			if err != nil {
 				return err
@@ -49,9 +47,10 @@ func newFindCmd() *cobra.Command {
 				fmt.Fprintln(cmd.OutOrStdout(), matches[0].Path)
 				return nil
 			}
-			fmt.Fprintf(os.Stderr, "wt: %q is ambiguous:\n", args[0])
+			errw := cmd.ErrOrStderr()
+			fmt.Fprintf(errw, "wt: %q is ambiguous:\n", args[0])
 			for _, m := range matches {
-				fmt.Fprintf(os.Stderr, "  %-24s %-28s %s\n", m.Work, m.Repo, m.Path)
+				fmt.Fprintf(errw, "  %-24s %-28s %s\n", m.Work, m.Repo, m.Path)
 			}
 			return fmt.Errorf("%d candidates", len(matches))
 		},

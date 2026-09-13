@@ -13,7 +13,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/anders-lindstrom/wt/internal/git"
-	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -104,6 +103,18 @@ func SyncWorktree(ctx *Context, arg string, opts SyncOptions, w io.Writer) error
 	return nil
 }
 
+// trunkTip is the ref every sync verb works against and the commit it
+// resolves to now. A trunk that is not there at all is the one thing none of
+// them can go on without.
+func trunkTip(ctx *Context) (onto, sha string, err error) {
+	onto = "origin/" + ctx.Config.MainBranch
+	sha, err = git.Run(ctx.Repo.MainRoot, "rev-parse", "--verify", onto)
+	if err != nil {
+		return onto, "", fmt.Errorf("%s is not known here; run git fetch origin", onto)
+	}
+	return onto, sha, nil
+}
+
 // syncInputs fetches trunk unless opts.NoFetch, reads what every assessment
 // needs and prints the header: the ref compared against, and a notice when
 // trunk declares nothing. A failed fetch is reported and the overview goes on
@@ -111,7 +122,6 @@ func SyncWorktree(ctx *Context, arg string, opts SyncOptions, w io.Writer) error
 // error.
 func syncInputs(ctx *Context, opts SyncOptions, w io.Writer) (onto string, cfg *wtsync.Config, agents []wtsync.Agent, err error) {
 	trunk := ctx.Config.MainBranch
-	onto = "origin/" + trunk
 	// Read before fetching: git empties FETCH_HEAD as a fetch starts, so a
 	// fetch that fails has already lost the age of the last one that did not.
 	asLast := lastFetched(ctx.Repo.MainRoot, time.Now())
@@ -126,9 +136,9 @@ func syncInputs(ctx *Context, opts SyncOptions, w io.Writer) (onto string, cfg *
 		}
 		return "", nil, nil, err
 	}
-	sha, err := git.Run(ctx.Repo.MainRoot, "rev-parse", "--verify", onto)
+	onto, sha, err := trunkTip(ctx)
 	if err != nil {
-		return "", nil, nil, fmt.Errorf("%s is not known here; run git fetch origin", onto)
+		return "", nil, nil, err
 	}
 	if cfg == nil {
 		fmt.Fprintf(w, "%s declares no %s on %s: reported only, never rebased.\n\n",
@@ -138,7 +148,7 @@ func syncInputs(ctx *Context, opts SyncOptions, w io.Writer) (onto string, cfg *
 	if aerr != nil {
 		fmt.Fprintf(w, "note: %v\n", aerr)
 	}
-	ref := onto + " " + short(sha)
+	ref := onto + " " + git.ShortID(sha, 7)
 	switch {
 	case opts.NoFetch:
 		fmt.Fprintf(w, "against %s, %s\n", ref, asLast)
@@ -186,22 +196,14 @@ func ago(d time.Duration) string {
 // fetchReason is the line of a failed fetch's error worth printing: ssh and
 // git can put warnings before the reason and hints after it.
 func fetchReason(err error) string {
-	for _, line := range strings.Split(err.Error(), "\n") {
-		line = strings.TrimSpace(line)
-		lower := strings.ToLower(line)
-		if line == "" || strings.HasPrefix(lower, "warning:") || strings.HasPrefix(lower, "hint:") {
-			continue
-		}
-		return truncate(strings.TrimPrefix(line, "fatal: "), noteWidth)
-	}
-	return truncate(oneLine(err.Error()), noteWidth)
+	return truncate(git.Reason(err, "warning:", "hint:"), noteWidth)
 }
 
 func workName(ctx *Context, branch string) string {
 	if branch == "" {
 		return "(detached)"
 	}
-	if _, work, ok := naming.ParseBranch(branch, ctx.Config.TypeSuffix); ok {
+	if _, work, ok := ctx.Scheme().Parse(branch); ok {
 		return work
 	}
 	return branch

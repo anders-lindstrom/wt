@@ -3,13 +3,14 @@ package commands
 import (
 	"bytes"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -69,14 +70,15 @@ func laterStopFixture(t *testing.T, withUnclaimed bool) (ctx *Context, bump stri
 // clock a few seconds on, so the lock a resume takes is told apart from the
 // one the run kept without the run's expiring.
 func noResumeAgents() ResumeOptions {
-	return ResumeOptions{Agents: []wtsync.Agent{}, Now: func() time.Time { return time.Unix(5, 0) }}
+	return ResumeOptions{verbOptions: verbOptions{
+		Agents: []wtsync.Agent{},
+		Now:    func() time.Time { return time.Unix(5, 0) },
+	}}
 }
 
 func writeFile(t *testing.T, dir, rel, content string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(dir, rel), []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteFile(t, filepath.Join(dir, rel), content)
 }
 
 // gitTry runs git where a non-zero exit is part of the scenario — a person's
@@ -84,11 +86,8 @@ func writeFile(t *testing.T, dir, rel, content string) {
 // editor. The caller asserts the state it was after.
 func gitTry(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_EDITOR=true")
-	out, _ := cmd.CombinedOutput()
-	return string(out)
+	out, _ := gittest.Try(t, dir, args...)
+	return out
 }
 
 // assertUntouched is what "a refusal changes nothing" means: the rebase is
@@ -136,7 +135,7 @@ func TestSyncResumeFinishesAHandedOverRebase(t *testing.T) {
 	}
 	tip := gitOut(t, ctx.Repo.MainRoot, "rev-parse", st.Branch)
 	if tip == st.OldTip {
-		t.Fatalf("%s is still at %s", st.Branch, short(st.OldTip))
+		t.Fatalf("%s is still at %s", st.Branch, git.ShortID(st.OldTip, 7))
 	}
 	// Same run, so the result ref carries the run's own epoch.
 	got, ok, err := wtsync.ResultTip(ctx.Repo.MainRoot, st.Branch, st.Epoch)
@@ -144,7 +143,7 @@ func TestSyncResumeFinishesAHandedOverRebase(t *testing.T) {
 		t.Fatalf("ResultTip = %v, %v; the run pinned no result", ok, err)
 	}
 	if got != tip {
-		t.Fatalf("result ref %s, branch %s", short(got), short(tip))
+		t.Fatalf("result ref %s, branch %s", git.ShortID(got, 7), git.ShortID(tip, 7))
 	}
 	// The strategy's answer stands and the person's does too.
 	if b, _ := os.ReadFile(filepath.Join(bump, "v.txt")); string(b) != "1.0.6\n" {
@@ -420,7 +419,7 @@ func restartedByHand(t *testing.T, bump string, st wtsync.State) {
 	writeFile(t, bump, "a.txt", "merged by hand\n")
 	gitOut(t, bump, "add", "--", "v.txt", "a.txt")
 	if staged := gitOut(t, bump, "rev-parse", ":0:v.txt"); staged != st.Resolved["v.txt"] {
-		t.Fatalf("v.txt staged %s, handover records %s; the test would be refused for the wrong reason", short(staged), short(st.Resolved["v.txt"]))
+		t.Fatalf("v.txt staged %s, handover records %s; the test would be refused for the wrong reason", git.ShortID(staged, 7), git.ShortID(st.Resolved["v.txt"], 7))
 	}
 }
 
@@ -544,7 +543,7 @@ func TestSyncResumeSaysWhereAFailedHandoverLeftTheWorktree(t *testing.T) {
 	}
 	gitOut(t, bump, "rebase", "--abort")
 	if got := gitOut(t, bump, "rev-parse", "HEAD"); got != st.OldTip {
-		t.Fatalf("the abort the line names left HEAD at %s, not the run's old tip %s", short(got), short(st.OldTip))
+		t.Fatalf("the abort the line names left HEAD at %s, not the run's old tip %s", git.ShortID(got, 7), git.ShortID(st.OldTip, 7))
 	}
 }
 
@@ -568,7 +567,7 @@ func TestSyncUndoPutsBackWhatAResumeFinished(t *testing.T) {
 		t.Fatalf("undo: %v\n%s", err, undoOut.String())
 	}
 	if got := gitOut(t, ctx.Repo.MainRoot, "rev-parse", st.Branch); got != st.OldTip {
-		t.Fatalf("%s is at %s, want the run's old tip %s\n%s", st.Branch, short(got), short(st.OldTip), undoOut.String())
+		t.Fatalf("%s is at %s, want the run's old tip %s\n%s", st.Branch, git.ShortID(got, 7), git.ShortID(st.OldTip, 7), undoOut.String())
 	}
 	if gitOut(t, bump, "rev-parse", "HEAD") != st.OldTip {
 		t.Fatal("HEAD not restored to the run's old tip")
@@ -657,7 +656,7 @@ func TestSyncHandoverRecordsTheBlobOfTheFileItNames(t *testing.T) {
 		t.Fatal("v1.txt and v[1].txt stage the same blob; the test is vacuous")
 	}
 	if got := st.Resolved["v[1].txt"]; got != own {
-		t.Fatalf("handover records %s for v[1].txt; it stages %s (v1.txt is %s)", short(got), short(own), short(sibling))
+		t.Fatalf("handover records %s for v[1].txt; it stages %s (v1.txt is %s)", git.ShortID(got, 7), git.ShortID(own, 7), git.ShortID(sibling, 7))
 	}
 
 	writeFile(t, bump, "a.txt", "merged by hand\n")

@@ -6,11 +6,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 func noAgentsUndo() UndoOptions {
-	return UndoOptions{Agents: []wtsync.Agent{}, Now: func() time.Time { return time.Unix(0, 100) }}
+	return UndoOptions{verbOptions: verbOptions{
+		Agents: []wtsync.Agent{},
+		Now:    func() time.Time { return time.Unix(0, 100) },
+	}}
 }
 
 func TestSyncUndoPutsBackWhatSyncRunMoved(t *testing.T) {
@@ -94,7 +98,7 @@ func TestSyncUndoAbortsWhatSyncRunHandedOver(t *testing.T) {
 	if err := SyncUndo(ctx, "bump", noAgentsUndo(), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
-	if !strings.Contains(out.String(), "bump  aborted the rebase; back at "+short(old)) {
+	if !strings.Contains(out.String(), "bump  aborted the rebase; back at "+git.ShortID(old, 7)) {
 		t.Fatalf("out %s", out.String())
 	}
 	if busy, err := wtsync.RebaseInProgress(bump); err != nil || busy {
@@ -119,7 +123,7 @@ func TestRestoredLineNeverClaimsARewindThatDidNotHappen(t *testing.T) {
 		Ref: "refs/wt-sync/feat_wt/bump/99", Aborted: true, NotRewound: true,
 	}
 	line := restoredLine("bump", r)
-	if strings.Contains(line, "→") || !strings.Contains(line, "not rewound") || !strings.Contains(line, "still at "+short(r.From)) {
+	if strings.Contains(line, "→") || !strings.Contains(line, "not rewound") || !strings.Contains(line, "still at "+git.ShortID(r.From, 7)) {
 		t.Fatalf("line %q claims a rewind or hides where the branch is", line)
 	}
 }
@@ -144,7 +148,7 @@ func TestSyncUndoForcedPastAMovedHandoverSaysWhatItRewound(t *testing.T) {
 	if err := SyncUndo(ctx, "bump", forced, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
-	if want := "bump  aborted the rebase; " + short(moved) + " → " + short(old); !strings.Contains(out.String(), want) {
+	if want := "bump  aborted the rebase; " + git.ShortID(moved, 7) + " → " + git.ShortID(old, 7); !strings.Contains(out.String(), want) {
 		t.Fatalf("output lacks %q:\n%s", want, out.String())
 	}
 	if gitOut(t, bump, "rev-parse", "HEAD") != old {

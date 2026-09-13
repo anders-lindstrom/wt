@@ -8,8 +8,8 @@ import (
 	"text/tabwriter"
 	"unicode/utf8"
 
-	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/naming"
+	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
 // listPadding is the gap tabwriter leaves after every column but the last.
@@ -24,31 +24,29 @@ const minPathWidth = 24
 // different things: "s" is Superset's layout, which is deliberate and must be
 // left alone, while "!" is a layout nothing owns and `wt migrate` can move.
 func List(ctx *Context, w io.Writer, width int) error {
-	worktrees, err := ctx.Repo.Worktrees()
+	names, err := WorkNames(ctx)
 	if err != nil {
 		return err
 	}
+	sch := ctx.Scheme()
 	rows := [][]string{{"", "WORK", "BRANCH", "PATH"}}
 	var seen [3]bool
-	for _, wt := range worktrees {
-		work, branch := "(main)", wt.Branch
+	for _, n := range names {
+		work, branch := "(main)", n.Branch
 		if branch == "" {
 			branch = "(detached)"
 		}
 		mark := ""
-		if !wt.IsMain {
+		if !n.IsMain {
+			work = "-"
 			layout := naming.Foreign
-			if typ, name, ok := naming.ParseBranch(wt.Branch, ctx.Config.TypeSuffix); ok {
-				work = name
-				layout = naming.Classify(wt.Path, ctx.Repo.Parent, ctx.Repo.Name,
-					typ, name, ctx.Config.TypeSuffix)
-			} else {
-				work = "-"
+			if _, w, l, ok := sch.ClassifyBranch(n.Path, n.Branch); ok {
+				work, layout = w, l
 			}
 			seen[layout] = true
 			mark = layoutMark(layout)
 		}
-		rows = append(rows, []string{mark, work, branch, wt.Path})
+		rows = append(rows, []string{mark, work, branch, n.Path})
 	}
 	if err := printPathTable(w, rows, width); err != nil {
 		return err
@@ -90,9 +88,9 @@ func Status(ctx *Context, w io.Writer, width int) error {
 			branch = "(detached)"
 		}
 		state := "clean"
-		if out, err := git.Run(wt.Path, "status", "--porcelain"); err != nil {
+		if dirty, err := repo.Dirty(wt.Path, false); err != nil {
 			state = "unreadable"
-		} else if out != "" {
+		} else if dirty {
 			state = "dirty"
 		}
 		rows = append(rows, []string{branch, state, wt.Path})

@@ -7,29 +7,17 @@ import (
 	"io"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
-// ResumeOptions tunes SyncResume for callers and tests.
+// ResumeOptions tunes SyncResume for callers and tests. Resume asks only when
+// idle sessions are in the worktree.
 type ResumeOptions struct {
-	// Agents are the sessions to check against. Nil asks `claude agents`;
-	// an empty slice means there are none.
-	Agents []wtsync.Agent
-	Now    func() time.Time
-	// Push and ConfirmPush are RunOptions' own: what happens to the branch
-	// once the rebase finishes with nothing owed.
-	Push        PushMode
-	ConfirmPush func(works []string) (bool, error)
-	// Yes, Confirm and Relist are RunOptions' own. Resume asks only when idle
-	// sessions are in the worktree; a nil Confirm never asks.
-	Yes     bool
-	Confirm func(works []string) (bool, error)
-	Relist  func() ([]wtsync.Agent, error)
+	verbOptions
+	pushOptions
 }
 
 // SyncResume continues the rebase a run left at a stop a person owned. It
@@ -50,12 +38,9 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 	tracker := &rebaseTracker{}
 	defer watchSignals(w, tracker)()
 
-	target, err := Locate(ctx, work)
+	target, err := locateBranch(ctx, work)
 	if err != nil {
 		return err
-	}
-	if target.Branch == "" {
-		return fmt.Errorf("%s has no branch", work)
 	}
 	gitDir, err := wtsync.GitDir(target.Path)
 	if err != nil {
@@ -87,13 +72,11 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 		return fmt.Errorf("the safety ref %s is gone; nothing is resumed", st.Safety)
 	}
 	if tip != st.OldTip {
-		return fmt.Errorf("%s pins %s but the handover says %s; nothing is resumed", st.Safety, short(tip), short(st.OldTip))
+		return fmt.Errorf("%s pins %s but the handover says %s; nothing is resumed", st.Safety, git.ShortID(tip, 7), git.ShortID(st.OldTip, 7))
 	}
-	agents := opts.Agents
-	if agents == nil {
-		if agents, err = wtsync.ListOtherAgents(); err != nil {
-			return fmt.Errorf("cannot list agent sessions (%v); nothing is resumed", err)
-		}
+	agents, err := opts.agents(resumedNothing)
+	if err != nil {
+		return err
 	}
 	sessions := wtsync.SessionsAt(agents, target.Path)
 	if len(sessions.Busy()) > 0 {
@@ -104,30 +87,19 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 	// verification has to see what they left after answering.
 	var landed int
 	if len(sessions) > 0 {
-		count, err := git.Run(ctx.Repo.MainRoot, "rev-list", "--count", st.OldTip+".."+st.Trunk)
-		if err == nil {
-			landed, err = strconv.Atoi(count)
-		}
+		behind, _, err := wtsync.BehindAhead(ctx.Repo.MainRoot, st.Trunk, st.OldTip)
 		if err != nil {
 			return fmt.Errorf("%s: counting what landed: %w; nothing is resumed", name, err)
 		}
+		landed = behind
 		fmt.Fprintln(w, idleNotice(name, sessions))
-		if opts.Confirm != nil && !opts.Yes {
-			ok, err := opts.Confirm([]string{name})
-			if err != nil {
-				return err
-			}
-			if !ok {
-				fmt.Fprintln(w, "nothing resumed")
-				return nil
-			}
-			fresh, err := listAgain(opts.Agents, opts.Relist)
-			if err != nil {
-				return fmt.Errorf("cannot list agent sessions again (%v); nothing is resumed", err)
-			}
-			if why := sessionsChanged(sessions, wtsync.SessionsAt(fresh, target.Path)); why != "" {
-				return fmt.Errorf("%s: %s; nothing is resumed", name, why)
-			}
+		told := []idle{{label: name, path: target.Path, sessions: sessions}}
+		ok, _, err := askIdle(w, opts.verbOptions, []string{name}, told, agents, resumedNothing)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return nil
 		}
 	}
 	// The run's trunk, not today's: a resume that read a newer declaration
@@ -157,11 +129,7 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 		}
 	}
 
-	now := opts.Now
-	if now == nil {
-		now = time.Now
-	}
-	lock, err := wtsync.TakeOver(gitDir, now(), st.Lock)
+	lock, err := wtsync.TakeOver(gitDir, opts.now(), st.Lock)
 	if err != nil {
 		return fmt.Errorf("%s: %w; nothing is resumed", name, err)
 	}
@@ -226,22 +194,17 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 	tracker.set(nil)
 	fmt.Fprintf(w, "  ✓ rebased %d commit%s\n", res.Replayed, plural(res.Replayed))
 	tracker.set(&rebaseInFlight{work: name, path: target.Path, rebased: true})
-	resolved := make([]string, 0, len(st.Resolved))
-	for p := range st.Resolved {
-		resolved = append(resolved, p)
-	}
-	sort.Strings(resolved)
 	_, owed, cerr := completeRun(ctx, w, cfg, completeInput{
 		Work: name, Branch: st.Branch, Path: target.Path, Epoch: st.Epoch, Res: res,
-		Tell: sessions, Trunk: strings.TrimPrefix(st.TrunkRef, "origin/"), Landed: landed,
-		Check: pathsOnce(st.Stopped, st.Left, resolved, st.Deleted, wtsync.StopPaths(res.Stops)),
+		Tell: sessions, TrunkName: strings.TrimPrefix(st.TrunkRef, "origin/"), Landed: landed,
+		Check: pathsOnce(st.Stopped, st.Left, st.ResolvedPaths(), st.Deleted, wtsync.StopPaths(res.Stops)),
 	})
 	tracker.set(nil)
 	if cerr != nil {
 		return cerr
 	}
 	if len(owed) > 0 {
-		return fmt.Errorf("not completed: %s", strings.Join(owed, ", "))
+		return fmt.Errorf("not completed: %s", strings.Join(owedBy(name, owed), ", "))
 	}
 	failed, err := offerPush(w, opts.Push, opts.ConfirmPush, []pushTarget{{Work: name, Branch: st.Branch, Path: target.Path}})
 	if err != nil {
@@ -280,10 +243,10 @@ func verifySequencer(wtPath string, st wtsync.State) error {
 		return fmt.Errorf("the handover's onto %q is not a commit here: %w; nothing is resumed", st.Onto, err)
 	}
 	if got, err := commitOf(wtPath, t.Onto); err != nil || got != want {
-		return notOurs(fmt.Sprintf("it replays onto %s, not %s", short(t.Onto), short(want)))
+		return notOurs(fmt.Sprintf("it replays onto %s, not %s", git.ShortID(t.Onto, 7), git.ShortID(want, 7)))
 	}
 	if got, err := commitOf(wtPath, t.OrigHead); err != nil || got != st.OldTip {
-		return notOurs(fmt.Sprintf("it started from %s, not the tip the run started from (%s)", short(t.OrigHead), short(st.OldTip)))
+		return notOurs(fmt.Sprintf("it started from %s, not the tip the run started from (%s)", git.ShortID(t.OrigHead, 7), git.ShortID(st.OldTip, 7)))
 	}
 	return nil
 }
@@ -403,11 +366,7 @@ func unmergedStatus(xy string) bool {
 // noteNotRechecked says, where the recorded stop is already committed, which
 // of the strategies' answers there resume can no longer compare.
 func noteNotRechecked(w io.Writer, where string, st wtsync.State) {
-	var ps []string
-	for p := range st.Resolved {
-		ps = append(ps, p)
-	}
-	ps = append(ps, st.Deleted...)
+	ps := append(st.ResolvedPaths(), st.Deleted...)
 	sort.Strings(ps)
 	line := "  note: " + where + "; what the strategies staged there is already committed and is not re-checked"
 	for i, p := range ps {

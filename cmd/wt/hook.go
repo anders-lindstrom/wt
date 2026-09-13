@@ -1,8 +1,6 @@
 package main
 
 import (
-	"os"
-
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
@@ -28,13 +26,9 @@ func newHookCmd() *cobra.Command {
 				"on stdin and prints the absolute path, and nothing else, on stdout.",
 			Example: "  wt hook claude-create <<< '{\"name\":\"fix/login-crash\"}'",
 			Args:    cobra.NoArgs,
-			RunE: func(cmd *cobra.Command, _ []string) error {
-				ctx, err := openContext()
-				if err != nil {
-					return err
-				}
-				return commands.HookCreate(ctx, cmd.InOrStdin(), cmd.OutOrStdout(), os.Stderr)
-			},
+			RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+				return commands.HookCreate(ctx, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
+			}),
 		},
 		&cobra.Command{
 			Use:   "claude-remove",
@@ -45,13 +39,9 @@ func newHookCmd() *cobra.Command {
 			Example: "  wt hook claude-remove <<< '{\"path\":\"/abs/path/to/worktree\"}'\n" +
 				"  wt hook claude-remove <<< '{\"name\":\"login-crash\"}'",
 			Args: cobra.NoArgs,
-			RunE: func(cmd *cobra.Command, _ []string) error {
-				ctx, err := openContext()
-				if err != nil {
-					return err
-				}
-				return commands.HookRemove(ctx, cmd.InOrStdin(), os.Stderr)
-			},
+			RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+				return commands.HookRemove(ctx, cmd.InOrStdin(), cmd.ErrOrStderr())
+			}),
 		},
 	)
 	return hook

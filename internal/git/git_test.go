@@ -2,29 +2,16 @@ package git
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
+
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 func newRepo(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	for _, args := range [][]string{
-		{"init", "-q", "-b", "main"},
-		{"config", "user.email", "t@example.com"},
-		{"config", "user.name", "T"},
-		{"commit", "-q", "--allow-empty", "-m", "init"},
-	} {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, out)
-		}
-	}
-	return dir
+	return gittest.NewRepo(t, t.TempDir(), "demo")
 }
 
 func TestRunReturnsTrimmedOutput(t *testing.T) {
@@ -35,6 +22,19 @@ func TestRunReturnsTrimmedOutput(t *testing.T) {
 	}
 	if got != "main" {
 		t.Errorf("got %q, want %q", got, "main")
+	}
+}
+
+func TestShortIDKeepsAnIDShorterThanAsked(t *testing.T) {
+	const sha = "5f3c2e9f5d4054ae6727b1966e9ab16a37c1409e"
+	if got := ShortID(sha, 7); got != "5f3c2e9" {
+		t.Errorf("ShortID 7 = %q", got)
+	}
+	if got := ShortID(sha, 12); got != "5f3c2e9f5d40" {
+		t.Errorf("ShortID 12 = %q", got)
+	}
+	if got := ShortID("abc", 7); got != "abc" {
+		t.Errorf("ShortID of a short id = %q", got)
 	}
 }
 
@@ -63,7 +63,7 @@ func TestRunTimeoutReportsADeadlineRatherThanWaiting(t *testing.T) {
 	dir := newRepo(t)
 	start := time.Now()
 	_, err := RunTimeout(dir, 100*time.Millisecond, "-c", "alias.slow=!sleep 5", "slow")
-	if err == nil || !strings.Contains(err.Error(), "timed out") {
+	if err == nil || err.Error() != "git -c alias.slow=!sleep 5 slow: timed out after 100ms" {
 		t.Fatalf("err %v", err)
 	}
 	if elapsed := time.Since(start); elapsed > 4*time.Second {
@@ -77,8 +77,16 @@ func TestRunNamesTheCommandAndExitCodeWhenGitSaysNothing(t *testing.T) {
 	if err == nil {
 		t.Fatal("want an error")
 	}
-	if !strings.Contains(err.Error(), "fail") || !strings.Contains(err.Error(), "exit 3") {
-		t.Fatalf("err %q: an empty error reads as success", err)
+	if got, want := err.Error(), "git -c alias.fail=!exit 3 fail: exit 3"; got != want {
+		t.Fatalf("err %q, want %q: an empty error reads as success", got, want)
+	}
+}
+
+// A failing git's error is exactly what it said on stderr, trimmed.
+func TestRunFailureIsWhatGitSaid(t *testing.T) {
+	_, err := Run(newRepo(t), "rev-parse", "--verify", "nope")
+	if err == nil || err.Error() != "fatal: Needed a single revision" {
+		t.Fatalf("err %v", err)
 	}
 }
 

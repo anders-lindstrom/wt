@@ -3,7 +3,6 @@ package wtsync
 import (
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -168,8 +167,13 @@ func Assess(mainRoot, onto string, cfg *Config, wt repo.Worktree, agents []Agent
 	a.Unverified = a.Replay.Truncated
 	switch {
 	case a.Replay.Stop != nil:
-		a.Files = a.Replay.Stop.Files
-		a.Class, a.Files = classifyStop(a.Files, a.Replay.Stop.Messages)
+		// The replay reports a stop only when the strategies did not resolve
+		// it, so a reported stop is a person's by construction. A stop with
+		// no conflicted file of its own still has to name something.
+		a.Class, a.Files = Contested, a.Replay.Stop.Files
+		if len(a.Files) == 0 {
+			a.Files = []FileOutcome{messagesOutcome(a.Replay.Stop.Messages)}
+		}
 	case len(a.Replay.Stops) > 0:
 		// Every stop reached was resolved by a strategy.
 		a.Class = Recipe
@@ -189,27 +193,6 @@ func Assess(mainRoot, onto string, cfg *Config, wt repo.Worktree, agents []Agent
 		a.Class = Divergent
 	}
 	return a
-}
-
-// classifyStop decides the class of the stop that decides it, from the files a
-// person would see and merge-tree's own messages. A stop with no files at
-// all has nothing to show: it gets a synthetic FileOutcome so the report
-// still names something, distinguishing "merge-tree said nothing useful"
-// from "merge-tree explained itself in messages".
-func classifyStop(files []FileOutcome, messages string) (Class, []FileOutcome) {
-	if len(files) == 0 {
-		note := messages
-		if note == "" {
-			note = "merge-tree reported a conflict with no details"
-		}
-		return Contested, append(files, FileOutcome{Path: messagesPath, Note: note})
-	}
-	for _, f := range files {
-		if !f.Resolved {
-			return Contested, files
-		}
-	}
-	return Recipe, files
 }
 
 // divergence returns the collisions that make a branch a workstream rather
@@ -235,7 +218,7 @@ func divergence(mainRoot, onto string, cfg *Config, branch string) (collisions [
 	for _, c := range conflicts {
 		f, ferr := tryStrategy(mainRoot, onto, cfg, c)
 		err = errors.Join(err, ferr)
-		if f.Strategy == "openapi" && !f.Resolved && len(f.Keys) > 0 {
+		if f.Strategy == StrategyOpenAPI && !f.Resolved && len(f.Keys) > 0 {
 			collisions = append(collisions, Collision{Path: c.Path, Groups: f.Groups})
 		}
 	}
@@ -286,20 +269,35 @@ func dependencyChanges(mainRoot string, cfg *Config, base, rev string) ([]string
 // lines at all (binary, mode only) is not "only owned lines".
 func onlyOwnedLines(mainRoot string, cfg *Config, base, rev, path string) (bool, error) {
 	rule, ok := cfg.RuleFor(path)
-	if !ok || rule.Strategy != "owned-line" {
+	if !ok || rule.Strategy != StrategyOwnedLine {
 		return false, nil
 	}
-	re, _ := regexp.Compile(rule.Line) // Parse already rejected a bad regex
+	// Parse compiled this onto the rule; a rule built by hand with a bad
+	// regex declares no owned line at all, which is the cautious answer.
+	re, rerr := rule.lineRE(StrategyOwnedLine)
+	if rerr != nil {
+		return false, nil
+	}
 	diff, err := gitEnv(mainRoot, nil, nil, "diff", "-U0", base, rev, "--", path)
 	if err != nil {
 		return false, fmt.Errorf("diff %s: %w", path, err)
 	}
-	textual := 0
+	// A line is a file header because of where it sits, not because of what
+	// it starts with: "---" and "+++" head the part before the first hunk,
+	// and inside a hunk the same characters are a removed line whose own text
+	// begins "-- " or an added one beginning "++ ". Treating those as headers
+	// skipped real changes, and a change that is not only owned lines could
+	// then pass as one.
+	textual, inHunk := 0, false
 	for _, l := range strings.Split(diff, "\n") {
-		if strings.HasPrefix(l, "--- ") || strings.HasPrefix(l, "+++ ") {
-			continue
-		}
-		if strings.HasPrefix(l, "+") || strings.HasPrefix(l, "-") {
+		switch {
+		case strings.HasPrefix(l, "diff --git "):
+			inHunk = false
+		case strings.HasPrefix(l, "@@ "):
+			inHunk = true
+		case !inHunk:
+			// Still in the file header: --- , +++ , index, mode, and the rest.
+		case strings.HasPrefix(l, "+"), strings.HasPrefix(l, "-"):
 			textual++
 			if !re.MatchString(l[1:]) {
 				return false, nil

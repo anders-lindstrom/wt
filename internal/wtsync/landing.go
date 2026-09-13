@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/anders-lindstrom/wt/internal/git"
 )
 
 // ScopeCount is one conventional-commit scope and how often it appears in
@@ -59,7 +61,7 @@ func LandingList(mainRoot, base, trunk string) (Landing, error) {
 			rng := fmt.Sprintf("%s^1..%s^%d", sha, sha, n)
 			merged, err := gitEnv(mainRoot, nil, nil, "log", "--format=%s", rng, "--")
 			if err != nil {
-				return Landing{}, fmt.Errorf("landing list %s: %w", short(sha), err)
+				return Landing{}, fmt.Errorf("landing list %s: %w", git.ShortID(sha, 7), err)
 			}
 			for _, s := range strings.Split(merged, "\n") {
 				countScope(counts, s)

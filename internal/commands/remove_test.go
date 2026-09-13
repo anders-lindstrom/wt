@@ -427,7 +427,7 @@ func TestRemoveDoesNotDeleteABranchThatGainedWorkAfterThePlan(t *testing.T) {
 	ctx, _ := Open(main)
 	dst := foreignWorktree(t, ctx, main, "someones-work", 0)
 
-	plan := planFor(ctx, dst, RemoveOptions{Agents: []wtsync.Agent{}})
+	plan := planFor(ctx, worktreeRecord(ctx, dst), RemoveOptions{Agents: []wtsync.Agent{}})
 	if plan.Outcome != BranchDeleted {
 		t.Fatalf("precondition: want a merged branch, got outcome %v", plan.Outcome)
 	}
@@ -456,7 +456,7 @@ func TestRemoveDoesNotDeleteWhenTheMainBranchDisappears(t *testing.T) {
 	main := committedRepo(t, minimalConf)
 	ctx, _ := Open(main)
 	dst := foreignWorktree(t, ctx, main, "someones-work", 0)
-	plan := planFor(ctx, dst, RemoveOptions{Agents: []wtsync.Agent{}})
+	plan := planFor(ctx, worktreeRecord(ctx, dst), RemoveOptions{Agents: []wtsync.Agent{}})
 
 	gitIn(t, main, "branch", "-m", "main", "renamed-trunk")
 
@@ -701,7 +701,7 @@ func TestRemoveDoesNotDeleteABranchThatMovedAfterThePlan(t *testing.T) {
 	main := committedRepo(t, minimalConf)
 	ctx, _ := Open(main)
 	dst := foreignWorktree(t, ctx, main, "someones-work", 0)
-	plan := planFor(ctx, dst, RemoveOptions{Agents: []wtsync.Agent{}})
+	plan := planFor(ctx, worktreeRecord(ctx, dst), RemoveOptions{Agents: []wtsync.Agent{}})
 	if plan.Outcome != BranchDeleted {
 		t.Fatalf("precondition: want a merged branch, got outcome %v", plan.Outcome)
 	}

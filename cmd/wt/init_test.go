@@ -12,7 +12,7 @@ var detected = commands.Answers{MainBranch: "main", BranchPrefix: "feat_wt"}
 
 func TestAskAnswersKeepsTheOfferedDefaultOnAnEmptyLine(t *testing.T) {
 	var out bytes.Buffer
-	got, err := askAnswers(strings.NewReader("\n\n\n"), &out)(detected)
+	got, err := askAnswers(newPrompter(strings.NewReader("\n\n\n"), &out))(detected)
 	if err != nil {
 		t.Fatalf("askAnswers: %v", err)
 	}
@@ -26,7 +26,7 @@ func TestAskAnswersKeepsTheOfferedDefaultOnAnEmptyLine(t *testing.T) {
 
 func TestAskAnswersReadsAllThreePromptsFromOneStream(t *testing.T) {
 	var out bytes.Buffer
-	got, err := askAnswers(strings.NewReader("trunk\nchore_wt\nmake build\n"), &out)(detected)
+	got, err := askAnswers(newPrompter(strings.NewReader("trunk\nchore_wt\nmake build\n"), &out))(detected)
 	if err != nil {
 		t.Fatalf("askAnswers: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestAskAnswersReadsAllThreePromptsFromOneStream(t *testing.T) {
 // defaults as though they had been confirmed.
 func TestAskAnswersAbortsOnEndOfInput(t *testing.T) {
 	var out bytes.Buffer
-	if _, err := askAnswers(strings.NewReader("trunk\n"), &out)(detected); err == nil {
+	if _, err := askAnswers(newPrompter(strings.NewReader("trunk\n"), &out))(detected); err == nil {
 		t.Fatal("askAnswers accepted a truncated set of answers")
 	}
 }
@@ -60,7 +60,7 @@ func TestRootListsInit(t *testing.T) {
 // own line and drop the answers meant for the second round.
 func TestAskAnswersSurvivesBeingCalledAgainForACorrection(t *testing.T) {
 	var out bytes.Buffer
-	ask := askAnswers(strings.NewReader("main\nwip_wt\n\nmain\nchore_wt\n\n"), &out)
+	ask := askAnswers(newPrompter(strings.NewReader("main\nwip_wt\n\nmain\nchore_wt\n\n"), &out))
 
 	first, err := ask(detected)
 	if err != nil {

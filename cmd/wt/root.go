@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -110,14 +111,17 @@ func newShellCmd(use, short, long, example string) *cobra.Command {
 		Long: long + "\n\n" +
 			"Implemented in wt's shell layer: a program cannot change its caller's\n" +
 			"directory, so this one has to run inside your shell. Enable it with:\n" +
-			"    source ~/.local/share/wt/wt.sh",
+			"    " + sourceShellLayer,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return fmt.Errorf("`wt %s` needs wt's shell layer, which is not loaded.\n"+
-				"  Add to your shell rc:  source ~/.local/share/wt/wt.sh",
-				cmd.Name())
+				"  Add to your shell rc:  %s",
+				cmd.Name(), sourceShellLayer)
 		},
 	}
 }
+
+// sourceShellLayer is the line that loads wt's shell layer.
+const sourceShellLayer = "source ~/.local/share/wt/wt.sh"
 
 func newCdCmd() *cobra.Command {
 	return newShellCmd("cd [pattern]", "Change directory to a worktree (shell)",
@@ -166,6 +170,38 @@ func openContext() (*commands.Context, error) {
 		return nil, err
 	}
 	return commands.Open(cwd)
+}
+
+// withContext is a RunE that opens the context first and hands it to fn.
+func withContext(fn func(cmd *cobra.Command, args []string, ctx *commands.Context) error) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		ctx, err := openContext()
+		if err != nil {
+			return err
+		}
+		return fn(cmd, args, ctx)
+	}
+}
+
+// openLenient opens the context even when the configuration does not load,
+// saying so on w. The context is nil outside a git repository, and what that
+// means is the caller's to say.
+func openLenient(w io.Writer) (*commands.Context, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	return commands.OpenLenient(cwd, w), nil
+}
+
+// printLine ends a command whose whole output is one path or name, printed
+// alone on stdout so a shell can capture it. An error prints nothing.
+func printLine(cmd *cobra.Command, s string, err error) error {
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), s)
+	return nil
 }
 
 // Execute runs the CLI and returns the process exit code.

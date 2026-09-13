@@ -1,8 +1,6 @@
 package main
 
 import (
-	"os"
-
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
@@ -27,23 +25,24 @@ func newSetupCmd() *cobra.Command {
 			"  wt setup --skip-build       # everything except build initialisation\n" +
 			"  wt setup --source superset  # name what ran it; changes nothing yet",
 		Args: cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, err := openContext()
-			if err != nil {
-				return err
-			}
+		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
 			opts := commands.SetupOptions{SkipBuild: skipBuild, Source: source}
 			if len(args) == 1 {
 				opts.SourceDir = args[0]
 			}
-			target, err := os.Getwd()
-			if err != nil {
-				return err
-			}
-			return commands.Setup(ctx, target, opts, cmd.OutOrStdout())
-		},
+			return commands.Setup(ctx, ctx.Cwd, opts, cmd.OutOrStdout())
+		}),
 	}
-	cmd.Flags().BoolVar(&skipBuild, "skip-build", false, "skip build initialisation")
+	addProvisionFlags(cmd, &skipBuild, nil)
 	cmd.Flags().StringVar(&source, "source", "", "what ran setup, such as superset; printed, changes nothing yet")
 	return cmd
+}
+
+// addProvisionFlags declares --skip-build, and --no-setup when noSetup is not
+// nil, for the commands that provision a worktree.
+func addProvisionFlags(cmd *cobra.Command, skipBuild, noSetup *bool) {
+	cmd.Flags().BoolVar(skipBuild, "skip-build", false, "skip build initialisation")
+	if noSetup != nil {
+		cmd.Flags().BoolVar(noSetup, "no-setup", false, "create the worktree without provisioning it")
+	}
 }

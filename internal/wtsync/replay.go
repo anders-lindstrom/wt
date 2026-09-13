@@ -11,6 +11,17 @@ import (
 // messages, with no three blobs of its own to show.
 const messagesPath = "(see messages)"
 
+// messagesOutcome is the stand-in for a stop with no conflicted file of its
+// own to name: merge-tree explained itself only in its messages, or the
+// sequencer stopped with nothing unmerged. note says which, and an empty one
+// distinguishes "merge-tree said nothing useful" from either.
+func messagesOutcome(note string) FileOutcome {
+	if note == "" {
+		note = "merge-tree reported a conflict with no details"
+	}
+	return FileOutcome{Path: messagesPath, Note: note}
+}
+
 // Stop is one commit at which a rebase stops, with what the declared
 // strategies answered for every file it conflicts on.
 type Stop struct {
@@ -70,16 +81,34 @@ func SimulateRebase(mainRoot, onto, branch string, cfg *Config) (Replay, error) 
 	var rep Replay
 	// The same selection and order the rebase sequencer uses: right side
 	// only, patch-equivalent commits dropped, merges flattened, topological.
-	out, err := gitEnv(mainRoot, nil, nil, "rev-list", "--reverse", "--topo-order", "--right-only", "--cherry-pick", "--no-merges", onto+"..."+branch, "--")
+	// The subject of every commit comes back with the list: a stop needs it,
+	// and asking for it at each stop is one more git process per stop.
+	out, err := gitEnv(mainRoot, nil, nil, "log", "--reverse", "--topo-order", "--right-only", "--cherry-pick", "--no-merges", "--format=%H%x00%s", onto+"..."+branch, "--")
 	if err != nil {
 		return rep, err
 	}
 	var commits []string
+	subjects := map[string]string{}
 	if out != "" {
-		commits = strings.Split(out, "\n")
+		for _, line := range strings.Split(out, "\n") {
+			sha, subject, _ := strings.Cut(line, "\x00")
+			commits = append(commits, sha)
+			subjects[sha] = subject
+		}
 	}
 	rep.Commits = len(commits)
 	base, err := gitEnv(mainRoot, nil, nil, "rev-parse", "--verify", onto+"^{commit}", "--")
+	if err != nil {
+		return rep, err
+	}
+	// The tree of base, carried alongside it rather than asked for once per
+	// commit: it is onto's tree to begin with, and the tree just committed
+	// after every stop. base is always a SHA computed here (verified, or a
+	// commit-tree result), never a user-supplied ref, so it carries no path
+	// ambiguity; no "--" here, since plain (non-`--verify`) `rev-parse`
+	// echoes a trailing "--" back as a second output line, which would
+	// corrupt the comparison below.
+	baseTree, err := gitEnv(mainRoot, nil, nil, "rev-parse", base+"^{tree}")
 	if err != nil {
 		return rep, err
 	}
@@ -89,12 +118,8 @@ func SimulateRebase(mainRoot, onto, branch string, cfg *Config) (Replay, error) 
 			return rep, err
 		}
 		if !clean {
-			subject, err := gitEnv(mainRoot, nil, nil, "log", "-1", "--format=%s", c, "--")
-			if err != nil {
-				return rep, err
-			}
 			stop := Stop{
-				Index: i + 1, Total: len(commits), Commit: c, Subject: subject,
+				Index: i + 1, Total: len(commits), Commit: c, Subject: subjects[c],
 				Conflicts: conflicts, Messages: messages,
 			}
 			resolved := map[string][]byte{}
@@ -110,7 +135,7 @@ func SimulateRebase(mainRoot, onto, branch string, cfg *Config) (Replay, error) 
 					stop.Resolved = false
 					continue
 				}
-				if r.Outcome.Strategy == "script" {
+				if r.Outcome.Strategy == StrategyScript {
 					// --check said the script owns it, which is all a
 					// script can say here: it resolves against a real
 					// index in a worktree, never in the object store. The
@@ -147,15 +172,6 @@ func SimulateRebase(mainRoot, onto, branch string, cfg *Config) (Replay, error) 
 		}
 		// A commit whose changes are already present replays to the same
 		// tree; rebase drops it, so no simulated commit is made for it.
-		// base is always a SHA computed above (verified, or a commit-tree
-		// result), never a user-supplied ref, so it carries no path
-		// ambiguity; no "--" here, since plain (non-`--verify`) `rev-parse`
-		// echoes a trailing "--" back as a second output line, which would
-		// corrupt this comparison.
-		baseTree, err := gitEnv(mainRoot, nil, nil, "rev-parse", base+"^{tree}")
-		if err != nil {
-			return rep, err
-		}
 		if baseTree == tree {
 			continue
 		}
@@ -163,6 +179,8 @@ func SimulateRebase(mainRoot, onto, branch string, cfg *Config) (Replay, error) 
 		if err != nil {
 			return rep, err
 		}
+		// commit-tree was just given this tree, so it is the new base's.
+		baseTree = tree
 	}
 	return rep, nil
 }
@@ -223,63 +241,13 @@ func mergeTree(mainRoot, mergeBase, onto, commit string) (tree string, clean boo
 	if code == 0 {
 		return tree, true, nil, "", nil
 	}
-	stages := map[string]*Conflict{}
-	seenStage := map[string]map[int]bool{}
-	var order []string
-	i := 1
-	for ; i < len(records); i++ {
-		rec := records[i]
-		if rec == "" {
-			break
-		}
-		meta, path, ok := strings.Cut(rec, "\t")
-		if !ok {
-			continue
-		}
-		fields := strings.Fields(meta)
-		if len(fields) != 3 {
-			continue
-		}
-		stage, _ := strconv.Atoi(fields[2])
-		c, seen := stages[path]
-		if !seen {
-			c = &Conflict{Path: path}
-			stages[path] = c
-			seenStage[path] = map[int]bool{}
-			order = append(order, path)
-		}
-		seenStage[path][stage] = true
-		if fields[0] != "100644" && fields[0] != "100755" {
-			c.Incomplete = "not a regular file (mode " + fields[0] + ")"
-			continue
-		}
-		data, err := catFileRaw(mainRoot, fields[1])
-		if err != nil {
-			return "", false, nil, "", err
-		}
-		switch stage {
-		case 1:
-			c.Base = data
-		case 2:
-			c.Trunk = data
-		case 3:
-			c.Branch = data
-		}
+	entries, next := parseStages(records[1:])
+	if 1+next < len(records) {
+		messages = parseMessages(records[1+next:])
 	}
-	if i+1 < len(records) {
-		messages = parseMessages(records[i+1:])
-	}
-	for _, p := range order {
-		c := stages[p]
-		if c.Incomplete == "" && (!seenStage[p][1] || !seenStage[p][2] || !seenStage[p][3]) {
-			switch {
-			case !seenStage[p][1] && seenStage[p][2] && seenStage[p][3]:
-				c.Incomplete = "both sides added it"
-			default:
-				c.Incomplete = "one side deleted or renamed it"
-			}
-		}
-		conflicts = append(conflicts, *c)
+	conflicts = conflictsFrom(entries)
+	if err := readBlobs(mainRoot, conflicts); err != nil {
+		return "", false, nil, "", err
 	}
 	return tree, false, conflicts, messages, nil
 }
@@ -312,15 +280,4 @@ func parseMessages(records []string) string {
 		i++
 	}
 	return strings.Join(msgs, "\n")
-}
-
-// catFileRaw reads a blob. Trailing newlines are preserved: gitEnv trims
-// them, so this goes through the same deadline and process group by asking
-// for the raw bytes with gitEnvRaw instead.
-func catFileRaw(mainRoot, oid string) ([]byte, error) {
-	out, err := gitEnvRaw(mainRoot, "cat-file", "blob", oid)
-	if err != nil {
-		return nil, fmt.Errorf("git cat-file blob %s: %w", oid, err)
-	}
-	return out, nil
 }

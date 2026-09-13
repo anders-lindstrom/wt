@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -112,9 +113,7 @@ func contestedFixture(t *testing.T) (ctx *Context, bump string) {
 // gitAncestor reports whether a is an ancestor of b; exit 1 is a plain no.
 func gitAncestor(t *testing.T, dir, a, b string) bool {
 	t.Helper()
-	cmd := exec.Command("git", "merge-base", "--is-ancestor", a, b)
-	cmd.Dir = dir
-	err := cmd.Run()
+	_, err := gittest.Try(t, dir, "merge-base", "--is-ancestor", a, b)
 	if err == nil {
 		return true
 	}
@@ -127,7 +126,10 @@ func gitAncestor(t *testing.T, dir, a, b string) bool {
 }
 
 func noAgents() RunOptions {
-	return RunOptions{NoFetch: true, Agents: []wtsync.Agent{}, Now: func() time.Time { return time.Unix(0, 99) }}
+	return RunOptions{NoFetch: true, verbOptions: verbOptions{
+		Agents: []wtsync.Agent{},
+		Now:    func() time.Time { return time.Unix(0, 99) },
+	}}
 }
 
 func TestSyncRunRebasesARecipeWorktreeAndRunsTheDeferredStep(t *testing.T) {
@@ -352,15 +354,15 @@ func TestSyncRunAsksOnceForMoreThanOneWorktreeAndStopsOnNo(t *testing.T) {
 	if gitOut(t, bump, "rev-parse", "HEAD") != old {
 		t.Fatal("HEAD moved after no")
 	}
-	// --yes never asks.
-	opts.Yes = true
+	// --yes, and a run with no terminal, arrive here as a nil Confirm.
+	opts.Confirm = nil
 	asked = nil
 	out.Reset()
 	if err := SyncRun(ctx, []string{"bump"}, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	if asked != nil {
-		t.Fatal("asked despite --yes")
+		t.Fatal("asked with nobody to ask")
 	}
 }
 
@@ -502,7 +504,7 @@ func TestSyncRunSaysWhereAFailedHandoverLeftTheWorktree(t *testing.T) {
 	}
 	// The command the line names has to be the one that works. undo does not:
 	// it refuses a mid-rebase worktree outright.
-	if uerr := SyncUndo(ctx, "bump", UndoOptions{Agents: []wtsync.Agent{}}, io.Discard); uerr == nil {
+	if uerr := SyncUndo(ctx, "bump", UndoOptions{verbOptions: verbOptions{Agents: []wtsync.Agent{}}}, io.Discard); uerr == nil {
 		t.Fatal("undo accepted a mid-rebase worktree; the old wording would have been true")
 	}
 	gitOut(t, bump, "rebase", "--abort")
@@ -737,21 +739,6 @@ func TestSyncRunUnderAnIdleSessionWithNoTerminalSaysSoAndEndsWithALineToRelay(t 
 	}
 	if !strings.Contains(s, "⚠ tell bump-1, idle in it:\n    wt: bump rebased on main (+1). yours to check: v.txt\n") {
 		t.Fatalf("no relay line:\n%s", s)
-	}
-}
-
-func TestSyncRunYesSkipsTheIdleQuestionButNotTheNotice(t *testing.T) {
-	ctx, bump := runFixture(t, false)
-	opts := noAgents()
-	opts.Agents = idleIn(t, bump, "bump-1")
-	opts.Yes = true
-	opts.Confirm = func([]string) (bool, error) { t.Fatal("asked despite --yes"); return false, nil }
-	var out bytes.Buffer
-	if err := SyncRun(ctx, []string{"bump"}, opts, &out); err != nil {
-		t.Fatalf("err %v\n%s", err, out.String())
-	}
-	if !strings.Contains(out.String(), "session bump-1 (idle) is in it") {
-		t.Fatalf("out:\n%s", out.String())
 	}
 }
 

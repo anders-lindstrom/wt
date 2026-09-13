@@ -6,6 +6,22 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-12 03:05 — wt sync sees a dependency-graph overlap it used to miss
+
+- A changed line beginning `-- ` or `++ ` is a change like any other. `wt sync`
+  had been skipping those as though they were a diff's `---`/`+++` file
+  headers, so an edit to a dependency-graph file could pass as "only the
+  version line moved" and the overlap with trunk went unsaid. It now reads the
+  hunks properly. Expect a worktree or two to start reporting that both sides
+  changed the graph — it was always true, and it is worth your eye.
+
+## 2026-09-12 02:18 — wt sync run still reports what did not finish when a push goes wrong
+
+- A run that pushed a branch and then could not read its new tip stopped
+  there, and the report it had been building — everything refused, restored,
+  failed or left needing you — was never printed. That push is now named as
+  one more thing that did not come off, and the run finishes its report.
+
 ## 2026-09-11 22:56 — wt sync: every git call has a deadline, and interrupted handovers say how to get back
 
 - `git merge-file`, the `git archive` and `tar` behind a conflict script, and

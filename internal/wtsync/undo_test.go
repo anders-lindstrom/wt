@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
@@ -374,7 +375,7 @@ func TestUndoStillRefusesAForeignRebase(t *testing.T) {
 	if _, err := WriteSafety(dir, "feature", gitIn(t, wt, "rev-parse", "HEAD"), 5); err != nil {
 		t.Fatal(err)
 	}
-	if err := gitCmd(wt, "rebase", "--no-update-refs", "--no-gpg-sign", "main").Run(); err == nil {
+	if _, err := gittest.Try(t, wt, "rebase", "--no-update-refs", "--no-gpg-sign", "main"); err == nil {
 		t.Fatal("rebase did not stop; the test is vacuous")
 	}
 	_, err := Undo(dir, []repo.Worktree{{Path: wt, Branch: "feature", Rebasing: true}}, nil, "feature", time.Now(), false)
@@ -475,7 +476,7 @@ func unabortableHandover(t *testing.T, dir, tip string, epoch int64) (path strin
 	if _, err := WriteSafety(dir, "later", tip, epoch); err != nil {
 		t.Fatal(err)
 	}
-	if err := gitCmd(path, "rebase", "--no-update-refs", "--no-gpg-sign", "origin/main").Run(); err == nil {
+	if _, err := gittest.Try(t, path, "rebase", "--no-update-refs", "--no-gpg-sign", "origin/main"); err == nil {
 		t.Fatal("later's rebase did not stop; the test is vacuous")
 	}
 	gitDir, err := GitDir(path)
@@ -542,7 +543,7 @@ func TestUndoDoesNotReportARewindItNeverReached(t *testing.T) {
 	gitIn(t, wt, "add", "c.txt")
 	gitIn(t, wt, "commit", "-q", "-m", "by hand")
 	moved := gitIn(t, wt, "rev-parse", "HEAD")
-	if err := gitCmd(wt, "rebase", "--no-update-refs", "--no-gpg-sign", "origin/main").Run(); err == nil {
+	if _, err := gittest.Try(t, wt, "rebase", "--no-update-refs", "--no-gpg-sign", "origin/main"); err == nil {
 		t.Fatal("feature's rebase did not stop; the test is vacuous")
 	}
 	later := unabortableHandover(t, dir, old, 5)

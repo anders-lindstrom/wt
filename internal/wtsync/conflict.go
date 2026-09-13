@@ -15,6 +15,15 @@ type Conflict struct {
 	Trunk  []byte
 	Branch []byte
 
+	// BaseOID, TrunkOID and BranchOID are git's own ids for those three
+	// blobs, kept as the index printed them so nothing has to hash the bytes
+	// again to name an object git has already named. They are empty on a
+	// Conflict built by hand — a test fixture — where the id is computed on
+	// demand instead.
+	BaseOID   string
+	TrunkOID  string
+	BranchOID string
+
 	// Incomplete is non-empty when a side is missing (a modify/delete
 	// conflict) or an entry is not a regular blob (a rename, a mode change,
 	// a submodule). Assess refuses such a conflict before any strategy sees

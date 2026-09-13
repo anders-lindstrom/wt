@@ -1,11 +1,7 @@
 package main
 
 import (
-	"bufio"
 	"errors"
-	"fmt"
-	"io"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -14,7 +10,7 @@ import (
 )
 
 func newSyncCmd() *cobra.Command {
-	var noFetch, yes, push, noPush bool
+	var noFetch bool
 	sync := &cobra.Command{
 		Use:   "sync [<work>]",
 		Short: "Show what a rebase onto trunk would do to each worktree",
@@ -75,11 +71,10 @@ func newSyncCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Lenient: a repository without worktree.conf still has worktrees
 			// worth reporting on, and the trunk name falls back to origin/HEAD.
-			cwd, err := os.Getwd()
+			ctx, err := openLenient(cmd.ErrOrStderr())
 			if err != nil {
 				return err
 			}
-			ctx := commands.OpenLenient(cwd, cmd.ErrOrStderr())
 			if ctx == nil {
 				return errors.New("not inside a git repository")
 			}
@@ -90,9 +85,14 @@ func newSyncCmd() *cobra.Command {
 			return commands.Sync(ctx, opts, cmd.OutOrStdout())
 		},
 	}
-	// Shared with run: only one of the two parses flags in any one invocation.
 	sync.Flags().BoolVar(&noFetch, "no-fetch", false, "compare with origin/<trunk> as last fetched")
+	sync.AddCommand(newSyncRunCmd(), newSyncResumeCmd(), newSyncUndoCmd(), newSyncDoctorCmd())
+	return sync
+}
 
+func newSyncRunCmd() *cobra.Command {
+	var noFetch, yes bool
+	var push func() commands.PushMode
 	run := &cobra.Command{
 		Use:   "run <work>...",
 		Short: "Rebase the named worktrees onto trunk with the declared strategies",
@@ -130,28 +130,31 @@ func newSyncCmd() *cobra.Command {
 			"  wt sync run login-crash --no-push      # print the push command instead",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: completeWork,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, err := openContext()
-			if err != nil {
-				return err
-			}
-			opts := commands.RunOptions{NoFetch: noFetch, Yes: yes, Push: pushMode(push, noPush)}
-			if isTerminal(os.Stdin) {
+		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
+			opts := commands.RunOptions{NoFetch: noFetch}
+			opts.Push = push()
+			if canAsk(cmd) {
+				// One prompter for both questions, so an answer typed ahead
+				// for the push is not lost to the rebase question's reader.
+				p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
 				if !yes {
-					opts.Confirm = confirmAsk(cmd.InOrStdin(), cmd.OutOrStdout(), "rebase")
+					opts.Confirm = confirmAsk(p, "rebase")
 				}
-				opts.ConfirmPush = confirmPush(cmd.InOrStdin(), cmd.OutOrStdout())
+				opts.ConfirmPush = confirmPush(p)
 			}
 			return commands.SyncRun(ctx, args, opts, cmd.OutOrStdout())
-		},
+		}),
 	}
 	run.Flags().BoolVar(&noFetch, "no-fetch", false, "rebase onto origin/<trunk> as last fetched")
 	run.Flags().BoolVar(&yes, "yes", false, "do not ask first: several worktrees, or an idle session in one")
-	run.Flags().BoolVar(&push, "push", false, "push the worktrees that finish, without asking")
-	run.Flags().BoolVar(&noPush, "no-push", false, "neither push nor ask; print the push command")
-	run.MarkFlagsMutuallyExclusive("push", "no-push")
-	sync.AddCommand(run)
+	push = addPushFlags(run, "push the worktrees that finish, without asking",
+		"neither push nor ask; print the push command")
+	return run
+}
 
+func newSyncResumeCmd() *cobra.Command {
+	var yes bool
+	var push func() commands.PushMode
 	resume := &cobra.Command{
 		Use:   "resume <work>",
 		Short: "Continue the rebase a run left at a conflict that was yours",
@@ -186,30 +189,27 @@ func newSyncCmd() *cobra.Command {
 			"  wt sync resume login-crash --yes      # not asked about an idle session",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeWork,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, err := openContext()
-			if err != nil {
-				return err
-			}
-			opts := commands.ResumeOptions{Yes: yes, Push: pushMode(push, noPush)}
-			if isTerminal(os.Stdin) {
+		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
+			var opts commands.ResumeOptions
+			opts.Push = push()
+			if canAsk(cmd) {
+				p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
 				if !yes {
-					opts.Confirm = confirmAsk(cmd.InOrStdin(), cmd.OutOrStdout(), "resume")
+					opts.Confirm = confirmAsk(p, "resume")
 				}
-				opts.ConfirmPush = confirmPush(cmd.InOrStdin(), cmd.OutOrStdout())
+				opts.ConfirmPush = confirmPush(p)
 			}
 			return commands.SyncResume(ctx, args[0], opts, cmd.OutOrStdout())
-		},
+		}),
 	}
-	// run's variables: only one of these commands parses flags in any one
-	// invocation.
-	resume.Flags().BoolVar(&push, "push", false, "push when done, without asking")
-	resume.Flags().BoolVar(&noPush, "no-push", false, "neither push nor ask; print the push command")
+	push = addPushFlags(resume, "push when done, without asking",
+		"neither push nor ask; print the push command")
 	resume.Flags().BoolVar(&yes, "yes", false, "do not ask first when a session is idle in the worktree")
-	resume.MarkFlagsMutuallyExclusive("push", "no-push")
-	sync.AddCommand(resume)
+	return resume
+}
 
-	var force bool
+func newSyncUndoCmd() *cobra.Command {
+	var force, yes bool
 	undo := &cobra.Command{
 		Use:   "undo <work>",
 		Short: "Put back every ref the last run on this worktree moved",
@@ -237,22 +237,20 @@ func newSyncCmd() *cobra.Command {
 			"  wt sync undo login-crash --yes    # not asked about an idle session",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeWork,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, err := openContext()
-			if err != nil {
-				return err
-			}
-			opts := commands.UndoOptions{Force: force, Yes: yes}
-			if isTerminal(os.Stdin) && !yes {
-				opts.Confirm = confirmAsk(cmd.InOrStdin(), cmd.OutOrStdout(), "undo")
+		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
+			opts := commands.UndoOptions{Force: force}
+			if canAsk(cmd) && !yes {
+				opts.Confirm = confirmAsk(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()), "undo")
 			}
 			return commands.SyncUndo(ctx, args[0], opts, cmd.OutOrStdout())
-		},
+		}),
 	}
 	undo.Flags().BoolVar(&force, "force", false, "undo a branch that has moved since the run, pinning its tip first")
 	undo.Flags().BoolVar(&yes, "yes", false, "do not ask first when a session is idle in a checkout")
-	sync.AddCommand(undo)
+	return undo
+}
 
+func newSyncDoctorCmd() *cobra.Command {
 	var fix, prune bool
 	doctor := &cobra.Command{
 		Use:   "doctor",
@@ -275,36 +273,20 @@ func newSyncCmd() *cobra.Command {
 			"  wt sync doctor --fix    # turn on rerere, remove expired locks\n" +
 			"  wt sync doctor --prune  # delete safety refs no run needs now",
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx, err := openContext()
-			if err != nil {
-				return err
-			}
+		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
 			return commands.SyncDoctor(ctx, commands.DoctorOptions{Fix: fix, Prune: prune}, cmd.OutOrStdout())
-		},
+		}),
 	}
 	doctor.Flags().BoolVar(&fix, "fix", false, "turn on rerere.enabled and remove expired locks")
 	doctor.Flags().BoolVar(&prune, "prune", false, "delete prunable safety refs")
-	sync.AddCommand(doctor)
-
-	return sync
+	return doctor
 }
 
 // confirmAsk asks the one question an acting command gets before it changes
 // anything, defaulting to no. What it is about has been printed by then.
-func confirmAsk(in io.Reader, out io.Writer, verb string) func([]string) (bool, error) {
+func confirmAsk(p *prompter, verb string) func([]string) (bool, error) {
 	return func(works []string) (bool, error) {
-		_, _ = fmt.Fprintf(out, "%s %s? [y/N] ", verb, strings.Join(works, ", "))
-		line, err := bufio.NewReader(in).ReadString('\n')
-		if err != nil {
-			// EOF on a terminal is ^D: the user declined rather than answered.
-			return false, nil
-		}
-		switch strings.ToLower(strings.TrimSpace(line)) {
-		case "y", "yes":
-			return true, nil
-		}
-		return false, nil
+		return p.yesNo(verb+" "+strings.Join(works, ", ")+"?", false), nil
 	}
 }
 
@@ -312,20 +294,20 @@ func confirmAsk(in io.Reader, out io.Writer, verb string) func([]string) (bool, 
 // question before a rebase it defaults to yes: what it pushes finished with
 // nothing owed, and the lease still refuses to overwrite commits on origin
 // the branch never saw.
-func confirmPush(in io.Reader, out io.Writer) func([]string) (bool, error) {
+func confirmPush(p *prompter) func([]string) (bool, error) {
 	return func(works []string) (bool, error) {
-		_, _ = fmt.Fprintf(out, "push %s with --force-with-lease? [Y/n] ", strings.Join(works, ", "))
-		line, err := bufio.NewReader(in).ReadString('\n')
-		if err != nil {
-			// ^D declines, as it does for the rebase question.
-			return false, nil
-		}
-		switch strings.ToLower(strings.TrimSpace(line)) {
-		case "", "y", "yes":
-			return true, nil
-		}
-		return false, nil
+		return p.yesNo("push "+strings.Join(works, ", ")+" with --force-with-lease?", true), nil
 	}
+}
+
+// addPushFlags declares --push and --no-push on cmd, refused together, and
+// returns the choice they make once cmd has parsed its flags.
+func addPushFlags(cmd *cobra.Command, pushUsage, noPushUsage string) func() commands.PushMode {
+	var push, noPush bool
+	cmd.Flags().BoolVar(&push, "push", false, pushUsage)
+	cmd.Flags().BoolVar(&noPush, "no-push", false, noPushUsage)
+	cmd.MarkFlagsMutuallyExclusive("push", "no-push")
+	return func() commands.PushMode { return pushMode(push, noPush) }
 }
 
 // pushMode is --push and --no-push as one choice; cobra has already refused

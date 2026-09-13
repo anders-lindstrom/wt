@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"path"
 	"regexp"
 	"strings"
 
@@ -38,6 +37,12 @@ type Rule struct {
 	Delimiter string `yaml:"delimiter"`
 	// Run is the executable of a script strategy, relative to the root.
 	Run string `yaml:"run"`
+
+	// line is Line compiled and value is Rule resolved, both filled in by
+	// Parse: a declaration is checked once, and nothing downstream compiles
+	// or re-resolves them. Both are nil on a Rule built by hand.
+	line  *regexp.Regexp
+	value ValueRule
 }
 
 // Deferred is work that runs once after the last commit is replayed.
@@ -57,12 +62,6 @@ type Config struct {
 	DependencyGraph []string   `yaml:"dependency_graph"`
 }
 
-// Strategies and value rules a declaration may name.
-var (
-	strategies = map[string]bool{"owned-line": true, "openapi": true, "list-union": true, "take-trunk": true, "script": true}
-	valueRules = map[string]bool{"max-plus-patch": true, "keep-branch": true, "keep-trunk": true}
-)
-
 // LoadFromTrunk reads the declaration from origin/<trunk>, never from a
 // working tree: the file names executables, and a feature branch must not be
 // able to change what runs unattended.
@@ -76,11 +75,14 @@ func LoadFromTrunk(mainRoot, trunk string) (*Config, error) {
 func LoadFromRef(mainRoot, ref string) (*Config, error) {
 	out, err := git.Run(mainRoot, "show", ref+":"+ConfigFile)
 	if err != nil {
-		if strings.Contains(err.Error(), "does not exist") || strings.Contains(err.Error(), "exists on disk, but not in") {
-			return nil, ErrNoConfig
-		}
-		if strings.Contains(err.Error(), "invalid object name") || strings.Contains(err.Error(), "unknown revision") {
-			return nil, fmt.Errorf("%s is not known here; run git fetch origin", ref)
+		var gerr *git.Error
+		if errors.As(err, &gerr) && !gerr.TimedOut {
+			switch said := gerr.Stderr; {
+			case strings.Contains(said, "does not exist") || strings.Contains(said, "exists on disk, but not in"):
+				return nil, ErrNoConfig
+			case strings.Contains(said, "invalid object name") || strings.Contains(said, "unknown revision"):
+				return nil, fmt.Errorf("%s is not known here; run git fetch origin", ref)
+			}
 		}
 		return nil, err
 	}
@@ -101,41 +103,19 @@ func Parse(data []byte) (*Config, error) {
 		if len(r.Paths) == 0 {
 			return nil, fmt.Errorf("%s: conflicts[%d] has no paths", ConfigFile, i)
 		}
-		if !strategies[r.Strategy] {
+		k, ok := kinds[r.Strategy]
+		if !ok {
 			return nil, fmt.Errorf("%s: conflicts[%d]: unknown strategy %q", ConfigFile, i, r.Strategy)
 		}
-		switch r.Strategy {
-		case "owned-line":
-			if r.Line == "" || r.Rule == "" {
-				return nil, fmt.Errorf("%s: conflicts[%d]: owned-line needs line and rule", ConfigFile, i)
-			}
-			if _, err := regexp.Compile(r.Line); err != nil {
-				return nil, fmt.Errorf("%s: conflicts[%d]: bad line regex %q: %w", ConfigFile, i, r.Line, err)
-			}
-		case "openapi":
-			if r.Rule == "" {
-				r.Rule = "max-plus-patch"
-			}
-		case "list-union":
-			if r.Line == "" {
-				return nil, fmt.Errorf("%s: conflicts[%d]: list-union needs line", ConfigFile, i)
-			}
-			if _, err := regexp.Compile(r.Line); err != nil {
-				return nil, fmt.Errorf("%s: conflicts[%d]: bad line regex %q: %w", ConfigFile, i, r.Line, err)
-			}
-			if r.Delimiter == "" {
-				r.Delimiter = ","
-			}
-		case "script":
-			if r.Run == "" {
-				return nil, fmt.Errorf("%s: conflicts[%d]: script needs run", ConfigFile, i)
-			}
-			if path.IsAbs(r.Run) || escapesRoot(r.Run) {
-				return nil, fmt.Errorf("%s: conflicts[%d]: script run %q must be relative to the root, with no parent-directory segments", ConfigFile, i, r.Run)
-			}
+		if err := k.prepare(r); err != nil {
+			return nil, fmt.Errorf("%s: conflicts[%d]: %w", ConfigFile, i, err)
 		}
-		if r.Rule != "" && !valueRules[r.Rule] {
-			return nil, fmt.Errorf("%s: conflicts[%d]: unknown rule %q", ConfigFile, i, r.Rule)
+		if r.Rule != "" {
+			v, err := RuleNamed(r.Rule)
+			if err != nil {
+				return nil, fmt.Errorf("%s: conflicts[%d]: %w", ConfigFile, i, err)
+			}
+			r.value = v
 		}
 	}
 	for i, d := range cfg.Defer {

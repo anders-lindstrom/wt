@@ -19,13 +19,9 @@ func newConfigCmd() *cobra.Command {
 		Example: "  wt config          # the resolved configuration, typed\n" +
 			"  wt config --shell  # the same as shell assignments, for eval",
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx, err := openContext()
-			if err != nil {
-				return err
-			}
+		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
 			return commands.Config(ctx, shell, cmd.OutOrStdout())
-		},
+		}),
 	}
 	cmd.Flags().BoolVar(&shell, "shell", false, "emit eval-able shell assignments")
 	return cmd

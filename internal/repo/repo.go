@@ -79,14 +79,40 @@ func Discover(cwd string) (*Repo, error) {
 	}, nil
 }
 
+// Worktrees is every worktree of a repository, in the order git lists them.
+type Worktrees []Worktree
+
+// ByPath returns the worktree at p. Paths are compared with SamePath, because
+// the path a user types comes from their shell and on macOS a checkout under
+// /var is /private/var to git; git's own spelling is the one that comes back.
+func (w Worktrees) ByPath(p string) (Worktree, bool) {
+	for _, wt := range w {
+		if SamePath(wt.Path, p) {
+			return wt, true
+		}
+	}
+	return Worktree{}, false
+}
+
+// ByBranch returns the worktree branch is checked out in, the branch a stopped
+// rebase will return HEAD to included.
+func (w Worktrees) ByBranch(branch string) (Worktree, bool) {
+	for _, wt := range w {
+		if wt.Branch == branch {
+			return wt, true
+		}
+	}
+	return Worktree{}, false
+}
+
 // Worktrees lists every worktree of the repository, main first.
-func (r *Repo) Worktrees() ([]Worktree, error) {
+func (r *Repo) Worktrees() (Worktrees, error) {
 	out, err := git.Run(r.MainRoot, "worktree", "list", "--porcelain")
 	if err != nil {
 		return nil, err
 	}
 
-	var list []Worktree
+	var list Worktrees
 	var cur *Worktree
 	flush := func() {
 		if cur != nil {
@@ -224,10 +250,8 @@ func gitDirOf(wtPath string) (string, error) {
 // This replaces the old hardcoded "development" default, which was correct for
 // exactly one of the seven repositories.
 func (r *Repo) DetectMainBranch() string {
-	if out, err := git.Run(r.MainRoot, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"); err == nil {
-		if _, branch, ok := strings.Cut(out, "/"); ok && branch != "" {
-			return branch
-		}
+	if branch, ok := r.OriginHead(); ok {
+		return branch
 	}
 	// symbolic-ref, not rev-parse --abbrev-ref: the latter fails outright on a
 	// repository whose HEAD is unborn, which is exactly the state a freshly
@@ -255,20 +279,6 @@ func (r *Repo) BranchAt(path string) string {
 func (r *Repo) BranchExists(name string) bool {
 	_, err := git.Run(r.MainRoot, "show-ref", "--verify", "--quiet", "refs/heads/"+name)
 	return err == nil
-}
-
-// IsMerged reports whether branch is fully contained in base.
-func (r *Repo) IsMerged(branch, base string) bool {
-	out, err := git.Run(r.MainRoot, "branch", "--merged", base, "--format=%(refname:short)")
-	if err != nil {
-		return false
-	}
-	for _, line := range strings.Split(out, "\n") {
-		if strings.TrimSpace(line) == branch {
-			return true
-		}
-	}
-	return false
 }
 
 // CommitsAhead counts the commits branch has that base does not. ok is false
@@ -356,10 +366,20 @@ func (r *Repo) OriginHead() (string, bool) {
 // own compare-and-delete, so a commit that lands after the caller last looked
 // is never deleted with it.
 //
-// Unlike `git branch -D` it does not refuse a branch a worktree has checked
-// out; the caller checks that. The branch's config section is removed after
-// the ref, as `git branch -D` would.
+// A branch a worktree is using is refused with a *BranchInUseError: the delete
+// is update-ref's, which unlike `git branch -D` will take a branch out from
+// under a checkout, a bisect or a stopped rebase. A worktree list that cannot
+// be read is ErrWorktreesUnknown — not knowing is not the same answer as
+// nobody using it. The branch's config section is removed after the ref, as
+// `git branch -D` would.
 func (r *Repo) DeleteBranchAt(name, tip string) error {
+	users, err := r.BranchUsers()
+	if err != nil {
+		return err
+	}
+	if use, ok := users[name]; ok {
+		return &BranchInUseError{Path: use.Path, By: use.By}
+	}
 	if _, err := git.Run(r.MainRoot, "update-ref", "-d", "refs/heads/"+name, tip); err != nil {
 		return err
 	}
@@ -427,19 +447,6 @@ func (r *Repo) MoveWorktree(from, to string) error {
 		return err
 	}
 	return nil
-}
-
-// DeleteBranch deletes a branch, whether or not git considers it merged.
-//
-// Deliberately -D, not -d. `git branch -d` measures "merged" against whatever
-// the main checkout happens to have checked out, which in a worktree layout is
-// rarely the branch anyone cares about — so it refuses branches that are
-// merged into trunk and, worse, would accept one that is not. The merge
-// question belongs to the caller, which asks it against the repository's own
-// main branch; this carries out the answer.
-func (r *Repo) DeleteBranch(name string) error {
-	_, err := git.Run(r.MainRoot, "branch", "-D", name)
-	return err
 }
 
 // RenameBranch renames a branch.
