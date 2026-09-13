@@ -173,11 +173,27 @@ func TestUndoRefusesABranchThatMovedAfterTheRun(t *testing.T) {
 	gitIn(t, wt, "commit", "-q", "--allow-empty", "-m", "after the run")
 	after := gitIn(t, wt, "rev-parse", "HEAD")
 	_, err := Undo(dir, []repo.Worktree{{Path: wt, Branch: "feature"}}, nil, "feature", time.Now(), false)
-	if err == nil || !strings.Contains(err.Error(), "moved since that run") {
-		t.Fatalf("err %v", err)
+	if err == nil || !strings.Contains(err.Error(), "moved since that run") || !strings.Contains(err.Error(), "wt sync undo --force feature") {
+		t.Fatalf("err %v; want the refusal to name the forced undo", err)
 	}
 	if gitIn(t, wt, "rev-parse", "HEAD") != after {
 		t.Fatal("HEAD moved despite the refusal")
+	}
+}
+
+// A handed-over rebase finished by hand with a commit made inside it before
+// the continue is not certified as the run's (the count refuses it), so
+// undo calls the branch moved; that refusal has to name the forced undo,
+// which is the only way out from there.
+func TestUndoNamesTheForcedUndoForAFinishedRebaseWithACommitInside(t *testing.T) {
+	dir, wt, _, _ := handedOverRepo(t, 5, false)
+	finishedByHand(t, wt, 1)
+	_, err := Undo(dir, []repo.Worktree{{Path: wt, Branch: "feature"}}, nil, "feature", time.Now(), false)
+	if err == nil || !strings.Contains(err.Error(), "moved since that run") || !strings.Contains(err.Error(), "wt sync undo --force feature") {
+		t.Fatalf("err %v; want moved since, naming the forced undo", err)
+	}
+	if strings.Contains(err.Error(), "finished by hand") {
+		t.Fatalf("err %v; a rebase with a commit inside is not certified as finished", err)
 	}
 }
 
@@ -1188,5 +1204,43 @@ func TestUndoBranchesNamesEveryBranchOfTheNewestRun(t *testing.T) {
 	}
 	if _, err := UndoBranches(dir, "nothing-here"); err == nil || !strings.Contains(err.Error(), "no run to undo") {
 		t.Fatalf("err %v", err)
+	}
+}
+
+// A handed-over rebase somebody finished with git rebase --continue leaves
+// the branch rebased with the handover still there. A plain undo used to
+// call that "moved since that run", which points at the wrong mental
+// model; it is the run's own rebase, finished by hand, and resume is what
+// runs the rest. --force still rewinds it, and pins it.
+func TestUndoNamesAFinishedByHandRebaseInsteadOfCallingItMoved(t *testing.T) {
+	dir, wt, gitDir, old := handedOverRepo(t, 5, false)
+	finishedByHand(t, wt, 0)
+	finished := gitIn(t, wt, "rev-parse", "HEAD")
+	wts := []repo.Worktree{{Path: wt, Branch: "feature"}}
+	_, err := Undo(dir, wts, nil, "feature", time.Now(), false)
+	if err == nil || !strings.Contains(err.Error(), "finished by hand") || !strings.Contains(err.Error(), "wt sync resume feature") {
+		t.Fatalf("err %v; want the finished rebase named and resume pointed at", err)
+	}
+	if strings.Contains(err.Error(), "moved since") {
+		t.Fatalf("err %v; the run's own rebase is not a branch that moved", err)
+	}
+	if gitIn(t, wt, "rev-parse", "HEAD") != finished {
+		t.Fatal("HEAD moved despite the refusal")
+	}
+	if has, err := HasPlan(gitDir); err != nil || !has {
+		t.Fatalf("HasPlan = %v, %v; the refusal removed the handover", has, err)
+	}
+	now := time.Unix(0, 4321)
+	if _, err := Undo(dir, wts, nil, "feature", now, true); err != nil {
+		t.Fatalf("forced undo: %v", err)
+	}
+	if gitIn(t, wt, "rev-parse", "HEAD") != old {
+		t.Fatal("the forced undo did not rewind")
+	}
+	if pinned := gitIn(t, dir, "rev-parse", SafetyPrefix+"feature/4321"); pinned != finished {
+		t.Fatalf("the forced undo pinned %s, want the finished rebase %s", pinned, finished)
+	}
+	if has, _ := HasPlan(gitDir); has {
+		t.Fatal("the forced undo left the handover")
 	}
 }

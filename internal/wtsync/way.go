@@ -26,6 +26,39 @@ type Way struct {
 	Inside   int    // commits made inside the handed-over rebase
 	Unproven bool   // an old sidecar: whether commits were made inside cannot be told
 	Foreign  bool   // the rebase in progress is not the one the handover describes
+	Restart  bool   // the stop cannot be continued as it stands: undo, then run again
+}
+
+// HandoverWay reads where a worktree's handover stands, touching nothing:
+// its rebase still in progress and waiting at the stop, or gone, in which
+// case the branch back at the tip the run started from means it was
+// aborted by hand, a branch VerifyFinished certifies means it was finished
+// by hand and resume runs what is left, and anything else (a commit made
+// inside, HEAD reset elsewhere, a reflog that shows another move) is a
+// branch that moved, which only the forced undo puts back. Work and Path
+// are the caller's to fill.
+func HandoverWay(wtPath string, st State) (Way, error) {
+	busy, err := RebaseInProgress(wtPath)
+	if err != nil {
+		return Way{}, err
+	}
+	w := Way{Plan: true, Rebasing: busy}
+	if busy {
+		return w, nil
+	}
+	head, err := gitEnv(wtPath, nil, nil, "rev-parse", "HEAD")
+	if err != nil {
+		return Way{}, err
+	}
+	switch {
+	case head == st.OldTip:
+		w.Aborted = true
+	case VerifyFinished(wtPath, st.Branch, st.Work, st.Onto, st.OldTip, st.Total) == nil:
+		w.Finished = true
+	default:
+		w.Moved = true
+	}
+	return w, nil
 }
 
 // WayOut is the sentence for w: one clause, no full stop, so a caller can
@@ -68,6 +101,10 @@ func WayOut(w Way) string {
 			them = "them"
 		}
 		return fmt.Sprintf("%s keeps %s and carries on; %s aborts and keeps %s under a safety ref", resume, them, force, them)
+	case w.Plan && w.Rebasing && w.Restart:
+		// K: the stop is not one a person may finish (a strategy's file
+		// hand-merged or unmerged again), so the run starts over.
+		return fmt.Sprintf("%s puts everything back, then %s starts again", undo, run)
 	case w.Plan && w.Rebasing && w.OwesAdd:
 		// B: the stop is waiting on the person's own resolution.
 		return fmt.Sprintf("resolve what is yours, git add it, then %s; or %s puts everything back", resume, undo)
@@ -92,7 +129,7 @@ func WayOut(w Way) string {
 		// E: the branch is back where it started with the handover still
 		// there. A run refuses while the plan is there, so undo clears it
 		// first.
-		return fmt.Sprintf("%s clears its plan, then %s starts again", undo, run)
+		return fmt.Sprintf("the handed-over rebase was aborted, not finished: %s clears its plan, then %s starts again", undo, run)
 	case w.Moved && !w.Plan && !w.Result:
 		// G: interrupted after the rebase and before the result was pinned.
 		return fmt.Sprintf("the rebase stands; %s puts it back", force)

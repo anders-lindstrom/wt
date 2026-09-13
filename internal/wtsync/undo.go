@@ -82,6 +82,10 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 	// Of those, the ones whose rebase carries commits a person made inside
 	// it, and the HEAD the abort will discard: a forced undo pins it.
 	insideHead := map[string]string{}
+	// Each checkout's sidecar, for the branch checks below: a handover whose
+	// rebase is gone may have been finished by hand, which is named as such
+	// rather than as a branch that moved.
+	states := map[string]State{}
 	for _, s := range run {
 		wt, ok := byBranch[s.Branch]
 		if !ok {
@@ -102,6 +106,7 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 		var prev LeftLock
 		if stateOK {
 			prev = st.Lock
+			states[s.Branch] = st
 		}
 		lock, err := TakeOver(gitDir, now, prev)
 		if err != nil {
@@ -211,12 +216,27 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 			continue
 		}
 		if !force {
-			return nil, fmt.Errorf("%s has moved since that run (%s commits ahead of it); undo would discard them", s.Branch, aheadCount(mainRoot, want, tip))
+			// A handed-over rebase somebody finished with git alone leaves
+			// the branch rebased and the handover behind: the run's own
+			// rebase, which resume runs the rest of, not a branch that
+			// moved. Read-only, and only where a handover has no rebase.
+			st, stateOK := states[s.Branch]
+			if stateOK && !aborting[s.Branch] {
+				wt := byBranch[s.Branch]
+				if VerifyFinished(wt.Path, s.Branch, cmp.Or(st.Work, s.Branch), st.Onto, st.OldTip, st.Total) == nil {
+					return nil, fmt.Errorf("%s: %s; nothing undone", s.Branch, WayOut(Way{Work: cmp.Or(st.Work, s.Branch), Path: wt.Path, Plan: true, Finished: true}))
+				}
+			}
+			// Also what a rebase finished by hand with a commit made inside
+			// it comes to: the count refuses it as the run's, so the way out
+			// is the forced undo, and the refusal has to say so.
+			moved := WayOut(Way{Work: cmp.Or(st.Work, s.Branch), Plan: stateOK, Moved: true})
+			return nil, fmt.Errorf("%s has moved since that run (%s commits ahead of it); undo would discard them: %s", s.Branch, aheadCount(mainRoot, want, tip), moved)
 		}
 		// A branch moved by hand whose rebase also carries a person's
 		// commits is two things to keep, and a forced undo pins one.
 		if insideHead[s.Branch] != "" {
-			yours := WayOut(Way{Work: s.Branch, Path: byBranch[s.Branch].Path, Plan: true, Rebasing: true, Foreign: true, Moved: true, Inside: 1})
+			yours := WayOut(Way{Work: cmp.Or(states[s.Branch].Work, s.Branch), Path: byBranch[s.Branch].Path, Plan: true, Rebasing: true, Foreign: true, Moved: true, Inside: 1})
 			return nil, fmt.Errorf("%s has moved since that run and carries commits made inside its handed-over rebase; one safety ref cannot keep both, so %s; nothing undone", s.Branch, yours)
 		}
 		// The forced undo is itself a run: it moves the branch from tip to

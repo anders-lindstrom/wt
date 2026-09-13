@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -397,6 +398,80 @@ func TestSyncResumeSaysWhatAFinishedByHandRebaseDidNotRecheck(t *testing.T) {
 	}
 	if has, err := wtsync.HasPlan(gitDir); err != nil || has {
 		t.Fatalf("HasPlan = %v, %v", has, err)
+	}
+}
+
+// The case that stranded a real worktree (forms-required-asterisks,
+// 2026-09-13): a contested stop handed over, resolved by hand and finished
+// with git rebase --continue, with a deferred step due and the handover
+// still there. The sidecar is rewritten in the shape that worktree held —
+// no head, no strategy answers, every file the person's — so this also
+// exercises the old-sidecar path. Resume recognises the finished rebase,
+// runs the deferred step, pins the result and ends the handover.
+func TestSyncResumeFinishesARebaseFinishedByHandAndRunsTheDeferredSteps(t *testing.T) {
+	ctx, bump := contested(t, true)
+	// A second branch commit, as the real case's stop 1/2: the hand
+	// continue passes through a later pick before the rebase finishes.
+	writeFile(t, bump, "b.txt", "branch\n")
+	gitOut(t, bump, "add", "-A")
+	gitOut(t, bump, "commit", "-q", "-m", "b on the branch")
+	gitDir, st := handOverNow(t, ctx, bump)
+	if st.Stop != 1 || st.Total != 2 {
+		t.Fatalf("handed over at %d/%d; want 1/2", st.Stop, st.Total)
+	}
+	raw, err := os.ReadFile(wtsync.StatePath(gitDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sidecar map[string]any
+	if err := json.Unmarshal(raw, &sidecar); err != nil {
+		t.Fatal(err)
+	}
+	delete(sidecar, "head")
+	sidecar["resolved"], sidecar["strategy"], sidecar["deleted"] = map[string]any{}, map[string]any{}, nil
+	sidecar["left"], sidecar["stopped"] = []string{"a.txt", "v.txt"}, []string{"a.txt", "v.txt"}
+	raw, err = json.MarshalIndent(sidecar, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(wtsync.StatePath(gitDir), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if st2, _, _ := wtsync.ReadState(gitDir); st2.Head != "" || len(st2.Resolved) != 0 || st2.Total != st.Total {
+		t.Fatalf("sidecar %+v; the rewrite did not take", st2)
+	}
+	writeFile(t, bump, "a.txt", "merged by hand\n")
+	gitOut(t, bump, "add", "--", "a.txt")
+	gitTry(t, bump, "rebase", "--continue")
+	if busy, err := wtsync.RebaseInProgress(bump); err != nil || busy {
+		t.Fatalf("RebaseInProgress = %v, %v; the hand continue did not finish", busy, err)
+	}
+	finished := gitOut(t, bump, "rev-parse", "HEAD")
+
+	var out bytes.Buffer
+	if err := SyncResume(ctx, "bump", noResumeAgents(), &out); err != nil {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	s := out.String()
+	for _, want := range []string{"the rebase is already finished; running what is left", "✓ cp v.txt gen.txt", "committed 1 file", "↩ wt sync undo bump puts it back"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("output lacks %q:\n%s", want, s)
+		}
+	}
+	if gitOut(t, bump, "log", "-1", "--format=%s") != "chore: regen" || gitOut(t, bump, "rev-parse", "HEAD~1") != finished {
+		t.Fatalf("the deferred step's commit is not on top of the finished rebase:\n%s", gitOut(t, bump, "log", "--oneline", "-3"))
+	}
+	if got, _ := os.ReadFile(filepath.Join(bump, "gen.txt")); string(got) != "1.0.6\n" {
+		t.Fatalf("gen.txt %q; the deferred step did not run", got)
+	}
+	if tip, ok, err := wtsync.ResultTip(ctx.Repo.MainRoot, st.Branch, st.Epoch); err != nil || !ok || tip != gitOut(t, bump, "rev-parse", "HEAD") {
+		t.Fatalf("ResultTip = %s, %v, %v; the run pinned no result at the branch's tip", tip, ok, err)
+	}
+	if has, err := wtsync.HasPlan(gitDir); err != nil || has {
+		t.Fatalf("HasPlan = %v, %v; the handover survived", has, err)
+	}
+	if _, ok, err := wtsync.ReadLock(gitDir); err != nil || ok {
+		t.Fatalf("ReadLock = %v, %v; a lock survived", ok, err)
 	}
 }
 

@@ -119,7 +119,7 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 			return err
 		}
 	} else {
-		if err := wtsync.VerifyFinished(target.Path, st.Branch, name, st.Onto, st.OldTip); err != nil {
+		if err := wtsync.VerifyFinished(target.Path, st.Branch, name, st.Onto, st.OldTip, st.Total); err != nil {
 			return fmt.Errorf("%s: %w; nothing is resumed", name, err)
 		}
 		fmt.Fprintf(w, "%s  the rebase is already finished; running what is left\n", name)
@@ -153,7 +153,7 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 	// plan file than with a refusal whose only remedy is undo.
 	req := wtsync.Request{
 		Path: target.Path, Branch: st.Branch, Trunk: st.Trunk,
-		Onto: st.Onto, Upstream: st.Upstream, Epoch: st.Epoch, Work: name,
+		Onto: st.Onto, Upstream: st.Upstream, Epoch: st.Epoch, Work: name, Total: st.Total,
 	}
 	safety := wtsync.Safety{Branch: st.Branch, Epoch: st.Epoch, Ref: st.Safety, Tip: st.OldTip}
 	if busy {
@@ -251,7 +251,7 @@ func verifyHandover(wtPath string, st wtsync.State, w io.Writer) error {
 		}
 	}
 	add := wtsync.WayOut(wtsync.Way{Work: st.Work, Plan: true, Rebasing: true, OwesAdd: true})
-	undo := wtsync.WayOut(wtsync.Way{Work: st.Work, Plan: true, Aborted: true})
+	undo := wtsync.WayOut(wtsync.Way{Work: st.Work, Plan: true, Rebasing: true, Restart: true})
 	if len(unstaged) > 0 {
 		return fmt.Errorf("changed but not staged: %s; git refuses to continue over that, so %s", strings.Join(unstaged, ", "), add)
 	}

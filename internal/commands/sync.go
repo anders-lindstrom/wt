@@ -352,7 +352,12 @@ func summaryLines(a wtsync.Assessment) []string {
 // returning cold sees the stop, the subject and the file that is theirs
 // without opening the plan.
 func pausedLine(a wtsync.Assessment) string {
-	way := wtsync.WayOut(wtsync.Way{Plan: true, Rebasing: true})
+	way := wtsync.WayOut(a.Way())
+	if !a.Rebasing {
+		// Finished or aborted by hand: the stop is not waiting any more,
+		// and the sentence says which and what runs the rest.
+		return way
+	}
 	st := a.Handover
 	if st == nil {
 		return "left mid-rebase by wt sync run: " + way

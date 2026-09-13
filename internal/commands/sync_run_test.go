@@ -94,7 +94,13 @@ func declareScript(t *testing.T, ctx *Context) {
 // class is contested and the run walks into it knowingly.
 func contestedFixture(t *testing.T) (ctx *Context, bump string) {
 	t.Helper()
-	ctx, bump = runFixture(t, false)
+	return contested(t, false)
+}
+
+// contested is contestedFixture with or without runFixture's deferred step.
+func contested(t *testing.T, withDefer bool) (ctx *Context, bump string) {
+	t.Helper()
+	ctx, bump = runFixture(t, withDefer)
 	main := ctx.Repo.MainRoot
 	if err := os.WriteFile(filepath.Join(bump, "a.txt"), []byte("branch\n"), 0o644); err != nil {
 		t.Fatal(err)
