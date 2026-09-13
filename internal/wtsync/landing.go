@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/anders-lindstrom/wt/internal/git"
@@ -17,10 +18,28 @@ type ScopeCount struct {
 }
 
 // Landing is what landed on trunk since the branch left it: the first-parent
-// commits, and the scopes underneath them.
+// commits, how many of those were merges, every commit they brought in, and
+// the scopes underneath them. The overview's "behind" is All; the plan
+// file's header names Commits and All together so the two are never taken
+// for one count.
 type Landing struct {
 	Commits int
+	Merges  int
+	All     int
 	Scopes  []ScopeCount
+}
+
+// Header is the plan file's count of what landed: "24 merges landed (145
+// commits)", "24 landed (145 commits)" when not every landing was a merge,
+// and "3 landed" when there is nothing to tell apart.
+func (l Landing) Header() string {
+	switch {
+	case l.All <= l.Commits:
+		return fmt.Sprintf("%d landed", l.Commits)
+	case l.Merges == l.Commits:
+		return fmt.Sprintf("%d merges landed (%d commits)", l.Commits, l.All)
+	}
+	return fmt.Sprintf("%d landed (%d commits)", l.Commits, l.All)
 }
 
 // maxScopes is how many scopes the plan file's header names. The point of
@@ -56,6 +75,7 @@ func LandingList(mainRoot, base, trunk string) (Landing, error) {
 			countScope(counts, subject)
 			continue
 		}
+		l.Merges++
 		sha := fields[0]
 		for n := 2; n <= len(fields)-1; n++ {
 			rng := fmt.Sprintf("%s^1..%s^%d", sha, sha, n)
@@ -67,6 +87,13 @@ func LandingList(mainRoot, base, trunk string) (Landing, error) {
 				countScope(counts, s)
 			}
 		}
+	}
+	all, err := gitEnv(mainRoot, nil, nil, "rev-list", "--count", base+".."+trunk, "--")
+	if err != nil {
+		return Landing{}, fmt.Errorf("landing list: %w", err)
+	}
+	if l.All, err = strconv.Atoi(all); err != nil {
+		return Landing{}, fmt.Errorf("landing list: %w", err)
 	}
 	for scope, n := range counts {
 		l.Scopes = append(l.Scopes, ScopeCount{Scope: scope, Count: n})
