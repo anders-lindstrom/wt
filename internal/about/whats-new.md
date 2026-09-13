@@ -6,6 +6,16 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-13 16:25 — wt sync says what puts a worktree back, and names a rebase finished by hand
+
+- A handed-over row keeps its stop, subject and file: `at 7/23 "…"  x.ts✗  waits
+  on you: wt sync resume, or wt sync undo`; `wt sync <work>` names the plan file.
+- The needs-you line says resolve, `git add`, then resume, or undo. The plan file
+  says `<<<<<<< HEAD` is trunk, lists each never-hand-merge path once, and counts
+  `24 merges landed (145 commits)`.
+- A handover you finished with `git rebase --continue` is called that by the
+  table, `run`, `doctor` and `undo`; `resume` runs what is left.
+
 ## 2026-09-13 15:48 — wt sync undo no longer throws away work that is not the run's
 
 - A rebase you started yourself after aborting the run's is refused, not
