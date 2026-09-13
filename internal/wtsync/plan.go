@@ -215,8 +215,10 @@ func PlanHolders(worktrees []repo.Worktree) ([]repo.Worktree, error) {
 	return out, nil
 }
 
-// NeedsYouLine is the after-the-fact protocol line of spec §5. Generated
-// here and relayed verbatim; never composed by hand.
+// NeedsYouLine is the after-the-fact line of spec §5: what is left, and what
+// to do about it. Generated here and printed verbatim; never composed by
+// hand. It carries no wt: prefix: the run's closing line does, and a person
+// reads this one under the worktree's own heading.
 func NeedsYouLine(work string, left []string) string {
 	files := "-"
 	if len(left) > 0 {
@@ -225,8 +227,8 @@ func NeedsYouLine(work string, left []string) string {
 			files += " +" + strconv.Itoa(n)
 		}
 	}
-	return fmt.Sprintf("wt: %s needs you. %d left after resolvers: %s · wt sync resume %s",
-		work, len(left), files, work)
+	return fmt.Sprintf("%s needs you. %d left after resolvers: %s · %s",
+		work, len(left), files, WayOut(Way{Work: work, Plan: true, Rebasing: true, OwesAdd: true}))
 }
 
 // RebasedLine is spec §5's after-the-fact line for a rebase that finished:

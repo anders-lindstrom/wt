@@ -422,6 +422,32 @@ func TestSyncRunHandsAContestedStopOver(t *testing.T) {
 	}
 }
 
+// The needs-you line has to say what to do: resolve what is yours, git add
+// it, then resume, or undo; and name the plan. The handover test read the
+// old line as naming the file and resume and nothing else, with a wt:
+// prefix inside the indented line that the closing line also carries.
+func TestSyncRunNeedsYouLineSaysResolveAddResumeOrUndo(t *testing.T) {
+	ctx, bump := contestedFixture(t)
+	var out bytes.Buffer
+	err := SyncRun(ctx, []string{"bump"}, noAgents(), &out)
+	if err == nil || err.Error() != "not completed: bump (needs you)" {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	gitDir, gerr := wtsync.GitDir(bump)
+	if gerr != nil {
+		t.Fatal(gerr)
+	}
+	s := out.String()
+	want := "\n  ⚠ bump needs you. 1 left after resolvers: a.txt · " + wtsync.WayOut(wtsync.Way{Work: "bump", Plan: true, Rebasing: true, OwesAdd: true}) +
+		"\n    plan " + wtsync.PlanPath(gitDir) + "\n"
+	if !strings.Contains(s, want) {
+		t.Fatalf("want %q in:\n%s", want, s)
+	}
+	if strings.Contains(s, "⚠ wt:") {
+		t.Fatalf("the wt: prefix is inside the indented line:\n%s", s)
+	}
+}
+
 // A second run refuses a worktree waiting on a person, and leaves both the
 // rebase and the handover exactly as the first run left them.
 func TestSyncRunRefusesAWorktreeWaitingOnAPerson(t *testing.T) {

@@ -316,11 +316,16 @@ func TestReadStateReturnsWritableMapsAndSlices(t *testing.T) {
 	}
 }
 
+// The line says what to do, not only which verb: resolve, git add, resume,
+// or undo. The wt: prefix belongs to the run's closing line, not here.
 func TestNeedsYouLine(t *testing.T) {
 	got := NeedsYouLine("login-crash", []string{"src/LoginHandler.java", "a", "b", "c"})
-	want := "wt: login-crash needs you. 4 left after resolvers: LoginHandler.java +3 · wt sync resume login-crash"
+	want := "login-crash needs you. 4 left after resolvers: LoginHandler.java +3 · " + WayOut(Way{Work: "login-crash", Plan: true, Rebasing: true, OwesAdd: true})
 	if got != want {
 		t.Fatalf("line = %q, want %q", got, want)
+	}
+	if strings.HasPrefix(got, "wt:") {
+		t.Fatalf("line %q carries the wt: prefix the closing line has", got)
 	}
 }
 
