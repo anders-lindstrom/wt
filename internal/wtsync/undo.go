@@ -2,6 +2,7 @@ package wtsync
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"time"
 
@@ -235,21 +236,48 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 	// abort fails the undo stops there, with nothing reset, and reports
 	// the aborts that did happen.
 	aborted := map[string]bool{}
+	// The branches whose pinned tip this undo has actually discarded: reset
+	// past it, or aborted a rebase that carried it. A failure past this
+	// point must leave a forced-undo pin for exactly these and no other. A
+	// pin left for a branch that never moved would be the newest run
+	// touching it, with its safety at the branch's own tip, so every later
+	// plain undo would say "already at" and the run it was meant to
+	// supersede would be out of reach.
+	moved := map[string]bool{}
+	dropUnmovedPins := func(err error) error {
+		for _, p := range pins {
+			if moved[p.Branch] {
+				continue
+			}
+			s := Safety{Branch: p.Branch, Epoch: forceEpoch, Ref: SafetyRef(p.Branch, forceEpoch), Tip: p.Safety}
+			if derr := DeleteSafety(mainRoot, s); derr != nil {
+				err = errors.Join(err, fmt.Errorf("%s: the forced undo's safety ref %s could not be removed: %w", p.Branch, s.Ref, derr))
+			}
+		}
+		return err
+	}
 	for _, s := range run {
 		if !aborting[s.Branch] {
 			continue
 		}
 		wt := byBranch[s.Branch]
 		if err := abortRebase(wt); err != nil {
-			return abortedRows(mainRoot, run, byBranch, tips, aborted), err
+			return abortedRows(mainRoot, run, byBranch, tips, aborted), dropUnmovedPins(err)
 		}
 		aborted[s.Branch] = true
+		// The abort resets the branch to the tip the rebase started from.
+		// That discards what the pin keeps in two cases: the commits made
+		// inside the rebase, and a branch ref moved by hand meanwhile, which
+		// the abort puts back before any reset would have.
+		if insideHead[s.Branch] != "" || tips[s.Branch] != s.Tip {
+			moved[s.Branch] = true
+		}
 		gitDir, err := gitDirOf(wt)
 		if err != nil {
-			return abortedRows(mainRoot, run, byBranch, tips, aborted), err
+			return abortedRows(mainRoot, run, byBranch, tips, aborted), dropUnmovedPins(err)
 		}
 		if err := RemovePlan(gitDir); err != nil {
-			return abortedRows(mainRoot, run, byBranch, tips, aborted), fmt.Errorf("%s: the rebase is aborted but its handover was not removed: %w", s.Branch, err)
+			return abortedRows(mainRoot, run, byBranch, tips, aborted), dropUnmovedPins(fmt.Errorf("%s: the rebase is aborted but its handover was not removed: %w", s.Branch, err))
 		}
 	}
 	// A branch that was handed over may still have a stale handover even
@@ -262,10 +290,10 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 		}
 		gitDir, err := gitDirOf(wt)
 		if err != nil {
-			return abortedRows(mainRoot, run, byBranch, tips, aborted), err
+			return abortedRows(mainRoot, run, byBranch, tips, aborted), dropUnmovedPins(err)
 		}
 		if err := RemovePlan(gitDir); err != nil {
-			return abortedRows(mainRoot, run, byBranch, tips, aborted), err
+			return abortedRows(mainRoot, run, byBranch, tips, aborted), dropUnmovedPins(err)
 		}
 	}
 	// A failure here returns the rows already put back, and every abort
@@ -285,13 +313,15 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 			r.Path = wt.Path
 			if from != s.Tip {
 				if _, err := gitEnv(wt.Path, rebaseEnv, nil, "reset", "--hard", s.Tip); err != nil {
-					return append(out, abortedRows(mainRoot, run[i:], byBranch, tips, aborted)...), err
+					return append(out, abortedRows(mainRoot, run[i:], byBranch, tips, aborted)...), dropUnmovedPins(err)
 				}
+				moved[s.Branch] = true
 			}
 		} else if from != s.Tip {
 			if _, err := gitEnv(mainRoot, nil, nil, "update-ref", "refs/heads/"+s.Branch, s.Tip, from); err != nil {
-				return append(out, abortedRows(mainRoot, run[i:], byBranch, tips, aborted)...), err
+				return append(out, abortedRows(mainRoot, run[i:], byBranch, tips, aborted)...), dropUnmovedPins(err)
 			}
+			moved[s.Branch] = true
 		}
 		out = append(out, r)
 	}
