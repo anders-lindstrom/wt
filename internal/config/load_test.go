@@ -91,6 +91,30 @@ RUN_TESTS_BEFORE_REMOVE=true
 	}
 }
 
+// The bash format rejects a misspelled key; the TOML format read past one, so
+// the same typo in worktree.toml was silence instead of the same error.
+func TestLoadTomlRejectsAnUnknownKey(t *testing.T) {
+	root := t.TempDir()
+	writeConf(t, root, "worktree.toml", "developer_config_file = [\".env\"]\n")
+	_, err := Load(root, "main")
+	if err == nil || !strings.Contains(err.Error(), `unknown key "developer_config_file"`) {
+		t.Fatalf("want error naming the key, got %v", err)
+	}
+	if !strings.HasPrefix(err.Error(), "worktree.toml:") {
+		t.Errorf("the error names the wrong file: %v", err)
+	}
+}
+
+// A retired key gets the same sentence in either spelling.
+func TestLoadTomlExplainsARetiredKey(t *testing.T) {
+	root := t.TempDir()
+	writeConf(t, root, "worktree.toml", "repo_name = \"x\"\n")
+	_, err := Load(root, "main")
+	if err == nil || !strings.Contains(err.Error(), "derived") {
+		t.Fatalf("want the retired-key sentence, got %v", err)
+	}
+}
+
 func TestLoadMissingConfig(t *testing.T) {
 	if _, err := Load(t.TempDir(), "main"); !errors.Is(err, ErrNoConfig) {
 		t.Errorf("got %v, want ErrNoConfig", err)
