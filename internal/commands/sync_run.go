@@ -228,7 +228,7 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 		if busy {
 			why := p.work + ": changed since triage: a rebase is in progress"
 			if has, herr := wtsync.HasPlan(gitDir); herr == nil && has {
-				why = p.work + ": left mid-rebase by an earlier run: wt sync resume " + p.work + ", or wt sync undo " + p.work
+				why = p.work + ": left mid-rebase by an earlier run: " + wtsync.WayOut(wtsync.Way{Work: p.work, Plan: true, Rebasing: true})
 			}
 			poison(b, why)
 			continue
@@ -332,9 +332,9 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 				// Not wt sync undo: it refuses a mid-rebase worktree, and
 				// there is no handover here for it to abort. The branch ref
 				// never moved, so the abort is the whole of putting it back.
-				abort := fmt.Sprintf("git -C %s rebase --abort", p.wt.Path)
-				fmt.Fprintf(w, "  ⚠ %s is left mid-rebase with no plan: finish it by hand, or put it back with %s\n", p.work, abort)
-				settle("failed", "✗ "+p.work+"  left mid-rebase with no plan: "+abort, p.work+" (failed)")
+				way := wtsync.WayOut(wtsync.Way{Work: p.work, Path: p.wt.Path, Rebasing: true})
+				fmt.Fprintf(w, "  ⚠ %s is left mid-rebase with no plan: %s\n", p.work, way)
+				settle("failed", "✗ "+p.work+"  left mid-rebase with no plan: "+way, p.work+" (failed)")
 				release(b)
 				poisonAbove(b, p.work+" failed")
 				continue
@@ -342,7 +342,7 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 			// The lock is left behind on purpose; dropping the handle here
 			// keeps the deferred release from removing the file.
 			p.lock = nil
-			settle("needs you", "⚠ "+p.work+"  needs you: wt sync resume "+p.work, p.work+" (needs you)")
+			settle("needs you", "⚠ "+p.work+"  needs you: "+wtsync.WayOut(wtsync.Way{Work: p.work, Plan: true, Rebasing: true, OwesAdd: true}), p.work+" (needs you)")
 			poisonAbove(b, p.work+" is waiting for you")
 			continue
 		}

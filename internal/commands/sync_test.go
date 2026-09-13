@@ -57,7 +57,7 @@ func TestSyncShowsAHandedOverWorktreeWithoutCallingItDirty(t *testing.T) {
 	block := syncBlock(t, buf.String(), "bump")
 	// Both commands, as Preflight and doctor name them: resume refuses a
 	// handover the person aborted by hand, and undo ends that one.
-	if !strings.Contains(block, "contested") || !strings.Contains(block, "left mid-rebase by wt sync run: wt sync resume, or wt sync undo") {
+	if !strings.Contains(block, "contested") || !strings.Contains(block, wtsync.WayOut(wtsync.Way{Plan: true, Rebasing: true})) {
 		t.Fatalf("bump block %q:\n%s", block, buf.String())
 	}
 	if strings.Contains(block, "dirty") {

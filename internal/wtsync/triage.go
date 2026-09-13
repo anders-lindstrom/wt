@@ -102,9 +102,13 @@ type Assessment struct {
 	// claims a path, and a script can only be checked before a run. The
 	// class is what the replay earned up to that point.
 	Unverified bool
-	// Paused is a worktree a run left mid-rebase with a handover in it.
-	Paused bool
-	Err    error
+	// Paused is a worktree a run left with a handover in it. Rebasing says
+	// whether that rebase is still in progress; read only for a paused
+	// worktree, it tells a handover still waiting at its stop from one a
+	// person finished or aborted by hand.
+	Paused   bool
+	Rebasing bool
+	Err      error
 }
 
 // Assess classifies one worktree against onto, the ref it would be rebased
@@ -124,6 +128,12 @@ func Assess(mainRoot, onto string, cfg *Config, wt repo.Worktree, agents []Agent
 	if a.Paused, err = HasPlan(gitDir); err != nil {
 		a.Err = err
 		return a
+	}
+	if a.Paused {
+		if a.Rebasing, err = RebaseInProgress(wt.Path); err != nil {
+			a.Err = err
+			return a
+		}
 	}
 	// --no-optional-locks: a plain status may refresh and rewrite the index,
 	// and this command must not touch a worktree.

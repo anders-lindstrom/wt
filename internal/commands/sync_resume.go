@@ -183,8 +183,7 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 			// branch ref has not moved since the run, so the abort is the whole
 			// of putting it back; undo refuses a mid-rebase worktree.
 			clearHandover(w, target.Path)
-			abort := fmt.Sprintf("git -C %s rebase --abort", target.Path)
-			fmt.Fprintf(w, "  ⚠ %s is left mid-rebase with no plan: finish it by hand, or put it back with %s\n", name, abort)
+			fmt.Fprintf(w, "  ⚠ %s is left mid-rebase with no plan: %s\n", name, wtsync.WayOut(wtsync.Way{Work: name, Path: target.Path, Rebasing: true}))
 			return fmt.Errorf("not completed: %s (failed)", name)
 		}
 		lock = nil // kept on purpose
@@ -251,8 +250,10 @@ func verifyHandover(wtPath string, st wtsync.State, w io.Writer) error {
 			unstaged = append(unstaged, strings.TrimSpace(line[3:]))
 		}
 	}
+	add := wtsync.WayOut(wtsync.Way{Work: st.Work, Plan: true, Rebasing: true, OwesAdd: true})
+	undo := wtsync.WayOut(wtsync.Way{Work: st.Work, Plan: true, Aborted: true})
 	if len(unstaged) > 0 {
-		return fmt.Errorf("changed but not staged: %s; git add them (git refuses to continue otherwise), then resume", strings.Join(unstaged, ", "))
+		return fmt.Errorf("changed but not staged: %s; git refuses to continue over that, so %s", strings.Join(unstaged, ", "), add)
 	}
 	p, err := wtsync.RebaseProgress(wtPath)
 	if err != nil {
@@ -276,15 +277,15 @@ func verifyHandover(wtPath string, st wtsync.State, w io.Writer) error {
 			}
 		}
 		if len(owned) > 0 {
-			return fmt.Errorf("unmerged again after a strategy resolved it: %s; that is not yours to merge, wt sync undo %s and start again", strings.Join(owned, ", "), st.Work)
+			return fmt.Errorf("unmerged again after a strategy resolved it: %s; that is not yours to merge: %s", strings.Join(owned, ", "), undo)
 		}
-		return fmt.Errorf("still unmerged: %s; resolve them, git add them, then resume", strings.Join(yours, ", "))
+		return fmt.Errorf("still unmerged: %s; %s", strings.Join(yours, ", "), add)
 	}
 	var changed []string
 	for path := range st.Resolved {
 		cur, err := git.Run(wtPath, "rev-parse", "--verify", ":0:"+path)
 		if err != nil {
-			return fmt.Errorf("%s is no longer staged and %s owns it; wt sync undo %s and start again", path, st.Strategy[path], st.Work)
+			return fmt.Errorf("%s is no longer staged and %s owns it: %s", path, st.Strategy[path], undo)
 		}
 		if cur != st.Resolved[path] {
 			changed = append(changed, path)

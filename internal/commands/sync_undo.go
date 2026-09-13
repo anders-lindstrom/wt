@@ -121,7 +121,7 @@ func restoredLine(name string, r wtsync.Restored) string {
 	// row is the one place that says where: for an aborted handover the
 	// branch never moved, so nothing above names the commit it kept.
 	if r.Kept != "" {
-		line += fmt.Sprintf("; %s kept under %s, wt sync undo %s puts it back", git.ShortID(r.KeptTip, 7), r.Kept, name)
+		line += fmt.Sprintf("; %s kept under %s, %s", git.ShortID(r.KeptTip, 7), r.Kept, wtsync.WayOut(wtsync.Way{Work: name, Result: true}))
 	}
 	return line
 }

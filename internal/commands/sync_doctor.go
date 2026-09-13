@@ -38,7 +38,7 @@ func SyncDoctor(ctx *Context, opts DoctorOptions, w io.Writer) error {
 			name := workName(ctx, wt.Branch)
 			// Both, as Preflight names them: resume refuses a handover the
 			// person aborted by hand, and undo is what ends that one.
-			lines = append(lines, name+": wt sync resume "+name+", or wt sync undo "+name)
+			lines = append(lines, name+": "+wtsync.WayOut(wtsync.Way{Work: name, Plan: true, Rebasing: true}))
 		}
 		plan.Detail = strings.Join(lines, "; ")
 	}

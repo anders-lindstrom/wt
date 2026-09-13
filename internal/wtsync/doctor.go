@@ -132,7 +132,7 @@ func rebasesCheck(worktrees []repo.Worktree, gitDirs map[string]string) (Check, 
 			if label == "" {
 				label = wt.Path
 			}
-			stuck = append(stuck, fmt.Sprintf("%s (git -C %s rebase --abort)", label, wt.Path))
+			stuck = append(stuck, label+": "+WayOut(Way{Path: wt.Path, Rebasing: true}))
 		}
 	}
 	if len(stuck) == 0 {

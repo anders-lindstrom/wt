@@ -406,8 +406,7 @@ func RenderPlan(in PlanInput) (string, error) {
 		}
 	}
 
-	fmt.Fprintf(&b, "\nresolve what is yours, `git add` it, then: wt sync resume %s\n", in.Work)
-	fmt.Fprintf(&b, "or put everything back: wt sync undo %s\n", in.Work)
+	fmt.Fprintf(&b, "\n%s\n", WayOut(Way{Work: in.Work, Plan: true, Rebasing: true, OwesAdd: true}))
 	return b.String(), nil
 }
 

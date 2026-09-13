@@ -321,7 +321,7 @@ func summaryLines(a wtsync.Assessment) []string {
 		lines = append(lines, oneLine("error: "+a.Err.Error()))
 	}
 	if a.Paused {
-		lines = append(lines, "left mid-rebase by wt sync run: wt sync resume, or wt sync undo")
+		lines = append(lines, "left mid-rebase by wt sync run: "+wtsync.WayOut(wtsync.Way{Plan: true, Rebasing: true}))
 	}
 	for _, c := range a.Divergent {
 		lines = append(lines, shortPath(c.Path)+": both sides changed "+wtsync.KeyCounts(c.Groups))
