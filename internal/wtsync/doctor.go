@@ -215,8 +215,11 @@ func lsTreeMode(mainRoot, onto, path string) (mode string, found bool, err error
 // rerereCheck reports whether rerere.enabled is on. A run never passes
 // --rerere-autoupdate and never consults a recorded resolution: it decides
 // every stop from the conflict's three stages and the declaration. Turning
-// rerere on is still worth it for the rebases a run refuses and hands back,
-// which is why the failing case keeps a Fix.
+// rerere on is still worth it for what a person resolves by hand, at a
+// handed-over stop or in a rebase of their own: git replays a recorded
+// resolution into the working file at the next stop that matches, staged
+// or not. That is why the failing case keeps a Fix, and why its detail
+// reads as advice.
 func rerereCheck(mainRoot string) Check {
 	out, err := git.Run(mainRoot, "config", "--get", "rerere.enabled")
 	on := err == nil && out == "true"
@@ -226,7 +229,7 @@ func rerereCheck(mainRoot string) Check {
 	return Check{
 		Name:   "rerere",
 		OK:     false,
-		Detail: "off; a run does not use rerere; enabling it records the resolutions of the rebases you do by hand (the ones run refuses)",
+		Detail: "off; enable it to remember the conflicts you resolve by hand, so the next rebase that meets one has the resolution in the working file already",
 		Fix: func() error {
 			_, err := git.Run(mainRoot, "config", "rerere.enabled", "true")
 			return err
