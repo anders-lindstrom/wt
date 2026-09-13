@@ -3,6 +3,7 @@ package commands
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -65,6 +66,48 @@ func TestSyncShowsAHandedOverWorktreeWithoutCallingItDirty(t *testing.T) {
 	}
 	if strings.Index(buf.String(), "needs you") > strings.Index(buf.String(), "  bump ") {
 		t.Errorf("a handover is filed under needs you:\n%s", buf.String())
+	}
+}
+
+// A handed-over row keeps what a person returning cold needs: the stop and
+// its total, the subject of the commit being replayed, the file that is
+// theirs, then the way out. Before this the row said only that the worktree
+// was left mid-rebase, and everything the same row had shown before the run
+// was gone.
+func TestSyncKeepsTheStopAndFileOnAHandedOverRow(t *testing.T) {
+	ctx, bump := contestedFixture(t)
+	_, st := handOverNow(t, ctx, bump)
+	var buf bytes.Buffer
+	if err := Sync(ctx, SyncOptions{NoFetch: true}, &buf); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	block := syncBlock(t, buf.String(), "bump")
+	want := fmt.Sprintf("at %d/%d %q  a.txt✗ v.txt✓  waits on you: %s", st.Stop, st.Total, "bump", wtsync.WayOut(wtsync.Way{Plan: true, Rebasing: true}))
+	if !strings.Contains(block, want) {
+		t.Fatalf("want %q in the bump block:\n%s", want, block)
+	}
+}
+
+// wt sync <work> is what the overview points at for the detail, so
+// mid-handover it must at least name the plan file and the files that are
+// the person's, not only the run's refusal.
+func TestSyncDetailNamesThePlanAndTheYoursFilesMidHandover(t *testing.T) {
+	ctx, bump := contestedFixture(t)
+	gitDir, _ := handOverNow(t, ctx, bump)
+	var buf bytes.Buffer
+	if err := SyncWorktree(ctx, "bump", SyncOptions{NoFetch: true}, &buf); err != nil {
+		t.Fatalf("SyncWorktree: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"\n  plan    " + wtsync.PlanPath(gitDir) + "\n",
+		"\nhanded over at 1/1  bump\n",
+		"\n    ✗ a.txt  yours\n",
+		"\n    ✓ v.txt  resolved by owned-line\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("want %q in:\n%s", want, out)
+		}
 	}
 }
 

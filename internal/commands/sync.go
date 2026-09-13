@@ -321,7 +321,7 @@ func summaryLines(a wtsync.Assessment) []string {
 		lines = append(lines, oneLine("error: "+a.Err.Error()))
 	}
 	if a.Paused {
-		lines = append(lines, "left mid-rebase by wt sync run: "+wtsync.WayOut(wtsync.Way{Plan: true, Rebasing: true}))
+		lines = append(lines, pausedLine(a))
 	}
 	for _, c := range a.Divergent {
 		lines = append(lines, shortPath(c.Path)+": both sides changed "+wtsync.KeyCounts(c.Groups))
@@ -345,6 +345,42 @@ func summaryLines(a wtsync.Assessment) []string {
 		lines = append(lines, truncate(oneLine(n), noteWidth))
 	}
 	return lines
+}
+
+// pausedLine is the row's detail for a handover: where the rebase waits, as
+// the stop line showed it before the run, then the way out. A person
+// returning cold sees the stop, the subject and the file that is theirs
+// without opening the plan.
+func pausedLine(a wtsync.Assessment) string {
+	way := wtsync.WayOut(wtsync.Way{Plan: true, Rebasing: true})
+	st := a.Handover
+	if st == nil {
+		return "left mid-rebase by wt sync run: " + way
+	}
+	line := fmt.Sprintf("at %d/%d", st.Stop, st.Total)
+	if a.Replaying != "" {
+		line += fmt.Sprintf(" %q", truncate(oneLine(a.Replaying), 32))
+	}
+	if marks := fileMarks(handoverFiles(st)); marks != "" {
+		line += "  " + marks
+	}
+	return line + "  waits on you: " + way
+}
+
+// handoverFiles is a handover's files as outcomes: the person's unresolved,
+// the strategies' resolved, so the row and the detail mark them as a stop's.
+func handoverFiles(st *wtsync.State) []wtsync.FileOutcome {
+	var files []wtsync.FileOutcome
+	for _, p := range st.Left {
+		files = append(files, wtsync.FileOutcome{Path: p})
+	}
+	for _, p := range st.ResolvedPaths() {
+		files = append(files, wtsync.FileOutcome{Path: p, Strategy: st.Strategy[p], Resolved: true})
+	}
+	for _, p := range st.Deleted {
+		files = append(files, wtsync.FileOutcome{Path: p, Strategy: st.Strategy[p], Resolved: true})
+	}
+	return files
 }
 
 // stopSummary is the stop that decides the class: the one a person owns, with
@@ -428,10 +464,31 @@ func printDetail(w io.Writer, work string, a wtsync.Assessment) {
 	fmt.Fprintf(w, "  branch  %s\n", branch)
 	fmt.Fprintf(w, "  path    %s\n", a.Path)
 	fmt.Fprintf(w, "  run     %s\n", runVerdict(work, a))
+	if a.PlanFile != "" {
+		fmt.Fprintf(w, "  plan    %s\n", a.PlanFile)
+	}
 
 	if a.Err != nil {
 		fmt.Fprintln(w, "\nerror")
 		printLines(w, 1, a.Err.Error())
+	}
+	if st := a.Handover; st != nil && a.Rebasing {
+		// The stop the run handed over, as the plan file lists it: what is
+		// the person's, and what the strategies already staged. Once the
+		// rebase is finished or aborted by hand the stop is not live, and
+		// the run line says what is.
+		head := fmt.Sprintf("handed over at %d/%d", st.Stop, st.Total)
+		if a.Replaying != "" {
+			head += "  " + oneLine(a.Replaying)
+		}
+		fmt.Fprintf(w, "\n%s\n", head)
+		for _, f := range handoverFiles(st) {
+			verdict := "yours"
+			if f.Resolved {
+				verdict = "resolved by " + f.Strategy
+			}
+			fmt.Fprintf(w, "    %s %s  %s\n", fileMark(f.Resolved), f.Path, verdict)
+		}
 	}
 	if len(a.Divergent) > 0 {
 		fmt.Fprintln(w, "\ndivergent: the openapi strategy refuses these at the endpoint")

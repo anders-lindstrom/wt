@@ -108,7 +108,14 @@ type Assessment struct {
 	// person finished or aborted by hand.
 	Paused   bool
 	Rebasing bool
-	Err      error
+	// Handover is the sidecar a paused worktree holds and PlanFile the
+	// brief beside it. Replaying is the subject of the commit the rebase is
+	// stopped on, read from the sequencer while it is at the stop the
+	// sidecar describes; nothing is re-simulated for a handed-over worktree.
+	Handover  *State
+	PlanFile  string
+	Replaying string
+	Err       error
 }
 
 // Assess classifies one worktree against onto, the ref it would be rebased
@@ -133,6 +140,26 @@ func Assess(mainRoot, onto string, cfg *Config, wt repo.Worktree, agents []Agent
 		if a.Rebasing, err = RebaseInProgress(wt.Path); err != nil {
 			a.Err = err
 			return a
+		}
+		// A sidecar that will not parse is an error here as it is for
+		// resume and undo: the row says so rather than describing a stop it
+		// cannot read.
+		st, ok, err := ReadState(gitDir)
+		if err != nil {
+			a.Err = err
+			return a
+		}
+		a.PlanFile = PlanPath(gitDir)
+		if ok {
+			a.Handover = &st
+		}
+		if ok && a.Rebasing {
+			// The apply backend has no message file; a rebase that moved
+			// past the recorded stop by hand is describing another commit.
+			// Either way the subject is left out rather than guessed.
+			if p, perr := RebaseProgress(wt.Path); perr == nil && p.Index == st.Stop {
+				a.Replaying = p.Subject
+			}
 		}
 	}
 	// --no-optional-locks: a plain status may refresh and rewrite the index,
