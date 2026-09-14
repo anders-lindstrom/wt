@@ -804,3 +804,117 @@ func TestSyncRunRefusesASessionThatChangedSinceTriage(t *testing.T) {
 		}
 	}
 }
+
+// A run holds each worktree's lock for as long as it is working in it and
+// no longer: a refused worktree's lock goes before the first rebase, and a
+// finished worktree's goes before the next worktree is rebased, so a run
+// over a fleet does not hold every worktree against another wt for its whole
+// length. A deferred step that waits to be let go is where the test looks.
+func TestSyncRunReleasesEachLockAsSoonAsItIsDoneWithTheWorktree(t *testing.T) {
+	ctx, bump := runFixture(t, false)
+	main := ctx.Repo.MainRoot
+	var buf bytes.Buffer
+	ahead := func(spec, base, file string) string {
+		t.Helper()
+		wt, err := New(ctx, spec, NewOptions{NoSetup: true, Base: base}, &buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, wt, file, file+"\n")
+		gitOut(t, wt, "add", "-A")
+		gitOut(t, wt, "commit", "-q", "-m", file)
+		return wt
+	}
+	second := ahead("feat/second", "", "s.txt")
+	leaf := ahead("feat/leaf", "feat_wt/second", "l.txt")
+	fourth := ahead("feat/fourth", "", "f.txt")
+	// The step marks that it started and waits for the test to let it go,
+	// for every rebased worktree.
+	marks, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	yaml := "conflicts:\n  - paths: [v.txt]\n    strategy: owned-line\n    line: '^\\d'\n    rule: max-plus-patch\n" +
+		"defer:\n  - run: touch " + marks + "/started-$(basename \"$(pwd)\"); while [ ! -f " + marks + "/go-$(basename \"$(pwd)\") ]; do sleep 0.05; done\n"
+	writeFile(t, main, ".wt-sync.yaml", yaml)
+	gitOut(t, main, "commit", "-q", "-am", "declare a step that waits")
+	gitOut(t, main, "fetch", "-q", "origin")
+	// Somebody else holds leaf: its stack, second and leaf, is refused at
+	// the lock, after second's own lock was taken.
+	leafGitDir, err := wtsync.GitDir(leaf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreign, err := wtsync.Acquire(leafGitDir, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = foreign.Release() })
+	locked := func(wt string) bool {
+		t.Helper()
+		gitDir, err := wtsync.GitDir(wt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, ok, err := wtsync.ReadLock(gitDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+	waitFor := func(name string) {
+		t.Helper()
+		for i := 0; i < 200; i++ {
+			if _, err := os.Stat(filepath.Join(marks, name)); err == nil {
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		t.Fatalf("%s never appeared", name)
+	}
+	letGo := func(work string) {
+		t.Helper()
+		writeFile(t, marks, "go-"+work, "")
+	}
+
+	done := make(chan error, 1)
+	var out bytes.Buffer
+	go func() { done <- SyncRun(ctx, []string{"bump", "second", "fourth"}, noAgents(), &out) }()
+
+	// bump is in its finish: the refused stack's lock has gone already, and
+	// bump's own is held.
+	waitFor("started-bump")
+	if locked(second) {
+		t.Error("second was refused at the lock and still holds its lock while bump is rebased")
+	}
+	if !locked(bump) {
+		t.Error("bump is in its finish and does not hold its lock")
+	}
+	letGo("bump")
+	// fourth is in its finish: bump is done, and its lock has gone.
+	waitFor("started-fourth")
+	if locked(bump) {
+		t.Error("bump is finished and still holds its lock while fourth is rebased")
+	}
+	if !locked(fourth) {
+		t.Error("fourth is in its finish and does not hold its lock")
+	}
+	letGo("fourth")
+
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(out.String(), "refused: leaf: locked") {
+			t.Fatalf("err %v\n%s", err, out.String())
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("the run did not finish")
+	}
+	for _, wt := range []string{bump, second, fourth} {
+		if locked(wt) {
+			t.Errorf("%s still locked after the run", wt)
+		}
+	}
+	if !locked(leaf) {
+		t.Error("the run removed somebody else's lock")
+	}
+}
