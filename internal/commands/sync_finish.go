@@ -61,10 +61,17 @@ func handOver(ctx *Context, w io.Writer, in handoverInput) error {
 	if err := wtsync.WritePlanFile(gitDir, plan); err != nil {
 		return err
 	}
+	// Where the rebase is: detached, at the last pick before the stop. A
+	// resume that stops again hands over through here too, so it is fresh
+	// at every stop.
+	head, err := git.Run(in.Path, "rev-parse", "HEAD")
+	if err != nil {
+		return err
+	}
 	st := wtsync.State{
 		Branch: in.Branch, Work: in.Work, Trunk: in.TrunkSHA, TrunkRef: in.TrunkRef,
 		Onto: in.Onto, Upstream: in.Upstream, Epoch: in.Epoch,
-		Safety: in.Res.Safety.Ref, OldTip: in.Res.OldTip,
+		Safety: in.Res.Safety.Ref, OldTip: in.Res.OldTip, Head: head,
 		Stop: in.Res.Left.Index, Total: in.Res.Left.Total,
 		Resolved: in.Res.Left.Staged, Strategy: map[string]string{},
 		Deleted: in.Res.Left.Deleted, Left: in.Res.Left.Left,

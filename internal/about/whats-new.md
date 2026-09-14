@@ -6,6 +6,14 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-13 15:48 — wt sync undo no longer throws away work that is not the run's
+
+- A rebase you started yourself after aborting the run's is refused, not
+  aborted, with or without `--force`; finish or abort it yourself first.
+- A commit you made inside the handed-over rebase is named and refused, not
+  aborted away. `resume` keeps it; `undo --force` keeps it under a safety ref.
+- A forced undo that stops partway no longer leaves a safety ref for a branch
+  it never moved, which made every later undo say "already at".
 ## 2026-09-13 08:28 — worktree.toml rejects a misspelled key, as worktree.conf does
 
 - A key wt does not read in `worktree.toml` used to pass in silence, so a

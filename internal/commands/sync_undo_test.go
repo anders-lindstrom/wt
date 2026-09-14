@@ -115,6 +115,82 @@ func TestSyncUndoAbortsWhatSyncRunHandedOver(t *testing.T) {
 	}
 }
 
+// A rebase a person restarted from their own commit carries the run's
+// sidecar but is not the run's rebase. resume refuses it; undo must too,
+// rather than abort it, because the abort would discard that commit and
+// nothing would pin it.
+func TestSyncUndoRefusesARebaseItDidNotLeave(t *testing.T) {
+	ctx, bump, gitDir, st := handedOver(t)
+	restartedByHand(t, bump, st)
+	main := ctx.Repo.MainRoot
+	moved := gitOut(t, main, "rev-parse", st.Branch)
+	if moved == st.OldTip {
+		t.Fatal("the branch did not move; the test is vacuous")
+	}
+	for _, force := range []bool{true, false} {
+		opts := noAgentsUndo()
+		opts.Force = force
+		var out bytes.Buffer
+		err := SyncUndo(ctx, "bump", opts, &out)
+		if err == nil || !strings.Contains(err.Error(), "not the one wt sync run left") || !strings.Contains(err.Error(), "rebase --abort") {
+			t.Fatalf("force=%v: err %v\n%s", force, err, out.String())
+		}
+		// Not assertUntouched: the refusal comes after undo took the
+		// handover's lock over, so the lock is displaced (the sidecar, not
+		// the lock, is the durable marker). The rebase and the sidecar are
+		// what the refusal must leave alone.
+		if busy, err := wtsync.RebaseInProgress(bump); err != nil || !busy {
+			t.Fatalf("force=%v: RebaseInProgress = %v, %v; the refusal aborted the rebase", force, busy, err)
+		}
+		if _, ok, err := wtsync.ReadState(gitDir); err != nil || !ok {
+			t.Fatalf("force=%v: ReadState = %v, %v; the sidecar is gone", force, ok, err)
+		}
+		if got := gitOut(t, main, "rev-parse", st.Branch); got != moved {
+			t.Fatalf("force=%v: %s is at %s, want %s", force, st.Branch, got, moved)
+		}
+	}
+}
+
+// A person who resolves the handed-over stop and commits it themselves has
+// a commit on detached HEAD that only the rebase knows about. undo must
+// name it and both ways of keeping it, and touch nothing.
+func TestSyncUndoNamesTheCommitAPersonMadeInsideTheHandover(t *testing.T) {
+	ctx, bump, gitDir, _ := handedOver(t)
+	writeFile(t, bump, "a.txt", "merged by hand\n")
+	gitOut(t, bump, "add", "--", "a.txt")
+	gitOut(t, bump, "commit", "-q", "-m", "resolved by hand")
+	sha := gitOut(t, bump, "rev-parse", "HEAD")
+
+	var out bytes.Buffer
+	err := SyncUndo(ctx, "bump", noAgentsUndo(), &out)
+	if err == nil || !strings.Contains(err.Error(), git.ShortID(sha, 7)) || !strings.Contains(err.Error(), "wt sync resume bump") || !strings.Contains(err.Error(), "wt sync undo --force bump") {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	// Not assertUntouched: the lock is displaced by the refusal (see
+	// TestSyncUndoRefusesARebaseItDidNotLeave); the rebase, the sidecar and
+	// the commit are what must survive.
+	if busy, err := wtsync.RebaseInProgress(bump); err != nil || !busy {
+		t.Fatalf("RebaseInProgress = %v, %v; the refusal aborted the rebase", busy, err)
+	}
+	if _, ok, err := wtsync.ReadState(gitDir); err != nil || !ok {
+		t.Fatalf("ReadState = %v, %v; the sidecar is gone", ok, err)
+	}
+	if gitOut(t, bump, "rev-parse", "HEAD") != sha {
+		t.Fatal("HEAD moved despite the refusal")
+	}
+}
+
+// The sidecar records where the rebase's HEAD was when the run handed
+// over, so undo can tell a commit made inside the rebase from the run's
+// own picks exactly, not by counting.
+func TestSyncHandoverRecordsHead(t *testing.T) {
+	ctx, bump := contestedFixture(t)
+	_, st := handOverNow(t, ctx, bump)
+	if head := gitOut(t, bump, "rev-parse", "HEAD"); st.Head == "" || st.Head != head {
+		t.Fatalf("sidecar head %q, HEAD %s", st.Head, head)
+	}
+}
+
 // An undo that stopped after aborting a handover it still had to rewind
 // must not print that rewind as done.
 func TestRestoredLineNeverClaimsARewindThatDidNotHappen(t *testing.T) {
@@ -151,11 +227,40 @@ func TestSyncUndoForcedPastAMovedHandoverSaysWhatItRewound(t *testing.T) {
 	if want := "bump  aborted the rebase; " + git.ShortID(moved, 7) + " → " + git.ShortID(old, 7); !strings.Contains(out.String(), want) {
 		t.Fatalf("output lacks %q:\n%s", want, out.String())
 	}
+	if want := git.ShortID(moved, 7) + " kept under refs/wt-sync/feat_wt/bump/100, wt sync undo bump puts it back"; !strings.Contains(out.String(), want) {
+		t.Fatalf("output lacks %q:\n%s", want, out.String())
+	}
 	if gitOut(t, bump, "rev-parse", "HEAD") != old {
 		t.Fatal("HEAD is not back at the pre-run tip")
 	}
 	if gitOut(t, main, "rev-parse", wtsync.SafetyPrefix+"feat_wt/bump/100") != moved {
 		t.Fatal("the forced undo did not pin the tip it discarded")
+	}
+}
+
+// A forced undo past a commit made inside the handover leaves the branch
+// where it was, so the row's "back at" names nothing of what was kept. The
+// row has to say where the commit went and what brings it back.
+func TestSyncUndoForcedPastACommitInsideSaysWhereItKeptIt(t *testing.T) {
+	ctx, bump, _, _ := handedOver(t)
+	old := gitOut(t, ctx.Repo.MainRoot, "rev-parse", "feat_wt/bump")
+	writeFile(t, bump, "a.txt", "merged by hand\n")
+	gitOut(t, bump, "add", "--", "a.txt")
+	gitOut(t, bump, "commit", "-q", "-m", "resolved by hand")
+	sha := gitOut(t, bump, "rev-parse", "HEAD")
+
+	forced := noAgentsUndo()
+	forced.Force = true
+	var out bytes.Buffer
+	if err := SyncUndo(ctx, "bump", forced, &out); err != nil {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	want := "bump  aborted the rebase; back at " + git.ShortID(old, 7) + "; " + git.ShortID(sha, 7) + " kept under refs/wt-sync/feat_wt/bump/100, wt sync undo bump puts it back"
+	if !strings.Contains(out.String(), want) {
+		t.Fatalf("output lacks %q:\n%s", want, out.String())
+	}
+	if gitOut(t, ctx.Repo.MainRoot, "rev-parse", "refs/wt-sync/feat_wt/bump/100") != sha {
+		t.Fatal("the ref the row names does not pin the commit")
 	}
 }
 

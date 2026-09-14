@@ -2,7 +2,6 @@ package commands
 
 import (
 	"cmp"
-	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -113,8 +112,8 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 		return err
 	}
 	if busy {
-		if err := verifySequencer(target.Path, st); err != nil {
-			return err
+		if err := wtsync.VerifyLeft(target.Path, st); err != nil {
+			return fmt.Errorf("%s: %w; nothing is resumed", name, err)
 		}
 		if err := verifyHandover(target.Path, st, w); err != nil {
 			return err
@@ -214,48 +213,6 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 		return fmt.Errorf("not completed: %s", strings.Join(failed, ", "))
 	}
 	return nil
-}
-
-// verifySequencer refuses a rebase in progress that is not the one the
-// handover describes: one moving another ref, replaying onto another commit,
-// or started from another tip — a person who aborted the run's rebase and
-// started their own, perhaps after committing. Continuing it would pin its
-// result under the run's epoch, and a later undo would discard their commit.
-// The onto and orig-head values are resolved to commits before they are
-// compared, so an abbreviated or symbolic one can neither refuse the run's
-// own rebase nor pass somebody else's.
-func verifySequencer(wtPath string, st wtsync.State) error {
-	notOurs := func(why string) error {
-		return fmt.Errorf("the rebase in progress in %s is not the one wt sync run left: %s; nothing is resumed", st.Work, why)
-	}
-	t, ok, err := wtsync.ReadRebaseTarget(wtPath)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return notOurs("it is not a merge-backend rebase")
-	}
-	if t.HeadName != "refs/heads/"+st.Branch {
-		return notOurs(fmt.Sprintf("it moves %s, not refs/heads/%s", t.HeadName, st.Branch))
-	}
-	want, err := commitOf(wtPath, st.Onto)
-	if err != nil {
-		return fmt.Errorf("the handover's onto %q is not a commit here: %w; nothing is resumed", st.Onto, err)
-	}
-	if got, err := commitOf(wtPath, t.Onto); err != nil || got != want {
-		return notOurs(fmt.Sprintf("it replays onto %s, not %s", git.ShortID(t.Onto, 7), git.ShortID(want, 7)))
-	}
-	if got, err := commitOf(wtPath, t.OrigHead); err != nil || got != st.OldTip {
-		return notOurs(fmt.Sprintf("it started from %s, not the tip the run started from (%s)", git.ShortID(t.OrigHead, 7), git.ShortID(st.OldTip, 7)))
-	}
-	return nil
-}
-
-func commitOf(dir, rev string) (string, error) {
-	if rev == "" {
-		return "", errors.New("empty")
-	}
-	return git.Run(dir, "rev-parse", "--verify", "--quiet", rev+"^{commit}")
 }
 
 // verifyHandover refuses to continue a rebase that is not what the run left.
