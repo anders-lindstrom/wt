@@ -6,13 +6,16 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -42,6 +45,9 @@ const shownFiles = 3
 // origin/<trunk>; nothing else changes, and the verbs that do are separate
 // commands.
 func Sync(ctx *Context, opts SyncOptions, w io.Writer) error {
+	// The assessments run several gits at once, and an interrupt has to
+	// reach every one of them, not only the one a goroutine is waiting on.
+	defer watchSignals(w, nil)()
 	onto, cfg, agents, err := syncInputs(ctx, opts, w)
 	if err != nil {
 		return err
@@ -50,31 +56,69 @@ func Sync(ctx *Context, opts SyncOptions, w io.Writer) error {
 	if err != nil {
 		return err
 	}
+	worktrees = slices.DeleteFunc(worktrees, func(wt repo.Worktree) bool { return wt.IsMain })
+	assessments := assessAll(ctx.Repo.MainRoot, onto, cfg, worktrees, agents, assessWorkers)
+	entries := make([]syncEntry, 0, len(worktrees))
+	for i, wt := range worktrees {
+		entries = append(entries, syncEntry{work: workName(ctx, wt.Branch), a: assessments[i]})
+	}
+	printOverview(w, cfg != nil, entries)
+	return nil
+}
+
+// assessWorkers is how many worktrees the overview assesses at once. An
+// assessment is a chain of short gits run one after the other, so assessed
+// one worktree at a time the overview takes the sum of every chain, and side
+// by side it takes the longest. Past four the gits contend on the object
+// store for no further gain.
+var assessWorkers = min(runtime.NumCPU(), 4)
+
+// assessAll assesses every worktree in wts, at most workers at a time, and
+// returns the assessments in the same order. Assess shares nothing between
+// worktrees: its temporary indexes and script copies are private directories,
+// and what it writes to the object store are loose objects git creates
+// atomically, never a ref.
+func assessAll(mainRoot, onto string, cfg *wtsync.Config, wts []repo.Worktree, agents []wtsync.Agent, workers int) []wtsync.Assessment {
+	out := make([]wtsync.Assessment, len(wts))
+	slots := make(chan struct{}, max(workers, 1))
+	var wg sync.WaitGroup
+	for i, wt := range wts {
+		slots <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { <-slots }()
+			out[i] = wtsync.Assess(mainRoot, onto, cfg, wt, agents)
+		}()
+	}
+	wg.Wait()
+	return out
+}
+
+// printOverview prints the entries grouped by what to do about them, in the
+// order given within each group, leaving out a current worktree nothing went
+// wrong with.
+func printOverview(w io.Writer, declared bool, entries []syncEntry) {
 	var groups [syncSections][]syncEntry
 	var all []syncEntry
-	for _, wt := range worktrees {
-		if wt.IsMain {
+	for _, e := range entries {
+		if e.a.Class == wtsync.Current && e.a.Err == nil {
 			continue
 		}
-		a := wtsync.Assess(ctx.Repo.MainRoot, onto, cfg, wt, agents)
-		if a.Class == wtsync.Current && a.Err == nil {
-			continue
-		}
-		e := syncEntry{work: workName(ctx, wt.Branch), a: a}
-		s := sectionOf(a)
+		s := sectionOf(e.a)
 		groups[s] = append(groups[s], e)
 		all = append(all, e)
 	}
 	if len(all) == 0 {
 		fmt.Fprintln(w, "every worktree is on trunk")
-		return nil
+		return
 	}
 	cols := measureRows(all)
 	for s, entries := range groups {
 		if len(entries) == 0 {
 			continue
 		}
-		fmt.Fprintf(w, "\n%s\n", sectionHeading(syncSection(s), cfg != nil))
+		fmt.Fprintf(w, "\n%s\n", sectionHeading(syncSection(s), declared))
 		for _, e := range entries {
 			fmt.Fprintf(w, "  %s\n", cols.row(e))
 			for _, line := range summaryLines(e.a) {
@@ -82,7 +126,6 @@ func Sync(ctx *Context, opts SyncOptions, w io.Writer) error {
 			}
 		}
 	}
-	return nil
 }
 
 // SyncWorktree prints everything wt sync knows about one worktree with
@@ -90,6 +133,7 @@ func Sync(ctx *Context, opts SyncOptions, w io.Writer) error {
 // files, every key a collision is made of, every dependency file both sides
 // changed.
 func SyncWorktree(ctx *Context, arg string, opts SyncOptions, w io.Writer) error {
+	defer watchSignals(w, nil)()
 	wt, err := Locate(ctx, arg)
 	if err != nil {
 		return err

@@ -3,7 +3,9 @@ package wtsync
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/gittest"
@@ -385,6 +387,61 @@ func scriptClaimingV(t *testing.T, dir string) *Config {
 		t.Fatal(err)
 	}
 	return cfg
+}
+
+// Replays run side by side, as the sync overview runs them, each answer what
+// the same replay run alone answers. Every temporary index and script copy a
+// replay makes has to be private to it: a fixed path shared between two would
+// be read half-written, and the one that lost would answer something else.
+// The owned-line stop resolves through a scratch index, the script stop
+// through a temporary index and a copy of the script from trunk, and the two
+// branches stop at different commits.
+func TestSimulateRebaseConcurrentlyMatchesTheReplayAlone(t *testing.T) {
+	dir := linearRepo(t,
+		[]map[string]string{{"v.txt": "2.0.0\n", "a.txt": "trunk\n"}},
+		[]map[string]string{{"v.txt": "1.1.0\n"}, {"v.txt": "1.1.1\n", "a.txt": "branch\n"}},
+	)
+	gitIn(t, dir, "branch", "shorter", "feature~1")
+	cfgs := map[string]*Config{"owned-line": ownedLineConfig(t), "script": scriptClaimingV(t, dir)}
+	type replay struct{ branch, cfg string }
+	cases := []replay{{"feature", "owned-line"}, {"shorter", "owned-line"}, {"feature", "script"}, {"shorter", "script"}}
+	want := map[replay]Replay{}
+	for _, c := range cases {
+		r, err := SimulateRebase(dir, "main", c.branch, cfgs[c.cfg])
+		if err != nil {
+			t.Fatalf("%s with %s alone: %v", c.branch, c.cfg, err)
+		}
+		want[c] = r
+	}
+	const rounds = 4
+	type answer struct {
+		replay
+		got Replay
+		err error
+	}
+	answers := make(chan answer, rounds*len(cases))
+	var wg sync.WaitGroup
+	for range rounds {
+		for _, c := range cases {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				got, err := SimulateRebase(dir, "main", c.branch, cfgs[c.cfg])
+				answers <- answer{c, got, err}
+			}()
+		}
+	}
+	wg.Wait()
+	close(answers)
+	for a := range answers {
+		if a.err != nil {
+			t.Errorf("%s with %s concurrently: %v", a.branch, a.cfg, a.err)
+			continue
+		}
+		if !reflect.DeepEqual(a.got, want[a.replay]) {
+			t.Errorf("%s with %s concurrently:\n%+v\nalone:\n%+v", a.branch, a.cfg, a.got, want[a.replay])
+		}
+	}
 }
 
 // A script proves it owns a path but yields no bytes in the object store, so
