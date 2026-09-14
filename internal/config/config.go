@@ -108,6 +108,12 @@ var retired = map[string]string{
 // valid configuration check the error and discard it; `wt doctor` deliberately
 // keeps it, so one retired key does not hide every other value in the file.
 func FromRaw(r map[string]Value, mainBranchFallback string) (*Config, error) {
+	return fromRaw(r, mainBranchFallback, "worktree.conf")
+}
+
+// fromRaw is FromRaw with the problems headed by the file they were read
+// from, so the same key gets the same sentence under either file's name.
+func fromRaw(r map[string]Value, mainBranchFallback, file string) (*Config, error) {
 	var problems []string
 
 	for name := range r {
@@ -165,7 +171,7 @@ func FromRaw(r map[string]Value, mainBranchFallback string) (*Config, error) {
 	}
 
 	if len(problems) > 0 {
-		return c, fmt.Errorf("worktree.conf:\n  - %s", strings.Join(problems, "\n  - "))
+		return c, fmt.Errorf("%s:\n  - %s", file, strings.Join(problems, "\n  - "))
 	}
 	return c, nil
 }

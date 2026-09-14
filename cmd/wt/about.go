@@ -8,9 +8,9 @@ import (
 	"github.com/anders-lindstrom/wt/internal/about"
 )
 
-// buildDate and commitDate are set by install.sh, like version. A plain
-// `go build` leaves them empty and `wt about` then says nothing about when
-// it was built.
+// buildDate and commitDate are set by scripts/ldflags.sh, like version, which
+// `make build` and install.sh both build with. A plain `go build` leaves them
+// empty and `wt about` then says nothing about when it was built.
 var (
 	buildDate  = ""
 	commitDate = ""

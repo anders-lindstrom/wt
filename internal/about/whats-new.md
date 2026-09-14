@@ -6,6 +6,22 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-13 08:28 — worktree.toml rejects a misspelled key, as worktree.conf does
+
+- A key wt does not read in `worktree.toml` used to pass in silence, so a
+  typo like `developer_config_file` quietly did nothing. It is now the same
+  error `worktree.conf` gives: `unknown key "developer_config_file"`. A
+  retired key gets the same sentence saying what replaced it. The repository's
+  own `worktree.toml` and every real `worktree.conf` still load clean.
+
+## 2026-09-13 08:27 — wt about names the commit on a make build too
+
+- A binary from `make build` used to say `wt dev` and nothing about when it
+  was built; only `install.sh` stamped the commit and dates. Both now build
+  with the same `scripts/ldflags.sh`, so `wt about` reports the commit, the
+  build time and the commit time whichever way the binary was made. `dev` is
+  still what a build without git says.
+
 ## 2026-09-12 03:05 — wt sync sees a dependency-graph overlap it used to miss
 
 - A changed line beginning `-- ` or `++ ` is a change like any other. `wt sync`

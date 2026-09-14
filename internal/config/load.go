@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
@@ -47,8 +48,8 @@ func Load(repoRoot, mainBranchFallback string) (*Config, error) {
 // bash-subset one. The keys table says which TOML key carries which setting
 // and how to read it, so the two formats cannot drift apart. Values are
 // decoded one at a time, in the file's own order, which is the order a typed
-// decode reported its problems in. A key wt does not read is ignored, as it
-// always has been here.
+// decode reported its problems in. A key wt does not read is handed on for
+// FromRaw to report, as a worktree.conf key it does not read is.
 func loadTOML(path, mainBranchFallback string) (*Config, error) {
 	var doc map[string]toml.Primitive
 	md, err := toml.DecodeFile(path, &doc)
@@ -63,6 +64,12 @@ func loadTOML(path, mainBranchFallback string) (*Config, error) {
 	for _, name := range md.Keys() {
 		k, ok := byTOML[name.String()]
 		if !ok {
+			// A key inside an unknown table is covered by the table's own
+			// entry. A retired key is looked up in its conf spelling, so it
+			// gets the sentence saying what replaced it.
+			if len(name) == 1 {
+				raw[unknownName(name[0])] = Value{}
+			}
 			continue
 		}
 		v, set, err := decodeTOML(md, doc[k.TOML], k.Kind)
@@ -73,7 +80,16 @@ func loadTOML(path, mainBranchFallback string) (*Config, error) {
 			raw[k.Name] = v
 		}
 	}
-	return FromRaw(raw, mainBranchFallback)
+	return fromRaw(raw, mainBranchFallback, "worktree.toml")
+}
+
+// unknownName is the name FromRaw reports a TOML key wt does not read under:
+// the retired spelling when there is one, otherwise the key as written.
+func unknownName(tomlKey string) string {
+	if upper := strings.ToUpper(tomlKey); retired[upper] != "" {
+		return upper
+	}
+	return tomlKey
 }
 
 // decodeTOML reads one value as its kind says it is written. set is false for a

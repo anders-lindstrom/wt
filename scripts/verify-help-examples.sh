@@ -6,8 +6,9 @@
 #
 # The examples are read back out of the built binary, so this cannot drift
 # from what help actually says. It ends by naming any printed example it did
-# not run: today that is the hook line carrying a literal placeholder path,
-# which is run with a real path substituted instead.
+# not run, and exits non-zero if one failed or was not run: CI runs it, so a
+# new example that is not listed here fails the build. The one hook line
+# carrying a literal placeholder path is run with a real path substituted.
 #
 # Not part of `make check`: it builds a few dozen git repositories and takes
 # about a minute.
@@ -218,8 +219,10 @@ check sync "" "" 'wt sync doctor --prune'
 
 check plain     "" "" 'wt hook claude-create <<< '"'"'{"name":"fix/login-crash"}'"'"''
 check worktrees "" "" 'wt hook claude-remove <<< '"'"'{"name":"login-crash"}'"'"''
-# The path form carries a placeholder; a real path is substituted for it.
+# The path form carries a placeholder; a real path is substituted for it, and
+# the printed line is recorded as run so the coverage check below accepts it.
 check worktrees "" "" 'wt hook claude-remove <<< "{\"path\":\"$PWD/../myrepo-old\"}"'
+RAN+=('wt hook claude-remove <<< '"'"'{"path":"/abs/path/to/worktree"}'"'"'')
 
 echo
 echo "$pass/$n examples ran clean, $fail failed"
@@ -258,3 +261,4 @@ while IFS= read -r cmdpath; do
 done < <(command_paths ""; command_paths hook)
 echo "$missing printed examples were not run verbatim"
 echo "fixtures under $BASE"
+[ "$fail" -eq 0 ] && [ "$missing" -eq 0 ]

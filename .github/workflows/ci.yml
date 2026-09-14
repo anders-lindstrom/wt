@@ -51,3 +51,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y bats
       - run: go build -o bin/wt ./cmd/wt
       - run: bats test/
+      # Every example `--help` prints is run against a throwaway repository,
+      # so an example that drifts from its command fails here, not by hand.
+      - name: Verify help examples
+        run: scripts/verify-help-examples.sh
