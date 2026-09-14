@@ -83,6 +83,49 @@ func TestSyncUndoRefusesAWorktreeCommittedToSinceTheRun(t *testing.T) {
 	}
 }
 
+// A handed-over rebase finished with git rebase --continue is the run's own
+// rebase, finished by hand: a plain undo names it as that and points at
+// resume, rather than calling the rebased branch one that "moved since"
+// the run. --force rewinds and pins it, as for any moved branch.
+func TestSyncUndoNamesAFinishedByHandRebaseInsteadOfCallingItMoved(t *testing.T) {
+	ctx, bump, gitDir, st := handedOver(t)
+	writeFile(t, bump, "a.txt", "merged by hand\n")
+	gitOut(t, bump, "add", "--", "a.txt")
+	gitTry(t, bump, "rebase", "--continue")
+	if busy, err := wtsync.RebaseInProgress(bump); err != nil || busy {
+		t.Fatalf("RebaseInProgress = %v, %v; the hand continue did not finish", busy, err)
+	}
+	finished := gitOut(t, bump, "rev-parse", "HEAD")
+
+	var out bytes.Buffer
+	err := SyncUndo(ctx, "bump", noAgentsUndo(), &out)
+	if err == nil || !strings.Contains(err.Error(), "finished by hand") || !strings.Contains(err.Error(), "wt sync resume bump") {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	if strings.Contains(err.Error(), "moved since") {
+		t.Fatalf("the run's own rebase is called a branch that moved: %v", err)
+	}
+	if gitOut(t, bump, "rev-parse", "HEAD") != finished {
+		t.Fatal("HEAD moved despite the refusal")
+	}
+	if has, herr := wtsync.HasPlan(gitDir); herr != nil || !has {
+		t.Fatalf("HasPlan = %v, %v; the refusal removed the handover", has, herr)
+	}
+
+	forced := noAgentsUndo()
+	forced.Force = true
+	out.Reset()
+	if err := SyncUndo(ctx, "bump", forced, &out); err != nil {
+		t.Fatalf("forced undo err %v\n%s", err, out.String())
+	}
+	if gitOut(t, bump, "rev-parse", "HEAD") != st.OldTip {
+		t.Fatal("the forced undo did not rewind to the run's old tip")
+	}
+	if gitOut(t, ctx.Repo.MainRoot, "rev-parse", wtsync.SafetyPrefix+"feat_wt/bump/100") != finished {
+		t.Fatal("the forced undo did not pin the finished rebase")
+	}
+}
+
 // The plan file tells a person wt sync undo puts everything back. It has to,
 // on the worktree exactly as the run left it: the rebase in progress, the
 // strategies' answers staged, and the run's lock still in the git dir.

@@ -38,6 +38,10 @@ func TestLandingListCountsDirectAndMergedScopes(t *testing.T) {
 	if l.Commits != 2 {
 		t.Fatalf("Commits = %d, want 2 first-parent commits", l.Commits)
 	}
+	// One of the two is a merge, and it brought two commits in: four in all.
+	if l.Merges != 1 || l.All != 4 {
+		t.Fatalf("Merges = %d, All = %d; want 1 merge and 4 commits in all", l.Merges, l.All)
+	}
 	if got := l.ScopeLine(); got != "pins ×2, auth ×1" {
 		t.Fatalf("ScopeLine = %q, want %q", got, "pins ×2, auth ×1")
 	}

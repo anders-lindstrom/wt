@@ -95,6 +95,108 @@ func TestRenderPlanHasEverySection(t *testing.T) {
 	}
 }
 
+// The header's count has to be one thing: "24 landed" was the first-parent
+// count while the table said 145 behind, and a reader had no way to tell
+// the two apart. It now names both when they differ, and says "merges" when
+// every landing was one.
+func TestRenderPlanHeaderCountsLandingsAndCommits(t *testing.T) {
+	dir := repoWith(t, map[string]string{"a.txt": "a\n"}, nil, nil)
+	base := gitIn(t, dir, "rev-parse", "HEAD")
+	render := func(l Landing) string {
+		t.Helper()
+		out, err := RenderPlan(PlanInput{
+			MainRoot: dir, Work: "w", Branch: "feat_wt/w", TrunkRef: "origin/main", Base: base, Trunk: "main",
+			Landing:  l,
+			Handover: Handover{Index: 1, Total: 1, Files: []FileOutcome{{Path: "a.txt", Note: "unclaimed"}}, Left: []string{"a.txt"}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	for _, tc := range []struct {
+		l    Landing
+		want string
+	}{
+		{Landing{Commits: 24, Merges: 24, All: 145}, "24 merges landed (145 commits). scopes: none named\n"},
+		{Landing{Commits: 24, Merges: 20, All: 145}, "24 landed (145 commits). scopes: none named\n"},
+		{Landing{Commits: 3, All: 3}, "3 landed. scopes: none named\n"},
+		{Landing{Commits: 90}, "90 landed. scopes: none named\n"},
+	} {
+		if out := render(tc.l); !strings.Contains(out, "\n"+tc.want) {
+			t.Errorf("Landing %+v: want %q in:\n%s", tc.l, tc.want, out)
+		}
+	}
+}
+
+// In a rebase HEAD is trunk and the other side is the branch's commit, the
+// opposite of what a merge trains people to expect. The brief says so where
+// the person's files are listed, before they open one.
+func TestRenderPlanSaysWhichSideOfTheMarkersIsTrunk(t *testing.T) {
+	dir := repoWith(t, map[string]string{"a.txt": "a\n"}, nil, nil)
+	base := gitIn(t, dir, "rev-parse", "HEAD")
+	out, err := RenderPlan(PlanInput{
+		MainRoot: dir, Work: "w", Branch: "feat_wt/w", TrunkRef: "origin/main", Base: base, Trunk: "main",
+		Handover: Handover{
+			Index: 7, Total: 23, Subject: "feat: administering webkeys",
+			Files: []FileOutcome{{Path: "a.txt", Note: "unclaimed"}},
+			Left:  []string{"a.txt"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	yours := yoursSection(t, out)
+	want := "<<<<<<< HEAD is trunk, >>>>>>> <sha> (feat: administering webkeys) is the branch's commit being replayed"
+	if !strings.Contains(yours, want) {
+		t.Fatalf("the yours section does not say which side is which; want %q in:\n%s", want, out)
+	}
+}
+
+// A path that both a conflict rule and a deferred step own was listed
+// twice under "never hand-merge here", which read as a bug in the plan
+// writer. Each path is one row, naming everything that owns it in order.
+func TestRenderPlanListsEachNeverHandMergePathOnce(t *testing.T) {
+	dir := repoWith(t, map[string]string{"a.txt": "a\n"}, nil, nil)
+	base := gitIn(t, dir, "rev-parse", "HEAD")
+	cfg, err := Parse([]byte(`conflicts:
+  - paths: [pnpm-lock.yaml]
+    strategy: take-trunk
+  - paths: ["apps/*/package.json"]
+    strategy: owned-line
+    line: '"version":'
+    rule: max-plus-patch
+defer:
+  - run: pnpm install
+    paths: [pnpm-lock.yaml, "**/package.json"]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := RenderPlan(PlanInput{
+		MainRoot: dir, Work: "w", Branch: "feat_wt/w", TrunkRef: "origin/main", Base: base, Trunk: "main",
+		Config:   cfg,
+		Handover: Handover{Index: 1, Total: 1, Files: []FileOutcome{{Path: "a.txt", Note: "unclaimed"}}, Left: []string{"a.txt"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	forbidden := out[strings.Index(out, "## never hand-merge here"):]
+	if i := strings.Index(forbidden, "\n## "); i >= 0 {
+		forbidden = forbidden[:i]
+	}
+	if n := strings.Count(forbidden, "pnpm-lock.yaml"); n != 1 {
+		t.Fatalf("pnpm-lock.yaml is listed %d times:\n%s", n, forbidden)
+	}
+	if !strings.Contains(forbidden, "take-trunk, then the deferred `pnpm install` owns it") {
+		t.Fatalf("the one row does not name both owners in order:\n%s", forbidden)
+	}
+	// Different globs are different rows, even when they overlap.
+	if !strings.Contains(forbidden, "apps/*/package.json") || !strings.Contains(forbidden, "**/package.json") {
+		t.Fatalf("a glob of its own was dropped:\n%s", forbidden)
+	}
+}
+
 // A file the strategies own but refused is a person's after all. It must not
 // appear under "never hand-merge here", where its own declaration would
 // otherwise put it — the plan would then say both "resolve this" and "never
@@ -316,11 +418,16 @@ func TestReadStateReturnsWritableMapsAndSlices(t *testing.T) {
 	}
 }
 
+// The line says what to do, not only which verb: resolve, git add, resume,
+// or undo. The wt: prefix belongs to the run's closing line, not here.
 func TestNeedsYouLine(t *testing.T) {
 	got := NeedsYouLine("login-crash", []string{"src/LoginHandler.java", "a", "b", "c"})
-	want := "wt: login-crash needs you. 4 left after resolvers: LoginHandler.java +3 · wt sync resume login-crash"
+	want := "login-crash needs you. 4 left after resolvers: LoginHandler.java +3 · " + WayOut(Way{Work: "login-crash", Plan: true, Rebasing: true, OwesAdd: true})
 	if got != want {
 		t.Fatalf("line = %q, want %q", got, want)
+	}
+	if strings.HasPrefix(got, "wt:") {
+		t.Fatalf("line %q carries the wt: prefix the closing line has", got)
 	}
 }
 

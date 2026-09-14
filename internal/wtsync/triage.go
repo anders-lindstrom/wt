@@ -102,9 +102,32 @@ type Assessment struct {
 	// claims a path, and a script can only be checked before a run. The
 	// class is what the replay earned up to that point.
 	Unverified bool
-	// Paused is a worktree a run left mid-rebase with a handover in it.
-	Paused bool
-	Err    error
+	// Paused is a worktree a run left with a handover in it. Rebasing says
+	// whether that rebase is still in progress; with it gone, Aborted says
+	// the branch is back at the tip the run started from, and Moved that
+	// it is somewhere VerifyFinished will not certify as the run's result.
+	// Read only for a paused worktree, they tell a handover still waiting
+	// at its stop from one a person finished or aborted by hand (see Way).
+	Paused   bool
+	Rebasing bool
+	Aborted  bool
+	Moved    bool
+	// Handover is the sidecar a paused worktree holds and PlanFile the
+	// brief beside it. Replaying is the subject of the commit the rebase is
+	// stopped on, read from the sequencer while it is at the stop the
+	// sidecar describes; nothing is re-simulated for a handed-over worktree.
+	Handover  *State
+	PlanFile  string
+	Replaying string
+	Err       error
+}
+
+// Way is where a paused worktree's handover stands, for WayOut: waiting at
+// its stop, finished or aborted by hand, or moved past what resume will
+// certify. Work and Path are left for the caller, which may have neither.
+func (a Assessment) Way() Way {
+	return Way{Plan: a.Paused, Rebasing: a.Rebasing, Aborted: a.Aborted, Moved: a.Moved,
+		Finished: a.Paused && !a.Rebasing && !a.Aborted && !a.Moved}
 }
 
 // Assess classifies one worktree against onto, the ref it would be rebased
@@ -124,6 +147,34 @@ func Assess(mainRoot, onto string, cfg *Config, wt repo.Worktree, agents []Agent
 	if a.Paused, err = HasPlan(gitDir); err != nil {
 		a.Err = err
 		return a
+	}
+	if a.Paused {
+		// A sidecar that will not parse is an error here as it is for
+		// resume and undo: the row says so rather than describing a stop it
+		// cannot read.
+		st, ok, err := ReadState(gitDir)
+		if err != nil {
+			a.Err = err
+			return a
+		}
+		a.PlanFile = PlanPath(gitDir)
+		if ok {
+			a.Handover = &st
+		}
+		way, err := HandoverWay(wt.Path, st)
+		if err != nil {
+			a.Err = err
+			return a
+		}
+		a.Rebasing, a.Aborted, a.Moved = way.Rebasing, way.Aborted, way.Moved
+		if ok && a.Rebasing {
+			// The apply backend has no message file; a rebase that moved
+			// past the recorded stop by hand is describing another commit.
+			// Either way the subject is left out rather than guessed.
+			if p, perr := RebaseProgress(wt.Path); perr == nil && p.Index == st.Stop {
+				a.Replaying = p.Subject
+			}
+		}
 	}
 	// --no-optional-locks: a plain status may refresh and rewrite the index,
 	// and this command must not touch a worktree.

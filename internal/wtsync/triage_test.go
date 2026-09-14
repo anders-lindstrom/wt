@@ -395,8 +395,8 @@ func TestAssessReportsAHandedOverWorktreeAsPaused(t *testing.T) {
 	if a.Err != nil {
 		t.Fatal(a.Err)
 	}
-	if !a.Paused || a.Class != Contested {
-		t.Fatalf("paused = %v, class = %s; want paused and contested", a.Paused, a.Class)
+	if !a.Paused || !a.Rebasing || a.Class != Contested {
+		t.Fatalf("paused = %v, rebasing = %v, class = %s; want paused, rebasing and contested", a.Paused, a.Rebasing, a.Class)
 	}
 	// The handover's staged resolutions make status non-empty; they are what
 	// a person is finishing, not dirt.
@@ -405,5 +405,15 @@ func TestAssessReportsAHandedOverWorktreeAsPaused(t *testing.T) {
 	}
 	if v, why := Preflight(a); v != RefuseRun || !strings.Contains(why, "wt sync resume") {
 		t.Fatalf("Preflight = %v %q; want a refusal naming wt sync resume", v, why)
+	}
+	// The same handover once its rebase was aborted by hand: still paused,
+	// no longer rebasing.
+	gitIn(t, wt, "rebase", "--abort")
+	a = Assess(dir, "origin/main", cfg, repo.Worktree{Path: wt, Branch: "feature"}, nil)
+	if a.Err != nil {
+		t.Fatal(a.Err)
+	}
+	if !a.Paused || a.Rebasing {
+		t.Fatalf("paused = %v, rebasing = %v after the abort; want paused and not rebasing", a.Paused, a.Rebasing)
 	}
 }

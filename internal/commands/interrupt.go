@@ -77,11 +77,11 @@ func onInterrupt(w io.Writer, locks []*wtsync.Lock, at *rebaseInFlight) {
 	case at.rebased:
 		// The run never got to pin where it left the branch, so a plain
 		// undo would refuse it as moved since the run.
-		fmt.Fprintf(w, "\ninterrupted after rebasing %s: the rebase stands; wt sync undo --force %s puts it back\n", at.work, at.work)
+		fmt.Fprintf(w, "\ninterrupted after rebasing %s: %s\n", at.work, wtsync.WayOut(wtsync.Way{Work: at.work, Moved: true}))
 	case at.resuming:
-		fmt.Fprintf(w, "\ninterrupted while resuming %s: the rebase and its plan are left as they are; wt sync resume %s picks it up again\n", at.work, at.work)
+		fmt.Fprintf(w, "\ninterrupted while resuming %s: the rebase and its plan are left as they are; %s\n", at.work, wtsync.WayOut(wtsync.Way{Work: at.work, Plan: true, Rebasing: true}))
 	default:
-		fmt.Fprintf(w, "\ninterrupted while rebasing %s: git -C %s rebase --abort restores it; the old tip is %s\n", at.work, at.path, at.safety)
+		fmt.Fprintf(w, "\ninterrupted while rebasing %s: %s\n", at.work, wtsync.WayOut(wtsync.Way{Work: at.work, Path: at.path, Rebasing: true, Safety: at.safety}))
 	}
 }
 

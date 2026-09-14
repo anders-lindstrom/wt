@@ -94,7 +94,13 @@ func declareScript(t *testing.T, ctx *Context) {
 // class is contested and the run walks into it knowingly.
 func contestedFixture(t *testing.T) (ctx *Context, bump string) {
 	t.Helper()
-	ctx, bump = runFixture(t, false)
+	return contested(t, false)
+}
+
+// contested is contestedFixture with or without runFixture's deferred step.
+func contested(t *testing.T, withDefer bool) (ctx *Context, bump string) {
+	t.Helper()
+	ctx, bump = runFixture(t, withDefer)
 	main := ctx.Repo.MainRoot
 	if err := os.WriteFile(filepath.Join(bump, "a.txt"), []byte("branch\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -419,6 +425,32 @@ func TestSyncRunHandsAContestedStopOver(t *testing.T) {
 	// No result ref: the run did not finish for this branch.
 	if _, ok, err := wtsync.ResultTip(ctx.Repo.MainRoot, branch, st.Epoch); err != nil || ok {
 		t.Fatalf("ResultTip = %v, %v; a handed-over run pins no result", ok, err)
+	}
+}
+
+// The needs-you line has to say what to do: resolve what is yours, git add
+// it, then resume, or undo; and name the plan. The handover test read the
+// old line as naming the file and resume and nothing else, with a wt:
+// prefix inside the indented line that the closing line also carries.
+func TestSyncRunNeedsYouLineSaysResolveAddResumeOrUndo(t *testing.T) {
+	ctx, bump := contestedFixture(t)
+	var out bytes.Buffer
+	err := SyncRun(ctx, []string{"bump"}, noAgents(), &out)
+	if err == nil || err.Error() != "not completed: bump (needs you)" {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	gitDir, gerr := wtsync.GitDir(bump)
+	if gerr != nil {
+		t.Fatal(gerr)
+	}
+	s := out.String()
+	want := "\n  ⚠ bump needs you. 1 left after resolvers: a.txt · " + wtsync.WayOut(wtsync.Way{Work: "bump", Plan: true, Rebasing: true, OwesAdd: true}) +
+		"\n    plan " + wtsync.PlanPath(gitDir) + "\n"
+	if !strings.Contains(s, want) {
+		t.Fatalf("want %q in:\n%s", want, s)
+	}
+	if strings.Contains(s, "⚠ wt:") {
+		t.Fatalf("the wt: prefix is inside the indented line:\n%s", s)
 	}
 }
 

@@ -215,8 +215,10 @@ func PlanHolders(worktrees []repo.Worktree) ([]repo.Worktree, error) {
 	return out, nil
 }
 
-// NeedsYouLine is the after-the-fact protocol line of spec §5. Generated
-// here and relayed verbatim; never composed by hand.
+// NeedsYouLine is the after-the-fact line of spec §5: what is left, and what
+// to do about it. Generated here and printed verbatim; never composed by
+// hand. It carries no wt: prefix: the run's closing line does, and a person
+// reads this one under the worktree's own heading.
 func NeedsYouLine(work string, left []string) string {
 	files := "-"
 	if len(left) > 0 {
@@ -225,8 +227,8 @@ func NeedsYouLine(work string, left []string) string {
 			files += " +" + strconv.Itoa(n)
 		}
 	}
-	return fmt.Sprintf("wt: %s needs you. %d left after resolvers: %s · wt sync resume %s",
-		work, len(left), files, work)
+	return fmt.Sprintf("%s needs you. %d left after resolvers: %s · %s",
+		work, len(left), files, WayOut(Way{Work: work, Plan: true, Rebasing: true, OwesAdd: true}))
 }
 
 // RebasedLine is spec §5's after-the-fact line for a rebase that finished:
@@ -284,7 +286,7 @@ func RenderPlan(in PlanInput) (string, error) {
 	if scopes == "" {
 		scopes = "none named"
 	}
-	fmt.Fprintf(&b, "%d landed. scopes: %s\n", in.Landing.Commits, scopes)
+	fmt.Fprintf(&b, "%s. scopes: %s\n", in.Landing.Header(), scopes)
 	fmt.Fprintf(&b, "stopped at stop %d/%d", in.Handover.Index, in.Handover.Total)
 	if in.Handover.Subject != "" {
 		fmt.Fprintf(&b, ", replaying %q", oneLinePlan(in.Handover.Subject))
@@ -335,6 +337,14 @@ func RenderPlan(in PlanInput) (string, error) {
 	}
 
 	fmt.Fprintf(&b, "\n## yours — %d file%s\n", len(left), pluralPlan(len(left)))
+	// A rebase replays the branch onto trunk, so HEAD is trunk's side: the
+	// opposite of what a merge trains people to expect, and one wrong
+	// resolution is what saying so costs to prevent.
+	replayed := "<sha>"
+	if in.Handover.Subject != "" {
+		replayed += " (" + oneLinePlan(in.Handover.Subject) + ")"
+	}
+	fmt.Fprintf(&b, "<<<<<<< HEAD is trunk, >>>>>>> %s is the branch's commit being replayed\n", replayed)
 	for _, f := range left {
 		note := f.Note
 		switch {
@@ -376,26 +386,36 @@ func RenderPlan(in PlanInput) (string, error) {
 			}
 			return false
 		}
-		var owned []string
+		// One row per declared path, naming everything that owns it in
+		// the order it applies: the strategy at the stop, then the deferred
+		// step once the rebase completes. Two globs that overlap are still
+		// two rows; only the same path is folded.
+		owners := map[string][]string{}
+		var paths []string
+		own := func(p, by string) {
+			if claims(p) {
+				return
+			}
+			if _, seen := owners[p]; !seen {
+				paths = append(paths, p)
+			}
+			owners[p] = append(owners[p], by)
+		}
 		for _, r := range in.Config.Conflicts {
 			for _, p := range r.Paths {
-				if !claims(p) {
-					owned = append(owned, fmt.Sprintf("%-40s ->  %s", p, r.Strategy))
-				}
+				own(p, r.Strategy)
 			}
 		}
 		for _, d := range in.Config.Defer {
 			for _, p := range d.Paths {
-				if !claims(p) {
-					owned = append(owned, fmt.Sprintf("%-40s ->  the deferred `%s` owns it", p, d.Run))
-				}
+				own(p, fmt.Sprintf("the deferred `%s` owns it", d.Run))
 			}
 		}
-		sort.Strings(owned)
-		if len(owned) > 0 {
+		sort.Strings(paths)
+		if len(paths) > 0 {
 			b.WriteString("\n## never hand-merge here\n")
-			for _, l := range owned {
-				b.WriteString(l + "\n")
+			for _, p := range paths {
+				fmt.Fprintf(&b, "%-40s ->  %s\n", p, strings.Join(owners[p], ", then "))
 			}
 		}
 		if len(in.Config.Defer) > 0 {
@@ -406,8 +426,7 @@ func RenderPlan(in PlanInput) (string, error) {
 		}
 	}
 
-	fmt.Fprintf(&b, "\nresolve what is yours, `git add` it, then: wt sync resume %s\n", in.Work)
-	fmt.Fprintf(&b, "or put everything back: wt sync undo %s\n", in.Work)
+	fmt.Fprintf(&b, "\n%s\n", WayOut(Way{Work: in.Work, Plan: true, Rebasing: true, OwesAdd: true}))
 	return b.String(), nil
 }
 

@@ -107,7 +107,38 @@ func TestSyncDoctorReportsAWorktreeWaitingOnAPerson(t *testing.T) {
 			plan = row
 		}
 	}
-	if fields := strings.Fields(plan); len(fields) < 2 || fields[1] != "warn" || !strings.Contains(plan, "bump: wt sync resume bump, or wt sync undo bump") {
+	// A sidecar with no rebase in progress, no old tip and no onto is a
+	// handover nothing can certify as finished: the branch reads as moved,
+	// and the forced undo is named, as the row and the run's refusal do.
+	if fields := strings.Fields(plan); len(fields) < 2 || fields[1] != "warn" || !strings.Contains(plan, "bump: "+wtsync.WayOut(wtsync.Way{Work: "bump", Path: bump, Plan: true, Moved: true})) {
 		t.Fatalf("plan row %q:\n%s", plan, out.String())
+	}
+}
+
+// The doctor's plan row says where each handover stands, as the overview's
+// row does: waiting at its stop, or aborted by hand.
+func TestSyncDoctorSaysWhereAHandoverStands(t *testing.T) {
+	ctx, bump, _, _ := handedOver(t)
+	gitOut(t, ctx.Repo.MainRoot, "config", "core.hooksPath", filepath.Join(ctx.Repo.MainRoot, ".git", "hooks"))
+	planRow := func() string {
+		t.Helper()
+		var out bytes.Buffer
+		if err := SyncDoctor(ctx, DoctorOptions{}, &out); err != nil {
+			t.Fatalf("err %v\n%s", err, out.String())
+		}
+		for _, row := range doctorRows(t, out.String()) {
+			if strings.HasPrefix(row, "plan ") {
+				return row
+			}
+		}
+		t.Fatalf("no plan row:\n%s", out.String())
+		return ""
+	}
+	if row, want := planRow(), "bump: "+wtsync.WayOut(wtsync.Way{Work: "bump", Path: bump, Plan: true, Rebasing: true}); !strings.Contains(row, want) {
+		t.Fatalf("waiting: row %q, want %q", row, want)
+	}
+	gitOut(t, bump, "rebase", "--abort")
+	if row, want := planRow(), "bump: "+wtsync.WayOut(wtsync.Way{Work: "bump", Path: bump, Plan: true, Aborted: true}); !strings.Contains(row, want) {
+		t.Fatalf("aborted: row %q, want %q", row, want)
 	}
 }

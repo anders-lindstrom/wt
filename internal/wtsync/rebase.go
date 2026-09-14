@@ -52,8 +52,12 @@ func Preflight(a Assessment) (Verdict, string) {
 	// Below the error, so the resume advice cannot hide a failed
 	// assessment; above the dirt, because a handover's staged conflicts
 	// are what a person is finishing, not dirt.
+	case a.Paused && a.Rebasing:
+		return RefuseRun, "left mid-rebase by an earlier run: " + WayOut(a.Way())
 	case a.Paused:
-		return RefuseRun, "left mid-rebase by an earlier run: wt sync resume, or wt sync undo"
+		// The handover is there and its rebase is not: finished or aborted
+		// by hand, and the sentence says which and what runs the rest.
+		return RefuseRun, WayOut(a.Way())
 	case a.Class == Detached:
 		return RefuseRun, "no branch"
 	case a.NoConfig:
@@ -112,6 +116,10 @@ type Request struct {
 	// mid-rebase strands every child on a base that is about to be
 	// rewritten, which is the half-applied stack §4 forbids.
 	Stacked bool
+	// Total is how many commits the run set out to replay, for a resume
+	// that finds the rebase finished by hand: more on the branch than that
+	// were committed inside it. Zero, as a run passes, is not checked.
+	Total int
 }
 
 // base is what the rebase replays from: the parent's old tip for a stack
@@ -253,7 +261,7 @@ func (d *driver) fail(err error) (Result, error) {
 		// Not "untouched": a resume that reached a stop may already have
 		// applied a strategy's answer before it failed. What is true is
 		// that nothing was put back, which is the whole point.
-		return d.res, fmt.Errorf("%w; the rebase is left where it stopped, wt sync undo %s puts it back", err, d.work())
+		return d.res, fmt.Errorf("%w; the rebase is left where it stopped: %s", err, WayOut(Way{Work: d.work(), Plan: true, Rebasing: true}))
 	}
 	rerr := d.restore()
 	if rerr == nil {
@@ -322,20 +330,26 @@ func Resume(mainRoot string, cfg *Config, req Request, old string, safety Safety
 }
 
 func (d *driver) verifyFinished() error {
-	return VerifyFinished(d.req.Path, d.req.Branch, d.work(), d.req.Onto, d.old)
+	return VerifyFinished(d.req.Path, d.req.Branch, d.work(), d.req.Onto, d.old, d.req.Total)
 }
 
 // VerifyFinished proves a rebase nobody is in the middle of actually
 // completed, rather than having been aborted, quit or reset: HEAD on the
-// branch, onto an ancestor of HEAD, HEAD moved off old, and the branch's
-// last move made from old. A rebase finished from any other tip carries
-// commits the run never made, and certifying it would let a later undo
-// discard them. work is the name the refusals give undo. Resume checks it
-// itself; a caller that must refuse before it takes a lock checks it first.
-func VerifyFinished(wtPath, branch, work, onto, old string) error {
+// branch, onto an ancestor of HEAD, HEAD moved off old, the branch's last
+// move made from old, and no more commits on top of onto than the total
+// the run set out to replay (fewer is a pick dropped as empty; zero means
+// the total is not known and is not checked). A rebase finished from any
+// other tip, or with a commit made inside it, carries commits the run
+// never made, and certifying it would let a later undo discard them. work
+// is the name the refusals give undo. Resume checks it itself; a caller
+// that must refuse before it takes a lock checks it first.
+func VerifyFinished(wtPath, branch, work, onto, old string, total int) error {
+	restart := WayOut(Way{Work: work, Plan: true, Rebasing: true, Restart: true})
+	aborted := WayOut(Way{Work: work, Plan: true, Aborted: true})
+	moved := WayOut(Way{Work: work, Plan: true, Moved: true})
 	ref, err := gitEnv(wtPath, rebaseEnv, nil, "symbolic-ref", "--quiet", "HEAD")
 	if err != nil || ref != "refs/heads/"+branch {
-		return fmt.Errorf("HEAD is %q, not %s: this is not the rebase that was left here; wt sync undo %s clears its plan", ref, branch, work)
+		return fmt.Errorf("HEAD is %q, not %s: this is not the rebase that was left here; %s", ref, branch, restart)
 	}
 	head, err := gitEnv(wtPath, rebaseEnv, nil, "rev-parse", "HEAD")
 	if err != nil {
@@ -344,14 +358,14 @@ func VerifyFinished(wtPath, branch, work, onto, old string) error {
 	if head == old {
 		// A run refuses while the plan is there, so wt sync run alone is not
 		// a way out: undo clears the plan first.
-		return fmt.Errorf("%s is back at the tip the run started from: the rebase was aborted, not finished; wt sync undo %s clears its plan, then wt sync run starts again", branch, work)
+		return fmt.Errorf("%s is back at the tip the run started from: %s", branch, aborted)
 	}
 	if _, code, err := gitEnvAllow(wtPath, rebaseEnv, nil, 1, "merge-base", "--is-ancestor", onto, "HEAD"); err != nil {
 		return err
 	} else if code == 1 {
 		// HEAD is on the branch and off the old tip, and the run pinned no
 		// result, so a plain undo would refuse the moved branch.
-		return fmt.Errorf("%s is not on top of what the run was rebasing onto: the rebase did not finish as this run; wt sync undo --force %s puts the run's tip back and keeps what is there now under a safety ref", branch, work)
+		return fmt.Errorf("%s is not on top of what the run was rebasing onto: the rebase did not finish as this run; %s", branch, moved)
 	}
 	// A rebase that finishes moves the branch once, from the tip it started
 	// at, so the reflog entry before HEAD is that tip. Anything else — a
@@ -361,10 +375,29 @@ func VerifyFinished(wtPath, branch, work, onto, old string) error {
 	// read proves nothing, so it refuses too.
 	prev, err := gitEnv(wtPath, rebaseEnv, nil, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch+"@{1}")
 	if err != nil {
-		return fmt.Errorf("%s's reflog cannot show that the rebase started from the run's tip (%s); wt sync undo --force %s puts that tip back and keeps what is there now under a safety ref", branch, git.ShortID(old, 7), work)
+		return fmt.Errorf("%s's reflog cannot show that the rebase started from the run's tip (%s); %s", branch, git.ShortID(old, 7), moved)
 	}
 	if prev != old {
-		return fmt.Errorf("%s was last moved from %s, not from the tip the run started from (%s): something besides the rebase committed on it, a person or a deferred step on an earlier try, and resume cannot tell which; wt sync undo --force %s puts the run's tip back and keeps what is there now under a safety ref", branch, git.ShortID(prev, 7), git.ShortID(old, 7), work)
+		return fmt.Errorf("%s was last moved from %s, not from the tip the run started from (%s): something besides the rebase committed on it, a person or a deferred step on an earlier try, and resume cannot tell which; %s", branch, git.ShortID(prev, 7), git.ShortID(old, 7), moved)
+	}
+	if total <= 0 {
+		return nil
+	}
+	// A rebase finished from the run's tip onto the run's onto still has
+	// room for a commit made inside it before the continue: the reflog
+	// shows one move, from old, and the extra commit rides in it. The count
+	// is the only thing that shows it. Fewer than total is a pick dropped
+	// as empty, which is not a person's commit.
+	out, err := gitEnv(wtPath, rebaseEnv, nil, "rev-list", "--count", onto+"..HEAD")
+	if err != nil {
+		return err
+	}
+	n, err := strconv.Atoi(out)
+	if err != nil {
+		return fmt.Errorf("counting %s..HEAD: %w", git.ShortID(onto, 7), err)
+	}
+	if n > total {
+		return fmt.Errorf("%s carries %d commits on top of what the run rebased onto, and the run set out to replay %d: something was committed inside the rebase; %s", branch, n, total, moved)
 	}
 	return nil
 }

@@ -585,3 +585,104 @@ func TestStopPathsSkipsTheMessagesPlaceholder(t *testing.T) {
 		t.Errorf("got %v", got)
 	}
 }
+
+// finishedByHand resolves the stop a handed-over rebase left and continues
+// it to the end with git alone, the way a person does. With extra, the
+// resolution is committed by hand first (which is the pick) and extra
+// commits are made inside the rebase on top of it, which the run never
+// planned.
+func finishedByHand(t *testing.T, wt string, extra int) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(wt, "a.txt"), []byte("by hand\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, wt, "add", "a.txt")
+	if extra > 0 {
+		gitIn(t, wt, "commit", "-q", "-m", "resolved by hand")
+	}
+	for i := 0; i < extra; i++ {
+		gitIn(t, wt, "commit", "-q", "--allow-empty", "-m", "inside the rebase")
+	}
+	gitIn(t, wt, "-c", "core.editor=true", "rebase", "--continue")
+	if busy, err := RebaseInProgress(wt); err != nil || busy {
+		t.Fatalf("RebaseInProgress = %v, %v; the hand continue did not finish", busy, err)
+	}
+}
+
+// A rebase finished by hand carries exactly the commits the run set out to
+// replay, or fewer when a pick was dropped as empty. More means something
+// was committed inside it, which resume must not certify as the run's.
+func TestVerifyFinishedRefusesMoreCommitsThanTheRunReplayed(t *testing.T) {
+	dir, wt, cfg := runRepo(t,
+		[]map[string]string{{"v.txt": "1.0.5\n", "a.txt": "trunk\n"}},
+		[]map[string]string{{"v.txt": "1.0.1\n", "a.txt": "branch\n"}})
+	res, err := Rebase(dir, cfg, trunkReq(wt, 1), nil)
+	if err != nil || res.Left == nil {
+		t.Fatalf("Rebase = %+v, %v", res, err)
+	}
+	finishedByHand(t, wt, 1)
+	onto := gitIn(t, dir, "rev-parse", "origin/main")
+	err = VerifyFinished(wt, "feature", "feature", onto, res.OldTip, res.Left.Total)
+	if err == nil || !strings.Contains(err.Error(), "committed inside") || !strings.Contains(err.Error(), "wt sync undo --force feature") {
+		t.Fatalf("err %v; want the extra commit refused and the forced undo named", err)
+	}
+	// Zero means the caller did not know the total, and the count is not
+	// checked: a run never reaches here with a rebase finished by hand.
+	if err := VerifyFinished(wt, "feature", "feature", onto, res.OldTip, 0); err != nil {
+		t.Fatalf("err %v with no total to check against", err)
+	}
+}
+
+func TestVerifyFinishedAcceptsAPickDroppedAsEmpty(t *testing.T) {
+	// The branch's second commit ends where trunk already is, by a
+	// different route (trunk got there in two commits, so no patch-id
+	// matches and the pick stays in the todo): it becomes empty when
+	// replayed and the rebase drops it. One commit on top of onto where
+	// the run set out to replay two.
+	dir, wt, cfg := runRepo(t,
+		[]map[string]string{{"v.txt": "1.0.5\n", "a.txt": "trunk\n"}, {"b.txt": "x\n"}, {"b.txt": "same\n"}},
+		[]map[string]string{{"v.txt": "1.0.1\n", "a.txt": "branch\n"}, {"b.txt": "same\n"}})
+	res, err := Rebase(dir, cfg, trunkReq(wt, 1), nil)
+	if err != nil || res.Left == nil || res.Left.Total != 2 {
+		t.Fatalf("Rebase = %+v, %v; want a handover at 1/2", res, err)
+	}
+	finishedByHand(t, wt, 0)
+	onto := gitIn(t, dir, "rev-parse", "origin/main")
+	if n := gitIn(t, wt, "rev-list", "--count", onto+"..HEAD"); n != "1" {
+		t.Fatalf("%s commits on top of onto; the pick was not dropped and the test is vacuous", n)
+	}
+	if err := VerifyFinished(wt, "feature", "feature", onto, res.OldTip, 2); err != nil {
+		t.Fatalf("err %v; a dropped pick is not a person's commit", err)
+	}
+}
+
+// HandoverWay reads where a handover stands without touching it: waiting
+// at its stop, finished by hand, or aborted by hand.
+func TestHandoverWayTellsWaitingFinishedAndAbortedApart(t *testing.T) {
+	_, wt, gitDir, _ := handedOverRepo(t, 5, false)
+	st, ok, err := ReadState(gitDir)
+	if err != nil || !ok {
+		t.Fatalf("ReadState = %v, %v", ok, err)
+	}
+	if w, err := HandoverWay(wt, st); err != nil || !w.Plan || !w.Rebasing || w.Finished || w.Aborted {
+		t.Fatalf("waiting: %+v, %v", w, err)
+	}
+	finishedByHand(t, wt, 0)
+	if w, err := HandoverWay(wt, st); err != nil || !w.Plan || w.Rebasing || !w.Finished || w.Aborted {
+		t.Fatalf("finished: %+v, %v", w, err)
+	}
+	_, wt2, gitDir2, _ := handedOverRepo(t, 6, false)
+	st2, _, _ := ReadState(gitDir2)
+	gitIn(t, wt2, "rebase", "--abort")
+	if w, err := HandoverWay(wt2, st2); err != nil || !w.Plan || w.Rebasing || w.Finished || !w.Aborted {
+		t.Fatalf("aborted: %+v, %v", w, err)
+	}
+	// Finished with a commit made inside: VerifyFinished refuses it, so it
+	// is a branch that moved, not one resume will run the rest of.
+	_, wt3, gitDir3, _ := handedOverRepo(t, 7, false)
+	st3, _, _ := ReadState(gitDir3)
+	finishedByHand(t, wt3, 1)
+	if w, err := HandoverWay(wt3, st3); err != nil || !w.Plan || w.Rebasing || w.Finished || w.Aborted || !w.Moved {
+		t.Fatalf("moved: %+v, %v", w, err)
+	}
+}
