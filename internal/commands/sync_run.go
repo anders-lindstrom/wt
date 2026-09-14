@@ -423,14 +423,9 @@ func (r *runPlan) rebaseOne(b string) {
 		}
 		fmt.Fprintf(w, "  ⚠ contested at %d/%d: %s\n", p.a.Replay.Stop.Index, p.a.Replay.Stop.Total, what)
 	}
-	r.tracker.set(&rebaseInFlight{work: p.work, path: p.wt.Path, safety: wtsync.SafetyRef(b, r.epoch)})
-	res, rerr := wtsync.Rebase(ctx.Repo.MainRoot, r.cfg, req, w)
-	// A stop being handed over is still a rebase stopped in the worktree,
-	// so the tracker stays set until the handover is written: an interrupt
-	// meanwhile still names the worktree and what puts it back.
-	if rerr != nil || res.Left == nil {
-		r.tracker.set(nil)
-	}
+	res, rerr := trackedRebase(r.tracker, &rebaseInFlight{work: p.work, path: p.wt.Path, safety: wtsync.SafetyRef(b, r.epoch)}, func() (wtsync.Result, error) {
+		return wtsync.Rebase(ctx.Repo.MainRoot, r.cfg, req, w)
+	})
 	p.result = &res
 	if rerr != nil {
 		fmt.Fprintf(w, "  ✗ failed: %v\n", rerr)
@@ -443,8 +438,8 @@ func (r *runPlan) rebaseOne(b string) {
 		herr := handOver(ctx, w, handoverInput{
 			Work: p.work, Branch: b, Path: p.wt.Path, TrunkRef: r.onto, TrunkSHA: r.trunkSHA,
 			Onto: req.Onto, Upstream: req.Upstream, Epoch: r.epoch, Cfg: r.cfg, Res: res, Lock: p.lock,
+			Tracker: r.tracker,
 		})
-		r.tracker.set(nil)
 		if herr != nil {
 			fmt.Fprintf(w, "  ✗ failed: %v\n", herr)
 			// The rebase is still in the worktree and there is now no
@@ -490,14 +485,12 @@ func (r *runPlan) rebaseOne(b string) {
 		line += fmt.Sprintf(", %d signature%s dropped", res.SignaturesDropped, plural(res.SignaturesDropped))
 	}
 	fmt.Fprintln(w, line)
-	// The rebase is done; from here an interrupt cannot abort it, only
-	// leave the deferred steps and the result ref undone.
-	r.tracker.set(&rebaseInFlight{work: p.work, path: p.wt.Path, rebased: true})
-	head, owed, derr := completeRun(ctx, w, r.cfg, completeInput{
-		Work: p.work, Branch: b, Path: p.wt.Path, Epoch: r.epoch, Res: res,
-		Tell: p.a.Sessions, TrunkName: r.trunk, Landed: p.a.Behind, Check: pathsOnce(wtsync.StopPaths(res.Stops)),
+	head, owed, derr := completeRun(ctx, w, r.cfg, r.tracker, p.work, p.wt.Path, func() completeInput {
+		return completeInput{
+			Branch: b, Epoch: r.epoch, Res: res,
+			Tell: p.a.Sessions, TrunkName: r.trunk, Landed: p.a.Behind, Check: pathsOnce(wtsync.StopPaths(res.Stops)),
+		}
 	})
-	r.tracker.set(nil)
 	p.head = head
 	r.failures = append(r.failures, owedBy(p.work, owed)...)
 	// The rebase itself stands; only this branch and what sits on it

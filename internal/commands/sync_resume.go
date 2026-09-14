@@ -159,23 +159,21 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 	if busy {
 		fmt.Fprintf(w, "%s  %s  resuming at %d/%d\n", name, st.Branch, st.Stop, st.Total)
 	}
-	tracker.set(&rebaseInFlight{work: name, path: target.Path, safety: st.Safety, resuming: true})
-	res, rerr := wtsync.Resume(ctx.Repo.MainRoot, cfg, req, st.OldTip, safety, w)
+	// Resuming, not rebasing: an interrupt must point back at resume, since
+	// the abort that is right for a run would discard a person's resolution.
+	res, rerr := trackedRebase(tracker, &rebaseInFlight{work: name, path: target.Path, safety: st.Safety, resuming: true}, func() (wtsync.Result, error) {
+		return wtsync.Resume(ctx.Repo.MainRoot, cfg, req, st.OldTip, safety, w)
+	})
 	if rerr != nil {
-		tracker.set(nil)
 		return fmt.Errorf("%s: %w", name, rerr)
 	}
 	if res.Left != nil {
 		fmt.Fprintf(w, "  ⚠ stopped again at %d/%d\n", res.Left.Index, res.Left.Total)
-		// The tracker stays on resuming while the fresh handover is written:
-		// an interrupt meanwhile leaves the rebase and a handover that resume
-		// picks up again, and must say so.
 		herr := handOver(ctx, w, handoverInput{
 			Work: name, Branch: st.Branch, Path: target.Path, TrunkRef: st.TrunkRef, TrunkSHA: st.Trunk,
 			Onto: st.Onto, Upstream: st.Upstream, Epoch: st.Epoch, Cfg: cfg, Res: res, Lock: lock,
-			Earlier: st.Stopped,
+			Earlier: st.Stopped, Tracker: tracker,
 		})
-		tracker.set(nil)
 		if herr != nil {
 			fmt.Fprintf(w, "  ✗ failed: %v\n", herr)
 			// As in run: a brief and a sidecar that may now describe different
@@ -189,15 +187,14 @@ func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) erro
 		lock = nil // kept on purpose
 		return fmt.Errorf("not completed: %s (needs you)", name)
 	}
-	tracker.set(nil)
 	fmt.Fprintf(w, "  ✓ rebased %d commit%s\n", res.Replayed, plural(res.Replayed))
-	tracker.set(&rebaseInFlight{work: name, path: target.Path, rebased: true})
-	_, owed, cerr := completeRun(ctx, w, cfg, completeInput{
-		Work: name, Branch: st.Branch, Path: target.Path, Epoch: st.Epoch, Res: res,
-		Tell: sessions, TrunkName: strings.TrimPrefix(st.TrunkRef, "origin/"), Landed: landed,
-		Check: pathsOnce(st.Stopped, st.Left, st.ResolvedPaths(), st.Deleted, wtsync.StopPaths(res.Stops)),
+	_, owed, cerr := completeRun(ctx, w, cfg, tracker, name, target.Path, func() completeInput {
+		return completeInput{
+			Branch: st.Branch, Epoch: st.Epoch, Res: res,
+			Tell: sessions, TrunkName: strings.TrimPrefix(st.TrunkRef, "origin/"), Landed: landed,
+			Check: pathsOnce(st.Stopped, st.Left, st.ResolvedPaths(), st.Deleted, wtsync.StopPaths(res.Stops)),
+		}
 	})
-	tracker.set(nil)
 	if cerr != nil {
 		return cerr
 	}
