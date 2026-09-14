@@ -6,6 +6,15 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-14 10:27 — wt sync looks at several worktrees at once
+
+- The overview used to simulate one worktree's rebase after another; it now
+  runs up to four side by side, so it takes about as long as the slowest
+  worktree rather than the sum of them. On accessmanager (4 worktrees) that is
+  1.15 s → 0.8 s, on server (8 worktrees, most current) 0.54 s → 0.39 s.
+- The rows and their order are exactly as before, and Ctrl-C during the
+  overview now stops every git it started and says `interrupted`.
+
 ## 2026-09-13 16:25 — wt sync says what puts a worktree back, and names a rebase finished by hand
 
 - A handed-over row keeps its stop, subject and file: `at 7/23 "…"  x.ts✗  waits

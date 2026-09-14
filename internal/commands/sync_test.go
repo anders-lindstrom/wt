@@ -266,6 +266,93 @@ func TestSyncPrintsTheTriageAndChangesNothing(t *testing.T) {
 	}
 }
 
+// The overview assesses worktrees side by side and prints exactly what
+// assessing them one at a time prints: the same rows in the same order, with
+// a failed assessment on its own row. The fixture has one worktree of every
+// kind the table files differently, plus one whose directory is gone.
+func TestSyncAssessedInParallelPrintsTheSequentialResult(t *testing.T) {
+	ctx := syncRepo(t)
+	main := ctx.Repo.MainRoot
+	var buf bytes.Buffer
+	// contested: both sides edit a.txt, which nothing claims.
+	contested, err := New(ctx, "feat/contested", NewOptions{NoSetup: true}, &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, contested, "a.txt", "branch\n")
+	gitIn(t, contested, "commit", "-q", "-am", "branch edits a")
+	// clean: a file of its own, nothing trunk touches.
+	clean, err := New(ctx, "feat/clean", NewOptions{NoSetup: true}, &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, clean, "c.txt", "clean\n")
+	gitIn(t, clean, "add", "--", "c.txt")
+	gitIn(t, clean, "commit", "-q", "-m", "adds c")
+	// stale: nothing of its own once trunk moves on.
+	if _, err := New(ctx, "feat/stale", NewOptions{NoSetup: true}, &buf); err != nil {
+		t.Fatal(err)
+	}
+	// gone: the row is its error.
+	gone, err := New(ctx, "feat/gone", NewOptions{NoSetup: true}, &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(gone); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, main, "a.txt", "trunk\n")
+	gitIn(t, main, "commit", "-q", "-am", "trunk edits a")
+	gitIn(t, main, "fetch", "-q", "origin")
+
+	buf.Reset()
+	onto, cfg, agents, err := syncInputs(ctx, SyncOptions{NoFetch: true}, &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worktrees, err := ctx.Repo.Worktrees()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entries []syncEntry
+	for _, wt := range worktrees {
+		if !wt.IsMain {
+			entries = append(entries, syncEntry{work: workName(ctx, wt.Branch), a: wtsync.Assess(main, onto, cfg, wt, agents)})
+		}
+	}
+	if len(entries) < 5 {
+		t.Fatalf("%d worktrees in the fixture, want at least 5", len(entries))
+	}
+	var want bytes.Buffer
+	printOverview(&want, cfg != nil, entries)
+	for _, work := range []string{"bump", "contested", "clean", "stale", "gone"} {
+		if !strings.Contains(want.String(), "  "+work+" ") {
+			t.Fatalf("the sequential overview has no row for %s:\n%s", work, want.String())
+		}
+	}
+	for _, class := range []string{"recipe", "contested", "clean", "stale", "unknown"} {
+		if !strings.Contains(want.String(), class) {
+			t.Fatalf("the sequential overview has no %s row:\n%s", class, want.String())
+		}
+	}
+
+	for _, workers := range []int{2, 4, 8} {
+		old := assessWorkers
+		assessWorkers = workers
+		buf.Reset()
+		err := Sync(ctx, SyncOptions{NoFetch: true}, &buf)
+		assessWorkers = old
+		if err != nil {
+			t.Fatalf("Sync with %d workers: %v", workers, err)
+		}
+		// Past the header line, which carries the age of the last fetch.
+		_, got, _ := strings.Cut(buf.String(), "\n")
+		if got != want.String() {
+			t.Fatalf("Sync with %d workers printed:\n%s\nwant:\n%s", workers, got, want.String())
+		}
+	}
+}
+
 // fetchHead is the fixture's FETCH_HEAD, whose mtime is the age --no-fetch
 // reports.
 func fetchHead(t *testing.T, main string) string {

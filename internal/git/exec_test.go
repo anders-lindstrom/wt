@@ -126,33 +126,48 @@ func TestRunBoundedKillsTheGroupAtTheDeadline(t *testing.T) {
 }
 
 func TestKillRunningTakesDownABoundedCommand(t *testing.T) {
-	done := make(chan error, 1)
-	go func() {
-		_, _, err := RunBounded(time.Minute, exec.Command("sleep", "30"))
-		done <- err
-	}()
+	killRunningTakesDown(t, 1)
+}
+
+// Several commands waited on at once, as the sync overview runs them, are
+// all registered and all killed by the one call.
+func TestKillRunningTakesDownEveryBoundedCommand(t *testing.T) {
+	killRunningTakesDown(t, 3)
+}
+
+func killRunningTakesDown(t *testing.T, n int) {
+	t.Helper()
+	done := make(chan error, n)
+	for range n {
+		go func() {
+			_, _, err := RunBounded(time.Minute, exec.Command("sleep", "30"))
+			done <- err
+		}()
+	}
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		groups.Lock()
-		n := len(groups.pids)
+		registered := len(groups.pids)
 		groups.Unlock()
-		if n > 0 {
+		if registered >= n {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("RunBounded registered no process group")
+			t.Fatalf("RunBounded registered %d process groups, want %d", registered, n)
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	if n := KillRunning(); n < 1 {
-		t.Fatal("KillRunning signalled nothing")
+	if killed := KillRunning(); killed < n {
+		t.Fatalf("KillRunning signalled %d groups, want %d", killed, n)
 	}
-	select {
-	case err := <-done:
-		if err == nil {
-			t.Fatal("a killed command must report an error")
+	for range n {
+		select {
+		case err := <-done:
+			if err == nil {
+				t.Fatal("a killed command must report an error")
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatal("a command outlived the kill")
 		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("the command outlived the kill")
 	}
 }
