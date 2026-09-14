@@ -424,7 +424,11 @@ func handoverFiles(st *wtsync.State) []wtsync.FileOutcome {
 		files = append(files, wtsync.FileOutcome{Path: p})
 	}
 	for _, p := range st.ResolvedPaths() {
-		files = append(files, wtsync.FileOutcome{Path: p, Strategy: st.Strategy[p], Resolved: true})
+		f := wtsync.FileOutcome{Path: p, Strategy: st.Strategy[p], Resolved: true}
+		if note, ok := st.Lifted[p]; ok {
+			f.Lifted, f.Note = true, note
+		}
+		files = append(files, f)
 	}
 	for _, p := range st.Deleted {
 		files = append(files, wtsync.FileOutcome{Path: p, Strategy: st.Strategy[p], Resolved: true})
@@ -493,6 +497,10 @@ func fileMark(resolved bool) string {
 // nothing claiming it.
 func fileNote(f wtsync.FileOutcome) string {
 	switch {
+	case f.Lifted && f.Resolved:
+		// Nobody conflicted on it and the version rule still rewrote it:
+		// the one resolution worth a line of its own in the overview.
+		return f.By()
 	case f.Resolved, f.Note == "", f.Note == "unclaimed":
 		return ""
 	case len(f.Groups) > 0:
@@ -534,7 +542,7 @@ func printDetail(w io.Writer, work string, a wtsync.Assessment) {
 		for _, f := range handoverFiles(st) {
 			verdict := "yours"
 			if f.Resolved {
-				verdict = "resolved by " + f.Strategy
+				verdict = fileVerdict(f)
 			}
 			fmt.Fprintf(w, "    %s %s  %s\n", fileMark(f.Resolved), f.Path, verdict)
 		}
@@ -593,7 +601,8 @@ func runVerdict(work string, a wtsync.Assessment) string {
 }
 
 // printFileDetail is one conflicted file: ✓ and the strategy that resolved
-// it, or ✗ and why it is yours, then any keys it collided on.
+// it — or lifted its version without any conflict — or ✗ and why it is
+// yours, then any keys it collided on.
 func printFileDetail(w io.Writer, f wtsync.FileOutcome) {
 	fmt.Fprintf(w, "    %s %s  %s\n", fileMark(f.Resolved), f.Path, fileVerdict(f))
 	if len(f.Groups) > 0 {
@@ -608,6 +617,8 @@ func printFileDetail(w io.Writer, f wtsync.FileOutcome) {
 func fileVerdict(f wtsync.FileOutcome) string {
 	first, _, _ := strings.Cut(f.Note, "\n")
 	switch {
+	case f.Lifted && f.Resolved:
+		return f.By()
 	case f.Resolved && f.Strategy != "":
 		return "resolved by " + f.Strategy
 	case f.Resolved:

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 )
 
@@ -26,12 +25,21 @@ func StagedConflicts(wtPath string) ([]Conflict, error) {
 	return cs, nil
 }
 
-// Progress is where a stopped rebase is.
+// Progress is where a stopped rebase is: the pick it is at among the picks,
+// and the last command the sequencer ran, which is what stopped it — pick
+// for a conflict, and the edit or break a run puts in the list around a pick
+// that may need a version lift.
 type Progress struct {
 	Index   int
 	Total   int
 	Commit  string
 	Subject string
+	Command string
+	// Applied says the sequencer stopped after applying the pick, for an
+	// edit: HEAD is past the pick (or, when git dropped the pick as empty,
+	// unmoved), and there is nothing unmerged. It is git's amend marker; an
+	// edit that stopped at a conflict is not applied, and has none.
+	Applied bool
 }
 
 // sequencerDirs resolves the sequencer's directories by name, in one git and
@@ -93,34 +101,58 @@ func RebaseInProgress(wtPath string) (bool, error) {
 	return false, nil
 }
 
-// RebaseProgress reads the sequencer's own bookkeeping: msgnum/end for the
-// position, stopped-sha for the commit, message for its subject.
+// RebaseProgress reads the sequencer's own bookkeeping: the commands done
+// and the commands left for the position, stopped-sha for the commit,
+// message for its subject. The position counts picks, not lines: msgnum and
+// end count every line of the list, and a run's list carries a break before
+// each pick that may need a version lift, which would put every stop after
+// it one line further along than the commit it is at.
 func RebaseProgress(wtPath string) (Progress, error) {
 	dir, err := rebaseDir(wtPath)
 	if err != nil {
 		return Progress{}, err
 	}
-	readInt := func(name string) (int, error) {
-		b, err := os.ReadFile(filepath.Join(dir, name))
-		if err != nil {
-			return 0, err
-		}
-		return strconv.Atoi(strings.TrimSpace(string(b)))
-	}
 	var p Progress
-	if p.Index, err = readInt("msgnum"); err != nil {
+	done, err := os.ReadFile(filepath.Join(dir, "done"))
+	if err != nil {
 		return p, fmt.Errorf("rebase progress: %w", err)
 	}
-	if p.Total, err = readInt("end"); err != nil {
+	todo, err := os.ReadFile(filepath.Join(dir, "git-rebase-todo"))
+	if err != nil {
 		return p, fmt.Errorf("rebase progress: %w", err)
 	}
+	var left int
+	p.Index, p.Command = countPicks(string(done))
+	left, _ = countPicks(string(todo))
+	p.Total = p.Index + left
 	if b, err := os.ReadFile(filepath.Join(dir, "stopped-sha")); err == nil {
 		p.Commit = strings.TrimSpace(string(b))
 	}
 	if b, err := os.ReadFile(filepath.Join(dir, "message")); err == nil {
 		p.Subject, _, _ = strings.Cut(strings.TrimSpace(string(b)), "\n")
 	}
+	if _, err := os.Stat(filepath.Join(dir, "amend")); err == nil {
+		p.Applied = true
+	}
 	return p, nil
+}
+
+// countPicks counts the commands in a sequencer list that apply a commit,
+// and names the last command of any kind, "" for an empty list. Comments
+// and blank lines are neither.
+func countPicks(list string) (picks int, last string) {
+	for _, line := range strings.Split(list, "\n") {
+		f := strings.Fields(line)
+		if len(f) == 0 || strings.HasPrefix(f[0], "#") {
+			continue
+		}
+		last = f[0]
+		switch f[0] {
+		case "pick", "p", "edit", "e", "reword", "r", "squash", "s", "fixup", "f", "merge", "m":
+			picks++
+		}
+	}
+	return picks, last
 }
 
 // RebaseTarget is what a merge-backend rebase in progress was started with,

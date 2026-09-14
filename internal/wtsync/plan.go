@@ -57,8 +57,12 @@ type State struct {
 	Total    int               `json:"total"`
 	Resolved map[string]string `json:"resolved"`
 	Strategy map[string]string `json:"strategy"`
-	Deleted  []string          `json:"deleted"`
-	Left     []string          `json:"left"`
+	// Lifted is what the version rule said for each path it lifted rather
+	// than resolved at the stop, so a report of the handover can say it the
+	// way the run did.
+	Lifted  map[string]string `json:"lifted,omitempty"`
+	Deleted []string          `json:"deleted"`
+	Left    []string          `json:"left"`
 	// Head is where HEAD was when the handover was written: detached, at
 	// the last pick before the stop. A commit a person makes inside the
 	// rebase moves HEAD off it, which is how undo knows to name that commit
@@ -332,22 +336,51 @@ func RenderPlan(in PlanInput) (string, error) {
 	if len(resolved) > 0 {
 		b.WriteString("\n## already resolved — do not re-open\n")
 		for _, f := range resolved {
-			fmt.Fprintf(&b, "%-40s %s\n", f.Path, f.Strategy)
+			fmt.Fprintf(&b, "%-40s %s\n", f.Path, f.By())
 		}
 	}
 
 	fmt.Fprintf(&b, "\n## yours — %d file%s\n", len(left), pluralPlan(len(left)))
 	// A rebase replays the branch onto trunk, so HEAD is trunk's side: the
 	// opposite of what a merge trains people to expect, and one wrong
-	// resolution is what saying so costs to prevent.
-	replayed := "<sha>"
-	if in.Handover.Subject != "" {
-		replayed += " (" + oneLinePlan(in.Handover.Subject) + ")"
+	// resolution is what saying so costs to prevent. Said only where a file
+	// carries markers: a file the version rule refused to lift has none,
+	// since git merged it clean.
+	markers := false
+	for _, f := range left {
+		if !f.Lifted {
+			markers = true
+		}
 	}
-	fmt.Fprintf(&b, "<<<<<<< HEAD is trunk, >>>>>>> %s is the branch's commit being replayed\n", replayed)
+	if markers {
+		replayed := "<sha>"
+		if in.Handover.Subject != "" {
+			replayed += " (" + oneLinePlan(in.Handover.Subject) + ")"
+		}
+		fmt.Fprintf(&b, "<<<<<<< HEAD is trunk, >>>>>>> %s is the branch's commit being replayed\n", replayed)
+	}
 	for _, f := range left {
 		note := f.Note
+		unlifted := ""
 		switch {
+		case f.Lifted:
+			// A file git merged clean whose version rule refused to lift
+			// it: it carries trunk's value, and the version the branch
+			// needs is a person's to write. Where the stop has no conflict
+			// at all, the pick is already committed, and resume amends what
+			// they stage into it.
+			note = fmt.Sprintf("%s refused to lift it: %s", f.Strategy, f.Note)
+			switch {
+			case f.Note == shapeRefusal:
+				// The lines did not pair up: the branch added or removed
+				// one, and nothing says it bumped anything. Writing a
+				// version here would bump an API the branch never changed.
+				unlifted = "no markers: the branch added or removed a version line; check the version lines by hand, git add the file, then wt sync resume"
+			case !markers:
+				unlifted = "no markers: the commit is already made, with trunk's value; write the version the branch should carry, above trunk's, then git add it, and wt sync resume amends it into the commit"
+			default:
+				unlifted = "no markers: git merged it with trunk's value; write the version the branch should carry, above trunk's, then git add it"
+			}
 		case f.Strategy != "":
 			// A file a declaration claims, whose strategy refused it: it is
 			// a person's after all, and saying which strategy refused and
@@ -361,6 +394,9 @@ func RenderPlan(in PlanInput) (string, error) {
 		// A path Left names but Files does not describe has no note at all,
 		// and a line of padding with nothing after it is noise.
 		b.WriteString(strings.TrimRight(fmt.Sprintf("%-40s %s", f.Path, note), " ") + "\n")
+		if unlifted != "" {
+			fmt.Fprintf(&b, "    %s\n", unlifted)
+		}
 		subject, err := trunkSubject(in.MainRoot, in.Base, in.Trunk, f.Path)
 		if err != nil {
 			return "", err

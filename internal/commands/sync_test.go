@@ -804,3 +804,39 @@ func TestSessionsChangedNamesWhatIsNewOrBusy(t *testing.T) {
 		}
 	}
 }
+
+// A file nobody conflicted on that the version rule still rewrote is shown
+// beside the resolved files, in the overview's note and the detail's stop
+// list alike, saying what it did and what trunk had.
+func TestSyncShowsALiftedVersionBesideTheResolvedFiles(t *testing.T) {
+	lifted := wtsync.FileOutcome{Path: "accessmanagement/src/main/resources/application.yaml", Strategy: "owned-line", Resolved: true, Lifted: true, Note: "lifted the version to 1.2.4: trunk took 1.2.3"}
+	a := wtsync.Assessment{
+		Branch: "feat_wt/api", Path: "/src/demo_wt/feat_wt/api", Class: wtsync.Recipe, Behind: 3, Ahead: 2,
+		Replay: wtsync.Replay{Commits: 2, Stops: []wtsync.Stop{{Index: 1, Total: 2, Subject: "bump the api", Files: []wtsync.FileOutcome{lifted}, Resolved: true}}},
+		Files:  []wtsync.FileOutcome{lifted},
+	}
+	var buf bytes.Buffer
+	printDetail(&buf, "api", a)
+	out := buf.String()
+	for _, want := range []string{
+		"\n  1/2  bump the api\n",
+		"\n    ✓ accessmanagement/src/main/resources/application.yaml  owned-line lifted the version to 1.2.4: trunk took 1.2.3\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("want %q in:\n%s", want, out)
+		}
+	}
+	lines := summaryLines(a)
+	if len(lines) != 2 || lines[0] != "1 stop, resolved · 1/2: application.yaml✓" || lines[1] != "application.yaml: owned-line lifted the version to 1.2.4: trunk took 1.2.3" {
+		t.Errorf("summary lines = %q", lines)
+	}
+	// A handover that staged a lift says the same under its own heading.
+	st := &wtsync.State{
+		Left: []string{"a.txt"}, Resolved: map[string]string{lifted.Path: "deadbeef"},
+		Strategy: map[string]string{lifted.Path: "owned-line"}, Lifted: map[string]string{lifted.Path: lifted.Note},
+	}
+	files := handoverFiles(st)
+	if len(files) != 2 || !files[1].Lifted || fileVerdict(files[1]) != "owned-line lifted the version to 1.2.4: trunk took 1.2.3" {
+		t.Errorf("handover files = %+v", files)
+	}
+}
