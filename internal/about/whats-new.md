@@ -6,6 +6,15 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-15 07:38 — wt sync lifts a version both sides bumped to the same number
+
+- A branch that bumped `version: 1.2.3` while trunk took 1.2.3 on its own used
+  to merge clean, so no rule ran and the branch landed on trunk's number. Now
+  `max-plus-patch` runs at that commit too, in the yaml and the spec, and the
+  table, plan and run say `owned-line lifted the version to 1.2.4: trunk took 1.2.3`.
+- A line only the branch bumped, or already above trunk, is left alone; a version
+  that is not X.Y.Z, or a file whose version lines no longer pair up, is refused.
+
 ## 2026-09-14 10:27 — wt sync looks at several worktrees at once
 
 - The overview used to simulate one worktree's rebase after another; it now
