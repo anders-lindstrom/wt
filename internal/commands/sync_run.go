@@ -293,29 +293,31 @@ func (r *runPlan) lockAll() error {
 		// A check that cannot be run is not a passed check: this fails
 		// closed, the way the restore check in wtsync does. It says so,
 		// rather than reporting the state it never managed to read.
-		busy, err := wtsync.RebaseInProgress(p.wt.Path)
-		if err != nil {
-			r.refuseStack(b, p.work+": changed since triage: could not check: "+err.Error())
+		stand := wtsync.Recheck(p.wt.Path, gitDir, fresh)
+		if stand.Err != nil {
+			// In git's own words, as this line has always read them: the
+			// form wtsync gives its errors adds the exit status.
+			msg := stand.Err.Error()
+			var gerr *git.Error
+			if errors.As(stand.Err, &gerr) {
+				msg = gerr.Error()
+			}
+			r.refuseStack(b, p.work+": changed since triage: could not check: "+msg)
 			continue
 		}
-		if busy {
+		if stand.Rebasing {
 			why := p.work + ": changed since triage: a rebase is in progress"
-			if has, herr := wtsync.HasPlan(gitDir); herr == nil && has {
+			if stand.Plan {
 				why = p.work + ": left mid-rebase by an earlier run: " + wtsync.WayOut(wtsync.Way{Work: p.work, Plan: true, Rebasing: true})
 			}
 			r.refuseStack(b, why)
 			continue
 		}
-		dirty, err := repo.Dirty(p.wt.Path, true)
-		if err != nil {
-			r.refuseStack(b, p.work+": changed since triage: could not check: "+err.Error())
-			continue
-		}
-		if dirty {
+		if stand.Dirty {
 			r.refuseStack(b, p.work+": changed since triage: tracked changes")
 			continue
 		}
-		if why := sessionsChanged(p.a.Sessions, wtsync.SessionsAt(fresh, p.wt.Path)); why != "" {
+		if why := sessionsChanged(p.a.Sessions, stand.Sessions); why != "" {
 			r.refuseStack(b, p.work+": changed since triage: "+why)
 			continue
 		}

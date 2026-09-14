@@ -918,3 +918,37 @@ func TestSyncRunReleasesEachLockAsSoonAsItIsDoneWithTheWorktree(t *testing.T) {
 		t.Error("the run removed somebody else's lock")
 	}
 }
+
+// A worktree whose state can no longer be read between triage and the lock
+// is refused for that, in git's own words: the check under the lock reads
+// through wtsync, whose error form appends the exit status, and the run's
+// line never carried it.
+func TestSyncRunSaysWhyARecheckCouldNotBeMadeInGitsOwnWords(t *testing.T) {
+	ctx, bump := runFixture(t, false)
+	gitDir, err := wtsync.GitDir(bump)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := gitOut(t, bump, "rev-parse", "HEAD")
+	opts := noAgents()
+	// The second listing is the last thing before the lock: the index goes
+	// unreadable there, after triage read it and before the recheck does.
+	opts.Relist = func() ([]wtsync.Agent, error) {
+		if err := os.WriteFile(filepath.Join(gitDir, "index"), []byte("junk"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return []wtsync.Agent{}, nil
+	}
+	var out bytes.Buffer
+	err = SyncRun(ctx, []string{"bump"}, opts, &out)
+	s := out.String()
+	if err == nil || !strings.Contains(s, "refused: bump: changed since triage: could not check: fatal: ") {
+		t.Fatalf("err %v\n%s", err, s)
+	}
+	if strings.Contains(s, "exit status") {
+		t.Fatalf("the refusal quotes the exit status:\n%s", s)
+	}
+	if gitOut(t, bump, "rev-parse", "HEAD") != old {
+		t.Fatal("HEAD moved")
+	}
+}

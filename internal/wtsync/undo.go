@@ -113,14 +113,20 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 			return nil, fmt.Errorf("%s: %w; nothing undone", s.Branch, err)
 		}
 		locks = append(locks, lock)
+		// The busy session first, from the listing alone: a worktree refused
+		// for it is not read at all, so an interrupt during the reads below
+		// cannot land on one that was already refused.
 		if sessions := SessionsAt(agents, wt.Path); len(sessions.Busy()) > 0 {
 			return nil, fmt.Errorf("%s: an agent session is busy in it: %s; nothing undone", s.Branch, sessions.Label(agentLabel))
 		}
-		busy, err := RebaseInProgress(wt.Path)
-		if err != nil {
-			return nil, err
+		// Read under the lock, so what the abort and the reset below trust
+		// is what is there. The sidecar read above is the handover marker
+		// this loop goes by; the lock is what keeps it true.
+		stand := RecheckGit(wt.Path, gitDir)
+		if stand.Err != nil {
+			return nil, stand.Err
 		}
-		if busy {
+		if stand.Rebasing {
 			// The sidecar read above is the handover marker; a rebase
 			// without one is somebody's own.
 			if !stateOK {
@@ -163,11 +169,7 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 			aborting[s.Branch] = true
 			continue
 		}
-		out, err := gitEnv(wt.Path, nil, nil, "--no-optional-locks", "status", "--porcelain", "--untracked-files=no")
-		if err != nil {
-			return nil, err
-		}
-		if out != "" {
+		if stand.Dirty {
 			return nil, fmt.Errorf("%s has tracked changes; nothing undone", s.Branch)
 		}
 	}
