@@ -63,7 +63,7 @@ func TestArgErrorsShowUsage(t *testing.T) {
 
 func TestArgErrorNamesWhatIsNeeded(t *testing.T) {
 	out, _ := runCmd(t, "path")
-	if !strings.Contains(out, "<type>/<work>") {
+	if !strings.Contains(out, "<work>") {
 		t.Errorf("usage does not name the argument:\n%s", out)
 	}
 }
@@ -89,7 +89,7 @@ func TestArgErrorMessageIsHelpful(t *testing.T) {
 	if strings.HasPrefix(msg, "wt ") {
 		t.Errorf("message repeats the command name, which Execute already prefixes: %q", msg)
 	}
-	if !strings.Contains(msg, "<type>/<work>") {
+	if !strings.Contains(msg, "<work>") {
 		t.Errorf("message does not name what is needed: %q", msg)
 	}
 	if !strings.Contains(msg, "for example") {

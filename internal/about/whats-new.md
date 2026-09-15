@@ -6,6 +6,16 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-15 09:36 — wt path and wt branch find the worktree by any name wt list prints
+
+- `wt path <work>` and `wt branch <work>` now answer for the worktree that
+  exists, named by its work name, branch or path, whatever its type. A bare name
+  used to take the default type, so `wt path wt-sync-flags` printed a `feat_wt/`
+  directory that did not exist while the worktree sat under `docs_wt/`.
+- Only when nothing exists does the old reading apply: the default type for a
+  bare name, and the path `wt new` would use. A name under two types is refused
+  as ambiguous, as `wt remove` refuses it.
+
 ## 2026-09-15 09:04 — the sync verbs are also flags, for finishing a recalled line
 
 - `wt sync <work> --run`, `--resume` and `--undo` are `wt sync run`, `resume` and

@@ -53,11 +53,12 @@ carry are shims that call `wt`.
 1. **Find worktrees through git.** Use `git worktree list --porcelain`, `wt list` or
    `wt find`. The layout says where new worktrees go; existing ones can sit elsewhere
    (see the table below), so the shape of a path proves nothing.
-2. **Ask `wt` for paths and branches.** From inside the repo, `wt path <type>/<work>`
-   and `wt branch <type>/<work>`; `wt config --shell` for the repo's settings.
-   `wt path` prints an absolute path, and when that work already has a worktree it
-   prints where that worktree is. Scripts that rebuild the convention themselves are
-   how tools drift apart.
+2. **Ask `wt` for paths and branches.** From inside the repo, `wt path <work>` and
+   `wt branch <work>`; `wt config --shell` for the repo's settings. Both take any
+   name `wt list` prints for a worktree that exists — the work name, the branch or
+   the path — and answer for that worktree, whatever its type. `wt path` prints an
+   absolute path; only when nothing exists is it where `wt new` would put the work.
+   Scripts that rebuild the convention themselves are how tools drift apart.
 3. **Create with `wt new`.** Its only stdout is the path:
    `path="$(wt new fix/login-crash)"`. For a checkout another tool made, run
    `wt adopt <path> --relocate`. Claude Code's `WorktreeCreate` and `WorktreeRemove`
