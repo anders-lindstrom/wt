@@ -25,15 +25,52 @@ type RunOptions struct {
 	pushOptions
 }
 
+// participant is one worktree of a run: the branch it is on, what triage
+// made of it, the lock the run holds on it, and what its rebase came to.
 type participant struct {
 	wt      repo.Worktree
 	work    string
 	a       wtsync.Assessment
 	verdict wtsync.Verdict
 	reason  string
+	// refused is why the run does not rebase this worktree, printed under
+	// its row: its own refusal at triage or at the lock, a stack member
+	// refused before anything moved, which poisons the whole stack (never
+	// half-apply, spec §4), or a parent that failed or was restored, which
+	// takes what sits on top of it with it. Empty means it goes ahead.
+	refused string
 	lock    *wtsync.Lock
 	result  *wtsync.Result
 	head    string // HEAD after the rebase and the deferred steps; what a child rebases onto
+}
+
+// runPlan is one wt sync run: the trunk it rebases onto, the worktrees the
+// arguments named and the stacks they belong to, and what each of them came
+// to. SyncRun drives it through its phases in order: selectBranches, triage,
+// lockAll, then rebaseOne per worktree.
+type runPlan struct {
+	ctx     *Context
+	opts    RunOptions
+	w       io.Writer
+	tracker *rebaseTracker
+
+	trunk    string // trunk as a person says it, "main"
+	onto     string // what the run rebases onto, "origin/main"
+	trunkSHA string // onto's tip, one SHA for the whole run
+	cfg      *wtsync.Config
+
+	parents  map[string]string
+	branches []string // every member of every named stack, parents first
+	parts    map[string]*participant
+	epoch    int64
+
+	// What each worktree came to: a count per outcome for the summary a run
+	// of more than one ends with, the line under it for each that did not
+	// finish, how the closing error names it, and what may be pushed.
+	outcomes   map[string]int
+	unfinished []string
+	failures   []string
+	pushable   []pushTarget
 }
 
 // SyncRun rebases the named worktrees (and the stacks they belong to) onto
@@ -41,15 +78,62 @@ type participant struct {
 // at the end. Anything refused, restored, failed or owed is reported and
 // makes the returned error non-nil, so a script sees it.
 func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
-	tracker := &rebaseTracker{}
-	defer watchSignals(w, tracker)()
+	r := &runPlan{ctx: ctx, opts: opts, w: w, tracker: &rebaseTracker{}, trunk: ctx.Config.MainBranch, outcomes: map[string]int{}}
+	defer watchSignals(w, r.tracker)()
 
-	trunk := ctx.Config.MainBranch
+	if err := r.declare(); err != nil {
+		return err
+	}
+	if err := r.selectBranches(works); err != nil {
+		return err
+	}
+	if proceed, err := r.triage(); err != nil || !proceed {
+		return err
+	}
+	// The backstop for a run that returns early: whatever lockAll and
+	// rebaseOne have not released by then. A handover drops its handle
+	// before this runs, so the lock it leaves behind for resume and undo is
+	// not among them.
+	defer r.releaseAll()
+	if err := r.lockAll(); err != nil {
+		return err
+	}
+	for _, b := range r.branches {
+		r.rebaseOne(b)
+	}
+	if len(r.branches) > 1 {
+		var counts []string
+		for _, outcome := range []string{"rebased", "skipped", "needs you", "refused", "restored", "failed"} {
+			if n := r.outcomes[outcome]; n > 0 {
+				counts = append(counts, fmt.Sprintf("%d %s", n, outcome))
+			}
+		}
+		fmt.Fprintf(w, "\n%s\n", strings.Join(counts, " · "))
+		for _, line := range r.unfinished {
+			fmt.Fprintln(w, line)
+		}
+	}
+	pushFailed, err := offerPush(w, opts.Push, opts.ConfirmPush, r.pushable)
+	if err != nil {
+		return err
+	}
+	r.failures = append(r.failures, pushFailed...)
+	if len(r.failures) > 0 {
+		return fmt.Errorf("not completed: %s", strings.Join(r.failures, ", "))
+	}
+	return nil
+}
+
+// declare fetches trunk unless told not to, pins the one SHA the whole run
+// works against, prints the run's first line and reads the declaration
+// there.
+func (r *runPlan) declare() error {
+	ctx := r.ctx
 	var fetched string
-	if opts.NoFetch {
-		fetched = lastFetched(ctx.Repo.MainRoot, opts.now())
+	if r.opts.NoFetch {
+		fetched = lastFetched(ctx.Repo.MainRoot, r.opts.now())
 	} else {
-		if _, err := git.RunTimeout(ctx.Repo.MainRoot, networkTimeout, "fetch", "--quiet", "origin", trunk); err != nil {
+		if _, err := git.RunTimeout(ctx.Repo.MainRoot, networkTimeout, "fetch", "--quiet", "origin", r.trunk); err != nil {
 			return fmt.Errorf("fetch: %w", err)
 		}
 		fetched = "fetched"
@@ -61,7 +145,8 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(w, "wt sync run  onto %s %s (%s)\n", onto, git.ShortID(trunkSHA, 7), fetched)
+	r.onto, r.trunkSHA = onto, trunkSHA
+	fmt.Fprintf(r.w, "wt sync run  onto %s %s (%s)\n", onto, git.ShortID(trunkSHA, 7), fetched)
 	cfg, err := wtsync.LoadFromRef(ctx.Repo.MainRoot, trunkSHA)
 	if errors.Is(err, wtsync.ErrNoConfig) {
 		return fmt.Errorf("%s declares no %s on %s: nothing is rebased", ctx.Repo.Name, wtsync.ConfigFile, onto)
@@ -69,6 +154,14 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 	if err != nil {
 		return err
 	}
+	r.cfg = cfg
+	return nil
+}
+
+// selectBranches turns the arguments into the branches the run rebases: each
+// named worktree's branch, every other member of its stack, parents first.
+func (r *runPlan) selectBranches(works []string) error {
+	ctx := r.ctx
 	worktrees, err := ctx.Repo.Worktrees()
 	if err != nil {
 		return err
@@ -87,7 +180,7 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 		}
 		named = append(named, wt.Branch)
 	}
-	parents, ambiguous, err := wtsync.Parents(ctx.Repo.MainRoot, trunkSHA, worktrees)
+	parents, ambiguous, err := wtsync.Parents(ctx.Repo.MainRoot, r.trunkSHA, worktrees)
 	if err != nil {
 		return err
 	}
@@ -111,310 +204,309 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 			}
 		}
 		if len(added) > 0 {
-			fmt.Fprintf(w, "%s is a stack with %s: rebasing all of them\n", workName(ctx, b), strings.Join(added, ", "))
+			fmt.Fprintf(r.w, "%s is a stack with %s: rebasing all of them\n", workName(ctx, b), strings.Join(added, ", "))
 		}
 	}
-	branches = wtsync.Order(parents, branches)
+	r.parents = parents
+	r.branches = wtsync.Order(parents, branches)
+	r.parts = map[string]*participant{}
+	for _, b := range r.branches {
+		r.parts[b] = &participant{wt: byBranch[b], work: workName(ctx, b)}
+	}
+	return nil
+}
 
-	agents, err := opts.agents(rebasedNothing)
+// triage assesses every branch, refuses what preflight refuses (and the
+// stack it belongs to), names the idle sessions the run is about to move
+// files under, and asks the one question a run asks. proceed is false for
+// the answer no, which is not an error: the line saying so has been printed.
+func (r *runPlan) triage() (proceed bool, err error) {
+	agents, err := r.opts.agents(rebasedNothing)
 	if err != nil {
-		return err
+		return false, err
 	}
-	parts := map[string]*participant{}
-	for _, b := range branches {
-		p := &participant{wt: byBranch[b], work: workName(ctx, b)}
-		p.a = wtsync.Assess(ctx.Repo.MainRoot, trunkSHA, cfg, p.wt, agents)
+	for _, b := range r.branches {
+		p := r.parts[b]
+		p.a = wtsync.Assess(r.ctx.Repo.MainRoot, r.trunkSHA, r.cfg, p.wt, agents)
 		p.verdict, p.reason = wtsync.Preflight(p.a)
-		parts[b] = p
 	}
-	// A member refused before anything has moved poisons its whole stack:
-	// never half-apply (spec §4).
-	poisoned := map[string]string{}
-	poison := func(b, why string) {
-		for _, m := range wtsync.Members(parents, b) {
-			if poisoned[m] == "" {
-				poisoned[m] = why
-			}
-		}
-	}
-	// A rebase that failed or was restored is different: the branch is back
-	// where it was and its parent and siblings are untouched, so only what
-	// sits on top of it loses its base.
-	poisonAbove := func(b, why string) {
-		for _, m := range wtsync.Descendants(parents, b) {
-			if poisoned[m] == "" {
-				poisoned[m] = why
-			}
-		}
-	}
-	for _, b := range branches {
-		if parts[b].verdict == wtsync.RefuseRun {
-			poison(b, parts[b].work+": "+parts[b].reason)
+	for _, b := range r.branches {
+		if p := r.parts[b]; p.verdict == wtsync.RefuseRun {
+			r.refuseStack(b, p.work+": "+p.reason)
 		}
 	}
 	var going []string
 	underIdle := false
-	for _, b := range branches {
-		p := parts[b]
-		if p.verdict != wtsync.Proceed || poisoned[b] != "" {
+	for _, b := range r.branches {
+		p := r.parts[b]
+		if p.verdict != wtsync.Proceed || p.refused != "" {
 			continue
 		}
 		going = append(going, p.work)
 		// Preflight lets sessions through only when every one is idle.
 		if len(p.a.Sessions) > 0 {
-			fmt.Fprintln(w, idleNotice(p.work, p.a.Sessions))
+			fmt.Fprintln(r.w, idleNotice(p.work, p.a.Sessions))
 			underIdle = true
 		}
 	}
 	if len(going) > 1 || underIdle {
-		if opts.Confirm != nil {
-			fmt.Fprintf(w, "about to rebase: %s\n", strings.Join(going, ", "))
+		if r.opts.Confirm != nil {
+			fmt.Fprintf(r.w, "about to rebase: %s\n", strings.Join(going, ", "))
 		}
 		// Nothing to re-check here: a run lists the sessions again at the
-		// lock below, whether or not anything was asked, and compares them
-		// there with the lock in hand.
-		ok, _, err := askIdle(w, opts.verbOptions, going, nil, agents, rebasedNothing)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return nil
+		// lock, whether or not anything was asked, and compares them there
+		// with the lock in hand.
+		ok, _, err := askIdle(r.w, r.opts.verbOptions, going, nil, agents, rebasedNothing)
+		if err != nil || !ok {
+			return false, err
 		}
 	}
+	return true, nil
+}
+
+// lockAll locks every member of every proceeding stack before touching any,
+// and re-checks what triage saw: the lock is what makes the check hold. A
+// worktree that fails here refuses its whole stack, as at triage.
+func (r *runPlan) lockAll() error {
 	// Listed again now: a question can sit unanswered for as long as it
 	// likes, and a triage over a large fleet takes a while.
-	fresh, err := opts.relist(rebasedNothing)
+	fresh, err := r.opts.relist(rebasedNothing)
 	if err != nil {
 		return err
 	}
-	epoch := opts.now().UnixNano()
-
-	// Lock every member of every proceeding stack before touching any, and
-	// re-check what triage saw: the lock is what makes the check hold.
-	release := func(b string) {
-		if p := parts[b]; p != nil && p.lock != nil {
-			_ = p.lock.Release()
-			p.lock = nil
-		}
-	}
-	defer func() {
-		for _, b := range branches {
-			release(b)
-		}
-	}()
-	for _, b := range branches {
-		p := parts[b]
-		if poisoned[b] != "" || p.verdict != wtsync.Proceed {
+	r.epoch = r.opts.now().UnixNano()
+	for _, b := range r.branches {
+		p := r.parts[b]
+		if p.refused != "" || p.verdict != wtsync.Proceed {
 			continue
 		}
 		gitDir, err := wtsync.GitDir(p.wt.Path)
 		if err != nil {
 			return err
 		}
-		lock, err := wtsync.Acquire(gitDir, opts.now())
+		lock, err := wtsync.Acquire(gitDir, r.opts.now())
 		if err != nil {
-			poison(b, p.work+": locked: "+err.Error())
+			r.refuseStack(b, p.work+": locked: "+err.Error())
 			continue
 		}
 		p.lock = lock
 		// A check that cannot be run is not a passed check: this fails
 		// closed, the way the restore check in wtsync does. It says so,
 		// rather than reporting the state it never managed to read.
-		busy, err := wtsync.RebaseInProgress(p.wt.Path)
-		if err != nil {
-			poison(b, p.work+": changed since triage: could not check: "+err.Error())
+		stand := wtsync.Recheck(p.wt.Path, gitDir, fresh)
+		if stand.Err != nil {
+			// In git's own words, as this line has always read them: the
+			// form wtsync gives its errors adds the exit status.
+			msg := stand.Err.Error()
+			var gerr *git.Error
+			if errors.As(stand.Err, &gerr) {
+				msg = gerr.Error()
+			}
+			r.refuseStack(b, p.work+": changed since triage: could not check: "+msg)
 			continue
 		}
-		if busy {
+		if stand.Rebasing {
 			why := p.work + ": changed since triage: a rebase is in progress"
-			if has, herr := wtsync.HasPlan(gitDir); herr == nil && has {
+			if stand.Plan {
 				why = p.work + ": left mid-rebase by an earlier run: " + wtsync.WayOut(wtsync.Way{Work: p.work, Plan: true, Rebasing: true})
 			}
-			poison(b, why)
+			r.refuseStack(b, why)
 			continue
 		}
-		dirty, err := repo.Dirty(p.wt.Path, true)
-		if err != nil {
-			poison(b, p.work+": changed since triage: could not check: "+err.Error())
+		if stand.Dirty {
+			r.refuseStack(b, p.work+": changed since triage: tracked changes")
 			continue
 		}
-		if dirty {
-			poison(b, p.work+": changed since triage: tracked changes")
-			continue
-		}
-		if why := sessionsChanged(p.a.Sessions, wtsync.SessionsAt(fresh, p.wt.Path)); why != "" {
-			poison(b, p.work+": changed since triage: "+why)
+		if why := sessionsChanged(p.a.Sessions, stand.Sessions); why != "" {
+			r.refuseStack(b, p.work+": changed since triage: "+why)
 			continue
 		}
 	}
-	for _, b := range branches {
-		if poisoned[b] != "" {
-			release(b)
+	// A worktree refused here, or with a stack member refused here, is not
+	// touched by the run: its lock goes now, before anything is rebased,
+	// so nobody waits on it for the length of the run.
+	for _, b := range r.branches {
+		if p := r.parts[b]; p.refused != "" {
+			r.release(p)
 		}
-	}
-
-	var failures []string
-	// What each worktree came to: a count per outcome for the summary a run
-	// of more than one ends with, the line under it for each that did not
-	// finish, and how the closing error names it. Either string may be empty.
-	outcomes := map[string]int{}
-	var unfinished []string
-	settle := func(outcome, line, failure string) {
-		outcomes[outcome]++
-		if line != "" {
-			unfinished = append(unfinished, "  "+line)
-		}
-		if failure != "" {
-			failures = append(failures, failure)
-		}
-	}
-	var pushable []pushTarget
-	for _, b := range branches {
-		p := parts[b]
-		fmt.Fprintf(w, "\n%s  %s  %d behind · %d ahead\n", p.work, b, p.a.Behind, p.a.Ahead)
-		if why, ok := poisoned[b]; ok {
-			fmt.Fprintf(w, "  ✗ refused: %s\n", why)
-			settle("refused", "✗ "+p.work+"  refused: "+why, p.work)
-			continue
-		}
-		if p.verdict == wtsync.SkipRun {
-			fmt.Fprintf(w, "  ⏭ skipped: %s\n", p.reason)
-			settle("skipped", "", "")
-			continue
-		}
-		req := wtsync.Request{Path: p.wt.Path, Branch: b, Trunk: trunkSHA, Onto: trunkSHA, Epoch: epoch, Work: p.work}
-		req.Stacked = len(wtsync.Descendants(parents, b)) > 0
-		ontoLabel := onto
-		if parent, ok := parents[b]; ok {
-			if pp := parts[parent]; pp != nil && pp.result != nil && !pp.result.Restored && pp.head != "" {
-				req.Onto, req.Upstream, ontoLabel = pp.head, pp.result.OldTip, pp.work
-			}
-		}
-		if p.a.Class == wtsync.Contested && p.a.Replay.Stop != nil {
-			what := "the run stops there and writes a plan"
-			if req.Stacked {
-				what = "the run stops there and puts the branch back: a stack parent cannot be left waiting"
-			}
-			fmt.Fprintf(w, "  ⚠ contested at %d/%d: %s\n", p.a.Replay.Stop.Index, p.a.Replay.Stop.Total, what)
-		}
-		tracker.set(&rebaseInFlight{work: p.work, path: p.wt.Path, safety: wtsync.SafetyRef(b, epoch)})
-		res, rerr := wtsync.Rebase(ctx.Repo.MainRoot, cfg, req, w)
-		// A stop being handed over is still a rebase stopped in the worktree,
-		// so the tracker stays set until the handover is written: an interrupt
-		// meanwhile still names the worktree and what puts it back.
-		if rerr != nil || res.Left == nil {
-			tracker.set(nil)
-		}
-		p.result = &res
-		if rerr != nil {
-			fmt.Fprintf(w, "  ✗ failed: %v\n", rerr)
-			clearHandover(w, p.wt.Path)
-			settle("failed", fmt.Sprintf("✗ %s  failed: %v", p.work, rerr), p.work+" (failed)")
-			poisonAbove(b, p.work+" failed")
-			release(b)
-			continue
-		}
-		if res.Left != nil {
-			herr := handOver(ctx, w, handoverInput{
-				Work: p.work, Branch: b, Path: p.wt.Path, TrunkRef: onto, TrunkSHA: trunkSHA,
-				Onto: req.Onto, Upstream: req.Upstream, Epoch: epoch, Cfg: cfg, Res: res, Lock: p.lock,
-			})
-			tracker.set(nil)
-			if herr != nil {
-				fmt.Fprintf(w, "  ✗ failed: %v\n", herr)
-				// The rebase is still in the worktree and there is now no
-				// plan file to explain it, so say the two things a person
-				// cannot see for themselves. Any half-written brief goes:
-				// the sidecar is the marker and it was never written, so
-				// nothing acts on what is left, and a stale markdown would
-				// describe a stop that is not this one.
-				clearHandover(w, p.wt.Path)
-				// Not wt sync undo: it refuses a mid-rebase worktree, and
-				// there is no handover here for it to abort. The branch ref
-				// never moved, so the abort is the whole of putting it back.
-				way := wtsync.WayOut(wtsync.Way{Work: p.work, Path: p.wt.Path, Rebasing: true})
-				fmt.Fprintf(w, "  ⚠ %s is left mid-rebase with no plan: %s\n", p.work, way)
-				settle("failed", "✗ "+p.work+"  left mid-rebase with no plan: "+way, p.work+" (failed)")
-				release(b)
-				poisonAbove(b, p.work+" failed")
-				continue
-			}
-			// The lock is left behind on purpose; dropping the handle here
-			// keeps the deferred release from removing the file.
-			p.lock = nil
-			settle("needs you", "⚠ "+p.work+"  needs you: "+wtsync.WayOut(wtsync.Way{Work: p.work, Plan: true, Rebasing: true, OwesAdd: true}), p.work+" (needs you)")
-			poisonAbove(b, p.work+" is waiting for you")
-			continue
-		}
-		if res.Restored {
-			last := res.Stops[len(res.Stops)-1]
-			var files []string
-			for _, f := range last.Files {
-				if !f.Resolved {
-					files = append(files, f.Path)
-				}
-			}
-			restored := fmt.Sprintf("restored: %s at %d/%d not resolved; rebase by hand", strings.Join(files, ", "), last.Index, last.Total)
-			fmt.Fprintf(w, "  ✗ %s\n", restored)
-			clearHandover(w, p.wt.Path)
-			settle("restored", "✗ "+p.work+"  "+restored, p.work+" (restored)")
-			poisonAbove(b, p.work+" was restored")
-			release(b)
-			continue
-		}
-		line := fmt.Sprintf("  ✓ rebased %d commit%s onto %s", res.Replayed, plural(res.Replayed), ontoLabel)
-		if res.SignaturesDropped > 0 {
-			line += fmt.Sprintf(", %d signature%s dropped", res.SignaturesDropped, plural(res.SignaturesDropped))
-		}
-		fmt.Fprintln(w, line)
-		// The rebase is done; from here an interrupt cannot abort it, only
-		// leave the deferred steps and the result ref undone.
-		tracker.set(&rebaseInFlight{work: p.work, path: p.wt.Path, rebased: true})
-		head, owed, derr := completeRun(ctx, w, cfg, completeInput{
-			Work: p.work, Branch: b, Path: p.wt.Path, Epoch: epoch, Res: res,
-			Tell: p.a.Sessions, TrunkName: trunk, Landed: p.a.Behind, Check: pathsOnce(wtsync.StopPaths(res.Stops)),
-		})
-		tracker.set(nil)
-		p.head = head
-		failures = append(failures, owedBy(p.work, owed)...)
-		// The rebase itself stands; only this branch and what sits on it
-		// lose their footing, so the rest of the run carries on.
-		if derr != nil {
-			fmt.Fprintf(w, "  ✗ failed: %v\n", derr)
-			settle("failed", fmt.Sprintf("✗ %s  failed: %v", p.work, derr), p.work+" (failed)")
-			poisonAbove(b, p.work+" failed")
-			release(b)
-			continue
-		}
-		if len(owed) > 0 {
-			settle("rebased", "✗ "+p.work+"  owed: "+strings.Join(owed, ", ")+"; run it by hand, then push", "")
-		} else {
-			settle("rebased", "", "")
-			pushable = append(pushable, pushTarget{Work: p.work, Branch: b, Path: p.wt.Path})
-		}
-		release(b)
-	}
-	if len(branches) > 1 {
-		var counts []string
-		for _, outcome := range []string{"rebased", "skipped", "needs you", "refused", "restored", "failed"} {
-			if n := outcomes[outcome]; n > 0 {
-				counts = append(counts, fmt.Sprintf("%d %s", n, outcome))
-			}
-		}
-		fmt.Fprintf(w, "\n%s\n", strings.Join(counts, " · "))
-		for _, line := range unfinished {
-			fmt.Fprintln(w, line)
-		}
-	}
-	pushFailed, err := offerPush(w, opts.Push, opts.ConfirmPush, pushable)
-	if err != nil {
-		return err
-	}
-	failures = append(failures, pushFailed...)
-	if len(failures) > 0 {
-		return fmt.Errorf("not completed: %s", strings.Join(failures, ", "))
 	}
 	return nil
+}
+
+// release drops p's lock, if the run still holds one.
+func (r *runPlan) release(p *participant) {
+	if p.lock != nil {
+		_ = p.lock.Release()
+		p.lock = nil
+	}
+}
+
+// refuseStack refuses b and every other member of its stack that is not
+// already refused: a member refused before anything has moved poisons the
+// whole stack, never half-apply (spec §4).
+func (r *runPlan) refuseStack(b, why string) {
+	for _, m := range wtsync.Members(r.parents, b) {
+		if p := r.parts[m]; p != nil && p.refused == "" {
+			p.refused = why
+		}
+	}
+}
+
+// refuseAbove refuses what sits on top of b and nothing else. A rebase that
+// failed or was restored is different from a refusal: the branch is back
+// where it was and its parent and siblings are untouched, so only its
+// descendants lose their base.
+func (r *runPlan) refuseAbove(b, why string) {
+	for _, m := range wtsync.Descendants(r.parents, b) {
+		if p := r.parts[m]; p != nil && p.refused == "" {
+			p.refused = why
+		}
+	}
+}
+
+// releaseAll drops every lock the run still holds. A handover's lock is
+// left behind on purpose and its handle dropped before this runs, so it is
+// not touched.
+func (r *runPlan) releaseAll() {
+	for _, b := range r.branches {
+		r.release(r.parts[b])
+	}
+}
+
+// settle records what one worktree came to: the outcome for the count, the
+// line under the summary for one that did not finish, and how the closing
+// error names it. Either string may be empty.
+func (r *runPlan) settle(outcome, line, failure string) {
+	r.outcomes[outcome]++
+	if line != "" {
+		r.unfinished = append(r.unfinished, "  "+line)
+	}
+	if failure != "" {
+		r.failures = append(r.failures, failure)
+	}
+}
+
+// rebaseOne prints b's row and, unless it is refused or skipped, rebases it:
+// onto trunk, or onto the tip its stack parent ended at. A stop a person
+// owns is handed over; a finished rebase runs the deferred steps and pins
+// its result. Whatever it comes to is settled, and what sits on top of a
+// branch that did not finish is refused.
+func (r *runPlan) rebaseOne(b string) {
+	ctx, w, p := r.ctx, r.w, r.parts[b]
+	// The lock goes as soon as this worktree is done, whichever way, so the
+	// next worktree's rebase does not hold it. The one exception is the
+	// handover, which drops the handle to leave its lock behind.
+	defer r.release(p)
+	fmt.Fprintf(w, "\n%s  %s  %d behind · %d ahead\n", p.work, b, p.a.Behind, p.a.Ahead)
+	if p.refused != "" {
+		fmt.Fprintf(w, "  ✗ refused: %s\n", p.refused)
+		r.settle("refused", "✗ "+p.work+"  refused: "+p.refused, p.work)
+		return
+	}
+	if p.verdict == wtsync.SkipRun {
+		fmt.Fprintf(w, "  ⏭ skipped: %s\n", p.reason)
+		r.settle("skipped", "", "")
+		return
+	}
+	req := wtsync.Request{Path: p.wt.Path, Branch: b, Trunk: r.trunkSHA, Onto: r.trunkSHA, Epoch: r.epoch, Work: p.work}
+	req.Stacked = len(wtsync.Descendants(r.parents, b)) > 0
+	ontoLabel := r.onto
+	if parent, ok := r.parents[b]; ok {
+		if pp := r.parts[parent]; pp != nil && pp.result != nil && !pp.result.Restored && pp.head != "" {
+			req.Onto, req.Upstream, ontoLabel = pp.head, pp.result.OldTip, pp.work
+		}
+	}
+	if p.a.Class == wtsync.Contested && p.a.Replay.Stop != nil {
+		what := "the run stops there and writes a plan"
+		if req.Stacked {
+			what = "the run stops there and puts the branch back: a stack parent cannot be left waiting"
+		}
+		fmt.Fprintf(w, "  ⚠ contested at %d/%d: %s\n", p.a.Replay.Stop.Index, p.a.Replay.Stop.Total, what)
+	}
+	res, rerr := trackedRebase(r.tracker, &rebaseInFlight{work: p.work, path: p.wt.Path, safety: wtsync.SafetyRef(b, r.epoch)}, func() (wtsync.Result, error) {
+		return wtsync.Rebase(ctx.Repo.MainRoot, r.cfg, req, w)
+	})
+	p.result = &res
+	if rerr != nil {
+		fmt.Fprintf(w, "  ✗ failed: %v\n", rerr)
+		clearHandover(w, p.wt.Path)
+		r.settle("failed", fmt.Sprintf("✗ %s  failed: %v", p.work, rerr), p.work+" (failed)")
+		r.refuseAbove(b, p.work+" failed")
+		return
+	}
+	if res.Left != nil {
+		herr := handOver(ctx, w, handoverInput{
+			Work: p.work, Branch: b, Path: p.wt.Path, TrunkRef: r.onto, TrunkSHA: r.trunkSHA,
+			Onto: req.Onto, Upstream: req.Upstream, Epoch: r.epoch, Cfg: r.cfg, Res: res, Lock: p.lock,
+			Tracker: r.tracker,
+		})
+		if herr != nil {
+			fmt.Fprintf(w, "  ✗ failed: %v\n", herr)
+			// The rebase is still in the worktree and there is now no
+			// plan file to explain it, so say the two things a person
+			// cannot see for themselves. Any half-written brief goes:
+			// the sidecar is the marker and it was never written, so
+			// nothing acts on what is left, and a stale markdown would
+			// describe a stop that is not this one.
+			clearHandover(w, p.wt.Path)
+			// Not wt sync undo: it refuses a mid-rebase worktree, and
+			// there is no handover here for it to abort. The branch ref
+			// never moved, so the abort is the whole of putting it back.
+			way := wtsync.WayOut(wtsync.Way{Work: p.work, Path: p.wt.Path, Rebasing: true})
+			fmt.Fprintf(w, "  ⚠ %s is left mid-rebase with no plan: %s\n", p.work, way)
+			r.settle("failed", "✗ "+p.work+"  left mid-rebase with no plan: "+way, p.work+" (failed)")
+			r.refuseAbove(b, p.work+" failed")
+			return
+		}
+		// The lock is left behind on purpose; dropping the handle here
+		// keeps the deferred releases from removing the file.
+		p.lock = nil
+		r.settle("needs you", "⚠ "+p.work+"  needs you: "+wtsync.WayOut(wtsync.Way{Work: p.work, Plan: true, Rebasing: true, OwesAdd: true}), p.work+" (needs you)")
+		r.refuseAbove(b, p.work+" is waiting for you")
+		return
+	}
+	if res.Restored {
+		last := res.Stops[len(res.Stops)-1]
+		var files []string
+		for _, f := range last.Files {
+			if !f.Resolved {
+				files = append(files, f.Path)
+			}
+		}
+		restored := fmt.Sprintf("restored: %s at %d/%d not resolved; rebase by hand", strings.Join(files, ", "), last.Index, last.Total)
+		fmt.Fprintf(w, "  ✗ %s\n", restored)
+		clearHandover(w, p.wt.Path)
+		r.settle("restored", "✗ "+p.work+"  "+restored, p.work+" (restored)")
+		r.refuseAbove(b, p.work+" was restored")
+		return
+	}
+	line := fmt.Sprintf("  ✓ rebased %d commit%s onto %s", res.Replayed, plural(res.Replayed), ontoLabel)
+	if res.SignaturesDropped > 0 {
+		line += fmt.Sprintf(", %d signature%s dropped", res.SignaturesDropped, plural(res.SignaturesDropped))
+	}
+	fmt.Fprintln(w, line)
+	head, owed, derr := completeRun(ctx, w, r.cfg, r.tracker, p.work, p.wt.Path, func() completeInput {
+		return completeInput{
+			Branch: b, Epoch: r.epoch, Res: res,
+			Tell: p.a.Sessions, TrunkName: r.trunk, Landed: p.a.Behind, Check: pathsOnce(wtsync.StopPaths(res.Stops)),
+		}
+	})
+	p.head = head
+	r.failures = append(r.failures, owedBy(p.work, owed)...)
+	// The rebase itself stands; only this branch and what sits on it
+	// lose their footing, so the rest of the run carries on.
+	if derr != nil {
+		fmt.Fprintf(w, "  ✗ failed: %v\n", derr)
+		r.settle("failed", fmt.Sprintf("✗ %s  failed: %v", p.work, derr), p.work+" (failed)")
+		r.refuseAbove(b, p.work+" failed")
+		return
+	}
+	if len(owed) > 0 {
+		r.settle("rebased", "✗ "+p.work+"  owed: "+strings.Join(owed, ", ")+"; run it by hand, then push", "")
+	} else {
+		r.settle("rebased", "", "")
+		r.pushable = append(r.pushable, pushTarget{Work: p.work, Branch: b, Path: p.wt.Path})
+	}
 }
 
 func printDeferred(w io.Writer, d wtsync.DeferredResult) {

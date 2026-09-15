@@ -8,6 +8,30 @@ import (
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
+// The tracker an interrupt reads is set and cleared here, and nowhere else,
+// so run and resume change its answer at the same moments:
+//
+//   - rebasing (resuming for a resume) from just before the rebase starts.
+//     A finished or failed rebase clears it as it returns. A stop being
+//     handed over is still a rebase stopped in the worktree, so it stays
+//     set until handOver returns, written or not: an interrupt meanwhile
+//     still names the worktree and what puts it back.
+//   - rebased from just before completeRun starts, its input included,
+//     until it returns. The rebase is done; from there an interrupt cannot
+//     abort it, only leave the deferred steps and the result ref undone.
+//   - nothing in between: there is no worktree to say anything about.
+
+// trackedRebase runs rebase with the tracker set to at for as long as the
+// rebase is stopped in the worktree, as described above.
+func trackedRebase(t *rebaseTracker, at *rebaseInFlight, rebase func() (wtsync.Result, error)) (wtsync.Result, error) {
+	t.set(at)
+	res, err := rebase()
+	if err != nil || res.Left == nil {
+		t.set(nil)
+	}
+	return res, err
+}
+
 // handoverInput is what writing a handover needs beyond the rebase's own
 // result: the names a person reads, and the trunk the run was planned
 // against.
@@ -25,6 +49,9 @@ type handoverInput struct {
 	Lock     *wtsync.Lock
 	// Earlier is the paths the run's earlier handovers stopped on.
 	Earlier []string
+	// Tracker is the verb's, still set to the rebase being handed over; it
+	// is cleared once the handover is written or has failed.
+	Tracker *rebaseTracker
 }
 
 // handOver leaves the worktree mid-rebase for a person: the §6 brief, the
@@ -36,6 +63,9 @@ type handoverInput struct {
 // it — or a defer it did not write — cannot delete the file the next run has
 // to respect.
 func handOver(ctx *Context, w io.Writer, in handoverInput) error {
+	// The rebase is stopped in the worktree until this returns, however it
+	// returns, and the tracker says so for exactly that long.
+	defer in.Tracker.set(nil)
 	if in.Res.Left == nil {
 		return fmt.Errorf("%s: nothing to hand over", in.Work)
 	}
@@ -97,11 +127,12 @@ func handOver(ctx *Context, w io.Writer, in handoverInput) error {
 	return nil
 }
 
-// completeInput is what the tail after a finished rebase needs.
+// completeInput is what the tail after a finished rebase needs beyond the
+// worktree itself.
 type completeInput struct {
-	Work, Branch, Path string
-	Epoch              int64
-	Res                wtsync.Result
+	Branch string
+	Epoch  int64
+	Res    wtsync.Result
 	// Tell are the idle sessions in the worktree. With any, the finish ends
 	// with the line to relay to them: Landed trunk commits on TrunkName, and
 	// the Check files the rebase stopped on.
@@ -119,13 +150,23 @@ type completeInput struct {
 // failed, by name — the rebase stands regardless (spec §3), and whose they
 // are is the caller's to say. The push is the caller's too, once every
 // worktree is done.
-func completeRun(ctx *Context, w io.Writer, cfg *wtsync.Config, in completeInput) (head string, owed []string, err error) {
+//
+// The worktree is work at path; t is the verb's tracker, and build is asked
+// for the rest of the input only once t says rebased, so nothing the finish
+// needs is prepared outside the span an interrupt reports as rebased.
+func completeRun(ctx *Context, w io.Writer, cfg *wtsync.Config, t *rebaseTracker, work, path string, build func() completeInput) (head string, owed []string, err error) {
+	// The rebase is done; from here an interrupt cannot abort it, only
+	// leave the deferred steps and the result ref undone. Cleared last, so
+	// the relay line below is still printed under it.
+	t.set(&rebaseInFlight{work: work, path: path, rebased: true})
+	defer t.set(nil)
+	in := build()
 	// Only ever called once a rebase has finished, so the files moved under
 	// the idle sessions however this returns.
-	defer tellIdle(w, in.Tell, wtsync.RebasedLine(in.Work, in.TrunkName, in.Landed, in.Check))
+	defer tellIdle(w, in.Tell, wtsync.RebasedLine(work, in.TrunkName, in.Landed, in.Check))
 	// w, not nil: RunDeferred announces each step as it starts, so a long
 	// one is not silence until printDeferred reports the result.
-	results, err := wtsync.RunDeferred(in.Path, cfg.Defer, in.Res.OldTip, in.Res.NewTip, w)
+	results, err := wtsync.RunDeferred(path, cfg.Defer, in.Res.OldTip, in.Res.NewTip, w)
 	if err != nil {
 		return "", nil, err
 	}
@@ -135,20 +176,20 @@ func completeRun(ctx *Context, w io.Writer, cfg *wtsync.Config, in completeInput
 			owed = append(owed, d.Step.Run)
 		}
 	}
-	if head, err = git.Run(in.Path, "rev-parse", "HEAD"); err != nil {
+	if head, err = git.Run(path, "rev-parse", "HEAD"); err != nil {
 		return "", owed, err
 	}
 	if err = wtsync.WriteResult(ctx.Repo.MainRoot, in.Branch, head, in.Epoch); err != nil {
 		return head, owed, err
 	}
-	gitDir, err := wtsync.GitDir(in.Path)
+	gitDir, err := wtsync.GitDir(path)
 	if err != nil {
 		return head, owed, err
 	}
 	if err := wtsync.RemovePlan(gitDir); err != nil {
 		return head, owed, err
 	}
-	fmt.Fprintf(w, "  ↩ %s\n", wtsync.WayOut(wtsync.Way{Work: in.Work, Result: true, Safety: git.ShortID(in.Res.OldTip, 7)}))
+	fmt.Fprintf(w, "  ↩ %s\n", wtsync.WayOut(wtsync.Way{Work: work, Result: true, Safety: git.ShortID(in.Res.OldTip, 7)}))
 	return head, owed, nil
 }
 

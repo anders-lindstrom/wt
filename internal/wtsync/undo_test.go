@@ -2,6 +2,7 @@ package wtsync
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -1191,6 +1192,73 @@ func TestUndoPassesAnIdleSessionAndRefusesABusyOne(t *testing.T) {
 	}
 	if gitIn(t, wt, "rev-parse", "HEAD") != old {
 		t.Fatal("not restored under an idle session")
+	}
+}
+
+// gitLoggedIn puts a git first on the PATH that notes where it ran and with
+// what before handing over to the real one, and returns what has been run
+// inside dir since the last call: one line of arguments per git.
+func gitLoggedIn(t *testing.T, dir string) func() []string {
+	t.Helper()
+	found, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stub := t.TempDir()
+	log := filepath.Join(stub, "git.log")
+	body := "#!/bin/sh\nprintf '%s\\t%s\\n' \"$(pwd -P)\" \"$*\" >> '" + log + "'\nexec '" + found + "' \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(stub, "git"), []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", stub+string(os.PathListSeparator)+os.Getenv("PATH"))
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return func() []string {
+		data, err := os.ReadFile(log)
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		_ = os.Remove(log)
+		var in []string
+		for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+			if cwd, args, ok := strings.Cut(line, "\t"); ok && cwd == resolved {
+				in = append(in, args)
+			}
+		}
+		return in
+	}
+}
+
+// A busy session is refused from the listing alone: the only git undo runs
+// in a worktree it refuses for one is the one that finds its git dir, before
+// the lock. Under an idle session the same undo goes on to read the
+// worktree, which is what shows the log sees the reads.
+func TestUndoRefusesABusySessionWithoutReadingGit(t *testing.T) {
+	dir, wt, cfg := runRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"b.txt": "b2\n"}})
+	old := gitIn(t, wt, "rev-parse", "HEAD")
+	if _, err := Rebase(dir, cfg, trunkReq(wt, 5), nil); err != nil {
+		t.Fatal(err)
+	}
+	completed(t, dir, wt, "feature", 5)
+	ran := gitLoggedIn(t, wt)
+	resolved, _ := filepath.EvalSymlinks(wt)
+	wts := []repo.Worktree{{Path: wt, Branch: "feature"}}
+	busy := []Agent{{Name: "f-2", Cwd: resolved, Kind: "interactive", Status: "busy"}}
+	_, err := Undo(dir, wts, busy, "feature", time.Now(), false)
+	if err == nil || !strings.Contains(err.Error(), "busy in it: f-2") {
+		t.Fatalf("err %v", err)
+	}
+	if got := ran(); !reflect.DeepEqual(got, []string{"rev-parse --absolute-git-dir"}) {
+		t.Fatalf("git ran in a worktree refused for a busy session:\n%s", strings.Join(got, "\n"))
+	}
+	idle := []Agent{{Name: "f-1", Cwd: resolved, Kind: "interactive", Status: "idle"}}
+	if _, err := Undo(dir, wts, idle, "feature", time.Now(), false); err != nil {
+		t.Fatal(err)
+	}
+	if got := ran(); !strings.Contains(strings.Join(got, "\n"), "status") || gitIn(t, wt, "rev-parse", "HEAD") != old {
+		t.Fatalf("the undo under an idle session did not read the worktree:\n%s", strings.Join(got, "\n"))
 	}
 }
 
