@@ -80,14 +80,23 @@ func TestEveryExampleIsAPastableLine(t *testing.T) {
 }
 
 // A flag nobody shows in use is a flag nobody finds. The flag list says what
-// exists; the examples say what it is for.
+// exists; the examples say what it is for. A flag named after a subcommand, or
+// one a subcommand declares too, is that verb spelled on the parent
+// (wt sync <work> --run --push), and the verb's examples are where it is shown.
 func TestEveryFlagAppearsInAnExample(t *testing.T) {
 	for _, c := range reachable(newRootCmd()) {
 		c.Flags().VisitAll(func(f *pflag.Flag) {
 			if f.Hidden || f.Name == "help" {
 				return
 			}
-			if !strings.Contains(c.Example, "--"+f.Name) {
+			shown := strings.Contains(c.Example, "--"+f.Name)
+			for _, sub := range c.Commands() {
+				verbs := sub.Name() == f.Name || sub.Flags().Lookup(f.Name) != nil
+				if verbs && strings.Contains(sub.Example, "--"+f.Name) {
+					shown = true
+				}
+			}
+			if !shown {
 				t.Errorf("%q: no example uses --%s", c.CommandPath(), f.Name)
 			}
 		})
