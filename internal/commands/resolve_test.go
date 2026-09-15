@@ -3,6 +3,7 @@ package commands
 import (
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -60,6 +61,118 @@ func TestBranchRejectsUnknownType(t *testing.T) {
 	ctx, _ := Open(fixtureRepo(t, minimalConf))
 	if _, err := Branch(ctx, "wibble/thing"); err == nil {
 		t.Error("want error for a type not in WORKTREE_TYPES")
+	}
+}
+
+// The WORK column of `wt list` names the worktree whatever its type. The
+// default-type fallback used to send a bare name to feat_wt/ and print a path
+// that did not exist while the worktree sat under chore_wt/.
+func TestPathAndBranchPreferAnExistingWorktreeOfAnotherType(t *testing.T) {
+	ctx := locatable(t, "chore/wt-migration")
+	want, err := Locate(ctx, "chore/wt-migration")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, arg := range []string{"wt-migration", "chore/wt-migration", "chore_wt/wt-migration", want.Path} {
+		if got, err := Path(ctx, arg); err != nil || got != want.Path {
+			t.Errorf("Path(%q) = %q, %v; want %q", arg, got, err, want.Path)
+		}
+		if got, err := Branch(ctx, arg); err != nil || got != "chore_wt/wt-migration" {
+			t.Errorf("Branch(%q) = %q, %v; want chore_wt/wt-migration", arg, got, err)
+		}
+	}
+}
+
+// One work name under two types is refused exactly as Locate refuses it,
+// rather than resolved to whichever the default type implies.
+func TestPathAndBranchRefuseAnAmbiguousWorkName(t *testing.T) {
+	ctx := locatable(t, "feat/arch", "fix/arch")
+
+	for name, resolve := range map[string]func(*Context, string) (string, error){"Path": Path, "Branch": Branch} {
+		_, err := resolve(ctx, "arch")
+		if err == nil {
+			t.Fatalf("%s: want an error for a work name under two types", name)
+		}
+		for _, want := range []string{"matches 2 worktrees", "feat_wt/arch", "fix_wt/arch"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("%s: error should contain %q, got: %v", name, want, err)
+			}
+		}
+	}
+	if got, err := Path(ctx, "fix/arch"); err != nil || !strings.HasSuffix(got, filepath.Join("fix_wt", "arch")) {
+		t.Errorf("an exact type must still resolve: %q, %v", got, err)
+	}
+}
+
+// With no worktree to find, a bare name still takes the default type, even
+// while other worktrees exist.
+func TestPathAndBranchFallBackToTheDefaultTypeWhenNothingExists(t *testing.T) {
+	ctx := locatable(t, "chore/wt-migration")
+
+	if got, err := Branch(ctx, "login-crash"); err != nil || got != "feat_wt/login-crash" {
+		t.Errorf("Branch = %q, %v; want feat_wt/login-crash", got, err)
+	}
+	want := filepath.Join(ctx.Repo.Parent, "demo_wt", "feat_wt", "login-crash")
+	if got, err := Path(ctx, "login-crash"); err != nil || got != want {
+		t.Errorf("Path = %q, %v; want %q", got, err, want)
+	}
+}
+
+// A worktree on a branch whose type the repository does not declare — adopted
+// from another layout, say — is still what `wt list` prints, so naming it
+// exactly answers rather than refusing the type. The refusal stays for a spec
+// that names nothing.
+func TestPathAndBranchAnswerForAnExistingWorktreeOfAnUndeclaredType(t *testing.T) {
+	ctx := locatable(t)
+	foreign := worktreeAt(t, ctx.Repo.MainRoot, "wibble_wt/thing", filepath.Join(ctx.Repo.Parent, "demo-thing"))
+
+	if got, err := Path(ctx, "wibble/thing"); err != nil || got != foreign {
+		t.Errorf("Path = %q, %v; want %q", got, err, foreign)
+	}
+	if got, err := Branch(ctx, "thing"); err != nil || got != "wibble_wt/thing" {
+		t.Errorf("Branch = %q, %v; want wibble_wt/thing", got, err)
+	}
+	if _, err := Path(ctx, "wibble/other"); err == nil || !strings.Contains(err.Error(), "unknown worktree type") {
+		t.Errorf("a spec naming nothing keeps the type check, got: %v", err)
+	}
+}
+
+// The main checkout is not a piece of work: its path falls through to the
+// parse, which has nothing to say about it, as before.
+func TestPathDoesNotAnswerForTheMainCheckout(t *testing.T) {
+	ctx := locatable(t)
+	if got, err := Path(ctx, ctx.Repo.MainRoot); err == nil {
+		t.Errorf("want an error for the main checkout's path, got %q", got)
+	}
+}
+
+// A detached worktree is found by its path but has no branch to print: an
+// error, not an empty line that exits 0.
+func TestBranchRefusesADetachedWorktree(t *testing.T) {
+	ctx := locatable(t)
+	detached := filepath.Join(ctx.Repo.Parent, "demo-detached")
+	gitIn(t, ctx.Repo.MainRoot, "worktree", "add", "-q", "--detach", detached)
+
+	got, err := Branch(ctx, detached)
+	if err == nil || !strings.Contains(err.Error(), "has no branch") {
+		t.Errorf("Branch = %q, %v; want a has-no-branch error", got, err)
+	}
+	if got, err := Path(ctx, detached); err != nil || got != detached {
+		t.Errorf("Path = %q, %v; want %q", got, err, detached)
+	}
+}
+
+// Branch, like Path, finds a worktree Superset made by the name it was given
+// before reading a type out of that name.
+func TestBranchStillFindsAWorktreeNamedTheWayItWasCreated(t *testing.T) {
+	main := committedRepo(t, minimalConf)
+	ctx, _ := Open(main)
+	superset := filepath.Join(ctx.Repo.Parent, "demo_wt", "demo", "feat_wt", "fix_dev-123")
+	gitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/fix_dev-123", superset)
+
+	if got, err := Branch(ctx, "fix_dev-123"); err != nil || got != "feat_wt/fix_dev-123" {
+		t.Errorf("Branch = %q, %v; want feat_wt/fix_dev-123", got, err)
 	}
 }
 
