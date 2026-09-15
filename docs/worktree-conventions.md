@@ -78,8 +78,9 @@ carry are shims that call `wt`.
 7. **Ask before `wt init`.** A repo without `bin/worktree/worktree.conf` is not set up
    for `wt`. `wt init` adds that file to the repo, which is the owner's decision.
 8. **Rebase onto trunk with `wt sync`.** `wt sync` alone shows what would happen and
-   changes nothing; `wt sync run <work>` does it, and `wt sync undo <work>` puts it
-   back. Each verb is also a flag on the line you just recalled: `wt sync <work> --run`,
+   changes nothing; `wt sync run <work>` does it, `wt sync --run` does every worktree
+   the table calls ready, and `wt sync undo <work>` puts a run back. Each verb is
+   also a flag on the line you just recalled: `wt sync <work> --run`,
    `--resume`, `--undo`.
 9. **Clean up merged branches with `wt sweep`.** From the main checkout, `wt sweep`
    fetches origin, lists the local branches trunk already contains, and deletes them

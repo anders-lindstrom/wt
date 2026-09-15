@@ -372,6 +372,160 @@ func TestSyncRunAsksOnceForMoreThanOneWorktreeAndStopsOnNo(t *testing.T) {
 	}
 }
 
+// contestedSibling adds a worktree feat/alpha whose one commit changes a.txt,
+// which nothing declares, and moves a.txt on trunk too: alpha is contested
+// while bump stays a recipe.
+func contestedSibling(t *testing.T, ctx *Context) (alpha string) {
+	t.Helper()
+	main := ctx.Repo.MainRoot
+	var buf bytes.Buffer
+	alpha, err := New(ctx, "feat/alpha", NewOptions{NoSetup: true}, &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(alpha, "a.txt"), []byte("alpha\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitOut(t, alpha, "commit", "-q", "-am", "a on alpha")
+	if err := os.WriteFile(filepath.Join(main, "a.txt"), []byte("trunk\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitOut(t, main, "commit", "-q", "-am", "a on trunk")
+	gitOut(t, main, "fetch", "-q", "origin")
+	return alpha
+}
+
+// With nothing named the run takes the ready group and nothing else, says
+// what it leaves alone in the overview's words, and asks even for one
+// worktree, since nobody named it.
+func TestSyncRunWithNothingNamedTakesEveryReadyWorktreeAndAsksFirst(t *testing.T) {
+	ctx, bump := runFixture(t, false)
+	alpha := contestedSibling(t, ctx)
+	oldBump := gitOut(t, bump, "rev-parse", "HEAD")
+	oldAlpha := gitOut(t, alpha, "rev-parse", "HEAD")
+	var asked []string
+	opts := noAgents()
+	opts.Confirm = func(works []string) (bool, error) { asked = works; return false, nil }
+	var out bytes.Buffer
+	if err := SyncRun(ctx, nil, opts, &out); err != nil {
+		t.Fatalf("a declined confirmation is not an error: %v", err)
+	}
+	s := out.String()
+	if len(asked) != 1 || asked[0] != "bump" {
+		t.Fatalf("asked %v, want only the ready worktree\n%s", asked, s)
+	}
+	// other is behind trunk with nothing ahead: stale, and said so, as the
+	// overview says it under skipped.
+	for _, want := range []string{"every ready worktree: bump\n", "left as they are: alpha contested · other stale\n", "nothing rebased"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing %q in:\n%s", want, s)
+		}
+	}
+	if gitOut(t, bump, "rev-parse", "HEAD") != oldBump {
+		t.Fatal("HEAD moved after no")
+	}
+	opts.Confirm = nil
+	out.Reset()
+	if err := SyncRun(ctx, nil, opts, &out); err != nil {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "rebased 1 commit") {
+		t.Fatalf("bump was not rebased:\n%s", out.String())
+	}
+	if gitOut(t, alpha, "rev-parse", "HEAD") != oldAlpha {
+		t.Fatal("the contested worktree moved")
+	}
+	if busy, err := wtsync.RebaseInProgress(alpha); err != nil || busy {
+		t.Fatalf("RebaseInProgress = %v, %v; the contested worktree was touched", busy, err)
+	}
+}
+
+// recipe? is not ready: a script owns a path, so the replay could not be
+// carried past it and a run may stop later. With nothing named the run
+// leaves it alone rather than risk a handover nobody asked for.
+func TestSyncRunWithNothingNamedLeavesRecipeQuestionAlone(t *testing.T) {
+	ctx, bump := runFixture(t, false)
+	declareScript(t, ctx)
+	old := gitOut(t, bump, "rev-parse", "HEAD")
+	var out bytes.Buffer
+	if err := SyncRun(ctx, nil, noAgents(), &out); err != nil {
+		t.Fatalf("nothing to do is not an error: %v\n%s", err, out.String())
+	}
+	s := out.String()
+	for _, want := range []string{"nothing is ready to rebase\n", "left as they are: bump recipe? · other stale\n"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing %q in:\n%s", want, s)
+		}
+	}
+	if gitOut(t, bump, "rev-parse", "HEAD") != old {
+		t.Fatal("HEAD moved")
+	}
+}
+
+// A ready worktree is only taken with its whole stack. A member held back
+// would refuse every one of them at triage, after the run said it was left
+// alone, so the stack is left alone up front and the reason names the member.
+func TestSyncRunWithNothingNamedLeavesAStackWithAHeldMember(t *testing.T) {
+	ctx, bump := runFixture(t, false)
+	child := stackFixture(t, ctx)
+	if err := os.WriteFile(filepath.Join(bump, "a.txt"), []byte("edited\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	oldChild := gitOut(t, child, "rev-parse", "HEAD")
+	var out bytes.Buffer
+	if err := SyncRun(ctx, nil, noAgents(), &out); err != nil {
+		t.Fatalf("nothing taken is not an error: %v\n%s", err, out.String())
+	}
+	s := out.String()
+	for _, want := range []string{"nothing is ready to rebase\n", "bump recipe, dirty · child ", ", stacked with bump\n"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing %q in:\n%s", want, s)
+		}
+	}
+	if strings.Contains(s, "is a stack with") || strings.Contains(s, "refused") {
+		t.Errorf("the stack was pulled in after being left alone:\n%s", s)
+	}
+	if gitOut(t, child, "rev-parse", "HEAD") != oldChild {
+		t.Fatal("the child moved")
+	}
+}
+
+// A ready worktree with a session idle in it is taken, and the session is
+// named in the question, as when it is named by hand.
+func TestSyncRunWithNothingNamedNamesAnIdleSessionAndAsks(t *testing.T) {
+	ctx, bump := runFixture(t, false)
+	opts := noAgents()
+	opts.Agents = idleIn(t, bump, "parked")
+	var asked []string
+	opts.Confirm = func(works []string) (bool, error) { asked = works; return false, nil }
+	var out bytes.Buffer
+	if err := SyncRun(ctx, nil, opts, &out); err != nil {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	s := out.String()
+	if len(asked) != 1 || asked[0] != "bump" || !strings.Contains(s, "every ready worktree: bump\n") || !strings.Contains(s, "parked") {
+		t.Fatalf("asked %v\n%s", asked, s)
+	}
+}
+
+// What holds a worktree back is named beside its class, as the overview
+// names it.
+func TestSyncRunWithNothingNamedNamesWhatHoldsAWorktree(t *testing.T) {
+	ctx, bump := runFixture(t, false)
+	if err := os.WriteFile(filepath.Join(bump, "a.txt"), []byte("edited\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := SyncRun(ctx, nil, noAgents(), &out); err != nil {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	// Nothing moved on trunk after other was cut, so other is current and
+	// not worth a line.
+	if !strings.Contains(out.String(), "left as they are: bump recipe, dirty\n") {
+		t.Fatalf("out:\n%s", out.String())
+	}
+}
+
 // A contested stop is no longer refused: the run rebases up to it, stages
 // what the strategies resolved, leaves the rebase in place and writes the
 // handover.

@@ -27,6 +27,7 @@ func newSyncCmd() *cobra.Command {
 			"                                  asks once when more than one worktree is involved or a\n" +
 			"                                  session is idle in one (--yes skips)\n" +
 			"          wt sync <work>... --run\n" +
+			"          wt sync --run           every worktree the table calls ready, asked first\n" +
 			"  finish  wt sync resume <work>   continue a rebase run left at a conflict that is yours,\n" +
 			"                                  then push with --force-with-lease\n" +
 			"          wt sync <work> --resume\n" +
@@ -38,10 +39,13 @@ func newSyncCmd() *cobra.Command {
 			"--run, --resume and --undo are those same three commands, spelled so a\n" +
 			"recalled wt sync <work> line is finished by adding the verb at the end. A\n" +
 			"verb's own flags go with it: --yes (-y), --push and --no-push with --run or\n" +
-			"--resume, --force with --undo.\n" +
+			"--resume, --force with --undo. --run with no worktree named takes every\n" +
+			"worktree under ready except recipe?, lists what it leaves alone, and asks\n" +
+			"before moving even one (--yes skips).\n" +
 			"\n" +
 			"Groups:\n" +
-			"  ready      clean or recipe, with nothing in the way: wt sync run <work>\n" +
+			"  ready      clean or recipe, with nothing in the way: wt sync run <work>,\n" +
+			"             or wt sync --run for all of them but recipe?\n" +
 			"  needs you  contested, divergent, dirty, handed over, or not assessed\n" +
 			"  skipped    a busy session is in it, nothing is ahead of trunk, or no branch\n" +
 			"\n" +
@@ -74,7 +78,7 @@ func newSyncCmd() *cobra.Command {
 			"  wt sync --no-fetch          # the same, against trunk as last fetched\n" +
 			"  wt sync login-crash         # that worktree in full\n" +
 			"  wt sync login-crash --run   # the same as wt sync run login-crash\n" +
-			"  wt sync login-crash --undo  # the same as wt sync undo login-crash",
+			"  wt sync --run               # every ready worktree, asked first",
 		ValidArgsFunction: completeWork,
 	}
 	var run, resume, undo, yes, force bool
@@ -128,7 +132,7 @@ func newSyncCmd() *cobra.Command {
 		return commands.Sync(ctx, opts, cmd.OutOrStdout())
 	}
 	sync.Flags().BoolVar(&noFetch, "no-fetch", false, "compare with origin/<trunk> as last fetched; with --run, rebase onto it")
-	sync.Flags().BoolVar(&run, "run", false, "wt sync run <work>..., spelled at the end of the line")
+	sync.Flags().BoolVar(&run, "run", false, "wt sync run <work>..., spelled at the end; alone, every ready worktree")
 	sync.Flags().BoolVar(&resume, "resume", false, "wt sync resume <work>, spelled at the end of the line")
 	sync.Flags().BoolVar(&undo, "undo", false, "wt sync undo <work>, spelled at the end of the line")
 	sync.Flags().BoolVarP(&yes, "yes", "y", false, "with a verb: do not ask first")
@@ -193,11 +197,11 @@ func (f syncVerbFlags) check() error {
 
 // syncArgs is the argument count wt sync takes for verb: the rule the verb's
 // subcommand declares, so both spellings refuse the same counts with the same
-// words.
+// words. run takes any number, none meaning every ready worktree.
 func syncArgs(verb string) cobra.PositionalArgs {
 	switch verb {
 	case "run":
-		return cobra.MinimumNArgs(1)
+		return cobra.ArbitraryArgs
 	case "resume", "undo":
 		return cobra.ExactArgs(1)
 	}
@@ -208,7 +212,7 @@ func newSyncRunCmd() *cobra.Command {
 	var noFetch, yes bool
 	var push func() commands.PushMode
 	run := &cobra.Command{
-		Use:   "run <work>...",
+		Use:   "run [<work>...]",
 		Short: "Rebase the named worktrees onto trunk with the declared strategies",
 		Long: "Fetch trunk once, then for each named worktree (and the rest of any\n" +
 			"stack it belongs to, parents first): pin the old tip under\n" +
@@ -220,6 +224,12 @@ func newSyncRunCmd() *cobra.Command {
 			"finish. A branch with a stack above it in the same run is put back instead,\n" +
 			"so a stack is never half-applied. A failed deferred step is reported as\n" +
 			"owed and never undoes the rebase.\n\n" +
+			"With no worktree named, it takes every worktree the overview files under\n" +
+			"ready: class clean or recipe, nothing dirty, no session busy in it, no\n" +
+			"handover waiting. recipe? is left out, since a run of it may stop and hand\n" +
+			"you a plan you did not ask for, and so is everything under needs you and\n" +
+			"skipped; what is left alone is listed with what holds it. You are asked\n" +
+			"before anything moves, even for one worktree (--yes skips).\n\n" +
 			"Refused, and never touched: a worktree with tracked changes, one a busy\n" +
 			"Claude session is in (Codex sessions are not detected), class divergent,\n" +
 			"one an earlier run already left waiting on you, and any repository whose\n" +
@@ -240,17 +250,17 @@ func newSyncRunCmd() *cobra.Command {
 			"Also spelled wt sync <work>... --run, with the same flags.",
 		Example: "  wt sync run login-crash                # fetch trunk, rebase, offer the push\n" +
 			"  wt sync run login-crash api-tidy --yes # both, their stacks, not asked first\n" +
-			"  wt sync run login-crash --no-fetch     # trunk as last fetched\n" +
+			"  wt sync run --no-fetch                 # every ready one, as last fetched\n" +
 			"  wt sync run login-crash --push         # push when done, without asking\n" +
 			"  wt sync login-crash --run --no-push    # run --no-push, spelled on wt sync",
-		Args:              cobra.MinimumNArgs(1),
+		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: completeWork,
 		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
 			return syncRun(cmd, args, ctx, noFetch, yes, push())
 		}),
 	}
 	run.Flags().BoolVar(&noFetch, "no-fetch", false, "rebase onto origin/<trunk> as last fetched")
-	run.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask first: several worktrees, or an idle session in one")
+	run.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask first: several worktrees, an idle session in one, or nothing named")
 	push = addPushFlags(run, "push the worktrees that finish, without asking",
 		"neither push nor ask; print the push command")
 	return run

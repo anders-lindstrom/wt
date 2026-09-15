@@ -6,6 +6,16 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-15 21:30 — wt sync --run with nothing named rebases every ready worktree
+
+- Look with `wt sync`, then `wt sync --run` (or `wt sync run`) takes every
+  worktree the table files under ready: clean or recipe, nothing dirty, no
+  session busy in it, no handover waiting. `recipe?` is left out, since its run
+  may stop and hand you a plan you did not ask for; so is everything under
+  needs you. What is left alone is listed with what holds it.
+- It asks before moving even one worktree, since nobody named it; `--yes`
+  skips, and `--push` / `--no-push` decide the push up front as before.
+
 ## 2026-09-15 09:36 — wt path and wt branch find the worktree by any name wt list prints
 
 - `wt path <work>` and `wt branch <work>` now answer for the worktree that

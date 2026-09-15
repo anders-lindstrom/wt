@@ -60,6 +60,20 @@ setup() {
     [[ "$output" == *"bump"*"recipe"* ]]
 }
 
+# With nothing named, --run takes the ready group; with no terminal there is
+# nobody to ask. Once bump is on trunk there is nothing left to take.
+@test "sync --run with nothing named takes every ready worktree" {
+    run wt sync --run --no-fetch
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"every ready worktree: bump"* ]]
+    [[ "$output" == *"rebased 1 commit"* ]]
+
+    run wt sync run --no-fetch
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"nothing is ready to rebase"* ]]
+    [[ "$output" != *"left as they are"* ]]
+}
+
 # The same flow with the fetch left in. The demo repo is its own origin, so
 # `git fetch origin main` is a local, deterministic no-op that still proves
 # the fetch path runs and does not change the outcome.

@@ -131,8 +131,6 @@ func TestSyncVerbFlagsTakeTheVerbsArgumentCount(t *testing.T) {
 		err  string
 	}{
 		{[]string{"sync", "a", "b"}, "accepts at most 1 arg(s), received 2"},
-		{[]string{"sync", "--run"}, "requires at least 1 arg(s), only received 0"},
-		{[]string{"sync", "run"}, "requires at least 1 arg(s), only received 0"},
 		{[]string{"sync", "--resume"}, "accepts 1 arg(s), received 0"},
 		{[]string{"sync", "a", "b", "--resume"}, "accepts 1 arg(s), received 2"},
 		{[]string{"sync", "resume", "a", "b"}, "accepts 1 arg(s), received 2"},
@@ -149,6 +147,18 @@ func TestSyncVerbFlagsTakeTheVerbsArgumentCount(t *testing.T) {
 		}
 		if !strings.Contains(out, "Usage:") {
 			t.Errorf("%v: an argument mistake shows usage:\n%s", tc.args, out)
+		}
+	}
+}
+
+// run with nothing named is every ready worktree, in both spellings: no
+// argument count refuses it, so it gets as far as opening the repository.
+func TestSyncRunWithNothingNamedIsNotAnArgumentMistake(t *testing.T) {
+	t.Chdir(t.TempDir())
+	for _, args := range [][]string{{"sync", "--run"}, {"sync", "run"}, {"sync", "run", "--no-fetch"}} {
+		out, err := runCmd(t, args...)
+		if err == nil || err.Error() != "not a git repository" {
+			t.Errorf("%v: error %v, want the verb's own not-a-repository error\n%s", args, err, out)
 		}
 	}
 }
