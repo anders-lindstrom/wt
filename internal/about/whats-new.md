@@ -6,6 +6,15 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-15 09:04 — the sync verbs are also flags, for finishing a recalled line
+
+- `wt sync <work> --run`, `--resume` and `--undo` are `wt sync run`, `resume` and
+  `undo`: recall the `wt sync <work>` line you just looked with and add the verb
+  at the end instead of inserting it in the middle. A verb's own flags go with
+  it (`--yes`, `--push`, `--no-push`, `--force`); given without the verb they are
+  refused by name.
+- `-y` is now the short form of `--yes` on all three verbs, as on `wt remove`.
+
 ## 2026-09-15 07:38 — wt sync lifts a version both sides bumped to the same number
 
 - A branch that bumped `version: 1.2.3` while trunk took 1.2.3 on its own used
