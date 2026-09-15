@@ -83,9 +83,9 @@ examples: `wt <command> --help`.
 | | |
 |---|---|
 | `wt sync` | what rebasing each worktree onto trunk would do, simulated after fetching trunk; changes nothing of yours (`--no-fetch`) |
-| `wt sync run <work>...` | rebase the named worktrees onto trunk with the declared strategies (`--no-fetch`, `--yes`) |
-| `wt sync resume <work>` | continue the rebase a run left at a conflict that was yours (`--yes`) |
-| `wt sync undo <work>` | put back every ref the last `wt sync run` on this worktree moved, aborting a rebase a run handed over (`--force`, `--yes`) |
+| `wt sync run <work>...` | rebase the named worktrees onto trunk with the declared strategies (`--no-fetch`, `--yes`/`-y`, `--push`, `--no-push`); also spelled `wt sync <work>... --run` |
+| `wt sync resume <work>` | continue the rebase a run left at a conflict that was yours (`--yes`/`-y`, `--push`, `--no-push`); also spelled `wt sync <work> --resume` |
+| `wt sync undo <work>` | put back every ref the last `wt sync run` on this worktree moved, aborting a rebase a run handed over (`--force`, `--yes`/`-y`); also spelled `wt sync <work> --undo` |
 | `wt sync doctor` | check what a run needs; `--fix` turns on rerere and removes expired locks, `--prune` deletes old safety refs |
 
 **Put worktrees in their place**

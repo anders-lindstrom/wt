@@ -26,10 +26,19 @@ func newSyncCmd() *cobra.Command {
 			"  act     wt sync run <work>...   rebase; safety ref, strategies at each stop, deferred steps;\n" +
 			"                                  asks once when more than one worktree is involved or a\n" +
 			"                                  session is idle in one (--yes skips)\n" +
-			"  finish  wt sync resume <work>   continue a rebase run left at a conflict that is yours\n" +
-			"          push with --force-with-lease; wt sync undo <work> puts every ref back\n" +
+			"          wt sync <work>... --run\n" +
+			"  finish  wt sync resume <work>   continue a rebase run left at a conflict that is yours,\n" +
+			"                                  then push with --force-with-lease\n" +
+			"          wt sync <work> --resume\n" +
+			"          wt sync undo <work>     put back every ref that run moved\n" +
+			"          wt sync <work> --undo\n" +
 			"          wt sync doctor          what a run needs, and --fix / --prune\n" +
 			"Only Claude sessions are detected; a Codex session is not seen.\n" +
+			"\n" +
+			"--run, --resume and --undo are those same three commands, spelled so a\n" +
+			"recalled wt sync <work> line is finished by adding the verb at the end. A\n" +
+			"verb's own flags go with it: --yes (-y), --push and --no-push with --run or\n" +
+			"--resume, --force with --undo.\n" +
 			"\n" +
 			"Groups:\n" +
 			"  ready      clean or recipe, with nothing in the way: wt sync run <work>\n" +
@@ -61,33 +70,138 @@ func newSyncCmd() *cobra.Command {
 			"verb names it, asks first, and ends with a wt: line to pass on to it. +N\n" +
 			"counts the other sessions there. The session wt itself runs under is not\n" +
 			"counted. The lines under a row are advisory and never change the class.",
-		Example: "  wt sync                   # fetch trunk, then every worktree, grouped\n" +
-			"  wt sync --no-fetch        # the same, against trunk as last fetched\n" +
-			"  wt sync login-crash       # that worktree in full\n" +
-			"  wt sync run login-crash   # act on it\n" +
-			"  wt sync undo login-crash  # put back every ref that run moved",
-		Args:              cobra.MaximumNArgs(1),
+		Example: "  wt sync                     # fetch trunk, then every worktree, grouped\n" +
+			"  wt sync --no-fetch          # the same, against trunk as last fetched\n" +
+			"  wt sync login-crash         # that worktree in full\n" +
+			"  wt sync login-crash --run   # the same as wt sync run login-crash\n" +
+			"  wt sync login-crash --undo  # the same as wt sync undo login-crash",
 		ValidArgsFunction: completeWork,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			// Lenient: a repository without worktree.conf still has worktrees
-			// worth reporting on, and the trunk name falls back to origin/HEAD.
-			ctx, err := openLenient(cmd.ErrOrStderr())
-			if err != nil {
-				return err
-			}
-			if ctx == nil {
-				return errors.New("not inside a git repository")
-			}
-			opts := commands.SyncOptions{NoFetch: noFetch}
-			if len(args) == 1 {
-				return commands.SyncWorktree(ctx, args[0], opts, cmd.OutOrStdout())
-			}
-			return commands.Sync(ctx, opts, cmd.OutOrStdout())
-		},
 	}
-	sync.Flags().BoolVar(&noFetch, "no-fetch", false, "compare with origin/<trunk> as last fetched")
+	var run, resume, undo, yes, force bool
+	var push func() commands.PushMode
+	flags := func() syncVerbFlags {
+		return syncVerbFlags{run: run, resume: resume, undo: undo,
+			yes: yes, force: force, noFetch: noFetch, push: push()}
+	}
+	// The count rule is the verb's own. Two verbs at once is a flag mistake,
+	// which RunE reports the way --push with --no-push is reported.
+	sync.Args = func(cmd *cobra.Command, args []string) error {
+		verb, err := flags().verb()
+		if err != nil {
+			return nil
+		}
+		return syncArgs(verb)(cmd, args)
+	}
+	sync.RunE = func(cmd *cobra.Command, args []string) error {
+		f := flags()
+		if err := f.check(); err != nil {
+			return err
+		}
+		verb, _ := f.verb()
+		switch verb {
+		case "run":
+			return withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
+				return syncRun(cmd, args, ctx, f.noFetch, f.yes, f.push)
+			})(cmd, args)
+		case "resume":
+			return withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
+				return syncResume(cmd, args[0], ctx, f.yes, f.push)
+			})(cmd, args)
+		case "undo":
+			return withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
+				return syncUndo(cmd, args[0], ctx, f.force, f.yes)
+			})(cmd, args)
+		}
+		// Lenient: a repository without worktree.conf still has worktrees
+		// worth reporting on, and the trunk name falls back to origin/HEAD.
+		ctx, err := openLenient(cmd.ErrOrStderr())
+		if err != nil {
+			return err
+		}
+		if ctx == nil {
+			return errors.New("not inside a git repository")
+		}
+		opts := commands.SyncOptions{NoFetch: noFetch}
+		if len(args) == 1 {
+			return commands.SyncWorktree(ctx, args[0], opts, cmd.OutOrStdout())
+		}
+		return commands.Sync(ctx, opts, cmd.OutOrStdout())
+	}
+	sync.Flags().BoolVar(&noFetch, "no-fetch", false, "compare with origin/<trunk> as last fetched; with --run, rebase onto it")
+	sync.Flags().BoolVar(&run, "run", false, "wt sync run <work>..., spelled at the end of the line")
+	sync.Flags().BoolVar(&resume, "resume", false, "wt sync resume <work>, spelled at the end of the line")
+	sync.Flags().BoolVar(&undo, "undo", false, "wt sync undo <work>, spelled at the end of the line")
+	sync.Flags().BoolVarP(&yes, "yes", "y", false, "with a verb: do not ask first")
+	push = addPushFlags(sync, "with --run or --resume: push when done, without asking",
+		"with --run or --resume: neither push nor ask; print the push command")
+	sync.Flags().BoolVar(&force, "force", false, "with --undo: undo a branch that has moved since the run")
 	sync.AddCommand(newSyncRunCmd(), newSyncResumeCmd(), newSyncUndoCmd(), newSyncDoctorCmd())
 	return sync
+}
+
+// syncVerbFlags is what wt sync's own flags say: at most one verb, spelled at
+// the end of a recalled `wt sync <work>` line, with that verb's own flags.
+type syncVerbFlags struct {
+	run, resume, undo   bool
+	yes, force, noFetch bool
+	push                commands.PushMode
+}
+
+// verb is the one verb given, "" for the overview, or an error naming the
+// verbs given together.
+func (f syncVerbFlags) verb() (string, error) {
+	var verbs []string
+	for _, v := range []struct {
+		name string
+		set  bool
+	}{{"run", f.run}, {"resume", f.resume}, {"undo", f.undo}} {
+		if v.set {
+			verbs = append(verbs, "--"+v.name)
+		}
+	}
+	switch len(verbs) {
+	case 0:
+		return "", nil
+	case 1:
+		return verbs[0][2:], nil
+	}
+	return "", errors.New(strings.Join(verbs[:len(verbs)-1], ", ") + " and " +
+		verbs[len(verbs)-1] + " cannot both be given")
+}
+
+// check refuses a verb's flag given without its verb.
+func (f syncVerbFlags) check() error {
+	verb, err := f.verb()
+	if err != nil {
+		return err
+	}
+	rebases := verb == "run" || verb == "resume"
+	switch {
+	case f.push == commands.PushAlways && !rebases:
+		return errors.New("--push needs --run or --resume")
+	case f.push == commands.PushNever && !rebases:
+		return errors.New("--no-push needs --run or --resume")
+	case f.force && verb != "undo":
+		return errors.New("--force needs --undo")
+	case f.yes && verb == "":
+		return errors.New("--yes needs --run, --resume or --undo")
+	case f.noFetch && verb != "" && verb != "run":
+		return errors.New("--no-fetch needs --run, or no verb")
+	}
+	return nil
+}
+
+// syncArgs is the argument count wt sync takes for verb: the rule the verb's
+// subcommand declares, so both spellings refuse the same counts with the same
+// words.
+func syncArgs(verb string) cobra.PositionalArgs {
+	switch verb {
+	case "run":
+		return cobra.MinimumNArgs(1)
+	case "resume", "undo":
+		return cobra.ExactArgs(1)
+	}
+	return cobra.MaximumNArgs(1)
 }
 
 func newSyncRunCmd() *cobra.Command {
@@ -122,34 +236,40 @@ func newSyncRunCmd() *cobra.Command {
 			"run with no terminal, prints the push command instead.\n\n" +
 			"Ctrl-C releases every lock the run holds and kills the step it was\n" +
 			"running; a worktree caught mid-rebase is named along with the command\n" +
-			"that puts it back.",
+			"that puts it back.\n\n" +
+			"Also spelled wt sync <work>... --run, with the same flags.",
 		Example: "  wt sync run login-crash                # fetch trunk, rebase, offer the push\n" +
 			"  wt sync run login-crash api-tidy --yes # both, their stacks, not asked first\n" +
 			"  wt sync run login-crash --no-fetch     # trunk as last fetched\n" +
 			"  wt sync run login-crash --push         # push when done, without asking\n" +
-			"  wt sync run login-crash --no-push      # print the push command instead",
+			"  wt sync login-crash --run --no-push    # run --no-push, spelled on wt sync",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
-			opts := commands.RunOptions{NoFetch: noFetch}
-			opts.Push = push()
-			if canAsk(cmd) {
-				// One prompter for both questions, so an answer typed ahead
-				// for the push is not lost to the rebase question's reader.
-				p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
-				if !yes {
-					opts.Confirm = confirmAsk(p, "rebase")
-				}
-				opts.ConfirmPush = confirmPush(p)
-			}
-			return commands.SyncRun(ctx, args, opts, cmd.OutOrStdout())
+			return syncRun(cmd, args, ctx, noFetch, yes, push())
 		}),
 	}
 	run.Flags().BoolVar(&noFetch, "no-fetch", false, "rebase onto origin/<trunk> as last fetched")
-	run.Flags().BoolVar(&yes, "yes", false, "do not ask first: several worktrees, or an idle session in one")
+	run.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask first: several worktrees, or an idle session in one")
 	push = addPushFlags(run, "push the worktrees that finish, without asking",
 		"neither push nor ask; print the push command")
 	return run
+}
+
+// syncRun is wt sync run, whichever way it was spelled.
+func syncRun(cmd *cobra.Command, works []string, ctx *commands.Context, noFetch, yes bool, push commands.PushMode) error {
+	opts := commands.RunOptions{NoFetch: noFetch}
+	opts.Push = push
+	if canAsk(cmd) {
+		// One prompter for both questions, so an answer typed ahead
+		// for the push is not lost to the rebase question's reader.
+		p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
+		if !yes {
+			opts.Confirm = confirmAsk(p, "rebase")
+		}
+		opts.ConfirmPush = confirmPush(p)
+	}
+	return commands.SyncRun(ctx, works, opts, cmd.OutOrStdout())
 }
 
 func newSyncResumeCmd() *cobra.Command {
@@ -181,31 +301,37 @@ func newSyncResumeCmd() *cobra.Command {
 			"only what comes after it, naming the strategy-resolved files it could not\n" +
 			"re-check. Ctrl-C leaves the rebase and its plan as they are; run this\n" +
 			"again. wt sync undo <work> aborts a handed-over rebase and puts the branch\n" +
-			"back instead.",
+			"back instead.\n\n" +
+			"Also spelled wt sync <work> --resume, with the same flags.",
 		Example: "  wt sync resume login-crash            # continue what the run handed you\n" +
 			"  wt sync resume fix/login-crash        # the same worktree, by branch\n" +
-			"  wt sync resume login-crash --push     # then push, without asking\n" +
 			"  wt sync resume login-crash --no-push  # then print the push command\n" +
-			"  wt sync resume login-crash --yes      # not asked about an idle session",
+			"  wt sync resume login-crash --yes      # not asked about an idle session\n" +
+			"  wt sync login-crash --resume --push   # resume --push, spelled on wt sync",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
-			var opts commands.ResumeOptions
-			opts.Push = push()
-			if canAsk(cmd) {
-				p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
-				if !yes {
-					opts.Confirm = confirmAsk(p, "resume")
-				}
-				opts.ConfirmPush = confirmPush(p)
-			}
-			return commands.SyncResume(ctx, args[0], opts, cmd.OutOrStdout())
+			return syncResume(cmd, args[0], ctx, yes, push())
 		}),
 	}
 	push = addPushFlags(resume, "push when done, without asking",
 		"neither push nor ask; print the push command")
-	resume.Flags().BoolVar(&yes, "yes", false, "do not ask first when a session is idle in the worktree")
+	resume.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask first when a session is idle in the worktree")
 	return resume
+}
+
+// syncResume is wt sync resume, whichever way it was spelled.
+func syncResume(cmd *cobra.Command, work string, ctx *commands.Context, yes bool, push commands.PushMode) error {
+	var opts commands.ResumeOptions
+	opts.Push = push
+	if canAsk(cmd) {
+		p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
+		if !yes {
+			opts.Confirm = confirmAsk(p, "resume")
+		}
+		opts.ConfirmPush = confirmPush(p)
+	}
+	return commands.SyncResume(ctx, work, opts, cmd.OutOrStdout())
 }
 
 func newSyncUndoCmd() *cobra.Command {
@@ -231,23 +357,30 @@ func newSyncUndoCmd() *cobra.Command {
 			"A Claude session idle in a checkout is named and you are asked first\n" +
 			"(--yes skips; with no terminal it goes ahead), and each branch put back\n" +
 			"under one ends with a wt: line to pass on to it. The session wt itself\n" +
-			"runs under is not counted.",
-		Example: "  wt sync undo login-crash          # back to the safety refs\n" +
-			"  wt sync undo login-crash --force  # even if the branch moved since\n" +
-			"  wt sync undo login-crash --yes    # not asked about an idle session",
+			"runs under is not counted.\n\n" +
+			"Also spelled wt sync <work> --undo, with the same flags.",
+		Example: "  wt sync undo login-crash            # back to the safety refs\n" +
+			"  wt sync undo login-crash --force    # even if the branch moved since\n" +
+			"  wt sync login-crash --undo --force  # the same, spelled on wt sync\n" +
+			"  wt sync login-crash --undo --yes    # undo --yes, spelled on wt sync",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
-			opts := commands.UndoOptions{Force: force}
-			if canAsk(cmd) && !yes {
-				opts.Confirm = confirmAsk(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()), "undo")
-			}
-			return commands.SyncUndo(ctx, args[0], opts, cmd.OutOrStdout())
+			return syncUndo(cmd, args[0], ctx, force, yes)
 		}),
 	}
 	undo.Flags().BoolVar(&force, "force", false, "undo a branch that has moved since the run, pinning its tip first")
-	undo.Flags().BoolVar(&yes, "yes", false, "do not ask first when a session is idle in a checkout")
+	undo.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask first when a session is idle in a checkout")
 	return undo
+}
+
+// syncUndo is wt sync undo, whichever way it was spelled.
+func syncUndo(cmd *cobra.Command, work string, ctx *commands.Context, force, yes bool) error {
+	opts := commands.UndoOptions{Force: force}
+	if canAsk(cmd) && !yes {
+		opts.Confirm = confirmAsk(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()), "undo")
+	}
+	return commands.SyncUndo(ctx, work, opts, cmd.OutOrStdout())
 }
 
 func newSyncDoctorCmd() *cobra.Command {

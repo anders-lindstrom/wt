@@ -78,7 +78,8 @@ carry are shims that call `wt`.
    for `wt`. `wt init` adds that file to the repo, which is the owner's decision.
 8. **Rebase onto trunk with `wt sync`.** `wt sync` alone shows what would happen and
    changes nothing; `wt sync run <work>` does it, and `wt sync undo <work>` puts it
-   back.
+   back. Each verb is also a flag on the line you just recalled: `wt sync <work> --run`,
+   `--resume`, `--undo`.
 9. **Clean up merged branches with `wt sweep`.** From the main checkout, `wt sweep`
    fetches origin, lists the local branches trunk already contains, and deletes them
    after one question (`--yes` for scripts; without a terminal it deletes nothing).
