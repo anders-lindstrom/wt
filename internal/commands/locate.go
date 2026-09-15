@@ -18,31 +18,48 @@ import (
 // checkout, so this deliberately does not reuse the fuzzy resolver behind
 // `wt find`.
 //
-// It also does not fall back to the repository's default type. Path() has to,
-// because `wt new` names a worktree that does not exist yet; here the worktrees
-// are right there to look at, and inventing a type only produces a confident
-// answer about the wrong one.
+// It also does not fall back to the repository's default type. Path() and
+// Branch() do, but only after the same exact lookup finds nothing, because `wt
+// new` names a worktree that does not exist yet; here the worktrees are right
+// there to look at, and inventing a type only produces a confident answer about
+// the wrong one.
 func Locate(ctx *Context, arg string) (repo.Worktree, error) {
 	arg = strings.TrimSpace(arg)
 	if arg == "" {
 		return repo.Worktree{}, errors.New("no worktree given")
 	}
-	names, err := WorkNames(ctx)
+	wt, ok, err := existing(ctx, arg)
 	if err != nil {
 		return repo.Worktree{}, err
+	}
+	if wt.IsMain || (!ok && arg == ctx.Repo.Name) {
+		return repo.Worktree{}, errors.New("the main checkout is not a worktree; name a worktree (see wt list)")
+	}
+	if !ok {
+		return repo.Worktree{}, fmt.Errorf(
+			"no worktree %q in %s — run `wt list` to see them", arg, ctx.Repo.Name)
+	}
+	return wt, nil
+}
+
+// existing is the exact matching behind Locate: arg names a worktree by path,
+// by branch, by <type>/<work> or by the bare work name. ok is false when
+// nothing matches; the error is the one for a work name under more than one
+// type. The main checkout is returned, IsMain set, only when its path is given,
+// so each caller decides what that means.
+func existing(ctx *Context, arg string) (wt repo.Worktree, ok bool, err error) {
+	names, err := WorkNames(ctx)
+	if err != nil {
+		return repo.Worktree{}, false, err
 	}
 
 	// A path is tried first and on its own: it identifies a worktree outright,
 	// so a name that happens to look like one cannot pull the answer elsewhere.
 	if abs, ok := absPath(arg); ok {
 		for _, n := range names {
-			if !repo.SamePath(n.Path, abs) {
-				continue
+			if repo.SamePath(n.Path, abs) {
+				return n.Worktree, true, nil
 			}
-			if n.IsMain {
-				return repo.Worktree{}, errors.New("the main checkout is not a worktree; name a worktree (see wt list)")
-			}
-			return n.Worktree, nil
 		}
 	}
 
@@ -54,15 +71,11 @@ func Locate(ctx *Context, arg string) (repo.Worktree, error) {
 	}
 	switch len(matches) {
 	case 1:
-		return matches[0], nil
+		return matches[0], true, nil
 	case 0:
-		if arg == ctx.Repo.Name {
-			return repo.Worktree{}, errors.New("the main checkout is not a worktree; name a worktree (see wt list)")
-		}
-		return repo.Worktree{}, fmt.Errorf(
-			"no worktree %q in %s — run `wt list` to see them", arg, ctx.Repo.Name)
+		return repo.Worktree{}, false, nil
 	default:
-		return repo.Worktree{}, ambiguous(arg, matches)
+		return repo.Worktree{}, false, ambiguous(arg, matches)
 	}
 }
 
