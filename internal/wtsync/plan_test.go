@@ -454,3 +454,90 @@ func TestUndoneLineSaysWhereTheBranchIs(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+// A lift at the handed-over stop is listed with the resolved files, saying
+// what it did; the deferred regeneration is still announced as it is today.
+func TestRenderPlanNamesALiftedVersion(t *testing.T) {
+	dir := repoWith(t, map[string]string{"v.txt": "1.0.0\n", "a.txt": "a\n"}, nil, nil)
+	base := gitIn(t, dir, "rev-parse", "HEAD")
+	out, err := RenderPlan(PlanInput{
+		MainRoot: dir, Work: "api", Branch: "feat_wt/api", TrunkRef: "origin/main",
+		Base: base, Trunk: "main", Config: planConfig(t),
+		Handover: Handover{
+			Index: 2, Total: 12, Subject: "bump the api",
+			Files: []FileOutcome{
+				{Path: "etc/openapi_v3.json", Strategy: "openapi", Resolved: true, Lifted: true, Note: "lifted the version to 2.40.2: trunk took 2.40.1"},
+				{Path: "a.txt", Note: "unclaimed"},
+			},
+			Staged: map[string]string{"etc/openapi_v3.json": "deadbeef"},
+			Left:   []string{"a.txt"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"## already resolved — do not re-open\netc/openapi_v3.json                      openapi lifted the version to 2.40.2: trunk took 2.40.1\n",
+		"## deferred, runs when the rebase completes\n./gradlew generateOpenApi\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("plan is missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// A refused lift is a file git merged clean: it carries trunk's value and
+// no markers, and the plan says what to write and where it goes. With no
+// conflict at the stop the pick is already committed, and resume amends the
+// staged file into it; beside a conflict it is still in the index.
+func TestRenderPlanSaysWhatToDoWithARefusedLift(t *testing.T) {
+	dir := repoWith(t, map[string]string{"v.txt": "1.0.0\n", "a.txt": "a\n"}, nil, nil)
+	base := gitIn(t, dir, "rev-parse", "HEAD")
+	refused := FileOutcome{Path: "v.txt", Strategy: "owned-line", Lifted: true, Note: `max-plus-patch needs an X.Y.Z version on both sides, got "1.0.1-SNAPSHOT" and "1.0.1-SNAPSHOT"`}
+	render := func(conflicts []Conflict, files []FileOutcome, left []string) string {
+		t.Helper()
+		out, err := RenderPlan(PlanInput{
+			MainRoot: dir, Work: "bump", Branch: "feat_wt/bump", TrunkRef: "origin/main",
+			Base: base, Trunk: "main", Config: planConfig(t),
+			Handover: Handover{Index: 1, Total: 2, Subject: "bump api", Conflicts: conflicts, Files: files, Left: left},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	committed := render(nil, []FileOutcome{refused}, []string{"v.txt"})
+	want := "## yours — 1 file\nv.txt                                    owned-line refused to lift it: max-plus-patch needs an X.Y.Z version on both sides, got \"1.0.1-SNAPSHOT\" and \"1.0.1-SNAPSHOT\"\n    no markers: the commit is already made, with trunk's value; write the version the branch should carry, above trunk's, then git add it, and wt sync resume amends it into the commit\n"
+	if !strings.Contains(committed, want) {
+		t.Errorf("plan is missing %q:\n%s", want, committed)
+	}
+	if strings.Contains(committed, "<<<<<<< HEAD is trunk") {
+		t.Errorf("a plan with no conflict describes markers:\n%s", committed)
+	}
+	unclaimed := FileOutcome{Path: "a.txt", Note: "unclaimed"}
+	c := Conflict{Path: "a.txt", Base: []byte("a\n"), Trunk: []byte("trunk\n"), Branch: []byte("branch\n")}
+	beside := render([]Conflict{c}, []FileOutcome{unclaimed, refused}, []string{"a.txt", "v.txt"})
+	for _, want := range []string{
+		"<<<<<<< HEAD is trunk, >>>>>>> <sha> (bump api) is the branch's commit being replayed\n",
+		"    no markers: git merged it with trunk's value; write the version the branch should carry, above trunk's, then git add it\n",
+	} {
+		if !strings.Contains(beside, want) {
+			t.Errorf("plan is missing %q:\n%s", want, beside)
+		}
+	}
+	if strings.Contains(beside, "already made") {
+		t.Errorf("a plan with a conflict calls the pick committed:\n%s", beside)
+	}
+	// The lines did not pair up: the branch added or removed a version line
+	// and may have bumped nothing, so the plan says what to check, not what
+	// to write.
+	shape := FileOutcome{Path: "v.txt", Strategy: "owned-line", Lifted: true, Note: shapeRefusal}
+	out := render(nil, []FileOutcome{shape}, []string{"v.txt"})
+	want = "v.txt                                    owned-line refused to lift it: the sides differ in the number of owned lines\n    no markers: the branch added or removed a version line; check the version lines by hand, git add the file, then wt sync resume\n"
+	if !strings.Contains(out, want) {
+		t.Errorf("plan is missing %q:\n%s", want, out)
+	}
+	if strings.Contains(out, "write the version") || strings.Contains(out, "<<<<<<< HEAD is trunk") {
+		t.Errorf("a shape refusal is told to write a version:\n%s", out)
+	}
+}

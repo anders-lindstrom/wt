@@ -47,6 +47,10 @@ type Stop struct {
 // declared strategies applied at every stop.
 type Replay struct {
 	Commits int
+	// Tree is the tree the replay ended on: what the branch would carry
+	// once rebased, when every stop resolved. Empty when a stop was left
+	// to a person or the replay was truncated.
+	Tree string
 	// Stops is every stop the replay reached, in order.
 	Stops []Stop
 	// Stop is the first stop the strategies did not resolve — the one a
@@ -79,22 +83,27 @@ var simEnv = []string{
 // commits. A nil cfg claims nothing, so the first stop is the last.
 func SimulateRebase(mainRoot, onto, branch string, cfg *Config) (Replay, error) {
 	var rep Replay
-	// The same selection and order the rebase sequencer uses: right side
-	// only, patch-equivalent commits dropped, merges flattened, topological.
-	// The subject of every commit comes back with the list: a stop needs it,
-	// and asking for it at each stop is one more git process per stop.
-	out, err := gitEnv(mainRoot, nil, nil, "log", "--reverse", "--topo-order", "--right-only", "--cherry-pick", "--no-merges", "--format=%H%x00%s", onto+"..."+branch, "--")
+	// The same selection and order the run's rebase uses: right side only,
+	// merges flattened, topological, and a commit trunk already carries
+	// patch for patch left out, as the rebase leaves it out before it is
+	// applied — unless it changes a lifted file, when the run keeps it in
+	// the list so that a bump both sides made is replayed and lifted rather
+	// than dropped unseen; one whose merge then changes nothing is skipped
+	// below, as the rebase drops it. The subject and the paths of every
+	// commit come back with the list: a stop needs the subject, the lift
+	// needs the paths, and asking at each stop is one more git process per
+	// stop.
+	all, err := logWithPaths(mainRoot, "--reverse", "--topo-order", "--right-only", "--no-merges", onto+"..."+branch, "--")
 	if err != nil {
 		return rep, err
 	}
-	var commits []string
-	subjects := map[string]string{}
-	if out != "" {
-		for _, line := range strings.Split(out, "\n") {
-			sha, subject, _ := strings.Cut(line, "\x00")
-			commits = append(commits, sha)
-			subjects[sha] = subject
+	lifting := cfg.liftPatterns()
+	var commits []commitPaths
+	for _, c := range all {
+		if c.OnTrunk && !touchesAny(lifting, c.Paths) {
+			continue
 		}
+		commits = append(commits, c)
 	}
 	rep.Commits = len(commits)
 	base, err := gitEnv(mainRoot, nil, nil, "rev-parse", "--verify", onto+"^{commit}", "--")
@@ -112,45 +121,73 @@ func SimulateRebase(mainRoot, onto, branch string, cfg *Config) (Replay, error) 
 	if err != nil {
 		return rep, err
 	}
-	for i, c := range commits {
+	for i, cp := range commits {
+		c := cp.SHA
 		tree, clean, conflicts, messages, err := mergeTree(mainRoot, c+"^", base, c)
 		if err != nil {
 			return rep, err
 		}
-		if !clean {
-			stop := Stop{
-				Index: i + 1, Total: len(commits), Commit: c, Subject: subjects[c],
-				Conflicts: conflicts, Messages: messages,
+		stop := Stop{
+			Index: i + 1, Total: len(commits), Commit: c, Subject: cp.Subject,
+			Conflicts: conflicts, Messages: messages,
+		}
+		resolved := map[string][]byte{}
+		script := ""
+		// A conflict merge-tree reports only in its messages has no blobs
+		// to put to a strategy, so it is nobody's but a person's.
+		stop.Resolved = clean || len(conflicts) > 0
+		conflicted := map[string]bool{}
+		for _, cf := range conflicts {
+			conflicted[cf.Path] = true
+			r, rerr := resolveConflict(mainRoot, onto, cfg, cf, "")
+			rep.Err = errors.Join(rep.Err, rerr)
+			stop.Files = append(stop.Files, r.Outcome)
+			if !r.Outcome.Resolved {
+				stop.Resolved = false
+				continue
 			}
-			resolved := map[string][]byte{}
-			script := ""
-			// A conflict merge-tree reports only in its messages has no
-			// blobs to put to a strategy, so it is nobody's but a person's.
-			stop.Resolved = len(conflicts) > 0
-			for _, cf := range conflicts {
-				r, rerr := resolveConflict(mainRoot, onto, cfg, cf, "")
-				rep.Err = errors.Join(rep.Err, rerr)
-				stop.Files = append(stop.Files, r.Outcome)
-				if !r.Outcome.Resolved {
-					stop.Resolved = false
-					continue
-				}
-				if r.Outcome.Strategy == StrategyScript {
-					// --check said the script owns it, which is all a
-					// script can say here: it resolves against a real
-					// index in a worktree, never in the object store. The
-					// truncation is unconditional; RuleFor only enriches
-					// Why with which script owns the path.
-					if script == "" {
-						script = fmt.Sprintf("a script owns %s and can only be checked before a run", cf.Path)
-						if rule, ok := cfg.RuleFor(cf.Path); ok {
-							script = fmt.Sprintf("%s owns %s and can only be checked before a run", rule.Run, cf.Path)
-						}
+			if r.Outcome.Strategy == StrategyScript {
+				// --check said the script owns it, which is all a
+				// script can say here: it resolves against a real
+				// index in a worktree, never in the object store. The
+				// truncation is unconditional; RuleFor only enriches
+				// Why with which script owns the path.
+				if script == "" {
+					script = fmt.Sprintf("a script owns %s and can only be checked before a run", cf.Path)
+					if rule, ok := cfg.RuleFor(cf.Path); ok {
+						script = fmt.Sprintf("%s owns %s and can only be checked before a run", rule.Run, cf.Path)
 					}
+				}
+				continue
+			}
+			resolved[cf.Path] = r.Content
+		}
+		// The files the pick changed that git merged clean: a version both
+		// sides bumped is lifted there, in the merged tree, before anything
+		// decides whether the pick still changes something.
+		if touchesAny(lifting, cp.Paths) {
+			lifts, lerr := liftAt(mainRoot, cfg, liftSides{base: c + "^", trunk: base, branch: c, merged: tree + ":"}, conflicted, mainRoot, onto)
+			rep.Err = errors.Join(rep.Err, lerr)
+			var refused []string
+			for _, l := range lifts {
+				stop.Files = append(stop.Files, l.Outcome)
+				if !l.Outcome.Resolved {
+					stop.Resolved = false
+					refused = append(refused, l.Outcome.Path+": "+l.Outcome.Note)
 					continue
 				}
-				resolved[cf.Path] = r.Content
+				resolved[l.Outcome.Path] = l.Content
 			}
+			// A pick whose merge changes nothing is one the rebase drops as
+			// empty, and a lift refused there has no commit for a person's
+			// fix to ride in: the run fails rather than hands over, and the
+			// overview says the same, as a failure rather than a stop.
+			if len(refused) > 0 && clean && tree == baseTree {
+				rep.Err = errors.Join(rep.Err, fmt.Errorf("%q is already on trunk and its version cannot be lifted: %s", cp.Subject, strings.Join(refused, "; ")))
+				return rep, nil
+			}
+		}
+		if !clean || len(stop.Files) > 0 {
 			if !stop.Resolved {
 				rep.Stops = append(rep.Stops, stop)
 				last := rep.Stops[len(rep.Stops)-1]
@@ -182,6 +219,7 @@ func SimulateRebase(mainRoot, onto, branch string, cfg *Config) (Replay, error) 
 		// commit-tree was just given this tree, so it is the new base's.
 		baseTree = tree
 	}
+	rep.Tree = baseTree
 	return rep, nil
 }
 

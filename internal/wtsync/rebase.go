@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -40,6 +41,16 @@ var rebaseConfig = []string{
 	// before a handover can record what it staged. The run plan believed the
 	// flag's absence was enough; it is not.
 	"-c", "rerere.autoupdate=false",
+	// The run edits the sequencer's list to stop around the picks that may
+	// need a version lift and to leave out the picks trunk already carries,
+	// matching each by the word pick and its id: no abbreviated command, no
+	// autosquash reordering what the simulation replayed in order, and no
+	// check refusing a list a pick was taken out of. The ids keep the
+	// repository's own abbreviation, which is what a conflict marker a person
+	// resolves by hand shows too.
+	"-c", "rebase.abbreviateCommands=false",
+	"-c", "rebase.autoSquash=false",
+	"-c", "rebase.missingCommitsCheck=ignore",
 }
 
 // Preflight decides from a triage assessment whether a run may start. The
@@ -183,6 +194,13 @@ type driver struct {
 	// fails leaves the worktree exactly as it is and says so.
 	keep bool
 	res  Result
+	// before is HEAD as the last break left it: what the pick after the
+	// break is applied on. At that pick's edit stop HEAD either moved past
+	// it, so the pick was committed, or did not, so git dropped the pick as
+	// empty; nothing else tells the two apart. A resume that finds the
+	// sequencer past such a pick reads it back from the marker the break
+	// wrote in the sequencer's own directory.
+	before string
 }
 
 func (d *driver) git(args ...string) (string, error) {
@@ -260,8 +278,14 @@ func (d *driver) fail(err error) (Result, error) {
 	if d.keep {
 		// Not "untouched": a resume that reached a stop may already have
 		// applied a strategy's answer before it failed. What is true is
-		// that nothing was put back, which is the whole point.
-		return d.res, fmt.Errorf("%w; the rebase is left where it stopped: %s", err, WayOut(Way{Work: d.work(), Plan: true, Rebasing: true}))
+		// that nothing was put back, which is the whole point. The rest of
+		// the list is a person's from here, so the run's own stops come out
+		// of it; a list that cannot be edited now is said so.
+		err = fmt.Errorf("%w; the rebase is left where it stopped: %s", err, WayOut(Way{Work: d.work(), Plan: true, Rebasing: true}))
+		if serr := StripMarks(d.req.Path); serr != nil {
+			err = fmt.Errorf("%w; %s", err, MarksLeft(serr))
+		}
+		return d.res, err
 	}
 	rerr := d.restore()
 	if rerr == nil {
@@ -291,14 +315,113 @@ func Rebase(mainRoot string, cfg *Config, req Request, log io.Writer) (Result, e
 	if d.res.SignaturesDropped, err = signedCount(req.Path, req.base(), old); err != nil {
 		return d.res, err
 	}
-	args := append(append([]string{}, rebaseConfig...), "rebase", "--no-update-refs", "--no-gpg-sign")
+	// The picks that may need a version lift are the ones changing a file a
+	// lifting rule claims. Around each the sequencer's list gets a break
+	// before and an edit in place of the pick, so the run sees HEAD before
+	// the pick is applied and stops after it. The list is git's own, edited
+	// by a script git runs as the sequence editor: --interactive is what
+	// makes git ask for one. --empty=drop keeps what a plain rebase does with
+	// a pick that becomes empty, which --interactive alone would stop at.
+	// A commit trunk already carries patch for patch is left out of the
+	// list, as a plain rebase leaves it out — unless it changes a lifted
+	// file, when the whole list is asked for (--reapply-cherry-picks), that
+	// commit is replayed and lifted rather than dropped before anything sees
+	// it, and the editor takes out the other such commits itself. A branch
+	// with nothing to lift gets the same list a plain rebase would,
+	// untouched.
+	plan, err := planLift(req.Path, cfg, req.base(), req.Branch)
+	if err != nil {
+		return d.res, err
+	}
+	env := rebaseEnv
+	if plan.edits() {
+		var b strings.Builder
+		sequenceEditor(&b, plan.marks, plan.drops)
+		script, cleanup, err := writeScript(b.String())
+		if err != nil {
+			return d.res, err
+		}
+		defer cleanup()
+		env = []string{"GIT_EDITOR=true", "GIT_SEQUENCE_EDITOR=" + shellQuote(script)}
+	}
+	args := append(append([]string{}, rebaseConfig...), "rebase", "--interactive", "--empty=drop")
+	if plan.reapply {
+		args = append(args, "--reapply-cherry-picks")
+	}
+	args = append(args, "--no-update-refs", "--no-gpg-sign")
 	if req.Upstream != "" {
 		args = append(args, "--onto", req.Onto, req.Upstream)
 	} else {
 		args = append(args, req.Onto)
 	}
-	_, err = d.git(args...)
+	if d.log != nil && os.Getenv("WT_SYNC_TRACE") != "" {
+		fmt.Fprintf(d.log, "  $ git %s\n", strings.Join(args, " "))
+	}
+	_, err = gitEnv(req.Path, env, nil, args...)
 	return d.drive(err)
+}
+
+// liftPlan is what the run does to the sequencer's list: marks is the picks
+// it stops around, the commits changing a file a lifting rule claims; drops
+// is the picks it takes out, the commits trunk already carries patch for
+// patch, which git would have left out itself had the list not been asked
+// to keep them (reapply) for a marked commit's sake.
+type liftPlan struct {
+	marks, drops []string
+	reapply      bool
+}
+
+func (p liftPlan) edits() bool { return len(p.marks) > 0 || len(p.drops) > 0 }
+
+// planLift reads the commits of base...branch the way the rebase selects
+// them — the right side, merges left out — and sorts them into the plan.
+func planLift(wtPath string, cfg *Config, base, branch string) (liftPlan, error) {
+	var plan liftPlan
+	patterns := cfg.liftPatterns()
+	if len(patterns) == 0 {
+		return plan, nil
+	}
+	commits, err := logWithPaths(wtPath, "--right-only", "--no-merges", base+"..."+branch, "--")
+	if err != nil {
+		return plan, err
+	}
+	for _, c := range commits {
+		switch {
+		case touchesAny(patterns, c.Paths):
+			plan.marks = append(plan.marks, c.SHA)
+			if c.OnTrunk {
+				plan.reapply = true
+			}
+		case c.OnTrunk:
+			plan.drops = append(plan.drops, c.SHA)
+		}
+	}
+	if !plan.reapply {
+		// git leaves them out itself.
+		plan.drops = nil
+	}
+	return plan, nil
+}
+
+// writeScript writes a sequence editor to a private directory and returns
+// its path and what removes it. git runs it once, for the one command it is
+// handed to; nothing reads it after.
+func writeScript(body string) (string, func(), error) {
+	dir, err := os.MkdirTemp("", "wtsync-todo-")
+	if err != nil {
+		return "", nil, err
+	}
+	path := filepath.Join(dir, "edit-todo.sh")
+	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
+		_ = os.RemoveAll(dir)
+		return "", nil, err
+	}
+	return path, func() { _ = os.RemoveAll(dir) }, nil
+}
+
+// shellQuote quotes s for the shell git runs an editor through.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // Resume drives a rebase a previous run left stopped. The caller has already
@@ -325,8 +448,177 @@ func Resume(mainRoot string, cfg *Config, req Request, old string, safety Safety
 		}
 		return d.finish()
 	}
+	// Where the sequencer sits decides how the run gets going again. A
+	// handover left it at a conflict, or after a pick whose lift was refused
+	// with what a person staged waiting to be amended in: --continue is the
+	// move. A resume interrupted at one of the run's own stops left it at a
+	// break, before a pick that may need a lift, or after that pick with the
+	// lift not yet done: the break is taken as the run takes one, and the
+	// pick after it is handled here before anything continues. The marker
+	// the break wrote is what tells the interrupted stop from a handed-over
+	// one: the run forgets it once it has handled the pick.
+	p, err := RebaseProgress(req.Path)
+	if err != nil {
+		return d.fail(err)
+	}
+	atPick := false
+	switch {
+	case p.Command == "break":
+		if err := d.markTodo(); err != nil {
+			return d.fail(err)
+		}
+		moved, err := d.atBreak()
+		if err != nil {
+			return d.fail(err)
+		}
+		return d.drive(moved)
+	case p.Command == "edit" && p.Applied:
+		before, ok, err := readBefore(req.Path)
+		if err != nil {
+			return d.fail(err)
+		}
+		d.before, atPick = before, ok
+	}
+	// The handover left the list without the run's own stops; the picks
+	// still to come that may need a version lift get them back.
+	if err := d.markTodo(); err != nil {
+		return d.fail(err)
+	}
+	if atPick {
+		return d.drive(nil)
+	}
 	_, cerr := d.git("rebase", "--continue")
 	return d.drive(cerr)
+}
+
+// atBreak is what the run does at a break it put before a pick: it records
+// HEAD, what the pick is applied on, in memory and in the sequencer's
+// directory for a resume, and continues. moved is what the continue
+// returned, for drive; err is a failure of the bookkeeping itself.
+func (d *driver) atBreak() (moved, err error) {
+	head, err := d.git("rev-parse", "HEAD")
+	if err != nil {
+		return nil, err
+	}
+	d.before = head
+	if err := noteBefore(d.req.Path, head); err != nil {
+		return nil, err
+	}
+	_, moved = d.git("rebase", "--continue")
+	return moved, nil
+}
+
+// beforePath is the marker a break writes: HEAD before the pick after it,
+// kept in the sequencer's own directory so that git's abort or finish
+// removes it with the rest.
+func beforePath(wtPath string) (string, error) {
+	dir, err := rebaseDir(wtPath)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "wt-sync-before"), nil
+}
+
+func noteBefore(wtPath, head string) error {
+	path, err := beforePath(wtPath)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(head+"\n"), 0o644)
+}
+
+func readBefore(wtPath string) (string, bool, error) {
+	path, err := beforePath(wtPath)
+	if err != nil {
+		return "", false, err
+	}
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return strings.TrimSpace(string(b)), true, nil
+}
+
+func forgetBefore(wtPath string) error {
+	path, err := beforePath(wtPath)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+// markTodo rewrites the rest of the sequencer's list through git's own
+// --edit-todo: a break before and an edit in place of every pick that may
+// need a version lift, and the picks trunk already carries taken out. A
+// list with nothing to mark or drop is left alone.
+func (d *driver) markTodo() error {
+	plan, err := planLift(d.req.Path, d.cfg, d.req.base(), d.req.Branch)
+	if err != nil || !plan.edits() {
+		return err
+	}
+	var b strings.Builder
+	sequenceEditor(&b, plan.marks, plan.drops)
+	return editTodo(d.req.Path, b.String())
+}
+
+// StripMarks takes the run's own stops out of the rest of a rebase's list:
+// every break dropped, every edit a pick, the list a plain rebase would
+// have, so that a person's own git rebase --continue does not stop where
+// the run would have. A list with no such line, or no rebase in progress,
+// is left alone. It runs wherever the run lets go of a rebase mid-way: a
+// handover, a resume that fails, an interrupt.
+func StripMarks(wtPath string) error {
+	dir, err := rebaseDir(wtPath)
+	if err != nil {
+		return err
+	}
+	todo, err := os.ReadFile(filepath.Join(dir, "git-rebase-todo"))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	marked := false
+	for _, line := range strings.Split(string(todo), "\n") {
+		if line == "break" || strings.HasPrefix(line, "break ") || strings.HasPrefix(line, "edit ") {
+			marked = true
+			break
+		}
+	}
+	if !marked {
+		return nil
+	}
+	var b strings.Builder
+	plainEditor(&b)
+	return editTodo(wtPath, b.String())
+}
+
+// MarksLeft is what a person is told when the run's stops could not be taken
+// out of a list it is leaving to them.
+func MarksLeft(err error) string {
+	return fmt.Sprintf("the rebase's list still carries the run's own break and edit lines (%v): take them out with git rebase --edit-todo before continuing by hand, or wt sync resume handles them", err)
+}
+
+// editTodo runs git's --edit-todo with script as the sequence editor.
+func editTodo(wtPath, script string) error {
+	path, cleanup, err := writeScript(script)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	env := []string{"GIT_EDITOR=true", "GIT_SEQUENCE_EDITOR=" + shellQuote(path)}
+	args := append(append([]string{}, rebaseConfig...), "rebase", "--edit-todo")
+	if _, err := gitEnv(wtPath, env, nil, args...); err != nil {
+		return fmt.Errorf("editing the rebase's list: %w", err)
+	}
+	return nil
 }
 
 func (d *driver) verifyFinished() error {
@@ -521,38 +813,52 @@ func commitOf(dir, rev string) (string, error) {
 
 // drive runs the stop-resolve-continue loop until the rebase finishes, fails
 // or reaches a stop a person owns. err is what the command that got the
-// rebase moving returned: nil means it is already finished.
+// rebase moving returned; a rebase no longer in progress with err nil is
+// finished. A rebase still in progress with err nil is at a stop the run
+// asked for: the break before a pick that may need a version lift, which
+// exits clean, or the edit after it.
 func (d *driver) drive(err error) (Result, error) {
 	lastIndex, lastUnmerged := -1, ""
 	stops, limit := 0, 0
-	for err != nil {
+	for {
 		busy, perr := RebaseInProgress(d.req.Path)
 		if perr != nil {
 			return d.fail(perr)
 		}
 		if !busy {
-			return d.fail(fmt.Errorf("rebase: %w", err))
+			if err != nil {
+				return d.fail(fmt.Errorf("rebase: %w", err))
+			}
+			break
 		}
 		p, perr := RebaseProgress(d.req.Path)
 		if perr != nil {
 			return d.fail(perr)
 		}
-		conflicts, cerr := StagedConflicts(d.req.Path)
-		if cerr != nil {
-			return d.fail(cerr)
-		}
 		// The guard below compares one stop with the one before it, which an
 		// alternating unmerged set would walk straight past; this cap bounds
-		// the loop whatever the sequencer does. Two stops per commit plus
-		// slack, or a flat 64 when the sequencer reports no total.
+		// the loop whatever the sequencer does. Three stops per commit (a
+		// break, a conflict, an edit) plus slack, or a flat 64 when the
+		// sequencer reports no total.
 		stops++
 		if limit == 0 {
-			if limit = 2*p.Total + 2; p.Total == 0 {
+			if limit = 3*p.Total + 2; p.Total == 0 {
 				limit = 64
 			}
 		}
 		if stops > limit {
 			return d.fail(fmt.Errorf("rebase did not converge after %d stops", limit))
+		}
+		if p.Command == "break" {
+			var berr error
+			if err, berr = d.atBreak(); berr != nil {
+				return d.fail(berr)
+			}
+			continue
+		}
+		conflicts, cerr := StagedConflicts(d.req.Path)
+		if cerr != nil {
+			return d.fail(cerr)
 		}
 		unmerged := pathsOf(conflicts)
 		if p.Index == lastIndex && (len(conflicts) == 0 || unmerged == lastUnmerged) {
@@ -579,7 +885,28 @@ func (d *driver) drive(err error) (Result, error) {
 			}
 			stop.Files = append(stop.Files, r.Outcome)
 		}
-		if len(conflicts) == 0 {
+		lifts, lerr := d.liftStop(p, conflicts, d.before)
+		if lerr != nil {
+			return d.fail(lerr)
+		}
+		// The pick is handled: a resume finding the sequencer here continues
+		// past it rather than handling it again.
+		if err := forgetBefore(d.req.Path); err != nil {
+			return d.fail(err)
+		}
+		for _, l := range lifts {
+			if !l.Resolved {
+				unresolved = true
+			}
+			stop.Files = append(stop.Files, l)
+		}
+		if len(stop.Files) == 0 {
+			if p.Applied {
+				// The stop the run asked for after a pick that may have
+				// needed a lift, and did not: nothing happened here.
+				_, err = d.git("rebase", "--continue")
+				continue
+			}
 			// Stopped with nothing unmerged: rerere or a hook did it all, or
 			// the sequencer stopped for a reason we do not handle. One
 			// --continue is the honest move; the guard above catches a
@@ -605,21 +932,102 @@ func (d *driver) drive(err error) (Result, error) {
 			if herr != nil {
 				return d.fail(herr)
 			}
+			// The rest of the list is a person's now, and the stops the
+			// run put in it for itself would only stop them too: their own
+			// git rebase --continue sees the list a plain rebase would.
+			// Resume puts the stops back before it continues.
+			if err := StripMarks(d.req.Path); err != nil {
+				return d.fail(err)
+			}
 			d.res.Left = h
 			return d.res, nil
 		}
 		_, err = d.git("rebase", "--continue")
 	}
-	// The command reported success, so the sequencer must be finished. If it
-	// is not, the rebase did not complete and the worktree goes back.
-	busy, perr := RebaseInProgress(d.req.Path)
-	if perr != nil {
-		return d.fail(perr)
-	}
-	if busy {
-		return d.fail(errors.New("rebase reported success but is still in progress"))
-	}
+	// The loop leaves only with the sequencer finished.
 	return d.finish()
+}
+
+// liftStop runs the version lift at a stop over the files the pick changed
+// that git merged clean, and applies what it answers. Where the merged file
+// is depends on the stop:
+//
+//   - At a conflict (not Applied), the pick is not committed: the merged
+//     files are in the index, HEAD is what the pick is applied on, and a
+//     lift is written and staged for --continue to commit with the rest.
+//   - At an edit after a pick git committed (HEAD moved past before), the
+//     merged files are HEAD's, applied on HEAD's parent. A lift is written
+//     and staged, and --continue amends it into the pick: git's own edit
+//     flow, which also carries a person's fix in after a refusal here.
+//   - At an edit after a pick git dropped as empty (HEAD is still before),
+//     nothing of the pick was committed and the merged files are HEAD's own.
+//     A lift is committed under the pick's author and message, so the bump
+//     commit trunk took patch for patch survives with its own number. A
+//     refusal here has no commit for a person's fix to ride in, so the run
+//     fails rather than hand over.
+func (d *driver) liftStop(p Progress, conflicts []Conflict, before string) ([]FileOutcome, error) {
+	if len(d.cfg.liftPatterns()) == 0 || p.Commit == "" {
+		return nil, nil
+	}
+	head, err := d.git("rev-parse", "HEAD")
+	if err != nil {
+		return nil, err
+	}
+	sides := liftSides{base: p.Commit + "^", branch: p.Commit}
+	dropped := false
+	switch {
+	case !p.Applied:
+		sides.trunk, sides.merged = head, ":0:"
+	case before == "":
+		return nil, fmt.Errorf("at %d/%d after the pick, with no record of what it was applied on", p.Index, p.Total)
+	case head == before:
+		dropped = true
+		sides.trunk, sides.merged = head, head+":"
+	default:
+		sides.trunk, sides.merged = before, head+":"
+	}
+	skip := map[string]bool{}
+	for _, c := range conflicts {
+		skip[c.Path] = true
+	}
+	lifts, err := liftAt(d.req.Path, d.cfg, sides, skip, d.mainRoot, d.req.Trunk)
+	if err != nil {
+		return nil, err
+	}
+	var outcomes []FileOutcome
+	refused := false
+	for _, l := range lifts {
+		outcomes = append(outcomes, l.Outcome)
+		if !l.Outcome.Resolved {
+			refused = true
+			continue
+		}
+		if err := stageFile(d.req.Path, l.Outcome.Path, l.Content); err != nil {
+			return nil, err
+		}
+	}
+	if dropped {
+		if refused {
+			var reasons []string
+			for _, o := range outcomes {
+				if !o.Resolved {
+					reasons = append(reasons, o.Path+": "+o.Note)
+				}
+			}
+			return outcomes, fmt.Errorf("%q is already on trunk and its version cannot be lifted: %s", p.Subject, strings.Join(reasons, "; "))
+		}
+		if len(lifts) > 0 {
+			if _, err := d.git("commit", "--quiet", "--no-verify", "--no-gpg-sign", "-C", p.Commit); err != nil {
+				return nil, fmt.Errorf("committing the lifted %q: %w", p.Subject, err)
+			}
+		}
+	}
+	return outcomes, nil
+}
+
+// stageFile writes content over a working file and stages it.
+func stageFile(wtPath, path string, content []byte) error {
+	return Apply(wtPath, Conflict{Path: path}, content)
 }
 
 // finish reads back what the completed rebase produced. Past this point the
@@ -697,7 +1105,7 @@ func logStop(log io.Writer, s StopResult) {
 	for _, f := range s.Files {
 		mark, note := "✗", f.Note
 		if f.Resolved {
-			mark, note = "✓", f.Strategy
+			mark, note = "✓", f.By()
 		}
 		parts = append(parts, strings.TrimSpace(mark+" "+f.Path+" "+note))
 	}

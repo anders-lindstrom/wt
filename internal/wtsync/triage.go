@@ -34,12 +34,28 @@ type FileOutcome struct {
 	Path     string
 	Strategy string // "" when unclaimed
 	Resolved bool
-	Note     string // "unclaimed", or the refusal's reason
+	// Lifted marks a file git merged clean whose version rule still had to
+	// act: both sides bumped the line, and the branch needs a number of its
+	// own above trunk's. Resolved, Note says what it was lifted to; not
+	// resolved, the rule refused and Note says why — the file carries
+	// trunk's value and no markers, which is what the plan then says.
+	Lifted bool
+	Note   string // "unclaimed", or the refusal's reason
 	// Keys is the refusal's Keys, when the strategy refused: non-empty only
 	// for a genuine key-by-key collision, never for an ordinary refusal.
 	Keys []string
 	// Groups is Keys by section of the document.
 	Groups []KeyGroup
+}
+
+// By is what settled a resolved file, as every report names it beside the
+// path: the strategy, or for a lift the strategy and what it did, "owned-line
+// lifted the version to 1.2.4: trunk took 1.2.3".
+func (f FileOutcome) By() string {
+	if f.Lifted && f.Resolved {
+		return f.Strategy + " " + f.Note
+	}
+	return f.Strategy
 }
 
 // KeyGroup is one section of a generated document and the keys in it that

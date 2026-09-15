@@ -105,8 +105,14 @@ func TestSimulateRebaseSkipsCommitsAlreadyOnTrunkLikeRebaseDoes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Commits != 1 || r.Stop != nil {
+	// The commit trunk already carries is left out before anything is
+	// replayed, as the rebase leaves it out, and the replay ends on the tree
+	// the branch's own commit makes.
+	if r.Commits != 1 || r.Stop != nil || len(r.Stops) != 0 {
 		t.Errorf("replay = %+v", r)
+	}
+	if got := gitIn(t, dir, "show", r.Tree+":b.txt"); got != "b2" {
+		t.Errorf("b.txt on the replayed tree = %q", got)
 	}
 }
 
