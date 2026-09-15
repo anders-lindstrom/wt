@@ -80,6 +80,63 @@ setup() {
     [[ "$output" == *"→"* ]]
 }
 
+# The same run and undo spelled as flags at the end of the wt sync line, with
+# the verb's own flags reaching it: --push pushes without asking, --force
+# rewinds a branch that moved after the run.
+@test "sync <work> --run and --undo are the verbs spelled on wt sync" {
+    run wt sync bump --run --no-fetch --push
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"(as last fetched"* ]]
+    [[ "$output" == *"rebased 1 commit"* ]]
+    [[ "$output" == *"✓ pushed feat_wt/bump"*"→"* ]]
+    [[ "$output" != *"push: git -C"* ]]
+
+    run wt sync
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"bump"* ]]
+
+    echo more > "$BUMP/more.txt"
+    git -C "$BUMP" add more.txt
+    git -C "$BUMP" commit -qm "moved since the run"
+    run wt sync bump --undo
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"has moved since that run"*"--force"* ]]
+
+    run wt sync bump --undo --force
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"bump  "*"→"*"kept under refs/wt-sync/feat_wt/bump/"* ]]
+
+    run wt sync bump --push
+    [ "$status" -eq 1 ]
+    [[ "$output" == "wt: --push needs --run or --resume" ]]
+}
+
+# The handover of the test below, resumed with the flag spelling.
+@test "sync <work> --resume is sync resume <work>" {
+    printf 'branch\n' > "$BUMP/a.txt"
+    git -C "$BUMP" add a.txt
+    git -C "$BUMP" commit -qm "a on the branch"
+    printf 'trunk\n' > "$REPO/a.txt"
+    git -C "$REPO" add a.txt
+    git -C "$REPO" commit -qm "a on trunk"
+    git -C "$REPO" fetch -q origin
+
+    run wt sync bump --run --no-fetch --yes
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"needs you"* ]]
+    GITDIR="$(git -C "$BUMP" rev-parse --absolute-git-dir)"
+    [ -f "$GITDIR/wt-sync-plan.md" ]
+
+    echo resolved > "$BUMP/a.txt"
+    git -C "$BUMP" add a.txt
+    run wt sync bump --resume --no-push
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"push: git -C"*"--force-with-lease --force-if-includes"* ]]
+    [ ! -d "$GITDIR/rebase-merge" ]
+    [ ! -f "$GITDIR/wt-sync-plan.md" ]
+    [ "$(git -C "$BUMP" symbolic-ref HEAD)" = "refs/heads/feat_wt/bump" ]
+}
+
 # A handover end to end: a.txt moved on both sides and nothing claims it, so
 # the run carries the v.txt stop, stops contested on the a.txt stop and leaves
 # the plan; the table reports the handover, and resume finishes the rebase
