@@ -279,13 +279,41 @@ func sectionOf(a wtsync.Assessment) syncSection {
 	return sectionNeedsYou
 }
 
+// readyToRun is what a run with nothing named takes: the ready group, less
+// recipe?, whose run may stop and hand over a plan nobody asked for.
+func readyToRun(a wtsync.Assessment) bool {
+	return sectionOf(a) == sectionReady && !a.Unverified
+}
+
+// leftLabel names a worktree a run with nothing named leaves alone, in the
+// overview's words: its class, and what holds it.
+func leftLabel(work string, a wtsync.Assessment) string {
+	if a.Err != nil {
+		return work + " error"
+	}
+	if a.Class == wtsync.Detached {
+		return work + " no branch"
+	}
+	parts := []string{classLabel(a)}
+	if len(a.Sessions) > 0 {
+		parts = append(parts, whoLabel(a.Sessions))
+	}
+	if a.Dirty {
+		parts = append(parts, "dirty")
+	}
+	if a.Paused {
+		parts = append(parts, "handed over")
+	}
+	return work + " " + strings.Join(parts, ", ")
+}
+
 func sectionHeading(s syncSection, declared bool) string {
 	switch s {
 	case sectionReady:
 		if !declared {
 			return "ready, once trunk declares " + wtsync.ConfigFile
 		}
-		return "ready · wt sync run <work>"
+		return "ready · wt sync run <work>, or wt sync --run for all of them"
 	case sectionNeedsYou:
 		return "needs you · wt sync <work> for the detail"
 	}

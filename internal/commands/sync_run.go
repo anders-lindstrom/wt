@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -59,10 +60,22 @@ type runPlan struct {
 	trunkSHA string // onto's tip, one SHA for the whole run
 	cfg      *wtsync.Config
 
-	parents  map[string]string
-	branches []string // every member of every named stack, parents first
-	parts    map[string]*participant
-	epoch    int64
+	parents   map[string]string
+	ambiguous map[string][]string // branches that merge two ancestors; not handled
+	branches  []string            // every member of every named stack, parents first
+	parts     map[string]*participant
+	epoch     int64
+
+	// Listed once for the run: selectReady and triage read the same list, and
+	// the lock lists again with the lock in hand.
+	agents       []wtsync.Agent
+	agentsListed bool
+	// all is a run with nothing named, which picked every ready worktree
+	// itself: it asks before moving even one, since nobody named it. assessed
+	// is what selectReady saw, by branch, so triage does not simulate the same
+	// rebases again.
+	all      bool
+	assessed map[string]wtsync.Assessment
 
 	// What each worktree came to: a count per outcome for the summary a run
 	// of more than one ends with, the line under it for each that did not
@@ -75,14 +88,22 @@ type runPlan struct {
 
 // SyncRun rebases the named worktrees (and the stacks they belong to) onto
 // origin/<trunk>: safety ref, strategies at each stop, deferred steps once
-// at the end. Anything refused, restored, failed or owed is reported and
-// makes the returned error non-nil, so a script sees it.
+// at the end. With nothing named it takes every worktree the overview calls
+// ready, less recipe?, and asks first. Anything refused, restored, failed or
+// owed is reported and makes the returned error non-nil, so a script sees it.
 func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 	r := &runPlan{ctx: ctx, opts: opts, w: w, tracker: &rebaseTracker{}, trunk: ctx.Config.MainBranch, outcomes: map[string]int{}}
 	defer watchSignals(w, r.tracker)()
 
 	if err := r.declare(); err != nil {
 		return err
+	}
+	if len(works) == 0 {
+		ready, err := r.selectReady()
+		if err != nil || len(ready) == 0 {
+			return err
+		}
+		works = ready
 	}
 	if err := r.selectBranches(works); err != nil {
 		return err
@@ -158,6 +179,99 @@ func (r *runPlan) declare() error {
 	return nil
 }
 
+// listAgents lists the other agent sessions once for the run.
+func (r *runPlan) listAgents() ([]wtsync.Agent, error) {
+	if !r.agentsListed {
+		agents, err := r.opts.agents(rebasedNothing)
+		if err != nil {
+			return nil, err
+		}
+		r.agents, r.agentsListed = agents, true
+	}
+	return r.agents, nil
+}
+
+// selectReady is what a run with nothing named rebases: every worktree the
+// overview files under ready, less recipe?, whose run may stop and hand over
+// a plan nobody asked for, and less a stack with a member held back, which
+// would refuse every one of them at triage. The rest is named with what
+// holds it, in the overview's words, and left as it is. The assessments are
+// kept for triage, which would otherwise simulate the same rebases again.
+func (r *runPlan) selectReady() ([]string, error) {
+	ctx := r.ctx
+	all, err := ctx.Repo.Worktrees()
+	if err != nil {
+		return nil, err
+	}
+	worktrees := slices.DeleteFunc(slices.Clone(all), func(wt repo.Worktree) bool { return wt.IsMain })
+	agents, err := r.listAgents()
+	if err != nil {
+		return nil, err
+	}
+	assessments := assessAll(ctx.Repo.MainRoot, r.trunkSHA, r.cfg, worktrees, agents, assessWorkers)
+	r.parents, r.ambiguous, err = wtsync.Parents(ctx.Repo.MainRoot, r.trunkSHA, all)
+	if err != nil {
+		return nil, err
+	}
+	r.all = true
+	r.assessed = map[string]wtsync.Assessment{}
+	for i, wt := range worktrees {
+		if wt.Branch != "" {
+			r.assessed[wt.Branch] = assessments[i]
+		}
+	}
+	var ready, left []string
+	for i, wt := range worktrees {
+		a := assessments[i]
+		work := workName(ctx, wt.Branch)
+		switch {
+		case a.Class == wtsync.Current && a.Err == nil:
+			// On trunk already; the overview leaves it out too.
+		case !readyToRun(a):
+			left = append(left, leftLabel(work, a))
+		default:
+			if hold := r.stackHold(wt.Branch); hold != "" {
+				left = append(left, work+" "+classLabel(a)+", "+hold)
+				continue
+			}
+			ready = append(ready, work)
+		}
+	}
+	if len(ready) == 0 {
+		fmt.Fprintln(r.w, "nothing is ready to rebase")
+	} else {
+		fmt.Fprintf(r.w, "every ready worktree: %s\n", strings.Join(ready, ", "))
+	}
+	if len(left) > 0 {
+		fmt.Fprintf(r.w, "left as they are: %s\n", strings.Join(left, " · "))
+	}
+	return ready, nil
+}
+
+// stackHold is why a ready worktree is not taken on its own: a member of its
+// stack that triage would refuse, or one that would be run and handed over
+// or put back, so the whole stack would go with it. A member that is only
+// skipped (on trunk, or nothing ahead of it) holds nothing. Empty means the
+// stack goes as a whole.
+func (r *runPlan) stackHold(branch string) string {
+	if anc, ok := r.ambiguous[branch]; ok {
+		return "merges " + strings.Join(anc, " and ")
+	}
+	for _, m := range wtsync.Members(r.parents, branch) {
+		if m == branch {
+			continue
+		}
+		a, ok := r.assessed[m]
+		if ok {
+			if v, _ := wtsync.Preflight(a); v == wtsync.SkipRun || (v == wtsync.Proceed && readyToRun(a)) {
+				continue
+			}
+		}
+		return "stacked with " + workName(r.ctx, m)
+	}
+	return ""
+}
+
 // selectBranches turns the arguments into the branches the run rebases: each
 // named worktree's branch, every other member of its stack, parents first.
 func (r *runPlan) selectBranches(works []string) error {
@@ -180,10 +294,13 @@ func (r *runPlan) selectBranches(works []string) error {
 		}
 		named = append(named, wt.Branch)
 	}
-	parents, ambiguous, err := wtsync.Parents(ctx.Repo.MainRoot, r.trunkSHA, worktrees)
-	if err != nil {
-		return err
+	if r.parents == nil {
+		r.parents, r.ambiguous, err = wtsync.Parents(ctx.Repo.MainRoot, r.trunkSHA, worktrees)
+		if err != nil {
+			return err
+		}
 	}
+	parents, ambiguous := r.parents, r.ambiguous
 	for _, b := range named {
 		if anc, ok := ambiguous[b]; ok {
 			return fmt.Errorf("%s merges %s; that shape is not handled", workName(ctx, b), strings.Join(anc, " and "))
@@ -207,7 +324,6 @@ func (r *runPlan) selectBranches(works []string) error {
 			fmt.Fprintf(r.w, "%s is a stack with %s: rebasing all of them\n", workName(ctx, b), strings.Join(added, ", "))
 		}
 	}
-	r.parents = parents
 	r.branches = wtsync.Order(parents, branches)
 	r.parts = map[string]*participant{}
 	for _, b := range r.branches {
@@ -221,13 +337,17 @@ func (r *runPlan) selectBranches(works []string) error {
 // files under, and asks the one question a run asks. proceed is false for
 // the answer no, which is not an error: the line saying so has been printed.
 func (r *runPlan) triage() (proceed bool, err error) {
-	agents, err := r.opts.agents(rebasedNothing)
+	agents, err := r.listAgents()
 	if err != nil {
 		return false, err
 	}
 	for _, b := range r.branches {
 		p := r.parts[b]
-		p.a = wtsync.Assess(r.ctx.Repo.MainRoot, r.trunkSHA, r.cfg, p.wt, agents)
+		if a, ok := r.assessed[b]; ok {
+			p.a = a
+		} else {
+			p.a = wtsync.Assess(r.ctx.Repo.MainRoot, r.trunkSHA, r.cfg, p.wt, agents)
+		}
 		p.verdict, p.reason = wtsync.Preflight(p.a)
 	}
 	for _, b := range r.branches {
@@ -249,7 +369,8 @@ func (r *runPlan) triage() (proceed bool, err error) {
 			underIdle = true
 		}
 	}
-	if len(going) > 1 || underIdle {
+	// A run that picked its worktrees itself asks even for one of them.
+	if len(going) > 1 || underIdle || (r.all && len(going) > 0) {
 		if r.opts.Confirm != nil {
 			fmt.Fprintf(r.w, "about to rebase: %s\n", strings.Join(going, ", "))
 		}
