@@ -56,7 +56,8 @@ carry are shims that call `wt`.
 2. **Ask `wt` for paths and branches.** From inside the repo, `wt path <work>` and
    `wt branch <work>`; `wt config --shell` for the repo's settings. Both take any
    name `wt list` prints for a worktree that exists — the work name, the branch or
-   the path — and answer for that worktree, whatever its type. `wt path` prints an
+   the path — or `.` for the one you are in, and answer for that worktree,
+   whatever its type. `wt path` prints an
    absolute path; only when nothing exists is it where `wt new` would put the work.
    Scripts that rebuild the convention themselves are how tools drift apart.
 3. **Create with `wt new`.** Its only stdout is the path:
@@ -66,8 +67,8 @@ carry are shims that call `wt`.
    `wt hook claude-remove`.
 4. **Remove with `wt remove`.** Deleting the folder or running `git worktree remove`
    leaves the branch behind with nothing deciding its fate. `wt remove` accepts a work
-   name, branch or path; `--yes` skips the question, and without a terminal it never
-   asks. Merged branches left without a worktree are for `wt sweep`.
+   name, branch, path or `.`; `--yes` skips the question, and without a terminal it
+   never asks. Merged branches left without a worktree are for `wt sweep`.
 5. **Move with `wt migrate`.** The move is git's own, so uncommitted work goes with
    it, but anything holding the old absolute path does not follow: IDE projects,
    running dev servers, terminal sessions, Herdr and Superset workspaces. Reopen those

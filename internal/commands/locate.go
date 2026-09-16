@@ -13,7 +13,8 @@ import (
 //
 // It accepts every form `wt list` prints — the work name, the branch, the path —
 // plus the <type>/<work> spec, because a user reading a list should be able to
-// type any column back. Matching is exact and never leaves this repository: a
+// type any column back, and "." for the worktree the caller is standing in.
+// Matching is exact and never leaves this repository: a
 // wrong guess by `wt cd` costs a directory change, a wrong guess here costs a
 // checkout, so this deliberately does not reuse the fuzzy resolver behind
 // `wt find`.
@@ -33,7 +34,7 @@ func Locate(ctx *Context, arg string) (repo.Worktree, error) {
 		return repo.Worktree{}, err
 	}
 	if wt.IsMain || (!ok && arg == ctx.Repo.Name) {
-		return repo.Worktree{}, errors.New("the main checkout is not a worktree; name a worktree (see wt list)")
+		return repo.Worktree{}, errMainCheckout
 	}
 	if !ok {
 		return repo.Worktree{}, fmt.Errorf(
@@ -42,15 +43,28 @@ func Locate(ctx *Context, arg string) (repo.Worktree, error) {
 	return wt, nil
 }
 
+// errMainCheckout is the answer for the main checkout named as a worktree, by
+// its path or by "." from inside it.
+var errMainCheckout = errors.New("the main checkout is not a worktree; name a worktree (see wt list)")
+
 // existing is the exact matching behind Locate: arg names a worktree by path,
-// by branch, by <type>/<work> or by the bare work name. ok is false when
-// nothing matches; the error is the one for a work name under more than one
-// type. The main checkout is returned, IsMain set, only when its path is given,
-// so each caller decides what that means.
+// by branch, by <type>/<work> or by the bare work name, or is "." for the one
+// the caller is standing in. ok is false when nothing matches; the error is
+// the one for a work name under more than one type, or for a "." from outside
+// every worktree. The main checkout is returned, IsMain set, only when its
+// path is given or "." is said from inside it, so each caller decides what
+// that means.
 func existing(ctx *Context, arg string) (wt repo.Worktree, ok bool, err error) {
 	names, err := WorkNames(ctx)
 	if err != nil {
 		return repo.Worktree{}, false, err
+	}
+
+	// "." is where the caller stands, whatever that directory is called: it
+	// is decided before the path rule, which would take "./" for the
+	// directory itself and miss from anywhere below the worktree's root.
+	if isDot(arg) {
+		return standingWorktree(ctx, names)
 	}
 
 	// A path is tried first and on its own: it identifies a worktree outright,
@@ -77,6 +91,34 @@ func existing(ctx *Context, arg string) (wt repo.Worktree, ok bool, err error) {
 	default:
 		return repo.Worktree{}, false, ambiguous(arg, matches)
 	}
+}
+
+// isDot reports whether arg is ".", spelled with or without the trailing
+// separator a shell's completion adds.
+func isDot(arg string) bool {
+	return arg == "." || filepath.Clean(arg) == "."
+}
+
+// standingWorktree is the worktree the caller's directory is inside, the main
+// checkout included: the deepest registered path containing it, so a worktree
+// nested under another's directory is found rather than its parent. Being
+// inside the repository at all does not put a directory inside a worktree
+// (a bare repository's parent, say), and that is an error naming the
+// directory, since "." meant something and it was not found.
+func standingWorktree(ctx *Context, names []WorkName) (repo.Worktree, bool, error) {
+	var found *repo.Worktree
+	for i := range names {
+		n := &names[i].Worktree
+		if standingIn(ctx.Cwd, n.Path) && (found == nil || len(n.Path) > len(found.Path)) {
+			found = n
+		}
+	}
+	if found == nil {
+		return repo.Worktree{}, false, fmt.Errorf(
+			". names the worktree you are standing in, and %s is in none of %s's — run `wt list` to see them",
+			ctx.Cwd, ctx.Repo.Name)
+	}
+	return *found, true, nil
 }
 
 // locateBranch is Locate for the verbs that act on a branch: one with none

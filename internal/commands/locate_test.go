@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -185,5 +186,120 @@ func TestWorkNamesReadsEachBranchAgainstTheConvention(t *testing.T) {
 	}
 	if want := [2]string{"", ""}; got["spare"] != want {
 		t.Errorf("spare = %v, want %v", got["spare"], want)
+	}
+}
+
+// "." is the worktree the caller stands in, from its root or anywhere below,
+// spelled with or without the separator completion adds.
+func TestLocateDotIsTheWorktreeYouStandIn(t *testing.T) {
+	ctx := locatable(t, "fix/login-crash")
+	wt, err := Locate(ctx, "login-crash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub := filepath.Join(wt.Path, "src", "deep")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, cwd := range []string{wt.Path, sub} {
+		ctx.Cwd = cwd
+		for _, arg := range []string{".", "./"} {
+			got, err := Locate(ctx, arg)
+			if err != nil {
+				t.Fatalf("Locate(%q) from %s: %v", arg, cwd, err)
+			}
+			if got.Path != wt.Path {
+				t.Errorf("Locate(%q) from %s = %q, want %q", arg, cwd, got.Path, wt.Path)
+			}
+		}
+	}
+	if got, err := Path(ctx, "."); err != nil || got != wt.Path {
+		t.Errorf("Path(.) = %q, %v; want %q", got, err, wt.Path)
+	}
+	if got, err := Branch(ctx, "."); err != nil || got != "fix_wt/login-crash" {
+		t.Errorf("Branch(.) = %q, %v; want fix_wt/login-crash", got, err)
+	}
+}
+
+// From the main checkout "." is the main checkout, which is refused the way
+// its path is, by every command that resolves a worktree.
+func TestLocateDotFromTheMainCheckoutIsRefusedAsTheMainCheckout(t *testing.T) {
+	ctx := locatable(t, "fix/login-crash")
+	ctx.Cwd = filepath.Join(ctx.Repo.MainRoot, "bin")
+
+	if _, err := Locate(ctx, "."); err == nil || !strings.Contains(err.Error(), "main checkout") {
+		t.Errorf("want the main-checkout error, got %v", err)
+	}
+	if _, err := Path(ctx, "."); err == nil || !strings.Contains(err.Error(), "main checkout") {
+		t.Errorf("Path: want the main-checkout error, got %v", err)
+	}
+	if _, err := Branch(ctx, "."); err == nil || !strings.Contains(err.Error(), "main checkout") {
+		t.Errorf("Branch: want the main-checkout error, got %v", err)
+	}
+}
+
+// A directory inside no worktree of the repository is an error naming it,
+// not a silent miss: "." meant something.
+func TestLocateDotFromOutsideEveryWorktreeSaysSo(t *testing.T) {
+	ctx := locatable(t, "fix/login-crash")
+	ctx.Cwd = t.TempDir()
+
+	_, err := Locate(ctx, ".")
+	if err == nil {
+		t.Fatal("want an error from outside every worktree")
+	}
+	for _, want := range []string{ctx.Cwd, "none of demo's", "wt list"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should say %q, got: %v", want, err)
+		}
+	}
+}
+
+// One worktree's path can lie under another's: "." from inside the inner
+// one is the inner one, and from elsewhere in the outer one the outer.
+func TestLocateDotPicksTheDeepestWorktreeContainingTheDirectory(t *testing.T) {
+	ctx := locatable(t, "fix/outer")
+	outer, err := Locate(ctx, "outer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inner := worktreeAt(t, ctx.Repo.MainRoot, "fix_wt/inner", filepath.Join(outer.Path, "nested", "inner"))
+	beside := filepath.Join(outer.Path, "nested", "other")
+	if err := os.MkdirAll(beside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for cwd, want := range map[string]string{
+		inner:                               inner,
+		filepath.Join(inner, "src"):         inner,
+		beside:                              outer.Path,
+		filepath.Join(outer.Path, "nested"): outer.Path,
+	} {
+		if err := os.MkdirAll(cwd, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		ctx.Cwd = cwd
+		got, err := Locate(ctx, ".")
+		if err != nil {
+			t.Fatalf("Locate(.) from %s: %v", cwd, err)
+		}
+		if got.Path != want {
+			t.Errorf("Locate(.) from %s = %q, want %q", cwd, got.Path, want)
+		}
+	}
+}
+
+// A worktree that lives inside the main checkout's directory is still the
+// one you stand in, not the main checkout around it.
+func TestLocateDotInsideAWorktreeUnderTheMainCheckoutIsThatWorktree(t *testing.T) {
+	ctx := locatable(t)
+	nested := worktreeAt(t, ctx.Repo.MainRoot, "fix_wt/nested", filepath.Join(ctx.Repo.MainRoot, "wts", "nested"))
+	ctx.Cwd = nested
+
+	got, err := Locate(ctx, ".")
+	if err != nil {
+		t.Fatalf("Locate(.): %v", err)
+	}
+	if got.Path != nested || got.IsMain {
+		t.Errorf("Locate(.) = %+v, want the nested worktree", got)
 	}
 }

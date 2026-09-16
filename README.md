@@ -75,7 +75,7 @@ examples: `wt <command> --help`.
 | `wt cd [pattern]` | cd to a worktree, in this shell; bare or `.` is the main checkout |
 | `wt exec <pattern> <cmd>…` | run a command there, in a subshell; your shell stays put |
 | `wt list` | every worktree, in any layout; `s` marks Superset's, `!` one nothing owns |
-| `wt status` | each worktree's branch and whether it is clean |
+| `wt status [<work>]` | each worktree's branch, whether it is clean, and how far behind and ahead of trunk it is; with a worktree named, that one in full with `wt sync`'s verdict |
 | `wt find <pattern>` | resolve a worktree by fuzzy name, across repositories (`--candidates`) |
 
 **Keep up with trunk**
@@ -95,7 +95,7 @@ examples: `wt <command> --help`.
 | `wt migrate <worktree> [<type>/<name>]` | move a worktree where it belongs, renaming or retyping it on the way (`--dry-run`, `--force`); also `wt move` |
 | `wt adopt <path>` | provision a worktree another tool created (`--relocate`, `--skip-build`) |
 | `wt setup [<source-dir>]` | provision the worktree you are in (`--skip-build`, `--source` to name what ran it) |
-| `wt remove <work>` | remove a worktree; delete its branch when merged, keep it when not (`--yes`, `--me`, `--force` for a locked one) |
+| `wt remove <work>` | remove a worktree; delete its branch when merged, keep it when not (`--yes`, `--me` or `.` for the one you are in, `--force` for a locked one) |
 | `wt sweep` | delete local branches already merged into trunk, and remove the worktrees on such branches that nothing is using; from the main checkout only (`--no-fetch`, `--yes`) |
 
 **This repository, and this build**
@@ -241,14 +241,17 @@ tool carrying a flag for it.
 ## Removing a worktree is careful
 
 **Anything `wt list` prints is a valid argument** — the work name, the branch, or
-the path — as is `<type>/<work>`. On a narrow terminal `wt list` shortens paths
-with `…` to fit; `wt list | cat` prints them whole:
+the path — as is `<type>/<work>`, and `.` for the worktree you are standing in
+(`wt cd .`, `wt exec .` and `wt find .` keep meaning the main checkout). On a
+narrow terminal `wt list` shortens paths with `…` to fit; `wt list | cat` prints
+them whole:
 
 ```sh
 wt remove wt-migration                       # WORK column
 wt remove chore_wt/wt-migration              # BRANCH column
 wt remove ~/src/repo_wt/chore_wt/wt-migration  # PATH column
 wt remove chore/wt-migration                 # <type>/<work>
+wt remove .                                  # the one you are in
 ```
 
 Matching is exact and stays inside this repository. `wt cd` may guess at a name;

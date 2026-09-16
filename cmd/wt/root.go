@@ -28,7 +28,9 @@ func newRootCmd() *cobra.Command {
 			"  finish  wt sync run, then wt remove    catch up with trunk, then tidy\n" +
 			"\n" +
 			"Every command that names a worktree takes any of the three things\n" +
-			"`wt list` prints for it: the work name, the branch, or the path.\n" +
+			"`wt list` prints for it: the work name, the branch, or the path, and .\n" +
+			"for the one you are in; wt cd . and wt find . keep meaning the main\n" +
+			"checkout.\n" +
 			"Run `wt <command> --help` for that command's own examples.",
 		Example: "  wt new fix/login-crash    # branch, worktree and provisioning in one\n" +
 			"  wt cd login-crash         # work in it (needs wt's shell layer)\n" +

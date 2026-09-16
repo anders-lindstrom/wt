@@ -30,9 +30,9 @@ func newRemoveCmd() *cobra.Command {
 			"that is the fact the whole decision turns on. \"clean\" is about the\n" +
 			"checkout, not the branch: it means nothing is uncommitted.\n\n" +
 			"The worktree can be named by anything `wt list` prints — the work name,\n" +
-			"the branch, or the path. Matching is exact and stays inside this\n" +
-			"repository; a work name used under two types has to be named by its\n" +
-			"type as well.\n\n" +
+			"the branch, or the path — or by . for the one you are standing in, which\n" +
+			"--me also means. Matching is exact and stays inside this repository; a\n" +
+			"work name used under two types has to be named by its type as well.\n\n" +
 			"What the removal will do is printed before it does it. In a terminal you\n" +
 			"are then asked to confirm; --yes skips the question, and a script or hook\n" +
 			"with no terminal is never asked.\n\n" +
@@ -44,7 +44,7 @@ func newRemoveCmd() *cobra.Command {
 			"  wt remove fix/login-crash      # when two types share a work name\n" +
 			"  wt remove login-crash --yes    # do not ask (scripts, hooks)\n" +
 			"  wt remove login-crash --force  # break a lock a session still holds\n" +
-			"  wt remove --me                 # the worktree you are standing in",
+			"  wt remove --me                 # the one you are standing in; or wt remove .",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {

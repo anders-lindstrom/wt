@@ -147,6 +147,13 @@ func SyncWorktree(ctx *Context, arg string, opts SyncOptions, w io.Writer) error
 	return nil
 }
 
+// noTrunkError is trunkTip's answer for a trunk that is not there.
+type noTrunkError struct{ onto string }
+
+func (e noTrunkError) Error() string {
+	return e.onto + " is not known here; run git fetch origin"
+}
+
 // trunkTip is the ref every sync verb works against and the commit it
 // resolves to now. A trunk that is not there at all is the one thing none of
 // them can go on without.
@@ -154,9 +161,31 @@ func trunkTip(ctx *Context) (onto, sha string, err error) {
 	onto = "origin/" + ctx.Config.MainBranch
 	sha, err = git.Run(ctx.Repo.MainRoot, "rev-parse", "--verify", onto)
 	if err != nil {
-		return onto, "", fmt.Errorf("%s is not known here; run git fetch origin", onto)
+		return onto, "", noTrunkError{onto}
 	}
 	return onto, sha, nil
+}
+
+// syncDeclaration is what every assessment is made against, read from trunk
+// as it is now: the ref, its commit, and the declaration on it, nil when
+// trunk declares nothing.
+func syncDeclaration(ctx *Context) (onto, sha string, cfg *wtsync.Config, err error) {
+	cfg, err = wtsync.LoadFromTrunk(ctx.Repo.MainRoot, ctx.Config.MainBranch)
+	if err != nil && !errors.Is(err, wtsync.ErrNoConfig) {
+		return "", "", nil, err
+	}
+	onto, sha, err = trunkTip(ctx)
+	if err != nil {
+		return "", "", nil, err
+	}
+	return onto, sha, cfg, nil
+}
+
+// undeclaredNotice is the overview's line for a repository whose trunk
+// declares no strategies: its worktrees are assessed and never rebased.
+func undeclaredNotice(ctx *Context, onto string) string {
+	return fmt.Sprintf("%s declares no %s on %s: reported only, never rebased.",
+		ctx.Repo.Name, wtsync.ConfigFile, onto)
 }
 
 // syncInputs fetches trunk unless opts.NoFetch, reads what every assessment
@@ -173,20 +202,17 @@ func syncInputs(ctx *Context, opts SyncOptions, w io.Writer) (onto string, cfg *
 	if !opts.NoFetch {
 		_, fetchErr = git.RunTimeout(ctx.Repo.MainRoot, syncFetchTimeout, "fetch", "--quiet", "origin", trunk)
 	}
-	cfg, err = wtsync.LoadFromTrunk(ctx.Repo.MainRoot, trunk)
-	if err != nil && !errors.Is(err, wtsync.ErrNoConfig) {
-		if fetchErr != nil {
+	onto, sha, cfg, err := syncDeclaration(ctx)
+	if err != nil {
+		var noTrunk noTrunkError
+		if fetchErr != nil && !errors.As(err, &noTrunk) {
 			fmt.Fprintf(w, "fetch failed: %s\n", fetchReason(fetchErr))
 		}
 		return "", nil, nil, err
 	}
-	onto, sha, err := trunkTip(ctx)
-	if err != nil {
-		return "", nil, nil, err
-	}
 	if cfg == nil {
-		fmt.Fprintf(w, "%s declares no %s on %s: reported only, never rebased.\n\n",
-			ctx.Repo.Name, wtsync.ConfigFile, onto)
+		fmt.Fprintln(w, undeclaredNotice(ctx, onto))
+		fmt.Fprintln(w)
 	}
 	agents, aerr := wtsync.ListOtherAgents()
 	if aerr != nil {

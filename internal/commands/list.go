@@ -6,10 +6,12 @@ import (
 	"os"
 	"strings"
 	"text/tabwriter"
+	"time"
 	"unicode/utf8"
 
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // listPadding is the gap tabwriter leaves after every column but the last.
@@ -75,27 +77,233 @@ func layoutMark(l naming.Layout) string {
 	}
 }
 
-// Status prints each worktree's branch and whether its checkout is clean.
+// Status prints each worktree's branch, whether its checkout is clean, and
+// where its branch stands against trunk: origin/<trunk> as last fetched, or
+// the local trunk without one, the bases wt remove and wt sweep compare with.
+// Nothing is fetched. The first line says which of the two it compared with
+// and how old the fetch is.
 func Status(ctx *Context, w io.Writer, width int) error {
 	worktrees, err := ctx.Repo.Worktrees()
 	if err != nil {
 		return err
 	}
-	rows := [][]string{{"BRANCH", "STATE", "PATH"}}
+	base, ok := statusBase(ctx)
+	fmt.Fprintf(w, "%s\n\n", statusHeader(ctx, base, ok))
+	rows := [][]string{{"BRANCH", "STATE", "TRUNK", "PATH"}}
 	for _, wt := range worktrees {
 		branch := wt.Branch
 		if branch == "" {
 			branch = "(detached)"
 		}
-		state := "clean"
-		if dirty, err := repo.Dirty(wt.Path, false); err != nil {
-			state = "unreadable"
-		} else if dirty {
-			state = "dirty"
+		trunk := "-"
+		if !wt.IsMain && wt.Branch != "" {
+			trunk = standingLabel(trunkStanding(ctx, base, ok, wt.Branch))
 		}
-		rows = append(rows, []string{branch, state, wt.Path})
+		rows = append(rows, []string{branch, checkoutState(wt.Path), trunk, wt.Path})
 	}
 	return printPathTable(w, rows, width)
+}
+
+// checkoutState is what wt status says of a checkout: clean, dirty with
+// untracked files counted, or unreadable.
+func checkoutState(path string) string {
+	dirty, err := repo.Dirty(path, false)
+	switch {
+	case err != nil:
+		return "unreadable"
+	case dirty:
+		return "dirty"
+	}
+	return "clean"
+}
+
+// statusBase is the trunk status compares with: the first of trunkBases,
+// origin/<trunk> as last fetched when it is there. ok is false when neither
+// it nor the local trunk exists.
+func statusBase(ctx *Context) (TrunkBase, bool) {
+	bases, err := trunkBases(ctx)
+	if err != nil {
+		return TrunkBase{}, false
+	}
+	return bases[0], true
+}
+
+// statusHeader is the first line of wt status: the ref compared with, and
+// for origin/<trunk> how long ago it was fetched, as wt sync --no-fetch says
+// it.
+func statusHeader(ctx *Context, base TrunkBase, ok bool) string {
+	switch {
+	case !ok:
+		return noTrunkHere(ctx.Config.MainBranch) + " to compare with"
+	case strings.HasPrefix(base.Name, "origin/"):
+		return "against " + base.Name + ", " + lastFetched(ctx.Repo.MainRoot, time.Now())
+	}
+	return "against " + base.Name
+}
+
+// trunkStanding counts what branch and base have that the other does not,
+// with one rev-list, the count every sync verb reads. ok is false when the
+// count cannot be read, or there is no base to count against.
+func trunkStanding(ctx *Context, base TrunkBase, ok bool, branch string) (behind, ahead int, counted bool) {
+	if !ok {
+		return 0, 0, false
+	}
+	behind, ahead, err := wtsync.BehindAhead(ctx.Repo.MainRoot, base.Tip, "refs/heads/"+branch)
+	if err != nil {
+		return 0, 0, false
+	}
+	return behind, ahead, true
+}
+
+// standingLabel is the TRUNK column: on trunk, the two counts, or ? when they
+// could not be read.
+func standingLabel(behind, ahead int, counted bool) string {
+	switch {
+	case !counted:
+		return "?"
+	case behind == 0 && ahead == 0:
+		return "on trunk"
+	}
+	return fmt.Sprintf("%d behind · %d ahead", behind, ahead)
+}
+
+// StatusOptions tunes StatusWorktree.
+type StatusOptions struct {
+	// Agents are the sessions to look for in the worktree. Nil asks `claude
+	// agents`; an empty slice means there are none.
+	Agents []wtsync.Agent
+}
+
+// StatusWorktree prints one worktree in full, one fact per line, then what
+// wt sync would make of it: the same assessment the overview runs, against
+// origin/<trunk> as last fetched, without fetching. The verdict is a
+// simulation of the rebase, and the line says so.
+func StatusWorktree(ctx *Context, arg string, opts StatusOptions, w io.Writer) error {
+	wt, err := Locate(ctx, arg)
+	if err != nil {
+		return err
+	}
+	branch := wt.Branch
+	if branch == "" {
+		branch = "(detached)"
+	}
+	base, ok := statusBase(ctx)
+	rows := [][]string{
+		{"  branch", branch},
+		{"  path", wt.Path},
+		{"  state", checkoutState(wt.Path)},
+		{"  trunk", trunkFact(ctx, base, ok, wt)},
+	}
+	agents := opts.Agents
+	if agents == nil {
+		var aerr error
+		if agents, aerr = wtsync.ListOtherAgents(); aerr != nil {
+			fmt.Fprintf(w, "note: %v\n", aerr)
+		}
+	}
+	if s := wtsync.SessionsAt(agents, wt.Path); len(s) > 0 {
+		rows = append(rows, []string{"  sessions", whoLabel(s)})
+	}
+	work := workName(ctx, wt.Branch)
+	verdict, under := syncVerdict(ctx, work, wt, agents)
+	rows = append(rows, []string{"  sync", verdict})
+
+	fmt.Fprintln(w, work)
+	if err := printTable(w, rows); err != nil {
+		return err
+	}
+	indent := strings.Repeat(" ", keyWidth(rows)+listPadding)
+	for _, line := range under {
+		fmt.Fprintf(w, "%s%s\n", indent, line)
+	}
+	return nil
+}
+
+// keyWidth is the width of a two-column table's first column, where the
+// second column starts less the padding.
+func keyWidth(rows [][]string) int {
+	widest := 0
+	for _, r := range rows {
+		widest = max(widest, utf8.RuneCountInString(r[0]))
+	}
+	return widest
+}
+
+// trunkFact is the trunk line of one worktree: the counts, the ref they are
+// against, and for origin/<trunk> how old the fetch is.
+func trunkFact(ctx *Context, base TrunkBase, ok bool, wt repo.Worktree) string {
+	if wt.Branch == "" {
+		return "-"
+	}
+	if !ok {
+		return noTrunkHere(ctx.Config.MainBranch) + " to compare with"
+	}
+	behind, ahead, counted := trunkStanding(ctx, base, ok, wt.Branch)
+	if !counted {
+		return "?"
+	}
+	fact := standingLabel(behind, ahead, counted)
+	if fact == "on trunk" {
+		fact = "on " + base.Name
+	} else {
+		fact += " of " + base.Name
+	}
+	if strings.HasPrefix(base.Name, "origin/") {
+		fact += " (" + lastFetched(ctx.Repo.MainRoot, time.Now()) + ")"
+	}
+	return fact
+}
+
+// syncVerdict assesses one worktree the way the overview does and returns
+// its verdict in the overview's words: the class with what holds it, then
+// the advice the overview's heading gives for its group, and under it the
+// overview's summary lines, ending with the reminder that it was simulated
+// against trunk as last fetched. A trunk the overview cannot assess against
+// gives its reason instead.
+func syncVerdict(ctx *Context, work string, wt repo.Worktree, agents []wtsync.Agent) (line string, under []string) {
+	onto, _, cfg, err := syncDeclaration(ctx)
+	if err != nil {
+		return err.Error(), nil
+	}
+	a := wtsync.Assess(ctx.Repo.MainRoot, onto, cfg, wt, agents)
+	parts := []string{classLabel(a)}
+	if a.Dirty && len(a.Sessions.Busy()) == 0 {
+		parts = append(parts, "dirty")
+	}
+	if a.Paused {
+		parts = append(parts, "handed over")
+	}
+	line = strings.Join(parts, ", ")
+	if advice := syncAdvice(work, cfg != nil, a); advice != "" {
+		line += " · " + advice
+	}
+	if cfg == nil {
+		under = append(under, undeclaredNotice(ctx, onto))
+	}
+	for _, l := range summaryLines(a) {
+		under = append(under, "  "+l)
+	}
+	under = append(under, "simulated against "+onto+" as last fetched; wt sync fetches first")
+	return line, under
+}
+
+// syncAdvice is what the overview's heading tells you to do with a worktree
+// of this group: run it, look at its detail, or nothing for one the overview
+// skips or leaves out.
+func syncAdvice(work string, declared bool, a wtsync.Assessment) string {
+	if a.Class == wtsync.Current && a.Err == nil {
+		return ""
+	}
+	switch sectionOf(a) {
+	case sectionReady:
+		if !declared {
+			return sectionHeading(sectionReady, false)
+		}
+		return "wt sync run " + work
+	case sectionNeedsYou:
+		return "wt sync " + work + " for the detail"
+	}
+	return ""
 }
 
 // printPathTable writes rows as aligned columns: the first row is the header
