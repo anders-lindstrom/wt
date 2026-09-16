@@ -182,10 +182,11 @@ func TestFindKeepsRepoFirstWithInvalidLocalConfig(t *testing.T) {
 	}
 }
 
-// "." means the repository you are in — its main checkout. Getting back to the
-// base repo is the most common jump there is, and it should not need the repo's
+// "/" means the repository you are in — its main checkout — and so does an
+// empty pattern, which is what a bare `wt cd` sends. Getting back to the base
+// repo is the most common jump there is, and it should not need the repo's
 // name.
-func TestFindDotResolvesToTheMainCheckout(t *testing.T) {
+func TestFindRootResolvesToTheMainCheckout(t *testing.T) {
 	t.Setenv("WT_ROOTS", t.TempDir())
 	main := committedRepo(t, minimalConf)
 	ctx, _ := Open(main)
@@ -193,27 +194,91 @@ func TestFindDotResolvesToTheMainCheckout(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// From inside a linked worktree, "." must still mean the main checkout.
+	// From inside a linked worktree, "/" must still mean the main checkout.
 	inner, err := Open(filepath.Join(ctx.Repo.Parent, "demo_wt", "feat_wt", "somewhere"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := Find(inner, ".")
-	if err != nil {
-		t.Fatalf("Find: %v", err)
-	}
-	if len(got) != 1 || got[0].Path != main {
-		t.Fatalf("want the main checkout %q, got %+v", main, got)
+	for _, pattern := range []string{"/", ""} {
+		got, err := Find(inner, pattern)
+		if err != nil {
+			t.Fatalf("Find(%q): %v", pattern, err)
+		}
+		if len(got) != 1 || got[0].Path != main || got[0].Work != "demo" {
+			t.Fatalf("Find(%q): want the main checkout %q, got %+v", pattern, main, got)
+		}
 	}
 }
 
-func TestFindDotOutsideARepoIsNotAMatch(t *testing.T) {
+// "." is the worktree you are standing in, as it is for every other command:
+// from its root or anywhere below, and from the main checkout the main
+// checkout, which find may answer for.
+func TestFindDotResolvesToTheWorktreeYouStandIn(t *testing.T) {
 	t.Setenv("WT_ROOTS", t.TempDir())
-	got, err := Find(nil, ".")
-	if err != nil {
+	main := committedRepo(t, minimalConf)
+	ctx, _ := Open(main)
+	if _, err := New(ctx, "feat/somewhere", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 0 {
-		t.Errorf("want no match outside a repository, got %+v", got)
+	wt := filepath.Join(ctx.Repo.Parent, "demo_wt", "feat_wt", "somewhere")
+	for _, sub := range []string{filepath.Join(wt, "src", "deep"), filepath.Join(main, "bin")} {
+		if err := os.MkdirAll(sub, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for cwd, want := range map[string]string{
+		wt:                               wt,
+		filepath.Join(wt, "src", "deep"): wt,
+		main:                             main,
+		filepath.Join(main, "bin"):       main,
+	} {
+		ctx, err := Open(cwd)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, pattern := range []string{".", "./"} {
+			got, err := Find(ctx, pattern)
+			if err != nil {
+				t.Fatalf("Find(%q) from %s: %v", pattern, cwd, err)
+			}
+			if len(got) != 1 || got[0].Path != want {
+				t.Errorf("Find(%q) from %s = %+v, want %q", pattern, cwd, got, want)
+			}
+		}
+	}
+	inner, _ := Open(wt)
+	if got, _ := Find(inner, "."); len(got) != 1 || got[0].Work != "somewhere" {
+		t.Errorf("want the worktree's own work name, got %+v", got)
+	}
+}
+
+// A directory in no worktree of the repository is the error Locate gives for
+// ".", not a silent miss.
+func TestFindDotFromOutsideEveryWorktreeSaysSo(t *testing.T) {
+	t.Setenv("WT_ROOTS", t.TempDir())
+	ctx := locatable(t, "fix/login-crash")
+	ctx.Cwd = t.TempDir()
+
+	_, err := Find(ctx, ".")
+	if err == nil {
+		t.Fatal("want an error from outside every worktree")
+	}
+	for _, want := range []string{ctx.Cwd, "none of demo's", "wt list"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should say %q, got: %v", want, err)
+		}
+	}
+}
+
+func TestFindDotAndRootOutsideARepoAreNotAMatch(t *testing.T) {
+	t.Setenv("WT_ROOTS", t.TempDir())
+	for _, pattern := range []string{".", "/", ""} {
+		got, err := Find(nil, pattern)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != 0 {
+			t.Errorf("Find(%q): want no match outside a repository, got %+v", pattern, got)
+		}
 	}
 }

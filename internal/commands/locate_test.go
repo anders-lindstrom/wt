@@ -103,14 +103,33 @@ func TestLocateAcceptsRelativeWorktreePath(t *testing.T) {
 	}
 }
 
-// The main checkout is never a removal target, however it is named.
+// The main checkout is never a removal target, however it is named: by its
+// path, or by "/" from anywhere.
 func TestLocateRefusesMainCheckout(t *testing.T) {
-	ctx := locatable(t)
+	ctx := locatable(t, "fix/login-crash")
+	wt, err := Locate(ctx, "login-crash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx.Cwd = wt.Path
 
-	if _, err := Locate(ctx, ctx.Repo.MainRoot); err == nil {
-		t.Fatal("want an error locating the main checkout")
-	} else if !strings.Contains(err.Error(), "main checkout") {
-		t.Errorf("error should name the main checkout, got: %v", err)
+	for _, arg := range []string{ctx.Repo.MainRoot, "/"} {
+		if _, err := Locate(ctx, arg); err == nil {
+			t.Fatalf("Locate(%q): want an error locating the main checkout", arg)
+		} else if !strings.Contains(err.Error(), "main checkout") {
+			t.Errorf("Locate(%q): error should name the main checkout, got: %v", arg, err)
+		}
+	}
+}
+
+// Only the exact "/" is the main checkout; a path that merely starts there is
+// a path, and one naming no worktree is refused as any such path is.
+func TestLocateTreatsOtherAbsolutePathsAsPaths(t *testing.T) {
+	ctx := locatable(t, "fix/login-crash")
+
+	_, err := Locate(ctx, "/nowhere/at/all")
+	if err == nil || strings.Contains(err.Error(), "main checkout") {
+		t.Errorf("want the no-such-worktree error, got %v", err)
 	}
 }
 
@@ -221,8 +240,9 @@ func TestLocateDotIsTheWorktreeYouStandIn(t *testing.T) {
 	}
 }
 
-// From the main checkout "." is the main checkout, which is refused the way
-// its path is, by every command that resolves a worktree.
+// From the main checkout "." is the main checkout: refused the way its path
+// is by every command that acts on a worktree, and answered by the ones that
+// only say where it is, as "/" is.
 func TestLocateDotFromTheMainCheckoutIsRefusedAsTheMainCheckout(t *testing.T) {
 	ctx := locatable(t, "fix/login-crash")
 	ctx.Cwd = filepath.Join(ctx.Repo.MainRoot, "bin")
@@ -230,11 +250,11 @@ func TestLocateDotFromTheMainCheckoutIsRefusedAsTheMainCheckout(t *testing.T) {
 	if _, err := Locate(ctx, "."); err == nil || !strings.Contains(err.Error(), "main checkout") {
 		t.Errorf("want the main-checkout error, got %v", err)
 	}
-	if _, err := Path(ctx, "."); err == nil || !strings.Contains(err.Error(), "main checkout") {
-		t.Errorf("Path: want the main-checkout error, got %v", err)
+	if got, err := Path(ctx, "."); err != nil || got != ctx.Repo.MainRoot {
+		t.Errorf("Path(.) = %q, %v; want the main root %q", got, err, ctx.Repo.MainRoot)
 	}
-	if _, err := Branch(ctx, "."); err == nil || !strings.Contains(err.Error(), "main checkout") {
-		t.Errorf("Branch: want the main-checkout error, got %v", err)
+	if got, err := Branch(ctx, "."); err != nil || got != "main" {
+		t.Errorf("Branch(.) = %q, %v; want trunk", got, err)
 	}
 }
 

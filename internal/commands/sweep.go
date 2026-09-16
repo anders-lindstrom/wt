@@ -532,7 +532,7 @@ func Sweep(ctx *Context, opts SweepOptions, w io.Writer) error {
 func sweepGuard(ctx *Context) error {
 	if !repo.SamePath(ctx.Repo.Root, ctx.Repo.MainRoot) {
 		return fmt.Errorf("wt sweep deletes branches across the whole repository, so it runs "+
-			"only from the main checkout, %s\n  wt cd . gets you there", ctx.Repo.MainRoot)
+			"only from the main checkout, %s\n  wt cd / gets you there", ctx.Repo.MainRoot)
 	}
 	worktrees, err := ctx.Repo.Worktrees()
 	if err != nil {
