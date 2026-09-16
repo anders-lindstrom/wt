@@ -82,13 +82,17 @@ carry are shims that call `wt`.
    the table calls ready, and `wt sync undo <work>` puts a run back. Each verb is
    also a flag on the line you just recalled: `wt sync <work> --run`,
    `--resume`, `--undo`.
-9. **Clean up merged branches with `wt sweep`.** From the main checkout, `wt sweep`
-   fetches origin, lists the local branches trunk already contains, and deletes them
-   after one question (`--yes` for scripts; without a terminal it deletes nothing).
-   It never deletes trunk, a long-lived branch or a branch a worktree is using;
-   `wt remove` that worktree first, or finish the bisect or rebase that holds the
-   branch. Don't bulk-delete with `git branch --merged | xargs git branch -D`: it
-   compares with whatever the checkout has and takes long-lived branches with it.
+9. **Clean up merged branches and their worktrees with `wt sweep`.** From the main
+   checkout, `wt sweep` fetches origin, lists the local branches trunk already
+   contains, and deletes them after one question (`--yes` for scripts; without a
+   terminal it changes nothing). A merged branch whose worktree nothing is using —
+   nothing uncommitted, no held lock, no agent session in it — goes with its
+   worktree, the way `wt remove` takes it; the plan shows every directory that will
+   go before asking. Any other worktree is kept, and its row says why: dirty, a
+   session in it, a held lock, or a bisect or rebase that holds the branch. It never
+   deletes trunk or a long-lived branch. Don't bulk-delete with
+   `git branch --merged | xargs git branch -D`: it compares with whatever the
+   checkout has and takes long-lived branches with it.
 
 ## Layouts `wt list` recognises
 

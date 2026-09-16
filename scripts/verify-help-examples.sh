@@ -90,7 +90,9 @@ make_resume() {
     echo "$d"
 }
 # make_worktrees, plus a plain branch trunk already contains, so a sweep has
-# something to delete and checked-out branches to point at wt remove.
+# a branch to delete, clean merged worktrees to remove (login-crash, spare and
+# old are cut from trunk and never committed to) and a dirty merged worktree
+# (api-tidy, with dirt staged) to keep and say why.
 make_sweep() {
     local d; d=$(make_worktrees "$1")
     git -C "$d" branch done-work
