@@ -6,6 +6,16 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-16 06:25 — wt sweep removes the worktrees on merged branches too
+
+- A merged branch that a worktree has checked out used to be kept with a
+  pointer to `wt remove`. Now the sweep removes the worktree itself, and the
+  branch with it, when nothing is using it: nothing uncommitted, no lock whose
+  holder is still running, and no agent session in it, idle or busy. The plan
+  lists every directory that will go before the one question.
+- A worktree that is not safe stays, and its row says why: dirty, the session
+  in it, or the pid holding its lock. Everything is read again before it goes.
+
 ## 2026-09-15 21:30 — wt sync --run with nothing named rebases every ready worktree
 
 - Look with `wt sync`, then `wt sync --run` (or `wt sync run`) takes every
