@@ -841,7 +841,7 @@ func TestSweepRefusesOutsideTheMainCheckout(t *testing.T) {
 	if err == nil {
 		t.Fatal("want a refusal from inside a worktree")
 	}
-	if !strings.Contains(err.Error(), "main checkout") || !strings.Contains(err.Error(), "wt cd .") {
+	if !strings.Contains(err.Error(), "main checkout") || !strings.Contains(err.Error(), "wt cd /") {
 		t.Errorf("the refusal must say where to run it: %v", err)
 	}
 	if !ctx.Repo.BranchExists("done-work") {

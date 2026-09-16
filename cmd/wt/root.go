@@ -28,9 +28,9 @@ func newRootCmd() *cobra.Command {
 			"  finish  wt sync run, then wt remove    catch up with trunk, then tidy\n" +
 			"\n" +
 			"Every command that names a worktree takes any of the three things\n" +
-			"`wt list` prints for it: the work name, the branch, or the path, and .\n" +
-			"for the one you are in; wt cd . and wt find . keep meaning the main\n" +
-			"checkout.\n" +
+			"`wt list` prints for it: the work name, the branch, or the path, . for\n" +
+			"the one you are in, or / for the main checkout, where a command can act\n" +
+			"on it.\n" +
 			"Run `wt <command> --help` for that command's own examples.",
 		Example: "  wt new fix/login-crash    # branch, worktree and provisioning in one\n" +
 			"  wt cd login-crash         # work in it (needs wt's shell layer)\n" +
@@ -129,10 +129,12 @@ func newCdCmd() *cobra.Command {
 	return newShellCmd("cd [pattern]", "Change directory to a worktree (shell)",
 		"Change your shell's directory to a worktree. The pattern is matched the\n"+
 			"way `wt find` matches, so a few letters of the work name are enough.\n\n"+
-			"With no pattern, or \".\", returns to the repository's main checkout.",
+			"\".\" is the root of the worktree you are in, the main checkout included;\n"+
+			"\"/\", or no pattern at all, is the repository's main checkout.",
 		"  wt cd login-crash  # jump to that worktree, in this shell\n"+
 			"  wt cd login        # a few letters are enough\n"+
-			"  wt cd .            # back to the repository's main checkout\n"+
+			"  wt cd .            # the root of the worktree you are in\n"+
+			"  wt cd /            # back to the repository's main checkout\n"+
 			"  wt cd              # the same, with nothing to type")
 }
 
@@ -144,7 +146,8 @@ func newExecCmd() *cobra.Command {
 			"what you get back.",
 		"  wt exec login-crash git status     # run it there, stay here\n"+
 			"  wt exec login-crash make test      # its exit code becomes yours\n"+
-			"  wt exec . git log --oneline -5     # the main checkout")
+			"  wt exec / git log --oneline -5     # the main checkout\n"+
+			"  wt exec . make test                # the worktree you are in")
 }
 
 // needArgs validates argument count with a message that names what is missing

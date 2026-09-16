@@ -40,13 +40,15 @@ func newPathCmd() *cobra.Command {
 		Long: "Print where a piece of work lives. A worktree that already exists wins,\n" +
 			"named by any of the things `wt list` prints for it — the work name, the\n" +
 			"branch or the path — whatever layout it is in, so this answers for\n" +
-			"worktrees other tools made too. Otherwise it prints the path `wt new`\n" +
-			"would use, with a bare name taking the default type.\n\n" +
+			"worktrees other tools made too; . is the one you are standing in and\n" +
+			"/ the main checkout. Otherwise it prints the path `wt new` would use,\n" +
+			"with a bare name taking the default type.\n\n" +
 			"The path alone goes to stdout, so `cd \"$(wt path fix/login-crash)\"`\n" +
 			"works — which is what `wt cd` does for you.",
 		Example: "  wt path fix/login-crash    # where that worktree is, or would go\n" +
 			"  wt path login-crash        # the existing worktree, whatever its type\n" +
-			"  wt path fix_wt/login-crash # by branch, as `wt list` prints it",
+			"  wt path fix_wt/login-crash # by branch, as `wt list` prints it\n" +
+			"  wt path /                  # the main checkout",
 		Args:              needArgs(1, "<work>", "wt path fix/login-crash"),
 		ValidArgsFunction: completeWork,
 		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
@@ -62,11 +64,13 @@ func newBranchCmd() *cobra.Command {
 		Short: "Print the branch name for a piece of work",
 		Long: "Print the branch of a piece of work. A worktree that already exists wins,\n" +
 			"named by any of the things `wt list` prints for it — the work name, the\n" +
-			"branch or the path. Otherwise it prints the branch `wt new` would make,\n" +
+			"branch or the path; . is the one you are standing in, and / is trunk.\n" +
+			"Otherwise it prints the branch `wt new` would make,\n" +
 			"<type><suffix>/<work>, with the type validated against the ones this\n" +
 			"repository declares and a bare name taking the default type.",
 		Example: "  wt branch fix/login-crash  # prints fix_wt/login-crash\n" +
-			"  wt branch login-crash      # the existing worktree's, else the default type",
+			"  wt branch login-crash      # the existing worktree's, else the default type\n" +
+			"  wt branch /                # trunk, as this repository configures it",
 		Args:              needArgs(1, "<work>", "wt branch fix/login-crash"),
 		ValidArgsFunction: completeWork,
 		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {

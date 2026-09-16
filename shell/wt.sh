@@ -12,6 +12,9 @@
 #   wt_ls   [pattern]              list worktrees, or show what a pattern matches
 #   wt_rm_me                       remove the worktree you are standing in
 #
+# A pattern of "." is the worktree you are standing in and "/" is the main
+# checkout, as everywhere in wt; a bare `wt cd` goes to the main checkout.
+#
 # Override the search roots with a colon-separated list:
 #   export WT_ROOTS="$HOME/work:$HOME/oss"
 
@@ -112,12 +115,12 @@ wt_rm_me() {
 # caller's directory. This wrapper handles those two and passes everything else
 # to the real wt, so there is one command to remember rather than two families.
 #
-# A bare `wt cd`, or `wt cd .`, returns to the repository's main checkout.
+# A bare `wt cd`, like `wt cd /`, returns to the repository's main checkout.
 wt() {
     case "${1:-}" in
         cd)
             shift
-            wt_cd "${1:-.}"
+            wt_cd "${1:-/}"
             ;;
         exec)
             shift

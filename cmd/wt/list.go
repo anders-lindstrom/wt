@@ -39,8 +39,7 @@ func newStatusCmd() *cobra.Command {
 			"when origin/<trunk> is not here. The first line says which, and how old\n" +
 			"the fetch is. Nothing is fetched; wt sync fetches.\n\n" +
 			"With a worktree named — by anything `wt list` prints for it, or . for the\n" +
-			"one you are in (wt cd . keeps meaning the main checkout) — that worktree\n" +
-			"alone, one fact per line: branch, path,\n" +
+			"one you are in — that worktree alone, one fact per line: branch, path,\n" +
 			"state, standing against trunk, the Claude sessions in it, then the verdict\n" +
 			"wt sync would give it, simulated against trunk as last fetched: its class\n" +
 			"in wt sync's words, and what to do about it.\n\n" + pathWidthHelp,

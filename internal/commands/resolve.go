@@ -33,27 +33,38 @@ func checkType(ctx *Context, typ string) error {
 		typ, strings.Join(ctx.Config.Types, " "))
 }
 
-// Branch returns the branch for a piece of work. A worktree that already exists
-// wins by any name `wt list` prints for it (see existingWork); otherwise the
-// spec is parsed and the type validated against the repository's
-// WORKTREE_TYPES. A detached worktree, which only its path can name, has no
-// branch to print and is refused as locateBranch refuses it.
+// Branch returns the branch for a piece of work. The main checkout, named by
+// "/" or by "." from inside it, is trunk as the repository configures or
+// detects it. A worktree that already exists wins by any name `wt list`
+// prints for it (see existingWork); otherwise the spec is parsed and the type
+// validated against the repository's WORKTREE_TYPES. A detached worktree,
+// which only its path can name, has no branch to print and is refused as
+// locateBranch refuses it.
 func Branch(ctx *Context, spec string) (string, error) {
-	if wt, ok, err := existingWork(ctx, spec); err != nil || ok {
-		if ok && wt.Branch == "" {
-			return "", fmt.Errorf("%s has no branch", spec)
+	wt, ok, err := existingWork(ctx, spec)
+	switch {
+	case err != nil:
+		return "", err
+	case ok && wt.IsMain:
+		if ctx.Config.MainBranch == "" {
+			return "", fmt.Errorf("%s is the main checkout, and its trunk is not known: set MAIN_BRANCH in worktree.conf", spec)
 		}
-		return wt.Branch, err
+		return ctx.Config.MainBranch, nil
+	case ok && wt.Branch == "":
+		return "", fmt.Errorf("%s has no branch", spec)
+	case ok:
+		return wt.Branch, nil
 	}
 	_, _, branch, err := parseWork(ctx, spec)
 	return branch, err
 }
 
-// Path returns where a piece of work lives. A worktree that already exists wins
-// by any name `wt list` prints for it (see existingWork), whatever layout it is
-// in, which is what lets worktrees created by other tools in other shapes —
-// Superset's included — resolve without migration. Otherwise the canonical path
-// is returned, so `new` and `switch` agree on one answer.
+// Path returns where a piece of work lives. The main checkout, named by "/"
+// or by "." from inside it, is its root. A worktree that already exists wins
+// by any name `wt list` prints for it (see existingWork), whatever layout it
+// is in, which is what lets worktrees created by other tools in other shapes
+// — Superset's included — resolve without migration. Otherwise the canonical
+// path is returned, so `new` and `switch` agree on one answer.
 func Path(ctx *Context, spec string) (string, error) {
 	if wt, ok, err := existingWork(ctx, spec); err != nil || ok {
 		return wt.Path, err
@@ -73,18 +84,14 @@ func Path(ctx *Context, spec string) (string, error) {
 // list` printed it. The same lookup keeps a worktree Superset made findable by
 // the name it was given: "fix_dev-123" sits on feat_wt/fix_dev-123, and is
 // matched by that work name before a type is read out of it. A name under two
-// types is refused as ambiguous. The main
-// checkout, which only its path can name, is not a piece of work and is left
-// to the parse.
+// types is refused as ambiguous. The main checkout is returned, IsMain set,
+// when "/" names it or "." is said from inside it: those asked where the
+// caller is, and the answer is a place, not a piece of work. Named by its
+// path it is left to the parse, as before.
 func existingWork(ctx *Context, spec string) (repo.Worktree, bool, error) {
 	spec = strings.TrimSpace(spec)
 	wt, ok, err := existing(ctx, spec)
-	if ok && wt.IsMain && isDot(spec) {
-		// "." said from the main checkout is not a spec to parse: it named
-		// where the caller stands, and that is Locate's answer.
-		return repo.Worktree{}, false, errMainCheckout
-	}
-	if err != nil || !ok || wt.IsMain {
+	if err != nil || !ok || (wt.IsMain && !isDot(spec) && !isRoot(spec)) {
 		return repo.Worktree{}, false, err
 	}
 	return wt, true, nil

@@ -50,22 +50,27 @@ func Roots() []string {
 func Find(ctx *Context, pattern string) ([]find.Scored, error) {
 	var scored []find.Scored
 
-	// "." is the repository you are in — its main checkout. Jumping back to the
-	// base repo is the most common move there is, and naming the repo for it is
-	// friction; this also means `wt cd` with no argument has somewhere to go.
-	if pattern == "." || pattern == "" {
+	// "/" is the repository you are in — its main checkout — and so is nothing
+	// at all, so `wt cd` with no argument has somewhere to go. "." is the
+	// worktree you are standing in, the main checkout included, resolved the
+	// way every other command resolves it. Neither searches anything.
+	if isRoot(pattern) || pattern == "" || isDot(pattern) {
 		if ctx == nil {
 			return nil, nil
 		}
+		wt := repo.Worktree{Path: ctx.Repo.MainRoot, Branch: ctx.Repo.BranchAt(ctx.Repo.MainRoot), IsMain: true}
+		if isDot(pattern) {
+			names, err := WorkNames(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if wt, _, err = standingWorktree(ctx, names); err != nil {
+				return nil, err
+			}
+		}
 		return []find.Scored{{
-			Candidate: find.Candidate{
-				Work:   ctx.Repo.Name,
-				Branch: ctx.Repo.BranchAt(ctx.Repo.MainRoot),
-				Repo:   ctx.Repo.Name,
-				Path:   ctx.Repo.MainRoot,
-				Local:  true,
-			},
-			Tier: find.TierExactWork,
+			Candidate: candidate(ctx.Repo, wt, ctx.Config.TypeSuffix, true),
+			Tier:      find.TierExactWork,
 		}}, nil
 	}
 
@@ -118,24 +123,31 @@ func candidates(r *repo.Repo, suffix string, local bool) ([]find.Candidate, erro
 	if err != nil {
 		return nil, err
 	}
-	var out []find.Candidate
+	out := make([]find.Candidate, 0, len(worktrees))
 	for _, wt := range worktrees {
-		work := r.Name
-		if !wt.IsMain {
-			work = naming.StripPrefix(wt.Branch, suffix)
-			if work == "" {
-				work = filepath.Base(wt.Path)
-			}
-		}
-		out = append(out, find.Candidate{
-			Work:   work,
-			Branch: wt.Branch,
-			Repo:   r.Name,
-			Path:   wt.Path,
-			Local:  local,
-		})
+		out = append(out, candidate(r, wt, suffix, local))
 	}
 	return out, nil
+}
+
+// candidate is a worktree as the matcher sees it: the main checkout goes by
+// the repository's name, a linked worktree by its work name, or by its
+// directory when the branch does not carry one.
+func candidate(r *repo.Repo, wt repo.Worktree, suffix string, local bool) find.Candidate {
+	work := r.Name
+	if !wt.IsMain {
+		work = naming.StripPrefix(wt.Branch, suffix)
+		if work == "" {
+			work = filepath.Base(wt.Path)
+		}
+	}
+	return find.Candidate{
+		Work:   work,
+		Branch: wt.Branch,
+		Repo:   r.Name,
+		Path:   wt.Path,
+		Local:  local,
+	}
 }
 
 // scoreAll scores every candidate. A pattern containing "/" is tried whole

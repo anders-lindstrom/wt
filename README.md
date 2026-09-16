@@ -72,7 +72,7 @@ examples: `wt <command> --help`.
 
 | | |
 |---|---|
-| `wt cd [pattern]` | cd to a worktree, in this shell; bare or `.` is the main checkout |
+| `wt cd [pattern]` | cd to a worktree, in this shell; `.` is the one you are in, bare or `/` the main checkout |
 | `wt exec <pattern> <cmd>…` | run a command there, in a subshell; your shell stays put |
 | `wt list` | every worktree, in any layout; `s` marks Superset's, `!` one nothing owns |
 | `wt status [<work>]` | each worktree's branch, whether it is clean, and how far behind and ahead of trunk it is; with a worktree named, that one in full with `wt sync`'s verdict |
@@ -129,7 +129,8 @@ shell function that handles those two and passes everything else to the binary,
 because a process cannot change its caller's directory.
 
 They are thin wrappers over `wt find`; the matching itself lives in the binary
-where it is tested. A pattern of `.` means the repository's main checkout.
+where it is tested. A pattern of `.` is the worktree you are standing in, and
+`/` the repository's main checkout.
 
 ## Layout
 
@@ -241,8 +242,8 @@ tool carrying a flag for it.
 ## Removing a worktree is careful
 
 **Anything `wt list` prints is a valid argument** — the work name, the branch, or
-the path — as is `<type>/<work>`, and `.` for the worktree you are standing in
-(`wt cd .`, `wt exec .` and `wt find .` keep meaning the main checkout). On a
+the path — as is `<type>/<work>`, and `.` for the worktree you are standing in,
+as in every command; `/` names the main checkout, which cannot be removed. On a
 narrow terminal `wt list` shortens paths with `…` to fit; `wt list | cat` prints
 them whole:
 
