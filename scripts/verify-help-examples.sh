@@ -179,6 +179,7 @@ check worktrees "" "" 'wt remove fix/login-crash'
 check worktrees "" "" 'wt remove login-crash --yes'
 check worktrees "" "" 'wt remove login-crash --force'
 check worktrees myrepo_wt/fix_wt/login-crash "" 'wt remove --me'
+check worktrees myrepo_wt/fix_wt/login-crash "" 'wt remove .'
 
 check sweep "" "" 'wt sweep'
 check sweep "" "" 'wt sweep --no-fetch'

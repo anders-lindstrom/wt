@@ -77,7 +77,13 @@ func Path(ctx *Context, spec string) (string, error) {
 // checkout, which only its path can name, is not a piece of work and is left
 // to the parse.
 func existingWork(ctx *Context, spec string) (repo.Worktree, bool, error) {
-	wt, ok, err := existing(ctx, strings.TrimSpace(spec))
+	spec = strings.TrimSpace(spec)
+	wt, ok, err := existing(ctx, spec)
+	if ok && wt.IsMain && isDot(spec) {
+		// "." said from the main checkout is not a spec to parse: it named
+		// where the caller stands, and that is Locate's answer.
+		return repo.Worktree{}, false, errMainCheckout
+	}
 	if err != nil || !ok || wt.IsMain {
 		return repo.Worktree{}, false, err
 	}
