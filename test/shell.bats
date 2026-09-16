@@ -78,9 +78,9 @@ setup() {
     [[ "$PWD" == */demo_wt/fix_wt/login-crash ]]
 }
 
-@test "wt cd . returns to the repository's main checkout" {
+@test "wt cd / returns to the repository's main checkout" {
     wt cd login-crash
-    wt cd .
+    wt cd /
     [ "$PWD" = "$REPO" ]
 }
 
@@ -88,6 +88,33 @@ setup() {
     wt cd login-crash
     wt cd
     [ "$PWD" = "$REPO" ]
+}
+
+@test "wt cd . from a subdirectory lands at that worktree's root" {
+    wt cd login-crash
+    mkdir -p src/deep
+    cd src/deep
+    wt cd .
+    [[ "$PWD" == */demo_wt/fix_wt/login-crash ]]
+}
+
+@test "wt cd . from inside the main checkout lands at its root" {
+    mkdir -p "$REPO/sub"
+    cd "$REPO/sub"
+    wt cd .
+    [ "$PWD" = "$REPO" ]
+}
+
+@test "wt exec . runs at the root of the worktree you are in" {
+    wt cd login-crash
+    mkdir -p src/deep
+    cd src/deep
+    run wt exec . pwd
+    [ "$status" -eq 0 ]
+    [[ "$output" == */demo_wt/fix_wt/login-crash ]]
+    run wt exec / pwd
+    [ "$status" -eq 0 ]
+    [ "$output" = "$REPO" ]
 }
 
 @test "wt exec runs in a worktree and leaves the shell put" {
