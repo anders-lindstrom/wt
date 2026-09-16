@@ -12,6 +12,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // sweepRepoWith is a main checkout on main with a bare origin beside it,
@@ -72,13 +73,21 @@ func goneUpstream(t *testing.T, main, branch string) {
 	gitIn(t, main, "config", "branch."+branch+".merge", "refs/heads/"+branch)
 }
 
+// nobodyIn is the sessions a plan is checked against when the test names none.
+var nobodyIn = SweepOptions{Agents: []wtsync.Agent{}}
+
 func planOf(t *testing.T, ctx *Context) SweepPlan {
+	t.Helper()
+	return planWith(t, ctx, nobodyIn)
+}
+
+func planWith(t *testing.T, ctx *Context, opts SweepOptions) SweepPlan {
 	t.Helper()
 	bases, err := trunkBases(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := planSweep(ctx, bases)
+	p, err := planSweep(ctx, bases, opts.listAgents)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,6 +102,14 @@ func branchNames(bs []SweepBranch) []string {
 	return out
 }
 
+func worktreeNames(ws []SweepWorktree) []string {
+	var out []string
+	for _, w := range ws {
+		out = append(out, w.Name)
+	}
+	return out
+}
+
 func rendered(p SweepPlan) string {
 	var buf bytes.Buffer
 	p.Render(&buf, 0)
@@ -101,8 +118,27 @@ func rendered(p SweepPlan) string {
 
 func inAnyGroup(p SweepPlan, name string) bool {
 	return slices.Contains(branchNames(p.Delete), name) ||
+		slices.Contains(worktreeNames(p.Remove), name) ||
 		slices.Contains(branchNames(p.CheckedOut), name) ||
 		slices.Contains(branchNames(p.Gone), name)
+}
+
+// mergedWorktree is a worktree wt new made on a branch cut from trunk and
+// never committed to, which is merged: what is left behind once a pull
+// request lands and nobody ran wt remove.
+func mergedWorktree(t *testing.T, ctx *Context, work string) string {
+	t.Helper()
+	var buf bytes.Buffer
+	path, err := New(ctx, work, NewOptions{NoSetup: true}, &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func exists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func TestSweepPlanDeletesAMergedBranch(t *testing.T) {
@@ -157,22 +193,405 @@ func TestSweepPlanCountsAMergeOnlyLocalTrunkHas(t *testing.T) {
 	}
 }
 
-func TestSweepPlanSendsACheckedOutBranchToRemove(t *testing.T) {
+func TestSweepPlanRemovesACleanMergedWorktree(t *testing.T) {
 	ctx, _, _ := sweepRepo(t)
+	path := mergedWorktree(t, ctx, "fix/login-crash")
+
+	p := planOf(t, ctx)
+	if slices.Contains(branchNames(p.Delete), "fix_wt/login-crash") {
+		t.Fatal("a branch a worktree has checked out is not deleted on its own")
+	}
+	if slices.Contains(branchNames(p.CheckedOut), "fix_wt/login-crash") {
+		t.Fatal("nothing is using the worktree; it is not kept")
+	}
+	if !slices.Equal(worktreeNames(p.Remove), []string{"fix_wt/login-crash"}) {
+		t.Fatalf("want the worktree removed: %v", worktreeNames(p.Remove))
+	}
+	if p.Remove[0].Work != "login-crash" || p.Remove[0].Worktree != path || p.Remove[0].Plan.Outcome != BranchDeleted {
+		t.Errorf("remove = %+v", p.Remove[0])
+	}
+	out := rendered(p)
+	for _, want := range []string{"Will be removed with its branch, 1 worktree:", "login-crash", "fix_wt/login-crash", path, "merged into origin/main"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the plan must show every directory that will go, with its branch and why:\nwant %q in\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "No merged branches") {
+		t.Errorf("there is a worktree to sweep:\n%s", out)
+	}
+}
+
+func TestSweepRemovesAMergedWorktreeAndDeletesItsBranch(t *testing.T) {
+	ctx, main, _ := sweepRepo(t)
+	path := mergedWorktree(t, ctx, "fix/login-crash")
+	branchWithWork(t, main, "done-work", 0)
+
 	var buf bytes.Buffer
-	if _, err := New(ctx, "fix/login-crash", NewOptions{NoSetup: true}, &buf); err != nil {
+	if err := Sweep(ctx, SweepOptions{Yes: true, Agents: []wtsync.Agent{}}, &buf); err != nil {
+		t.Fatalf("Sweep: %v\n%s", err, buf.String())
+	}
+	if exists(path) {
+		t.Error("the worktree should have been removed")
+	}
+	if ctx.Repo.BranchExists("fix_wt/login-crash") {
+		t.Error("the branch should have gone with its worktree")
+	}
+	if ctx.Repo.BranchExists("done-work") {
+		t.Error("the plain branch should still have been deleted")
+	}
+	if !strings.Contains(buf.String(), "✓ worktree removed; branch fix_wt/login-crash was merged into origin/main and has been deleted") {
+		t.Errorf("each removal says what wt remove says:\n%s", buf.String())
+	}
+}
+
+func TestSweepPlanKeepsADirtyMergedWorktree(t *testing.T) {
+	ctx, _, _ := sweepRepo(t)
+	path := mergedWorktree(t, ctx, "fix/login-crash")
+	mustWrite(t, filepath.Join(path, "scratch.txt"), "not yet\n")
+
+	p := planOf(t, ctx)
+	if len(p.Remove) != 0 {
+		t.Fatalf("a dirty worktree must not be removed: %v", worktreeNames(p.Remove))
+	}
+	if !slices.Contains(branchNames(p.CheckedOut), "fix_wt/login-crash") {
+		t.Fatalf("want it kept: %+v", p)
+	}
+	if out := rendered(p); !strings.Contains(out, "fix_wt/login-crash  dirty; commit or discard the changes, then sweep again") {
+		t.Errorf("the row must say why it is kept:\n%s", out)
+	}
+}
+
+func TestSweepPlanKeepsAMergedWorktreeWhoseLockIsHeld(t *testing.T) {
+	ctx, main, _ := sweepRepo(t)
+	path := mergedWorktree(t, ctx, "fix/login-crash")
+	gitIn(t, main, "worktree", "lock", "--reason", fmt.Sprintf("(pid %d start now)", os.Getpid()), path)
+
+	p := planOf(t, ctx)
+	if len(p.Remove) != 0 {
+		t.Fatalf("a worktree whose lock is held must not be removed: %v", worktreeNames(p.Remove))
+	}
+	want := fmt.Sprintf("fix_wt/login-crash  lock held by pid %d; wt remove login-crash --force", os.Getpid())
+	if out := rendered(p); !strings.Contains(out, want) {
+		t.Errorf("the row must name the holder and say --force breaks it:\nwant %q in\n%s", want, out)
+	}
+}
+
+// A stale lock is litter wt remove releases on its way; it does not keep the
+// worktree.
+func TestSweepRemovesAMergedWorktreeWithAStaleLock(t *testing.T) {
+	ctx, main, _ := sweepRepo(t)
+	path := mergedWorktree(t, ctx, "fix/login-crash")
+	gitIn(t, main, "worktree", "lock", "--reason", "(pid 2147483000 start long ago)", path)
+
+	var buf bytes.Buffer
+	if err := Sweep(ctx, SweepOptions{Yes: true, Agents: []wtsync.Agent{}}, &buf); err != nil {
+		t.Fatalf("Sweep: %v\n%s", err, buf.String())
+	}
+	if exists(path) {
+		t.Error("the worktree should have been removed past its stale lock")
+	}
+	if !strings.Contains(buf.String(), "- released a stale lock") {
+		t.Errorf("say the lock went first:\n%s", buf.String())
+	}
+}
+
+func TestSweepPlanKeepsAMergedWorktreeWithAnIdleSession(t *testing.T) {
+	ctx, _, _ := sweepRepo(t)
+	path := mergedWorktree(t, ctx, "fix/login-crash")
+
+	p := planWith(t, ctx, SweepOptions{Agents: idleIn(t, path, "parked-1")})
+	if len(p.Remove) != 0 {
+		t.Fatalf("a worktree with a session in it, idle or not, must not be removed: %v", worktreeNames(p.Remove))
+	}
+	if out := rendered(p); !strings.Contains(out, "fix_wt/login-crash  session parked-1 (idle) in it; wt remove login-crash") {
+		t.Errorf("the row must name the session the way wt sync does:\n%s", out)
+	}
+}
+
+func TestSweepKeepsAWorktreeWhenTheSessionsCannotBeListed(t *testing.T) {
+	ctx, _, _ := sweepRepo(t)
+	mergedWorktree(t, ctx, "fix/login-crash")
+
+	bases, err := trunkBases(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := planSweep(ctx, bases, func() ([]wtsync.Agent, error) { return nil, fmt.Errorf("claude is away") })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Remove) != 0 {
+		t.Fatalf("with nobody to ask, no worktree is known to be safe: %v", worktreeNames(p.Remove))
+	}
+	if out := rendered(p); !strings.Contains(out, "cannot list agent sessions (claude is away)") {
+		t.Errorf("say why:\n%s", out)
+	}
+}
+
+func TestSweepLeavesAnUnmergedWorktreeAlone(t *testing.T) {
+	ctx, _, _ := sweepRepo(t)
+	path := mergedWorktree(t, ctx, "feat/api-tidy")
+	gitIn(t, path, "commit", "-q", "--allow-empty", "-m", "real work")
+
+	p := planOf(t, ctx)
+	if inAnyGroup(p, "feat_wt/api-tidy") {
+		t.Fatalf("unmerged work belongs in no group: %+v", p)
+	}
+	var buf bytes.Buffer
+	if err := Sweep(ctx, SweepOptions{Yes: true, Agents: []wtsync.Agent{}}, &buf); err != nil {
+		t.Fatalf("Sweep: %v\n%s", err, buf.String())
+	}
+	if !exists(path) || !ctx.Repo.BranchExists("feat_wt/api-tidy") {
+		t.Error("an unmerged worktree and its branch are never touched")
+	}
+	if !strings.Contains(buf.String(), "No merged branches or worktrees to sweep.") {
+		t.Errorf("an empty plan says so in one sentence:\n%s", buf.String())
+	}
+}
+
+// The prompt can stay open while somebody starts editing in a worktree the
+// plan was going to remove. It is kept; the rest of the plan still runs.
+func TestSweepKeepsAWorktreeThatBecameDirtyWhileThePromptWasOpen(t *testing.T) {
+	ctx, main, _ := sweepRepo(t)
+	path := mergedWorktree(t, ctx, "fix/login-crash")
+	other := mergedWorktree(t, ctx, "chore/tidy")
+	branchWithWork(t, main, "done-work", 0)
+
+	opts := SweepOptions{Agents: []wtsync.Agent{}, Confirm: func(SweepPlan) (bool, error) {
+		mustWrite(t, filepath.Join(path, "scratch.txt"), "started\n")
+		return true, nil
+	}}
+	var buf bytes.Buffer
+	err := Sweep(ctx, opts, &buf)
+	if err == nil {
+		t.Fatal("a kept worktree must make the sweep fail")
+	}
+	if !strings.Contains(err.Error(), "1 of 1 branch and 2 worktrees kept") {
+		t.Errorf("the closing error counts both kinds: %v", err)
+	}
+	if !exists(path) || !ctx.Repo.BranchExists("fix_wt/login-crash") {
+		t.Fatal("a worktree that gained a change after the plan was removed")
+	}
+	if exists(other) || ctx.Repo.BranchExists("chore_wt/tidy") || ctx.Repo.BranchExists("done-work") {
+		t.Error("the unchanged worktree and the plain branch should still have gone")
+	}
+	if !strings.Contains(buf.String(), "- kept login-crash: dirty") {
+		t.Errorf("say why it was kept:\n%s", buf.String())
+	}
+}
+
+func TestSweepKeepsAWorktreeASessionEnteredWhileThePromptWasOpen(t *testing.T) {
+	ctx, _, _ := sweepRepo(t)
+	path := mergedWorktree(t, ctx, "fix/login-crash")
+
+	opts := SweepOptions{Agents: []wtsync.Agent{},
+		Relist:  func() ([]wtsync.Agent, error) { return idleIn(t, path, "late-1"), nil },
+		Confirm: func(SweepPlan) (bool, error) { return true, nil }}
+	var buf bytes.Buffer
+	if err := Sweep(ctx, opts, &buf); err == nil {
+		t.Fatal("a kept worktree must make the sweep fail")
+	}
+	if !exists(path) {
+		t.Fatal("a worktree a session entered after the plan was removed under it")
+	}
+	if !strings.Contains(buf.String(), "- kept login-crash: session late-1 (idle) in it") {
+		t.Errorf("say who was found:\n%s", buf.String())
+	}
+}
+
+// A directory deleted by hand leaves git's record of the worktree behind,
+// and with it the branch counts as in use. wt remove finds nothing there.
+func TestSweepPlanKeepsAWorktreeWhoseDirectoryIsGone(t *testing.T) {
+	ctx, _, _ := sweepRepo(t)
+	path := mergedWorktree(t, ctx, "fix/login-crash")
+	if err := os.RemoveAll(path); err != nil {
 		t.Fatal(err)
 	}
 
 	p := planOf(t, ctx)
-	if slices.Contains(branchNames(p.Delete), "fix_wt/login-crash") {
-		t.Fatal("a branch a worktree has checked out must not be deleted")
+	if len(p.Remove) != 0 {
+		t.Fatalf("there is no directory to remove: %v", worktreeNames(p.Remove))
 	}
-	if !slices.Contains(branchNames(p.CheckedOut), "fix_wt/login-crash") {
-		t.Fatalf("want it in the checked-out group: %v", branchNames(p.CheckedOut))
+	if out := rendered(p); !strings.Contains(out, "fix_wt/login-crash  its directory is gone; git worktree prune, then sweep again") {
+		t.Errorf("say what happened and what clears it:\n%s", out)
 	}
-	if out := rendered(p); !strings.Contains(out, "wt remove fix_wt/login-crash") {
-		t.Errorf("the plan must say how to finish it:\n%s", out)
+}
+
+// The re-check before anything goes, case by case: what can change while
+// the prompt is open, and what the kept line says about it.
+func TestSweepKeepsAWorktreeDeletedByHandWhileThePromptWasOpen(t *testing.T) {
+	ctx, _, _ := sweepRepo(t)
+	path := mergedWorktree(t, ctx, "fix/login-crash")
+
+	opts := SweepOptions{Agents: []wtsync.Agent{}, Confirm: func(SweepPlan) (bool, error) {
+		return true, os.RemoveAll(path)
+	}}
+	var buf bytes.Buffer
+	if err := Sweep(ctx, opts, &buf); err == nil {
+		t.Fatal("a kept worktree must make the sweep fail")
+	}
+	if !ctx.Repo.BranchExists("fix_wt/login-crash") {
+		t.Fatal("the branch of a worktree deleted by hand was deleted underneath its record")
+	}
+	if !strings.Contains(buf.String(), "- kept login-crash: its directory is gone") {
+		t.Errorf("say why it was kept:\n%s", buf.String())
+	}
+}
+
+func TestSweepKeepsAWorktreeLockedWhileThePromptWasOpen(t *testing.T) {
+	ctx, main, _ := sweepRepo(t)
+	path := mergedWorktree(t, ctx, "fix/login-crash")
+
+	opts := SweepOptions{Agents: []wtsync.Agent{}, Confirm: func(SweepPlan) (bool, error) {
+		gitIn(t, main, "worktree", "lock", "--reason", fmt.Sprintf("(pid %d start now)", os.Getpid()), path)
+		return true, nil
+	}}
+	var buf bytes.Buffer
+	if err := Sweep(ctx, opts, &buf); err == nil {
+		t.Fatal("a kept worktree must make the sweep fail")
+	}
+	if !exists(path) {
+		t.Fatal("a worktree locked after the plan was removed past the lock")
+	}
+	if !strings.Contains(buf.String(), fmt.Sprintf("- kept login-crash: lock held by pid %d", os.Getpid())) {
+		t.Errorf("say who holds it:\n%s", buf.String())
+	}
+}
+
+func TestSweepKeepsAWorktreeWhoseBranchMovedWhileThePromptWasOpen(t *testing.T) {
+	ctx, _, _ := sweepRepo(t)
+	path := mergedWorktree(t, ctx, "fix/login-crash")
+
+	opts := SweepOptions{Agents: []wtsync.Agent{}, Confirm: func(SweepPlan) (bool, error) {
+		gitIn(t, path, "commit", "-q", "--allow-empty", "-m", "landed in the window")
+		return true, nil
+	}}
+	var buf bytes.Buffer
+	if err := Sweep(ctx, opts, &buf); err == nil {
+		t.Fatal("a kept worktree must make the sweep fail")
+	}
+	if !exists(path) || !ctx.Repo.BranchExists("fix_wt/login-crash") {
+		t.Fatal("a commit that landed after the plan was removed with its worktree")
+	}
+	if !strings.Contains(buf.String(), "- kept login-crash: it moved after the plan was made") {
+		t.Errorf("say why it was kept:\n%s", buf.String())
+	}
+}
+
+func TestSweepKeepsAWorktreeThatSwitchedBranchWhileThePromptWasOpen(t *testing.T) {
+	ctx, _, _ := sweepRepo(t)
+	path := mergedWorktree(t, ctx, "fix/login-crash")
+
+	opts := SweepOptions{Agents: []wtsync.Agent{}, Confirm: func(SweepPlan) (bool, error) {
+		gitIn(t, path, "switch", "-q", "-c", "elsewhere")
+		return true, nil
+	}}
+	var buf bytes.Buffer
+	if err := Sweep(ctx, opts, &buf); err == nil {
+		t.Fatal("a kept worktree must make the sweep fail")
+	}
+	if !exists(path) || !ctx.Repo.BranchExists("fix_wt/login-crash") {
+		t.Fatal("a worktree that moved off the branch was removed, or the branch deleted, on a stale plan")
+	}
+	if !strings.Contains(buf.String(), "- kept login-crash: its worktree is on elsewhere now; the branch goes next time") {
+		t.Errorf("say what happened:\n%s", buf.String())
+	}
+}
+
+func TestSweepKeepsAWorktreeWhenTheSessionsCannotBeListedAgain(t *testing.T) {
+	ctx, _, _ := sweepRepo(t)
+	path := mergedWorktree(t, ctx, "fix/login-crash")
+
+	opts := SweepOptions{Agents: []wtsync.Agent{},
+		Relist:  func() ([]wtsync.Agent, error) { return nil, fmt.Errorf("claude is away") },
+		Confirm: func(SweepPlan) (bool, error) { return true, nil }}
+	var buf bytes.Buffer
+	if err := Sweep(ctx, opts, &buf); err == nil {
+		t.Fatal("a kept worktree must make the sweep fail")
+	}
+	if !exists(path) {
+		t.Fatal("with nobody to ask, no worktree is known to be safe")
+	}
+	if !strings.Contains(buf.String(), "- kept login-crash: cannot list agent sessions (claude is away)") {
+		t.Errorf("say why:\n%s", buf.String())
+	}
+}
+
+// A removal git refuses keeps that worktree and its branch; the sweep goes on
+// to the plain branches all the same.
+func TestSweepGoesOnToTheBranchesWhenARemovalFails(t *testing.T) {
+	ctx, main, _ := sweepRepo(t)
+	path := mergedWorktree(t, ctx, "fix/login-crash")
+	branchWithWork(t, main, "done-work", 0)
+
+	opts := SweepOptions{Agents: []wtsync.Agent{}, Confirm: func(SweepPlan) (bool, error) {
+		// git cannot unlink files in a directory it may not write to.
+		if err := os.Chmod(path, 0o555); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(path, 0o755) })
+		return true, nil
+	}}
+	var buf bytes.Buffer
+	err := Sweep(ctx, opts, &buf)
+	if err == nil {
+		t.Fatal("a kept worktree must make the sweep fail")
+	}
+	if !strings.Contains(err.Error(), "1 of 1 branch and 1 worktree kept") {
+		t.Errorf("the closing error counts what was kept: %v", err)
+	}
+	if !ctx.Repo.BranchExists("fix_wt/login-crash") {
+		t.Fatal("the branch of a worktree that could not be removed was deleted underneath it")
+	}
+	if ctx.Repo.BranchExists("done-work") {
+		t.Error("the plain branch should still have been deleted")
+	}
+	if !strings.Contains(buf.String(), "- kept login-crash: git refused to remove "+path) {
+		t.Errorf("say what git said:\n%s", buf.String())
+	}
+}
+
+func TestSweepAsksOnceForBranchesAndWorktreesTogether(t *testing.T) {
+	ctx, main, _ := sweepRepo(t)
+	mergedWorktree(t, ctx, "fix/login-crash")
+	branchWithWork(t, main, "done-work", 0)
+	branchWithWork(t, main, "also-done", 0)
+
+	asked := 0
+	var seen SweepPlan
+	opts := SweepOptions{Agents: []wtsync.Agent{}, Confirm: func(p SweepPlan) (bool, error) {
+		asked++
+		seen = p
+		return false, nil
+	}}
+	var buf bytes.Buffer
+	if err := Sweep(ctx, opts, &buf); err != nil {
+		t.Fatalf("Sweep: %v", err)
+	}
+	if asked != 1 {
+		t.Errorf("asked %d times, want once", asked)
+	}
+	if seen.Question() != "Delete these 2 branches and remove this worktree?" {
+		t.Errorf("question = %q", seen.Question())
+	}
+	if !strings.Contains(buf.String(), "Nothing was swept.") {
+		t.Errorf("say so:\n%s", buf.String())
+	}
+}
+
+func TestSweepWithoutATerminalRemovesNoWorktree(t *testing.T) {
+	ctx, _, _ := sweepRepo(t)
+	path := mergedWorktree(t, ctx, "fix/login-crash")
+
+	var buf bytes.Buffer
+	if err := Sweep(ctx, SweepOptions{Agents: []wtsync.Agent{}}, &buf); err != nil {
+		t.Fatalf("Sweep: %v", err)
+	}
+	if !exists(path) {
+		t.Error("with no terminal and no --yes, nothing may be removed")
+	}
+	if !strings.Contains(buf.String(), "Pass --yes to sweep 1 worktree.") {
+		t.Errorf("say how to go ahead:\n%s", buf.String())
 	}
 }
 
@@ -400,7 +819,7 @@ func TestSweepPlanFitsSubjectsToTheTerminal(t *testing.T) {
 
 func TestSweepPlanWithNothingMergedSaysSo(t *testing.T) {
 	ctx, _, _ := sweepRepo(t)
-	if out := rendered(planOf(t, ctx)); !strings.Contains(out, "No merged branches to delete.") {
+	if out := rendered(planOf(t, ctx)); !strings.Contains(out, "No merged branches or worktrees to sweep.") {
 		t.Errorf("an empty plan must say so:\n%s", out)
 	}
 }
@@ -551,7 +970,7 @@ func TestSweepDeclinedDeletesNothingAndTheQuestionSeesThePlan(t *testing.T) {
 	if !slices.Equal(branchNames(seen.Delete), []string{"done-work"}) {
 		t.Errorf("the question must see the plan it asks about: %v", branchNames(seen.Delete))
 	}
-	if !strings.Contains(buf.String(), "Nothing was deleted.") {
+	if !strings.Contains(buf.String(), "Nothing was swept.") {
 		t.Errorf("say so:\n%s", buf.String())
 	}
 }
@@ -602,7 +1021,7 @@ func TestSweepKeepsABranchCheckedOutWhileThePromptWasOpen(t *testing.T) {
 	ctx, main, _ := sweepRepo(t)
 	branchWithWork(t, main, "done-work", 0)
 
-	opts := SweepOptions{Confirm: func(SweepPlan) (bool, error) {
+	opts := SweepOptions{Agents: []wtsync.Agent{}, Confirm: func(SweepPlan) (bool, error) {
 		gitIn(t, main, "worktree", "add", "-q", filepath.Join(ctx.Repo.Parent, "late"), "done-work")
 		return true, nil
 	}}
@@ -638,7 +1057,7 @@ func TestSweepKeepsABranchCheckedOutBetweenTwoDeletes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	opts := SweepOptions{NoFetch: true, Confirm: func(SweepPlan) (bool, error) {
+	opts := SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, Confirm: func(SweepPlan) (bool, error) {
 		gitIn(t, main, "config", "core.hooksPath", hooks)
 		return true, nil
 	}}
