@@ -6,6 +6,16 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-16 12:45 — wt status counts against trunk, and . names the worktree you are in
+
+- `wt status` has a TRUNK column: how many commits each branch is behind and
+  ahead of origin/<trunk> as last fetched, or the local trunk without it; the
+  first line says which. Nothing is fetched.
+- `wt status <work>` prints that worktree alone, one fact per line, then the
+  verdict `wt sync` would give it, simulated against trunk as last fetched.
+- `.` names the worktree you are standing in for every command that names one
+  (`wt status .`, `wt sync .`, `wt remove .`); `wt cd .` is still the main checkout.
+
 ## 2026-09-16 06:25 — wt sweep removes the worktrees on merged branches too
 
 - A merged branch that a worktree has checked out used to be kept with a
