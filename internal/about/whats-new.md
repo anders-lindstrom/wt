@@ -6,6 +6,16 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-16 14:31 — . is the worktree you are in and / the main checkout, everywhere
+
+- `.` now names the worktree you are standing in for every command, `wt cd`,
+  `wt exec` and `wt find` included: `wt cd .` from a subdirectory takes you to
+  that worktree's root, and from the main checkout to its root.
+- `/` is the main checkout everywhere: `wt cd /`, `wt find /` and `wt path /`
+  go there, `wt branch /` prints trunk, and the commands that act on a worktree
+  refuse it as they refuse its path. A bare `wt cd` still goes to the main
+  checkout.
+
 ## 2026-09-16 12:45 — wt status counts against trunk, and . names the worktree you are in
 
 - `wt status` has a TRUNK column: how many commits each branch is behind and
@@ -14,7 +24,7 @@ want read out to them; the full story is in git history and in
 - `wt status <work>` prints that worktree alone, one fact per line, then the
   verdict `wt sync` would give it, simulated against trunk as last fetched.
 - `.` names the worktree you are standing in for every command that names one
-  (`wt status .`, `wt sync .`, `wt remove .`); `wt cd .` is still the main checkout.
+  (`wt status .`, `wt sync .`, `wt remove .`).
 
 ## 2026-09-16 06:25 — wt sweep removes the worktrees on merged branches too
 

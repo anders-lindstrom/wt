@@ -18,9 +18,11 @@ func newFindCmd() *cobra.Command {
 			"repositories under $WT_ROOTS compete.\n\n" +
 			"Prints one path. When several candidates tie, exits non-zero and lists\n" +
 			"them on stderr, so nothing runs in a worktree you did not mean.\n\n" +
-			"A pattern of \".\" means this repository's main checkout.",
+			"A pattern of \".\" is the worktree you are standing in, the main checkout\n" +
+			"included; \"/\" is this repository's main checkout.",
 		Example: "  wt find login              # fuzzy match; prints one path\n" +
-			"  wt find .                  # this repository's main checkout\n" +
+			"  wt find .                  # the worktree you are standing in\n" +
+			"  wt find /                  # this repository's main checkout\n" +
 			"  wt find login --candidates # every tied candidate, one per line",
 		Args: needArgs(1, "<pattern>", "wt find login-crash"),
 		RunE: func(cmd *cobra.Command, args []string) error {
