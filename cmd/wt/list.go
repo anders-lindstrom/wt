@@ -31,15 +31,30 @@ func newListCmd() *cobra.Command {
 
 func newStatusCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "status",
-		Short: "Show each worktree's branch and whether it is clean",
-		Long: "Print each worktree's branch and whether its checkout is clean, dirty\n" +
-			"or unreadable — the one question `wt list` does not answer.\n\n" + pathWidthHelp,
-		Example: "  wt status               # branch and state for every worktree\n" +
-			"  wt status | grep dirty  # only the ones with uncommitted changes",
-		Args: cobra.NoArgs,
-		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+		Use:   "status [<work>]",
+		Short: "Show each worktree's state and standing against trunk",
+		Long: "Print each worktree's branch, whether its checkout is clean, dirty or\n" +
+			"unreadable, and where its branch stands against trunk: how many commits\n" +
+			"behind and ahead of origin/<trunk> as last fetched, or of the local trunk\n" +
+			"when origin/<trunk> is not here. The first line says which, and how old\n" +
+			"the fetch is. Nothing is fetched; wt sync fetches.\n\n" +
+			"With a worktree named — by anything `wt list` prints for it, or . for the\n" +
+			"one you are in (wt cd . keeps meaning the main checkout) — that worktree\n" +
+			"alone, one fact per line: branch, path,\n" +
+			"state, standing against trunk, the Claude sessions in it, then the verdict\n" +
+			"wt sync would give it, simulated against trunk as last fetched: its class\n" +
+			"in wt sync's words, and what to do about it.\n\n" + pathWidthHelp,
+		Example: "  wt status               # state and standing for every worktree\n" +
+			"  wt status | grep dirty  # only the ones with uncommitted changes\n" +
+			"  wt status login-crash   # that worktree in full, with wt sync's verdict\n" +
+			"  wt status .             # the one you are standing in",
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeWork,
+		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
 			out := cmd.OutOrStdout()
+			if len(args) == 1 {
+				return commands.StatusWorktree(ctx, args[0], commands.StatusOptions{}, out)
+			}
 			return commands.Status(ctx, out, terminalWidth(out))
 		}),
 	}

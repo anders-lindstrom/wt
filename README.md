@@ -75,7 +75,7 @@ examples: `wt <command> --help`.
 | `wt cd [pattern]` | cd to a worktree, in this shell; bare or `.` is the main checkout |
 | `wt exec <pattern> <cmd>…` | run a command there, in a subshell; your shell stays put |
 | `wt list` | every worktree, in any layout; `s` marks Superset's, `!` one nothing owns |
-| `wt status` | each worktree's branch and whether it is clean |
+| `wt status [<work>]` | each worktree's branch, whether it is clean, and how far behind and ahead of trunk it is; with a worktree named, that one in full with `wt sync`'s verdict |
 | `wt find <pattern>` | resolve a worktree by fuzzy name, across repositories (`--candidates`) |
 
 **Keep up with trunk**
