@@ -64,6 +64,7 @@ func newSyncCmd() *cobra.Command {
 			"             automatically\n" +
 			"  stale      nothing ahead of trunk; skipped\n" +
 			"  current    already on trunk; not printed\n" +
+			"  unknown    the assessment hit an error; the line under it says which\n" +
 			"\n" +
 			"Under each worktree: the stop that decides the class \u2014 the first one\n" +
 			"that is yours, or the first of a run that resolves throughout \u2014 with its\n" +

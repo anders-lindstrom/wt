@@ -259,6 +259,16 @@ func Assess(mainRoot, onto string, cfg *Config, wt repo.Worktree, agents []Agent
 	if len(a.Divergent) > 0 {
 		a.Class = Divergent
 	}
+	if a.Err != nil && (a.Class == Clean || a.Class == Recipe) {
+		// Clean and recipe promise that a run goes through, and a run
+		// refuses on the error: a version rule refusing a pick git drops as
+		// already on trunk reaches no stop, which is what clean means, yet
+		// fails the run. The row says unknown beside the error line rather
+		// than a class the run would not honour. Contested and divergent
+		// stand: the stop that earned them is a person's either way, and the
+		// error says why.
+		a.Class, a.Unverified = Unknown, false
+	}
 	return a
 }
 
