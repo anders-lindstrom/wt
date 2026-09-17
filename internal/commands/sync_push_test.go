@@ -68,7 +68,7 @@ func TestOfferPushKeepsTheReportWhenANewTipCannotBeRead(t *testing.T) {
 	failGit(t, "rev-parse --verify feat_wt/bump")
 
 	var out bytes.Buffer
-	failed, err := offerPush(&out, PushAlways, nil, []pushTarget{{Work: "bump", Branch: "feat_wt/bump", Path: bump}})
+	_, failed, err := offerPush(&out, PushAlways, nil, []pushTarget{{Work: "bump", Branch: "feat_wt/bump", Path: bump}})
 	if err != nil {
 		t.Fatalf("a tip that could not be read ended the run: %v\n%s", err, out.String())
 	}

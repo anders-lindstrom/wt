@@ -52,6 +52,9 @@ func Sync(ctx *Context, opts SyncOptions, w io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if line := keptLine(ctx, time.Now()); line != "" {
+		fmt.Fprintln(w, line)
+	}
 	worktrees, err := ctx.Repo.Worktrees()
 	if err != nil {
 		return err

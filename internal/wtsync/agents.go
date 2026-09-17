@@ -227,6 +227,19 @@ func Ancestors() (map[int]bool, error) {
 	return ancestors, nil
 }
 
+// ErrNoClaude is ListOtherAgentsRequired's answer without a claude to ask.
+var ErrNoClaude = errors.New("claude is not on the PATH")
+
+// ListOtherAgentsRequired is ListOtherAgents for a caller that has to know
+// who is in a worktree: no claude on the PATH is not nobody there, it is
+// not knowing, and is an error.
+func ListOtherAgentsRequired() ([]Agent, error) {
+	if _, err := exec.LookPath("claude"); err != nil {
+		return nil, ErrNoClaude
+	}
+	return ListOtherAgents()
+}
+
 // ListOtherAgents is ListAgents without the session wt runs under. When the
 // process tree cannot be read nobody is dropped: the caller then counts like
 // any other session, which refuses rather than rebases.
