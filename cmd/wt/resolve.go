@@ -11,7 +11,8 @@ import (
 
 // completeWork offers the work names of existing worktrees. This is the
 // ergonomic point of the tool: the names are never memorable, so the shell
-// should supply them.
+// should supply them. "." and "/" are not offered: each is one key, quicker
+// to type than to pick from a list.
 func completeWork(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
 	if len(args) > 0 {
 		return nil, cobra.ShellCompDirectiveNoFileComp
@@ -31,6 +32,19 @@ func completeWork(_ *cobra.Command, args []string, _ string) ([]string, cobra.Sh
 		}
 	}
 	return out, cobra.ShellCompDirectiveNoFileComp
+}
+
+// completeWorkThenCommand is completeWork for the worktree, then the shell's
+// own completion for the command that follows it and its arguments: the
+// Default directive with no candidates is how cobra hands the word back to
+// the shell, which completes it as a file name. Even the shell layer's `wt`
+// function ends up here, since the completion script calls `wt __complete`,
+// and the function passes anything but cd and exec to the binary.
+func completeWorkThenCommand(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	if len(args) > 0 {
+		return nil, cobra.ShellCompDirectiveDefault
+	}
+	return completeWork(cmd, args, toComplete)
 }
 
 func newPathCmd() *cobra.Command {

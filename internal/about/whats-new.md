@@ -6,6 +6,14 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-17 15:24 — wt cd and wt exec complete the worktrees
+
+- `wt cd <tab>` and `wt exec <tab>` offer the work names of this repository's
+  worktrees, as `wt path` and `wt remove` already did. Pick one, then for
+  `wt exec` type the command: from that word on your shell completes as it
+  would for any command, so file names work as usual.
+- `.` and `/` are not offered: each is one key, quicker to type than to pick.
+
 ## 2026-09-16 14:31 — . is the worktree you are in and / the main checkout, everywhere
 
 - `.` now names the worktree you are standing in for every command, `wt cd`,

@@ -126,7 +126,7 @@ func newShellCmd(use, short, long, example string) *cobra.Command {
 const sourceShellLayer = "source ~/.local/share/wt/wt.sh"
 
 func newCdCmd() *cobra.Command {
-	return newShellCmd("cd [pattern]", "Change directory to a worktree (shell)",
+	c := newShellCmd("cd [pattern]", "Change directory to a worktree (shell)",
 		"Change your shell's directory to a worktree. The pattern is matched the\n"+
 			"way `wt find` matches, so a few letters of the work name are enough.\n\n"+
 			"\".\" is the root of the worktree you are in, the main checkout included;\n"+
@@ -136,10 +136,12 @@ func newCdCmd() *cobra.Command {
 			"  wt cd .            # the root of the worktree you are in\n"+
 			"  wt cd /            # back to the repository's main checkout\n"+
 			"  wt cd              # the same, with nothing to type")
+	c.ValidArgsFunction = completeWork
+	return c
 }
 
 func newExecCmd() *cobra.Command {
-	return newShellCmd("exec <pattern> <command> [args...]",
+	c := newShellCmd("exec <pattern> <command> [args...]",
 		"Run a command inside a worktree (shell)",
 		"Run a command with a worktree as its working directory, in a subshell,\n"+
 			"so your own shell stays where it is and the command's exit code is\n"+
@@ -148,6 +150,8 @@ func newExecCmd() *cobra.Command {
 			"  wt exec login-crash make test      # its exit code becomes yours\n"+
 			"  wt exec / git log --oneline -5     # the main checkout\n"+
 			"  wt exec . make test                # the worktree you are in")
+	c.ValidArgsFunction = completeWorkThenCommand
+	return c
 }
 
 // needArgs validates argument count with a message that names what is missing

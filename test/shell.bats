@@ -73,6 +73,21 @@ setup() {
     [ ! -d "$REPO/../demo_wt/fix_wt/login-crash" ]
 }
 
+# The completion script calls `wt __complete ...`, which the sourced function
+# must pass through to the binary, or `wt exec <tab>` completes nothing.
+@test "wt exec completion reaches the binary through the wt function" {
+    run wt __complete exec ""
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"fix/login-crash"* ]]
+    [[ "$output" == *$'\n:4\n'* ]]
+    run wt __complete exec login-crash ""
+    [ "$status" -eq 0 ]
+    [[ "$output" == ':0'$'\n'* ]]
+    run wt __complete cd ""
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"fix/login-crash"* ]]
+}
+
 @test "wt cd changes the calling shell's directory" {
     wt cd login-crash
     [[ "$PWD" == */demo_wt/fix_wt/login-crash ]]
