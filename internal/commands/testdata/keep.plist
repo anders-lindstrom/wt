@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>se.wt.sync-keep.myrepo-0123abcd</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/local/bin/wt</string>
+		<string>sync</string>
+		<string>keep</string>
+		<string>run</string>
+		<string>--every</string>
+		<string>1h30m</string>
+		<string>--no-push</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>/Users/me/code/myrepo</string>
+	<key>StartInterval</key>
+	<integer>5400</integer>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>StandardOutPath</key>
+	<string>/dev/null</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/me/code/myrepo/.git/wt-sync-keep.err</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>GIT_CONFIG_COUNT</key>
+		<string>1</string>
+		<key>GIT_CONFIG_KEY_0</key>
+		<string>commit.gpgsign</string>
+		<key>GIT_CONFIG_VALUE_0</key>
+		<string>false</string>
+		<key>HOME</key>
+		<string>/Users/me</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/bin:/bin</string>
+		<key>SSH_AUTH_SOCK</key>
+		<string>/Users/me/Library/Group Containers/1P&amp;co/t/agent.sock</string>
+	</dict>
+</dict>
+</plist>

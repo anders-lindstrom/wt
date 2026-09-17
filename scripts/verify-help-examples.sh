@@ -98,11 +98,32 @@ make_sweep() {
     git -C "$d" branch done-work
     echo "$d"
 }
+# make_sync, plus a bin of its own first on the PATH and a home of its own,
+# so the keep examples touch nothing of this machine's: a claude that lists
+# no sessions (a pass refuses to run without one to ask, and CI has none; a
+# real one must not be asked either), and a launchctl that writes and
+# removes a plist without reaching launchd. Off macOS, start and stop are
+# not run at all: they exit 2 there by design, so check lists them as
+# skipped and counts them as covered.
+make_keep() {
+    local d; d=$(make_sync "$1")
+    mkdir -p "$1/home" "$1/bin"
+    printf '#!/bin/sh\n[ "$1" = agents ] && echo "[]"\nexit 0\n' > "$1/bin/claude"
+    # It remembers what was bootstrapped, so print answers as launchd would.
+    printf '#!/bin/sh\necho "$@" >> "%s/launchctl.calls"\ncase "$1" in\n  bootstrap) touch "%s/loaded" ;;\n  bootout) rm -f "%s/loaded" ;;\n  print) [ -e "%s/loaded" ] || exit 1 ;;\nesac\nexit 0\n' "$1" "$1" "$1" "$1" > "$1/bin/launchctl"
+    chmod +x "$1/bin/claude" "$1/bin/launchctl"
+    echo "$d"
+}
 
 # check <mode> <cwd-under-case-dir|""> <prereq|""> <example verbatim>
 check() {
     local mode=$1 where=$2 prereq=$3 example=$4
     n=$((n+1))
+    RAN+=("$example")
+    if [ "$mode" = launchd ] && [ "$(uname)" != Darwin ]; then
+        printf 'skip %s (launchd; not on this platform)\n' "$example"
+        return
+    fi
     local dir="$BASE/case$n"; mkdir -p "$dir"
     local repo
     case $mode in
@@ -112,11 +133,11 @@ check() {
         sync) repo=$(make_sync "$dir");;
         resume) repo=$(make_resume "$dir");;
         sweep) repo=$(make_sweep "$dir");;
+        keep|launchd) repo=$(make_keep "$dir"); prereq="export HOME=$dir/home PATH=$dir/bin:\$PATH; $prereq";;
         branch) repo=$(make_plain "$dir"); git -C "$repo" branch fix_wt/login-crash;;
     esac
     local cwd=$repo
     [ -n "$where" ] && cwd="$dir/$where"
-    RAN+=("$example")
     local out status
     out=$(cd "$cwd" && { [ -n "$prereq" ] && eval "$prereq" >/dev/null 2>&1; eval "$example"; } 2>&1 </dev/null); status=$?
     if [ $status -eq 0 ]; then
@@ -230,6 +251,15 @@ check sync "" 'wt sync run login-crash --yes' 'wt sync login-crash --undo --yes'
 check sync "" "" 'wt sync doctor'
 check sync "" "" 'wt sync doctor --fix'
 check sync "" "" 'wt sync doctor --prune'
+check keep "" "" 'wt sync keep'
+check keep "" "" 'wt sync keep run'
+check keep "" "" 'wt sync keep status'
+check keep "" "" 'wt sync keep run --no-push'
+check keep "" "" 'wt sync keep run --every 1h'
+check launchd "" "" 'wt sync keep start'
+check launchd "" "" 'wt sync keep start --every 1h'
+check launchd "" "" 'wt sync keep start --no-push'
+check launchd "" 'wt sync keep start' 'wt sync keep stop'
 
 check plain     "" "" 'wt hook claude-create <<< '"'"'{"name":"fix/login-crash"}'"'"''
 check worktrees "" "" 'wt hook claude-remove <<< '"'"'{"name":"login-crash"}'"'"''
