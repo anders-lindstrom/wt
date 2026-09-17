@@ -66,9 +66,11 @@ func (t *rebaseTracker) get() *rebaseInFlight {
 func onInterrupt(w io.Writer, locks []*wtsync.Lock, at *rebaseInFlight) {
 	// The groups die first: nothing may still be writing to a worktree
 	// whose lock we are about to drop, or to a temporary index we are about
-	// to remove. The process exits from here without running any deferred
-	// cleanup, so the directories go now or never.
-	git.KillRunning()
+	// to remove. The goroutines that ran them park rather than act on the
+	// failure while this handler is still cleaning up. The process exits
+	// from here without running any deferred cleanup, so the directories go
+	// now or never.
+	git.Interrupt()
 	wtsync.RemoveTempDirs()
 	for _, l := range locks {
 		if l != nil {

@@ -2,7 +2,9 @@ package git
 
 import (
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -144,19 +146,7 @@ func killRunningTakesDown(t *testing.T, n int) {
 			done <- err
 		}()
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		groups.Lock()
-		registered := len(groups.pids)
-		groups.Unlock()
-		if registered >= n {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("RunBounded registered %d process groups, want %d", registered, n)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	waitRegistered(t, n)
 	if killed := KillRunning(); killed < n {
 		t.Fatalf("KillRunning signalled %d groups, want %d", killed, n)
 	}
@@ -169,5 +159,103 @@ func killRunningTakesDown(t *testing.T, n int) {
 		case <-time.After(10 * time.Second):
 			t.Fatal("a command outlived the kill")
 		}
+	}
+}
+
+// waitRegistered blocks until n process groups are registered.
+func waitRegistered(t *testing.T, n int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		groups.Lock()
+		registered := len(groups.pids)
+		groups.Unlock()
+		if registered >= n {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("RunBounded registered %d process groups, want %d", registered, n)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// A command that handles SIGTERM gets to finish its cleanup before anything
+// harder arrives: a git fetch removes its lock files that way.
+func TestKillRunningLetsACommandCleanUpOnSIGTERM(t *testing.T) {
+	dir := t.TempDir()
+	marker, ready := filepath.Join(dir, "cleaned-up"), filepath.Join(dir, "ready")
+	// The shell says when its trap is in place: a SIGTERM before that ends it
+	// the default way, with nothing to show for it.
+	cmd := exec.Command("sh", "-c", "trap 'touch \"$0\"; exit 0' TERM; touch \"$1\"; sleep 30 & wait $!", marker, ready)
+	done := make(chan struct{})
+	go func() {
+		_, _, _ = RunBounded(time.Minute, cmd)
+		close(done)
+	}()
+	waitRegistered(t, 1)
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		if _, err := os.Stat(ready); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the shell never installed its trap")
+		}
+	}
+	KillRunning()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the command outlived the kill")
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("the command was not given the chance to clean up: %v", err)
+	}
+}
+
+// One that ignores SIGTERM is killed once the grace has passed, so Ctrl-C
+// stays snappy.
+func TestKillRunningKillsWhatIgnoresSIGTERMAfterTheGrace(t *testing.T) {
+	cmd := exec.Command("sh", "-c", "trap '' TERM; while :; do sleep 1; done")
+	done := make(chan struct{})
+	go func() {
+		_, _, _ = RunBounded(time.Minute, cmd)
+		close(done)
+	}()
+	waitRegistered(t, 1)
+	start := time.Now()
+	KillRunning()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the command outlived the kill")
+	}
+	if elapsed := time.Since(start); elapsed > TermGrace+WaitDelay+time.Second {
+		t.Fatalf("took %s: the group was not killed after the grace", elapsed)
+	}
+}
+
+// A signal handler that exits the process must not race the goroutine whose
+// git it killed: that goroutine would go on to report a failure, drop a lock
+// or start another git during the grace. Interrupt marks the groups it
+// signals, and the RunBounded waiting on each parks once it is reaped.
+func TestInterruptParksTheCallerOfAKilledCommand(t *testing.T) {
+	cmd := exec.Command("sleep", "30")
+	returned := make(chan struct{})
+	go func() {
+		_, _, _ = RunBounded(time.Minute, cmd)
+		close(returned)
+	}()
+	waitRegistered(t, 1)
+	if n := Interrupt(); n != 1 {
+		t.Fatalf("Interrupt signalled %d groups, want 1", n)
+	}
+	if left := stillRunning([]int{cmd.Process.Pid}); len(left) != 0 {
+		t.Fatalf("the group is still registered after the grace: %v", left)
+	}
+	select {
+	case <-returned:
+		t.Fatal("RunBounded returned after an interrupt")
+	case <-time.After(300 * time.Millisecond):
 	}
 }

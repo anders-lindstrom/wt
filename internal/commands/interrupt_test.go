@@ -8,12 +8,75 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
+
+// lockedBuffer is a bytes.Buffer a run goroutine may still be writing to
+// while the test reads it.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// With the SIGTERM grace, a deferred step the interrupt kills returns to the
+// run before the handler has exited, and the run would go on to print the
+// step as owed, pin refs/wt-sync-result/<branch>/<epoch> and remove the plan,
+// leaving the handler's "wt sync undo --force puts it back" stale. The
+// goroutine that ran the killed step parks instead, so the rebase stands as
+// the handler says, with no result pinned and nothing owed.
+func TestInterruptDuringADeferredStepPinsNoResult(t *testing.T) {
+	ctx, _ := runFixture(t, false)
+	main := ctx.Repo.MainRoot
+	started := filepath.Join(t.TempDir(), "started")
+	yaml, err := os.ReadFile(filepath.Join(main, ".wt-sync.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, main, ".wt-sync.yaml", string(yaml)+"defer:\n  - run: touch "+started+"; sleep 30\n    paths: [v.txt]\n")
+	gitIn(t, main, "commit", "-q", "-am", "declare a slow step")
+	gitIn(t, main, "fetch", "-q", "origin")
+
+	var out lockedBuffer
+	go func() { _ = SyncRun(ctx, []string{"bump"}, noAgents(), &out) }()
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if _, err := os.Stat(started); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the step never started:\n%s", out.String())
+		}
+	}
+	if n := git.Interrupt(); n < 1 {
+		t.Fatalf("Interrupt signalled %d groups, want the step", n)
+	}
+	// Long enough for the run to have finished the step's failure path,
+	// had it not parked.
+	time.Sleep(500 * time.Millisecond)
+	if refs := gitOut(t, main, "for-each-ref", wtsync.ResultPrefix); refs != "" {
+		t.Errorf("the run pinned a result after the interrupt: %s", refs)
+	}
+	if s := out.String(); strings.Contains(s, "owed") || strings.Contains(s, "✗") {
+		t.Errorf("the run reported the killed step:\n%s", s)
+	}
+}
 
 // interruptChild is set in the environment of a test binary that
 // interruptedChild re-ran: the test runs its child half there.

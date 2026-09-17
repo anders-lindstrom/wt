@@ -27,33 +27,92 @@ const WaitDelay = 2 * time.Second
 var groups = struct {
 	sync.Mutex
 	pids map[int]bool
-}{pids: map[int]bool{}}
+	// parked is the groups Interrupt signalled: the RunBounded waiting on
+	// each parks once its command is reaped, instead of returning.
+	parked map[int]bool
+}{pids: map[int]bool{}, parked: map[int]bool{}}
 
-// KillRunning sends SIGKILL to the process group of every command RunBounded
-// is waiting on, and reports how many it signalled. Best effort: a group that
-// has already exited is not an error.
-func KillRunning() int {
-	groups.Lock()
-	defer groups.Unlock()
+// TermGrace is how long KillRunning gives a process group after SIGTERM
+// before SIGKILL: long enough for a git to remove its lock files on the way
+// out, short enough that Ctrl-C still feels immediate.
+const TermGrace = 200 * time.Millisecond
+
+// KillRunning sends SIGTERM to the process group of every command RunBounded
+// is waiting on, waits up to TermGrace for them to go, then sends SIGKILL to
+// whichever are still running, and reports how many it signalled. Best
+// effort: a group that has already exited is not an error.
+func KillRunning() int { return killRunning(false) }
+
+// Interrupt is KillRunning for a signal handler about to exit the process:
+// the RunBounded waiting on each group it signals parks instead of
+// returning, so the goroutine that ran the command does not go on to report
+// a failure, drop a lock or start another git while the handler cleans up
+// during the grace. A command started after this call is not affected.
+func Interrupt() int { return killRunning(true) }
+
+func killRunning(park bool) int {
+	pids := running(park)
 	n := 0
-	for pid := range groups.pids {
-		if err := syscall.Kill(-pid, syscall.SIGKILL); err == nil {
+	for _, pid := range pids {
+		if err := syscall.Kill(-pid, syscall.SIGTERM); err == nil {
 			n++
 		}
+	}
+	deadline := time.Now().Add(TermGrace)
+	for len(stillRunning(pids)) > 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	for _, pid := range stillRunning(pids) {
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
 	}
 	return n
 }
 
-// track registers the process group pid until done is called.
-func track(pid int) (done func()) {
+// running is the process groups registered right now, marked to park when
+// park is set.
+func running(park bool) []int {
+	groups.Lock()
+	defer groups.Unlock()
+	pids := make([]int, 0, len(groups.pids))
+	for pid := range groups.pids {
+		pids = append(pids, pid)
+		if park {
+			groups.parked[pid] = true
+		}
+	}
+	return pids
+}
+
+// stillRunning is the subset of pids RunBounded has not finished waiting on:
+// a group whose command has exited and been reaped is gone from the registry.
+func stillRunning(pids []int) []int {
+	groups.Lock()
+	defer groups.Unlock()
+	var left []int
+	for _, pid := range pids {
+		if groups.pids[pid] {
+			left = append(left, pid)
+		}
+	}
+	return left
+}
+
+// track registers the process group pid.
+func track(pid int) {
 	groups.Lock()
 	groups.pids[pid] = true
 	groups.Unlock()
-	return func() {
-		groups.Lock()
-		delete(groups.pids, pid)
-		groups.Unlock()
-	}
+}
+
+// untrack removes the group once its command is reaped, and reports whether
+// Interrupt marked it to park.
+func untrack(pid int) (park bool) {
+	groups.Lock()
+	defer groups.Unlock()
+	delete(groups.pids, pid)
+	park = groups.parked[pid]
+	delete(groups.parked, pid)
+	return park
 }
 
 // RunBounded runs cmd in its own process group, registered for KillRunning
@@ -74,7 +133,7 @@ func RunBounded(timeout time.Duration, cmd *exec.Cmd) (timedOut bool, code int, 
 		return false, -1, err
 	}
 	pid := cmd.Process.Pid
-	defer track(pid)()
+	track(pid)
 
 	var mu sync.Mutex
 	waited, fired := false, false
@@ -94,6 +153,11 @@ func RunBounded(timeout time.Duration, cmd *exec.Cmd) (timedOut bool, code int, 
 	waited = true
 	timedOut = fired
 	mu.Unlock()
+	if untrack(pid) {
+		// Interrupt signalled this group and the process is on its way out:
+		// the caller must not act on the failure.
+		select {}
+	}
 
 	var exit *exec.ExitError
 	switch {
