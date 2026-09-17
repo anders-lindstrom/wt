@@ -1203,3 +1203,49 @@ func TestSweepNoFetchComparesWithOriginAsLastFetched(t *testing.T) {
 		t.Errorf("say it did not fetch:\n%s", buf.String())
 	}
 }
+
+// A worktree left detached at a merged tip holds no branch, so the branch
+// goes as a plain delete and nothing above would name the checkout. It is
+// listed as kept with the path wt remove takes, rather than passed over. One
+// detached at a commit trunk lacks is nobody's litter and is not mentioned.
+func TestSweepPlanNamesADetachedWorktreeAtAMergedTip(t *testing.T) {
+	ctx, main, _ := sweepRepo(t)
+	branchWithWork(t, main, "done", 0)
+	branchWithWork(t, main, "wip", 1)
+	merged := filepath.Join(ctx.Repo.Parent, "demo-done")
+	unmerged := filepath.Join(ctx.Repo.Parent, "demo-wip")
+	gitIn(t, main, "worktree", "add", "-q", "--detach", merged, "done")
+	gitIn(t, main, "worktree", "add", "-q", "--detach", unmerged, "wip")
+	tip := gitOut(t, main, "rev-parse", "done")
+
+	p := planOf(t, ctx)
+	if !slices.Equal(branchNames(p.Delete), []string{"done"}) {
+		t.Fatalf("a detached checkout holds no branch, so done still goes: %v", branchNames(p.Delete))
+	}
+	if len(p.CheckedOut) != 1 || !p.CheckedOut[0].Detached || p.CheckedOut[0].Worktree != merged || p.CheckedOut[0].Tip != tip {
+		t.Fatalf("want the detached worktree kept by its path: %+v", p.CheckedOut)
+	}
+	out := rendered(p)
+	if want := "(detached)  no branch, and its HEAD " + tip[:12] + " is on origin/main; wt remove " + merged; !strings.Contains(out, want) {
+		t.Errorf("want %q in:\n%s", want, out)
+	}
+	if strings.Contains(out, unmerged) {
+		t.Errorf("a detached worktree trunk lacks is not merged work:\n%s", out)
+	}
+
+	var buf bytes.Buffer
+	if err := Sweep(ctx, SweepOptions{NoFetch: true, Yes: true, Agents: []wtsync.Agent{}}, &buf); err != nil {
+		t.Fatalf("Sweep: %v\n%s", err, buf.String())
+	}
+	if !exists(merged) || ctx.Repo.BranchExists("done") {
+		t.Errorf("sweep removes no detached worktree and deletes the branch: %s", buf.String())
+	}
+
+	// A dirty one is checked like any other worktree, so the row names the
+	// dirt rather than advising a wt remove that would refuse.
+	mustWrite(t, filepath.Join(merged, "scratch.txt"), "not yet\n")
+	out = rendered(planOf(t, ctx))
+	if want := "(detached)  no branch, and its HEAD " + tip[:12] + " is on origin/main, dirty; commit or discard the changes, then sweep again"; !strings.Contains(out, want) {
+		t.Errorf("want %q in:\n%s", want, out)
+	}
+}
