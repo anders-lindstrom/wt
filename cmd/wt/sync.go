@@ -124,7 +124,7 @@ func newSyncCmd() *cobra.Command {
 			return err
 		}
 		if ctx == nil {
-			return errors.New("not inside a git repository")
+			return commands.ErrNotInRepo
 		}
 		opts := commands.SyncOptions{NoFetch: noFetch}
 		if len(args) == 1 {

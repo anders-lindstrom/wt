@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,6 +38,10 @@ func Roots() []string {
 	return out
 }
 
+// ErrNotInRepo is the answer for a command that needs the repository the
+// caller is standing in, from outside every repository.
+var ErrNotInRepo = errors.New("not inside a git repository")
+
 // Find resolves a fuzzy pattern to the best-matching worktrees.
 //
 // The current repository is searched first and wins ties, but only a strong hit
@@ -53,10 +58,12 @@ func Find(ctx *Context, pattern string) ([]find.Scored, error) {
 	// "/" is the repository you are in — its main checkout — and so is nothing
 	// at all, so `wt cd` with no argument has somewhere to go. "." is the
 	// worktree you are standing in, the main checkout included, resolved the
-	// way every other command resolves it. Neither searches anything.
+	// way every other command resolves it. Neither searches anything, and
+	// outside a repository neither names a place: that is the error, not
+	// "no worktree matches".
 	if isRoot(pattern) || pattern == "" || isDot(pattern) {
 		if ctx == nil {
-			return nil, nil
+			return nil, ErrNotInRepo
 		}
 		wt := repo.Worktree{Path: ctx.Repo.MainRoot, Branch: ctx.Repo.BranchAt(ctx.Repo.MainRoot), IsMain: true}
 		if isDot(pattern) {
