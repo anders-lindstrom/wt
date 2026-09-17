@@ -6,6 +6,16 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-17 15:41 — Clearer answers at the edges: sweep, new, status, cd, sync
+
+- `wt sweep` lists a worktree left detached at a merged tip under kept, with
+  the `wt remove <path>` that takes it.
+- `wt new .` and `wt new /` are refused with what they name; a bare `wt cd`
+  outside every repository says `not inside a git repository`.
+- `wt status` and `wt sync --no-fetch` say `as last fetched (when is not
+  recorded)` without a fetch age; a `wt sync` row that hit an error reads `unknown`.
+- Ctrl-C leaves no temp directories, and a running git gets to remove its locks.
+
 ## 2026-09-17 15:24 — wt cd and wt exec complete the worktrees
 
 - `wt cd <tab>` and `wt exec <tab>` offer the work names of this repository's

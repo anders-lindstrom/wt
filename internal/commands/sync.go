@@ -230,24 +230,42 @@ func syncInputs(ctx *Context, opts SyncOptions, w io.Writer) (onto string, cfg *
 	return onto, cfg, agents, nil
 }
 
-// lastFetched is "as last fetched" and how long ago, read from the mtime of
-// the repository's FETCH_HEAD, which every fetch writes. Without one there is
-// no age to give, and neither is there when it is empty: git 2.55 empties it
-// as a fetch starts, so an empty one was touched by a fetch that failed.
+// lastFetched is "as last fetched" and how long ago, or that when is not
+// recorded, for the headers of wt sync --no-fetch and wt status.
 func lastFetched(mainRoot string, now time.Time) string {
-	const phrase = "as last fetched"
+	if age := fetchAge(mainRoot, now); age != "" {
+		return "as last fetched " + age
+	}
+	return "as last fetched (when is not recorded)"
+}
+
+// lastFetchedParen is lastFetched inside a parenthesis, for the lines that
+// put it after a ref: "(as last fetched 3h ago)".
+func lastFetchedParen(mainRoot string, now time.Time) string {
+	if age := fetchAge(mainRoot, now); age != "" {
+		return "(as last fetched " + age + ")"
+	}
+	return "(as last fetched; when is not recorded)"
+}
+
+// fetchAge is how long ago the repository last fetched, read from the mtime
+// of its FETCH_HEAD, which every fetch writes. Without one there is no age
+// to give, and neither is there when it is empty: git 2.55 empties it as a
+// fetch starts, so an empty one was touched by a fetch that failed. Then it
+// is "".
+func fetchAge(mainRoot string, now time.Time) string {
 	path, err := git.Run(mainRoot, "rev-parse", "--git-path", "FETCH_HEAD")
 	if err != nil {
-		return phrase
+		return ""
 	}
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(mainRoot, path)
 	}
 	info, err := os.Stat(path)
 	if err != nil || info.Size() == 0 {
-		return phrase
+		return ""
 	}
-	return phrase + " " + ago(now.Sub(info.ModTime()))
+	return ago(now.Sub(info.ModTime()))
 }
 
 // ago is a duration as a person reads an age: the largest whole unit.

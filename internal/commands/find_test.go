@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -270,12 +271,15 @@ func TestFindDotFromOutsideEveryWorktreeSaysSo(t *testing.T) {
 	}
 }
 
-func TestFindDotAndRootOutsideARepoAreNotAMatch(t *testing.T) {
+// A bare wt cd, wt cd . or wt cd / from outside every repository asks for a
+// place in the repository you are in, and there is none: the error says
+// that, not that no worktree matches "/".
+func TestFindDotAndRootOutsideARepoSayThereIsNoRepo(t *testing.T) {
 	t.Setenv("WT_ROOTS", t.TempDir())
 	for _, pattern := range []string{".", "/", ""} {
 		got, err := Find(nil, pattern)
-		if err != nil {
-			t.Fatal(err)
+		if !errors.Is(err, ErrNotInRepo) || err.Error() != "not inside a git repository" {
+			t.Errorf("Find(%q): err %v, want ErrNotInRepo", pattern, err)
 		}
 		if len(got) != 0 {
 			t.Errorf("Find(%q): want no match outside a repository, got %+v", pattern, got)

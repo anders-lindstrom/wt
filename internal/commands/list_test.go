@@ -591,3 +591,28 @@ func TestStatusWorktreeMarksADirtyWorktreeOnTheSyncLine(t *testing.T) {
 		}
 	}
 }
+
+// Without a FETCH_HEAD there is no fetch age to give, and the header says
+// so rather than trailing off after "as last fetched"; the trunk line of one
+// worktree says the same inside its parenthesis, as wt sync --no-fetch does.
+func TestStatusSaysWhenTheFetchAgeIsNotRecorded(t *testing.T) {
+	ctx := syncRepo(t)
+	if err := os.Remove(fetchHead(t, ctx.Repo.MainRoot)); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	if err := Status(ctx, &buf, 0); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(buf.String(), "against origin/main, as last fetched (when is not recorded)\n") {
+		t.Errorf("want the header to say the age is not recorded:\n%s", buf.String())
+	}
+	buf.Reset()
+	if err := StatusWorktree(ctx, "other", noStatusSessions(), &buf); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "  trunk   on origin/main (as last fetched; when is not recorded)\n") {
+		t.Errorf("want the trunk line to say the age is not recorded:\n%s", buf.String())
+	}
+}

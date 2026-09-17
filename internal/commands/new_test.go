@@ -68,3 +68,25 @@ func TestNewRejectsUnknownType(t *testing.T) {
 		t.Error("want an error for an unknown type")
 	}
 }
+
+// "." and "/" name the worktree you are in and the main checkout, as
+// everywhere in wt; read as a work name they would fail on a branch called
+// feat_wt/. or a path that already exists, with an error about the wrong
+// thing.
+func TestNewRefusesDotAndRootAsAWorkName(t *testing.T) {
+	ctx, _ := Open(committedRepo(t, minimalConf))
+	var buf bytes.Buffer
+	for spec, want := range map[string]string{
+		".":  ". names the worktree you are in; wt new takes a new <type>/<work>",
+		"./": ". names the worktree you are in; wt new takes a new <type>/<work>",
+		"/":  "/ names the main checkout; wt new takes a new <type>/<work>",
+	} {
+		_, err := New(ctx, spec, NewOptions{NoSetup: true}, &buf)
+		if err == nil || err.Error() != want {
+			t.Errorf("New(%q): err %v, want %q", spec, err, want)
+		}
+	}
+	if buf.Len() != 0 {
+		t.Errorf("nothing is created before the refusal:\n%s", buf.String())
+	}
+}

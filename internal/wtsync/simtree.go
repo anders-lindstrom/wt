@@ -2,7 +2,6 @@ package wtsync
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -98,9 +97,9 @@ func indexModes(mainRoot string, env, paths []string) (map[string]string, error)
 // scratchIndex is a private index file git creates for itself. The file must
 // not exist when git first writes it: an empty file is not a valid index.
 func scratchIndex() (string, func(), error) {
-	dir, err := os.MkdirTemp("", "wtsync-simindex-")
+	dir, cleanup, err := tempDir("wtsync-simindex-")
 	if err != nil {
 		return "", nil, err
 	}
-	return filepath.Join(dir, "index"), func() { _ = os.RemoveAll(dir) }, nil
+	return filepath.Join(dir, "index"), cleanup, nil
 }

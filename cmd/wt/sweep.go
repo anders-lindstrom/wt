@@ -27,7 +27,10 @@ func newSweepCmd() *cobra.Command {
 			"  in use        merged, but its worktree is not safe to remove, and\n" +
 			"                each row says why (dirty, a session in it, a held lock),\n" +
 			"                or a bisect or rebase there holds it (finish or abort\n" +
-			"                that, then sweep again)\n" +
+			"                that, then sweep again). A worktree left detached at\n" +
+			"                a merged tip is listed here too, with the wt remove\n" +
+			"                <path> that takes it; one detached at a commit trunk\n" +
+			"                lacks is passed over\n" +
 			"  kept          its upstream is gone, but trunk lacks its commits\n\n" +
 			"Trunk is MAIN_BRANCH, or origin's HEAD when that is not set; with\n" +
 			"neither, sweep refuses. Trunk, the branch origin's HEAD names and the\n" +

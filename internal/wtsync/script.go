@@ -172,11 +172,10 @@ func (s Script) ResolveInWorktree(wtPath, path string) error {
 // every git here does. A deadline that fires is reported as one, never as a
 // script missing from trunk.
 func materialise(root, trunk, run string) (exe string, cleanup func(), err error) {
-	dir, err := os.MkdirTemp("", "wtsync-script-")
+	dir, cleanup, err := tempDir("wtsync-script-")
 	if err != nil {
 		return "", nil, err
 	}
-	cleanup = func() { _ = os.RemoveAll(dir) }
 	scriptDir := filepath.Dir(run)
 	archive, tree := filepath.Join(dir, "script.tar"), filepath.Join(dir, "tree")
 	if err := os.Mkdir(tree, 0o700); err != nil {
@@ -216,11 +215,10 @@ func materialise(root, trunk, run string) (exe string, cleanup func(), err error
 // and nothing else. The blobs are written to the object store, which is the
 // only side effect, and one git already tolerates.
 func tempIndex(root string, c Conflict) (index string, cleanup func(), err error) {
-	dir, err := os.MkdirTemp("", "wtsync-index-")
+	dir, cleanup, err := tempDir("wtsync-index-")
 	if err != nil {
 		return "", nil, err
 	}
-	cleanup = func() { _ = os.RemoveAll(dir) }
 	index = filepath.Join(dir, "index")
 	var info strings.Builder
 	for i, side := range [3]struct {

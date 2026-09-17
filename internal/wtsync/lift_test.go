@@ -508,6 +508,11 @@ func TestAPureBumpBothSidesTookToANonSemverFailsInBothPaths(t *testing.T) {
 	if v, why := Preflight(a); v != RefuseRun || !strings.Contains(why, want) {
 		t.Fatalf("preflight %v %q", v, why)
 	}
+	// The replay reached no stop, which is what clean means, but the run
+	// would fail: the row says unknown beside its error line, not clean.
+	if a.Class != Unknown || a.Err == nil {
+		t.Fatalf("class %s beside error %v, want unknown", a.Class, a.Err)
+	}
 	res, err := Rebase(dir, cfg, trunkReq(wt, 1), nil)
 	if err == nil || !strings.Contains(err.Error(), want) || !res.Restored {
 		t.Fatalf("run err = %v, result %+v", err, res)

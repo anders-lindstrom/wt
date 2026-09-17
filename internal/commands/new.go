@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -16,6 +17,15 @@ type NewOptions struct {
 // New creates a branch and its worktree at the canonical path, then provisions
 // it. It returns the worktree path so a caller can cd there.
 func New(ctx *Context, spec string, opts NewOptions, w io.Writer) (string, error) {
+	// "." and "/" name a place that exists, as everywhere in wt; read as a
+	// work name they would make a branch called feat_wt/. or a worktree at
+	// <repo>_wt/<type>, and the error for either is about the wrong thing.
+	switch {
+	case isDot(spec):
+		return "", errors.New(". names the worktree you are in; wt new takes a new <type>/<work>")
+	case isRoot(spec):
+		return "", errors.New("/ names the main checkout; wt new takes a new <type>/<work>")
+	}
 	typ, work, branch, err := parseWork(ctx, spec)
 	if err != nil {
 		return "", err

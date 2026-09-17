@@ -64,6 +64,7 @@ func newSyncCmd() *cobra.Command {
 			"             automatically\n" +
 			"  stale      nothing ahead of trunk; skipped\n" +
 			"  current    already on trunk; not printed\n" +
+			"  unknown    the assessment hit an error; the line under it says which\n" +
 			"\n" +
 			"Under each worktree: the stop that decides the class \u2014 the first one\n" +
 			"that is yours, or the first of a run that resolves throughout \u2014 with its\n" +
@@ -123,7 +124,7 @@ func newSyncCmd() *cobra.Command {
 			return err
 		}
 		if ctx == nil {
-			return errors.New("not inside a git repository")
+			return commands.ErrNotInRepo
 		}
 		opts := commands.SyncOptions{NoFetch: noFetch}
 		if len(args) == 1 {
@@ -260,7 +261,7 @@ func newSyncRunCmd() *cobra.Command {
 		}),
 	}
 	run.Flags().BoolVar(&noFetch, "no-fetch", false, "rebase onto origin/<trunk> as last fetched")
-	run.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask first: several worktrees, an idle session in one, or nothing named")
+	run.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask before anything moves")
 	push = addPushFlags(run, "push the worktrees that finish, without asking",
 		"neither push nor ask; print the push command")
 	return run
