@@ -82,7 +82,8 @@ carry are shims that call `wt`.
    changes nothing; `wt sync run <work>` does it, `wt sync --run` does every worktree
    the table calls ready, and `wt sync undo <work>` puts a run back. Each verb is
    also a flag on the line you just recalled: `wt sync <work> --run`,
-   `--resume`, `--undo`.
+   `--resume`, `--undo`. `wt sync keep start` does the ready ones on a timer,
+   leaving alone any worktree a session is in, and the table says when it last did.
 9. **Clean up merged branches and their worktrees with `wt sweep`.** From the main
    checkout, `wt sweep` fetches origin, lists the local branches trunk already
    contains, and deletes them after one question (`--yes` for scripts; without a

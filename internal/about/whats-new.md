@@ -6,6 +6,16 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-17 16:58 — wt sync keep rebases the ready worktrees on a timer
+
+- `wt sync keep start` installs a launchd job that runs `wt sync keep run`
+  every 30 minutes: fetch trunk, and when it moved, rebase every worktree the
+  table calls ready and push with the lease. A worktree with any session in
+  it, idle or busy, is left alone: nobody is there to ask.
+- Every pass is logged to `.git/wt-sync-keep.log`; `wt sync` says `kept at
+  14:20, next 14:50`, `wt sync keep status` says what the last pass did, and
+  `wt sync doctor` has a `keeper` row. `wt sync keep stop` removes the job.
+
 ## 2026-09-17 15:41 — Clearer answers at the edges: sweep, new, status, cd, sync
 
 - `wt sweep` lists a worktree left detached at a merged tip under kept, with
