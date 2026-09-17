@@ -56,7 +56,7 @@ func SyncDoctor(ctx *Context, opts DoctorOptions, w io.Writer) error {
 		}
 		plan.Detail = strings.Join(lines, "; ")
 	}
-	checks = append(checks, plan)
+	checks = append(checks, plan, keeperCheck(ctx, time.Now()))
 	rows := [][]string{{"CHECK", "STATE", "DETAIL"}}
 	var blocking []string
 	for _, c := range checks {

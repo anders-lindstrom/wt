@@ -41,11 +41,11 @@ func pushArgs(t pushTarget) []string {
 
 // offerPush ends a run or a resume: it pushes the branches that finished, or
 // prints the command for each when told not to, when the answer is no, or
-// when there is nobody to ask. It returns the pushes that failed, named the
-// way the not-completed error names them.
-func offerPush(w io.Writer, mode PushMode, confirm func(works []string) (bool, error), targets []pushTarget) ([]string, error) {
+// when there is nobody to ask. It returns the works it pushed, and the pushes
+// that failed, named the way the not-completed error names them.
+func offerPush(w io.Writer, mode PushMode, confirm func(works []string) (bool, error), targets []pushTarget) (pushed, failed []string, err error) {
 	if len(targets) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	fmt.Fprintln(w)
 	push := mode == PushAlways
@@ -56,7 +56,7 @@ func offerPush(w io.Writer, mode PushMode, confirm func(works []string) (bool, e
 		}
 		ok, err := confirm(works)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		push = ok
 	}
@@ -64,9 +64,8 @@ func offerPush(w io.Writer, mode PushMode, confirm func(works []string) (bool, e
 		for _, t := range targets {
 			fmt.Fprintf(w, "push: git -C %s %s\n", t.Path, strings.Join(pushArgs(t), " "))
 		}
-		return nil, nil
+		return nil, nil, nil
 	}
-	var failed []string
 	for _, t := range targets {
 		from := "new on origin"
 		if before, err := git.Run(t.Path, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+t.Branch); err == nil {
@@ -89,8 +88,9 @@ func offerPush(w io.Writer, mode PushMode, confirm func(works []string) (bool, e
 			continue
 		}
 		fmt.Fprintf(w, "  ✓ pushed %s  %s → %s\n", t.Branch, from, git.ShortID(to, 7))
+		pushed = append(pushed, t.Work)
 	}
-	return failed, nil
+	return pushed, failed, nil
 }
 
 // pushReason is the line of git's refusal that says why — the "!" line

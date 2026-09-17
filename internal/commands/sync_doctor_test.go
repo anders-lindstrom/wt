@@ -51,15 +51,17 @@ func doctorRows(t *testing.T, out string) []string {
 	return lines[1:]
 }
 
-func TestSyncDoctorPrintsElevenOKRowsForAHealthyFixture(t *testing.T) {
+func TestSyncDoctorPrintsTwelveOKRowsForAHealthyFixture(t *testing.T) {
 	ctx := doctorFixture(t, true)
+	// No keeper is installed in the fixture's home, whatever this machine has.
+	t.Setenv("HOME", t.TempDir())
 	var out bytes.Buffer
 	if err := SyncDoctor(ctx, DoctorOptions{}, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	rows := doctorRows(t, out.String())
-	if len(rows) != 11 {
-		t.Fatalf("got %d rows, want 11:\n%s", len(rows), out.String())
+	if len(rows) != 12 {
+		t.Fatalf("got %d rows, want 12:\n%s", len(rows), out.String())
 	}
 	for _, row := range rows {
 		fields := strings.Fields(row)

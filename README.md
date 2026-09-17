@@ -86,7 +86,9 @@ examples: `wt <command> --help`.
 | `wt sync run [<work>...]` | rebase the named worktrees onto trunk with the declared strategies (`--no-fetch`, `--yes`/`-y`, `--push`, `--no-push`); also spelled `wt sync <work>... --run`. With nothing named, every worktree the table calls ready except `recipe?`, asked first |
 | `wt sync resume <work>` | continue the rebase a run left at a conflict that was yours (`--yes`/`-y`, `--push`, `--no-push`); also spelled `wt sync <work> --resume` |
 | `wt sync undo <work>` | put back every ref the last `wt sync run` on this worktree moved, aborting a rebase a run handed over (`--force`, `--yes`/`-y`); also spelled `wt sync <work> --undo` |
-| `wt sync doctor` | check what a run needs; `--fix` turns on rerere and removes expired locks, `--prune` deletes old safety refs |
+| `wt sync doctor` | check what a run needs; `--fix` turns on rerere and removes expired locks, `--prune` deletes old safety refs; a `keeper` row says whether one is installed and how its last pass went |
+| `wt sync keep run` | one unattended pass: fetch trunk and, when it moved, rebase every ready worktree nobody is in and push what finished (`--no-push`, `--every`); logged to `.git/wt-sync-keep.log`; what the job runs, and what cron runs elsewhere |
+| `wt sync keep start` | install a launchd job (macOS) that runs `wt sync keep run` every 30 minutes (`--every`, `--no-push`), pushing the way this shell's git does; `wt sync keep status` for the last pass and the next, `wt sync keep stop` to remove it |
 
 **Put worktrees in their place**
 

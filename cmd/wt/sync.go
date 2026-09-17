@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -34,6 +35,8 @@ func newSyncCmd() *cobra.Command {
 			"          wt sync undo <work>     put back every ref that run moved\n" +
 			"          wt sync <work> --undo\n" +
 			"          wt sync doctor          what a run needs, and --fix / --prune\n" +
+			"  keep    wt sync keep start      a launchd job that runs wt sync keep run every 30m:\n" +
+			"                                  every ready worktree with nobody in it, then push\n" +
 			"Only Claude sessions are detected; a Codex session is not seen.\n" +
 			"\n" +
 			"--run, --resume and --undo are those same three commands, spelled so a\n" +
@@ -140,8 +143,178 @@ func newSyncCmd() *cobra.Command {
 	push = addPushFlags(sync, "with --run or --resume: push when done, without asking",
 		"with --run or --resume: neither push nor ask; print the push command")
 	sync.Flags().BoolVar(&force, "force", false, "with --undo: undo a branch that has moved since the run")
-	sync.AddCommand(newSyncRunCmd(), newSyncResumeCmd(), newSyncUndoCmd(), newSyncDoctorCmd())
+	sync.AddCommand(newSyncRunCmd(), newSyncResumeCmd(), newSyncUndoCmd(), newSyncDoctorCmd(), newSyncKeepCmd())
 	return sync
+}
+
+func newSyncKeepCmd() *cobra.Command {
+	keep := &cobra.Command{
+		Use:   "keep",
+		Short: "Keep the ready worktrees rebased on trunk, unattended",
+		Long: "A keeper is wt sync --run --yes on a timer, with nobody watching. Each\n" +
+			"pass fetches trunk and, when its tip has moved since the last pass,\n" +
+			"rebases every worktree the table calls ready, pushes what finished with\n" +
+			"nothing owed (--force-with-lease --force-if-includes), and records what it\n" +
+			"did. It is stricter than a run you start: a worktree with any Claude\n" +
+			"session in it, idle or busy, is left alone, since nobody is there to be\n" +
+			"asked on its behalf; recipe?, needs you and skipped are left alone as a\n" +
+			"run with nothing named leaves them, and a stack goes whole or not at all.\n" +
+			"A conflict that is yours is never handed over by a keeper: the worktree\n" +
+			"was not ready, so it was not taken.\n" +
+			"\n" +
+			"  wt sync keep run      one pass, what the job runs; usable from cron\n" +
+			"  wt sync keep start    install the job (macOS launchd), every 30m by default\n" +
+			"  wt sync keep status   installed or not, the last pass, the next one\n" +
+			"  wt sync keep stop     unload the job and remove its plist\n" +
+			"\n" +
+			"Every pass is appended to .git/wt-sync-keep.log in the main checkout:\n" +
+			"the time, trunk before and after, what was rebased, pushed and left, and\n" +
+			"the run's own output. The log is rotated at 1 MB, the previous file kept\n" +
+			"as .log.1. .git/wt-sync-keep.json holds the last pass for wt sync's\n" +
+			"kept-at line and wt sync doctor's keeper row; a pass that failed stays\n" +
+			"there as a problem until a pass finishes clean. Two passes never overlap:\n" +
+			"the json names the running one, and a pass that finds it alive says so\n" +
+			"and exits. A pass takes the same locks a run takes and is refused by\n" +
+			"them the same way. Without a subcommand this is wt sync keep status.",
+		Example: "  wt sync keep            # is a keeper installed, and what did it last do\n" +
+			"  wt sync keep run        # one pass now, by hand or from cron\n" +
+			"  wt sync keep status     # the same as wt sync keep",
+		Args: cobra.NoArgs,
+		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+			return commands.SyncKeepStatus(ctx, time.Now(), cmd.OutOrStdout())
+		}),
+	}
+	keep.AddCommand(newSyncKeepRunCmd(), newSyncKeepStartCmd(), newSyncKeepStatusCmd(), newSyncKeepStopCmd())
+	return keep
+}
+
+func newSyncKeepRunCmd() *cobra.Command {
+	var every time.Duration
+	var noPush bool
+	run := &cobra.Command{
+		Use:   "run",
+		Short: "One pass: fetch, rebase what is ready and nobody is in, push",
+		Long: "What the keeper's job runs every interval, and what to run from cron\n" +
+			"where there is no launchd. Fetch trunk; when its tip is the one the last\n" +
+			"pass recorded, say so and exit 0. Otherwise rebase every ready worktree\n" +
+			"as wt sync --run --yes would, except that a worktree with any Claude\n" +
+			"session in it is left alone and named with the session as the reason,\n" +
+			"and push each worktree that finished with nothing owed, with\n" +
+			"--force-with-lease --force-if-includes. Nothing is asked. The pass is\n" +
+			"appended to .git/wt-sync-keep.log and its outcome written to\n" +
+			".git/wt-sync-keep.json. The exit code is wt sync run's: non-zero when\n" +
+			"anything was refused, restored, failed or owed, a push that did not go\n" +
+			"through included; that push is then spelled out as a git command.\n" +
+			"Every commit a pass makes, replayed or deferred, is unsigned, whatever\n" +
+			"your git config says: a signer that asks has nobody to ask. A pass that\n" +
+			"cannot list Claude sessions (no claude on the PATH, or a listing that\n" +
+			"fails) rebases nothing: it cannot tell who is in a worktree. The session\n" +
+			"wt itself runs under is not counted, as wt sync run does not count it:\n" +
+			"under launchd there is none, and a pass you run from inside one is\n" +
+			"attended by you.\n" +
+			"\n" +
+			"A pass that failed does not record trunk, so it is tried again next\n" +
+			"interval: a lock a person's run held, or a fetch that timed out, clears\n" +
+			"itself that way, and a worktree already rebased is current and skipped.\n" +
+			"A refused push is retried every pass until it goes through or the\n" +
+			"branch moves; the git command in the log does it by hand. A new\n" +
+			"worktree, or a branch that moved, waits for trunk to move. The last\n" +
+			"failure stays in the status as a problem until a pass ends with nothing\n" +
+			"owed and nothing left unpushed.\n" +
+			"\n" +
+			"--every is the interval the job runs at, for the next-run line the\n" +
+			"status shows; the job passes its own. --no-push rebases only and prints\n" +
+			"the push commands, into the log when the job runs it. A pass that finds\n" +
+			"another still running exits saying so. Ctrl-C is a run's Ctrl-C: every\n" +
+			"lock goes and a worktree caught mid-rebase is named with its way back.",
+		Example: "  wt sync keep run              # one pass now\n" +
+			"  wt sync keep run --no-push    # rebase only; print the push commands\n" +
+			"  wt sync keep run --every 1h   # record the next pass an hour on",
+		Args: cobra.NoArgs,
+		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+			opts := commands.KeepOptions{Every: every, Push: commands.PushAlways}
+			if noPush {
+				opts.Push = commands.PushNever
+			}
+			return commands.SyncKeepRun(ctx, opts, cmd.OutOrStdout())
+		}),
+	}
+	run.Flags().DurationVar(&every, "every", 0, "the job's interval, for the next-run line (default 30m)")
+	run.Flags().BoolVar(&noPush, "no-push", false, "rebase only; print the push commands")
+	return run
+}
+
+func newSyncKeepStartCmd() *cobra.Command {
+	var every time.Duration
+	var noPush bool
+	start := &cobra.Command{
+		Use:   "start",
+		Short: "Install a launchd job that runs wt sync keep run on a timer",
+		Long: "Write ~/Library/LaunchAgents/se.wt.sync-keep.<repo>-<hash>.plist, one per\n" +
+			"main checkout, running this wt binary's sync keep run from that checkout\n" +
+			"every --every (30m), with its output under the checkout's .git, and load\n" +
+			"it with launchctl bootstrap. The first pass is one interval after this.\n" +
+			"Refused when a job is already installed: wt sync keep status says so.\n" +
+			"macOS only; elsewhere this exits 2 and wt sync keep run is for cron.\n" +
+			"\n" +
+			"A launchd job inherits nothing from your shell, so start captures what\n" +
+			"the pass needs into the plist: PATH (git, and claude to see who is in a\n" +
+			"worktree), HOME (~/.ssh/config, ~/.gitconfig), and how git push\n" +
+			"authenticates: SSH_AUTH_SOCK, or GIT_SSH_COMMAND with the key file it\n" +
+			"names. Run start from your own shell and the job pushes through your ssh\n" +
+			"agent, as your git does; with 1Password's agent that works while you are\n" +
+			"logged in, and it may ask you to approve the key. Run it from an agent\n" +
+			"session and the job gets that launcher's key, which is shredded when the\n" +
+			"agent exits: start says so. GIT_SSH_COMMAND is captured verbatim, so\n" +
+			"keep it free of inline credentials; the 1Password token is never\n" +
+			"written, and the plist is readable by you alone. A push that fails is\n" +
+			"named in the log with the command that does it by hand.\n" +
+			"The plist also turns commit signing off for the job: every commit a\n" +
+			"pass makes is unsigned, so a signer that asks never has to.\n" +
+			"--no-push installs a job that rebases only and logs the push commands.",
+		Example: "  wt sync keep start                # every 30m, pushing as this shell does\n" +
+			"  wt sync keep start --every 1h     # a longer interval\n" +
+			"  wt sync keep start --no-push      # rebase only; the pushes are yours",
+		Args: cobra.NoArgs,
+		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+			return commands.SyncKeepStart(ctx, commands.KeepStartOptions{Every: every, NoPush: noPush}, cmd.OutOrStdout())
+		}),
+	}
+	start.Flags().DurationVar(&every, "every", commands.KeepDefaultInterval, "how often the job runs")
+	start.Flags().BoolVar(&noPush, "no-push", false, "the job rebases only and logs the push commands")
+	return start
+}
+
+func newSyncKeepStatusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Whether a keeper is installed, its last pass and its next",
+		Long: "Whether the job is installed (its plist present and loaded), its\n" +
+			"interval, when the last pass ran and what it did, when the next one is\n" +
+			"due, and where the log is. The same as wt sync keep with nothing after it.",
+		Example: "  wt sync keep status     # installed or not, last pass, next pass\n" +
+			"  wt sync keep            # the same",
+		Args: cobra.NoArgs,
+		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+			return commands.SyncKeepStatus(ctx, time.Now(), cmd.OutOrStdout())
+		}),
+	}
+}
+
+func newSyncKeepStopCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "stop",
+		Short: "Unload the keeper's launchd job and remove its plist",
+		Long: "launchctl bootout the job and remove its plist. The log and the json\n" +
+			"stay, so wt sync still says when the repository was last kept, marked\n" +
+			"keeper stopped. macOS only; elsewhere this exits 2.",
+		Example: "  wt sync keep stop       # no more passes; the log stays\n" +
+			"  wt sync keep status     # afterwards: stopped",
+		Args: cobra.NoArgs,
+		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+			return commands.SyncKeepStop(ctx, cmd.OutOrStdout())
+		}),
+	}
 }
 
 // syncVerbFlags is what wt sync's own flags say: at most one verb, spelled at

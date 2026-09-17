@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -218,6 +219,9 @@ func Execute() int {
 	root := newRootCmd()
 	if err := root.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "wt: %v\n", err)
+		if errors.Is(err, commands.ErrNoLaunchd) {
+			return 2
+		}
 		return 1
 	}
 	return 0

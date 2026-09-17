@@ -22,6 +22,10 @@ const networkTimeout = 5 * time.Minute
 // RunOptions tunes SyncRun for callers and tests.
 type RunOptions struct {
 	NoFetch bool
+	// Unattended is a run nobody is watching: wt sync keep run. With nothing
+	// named it leaves a worktree with any session in it alone, idle or busy,
+	// since there is nobody there to ask on its behalf.
+	Unattended bool
 	verbOptions
 	pushOptions
 }
@@ -84,6 +88,10 @@ type runPlan struct {
 	unfinished []string
 	failures   []string
 	pushable   []pushTarget
+	// What the keeper records of a run with nothing named: the worktrees it
+	// left alone with what holds them, the ones it rebased, the ones it
+	// pushed.
+	left, rebased, pushed []string
 }
 
 // SyncRun rebases the named worktrees (and the stacks they belong to) onto
@@ -92,7 +100,20 @@ type runPlan struct {
 // ready, less recipe?, and asks first. Anything refused, restored, failed or
 // owed is reported and makes the returned error non-nil, so a script sees it.
 func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
+	_, err := runSync(ctx, works, opts, w)
+	return err
+}
+
+// runSync is SyncRun with the plan handed back, for the keeper's record of
+// what a pass did.
+func runSync(ctx *Context, works []string, opts RunOptions, w io.Writer) (*runPlan, error) {
 	r := &runPlan{ctx: ctx, opts: opts, w: w, tracker: &rebaseTracker{}, trunk: ctx.Config.MainBranch, outcomes: map[string]int{}}
+	err := r.run(works)
+	return r, err
+}
+
+func (r *runPlan) run(works []string) error {
+	w, opts := r.w, r.opts
 	defer watchSignals(w, r.tracker)()
 
 	if err := r.declare(); err != nil {
@@ -134,10 +155,11 @@ func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 			fmt.Fprintln(w, line)
 		}
 	}
-	pushFailed, err := offerPush(w, opts.Push, opts.ConfirmPush, r.pushable)
+	pushed, pushFailed, err := offerPush(w, opts.Push, opts.ConfirmPush, r.pushable)
 	if err != nil {
 		return err
 	}
+	r.pushed = pushed
 	r.failures = append(r.failures, pushFailed...)
 	if len(r.failures) > 0 {
 		return fmt.Errorf("not completed: %s", strings.Join(r.failures, ", "))
@@ -227,7 +249,7 @@ func (r *runPlan) selectReady() ([]string, error) {
 		switch {
 		case a.Class == wtsync.Current && a.Err == nil:
 			// On trunk already; the overview leaves it out too.
-		case !readyToRun(a):
+		case !r.ready(a):
 			left = append(left, leftLabel(work, a))
 		default:
 			if hold := r.stackHold(wt.Branch); hold != "" {
@@ -245,7 +267,16 @@ func (r *runPlan) selectReady() ([]string, error) {
 	if len(left) > 0 {
 		fmt.Fprintf(r.w, "left as they are: %s\n", strings.Join(left, " · "))
 	}
+	r.left = left
 	return ready, nil
+}
+
+// ready is what a run with nothing named takes: readyToRun, and unattended
+// nothing with a session in it, idle included. An idle session is a person
+// away from their desk; a run they started may ask on its behalf, a keeper
+// has nobody to ask.
+func (r *runPlan) ready(a wtsync.Assessment) bool {
+	return readyToRun(a) && (!r.opts.Unattended || len(a.Sessions) == 0)
 }
 
 // stackHold is why a ready worktree is not taken on its own: a member of its
@@ -263,7 +294,7 @@ func (r *runPlan) stackHold(branch string) string {
 		}
 		a, ok := r.assessed[m]
 		if ok {
-			if v, _ := wtsync.Preflight(a); v == wtsync.SkipRun || (v == wtsync.Proceed && readyToRun(a)) {
+			if v, _ := wtsync.Preflight(a); v == wtsync.SkipRun || (v == wtsync.Proceed && r.ready(a)) {
 				continue
 			}
 		}
@@ -622,6 +653,7 @@ func (r *runPlan) rebaseOne(b string) {
 		r.refuseAbove(b, p.work+" failed")
 		return
 	}
+	r.rebased = append(r.rebased, p.work)
 	if len(owed) > 0 {
 		r.settle("rebased", "✗ "+p.work+"  owed: "+strings.Join(owed, ", ")+"; run it by hand, then push", "")
 	} else {
