@@ -407,16 +407,16 @@ func planLift(wtPath string, cfg *Config, base, branch string) (liftPlan, error)
 // its path and what removes it. git runs it once, for the one command it is
 // handed to; nothing reads it after.
 func writeScript(body string) (string, func(), error) {
-	dir, err := os.MkdirTemp("", "wtsync-todo-")
+	dir, cleanup, err := tempDir("wtsync-todo-")
 	if err != nil {
 		return "", nil, err
 	}
 	path := filepath.Join(dir, "edit-todo.sh")
 	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
-		_ = os.RemoveAll(dir)
+		cleanup()
 		return "", nil, err
 	}
-	return path, func() { _ = os.RemoveAll(dir) }, nil
+	return path, cleanup, nil
 }
 
 // shellQuote quotes s for the shell git runs an editor through.

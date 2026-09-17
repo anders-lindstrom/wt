@@ -37,11 +37,11 @@ const (
 // result into text and conflict blocks. git decides what conflicts; this
 // package only decides what to do about it.
 func Merge3(c Conflict) ([]Segment, error) {
-	dir, err := os.MkdirTemp("", "wtsync-merge3-")
+	dir, cleanup, err := tempDir("wtsync-merge3-")
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = os.RemoveAll(dir) }()
+	defer cleanup()
 	names := map[string][]byte{"branch": c.Branch, "base": c.Base, "trunk": c.Trunk}
 	for name, data := range names {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {

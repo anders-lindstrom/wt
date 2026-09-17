@@ -59,13 +59,17 @@ func (t *rebaseTracker) get() *rebaseInFlight {
 
 // onInterrupt cleans up what a signal caught mid-flight: it kills every
 // process group still running (a git, a script, a deferred step, claude
-// agents), releases the locks so the next run is not blocked for LockExpiry,
-// and says how to put back a worktree left mid-rebase. Everything is best
-// effort; the process exits straight after.
+// agents), removes the temporary directories the assessments and strategies
+// still have open, releases the locks so the next run is not blocked for
+// LockExpiry, and says how to put back a worktree left mid-rebase.
+// Everything is best effort; the process exits straight after.
 func onInterrupt(w io.Writer, locks []*wtsync.Lock, at *rebaseInFlight) {
 	// The groups die first: nothing may still be writing to a worktree
-	// whose lock we are about to drop.
+	// whose lock we are about to drop, or to a temporary index we are about
+	// to remove. The process exits from here without running any deferred
+	// cleanup, so the directories go now or never.
 	git.KillRunning()
+	wtsync.RemoveTempDirs()
 	for _, l := range locks {
 		if l != nil {
 			_ = l.Release()
