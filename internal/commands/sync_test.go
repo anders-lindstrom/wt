@@ -436,7 +436,7 @@ func TestSyncNoFetchComparesWithTrunkAsLastFetched(t *testing.T) {
 	if err := SyncWorktree(ctx, "bump", SyncOptions{NoFetch: true}, &buf); err != nil {
 		t.Fatalf("SyncWorktree: %v", err)
 	}
-	if want := "against origin/main " + stale[:7] + ", as last fetched\n"; !strings.Contains(buf.String(), want) {
+	if want := "against origin/main " + stale[:7] + ", as last fetched (when is not recorded)\n"; !strings.Contains(buf.String(), want) {
 		t.Errorf("want %q with no FETCH_HEAD in:\n%s", want, buf.String())
 	}
 }
@@ -479,7 +479,7 @@ func TestSyncReportsAFailedFetchAndStillPrintsTheTable(t *testing.T) {
 	if err := Sync(ctx, SyncOptions{NoFetch: true}, &buf); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
-	if want := "against origin/main " + sha[:7] + ", as last fetched\n"; !strings.Contains(buf.String(), want) {
+	if want := "against origin/main " + sha[:7] + ", as last fetched (when is not recorded)\n"; !strings.Contains(buf.String(), want) {
 		t.Errorf("want %q after a failed fetch in:\n%s", want, buf.String())
 	}
 }

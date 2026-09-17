@@ -249,7 +249,7 @@ func trunkFact(ctx *Context, base TrunkBase, ok bool, wt repo.Worktree) string {
 		fact += " of " + base.Name
 	}
 	if strings.HasPrefix(base.Name, "origin/") {
-		fact += " (" + lastFetched(ctx.Repo.MainRoot, time.Now()) + ")"
+		fact += " " + lastFetchedParen(ctx.Repo.MainRoot, time.Now())
 	}
 	return fact
 }

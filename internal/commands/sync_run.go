@@ -152,12 +152,12 @@ func (r *runPlan) declare() error {
 	ctx := r.ctx
 	var fetched string
 	if r.opts.NoFetch {
-		fetched = lastFetched(ctx.Repo.MainRoot, r.opts.now())
+		fetched = lastFetchedParen(ctx.Repo.MainRoot, r.opts.now())
 	} else {
 		if _, err := git.RunTimeout(ctx.Repo.MainRoot, networkTimeout, "fetch", "--quiet", "origin", r.trunk); err != nil {
 			return fmt.Errorf("fetch: %w", err)
 		}
-		fetched = "fetched"
+		fetched = "(fetched)"
 	}
 	// One SHA for the whole run: the declaration, the scripts and every
 	// rebase target are the same trunk, whatever someone else fetches
@@ -167,7 +167,7 @@ func (r *runPlan) declare() error {
 		return err
 	}
 	r.onto, r.trunkSHA = onto, trunkSHA
-	fmt.Fprintf(r.w, "wt sync run  onto %s %s (%s)\n", onto, git.ShortID(trunkSHA, 7), fetched)
+	fmt.Fprintf(r.w, "wt sync run  onto %s %s %s\n", onto, git.ShortID(trunkSHA, 7), fetched)
 	cfg, err := wtsync.LoadFromRef(ctx.Repo.MainRoot, trunkSHA)
 	if errors.Is(err, wtsync.ErrNoConfig) {
 		return fmt.Errorf("%s declares no %s on %s: nothing is rebased", ctx.Repo.Name, wtsync.ConfigFile, onto)
