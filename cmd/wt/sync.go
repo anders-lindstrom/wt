@@ -261,7 +261,7 @@ func newSyncRunCmd() *cobra.Command {
 		}),
 	}
 	run.Flags().BoolVar(&noFetch, "no-fetch", false, "rebase onto origin/<trunk> as last fetched")
-	run.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask first: several worktrees, an idle session in one, or nothing named")
+	run.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask before anything moves")
 	push = addPushFlags(run, "push the worktrees that finish, without asking",
 		"neither push nor ask; print the push command")
 	return run
