@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -26,6 +27,8 @@ type ListOptions struct {
 	// NoPR leaves the pull requests out. The column costs one gh call: 0.8s
 	// against a repository whose listing otherwise takes 0.02s.
 	NoPR bool
+	// Refresh asks GitHub even when the cached answer is still young.
+	Refresh bool
 }
 
 // List prints every worktree of the repository, in whatever layout it is in.
@@ -40,7 +43,7 @@ func List(ctx *Context, opts ListOptions, w io.Writer, width int) error {
 	sch := ctx.Scheme()
 	var prs map[string]string
 	if !opts.NoPR {
-		prs = listPRs(ctx, names)
+		prs = listPRs(ctx, names, opts.Refresh)
 	}
 	header := []string{"", "WORK", "BRANCH", "PATH"}
 	if len(prs) > 0 {
@@ -89,7 +92,7 @@ func List(ctx *Context, opts ListOptions, w io.Writer, width int) error {
 // is not in play (off, absent, offline, not this repository) or when no
 // worktree here has a pull request, and empty means the column is not
 // printed: `wt list` is then byte for byte what it was without it.
-func listPRs(ctx *Context, names []WorkName) map[string]string {
+func listPRs(ctx *Context, names []WorkName, refresh bool) map[string]string {
 	linked := false
 	for _, n := range names {
 		linked = linked || (!n.IsMain && n.Branch != "")
@@ -97,7 +100,7 @@ func listPRs(ctx *Context, names []WorkName) map[string]string {
 	if !linked {
 		return nil
 	}
-	byBranch := worktreePRs(ctx)
+	byBranch := worktreePRs(ctx, listQuery(github.ListDeadline), refresh)
 	if len(byBranch) == 0 {
 		return nil
 	}
