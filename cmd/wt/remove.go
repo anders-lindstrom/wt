@@ -25,6 +25,13 @@ func newRemoveCmd() *cobra.Command {
 			"fetched, or from the local trunk, so a pull request merged on the\n" +
 			"remote counts even while the main checkout's trunk is behind. Remove\n" +
 			"never fetches. A branch that moves after the plan is kept.\n\n" +
+			"A squash or rebase merge leaves no such tip, so git reads the branch as\n" +
+			"unmerged for ever. Where `wt list` or `wt sweep` has already recorded\n" +
+			"that GitHub merged this branch into trunk at exactly this commit, remove\n" +
+			"deletes it too, and says which pull request it believed. It reads that\n" +
+			"from the file they left behind and never from the network: remove runs\n" +
+			"from git hooks. With nothing recorded, the branch is kept as it always\n" +
+			"was.\n\n" +
 			"The plan says where the branch stands either way — merged, or how many\n" +
 			"commits ahead of origin/<trunk> (or trunk, without it) it is — because\n" +
 			"that is the fact the whole decision turns on. \"clean\" is about the\n" +

@@ -23,6 +23,34 @@ setup() {
     git -C "$REPO" commit -q --allow-empty -m init
 }
 
+# gh_graphql_shim answers `gh api graphql`, which is how wt asks about branches
+# by name: alias by alias from head_nodes, so a branch's answer depends on the
+# branch asked about and nothing else. The picker's query is told apart by its
+# `viewer` field and answered from open_prs.
+gh_graphql_shim() {
+    cat <<'GH'
+graphql() {
+  case "$*" in
+    *viewer*)
+      printf '{"data":{"viewer":{"login":"anders"},"repository":{"pullRequests":{"nodes":[%s]}}}}\n' "$(open_prs)"
+      return ;;
+  esac
+  printf '{"data":{"repository":{'
+  first=1
+  for a in "$@"; do
+    case "$a" in
+      b[0-9]*=*)
+        [ $first -eq 1 ] || printf ','
+        first=0
+        printf '"%s":{"nodes":[%s]}' "${a%%=*}" "$(head_nodes "${a#*=}")"
+        ;;
+    esac
+  done
+  printf '}}}\n'
+}
+GH
+}
+
 # fake_gh writes a gh answering for one open pull request, #12 on
 # residential_fixes, and doing `pr checkout` by creating that branch where it
 # is run. Nothing here reaches github.com.
@@ -32,10 +60,16 @@ fake_gh() {
 printf '%s\n' "\$*" >> "$GH_ARGV"
 GH
     cat >> "$FAKEBIN/gh" <<'GH'
-pr='{"number":12,"title":"Residents keep their doors","headRefName":"residential_fixes","isDraft":false,"state":"OPEN","reviewDecision":"","isCrossRepository":false,"author":{"login":"someone"},"headRepositoryOwner":{"login":"demo"},"url":"https://github.com/demo/myrepo/pull/12"}'
+pr='{"number":12,"title":"Residents keep their doors","headRefName":"residential_fixes","baseRefName":"main","isDraft":false,"state":"OPEN","reviewDecision":"","isCrossRepository":false,"author":{"login":"someone"},"headRepositoryOwner":{"login":"demo"},"url":"https://github.com/demo/myrepo/pull/12"}'
+head_nodes() { case "$1" in residential_fixes) printf '%s' "$pr" ;; esac; }
+open_prs() { printf '%s' "$pr"; }
+GH
+    gh_graphql_shim >> "$FAKEBIN/gh"
+    cat >> "$FAKEBIN/gh" <<'GH'
 case "$1 $2" in
   'auth status') exit 0 ;;
   '--version ') echo 'gh version 2.100.0 (2026-09-03)' ;;
+  'api graphql') graphql "$@" ;;
   'pr list') printf '[%s]\n' "$pr" ;;
   'pr view') [ "$3" = 12 ] && printf '%s\n' "$pr" || { echo 'no pull requests found' >&2; exit 1; } ;;
   'pr checkout') [ "$3" = 12 ] && git checkout -q -b residential_fixes || exit 1 ;;
@@ -198,7 +232,7 @@ no_gh() {
 #!/bin/sh
 case "$1 $2" in
   'auth status') exit 0 ;;
-  'pr list') echo 'dial tcp: no route to host' >&2; exit 1 ;;
+  'api graphql') echo 'dial tcp: no route to host' >&2; exit 1 ;;
 esac
 GH
     chmod +x "$FAKEBIN/gh"
@@ -244,21 +278,31 @@ GH
     run wt pr open login-crash
     [ "$status" -ne 0 ]
     [[ "$output" == *"no pull request in demo/demo has fix_wt/login-crash as its head branch"* ]]
+    # GitHub was asked about this branch and said there is none; that is what
+    # makes the absence of --web mean something.
+    grep -q -- 'b0=fix_wt/login-crash' "$GH_ARGV"
     ! grep -q -- '--web' "$GH_ARGV"
 }
 
 # fake_gh_merged answers with one merged pull request, #34, whose head is
-# branch at tip — a squash or rebase merge, which leaves the branch looking
-# unmerged to git for ever.
+# branch at tip and whose base is trunk — a squash or rebase merge, which
+# leaves the branch looking unmerged to git for ever.
 fake_gh_merged() {
-    local branch=$1 tip=$2
+    local branch=$1 tip=$2 base=${3:-main}
     cat > "$FAKEBIN/gh" <<GH
 #!/bin/sh
-pr='{"number":34,"title":"Login crash","headRefName":"$branch","headRefOid":"$tip","isDraft":false,"state":"MERGED","reviewDecision":"","isCrossRepository":false,"author":{"login":"someone"},"headRepositoryOwner":{"login":"demo"},"url":"https://github.com/demo/demo/pull/34"}'
-case "\$1 \$2" in
+printf '%s\n' "\$*" >> "$GH_ARGV"
+pr='{"number":34,"title":"Login crash","headRefName":"$branch","baseRefName":"$base","headRefOid":"$tip","isDraft":false,"state":"MERGED","reviewDecision":"","isCrossRepository":false,"author":{"login":"someone"},"headRepositoryOwner":{"login":"demo"},"url":"https://github.com/demo/demo/pull/34"}'
+head_nodes() { case "\$1" in "$branch") printf '%s' "\$pr" ;; esac; }
+open_prs() { :; }
+GH
+    gh_graphql_shim >> "$FAKEBIN/gh"
+    cat >> "$FAKEBIN/gh" <<'GH'
+case "$1 $2" in
   'auth status') exit 0 ;;
   '--version ') echo 'gh version 2.100.0 (2026-09-03)' ;;
-  'pr list') printf '[%s]\n' "\$pr" ;;
+  'api graphql') graphql "$@" ;;
+  'pr list') printf '[%s]\n' "$pr" ;;
 esac
 GH
     chmod +x "$FAKEBIN/gh"
@@ -297,4 +341,47 @@ GH
     [ "$status" -eq 0 ]
     [[ "$output" != *"#34 merged on GitHub"* ]]
     [ -d "$wtpath" ]
+}
+
+@test "wt remove deletes a squash-merged branch from the cache, with no gh at all" {
+    cd "$REPO"
+    wtpath=$(wt new fix/login-crash --no-setup | tail -1)
+    git -C "$wtpath" commit -q --allow-empty -m "the work that was squashed"
+    tip=$(git -C "$wtpath" rev-parse HEAD)
+    fake_gh_merged fix_wt/login-crash "$tip"
+    # One sweep plan is enough to leave the answer in the cache; nothing is
+    # removed, because there is no terminal to ask.
+    wt sweep --no-fetch >/dev/null
+    [ -f "$REPO/.git/wt-pr-cache.json" ]
+
+    # From here on gh does not exist. wt remove runs from git hooks, so it may
+    # start no process and touch no network: the cache is all it has.
+    (
+        no_gh
+        run wt remove login-crash --yes
+        [ "$status" -eq 0 ]
+        [[ "$output" == *"branch fix_wt/login-crash was merged as #34 and has been deleted"* ]]
+    )
+    [ ! -d "$wtpath" ]
+    run git -C "$REPO" rev-parse --verify --quiet refs/heads/fix_wt/login-crash
+    [ "$status" -ne 0 ]
+}
+
+@test "wt remove keeps a branch whose pull request merged into its parent" {
+    cd "$REPO"
+    wtpath=$(wt new fix/login-crash --no-setup | tail -1)
+    git -C "$wtpath" commit -q --allow-empty -m "the work that was squashed"
+    tip=$(git -C "$wtpath" rev-parse HEAD)
+    # Merged, but into the branch it was stacked on: nothing reached trunk.
+    fake_gh_merged fix_wt/login-crash "$tip" feat_wt/the-parent
+    wt sweep --no-fetch >/dev/null
+
+    (
+        no_gh
+        run wt remove login-crash --yes
+        [ "$status" -eq 0 ]
+        [[ "$output" == *"branch kept as login-crash"* ]]
+    )
+    run git -C "$REPO" rev-parse --verify --quiet refs/heads/login-crash
+    [ "$status" -eq 0 ]
 }

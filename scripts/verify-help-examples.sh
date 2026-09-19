@@ -128,10 +128,35 @@ make_gh() {
     mkdir -p "$1/bin"
     cat > "$1/bin/gh" <<GH
 #!/bin/sh
-pr='{"number":12,"title":"Residents keep their doors","headRefName":"$head","headRefOid":"deadbeef","isDraft":false,"state":"OPEN","reviewDecision":"","isCrossRepository":false,"author":{"login":"someone"},"headRepositoryOwner":{"login":"demo"},"url":"https://github.com/demo/myrepo/pull/12"}'
+pr='{"number":12,"title":"Residents keep their doors","headRefName":"$head","baseRefName":"main","headRefOid":"deadbeef","isDraft":false,"state":"OPEN","reviewDecision":"","isCrossRepository":false,"author":{"login":"someone"},"headRepositoryOwner":{"login":"demo"},"url":"https://github.com/demo/myrepo/pull/12"}'
+head_nodes() { case "\$1" in '$head') printf '%s' "\$pr" ;; esac; }
+GH
+    cat >> "$1/bin/gh" <<'GH'
+graphql() {
+  case "$*" in
+    *viewer*)
+      printf '{"data":{"viewer":{"login":"anders"},"repository":{"pullRequests":{"nodes":[%s]}}}}\n' "$pr"
+      return ;;
+  esac
+  printf '{"data":{"repository":{'
+  first=1
+  for a in "$@"; do
+    case "$a" in
+      b[0-9]*=*)
+        [ $first -eq 1 ] || printf ','
+        first=0
+        printf '"%s":{"nodes":[%s]}' "${a%%=*}" "$(head_nodes "${a#*=}")"
+        ;;
+    esac
+  done
+  printf '}}}\n'
+}
+GH
+    cat >> "$1/bin/gh" <<GH
 case "\$1 \$2" in
   'auth status') exit 0 ;;
   '--version ') echo 'gh version 2.100.0 (2026-09-03)' ;;
+  'api graphql') graphql "\$@" ;;
   'pr list') printf '[%s]\n' "\$pr" ;;
   'pr view') [ "\$3" = 12 ] && printf '%s\n' "\$pr" || { echo 'no pull requests found' >&2; exit 1; } ;;
   'pr checkout') [ "\$3" = 12 ] && git checkout -q -b '$head' || exit 1 ;;

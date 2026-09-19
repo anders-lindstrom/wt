@@ -18,9 +18,9 @@ import (
 	"github.com/anders-lindstrom/wt/internal/git"
 )
 
-// The deadlines bounding the CLI. ListDeadline is spent on every `wt list`,
-// and a call that overruns it is dropped without a word. A checkout may have
-// a whole branch to fetch.
+// The deadlines bounding the CLI. ListDeadline bounds the branch lookup
+// behind `wt list` and `wt status`; a call that overruns it costs the column
+// and one line on stderr. A checkout may have a whole branch to fetch.
 var (
 	ListDeadline     = 2 * time.Second
 	readDeadline     = 15 * time.Second
@@ -54,49 +54,29 @@ func (c CLI) Version() string {
 	return strings.TrimSpace(version)
 }
 
-// Authenticated reports whether gh holds a login for host. It is the one gate
-// wt cannot answer from the filesystem, and it costs a process, so `wt list`
-// does not ask it: there a failed call is simply a listing without the column.
+// Authenticated reports whether gh holds a login for host. It costs a
+// process, so only `wt doctor` asks it: everything else reads the login out
+// of the call it was making anyway, through NotLoggedIn.
 func (c CLI) Authenticated(host string) error {
 	_, err := c.run("", authDeadline, "auth", "status", "--hostname", host)
 	return err
 }
 
-// ListOptions is what to ask `gh pr list` for.
-type ListOptions struct {
-	// State is "open" or "all". "all" also carries the recently merged and
-	// closed ones, at the cost of a slower call.
-	State string
-	// Limit is how many pull requests to ask for, newest first.
-	Limit int
-	// Head restricts the answer to pull requests made from that branch.
-	Head string
-	// Checks asks for the check results too, which roughly doubles the call.
-	Checks bool
-	// Deadline bounds the call; zero means readDeadline.
-	Deadline time.Duration
-}
-
-// listFields is what every pull request is read as. statusCheckRollup is left
-// out unless it is asked for: it is the expensive half of the call.
+// listFields is what a pull request is read as, in `gh pr list --json`'s
+// spelling. It matches prFields, so one PR struct decodes both answers.
 var listFields = []string{
-	"number", "title", "author", "headRefName", "headRefOid", "isDraft", "state",
+	"number", "title", "author", "headRefName", "baseRefName", "headRefOid", "isDraft", "state",
 	"reviewDecision", "isCrossRepository", "headRepositoryOwner", "url",
 }
 
-// List reads the repository's pull requests, newest first. dir is any checkout
-// of the repository: gh reads the remote from it.
-func (c CLI) List(dir string, o ListOptions) ([]PR, error) {
-	fields := listFields
-	if o.Checks {
-		fields = append(append([]string{}, fields...), "statusCheckRollup")
-	}
-	args := []string{"pr", "list", "--state", o.State, "--limit", fmt.Sprint(o.Limit),
-		"--json", strings.Join(fields, ",")}
-	if o.Head != "" {
-		args = append(args, "--head", o.Head)
-	}
-	out, err := c.run(dir, o.Deadline, args...)
+// OpenWithChecks reads the repository's open pull requests and what the checks
+// on each head commit say, newest first: the wide view `wt pr list` prints.
+// The rollup roughly doubles the call, so nothing on a deadline asks for it.
+// dir is any checkout of the repository: gh reads the remote from it.
+func (c CLI) OpenWithChecks(dir string, limit int) ([]PR, error) {
+	fields := append(append([]string{}, listFields...), "statusCheckRollup")
+	out, err := c.run(dir, readDeadline, "pr", "list", "--state", "open",
+		"--limit", fmt.Sprint(limit), "--json", strings.Join(fields, ","))
 	if err != nil {
 		return nil, err
 	}

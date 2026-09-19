@@ -21,6 +21,14 @@ func TestListWarnsOnlyWhenGitHubWasSupposedToWork(t *testing.T) {
 		t.Fatal(err)
 	}
 	pr := openPR(12, "fix_wt/login-crash", "Login crash")
+	// The listing without the column, to compare each case against: "PR"
+	// appears in a work name as readily as in a header.
+	ctx.User.GitHub = false
+	var noColumn bytes.Buffer
+	if err := List(ctx, ListOptions{}, &noColumn, 0); err != nil {
+		t.Fatal(err)
+	}
+	ctx.User.GitHub = true
 
 	for name, tc := range map[string]struct {
 		set  func(t *testing.T, ctx *Context)
@@ -28,13 +36,13 @@ func TestListWarnsOnlyWhenGitHubWasSupposedToWork(t *testing.T) {
 	}{
 		"gh failed": {
 			func(t *testing.T, _ *Context) {
-				fakeGitHubWith(t, `[ "$1 $2" = 'pr list' ] && { echo "dial tcp: no route to host" >&2; exit 1; }`, pr)
+				fakeGitHubWith(t, `[ "$1 $2" = 'api graphql' ] && { echo "dial tcp: no route to host" >&2; exit 1; }`, pr)
 			},
 			"no pull requests shown",
 		},
 		"gh is not logged in": {
 			func(t *testing.T, _ *Context) {
-				fakeGitHubWith(t, `[ "$1 $2" = 'pr list' ] && { echo "To get started with GitHub CLI, please run:  gh auth login" >&2; exit 1; }`, pr)
+				fakeGitHubWith(t, `[ "$1 $2" = 'api graphql' ] && { echo "To get started with GitHub CLI, please run:  gh auth login" >&2; exit 1; }`, pr)
 			},
 			"",
 		},
@@ -59,8 +67,8 @@ func TestListWarnsOnlyWhenGitHubWasSupposedToWork(t *testing.T) {
 			if err := List(ctx, ListOptions{Refresh: true}, &out, 0); err != nil {
 				t.Fatalf("wt list failed: %v", err)
 			}
-			if strings.Contains(out.String(), "PR") || strings.Contains(out.String(), "wt:") {
-				t.Errorf("stdout carries the failure:\n%s", out.String())
+			if out.String() != noColumn.String() {
+				t.Errorf("stdout carries the failure:\n%s\nwant:\n%s", out.String(), noColumn.String())
 			}
 			switch {
 			case tc.want == "" && warnings.Len() > 0:
@@ -82,7 +90,7 @@ func TestGitHubWarnsOncePerInvocation(t *testing.T) {
 	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
 	}
-	fakeGitHubWith(t, `[ "$1 $2" = 'pr list' ] && { echo offline >&2; exit 1; }`,
+	fakeGitHubWith(t, `[ "$1 $2" = 'api graphql' ] && { echo offline >&2; exit 1; }`,
 		openPR(12, "fix_wt/login-crash", "Login crash"))
 
 	var warnings, out bytes.Buffer

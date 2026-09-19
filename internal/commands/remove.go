@@ -32,6 +32,19 @@ type RemoveOptions struct {
 	// consulted only for a locked worktree, which is rare — every other
 	// removal costs nothing.
 	Agents []wtsync.Agent
+	// Landed answers whether a branch at tip is a pull request GitHub merged
+	// into trunk, and which. `wt sweep` passes the listing it has just read;
+	// nil reads the cache, which is all a plain `wt remove` may do.
+	Landed func(branch, tip string) int
+}
+
+// landed asks the question RemoveOptions.Landed answers, falling back to the
+// cache: a file read, no process and no network, so this runs from a git hook.
+func (o RemoveOptions) landed(ctx *Context, branch, tip string) int {
+	if o.Landed != nil {
+		return o.Landed(branch, tip)
+	}
+	return landedPR(ctx, branch, tip)
 }
 
 // BranchOutcome is what removal will do to the branch checked out in a
@@ -90,10 +103,10 @@ type Plan struct {
 	// Tip is the commit the branch was at when the plan was made. A merged
 	// branch is deleted only while it is still there.
 	Tip string
-	// MergedPR is a pull request GitHub reports merged at exactly Tip, which
-	// is what says the work landed when a squash or rebase merge has left the
-	// branch looking unmerged to git. Only `wt sweep` sets it; `wt remove`
-	// runs from hooks, where a network call has no business.
+	// MergedPR is a pull request GitHub merged into trunk at exactly Tip,
+	// which is what says the work landed when a squash or rebase merge has
+	// left the branch looking unmerged to git. Sweep reads it from GitHub,
+	// remove from the cache — a merge is permanent, so that cannot go stale.
 	MergedPR int
 	// Locked is git's own lock on the checkout, which stops it being removed
 	// at all. LockReason is git's text for it, LockHolder names whoever wt
@@ -211,6 +224,9 @@ func planFor(ctx *Context, wt repo.Worktree, opts RemoveOptions) Plan {
 
 	s := mergeStanding(ctx, p.Branch)
 	p.Merge, p.Ahead, p.Base, p.Tip = s.Merge, s.Ahead, s.Base, s.Tip
+	if p.Merge != Merged {
+		p.MergedPR = opts.landed(ctx, p.Branch, p.Tip)
+	}
 
 	switch {
 	case p.Branch == "":
@@ -219,7 +235,7 @@ func planFor(ctx *Context, wt repo.Worktree, opts RemoveOptions) Plan {
 		// mergeStanding has just asked git for the branch's tip, and no tip is
 		// a branch that is not there.
 		p.Reason = "already gone"
-	case p.Merge == Merged:
+	case p.Merge == Merged, p.MergedPR > 0:
 		// Merged first, and whoever created the branch: nothing is lost, and
 		// leaving it behind because wt did not make it only leaves litter.
 		p.Outcome = BranchDeleted
@@ -363,9 +379,10 @@ func gitSaid(err error) string {
 // that moved.
 func stillMerged(ctx *Context, p Plan) error {
 	// git cannot answer this for a squash- or rebase-merged branch, which
-	// looks unmerged for ever. Sweep, the only caller that sets MergedPR,
-	// re-reads the pull request state before it acts, and DeleteBranchAt
-	// still refuses a branch that has moved off Tip.
+	// looks unmerged for ever. In its place: MergedPR is only set for a pull
+	// request merged into trunk whose head commit is this tip, DeleteBranchAt
+	// refuses a branch that has moved off it, and sweep re-reads the pull
+	// request state before it acts.
 	if p.MergedPR > 0 {
 		return nil
 	}
