@@ -47,6 +47,9 @@ func Doctor(ctx *Context, w io.Writer) (int, error) {
 		fmt.Fprintf(w, "  ✓ main branch %s, default type %s\n",
 			ctx.Config.MainBranch, ctx.Config.DefaultType)
 	}
+	if ctx.UserError != nil {
+		report("%v", ctx.UserError)
+	}
 
 	fmt.Fprintln(w, "Required tools:")
 	if len(ctx.Config.RequiredBins) == 0 {
@@ -122,8 +125,15 @@ func Doctor(ctx *Context, w io.Writer) (int, error) {
 // doctorSuperset reports whether a new worktree here would reach the Superset
 // desktop app, and where it would stop if it would not.
 func doctorSuperset(ctx *Context, w io.Writer, report func(string, ...any)) {
-	mode := ctx.Config.SupersetRegister
 	fmt.Fprintln(w, "Superset:")
+	// Nothing to probe when the user has not opted in, and no repository
+	// setting overrides that.
+	if !ctx.UserConfig().Superset {
+		fmt.Fprintf(w, "  - off in your wt config; turn it on with `wt config set %s true`\n",
+			config.UserKeySuperset)
+		return
+	}
+	mode := ctx.Config.SupersetRegister
 	if mode == config.SupersetOff {
 		fmt.Fprintf(w, "  - %s=off; new worktrees are not registered\n", config.KeySupersetRegister)
 		return
