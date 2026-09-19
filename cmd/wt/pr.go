@@ -59,6 +59,9 @@ func newPrOpenCmd() *cobra.Command {
 			"`gh pr view --web`. With no argument it is the worktree you are standing\n" +
 			"in; otherwise name one the way `wt list` prints it — the work name, the\n" +
 			"branch or the path.\n\n" +
+			"GitHub is asked about that branch by name, so a pull request of any age\n" +
+			"is found, and \"no pull request\" means there is none rather than that a\n" +
+			"listing did not reach back far enough.\n\n" +
 			"A worktree with no pull request is one line and a non-zero exit.",
 		Example: "  wt pr open              # the one you are standing in\n" +
 			"  wt pr open login-crash  # by work name",
@@ -85,6 +88,13 @@ func newPrCheckoutCmd() *cobra.Command {
 			"`gh pr checkout` itself, so a push from it updates the pull request —\n" +
 			"including a pull request from a fork.\n\n" +
 			"Without a number, the open pull requests are listed and you pick one.\n" +
+			"The ones waiting on your review come first, then the rest by how\n" +
+			"recently they were touched; a row whose branch already has a worktree\n" +
+			"here says so, and a draft says it is one. Answer with a row number,\n" +
+			"#<number>, or any text — part of a title, a branch or an author — which\n" +
+			"narrows the list and asks again; text matching one pull request picks\n" +
+			"it. Long lists are shown a screenful at a time, and `all` shows the\n" +
+			"rest. An empty answer cancels.\n" +
 			"With one, that pull request is checked out with no listing, and it may\n" +
 			"be a merged or closed one: finished work is worth re-reading. GitHub\n" +
 			"deletes the head branch on merge, so that one comes from\n" +
