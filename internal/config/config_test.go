@@ -93,3 +93,66 @@ func TestFromRawRecordsWhetherMainBranchWasSet(t *testing.T) {
 		t.Errorf("an empty MAIN_BRANCH is not set: %+v", empty)
 	}
 }
+
+// SUPERSET_REGISTER is a three-way: a machine without Superset makes auto
+// inert, so the interesting states are "on" (say when it is not there) and
+// "off" (never look).
+func TestSupersetRegister(t *testing.T) {
+	for name, tc := range map[string]struct {
+		raw     string
+		want    SupersetMode
+		problem string
+	}{
+		"unset":     {"", SupersetAuto, ""},
+		"auto":      {"auto", SupersetAuto, ""},
+		"on":        {"on", SupersetOn, ""},
+		"off":       {"off", SupersetOff, ""},
+		"uppercase": {"OFF", SupersetOff, ""},
+		"empty":     {"", SupersetAuto, ""},
+		"nonsense":  {"yes", SupersetAuto, `SUPERSET_REGISTER="yes" is not one of: auto on off`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			raw := map[string]Value{KeyMainBranch: {Scalar: "main"}}
+			if tc.raw != "" {
+				raw[KeySupersetRegister] = Value{Scalar: tc.raw}
+			}
+			c, err := FromRaw(raw, "main")
+			if c.SupersetRegister != tc.want {
+				t.Errorf("SupersetRegister = %q, want %q", c.SupersetRegister, tc.want)
+			}
+			switch {
+			case tc.problem == "" && err != nil:
+				t.Errorf("err = %v, want none", err)
+			case tc.problem != "" && (err == nil || !strings.Contains(err.Error(), tc.problem)):
+				t.Errorf("err = %v, want it to mention %q", err, tc.problem)
+			}
+		})
+	}
+}
+
+// A list where a word belongs is a mistake worth a sentence: silently reading
+// SUPERSET_REGISTER=(on) as the default left the repository asking for
+// something it never got.
+func TestSupersetRegisterRefusesAList(t *testing.T) {
+	for name, v := range map[string]Value{
+		"a list of one":  {List: []string{"on"}, IsList: true},
+		"a list of many": {List: []string{"auto", "on"}, IsList: true},
+		"an empty list":  {List: nil, IsList: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c, err := FromRaw(map[string]Value{
+				KeyMainBranch:       {Scalar: "main"},
+				KeySupersetRegister: v,
+			}, "main")
+			if err == nil {
+				t.Fatal("a list was accepted")
+			}
+			if !strings.Contains(err.Error(), "is a list; it takes one of: auto on off") {
+				t.Errorf("err = %v", err)
+			}
+			if c.SupersetRegister != SupersetAuto {
+				t.Errorf("SupersetRegister = %q, want the default", c.SupersetRegister)
+			}
+		})
+	}
+}
