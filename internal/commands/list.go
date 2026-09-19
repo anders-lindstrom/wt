@@ -284,7 +284,7 @@ func StatusWorktree(ctx *Context, arg string, opts StatusOptions, w io.Writer) e
 	if s := wtsync.SessionsAt(agents, wt.Path); len(s) > 0 {
 		rows = append(rows, []string{"  sessions", whoLabel(s)})
 	}
-	work := workName(ctx, wt.Branch)
+	work := worktreeName(ctx, wt.Branch, wt.Path)
 	verdict, under := syncVerdict(ctx, work, wt, agents)
 	rows = append(rows, []string{"  sync", verdict})
 
