@@ -182,30 +182,70 @@ it. A gh that fails leaves nothing behind: the detached worktree is removed.
 wt only ever reads GitHub. Nothing creates, merges, comments on or closes a
 pull request, and wt stores no credentials — `gh auth login` is yours to run.
 The integration needs `github = true` in your settings (the default), `gh` on
-the PATH, a GitHub remote and gh logged in to its host; `wt pr` says which of
-those failed and `wt doctor` reports them all. `wt pr open` opens a worktree's
-pull request through `gh pr view --web`.
+the PATH, a GitHub remote and gh logged in to its host. The first three are
+checked before a command does anything; the login is not, because the real call
+reports it and a `gh auth status` of its own would cost a process for an answer
+wt is about to get anyway. `wt pr` says which of the four failed and
+`wt doctor`, whose job is to report the state, checks all four explicitly.
+`wt pr open` opens a worktree's pull request through `gh pr view --web`.
 
-`wt list`'s `PR` column is one bounded `gh` call for the whole listing, cached
-for five minutes in the main checkout's git dir (`wt-pr-cache.json`, beside the
-keeper's state), so only the first listing pays for it. The cache is keyed on
-the remote and the query, and a file that is missing, stale, corrupt or
-unwritable is simply a miss: `wt list` is never slower or less reliable for
-having one. `wt list --refresh` asks again; everything that acts on a pull
-request asks GitHub itself and leaves the fresh answer behind.
+The repository asked about is the one **gh** resolves as its base, not always
+`origin`: `remote.<name>.gh-resolved` where `gh repo set-default` wrote one, and
+otherwise gh's own ordering, `upstream` before `github` before `origin`. wt acts
+on gh's answers — it fetches `refs/pull/<n>/head` from this remote and keys the
+cache on it — so asking about a different repository than gh would is a bug
+waiting to happen on any fork.
+
+### Asking by branch
+
+wt asks GitHub about **the branches its worktrees are on**, by name: one
+`gh api graphql` carrying an aliased `pullRequests(headRefName:)` per branch,
+all states, five per branch ordered by `UPDATED_AT`, fifty branches to a call.
+A listing by recency could not answer this — in a repository with two hundred
+open pull requests, a worktree on an older one simply showed nothing. Branch
+names travel as GraphQL variables, never spliced into the query text.
+
+Where a branch has more than one pull request, this repository's own beats a
+fork's (a bare branch name here is this repository's branch), then an open one
+beats a finished one, then the most recently updated.
+
+The answers live in the main checkout's git dir (`wt-pr-cache.json`, beside the
+keeper's state), one entry per branch with its own fetched-at, keyed on the
+repository gh resolved. `wt list` and `wt status` read them; five minutes is how
+long an answer about an open pull request stands. Only the branches the cache
+cannot answer are fetched, so a branch made since the last listing does not wait
+the five minutes out — and a branch that has no pull request is remembered as
+such, or every listing would ask again. A file that is missing, stale, corrupt
+or unwritable is simply a miss: `wt list` is never slower or less reliable for
+having one, and `wt doctor` is where a cache nothing can write becomes visible.
+
+`wt list --refresh` asks about them all again. The commands that write the file
+are the ones that just read GitHub: `wt list` and `wt status` for the branches
+they had to fetch, `wt pr open` and `wt sweep` for the branches they touch.
+`wt pr list` and the checkout picker ask a different question and leave the file
+alone. A `wt list` column served from the cache says how old the oldest answer
+in it is, once that is a minute or more.
 
 ### What sweep reads it for
 
 A squash or rebase merge rewrites the commits, so git sees the branch as
 unmerged for ever. The pull request is what answers that, so sweep reads it:
-every row that has one names it, and a
-worktree whose pull request GitHub **merged** is swept — but only when the
-local branch is at exactly the commit the pull request carried, so a commit
-made after the merge keeps it. Sweep's own checks come first, unchanged.
+every row that has one names it, and a worktree whose pull request landed is
+swept. Landed is three things, all required — GitHub says **merged**, the pull
+request's **base is trunk**, and the local branch is at **exactly** the commit
+the pull request carried. A stacked pull request merged into its parent branch
+is merged with nothing having reached trunk, and deleting that branch would
+throw the work away; a commit made after the merge takes the branch off that
+commit and keeps it. An answer with no base recorded is an unanswered question,
+not a yes. Sweep's own checks come first, unchanged.
 
-`wt remove` does not read pull requests: it runs from git hooks, so it starts
-no process and makes no network call. On a squash-merged branch it keeps the
-branch, and `wt sweep` is what deletes it.
+`wt remove` acts on the same fact, and reads it from the cache file rather than
+from GitHub. It runs from git hooks, so it starts no process and makes no
+network call — and it does not need to. A merge is permanent and the commit it
+carried never moves again, so a recorded merge is not something the five-minute
+TTL has any bearing on: that TTL is about how fresh the state of an *open* pull
+request is. With nothing recorded for the branch, remove keeps the branch, as
+it does without GitHub.
 
 ### Not applicable, and broken
 
