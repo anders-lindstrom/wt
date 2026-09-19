@@ -183,12 +183,15 @@ func openContext() (*commands.Context, error) {
 }
 
 // withContext is a RunE that opens the context first and hands it to fn.
+// Stderr is where the context puts a warning: an integration that was
+// supposed to work and did not, or settings it could not read.
 func withContext(fn func(cmd *cobra.Command, args []string, ctx *commands.Context) error) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		ctx, err := openContext()
 		if err != nil {
 			return err
 		}
+		ctx.WarnTo(cmd.ErrOrStderr())
 		return fn(cmd, args, ctx)
 	}
 }
@@ -201,7 +204,11 @@ func openLenient(w io.Writer) (*commands.Context, error) {
 	if err != nil {
 		return nil, err
 	}
-	return commands.OpenLenient(cwd, w), nil
+	ctx := commands.OpenLenient(cwd, w)
+	if ctx != nil {
+		ctx.WarnTo(w)
+	}
+	return ctx, nil
 }
 
 // printLine ends a command whose whole output is one path or name, printed
