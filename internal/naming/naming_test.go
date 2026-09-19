@@ -189,3 +189,34 @@ func TestUnderSuperset(t *testing.T) {
 		}
 	}
 }
+
+// ClassifyPath reads the name out of the directory, for the worktrees whose
+// branch carries none — and must not read Superset's tree, which has one
+// segment more.
+func TestClassifyPath(t *testing.T) {
+	s := Scheme{Parent: "/repos", Repo: "demo", Suffix: "_wt"}
+	for name, tc := range map[string]struct {
+		path           string
+		wantType, want string
+	}{
+		"canonical":          {"/repos/demo_wt/feat_wt/pr-12-fixes", "feat", "pr-12-fixes"},
+		"trailing slash":     {"/repos/demo_wt/fix_wt/login-crash/", "fix", "login-crash"},
+		"superset's layout":  {"/repos/demo_wt/demo/feat_wt/arch", "", ""},
+		"another repository": {"/repos/other_wt/feat_wt/arch", "", ""},
+		"the main checkout":  {"/repos/demo", "", ""},
+		"one level short":    {"/repos/demo_wt/feat_wt", "", ""},
+		"no type suffix":     {"/repos/demo_wt/feat/arch", "", ""},
+		"an empty type":      {"/repos/demo_wt/_wt/arch", "", ""},
+		"somewhere else":     {"/tmp/demo_wt/feat_wt/arch", "", ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			typ, work, ok := s.ClassifyPath(tc.path)
+			if (tc.wantType != "") != ok {
+				t.Fatalf("ClassifyPath(%q) ok = %v", tc.path, ok)
+			}
+			if ok && (typ != tc.wantType || work != tc.want) {
+				t.Errorf("ClassifyPath(%q) = %q, %q; want %q, %q", tc.path, typ, work, tc.wantType, tc.want)
+			}
+		})
+	}
+}

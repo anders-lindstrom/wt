@@ -11,22 +11,29 @@ const pathWidthHelp = "On a terminal, paths are shown from ~ and shortened from 
 	"its width. Piped, they are printed whole."
 
 func newListCmd() *cobra.Command {
-	return &cobra.Command{
+	var opts commands.ListOptions
+	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List every worktree of this repository",
 		Long: "Print every worktree of this repository: its work name, its branch and\n" +
 			"its path. A worktree not at the path this layout gives it is marked,\n" +
-			"and the legend says what to do about it.\n\n" + pathWidthHelp,
+			"and the legend says what to do about it.\n\n" +
+			"A PR column appears when a worktree here is on a pull request. It costs\n" +
+			"one `gh` call of around a second; --no-pr leaves it out, as does\n" +
+			"`wt config set github false`.\n\n" + pathWidthHelp,
 		Example: "  wt list          # work name, branch and path for every worktree\n" +
 			"  wt ls            # the same, for the impatient\n" +
-			"  wt list | cat    # whole paths, however narrow the terminal",
+			"  wt list | cat    # whole paths, however narrow the terminal\n" +
+			"  wt list --no-pr  # no pull requests, and no call to GitHub",
 		Args: cobra.NoArgs,
 		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
 			out := cmd.OutOrStdout()
-			return commands.List(ctx, out, terminalWidth(out))
+			return commands.List(ctx, opts, out, terminalWidth(out))
 		}),
 	}
+	cmd.Flags().BoolVar(&opts.NoPR, "no-pr", false, "do not ask GitHub which worktree has a pull request")
+	return cmd
 }
 
 func newStatusCmd() *cobra.Command {
@@ -40,9 +47,12 @@ func newStatusCmd() *cobra.Command {
 			"the fetch is. Nothing is fetched; wt sync fetches.\n\n" +
 			"With a worktree named — by anything `wt list` prints for it, or . for the\n" +
 			"one you are in — that worktree alone, one fact per line: branch, path,\n" +
-			"state, standing against trunk, the Claude sessions in it, then the verdict\n" +
-			"wt sync would give it, simulated against trunk as last fetched: its class\n" +
-			"in wt sync's words, and what to do about it.\n\n" + pathWidthHelp,
+			"state, standing against trunk, its pull request where it has one, the\n" +
+			"Claude sessions in it, then the verdict wt sync would give it, simulated\n" +
+			"against trunk as last fetched: its class in wt sync's words, and what to\n" +
+			"do about it.\n\n" +
+			"The pull request line comes from the same answers `wt list` caches, so a\n" +
+			"listing has already paid for it.\n\n" + pathWidthHelp,
 		Example: "  wt status               # state and standing for every worktree\n" +
 			"  wt status | grep dirty  # only the ones with uncommitted changes\n" +
 			"  wt status login-crash   # that worktree in full, with wt sync's verdict\n" +

@@ -81,3 +81,54 @@ GH
     [[ "$stderr" == *"not registered"* ]]
 }
 
+# fake_gh answers for one open pull request, #12 on residential_fixes, and
+# does `pr checkout` by creating that branch where it is run.
+fake_gh() {
+    cat > "$FAKEBIN/gh" <<'GH'
+#!/bin/sh
+pr='{"number":12,"title":"Residents keep their doors","headRefName":"residential_fixes","baseRefName":"main","isDraft":false,"state":"OPEN","reviewDecision":"","isCrossRepository":false,"author":{"login":"someone"},"headRepositoryOwner":{"login":"demo"},"url":"https://github.com/demo/demo/pull/12"}'
+case "$1 $2" in
+  'auth status') exit 0 ;;
+  'pr list') printf '[%s]\n' "$pr" ;;
+  'api graphql')
+    case "$*" in
+      *viewer*) printf '{"data":{"viewer":{"login":"anders"},"repository":{"pullRequests":{"nodes":[%s]}}}}\n' "$pr" ;;
+      *) printf '{"data":{"repository":{"b0":{"nodes":[%s]}}}}\n' "$pr" ;;
+    esac ;;
+  'pr view') [ "$3" = 12 ] && printf '%s\n' "$pr" || { echo 'no pull requests found' >&2; exit 1; } ;;
+  'pr checkout') [ "$3" = 12 ] && git checkout -q -b residential_fixes || exit 1 ;;
+esac
+GH
+    chmod +x "$FAKEBIN/gh"
+    git -C "$REPO" remote remove origin 2>/dev/null || true
+    git -C "$REPO" remote add origin git@github.com:demo/demo.git
+}
+
+@test "wt pr checkout writes the path alone to stdout, twice over" {
+    fake_superset
+    fake_gh
+    cd "$REPO"
+    run --separate-stderr wt pr checkout 12 --skip-build
+    [ "$status" -eq 0 ]
+    only_path
+    [[ "$output" == */demo_wt/feat_wt/pr-12-residential_fixes ]]
+    first="$output"
+
+    # The worktree is already there: stdout is still that path and nothing
+    # else, so `cd "$(wt pr checkout 12)"` works the second time too.
+    run --separate-stderr wt pr checkout 12
+    [ "$status" -eq 0 ]
+    [ "${#lines[@]}" -eq 1 ]
+    [ "$output" = "$first" ]
+    [[ "$stderr" == *"already checked out"* ]]
+}
+
+@test "the picker with no terminal writes nothing at all to stdout" {
+    fake_gh
+    cd "$REPO"
+    run --separate-stderr wt pr checkout < /dev/null
+    [ "$status" -ne 0 ]
+    [ -z "$output" ]
+    [[ "$stderr" == *"#12"* ]]
+    [[ "$stderr" == *"no terminal to choose in"* ]]
+}
