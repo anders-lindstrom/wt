@@ -83,6 +83,40 @@ func (c CLI) branchBatch(dir, owner, name string, heads []string, deadline time.
 	return prs, nil
 }
 
+// OpenPRsAndViewer is the repository's open pull requests, most recently
+// updated first, with the login gh is authenticated as. One call answers
+// both, so the picker can lead with this person's review queue without a
+// second round trip.
+func (c CLI) OpenPRsAndViewer(dir string, r Remote, limit int, deadline time.Duration) (viewer string, prs []PR, err error) {
+	owner, name, ok := strings.Cut(r.Slug, "/")
+	if !ok {
+		return "", nil, fmt.Errorf("%q is not an owner/repo", r.Slug)
+	}
+	query := "query($owner:String!,$repo:String!,$n:Int!){viewer{login}" +
+		"repository(owner:$owner,name:$repo){pullRequests(states:OPEN,first:$n," +
+		"orderBy:{field:UPDATED_AT,direction:DESC}){nodes{" + prFields +
+		" reviewRequests(first:20){nodes{requestedReviewer{__typename ... on User{login}}}}}}}}"
+	out, err := c.run(dir, deadline, "api", "graphql", "-f", "owner="+owner, "-f", "repo="+name,
+		"-F", fmt.Sprintf("n=%d", limit), "-f", "query="+query)
+	if err != nil {
+		return "", nil, err
+	}
+	var answer struct {
+		Data struct {
+			Viewer     Account `json:"viewer"`
+			Repository struct {
+				PullRequests struct {
+					Nodes []PR `json:"nodes"`
+				} `json:"pullRequests"`
+			} `json:"repository"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(out, &answer); err != nil {
+		return "", nil, fmt.Errorf("gh api graphql: %w", err)
+	}
+	return answer.Data.Viewer.Login, answer.Data.Repository.PullRequests.Nodes, nil
+}
+
 // HeadRefNames is the head branch names to ask GitHub about for a set of local
 // branches: the same names, plus one.
 //

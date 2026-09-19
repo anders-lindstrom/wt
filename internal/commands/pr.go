@@ -31,7 +31,7 @@ type PROptions struct {
 	// Choose picks one of the open pull requests when the caller named no
 	// number. It is only ever called with a non-empty list. Nil means there
 	// is nobody to ask.
-	Choose func([]github.PR) (github.PR, error)
+	Choose func([]PRChoice) (github.PR, error)
 }
 
 // PRCheckout puts a worktree on a pull request's own head branch, set up by
@@ -77,10 +77,19 @@ func PRCheckout(ctx *Context, number int, opts PROptions, w io.Writer) (string, 
 	}, opts.NewOptions, w)
 }
 
+// PRChoice is one row of the picker: a pull request, whether GitHub is
+// waiting on this person to review it, and the worktree here already on its
+// branch, if any.
+type PRChoice struct {
+	PR              github.PR
+	ReviewRequested bool
+	Worktree        string
+}
+
 // resolvePR is the pull request to check out: the one named, whatever state
 // it is in, or one chosen from the open ones. A merged pull request can be
 // named but is never offered in the list.
-func resolvePR(ctx *Context, gh gitHub, number int, choose func([]github.PR) (github.PR, error)) (github.PR, error) {
+func resolvePR(ctx *Context, gh gitHub, number int, choose func([]PRChoice) (github.PR, error)) (github.PR, error) {
 	if number > 0 {
 		pr, err := gh.CLI.View(ctx.Repo.MainRoot, number)
 		if err != nil {
@@ -88,7 +97,7 @@ func resolvePR(ctx *Context, gh gitHub, number int, choose func([]github.PR) (gi
 		}
 		return pr, nil
 	}
-	prs, err := gh.CLI.OpenWithChecks(ctx.Repo.MainRoot, fullLimit)
+	viewer, prs, err := gh.CLI.OpenPRsAndViewer(ctx.Repo.MainRoot, gh.Remote, fullLimit, 0)
 	if err != nil {
 		return github.PR{}, gh.fail(err)
 	}
@@ -98,7 +107,32 @@ func resolvePR(ctx *Context, gh gitHub, number int, choose func([]github.PR) (gi
 	if choose == nil {
 		return github.PR{}, errors.New("no pull request named, and nothing here to choose with")
 	}
-	return choose(prs)
+	return choose(prChoices(ctx, viewer, prs))
+}
+
+// prChoices turns the open pull requests into the picker's rows: the ones
+// waiting on this person's review first, then the rest in GitHub's order,
+// which is most recently updated first.
+func prChoices(ctx *Context, viewer string, prs []github.PR) []PRChoice {
+	worktrees, _ := ctx.Repo.Worktrees()
+	rows := make([]PRChoice, 0, len(prs))
+	for _, pr := range prs {
+		rows = append(rows, PRChoice{
+			PR:              pr,
+			ReviewRequested: pr.WantsReviewFrom(viewer),
+			Worktree:        prWorktree(worktrees, pr, ctx.Config.MainBranch),
+		})
+	}
+	slices.SortStableFunc(rows, func(a, b PRChoice) int {
+		switch {
+		case a.ReviewRequested == b.ReviewRequested:
+			return 0
+		case a.ReviewRequested:
+			return -1
+		}
+		return 1
+	})
+	return rows
 }
 
 // checkoutPRInto makes the worktree and hands it to gh. It is created detached

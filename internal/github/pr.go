@@ -32,6 +32,18 @@ type PR struct {
 	// StatusCheckRollup is the checks on the head commit, empty unless they
 	// were asked for.
 	StatusCheckRollup []Check `json:"statusCheckRollup"`
+
+	// ReviewRequests is who has been asked to review. Only the picker's
+	// query fills it in.
+	ReviewRequests ReviewRequests `json:"reviewRequests"`
+}
+
+// ReviewRequests is a pull request's outstanding review requests, in the
+// shape GraphQL answers with.
+type ReviewRequests struct {
+	Nodes []struct {
+		RequestedReviewer Account `json:"requestedReviewer"`
+	} `json:"nodes"`
 }
 
 // Account is a GitHub login.
@@ -78,6 +90,20 @@ func (p PR) Branches(trunk string) []string {
 		return []string{prefixed}
 	}
 	return []string{p.HeadRefName, prefixed}
+}
+
+// WantsReviewFrom reports whether login has been asked to review. A request
+// made of a team does not count: GitHub does not say here who is in one.
+func (p PR) WantsReviewFrom(login string) bool {
+	if login == "" {
+		return false
+	}
+	for _, n := range p.ReviewRequests.Nodes {
+		if strings.EqualFold(n.RequestedReviewer.Login, login) {
+			return true
+		}
+	}
+	return false
 }
 
 // Open reports whether the pull request is still open.

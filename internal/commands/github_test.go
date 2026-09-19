@@ -340,24 +340,25 @@ func TestPRCheckoutWithoutANumberAsks(t *testing.T) {
 		openPR(12, "residential_fixes", "Fixes"),
 		openPR(7, "fix_wt/login-crash", "Login crash"))
 
-	var offered []github.PR
-	opts := PROptions{Choose: func(prs []github.PR) (github.PR, error) {
-		offered = prs
-		return prs[1], nil
+	var offered []PRChoice
+	opts := PROptions{Choose: func(rows []PRChoice) (github.PR, error) {
+		offered = rows
+		return rows[1].PR, nil
 	}}
 	var errs bytes.Buffer
 	path, err := PRCheckout(ctx, 0, opts, &errs)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(offered) != 2 || offered[0].Number != 12 {
+	if len(offered) != 2 || offered[0].PR.Number != 12 {
 		t.Errorf("the picker was offered %+v", offered)
 	}
 	if want := ctx.Scheme().Dir("fix", "login-crash"); path != want {
 		t.Errorf("path = %q, want the one that was picked (%q)", path, want)
 	}
-	if got := argvOf(t, log)[0]; !strings.HasPrefix(got, "pr list") {
-		t.Errorf("the listing was %q, want the open pull requests", got)
+	if got := argvOf(t, log)[0]; !strings.Contains(got, "viewer{login}") ||
+		!strings.Contains(got, "states:OPEN") {
+		t.Errorf("the listing was %q, want one call for the open ones and the viewer", got)
 	}
 }
 
