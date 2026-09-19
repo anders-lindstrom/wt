@@ -383,3 +383,34 @@ func TestSweepSaysWhatItLosesWithoutGitHub(t *testing.T) {
 		t.Errorf("stderr = %q, which is `wt list`'s sentence, not sweep's", errs.String())
 	}
 }
+
+// Sweep names a worktree the way `wt list` does. A pull request's worktree
+// sits on somebody else's branch, so the name comes from the path — and a
+// name that only sweep uses is a name you cannot type back at it.
+func TestSweepNamesAWorktreeTheWayListDoes(t *testing.T) {
+	ctx, _, _ := sweepRepo(t)
+	path := ctx.Scheme().Dir("feat", "pr-2135-sanitize")
+	if err := ctx.Repo.AddWorktree(path, "sanitize-refactor", "HEAD"); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, path, "commit", "-q", "--allow-empty", "-m", "the work that was squashed")
+	tip := gitOut(t, path, "rev-parse", "HEAD")
+
+	p := sweptWith(t, ctx, map[string]github.PR{
+		"sanitize-refactor": mergedPR(2135, "sanitize-refactor", tip)})
+	if len(p.Remove) != 1 {
+		t.Fatalf("remove = %+v", p.Remove)
+	}
+	if got := p.Remove[0].Work; got != "pr-2135-sanitize" {
+		t.Errorf("sweep calls it %q; `wt list` calls it pr-2135-sanitize", got)
+	}
+	names, err := WorkNames(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range names {
+		if n.Path == path && n.Work != p.Remove[0].Work {
+			t.Errorf("wt list calls it %q and sweep calls it %q", n.Work, p.Remove[0].Work)
+		}
+	}
+}

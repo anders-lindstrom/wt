@@ -35,7 +35,7 @@ func SyncDoctor(ctx *Context, opts DoctorOptions, w io.Writer) error {
 	if len(holders) > 0 {
 		var lines []string
 		for _, wt := range holders {
-			name := workName(ctx, wt.Branch)
+			name := worktreeName(ctx, wt.Branch, wt.Path)
 			// Where the handover stands, as the overview's row says it:
 			// waiting at its stop, or finished or aborted by hand.
 			gitDir, err := wtsync.GitDir(wt.Path)

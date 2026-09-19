@@ -179,7 +179,7 @@ func planSweep(ctx *Context, bases []TrunkBase, list func() ([]wtsync.Agent, err
 		}
 		switch {
 		case sb.done() && sb.Worktree != "":
-			sb.Work = workName(ctx, b.Name)
+			sb.Work = worktreeName(ctx, b.Name, sb.Worktree)
 			if sb.HeldBy != "" || repo.SamePath(sb.Worktree, p.MainRoot) {
 				p.CheckedOut = append(p.CheckedOut, sb)
 			} else {
