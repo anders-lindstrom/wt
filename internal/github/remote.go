@@ -15,27 +15,47 @@ type Remote struct {
 	Slug string
 }
 
-// preferred is the order remotes are considered in. A repository with both
-// has origin as the one you work against and upstream as the one you forked;
-// anything else is taken in the order git lists it.
-var preferred = []string{"origin", "upstream"}
+// score ranks a remote the way gh does: upstream, then github, then origin.
+// On a fork with origin=your copy and upstream=the parent, that is the parent.
+func score(name string) int {
+	switch name {
+	case "upstream":
+		return 3
+	case "github":
+		return 2
+	case "origin":
+		return 1
+	}
+	return 0
+}
 
-// RemoteOf returns the GitHub repository a checkout points at, and false when
-// it points at none. Only the URL is read: no process is started beyond the
-// one git that lists the remotes, so this is cheap enough for `wt list`.
+// RemoteOf returns the GitHub repository a checkout's pull requests belong to,
+// and false when it points at none.
+//
+// It has to be the repository gh itself resolves, because wt acts on gh's
+// answers: it fetches a merge's head commit from the remote named here and
+// keys the cache on the slug. `gh repo set-default` writes the choice into git
+// config and is honoured first; otherwise gh's ordering of remote names wins.
+//
+// Only git config is read, so this is cheap enough for `wt list`.
 func RemoteOf(dir string) (Remote, bool) {
-	lines, err := git.Lines(dir, "config", "--get-regexp", `^remote\..*\.url$`)
+	lines, err := git.Lines(dir, "config", "--get-regexp", `^remote\..*\.(url|gh-resolved)$`)
 	if err != nil {
 		return Remote{}, false
 	}
 	var found []Remote
+	resolved := map[string]string{}
 	for _, line := range lines {
-		key, url, ok := strings.Cut(strings.TrimSpace(line), " ")
+		key, value, ok := strings.Cut(strings.TrimSpace(line), " ")
 		if !ok {
 			continue
 		}
+		if name, ok := strings.CutSuffix(strings.TrimPrefix(key, "remote."), ".gh-resolved"); ok {
+			resolved[name] = value
+			continue
+		}
 		name := strings.TrimSuffix(strings.TrimPrefix(key, "remote."), ".url")
-		host, slug, ok := parseURL(url)
+		host, slug, ok := parseURL(value)
 		if !ok || !isGitHub(host) {
 			continue
 		}
@@ -44,14 +64,25 @@ func RemoteOf(dir string) (Remote, bool) {
 	if len(found) == 0 {
 		return Remote{}, false
 	}
-	for _, want := range preferred {
-		for _, r := range found {
-			if r.Name == want {
-				return r, true
-			}
+	best := found[0]
+	for _, r := range found[1:] {
+		if score(r.Name) > score(best.Name) {
+			best = r
 		}
 	}
-	return found[0], true
+	// `gh repo set-default` writes remote.<name>.gh-resolved: "base" means
+	// that remote is it, and an owner/repo means a repository that need not
+	// be a remote here at all.
+	for _, r := range found {
+		switch value := resolved[r.Name]; {
+		case value == "":
+		case value == "base":
+			return r, true
+		case strings.Count(value, "/") == 1:
+			return Remote{Name: r.Name, Host: r.Host, Slug: value}, true
+		}
+	}
+	return best, true
 }
 
 // isGitHub reports whether a host is GitHub's: github.com, or any host with

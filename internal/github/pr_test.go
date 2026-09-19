@@ -124,27 +124,67 @@ func TestByBranchIndexesBothForkSpellings(t *testing.T) {
 }
 
 // Landed is the one fact that lets a squash- or rebase-merged branch be
-// swept: GitHub merged it, and the branch is still at exactly the commit it
-// merged.
+// swept: GitHub merged it into trunk, and the branch is still at exactly the
+// commit it merged.
 func TestLanded(t *testing.T) {
 	const tip = "a1b2c3"
+	landed := func(base string) PR { return PR{State: "MERGED", HeadRefOid: tip, BaseRefName: base} }
 	for name, tc := range map[string]struct {
 		pr   PR
 		tip  string
 		want bool
 	}{
-		"merged at this tip":        {PR{State: "MERGED", HeadRefOid: tip}, tip, true},
-		"merged, lower case":        {PR{State: "merged", HeadRefOid: tip}, tip, true},
-		"a commit past the merge":   {PR{State: "MERGED", HeadRefOid: tip}, "d4e5f6", false},
-		"still open":                {PR{State: "OPEN", HeadRefOid: tip}, tip, false},
-		"closed without merging":    {PR{State: "CLOSED", HeadRefOid: tip}, tip, false},
-		"GitHub named no commit":    {PR{State: "MERGED"}, "", false},
-		"a branch with no tip read": {PR{State: "MERGED", HeadRefOid: tip}, "", false},
+		"merged into trunk at this tip": {landed("main"), tip, true},
+		"merged, lower case":            {PR{State: "merged", HeadRefOid: tip, BaseRefName: "main"}, tip, true},
+		"merged into origin's HEAD":     {landed("trunk"), tip, true},
+		// A stacked pull request merged into its parent has moved the work
+		// one branch along, not onto trunk. Deleting the branch here throws
+		// away everything the parent has not landed yet.
+		"merged into its parent branch": {landed("feat_wt/parent"), tip, false},
+		// An entry written before wt read the base: unanswered, not yes.
+		"no base recorded":          {landed(""), tip, false},
+		"a commit past the merge":   {landed("main"), "d4e5f6", false},
+		"still open":                {PR{State: "OPEN", HeadRefOid: tip, BaseRefName: "main"}, tip, false},
+		"closed without merging":    {PR{State: "CLOSED", HeadRefOid: tip, BaseRefName: "main"}, tip, false},
+		"GitHub named no commit":    {PR{State: "MERGED", BaseRefName: "main"}, "", false},
+		"a branch with no tip read": {landed("main"), "", false},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if got := tc.pr.Landed(tc.tip); got != tc.want {
+			if got := tc.pr.Landed(tc.tip, "main", "trunk"); got != tc.want {
 				t.Errorf("Landed(%q) = %v, want %v", tc.tip, got, tc.want)
 			}
 		})
+	}
+	if landed("main").Landed(tip) {
+		t.Error("Landed with no trunk named said yes")
+	}
+}
+
+// A stranger's fork using this repository's branch name must not take the row
+// from the pull request the local branch actually belongs to.
+func TestByBranchPrefersThisRepositorysOwnPullRequest(t *testing.T) {
+	own := PR{Number: 10, HeadRefName: "feat_wt/foo", State: "OPEN"}
+	theirs := fork("stranger", "feat_wt/foo")
+	theirs.Number = 20
+	for name, prs := range map[string][]PR{
+		"fork first": {theirs, own},
+		"own first":  {own, theirs},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := ByBranch(prs, "main")["feat_wt/foo"]; got.Number != 10 {
+				t.Errorf("ByBranch kept #%d, want #10", got.Number)
+			}
+			// The fork keeps its own prefixed spelling, which is the branch
+			// gh would put it on here.
+			if got := ByBranch(prs, "main")["stranger/feat_wt/foo"]; got.Number != 20 {
+				t.Errorf("the prefixed spelling kept #%d, want #20", got.Number)
+			}
+		})
+	}
+	// A merged one of this repository's own still beats an open fork: the
+	// bare name is this repository's branch.
+	own.State = "MERGED"
+	if got := ByBranch([]PR{theirs, own}, "main")["feat_wt/foo"]; got.Number != 10 {
+		t.Errorf("ByBranch kept #%d, want #10", got.Number)
 	}
 }

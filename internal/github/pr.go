@@ -1,6 +1,7 @@
 package github
 
 import (
+	"slices"
 	"strings"
 )
 
@@ -9,6 +10,9 @@ type PR struct {
 	Number      int    `json:"number"`
 	Title       string `json:"title"`
 	HeadRefName string `json:"headRefName"`
+	// BaseRefName is the branch GitHub merged it into, or would. A stacked
+	// pull request's base is its parent branch, not trunk.
+	BaseRefName string `json:"baseRefName"`
 	// HeadRefOid is the last commit GitHub saw on the head branch, which is
 	// what says a local branch holds nothing the pull request did not carry.
 	HeadRefOid string `json:"headRefOid"`
@@ -82,14 +86,22 @@ func (p PR) Open() bool { return strings.EqualFold(p.State, "OPEN") }
 // Merged reports whether GitHub has merged it.
 func (p PR) Merged() bool { return strings.EqualFold(p.State, "MERGED") }
 
-// Landed reports that this pull request was merged and tip is exactly the
-// commit it carried, so a branch still at tip holds nothing GitHub did not
-// take. It is what makes sweeping a squash- or rebase-merged branch safe:
+// Landed reports that this pull request took a branch still at tip onto one of
+// trunks. It is what makes sweeping a squash- or rebase-merged branch safe:
 // such a merge rewrites the commits, so git reads the branch as unmerged for
-// ever, while a commit made locally after the merge moves the tip off
-// HeadRefOid and is refused here.
-func (p PR) Landed(tip string) bool {
-	return p.Merged() && tip != "" && tip == p.HeadRefOid
+// ever.
+//
+// Three things have to hold. GitHub merged it. tip is exactly the commit it
+// carried, so a commit made after the merge keeps the branch. And its base is
+// trunk: a stacked pull request merged into its parent has landed nothing on
+// trunk, and deleting that branch would throw the work away.
+//
+// No base recorded — a cache written before wt read the field — is not landed.
+func (p PR) Landed(tip string, trunks ...string) bool {
+	if !p.Merged() || tip == "" || tip != p.HeadRefOid || p.BaseRefName == "" {
+		return false
+	}
+	return slices.Contains(trunks, p.BaseRefName)
 }
 
 // StateLabel is the pull request's state in one or two words: what it is, and
@@ -151,17 +163,29 @@ func failed(outcome string) bool {
 }
 
 // ByBranch indexes pull requests by every branch they could be checked out
-// under. A branch reused for several pull requests keeps the open one, and
-// otherwise the first — `gh pr list` answers newest first.
+// under, taking the best where several contend for a name: this repository's
+// own before a fork's, then an open one before a finished one, then whichever
+// came first (callers list most recently updated first).
+//
+// The fork rule comes first because a bare branch name here is this
+// repository's branch, whatever a stranger's fork calls its own.
 func ByBranch(prs []PR, trunk string) map[string]PR {
 	out := make(map[string]PR, len(prs))
 	for _, p := range prs {
 		for _, b := range p.Branches(trunk) {
-			if held, taken := out[b]; taken && (held.Open() || !p.Open()) {
+			if held, taken := out[b]; taken && !better(p, held) {
 				continue
 			}
 			out[b] = p
 		}
 	}
 	return out
+}
+
+// better reports whether p should take a branch's row from held.
+func better(p, held PR) bool {
+	if p.IsCrossRepository != held.IsCrossRepository {
+		return !p.IsCrossRepository
+	}
+	return p.Open() && !held.Open()
 }
