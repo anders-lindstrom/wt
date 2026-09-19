@@ -1,5 +1,9 @@
 #!/usr/bin/env bats
 
+# `run --separate-stderr` is how these tests check that a warning goes to
+# stderr and nowhere near stdout.
+bats_require_minimum_version 1.5.0
+
 load helpers
 
 setup() {
@@ -7,6 +11,10 @@ setup() {
     # the developer's real one is never asked anything.
     FAKEBIN="$BATS_TEST_TMPDIR/bin"
     mkdir -p "$FAKEBIN"
+    # Every invocation of the fake appends its argv here, which is how these
+    # tests see whether gh ran at all.
+    GH_ARGV="$BATS_TEST_TMPDIR/gh-argv"
+    : > "$GH_ARGV"
     export PATH="$FAKEBIN:$BATS_TEST_DIRNAME/../bin:$PATH"
     export XDG_CONFIG_HOME="$BATS_TEST_TMPDIR/xdg"
     mkdir -p "$XDG_CONFIG_HOME"
@@ -19,8 +27,11 @@ setup() {
 # residential_fixes, and doing `pr checkout` by creating that branch where it
 # is run. Nothing here reaches github.com.
 fake_gh() {
-    cat > "$FAKEBIN/gh" <<'GH'
+    cat > "$FAKEBIN/gh" <<GH
 #!/bin/sh
+printf '%s\n' "\$*" >> "$GH_ARGV"
+GH
+    cat >> "$FAKEBIN/gh" <<'GH'
 pr='{"number":12,"title":"Residents keep their doors","headRefName":"residential_fixes","isDraft":false,"state":"OPEN","reviewDecision":"","isCrossRepository":false,"author":{"login":"someone"},"headRepositoryOwner":{"login":"demo"},"url":"https://github.com/demo/myrepo/pull/12"}'
 case "$1 $2" in
   'auth status') exit 0 ;;
@@ -148,4 +159,142 @@ no_gh() {
     [ "$status" -eq 0 ]
     [[ "$output" == *"✓ demo/demo on github.com"* ]]
     [[ "$output" == *"No problems found."* ]]
+}
+
+@test "the PR column is cached, and --refresh asks again" {
+    fake_gh
+    cd "$REPO"
+    wt pr checkout 12 >/dev/null
+    wt list >/dev/null
+    before=$(wc -l < "$GH_ARGV")
+
+    # The second listing is answered from the cache: no gh at all.
+    run wt list
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"#12 open"* ]]
+    [ "$(wc -l < "$GH_ARGV")" -eq "$before" ]
+
+    run wt list --refresh
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"#12 open"* ]]
+    [ "$(wc -l < "$GH_ARGV")" -gt "$before" ]
+
+    # --no-pr asks nothing, cache or no cache.
+    before=$(wc -l < "$GH_ARGV")
+    run wt list --no-pr
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"#12"* ]]
+    [ "$(wc -l < "$GH_ARGV")" -eq "$before" ]
+}
+
+@test "a gh that fails warns on stderr and leaves stdout alone" {
+    fake_gh
+    cd "$REPO"
+    wt pr checkout 12 >/dev/null
+    wt list --no-pr > "$BATS_TEST_TMPDIR/plain"
+
+    # A gh that is there, logged in, and cannot answer.
+    cat > "$FAKEBIN/gh" <<'GH'
+#!/bin/sh
+case "$1 $2" in
+  'auth status') exit 0 ;;
+  'pr list') echo 'dial tcp: no route to host' >&2; exit 1 ;;
+esac
+GH
+    chmod +x "$FAKEBIN/gh"
+
+    run --separate-stderr wt list --refresh
+    [ "$status" -eq 0 ]
+    [ "$output" = "$(cat "$BATS_TEST_TMPDIR/plain")" ]
+    [[ "$stderr" == *"wt: no pull requests shown"* ]]
+
+    # A gh that was never logged in is an ordinary machine: nothing to say.
+    cat > "$FAKEBIN/gh" <<'GH'
+#!/bin/sh
+echo 'To get started with GitHub CLI, please run:  gh auth login' >&2
+exit 1
+GH
+    chmod +x "$FAKEBIN/gh"
+
+    run --separate-stderr wt list --refresh
+    [ "$status" -eq 0 ]
+    [ "$output" = "$(cat "$BATS_TEST_TMPDIR/plain")" ]
+    [ -z "$stderr" ]
+}
+
+@test "wt pr open hands the number to gh --web" {
+    fake_gh
+    cd "$REPO"
+    wtpath=$(wt pr checkout 12 | tail -1)
+    : > "$GH_ARGV"
+
+    cd "$wtpath"
+    run wt pr open
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Opening #12 open · Residents keep their doors"* ]]
+    grep -q -- 'pr view 12 --web' "$GH_ARGV"
+}
+
+@test "wt pr open on a worktree with no pull request says so" {
+    fake_gh
+    cd "$REPO"
+    wt new fix/login-crash --no-setup >/dev/null
+    : > "$GH_ARGV"
+
+    run wt pr open login-crash
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"no pull request in demo/demo has fix_wt/login-crash as its head branch"* ]]
+    ! grep -q -- '--web' "$GH_ARGV"
+}
+
+# fake_gh_merged answers with one merged pull request, #34, whose head is
+# branch at tip — a squash or rebase merge, which leaves the branch looking
+# unmerged to git for ever.
+fake_gh_merged() {
+    local branch=$1 tip=$2
+    cat > "$FAKEBIN/gh" <<GH
+#!/bin/sh
+pr='{"number":34,"title":"Login crash","headRefName":"$branch","headRefOid":"$tip","isDraft":false,"state":"MERGED","reviewDecision":"","isCrossRepository":false,"author":{"login":"someone"},"headRepositoryOwner":{"login":"demo"},"url":"https://github.com/demo/demo/pull/34"}'
+case "\$1 \$2" in
+  'auth status') exit 0 ;;
+  '--version ') echo 'gh version 2.100.0 (2026-09-03)' ;;
+  'pr list') printf '[%s]\n' "\$pr" ;;
+esac
+GH
+    chmod +x "$FAKEBIN/gh"
+    git -C "$REPO" remote remove origin 2>/dev/null || true
+    git -C "$REPO" remote add origin git@github.com:demo/demo.git
+}
+
+@test "sweep names the pull request, and sweeps a squash-merged worktree" {
+    cd "$REPO"
+    wtpath=$(wt new fix/login-crash --no-setup | tail -1)
+    git -C "$wtpath" commit -q --allow-empty -m "the work that was squashed"
+    tip=$(git -C "$wtpath" rev-parse HEAD)
+    fake_gh_merged fix_wt/login-crash "$tip"
+
+    run wt sweep --no-fetch
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"#34 merged on GitHub (squashed or rebased, so git cannot see it)"* ]]
+
+    run wt sweep --no-fetch --yes
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"branch fix_wt/login-crash was merged as #34 and has been deleted"* ]]
+    [ ! -d "$wtpath" ]
+    run git -C "$REPO" rev-parse --verify --quiet refs/heads/fix_wt/login-crash
+    [ "$status" -ne 0 ]
+}
+
+@test "a commit made after the merge keeps the worktree" {
+    cd "$REPO"
+    wtpath=$(wt new fix/login-crash --no-setup | tail -1)
+    git -C "$wtpath" commit -q --allow-empty -m "the work that was squashed"
+    tip=$(git -C "$wtpath" rev-parse HEAD)
+    git -C "$wtpath" commit -q --allow-empty -m "and then some more"
+    fake_gh_merged fix_wt/login-crash "$tip"
+
+    run wt sweep --no-fetch --yes
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"#34 merged on GitHub"* ]]
+    [ -d "$wtpath" ]
 }

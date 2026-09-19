@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -43,6 +44,34 @@ type SweepBranch struct {
 	// is "(detached)", Tip its HEAD, and only its path names it.
 	Detached bool
 	Ahead    int // commits the first base lacks; read only for Gone
+	// PR is what GitHub says about this branch's pull request, "#34 merged"
+	// or "#35 open", and "" when there is none or GitHub is not in play.
+	PR string
+	// MergedPR is a pull request GitHub merged at exactly this branch's tip
+	// while trunk does not contain the branch — a squash or rebase merge,
+	// which git cannot see. It is what makes such a branch a candidate.
+	MergedPR int
+}
+
+// done reports that the work on this branch has landed: trunk contains it, or
+// GitHub merged its pull request at this very tip.
+func (b SweepBranch) done() bool { return b.MergedInto != "" || b.MergedPR > 0 }
+
+// why is why a branch counts as done with, in the words the plan prints.
+func (b SweepBranch) why() string {
+	if b.MergedPR > 0 {
+		return fmt.Sprintf("#%d merged on GitHub (squashed or rebased, so git cannot see it)", b.MergedPR)
+	}
+	return withPR("merged into "+b.MergedInto, b.PR)
+}
+
+// withPR adds what GitHub says about a branch to a reason, when anything here
+// knows a pull request for it.
+func withPR(reason, pr string) string {
+	if pr == "" {
+		return reason
+	}
+	return reason + " · " + pr
 }
 
 // SweepWorktree is a worktree whose branch trunk contains and that is safe
@@ -91,8 +120,10 @@ func trunkBases(ctx *Context) ([]TrunkBase, error) {
 
 // planSweep reads every fact a sweep depends on and sorts the branches. list
 // is the agent sessions to check the worktrees against; it is asked only
-// when a merged branch has a worktree that could go.
-func planSweep(ctx *Context, bases []TrunkBase, list func() ([]wtsync.Agent, error)) (SweepPlan, error) {
+// when a merged branch has a worktree that could go. prs is what GitHub says
+// about each branch, which is empty whenever GitHub is not in play.
+func planSweep(ctx *Context, bases []TrunkBase, list func() ([]wtsync.Agent, error),
+	prs func() map[string]github.PR) (SweepPlan, error) {
 	branches, err := ctx.Repo.Branches()
 	if err != nil {
 		return SweepPlan{}, fmt.Errorf("could not list branches: %w", err)
@@ -114,6 +145,7 @@ func planSweep(ctx *Context, bases []TrunkBase, list func() ([]wtsync.Agent, err
 	}
 	inUse := worktrees.Users()
 	originHead, _ := ctx.Repo.OriginHead()
+	byBranch := prs()
 
 	p := SweepPlan{Bases: bases, MainRoot: ctx.Repo.MainRoot}
 	var candidates []SweepBranch
@@ -123,15 +155,23 @@ func planSweep(ctx *Context, bases []TrunkBase, list func() ([]wtsync.Agent, err
 		}
 		use := inUse[b.Name]
 		sb := SweepBranch{Branch: b, MergedInto: merged[b.Name], Worktree: use.Path, HeldBy: use.By}
+		if pr, ok := byBranch[b.Name]; ok {
+			sb.PR = prLabel(pr)
+			// Only where git cannot tell: trunk containing the branch is the
+			// stronger fact and the one every other command reads.
+			if sb.MergedInto == "" && pr.Landed(b.Tip) {
+				sb.MergedPR = pr.Number
+			}
+		}
 		switch {
-		case sb.MergedInto != "" && sb.Worktree != "":
+		case sb.done() && sb.Worktree != "":
 			sb.Work = workName(ctx, b.Name)
 			if sb.HeldBy != "" || repo.SamePath(sb.Worktree, p.MainRoot) {
 				p.CheckedOut = append(p.CheckedOut, sb)
 			} else {
 				candidates = append(candidates, sb)
 			}
-		case sb.MergedInto != "":
+		case sb.done():
 			p.Delete = append(p.Delete, sb)
 		case b.Gone:
 			// By tip, not name: a tag with the branch's name would shadow it.
@@ -177,6 +217,12 @@ func planSweep(ctx *Context, bases []TrunkBase, list func() ([]wtsync.Agent, err
 		wt, _ := worktrees.ByPath(sb.Worktree)
 		wt.Path = sb.Worktree
 		rp := planFor(ctx, wt, RemoveOptions{Agents: agents})
+		// git reads a squash- or rebase-merged branch as unmerged, so the
+		// removal plan would rename it aside. GitHub says it landed at this
+		// tip, so it goes, and the plan carries the number that says why.
+		if sb.MergedPR > 0 && rp.Branch == sb.Name && rp.Tip == sb.Tip {
+			rp.Outcome, rp.MergedPR, rp.KeepAs = BranchDeleted, sb.MergedPR, ""
+		}
 		sb.Kept = unsafeToRemove(sb, rp, wtsync.SessionsAt(agents, sb.Worktree), listErr)
 		sb.Dirty, sb.LockHeld = rp.Dirty, rp.Locked && rp.LockHeld
 		if sb.Detached {
@@ -290,7 +336,7 @@ func (p SweepPlan) Render(w io.Writer, width int) {
 		fmt.Fprintf(w, heading, worktreeCount(len(p.Remove)))
 		var rows [][]string
 		for _, b := range p.Remove {
-			rows = append(rows, []string{"  " + b.Work, b.Name, b.Worktree, "merged into " + b.MergedInto})
+			rows = append(rows, []string{"  " + b.Work, b.Name, b.Worktree, b.why()})
 		}
 		_ = printTable(w, rows)
 		if len(p.Delete) > 0 {
@@ -302,7 +348,7 @@ func (p SweepPlan) Render(w io.Writer, width int) {
 		fmt.Fprintf(w, "Will be deleted, %s:\n", branchCount(len(p.Delete)))
 		var rows [][]string
 		for _, b := range p.Delete {
-			rows = append(rows, []string{"  " + b.Name, "merged into " + b.MergedInto, b.Date, b.Subject})
+			rows = append(rows, []string{"  " + b.Name, b.why(), b.Date, b.Subject})
 		}
 		printSubjectTable(w, rows, width)
 	case len(p.Remove) == 0:
@@ -320,7 +366,7 @@ func (p SweepPlan) Render(w io.Writer, width int) {
 		fmt.Fprintln(w, "\nUpstream gone, but not merged, so kept:")
 		var rows [][]string
 		for _, b := range p.Gone {
-			rows = append(rows, []string{"  " + b.Name, aheadOf(b.Ahead, p.Bases[0].Name), b.Date, b.Subject})
+			rows = append(rows, []string{"  " + b.Name, withPR(aheadOf(b.Ahead, p.Bases[0].Name), b.PR), b.Date, b.Subject})
 		}
 		printSubjectTable(w, rows, width)
 	}
@@ -354,6 +400,10 @@ func elideRight(s string, limit int) string {
 // it deletes the branch with the worktree; --force is what breaks a held
 // lock, and nothing removes a checkout with uncommitted changes.
 func (p SweepPlan) checkedOutAdvice(b SweepBranch) string {
+	return withPR(p.keptBecause(b), b.PR)
+}
+
+func (p SweepPlan) keptBecause(b SweepBranch) string {
 	target := b.Work
 	if b.Detached {
 		target = b.Worktree
@@ -404,6 +454,8 @@ func (p SweepPlan) changedFrom(ctx *Context, was SweepBranch) string {
 		return "it moved after the plan was made"
 	case protectedBranch(was.Name, ctx.Config.MainBranch, head):
 		return "origin's HEAD names it now"
+	case was.MergedPR > 0:
+		return fmt.Sprintf("#%d no longer reads as merged at this tip", was.MergedPR)
 	}
 	return "trunk no longer contains it: the merge was undone after the plan was made"
 }
@@ -518,6 +570,20 @@ type SweepOptions struct {
 	// again before anything is removed; nil lists them the way Agents did.
 	Agents []wtsync.Agent
 	Relist func() ([]wtsync.Agent, error)
+	// PRs is the pull requests by branch, for a test that has no gh. Nil asks
+	// GitHub; an empty map means it had nothing to say.
+	PRs map[string]github.PR
+}
+
+// pullRequests is what GitHub says about this repository's branches, fetched
+// fresh because a sweep decides what to delete, and left in the cache
+// `wt list` reads. Empty whenever GitHub is not in play, and a sweep is then
+// exactly what it was before.
+func (o SweepOptions) pullRequests(ctx *Context) func() map[string]github.PR {
+	if o.PRs != nil {
+		return func() map[string]github.PR { return o.PRs }
+	}
+	return func() map[string]github.PR { return worktreePRs(ctx, listQuery(0), true) }
 }
 
 // listAgents is the first listing of the sessions, for the plan.
@@ -546,7 +612,7 @@ func Sweep(ctx *Context, opts SweepOptions, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	plan, err := planSweep(ctx, bases, opts.listAgents)
+	plan, err := planSweep(ctx, bases, opts.listAgents, opts.pullRequests(ctx))
 	if err != nil {
 		return err
 	}
@@ -638,7 +704,7 @@ func (p SweepPlan) apply(ctx *Context, opts SweepOptions, w io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("could not re-read trunk before deleting, so nothing was deleted: %w", err)
 	}
-	fresh, err := planSweep(ctx, bases, opts.relistAgents)
+	fresh, err := planSweep(ctx, bases, opts.relistAgents, opts.pullRequests(ctx))
 	if err != nil {
 		return fmt.Errorf("could not re-read the branches before deleting, so nothing was deleted: %w", err)
 	}
