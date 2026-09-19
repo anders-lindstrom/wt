@@ -653,3 +653,83 @@ func TestPRCheckoutOfAMergedPullRequestUsesThePullRef(t *testing.T) {
 		t.Errorf("the tree was not populated: %v", err)
 	}
 }
+
+// wt pr open hands gh the number and --web; nothing else about it is wt's
+// business.
+func TestPROpenAsksGhToOpenThePullRequest(t *testing.T) {
+	ctx, err := Open(committedRepo(t, minimalConf))
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := fakeGitHub(t, openPR(12, "fix_wt/login-crash", "Login crash"))
+	var errs bytes.Buffer
+	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &errs); err != nil {
+		t.Fatal(err)
+	}
+
+	errs.Reset()
+	if err := PROpen(ctx, "login-crash", &errs); err != nil {
+		t.Fatalf("PROpen: %v", err)
+	}
+	if !strings.Contains(errs.String(), "Opening #12 open · Login crash") {
+		t.Errorf("stderr = %q", errs.String())
+	}
+	argv := argvOf(t, log)
+	if got := argv[len(argv)-1]; got != "pr view 12 --web" {
+		t.Errorf("argv = %q, want the last call to be `pr view 12 --web`", argv)
+	}
+}
+
+// A worktree with no pull request is one line and a non-zero exit, and no
+// browser window.
+func TestPROpenSaysSoWhenThereIsNone(t *testing.T) {
+	ctx, err := Open(committedRepo(t, minimalConf))
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := fakeGitHub(t, openPR(12, "somebody-elses-branch", "Not yours"))
+	var errs bytes.Buffer
+	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &errs); err != nil {
+		t.Fatal(err)
+	}
+
+	err = PROpen(ctx, "login-crash", &errs)
+	if err == nil {
+		t.Fatal("PROpen succeeded without a pull request")
+	}
+	if !strings.Contains(err.Error(), "no pull request in t/demo has fix_wt/login-crash as its head branch") {
+		t.Errorf("err = %v", err)
+	}
+	for _, call := range argvOf(t, log) {
+		if strings.Contains(call, "--web") {
+			t.Errorf("a browser was opened anyway: %q", call)
+		}
+	}
+}
+
+// Standing in a worktree, `wt pr open` needs no argument.
+func TestPROpenDefaultsToTheWorktreeYouAreIn(t *testing.T) {
+	main := committedRepo(t, minimalConf)
+	ctx, err := Open(main)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fakeGitHub(t, openPR(12, "fix_wt/login-crash", "Login crash"))
+	var errs bytes.Buffer
+	path, err := New(ctx, "fix/login-crash", NewOptions{}, &errs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inside, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	errs.Reset()
+	if err := PROpen(inside, "", &errs); err != nil {
+		t.Fatalf("PROpen: %v", err)
+	}
+	if !strings.Contains(errs.String(), "Opening #12") {
+		t.Errorf("stderr = %q", errs.String())
+	}
+}

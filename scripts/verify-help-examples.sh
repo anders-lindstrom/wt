@@ -123,20 +123,30 @@ make_keep() {
 # of what wt asks of it. Nothing here reaches github.com.
 make_gh() {
     local d; d=$(make_plain "$1")
+    local head=${2:-residential_fixes}
     git -C "$d" remote set-url origin git@github.com:demo/myrepo.git
     mkdir -p "$1/bin"
-    cat > "$1/bin/gh" <<'GH'
+    cat > "$1/bin/gh" <<GH
 #!/bin/sh
-pr='{"number":12,"title":"Residents keep their doors","headRefName":"residential_fixes","isDraft":false,"state":"OPEN","reviewDecision":"","isCrossRepository":false,"author":{"login":"someone"},"headRepositoryOwner":{"login":"demo"},"url":"https://github.com/demo/myrepo/pull/12"}'
-case "$1 $2" in
+pr='{"number":12,"title":"Residents keep their doors","headRefName":"$head","headRefOid":"deadbeef","isDraft":false,"state":"OPEN","reviewDecision":"","isCrossRepository":false,"author":{"login":"someone"},"headRepositoryOwner":{"login":"demo"},"url":"https://github.com/demo/myrepo/pull/12"}'
+case "\$1 \$2" in
   'auth status') exit 0 ;;
   '--version ') echo 'gh version 2.100.0 (2026-09-03)' ;;
-  'pr list') printf '[%s]\n' "$pr" ;;
-  'pr view') [ "$3" = 12 ] && printf '%s\n' "$pr" || { echo 'no pull requests found' >&2; exit 1; } ;;
-  'pr checkout') [ "$3" = 12 ] && git checkout -q -b residential_fixes || exit 1 ;;
+  'pr list') printf '[%s]\n' "\$pr" ;;
+  'pr view') [ "\$3" = 12 ] && printf '%s\n' "\$pr" || { echo 'no pull requests found' >&2; exit 1; } ;;
+  'pr checkout') [ "\$3" = 12 ] && git checkout -q -b '$head' || exit 1 ;;
 esac
 GH
     chmod +x "$1/bin/gh"
+    echo "$d"
+}
+
+# make_gh where the pull request is on a branch of this repository's own
+# convention, with its worktree already checked out — what `wt pr open` needs
+# something to open.
+make_ghwork() {
+    local d; d=$(make_gh "$1" fix_wt/login-crash)
+    (cd "$d" && PATH="$1/bin:$PATH" "$WT" pr checkout 12 --no-setup) >/dev/null 2>&1
     echo "$d"
 }
 
@@ -165,6 +175,7 @@ check() {
         sweep) repo=$(make_sweep "$dir");;
         keep|launchd) repo=$(make_keep "$dir"); prereq="export HOME=$dir/home PATH=$dir/bin:\$PATH; $prereq";;
         gh) repo=$(make_gh "$dir"); prereq="export PATH=$dir/bin:\$PATH; $prereq";;
+        ghwork) repo=$(make_ghwork "$dir"); prereq="export PATH=$dir/bin:\$PATH; $prereq";;
         branch) repo=$(make_plain "$dir"); git -C "$repo" branch fix_wt/login-crash;;
     esac
     local cwd=$repo
@@ -214,6 +225,7 @@ check worktrees myrepo_wt/fix_wt/login-crash "$SHELL_LAYER" 'wt exec . make test
 check worktrees "" "" 'wt ls'
 check worktrees "" "" 'wt list | cat'
 check worktrees "" "" 'wt list --no-pr'
+check worktrees "" "" 'wt list --refresh'
 check worktrees "" "" 'wt status'
 check worktrees "" "" 'wt status | grep dirty'
 check sync      "" "" 'wt status login-crash'
@@ -261,6 +273,8 @@ check gh "" "" 'wt pr co 12'
 check gh "" "" 'wt pr checkout 12 --no-setup'
 check gh "" "" 'wt pr checkout 12 --skip-build'
 check gh "" "" 'wt pr checkout 12 --no-superset'
+check ghwork myrepo_wt/fix_wt/login-crash "" 'wt pr open'
+check ghwork "" "" 'wt pr open login-crash'
 
 check plain "" "" 'wt config'
 check plain "" "" 'wt config --shell'
