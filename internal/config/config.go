@@ -25,6 +25,10 @@ type Config struct {
 	// MainBranchSet says MAIN_BRANCH came from the configuration rather than
 	// from the fallback, which is only a guess from origin or the checkout.
 	MainBranchSet bool
+	// SupersetRegisterSet says SUPERSET_REGISTER was written in the file
+	// rather than left at its default, which is what `wt config` reports as
+	// the value's origin.
+	SupersetRegisterSet bool
 }
 
 // The keys a repository may set. They are named constants because `wt init`
@@ -164,6 +168,9 @@ func fromRaw(r map[string]Value, mainBranchFallback, file string) (*Config, erro
 
 	if v, ok := r[KeyMainBranch]; ok && v.Scalar != "" {
 		c.MainBranchSet = true
+	}
+	if v, ok := r[KeySupersetRegister]; ok && !v.IsList && v.Scalar != "" {
+		c.SupersetRegisterSet = true
 	}
 
 	// Build init defaults to "on if a command was given". Defaulting it to true
