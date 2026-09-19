@@ -75,3 +75,13 @@ func (p *prompter) yesNo(question string, def bool) bool {
 	}
 	return false
 }
+
+// line reads one answer without printing a question; the caller has already
+// written whatever it is asking. EOF comes back as an error.
+func (p *prompter) line() (string, error) {
+	s, err := p.r.ReadString('\n')
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(s), nil
+}

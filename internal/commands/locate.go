@@ -164,9 +164,8 @@ func matchesName(n WorkName, arg string) bool {
 	return n.Work != "" && (n.Work == arg || n.Type+"/"+n.Work == arg)
 }
 
-// WorkName is a worktree with its branch read against the naming convention.
-// Type and Work are empty when the branch does not follow it, or there is no
-// branch.
+// WorkName is a worktree with its name read against the naming convention.
+// Type and Work are empty when neither its branch nor its path follows it.
 type WorkName struct {
 	repo.Worktree
 	Type, Work string
@@ -174,6 +173,11 @@ type WorkName struct {
 
 // WorkNames returns every worktree of the repository, the main checkout
 // included, in the order git lists them, each with its type and work name.
+//
+// The branch names the work where it follows the convention, and the path
+// where it does not: `wt checkout` and `wt pr checkout` put a worktree on
+// somebody else's branch at a path wt chose, and that directory is the name
+// it goes by in `wt list`, in completion and as an argument.
 func WorkNames(ctx *Context) ([]WorkName, error) {
 	worktrees, err := ctx.Repo.Worktrees()
 	if err != nil {
@@ -184,6 +188,8 @@ func WorkNames(ctx *Context) ([]WorkName, error) {
 	for _, wt := range worktrees {
 		n := WorkName{Worktree: wt}
 		if typ, work, ok := sch.Parse(wt.Branch); ok {
+			n.Type, n.Work = typ, work
+		} else if typ, work, ok := sch.ClassifyPath(wt.Path); ok {
 			n.Type, n.Work = typ, work
 		}
 		names = append(names, n)

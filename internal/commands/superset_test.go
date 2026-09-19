@@ -8,12 +8,13 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/config"
+	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/superset"
 )
 
 // TestMain keeps this package off the machine running it: XDG_CONFIG_HOME is
-// a directory of this run's own, and probeSuperset answers "no Superset here"
-// until a test asks for another state.
+// a directory of this run's own, probeSuperset answers "no Superset here" and
+// findGitHub "no gh here" until a test asks for another state.
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "wt-commands-test")
 	if err != nil {
@@ -23,6 +24,7 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	probeSuperset = func() superset.Status { return superset.Status{} }
+	findGitHub = func() (github.CLI, bool) { return github.CLI{}, false }
 	code := m.Run()
 	_ = os.RemoveAll(dir)
 	os.Exit(code)
@@ -490,5 +492,26 @@ func TestRegisterSupersetRunsEvenWhenSetupFailed(t *testing.T) {
 	}
 	if got := argvOf(t, log); len(got) != 2 {
 		t.Errorf("argv = %q, want the listing and the create", got)
+	}
+}
+
+// `wt pr checkout` is the third creating command, and goes through the same
+// tail: its worktree is registered too.
+func TestPRCheckoutRegistersWithSuperset(t *testing.T) {
+	ctx, err := Open(committedRepo(t, minimalConf))
+	if err != nil {
+		t.Fatal(err)
+	}
+	optIn(ctx)
+	fakeGitHub(t, openPR(12, "residential_fixes", "Residents keep their doors"))
+	log := fakeSuperset(t, ctx.Repo.MainRoot, true)
+
+	var errs bytes.Buffer
+	if _, err := PRCheckout(ctx, 12, PROptions{}, &errs); err != nil {
+		t.Fatalf("PRCheckout: %v", err)
+	}
+	got := argvOf(t, log)
+	if len(got) != 2 || !strings.Contains(got[1], "--branch residential_fixes") {
+		t.Errorf("argv = %q, want the pull request's own branch registered", got)
 	}
 }

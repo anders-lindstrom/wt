@@ -68,6 +68,7 @@ func Doctor(ctx *Context, w io.Writer) (int, error) {
 	}
 
 	doctorSuperset(ctx, w, report)
+	doctorGitHub(ctx, w)
 
 	fmt.Fprintln(w, "Worktrees:")
 	worktrees, err := ctx.Repo.Worktrees()
@@ -87,6 +88,12 @@ func Doctor(ctx *Context, w io.Writer) (int, error) {
 		}
 		typ, work, layout, ok := sch.ClassifyBranch(wt.Path, wt.Branch)
 		if !ok {
+			// A branch wt did not name, at a path wt did: `wt checkout` and
+			// `wt pr checkout` make these, and the directory names the work.
+			if _, work, atPath := sch.ClassifyPath(wt.Path); atPath {
+				fmt.Fprintf(w, "  ✓ %s (%s, on %q)\n", wt.Path, work, wt.Branch)
+				continue
+			}
 			fmt.Fprintf(w, "  - %s is on %q, not managed by wt\n", wt.Path, wt.Branch)
 			continue
 		}

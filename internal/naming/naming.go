@@ -66,6 +66,29 @@ func (s Scheme) ClassifyBranch(path, branch string) (typ, work string, l Layout,
 	return typ, work, s.Classify(path, typ, work), true
 }
 
+// ClassifyPath reads the type and work name a path carries, when the path is
+// one this scheme spells: <Parent>/<Repo><Suffix>/<typ><Suffix>/<work>.
+//
+// It names the worktrees whose branch follows no convention: `wt checkout` of
+// somebody else's branch, and `wt pr checkout`. Superset's tree has one
+// segment more, so its paths do not match.
+func (s Scheme) ClassifyPath(path string) (typ, work string, ok bool) {
+	sep := string(filepath.Separator)
+	rest, found := strings.CutPrefix(filepath.Clean(path), filepath.Join(s.Parent, s.Repo+s.Suffix)+sep)
+	if !found {
+		return "", "", false
+	}
+	head, work, found := strings.Cut(rest, sep)
+	if !found || work == "" || strings.Contains(work, sep) {
+		return "", "", false
+	}
+	typ, ok = strings.CutSuffix(head, s.Suffix)
+	if !ok || typ == "" {
+		return "", "", false
+	}
+	return typ, work, true
+}
+
 func parseBranch(branch, suffix string) (typ, work string, ok bool) {
 	head, rest, found := strings.Cut(branch, "/")
 	if !found || rest == "" {
