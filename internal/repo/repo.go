@@ -470,3 +470,25 @@ func (r *Repo) AddExistingWorktree(path, branch string) error {
 	_, err := git.Run(r.MainRoot, "worktree", "add", path, branch)
 	return err
 }
+
+// AddDetachedWorktree puts a worktree at path with HEAD detached at ref and
+// no files checked out, for a caller about to switch it to a branch itself.
+// The tree is then populated once, by that switch.
+func (r *Repo) AddDetachedWorktree(path, ref string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	_, err := git.Run(r.MainRoot, "worktree", "add", "--detach", "--no-checkout", path, ref)
+	return err
+}
+
+// DiscardWorktree deletes a worktree wt has just created and nothing has
+// written to. It forces, which RemoveWorktree will not: a worktree added with
+// --no-checkout reads to git as one whose every tracked file was deleted, so
+// an unforced remove refuses it.
+func (r *Repo) DiscardWorktree(path string) error {
+	if _, err := git.Run(r.MainRoot, "worktree", "remove", "--force", path); err != nil {
+		return err
+	}
+	return nil
+}
