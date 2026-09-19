@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -145,5 +146,44 @@ func TestPRCheckoutKeepsABranchItDidNotMake(t *testing.T) {
 	}
 	if _, ok := ctx.Repo.ResolveRef("refs/heads/residential_fixes"); !ok {
 		t.Error("a branch that was here before was deleted")
+	}
+}
+
+// The picker leads with what is waiting on you, and says which rows already
+// have a worktree here.
+func TestPRChoicesLeadWithYourReviewQueue(t *testing.T) {
+	ctx, err := Open(committedRepo(t, minimalConf))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mine := openPR(12, "fix_wt/login-crash", "Login crash")
+	wanted := openPR(41, "somebody/fix", "Please look at this")
+	wanted.ReviewRequests.Nodes = append(wanted.ReviewRequests.Nodes, struct {
+		RequestedReviewer github.Account `json:"requestedReviewer"`
+	}{RequestedReviewer: github.Account{Login: "anders"}})
+	fakeGitHubAs(t, "anders", "", mine, wanted)
+
+	var errs bytes.Buffer
+	path, err := New(ctx, "fix/login-crash", NewOptions{}, &errs)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var offered []PRChoice
+	opts := PROptions{Choose: func(rows []PRChoice) (github.PR, error) {
+		offered = rows
+		return rows[0].PR, nil
+	}}
+	if _, err := PRCheckout(ctx, 0, opts, &errs); err != nil {
+		t.Fatalf("PRCheckout: %v", err)
+	}
+	if len(offered) != 2 {
+		t.Fatalf("offered %+v", offered)
+	}
+	if offered[0].PR.Number != 41 || !offered[0].ReviewRequested {
+		t.Errorf("the review queue is not first: %+v", offered)
+	}
+	if offered[1].Worktree != path {
+		t.Errorf("the row with a worktree does not name it: %+v", offered[1])
 	}
 }

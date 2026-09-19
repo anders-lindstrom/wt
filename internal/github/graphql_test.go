@@ -113,6 +113,45 @@ func TestPRsOnBranchesRejectsRubbish(t *testing.T) {
 	}
 }
 
+// One call answers both halves of the picker's question: who gh is logged in
+// as, and who has been asked to review what.
+func TestOpenPRsAndViewer(t *testing.T) {
+	c, log := fake(t, `echo '{"data":{"viewer":{"login":"anders"},"repository":{"pullRequests":{"nodes":[`+
+		`{"number":9,"headRefName":"fix-login","state":"OPEN","reviewRequests":{"nodes":[{"requestedReviewer":{"login":"Anders"}}]}},`+
+		`{"number":8,"headRefName":"other","state":"OPEN","reviewRequests":{"nodes":[]}}]}}}}'`)
+	viewer, prs, err := c.OpenPRsAndViewer(t.TempDir(), demo, 100, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if viewer != "anders" {
+		t.Errorf("viewer = %q", viewer)
+	}
+	if len(prs) != 2 {
+		t.Fatalf("prs = %+v", prs)
+	}
+	if !prs[0].WantsReviewFrom("anders") {
+		t.Error("#9 asks anders to review it and did not say so")
+	}
+	if prs[1].WantsReviewFrom("anders") {
+		t.Error("#8 asks nobody and said it did")
+	}
+	if got := argv(t, log); len(got) != 1 || !strings.Contains(got[0], "viewer{login}") {
+		t.Errorf("argv = %q", got)
+	}
+}
+
+// A login nobody is is nobody: an empty viewer must not match an empty
+// requested reviewer.
+func TestWantsReviewFromNobody(t *testing.T) {
+	var p PR
+	p.ReviewRequests.Nodes = append(p.ReviewRequests.Nodes, struct {
+		RequestedReviewer Account `json:"requestedReviewer"`
+	}{})
+	if p.WantsReviewFrom("") {
+		t.Error("an empty login matched an empty reviewer")
+	}
+}
+
 // gh checks a fork's branch out under its own name unless that name is
 // trunk's, where it prefixes the owner. A local someone/main is therefore a
 // pull request GitHub calls main, and both have to be asked about.
