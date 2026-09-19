@@ -76,64 +76,48 @@ func TestAuthenticated(t *testing.T) {
 	}
 }
 
-// The cheap call `wt list` makes: no statusCheckRollup, which is the
-// expensive half, and a state and a limit it chose on purpose.
-func TestListArgvIsTheCheapCall(t *testing.T) {
+// `wt pr list` is the one view that pays for the check rollup, and it is the
+// only caller that does.
+func TestOpenWithChecksArgv(t *testing.T) {
 	c, log := fake(t, `echo '[]'`)
-	if _, err := c.List(t.TempDir(), ListOptions{State: "all", Limit: 50}); err != nil {
+	if _, err := c.OpenWithChecks(t.TempDir(), 100); err != nil {
 		t.Fatal(err)
 	}
 	got := argv(t, log)
 	if len(got) != 1 {
 		t.Fatalf("argv = %q, want one call", got)
 	}
-	if !strings.HasPrefix(got[0], "pr list --state all --limit 50 --json ") {
+	if !strings.HasPrefix(got[0], "pr list --state open --limit 100 --json ") {
 		t.Errorf("argv = %q", got[0])
 	}
-	if strings.Contains(got[0], "statusCheckRollup") {
-		t.Errorf("wt list asked for the checks: %q", got[0])
-	}
-	for _, field := range []string{"number", "headRefName", "isDraft", "state", "reviewDecision", "isCrossRepository"} {
+	for _, field := range []string{"number", "headRefName", "baseRefName", "isDraft",
+		"state", "reviewDecision", "isCrossRepository", "statusCheckRollup"} {
 		if !strings.Contains(got[0], field) {
 			t.Errorf("argv does not ask for %s: %q", field, got[0])
 		}
 	}
 }
 
-func TestListWithChecksAndHead(t *testing.T) {
-	c, log := fake(t, `echo '[]'`)
-	if _, err := c.List(t.TempDir(), ListOptions{State: "open", Limit: 100, Checks: true, Head: "fix_wt/x"}); err != nil {
+// Asking for the checks must not leave them in the shared field list, which
+// `pr view` reads too: appending to it in place would poison it.
+func TestOpenWithChecksDoesNotKeepTheChecksField(t *testing.T) {
+	c, log := fake(t, `case "$2" in list) echo '[]' ;; view) echo '{}' ;; esac`)
+	if _, err := c.OpenWithChecks(t.TempDir(), 10); err != nil {
 		t.Fatal(err)
 	}
-	got := argv(t, log)[0]
-	if !strings.Contains(got, "statusCheckRollup") {
-		t.Errorf("checks were not asked for: %q", got)
-	}
-	if !strings.HasSuffix(got, "--head fix_wt/x") {
-		t.Errorf("argv = %q", got)
-	}
-}
-
-// Asking for the checks must not leave them in the fields the next call sends:
-// the field list is shared, and appending to it in place would poison it.
-func TestListDoesNotKeepTheChecksField(t *testing.T) {
-	c, log := fake(t, `echo '[]'`)
-	if _, err := c.List(t.TempDir(), ListOptions{State: "open", Limit: 10, Checks: true}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := c.List(t.TempDir(), ListOptions{State: "all", Limit: 10}); err != nil {
+	if _, err := c.View(t.TempDir(), 7); err != nil {
 		t.Fatal(err)
 	}
 	if got := argv(t, log); len(got) != 2 || strings.Contains(got[1], "statusCheckRollup") {
-		t.Errorf("second call asked for the checks: %q", got)
+		t.Errorf("the second call asked for the checks: %q", got)
 	}
 }
 
-func TestListParsesPullRequests(t *testing.T) {
+func TestOpenWithChecksParsesPullRequests(t *testing.T) {
 	c, _ := fake(t, `echo '[{"number":12,"title":"Tidy","headRefName":"fix_wt/tidy","isDraft":false,`+
 		`"state":"OPEN","reviewDecision":"APPROVED","isCrossRepository":false,`+
 		`"author":{"login":"anders"},"headRepositoryOwner":{"login":"Telcred"},"url":"u"}]'`)
-	prs, err := c.List(t.TempDir(), ListOptions{State: "open", Limit: 5})
+	prs, err := c.OpenWithChecks(t.TempDir(), 5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +171,7 @@ func TestCheckoutIntoRunsInTheWorktree(t *testing.T) {
 // gh's own complaint is what a person needs to see, not "exit status 1".
 func TestRunQuotesGitHubsComplaint(t *testing.T) {
 	c, _ := fake(t, `echo "could not determine base repository" >&2; exit 1`)
-	_, err := c.List(t.TempDir(), ListOptions{State: "open", Limit: 5})
+	_, err := c.OpenWithChecks(t.TempDir(), 5)
 	if err == nil || !strings.Contains(err.Error(), "could not determine base repository") {
 		t.Errorf("err = %v", err)
 	}
@@ -198,7 +182,7 @@ func TestRunQuotesGitHubsComplaint(t *testing.T) {
 func TestRunDeadline(t *testing.T) {
 	c, _ := fake(t, `sleep 30`)
 	start := time.Now()
-	_, err := c.List(t.TempDir(), ListOptions{State: "open", Limit: 5, Deadline: 200 * time.Millisecond})
+	_, err := c.PRsOnBranches(t.TempDir(), Remote{Slug: "t/demo"}, []string{"b"}, 200*time.Millisecond)
 	if err == nil || !strings.Contains(err.Error(), "did not answer within") {
 		t.Fatalf("err = %v, want a deadline", err)
 	}
@@ -209,9 +193,9 @@ func TestRunDeadline(t *testing.T) {
 
 // Broken JSON is an error, not an empty list that would read as "no pull
 // requests".
-func TestListRejectsRubbish(t *testing.T) {
+func TestOpenWithChecksRejectsRubbish(t *testing.T) {
 	c, _ := fake(t, `echo 'not json'`)
-	if _, err := c.List(t.TempDir(), ListOptions{State: "open", Limit: 5}); err == nil {
+	if _, err := c.OpenWithChecks(t.TempDir(), 5); err == nil {
 		t.Error("rubbish parsed as an empty list")
 	}
 }

@@ -123,7 +123,7 @@ func trunkBases(ctx *Context) ([]TrunkBase, error) {
 // when a merged branch has a worktree that could go. prs is what GitHub says
 // about each branch, which is empty whenever GitHub is not in play.
 func planSweep(ctx *Context, bases []TrunkBase, list func() ([]wtsync.Agent, error),
-	prs func() map[string]github.PR) (SweepPlan, error) {
+	prs func([]string) map[string]github.PR) (SweepPlan, error) {
 	branches, err := ctx.Repo.Branches()
 	if err != nil {
 		return SweepPlan{}, fmt.Errorf("could not list branches: %w", err)
@@ -145,7 +145,21 @@ func planSweep(ctx *Context, bases []TrunkBase, list func() ([]wtsync.Agent, err
 	}
 	inUse := worktrees.Users()
 	originHead, _ := ctx.Repo.OriginHead()
-	byBranch := prs()
+
+	// Only the branches that can reach a row of the plan: merged into trunk,
+	// upstream gone, or holding a worktree — which is where a squash merge
+	// git cannot see shows up. Anything else is work in progress.
+	var asked []string
+	for _, b := range branches {
+		if protectedBranch(b.Name, ctx.Config.MainBranch, originHead) {
+			continue
+		}
+		if merged[b.Name] != "" || b.Gone || inUse[b.Name].Path != "" {
+			asked = append(asked, b.Name)
+		}
+	}
+	byBranch := prs(asked)
+	trunkNames := trunks(ctx)
 
 	p := SweepPlan{Bases: bases, MainRoot: ctx.Repo.MainRoot}
 	var candidates []SweepBranch
@@ -156,10 +170,10 @@ func planSweep(ctx *Context, bases []TrunkBase, list func() ([]wtsync.Agent, err
 		use := inUse[b.Name]
 		sb := SweepBranch{Branch: b, MergedInto: merged[b.Name], Worktree: use.Path, HeldBy: use.By}
 		if pr, ok := byBranch[b.Name]; ok {
-			sb.PR = prLabel(pr)
+			sb.PR = prLabel(pr, trunkNames)
 			// Only where git cannot tell: trunk containing the branch is the
 			// stronger fact and the one every other command reads.
-			if sb.MergedInto == "" && pr.Landed(b.Tip) {
+			if sb.MergedInto == "" && pr.Landed(b.Tip, trunkNames...) {
 				sb.MergedPR = pr.Number
 			}
 		}
@@ -216,13 +230,10 @@ func planSweep(ctx *Context, bases []TrunkBase, list func() ([]wtsync.Agent, err
 		}
 		wt, _ := worktrees.ByPath(sb.Worktree)
 		wt.Path = sb.Worktree
-		rp := planFor(ctx, wt, RemoveOptions{Agents: agents})
-		// git reads a squash- or rebase-merged branch as unmerged, so the
-		// removal plan would rename it aside. GitHub says it landed at this
-		// tip, so it goes, and the plan carries the number that says why.
-		if sb.MergedPR > 0 && rp.Branch == sb.Name && rp.Tip == sb.Tip {
-			rp.Outcome, rp.MergedPR, rp.KeepAs = BranchDeleted, sb.MergedPR, ""
-		}
+		// git reads a squash- or rebase-merged branch as unmerged, so without
+		// this the plan would rename it aside. Sweep has just read GitHub, so
+		// it answers from that rather than from the cache remove falls back on.
+		rp := planFor(ctx, wt, RemoveOptions{Agents: agents, Landed: landedFrom(byBranch, trunkNames)})
 		sb.Kept = unsafeToRemove(sb, rp, wtsync.SessionsAt(agents, sb.Worktree), listErr)
 		sb.Dirty, sb.LockHeld = rp.Dirty, rp.Locked && rp.LockHeld
 		if sb.Detached {
@@ -455,7 +466,10 @@ func (p SweepPlan) changedFrom(ctx *Context, was SweepBranch) string {
 	case protectedBranch(was.Name, ctx.Config.MainBranch, head):
 		return "origin's HEAD names it now"
 	case was.MergedPR > 0:
-		return fmt.Sprintf("#%d no longer reads as merged at this tip", was.MergedPR)
+		// The branch is where it was and nothing else claims it, so what
+		// changed is the answer about the pull request — usually that GitHub
+		// could not be asked again, not that it said something new.
+		return fmt.Sprintf("#%d could not be read as merged at this tip a second time", was.MergedPR)
 	}
 	return "trunk no longer contains it: the merge was undone after the plan was made"
 }
@@ -575,15 +589,22 @@ type SweepOptions struct {
 	PRs map[string]github.PR
 }
 
-// pullRequests is what GitHub says about this repository's branches, fetched
-// fresh because a sweep decides what to delete, and left in the cache
-// `wt list` reads. Empty whenever GitHub is not in play, and a sweep is then
-// exactly what it was before.
-func (o SweepOptions) pullRequests(ctx *Context) func() map[string]github.PR {
+// pullRequests is what GitHub says about the branches a sweep considers,
+// fetched fresh because a sweep decides what to delete, and left in the cache
+// `wt list` reads. Empty whenever GitHub is not in play.
+//
+// The branches are named in the question, so a pull request of any age is
+// found, and only the branches that can appear in the plan are asked about.
+func (o SweepOptions) pullRequests(ctx *Context) func([]string) map[string]github.PR {
 	if o.PRs != nil {
-		return func() map[string]github.PR { return o.PRs }
+		return func([]string) map[string]github.PR { return o.PRs }
 	}
-	return func() map[string]github.PR { return worktreePRs(ctx, listQuery(0), true) }
+	return func(branches []string) map[string]github.PR {
+		return branchPRs(ctx, branches, prLookup{
+			warn:    "sweeping without GitHub's answers, so a squash-merged branch is not recognised",
+			refresh: true,
+		}).byBranch
+	}
 }
 
 // listAgents is the first listing of the sessions, for the plan.
@@ -754,4 +775,16 @@ func whyKept(err error) string {
 		return err.Error()
 	}
 	return gitSaid(err)
+}
+
+// landedFrom answers planFor's landed question from a listing already read, so
+// a sweep decides on the pull requests it just fetched.
+func landedFrom(byBranch map[string]github.PR, trunkNames []string) func(branch, tip string) int {
+	return func(branch, tip string) int {
+		pr, ok := byBranch[branch]
+		if !ok || !pr.Landed(tip, trunkNames...) {
+			return 0
+		}
+		return pr.Number
+	}
 }

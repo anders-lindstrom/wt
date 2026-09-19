@@ -1254,4 +1254,4 @@ func TestSweepPlanNamesADetachedWorktreeAtAMergedTip(t *testing.T) {
 
 // noPullRequests is a GitHub with nothing to say, which is what every sweep
 // test that is not about pull requests wants.
-func noPullRequests() map[string]github.PR { return nil }
+func noPullRequests([]string) map[string]github.PR { return nil }
