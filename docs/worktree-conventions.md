@@ -104,6 +104,39 @@ carry are shims that call `wt`.
 | `s` | Superset's: `<repo>_wt/<repo>/<type>_wt/<work>` | Leave it where it is. Superset stores the absolute path of every workspace, so a move leaves its workspace pointing at nothing. `wt setup` provisions it in place. |
 | `!` | Anything else: a legacy `../<repo>-<work>` checkout, one inside the repo, or plain `git worktree add` somewhere | `wt migrate <work, branch or path>` moves it into place and renames the branch to match. |
 
+## Superset registers both ways
+
+Superset's own workspaces reach wt through the project's setup step, which runs
+`wt setup --source superset` in the workspace Superset built.
+
+It goes the other way too: `wt new` and `wt checkout` hand the worktree they
+just made to Superset, so a worktree started from the shell shows up in the app
+beside the ones started there. wt runs `superset ws create --local --project
+<id> --branch <branch> --skip-branch-prefix`, which makes no checkout of its
+own — Superset adopts the one git already has for that branch, at the path wt
+chose.
+
+It is inactive unless everything is in place: the `superset` CLI on the PATH or
+at `~/.superset/bin/superset`, the desktop app's host service running, and this
+repository one of Superset's projects. wt never starts the host service and
+never creates a project. A machine without Superset, and a repository Superset
+does not track, are ordinary states and pass in silence; a Superset that is
+there and would not answer is a line. `SUPERSET_REGISTER=on` is a repository
+asking for registration, so under it every way the registration can stop is a
+line, marked `!`, and `wt doctor` counts it as a problem. `wt doctor` names the
+state whatever the mode. Registering the same branch twice is Superset's own
+no-op, so nothing duplicates.
+
+**Nothing is deregistered.** `wt remove` and `wt sweep` never call Superset.
+`superset ws delete` deletes the checkout off disk along with the row,
+uncommitted work included, so wt does not call it. Remove the workspace in
+Superset when you want it gone; after `wt remove` it stays behind, pointing at
+a directory that is no longer there.
+
+Turn it off for a repository with `SUPERSET_REGISTER=off` in `worktree.conf`,
+or once with `wt new --no-superset`. `wt doctor` reports which of the three
+states the machine is in.
+
 ## More
 
 - `wt <command> --help`: every command, with worked examples.

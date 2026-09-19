@@ -6,6 +6,16 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-19 06:52 — wt new registers the worktree with Superset
+
+- `wt new` and `wt checkout` hand the worktree to the Superset app, which
+  adopts the checkout git already has. Inactive unless the `superset` CLI is
+  there, the app is running and this repo is one of its projects; each way it
+  stops is one line on stderr, and stdout and the exit code never change.
+- `SUPERSET_REGISTER=auto|on|off`, or `--no-superset` once; `wt doctor` has a
+  Superset section. Nothing is deregistered: `superset ws delete` takes the
+  checkout off disk, so that stays a thing you do in Superset.
+
 ## 2026-09-17 16:58 — wt sync keep rebases the ready worktrees on a timer
 
 - `wt sync keep start` installs a launchd job that runs `wt sync keep run`

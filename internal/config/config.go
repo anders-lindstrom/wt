@@ -21,6 +21,7 @@ type Config struct {
 	RequiredBins         []string
 	TestCommand          string
 	RunTestsBeforeRemove bool
+	SupersetRegister     SupersetMode
 	// MainBranchSet says MAIN_BRANCH came from the configuration rather than
 	// from the fallback, which is only a guess from origin or the checkout.
 	MainBranchSet bool
@@ -42,7 +43,28 @@ const (
 	KeyRequiredBins         = "REQUIRED_BINS"
 	KeyTestCommand          = "TEST_COMMAND"
 	KeyRunTestsBeforeRemove = "RUN_TESTS_BEFORE_REMOVE"
+	KeySupersetRegister     = "SUPERSET_REGISTER"
 )
+
+// SupersetMode says whether a worktree wt creates is also registered as a
+// workspace in the Superset desktop app.
+type SupersetMode string
+
+const (
+	// SupersetAuto registers when Superset is installed, its host service is
+	// running and this repository is one of its projects, and says in a line
+	// when it is not. The default: on a machine without Superset it does
+	// nothing at all.
+	SupersetAuto SupersetMode = "auto"
+	// SupersetOn is auto, plus `wt doctor` counting an unusable Superset as a
+	// problem. Registration is still never fatal.
+	SupersetOn SupersetMode = "on"
+	// SupersetOff never runs Superset and never mentions it.
+	SupersetOff SupersetMode = "off"
+)
+
+// SupersetModes is every value SUPERSET_REGISTER accepts.
+var SupersetModes = []SupersetMode{SupersetAuto, SupersetOn, SupersetOff}
 
 // kind is how a key's value is written.
 type kind int
@@ -77,6 +99,7 @@ var keys = []key{
 	{KeyRequiredBins, "required_bins", kindList},
 	{KeyTestCommand, "test_command", kindString},
 	{KeyRunTestsBeforeRemove, "run_tests_before_remove", kindBool},
+	{KeySupersetRegister, "superset_register", kindString},
 }
 
 // isKnown reports whether a key is one wt reads.
@@ -152,6 +175,9 @@ func fromRaw(r map[string]Value, mainBranchFallback, file string) (*Config, erro
 	if c.RunTestsBeforeRemove, err = boolean(r, KeyRunTestsBeforeRemove, false); err != nil {
 		problems = append(problems, err.Error())
 	}
+	if c.SupersetRegister, err = supersetMode(r, KeySupersetRegister, SupersetAuto); err != nil {
+		problems = append(problems, err.Error())
+	}
 
 	c.DefaultType = str(r, KeyDefaultType, "")
 	if c.DefaultType == "" {
@@ -192,6 +218,25 @@ func list(r map[string]Value, key string, def []string) []string {
 		return v.List
 	}
 	return strings.Fields(v.Scalar)
+}
+
+func supersetMode(r map[string]Value, key string, def SupersetMode) (SupersetMode, error) {
+	v, ok := r[key]
+	if !ok {
+		return def, nil
+	}
+	if v.IsList {
+		return def, fmt.Errorf("%s=(%s) is a list; it takes one of: auto on off",
+			key, strings.Join(v.List, " "))
+	}
+	if v.Scalar == "" {
+		return def, nil
+	}
+	m := SupersetMode(strings.ToLower(v.Scalar))
+	if !slices.Contains(SupersetModes, m) {
+		return def, fmt.Errorf("%s=%q is not one of: auto on off", key, v.Scalar)
+	}
+	return m, nil
 }
 
 func boolean(r map[string]Value, key string, def bool) (bool, error) {

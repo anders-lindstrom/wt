@@ -12,6 +12,9 @@ type NewOptions struct {
 	Base      string
 	SkipBuild bool
 	NoSetup   bool
+	// NoSuperset leaves the worktree out of the Superset desktop app for this
+	// one invocation, whatever SUPERSET_REGISTER says.
+	NoSuperset bool
 }
 
 // New creates a branch and its worktree at the canonical path, then provisions
@@ -51,6 +54,10 @@ func New(ctx *Context, spec string, opts NewOptions, w io.Writer) (string, error
 //
 // Setup is left to default SourceDir to the main checkout, which is what these
 // callers each passed it by hand.
+//
+// Superset registration runs after Setup, and runs even when Setup reported a
+// problem: the worktree is on disk and on its branch either way, which is all
+// Superset is told. It cannot change what this returns.
 func addAndProvision(ctx *Context, path string, add func() error, opts NewOptions, w io.Writer) (string, error) {
 	if _, err := os.Stat(path); err == nil {
 		return "", fmt.Errorf("%s already exists", path)
@@ -58,8 +65,14 @@ func addAndProvision(ctx *Context, path string, add func() error, opts NewOption
 	if err := add(); err != nil {
 		return "", err
 	}
+	// --no-setup is "the checkout, nothing else", and Superset is one of the
+	// else: it answers a new workspace by running the project's setup script.
 	if opts.NoSetup {
 		return path, nil
 	}
-	return path, Setup(ctx, path, SetupOptions{SkipBuild: opts.SkipBuild}, w)
+	err := Setup(ctx, path, SetupOptions{SkipBuild: opts.SkipBuild}, w)
+	if !opts.NoSuperset {
+		registerSuperset(ctx, path, w)
+	}
+	return path, err
 }

@@ -217,5 +217,10 @@ func render(repoName string, a Answers, c *config.Config) string {
 	p("# whenever this is on.")
 	p("# TEST_COMMAND=%s", c.TestCommand)
 	p("# RUN_TESTS_BEFORE_REMOVE=%s", strconv.FormatBool(c.RunTestsBeforeRemove))
+	p("")
+	p("# Register each new worktree as a workspace in the Superset desktop app:")
+	p("# auto when Superset can take it, on to also have `wt doctor` complain")
+	p("# when it cannot, off to leave Superset alone.")
+	p("# SUPERSET_REGISTER=%s", c.SupersetRegister)
 	return b.String()
 }
