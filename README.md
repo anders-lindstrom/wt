@@ -67,6 +67,8 @@ examples: `wt <command> --help`.
 |---|---|
 | `wt new <type>/<work>` | create a branch and worktree, then provision it (`--base`, `--no-setup`, `--skip-build`) |
 | `wt checkout <branch> [work]` | put a worktree on a branch that already exists |
+| `wt pr checkout [<number>]` | put a worktree on a pull request; with no number, pick one from the open ones |
+| `wt pr list` | every open pull request, its state and checks, and the worktree on it |
 
 **Get to your work**
 
@@ -74,7 +76,7 @@ examples: `wt <command> --help`.
 |---|---|
 | `wt cd [pattern]` | cd to a worktree, in this shell; `.` is the one you are in, bare or `/` the main checkout |
 | `wt exec <pattern> <cmd>…` | run a command there, in a subshell; your shell stays put |
-| `wt list` | every worktree, in any layout; `s` marks Superset's, `!` one nothing owns |
+| `wt list` | every worktree, in any layout; `s` marks Superset's, `!` one nothing owns; a `PR` column when a worktree here has one (`--no-pr`) |
 | `wt status [<work>]` | each worktree's branch, whether it is clean, and how far behind and ahead of trunk it is; with a worktree named, that one in full with `wt sync`'s verdict |
 | `wt find <pattern>` | resolve a worktree by fuzzy name, across repositories (`--candidates`) |
 
@@ -184,7 +186,8 @@ happens until:
 wt config set superset true
 ```
 
-After that, `wt new` and `wt checkout` hand the worktree to Superset once it is
+After that, `wt new`, `wt checkout` and `wt pr checkout` hand the worktree to
+Superset once it is
 provisioned, so one started from the shell appears in the app beside the ones
 started there. Superset adopts the checkout git already has — it creates
 nothing and moves nothing, and the workspace points at wt's canonical path.
@@ -215,6 +218,74 @@ in its `worktree.conf`, and one run can with `wt new --no-superset`. A
 repository that asks for it with `SUPERSET_REGISTER=on` hears about every way
 the registration can stop, this one included, and `wt doctor` counts those as
 problems.
+
+## Pull requests
+
+**On by default**, and inert where it cannot apply. wt reads pull requests
+through the `gh` CLI and keeps no credentials of its own: whatever gh is logged
+in as is what wt sees. Nothing wt does writes to GitHub — the only gh command
+it runs that changes anything is `gh pr checkout`, and what that changes is
+your own checkout.
+
+```
+wt pr list          # every open pull request, and the worktree on it
+wt pr checkout 12   # a worktree for that one, provisioned like any other
+wt pr checkout      # pick from the open ones
+```
+
+`wt pr checkout` makes the worktree at the canonical path and provisions it
+through the same step as `wt new`, so everything else — `provision.sh`, the
+build, the Superset registration if you have opted into it — happens by its own
+rules. The worktree goes on the pull request's **own head branch**, put there
+by `gh pr checkout` running inside the new worktree, so a push from it updates
+the pull request. That is what makes a pull request from a fork work: gh points
+the branch's remote at the fork, which nothing else would get right. Your main
+checkout is never switched.
+
+The worktree is named `pr-<number>-<branch>`, under the type its branch
+suggests — `feat_wt/pr-12-residential_fixes` — so `wt cd pr-12` finds it. A head
+branch that already follows this repository's convention keeps its own name
+instead, so a branch wt made lands exactly where `wt new` would have put it. A
+pull request whose branch is already in a worktree prints that path and makes
+nothing.
+
+Given a number, a merged or closed pull request is checked out too: finished
+work is worth re-reading. GitHub deletes the head branch when a pull request
+merges, so wt falls back to `refs/pull/<number>/head` — the same commit, on a
+branch with no upstream, and it says so. The picker only offers the open ones.
+Without a
+terminal to pick in, the list goes to stderr and wt asks for a number rather
+than choosing — so a script or an agent never lands in a worktree it did not
+name. stdout stays the path alone, so `cd "$(wt pr checkout 12)"` works.
+
+`wt list` shows a `PR` column when any worktree here is on a pull request:
+
+```
+   WORK                       BRANCH             PR          PATH
+   (main)                     master             -           ~/src/fd
+   pr-2137-argument-sanitize  argument-sanitize  #2137 open  ~/src/fd_wt/feat_wt/pr-2137-…
+```
+
+That column costs **one** `gh` call for the whole listing, under a two-second
+deadline, for the 50 most recent pull requests of any state. Every way it can
+go wrong — no gh, offline, not logged in, a repository that is not on GitHub,
+a call that overran — prints `wt list` exactly as it was before the column
+existed: no column, no message, the same exit code. It is not printed at all
+when no worktree here has a pull request.
+
+It is not free: measured on a repository with three worktrees and one open
+pull request, `wt list` takes about **0.8s** with it and **0.02s** without.
+`wt list --no-pr` skips the call.
+
+**Four things have to be true**, in this order, and `wt pr` says which one was
+not: `github = true` in your settings; `gh` on the PATH; a GitHub remote on
+this repository; and gh logged in to that remote's host. `wt doctor` has a
+`GitHub:` section reporting the same, and never counts any of it as a problem —
+a machine without gh is an ordinary machine.
+
+Off with `wt config set github false`, which stops wt running gh at all.
+
+Not here: creating, merging or commenting on pull requests. wt reads.
 
 ## Moving a worktree
 
@@ -306,7 +377,7 @@ $XDG_CONFIG_HOME/wt/config.toml     # or ~/.config/wt/config.toml
 | key | default | what it decides |
 |---|---|---|
 | `superset` | `false` | whether wt registers worktrees it creates as Superset workspaces |
-| `github` | `true` | whether wt uses the GitHub CLI |
+| `github` | `true` | whether wt reads pull requests through the GitHub CLI |
 
 ```
 wt config                      # everything, with where each value came from
