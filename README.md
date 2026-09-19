@@ -174,6 +174,36 @@ pre-migration `<repo>-<work>` checkout — is a `wt migrate` candidate, because
 Superset stores the absolute path of every workspace and a move leaves that
 workspace pointing at nothing. `wt migrate` says so before it moves.
 
+### Worktrees wt makes show up in Superset
+
+`wt new` and `wt checkout` hand the worktree to Superset once it is provisioned,
+so one started from the shell appears in the app beside the ones started there.
+Superset adopts the checkout git already has — it creates nothing and moves
+nothing, and the workspace points at wt's canonical path.
+
+This needs all three of: the `superset` CLI, on the PATH or at
+`~/.superset/bin/superset` where the desktop app installs it; the host service
+running, which means the app is open; and this repository already one of
+Superset's projects. A machine with no Superset, and a repository Superset does
+not track, are ordinary states and pass in silence. A Superset that is there and
+would not answer is one line on stderr and nothing else — `wt new` still prints
+only the path on stdout and still exits the same way. wt never starts the app
+and never creates a project. `wt doctor` reports which of the three it found,
+whatever the mode.
+
+Registering a branch that already has a workspace is Superset's own no-op, so
+running it twice changes nothing. A *new* workspace makes Superset run the
+project's setup step if it has one, which for these repos is
+`wt setup --source superset`: a second, idempotent provisioning pass on top of
+the one `wt new` just did. `--no-setup` therefore skips registration too.
+
+**Removal is one-way.** wt never deregisters. `superset ws delete` deletes the
+checkout off disk, uncommitted work included, so `wt remove` does not call it —
+delete the workspace in Superset when you want it gone.
+
+Off for a repository with `SUPERSET_REGISTER=off`, off once with
+`wt new --no-superset`.
+
 ## Moving a worktree
 
 `wt migrate` takes a worktree the way `wt list` prints it — the work name, the
@@ -230,6 +260,12 @@ is validated: **an unknown or misspelled key is an error, not silence.**
 | `REQUIRED_BINS` | list | empty |
 | `TEST_COMMAND` | string | required when tests-before-remove is on |
 | `RUN_TESTS_BEFORE_REMOVE` | bool | `false` |
+| `SUPERSET_REGISTER` | `auto` `on` `off` | `auto` |
+
+`SUPERSET_REGISTER` decides whether a new worktree is also registered as a
+Superset workspace: `auto` when Superset can take it, `on` to additionally have
+`wt doctor` count an unusable Superset as a problem, `off` to leave it alone.
+Registration never fails a command under any of them.
 
 Retired: `REPO_NAME` (derived), `WORKTREE_LAYOUT` (the tool owns the shape),
 `AWS_SETUP_ENABLED` (became `provision.sh`).
