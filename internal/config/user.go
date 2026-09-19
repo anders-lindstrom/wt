@@ -1,0 +1,410 @@
+package config
+
+import (
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+
+	"github.com/BurntSushi/toml"
+)
+
+// The per-user settings: whether wt uses each integration on this machine.
+// worktree.conf is committed, so it cannot answer this for whoever clones the
+// repository.
+const (
+	// UserKeySuperset decides whether wt talks to the Superset desktop app at
+	// all. Off by default.
+	UserKeySuperset = "superset"
+	// UserKeyGitHub decides whether wt uses the GitHub CLI. On by default.
+	UserKeyGitHub = "github"
+)
+
+// userKey is one setting in the user file.
+type userKey struct {
+	Name    string
+	Default bool
+	Doc     string
+	field   func(*User) *bool
+}
+
+// userKeys is every key the user file accepts; the reader, the writer, the
+// printer and the unknown-key check are all derived from it.
+var userKeys = []userKey{
+	{UserKeySuperset, false, "register worktrees wt creates as Superset workspaces",
+		func(u *User) *bool { return &u.Superset }},
+	{UserKeyGitHub, true, "use the GitHub CLI for branches and pull requests",
+		func(u *User) *bool { return &u.GitHub }},
+}
+
+// UserKeyNames is every key the user file accepts, in the order `wt config`
+// prints them.
+func UserKeyNames() []string {
+	out := make([]string, 0, len(userKeys))
+	for _, k := range userKeys {
+		out = append(out, k.Name)
+	}
+	return out
+}
+
+// UserKeyDoc is the one-line explanation of a key, or "" for a key wt does
+// not read.
+func UserKeyDoc(name string) string {
+	if k, ok := userKeyByName(name); ok {
+		return k.Doc
+	}
+	return ""
+}
+
+func userKeyByName(name string) (userKey, bool) {
+	i := slices.IndexFunc(userKeys, func(k userKey) bool { return k.Name == name })
+	if i < 0 {
+		return userKey{}, false
+	}
+	return userKeys[i], true
+}
+
+// User is the per-user configuration. A missing file means the built-in
+// defaults; nothing creates the file but `wt config set`.
+type User struct {
+	Superset bool
+	GitHub   bool
+	// Path is the file these values would be read from, whether or not it
+	// exists.
+	Path string
+	// Exists says the file was there.
+	Exists bool
+	// Unusable says the file was there and wt could not read it. Every
+	// integration is then off for the run: a file nobody can parse must not
+	// hand back a default that switches one on.
+	Unusable bool
+	// fromFile records which keys the file set, so `wt config` can say where
+	// a value came from.
+	fromFile map[string]bool
+}
+
+// DefaultUser is the configuration a machine with no user file has.
+func DefaultUser() *User { return defaultUser("") }
+
+func defaultUser(path string) *User {
+	u := &User{Path: path, fromFile: map[string]bool{}}
+	for _, k := range userKeys {
+		*k.field(u) = k.Default
+	}
+	return u
+}
+
+// unusableUser is the configuration of a run whose file is there and cannot
+// be read: every integration off, whatever its own default is. The person
+// wrote something into that file, and wt does not know what.
+func unusableUser(path string) *User {
+	u := defaultUser(path)
+	u.Exists, u.Unusable = true, true
+	for _, k := range userKeys {
+		*k.field(u) = false
+	}
+	return u
+}
+
+// Origin says where a key's value came from: "user file", "default", or the
+// unreadable file that turned every integration off.
+func (u *User) Origin(name string) string {
+	switch {
+	case u == nil:
+		return "default"
+	case u.Unusable:
+		return "file unreadable"
+	case u.fromFile[name]:
+		return "user file"
+	}
+	return "default"
+}
+
+// Value is one key's current value.
+func (u *User) Value(name string) (bool, error) {
+	k, ok := userKeyByName(name)
+	if !ok {
+		return false, unknownUserKey(name)
+	}
+	return *k.field(u), nil
+}
+
+func unknownUserKey(name string) error {
+	return fmt.Errorf("unknown key %q; the user config takes: %s",
+		name, strings.Join(UserKeyNames(), " "))
+}
+
+// userFile is the file's name under the wt configuration directory.
+const userFile = "config.toml"
+
+// UserPath is where the user file lives: under XDG_CONFIG_HOME when the
+// environment sets one, and ~/.config otherwise.
+func UserPath() (string, error) {
+	if dir := os.Getenv("XDG_CONFIG_HOME"); dir != "" {
+		return filepath.Join(dir, "wt", userFile), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".config", "wt", userFile), nil
+}
+
+// LoadUser reads the user configuration. A missing file is not an error, and
+// a usable User comes back even when there is one.
+func LoadUser() (*User, error) {
+	path, err := UserPath()
+	if err != nil {
+		return DefaultUser(), err
+	}
+	return loadUser(path)
+}
+
+func loadUser(path string) (*User, error) {
+	u := defaultUser(path)
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return u, nil
+	}
+	if err != nil {
+		return unusableUser(path), err
+	}
+	u.Exists = true
+
+	var doc map[string]toml.Primitive
+	md, err := toml.Decode(string(data), &doc)
+	if err != nil {
+		return unusableUser(path), fmt.Errorf("%s: %w", path, err)
+	}
+	var problems []string
+	for _, name := range md.Keys() {
+		// Every setting is top-level; a key inside a table is covered by the
+		// table's own entry, which is already unknown.
+		if len(name) != 1 {
+			continue
+		}
+		k, ok := userKeyByName(name[0])
+		if !ok {
+			problems = append(problems, fmt.Sprintf("unknown key %q in %s", name[0], path))
+			continue
+		}
+		var b bool
+		if err := md.PrimitiveDecode(doc[k.Name], &b); err != nil {
+			problems = append(problems, fmt.Sprintf("%s in %s is not a boolean (true or false)", k.Name, path))
+			continue
+		}
+		*k.field(u) = b
+		u.fromFile[k.Name] = true
+	}
+	if len(problems) > 0 {
+		// The keys that did parse are kept: one mistyped key must not cost
+		// the person the setting they wrote on the line above it.
+		return u, fmt.Errorf("%s (wt's settings are: %s)",
+			strings.Join(problems, "; "), strings.Join(UserKeyNames(), " "))
+	}
+	return u, nil
+}
+
+// SetUser writes one key to the user file, creating the file if it is not
+// there, and returns the path and the parsed value. An unknown key, a value
+// that is not a boolean, or a file wt cannot parse writes nothing.
+func SetUser(name, value string) (path string, set bool, err error) {
+	b, err := userBool(name, value)
+	if err != nil {
+		return "", false, err
+	}
+	path, content, err := editable()
+	if err != nil {
+		return path, false, err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return path, false, err
+	}
+	return path, b, os.WriteFile(path, []byte(assign(content, name, b)), 0o644)
+}
+
+// UnsetUser removes one key from the user file, so it falls back to its
+// built-in default. Removing a key that was never written is not an error.
+func UnsetUser(name string) (path string, removed bool, err error) {
+	if _, ok := userKeyByName(name); !ok {
+		return "", false, unknownUserKey(name)
+	}
+	path, content, err := editable()
+	if err != nil {
+		return path, false, err
+	}
+	out, removed := remove(content, name)
+	if !removed {
+		return path, false, nil
+	}
+	return path, true, os.WriteFile(path, []byte(out), 0o644)
+}
+
+// userBool is the value a key is being set to: exactly true or false, the two
+// words the file, the help and `wt config` all use. strconv.ParseBool would
+// also take 1, t, T and TRUE, which nothing here writes or documents.
+func userBool(name, value string) (bool, error) {
+	if _, ok := userKeyByName(name); !ok {
+		return false, unknownUserKey(name)
+	}
+	switch value {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	}
+	return false, fmt.Errorf("%s=%q is not a boolean; write true or false", name, value)
+}
+
+// editable is the path of the user file and the content the writer may edit.
+// A file whose TOML does not parse is refused: the writer works line by line,
+// and a line edited into a file wt has not understood can only make it worse.
+func editable() (path, content string, err error) {
+	if path, err = UserPath(); err != nil {
+		return "", "", err
+	}
+	if content, err = readOrEmpty(path); err != nil {
+		return path, "", err
+	}
+	if err := parses(content); err != nil {
+		return path, "", fmt.Errorf("%s: %w\n  fix it by hand, then try again", path, err)
+	}
+	return path, content, nil
+}
+
+// parses reports the file's own syntax error, or nil for a file wt can read.
+func parses(content string) error {
+	if strings.TrimSpace(content) == "" {
+		return nil
+	}
+	var doc map[string]toml.Primitive
+	_, err := toml.Decode(content, &doc)
+	return err
+}
+
+func readOrEmpty(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// userFileHeader opens a file wt creates from nothing.
+const userFileHeader = "# wt's own settings, for this user on this machine.\n" +
+	"# `wt config` prints them; `wt config set <key> <value>` changes them.\n\n"
+
+// assign rewrites content with name set to value, editing the line in place
+// when the key is already there. Line by line, not decode-and-re-encode: a
+// TOML encoder drops the comments and the ordering.
+func assign(content, name string, value bool) string {
+	line := fmt.Sprintf("%s = %v", name, value)
+	if content == "" {
+		return userFileHeader + line + "\n"
+	}
+	lines, crlf, final := splitUserFile(content)
+	top := topLevel(lines)
+	for i, l := range lines[:top] {
+		if rest, ok := assignmentTo(l, name); ok {
+			lines[i] = line + trailingComment(rest)
+			return joinUserFile(lines, crlf, final)
+		}
+	}
+	return joinUserFile(insertAt(lines, top, line), crlf, final)
+}
+
+// remove takes name's assignment out of content, reporting whether it found
+// one.
+func remove(content, name string) (string, bool) {
+	lines, crlf, final := splitUserFile(content)
+	for i, l := range lines[:topLevel(lines)] {
+		if _, ok := assignmentTo(l, name); ok {
+			return joinUserFile(slices.Delete(slices.Clone(lines), i, i+1), crlf, final), true
+		}
+	}
+	return content, false
+}
+
+// splitUserFile cuts content into lines to edit, and carries the two things
+// the rewrite has to give back: CRLF endings, and whether the file ended with
+// a newline at all.
+func splitUserFile(content string) (lines []string, crlf, final bool) {
+	crlf = strings.Contains(content, "\r\n")
+	if crlf {
+		content = strings.ReplaceAll(content, "\r\n", "\n")
+	}
+	final = strings.HasSuffix(content, "\n")
+	return strings.Split(strings.TrimSuffix(content, "\n"), "\n"), crlf, final
+}
+
+// joinUserFile writes the lines back the way the file had them.
+func joinUserFile(lines []string, crlf, final bool) string {
+	out := strings.Join(lines, "\n")
+	if final {
+		out += "\n"
+	}
+	if crlf {
+		out = strings.ReplaceAll(out, "\n", "\r\n")
+	}
+	return out
+}
+
+// topLevel is how many of lines stand before the first `[table]` header. wt's
+// settings are all top-level, so a `github` written under a table is that
+// table's key and none of the writer's business.
+func topLevel(lines []string) int {
+	for i, l := range lines {
+		if strings.HasPrefix(strings.TrimSpace(l), "[") {
+			return i
+		}
+	}
+	return len(lines)
+}
+
+// assignmentTo reports whether line assigns name, and returns what stands
+// after the `=`. TOML lets a key be quoted, and `"github" = false` is the same
+// assignment as `github = false`.
+func assignmentTo(line, name string) (rest string, ok bool) {
+	key, rest, found := strings.Cut(line, "=")
+	if !found || unquoteKey(strings.TrimSpace(key)) != name {
+		return "", false
+	}
+	return rest, true
+}
+
+// unquoteKey takes off the quotes TOML allows around a key. Every key wt
+// reads is a bare word, so there is nothing else to undo.
+func unquoteKey(key string) string {
+	for _, q := range []string{`"`, "'"} {
+		if len(key) >= 2 && strings.HasPrefix(key, q) && strings.HasSuffix(key, q) {
+			return key[1 : len(key)-1]
+		}
+	}
+	return key
+}
+
+// trailingComment keeps a `# ...` written after the value, so setting a key
+// does not delete the note explaining it.
+func trailingComment(rest string) string {
+	i := strings.Index(rest, "#")
+	if i < 0 {
+		return ""
+	}
+	return "  " + strings.TrimSpace(rest[i:])
+}
+
+// insertAt puts a new assignment at the end of the top-level section, above
+// the blank lines that stand there — before a `[table]` header, or at the end
+// of a file that has none.
+func insertAt(lines []string, at int, line string) []string {
+	for at > 0 && strings.TrimSpace(lines[at-1]) == "" {
+		at--
+	}
+	return slices.Insert(slices.Clone(lines), at, line)
+}

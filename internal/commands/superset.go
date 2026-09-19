@@ -15,11 +15,14 @@ var probeSuperset = superset.Probe
 // registerSuperset adopts a worktree wt has just created as a workspace in the
 // Superset desktop app.
 //
-// Nothing here can fail the command it hangs off: `wt new` prints the path on
-// stdout and callers cd to it, so every outcome is one line on w, which is
-// stderr, and the exit code is untouched. A machine with no Superset hears
-// nothing.
+// Nothing here can fail the command it hangs off: every outcome is one line on
+// w, which is stderr, and the exit code is untouched. The user's own `superset`
+// setting is checked first, so until they opt in wt starts no subprocess and
+// says nothing, whatever worktree.conf asks for.
 func registerSuperset(ctx *Context, path string, w io.Writer) {
+	if !ctx.UserConfig().Superset {
+		return
+	}
 	mode := ctx.Config.SupersetRegister
 	if mode != config.SupersetAuto && mode != config.SupersetOn {
 		return

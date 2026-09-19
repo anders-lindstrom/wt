@@ -20,6 +20,12 @@ type Context struct {
 	// ConfigError records why Config fell back to defaults, when it did.
 	// Only OpenLenient sets it; Open fails outright instead.
 	ConfigError error
+	// User is this person's own configuration, which decides which
+	// integrations wt uses at all. Never nil.
+	User *config.User
+	// UserError records why User fell back to defaults, when it did. Only
+	// OpenLenient sets it; Open fails outright instead.
+	UserError error
 	// Cwd is the directory the context was opened from: where the caller is
 	// standing.
 	Cwd string
@@ -35,7 +41,11 @@ func Open(cwd string) (*Context, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Context{Repo: r, Config: c, Cwd: cwd}, nil
+	u, err := config.LoadUser()
+	if err != nil {
+		return nil, err
+	}
+	return &Context{Repo: r, Config: c, User: u, Cwd: cwd}, nil
 }
 
 // Scheme is how this repository spells its worktrees: the directory they sit
@@ -43,6 +53,15 @@ func Open(cwd string) (*Context, error) {
 // piece of work, its branch and its path is made through it.
 func (c *Context) Scheme() naming.Scheme {
 	return naming.Scheme{Parent: c.Repo.Parent, Repo: c.Repo.Name, Suffix: c.Config.TypeSuffix}
+}
+
+// UserConfig is the person's own settings, defaulted for a Context assembled
+// by hand.
+func (c *Context) UserConfig() *config.User {
+	if c.User == nil {
+		return config.DefaultUser()
+	}
+	return c.User
 }
 
 // HasProvisionScript reports whether the repo declares its own setup step.
@@ -78,6 +97,10 @@ func OpenLenient(cwd string, w io.Writer) *Context {
 	if err != nil {
 		return nil
 	}
+	u, userErr := config.LoadUser()
+	if userErr != nil {
+		fmt.Fprintf(w, "wt: using default user settings: %v\n", userErr)
+	}
 	c, trunk, err := loadFor(r)
 	if err != nil {
 		// Keep whatever did parse: a single retired key should not hide the
@@ -86,7 +109,7 @@ func OpenLenient(cwd string, w io.Writer) *Context {
 			c, _ = config.FromRaw(nil, trunk)
 		}
 		fmt.Fprintf(w, "wt: using partial configuration for %s: %v\n", r.Name, err)
-		return &Context{Repo: r, Config: c, ConfigError: err, Cwd: cwd}
+		return &Context{Repo: r, Config: c, ConfigError: err, User: u, UserError: userErr, Cwd: cwd}
 	}
-	return &Context{Repo: r, Config: c, Cwd: cwd}
+	return &Context{Repo: r, Config: c, User: u, UserError: userErr, Cwd: cwd}
 }
