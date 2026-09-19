@@ -42,7 +42,7 @@ func TestListShowsWorktreesAndMarksNonCanonical(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	if err := List(ctx, &buf, 0); err != nil {
+	if err := List(ctx, ListOptions{}, &buf, 0); err != nil {
 		t.Fatalf("List: %v", err)
 	}
 	out := buf.String()
@@ -64,7 +64,7 @@ func TestListMarksCanonicalWorktreeCleanly(t *testing.T) {
 
 	ctx, _ := Open(main)
 	var buf bytes.Buffer
-	if err := List(ctx, &buf, 0); err != nil {
+	if err := List(ctx, ListOptions{}, &buf, 0); err != nil {
 		t.Fatal(err)
 	}
 	for _, line := range strings.Split(buf.String(), "\n") {
@@ -85,7 +85,7 @@ func TestListMarksSupersetLayoutApartFromForeignOnes(t *testing.T) {
 
 	ctx, _ := Open(main)
 	var buf bytes.Buffer
-	if err := List(ctx, &buf, 0); err != nil {
+	if err := List(ctx, ListOptions{}, &buf, 0); err != nil {
 		t.Fatal(err)
 	}
 	line := lineContaining(t, buf.String(), "feat_wt/thing")
@@ -107,7 +107,7 @@ func TestListExplainsTheForeignMark(t *testing.T) {
 
 	ctx, _ := Open(main)
 	var buf bytes.Buffer
-	if err := List(ctx, &buf, 0); err != nil {
+	if err := List(ctx, ListOptions{}, &buf, 0); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "wt migrate") {
@@ -122,7 +122,7 @@ func TestListPrintsNoLegendWhenEverythingIsCanonical(t *testing.T) {
 
 	ctx, _ := Open(main)
 	var buf bytes.Buffer
-	if err := List(ctx, &buf, 0); err != nil {
+	if err := List(ctx, ListOptions{}, &buf, 0); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(buf.String(), "wt migrate") {
@@ -140,7 +140,7 @@ func TestListFitsPathsToTheTerminalWidth(t *testing.T) {
 
 	const width = 60
 	var buf bytes.Buffer
-	if err := List(ctx, &buf, width); err != nil {
+	if err := List(ctx, ListOptions{}, &buf, width); err != nil {
 		t.Fatal(err)
 	}
 	for _, line := range strings.Split(strings.TrimRight(buf.String(), "\n"), "\n") {
@@ -162,7 +162,7 @@ func TestListPrintsWholePathsWithoutATerminal(t *testing.T) {
 	ctx, _ := Open(main)
 
 	var buf bytes.Buffer
-	if err := List(ctx, &buf, 0); err != nil {
+	if err := List(ctx, ListOptions{}, &buf, 0); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), wt) {
@@ -178,7 +178,7 @@ func TestListShowsPathsFromHomeOnATerminal(t *testing.T) {
 	t.Setenv("HOME", ctx.Repo.Parent)
 
 	var buf bytes.Buffer
-	if err := List(ctx, &buf, 500); err != nil {
+	if err := List(ctx, ListOptions{}, &buf, 500); err != nil {
 		t.Fatal(err)
 	}
 	if line := lineContaining(t, buf.String(), "feat_wt/thing"); !strings.HasSuffix(line, "  ~/demo_wt/feat_wt/thing") {
@@ -262,7 +262,7 @@ func TestListLegendNamesSomethingTheRowActuallyShows(t *testing.T) {
 		filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 
 	var buf bytes.Buffer
-	if err := List(ctx, &buf, 0); err != nil {
+	if err := List(ctx, ListOptions{}, &buf, 0); err != nil {
 		t.Fatal(err)
 	}
 	legend := lineContaining(t, buf.String(), "wt migrate")

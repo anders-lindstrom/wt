@@ -39,7 +39,8 @@ func newSetupCmd() *cobra.Command {
 }
 
 // addProvisionFlags declares --skip-build for every command that provisions a
-// worktree, and --no-setup and --no-superset for the two that create one.
+// worktree, and --no-setup and --no-superset for the three that create one:
+// `wt new`, `wt checkout` and `wt pr checkout`.
 func addProvisionFlags(cmd *cobra.Command, skipBuild, noSetup, noSuperset *bool) {
 	cmd.Flags().BoolVar(skipBuild, "skip-build", false, "skip build initialisation")
 	if noSetup != nil {
