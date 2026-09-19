@@ -183,9 +183,55 @@ wt only ever reads GitHub. Nothing creates, merges, comments on or closes a
 pull request, and wt stores no credentials — `gh auth login` is yours to run.
 The integration needs `github = true` in your settings (the default), `gh` on
 the PATH, a GitHub remote and gh logged in to its host; `wt pr` says which of
-those failed and `wt doctor` reports them all. `wt list`'s `PR` column is one
-bounded `gh` call for the whole listing and degrades to silence, so a listing
-offline is the listing you always had.
+those failed and `wt doctor` reports them all. `wt pr open` opens a worktree's
+pull request through `gh pr view --web`.
+
+`wt list`'s `PR` column is one bounded `gh` call for the whole listing, cached
+for five minutes in the main checkout's git dir (`wt-pr-cache.json`, beside the
+keeper's state), so only the first listing pays for it. The cache is keyed on
+the remote and the query, and a file that is missing, stale, corrupt or
+unwritable is simply a miss: `wt list` is never slower or less reliable for
+having one. `wt list --refresh` asks again; everything that acts on a pull
+request asks GitHub itself and leaves the fresh answer behind.
+
+### What sweep reads it for
+
+A squash or rebase merge rewrites the commits, so git sees the branch as
+unmerged for ever. The pull request is what answers that, so sweep reads it:
+every row that has one names it, and a
+worktree whose pull request GitHub **merged** is swept — but only when the
+local branch is at exactly the commit the pull request carried, so a commit
+made after the merge keeps it. Sweep's own checks come first, unchanged.
+
+`wt remove` does not read pull requests: it runs from git hooks, so it starts
+no process and makes no network call. On a squash-merged branch it keeps the
+branch, and `wt sweep` is what deletes it.
+
+### Not applicable, and broken
+
+Anything that touches an integration follows one rule. When the integration
+cannot apply — switched off, the tool absent, this repository not on GitHub, no
+login, this repository not a Superset project — wt is **silent** and behaves
+exactly as it does without the integration. When the integration is set up and
+the thing it was supposed to do failed anyway, wt says so on **stderr**: stdout
+and the exit code are untouched.
+
+The two spell that line differently, because they answer different questions.
+GitHub is asked in passing by commands whose subject is something else, so its
+failure is one `wt: <what is missing>: <gh's line>` per command per integration,
+through `Context.Warnf`. Superset is a step `wt new` carries out, so it reports
+that step's outcome where it happens, one line per worktree: `-` for a remark,
+`!` where `SUPERSET_REGISTER=on` asked for it, `✓` for a workspace that was
+made.
+
+wt's own settings fail **closed**. A `~/.config/wt/config.toml` wt cannot parse
+turns every integration off for that run and says so in one line: a file the
+person wrote and wt cannot read is no licence to fall back to a default that
+switches one on. A file that parses with one bad key keeps its good keys and the
+line names the part being ignored. Either way the command runs and `wt doctor`
+reports it as a problem. `wt config set` refuses to edit a file it cannot parse;
+`wt config get` answers with the value wt is acting on and puts the file's
+problem on stderr.
 
 ## More
 

@@ -69,6 +69,7 @@ examples: `wt <command> --help`.
 | `wt checkout <branch> [work]` | put a worktree on a branch that already exists |
 | `wt pr checkout [<number>]` | put a worktree on a pull request; with no number, pick one from the open ones |
 | `wt pr list` | every open pull request, its state and checks, and the worktree on it |
+| `wt pr open [<work>]` | open a worktree's pull request in the browser; with no argument, the one you are in |
 
 **Get to your work**
 
@@ -76,7 +77,7 @@ examples: `wt <command> --help`.
 |---|---|
 | `wt cd [pattern]` | cd to a worktree, in this shell; `.` is the one you are in, bare or `/` the main checkout |
 | `wt exec <pattern> <cmd>…` | run a command there, in a subshell; your shell stays put |
-| `wt list` | every worktree, in any layout; `s` marks Superset's, `!` one nothing owns; a `PR` column when a worktree here has one (`--no-pr`) |
+| `wt list` | every worktree, in any layout; `s` marks Superset's, `!` one nothing owns; a `PR` column when a worktree here has one, cached for a few minutes (`--no-pr`, `--refresh`) |
 | `wt status [<work>]` | each worktree's branch, whether it is clean, and how far behind and ahead of trunk it is; with a worktree named, that one in full with `wt sync`'s verdict |
 | `wt find <pattern>` | resolve a worktree by fuzzy name, across repositories (`--candidates`) |
 
@@ -100,7 +101,7 @@ examples: `wt <command> --help`.
 | `wt adopt <path>` | provision a worktree another tool created (`--relocate`, `--skip-build`) |
 | `wt setup [<source-dir>]` | provision the worktree you are in (`--skip-build`, `--source` to name what ran it) |
 | `wt remove <work>` | remove a worktree; delete its branch when merged, keep it when not (`--yes`, `--me` or `.` for the one you are in, `--force` for a locked one) |
-| `wt sweep` | delete local branches already merged into trunk, and remove the worktrees on such branches that nothing is using; from the main checkout only (`--no-fetch`, `--yes`) |
+| `wt sweep` | delete local branches already merged into trunk — or whose pull request GitHub merged — and remove the worktrees on such branches that nothing is using; from the main checkout only (`--no-fetch`, `--yes`) |
 
 **This repository, and this build**
 
@@ -231,6 +232,7 @@ your own checkout.
 wt pr list          # every open pull request, and the worktree on it
 wt pr checkout 12   # a worktree for that one, provisioned like any other
 wt pr checkout      # pick from the open ones
+wt pr open          # this worktree's pull request, in the browser
 ```
 
 `wt pr checkout` makes the worktree at the canonical path and provisions it
@@ -267,15 +269,30 @@ name. stdout stays the path alone, so `cd "$(wt pr checkout 12)"` works.
 ```
 
 That column costs **one** `gh` call for the whole listing, under a two-second
-deadline, for the 50 most recent pull requests of any state. Every way it can
-go wrong — no gh, offline, not logged in, a repository that is not on GitHub,
-a call that overran — prints `wt list` exactly as it was before the column
-existed: no column, no message, the same exit code. It is not printed at all
-when no worktree here has a pull request.
+deadline, for the 50 most recent pull requests of any state — and the answer is
+then kept in this repository's `.git/` for five minutes, so the next `wt list`
+pays nothing at all. Measured on a repository with three worktrees and one open
+pull request:
 
-It is not free: measured on a repository with three worktrees and one open
-pull request, `wt list` takes about **0.8s** with it and **0.02s** without.
-`wt list --no-pr` skips the call.
+| | |
+|---|---|
+| first listing, GitHub asked | **0.84s** |
+| listing from the cache | **0.03s** |
+| `wt list --no-pr` | **0.02s** |
+
+`wt list --refresh` asks again without waiting the cache out, and `--no-pr`
+skips the whole thing. Everything that acts on a pull request — `wt pr list`,
+`wt pr checkout`, `wt pr open`, `wt sweep` — asks GitHub itself and leaves the
+fresh answer in the cache. A cache file that is corrupt, missing or unwritable
+is a cache miss and nothing more: `wt list` never fails or waits over it.
+
+The column is not printed at all when no worktree here has a pull request, and
+when GitHub is out of play `wt list` is byte for byte what it was before the
+column existed — see **When something does not work** below.
+
+`wt pr open` opens the pull request whose head branch a worktree is on, through
+`gh pr view --web`. With no argument it is the worktree you are standing in.
+A worktree with no pull request is one line and a non-zero exit.
 
 **Four things have to be true**, in this order, and `wt pr` says which one was
 not: `github = true` in your settings; `gh` on the PATH; a GitHub remote on
@@ -286,6 +303,87 @@ a machine without gh is an ordinary machine.
 Off with `wt config set github false`, which stops wt running gh at all.
 
 Not here: creating, merging or commenting on pull requests. wt reads.
+
+### `wt sweep` knows what merged
+
+`wt sweep` deletes what trunk already contains. That question is git's, and git
+gets it wrong in one common case: a **squash or rebase merge** rewrites the
+commits, so the branch stays unmerged for ever however long ago it landed. The
+pull request is the fact that answers it, and sweep reads it.
+
+```
+Will be removed with its branch, 1 worktree:
+  login-crash  fix_wt/login-crash  ~/src/repo_wt/fix_wt/login-crash  #34 merged on GitHub (squashed or rebased, so git cannot see it)
+
+Merged, but in use in a worktree, so kept:
+  fix_wt/api-tidy  dirty; commit or discard the changes, then sweep again · #35 open
+```
+
+Every row that has a pull request names it, including the ones sweep keeps and
+the ones whose upstream is gone — usually the whole explanation of why a branch
+is sitting there.
+
+Acting on one is narrower than printing it. A worktree is swept on the strength
+of its pull request only when GitHub says **merged** and the local branch is at
+**exactly** the commit the pull request carried. One commit made locally after
+the merge is work that went nowhere and takes the branch off that commit, so
+sweep leaves it alone. Every check sweep already made applies first:
+uncommitted changes, a held lock, an agent session in the directory. Sweep
+fetches its pull requests fresh, and with GitHub off or unreachable it does
+exactly what it did before.
+
+`wt remove <work>` does **not** read pull requests: it runs from git hooks, so
+it starts no process and makes no network call. On a squash-merged branch it
+keeps the branch, and `wt sweep` is what deletes it.
+
+### When something does not work
+
+wt distinguishes **not applicable** from **broken**, and only says something
+about the second.
+
+Not applicable is silence: `github = false`, no `gh`, a repository with no
+GitHub remote, a gh that was never logged in. Nothing was set up, there is
+nothing to report, and `wt list` prints what it always printed.
+
+Broken is one line on **stderr**: gh is there, the repository is on GitHub, and
+the call failed or ran past its deadline anyway.
+
+```
+$ wt list
+wt: no pull requests shown: gh pr list --state all … did not answer within 2s
+   WORK         BRANCH                PATH
+   login-crash  fix_wt/login-crash    ~/src/repo_wt/fix_wt/login-crash
+```
+
+stdout is unchanged, the exit code is unchanged, and each integration says it
+at most once per command. Superset follows the same rule, in its own shape: a
+registration reports its outcome as it happens, one `-`, `!` or `✓` line on
+stderr per worktree, and says nothing where the integration does not apply.
+
+Your own `~/.config/wt/config.toml` splits the same way, and it fails **closed**.
+A file wt cannot parse at all turns every integration off for that run — a file
+you wrote and wt cannot read is no licence to fall back to a default that
+switches one on:
+
+```
+$ wt list
+wt: every integration is off for this run: /Users/you/.config/wt/config.toml: toml: line 2 (last key "superset"): expected value but found '\n' instead
+```
+
+A file that parses with one bad key keeps its good keys, and the line names the
+part being ignored:
+
+```
+$ wt list
+wt: ignoring unknown key "githb" in /Users/you/.config/wt/config.toml (wt's settings are: superset github)
+```
+
+Either way the command runs, and `wt doctor` counts it as a problem — that is
+where you go to read it in full. `wt config get` still answers, with the file's
+problem on stderr, because a script asking what a setting is should get the
+value wt is itself acting on. `wt config set` refuses to edit a file it cannot
+parse, and both still refuse an unknown key outright: that is input validation,
+not a file wt could not read.
 
 ## Moving a worktree
 
