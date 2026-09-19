@@ -23,7 +23,9 @@ n=0; pass=0; fail=0
 FAILED=(); RAN=()
 
 # make_repo is the bats fixture's, so the examples run against the repository
-# the tests use.
+# the tests use. WT_TEST_TMPDIR is where it puts the user settings it keeps
+# away from the developer's own.
+export WT_TEST_TMPDIR=$BASE
 source "$SRC/test/helpers.bash"
 
 make_plain() {

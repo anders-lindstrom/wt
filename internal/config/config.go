@@ -51,19 +51,24 @@ const (
 )
 
 // SupersetMode says whether a worktree wt creates is also registered as a
-// workspace in the Superset desktop app.
+// workspace in the Superset desktop app. It is read only once the person has
+// turned the integration on with `wt config set superset true`; until then wt
+// runs no Superset at all, whatever this says.
 type SupersetMode string
 
 const (
 	// SupersetAuto registers when Superset is installed, its host service is
-	// running and this repository is one of its projects, and says in a line
-	// when it is not. The default: on a machine without Superset it does
-	// nothing at all.
+	// running and this repository is one of its projects. The default: a
+	// machine without Superset, and a repository Superset does not track, are
+	// ordinary states and pass in silence. A Superset that is there and would
+	// not answer is a line.
 	SupersetAuto SupersetMode = "auto"
-	// SupersetOn is auto, plus `wt doctor` counting an unusable Superset as a
-	// problem. Registration is still never fatal.
+	// SupersetOn is auto for a repository that asked for registration: every
+	// way it can stop is a line, and `wt doctor` counts an unusable Superset
+	// as a problem. Registration is still never fatal.
 	SupersetOn SupersetMode = "on"
-	// SupersetOff never runs Superset and never mentions it.
+	// SupersetOff never runs Superset. `wt doctor` still names the mode, so
+	// there is somewhere to read why nothing is being registered.
 	SupersetOff SupersetMode = "off"
 )
 

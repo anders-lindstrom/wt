@@ -11,12 +11,27 @@ import (
 	"github.com/anders-lindstrom/wt/internal/superset"
 )
 
-// TestMain puts "no Superset on this machine" in front of every test that does
-// not ask for another state, so these tests never reach the Superset of
-// whoever runs them.
+// TestMain keeps this package off the machine running it: XDG_CONFIG_HOME is
+// a directory of this run's own, and probeSuperset answers "no Superset here"
+// until a test asks for another state.
 func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "wt-commands-test")
+	if err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("XDG_CONFIG_HOME", dir); err != nil {
+		panic(err)
+	}
 	probeSuperset = func() superset.Status { return superset.Status{} }
-	os.Exit(m.Run())
+	code := m.Run()
+	_ = os.RemoveAll(dir)
+	os.Exit(code)
+}
+
+// optIn is `wt config set superset true`. Every test that expects wt to reach
+// Superset needs it: the shipped default is off.
+func optIn(ctx *Context) {
+	ctx.User.Superset = true
 }
 
 // fakeSuperset writes a `superset` that answers projects/ws create for one
@@ -65,6 +80,7 @@ func TestNewRegistersTheWorktreeWithSuperset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	optIn(ctx)
 	log := fakeSuperset(t, ctx.Repo.MainRoot, true)
 
 	var out, errs bytes.Buffer
@@ -127,6 +143,7 @@ func TestNewSurvivesEverySupersetState(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			optIn(ctx)
 			ctx.Config.SupersetRegister = tc.mode
 			stub(t, tc.status)
 
@@ -177,6 +194,7 @@ func TestRegisterSupersetIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	optIn(ctx)
 	dir := t.TempDir()
 	exe := filepath.Join(dir, "superset")
 	script := "#!/bin/sh\n" +
@@ -211,6 +229,7 @@ func TestNewSkipsSupersetWhenAsked(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			optIn(ctx)
 			log := fakeSuperset(t, ctx.Repo.MainRoot, true)
 			var errs bytes.Buffer
 			if _, err := New(ctx, "fix/login-crash", opts, &errs); err != nil {
@@ -231,6 +250,7 @@ func TestCheckoutRegistersToo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	optIn(ctx)
 	gitIn(t, main, "branch", "fix_wt/from-elsewhere")
 	log := fakeSuperset(t, ctx.Repo.MainRoot, true)
 
@@ -271,6 +291,7 @@ func TestDoctorReportsSupersetState(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			optIn(ctx)
 			ctx.Config.SupersetRegister = tc.mode
 			stub(t, tc.status)
 
@@ -295,6 +316,7 @@ func TestDoctorReportsAUsableSuperset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	optIn(ctx)
 	dir := t.TempDir()
 	exe := filepath.Join(dir, "superset")
 	script := "#!/bin/sh\n" +
@@ -319,5 +341,154 @@ func TestDoctorReportsAUsableSuperset(t *testing.T) {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("doctor said\n%s\nwant %q", out.String(), want)
 		}
+	}
+}
+
+// supersetWithoutProject is a `superset` that knows some other repository, so
+// the one under test is not one of its projects.
+func supersetWithoutProject(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	log := filepath.Join(dir, "argv")
+	exe := filepath.Join(dir, "superset")
+	script := "#!/bin/sh\n" +
+		"printf '%s\\n' \"$*\" >> " + log + "\n" +
+		"case \"$1 $2\" in\n" +
+		"  'projects list') echo '[{\"id\":\"p9\",\"name\":\"somewhere-else\",\"path\":\"/somewhere/else\"}]' ;;\n" +
+		"  '--version ') echo 1.29.0 ;;\n" +
+		"esac\n"
+	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stub(t, superset.Status{Exe: exe, Running: true})
+	return log
+}
+
+// Most repositories are not Superset projects, and an integration that does
+// not apply here says nothing. Under auto that is silence; a repository that
+// asked for registration with SUPERSET_REGISTER=on is told.
+func TestNewSaysNothingAboutARepositorySupersetDoesNotTrack(t *testing.T) {
+	for name, tc := range map[string]struct {
+		mode config.SupersetMode
+		want string
+	}{
+		"auto": {config.SupersetAuto, ""},
+		"on":   {config.SupersetOn, "! Superset has no project for "},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx, err := Open(committedRepo(t, minimalConf))
+			if err != nil {
+				t.Fatal(err)
+			}
+			optIn(ctx)
+			ctx.Config.SupersetRegister = tc.mode
+			log := supersetWithoutProject(t)
+
+			var errs bytes.Buffer
+			if _, err := New(ctx, "fix/login-crash", NewOptions{}, &errs); err != nil {
+				t.Fatal(err)
+			}
+			if tc.want == "" {
+				if line := supersetLine(errs.String()); line != "" {
+					t.Errorf("stderr mentions Superset: %q", line)
+				}
+			} else if !strings.Contains(errs.String(), tc.want) {
+				t.Errorf("stderr = %q, want it to contain %q", errs.String(), tc.want)
+			}
+			// Either way the projects were read: the silence is about what
+			// was found, not about wt declining to look.
+			if got := argvOf(t, log); len(got) != 1 || !strings.HasPrefix(got[0], "projects list") {
+				t.Errorf("argv = %q, want the project listing alone", got)
+			}
+		})
+	}
+}
+
+// `wt doctor` names the state whatever the mode: it is where you go to read
+// why nothing is being registered.
+func TestDoctorAlwaysNamesAMissingSupersetProject(t *testing.T) {
+	for name, mode := range map[string]config.SupersetMode{
+		"auto": config.SupersetAuto,
+		"on":   config.SupersetOn,
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx, err := Open(committedRepo(t, minimalConf))
+			if err != nil {
+				t.Fatal(err)
+			}
+			optIn(ctx)
+			ctx.Config.SupersetRegister = mode
+			supersetWithoutProject(t)
+
+			var out bytes.Buffer
+			problems, err := Doctor(ctx, &out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(out.String(), "no Superset project for "+ctx.Repo.MainRoot) {
+				t.Errorf("doctor said\n%s", out.String())
+			}
+			if want := mode == config.SupersetOn; (problems > 0) != want {
+				t.Errorf("problems = %d, want problem = %v", problems, want)
+			}
+		})
+	}
+}
+
+// A worktree with no branch has nothing Superset can adopt: Superset takes the
+// checkout git already has for a named branch.
+func TestRegisterSupersetNeedsABranch(t *testing.T) {
+	main := committedRepo(t, minimalConf)
+	ctx, err := Open(main)
+	if err != nil {
+		t.Fatal(err)
+	}
+	optIn(ctx)
+	log := fakeSuperset(t, ctx.Repo.MainRoot, true)
+	path := ctx.Scheme().Dir("fix", "detached")
+	gitIn(t, main, "worktree", "add", "--detach", path, "HEAD")
+
+	var errs bytes.Buffer
+	registerSuperset(ctx, path, &errs)
+	if !strings.Contains(errs.String(), path+" is not on a branch; not registered with Superset") {
+		t.Errorf("stderr = %q", errs.String())
+	}
+	if got := argvOf(t, log); got != nil {
+		t.Errorf("superset was asked to adopt a worktree with no branch: %q", got)
+	}
+}
+
+// Provisioning that failed does not cost the registration: the worktree is on
+// disk and on its branch, which is all Superset is told.
+func TestRegisterSupersetRunsEvenWhenSetupFailed(t *testing.T) {
+	main := committedRepo(t, minimalConf)
+	// A provision.sh that fails is the one thing Setup reports and carries on
+	// from; the worktree is made either way.
+	dir := filepath.Join(main, "bin", "worktree")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "provision.sh"),
+		[]byte("#!/bin/sh\necho 'provisioning broke' >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, main, "add", "-A")
+	gitIn(t, main, "commit", "-qm", "provision")
+	ctx, err := Open(main)
+	if err != nil {
+		t.Fatal(err)
+	}
+	optIn(ctx)
+	log := fakeSuperset(t, ctx.Repo.MainRoot, true)
+
+	var errs bytes.Buffer
+	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &errs); err == nil {
+		t.Fatal("a provision.sh that failed was not reported")
+	}
+	if !strings.Contains(errs.String(), "✓ registered with Superset") {
+		t.Errorf("stderr = %q, want the registration to have gone ahead", errs.String())
+	}
+	if got := argvOf(t, log); len(got) != 2 {
+		t.Errorf("argv = %q, want the listing and the create", got)
 	}
 }

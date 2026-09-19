@@ -20,10 +20,12 @@ func newNewCmd() *cobra.Command {
 			"fix_wt/login-crash.\n\n" +
 			"The path alone goes to stdout, so `cd \"$(wt new fix/login-crash)\"`\n" +
 			"works.\n\n" +
-			"When the repository is a Superset project and the Superset app is\n" +
-			"running, the new worktree is also registered there as a workspace.\n" +
-			"`--no-superset` skips that once; SUPERSET_REGISTER=off skips it for\n" +
-			"the repository.",
+			"Once you have opted in with `wt config set superset true`, and this\n" +
+			"repository is a Superset project with the app running, the new\n" +
+			"worktree is also registered there as a workspace. `--no-superset`\n" +
+			"skips that once; SUPERSET_REGISTER=off skips it for the repository;\n" +
+			"and `--no-setup` skips it too, because registering a new workspace\n" +
+			"makes Superset run the project's setup step.",
 		Example: "  wt new fix/login-crash                # branch, worktree, provisioning\n" +
 			"  wt new login-crash                    # the repository's default type\n" +
 			"  wt new fix/login-crash --base v2.1    # cut from something else\n" +
