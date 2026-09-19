@@ -1,6 +1,7 @@
 package github
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -212,5 +213,38 @@ func TestListRejectsRubbish(t *testing.T) {
 	c, _ := fake(t, `echo 'not json'`)
 	if _, err := c.List(t.TempDir(), ListOptions{State: "open", Limit: 5}); err == nil {
 		t.Error("rubbish parsed as an empty list")
+	}
+}
+
+// The line between "no GitHub is set up here", which is silence, and "GitHub
+// was supposed to answer and did not", which is a warning.
+func TestNotLoggedIn(t *testing.T) {
+	for name, tc := range map[string]struct {
+		err  error
+		want bool
+	}{
+		"gh's own advice": {
+			errors.New("gh pr list failed: To get started with GitHub CLI, please run:  gh auth login"), true},
+		"auth status's wording": {
+			errors.New("gh auth status failed: You are not logged into any GitHub hosts"), true},
+		// "authentication token" is not a phrase this matches on: gh writes it
+		// about a token that is there and short of a scope as well, and
+		// silencing that hides a 401 on a machine that is logged in. A gh
+		// with no token at all says so in the same breath as `gh auth login`.
+		"a token short of a scope": {
+			errors.New("gh api graphql failed: HTTP 401: Bad credentials; " +
+				"the authentication token is missing required scopes [read:org]"), false},
+		"no token, with gh's advice": {
+			errors.New("gh api graphql failed: authentication token not found for host " +
+				"github.com. Try authenticating with: gh auth login"), true},
+		"offline":  {errors.New("gh pr list failed: dial tcp: no route to host"), false},
+		"a stall":  {errors.New("gh pr list did not answer within 2s"), false},
+		"no error": {nil, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := NotLoggedIn(tc.err); got != tc.want {
+				t.Errorf("NotLoggedIn(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
 	}
 }

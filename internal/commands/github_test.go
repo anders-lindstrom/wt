@@ -400,13 +400,22 @@ func TestDoctorReportsGitHubState(t *testing.T) {
 		},
 		"not logged in": {
 			func(t *testing.T, _ *Context) {
-				fakeGitHubWith(t, `[ "$1 $2" = 'auth status' ] && { echo no >&2; exit 1; }`)
+				fakeGitHubWith(t, `[ "$1 $2" = 'auth status' ] && `+
+					`{ echo 'To get started with GitHub CLI, please run:  gh auth login' >&2; exit 1; }`)
 			},
 			"which gh is not logged in to; run `gh auth login --hostname github.com`",
 		},
+		// A check that failed for its own reasons is not a missing login, and
+		// saying it is sends you off to log in again for nothing.
+		"the login could not be checked": {
+			func(t *testing.T, _ *Context) {
+				fakeGitHubWith(t, `[ "$1 $2" = 'auth status' ] && { echo 'dial tcp: no route to host' >&2; exit 1; }`)
+			},
+			"could not check gh's login for github.com: gh auth status failed: dial tcp: no route to host",
+		},
 		"usable": {
 			func(t *testing.T, _ *Context) { fakeGitHub(t) },
-			"✓ t/demo on github.com — `wt pr` reads its pull requests",
+			"✓ t/demo on github.com — gh is logged in",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
