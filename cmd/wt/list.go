@@ -19,13 +19,16 @@ func newListCmd() *cobra.Command {
 		Long: "Print every worktree of this repository: its work name, its branch and\n" +
 			"its path. A worktree not at the path this layout gives it is marked,\n" +
 			"and the legend says what to do about it.\n\n" +
-			"A PR column appears when a worktree here is on a pull request. It costs\n" +
-			"one `gh` call of around a second; --no-pr leaves it out, as does\n" +
-			"`wt config set github false`.\n\n" + pathWidthHelp,
-		Example: "  wt list          # work name, branch and path for every worktree\n" +
-			"  wt ls            # the same, for the impatient\n" +
-			"  wt list | cat    # whole paths, however narrow the terminal\n" +
-			"  wt list --no-pr  # no pull requests, and no call to GitHub",
+			"A PR column appears when a worktree here is on a pull request. The\n" +
+			"answer is cached in this repository for a few minutes, so only the\n" +
+			"first listing pays the `gh` call of around a second; --refresh asks\n" +
+			"again at once, --no-pr leaves the column out, and `wt config set github\n" +
+			"false` turns the whole thing off.\n\n" + pathWidthHelp,
+		Example: "  wt list            # work name, branch and path for every worktree\n" +
+			"  wt ls              # the same, for the impatient\n" +
+			"  wt list | cat      # whole paths, however narrow the terminal\n" +
+			"  wt list --no-pr    # no pull requests, and no call to GitHub\n" +
+			"  wt list --refresh  # ask GitHub again rather than use the cache",
 		Args: cobra.NoArgs,
 		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
 			out := cmd.OutOrStdout()
@@ -33,6 +36,7 @@ func newListCmd() *cobra.Command {
 		}),
 	}
 	cmd.Flags().BoolVar(&opts.NoPR, "no-pr", false, "do not ask GitHub which worktree has a pull request")
+	cmd.Flags().BoolVar(&opts.Refresh, "refresh", false, "ask GitHub again instead of using the cached pull requests")
 	return cmd
 }
 

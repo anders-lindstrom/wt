@@ -19,13 +19,14 @@ func newPrCmd() *cobra.Command {
 			"logged in as is what it sees, and nothing here writes to GitHub.\n\n" +
 			"Turn the whole integration off with `wt config set github false`.",
 		Example: "  wt pr list          # every open pull request, and the worktree on it\n" +
-			"  wt pr checkout 12   # a worktree for that pull request",
+			"  wt pr checkout 12   # a worktree for that pull request\n" +
+			"  wt pr open          # this worktree's pull request, in the browser",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
 	}
-	cmd.AddCommand(newPrListCmd(), newPrCheckoutCmd())
+	cmd.AddCommand(newPrListCmd(), newPrCheckoutCmd(), newPrOpenCmd())
 	return cmd
 }
 
@@ -46,6 +47,29 @@ func newPrListCmd() *cobra.Command {
 		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
 			out := cmd.OutOrStdout()
 			return commands.PRList(ctx, out, terminalWidth(out))
+		}),
+	}
+}
+
+func newPrOpenCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "open [<work>]",
+		Short: "Open a worktree's pull request in the browser",
+		Long: "Open the pull request whose head branch this worktree is on, through\n" +
+			"`gh pr view --web`. With no argument it is the worktree you are standing\n" +
+			"in; otherwise name one the way `wt list` prints it — the work name, the\n" +
+			"branch or the path.\n\n" +
+			"A worktree with no pull request is one line and a non-zero exit.",
+		Example: "  wt pr open              # the one you are standing in\n" +
+			"  wt pr open login-crash  # by work name",
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeWork,
+		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
+			arg := ""
+			if len(args) == 1 {
+				arg = args[0]
+			}
+			return commands.PROpen(ctx, arg, cmd.ErrOrStderr())
 		}),
 	}
 }

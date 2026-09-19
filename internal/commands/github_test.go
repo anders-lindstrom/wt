@@ -400,13 +400,22 @@ func TestDoctorReportsGitHubState(t *testing.T) {
 		},
 		"not logged in": {
 			func(t *testing.T, _ *Context) {
-				fakeGitHubWith(t, `[ "$1 $2" = 'auth status' ] && { echo no >&2; exit 1; }`)
+				fakeGitHubWith(t, `[ "$1 $2" = 'auth status' ] && `+
+					`{ echo 'To get started with GitHub CLI, please run:  gh auth login' >&2; exit 1; }`)
 			},
 			"which gh is not logged in to; run `gh auth login --hostname github.com`",
 		},
+		// A check that failed for its own reasons is not a missing login, and
+		// saying it is sends you off to log in again for nothing.
+		"the login could not be checked": {
+			func(t *testing.T, _ *Context) {
+				fakeGitHubWith(t, `[ "$1 $2" = 'auth status' ] && { echo 'dial tcp: no route to host' >&2; exit 1; }`)
+			},
+			"could not check gh's login for github.com: gh auth status failed: dial tcp: no route to host",
+		},
 		"usable": {
 			func(t *testing.T, _ *Context) { fakeGitHub(t) },
-			"✓ t/demo on github.com — `wt pr` reads its pull requests",
+			"✓ t/demo on github.com — gh is logged in",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -642,5 +651,85 @@ func TestPRCheckoutOfAMergedPullRequestUsesThePullRef(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(path, "README.md")); err != nil {
 		t.Errorf("the tree was not populated: %v", err)
+	}
+}
+
+// wt pr open hands gh the number and --web; nothing else about it is wt's
+// business.
+func TestPROpenAsksGhToOpenThePullRequest(t *testing.T) {
+	ctx, err := Open(committedRepo(t, minimalConf))
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := fakeGitHub(t, openPR(12, "fix_wt/login-crash", "Login crash"))
+	var errs bytes.Buffer
+	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &errs); err != nil {
+		t.Fatal(err)
+	}
+
+	errs.Reset()
+	if err := PROpen(ctx, "login-crash", &errs); err != nil {
+		t.Fatalf("PROpen: %v", err)
+	}
+	if !strings.Contains(errs.String(), "Opening #12 open · Login crash") {
+		t.Errorf("stderr = %q", errs.String())
+	}
+	argv := argvOf(t, log)
+	if got := argv[len(argv)-1]; got != "pr view 12 --web" {
+		t.Errorf("argv = %q, want the last call to be `pr view 12 --web`", argv)
+	}
+}
+
+// A worktree with no pull request is one line and a non-zero exit, and no
+// browser window.
+func TestPROpenSaysSoWhenThereIsNone(t *testing.T) {
+	ctx, err := Open(committedRepo(t, minimalConf))
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := fakeGitHub(t, openPR(12, "somebody-elses-branch", "Not yours"))
+	var errs bytes.Buffer
+	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &errs); err != nil {
+		t.Fatal(err)
+	}
+
+	err = PROpen(ctx, "login-crash", &errs)
+	if err == nil {
+		t.Fatal("PROpen succeeded without a pull request")
+	}
+	if !strings.Contains(err.Error(), "no pull request in t/demo has fix_wt/login-crash as its head branch") {
+		t.Errorf("err = %v", err)
+	}
+	for _, call := range argvOf(t, log) {
+		if strings.Contains(call, "--web") {
+			t.Errorf("a browser was opened anyway: %q", call)
+		}
+	}
+}
+
+// Standing in a worktree, `wt pr open` needs no argument.
+func TestPROpenDefaultsToTheWorktreeYouAreIn(t *testing.T) {
+	main := committedRepo(t, minimalConf)
+	ctx, err := Open(main)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fakeGitHub(t, openPR(12, "fix_wt/login-crash", "Login crash"))
+	var errs bytes.Buffer
+	path, err := New(ctx, "fix/login-crash", NewOptions{}, &errs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inside, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	errs.Reset()
+	if err := PROpen(inside, "", &errs); err != nil {
+		t.Fatalf("PROpen: %v", err)
+	}
+	if !strings.Contains(errs.String(), "Opening #12") {
+		t.Errorf("stderr = %q", errs.String())
 	}
 }

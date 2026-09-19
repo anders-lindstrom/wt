@@ -6,6 +6,16 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-19 09:26 — Sweep knows what merged, and settings fail closed
+
+- `wt sweep` now sweeps a worktree whose pull request GitHub merged even when
+  git cannot see it — a squash or rebase merge — if the branch is still at the
+  commit it carried, and every row names its pull request.
+- The `wt list` PR column is cached five minutes; `--refresh` asks again, and
+  `wt pr open` opens one in the browser. A gh call that failed is one line.
+- A settings file wt cannot parse turns every integration off for that run and
+  says so; one bad key in a file that parses keeps the rest.
+
 ## 2026-09-19 08:07 — wt pr checkout: a worktree for a pull request
 
 - `wt pr checkout 12` makes a worktree for that pull request and provisions it

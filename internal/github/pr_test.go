@@ -122,3 +122,29 @@ func TestByBranchIndexesBothForkSpellings(t *testing.T) {
 		}
 	}
 }
+
+// Landed is the one fact that lets a squash- or rebase-merged branch be
+// swept: GitHub merged it, and the branch is still at exactly the commit it
+// merged.
+func TestLanded(t *testing.T) {
+	const tip = "a1b2c3"
+	for name, tc := range map[string]struct {
+		pr   PR
+		tip  string
+		want bool
+	}{
+		"merged at this tip":        {PR{State: "MERGED", HeadRefOid: tip}, tip, true},
+		"merged, lower case":        {PR{State: "merged", HeadRefOid: tip}, tip, true},
+		"a commit past the merge":   {PR{State: "MERGED", HeadRefOid: tip}, "d4e5f6", false},
+		"still open":                {PR{State: "OPEN", HeadRefOid: tip}, tip, false},
+		"closed without merging":    {PR{State: "CLOSED", HeadRefOid: tip}, tip, false},
+		"GitHub named no commit":    {PR{State: "MERGED"}, "", false},
+		"a branch with no tip read": {PR{State: "MERGED", HeadRefOid: tip}, "", false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := tc.pr.Landed(tc.tip); got != tc.want {
+				t.Errorf("Landed(%q) = %v, want %v", tc.tip, got, tc.want)
+			}
+		})
+	}
+}

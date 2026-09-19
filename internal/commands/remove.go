@@ -90,6 +90,11 @@ type Plan struct {
 	// Tip is the commit the branch was at when the plan was made. A merged
 	// branch is deleted only while it is still there.
 	Tip string
+	// MergedPR is a pull request GitHub reports merged at exactly Tip, which
+	// is what says the work landed when a squash or rebase merge has left the
+	// branch looking unmerged to git. Only `wt sweep` sets it; `wt remove`
+	// runs from hooks, where a network call has no business.
+	MergedPR int
 	// Locked is git's own lock on the checkout, which stops it being removed
 	// at all. LockReason is git's text for it, LockHolder names whoever wt
 	// could work out is behind it, and LockHeld says that holder is still
@@ -357,6 +362,13 @@ func gitSaid(err error) string {
 // delete does not ask whether the branch is merged: it only refuses a branch
 // that moved.
 func stillMerged(ctx *Context, p Plan) error {
+	// git cannot answer this for a squash- or rebase-merged branch, which
+	// looks unmerged for ever. Sweep, the only caller that sets MergedPR,
+	// re-reads the pull request state before it acts, and DeleteBranchAt
+	// still refuses a branch that has moved off Tip.
+	if p.MergedPR > 0 {
+		return nil
+	}
 	now := mergeStanding(ctx, p.Branch)
 	if now.Merge == Merged {
 		return nil
@@ -401,6 +413,10 @@ func (p Plan) Render(w io.Writer) {
 	fmt.Fprintf(w, "  the checkout will be deleted%s\n", p.lockNote())
 	switch p.Outcome {
 	case BranchDeleted:
+		if p.MergedPR > 0 {
+			fmt.Fprintf(w, "  the branch will be deleted (#%d merged on GitHub)\n", p.MergedPR)
+			break
+		}
 		fmt.Fprintf(w, "  the branch will be deleted (merged into %s)\n", p.Base)
 	case BranchKept:
 		fmt.Fprintf(w, "  the branch will be kept as %q (%s)\n", p.KeepAs, aheadOf(p.Ahead, p.Base))
@@ -445,6 +461,11 @@ func (p Plan) standing() string {
 		return "detached HEAD"
 	case p.Reason == "already gone":
 		return "already gone"
+	case p.MergedPR > 0 && p.Merge != Merged:
+		// git still counts the original commits, so state both, and which
+		// one the removal believes.
+		return fmt.Sprintf("#%d merged on GitHub, squashed or rebased, so git still counts it %s",
+			p.MergedPR, aheadOf(p.Ahead, p.Base))
 	case p.Merge == Merged:
 		return "merged into " + p.Base
 	case p.Merge == Unmerged:
@@ -506,6 +527,11 @@ func (p Plan) apply(ctx *Context, w io.Writer) error {
 			}
 			return fmt.Errorf("branch %s is merged into %s, but deleting it failed: %s",
 				p.Branch, p.Base, gitSaid(err))
+		}
+		if p.MergedPR > 0 {
+			fmt.Fprintf(w, "✓ worktree removed; branch %s was merged as #%d and has been deleted\n",
+				p.Branch, p.MergedPR)
+			break
 		}
 		fmt.Fprintf(w, "✓ worktree removed; branch %s was merged into %s and has been deleted\n",
 			p.Branch, p.Base)

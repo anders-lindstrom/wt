@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/config"
+	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -87,7 +88,7 @@ func planWith(t *testing.T, ctx *Context, opts SweepOptions) SweepPlan {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := planSweep(ctx, bases, opts.listAgents)
+	p, err := planSweep(ctx, bases, opts.listAgents, opts.pullRequests(ctx))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -316,7 +317,8 @@ func TestSweepKeepsAWorktreeWhenTheSessionsCannotBeListed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := planSweep(ctx, bases, func() ([]wtsync.Agent, error) { return nil, fmt.Errorf("claude is away") })
+	p, err := planSweep(ctx, bases, func() ([]wtsync.Agent, error) { return nil, fmt.Errorf("claude is away") },
+		noPullRequests)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1249,3 +1251,7 @@ func TestSweepPlanNamesADetachedWorktreeAtAMergedTip(t *testing.T) {
 		t.Errorf("want %q in:\n%s", want, out)
 	}
 }
+
+// noPullRequests is a GitHub with nothing to say, which is what every sweep
+// test that is not about pull requests wants.
+func noPullRequests() map[string]github.PR { return nil }
