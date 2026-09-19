@@ -223,6 +223,10 @@ func rebaseHeadName(wtPath string) string {
 	return ""
 }
 
+// GitDir is the main checkout's git directory, where wt keeps the state that
+// belongs to the repository rather than to one worktree.
+func (r *Repo) GitDir() (string, error) { return gitDirOf(r.MainRoot) }
+
 // gitDirOf resolves a checkout's git dir without a subprocess: a linked
 // worktree's .git is a file holding "gitdir: <path>", the main checkout's is
 // the directory itself.
