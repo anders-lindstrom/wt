@@ -106,6 +106,7 @@ examples: `wt <command> --help`.
 |---|---|
 | `wt init` | create this repository's `worktree.conf` (`--yes` to skip the prompts, `--force` to replace one) |
 | `wt config [--shell]` | the resolved configuration, typed or eval-able |
+| `wt config get`/`set`/`unset`/`path` | your own settings, per machine, from anywhere |
 | `wt doctor` | check config, required tools and worktree health |
 | `wt path` / `wt branch` | resolve one piece of work |
 | `wt about` / `wt version` | which build this is and what changed; the version alone, for scripts |
@@ -176,10 +177,17 @@ workspace pointing at nothing. `wt migrate` says so before it moves.
 
 ### Worktrees wt makes show up in Superset
 
-`wt new` and `wt checkout` hand the worktree to Superset once it is provisioned,
-so one started from the shell appears in the app beside the ones started there.
-Superset adopts the checkout git already has — it creates nothing and moves
-nothing, and the workspace points at wt's canonical path.
+**Off until you turn it on.** Superset is a per-person choice, so nothing here
+happens until:
+
+```
+wt config set superset true
+```
+
+After that, `wt new` and `wt checkout` hand the worktree to Superset once it is
+provisioned, so one started from the shell appears in the app beside the ones
+started there. Superset adopts the checkout git already has — it creates
+nothing and moves nothing, and the workspace points at wt's canonical path.
 
 This needs all three of: the `superset` CLI, on the PATH or at
 `~/.superset/bin/superset` where the desktop app installs it; the host service
@@ -201,8 +209,12 @@ the one `wt new` just did. `--no-setup` therefore skips registration too.
 checkout off disk, uncommitted work included, so `wt remove` does not call it —
 delete the workspace in Superset when you want it gone.
 
-Off for a repository with `SUPERSET_REGISTER=off`, off once with
-`wt new --no-superset`.
+Off again with `wt config set superset false`, which stops wt running Superset
+at all. With it on, a repository can still decline with `SUPERSET_REGISTER=off`
+in its `worktree.conf`, and one run can with `wt new --no-superset`. A
+repository that asks for it with `SUPERSET_REGISTER=on` hears about every way
+the registration can stop, this one included, and `wt doctor` counts those as
+problems.
 
 ## Moving a worktree
 
@@ -265,7 +277,9 @@ is validated: **an unknown or misspelled key is an error, not silence.**
 `SUPERSET_REGISTER` decides whether a new worktree is also registered as a
 Superset workspace: `auto` when Superset can take it, `on` to additionally have
 `wt doctor` count an unusable Superset as a problem, `off` to leave it alone.
-Registration never fails a command under any of them.
+Registration never fails a command under any of them. It only applies once
+[your own settings](#what-you-keep) say `superset = true`; a committed file
+cannot switch a desktop integration on for whoever clones the repository.
 
 Retired: `REPO_NAME` (derived), `WORKTREE_LAYOUT` (the tool owns the shape),
 `AWS_SETUP_ENABLED` (became `provision.sh`).
@@ -276,6 +290,51 @@ An optional executable run by `wt setup` after config copying and before build
 init, with the new worktree as its working directory. This is where a repo puts
 its own step — decrypting secrets, checking a cloud identity — instead of the
 tool carrying a flag for it.
+
+## What you keep
+
+Which integrations wt uses is per person and per machine, so it lives in a
+file of your own rather than in any repository:
+
+```
+$XDG_CONFIG_HOME/wt/config.toml     # or ~/.config/wt/config.toml
+```
+
+**It does not have to exist.** No file means the built-in defaults, and
+`wt config set` is the only thing that ever creates it.
+
+| key | default | what it decides |
+|---|---|---|
+| `superset` | `false` | whether wt registers worktrees it creates as Superset workspaces |
+| `github` | `true` | whether wt uses the GitHub CLI |
+
+```
+wt config                      # everything, with where each value came from
+wt config get superset         # one value alone, for a script
+wt config set superset true    # written to your file; validated first
+wt config unset superset       # back to the built-in default
+wt config path                 # where that file is, whether or not it exists
+```
+
+`get`, `set`, `unset` and `path` work from anywhere — these are not repository
+settings, so they do not need one. An unknown key is an error naming the key,
+the way `worktree.conf` treats one, and a value that is not `true` or `false`
+is refused before anything is written. `set` edits the file in place, so
+comments and ordering you put there survive.
+
+**Your setting is the master switch.** With `superset = false` wt never runs
+the Superset CLI, whatever a repository's `SUPERSET_REGISTER` says; with it
+true, that key still gets to decline. `wt config` shows the resolution:
+
+```
+user config:   /Users/you/.config/wt/config.toml (no file yet)
+  superset:    false (default)
+  github:      true (default)
+superset mode: off (user config)
+```
+
+`wt config --shell` is unchanged: it stays the repository's legacy
+assignments, which the Herdr skills eval.
 
 ## Removing a worktree is careful
 

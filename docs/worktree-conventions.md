@@ -109,12 +109,12 @@ carry are shims that call `wt`.
 Superset's own workspaces reach wt through the project's setup step, which runs
 `wt setup --source superset` in the workspace Superset built.
 
-It goes the other way too: `wt new` and `wt checkout` hand the worktree they
-just made to Superset, so a worktree started from the shell shows up in the app
-beside the ones started there. wt runs `superset ws create --local --project
-<id> --branch <branch> --skip-branch-prefix`, which makes no checkout of its
-own — Superset adopts the one git already has for that branch, at the path wt
-chose.
+It goes the other way too, once you have opted in with `wt config set superset
+true`: `wt new` and `wt checkout` hand the worktree they just made to Superset,
+so a worktree started from the shell shows up in the app beside the ones
+started there. wt runs `superset ws create --local --project <id> --branch
+<branch> --skip-branch-prefix`, which makes no checkout of its own — Superset
+adopts the one git already has for that branch, at the path wt chose.
 
 It is inactive unless everything is in place: the `superset` CLI on the PATH or
 at `~/.superset/bin/superset`, the desktop app's host service running, and this
@@ -133,8 +133,16 @@ uncommitted work included, so wt does not call it. Remove the workspace in
 Superset when you want it gone; after `wt remove` it stays behind, pointing at
 a directory that is no longer there.
 
-Turn it off for a repository with `SUPERSET_REGISTER=off` in `worktree.conf`,
-or once with `wt new --no-superset`. `wt doctor` reports which of the three
+**The user switch is the master, and it is off by default.** `superset` in
+`$XDG_CONFIG_HOME/wt/config.toml` (or `~/.config/wt/config.toml`) decides
+whether wt runs the Superset CLI at all: with it false wt starts no subprocess
+and says nothing, whatever a repository asks for. `worktree.conf` is committed,
+and a committed file must not switch on a desktop integration for whoever
+clones the repository.
+
+With it on, a repository can still decline with `SUPERSET_REGISTER=off` in
+`worktree.conf`, and one run can with `wt new --no-superset`. `wt config` prints
+the resolution and which file decided it; `wt doctor` reports which of the three
 states the machine is in.
 
 ## More
