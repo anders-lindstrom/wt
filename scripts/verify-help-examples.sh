@@ -23,7 +23,9 @@ n=0; pass=0; fail=0
 FAILED=(); RAN=()
 
 # make_repo is the bats fixture's, so the examples run against the repository
-# the tests use.
+# the tests use. WT_TEST_TMPDIR is where it puts the user settings it keeps
+# away from the developer's own.
+export WT_TEST_TMPDIR=$BASE
 source "$SRC/test/helpers.bash"
 
 make_plain() {
@@ -219,6 +221,13 @@ check plain  "" "" 'wt init --force'
 
 check plain "" "" 'wt config'
 check plain "" "" 'wt config --shell'
+check plain "" "" 'wt config path'
+check plain "" "" 'wt config get superset'
+check plain "" "" 'wt config get github'
+check plain "" "" 'wt config set superset true'
+check plain "" "" 'wt config set github false'
+check plain "" "" 'wt config unset superset'
+check plain "" "" 'wt config unset github'
 check plain "" "" 'wt doctor'
 check worktrees "" "" 'wt doctor; echo $?'
 check plain     "" "" 'wt path fix/login-crash'

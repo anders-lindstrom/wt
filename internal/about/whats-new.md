@@ -6,12 +6,23 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-19 07:26 — Your own settings, and Superset is now opt-in
+
+- `wt config set superset true` turns the Superset registration on; it is off
+  until you do. Your settings live in `~/.config/wt/config.toml` (or under
+  `$XDG_CONFIG_HOME`), which does not have to exist, and `github`, on by
+  default, is the second one. Your switch is the master: with superset off wt
+  runs no Superset subprocess whatever a repo's `SUPERSET_REGISTER` says.
+- `wt config` now prints them with where each value came from; `get`, `set`,
+  `unset` and `path` work from anywhere. `--shell` is unchanged.
+
 ## 2026-09-19 06:52 — wt new registers the worktree with Superset
 
 - `wt new` and `wt checkout` hand the worktree to the Superset app, which
-  adopts the checkout git already has. Inactive unless the `superset` CLI is
-  there, the app is running and this repo is one of its projects; each way it
-  stops is one line on stderr, and stdout and the exit code never change.
+  adopts the checkout git already has. Off until `wt config set superset true`,
+  and then only when the app is running and this repo is one of its projects;
+  a repo Superset does not track passes in silence, anything that was set up
+  and failed is one line on stderr, and stdout and the exit code never change.
 - `SUPERSET_REGISTER=auto|on|off`, or `--no-superset` once; `wt doctor` has a
   Superset section. Nothing is deregistered: `superset ws delete` takes the
   checkout off disk, so that stays a thing you do in Superset.

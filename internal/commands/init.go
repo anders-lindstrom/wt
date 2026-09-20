@@ -220,7 +220,8 @@ func render(repoName string, a Answers, c *config.Config) string {
 	p("")
 	p("# Register each new worktree as a workspace in the Superset desktop app:")
 	p("# auto when Superset can take it, on to also have `wt doctor` complain")
-	p("# when it cannot, off to leave Superset alone.")
+	p("# when it cannot, off to leave Superset alone. It applies only to people")
+	p("# who opted in with `wt config set superset true`.")
 	p("# SUPERSET_REGISTER=%s", c.SupersetRegister)
 	return b.String()
 }
