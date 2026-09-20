@@ -6,6 +6,7 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/anders-lindstrom/wt/internal/git"
@@ -253,21 +254,54 @@ func prLabel(pr github.PR) string {
 	return fmt.Sprintf("#%d %s", pr.Number, pr.StateLabel())
 }
 
-// worktreePRs is the pull request each worktree branch belongs to, for the PR
-// column of `wt list`. One bounded call covers the whole listing, and every
-// way it can fail — off, no gh, no remote, offline, not logged in, over the
-// deadline — answers nil, which leaves `wt list` as it was.
-func worktreePRs(ctx *Context) map[string]github.PR {
+// listQuery is the question `wt list` and `wt sweep` ask: the 50 most recent
+// pull requests of any state, which says whether a worktree's branch has one
+// and whether it landed. It is also what the cache holds, so both read the
+// same file.
+func listQuery(deadline time.Duration) github.ListOptions {
+	return github.ListOptions{State: "all", Limit: listLimit, Deadline: deadline}
+}
+
+// worktreePRs is the pull request each worktree branch belongs to.
+//
+// fresh runs gh whatever the cache holds; without it a cached answer younger
+// than PRCacheTTL is used and no process is started. A fetch that succeeds
+// refreshes the cache either way.
+//
+// Both failures answer nil, so the listing is what it was before the column
+// existed, but only one of them says anything. An integration that does not
+// apply here — off, no gh, no GitHub remote, no login — is silent; a gh that
+// was supposed to answer and did not warns once on stderr.
+func worktreePRs(ctx *Context, o github.ListOptions, fresh bool) map[string]github.PR {
 	gh, err := openGitHub(ctx, false)
 	if err != nil {
 		return nil
 	}
-	prs, err := gh.CLI.List(ctx.Repo.MainRoot, github.ListOptions{
-		State: "all", Limit: listLimit, Deadline: github.ListDeadline})
+	now := time.Now()
+	if !fresh {
+		if prs, ok := readPRCache(ctx, gh, o, now); ok {
+			return github.ByBranch(prs, ctx.Config.MainBranch)
+		}
+	}
+	prs, err := gh.CLI.List(ctx.Repo.MainRoot, o)
 	if err != nil {
+		warnGitHub(ctx, err)
 		return nil
 	}
+	writePRCache(ctx, gh, o, prs, now)
 	return github.ByBranch(prs, ctx.Config.MainBranch)
+}
+
+// warnGitHub reports a gh call that was supposed to work and did not: one
+// line on stderr, the command's own output and exit code untouched.
+//
+// A gh holding no login stays silent: `wt list` does not pay for the login
+// check, so the failure it gets back is that check, not a fault.
+func warnGitHub(ctx *Context, err error) {
+	if github.NotLoggedIn(err) {
+		return
+	}
+	ctx.Warnf(WarnGitHub, "no pull requests shown: %v", err)
 }
 
 // prFact is the pull request line of `wt status <work>`: the number, the
@@ -283,7 +317,11 @@ func prFact(ctx *Context, branch string) string {
 	}
 	prs, err := gh.CLI.List(ctx.Repo.MainRoot, github.ListOptions{
 		State: "all", Limit: 5, Head: branch, Deadline: github.ListDeadline})
-	if err != nil || len(prs) == 0 {
+	if err != nil {
+		warnGitHub(ctx, err)
+		return ""
+	}
+	if len(prs) == 0 {
 		return ""
 	}
 	pr := github.ByBranch(prs, ctx.Config.MainBranch)[branch]

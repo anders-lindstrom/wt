@@ -80,7 +80,7 @@ type ListOptions struct {
 // listFields is what every pull request is read as. statusCheckRollup is left
 // out unless it is asked for: it is the expensive half of the call.
 var listFields = []string{
-	"number", "title", "author", "headRefName", "isDraft", "state",
+	"number", "title", "author", "headRefName", "headRefOid", "isDraft", "state",
 	"reviewDecision", "isCrossRepository", "headRepositoryOwner", "url",
 }
 
@@ -121,6 +121,13 @@ func (c CLI) View(dir string, number int) (PR, error) {
 	return pr, nil
 }
 
+// OpenWeb asks gh to open a pull request in a browser. Nothing is written to
+// GitHub: --web resolves a URL and hands it to the desktop.
+func (c CLI) OpenWeb(dir string, number int) error {
+	_, err := c.run(dir, readDeadline, "pr", "view", fmt.Sprint(number), "--web")
+	return err
+}
+
 // CheckoutInto runs `gh pr checkout` with dir as its working directory, so
 // the branch, its remote and its push configuration are set up the way gh
 // does it; nothing else gets a fork's push remote right. gh switches the
@@ -144,12 +151,28 @@ func (c CLI) run(dir string, deadline time.Duration, args ...string) ([]byte, er
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	timedOut, _, err := git.RunBounded(deadline, cmd)
 	if timedOut {
-		return nil, fmt.Errorf("gh %s did not answer within %s", strings.Join(args, " "), deadline)
+		return nil, fmt.Errorf("%s did not answer within %s", called(args), deadline)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("gh %s failed: %s", strings.Join(args, " "), reason(stderr.String(), err))
+		return nil, fmt.Errorf("%s failed: %s", called(args), reason(stderr.String(), err))
 	}
 	return stdout.Bytes(), nil
+}
+
+// called is the call as a message names it: the subcommand and its arguments,
+// without the flags. The --json field list alone runs to 200 characters.
+func called(args []string) string {
+	kept := []string{"gh"}
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") {
+			break
+		}
+		kept = append(kept, a)
+	}
+	if len(kept) == 1 && len(args) > 0 {
+		kept = append(kept, args[0])
+	}
+	return strings.Join(kept, " ")
 }
 
 // reason is gh's own complaint: its first line of stderr, which is where it
@@ -166,4 +189,27 @@ func reason(stderr string, err error) string {
 		}
 	}
 	return err.Error()
+}
+
+// loginWanted is how gh says it holds no credentials for the host. Each
+// subcommand words it differently, so the test is on the phrases they share.
+// "authentication token" is not among them: gh writes it about a token that
+// is there and lacks a scope, which is a fault worth reporting.
+var loginWanted = []string{"gh auth login", "not logged in", "not logged into"}
+
+// NotLoggedIn reports whether a call failed for want of a login rather than
+// for want of an answer: a machine with no GitHub set up is nothing to report.
+// Nothing checks the login up front, so this is read off the call that was
+// being made anyway.
+func NotLoggedIn(err error) bool {
+	if err == nil {
+		return false
+	}
+	said := strings.ToLower(err.Error())
+	for _, phrase := range loginWanted {
+		if strings.Contains(said, phrase) {
+			return true
+		}
+	}
+	return false
 }

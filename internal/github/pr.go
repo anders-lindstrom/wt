@@ -9,7 +9,10 @@ type PR struct {
 	Number      int    `json:"number"`
 	Title       string `json:"title"`
 	HeadRefName string `json:"headRefName"`
-	IsDraft     bool   `json:"isDraft"`
+	// HeadRefOid is the last commit GitHub saw on the head branch, which is
+	// what says a local branch holds nothing the pull request did not carry.
+	HeadRefOid string `json:"headRefOid"`
+	IsDraft    bool   `json:"isDraft"`
 	// State is OPEN, MERGED or CLOSED.
 	State string `json:"state"`
 	// ReviewDecision is APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED, or
@@ -75,6 +78,19 @@ func (p PR) Branches(trunk string) []string {
 
 // Open reports whether the pull request is still open.
 func (p PR) Open() bool { return strings.EqualFold(p.State, "OPEN") }
+
+// Merged reports whether GitHub has merged it.
+func (p PR) Merged() bool { return strings.EqualFold(p.State, "MERGED") }
+
+// Landed reports that this pull request was merged and tip is exactly the
+// commit it carried, so a branch still at tip holds nothing GitHub did not
+// take. It is what makes sweeping a squash- or rebase-merged branch safe:
+// such a merge rewrites the commits, so git reads the branch as unmerged for
+// ever, while a commit made locally after the merge moves the tip off
+// HeadRefOid and is refused here.
+func (p PR) Landed(tip string) bool {
+	return p.Merged() && tip != "" && tip == p.HeadRefOid
+}
 
 // StateLabel is the pull request's state in one or two words: what it is, and
 // for an open one how its review stands.

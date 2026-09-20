@@ -23,12 +23,53 @@ type Context struct {
 	// User is this person's own configuration, which decides which
 	// integrations wt uses at all. Never nil.
 	User *config.User
-	// UserError records why User fell back to defaults, when it did. Only
-	// OpenLenient sets it; Open fails outright instead.
+	// UserError is what was wrong with the user file, when something was. It
+	// never stops a command: see Open.
 	UserError error
 	// Cwd is the directory the context was opened from: where the caller is
 	// standing.
 	Cwd string
+	// warn is where an integration that was supposed to work says it did
+	// not: stderr, never the command's own output and never its exit code.
+	// Nil discards.
+	warn io.Writer
+	// warned is the topics already spoken about.
+	warned map[string]bool
+}
+
+// The warning topics. One line per topic per invocation, so a command that
+// asks GitHub twice complains once.
+const (
+	WarnUserConfig = "user config"
+	WarnGitHub     = "github"
+)
+
+// WarnTo gives the context somewhere to put its warnings, and says at once
+// what it already knows went wrong with the user file: that wt could not read
+// it at all, and every integration is off for this run, or which part of it
+// wt is ignoring.
+func (c *Context) WarnTo(w io.Writer) {
+	c.warn = w
+	switch {
+	case c.UserError == nil:
+	case c.UserConfig().Unusable:
+		c.Warnf(WarnUserConfig, "every integration is off for this run: %v", c.UserError)
+	default:
+		c.Warnf(WarnUserConfig, "ignoring %v", c.UserError)
+	}
+}
+
+// Warnf writes one warning line about topic, the first time that topic comes
+// up. A context nobody gave a writer to says nothing.
+func (c *Context) Warnf(topic, format string, args ...any) {
+	if c.warn == nil || c.warned[topic] {
+		return
+	}
+	if c.warned == nil {
+		c.warned = map[string]bool{}
+	}
+	c.warned[topic] = true
+	fmt.Fprintf(c.warn, "wt: "+format+"\n", args...)
 }
 
 // Open discovers the repository containing cwd and loads its configuration.
@@ -41,11 +82,14 @@ func Open(cwd string) (*Context, error) {
 	if err != nil {
 		return nil, err
 	}
-	u, err := config.LoadUser()
-	if err != nil {
-		return nil, err
-	}
-	return &Context{Repo: r, Config: c, User: u, Cwd: cwd}, nil
+	// A user file wt cannot read costs the integrations, not the command:
+	// every one of them is off for the run, because a file the person wrote
+	// and wt cannot parse is no licence to fall back to a default that
+	// switches one on. A file that parses with one bad key keeps its good
+	// keys. WarnTo says which it was, once, on stderr, and `wt doctor` counts
+	// it as a problem.
+	u, userErr := config.LoadUser()
+	return &Context{Repo: r, Config: c, User: u, UserError: userErr, Cwd: cwd}, nil
 }
 
 // Scheme is how this repository spells its worktrees: the directory they sit
@@ -98,9 +142,6 @@ func OpenLenient(cwd string, w io.Writer) *Context {
 		return nil
 	}
 	u, userErr := config.LoadUser()
-	if userErr != nil {
-		fmt.Fprintf(w, "wt: using default user settings: %v\n", userErr)
-	}
 	c, trunk, err := loadFor(r)
 	if err != nil {
 		// Keep whatever did parse: a single retired key should not hide the

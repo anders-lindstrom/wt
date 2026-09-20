@@ -78,10 +78,18 @@ func doctorGitHub(ctx *Context, w io.Writer) {
 		fmt.Fprintf(w, "  - no GitHub remote for %s; `wt pr` is inactive here\n", ctx.Repo.Name)
 		return
 	}
-	if err := cli.Authenticated(remote.Host); err != nil {
+	// A login gh answered about is one thing; a `gh auth status` that timed
+	// out, or failed for its own reasons, is another, and reporting the
+	// second as the first sends you off to log in again for nothing.
+	switch err := cli.Authenticated(remote.Host); {
+	case err == nil:
+		fmt.Fprintf(w, "  ✓ %s on %s — gh is logged in\n", remote.Slug, remote.Host)
+	case github.NotLoggedIn(err):
 		fmt.Fprintf(w, "  - %s is on %s, which gh is not logged in to; run `gh auth login --hostname %s`\n",
 			remote.Slug, remote.Host, remote.Host)
 		return
+	default:
+		fmt.Fprintf(w, "  - could not check gh's login for %s: %v\n", remote.Host, err)
+		return
 	}
-	fmt.Fprintf(w, "  ✓ %s on %s — `wt pr` reads its pull requests\n", remote.Slug, remote.Host)
 }

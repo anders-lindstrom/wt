@@ -227,8 +227,10 @@ func TestUserSetRejectsWhatItCannotWrite(t *testing.T) {
 	}
 }
 
-// A user file wt cannot read stops the commands that must have it right.
-func TestOpenRefusesABrokenUserConfig(t *testing.T) {
+// A file that parses with one bad key keeps its good keys and its defaults,
+// and the warning names the part being ignored rather than claiming the whole
+// file was thrown away. `wt doctor` still counts it as a problem.
+func TestOpenWarnsAboutABrokenUserConfigAndCarriesOn(t *testing.T) {
 	path := userConfigIn(t)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
@@ -236,11 +238,140 @@ func TestOpenRefusesABrokenUserConfig(t *testing.T) {
 	if err := os.WriteFile(path, []byte("github = \"yes\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := Open(fixtureRepo(t, minimalConf))
-	if err == nil {
-		t.Fatal("a broken user config was accepted")
+	ctx, err := Open(fixtureRepo(t, minimalConf))
+	if err != nil {
+		t.Fatalf("a broken user config stopped the command: %v", err)
 	}
-	if !strings.Contains(err.Error(), "not a boolean") || !strings.Contains(err.Error(), path) {
-		t.Errorf("err = %v, want it to name the file and the problem", err)
+	if !ctx.UserConfig().GitHub || ctx.UserConfig().Superset {
+		t.Errorf("user settings = %+v, want the defaults", ctx.UserConfig())
+	}
+
+	var errs bytes.Buffer
+	ctx.WarnTo(&errs)
+	if !strings.Contains(errs.String(), "not a boolean") || !strings.Contains(errs.String(), path) {
+		t.Errorf("stderr = %q, want it to name the file and the problem", errs.String())
+	}
+	if !strings.HasPrefix(errs.String(), "wt: ignoring ") {
+		t.Errorf("stderr = %q, want it to say which part is being ignored", errs.String())
+	}
+	if strings.Contains(errs.String(), "default settings") {
+		t.Errorf("stderr = %q, but the keys that parsed were kept", errs.String())
+	}
+	if n := strings.Count(errs.String(), "\n"); n != 1 {
+		t.Errorf("stderr = %q, want exactly one line", errs.String())
+	}
+	// Whatever else the command then asks, the file is complained about once.
+	ctx.Warnf(WarnUserConfig, "again")
+	if n := strings.Count(errs.String(), "\n"); n != 1 {
+		t.Errorf("stderr = %q, want the warning only once", errs.String())
+	}
+}
+
+// writeUserConfig puts body at the user config path for this test.
+func writeUserConfig(t *testing.T, body string) string {
+	t.Helper()
+	path := userConfigIn(t)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// A file wt cannot parse at all turns every integration off for the run. The
+// command still works; what stops is anything that would have run gh or
+// Superset on the strength of a default the person never asked for.
+func TestAUserFileThatDoesNotParseTurnsEveryIntegrationOff(t *testing.T) {
+	path := writeUserConfig(t, "github = false\nsuperset = \n")
+	ctx, err := Open(committedRepo(t, minimalConf))
+	if err != nil {
+		t.Fatalf("a user file that does not parse stopped the command: %v", err)
+	}
+	if ctx.UserConfig().GitHub || ctx.UserConfig().Superset {
+		t.Errorf("user settings = %+v, want every integration off", ctx.UserConfig())
+	}
+
+	var errs bytes.Buffer
+	ctx.WarnTo(&errs)
+	if !strings.Contains(errs.String(), "every integration is off for this run") {
+		t.Errorf("stderr = %q, want it to say the integrations are off", errs.String())
+	}
+	if !strings.Contains(errs.String(), path) {
+		t.Errorf("stderr = %q, want it to name the file", errs.String())
+	}
+	if n := strings.Count(errs.String(), "\n"); n != 1 {
+		t.Errorf("stderr = %q, want exactly one line", errs.String())
+	}
+
+	// The one thing that must not happen: a gh process.
+	log := fakeGitHub(t, openPR(12, "fix_wt/login-crash", "Login crash"))
+	var out bytes.Buffer
+	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &errs); err != nil {
+		t.Fatal(err)
+	}
+	if err := List(ctx, ListOptions{}, &out, 0); err != nil {
+		t.Fatal(err)
+	}
+	if got := argvOf(t, log); got != nil {
+		t.Errorf("gh was run for a user file wt could not read: %q", got)
+	}
+	if strings.Contains(out.String(), "#12") {
+		t.Errorf("wt list showed a pull request anyway:\n%s", out.String())
+	}
+}
+
+// `wt config get` answers with the value wt itself is acting on, and puts
+// what is wrong with the file on stderr: a script asking what a setting is
+// must not fail because of an unrelated key.
+func TestUserGetAnswersDespiteABrokenFile(t *testing.T) {
+	for name, tc := range map[string]struct{ body, want string }{
+		"one bad key":         {"superset = true\ngithbu = false\n", "true"},
+		"does not parse":      {"superset = true\ngithub = \n", "false"},
+		"not a boolean value": {"superset = \"yes\"\n", "false"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := writeUserConfig(t, tc.body)
+			var out, errs bytes.Buffer
+			if err := UserGet(config.UserKeySuperset, &out, &errs); err != nil {
+				t.Fatalf("UserGet: %v", err)
+			}
+			if got := strings.TrimSpace(out.String()); got != tc.want {
+				t.Errorf("stdout = %q, want %q", got, tc.want)
+			}
+			if !strings.Contains(errs.String(), path) {
+				t.Errorf("stderr = %q, want the file's problem on it", errs.String())
+			}
+		})
+	}
+}
+
+// An unknown key is still an error: there is no value to answer with.
+func TestUserGetStillRefusesAnUnknownKey(t *testing.T) {
+	writeUserConfig(t, "superset = true\n")
+	var out, errs bytes.Buffer
+	if err := UserGet("superst", &out, &errs); err == nil {
+		t.Fatalf("an unknown key was answered with %q", out.String())
+	}
+}
+
+// `wt config` says on stdout that it could not read the file, so the false
+// beside every setting is not read as somebody's choice.
+func TestConfigSaysTheFileCouldNotBeRead(t *testing.T) {
+	path := writeUserConfig(t, "github = \n")
+	ctx, err := Open(committedRepo(t, minimalConf))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := Config(ctx, false, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), path+" (wt cannot read it") {
+		t.Errorf("wt config said\n%s\nwant the file marked unreadable", out.String())
+	}
+	if !strings.Contains(out.String(), "github:      false (file unreadable)") {
+		t.Errorf("wt config said\n%s\nwant each value marked as coming from nowhere", out.String())
 	}
 }

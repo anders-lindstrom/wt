@@ -16,7 +16,17 @@ func newSweepCmd() *cobra.Command {
 			"left. A branch is merged when its tip is reachable from origin/<trunk>,\n" +
 			"fetched first because merges happen on the remote, or from the local\n" +
 			"trunk, so its commits are on trunk. A branch cut and never committed to\n" +
-			"counts as merged. Squash merges are not recognised.\n\n" +
+			"counts as merged.\n\n" +
+			"A squash or rebase merge rewrites the commits, so git reads the branch\n" +
+			"as unmerged for ever. The pull request answers that, and sweep reads it\n" +
+			"through `gh`: every row that has one names it, and a worktree is swept\n" +
+			"on its strength only when GitHub says merged, the pull request's base is\n" +
+			"trunk, and the branch is still at exactly the commit it carried. A\n" +
+			"stacked pull request merged into its parent has landed nothing on trunk,\n" +
+			"so it never makes a branch deletable. GitHub is asked twice, once for\n" +
+			"the plan and once before anything goes, each call bounded at 15\n" +
+			"seconds; with GitHub off or unreachable sweep does what it did before,\n" +
+			"on git's answer alone.\n\n" +
 			"The plan has four parts:\n" +
 			"  removed       merged, and its worktree is safe to remove: nothing\n" +
 			"                uncommitted, no lock whose holder is still running, and\n" +
