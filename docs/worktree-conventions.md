@@ -104,13 +104,21 @@ carry are shims that call `wt`.
 | `s` | Superset's: `<repo>_wt/<repo>/<type>_wt/<work>` | Leave it where it is. Superset stores the absolute path of every workspace, so a move leaves its workspace pointing at nothing. `wt setup` provisions it in place. |
 | `!` | Anything else: a legacy `../<repo>-<work>` checkout, one inside the repo, or plain `git worktree add` somewhere | `wt migrate <work, branch or path>` moves it into place and renames the branch to match. |
 
+A worktree's name comes from its branch where the branch follows the
+convention, and from its directory where it does not — which is the case for
+every worktree on somebody else's branch, made by `wt checkout <branch>` or by
+`wt pr checkout`. Those are at a canonical path and are marked as such; the
+directory wt gave them is the name they go by in `wt list`, in completion and
+as an argument to every command that takes one.
+
 ## Superset registers both ways
 
 Superset's own workspaces reach wt through the project's setup step, which runs
 `wt setup --source superset` in the workspace Superset built.
 
 It goes the other way too, once you have opted in with `wt config set superset
-true`: `wt new` and `wt checkout` hand the worktree they just made to Superset,
+true`: `wt new`, `wt checkout` and `wt pr checkout` hand the worktree they just
+made to Superset,
 so a worktree started from the shell shows up in the app beside the ones
 started there. wt runs `superset ws create --local --project <id> --branch
 <branch> --skip-branch-prefix`, which makes no checkout of its own — Superset
@@ -144,6 +152,40 @@ With it on, a repository can still decline with `SUPERSET_REGISTER=off` in
 `worktree.conf`, and one run can with `wt new --no-superset`. `wt config` prints
 the resolution and which file decided it; `wt doctor` reports which of the three
 states the machine is in.
+
+## Pull requests come in through `gh`
+
+`wt pr checkout <n>` makes the worktree and then runs `gh pr checkout` **inside
+it**, never in the main checkout. wt creates the worktree detached and with no
+files (`git worktree add --detach --no-checkout`), and gh switches it to the
+pull request's own head branch, which populates the tree once rather than
+twice. Provisioning then runs through the same step as `wt new`.
+
+The branch is gh's to set up: for a pull request from a fork gh points
+`branch.<name>.remote` and `.pushRemote` at the fork's URL, so a push from the
+worktree updates the pull request. Nothing wt could do with `git worktree add`
+alone would get that right. gh also renames a fork branch
+that is called after trunk to `<owner>/<branch>`, and wt matches worktrees to
+pull requests under both spellings, so a fork's `main` is never mistaken for
+your own.
+
+A merged pull request usually has no head branch left, so `gh pr checkout`
+cannot find it. wt then fetches `refs/pull/<number>/head` into the branch
+itself and says the branch has no upstream. Only for a pull request that is not
+open: for an open one, a gh that fails is a failure.
+
+The worktree is named `pr-<number>-<branch>`, under the type the head branch
+suggests, unless the head branch already follows this repository's convention
+— then it keeps its own type and name, and lands where `wt new` would have put
+it. A gh that fails leaves nothing behind: the detached worktree is removed.
+
+wt only ever reads GitHub. Nothing creates, merges, comments on or closes a
+pull request, and wt stores no credentials — `gh auth login` is yours to run.
+The integration needs `github = true` in your settings (the default), `gh` on
+the PATH, a GitHub remote and gh logged in to its host; `wt pr` says which of
+those failed and `wt doctor` reports them all. `wt list`'s `PR` column is one
+bounded `gh` call for the whole listing and degrades to silence, so a listing
+offline is the listing you always had.
 
 ## More
 

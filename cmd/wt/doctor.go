@@ -15,9 +15,14 @@ func newDoctorCmd() *cobra.Command {
 		Use:   "doctor",
 		Short: "Check configuration, required tools and worktree health",
 		Long: "Check what every other command depends on: that worktree.conf parses\n" +
-			"and says something sensible, that the tools it requires are on the\n" +
-			"PATH, and that no worktree is nested, missing or in a layout nothing\n" +
-			"owns. It changes nothing, and exits non-zero when it found something.",
+			"and says something sensible, that your own settings do, that the tools\n" +
+			"it requires are on the PATH, and that no worktree is nested, missing or\n" +
+			"in a layout nothing owns. It changes nothing, and exits non-zero when\n" +
+			"it found something.\n\n" +
+			"A Superset section and a GitHub section say how far each integration\n" +
+			"would get here and where it would stop. Neither counts as a problem on\n" +
+			"its own — a machine without gh is an ordinary machine — except where a\n" +
+			"repository asked for Superset with SUPERSET_REGISTER=on.",
 		Example: "  wt doctor          # check this repository\n" +
 			"  wt doctor; echo $? # 0 when clean, 1 when it found problems",
 		Args: cobra.NoArgs,

@@ -21,17 +21,32 @@ const listPadding = 2
 // apart; a terminal narrower than that wraps the row instead.
 const minPathWidth = 24
 
+// ListOptions tunes List.
+type ListOptions struct {
+	// NoPR leaves the pull requests out. The column costs one gh call: 0.8s
+	// against a repository whose listing otherwise takes 0.02s.
+	NoPR bool
+}
+
 // List prints every worktree of the repository, in whatever layout it is in.
 // Anything not at the canonical path is marked, and the two marks mean
 // different things: "s" is Superset's layout, which is deliberate and must be
 // left alone, while "!" is a layout nothing owns and `wt migrate` can move.
-func List(ctx *Context, w io.Writer, width int) error {
+func List(ctx *Context, opts ListOptions, w io.Writer, width int) error {
 	names, err := WorkNames(ctx)
 	if err != nil {
 		return err
 	}
 	sch := ctx.Scheme()
-	rows := [][]string{{"", "WORK", "BRANCH", "PATH"}}
+	var prs map[string]string
+	if !opts.NoPR {
+		prs = listPRs(ctx, names)
+	}
+	header := []string{"", "WORK", "BRANCH", "PATH"}
+	if len(prs) > 0 {
+		header = []string{"", "WORK", "BRANCH", "PR", "PATH"}
+	}
+	rows := [][]string{header}
 	var seen [3]bool
 	for _, n := range names {
 		work, branch := "(main)", n.Branch
@@ -42,13 +57,17 @@ func List(ctx *Context, w io.Writer, width int) error {
 		if !n.IsMain {
 			work = "-"
 			layout := naming.Foreign
-			if _, w, l, ok := sch.ClassifyBranch(n.Path, n.Branch); ok {
-				work, layout = w, l
+			if n.Work != "" {
+				work, layout = n.Work, sch.Classify(n.Path, n.Type, n.Work)
 			}
 			seen[layout] = true
 			mark = layoutMark(layout)
 		}
-		rows = append(rows, []string{mark, work, branch, n.Path})
+		row := []string{mark, work, branch}
+		if len(prs) > 0 {
+			row = append(row, dash(prs[n.Branch]))
+		}
+		rows = append(rows, append(row, n.Path))
 	}
 	if err := printPathTable(w, rows, width); err != nil {
 		return err
@@ -64,6 +83,31 @@ func List(ctx *Context, w io.Writer, width int) error {
 		fmt.Fprintln(w, "   canonical path; add a destination to rename or retype it as it goes")
 	}
 	return nil
+}
+
+// listPRs is the PR column of `wt list`, keyed by branch. Empty when GitHub
+// is not in play (off, absent, offline, not this repository) or when no
+// worktree here has a pull request, and empty means the column is not
+// printed: `wt list` is then byte for byte what it was without it.
+func listPRs(ctx *Context, names []WorkName) map[string]string {
+	linked := false
+	for _, n := range names {
+		linked = linked || (!n.IsMain && n.Branch != "")
+	}
+	if !linked {
+		return nil
+	}
+	byBranch := worktreePRs(ctx)
+	if len(byBranch) == 0 {
+		return nil
+	}
+	out := map[string]string{}
+	for _, n := range names {
+		if pr, ok := byBranch[n.Branch]; ok && !n.IsMain {
+			out[n.Branch] = prLabel(pr)
+		}
+	}
+	return out
 }
 
 func layoutMark(l naming.Layout) string {
@@ -193,6 +237,9 @@ func StatusWorktree(ctx *Context, arg string, opts StatusOptions, w io.Writer) e
 		{"  path", wt.Path},
 		{"  state", checkoutState(wt.Path)},
 		{"  trunk", trunkFact(ctx, base, ok, wt)},
+	}
+	if pr := prFact(ctx, wt.Branch); pr != "" {
+		rows = append(rows, []string{"  pr", pr})
 	}
 	agents := opts.Agents
 	if agents == nil {

@@ -6,6 +6,16 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-19 08:07 — wt pr checkout: a worktree for a pull request
+
+- `wt pr checkout 12` makes a worktree for that pull request and provisions it
+  like any other; with no number it lists the open ones and you pick. It goes
+  on the pull request's own head branch, set up by `gh pr checkout` inside it,
+  so a push updates the pull request — forks included.
+- `wt pr list` is the same from the other end; `wt list` grows a `PR` column
+  and `wt status <work>` a pull request line, both from one bounded `gh` call.
+  On by default; off with `wt config set github false`.
+
 ## 2026-09-19 07:26 — Your own settings, and Superset is now opt-in
 
 - `wt config set superset true` turns the Superset registration on; it is off

@@ -138,14 +138,22 @@ func candidates(r *repo.Repo, suffix string, local bool) ([]find.Candidate, erro
 }
 
 // candidate is a worktree as the matcher sees it: the main checkout goes by
-// the repository's name, a linked worktree by its work name, or by its
-// directory when the branch does not carry one.
+// the repository's name, a linked worktree by the work name its branch
+// carries, and failing that by its directory. That is the same name `wt list`
+// prints for it.
 func candidate(r *repo.Repo, wt repo.Worktree, suffix string, local bool) find.Candidate {
 	work := r.Name
 	if !wt.IsMain {
-		work = naming.StripPrefix(wt.Branch, suffix)
-		if work == "" {
-			work = filepath.Base(wt.Path)
+		sch := naming.Scheme{Parent: r.Parent, Repo: r.Name, Suffix: suffix}
+		switch _, w, ok := sch.Parse(wt.Branch); {
+		case ok:
+			work = w
+		default:
+			if _, w, ok := sch.ClassifyPath(wt.Path); ok {
+				work = w
+			} else if work = wt.Branch; work == "" {
+				work = filepath.Base(wt.Path)
+			}
 		}
 	}
 	return find.Candidate{
