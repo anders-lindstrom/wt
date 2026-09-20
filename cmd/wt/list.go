@@ -19,11 +19,17 @@ func newListCmd() *cobra.Command {
 		Long: "Print every worktree of this repository: its work name, its branch and\n" +
 			"its path. A worktree not at the path this layout gives it is marked,\n" +
 			"and the legend says what to do about it.\n\n" +
-			"A PR column appears when a worktree here is on a pull request. The\n" +
-			"answer is cached in this repository for a few minutes, so only the\n" +
-			"first listing pays the `gh` call of around a second; --refresh asks\n" +
-			"again at once, --no-pr leaves the column out, and `wt config set github\n" +
-			"false` turns the whole thing off.\n\n" + pathWidthHelp,
+			"A PR column appears when a worktree here is on a pull request. GitHub\n" +
+			"is asked about those branches by name, so a pull request of any age is\n" +
+			"found — however many have been opened since. Each branch's answer is\n" +
+			"kept in this repository for five minutes, so only the first listing\n" +
+			"pays the `gh` call of around a second, and a branch made since then is\n" +
+			"asked about on its own rather than waiting the five minutes out.\n" +
+			"--refresh asks about them all again, --no-pr leaves the column out, and\n" +
+			"`wt config set github false` turns the whole thing off.\n\n" +
+			"A pull request merged somewhere other than trunk says where: a stacked\n" +
+			"one reads `#31 merged into feat_wt/its-parent`, because nothing of it\n" +
+			"has reached trunk yet.\n\n" + pathWidthHelp,
 		Example: "  wt list            # work name, branch and path for every worktree\n" +
 			"  wt ls              # the same, for the impatient\n" +
 			"  wt list | cat      # whole paths, however narrow the terminal\n" +

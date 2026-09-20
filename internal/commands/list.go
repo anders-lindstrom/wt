@@ -24,8 +24,9 @@ const minPathWidth = 24
 
 // ListOptions tunes List.
 type ListOptions struct {
-	// NoPR leaves the pull requests out. The column costs one gh call: 0.8s
-	// against a repository whose listing otherwise takes 0.02s.
+	// NoPR leaves the pull requests out. The column costs one gh call on the
+	// first listing — around 0.6s, against 0.02s for the rest of it — and
+	// nothing on the listings the cache answers.
 	NoPR bool
 	// Refresh asks GitHub even when the cached answer is still young.
 	Refresh bool
@@ -42,8 +43,9 @@ func List(ctx *Context, opts ListOptions, w io.Writer, width int) error {
 	}
 	sch := ctx.Scheme()
 	var prs map[string]string
+	var cached time.Time
 	if !opts.NoPR {
-		prs = listPRs(ctx, names, opts.Refresh)
+		prs, cached = listPRs(ctx, names, opts.Refresh)
 	}
 	header := []string{"", "WORK", "BRANCH", "PATH"}
 	if len(prs) > 0 {
@@ -75,42 +77,70 @@ func List(ctx *Context, opts ListOptions, w io.Writer, width int) error {
 	if err := printPathTable(w, rows, width); err != nil {
 		return err
 	}
-	if seen[naming.Superset] || seen[naming.Foreign] {
-		fmt.Fprintln(w, "")
-	}
+	var legend []string
 	if seen[naming.Superset] {
-		fmt.Fprintln(w, "s  Superset's layout — its workspace holds this path; leave it where it is")
+		legend = append(legend, "s  Superset's layout — its workspace holds this path; leave it where it is")
 	}
 	if seen[naming.Foreign] {
-		fmt.Fprintln(w, "!  not a layout wt recognises — `wt migrate <work|branch|path>` moves it to the")
-		fmt.Fprintln(w, "   canonical path; add a destination to rename or retype it as it goes")
+		legend = append(legend,
+			"!  not a layout wt recognises — `wt migrate <work|branch|path>` moves it to the",
+			"   canonical path; add a destination to rename or retype it as it goes")
+	}
+	if age := prColumnAge(cached, time.Now()); age != "" {
+		legend = append(legend, "   pull requests as of "+age+" — `wt list --refresh` asks GitHub again")
+	}
+	if len(legend) > 0 {
+		fmt.Fprintln(w, "")
+		for _, line := range legend {
+			fmt.Fprintln(w, line)
+		}
 	}
 	return nil
 }
 
-// listPRs is the PR column of `wt list`, keyed by branch. Empty when GitHub
-// is not in play (off, absent, offline, not this repository) or when no
-// worktree here has a pull request, and empty means the column is not
-// printed: `wt list` is then byte for byte what it was without it.
-func listPRs(ctx *Context, names []WorkName, refresh bool) map[string]string {
+// prColumnAge is how old the oldest cached answer in the PR column is, and ""
+// when the column is this listing's own work or fresh enough that its age is
+// not worth a line.
+func prColumnAge(cached, now time.Time) string {
+	if cached.IsZero() || now.Sub(cached) < time.Minute {
+		return ""
+	}
+	return ago(now.Sub(cached))
+}
+
+// listPRs is the PR column of `wt list`, keyed by branch, and when the oldest
+// answer it took from the cache was read. Empty when GitHub is not in play
+// (off, absent, offline, not this repository) or when no worktree here has a
+// pull request, and empty means the column is not printed: `wt list` is then
+// byte for byte what it was without it.
+func listPRs(ctx *Context, names []WorkName, refresh bool) (map[string]string, time.Time) {
 	linked := false
 	for _, n := range names {
 		linked = linked || (!n.IsMain && n.Branch != "")
 	}
 	if !linked {
-		return nil
+		return nil, time.Time{}
 	}
-	byBranch := worktreePRs(ctx, listQuery(github.ListDeadline), refresh)
-	if len(byBranch) == 0 {
-		return nil
-	}
-	out := map[string]string{}
+	branches := make([]string, 0, len(names))
 	for _, n := range names {
-		if pr, ok := byBranch[n.Branch]; ok && !n.IsMain {
-			out[n.Branch] = prLabel(pr)
+		if !n.IsMain && n.Branch != "" {
+			branches = append(branches, n.Branch)
 		}
 	}
-	return out
+	a := branchPRs(ctx, branches, prLookup{
+		warn: "no pull requests shown", refresh: refresh, deadline: github.ListDeadline,
+	})
+	if len(a.byBranch) == 0 {
+		return nil, time.Time{}
+	}
+	trunk := trunks(ctx)
+	out := map[string]string{}
+	for _, n := range names {
+		if pr, ok := a.byBranch[n.Branch]; ok && !n.IsMain {
+			out[n.Branch] = prLabel(pr, trunk)
+		}
+	}
+	return out, a.cached
 }
 
 func layoutMark(l naming.Layout) string {
@@ -254,7 +284,7 @@ func StatusWorktree(ctx *Context, arg string, opts StatusOptions, w io.Writer) e
 	if s := wtsync.SessionsAt(agents, wt.Path); len(s) > 0 {
 		rows = append(rows, []string{"  sessions", whoLabel(s)})
 	}
-	work := workName(ctx, wt.Branch)
+	work := worktreeName(ctx, wt.Branch, wt.Path)
 	verdict, under := syncVerdict(ctx, work, wt, agents)
 	rows = append(rows, []string{"  sync", verdict})
 

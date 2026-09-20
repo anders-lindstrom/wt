@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -16,11 +17,12 @@ import (
 // ghRepo is the remote every test in this file pretends the fixture has.
 var ghRepo = github.Remote{Name: "origin", Host: "github.com", Slug: "t/demo"}
 
-// fakeGitHub writes a `gh` that answers `pr list` and `pr view` with prs, and
-// performs `pr checkout <n>` by creating that pull request's branch where it
-// is run — which is what the real one does, and the only part of it wt
-// depends on. It points findGitHub and gitHubRemote at the fake for one test
-// and returns the file every invocation's argv is appended to.
+// fakeGitHub writes a `gh` that answers the two questions wt asks — the branch
+// lookup over `api graphql`, and the wide open listing — and performs
+// `pr checkout <n>` by creating that pull request's branch where it is run,
+// which is the only part of the real one wt depends on. It points findGitHub
+// and gitHubRemote at the fake for one test and returns the file every
+// invocation's argv is appended to.
 func fakeGitHub(t *testing.T, prs ...github.PR) string {
 	t.Helper()
 	return fakeGitHubWith(t, "", prs...)
@@ -30,7 +32,24 @@ func fakeGitHub(t *testing.T, prs ...github.PR) string {
 // the tests that need gh to fail.
 func fakeGitHubWith(t *testing.T, prelude string, prs ...github.PR) string {
 	t.Helper()
+	return fakeGitHubAs(t, "anders", prelude, prs...)
+}
+
+// fakeGitHubAs is fakeGitHubWith with the login gh reports itself as, which
+// is what decides whose review the picker leads with.
+func fakeGitHubAs(t *testing.T, viewer, prelude string, prs ...github.PR) string {
+	t.Helper()
 	listed, err := json.Marshal(prs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	open := []github.PR{}
+	for _, pr := range prs {
+		if pr.Open() {
+			open = append(open, pr)
+		}
+	}
+	openJSON, err := json.Marshal(open)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +68,10 @@ func fakeGitHubWith(t *testing.T, prelude string, prs ...github.PR) string {
 	script := "#!/bin/sh\n" +
 		"printf '%s\\n' \"$*\" >> " + log + "\n" +
 		prelude + "\n" +
+		headCase(t, prs) +
+		graphqlShell(string(openJSON), viewer) +
 		"case \"$1 $2\" in\n" +
+		"  'api graphql') graphql \"$@\" ;;\n" +
 		"  'pr list') cat <<'JSON'\n" + string(listed) + "\nJSON\n    ;;\n" +
 		"  'pr view') " + viewCase(t, prs) + " ;;\n" +
 		"  'pr checkout') case \"$3\" in\n" + cases.String() + "    *) exit 1 ;;\n  esac ;;\n" +
@@ -61,6 +83,57 @@ func fakeGitHubWith(t *testing.T, prelude string, prs ...github.PR) string {
 	}
 	stubGitHub(t, github.CLI{Exe: exe}, ghRepo, true)
 	return log
+}
+
+// graphqlShell answers the two GraphQL queries wt sends. The branch query is
+// recognised by its b<n>=<branch> variables and answered alias by alias, so a
+// branch's answer depends on the branch asked about and on nothing else.
+func graphqlShell(openJSON, viewer string) string {
+	return "graphql() {\n" +
+		"  case \"$*\" in\n" +
+		"    *viewer*)\n" +
+		"      printf '{\"data\":{\"viewer\":{\"login\":\"" + viewer + "\"},\"repository\":{\"pullRequests\":{\"nodes\":%s}}}}\\n' '" + openJSON + "'\n" +
+		"      return ;;\n" +
+		"  esac\n" +
+		"  printf '{\"data\":{\"repository\":{'\n" +
+		"  first=1\n" +
+		"  for a in \"$@\"; do\n" +
+		"    case \"$a\" in\n" +
+		"      b[0-9]*=*)\n" +
+		"        [ $first -eq 1 ] || printf ','\n" +
+		"        first=0\n" +
+		"        printf '\"%s\":{\"nodes\":[%s]}' \"${a%%=*}\" \"$(head_nodes \"${a#*=}\")\"\n" +
+		"        ;;\n" +
+		"    esac\n" +
+		"  done\n" +
+		"  printf '}}}\\n'\n" +
+		"}\n"
+}
+
+// headCase answers "which pull requests have this head branch", which is the
+// question the branch query asks.
+func headCase(t *testing.T, prs []github.PR) string {
+	t.Helper()
+	byHead := map[string][]github.PR{}
+	var heads []string
+	for _, pr := range prs {
+		if _, seen := byHead[pr.HeadRefName]; !seen {
+			heads = append(heads, pr.HeadRefName)
+		}
+		byHead[pr.HeadRefName] = append(byHead[pr.HeadRefName], pr)
+	}
+	var b strings.Builder
+	b.WriteString("head_nodes() {\n  case \"$1\" in\n")
+	for _, head := range heads {
+		nodes, err := json.Marshal(byHead[head])
+		if err != nil {
+			t.Fatal(err)
+		}
+		// The brackets are the caller's; a branch contributes its nodes.
+		fmt.Fprintf(&b, "    %q) printf '%%s' '%s' ;;\n", head, strings.Trim(string(nodes), "[]"))
+	}
+	b.WriteString("  esac\n}\n")
+	return b.String()
 }
 
 // viewCase answers `pr view <n>` for each pull request by number.
@@ -116,9 +189,11 @@ func TestGitHubGateNamesTheGateThatFailed(t *testing.T) {
 			func(t *testing.T, _ *Context) { stubGitHub(t, github.CLI{Exe: "/nope/gh"}, github.Remote{}, false) },
 			"has no GitHub remote",
 		},
+		// No gate asks `gh auth status` any more: the real call is what
+		// finds out, and gh's own complaint is turned into this line.
 		"not logged in": {
 			func(t *testing.T, _ *Context) {
-				fakeGitHubWith(t, `[ "$1 $2" = 'auth status' ] && { echo 'not logged in' >&2; exit 1; }`)
+				fakeGitHubWith(t, `echo 'To get started with GitHub CLI, please run:  gh auth login' >&2; exit 1`)
 			},
 			"gh is not logged in to github.com; run `gh auth login --hostname github.com`",
 		},
@@ -162,12 +237,11 @@ func TestPRCheckoutMakesAWorktreeOnThePullRequestsBranch(t *testing.T) {
 	if got := ctx.Repo.BranchAt(path); got != "residential_fixes" {
 		t.Errorf("worktree is on %q, want the pull request's head branch", got)
 	}
-	// The login is checked, the pull request is read by number and gh does
-	// the checkout — and nothing lists them, because a number means straight
-	// to it.
+	// The pull request is read by number and gh does the checkout. Nothing
+	// lists them, because a number means straight to it, and nothing asks
+	// `gh auth status` first: the real call answers that question too.
 	argv := argvOf(t, log)
-	if len(argv) != 3 || !strings.HasPrefix(argv[0], "auth status") ||
-		!strings.HasPrefix(argv[1], "pr view 12 ") || argv[2] != "pr checkout 12" {
+	if len(argv) != 2 || !strings.HasPrefix(argv[0], "pr view 12 ") || argv[1] != "pr checkout 12" {
 		t.Errorf("argv = %q", argv)
 	}
 }
@@ -266,24 +340,25 @@ func TestPRCheckoutWithoutANumberAsks(t *testing.T) {
 		openPR(12, "residential_fixes", "Fixes"),
 		openPR(7, "fix_wt/login-crash", "Login crash"))
 
-	var offered []github.PR
-	opts := PROptions{Choose: func(prs []github.PR) (github.PR, error) {
-		offered = prs
-		return prs[1], nil
+	var offered []PRChoice
+	opts := PROptions{Choose: func(rows []PRChoice) (github.PR, error) {
+		offered = rows
+		return rows[1].PR, nil
 	}}
 	var errs bytes.Buffer
 	path, err := PRCheckout(ctx, 0, opts, &errs)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(offered) != 2 || offered[0].Number != 12 {
+	if len(offered) != 2 || offered[0].PR.Number != 12 {
 		t.Errorf("the picker was offered %+v", offered)
 	}
 	if want := ctx.Scheme().Dir("fix", "login-crash"); path != want {
 		t.Errorf("path = %q, want the one that was picked (%q)", path, want)
 	}
-	if got := argvOf(t, log)[1]; !strings.HasPrefix(got, "pr list --state open") {
-		t.Errorf("the listing was %q, want the open ones", got)
+	if got := argvOf(t, log)[0]; !strings.Contains(got, "viewer{login}") ||
+		!strings.Contains(got, "states:OPEN") {
+		t.Errorf("the listing was %q, want one call for the open ones and the viewer", got)
 	}
 }
 
@@ -336,6 +411,10 @@ func TestListShowsThePullRequestColumn(t *testing.T) {
 // Every way GitHub can be out of play leaves `wt list` byte for byte what it
 // was before the column existed. This is the whole contract for the column:
 // `wt list` is read by scripts and by completion.
+//
+// Every case asks with Refresh, and the ones where gh is supposed to run say
+// so: the subtests share one repository, so one that read a cached answer
+// would pass without gh having been reached at all.
 func TestListIsUnchangedWhenGitHubIsNotInPlay(t *testing.T) {
 	ctx, err := Open(committedRepo(t, minimalConf))
 	if err != nil {
@@ -345,38 +424,107 @@ func TestListIsUnchangedWhenGitHubIsNotInPlay(t *testing.T) {
 	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
 	}
+	// The listing without the column, taken with the integration off rather
+	// than with whatever gh the machine running the tests happens to have.
+	ctx.User.GitHub = false
 	var before bytes.Buffer
 	if err := List(ctx, ListOptions{}, &before, 0); err != nil {
 		t.Fatal(err)
 	}
+	ctx.User.GitHub = true
 
-	for name, set := range map[string]func(t *testing.T, ctx *Context){
-		"off in the user config": func(t *testing.T, ctx *Context) {
-			fakeGitHub(t, openPR(12, "fix_wt/login-crash", "x"))
+	for name, tc := range map[string]struct {
+		set      func(t *testing.T, ctx *Context) string
+		wantCall bool
+	}{
+		"off in the user config": {func(t *testing.T, ctx *Context) string {
+			log := fakeGitHub(t, openPR(12, "fix_wt/login-crash", "x"))
 			ctx.User.GitHub = false
-		},
-		"no gh":      func(t *testing.T, _ *Context) { stubGitHub(t, github.CLI{}, ghRepo, true) },
-		"not GitHub": func(t *testing.T, _ *Context) { stubGitHub(t, github.CLI{Exe: "/nope/gh"}, github.Remote{}, false) },
-		"gh fails": func(t *testing.T, _ *Context) {
-			fakeGitHubWith(t, `[ "$1 $2" = 'pr list' ] && { echo offline >&2; exit 1; }`,
+			return log
+		}, false},
+		"no gh": {func(t *testing.T, _ *Context) string {
+			stubGitHub(t, github.CLI{}, ghRepo, true)
+			return ""
+		}, false},
+		"not GitHub": {func(t *testing.T, _ *Context) string {
+			stubGitHub(t, github.CLI{Exe: "/nope/gh"}, github.Remote{}, false)
+			return ""
+		}, false},
+		"gh fails": {func(t *testing.T, _ *Context) string {
+			return fakeGitHubWith(t, `[ "$1 $2" = 'api graphql' ] && { echo offline >&2; exit 1; }`,
 				openPR(12, "fix_wt/login-crash", "x"))
-		},
-		"no pull request for any worktree": func(t *testing.T, _ *Context) {
-			fakeGitHub(t, openPR(12, "somebody-elses-branch", "x"))
-		},
+		}, true},
+		"no pull request for any worktree": {func(t *testing.T, _ *Context) string {
+			return fakeGitHub(t, openPR(12, "somebody-elses-branch", "x"))
+		}, true},
 	} {
 		t.Run(name, func(t *testing.T) {
-			set(t, ctx)
+			log := tc.set(t, ctx)
 			defer func() { ctx.User.GitHub = true }()
 			var out bytes.Buffer
-			if err := List(ctx, ListOptions{}, &out, 0); err != nil {
+			if err := List(ctx, ListOptions{Refresh: true}, &out, 0); err != nil {
 				t.Fatal(err)
 			}
 			if out.String() != before.String() {
 				t.Errorf("wt list changed:\n%s\nwant:\n%s", out.String(), before.String())
 			}
+			if tc.wantCall && len(argvOf(t, log)) == 0 {
+				t.Error("gh was never run, so this proves nothing about what wt does with its answer")
+			}
 		})
 	}
+}
+
+// The PR column is served from a cache, and a listing says so once the answer
+// is a minute old. Under a minute, and with no cache behind the column at all,
+// the listing is what it was.
+func TestListSaysHowOldACachedColumnIs(t *testing.T) {
+	ctx, err := Open(committedRepo(t, minimalConf))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fakeGitHub(t, openPR(12, "fix_wt/login-crash", "Login crash"))
+	var errs bytes.Buffer
+	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &errs); err != nil {
+		t.Fatal(err)
+	}
+
+	var fresh bytes.Buffer
+	if err := List(ctx, ListOptions{}, &fresh, 0); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(fresh.String(), "pull requests as of") {
+		t.Errorf("a listing that asked GitHub itself dated its own answer:\n%s", fresh.String())
+	}
+
+	backdatePRCache(t, ctx, ghRepo, 3*time.Minute)
+	var old bytes.Buffer
+	if err := List(ctx, ListOptions{}, &old, 0); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(old.String(), "pull requests as of 3m ago — `wt list --refresh` asks GitHub again") {
+		t.Errorf("wt list said\n%s\nwant the age of the cached column", old.String())
+	}
+
+	// --no-pr has no column, so it has no legend either.
+	var none bytes.Buffer
+	if err := List(ctx, ListOptions{NoPR: true}, &none, 0); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(none.String(), "pull requests as of") {
+		t.Errorf("--no-pr printed the age of a column it did not print:\n%s", none.String())
+	}
+}
+
+// backdatePRCache makes every answer in the cache by how old.
+func backdatePRCache(t *testing.T, ctx *Context, r github.Remote, by time.Duration) {
+	t.Helper()
+	c := readPRCache(ctx, r)
+	answers := map[string]*github.PR{}
+	for branch, e := range c.Branches {
+		answers[branch] = e.PR
+	}
+	writePRCache(ctx, r, answers, time.Now().Add(-by))
 }
 
 // doctor's GitHub section: what it found, and never a problem — a machine
@@ -469,7 +617,7 @@ func TestPRListNamesTheWorktreeOnEachPullRequest(t *testing.T) {
 		}
 	}
 	// The richer view is the one that pays for the checks.
-	if got := argvOf(t, log)[1]; !strings.Contains(got, "statusCheckRollup") {
+	if got := argvOf(t, log)[0]; !strings.Contains(got, "statusCheckRollup") {
 		t.Errorf("wt pr list did not ask for the checks: %q", got)
 	}
 }
@@ -556,7 +704,7 @@ func TestStatusWorktreeCarriesThePullRequest(t *testing.T) {
 	if !strings.Contains(out.String(), "pr      #12 open · Login crash") {
 		t.Errorf("wt status said\n%s", out.String())
 	}
-	if got := argvOf(t, log); len(got) != 1 || !strings.Contains(got[0], "--head fix_wt/login-crash") {
+	if got := argvOf(t, log); len(got) != 1 || !strings.Contains(got[0], "b0=fix_wt/login-crash") {
 		t.Errorf("argv = %q, want one call for that branch alone", got)
 	}
 }
@@ -576,7 +724,7 @@ func TestStatusWorktreeIsSilentWithoutOne(t *testing.T) {
 		"no pull request": func(t *testing.T) { fakeGitHub(t) },
 		"no gh":           func(t *testing.T) { stubGitHub(t, github.CLI{}, ghRepo, true) },
 		"gh fails": func(t *testing.T) {
-			fakeGitHubWith(t, `[ "$1 $2" = 'pr list' ] && { echo offline >&2; exit 1; }`)
+			fakeGitHubWith(t, `[ "$1 $2" = 'api graphql' ] && { echo offline >&2; exit 1; }`)
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -678,6 +826,11 @@ func TestPROpenAsksGhToOpenThePullRequest(t *testing.T) {
 	if got := argv[len(argv)-1]; got != "pr view 12 --web" {
 		t.Errorf("argv = %q, want the last call to be `pr view 12 --web`", argv)
 	}
+	// The lookup is this worktree's branch and nothing else: one call, no
+	// wide listing to pick a number out of.
+	if len(argv) != 2 || !strings.Contains(argv[0], "b0=fix_wt/login-crash") {
+		t.Errorf("argv = %q, want one branch lookup and the open", argv)
+	}
 }
 
 // A worktree with no pull request is one line and a non-zero exit, and no
@@ -731,5 +884,96 @@ func TestPROpenDefaultsToTheWorktreeYouAreIn(t *testing.T) {
 	}
 	if !strings.Contains(errs.String(), "Opening #12") {
 		t.Errorf("stderr = %q", errs.String())
+	}
+}
+
+// The pull ref is the second chance, not a guarantee: a merged pull request
+// GitHub will not hand over either way leaves nothing behind, and the error
+// reported is gh's own.
+func TestPRCheckoutOfAMergedPullRequestWithNoPullRefFails(t *testing.T) {
+	main := committedRepo(t, minimalConf)
+	gitIn(t, main, "remote", "add", "origin", main)
+	ctx, err := Open(main)
+	if err != nil {
+		t.Fatal(err)
+	}
+	merged := github.PR{Number: 34, Title: "Gone", HeadRefName: "fix_wt/ses-endpoint", State: "MERGED"}
+	fakeGitHubWith(t, `[ "$1 $2" = 'pr checkout' ] && { echo "couldn't find remote ref" >&2; exit 1; }`, merged)
+
+	var errs bytes.Buffer
+	_, err = PRCheckout(ctx, 34, PROptions{}, &errs)
+	if err == nil {
+		t.Fatal("PRCheckout succeeded with neither the branch nor the pull ref")
+	}
+	if !strings.Contains(err.Error(), "couldn't find remote ref") {
+		t.Errorf("err = %v, want gh's own complaint", err)
+	}
+	path := ctx.Scheme().Dir("fix", "ses-endpoint")
+	if _, err := os.Stat(path); err == nil {
+		t.Errorf("%s was left behind", path)
+	}
+	worktrees, err := ctx.Repo.Worktrees()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(worktrees) != 1 {
+		t.Errorf("worktrees = %+v, want the main checkout alone", worktrees)
+	}
+	if _, ok := ctx.Repo.ResolveRef("refs/heads/fix_wt/ses-endpoint"); ok {
+		t.Error("the branch gh was asked for was left behind")
+	}
+}
+
+// A cache nothing can write is a listing that asks GitHub every single time,
+// and nothing else says so. doctor does — as a remark, not a problem.
+func TestDoctorReportsAPRCacheItCannotWrite(t *testing.T) {
+	ctx, err := Open(committedRepo(t, minimalConf))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fakeGitHub(t)
+	dir, err := ctx.Repo.GitDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Skipf("cannot make %s read-only here: %v", dir, err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, info.Mode()) })
+
+	var out bytes.Buffer
+	problems, err := Doctor(ctx, &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "the pull requests cannot be cached, so every listing asks GitHub again") {
+		t.Errorf("doctor said\n%s", out.String())
+	}
+	if problems != 0 {
+		t.Errorf("problems = %d; the GitHub section is never one:\n%s", problems, out.String())
+	}
+}
+
+// With a cache it can write, doctor says where it is.
+func TestDoctorNamesTheCacheItCanWrite(t *testing.T) {
+	ctx, err := Open(committedRepo(t, minimalConf))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fakeGitHub(t)
+	var out bytes.Buffer
+	if _, err := Doctor(ctx, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "✓ pull requests cached in "+prCachePath(ctx)) {
+		t.Errorf("doctor said\n%s", out.String())
+	}
+	// Asking the question leaves no cache behind where there was none.
+	if _, err := os.Stat(prCachePath(ctx)); err == nil {
+		t.Error("wt doctor created the cache file")
 	}
 }

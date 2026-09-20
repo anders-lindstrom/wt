@@ -6,6 +6,16 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-19 14:40 — Pull requests found by branch, and remove knows what landed
+
+- wt asks GitHub about the branches its worktrees are on, by name, not the 50
+  most recent pull requests: an open one of any age shows again.
+- One cache per repository, a fact per branch, shared by list, status, pr open
+  and sweep; a new branch does not wait, and a cached column says how old it is.
+- `wt remove` now deletes a squash-merged branch too, from that cache alone —
+  no gh, no network. Only for one merged into **trunk**: a stacked pull request
+  merged into its parent has landed nothing, and is left alone everywhere.
+
 ## 2026-09-19 09:26 — Sweep knows what merged, and settings fail closed
 
 - `wt sweep` now sweeps a worktree whose pull request GitHub merged even when

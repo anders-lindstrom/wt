@@ -35,7 +35,7 @@ func SyncUndo(ctx *Context, work string, opts UndoOptions, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	name := workName(ctx, target.Branch)
+	name := worktreeName(ctx, target.Branch, target.Path)
 	branches, err := wtsync.UndoBranches(ctx.Repo.MainRoot, target.Branch)
 	if err != nil {
 		return err
@@ -84,7 +84,7 @@ func SyncUndo(ctx *Context, work string, opts UndoOptions, w io.Writer) error {
 	// reported, so a partial restore is visible rather than silent.
 	restored, err := wtsync.Undo(ctx.Repo.MainRoot, worktrees, agents, target.Branch, opts.now(), opts.Force)
 	for _, r := range restored {
-		rowWork := workName(ctx, r.Branch)
+		rowWork := worktreeName(ctx, r.Branch, paths[r.Branch])
 		fmt.Fprintln(w, restoredLine(rowWork, r))
 		switch {
 		case r.From == r.To && !r.Aborted:

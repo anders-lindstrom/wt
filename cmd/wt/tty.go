@@ -42,6 +42,19 @@ func terminalWidth(w io.Writer) int {
 	return width
 }
 
+// terminalHeight is w's row count when w is a terminal, and 0 otherwise.
+func terminalHeight(w io.Writer) int {
+	f, ok := w.(*os.File)
+	if !ok || !isTerminal(f) {
+		return 0
+	}
+	_, height, err := term.GetSize(int(f.Fd()))
+	if err != nil {
+		return 0
+	}
+	return height
+}
+
 // prompter asks a command's questions. Build one per command and ask every
 // question through it: a bufio.Reader buffers past its own line, so a reader
 // built per question eats the answers typed ahead for the next one.

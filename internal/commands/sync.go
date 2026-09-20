@@ -63,7 +63,7 @@ func Sync(ctx *Context, opts SyncOptions, w io.Writer) error {
 	assessments := assessAll(ctx.Repo.MainRoot, onto, cfg, worktrees, agents, assessWorkers)
 	entries := make([]syncEntry, 0, len(worktrees))
 	for i, wt := range worktrees {
-		entries = append(entries, syncEntry{work: workName(ctx, wt.Branch), a: assessments[i]})
+		entries = append(entries, syncEntry{work: worktreeName(ctx, wt.Branch, wt.Path), a: assessments[i]})
 	}
 	printOverview(w, cfg != nil, entries)
 	return nil
@@ -146,7 +146,7 @@ func SyncWorktree(ctx *Context, arg string, opts SyncOptions, w io.Writer) error
 		return err
 	}
 	a := wtsync.Assess(ctx.Repo.MainRoot, onto, cfg, wt, agents)
-	printDetail(w, workName(ctx, wt.Branch), a)
+	printDetail(w, worktreeName(ctx, wt.Branch, wt.Path), a)
 	return nil
 }
 
@@ -298,6 +298,20 @@ func workName(ctx *Context, branch string) string {
 		return work
 	}
 	return branch
+}
+
+// worktreeName is what a worktree is called, and is what to use wherever one
+// is at hand: its branch's work name where the branch follows the convention,
+// otherwise the name its path gives it. That is how `wt list`, completion and
+// `wt find` name it; any other name is one you cannot type back.
+func worktreeName(ctx *Context, branch, path string) string {
+	if _, work, ok := ctx.Scheme().Parse(branch); ok {
+		return work
+	}
+	if _, work, ok := ctx.Scheme().ClassifyPath(path); ok {
+		return work
+	}
+	return workName(ctx, branch)
 }
 
 // syncSection is where the overview files a worktree: what to do about it.

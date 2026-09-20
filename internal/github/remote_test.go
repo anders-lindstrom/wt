@@ -49,9 +49,11 @@ func TestIsGitHub(t *testing.T) {
 	}
 }
 
-// origin is the remote you work against, so it wins; a repository with no
-// GitHub remote at all answers no.
-func TestRemoteOfPrefersOrigin(t *testing.T) {
+// On a fork, origin is your copy and upstream is where the pull requests
+// are. gh resolves upstream as the base repository, and wt has to ask about
+// the same one: it acts on gh's answers, down to fetching a merged pull
+// request's head commit from this remote.
+func TestRemoteOfResolvesTheBaseRepositoryTheWayGhDoes(t *testing.T) {
 	dir := t.TempDir()
 	runGit(t, dir, "init", "-q", ".")
 	runGit(t, dir, "remote", "add", "upstream", "git@github.com:sharkdp/fd.git")
@@ -62,8 +64,28 @@ func TestRemoteOfPrefersOrigin(t *testing.T) {
 	if !ok {
 		t.Fatal("RemoteOf found nothing")
 	}
-	if r.Name != "origin" || r.Slug != "anders/fd" || r.Host != "github.com" {
-		t.Errorf("RemoteOf() = %+v", r)
+	if r.Name != "upstream" || r.Slug != "sharkdp/fd" || r.Host != "github.com" {
+		t.Errorf("RemoteOf() = %+v, want upstream", r)
+	}
+}
+
+// `gh repo set-default` writes the answer into git config, and it overrides
+// the ordering: the person said which repository this checkout is about.
+func TestRemoteOfHonoursGhRepoSetDefault(t *testing.T) {
+	dir := t.TempDir()
+	runGit(t, dir, "init", "-q", ".")
+	runGit(t, dir, "remote", "add", "upstream", "git@github.com:sharkdp/fd.git")
+	runGit(t, dir, "remote", "add", "origin", "git@github.com:anders/fd.git")
+	runGit(t, dir, "config", "remote.origin.gh-resolved", "base")
+	if r, _ := RemoteOf(dir); r.Name != "origin" || r.Slug != "anders/fd" {
+		t.Errorf("RemoteOf() = %+v, want origin", r)
+	}
+
+	// The other spelling: a repository that need not be a remote here.
+	runGit(t, dir, "config", "--unset", "remote.origin.gh-resolved")
+	runGit(t, dir, "config", "remote.origin.gh-resolved", "Telcred/server")
+	if r, _ := RemoteOf(dir); r.Slug != "Telcred/server" || r.Host != "github.com" {
+		t.Errorf("RemoteOf() = %+v, want Telcred/server", r)
 	}
 }
 

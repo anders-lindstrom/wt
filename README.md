@@ -67,7 +67,7 @@ examples: `wt <command> --help`.
 |---|---|
 | `wt new <type>/<work>` | create a branch and worktree, then provision it (`--base`, `--no-setup`, `--skip-build`) |
 | `wt checkout <branch> [work]` | put a worktree on a branch that already exists |
-| `wt pr checkout [<number>]` | put a worktree on a pull request; with no number, pick one from the open ones |
+| `wt pr checkout [<number>]` | put a worktree on a pull request; with no number, pick one from the open ones, your review queue first |
 | `wt pr list` | every open pull request, its state and checks, and the worktree on it |
 | `wt pr open [<work>]` | open a worktree's pull request in the browser; with no argument, the one you are in |
 
@@ -77,7 +77,7 @@ examples: `wt <command> --help`.
 |---|---|
 | `wt cd [pattern]` | cd to a worktree, in this shell; `.` is the one you are in, bare or `/` the main checkout |
 | `wt exec <pattern> <cmd>…` | run a command there, in a subshell; your shell stays put |
-| `wt list` | every worktree, in any layout; `s` marks Superset's, `!` one nothing owns; a `PR` column when a worktree here has one, cached for a few minutes (`--no-pr`, `--refresh`) |
+| `wt list` | every worktree, in any layout; `s` marks Superset's, `!` one nothing owns; a `PR` column when a worktree here has one, asked for by branch and cached for a few minutes (`--no-pr`, `--refresh`) |
 | `wt status [<work>]` | each worktree's branch, whether it is clean, and how far behind and ahead of trunk it is; with a worktree named, that one in full with `wt sync`'s verdict |
 | `wt find <pattern>` | resolve a worktree by fuzzy name, across repositories (`--candidates`) |
 
@@ -100,7 +100,7 @@ examples: `wt <command> --help`.
 | `wt migrate <worktree> [<type>/<name>]` | move a worktree where it belongs, renaming or retyping it on the way (`--dry-run`, `--force`); also `wt move` |
 | `wt adopt <path>` | provision a worktree another tool created (`--relocate`, `--skip-build`) |
 | `wt setup [<source-dir>]` | provision the worktree you are in (`--skip-build`, `--source` to name what ran it) |
-| `wt remove <work>` | remove a worktree; delete its branch when merged, keep it when not (`--yes`, `--me` or `.` for the one you are in, `--force` for a locked one) |
+| `wt remove <work>` | remove a worktree; delete its branch when merged — on trunk, or as a pull request the cache says landed — keep it when not (`--yes`, `--me` or `.` for the one you are in, `--force` for a locked one) |
 | `wt sweep` | delete local branches already merged into trunk — or whose pull request GitHub merged — and remove the worktrees on such branches that nothing is using; from the main checkout only (`--no-fetch`, `--yes`) |
 
 **This repository, and this build**
@@ -254,11 +254,29 @@ nothing.
 Given a number, a merged or closed pull request is checked out too: finished
 work is worth re-reading. GitHub deletes the head branch when a pull request
 merges, so wt falls back to `refs/pull/<number>/head` — the same commit, on a
-branch with no upstream, and it says so. The picker only offers the open ones.
-Without a
-terminal to pick in, the list goes to stderr and wt asks for a number rather
-than choosing — so a script or an agent never lands in a worktree it did not
-name. stdout stays the path alone, so `cd "$(wt pr checkout 12)"` works.
+branch with no upstream, and it says so.
+
+The picker only offers the open ones, and puts the ones **waiting on your
+review** first:
+
+```
+Open pull requests (34):
+
+   1  #41  open   alice   fix-login          Login fails on Safari          your review
+   2  #38  draft  anders  feat_wt/pr-lookup  Look pull requests up by …     has a worktree
+   …
+  10  #12  open   someone residential_fixes  Residents keep their doors
+
+  24 more — `all` shows them, or type part of a title, branch or author to narrow the list.
+
+Which one? [1-34, #<number>, text to filter; empty to cancel]
+```
+
+Answer with a row number, `#<number>`, or any text: the list narrows and asks
+again, and text that leaves one pull request picks it. Without a terminal to pick
+in, the whole list goes to stderr and wt asks for a number rather than
+choosing — so a script or an agent never lands in a worktree it did not name.
+stdout stays the path alone, so `cd "$(wt pr checkout 12)"` works.
 
 `wt list` shows a `PR` column when any worktree here is on a pull request:
 
@@ -268,37 +286,61 @@ name. stdout stays the path alone, so `cd "$(wt pr checkout 12)"` works.
    pr-2137-argument-sanitize  argument-sanitize  #2137 open  ~/src/fd_wt/feat_wt/pr-2137-…
 ```
 
-That column costs **one** `gh` call for the whole listing, under a two-second
-deadline, for the 50 most recent pull requests of any state — and the answer is
-then kept in this repository's `.git/` for five minutes, so the next `wt list`
-pays nothing at all. Measured on a repository with three worktrees and one open
-pull request:
+wt asks GitHub **about those branches by name** — one `gh api graphql` under a
+two-second deadline, with a query per branch — so a pull request is found
+however old it is and however many have been opened since. Each branch's answer
+is then kept in this repository's `.git/` for five minutes, so the next
+`wt list` pays nothing at all. Measured on a repository with three worktrees:
 
 | | |
 |---|---|
-| first listing, GitHub asked | **0.84s** |
-| listing from the cache | **0.03s** |
+| first listing, GitHub asked | **0.6s** |
+| listing from the cache | **0.02s** |
 | `wt list --no-pr` | **0.02s** |
 
-`wt list --refresh` asks again without waiting the cache out, and `--no-pr`
-skips the whole thing. Everything that acts on a pull request — `wt pr list`,
-`wt pr checkout`, `wt pr open`, `wt sweep` — asks GitHub itself and leaves the
-fresh answer in the cache. A cache file that is corrupt, missing or unwritable
-is a cache miss and nothing more: `wt list` never fails or waits over it.
+Only the branches the cache cannot answer are asked about, so a worktree made
+since the last listing shows its pull request at once rather than waiting the
+five minutes out. `wt list --refresh` asks about them all again, and `--no-pr`
+skips the whole thing. `wt status <work>` reads the same answers and prints the
+pull request as one of its facts; `wt pr open` and `wt sweep` refresh what they
+touch. A cache file that is corrupt, missing or unwritable is a cache miss and
+nothing more: `wt list` never fails or waits over it.
+
+A column served from the cache says how old it is, under the table beside the
+layout legend:
+
+```
+   pull requests as of 3m ago — `wt list --refresh` asks GitHub again
+```
+
+Under a minute there is no line: the listing asked GitHub itself. A cache wt
+cannot write means every listing pays the call again, silently — `wt doctor`
+is where that shows up.
+
+A pull request merged into something other than trunk says where —
+`#31 merged into feat_wt/its-parent` — because a stacked pull request merged
+into its parent has landed nothing on trunk.
 
 The column is not printed at all when no worktree here has a pull request, and
-when GitHub is out of play `wt list` is byte for byte what it was before the
-column existed — see **When something does not work** below.
+when GitHub is out of play `wt list` is byte for byte the listing without it —
+see **When something does not work** below.
 
 `wt pr open` opens the pull request whose head branch a worktree is on, through
 `gh pr view --web`. With no argument it is the worktree you are standing in.
 A worktree with no pull request is one line and a non-zero exit.
 
-**Four things have to be true**, in this order, and `wt pr` says which one was
-not: `github = true` in your settings; `gh` on the PATH; a GitHub remote on
-this repository; and gh logged in to that remote's host. `wt doctor` has a
-`GitHub:` section reporting the same, and never counts any of it as a problem —
-a machine without gh is an ordinary machine.
+**Four things have to be true**, and `wt pr` says which one was not:
+`github = true` in your settings; `gh` on the PATH; a GitHub remote on this
+repository; and gh logged in to that remote's host. The first three are checked
+before anything runs; the login is whatever the real call reports, so no
+command pays for a `gh auth status` of its own. `wt doctor` has a `GitHub:`
+section reporting all four, and never counts any of it as a problem — a machine
+without gh is an ordinary machine.
+
+The repository asked about is the one **gh** resolves as its base: whatever
+`gh repo set-default` recorded, and otherwise `upstream` before `github` before
+`origin`. On a fork checked out with `origin` pointing at your copy, that is the
+parent — which is where the pull requests are.
 
 Off with `wt config set github false`, which stops wt running gh at all.
 
@@ -324,17 +366,22 @@ the ones whose upstream is gone — usually the whole explanation of why a branc
 is sitting there.
 
 Acting on one is narrower than printing it. A worktree is swept on the strength
-of its pull request only when GitHub says **merged** and the local branch is at
-**exactly** the commit the pull request carried. One commit made locally after
-the merge is work that went nowhere and takes the branch off that commit, so
-sweep leaves it alone. Every check sweep already made applies first:
-uncommitted changes, a held lock, an agent session in the directory. Sweep
-fetches its pull requests fresh, and with GitHub off or unreachable it does
-exactly what it did before.
+of its pull request only when three things hold: GitHub says **merged**, the
+pull request's base is **trunk**, and the local branch is at **exactly** the
+commit the pull request carried. A stacked pull request merged into its parent
+branch is merged without anything having reached trunk, so it never makes a
+branch deletable. One commit made locally after the merge is work that went
+nowhere and takes the branch off that commit, so sweep leaves it alone. Every
+check sweep already made applies first: uncommitted changes, a held lock, an
+agent session in the directory. Sweep fetches its pull requests fresh, and with
+GitHub off or unreachable it does exactly what it did before.
 
-`wt remove <work>` does **not** read pull requests: it runs from git hooks, so
-it starts no process and makes no network call. On a squash-merged branch it
-keeps the branch, and `wt sweep` is what deletes it.
+`wt remove <work>` acts on the same fact, from the file `wt list` and `wt sweep`
+leave behind. It starts no `gh` and makes no network call — it runs from git
+hooks — but it does not have to: a merge is permanent and the commit it carried
+never moves, so a recorded merge cannot go stale, whatever the five-minute TTL
+says about open ones. With nothing recorded for the branch, remove keeps the
+branch, as it does without GitHub.
 
 ### When something does not work
 
@@ -350,7 +397,7 @@ the call failed or ran past its deadline anyway.
 
 ```
 $ wt list
-wt: no pull requests shown: gh pr list --state all … did not answer within 2s
+wt: no pull requests shown: gh api graphql did not answer within 2s
    WORK         BRANCH                PATH
    login-crash  fix_wt/login-crash    ~/src/repo_wt/fix_wt/login-crash
 ```

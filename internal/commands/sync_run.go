@@ -245,7 +245,7 @@ func (r *runPlan) selectReady() ([]string, error) {
 	var ready, left []string
 	for i, wt := range worktrees {
 		a := assessments[i]
-		work := workName(ctx, wt.Branch)
+		work := worktreeName(ctx, wt.Branch, wt.Path)
 		switch {
 		case a.Class == wtsync.Current && a.Err == nil:
 			// On trunk already; the overview leaves it out too.
