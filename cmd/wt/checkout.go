@@ -19,7 +19,8 @@ func newCheckoutCmd() *cobra.Command {
 		Example: "  wt checkout fix_wt/login-crash        # worktree for an existing branch\n" +
 			"  wt checkout release-2.1 rel21         # give the worktree its own name\n" +
 			"  wt checkout release-2.1 --no-setup    # the worktree, nothing else\n" +
-			"  wt checkout release-2.1 --skip-build  # provision, but do not build",
+			"  wt checkout release-2.1 --skip-build  # provision, but do not build\n" +
+			"  wt checkout release-2.1 --no-superset # keep it out of the Superset app",
 		Args: cobra.RangeArgs(1, 2),
 		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
 			work := ""
@@ -30,6 +31,6 @@ func newCheckoutCmd() *cobra.Command {
 			return printLine(cmd, path, err)
 		}),
 	}
-	addProvisionFlags(cmd, &opts.SkipBuild, &opts.NoSetup)
+	addProvisionFlags(cmd, &opts.SkipBuild, &opts.NoSetup, &opts.NoSuperset)
 	return cmd
 }

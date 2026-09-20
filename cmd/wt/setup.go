@@ -33,16 +33,20 @@ func newSetupCmd() *cobra.Command {
 			return commands.Setup(ctx, ctx.Cwd, opts, cmd.OutOrStdout())
 		}),
 	}
-	addProvisionFlags(cmd, &skipBuild, nil)
+	addProvisionFlags(cmd, &skipBuild, nil, nil)
 	cmd.Flags().StringVar(&source, "source", "", "what ran setup, such as superset; printed, changes nothing yet")
 	return cmd
 }
 
-// addProvisionFlags declares --skip-build, and --no-setup when noSetup is not
-// nil, for the commands that provision a worktree.
-func addProvisionFlags(cmd *cobra.Command, skipBuild, noSetup *bool) {
+// addProvisionFlags declares --skip-build for every command that provisions a
+// worktree, and --no-setup and --no-superset for the two that create one.
+func addProvisionFlags(cmd *cobra.Command, skipBuild, noSetup, noSuperset *bool) {
 	cmd.Flags().BoolVar(skipBuild, "skip-build", false, "skip build initialisation")
 	if noSetup != nil {
 		cmd.Flags().BoolVar(noSetup, "no-setup", false, "create the worktree without provisioning it")
+	}
+	if noSuperset != nil {
+		cmd.Flags().BoolVar(noSuperset, "no-superset", false,
+			"do not register the worktree as a Superset workspace")
 	}
 }

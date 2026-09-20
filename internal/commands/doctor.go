@@ -10,6 +10,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anders-lindstrom/wt/internal/superset"
 )
 
 // Doctor reports configuration and worktree health, returning the number of
@@ -63,6 +64,8 @@ func Doctor(ctx *Context, w io.Writer) (int, error) {
 		report("MAIN_BRANCH %q does not exist locally", ctx.Config.MainBranch)
 	}
 
+	doctorSuperset(ctx, w, report)
+
 	fmt.Fprintln(w, "Worktrees:")
 	worktrees, err := ctx.Repo.Worktrees()
 	if err != nil {
@@ -114,4 +117,55 @@ func Doctor(ctx *Context, w io.Writer) (int, error) {
 		fmt.Fprintln(w, "Fix the configuration first — the migrate commands above need it.")
 	}
 	return problems, nil
+}
+
+// doctorSuperset reports whether a new worktree here would reach the Superset
+// desktop app, and where it would stop if it would not.
+func doctorSuperset(ctx *Context, w io.Writer, report func(string, ...any)) {
+	mode := ctx.Config.SupersetRegister
+	fmt.Fprintln(w, "Superset:")
+	if mode == config.SupersetOff {
+		fmt.Fprintf(w, "  - %s=off; new worktrees are not registered\n", config.KeySupersetRegister)
+		return
+	}
+	// Under =auto an inactive Superset is a remark; under =on the repository
+	// asked for it, so the same sentence is counted as a problem.
+	note := func(format string, args ...any) {
+		if mode == config.SupersetOn {
+			report(format, args...)
+			return
+		}
+		fmt.Fprintf(w, "  - "+format+"\n", args...)
+	}
+
+	status := probeSuperset()
+	if !status.Installed() {
+		note("no superset on the PATH or at ~/.superset/bin; registration is inactive")
+		return
+	}
+	version := status.CLI().Version()
+	if version == "" {
+		version = "version unknown"
+	}
+	switch {
+	case status.Err != nil:
+		note("%s (%s) would not say whether its host service is running: %v", status.Exe, version, status.Err)
+		return
+	case !status.Running:
+		note("%s (%s) is installed but its host service is not running; start the Superset app", status.Exe, version)
+		return
+	}
+	fmt.Fprintf(w, "  ✓ %s (%s), host service running\n", status.Exe, version)
+
+	projects, err := status.CLI().Projects()
+	if err != nil {
+		note("could not list Superset projects: %v", err)
+		return
+	}
+	project, ok := superset.ProjectAt(projects, ctx.Repo.MainRoot)
+	if !ok {
+		note("no Superset project for %s; registration is inactive", ctx.Repo.MainRoot)
+		return
+	}
+	fmt.Fprintf(w, "  ✓ project %q — new worktrees are registered as workspaces\n", project.Name)
 }
