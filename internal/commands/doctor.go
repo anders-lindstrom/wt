@@ -46,6 +46,16 @@ func Doctor(ctx *Context, w io.Writer) (int, error) {
 	} else {
 		fmt.Fprintf(w, "  ✓ main branch %s, default type %s\n",
 			ctx.Config.MainBranch, ctx.Config.DefaultType)
+		// Worth a line only where the two differ: branches named one way and
+		// folders another is a surprise wt should own up to, not hide.
+		if suffix, origin := ctx.BranchSuffix(); suffix != ctx.Config.TypeSuffix {
+			fmt.Fprintf(w, "  ✓ branches carry %q (%s); worktree paths keep %q\n",
+				suffix, origin, ctx.Config.TypeSuffix)
+		}
+		if names, origin := ctx.TypeNames(); len(names) > 0 {
+			fmt.Fprintf(w, "  ✓ branches call %s (%s); worktree paths keep the type\n",
+				strings.Join(typeNamePairs(ctx), " "), origin)
+		}
 	}
 	if ctx.UserError != nil {
 		report("%v", ctx.UserError)

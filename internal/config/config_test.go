@@ -156,3 +156,117 @@ func TestSupersetRegisterRefusesAList(t *testing.T) {
 		})
 	}
 }
+
+// WORKTREE_BRANCH_SUFFIX="" is the one string key where an empty value is a
+// value: it is how a repository asks for feat/login-crash branches. It names
+// branches only, so the type suffix — and with it every worktree path — is
+// untouched.
+func TestAnEmptyBranchSuffixIsAValue(t *testing.T) {
+	c, err := FromRaw(raw(t, "WORKTREE_BRANCH_SUFFIX=\"\"\n"), "main")
+	if err != nil {
+		t.Fatalf("FromRaw: %v", err)
+	}
+	if c.BranchSuffix != "" || !c.BranchSuffixSet {
+		t.Errorf("BranchSuffix = %q, set = %v; want \"\" true", c.BranchSuffix, c.BranchSuffixSet)
+	}
+	if c.TypeSuffix != DefaultTypeSuffix || c.BranchPrefix != "feat_wt" || c.DefaultType != "feat" {
+		t.Errorf("type suffix %q, prefix %q, default type %q; want _wt feat_wt feat",
+			c.TypeSuffix, c.BranchPrefix, c.DefaultType)
+	}
+
+	// A bare key says the same thing.
+	if c, err := FromRaw(raw(t, "WORKTREE_BRANCH_SUFFIX=\n"), "main"); err != nil || c.BranchSuffix != "" || !c.BranchSuffixSet {
+		t.Errorf("bare assignment: BranchSuffix = %q, set = %v, err %v", c.BranchSuffix, c.BranchSuffixSet, err)
+	}
+}
+
+// An absent key is not a choice: the branch follows the folders, and the
+// person's own setting is free to decide instead.
+func TestAnAbsentBranchSuffixFollowsTheTypeSuffix(t *testing.T) {
+	for conf, want := range map[string]string{
+		"":                           DefaultTypeSuffix,
+		"WORKTREE_TYPE_SUFFIX=-wt\n": "-wt",
+	} {
+		c, err := FromRaw(raw(t, conf), "main")
+		if err != nil {
+			t.Fatalf("FromRaw(%q): %v", conf, err)
+		}
+		if c.BranchSuffix != want || c.BranchSuffixSet {
+			t.Errorf("%q: BranchSuffix = %q, set = %v; want %q false", conf, c.BranchSuffix, c.BranchSuffixSet, want)
+		}
+	}
+}
+
+// The prefix is a type spelled with the repository's own suffix, so a repo
+// that changes the suffix does not have to restate the prefix to validate.
+func TestTheBranchPrefixFollowsTheTypeSuffix(t *testing.T) {
+	c, err := FromRaw(raw(t, "WORKTREE_TYPE_SUFFIX=-wt\n"), "main")
+	if err != nil {
+		t.Fatalf("FromRaw: %v", err)
+	}
+	if c.BranchPrefix != "feat-wt" || c.DefaultType != "feat" {
+		t.Errorf("prefix %q, default type %q; want feat-wt feat", c.BranchPrefix, c.DefaultType)
+	}
+}
+
+func TestASuffixWithASlashOrASpaceIsAnError(t *testing.T) {
+	for _, conf := range []string{
+		"WORKTREE_TYPE_SUFFIX=_wt/\n",
+		"WORKTREE_BRANCH_SUFFIX=\"_wt \"\n",
+	} {
+		_, err := FromRaw(raw(t, conf), "main")
+		if err == nil || !strings.Contains(err.Error(), "SUFFIX") {
+			t.Errorf("%q: want an error naming the key, got %v", conf, err)
+		}
+	}
+}
+
+// The names are read against the repository's own types, and every way two
+// branches could end up reading alike is a problem its file is told about.
+func TestTypeNamesAreValidatedAgainstTheTypes(t *testing.T) {
+	c, err := FromRaw(raw(t, "WORKTREE_TYPE_NAMES=(feat=feature docs=doc)\n"), "main")
+	if err != nil {
+		t.Fatalf("FromRaw: %v", err)
+	}
+	if c.TypeNames["feat"] != "feature" || c.TypeNames["docs"] != "doc" || !c.TypeNamesSet {
+		t.Errorf("TypeNames = %v, set = %v", c.TypeNames, c.TypeNamesSet)
+	}
+
+	for conf, want := range map[string]string{
+		"WORKTREE_TYPE_NAMES=(feature)\n":       "not a <type>=<name> pair",
+		"WORKTREE_TYPE_NAMES=(wibble=w)\n":      "WORKTREE_TYPES",
+		"WORKTREE_TYPE_NAMES=(feat=a feat=b)\n": "named twice",
+		"WORKTREE_TYPE_NAMES=(feat=x docs=x)\n": "would name both",
+		"WORKTREE_TYPE_NAMES=(feat=fix)\n":      "already a type of its own",
+		"WORKTREE_TYPE_NAMES=(feat=fea/ture)\n": "may not contain a slash",
+	} {
+		_, err := FromRaw(raw(t, conf), "main")
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: want an error mentioning %q, got %v", conf, want, err)
+		}
+	}
+}
+
+// A repository whose feat is called feature may write its prefix that way too.
+func TestTheDefaultTypeReadsAPrefixWrittenAsABranch(t *testing.T) {
+	c, err := FromRaw(raw(t,
+		"WORKTREE_TYPE_NAMES=(feat=feature)\nWORKTREE_BRANCH_PREFIX=feature_wt\n"), "main")
+	if err != nil {
+		t.Fatalf("FromRaw: %v", err)
+	}
+	if c.DefaultType != "feat" {
+		t.Errorf("DefaultType = %q, want feat", c.DefaultType)
+	}
+}
+
+// A person's pairs travel across every repository they work in, so a pair for
+// a type this one does not have is dropped rather than refused.
+func TestTypeNamesFromDropsWhatDoesNotApply(t *testing.T) {
+	names, problems := TypeNamesFrom([]string{"feat=feature", "spike=probe"}, []string{"feat", "fix"})
+	if names["feat"] != "feature" || len(names) != 1 {
+		t.Errorf("names = %v, want just feat=feature", names)
+	}
+	if len(problems) != 1 || !strings.Contains(problems[0], "spike") {
+		t.Errorf("problems = %v, want one naming spike", problems)
+	}
+}

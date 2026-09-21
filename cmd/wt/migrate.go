@@ -92,7 +92,7 @@ func completeMigrate(_ *cobra.Command, args []string, _ string) ([]string, cobra
 		if name != args[0] && n.Branch != args[0] {
 			continue
 		}
-		for _, t := range ctx.Config.Types {
+		for _, t := range ctx.Vocab().Words() {
 			out = append(out, t+"/"+work)
 		}
 	}

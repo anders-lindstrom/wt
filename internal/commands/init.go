@@ -185,8 +185,15 @@ func render(repoName string, a Answers, c *config.Config) string {
 	p("# The branch prefix `wt new <work>` uses when given no type.")
 	p("WORKTREE_BRANCH_PREFIX=%s", c.BranchPrefix)
 	p("")
-	p("# The suffix marking a type in a branch name and worktree path.")
+	p("# The suffix marking a type in a worktree path, and in the branch that")
+	p("# goes with it. The prefix above follows whatever you set here.")
 	p("# WORKTREE_TYPE_SUFFIX=%s", c.TypeSuffix)
+	p("")
+	p("# The suffix the branches carry, when this repository insists on one of")
+	p("# its own: set it empty for plain feat/login-crash branches. Leave it")
+	p("# out and each person chooses, with `wt config set branch_suffix`. The")
+	p("# worktrees sit where WORKTREE_TYPE_SUFFIX puts them either way.")
+	p("# WORKTREE_BRANCH_SUFFIX=%s", c.BranchSuffix)
 	p("")
 	p("# The type a bare `wt new <work>` takes. Derived from the prefix above;")
 	p("# set it only when the two should differ, and to one of WORKTREE_TYPES.")
@@ -195,6 +202,14 @@ func render(repoName string, a Answers, c *config.Config) string {
 	p("# The types a worktree may use: Conventional Commits, plus the two")
 	p("# exploratory kinds that produce no feature.")
 	p("# WORKTREE_TYPES=(%s)", strings.Join(c.Types, " "))
+	p("")
+	p("# What the branches call a type, where that is not the type itself:")
+	p("# with feat=feature, `wt new feat/login` is branch feature/login. The")
+	p("# worktree still sits under the type, so renaming one moves nothing.")
+	p("# Leave the key out and each person chooses, with")
+	p("# `wt config set type_names`; the empty list below says this repository")
+	p("# calls its types nothing else.")
+	p("# WORKTREE_TYPE_NAMES=(%s)", strings.Join(typeNamePairsOf(c.TypeNames, c.Types), " "))
 	p("")
 	p("# Untracked developer configuration copied into each new worktree by")
 	p("# `wt setup`, since git does not carry it.")
@@ -224,4 +239,16 @@ func render(repoName string, a Answers, c *config.Config) string {
 	p("# who opted in with `wt config set superset true`.")
 	p("# SUPERSET_REGISTER=%s", c.SupersetRegister)
 	return b.String()
+}
+
+// typeNamePairsOf writes a resolved naming back as the files spell it, in the
+// order the types are declared so the same map always reads the same way.
+func typeNamePairsOf(names map[string]string, types []string) []string {
+	out := make([]string, 0, len(names))
+	for _, typ := range types {
+		if name, ok := names[typ]; ok {
+			out = append(out, typ+"="+name)
+		}
+	}
+	return out
 }

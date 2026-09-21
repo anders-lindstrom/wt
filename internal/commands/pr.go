@@ -197,9 +197,9 @@ func prWorkName(ctx *Context, pr github.PR) (typ, work string) {
 	if t, w, ok := ctx.Scheme().Parse(pr.HeadRefName); ok && slices.Contains(ctx.Config.Types, t) {
 		return t, w
 	}
-	slug := shorten(WorkNameFromBranch(pr.HeadRefName, ctx.Config.TypeSuffix))
+	slug := shorten(WorkNameFromBranch(pr.HeadRefName, ctx.Scheme().Suffix))
 	if slug == "" {
-		slug = shorten(WorkNameFromBranch(pr.Title, ctx.Config.TypeSuffix))
+		slug = shorten(WorkNameFromBranch(pr.Title, ctx.Scheme().Suffix))
 	}
 	work = fmt.Sprintf("pr-%d", pr.Number)
 	if slug != "" {
@@ -211,10 +211,12 @@ func prWorkName(ctx *Context, pr github.PR) (typ, work string) {
 // prType reads a type out of a branch someone else named: a leading segment
 // that is one of this repository's types, in either spelling a branch uses.
 func prType(ctx *Context, branch string) string {
-	if head, _, ok := strings.Cut(branch, "/"); ok && slices.Contains(ctx.Config.Types, head) {
-		return head
+	if head, _, found := strings.Cut(branch, "/"); found {
+		if typ, ok := ctx.Vocab().Type(head); ok {
+			return typ
+		}
 	}
-	if t, _, ok := naming.InferType(branch, ctx.Config.Types); ok {
+	if t, _, ok := naming.InferType(branch, ctx.Vocab()); ok {
 		return t
 	}
 	return ctx.Config.DefaultType

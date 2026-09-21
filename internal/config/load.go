@@ -72,7 +72,7 @@ func loadTOML(path, mainBranchFallback string) (*Config, error) {
 			}
 			continue
 		}
-		v, set, err := decodeTOML(md, doc[k.TOML], k.Kind)
+		v, set, err := decodeTOML(md, doc[k.TOML], k)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", path, err)
 		}
@@ -94,9 +94,11 @@ func unknownName(tomlKey string) string {
 
 // decodeTOML reads one value as its kind says it is written. set is false for a
 // value that says nothing — an empty string, or a list the file left out —
-// which is how the bash format spells an absent key too.
-func decodeTOML(md toml.MetaData, prim toml.Primitive, k kind) (v Value, set bool, err error) {
-	switch k {
+// which is how the bash format spells an absent key too. The exception is a
+// key where "" is a value: worktree_branch_suffix = "" asks for branches with
+// no suffix, exactly as WORKTREE_BRANCH_SUFFIX="" does in the bash format.
+func decodeTOML(md toml.MetaData, prim toml.Primitive, k key) (v Value, set bool, err error) {
+	switch k.Kind {
 	case kindList:
 		var l []string
 		if err := md.PrimitiveDecode(prim, &l); err != nil {
@@ -114,6 +116,6 @@ func decodeTOML(md toml.MetaData, prim toml.Primitive, k kind) (v Value, set boo
 		if err := md.PrimitiveDecode(prim, &s); err != nil {
 			return Value{}, false, err
 		}
-		return Value{Scalar: s}, s != "", nil
+		return Value{Scalar: s}, s != "" || k.Name == KeyBranchSuffix, nil
 	}
 }

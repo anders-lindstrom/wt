@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/anders-lindstrom/wt/internal/naming"
 )
 
 // Config is a repository's validated worktree configuration.
@@ -12,6 +14,8 @@ type Config struct {
 	MainBranch           string
 	BranchPrefix         string
 	TypeSuffix           string
+	BranchSuffix         string
+	TypeNames            map[string]string
 	DefaultType          string
 	Types                []string
 	DeveloperConfigDirs  []string
@@ -25,6 +29,13 @@ type Config struct {
 	// MainBranchSet says MAIN_BRANCH came from the configuration rather than
 	// from the fallback, which is only a guess from origin or the checkout.
 	MainBranchSet bool
+	// TypeNamesSet says WORKTREE_TYPE_NAMES was written in the file, which
+	// is what decides between the repository's naming and the person's.
+	TypeNamesSet bool
+	// BranchSuffixSet says WORKTREE_BRANCH_SUFFIX was written in the file.
+	// Only then does the repository outrank the person's own setting; a
+	// repository that says nothing leaves the choice to whoever clones it.
+	BranchSuffixSet bool
 	// SupersetRegisterSet says SUPERSET_REGISTER was written in the file
 	// rather than left at its default, which is what `wt config` reports as
 	// the value's origin.
@@ -38,6 +49,8 @@ const (
 	KeyMainBranch           = "MAIN_BRANCH"
 	KeyBranchPrefix         = "WORKTREE_BRANCH_PREFIX"
 	KeyTypeSuffix           = "WORKTREE_TYPE_SUFFIX"
+	KeyBranchSuffix         = "WORKTREE_BRANCH_SUFFIX"
+	KeyTypeNames            = "WORKTREE_TYPE_NAMES"
 	KeyDefaultType          = "WORKTREE_DEFAULT_TYPE"
 	KeyTypes                = "WORKTREE_TYPES"
 	KeyConfigDirs           = "DEVELOPER_CONFIG_DIRS"
@@ -49,6 +62,10 @@ const (
 	KeyRunTestsBeforeRemove = "RUN_TESTS_BEFORE_REMOVE"
 	KeySupersetRegister     = "SUPERSET_REGISTER"
 )
+
+// DefaultTypeSuffix marks a type in a worktree path, and in the branch name
+// that goes with it, unless a repository says otherwise.
+const DefaultTypeSuffix = "_wt"
 
 // SupersetMode says whether a worktree wt creates is also registered as a
 // workspace in the Superset desktop app. It is read only once the person has
@@ -99,6 +116,8 @@ var keys = []key{
 	{KeyMainBranch, "main_branch", kindString},
 	{KeyBranchPrefix, "worktree_branch_prefix", kindString},
 	{KeyTypeSuffix, "worktree_type_suffix", kindString},
+	{KeyBranchSuffix, "worktree_branch_suffix", kindString},
+	{KeyTypeNames, "worktree_type_names", kindList},
 	{KeyDefaultType, "worktree_default_type", kindString},
 	{KeyTypes, "worktree_types", kindList},
 	{KeyConfigDirs, "developer_config_dirs", kindList},
@@ -158,10 +177,15 @@ func fromRaw(r map[string]Value, mainBranchFallback, file string) (*Config, erro
 		}
 	}
 
+	// The prefix is a type spelled with this repository's own suffix, so a
+	// repository that changes the suffix needs no second key changed to stay
+	// consistent: the default is feat_wt, and feat-wt under a "-wt" suffix.
+	ts := str(r, KeyTypeSuffix, DefaultTypeSuffix)
 	c := &Config{
 		MainBranch:   str(r, KeyMainBranch, mainBranchFallback),
-		BranchPrefix: str(r, KeyBranchPrefix, "feat_wt"),
-		TypeSuffix:   str(r, KeyTypeSuffix, "_wt"),
+		BranchPrefix: str(r, KeyBranchPrefix, "feat"+ts),
+		TypeSuffix:   ts,
+		BranchSuffix: branchSuffix(r, ts),
 		Types:        list(r, KeyTypes, DefaultTypes),
 		DeveloperConfigDirs: list(r, KeyConfigDirs,
 			[]string{".cursor", ".claude", ".run", ".vscode", ".idea"}),
@@ -173,6 +197,12 @@ func fromRaw(r map[string]Value, mainBranchFallback, file string) (*Config, erro
 
 	if v, ok := r[KeyMainBranch]; ok && v.Scalar != "" {
 		c.MainBranchSet = true
+	}
+	if v, ok := r[KeyBranchSuffix]; ok && !v.IsList {
+		c.BranchSuffixSet = true
+	}
+	if _, ok := r[KeyTypeNames]; ok {
+		c.TypeNamesSet = true
 	}
 	if v, ok := r[KeySupersetRegister]; ok && !v.IsList && v.Scalar != "" {
 		c.SupersetRegisterSet = true
@@ -191,9 +221,31 @@ func fromRaw(r map[string]Value, mainBranchFallback, file string) (*Config, erro
 		problems = append(problems, err.Error())
 	}
 
+	for _, k := range []struct{ name, value string }{
+		{KeyTypeSuffix, c.TypeSuffix}, {KeyBranchSuffix, c.BranchSuffix},
+	} {
+		if strings.ContainsAny(k.value, "/ \t") {
+			problems = append(problems, fmt.Sprintf(
+				"%s=%q may not contain a slash or a space; it is what a name carries before one",
+				k.name, k.value))
+		}
+	}
+
+	// The names are read against this repository's own types, so a name for a
+	// type it does not have, or one that would make two branches read alike,
+	// is its own file's problem and is reported as one.
+	names, nameProblems := TypeNamesFrom(list(r, KeyTypeNames, nil), c.Types)
+	c.TypeNames = names
+	for _, p := range nameProblems {
+		problems = append(problems, KeyTypeNames+": "+p)
+	}
+
 	c.DefaultType = str(r, KeyDefaultType, "")
 	if c.DefaultType == "" {
-		c.DefaultType = strings.TrimSuffix(c.BranchPrefix, c.TypeSuffix)
+		// The prefix may be written the way the branches read, so a repo
+		// whose feat is called feature may say feature_wt here.
+		c.DefaultType = naming.Vocab{Types: c.Types, Names: c.TypeNames}.
+			Canonical(strings.TrimSuffix(c.BranchPrefix, c.TypeSuffix))
 	}
 	if !slices.Contains(c.Types, c.DefaultType) {
 		problems = append(problems, fmt.Sprintf(
@@ -212,6 +264,19 @@ func fromRaw(r map[string]Value, mainBranchFallback, file string) (*Config, erro
 		return c, fmt.Errorf("%s:\n  - %s", file, strings.Join(problems, "\n  - "))
 	}
 	return c, nil
+}
+
+// branchSuffix reads WORKTREE_BRANCH_SUFFIX, where — alone among the string
+// keys — an empty value is a value rather than an absent key:
+// WORKTREE_BRANCH_SUFFIX="" is how a repository asks for feat/login-crash
+// instead of feat_wt/login-crash. It names branches only; the worktrees sit
+// where the type suffix puts them either way, which is why a repository can
+// change it without moving anybody's checkouts.
+func branchSuffix(r map[string]Value, typeSuffix string) string {
+	if v, ok := r[KeyBranchSuffix]; ok && !v.IsList {
+		return v.Scalar
+	}
+	return typeSuffix
 }
 
 func str(r map[string]Value, key, def string) string {
@@ -261,4 +326,48 @@ func boolean(r map[string]Value, key string, def bool) (bool, error) {
 		return def, fmt.Errorf("%s=%q is not a boolean", key, v.Scalar)
 	}
 	return b, nil
+}
+
+// TypeNamesFrom reads "<type>=<name>" pairs into the map naming.Vocab takes,
+// reporting every pair it had to drop. A type is what wt works in; a name is
+// what its branches read as, so the pairs are validated against the types the
+// repository has and against each other: two types that read alike would make
+// a branch name ambiguous, and wt would not know which piece of work it was
+// looking at.
+//
+// Dropping rather than failing is what lets one person's naming travel across
+// every repository they work in: a name for a type this one does not have is
+// not a mistake, it is a name for somewhere else. A repository's own file gets
+// the problems reported, because there they are mistakes.
+func TypeNamesFrom(pairs, types []string) (map[string]string, []string) {
+	var problems []string
+	names := map[string]string{}
+	byName := map[string]string{}
+	for _, pair := range pairs {
+		typ, name, found := strings.Cut(pair, "=")
+		switch {
+		case !found || typ == "" || name == "":
+			problems = append(problems, fmt.Sprintf("%q is not a <type>=<name> pair", pair))
+		case !slices.Contains(types, typ):
+			problems = append(problems, fmt.Sprintf(
+				"%q names %q, which is not in %s", pair, typ, KeyTypes))
+		case strings.ContainsAny(name, "/ \t"):
+			problems = append(problems, fmt.Sprintf(
+				"%q may not contain a slash or a space; it is what a branch carries before one", name))
+		case names[typ] != "":
+			problems = append(problems, fmt.Sprintf("%q is named twice", typ))
+		case byName[name] != "":
+			problems = append(problems, fmt.Sprintf(
+				"%q would name both %q and %q", name, byName[name], typ))
+		case name != typ && slices.Contains(types, name):
+			problems = append(problems, fmt.Sprintf(
+				"%q would name %q, which is already a type of its own", name, typ))
+		default:
+			names[typ], byName[name] = name, typ
+		}
+	}
+	if len(names) == 0 {
+		names = nil
+	}
+	return names, problems
 }

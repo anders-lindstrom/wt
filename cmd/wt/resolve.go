@@ -101,7 +101,7 @@ func newBranchStripCmd() *cobra.Command {
 		Args:   needArgs(1, "<branch>", "wt branch-strip fix_wt/login-crash"),
 		Hidden: true, // compat surface for strip_worktree_prefix
 		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
-			fmt.Fprintln(cmd.OutOrStdout(), naming.StripPrefix(args[0], ctx.Config.TypeSuffix))
+			fmt.Fprintln(cmd.OutOrStdout(), naming.StripPrefix(args[0], ctx.Scheme().Suffix))
 			return nil
 		}),
 	}

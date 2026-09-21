@@ -44,13 +44,13 @@ setup() {
     cd "$REPO"
     run wt config
     [ "$status" -eq 0 ]
-    [[ "$output" == *"superset:    false (default)"* ]]
-    [[ "$output" == *"github:      true (default)"* ]]
+    [[ "$output" == *"superset:      false (default)"* ]]
+    [[ "$output" == *"github:        true (default)"* ]]
     [[ "$output" == *"superset mode: off (user config)"* ]]
 
     wt config set superset true
     run wt config
-    [[ "$output" == *"superset:    true (user file)"* ]]
+    [[ "$output" == *"superset:      true (user file)"* ]]
     [[ "$output" == *"superset mode: auto (repo default)"* ]]
 }
 
@@ -142,4 +142,86 @@ setup() {
     [ "$status" -ne 0 ]
     [[ "$output" == *"fix it by hand"* ]]
     [ "$(cat "$USER_CONFIG")" = "$before" ]
+}
+
+@test "branch_suffix names your branches and leaves the worktree where it was" {
+    cd "$REPO"
+    git commit -qm init --allow-empty
+
+    run wt config get branch_suffix
+    [ "$status" -eq 0 ]
+    [ "$output" = "_wt" ]
+
+    run wt config set branch_suffix ""
+    [ "$status" -eq 0 ]
+    [[ "$output" == "branch_suffix = \"\" in $USER_CONFIG" ]]
+
+    run wt new fix/login-crash --no-setup
+    [ "$status" -eq 0 ]
+    [[ "$output" == */demo_wt/fix_wt/login-crash ]]
+    [ -d "$BATS_TEST_TMPDIR/demo_wt/fix_wt/login-crash" ]
+
+    run git -C "$BATS_TEST_TMPDIR/demo_wt/fix_wt/login-crash" rev-parse --abbrev-ref HEAD
+    [ "$output" = "fix/login-crash" ]
+
+    run wt config
+    [[ "$output" == *'branch suffix: "" (user file); worktree paths keep "_wt"'* ]]
+}
+
+@test "a repository that names its own branch suffix outranks yours" {
+    cd "$REPO"
+    printf 'WORKTREE_BRANCH_SUFFIX="_wt"\n' >> bin/worktree/worktree.conf
+    git add -A && git commit -qm init
+
+    wt config set branch_suffix ""
+    run wt new fix/login-crash --no-setup
+    [ "$status" -eq 0 ]
+
+    run git -C "$BATS_TEST_TMPDIR/demo_wt/fix_wt/login-crash" rev-parse --abbrev-ref HEAD
+    [ "$output" = "fix_wt/login-crash" ]
+
+    run wt config
+    [[ "$output" == *'branch suffix: "_wt" (repo file)'* ]]
+}
+
+@test "a branch suffix that a branch cannot carry is refused" {
+    cd "$BATS_TEST_TMPDIR"
+    run wt config set branch_suffix "wt/"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"may not contain a slash"* ]]
+    [ ! -e "$USER_CONFIG" ]
+}
+
+@test "type_names names the branch and leaves the worktree under the type" {
+    cd "$REPO"
+    git commit -qm init --allow-empty
+
+    run wt config set type_names "feat=feature"
+    [ "$status" -eq 0 ]
+    [[ "$output" == 'type_names = ["feat=feature"] in '* ]]
+
+    run wt config get type_names
+    [ "$output" = "feat=feature" ]
+
+    # Either spelling names the same piece of work.
+    run wt new feature/login --no-setup
+    [ "$status" -eq 0 ]
+    [[ "$output" == */demo_wt/feat_wt/login ]]
+
+    run git -C "$BATS_TEST_TMPDIR/demo_wt/feat_wt/login" rev-parse --abbrev-ref HEAD
+    [ "$output" = "feature_wt/login" ]
+
+    run wt path feat/login
+    [[ "$output" == */demo_wt/feat_wt/login ]]
+
+    run wt config
+    [[ "$output" == *"type names:    feat=feature (user file)"* ]]
+}
+
+@test "a type_names pair that is not one is refused" {
+    cd "$BATS_TEST_TMPDIR"
+    run wt config set type_names "feature"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"<type>=<name>"* ]]
+    [ ! -e "$USER_CONFIG" ]
 }

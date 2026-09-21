@@ -21,7 +21,18 @@ func Config(ctx *Context, shell bool, w io.Writer) error {
 		fmt.Fprintf(w, "main branch:   %s\n", c.MainBranch)
 		fmt.Fprintf(w, "branch prefix: %s\n", c.BranchPrefix)
 		fmt.Fprintf(w, "default type:  %s\n", c.DefaultType)
+		suffix, origin := ctx.BranchSuffix()
+		if suffix == c.TypeSuffix {
+			fmt.Fprintf(w, "branch suffix: %q (%s)\n", suffix, origin)
+		} else {
+			fmt.Fprintf(w, "branch suffix: %q (%s); worktree paths keep %q\n",
+				suffix, origin, c.TypeSuffix)
+		}
 		fmt.Fprintf(w, "types:         %s\n", strings.Join(c.Types, " "))
+		if names, origin := ctx.TypeNames(); len(names) > 0 {
+			fmt.Fprintf(w, "type names:    %s (%s); worktree paths keep the type\n",
+				strings.Join(typeNamePairs(ctx), " "), origin)
+		}
 		fmt.Fprintf(w, "config dirs:   %s\n", strings.Join(c.DeveloperConfigDirs, " "))
 		fmt.Fprintf(w, "config files:  %s\n", strings.Join(c.DeveloperConfigFiles, " "))
 		fmt.Fprintf(w, "required bins: %s\n", strings.Join(c.RequiredBins, " "))
@@ -35,6 +46,9 @@ func Config(ctx *Context, shell bool, w io.Writer) error {
 	fmt.Fprintf(w, "MAIN_BRANCH=%s\n", shellQuote(c.MainBranch))
 	fmt.Fprintf(w, "WORKTREE_BRANCH_PREFIX=%s\n", shellQuote(c.BranchPrefix))
 	fmt.Fprintf(w, "WORKTREE_TYPE_SUFFIX=%s\n", shellQuote(c.TypeSuffix))
+	branchSuffix, _ := ctx.BranchSuffix()
+	fmt.Fprintf(w, "WORKTREE_BRANCH_SUFFIX=%s\n", shellQuote(branchSuffix))
+	fmt.Fprintf(w, "WORKTREE_TYPE_NAMES=(%s)\n", shellQuoteAll(typeNamePairs(ctx)))
 	fmt.Fprintf(w, "WORKTREE_DEFAULT_TYPE=%s\n", shellQuote(c.DefaultType))
 	fmt.Fprintf(w, "WORKTREE_TYPES=%s\n", shellQuote(strings.Join(c.Types, " ")))
 	fmt.Fprintf(w, "REQUIRED_BINS=%s\n", shellQuote(strings.Join(c.RequiredBins, " ")))
@@ -46,6 +60,13 @@ func Config(ctx *Context, shell bool, w io.Writer) error {
 	fmt.Fprintf(w, "DEVELOPER_CONFIG_DIRS=(%s)\n", shellQuoteAll(c.DeveloperConfigDirs))
 	fmt.Fprintf(w, "DEVELOPER_CONFIG_FILES=(%s)\n", shellQuoteAll(c.DeveloperConfigFiles))
 	return nil
+}
+
+// typeNamePairs is this repository's resolved naming as the configuration
+// files write it.
+func typeNamePairs(ctx *Context) []string {
+	names, _ := ctx.TypeNames()
+	return typeNamePairsOf(names, ctx.Config.Types)
 }
 
 // shellQuote single-quotes a value so that eval cannot reinterpret it.
@@ -79,7 +100,7 @@ func userBlock(ctx *Context, w io.Writer) {
 		if err != nil {
 			continue
 		}
-		fmt.Fprintf(w, "  %-12s %v (%s)\n", name+":", v, u.Origin(name))
+		fmt.Fprintf(w, "  %-14s %v (%s)\n", name+":", config.UserLiteral(name, v), u.Origin(name))
 	}
 	mode, origin := supersetOrigin(ctx)
 	fmt.Fprintf(w, "superset mode: %s (%s)\n", mode, origin)
@@ -124,7 +145,7 @@ func UserSet(name, value string, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(w, "%s = %v in %s\n", name, set, path)
+	fmt.Fprintf(w, "%s = %s in %s\n", name, set, path)
 	return nil
 }
 
@@ -140,10 +161,10 @@ func UserUnset(name string, w io.Writer) error {
 		return err
 	}
 	if !removed {
-		fmt.Fprintf(w, "%s was not set in %s; it is %v\n", name, path, def)
+		fmt.Fprintf(w, "%s was not set in %s; it is %v\n", name, path, config.UserLiteral(name, def))
 		return nil
 	}
-	fmt.Fprintf(w, "%s removed from %s; back to %v\n", name, path, def)
+	fmt.Fprintf(w, "%s removed from %s; back to %v\n", name, path, config.UserLiteral(name, def))
 	return nil
 }
 
