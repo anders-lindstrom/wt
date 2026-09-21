@@ -203,6 +203,14 @@ func render(repoName string, a Answers, c *config.Config) string {
 	p("# exploratory kinds that produce no feature.")
 	p("# WORKTREE_TYPES=(%s)", strings.Join(c.Types, " "))
 	p("")
+	p("# What the branches call a type, where that is not the type itself:")
+	p("# with feat=feature, `wt new feat/login` is branch feature/login. The")
+	p("# worktree still sits under the type, so renaming one moves nothing.")
+	p("# Leave the key out and each person chooses, with")
+	p("# `wt config set type_names`; the empty list below says this repository")
+	p("# calls its types nothing else.")
+	p("# WORKTREE_TYPE_NAMES=(%s)", strings.Join(typeNamePairsOf(c.TypeNames, c.Types), " "))
+	p("")
 	p("# Untracked developer configuration copied into each new worktree by")
 	p("# `wt setup`, since git does not carry it.")
 	p("# DEVELOPER_CONFIG_DIRS=(%s)", strings.Join(c.DeveloperConfigDirs, " "))
@@ -231,4 +239,16 @@ func render(repoName string, a Answers, c *config.Config) string {
 	p("# who opted in with `wt config set superset true`.")
 	p("# SUPERSET_REGISTER=%s", c.SupersetRegister)
 	return b.String()
+}
+
+// typeNamePairsOf writes a resolved naming back as the files spell it, in the
+// order the types are declared so the same map always reads the same way.
+func typeNamePairsOf(names map[string]string, types []string) []string {
+	out := make([]string, 0, len(names))
+	for _, typ := range types {
+		if name, ok := names[typ]; ok {
+			out = append(out, typ+"="+name)
+		}
+	}
+	return out
 }

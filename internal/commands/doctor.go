@@ -52,6 +52,10 @@ func Doctor(ctx *Context, w io.Writer) (int, error) {
 			fmt.Fprintf(w, "  ✓ branches carry %q (%s); worktree paths keep %q\n",
 				suffix, origin, ctx.Config.TypeSuffix)
 		}
+		if names, origin := ctx.TypeNames(); len(names) > 0 {
+			fmt.Fprintf(w, "  ✓ branches call %s (%s); worktree paths keep the type\n",
+				strings.Join(typeNamePairs(ctx), " "), origin)
+		}
 	}
 	if ctx.UserError != nil {
 		report("%v", ctx.UserError)

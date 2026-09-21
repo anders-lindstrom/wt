@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/anders-lindstrom/wt/internal/naming"
@@ -156,7 +155,7 @@ func migrateTarget(ctx *Context, wt repo.Worktree, dest string) (typ, work strin
 	if implied {
 		fallback = typ
 	}
-	typ, work, err = naming.ParseSpec(stripTypeSuffix(ctx, dest), fallback, ctx.Config.Types)
+	typ, work, err = naming.ParseSpec(stripTypeSuffix(ctx, dest), fallback, ctx.Vocab())
 	if err != nil {
 		return "", "", fmt.Errorf("%w; a destination is <type>/<name>, or a name on its own", err)
 	}
@@ -173,15 +172,16 @@ func impliedTarget(ctx *Context, branch string) (typ, work string, ok bool) {
 		return typ, work, true
 	}
 	if head, rest, found := strings.Cut(branch, "/"); found {
-		if rest == "" || strings.Contains(rest, "/") || !slices.Contains(ctx.Config.Types, head) {
+		typ, known := ctx.Vocab().Type(head)
+		if rest == "" || strings.Contains(rest, "/") || !known {
 			return "", "", false
 		}
-		return head, rest, true
+		return typ, rest, true
 	}
 	if branch == "" {
 		return "", "", false
 	}
-	if t, rest, ok := naming.InferType(branch, ctx.Config.Types); ok {
+	if t, rest, ok := naming.InferType(branch, ctx.Vocab()); ok {
 		return t, rest, true
 	}
 	return ctx.Config.DefaultType, branch, true
@@ -198,8 +198,10 @@ func stripTypeSuffix(ctx *Context, dest string) string {
 		if suffix == "" {
 			continue
 		}
-		if base, cut := strings.CutSuffix(head, suffix); cut && slices.Contains(ctx.Config.Types, base) {
-			return base + "/" + rest
+		if base, cut := strings.CutSuffix(head, suffix); cut {
+			if _, known := ctx.Vocab().Type(base); known {
+				return base + "/" + rest
+			}
 		}
 	}
 	return dest

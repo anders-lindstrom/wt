@@ -36,17 +36,83 @@ type Scheme struct {
 	// created inside it. The folders are wt's layout, not a name anybody
 	// types, which is why they always carry one.
 	DirSuffix string
+	// Vocab is what each type is called. The zero value calls every type by
+	// its own name, which is what a repository saying nothing gets.
+	Vocab Vocab
+}
+
+// Vocab is a repository's type vocabulary: the types it works in, and the word
+// each one goes by in a branch name where that differs from the type itself.
+//
+// The type is the identity — a fix is a fix whether its branches say fix,
+// fix_wt or bugfix — so it is what the folders carry and what every command
+// reasons in. Only the branch reads the word, which is why renaming one
+// strands no checkout.
+type Vocab struct {
+	// Types is the types a worktree may have, in the order they are offered.
+	Types []string
+	// Names maps a type to the word its branches carry, for the types called
+	// something else: {"feat": "feature"}.
+	Names map[string]string
+}
+
+// Word is what typ's branches call it.
+func (v Vocab) Word(typ string) string {
+	if word, ok := v.Names[typ]; ok && word != "" {
+		return word
+	}
+	return typ
+}
+
+// Canonical is the type a branch's word names: the type it is a word for, or
+// the word itself. A word wt has never heard of comes back unchanged, because
+// branches outside the convention are read here too and are nobody's to
+// rename.
+func (v Vocab) Canonical(word string) string {
+	for typ, name := range v.Names {
+		if name == word {
+			return typ
+		}
+	}
+	return word
+}
+
+// Type reads a word as one of this vocabulary's types, in either spelling:
+// the word the branches carry, or the type itself, which is what the folders
+// carry and what a person may well have in front of them instead. ok is false
+// for a word that is neither.
+func (v Vocab) Type(word string) (typ string, ok bool) {
+	for _, t := range v.Types {
+		if word == t || word == v.Word(t) {
+			return t, true
+		}
+	}
+	return "", false
+}
+
+// Words is every type as a person types it, in Types order. It is what the
+// completions offer and what an unknown type is answered with.
+func (v Vocab) Words() []string {
+	out := make([]string, 0, len(v.Types))
+	for _, t := range v.Types {
+		out = append(out, v.Word(t))
+	}
+	return out
 }
 
 // Branch builds the branch for a piece of work, e.g. fix_wt/login-crash.
 func (s Scheme) Branch(typ, work string) string {
-	return typ + s.Suffix + "/" + work
+	return s.Vocab.Word(typ) + s.Suffix + "/" + work
 }
 
 // Parse splits a worktree branch into its type and work name. ok is false for
 // any branch that does not follow the convention.
 func (s Scheme) Parse(branch string) (typ, work string, ok bool) {
-	return parseBranch(branch, s.Suffix)
+	word, work, ok := parseBranch(branch, s.Suffix)
+	if !ok {
+		return "", "", false
+	}
+	return s.Vocab.Canonical(word), work, true
 }
 
 // Dir returns the canonical absolute path for a piece of work.
@@ -203,7 +269,12 @@ func (l Layout) String() string {
 // ParseSpec reads a "<type>/<work>" argument, or a bare "<work>" whose type is
 // read out of the name when it starts with one, and is defaultType otherwise.
 // An explicit type always wins over the name.
-func ParseSpec(spec, defaultType string, types []string) (typ, work string, err error) {
+//
+// A type may be written as the word its branches carry or as the type itself:
+// where feat is called feature, `wt new feature/login` and `wt new feat/login`
+// are the same piece of work, because one of them is what the branches say and
+// the other is what the folders do.
+func ParseSpec(spec, defaultType string, v Vocab) (typ, work string, err error) {
 	spec = strings.TrimSpace(spec)
 	if spec == "" {
 		return "", "", errors.New("no work name given")
@@ -215,9 +286,9 @@ func ParseSpec(spec, defaultType string, types []string) (typ, work string, err 
 		if head == "" || rest == "" {
 			return "", "", fmt.Errorf("%q is not a valid <type>/<work>", spec)
 		}
-		return head, rest, nil
+		return v.Canonical(head), rest, nil
 	}
-	if t, rest, ok := InferType(spec, types); ok {
+	if t, rest, ok := InferType(spec, v); ok {
 		return t, rest, nil
 	}
 	return defaultType, spec, nil
@@ -230,15 +301,18 @@ func ParseSpec(spec, defaultType string, types []string) (typ, work string, err 
 // worktrees here cannot both be told it: Superset mints every branch from one
 // fixed prefix, so the only place the type can travel is inside the name a
 // person types. "fix_dev-123" is a fix, not a feature called "fix_dev-123".
-func InferType(work string, types []string) (typ, rest string, ok bool) {
+func InferType(work string, v Vocab) (typ, rest string, ok bool) {
 	for _, sep := range []string{"_", "-"} {
 		head, tail, found := strings.Cut(work, sep)
 		if !found || head == "" || tail == "" {
 			continue
 		}
-		for _, t := range types {
-			if head == t {
-				return head, tail, true
+		for _, t := range v.Types {
+			// Either spelling: the word the branches carry is the one a
+			// person has in front of them, and the type is the one they see
+			// in the folders.
+			if head == t || head == v.Word(t) {
+				return t, tail, true
 			}
 		}
 	}

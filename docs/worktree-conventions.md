@@ -36,7 +36,7 @@ One layout fixes that for both kinds of reader:
 | Beside the repo, not inside it | Build tools, test runners, file watchers, search and IDE indexing all descend into folders inside a repo, and every repo would have to gitignore it. A sibling folder is outside all of that. |
 | One `<repo>_wt/` folder per repo | A repo's worktrees sort next to it and stay out of the parent folder, which in `telcred/` already holds dozens of entries. |
 | The path below `<repo>_wt/` is the branch name | Nothing to translate: the path gives the branch and the branch gives the path. |
-| A type: `feat`, `fix`, `research`, `spike`, … | Folder listings and `git branch` read as a list of work grouped by kind. |
+| A type: `feat`, `fix`, `research`, `spike`, … | Folder listings and `git branch` read as a list of work grouped by kind. The type is the identity every tool reasons in; `WORKTREE_TYPE_NAMES` (or a person's `type_names`) only changes the word its branches carry, and the folders keep the type. |
 | The `_wt` suffix on the type | Marks a branch as made for a worktree. `wt remove` uses it: a merged branch is deleted, and an unmerged one `wt` made is renamed out of the prefix so its commits survive. |
 
 A repo that wants plain `fix/login-crash` branches sets

@@ -26,6 +26,10 @@ const (
 	// every repository that does not insist on one of its own. Empty is a
 	// value: it asks for plain feature/login-crash branches.
 	UserKeyBranchSuffix = "branch_suffix"
+	// UserKeyTypeNames is what this person calls each type in a branch name,
+	// as <type>=<name> pairs, for every repository that does not name its
+	// types itself.
+	UserKeyTypeNames = "type_names"
 )
 
 // userKind is how a setting's value is written: the file, the validator, the
@@ -35,6 +39,7 @@ type userKind int
 const (
 	userBool userKind = iota
 	userString
+	userList
 )
 
 // userKey is one setting in the user file. Default is the value as the file
@@ -46,6 +51,7 @@ type userKey struct {
 	Doc      string
 	boolAt   func(*User) *bool
 	stringAt func(*User) *string
+	listAt   func(*User) *[]string
 }
 
 // userKeys is every key the user file accepts; the reader, the writer, the
@@ -60,6 +66,9 @@ var userKeys = []userKey{
 	{Name: UserKeyBranchSuffix, Kind: userString, Default: DefaultTypeSuffix,
 		Doc:      `the suffix your branches carry ("" for none), where a repo does not say`,
 		stringAt: func(u *User) *string { return &u.BranchSuffix }},
+	{Name: UserKeyTypeNames, Kind: userList, Default: "",
+		Doc:    "what your branches call each type, as feat=feature pairs",
+		listAt: func(u *User) *[]string { return &u.TypeNames }},
 }
 
 // UserKeyNames is every key the user file accepts, in the order `wt config`
@@ -108,6 +117,10 @@ type User struct {
 	// BranchSuffix is read only where the repository leaves the choice open
 	// (see Config.BranchSuffixSet), so IsSet says whether it was chosen.
 	BranchSuffix string
+	// TypeNames is <type>=<name> pairs, read the same way and against each
+	// repository's own types: a pair for a type a repository does not have
+	// is a name for somewhere else, not a mistake.
+	TypeNames []string
 	// Path is the file these values would be read from, whether or not it
 	// exists.
 	Path string
@@ -136,28 +149,44 @@ func defaultUser(path string) *User {
 // put writes a value into the User, taking it as the file spells it. A bool
 // that does not parse is left at false, which is what a misread key costs.
 func (k userKey) put(u *User, value string) {
-	if k.Kind == userString {
+	switch k.Kind {
+	case userString:
 		*k.stringAt(u) = value
-		return
+	case userList:
+		*k.listAt(u) = strings.Fields(value)
+	default:
+		*k.boolAt(u) = value == "true"
 	}
-	*k.boolAt(u) = value == "true"
 }
 
 // get reads the value back as the file would spell it.
 func (k userKey) get(u *User) string {
-	if k.Kind == userString {
+	switch k.Kind {
+	case userString:
 		return *k.stringAt(u)
+	case userList:
+		return strings.Join(*k.listAt(u), " ")
+	default:
+		return strconv.FormatBool(*k.boolAt(u))
 	}
-	return strconv.FormatBool(*k.boolAt(u))
 }
 
 // literal is the value as TOML writes it: a bare true or false, a quoted
 // string.
 func (k userKey) literal(value string) string {
-	if k.Kind == userString {
+	switch k.Kind {
+	case userString:
 		return strconv.Quote(value)
+	case userList:
+		items := strings.Fields(value)
+		quoted := make([]string, 0, len(items))
+		for _, item := range items {
+			quoted = append(quoted, strconv.Quote(item))
+		}
+		return "[" + strings.Join(quoted, ", ") + "]"
+	default:
+		return value
 	}
-	return value
 }
 
 // unusableUser is the configuration of a run whose file is there and cannot
@@ -286,6 +315,13 @@ func loadUser(path string) (*User, error) {
 // decodeUser reads one value as its kind says it is written, and says what it
 // should have been when it is not.
 func decodeUser(md toml.MetaData, prim toml.Primitive, k userKey) (string, error) {
+	if k.Kind == userList {
+		var l []string
+		if err := md.PrimitiveDecode(prim, &l); err != nil {
+			return "", errors.New(`is not a list of strings (write it as ["feat=feature"])`)
+		}
+		return strings.Join(l, " "), nil
+	}
 	if k.Kind == userString {
 		var s string
 		if err := md.PrimitiveDecode(prim, &s); err != nil {
@@ -344,6 +380,19 @@ func userValue(name, value string) (string, error) {
 	k, ok := userKeyByName(name)
 	if !ok {
 		return "", unknownUserKey(name)
+	}
+	if k.Kind == userList {
+		// The types are not known here — they are each repository's — so the
+		// pairs are checked for shape only, and read against the types where
+		// they are used.
+		for _, pair := range strings.Fields(value) {
+			typ, word, found := strings.Cut(pair, "=")
+			if !found || typ == "" || word == "" || strings.Contains(word, "/") {
+				return "", fmt.Errorf(
+					"%s: %q is not a <type>=<name> pair, e.g. feat=feature", name, pair)
+			}
+		}
+		return k.literal(value), nil
 	}
 	if k.Kind == userString {
 		if strings.ContainsAny(value, "/ \t") {

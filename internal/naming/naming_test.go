@@ -25,7 +25,7 @@ func TestInferTypeReadsTheTypeOutOfTheWorkName(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.work, func(t *testing.T) {
-			typ, rest, ok := InferType(c.work, types)
+			typ, rest, ok := InferType(c.work, Vocab{Types: types})
 			if ok != c.inferred || typ != c.typ || rest != c.rest {
 				t.Errorf("InferType(%q) = %q %q %v, want %q %q %v",
 					c.work, typ, rest, ok, c.typ, c.rest, c.inferred)
@@ -36,7 +36,7 @@ func TestInferTypeReadsTheTypeOutOfTheWorkName(t *testing.T) {
 
 func TestParseSpecPrefersAnExplicitTypeOverTheName(t *testing.T) {
 	types := []string{"feat", "fix"}
-	typ, work, err := ParseSpec("feat/fix_dev-123", "feat", types)
+	typ, work, err := ParseSpec("feat/fix_dev-123", "feat", Vocab{Types: types})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestParseSpecPrefersAnExplicitTypeOverTheName(t *testing.T) {
 }
 
 func TestParseSpecInfersTheTypeFromABareName(t *testing.T) {
-	typ, work, err := ParseSpec("fix_dev-123", "feat", []string{"feat", "fix"})
+	typ, work, err := ParseSpec("fix_dev-123", "feat", Vocab{Types: []string{"feat", "fix"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,18 +152,18 @@ func TestWorktreeDirTailEqualsBranch(t *testing.T) {
 }
 
 func TestParseSpec(t *testing.T) {
-	typ, work, err := ParseSpec("fix/login-crash", "feat", []string{"feat", "fix"})
+	typ, work, err := ParseSpec("fix/login-crash", "feat", Vocab{Types: []string{"feat", "fix"}})
 	if err != nil || typ != "fix" || work != "login-crash" {
 		t.Errorf("typed spec: got %q %q %v", typ, work, err)
 	}
-	typ, work, err = ParseSpec("login-crash", "feat", []string{"feat", "fix"})
+	typ, work, err = ParseSpec("login-crash", "feat", Vocab{Types: []string{"feat", "fix"}})
 	if err != nil || typ != "feat" || work != "login-crash" {
 		t.Errorf("bare spec should take the default type: got %q %q %v", typ, work, err)
 	}
-	if _, _, err := ParseSpec("", "feat", []string{"feat", "fix"}); err == nil {
+	if _, _, err := ParseSpec("", "feat", Vocab{Types: []string{"feat", "fix"}}); err == nil {
 		t.Error("empty spec should error")
 	}
-	if _, _, err := ParseSpec("a/b/c", "feat", []string{"feat", "fix"}); err == nil {
+	if _, _, err := ParseSpec("a/b/c", "feat", Vocab{Types: []string{"feat", "fix"}}); err == nil {
 		t.Error("two slashes should error")
 	}
 }
@@ -284,6 +284,73 @@ func TestRepoDirNameKeepsTheDefaultSuffixWhenThereIsNone(t *testing.T) {
 		}
 		if got := SupersetRoot("/src", "demo", suffix); got != filepath.Join("/src", want, "demo") {
 			t.Errorf("SupersetRoot(%q) = %q", suffix, got)
+		}
+	}
+}
+
+// A type is the identity; the word is what its branches read as. The folders
+// carry the type, so calling feat "feature" moves no checkout.
+func TestAVocabularyNamesTheBranchAndLeavesTheFoldersAlone(t *testing.T) {
+	s := Scheme{Parent: "/src", Repo: "demo", Suffix: "", DirSuffix: "_wt",
+		Vocab: Vocab{Types: []string{"feat", "fix"}, Names: map[string]string{"feat": "feature"}}}
+
+	if got := s.Branch("feat", "login"); got != "feature/login" {
+		t.Errorf("Branch = %q, want feature/login", got)
+	}
+	if got := s.Branch("fix", "login"); got != "fix/login" {
+		t.Errorf("a type with no name of its own: Branch = %q, want fix/login", got)
+	}
+	if got, want := s.Dir("feat", "login"), filepath.Join("/src", "demo_wt", "feat_wt", "login"); got != want {
+		t.Errorf("Dir = %q, want %q", got, want)
+	}
+	// Both ways round: a branch wt wrote reads back as the type it is for.
+	if typ, work, ok := s.Parse("feature/login"); !ok || typ != "feat" || work != "login" {
+		t.Errorf("Parse = %q %q %v, want feat login true", typ, work, ok)
+	}
+	// And a branch from before the naming, or from another tool, is nobody's
+	// to rename: its word comes back as it stands.
+	if typ, work, ok := s.Parse("feat/login"); !ok || typ != "feat" || work != "login" {
+		t.Errorf("Parse = %q %q %v, want feat login true", typ, work, ok)
+	}
+	if typ, _, ok := s.Parse("wip/login"); !ok || typ != "wip" {
+		t.Errorf("Parse = %q %v, want wip true", typ, ok)
+	}
+}
+
+func TestVocabReadsATypeInEitherSpelling(t *testing.T) {
+	v := Vocab{Types: []string{"feat", "fix"}, Names: map[string]string{"feat": "feature"}}
+
+	if got := v.Words(); got[0] != "feature" || got[1] != "fix" {
+		t.Errorf("Words = %q, want [feature fix]", got)
+	}
+	for word, want := range map[string]string{"feature": "feat", "feat": "feat", "fix": "fix"} {
+		if got, ok := v.Type(word); !ok || got != want {
+			t.Errorf("Type(%q) = %q %v, want %q true", word, got, ok, want)
+		}
+	}
+	if _, ok := v.Type("wibble"); ok {
+		t.Error("a word that is neither a type nor a name was accepted")
+	}
+	// The zero vocabulary calls every type by its own name.
+	if got := (Vocab{}).Word("feat"); got != "feat" {
+		t.Errorf("Word = %q, want feat", got)
+	}
+}
+
+// A spec may be written either way, whichever the person has in front of
+// them: the word from a branch, or the type from a folder.
+func TestParseSpecTakesEitherSpellingOfAType(t *testing.T) {
+	v := Vocab{Types: []string{"feat", "fix"}, Names: map[string]string{"feat": "feature"}}
+	for _, spec := range []string{"feature/login", "feat/login"} {
+		typ, work, err := ParseSpec(spec, "fix", v)
+		if err != nil || typ != "feat" || work != "login" {
+			t.Errorf("ParseSpec(%q) = %q %q %v, want feat login nil", spec, typ, work, err)
+		}
+	}
+	for _, spec := range []string{"feature_dev-123", "feat_dev-123"} {
+		typ, work, err := ParseSpec(spec, "fix", v)
+		if err != nil || typ != "feat" || work != "dev-123" {
+			t.Errorf("ParseSpec(%q) = %q %q %v, want feat dev-123 nil", spec, typ, work, err)
 		}
 	}
 }

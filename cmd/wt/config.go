@@ -59,7 +59,8 @@ func newConfigGetCmd() *cobra.Command {
 			userKeyList(),
 		Example: "  wt config get superset       # false until you turn it on\n" +
 			"  wt config get github         # true unless you turned it off\n" +
-			"  wt config get branch_suffix  # _wt unless you named another",
+			"  wt config get branch_suffix  # _wt unless you named another\n" +
+			"  wt config get type_names     # empty unless you renamed a type",
 		Args:      needArgs(1, "<key>", "wt config get superset"),
 		ValidArgs: config.UserKeyNames(),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -74,7 +75,8 @@ func newConfigSetCmd() *cobra.Command {
 		Short: "Change one of your settings",
 		Long: "Write one setting to your own configuration file, creating it if it\n" +
 			"is not there. The integrations take true or false; branch_suffix\n" +
-			"takes what your branches should carry, and \"\" for nothing at all.\n" +
+			"takes what your branches should carry, and \"\" for nothing at all;\n" +
+			"type_names takes <type>=<name> pairs, as one quoted argument.\n" +
 			"The key and the value are validated first, so a mistake writes\n" +
 			"nothing, and the comments and ordering already in the file are kept.\n\n" +
 			"This writes your file only. A repository's own bin/worktree config\n" +
@@ -82,7 +84,8 @@ func newConfigSetCmd() *cobra.Command {
 			"of its own, that repository's answer stands.\n\n" + userKeyList(),
 		Example: "  wt config set superset true   # register new worktrees with Superset\n" +
 			"  wt config set github false    # keep wt away from the GitHub CLI\n" +
-			"  wt config set branch_suffix \"\"  # name branches feat/login-crash",
+			"  wt config set branch_suffix \"\"  # name branches feat/login-crash\n" +
+			"  wt config set type_names \"feat=feature docs=doc\"  # and feature/login-crash",
 		Args:      needArgs(2, "<key> <value>", "wt config set superset true"),
 		ValidArgs: config.UserKeyNames(),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -100,7 +103,8 @@ func newConfigUnsetCmd() *cobra.Command {
 			userKeyList(),
 		Example: "  wt config unset superset       # back to the built-in default\n" +
 			"  wt config unset github         # the same for the GitHub integration\n" +
-			"  wt config unset branch_suffix  # let each repository name its branches",
+			"  wt config unset branch_suffix  # let each repository name its branches\n" +
+			"  wt config unset type_names     # and let it name its types",
 		Args:      needArgs(1, "<key>", "wt config unset superset"),
 		ValidArgs: config.UserKeyNames(),
 		RunE: func(cmd *cobra.Command, args []string) error {

@@ -6,13 +6,15 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
-## 2026-09-21 16:10 — Branches without the `_wt`, if you want them
+## 2026-09-21 18:05 — Your branches, named the way you name branches
 
-- `WORKTREE_BRANCH_SUFFIX=""`, or `wt config set branch_suffix ""` for
-  yourself, names branches `fix/login-crash` instead of `fix_wt/login-crash`.
-- Nothing moves on disk: the worktrees stay under `<repo>_wt/<type>_wt/<work>`.
-- The repository wins where it named a suffix; otherwise yours does, in every
-  repository. `wt config` and `wt doctor` say which file decided.
+- `WORKTREE_BRANCH_SUFFIX=""`, or `wt config set branch_suffix ""`, names
+  branches `fix/login-crash` instead of `fix_wt/login-crash`.
+- `WORKTREE_TYPE_NAMES=(feat=feature)`, or `wt config set type_names
+  "feat=feature"`, calls a type what you call it: branch `feature/login`.
+- Nothing moves on disk, and both spellings name the same work: the worktrees
+  stay under `<repo>_wt/<type>_wt/<work>`, which is wt's layout.
+- The repository wins where it named one; otherwise you do, everywhere.
 
 ## 2026-09-19 14:40 — Pull requests found by branch, and remove knows what landed
 

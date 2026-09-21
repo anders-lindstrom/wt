@@ -193,9 +193,38 @@ any `<word>/<name>` branch — `dependabot/npm-x`, an agent's own `claude/…` �
 reads as a worktree branch of type `<word>`. Nothing breaks: every lookup still
 goes through `git worktree list`, so only the names change.
 
-To go further and have the branches read `feature/login-crash`, give the
-repository the vocabulary to match — `WORKTREE_TYPES=(feature fix docs chore)`
-— and its folders follow the types, as `feature_wt/login-crash`.
+### What each type is called
+
+`feat` or `feature`, `docs` or `doc`: the word is a preference, and the type
+underneath it is not. Name the ones you want called something else, in the
+repository's file or in your own:
+
+```sh
+WORKTREE_TYPE_NAMES=(feat=feature docs=doc)      # the repository's naming
+wt config set type_names "feat=feature"          # or yours, everywhere
+```
+
+```
+$ wt new feat/login-crash        # or feature/login-crash: the same work
+  ~/src/myrepo_wt/feat_wt/login-crash        branch: feature/login-crash
+```
+
+The type is the identity — a fix is a fix whether its branches say `fix`,
+`fix_wt` or `bugfix` — so it is what the folders carry and what every command
+reasons in. Only the branch reads the word, which is why renaming one strands
+no checkout, and why a branch named before the change still resolves.
+
+Everything takes both spellings: `wt new`, `wt migrate`, `wt path`, `wt branch`,
+the type read out of a bare name (`wt new feature_dev-123`), the type read off
+somebody else's pull request branch, and the completions, which offer the words
+you would type. The same two-file rule as the suffix applies — the repository
+where it named its types, you everywhere else — and a pair for a type a
+repository does not have is a name for somewhere else, so it quietly does not
+apply there.
+
+Two names for one type, or a name that is already another type, would make a
+branch ambiguous; the repository's file is told so, and your own pairs are
+dropped where they would collide.
 
 The type comes from the spec — `wt new fix/login-crash` — or, for a bare name,
 is read out of the name itself: `wt new fix_dev-123` creates `fix_wt/dev-123`.
@@ -523,6 +552,7 @@ is validated: **an unknown or misspelled key is an error, not silence.**
 | `WORKTREE_BRANCH_PREFIX` | string | `feat_wt` |
 | `WORKTREE_TYPE_SUFFIX` | string | `_wt` |
 | `WORKTREE_BRANCH_SUFFIX` | string | the type suffix |
+| `WORKTREE_TYPE_NAMES` | list | empty — each type is called by its own name |
 | `WORKTREE_DEFAULT_TYPE` | string | derived from the prefix |
 | `WORKTREE_TYPES` | list | Conventional Commits + `research` `spike` |
 | `DEVELOPER_CONFIG_DIRS` | list | `.cursor .claude .run .vscode .idea` |
@@ -541,7 +571,14 @@ the one string key where an empty value is a value rather than an absent key:
 path where it was — see [branches without the `_wt`](#branches-without-the-_wt).
 Leave it out and the choice falls to whoever clones the repository.
 `WORKTREE_BRANCH_PREFIX` follows the type suffix when it is not set itself, so
-the two cannot silently disagree.
+the two cannot silently disagree, and it may be written the way the branches
+read (`feature_wt`) in a repository that renames its types.
+
+`WORKTREE_TYPE_NAMES` is `<type>=<name>` pairs — `(feat=feature docs=doc)` —
+saying what the branches call a type. It is validated against
+`WORKTREE_TYPES`, and against itself: two types that read alike would make a
+branch name ambiguous. See [what each type is
+called](#what-each-type-is-called).
 
 `SUPERSET_REGISTER` decides whether a new worktree is also registered as a
 Superset workspace: `auto` when Superset can take it, `on` to additionally have
@@ -577,6 +614,7 @@ $XDG_CONFIG_HOME/wt/config.toml     # or ~/.config/wt/config.toml
 | `superset` | `false` | whether wt registers worktrees it creates as Superset workspaces |
 | `github` | `true` | whether wt reads pull requests through the GitHub CLI |
 | `branch_suffix` | `_wt` | what your branches carry, where a repository does not say |
+| `type_names` | empty | what your branches call each type, as `feat=feature` pairs |
 
 ```
 wt config                      # everything, with where each value came from
@@ -593,10 +631,11 @@ nothing else, `branch_suffix` takes what a branch can carry before its slash
 (`""` included), and either is refused before anything is written. `set` edits
 the file in place, so comments and ordering you put there survive.
 
-`branch_suffix` is the one setting a repository can overrule, and only by
-naming its own `WORKTREE_BRANCH_SUFFIX`: see [branches without the
-`_wt`](#branches-without-the-_wt). A file wt cannot read costs you the
-integrations, never this one — a branch has to be called something, so the
+`branch_suffix` and `type_names` are the settings a repository can overrule,
+and only by naming its own `WORKTREE_BRANCH_SUFFIX` or `WORKTREE_TYPE_NAMES`:
+see [branches without the `_wt`](#branches-without-the-_wt) and [what each type
+is called](#what-each-type-is-called). A file wt cannot read costs you the
+integrations, never these two — a branch has to be called something, so the
 repository answers instead.
 
 **Your setting is the master switch.** With `superset = false` wt never runs
@@ -605,9 +644,10 @@ true, that key still gets to decline. `wt config` shows the resolution:
 
 ```
 user config:   /Users/you/.config/wt/config.toml (no file yet)
-  superset:    false (default)
-  github:      true (default)
+  superset:      false (default)
+  github:        true (default)
   branch_suffix: "_wt" (default)
+  type_names:    [] (default)
 superset mode: off (user config)
 ```
 

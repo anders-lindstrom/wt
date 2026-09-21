@@ -14,7 +14,7 @@ import (
 // Everything that takes a spec reads it here, so nothing has to parse the same
 // argument twice to learn a second half of the answer.
 func parseWork(ctx *Context, spec string) (typ, work, branch string, err error) {
-	typ, work, err = naming.ParseSpec(spec, ctx.Config.DefaultType, ctx.Config.Types)
+	typ, work, err = naming.ParseSpec(spec, ctx.Config.DefaultType, ctx.Vocab())
 	if err != nil {
 		return "", "", "", err
 	}
@@ -24,13 +24,15 @@ func parseWork(ctx *Context, spec string) (typ, work, branch string, err error) 
 	return typ, work, ctx.Scheme().Branch(typ, work), nil
 }
 
-// checkType refuses a type this repository does not declare.
+// checkType refuses a type this repository does not declare. The types are
+// offered back as the branches spell them, since that is what the person has
+// in front of them.
 func checkType(ctx *Context, typ string) error {
 	if slices.Contains(ctx.Config.Types, typ) {
 		return nil
 	}
 	return fmt.Errorf("unknown worktree type %q; expected one of: %s",
-		typ, strings.Join(ctx.Config.Types, " "))
+		typ, strings.Join(ctx.Vocab().Words(), " "))
 }
 
 // Branch returns the branch for a piece of work. The main checkout, named by

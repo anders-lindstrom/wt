@@ -104,7 +104,42 @@ func (c *Context) Scheme() naming.Scheme {
 // running wt, which is all a Scheme is.
 func scheme(r *repo.Repo, c *config.Config, u *config.User) naming.Scheme {
 	suffix, _ := branchSuffix(c, u)
-	return naming.Scheme{Parent: r.Parent, Repo: r.Name, Suffix: suffix, DirSuffix: c.TypeSuffix}
+	names, _ := typeNames(c, u)
+	return naming.Scheme{
+		Parent:    r.Parent,
+		Repo:      r.Name,
+		Suffix:    suffix,
+		DirSuffix: c.TypeSuffix,
+		Vocab:     naming.Vocab{Types: c.Types, Names: names},
+	}
+}
+
+// Vocab is the types this repository works in and what its branches call
+// them. Everything that reads a type out of an argument, a branch or a name
+// goes through it, so one answer serves them all.
+func (c *Context) Vocab() naming.Vocab {
+	return c.Scheme().Vocab
+}
+
+// TypeNames is what the branches call each type, and where that was decided.
+func (c *Context) TypeNames() (names map[string]string, origin string) {
+	return typeNames(c.Config, c.UserConfig())
+}
+
+// typeNames follows the same rule as branchSuffix: a repository that named
+// its types has named them for everybody who clones it, and one that did not
+// leaves each person their own. The person's pairs are read against this
+// repository's types, so the ones that are for somewhere else drop out
+// quietly rather than failing a command.
+func typeNames(c *config.Config, u *config.User) (map[string]string, string) {
+	if c.TypeNamesSet {
+		return c.TypeNames, "repo file"
+	}
+	if u.IsSet(config.UserKeyTypeNames) {
+		names, _ := config.TypeNamesFrom(u.TypeNames, c.Types)
+		return names, "user file"
+	}
+	return nil, "repo default"
 }
 
 // BranchSuffix is what this repository's branches carry before the slash, and

@@ -29,6 +29,10 @@ func Config(ctx *Context, shell bool, w io.Writer) error {
 				suffix, origin, c.TypeSuffix)
 		}
 		fmt.Fprintf(w, "types:         %s\n", strings.Join(c.Types, " "))
+		if names, origin := ctx.TypeNames(); len(names) > 0 {
+			fmt.Fprintf(w, "type names:    %s (%s); worktree paths keep the type\n",
+				strings.Join(typeNamePairs(ctx), " "), origin)
+		}
 		fmt.Fprintf(w, "config dirs:   %s\n", strings.Join(c.DeveloperConfigDirs, " "))
 		fmt.Fprintf(w, "config files:  %s\n", strings.Join(c.DeveloperConfigFiles, " "))
 		fmt.Fprintf(w, "required bins: %s\n", strings.Join(c.RequiredBins, " "))
@@ -44,6 +48,7 @@ func Config(ctx *Context, shell bool, w io.Writer) error {
 	fmt.Fprintf(w, "WORKTREE_TYPE_SUFFIX=%s\n", shellQuote(c.TypeSuffix))
 	branchSuffix, _ := ctx.BranchSuffix()
 	fmt.Fprintf(w, "WORKTREE_BRANCH_SUFFIX=%s\n", shellQuote(branchSuffix))
+	fmt.Fprintf(w, "WORKTREE_TYPE_NAMES=(%s)\n", shellQuoteAll(typeNamePairs(ctx)))
 	fmt.Fprintf(w, "WORKTREE_DEFAULT_TYPE=%s\n", shellQuote(c.DefaultType))
 	fmt.Fprintf(w, "WORKTREE_TYPES=%s\n", shellQuote(strings.Join(c.Types, " ")))
 	fmt.Fprintf(w, "REQUIRED_BINS=%s\n", shellQuote(strings.Join(c.RequiredBins, " ")))
@@ -55,6 +60,13 @@ func Config(ctx *Context, shell bool, w io.Writer) error {
 	fmt.Fprintf(w, "DEVELOPER_CONFIG_DIRS=(%s)\n", shellQuoteAll(c.DeveloperConfigDirs))
 	fmt.Fprintf(w, "DEVELOPER_CONFIG_FILES=(%s)\n", shellQuoteAll(c.DeveloperConfigFiles))
 	return nil
+}
+
+// typeNamePairs is this repository's resolved naming as the configuration
+// files write it.
+func typeNamePairs(ctx *Context) []string {
+	names, _ := ctx.TypeNames()
+	return typeNamePairsOf(names, ctx.Config.Types)
 }
 
 // shellQuote single-quotes a value so that eval cannot reinterpret it.
@@ -88,7 +100,7 @@ func userBlock(ctx *Context, w io.Writer) {
 		if err != nil {
 			continue
 		}
-		fmt.Fprintf(w, "  %-12s %v (%s)\n", name+":", config.UserLiteral(name, v), u.Origin(name))
+		fmt.Fprintf(w, "  %-14s %v (%s)\n", name+":", config.UserLiteral(name, v), u.Origin(name))
 	}
 	mode, origin := supersetOrigin(ctx)
 	fmt.Fprintf(w, "superset mode: %s (%s)\n", mode, origin)

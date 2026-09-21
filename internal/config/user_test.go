@@ -54,13 +54,14 @@ func writeUser(t *testing.T, body string) string {
 }
 
 func TestUserFileOverridesTheDefaults(t *testing.T) {
-	u, err := loadUser(writeUser(t, "superset = true\ngithub = false\nbranch_suffix = \"\"\n"))
+	u, err := loadUser(writeUser(t,
+		"superset = true\ngithub = false\nbranch_suffix = \"\"\ntype_names = [\"feat=feature\"]\n"))
 	if err != nil {
 		t.Fatalf("loadUser: %v", err)
 	}
-	if !u.Superset || u.GitHub || u.BranchSuffix != "" {
-		t.Errorf("superset = %v, github = %v, branch_suffix = %q; want true, false, \"\"",
-			u.Superset, u.GitHub, u.BranchSuffix)
+	if !u.Superset || u.GitHub || u.BranchSuffix != "" || len(u.TypeNames) != 1 {
+		t.Errorf("superset = %v, github = %v, branch_suffix = %q, type_names = %q",
+			u.Superset, u.GitHub, u.BranchSuffix, u.TypeNames)
 	}
 	for _, k := range UserKeyNames() {
 		if got := u.Origin(k); got != "user file" {
@@ -542,5 +543,54 @@ func TestUserBranchSuffixMustBeAString(t *testing.T) {
 	_, err := loadUser(writeUser(t, "branch_suffix = true\n"))
 	if err == nil || !strings.Contains(err.Error(), "is not a string") {
 		t.Fatalf("want a not-a-string error, got %v", err)
+	}
+}
+
+// A list setting round-trips through the file as a TOML array, and `wt config
+// get` prints it the way `wt config set` takes it.
+func TestTypeNamesAreWrittenAsAListAndReadBack(t *testing.T) {
+	path := setIn(t)
+	_, set, err := SetUser(UserKeyTypeNames, "feat=feature docs=doc")
+	if err != nil {
+		t.Fatalf("SetUser: %v", err)
+	}
+	if want := `["feat=feature", "docs=doc"]`; set != want {
+		t.Errorf("SetUser reported %s, want %s", set, want)
+	}
+	u, err := loadUser(path)
+	if err != nil {
+		t.Fatalf("reading back: %v", err)
+	}
+	if len(u.TypeNames) != 2 || u.TypeNames[0] != "feat=feature" {
+		t.Errorf("TypeNames = %q", u.TypeNames)
+	}
+	if !u.IsSet(UserKeyTypeNames) {
+		t.Error("a key the file wrote does not read as chosen")
+	}
+	if got, _ := u.Value(UserKeyTypeNames); got != "feat=feature docs=doc" {
+		t.Errorf("Value = %q, want the pairs as set", got)
+	}
+}
+
+// The types belong to each repository, so only the shape of a pair can be
+// checked here — and it is, before anything is written.
+func TestSetUserRefusesAPairThatIsNotOne(t *testing.T) {
+	for _, value := range []string{"feature", "feat=", "=feature", "feat=fea/ture"} {
+		t.Run(value, func(t *testing.T) {
+			path := setIn(t)
+			if _, _, err := SetUser(UserKeyTypeNames, value); err == nil {
+				t.Errorf("%q was accepted", value)
+			}
+			if _, err := os.Stat(path); err == nil {
+				t.Error("a rejected set wrote the file anyway")
+			}
+		})
+	}
+}
+
+func TestUserTypeNamesMustBeAList(t *testing.T) {
+	_, err := loadUser(writeUser(t, "type_names = \"feat=feature\"\n"))
+	if err == nil || !strings.Contains(err.Error(), "is not a list") {
+		t.Fatalf("want a not-a-list error, got %v", err)
 	}
 }

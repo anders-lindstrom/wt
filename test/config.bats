@@ -44,13 +44,13 @@ setup() {
     cd "$REPO"
     run wt config
     [ "$status" -eq 0 ]
-    [[ "$output" == *"superset:    false (default)"* ]]
-    [[ "$output" == *"github:      true (default)"* ]]
+    [[ "$output" == *"superset:      false (default)"* ]]
+    [[ "$output" == *"github:        true (default)"* ]]
     [[ "$output" == *"superset mode: off (user config)"* ]]
 
     wt config set superset true
     run wt config
-    [[ "$output" == *"superset:    true (user file)"* ]]
+    [[ "$output" == *"superset:      true (user file)"* ]]
     [[ "$output" == *"superset mode: auto (repo default)"* ]]
 }
 
@@ -189,5 +189,39 @@ setup() {
     run wt config set branch_suffix "wt/"
     [ "$status" -eq 1 ]
     [[ "$output" == *"may not contain a slash"* ]]
+    [ ! -e "$USER_CONFIG" ]
+}
+
+@test "type_names names the branch and leaves the worktree under the type" {
+    cd "$REPO"
+    git commit -qm init --allow-empty
+
+    run wt config set type_names "feat=feature"
+    [ "$status" -eq 0 ]
+    [[ "$output" == 'type_names = ["feat=feature"] in '* ]]
+
+    run wt config get type_names
+    [ "$output" = "feat=feature" ]
+
+    # Either spelling names the same piece of work.
+    run wt new feature/login --no-setup
+    [ "$status" -eq 0 ]
+    [[ "$output" == */demo_wt/feat_wt/login ]]
+
+    run git -C "$BATS_TEST_TMPDIR/demo_wt/feat_wt/login" rev-parse --abbrev-ref HEAD
+    [ "$output" = "feature_wt/login" ]
+
+    run wt path feat/login
+    [[ "$output" == */demo_wt/feat_wt/login ]]
+
+    run wt config
+    [[ "$output" == *"type names:    feat=feature (user file)"* ]]
+}
+
+@test "a type_names pair that is not one is refused" {
+    cd "$BATS_TEST_TMPDIR"
+    run wt config set type_names "feature"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"<type>=<name>"* ]]
     [ ! -e "$USER_CONFIG" ]
 }

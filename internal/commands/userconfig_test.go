@@ -107,8 +107,8 @@ func TestConfigPrintsTheUserSettings(t *testing.T) {
 	}
 	for _, want := range []string{
 		"(no file yet)",
-		"  superset:    false (default)",
-		"  github:      true (default)",
+		"  superset:      false (default)",
+		"  github:        true (default)",
 		"superset mode: off (user config)",
 	} {
 		if !strings.Contains(buf.String(), want) {
@@ -371,7 +371,7 @@ func TestConfigSaysTheFileCouldNotBeRead(t *testing.T) {
 	if !strings.Contains(out.String(), path+" (wt cannot read it") {
 		t.Errorf("wt config said\n%s\nwant the file marked unreadable", out.String())
 	}
-	if !strings.Contains(out.String(), "github:      false (file unreadable)") {
+	if !strings.Contains(out.String(), "github:        false (file unreadable)") {
 		t.Errorf("wt config said\n%s\nwant each value marked as coming from nowhere", out.String())
 	}
 }

@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/anders-lindstrom/wt/internal/naming"
 )
 
 // Config is a repository's validated worktree configuration.
@@ -13,6 +15,7 @@ type Config struct {
 	BranchPrefix         string
 	TypeSuffix           string
 	BranchSuffix         string
+	TypeNames            map[string]string
 	DefaultType          string
 	Types                []string
 	DeveloperConfigDirs  []string
@@ -26,6 +29,9 @@ type Config struct {
 	// MainBranchSet says MAIN_BRANCH came from the configuration rather than
 	// from the fallback, which is only a guess from origin or the checkout.
 	MainBranchSet bool
+	// TypeNamesSet says WORKTREE_TYPE_NAMES was written in the file, which
+	// is what decides between the repository's naming and the person's.
+	TypeNamesSet bool
 	// BranchSuffixSet says WORKTREE_BRANCH_SUFFIX was written in the file.
 	// Only then does the repository outrank the person's own setting; a
 	// repository that says nothing leaves the choice to whoever clones it.
@@ -44,6 +50,7 @@ const (
 	KeyBranchPrefix         = "WORKTREE_BRANCH_PREFIX"
 	KeyTypeSuffix           = "WORKTREE_TYPE_SUFFIX"
 	KeyBranchSuffix         = "WORKTREE_BRANCH_SUFFIX"
+	KeyTypeNames            = "WORKTREE_TYPE_NAMES"
 	KeyDefaultType          = "WORKTREE_DEFAULT_TYPE"
 	KeyTypes                = "WORKTREE_TYPES"
 	KeyConfigDirs           = "DEVELOPER_CONFIG_DIRS"
@@ -110,6 +117,7 @@ var keys = []key{
 	{KeyBranchPrefix, "worktree_branch_prefix", kindString},
 	{KeyTypeSuffix, "worktree_type_suffix", kindString},
 	{KeyBranchSuffix, "worktree_branch_suffix", kindString},
+	{KeyTypeNames, "worktree_type_names", kindList},
 	{KeyDefaultType, "worktree_default_type", kindString},
 	{KeyTypes, "worktree_types", kindList},
 	{KeyConfigDirs, "developer_config_dirs", kindList},
@@ -193,6 +201,9 @@ func fromRaw(r map[string]Value, mainBranchFallback, file string) (*Config, erro
 	if v, ok := r[KeyBranchSuffix]; ok && !v.IsList {
 		c.BranchSuffixSet = true
 	}
+	if _, ok := r[KeyTypeNames]; ok {
+		c.TypeNamesSet = true
+	}
 	if v, ok := r[KeySupersetRegister]; ok && !v.IsList && v.Scalar != "" {
 		c.SupersetRegisterSet = true
 	}
@@ -220,9 +231,21 @@ func fromRaw(r map[string]Value, mainBranchFallback, file string) (*Config, erro
 		}
 	}
 
+	// The names are read against this repository's own types, so a name for a
+	// type it does not have, or one that would make two branches read alike,
+	// is its own file's problem and is reported as one.
+	names, nameProblems := TypeNamesFrom(list(r, KeyTypeNames, nil), c.Types)
+	c.TypeNames = names
+	for _, p := range nameProblems {
+		problems = append(problems, KeyTypeNames+": "+p)
+	}
+
 	c.DefaultType = str(r, KeyDefaultType, "")
 	if c.DefaultType == "" {
-		c.DefaultType = strings.TrimSuffix(c.BranchPrefix, c.TypeSuffix)
+		// The prefix may be written the way the branches read, so a repo
+		// whose feat is called feature may say feature_wt here.
+		c.DefaultType = naming.Vocab{Types: c.Types, Names: c.TypeNames}.
+			Canonical(strings.TrimSuffix(c.BranchPrefix, c.TypeSuffix))
 	}
 	if !slices.Contains(c.Types, c.DefaultType) {
 		problems = append(problems, fmt.Sprintf(
@@ -303,4 +326,48 @@ func boolean(r map[string]Value, key string, def bool) (bool, error) {
 		return def, fmt.Errorf("%s=%q is not a boolean", key, v.Scalar)
 	}
 	return b, nil
+}
+
+// TypeNamesFrom reads "<type>=<name>" pairs into the map naming.Vocab takes,
+// reporting every pair it had to drop. A type is what wt works in; a name is
+// what its branches read as, so the pairs are validated against the types the
+// repository has and against each other: two types that read alike would make
+// a branch name ambiguous, and wt would not know which piece of work it was
+// looking at.
+//
+// Dropping rather than failing is what lets one person's naming travel across
+// every repository they work in: a name for a type this one does not have is
+// not a mistake, it is a name for somewhere else. A repository's own file gets
+// the problems reported, because there they are mistakes.
+func TypeNamesFrom(pairs, types []string) (map[string]string, []string) {
+	var problems []string
+	names := map[string]string{}
+	byName := map[string]string{}
+	for _, pair := range pairs {
+		typ, name, found := strings.Cut(pair, "=")
+		switch {
+		case !found || typ == "" || name == "":
+			problems = append(problems, fmt.Sprintf("%q is not a <type>=<name> pair", pair))
+		case !slices.Contains(types, typ):
+			problems = append(problems, fmt.Sprintf(
+				"%q names %q, which is not in %s", pair, typ, KeyTypes))
+		case strings.ContainsAny(name, "/ \t"):
+			problems = append(problems, fmt.Sprintf(
+				"%q may not contain a slash or a space; it is what a branch carries before one", name))
+		case names[typ] != "":
+			problems = append(problems, fmt.Sprintf("%q is named twice", typ))
+		case byName[name] != "":
+			problems = append(problems, fmt.Sprintf(
+				"%q would name both %q and %q", name, byName[name], typ))
+		case name != typ && slices.Contains(types, name):
+			problems = append(problems, fmt.Sprintf(
+				"%q would name %q, which is already a type of its own", name, typ))
+		default:
+			names[typ], byName[name] = name, typ
+		}
+	}
+	if len(names) == 0 {
+		names = nil
+	}
+	return names, problems
 }
