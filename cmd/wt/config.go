@@ -53,11 +53,13 @@ func newConfigGetCmd() *cobra.Command {
 		Short: "Print one of your settings",
 		Long: "Print one setting's value alone, so a script can read it. The value\n" +
 			"is what wt would use: the file's, the built-in default when the file\n" +
-			"does not set it, or false when wt cannot read the file at all. What\n" +
-			"is wrong with the file goes to stderr; only an unknown key fails.\n\n" +
+			"does not set it, or the integration off when wt cannot read the file\n" +
+			"at all. What is wrong with the file goes to stderr; only an unknown\n" +
+			"key fails.\n\n" +
 			userKeyList(),
-		Example: "  wt config get superset  # false until you turn it on\n" +
-			"  wt config get github    # true unless you turned it off",
+		Example: "  wt config get superset       # false until you turn it on\n" +
+			"  wt config get github         # true unless you turned it off\n" +
+			"  wt config get branch_suffix  # _wt unless you named another",
 		Args:      needArgs(1, "<key>", "wt config get superset"),
 		ValidArgs: config.UserKeyNames(),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -71,13 +73,16 @@ func newConfigSetCmd() *cobra.Command {
 		Use:   "set <key> <value>",
 		Short: "Change one of your settings",
 		Long: "Write one setting to your own configuration file, creating it if it\n" +
-			"is not there. Values are true or false. The key and the value are\n" +
-			"validated first, so a mistake writes nothing, and the comments and\n" +
-			"ordering already in the file are kept.\n\n" +
+			"is not there. The integrations take true or false; branch_suffix\n" +
+			"takes what your branches should carry, and \"\" for nothing at all.\n" +
+			"The key and the value are validated first, so a mistake writes\n" +
+			"nothing, and the comments and ordering already in the file are kept.\n\n" +
 			"This writes your file only. A repository's own bin/worktree config\n" +
-			"is committed and edited by hand.\n\n" + userKeyList(),
-		Example: "  wt config set superset true  # register new worktrees with Superset\n" +
-			"  wt config set github false   # keep wt away from the GitHub CLI",
+			"is committed and edited by hand, and where it names a branch suffix\n" +
+			"of its own, that repository's answer stands.\n\n" + userKeyList(),
+		Example: "  wt config set superset true   # register new worktrees with Superset\n" +
+			"  wt config set github false    # keep wt away from the GitHub CLI\n" +
+			"  wt config set branch_suffix \"\"  # name branches feat/login-crash",
 		Args:      needArgs(2, "<key> <value>", "wt config set superset true"),
 		ValidArgs: config.UserKeyNames(),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -93,8 +98,9 @@ func newConfigUnsetCmd() *cobra.Command {
 		Long: "Take one setting out of your configuration file, so it falls back to\n" +
 			"wt's built-in default. A key the file never set is not an error.\n\n" +
 			userKeyList(),
-		Example: "  wt config unset superset  # back to the built-in default\n" +
-			"  wt config unset github    # the same for the GitHub integration",
+		Example: "  wt config unset superset       # back to the built-in default\n" +
+			"  wt config unset github         # the same for the GitHub integration\n" +
+			"  wt config unset branch_suffix  # let each repository name its branches",
 		Args:      needArgs(1, "<key>", "wt config unset superset"),
 		ValidArgs: config.UserKeyNames(),
 		RunE: func(cmd *cobra.Command, args []string) error {

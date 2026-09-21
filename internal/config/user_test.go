@@ -54,12 +54,13 @@ func writeUser(t *testing.T, body string) string {
 }
 
 func TestUserFileOverridesTheDefaults(t *testing.T) {
-	u, err := loadUser(writeUser(t, "superset = true\ngithub = false\n"))
+	u, err := loadUser(writeUser(t, "superset = true\ngithub = false\nbranch_suffix = \"\"\n"))
 	if err != nil {
 		t.Fatalf("loadUser: %v", err)
 	}
-	if !u.Superset || u.GitHub {
-		t.Errorf("superset = %v, github = %v; want true, false", u.Superset, u.GitHub)
+	if !u.Superset || u.GitHub || u.BranchSuffix != "" {
+		t.Errorf("superset = %v, github = %v, branch_suffix = %q; want true, false, \"\"",
+			u.Superset, u.GitHub, u.BranchSuffix)
 	}
 	for _, k := range UserKeyNames() {
 		if got := u.Origin(k); got != "user file" {
@@ -148,8 +149,8 @@ func TestSetUserCreatesTheFile(t *testing.T) {
 	if path != want {
 		t.Errorf("wrote %q, want %q", path, want)
 	}
-	if !set {
-		t.Error("SetUser reported false for true")
+	if set != "true" {
+		t.Errorf("SetUser reported %q for true", set)
 	}
 	u, err := loadUser(path)
 	if err != nil {
@@ -467,4 +468,79 @@ func readBack(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+// The branch suffix is a string, and the empty one is a value: the file must
+// carry it as written, and say that the person chose it.
+func TestBranchSuffixIsWrittenAndReadBackAsAString(t *testing.T) {
+	for _, value := range []string{"", "-wt", "_wt"} {
+		t.Run("suffix "+value, func(t *testing.T) {
+			path := setIn(t)
+			_, set, err := SetUser(UserKeyBranchSuffix, value)
+			if err != nil {
+				t.Fatalf("SetUser: %v", err)
+			}
+			if want := `"` + value + `"`; set != want {
+				t.Errorf("SetUser reported %s, want %s", set, want)
+			}
+			u, err := loadUser(path)
+			if err != nil {
+				t.Fatalf("reading back: %v", err)
+			}
+			if u.BranchSuffix != value || !u.IsSet(UserKeyBranchSuffix) {
+				t.Errorf("read back %q, set = %v; want %q true", u.BranchSuffix, u.IsSet(UserKeyBranchSuffix), value)
+			}
+		})
+	}
+}
+
+// A file that never names it is not a choice, so the repository decides.
+func TestAnUnwrittenBranchSuffixIsNotSet(t *testing.T) {
+	u, err := loadUser(writeUser(t, "github = true\n"))
+	if err != nil {
+		t.Fatalf("loadUser: %v", err)
+	}
+	if u.IsSet(UserKeyBranchSuffix) {
+		t.Error("a key the file never wrote reads as chosen")
+	}
+	if u.BranchSuffix != DefaultTypeSuffix {
+		t.Errorf("BranchSuffix = %q, want %q", u.BranchSuffix, DefaultTypeSuffix)
+	}
+}
+
+// A branch suffix cannot carry what a branch name cannot.
+func TestSetUserRefusesABranchSuffixWithASlashOrASpace(t *testing.T) {
+	for _, value := range []string{"wt/", "_wt x"} {
+		t.Run(value, func(t *testing.T) {
+			path := setIn(t)
+			if _, _, err := SetUser(UserKeyBranchSuffix, value); err == nil {
+				t.Errorf("%q was accepted", value)
+			}
+			if _, err := os.Stat(path); err == nil {
+				t.Error("a rejected set wrote the file anyway")
+			}
+		})
+	}
+}
+
+// A file wt cannot read costs the integrations, because switching one on
+// under a misunderstanding is the harm. A branch has to be called something
+// either way, so that setting stays out of it and the repository answers.
+func TestAnUnreadableFileLeavesTheBranchSuffixToTheRepository(t *testing.T) {
+	u, _ := loadUser(writeUser(t, "branch_suffix = \nsuperset = true\n"))
+	if !u.Unusable {
+		t.Fatal("the file was not treated as unreadable")
+	}
+	if u.BranchSuffix != DefaultTypeSuffix || u.IsSet(UserKeyBranchSuffix) {
+		t.Errorf("BranchSuffix = %q, set = %v; want the default, unchosen",
+			u.BranchSuffix, u.IsSet(UserKeyBranchSuffix))
+	}
+}
+
+// The value the file wanted is named in the problem, not just the key.
+func TestUserBranchSuffixMustBeAString(t *testing.T) {
+	_, err := loadUser(writeUser(t, "branch_suffix = true\n"))
+	if err == nil || !strings.Contains(err.Error(), "is not a string") {
+		t.Fatalf("want a not-a-string error, got %v", err)
+	}
 }

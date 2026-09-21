@@ -53,6 +53,7 @@ func TestTheTwoFormatsResolveToTheSameConfiguration(t *testing.T) {
 	writeConf(t, tomlRoot, "worktree.toml", `main_branch = "trunk"
 worktree_branch_prefix = "fix_wt"
 worktree_type_suffix = "_wt"
+worktree_branch_suffix = ""
 worktree_default_type = "fix"
 worktree_types = ["fix", "feat"]
 developer_config_dirs = [".idea"]
@@ -67,6 +68,7 @@ run_tests_before_remove = true
 	writeConf(t, bashRoot, "worktree.conf", `MAIN_BRANCH="trunk"
 WORKTREE_BRANCH_PREFIX="fix_wt"
 WORKTREE_TYPE_SUFFIX="_wt"
+WORKTREE_BRANCH_SUFFIX=""
 WORKTREE_DEFAULT_TYPE="fix"
 WORKTREE_TYPES=(fix feat)
 DEVELOPER_CONFIG_DIRS=(.idea)
@@ -126,5 +128,25 @@ func TestLoadMissingConfig(t *testing.T) {
 func TestErrNoConfigNamesTheCommandThatFixesIt(t *testing.T) {
 	if !strings.Contains(ErrNoConfig.Error(), "wt init") {
 		t.Errorf("ErrNoConfig does not point at wt init: %q", ErrNoConfig)
+	}
+}
+
+// The two formats spell an empty branch suffix differently but must mean the
+// same thing by it: branches with no suffix, not a key the file left out.
+func TestTomlEmptyBranchSuffixIsAValue(t *testing.T) {
+	root := t.TempDir()
+	writeConf(t, root, "worktree.toml", "worktree_branch_suffix = \"\"\n")
+	c, err := Load(root, "main")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.BranchSuffix != "" || !c.BranchSuffixSet || c.TypeSuffix != DefaultTypeSuffix {
+		t.Errorf("BranchSuffix = %q, set = %v, TypeSuffix = %q; want \"\" true _wt",
+			c.BranchSuffix, c.BranchSuffixSet, c.TypeSuffix)
+	}
+	// A file that leaves it out leaves the choice open.
+	writeConf(t, root, "worktree.toml", "main_branch = \"main\"\n")
+	if c, err := Load(root, "main"); err != nil || c.BranchSuffix != DefaultTypeSuffix || c.BranchSuffixSet {
+		t.Errorf("absent: BranchSuffix = %q, set = %v, err %v", c.BranchSuffix, c.BranchSuffixSet, err)
 	}
 }

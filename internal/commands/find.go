@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/find"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -76,13 +77,13 @@ func Find(ctx *Context, pattern string) ([]find.Scored, error) {
 			}
 		}
 		return []find.Scored{{
-			Candidate: candidate(ctx.Repo, wt, ctx.Config.TypeSuffix, true),
+			Candidate: candidate(ctx.Repo, wt, ctx.Scheme(), true),
 			Tier:      find.TierExactWork,
 		}}, nil
 	}
 
 	if ctx != nil {
-		local, err := candidates(ctx.Repo, ctx.Config.TypeSuffix, true)
+		local, err := candidates(ctx.Repo, ctx.Scheme(), true)
 		if err != nil {
 			return nil, err
 		}
@@ -100,7 +101,7 @@ func Find(ctx *Context, pattern string) ([]find.Scored, error) {
 		if ctx != nil && r.MainRoot == ctx.Repo.MainRoot {
 			continue
 		}
-		cands, err := candidates(r, suffixFor(r), false)
+		cands, err := candidates(r, schemeFor(r, ctx.UserConfig()), false)
 		if err != nil {
 			continue
 		}
@@ -114,25 +115,26 @@ func Find(ctx *Context, pattern string) ([]find.Scored, error) {
 	return find.Best(scored), nil
 }
 
-// suffixFor reads another repository's type suffix, falling back to the default
-// when it has no readable configuration — a repo wt does not manage still has
-// worktrees worth finding.
-func suffixFor(r *repo.Repo) string {
+// schemeFor is how another repository spells its worktrees, falling back to
+// the defaults when it has no readable configuration — a repo wt does not
+// manage still has worktrees worth finding. The person's own branch suffix
+// travels with them, since it is the same person reading these names.
+func schemeFor(r *repo.Repo, u *config.User) naming.Scheme {
 	c, _, err := loadFor(r)
 	if err != nil {
-		return "_wt"
+		c = &config.Config{TypeSuffix: config.DefaultTypeSuffix, BranchSuffix: config.DefaultTypeSuffix}
 	}
-	return c.TypeSuffix
+	return scheme(r, c, u)
 }
 
-func candidates(r *repo.Repo, suffix string, local bool) ([]find.Candidate, error) {
+func candidates(r *repo.Repo, sch naming.Scheme, local bool) ([]find.Candidate, error) {
 	worktrees, err := r.Worktrees()
 	if err != nil {
 		return nil, err
 	}
 	out := make([]find.Candidate, 0, len(worktrees))
 	for _, wt := range worktrees {
-		out = append(out, candidate(r, wt, suffix, local))
+		out = append(out, candidate(r, wt, sch, local))
 	}
 	return out, nil
 }
@@ -141,10 +143,9 @@ func candidates(r *repo.Repo, suffix string, local bool) ([]find.Candidate, erro
 // the repository's name, a linked worktree by the work name its branch
 // carries, and failing that by its directory. That is the same name `wt list`
 // prints for it.
-func candidate(r *repo.Repo, wt repo.Worktree, suffix string, local bool) find.Candidate {
+func candidate(r *repo.Repo, wt repo.Worktree, sch naming.Scheme, local bool) find.Candidate {
 	work := r.Name
 	if !wt.IsMain {
-		sch := naming.Scheme{Parent: r.Parent, Repo: r.Name, Suffix: suffix}
 		switch _, w, ok := sch.Parse(wt.Branch); {
 		case ok:
 			work = w

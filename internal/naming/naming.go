@@ -4,6 +4,11 @@
 // below <repo><suffix>/ is character-for-character the branch name. Path and
 // branch therefore convert to each other with no rules to remember, and
 // `git worktree list` reads identically to the directory tree.
+//
+// A branch may carry a different suffix from the folders, or none at all —
+// feature/login-crash under feature_wt/login-crash — when a repository or the
+// person running wt says so. The layout on disk is unchanged by that: the
+// folders are wt's, and only the name the branch goes by moves.
 package naming
 
 import (
@@ -22,8 +27,15 @@ type Scheme struct {
 	Parent string
 	// Repo is the repository's name.
 	Repo string
-	// Suffix marks a type in both a branch name and a path, e.g. "_wt".
+	// Suffix marks a type in a branch name, e.g. "_wt". It is empty where
+	// the branches are to read feature/login-crash.
 	Suffix string
+	// DirSuffix marks a type in a worktree path. It is Suffix where it is
+	// not given, and DefaultSuffix where that is empty too: <Parent>/<Repo>
+	// is the main checkout, so worktrees under no suffix at all would be
+	// created inside it. The folders are wt's layout, not a name anybody
+	// types, which is why they always carry one.
+	DirSuffix string
 }
 
 // Branch builds the branch for a piece of work, e.g. fix_wt/login-crash.
@@ -39,7 +51,7 @@ func (s Scheme) Parse(branch string) (typ, work string, ok bool) {
 
 // Dir returns the canonical absolute path for a piece of work.
 func (s Scheme) Dir(typ, work string) string {
-	return filepath.Join(s.Parent, s.Repo+s.Suffix, typ+s.Suffix, work)
+	return filepath.Join(s.Parent, RepoDirName(s.Repo, s.dirSuffix()), typ+s.dirSuffix(), work)
 }
 
 // Classify reports which layout path follows for the given piece of work.
@@ -47,7 +59,7 @@ func (s Scheme) Classify(path, typ, work string) Layout {
 	switch path {
 	case s.Dir(typ, work):
 		return Canonical
-	case SupersetDir(s.Parent, s.Repo, typ, work, s.Suffix):
+	case SupersetDir(s.Parent, s.Repo, typ, work, s.dirSuffix()):
 		return Superset
 	default:
 		return Foreign
@@ -74,7 +86,7 @@ func (s Scheme) ClassifyBranch(path, branch string) (typ, work string, l Layout,
 // segment more, so its paths do not match.
 func (s Scheme) ClassifyPath(path string) (typ, work string, ok bool) {
 	sep := string(filepath.Separator)
-	rest, found := strings.CutPrefix(filepath.Clean(path), filepath.Join(s.Parent, s.Repo+s.Suffix)+sep)
+	rest, found := strings.CutPrefix(filepath.Clean(path), filepath.Join(s.Parent, RepoDirName(s.Repo, s.dirSuffix()))+sep)
 	if !found {
 		return "", "", false
 	}
@@ -82,11 +94,24 @@ func (s Scheme) ClassifyPath(path string) (typ, work string, ok bool) {
 	if !found || work == "" || strings.Contains(work, sep) {
 		return "", "", false
 	}
-	typ, ok = strings.CutSuffix(head, s.Suffix)
+	typ, ok = strings.CutSuffix(head, s.dirSuffix())
 	if !ok || typ == "" {
 		return "", "", false
 	}
 	return typ, work, true
+}
+
+// dirSuffix is what the folders carry, which is never nothing: the branch's
+// suffix where they were given none of their own, and DefaultSuffix where the
+// branches carry none either.
+func (s Scheme) dirSuffix() string {
+	switch {
+	case s.DirSuffix != "":
+		return s.DirSuffix
+	case s.Suffix != "":
+		return s.Suffix
+	}
+	return DefaultSuffix
 }
 
 func parseBranch(branch, suffix string) (typ, work string, ok bool) {
@@ -101,9 +126,22 @@ func parseBranch(branch, suffix string) (typ, work string, ok bool) {
 	return typ, rest, true
 }
 
+// DefaultSuffix marks a type in a worktree path, and in the branch that goes
+// with it, unless a repository says otherwise.
+const DefaultSuffix = "_wt"
+
+// RepoDirName is the folder holding one repository's worktrees:
+// <repo><suffix>, or <repo>_wt when it is given no suffix.
+func RepoDirName(repoName, suffix string) string {
+	if suffix == "" {
+		suffix = DefaultSuffix
+	}
+	return repoName + suffix
+}
+
 // StripPrefix returns the work name, or the branch unchanged when it does not
-// follow the convention. It takes a bare suffix because `wt find` reads the
-// branches of repositories it holds nothing else about.
+// follow the convention. It takes a bare branch suffix because `wt find` reads
+// the branches of repositories it holds nothing else about.
 func StripPrefix(branch, suffix string) string {
 	if _, work, ok := parseBranch(branch, suffix); ok {
 		return work
@@ -111,7 +149,8 @@ func StripPrefix(branch, suffix string) string {
 	return branch
 }
 
-// SupersetDir returns the path Superset builds for a piece of work. It differs
+// SupersetDir returns the path Superset builds for a piece of work. Like every
+// path here it takes the folders' suffix, never a branch's. It differs
 // from the canonical one by a repeated repository name, because Superset joins
 // its per-project worktree base directory with <repo>/<branch> and that base is
 // already <parent>/<repo><suffix>. No setting on either side removes the extra
@@ -123,7 +162,7 @@ func SupersetDir(parent, repoName, typ, work, suffix string) string {
 // SupersetRoot is the directory Superset puts every worktree of a repository
 // under.
 func SupersetRoot(parent, repoName, suffix string) string {
-	return filepath.Join(parent, repoName+suffix, repoName)
+	return filepath.Join(parent, RepoDirName(repoName, suffix), repoName)
 }
 
 // UnderSuperset reports whether a path lies inside Superset's tree. Classify

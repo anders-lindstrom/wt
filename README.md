@@ -154,6 +154,49 @@ The path tail below `<repo>_wt/` is character-for-character the branch name, so
 the two convert with no rules to remember. Why the layout is this shape, and the
 rules a tool building on it follows: [docs/worktree-conventions.md](docs/worktree-conventions.md).
 
+### Branches without the `_wt`
+
+The `_wt` on a branch is one setting. A repository whose branches should read
+`fix/login-crash` says so in its own file:
+
+```sh
+WORKTREE_BRANCH_SUFFIX=""
+```
+
+and a person who wants that wherever the repository has not decided says so in
+theirs, once, for every repository they work in:
+
+```sh
+wt config set branch_suffix ""      # or "-wt", or whatever yours carry
+```
+
+**The worktrees do not move for it.** The folders are wt's layout, not a name
+anybody types, and they keep the suffix `WORKTREE_TYPE_SUFFIX` gives them:
+
+```
+code/
+├─ myrepo/                                    ← the repo
+└─ myrepo_wt/
+   ├─ feat_wt/api-tidy/                       branch: feat/api-tidy
+   └─ fix_wt/login-crash/                     branch: fix/login-crash
+```
+
+The repository outranks the person, but only where it said something: a
+committed file that never mentions the suffix is not a decision, so whoever
+clones it may still name their own branches. `wt config` and `wt doctor` both
+print which file decided.
+
+What the suffix buys, and what dropping it costs: a suffixed branch says at a
+glance that wt made it, and `wt remove` renames an unmerged one out of the
+prefix to keep its commits (`fix_wt/login-crash` → `login-crash`). Without one,
+any `<word>/<name>` branch — `dependabot/npm-x`, an agent's own `claude/…` —
+reads as a worktree branch of type `<word>`. Nothing breaks: every lookup still
+goes through `git worktree list`, so only the names change.
+
+To go further and have the branches read `feature/login-crash`, give the
+repository the vocabulary to match — `WORKTREE_TYPES=(feature fix docs chore)`
+— and its folders follow the types, as `feature_wt/login-crash`.
+
 The type comes from the spec — `wt new fix/login-crash` — or, for a bare name,
 is read out of the name itself: `wt new fix_dev-123` creates `fix_wt/dev-123`.
 A name whose first word is not a type is left whole, and an explicit
@@ -479,6 +522,7 @@ is validated: **an unknown or misspelled key is an error, not silence.**
 | `MAIN_BRANCH` | string | detected from origin HEAD |
 | `WORKTREE_BRANCH_PREFIX` | string | `feat_wt` |
 | `WORKTREE_TYPE_SUFFIX` | string | `_wt` |
+| `WORKTREE_BRANCH_SUFFIX` | string | the type suffix |
 | `WORKTREE_DEFAULT_TYPE` | string | derived from the prefix |
 | `WORKTREE_TYPES` | list | Conventional Commits + `research` `spike` |
 | `DEVELOPER_CONFIG_DIRS` | list | `.cursor .claude .run .vscode .idea` |
@@ -489,6 +533,15 @@ is validated: **an unknown or misspelled key is an error, not silence.**
 | `TEST_COMMAND` | string | required when tests-before-remove is on |
 | `RUN_TESTS_BEFORE_REMOVE` | bool | `false` |
 | `SUPERSET_REGISTER` | `auto` `on` `off` | `auto` |
+
+`WORKTREE_TYPE_SUFFIX` marks a type in a worktree path and in the branch that
+goes with it; `WORKTREE_BRANCH_SUFFIX` overrides it for branches alone, and is
+the one string key where an empty value is a value rather than an absent key:
+`WORKTREE_BRANCH_SUFFIX=""` gives branches with no suffix at all, leaving every
+path where it was — see [branches without the `_wt`](#branches-without-the-_wt).
+Leave it out and the choice falls to whoever clones the repository.
+`WORKTREE_BRANCH_PREFIX` follows the type suffix when it is not set itself, so
+the two cannot silently disagree.
 
 `SUPERSET_REGISTER` decides whether a new worktree is also registered as a
 Superset workspace: `auto` when Superset can take it, `on` to additionally have
@@ -523,6 +576,7 @@ $XDG_CONFIG_HOME/wt/config.toml     # or ~/.config/wt/config.toml
 |---|---|---|
 | `superset` | `false` | whether wt registers worktrees it creates as Superset workspaces |
 | `github` | `true` | whether wt reads pull requests through the GitHub CLI |
+| `branch_suffix` | `_wt` | what your branches carry, where a repository does not say |
 
 ```
 wt config                      # everything, with where each value came from
@@ -534,9 +588,16 @@ wt config path                 # where that file is, whether or not it exists
 
 `get`, `set`, `unset` and `path` work from anywhere — these are not repository
 settings, so they do not need one. An unknown key is an error naming the key,
-the way `worktree.conf` treats one, and a value that is not `true` or `false`
-is refused before anything is written. `set` edits the file in place, so
-comments and ordering you put there survive.
+the way `worktree.conf` treats one; an integration takes `true` or `false` and
+nothing else, `branch_suffix` takes what a branch can carry before its slash
+(`""` included), and either is refused before anything is written. `set` edits
+the file in place, so comments and ordering you put there survive.
+
+`branch_suffix` is the one setting a repository can overrule, and only by
+naming its own `WORKTREE_BRANCH_SUFFIX`: see [branches without the
+`_wt`](#branches-without-the-_wt). A file wt cannot read costs you the
+integrations, never this one — a branch has to be called something, so the
+repository answers instead.
 
 **Your setting is the master switch.** With `superset = false` wt never runs
 the Superset CLI, whatever a repository's `SUPERSET_REGISTER` says; with it
@@ -546,6 +607,7 @@ true, that key still gets to decline. `wt config` shows the resolution:
 user config:   /Users/you/.config/wt/config.toml (no file yet)
   superset:    false (default)
   github:      true (default)
+  branch_suffix: "_wt" (default)
 superset mode: off (user config)
 ```
 

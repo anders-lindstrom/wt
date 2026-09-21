@@ -121,7 +121,7 @@ func planMigrate(ctx *Context, wt repo.Worktree, dest string) (MigratePlan, erro
 		Branch:    wt.Branch,
 		NewBranch: sch.Branch(typ, work),
 		Work:      work,
-		Superset:  naming.UnderSuperset(wt.Path, sch.Parent, sch.Repo, sch.Suffix),
+		Superset:  naming.UnderSuperset(wt.Path, sch.Parent, sch.Repo, ctx.Config.TypeSuffix),
 	}
 	if dirty, err := repo.Dirty(p.From, false); err == nil && dirty {
 		p.Dirty = true
@@ -187,15 +187,20 @@ func impliedTarget(ctx *Context, branch string) (typ, work string, ok bool) {
 	return ctx.Config.DefaultType, branch, true
 }
 
-// stripTypeSuffix lets a destination be written the way the branch reads —
-// "fix_wt/login-crash" as well as "fix/login-crash".
+// stripTypeSuffix lets a destination be written the way the branch or the
+// folder reads — "fix_wt/login-crash" as well as "fix/login-crash".
 func stripTypeSuffix(ctx *Context, dest string) string {
 	head, rest, found := strings.Cut(dest, "/")
-	if !found || ctx.Config.TypeSuffix == "" {
+	if !found {
 		return dest
 	}
-	if base, cut := strings.CutSuffix(head, ctx.Config.TypeSuffix); cut && slices.Contains(ctx.Config.Types, base) {
-		return base + "/" + rest
+	for _, suffix := range []string{ctx.Config.TypeSuffix, ctx.Scheme().Suffix} {
+		if suffix == "" {
+			continue
+		}
+		if base, cut := strings.CutSuffix(head, suffix); cut && slices.Contains(ctx.Config.Types, base) {
+			return base + "/" + rest
+		}
 	}
 	return dest
 }

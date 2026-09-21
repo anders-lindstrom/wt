@@ -93,16 +93,46 @@ func Open(cwd string) (*Context, error) {
 }
 
 // Scheme is how this repository spells its worktrees: the directory they sit
-// under, the repository's name and its type suffix. Every conversion between a
-// piece of work, its branch and its path is made through it.
+// under, the repository's name, its type suffix and the suffix its branches
+// carry. Every conversion between a piece of work, its branch and its path is
+// made through it.
 func (c *Context) Scheme() naming.Scheme {
-	return naming.Scheme{Parent: c.Repo.Parent, Repo: c.Repo.Name, Suffix: c.Config.TypeSuffix}
+	return scheme(c.Repo, c.Config, c.UserConfig())
+}
+
+// scheme pairs a repository with the configuration read for it and the person
+// running wt, which is all a Scheme is.
+func scheme(r *repo.Repo, c *config.Config, u *config.User) naming.Scheme {
+	suffix, _ := branchSuffix(c, u)
+	return naming.Scheme{Parent: r.Parent, Repo: r.Name, Suffix: suffix, DirSuffix: c.TypeSuffix}
+}
+
+// BranchSuffix is what this repository's branches carry before the slash, and
+// where that was decided.
+func (c *Context) BranchSuffix() (suffix, origin string) {
+	return branchSuffix(c.Config, c.UserConfig())
+}
+
+// branchSuffix is the one rule for it: the repository outranks the person only
+// where it said something, because a committed file that never mentions the
+// suffix is not a decision, and whoever clones it may name their own branches.
+// Absent both, the branch follows the folders.
+func branchSuffix(c *config.Config, u *config.User) (suffix, origin string) {
+	switch {
+	case c.BranchSuffixSet:
+		return c.BranchSuffix, "repo file"
+	case u.IsSet(config.UserKeyBranchSuffix):
+		return u.BranchSuffix, "user file"
+	default:
+		return c.BranchSuffix, "repo default"
+	}
 }
 
 // UserConfig is the person's own settings, defaulted for a Context assembled
-// by hand.
+// by hand, or for no Context at all — `wt find` scans other repositories with
+// or without one.
 func (c *Context) UserConfig() *config.User {
-	if c.User == nil {
+	if c == nil || c.User == nil {
 		return config.DefaultUser()
 	}
 	return c.User

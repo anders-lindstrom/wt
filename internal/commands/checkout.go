@@ -33,7 +33,7 @@ func Checkout(ctx *Context, branch, work string, opts NewOptions, w io.Writer) (
 		return "", fmt.Errorf("branch %s does not exist; use `wt new` to create one", branch)
 	}
 	if work == "" {
-		work = WorkNameFromBranch(branch, ctx.Config.TypeSuffix)
+		work = WorkNameFromBranch(branch, ctx.Scheme().Suffix)
 		if work == "" {
 			return "", fmt.Errorf("could not derive a work name from branch %q", branch)
 		}

@@ -156,3 +156,67 @@ func TestSupersetRegisterRefusesAList(t *testing.T) {
 		})
 	}
 }
+
+// WORKTREE_BRANCH_SUFFIX="" is the one string key where an empty value is a
+// value: it is how a repository asks for feat/login-crash branches. It names
+// branches only, so the type suffix — and with it every worktree path — is
+// untouched.
+func TestAnEmptyBranchSuffixIsAValue(t *testing.T) {
+	c, err := FromRaw(raw(t, "WORKTREE_BRANCH_SUFFIX=\"\"\n"), "main")
+	if err != nil {
+		t.Fatalf("FromRaw: %v", err)
+	}
+	if c.BranchSuffix != "" || !c.BranchSuffixSet {
+		t.Errorf("BranchSuffix = %q, set = %v; want \"\" true", c.BranchSuffix, c.BranchSuffixSet)
+	}
+	if c.TypeSuffix != DefaultTypeSuffix || c.BranchPrefix != "feat_wt" || c.DefaultType != "feat" {
+		t.Errorf("type suffix %q, prefix %q, default type %q; want _wt feat_wt feat",
+			c.TypeSuffix, c.BranchPrefix, c.DefaultType)
+	}
+
+	// A bare key says the same thing.
+	if c, err := FromRaw(raw(t, "WORKTREE_BRANCH_SUFFIX=\n"), "main"); err != nil || c.BranchSuffix != "" || !c.BranchSuffixSet {
+		t.Errorf("bare assignment: BranchSuffix = %q, set = %v, err %v", c.BranchSuffix, c.BranchSuffixSet, err)
+	}
+}
+
+// An absent key is not a choice: the branch follows the folders, and the
+// person's own setting is free to decide instead.
+func TestAnAbsentBranchSuffixFollowsTheTypeSuffix(t *testing.T) {
+	for conf, want := range map[string]string{
+		"":                           DefaultTypeSuffix,
+		"WORKTREE_TYPE_SUFFIX=-wt\n": "-wt",
+	} {
+		c, err := FromRaw(raw(t, conf), "main")
+		if err != nil {
+			t.Fatalf("FromRaw(%q): %v", conf, err)
+		}
+		if c.BranchSuffix != want || c.BranchSuffixSet {
+			t.Errorf("%q: BranchSuffix = %q, set = %v; want %q false", conf, c.BranchSuffix, c.BranchSuffixSet, want)
+		}
+	}
+}
+
+// The prefix is a type spelled with the repository's own suffix, so a repo
+// that changes the suffix does not have to restate the prefix to validate.
+func TestTheBranchPrefixFollowsTheTypeSuffix(t *testing.T) {
+	c, err := FromRaw(raw(t, "WORKTREE_TYPE_SUFFIX=-wt\n"), "main")
+	if err != nil {
+		t.Fatalf("FromRaw: %v", err)
+	}
+	if c.BranchPrefix != "feat-wt" || c.DefaultType != "feat" {
+		t.Errorf("prefix %q, default type %q; want feat-wt feat", c.BranchPrefix, c.DefaultType)
+	}
+}
+
+func TestASuffixWithASlashOrASpaceIsAnError(t *testing.T) {
+	for _, conf := range []string{
+		"WORKTREE_TYPE_SUFFIX=_wt/\n",
+		"WORKTREE_BRANCH_SUFFIX=\"_wt \"\n",
+	} {
+		_, err := FromRaw(raw(t, conf), "main")
+		if err == nil || !strings.Contains(err.Error(), "SUFFIX") {
+			t.Errorf("%q: want an error naming the key, got %v", conf, err)
+		}
+	}
+}

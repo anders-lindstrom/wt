@@ -246,7 +246,7 @@ func planFor(ctx *Context, wt repo.Worktree, opts RemoveOptions) Plan {
 		p.Reason = "not created by wt and not merged"
 	default:
 		p.Outcome = BranchKept
-		p.KeepAs = naming.StripPrefix(p.Branch, ctx.Config.TypeSuffix)
+		p.KeepAs = naming.StripPrefix(p.Branch, ctx.Scheme().Suffix)
 	}
 	return p
 }

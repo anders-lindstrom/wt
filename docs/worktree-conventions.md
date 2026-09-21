@@ -39,6 +39,14 @@ One layout fixes that for both kinds of reader:
 | A type: `feat`, `fix`, `research`, `spike`, … | Folder listings and `git branch` read as a list of work grouped by kind. |
 | The `_wt` suffix on the type | Marks a branch as made for a worktree. `wt remove` uses it: a merged branch is deleted, and an unmerged one `wt` made is renamed out of the prefix so its commits survive. |
 
+A repo that wants plain `fix/login-crash` branches sets
+`WORKTREE_BRANCH_SUFFIX=""`, and a person who wants it wherever the repo has
+not decided sets `branch_suffix` in their own config. That gives up the last
+mark: any `<word>/<name>` branch then reads as a worktree branch of type
+`<word>`. It renames nothing on disk — the folders above are the layout, and
+they keep their suffix — so every rule below holds unchanged, and the path is
+the branch wherever the two suffixes agree, which is the default.
+
 ## Provisioning belongs to `wt`
 
 A bare checkout is not usable: it has no gitignored developer config, no secrets, no

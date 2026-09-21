@@ -143,3 +143,51 @@ setup() {
     [[ "$output" == *"fix it by hand"* ]]
     [ "$(cat "$USER_CONFIG")" = "$before" ]
 }
+
+@test "branch_suffix names your branches and leaves the worktree where it was" {
+    cd "$REPO"
+    git commit -qm init --allow-empty
+
+    run wt config get branch_suffix
+    [ "$status" -eq 0 ]
+    [ "$output" = "_wt" ]
+
+    run wt config set branch_suffix ""
+    [ "$status" -eq 0 ]
+    [[ "$output" == "branch_suffix = \"\" in $USER_CONFIG" ]]
+
+    run wt new fix/login-crash --no-setup
+    [ "$status" -eq 0 ]
+    [[ "$output" == */demo_wt/fix_wt/login-crash ]]
+    [ -d "$BATS_TEST_TMPDIR/demo_wt/fix_wt/login-crash" ]
+
+    run git -C "$BATS_TEST_TMPDIR/demo_wt/fix_wt/login-crash" rev-parse --abbrev-ref HEAD
+    [ "$output" = "fix/login-crash" ]
+
+    run wt config
+    [[ "$output" == *'branch suffix: "" (user file); worktree paths keep "_wt"'* ]]
+}
+
+@test "a repository that names its own branch suffix outranks yours" {
+    cd "$REPO"
+    printf 'WORKTREE_BRANCH_SUFFIX="_wt"\n' >> bin/worktree/worktree.conf
+    git add -A && git commit -qm init
+
+    wt config set branch_suffix ""
+    run wt new fix/login-crash --no-setup
+    [ "$status" -eq 0 ]
+
+    run git -C "$BATS_TEST_TMPDIR/demo_wt/fix_wt/login-crash" rev-parse --abbrev-ref HEAD
+    [ "$output" = "fix_wt/login-crash" ]
+
+    run wt config
+    [[ "$output" == *'branch suffix: "_wt" (repo file)'* ]]
+}
+
+@test "a branch suffix that a branch cannot carry is refused" {
+    cd "$BATS_TEST_TMPDIR"
+    run wt config set branch_suffix "wt/"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"may not contain a slash"* ]]
+    [ ! -e "$USER_CONFIG" ]
+}

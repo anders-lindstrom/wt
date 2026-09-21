@@ -220,3 +220,70 @@ func TestClassifyPath(t *testing.T) {
 		})
 	}
 }
+
+// A repository may name its branches with a suffix of their own, or with
+// none at all. The worktrees do not move for it: the folders are wt's layout
+// and keep the suffix they had.
+func TestABranchSuffixOfItsOwnLeavesTheFoldersAlone(t *testing.T) {
+	s := Scheme{Parent: "/src", Repo: "demo", Suffix: "", DirSuffix: "_wt"}
+
+	if got := s.Branch("feature", "login-crash"); got != "feature/login-crash" {
+		t.Errorf("Branch = %q, want feature/login-crash", got)
+	}
+	dir := filepath.Join("/src", "demo_wt", "feature_wt", "login-crash")
+	if got := s.Dir("feature", "login-crash"); got != dir {
+		t.Errorf("Dir = %q, want %q", got, dir)
+	}
+	typ, work, ok := s.Parse("feature/login-crash")
+	if !ok || typ != "feature" || work != "login-crash" {
+		t.Errorf("Parse = %q %q %v, want feature login-crash true", typ, work, ok)
+	}
+	if typ, work, ok := s.ClassifyPath(dir); !ok || typ != "feature" || work != "login-crash" {
+		t.Errorf("ClassifyPath = %q %q %v, want feature login-crash true", typ, work, ok)
+	}
+	if got := s.Classify(dir, "feature", "login-crash"); got != Canonical {
+		t.Errorf("Classify = %v, want canonical", got)
+	}
+	if got := StripPrefix("feature/login-crash", ""); got != "login-crash" {
+		t.Errorf("StripPrefix = %q, want login-crash", got)
+	}
+}
+
+// The folders never go without a suffix, whatever the branches do: <parent>/
+// <repo> is the main checkout, so worktrees under no suffix at all would be
+// created inside it.
+func TestTheFoldersAlwaysCarryASuffix(t *testing.T) {
+	cases := []struct {
+		name            string
+		branch, folders string
+		want            string
+	}{
+		{"both given", "_wt", "-wt", "/src/demo-wt/feat-wt/login"},
+		{"folders follow the branch", "-wt", "", "/src/demo-wt/feat-wt/login"},
+		{"branches carry none", "", "_wt", "/src/demo_wt/feat_wt/login"},
+		{"nothing given at all", "", "", "/src/demo_wt/feat_wt/login"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s := Scheme{Parent: "/src", Repo: "demo", Suffix: c.branch, DirSuffix: c.folders}
+			if got := s.Dir("feat", "login"); got != filepath.FromSlash(c.want) {
+				t.Errorf("Dir = %q, want %q", got, c.want)
+			}
+			if _, _, ok := s.ClassifyPath(s.Dir("feat", "login")); !ok {
+				t.Error("a path this scheme builds must classify as its own")
+			}
+		})
+	}
+}
+
+func TestRepoDirNameKeepsTheDefaultSuffixWhenThereIsNone(t *testing.T) {
+	cases := map[string]string{"_wt": "demo_wt", "-wt": "demo-wt", "": "demo_wt"}
+	for suffix, want := range cases {
+		if got := RepoDirName("demo", suffix); got != want {
+			t.Errorf("RepoDirName(demo, %q) = %q, want %q", suffix, got, want)
+		}
+		if got := SupersetRoot("/src", "demo", suffix); got != filepath.Join("/src", want, "demo") {
+			t.Errorf("SupersetRoot(%q) = %q", suffix, got)
+		}
+	}
+}

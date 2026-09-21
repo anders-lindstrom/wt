@@ -90,3 +90,89 @@ func TestNewRefusesDotAndRootAsAWorkName(t *testing.T) {
 		t.Errorf("nothing is created before the refusal:\n%s", buf.String())
 	}
 }
+
+// A repository that names its branches without a suffix gets exactly that,
+// and its worktrees do not move for it: the folders are wt's layout.
+func TestNewWithoutABranchSuffixLeavesTheFoldersAlone(t *testing.T) {
+	conf := minimalConf + "WORKTREE_BRANCH_SUFFIX=\"\"\n"
+	ctx, err := Open(committedRepo(t, conf))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	path, err := New(ctx, "login-crash", NewOptions{NoSetup: true}, &buf)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	want := filepath.Join(ctx.Repo.Parent, "demo_wt", "feat_wt", "login-crash")
+	if path != want {
+		t.Errorf("path = %q, want %q", path, want)
+	}
+	if got := ctx.Repo.BranchAt(path); got != "feat/login-crash" {
+		t.Errorf("branch = %q, want feat/login-crash", got)
+	}
+	// The worktree must still be found by the name it was created under, and
+	// by the branch it is on.
+	for _, spec := range []string{"login-crash", "feat/login-crash"} {
+		if got, err := Path(ctx, spec); err != nil || got != want {
+			t.Errorf("Path(%q) = %q, %v; want %q", spec, got, err, want)
+		}
+	}
+}
+
+// The person's own setting names their branches wherever the repository has
+// not made the choice for them.
+func TestTheUserBranchSuffixAppliesWhereTheRepositoryIsSilent(t *testing.T) {
+	path := userConfigIn(t)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("branch_suffix = \"\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx, err := Open(committedRepo(t, minimalConf))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	wtPath, err := New(ctx, "fix/login-crash", NewOptions{NoSetup: true}, &buf)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if got := ctx.Repo.BranchAt(wtPath); got != "fix/login-crash" {
+		t.Errorf("branch = %q, want fix/login-crash", got)
+	}
+	if want := filepath.Join(ctx.Repo.Parent, "demo_wt", "fix_wt", "login-crash"); wtPath != want {
+		t.Errorf("path = %q, want %q", wtPath, want)
+	}
+	if suffix, origin := ctx.BranchSuffix(); suffix != "" || origin != "user file" {
+		t.Errorf("BranchSuffix = %q (%s), want \"\" (user file)", suffix, origin)
+	}
+}
+
+// A repository that does name its branches outranks the person: a committed
+// answer is the one everybody working on it shares.
+func TestTheRepositoryOutranksTheUserBranchSuffix(t *testing.T) {
+	path := userConfigIn(t)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("branch_suffix = \"\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx, err := Open(committedRepo(t, minimalConf+"WORKTREE_BRANCH_SUFFIX=_wt\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	wtPath, err := New(ctx, "fix/login-crash", NewOptions{NoSetup: true}, &buf)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if got := ctx.Repo.BranchAt(wtPath); got != "fix_wt/login-crash" {
+		t.Errorf("branch = %q, want fix_wt/login-crash", got)
+	}
+	if suffix, origin := ctx.BranchSuffix(); suffix != "_wt" || origin != "repo file" {
+		t.Errorf("BranchSuffix = %q (%s), want _wt (repo file)", suffix, origin)
+	}
+}

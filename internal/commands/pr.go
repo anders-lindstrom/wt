@@ -197,9 +197,9 @@ func prWorkName(ctx *Context, pr github.PR) (typ, work string) {
 	if t, w, ok := ctx.Scheme().Parse(pr.HeadRefName); ok && slices.Contains(ctx.Config.Types, t) {
 		return t, w
 	}
-	slug := shorten(WorkNameFromBranch(pr.HeadRefName, ctx.Config.TypeSuffix))
+	slug := shorten(WorkNameFromBranch(pr.HeadRefName, ctx.Scheme().Suffix))
 	if slug == "" {
-		slug = shorten(WorkNameFromBranch(pr.Title, ctx.Config.TypeSuffix))
+		slug = shorten(WorkNameFromBranch(pr.Title, ctx.Scheme().Suffix))
 	}
 	work = fmt.Sprintf("pr-%d", pr.Number)
 	if slug != "" {
