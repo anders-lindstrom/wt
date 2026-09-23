@@ -86,9 +86,11 @@ carry are shims that call `wt`.
    worktree. `--force` is for when you know that session is finished with it.
 7. **Ask before `wt init`.** A repo without `bin/worktree/worktree.conf` is not set up
    for `wt`. `wt init` adds that file to the repo, which is the owner's decision.
-8. **Rebase onto trunk with `wt sync`.** `wt sync` alone shows what would happen and
-   changes nothing; `wt sync run <work>` does it, `wt sync --run` does every worktree
-   the table calls ready, and `wt sync undo <work>` puts a run back. Each verb is
+8. **`wt sync` is opt-in.** An ordinary rebase onto trunk is plain git
+   (`git fetch && git rebase origin/<trunk>`); reach for `wt sync` when asked, or to
+   finish a run that stopped. `wt sync` alone shows what would happen and changes
+   nothing; `wt sync run <work>` does it, `wt sync --run` does every worktree the table
+   calls ready, and `wt sync undo <work>` puts a run back. Each verb is
    also a flag on the line you just recalled: `wt sync <work> --run`,
    `--resume`, `--undo`. `wt sync keep start` does the ready ones on a timer,
    leaving alone any worktree a session is in, and the table says when it last did.
