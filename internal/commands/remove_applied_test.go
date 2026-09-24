@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -129,5 +130,90 @@ func TestSweepPlanDeletesAGoneBranchWhoseCommitsWereRebasedOntoTrunk(t *testing.
 	p := planOf(t, ctx)
 	if !slices.Contains(branchNames(p.Delete), "left-behind") {
 		t.Fatalf("want the branch deleted:\n%s", rendered(p))
+	}
+}
+
+// Something else — a session ending, an editor closing its workspace — can
+// remove the worktree while the prompt is open. Saying "run the command
+// again" would send the user after a checkout that is gone.
+func TestRemoveSaysSomethingElseRemovedTheWorktree(t *testing.T) {
+	ctx, main, _ := sweepRepo(t)
+	var buf bytes.Buffer
+	path, err := New(ctx, "feat/elsewhere", NewOptions{NoSetup: true}, &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitFile(t, path, "kept-work")
+	buf.Reset()
+
+	for name, alsoBranch := range map[string]bool{"branch gone too": true, "branch left": false} {
+		t.Run(name, func(t *testing.T) {
+			if !exists(path) {
+				var err error
+				if path, err = New(ctx, "feat/elsewhere", NewOptions{NoSetup: true}, &buf); err != nil {
+					t.Fatal(err)
+				}
+				commitFile(t, path, "kept-work")
+			}
+			buf.Reset()
+			opts := RemoveOptions{Agents: []wtsync.Agent{}, Confirm: func(Plan) (bool, error) {
+				gitIn(t, main, "worktree", "remove", "--force", path)
+				if alsoBranch {
+					gitIn(t, main, "branch", "-D", "feat_wt/elsewhere")
+				}
+				return true, nil
+			}}
+			if err := RemoveAt(ctx, path, opts, &buf); err != nil {
+				t.Fatalf("the worktree is gone, which is what was asked: %v\n%s", err, buf.String())
+			}
+			out := buf.String()
+			if !strings.Contains(out, "Something else removed the worktree while the prompt was open; wt removed nothing.") {
+				t.Errorf("say what happened:\n%s", out)
+			}
+			want := "branch feat_wt/elsewhere is gone too"
+			if !alsoBranch {
+				want = "branch feat_wt/elsewhere is still here (1 commit ahead of origin/main); wt sweep lists it"
+			}
+			if !strings.Contains(out, want) {
+				t.Errorf("want %q in:\n%s", want, out)
+			}
+			if strings.Contains(out, "run the command again") {
+				t.Errorf("there is nothing left to run it on:\n%s", out)
+			}
+			if !alsoBranch {
+				gitIn(t, main, "branch", "-D", "feat_wt/elsewhere")
+			}
+		})
+	}
+}
+
+// Files disappearing from a checkout that was clean are a deletion in
+// progress, not somebody's edits.
+func TestRemoveSaysWhenSomethingElseIsStillRemovingTheWorktree(t *testing.T) {
+	was := vanishWait
+	vanishWait = 50 * time.Millisecond
+	t.Cleanup(func() { vanishWait = was })
+
+	ctx, _, _ := sweepRepo(t)
+	var buf bytes.Buffer
+	path, err := New(ctx, "feat/elsewhere", NewOptions{NoSetup: true}, &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitFile(t, path, "going")
+	buf.Reset()
+
+	opts := RemoveOptions{Agents: []wtsync.Agent{}, Confirm: func(Plan) (bool, error) {
+		return true, os.Remove(filepath.Join(path, "going"))
+	}}
+	err = RemoveAt(ctx, path, opts, &buf)
+	if err == nil || !strings.Contains(err.Error(), "is being removed by something else") {
+		t.Fatalf("want an error naming the other removal, got %v\n%s", err, buf.String())
+	}
+	if !strings.Contains(buf.String(), "wt removed nothing.") || strings.Contains(buf.String(), "Removal would now do this") {
+		t.Errorf("say what is happening instead of re-planning:\n%s", buf.String())
+	}
+	if !ctx.Repo.BranchExists("feat_wt/elsewhere") {
+		t.Error("wt must not touch the branch")
 	}
 }

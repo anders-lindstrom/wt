@@ -11,6 +11,8 @@ want read out to them; the full story is in git history and in
 - `wt remove` and `wt sweep` now delete a branch whose every commit is on trunk
   under a new id, which is what "rebase and merge" on GitHub leaves locally.
   Before, it read as "not merged: 11 commits ahead" and was kept.
+- When something else removes a worktree while `wt remove` is asking, it now
+  says so and what became of the branch, instead of "run the command again".
 
 ## 2026-09-21 18:05 — Your branches, named the way you name branches
 
