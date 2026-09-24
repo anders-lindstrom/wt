@@ -108,7 +108,7 @@ func newPrCheckoutCmd() *cobra.Command {
 		Example: "  wt pr checkout                  # pick one of the open pull requests\n" +
 			"  wt pr checkout 12               # straight to that one, no listing\n" +
 			"  wt pr checkout 12 --no-setup    # the worktree, nothing else\n" +
-			"  wt pr checkout 12 --skip-build  # provision, but do not build\n" +
+			"  wt pr checkout 12 --no-build    # provision, but do not build\n" +
 			"  wt pr checkout 12 --no-superset # keep it out of the Superset app",
 		Args: cobra.MaximumNArgs(1),
 		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {

@@ -5,15 +5,17 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/anders-lindstrom/wt/internal/commands"
 )
 
-func TestConfirmPushDefaultsToYes(t *testing.T) {
+func TestConfirmPushDefaultsToNo(t *testing.T) {
 	for _, tc := range []struct {
 		in   string
 		want bool
 	}{
-		{"\n", true},
+		{"\n", false},
 		{"y\n", true},
 		{"YES\n", true},
 		{"n\n", false},
@@ -26,7 +28,7 @@ func TestConfirmPushDefaultsToYes(t *testing.T) {
 		if err != nil || got != tc.want {
 			t.Errorf("answer %q: got %v, %v; want %v", tc.in, got, err, tc.want)
 		}
-		if !strings.Contains(out.String(), "push bump with --force-with-lease? [Y/n]") {
+		if !strings.Contains(out.String(), "push bump with --force-with-lease? [y/N]") {
 			t.Errorf("question %q", out.String())
 		}
 	}
@@ -34,7 +36,7 @@ func TestConfirmPushDefaultsToYes(t *testing.T) {
 	if _, err := confirmPush(newPrompter(strings.NewReader("\n"), &out))([]string{"a", "b"}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "push a, b with --force-with-lease? [Y/n]") {
+	if !strings.Contains(out.String(), "push a, b with --force-with-lease? [y/N]") {
 		t.Errorf("question %q", out.String())
 	}
 }
@@ -244,7 +246,31 @@ func TestRunQuestionsShareOneReader(t *testing.T) {
 	if ok, _ := confirmPush(p)([]string{"bump"}); !ok {
 		t.Error("the push question lost the y typed ahead for it")
 	}
-	if want := "rebase bump? [y/N] push bump with --force-with-lease? [Y/n] "; out.String() != want {
+	if want := "rebase bump? [y/N] push bump with --force-with-lease? [y/N] "; out.String() != want {
 		t.Errorf("questions = %q, want %q", out.String(), want)
+	}
+}
+
+// With nobody at a terminal, a bulk run rebases nothing without --yes; a
+// named worktree goes ahead; --yes asks nothing, the push included.
+func TestRunOptionsAskNobodyAndRefuseBulkWithoutATerminal(t *testing.T) {
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetIn(strings.NewReader(""))
+	cmd.SetOut(&out)
+
+	bulk, _ := runOptions(cmd, syncVerbFlags{run: true}, true)
+	if bulk.Confirm == nil {
+		t.Fatal("a bulk run with no terminal must not go ahead unasked")
+	}
+	if ok, _ := bulk.Confirm([]string{"bump"}); ok || !strings.Contains(out.String(), "Pass --yes to rebase bump.") {
+		t.Errorf("want a no that says how to say yes: %v %q", ok, out.String())
+	}
+	if named, _ := runOptions(cmd, syncVerbFlags{run: true}, false); named.Confirm != nil {
+		t.Error("a named worktree with no terminal goes ahead")
+	}
+	yes, p := runOptions(cmd, syncVerbFlags{run: true, yes: true}, true)
+	if yes.Confirm != nil || yes.ConfirmPush != nil || p != nil {
+		t.Error("--yes asks nothing")
 	}
 }

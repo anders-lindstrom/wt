@@ -2,6 +2,8 @@ package commands
 
 import (
 	"bytes"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -122,10 +124,10 @@ func TestSelectReposByRootAndByProfile(t *testing.T) {
 	if _, err := SelectRepos(u, Selection{Roots: []string{"c"}}); err == nil || !strings.Contains(err.Error(), "the roots are: a b") {
 		t.Errorf("unknown root: %v", err)
 	}
-	if _, err := SelectRepos(u, Selection{Profile: "q"}); err == nil || !strings.Contains(err.Error(), "the profiles are: p") {
+	if _, err := SelectRepos(u, Selection{Profiles: []string{"q"}}); err == nil || !strings.Contains(err.Error(), "the profiles are: p") {
 		t.Errorf("unknown profile: %v", err)
 	}
-	set, err = SelectRepos(u, Selection{Profile: "p"})
+	set, err = SelectRepos(u, Selection{Profiles: []string{"p"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +197,7 @@ func TestSweepAllAsksOnceAndSweepsEveryRepository(t *testing.T) {
 	opts := SweepAllOptions{SweepOptions: SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}},
 		Ask: func(q string) (bool, error) { asked = append(asked, q); return true, nil }}
 	var buf bytes.Buffer
-	err := SweepAll(u, Selection{Profile: "p"}, opts, &buf)
+	err := SweepAll(u, Selection{Profiles: []string{"p"}}, opts, &buf)
 	if err == nil || !strings.Contains(err.Error(), "1 of 3 repositories could not be swept in full: gone") {
 		t.Fatalf("want the missing entry reported: %v\n%s", err, buf.String())
 	}
@@ -217,7 +219,7 @@ func TestSweepAllChangesNothingWhenTheAnswerIsNo(t *testing.T) {
 	opts := SweepAllOptions{SweepOptions: SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}},
 		Ask: func(string) (bool, error) { return false, nil }}
 	var buf bytes.Buffer
-	if err := SweepAll(u, Selection{Profile: "p"}, opts, &buf); err != nil {
+	if err := SweepAll(u, Selection{Profiles: []string{"p"}}, opts, &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !exists(path) || !strings.Contains(buf.String(), "Nothing was swept.") {
@@ -226,7 +228,8 @@ func TestSweepAllChangesNothingWhenTheAnswerIsNo(t *testing.T) {
 }
 
 // The listing says per repository whether trunk declares wt sync, and names a
-// wt configuration that does not parse; --doctor runs doctor in each.
+// wt configuration that does not parse; wt doctor --all runs doctor in each,
+// and wt sync doctor where trunk declares wt sync.
 func TestReposShowsSyncAndABrokenConfiguration(t *testing.T) {
 	root := realTempDir(t)
 	synced := managedRepo(t, root, "synced")
@@ -257,8 +260,9 @@ func TestReposShowsSyncAndABrokenConfiguration(t *testing.T) {
 		}
 	}
 	buf.Reset()
-	err := Repos(u, Selection{}, ReposOptions{Doctor: true}, &buf)
-	if err == nil || !strings.Contains(buf.String(), "broken     1 problem(s)") || !strings.Contains(buf.String(), "plain      ✓") {
+	err := DoctorAll(u, Selection{All: true}, &buf)
+	if err == nil || !strings.Contains(buf.String(), "broken     1 problem(s)") || !strings.Contains(buf.String(), "plain      ✓") ||
+		!strings.Contains(buf.String(), "~ sync ") {
 		t.Errorf("want doctor per repository and a failure: %v\n%s", err, buf.String())
 	}
 }
@@ -274,8 +278,63 @@ func TestSelectReposRefusesAnUnreadableFileAndMergesDuplicates(t *testing.T) {
 	}
 	dir := managedRepo(t, realTempDir(t), "api")
 	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{dir, dir + "/", filepath.Join(dir, ".")}}}}
-	set, err := SelectRepos(u, Selection{Profile: "p"})
+	set, err := SelectRepos(u, Selection{Profiles: []string{"p"}})
 	if err != nil || len(set.Repos) != 1 {
 		t.Errorf("want one repository, got %v, %v", targetNames(set.Repos), err)
+	}
+}
+
+// --dry-run prints the plan and changes nothing, on remove and on sweep, in
+// one repository or across many.
+func TestDryRunPrintsThePlanAndChangesNothing(t *testing.T) {
+	ctx, _, _ := sweepRepo(t)
+	path := mergedWorktree(t, ctx, "fix/one")
+	var buf bytes.Buffer
+	if err := RemoveAt(ctx, path, RemoveOptions{DryRun: true, Agents: []wtsync.Agent{}}, &buf); err != nil {
+		t.Fatal(err)
+	}
+	if !exists(path) || !strings.Contains(buf.String(), "Nothing was removed: --dry-run.") {
+		t.Errorf("remove --dry-run:\n%s", buf.String())
+	}
+	buf.Reset()
+	if err := Sweep(ctx, SweepOptions{NoFetch: true, DryRun: true, Yes: false, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}}, &buf); err != nil {
+		t.Fatal(err)
+	}
+	if !exists(path) || !strings.Contains(buf.String(), "Nothing was swept: --dry-run.") {
+		t.Errorf("sweep --dry-run:\n%s", buf.String())
+	}
+	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{ctx.Repo.MainRoot}}}}
+	buf.Reset()
+	opts := SweepAllOptions{SweepOptions: SweepOptions{NoFetch: true, DryRun: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}},
+		Ask: func(string) (bool, error) { t.Fatal("a dry run asks nothing"); return false, nil }}
+	if err := SweepAll(u, Selection{Profiles: []string{"p"}}, opts, &buf); err != nil {
+		t.Fatal(err)
+	}
+	if !exists(path) || !strings.Contains(buf.String(), "Nothing was swept: --dry-run.") {
+		t.Errorf("sweep --all --dry-run:\n%s", buf.String())
+	}
+}
+
+// AcrossRepos prints each repository's output under its name, in order, and
+// names the ones it could not run in; --profile takes several names.
+func TestAcrossReposPrintsEachRepositoryUnderItsName(t *testing.T) {
+	root := realTempDir(t)
+	a, b := managedRepo(t, root, "alpha"), managedRepo(t, root, "beta")
+	u := &config.User{Profiles: []config.Profile{
+		{Name: "one", Repos: []string{a}},
+		{Name: "two", Repos: []string{b, filepath.Join(root, "gone")}},
+	}}
+	var buf bytes.Buffer
+	err := AcrossRepos(u, Selection{Profiles: []string{"one", "two"}}, &buf, func(ctx *Context, w io.Writer) error {
+		_, err := fmt.Fprintf(w, "in %s\n", ctx.Repo.Name)
+		return err
+	})
+	if err == nil || !strings.Contains(err.Error(), "1 of 3 repositories failed: gone") {
+		t.Errorf("err = %v", err)
+	}
+	out := buf.String()
+	ia, ib := strings.Index(out, "== alpha"), strings.Index(out, "== beta")
+	if ia < 0 || ib < ia || !strings.Contains(out, "in alpha") || !strings.Contains(out, "in beta") {
+		t.Errorf("sections:\n%s", out)
 	}
 }

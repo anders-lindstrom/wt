@@ -33,6 +33,8 @@ type RemoveOptions struct {
 	// consulted only for a locked worktree, which is rare — every other
 	// removal costs nothing.
 	Agents []wtsync.Agent
+	// DryRun prints the plan and stops.
+	DryRun bool
 	// Landed answers whether a branch at tip is a pull request GitHub merged
 	// into trunk, and which. `wt sweep` passes the listing it has just read;
 	// nil reads the cache, which is all a plain `wt remove` may do.
@@ -185,6 +187,10 @@ func removeWorktree(ctx *Context, wt repo.Worktree, opts RemoveOptions, w io.Wri
 		return fmt.Errorf("%s is locked and its holder is still there: %s\n"+
 			"  Finish or stop it, or pass --force to break the lock",
 			wt.Path, plan.LockHolder)
+	}
+	if opts.DryRun {
+		fmt.Fprintln(w, "Nothing was removed: --dry-run.")
+		return nil
 	}
 
 	if opts.Confirm != nil {

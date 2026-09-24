@@ -74,7 +74,7 @@ func TestSyncKeepRunRebasesAReadyWorktreeAndRecordsThePass(t *testing.T) {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	s := out.String()
-	for _, want := range []string{"wt sync keep run  origin/main ", "→", "every ready worktree: bump\n", "✓ rebased 1 commit", "✓ pushed feat_wt/bump", "kept: rebased 1, pushed 1, left 0 · log "} {
+	for _, want := range []string{"wt sync keep once  origin/main ", "→", "every ready worktree: bump\n", "✓ rebased 1 commit", "✓ pushed feat_wt/bump", "kept: rebased 1, pushed 1, left 0 · log "} {
 		if !strings.Contains(s, want) {
 			t.Errorf("output lacks %q:\n%s", want, s)
 		}
@@ -141,7 +141,7 @@ func TestSyncKeepRunDoesNothingWhileTrunkIsUnchanged(t *testing.T) {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	sha := gitOut(t, ctx.Repo.MainRoot, "rev-parse", "origin/main")
-	if want := "wt sync keep run  origin/main " + sha[:7] + " unchanged; nothing to do\n"; out.String() != want {
+	if want := "wt sync keep once  origin/main " + sha[:7] + " unchanged; nothing to do\n"; out.String() != want {
 		t.Fatalf("second pass printed %q, want %q", out.String(), want)
 	}
 	logPath, _ := keepFiles(t, ctx)
@@ -376,7 +376,7 @@ func TestSyncKeepRunNoPushRepeatsThePushCommandUntilItIsPushedByHand(t *testing.
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	s := out.String()
-	for _, want := range []string{"wt sync keep run  origin/main " + sha[:7] + " unchanged; 1 push to retry\n", "push: git -C " + bump + " push --force-with-lease --force-if-includes", "kept: trunk unchanged, pushed 0, unpushed 1 · log "} {
+	for _, want := range []string{"wt sync keep once  origin/main " + sha[:7] + " unchanged; 1 push to retry\n", "push: git -C " + bump + " push --force-with-lease --force-if-includes", "kept: trunk unchanged, pushed 0, unpushed 1 · log "} {
 		if !strings.Contains(s, want) {
 			t.Errorf("output lacks %q:\n%s", want, s)
 		}
@@ -396,7 +396,7 @@ func TestSyncKeepRunNoPushRepeatsThePushCommandUntilItIsPushedByHand(t *testing.
 	if err := SyncKeepRun(ctx, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
-	if want := "wt sync keep run  origin/main " + sha[:7] + " unchanged; nothing to do\n"; out.String() != want {
+	if want := "wt sync keep once  origin/main " + sha[:7] + " unchanged; nothing to do\n"; out.String() != want {
 		t.Fatalf("pushed by hand, yet: %q", out.String())
 	}
 	if st := readKeep(t, ctx); len(st.Unpushed) != 0 {
@@ -470,7 +470,7 @@ func TestSyncTableAndDoctorSayWhenTheRepositoryWasKept(t *testing.T) {
 	if err := SyncDoctor(ctx, DoctorOptions{}, &out); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "keeper       warn   no launchd here; run wt sync keep run from cron; last pass Mar 4 14:20 trunk unchanged; problem since Mar 4 14:20: failed: not completed: bump (push failed); log "+logPath+"\n") {
+	if !strings.Contains(out.String(), "keeper       warn   no launchd here; run wt sync keep once from cron; last pass Mar 4 14:20 trunk unchanged; problem since Mar 4 14:20: failed: not completed: bump (push failed); log "+logPath+"\n") {
 		t.Fatalf("doctor off macOS:\n%s", out.String())
 	}
 	out.Reset()
@@ -484,7 +484,7 @@ func TestSyncTableAndDoctorSayWhenTheRepositoryWasKept(t *testing.T) {
 	if err := SyncKeepStatus(ctx, time.Now(), &out); err != nil {
 		t.Fatal(err)
 	}
-	if want := "keeper   no launchd on this platform; run wt sync keep run from cron\nlast     Mar 4 14:20  trunk unchanged\nproblem  since Mar 4 14:20: failed: not completed: bump (push failed)\nlog      " + logPath + "\n"; out.String() != want {
+	if want := "keeper   no launchd on this platform; run wt sync keep once from cron\nlast     Mar 4 14:20  trunk unchanged\nproblem  since Mar 4 14:20: failed: not completed: bump (push failed)\nlog      " + logPath + "\n"; out.String() != want {
 		t.Fatalf("status off macOS:\n%s\nwant:\n%s", out.String(), want)
 	}
 }
@@ -560,7 +560,7 @@ func TestSyncKeepStartAndStopDriveLaunchd(t *testing.T) {
 	s := out.String()
 	for _, want := range []string{
 		"installed " + plist + "\n",
-		"runs wt sync keep run every 1h in " + ctx.Repo.MainRoot + "; first at 15:20\n",
+		"runs wt sync keep once every 1h in " + ctx.Repo.MainRoot + "; first at 15:20\n",
 		"pushes through this shell's ssh agent (SSH_AUTH_SOCK captured; 1Password may ask to approve the key)\n",
 		"· wt sync keep status\n",
 	} {
@@ -923,7 +923,7 @@ func TestSyncKeepStartAndStopAreRefusedWithoutLaunchd(t *testing.T) {
 	if err := SyncKeepStop(ctx, &out); err != ErrNoLaunchd {
 		t.Fatalf("stop: %v", err)
 	}
-	if err := SyncKeepStatus(ctx, time.Now(), &out); err != nil || !strings.HasPrefix(out.String(), "keeper   no launchd on this platform; run wt sync keep run from cron\n") {
+	if err := SyncKeepStatus(ctx, time.Now(), &out); err != nil || !strings.HasPrefix(out.String(), "keeper   no launchd on this platform; run wt sync keep once from cron\n") {
 		t.Fatalf("status: %v\n%s", err, out.String())
 	}
 }

@@ -1,12 +1,15 @@
 package commands
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // doctorRepos checks the roots and profiles every multi-repository command
@@ -89,4 +92,95 @@ func DoctorRepositories(u *config.User, userErr error, w io.Writer) int {
 		fmt.Fprintf(w, "%d problem(s) found.\n", problems)
 	}
 	return problems
+}
+
+// DoctorAll is wt doctor across repositories: in every one a selection names,
+// a few at a time, wt doctor and — where trunk declares wt sync — wt sync
+// doctor, each repository a line with what they found under it; then the
+// roots and profiles, once. It fails when either found a problem; a sync
+// warning is advice, as it is in wt sync doctor.
+func DoctorAll(u *config.User, sel Selection, w io.Writer) error {
+	set, err := SelectRepos(u, sel)
+	if err != nil {
+		return err
+	}
+	type checked struct {
+		problems, warnings int
+		lines              []string
+	}
+	results := eachRepo(set.Repos, repoParallelism, func(t RepoTarget) checked {
+		if t.Problem != "" {
+			return checked{problems: 1, lines: []string{"  ! " + t.Problem}}
+		}
+		ctx := OpenLenient(t.Path, io.Discard)
+		if ctx == nil {
+			return checked{problems: 1, lines: []string{"  ! not a git repository"}}
+		}
+		var c checked
+		var buf bytes.Buffer
+		n, err := doctor(ctx, &buf, false)
+		c.problems = n
+		for _, l := range strings.Split(buf.String(), "\n") {
+			if strings.HasPrefix(l, "  ! ") {
+				c.lines = append(c.lines, l)
+			}
+		}
+		if err != nil {
+			c.problems++
+			c.lines = append(c.lines, "  ! "+err.Error())
+		}
+		if ctx.ConfigError != nil {
+			return c
+		}
+		if _, err := wtsync.LoadFromTrunk(ctx.Repo.MainRoot, ctx.Config.MainBranch); err != nil {
+			return c
+		}
+		buf.Reset()
+		if err := SyncDoctor(ctx, DoctorOptions{}, &buf); err != nil {
+			c.problems++
+			c.lines = append(c.lines, "  ! sync: "+oneLine(err.Error()))
+		}
+		for _, l := range strings.Split(buf.String(), "\n") {
+			if f := strings.Fields(l); len(f) >= 2 && f[1] == "warn" {
+				c.warnings++
+				c.lines = append(c.lines, "  ~ sync "+f[0]+": "+strings.Join(f[2:], " "))
+			}
+		}
+		return c
+	})
+	home, _ := os.UserHomeDir()
+	width := 0
+	for _, t := range set.Repos {
+		width = max(width, len(t.Name))
+	}
+	total := 0
+	for i, c := range results {
+		t := set.Repos[i]
+		var verdict []string
+		if c.problems > 0 {
+			verdict = append(verdict, fmt.Sprintf("%d problem(s)", c.problems))
+		}
+		if c.warnings > 0 {
+			verdict = append(verdict, fmt.Sprintf("%d sync warning(s)", c.warnings))
+		}
+		if len(verdict) == 0 {
+			verdict = []string{"✓"}
+		}
+		fmt.Fprintf(w, "%-*s  %-26s  %s\n", width, t.Name, strings.Join(verdict, ", "), abbreviateHome(t.Path, home))
+		for _, l := range c.lines {
+			fmt.Fprintln(w, l)
+		}
+		total += c.problems
+	}
+	fmt.Fprintln(w)
+	report := func(format string, args ...any) {
+		total++
+		fmt.Fprintf(w, "  ! "+format+"\n", args...)
+	}
+	doctorRepos(u, w, report)
+	if total > 0 {
+		return fmt.Errorf("%d problem(s) found; wt doctor in a repository says more", total)
+	}
+	fmt.Fprintln(w, "No problems found.")
+	return nil
 }

@@ -11,11 +11,11 @@ import (
 func newMigrateCmd() *cobra.Command {
 	var opts commands.MigrateOptions
 	cmd := &cobra.Command{
-		Use:     "migrate <worktree> [<type>/<name>]",
+		Use:     "migrate <work> [<type>/<name>]",
 		Aliases: []string{"move"},
 		Short:   "Move a worktree where it belongs, renaming it if you like",
 		Long: "Move a worktree to the path this repository's layout gives it.\n\n" +
-			"<worktree> is any of the three things `wt list` prints for it: the work\n" +
+			"<work> is any of the three things `wt list` prints for it: the work\n" +
 			"name, the branch, or the path. Add a destination to change the type, the\n" +
 			"name, or both — the branch is renamed to match, because in this layout the\n" +
 			"path and the branch are the same words.\n\n" +
@@ -43,7 +43,7 @@ func newMigrateCmd() *cobra.Command {
 		}),
 	}
 	cmd.Flags().BoolVar(&opts.DryRun, "dry-run", false, "show what would happen, change nothing")
-	cmd.Flags().BoolVar(&opts.Force, "force", false, "move it even with an agent session working in it")
+	cmd.Flags().BoolVarP(&opts.Force, "force", "f", false, "move it even with an agent session working in it")
 	return cmd
 }
 

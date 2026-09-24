@@ -11,7 +11,7 @@ import (
 func newRemoveCmd() *cobra.Command {
 	var me bool
 	var meAt string
-	var yes, force bool
+	var yes, force, dryRun bool
 	cmd := &cobra.Command{
 		Use:     "remove <work>",
 		Aliases: []string{"rm"},
@@ -42,33 +42,34 @@ func newRemoveCmd() *cobra.Command {
 			"that is the fact the whole decision turns on. \"clean\" is about the\n" +
 			"checkout, not the branch: it means nothing is uncommitted.\n\n" +
 			"The worktree can be named by anything `wt list` prints — the work name,\n" +
-			"the branch, or the path — or by . for the one you are standing in, which\n" +
-			"--me also means. Matching is exact and stays inside this repository; a\n" +
-			"work name used under two types has to be named by its type as well.\n\n" +
+			"the branch, or the path — or by . for the one you are standing in.\n" +
+			"Matching is exact and stays inside this repository; a work name used\n" +
+			"under two types is named with its type, as in wt remove fix/login-crash.\n\n" +
 			"What the removal will do is printed before it does it. In a terminal you\n" +
 			"are then asked to confirm; --yes skips the question, and a script or hook\n" +
-			"with no terminal is never asked.\n\n" +
+			"with no terminal is never asked: it named the worktree. --dry-run prints\n" +
+			"the plan and stops.\n\n" +
 			"A worktree can carry a git lock — an agent session takes one for the\n" +
 			"directory it works in. A lock whose process has exited is released and\n" +
 			"the removal goes ahead; one whose holder is still running stops it before\n" +
 			"the question is asked, and --force is how you say you mean it anyway.",
-		Example: "  wt remove login-crash          # say where the branch stands, then ask\n" +
-			"  wt remove fix/login-crash      # when two types share a work name\n" +
-			"  wt remove login-crash --yes    # do not ask (scripts, hooks)\n" +
-			"  wt remove login-crash --force  # break a lock a session still holds\n" +
-			"  wt remove --me                 # the one you are standing in; or wt remove .",
+		Example: "  wt remove login-crash            # say where the branch stands, then ask\n" +
+			"  wt remove login-crash --dry-run  # what it would do; change nothing\n" +
+			"  wt remove login-crash --yes      # do not ask (scripts, hooks)\n" +
+			"  wt remove login-crash --force    # break a lock a session still holds\n" +
+			"  wt remove .                      # the one you are standing in",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !me && meAt == "" && len(args) != 1 {
-				return fmt.Errorf("needs the worktree to remove, or --me to remove the " +
-					"one you are in — for example: wt remove login-crash")
+				return fmt.Errorf("needs the worktree to remove, or . for the one " +
+					"you are in — for example: wt remove login-crash")
 			}
 			ctx, err := openContext()
 			if err != nil {
 				return err
 			}
-			opts := commands.RemoveOptions{Force: force}
+			opts := commands.RemoveOptions{Force: force, DryRun: dryRun}
 			if !yes && canAsk(cmd) {
 				opts.Confirm = confirmRemoval(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()))
 			}
@@ -81,10 +82,15 @@ func newRemoveCmd() *cobra.Command {
 			return commands.Remove(ctx, args[0], opts, cmd.OutOrStdout())
 		},
 	}
+	// . says the same and is what every other command takes; --me stays for
+	// the lines already written with it.
 	cmd.Flags().BoolVar(&me, "me", false, "remove the worktree you are standing in")
+	_ = cmd.Flags().MarkHidden("me")
 	cmd.Flags().BoolVarP(&force, "force", "f", false,
 		"break a git worktree lock whose holder is still running")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask for confirmation")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what removal would do and change nothing")
+	cmd.MarkFlagsMutuallyExclusive("yes", "dry-run")
 	cmd.Flags().StringVar(&meAt, "me-at", "", "remove the worktree at this path (used by wt_rm_me)")
 	_ = cmd.Flags().MarkHidden("me-at")
 	return cmd

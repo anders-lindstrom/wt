@@ -1,6 +1,9 @@
 package main
 
 import (
+	"errors"
+	"io"
+
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
@@ -12,6 +15,7 @@ const pathWidthHelp = "On a terminal, paths are shown from ~ and shortened from 
 
 func newListCmd() *cobra.Command {
 	var opts commands.ListOptions
+	var sel selectionFlags
 	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
@@ -29,25 +33,35 @@ func newListCmd() *cobra.Command {
 			"`wt config set github false` turns the whole thing off.\n\n" +
 			"A pull request merged somewhere other than trunk says where: a stacked\n" +
 			"one reads `#31 merged into feat_wt/its-parent`, because nothing of it\n" +
-			"has reached trunk yet.\n\n" + pathWidthHelp,
-		Example: "  wt list            # work name, branch and path for every worktree\n" +
-			"  wt ls              # the same, for the impatient\n" +
-			"  wt list | cat      # whole paths, however narrow the terminal\n" +
-			"  wt list --no-pr    # no pull requests, and no call to GitHub\n" +
-			"  wt list --refresh  # ask GitHub again rather than use the cache",
+			"has reached trunk yet.\n\n" +
+			"--all, --roots or --profile list every repository they name, one\n" +
+			"section each.\n\n" + pathWidthHelp,
+		Example: "  wt ls                        # work name, branch and path for each worktree\n" +
+			"  wt list | cat                # whole paths, however narrow the terminal\n" +
+			"  wt list --all --no-pr        # every repository, no call to GitHub\n" +
+			"  wt list --roots work --refresh  # one root's, asking GitHub again\n" +
+			"  wt list --profile api        # the repositories a profile names",
 		Args: cobra.NoArgs,
-		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
-			return commands.List(ctx, opts, out, terminalWidth(out))
-		}),
+			if sel.selection().Any() {
+				return commands.AcrossRepos(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), out,
+					func(ctx *commands.Context, w io.Writer) error { return commands.List(ctx, opts, w, terminalWidth(out)) })
+			}
+			return withContext(func(_ *cobra.Command, _ []string, ctx *commands.Context) error {
+				return commands.List(ctx, opts, out, terminalWidth(out))
+			})(cmd, args)
+		},
 	}
+	sel.add(cmd, true)
 	cmd.Flags().BoolVar(&opts.NoPR, "no-pr", false, "do not ask GitHub which worktree has a pull request")
 	cmd.Flags().BoolVar(&opts.Refresh, "refresh", false, "ask GitHub again instead of using the cached pull requests")
 	return cmd
 }
 
 func newStatusCmd() *cobra.Command {
-	return &cobra.Command{
+	var sel selectionFlags
+	cmd := &cobra.Command{
 		Use:   "status [<work>]",
 		Short: "Show each worktree's state and standing against trunk",
 		Long: "Print each worktree's branch, whether its checkout is clean, dirty or\n" +
@@ -62,19 +76,33 @@ func newStatusCmd() *cobra.Command {
 			"against trunk as last fetched: its class in wt sync's words, and what to\n" +
 			"do about it.\n\n" +
 			"The pull request line comes from the same answers `wt list` caches, so a\n" +
-			"listing has already paid for it.\n\n" + pathWidthHelp,
-		Example: "  wt status               # state and standing for every worktree\n" +
-			"  wt status | grep dirty  # only the ones with uncommitted changes\n" +
-			"  wt status login-crash   # that worktree in full, with wt sync's verdict\n" +
-			"  wt status .             # the one you are standing in",
+			"listing has already paid for it.\n\n" +
+			"--all, --roots or --profile show every repository they name, one\n" +
+			"section each; they take no worktree.\n\n" + pathWidthHelp,
+		Example: "  wt status                     # state and standing for every worktree\n" +
+			"  wt status login-crash         # that one in full, with wt sync's verdict\n" +
+			"  wt status --all | grep behind # what is not on trunk, anywhere\n" +
+			"  wt status --roots work        # the repositories under one root\n" +
+			"  wt status --profile api       # the ones a profile names",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeWork,
-		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
-			if len(args) == 1 {
-				return commands.StatusWorktree(ctx, args[0], commands.StatusOptions{}, out)
+			if sel.selection().Any() {
+				if len(args) > 0 {
+					return errors.New("--all, --roots and --profile cover whole repositories; name no worktree with them")
+				}
+				return commands.AcrossRepos(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), out,
+					func(ctx *commands.Context, w io.Writer) error { return commands.Status(ctx, w, terminalWidth(out)) })
 			}
-			return commands.Status(ctx, out, terminalWidth(out))
-		}),
+			return withContext(func(_ *cobra.Command, args []string, ctx *commands.Context) error {
+				if len(args) == 1 {
+					return commands.StatusWorktree(ctx, args[0], commands.StatusOptions{}, out)
+				}
+				return commands.Status(ctx, out, terminalWidth(out))
+			})(cmd, args)
+		},
 	}
+	sel.add(cmd, true)
+	return cmd
 }

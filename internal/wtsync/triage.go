@@ -26,7 +26,7 @@ const (
 )
 
 func (c Class) String() string {
-	return [...]string{"unknown", "detached", "current", "stale", "clean", "recipe", "contested", "divergent"}[c]
+	return [...]string{"unknown", "detached", "current", "stale", "conflict-free", "recipe", "contested", "divergent"}[c]
 }
 
 // FileOutcome is one conflicted file at the first stop.

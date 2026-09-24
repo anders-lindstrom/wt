@@ -6,6 +6,14 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-24 13:13 — One way to say things, and safer defaults
+
+- A bulk `wt sync --run`, or any `--all` run, with no terminal needs `--yes`.
+- The push question defaults to no; `--yes` asks nothing and pushes only with `--push`.
+- Renamed: sync class clean → conflict-free, `keep run` → `keep once`, `--skip-build`
+  → `--no-build` (the old names still work); `wt setup [<from-dir>]`.
+- New: `--dry-run` on sweep and remove; `--all` on doctor, list and status; `-f`.
+
 ## 2026-09-24 10:59 — Your roots, and wt across every repository
 
 - `wt config set root.work ~/src/work` names a folder of repositories, or one

@@ -149,7 +149,7 @@ func tableLiteral(table, name, value string) (string, error) {
 		}
 		return strconv.Quote(value), nil
 	}
-	repos := strings.Fields(value)
+	repos := strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' })
 	if len(repos) == 0 {
 		return "", errors.New("a profile needs at least one repository path")
 	}

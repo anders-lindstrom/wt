@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -18,9 +17,6 @@ import (
 // ReposOptions is how `wt repos` prints: a table, or paths alone for a script.
 type ReposOptions struct {
 	Paths bool
-	// Doctor runs wt doctor in every repository and prints what it found,
-	// then checks the roots and profiles once.
-	Doctor bool
 }
 
 // Repos lists the repositories wt manages under the roots, or the ones a
@@ -40,11 +36,8 @@ func Repos(u *config.User, sel Selection, opts ReposOptions, w io.Writer) error 
 		return nil
 	}
 	home, _ := os.UserHomeDir()
-	if opts.Doctor {
-		return reposDoctor(u, set.Repos, w)
-	}
-	if sel.Profile != "" {
-		fmt.Fprintf(w, "profile %s\n", sel.Profile)
+	if len(sel.Profiles) > 0 {
+		fmt.Fprintf(w, "profile %s\n", strings.Join(sel.Profiles, ", "))
 		_ = printTable(w, repoRows(set.Repos, home))
 		return problemsIn(set.Repos)
 	}
@@ -127,68 +120,6 @@ func repoStatus(t RepoTarget) status {
 		s.sync = "sync broken: " + oneLine(err.Error())
 	}
 	return s
-}
-
-// reposDoctor is wt repos --doctor: wt doctor in every repository, a few at a
-// time, each shown as a line with its problems under it; then the roots and
-// profiles, once. It fails when anything was found.
-func reposDoctor(u *config.User, targets []RepoTarget, w io.Writer) error {
-	type checked struct {
-		problems int
-		lines    []string
-	}
-	results := eachRepo(targets, repoParallelism, func(t RepoTarget) checked {
-		if t.Problem != "" {
-			return checked{1, []string{"  ! " + t.Problem}}
-		}
-		ctx := OpenLenient(t.Path, io.Discard)
-		if ctx == nil {
-			return checked{1, []string{"  ! not a git repository"}}
-		}
-		var buf bytes.Buffer
-		n, err := doctor(ctx, &buf, false)
-		var c checked
-		for _, l := range strings.Split(buf.String(), "\n") {
-			if strings.HasPrefix(l, "  ! ") {
-				c.lines = append(c.lines, l)
-			}
-		}
-		c.problems = n
-		if err != nil {
-			c.problems++
-			c.lines = append(c.lines, "  ! "+err.Error())
-		}
-		return c
-	})
-	home, _ := os.UserHomeDir()
-	width := 0
-	for _, t := range targets {
-		width = max(width, len(t.Name))
-	}
-	total := 0
-	for i, c := range results {
-		t := targets[i]
-		verdict := "✓"
-		if c.problems > 0 {
-			verdict = fmt.Sprintf("%d problem(s)", c.problems)
-		}
-		fmt.Fprintf(w, "%-*s  %-12s  %s\n", width, t.Name, verdict, abbreviateHome(t.Path, home))
-		for _, l := range c.lines {
-			fmt.Fprintln(w, l)
-		}
-		total += c.problems
-	}
-	fmt.Fprintln(w)
-	report := func(format string, args ...any) {
-		total++
-		fmt.Fprintf(w, "  ! "+format+"\n", args...)
-	}
-	doctorRepos(u, w, report)
-	if total > 0 {
-		return fmt.Errorf("%d problem(s) found; wt doctor in a repository says more", total)
-	}
-	fmt.Fprintln(w, "No problems found.")
-	return nil
 }
 
 // worktreesIn counts a repository's worktrees beside its main checkout.

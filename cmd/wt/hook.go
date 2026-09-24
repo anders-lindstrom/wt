@@ -11,7 +11,7 @@ func newHookCmd() *cobra.Command {
 		Use:   "hook",
 		Short: "Event handlers for editors and agents",
 		Long: "Handlers a harness calls, not a person: they read one JSON object on\n" +
-			"stdin and go through the same New and Remove as the commands, so a\n" +
+			"stdin and go through the same steps as wt new and wt remove, so a\n" +
 			"worktree an agent makes is provisioned and one it drops keeps its\n" +
 			"unmerged branch.",
 		Example: "  wt hook claude-create <<< '{\"name\":\"fix/login-crash\"}'\n" +

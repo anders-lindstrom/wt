@@ -7,7 +7,7 @@ import (
 )
 
 func newSweepCmd() *cobra.Command {
-	var noFetch, yes bool
+	var noFetch, yes, dryRun bool
 	var sel selectionFlags
 	cmd := &cobra.Command{
 		Use:   "sweep",
@@ -70,14 +70,14 @@ func newSweepCmd() *cobra.Command {
 			"read again first. A repository that cannot be swept is reported, the\n" +
 			"rest go ahead, and the run exits non-zero.\n\n" + selectionHelp,
 		Example: "  wt sweep                    # fetch, show what is merged, then ask\n" +
-			"  wt sweep --no-fetch         # compare with origin as last fetched\n" +
+			"  wt sweep --all --dry-run    # every repository's plan; change nothing\n" +
 			"  wt sweep --all --yes        # every repository, without asking (scripts)\n" +
 			"  wt sweep --roots work       # the repositories under one root, asked once\n" +
-			"  wt sweep --profile api      # the ones a profile names",
+			"  wt sweep --profile api --no-fetch  # a profile's, as last fetched",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opts := commands.SweepOptions{NoFetch: noFetch, Yes: yes,
+			opts := commands.SweepOptions{NoFetch: noFetch, Yes: yes, DryRun: dryRun,
 				Width: terminalWidth(cmd.OutOrStdout())}
 			if sel.selection().Any() {
 				all := commands.SweepAllOptions{SweepOptions: opts}
@@ -98,6 +98,8 @@ func newSweepCmd() *cobra.Command {
 	sel.add(cmd, true)
 	cmd.Flags().BoolVar(&noFetch, "no-fetch", false, "compare with origin as last fetched")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "delete and remove without asking")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print the plan and change nothing")
+	cmd.MarkFlagsMutuallyExclusive("yes", "dry-run")
 	return cmd
 }
 

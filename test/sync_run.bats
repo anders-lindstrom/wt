@@ -63,9 +63,15 @@ setup() {
 # With nothing named, --run takes the ready group; with no terminal there is
 # nobody to ask. Once bump is on trunk there is nothing left to take.
 @test "sync --run with nothing named takes every ready worktree" {
+    # bats gives the run no terminal: a bulk run nobody confirmed moves nothing.
     run wt sync --run --no-fetch
     [ "$status" -eq 0 ]
     [[ "$output" == *"every ready worktree: bump"* ]]
+    [[ "$output" == *"Pass --yes to rebase bump."* ]]
+    [[ "$output" != *"rebased 1 commit"* ]]
+
+    run wt sync --run --no-fetch --yes
+    [ "$status" -eq 0 ]
     [[ "$output" == *"rebased 1 commit"* ]]
 
     run wt sync run --no-fetch

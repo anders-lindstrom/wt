@@ -587,6 +587,8 @@ func (p SweepPlan) Empty() bool {
 // SweepOptions carries the caller's fetch and confirmation policy.
 type SweepOptions struct {
 	NoFetch bool
+	// DryRun prints the plan and stops, asked or not.
+	DryRun bool
 	// Yes deletes without asking. Without it Confirm asks, and with neither
 	// the plan is printed and nothing is deleted: a bulk delete does not
 	// happen because nobody was there to say no.
@@ -658,6 +660,9 @@ func Sweep(ctx *Context, opts SweepOptions, w io.Writer) error {
 	}
 
 	switch {
+	case opts.DryRun:
+		fmt.Fprintln(w, "Nothing was swept: --dry-run.")
+		return nil
 	case opts.Yes:
 	case opts.Confirm != nil:
 		ok, err := opts.Confirm(plan)

@@ -18,7 +18,7 @@ func newAdoptCmd() *cobra.Command {
 			"another tool stored is a path that tool still expects to find.",
 		Example: "  wt adopt ../myrepo-login-crash             # provision it where it is\n" +
 			"  wt adopt ../myrepo-login-crash --relocate  # and move it into place\n" +
-			"  wt adopt . --skip-build                    # this one, without a build",
+			"  wt adopt . --no-build                      # this one, without a build",
 		Args: needArgs(1, "<path>", "wt adopt ../myrepo-login-crash"),
 		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
 			path, err := commands.Adopt(ctx, args[0], relocate,

@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/anders-lindstrom/wt/internal/config"
@@ -18,7 +19,7 @@ func Config(ctx *Context, shell bool, w io.Writer) error {
 	if !shell {
 		fmt.Fprintf(w, "repo:          %s\n", ctx.Repo.Name)
 		fmt.Fprintf(w, "main root:     %s\n", ctx.Repo.MainRoot)
-		fmt.Fprintf(w, "main branch:   %s\n", c.MainBranch)
+		fmt.Fprintf(w, "trunk:         %s\n", c.MainBranch)
 		fmt.Fprintf(w, "branch prefix: %s\n", c.BranchPrefix)
 		fmt.Fprintf(w, "default type:  %s\n", c.DefaultType)
 		suffix, origin := ctx.BranchSuffix()
@@ -157,6 +158,9 @@ func UserSet(name, value string, w io.Writer) error {
 		return err
 	}
 	fmt.Fprintf(w, "%s = %s in %s\n", name, set, path)
+	if strings.HasPrefix(name, "root.") && os.Getenv("WT_ROOTS") != "" {
+		fmt.Fprintln(w, "note: WT_ROOTS is set in this environment, and stands in for every root the file names")
+	}
 	return nil
 }
 

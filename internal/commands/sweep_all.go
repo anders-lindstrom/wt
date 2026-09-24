@@ -99,6 +99,9 @@ func SweepAll(u *config.User, sel Selection, opts SweepAllOptions, w io.Writer) 
 
 	what := sweepCounts(branches, worktrees) + " across " + repoCount(repos)
 	switch {
+	case opts.DryRun:
+		fmt.Fprintln(w, "Nothing was swept: --dry-run.")
+		return failures(failed, len(sweeps))
 	case opts.Yes:
 	case opts.Ask != nil:
 		ok, err := opts.Ask("Sweep " + what + "?")

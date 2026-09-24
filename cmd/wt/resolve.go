@@ -58,7 +58,8 @@ func newPathCmd() *cobra.Command {
 			"/ the main checkout. Otherwise it prints the path `wt new` would use,\n" +
 			"with a bare name taking the default type.\n\n" +
 			"The path alone goes to stdout, so `cd \"$(wt path fix/login-crash)\"`\n" +
-			"works — which is what `wt cd` does for you.",
+			"works. path is exact and stays in this repository, for scripts; wt find\n" +
+			"is the fuzzy one, across repositories, and wt cd goes through that.",
 		Example: "  wt path fix/login-crash    # where that worktree is, or would go\n" +
 			"  wt path login-crash        # the existing worktree, whatever its type\n" +
 			"  wt path fix_wt/login-crash # by branch, as `wt list` prints it\n" +

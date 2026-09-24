@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -34,12 +35,12 @@ func newSyncCmd() *cobra.Command {
 			"                                  only if it goes through without needing you; else\n" +
 			"                                  say why, touch nothing, and fail\n" +
 			"  finish  wt sync resume <work>   continue a rebase run left at a conflict that is yours,\n" +
-			"                                  then push with --force-with-lease\n" +
+			"                                  then push, asked first as for run\n" +
 			"          wt sync <work> --resume\n" +
 			"          wt sync undo <work>     put back every ref that run moved\n" +
 			"          wt sync <work> --undo\n" +
 			"          wt sync doctor          what a run needs, and --fix / --prune\n" +
-			"  keep    wt sync keep start      a launchd job that runs wt sync keep run every 30m:\n" +
+			"  keep    wt sync keep start      a launchd job that runs wt sync keep once every 30m:\n" +
 			"                                  every ready worktree with nobody in it, then push\n" +
 			"Only Claude sessions are detected; a Codex session is not seen.\n" +
 			"\n" +
@@ -50,11 +51,14 @@ func newSyncCmd() *cobra.Command {
 			"worktree under ready except recipe?, lists what it leaves alone, and asks\n" +
 			"before moving even one (--yes skips).\n" +
 			"\n" +
-			"--if-ready with --run rebases only what is ready: clean, or every stop\n" +
-			"resolved by a strategy the simulation verified. A named worktree that is\n" +
-			"not is refused with its stack and untouched, and the run fails saying\n" +
-			"what would stop it; with nothing named, every worktree left behind trunk\n" +
-			"fails the run (stale and detached ones do not). recipe? is not ready.\n" +
+			"--if-ready with --run means: rebase what is ready, and fail if anything\n" +
+			"was not. Ready here is conflict-free, or every stop resolved by a\n" +
+			"strategy the simulation verified: recipe? is listed under ready but\n" +
+			"does not count. A named worktree that is not ready is refused with its\n" +
+			"stack and left untouched. With nothing named a run takes only the\n" +
+			"ready ones anyway, so --if-ready changes one thing there: a worktree\n" +
+			"left behind trunk fails the run (stale and detached ones do not),\n" +
+			"where without it the run succeeds.\n" +
 			"\n" +
 			"--all, --roots or --profile cover many repositories from anywhere: the\n" +
 			"overview of each, or with --run every ready worktree in each, planned a\n" +
@@ -63,13 +67,14 @@ func newSyncCmd() *cobra.Command {
 			".wt-sync.yaml is listed, not failed.\n" + selectionHelp + "\n" +
 			"\n" +
 			"Groups:\n" +
-			"  ready      clean or recipe, with nothing in the way: wt sync run <work>,\n" +
-			"             or wt sync --run for all of them but recipe?\n" +
+			"  ready      conflict-free or recipe, with nothing in the way: wt sync\n" +
+			"             run <work>, or wt sync --run for all of them but recipe?\n" +
 			"  needs you  contested, divergent, dirty, handed over, or not assessed\n" +
 			"  skipped    a busy session is in it, nothing is ahead of trunk, or no branch\n" +
 			"\n" +
 			"Classes:\n" +
-			"  clean      rebases without a conflict\n" +
+			"  conflict-free\n" +
+			"             rebases without a conflict\n" +
 			"  recipe     every conflict at every stop is claimed by a strategy in\n" +
 			"             .wt-sync.yaml; a run completes on its own. recipe? means a\n" +
 			"             script owns a path and the replay could not be carried past\n" +
@@ -97,7 +102,7 @@ func newSyncCmd() *cobra.Command {
 		Example: "  wt sync --no-fetch            # every worktree, against trunk as last fetched\n" +
 			"  wt sync login-crash           # that worktree in full\n" +
 			"  wt sync . --run --if-ready    # rebase it only if it needs nothing from you\n" +
-			"  wt sync --all --run --if-ready     # every ready worktree, every repository\n" +
+			"  wt sync --all --run --if-ready # every ready worktree, every repository\n" +
 			"  wt sync --profile api         # the overview of a profile's repositories",
 		ValidArgsFunction: completeWork,
 	}
@@ -162,9 +167,15 @@ func newSyncCmd() *cobra.Command {
 	sync.Flags().BoolVarP(&yes, "yes", "y", false, "with a verb: do not ask first")
 	push = addPushFlags(sync, "with --run or --resume: push when done, without asking",
 		"with --run or --resume: neither push nor ask; print the push command")
-	sync.Flags().BoolVar(&force, "force", false, "with --undo: undo a branch that has moved since the run")
+	sync.Flags().BoolVarP(&force, "force", "f", false, "with --undo: undo a branch that has moved since the run")
 	sync.Flags().BoolVar(&ifReady, "if-ready", false, "with --run: rebase only what will go through without needing you, and fail on the rest")
 	sel.add(sync, true)
+	// The verbs spelled as flags, and their own flags, work on this line but
+	// belong to the verbs: their help is wt sync run, resume and undo --help,
+	// and the table here keeps to what the overview itself takes.
+	for _, name := range []string{"run", "resume", "undo", "yes", "push", "no-push", "force", "if-ready"} {
+		_ = sync.Flags().MarkHidden(name)
+	}
 	sync.AddCommand(newSyncRunCmd(), newSyncResumeCmd(), newSyncUndoCmd(), newSyncDoctorCmd(), newSyncKeepCmd())
 	return sync
 }
@@ -173,18 +184,18 @@ func newSyncKeepCmd() *cobra.Command {
 	keep := &cobra.Command{
 		Use:   "keep",
 		Short: "Keep the ready worktrees rebased on trunk, unattended",
-		Long: "A keeper is wt sync --run --yes on a timer, with nobody watching. Each\n" +
-			"pass fetches trunk and, when its tip has moved since the last pass,\n" +
-			"rebases every worktree the table calls ready, pushes what finished with\n" +
-			"nothing owed (--force-with-lease --force-if-includes), and records what it\n" +
-			"did. It is stricter than a run you start: a worktree with any Claude\n" +
-			"session in it, idle or busy, is left alone, since nobody is there to be\n" +
-			"asked on its behalf; recipe?, needs you and skipped are left alone as a\n" +
-			"run with nothing named leaves them, and a stack goes whole or not at all.\n" +
-			"A conflict that is yours is never handed over by a keeper: the worktree\n" +
-			"was not ready, so it was not taken.\n" +
+		Long: "A keeper is wt sync --run --yes --push on a timer, with nobody\n" +
+			"watching. Each pass fetches trunk and, when its tip has moved since the\n" +
+			"last pass, rebases every worktree the table calls ready, pushes what\n" +
+			"finished with nothing owed (--force-with-lease --force-if-includes), and\n" +
+			"records what it did. It is stricter than a run you start: a worktree\n" +
+			"with any Claude session in it, idle or busy, is left alone, since nobody\n" +
+			"is there to be asked on its behalf; recipe?, needs you and skipped are\n" +
+			"left alone as a run with nothing named leaves them, and a stack goes\n" +
+			"whole or not at all. A conflict that is yours is never handed over by a\n" +
+			"keeper: the worktree was not ready, so it was not taken.\n" +
 			"\n" +
-			"  wt sync keep run      one pass, what the job runs; usable from cron\n" +
+			"  wt sync keep once     one pass, what the job runs; usable from cron\n" +
 			"  wt sync keep start    install the job (macOS launchd), every 30m by default\n" +
 			"  wt sync keep status   installed or not, the last pass, the next one\n" +
 			"  wt sync keep stop     unload the job and remove its plist\n" +
@@ -194,12 +205,13 @@ func newSyncKeepCmd() *cobra.Command {
 			"the run's own output. The log is rotated at 1 MB, the previous file kept\n" +
 			"as .log.1. .git/wt-sync-keep.json holds the last pass for wt sync's\n" +
 			"kept-at line and wt sync doctor's keeper row; a pass that failed stays\n" +
-			"there as a problem until a pass finishes clean. Two passes never overlap:\n" +
-			"the json names the running one, and a pass that finds it alive says so\n" +
-			"and exits. A pass takes the same locks a run takes and is refused by\n" +
-			"them the same way. Without a subcommand this is wt sync keep status.",
+			"there as a problem until a pass ends with nothing owed. Two passes never\n" +
+			"overlap: the json names the running one, and a pass that finds it alive\n" +
+			"says so and exits. A pass takes the same locks a run takes and is\n" +
+			"refused by them the same way. Without a subcommand this is wt sync keep\n" +
+			"status.",
 		Example: "  wt sync keep            # is a keeper installed, and what did it last do\n" +
-			"  wt sync keep run        # one pass now, by hand or from cron\n" +
+			"  wt sync keep once       # one pass now, by hand or from cron\n" +
 			"  wt sync keep status     # the same as wt sync keep",
 		Args: cobra.NoArgs,
 		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
@@ -214,8 +226,9 @@ func newSyncKeepRunCmd() *cobra.Command {
 	var every time.Duration
 	var noPush bool
 	run := &cobra.Command{
-		Use:   "run",
-		Short: "One pass: fetch, rebase what is ready and nobody is in, push",
+		Use:     "once",
+		Aliases: []string{"run"},
+		Short:   "One pass: fetch, rebase what is ready and nobody is in, push",
 		Long: "What the keeper's job runs every interval, and what to run from cron\n" +
 			"where there is no launchd. Fetch trunk; when its tip is the one the last\n" +
 			"pass recorded, say so and exit 0. Otherwise rebase every ready worktree\n" +
@@ -244,14 +257,13 @@ func newSyncKeepRunCmd() *cobra.Command {
 			"failure stays in the status as a problem until a pass ends with nothing\n" +
 			"owed and nothing left unpushed.\n" +
 			"\n" +
-			"--every is the interval the job runs at, for the next-run line the\n" +
-			"status shows; the job passes its own. --no-push rebases only and prints\n" +
+			"The job passes its interval as --every, for the next-run line the\n" +
+			"status shows; nothing else needs it. --no-push rebases only and prints\n" +
 			"the push commands, into the log when the job runs it. A pass that finds\n" +
 			"another still running exits saying so. Ctrl-C is a run's Ctrl-C: every\n" +
 			"lock goes and a worktree caught mid-rebase is named with its way back.",
-		Example: "  wt sync keep run              # one pass now\n" +
-			"  wt sync keep run --no-push    # rebase only; print the push commands\n" +
-			"  wt sync keep run --every 1h   # record the next pass an hour on",
+		Example: "  wt sync keep once              # one pass now\n" +
+			"  wt sync keep once --no-push    # rebase only; print the push commands",
 		Args: cobra.NoArgs,
 		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
 			opts := commands.KeepOptions{Every: every, Push: commands.PushAlways}
@@ -262,6 +274,7 @@ func newSyncKeepRunCmd() *cobra.Command {
 		}),
 	}
 	run.Flags().DurationVar(&every, "every", 0, "the job's interval, for the next-run line (default 30m)")
+	_ = run.Flags().MarkHidden("every")
 	run.Flags().BoolVar(&noPush, "no-push", false, "rebase only; print the push commands")
 	return run
 }
@@ -271,13 +284,13 @@ func newSyncKeepStartCmd() *cobra.Command {
 	var noPush bool
 	start := &cobra.Command{
 		Use:   "start",
-		Short: "Install a launchd job that runs wt sync keep run on a timer",
+		Short: "Install a launchd job that runs wt sync keep once on a timer",
 		Long: "Write ~/Library/LaunchAgents/se.wt.sync-keep.<repo>-<hash>.plist, one per\n" +
-			"main checkout, running this wt binary's sync keep run from that checkout\n" +
+			"main checkout, running this wt binary's sync keep once from that checkout\n" +
 			"every --every (30m), with its output under the checkout's .git, and load\n" +
 			"it with launchctl bootstrap. The first pass is one interval after this.\n" +
 			"Refused when a job is already installed: wt sync keep status says so.\n" +
-			"macOS only; elsewhere this exits 2 and wt sync keep run is for cron.\n" +
+			"macOS only; elsewhere this exits 2 and wt sync keep once is for cron.\n" +
 			"\n" +
 			"A launchd job inherits nothing from your shell, so start captures what\n" +
 			"the pass needs into the plist: PATH (git, and claude to see who is in a\n" +
@@ -425,31 +438,36 @@ func newSyncRunCmd() *cobra.Command {
 			"so a stack is never half-applied. A failed deferred step is reported as\n" +
 			"owed and never undoes the rebase.\n\n" +
 			"With no worktree named, it takes every worktree the overview files under\n" +
-			"ready: class clean or recipe, nothing dirty, no session busy in it, no\n" +
-			"handover waiting. recipe? is left out, since a run of it may stop and hand\n" +
-			"you a plan you did not ask for, and so is everything under needs you and\n" +
-			"skipped; what is left alone is listed with what holds it. You are asked\n" +
-			"before anything moves, even for one worktree (--yes skips).\n\n" +
+			"ready: class conflict-free or recipe, nothing dirty, no session busy in\n" +
+			"it, no handover waiting. recipe? is left out, since a run of it may stop\n" +
+			"and hand you a plan you did not ask for, and so is everything under needs\n" +
+			"you and skipped; what is left alone is listed with what holds it.\n\n" +
+			"When it asks first, on a terminal (--yes never asks):\n" +
+			"  one worktree named      only when a Claude session is idle in it\n" +
+			"  several named           once, for all of them\n" +
+			"  nothing named, --all    once, even for one\n" +
+			"With no terminal a named worktree goes ahead, and a run with nothing\n" +
+			"named, or across repositories, rebases nothing unless --yes says so.\n\n" +
 			"Refused, and never touched: a worktree with tracked changes, one a busy\n" +
 			"Claude session is in (Codex sessions are not detected), class divergent,\n" +
 			"one an earlier run already left waiting on you, and any repository whose\n" +
-			"trunk declares no .wt-sync.yaml. You are asked once when more than one\n" +
-			"worktree would be rebased or a Claude session is idle in one; --yes skips\n" +
-			"that. The idle session is named before anything moves either way, and a\n" +
+			"trunk declares no .wt-sync.yaml. An idle Claude session is named before\n" +
+			"anything moves under it, whether or not anyone is asked, and a\n" +
 			"finished rebase ends with a wt: line to pass on to it. Sessions are listed\n" +
 			"again at the lock: one busy by then, or new since, is refused. The session\n" +
 			"wt itself runs under is not counted.\n\n" +
 			"A worktree whose rebase finished with nothing owed is pushed at the end\n" +
 			"with --force-with-lease --force-if-includes, which refuses to overwrite\n" +
 			"commits on origin the branch has not seen. On a terminal you are asked\n" +
-			"once and Enter pushes; --push pushes without asking, and --no-push, or a\n" +
-			"run with no terminal, prints the push command instead.\n\n" +
+			"once, and Enter means no. --push pushes without asking; without it,\n" +
+			"--no-push, --yes or a run with no terminal prints the push command\n" +
+			"instead.\n\n" +
 			"Ctrl-C releases every lock the run holds and kills the step it was\n" +
 			"running; a worktree caught mid-rebase is named along with the command\n" +
 			"that puts it back.\n\n" +
-			"--if-ready rebases only what goes through without needing you, refuses\n" +
-			"the rest untouched and fails naming them; --all, --roots and --profile\n" +
-			"run across repositories, asked once (see wt sync --help).\n\n" +
+			"--if-ready rebases what is ready and fails if anything was not: a named\n" +
+			"worktree that is not ready is refused untouched (see wt sync --help).\n" +
+			"--all, --roots and --profile run across repositories, asked once.\n\n" +
 			"Also spelled wt sync <work>... --run, with the same flags.",
 		Example: "  wt sync run login-crash api-tidy --yes # both, their stacks, not asked first\n" +
 			"  wt sync run login-crash --if-ready     # only if it needs nothing from you\n" +
@@ -479,25 +497,44 @@ func newSyncRunCmd() *cobra.Command {
 
 // syncRun is wt sync run, whichever way it was spelled.
 func syncRun(cmd *cobra.Command, works []string, ctx *commands.Context, f syncVerbFlags) error {
-	opts, _ := runOptions(cmd, f)
+	opts, _ := runOptions(cmd, f, len(works) == 0)
 	return commands.SyncRun(ctx, works, opts, cmd.OutOrStdout())
 }
 
 // runOptions is a run's options from its flags, and the prompter asking its
 // questions, nil with no terminal. One prompter for every question, so an
 // answer typed ahead for the push is not lost to the rebase question's reader.
-func runOptions(cmd *cobra.Command, f syncVerbFlags) (commands.RunOptions, *prompter) {
+//
+// --yes asks nothing, the push included, which then follows --push and
+// otherwise prints the push commands. A bulk run — nothing named, or many
+// repositories — with nobody at a terminal to ask and no --yes rebases
+// nothing, as a sweep deletes nothing: what nobody named and nobody
+// confirmed does not move. A worktree named on the line goes ahead.
+func runOptions(cmd *cobra.Command, f syncVerbFlags, bulk bool) (commands.RunOptions, *prompter) {
 	opts := commands.RunOptions{NoFetch: f.noFetch, IfReady: f.ifReady}
 	opts.Push = f.push
-	if !canAsk(cmd) {
+	switch {
+	case f.yes:
+		return opts, nil
+	case !canAsk(cmd):
+		if bulk {
+			opts.Confirm = noTerminal(cmd.OutOrStdout())
+		}
 		return opts, nil
 	}
 	p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
-	if !f.yes {
-		opts.Confirm = confirmAsk(p, "rebase")
-	}
+	opts.Confirm = confirmAsk(p, "rebase")
 	opts.ConfirmPush = confirmPush(p)
 	return opts, p
+}
+
+// noTerminal is the answer to a bulk run's question when nobody is there to
+// give it: no, with how to say yes.
+func noTerminal(w io.Writer) func([]string) (bool, error) {
+	return func(works []string) (bool, error) {
+		fmt.Fprintf(w, "There is no terminal to ask. Pass --yes to rebase %s.\n", strings.Join(works, ", "))
+		return false, nil
+	}
 }
 
 // syncAcross is wt sync with --all, --roots or --profile: the overview of
@@ -513,10 +550,17 @@ func syncAcross(cmd *cobra.Command, args []string, verb string, sel commands.Sel
 	case verb == "":
 		return commands.SyncAll(u, sel, commands.SyncOptions{NoFetch: f.noFetch}, cmd.OutOrStdout())
 	}
-	opts, p := runOptions(cmd, f)
+	opts, p := runOptions(cmd, f, true)
 	all := commands.SyncRunAllOptions{RunOptions: opts}
-	if p != nil && !f.yes {
+	switch {
+	case p != nil:
 		all.Ask = func(q string) (bool, error) { return p.yesNo(q, false), nil }
+	case !f.yes:
+		all.Ask = func(q string) (bool, error) {
+			fmt.Fprintf(cmd.OutOrStdout(), "There is no terminal to ask. Pass --yes to %s.\n",
+				strings.ToLower(strings.TrimSuffix(q, "?")))
+			return false, nil
+		}
 	}
 	return commands.SyncRunAll(u, sel, all, cmd.OutOrStdout())
 }
@@ -541,10 +585,10 @@ func newSyncResumeCmd() *cobra.Command {
 			"deferred steps, pins the result ref and ends with the push, asked or not\n" +
 			"as for wt sync run (--push, --no-push). A later conflict that is yours is\n" +
 			"handed over again with a fresh plan file. A Claude session idle in the\n" +
-			"worktree is named first and you are asked (--yes skips; with no terminal\n" +
-			"it goes ahead) before anything is verified, and the finish ends with a\n" +
-			"wt: line to pass on to it. The session wt itself runs under is not\n" +
-			"counted.\n\n" +
+			"worktree is named first and you are asked (with no terminal it goes\n" +
+			"ahead) before anything is verified, and the finish ends with a wt: line\n" +
+			"to pass on to it. The session wt itself runs under is not counted.\n" +
+			"--yes asks nothing, neither about that session nor about the push.\n\n" +
 			"Carrying on yourself with git rebase --continue is fine: a later stop you\n" +
 			"left it at goes through the strategies, and a rebase you finished runs\n" +
 			"only what comes after it, naming the strategy-resolved files it could not\n" +
@@ -555,7 +599,7 @@ func newSyncResumeCmd() *cobra.Command {
 		Example: "  wt sync resume login-crash            # continue what the run handed you\n" +
 			"  wt sync resume fix/login-crash        # the same worktree, by branch\n" +
 			"  wt sync resume login-crash --no-push  # then print the push command\n" +
-			"  wt sync resume login-crash --yes      # not asked about an idle session\n" +
+			"  wt sync resume login-crash --yes      # ask nothing; print the push\n" +
 			"  wt sync login-crash --resume --push   # resume --push, spelled on wt sync",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeWork,
@@ -565,7 +609,7 @@ func newSyncResumeCmd() *cobra.Command {
 	}
 	push = addPushFlags(resume, "push when done, without asking",
 		"neither push nor ask; print the push command")
-	resume.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask first when a session is idle in the worktree")
+	resume.Flags().BoolVarP(&yes, "yes", "y", false, "ask nothing: not about an idle session, nor the push")
 	return resume
 }
 
@@ -573,11 +617,11 @@ func newSyncResumeCmd() *cobra.Command {
 func syncResume(cmd *cobra.Command, work string, ctx *commands.Context, yes bool, push commands.PushMode) error {
 	var opts commands.ResumeOptions
 	opts.Push = push
-	if canAsk(cmd) {
+	// --yes asks nothing, the push included: it then follows --push, and
+	// without it prints the push command.
+	if canAsk(cmd) && !yes {
 		p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
-		if !yes {
-			opts.Confirm = confirmAsk(p, "resume")
-		}
+		opts.Confirm = confirmAsk(p, "resume")
 		opts.ConfirmPush = confirmPush(p)
 	}
 	return commands.SyncResume(ctx, work, opts, cmd.OutOrStdout())
@@ -618,7 +662,7 @@ func newSyncUndoCmd() *cobra.Command {
 			return syncUndo(cmd, args[0], ctx, force, yes)
 		}),
 	}
-	undo.Flags().BoolVar(&force, "force", false, "undo a branch that has moved since the run, pinning its tip first")
+	undo.Flags().BoolVarP(&force, "force", "f", false, "undo a branch that has moved since the run, pinning its tip first")
 	undo.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask first when a session is idle in a checkout")
 	return undo
 }
@@ -672,13 +716,12 @@ func confirmAsk(p *prompter, verb string) func([]string) (bool, error) {
 	}
 }
 
-// confirmPush asks the question a run or a resume ends with. Unlike the
-// question before a rebase it defaults to yes: what it pushes finished with
-// nothing owed, and the lease still refuses to overwrite commits on origin
-// the branch never saw.
+// confirmPush asks the question a run or a resume ends with. It defaults to
+// no, like every question wt asks: a push is the one step that reaches the
+// remote, so Enter must not be what takes it there.
 func confirmPush(p *prompter) func([]string) (bool, error) {
 	return func(works []string) (bool, error) {
-		return p.yesNo("push "+strings.Join(works, ", ")+" with --force-with-lease?", true), nil
+		return p.yesNo("push "+strings.Join(works, ", ")+" with --force-with-lease?", false), nil
 	}
 }
 

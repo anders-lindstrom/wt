@@ -1,7 +1,9 @@
 package commands
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -92,14 +94,14 @@ type RepoTarget struct {
 // Selection is which repositories a command covers: every one under every
 // root, the ones under the named roots, or a named profile's.
 type Selection struct {
-	All     bool
-	Roots   []string
-	Profile string
+	All      bool
+	Roots    []string
+	Profiles []string
 }
 
 // Any reports that a selection was asked for at all, which is what turns a
 // single-repository command into a multi-repository one.
-func (s Selection) Any() bool { return s.All || len(s.Roots) > 0 || s.Profile != "" }
+func (s Selection) Any() bool { return s.All || len(s.Roots) > 0 || len(s.Profiles) > 0 }
 
 // RepoSet is what a selection found: the repositories wt manages, and the
 // checkouts under the same roots it does not.
@@ -119,16 +121,20 @@ func SelectRepos(u *config.User, sel Selection) (RepoSet, error) {
 		return RepoSet{}, fmt.Errorf("%s cannot be read, so wt does not know your roots; wt doctor says why", u.Path)
 	}
 	roots, _ := RootsFor(u)
-	if sel.Roots != nil && sel.Profile != "" {
+	if len(sel.Roots) > 0 && len(sel.Profiles) > 0 {
 		return RepoSet{}, fmt.Errorf("--roots and --profile each name the repositories; give one of them")
 	}
-	if sel.Profile != "" {
-		p, ok := u.Profile(sel.Profile)
-		if !ok {
-			return RepoSet{}, fmt.Errorf("no profile named %q%s", sel.Profile, known("profiles", profileNames(u)))
+	if len(sel.Profiles) > 0 {
+		var paths []string
+		for _, name := range sel.Profiles {
+			p, ok := u.Profile(name)
+			if !ok {
+				return RepoSet{}, fmt.Errorf("no profile named %q%s", name, known("profiles", profileNames(u)))
+			}
+			paths = append(paths, p.Repos...)
 		}
 		var set RepoSet
-		for _, path := range p.Repos {
+		for _, path := range paths {
 			t := profileTarget(path, roots)
 			// The same repository twice, by two spellings, would be fetched
 			// and swept twice at once.
@@ -291,3 +297,50 @@ func eachRepo[T any](targets []RepoTarget, limit int, fn func(RepoTarget) T) []T
 // once: enough that twenty fetches do not run end to end, few enough that
 // GitHub and the disk are not hammered.
 const repoParallelism = 4
+
+// AcrossRepos runs fn in every repository a selection names, a few at a time,
+// and prints what each printed under its name, in the selection's order. A
+// repository fn cannot run in is reported under its name, the rest go on, and
+// the returned error names every one that failed.
+func AcrossRepos(u *config.User, sel Selection, w io.Writer, fn func(*Context, io.Writer) error) error {
+	set, err := SelectRepos(u, sel)
+	if err != nil {
+		return err
+	}
+	type result struct {
+		out bytes.Buffer
+		err error
+	}
+	results := eachRepo(set.Repos, repoParallelism, func(t RepoTarget) *result {
+		r := &result{}
+		if t.Problem != "" {
+			r.err = fmt.Errorf("%s: %s", t.Path, t.Problem)
+			return r
+		}
+		ctx, err := Open(t.Path)
+		if err != nil {
+			r.err = err
+			return r
+		}
+		r.err = fn(ctx, &r.out)
+		return r
+	})
+	home, _ := os.UserHomeDir()
+	var failed []string
+	for i, r := range results {
+		t := set.Repos[i]
+		if i > 0 {
+			fmt.Fprintln(w)
+		}
+		fmt.Fprintf(w, "== %s  %s\n", t.Name, abbreviateHome(t.Path, home))
+		_, _ = w.Write(r.out.Bytes())
+		if r.err != nil {
+			fmt.Fprintf(w, "! %v\n", r.err)
+			failed = append(failed, t.Name)
+		}
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("%d of %s failed: %s", len(failed), repoCount(len(results)), strings.Join(failed, ", "))
+	}
+	return nil
+}

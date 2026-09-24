@@ -14,9 +14,9 @@ import (
 // on many: --all, --roots and --profile, spelled the same on every command
 // that takes them.
 type selectionFlags struct {
-	all     bool
-	roots   []string
-	profile string
+	all      bool
+	roots    []string
+	profiles []string
 }
 
 // add puts the flags on cmd. withAll is false for a command that covers every
@@ -26,7 +26,7 @@ func (s *selectionFlags) add(cmd *cobra.Command, withAll bool) {
 		cmd.Flags().BoolVar(&s.all, "all", false, "every repository wt manages under your roots")
 	}
 	cmd.Flags().StringSliceVar(&s.roots, "roots", nil, "only the repositories under these roots, by name")
-	cmd.Flags().StringVar(&s.profile, "profile", "", "only the repositories this profile names")
+	cmd.Flags().StringSliceVar(&s.profiles, "profile", nil, "only the repositories these profiles name, by name")
 	cmd.MarkFlagsMutuallyExclusive("roots", "profile")
 	_ = cmd.RegisterFlagCompletionFunc("roots", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 		u, _ := config.LoadUser()
@@ -48,7 +48,7 @@ func (s *selectionFlags) add(cmd *cobra.Command, withAll bool) {
 }
 
 func (s selectionFlags) selection() commands.Selection {
-	return commands.Selection{All: s.all, Roots: s.roots, Profile: s.profile}
+	return commands.Selection{All: s.all, Roots: s.roots, Profiles: s.profiles}
 }
 
 // selectionHelp is the paragraph every command taking the flags adds to its

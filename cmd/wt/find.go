@@ -15,7 +15,10 @@ func newFindCmd() *cobra.Command {
 		Short: "Resolve a worktree by fuzzy name, across repositories",
 		Long: "Resolve a fuzzy pattern to a worktree path. The current repository is\n" +
 			"searched first and wins ties, but a weak local match still lets other\n" +
-			"repositories under $WT_ROOTS compete.\n\n" +
+			"repositories under your roots compete (wt repos lists them).\n\n" +
+			"find is the fuzzy one, for a person typing part of a name; wt cd and wt\n" +
+			"exec go through it. wt path is exact and stays in this repository, for\n" +
+			"a script, and also says where work that does not exist yet would go.\n\n" +
 			"Prints one path. When several candidates tie, exits non-zero and lists\n" +
 			"them on stderr, so nothing runs in a worktree you did not mean.\n\n" +
 			"A pattern of \".\" is the worktree you are standing in, the main checkout\n" +

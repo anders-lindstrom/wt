@@ -17,45 +17,8 @@ import (
 // selection names, a few at a time, printed one section after another. It
 // changes nothing but the fetch.
 func SyncAll(u *config.User, sel Selection, opts SyncOptions, w io.Writer) error {
-	set, err := SelectRepos(u, sel)
-	if err != nil {
-		return err
-	}
 	defer watchSignals(w, nil)()
-	type overview struct {
-		out bytes.Buffer
-		err error
-	}
-	views := eachRepo(set.Repos, repoParallelism, func(t RepoTarget) *overview {
-		v := &overview{}
-		if t.Problem != "" {
-			v.err = fmt.Errorf("%s: %s", t.Path, t.Problem)
-			return v
-		}
-		ctx, err := Open(t.Path)
-		if err != nil {
-			v.err = err
-			return v
-		}
-		v.err = Sync(ctx, opts, &v.out)
-		return v
-	})
-	home, _ := os.UserHomeDir()
-	var failed []string
-	for i, v := range views {
-		t := set.Repos[i]
-		fmt.Fprintf(w, "== %s  %s\n", t.Name, abbreviateHome(t.Path, home))
-		_, _ = w.Write(v.out.Bytes())
-		if v.err != nil {
-			fmt.Fprintf(w, "! %v\n", v.err)
-			failed = append(failed, t.Name)
-		}
-		fmt.Fprintln(w)
-	}
-	if len(failed) > 0 {
-		return fmt.Errorf("%d of %s could not be read: %s", len(failed), repoCount(len(views)), strings.Join(failed, ", "))
-	}
-	return nil
+	return AcrossRepos(u, sel, w, func(ctx *Context, w io.Writer) error { return Sync(ctx, opts, w) })
 }
 
 // SyncRunAllOptions is a run across repositories: the options every

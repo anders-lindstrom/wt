@@ -21,7 +21,7 @@ func Doctor(ctx *Context, w io.Writer) (int, error) {
 	return doctor(ctx, w, true)
 }
 
-// doctor is Doctor, with or without the roots and profiles: wt repos --doctor
+// doctor is Doctor, with or without the roots and profiles: wt doctor --all
 // checks those once for every repository, not once in each.
 func doctor(ctx *Context, w io.Writer, withRepos bool) (int, error) {
 	problems := 0
@@ -50,7 +50,7 @@ func doctor(ctx *Context, w io.Writer, withRepos bool) (int, error) {
 			fmt.Fprintln(w, "  (checking the rest against the values that did parse)")
 		}
 	} else {
-		fmt.Fprintf(w, "  ✓ main branch %s, default type %s\n",
+		fmt.Fprintf(w, "  ✓ trunk %s, default type %s\n",
 			ctx.Config.MainBranch, ctx.Config.DefaultType)
 		// Worth a line only where the two differ: branches named one way and
 		// folders another is a surprise wt should own up to, not hide.

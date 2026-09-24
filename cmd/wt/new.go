@@ -11,7 +11,7 @@ func newNewCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "new <type>/<work>",
 		Short: "Create a worktree and its branch, then provision it",
-		Long: "Create the branch <type>_wt/<work> from the repository's main branch,\n" +
+		Long: "Create the branch <type>_wt/<work> from the repository's trunk,\n" +
 			"put its worktree at the canonical path, and provision it: developer\n" +
 			"config copied in, the repository's provision.sh run, submodules\n" +
 			"initialised, build initialised.\n\n" +
@@ -30,7 +30,7 @@ func newNewCmd() *cobra.Command {
 			"  wt new login-crash                    # the repository's default type\n" +
 			"  wt new fix/login-crash --base v2.1    # cut from something else\n" +
 			"  wt new spike/idea --no-setup          # the worktree, nothing else\n" +
-			"  wt new spike/idea --skip-build --no-superset  # neither build nor Superset",
+			"  wt new spike/idea --no-build --no-superset  # neither build nor Superset",
 		Args: needArgs(1, "<type>/<work>", "wt new fix/login-crash"),
 		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
 			path, err := commands.New(ctx, args[0], opts, cmd.ErrOrStderr())
@@ -38,7 +38,7 @@ func newNewCmd() *cobra.Command {
 			return printLine(cmd, path, err)
 		}),
 	}
-	cmd.Flags().StringVar(&opts.Base, "base", "", "branch to cut from (default: the configured main branch)")
+	cmd.Flags().StringVar(&opts.Base, "base", "", "branch or commit to cut from (default: trunk)")
 	addProvisionFlags(cmd, &opts.SkipBuild, &opts.NoSetup, &opts.NoSuperset)
 	return cmd
 }
