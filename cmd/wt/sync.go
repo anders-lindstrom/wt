@@ -168,7 +168,7 @@ func newSyncCmd() *cobra.Command {
 	sync.Flags().BoolVarP(&yes, "yes", "y", false, "with a verb: do not ask first")
 	push = addPushFlags(sync, "with --run or --resume: push when done, without asking",
 		"with --run or --resume: neither push nor ask; print the push command")
-	sync.Flags().BoolVarP(&force, "force", "f", false, "with --undo: undo a branch that has moved since the run")
+	sync.Flags().BoolVarP(&force, "force", "f", false, "with --run: past a Claude session in it; with --undo: past a moved branch")
 	sync.Flags().BoolVar(&ifReady, "if-ready", false, "with --run: rebase only what will go through without needing you, and fail on the rest")
 	sel.add(sync, true)
 	// The verbs spelled as flags, and their own flags, work on this line but
@@ -398,8 +398,8 @@ func (f syncVerbFlags) check() error {
 		return errors.New("--no-push needs --run or --resume")
 	case f.ifReady && verb != "run":
 		return errors.New("--if-ready needs --run")
-	case f.force && verb != "undo":
-		return errors.New("--force needs --undo")
+	case f.force && verb != "undo" && verb != "run":
+		return errors.New("--force needs --run or --undo")
 	case f.yes && verb == "":
 		return errors.New("--yes needs --run, --resume or --undo")
 	case f.noFetch && verb != "" && verb != "run":
@@ -422,7 +422,7 @@ func syncArgs(verb string) cobra.PositionalArgs {
 }
 
 func newSyncRunCmd() *cobra.Command {
-	var noFetch, yes, ifReady bool
+	var noFetch, yes, ifReady, force bool
 	var sel selectionFlags
 	var push func() commands.PushMode
 	run := &cobra.Command{
@@ -453,10 +453,13 @@ func newSyncRunCmd() *cobra.Command {
 			"Claude session is in (Codex sessions are not detected), class divergent,\n" +
 			"one an earlier run already left waiting on you, and any repository whose\n" +
 			"trunk declares no .wt-sync.yaml. An idle Claude session is named before\n" +
-			"anything moves under it, whether or not anyone is asked, and a\n" +
-			"finished rebase ends with a wt: line to pass on to it. Sessions are listed\n" +
-			"again at the lock: one busy by then, or new since, is refused. The session\n" +
-			"wt itself runs under is not counted.\n\n" +
+			"anything moves under it, whether or not anyone is asked, and a finished\n" +
+			"rebase ends with a wt: line to pass on to it. Sessions are listed again\n" +
+			"at the lock: one busy by then, or new since, is refused. The session wt\n" +
+			"itself runs under is not counted.\n\n" +
+			"--force (-f) takes a named worktree past a Claude session in it, busy or\n" +
+			"idle: the session is named and told at the finish, and the run goes\n" +
+			"ahead. It lifts nothing else, and a run with nothing named refuses it.\n\n" +
 			"A worktree whose rebase finished with nothing owed is pushed at the end\n" +
 			"with --force-with-lease --force-if-includes, which refuses to overwrite\n" +
 			"commits on origin the branch has not seen. On a terminal you are asked\n" +
@@ -471,14 +474,14 @@ func newSyncRunCmd() *cobra.Command {
 			"--all, --roots and --profile run across repositories, asked once.\n\n" +
 			"Also spelled wt sync <work>... --run, with the same flags.",
 		Example: "  wt sync run login-crash api-tidy --yes # both, their stacks, not asked first\n" +
-			"  wt sync run login-crash --if-ready     # only if it needs nothing from you\n" +
+			"  wt sync run login-crash --if-ready --force  # clean only, past a session\n" +
 			"  wt sync run --all --no-fetch --push    # every ready one, everywhere, pushed\n" +
 			"  wt sync run --profile api --if-ready   # the ready ones in a profile's repos\n" +
 			"  wt sync --roots work --run --no-push   # spelled on wt sync; print the pushes",
 		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			f := syncVerbFlags{run: true, yes: yes, noFetch: noFetch, ifReady: ifReady, push: push()}
+			f := syncVerbFlags{run: true, yes: yes, noFetch: noFetch, ifReady: ifReady, force: force, push: push()}
 			if sel.selection().Any() {
 				return syncAcross(cmd, args, "run", sel.selection(), f)
 			}
@@ -490,6 +493,7 @@ func newSyncRunCmd() *cobra.Command {
 	run.Flags().BoolVar(&noFetch, "no-fetch", false, "rebase onto origin/<trunk> as last fetched")
 	run.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask before anything moves")
 	run.Flags().BoolVar(&ifReady, "if-ready", false, "rebase only what will go through without needing you, and fail on the rest")
+	run.Flags().BoolVarP(&force, "force", "f", false, "rebase a named worktree even with a Claude session in it")
 	sel.add(run, true)
 	push = addPushFlags(run, "push the worktrees that finish, without asking",
 		"neither push nor ask; print the push command")
@@ -512,7 +516,7 @@ func syncRun(cmd *cobra.Command, works []string, ctx *commands.Context, f syncVe
 // nothing, as a sweep deletes nothing: what nobody named and nobody
 // confirmed does not move. A worktree named on the line goes ahead.
 func runOptions(cmd *cobra.Command, f syncVerbFlags, bulk bool) (commands.RunOptions, *prompter) {
-	opts := commands.RunOptions{NoFetch: f.noFetch, IfReady: f.ifReady}
+	opts := commands.RunOptions{NoFetch: f.noFetch, IfReady: f.ifReady, Force: f.force}
 	opts.Push = f.push
 	switch {
 	case f.yes:
