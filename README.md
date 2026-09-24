@@ -80,13 +80,14 @@ examples: `wt <command> --help`.
 | `wt list` | every worktree, in any layout; `s` marks Superset's, `!` one nothing owns; a `PR` column when a worktree here has one, asked for by branch and cached for a few minutes (`--no-pr`, `--refresh`) |
 | `wt status [<work>]` | each worktree's branch, whether it is clean, and how far behind and ahead of trunk it is; with a worktree named, that one in full with `wt sync`'s verdict |
 | `wt find <pattern>` | resolve a worktree by fuzzy name, across repositories (`--candidates`) |
+| `wt repos` | every repository wt manages under your roots, with its worktrees and whether wt sync is set up (`--roots`, `--profile`, `--paths`, `--doctor`) |
 
 **Keep up with trunk**
 
 | | |
 |---|---|
 | `wt sync` | what rebasing each worktree onto trunk would do, simulated after fetching trunk; changes nothing of yours (`--no-fetch`) |
-| `wt sync run [<work>...]` | rebase the named worktrees onto trunk with the declared strategies (`--no-fetch`, `--yes`/`-y`, `--push`, `--no-push`); also spelled `wt sync <work>... --run`. With nothing named, every worktree the table calls ready except `recipe?`, asked first |
+| `wt sync run [<work>...]` | rebase the named worktrees onto trunk with the declared strategies (`--no-fetch`, `--yes`/`-y`, `--push`, `--no-push`); also spelled `wt sync <work>... --run`. With nothing named, every worktree the table calls ready except `recipe?`, asked first. `--if-ready` rebases only what goes through without needing you and fails on the rest |
 | `wt sync resume <work>` | continue the rebase a run left at a conflict that was yours (`--yes`/`-y`, `--push`, `--no-push`); also spelled `wt sync <work> --resume` |
 | `wt sync undo <work>` | put back every ref the last `wt sync run` on this worktree moved, aborting a rebase a run handed over (`--force`, `--yes`/`-y`); also spelled `wt sync <work> --undo` |
 | `wt sync doctor` | check what a run needs; `--fix` turns on rerere and removes expired locks, `--prune` deletes old safety refs; a `keeper` row says whether one is installed and how its last pass went |
@@ -101,7 +102,7 @@ examples: `wt <command> --help`.
 | `wt adopt <path>` | provision a worktree another tool created (`--relocate`, `--skip-build`) |
 | `wt setup [<source-dir>]` | provision the worktree you are in (`--skip-build`, `--source` to name what ran it) |
 | `wt remove <work>` | remove a worktree; delete its branch when merged — on trunk, or as a pull request the cache says landed — keep it when not (`--yes`, `--me` or `.` for the one you are in, `--force` for a locked one) |
-| `wt sweep` | delete local branches already merged into trunk — or whose pull request GitHub merged — and remove the worktrees on such branches that nothing is using; from the main checkout only (`--no-fetch`, `--yes`) |
+| `wt sweep` | delete local branches already merged into trunk — or whose pull request GitHub merged — and remove the worktrees on such branches that nothing is using; from the main checkout only (`--no-fetch`, `--yes`), or across repositories with `--all`, `--roots`, `--profile` |
 
 **This repository, and this build**
 
@@ -117,6 +118,32 @@ examples: `wt <command> --help`.
 
 A bare `<work>` takes the repository's default type, so `wt new thing` creates
 `feat_wt/thing`.
+
+### Many repositories
+
+wt knows where your repositories live: your **roots**, set per machine.
+
+```toml
+# ~/.config/wt/config.toml
+[roots]
+work = "~/src/work"        # a folder: every repository one level down
+oss = "~/src/oss"
+dotfiles = "~/dotfiles"    # a repository: that one, searched no deeper
+
+[profiles]
+api = ["~/src/work/api", "~/src/work/billing"]
+```
+
+`wt config set root.work ~/src/work` and `wt config set profile.api
+"<dir> <dir>"` write them; `WT_ROOTS` overrides the table. Only
+repositories with a `bin/worktree` configuration count.
+
+- `wt repos` lists them, and `wt cd <repo>` goes to one.
+- `wt sweep --all`, `wt sync --all` and `wt sync --all --run` work across every
+  one, planned a few at a time and asked once. `--roots work` or `--profile api`
+  narrows the run.
+- `wt doctor` and `wt repos --doctor` check that every root is there and every
+  profile entry is still a repository wt manages, inside a root.
 
 ## Shell functions
 

@@ -105,6 +105,13 @@ carry are shims that call `wt`.
    deletes trunk or a long-lived branch. Don't bulk-delete with
    `git branch --merged | xargs git branch -D`: it compares with whatever the
    checkout has and takes long-lived branches with it.
+10. **Find repositories with `wt repos`.** Anything that walks every repository
+    reads `wt repos --paths` rather than globbing folders: it knows the person's
+    roots (the `[roots]` table of their wt config, or `WT_ROOTS`), treats a root
+    that is itself a repository as that one repository, skips `<repo>_wt/` folders
+    and checkouts wt does not manage, and names each repository once. Commands
+    that act across repositories take `--all`, `--roots <name>` or `--profile
+    <name>` instead of a loop.
 
 ## Layouts `wt list` recognises
 
