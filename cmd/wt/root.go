@@ -25,8 +25,8 @@ func newRootCmd() *cobra.Command {
 			"\n" +
 			"The day goes look, work, tidy:\n" +
 			"  look    wt list, wt status, wt sync    what exists, and how it stands\n" +
-			"  work    wt new, then wt cd             make one and work in it\n" +
-			"  tidy    wt sync run, then wt remove    catch up with trunk, then clear up\n" +
+			"  work    wt new, wt cd, wt up           make one, work in it, keep it on trunk\n" +
+			"  tidy    wt sweep, wt remove            clear up what has landed\n" +
 			"\n" +
 			"<work> names a worktree of this repository exactly: any of the three\n" +
 			"things `wt list` prints for it (the work name, the branch, or the path),\n" +
@@ -41,8 +41,8 @@ func newRootCmd() *cobra.Command {
 			"Run `wt <command> --help` for that command's own examples.",
 		Example: "  wt new fix/login-crash    # branch, worktree and provisioning in one\n" +
 			"  wt cd login-crash         # work in it (needs wt's shell layer)\n" +
+			"  wt up                     # onto trunk, if that goes through cleanly\n" +
 			"  wt list                   # everything this repository has, and where\n" +
-			"  wt sync                   # what a rebase onto trunk would do to each\n" +
 			"  wt remove login-crash     # done with it; the branch is kept if unmerged",
 		SilenceErrors: true,
 		// Usage is silenced only once a command starts doing work. Cobra
@@ -76,7 +76,7 @@ func newRootCmd() *cobra.Command {
 	add(groupMake, newNewCmd(), newCheckoutCmd(), newPrCmd())
 	add(groupUse, newCdCmd(), newExecCmd(), newListCmd(), newStatusCmd(), newFindCmd(),
 		newPathCmd(), newBranchCmd(), newReposCmd())
-	add(groupTrunk, newSyncCmd())
+	add(groupTrunk, newUpCmd(), newSyncCmd())
 	add(groupTidy, newMigrateCmd(), newAdoptCmd(), newSetupCmd(), newRemoveCmd(), newSweepCmd())
 	add(groupRepo, newInitCmd(), newConfigCmd(), newDoctorCmd(), newAboutCmd(), newVersionCmd())
 	root.AddCommand(newBranchStripCmd(), newHookCmd())
