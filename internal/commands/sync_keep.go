@@ -378,7 +378,7 @@ func (p *keepPass) pass(recorded string) error {
 	if after == recorded && len(retry) == 0 {
 		p.result = "trunk unchanged"
 		p.header(fmt.Sprintf("%s %s unchanged; nothing to do", p.onto, git.ShortID(after, 7)))
-		fmt.Fprintf(p.w, "wt sync keep run  %s %s unchanged; nothing to do\n", p.onto, git.ShortID(after, 7))
+		fmt.Fprintf(p.w, "wt sync keep once  %s %s unchanged; nothing to do\n", p.onto, git.ShortID(after, 7))
 		return nil
 	}
 	p.acted = true
@@ -390,10 +390,10 @@ func (p *keepPass) pass(recorded string) error {
 	var rerr error
 	if after == recorded {
 		p.header(fmt.Sprintf("%s %s unchanged", p.onto, git.ShortID(after, 7)))
-		fmt.Fprintf(p.w, "wt sync keep run  %s %s unchanged; %d push%s to retry\n", p.onto, git.ShortID(after, 7), len(retry), plural(len(retry)))
+		fmt.Fprintf(p.w, "wt sync keep once  %s %s unchanged; %d push%s to retry\n", p.onto, git.ShortID(after, 7), len(retry), plural(len(retry)))
 	} else {
 		p.header(fmt.Sprintf("%s %s → %s", p.onto, git.ShortID(p.before, 7), git.ShortID(after, 7)))
-		fmt.Fprintf(p.w, "wt sync keep run  %s %s → %s (fetched)\n", p.onto, git.ShortID(p.before, 7), git.ShortID(after, 7))
+		fmt.Fprintf(p.w, "wt sync keep once  %s %s → %s (fetched)\n", p.onto, git.ShortID(p.before, 7), git.ShortID(after, 7))
 		ropts := RunOptions{NoFetch: true, Unattended: true, verbOptions: p.opts.verbOptions, pushOptions: pushOptions{Push: p.opts.Push}}
 		ropts.Confirm = nil
 		// An unattended pass has to know who is in a worktree: no claude to
@@ -671,7 +671,7 @@ func keeperCheck(ctx *Context, now time.Time) wtsync.Check {
 	case k.st.Job != "":
 		parts = append(parts, "stopped")
 	case !k.launchd:
-		parts = append(parts, "no launchd here; run wt sync keep run from cron")
+		parts = append(parts, "no launchd here; run wt sync keep once from cron")
 	default:
 		parts = append(parts, "not installed; wt sync keep start")
 	}
@@ -699,7 +699,7 @@ func SyncKeepStatus(ctx *Context, now time.Time, w io.Writer) error {
 	}
 	switch {
 	case !k.launchd:
-		fmt.Fprintln(w, "keeper   no launchd on this platform; run wt sync keep run from cron")
+		fmt.Fprintln(w, "keeper   no launchd on this platform; run wt sync keep once from cron")
 	case k.installed && k.loaded:
 		fmt.Fprintf(w, "keeper   installed, every %s, loaded · %s\n", fmtEvery(k.st.interval()), k.plistPath)
 	case k.installed:

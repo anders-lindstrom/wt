@@ -403,7 +403,7 @@ func TestStatusWorktreeSaysCleanAndCurrentInTheOverviewsWords(t *testing.T) {
 	if err := StatusWorktree(ctx, "clean", noStatusSessions(), &buf); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(buf.String(), "  sync    clean · wt sync run clean\n") {
+	if !strings.Contains(buf.String(), "  sync    conflict-free · wt sync run clean\n") {
 		t.Errorf("want the clean verdict with the run advice:\n%s", buf.String())
 	}
 }
@@ -461,7 +461,7 @@ func TestStatusWorktreeSaysWhenTrunkDeclaresNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"  sync    clean · ready, once trunk declares .wt-sync.yaml\n",
+		"  sync    conflict-free · ready, once trunk declares .wt-sync.yaml\n",
 		"demo declares no .wt-sync.yaml on origin/main: reported only, never rebased.\n",
 	} {
 		if !strings.Contains(buf.String(), want) {

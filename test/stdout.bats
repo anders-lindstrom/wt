@@ -49,7 +49,7 @@ only_path() {
 @test "wt new writes the path alone to stdout, with Superset talking on stderr" {
     fake_superset
     cd "$REPO"
-    run --separate-stderr wt new fix/login-crash --skip-build
+    run --separate-stderr wt new fix/login-crash --no-build
     [ "$status" -eq 0 ]
     only_path
     [[ "$output" == */demo_wt/fix_wt/login-crash ]]
@@ -59,7 +59,7 @@ only_path() {
     fake_superset
     cd "$REPO"
     git -C "$REPO" branch fix_wt/from-elsewhere
-    run --separate-stderr wt checkout fix_wt/from-elsewhere --skip-build
+    run --separate-stderr wt checkout fix_wt/from-elsewhere --no-build
     [ "$status" -eq 0 ]
     only_path
     [[ "$output" == */demo_wt/*/from-elsewhere ]]
@@ -108,7 +108,7 @@ GH
     fake_superset
     fake_gh
     cd "$REPO"
-    run --separate-stderr wt pr checkout 12 --skip-build
+    run --separate-stderr wt pr checkout 12 --no-build
     [ "$status" -eq 0 ]
     only_path
     [[ "$output" == */demo_wt/feat_wt/pr-12-residential_fixes ]]

@@ -32,7 +32,7 @@ wt doctor        # check it
 detected values as the defaults:
 
 ```
-main branch [main]:
+trunk (MAIN_BRANCH) [main]:
 branch prefix [feat_wt]:
 build command (blank for none): make build
 ```
@@ -65,8 +65,8 @@ examples: `wt <command> --help`.
 
 | | |
 |---|---|
-| `wt new <type>/<work>` | create a branch and worktree, then provision it (`--base`, `--no-setup`, `--skip-build`) |
-| `wt checkout <branch> [work]` | put a worktree on a branch that already exists |
+| `wt new <type>/<work>` | create a branch and worktree, then provision it (`--base`, `--no-setup`, `--no-build`, `--no-superset`) |
+| `wt checkout <branch> [<work>]` | put a worktree on a branch that already exists; also `wt co` |
 | `wt pr checkout [<number>]` | put a worktree on a pull request; with no number, pick one from the open ones, your review queue first |
 | `wt pr list` | every open pull request, its state and checks, and the worktree on it |
 | `wt pr open [<work>]` | open a worktree's pull request in the browser; with no argument, the one you are in |
@@ -75,49 +75,51 @@ examples: `wt <command> --help`.
 
 | | |
 |---|---|
-| `wt cd [pattern]` | cd to a worktree, in this shell; `.` is the one you are in, bare or `/` the main checkout |
+| `wt cd [<pattern>]` | cd to a worktree, in this shell; `.` is the one you are in, bare or `/` the main checkout |
 | `wt exec <pattern> <cmd>…` | run a command there, in a subshell; your shell stays put |
-| `wt list` | every worktree, in any layout; `s` marks Superset's, `!` one nothing owns; a `PR` column when a worktree here has one, asked for by branch and cached for a few minutes (`--no-pr`, `--refresh`) |
-| `wt status [<work>]` | each worktree's branch, whether it is clean, and how far behind and ahead of trunk it is; with a worktree named, that one in full with `wt sync`'s verdict |
+| `wt list` | every worktree, in any layout; `s` marks Superset's, `!` one nothing owns; a `PR` column when a worktree here has one, asked for by branch and cached for a few minutes (`--no-pr`, `--refresh`; `--all`, `--roots`, `--profile` for many repositories) |
+| `wt status [<work>]` | each worktree's branch, whether its checkout is clean, and how far behind and ahead of trunk it is; with a worktree named, that one in full with `wt sync`'s verdict (`--all`, `--roots`, `--profile` for many repositories) |
 | `wt find <pattern>` | resolve a worktree by fuzzy name, across repositories (`--candidates`) |
-| `wt repos` | every repository wt manages under your roots, with its worktrees and whether wt sync is set up (`--roots`, `--profile`, `--paths`, `--doctor`) |
+| `wt path <work>` / `wt branch <work>` | where a piece of work lives or would go, and its branch; exact, this repository only, for scripts |
+| `wt repos` | every repository wt manages under your roots, with its worktrees and whether wt sync is set up (`--all`, `--roots`, `--profile`, `--paths`) |
 
 **Keep up with trunk**
 
 | | |
 |---|---|
 | `wt sync` | what rebasing each worktree onto trunk would do, simulated after fetching trunk; changes nothing of yours (`--no-fetch`) |
-| `wt sync run [<work>...]` | rebase the named worktrees onto trunk with the declared strategies (`--no-fetch`, `--yes`/`-y`, `--push`, `--no-push`); also spelled `wt sync <work>... --run`. With nothing named, every worktree the table calls ready except `recipe?`, asked first. `--if-ready` rebases only what goes through without needing you and fails on the rest |
+| `wt sync run [<work>...]` | rebase the named worktrees onto trunk with the declared strategies (`--no-fetch`, `--yes`/`-y`, `--push`, `--no-push`, `--if-ready`); also spelled `wt sync <work>... --run`. With nothing named, every worktree the table calls ready except `recipe?`, asked first — and with no terminal, only with `--yes`. `--if-ready` rebases what is ready and fails if anything was not. The push question defaults to no; `--yes` asks nothing and pushes only with `--push` |
 | `wt sync resume <work>` | continue the rebase a run left at a conflict that was yours (`--yes`/`-y`, `--push`, `--no-push`); also spelled `wt sync <work> --resume` |
-| `wt sync undo <work>` | put back every ref the last `wt sync run` on this worktree moved, aborting a rebase a run handed over (`--force`, `--yes`/`-y`); also spelled `wt sync <work> --undo` |
+| `wt sync undo <work>` | put back every ref the last `wt sync run` on this worktree moved, aborting a rebase a run handed over (`--force`/`-f`, `--yes`/`-y`); also spelled `wt sync <work> --undo` |
 | `wt sync doctor` | check what a run needs; `--fix` turns on rerere and removes expired locks, `--prune` deletes old safety refs; a `keeper` row says whether one is installed and how its last pass went |
-| `wt sync keep run` | one unattended pass: fetch trunk and, when it moved, rebase every ready worktree nobody is in and push what finished (`--no-push`, `--every`); logged to `.git/wt-sync-keep.log`; what the job runs, and what cron runs elsewhere |
-| `wt sync keep start` | install a launchd job (macOS) that runs `wt sync keep run` every 30 minutes (`--every`, `--no-push`), pushing the way this shell's git does; `wt sync keep status` for the last pass and the next, `wt sync keep stop` to remove it |
+| `wt sync keep once` | one unattended pass: fetch trunk and, when it moved, rebase every ready worktree nobody is in and push what finished (`--no-push`); `keep run` still works; logged to `.git/wt-sync-keep.log`; what the job runs, and what cron runs elsewhere |
+| `wt sync keep start` | install a launchd job (macOS) that runs `wt sync keep once` every 30 minutes (`--every`, `--no-push`), pushing the way this shell's git does; `wt sync keep status` for the last pass and the next, `wt sync keep stop` to remove it |
 
 **Put worktrees in their place**
 
 | | |
 |---|---|
-| `wt migrate <worktree> [<type>/<name>]` | move a worktree where it belongs, renaming or retyping it on the way (`--dry-run`, `--force`); also `wt move` |
-| `wt adopt <path>` | provision a worktree another tool created (`--relocate`, `--skip-build`) |
-| `wt setup [<source-dir>]` | provision the worktree you are in (`--skip-build`, `--source` to name what ran it) |
-| `wt remove <work>` | remove a worktree; delete its branch when merged — on trunk, or as a pull request the cache says landed — keep it when not (`--yes`, `--me` or `.` for the one you are in, `--force` for a locked one) |
-| `wt sweep` | delete local branches already merged into trunk — or whose pull request GitHub merged — and remove the worktrees on such branches that nothing is using; from the main checkout only (`--no-fetch`, `--yes`), or across repositories with `--all`, `--roots`, `--profile` |
+| `wt migrate <work> [<type>/<name>]` | move a worktree where it belongs, renaming or retyping it on the way (`--dry-run`, `--force`/`-f`); also `wt move` |
+| `wt adopt <path>` | provision a worktree another tool created (`--relocate`, `--no-build`) |
+| `wt setup [<from-dir>]` | provision the worktree you are in (`--no-build`, `--source` to name what ran it) |
+| `wt remove <work>` | remove a worktree; delete its branch when merged — on trunk, or as a pull request the cache says landed — keep it when not (`--yes`, `--dry-run`, `.` for the one you are in, `--force`/`-f` for a locked one) |
+| `wt sweep` | delete local branches already merged into trunk — or whose pull request GitHub merged — and remove the worktrees on such branches that nothing is using; from the main checkout only (`--no-fetch`, `--yes`, `--dry-run`), or across repositories with `--all`, `--roots`, `--profile` |
 
 **This repository, and this build**
 
 | | |
 |---|---|
-| `wt init` | create this repository's `worktree.conf` (`--yes` to skip the prompts, `--force` to replace one) |
+| `wt init` | create this repository's `worktree.conf` (`--yes` to skip the prompts, `--force`/`-f` to replace one) |
 | `wt config [--shell]` | the resolved configuration, typed or eval-able |
 | `wt config get`/`set`/`unset`/`path` | your own settings, per machine, from anywhere |
-| `wt doctor` | check config, required tools and worktree health |
-| `wt path` / `wt branch` | resolve one piece of work |
+| `wt doctor` | check config, required tools and worktree health, and your roots and profiles; `--all`, `--roots`, `--profile` check every repository, wt sync doctor included where it is set up |
 | `wt about` / `wt version` | which build this is and what changed; the version alone, for scripts |
 | `wt completion zsh` | shell completion, including live work names |
 
 A bare `<work>` takes the repository's default type, so `wt new thing` creates
-`feat_wt/thing`.
+`feat_wt/thing`. `<work>` matches exactly, inside this repository, and is what
+every command that changes or deletes takes; `<pattern>` (`cd`, `exec`, `find`)
+is fuzzy and searches your other repositories too.
 
 ### Many repositories
 
@@ -139,11 +141,12 @@ api = ["~/src/work/api", "~/src/work/billing"]
 repositories with a `bin/worktree` configuration count.
 
 - `wt repos` lists them, and `wt cd <repo>` goes to one.
-- `wt sweep --all`, `wt sync --all` and `wt sync --all --run` work across every
-  one, planned a few at a time and asked once. `--roots work` or `--profile api`
-  narrows the run.
-- `wt doctor` and `wt repos --doctor` check that every root is there and every
-  profile entry is still a repository wt manages, inside a root.
+- `wt sweep --all` and `wt sync --all --run` work across every one, planned a
+  few at a time and asked once; `wt sync --all` is the overview of each.
+  `--roots work` or `--profile api` narrows the run.
+- `wt list`, `wt status` and `wt doctor` take the same flags.
+- `wt doctor` checks that every root is there and every profile entry is still a
+  repository wt manages, inside a root.
 
 ## Shell functions
 

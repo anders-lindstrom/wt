@@ -178,7 +178,7 @@ func initSubmodules(ctx *Context, target string, w io.Writer) {
 func runBuildInit(ctx *Context, target string, opts SetupOptions, w io.Writer) {
 	switch {
 	case opts.SkipBuild:
-		fmt.Fprintln(w, "⏭ build initialisation skipped (--skip-build)")
+		fmt.Fprintln(w, "⏭ build initialisation skipped (--no-build)")
 		return
 	case !ctx.Config.BuildInitEnabled:
 		fmt.Fprintln(w, "- build initialisation disabled in configuration")

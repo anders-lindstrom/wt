@@ -68,7 +68,7 @@ func keepJobFor(ctx *Context) (keepJob, error) {
 
 // keepPlist is the job as a launchd property list.
 func keepPlist(j keepJob) string {
-	args := []string{j.Exe, "sync", "keep", "run", "--every", fmtEvery(j.Every)}
+	args := []string{j.Exe, "sync", "keep", "once", "--every", fmtEvery(j.Every)}
 	if j.NoPush {
 		args = append(args, "--no-push")
 	}
@@ -96,7 +96,7 @@ func keepPlist(j keepJob) string {
 	b.WriteString("\t<key>StandardOutPath</key>\n\t<string>/dev/null</string>\n")
 	fmt.Fprintf(&b, "\t<key>StandardErrorPath</key>\n\t<string>%s</string>\n", esc(filepath.Join(j.GitDir, "wt-sync-keep.err")))
 	// Every commit a pass makes is unsigned, whatever ~/.gitconfig says: a
-	// signer that asks has nobody to ask under launchd. keep run appends
+	// signer that asks has nobody to ask under launchd. keep once appends
 	// the same on top of whatever stack it finds; here the stack is this.
 	env := map[string]string{"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "commit.gpgsign", "GIT_CONFIG_VALUE_0": "false"}
 	for n, v := range j.Env {
@@ -186,7 +186,7 @@ type KeepStartOptions struct {
 
 // ErrNoLaunchd is start's and stop's answer off macOS. The command exits 2
 // with it: not a failure of the repository, a platform with no launchd.
-var ErrNoLaunchd = errors.New("not supported on this platform; run wt sync keep run from cron")
+var ErrNoLaunchd = errors.New("not supported on this platform; run wt sync keep once from cron")
 
 // SyncKeepStart installs the keeper as a launchd job for this repository
 // and loads it. It refuses when one is already installed.
@@ -259,7 +259,7 @@ func SyncKeepStart(ctx *Context, opts KeepStartOptions, w io.Writer) error {
 		return err
 	}
 	fmt.Fprintf(w, "installed %s\n", job.PlistPath)
-	fmt.Fprintf(w, "runs wt sync keep run every %s in %s; first at %s\n", fmtEvery(every), ctx.Repo.MainRoot, keepClock(st.NextRun, now()))
+	fmt.Fprintf(w, "runs wt sync keep once every %s in %s; first at %s\n", fmtEvery(every), ctx.Repo.MainRoot, keepClock(st.NextRun, now()))
 	fmt.Fprintln(w, keepAuthLine(job))
 	fmt.Fprintf(w, "log %s · wt sync keep status\n", logPath)
 	return nil

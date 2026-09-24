@@ -15,7 +15,7 @@ func newConfigCmd() *cobra.Command {
 		Use:   "config",
 		Short: "Print the resolved configuration, and change your own settings",
 		Long: "Print the configuration as every command sees it: the repository's\n" +
-			"values, the defaults it did not set, the main branch detected from\n" +
+			"values, the defaults it did not set, trunk as detected from\n" +
 			"origin, and your own settings with where each one came from.\n\n" +
 			"Your settings live in one file per machine, outside any repository:\n" +
 			"$XDG_CONFIG_HOME/wt/config.toml, or ~/.config/wt/config.toml. It is\n" +
@@ -44,6 +44,10 @@ func userKeyList() string {
 	for _, name := range config.UserKeyNames() {
 		b.WriteString("  " + name + " — " + config.UserKeyDoc(name) + "\n")
 	}
+	b.WriteString("  root.<name> — a directory of repositories, or one repository, for\n" +
+		"    --roots <name>; WT_ROOTS, when set, stands in for every root\n")
+	b.WriteString("  profile.<name> — repositories for --profile <name>, as paths\n" +
+		"    separated by spaces or commas\n")
 	return strings.TrimRight(b.String(), "\n")
 }
 
@@ -62,7 +66,7 @@ func newConfigGetCmd() *cobra.Command {
 			"  wt config get branch_suffix  # _wt unless you named another\n" +
 			"  wt config get type_names     # empty unless you renamed a type",
 		Args:      needArgs(1, "<key>", "wt config get superset"),
-		ValidArgs: config.UserKeyNames(),
+		ValidArgs: append(config.UserKeyNames(), "root.", "profile."),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return commands.UserGet(args[0], cmd.OutOrStdout(), cmd.ErrOrStderr())
 		},
@@ -85,9 +89,10 @@ func newConfigSetCmd() *cobra.Command {
 		Example: "  wt config set superset true   # register new worktrees with Superset\n" +
 			"  wt config set github false    # keep wt away from the GitHub CLI\n" +
 			"  wt config set branch_suffix \"\"  # name branches feat/login-crash\n" +
-			"  wt config set type_names \"feat=feature docs=doc\"  # and feature/login-crash",
+			"  wt config set type_names \"feat=feature docs=doc\"  # and feature/login-crash\n" +
+			"  wt config set root.work ~/src/work  # a root --roots work selects",
 		Args:      needArgs(2, "<key> <value>", "wt config set superset true"),
-		ValidArgs: config.UserKeyNames(),
+		ValidArgs: append(config.UserKeyNames(), "root.", "profile."),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return commands.UserSet(args[0], args[1], cmd.OutOrStdout())
 		},
@@ -106,7 +111,7 @@ func newConfigUnsetCmd() *cobra.Command {
 			"  wt config unset branch_suffix  # let each repository name its branches\n" +
 			"  wt config unset type_names     # and let it name its types",
 		Args:      needArgs(1, "<key>", "wt config unset superset"),
-		ValidArgs: config.UserKeyNames(),
+		ValidArgs: append(config.UserKeyNames(), "root.", "profile."),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return commands.UserUnset(args[0], cmd.OutOrStdout())
 		},

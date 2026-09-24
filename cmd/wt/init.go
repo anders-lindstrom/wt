@@ -18,7 +18,7 @@ func newInitCmd() *cobra.Command {
 		Use:   "init",
 		Short: "Create this repository's worktree configuration",
 		Long: "Write bin/worktree/worktree.conf, which every other command needs.\n\n" +
-			"Asks for the three keys a repository actually varies — the main branch,\n" +
+			"Asks for the three keys a repository actually varies — trunk (MAIN_BRANCH),\n" +
 			"the branch prefix, and the build command — offering detected values as\n" +
 			"the defaults. Every other key is written commented at its default, so\n" +
 			"the file is this repository's reference for what it may set.\n\n" +
@@ -47,7 +47,7 @@ func newInitCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask; write the detected values")
-	cmd.Flags().BoolVar(&force, "force", false, "replace an existing configuration")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "replace an existing configuration")
 	return cmd
 }
 
@@ -80,7 +80,7 @@ func askAnswers(p *prompter) func(commands.Answers) (commands.Answers, error) {
 
 		var a commands.Answers
 		var err error
-		if a.MainBranch, err = ask("main branch", defaults.MainBranch); err != nil {
+		if a.MainBranch, err = ask("trunk (MAIN_BRANCH)", defaults.MainBranch); err != nil {
 			return a, err
 		}
 		if a.BranchPrefix, err = ask("branch prefix", defaults.BranchPrefix); err != nil {

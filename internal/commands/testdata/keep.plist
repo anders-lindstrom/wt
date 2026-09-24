@@ -9,7 +9,7 @@
 		<string>/usr/local/bin/wt</string>
 		<string>sync</string>
 		<string>keep</string>
-		<string>run</string>
+		<string>once</string>
 		<string>--every</string>
 		<string>1h30m</string>
 		<string>--no-push</string>

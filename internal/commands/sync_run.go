@@ -22,7 +22,7 @@ const networkTimeout = 5 * time.Minute
 // RunOptions tunes SyncRun for callers and tests.
 type RunOptions struct {
 	NoFetch bool
-	// Unattended is a run nobody is watching: wt sync keep run. With nothing
+	// Unattended is a run nobody is watching: wt sync keep once. With nothing
 	// named it leaves a worktree with any session in it alone, idle or busy,
 	// since there is nobody there to ask on its behalf.
 	Unattended bool
