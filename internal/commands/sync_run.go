@@ -32,6 +32,12 @@ type RunOptions struct {
 	// refused, with its stack, and makes the run fail; with nothing named,
 	// every worktree left behind trunk does.
 	IfReady bool
+	// label is the run's first word, "wt up" for the short form.
+	label string
+	// undeclaredOK lets a trunk with no .wt-sync.yaml be rebased onto, with
+	// nothing declared: no strategies, no deferred steps. With IfReady that
+	// takes a conflict-free rebase and nothing else, which is all wt up asks.
+	undeclaredOK bool
 	verbOptions
 	pushOptions
 }
@@ -212,8 +218,17 @@ func (r *runPlan) declare() error {
 		return err
 	}
 	r.onto, r.trunkSHA = onto, trunkSHA
-	fmt.Fprintf(r.w, "wt sync run  onto %s %s %s\n", onto, git.ShortID(trunkSHA, 7), fetched)
+	label := r.opts.label
+	if label == "" {
+		label = "wt sync run"
+	}
+	fmt.Fprintf(r.w, "%s  onto %s %s %s\n", label, onto, git.ShortID(trunkSHA, 7), fetched)
 	cfg, err := wtsync.LoadFromRef(ctx.Repo.MainRoot, trunkSHA)
+	if errors.Is(err, wtsync.ErrNoConfig) && r.opts.undeclaredOK {
+		fmt.Fprintf(r.w, "no %s on %s: nothing is declared, so only a conflict-free rebase goes\n", wtsync.ConfigFile, onto)
+		r.cfg = &wtsync.Config{}
+		return nil
+	}
 	if errors.Is(err, wtsync.ErrNoConfig) {
 		return undeclaredError{fmt.Sprintf("%s declares no %s on %s: nothing is rebased", ctx.Repo.Name, wtsync.ConfigFile, onto)}
 	}

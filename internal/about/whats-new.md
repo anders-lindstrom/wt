@@ -6,6 +6,13 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-24 15:05 — wt up: onto trunk, if it is clean
+
+- `wt up` rebases the worktree you are in onto trunk only when nothing would be
+  handed to you; otherwise it touches nothing, says why and fails.
+- It is `wt sync . --run --if-ready`, and also works where trunk has no
+  `.wt-sync.yaml` (conflict-free only there). `--push` pushes without asking.
+
 ## 2026-09-24 13:13 — One way to say things, and safer defaults
 
 - With no terminal, `wt sync --run` with nothing named, or across repositories,

@@ -32,6 +32,7 @@ func newSyncCmd() *cobra.Command {
 			"          wt sync <work>... --run\n" +
 			"          wt sync --run           every worktree the table calls ready, asked first\n" +
 			"          wt sync <work> --run --if-ready\n" +
+			"          wt up                   the same for the worktree you are in\n" +
 			"                                  only if it goes through without needing you; else\n" +
 			"                                  say why, touch nothing, and fail\n" +
 			"  finish  wt sync resume <work>   continue a rebase run left at a conflict that is yours,\n" +
