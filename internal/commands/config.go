@@ -102,6 +102,17 @@ func userBlock(ctx *Context, w io.Writer) {
 		}
 		fmt.Fprintf(w, "  %-14s %v (%s)\n", name+":", config.UserLiteral(name, v), u.Origin(name))
 	}
+	roots, origin := RootsFor(u)
+	fmt.Fprintf(w, "roots:         (%s)\n", origin)
+	for _, root := range roots {
+		fmt.Fprintf(w, "  %-14s %s\n", root.Name+":", root.Path)
+	}
+	for _, p := range u.Profiles {
+		fmt.Fprintf(w, "profile %s:\n", p.Name)
+		for _, r := range p.Repos {
+			fmt.Fprintf(w, "  %s\n", r)
+		}
+	}
 	mode, origin := supersetOrigin(ctx)
 	fmt.Fprintf(w, "superset mode: %s (%s)\n", mode, origin)
 }
@@ -155,6 +166,14 @@ func UserUnset(name string, w io.Writer) error {
 	path, removed, err := config.UnsetUser(name)
 	if err != nil {
 		return err
+	}
+	if config.IsTableKey(name) {
+		if !removed {
+			fmt.Fprintf(w, "%s was not set in %s\n", name, path)
+			return nil
+		}
+		fmt.Fprintf(w, "%s removed from %s\n", name, path)
+		return nil
 	}
 	def, err := config.DefaultUser().Value(name)
 	if err != nil {

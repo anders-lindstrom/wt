@@ -6,6 +6,14 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-24 10:59 — Your roots, and wt across every repository
+
+- `wt config set root.work ~/src/work` names a folder of repositories, or one
+  repository such as `~/dotfiles`; `profile.<name>` names a hand-picked set.
+- `wt repos` lists them, with whether wt sync is set up (`--doctor` for more).
+- `wt sweep --all` and `wt sync --all [--run]` act on every one, asked once.
+- `wt sync . --run --if-ready` rebases only if nothing needs you, else fails.
+
 ## 2026-09-24 09:25 — A branch GitHub rebased and merged is merged
 
 - `wt remove` and `wt sweep` now delete a branch whose every commit is on trunk

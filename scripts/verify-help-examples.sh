@@ -95,6 +95,17 @@ make_resume() {
 # a branch to delete, clean merged worktrees to remove (login-crash, spare and
 # old are cut from trunk and never committed to) and a dirty merged worktree
 # (api-tidy, with dirt staged) to keep and say why.
+# make_sync under a root named work, make_plain under one named oss, and a
+# profile api naming the first: what --all, --roots and --profile select. The
+# roots are this case's own settings, like every other case's.
+make_fleet() {
+    local d; d=$(make_sync "$1/work")
+    make_plain "$1/oss" >/dev/null
+    "$WT" config set root.work "$1/work" >/dev/null
+    "$WT" config set root.oss "$1/oss" >/dev/null
+    "$WT" config set profile.api "$d" >/dev/null
+    echo "$d"
+}
 make_sweep() {
     local d; d=$(make_worktrees "$1")
     git -C "$d" branch done-work
@@ -198,6 +209,7 @@ check() {
         sync) repo=$(make_sync "$dir");;
         resume) repo=$(make_resume "$dir");;
         sweep) repo=$(make_sweep "$dir");;
+        fleet) repo=$(make_fleet "$dir");;
         keep|launchd) repo=$(make_keep "$dir"); prereq="export HOME=$dir/home PATH=$dir/bin:\$PATH; $prereq";;
         gh) repo=$(make_gh "$dir"); prereq="export PATH=$dir/bin:\$PATH; $prereq";;
         ghwork) repo=$(make_ghwork "$dir"); prereq="export PATH=$dir/bin:\$PATH; $prereq";;
@@ -282,6 +294,14 @@ check worktrees myrepo_wt/fix_wt/login-crash "" 'wt remove --me'
 check worktrees myrepo_wt/fix_wt/login-crash "" 'wt remove .'
 
 check sweep "" "" 'wt sweep'
+check fleet "" "" 'wt sweep --all --yes'
+check fleet "" "" 'wt sweep --roots work'
+check fleet "" "" 'wt sweep --profile api'
+check fleet "" "" 'wt repos'
+check fleet "" "" 'wt repos --roots work,oss'
+check fleet "" "" 'wt repos --profile api'
+check fleet "" "" 'wt repos --paths'
+check fleet "" "" 'wt repos --doctor'
 check sweep "" "" 'wt sweep --no-fetch'
 check sweep "" "" 'wt sweep --yes'
 
@@ -338,6 +358,13 @@ check sync "" "" 'wt sync run --no-fetch'
 check sync "" "" 'wt sync run login-crash api-tidy --yes'
 check sync "" "" 'wt sync run login-crash --push'
 check sync "" "" 'wt sync login-crash --run --no-push'
+check fleet work/myrepo_wt/fix_wt/login-crash "" 'wt sync . --run --if-ready'
+check fleet "" "" 'wt sync --all --run --if-ready'
+check fleet "" "" 'wt sync --profile api'
+check fleet "" "" 'wt sync run login-crash --if-ready'
+check fleet "" "" 'wt sync run --all --no-fetch --push'
+check fleet "" "" 'wt sync run --profile api --if-ready'
+check fleet "" "" 'wt sync --roots work --run --no-push'
 check resume "" "" 'wt sync resume login-crash'
 check resume "" "" 'wt sync resume fix/login-crash'
 check resume "" "" 'wt sync resume login-crash --no-push'

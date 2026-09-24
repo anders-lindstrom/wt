@@ -121,6 +121,13 @@ type User struct {
 	// repository's own types: a pair for a type a repository does not have
 	// is a name for somewhere else, not a mistake.
 	TypeNames []string
+	// Roots and Profiles are the [roots] and [profiles] tables, in the order
+	// the file writes them; nil when it has none.
+	Roots    []NamedRoot
+	Profiles []Profile
+	// TablesUnreadable says [roots] or [profiles] is there and could not be
+	// read, so the roots it names are not known.
+	TablesUnreadable bool
 	// Path is the file these values would be read from, whether or not it
 	// exists.
 	Path string
@@ -223,6 +230,9 @@ func (u *User) Origin(name string) string {
 
 // Value is one key's current value, as the file spells it.
 func (u *User) Value(name string) (string, error) {
+	if table, entry, ok := tableKey(name); ok {
+		return u.tableValue(table, entry)
+	}
 	k, ok := userKeyByName(name)
 	if !ok {
 		return "", unknownUserKey(name)
@@ -237,7 +247,7 @@ func (u *User) IsSet(name string) bool {
 }
 
 func unknownUserKey(name string) error {
-	return fmt.Errorf("unknown key %q; the user config takes: %s",
+	return fmt.Errorf("unknown key %q; the user config takes: %s root.<name> profile.<name>",
 		name, strings.Join(UserKeyNames(), " "))
 }
 
@@ -283,11 +293,11 @@ func loadUser(path string) (*User, error) {
 	if err != nil {
 		return unusableUser(path), fmt.Errorf("%s: %w", path, err)
 	}
-	var problems []string
+	problems := decodeTables(u, md, doc, md.Keys())
 	for _, name := range md.Keys() {
 		// Every setting is top-level; a key inside a table is covered by the
 		// table's own entry, which is already unknown.
-		if len(name) != 1 {
+		if len(name) != 1 || name[0] == tableRoots || name[0] == tableProfiles {
 			continue
 		}
 		k, ok := userKeyByName(name[0])
@@ -306,7 +316,7 @@ func loadUser(path string) (*User, error) {
 	if len(problems) > 0 {
 		// The keys that did parse are kept: one mistyped key must not cost
 		// the person the setting they wrote on the line above it.
-		return u, fmt.Errorf("%s (wt's settings are: %s)",
+		return u, fmt.Errorf("%s (wt's settings are: %s, and the [roots] and [profiles] tables)",
 			strings.Join(problems, "; "), strings.Join(UserKeyNames(), " "))
 	}
 	return u, nil
@@ -340,6 +350,9 @@ func decodeUser(md toml.MetaData, prim toml.Primitive, k userKey) (string, error
 // there, and returns the path and the parsed value. An unknown key, a value
 // that is not a boolean, or a file wt cannot parse writes nothing.
 func SetUser(name, value string) (path string, set string, err error) {
+	if _, _, ok := tableKey(name); ok {
+		return setTable(name, value)
+	}
 	literal, err := userValue(name, value)
 	if err != nil {
 		return "", "", err
@@ -357,6 +370,9 @@ func SetUser(name, value string) (path string, set string, err error) {
 // UnsetUser removes one key from the user file, so it falls back to its
 // built-in default. Removing a key that was never written is not an error.
 func UnsetUser(name string) (path string, removed bool, err error) {
+	if _, _, ok := tableKey(name); ok {
+		return unsetTable(name)
+	}
 	if _, ok := userKeyByName(name); !ok {
 		return "", false, unknownUserKey(name)
 	}

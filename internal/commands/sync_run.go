@@ -26,6 +26,12 @@ type RunOptions struct {
 	// named it leaves a worktree with any session in it alone, idle or busy,
 	// since there is nobody there to ask on its behalf.
 	Unattended bool
+	// IfReady rebases only what will go through without handing anything
+	// to a person: clean, or every stop resolved by a verified strategy —
+	// what the overview files under ready. A named worktree that is not is
+	// refused, with its stack, and makes the run fail; with nothing named,
+	// every worktree left behind trunk does.
+	IfReady bool
 	verbOptions
 	pushOptions
 }
@@ -92,6 +98,9 @@ type runPlan struct {
 	// left alone with what holds them, the ones it rebased, the ones it
 	// pushed.
 	left, rebased, pushed []string
+	// notReady is the work name of every worktree selectReady left behind
+	// trunk, for a run that must say so: IfReady fails on them.
+	notReady []string
 }
 
 // SyncRun rebases the named worktrees (and the stacks they belong to) onto
@@ -121,8 +130,19 @@ func (r *runPlan) run(works []string) error {
 	}
 	if len(works) == 0 {
 		ready, err := r.selectReady()
-		if err != nil || len(ready) == 0 {
+		if err != nil {
 			return err
+		}
+		if opts.IfReady {
+			for _, l := range r.notReady {
+				r.failures = append(r.failures, l+" (not ready)")
+			}
+		}
+		if len(ready) == 0 {
+			if len(r.failures) > 0 {
+				return fmt.Errorf("not completed: %s", strings.Join(r.failures, ", "))
+			}
+			return nil
 		}
 		works = ready
 	}
@@ -130,6 +150,9 @@ func (r *runPlan) run(works []string) error {
 		return err
 	}
 	if proceed, err := r.triage(); err != nil || !proceed {
+		if err == nil && len(r.failures) > 0 {
+			return fmt.Errorf("not completed: %s", strings.Join(r.failures, ", "))
+		}
 		return err
 	}
 	// The backstop for a run that returns early: whatever lockAll and
@@ -192,7 +215,7 @@ func (r *runPlan) declare() error {
 	fmt.Fprintf(r.w, "wt sync run  onto %s %s %s\n", onto, git.ShortID(trunkSHA, 7), fetched)
 	cfg, err := wtsync.LoadFromRef(ctx.Repo.MainRoot, trunkSHA)
 	if errors.Is(err, wtsync.ErrNoConfig) {
-		return fmt.Errorf("%s declares no %s on %s: nothing is rebased", ctx.Repo.Name, wtsync.ConfigFile, onto)
+		return undeclaredError{fmt.Sprintf("%s declares no %s on %s: nothing is rebased", ctx.Repo.Name, wtsync.ConfigFile, onto)}
 	}
 	if err != nil {
 		return err
@@ -200,6 +223,13 @@ func (r *runPlan) declare() error {
 	r.cfg = cfg
 	return nil
 }
+
+// undeclaredError is a trunk with no .wt-sync.yaml: nothing a run can do, and
+// in a run across repositories not a failure — that repository has not opted
+// in.
+type undeclaredError struct{ msg string }
+
+func (e undeclaredError) Error() string { return e.msg }
 
 // listAgents lists the other agent sessions once for the run.
 func (r *runPlan) listAgents() ([]wtsync.Agent, error) {
@@ -251,9 +281,15 @@ func (r *runPlan) selectReady() ([]string, error) {
 			// On trunk already; the overview leaves it out too.
 		case !r.ready(a):
 			left = append(left, leftLabel(work, a))
+			// Detached and stale are lifecycle questions, not a rebase that
+			// would not go through.
+			if a.Class != wtsync.Detached && a.Class != wtsync.Stale {
+				r.notReady = append(r.notReady, work)
+			}
 		default:
 			if hold := r.stackHold(wt.Branch); hold != "" {
 				left = append(left, work+" "+classLabel(a)+", "+hold)
+				r.notReady = append(r.notReady, work)
 				continue
 			}
 			ready = append(ready, work)
@@ -384,6 +420,14 @@ func (r *runPlan) triage() (proceed bool, err error) {
 	for _, b := range r.branches {
 		if p := r.parts[b]; p.verdict == wtsync.RefuseRun {
 			r.refuseStack(b, p.work+": "+p.reason)
+		}
+	}
+	if r.opts.IfReady {
+		for _, b := range r.branches {
+			p := r.parts[b]
+			if p.verdict == wtsync.Proceed && p.refused == "" && !r.ready(p.a) {
+				r.refuseStack(b, p.work+" would not sync cleanly: "+notReadyReason(p.a)+"; wt sync "+p.work+" for the detail")
+			}
 		}
 	}
 	var going []string
@@ -695,4 +739,20 @@ func plural(n int) string {
 		return ""
 	}
 	return "s"
+}
+
+// notReadyReason is why a worktree a run could start on is not ready, in the
+// words a person decides by: what would stop it, or what holds it.
+func notReadyReason(a wtsync.Assessment) string {
+	switch {
+	case a.Dirty:
+		return "it has uncommitted changes"
+	case a.Paused:
+		return "an earlier run handed it over"
+	case a.Unverified:
+		return "a script strategy claims a file, and a script can only be checked by a real run"
+	case a.Class == wtsync.Contested && a.Replay.Stop != nil:
+		return fmt.Sprintf("it would stop at %d/%d with a conflict that is yours", a.Replay.Stop.Index, a.Replay.Stop.Total)
+	}
+	return "it is " + classLabel(a)
 }

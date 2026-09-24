@@ -8,6 +8,7 @@ import (
 
 func newSweepCmd() *cobra.Command {
 	var noFetch, yes bool
+	var sel selectionFlags
 	cmd := &cobra.Command{
 		Use:   "sweep",
 		Short: "Delete merged branches, and the worktrees nothing is using on them",
@@ -61,21 +62,40 @@ func newSweepCmd() *cobra.Command {
 			"branch was at: `git branch <name> <commit>` restores its commits, not\n" +
 			"its upstream setting.\n\n" +
 			"On a terminal, commit subjects are cut to fit its width. Piped, they\n" +
-			"are printed whole.",
-		Example: "  wt sweep             # fetch, show what is merged, then ask\n" +
-			"  wt sweep --no-fetch  # compare with origin as last fetched\n" +
-			"  wt sweep --yes       # delete and remove without asking (scripts)",
+			"are printed whole.\n\n" +
+			"--all, --roots or --profile sweep many repositories from anywhere: each\n" +
+			"is fetched and planned, a few at a time; every plan with something in\n" +
+			"it is printed under its repository's name, the rest on one line; one\n" +
+			"question covers them all; then each is swept as it would be alone,\n" +
+			"read again first. A repository that cannot be swept is reported, the\n" +
+			"rest go ahead, and the run exits non-zero.\n\n" + selectionHelp,
+		Example: "  wt sweep                    # fetch, show what is merged, then ask\n" +
+			"  wt sweep --no-fetch         # compare with origin as last fetched\n" +
+			"  wt sweep --all --yes        # every repository, without asking (scripts)\n" +
+			"  wt sweep --roots work       # the repositories under one root, asked once\n" +
+			"  wt sweep --profile api      # the ones a profile names",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
-		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			opts := commands.SweepOptions{NoFetch: noFetch, Yes: yes,
 				Width: terminalWidth(cmd.OutOrStdout())}
-			if !yes && canAsk(cmd) {
-				opts.Confirm = confirmSweep(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()))
+			if sel.selection().Any() {
+				all := commands.SweepAllOptions{SweepOptions: opts}
+				if !yes && canAsk(cmd) {
+					p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
+					all.Ask = func(q string) (bool, error) { return p.yesNo(q, false), nil }
+				}
+				return commands.SweepAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), all, cmd.OutOrStdout())
 			}
-			return commands.Sweep(ctx, opts, cmd.OutOrStdout())
-		}),
+			return withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+				if !yes && canAsk(cmd) {
+					opts.Confirm = confirmSweep(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()))
+				}
+				return commands.Sweep(ctx, opts, cmd.OutOrStdout())
+			})(cmd, args)
+		},
 	}
+	sel.add(cmd, true)
 	cmd.Flags().BoolVar(&noFetch, "no-fetch", false, "compare with origin as last fetched")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "delete and remove without asking")
 	return cmd

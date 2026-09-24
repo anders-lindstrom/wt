@@ -68,7 +68,7 @@ func newRootCmd() *cobra.Command {
 		root.AddCommand(cmds...)
 	}
 	add(groupMake, newNewCmd(), newCheckoutCmd(), newPrCmd())
-	add(groupUse, newCdCmd(), newExecCmd(), newListCmd(), newStatusCmd(), newFindCmd())
+	add(groupUse, newCdCmd(), newExecCmd(), newListCmd(), newStatusCmd(), newFindCmd(), newReposCmd())
 	add(groupTrunk, newSyncCmd())
 	add(groupTidy, newMigrateCmd(), newAdoptCmd(), newSetupCmd(), newRemoveCmd(), newSweepCmd())
 	add(groupRepo, newInitCmd(), newConfigCmd(), newDoctorCmd(), newPathCmd(),

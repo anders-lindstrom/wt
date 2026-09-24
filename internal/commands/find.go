@@ -16,25 +16,14 @@ import (
 // nothing. Colon-separated, so a path containing spaces survives.
 const defaultRoots = "programmering/telcred:programmering/private:Git"
 
-// Roots returns the directories to scan for other repositories.
+// Roots returns the directories to scan for other repositories: the ones
+// RootsFor resolves, from WT_ROOTS, the user file's [roots], or the defaults.
 func Roots() []string {
-	raw := os.Getenv("WT_ROOTS")
-	if raw == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil
-		}
-		var out []string
-		for _, rel := range strings.Split(defaultRoots, ":") {
-			out = append(out, filepath.Join(home, rel))
-		}
-		return out
-	}
-	var out []string
-	for _, p := range strings.Split(raw, ":") {
-		if p = strings.TrimSpace(p); p != "" {
-			out = append(out, p)
-		}
+	u, _ := config.LoadUser()
+	roots, _ := RootsFor(u)
+	out := make([]string, 0, len(roots))
+	for _, r := range roots {
+		out = append(out, r.Path)
 	}
 	return out
 }
@@ -189,28 +178,36 @@ func scoreAll(cands []find.Candidate, pattern string) []find.Scored {
 	return out
 }
 
-// scanRoots finds repositories one level under each root. A linked worktree
+// scanRoots finds repositories one level under each root, or the root itself
+// when it is one. A linked worktree
 // that happens to sit at that depth reports its whole repository, so results
 // are deduplicated by main-worktree path.
 func scanRoots(roots []string) []*repo.Repo {
 	seen := map[string]bool{}
 	var out []*repo.Repo
+	add := func(dir string) {
+		r, err := repo.Discover(dir)
+		if err != nil || seen[r.MainRoot] {
+			return
+		}
+		seen[r.MainRoot] = true
+		out = append(out, r)
+	}
 	for _, root := range roots {
+		// A root that is a checkout is that one repository, and what is
+		// under it is its own business.
+		if isCheckout(root) {
+			add(root)
+			continue
+		}
 		entries, err := os.ReadDir(root)
 		if err != nil {
 			continue
 		}
 		for _, e := range entries {
-			dir := filepath.Join(root, e.Name())
-			if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
-				continue
+			if dir := filepath.Join(root, e.Name()); isCheckout(dir) {
+				add(dir)
 			}
-			r, err := repo.Discover(dir)
-			if err != nil || seen[r.MainRoot] {
-				continue
-			}
-			seen[r.MainRoot] = true
-			out = append(out, r)
 		}
 	}
 	return out
