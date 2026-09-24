@@ -32,6 +32,11 @@ type RunOptions struct {
 	// refused, with its stack, and makes the run fail; with nothing named,
 	// every worktree left behind trunk does.
 	IfReady bool
+	// Force rebases a named worktree even with a Claude session in it, busy
+	// or idle: the sessions are named, not checked. Nothing else it refuses
+	// is lifted — dirt, a handover, another run's lock. A run with nothing
+	// named does not take it: that would roll over every session at once.
+	Force bool
 	// label is the run's first word, "wt up" for the short form.
 	label string
 	// undeclaredOK lets a trunk with no .wt-sync.yaml be rebased onto, with
@@ -59,6 +64,9 @@ type participant struct {
 	lock    *wtsync.Lock
 	result  *wtsync.Result
 	head    string // HEAD after the rebase and the deferred steps; what a child rebases onto
+	// forced is the sessions Force took the run past: named before anything
+	// moves, and told at the finish like an idle one.
+	forced wtsync.Sessions
 }
 
 // runPlan is one wt sync run: the trunk it rebases onto, the worktrees the
@@ -133,6 +141,9 @@ func (r *runPlan) run(works []string) error {
 
 	if err := r.declare(); err != nil {
 		return err
+	}
+	if len(works) == 0 && opts.Force {
+		return errors.New("--force takes a run past the sessions in a worktree you name; name it")
 	}
 	if len(works) == 0 {
 		ready, err := r.selectReady()
@@ -430,6 +441,11 @@ func (r *runPlan) triage() (proceed bool, err error) {
 		} else {
 			p.a = wtsync.Assess(r.ctx.Repo.MainRoot, r.trunkSHA, r.cfg, p.wt, agents)
 		}
+		if r.opts.Force && len(p.a.Sessions) > 0 {
+			p.forced, p.a.Sessions = p.a.Sessions, nil
+			fmt.Fprintf(r.w, "⚠ %s: --force takes the run past %s; the files it has read will change\n",
+				p.work, whoLabel(p.forced))
+		}
 		p.verdict, p.reason = wtsync.Preflight(p.a)
 	}
 	for _, b := range r.branches {
@@ -528,7 +544,7 @@ func (r *runPlan) lockAll() error {
 			r.refuseStack(b, p.work+": changed since triage: tracked changes")
 			continue
 		}
-		if why := sessionsChanged(p.a.Sessions, stand.Sessions); why != "" {
+		if why := sessionsChanged(p.a.Sessions, stand.Sessions); why != "" && !r.opts.Force {
 			r.refuseStack(b, p.work+": changed since triage: "+why)
 			continue
 		}
@@ -699,7 +715,7 @@ func (r *runPlan) rebaseOne(b string) {
 	head, owed, derr := completeRun(ctx, w, r.cfg, r.tracker, p.work, p.wt.Path, func() completeInput {
 		return completeInput{
 			Branch: b, Epoch: r.epoch, Res: res,
-			Tell: p.a.Sessions, TrunkName: r.trunk, Landed: p.a.Behind, Check: pathsOnce(wtsync.StopPaths(res.Stops)),
+			Tell: append(slices.Clone(p.a.Sessions), p.forced...), TrunkName: r.trunk, Landed: p.a.Behind, Check: pathsOnce(wtsync.StopPaths(res.Stops)),
 		}
 	})
 	p.head = head

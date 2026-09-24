@@ -6,6 +6,13 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-24 21:48 — --force past a Claude session
+
+- `wt up -f` and `wt sync run <work> -f` rebase even with a Claude session busy
+  in the worktree: the session is named, and told at the finish.
+- It lifts nothing else: uncommitted changes and a conflict that is yours
+  still refuse, and a run with nothing named does not take it.
+
 ## 2026-09-24 15:05 — wt up: onto trunk, if it is clean
 
 - `wt up` rebases the worktree you are in onto trunk only when nothing would be
