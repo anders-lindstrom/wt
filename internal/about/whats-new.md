@@ -6,6 +6,14 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-24 09:25 — A branch GitHub rebased and merged is merged
+
+- `wt remove` and `wt sweep` now delete a branch whose every commit is on trunk
+  under a new id, which is what "rebase and merge" on GitHub leaves locally.
+  Before, it read as "not merged: 11 commits ahead" and was kept.
+- When something else removes a worktree while `wt remove` is asking, it now
+  says so and what became of the branch, instead of "run the command again".
+
 ## 2026-09-21 18:05 — Your branches, named the way you name branches
 
 - `WORKTREE_BRANCH_SUFFIX=""`, or `wt config set branch_suffix ""`, names

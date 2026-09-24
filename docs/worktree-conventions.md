@@ -249,6 +249,13 @@ throw the work away; a commit made after the merge takes the branch off that
 commit and keeps it. An answer with no base recorded is an unanswered question,
 not a yes. Sweep's own checks come first, unchanged.
 
+When GitHub rebased the branch before merging, the pull request carried the
+rebased commits and the local branch still has the old ones, so the pull request
+cannot vouch for it. `git cherry` can: when every commit on the branch is on trunk
+as the same change, the branch counts as merged, in `wt remove` and in sweep for a
+branch with a worktree or a gone upstream. A merge commit or an empty commit on
+the branch keeps it, because git cherry cannot find either.
+
 `wt remove` acts on the same fact, and reads it from the cache file rather than
 from GitHub. It runs from git hooks, so it starts no process and makes no
 network call — and it does not need to. A merge is permanent and the commit it

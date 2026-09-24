@@ -51,16 +51,23 @@ type SweepBranch struct {
 	// while trunk does not contain the branch — a squash or rebase merge,
 	// which git cannot see. It is what makes such a branch a candidate.
 	MergedPR int
+	// AppliedTo is the first base holding every commit of the branch under
+	// another id — rebased or cherry-picked there — when neither trunk nor a
+	// pull request says it landed. "" otherwise.
+	AppliedTo string
 }
 
-// done reports that the work on this branch has landed: trunk contains it, or
-// GitHub merged its pull request at this very tip.
-func (b SweepBranch) done() bool { return b.MergedInto != "" || b.MergedPR > 0 }
+// done reports that the work on this branch has landed: trunk contains it,
+// GitHub merged its pull request at this very tip, or trunk has every commit.
+func (b SweepBranch) done() bool { return b.MergedInto != "" || b.MergedPR > 0 || b.AppliedTo != "" }
 
 // why is why a branch counts as done with, in the words the plan prints.
 func (b SweepBranch) why() string {
 	if b.MergedPR > 0 {
 		return fmt.Sprintf("#%d merged on GitHub (squashed or rebased, so git cannot see it)", b.MergedPR)
+	}
+	if b.AppliedTo != "" {
+		return withPR("every commit is on "+b.AppliedTo+" under a new id (rebased or cherry-picked)", b.PR)
 	}
 	return withPR("merged into "+b.MergedInto, b.PR)
 }
@@ -176,6 +183,12 @@ func planSweep(ctx *Context, bases []TrunkBase, list func() ([]wtsync.Agent, err
 			if sb.MergedInto == "" && pr.Landed(b.Tip, trunkNames...) {
 				sb.MergedPR = pr.Number
 			}
+		}
+		// A branch GitHub rebased before merging carries the old ids, so
+		// neither answer above sees it. Asked only of the branches that can
+		// reach a row, as the pull requests are: git cherry is not free.
+		if !sb.done() && (b.Gone || use.Path != "") {
+			sb.AppliedTo = appliedTo(ctx, b.Tip, bases)
 		}
 		switch {
 		case sb.done() && sb.Worktree != "":
@@ -470,6 +483,8 @@ func (p SweepPlan) changedFrom(ctx *Context, was SweepBranch) string {
 		// changed is the answer about the pull request — usually that GitHub
 		// could not be asked again, not that it said something new.
 		return fmt.Sprintf("#%d could not be read as merged at this tip a second time", was.MergedPR)
+	case was.AppliedTo != "":
+		return "its commits are no longer all on " + was.AppliedTo
 	}
 	return "trunk no longer contains it: the merge was undone after the plan was made"
 }

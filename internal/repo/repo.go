@@ -299,6 +299,40 @@ func (r *Repo) CommitsAhead(branch, base string) (n int, ok bool) {
 	return n, true
 }
 
+// Applied reports whether every commit branch has that base lacks is already
+// on base as the same change under another id: what a rebase merge or a
+// cherry-pick leaves, which git reads as unmerged for ever. A merge commit on
+// the branch answers false, because git cherry never compares one and a merge
+// can carry changes of its own. So does an empty commit: every empty commit
+// has the same patch id, so git cherry pairs it with any empty commit on
+// base. So does a branch base already contains.
+func (r *Repo) Applied(branch, base string) bool {
+	merges, err := git.Run(r.MainRoot, "rev-list", "--count", "--merges", base+".."+branch)
+	if err != nil || merges != "0" {
+		return false
+	}
+	// A pathspec leaves out the commits that change nothing, so the two
+	// counts differ exactly when the branch has an empty commit.
+	all, err := git.Run(r.MainRoot, "rev-list", "--count", base+".."+branch)
+	if err != nil {
+		return false
+	}
+	changing, err := git.Run(r.MainRoot, "rev-list", "--count", base+".."+branch, "--", ":/")
+	if err != nil || changing != all {
+		return false
+	}
+	lines, err := git.Lines(r.MainRoot, "cherry", base, branch)
+	if err != nil || len(lines) == 0 {
+		return false
+	}
+	for _, l := range lines {
+		if !strings.HasPrefix(l, "- ") {
+			return false
+		}
+	}
+	return true
+}
+
 // Branch is one local branch as for-each-ref reports it.
 type Branch struct {
 	Name     string
