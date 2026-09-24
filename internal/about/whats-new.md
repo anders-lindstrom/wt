@@ -8,11 +8,13 @@ want read out to them; the full story is in git history and in
 
 ## 2026-09-24 13:13 — One way to say things, and safer defaults
 
-- A bulk `wt sync --run`, or any `--all` run, with no terminal needs `--yes`.
+- With no terminal, `wt sync --run` with nothing named, or across repositories,
+  rebases nothing without `--yes`.
 - The push question defaults to no; `--yes` asks nothing and pushes only with `--push`.
 - Renamed: sync class clean → conflict-free, `keep run` → `keep once`, `--skip-build`
   → `--no-build` (the old names still work); `wt setup [<from-dir>]`.
-- New: `--dry-run` on sweep and remove; `--all` on doctor, list and status; `-f`.
+- New: `--dry-run` on sweep and remove; `--all` on doctor, list and status; `-f`
+  for every `--force`. `wt repos --doctor` is now `wt doctor --all`.
 
 ## 2026-09-24 10:59 — Your roots, and wt across every repository
 
