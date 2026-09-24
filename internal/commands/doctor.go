@@ -18,6 +18,12 @@ import (
 // setup_precheck.sh and additionally finds worktrees that are misplaced,
 // unowned, or nested inside the main checkout.
 func Doctor(ctx *Context, w io.Writer) (int, error) {
+	return doctor(ctx, w, true)
+}
+
+// doctor is Doctor, with or without the roots and profiles: wt repos --doctor
+// checks those once for every repository, not once in each.
+func doctor(ctx *Context, w io.Writer, withRepos bool) (int, error) {
 	problems := 0
 	report := func(format string, args ...any) {
 		problems++
@@ -119,6 +125,10 @@ func Doctor(ctx *Context, w io.Writer) (int, error) {
 			report("%s is not at its canonical path (%s); run: wt migrate %s/%s",
 				wt.Path, sch.Dir(typ, work), typ, work)
 		}
+	}
+
+	if withRepos {
+		doctorRepos(ctx.UserConfig(), w, report)
 	}
 
 	if problems == 0 {

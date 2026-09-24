@@ -1,13 +1,13 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"io"
 
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/config"
 )
 
 func newDoctorCmd() *cobra.Command {
@@ -35,7 +35,13 @@ func newDoctorCmd() *cobra.Command {
 				return err
 			}
 			if ctx == nil {
-				return errors.New("not a git repository")
+				// Outside every repository, the roots and profiles are all
+				// there is to check.
+				u, userErr := config.LoadUser()
+				if n := commands.DoctorRepositories(u, userErr, cmd.OutOrStdout()); n > 0 {
+					return fmt.Errorf("%d problem(s) found", n)
+				}
+				return nil
 			}
 			problems, err := commands.Doctor(ctx, cmd.OutOrStdout())
 			if err != nil {
