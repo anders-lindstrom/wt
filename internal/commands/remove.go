@@ -78,6 +78,10 @@ const (
 	Merged
 	// Unmerged is a branch carrying commits the main branch does not have.
 	Unmerged
+	// Applied is a branch trunk does not contain whose every commit is on
+	// trunk already under another id — rebased or cherry-picked there, as a
+	// rebase merge on GitHub leaves it. Deleting it loses nothing.
+	Applied
 )
 
 // Plan is what a removal is about to do, assembled before anything is touched.
@@ -224,7 +228,7 @@ func planFor(ctx *Context, wt repo.Worktree, opts RemoveOptions) Plan {
 
 	s := mergeStanding(ctx, p.Branch)
 	p.Merge, p.Ahead, p.Base, p.Tip = s.Merge, s.Ahead, s.Base, s.Tip
-	if p.Merge != Merged {
+	if p.Merge == Unmerged || p.Merge == MergeUnknown {
 		p.MergedPR = opts.landed(ctx, p.Branch, p.Tip)
 	}
 
@@ -235,7 +239,7 @@ func planFor(ctx *Context, wt repo.Worktree, opts RemoveOptions) Plan {
 		// mergeStanding has just asked git for the branch's tip, and no tip is
 		// a branch that is not there.
 		p.Reason = "already gone"
-	case p.Merge == Merged, p.MergedPR > 0:
+	case p.Merge == Merged, p.Merge == Applied, p.MergedPR > 0:
 		// Merged first, and whoever created the branch: nothing is lost, and
 		// leaving it behind because wt did not make it only leaves litter.
 		p.Outcome = BranchDeleted
@@ -314,11 +318,12 @@ type standing struct {
 // mergeStanding reads where a branch stands against trunk. Merged means its
 // tip is reachable from origin/<trunk> as last fetched or from the local
 // trunk, the bases wt sweep uses: a pull request merged on GitHub counts even
-// while the main checkout's trunk is behind. Nothing is fetched, because
-// remove runs from hooks. The count comes from git rather than from "is it
-// merged", because "not merged" on its own does not say whether one commit or
-// thirty are at stake; it is taken against the first base, origin/<trunk>
-// when there is one.
+// while the main checkout's trunk is behind. Applied is the next best answer:
+// no base contains the tip, but one of them has every commit's change. Nothing
+// is fetched, because remove runs from hooks. The count comes from git rather
+// than from "is it merged", because "not merged" on its own does not say
+// whether one commit or thirty are at stake; it is taken against the first
+// base, origin/<trunk> when there is one.
 func mergeStanding(ctx *Context, branch string) standing {
 	s := standing{Base: ctx.Config.MainBranch}
 	if branch == "" {
@@ -344,7 +349,26 @@ func mergeStanding(ctx *Context, branch string) standing {
 			s.Ahead = n
 		}
 	}
+	for _, b := range bases {
+		if ctx.Repo.Applied(tip, b.Tip) {
+			// The count the plan prints is against the base it names.
+			s.Merge, s.Base = Applied, b.Name
+			s.Ahead, _ = ctx.Repo.CommitsAhead(tip, b.Tip)
+			break
+		}
+	}
 	return s
+}
+
+// appliedTo is the first base holding every commit of tip under another id,
+// "" when none does.
+func appliedTo(ctx *Context, tip string, bases []TrunkBase) string {
+	for _, b := range bases {
+		if ctx.Repo.Applied(tip, b.Tip) {
+			return b.Name
+		}
+	}
+	return ""
 }
 
 // noTrunkHere says there is nothing to compare a branch with.
@@ -387,7 +411,7 @@ func stillMerged(ctx *Context, p Plan) error {
 		return nil
 	}
 	now := mergeStanding(ctx, p.Branch)
-	if now.Merge == Merged {
+	if now.Merge == Merged || now.Merge == Applied {
 		return nil
 	}
 	found := "cannot be compared with it any more — one of the two has gone"
@@ -432,6 +456,10 @@ func (p Plan) Render(w io.Writer) {
 	case BranchDeleted:
 		if p.MergedPR > 0 {
 			fmt.Fprintf(w, "  the branch will be deleted (#%d merged on GitHub)\n", p.MergedPR)
+			break
+		}
+		if p.Merge == Applied {
+			fmt.Fprintf(w, "  the branch will be deleted (every commit is on %s)\n", p.Base)
 			break
 		}
 		fmt.Fprintf(w, "  the branch will be deleted (merged into %s)\n", p.Base)
@@ -485,6 +513,9 @@ func (p Plan) standing() string {
 			p.MergedPR, aheadOf(p.Ahead, p.Base))
 	case p.Merge == Merged:
 		return "merged into " + p.Base
+	case p.Merge == Applied:
+		return fmt.Sprintf("every commit is on %s under a new id, rebased or cherry-picked, so git still counts it %s",
+			p.Base, aheadOf(p.Ahead, p.Base))
 	case p.Merge == Unmerged:
 		return "not merged: " + aheadOf(p.Ahead, p.Base)
 	}
@@ -548,6 +579,11 @@ func (p Plan) apply(ctx *Context, w io.Writer) error {
 		if p.MergedPR > 0 {
 			fmt.Fprintf(w, "✓ worktree removed; branch %s was merged as #%d and has been deleted\n",
 				p.Branch, p.MergedPR)
+			break
+		}
+		if p.Merge == Applied {
+			fmt.Fprintf(w, "✓ worktree removed; every commit of %s is on %s, so the branch has been deleted\n",
+				p.Branch, p.Base)
 			break
 		}
 		fmt.Fprintf(w, "✓ worktree removed; branch %s was merged into %s and has been deleted\n",

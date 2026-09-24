@@ -1,7 +1,9 @@
 package repo
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -155,5 +157,45 @@ func TestDeleteBranchAtRefusesAMovedBranchAndCleansConfig(t *testing.T) {
 	}
 	if out, err := exec.Command("git", "-C", dir, "config", "branch.done-work.remote").Output(); err == nil {
 		t.Errorf("branch config should be removed with the branch, still %q", out)
+	}
+}
+
+func TestAppliedFindsEveryCommitUnderAnotherID(t *testing.T) {
+	r, dir := sweepFixture(t)
+	commit := func(name string) {
+		sweepGit(t, dir, "commit", "-q", "--allow-empty", "-m", name)
+	}
+	file := func(name string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(name+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		sweepGit(t, dir, "add", name)
+		sweepGit(t, dir, "commit", "-q", "-m", name)
+	}
+	sweepGit(t, dir, "switch", "-q", "-c", "feat")
+	file("a")
+	file("b")
+	sweepGit(t, dir, "switch", "-q", "main")
+	file("trunk")
+	sweepGit(t, dir, "cherry-pick", "main..feat")
+
+	if !r.Applied("feat", "main") {
+		t.Error("every commit of feat is on main under a new id")
+	}
+	if r.Applied("main", "main") {
+		t.Error("a branch base contains is not this question")
+	}
+	// An empty commit on each side: git cherry pairs them, and the branch's
+	// is still not on main.
+	commit("trunk empty")
+	sweepGit(t, dir, "switch", "-q", "feat")
+	commit("empty")
+	if r.Applied("feat", "main") {
+		t.Error("an empty commit is not found on main by matching main's own empty commit")
+	}
+	sweepGit(t, dir, "reset", "-q", "--hard", "HEAD~1")
+	sweepGit(t, dir, "merge", "-q", "--no-ff", "-m", "merge main", "main")
+	if r.Applied("feat", "main") {
+		t.Error("a merge commit can carry changes git cherry never compares")
 	}
 }

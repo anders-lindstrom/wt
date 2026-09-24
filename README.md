@@ -423,7 +423,9 @@ Not here: creating, merging or commenting on pull requests. wt reads.
 `wt sweep` deletes what trunk already contains. That question is git's, and git
 gets it wrong in one common case: a **squash or rebase merge** rewrites the
 commits, so the branch stays unmerged for ever however long ago it landed. The
-pull request is the fact that answers it, and sweep reads it.
+pull request is the fact that answers it, and sweep reads it. When GitHub
+rebased the branch first, so the pull request carried other commits than yours,
+`git cherry` finds each of your commits on trunk instead.
 
 ```
 Will be removed with its branch, 1 worktree:

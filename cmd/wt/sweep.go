@@ -27,6 +27,10 @@ func newSweepCmd() *cobra.Command {
 			"the plan and once before anything goes, each call bounded at 15\n" +
 			"seconds; with GitHub off or unreachable sweep does what it did before,\n" +
 			"on git's answer alone.\n\n" +
+			"A branch whose upstream is gone or that a worktree has checked out also\n" +
+			"counts as merged when every commit is on trunk under another id, found\n" +
+			"by git cherry: a rebase merge whose pull request carried the rebased\n" +
+			"tip, or a cherry-pick. A merge or empty commit on it keeps it.\n\n" +
 			"The plan has four parts:\n" +
 			"  removed       merged, and its worktree is safe to remove: nothing\n" +
 			"                uncommitted, no lock whose holder is still running, and\n" +

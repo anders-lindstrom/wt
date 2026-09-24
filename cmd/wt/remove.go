@@ -32,6 +32,11 @@ func newRemoveCmd() *cobra.Command {
 			"from the file they left behind and never from the network: remove runs\n" +
 			"from git hooks. With nothing recorded, the branch is kept as it always\n" +
 			"was.\n\n" +
+			"A branch whose every commit is on trunk already under another id — a\n" +
+			"rebase merge whose pull request carried the rebased tip, or a\n" +
+			"cherry-pick — is deleted too, since nothing is lost: git cherry finds\n" +
+			"each change on trunk. A merge commit or an empty commit on the branch\n" +
+			"keeps it, because neither can be found that way.\n\n" +
 			"The plan says where the branch stands either way — merged, or how many\n" +
 			"commits ahead of origin/<trunk> (or trunk, without it) it is — because\n" +
 			"that is the fact the whole decision turns on. \"clean\" is about the\n" +
