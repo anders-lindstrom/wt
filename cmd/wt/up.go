@@ -1,13 +1,16 @@
 package main
 
 import (
+	"os"
+
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
 )
 
 func newUpCmd() *cobra.Command {
-	var noFetch, yes, force bool
+	var noFetch, yes, force, asJSON bool
+	var expect string
 	var push func() commands.PushMode
 	cmd := &cobra.Command{
 		Use:   "up [<work>]",
@@ -29,26 +32,60 @@ func newUpCmd() *cobra.Command {
 			"A Claude session busy in the worktree refuses the run, since the files\n" +
 			"it has read would change under it. --force (-f) goes ahead anyway and\n" +
 			"names the session, so you can tell it; it lifts nothing else — dirt\n" +
-			"and a conflict that is yours still refuse.",
+			"and a conflict that is yours still refuse.\n\n" +
+			"--json prints one result object on stdout and the progress on stderr,\n" +
+			"for a tool driving wt; --expect <token> refuses the run, touching\n" +
+			"nothing, when trunk, the configuration or the stack is no longer what\n" +
+			"wt status --json reported. The schema is in wt's docs/json.md.",
 		Example: "  wt up                  # the worktree you are in, if it syncs cleanly\n" +
 			"  wt up --push           # and push it, without asking\n" +
 			"  wt up -y --force       # yes to everything, past a session busy in it\n" +
-			"  wt up --no-fetch --yes # onto trunk as last fetched, and push\n" +
-			"  wt up --no-push        # rebase only; print the push command",
+			"  wt up --yes --no-push --json  # for a tool: one JSON object on stdout\n" +
+			"  wt up --json --expect 1:0123abcd --no-fetch  # only if the plan still holds",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeWork,
-		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			work := "."
 			if len(args) == 1 {
 				work = args[0]
 			}
-			opts, _ := runOptions(cmd, syncVerbFlags{run: true, yes: yes, noFetch: noFetch, ifReady: true, force: force, push: push()}, false)
+			f := syncVerbFlags{run: true, yes: yes, noFetch: noFetch, ifReady: true, force: force, push: push()}
+			if !asJSON {
+				return withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+					opts, _ := runOptions(cmd, f, false)
+					return commands.Up(ctx, work, opts, cmd.OutOrStdout())
+				})(cmd, args)
+			}
+			// stdout carries the one result object and nothing else: the
+			// progress, and any question, go to stderr.
+			journal := commands.NewRunJournal(cmd.OutOrStdout())
+			cmd.SetOut(cmd.ErrOrStderr())
+			cwd, err := os.Getwd()
+			if err != nil {
+				journal.Fail(err)
+				return err
+			}
+			ctx := commands.OpenLenient(cwd, cmd.ErrOrStderr())
+			switch {
+			case ctx == nil:
+				err = commands.ErrNotInRepo
+			case ctx.ConfigError != nil:
+				err = ctx.ConfigError
+			}
+			if err != nil {
+				journal.Fail(err)
+				return err
+			}
+			opts, _ := runOptions(cmd, f, false)
+			opts.Journal, opts.Expect = journal, expect
 			return commands.Up(ctx, work, opts, cmd.OutOrStdout())
-		}),
+		},
 	}
 	cmd.Flags().BoolVar(&noFetch, "no-fetch", false, "rebase onto origin/<trunk> as last fetched")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "yes to every question, the push included (--no-push keeps it out)")
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "go ahead even with a Claude session in the worktree")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "print one result object on stdout, the progress on stderr")
+	cmd.Flags().StringVar(&expect, "expect", "", "refuse unless the plan still matches this token from wt status --json")
 	push = addPushFlags(cmd, "push when it is done, without asking", "neither push nor ask; print the push command")
 	return cmd
 }

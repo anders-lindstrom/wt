@@ -6,6 +6,13 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-25 16:00 — JSON for tools driving wt
+
+- `wt status <work> --json` is the plan for `wt up`: trunk, eligibility, the
+  stack it would move, sessions, and a token. It writes nothing.
+- `wt up --json` prints one result object; `--expect <token>` refuses the run
+  if the plan changed. The schema is `docs/json.md`.
+
 ## 2026-09-25 14:28 — --yes pushes
 
 - `-y` is yes to every question, the push included: `wt up -f -y` rebases and
