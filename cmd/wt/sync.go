@@ -463,9 +463,9 @@ func newSyncRunCmd() *cobra.Command {
 			"A worktree whose rebase finished with nothing owed is pushed at the end\n" +
 			"with --force-with-lease --force-if-includes, which refuses to overwrite\n" +
 			"commits on origin the branch has not seen. On a terminal you are asked\n" +
-			"once, and Enter means no. --push pushes without asking; without it,\n" +
-			"--no-push, --yes or a run with no terminal prints the push command\n" +
-			"instead.\n\n" +
+			"once, and Enter means no. --push and --yes push without asking;\n" +
+			"--no-push, or a run with no terminal and neither of those, prints the\n" +
+			"push command instead.\n\n" +
 			"Ctrl-C releases every lock the run holds and kills the step it was\n" +
 			"running; a worktree caught mid-rebase is named along with the command\n" +
 			"that puts it back.\n\n" +
@@ -491,7 +491,7 @@ func newSyncRunCmd() *cobra.Command {
 		},
 	}
 	run.Flags().BoolVar(&noFetch, "no-fetch", false, "rebase onto origin/<trunk> as last fetched")
-	run.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask before anything moves")
+	run.Flags().BoolVarP(&yes, "yes", "y", false, "yes to every question, the push included (--no-push keeps it out)")
 	run.Flags().BoolVar(&ifReady, "if-ready", false, "rebase only what will go through without needing you, and fail on the rest")
 	run.Flags().BoolVarP(&force, "force", "f", false, "rebase a named worktree even with a Claude session in it")
 	sel.add(run, true)
@@ -510,8 +510,8 @@ func syncRun(cmd *cobra.Command, works []string, ctx *commands.Context, f syncVe
 // questions, nil with no terminal. One prompter for every question, so an
 // answer typed ahead for the push is not lost to the rebase question's reader.
 //
-// --yes asks nothing, the push included, which then follows --push and
-// otherwise prints the push commands. A bulk run — nothing named, or many
+// --yes answers yes to every question, the push included, unless --no-push
+// says otherwise. A bulk run — nothing named, or many
 // repositories — with nobody at a terminal to ask and no --yes rebases
 // nothing, as a sweep deletes nothing: what nobody named and nobody
 // confirmed does not move. A worktree named on the line goes ahead.
@@ -520,6 +520,7 @@ func runOptions(cmd *cobra.Command, f syncVerbFlags, bulk bool) (commands.RunOpt
 	opts.Push = f.push
 	switch {
 	case f.yes:
+		opts.Push = yesPush(f.push)
 		return opts, nil
 	case !canAsk(cmd):
 		if bulk {
@@ -593,7 +594,8 @@ func newSyncResumeCmd() *cobra.Command {
 			"worktree is named first and you are asked (with no terminal it goes\n" +
 			"ahead) before anything is verified, and the finish ends with a wt: line\n" +
 			"to pass on to it. The session wt itself runs under is not counted.\n" +
-			"--yes asks nothing, neither about that session nor about the push.\n\n" +
+			"--yes answers yes to both, that session and the push (--no-push keeps\n" +
+			"the push out).\n\n" +
 			"Carrying on yourself with git rebase --continue is fine: a later stop you\n" +
 			"left it at goes through the strategies, and a rebase you finished runs\n" +
 			"only what comes after it, naming the strategy-resolved files it could not\n" +
@@ -604,7 +606,7 @@ func newSyncResumeCmd() *cobra.Command {
 		Example: "  wt sync resume login-crash            # continue what the run handed you\n" +
 			"  wt sync resume fix/login-crash        # the same worktree, by branch\n" +
 			"  wt sync resume login-crash --no-push  # then print the push command\n" +
-			"  wt sync resume login-crash --yes      # ask nothing; print the push\n" +
+			"  wt sync resume login-crash --yes      # yes to everything, push included\n" +
 			"  wt sync login-crash --resume --push   # resume --push, spelled on wt sync",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeWork,
@@ -614,7 +616,7 @@ func newSyncResumeCmd() *cobra.Command {
 	}
 	push = addPushFlags(resume, "push when done, without asking",
 		"neither push nor ask; print the push command")
-	resume.Flags().BoolVarP(&yes, "yes", "y", false, "ask nothing: not about an idle session, nor the push")
+	resume.Flags().BoolVarP(&yes, "yes", "y", false, "yes to every question: an idle session, and the push")
 	return resume
 }
 
@@ -622,8 +624,11 @@ func newSyncResumeCmd() *cobra.Command {
 func syncResume(cmd *cobra.Command, work string, ctx *commands.Context, yes bool, push commands.PushMode) error {
 	var opts commands.ResumeOptions
 	opts.Push = push
-	// --yes asks nothing, the push included: it then follows --push, and
-	// without it prints the push command.
+	// --yes answers yes to every question, the push included, unless
+	// --no-push says otherwise.
+	if yes {
+		opts.Push = yesPush(push)
+	}
 	if canAsk(cmd) && !yes {
 		p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
 		opts.Confirm = confirmAsk(p, "resume")
@@ -738,6 +743,15 @@ func addPushFlags(cmd *cobra.Command, pushUsage, noPushUsage string) func() comm
 	cmd.Flags().BoolVar(&noPush, "no-push", false, noPushUsage)
 	cmd.MarkFlagsMutuallyExclusive("push", "no-push")
 	return func() commands.PushMode { return pushMode(push, noPush) }
+}
+
+// yesPush is the push --yes makes: yes, like every other question it
+// answers, unless --no-push was given.
+func yesPush(mode commands.PushMode) commands.PushMode {
+	if mode == commands.PushNever {
+		return commands.PushNever
+	}
+	return commands.PushAlways
 }
 
 // pushMode is --push and --no-push as one choice; cobra has already refused

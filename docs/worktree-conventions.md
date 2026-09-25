@@ -92,7 +92,7 @@ carry are shims that call `wt`.
    nothing; `wt sync run <work>` does it, `wt sync --run` does every worktree the table
    calls ready except `recipe?`, and `wt sync undo <work>` puts a run back. Without a
    terminal, a run with nothing named rebases nothing unless `--yes` says so, and
-   nothing is pushed without `--push`. Each verb is
+   nothing is pushed without `--push` or `--yes`. Each verb is
    also a flag on the line you just recalled: `wt sync <work> --run`,
    `--resume`, `--undo`. `wt sync keep start` does the ready ones on a timer,
    leaving alone any worktree a session is in, and the table says when it last did.

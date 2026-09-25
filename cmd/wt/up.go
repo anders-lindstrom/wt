@@ -22,19 +22,18 @@ func newUpCmd() *cobra.Command {
 			"strategies and no deferred steps.\n\n" +
 			"It is wt sync <work> --run --if-ready, for the moment you arrive in a\n" +
 			"worktree. Trunk is fetched first (--no-fetch rebases onto it as last\n" +
-			"fetched). At the end it asks whether to push, and Enter means no;\n" +
-			"--push pushes without asking, and --no-push or --yes prints the push\n" +
-			"command instead. --yes also skips the question asked when a Claude\n" +
-			"session is idle in the worktree.\n\n" +
+			"fetched). At the end it asks whether to push, and Enter means no.\n" +
+			"--yes (-y) answers yes to every question, the push included; --push\n" +
+			"pushes without asking anything else; --no-push prints the push command\n" +
+			"instead, with or without --yes.\n\n" +
 			"A Claude session busy in the worktree refuses the run, since the files\n" +
 			"it has read would change under it. --force (-f) goes ahead anyway and\n" +
 			"names the session, so you can tell it; it lifts nothing else — dirt\n" +
 			"and a conflict that is yours still refuse.",
 		Example: "  wt up                  # the worktree you are in, if it syncs cleanly\n" +
 			"  wt up --push           # and push it, without asking\n" +
-
-			"  wt up -y --force       # asking nothing, past a session busy in it\n" +
-			"  wt up --no-fetch --yes # onto trunk as last fetched, asking nothing\n" +
+			"  wt up -y --force       # yes to everything, past a session busy in it\n" +
+			"  wt up --no-fetch --yes # onto trunk as last fetched, and push\n" +
 			"  wt up --no-push        # rebase only; print the push command",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeWork,
@@ -48,7 +47,7 @@ func newUpCmd() *cobra.Command {
 		}),
 	}
 	cmd.Flags().BoolVar(&noFetch, "no-fetch", false, "rebase onto origin/<trunk> as last fetched")
-	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "ask nothing; push only with --push")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "yes to every question, the push included (--no-push keeps it out)")
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "go ahead even with a Claude session in the worktree")
 	push = addPushFlags(cmd, "push when it is done, without asking", "neither push nor ask; print the push command")
 	return cmd
