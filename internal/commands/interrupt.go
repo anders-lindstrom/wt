@@ -1,10 +1,12 @@
 package commands
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -114,7 +116,18 @@ func watchSignals(w io.Writer, t *rebaseTracker) func() {
 	go func() {
 		select {
 		case <-ch:
-			onInterrupt(w, wtsync.HeldLocks(), t.get())
+			at := t.get()
+			var said bytes.Buffer
+			onInterrupt(io.MultiWriter(w, &said), wtsync.HeldLocks(), at)
+			// A --json run owes its one object even now: the participants
+			// so far, the one in flight, and the way back that was printed.
+			if j := currentInterruptJournal(); j != nil {
+				inFlight := ""
+				if at != nil {
+					inFlight = at.work
+				}
+				j.interrupted(inFlight, strings.TrimSpace(said.String()))
+			}
 			os.Exit(interruptStatus)
 		case <-done:
 		}

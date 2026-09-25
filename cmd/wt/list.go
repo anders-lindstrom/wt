@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"io"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -61,6 +62,7 @@ func newListCmd() *cobra.Command {
 
 func newStatusCmd() *cobra.Command {
 	var sel selectionFlags
+	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "status [<work>]",
 		Short: "Show each worktree's state and standing against trunk",
@@ -78,16 +80,41 @@ func newStatusCmd() *cobra.Command {
 			"The pull request line comes from the same answers `wt list` caches, so a\n" +
 			"listing has already paid for it.\n\n" +
 			"--all, --roots or --profile show every repository they name, one\n" +
-			"section each; they take no worktree.\n\n" + pathWidthHelp,
+			"section each; they take no worktree.\n\n" +
+			"--json prints the worktree's plan for wt up as one object, for a tool\n" +
+			"driving wt: trunk, eligibility, the stack it would move, the sessions\n" +
+			"in it, and a token for wt up --expect. It writes nothing — no fetch,\n" +
+			"no simulation. The schema is in wt's docs/json.md.\n\n" + pathWidthHelp,
 		Example: "  wt status                     # state and standing for every worktree\n" +
-			"  wt status login-crash         # that one in full, with wt sync's verdict\n" +
+
 			"  wt status --all | grep behind # what is not on trunk, anywhere\n" +
+			"  wt status . --json            # this worktree's plan for wt up, as JSON\n" +
 			"  wt status --roots work        # the repositories under one root\n" +
 			"  wt status --profile api       # the ones a profile names",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
+			if asJSON {
+				if sel.selection().Any() {
+					return errors.New("--json reports one worktree; name it, without --all, --roots or --profile")
+				}
+				work := "."
+				if len(args) == 1 {
+					work = args[0]
+				}
+				cwd, err := os.Getwd()
+				if err != nil {
+					return err
+				}
+				// Lenient: a repository with no configuration is a plan
+				// that says so, not an error.
+				ctx := commands.OpenLenient(cwd, io.Discard)
+				if ctx == nil {
+					return commands.ErrNotInRepo
+				}
+				return commands.UpPlanJSON(ctx, work, out)
+			}
 			if sel.selection().Any() {
 				if len(args) > 0 {
 					return errors.New("--all, --roots and --profile cover whole repositories; name no worktree with them")
@@ -104,5 +131,6 @@ func newStatusCmd() *cobra.Command {
 		},
 	}
 	sel.add(cmd, true)
+	cmd.Flags().BoolVar(&asJSON, "json", false, "the worktree's plan for wt up, as one JSON object; reads only")
 	return cmd
 }

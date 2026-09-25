@@ -88,6 +88,7 @@ examples: `wt <command> --help`.
 | | |
 |---|---|
 | `wt up [<work>]` | bring the worktree you are in onto trunk, only if it goes through without you — conflict-free, or every stop resolved by `.wt-sync.yaml`; otherwise it touches nothing and says why. Also where trunk declares no `.wt-sync.yaml`, conflict-free only. The short form of `wt sync . --run --if-ready` (`--push`, `--no-push`, `--no-fetch`, `--yes`/`-y` for yes to everything including the push, `--force`/`-f` to go ahead past a Claude session in it) |
+| `wt status <work> --json` / `wt up --json` | a worktree's plan for `wt up`, and a run's result, as one JSON object each for tools driving wt (`--expect` holds a run to its plan); the schema is [docs/json.md](docs/json.md) |
 | `wt sync` | what rebasing each worktree onto trunk would do, simulated after fetching trunk; changes nothing of yours (`--no-fetch`) |
 | `wt sync run [<work>...]` | rebase the named worktrees onto trunk with the declared strategies (`--no-fetch`, `--yes`/`-y`, `--push`, `--no-push`, `--if-ready`); also spelled `wt sync <work>... --run`. With nothing named, every worktree the table calls ready except `recipe?`, asked first — and with no terminal, only with `--yes`. `--if-ready` rebases what is ready and fails if anything was not. The push question defaults to no; `--yes` answers yes to it, like every question, unless `--no-push` |
 | `wt sync resume <work>` | continue the rebase a run left at a conflict that was yours (`--yes`/`-y`, `--push`, `--no-push`); also spelled `wt sync <work> --resume` |
