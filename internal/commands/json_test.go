@@ -16,6 +16,7 @@ func planOfWork(t *testing.T, ctx *Context, work string) UpPlan {
 	if err := UpPlanJSON(ctx, work, &buf); err != nil {
 		t.Fatal(err)
 	}
+	validateJSON(t, "status", buf.Bytes())
 	var p UpPlan
 	if err := json.Unmarshal(buf.Bytes(), &p); err != nil {
 		t.Fatalf("%v\n%s", err, buf.String())
@@ -28,6 +29,7 @@ func upJSON(t *testing.T, ctx *Context, work string, opts RunOptions) (UpResult,
 	var out, human bytes.Buffer
 	opts.Journal = NewRunJournal(&out)
 	err := Up(ctx, work, opts, &human)
+	validateJSON(t, "up", out.Bytes())
 	var r UpResult
 	if jerr := json.Unmarshal(out.Bytes(), &r); jerr != nil {
 		t.Fatalf("stdout is not one JSON object: %v\n%s", jerr, out.String())
@@ -189,12 +191,13 @@ func TestUpJSONReportsAnErrorBeforeAnyParticipant(t *testing.T) {
 func TestJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 	var out bytes.Buffer
 	j := NewRunJournal(&out)
-	j.trunk("main", "origin/main", "abc", true)
-	j.join("one", "feat_wt/one", "/w/one", "111")
-	j.join("two", "feat_wt/two", "/w/two", "222")
+	j.trunk("main", "origin/main", strings.Repeat("a", 40), true)
+	j.join("one", "feat_wt/one", "/w/one", strings.Repeat("1", 40))
+	j.join("two", "feat_wt/two", "/w/two", strings.Repeat("2", 40))
 	j.set("feat_wt/one", func(p *UpParticipant) { p.Result = ResultRebased })
 	j.interrupted("two", "interrupted while rebasing two: git rebase --abort")
 	j.Finish()
+	validateJSON(t, "up", out.Bytes())
 	dec := json.NewDecoder(&out)
 	var r UpResult
 	if err := dec.Decode(&r); err != nil {

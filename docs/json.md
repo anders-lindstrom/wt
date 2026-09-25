@@ -2,11 +2,46 @@
 
 Two commands print one JSON object on stdout when given `--json`, for tools that
 drive wt (a git client, an editor, a script). Their human output is unchanged
-without it. Each object carries `"schema": 1`; within schema 1 fields may be
-**added**, never renamed or removed, and the enumerations below may gain values —
-a reader treats an unknown value as "not one I know", never as an error.
+without it.
+
+## Versions
+
+Each output has a schema with a semantic version, and says which it follows:
+
+- `schema` — the **major** version, an integer. A new major is a change that
+  breaks a reader: a field renamed or removed, a type or a meaning changed. It
+  comes as a new schema file (`up.v2.json`); v1 is never edited that way.
+- `schemaVersion` — the full version, `MAJOR.MINOR.PATCH`. A **minor** adds a
+  field or an enumeration value; a **patch** changes only wording.
+
+So within one major, fields are only added and enumerations only grow: a reader
+ignores fields it does not know and treats an unknown value as "not one I know",
+never as an error. wt's tests fail when a schema file changes without a new
+version, and when an output's `schemaVersion` is not its schema's.
+
+| Version | Change |
+|---|---|
+| 1.0.0 | `wt status --json` and `wt up --json`, as wt 53bc0d8 printed them |
+| 1.1.0 | `schemaVersion` in both outputs; the schemas published under `schema/` and by `wt schema` |
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
+
+## JSON Schema
+
+Both objects have a JSON Schema (draft 2020-12), for validating what you read or
+generating types from it:
+
+| Output | Schema | `$id` |
+|---|---|---|
+| `wt status --json` | [`schema/status.v1.json`](../schema/status.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/status.v1.json` |
+| `wt up --json` | [`schema/up.v1.json`](../schema/up.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/up.v1.json` |
+
+They are built into the binary: `wt schema` lists them and `wt schema up` prints
+one, so the schema you read is the one for the wt you run. Validate against that
+one. Its enumerations are exact for that wt, and a newer wt may add values and
+fields within the same schema number — so an older copy of a schema can reject
+newer output, and a reader that does not validate treats an unknown value as
+unknown. wt's own tests validate every `--json` output against these schemas.
 
 ## `wt status [<work>] --json` — the plan
 
@@ -21,7 +56,8 @@ repository.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `schema` | 1 | |
+| `schema` | 1 | the major version |
+| `schemaVersion` | string | the full version, `1.<minor>.<patch>` |
 | `command` | `"status"` | |
 | `token` | string \| null | names the inputs of this plan; pass it to `wt up --expect`. Null when not eligible |
 | `trunk` | string | trunk as `wt up` resolves it here: `MAIN_BRANCH`, else origin's HEAD |
@@ -68,7 +104,8 @@ exits 130. SIGKILL or a crash may write none; treat a missing object as unknown.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `schema` | 1 | |
+| `schema` | 1 | the major version |
+| `schemaVersion` | string | the full version, `1.<minor>.<patch>` |
 | `command` | `"up"` | |
 | `trunk`, `trunkRef` | string \| null | null when the run stopped before resolving them |
 | `onto` | string \| null | the trunk commit the run rebased onto, after its fetch; null when never determined |

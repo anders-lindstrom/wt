@@ -11,6 +11,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
+	"github.com/anders-lindstrom/wt/schema"
 )
 
 // Why wt up would not start on a worktree, as --json names it.
@@ -54,6 +55,7 @@ type PlanStackMember struct {
 // start on, computed from local state alone.
 type UpPlan struct {
 	Schema             int               `json:"schema"`
+	SchemaVersion      string            `json:"schemaVersion"`
 	Command            string            `json:"command"`
 	Token              *string           `json:"token"`
 	Trunk              *string           `json:"trunk"`
@@ -76,7 +78,8 @@ type UpPlan struct {
 // A worktree wt up would not start on is a plan with upEligible false and
 // the reason, not an error; only a worktree that cannot be found is.
 func UpPlanJSON(ctx *Context, arg string, w io.Writer) error {
-	p := UpPlan{Schema: 1, Command: "status", Stack: []PlanStackMember{}, Sessions: []PlanSession{}}
+	p := UpPlan{Schema: 1, SchemaVersion: schema.VersionOf("status"), Command: "status",
+		Stack: []PlanStackMember{}, Sessions: []PlanSession{}}
 	trunk := ctx.Config.MainBranch
 	ref := "origin/" + trunk
 	p.Trunk, p.TrunkRef = strp(trunk), strp(ref)

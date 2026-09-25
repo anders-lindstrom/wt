@@ -84,7 +84,8 @@ func newStatusCmd() *cobra.Command {
 			"--json prints the worktree's plan for wt up as one object, for a tool\n" +
 			"driving wt: trunk, eligibility, the stack it would move, the sessions\n" +
 			"in it, and a token for wt up --expect. It writes nothing — no fetch,\n" +
-			"no simulation. The schema is in wt's docs/json.md.\n\n" + pathWidthHelp,
+			"no simulation. wt schema status prints its JSON Schema; docs/json.md\n" +
+			"explains it.\n\n" + pathWidthHelp,
 		Example: "  wt status                     # state and standing for every worktree\n" +
 
 			"  wt status --all | grep behind # what is not on trunk, anywhere\n" +

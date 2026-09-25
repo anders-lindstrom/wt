@@ -1,0 +1,5 @@
+# Each schema's version and the sha256 of its file. A test fails when a file
+# changes without a new version here and in its x-version: see AGENTS.md.
+
+status.v1.json 1.1.0 22c92cb1d49a07a26ae0fdd4ae3413e1dab0f01c22ec87edaeea1846e195f080
+up.v1.json 1.1.0 c333a7fbfd690af6a5649ce681ff945baa9c997615a205c826c9db8673a8ffbe
