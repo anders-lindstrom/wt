@@ -6,6 +6,14 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-25 16:25 — JSON Schemas for the --json output
+
+- `wt schema` lists the JSON Schemas of `wt status --json` and `wt up --json`;
+  `wt schema up` prints one, for validating output or generating types.
+- They are built into the binary and published under `schema/` in the repo.
+- Each output now says its `schemaVersion` (1.1.0): minor for an added field or
+  value, a new major for anything that breaks a reader.
+
 ## 2026-09-25 16:00 — JSON for tools driving wt
 
 - `wt status <work> --json` is the plan for `wt up`: trunk, eligibility, the

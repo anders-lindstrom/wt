@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/up.v1.json",
+  "x-version": "1.1.0",
+  "title": "wt up --json",
+  "description": "What a wt up run did. Printed by `wt up [<work>] --json` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends the run. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
+  "type": "object",
+  "required": ["schema", "schemaVersion", "command", "trunk", "trunkRef", "onto", "fetched", "outcome", "error", "worktrees", "recovery"],
+  "properties": {
+    "schema": { "const": 1, "description": "The major version: a new one only for a change that breaks readers." },
+    "schemaVersion": { "type": "string", "pattern": "^1\\.[0-9]+\\.[0-9]+$", "description": "The full semantic version of this schema that the output follows: minor for an added field or enumeration value, patch for wording." },
+    "command": { "const": "up" },
+    "trunk": { "type": ["string", "null"] },
+    "trunkRef": { "type": ["string", "null"] },
+    "onto": { "$ref": "#/$defs/shaOrNull", "description": "The trunk commit the run rebased onto, after its fetch; null when never determined." },
+    "fetched": { "type": "boolean" },
+    "outcome": {
+      "enum": ["done", "refused", "partial", "interrupted"],
+      "description": "done: every participant rebased or skipped. refused: nothing changed, or error stopped the run first. partial: something changed and not everything finished. interrupted: a signal ended the run."
+    },
+    "error": { "type": ["string", "null"], "description": "Why the run stopped before touching any participant." },
+    "worktrees": { "type": "array", "description": "The participants, parents first.", "items": { "$ref": "#/$defs/participant" } },
+    "recovery": { "type": ["string", "null"], "description": "For interrupted: the way back wt printed." }
+  },
+  "$defs": {
+    "shaOrNull": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40,64}$" },
+    "participant": {
+      "type": "object",
+      "required": ["work", "branch", "path", "result", "reason", "before", "after", "failedSteps", "recovery", "pushCommand", "pushed"],
+      "properties": {
+        "work": { "type": "string" },
+        "branch": { "type": "string" },
+        "path": { "type": "string" },
+        "result": {
+          "enum": ["rebased", "rebasedStepFailed", "skipped", "refused", "notRun", "restored", "needsRecovery", "handedOver", "interrupted"],
+          "description": "rebased, rebasedStepFailed, needsRecovery, handedOver and interrupted changed the branch or worktree; skipped, refused, notRun and restored left them as they were."
+        },
+        "reason": { "type": ["string", "null"] },
+        "before": { "$ref": "#/$defs/shaOrNull" },
+        "after": { "$ref": "#/$defs/shaOrNull" },
+        "failedSteps": { "type": "array", "items": { "type": "string" } },
+        "recovery": { "type": ["string", "null"] },
+        "pushCommand": {
+          "oneOf": [{ "type": "null" }, { "type": "array", "items": { "type": "string" }, "minItems": 1 }],
+          "description": "For rebased: the push, as an argv."
+        },
+        "pushed": { "type": "boolean" }
+      }
+    }
+  }
+}

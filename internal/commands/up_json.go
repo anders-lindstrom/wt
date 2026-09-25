@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/anders-lindstrom/wt/schema"
 )
 
 // The results a participant of a run can come to, for --json. The set is
@@ -72,16 +74,17 @@ type UpParticipant struct {
 
 // UpResult is the one object wt up --json prints.
 type UpResult struct {
-	Schema    int              `json:"schema"`
-	Command   string           `json:"command"`
-	Trunk     *string          `json:"trunk"`
-	TrunkRef  *string          `json:"trunkRef"`
-	Onto      *string          `json:"onto"`
-	Fetched   bool             `json:"fetched"`
-	Outcome   string           `json:"outcome"`
-	Error     *string          `json:"error"`
-	Worktrees []*UpParticipant `json:"worktrees"`
-	Recovery  *string          `json:"recovery"`
+	Schema        int              `json:"schema"`
+	SchemaVersion string           `json:"schemaVersion"`
+	Command       string           `json:"command"`
+	Trunk         *string          `json:"trunk"`
+	TrunkRef      *string          `json:"trunkRef"`
+	Onto          *string          `json:"onto"`
+	Fetched       bool             `json:"fetched"`
+	Outcome       string           `json:"outcome"`
+	Error         *string          `json:"error"`
+	Worktrees     []*UpParticipant `json:"worktrees"`
+	Recovery      *string          `json:"recovery"`
 }
 
 // RunJournal collects what a run did, participant by participant, as it
@@ -98,7 +101,8 @@ type RunJournal struct {
 
 // NewRunJournal is a journal that writes its object to out.
 func NewRunJournal(out io.Writer) *RunJournal {
-	return &RunJournal{out: out, res: UpResult{Schema: 1, Command: "up", Worktrees: []*UpParticipant{}},
+	return &RunJournal{out: out, res: UpResult{Schema: 1, SchemaVersion: schema.VersionOf("up"), Command: "up",
+		Worktrees: []*UpParticipant{}},
 		byBr: map[string]*UpParticipant{}}
 }
 

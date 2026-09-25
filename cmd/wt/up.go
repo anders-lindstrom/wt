@@ -36,7 +36,8 @@ func newUpCmd() *cobra.Command {
 			"--json prints one result object on stdout and the progress on stderr,\n" +
 			"for a tool driving wt; --expect <token> refuses the run, touching\n" +
 			"nothing, when trunk, the configuration or the stack is no longer what\n" +
-			"wt status --json reported. The schema is in wt's docs/json.md.",
+			"wt status --json reported. wt schema up prints its JSON Schema;\n" +
+			"docs/json.md explains it.",
 		Example: "  wt up                  # the worktree you are in, if it syncs cleanly\n" +
 			"  wt up --push           # and push it, without asking\n" +
 			"  wt up -y --force       # yes to everything, past a session busy in it\n" +

@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/status.v1.json",
+  "x-version": "1.1.0",
+  "title": "wt status --json",
+  "description": "What wt up would start on, from local state alone. Printed by `wt status [<work>] --json`, which writes nothing to any repository. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
+  "type": "object",
+  "required": ["schema", "schemaVersion", "command", "token", "trunk", "trunkRef", "trunkRefExists", "trunkTip", "trunkRefUpdatedAt",
+    "configured", "worktree", "upEligible", "upIneligibleCode", "upIneligibleReason", "stack", "sessions", "sessionsError"],
+  "properties": {
+    "schema": { "const": 1, "description": "The major version: a new one only for a change that breaks readers." },
+    "schemaVersion": { "type": "string", "pattern": "^1\\.[0-9]+\\.[0-9]+$", "description": "The full semantic version of this schema that the output follows: minor for an added field or enumeration value, patch for wording." },
+    "command": { "const": "status" },
+    "token": { "type": ["string", "null"], "description": "Names the inputs of this plan (trunk name, wt configuration, stack); pass it to `wt up --expect`. Null when not eligible." },
+    "trunk": { "type": ["string", "null"], "description": "Trunk as wt up resolves it here." },
+    "trunkRef": { "type": ["string", "null"], "description": "origin/<trunk>, what wt up rebases onto after its fetch." },
+    "trunkRefExists": { "type": "boolean" },
+    "trunkTip": { "$ref": "#/$defs/shaOrNull" },
+    "trunkRefUpdatedAt": { "type": ["string", "null"], "format": "date-time", "description": "When the trunk ref last moved, from its own reflog; null without one." },
+    "configured": { "type": "boolean", "description": "The repository has a wt configuration that parses." },
+    "worktree": {
+      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/worktree" }],
+      "description": "The worktree named; null when it cannot be found."
+    },
+    "upEligible": { "type": "boolean", "description": "wt up would start on it. Dirt, conflicts and busy sessions are not checked here." },
+    "upIneligibleCode": {
+      "oneOf": [
+        { "type": "null" },
+        { "enum": ["mainCheckout", "noConfiguration", "configurationInvalid", "detachedHead", "onTrunk", "handedOver", "notAWorktree"] }
+      ]
+    },
+    "upIneligibleReason": { "type": ["string", "null"] },
+    "stack": {
+      "type": "array",
+      "description": "Every worktree wt up would move, parents first.",
+      "items": { "$ref": "#/$defs/stackMember" }
+    },
+    "sessions": { "type": "array", "items": { "$ref": "#/$defs/session" } },
+    "sessionsError": { "type": ["string", "null"], "description": "Listing the sessions failed; sessions is then empty, not known empty." }
+  },
+  "$defs": {
+    "shaOrNull": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40,64}$" },
+    "countOrNull": { "type": ["integer", "null"], "minimum": 0 },
+    "worktree": {
+      "type": "object",
+      "required": ["work", "branch", "path", "isMain", "state", "behind", "ahead"],
+      "properties": {
+        "work": { "type": "string", "description": "The work name, as wt list prints it." },
+        "branch": { "type": "string", "description": "Empty when detached." },
+        "path": { "type": "string" },
+        "isMain": { "type": "boolean" },
+        "state": { "enum": ["clean", "dirty", "unreadable"] },
+        "behind": { "$ref": "#/$defs/countOrNull" },
+        "ahead": { "$ref": "#/$defs/countOrNull" }
+      }
+    },
+    "stackMember": {
+      "type": "object",
+      "required": ["work", "branch", "path"],
+      "properties": {
+        "work": { "type": "string" },
+        "branch": { "type": "string" },
+        "path": { "type": "string" }
+      }
+    },
+    "session": {
+      "type": "object",
+      "required": ["work", "name", "kind", "state"],
+      "properties": {
+        "work": { "type": "string" },
+        "name": { "type": "string" },
+        "kind": { "enum": ["claude"] },
+        "state": { "enum": ["busy", "idle"] }
+      }
+    }
+  }
+}
