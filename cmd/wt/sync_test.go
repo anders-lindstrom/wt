@@ -272,4 +272,10 @@ func TestRunOptionsAskNobodyAndRefuseBulkWithoutATerminal(t *testing.T) {
 	if yes.Confirm != nil || yes.ConfirmPush != nil || p != nil {
 		t.Error("--yes asks nothing")
 	}
+	if yes.Push != commands.PushAlways {
+		t.Error("--yes is yes to the push too")
+	}
+	if held, _ := runOptions(cmd, syncVerbFlags{run: true, yes: true, push: commands.PushNever}, false); held.Push != commands.PushNever {
+		t.Error("--no-push keeps the push out, --yes or not")
+	}
 }

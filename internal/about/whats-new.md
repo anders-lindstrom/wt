@@ -6,6 +6,12 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-25 14:28 — --yes pushes
+
+- `-y` is yes to every question, the push included: `wt up -f -y` rebases and
+  pushes. `--no-push` keeps the push out; without `-y` the push is still asked,
+  and Enter still means no. The same for `wt sync run` and `wt sync resume`.
+
 ## 2026-09-24 21:48 — --force past a Claude session
 
 - `wt up -f` and `wt sync run <work> -f` rebase even with a Claude session busy
