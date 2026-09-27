@@ -14,6 +14,14 @@ want read out to them; the full story is in git history and in
 - `--no-ff-trunk` or `wt config set ff_trunk false` turns it off.
 - JSON: `trunkSync` in up (1.2.0), sync-run (1.1.0) and status (1.2.0).
 
+## 2026-09-27 23:44 — Help fits in 80 columns
+
+- Every line `--help` prints now fits an 80-column terminal: flag descriptions
+  wrap under themselves, and the `wt sync` flow table and the settings list
+  are rewrapped. A test holds every command to it, hidden ones included.
+- `wt branch-strip --help` shows examples.
+- `wt config` says `main checkout:` where it said `main root:`.
+
 ## 2026-09-27 23:10 — JSON results for wt sync run, resume and undo
 
 - `--json` on `wt sync run`, `wt sync --run`, `resume` and `undo` prints one
