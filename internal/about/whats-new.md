@@ -8,11 +8,12 @@ want read out to them; the full story is in git history and in
 
 ## 2026-09-28 01:18 — Remove moves a worktree aside instead of deleting it
 
-- `wt remove <work> --quarantine <dir>` moves the checkout and its
-  `.git/worktrees/<id>` into a new folder, renames only,
+- `wt remove <work> --quarantine <dir>` and `wt sweep --quarantine <dir>` move
+  the checkout and its `.git/worktrees/<id>` into a new folder, renames only,
   journalled step by step in `<dir>/recovery.json`. `wt restore <dir>` puts
   it back, branch and config included. A branch step that fails after the
-  folder has gone now says "partly done". JSON: recovery, restore(-plan) 1.0.0.
+  folder has gone now says "partly done". JSON: recovery, restore(-plan)
+  1.0.0; sweep 1.1.0, sweep-plan 1.2.0.
 
 ## 2026-09-28 00:46 — Keepers for many repositories at once
 

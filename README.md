@@ -110,7 +110,7 @@ examples: `wt <command> --help`.
 | `wt setup [<from-dir>]` | provision the worktree you are in (`--no-build`, `--source` to name what ran it) |
 | `wt remove <work>` | remove a worktree; delete its branch when merged — on trunk, or as a pull request the cache says landed — keep it when not (`--yes`, `--dry-run`, `.` for the one you are in, `--force`/`-f` for a locked one, `--quarantine <dir>` to move it aside instead of deleting it) |
 | `wt restore <dir>` | put back a worktree `--quarantine` moved into `<dir>`, and its branch, from the `recovery.json` there (`--dry-run`, `--json`) |
-| `wt sweep` | delete local branches already merged into trunk — or whose pull request GitHub merged — and remove the worktrees on such branches that nothing is using; from the main checkout only (`--no-fetch`, `--yes`, `--dry-run`, `--json`, `--expect`), or across repositories with `--all`, `--roots`, `--profile` |
+| `wt sweep` | delete local branches already merged into trunk — or whose pull request GitHub merged — and remove the worktrees on such branches that nothing is using; from the main checkout only (`--no-fetch`, `--yes`, `--dry-run`, `--json`, `--expect`, `--quarantine <dir>`), or across repositories with `--all`, `--roots`, `--profile` |
 
 **This repository, and this build**
 

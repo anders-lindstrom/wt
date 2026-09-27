@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -132,6 +134,7 @@ type SweepPlanOutput struct {
 	Token         *string     `json:"token"`
 	Error         *string     `json:"error"`
 	Items         []SweepItem `json:"items"`
+	Quarantine    *string     `json:"quarantine"`
 }
 
 // SweepResultItem is what became of one row of the plan.
@@ -146,6 +149,16 @@ type SweepResultItem struct {
 	WorktreeRemoved bool     `json:"worktreeRemoved"`
 	BranchDeleted   bool     `json:"branchDeleted"`
 	RestoreCommand  []string `json:"restoreCommand"`
+	// Quarantine is the folder the worktree went to under --quarantine,
+	// and which of its two moves are done; nil otherwise.
+	Quarantine *SweepQuarantine `json:"quarantine"`
+}
+
+// SweepQuarantine is one worktree's folder in a sweep's quarantine.
+type SweepQuarantine struct {
+	Dir           string `json:"dir"`
+	CheckoutMoved bool   `json:"checkoutMoved"`
+	AdminMoved    bool   `json:"adminMoved"`
 }
 
 // SweepResult is the one object wt sweep --yes --json prints.
@@ -161,6 +174,7 @@ type SweepResult struct {
 	Error         *string            `json:"error"`
 	Items         []*SweepResultItem `json:"items"`
 	Recovery      *string            `json:"recovery"`
+	Quarantine    *string            `json:"quarantine"`
 }
 
 // sweepItem is one row of the plan as --json reports it.
@@ -209,16 +223,20 @@ func planItemsOf(p SweepPlan) []SweepItem {
 
 // sweepToken names a plan: the repository, trunk, the configuration, and
 // every row with what it stands on — its part, branch, commit, worktree,
-// evidence, what GitHub says about it, and its reasons, codes and words.
-// Any difference in any of them is a different token. Nil when the plan has
+// evidence, what GitHub says about it, and its reasons, codes and words —
+// and the quarantine folder the worktrees go to, when there is one. Any
+// difference in any of them is a different token. Nil when the plan has
 // nothing to remove or delete.
-func sweepToken(ctx *Context, p SweepPlan) *string {
+func sweepToken(ctx *Context, p SweepPlan, quarantine string) *string {
 	if p.Empty() {
 		return nil
 	}
 	h := sha256.New()
 	h.Write([]byte("wt-sweep-1\x00" + ctx.Repo.MainRoot + "\x00" + ctx.Config.MainBranch + "\x00"))
 	h.Write(configFingerprint(ctx))
+	if quarantine != "" {
+		h.Write([]byte("\nquarantine\x00" + quarantine))
+	}
 	for _, it := range planItemsOf(p) {
 		fields := []string{it.Category, deref(it.Branch), deref(it.Tip), deref(it.Path),
 			strings.Join(it.Kept, ","), it.Reason}
@@ -275,15 +293,22 @@ func SweepPlanJSON(ctx *Context, opts SweepOptions, out, progress io.Writer) err
 		return writeSweepPlan(out, res, ErrNotInRepo)
 	}
 	res.Repo, res.Trunk = strp(ctx.Repo.MainRoot), strp(ctx.Config.MainBranch)
+	res.Quarantine = strp(opts.Quarantine)
 	plan, fetched, err := prepareSweep(ctx, opts, progress)
 	res.Fetched = fetched
 	if err != nil {
 		return writeSweepPlan(out, res, err)
 	}
+	if !plan.Empty() {
+		if err := quarantineReady(ctx, opts.Quarantine, plan); err != nil {
+			res.Items = planItemsOf(plan)
+			return writeSweepPlan(out, res, err)
+		}
+	}
 	for _, b := range plan.Bases {
 		res.Bases = append(res.Bases, SweepBase(b))
 	}
-	res.Items, res.Token = planItemsOf(plan), sweepToken(ctx, plan)
+	res.Items, res.Token = planItemsOf(plan), sweepToken(ctx, plan, opts.Quarantine)
 	return writeSweepPlan(out, res, nil)
 }
 
@@ -395,6 +420,28 @@ func (j *SweepJournal) begin(ctx *Context, p SweepPlan, token string) {
 	}
 }
 
+// quarantineIn records the folder the worktrees go to, "" for none.
+func (j *SweepJournal) quarantineIn(dir string) {
+	if j == nil || dir == "" {
+		return
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.res.Quarantine = strp(dir)
+}
+
+// quarantined records the folder one row's worktree is about to go to.
+func (j *SweepJournal) quarantined(key, dir string) {
+	if j == nil {
+		return
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if r := j.byKey[key]; r != nil {
+		r.Quarantine = &SweepQuarantine{Dir: dir}
+	}
+}
+
 // startApply marks the point after which an error is an item's, not the
 // run's.
 func (j *SweepJournal) startApply() {
@@ -455,6 +502,7 @@ func (j *SweepJournal) settle(key string, err error) {
 	defer j.mu.Unlock()
 	j.inFlight = ""
 	r.WorktreeRemoved, r.BranchDeleted, r.RestoreCommand = probe.WorktreeRemoved, probe.BranchDeleted, probe.RestoreCommand
+	r.Quarantine = probe.Quarantine
 	complete := r.BranchDeleted && (r.Category != SweepRemove || r.WorktreeRemoved)
 	switch {
 	case err == nil && complete && r.Category == SweepRemove:
@@ -488,6 +536,13 @@ func readState(ctx *Context, r *SweepResultItem) {
 	}
 	if r.Category == SweepRemove && r.Path != nil {
 		r.WorktreeRemoved = worktreeGone(ctx, *r.Path)
+	}
+	if q := r.Quarantine; q != nil {
+		moved := *q
+		_, cerr := os.Lstat(filepath.Join(q.Dir, "checkout"))
+		_, aerr := os.Lstat(filepath.Join(q.Dir, "admin"))
+		moved.CheckoutMoved, moved.AdminMoved = cerr == nil, aerr == nil
+		r.Quarantine = &moved
 	}
 	if r.Branch != nil && r.Tip != nil {
 		_, ok := ctx.Repo.ResolveRef("refs/heads/" + *r.Branch)

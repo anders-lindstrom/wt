@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -10,7 +11,7 @@ import (
 
 func newSweepCmd() *cobra.Command {
 	var noFetch, yes, dryRun, asJSON bool
-	var expect string
+	var expect, quarantineDir string
 	var sel selectionFlags
 	cmd := &cobra.Command{
 		Use:   "sweep",
@@ -83,8 +84,16 @@ func newSweepCmd() *cobra.Command {
 			"plan and the progress go to stderr. --expect <token> refuses the sweep,\n" +
 			"touching nothing, unless the plan made now has that token. wt schema\n" +
 			"sweep-plan and wt schema sweep print the schemas; docs/json.md\n" +
-			"explains them.\n\n" + selectionHelp,
-		Example: "  wt sweep                    # fetch, show what is merged, then ask\n" +
+			"explains them.\n\n" +
+			"--quarantine <dir> moves each worktree it removes into a folder of its\n" +
+			"own in <dir>, named after its directory, instead of deleting it, the\n" +
+			"way wt remove --quarantine does; wt restore <dir>/<name> puts one back.\n" +
+			"<dir> is a new folder whose parent exists, on the worktrees' volume and\n" +
+			"outside the repository; otherwise the sweep refuses before anything\n" +
+			"goes. It sweeps one repository. Every sweep also drops the refs that\n" +
+			"pinned a quarantine's commits once its folder has been deleted.\n\n" +
+			selectionHelp,
+		Example: "  wt sweep --quarantine ../trash/sw  # ask, then move worktrees aside\n" +
 			"  wt sweep --all --dry-run    # every repository's plan; change nothing\n" +
 			"  wt sweep --roots work --yes # one root's repositories, without asking\n" +
 			"  wt sweep --profile api --no-fetch  # a profile's, as last fetched\n" +
@@ -95,14 +104,25 @@ func newSweepCmd() *cobra.Command {
 			if expect != "" && (!asJSON || !yes) {
 				return errors.New("--expect holds a sweep to the plan a tool read: pass it with --yes --json")
 			}
+			if quarantineDir != "" {
+				if sel.selection().Any() {
+					return errors.New("--quarantine sweeps one repository: run it in its main checkout")
+				}
+				abs, err := filepath.Abs(quarantineDir)
+				if err != nil {
+					return err
+				}
+				quarantineDir = abs
+			}
 			if asJSON {
 				if sel.selection().Any() {
 					return errors.New("--json sweeps one repository: run it in each repository's main checkout")
 				}
-				return sweepJSON(cmd, commands.SweepOptions{NoFetch: noFetch, Yes: yes, DryRun: dryRun, Expect: expect})
+				return sweepJSON(cmd, commands.SweepOptions{NoFetch: noFetch, Yes: yes, DryRun: dryRun, Expect: expect,
+					Quarantine: quarantineDir})
 			}
 			opts := commands.SweepOptions{NoFetch: noFetch, Yes: yes, DryRun: dryRun,
-				Width: terminalWidth(cmd.OutOrStdout())}
+				Width: terminalWidth(cmd.OutOrStdout()), Quarantine: quarantineDir}
 			if sel.selection().Any() {
 				all := commands.SweepAllOptions{SweepOptions: opts}
 				if !yes && canAsk(cmd) {
@@ -125,6 +145,8 @@ func newSweepCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print the plan and change nothing")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print the plan, or with --yes the result, as JSON")
 	cmd.Flags().StringVar(&expect, "expect", "", "sweep only if the plan still has this token")
+	cmd.Flags().StringVar(&quarantineDir, "quarantine", "",
+		"move each worktree into this new folder instead of deleting it")
 	cmd.MarkFlagsMutuallyExclusive("yes", "dry-run")
 	return cmd
 }

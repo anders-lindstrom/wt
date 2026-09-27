@@ -37,6 +37,8 @@ Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 | `new-plan`, `checkout-plan` | 1.0.0 | `wt new` and `wt checkout --dry-run --json`, the plan |
 | `new`, `checkout` | 1.0.0 | `wt new` and `wt checkout --json`, the result |
 | `sync-run` | 1.1.0 | `trunkSync`: what the run did to local trunk after its fetch |
+| `sweep` | 1.1.0 | `quarantine`, top-level and on each item: the folders `--quarantine` moved worktrees into |
+| `sweep-plan` | 1.2.0 | `quarantine`: the folder `--quarantine` names, which the token covers |
 | `recovery` | 1.0.0 | `<dir>/recovery.json`, the journal of `--quarantine` and `wt restore` |
 | `restore-plan`, `restore` | 1.0.0 | `wt restore <dir> --dry-run --json`, the plan, and `--json`, the result |
 
@@ -245,6 +247,7 @@ is still one object, with `error` set and no items, and a non-zero exit.
 | `token` | string \| null | names this plan; pass it to `wt sweep --expect`. Null when there is nothing to remove or delete, or on error |
 | `error` | string \| null | why no plan could be made |
 | `items` | array | the rows, in the order `wt sweep` prints them |
+| `quarantine` | string \| null | since 1.2.0: with `--quarantine <dir>`, the folder, absolute; a folder that exists or is on another volume sets `error` (the items stay, the token is null). Null without it |
 
 Each item:
 
@@ -300,7 +303,8 @@ and every row: its category, branch, commit, worktree, evidence, pull request
 (number, state, base) and reasons, codes and words. So a branch that moved, a
 new merged branch, a worktree that turned dirty, a session that arrived or
 changed, a pull request GitHub no longer answers for — any of them is a
-different token. A newer trunk commit that changes no row is not.
+different token. So is the `--quarantine` folder, or its absence: a token read
+for a quarantine does not let a sweep delete instead. A newer trunk commit that changes no row is not.
 
 ## `wt sweep --yes --json` — the sweep
 
@@ -329,6 +333,7 @@ a crash may write none; treat a missing object as unknown.
 | `error` | string \| null | why the sweep stopped before touching anything: `--expect`, the fetch, not the main checkout |
 | `items` | array | every row of the plan, in its order; empty when `error` stopped it first |
 | `recovery` | string \| null | for `interrupted`: what wt printed |
+| `quarantine` | string \| null | since 1.1.0: with `--quarantine <dir>`, the folder; null without |
 
 Each item:
 
@@ -340,6 +345,7 @@ Each item:
 | `worktreeRemoved` | bool | the worktree is gone now |
 | `branchDeleted` | bool | the branch is gone now |
 | `restoreCommand` | array of string \| null | when the branch was deleted: `["git", "-C", repo, "branch", branch, tip]`, which puts it back at that commit (not its upstream setting) |
+| `quarantine` | object \| null | since 1.1.0: for a worktree moved, or being moved, into the quarantine: `dir`, its own folder (`wt restore <dir>` puts it back), and `checkoutMoved`, `adminMoved`, which of the two moves are done; null otherwise |
 
 `worktreeRemoved` and `branchDeleted` are read from the repository after the
 row, not from what was attempted.
@@ -367,9 +373,17 @@ row, not from what was attempted.
 The exit code is non-zero when anything to remove or delete was kept or failed;
 read `outcome`.
 
+With `--quarantine <dir>`, `<dir>` must be a new folder whose parent exists, on
+the volume of every worktree the plan removes and of their admin dirs; otherwise
+the sweep refuses before touching anything (`error` set). Each worktree goes into
+`<dir>/<its directory's name>` (numbered `-2`, `-3` on a clash), with its own
+`recovery.json`, exactly as `wt remove --quarantine` would move it;
+`worktreeRemoved` is then true once its checkout has left its path.
+
 ## `<dir>/recovery.json` — a quarantine's journal
 
-`wt remove <work> --quarantine <dir>` moves the worktree aside instead of deleting it. `<dir>` is a new
+`wt remove <work> --quarantine <dir>` (and `wt sweep --quarantine`, per
+worktree) moves the worktree aside instead of deleting it. `<dir>` is a new
 folder the caller names, on the worktree's volume and outside every checkout of
 the repository and its git dir; it is made with `mkdir`, not `mkdir -p`, and a
 folder that exists refuses the removal, as does one inside the repository or a

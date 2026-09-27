@@ -355,6 +355,7 @@ check fleet "" "" 'wt sweep --profile api --no-fetch'
 check worktrees "" "" 'wt remove login-crash --dry-run'
 check plain "" "" 'wt config set root.work ~/src/work'
 check sweep "" "" 'wt sweep --no-fetch'
+check sweep "" "mkdir -p ../trash" 'wt sweep --quarantine ../trash/sw'
 check sweep "" "" 'wt sweep --yes'
 check sweep "" "" 'wt sweep --yes --json --expect 1:0123abcd' fail
 
