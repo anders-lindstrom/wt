@@ -128,16 +128,25 @@ func TestHelpUsesIllustrativeNames(t *testing.T) {
 	}
 }
 
-// The README is read by the same people, and its examples date the same way.
-func TestReadmeUsesIllustrativeNames(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+// The README and the docs beside it are read by the same people, and their
+// examples date the same way.
+func TestDocsUseIllustrativeNames(t *testing.T) {
+	root := filepath.Join("..", "..")
+	docs, err := filepath.Glob(filepath.Join(root, "docs", "*.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i, line := range strings.Split(strings.ToLower(string(data)), "\n") {
-		for _, name := range fleet {
-			if strings.Contains(line, name) {
-				t.Errorf("README.md:%d names %q from the real fleet", i+1, name)
+	for _, path := range append([]string{filepath.Join(root, "README.md")}, docs...) {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rel, _ := filepath.Rel(root, path)
+		for i, line := range strings.Split(strings.ToLower(string(data)), "\n") {
+			for _, name := range fleet {
+				if strings.Contains(line, name) {
+					t.Errorf("%s:%d names %q from the real fleet", rel, i+1, name)
+				}
 			}
 		}
 	}
