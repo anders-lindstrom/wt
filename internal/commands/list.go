@@ -9,7 +9,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -138,7 +137,7 @@ func listPRs(ctx *Context, names []WorkName, refresh bool) (map[string]string, t
 		}
 	}
 	a := branchPRs(ctx, branches, prLookup{
-		warn: "no pull requests shown", refresh: refresh, deadline: github.ListDeadline,
+		warn: "no pull requests shown", refresh: refresh, deadline: lookupDeadline,
 	})
 	if len(a.byBranch) == 0 {
 		return nil, time.Time{}

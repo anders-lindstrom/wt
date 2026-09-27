@@ -456,7 +456,7 @@ func warnGitHub(ctx *Context, subject string, err error) {
 // GitHub regardless.
 func prFact(ctx *Context, branch string, refresh bool) string {
 	a := branchPRs(ctx, []string{branch}, prLookup{
-		warn: "no pull requests shown", refresh: refresh, deadline: github.ListDeadline,
+		warn: "no pull requests shown", refresh: refresh, deadline: lookupDeadline,
 	})
 	pr, ok := a.byBranch[branch]
 	if !ok {
