@@ -1,6 +1,8 @@
 package main
 
 import (
+	"io"
+
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
@@ -8,6 +10,8 @@ import (
 
 func newCheckoutCmd() *cobra.Command {
 	var opts commands.NewOptions
+	var asJSON, dryRun bool
+	var expect string
 	cmd := &cobra.Command{
 		Use:     "checkout <branch> [<work>]",
 		Aliases: []string{"co"},
@@ -16,22 +20,38 @@ func newCheckoutCmd() *cobra.Command {
 			"request, or picking up work someone else started. The branch has to be\n" +
 			"a local one: this never creates a branch, `wt new` does that.\n\n" +
 			"Without <work> a work name is derived from the branch, with the type\n" +
-			"prefix dropped and anything a directory cannot hold replaced.",
+			"prefix dropped and anything a directory cannot hold replaced.\n\n" +
+			"--dry-run, --json and --expect work as for wt new; the plan's token\n" +
+			"also pins the branch's commit, so --expect refuses a branch that has\n" +
+			"moved since. wt schema checkout-plan and wt schema checkout print\n" +
+			"their JSON Schemas.",
 		Example: "  wt checkout fix_wt/login-crash        # worktree for an existing branch\n" +
-			"  wt checkout release-2.1 rel21         # give the worktree its own name\n" +
+			"  wt checkout release-2.1 rel21 --dry-run  # say what it would make\n" +
 			"  wt checkout release-2.1 --no-setup    # the worktree, nothing else\n" +
-			"  wt checkout release-2.1 --no-build    # provision, but do not build\n" +
-			"  wt checkout release-2.1 --no-superset # keep it out of the Superset app",
+			"  wt checkout release-2.1 --no-build --no-superset  # no build, no Superset\n" +
+			"  wt checkout release-2.1 --json --expect 1:0123abcd  # if the plan holds",
 		Args: cobra.RangeArgs(1, 2),
-		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			work := ""
 			if len(args) == 2 {
 				work = args[1]
 			}
-			path, err := commands.Checkout(ctx, args[0], work, opts, cmd.ErrOrStderr())
-			return printLine(cmd, path, err)
-		}),
+			return runCreate(cmd, args, "checkout", create{json: asJSON, dryRun: dryRun, expect: expect},
+				func(ctx *commands.Context) (string, error) {
+					return commands.Checkout(ctx, args[0], work, opts, cmd.ErrOrStderr())
+				},
+				func(ctx *commands.Context, w io.Writer) error {
+					return commands.CheckoutDryRun(ctx, args[0], work, opts, w)
+				},
+				func(ctx *commands.Context, w io.Writer) error {
+					return commands.CheckoutPlanJSON(ctx, args[0], work, opts, w)
+				},
+				func(ctx *commands.Context, j *commands.CreateJournal, w io.Writer) error {
+					return commands.CheckoutJSON(ctx, args[0], work, opts, expect, j, w)
+				})
+		},
 	}
 	addProvisionFlags(cmd, &opts.SkipBuild, &opts.NoSetup, &opts.NoSuperset)
+	addCreateFlags(cmd, &asJSON, &dryRun, &expect)
 	return cmd
 }

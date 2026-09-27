@@ -1,8 +1,9 @@
 # wt's JSON output
 
-`wt status`, `wt up`, `wt sweep`, `wt sync` and its verbs print JSON on stdout
-when given `--json`, for tools that drive wt (a git client, an editor, a
-script). Their human output is unchanged without it.
+`wt status`, `wt up`, `wt sweep`, `wt sync` and its verbs, `wt new` and
+`wt checkout` print JSON on stdout when given `--json`, for tools that drive wt
+(a git client, an editor, a script). Their human output is unchanged without
+it.
 
 ## Versions
 
@@ -30,6 +31,8 @@ Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 |---|---|---|
 | `sync` | 1.0.0 | `wt sync --json`, the overview |
 | `sync-run` | 1.0.0 | `wt sync run`, `resume` and `undo --json`, the result |
+| `new-plan`, `checkout-plan` | 1.0.0 | `wt new` and `wt checkout --dry-run --json`, the plan |
+| `new`, `checkout` | 1.0.0 | `wt new` and `wt checkout --json`, the result |
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
 
@@ -46,6 +49,10 @@ generating types from it:
 | `wt sweep --yes --json` | [`schema/sweep.v1.json`](../schema/sweep.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sweep.v1.json` |
 | `wt sync --json` | [`schema/sync.v1.json`](../schema/sync.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sync.v1.json` |
 | `wt sync run\|resume\|undo --json` | [`schema/sync-run.v1.json`](../schema/sync-run.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sync-run.v1.json` |
+| `wt new --dry-run --json` | [`schema/new-plan.v1.json`](../schema/new-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/new-plan.v1.json` |
+| `wt new --json` | [`schema/new.v1.json`](../schema/new.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/new.v1.json` |
+| `wt checkout --dry-run --json` | [`schema/checkout-plan.v1.json`](../schema/checkout-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/checkout-plan.v1.json` |
+| `wt checkout --json` | [`schema/checkout.v1.json`](../schema/checkout.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/checkout.v1.json` |
 
 They are built into the binary: `wt schema` lists them and `wt schema up` prints
 one, so the schema you read is the one for the wt you run. Validate against that
@@ -422,3 +429,126 @@ is `needsRecovery`. `outcome` follows the same rules, with `undone` counting as
 back, each `notRun` until it is reported; a signal partway marks `interrupted`
 each of those whose tip, or the rebase it was waiting in, changed. The exit code
 keeps its meaning; read `outcome`.
+
+## `wt new <type>/<work> [--base <ref>] --dry-run --json` — the plan
+
+What `wt new` would create, from local state alone. It **writes nothing**: no
+fetch, no branch, no directory. `wt checkout <branch> [<work>] --dry-run --json`
+is the same for a branch that exists (below). A name that cannot be created is
+still a plan, with its `problems` and no token — never an error exit. The
+command fails only outside a git repository.
+
+The provisioning flags (`--no-setup`, `--no-build`, `--no-superset`) change
+`provision`, `buildCommand` and `superset` as they would change the run.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `schema` | 1 | the major version |
+| `schemaVersion` | string | the full version, `1.<minor>.<patch>` |
+| `command` | `"new"` | |
+| `token` | string \| null | names the inputs of this plan; pass it to `wt new --json --expect`. Null when there is a problem |
+| `configured` | bool | the repository has a wt configuration that parses |
+| `types` | array of string | the worktree types the repository declares |
+| `defaultType` | string \| null | the type a bare work name takes |
+| `type`, `work` | string \| null | as parsed from the argument; null when it does not parse |
+| `branch`, `path` | string \| null | the branch and the worktree path it would create; null when the name or type is not valid |
+| `base` | string \| null | what the branch is cut from: `--base`, else trunk |
+| `baseCommit` | string \| null | the commit `base` resolves to now; null when it does not |
+| `provision` | bool | the repository's `bin/worktree/provision.sh` would run |
+| `buildCommand` | string \| null | the build command that would run; null when build initialisation is off, or `--no-build`, `--no-setup` |
+| `superset` | bool | wt would try to register the worktree in Superset: you opted in, `SUPERSET_REGISTER` is `auto` or `on`. Whether Superset is running and tracks the repository is not checked |
+| `problems` | array | why it would not be created; empty when it would |
+| `problems[].code` | see below | |
+| `problems[].message` | string | the same as a sentence, as wt would print it |
+
+`problems[].code`: `branchExists`, `pathExists`, `unknownType`, `invalidName`
+(`.`, `/`, too many slashes, a branch name git refuses, nothing derivable), `noConfiguration`,
+`configurationInvalid`, `branchMissing` and `branchCheckedOut` (checkout only:
+git gives a branch one worktree), `baseMissing`.
+
+The **token** covers the command, the branch and path, `baseCommit`, and the bytes
+of the wt configuration file. `--base <oid>` with a full commit id, as a git
+client names a commit, cuts the branch from exactly that commit and gives it no
+upstream; `--base origin/main` would track `origin/main` under git's
+`branch.autoSetupMerge`.
+
+## `wt checkout <branch> [<work>] --dry-run --json` — the plan
+
+As `wt new`'s, with `command` `"checkout"`, `type` the default type, and in place
+of `base` and `baseCommit`:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `branchCommit` | string \| null | the local branch's commit now; null when there is no such branch |
+
+`<branch>` is a local branch's exact name; a revision expression such as
+`main~1` is `branchMissing`. Its token pins `branchCommit`, so
+`wt checkout --expect` refuses a branch that has moved since the plan.
+
+## `wt new … --json` and `wt checkout … --json` — the run
+
+The same run as without `--json`: the plan is recomputed, then the worktree is
+created and provisioned as it always is. Progress goes to **stderr**; stdout
+carries exactly one object. Neither asks anything.
+
+A plan with a problem is refused, creating nothing. With `--expect <token>` the
+recomputed plan's token must equal the one given (an empty one is refused), or
+the run is refused with `planChanged`, creating nothing: the base or branch moved, the name or the
+configuration changed. That check is the last thing before `git worktree add`;
+afterwards wt reads the new worktree's HEAD back, and a HEAD that is not the
+pinned commit (the branch moved in between, or a hook committed) is
+`headMoved` — created, never a quiet success.
+
+A handled SIGINT or SIGTERM, from the moment the command starts, writes the
+object too — the step in flight `interrupted`, the rest as they stood — then
+stops a `provision.sh`, build command or git still running, each with its whole
+process group, and exits 130. SIGKILL or a crash may write none; treat a
+missing object as unknown. A usage error (a missing argument, an unknown flag,
+`--expect` without `--json`) is reported as without `--json`, with no object.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `schema` | 1 | the major version |
+| `schemaVersion` | string | the full version, `1.<minor>.<patch>` |
+| `command` | `"new"` \| `"checkout"` | one schema each |
+| `outcome` | see below | |
+| `error` | string \| null | why it was refused, or stopped before planning (not in a git repository) |
+| `problems` | array | as in the plan, plus `planChanged` and `headMoved` |
+| `type`, `work`, `branch`, `path` | string \| null | from the plan |
+| `base` | string \| null | `wt new`: what the branch was cut from. Null for `wt checkout` |
+| `expectedCommit` | string \| null | the commit the plan pinned: `baseCommit` or `branchCommit` |
+| `commit` | string \| null | the new worktree's HEAD, read after `git worktree add`; null when there is none |
+| `steps` | array | every side effect, always all seven, in this order |
+| `steps[].step` | `worktree`, `branch`, `config`, `provision`, `submodules`, `build`, `superset` | |
+| `steps[].result` | see below | |
+| `steps[].commit` | string \| null | `worktree`: its HEAD; `branch`: its tip |
+| `steps[].reason` | string \| null | why, for `skipped`, `failed` and `interrupted` |
+
+`steps[].result`, by step:
+
+| Step | Results |
+|---|---|
+| `worktree` | `created`, `failed` (`git worktree add` failed and left no worktree, or the path was taken). `created` with a `reason` when git failed after making it, as when a `post-checkout` hook fails; the steps after it are then `notRun` |
+| `branch` | `created` (`wt new`), `untouched` (`wt checkout`) |
+| `config` | `done`, `skipped` (no source checkout), `failed` (an entry could not be copied, or escapes the worktree) |
+| `provision` | `done`, `skipped` (no `provision.sh`), `failed` |
+| `submodules` | `done`, `skipped` (no `.gitmodules`), `failed` |
+| `build` | `done`, `skipped` (`--no-build`, or off in the configuration), `failed` |
+| `superset` | `registered` (also when it already had the workspace), `skipped` (not opted in, `SUPERSET_REGISTER=off`, `--no-superset`, or under `auto` not installed, not running, no project for the repository), `failed` (Superset erred, or under `on` did not take it) |
+| any | `notRun` (the run stopped before it), `interrupted` |
+
+`--no-setup` skips every step after `branch`.
+
+`outcome`, from the steps:
+
+| Value | When |
+|---|---|
+| `created` | `worktree` created and every other step done, skipped, `untouched` or `registered`; no problem |
+| `createdWithProblems` | `worktree` created, and a step `failed` or `notRun`, or `headMoved` |
+| `refused` | nothing created: a problem in the plan, or `planChanged` |
+| `failed` | `worktree` failed and there is no worktree; `branch` says whether `wt new`'s branch was made anyway |
+| `interrupted` | a signal ended the run |
+
+The exit code keeps its meaning: non-zero for a refusal, a failed
+`git worktree add` and a failed `provision.sh`; zero for a failed build,
+submodule initialisation or Superset registration. Read `outcome`.

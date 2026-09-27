@@ -19,13 +19,25 @@ var probeSuperset = superset.Probe
 // w, which is stderr, and the exit code is untouched. The user's own `superset`
 // setting is checked first, so until they opt in wt starts no subprocess and
 // says nothing, whatever worktree.conf asks for.
-func registerSuperset(ctx *Context, path string, w io.Writer) {
+//
+// It returns what came of it as a --json step result: registered; skipped
+// when registration is off or, under auto, Superset is not there to take it;
+// failed when Superset errs, or under SUPERSET_REGISTER=on did not take it.
+func registerSuperset(ctx *Context, path string, w io.Writer) (result, reason string) {
 	if !ctx.UserConfig().Superset {
-		return
+		return StepSkipped, "Superset is not switched on for you (wt config set superset true)"
 	}
 	mode := ctx.Config.SupersetRegister
 	if mode != config.SupersetAuto && mode != config.SupersetOn {
-		return
+		return StepSkipped, config.KeySupersetRegister + "=" + string(mode)
+	}
+	// missed is Superset not being there to take the worktree: a skip under
+	// auto, a failure under on.
+	missed := func(why string) (string, string) {
+		if mode == config.SupersetOn {
+			return StepFailed, why
+		}
+		return StepSkipped, why
 	}
 	status := probeSuperset()
 	if !status.Installed() {
@@ -33,36 +45,33 @@ func registerSuperset(ctx *Context, path string, w io.Writer) {
 			fmt.Fprintf(w, "! %s=on but no superset on the PATH or at ~/.superset/bin; not registered\n",
 				config.KeySupersetRegister)
 		}
-		return
+		return missed("no superset on the PATH or at ~/.superset/bin")
 	}
-	say := func(format string, args ...any) {
+	say := func(format string, args ...any) string {
 		mark := "-"
 		if mode == config.SupersetOn {
 			mark = "!"
 		}
 		fmt.Fprintf(w, mark+" "+format+"\n", args...)
+		return fmt.Sprintf(format, args...)
 	}
 	switch {
 	case status.Err != nil:
-		say("%v; not registered", status.Err)
-		return
+		return StepFailed, say("%v; not registered", status.Err)
 	case !status.Running:
 		// Starting it is the person's call, not wt's: `wt new` must not bring
 		// a desktop app up behind them.
-		say("Superset's host service is not running; not registered")
-		return
+		return missed(say("Superset's host service is not running; not registered"))
 	}
 
 	branch := ctx.Repo.BranchAt(path)
 	if branch == "" {
-		say("%s is not on a branch; not registered with Superset", path)
-		return
+		return missed(say("%s is not on a branch; not registered with Superset", path))
 	}
 	cli := status.CLI()
 	projects, err := cli.Projects()
 	if err != nil {
-		say("%v; not registered", err)
-		return
+		return StepFailed, say("%v; not registered", err)
 	}
 	// A repository Superset has never heard of is an ordinary state, and an
 	// integration that does not apply here says nothing — so under auto this
@@ -72,19 +81,28 @@ func registerSuperset(ctx *Context, path string, w io.Writer) {
 	// repositories their app tracks, so wt never does that.
 	project, ok := superset.ProjectAt(projects, ctx.Repo.MainRoot)
 	if !ok {
+		why := fmt.Sprintf("Superset has no project for %s; not registered", ctx.Repo.MainRoot)
 		if mode == config.SupersetOn {
-			say("Superset has no project for %s; not registered", ctx.Repo.MainRoot)
+			say("%s", why)
 		}
-		return
+		return missed(why)
 	}
 	reg, err := cli.Register(project.ID, branch)
 	if err != nil {
-		say("%v; not registered", err)
-		return
+		return StepFailed, say("%v; not registered", err)
 	}
 	if reg.AlreadyExists {
 		fmt.Fprintf(w, "- Superset already had a workspace for %s\n", branch)
-		return
+		return StepRegistered, "Superset already had a workspace for " + branch
 	}
 	fmt.Fprintf(w, "✓ registered with Superset as a workspace of project %s\n", project.Name)
+	return StepRegistered, ""
+}
+
+// supersetEnabled is whether wt new would try to register a worktree here:
+// the person opted in and the repository does not say off. Whether Superset
+// is installed, running and tracks the repository is not asked.
+func supersetEnabled(ctx *Context) bool {
+	mode := ctx.Config.SupersetRegister
+	return ctx.UserConfig().Superset && (mode == config.SupersetAuto || mode == config.SupersetOn)
 }

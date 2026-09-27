@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/naming"
@@ -30,6 +31,12 @@ type SetupOptions struct {
 // because every agent that provisions a worktree would otherwise start failing
 // on a transient dependency problem.
 func Setup(ctx *Context, target string, opts SetupOptions, w io.Writer) error {
+	return setup(ctx, target, opts, w, nil)
+}
+
+// setup is Setup, recording each step in j for --json. What it prints does
+// not depend on j.
+func setup(ctx *Context, target string, opts SetupOptions, w io.Writer, j *CreateJournal) error {
 	if opts.Source != "" {
 		fmt.Fprintf(w, "Setup run by %s\n", opts.Source)
 	}
@@ -38,20 +45,29 @@ func Setup(ctx *Context, target string, opts SetupOptions, w io.Writer) error {
 		src = ctx.Repo.MainRoot
 	}
 
+	j.start(StepConfig)
 	if _, err := os.Stat(src); err != nil {
 		fmt.Fprintf(w, " - source %s not found; skipping config sync\n", src)
+		j.finish(StepConfig, StepSkipped, "source "+src+" not found", "")
 	} else {
-		copyConfigDirs(ctx, src, target, w)
-		copyConfigFiles(ctx, src, target, w)
+		failed := append(copyConfigDirs(ctx, src, target, w), copyConfigFiles(ctx, src, target, w)...)
+		j.finish(StepConfig, failedResult(failed), strings.Join(failed, "; "), "")
 	}
 
 	// A failed provision step is reported but does not abort the rest: stopping
 	// here would leave a worktree with no submodules and no dependencies
 	// either, which is strictly less usable than one that merely lacks
 	// secrets. The error still surfaces, so nothing treats this as success.
-	provisionErr := runProvision(ctx, target, w)
-	initSubmodules(ctx, target, w)
-	runBuildInit(ctx, target, opts, w)
+	j.start(StepProvision)
+	provisionErr := runProvision(ctx, target, w, j)
+	result, reason := stepOutcome(ctx.HasProvisionScript(), "no bin/worktree/provision.sh", provisionErr)
+	j.finish(StepProvision, result, reason, "")
+	j.start(StepSubmodules)
+	result, reason = stepOutcome(ctx.Repo.HasSubmodules(target), "no .gitmodules", initSubmodules(ctx, target, w))
+	j.finish(StepSubmodules, result, reason, "")
+	j.start(StepBuild)
+	result, reason = runBuildInit(ctx, target, opts, w, j)
+	j.finish(StepBuild, result, reason, "")
 
 	if provisionErr != nil {
 		fmt.Fprintln(w, "")
@@ -93,11 +109,14 @@ func within(base, candidate string) bool {
 	return repo.Inside(base, candidate, false)
 }
 
-func copyConfigDirs(ctx *Context, src, target string, w io.Writer) {
+// copyConfigDirs copies the declared directories, and returns a line for
+// each it could not.
+func copyConfigDirs(ctx *Context, src, target string, w io.Writer) (failed []string) {
 	for _, d := range ctx.Config.DeveloperConfigDirs {
 		from, to := filepath.Join(src, d), filepath.Join(target, d)
 		if !within(target, to) {
 			fmt.Fprintf(w, " ! %s escapes the worktree, refusing to copy it\n", d)
+			failed = append(failed, d+" escapes the worktree")
 			continue
 		}
 		if _, err := os.Stat(from); err != nil {
@@ -110,17 +129,22 @@ func copyConfigDirs(ctx *Context, src, target string, w io.Writer) {
 		}
 		if err := copyTree(from, to); err != nil {
 			fmt.Fprintf(w, " ! failed to copy %s: %v\n", d, err)
+			failed = append(failed, fmt.Sprintf("%s: %v", d, err))
 			continue
 		}
 		fmt.Fprintf(w, " ✓ copied %s\n", d)
 	}
+	return failed
 }
 
-func copyConfigFiles(ctx *Context, src, target string, w io.Writer) {
+// copyConfigFiles copies the declared files, and returns a line for each it
+// could not.
+func copyConfigFiles(ctx *Context, src, target string, w io.Writer) (failed []string) {
 	for _, f := range ctx.Config.DeveloperConfigFiles {
 		from, to := filepath.Join(src, f), filepath.Join(target, f)
 		if !within(target, to) {
 			fmt.Fprintf(w, " ! %s escapes the worktree, refusing to copy it\n", f)
+			failed = append(failed, f+" escapes the worktree")
 			continue
 		}
 		if st, err := os.Stat(from); err != nil || st.IsDir() {
@@ -133,21 +157,24 @@ func copyConfigFiles(ctx *Context, src, target string, w io.Writer) {
 		}
 		if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil {
 			fmt.Fprintf(w, " ! failed to create %s: %v\n", filepath.Dir(to), err)
+			failed = append(failed, fmt.Sprintf("%s: %v", f, err))
 			continue
 		}
 		if err := copyFile(from, to); err != nil {
 			fmt.Fprintf(w, " ! failed to copy %s: %v\n", f, err)
+			failed = append(failed, fmt.Sprintf("%s: %v", f, err))
 			continue
 		}
 		fmt.Fprintf(w, " ✓ copied %s\n", f)
 	}
+	return failed
 }
 
 // runProvision executes the repository's own setup step, if it declares one.
 // This is what AWS_SETUP_ENABLED became: repo-declared behaviour rather than a
 // Telcred-shaped flag in a generic tool. Its failure IS fatal — a worktree
 // without decrypted secrets is not usable.
-func runProvision(ctx *Context, target string, w io.Writer) error {
+func runProvision(ctx *Context, target string, w io.Writer, j *CreateJournal) error {
 	if !ctx.HasProvisionScript() {
 		return nil
 	}
@@ -156,44 +183,82 @@ func runProvision(ctx *Context, target string, w io.Writer) error {
 	cmd := exec.Command(script)
 	cmd.Dir = target
 	cmd.Stdout, cmd.Stderr = w, w
-	if err := cmd.Run(); err != nil {
+	if err := runTracked(cmd, j); err != nil {
 		return fmt.Errorf("provision.sh failed: %w", err)
 	}
 	fmt.Fprintln(w, "✓ provision.sh complete")
 	return nil
 }
 
-func initSubmodules(ctx *Context, target string, w io.Writer) {
+// initSubmodules initialises the worktree's submodules, if it declares any.
+// A failure is a warning here and an error for the caller to record: the
+// command's exit code does not depend on it.
+func initSubmodules(ctx *Context, target string, w io.Writer) error {
 	if !ctx.Repo.HasSubmodules(target) {
-		return
+		return nil
 	}
 	fmt.Fprintln(w, "Initializing git submodules...")
 	if _, err := git.Run(target, "submodule", "update", "--init", "--recursive"); err != nil {
 		fmt.Fprintf(w, " ! Warning: failed to initialise submodules: %v\n", err)
-		return
+		return fmt.Errorf("git submodule update --init --recursive failed: %w", err)
 	}
 	fmt.Fprintln(w, "✓ submodules initialised")
+	return nil
 }
 
-func runBuildInit(ctx *Context, target string, opts SetupOptions, w io.Writer) {
+// runBuildInit runs the build command, and returns what came of it as a step
+// result. A failure is a warning, as for submodules.
+func runBuildInit(ctx *Context, target string, opts SetupOptions, w io.Writer, j *CreateJournal) (result, reason string) {
 	switch {
 	case opts.SkipBuild:
 		fmt.Fprintln(w, "⏭ build initialisation skipped (--no-build)")
-		return
+		return StepSkipped, "--no-build"
 	case !ctx.Config.BuildInitEnabled:
 		fmt.Fprintln(w, "- build initialisation disabled in configuration")
-		return
+		return StepSkipped, "build initialisation disabled in configuration"
 	}
 	fmt.Fprintf(w, "Running: %s\n", ctx.Config.BuildInitCommand)
 	cmd := exec.Command("sh", "-c", ctx.Config.BuildInitCommand)
 	cmd.Dir = target
 	cmd.Stdout, cmd.Stderr = w, w
-	if err := cmd.Run(); err != nil {
+	if err := runTracked(cmd, j); err != nil {
 		fmt.Fprintf(w, " ! Warning: build initialisation failed: %v\n", err)
 		fmt.Fprintf(w, "   Try running it by hand: %s\n", ctx.Config.BuildInitCommand)
-		return
+		return StepFailed, fmt.Sprintf("%s failed: %v", ctx.Config.BuildInitCommand, err)
 	}
 	fmt.Fprintln(w, "✓ build dependencies downloaded")
+	return StepDone, ""
+}
+
+// runTracked is cmd.Run. In a --json run the command runs in a process
+// group of its own that a signal's handler stops, and the run parks rather
+// than act on the failure; without --json it runs as it always has.
+func runTracked(cmd *exec.Cmd, j *CreateJournal) error {
+	if j == nil {
+		return cmd.Run()
+	}
+	_, _, err := git.RunBounded(0, cmd)
+	j.park()
+	return err
+}
+
+// stepOutcome is a step's result: skipped, with why, when it had nothing to
+// do; failed with the error; done.
+func stepOutcome(applies bool, whyNot string, err error) (result, reason string) {
+	switch {
+	case !applies:
+		return StepSkipped, whyNot
+	case err != nil:
+		return StepFailed, oneLine(err.Error())
+	}
+	return StepDone, ""
+}
+
+func failedResult(failed []string) string {
+	if len(failed) > 0 {
+		return StepFailed
+	}
+	return StepDone
 }
 
 func copyFile(from, to string) error {
