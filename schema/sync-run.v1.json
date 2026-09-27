@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sync-run.v1.json",
+  "x-version": "1.0.0",
+  "title": "wt sync run|resume|undo --json",
+  "description": "What a wt sync run, resume or undo did. Printed by `wt sync run [<work>...] --json`, `wt sync [<work>...] --run --json`, `wt sync resume <work> --json` and `wt sync undo <work> --json` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends it. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
+  "type": "object",
+  "required": ["schema", "schemaVersion", "command", "repo", "trunk", "trunkRef", "onto", "fetched", "outcome", "error", "worktrees", "recovery"],
+  "properties": {
+    "schema": { "const": 1, "description": "The major version: a new one only for a change that breaks readers." },
+    "schemaVersion": { "type": "string", "pattern": "^1\\.[0-9]+\\.[0-9]+$", "description": "The full semantic version of this schema that the output follows." },
+    "command": { "enum": ["sync run", "sync resume", "sync undo"] },
+    "repo": { "type": ["string", "null"], "description": "The main checkout, as wt sweep --json names the repository; null when the verb stopped before reading it." },
+    "trunk": { "type": ["string", "null"] },
+    "trunkRef": { "type": ["string", "null"] },
+    "onto": { "$ref": "#/$defs/shaOrNull", "description": "The trunk commit rebased onto: after the run's fetch, or the one the handed-over run recorded. Null for undo." },
+    "fetched": { "type": "boolean" },
+    "outcome": {
+      "enum": ["done", "refused", "partial", "interrupted"],
+      "description": "done: every participant rebased, undone or skipped. refused: nothing changed, or error stopped the verb first. partial: something changed and not everything finished. interrupted: a signal ended it."
+    },
+    "error": { "type": ["string", "null"], "description": "Why the verb stopped before touching any participant; for undo, also why it stopped after putting some back." },
+    "worktrees": { "type": "array", "description": "The participants, parents first.", "items": { "$ref": "#/$defs/participant" } },
+    "recovery": { "type": ["string", "null"], "description": "For interrupted: the way back wt printed." }
+  },
+  "$defs": {
+    "shaOrNull": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40,64}$" },
+    "argvOrNull": {
+      "oneOf": [{ "type": "null" }, { "type": "array", "items": { "type": "string" }, "minItems": 1 }]
+    },
+    "participant": {
+      "type": "object",
+      "required": ["work", "branch", "path", "result", "reason", "before", "after", "failedSteps", "recovery", "pushCommand", "pushed", "safetyRef", "deferred", "undoCommand", "planFile"],
+      "properties": {
+        "work": { "type": "string" },
+        "branch": { "type": "string" },
+        "path": { "type": "string" },
+        "result": {
+          "enum": ["rebased", "rebasedStepFailed", "skipped", "refused", "notRun", "restored", "needsRecovery", "handedOver", "interrupted", "undone"],
+          "description": "rebased, rebasedStepFailed, needsRecovery, handedOver, interrupted and undone changed the branch or worktree; skipped, refused, notRun and restored left them as they were."
+        },
+        "reason": { "type": ["string", "null"] },
+        "before": { "$ref": "#/$defs/shaOrNull" },
+        "after": { "$ref": "#/$defs/shaOrNull" },
+        "failedSteps": { "type": "array", "items": { "type": "string" } },
+        "recovery": { "type": ["string", "null"] },
+        "pushCommand": { "$ref": "#/$defs/argvOrNull", "description": "For rebased: the push, as an argv." },
+        "pushed": { "type": "boolean" },
+        "safetyRef": { "type": ["string", "null"], "description": "The ref pinning the branch's tip from before the run: refs/wt-sync/<branch>/<epoch>." },
+        "deferred": {
+          "type": "array",
+          "description": "What each deferred step of a finished rebase came to.",
+          "items": {
+            "type": "object",
+            "required": ["step", "result", "reason", "commit"],
+            "properties": {
+              "step": { "type": "string", "description": "The step's run line from .wt-sync.yaml." },
+              "result": { "enum": ["done", "committed", "failed", "skipped"] },
+              "reason": { "type": ["string", "null"], "description": "Why it failed or was skipped." },
+              "commit": { "type": ["string", "null"], "description": "For committed: the commit." }
+            }
+          }
+        },
+        "undoCommand": { "$ref": "#/$defs/argvOrNull", "description": "What puts it back where the run found it, as an argv; null when there is nothing to undo." },
+        "planFile": { "type": ["string", "null"], "description": "For handedOver: the plan file saying what is yours." }
+      }
+    }
+  }
+}

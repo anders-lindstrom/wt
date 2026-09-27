@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sync.v1.json",
+  "x-version": "1.0.0",
+  "title": "wt sync --json",
+  "description": "What a rebase onto trunk would do to every worktree of a repository, as `wt sync --json` prints it on stdout: one overview object, or with --all, --roots or --profile an array of them, one per repository. It fetches trunk (unless --no-fetch) and writes nothing else. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
+  "oneOf": [
+    { "$ref": "#/$defs/overview" },
+    { "type": "array", "items": { "$ref": "#/$defs/overview" } }
+  ],
+  "$defs": {
+    "shaOrNull": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40,64}$" },
+    "overview": {
+      "type": "object",
+      "required": ["schema", "schemaVersion", "command", "repo", "name", "trunk", "trunkRef", "onto", "fetched", "fetchError", "declared", "token", "error", "sessionsError", "worktrees"],
+      "properties": {
+        "schema": { "const": 1, "description": "The major version: a new one only for a change that breaks readers." },
+        "schemaVersion": { "type": "string", "pattern": "^1\\.[0-9]+\\.[0-9]+$", "description": "The full semantic version of this schema that the output follows." },
+        "command": { "const": "sync" },
+        "repo": { "type": "string", "description": "The main checkout, as wt sweep --json names the repository." },
+        "name": { "type": "string", "description": "The repository's name: its main checkout's directory name." },
+        "trunk": { "type": ["string", "null"] },
+        "trunkRef": { "type": ["string", "null"], "description": "origin/<trunk>, what every worktree is assessed against." },
+        "onto": { "$ref": "#/$defs/shaOrNull", "description": "The trunk commit assessed against; null when trunk is not known here." },
+        "fetched": { "type": "boolean", "description": "Trunk was fetched first." },
+        "fetchError": { "type": ["string", "null"], "description": "The fetch failed: the overview is against trunk as last fetched." },
+        "declared": { "type": "boolean", "description": "Trunk declares .wt-sync.yaml. Without it the worktrees are assessed but a run rebases none." },
+        "token": { "type": ["string", "null"], "description": "Names what a run would start on; pass it to wt sync run --expect or wt sync --run --expect. Null when a run would start on nothing." },
+        "error": { "type": ["string", "null"], "description": "Why there is no overview: trunk not known, the repository not readable." },
+        "sessionsError": { "type": ["string", "null"], "description": "Claude sessions could not be listed; sessions are then empty, not known empty." },
+        "worktrees": { "type": "array", "description": "Every worktree but the main checkout, in git's order.", "items": { "$ref": "#/$defs/worktree" } }
+      }
+    },
+    "worktree": {
+      "type": "object",
+      "required": ["work", "branch", "path", "group", "class", "verified", "verdict", "runnable", "reason", "behind", "ahead", "dirty", "handedOver", "planFile", "sessions", "stack", "stops", "strategies", "notes", "error"],
+      "properties": {
+        "work": { "type": "string" },
+        "branch": { "type": ["string", "null"], "description": "Null when detached." },
+        "path": { "type": "string" },
+        "group": {
+          "enum": ["ready", "needsYou", "skipped", "current"],
+          "description": "The overview's group. current is on trunk already, which the human overview leaves out."
+        },
+        "class": {
+          "enum": ["conflict-free", "recipe", "contested", "divergent", "stale", "current", "detached", "unknown"],
+          "description": "What the simulated rebase found; unknown when the assessment failed (error)."
+        },
+        "verified": { "type": "boolean", "description": "false is the overview's question mark (recipe?): a script owns a path and the replay could not be carried past it." },
+        "verdict": {
+          "enum": ["proceed", "skip", "refuse"],
+          "description": "What wt sync run <work> would do: start on it, skip it, or refuse it untouched."
+        },
+        "runnable": { "type": "boolean", "description": "wt sync --run, with nothing named, takes it." },
+        "reason": { "type": ["string", "null"], "description": "Why it is not runnable; null when it is." },
+        "behind": { "type": "integer" },
+        "ahead": { "type": "integer" },
+        "dirty": { "type": "boolean", "description": "Tracked changes." },
+        "handedOver": { "type": "boolean", "description": "An earlier run left a conflict here for a person: wt sync resume or wt sync undo." },
+        "planFile": { "type": ["string", "null"], "description": "The plan file of a handover." },
+        "sessions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["work", "name", "kind", "state"],
+            "properties": {
+              "work": { "type": "string" },
+              "name": { "type": "string" },
+              "kind": { "const": "claude" },
+              "state": { "enum": ["busy", "idle"] }
+            }
+          }
+        },
+        "stack": {
+          "type": "array",
+          "description": "Every worktree a run on this one would move, parents first; just this one without a stack; empty when detached.",
+          "items": {
+            "type": "object",
+            "required": ["work", "branch", "path"],
+            "properties": { "work": { "type": "string" }, "branch": { "type": "string" }, "path": { "type": "string" } }
+          }
+        },
+        "stops": { "type": "array", "description": "Every stop the simulated rebase reached, in order.", "items": { "$ref": "#/$defs/stop" } },
+        "strategies": { "type": "array", "items": { "type": "string" }, "description": "The declared strategies that resolved a file at some stop, each once." },
+        "notes": { "type": "array", "items": { "type": "string" }, "description": "Advisory; never change the class." },
+        "error": { "type": ["string", "null"], "description": "The assessment failed." }
+      }
+    },
+    "stop": {
+      "type": "object",
+      "required": ["index", "total", "commit", "subject", "resolved", "yours", "files"],
+      "properties": {
+        "index": { "type": "integer", "minimum": 1 },
+        "total": { "type": "integer", "minimum": 1 },
+        "commit": { "$ref": "#/$defs/shaOrNull" },
+        "subject": { "type": "string" },
+        "resolved": { "type": "boolean", "description": "Every conflicted file here was resolved by a strategy." },
+        "yours": { "type": "boolean", "description": "The first stop no strategy resolves: a run hands it to a person." },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "resolved", "strategy", "note"],
+            "properties": {
+              "path": { "type": "string" },
+              "resolved": { "type": "boolean" },
+              "strategy": { "type": ["string", "null"], "description": "The strategy that claims it; null when none does." },
+              "note": { "type": ["string", "null"], "description": "Why a strategy refused it, or what a lift did." }
+            }
+          }
+        }
+      }
+    }
+  }
+}

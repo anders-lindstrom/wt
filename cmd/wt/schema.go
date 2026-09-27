@@ -28,6 +28,7 @@ func newSchemaCmd() *cobra.Command {
 			"Schemas: " + strings.Join(names, ", "),
 		Example: "  wt schema             # the schemas there are, and their ids\n" +
 			"  wt schema up          # the schema of wt up --json\n" +
+			"  wt schema sync-run    # of wt sync run, resume and undo --json\n" +
 			"  wt schema status > wt-status.schema.json  # save one for a validator",
 		Args:      cobra.MaximumNArgs(1),
 		ValidArgs: names,
@@ -35,7 +36,7 @@ func newSchemaCmd() *cobra.Command {
 			out := cmd.OutOrStdout()
 			if len(args) == 0 {
 				for _, d := range schema.All() {
-					fmt.Fprintf(out, "%-11s %-26s %s\n", d.Name, d.Title(), d.ID())
+					fmt.Fprintf(out, "%-11s %-30s %s\n", d.Name, d.Title(), d.ID())
 				}
 				return nil
 			}

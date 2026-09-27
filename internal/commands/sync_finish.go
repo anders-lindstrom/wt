@@ -149,15 +149,15 @@ type completeInput struct {
 
 // completeRun is what run and resume both do once a rebase has finished: the
 // deferred steps, the result ref that says where the run left the branch,
-// the handover removed, and the undo line. owed is the deferred steps that
-// failed, by name — the rebase stands regardless (spec §3), and whose they
-// are is the caller's to say. The push is the caller's too, once every
+// the handover removed, and the undo line. ran is what each deferred step
+// came to; the ones that failed are owed — the rebase stands regardless
+// (spec §3), and whose they are is the caller's to say. The push is the caller's too, once every
 // worktree is done.
 //
 // The worktree is work at path; t is the verb's tracker, and build is asked
 // for the rest of the input only once t says rebased, so nothing the finish
 // needs is prepared outside the span an interrupt reports as rebased.
-func completeRun(ctx *Context, w io.Writer, cfg *wtsync.Config, t *rebaseTracker, work, path string, build func() completeInput) (head string, owed []string, err error) {
+func completeRun(ctx *Context, w io.Writer, cfg *wtsync.Config, t *rebaseTracker, work, path string, build func() completeInput) (head string, ran []wtsync.DeferredResult, err error) {
 	// The rebase is done; from here an interrupt cannot abort it, only
 	// leave the deferred steps and the result ref undone. Cleared last, so
 	// the relay line below is still printed under it.
@@ -169,31 +169,74 @@ func completeRun(ctx *Context, w io.Writer, cfg *wtsync.Config, t *rebaseTracker
 	defer tellIdle(w, in.Tell, wtsync.RebasedLine(work, in.TrunkName, in.Landed, in.Check))
 	// w, not nil: RunDeferred announces each step as it starts, so a long
 	// one is not silence until printDeferred reports the result.
-	results, err := wtsync.RunDeferred(path, cfg.Defer, in.Res.OldTip, in.Res.NewTip, w)
+	ran, err = wtsync.RunDeferred(path, cfg.Defer, in.Res.OldTip, in.Res.NewTip, w)
 	if err != nil {
 		return "", nil, err
 	}
-	for _, d := range results {
+	for _, d := range ran {
 		printDeferred(w, d)
+	}
+	if head, err = git.Run(path, "rev-parse", "HEAD"); err != nil {
+		return "", ran, err
+	}
+	if err = wtsync.WriteResult(ctx.Repo.MainRoot, in.Branch, head, in.Epoch); err != nil {
+		return head, ran, err
+	}
+	gitDir, err := wtsync.GitDir(path)
+	if err != nil {
+		return head, ran, err
+	}
+	if err := wtsync.RemovePlan(gitDir); err != nil {
+		return head, ran, err
+	}
+	fmt.Fprintf(w, "  ↩ %s\n", wtsync.WayOut(wtsync.Way{Work: work, Result: true, Safety: git.ShortID(in.Res.OldTip, 7)}))
+	return head, ran, nil
+}
+
+// owedSteps is the deferred steps that failed, by name: owed, to be run by
+// hand.
+func owedSteps(ran []wtsync.DeferredResult) []string {
+	var owed []string
+	for _, d := range ran {
 		if d.Err != nil {
 			owed = append(owed, d.Step.Run)
 		}
 	}
-	if head, err = git.Run(path, "rev-parse", "HEAD"); err != nil {
-		return "", owed, err
+	return owed
+}
+
+// deferredSteps is what each deferred step came to, for --json.
+func deferredSteps(ran []wtsync.DeferredResult) []DeferredStep {
+	steps := []DeferredStep{}
+	for _, d := range ran {
+		s := DeferredStep{Step: d.Step.Run, Result: DeferredDone}
+		switch {
+		case !d.Ran:
+			s.Result, s.Reason = DeferredSkipped, strp(d.Why)
+		case d.Err != nil:
+			s.Result, s.Reason = DeferredFailed, strp(oneLine(d.Err.Error()))
+		case d.Commit != "":
+			s.Result, s.Commit = DeferredCommitted, strp(d.Commit)
+		}
+		steps = append(steps, s)
 	}
-	if err = wtsync.WriteResult(ctx.Repo.MainRoot, in.Branch, head, in.Epoch); err != nil {
-		return head, owed, err
-	}
+	return steps
+}
+
+// undoCommand is the command that puts work back where a run found it, as
+// an argv.
+func undoCommand(work string) []string {
+	return []string{"wt", "sync", "undo", work}
+}
+
+// planFileOf is the plan file a handover in the worktree at path is
+// explained by; nil when its git dir cannot be read.
+func planFileOf(path string) *string {
 	gitDir, err := wtsync.GitDir(path)
 	if err != nil {
-		return head, owed, err
+		return nil
 	}
-	if err := wtsync.RemovePlan(gitDir); err != nil {
-		return head, owed, err
-	}
-	fmt.Fprintf(w, "  ↩ %s\n", wtsync.WayOut(wtsync.Way{Work: work, Result: true, Safety: git.ShortID(in.Res.OldTip, 7)}))
-	return head, owed, nil
+	return strp(wtsync.PlanPath(gitDir))
 }
 
 // owedBy names a finish's owed steps the way the closing error names them.
