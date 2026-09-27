@@ -39,8 +39,9 @@ func newSweepCmd() *cobra.Command {
 			"whitespace.\n\n" +
 			"The plan has four parts:\n" +
 			"  removed       merged, and its worktree is safe to remove: nothing\n" +
-			"                uncommitted, no lock whose holder is still running, and\n" +
-			"                no agent session in it, idle or busy. The worktree goes\n" +
+			"                uncommitted (submodules too), no operation in progress,\n" +
+			"                no lock whose holder is still running, and no agent\n" +
+			"                session in it, idle or busy. The worktree goes\n" +
 			"                the way wt remove takes it, ignored files (.env,\n" +
 			"                node_modules/) and all, and the branch with it\n" +
 			"  deleted       merged, and in use in no worktree\n" +

@@ -22,6 +22,14 @@ want read out to them; the full story is in git history and in
 - `wt branch-strip --help` shows examples.
 - `wt config` says `main checkout:` where it said `main root:`.
 
+## 2026-09-27 23:36 — wt remove refuses what it could not see
+
+- `wt remove`, `wt sweep` and the Claude hook now refuse a worktree with work in a
+  submodule (whatever git's config says), an unreadable status, an operation in
+  progress, commits only its HEAD or its submodules hold, or a worktree inside it.
+- Any Claude session in it, or a listing that failed, refuses remove, migrate and
+  sweep alike; the session running wt does not count. `--force` goes past that.
+
 ## 2026-09-27 23:10 — JSON results for wt sync run, resume and undo
 
 - `--json` on `wt sync run`, `wt sync --run`, `resume` and `undo` prints one

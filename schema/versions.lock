@@ -2,7 +2,7 @@
 # changes without a new version here and in its x-version: see AGENTS.md.
 
 status.v1.json 1.2.0 e7ba28f8cac16f0235b8112506f188b7bd7db31f7fa3c0a190aaf11b4277f737
-sweep-plan.v1.json 1.0.0 f98ee89abab91487e60074723efb7e4742edf803b08172ad7e2e43fd29c25437
+sweep-plan.v1.json 1.1.0 f65948cc362a0eb222e5cafc04efd80e2ce7884409c78c635c871dfc3d60e6f8
 sweep.v1.json 1.0.0 e5c61a41c2986b952561e237be56eed16d560b6496bad3458959cde2a9155a6d
 up.v1.json 1.2.0 d28ec13aeba431898708b52022202ea0dcb1fe3c52d7108b472b1ae0f128f03c
 sync.v1.json 1.0.0 0284b0d212c525155a38dae91bb6abcf34db25f41413db65e21d4192dad8141d

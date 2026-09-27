@@ -25,7 +25,10 @@ func newMigrateCmd() *cobra.Command {
 			"The move is git's own, so commits, stashes, uncommitted changes and\n" +
 			"ignored files all travel with it — but tools holding the old absolute\n" +
 			"path will not. Use --dry-run first on a worktree carrying work that\n" +
-			"matters.",
+			"matters.\n\n" +
+			"A worktree a Claude session is working in, idle or busy, is not moved,\n" +
+			"nor one whose sessions cannot be listed; the session running wt migrate\n" +
+			"does not count. --force moves it anyway.",
 		Example: "  wt migrate login-crash                # fit it to the layout\n" +
 			"  wt migrate ../myrepo-login-crash      # name it by path instead\n" +
 			"  wt migrate fix/login-crash chore/tidy # rename and retype as it moves\n" +
@@ -43,7 +46,7 @@ func newMigrateCmd() *cobra.Command {
 		}),
 	}
 	cmd.Flags().BoolVar(&opts.DryRun, "dry-run", false, "show what would happen, change nothing")
-	cmd.Flags().BoolVarP(&opts.Force, "force", "f", false, "move it even with an agent session working in it")
+	cmd.Flags().BoolVarP(&opts.Force, "force", "f", false, "move it past a session, or sessions that cannot be listed")
 	return cmd
 }
 
