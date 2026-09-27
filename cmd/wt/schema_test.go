@@ -25,3 +25,21 @@ func TestSchemaListNamesEachCommand(t *testing.T) {
 		t.Errorf("a command that does not exist:\n%s", out.String())
 	}
 }
+
+// The list lines up however long a schema's name or title is: a plan's
+// schema, checkout-plan, is longer than the first ones were.
+func TestSchemaListLinesUp(t *testing.T) {
+	out, err := runCmd(t, "schema")
+	if err != nil {
+		t.Fatal(err)
+	}
+	col := -1
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		at := strings.Index(line, "https://")
+		if col >= 0 && at != col {
+			t.Errorf("ids do not line up:\n%s", out)
+			break
+		}
+		col = at
+	}
+}

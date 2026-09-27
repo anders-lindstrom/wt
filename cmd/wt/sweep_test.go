@@ -1,6 +1,7 @@
 package main
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -31,8 +32,8 @@ func TestSchemaListsTheSweepSchemas(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"sweep-plan  wt sweep --dry-run --json", "sweep       wt sweep --yes --json"} {
-		if !strings.Contains(out, want) {
+	for _, want := range []string{`(?m)^sweep-plan +wt sweep --dry-run --json `, `(?m)^sweep +wt sweep --yes --json `} {
+		if !regexp.MustCompile(want).MatchString(out) {
 			t.Errorf("want %q in:\n%s", want, out)
 		}
 	}

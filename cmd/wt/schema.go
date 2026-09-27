@@ -35,8 +35,12 @@ func newSchemaCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
 			if len(args) == 0 {
+				nameW, titleW := 0, 0
 				for _, d := range schema.All() {
-					fmt.Fprintf(out, "%-11s %-30s %s\n", d.Name, d.Title(), d.ID())
+					nameW, titleW = max(nameW, len(d.Name)), max(titleW, len(d.Title()))
+				}
+				for _, d := range schema.All() {
+					fmt.Fprintf(out, "%-*s %-*s %s\n", nameW, d.Name, titleW, d.Title(), d.ID())
 				}
 				return nil
 			}
