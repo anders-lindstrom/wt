@@ -373,6 +373,9 @@ check worktrees "" "" 'wt path /'
 check plain     "" "" 'wt branch fix/login-crash'
 check worktrees "" "" 'wt branch login-crash'
 check worktrees "" "" 'wt branch /'
+check plain "" "" 'wt branch-strip fix_wt/login-crash'
+check plain "" "" 'wt branch-strip feat_wt/api-tidy'
+check plain "" "" 'wt branch-strip main'
 check plain "" "" 'wt about'
 check plain "" "" 'wt schema'
 check plain "" "" 'wt schema up'
@@ -457,7 +460,8 @@ command_paths() {
 
 # Coverage: every example the binary prints must appear above, verbatim. The
 # commands are read from the binary too, so a new one is covered without being
-# listed here; hook is hidden from completion, so it is named.
+# listed here; hook and branch-strip are hidden from completion, so they are
+# named.
 echo
 missing=0
 while IFS= read -r cmdpath; do
@@ -472,7 +476,7 @@ while IFS= read -r cmdpath; do
         /^Examples:/ {f=1; next}
         f && /^[^ ]/ {f=0}
         f && /^  wt / {sub(/^  /, ""); sub(/[[:space:]]*#.*$/, ""); sub(/[[:space:]]*$/, ""); print}')
-done < <(command_paths ""; command_paths hook)
+done < <(command_paths ""; command_paths hook; command_paths branch-strip)
 echo "$missing printed examples were not run verbatim"
 echo "fixtures under $BASE"
 [ "$fail" -eq 0 ] && [ "$missing" -eq 0 ]
