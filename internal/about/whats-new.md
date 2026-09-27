@@ -12,6 +12,13 @@ want read out to them; the full story is in git history and in
 - `wt status` and `wt status <work>` take `--refresh` to ask GitHub again and
   `--no-pr` to ask it nothing, as `wt list` does.
 
+## 2026-09-27 22:33 — whitespace no longer counts as the same change
+
+- `wt remove` and `wt sweep` delete a branch whose commits are all on trunk
+  under new ids only when each patch matches byte for byte. git cherry ignores
+  whitespace, so a change trunk has only with other indentation used to count
+  as landed; that branch is now kept.
+
 ## 2026-09-25 16:25 — JSON Schemas for the --json output
 
 - `wt schema` lists the JSON Schemas of `wt status --json` and `wt up --json`;

@@ -199,3 +199,34 @@ func TestAppliedFindsEveryCommitUnderAnotherID(t *testing.T) {
 		t.Error("a merge commit can carry changes git cherry never compares")
 	}
 }
+
+// A commit on trunk that differs from the branch's only in whitespace is not
+// the same change: git cherry's patch id ignores whitespace, so Applied checks
+// the patch byte for byte.
+func TestAppliedKeepsABranchDifferingOnlyInWhitespace(t *testing.T) {
+	r, dir := sweepFixture(t)
+	write := func(name, content, msg string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		sweepGit(t, dir, "add", name)
+		sweepGit(t, dir, "commit", "-q", "-m", msg)
+	}
+	write("code.go", "package x\n", "base")
+	sweepGit(t, dir, "switch", "-q", "-c", "feat")
+	write("code.go", "package x\n\nfunc f() {\n\treturn\n}\n", "tabs")
+	sweepGit(t, dir, "switch", "-q", "main")
+	write("code.go", "package x\n\nfunc f() {\n    return\n}\n", "spaces")
+
+	if r.Applied("feat", "main") {
+		t.Error("a change trunk has only with other whitespace is not on trunk")
+	}
+
+	// The same change byte for byte, under another id, still is.
+	sweepGit(t, dir, "reset", "-q", "--hard", "HEAD~1")
+	write("other.txt", "trunk moved on\n", "trunk")
+	sweepGit(t, dir, "cherry-pick", "main..feat")
+	if !r.Applied("feat", "main") {
+		t.Error("every commit of feat is on main under a new id")
+	}
+}

@@ -30,8 +30,10 @@ func newSweepCmd() *cobra.Command {
 			"on git's answer alone.\n\n" +
 			"A branch whose upstream is gone or that a worktree has checked out also\n" +
 			"counts as merged when every commit is on trunk under another id, found\n" +
-			"by git cherry: a rebase merge whose pull request carried the rebased\n" +
-			"tip, or a cherry-pick. A merge or empty commit on it keeps it.\n\n" +
+			"by git cherry and confirmed byte for byte: a rebase merge whose pull\n" +
+			"request carried the rebased tip, or a cherry-pick. A merge or empty\n" +
+			"commit on it keeps it, and so does a change trunk has only with other\n" +
+			"whitespace.\n\n" +
 			"The plan has four parts:\n" +
 			"  removed       merged, and its worktree is safe to remove: nothing\n" +
 			"                uncommitted, no lock whose holder is still running, and\n" +
