@@ -4,6 +4,7 @@
 package repo
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -305,7 +306,8 @@ func (r *Repo) CommitsAhead(branch, base string) (n int, ok bool) {
 // the branch answers false, because git cherry never compares one and a merge
 // can carry changes of its own. So does an empty commit: every empty commit
 // has the same patch id, so git cherry pairs it with any empty commit on
-// base. So does a branch base already contains.
+// base. So does a branch base already contains, and one whose change base
+// has only with other whitespace.
 func (r *Repo) Applied(branch, base string) bool {
 	merges, err := git.Run(r.MainRoot, "rev-list", "--count", "--merges", base+".."+branch)
 	if err != nil || merges != "0" {
@@ -330,7 +332,77 @@ func (r *Repo) Applied(branch, base string) bool {
 			return false
 		}
 	}
+	return r.appliedVerbatim(branch, base, all)
+}
+
+// appliedVerbatim confirms what git cherry found: its patch id ignores
+// whitespace, so a trunk commit differing from the branch's only in
+// indentation would count as the same change. Every commit of the branch
+// must have a patch, byte for byte, that base's own side also has. Base's
+// side is limited to the commits touching the branch's files, shown whole.
+// count is how many commits the branch has that base lacks.
+func (r *Repo) appliedVerbatim(branch, base, count string) bool {
+	mine, err := r.verbatimPatchIDs(base + ".." + branch)
+	if err != nil || len(mine) == 0 || strconv.Itoa(len(mine)) != count {
+		return false
+	}
+	out, err := git.Run(r.MainRoot, "log", "--format=", "--name-only", "-z", "--no-renames", base+".."+branch)
+	if err != nil {
+		return false
+	}
+	paths := map[string]bool{}
+	for _, p := range strings.Split(out, "\x00") {
+		if p = strings.Trim(p, "\n"); p != "" {
+			paths[p] = true
+		}
+	}
+	upstream := []string{branch + ".." + base}
+	if len(paths) <= maxPathspec {
+		upstream = append(upstream, "--full-diff", "--")
+		for p := range paths {
+			upstream = append(upstream, p)
+		}
+	}
+	theirs, err := r.verbatimPatchIDs(upstream...)
+	if err != nil {
+		return false
+	}
+	have := map[string]bool{}
+	for _, id := range theirs {
+		have[id] = true
+	}
+	for _, id := range mine {
+		if !have[id] {
+			return false
+		}
+	}
 	return true
+}
+
+// maxPathspec is how many paths a lookup names before it reads every commit
+// instead, which is slower but never too long a command line.
+const maxPathspec = 500
+
+// verbatimPatchIDs is the patch id of every non-merge commit the log
+// arguments select, whitespace included, by commit.
+func (r *Repo) verbatimPatchIDs(logArgs ...string) (map[string]string, error) {
+	args := append([]string{"--literal-pathspecs", "log", "-p", "--no-color", "--no-ext-diff", "--no-textconv",
+		"--binary", "--no-renames", "--no-merges", "--format=commit %H"}, logArgs...)
+	patches, err := git.Exec(git.Opts{Dir: r.MainRoot}, args...)
+	if err != nil {
+		return nil, err
+	}
+	out, err := git.Exec(git.Opts{Dir: r.MainRoot, Stdin: bytes.NewReader(patches)}, "patch-id", "--verbatim")
+	if err != nil {
+		return nil, err
+	}
+	ids := map[string]string{}
+	for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if f := strings.Fields(l); len(f) == 2 {
+			ids[f[1]] = f[0]
+		}
+	}
+	return ids, nil
 }
 
 // Branch is one local branch as for-each-ref reports it.

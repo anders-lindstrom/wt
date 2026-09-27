@@ -1255,3 +1255,39 @@ func TestSweepPlanNamesADetachedWorktreeAtAMergedTip(t *testing.T) {
 // noPullRequests is a GitHub with nothing to say, which is what every sweep
 // test that is not about pull requests wants.
 func noPullRequests([]string) map[string]github.PR { return nil }
+
+// Each worktree is checked again immediately before it goes, not only once
+// before the first: one that turns dirty while an earlier one is removed is
+// kept. With a .gitmodules, removal deletes the directory itself, so git's
+// own refusal of a dirty checkout is not there to fall back on.
+func TestSweepKeepsAWorktreeThatBecameDirtyDuringTheSweep(t *testing.T) {
+	ctx, main, _ := sweepRepo(t)
+	mustWrite(t, filepath.Join(main, ".gitmodules"), "")
+	gitIn(t, main, "add", ".gitmodules")
+	gitIn(t, main, "commit", "-q", "-m", "submodules")
+	gitIn(t, main, "push", "-q", "origin", "main")
+	gitIn(t, main, "fetch", "-q", "origin")
+	first := mergedWorktree(t, ctx, "fix/aaa")
+	second := mergedWorktree(t, ctx, "fix/bbb")
+
+	// When the first worktree's branch is deleted, the second gains a change.
+	hooks := t.TempDir()
+	mustWrite(t, filepath.Join(hooks, "reference-transaction"), "#!/bin/sh\n"+
+		"[ \"$1\" = committed ] && grep -q 'refs/heads/fix_wt/aaa' && echo work > '"+filepath.Join(second, "work.txt")+"'\nexit 0\n")
+	if err := os.Chmod(filepath.Join(hooks, "reference-transaction"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, main, "config", "core.hooksPath", hooks)
+
+	var buf bytes.Buffer
+	err := Sweep(ctx, SweepOptions{NoFetch: true, Yes: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}}, &buf)
+	if exists(first) {
+		t.Fatalf("the first worktree should have gone:\n%s", buf.String())
+	}
+	if !exists(filepath.Join(second, "work.txt")) {
+		t.Fatalf("a worktree that became dirty during the sweep was removed: %v\n%s", err, buf.String())
+	}
+	if err == nil || !strings.Contains(buf.String(), "- kept bbb") {
+		t.Errorf("say it was kept: %v\n%s", err, buf.String())
+	}
+}

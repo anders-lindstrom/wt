@@ -133,6 +133,34 @@ func TestSweepPlanDeletesAGoneBranchWhoseCommitsWereRebasedOntoTrunk(t *testing.
 	}
 }
 
+// A change trunk has only with other whitespace is not on trunk: git
+// cherry would pair the two, so the branch and its worktree must stay.
+func TestSweepKeepsABranchTrunkHasOnlyWithOtherWhitespace(t *testing.T) {
+	ctx, main, _ := sweepRepo(t)
+	var buf bytes.Buffer
+	path, err := New(ctx, "feat/indent", NewOptions{NoSetup: true}, &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write := func(dir, content string) {
+		if err := os.WriteFile(filepath.Join(dir, "code.go"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		gitIn(t, dir, "add", "code.go")
+		gitIn(t, dir, "commit", "-q", "-m", "add code.go")
+	}
+	write(path, "package x\n\nfunc f() {\n\treturn\n}\n")
+	commitFile(t, main, "trunk-moved-on")
+	write(main, "package x\n\nfunc f() {\n    return\n}\n")
+	gitIn(t, main, "push", "-q", "origin", "main")
+	gitIn(t, main, "fetch", "-q", "origin")
+
+	p := planOf(t, ctx)
+	if len(p.Remove) != 0 || len(p.Delete) != 0 {
+		t.Fatalf("nothing of feat_wt/indent is on trunk byte for byte:\n%s", rendered(p))
+	}
+}
+
 // Something else — a session ending, an editor closing its workspace — can
 // remove the worktree while the prompt is open. Saying "run the command
 // again" would send the user after a checkout that is gone.

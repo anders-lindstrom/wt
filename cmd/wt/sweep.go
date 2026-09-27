@@ -1,13 +1,16 @@
 package main
 
 import (
+	"errors"
+
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
 )
 
 func newSweepCmd() *cobra.Command {
-	var noFetch, yes, dryRun bool
+	var noFetch, yes, dryRun, asJSON bool
+	var expect string
 	var sel selectionFlags
 	cmd := &cobra.Command{
 		Use:   "sweep",
@@ -30,8 +33,10 @@ func newSweepCmd() *cobra.Command {
 			"on git's answer alone.\n\n" +
 			"A branch whose upstream is gone or that a worktree has checked out also\n" +
 			"counts as merged when every commit is on trunk under another id, found\n" +
-			"by git cherry: a rebase merge whose pull request carried the rebased\n" +
-			"tip, or a cherry-pick. A merge or empty commit on it keeps it.\n\n" +
+			"by git cherry and confirmed byte for byte: a rebase merge whose pull\n" +
+			"request carried the rebased tip, or a cherry-pick. A merge or empty\n" +
+			"commit on it keeps it, and so does a change trunk has only with other\n" +
+			"whitespace.\n\n" +
 			"The plan has four parts:\n" +
 			"  removed       merged, and its worktree is safe to remove: nothing\n" +
 			"                uncommitted, no lock whose holder is still running, and\n" +
@@ -58,9 +63,10 @@ func newSweepCmd() *cobra.Command {
 			"terminal it prints the plan and changes nothing. Before anything goes,\n" +
 			"everything is read again: a branch that moved or was checked out, and\n" +
 			"a worktree that gained a change, a session or a lock while the question\n" +
-			"was open, is kept and says so. Each deletion prints the commit the\n" +
-			"branch was at: `git branch <name> <commit>` restores its commits, not\n" +
-			"its upstream setting.\n\n" +
+			"was open, is kept and says so; each worktree is read once more right\n" +
+			"before it goes. Each deletion prints the commit the branch was at:\n" +
+			"`git branch <name> <commit>` restores its commits, not its upstream\n" +
+			"setting.\n\n" +
 			"On a terminal, commit subjects are cut to fit its width. Piped, they\n" +
 			"are printed whole.\n\n" +
 			"--all, --roots or --profile sweep many repositories from anywhere: each\n" +
@@ -68,15 +74,32 @@ func newSweepCmd() *cobra.Command {
 			"it is printed under its repository's name, the rest on one line; one\n" +
 			"question covers them all; then each is swept as it would be alone,\n" +
 			"read again first. A repository that cannot be swept is reported, the\n" +
-			"rest go ahead, and the run exits non-zero.\n\n" + selectionHelp,
+			"rest go ahead, and the run exits non-zero.\n\n" +
+			"--json is for a tool driving wt, one repository at a time. With\n" +
+			"--dry-run, or without --yes, it prints the plan as one JSON object on\n" +
+			"stdout: every row, why it is merged or why it is kept, and a token.\n" +
+			"With --yes it sweeps and prints one result object, row by row; the\n" +
+			"plan and the progress go to stderr. --expect <token> refuses the sweep,\n" +
+			"touching nothing, unless the plan made now has that token. wt schema\n" +
+			"sweep-plan and wt schema sweep print the schemas; docs/json.md\n" +
+			"explains them.\n\n" + selectionHelp,
 		Example: "  wt sweep                    # fetch, show what is merged, then ask\n" +
 			"  wt sweep --all --dry-run    # every repository's plan; change nothing\n" +
-			"  wt sweep --all --yes        # every repository, without asking (scripts)\n" +
-			"  wt sweep --roots work       # the repositories under one root, asked once\n" +
-			"  wt sweep --profile api --no-fetch  # a profile's, as last fetched",
+			"  wt sweep --roots work --yes # one root's repositories, without asking\n" +
+			"  wt sweep --profile api --no-fetch  # a profile's, as last fetched\n" +
+			"  wt sweep --yes --json --expect 1:0123abcd  # only the plan a tool read",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if expect != "" && (!asJSON || !yes) {
+				return errors.New("--expect holds a sweep to the plan a tool read: pass it with --yes --json")
+			}
+			if asJSON {
+				if sel.selection().Any() {
+					return errors.New("--json sweeps one repository: run it in each repository's main checkout")
+				}
+				return sweepJSON(cmd, commands.SweepOptions{NoFetch: noFetch, Yes: yes, DryRun: dryRun, Expect: expect})
+			}
 			opts := commands.SweepOptions{NoFetch: noFetch, Yes: yes, DryRun: dryRun,
 				Width: terminalWidth(cmd.OutOrStdout())}
 			if sel.selection().Any() {
@@ -99,8 +122,35 @@ func newSweepCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&noFetch, "no-fetch", false, "compare with origin as last fetched")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "delete and remove without asking")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print the plan and change nothing")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "print the plan, or with --yes the result, as JSON")
+	cmd.Flags().StringVar(&expect, "expect", "", "sweep only if the plan still has this token")
 	cmd.MarkFlagsMutuallyExclusive("yes", "dry-run")
 	return cmd
+}
+
+// sweepJSON is wt sweep --json: stdout carries one object and nothing else,
+// the plan or, with --yes, the result; the plan as wt prints it and the
+// progress go to stderr. An error that stops it before it opens the
+// repository is still that one object.
+func sweepJSON(cmd *cobra.Command, opts commands.SweepOptions) error {
+	out, progress := cmd.OutOrStdout(), cmd.ErrOrStderr()
+	ctx, err := openContext()
+	if !opts.Yes {
+		if err != nil {
+			commands.SweepPlanFailed(out, err)
+			return err
+		}
+		ctx.WarnTo(progress)
+		return commands.SweepPlanJSON(ctx, opts, out, progress)
+	}
+	journal := commands.NewSweepJournal(out)
+	if err != nil {
+		journal.Fail(err)
+		return err
+	}
+	ctx.WarnTo(progress)
+	opts.Journal = journal
+	return commands.Sweep(ctx, opts, progress)
 }
 
 // confirmSweep asks once for the whole plan, defaulting to no.

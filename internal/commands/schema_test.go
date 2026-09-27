@@ -56,7 +56,7 @@ func TestEverySchemaCompiles(t *testing.T) {
 			t.Errorf("%s: %v", d.File, err)
 		}
 	}
-	if len(schema.All()) != 2 {
-		t.Errorf("want the status and up schemas, got %d", len(schema.All()))
+	if len(schema.All()) != 4 {
+		t.Errorf("want the status, sweep, sweep-plan and up schemas, got %d", len(schema.All()))
 	}
 }

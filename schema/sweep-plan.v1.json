@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sweep-plan.v1.json",
+  "x-version": "1.0.0",
+  "title": "wt sweep --dry-run --json",
+  "description": "What wt sweep would do, and what it would keep and why. Printed by `wt sweep --dry-run --json` (or `wt sweep --json` without --yes) as the only thing on stdout; nothing is deleted. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
+  "type": "object",
+  "required": ["schema", "schemaVersion", "command", "repo", "trunk", "bases", "fetched", "token", "error", "items"],
+  "properties": {
+    "schema": { "const": 1, "description": "The major version: a new one only for a change that breaks readers." },
+    "schemaVersion": { "type": "string", "pattern": "^1\\.[0-9]+\\.[0-9]+$", "description": "The full semantic version of this schema that the output follows: minor for an added field or enumeration value, patch for wording." },
+    "command": { "const": "sweep" },
+    "repo": { "type": ["string", "null"], "description": "The repository's main checkout; null outside one." },
+    "trunk": { "type": ["string", "null"], "description": "Trunk's branch name; null outside a repository." },
+    "bases": {
+      "type": "array",
+      "description": "What merged is measured against, first one first: origin/<trunk> as fetched, then <trunk>.",
+      "items": {
+        "type": "object",
+        "required": ["name", "tip"],
+        "properties": { "name": { "type": "string" }, "tip": { "$ref": "#/$defs/sha" } }
+      }
+    },
+    "fetched": { "type": "boolean", "description": "origin was fetched first (false with --no-fetch, without an origin, or when the plan stopped before)." },
+    "token": { "type": ["string", "null"], "description": "Names this plan; pass it to `wt sweep --expect <token> --yes --json`. Null when there is nothing to remove or delete, or on error." },
+    "error": { "type": ["string", "null"], "description": "Why no plan could be made: not the main checkout, no trunk, the fetch failed. items is then empty." },
+    "items": { "type": "array", "items": { "$ref": "#/$defs/item" } }
+  },
+  "$defs": {
+    "sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
+    "item": {
+      "type": "object",
+      "required": ["category", "branch", "tip", "work", "path", "merged", "pullRequest", "kept", "reason", "ahead", "subject"],
+      "properties": {
+        "category": {
+          "enum": ["remove", "delete", "inUse", "upstreamGone"],
+          "description": "remove: the worktree goes, and its branch with it. delete: a branch in no worktree goes. inUse: merged, but its worktree is kept (kept says why). upstreamGone: its upstream is gone but trunk lacks its commits, kept."
+        },
+        "branch": { "type": ["string", "null"], "description": "Null for a detached worktree." },
+        "tip": { "$ref": "#/$defs/sha", "description": "The branch's commit, or a detached worktree's HEAD." },
+        "work": { "type": ["string", "null"], "description": "The worktree's work name; null for a branch in no worktree, or a detached one." },
+        "path": { "type": ["string", "null"], "description": "The worktree; null for a branch in no worktree." },
+        "merged": {
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/merged" }],
+          "description": "Why it counts as merged; null for upstreamGone."
+        },
+        "pullRequest": {
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/pullRequest" }],
+          "description": "What GitHub says about the branch's pull request; null when there is none, or GitHub was not asked."
+        },
+        "kept": {
+          "type": "array",
+          "description": "Why it is kept, every reason that applies; empty for remove and delete.",
+          "items": {
+            "enum": ["dirty", "statusUnknown", "detached", "session", "sessionsUnknown", "lockHeld", "directoryMissing",
+              "heldByRebase", "heldByBisect", "mainCheckout", "branchNotDeletable", "notMerged"]
+          }
+        },
+        "reason": { "type": "string", "description": "The row as wt sweep prints it: why it goes, or why it stays and what to do." },
+        "ahead": { "type": ["integer", "null"], "minimum": 0, "description": "For upstreamGone: commits the first base lacks." },
+        "subject": { "type": ["string", "null"], "description": "The tip's commit subject." }
+      }
+    },
+    "merged": {
+      "type": "object",
+      "required": ["how", "into", "pullRequest"],
+      "properties": {
+        "how": {
+          "enum": ["ancestor", "patch", "pullRequest"],
+          "description": "ancestor: into contains the tip. patch: every commit is on into under another id, byte for byte. pullRequest: GitHub merged its pull request into trunk at exactly this tip."
+        },
+        "into": { "type": "string", "description": "The base it is on; trunk's name for pullRequest." },
+        "pullRequest": { "type": ["integer", "null"], "description": "For pullRequest: its number." }
+      }
+    },
+    "pullRequest": {
+      "type": "object",
+      "required": ["number", "state", "base", "url"],
+      "properties": {
+        "number": { "type": "integer" },
+        "state": { "enum": ["OPEN", "MERGED", "CLOSED"] },
+        "base": { "type": ["string", "null"] },
+        "url": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

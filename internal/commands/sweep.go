@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -55,6 +56,11 @@ type SweepBranch struct {
 	// another id — rebased or cherry-picked there — when neither trunk nor a
 	// pull request says it landed. "" otherwise.
 	AppliedTo string
+	// GitHub is the pull request PR describes, nil when there is none.
+	GitHub *github.PR
+	// KeptCodes are the reasons it is kept, as --json names them: the Kept*
+	// constants. Empty for a branch or worktree that goes.
+	KeptCodes []string
 }
 
 // done reports that the work on this branch has landed: trunk contains it,
@@ -177,7 +183,7 @@ func planSweep(ctx *Context, bases []TrunkBase, list func() ([]wtsync.Agent, err
 		use := inUse[b.Name]
 		sb := SweepBranch{Branch: b, MergedInto: merged[b.Name], Worktree: use.Path, HeldBy: use.By}
 		if pr, ok := byBranch[b.Name]; ok {
-			sb.PR = prLabel(pr, trunkNames)
+			sb.PR, sb.GitHub = prLabel(pr, trunkNames), &pr
 			// Only where git cannot tell: trunk containing the branch is the
 			// stronger fact and the one every other command reads.
 			if sb.MergedInto == "" && pr.Landed(b.Tip, trunkNames...) {
@@ -194,6 +200,10 @@ func planSweep(ctx *Context, bases []TrunkBase, list func() ([]wtsync.Agent, err
 		case sb.done() && sb.Worktree != "":
 			sb.Work = worktreeName(ctx, b.Name, sb.Worktree)
 			if sb.HeldBy != "" || repo.SamePath(sb.Worktree, p.MainRoot) {
+				sb.KeptCodes = []string{KeptMainCheckout}
+				if sb.HeldBy != "" {
+					sb.KeptCodes = []string{heldByCode(sb.HeldBy)}
+				}
 				p.CheckedOut = append(p.CheckedOut, sb)
 			} else {
 				candidates = append(candidates, sb)
@@ -203,6 +213,7 @@ func planSweep(ctx *Context, bases []TrunkBase, list func() ([]wtsync.Agent, err
 		case b.Gone:
 			// By tip, not name: a tag with the branch's name would shadow it.
 			sb.Ahead, _ = ctx.Repo.CommitsAhead(b.Tip, bases[0].Tip)
+			sb.KeptCodes = []string{KeptNotMerged}
 			p.Gone = append(p.Gone, sb)
 		}
 	}
@@ -238,6 +249,7 @@ func planSweep(ctx *Context, bases []TrunkBase, list func() ([]wtsync.Agent, err
 			// git still lists it, so wt remove finds no worktree there and
 			// the branch counts as in use until the record is pruned.
 			sb.Kept, sb.Missing = "its directory is gone", true
+			sb.KeptCodes = []string{KeptDirectoryMissing}
 			p.CheckedOut = append(p.CheckedOut, sb)
 			continue
 		}
@@ -247,7 +259,12 @@ func planSweep(ctx *Context, bases []TrunkBase, list func() ([]wtsync.Agent, err
 		// this the plan would rename it aside. Sweep has just read GitHub, so
 		// it answers from that rather than from the cache remove falls back on.
 		rp := planFor(ctx, wt, RemoveOptions{Agents: agents, Landed: landedFrom(byBranch, trunkNames)})
-		sb.Kept = unsafeToRemove(sb, rp, wtsync.SessionsAt(agents, sb.Worktree), listErr)
+		// planFor reads a status it cannot get as clean; a sweep does not
+		// remove a checkout whose changes it could not see. Dirt this read
+		// finds counts as much as planFor's.
+		dirty, statusErr := repo.Dirty(sb.Worktree, false)
+		rp.Dirty = rp.Dirty || dirty
+		sb.Kept, sb.KeptCodes = unsafeToRemove(sb, rp, wtsync.SessionsAt(agents, sb.Worktree), listErr, statusErr)
 		sb.Dirty, sb.LockHeld = rp.Dirty, rp.Locked && rp.LockHeld
 		if sb.Detached {
 			reason := "no branch, and its HEAD " + git.ShortID(sb.Tip, 12) + " is on " + sb.MergedInto
@@ -255,6 +272,7 @@ func planSweep(ctx *Context, bases []TrunkBase, list func() ([]wtsync.Agent, err
 				reason += ", " + sb.Kept
 			}
 			sb.Kept = reason
+			sb.KeptCodes = append([]string{KeptDetached}, sb.KeptCodes...)
 		}
 		if sb.Kept != "" {
 			p.CheckedOut = append(p.CheckedOut, sb)
@@ -281,28 +299,35 @@ func detachedOn(ctx *Context, path string, bases []TrunkBase) (head, base string
 }
 
 // unsafeToRemove is why sweep leaves a worktree alone, "" when wt remove
-// without --force would take it: nothing uncommitted, no lock whose holder
-// is still there, and no agent session in it at all, idle or busy — a sweep
-// is not the moment to pull a directory out from under one. Every reason
-// that applies is named, so the row says all of what holds it.
-func unsafeToRemove(b SweepBranch, rp Plan, s wtsync.Sessions, listErr error) string {
+// without --force would take it: nothing uncommitted, a status that could be
+// read, no lock whose holder is still there, and no agent session in it at
+// all, idle or busy — a sweep is not the moment to pull a directory out from
+// under one. Every reason that applies is named, so the row says all of what
+// holds it, and codes names each for --json.
+func unsafeToRemove(b SweepBranch, rp Plan, s wtsync.Sessions, listErr, statusErr error) (reason string, codes []string) {
 	var why []string
+	add := func(code, reason string) {
+		codes, why = append(codes, code), append(why, reason)
+	}
 	if listErr != nil {
-		why = append(why, fmt.Sprintf("cannot list agent sessions (%v)", listErr))
+		add(KeptSessionsUnknown, fmt.Sprintf("cannot list agent sessions (%v)", listErr))
 	}
 	if len(s) > 0 {
-		why = append(why, whoLabel(s)+" in it")
+		add(KeptSession, whoLabel(s)+" in it")
 	}
 	if rp.Locked && rp.LockHeld {
-		why = append(why, heldLock(rp))
+		add(KeptLockHeld, heldLock(rp))
+	}
+	if statusErr != nil {
+		add(KeptStatusUnknown, "cannot read its status ("+oneLine(gitSaid(statusErr))+")")
 	}
 	if rp.Dirty {
-		why = append(why, "dirty")
+		add(KeptDirty, "dirty")
 	}
 	if !b.Detached && (rp.Branch != b.Name || rp.Outcome != BranchDeleted) {
-		why = append(why, "wt remove would not delete the branch: "+rp.standing())
+		add(KeptBranchNotDeletable, "wt remove would not delete the branch: "+rp.standing())
 	}
-	return strings.Join(why, ", ")
+	return strings.Join(why, ", "), codes
 }
 
 // heldLock is a held lock as the kept row states it: by the pid the reason
@@ -439,6 +464,8 @@ func (p SweepPlan) keptBecause(b SweepBranch) string {
 		return "the main checkout is on it; switch it to trunk, then sweep again"
 	case b.Missing:
 		return b.Kept + "; git worktree prune, then sweep again"
+	case slices.Contains(b.KeptCodes, KeptStatusUnknown):
+		return b.Kept + "; see git status there, then sweep again"
 	case b.Dirty:
 		return b.Kept + "; commit or discard the changes, then sweep again"
 	case b.LockHeld:
@@ -604,6 +631,12 @@ type SweepOptions struct {
 	// PRs is the pull requests by branch, for a test that has no gh. Nil asks
 	// GitHub; an empty map means it had nothing to say.
 	PRs map[string]github.PR
+	// Journal records what the sweep does, row by row, for --json; nil
+	// records nothing.
+	Journal *SweepJournal
+	// Expect is the token wt sweep --dry-run --json gave: the sweep refuses,
+	// touching nothing, unless the plan it makes now has that token.
+	Expect string
 }
 
 // pullRequests is what GitHub says about the branches a sweep considers,
@@ -639,21 +672,27 @@ func (o SweepOptions) relistAgents() ([]wtsync.Agent, error) {
 
 // Sweep deletes the local branches trunk already contains, and removes the
 // worktrees on such branches that nothing is using.
-func Sweep(ctx *Context, opts SweepOptions, w io.Writer) error {
-	if err := sweepGuard(ctx); err != nil {
-		return err
+func Sweep(ctx *Context, opts SweepOptions, w io.Writer) (err error) {
+	if j := opts.Journal; j != nil {
+		j.open(ctx)
+		defer setInterruptJournal(j)()
+		defer watchSignals(w, nil)()
+		defer func() {
+			j.fail(err)
+			j.Finish()
+		}()
 	}
-	if err := sweepFetch(ctx, opts.NoFetch, w); err != nil {
-		return err
-	}
-	bases, err := trunkBases(ctx)
+	plan, fetched, err := prepareSweep(ctx, opts, w)
+	opts.Journal.fetched(fetched)
 	if err != nil {
 		return err
 	}
-	plan, err := planSweep(ctx, bases, opts.listAgents, opts.pullRequests(ctx))
-	if err != nil {
-		return err
+	token := sweepToken(ctx, plan)
+	if opts.Expect != "" && deref(token) != opts.Expect {
+		return errors.New("the sweep plan changed since it was read (a branch or worktree moved, " +
+			"was merged, or gained or lost a reason to be kept); nothing was swept: read the plan again")
 	}
+	opts.Journal.begin(ctx, plan, deref(token))
 	plan.Render(w, opts.Width)
 	if plan.Empty() {
 		return nil
@@ -749,28 +788,43 @@ func (p SweepPlan) apply(ctx *Context, opts SweepOptions, w io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("could not re-read the branches before deleting, so nothing was deleted: %w", err)
 	}
+	j := opts.Journal
+	j.startApply()
 	kept := 0
-	for _, wt := range p.Remove {
+	for i, wt := range p.Remove {
+		key := sweepKey(wt.SweepBranch)
 		rp, why := fresh.worktreeChangedFrom(ctx, wt)
+		if why == "" && i > 0 {
+			why = changedDuringSweep(ctx, rp, opts)
+		}
 		if why != "" {
 			fmt.Fprintf(w, "- kept %s: %s\n", wt.Work, why)
+			j.keep(key, why)
 			kept++
 			continue
 		}
-		if err := rp.apply(ctx, w); err != nil {
+		j.start(key)
+		err := rp.apply(ctx, w)
+		j.settle(key, err)
+		if err != nil {
 			fmt.Fprintf(w, "- kept %s: %s\n", wt.Work, err)
 			kept++
 		}
 	}
 	for _, b := range p.Delete {
+		key := sweepKey(b)
 		if why := fresh.changedFrom(ctx, b); why != "" {
 			fmt.Fprintf(w, "- kept %s: %s\n", b.Name, why)
+			j.keep(key, why)
 			kept++
 			continue
 		}
 		// DeleteBranchAt asks the worktrees again immediately before the
 		// delete, which is as close to it as that question gets.
-		if err := ctx.Repo.DeleteBranchAt(b.Name, b.Tip); err != nil {
+		j.start(key)
+		err := ctx.Repo.DeleteBranchAt(b.Name, b.Tip)
+		j.settle(key, err)
+		if err != nil {
 			fmt.Fprintf(w, "- kept %s: %s\n", b.Name, whyKept(err))
 			kept++
 			continue
@@ -781,6 +835,45 @@ func (p SweepPlan) apply(ctx *Context, opts SweepOptions, w io.Writer) error {
 		return fmt.Errorf("%d of %s kept; run wt sweep again to see why", kept, p.counts())
 	}
 	return nil
+}
+
+// changedDuringSweep reads a worktree once more immediately before it goes,
+// for every worktree after the first: removing the ones before it takes
+// time, and a checkout can gain a change, a lock or a session meanwhile.
+// Its status is read first, and a status that cannot be read keeps it; then
+// the removal plan is made again and has to be the one the fresh plan made;
+// then the sessions are listed again. "" when it can still go.
+func changedDuringSweep(ctx *Context, rp Plan, opts SweepOptions) string {
+	dirty, err := repo.Dirty(rp.Path, false)
+	switch {
+	case err != nil:
+		return "cannot read its status (" + oneLine(gitSaid(err)) + ")"
+	case dirty:
+		return "it gained uncommitted changes during the sweep"
+	}
+	agents, err := opts.relistAgents()
+	if err != nil {
+		return fmt.Sprintf("cannot list agent sessions (%v)", err)
+	}
+	if agents == nil {
+		agents = []wtsync.Agent{}
+	}
+	if s := wtsync.SessionsAt(agents, rp.Path); len(s) > 0 {
+		return whoLabel(s) + " in it"
+	}
+	// The pull request is the one the fresh plan read: it was asked seconds
+	// ago, and a merge does not come undone.
+	landed := func(branch, tip string) int {
+		if branch == rp.Branch && tip == rp.Tip {
+			return rp.MergedPR
+		}
+		return 0
+	}
+	now := planFor(ctx, worktreeRecord(ctx, rp.Path), RemoveOptions{Agents: agents, Landed: landed, Force: rp.Force})
+	if now != rp {
+		return "it changed during the sweep"
+	}
+	return ""
 }
 
 // whyKept says, in sweep's words, why a delete was refused: a worktree took

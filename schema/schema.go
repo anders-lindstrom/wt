@@ -15,7 +15,7 @@ var files embed.FS
 // Doc is one schema: the command whose --json output it describes, and its
 // document.
 type Doc struct {
-	Name  string // "status", "up"
+	Name  string // "status", "up", "sweep-plan"
 	File  string // "up.v1.json"
 	Bytes []byte
 }
@@ -44,9 +44,14 @@ func (d Doc) ID() string { return d.head().ID }
 // carries it as "schemaVersion".
 func (d Doc) Version() string { return d.head().Version }
 
+// Title is the schema's title: the command line whose output it describes,
+// "wt sweep --dry-run --json".
+func (d Doc) Title() string { return d.head().Title }
+
 func (d Doc) head() (h struct {
 	ID      string `json:"$id"`
 	Version string `json:"x-version"`
+	Title   string `json:"title"`
 }) {
 	_ = json.Unmarshal(d.Bytes, &h)
 	return h

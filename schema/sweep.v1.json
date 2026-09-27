@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sweep.v1.json",
+  "x-version": "1.0.0",
+  "title": "wt sweep --yes --json",
+  "description": "What a wt sweep did, item by item. Printed by `wt sweep --yes --json [--expect <token>]` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends the run. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
+  "type": "object",
+  "required": ["schema", "schemaVersion", "command", "repo", "trunk", "fetched", "token", "outcome", "error", "items", "recovery"],
+  "properties": {
+    "schema": { "const": 1, "description": "The major version: a new one only for a change that breaks readers." },
+    "schemaVersion": { "type": "string", "pattern": "^1\\.[0-9]+\\.[0-9]+$", "description": "The full semantic version of this schema that the output follows: minor for an added field or enumeration value, patch for wording." },
+    "command": { "const": "sweep" },
+    "repo": { "type": ["string", "null"] },
+    "trunk": { "type": ["string", "null"] },
+    "fetched": { "type": "boolean" },
+    "token": { "type": ["string", "null"], "description": "The token of the plan this run carried out; null when it stopped before one was made, or there was nothing to do." },
+    "outcome": {
+      "enum": ["done", "refused", "partial", "interrupted"],
+      "description": "done: every item to remove or delete went. refused: nothing was removed or deleted. partial: some went, some did not. interrupted: a signal ended the run."
+    },
+    "error": { "type": ["string", "null"], "description": "Why the run stopped before touching anything: an --expect that no longer holds, the fetch, not the main checkout." },
+    "items": { "type": "array", "items": { "$ref": "#/$defs/item" } },
+    "recovery": { "type": ["string", "null"], "description": "For interrupted: what wt printed." }
+  },
+  "$defs": {
+    "sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
+    "item": {
+      "type": "object",
+      "required": ["category", "branch", "tip", "work", "path", "result", "reason", "worktreeRemoved", "branchDeleted", "restoreCommand"],
+      "properties": {
+        "category": { "enum": ["remove", "delete", "inUse", "upstreamGone"], "description": "Its part of the plan, as in the sweep-plan schema." },
+        "branch": { "type": ["string", "null"] },
+        "tip": { "$ref": "#/$defs/sha" },
+        "work": { "type": ["string", "null"] },
+        "path": { "type": ["string", "null"] },
+        "result": {
+          "enum": ["removed", "deleted", "kept", "failed", "notRun", "interrupted"],
+          "description": "removed: the worktree and its branch are gone. deleted: the branch is gone. kept: left as it was, on purpose. failed: tried and not finished; worktreeRemoved and branchDeleted say what did happen. notRun: the run ended before it. interrupted: the one a signal caught."
+        },
+        "reason": { "type": ["string", "null"], "description": "Why, for everything but removed and deleted." },
+        "worktreeRemoved": { "type": "boolean" },
+        "branchDeleted": { "type": "boolean" },
+        "restoreCommand": {
+          "oneOf": [{ "type": "null" }, { "type": "array", "items": { "type": "string" }, "minItems": 1 }],
+          "description": "When the branch was deleted: the git command, as an argv, that puts it back at the commit it was at."
+        }
+      }
+    }
+  }
+}
