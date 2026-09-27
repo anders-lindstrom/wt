@@ -6,6 +6,13 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-28 00:46 — Keepers for many repositories at once
+
+- `wt sync keep start --all` (or `--roots`, `--profile`) installs one keeper
+  per repository with a `.wt-sync.yaml` on trunk, asked once (`--yes`,
+  `--dry-run`); ones already kept are left as they are, the rest are skipped.
+- `wt sync keep stop` and `wt sync keep status` take the same selection.
+
 ## 2026-09-27 23:55 — wt up and wt sync run bring local trunk along
 
 - After fetching, `wt up`, `wt sync run`/`--run` and the keeper fast-forward

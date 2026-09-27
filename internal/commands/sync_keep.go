@@ -686,6 +686,12 @@ func keeperCheck(ctx *Context, now time.Time) wtsync.Check {
 	if err != nil {
 		return wtsync.Check{Name: "keeper", OK: false, Detail: err.Error()}
 	}
+	return k.check(now)
+}
+
+// check is the keeper as the doctor's row says it, and as the status across
+// repositories says it on one line.
+func (k keeperState) check(now time.Time) wtsync.Check {
 	var parts []string
 	switch {
 	case k.installed && k.loaded:

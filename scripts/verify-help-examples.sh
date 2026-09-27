@@ -120,12 +120,23 @@ make_sweep() {
 # skipped and counts them as covered.
 make_keep() {
     local d; d=$(make_sync "$1")
+    keep_bin "$1"
+    echo "$d"
+}
+# make_fleet with make_keep's bin and home: the keep examples across
+# repositories.
+make_keepfleet() {
+    local d; d=$(make_fleet "$1")
+    keep_bin "$1"
+    echo "$d"
+}
+keep_bin() {
     mkdir -p "$1/home" "$1/bin"
     printf '#!/bin/sh\n[ "$1" = agents ] && echo "[]"\nexit 0\n' > "$1/bin/claude"
-    # It remembers what was bootstrapped, so print answers as launchd would.
-    printf '#!/bin/sh\necho "$@" >> "%s/launchctl.calls"\ncase "$1" in\n  bootstrap) touch "%s/loaded" ;;\n  bootout) rm -f "%s/loaded" ;;\n  print) [ -e "%s/loaded" ] || exit 1 ;;\nesac\nexit 0\n' "$1" "$1" "$1" "$1" > "$1/bin/launchctl"
+    # It remembers which jobs were bootstrapped, so print answers as launchd
+    # would.
+    printf '#!/bin/sh\necho "$@" >> "%s/launchctl.calls"\ncase "$1" in\n  bootstrap) touch "%s/loaded.$(basename "$3" .plist)" ;;\n  bootout) rm -f "%s/loaded.${2##*/}" ;;\n  print) [ -e "%s/loaded.${2##*/}" ] || exit 1 ;;\nesac\nexit 0\n' "$1" "$1" "$1" "$1" > "$1/bin/launchctl"
     chmod +x "$1/bin/claude" "$1/bin/launchctl"
-    echo "$d"
 }
 
 # make_plain, plus a GitHub remote and a fake `gh` first on the PATH that
@@ -193,7 +204,7 @@ check() {
     local mode=$1 where=$2 prereq=$3 example=$4 expect=${5:-ok}
     n=$((n+1))
     RAN+=("$example")
-    if [ "$mode" = launchd ] && [ "$(uname)" != Darwin ]; then
+    if [[ $mode == launchd* ]] && [ "$(uname)" != Darwin ]; then
         printf 'skip %s (launchd; not on this platform)\n' "$example"
         return
     fi
@@ -211,6 +222,7 @@ check() {
         sweep) repo=$(make_sweep "$dir");;
         fleet) repo=$(make_fleet "$dir");;
         keep|launchd) repo=$(make_keep "$dir"); prereq="export HOME=$dir/home PATH=$dir/bin:\$PATH; $prereq";;
+        keepfleet|launchdfleet) repo=$(make_keepfleet "$dir"); prereq="export HOME=$dir/home PATH=$dir/bin:\$PATH; $prereq";;
         gh) repo=$(make_gh "$dir"); prereq="export PATH=$dir/bin:\$PATH; $prereq";;
         ghwork) repo=$(make_ghwork "$dir"); prereq="export PATH=$dir/bin:\$PATH; $prereq";;
         branch) repo=$(make_plain "$dir"); git -C "$repo" branch fix_wt/login-crash;;
@@ -430,9 +442,17 @@ check keep "" "" 'wt sync keep once --no-push'
 check keep "" "" 'wt sync keep once --no-ff-trunk'
 check keep "" "" 'wt sync keep once --every 1h'
 check launchd "" "" 'wt sync keep start'
-check launchd "" "" 'wt sync keep start --every 1h'
 check launchd "" "" 'wt sync keep start --no-push'
 check launchd "" 'wt sync keep start' 'wt sync keep stop'
+check launchdfleet "" "" 'wt sync keep start --profile api --every 1h'
+check launchdfleet "" "" 'wt sync keep start --all --dry-run'
+check launchdfleet "" "" 'wt sync keep start --roots work --yes'
+check keepfleet "" "" 'wt sync keep status --all'
+check keepfleet "" "" 'wt sync keep status --roots work'
+check keepfleet "" "" 'wt sync keep status --profile api'
+check launchdfleet "" 'wt sync keep start --all --yes' 'wt sync keep stop --all --dry-run'
+check launchdfleet "" 'wt sync keep start --all --yes' 'wt sync keep stop --roots work'
+check launchdfleet "" 'wt sync keep start --all --yes' 'wt sync keep stop --profile api'
 
 check plain     "" "" 'wt hook claude-create <<< '"'"'{"name":"fix/login-crash"}'"'"''
 check worktrees "" "" 'wt hook claude-remove <<< '"'"'{"name":"login-crash"}'"'"''

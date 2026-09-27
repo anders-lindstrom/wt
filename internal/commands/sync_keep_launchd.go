@@ -188,78 +188,124 @@ type KeepStartOptions struct {
 // with it: not a failure of the repository, a platform with no launchd.
 var ErrNoLaunchd = errors.New("not supported on this platform; run wt sync keep once from cron")
 
-// SyncKeepStart installs the keeper as a launchd job for this repository
-// and loads it. It refuses when one is already installed.
-func SyncKeepStart(ctx *Context, opts KeepStartOptions, w io.Writer) error {
+// keepStarter is what every job a start installs shares: the interval, the
+// wt binary and what it captured from the shell.
+type keepStarter struct {
+	every  time.Duration
+	noPush bool
+	exe    string
+	env    map[string]string
+	now    func() time.Time
+}
+
+// newKeepStarter checks the platform and the interval and captures the
+// shell's environment, once for however many repositories follow.
+func newKeepStarter(opts KeepStartOptions) (*keepStarter, error) {
 	if keepGOOS != "darwin" {
-		return ErrNoLaunchd
+		return nil, ErrNoLaunchd
 	}
 	getenv := opts.Getenv
 	if getenv == nil {
 		getenv = os.Getenv
 	}
-	now := time.Now
+	s := &keepStarter{every: opts.Every, noPush: opts.NoPush, now: time.Now, env: map[string]string{}}
 	if opts.Now != nil {
-		now = opts.Now
+		s.now = opts.Now
 	}
-	every := opts.Every
-	if every <= 0 {
-		every = KeepDefaultInterval
+	if s.every <= 0 {
+		s.every = KeepDefaultInterval
 	}
-	if every < time.Minute {
-		return fmt.Errorf("--every %s is under a minute; a pass fetches trunk every time", every)
+	if s.every < time.Minute {
+		return nil, fmt.Errorf("--every %s is under a minute; a pass fetches trunk every time", s.every)
 	}
+	// The path as invoked, symlink and all: an install that points a stable
+	// name at the current version keeps the job on the current version.
+	exe, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	s.exe = exe
+	for _, n := range keepEnvNames {
+		if v := getenv(n); v != "" {
+			s.env[n] = v
+		}
+	}
+	return s, nil
+}
+
+// job is ctx's job as s would install it.
+func (s *keepStarter) job(ctx *Context) (keepJob, error) {
 	job, err := keepJobFor(ctx)
+	if err != nil {
+		return keepJob{}, err
+	}
+	gitDir, _, _, err := keepPaths(ctx)
+	if err != nil {
+		return keepJob{}, err
+	}
+	job.Exe, job.GitDir, job.Every, job.NoPush, job.Env = s.exe, gitDir, s.every, s.noPush, s.env
+	return job, nil
+}
+
+// install writes the job's plist, loads it, and records in ctx's state file
+// when the first pass is due, which it returns.
+func (s *keepStarter) install(ctx *Context, job keepJob) (time.Time, error) {
+	_, _, statePath, err := keepPaths(ctx)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if err := os.MkdirAll(filepath.Dir(job.PlistPath), 0o755); err != nil {
+		return time.Time{}, err
+	}
+	// Owner-only: the plist carries the shell's GIT_SSH_COMMAND verbatim,
+	// whatever that names. launchd asks only that a user agent's plist be
+	// the user's own and not writable by anyone else.
+	if err := os.WriteFile(job.PlistPath, []byte(keepPlist(job)), 0o600); err != nil {
+		return time.Time{}, err
+	}
+	if err := launchctl.load(job.PlistPath); err != nil {
+		_ = os.Remove(job.PlistPath)
+		return time.Time{}, err
+	}
+	// The state file says when the first pass is due, for the table line;
+	// what an earlier keeper recorded is kept.
+	st, _, err := readKeepState(statePath)
+	if err != nil {
+		return time.Time{}, err
+	}
+	st.Interval = fmtEvery(s.every)
+	st.NextRun = s.now().Add(s.every)
+	st.Job = job.Label
+	if err := writeKeepState(statePath, st); err != nil {
+		return time.Time{}, err
+	}
+	return st.NextRun, nil
+}
+
+// SyncKeepStart installs the keeper as a launchd job for this repository
+// and loads it. It refuses when one is already installed.
+func SyncKeepStart(ctx *Context, opts KeepStartOptions, w io.Writer) error {
+	s, err := newKeepStarter(opts)
+	if err != nil {
+		return err
+	}
+	job, err := s.job(ctx)
 	if err != nil {
 		return err
 	}
 	if _, err := os.Stat(job.PlistPath); err == nil {
 		return fmt.Errorf("a keeper is already installed here: %s; wt sync keep status", job.PlistPath)
 	}
-	// The path as invoked, symlink and all: an install that points a stable
-	// name at the current version keeps the job on the current version.
-	exe, err := os.Executable()
+	next, err := s.install(ctx, job)
 	if err != nil {
 		return err
 	}
-	gitDir, logPath, statePath, err := keepPaths(ctx)
+	_, logPath, _, err := keepPaths(ctx)
 	if err != nil {
-		return err
-	}
-	job.Exe, job.GitDir, job.Every, job.NoPush = exe, gitDir, every, opts.NoPush
-	job.Env = map[string]string{}
-	for _, n := range keepEnvNames {
-		if v := getenv(n); v != "" {
-			job.Env[n] = v
-		}
-	}
-	if err := os.MkdirAll(filepath.Dir(job.PlistPath), 0o755); err != nil {
-		return err
-	}
-	// Owner-only: the plist carries the shell's GIT_SSH_COMMAND verbatim,
-	// whatever that names. launchd asks only that a user agent's plist be
-	// the user's own and not writable by anyone else.
-	if err := os.WriteFile(job.PlistPath, []byte(keepPlist(job)), 0o600); err != nil {
-		return err
-	}
-	if err := launchctl.load(job.PlistPath); err != nil {
-		_ = os.Remove(job.PlistPath)
-		return err
-	}
-	// The state file says when the first pass is due, for the table line;
-	// what an earlier keeper recorded is kept.
-	st, _, err := readKeepState(statePath)
-	if err != nil {
-		return err
-	}
-	st.Interval = fmtEvery(every)
-	st.NextRun = now().Add(every)
-	st.Job = job.Label
-	if err := writeKeepState(statePath, st); err != nil {
 		return err
 	}
 	fmt.Fprintf(w, "installed %s\n", job.PlistPath)
-	fmt.Fprintf(w, "runs wt sync keep once every %s in %s; first at %s\n", fmtEvery(every), ctx.Repo.MainRoot, keepClock(st.NextRun, now()))
+	fmt.Fprintf(w, "runs wt sync keep once every %s in %s; first at %s\n", fmtEvery(s.every), ctx.Repo.MainRoot, keepClock(next, s.now()))
 	fmt.Fprintln(w, keepAuthLine(job))
 	fmt.Fprintf(w, "log %s · wt sync keep status\n", logPath)
 	return nil
@@ -298,23 +344,38 @@ func SyncKeepStop(ctx *Context, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	_, statErr := os.Stat(job.PlistPath)
-	installed := statErr == nil
-	// A job whose plist was removed by hand is still loaded until logout;
-	// it is booted out by its label, plist or no plist.
-	if !installed && !launchctl.loaded(job.Label) {
+	installed, ok := keepJobPresent(job)
+	if !ok {
 		return errors.New("no keeper is installed here; wt sync keep start")
 	}
-	if err := launchctl.unload(job.Label, job.PlistPath); err != nil {
+	if err := stopKeepJob(job, installed); err != nil {
 		return err
 	}
 	if !installed {
 		fmt.Fprintf(w, "stopped %s; its plist was already gone\n", job.Label)
 		return nil
 	}
-	if err := os.Remove(job.PlistPath); err != nil {
-		return err
-	}
 	fmt.Fprintf(w, "stopped %s; removed %s\n", job.Label, job.PlistPath)
 	return nil
+}
+
+// keepJobPresent says whether the job's plist is there, and whether there is
+// anything to stop at all: a plist, or a job launchd still has loaded
+// because its plist was removed by hand (it stays until logout).
+func keepJobPresent(job keepJob) (installed, present bool) {
+	_, statErr := os.Stat(job.PlistPath)
+	installed = statErr == nil
+	return installed, installed || launchctl.loaded(job.Label)
+}
+
+// stopKeepJob boots the job out by its label, plist or no plist, and
+// removes the plist when there is one.
+func stopKeepJob(job keepJob, installed bool) error {
+	if err := launchctl.unload(job.Label, job.PlistPath); err != nil {
+		return err
+	}
+	if !installed {
+		return nil
+	}
+	return os.Remove(job.PlistPath)
 }
