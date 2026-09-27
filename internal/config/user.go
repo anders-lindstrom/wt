@@ -30,6 +30,10 @@ const (
 	// as <type>=<name> pairs, for every repository that does not name its
 	// types itself.
 	UserKeyTypeNames = "type_names"
+	// UserKeyFFTrunk decides whether wt up and wt sync run bring local trunk
+	// up to origin after fetching it, when that is a safe fast-forward. On by
+	// default.
+	UserKeyFFTrunk = "ff_trunk"
 )
 
 // userKind is how a setting's value is written: the file, the validator, the
@@ -69,6 +73,9 @@ var userKeys = []userKey{
 	{Name: UserKeyTypeNames, Kind: userList, Default: "",
 		Doc:    "what your branches call each type, as feat=feature pairs",
 		listAt: func(u *User) *[]string { return &u.TypeNames }},
+	{Name: UserKeyFFTrunk, Kind: userBool, Default: "true",
+		Doc:    "fast-forward local trunk when wt up and wt sync run fetch it",
+		boolAt: func(u *User) *bool { return &u.FFTrunk }},
 }
 
 // UserKeyNames is every key the user file accepts, in the order `wt config`
@@ -121,6 +128,8 @@ type User struct {
 	// repository's own types: a pair for a type a repository does not have
 	// is a name for somewhere else, not a mistake.
 	TypeNames []string
+	// FFTrunk has a run that fetched trunk fast-forward local trunk to it.
+	FFTrunk bool
 	// Roots and Profiles are the [roots] and [profiles] tables, in the order
 	// the file writes them; nil when it has none.
 	Roots    []NamedRoot
