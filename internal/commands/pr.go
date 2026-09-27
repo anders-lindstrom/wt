@@ -452,9 +452,12 @@ func warnGitHub(ctx *Context, subject string, err error) {
 
 // prFact is the pull request line of `wt status <work>`: number, state, title.
 // Empty when there is none, or when GitHub cannot be reached. It reads the
-// cache `wt list` fills, so a listing already paid for it.
-func prFact(ctx *Context, branch string) string {
-	a := branchPRs(ctx, []string{branch}, prLookup{warn: "no pull requests shown", deadline: github.ListDeadline})
+// cache `wt list` fills, so a listing already paid for it; refresh asks
+// GitHub regardless.
+func prFact(ctx *Context, branch string, refresh bool) string {
+	a := branchPRs(ctx, []string{branch}, prLookup{
+		warn: "no pull requests shown", refresh: refresh, deadline: github.ListDeadline,
+	})
 	pr, ok := a.byBranch[branch]
 	if !ok {
 		return ""
