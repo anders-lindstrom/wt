@@ -18,7 +18,7 @@ func Config(ctx *Context, shell bool, w io.Writer) error {
 	c := ctx.Config
 	if !shell {
 		fmt.Fprintf(w, "repo:          %s\n", ctx.Repo.Name)
-		fmt.Fprintf(w, "main root:     %s\n", ctx.Repo.MainRoot)
+		fmt.Fprintf(w, "main checkout: %s\n", ctx.Repo.MainRoot)
 		fmt.Fprintf(w, "trunk:         %s\n", c.MainBranch)
 		fmt.Fprintf(w, "branch prefix: %s\n", c.BranchPrefix)
 		fmt.Fprintf(w, "default type:  %s\n", c.DefaultType)

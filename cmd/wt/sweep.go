@@ -14,7 +14,7 @@ func newSweepCmd() *cobra.Command {
 	var sel selectionFlags
 	cmd := &cobra.Command{
 		Use:   "sweep",
-		Short: "Delete merged branches, and the worktrees nothing is using on them",
+		Short: "Delete merged branches, and the unused worktrees on them",
 		Long: "Delete the local branches already merged into trunk, remove the\n" +
 			"worktrees on such branches that nothing is using, and say what else is\n" +
 			"left. A branch is merged when its tip is reachable from origin/<trunk>,\n" +

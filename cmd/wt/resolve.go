@@ -97,8 +97,14 @@ func newBranchCmd() *cobra.Command {
 
 func newBranchStripCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:    "branch-strip <branch>",
-		Short:  "Strip the worktree type prefix from a branch name",
+		Use:   "branch-strip <branch>",
+		Short: "Strip the worktree type prefix from a branch name",
+		Long: "Print the work name a branch carries, for the old shell function\n" +
+			"strip_worktree_prefix. A branch that does not follow this\n" +
+			"repository's convention is printed unchanged.",
+		Example: "  wt branch-strip fix_wt/login-crash  # prints login-crash\n" +
+			"  wt branch-strip feat_wt/api-tidy    # prints api-tidy\n" +
+			"  wt branch-strip main                # not a work branch: main",
 		Args:   needArgs(1, "<branch>", "wt branch-strip fix_wt/login-crash"),
 		Hidden: true, // compat surface for strip_worktree_prefix
 		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {

@@ -1,22 +1,25 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
-// reachable is every command a user can get help for: the whole tree minus the
-// hidden compatibility surfaces and cobra's own generated commands.
+// reachable is every command a user can get help for: the whole tree minus
+// cobra's own generated commands. Hidden ones are in it: someone who types
+// `wt branch-strip --help` reads that help too.
 func reachable(root *cobra.Command) []*cobra.Command {
 	var out []*cobra.Command
 	var walk func(*cobra.Command)
 	walk = func(c *cobra.Command) {
-		if c.Hidden || c.Name() == "help" || c.Name() == "completion" {
+		if c.Name() == "help" || c.Name() == "completion" {
 			return
 		}
 		out = append(out, c)
@@ -174,6 +177,25 @@ func TestEveryCommandIsInAGroup(t *testing.T) {
 		if !groups[c.GroupID] {
 			t.Errorf("%q is in group %q, which the root does not declare",
 				c.CommandPath(), c.GroupID)
+		}
+	}
+}
+
+// Help is read in an 80-column terminal as often as not, and a line that wraps
+// there breaks a table or strands a word. Every line --help prints — the
+// description, the flag list, the examples — fits in 79.
+func TestEveryHelpLineFitsIn79Columns(t *testing.T) {
+	for _, c := range reachable(newRootCmd()) {
+		var buf bytes.Buffer
+		c.SetOut(&buf)
+		c.SetErr(&buf)
+		if err := c.Help(); err != nil {
+			t.Fatalf("%q: %v", c.CommandPath(), err)
+		}
+		for _, line := range strings.Split(buf.String(), "\n") {
+			if n := utf8.RuneCountInString(line); n > 79 {
+				t.Errorf("%q: help line is %d columns: %q", c.CommandPath(), n, line)
+			}
 		}
 	}
 }
