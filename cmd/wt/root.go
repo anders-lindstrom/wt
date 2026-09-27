@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 
@@ -80,7 +82,27 @@ func newRootCmd() *cobra.Command {
 	add(groupTidy, newMigrateCmd(), newAdoptCmd(), newSetupCmd(), newRemoveCmd(), newSweepCmd())
 	add(groupRepo, newInitCmd(), newConfigCmd(), newDoctorCmd(), newSchemaCmd(), newAboutCmd(), newVersionCmd())
 	root.AddCommand(newBranchStripCmd(), newHookCmd())
+	// Flag descriptions wrap at 79 columns, lined up under their first line,
+	// so a long one does not wrap in an 80-column terminal.
+	root.SetUsageTemplate(strings.ReplaceAll(root.UsageTemplate(),
+		".FlagUsages |", ".FlagUsagesWrapped 79 |"))
 	return root
+}
+
+// wrapLine breaks a help line at the last space that keeps it in 79 columns,
+// continuing under it after indent, for lists that are built rather than
+// written.
+func wrapLine(line, indent string) string {
+	var out []string
+	for utf8.RuneCountInString(line) > 79 {
+		cut := strings.LastIndex(string([]rune(line)[:80]), " ")
+		if cut <= len(indent) {
+			break
+		}
+		out = append(out, line[:cut])
+		line = indent + line[cut+1:]
+	}
+	return strings.Join(append(out, line), "\n")
 }
 
 // The command groups `wt --help` prints under.

@@ -24,25 +24,31 @@ func newSyncCmd() *cobra.Command {
 			"trunk as last fetched, and so does a fetch that fails, saying why.\n" +
 			"\n" +
 			"The flow is look, act, finish.\n" +
-			"  look    wt sync                 every worktree, grouped; changes nothing of yours\n" +
-			"          wt sync <work>          one worktree in full: every stop, file and key\n" +
-			"  act     wt sync run <work>...   rebase; safety ref, strategies at each stop, deferred steps;\n" +
-			"                                  asks once when more than one worktree is involved or a\n" +
-			"                                  session is idle in one (--yes skips)\n" +
+			"  look    wt sync                every worktree, grouped; changes nothing\n" +
+			"                                 of yours\n" +
+			"          wt sync <work>         one worktree in full: every stop, file\n" +
+			"                                 and key\n" +
+			"  act     wt sync run <work>...  rebase; safety ref, strategies at each\n" +
+			"                                 stop, deferred steps; asks once when more\n" +
+			"                                 than one worktree is involved or a\n" +
+			"                                 session is idle in one (--yes skips)\n" +
 			"          wt sync <work>... --run\n" +
-			"          wt sync --run           every worktree the table calls ready, asked first\n" +
+			"          wt sync --run          every worktree the table calls ready,\n" +
+			"                                 asked first\n" +
 			"          wt sync <work> --run --if-ready\n" +
-			"          wt up                   the same for the worktree you are in\n" +
-			"                                  only if it goes through without needing you; else\n" +
-			"                                  say why, touch nothing, and fail\n" +
-			"  finish  wt sync resume <work>   continue a rebase run left at a conflict that is yours,\n" +
-			"                                  then push, asked first as for run\n" +
+			"          wt up                  the same for the worktree you are in\n" +
+			"                                 only if it goes through without needing\n" +
+			"                                 you; else say why, touch nothing, and fail\n" +
+			"  finish  wt sync resume <work>  continue a rebase run left at a conflict\n" +
+			"                                 that is yours, then push, asked first as\n" +
+			"                                 for run\n" +
 			"          wt sync <work> --resume\n" +
-			"          wt sync undo <work>     put back every ref that run moved\n" +
+			"          wt sync undo <work>    put back every ref that run moved\n" +
 			"          wt sync <work> --undo\n" +
-			"          wt sync doctor          what a run needs, and --fix / --prune\n" +
-			"  keep    wt sync keep start      a launchd job that runs wt sync keep once every 30m:\n" +
-			"                                  every ready worktree with nobody in it, then push\n" +
+			"          wt sync doctor         what a run needs, and --fix / --prune\n" +
+			"  keep    wt sync keep start     a launchd job that runs wt sync keep once\n" +
+			"                                 every 30m: every ready worktree with\n" +
+			"                                 nobody in it, then push\n" +
 			"Only Claude sessions are detected; a Codex session is not seen.\n" +
 			"\n" +
 			"--run, --resume and --undo are those same three commands, spelled so a\n" +
@@ -475,7 +481,7 @@ func newSyncRunCmd() *cobra.Command {
 	var push func() commands.PushMode
 	run := &cobra.Command{
 		Use:   "run [<work>...]",
-		Short: "Rebase the named worktrees onto trunk with the declared strategies",
+		Short: "Rebase named worktrees onto trunk with the declared strategies",
 		Long: "Fetch trunk once, then for each named worktree (and the rest of any\n" +
 			"stack it belongs to, parents first): pin the old tip under\n" +
 			"refs/wt-sync/<branch>/<epoch>, rebase with --no-update-refs --no-gpg-sign,\n" +
