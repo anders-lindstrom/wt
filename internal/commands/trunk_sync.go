@@ -2,8 +2,6 @@ package commands
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -180,9 +178,9 @@ func checkoutBusy(on repo.Worktree, agents func() ([]wtsync.Agent, error)) (reas
 	if on.Rebasing {
 		return TrunkSkipOperation, "a rebase is in progress at " + on.Path
 	}
-	if gitDir, err := wtsync.GitDir(on.Path); err != nil {
+	if op, err := repo.OperationInProgress(on.Path); err != nil {
 		return TrunkSkipFailed, "cannot read " + on.Path + ": " + oneLine(err.Error())
-	} else if op := operationIn(gitDir); op != "" {
+	} else if op != "" {
 		return TrunkSkipOperation, "a " + op + " is in progress at " + on.Path
 	}
 	// Untracked files named explicitly: status.showUntrackedFiles=no must
@@ -203,24 +201,6 @@ func checkoutBusy(on repo.Worktree, agents func() ([]wtsync.Agent, error)) (reas
 		return TrunkSkipSession, "a Claude session is busy in " + on.Path
 	}
 	return "", ""
-}
-
-// operationIn names the git operation in progress in a worktree's git dir:
-// the files git itself keeps while one runs. Empty when none is.
-//
-// A private helper until the repository-wide one lands; the rebase and the
-// bisect are also in repo.Worktree, as Rebasing and Holds.
-func operationIn(gitDir string) string {
-	for _, op := range []struct{ file, name string }{
-		{"rebase-merge", "rebase"}, {"rebase-apply", "rebase"},
-		{"MERGE_HEAD", "merge"}, {"CHERRY_PICK_HEAD", "cherry-pick"},
-		{"REVERT_HEAD", "revert"}, {"BISECT_LOG", "bisect"}, {"BISECT_START", "bisect"},
-	} {
-		if _, err := os.Stat(filepath.Join(gitDir, op.file)); err == nil {
-			return op.name
-		}
-	}
-	return ""
 }
 
 func (ts *TrunkSync) skip(reason, detail string) *TrunkSync {
