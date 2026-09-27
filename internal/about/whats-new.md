@@ -11,7 +11,8 @@ want read out to them; the full story is in git history and in
 - `wt sweep --dry-run --json` is the plan as one object: every row, why it is
   merged (ancestor, patch, pull request) or kept (dirty, session, lock…), and a
   token. `wt sweep --yes --json --expect <token>` sweeps only that plan.
-- A worktree whose `git status` fails is now kept rather than removed.
+- A worktree whose `git status` fails is now kept rather than removed, and
+  each worktree is checked again right before it goes, not once for all.
 
 ## 2026-09-27 22:34 — wt status shows pull requests, with --no-pr and --refresh
 

@@ -260,8 +260,10 @@ func planSweep(ctx *Context, bases []TrunkBase, list func() ([]wtsync.Agent, err
 		// it answers from that rather than from the cache remove falls back on.
 		rp := planFor(ctx, wt, RemoveOptions{Agents: agents, Landed: landedFrom(byBranch, trunkNames)})
 		// planFor reads a status it cannot get as clean; a sweep does not
-		// remove a checkout whose changes it could not see.
-		_, statusErr := repo.Dirty(sb.Worktree, false)
+		// remove a checkout whose changes it could not see. Dirt this read
+		// finds counts as much as planFor's.
+		dirty, statusErr := repo.Dirty(sb.Worktree, false)
+		rp.Dirty = rp.Dirty || dirty
 		sb.Kept, sb.KeptCodes = unsafeToRemove(sb, rp, wtsync.SessionsAt(agents, sb.Worktree), listErr, statusErr)
 		sb.Dirty, sb.LockHeld = rp.Dirty, rp.Locked && rp.LockHeld
 		if sb.Detached {
@@ -789,9 +791,12 @@ func (p SweepPlan) apply(ctx *Context, opts SweepOptions, w io.Writer) error {
 	j := opts.Journal
 	j.startApply()
 	kept := 0
-	for _, wt := range p.Remove {
+	for i, wt := range p.Remove {
 		key := sweepKey(wt.SweepBranch)
 		rp, why := fresh.worktreeChangedFrom(ctx, wt)
+		if why == "" && i > 0 {
+			why = changedDuringSweep(ctx, rp, opts)
+		}
 		if why != "" {
 			fmt.Fprintf(w, "- kept %s: %s\n", wt.Work, why)
 			j.keep(key, why)
@@ -830,6 +835,45 @@ func (p SweepPlan) apply(ctx *Context, opts SweepOptions, w io.Writer) error {
 		return fmt.Errorf("%d of %s kept; run wt sweep again to see why", kept, p.counts())
 	}
 	return nil
+}
+
+// changedDuringSweep reads a worktree once more immediately before it goes,
+// for every worktree after the first: removing the ones before it takes
+// time, and a checkout can gain a change, a lock or a session meanwhile.
+// Its status is read first, and a status that cannot be read keeps it; then
+// the removal plan is made again and has to be the one the fresh plan made;
+// then the sessions are listed again. "" when it can still go.
+func changedDuringSweep(ctx *Context, rp Plan, opts SweepOptions) string {
+	dirty, err := repo.Dirty(rp.Path, false)
+	switch {
+	case err != nil:
+		return "cannot read its status (" + oneLine(gitSaid(err)) + ")"
+	case dirty:
+		return "it gained uncommitted changes during the sweep"
+	}
+	agents, err := opts.relistAgents()
+	if err != nil {
+		return fmt.Sprintf("cannot list agent sessions (%v)", err)
+	}
+	if agents == nil {
+		agents = []wtsync.Agent{}
+	}
+	if s := wtsync.SessionsAt(agents, rp.Path); len(s) > 0 {
+		return whoLabel(s) + " in it"
+	}
+	// The pull request is the one the fresh plan read: it was asked seconds
+	// ago, and a merge does not come undone.
+	landed := func(branch, tip string) int {
+		if branch == rp.Branch && tip == rp.Tip {
+			return rp.MergedPR
+		}
+		return 0
+	}
+	now := planFor(ctx, worktreeRecord(ctx, rp.Path), RemoveOptions{Agents: agents, Landed: landed, Force: rp.Force})
+	if now != rp {
+		return "it changed during the sweep"
+	}
+	return ""
 }
 
 // whyKept says, in sweep's words, why a delete was refused: a worktree took

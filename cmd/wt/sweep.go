@@ -63,9 +63,10 @@ func newSweepCmd() *cobra.Command {
 			"terminal it prints the plan and changes nothing. Before anything goes,\n" +
 			"everything is read again: a branch that moved or was checked out, and\n" +
 			"a worktree that gained a change, a session or a lock while the question\n" +
-			"was open, is kept and says so. Each deletion prints the commit the\n" +
-			"branch was at: `git branch <name> <commit>` restores its commits, not\n" +
-			"its upstream setting.\n\n" +
+			"was open, is kept and says so; each worktree is read once more right\n" +
+			"before it goes. Each deletion prints the commit the branch was at:\n" +
+			"`git branch <name> <commit>` restores its commits, not its upstream\n" +
+			"setting.\n\n" +
 			"On a terminal, commit subjects are cut to fit its width. Piped, they\n" +
 			"are printed whole.\n\n" +
 			"--all, --roots or --profile sweep many repositories from anywhere: each\n" +
