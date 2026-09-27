@@ -35,7 +35,7 @@ func newSchemaCmd() *cobra.Command {
 			out := cmd.OutOrStdout()
 			if len(args) == 0 {
 				for _, d := range schema.All() {
-					fmt.Fprintf(out, "%-8s %-18s %s\n", d.Name, "wt "+d.Name+" --json", d.ID())
+					fmt.Fprintf(out, "%-11s %-26s %s\n", d.Name, d.Title(), d.ID())
 				}
 				return nil
 			}

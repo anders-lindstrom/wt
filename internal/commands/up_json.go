@@ -249,13 +249,19 @@ func outcomeOf(ps []*UpParticipant, failedEarly bool) string {
 }
 
 // interruptJournal is the journal a signal must finish, if a --json run is
-// under way: watchSignals hands it the recovery it printed.
+// under way: watchSignals hands it the worktree in flight and the recovery it
+// printed.
 var (
 	interruptMu      sync.Mutex
-	interruptJournal *RunJournal
+	interruptJournal interruptible
 )
 
-func setInterruptJournal(j *RunJournal) func() {
+// interruptible is a journal a signal can finish: RunJournal, SweepJournal.
+type interruptible interface {
+	interrupted(inFlight, recovery string)
+}
+
+func setInterruptJournal(j interruptible) func() {
 	interruptMu.Lock()
 	interruptJournal = j
 	interruptMu.Unlock()
@@ -266,7 +272,7 @@ func setInterruptJournal(j *RunJournal) func() {
 	}
 }
 
-func currentInterruptJournal() *RunJournal {
+func currentInterruptJournal() interruptible {
 	interruptMu.Lock()
 	defer interruptMu.Unlock()
 	return interruptJournal

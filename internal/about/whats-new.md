@@ -6,6 +6,13 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-27 22:43 — JSON for wt sweep
+
+- `wt sweep --dry-run --json` is the plan as one object: every row, why it is
+  merged (ancestor, patch, pull request) or kept (dirty, session, lock…), and a
+  token. `wt sweep --yes --json --expect <token>` sweeps only that plan.
+- A worktree whose `git status` fails is now kept rather than removed.
+
 ## 2026-09-27 22:34 — wt status shows pull requests, with --no-pr and --refresh
 
 - `wt status` has `wt list`'s PR column, from the same five-minute cache.
