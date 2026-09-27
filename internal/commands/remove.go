@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -25,14 +27,18 @@ import (
 // hook, a script and `--yes` all want.
 type RemoveOptions struct {
 	Confirm func(Plan) (bool, error)
-	// Force breaks a git worktree lock whose holder is still running. A lock
-	// is somebody's claim on the directory, so nothing else overrides it.
+	// Force breaks a git worktree lock whose holder is still running, and
+	// removes past a Claude session in the worktree, a session listing that
+	// failed, and files git status is told not to look at. It never removes
+	// uncommitted work, an operation in progress, or commits only the
+	// checkout's HEAD holds.
 	Force bool
-	// Agents are the sessions to check against when a lock names no pid.
-	// Nil asks `claude agents`; an empty slice means there are none. It is
-	// consulted only for a locked worktree, which is rare — every other
-	// removal costs nothing.
-	Agents []wtsync.Agent
+	// Agents are the Claude sessions to check the worktree against. Nil
+	// asks `claude agents`; an empty slice means there are none. AgentsErr
+	// is a listing the caller could not get, which refuses the way a
+	// listing that fails here does.
+	Agents    []wtsync.Agent
+	AgentsErr error
 	// DryRun prints the plan and stops.
 	DryRun bool
 	// Landed answers whether a branch at tip is a pull request GitHub merged
@@ -99,7 +105,35 @@ type Plan struct {
 	Outcome BranchOutcome
 	KeepAs  string // the name BranchKept will rename the branch to
 	Reason  string // why an outcome of BranchUntouched was reached
-	Dirty   bool   // the checkout has uncommitted changes
+	// Dirty is anything uncommitted in the checkout, its submodules
+	// included, read so that no configuration can hide it. StatusError is
+	// why it could not be read, which refuses rather than reads as clean.
+	Dirty       bool
+	StatusError string
+	// Hidden are unedited files git status is told not to look at
+	// (assume-unchanged, or skip-worktree and on disk). An edited one is
+	// Dirty.
+	Hidden []string
+	// Moved are submodules checked out at another commit than the one
+	// recorded, with nothing else changed in them.
+	Moved []string
+	// Nested are other worktrees whose checkouts are inside this one, and
+	// would go with it.
+	Nested []string
+	// Operation is a git operation stopped halfway there — "rebase",
+	// "merge", "cherry-pick", "revert", "bisect" — or "" for none.
+	Operation string
+	// Head is the commit checked out there, "" before the first commit.
+	Head string
+	// Unreachable is each tip whose commits nothing would hold once the
+	// removal is done, counted against every ref and worktree HEAD that
+	// survives it; ReachError is why that could not be worked out.
+	Unreachable []Lost
+	ReachError  string
+	// Sessions are the Claude sessions working in the checkout, idle or
+	// busy; SessionsError is why they could not be listed.
+	Sessions      wtsync.Sessions
+	SessionsError string
 	// Merge, Ahead and Base are the branch's standing against trunk: Base is
 	// the ref the answer is about (the one containing it when merged, the one
 	// counted against otherwise), and Ahead is how many commits it carries
@@ -131,6 +165,23 @@ type Plan struct {
 	// plan itself.
 	MainBranch string
 }
+
+// Lost is a tip a removal would leave nothing holding.
+type Lost struct {
+	// Kind is LostBranch for the branch the removal deletes, LostHead for
+	// the checkout's own HEAD, LostSubmodule for a submodule's commits.
+	Kind  string
+	OID   string
+	Count int    // commits reachable from it and from nothing that survives
+	Path  string // for LostSubmodule: the submodule, relative to the checkout
+}
+
+// The tips a removal can leave unreachable.
+const (
+	LostBranch    = "branch"
+	LostHead      = "head"
+	LostSubmodule = "submodule"
+)
 
 // Remove deletes the worktree named by arg, then decides what happens to its
 // branch.
@@ -188,6 +239,16 @@ func removeWorktree(ctx *Context, wt repo.Worktree, opts RemoveOptions, w io.Wri
 			"  Finish or stop it, or pass --force to break the lock",
 			wt.Path, plan.LockHolder)
 	}
+	if why := plan.refusal(); why != "" {
+		hint := ""
+		if plan.forceWould() {
+			hint = "\n  pass --force to remove it anyway"
+		}
+		if _, ok := plan.lost(LostHead); ok {
+			hint += "\n  keep them on a branch first: git -C " + wt.Path + " branch <name>"
+		}
+		return fmt.Errorf("%s was not removed: %s%s", wt.Path, why, hint)
+	}
 	if opts.DryRun {
 		fmt.Fprintln(w, "Nothing was removed: --dry-run.")
 		return nil
@@ -209,7 +270,7 @@ func removeWorktree(ctx *Context, wt repo.Worktree, opts RemoveOptions, w io.Wri
 		// commits. The plan the user confirmed is the plan that runs, or
 		// nothing runs. git's record is read again too: a lock can be taken
 		// while the prompt is open, and that is a change to the plan.
-		if fresh := planFor(ctx, worktreeRecord(ctx, wt.Path), opts); fresh != plan {
+		if fresh := planFor(ctx, worktreeRecord(ctx, wt.Path), opts); !fresh.same(plan) {
 			if vanished, err := removedMeanwhile(ctx, plan, w); vanished {
 				return err
 			}
@@ -231,10 +292,9 @@ func removeWorktree(ctx *Context, wt repo.Worktree, opts RemoveOptions, w io.Wri
 func planFor(ctx *Context, wt repo.Worktree, opts RemoveOptions) Plan {
 	p := Plan{Path: wt.Path, Branch: ctx.Repo.BranchAt(wt.Path),
 		MainBranch: ctx.Config.MainBranch, Force: opts.Force}
-	p.readLock(wt, opts)
-	if dirty, err := repo.Dirty(wt.Path, false); err == nil && dirty {
-		p.Dirty = true
-	}
+	p.readSessions(opts)
+	p.readLock(wt)
+	p.readCheckout()
 
 	s := mergeStanding(ctx, p.Branch)
 	p.Merge, p.Ahead, p.Base, p.Tip = s.Merge, s.Ahead, s.Base, s.Tip
@@ -262,7 +322,223 @@ func planFor(ctx *Context, wt repo.Worktree, opts RemoveOptions) Plan {
 		p.Outcome = BranchKept
 		p.KeepAs = naming.StripPrefix(p.Branch, ctx.Scheme().Suffix)
 	}
+	p.readReach(ctx)
 	return p
+}
+
+// readSessions reads the Claude sessions working in the checkout.
+func (p *Plan) readSessions(opts RemoveOptions) {
+	s, err := sessionsIn(opts.Agents, opts.AgentsErr, p.Path)
+	if err != nil {
+		p.SessionsError = err.Error()
+		return
+	}
+	p.Sessions = s
+}
+
+// readCheckout reads what the files and the git dir say: anything
+// uncommitted, anything hidden from status, an operation stopped halfway,
+// and the commit checked out.
+func (p *Plan) readCheckout() {
+	st, err := repo.DirtyStrict(p.Path)
+	if err != nil {
+		p.StatusError = oneLine(gitSaid(err))
+	} else {
+		p.Dirty, p.Hidden, p.Moved = st.Dirty, st.Hidden, st.Moved
+	}
+	op, err := repo.OperationInProgress(p.Path)
+	if err != nil && p.StatusError == "" {
+		p.StatusError = "its git dir cannot be read: " + err.Error()
+	}
+	p.Operation = op
+	head, err := repo.HeadOf(p.Path)
+	if err != nil && p.StatusError == "" {
+		p.StatusError = oneLine(err.Error())
+	}
+	p.Head = head
+}
+
+// readReach works out what the whole removal leaves unreachable: the
+// branch it deletes and this checkout's HEAD, each counted against every
+// ref and worktree HEAD that survives it, and the commits of submodules
+// whose repositories go with the checkout. A branch kept or renamed
+// survives, so a HEAD on it loses nothing. It also finds the worktrees
+// nested inside this one, which would go with it.
+func (p *Plan) readReach(ctx *Context) {
+	worktrees, err := ctx.Repo.Worktrees()
+	if err != nil {
+		p.ReachError = oneLine(gitSaid(err))
+		return
+	}
+	for _, wt := range worktrees {
+		if !repo.SamePath(wt.Path, p.Path) && repo.Inside(p.Path, wt.Path, true) {
+			p.Nested = append(p.Nested, wt.Path)
+		}
+	}
+	subs, err := repo.SubmoduleLosses(p.Path)
+	if err != nil {
+		p.ReachError = oneLine(gitSaid(err))
+		return
+	}
+	for _, l := range subs {
+		p.Unreachable = append(p.Unreachable, Lost{Kind: LostSubmodule, OID: l.OID, Count: l.Count, Path: l.Path})
+	}
+	var drop []string
+	if p.Outcome == BranchDeleted {
+		drop = []string{"refs/heads/" + p.Branch}
+	}
+	keep, err := ctx.Repo.Survivors(drop, p.Path)
+	if err != nil {
+		p.ReachError = oneLine(gitSaid(err))
+		return
+	}
+	count := func(kind, tip string) {
+		n, err := ctx.Repo.CountLost(tip, keep)
+		switch {
+		case err != nil:
+			p.ReachError = oneLine(gitSaid(err))
+		case n > 0:
+			p.Unreachable = append(p.Unreachable, Lost{Kind: kind, OID: tip, Count: n})
+		}
+	}
+	if p.Outcome == BranchDeleted {
+		count(LostBranch, p.Tip)
+	}
+	if p.Head != "" && (p.Outcome != BranchDeleted || p.Head != p.Tip) {
+		count(LostHead, p.Head)
+	}
+}
+
+// problem is one reason a removal does not go ahead.
+type problem struct {
+	code string // why, as sweep's --json names it: a Kept* constant
+	text string
+	// forced is a problem --force goes past: somebody's claim on the
+	// directory, not work that would be lost with it.
+	forced bool
+}
+
+// problems is every reason this removal would not go ahead, --force or not,
+// in the order they are named.
+func (p Plan) problems() []problem {
+	var out []problem
+	add := func(code, text string, forced bool) {
+		out = append(out, problem{code: code, text: text, forced: forced})
+	}
+	if p.SessionsError != "" {
+		add(KeptSessionsUnknown, "cannot list agent sessions ("+p.SessionsError+")", true)
+	}
+	if len(p.Sessions) > 0 {
+		add(KeptSession, whoLabel(p.Sessions)+" in it", true)
+	}
+	if p.Locked && p.LockHeld {
+		add(KeptLockHeld, heldLock(p), true)
+	}
+	if p.StatusError != "" {
+		add(KeptStatusUnknown, "cannot read its status ("+p.StatusError+")", false)
+	}
+	if p.Dirty {
+		add(KeptDirty, "dirty", false)
+	}
+	for _, sm := range p.Moved {
+		add(KeptDirty, "submodule "+sm+" is not at the commit recorded for it "+
+			"(git submodule update, or commit the new one)", false)
+	}
+	if len(p.Nested) > 0 {
+		add(KeptNestedWorktree, "the worktree "+someOf(p.Nested, 3)+" is inside it", false)
+	}
+	if len(p.Hidden) > 0 {
+		add(KeptHiddenChanges, "git status is told not to look at "+someOf(p.Hidden, 3), true)
+	}
+	if p.Operation != "" {
+		add(KeptOperation, "a "+p.Operation+" is in progress", false)
+	}
+	for _, l := range p.Unreachable {
+		switch l.Kind {
+		case LostHead:
+			add(KeptHeadUnreachable, fmt.Sprintf("%s on its HEAD %s would be on no branch",
+				commitCount(l.Count), git.ShortID(l.OID, 12)), false)
+		case LostSubmodule:
+			add(KeptSubmoduleUnreachable, fmt.Sprintf("submodule %s has %s nothing outside this worktree holds (%s)",
+				l.Path, commitCount(l.Count), git.ShortID(l.OID, 12)), false)
+		}
+	}
+	if p.ReachError != "" {
+		add(KeptReachUnknown, "cannot tell what the removal would leave unreachable ("+p.ReachError+")", false)
+	}
+	return out
+}
+
+// blocking is the problems that stop this removal: all of them, less the
+// ones --force goes past when it was given.
+func (p Plan) blocking() []problem {
+	var out []problem
+	for _, pr := range p.problems() {
+		if !pr.forced || !p.Force {
+			out = append(out, pr)
+		}
+	}
+	return out
+}
+
+// refusal is why this removal will not go ahead, "" when it will.
+func (p Plan) refusal() string {
+	var why []string
+	for _, pr := range p.blocking() {
+		why = append(why, pr.text)
+	}
+	return strings.Join(why, ", ")
+}
+
+// forceWould reports that --force is all that stands between this plan and
+// the removal: every problem is one it goes past.
+func (p Plan) forceWould() bool {
+	b := p.blocking()
+	return len(b) > 0 && !slices.ContainsFunc(b, func(pr problem) bool { return !pr.forced })
+}
+
+// same reports two readings of a worktree as the same plan. Sessions count
+// by who they are, not by what they are doing. A deleted branch's lost
+// commits are what the removal reports, not a reason to refuse it: they
+// change when a sweep removes another worktree holding the same tip. The
+// losses that refuse are compared.
+func (p Plan) same(q Plan) bool {
+	p.Sessions, q.Sessions = identities(p.Sessions), identities(q.Sessions)
+	p.Unreachable, q.Unreachable = refusingLosses(p.Unreachable), refusingLosses(q.Unreachable)
+	return reflect.DeepEqual(p, q)
+}
+
+func refusingLosses(lost []Lost) []Lost {
+	var out []Lost
+	for _, l := range lost {
+		if l.Kind != LostBranch {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+func identities(s wtsync.Sessions) wtsync.Sessions {
+	var out wtsync.Sessions
+	for _, a := range s {
+		out = append(out, wtsync.Agent{ID: a.ID, Name: a.Name, Cwd: a.Cwd, PID: a.PID})
+	}
+	return out
+}
+
+// someOf names up to n of a list, and how many more there are.
+func someOf(list []string, n int) string {
+	if len(list) <= n {
+		return strings.Join(list, ", ")
+	}
+	return fmt.Sprintf("%s and %d more", strings.Join(list[:n], ", "), len(list)-n)
+}
+
+func commitCount(n int) string {
+	if n == 1 {
+		return "1 commit"
+	}
+	return fmt.Sprintf("%d commits", n)
 }
 
 // pidInReason finds the pid a lock reason names, if it names one. Claude Code
@@ -275,7 +551,7 @@ var pidInReason = regexp.MustCompile(`\bpid (\d+)\b`)
 // A lock is held unless it can be shown stale. Somebody took it on purpose,
 // and the cost of being wrong runs one way: refusing costs a flag, breaking a
 // live session's ground costs its work.
-func (p *Plan) readLock(wt repo.Worktree, opts RemoveOptions) {
+func (p *Plan) readLock(wt repo.Worktree) {
 	if !wt.Locked {
 		return
 	}
@@ -292,7 +568,7 @@ func (p *Plan) readLock(wt repo.Worktree, opts RemoveOptions) {
 	}
 	// No pid to ask about: the sessions wt can see are the second opinion, and
 	// finding one names the holder properly.
-	if a := sessionIn(MigrateOptions{Agents: opts.Agents}, p.Path, io.Discard); a != nil {
+	if a := p.Sessions.Lead(); a != nil {
 		p.LockHolder = sessionLabel(a)
 	}
 }
@@ -495,8 +771,13 @@ func branchIsOurs(ctx *Context, branch string) bool {
 // worktree this is, and what it will cost.
 func (p Plan) Render(w io.Writer) {
 	state := "clean"
-	if p.Dirty {
+	switch {
+	case p.StatusError != "":
+		state = "unknown: cannot read its status (" + p.StatusError + ")"
+	case p.Dirty:
 		state = "uncommitted changes"
+	case len(p.Moved) > 0:
+		state = "submodule " + someOf(p.Moved, 3) + " not at its recorded commit"
 	}
 	branch := "(none) — detached HEAD"
 	if p.Branch != "" {
@@ -504,6 +785,18 @@ func (p Plan) Render(w io.Writer) {
 	}
 
 	rows := [][]string{{"  path", p.Path}, {"  branch", branch}, {"  state", state}}
+	if len(p.Hidden) > 0 {
+		rows = append(rows, []string{"  hidden", "git status is told not to look at " + someOf(p.Hidden, 3)})
+	}
+	if p.Operation != "" {
+		rows = append(rows, []string{"  operation", "a " + p.Operation + " is in progress"})
+	}
+	switch {
+	case p.SessionsError != "":
+		rows = append(rows, []string{"  sessions", "cannot list agent sessions (" + p.SessionsError + ")"})
+	case len(p.Sessions) > 0:
+		rows = append(rows, []string{"  sessions", whoLabel(p.Sessions) + " working in it"})
+	}
 	if p.Locked {
 		rows = append(rows, []string{"  lock", p.lockLine()})
 	}
@@ -511,9 +804,21 @@ func (p Plan) Render(w io.Writer) {
 	fmt.Fprintln(w)
 
 	// A held lock ends the plan: what would happen to the branch is beside
-	// the point when the checkout is not going anywhere.
+	// the point when the checkout is not going anywhere. So does anything
+	// else that refuses it, which the error names.
 	if p.blockedByLock() {
 		return
+	}
+	if p.refusal() != "" {
+		fmt.Fprintln(w, "  nothing will be removed")
+		fmt.Fprintln(w)
+		return
+	}
+	for _, pr := range p.problems() {
+		// A held lock has its own words on the line below.
+		if pr.code != KeptLockHeld {
+			fmt.Fprintf(w, "  ! --force: going past %s\n", pr.text)
+		}
 	}
 	fmt.Fprintf(w, "  the checkout will be deleted%s\n", p.lockNote())
 	switch p.Outcome {
@@ -532,7 +837,26 @@ func (p Plan) Render(w io.Writer) {
 	default:
 		fmt.Fprintf(w, "  no branch will be touched: %s\n", p.Reason)
 	}
+	if l, ok := p.lost(LostBranch); ok {
+		fmt.Fprintf(w, "  its %s will then be on no branch: %s brings them back\n",
+			commitCount(l.Count), p.restoreHint(l))
+	}
 	fmt.Fprintln(w)
+}
+
+// lost is the tip of that kind the removal leaves unreachable, if any.
+func (p Plan) lost(kind string) (Lost, bool) {
+	for _, l := range p.Unreachable {
+		if l.Kind == kind {
+			return l, true
+		}
+	}
+	return Lost{}, false
+}
+
+// restoreHint is the command that puts a deleted branch's commits back.
+func (p Plan) restoreHint(l Lost) string {
+	return "git branch " + p.Branch + " " + git.ShortID(l.OID, 12)
 }
 
 // lockLine is the lock as the plan shows it: git's own reason, and what wt
@@ -600,8 +924,12 @@ func aheadOf(n int, base string) string {
 }
 
 // apply carries out the plan. Every decision was already made in planFor, so
-// nothing here re-reads state that the removal itself has changed.
+// nothing here re-reads state that the removal itself has changed — except
+// the checkout, read once more right before it goes.
 func (p Plan) apply(ctx *Context, w io.Writer) error {
+	if why := p.recheck(); why != "" {
+		return fmt.Errorf("%s was not removed: %s", p.Path, why)
+	}
 	if p.Locked {
 		if err := ctx.Repo.UnlockWorktree(p.Path); err != nil {
 			return fmt.Errorf("could not release the lock on %s: %s", p.Path, gitSaid(err))
@@ -654,9 +982,9 @@ func (p Plan) apply(ctx *Context, w io.Writer) error {
 			p.Branch, p.Base)
 	case BranchKept:
 		if err := ctx.Repo.RenameBranch(p.Branch, p.KeepAs); err != nil {
-			fmt.Fprintf(w, "✓ worktree removed; keeping branch %s (%s)\n",
-				p.Branch, aheadOf(p.Ahead, p.Base))
-			return nil
+			fmt.Fprintln(w, "✓ worktree removed")
+			return fmt.Errorf("branch %s is kept under that name (%s): renaming it to %s failed: %s",
+				p.Branch, aheadOf(p.Ahead, p.Base), p.KeepAs, gitSaid(err))
 		}
 		fmt.Fprintf(w, "✓ worktree removed; branch kept as %s (%s)\n",
 			p.KeepAs, aheadOf(p.Ahead, p.Base))
@@ -664,5 +992,20 @@ func (p Plan) apply(ctx *Context, w io.Writer) error {
 	default:
 		fmt.Fprintln(w, "✓ worktree removed")
 	}
+	if l, ok := p.lost(LostBranch); ok && p.Outcome == BranchDeleted {
+		fmt.Fprintf(w, "  %s restores its commits\n", p.restoreHint(l))
+	}
 	return nil
+}
+
+// recheck reads the checkout once more, immediately before it is deleted:
+// a plan can sit under a prompt for minutes, and a file written or a commit
+// made since is work it never saw. "" when it can still go.
+func (p Plan) recheck() string {
+	now := Plan{Path: p.Path, Force: p.Force}
+	now.readCheckout()
+	if now.Head != p.Head && now.StatusError == "" {
+		return "its HEAD moved after the plan was made"
+	}
+	return now.refusal()
 }

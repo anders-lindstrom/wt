@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sweep-plan.v1.json",
-  "x-version": "1.0.0",
+  "x-version": "1.1.0",
   "title": "wt sweep --dry-run --json",
   "description": "What wt sweep would do, and what it would keep and why. Printed by `wt sweep --dry-run --json` (or `wt sweep --json` without --yes) as the only thing on stdout; nothing is deleted. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
@@ -53,7 +53,9 @@
           "description": "Why it is kept, every reason that applies; empty for remove and delete.",
           "items": {
             "enum": ["dirty", "statusUnknown", "detached", "session", "sessionsUnknown", "lockHeld", "directoryMissing",
-              "heldByRebase", "heldByBisect", "mainCheckout", "branchNotDeletable", "notMerged"]
+              "heldByRebase", "heldByBisect", "mainCheckout", "branchNotDeletable", "notMerged",
+              "operation", "hiddenChanges", "headUnreachable", "reachUnknown", "submoduleUnreachable",
+              "nestedWorktree"]
           }
         },
         "reason": { "type": "string", "description": "The row as wt sweep prints it: why it goes, or why it stays and what to do." },

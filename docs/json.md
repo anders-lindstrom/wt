@@ -27,6 +27,8 @@ version, and when an output's `schemaVersion` is not its schema's.
 | 1.2.0 | `trunkSync` in both: what a run did, or would do, to local trunk after its fetch |
 
 Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
+`sweep-plan` 1.1.0 added the `kept` values `operation`, `hiddenChanges`,
+`headUnreachable`, `reachUnknown`, `submoduleUnreachable` and `nestedWorktree`.
 
 | Schema | Version | Change |
 |---|---|---|
@@ -270,7 +272,7 @@ Each item:
 
 | Value | Meaning |
 |---|---|
-| `dirty` | uncommitted changes, untracked files included |
+| `dirty` | uncommitted changes, untracked files, edits to files status is told to skip, and initialised submodules (their content, or a checked-out commit other than the recorded one) included, whatever git's config says |
 | `statusUnknown` | `git status` failed there, so its changes could not be seen |
 | `detached` | a worktree with no branch whose HEAD trunk contains; sweep never removes one (`wt remove <path>` does) |
 | `session` | a Claude session is in it, idle or busy |
@@ -281,6 +283,12 @@ Each item:
 | `mainCheckout` | the main checkout is on the branch |
 | `branchNotDeletable` | `wt remove` would not delete the branch with the worktree |
 | `notMerged` | for `upstreamGone`: trunk lacks its commits |
+| `operation` | a rebase, merge, cherry-pick, revert or bisect is in progress there |
+| `hiddenChanges` | files `git status` is told not to look at (assume-unchanged, skip-worktree) |
+| `headUnreachable` | its HEAD holds commits that no ref or other worktree would |
+| `reachUnknown` | what the removal would leave unreachable could not be worked out |
+| `submoduleUnreachable` | a submodule has commits that only this worktree's copy of it holds |
+| `nestedWorktree` | another worktree's checkout is inside this one |
 
 The **token** covers the repository, trunk's name, the wt configuration file,
 and every row: its category, branch, commit, worktree, evidence, pull request

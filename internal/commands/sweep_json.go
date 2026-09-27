@@ -39,18 +39,24 @@ const (
 // Why a sweep keeps something, for --json. An item names every one that
 // applies.
 const (
-	KeptDirty              = "dirty"
-	KeptStatusUnknown      = "statusUnknown"
-	KeptDetached           = "detached"
-	KeptSession            = "session"
-	KeptSessionsUnknown    = "sessionsUnknown"
-	KeptLockHeld           = "lockHeld"
-	KeptDirectoryMissing   = "directoryMissing"
-	KeptHeldByRebase       = "heldByRebase"
-	KeptHeldByBisect       = "heldByBisect"
-	KeptMainCheckout       = "mainCheckout"
-	KeptBranchNotDeletable = "branchNotDeletable"
-	KeptNotMerged          = "notMerged"
+	KeptDirty                = "dirty"
+	KeptStatusUnknown        = "statusUnknown"
+	KeptDetached             = "detached"
+	KeptSession              = "session"
+	KeptSessionsUnknown      = "sessionsUnknown"
+	KeptLockHeld             = "lockHeld"
+	KeptDirectoryMissing     = "directoryMissing"
+	KeptHeldByRebase         = "heldByRebase"
+	KeptHeldByBisect         = "heldByBisect"
+	KeptMainCheckout         = "mainCheckout"
+	KeptBranchNotDeletable   = "branchNotDeletable"
+	KeptNotMerged            = "notMerged"
+	KeptOperation            = "operation"
+	KeptHiddenChanges        = "hiddenChanges"
+	KeptHeadUnreachable      = "headUnreachable"
+	KeptReachUnknown         = "reachUnknown"
+	KeptSubmoduleUnreachable = "submoduleUnreachable"
+	KeptNestedWorktree       = "nestedWorktree"
 )
 
 // What became of one item of a sweep that ran. The set is exhaustive.

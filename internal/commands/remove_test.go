@@ -162,7 +162,8 @@ func TestRemoveReadsBranchFromWorktree(t *testing.T) {
 	}
 }
 
-// 4. A worktree with submodules cannot go through `git worktree remove`.
+// 4. A worktree declaring submodules cannot go through a plain `git worktree
+// remove`.
 func TestRemoveHandlesSubmodulesWorktree(t *testing.T) {
 	ctx, _ := Open(committedRepo(t, minimalConf))
 	var buf bytes.Buffer
@@ -171,6 +172,8 @@ func TestRemoveHandlesSubmodulesWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 	mustWrite(t, filepath.Join(path, ".gitmodules"), "")
+	gitIn(t, path, "add", ".gitmodules")
+	gitIn(t, path, "commit", "-qm", "declare submodules")
 
 	if err := RemoveAt(ctx, path, RemoveOptions{}, &buf); err != nil {
 		t.Fatalf("RemoveAt with submodules: %v", err)
@@ -419,9 +422,8 @@ func TestRemoveStillKeepsUnmergedWorkWhenTheMainCheckoutIsElsewhere(t *testing.T
 }
 
 // A confirmed removal re-reads the whole plan before acting; --yes and a hook
-// go straight from the plan to the delete, and the delete no longer asks git
-// for a second opinion. So the merged answer is checked once more, in the
-// window where it can go stale, before a branch is destroyed.
+// go straight from the plan to the delete. So the checkout is read once more
+// right before it goes, and a commit made in that window keeps all of it.
 func TestRemoveDoesNotDeleteABranchThatGainedWorkAfterThePlan(t *testing.T) {
 	main := committedRepo(t, minimalConf)
 	ctx, _ := Open(main)
@@ -442,11 +444,11 @@ func TestRemoveDoesNotDeleteABranchThatGainedWorkAfterThePlan(t *testing.T) {
 	if !ctx.Repo.BranchExists("someones-work") {
 		t.Fatal("a commit that landed after the plan was deleted with the branch")
 	}
-	if !strings.Contains(err.Error(), "1 commit ahead of main") {
+	if !strings.Contains(err.Error(), "HEAD moved") {
 		t.Errorf("the message must say what it found instead: %v", err)
 	}
-	if !strings.Contains(buf.String(), "worktree removed") {
-		t.Errorf("the worktree did go by then; say so:\n%s", buf.String())
+	if _, err := os.Stat(dst); err != nil {
+		t.Error("the worktree must still be there")
 	}
 }
 

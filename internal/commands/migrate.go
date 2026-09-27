@@ -17,11 +17,14 @@ type MigrateOptions struct {
 	// DryRun reports what would happen and changes nothing. Worth reaching for
 	// on a worktree carrying work you cannot afford to lose.
 	DryRun bool
-	// Force moves a worktree an agent session is living in.
+	// Force moves a worktree an agent session is living in, or one whose
+	// sessions could not be listed.
 	Force bool
 	// Agents are the sessions to check against. Nil asks `claude agents`;
-	// an empty slice means there are none.
-	Agents []wtsync.Agent
+	// an empty slice means there are none. AgentsErr is a listing the caller
+	// could not get.
+	Agents    []wtsync.Agent
+	AgentsErr error
 }
 
 // MigratePlan is what a migration will do, worked out before anything moves.
@@ -42,8 +45,10 @@ type MigratePlan struct {
 	// Superset records that the old path is inside the tree Superset owns,
 	// where a stored workspace path will be left pointing at nothing.
 	Superset bool
-	// Agent is a session whose working directory is inside the worktree.
-	Agent *wtsync.Agent
+	// Sessions are the Claude sessions working inside the worktree, and
+	// SessionsError why they could not be listed.
+	Sessions      wtsync.Sessions
+	SessionsError string
 	// InCwd records that the caller is standing in the worktree being moved.
 	InCwd bool
 }
@@ -64,7 +69,11 @@ func Migrate(ctx *Context, arg, dest string, opts MigrateOptions, w io.Writer) (
 	if err != nil {
 		return "", err
 	}
-	plan.Agent = sessionIn(opts, plan.From, w)
+	if s, err := sessionsIn(opts.Agents, opts.AgentsErr, plan.From); err != nil {
+		plan.SessionsError = err.Error()
+	} else {
+		plan.Sessions = s
+	}
 	plan.InCwd = standingIn(ctx.Cwd, plan.From)
 
 	if plan.movesNothing() {
@@ -75,17 +84,17 @@ func Migrate(ctx *Context, arg, dest string, opts MigrateOptions, w io.Writer) (
 
 	if opts.DryRun {
 		fmt.Fprintf(w, "would %s; nothing has changed yet\n", strings.Join(plan.actions(), " and "))
-		if plan.Agent != nil && !opts.Force {
-			fmt.Fprintf(w, "  but a real run would refuse: %s\n", agentInTheWay(plan.Agent))
+		if why := plan.sessionsInTheWay(); why != "" && !opts.Force {
+			fmt.Fprintf(w, "  but a real run would refuse: %s\n", why)
 		}
 		fmt.Fprintln(w, "  (drop --dry-run to do it)")
 		return plan.To, nil
 	}
-	if plan.Agent != nil && !opts.Force {
+	if why := plan.sessionsInTheWay(); why != "" && !opts.Force {
 		return "", fmt.Errorf("%s\n"+
 			"  Moving the directory would pull the ground out from under it.\n"+
 			"  Stop the session and run this again, or pass --force to move it anyway",
-			agentInTheWay(plan.Agent))
+			why)
 	}
 	return plan.apply(ctx, w)
 }
@@ -281,8 +290,11 @@ func (p MigratePlan) Render(w io.Writer) {
 		state = "uncommitted changes — the move carries them"
 	}
 	rows := [][]string{{"  from", p.From}, {"  to", to}, {"  branch", branch}, {"  state", state}}
-	if p.Agent != nil {
-		rows = append(rows, []string{"  session", sessionLabel(p.Agent) + " is working in it"})
+	switch {
+	case p.SessionsError != "":
+		rows = append(rows, []string{"  sessions", "cannot list agent sessions (" + p.SessionsError + ")"})
+	case len(p.Sessions) > 0:
+		rows = append(rows, []string{"  session", whoLabel(p.Sessions) + " is working in it"})
 	}
 	_ = printTable(w, rows)
 	fmt.Fprintln(w)
@@ -357,26 +369,17 @@ func pruneEmptyParents(dir, stopAt string) string {
 	return removed
 }
 
-// sessionIn finds an agent session living in the worktree. Not being able to
-// ask is reported and then ignored: this command moves a directory, it does
-// not rewrite history, and refusing to move anything because `claude` is
-// unhappy would be the worse answer.
-func sessionIn(opts MigrateOptions, path string, w io.Writer) *wtsync.Agent {
-	agents := opts.Agents
-	if agents == nil {
-		var err error
-		if agents, err = wtsync.ListAgents(); err != nil {
-			fmt.Fprintf(w, "note: cannot list agent sessions (%v)\n", err)
-			return nil
-		}
+// sessionsInTheWay is why the sessions stop a move: one is working in the
+// worktree, idle or busy, or they could not be listed, which is not knowing
+// rather than nobody there. "" when nothing stands in the way.
+func (p MigratePlan) sessionsInTheWay() string {
+	switch {
+	case p.SessionsError != "":
+		return "cannot list agent sessions (" + p.SessionsError + ")"
+	case len(p.Sessions) > 0:
+		return "an agent session is working in it: " + p.Sessions.Label(sessionLabel)
 	}
-	// AgentAt resolves the path itself, which is what a worktree behind a
-	// symlink (a macOS /tmp, a mounted home) needs.
-	return wtsync.AgentAt(agents, path)
-}
-
-func agentInTheWay(a *wtsync.Agent) string {
-	return "an agent session is working in it: " + sessionLabel(a)
+	return ""
 }
 
 func sessionLabel(a *wtsync.Agent) string {

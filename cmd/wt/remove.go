@@ -51,14 +51,25 @@ func newRemoveCmd() *cobra.Command {
 			"are then asked to confirm; --yes skips the question, and a script or hook\n" +
 			"with no terminal is never asked: it named the worktree. --dry-run prints\n" +
 			"the plan and stops.\n\n" +
-			"A worktree can carry a git lock — an agent session takes one for the\n" +
-			"directory it works in. A lock whose process has exited is released and\n" +
-			"the removal goes ahead; one whose holder is still running stops it before\n" +
-			"the question is asked, and --force is how you say you mean it anyway.",
+			"Before the question, removal refuses a worktree with anything\n" +
+			"uncommitted — in a submodule too, whatever git's config says — a status\n" +
+			"that cannot be read, a rebase, merge, cherry-pick, revert or bisect in\n" +
+			"progress, a HEAD holding commits no branch has, a submodule commit only\n" +
+			"this worktree holds, or another worktree inside it. No flag goes past\n" +
+			"those: commit, discard or finish first. The checkout is read once more\n" +
+			"right before it is deleted.\n\n" +
+			"It also refuses a worktree a Claude session is working in, idle or busy,\n" +
+			"or whose sessions cannot be listed, and one with files git status is\n" +
+			"told not to look at (assume-unchanged, skip-worktree). The session\n" +
+			"running wt remove — the one a WorktreeRemove hook fires in — does not\n" +
+			"count, and without claude on the PATH there are none. A git lock whose\n" +
+			"process has exited is released; one whose holder is still running\n" +
+			"refuses. --force goes past a session, a failed listing, a held lock,\n" +
+			"and hidden files still as committed; an edited one is uncommitted work.",
 		Example: "  wt remove login-crash            # say where the branch stands, then ask\n" +
 			"  wt remove login-crash --dry-run  # what it would do; change nothing\n" +
 			"  wt remove login-crash --yes      # do not ask (scripts, hooks)\n" +
-			"  wt remove login-crash --force    # break a lock a session still holds\n" +
+			"  wt remove login-crash --force    # past a session or a held lock\n" +
 			"  wt remove .                      # the one you are standing in",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeWork,
@@ -89,7 +100,7 @@ func newRemoveCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&me, "me", false, "remove the worktree you are standing in")
 	_ = cmd.Flags().MarkHidden("me")
 	cmd.Flags().BoolVarP(&force, "force", "f", false,
-		"break a git worktree lock whose holder is still running")
+		"go past a session, a held lock, or files hidden from status")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask for confirmation")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what removal would do and change nothing")
 	cmd.MarkFlagsMutuallyExclusive("yes", "dry-run")
