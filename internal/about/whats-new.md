@@ -6,6 +6,12 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-27 22:34 — wt status shows pull requests, with --no-pr and --refresh
+
+- `wt status` has `wt list`'s PR column, from the same five-minute cache.
+- `wt status` and `wt status <work>` take `--refresh` to ask GitHub again and
+  `--no-pr` to ask it nothing, as `wt list` does.
+
 ## 2026-09-25 16:25 — JSON Schemas for the --json output
 
 - `wt schema` lists the JSON Schemas of `wt status --json` and `wt up --json`;

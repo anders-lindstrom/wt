@@ -222,7 +222,7 @@ func TestStatusReportsCleanliness(t *testing.T) {
 
 	ctx, _ := Open(main)
 	var buf bytes.Buffer
-	if err := Status(ctx, &buf, 0); err != nil {
+	if err := Status(ctx, StatusOptions{}, &buf, 0); err != nil {
 		t.Fatalf("Status: %v", err)
 	}
 	if !strings.Contains(buf.String(), "clean") {
@@ -238,7 +238,7 @@ func TestStatusFitsPathsToTheTerminalWidth(t *testing.T) {
 
 	const width = 60
 	var buf bytes.Buffer
-	if err := Status(ctx, &buf, width); err != nil {
+	if err := Status(ctx, StatusOptions{}, &buf, width); err != nil {
 		t.Fatal(err)
 	}
 	for _, line := range strings.Split(strings.TrimRight(buf.String(), "\n"), "\n") {
@@ -281,7 +281,7 @@ func TestStatusCountsEachBranchAgainstTrunkAsLastFetched(t *testing.T) {
 	ctx := syncRepo(t)
 
 	var buf bytes.Buffer
-	if err := Status(ctx, &buf, 0); err != nil {
+	if err := Status(ctx, StatusOptions{}, &buf, 0); err != nil {
 		t.Fatalf("Status: %v", err)
 	}
 	out := buf.String()
@@ -311,7 +311,7 @@ func TestStatusFallsBackToTheLocalTrunkWithoutOrigin(t *testing.T) {
 	ctx, _ := Open(main)
 
 	var buf bytes.Buffer
-	if err := Status(ctx, &buf, 0); err != nil {
+	if err := Status(ctx, StatusOptions{}, &buf, 0); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(buf.String(), "against main\n") {
@@ -329,7 +329,7 @@ func TestStatusPrintsADashForADetachedWorktree(t *testing.T) {
 	gitIn(t, ctx.Repo.MainRoot, "worktree", "add", "-q", "--detach", detached)
 
 	var buf bytes.Buffer
-	if err := Status(ctx, &buf, 0); err != nil {
+	if err := Status(ctx, StatusOptions{}, &buf, 0); err != nil {
 		t.Fatal(err)
 	}
 	line := lineContaining(t, buf.String(), "demo-detached")
@@ -512,7 +512,7 @@ func TestStatusPrintsAQuestionMarkWhenACountCannotBeRead(t *testing.T) {
 	gitIn(t, ctx.Repo.MainRoot, "update-ref", "-d", "refs/heads/feat_wt/other")
 
 	var buf bytes.Buffer
-	if err := Status(ctx, &buf, 0); err != nil {
+	if err := Status(ctx, StatusOptions{}, &buf, 0); err != nil {
 		t.Fatalf("Status: %v", err)
 	}
 	line := lineContaining(t, buf.String(), "feat_wt/other")
@@ -534,7 +534,7 @@ func TestStatusSaysWhenThereIsNoTrunkToCompareWith(t *testing.T) {
 	ctx, _ := Open(main)
 
 	var buf bytes.Buffer
-	if err := Status(ctx, &buf, 0); err != nil {
+	if err := Status(ctx, StatusOptions{}, &buf, 0); err != nil {
 		t.Fatalf("Status: %v", err)
 	}
 	if !strings.HasPrefix(buf.String(), "neither origin/main nor main is here to compare with\n") {
@@ -602,7 +602,7 @@ func TestStatusSaysWhenTheFetchAgeIsNotRecorded(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := Status(ctx, &buf, 0); err != nil {
+	if err := Status(ctx, StatusOptions{}, &buf, 0); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(buf.String(), "against origin/main, as last fetched (when is not recorded)\n") {

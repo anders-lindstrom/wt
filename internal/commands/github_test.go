@@ -765,6 +765,104 @@ func TestListNoPRAsksGitHubNothing(t *testing.T) {
 	}
 }
 
+// wt status has wt list's PR column, from the same cache, dated the same way
+// once the answer is a minute old; --no-pr leaves it out and asks nothing.
+func TestStatusShowsThePullRequestColumn(t *testing.T) {
+	ctx, err := Open(committedRepo(t, minimalConf))
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := fakeGitHub(t, openPR(12, "fix_wt/login-crash", "Login crash"))
+	var errs bytes.Buffer
+	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &errs); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New(ctx, "feat/api-tidy", NewOptions{}, &errs); err != nil {
+		t.Fatal(err)
+	}
+
+	var none bytes.Buffer
+	if err := Status(ctx, StatusOptions{NoPR: true}, &none, 0); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(none.String(), "PR") || strings.Contains(none.String(), "#12") {
+		t.Errorf("--no-pr still printed the column:\n%s", none.String())
+	}
+	if got := argvOf(t, log); got != nil {
+		t.Errorf("--no-pr ran gh: %q", got)
+	}
+
+	var out bytes.Buffer
+	if err := Status(ctx, StatusOptions{}, &out, 0); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "PR") || !strings.Contains(out.String(), "#12 open") {
+		t.Errorf("no PR column:\n%s", out.String())
+	}
+	for _, line := range strings.Split(out.String(), "\n") {
+		if strings.Contains(line, "api-tidy") && !strings.Contains(line, " -  ") {
+			t.Errorf("a worktree with no pull request is not dashed: %q", line)
+		}
+	}
+	if strings.Contains(out.String(), "pull requests as of") {
+		t.Errorf("a status that asked GitHub itself dated its own answer:\n%s", out.String())
+	}
+
+	backdatePRCache(t, ctx, ghRepo, 3*time.Minute)
+	var old bytes.Buffer
+	if err := Status(ctx, StatusOptions{}, &old, 0); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(old.String(), "pull requests as of 3m ago — `wt status --refresh` asks GitHub again") {
+		t.Errorf("wt status said\n%s\nwant the age of the cached column", old.String())
+	}
+	if got := argvOf(t, log); len(got) != 1 {
+		t.Errorf("gh ran %d times, want once: the cache answers the second status", len(got))
+	}
+}
+
+// wt status <work> takes --refresh and --no-pr as wt list does: the one asks
+// GitHub past the cache, the other asks nothing and prints no pr line.
+func TestStatusWorktreeRefreshAndNoPR(t *testing.T) {
+	ctx, err := Open(committedRepo(t, minimalConf))
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := fakeGitHub(t, openPR(12, "fix_wt/login-crash", "Login crash"))
+	var errs bytes.Buffer
+	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &errs); err != nil {
+		t.Fatal(err)
+	}
+	status := func(opts StatusOptions) string {
+		t.Helper()
+		opts.Agents = []wtsync.Agent{}
+		var out bytes.Buffer
+		if err := StatusWorktree(ctx, "login-crash", opts, &out); err != nil {
+			t.Fatal(err)
+		}
+		return out.String()
+	}
+	calls := func() int { return len(argvOf(t, log)) }
+
+	status(StatusOptions{})
+	status(StatusOptions{})
+	if calls() != 1 {
+		t.Fatalf("gh ran %d times, want once: the cache answers the second status", calls())
+	}
+	if out := status(StatusOptions{Refresh: true}); !strings.Contains(out, "#12 open") {
+		t.Errorf("--refresh lost the pull request:\n%s", out)
+	}
+	if calls() != 2 {
+		t.Errorf("--refresh did not ask GitHub again: %d calls", calls())
+	}
+	if out := status(StatusOptions{NoPR: true}); strings.Contains(out, "  pr ") {
+		t.Errorf("--no-pr printed a pr line:\n%s", out)
+	}
+	if calls() != 2 {
+		t.Errorf("--no-pr ran gh: %d calls", calls())
+	}
+}
+
 // GitHub deletes a head branch when the pull request is merged, and `gh pr
 // checkout` fetches that branch by name — so a merged pull request is picked
 // up from refs/pull/<n>/head instead. An open one gets no such second chance.

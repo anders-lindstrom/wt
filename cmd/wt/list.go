@@ -55,13 +55,20 @@ func newListCmd() *cobra.Command {
 		},
 	}
 	sel.add(cmd, true)
-	cmd.Flags().BoolVar(&opts.NoPR, "no-pr", false, "do not ask GitHub which worktree has a pull request")
-	cmd.Flags().BoolVar(&opts.Refresh, "refresh", false, "ask GitHub again instead of using the cached pull requests")
+	addPRFlags(cmd, &opts.NoPR, &opts.Refresh)
 	return cmd
+}
+
+// addPRFlags puts --no-pr and --refresh on a command that shows the pull
+// requests `wt list` caches, spelled the same on each.
+func addPRFlags(cmd *cobra.Command, noPR, refresh *bool) {
+	cmd.Flags().BoolVar(noPR, "no-pr", false, "do not ask GitHub which worktree has a pull request")
+	cmd.Flags().BoolVar(refresh, "refresh", false, "ask GitHub again instead of using the cached pull requests")
 }
 
 func newStatusCmd() *cobra.Command {
 	var sel selectionFlags
+	var opts commands.StatusOptions
 	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "status [<work>]",
@@ -77,8 +84,10 @@ func newStatusCmd() *cobra.Command {
 			"Claude sessions in it, then the verdict wt sync would give it, simulated\n" +
 			"against trunk as last fetched: its class in wt sync's words, and what to\n" +
 			"do about it.\n\n" +
-			"The pull request line comes from the same answers `wt list` caches, so a\n" +
-			"listing has already paid for it.\n\n" +
+			"A PR column appears when a worktree here is on a pull request. It and\n" +
+			"the pull request line come from the same answers `wt list` caches, so\n" +
+			"a listing has already paid for them. --refresh asks GitHub again,\n" +
+			"--no-pr leaves them out.\n\n" +
 			"--all, --roots or --profile show every repository they name, one\n" +
 			"section each; they take no worktree.\n\n" +
 			"--json prints the worktree's plan for wt up as one object, for a tool\n" +
@@ -86,17 +95,19 @@ func newStatusCmd() *cobra.Command {
 			"in it, and a token for wt up --expect. It writes nothing — no fetch,\n" +
 			"no simulation. wt schema status prints its JSON Schema; docs/json.md\n" +
 			"explains it.\n\n" + pathWidthHelp,
-		Example: "  wt status                     # state and standing for every worktree\n" +
-
-			"  wt status --all | grep behind # what is not on trunk, anywhere\n" +
-			"  wt status . --json            # this worktree's plan for wt up, as JSON\n" +
-			"  wt status --roots work        # the repositories under one root\n" +
-			"  wt status --profile api       # the ones a profile names",
+		Example: "  wt status --all | grep behind   # what is not on trunk, anywhere\n" +
+			"  wt status --roots work --no-pr  # one root's, no call to GitHub\n" +
+			"  wt status --profile api         # the repositories a profile names\n" +
+			"  wt status login-crash --refresh # one worktree, its PR asked again\n" +
+			"  wt status . --json              # this worktree's plan for wt up, as JSON",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
 			if asJSON {
+				if opts.Refresh {
+					return errors.New("--json asks GitHub nothing, so there is nothing to --refresh")
+				}
 				if sel.selection().Any() {
 					return errors.New("--json reports one worktree; name it, without --all, --roots or --profile")
 				}
@@ -121,17 +132,20 @@ func newStatusCmd() *cobra.Command {
 					return errors.New("--all, --roots and --profile cover whole repositories; name no worktree with them")
 				}
 				return commands.AcrossRepos(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), out,
-					func(ctx *commands.Context, w io.Writer) error { return commands.Status(ctx, w, terminalWidth(out)) })
+					func(ctx *commands.Context, w io.Writer) error {
+						return commands.Status(ctx, opts, w, terminalWidth(out))
+					})
 			}
 			return withContext(func(_ *cobra.Command, args []string, ctx *commands.Context) error {
 				if len(args) == 1 {
-					return commands.StatusWorktree(ctx, args[0], commands.StatusOptions{}, out)
+					return commands.StatusWorktree(ctx, args[0], opts, out)
 				}
-				return commands.Status(ctx, out, terminalWidth(out))
+				return commands.Status(ctx, opts, out, terminalWidth(out))
 			})(cmd, args)
 		},
 	}
 	sel.add(cmd, true)
+	addPRFlags(cmd, &opts.NoPR, &opts.Refresh)
 	cmd.Flags().BoolVar(&asJSON, "json", false, "the worktree's plan for wt up, as one JSON object; reads only")
 	return cmd
 }

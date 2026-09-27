@@ -86,8 +86,8 @@ func List(ctx *Context, opts ListOptions, w io.Writer, width int) error {
 			"!  not a layout wt recognises — `wt migrate <work|branch|path>` moves it to the",
 			"   canonical path; add a destination to rename or retype it as it goes")
 	}
-	if age := prColumnAge(cached, time.Now()); age != "" {
-		legend = append(legend, "   pull requests as of "+age+" — `wt list --refresh` asks GitHub again")
+	if line := prAgeLine(cached, "wt list"); line != "" {
+		legend = append(legend, line)
 	}
 	if len(legend) > 0 {
 		fmt.Fprintln(w, "")
@@ -106,6 +106,16 @@ func prColumnAge(cached, now time.Time) string {
 		return ""
 	}
 	return ago(now.Sub(cached))
+}
+
+// prAgeLine is the legend line saying how old a cached PR column is, naming
+// the command that asks again, and "" when prColumnAge has nothing to say.
+func prAgeLine(cached time.Time, command string) string {
+	age := prColumnAge(cached, time.Now())
+	if age == "" {
+		return ""
+	}
+	return "   pull requests as of " + age + " — `" + command + " --refresh` asks GitHub again"
 }
 
 // listPRs is the PR column of `wt list`, keyed by branch, and when the oldest
@@ -158,15 +168,28 @@ func layoutMark(l naming.Layout) string {
 // where its branch stands against trunk: origin/<trunk> as last fetched, or
 // the local trunk without one, the bases wt remove and wt sweep compare with.
 // Nothing is fetched. The first line says which of the two it compared with
-// and how old the fetch is.
-func Status(ctx *Context, w io.Writer, width int) error {
+// and how old the fetch is. The PR column is `wt list`'s, from the same cache.
+func Status(ctx *Context, opts StatusOptions, w io.Writer, width int) error {
 	worktrees, err := ctx.Repo.Worktrees()
 	if err != nil {
 		return err
 	}
+	var prs map[string]string
+	var cached time.Time
+	if !opts.NoPR {
+		names := make([]WorkName, len(worktrees))
+		for i, wt := range worktrees {
+			names[i] = WorkName{Worktree: wt}
+		}
+		prs, cached = listPRs(ctx, names, opts.Refresh)
+	}
 	base, ok := statusBase(ctx)
 	fmt.Fprintf(w, "%s\n\n", statusHeader(ctx, base, ok))
-	rows := [][]string{{"BRANCH", "STATE", "TRUNK", "PATH"}}
+	header := []string{"BRANCH", "STATE", "TRUNK", "PATH"}
+	if len(prs) > 0 {
+		header = []string{"BRANCH", "STATE", "TRUNK", "PR", "PATH"}
+	}
+	rows := [][]string{header}
 	for _, wt := range worktrees {
 		branch := wt.Branch
 		if branch == "" {
@@ -176,9 +199,19 @@ func Status(ctx *Context, w io.Writer, width int) error {
 		if !wt.IsMain && wt.Branch != "" {
 			trunk = standingLabel(trunkStanding(ctx, base, ok, wt.Branch))
 		}
-		rows = append(rows, []string{branch, checkoutState(wt.Path), trunk, wt.Path})
+		row := []string{branch, checkoutState(wt.Path), trunk}
+		if len(prs) > 0 {
+			row = append(row, dash(prs[wt.Branch]))
+		}
+		rows = append(rows, append(row, wt.Path))
 	}
-	return printPathTable(w, rows, width)
+	if err := printPathTable(w, rows, width); err != nil {
+		return err
+	}
+	if line := prAgeLine(cached, "wt status"); line != "" {
+		fmt.Fprintf(w, "\n%s\n", line)
+	}
+	return nil
 }
 
 // checkoutState is what wt status says of a checkout: clean, dirty with
@@ -244,10 +277,13 @@ func standingLabel(behind, ahead int, counted bool) string {
 	return fmt.Sprintf("%d behind · %d ahead", behind, ahead)
 }
 
-// StatusOptions tunes StatusWorktree.
+// StatusOptions tunes Status and StatusWorktree.
 type StatusOptions struct {
-	// Agents are the sessions to look for in the worktree. Nil asks `claude
-	// agents`; an empty slice means there are none.
+	// NoPR and Refresh are ListOptions' own, for the PR column of Status and
+	// the pr line of StatusWorktree.
+	NoPR, Refresh bool
+	// Agents are the sessions StatusWorktree looks for in the worktree. Nil
+	// asks `claude agents`; an empty slice means there are none.
 	Agents []wtsync.Agent
 }
 
@@ -271,8 +307,10 @@ func StatusWorktree(ctx *Context, arg string, opts StatusOptions, w io.Writer) e
 		{"  state", checkoutState(wt.Path)},
 		{"  trunk", trunkFact(ctx, base, ok, wt)},
 	}
-	if pr := prFact(ctx, wt.Branch); pr != "" {
-		rows = append(rows, []string{"  pr", pr})
+	if !opts.NoPR {
+		if pr := prFact(ctx, wt.Branch, opts.Refresh); pr != "" {
+			rows = append(rows, []string{"  pr", pr})
+		}
 	}
 	agents := opts.Agents
 	if agents == nil {

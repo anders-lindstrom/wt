@@ -78,7 +78,7 @@ examples: `wt <command> --help`.
 | `wt cd [<pattern>]` | cd to a worktree, in this shell; `.` is the one you are in, bare or `/` the main checkout |
 | `wt exec <pattern> <cmd>…` | run a command there, in a subshell; your shell stays put |
 | `wt list` | every worktree, in any layout; `s` marks Superset's, `!` one nothing owns; a `PR` column when a worktree here has one, asked for by branch and cached for a few minutes (`--no-pr`, `--refresh`; `--all`, `--roots`, `--profile` for many repositories) |
-| `wt status [<work>]` | each worktree's branch, whether its checkout is clean, and how far behind and ahead of trunk it is; with a worktree named, that one in full with `wt sync`'s verdict (`--all`, `--roots`, `--profile` for many repositories) |
+| `wt status [<work>]` | each worktree's branch, whether its checkout is clean, and how far behind and ahead of trunk it is; with a worktree named, that one in full with `wt sync`'s verdict; `wt list`'s `PR` column and cache (`--no-pr`, `--refresh`; `--all`, `--roots`, `--profile` for many repositories) |
 | `wt find <pattern>` | resolve a worktree by fuzzy name, across repositories (`--candidates`) |
 | `wt path <work>` / `wt branch <work>` | where a piece of work lives or would go, and its branch; exact, this repository only, for scripts |
 | `wt repos` | every repository wt manages under your roots, with its worktrees and whether wt sync is set up (`--all`, `--roots`, `--profile`, `--paths`) |
@@ -405,8 +405,9 @@ is then kept in this repository's `.git/` for five minutes, so the next
 Only the branches the cache cannot answer are asked about, so a worktree made
 since the last listing shows its pull request at once rather than waiting the
 five minutes out. `wt list --refresh` asks about them all again, and `--no-pr`
-skips the whole thing. `wt status <work>` reads the same answers and prints the
-pull request as one of its facts; `wt pr open` and `wt sweep` refresh what they
+skips the whole thing. `wt status` reads the same answers into the same column,
+and `wt status <work>` prints the pull request as one of its facts; both take
+`--refresh` and `--no-pr` too. `wt pr open` and `wt sweep` refresh what they
 touch. A cache file that is corrupt, missing or unwritable is a cache miss and
 nothing more: `wt list` never fails or waits over it.
 
