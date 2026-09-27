@@ -74,7 +74,7 @@ func PRCheckout(ctx *Context, number int, opts PROptions, w io.Writer) (string, 
 	return addAndProvision(ctx, path, func() error {
 		fmt.Fprintf(w, "Checking out #%d %s at %s\n", pr.Number, pr.HeadRefName, path)
 		return checkoutPRInto(ctx, gh, pr, path, w)
-	}, opts.NewOptions, w)
+	}, opts.NewOptions, w, nil)
 }
 
 // PRChoice is one row of the picker: a pull request, whether GitHub is

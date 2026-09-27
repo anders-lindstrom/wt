@@ -244,6 +244,9 @@ check plain "" "" 'wt new spike/idea --no-setup'
 check plain "" "" 'wt new fix/login-crash --skip-build'
 check plain "" "" 'wt new spike/idea --skip-build --no-superset'
 check plain "" "" 'wt new spike/idea --no-build --no-superset'
+check plain "" "" 'wt new login-crash --base v2.1'
+check plain "" "" 'wt new spike/idea --no-setup --dry-run'
+check plain "" "" 'wt new fix/x --json --expect 1:0123abcd' fail
 
 check branch "" "" 'wt checkout fix_wt/login-crash'
 check plain  "" "" 'wt checkout release-2.1 rel21'
@@ -251,6 +254,9 @@ check plain  "" "" 'wt checkout release-2.1 --no-setup'
 check plain  "" "" 'wt checkout release-2.1 --skip-build'
 check plain  "" "" 'wt checkout release-2.1 --no-build'
 check plain  "" "" 'wt checkout release-2.1 --no-superset'
+check plain  "" "" 'wt checkout release-2.1 rel21 --dry-run'
+check plain  "" "" 'wt checkout release-2.1 --no-build --no-superset'
+check plain  "" "" 'wt checkout release-2.1 --json --expect 1:0123abcd' fail
 
 check worktrees "" "$SHELL_LAYER" 'wt cd login'
 check worktrees myrepo_wt/fix_wt/login-crash "$SHELL_LAYER" 'wt cd .'

@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/checkout-plan.v1.json",
+  "x-version": "1.0.0",
+  "title": "wt checkout --dry-run --json",
+  "description": "What `wt checkout` would create, from local state alone; it writes nothing. Printed by `wt checkout <branch> [<work>] --dry-run --json` as the only thing on stdout. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
+  "type": "object",
+  "required": [
+    "schema",
+    "schemaVersion",
+    "command",
+    "token",
+    "configured",
+    "types",
+    "defaultType",
+    "type",
+    "work",
+    "branch",
+    "path",
+    "branchCommit",
+    "provision",
+    "buildCommand",
+    "superset",
+    "problems"
+  ],
+  "properties": {
+    "schema": {
+      "const": 1,
+      "description": "The major version: a new one only for a change that breaks readers."
+    },
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^1\\.[0-9]+\\.[0-9]+$",
+      "description": "The full semantic version of this schema that the output follows: minor for an added field or enumeration value, patch for wording."
+    },
+    "command": {
+      "const": "checkout"
+    },
+    "token": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Names the inputs of this plan; pass it to `wt checkout --json --expect`. Null when the plan has a problem."
+    },
+    "configured": {
+      "type": "boolean",
+      "description": "The repository has a wt configuration that parses."
+    },
+    "types": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "The worktree types this repository declares."
+    },
+    "defaultType": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The type a bare work name takes."
+    },
+    "type": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The type the worktree would have; null when the name did not parse."
+    },
+    "work": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The work name; null when it did not parse or could not be derived."
+    },
+    "branch": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The branch the worktree would be on."
+    },
+    "path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The absolute path the worktree would be created at."
+    },
+    "branchCommit": {
+      "$ref": "#/$defs/shaOrNull",
+      "description": "The commit the branch is at now; null when there is no such local branch."
+    },
+    "provision": {
+      "type": "boolean",
+      "description": "The repository's bin/worktree/provision.sh would run."
+    },
+    "buildCommand": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The build command that would run; null when build initialisation is off, --no-build or --no-setup."
+    },
+    "superset": {
+      "type": "boolean",
+      "description": "wt would try to register the worktree as a Superset workspace: you opted in and SUPERSET_REGISTER is auto or on. Whether Superset is running and knows this repository is not checked."
+    },
+    "problems": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/problem"
+      },
+      "description": "Why the worktree would not be created; empty when it would."
+    }
+  },
+  "$defs": {
+    "shaOrNull": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{40,64}$"
+    },
+    "problem": {
+      "type": "object",
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "branchExists",
+            "pathExists",
+            "unknownType",
+            "invalidName",
+            "noConfiguration",
+            "configurationInvalid",
+            "branchMissing",
+            "branchCheckedOut",
+            "baseMissing"
+          ],
+          "description": "branchExists, pathExists, unknownType, invalidName, noConfiguration, configurationInvalid, branchMissing, branchCheckedOut (git gives a branch one worktree), baseMissing."
+        },
+        "message": {
+          "type": "string",
+          "description": "The problem as a sentence."
+        }
+      }
+    }
+  }
+}

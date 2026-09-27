@@ -43,8 +43,13 @@ func Checkout(ctx *Context, branch, work string, opts NewOptions, w io.Writer) (
 	}
 
 	path := ctx.Scheme().Dir(ctx.Config.DefaultType, work)
-	return addAndProvision(ctx, path, func() error {
+	return addAndProvision(ctx, path, checkoutAdd(ctx, path, branch, w), opts, w, nil)
+}
+
+// checkoutAdd is wt checkout's add: a worktree on the branch as it is.
+func checkoutAdd(ctx *Context, path, branch string, w io.Writer) func() error {
+	return func() error {
 		fmt.Fprintf(w, "Checking out %s at %s\n", branch, path)
 		return ctx.Repo.AddExistingWorktree(path, branch)
-	}, opts, w)
+	}
 }

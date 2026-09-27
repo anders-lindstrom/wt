@@ -14,6 +14,14 @@ want read out to them; the full story is in git history and in
 - `--expect <token>` from `wt sync --json` refuses a run whose overview changed.
 - `wt schema sync-run` prints its JSON Schema (1.0.0).
 
+## 2026-09-27 22:51 — wt new and wt checkout for tools
+
+- `--dry-run` says what `wt new` / `wt checkout` would create, or why not.
+- `--dry-run --json` is that plan with a token; `--json --expect <token>` creates
+  only if the base (or the branch, for checkout) has not moved since.
+- `--json` reports each side effect: worktree, branch, config, provision,
+  submodules, build, Superset. `wt schema new` prints the schema.
+
 ## 2026-09-27 22:45 — wt sync --json, the overview for tools
 
 - `wt sync --json` prints the overview as one object: every worktree with its

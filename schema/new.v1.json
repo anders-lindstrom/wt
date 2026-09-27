@@ -1,0 +1,193 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/new.v1.json",
+  "x-version": "1.0.0",
+  "title": "wt new --json",
+  "description": "What a `wt new` run did, side effect by side effect. Printed by `wt new --json` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends the run. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
+  "type": "object",
+  "required": [
+    "schema",
+    "schemaVersion",
+    "command",
+    "outcome",
+    "error",
+    "problems",
+    "type",
+    "work",
+    "branch",
+    "path",
+    "base",
+    "expectedCommit",
+    "commit",
+    "steps"
+  ],
+  "properties": {
+    "schema": {
+      "const": 1,
+      "description": "The major version: a new one only for a change that breaks readers."
+    },
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^1\\.[0-9]+\\.[0-9]+$",
+      "description": "The full semantic version of this schema that the output follows: minor for an added field or enumeration value, patch for wording."
+    },
+    "command": {
+      "const": "new"
+    },
+    "outcome": {
+      "enum": [
+        "created",
+        "createdWithProblems",
+        "refused",
+        "failed",
+        "interrupted"
+      ],
+      "description": "created: the worktree made, every step done or skipped. createdWithProblems: the worktree made, and a step failed or was not run, or it is not on expectedCommit. refused: nothing made, see problems. failed: git worktree add failed and left no worktree. interrupted: a signal ended the run."
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Why the run was refused or stopped before creating anything."
+    },
+    "problems": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/problem"
+      },
+      "description": "Why it was refused, or what is wrong with the worktree made that no step names."
+    },
+    "type": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "work": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "branch": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Absolute."
+    },
+    "base": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "For wt new: what the branch was cut from. Null for wt checkout."
+    },
+    "expectedCommit": {
+      "$ref": "#/$defs/shaOrNull",
+      "description": "The commit the plan pinned: the base's for wt new, the branch's for wt checkout."
+    },
+    "commit": {
+      "$ref": "#/$defs/shaOrNull",
+      "description": "The new worktree's HEAD, read after it was created; null when none was."
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/step"
+      },
+      "description": "Every side effect, in the order they happen: worktree, branch, config, provision, submodules, build, superset."
+    }
+  },
+  "$defs": {
+    "shaOrNull": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{40,64}$"
+    },
+    "problem": {
+      "type": "object",
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "branchExists",
+            "pathExists",
+            "unknownType",
+            "invalidName",
+            "noConfiguration",
+            "configurationInvalid",
+            "branchMissing",
+            "branchCheckedOut",
+            "baseMissing",
+            "planChanged",
+            "headMoved"
+          ],
+          "description": "The plan's problems, and planChanged (--expect no longer holds), headMoved (the worktree is not on expectedCommit)."
+        },
+        "message": {
+          "type": "string",
+          "description": "The problem as a sentence."
+        }
+      }
+    },
+    "step": {
+      "type": "object",
+      "required": [
+        "step",
+        "result",
+        "commit",
+        "reason"
+      ],
+      "properties": {
+        "step": {
+          "enum": [
+            "worktree",
+            "branch",
+            "config",
+            "provision",
+            "submodules",
+            "build",
+            "superset"
+          ]
+        },
+        "result": {
+          "enum": [
+            "created",
+            "untouched",
+            "done",
+            "registered",
+            "skipped",
+            "failed",
+            "notRun",
+            "interrupted"
+          ],
+          "description": "worktree: created (with a reason when git failed after making it), failed. branch: created (wt new), untouched (wt checkout). config, provision, submodules, build: done, skipped, failed. superset: registered, skipped, failed. Any step: notRun, interrupted."
+        },
+        "commit": {
+          "$ref": "#/$defs/shaOrNull",
+          "description": "worktree: its HEAD. branch: its tip."
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Why, for skipped, failed and interrupted; a note otherwise."
+        }
+      }
+    }
+  }
+}

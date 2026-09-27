@@ -65,8 +65,8 @@ examples: `wt <command> --help`.
 
 | | |
 |---|---|
-| `wt new <type>/<work>` | create a branch and worktree, then provision it (`--base`, `--no-setup`, `--no-build`, `--no-superset`) |
-| `wt checkout <branch> [<work>]` | put a worktree on a branch that already exists; also `wt co` |
+| `wt new <type>/<work>` | create a branch and worktree, then provision it (`--base`, `--no-setup`, `--no-build`, `--no-superset`, `--dry-run`) |
+| `wt checkout <branch> [<work>]` | put a worktree on a branch that already exists; also `wt co` (`--dry-run`) |
 | `wt pr checkout [<number>]` | put a worktree on a pull request; with no number, pick one from the open ones, your review queue first |
 | `wt pr list` | every open pull request, its state and checks, and the worktree on it |
 | `wt pr open [<work>]` | open a worktree's pull request in the browser; with no argument, the one you are in |
@@ -91,6 +91,7 @@ examples: `wt <command> --help`.
 | `wt status <work> --json` / `wt up --json` | a worktree's plan for `wt up`, and a run's result, as one JSON object each for tools driving wt (`--expect` holds a run to its plan); `wt schema` prints their JSON Schemas, and [docs/json.md](docs/json.md) explains them |
 | `wt sweep --dry-run --json` / `wt sweep --yes --json` | a sweep's plan, every row with why it is merged or kept, and a sweep's result row by row, for tools driving wt (`--expect` holds the sweep to its plan); see [docs/json.md](docs/json.md) |
 | `wt sync --json` / `wt sync run\|resume\|undo --json` | the sync overview of every worktree, and a verb's result, as JSON for tools (`wt sync run --expect` holds a run to the overview); `wt schema sync` and `wt schema sync-run` |
+| `wt new … --dry-run --json` / `wt new … --json` | the same for creating a worktree, and for `wt checkout`: the plan with a token, and a result naming every side effect (`--expect` refuses a moved base or branch) |
 | `wt sync` | what rebasing each worktree onto trunk would do, simulated after fetching trunk; changes nothing of yours (`--no-fetch`) |
 | `wt sync run [<work>...]` | rebase the named worktrees onto trunk with the declared strategies (`--no-fetch`, `--yes`/`-y`, `--push`, `--no-push`, `--if-ready`); also spelled `wt sync <work>... --run`. With nothing named, every worktree the table calls ready except `recipe?`, asked first — and with no terminal, only with `--yes`. `--if-ready` rebases what is ready and fails if anything was not. The push question defaults to no; `--yes` answers yes to it, like every question, unless `--no-push` |
 | `wt sync resume <work>` | continue the rebase a run left at a conflict that was yours (`--yes`/`-y`, `--push`, `--no-push`); also spelled `wt sync <work> --resume` |
