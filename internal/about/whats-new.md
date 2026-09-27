@@ -6,6 +6,14 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-27 23:10 — JSON results for wt sync run, resume and undo
+
+- `--json` on `wt sync run`, `wt sync --run`, `resume` and `undo` prints one
+  result object on stdout, progress on stderr: per worktree what it came to,
+  its safety ref, deferred steps and the command that undoes it.
+- `--expect <token>` from `wt sync --json` refuses a run whose overview changed.
+- `wt schema sync-run` prints its JSON Schema (1.0.0).
+
 ## 2026-09-27 22:45 — wt sync --json, the overview for tools
 
 - `wt sync --json` prints the overview as one object: every worktree with its

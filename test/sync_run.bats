@@ -219,3 +219,42 @@ setup() {
     [ "$status" -ne 0 ]
     [[ "$output" == *"name none"* ]]
 }
+
+# --json on a verb: one result object on stdout, the progress on stderr. With
+# no terminal a run with nothing named needs --yes; --expect holds the run to
+# the overview it was read from.
+@test "sync --run --json reports the run and holds it to the overview's token" {
+    run --separate-stderr wt sync --run --no-fetch --json
+    [ "$status" -eq 0 ]
+    [[ "$output" == "{"*"}" ]]
+    [[ "$output" == *'"outcome": "refused"'* ]]
+    [[ "$output" == *'"error": "not confirmed: nothing rebased"'* ]]
+    [[ "$stderr" == *"Pass --yes to rebase bump."* ]]
+
+    run --separate-stderr wt sync --no-fetch --json
+    token=$(printf '%s\n' "$output" | sed -n 's/^  "token": "\(.*\)",$/\1/p')
+    [ -n "$token" ]
+
+    run --separate-stderr wt sync run --no-fetch --yes --no-push --json --expect 1:0000
+    [ "$status" -ne 0 ]
+    [[ "$output" == *'"outcome": "refused"'* ]]
+    [[ "$output" == *'"worktrees": []'* ]]
+
+    run --separate-stderr wt sync run --no-fetch --yes --no-push --json --expect "$token"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"command": "sync run"'* ]]
+    [[ "$output" == *'"outcome": "done"'* ]]
+    [[ "$output" == *'"result": "rebased"'* ]]
+    [[ "$output" == *'"pushed": false'* ]]
+    [[ "$output" == *'"undoCommand": ['*'"undo",'*'"bump"'* ]]
+    [[ "$stderr" == *"rebased 1 commit"* ]]
+
+    run --separate-stderr wt sync undo bump --json
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"command": "sync undo"'* ]]
+    [[ "$output" == *'"result": "undone"'* ]]
+
+    run --separate-stderr wt sync --all --run --json
+    [ "$status" -ne 0 ]
+    [[ "$output" == "" ]]
+}

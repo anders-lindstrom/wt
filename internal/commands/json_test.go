@@ -213,15 +213,15 @@ func TestJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 
 // The outcome rules, as docs/json.md states them.
 func TestOutcomeRules(t *testing.T) {
-	ps := func(results ...string) []*UpParticipant {
-		var out []*UpParticipant
+	ps := func(results ...string) []*SyncParticipant {
+		var out []*SyncParticipant
 		for _, r := range results {
-			out = append(out, &UpParticipant{Result: r})
+			out = append(out, &SyncParticipant{UpParticipant: UpParticipant{Result: r}})
 		}
 		return out
 	}
 	for _, tc := range []struct {
-		ps    []*UpParticipant
+		ps    []*SyncParticipant
 		early bool
 		want  string
 	}{
@@ -234,6 +234,8 @@ func TestOutcomeRules(t *testing.T) {
 		{ps(ResultRebasedStepFailed), false, OutcomePartial},
 		{ps(ResultNeedsRecovery), false, OutcomePartial},
 		{ps(ResultHandedOver, ResultNotRun), false, OutcomePartial},
+		{ps(ResultUndone, ResultSkipped), false, OutcomeDone},
+		{ps(ResultUndone), true, OutcomePartial},
 	} {
 		if got := outcomeOf(tc.ps, tc.early); got != tc.want {
 			t.Errorf("%v early=%v: got %s, want %s", tc.ps, tc.early, got, tc.want)

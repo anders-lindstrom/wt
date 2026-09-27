@@ -3,7 +3,6 @@ package commands
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -42,6 +41,21 @@ const (
 	// ResultInterrupted is the participant a signal caught; Recovery says
 	// how to put it back.
 	ResultInterrupted = "interrupted"
+	// ResultUndone is a branch wt sync undo put back at its safety ref, or
+	// whose handed-over rebase it aborted. Only wt sync undo reports it.
+	ResultUndone = "undone"
+)
+
+// What a deferred step came to, for wt sync --json.
+const (
+	// DeferredDone ran and changed nothing tracked.
+	DeferredDone = "done"
+	// DeferredCommitted ran and its output was committed.
+	DeferredCommitted = "committed"
+	// DeferredFailed ran and failed: owed, to run by hand.
+	DeferredFailed = "failed"
+	// DeferredSkipped did not run; Reason says why.
+	DeferredSkipped = "skipped"
 )
 
 // The outcomes a whole run can come to.
@@ -72,6 +86,41 @@ type UpParticipant struct {
 	Pushed      bool     `json:"pushed"`
 }
 
+// DeferredStep is one deferred step of a finished rebase.
+type DeferredStep struct {
+	Step   string  `json:"step"`
+	Result string  `json:"result"`
+	Reason *string `json:"reason"`
+	Commit *string `json:"commit"`
+}
+
+// SyncParticipant is one worktree of a wt sync run, resume or undo: what wt
+// up reports of it, and the way back.
+type SyncParticipant struct {
+	UpParticipant
+	SafetyRef   *string        `json:"safetyRef"`
+	Deferred    []DeferredStep `json:"deferred"`
+	UndoCommand []string       `json:"undoCommand"`
+	PlanFile    *string        `json:"planFile"`
+}
+
+// SyncRunResult is the one object wt sync run, resume and undo print with
+// --json.
+type SyncRunResult struct {
+	Schema        int                `json:"schema"`
+	SchemaVersion string             `json:"schemaVersion"`
+	Command       string             `json:"command"`
+	Repo          *string            `json:"repo"`
+	Trunk         *string            `json:"trunk"`
+	TrunkRef      *string            `json:"trunkRef"`
+	Onto          *string            `json:"onto"`
+	Fetched       bool               `json:"fetched"`
+	Outcome       string             `json:"outcome"`
+	Error         *string            `json:"error"`
+	Worktrees     []*SyncParticipant `json:"worktrees"`
+	Recovery      *string            `json:"recovery"`
+}
+
 // UpResult is the one object wt up --json prints.
 type UpResult struct {
 	Schema        int              `json:"schema"`
@@ -95,15 +144,34 @@ type RunJournal struct {
 	mu   sync.Mutex
 	once sync.Once
 	out  io.Writer
-	res  UpResult
-	byBr map[string]*UpParticipant
+	// up writes wt up's object; otherwise the journal writes wt sync's,
+	// which reports more of each participant.
+	up   bool
+	res  SyncRunResult
+	byBr map[string]*SyncParticipant
+	// changed tells a signal which participants still recorded as not run
+	// it caught changed, for a verb that moves several with nothing in
+	// flight to name: undo.
+	changed func(p *SyncParticipant) bool
 }
 
-// NewRunJournal is a journal that writes its object to out.
+// NewRunJournal is a journal that writes wt up's object to out.
 func NewRunJournal(out io.Writer) *RunJournal {
-	return &RunJournal{out: out, res: UpResult{Schema: 1, SchemaVersion: schema.VersionOf("up"), Command: "up",
-		Worktrees: []*UpParticipant{}},
-		byBr: map[string]*UpParticipant{}}
+	j := newJournal(out, "up", "up")
+	j.up = true
+	return j
+}
+
+// NewSyncRunJournal is a journal that writes the object of a wt sync verb
+// to out: command is "sync run", "sync resume" or "sync undo".
+func NewSyncRunJournal(out io.Writer, command string) *RunJournal {
+	return newJournal(out, "sync-run", command)
+}
+
+func newJournal(out io.Writer, schemaName, command string) *RunJournal {
+	return &RunJournal{out: out, res: SyncRunResult{Schema: 1, SchemaVersion: schema.VersionOf(schemaName), Command: command,
+		Worktrees: []*SyncParticipant{}},
+		byBr: map[string]*SyncParticipant{}}
 }
 
 func strp(s string) *string {
@@ -111,6 +179,16 @@ func strp(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// repo records the repository the run is in: its main checkout.
+func (j *RunJournal) repo(name string) {
+	if j == nil {
+		return
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.res.Repo = strp(name)
 }
 
 func (j *RunJournal) trunk(name, ref, onto string, fetched bool) {
@@ -131,14 +209,38 @@ func (j *RunJournal) join(work, branch, path, before string) {
 	}
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	p := &UpParticipant{Work: work, Branch: branch, Path: path, Result: ResultNotRun,
-		Before: strp(before), After: strp(before), FailedSteps: []string{}}
+	p := &SyncParticipant{UpParticipant: UpParticipant{Work: work, Branch: branch, Path: path, Result: ResultNotRun,
+		Before: strp(before), After: strp(before), FailedSteps: []string{}}, Deferred: []DeferredStep{}}
 	j.res.Worktrees = append(j.res.Worktrees, p)
 	j.byBr[branch] = p
 }
 
+// onSignal has a signal ask changed which participants still recorded as
+// not run it caught changed; those are interrupted.
+func (j *RunJournal) onSignal(changed func(p *SyncParticipant) bool) {
+	if j == nil {
+		return
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.changed = changed
+}
+
+// has reports whether branch has joined the run.
+func (j *RunJournal) has(branch string) bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return j.byBr[branch] != nil
+}
+
 // set records what one participant came to.
 func (j *RunJournal) set(branch string, edit func(p *UpParticipant)) {
+	j.setSync(branch, func(p *SyncParticipant) { edit(&p.UpParticipant) })
+}
+
+// setSync records what one participant came to, the parts only wt sync
+// reports included.
+func (j *RunJournal) setSync(branch string, edit func(p *SyncParticipant)) {
 	if j == nil {
 		return
 	}
@@ -201,7 +303,11 @@ func (j *RunJournal) write(inFlight string, signalled bool, recovery ...string) 
 		defer j.mu.Unlock()
 		if signalled {
 			for _, p := range j.res.Worktrees {
-				if p.Branch == inFlight || p.Work == inFlight {
+				caught := p.Branch == inFlight || p.Work == inFlight
+				if !caught && p.Result == ResultNotRun && j.changed != nil {
+					caught = j.changed(p)
+				}
+				if caught {
 					p.Result = ResultInterrupted
 					p.Recovery = strp(strings.Join(recovery, ""))
 				}
@@ -211,16 +317,43 @@ func (j *RunJournal) write(inFlight string, signalled bool, recovery ...string) 
 		} else {
 			j.res.Outcome = outcomeOf(j.res.Worktrees, j.res.Error != nil)
 		}
-		enc := json.NewEncoder(j.out)
-		enc.SetIndent("", "  ")
-		_ = enc.Encode(j.res)
+		if !j.up {
+			_ = writeJSON(j.out, j.res)
+			return
+		}
+		up := UpResult{Schema: j.res.Schema, SchemaVersion: j.res.SchemaVersion, Command: j.res.Command,
+			Trunk: j.res.Trunk, TrunkRef: j.res.TrunkRef, Onto: j.res.Onto, Fetched: j.res.Fetched,
+			Outcome: j.res.Outcome, Error: j.res.Error, Worktrees: []*UpParticipant{}, Recovery: j.res.Recovery}
+		for _, p := range j.res.Worktrees {
+			up.Worktrees = append(up.Worktrees, &p.UpParticipant)
+		}
+		_ = writeJSON(j.out, up)
 	})
 }
 
-// outcomeOf is the rule: done when every participant is rebased or skipped;
-// refused when nothing changed (every one skipped, refused, not run or
-// restored, or none chosen); partial otherwise.
-func outcomeOf(ps []*UpParticipant, failedEarly bool) string {
+// journaled runs a verb that reports to j, when there is one: j is the one
+// a signal finishes while the verb runs, an error before any participant was
+// touched is the run's own, and the object is written once the verb
+// returns.
+func journaled(j *RunJournal, verb func() error) error {
+	if j == nil {
+		return verb()
+	}
+	defer setInterruptJournal(j)()
+	err := verb()
+	// An error after a participant was touched is in the participants
+	// already.
+	if err != nil && j.untouched() {
+		j.fail(err)
+	}
+	j.Finish()
+	return err
+}
+
+// outcomeOf is the rule: done when every participant is rebased, undone or
+// skipped; refused when nothing changed (every one skipped, refused, not run
+// or restored, or none chosen); partial otherwise.
+func outcomeOf(ps []*SyncParticipant, failedEarly bool) string {
 	if len(ps) == 0 {
 		if failedEarly {
 			return OutcomeRefused
@@ -230,7 +363,7 @@ func outcomeOf(ps []*UpParticipant, failedEarly bool) string {
 	finished, changed := true, false
 	for _, p := range ps {
 		switch p.Result {
-		case ResultRebased:
+		case ResultRebased, ResultUndone:
 			changed = true
 		case ResultSkipped:
 		case ResultRebasedStepFailed, ResultNeedsRecovery, ResultHandedOver, ResultInterrupted:

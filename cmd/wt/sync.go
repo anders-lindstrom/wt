@@ -103,9 +103,10 @@ func newSyncCmd() *cobra.Command {
 			"\n" +
 			"--json prints the overview as one object on stdout, for a tool driving\n" +
 			"wt: every worktree with its group, class, stack and stops, current ones\n" +
-			"included, and a token naming what a run would start on. With --all,\n" +
-			"--roots or --profile it is an array, one object per repository. wt\n" +
-			"schema sync prints its JSON Schema; docs/json.md explains it.",
+			"included, and a token for --run --expect. With --all, --roots or\n" +
+			"--profile it is an array, one object per repository. With a verb it is\n" +
+			"that verb's result instead (wt sync run --help). wt schema sync and wt\n" +
+			"schema sync-run print their JSON Schemas; docs/json.md explains them.",
 		Example: "  wt sync --no-fetch --json     # every worktree as JSON, trunk as last fetched\n" +
 			"  wt sync login-crash           # that worktree in full\n" +
 			"  wt sync . --run --if-ready    # rebase it only if it needs nothing from you\n" +
@@ -114,12 +115,13 @@ func newSyncCmd() *cobra.Command {
 		ValidArgsFunction: completeWork,
 	}
 	var run, resume, undo, yes, force, ifReady, asJSON bool
+	var expect string
 	var sel selectionFlags
 	var push func() commands.PushMode
 	flags := func() syncVerbFlags {
 		return syncVerbFlags{run: run, resume: resume, undo: undo,
 			yes: yes, force: force, noFetch: noFetch, ifReady: ifReady, push: push(),
-			json: asJSON}
+			json: asJSON, expect: expect}
 	}
 	// The count rule is the verb's own. Two verbs at once is a flag mistake,
 	// which RunE reports the way --push with --no-push is reported.
@@ -136,7 +138,7 @@ func newSyncCmd() *cobra.Command {
 			return err
 		}
 		verb, _ := f.verb()
-		if f.json {
+		if f.json && verb == "" {
 			return syncOverviewJSON(cmd, args, sel.selection(), f)
 		}
 		if sel.selection().Any() {
@@ -144,17 +146,17 @@ func newSyncCmd() *cobra.Command {
 		}
 		switch verb {
 		case "run":
-			return withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
-				return syncRun(cmd, args, ctx, f)
-			})(cmd, args)
+			return withVerbContext(cmd, args, "sync run", f.json, func(ctx *commands.Context, j *commands.RunJournal) error {
+				return syncRun(cmd, args, ctx, f, j)
+			})
 		case "resume":
-			return withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
-				return syncResume(cmd, args[0], ctx, f.yes, f.push)
-			})(cmd, args)
+			return withVerbContext(cmd, args, "sync resume", f.json, func(ctx *commands.Context, j *commands.RunJournal) error {
+				return syncResume(cmd, args[0], ctx, f.yes, f.push, j)
+			})
 		case "undo":
-			return withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
-				return syncUndo(cmd, args[0], ctx, f.force, f.yes)
-			})(cmd, args)
+			return withVerbContext(cmd, args, "sync undo", f.json, func(ctx *commands.Context, j *commands.RunJournal) error {
+				return syncUndo(cmd, args[0], ctx, f.force, f.yes, j)
+			})
 		}
 		// Lenient: a repository without worktree.conf still has worktrees
 		// worth reporting on, and the trunk name falls back to origin/HEAD.
@@ -180,12 +182,13 @@ func newSyncCmd() *cobra.Command {
 		"with --run or --resume: neither push nor ask; print the push command")
 	sync.Flags().BoolVarP(&force, "force", "f", false, "with --run: past a Claude session in it; with --undo: past a moved branch")
 	sync.Flags().BoolVar(&ifReady, "if-ready", false, "with --run: rebase only what will go through without needing you, and fail on the rest")
-	sync.Flags().BoolVar(&asJSON, "json", false, "print the overview as one JSON object on stdout")
+	sync.Flags().BoolVar(&asJSON, "json", false, "print the overview as one JSON object on stdout; with a verb, its result")
+	sync.Flags().StringVar(&expect, "expect", "", "with --run: refuse unless the overview still matches this token from wt sync --json")
 	sel.add(sync, true)
 	// The verbs spelled as flags, and their own flags, work on this line but
 	// belong to the verbs: their help is wt sync run, resume and undo --help,
 	// and the table here keeps to what the overview itself takes.
-	for _, name := range []string{"run", "resume", "undo", "yes", "push", "no-push", "force", "if-ready"} {
+	for _, name := range []string{"run", "resume", "undo", "yes", "push", "no-push", "force", "if-ready", "expect"} {
 		_ = sync.Flags().MarkHidden(name)
 	}
 	sync.AddCommand(newSyncRunCmd(), newSyncResumeCmd(), newSyncUndoCmd(), newSyncDoctorCmd(), newSyncKeepCmd())
@@ -371,8 +374,10 @@ type syncVerbFlags struct {
 	yes, force, noFetch bool
 	ifReady             bool
 	push                commands.PushMode
-	// json prints the overview as one object on stdout.
+	// json prints one object on stdout: the overview, or the verb's result.
 	json bool
+	// expect is the overview's token a run must still match.
+	expect string
 }
 
 // verb is the one verb given, "" for the overview, or an error naming the
@@ -417,8 +422,8 @@ func (f syncVerbFlags) check() error {
 		return errors.New("--yes needs --run, --resume or --undo")
 	case f.noFetch && verb != "" && verb != "run":
 		return errors.New("--no-fetch needs --run, or no verb")
-	case f.json && verb != "":
-		return errors.New("--json prints the overview; --" + verb + " does not take it")
+	case f.expect != "" && verb != "run":
+		return errors.New("--expect needs --run")
 	}
 	return nil
 }
@@ -429,7 +434,7 @@ func syncOverviewJSON(cmd *cobra.Command, args []string, sel commands.Selection,
 	opts := commands.SyncOptions{NoFetch: f.noFetch}
 	switch {
 	case len(args) > 0:
-		return errors.New("--json prints the overview of every worktree; name none")
+		return errors.New("--json prints the overview of every worktree; name none, or add the verb whose result you want")
 	case sel.Any():
 		return commands.SyncAllJSON(loadUserWarn(cmd.ErrOrStderr()), sel, opts, cmd.OutOrStdout())
 	}
@@ -457,7 +462,8 @@ func syncArgs(verb string) cobra.PositionalArgs {
 }
 
 func newSyncRunCmd() *cobra.Command {
-	var noFetch, yes, ifReady, force bool
+	var noFetch, yes, ifReady, force, asJSON bool
+	var expect string
 	var sel selectionFlags
 	var push func() commands.PushMode
 	run := &cobra.Command{
@@ -507,8 +513,14 @@ func newSyncRunCmd() *cobra.Command {
 			"--if-ready rebases what is ready and fails if anything was not: a named\n" +
 			"worktree that is not ready is refused untouched (see wt sync --help).\n" +
 			"--all, --roots and --profile run across repositories, asked once.\n\n" +
+			"--json prints one result object on stdout and the progress, and any\n" +
+			"question, on stderr, for a tool driving wt; with no terminal a run with\n" +
+			"nothing named still needs --yes, and --no-push keeps the push out.\n" +
+			"--expect <token> fetches, then refuses the run, touching nothing, when\n" +
+			"what it would start on is no longer what wt sync --json reported. wt\n" +
+			"schema sync-run prints its JSON Schema; docs/json.md explains it.\n\n" +
 			"Also spelled wt sync <work>... --run, with the same flags.",
-		Example: "  wt sync run login-crash api-tidy --yes # both, their stacks, not asked first\n" +
+		Example: "  wt sync run login-crash api-tidy --yes --json --expect 1:0123abcd  # a tool\n" +
 			"  wt sync run login-crash --if-ready --force  # clean only, past a session\n" +
 			"  wt sync run --all --no-fetch --push    # every ready one, everywhere, pushed\n" +
 			"  wt sync run --profile api --if-ready   # the ready ones in a profile's repos\n" +
@@ -516,29 +528,56 @@ func newSyncRunCmd() *cobra.Command {
 		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			f := syncVerbFlags{run: true, yes: yes, noFetch: noFetch, ifReady: ifReady, force: force, push: push()}
+			f := syncVerbFlags{run: true, yes: yes, noFetch: noFetch, ifReady: ifReady, force: force, push: push(),
+				json: asJSON, expect: expect}
 			if sel.selection().Any() {
 				return syncAcross(cmd, args, "run", sel.selection(), f)
 			}
-			return withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
-				return syncRun(cmd, args, ctx, f)
-			})(cmd, args)
+			return withVerbContext(cmd, args, "sync run", asJSON, func(ctx *commands.Context, j *commands.RunJournal) error {
+				return syncRun(cmd, args, ctx, f, j)
+			})
 		},
 	}
 	run.Flags().BoolVar(&noFetch, "no-fetch", false, "rebase onto origin/<trunk> as last fetched")
 	run.Flags().BoolVarP(&yes, "yes", "y", false, "yes to every question, the push included (--no-push keeps it out)")
 	run.Flags().BoolVar(&ifReady, "if-ready", false, "rebase only what will go through without needing you, and fail on the rest")
 	run.Flags().BoolVarP(&force, "force", "f", false, "rebase a named worktree even with a Claude session in it")
+	run.Flags().BoolVar(&asJSON, "json", false, "print one result object on stdout, the progress on stderr")
+	run.Flags().StringVar(&expect, "expect", "", "refuse unless the overview still matches this token from wt sync --json")
 	sel.add(run, true)
 	push = addPushFlags(run, "push the worktrees that finish, without asking",
 		"neither push nor ask; print the push command")
 	return run
 }
 
-// syncRun is wt sync run, whichever way it was spelled.
-func syncRun(cmd *cobra.Command, works []string, ctx *commands.Context, f syncVerbFlags) error {
+// syncRun is wt sync run, whichever way it was spelled. j, when not nil,
+// gets its result for --json.
+func syncRun(cmd *cobra.Command, works []string, ctx *commands.Context, f syncVerbFlags, j *commands.RunJournal) error {
 	opts, _ := runOptions(cmd, f, len(works) == 0)
+	opts.Journal, opts.Expect = j, f.expect
 	return commands.SyncRun(ctx, works, opts, cmd.OutOrStdout())
+}
+
+// withVerbContext runs a wt sync verb in the repository it is in. With
+// asJSON its result is one object on stdout, written however the verb ends,
+// and everything it prints, questions included, goes to stderr; command
+// names the verb in that object.
+func withVerbContext(cmd *cobra.Command, args []string, command string, asJSON bool,
+	fn func(ctx *commands.Context, j *commands.RunJournal) error) error {
+	if !asJSON {
+		return withContext(func(_ *cobra.Command, _ []string, ctx *commands.Context) error {
+			return fn(ctx, nil)
+		})(cmd, args)
+	}
+	journal := commands.NewSyncRunJournal(cmd.OutOrStdout(), command)
+	cmd.SetOut(cmd.ErrOrStderr())
+	ctx, err := openContext()
+	if err != nil {
+		journal.Fail(err)
+		return err
+	}
+	ctx.WarnTo(cmd.ErrOrStderr())
+	return fn(ctx, journal)
 }
 
 // runOptions is a run's options from its flags, and the prompter asking its
@@ -588,6 +627,10 @@ func syncAcross(cmd *cobra.Command, args []string, verb string, sel commands.Sel
 		return fmt.Errorf("--%s finishes one worktree's run; name it, without --all, --roots or --profile", verb)
 	case len(args) > 0:
 		return errors.New("--all, --roots and --profile cover whole repositories; name no worktree with them")
+	case f.json && verb != "":
+		return errors.New("--json reports a run in one repository; leave out --all, --roots and --profile")
+	case f.expect != "":
+		return errors.New("--expect holds a run in one repository to its overview; leave out --all, --roots and --profile")
 	case verb == "":
 		return commands.SyncAll(u, sel, commands.SyncOptions{NoFetch: f.noFetch}, cmd.OutOrStdout())
 	}
@@ -607,7 +650,7 @@ func syncAcross(cmd *cobra.Command, args []string, verb string, sel commands.Sel
 }
 
 func newSyncResumeCmd() *cobra.Command {
-	var yes bool
+	var yes, asJSON bool
 	var push func() commands.PushMode
 	resume := &cobra.Command{
 		Use:   "resume <work>",
@@ -637,27 +680,32 @@ func newSyncResumeCmd() *cobra.Command {
 			"re-check. Ctrl-C leaves the rebase and its plan as they are; run this\n" +
 			"again. wt sync undo <work> aborts a handed-over rebase and puts the branch\n" +
 			"back instead.\n\n" +
+			"--json prints one result object on stdout and the rest on stderr, as\n" +
+			"wt sync run --json does.\n\n" +
 			"Also spelled wt sync <work> --resume, with the same flags.",
 		Example: "  wt sync resume login-crash            # continue what the run handed you\n" +
-			"  wt sync resume fix/login-crash        # the same worktree, by branch\n" +
+			"  wt sync resume fix/login-crash --json # by branch; the result as JSON\n" +
 			"  wt sync resume login-crash --no-push  # then print the push command\n" +
 			"  wt sync resume login-crash --yes      # yes to everything, push included\n" +
 			"  wt sync login-crash --resume --push   # resume --push, spelled on wt sync",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeWork,
-		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
-			return syncResume(cmd, args[0], ctx, yes, push())
-		}),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withVerbContext(cmd, args, "sync resume", asJSON, func(ctx *commands.Context, j *commands.RunJournal) error {
+				return syncResume(cmd, args[0], ctx, yes, push(), j)
+			})
+		},
 	}
 	push = addPushFlags(resume, "push when done, without asking",
 		"neither push nor ask; print the push command")
 	resume.Flags().BoolVarP(&yes, "yes", "y", false, "yes to every question: an idle session, and the push")
+	resume.Flags().BoolVar(&asJSON, "json", false, "print one result object on stdout, the rest on stderr")
 	return resume
 }
 
 // syncResume is wt sync resume, whichever way it was spelled.
-func syncResume(cmd *cobra.Command, work string, ctx *commands.Context, yes bool, push commands.PushMode) error {
-	var opts commands.ResumeOptions
+func syncResume(cmd *cobra.Command, work string, ctx *commands.Context, yes bool, push commands.PushMode, j *commands.RunJournal) error {
+	opts := commands.ResumeOptions{Journal: j}
 	opts.Push = push
 	// --yes answers yes to every question, the push included, unless
 	// --no-push says otherwise.
@@ -673,7 +721,7 @@ func syncResume(cmd *cobra.Command, work string, ctx *commands.Context, yes bool
 }
 
 func newSyncUndoCmd() *cobra.Command {
-	var force, yes bool
+	var force, yes, asJSON bool
 	undo := &cobra.Command{
 		Use:   "undo <work>",
 		Short: "Put back every ref the last run on this worktree moved",
@@ -696,25 +744,31 @@ func newSyncUndoCmd() *cobra.Command {
 			"(--yes skips; with no terminal it goes ahead), and each branch put back\n" +
 			"under one ends with a wt: line to pass on to it. The session wt itself\n" +
 			"runs under is not counted.\n\n" +
+			"--json prints one result object on stdout and the rest on stderr, as\n" +
+			"wt sync run --json does.\n\n" +
 			"Also spelled wt sync <work> --undo, with the same flags.",
 		Example: "  wt sync undo login-crash            # back to the safety refs\n" +
 			"  wt sync undo login-crash --force    # even if the branch moved since\n" +
 			"  wt sync login-crash --undo --force  # the same, spelled on wt sync\n" +
-			"  wt sync login-crash --undo --yes    # undo --yes, spelled on wt sync",
+			"  wt sync login-crash --undo --yes    # undo --yes, spelled on wt sync\n" +
+			"  wt sync undo login-crash --json     # the result as one JSON object",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeWork,
-		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
-			return syncUndo(cmd, args[0], ctx, force, yes)
-		}),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withVerbContext(cmd, args, "sync undo", asJSON, func(ctx *commands.Context, j *commands.RunJournal) error {
+				return syncUndo(cmd, args[0], ctx, force, yes, j)
+			})
+		},
 	}
 	undo.Flags().BoolVarP(&force, "force", "f", false, "undo a branch that has moved since the run, pinning its tip first")
 	undo.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask first when a session is idle in a checkout")
+	undo.Flags().BoolVar(&asJSON, "json", false, "print one result object on stdout, the rest on stderr")
 	return undo
 }
 
 // syncUndo is wt sync undo, whichever way it was spelled.
-func syncUndo(cmd *cobra.Command, work string, ctx *commands.Context, force, yes bool) error {
-	opts := commands.UndoOptions{Force: force}
+func syncUndo(cmd *cobra.Command, work string, ctx *commands.Context, force, yes bool, j *commands.RunJournal) error {
+	opts := commands.UndoOptions{Force: force, Journal: j}
 	if canAsk(cmd) && !yes {
 		opts.Confirm = confirmAsk(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()), "undo")
 	}

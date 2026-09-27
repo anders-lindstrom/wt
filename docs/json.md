@@ -1,8 +1,8 @@
 # wt's JSON output
 
-`wt status`, `wt up`, `wt sweep` and `wt sync` print JSON on stdout when given
-`--json`, for tools that drive wt (a git client, an editor, a script). Their
-human output is unchanged without it.
+`wt status`, `wt up`, `wt sweep`, `wt sync` and its verbs print JSON on stdout
+when given `--json`, for tools that drive wt (a git client, an editor, a
+script). Their human output is unchanged without it.
 
 ## Versions
 
@@ -29,6 +29,7 @@ Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 | Schema | Version | Change |
 |---|---|---|
 | `sync` | 1.0.0 | `wt sync --json`, the overview |
+| `sync-run` | 1.0.0 | `wt sync run`, `resume` and `undo --json`, the result |
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
 
@@ -44,6 +45,7 @@ generating types from it:
 | `wt sweep --dry-run --json` | [`schema/sweep-plan.v1.json`](../schema/sweep-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sweep-plan.v1.json` |
 | `wt sweep --yes --json` | [`schema/sweep.v1.json`](../schema/sweep.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sweep.v1.json` |
 | `wt sync --json` | [`schema/sync.v1.json`](../schema/sync.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sync.v1.json` |
+| `wt sync run\|resume\|undo --json` | [`schema/sync-run.v1.json`](../schema/sync-run.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sync-run.v1.json` |
 
 They are built into the binary: `wt schema` lists them and `wt schema up` prints
 one, so the schema you read is the one for the wt you run. Validate against that
@@ -333,7 +335,7 @@ object with `error` set and no worktrees, and the exit code is non-zero.
 | `fetched` | bool | trunk was fetched first |
 | `fetchError` | string \| null | the fetch failed; the overview is against trunk as last fetched |
 | `declared` | bool | trunk declares `.wt-sync.yaml`; without it nothing is rebased |
-| `token` | string \| null | names what a run would start on. Null when a run would start on nothing |
+| `token` | string \| null | names what a run would start on; pass it to `wt sync run --expect` or `wt sync --run --expect`. Null when a run would start on nothing |
 | `error` | string \| null | why there is no overview: trunk not known here, the repository not readable. The exit code is then non-zero |
 | `sessionsError` | string \| null | Claude sessions could not be listed; `sessions` are then empty, not known empty |
 | `worktrees` | array | every worktree but the main checkout, in git's order |
@@ -372,3 +374,51 @@ on trunk, and every worktree whose `verdict` is `proceed`: its branch, class,
 `verified`, `runnable` and stack. A newer trunk commit is not in it, but what it
 changes about those is: a worktree that stops being ready after a fetch changes
 the token.
+
+## `wt sync run|resume|undo --json` — the result
+
+`wt sync run [<work>...] --json` (also spelled `wt sync [<work>...] --run
+--json`), `wt sync resume <work> --json` and `wt sync undo <work> --json` do
+what they do without it, and print one object in the shape of `wt up --json`'s,
+with more said about each worktree. Progress, and any question, go to
+**stderr**; stdout carries exactly that object, also when a handled SIGINT or
+SIGTERM ends the verb (exit 130). `--all`, `--roots` and `--profile` are refused
+with `--json`: a run across repositories has no single result.
+
+To run unattended: a run with nothing named, and no terminal, rebases nothing
+without `--yes` (it is then `refused` with `error` saying so), as without
+`--json`. `--yes` says yes to every question, the push included; `--no-push`
+keeps the push out, on `run` and `resume` (undo never pushes). A named worktree
+goes ahead without `--yes`, and with no terminal nothing is asked.
+
+With `--expect <token>`, `wt sync run` and `wt sync --run` fetch, recompute the
+overview's token and refuse, touching no worktree, when it differs: what a run
+would start on is not what `wt sync --json` showed. It is then an `error` with
+no participants and a non-zero exit.
+
+The fields are `wt up --json`'s (above), with `command` one of `"sync run"`,
+`"sync resume"`, `"sync undo"`, and:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `repo` | string \| null | the main checkout, as in `wt sweep --json`; null when the verb stopped before reading it |
+| `onto` | string \| null | for resume, the trunk commit the handed-over run recorded; null for undo |
+| `error` | string \| null | as for `wt up`; also a question answered no (or nobody there to answer it), and for undo, why it stopped after putting some back |
+
+Each participant has `wt up`'s fields, and:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `safetyRef` | string \| null | the ref pinning the branch's tip from before the run, `refs/wt-sync/<branch>/<epoch>` |
+| `deferred` | array | what each deferred step of a finished rebase came to: `step` (its `run` line), `result` (`done` \| `committed` \| `failed` \| `skipped`), `reason` (why failed or skipped), `commit` (for committed) |
+| `undoCommand` | array of string \| null | what puts it back where the run found it, as an argv (`["wt", "sync", "undo", work]`); null when nothing is there to undo |
+| `planFile` | string \| null | for `handedOver`: the plan saying what is yours |
+
+`result` has `wt up`'s values and one more, `undone`: `wt sync undo` put the
+branch back at its safety ref, or aborted its handed-over rebase. A branch undo
+finds at its old tip already is `skipped`; one it aborted but could not rewind
+is `needsRecovery`. `outcome` follows the same rules, with `undone` counting as
+`rebased` does. Undo lists every branch of the run it undoes before putting any
+back, each `notRun` until it is reported; a signal partway marks `interrupted`
+each of those whose tip, or the rebase it was waiting in, changed. The exit code
+keeps its meaning; read `outcome`.

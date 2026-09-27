@@ -40,10 +40,13 @@ type RunOptions struct {
 	// Journal records what the run does, participant by participant, for
 	// --json; nil records nothing.
 	Journal *RunJournal
-	// Expect is the token wt status --json gave for the plan: the run
-	// refuses, touching nothing, when trunk's name, the configuration or the
-	// stack is no longer what it was. Empty checks nothing.
+	// Expect is the token wt sync --json gave for the overview: the run
+	// refuses, touching nothing, when what it would start on is no longer
+	// what the overview showed. Empty checks nothing.
 	Expect string
+	// planExpect is wt up's: Expect is the token wt status --json gave for
+	// the plan, and names trunk, the configuration and the stack.
+	planExpect bool
 	// label is the run's first word, "wt up" for the short form.
 	label string
 	// undeclaredOK lets a trunk with no .wt-sync.yaml be rebased onto, with
@@ -104,6 +107,9 @@ type runPlan struct {
 	// the lock lists again with the lock in hand.
 	agents       []wtsync.Agent
 	agentsListed bool
+	// survey is the overview --expect recomputed, whose assessments
+	// selectReady and triage use rather than simulate the same rebases again.
+	survey *survey
 	// all is a run with nothing named, which picked every ready worktree
 	// itself: it asks before moving even one, since nobody named it. assessed
 	// is what selectReady saw, by branch, so triage does not simulate the same
@@ -133,8 +139,10 @@ type runPlan struct {
 // ready, less recipe?, and asks first. Anything refused, restored, failed or
 // owed is reported and makes the returned error non-nil, so a script sees it.
 func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
-	_, err := runSync(ctx, works, opts, w)
-	return err
+	return journaled(opts.Journal, func() error {
+		_, err := runSync(ctx, works, opts, w)
+		return err
+	})
 }
 
 // runSync is SyncRun with the plan handed back, for the keeper's record of
@@ -151,6 +159,11 @@ func (r *runPlan) run(works []string) error {
 
 	if err := r.declare(); err != nil {
 		return err
+	}
+	if opts.Expect != "" && !opts.planExpect {
+		if err := r.expectOverview(); err != nil {
+			return err
+		}
 	}
 	if len(works) == 0 && opts.Force {
 		return errors.New("--force takes a run past the sessions in a worktree you name; name it")
@@ -176,7 +189,7 @@ func (r *runPlan) run(works []string) error {
 	if err := r.selectBranches(works); err != nil {
 		return err
 	}
-	if opts.Expect != "" {
+	if opts.Expect != "" && opts.planExpect {
 		if now := planToken(r.ctx, r.trunk, r.branches); now != opts.Expect {
 			return fmt.Errorf("the plan changed since it was read (trunk %s, the configuration or the stack "+
 				"%s is not what wt status --json saw); nothing is rebased: read the plan again",
@@ -189,6 +202,9 @@ func (r *runPlan) run(works []string) error {
 		opts.Journal.join(p.work, b, p.wt.Path, before)
 	}
 	if proceed, err := r.triage(); err != nil || !proceed {
+		if err == nil {
+			opts.Journal.fail(errors.New("not confirmed: " + rebasedNothing.line))
+		}
 		if err == nil && len(r.failures) > 0 {
 			return fmt.Errorf("not completed: %s", strings.Join(r.failures, ", "))
 		}
@@ -256,6 +272,7 @@ func (r *runPlan) declare() error {
 		return err
 	}
 	r.onto, r.trunkSHA = onto, trunkSHA
+	r.opts.Journal.repo(ctx.Repo.MainRoot)
 	r.opts.Journal.trunk(r.trunk, onto, trunkSHA, !r.opts.NoFetch)
 	label := r.opts.label
 	if label == "" {
@@ -285,6 +302,27 @@ type undeclaredError struct{ msg string }
 
 func (e undeclaredError) Error() string { return e.msg }
 
+// expectOverview recomputes the overview wt sync --json printed, against the
+// trunk just fetched, and refuses the run when its token is not the one
+// expected: what the run would start on is not what the overview showed.
+func (r *runPlan) expectOverview() error {
+	agents, err := r.listAgents()
+	if err != nil {
+		return err
+	}
+	sv, err := surveyRepo(r.ctx, r.trunkSHA, r.cfg, agents)
+	if err != nil {
+		return err
+	}
+	r.survey = &sv
+	if now := sv.token(r.ctx, r.trunk, r.trunkSHA); now == nil || *now != r.opts.Expect {
+		return fmt.Errorf("the overview changed since it was read (what a run on trunk %s would start on is "+
+			"not what wt sync --json saw); nothing is rebased: read the overview again", r.trunk)
+	}
+	r.parents, r.ambiguous, r.assessed = sv.parents, sv.ambiguous, sv.assessed
+	return nil
+}
+
 // listAgents lists the other agent sessions once for the run.
 func (r *runPlan) listAgents() ([]wtsync.Agent, error) {
 	if !r.agentsListed {
@@ -310,14 +348,19 @@ func (r *runPlan) selectReady() ([]string, error) {
 		return nil, err
 	}
 	worktrees := slices.DeleteFunc(slices.Clone(all), func(wt repo.Worktree) bool { return wt.IsMain })
-	agents, err := r.listAgents()
-	if err != nil {
-		return nil, err
-	}
-	assessments := assessAll(ctx.Repo.MainRoot, r.trunkSHA, r.cfg, worktrees, agents, assessWorkers)
-	r.parents, r.ambiguous, err = wtsync.Parents(ctx.Repo.MainRoot, r.trunkSHA, all)
-	if err != nil {
-		return nil, err
+	var assessments []wtsync.Assessment
+	if sv := r.survey; sv != nil {
+		worktrees, assessments = sv.worktrees, sv.assessments
+	} else {
+		agents, err := r.listAgents()
+		if err != nil {
+			return nil, err
+		}
+		assessments = assessAll(ctx.Repo.MainRoot, r.trunkSHA, r.cfg, worktrees, agents, assessWorkers)
+		r.parents, r.ambiguous, err = wtsync.Parents(ctx.Repo.MainRoot, r.trunkSHA, all)
+		if err != nil {
+			return nil, err
+		}
 	}
 	r.all = true
 	r.assessed = map[string]wtsync.Assessment{}
@@ -693,7 +736,7 @@ func (r *runPlan) rebaseOne(b string) {
 	if rerr != nil {
 		fmt.Fprintf(w, "  ✗ failed: %v\n", rerr)
 		clearHandover(w, p.wt.Path)
-		r.recordFailed(b, p, rerr.Error(), res.OldTip)
+		r.recordFailed(b, p, rerr.Error(), res.OldTip, res.Safety.Ref)
 		r.settle("failed", fmt.Sprintf("✗ %s  failed: %v", p.work, rerr), p.work+" (failed)")
 		r.refuseAbove(b, p.work+" failed")
 		return
@@ -718,8 +761,9 @@ func (r *runPlan) rebaseOne(b string) {
 			// never moved, so the abort is the whole of putting it back.
 			way := wtsync.WayOut(wtsync.Way{Work: p.work, Path: p.wt.Path, Rebasing: true})
 			fmt.Fprintf(w, "  ⚠ %s is left mid-rebase with no plan: %s\n", p.work, way)
-			j.set(b, func(jp *UpParticipant) {
+			j.setSync(b, func(jp *SyncParticipant) {
 				jp.Result, jp.Reason, jp.Recovery = ResultNeedsRecovery, strp(herr.Error()), strp(way)
+				jp.SafetyRef = strp(res.Safety.Ref)
 			})
 			r.settle("failed", "✗ "+p.work+"  left mid-rebase with no plan: "+way, p.work+" (failed)")
 			r.refuseAbove(b, p.work+" failed")
@@ -728,10 +772,11 @@ func (r *runPlan) rebaseOne(b string) {
 		// The lock is left behind on purpose; dropping the handle here
 		// keeps the deferred releases from removing the file.
 		p.lock = nil
-		j.set(b, func(jp *UpParticipant) {
+		j.setSync(b, func(jp *SyncParticipant) {
 			jp.Result = ResultHandedOver
 			jp.Reason = strp("stopped at a conflict that is yours")
 			jp.Recovery = strp(wtsync.WayOut(wtsync.Way{Work: p.work, Plan: true, Rebasing: true, OwesAdd: true}))
+			jp.SafetyRef, jp.UndoCommand, jp.PlanFile = strp(res.Safety.Ref), undoCommand(p.work), planFileOf(p.wt.Path)
 		})
 		r.settle("needs you", "⚠ "+p.work+"  needs you: "+wtsync.WayOut(wtsync.Way{Work: p.work, Plan: true, Rebasing: true, OwesAdd: true}), p.work+" (needs you)")
 		r.refuseAbove(b, p.work+" is waiting for you")
@@ -748,7 +793,9 @@ func (r *runPlan) rebaseOne(b string) {
 		restored := fmt.Sprintf("restored: %s at %d/%d not resolved; rebase by hand", strings.Join(files, ", "), last.Index, last.Total)
 		fmt.Fprintf(w, "  ✗ %s\n", restored)
 		clearHandover(w, p.wt.Path)
-		j.set(b, func(jp *UpParticipant) { jp.Result, jp.Reason = ResultRestored, strp(restored) })
+		j.setSync(b, func(jp *SyncParticipant) {
+			jp.Result, jp.Reason, jp.SafetyRef = ResultRestored, strp(restored), strp(res.Safety.Ref)
+		})
 		r.settle("restored", "✗ "+p.work+"  "+restored, p.work+" (restored)")
 		r.refuseAbove(b, p.work+" was restored")
 		return
@@ -758,17 +805,21 @@ func (r *runPlan) rebaseOne(b string) {
 		line += fmt.Sprintf(", %d signature%s dropped", res.SignaturesDropped, plural(res.SignaturesDropped))
 	}
 	fmt.Fprintln(w, line)
-	head, owed, derr := completeRun(ctx, w, r.cfg, r.tracker, p.work, p.wt.Path, func() completeInput {
+	head, ran, derr := completeRun(ctx, w, r.cfg, r.tracker, p.work, p.wt.Path, func() completeInput {
 		return completeInput{
 			Branch: b, Epoch: r.epoch, Res: res,
 			Tell: append(slices.Clone(p.a.Sessions), p.forced...), TrunkName: r.trunk, Landed: p.a.Behind, Check: pathsOnce(wtsync.StopPaths(res.Stops)),
 		}
 	})
 	p.head = head
+	owed := owedSteps(ran)
 	r.failures = append(r.failures, owedBy(p.work, owed)...)
 	// The rebase itself stands; only this branch and what sits on it
 	// lose their footing, so the rest of the run carries on.
 	after, _ := ctx.Repo.ResolveRef("refs/heads/" + b)
+	j.setSync(b, func(jp *SyncParticipant) {
+		jp.SafetyRef, jp.UndoCommand, jp.Deferred = strp(res.Safety.Ref), undoCommand(p.work), deferredSteps(ran)
+	})
 	if derr != nil {
 		fmt.Fprintf(w, "  ✗ failed: %v\n", derr)
 		j.set(b, func(jp *UpParticipant) {
@@ -850,21 +901,22 @@ func notReadyReason(a wtsync.Assessment) string {
 
 // recordFailed records a rebase that failed by what it left: back at the
 // tip the run found, with no rebase in progress and nothing changed, is
-// restored; anything else needs putting back by hand, and says how.
-func (r *runPlan) recordFailed(b string, p *participant, why, oldTip string) {
+// restored; anything else needs putting back by hand, and says how. safety
+// is the ref the rebase pinned the old tip under, "" when it failed first.
+func (r *runPlan) recordFailed(b string, p *participant, why, oldTip, safety string) {
 	now, _ := r.ctx.Repo.ResolveRef("refs/heads/" + b)
 	busy, berr := wtsync.RebaseInProgress(p.wt.Path)
 	dirty, derr := repo.Dirty(p.wt.Path, true)
 	head, herr := git.Run(p.wt.Path, "rev-parse", "--verify", "--quiet", "HEAD")
 	restored := berr == nil && !busy && derr == nil && !dirty && herr == nil &&
 		oldTip != "" && now == oldTip && head == oldTip
-	r.opts.Journal.set(b, func(jp *UpParticipant) {
-		jp.Reason, jp.After = strp(why), strp(now)
+	r.opts.Journal.setSync(b, func(jp *SyncParticipant) {
+		jp.Reason, jp.After, jp.SafetyRef = strp(why), strp(now), strp(safety)
 		if restored {
 			jp.Result = ResultRestored
 			return
 		}
-		jp.Result = ResultNeedsRecovery
+		jp.Result, jp.UndoCommand = ResultNeedsRecovery, nil
 		jp.Recovery = strp(wtsync.WayOut(wtsync.Way{Work: p.work, Path: p.wt.Path, Rebasing: busy,
 			Safety: wtsync.SafetyRef(b, r.epoch)}))
 	})
