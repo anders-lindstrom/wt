@@ -6,6 +6,14 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-28 01:18 — Remove moves a worktree aside instead of deleting it
+
+- `wt remove <work> --quarantine <dir>` moves the checkout and its
+  `.git/worktrees/<id>` into a new folder, renames only,
+  journalled step by step in `<dir>/recovery.json`. `wt restore <dir>` puts
+  it back, branch and config included. A branch step that fails after the
+  folder has gone now says "partly done". JSON: recovery, restore(-plan) 1.0.0.
+
 ## 2026-09-28 00:46 — Keepers for many repositories at once
 
 - `wt sync keep start --all` (or `--roots`, `--profile`) installs one keeper

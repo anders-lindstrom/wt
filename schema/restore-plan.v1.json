@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/restore-plan.v1.json",
+  "x-version": "1.0.0",
+  "title": "wt restore <dir> --dry-run --json",
+  "description": "What `wt restore <dir>` would do, changing nothing. Printed by `wt restore <dir> --dry-run --json` as the only thing on stdout. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
+  "type": "object",
+  "required": ["schema", "schemaVersion", "command", "dir", "repo", "checkout", "admin", "head", "branch", "locked", "orphan", "problems", "error"],
+  "properties": {
+    "schema": { "const": 1 },
+    "schemaVersion": { "type": "string", "pattern": "^1\\.[0-9]+\\.[0-9]+$" },
+    "command": { "const": "restore" },
+    "dir": { "type": "string", "description": "The quarantine folder, absolute." },
+    "repo": { "type": ["string", "null"] },
+    "checkout": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/place" }] },
+    "admin": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/place" }] },
+    "head": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/sha" }] },
+    "branch": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/branch" }] },
+    "locked": { "type": "boolean", "description": "The worktree carries this quarantine's git lock, which the restore takes off last." },
+    "orphan": { "type": ["string", "null"], "description": "A worktree locked for this quarantine with no recovery.json: stopped before anything moved; restoring it is unlocking it." },
+    "problems": { "type": "array", "items": { "$ref": "#/$defs/problem" }, "description": "Every reason the restore refuses; empty when it would go ahead." },
+    "error": { "type": ["string", "null"], "description": "The problems in words, or why the plan could not be made." }
+  },
+  "$defs": {
+    "sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
+    "place": {
+      "type": "object",
+      "required": ["path", "quarantined", "location"],
+      "properties": {
+        "path": { "type": "string" },
+        "quarantined": { "type": "string" },
+        "location": {
+          "enum": ["original", "quarantined", "taken", "missing"],
+          "description": "original: at path, the same directory (by inode) — moved back, or never moved. quarantined: in the quarantine. taken: something else is at path. missing: in neither place."
+        }
+      }
+    },
+    "branch": {
+      "type": "object",
+      "required": ["name", "tip", "keepAs", "removal", "action", "occupiedBy"],
+      "properties": {
+        "name": { "type": "string" },
+        "tip": { "$ref": "#/$defs/sha" },
+        "keepAs": { "type": ["string", "null"] },
+        "removal": { "oneOf": [{ "type": "null" }, { "enum": ["deleted", "renamed", "untouched", "kept", "failed"] }], "description": "What the removal's branch step came to, as recovery.json records it." },
+        "action": {
+          "oneOf": [{ "type": "null" }, { "enum": ["none", "renameBack", "recreate", "attach", "detach"] }],
+          "description": "none: the branch is there at its tip. renameBack: kept under keepAs; gets its name back, config included. recreate: deleted and the name free; made again at tip with its recorded config. attach: its name holds another commit and keepAs still has tip; HEAD names keepAs. detach: another worktree uses it, or it moved on; no branch change, HEAD detached at head. null when a problem stops the decision."
+        },
+        "occupiedBy": { "type": ["string", "null"], "description": "The worktree that has the branch — as HEAD, rebasing it, or bisecting from it — when that made the action detach." }
+      }
+    },
+    "problem": {
+      "type": "object",
+      "required": ["code", "text"],
+      "properties": {
+        "code": { "enum": ["noRecord", "repository", "checkoutTaken", "checkoutMissing", "adminTaken", "adminMissing", "volume", "commitMissing", "worktreesUnknown"] },
+        "text": { "type": "string" }
+      }
+    }
+  }
+}

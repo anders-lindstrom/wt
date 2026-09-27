@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"slices"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/naming"
+	"github.com/anders-lindstrom/wt/internal/quarantine"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -45,7 +47,62 @@ type RemoveOptions struct {
 	// into trunk, and which. `wt sweep` passes the listing it has just read;
 	// nil reads the cache, which is all a plain `wt remove` may do.
 	Landed func(branch, tip string) int
+	// Quarantine is a new folder, absolute, to move the worktree into
+	// instead of deleting it; "" deletes it.
+	Quarantine string
+	// Result, when set, receives what the removal did, effect by effect.
+	Result *RemoveResult
 }
+
+// RemoveResult is what a removal did, effect by effect, as far as it got.
+type RemoveResult struct {
+	// Outcome is one of the Remove* outcomes.
+	Outcome string
+	// Worktree is what became of the checkout: one of the Worktree*
+	// values. CheckoutMoved and AdminMoved say which moves a quarantine
+	// made, Quarantine is its folder.
+	Worktree      string
+	Quarantine    string
+	CheckoutMoved bool
+	AdminMoved    bool
+	// Branch is what the branch step came to — quarantine.BranchDeleted,
+	// Renamed, Untouched, Kept or Failed — and "" when the run did not get
+	// that far. BranchName and BranchTip are the branch the plan read;
+	// KeepAs the name a kept branch was to get.
+	Branch     string
+	BranchName string
+	BranchTip  string
+	KeepAs     string
+	// Error is why the run refused or stopped, "" when it did neither.
+	Error string
+}
+
+// What a removal came to.
+const (
+	// RemoveRemoved: the worktree is gone, or quarantined, and the branch
+	// step did what the plan said.
+	RemoveRemoved = "removed"
+	// RemoveRemovedWithBranchProblem: the worktree is gone, and the branch
+	// was left as it was on purpose — it moved, is no longer merged, or a
+	// worktree took it.
+	RemoveRemovedWithBranchProblem = "removedWithBranchProblem"
+	// RemoveRefused: nothing was changed.
+	RemoveRefused = "refused"
+	// RemovePartial: something changed and a later step failed: the
+	// second move, or the branch step.
+	RemovePartial = "partial"
+)
+
+// What became of the checkout.
+const (
+	WorktreeRemoved     = "removed"
+	WorktreeQuarantined = "quarantined"
+	// WorktreeKept is a checkout left where it was.
+	WorktreeKept = "kept"
+	// WorktreePartlyMoved is a quarantine that moved the checkout but not
+	// its admin dir.
+	WorktreePartlyMoved = "partlyMoved"
+)
 
 // landed asks the question RemoveOptions.Landed answers, falling back to the
 // cache: a file read, no process and no network, so this runs from a git hook.
@@ -164,6 +221,15 @@ type Plan struct {
 	// MainBranch is carried on the plan so rendering needs nothing but the
 	// plan itself.
 	MainBranch string
+	// AdminDir is the worktree's own git dir, .git/worktrees/<id>, ""
+	// when it cannot be read.
+	AdminDir string
+	// Quarantine is the folder the checkout is to be moved into instead of
+	// deleted, "" to delete it; QuarantineError is why it cannot be.
+	Quarantine      string
+	QuarantineError string
+	// quarantineBy names the command in recovery.json.
+	quarantineBy string
 }
 
 // Lost is a tip a removal would leave nothing holding.
@@ -225,17 +291,30 @@ func worktreeRecord(ctx *Context, path string) repo.Worktree {
 }
 
 func removeWorktree(ctx *Context, wt repo.Worktree, opts RemoveOptions, w io.Writer) error {
+	res, err := removeWorktreeResult(ctx, wt, opts, w)
+	if err != nil && res.Error == "" {
+		res.Error = err.Error()
+	}
+	if opts.Result != nil {
+		*opts.Result = res
+	}
+	return err
+}
+
+func removeWorktreeResult(ctx *Context, wt repo.Worktree, opts RemoveOptions, w io.Writer) (RemoveResult, error) {
+	res := RemoveResult{Outcome: RemoveRefused, Worktree: WorktreeKept, Quarantine: opts.Quarantine}
 	if _, err := os.Stat(wt.Path); err != nil {
-		return fmt.Errorf("no worktree at %s", wt.Path)
+		return res, fmt.Errorf("no worktree at %s", wt.Path)
 	}
 	plan := planFor(ctx, wt, opts)
+	res.BranchName, res.BranchTip, res.KeepAs = plan.Branch, plan.Tip, plan.KeepAs
 	plan.Render(w)
 
 	// The lock is decided before the question, because the question does not
 	// change the answer: a directory somebody is working in is not removed
 	// because a prompt was answered quickly.
 	if plan.blockedByLock() {
-		return fmt.Errorf("%s is locked and its holder is still there: %s\n"+
+		return res, fmt.Errorf("%s is locked and its holder is still there: %s\n"+
 			"  Finish or stop it, or pass --force to break the lock",
 			wt.Path, plan.LockHolder)
 	}
@@ -247,21 +326,21 @@ func removeWorktree(ctx *Context, wt repo.Worktree, opts RemoveOptions, w io.Wri
 		if _, ok := plan.lost(LostHead); ok {
 			hint += "\n  keep them on a branch first: git -C " + wt.Path + " branch <name>"
 		}
-		return fmt.Errorf("%s was not removed: %s%s", wt.Path, why, hint)
+		return res, fmt.Errorf("%s was not removed: %s%s", wt.Path, why, hint)
 	}
 	if opts.DryRun {
 		fmt.Fprintln(w, "Nothing was removed: --dry-run.")
-		return nil
+		return res, nil
 	}
 
 	if opts.Confirm != nil {
 		ok, err := opts.Confirm(plan)
 		if err != nil {
-			return err
+			return res, err
 		}
 		if !ok {
 			fmt.Fprintln(w, "Nothing was removed.")
-			return nil
+			return res, nil
 		}
 		// The prompt can stay open for a while, and another session can land
 		// commits meanwhile: a branch shown as merged may no longer be. The
@@ -272,15 +351,15 @@ func removeWorktree(ctx *Context, wt repo.Worktree, opts RemoveOptions, w io.Wri
 		// while the prompt is open, and that is a change to the plan.
 		if fresh := planFor(ctx, worktreeRecord(ctx, wt.Path), opts); !fresh.same(plan) {
 			if vanished, err := removedMeanwhile(ctx, plan, w); vanished {
-				return err
+				return res, err
 			}
 			fmt.Fprintln(w, "The worktree changed while the prompt was open. Removal would now do this:")
 			fresh.Render(w)
 			fmt.Fprintln(w, "Nothing was removed.")
-			return fmt.Errorf("the plan changed during confirmation; run the command again")
+			return res, fmt.Errorf("the plan changed during confirmation; run the command again")
 		}
 	}
-	return plan.apply(ctx, w)
+	return plan.run(ctx, w)
 }
 
 // planFor reads every fact a removal depends on, before any of them change.
@@ -295,6 +374,11 @@ func planFor(ctx *Context, wt repo.Worktree, opts RemoveOptions) Plan {
 	p.readSessions(opts)
 	p.readLock(wt)
 	p.readCheckout()
+	p.AdminDir, _ = repo.AdminDir(wt.Path)
+	if opts.Quarantine != "" {
+		p.Quarantine, p.quarantineBy = opts.Quarantine, "remove"
+		p.QuarantineError = quarantineProblem(ctx, p.Quarantine, p.Path, p.AdminDir)
+	}
 
 	s := mergeStanding(ctx, p.Branch)
 	p.Merge, p.Ahead, p.Base, p.Tip = s.Merge, s.Ahead, s.Base, s.Tip
@@ -466,7 +550,62 @@ func (p Plan) problems() []problem {
 	if p.ReachError != "" {
 		add(KeptReachUnknown, "cannot tell what the removal would leave unreachable ("+p.ReachError+")", false)
 	}
+	if p.QuarantineError != "" {
+		add(problemQuarantine, "it cannot be quarantined: "+p.QuarantineError, false)
+	}
 	return out
+}
+
+// problemQuarantine is a quarantine folder that cannot be used. Sweep checks
+// its folder before it plans, so this never reaches its --json.
+const problemQuarantine = "quarantine"
+
+// quarantineProblem is why the checkout at path and its admin dir cannot be
+// moved into dir, "" when they can.
+func quarantineProblem(ctx *Context, dir, path, admin string) string {
+	if admin == "" {
+		return "its git dir under .git/worktrees cannot be read"
+	}
+	if err := quarantineOutside(ctx, dir); err != nil {
+		return err.Error()
+	}
+	if err := quarantine.Check(dir, path, admin); err != nil {
+		return err.Error()
+	}
+	return ""
+}
+
+// quarantineOutside refuses a quarantine folder inside any checkout of the
+// repository or inside its git dir: another removal would take it with a
+// checkout, and git's own files are git's.
+func quarantineOutside(ctx *Context, dir string) error {
+	worktrees, err := ctx.Repo.Worktrees()
+	if err != nil {
+		return fmt.Errorf("cannot list the worktrees to check where %s is: %w", dir, err)
+	}
+	roots := []string{}
+	for _, wt := range worktrees {
+		roots = append(roots, wt.Path)
+	}
+	if common, err := git.Run(ctx.Repo.MainRoot, "rev-parse", "--path-format=absolute", "--git-common-dir"); err == nil {
+		roots = append(roots, common)
+	}
+	// dir does not exist yet: its parent, symlinks resolved, says where it is.
+	where := dir
+	if parent, err := filepath.EvalSymlinks(filepath.Dir(dir)); err == nil {
+		where = filepath.Join(parent, filepath.Base(dir))
+	}
+	for _, root := range roots {
+		if repo.Inside(root, dir, false) || repo.Inside(root, where, false) || insideResolved(root, where) {
+			return fmt.Errorf("%s is inside %s: a quarantine goes outside every checkout and the git dir", dir, root)
+		}
+	}
+	return nil
+}
+
+func insideResolved(root, p string) bool {
+	r, err := filepath.EvalSymlinks(root)
+	return err == nil && repo.Inside(r, p, false)
 }
 
 // blocking is the problems that stop this removal: all of them, less the
@@ -820,7 +959,11 @@ func (p Plan) Render(w io.Writer) {
 			fmt.Fprintf(w, "  ! --force: going past %s\n", pr.text)
 		}
 	}
-	fmt.Fprintf(w, "  the checkout will be deleted%s\n", p.lockNote())
+	if p.Quarantine != "" {
+		fmt.Fprintf(w, "  the checkout will be moved to %s%s\n", p.Quarantine, p.lockNote())
+	} else {
+		fmt.Fprintf(w, "  the checkout will be deleted%s\n", p.lockNote())
+	}
 	switch p.Outcome {
 	case BranchDeleted:
 		if p.MergedPR > 0 {
@@ -927,75 +1070,299 @@ func aheadOf(n int, base string) string {
 // nothing here re-reads state that the removal itself has changed — except
 // the checkout, read once more right before it goes.
 func (p Plan) apply(ctx *Context, w io.Writer) error {
+	_, err := p.run(ctx, w)
+	return err
+}
+
+// afterFinalCheck runs between the last read of the checkout and the first
+// change. Tests set it to write a file a real editor would write there.
+var afterFinalCheck func()
+
+// run is apply, reporting what it did effect by effect. The checkout goes
+// first, deleted or quarantined, and then the branch step, so a removal
+// that fails leaves its branch where it was.
+func (p Plan) run(ctx *Context, w io.Writer) (RemoveResult, error) {
+	res := RemoveResult{Outcome: RemoveRefused, Worktree: WorktreeKept, Quarantine: p.Quarantine,
+		BranchName: p.Branch, BranchTip: p.Tip, KeepAs: p.KeepAs}
 	if why := p.recheck(); why != "" {
-		return fmt.Errorf("%s was not removed: %s", p.Path, why)
+		return res, fmt.Errorf("%s was not removed: %s", p.Path, why)
 	}
-	if p.Locked {
-		if err := ctx.Repo.UnlockWorktree(p.Path); err != nil {
-			return fmt.Errorf("could not release the lock on %s: %s", p.Path, gitSaid(err))
+	if afterFinalCheck != nil {
+		afterFinalCheck()
+	}
+	var rec *quarantine.Record
+	if p.Quarantine != "" {
+		var err error
+		if rec, err = p.quarantine(ctx, w, &res); err != nil {
+			return res, err
 		}
-		if p.LockHeld {
-			fmt.Fprintf(w, "! broke the lock on the checkout: %s\n", p.LockHolder)
-		} else {
-			fmt.Fprintf(w, "- released a stale lock: %s\n", p.LockHolder)
+	} else {
+		if err := p.releaseLock(ctx, w); err != nil {
+			return res, err
+		}
+		if err := ctx.Repo.RemoveWorktree(p.Path); err != nil {
+			return res, removalFailed(p.Path, err)
+		}
+		res.Worktree = WorktreeRemoved
+	}
+	res.Outcome = RemoveRemoved
+
+	removed := "worktree removed"
+	if rec != nil {
+		removed = "worktree moved to " + p.Quarantine
+	}
+	result, msg, err := p.branchStep(ctx)
+	res.Branch = result
+	if rec != nil {
+		if jerr := rec.RecordBranch(result, err); jerr != nil {
+			res.Outcome = RemovePartial
+			return res, jerr
 		}
 	}
-	if err := ctx.Repo.RemoveWorktree(p.Path); err != nil {
-		return removalFailed(p.Path, err)
+	restore := ""
+	if rec != nil {
+		restore = fmt.Sprintf("  wt restore %s puts it back\n", p.Quarantine)
 	}
+	switch result {
+	case quarantine.BranchFailed:
+		res.Outcome = RemovePartial
+		fmt.Fprintf(w, "! partly done: %s, but the branch step failed\n%s", removed, restore)
+		return res, err
+	case quarantine.BranchKept:
+		res.Outcome = RemoveRemovedWithBranchProblem
+		fmt.Fprintf(w, "✓ %s\n%s", removed, restore)
+		return res, err
+	}
+	if msg == "" {
+		fmt.Fprintf(w, "✓ %s\n", removed)
+	} else {
+		fmt.Fprintf(w, "✓ %s; %s\n", removed, msg)
+	}
+	if p.Outcome == BranchKept {
+		fmt.Fprintf(w, "  delete it later with: git branch -d %s\n", p.KeepAs)
+	}
+	fmt.Fprintf(w, "%s", restore)
+	if l, ok := p.lost(LostBranch); ok && p.Outcome == BranchDeleted {
+		fmt.Fprintf(w, "  %s restores its commits\n", p.restoreHint(l))
+	}
+	return res, nil
+}
+
+// releaseLock takes git's lock off the checkout, a stale one or one --force
+// breaks, and says so.
+func (p Plan) releaseLock(ctx *Context, w io.Writer) error {
+	if !p.Locked {
+		return nil
+	}
+	if err := ctx.Repo.UnlockWorktree(p.Path); err != nil {
+		return fmt.Errorf("could not release the lock on %s: %s", p.Path, gitSaid(err))
+	}
+	if p.LockHeld {
+		fmt.Fprintf(w, "! broke the lock on the checkout: %s\n", p.LockHolder)
+	} else {
+		fmt.Fprintf(w, "- released a stale lock: %s\n", p.LockHolder)
+	}
+	return nil
+}
+
+// branchStep carries out the plan's branch outcome once the checkout is
+// gone. result is one of quarantine's Branch* values: BranchKept is a step
+// turned down on purpose, BranchFailed one git failed; err says why for
+// both. msg is the clause the success line ends with.
+func (p Plan) branchStep(ctx *Context) (result, msg string, err error) {
 	switch p.Outcome {
 	case BranchDeleted:
 		if err := stillMerged(ctx, p); err != nil {
-			fmt.Fprintln(w, "✓ worktree removed")
-			return err
+			return quarantine.BranchKept, "", err
 		}
 		// Only at the tip the plan showed, so a commit that lands after the
 		// plan is never deleted with the branch. DeleteBranchAt refuses a
 		// branch another worktree is using, which update-ref would not.
 		if err := ctx.Repo.DeleteBranchAt(p.Branch, p.Tip); err != nil {
-			fmt.Fprintln(w, "✓ worktree removed")
 			var inUse *repo.BranchInUseError
 			switch {
 			case errors.As(err, &inUse):
-				return fmt.Errorf("branch %s is merged into %s but was kept: %s is using it",
+				return quarantine.BranchKept, "", fmt.Errorf("branch %s is merged into %s but was kept: %s is using it",
 					p.Branch, p.Base, inUse.Path)
 			case errors.Is(err, repo.ErrWorktreesUnknown):
-				return fmt.Errorf("branch %s is merged into %s but was kept: %w", p.Branch, p.Base, err)
+				return quarantine.BranchKept, "", fmt.Errorf("branch %s is merged into %s but was kept: %w", p.Branch, p.Base, err)
 			}
 			if now, ok := ctx.Repo.ResolveRef("refs/heads/" + p.Branch); ok && now != p.Tip {
-				return fmt.Errorf("branch %s was kept: it moved after the plan was made", p.Branch)
+				return quarantine.BranchKept, "", fmt.Errorf("branch %s was kept: it moved after the plan was made", p.Branch)
 			}
-			return fmt.Errorf("branch %s is merged into %s, but deleting it failed: %s",
+			return quarantine.BranchFailed, "", fmt.Errorf("branch %s is merged into %s, but deleting it failed: %s",
 				p.Branch, p.Base, gitSaid(err))
 		}
-		if p.MergedPR > 0 {
-			fmt.Fprintf(w, "✓ worktree removed; branch %s was merged as #%d and has been deleted\n",
-				p.Branch, p.MergedPR)
-			break
+		switch {
+		case p.MergedPR > 0:
+			msg = fmt.Sprintf("branch %s was merged as #%d and has been deleted", p.Branch, p.MergedPR)
+		case p.Merge == Applied:
+			msg = fmt.Sprintf("every commit of %s is on %s, so the branch has been deleted", p.Branch, p.Base)
+		default:
+			msg = fmt.Sprintf("branch %s was merged into %s and has been deleted", p.Branch, p.Base)
 		}
-		if p.Merge == Applied {
-			fmt.Fprintf(w, "✓ worktree removed; every commit of %s is on %s, so the branch has been deleted\n",
-				p.Branch, p.Base)
-			break
-		}
-		fmt.Fprintf(w, "✓ worktree removed; branch %s was merged into %s and has been deleted\n",
-			p.Branch, p.Base)
+		return quarantine.BranchDeleted, msg, nil
 	case BranchKept:
 		if err := ctx.Repo.RenameBranch(p.Branch, p.KeepAs); err != nil {
-			fmt.Fprintln(w, "✓ worktree removed")
-			return fmt.Errorf("branch %s is kept under that name (%s): renaming it to %s failed: %s",
+			return quarantine.BranchFailed, "", fmt.Errorf("branch %s is kept under that name (%s): renaming it to %s failed: %s",
 				p.Branch, aheadOf(p.Ahead, p.Base), p.KeepAs, gitSaid(err))
 		}
-		fmt.Fprintf(w, "✓ worktree removed; branch kept as %s (%s)\n",
-			p.KeepAs, aheadOf(p.Ahead, p.Base))
-		fmt.Fprintf(w, "  delete it later with: git branch -d %s\n", p.KeepAs)
-	default:
-		fmt.Fprintln(w, "✓ worktree removed")
+		return quarantine.BranchRenamed, fmt.Sprintf("branch kept as %s (%s)", p.KeepAs, aheadOf(p.Ahead, p.Base)), nil
 	}
-	if l, ok := p.lost(LostBranch); ok && p.Outcome == BranchDeleted {
-		fmt.Fprintf(w, "  %s restores its commits\n", p.restoreHint(l))
+	return quarantine.BranchUntouched, "", nil
+}
+
+// quarantine moves the checkout and its admin dir into p.Quarantine, each
+// step written to recovery.json before and after it runs: the folder and
+// the journal first, then git's lock with the quarantine's reason, so no
+// prune takes the registration while the checkout is away, then the
+// checkout, then the admin dir, whose move is the unregistration. Nothing is
+// deleted. It returns the journal for the branch step.
+func (p Plan) quarantine(ctx *Context, w io.Writer, res *RemoveResult) (*quarantine.Record, error) {
+	dir := p.Quarantine
+	admin, err := repo.AdminDir(p.Path)
+	if err != nil {
+		return nil, fmt.Errorf("%s was not removed: its git dir cannot be read: %w", p.Path, err)
 	}
-	return nil
+	if err := quarantine.Check(dir, p.Path, admin); err != nil {
+		return nil, fmt.Errorf("%s was not removed: %w", p.Path, err)
+	}
+	checkoutID, err := quarantine.Identify(p.Path)
+	if err != nil {
+		return nil, err
+	}
+	adminID, err := quarantine.Identify(admin)
+	if err != nil {
+		return nil, err
+	}
+	gitFile, err := os.ReadFile(filepath.Join(p.Path, ".git"))
+	if err != nil {
+		return nil, fmt.Errorf("%s was not removed: %w", p.Path, err)
+	}
+	rec := quarantine.Record{Command: p.quarantineBy, Repo: ctx.Repo.MainRoot, GitFile: string(gitFile),
+		CommonDir: filepath.Dir(filepath.Dir(admin)), WorktreeID: filepath.Base(admin),
+		Checkout: quarantine.Place{Path: p.Path, Quarantined: filepath.Join(dir, "checkout"),
+			Device: checkoutID.Device, Inode: checkoutID.Inode},
+		Admin: quarantine.Place{Path: admin, Quarantined: filepath.Join(dir, "admin"),
+			Device: adminID.Device, Inode: adminID.Inode},
+		Head: strp(p.Head)}
+	if p.Branch != "" && p.Tip != "" {
+		plan := quarantine.BranchPlanNone
+		switch p.Outcome {
+		case BranchDeleted:
+			plan = quarantine.BranchPlanDelete
+		case BranchKept:
+			plan = quarantine.BranchPlanKeep
+		}
+		rec.Branch = &quarantine.Branch{Name: p.Branch, Tip: p.Tip, Plan: plan, KeepAs: strp(p.KeepAs)}
+	}
+	r, err := quarantine.Begin(dir, rec)
+	if err != nil {
+		return nil, fmt.Errorf("%s was not removed: %w", p.Path, err)
+	}
+
+	if err := r.Set(quarantine.StepLock, quarantine.Running, nil); err != nil {
+		return nil, err
+	}
+	if err := p.releaseLock(ctx, w); err != nil {
+		_ = r.Set(quarantine.StepLock, quarantine.Failed, err)
+		return nil, err
+	}
+	if err := ctx.Repo.LockWorktree(p.Path, quarantine.LockReason(dir)); err != nil {
+		err = fmt.Errorf("%s was not removed: git would not lock it: %s", p.Path, gitSaid(err))
+		_ = r.Set(quarantine.StepLock, quarantine.Failed, err)
+		return nil, err
+	}
+	// The lock is a file in the admin dir: on disk before it is journalled.
+	if err := quarantine.SyncDir(admin); err != nil {
+		_ = r.Set(quarantine.StepLock, quarantine.Failed, err)
+		return nil, err
+	}
+	if err := r.Set(quarantine.StepLock, quarantine.Done, nil); err != nil {
+		return nil, err
+	}
+
+	// Once the branch is deleted and the admin dir is out of the
+	// repository, nothing else may hold its commits: gc would take them.
+	if err := r.Set(quarantine.StepPin, quarantine.Running, nil); err != nil {
+		return nil, err
+	}
+	if err := r.Pin(ctx.Repo); err != nil {
+		_ = r.Set(quarantine.StepPin, quarantine.Failed, err)
+		return nil, fmt.Errorf("%s was not removed: %w", p.Path, err)
+	}
+	if err := r.Set(quarantine.StepPin, quarantine.Done, nil); err != nil {
+		return nil, err
+	}
+
+	if err := r.Set(quarantine.StepMoveCheckout, quarantine.Running, nil); err != nil {
+		return nil, err
+	}
+	if err := quarantine.Move(p.Path, r.Checkout.Quarantined); err != nil {
+		_ = r.Set(quarantine.StepMoveCheckout, quarantine.Failed, err)
+		if quarantine.Locate(r.Checkout) == quarantine.AtOriginal {
+			// Nothing moved: the lock and the pins are all there is to take
+			// back. The record stays; a restore finds nothing more to do.
+			_ = ctx.Repo.UnlockWorktree(p.Path)
+			_ = r.Unpin(ctx.Repo)
+			return nil, fmt.Errorf("%s was not removed: %w", p.Path, err)
+		}
+		// It moved and the rest failed: the lock stays, so no prune takes
+		// the registration of a checkout that is not at its path.
+		res.CheckoutMoved, res.Worktree, res.Outcome = true, WorktreePartlyMoved, RemovePartial
+		fmt.Fprintf(w, "! partly done: the checkout is in %s, its git dir is still registered\n"+
+			"  wt restore %s puts it back\n", dir, dir)
+		return nil, fmt.Errorf("%s was moved, and then: %w", p.Path, err)
+	}
+	res.CheckoutMoved, res.Worktree = true, WorktreePartlyMoved
+	if err := r.Set(quarantine.StepMoveCheckout, quarantine.Done, nil); err != nil {
+		res.Outcome = RemovePartial
+		return nil, err
+	}
+
+	if err := r.Set(quarantine.StepMoveAdmin, quarantine.Running, nil); err != nil {
+		res.Outcome = RemovePartial
+		return nil, err
+	}
+	if err := quarantine.Move(admin, r.Admin.Quarantined); err != nil {
+		_ = r.Set(quarantine.StepMoveAdmin, quarantine.Failed, err)
+		res.Outcome = RemovePartial
+		if quarantine.Locate(r.Admin) != quarantine.AtOriginal {
+			res.AdminMoved, res.Worktree = true, WorktreeQuarantined
+			fmt.Fprintf(w, "! partly done: the worktree is in %s\n  wt restore %s puts it back\n", dir, dir)
+			return nil, fmt.Errorf("%s was moved, and then: %w", p.Path, err)
+		}
+		fmt.Fprintf(w, "! partly done: the checkout is in %s, its git dir is still registered\n"+
+			"  wt restore %s puts it back\n", dir, dir)
+		return nil, fmt.Errorf("%s was moved, but its git dir was not: %w", p.Path, err)
+	}
+	res.AdminMoved, res.Worktree = true, WorktreeQuarantined
+	if err := r.Set(quarantine.StepMoveAdmin, quarantine.Done, nil); err != nil {
+		res.Outcome = RemovePartial
+		return nil, err
+	}
+
+	// The id is free now, and a new worktree may take it: git in the
+	// quarantine must work on its own admin dir, never on that one's.
+	if err := r.Set(quarantine.StepRelink, quarantine.Running, nil); err != nil {
+		res.Outcome = RemovePartial
+		return nil, err
+	}
+	if err := r.Relink(); err != nil {
+		_ = r.Set(quarantine.StepRelink, quarantine.Failed, err)
+		res.Outcome = RemovePartial
+		fmt.Fprintf(w, "! partly done: the worktree is in %s\n  wt restore %s puts it back\n", dir, dir)
+		return nil, fmt.Errorf("%s was moved, and then: %w", p.Path, err)
+	}
+	if err := r.Set(quarantine.StepRelink, quarantine.Done, nil); err != nil {
+		res.Outcome = RemovePartial
+		return nil, err
+	}
+	if err := r.BeginBranch(ctx.Repo); err != nil {
+		res.Outcome = RemovePartial
+		return nil, err
+	}
+	return r, nil
 }
 
 // recheck reads the checkout once more, immediately before it is deleted:

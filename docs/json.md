@@ -1,9 +1,9 @@
 # wt's JSON output
 
-`wt status`, `wt up`, `wt sweep`, `wt sync` and its verbs, `wt new` and
-`wt checkout` print JSON on stdout when given `--json`, for tools that drive wt
-(a git client, an editor, a script). Their human output is unchanged without
-it.
+`wt status`, `wt up`, `wt sweep`, `wt sync` and its verbs, `wt new`,
+`wt checkout` and `wt restore` print JSON on stdout when given `--json`, for
+tools that drive wt (a git client, an editor, a script). Their human output is
+unchanged without it. A quarantine's `recovery.json` is JSON with a schema too.
 
 ## Versions
 
@@ -37,6 +37,8 @@ Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 | `new-plan`, `checkout-plan` | 1.0.0 | `wt new` and `wt checkout --dry-run --json`, the plan |
 | `new`, `checkout` | 1.0.0 | `wt new` and `wt checkout --json`, the result |
 | `sync-run` | 1.1.0 | `trunkSync`: what the run did to local trunk after its fetch |
+| `recovery` | 1.0.0 | `<dir>/recovery.json`, the journal of `--quarantine` and `wt restore` |
+| `restore-plan`, `restore` | 1.0.0 | `wt restore <dir> --dry-run --json`, the plan, and `--json`, the result |
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
 
@@ -57,6 +59,9 @@ generating types from it:
 | `wt new --json` | [`schema/new.v1.json`](../schema/new.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/new.v1.json` |
 | `wt checkout --dry-run --json` | [`schema/checkout-plan.v1.json`](../schema/checkout-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/checkout-plan.v1.json` |
 | `wt checkout --json` | [`schema/checkout.v1.json`](../schema/checkout.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/checkout.v1.json` |
+| `<dir>/recovery.json` | [`schema/recovery.v1.json`](../schema/recovery.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/recovery.v1.json` |
+| `wt restore --dry-run --json` | [`schema/restore-plan.v1.json`](../schema/restore-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/restore-plan.v1.json` |
+| `wt restore --json` | [`schema/restore.v1.json`](../schema/restore.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/restore.v1.json` |
 
 They are built into the binary: `wt schema` lists them and `wt schema up` prints
 one, so the schema you read is the one for the wt you run. Validate against that
@@ -361,6 +366,132 @@ row, not from what was attempted.
 
 The exit code is non-zero when anything to remove or delete was kept or failed;
 read `outcome`.
+
+## `<dir>/recovery.json` — a quarantine's journal
+
+`wt remove <work> --quarantine <dir>` moves the worktree aside instead of deleting it. `<dir>` is a new
+folder the caller names, on the worktree's volume and outside every checkout of
+the repository and its git dir; it is made with `mkdir`, not `mkdir -p`, and a
+folder that exists refuses the removal, as does one inside the repository or a
+checkout or admin dir on another volume: every move is a rename. After its last
+check the
+removal runs these steps, writing `recovery.json` durably (a temp file, fsync,
+rename, folder fsync) before anything changes and before and after each step:
+
+1. `lock` — `git worktree lock --reason "wt quarantine <dir>"`, fsynced, so
+   nothing prunes the registration while the checkout is away (a stale lock, or
+   one `--force` breaks, is released first);
+2. `pin` — refs under `refs/wt-quarantine/<id>-<hash>/` hold HEAD and the
+   branch's tip: once the branch is deleted and the admin dir is out of the
+   repository, nothing else would, and `git gc` would take a squash-merged
+   branch's commits;
+3. `moveCheckout` — the checkout to `<dir>/checkout`;
+4. `moveAdmin` — `.git/worktrees/<id>`, with the worktree's initialised
+   submodule repositories under `modules/`, to `<dir>/admin`: git no longer lists
+   the worktree. wt never runs `git worktree prune`;
+5. `relink` — `<dir>/checkout/.git` names `<dir>/admin`, so a new worktree that
+   takes the id is never the one git in the quarantine works on;
+6. `branch` — the branch's local config section is recorded, then the branch is
+   deleted or renamed as the plan says.
+
+A file written after the last check moves with the checkout. Nothing is deleted:
+emptying the folder is the user's own act. The pins go when the restore is done,
+or at the next `wt sweep` once the folder has been deleted (its parent still
+there: a folder on a volume that is not mounted keeps them).
+
+| Field | Type | Meaning |
+|---|---|---|
+| `schema`, `schemaVersion` | | as everywhere |
+| `command` | `remove` \| `sweep` | who made it |
+| `createdAt` | string | RFC 3339, UTC |
+| `repo`, `commonDir` | string | the main checkout and the common git dir |
+| `worktreeId` | string | the `<id>` of `.git/worktrees/<id>` |
+| `dir` | string | the folder, as the removal named it |
+| `checkout`, `admin` | object | `path` (where it was), `quarantined` (where it goes), `device` and `inode` (which a rename keeps: a directory at either place with them is this one, and nothing else is) |
+| `gitFile` | string | the checkout's `.git` file as it was, which the restore writes back |
+| `pins` | object | the refs: `head`, `tip` (null when there is none) and `dir`, a blob holding the folder's path |
+| `head` | string \| null | the commit checked out; null before the first |
+| `branch` | object \| null | null for a detached HEAD; else `name`, `tip`, `plan` (`delete`, `keep`, `none`), `keepAs`, `config` (`[{key, value}]`, every value in order; null until captured) and `result` (`deleted`, `renamed`, `untouched`, `kept` — turned down on purpose — or `failed`; null before the step) |
+| `steps` | array | `{name, state, error}` for `lock`, `pin`, `moveCheckout`, `moveAdmin`, `relink`, `branch`, in order |
+| `restore` | object \| null | the restore's own journal: `action`, `occupiedBy` and its `steps` (`branch`, `moveAdmin`, `relink`, `moveCheckout`, `unlock`, `unpin`); null until `wt restore` changes something |
+
+The step lists and the states are **closed**, unlike the enumerations elsewhere:
+wt refuses a record whose steps are not exactly these, in this order, so another
+step or state comes as a new major (`recovery.v2.json`), never a minor. Fields
+may still be added.
+
+A step's `state` is `pending`, `running`, `done` or `failed`. `running` is
+written before the step changes anything, so a step left `running` may or may
+not have happened: the two places each directory can be (and its inode) say
+which. A removal that left no result — killed, or crashed — is fully described by
+the file. A lock `"wt quarantine <dir>"` on a worktree with no `recovery.json`
+was stopped before anything moved.
+
+A branch step that fails once the checkout has gone is **partial**, and wt says
+"partly done", not "removed": the file's `branch.result` is `failed`.
+
+## `wt restore <dir> --dry-run --json` — the plan
+
+What `wt restore <dir>` would do, changing nothing: where each directory is,
+what happens to the branch, and every reason it would refuse.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `schema`, `schemaVersion` | | |
+| `command` | `"restore"` | |
+| `dir` | string | the folder, absolute |
+| `repo` | string \| null | from `recovery.json` |
+| `checkout`, `admin` | object \| null | `path`, `quarantined`, and `location`: `original` (at its path, the same directory by inode — moved back, or never moved), `quarantined`, `taken` (something else is at its path), `missing` |
+| `head` | string \| null | the commit to detach at, if it comes to that |
+| `branch` | object \| null | `name`, `tip`, `keepAs`, `removal` (the removal's `branch.result`), `action` and `occupiedBy` |
+| `locked` | bool | the worktree carries this quarantine's lock, which comes off last |
+| `orphan` | string \| null | a worktree locked for `<dir>` with no `recovery.json`: restoring it is unlocking it |
+| `problems` | array | `{code, text}`: `noRecord`, `repository`, `checkoutTaken`, `checkoutMissing`, `adminTaken`, `adminMissing`, `volume`, `commitMissing`, `worktreesUnknown` |
+| `error` | string \| null | the problems in words |
+
+`branch.action`, exhaustively, decided in this order:
+
+| Value | When | Then |
+|---|---|---|
+| `detach` | another worktree has the branch — under its name or the kept name — as HEAD, rebasing it (`head-name`), or bisecting from it (`BISECT_START`) | no branch change; HEAD detached at `head`; `occupiedBy` names that worktree |
+| `none` | the branch is at `tip` | nothing |
+| `renameBack` | its name is free and the kept name is at `tip` | renamed back, config section with it |
+| `recreate` | its name is free and there is no kept branch | made again at `tip` (refused, naming the commit, when it is not in the repository), and its recorded config added to the empty section |
+| `attach` | its name holds another commit, the kept name is at `tip` | HEAD names the kept branch |
+| `detach` | anything else (the kept branch moved on) | as above, `occupiedBy` null |
+
+Before the admin dir moves back — also when a restore that stopped resumes — the
+branch HEAD will name is read again: gone, moved off `tip`, or taken by another
+worktree in between, and HEAD is detached instead.
+
+A removal that stopped before its admin dir moved never unregistered the
+worktree, which may have been worked in since: `action` is `none` whatever its
+branch did, and the restore only unlocks it and deletes the pins.
+
+The recorded config goes back only when this restore made the branch again, or
+the branch's section is empty: a branch somebody else made keeps its own config.
+It goes back entry by entry, and one already there counts once, so a restore
+stopped halfway through it adds the rest.
+
+## `wt restore <dir> --json` — the result
+
+The restore: the branch action, then the admin dir back — its parent folders made
+again if `git worktree prune` or a tidy took them, never the directory itself —
+then the checkout's `.git` as it was, then the checkout, then the quarantine's
+lock off and its pins deleted, each journalled in `recovery.json` and idempotent, so
+running `wt restore <dir>` again finishes a restore — or a removal — stopped
+anywhere. The human output goes to stderr. A handled SIGINT or SIGTERM writes the
+object too.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `schema`, `schemaVersion`, `command`, `dir`, `repo` | | as in the plan |
+| `outcome` | `restored` \| `refused` \| `partial` \| `interrupted` | restored: registered at its path again, branch action done, lock off. refused: nothing changed. partial: a step failed after others; run it again. interrupted: a signal |
+| `error` | string \| null | |
+| `checkout`, `admin`, `branch` | | as in the plan, read when the object is written |
+| `unlocked` | bool | this run took the quarantine's lock off |
+| `steps` | array | the restore's steps from `recovery.json`; empty when it has none |
+| `recovery` | string \| null | for `interrupted`: what wt printed |
 
 ## `wt sync --json` — the overview
 

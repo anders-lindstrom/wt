@@ -106,6 +106,14 @@ make_fleet() {
     "$WT" config set profile.api "$d" >/dev/null
     echo "$d"
 }
+# make_worktrees with login-crash already moved aside into ../trash/lc, for
+# wt restore.
+make_quarantine() {
+    local d; d=$(make_worktrees "$1")
+    mkdir -p "$1/trash"
+    (cd "$d" && "$WT" remove login-crash --yes --quarantine "$1/trash/lc" >/dev/null 2>&1)
+    echo "$d"
+}
 make_sweep() {
     local d; d=$(make_worktrees "$1")
     git -C "$d" branch done-work
@@ -220,6 +228,7 @@ check() {
         sync) repo=$(make_sync "$dir");;
         resume) repo=$(make_resume "$dir");;
         sweep) repo=$(make_sweep "$dir");;
+        quarantine) repo=$(make_quarantine "$dir");;
         fleet) repo=$(make_fleet "$dir");;
         keep|launchd) repo=$(make_keep "$dir"); prereq="export HOME=$dir/home PATH=$dir/bin:\$PATH; $prereq";;
         keepfleet|launchdfleet) repo=$(make_keepfleet "$dir"); prereq="export HOME=$dir/home PATH=$dir/bin:\$PATH; $prereq";;
@@ -314,6 +323,11 @@ check worktrees "" "" 'wt remove login-crash --yes'
 check worktrees "" "" 'wt remove login-crash --force'
 check worktrees myrepo_wt/fix_wt/login-crash "" 'wt remove --me'
 check worktrees myrepo_wt/fix_wt/login-crash "" 'wt remove .'
+check worktrees myrepo_wt/fix_wt/login-crash "" 'wt remove . --force'
+check worktrees "" "mkdir -p ../trash" 'wt remove login-crash --quarantine ../trash/lc'
+check quarantine "" "" 'wt restore ../trash/lc'
+check quarantine "" "" 'wt restore ../trash/lc --dry-run'
+check quarantine "" "" 'wt restore ../trash/lc --json'
 
 check sweep "" "" 'wt sweep'
 check fleet "" "" 'wt sweep --all --yes'

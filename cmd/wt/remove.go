@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -12,6 +13,7 @@ func newRemoveCmd() *cobra.Command {
 	var me bool
 	var meAt string
 	var yes, force, dryRun bool
+	var quarantineDir string
 	cmd := &cobra.Command{
 		Use:     "remove <work>",
 		Aliases: []string{"rm"},
@@ -65,12 +67,24 @@ func newRemoveCmd() *cobra.Command {
 			"count, and without claude on the PATH there are none. A git lock whose\n" +
 			"process has exited is released; one whose holder is still running\n" +
 			"refuses. --force goes past a session, a failed listing, a held lock,\n" +
-			"and hidden files still as committed; an edited one is uncommitted work.",
+			"and hidden files still as committed; an edited one is uncommitted work.\n\n" +
+			"--quarantine <dir> moves the worktree aside instead of deleting it.\n" +
+			"<dir> is a new folder on the worktree's volume — its parent must exist\n" +
+			"— outside every checkout and the git dir; removal refuses, changing\n" +
+			"nothing, when it is not: only renames, never a copy. After the last\n" +
+			"check it writes <dir>/recovery.json, locks the worktree with the reason\n" +
+			"\"wt quarantine <dir>\", pins its commits with refs under\n" +
+			"refs/wt-quarantine/ so gc keeps them, moves the checkout to\n" +
+			"<dir>/checkout and its admin dir, .git/worktrees/<id> with its\n" +
+			"submodules' repositories, to <dir>/admin, which unregisters it; then\n" +
+			"the branch goes as it would. A file written after the check moves with\n" +
+			"the checkout. Each step is journalled in recovery.json; wt restore <dir>\n" +
+			"puts it all back, and wt sweep drops the pins once <dir> is deleted.",
 		Example: "  wt remove login-crash            # say where the branch stands, then ask\n" +
 			"  wt remove login-crash --dry-run  # what it would do; change nothing\n" +
 			"  wt remove login-crash --yes      # do not ask (scripts, hooks)\n" +
-			"  wt remove login-crash --force    # past a session or a held lock\n" +
-			"  wt remove .                      # the one you are standing in",
+			"  wt remove . --force              # the one you are in, past a session\n" +
+			"  wt remove login-crash --quarantine ../trash/lc  # move it aside",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -83,6 +97,11 @@ func newRemoveCmd() *cobra.Command {
 				return err
 			}
 			opts := commands.RemoveOptions{Force: force, DryRun: dryRun}
+			if quarantineDir != "" {
+				if opts.Quarantine, err = filepath.Abs(quarantineDir); err != nil {
+					return err
+				}
+			}
 			if !yes && canAsk(cmd) {
 				opts.Confirm = confirmRemoval(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()))
 			}
@@ -103,6 +122,8 @@ func newRemoveCmd() *cobra.Command {
 		"go past a session, a held lock, or files hidden from status")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask for confirmation")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what removal would do and change nothing")
+	cmd.Flags().StringVar(&quarantineDir, "quarantine", "",
+		"move it into this new folder instead of deleting it")
 	cmd.MarkFlagsMutuallyExclusive("yes", "dry-run")
 	cmd.Flags().StringVar(&meAt, "me-at", "", "remove the worktree at this path (used by wt_rm_me)")
 	_ = cmd.Flags().MarkHidden("me-at")
