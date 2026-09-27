@@ -56,7 +56,9 @@ func TestEverySchemaCompiles(t *testing.T) {
 			t.Errorf("%s: %v", d.File, err)
 		}
 	}
-	if len(schema.All()) != 4 {
-		t.Errorf("want the status, sweep, sweep-plan and up schemas, got %d", len(schema.All()))
+	for _, name := range []string{"status", "up", "sweep", "sweep-plan", "sync"} {
+		if _, ok := schema.Get(name); !ok {
+			t.Errorf("no %s schema", name)
+		}
 	}
 }

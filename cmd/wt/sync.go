@@ -99,20 +99,27 @@ func newSyncCmd() *cobra.Command {
 			"one keeps every verb off it. One marked (idle) is waiting for its person; a\n" +
 			"verb names it, asks first, and ends with a wt: line to pass on to it. +N\n" +
 			"counts the other sessions there. The session wt itself runs under is not\n" +
-			"counted. The lines under a row are advisory and never change the class.",
-		Example: "  wt sync --no-fetch            # every worktree, against trunk as last fetched\n" +
+			"counted. The lines under a row are advisory and never change the class.\n" +
+			"\n" +
+			"--json prints the overview as one object on stdout, for a tool driving\n" +
+			"wt: every worktree with its group, class, stack and stops, current ones\n" +
+			"included, and a token naming what a run would start on. With --all,\n" +
+			"--roots or --profile it is an array, one object per repository. wt\n" +
+			"schema sync prints its JSON Schema; docs/json.md explains it.",
+		Example: "  wt sync --no-fetch --json     # every worktree as JSON, trunk as last fetched\n" +
 			"  wt sync login-crash           # that worktree in full\n" +
 			"  wt sync . --run --if-ready    # rebase it only if it needs nothing from you\n" +
 			"  wt sync --all --run --if-ready # every ready worktree, every repository\n" +
 			"  wt sync --profile api         # the overview of a profile's repositories",
 		ValidArgsFunction: completeWork,
 	}
-	var run, resume, undo, yes, force, ifReady bool
+	var run, resume, undo, yes, force, ifReady, asJSON bool
 	var sel selectionFlags
 	var push func() commands.PushMode
 	flags := func() syncVerbFlags {
 		return syncVerbFlags{run: run, resume: resume, undo: undo,
-			yes: yes, force: force, noFetch: noFetch, ifReady: ifReady, push: push()}
+			yes: yes, force: force, noFetch: noFetch, ifReady: ifReady, push: push(),
+			json: asJSON}
 	}
 	// The count rule is the verb's own. Two verbs at once is a flag mistake,
 	// which RunE reports the way --push with --no-push is reported.
@@ -129,6 +136,9 @@ func newSyncCmd() *cobra.Command {
 			return err
 		}
 		verb, _ := f.verb()
+		if f.json {
+			return syncOverviewJSON(cmd, args, sel.selection(), f)
+		}
 		if sel.selection().Any() {
 			return syncAcross(cmd, args, verb, sel.selection(), f)
 		}
@@ -170,6 +180,7 @@ func newSyncCmd() *cobra.Command {
 		"with --run or --resume: neither push nor ask; print the push command")
 	sync.Flags().BoolVarP(&force, "force", "f", false, "with --run: past a Claude session in it; with --undo: past a moved branch")
 	sync.Flags().BoolVar(&ifReady, "if-ready", false, "with --run: rebase only what will go through without needing you, and fail on the rest")
+	sync.Flags().BoolVar(&asJSON, "json", false, "print the overview as one JSON object on stdout")
 	sel.add(sync, true)
 	// The verbs spelled as flags, and their own flags, work on this line but
 	// belong to the verbs: their help is wt sync run, resume and undo --help,
@@ -360,6 +371,8 @@ type syncVerbFlags struct {
 	yes, force, noFetch bool
 	ifReady             bool
 	push                commands.PushMode
+	// json prints the overview as one object on stdout.
+	json bool
 }
 
 // verb is the one verb given, "" for the overview, or an error naming the
@@ -404,8 +417,30 @@ func (f syncVerbFlags) check() error {
 		return errors.New("--yes needs --run, --resume or --undo")
 	case f.noFetch && verb != "" && verb != "run":
 		return errors.New("--no-fetch needs --run, or no verb")
+	case f.json && verb != "":
+		return errors.New("--json prints the overview; --" + verb + " does not take it")
 	}
 	return nil
+}
+
+// syncOverviewJSON is wt sync --json: the overview as one object, or with
+// --all, --roots or --profile an array of one per repository.
+func syncOverviewJSON(cmd *cobra.Command, args []string, sel commands.Selection, f syncVerbFlags) error {
+	opts := commands.SyncOptions{NoFetch: f.noFetch}
+	switch {
+	case len(args) > 0:
+		return errors.New("--json prints the overview of every worktree; name none")
+	case sel.Any():
+		return commands.SyncAllJSON(loadUserWarn(cmd.ErrOrStderr()), sel, opts, cmd.OutOrStdout())
+	}
+	ctx, err := openLenient(cmd.ErrOrStderr())
+	if err != nil {
+		return err
+	}
+	if ctx == nil {
+		return commands.ErrNotInRepo
+	}
+	return commands.SyncJSON(ctx, opts, cmd.OutOrStdout())
 }
 
 // syncArgs is the argument count wt sync takes for verb: the rule the verb's

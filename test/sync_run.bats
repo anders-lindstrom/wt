@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 load helpers
+bats_require_minimum_version 1.5.0
 
 # A repo whose trunk declares v.txt owned-line max-plus-patch, with a
 # worktree one commit ahead of trunk on v.txt and trunk itself bumped past
@@ -202,4 +203,19 @@ setup() {
     run wt sync
     [ "$status" -eq 0 ]
     [[ "$output" != *"bump"* ]]
+}
+
+# --json: the overview as one object on stdout, nothing else there, and the
+# worktree filed where the table files it.
+@test "sync --json prints the overview as one object on stdout" {
+    run --separate-stderr wt sync --no-fetch --json
+    [ "$status" -eq 0 ]
+    [[ "$output" == "{"*"}" ]]
+    [[ "$output" == *'"command": "sync"'* ]]
+    [[ "$output" == *'"work": "bump"'*'"group": "ready"'*'"class": "recipe"'* ]]
+    [[ "$output" == *'"token": "1:'* ]]
+
+    run wt sync bump --json
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"name none"* ]]
 }

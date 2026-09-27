@@ -383,7 +383,7 @@ check sync myrepo_wt/fix_wt/login-crash "" 'wt up --json --expect 1:0123abcd --n
 check sync myrepo_wt/fix_wt/login-crash "" 'wt status . --json'
 check sync myrepo_wt/fix_wt/login-crash "" 'wt up -y --force'
 check sync "" "" 'wt sync run login-crash --if-ready --force'
-check sync "" "" 'wt sync --no-fetch'
+check sync "" "" 'wt sync --no-fetch --json'
 check sync "" "" 'wt sync login-crash'
 check sync "" "" 'wt sync login-crash --run'
 check sync "" "" 'wt sync --run'

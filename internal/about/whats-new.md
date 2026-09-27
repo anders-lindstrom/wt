@@ -6,6 +6,14 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-27 22:45 — wt sync --json, the overview for tools
+
+- `wt sync --json` prints the overview as one object: every worktree with its
+  group (ready, needs you, skipped, current), class, stack, stops and the
+  strategies that resolve them, plus a token naming what a run would start on.
+- With `--all`, `--roots` or `--profile` it is an array, one per repository.
+- `wt schema sync` prints its JSON Schema (1.0.0); docs/json.md explains it.
+
 ## 2026-09-27 22:43 — JSON for wt sweep
 
 - `wt sweep --dry-run --json` is the plan as one object: every row, why it is
