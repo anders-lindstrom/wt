@@ -9,7 +9,7 @@ import (
 )
 
 func newUpCmd() *cobra.Command {
-	var noFetch, yes, force, asJSON bool
+	var noFetch, noFFTrunk, yes, force, asJSON bool
 	var expect string
 	var push func() commands.PushMode
 	cmd := &cobra.Command{
@@ -29,6 +29,11 @@ func newUpCmd() *cobra.Command {
 			"--yes (-y) answers yes to every question, the push included; --push\n" +
 			"pushes without asking anything else; --no-push prints the push command\n" +
 			"instead, with or without --yes.\n\n" +
+			"After the fetch, local <trunk> is fast-forwarded to origin/<trunk>\n" +
+			"when that is safe: checked out nowhere, or in a clean checkout with\n" +
+			"nothing in progress and no session busy in it. Otherwise it is left,\n" +
+			"and a line says why. --no-ff-trunk, or wt config set ff_trunk false,\n" +
+			"leaves it alone.\n\n" +
 			"A Claude session busy in the worktree refuses the run, since the files\n" +
 			"it has read would change under it. --force (-f) goes ahead anyway and\n" +
 			"names the session, so you can tell it; it lifts nothing else — dirt\n" +
@@ -39,7 +44,7 @@ func newUpCmd() *cobra.Command {
 			"wt status --json reported. wt schema up prints its JSON Schema;\n" +
 			"docs/json.md explains it.",
 		Example: "  wt up                  # the worktree you are in, if it syncs cleanly\n" +
-			"  wt up --push           # and push it, without asking\n" +
+			"  wt up --push --no-ff-trunk  # and push it; local trunk stays put\n" +
 			"  wt up -y --force       # yes to everything, past a session busy in it\n" +
 			"  wt up --yes --no-push --json  # for a tool: one JSON object on stdout\n" +
 			"  wt up --json --expect 1:0123abcd --no-fetch  # only if the plan still holds",
@@ -50,7 +55,7 @@ func newUpCmd() *cobra.Command {
 			if len(args) == 1 {
 				work = args[0]
 			}
-			f := syncVerbFlags{run: true, yes: yes, noFetch: noFetch, ifReady: true, force: force, push: push()}
+			f := syncVerbFlags{run: true, yes: yes, noFetch: noFetch, noFFTrunk: noFFTrunk, ifReady: true, force: force, push: push()}
 			if !asJSON {
 				return withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
 					opts, _ := runOptions(cmd, f, false)
@@ -83,6 +88,7 @@ func newUpCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&noFetch, "no-fetch", false, "rebase onto origin/<trunk> as last fetched")
+	cmd.Flags().BoolVar(&noFFTrunk, "no-ff-trunk", false, "leave local <trunk> where it is after the fetch")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "yes to every question, the push included (--no-push keeps it out)")
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "go ahead even with a Claude session in the worktree")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print one result object on stdout, the progress on stderr")

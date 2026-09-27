@@ -94,6 +94,9 @@ type KeepOptions struct {
 	Every time.Duration
 	// Push is PushAlways or PushNever: a keeper has nobody to ask.
 	Push PushMode
+	// NoFFTrunk leaves local trunk where it is after the fetch, as the user
+	// setting ff_trunk false does.
+	NoFFTrunk bool
 	verbOptions
 }
 
@@ -349,6 +352,15 @@ func (p *keepPass) closeLog(err error) error {
 	return werr
 }
 
+// agents lists the sessions for the fast-forward of local trunk the way the
+// run does: an unattended pass has to know, so no claude to ask is an error.
+func (p *keepPass) agents() ([]wtsync.Agent, error) {
+	if p.opts.Agents != nil {
+		return p.opts.Agents, nil
+	}
+	return wtsync.ListOtherAgentsRequired()
+}
+
 // header writes the record's first line: the time, and trunk as the fetch
 // found it.
 func (p *keepPass) header(line string) {
@@ -374,11 +386,23 @@ func (p *keepPass) pass(recorded string) error {
 		return err
 	}
 	p.after = after
+	// Local trunk follows every fetch, whether or not trunk moved since the
+	// last pass: one that was held back then may go now.
+	trunkLine := syncLocalTrunk(ctx, after, trunkSyncOptions{apply: true,
+		optedOut: p.opts.NoFFTrunk || !ctx.UserConfig().FFTrunk,
+		agents:   p.agents}).Line()
+	noteTrunk := func() {
+		if trunkLine != "" {
+			fmt.Fprintln(p.w, trunkLine)
+			fmt.Fprintf(p.log, "  %s\n", trunkLine)
+		}
+	}
 	retry := stillUnpushed(ctx.Repo.MainRoot, p.prev)
 	if after == recorded && len(retry) == 0 {
 		p.result = "trunk unchanged"
 		p.header(fmt.Sprintf("%s %s unchanged; nothing to do", p.onto, git.ShortID(after, 7)))
 		fmt.Fprintf(p.w, "wt sync keep once  %s %s unchanged; nothing to do\n", p.onto, git.ShortID(after, 7))
+		noteTrunk()
 		return nil
 	}
 	p.acted = true
@@ -391,9 +415,11 @@ func (p *keepPass) pass(recorded string) error {
 	if after == recorded {
 		p.header(fmt.Sprintf("%s %s unchanged", p.onto, git.ShortID(after, 7)))
 		fmt.Fprintf(p.w, "wt sync keep once  %s %s unchanged; %d push%s to retry\n", p.onto, git.ShortID(after, 7), len(retry), plural(len(retry)))
+		noteTrunk()
 	} else {
 		p.header(fmt.Sprintf("%s %s → %s", p.onto, git.ShortID(p.before, 7), git.ShortID(after, 7)))
 		fmt.Fprintf(p.w, "wt sync keep once  %s %s → %s (fetched)\n", p.onto, git.ShortID(p.before, 7), git.ShortID(after, 7))
+		noteTrunk()
 		ropts := RunOptions{NoFetch: true, Unattended: true, verbOptions: p.opts.verbOptions, pushOptions: pushOptions{Push: p.opts.Push}}
 		ropts.Confirm = nil
 		// An unattended pass has to know who is in a worktree: no claude to

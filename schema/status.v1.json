@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/status.v1.json",
-  "x-version": "1.1.0",
+  "x-version": "1.2.0",
   "title": "wt status --json",
   "description": "What wt up would start on, from local state alone. Printed by `wt status [<work>] --json`, which writes nothing to any repository. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
-  "required": ["schema", "schemaVersion", "command", "token", "trunk", "trunkRef", "trunkRefExists", "trunkTip", "trunkRefUpdatedAt",
+  "required": ["schema", "schemaVersion", "command", "token", "trunk", "trunkRef", "trunkRefExists", "trunkTip", "trunkRefUpdatedAt", "trunkSync",
     "configured", "worktree", "upEligible", "upIneligibleCode", "upIneligibleReason", "stack", "sessions", "sessionsError"],
   "properties": {
     "schema": { "const": 1, "description": "The major version: a new one only for a change that breaks readers." },
@@ -17,6 +17,7 @@
     "trunkRefExists": { "type": "boolean" },
     "trunkTip": { "$ref": "#/$defs/shaOrNull" },
     "trunkRefUpdatedAt": { "type": ["string", "null"], "format": "date-time", "description": "When the trunk ref last moved, from its own reflog; null without one." },
+    "trunkSync": { "$ref": "#/$defs/trunkSync", "description": "What wt up would do to local trunk after its fetch, judged against trunkTip; fastForwarded is always false here." },
     "configured": { "type": "boolean", "description": "The repository has a wt configuration that parses." },
     "worktree": {
       "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/worktree" }],
@@ -39,6 +40,22 @@
     "sessionsError": { "type": ["string", "null"], "description": "Listing the sessions failed; sessions is then empty, not known empty." }
   },
   "$defs": {
+    "trunkSync": {
+      "type": "object",
+      "description": "Local trunk against origin/<trunk>, and what was done about it. See docs/json.md.",
+      "required": ["local", "remote", "localAhead", "remoteAhead", "fastForwarded", "skippedReason"],
+      "properties": {
+        "local": { "$ref": "#/$defs/shaOrNull", "description": "Local trunk after the run (as found unless fast-forwarded); null when there is none." },
+        "remote": { "$ref": "#/$defs/shaOrNull", "description": "The origin/<trunk> commit compared with; null when there is none." },
+        "localAhead": { "type": ["integer", "null"], "minimum": 0, "description": "Commits local trunk has that origin lacks, as found." },
+        "remoteAhead": { "type": ["integer", "null"], "minimum": 0, "description": "Commits origin has that local trunk lacks, as found." },
+        "fastForwarded": { "type": "boolean" },
+        "skippedReason": {
+          "oneOf": [{ "type": "null" }, { "enum": ["optedOut", "ahead", "diverged", "dirty", "operation", "session", "notFastForward", "failed"] }],
+          "description": "Why local trunk was left; null when fast-forwarded or with nothing to do."
+        }
+      }
+    },
     "shaOrNull": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40,64}$" },
     "countOrNull": { "type": ["integer", "null"], "minimum": 0 },
     "worktree": {

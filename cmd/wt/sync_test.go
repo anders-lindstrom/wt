@@ -106,6 +106,8 @@ func TestSyncVerbFlagsRefuseAFlagWithoutItsVerb(t *testing.T) {
 		{syncVerbFlags{push: commands.PushNever}, "--no-push needs --run or --resume"},
 		{syncVerbFlags{undo: true, push: commands.PushNever}, "--no-push needs --run or --resume"},
 		{syncVerbFlags{force: true}, "--force needs --run or --undo"},
+		{syncVerbFlags{noFFTrunk: true}, "--no-ff-trunk needs --run"},
+		{syncVerbFlags{resume: true, noFFTrunk: true}, "--no-ff-trunk needs --run"},
 		{syncVerbFlags{resume: true, force: true}, "--force needs --run or --undo"},
 		{syncVerbFlags{yes: true}, "--yes needs --run, --resume or --undo"},
 		{syncVerbFlags{resume: true, noFetch: true}, "--no-fetch needs --run, or no verb"},

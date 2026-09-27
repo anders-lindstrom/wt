@@ -6,6 +6,14 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-27 23:55 — wt up and wt sync run bring local trunk along
+
+- After fetching, `wt up`, `wt sync run`/`--run` and the keeper fast-forward
+  local trunk to origin when safe: checked out nowhere, or in a clean checkout
+  with nothing in progress and no busy session. Otherwise one line says why.
+- `--no-ff-trunk` or `wt config set ff_trunk false` turns it off.
+- JSON: `trunkSync` in up (1.2.0), sync-run (1.1.0) and status (1.2.0).
+
 ## 2026-09-27 23:10 — JSON results for wt sync run, resume and undo
 
 - `--json` on `wt sync run`, `wt sync --run`, `resume` and `undo` prints one

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/config"
@@ -63,6 +64,7 @@ type UpPlan struct {
 	TrunkRefExists     bool              `json:"trunkRefExists"`
 	TrunkTip           *string           `json:"trunkTip"`
 	TrunkRefUpdatedAt  *string           `json:"trunkRefUpdatedAt"`
+	TrunkSync          *TrunkSync        `json:"trunkSync"`
 	Configured         bool              `json:"configured"`
 	Worktree           *PlanWorktree     `json:"worktree"`
 	UpEligible         bool              `json:"upEligible"`
@@ -87,6 +89,12 @@ func UpPlanJSON(ctx *Context, arg string, w io.Writer) error {
 	tip, exists := ctx.Repo.ResolveRef("refs/remotes/" + ref)
 	p.TrunkRefExists, p.TrunkTip = exists, strp(tip)
 	p.TrunkRefUpdatedAt = refUpdatedAt(ctx.Repo.MainRoot, "refs/remotes/"+ref)
+	// Listed at most once, and only when asked: by the trunk check, when
+	// local trunk is checked out, and for the stack's sessions.
+	listAgents := sync.OnceValues(wtsync.ListOtherAgents)
+	// What wt up would do to local trunk after its fetch, judged against
+	// origin/<trunk> as last fetched: the fetch may bring more.
+	p.TrunkSync = syncLocalTrunk(ctx, tip, trunkSyncOptions{optedOut: !ctx.UserConfig().FFTrunk, agents: listAgents})
 
 	inel := func(code, why string) {
 		if p.UpIneligibleCode == nil {
@@ -170,7 +178,7 @@ func UpPlanJSON(ctx *Context, arg string, w io.Writer) error {
 		p.Token = strp(planToken(ctx, trunk, stack))
 	}
 
-	agents, err := wtsync.ListOtherAgents()
+	agents, err := listAgents()
 	if err != nil {
 		p.SessionsError = strp(err.Error())
 	}

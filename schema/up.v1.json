@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/up.v1.json",
-  "x-version": "1.1.0",
+  "x-version": "1.2.0",
   "title": "wt up --json",
   "description": "What a wt up run did. Printed by `wt up [<work>] --json` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends the run. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
-  "required": ["schema", "schemaVersion", "command", "trunk", "trunkRef", "onto", "fetched", "outcome", "error", "worktrees", "recovery"],
+  "required": ["schema", "schemaVersion", "command", "trunk", "trunkRef", "onto", "fetched", "trunkSync", "outcome", "error", "worktrees", "recovery"],
   "properties": {
     "schema": { "const": 1, "description": "The major version: a new one only for a change that breaks readers." },
     "schemaVersion": { "type": "string", "pattern": "^1\\.[0-9]+\\.[0-9]+$", "description": "The full semantic version of this schema that the output follows: minor for an added field or enumeration value, patch for wording." },
@@ -14,6 +14,7 @@
     "trunkRef": { "type": ["string", "null"] },
     "onto": { "$ref": "#/$defs/shaOrNull", "description": "The trunk commit the run rebased onto, after its fetch; null when never determined." },
     "fetched": { "type": "boolean" },
+    "trunkSync": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/trunkSync" }], "description": "What the run did to local trunk after its fetch: fast-forwarded to origin/<trunk> when safe, or why not. Null when it did not fetch." },
     "outcome": {
       "enum": ["done", "refused", "partial", "interrupted"],
       "description": "done: every participant rebased or skipped. refused: nothing changed, or error stopped the run first. partial: something changed and not everything finished. interrupted: a signal ended the run."
@@ -23,6 +24,22 @@
     "recovery": { "type": ["string", "null"], "description": "For interrupted: the way back wt printed." }
   },
   "$defs": {
+    "trunkSync": {
+      "type": "object",
+      "description": "Local trunk against origin/<trunk>, and what was done about it. See docs/json.md.",
+      "required": ["local", "remote", "localAhead", "remoteAhead", "fastForwarded", "skippedReason"],
+      "properties": {
+        "local": { "$ref": "#/$defs/shaOrNull", "description": "Local trunk after the run (as found unless fast-forwarded); null when there is none." },
+        "remote": { "$ref": "#/$defs/shaOrNull", "description": "The origin/<trunk> commit compared with; null when there is none." },
+        "localAhead": { "type": ["integer", "null"], "minimum": 0, "description": "Commits local trunk has that origin lacks, as found." },
+        "remoteAhead": { "type": ["integer", "null"], "minimum": 0, "description": "Commits origin has that local trunk lacks, as found." },
+        "fastForwarded": { "type": "boolean" },
+        "skippedReason": {
+          "oneOf": [{ "type": "null" }, { "enum": ["optedOut", "ahead", "diverged", "dirty", "operation", "session", "notFastForward", "failed"] }],
+          "description": "Why local trunk was left; null when fast-forwarded or with nothing to do."
+        }
+      }
+    },
     "shaOrNull": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40,64}$" },
     "participant": {
       "type": "object",
