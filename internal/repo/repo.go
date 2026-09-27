@@ -22,6 +22,8 @@ type Worktree struct {
 	Detached bool
 	Bare     bool
 	IsMain   bool
+	// Head is the commit checked out there, "" before its first commit.
+	Head string
 	// Rebasing is set when git reports the worktree as detached only
 	// because a rebase is in progress. Branch then names the branch the
 	// sequencer will put HEAD back on, read from its own head-name.
@@ -108,7 +110,8 @@ func (w Worktrees) ByBranch(branch string) (Worktree, bool) {
 
 // Worktrees lists every worktree of the repository, main first.
 func (r *Repo) Worktrees() (Worktrees, error) {
-	out, err := git.Run(r.MainRoot, "worktree", "list", "--porcelain")
+	// -z, so a path with a newline in it is read whole.
+	out, err := git.Run(r.MainRoot, "worktree", "list", "--porcelain", "-z")
 	if err != nil {
 		return nil, err
 	}
@@ -122,13 +125,18 @@ func (r *Repo) Worktrees() (Worktrees, error) {
 			cur = nil
 		}
 	}
-	for _, line := range strings.Split(out, "\n") {
+	for _, line := range strings.Split(out, "\x00") {
 		switch {
 		case strings.HasPrefix(line, "worktree "):
 			flush()
 			cur = &Worktree{Path: strings.TrimPrefix(line, "worktree ")}
 		case cur == nil:
 			// header noise before the first entry
+		case strings.HasPrefix(line, "HEAD "):
+			// An unborn branch is reported at the all-zero id: no commit.
+			if head := strings.TrimPrefix(line, "HEAD "); strings.Trim(head, "0") != "" {
+				cur.Head = head
+			}
 		case strings.HasPrefix(line, "branch "):
 			cur.Branch = strings.TrimPrefix(
 				strings.TrimPrefix(line, "branch "), "refs/heads/")
@@ -247,6 +255,10 @@ func gitDirOf(wtPath string) (string, error) {
 	dir := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(string(data)), "gitdir:"))
 	if dir == "" {
 		return "", fmt.Errorf("%s names no git dir", p)
+	}
+	// git worktree add --relative-paths writes it relative to the checkout.
+	if !filepath.IsAbs(dir) {
+		dir = filepath.Join(wtPath, dir)
 	}
 	return dir, nil
 }
@@ -507,17 +519,16 @@ func (r *Repo) AddWorktree(path, branch, base string) error {
 	return err
 }
 
-// RemoveWorktree deletes a worktree checkout. A worktree containing submodules
-// cannot be removed by git worktree remove, so it is deleted directly and the
-// registration pruned — the same manual path the bash implementation took.
+// RemoveWorktree deletes a worktree checkout and its registration. git
+// refuses a worktree holding submodules unless forced, and forcing is safe
+// only because every caller has read the checkout with DirtyStrict first.
+// Only this worktree's registration goes: nothing here prunes the others.
 func (r *Repo) RemoveWorktree(path string) error {
+	args := []string{"worktree", "remove", path}
 	if r.HasSubmodules(path) {
-		if err := os.RemoveAll(path); err != nil {
-			return err
-		}
-		return r.Prune()
+		args = []string{"worktree", "remove", "--force", path}
 	}
-	if _, err := git.Run(r.MainRoot, "worktree", "remove", path); err != nil {
+	if _, err := git.Run(r.MainRoot, args...); err != nil {
 		return fmt.Errorf("%w (uncommitted changes? try removing it by hand)", err)
 	}
 	return nil
