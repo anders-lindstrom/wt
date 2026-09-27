@@ -13,6 +13,8 @@ import (
 var (
 	findGitHub   = github.Find
 	gitHubRemote = github.RemoteOf
+	// lookupDeadline bounds the branch lookup behind `wt list` and `wt status`.
+	lookupDeadline = github.ListDeadline
 )
 
 // gitHub is a usable GitHub CLI and the repository it answers for.

@@ -157,11 +157,14 @@ func viewCase(t *testing.T, prs []github.PR) string {
 // that is not on GitHub.
 func stubGitHub(t *testing.T, cli github.CLI, remote github.Remote, hasRemote bool) {
 	t.Helper()
-	oldFind, oldRemote := findGitHub, gitHubRemote
+	oldFind, oldRemote, oldDeadline := findGitHub, gitHubRemote, lookupDeadline
 	found := cli.Exe != ""
 	findGitHub = func() (github.CLI, bool) { return cli, found }
 	gitHubRemote = func(string) (github.Remote, bool) { return remote, hasRemote }
-	t.Cleanup(func() { findGitHub, gitHubRemote = oldFind, oldRemote })
+	// The fake is a shell script, and on a loaded machine starting one can
+	// take longer than the 2s wt list gives gh.
+	lookupDeadline = time.Minute
+	t.Cleanup(func() { findGitHub, gitHubRemote, lookupDeadline = oldFind, oldRemote, oldDeadline })
 }
 
 func openPR(number int, head, title string) github.PR {
