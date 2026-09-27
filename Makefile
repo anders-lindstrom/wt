@@ -11,8 +11,9 @@ build:
 test:
 	go test ./...
 
+# scripts/bats.sh kills a hung run after 10 minutes; BATS_DEADLINE changes it.
 bats: build
-	bats test/
+	scripts/bats.sh test/
 
 lint:
 	golangci-lint run

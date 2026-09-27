@@ -764,6 +764,10 @@ make check      # lint + go test + bats
 make build
 ```
 
+`make bats` gives the run 10 minutes (`BATS_DEADLINE=<seconds>` changes it),
+then kills it: on macOS, bash before 5.3 patch 16 can hang a test for good
+when the machine is busy, so `brew upgrade bash`.
+
 ## Documentation
 
 - [Design spec](docs/superpowers/specs/2026-08-25-worktree-tool-extraction-design.md)
