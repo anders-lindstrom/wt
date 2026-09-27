@@ -115,6 +115,7 @@ type SyncRunResult struct {
 	TrunkRef      *string            `json:"trunkRef"`
 	Onto          *string            `json:"onto"`
 	Fetched       bool               `json:"fetched"`
+	TrunkSync     *TrunkSync         `json:"trunkSync"`
 	Outcome       string             `json:"outcome"`
 	Error         *string            `json:"error"`
 	Worktrees     []*SyncParticipant `json:"worktrees"`
@@ -130,6 +131,7 @@ type UpResult struct {
 	TrunkRef      *string          `json:"trunkRef"`
 	Onto          *string          `json:"onto"`
 	Fetched       bool             `json:"fetched"`
+	TrunkSync     *TrunkSync       `json:"trunkSync"`
 	Outcome       string           `json:"outcome"`
 	Error         *string          `json:"error"`
 	Worktrees     []*UpParticipant `json:"worktrees"`
@@ -198,6 +200,16 @@ func (j *RunJournal) trunk(name, ref, onto string, fetched bool) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	j.res.Trunk, j.res.TrunkRef, j.res.Onto, j.res.Fetched = strp(name), strp(ref), strp(onto), fetched
+}
+
+// trunkSync records what the run did to local trunk after its fetch.
+func (j *RunJournal) trunkSync(ts *TrunkSync) {
+	if j == nil {
+		return
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.res.TrunkSync = ts
 }
 
 // join records the participants, parents first, before any is touched: each
@@ -323,7 +335,7 @@ func (j *RunJournal) write(inFlight string, signalled bool, recovery ...string) 
 		}
 		up := UpResult{Schema: j.res.Schema, SchemaVersion: j.res.SchemaVersion, Command: j.res.Command,
 			Trunk: j.res.Trunk, TrunkRef: j.res.TrunkRef, Onto: j.res.Onto, Fetched: j.res.Fetched,
-			Outcome: j.res.Outcome, Error: j.res.Error, Worktrees: []*UpParticipant{}, Recovery: j.res.Recovery}
+			TrunkSync: j.res.TrunkSync, Outcome: j.res.Outcome, Error: j.res.Error, Worktrees: []*UpParticipant{}, Recovery: j.res.Recovery}
 		for _, p := range j.res.Worktrees {
 			up.Worktrees = append(up.Worktrees, &p.UpParticipant)
 		}

@@ -22,6 +22,9 @@ const networkTimeout = 5 * time.Minute
 // RunOptions tunes SyncRun for callers and tests.
 type RunOptions struct {
 	NoFetch bool
+	// NoFFTrunk leaves local trunk where it is after the fetch, as the user
+	// setting ff_trunk false does.
+	NoFFTrunk bool
 	// Unattended is a run nobody is watching: wt sync keep once. With nothing
 	// named it leaves a worktree with any session in it alone, idle or busy,
 	// since there is nobody there to ask on its behalf.
@@ -168,6 +171,10 @@ func (r *runPlan) run(works []string) error {
 	if len(works) == 0 && opts.Force {
 		return errors.New("--force takes a run past the sessions in a worktree you name; name it")
 	}
+	// wt up's token names the stack, which is only known further down.
+	if opts.Expect == "" || !opts.planExpect {
+		r.syncTrunk()
+	}
 	if len(works) == 0 {
 		ready, err := r.selectReady()
 		if err != nil {
@@ -195,6 +202,7 @@ func (r *runPlan) run(works []string) error {
 				"%s is not what wt status --json saw); nothing is rebased: read the plan again",
 				r.trunk, strings.Join(r.branches, ", "))
 		}
+		r.syncTrunk()
 	}
 	for _, b := range r.branches {
 		p := r.parts[b]
@@ -286,6 +294,11 @@ func (r *runPlan) declare() error {
 		return nil
 	}
 	if errors.Is(err, wtsync.ErrNoConfig) {
+		// Nothing to rebase, but trunk was fetched: local trunk follows,
+		// unless an --expect is waiting to refuse the run anyway.
+		if r.opts.Expect == "" {
+			r.syncTrunk()
+		}
 		return undeclaredError{fmt.Sprintf("%s declares no %s on %s: nothing is rebased", ctx.Repo.Name, wtsync.ConfigFile, onto)}
 	}
 	if err != nil {
@@ -293,6 +306,22 @@ func (r *runPlan) declare() error {
 	}
 	r.cfg = cfg
 	return nil
+}
+
+// syncTrunk brings local trunk to the trunk the run fetched, when it did,
+// and says what came of it. It runs once an --expect has held: a refused
+// run touches nothing, local trunk included.
+func (r *runPlan) syncTrunk() {
+	if r.opts.NoFetch {
+		return
+	}
+	ts := syncLocalTrunk(r.ctx, r.trunkSHA, trunkSyncOptions{apply: true,
+		optedOut: r.opts.NoFFTrunk || !r.ctx.UserConfig().FFTrunk,
+		agents:   r.listAgents})
+	r.opts.Journal.trunkSync(ts)
+	if line := ts.Line(); line != "" {
+		fmt.Fprintln(r.w, line)
+	}
 }
 
 // undeclaredError is a trunk with no .wt-sync.yaml: nothing a run can do, and

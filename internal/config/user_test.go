@@ -55,11 +55,11 @@ func writeUser(t *testing.T, body string) string {
 
 func TestUserFileOverridesTheDefaults(t *testing.T) {
 	u, err := loadUser(writeUser(t,
-		"superset = true\ngithub = false\nbranch_suffix = \"\"\ntype_names = [\"feat=feature\"]\n"))
+		"superset = true\ngithub = false\nbranch_suffix = \"\"\ntype_names = [\"feat=feature\"]\nff_trunk = false\n"))
 	if err != nil {
 		t.Fatalf("loadUser: %v", err)
 	}
-	if !u.Superset || u.GitHub || u.BranchSuffix != "" || len(u.TypeNames) != 1 {
+	if !u.Superset || u.GitHub || u.BranchSuffix != "" || len(u.TypeNames) != 1 || u.FFTrunk {
 		t.Errorf("superset = %v, github = %v, branch_suffix = %q, type_names = %q",
 			u.Superset, u.GitHub, u.BranchSuffix, u.TypeNames)
 	}
@@ -592,5 +592,23 @@ func TestUserTypeNamesMustBeAList(t *testing.T) {
 	_, err := loadUser(writeUser(t, "type_names = \"feat=feature\"\n"))
 	if err == nil || !strings.Contains(err.Error(), "is not a list") {
 		t.Fatalf("want a not-a-list error, got %v", err)
+	}
+}
+
+// ff_trunk is on unless a person turns it off; wt config set validates it
+// like any bool, and a file wt cannot read turns it off with the rest.
+func TestUserFFTrunkDefaultsOnAndTurnsOff(t *testing.T) {
+	u, err := loadUser(filepath.Join(t.TempDir(), "config.toml"))
+	if err != nil || !u.FFTrunk {
+		t.Fatalf("ff_trunk = %v (%v), want true by default", u.FFTrunk, err)
+	}
+	if u, _ = loadUser(writeUser(t, "ff_trunk = false\n")); u.FFTrunk || u.Origin(UserKeyFFTrunk) != "user file" {
+		t.Fatalf("ff_trunk = %v from %s, want false from the user file", u.FFTrunk, u.Origin(UserKeyFFTrunk))
+	}
+	if u, _ = loadUser(writeUser(t, "ff_trunk = \n")); u.FFTrunk {
+		t.Fatal("an unreadable file left ff_trunk on")
+	}
+	if _, _, err := SetUser(UserKeyFFTrunk, "sometimes"); err == nil {
+		t.Fatal("wt config set ff_trunk sometimes was accepted")
 	}
 }

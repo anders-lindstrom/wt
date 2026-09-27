@@ -13,7 +13,7 @@ import (
 )
 
 func newSyncCmd() *cobra.Command {
-	var noFetch bool
+	var noFetch, noFFTrunk bool
 	sync := &cobra.Command{
 		Use:   "sync [<work>]",
 		Short: "Show what a rebase onto trunk would do to each worktree",
@@ -120,7 +120,7 @@ func newSyncCmd() *cobra.Command {
 	var push func() commands.PushMode
 	flags := func() syncVerbFlags {
 		return syncVerbFlags{run: run, resume: resume, undo: undo,
-			yes: yes, force: force, noFetch: noFetch, ifReady: ifReady, push: push(),
+			yes: yes, force: force, noFetch: noFetch, noFFTrunk: noFFTrunk, ifReady: ifReady, push: push(),
 			json: asJSON, expect: expect}
 	}
 	// The count rule is the verb's own. Two verbs at once is a flag mistake,
@@ -184,11 +184,12 @@ func newSyncCmd() *cobra.Command {
 	sync.Flags().BoolVar(&ifReady, "if-ready", false, "with --run: rebase only what will go through without needing you, and fail on the rest")
 	sync.Flags().BoolVar(&asJSON, "json", false, "print the overview as one JSON object on stdout; with a verb, its result")
 	sync.Flags().StringVar(&expect, "expect", "", "with --run: refuse unless the overview still matches this token from wt sync --json")
+	sync.Flags().BoolVar(&noFFTrunk, "no-ff-trunk", false, "with --run: leave local <trunk> where it is after the fetch")
 	sel.add(sync, true)
 	// The verbs spelled as flags, and their own flags, work on this line but
 	// belong to the verbs: their help is wt sync run, resume and undo --help,
 	// and the table here keeps to what the overview itself takes.
-	for _, name := range []string{"run", "resume", "undo", "yes", "push", "no-push", "force", "if-ready", "expect"} {
+	for _, name := range []string{"run", "resume", "undo", "yes", "push", "no-push", "force", "if-ready", "expect", "no-ff-trunk"} {
 		_ = sync.Flags().MarkHidden(name)
 	}
 	sync.AddCommand(newSyncRunCmd(), newSyncResumeCmd(), newSyncUndoCmd(), newSyncDoctorCmd(), newSyncKeepCmd())
@@ -239,7 +240,7 @@ func newSyncKeepCmd() *cobra.Command {
 
 func newSyncKeepRunCmd() *cobra.Command {
 	var every time.Duration
-	var noPush bool
+	var noPush, noFFTrunk bool
 	run := &cobra.Command{
 		Use:     "once",
 		Aliases: []string{"run"},
@@ -274,14 +275,17 @@ func newSyncKeepRunCmd() *cobra.Command {
 			"\n" +
 			"The job passes its interval as --every, for the next-run line the\n" +
 			"status shows; nothing else needs it. --no-push rebases only and prints\n" +
-			"the push commands, into the log when the job runs it. A pass that finds\n" +
+			"the push commands, into the log when the job runs it. After every fetch\n" +
+			"local <trunk> is fast-forwarded as wt sync run does it; --no-ff-trunk,\n" +
+			"or ff_trunk false in wt config, leaves it. A pass that finds\n" +
 			"another still running exits saying so. Ctrl-C is a run's Ctrl-C: every\n" +
 			"lock goes and a worktree caught mid-rebase is named with its way back.",
 		Example: "  wt sync keep once              # one pass now\n" +
-			"  wt sync keep once --no-push    # rebase only; print the push commands",
+			"  wt sync keep once --no-push    # rebase only; print the push commands\n" +
+			"  wt sync keep once --no-ff-trunk  # leave local trunk where it is",
 		Args: cobra.NoArgs,
 		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
-			opts := commands.KeepOptions{Every: every, Push: commands.PushAlways}
+			opts := commands.KeepOptions{Every: every, Push: commands.PushAlways, NoFFTrunk: noFFTrunk}
 			if noPush {
 				opts.Push = commands.PushNever
 			}
@@ -291,6 +295,7 @@ func newSyncKeepRunCmd() *cobra.Command {
 	run.Flags().DurationVar(&every, "every", 0, "the job's interval, for the next-run line (default 30m)")
 	_ = run.Flags().MarkHidden("every")
 	run.Flags().BoolVar(&noPush, "no-push", false, "rebase only; print the push commands")
+	run.Flags().BoolVar(&noFFTrunk, "no-ff-trunk", false, "leave local <trunk> where it is after the fetch")
 	return run
 }
 
@@ -372,7 +377,7 @@ func newSyncKeepStopCmd() *cobra.Command {
 type syncVerbFlags struct {
 	run, resume, undo   bool
 	yes, force, noFetch bool
-	ifReady             bool
+	ifReady, noFFTrunk  bool
 	push                commands.PushMode
 	// json prints one object on stdout: the overview, or the verb's result.
 	json bool
@@ -424,6 +429,8 @@ func (f syncVerbFlags) check() error {
 		return errors.New("--no-fetch needs --run, or no verb")
 	case f.expect != "" && verb != "run":
 		return errors.New("--expect needs --run")
+	case f.noFFTrunk && verb != "run":
+		return errors.New("--no-ff-trunk needs --run")
 	}
 	return nil
 }
@@ -462,7 +469,7 @@ func syncArgs(verb string) cobra.PositionalArgs {
 }
 
 func newSyncRunCmd() *cobra.Command {
-	var noFetch, yes, ifReady, force, asJSON bool
+	var noFetch, noFFTrunk, yes, ifReady, force, asJSON bool
 	var expect string
 	var sel selectionFlags
 	var push func() commands.PushMode
@@ -479,6 +486,11 @@ func newSyncRunCmd() *cobra.Command {
 			"finish. A branch with a stack above it in the same run is put back instead,\n" +
 			"so a stack is never half-applied. A failed deferred step is reported as\n" +
 			"owed and never undoes the rebase.\n\n" +
+			"After the fetch, local <trunk> is fast-forwarded to origin/<trunk>\n" +
+			"when that is safe: checked out nowhere, or in a clean checkout with\n" +
+			"nothing in progress and no session busy in it. Otherwise it is left,\n" +
+			"and a line says why. --no-ff-trunk, or wt config set ff_trunk false,\n" +
+			"leaves it alone.\n\n" +
 			"With no worktree named, it takes every worktree the overview files under\n" +
 			"ready: class conflict-free or recipe, nothing dirty, no session busy in\n" +
 			"it, no handover waiting. recipe? is left out, since a run of it may stop\n" +
@@ -523,13 +535,13 @@ func newSyncRunCmd() *cobra.Command {
 		Example: "  wt sync run login-crash api-tidy --yes --json --expect 1:0123abcd  # a tool\n" +
 			"  wt sync run login-crash --if-ready --force  # clean only, past a session\n" +
 			"  wt sync run --all --no-fetch --push    # every ready one, everywhere, pushed\n" +
-			"  wt sync run --profile api --if-ready   # the ready ones in a profile's repos\n" +
+			"  wt sync run --profile api --if-ready --no-ff-trunk  # trunk left as it is\n" +
 			"  wt sync --roots work --run --no-push   # spelled on wt sync; print the pushes",
 		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			f := syncVerbFlags{run: true, yes: yes, noFetch: noFetch, ifReady: ifReady, force: force, push: push(),
-				json: asJSON, expect: expect}
+			f := syncVerbFlags{run: true, yes: yes, noFetch: noFetch, noFFTrunk: noFFTrunk, ifReady: ifReady, force: force,
+				push: push(), json: asJSON, expect: expect}
 			if sel.selection().Any() {
 				return syncAcross(cmd, args, "run", sel.selection(), f)
 			}
@@ -539,6 +551,7 @@ func newSyncRunCmd() *cobra.Command {
 		},
 	}
 	run.Flags().BoolVar(&noFetch, "no-fetch", false, "rebase onto origin/<trunk> as last fetched")
+	run.Flags().BoolVar(&noFFTrunk, "no-ff-trunk", false, "leave local <trunk> where it is after the fetch")
 	run.Flags().BoolVarP(&yes, "yes", "y", false, "yes to every question, the push included (--no-push keeps it out)")
 	run.Flags().BoolVar(&ifReady, "if-ready", false, "rebase only what will go through without needing you, and fail on the rest")
 	run.Flags().BoolVarP(&force, "force", "f", false, "rebase a named worktree even with a Claude session in it")
@@ -590,7 +603,7 @@ func withVerbContext(cmd *cobra.Command, args []string, command string, asJSON b
 // nothing, as a sweep deletes nothing: what nobody named and nobody
 // confirmed does not move. A worktree named on the line goes ahead.
 func runOptions(cmd *cobra.Command, f syncVerbFlags, bulk bool) (commands.RunOptions, *prompter) {
-	opts := commands.RunOptions{NoFetch: f.noFetch, IfReady: f.ifReady, Force: f.force}
+	opts := commands.RunOptions{NoFetch: f.noFetch, NoFFTrunk: f.noFFTrunk, IfReady: f.ifReady, Force: f.force}
 	opts.Push = f.push
 	switch {
 	case f.yes:

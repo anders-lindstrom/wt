@@ -24,6 +24,7 @@ version, and when an output's `schemaVersion` is not its schema's.
 |---|---|
 | 1.0.0 | `wt status --json` and `wt up --json`, as wt 53bc0d8 printed them |
 | 1.1.0 | `schemaVersion` in both outputs; the schemas published under `schema/` and by `wt schema` |
+| 1.2.0 | `trunkSync` in both: what a run did, or would do, to local trunk after its fetch |
 
 Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 
@@ -33,6 +34,7 @@ Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 | `sync-run` | 1.0.0 | `wt sync run`, `resume` and `undo --json`, the result |
 | `new-plan`, `checkout-plan` | 1.0.0 | `wt new` and `wt checkout --dry-run --json`, the plan |
 | `new`, `checkout` | 1.0.0 | `wt new` and `wt checkout --json`, the result |
+| `sync-run` | 1.1.0 | `trunkSync`: what the run did to local trunk after its fetch |
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
 
@@ -83,6 +85,7 @@ repository.
 | `trunkRefExists` | bool | whether that ref is here, as last fetched |
 | `trunkTip` | string \| null | its commit |
 | `trunkRefUpdatedAt` | string \| null | when that ref last moved, from its own reflog (RFC 3339, UTC); null without a reflog. Not FETCH_HEAD's time, which any fetch sets |
+| `trunkSync` | object | what `wt up` would do to local `<trunk>` after its fetch, judged against `trunkTip` (see [`trunkSync`](#trunksync--local-trunk)); `fastForwarded` is always false here, and `skippedReason` null means a run would fast-forward it (or there is nothing to do) |
 | `configured` | bool | the repository has a wt configuration that parses |
 | `worktree` | object \| null | the worktree named; null when it cannot be found |
 | `worktree.work` | string | its work name, as `wt list` prints it |
@@ -128,6 +131,7 @@ exits 130. SIGKILL or a crash may write none; treat a missing object as unknown.
 | `trunk`, `trunkRef` | string \| null | null when the run stopped before resolving them |
 | `onto` | string \| null | the trunk commit the run rebased onto, after its fetch; null when never determined |
 | `fetched` | bool | trunk was fetched (false with `--no-fetch`, or when the run stopped first) |
+| `trunkSync` | object \| null | what the run did to local `<trunk>` after its fetch (see [`trunkSync`](#trunksync--local-trunk)); null when it did not fetch |
 | `outcome` | see below | |
 | `error` | string \| null | why the run stopped before touching any participant: configuration, fetch, `--expect`, the main checkout named, a worktree not found |
 | `worktrees` | array | the participants, parents first; empty when `error` stopped the run first |
@@ -175,6 +179,39 @@ are as they were; the fetched trunk ref and the objects a simulation writes are
 expected writes.
 
 The exit code keeps its meaning (0 when the run completed); read `outcome`.
+
+### `trunkSync` — local trunk
+
+After fetching trunk, `wt up`, `wt sync run` and `wt sync --run` bring local
+`<trunk>` up to `origin/<trunk>` when that is a pure fast-forward and safe:
+checked out nowhere, the ref moves by compare-and-swap; checked out in a
+checkout that is clean (untracked files count), with no operation in progress
+and no Claude session busy in it (an idle one does not count, nor the session
+running wt), `git merge --ff-only --no-overwrite-ignore` moves
+it there. Anything else leaves it, with the reason. Local commits are never
+thrown away, and a fast-forward that fails never fails the run.
+`--no-ff-trunk`, or `wt config set ff_trunk false`, turns it off.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `local` | string \| null | local `<trunk>`'s commit after the run (as found, unless fast-forwarded); null when there is no local `<trunk>` |
+| `remote` | string \| null | the `origin/<trunk>` commit compared with; null when there is none |
+| `localAhead`, `remoteAhead` | int \| null | commits each side has that the other lacks, as found; null when either is missing |
+| `fastForwarded` | bool | local `<trunk>` was moved to `remote` |
+| `skippedReason` | string \| null | why it was left; null when fast-forwarded or with nothing to do (equal, or either side missing) |
+
+`skippedReason`, exhaustively:
+
+| Value | Meaning |
+|---|---|
+| `optedOut` | `--no-ff-trunk`, or `ff_trunk` false in the user config |
+| `ahead` | local has commits origin lacks, and origin none local lacks |
+| `diverged` | both have commits the other lacks |
+| `dirty` | the checkout it is on has changes, untracked files included |
+| `operation` | a rebase, merge, cherry-pick, revert or bisect is in progress on it |
+| `session` | a Claude session is busy in the checkout it is on (idle ones, and the session running wt, do not count), or the sessions could not be listed |
+| `notFastForward` | it moved, or was checked out or switched away from, while wt was updating it |
+| `failed` | git refused the update (an ignored file it would overwrite), or it is not safe to try: trunk checked out in more than one worktree |
 
 ## `wt sweep --dry-run --json` — the sweep's plan
 
@@ -410,6 +447,7 @@ The fields are `wt up --json`'s (above), with `command` one of `"sync run"`,
 |---|---|---|
 | `repo` | string \| null | the main checkout, as in `wt sweep --json`; null when the verb stopped before reading it |
 | `onto` | string \| null | for resume, the trunk commit the handed-over run recorded; null for undo |
+| `trunkSync` | object \| null | as for `wt up`; always null for resume and undo, which do not fetch |
 | `error` | string \| null | as for `wt up`; also a question answered no (or nobody there to answer it), and for undo, why it stopped after putting some back |
 
 Each participant has `wt up`'s fields, and:
