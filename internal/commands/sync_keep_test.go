@@ -514,17 +514,17 @@ func TestKeepPlistMatchesTheGoldenFile(t *testing.T) {
 }
 
 // fakeLaunchctl puts a launchctl on the PATH that records its arguments,
-// remembers what was bootstrapped so print answers as launchd would, and
-// returns the file it records the calls in.
+// remembers which jobs were bootstrapped so print answers as launchd would,
+// and returns the file it records the calls in.
 func fakeLaunchctl(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	log := filepath.Join(dir, "calls")
-	loaded := filepath.Join(dir, "loaded")
+	loaded := filepath.Join(dir, "loaded.")
 	script := "#!/bin/sh\necho \"$@\" >> " + log + "\ncase \"$1\" in\n" +
-		"  bootstrap) touch " + loaded + " ;;\n" +
-		"  bootout) rm -f " + loaded + " ;;\n" +
-		"  print) [ -e " + loaded + " ] || exit 1 ;;\n" +
+		"  bootstrap) touch " + loaded + "$(basename \"$3\" .plist) ;;\n" +
+		"  bootout) rm -f " + loaded + "${2##*/} ;;\n" +
+		"  print) [ -e " + loaded + "${2##*/} ] || exit 1 ;;\n" +
 		"esac\nexit 0\n"
 	if err := os.WriteFile(filepath.Join(dir, "launchctl"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)

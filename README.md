@@ -98,7 +98,7 @@ examples: `wt <command> --help`.
 | `wt sync undo <work>` | put back every ref the last `wt sync run` on this worktree moved, aborting a rebase a run handed over (`--force`/`-f`, `--yes`/`-y`); also spelled `wt sync <work> --undo` |
 | `wt sync doctor` | check what a run needs; `--fix` turns on rerere and removes expired locks, `--prune` deletes old safety refs; a `keeper` row says whether one is installed and how its last pass went |
 | `wt sync keep once` | one unattended pass: fetch trunk and, when it moved, rebase every ready worktree nobody is in and push what finished (`--no-push`); `keep run` still works; logged to `.git/wt-sync-keep.log`; what the job runs, and what cron runs elsewhere |
-| `wt sync keep start` | install a launchd job (macOS) that runs `wt sync keep once` every 30 minutes (`--every`, `--no-push`), pushing the way this shell's git does; `wt sync keep status` for the last pass and the next, `wt sync keep stop` to remove it |
+| `wt sync keep start` | install a launchd job (macOS) that runs `wt sync keep once` every 30 minutes (`--every`, `--no-push`), pushing the way this shell's git does; `wt sync keep status` for the last pass and the next, `wt sync keep stop` to remove it; `--all`, `--roots` or `--profile` on all three for many repositories |
 
 **Put worktrees in their place**
 

@@ -307,7 +307,8 @@ func newSyncKeepRunCmd() *cobra.Command {
 
 func newSyncKeepStartCmd() *cobra.Command {
 	var every time.Duration
-	var noPush bool
+	var noPush, dryRun, yes bool
+	var sel selectionFlags
 	start := &cobra.Command{
 		Use:   "start",
 		Short: "Install a launchd job that runs wt sync keep once on a timer",
@@ -332,50 +333,116 @@ func newSyncKeepStartCmd() *cobra.Command {
 			"named in the log with the command that does it by hand.\n" +
 			"The plist also turns commit signing off for the job: every commit a\n" +
 			"pass makes is unsigned, so a signer that asks never has to.\n" +
-			"--no-push installs a job that rebases only and logs the push commands.",
+			"--no-push installs a job that rebases only and logs the push commands.\n" +
+			"\n" +
+			"--all, --roots or --profile install one job per repository, from\n" +
+			"anywhere, each as start in that repository would. Only a repository\n" +
+			"whose trunk has a .wt-sync.yaml gets one; the rest are listed as\n" +
+			"skipped. One that has a job already keeps it as it is, interval and\n" +
+			"all (stop it first to change that), so running this again installs\n" +
+			"only what is missing. The plan is printed and you are asked once\n" +
+			"(--yes skips; with no terminal and no --yes nothing is installed);\n" +
+			"--dry-run prints the plan and installs nothing.\n" + selectionHelp,
 		Example: "  wt sync keep start                # every 30m, pushing as this shell does\n" +
-			"  wt sync keep start --every 1h     # a longer interval\n" +
-			"  wt sync keep start --no-push      # rebase only; the pushes are yours",
+			"  wt sync keep start --profile api --every 1h  # a profile's, hourly\n" +
+			"  wt sync keep start --no-push      # rebase only; the pushes are yours\n" +
+			"  wt sync keep start --all --dry-run  # which repositories would get one\n" +
+			"  wt sync keep start --roots work --yes  # a root's, without asking",
 		Args: cobra.NoArgs,
-		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
-			return commands.SyncKeepStart(ctx, commands.KeepStartOptions{Every: every, NoPush: noPush}, cmd.OutOrStdout())
-		}),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			opts := commands.KeepStartOptions{Every: every, NoPush: noPush}
+			if sel.selection().Any() {
+				all := commands.KeepStartAllOptions{KeepStartOptions: opts, DryRun: dryRun, Yes: yes}
+				if !yes && !dryRun && canAsk(cmd) {
+					p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
+					all.Ask = func(q string) (bool, error) { return p.yesNo(q, false), nil }
+				}
+				return commands.SyncKeepStartAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), all, cmd.OutOrStdout())
+			}
+			if dryRun || yes {
+				return errors.New("--dry-run and --yes go with --all, --roots or --profile; start in one repository asks nothing")
+			}
+			return withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+				return commands.SyncKeepStart(ctx, opts, cmd.OutOrStdout())
+			})(cmd, args)
+		},
 	}
 	start.Flags().DurationVar(&every, "every", commands.KeepDefaultInterval, "how often the job runs")
 	start.Flags().BoolVar(&noPush, "no-push", false, "the job rebases only and logs the push commands")
+	start.Flags().BoolVar(&dryRun, "dry-run", false, "with --all, --roots or --profile: print the plan, install nothing")
+	start.Flags().BoolVarP(&yes, "yes", "y", false, "with --all, --roots or --profile: do not ask first")
+	start.MarkFlagsMutuallyExclusive("yes", "dry-run")
+	sel.add(start, true)
 	return start
 }
 
 func newSyncKeepStatusCmd() *cobra.Command {
-	return &cobra.Command{
+	var sel selectionFlags
+	status := &cobra.Command{
 		Use:   "status",
 		Short: "Whether a keeper is installed, its last pass and its next",
 		Long: "Whether the job is installed (its plist present and loaded), its\n" +
 			"interval, when the last pass ran and what it did, when the next one is\n" +
-			"due, and where the log is. The same as wt sync keep with nothing after it.",
+			"due, and where the log is. The same as wt sync keep with nothing after it.\n" +
+			"\n" +
+			"--all, --roots or --profile say it for many repositories from anywhere,\n" +
+			"one line each as wt sync doctor's keeper row says it, or why the\n" +
+			"repository is not kept. A line marked ! has a problem to look at.\n" +
+			selectionHelp,
 		Example: "  wt sync keep status     # installed or not, last pass, next pass\n" +
-			"  wt sync keep            # the same",
+			"  wt sync keep            # the same\n" +
+			"  wt sync keep status --all          # one line per repository\n" +
+			"  wt sync keep status --roots work   # a root's repositories\n" +
+			"  wt sync keep status --profile api  # a profile's",
 		Args: cobra.NoArgs,
-		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
-			return commands.SyncKeepStatus(ctx, time.Now(), cmd.OutOrStdout())
-		}),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if sel.selection().Any() {
+				return commands.SyncKeepStatusAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), time.Now(), cmd.OutOrStdout())
+			}
+			return withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+				return commands.SyncKeepStatus(ctx, time.Now(), cmd.OutOrStdout())
+			})(cmd, args)
+		},
 	}
+	sel.add(status, true)
+	return status
 }
 
 func newSyncKeepStopCmd() *cobra.Command {
-	return &cobra.Command{
+	var dryRun bool
+	var sel selectionFlags
+	stop := &cobra.Command{
 		Use:   "stop",
 		Short: "Unload the keeper's launchd job and remove its plist",
 		Long: "launchctl bootout the job and remove its plist. The log and the json\n" +
 			"stay, so wt sync still says when the repository was last kept, marked\n" +
-			"keeper stopped. macOS only; elsewhere this exits 2.",
+			"keeper stopped. macOS only; elsewhere this exits 2.\n" +
+			"\n" +
+			"--all, --roots or --profile stop every job their repositories have,\n" +
+			"from anywhere and without asking: wt sync keep start puts them back.\n" +
+			"A repository with no job is listed and left alone. --dry-run lists\n" +
+			"what would be stopped and stops nothing.\n" + selectionHelp,
 		Example: "  wt sync keep stop       # no more passes; the log stays\n" +
-			"  wt sync keep status     # afterwards: stopped",
+			"  wt sync keep status     # afterwards: stopped\n" +
+			"  wt sync keep stop --all --dry-run  # which keepers would stop\n" +
+			"  wt sync keep stop --roots work     # a root's keepers\n" +
+			"  wt sync keep stop --profile api    # a profile's",
 		Args: cobra.NoArgs,
-		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
-			return commands.SyncKeepStop(ctx, cmd.OutOrStdout())
-		}),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if sel.selection().Any() {
+				return commands.SyncKeepStopAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), dryRun, cmd.OutOrStdout())
+			}
+			if dryRun {
+				return errors.New("--dry-run goes with --all, --roots or --profile")
+			}
+			return withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+				return commands.SyncKeepStop(ctx, cmd.OutOrStdout())
+			})(cmd, args)
+		},
 	}
+	stop.Flags().BoolVar(&dryRun, "dry-run", false, "with --all, --roots or --profile: list, stop nothing")
+	sel.add(stop, true)
+	return stop
 }
 
 // syncVerbFlags is what wt sync's own flags say: at most one verb, spelled at
