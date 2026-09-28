@@ -73,6 +73,12 @@ type RemoveResult struct {
 	BranchName string
 	BranchTip  string
 	KeepAs     string
+	// Superset is what came of deleting the worktree's Superset workspace
+	// — StepDeregistered, StepNotRegistered, StepSkipped or StepFailed —
+	// and "" when no worktree was removed. SupersetReason says why for a
+	// skip or a failure.
+	Superset       string
+	SupersetReason string
 	// Error is why the run refused or stopped, "" when it did neither.
 	Error string
 }
@@ -1080,8 +1086,20 @@ var afterFinalCheck func()
 
 // run is apply, reporting what it did effect by effect. The checkout goes
 // first, deleted or quarantined, and then the branch step, so a removal
-// that fails leaves its branch where it was.
+// that fails leaves its branch where it was. Once the checkout is gone from
+// its path, its Superset workspace goes too; it is looked up before, while
+// the path still resolves.
 func (p Plan) run(ctx *Context, w io.Writer) (RemoveResult, error) {
+	workspaces := findSupersetWorkspaces(ctx, p.Path)
+	res, err := p.remove(ctx, w)
+	if res.Worktree == WorktreeRemoved || res.Worktree == WorktreeQuarantined {
+		res.Superset, res.SupersetReason = workspaces.deregister(ctx, p.Path, w)
+	}
+	return res, err
+}
+
+// remove is run without Superset.
+func (p Plan) remove(ctx *Context, w io.Writer) (RemoveResult, error) {
 	res := RemoveResult{Outcome: RemoveRefused, Worktree: WorktreeKept, Quarantine: p.Quarantine,
 		BranchName: p.Branch, BranchTip: p.Tip, KeepAs: p.KeepAs}
 	if why := p.recheck(); why != "" {

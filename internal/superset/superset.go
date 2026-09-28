@@ -22,8 +22,8 @@ import (
 )
 
 // The deadlines bounding the CLI. The read-only calls answer from a local
-// socket; `ws create` does git work and one cloud call, so it gets longer.
-// A Superset that has stopped answering must not hold `wt new` open.
+// socket; `ws create` and `ws delete` do git work and one cloud call, so they
+// get longer. A Superset that has stopped answering must not hold wt open.
 var (
 	readDeadline     = 10 * time.Second
 	registerDeadline = 30 * time.Second
@@ -175,6 +175,64 @@ func (c CLI) Register(projectID, branch string) (Registration, error) {
 		return Registration{}, fmt.Errorf("superset ws create --json: %w", err)
 	}
 	return r, nil
+}
+
+// ListedWorkspace is one row of `ws list --local`: a live workspace on this
+// machine. Superset's archived rows are not listed.
+type ListedWorkspace struct {
+	ID     string `json:"id"`
+	Branch string `json:"branch"`
+	// Type is "worktree" for a workspace on a worktree, "local" for the
+	// one on a project's main checkout.
+	Type         string `json:"type"`
+	WorktreePath string `json:"worktreePath"`
+	ArchivedAt   any    `json:"archivedAt"`
+}
+
+// Workspaces lists the live workspaces on this machine.
+func (c CLI) Workspaces() ([]ListedWorkspace, error) {
+	out, err := c.run(readDeadline, "ws", "list", "--local", "--json")
+	if err != nil {
+		return nil, err
+	}
+	var ws []ListedWorkspace
+	if err := json.Unmarshal(out, &ws); err != nil {
+		return nil, fmt.Errorf("superset ws list --json: %w", err)
+	}
+	return ws, nil
+}
+
+// WorkspacesAt returns the live worktree workspaces whose checkout is path,
+// compared through symlinks. A "local" workspace is a project's main
+// checkout, which no removal touches; an archived row is Superset's own.
+// path must still exist for its symlinks to resolve.
+func WorkspacesAt(ws []ListedWorkspace, path string) []ListedWorkspace {
+	want := resolve(path)
+	var found []ListedWorkspace
+	for _, w := range ws {
+		if w.Type == "worktree" && w.ArchivedAt == nil && w.WorktreePath != "" && resolve(w.WorktreePath) == want {
+			found = append(found, w)
+		}
+	}
+	return found
+}
+
+// Delete deletes the workspace id on this machine and returns Superset's
+// warnings. Superset force-removes the workspace's worktree as part of it,
+// so it is only for a workspace whose checkout is already gone. The CLI
+// never deletes the branch.
+func (c CLI) Delete(id string) (warnings []string, err error) {
+	out, err := c.run(registerDeadline, "ws", "delete", "--local", id, "--json")
+	if err != nil {
+		return nil, err
+	}
+	var d struct {
+		Warnings []string `json:"warnings"`
+	}
+	if err := json.Unmarshal(out, &d); err != nil {
+		return nil, fmt.Errorf("superset ws delete --json: %w", err)
+	}
+	return d.Warnings, nil
 }
 
 // run executes the CLI under a deadline, through the same bounded runner git

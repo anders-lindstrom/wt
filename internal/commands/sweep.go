@@ -830,6 +830,7 @@ func (p SweepPlan) apply(ctx *Context, opts SweepOptions, w io.Writer) error {
 		}
 		j.start(key)
 		res, err := rp.run(ctx, w)
+		j.superset(key, res)
 		j.settle(key, err)
 		if err != nil {
 			// Said as what happened: only a worktree nothing touched was kept.

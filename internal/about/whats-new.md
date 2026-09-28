@@ -6,6 +6,14 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-28 08:52 — Removing a worktree removes its Superset workspace
+
+- With `wt config set superset true`, `wt remove` and `wt sweep` (plain or
+  `--quarantine`) delete the worktree's Superset workspace once its directory
+  is gone and git no longer lists it; Superset down is one line, never a
+  failure. `wt restore` registers it again, like `wt new`.
+- JSON: sweep 1.2.0, `superset` on each item.
+
 ## 2026-09-28 01:18 — Remove moves a worktree aside instead of deleting it
 
 - `wt remove <work> --quarantine <dir>` and `wt sweep --quarantine <dir>` move

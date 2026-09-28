@@ -318,9 +318,11 @@ project's setup step if it has one, which for these repos is
 `wt setup --source superset`: a second, idempotent provisioning pass on top of
 the one `wt new` just did. `--no-setup` therefore skips registration too.
 
-**Removal is one-way.** wt never deregisters. `superset ws delete` deletes the
-checkout off disk, uncommitted work included, so `wt remove` does not call it —
-delete the workspace in Superset when you want it gone.
+**Removal mirrors it.** `wt remove` and `wt sweep`, plain or `--quarantine`,
+delete the worktree's workspace with `superset ws delete` — only after the
+directory has left its path and git no longer lists it, because Superset's
+delete force-removes the checkout. A Superset that is down or errs is one line
+and the removal stands. `wt restore` registers the worktree again.
 
 Off again with `wt config set superset false`, which stops wt running Superset
 at all. With it on, a repository can still decline with `SUPERSET_REGISTER=off`

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sweep.v1.json",
-  "x-version": "1.1.0",
+  "x-version": "1.2.0",
   "title": "wt sweep --yes --json",
   "description": "What a wt sweep did, item by item. Printed by `wt sweep --yes --json [--expect <token>]` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends the run. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
@@ -27,7 +27,7 @@
     "sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
     "item": {
       "type": "object",
-      "required": ["category", "branch", "tip", "work", "path", "result", "reason", "worktreeRemoved", "branchDeleted", "restoreCommand", "quarantine"],
+      "required": ["category", "branch", "tip", "work", "path", "result", "reason", "worktreeRemoved", "branchDeleted", "restoreCommand", "quarantine", "superset"],
       "properties": {
         "category": { "enum": ["remove", "delete", "inUse", "upstreamGone"], "description": "Its part of the plan, as in the sweep-plan schema." },
         "branch": { "type": ["string", "null"] },
@@ -59,6 +59,23 @@
             }
           ],
           "description": "Since 1.1.0. For a worktree the run moved, or tried to move, into the quarantine; null otherwise. Read from the folder after the row."
+        },
+        "superset": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["result", "reason"],
+              "properties": {
+                "result": {
+                  "enum": ["deregistered", "notRegistered", "skipped", "failed"],
+                  "description": "deregistered: the workspace was deleted, after the directory left its path and git stopped listing it. notRegistered: Superset is running and has no workspace there. skipped: the integration is off, Superset is not installed or not running, or the worktree was still there. failed: Superset erred."
+                },
+                "reason": { "type": ["string", "null"], "description": "Why, for skipped and failed." }
+              }
+            }
+          ],
+          "description": "Since 1.2.0. For a worktree the run removed, what came of its Superset workspace; null when no worktree was removed. It changes neither result nor outcome."
         }
       }
     }

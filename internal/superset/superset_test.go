@@ -242,3 +242,62 @@ func TestVersion(t *testing.T) {
 		t.Errorf("Version() = %q, want empty", got)
 	}
 }
+
+// The live workspaces are read with the same --local --json as the projects,
+// and only the fields a removal needs are kept.
+func TestWorkspaces(t *testing.T) {
+	c, log := fake(t, `echo '[{"id":"w1","branch":"fix_wt/x","type":"worktree","worktreePath":"/wt/x","archivedAt":null,"worktreeExists":true}]'`)
+	ws, err := c.Workspaces()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ws) != 1 || ws[0].ID != "w1" || ws[0].WorktreePath != "/wt/x" || ws[0].Type != "worktree" {
+		t.Fatalf("Workspaces() = %+v", ws)
+	}
+	if got := argv(t, log); len(got) != 1 || got[0] != "ws list --local --json" {
+		t.Errorf("argv = %q", got)
+	}
+}
+
+// Only a live worktree workspace at the path matches, through symlinks: never
+// the main checkout's "local" workspace, which Superset deletes differently,
+// and never an archived row.
+func TestWorkspacesAt(t *testing.T) {
+	root := t.TempDir()
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(root, link); err != nil {
+		t.Fatal(err)
+	}
+	ws := []ListedWorkspace{
+		{ID: "w1", Type: "worktree", WorktreePath: link},
+		{ID: "main", Type: "local", WorktreePath: root},
+		{ID: "old", Type: "worktree", WorktreePath: root, ArchivedAt: "2026-09-01T00:00:00Z"},
+		{ID: "other", Type: "worktree", WorktreePath: t.TempDir()},
+	}
+	got := WorkspacesAt(ws, root)
+	if len(got) != 1 || got[0].ID != "w1" {
+		t.Errorf("WorkspacesAt = %+v, want w1 alone", got)
+	}
+	if got := WorkspacesAt(nil, root); len(got) != 0 {
+		t.Errorf("WorkspacesAt(nil) = %+v", got)
+	}
+}
+
+// Delete names the host and the one id, and passes on Superset's warnings.
+func TestDelete(t *testing.T) {
+	c, log := fake(t, `echo '{"deleted":["w1"],"warnings":["teardown failed"]}'`)
+	warnings, err := c.Delete("w1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warnings) != 1 || warnings[0] != "teardown failed" {
+		t.Errorf("warnings = %q", warnings)
+	}
+	if got := argv(t, log); len(got) != 1 || got[0] != "ws delete --local w1 --json" {
+		t.Errorf("argv = %q", got)
+	}
+	broken, _ := fake(t, `echo 'Error: Host service for this machine isn'"'"'t running' >&2; exit 1`)
+	if _, err := broken.Delete("w1"); err == nil || !strings.Contains(err.Error(), "isn't running") {
+		t.Errorf("err = %v, want Superset's complaint", err)
+	}
+}
