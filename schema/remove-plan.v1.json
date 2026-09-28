@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/remove-plan.v1.json",
-  "x-version": "1.1.0",
+  "x-version": "1.2.0",
   "title": "wt remove <work> --dry-run --json",
   "description": "What `wt remove <work>` would do, and the token that holds a later removal to it. Printed by `wt remove <work> --dry-run --json`, and by `wt remove <work> --json` without --yes, as the only thing on stdout; nothing is changed. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
@@ -210,14 +210,21 @@
     },
     "force": {
       "type": "boolean",
-      "description": "--force was given: the problems with force true do not refuse."
+      "description": "Bare --force was given: the problems with force true do not refuse. False for --force=<list>, whose categories forceWith names."
+    },
+    "forceWith": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/forceCategory"
+      },
+      "description": "Since 1.2.0. The --force categories given, all five for bare --force; empty without it. The token covers them."
     },
     "problems": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/problem"
       },
-      "description": "Every problem with the removal; those that refuse it are all of them, less the ones --force goes past when it was given."
+      "description": "Every problem with the removal; those that refuse it are all of them, less the ones whose forceWith is in the top-level forceWith."
     }
   },
   "$defs": {
@@ -230,7 +237,8 @@
       "required": [
         "code",
         "message",
-        "force"
+        "force",
+        "forceWith"
       ],
       "properties": {
         "code": {
@@ -257,8 +265,29 @@
         "force": {
           "type": "boolean",
           "description": "--force goes past it: somebody's claim on the checkout, not work that would be lost."
+        },
+        "forceWith": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/forceCategory"
+            }
+          ],
+          "description": "Since 1.2.0. The --force category that goes past it; null when force is false. A session problem is either idle-sessions or busy-sessions: idle and busy sessions are two problems."
         }
       }
+    },
+    "forceCategory": {
+      "enum": [
+        "idle-sessions",
+        "busy-sessions",
+        "sessions-unknown",
+        "hidden-files",
+        "lock"
+      ],
+      "description": "What --force=<list> names; bare --force is all of them. idle-sessions: an idle Claude session in it. busy-sessions: a busy one, and idle ones too. sessions-unknown: claude agents failed. hidden-files: files git status is told not to look at, unedited. lock: git's lock, its holder still running."
     },
     "branch": {
       "type": "object",
@@ -480,6 +509,7 @@
     "quarantine",
     "keepSuperset",
     "force",
+    "forceWith",
     "problems"
   ]
 }

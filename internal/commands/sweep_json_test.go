@@ -404,3 +404,46 @@ func TestSweepJSONRefusalSaysItFetched(t *testing.T) {
 		t.Fatalf("%v %+v", err, r)
 	}
 }
+
+// The sessions are listed once more right before each worktree goes, after
+// the fresh plan: a session that arrives in between keeps it.
+func TestSweepReadsTheSessionsAgainRightBeforeAWorktreeGoes(t *testing.T) {
+	ctx, _, _ := sweepRepo(t)
+	path := mergedWorktree(t, ctx, "fix/login-crash")
+	calls := 0
+	opts := SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{},
+		Relist: func() ([]wtsync.Agent, error) {
+			calls++
+			if calls == 1 {
+				return []wtsync.Agent{}, nil
+			}
+			return idleIn(t, path, "arrived"), nil
+		}}
+	r, human, err := sweepJSON(t, ctx, opts)
+	if err == nil {
+		t.Fatalf("want the worktree kept\n%s", human)
+	}
+	// Refused at the last check, as a file written then is: failed, with
+	// nothing removed.
+	if it := resultItem(t, r, "fix_wt/login-crash"); it.Result != SweepFailed || it.WorktreeRemoved ||
+		it.BranchDeleted || it.Reason == nil || !strings.Contains(*it.Reason, "arrived") || !exists(path) {
+		t.Errorf("login-crash = %+v\n%s", it, human)
+	}
+}
+
+// Idle and busy sessions are two problems to wt remove, and one reason to
+// keep the worktree here: the code is listed once.
+func TestSweepPlanJSONListsTheSessionCodeOnce(t *testing.T) {
+	ctx, _, _ := sweepRepo(t)
+	path := mergedWorktree(t, ctx, "fix/login-crash")
+	busy := idleIn(t, path, "busy-1")
+	busy[0].Status = "busy"
+	agents := append(idleIn(t, path, "idle-1"), busy...)
+	p, err := sweepPlanJSON(t, ctx, SweepOptions{NoFetch: true, Agents: agents, PRs: map[string]github.PR{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if it := planItem(t, p, "fix_wt/login-crash"); !slices.Equal(it.Kept, []string{KeptSession}) {
+		t.Errorf("kept = %q", it.Kept)
+	}
+}

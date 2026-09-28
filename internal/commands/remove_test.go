@@ -560,7 +560,7 @@ func TestRemoveForceBreaksALockHeldByARunningProcess(t *testing.T) {
 	path := lockedWorktree(t, ctx, main, "fix/live", reason)
 
 	var buf bytes.Buffer
-	opts := RemoveOptions{Force: true, Agents: []wtsync.Agent{}}
+	opts := RemoveOptions{Force: ForceAll, Agents: []wtsync.Agent{}}
 	if err := RemoveAt(ctx, path, opts, &buf); err != nil {
 		t.Fatalf("RemoveAt --force: %v\n%s", err, buf.String())
 	}

@@ -13,7 +13,8 @@ import (
 func newRemoveCmd() *cobra.Command {
 	var me bool
 	var meAt string
-	var yes, force, dryRun, asJSON, keepSuperset bool
+	var yes, dryRun, asJSON, keepSuperset bool
+	var force []string
 	var quarantineDir, expect string
 	cmd := &cobra.Command{
 		Use:     "remove <work>",
@@ -67,8 +68,13 @@ func newRemoveCmd() *cobra.Command {
 			"running wt remove — the one a WorktreeRemove hook fires in — does not\n" +
 			"count, and without claude on the PATH there are none. A git lock whose\n" +
 			"process has exited is released; one whose holder is still running\n" +
-			"refuses. --force goes past a session, a failed listing, a held lock,\n" +
-			"and hidden files still as committed; an edited one is uncommitted work.\n\n" +
+			"refuses. Bare --force goes past a session, a failed listing, a held lock,\n" +
+			"and hidden files still as committed; an edited one is uncommitted work.\n" +
+			"--force=<list> goes past only what it names: idle-sessions,\n" +
+			"busy-sessions (idle ones too), sessions-unknown, hidden-files, lock;\n" +
+			"the list goes after an =. The sessions are listed again right before\n" +
+			"the checkout goes, and one that turned busy or arrived since refuses\n" +
+			"unless --force names its state.\n\n" +
 			"--quarantine <dir> moves the worktree aside instead of deleting it.\n" +
 			"<dir> is a new folder on the worktree's volume — its parent must exist\n" +
 			"— outside every checkout and the git dir; removal refuses, changing\n" +
@@ -98,7 +104,7 @@ func newRemoveCmd() *cobra.Command {
 			"has that token. wt schema remove-plan and wt schema remove print the\n" +
 			"schemas; docs/json.md explains them.",
 		Example: "  wt remove login-crash            # say where the branch stands, then ask\n" +
-			"  wt remove . --force              # the one you are in, past a session\n" +
+			"  wt remove . --force=idle-sessions  # the one you are in, past idle ones\n" +
 			"  wt remove login-crash --quarantine ../trash/lc  # move it aside\n" +
 			"  wt remove login-crash --dry-run --json --keep-superset  # a tool's plan\n" +
 			"  wt remove login-crash --yes --json --expect 1:0123abcd  # only that plan",
@@ -109,11 +115,26 @@ func newRemoveCmd() *cobra.Command {
 				return fmt.Errorf("needs the worktree to remove, or . for the one " +
 					"you are in — for example: wt remove login-crash")
 			}
+			if (me || meAt != "") && len(args) > 0 {
+				return fmt.Errorf("--me and --me-at name the worktree, so wt remove takes no worktree "+
+					"beside them, and %q would be ignored", args[0])
+			}
+			// pflag reads --force idle-sessions as a bare --force and a
+			// worktree: a list after a space would force everything.
+			if cmd.Flags().Changed("force") && len(args) == 1 && commands.IsForceList(args[0]) {
+				return fmt.Errorf("%q is --force's list, which goes after an =: --force=%s "+
+					"(--force=<list>); a worktree of that name is named by its path or <type>/<work>",
+					args[0], args[0])
+			}
 			if cmd.Flags().Changed("expect") && expect == "" {
 				return errors.New("--expect needs the token wt remove --dry-run --json printed")
 			}
 			if expect != "" && (!asJSON || !yes) {
 				return errors.New("--expect holds a removal to the plan a tool read: pass it with --yes --json")
+			}
+			forced, err := commands.ParseForce(force)
+			if err != nil {
+				return err
 			}
 			ctx, err := openContext()
 			if err != nil {
@@ -122,7 +143,7 @@ func newRemoveCmd() *cobra.Command {
 				}
 				return err
 			}
-			opts := commands.RemoveOptions{Force: force, DryRun: dryRun, Expect: expect, KeepSuperset: keepSuperset}
+			opts := commands.RemoveOptions{Force: forced, DryRun: dryRun, Expect: expect, KeepSuperset: keepSuperset}
 			if quarantineDir != "" {
 				if opts.Quarantine, err = filepath.Abs(quarantineDir); err != nil {
 					return err
@@ -160,8 +181,10 @@ func newRemoveCmd() *cobra.Command {
 	// the lines already written with it.
 	cmd.Flags().BoolVar(&me, "me", false, "remove the worktree you are standing in")
 	_ = cmd.Flags().MarkHidden("me")
-	cmd.Flags().BoolVarP(&force, "force", "f", false,
-		"go past a session, a held lock, or files hidden from status")
+	cmd.Flags().StringSliceVarP(&force, "force", "f", nil,
+		"go past `what`, or bare all: idle-sessions, busy-sessions, "+
+			"sessions-unknown, hidden-files, lock")
+	cmd.Flags().Lookup("force").NoOptDefVal = "all"
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask for confirmation")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what removal would do and change nothing")
 	cmd.Flags().StringVar(&quarantineDir, "quarantine", "",

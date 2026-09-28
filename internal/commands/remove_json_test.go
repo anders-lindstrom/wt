@@ -289,7 +289,7 @@ func TestRemoveExpectRefusesEveryChangeTouchingNothing(t *testing.T) {
 		}},
 		{name: "sessions",
 			setup: func(_ *testing.T, _ *Context, _ string, plan, run *RemoveOptions) {
-				plan.Force, run.Force = true, true
+				plan.Force, run.Force = ForceAll, ForceAll
 			},
 			change: func(_ *testing.T, _ *Context, path string, run *RemoveOptions) {
 				run.Agents = []wtsync.Agent{{ID: "late", Cwd: path, Status: "idle"}}

@@ -30,6 +30,16 @@ want read out to them; the full story is in git history and in
   now stops them when wt goes. Read-only commands never start one.
 - docs/json.md: "Signals and what wt starts".
 
+## 2026-09-28 13:38 — wt remove --force=<list> goes past only what it names
+
+- `--force=idle-sessions,hidden-files` (also `busy-sessions`, which covers
+  idle ones, `sessions-unknown`, `lock`); bare `--force` is all, as before.
+  `--force=` is none; `--force=true` and `--force=false` are usage errors.
+- The sessions are read again right before the checkout goes: one that
+  turned busy or arrived since refuses unless `--force` names its state.
+- JSON: `forceWith` on the plan and each problem, `forced` on the result;
+  the token covers each session's state. remove-plan, remove 1.2.0.
+
 ## 2026-09-28 13:32 — wt quarantine purge deletes a quarantine for good
 
 - `wt quarantine purge <dir>` deletes the pins under refs/wt-quarantine/ and

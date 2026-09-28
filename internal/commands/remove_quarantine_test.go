@@ -145,7 +145,7 @@ func TestQuarantineRefusesAnotherVolumeBeforeAnyChange(t *testing.T) {
 		}
 		return orig(p)
 	}
-	refused(t, ctx, path, RemoveOptions{Quarantine: dir, Force: true}, "another volume")
+	refused(t, ctx, path, RemoveOptions{Quarantine: dir, Force: ForceAll}, "another volume")
 	assertNotQuarantined(t, ctx, path, dir)
 }
 

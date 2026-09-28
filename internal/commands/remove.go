@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -29,18 +28,21 @@ import (
 // hook, a script and `--yes` all want.
 type RemoveOptions struct {
 	Confirm func(Plan) (bool, error)
-	// Force breaks a git worktree lock whose holder is still running, and
-	// removes past a Claude session in the worktree, a session listing that
-	// failed, and files git status is told not to look at. It never removes
-	// uncommitted work, an operation in progress, or commits only the
-	// checkout's HEAD holds.
-	Force bool
+	// Force is what the removal goes past, category by category: an idle
+	// or a busy Claude session in the worktree, a session listing that
+	// failed, files git status is told not to look at, and a git worktree
+	// lock whose holder is still running. Nothing forces past uncommitted
+	// work, an operation in progress, or commits only the checkout's HEAD
+	// holds.
+	Force ForceSet
 	// Agents are the Claude sessions to check the worktree against. Nil
 	// asks `claude agents`; an empty slice means there are none. AgentsErr
 	// is a listing the caller could not get, which refuses the way a
-	// listing that fails here does.
+	// listing that fails here does. Relist lists them again right before
+	// the checkout goes; nil lists them the way Agents did.
 	Agents    []wtsync.Agent
 	AgentsErr error
+	Relist    func() ([]wtsync.Agent, error)
 	// DryRun prints the plan and stops.
 	DryRun bool
 	// Landed answers whether a branch at tip is a pull request GitHub merged
@@ -87,6 +89,8 @@ type RemoveResult struct {
 	// skip or a failure.
 	Superset       string
 	SupersetReason string
+	// Forced is the --force categories the removal went past.
+	Forced ForceSet
 	// Error is why the run refused or stopped, "" when it did neither.
 	Error string
 }
@@ -230,8 +234,8 @@ type Plan struct {
 	LockHeld   bool
 	// LockPid is the process the reason named, 0 when it named none.
 	LockPid int
-	// Force is the caller's willingness to break a held lock.
-	Force bool
+	// Force is what the caller lets the removal go past.
+	Force ForceSet
 	// MainBranch is carried on the plan so rendering needs nothing but the
 	// plan itself.
 	MainBranch string
@@ -246,6 +250,9 @@ type Plan struct {
 	KeepSuperset bool
 	// quarantineBy names the command in recovery.json.
 	quarantineBy string
+	// relist lists the sessions again for the check right before the
+	// checkout goes.
+	relist func() ([]wtsync.Agent, error)
 }
 
 // Lost is a tip a removal would leave nothing holding.
@@ -337,14 +344,17 @@ func removeWorktreeResult(ctx *Context, wt repo.Worktree, opts RemoveOptions, w 
 	// change the answer: a directory somebody is working in is not removed
 	// because a prompt was answered quickly.
 	if plan.blockedByLock() {
+		hint := "pass --force=lock to break the lock"
+		if f := plan.forceWould(); f != 0 {
+			hint = "pass " + (plan.Force | f).Flag() + " to break the lock and remove it"
+		}
 		return res, fmt.Errorf("%s is locked and its holder is still there: %s\n"+
-			"  Finish or stop it, or pass --force to break the lock",
-			wt.Path, plan.LockHolder)
+			"  Finish or stop it, or %s", wt.Path, plan.LockHolder, hint)
 	}
 	if why := plan.refusal(); why != "" {
 		hint := ""
-		if plan.forceWould() {
-			hint = "\n  pass --force to remove it anyway"
+		if f := plan.forceWould(); f != 0 {
+			hint = "\n  pass " + (plan.Force | f).Flag() + " to remove it anyway"
 		}
 		if _, ok := plan.lost(LostHead); ok {
 			hint += "\n  keep them on a branch first: git -C " + wt.Path + " branch <name>"
@@ -394,7 +404,8 @@ func removeWorktreeResult(ctx *Context, wt repo.Worktree, opts RemoveOptions, w 
 // the branch this checkout has.
 func planFor(ctx *Context, wt repo.Worktree, opts RemoveOptions) Plan {
 	p := Plan{Path: wt.Path, Branch: ctx.Repo.BranchAt(wt.Path),
-		MainBranch: ctx.Config.MainBranch, Force: opts.Force, KeepSuperset: opts.KeepSuperset}
+		MainBranch: ctx.Config.MainBranch, Force: opts.Force.implied(), KeepSuperset: opts.KeepSuperset,
+		relist: opts.relistAgents}
 	p.readSessions(opts)
 	p.readLock(wt)
 	p.readCheckout()
@@ -436,12 +447,29 @@ func planFor(ctx *Context, wt repo.Worktree, opts RemoveOptions) Plan {
 
 // readSessions reads the Claude sessions working in the checkout.
 func (p *Plan) readSessions(opts RemoveOptions) {
-	s, err := sessionsIn(opts.Agents, opts.AgentsErr, p.Path)
+	p.setSessions(sessionsIn(opts.Agents, opts.AgentsErr, p.Path))
+}
+
+func (p *Plan) setSessions(s wtsync.Sessions, err error) {
 	if err != nil {
 		p.SessionsError = err.Error()
 		return
 	}
 	p.Sessions = s
+}
+
+// relistAgents is the listing for the check right before the checkout
+// goes: Relist, else the listing the plan was given, else claude's.
+func (o RemoveOptions) relistAgents() ([]wtsync.Agent, error) {
+	switch {
+	case o.Relist != nil:
+		return o.Relist()
+	case o.AgentsErr != nil:
+		return nil, o.AgentsErr
+	case o.Agents != nil:
+		return o.Agents, nil
+	}
+	return listSessions()
 }
 
 // readCheckout reads what the files and the git dir say: anything
@@ -521,61 +549,74 @@ func (p *Plan) readReach(ctx *Context) {
 type problem struct {
 	code string // why, as sweep's --json names it: a Kept* constant
 	text string
-	// forced is a problem --force goes past: somebody's claim on the
-	// directory, not work that would be lost with it.
-	forced bool
+	// force is the --force category that goes past it, 0 for none: only
+	// somebody's claim on the directory, never work lost with it.
+	force ForceSet
 }
 
 // problems is every reason this removal would not go ahead, --force or not,
 // in the order they are named.
 func (p Plan) problems() []problem {
 	var out []problem
-	add := func(code, text string, forced bool) {
-		out = append(out, problem{code: code, text: text, forced: forced})
+	add := func(code, text string, force ForceSet) {
+		out = append(out, problem{code: code, text: text, force: force})
 	}
 	if p.SessionsError != "" {
-		add(KeptSessionsUnknown, "cannot list agent sessions ("+p.SessionsError+")", true)
+		add(KeptSessionsUnknown, "cannot list agent sessions ("+p.SessionsError+")", ForceSessionsUnknown)
 	}
-	if len(p.Sessions) > 0 {
-		add(KeptSession, whoLabel(p.Sessions)+" in it", true)
+	// Idle and busy sessions are forced apart, so each is a problem of
+	// its own.
+	var idle, busy wtsync.Sessions
+	for _, a := range p.Sessions {
+		if a.Idle() {
+			idle = append(idle, a)
+		} else {
+			busy = append(busy, a)
+		}
+	}
+	if len(idle) > 0 {
+		add(KeptSession, whoLabel(idle)+" in it", ForceIdleSessions)
+	}
+	if len(busy) > 0 {
+		add(KeptSession, whoLabel(busy)+" in it", ForceBusySessions)
 	}
 	if p.Locked && p.LockHeld {
-		add(KeptLockHeld, heldLock(p), true)
+		add(KeptLockHeld, heldLock(p), ForceLock)
 	}
 	if p.StatusError != "" {
-		add(KeptStatusUnknown, "cannot read its status ("+p.StatusError+")", false)
+		add(KeptStatusUnknown, "cannot read its status ("+p.StatusError+")", 0)
 	}
 	if p.Dirty {
-		add(KeptDirty, "dirty", false)
+		add(KeptDirty, "dirty", 0)
 	}
 	for _, sm := range p.Moved {
 		add(KeptDirty, "submodule "+sm+" is not at the commit recorded for it "+
-			"(git submodule update, or commit the new one)", false)
+			"(git submodule update, or commit the new one)", 0)
 	}
 	if len(p.Nested) > 0 {
-		add(KeptNestedWorktree, "the worktree "+someOf(p.Nested, 3)+" is inside it", false)
+		add(KeptNestedWorktree, "the worktree "+someOf(p.Nested, 3)+" is inside it", 0)
 	}
 	if len(p.Hidden) > 0 {
-		add(KeptHiddenChanges, "git status is told not to look at "+someOf(p.Hidden, 3), true)
+		add(KeptHiddenChanges, "git status is told not to look at "+someOf(p.Hidden, 3), ForceHiddenFiles)
 	}
 	if p.Operation != "" {
-		add(KeptOperation, "a "+p.Operation+" is in progress", false)
+		add(KeptOperation, "a "+p.Operation+" is in progress", 0)
 	}
 	for _, l := range p.Unreachable {
 		switch l.Kind {
 		case LostHead:
 			add(KeptHeadUnreachable, fmt.Sprintf("%s on its HEAD %s would be on no branch",
-				commitCount(l.Count), git.ShortID(l.OID, 12)), false)
+				commitCount(l.Count), git.ShortID(l.OID, 12)), 0)
 		case LostSubmodule:
 			add(KeptSubmoduleUnreachable, fmt.Sprintf("submodule %s has %s nothing outside this worktree holds (%s)",
-				l.Path, commitCount(l.Count), git.ShortID(l.OID, 12)), false)
+				l.Path, commitCount(l.Count), git.ShortID(l.OID, 12)), 0)
 		}
 	}
 	if p.ReachError != "" {
-		add(KeptReachUnknown, "cannot tell what the removal would leave unreachable ("+p.ReachError+")", false)
+		add(KeptReachUnknown, "cannot tell what the removal would leave unreachable ("+p.ReachError+")", 0)
 	}
 	if p.QuarantineError != "" {
-		add(ProblemQuarantineUnusable, "it cannot be quarantined: "+p.QuarantineError, false)
+		add(ProblemQuarantineUnusable, "it cannot be quarantined: "+p.QuarantineError, 0)
 	}
 	return out
 }
@@ -634,15 +675,26 @@ func insideResolved(root, p string) bool {
 }
 
 // blocking is the problems that stop this removal: all of them, less the
-// ones --force goes past when it was given.
+// ones whose --force category was given.
 func (p Plan) blocking() []problem {
 	var out []problem
 	for _, pr := range p.problems() {
-		if !pr.forced || !p.Force {
+		if !p.Force.Has(pr.force) {
 			out = append(out, pr)
 		}
 	}
 	return out
+}
+
+// forced is the --force categories this removal goes past.
+func (p Plan) forced() ForceSet {
+	var f ForceSet
+	for _, pr := range p.problems() {
+		if p.Force.Has(pr.force) {
+			f |= pr.force
+		}
+	}
+	return f
 }
 
 // refusal is why this removal will not go ahead, "" when it will.
@@ -654,11 +706,18 @@ func (p Plan) refusal() string {
 	return strings.Join(why, ", ")
 }
 
-// forceWould reports that --force is all that stands between this plan and
-// the removal: every problem is one it goes past.
-func (p Plan) forceWould() bool {
-	b := p.blocking()
-	return len(b) > 0 && !slices.ContainsFunc(b, func(pr problem) bool { return !pr.forced })
+// forceWould is the --force categories that are all that stands between
+// this plan and the removal, 0 when a problem no force goes past is there
+// too, or none is.
+func (p Plan) forceWould() ForceSet {
+	var f ForceSet
+	for _, pr := range p.blocking() {
+		if pr.force == 0 {
+			return 0
+		}
+		f |= pr.force
+	}
+	return f
 }
 
 // same reports two readings of a worktree as the same plan. Sessions count
@@ -668,6 +727,7 @@ func (p Plan) forceWould() bool {
 // losses that refuse are compared.
 func (p Plan) same(q Plan) bool {
 	p.Sessions, q.Sessions = identities(p.Sessions), identities(q.Sessions)
+	p.relist, q.relist = nil, nil
 	p.Unreachable, q.Unreachable = refusingLosses(p.Unreachable), refusingLosses(q.Unreachable)
 	return reflect.DeepEqual(p, q)
 }
@@ -754,7 +814,7 @@ func pidAlive(pid int) bool {
 
 // blockedByLock reports the one state a removal will not talk itself out of.
 func (p Plan) blockedByLock() bool {
-	return p.Locked && p.LockHeld && !p.Force
+	return p.Locked && p.LockHeld && !p.Force.Has(ForceLock)
 }
 
 // standing is where a branch stands against trunk, as mergeStanding read it.
@@ -1124,9 +1184,15 @@ func (p Plan) run(ctx *Context, w io.Writer) (RemoveResult, error) {
 func (p Plan) remove(ctx *Context, w io.Writer) (RemoveResult, error) {
 	res := RemoveResult{Outcome: RemoveRefused, Worktree: WorktreeKept, Quarantine: p.Quarantine,
 		BranchName: p.Branch, BranchTip: p.Tip, KeepAs: p.KeepAs}
-	if why := p.recheck(); why != "" {
-		return res, fmt.Errorf("%s was not removed: %s", p.Path, why)
+	now, why := p.recheck()
+	if why != "" {
+		hint := ""
+		if f := now.forceWould(); f != 0 {
+			hint = "\n  pass " + (p.Force | f).Flag() + " to remove it anyway"
+		}
+		return res, fmt.Errorf("%s was not removed: %s%s", p.Path, why, hint)
 	}
+	res.Forced = p.forced() | now.forced()
 	if afterFinalCheck != nil {
 		afterFinalCheck()
 	}
@@ -1405,14 +1471,30 @@ func (p Plan) quarantine(ctx *Context, w io.Writer, res *RemoveResult) (*quarant
 	return r, nil
 }
 
-// recheck reads the checkout once more, immediately before it is deleted:
-// a plan can sit under a prompt for minutes, and a file written or a commit
-// made since is work it never saw. "" when it can still go.
-func (p Plan) recheck() string {
-	now := Plan{Path: p.Path, Force: p.Force}
+// recheck reads the checkout and the sessions once more, immediately
+// before it is deleted or moved: a plan can sit under a prompt for minutes,
+// and a file written or a commit made since is work it never saw, a session
+// that turned busy or arrived one it never weighed. A session refuses unless
+// --force names its state now. The sessions are listed first, because that
+// can take seconds, and the checkout is read last, as close to the delete as
+// it gets. It returns that reading, and why is "" when it can still go.
+func (p Plan) recheck() (now Plan, why string) {
+	now = Plan{Path: p.Path, Force: p.Force}
+	relist := p.relist
+	if relist == nil {
+		relist = listSessions
+	}
+	agents, err := relist()
+	if agents == nil {
+		agents = []wtsync.Agent{}
+	}
+	now.setSessions(sessionsIn(agents, err, p.Path))
 	now.readCheckout()
 	if now.Head != p.Head && now.StatusError == "" {
-		return "its HEAD moved after the plan was made"
+		return now, "its HEAD moved after the plan was made"
 	}
-	return now.refusal()
+	if why := now.refusal(); why != "" {
+		return now, "it changed since the plan was made: " + why
+	}
+	return now, ""
 }

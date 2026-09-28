@@ -305,7 +305,11 @@ func detachedOn(ctx *Context, path string, bases []TrunkBase) (head, base string
 func unsafeToRemove(b SweepBranch, rp Plan) (reason string, codes []string) {
 	var why []string
 	add := func(code, reason string) {
-		codes, why = append(codes, code), append(why, reason)
+		why = append(why, reason)
+		// Idle and busy sessions are a problem each, and one code.
+		if !slices.Contains(codes, code) {
+			codes = append(codes, code)
+		}
 	}
 	for _, pr := range rp.problems() {
 		add(pr.code, pr.text)
@@ -830,7 +834,7 @@ func (p SweepPlan) apply(ctx *Context, opts SweepOptions, w io.Writer) error {
 			rp.quarantineBy = "sweep"
 			j.quarantined(key, rp.Quarantine)
 		}
-		rp.KeepSuperset = opts.KeepSuperset
+		rp.KeepSuperset, rp.relist = opts.KeepSuperset, opts.relistAgents
 		j.start(key)
 		res, err := rp.run(ctx, w)
 		j.superset(key, res)
