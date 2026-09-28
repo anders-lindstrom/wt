@@ -45,6 +45,7 @@ type SyncOverview struct {
 	Repo          string             `json:"repo"`
 	Name          string             `json:"name"`
 	Trunk         *string            `json:"trunk"`
+	TrunkSource   *string            `json:"trunkSource"`
 	TrunkRef      *string            `json:"trunkRef"`
 	Onto          *string            `json:"onto"`
 	Fetched       bool               `json:"fetched"`
@@ -170,7 +171,7 @@ func writeJSON(w io.Writer, v any) error {
 func overviewOf(ctx *Context, opts SyncOptions) SyncOverview {
 	o := newOverview(ctx.Repo.Name, ctx.Repo.MainRoot)
 	trunk := ctx.Config.MainBranch
-	o.Trunk, o.TrunkRef = strp(trunk), strp("origin/"+trunk)
+	o.Trunk, o.TrunkRef, o.TrunkSource = strp(trunk), strp("origin/"+trunk), ctx.trunkSource()
 	if !opts.NoFetch {
 		if _, err := git.RunTimeout(ctx.Repo.MainRoot, syncFetchTimeout, "fetch", "--quiet", "origin", trunk); err != nil {
 			o.FetchError = strp(fetchReason(err))

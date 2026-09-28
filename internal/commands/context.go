@@ -181,6 +181,11 @@ func (c *Context) configured() bool {
 	return c.ConfigError == nil && !c.Config.Detected
 }
 
+// trunkSource is how the configured trunk was found, as --json prints it.
+func (c *Context) trunkSource() *string {
+	return strp(string(c.Config.TrunkSource))
+}
+
 // HasProvisionScript reports whether the repo declares its own setup step.
 func (c *Context) HasProvisionScript() bool {
 	info, err := os.Stat(filepath.Join(c.Repo.Root, "bin", "worktree", "provision.sh"))
@@ -189,19 +194,34 @@ func (c *Context) HasProvisionScript() bool {
 
 // loadFor loads a repository's configuration, preferring the worktree the
 // caller is standing in and falling back to the main checkout when that
-// worktree carries none, and to the detected defaults when neither does. The trunk it detected comes back with it: reading it
-// costs a git process, and everything that needs a fallback branch here needs
-// the same answer.
-func loadFor(r *repo.Repo) (*config.Config, string, error) {
-	trunk := r.DetectMainBranch()
-	c, err := config.Load(r.Root, trunk)
+// worktree carries none, and to the detected defaults when neither does. The
+// trunk it detected comes back with it: reading it costs git processes, and
+// everything that needs a fallback branch here needs the same answer.
+func loadFor(r *repo.Repo) (*config.Config, detectedTrunk, error) {
+	trunk := detectedTrunk{}
+	trunk.name, trunk.source = r.DetectTrunk()
+	c, err := config.Load(r.Root, trunk.name)
 	if errors.Is(err, config.ErrNoConfig) && r.Root != r.MainRoot {
-		c, err = config.Load(r.MainRoot, trunk)
+		c, err = config.Load(r.MainRoot, trunk.name)
 	}
 	if errors.Is(err, config.ErrNoConfig) {
-		c, err = detectedConfig(r, trunk)
+		c, err = detectedConfig(r, trunk.name)
 	}
+	trunk.applyTo(c)
 	return c, trunk, err
+}
+
+// detectedTrunk is the trunk a repository's refs point to, and how.
+type detectedTrunk struct {
+	name   string
+	source config.TrunkSource
+}
+
+// applyTo records where c's trunk came from when no file named it.
+func (d detectedTrunk) applyTo(c *config.Config) {
+	if c != nil && !c.MainBranchSet {
+		c.TrunkSource = d.source
+	}
 }
 
 // OpenLenient builds a Context for read-only lookups, falling back to default
@@ -223,7 +243,8 @@ func OpenLenient(cwd string, w io.Writer) *Context {
 		// Keep whatever did parse: a single retired key should not hide the
 		// repository's REQUIRED_BINS, branch prefix and the rest.
 		if c == nil {
-			c, _ = config.FromRaw(nil, trunk)
+			c, _ = config.FromRaw(nil, trunk.name)
+			trunk.applyTo(c)
 		}
 		fmt.Fprintf(w, "wt: using partial configuration for %s: %v\n", r.Name, err)
 		return &Context{Repo: r, Config: c, ConfigError: err, User: u, UserError: userErr, Cwd: cwd}

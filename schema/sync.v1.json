@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sync.v1.json",
-  "x-version": "1.0.0",
+  "x-version": "1.1.0",
   "title": "wt sync --json",
   "description": "What a rebase onto trunk would do to every worktree of a repository, as `wt sync --json` prints it on stdout: one overview object, or with --all, --roots or --profile an array of them, one per repository. It fetches trunk (unless --no-fetch) and writes nothing else. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "oneOf": [
@@ -12,7 +12,7 @@
     "shaOrNull": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40,64}$" },
     "overview": {
       "type": "object",
-      "required": ["schema", "schemaVersion", "command", "repo", "name", "trunk", "trunkRef", "onto", "fetched", "fetchError", "declared", "token", "error", "sessionsError", "worktrees"],
+      "required": ["schema", "schemaVersion", "command", "repo", "name", "trunk", "trunkSource", "trunkRef", "onto", "fetched", "fetchError", "declared", "token", "error", "sessionsError", "worktrees"],
       "properties": {
         "schema": { "const": 1, "description": "The major version: a new one only for a change that breaks readers." },
         "schemaVersion": { "type": "string", "pattern": "^1\\.[0-9]+\\.[0-9]+$", "description": "The full semantic version of this schema that the output follows." },
@@ -20,6 +20,7 @@
         "repo": { "type": "string", "description": "The main checkout, as wt sweep --json names the repository." },
         "name": { "type": "string", "description": "The repository's name: its main checkout's directory name." },
         "trunk": { "type": ["string", "null"] },
+        "trunkSource": { "enum": ["config", "originHead", "conventional", "currentBranchGuess", null], "description": "How trunk was determined, first match wins, from local refs alone (since 1.1.0): config — MAIN_BRANCH in the wt configuration file; originHead — refs/remotes/origin/HEAD; conventional — the first of main, master, trunk, development, develop that exists both locally and on origin, else on origin, else locally; currentBranchGuess — none of those, so the main checkout's branch, which may be a feature branch: do not rebase onto or delete branches against it. Null when trunk is." },
         "trunkRef": { "type": ["string", "null"], "description": "origin/<trunk>, what every worktree is assessed against." },
         "onto": { "$ref": "#/$defs/shaOrNull", "description": "The trunk commit assessed against; null when trunk is not known here." },
         "fetched": { "type": "boolean", "description": "Trunk was fetched first." },

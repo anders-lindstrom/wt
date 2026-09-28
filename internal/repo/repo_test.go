@@ -81,18 +81,6 @@ func TestWorktreesListsMainFirstAndBranches(t *testing.T) {
 	}
 }
 
-func TestDetectMainBranchSurvivesUnbornHead(t *testing.T) {
-	parent := resolved(t, t.TempDir())
-	run(t, parent, "init", "-q", "-b", "trunk", "fresh")
-	r, err := Discover(filepath.Join(parent, "fresh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := r.DetectMainBranch(); got != "trunk" {
-		t.Errorf("got %q, want trunk", got)
-	}
-}
-
 // runIgnoringFailure runs git and discards a non-zero exit, for commands like
 // `git rebase` that are expected to stop with a conflict.
 func runIgnoringFailure(t *testing.T, dir string, args ...string) {

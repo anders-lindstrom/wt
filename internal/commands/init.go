@@ -48,7 +48,8 @@ func Init(r *repo.Repo, opts InitOptions, w io.Writer) error {
 		}
 	}
 
-	answers := detectAnswers(r.DetectMainBranch())
+	trunk, source := r.DetectTrunk()
+	answers := detectAnswers(trunk)
 
 	cfg, err := resolve(answers)
 	var asked Answers
@@ -84,6 +85,10 @@ func Init(r *repo.Repo, opts InitOptions, w io.Writer) error {
 		return err
 	}
 	fmt.Fprintf(w, "Wrote %s\n", path)
+	if source == config.TrunkCurrentBranchGuess && answers.MainBranch == trunk {
+		fmt.Fprintf(w, "  ! MAIN_BRANCH %s is the checked-out branch, a guess: "+
+			"nothing else names trunk — edit it if trunk is another branch\n", trunk)
+	}
 	if rule := ignoreRule(r.Root, path); rule != "" {
 		fmt.Fprintf(w, "  ! %s is ignored by %s, so git will not track it — "+
 			"un-ignore it, or this configuration stays local to you\n",

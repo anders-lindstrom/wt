@@ -1,16 +1,16 @@
 # Each schema's version and the sha256 of its file. A test fails when a file
 # changes without a new version here and in its x-version: see AGENTS.md.
 
-status.v1.json 1.3.0 ff1b659083c060a7896c8eb534487ca434cdd5c07057770875dfe9dac1b9d4f7
-sweep-plan.v1.json 1.2.0 17cfdfa16cd2b0a5e677d7d5c3e21e7a5fc8d36320291c4d38d8a6a56f60a111
+status.v1.json 1.4.0 8cffef364e24ef2ce96b9be60a4e294a588f0ab1b6e352a8e5739e6eced587c3
+sweep-plan.v1.json 1.3.0 ec9516b107ba65afaba041121a4b2a8c9664cbb02ca7b61ee21c5ebb2a5ddb58
 sweep.v1.json 1.2.0 a6f33348b567e333e5d58ec59c53b5b26c6ff2c62433394ae3ad55de41718449
-up.v1.json 1.2.0 d28ec13aeba431898708b52022202ea0dcb1fe3c52d7108b472b1ae0f128f03c
-sync.v1.json 1.0.0 0284b0d212c525155a38dae91bb6abcf34db25f41413db65e21d4192dad8141d
+up.v1.json 1.3.0 e01ab76a90e27d61b6a9687c6f1e2cf25399c15a17fc68aa474463584f85e167
+sync.v1.json 1.1.0 8d00f8097f4ee265a63c1915761cdd091e5620ff25dcc28406d1f4b523c5b4d4
 sync-run.v1.json 1.1.0 c34f0dc1d107b57e01cb0a5b8aef8b25817d14d3f417e1597f62b6c2096d73dd
 checkout.v1.json 1.1.0 c42bb931b9956fa592fcd11c817d1abb9e23998120836ddcf40036ea663ea595
-checkout-plan.v1.json 1.2.0 b182253b5ac01c46afaae3714d0cae9fbd629a5ebbabab509dba1031761b1b19
+checkout-plan.v1.json 1.3.0 1d6d4774e5081a1e08e150c183b9af5142a7a399cea4dfc5ef199e1923f9338b
 new.v1.json 1.0.0 1f7fac700014e17e2d50c492243fb8df0aacaefa6e17f29aa94b3e3d6c0079f1
-new-plan.v1.json 1.1.0 0cfbd663a026a67bf496c1974040824a832fb6fef9acb3cae8c9071d1b11450a
+new-plan.v1.json 1.2.0 301161f0d8c8bc3a95371e75cee87f426c31030ee4721e75153eeb310fb9ba0b
 recovery.v1.json 1.2.0 36046f1d2310fbf4536f2f686afcdce65722b93b9c93bddf14b3b921ec561e15
 restore-plan.v1.json 1.1.0 ebd528800dfeae4cc6c2109b148b675355a761d4fb7303e3778be55a2be9c11b
 restore.v1.json 1.0.0 4431cdb2bff4bb6372e7bbf97808b6f18afc0d37f07df55c6c0eab8ceed0fc58

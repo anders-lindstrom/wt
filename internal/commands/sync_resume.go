@@ -70,7 +70,7 @@ func syncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) (err
 	name := st.Work
 	j := opts.Journal
 	j.repo(ctx.Repo.MainRoot)
-	j.trunk(strings.TrimPrefix(st.TrunkRef, "origin/"), st.TrunkRef, st.Trunk, false)
+	j.trunk(strings.TrimPrefix(st.TrunkRef, "origin/"), nil, st.TrunkRef, st.Trunk, false)
 	// The branch as resume finds it: the run's old tip while the rebase
 	// waits, the rebased tip when a person finished it by hand.
 	found, _ := ctx.Repo.ResolveRef("refs/heads/" + st.Branch)

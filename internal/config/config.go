@@ -29,6 +29,9 @@ type Config struct {
 	// MainBranchSet says MAIN_BRANCH came from the configuration rather than
 	// from the fallback, which is only a guess from origin or the checkout.
 	MainBranchSet bool
+	// TrunkSource says how MainBranch was determined: the configuration
+	// file, or how it was detected when the file names none.
+	TrunkSource TrunkSource
 	// TypeNamesSet says WORKTREE_TYPE_NAMES was written in the file, which
 	// is what decides between the repository's naming and the person's.
 	TypeNamesSet bool
@@ -199,7 +202,7 @@ func fromRaw(r map[string]Value, mainBranchFallback, file string) (*Config, erro
 	}
 
 	if v, ok := r[KeyMainBranch]; ok && v.Scalar != "" {
-		c.MainBranchSet = true
+		c.MainBranchSet, c.TrunkSource = true, TrunkFromConfig
 	}
 	if v, ok := r[KeyBranchSuffix]; ok && !v.IsList {
 		c.BranchSuffixSet = true
