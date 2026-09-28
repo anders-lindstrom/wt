@@ -158,7 +158,11 @@ type Restore struct {
 	// worktree using the branch when that decided it.
 	Action     *string `json:"action"`
 	OccupiedBy *string `json:"occupiedBy"`
-	Steps      []Step  `json:"steps"`
+	// CreatedBranch is set once this restore has made the branch again: it
+	// owns that branch, and its config, until the restore is done, also
+	// after a step that failed.
+	CreatedBranch bool   `json:"createdBranch"`
+	Steps         []Step `json:"steps"`
 }
 
 // Record is recovery.json.

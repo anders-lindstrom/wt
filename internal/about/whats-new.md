@@ -29,6 +29,13 @@ want read out to them; the full story is in git history and in
   fetched; several remotes having it is refused unless checkout.defaultRemote.
 - JSON: checkout-plan, checkout 1.1.0 (`source`, `remote`, `remoteRef`).
 
+## 2026-09-28 13:20 — wt restore run again finishes a branch's config
+
+- A restore that made a deleted branch again and then failed to write its
+  config now owns that branch when run again: the missing entries go back,
+  none twice, a value set since is left alone, and it only says restored
+  once the config is back. JSON: recovery 1.1.0 (`restore.createdBranch`).
+
 ## 2026-09-28 10:16 — wt remove speaks JSON, and holds to its plan
 
 - `wt remove <work> --dry-run --json` prints the plan: HEAD, where the branch

@@ -45,6 +45,7 @@ Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 | `remove-plan`, `remove` | 1.0.0 | `wt remove <work> --dry-run --json`, the plan, and `--yes --json`, the result |
 | `checkout-plan`, `checkout` | 1.1.0 | `source`, `remote`, `remoteRef` (and `remoteCommit` in the plan, `upstream` in the result): a branch created from a remote-tracking ref; problems `branchAmbiguous`, `remoteBranchMissing` |
 | `new-plan` 1.1.0, `checkout-plan` 1.2.0, `status` 1.3.0 | | a repository with no configuration file runs on detected defaults: `configured` false with no problem; `noConfiguration` only when no trunk can be detected either |
+| `recovery` | 1.1.0 | `restore.createdBranch`: this restore made the branch again, so a run after a failed one finishes its config |
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
 
@@ -472,7 +473,7 @@ there: a folder on a volume that is not mounted keeps them).
 | `head` | string \| null | the commit checked out; null before the first |
 | `branch` | object \| null | null for a detached HEAD; else `name`, `tip`, `plan` (`delete`, `keep`, `none`), `keepAs`, `config` (`[{key, value}]`, every value in order; null until captured) and `result` (`deleted`, `renamed`, `untouched`, `kept` — turned down on purpose — or `failed`; null before the step) |
 | `steps` | array | `{name, state, error}` for `lock`, `pin`, `moveCheckout`, `moveAdmin`, `relink`, `branch`, in order |
-| `restore` | object \| null | the restore's own journal: `action`, `occupiedBy` and its `steps` (`branch`, `moveAdmin`, `relink`, `moveCheckout`, `unlock`, `unpin`); null until `wt restore` changes something |
+| `restore` | object \| null | the restore's own journal: `action`, `occupiedBy`, `createdBranch` (this restore made the branch again; absent before 1.1.0) and its `steps` (`branch`, `moveAdmin`, `relink`, `moveCheckout`, `unlock`, `unpin`); null until `wt restore` changes something |
 
 The step lists and the states are **closed**, unlike the enumerations elsewhere:
 wt refuses a record whose steps are not exactly these, in this order, so another
@@ -530,7 +531,10 @@ branch did, and the restore only unlocks it and deletes the pins.
 The recorded config goes back only when this restore made the branch again, or
 the branch's section is empty: a branch somebody else made keeps its own config.
 It goes back entry by entry, and one already there counts once, so a restore
-stopped halfway through it adds the rest.
+stopped halfway through it adds the rest. Once it has made the branch
+(`createdBranch`) the branch stays its own: a restore run again after a failed
+config write adds the entries still missing, leaves a key somebody set to a
+value of their own since, and fails unless every other recorded entry is back.
 
 ## `wt restore <dir> --json` — the result
 

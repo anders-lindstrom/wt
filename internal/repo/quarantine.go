@@ -53,8 +53,17 @@ func (r *Repo) BranchConfig(name string) ([]ConfigEntry, error) {
 	return list, nil
 }
 
+// BeforeConfigAdd runs, when set, before AddConfig writes, and an error from
+// it is AddConfig's. Tests set it; nothing else does.
+var BeforeConfigAdd func(key, value string) error
+
 // AddConfig appends one value to the local config, as git config --add.
 func (r *Repo) AddConfig(key, value string) error {
+	if BeforeConfigAdd != nil {
+		if err := BeforeConfigAdd(key, value); err != nil {
+			return err
+		}
+	}
 	_, err := git.Run(r.MainRoot, "config", "--local", "--add", key, value)
 	return err
 }

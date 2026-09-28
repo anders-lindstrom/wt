@@ -683,3 +683,106 @@ func TestRestorePutsBackARemovalStoppedInsideAStep(t *testing.T) {
 		})
 	}
 }
+
+// A restore that made a deleted branch again and then failed to put its
+// config back owns that branch when it is run again: the entries still
+// missing go back, none twice, and a value set since is left as it is.
+func TestRestoreRetryFinishesTheConfigOfABranchItMade(t *testing.T) {
+	for _, newer := range []bool{false, true} {
+		name := "failed"
+		if newer {
+			name = "set-since"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx, path := safetyWorktree(t, "fix/retry-"+name)
+			branch := "fix_wt/retry-" + name
+			section := "branch." + branch + "."
+			gitIn(t, ctx.Repo.MainRoot, "config", section+"remote", "origin")
+			gitIn(t, ctx.Repo.MainRoot, "config", section+"merge", "refs/heads/"+branch)
+			gitIn(t, ctx.Repo.MainRoot, "config", section+"description", "mine")
+			tip := strings.TrimSpace(gitOut(t, path, "rev-parse", "HEAD"))
+			dir := trashFor(t, ctx)
+			var buf bytes.Buffer
+			if err := RemoveAt(ctx, path, RemoveOptions{Quarantine: dir}, &buf); err != nil {
+				t.Fatalf("RemoveAt: %v\n%s", err, buf.String())
+			}
+			t.Cleanup(func() { repo.BeforeConfigAdd = nil })
+			repo.BeforeConfigAdd = func(key, _ string) error {
+				if strings.HasSuffix(key, ".merge") {
+					return errCrash
+				}
+				return nil
+			}
+			var res quarantine.RestoreResult
+			if err := Restore(ctx, dir, RestoreOptions{Result: &res}, &buf); err == nil {
+				t.Fatalf("the config write must fail\n%s", buf.String())
+			}
+			repo.BeforeConfigAdd = nil
+			if branchTip(t, ctx, branch) != tip {
+				t.Fatal("the first run should have made the branch again")
+			}
+			wantMerge := "refs/heads/" + branch
+			if newer {
+				wantMerge = "refs/heads/elsewhere"
+				gitIn(t, ctx.Repo.MainRoot, "config", section+"merge", wantMerge)
+			}
+			res = restore(t, ctx, dir)
+			if res.Outcome != quarantine.OutcomeRestored {
+				t.Errorf("result %+v", res)
+			}
+			assertBack(t, ctx, path, dir, "ref: refs/heads/"+branch)
+			for key, want := range map[string]string{"remote": "origin", "merge": wantMerge, "description": "mine"} {
+				if got := strings.TrimSpace(gitOut(t, ctx.Repo.MainRoot, "config", "--get-all", section+key)); got != want {
+					t.Errorf("%s is %q, want %q", key, got, want)
+				}
+			}
+		})
+	}
+}
+
+// A restore that stopped between making the branch again and saying so,
+// then failed a config write, then runs a third time: the branch stays its
+// own throughout, and the config comes back whole.
+func TestRestoreKeepsABranchItMadeAcrossTwoFailures(t *testing.T) {
+	ctx, path := safetyWorktree(t, "fix/thrice")
+	branch := "fix_wt/thrice"
+	section := "branch." + branch + "."
+	gitIn(t, ctx.Repo.MainRoot, "config", section+"remote", "origin")
+	gitIn(t, ctx.Repo.MainRoot, "config", section+"merge", "refs/heads/"+branch)
+	tip := strings.TrimSpace(gitOut(t, path, "rev-parse", "HEAD"))
+	dir := trashFor(t, ctx)
+	var buf bytes.Buffer
+	if err := RemoveAt(ctx, path, RemoveOptions{Quarantine: dir}, &buf); err != nil {
+		t.Fatalf("RemoveAt: %v\n%s", err, buf.String())
+	}
+	// The first run: the branch made, nothing journalled about it.
+	gitIn(t, ctx.Repo.MainRoot, "update-ref", "refs/heads/"+branch, tip)
+	r := loadRecord(t, dir)
+	recreate := quarantine.ActionRecreate
+	r.Restore = &quarantine.Restore{Action: &recreate, Steps: []quarantine.Step{
+		{Name: "branch", State: quarantine.Running}, {Name: "moveAdmin", State: quarantine.Pending},
+		{Name: "relink", State: quarantine.Pending}, {Name: "moveCheckout", State: quarantine.Pending},
+		{Name: "unlock", State: quarantine.Pending}, {Name: "unpin", State: quarantine.Pending}}}
+	if err := r.Save("test"); err != nil {
+		t.Fatal(err)
+	}
+	// The second: one entry back, then a failure.
+	t.Cleanup(func() { repo.BeforeConfigAdd = nil })
+	repo.BeforeConfigAdd = func(key, _ string) error {
+		if strings.HasSuffix(key, ".merge") {
+			return errCrash
+		}
+		return nil
+	}
+	if err := Restore(ctx, dir, RestoreOptions{}, &buf); err == nil {
+		t.Fatal("the config write must fail")
+	}
+	repo.BeforeConfigAdd = nil
+	restore(t, ctx, dir)
+	assertBack(t, ctx, path, dir, "ref: refs/heads/"+branch)
+	got := strings.TrimSpace(gitOut(t, ctx.Repo.MainRoot, "config", "--get-regexp", `^branch\.fix_wt/thrice\.`))
+	want := section + "remote origin\n" + section + "merge refs/heads/" + branch
+	if got != want {
+		t.Errorf("config:\n%s\nwant:\n%s", got, want)
+	}
+}
