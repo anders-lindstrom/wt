@@ -460,3 +460,17 @@ func TestRemoveJSONQuarantineStoppedAfterTheLockIsPartial(t *testing.T) {
 		t.Errorf("restore %v", r.RestoreCommand)
 	}
 }
+
+// The plan and the result say how trunk was found, as every other plan
+// does, and the token covers it.
+func TestRemoveJSONSaysHowTrunkWasFound(t *testing.T) {
+	ctx, path := safetyWorktree(t, "fix/trunk-source")
+	p, err := removePlanJSON(t, ctx, path, RemoveOptions{Agents: []wtsync.Agent{}})
+	if err != nil || p.TrunkSource == nil || *p.TrunkSource != string(ctx.Config.TrunkSource) || *p.TrunkSource == "" {
+		t.Fatalf("plan trunkSource = %v (%v)", p.TrunkSource, err)
+	}
+	r, err := removeJSON(t, ctx, path, RemoveOptions{Agents: []wtsync.Agent{}, Expect: deref(p.Token)})
+	if err != nil || r.TrunkSource == nil || *r.TrunkSource != *p.TrunkSource {
+		t.Fatalf("result trunkSource = %v (%v)", r.TrunkSource, err)
+	}
+}

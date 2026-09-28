@@ -6,6 +6,11 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-28 16:29 — wt remove --json says how trunk was found
+
+- The remove plan and result carry `trunkSource`, as the other plans do,
+  and the plan's token covers it. JSON: remove-plan, remove 1.3.0.
+
 ## 2026-09-28 15:52 — Trunk is no longer the branch the main checkout is on
 
 - Without MAIN_BRANCH, trunk is origin/HEAD, else main, master, trunk,

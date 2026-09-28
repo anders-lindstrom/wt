@@ -54,6 +54,7 @@ Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 | `remove`, `sweep` | 1.1.0, 1.3.0 | the `superset` result `optedOut`: `--keep-superset`, Superset was not asked |
 | `remove-plan` | 1.2.0 | `forceWith`, top-level and on each problem: the `--force` categories given, and the one that goes past each problem |
 | `remove` | 1.2.0 | `forced`: the `--force` categories the removal went past; `forceWith` on each problem |
+| `remove-plan`, `remove` | 1.3.0 | [`trunkSource`](#trunksource--how-trunk-was-found): how trunk was found |
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
 
@@ -972,6 +973,7 @@ worktree, the main checkout), with the worktree fields null.
 |---|---|---|
 | `schema`, `schemaVersion`, `command` | 1, string, `"remove"` | |
 | `repo`, `trunk` | string \| null | the main checkout, trunk's name |
+| `trunkSource` | string \| null | since 1.3.0: how `trunk` was found ([`trunkSource`](#trunksource--how-trunk-was-found)); the token covers it |
 | `token` | string \| null | names this plan; pass it to `wt remove --yes --json --expect`. Null when it would refuse, or on error |
 | `error` | string \| null | why the removal would refuse, or why there is no plan |
 | `path` | string \| null | the checkout |
@@ -1032,8 +1034,8 @@ its status and the sessions are read again: a session that turned busy or
 arrived since the plan refuses the removal unless `--force` names its state
 now, and a listing that fails refuses unless it names `sessions-unknown`.
 
-The **token** covers the repository, trunk's name and both bases' commits, the
-wt configuration file, and everything the removal turns on: the checkout, its
+The **token** covers the repository, trunk's name, how it was found and both
+bases' commits, the wt configuration file, and everything the removal turns on: the checkout, its
 admin dir, HEAD, the branch, its tip, standing, pull request and outcome, the
 commit its kept name holds, anything uncommitted or hidden, moved submodules, nested worktrees, the
 operation, the sessions by id and state (idle or busy), the lock (reason,
@@ -1064,6 +1066,7 @@ quarantine got. A usage error is reported as without `--json`, with no object.
 |---|---|---|
 | `schema`, `schemaVersion`, `command` | 1, string, `"remove"` | |
 | `repo`, `trunk` | string \| null | |
+| `trunkSource` | string \| null | since 1.3.0: as in the plan |
 | `token` | string \| null | the plan's token |
 | `outcome` | see below | |
 | `error` | string \| null | why it refused or stopped |

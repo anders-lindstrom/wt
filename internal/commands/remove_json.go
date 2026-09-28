@@ -99,6 +99,7 @@ type RemovePlanOutput struct {
 	Command         string            `json:"command"`
 	Repo            *string           `json:"repo"`
 	Trunk           *string           `json:"trunk"`
+	TrunkSource     *string           `json:"trunkSource"`
 	Token           *string           `json:"token"`
 	Error           *string           `json:"error"`
 	Path            *string           `json:"path"`
@@ -151,6 +152,7 @@ type RemoveOutput struct {
 	Command        string            `json:"command"`
 	Repo           *string           `json:"repo"`
 	Trunk          *string           `json:"trunk"`
+	TrunkSource    *string           `json:"trunkSource"`
 	Token          *string           `json:"token"`
 	Outcome        string            `json:"outcome"`
 	Error          *string           `json:"error"`
@@ -182,6 +184,7 @@ func removeToken(ctx *Context, p Plan) *string {
 	field("wt-remove", 1)
 	field("repo", ctx.Repo.MainRoot)
 	field("trunk", ctx.Config.MainBranch)
+	field("trunkSource", ctx.Config.TrunkSource)
 	h.Write(configFingerprint(ctx))
 	bases, err := trunkBases(ctx)
 	field("basesError", err != nil)
@@ -268,7 +271,7 @@ func restoreBranch(ctx *Context, branch, tip string) []string {
 
 func removePlanOutput(ctx *Context, p Plan, token string) RemovePlanOutput {
 	o := emptyRemovePlan()
-	o.Repo, o.Trunk, o.Token = strp(ctx.Repo.MainRoot), strp(ctx.Config.MainBranch), strp(token)
+	o.Repo, o.Trunk, o.TrunkSource, o.Token = strp(ctx.Repo.MainRoot), strp(ctx.Config.MainBranch), ctx.trunkSource(), strp(token)
 	o.Path, o.AdminDir, o.Head, o.Detached = strp(p.Path), strp(p.AdminDir), strp(p.Head), p.Branch == ""
 	if p.Branch != "" {
 		b := &RemoveBranchPlan{Name: p.Branch, Tip: strp(p.Tip), Merge: mergeNames[p.Merge], Base: strp(p.Base),
@@ -350,7 +353,7 @@ func RemovePlanJSON(ctx *Context, t RemoveTarget, opts RemoveOptions, out, progr
 	if j.plan != nil {
 		o = removePlanOutput(ctx, *j.plan, j.token)
 	} else {
-		o.Repo, o.Trunk = strp(ctx.Repo.MainRoot), strp(ctx.Config.MainBranch)
+		o.Repo, o.Trunk, o.TrunkSource = strp(ctx.Repo.MainRoot), strp(ctx.Config.MainBranch), ctx.trunkSource()
 	}
 	if err != nil {
 		o.Error, o.Token = strp(err.Error()), nil
@@ -464,7 +467,7 @@ func removeOutput(ctx *Context, plan *Plan, token string, started bool, res *Rem
 		o.Error = strp(err.Error())
 	}
 	if ctx != nil {
-		o.Repo, o.Trunk = strp(ctx.Repo.MainRoot), strp(ctx.Config.MainBranch)
+		o.Repo, o.Trunk, o.TrunkSource = strp(ctx.Repo.MainRoot), strp(ctx.Config.MainBranch), ctx.trunkSource()
 	}
 	notRun := func(name, commit string) RemoveStep {
 		return RemoveStep{Step: name, Result: StepNotRun, Commit: strp(commit)}
