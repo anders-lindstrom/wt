@@ -6,6 +6,13 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-28 13:44 — A killed wt no longer leaves provisioning running
+
+- SIGKILL to wt, or to the group it runs in, used to leave provision.sh, a
+  build or a writing git running in the new worktree. A small `wt reaper`
+  now stops them when wt goes. Read-only commands never start one.
+- docs/json.md: "Signals and what wt starts".
+
 ## 2026-09-28 13:21 — wt checkout takes a branch that is only on a remote
 
 - `wt checkout origin/topic`, or a bare `wt checkout topic` when no local

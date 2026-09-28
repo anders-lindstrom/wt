@@ -117,7 +117,8 @@ func untrack(pid int) (park bool) {
 
 // RunBounded runs cmd in its own process group, registered for KillRunning
 // while it runs, and kills the whole group once timeout has passed; zero or
-// less means no deadline. cmd must not have been started.
+// less means no deadline. A command that Writes is on the reaper's list too,
+// so SIGKILL to wt does not leave it running. cmd must not have been started.
 //
 // timedOut reports that the deadline fired before Wait returned. It wins over
 // err: a command that exited 0 but left a child holding stdio open past
@@ -134,6 +135,7 @@ func RunBounded(timeout time.Duration, cmd *exec.Cmd) (timedOut bool, code int, 
 	}
 	pid := cmd.Process.Pid
 	track(pid)
+	told := Writes(cmd.Args, cmd.Env) && tellReaper('+', pid)
 
 	var mu sync.Mutex
 	waited, fired := false, false
@@ -147,6 +149,12 @@ func RunBounded(timeout time.Duration, cmd *exec.Cmd) (timedOut bool, code int, 
 			}
 		})
 		defer timer.Stop()
+	}
+	if told {
+		// Off the reaper's list while the exited process still holds its
+		// pid, so the reaper never signals an id reused since.
+		waitExited(pid)
+		tellReaper('-', pid)
 	}
 	err = cmd.Wait()
 	mu.Lock()

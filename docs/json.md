@@ -47,6 +47,36 @@ Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
 
+## Signals and what wt starts
+
+Every git, script and build wt runs gets a process group of its own. Its
+deadline and a handled SIGINT or SIGTERM to wt stop that whole group, however
+many processes it forked, before wt writes its object and exits 130. Each verb's
+section below says what that object holds.
+
+SIGKILL, or a crash, leaves wt no chance to do that. So a command that can write
+or run long — a `provision.sh`, a build, a deferred step, a git that changes
+something — is also listed with a small helper wt starts the first time it needs
+one: wt's own binary as `wt reaper`, in a process group of its own, holding
+none of wt's stdout, stderr or other descriptors. When wt is gone however it went, the reaper
+sends each listed group SIGTERM, then SIGKILL after 200 ms, and exits. So a
+caller only has to kill wt, or the process group it started wt in, and nothing
+wt started keeps writing to a worktree. The groups go within about a quarter of
+a second, not in the same instant. A group is taken off the list once its
+command has exited, before wt reaps it, so the reaper never signals a group id
+that has been reused since. The reaper reads everything wt wrote before it acts.
+A process the command left running in its group after the command itself
+exited is not stopped, just as a handled signal does not stop it. Reads — `wt
+list`, `wt status` (its rebase simulation only adds objects), `wt schema`, the
+queries every verb makes — never start a reaper.
+
+Why not run everything in wt's own group, so that one signal from the caller
+stops the lot? Then wt could stop its children only by signalling its own group.
+That group also holds the other commands of a pipeline (`wt up --json | jq`), or
+the script that called wt without job control. Escalating to SIGKILL would kill
+wt before it wrote its object. And signalling only its direct children would let
+their children run on.
+
 ## JSON Schema
 
 Every object has a JSON Schema (draft 2020-12), for validating what you read or
@@ -736,7 +766,8 @@ A handled SIGINT or SIGTERM, from the moment the command starts, writes the
 object too — the step in flight `interrupted`, the rest as they stood — then
 stops a `provision.sh`, build command or git still running, each with its whole
 process group, and exits 130. SIGKILL or a crash may write none; treat a
-missing object as unknown. A usage error (a missing argument, an unknown flag,
+missing object as unknown. Its reaper then stops what was running (see
+[Signals](#signals-and-what-wt-starts)). A usage error (a missing argument, an unknown flag,
 `--expect` without `--json`) is reported as without `--json`, with no object.
 
 | Field | Type | Meaning |
