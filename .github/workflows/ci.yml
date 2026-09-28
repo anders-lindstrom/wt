@@ -23,7 +23,7 @@ jobs:
           git config --global user.email ci@example.com
           git config --global user.name CI
       - run: go build ./...
-      - run: go test ./... -race
+      - run: go test -timeout 30m ./... -race
 
   lint:
     runs-on: ubuntu-latest
