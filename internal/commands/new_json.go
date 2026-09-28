@@ -223,9 +223,10 @@ func PlanNew(ctx *Context, spec string, opts NewOptions) NewPlan {
 			}
 		}
 	}
+	// No base at all is no trunk and no --base: noConfiguration says so.
 	if oid, ok := ctx.Repo.ResolveRef(base); ok {
 		p.BaseCommit = strp(oid)
-	} else {
+	} else if base != "" {
 		p.problem(ProblemBaseMissing, "%q is not a commit here", base)
 	}
 	if len(p.Problems) == 0 {

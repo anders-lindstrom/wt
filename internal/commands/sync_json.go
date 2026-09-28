@@ -170,6 +170,10 @@ func writeJSON(w io.Writer, v any) error {
 // overviewOf is what wt sync would print for ctx's repository, as data.
 func overviewOf(ctx *Context, opts SyncOptions) SyncOverview {
 	o := newOverview(ctx.Repo.Name, ctx.Repo.MainRoot)
+	if err := ctx.noTrunk(); err != nil {
+		o.Error = strp(err.Error())
+		return o
+	}
 	trunk := ctx.Config.MainBranch
 	o.Trunk, o.TrunkRef, o.TrunkSource = strp(trunk), strp("origin/"+trunk), ctx.trunkSource()
 	if !opts.NoFetch {

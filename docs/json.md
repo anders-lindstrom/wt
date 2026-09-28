@@ -55,6 +55,7 @@ Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 | `remove-plan` | 1.2.0 | `forceWith`, top-level and on each problem: the `--force` categories given, and the one that goes past each problem |
 | `remove` | 1.2.0 | `forced`: the `--force` categories the removal went past; `forceWith` on each problem |
 | `remove-plan`, `remove` | 1.3.0 | [`trunkSource`](#trunksource--how-trunk-was-found): how trunk was found |
+| `status` 1.4.1, `up` 1.3.1, `sync` 1.1.1, `sweep-plan` 1.4.1, `new-plan` 1.2.1, `checkout-plan` 1.3.1 | | detection is origin/HEAD, then the first of `development`, `main`, `master`, else it fails: `currentBranchGuess` is no longer produced, and a repository nothing names trunk for is `noConfiguration` — also one whose file has no `MAIN_BRANCH` |
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
 
@@ -139,7 +140,7 @@ repository.
 | `token` | string \| null | names the inputs of this plan; pass it to `wt up --expect`. Null when not eligible |
 | `trunk` | string | trunk as `wt up` resolves it here (see [`trunkSource`](#trunksource--how-trunk-was-found)) |
 | `trunkSource` | string \| null | since 1.4.0: how `trunk` was found, [below](#trunksource--how-trunk-was-found) |
-| `trunkRef` | string | `origin/<trunk>`, what `wt up` rebases onto after its fetch |
+| `trunkRef` | string \| null | `origin/<trunk>`, what `wt up` rebases onto after its fetch; null with `trunk` null, when nothing names trunk |
 | `trunkRefExists` | bool | whether that ref is here, as last fetched |
 | `trunkTip` | string \| null | its commit |
 | `trunkRefUpdatedAt` | string \| null | when that ref last moved, from its own reflog (RFC 3339, UTC); null without a reflog. Not FETCH_HEAD's time, which any fetch sets |
@@ -153,7 +154,7 @@ repository.
 | `worktree.state` | `clean` \| `dirty` \| `unreadable` | the checkout: `clean` is nothing uncommitted |
 | `worktree.behind`, `worktree.ahead` | int \| null | commits against `trunkRef` (the local trunk when that is not here); null when they cannot be counted |
 | `upEligible` | bool | `wt up` would start on it. Dirt, conflicts and busy sessions are **not** checked here: `wt up` checks them and its result says so |
-| `upIneligibleCode` | string \| null | `mainCheckout`, `noConfiguration` (no configuration file, and no trunk to detect either), `configurationInvalid`, `detachedHead`, `onTrunk`, `handedOver` (an earlier `wt sync` run waits on a person there), `notAWorktree` |
+| `upIneligibleCode` | string \| null | `mainCheckout`, `noConfiguration` (no `MAIN_BRANCH` in a configuration file, and no trunk to detect either), `configurationInvalid`, `detachedHead`, `onTrunk`, `handedOver` (an earlier `wt sync` run waits on a person there), `notAWorktree` |
 | `upIneligibleReason` | string \| null | the same as a sentence |
 | `stack` | array | every worktree `wt up` would move, parents first, from local refs as of now; just the one when it has no stack |
 | `stack[].work`, `.branch`, `.path` | string | |
@@ -249,11 +250,14 @@ and only local refs are read — nothing asks the remote:
 |---|---|
 | `config` | `MAIN_BRANCH` in the wt configuration file |
 | `originHead` | the branch `refs/remotes/origin/HEAD` names |
-| `conventional` | the first of `main`, `master`, `trunk`, `development`, `develop` that exists both locally and as `origin/<name>`; else the first on origin; else the first local |
-| `currentBranchGuess` | none of those: the main checkout's branch, which may be a feature branch. Do not rebase onto it or judge branches merged against it; `wt init` or `MAIN_BRANCH` pins trunk |
+| `conventional` | the first of `development`, `main`, `master` that exists locally or as `origin/<name>` — the order decides, not where it exists |
+| `currentBranchGuess` | no longer produced since `status` 1.4.1, `up` 1.3.1, `sync` 1.1.1, `sweep-plan` 1.4.1, `new-plan` 1.2.1, `checkout-plan` 1.3.1, and never by `remove-plan` or `remove`; detection fails instead. Before, the main checkout's branch, which may be a feature branch |
 
-Null only with `trunk` null. A reader treats a value it does not know as
-`currentBranchGuess`.
+When none of those names trunk, wt does not guess: commands refuse with
+"cannot tell which branch is trunk", and the plans report `noConfiguration`
+with `trunk` and `trunkSource` null. Null only with `trunk` null. A reader
+treats `currentBranchGuess`, and a value it does not know, as no trunk to
+rebase onto or judge branches merged against.
 
 ### `trunkSync` — local trunk
 
@@ -705,7 +709,7 @@ object with `error` set and no worktrees, and the exit code is non-zero.
 | `command` | `"sync"` | |
 | `repo` | string | the main checkout, as in `wt sweep --json` |
 | `name` | string | the repository's name: the main checkout's directory name |
-| `trunk`, `trunkRef` | string \| null | `main`, `origin/main` |
+| `trunk`, `trunkRef` | string \| null | `main`, `origin/main`; null when nothing names trunk, and `error` says so |
 | `trunkSource` | string \| null | since 1.1.0: how `trunk` was found ([`trunkSource`](#trunksource--how-trunk-was-found)) |
 | `onto` | string \| null | the trunk commit assessed against; null when trunk is not known |
 | `fetched` | bool | trunk was fetched first |
@@ -834,7 +838,7 @@ The provisioning flags (`--no-setup`, `--no-build`, `--no-superset`) change
 
 `problems[].code`: `branchExists`, `pathExists`, `unknownType`, `invalidName`
 (`.`, `/`, too many slashes, a branch name git refuses, nothing derivable), `noConfiguration`
-(no configuration file, and no trunk wt can detect: `wt init` names one),
+(no `MAIN_BRANCH` in a configuration file, and no trunk wt can detect: `wt init` names one),
 `configurationInvalid`, `branchMissing` and `branchCheckedOut` (checkout only:
 git gives a branch one worktree), `baseMissing`.
 

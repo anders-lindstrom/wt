@@ -186,6 +186,18 @@ func (c *Context) trunkSource() *string {
 	return strp(string(c.Config.TrunkSource))
 }
 
+// noTrunk is why c has no trunk to work against — no MAIN_BRANCH, and none
+// detected — or nil when it has one. A lenient Context gets this far.
+func (c *Context) noTrunk() error {
+	switch {
+	case c.Config.MainBranch != "":
+		return nil
+	case c.ConfigError != nil:
+		return c.ConfigError
+	}
+	return repo.ErrNoTrunk
+}
+
 // HasProvisionScript reports whether the repo declares its own setup step.
 func (c *Context) HasProvisionScript() bool {
 	info, err := os.Stat(filepath.Join(c.Repo.Root, "bin", "worktree", "provision.sh"))
@@ -196,25 +208,34 @@ func (c *Context) HasProvisionScript() bool {
 // caller is standing in and falling back to the main checkout when that
 // worktree carries none, and to the detected defaults when neither does. The
 // trunk it detected comes back with it: reading it costs git processes, and
-// everything that needs a fallback branch here needs the same answer.
+// everything that needs a fallback branch here needs the same answer. When
+// no MAIN_BRANCH names trunk and detection finds none, the error is an
+// undetectedError.
 func loadFor(r *repo.Repo) (*config.Config, detectedTrunk, error) {
 	trunk := detectedTrunk{}
-	trunk.name, trunk.source = r.DetectTrunk()
+	trunk.name, trunk.source, trunk.err = r.DetectTrunk()
 	c, err := config.Load(r.Root, trunk.name)
 	if errors.Is(err, config.ErrNoConfig) && r.Root != r.MainRoot {
 		c, err = config.Load(r.MainRoot, trunk.name)
 	}
-	if errors.Is(err, config.ErrNoConfig) {
+	switch {
+	case errors.Is(err, config.ErrNoConfig) && trunk.err != nil:
+		err = undetectedError{trunk.err}
+	case errors.Is(err, config.ErrNoConfig):
 		c, err = detectedConfig(r, trunk.name)
+	case err == nil && !c.MainBranchSet && trunk.err != nil:
+		err = undetectedError{trunk.err}
 	}
 	trunk.applyTo(c)
 	return c, trunk, err
 }
 
-// detectedTrunk is the trunk a repository's refs point to, and how.
+// detectedTrunk is the trunk a repository's refs point to, and how; err is
+// repo.ErrNoTrunk when they point to none.
 type detectedTrunk struct {
 	name   string
 	source config.TrunkSource
+	err    error
 }
 
 // applyTo records where c's trunk came from when no file named it.

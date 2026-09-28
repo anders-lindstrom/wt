@@ -51,12 +51,11 @@ func TestDoctorStillReportsAForeignLayout(t *testing.T) {
 	}
 }
 
-// A repository with no configuration is the one case where doctor's closing
-// advice had nothing behind it: there are no migrate commands above to need
-// fixing first, and no way out was named.
+// A repository with no configuration and no trunk to detect is the one case
+// where doctor's closing advice had nothing behind it: there are no migrate
+// commands above to need fixing first, and no way out was named.
 func TestDoctorTellsAConfiglessRepoToRunInit(t *testing.T) {
-	r := bareRepo(t)
-	ctx := OpenLenient(r.Root, io.Discard)
+	ctx := OpenLenient(noTrunkRepo(t), io.Discard)
 	if ctx == nil {
 		t.Fatal("OpenLenient returned nil for a real repository")
 	}

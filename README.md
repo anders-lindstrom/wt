@@ -53,15 +53,17 @@ without hanging on a prompt. `--force` replaces a configuration already there;
 without it, an existing file is an error rather than something to overwrite.
 
 A repository with **no configuration** works too: every command runs on what
-`wt init --yes` would write — trunk from origin's HEAD, the default prefix,
+`wt init --yes` would write — trunk from origin's HEAD, else the first of
+`development`, `main` and `master` that exists here or on origin, the default prefix,
 no build command — detected on each run and never written to the repository.
 That is what lets a harness make worktrees in a clone nobody set up (the Claude
 Code hooks, for one). `wt new` says so in one line on stderr, `wt config` shows
 the values as `detected`, and `wt doctor` notes it without counting it as a
 problem. Nothing that runs code is detected: only a `bin/worktree/provision.sh`
 the repository itself carries runs. When not even trunk can be detected —
-no origin HEAD, and a checkout on no branch with commits — commands stop and
-say so, and `wt init` is where you name it.
+no origin HEAD, and none of those three branches — wt does not take the
+checked-out branch for it: commands stop with "cannot tell which branch is
+trunk", `wt init --yes` refuses, and `wt init` asks you to name it.
 
 If the config lands somewhere git ignores — a repo ignoring `bin/` for its
 build output also ignores `bin/worktree/` — `wt init` says so, because that
@@ -604,7 +606,7 @@ is validated: **an unknown or misspelled key is an error, not silence.**
 
 | key | type | default |
 |---|---|---|
-| `MAIN_BRANCH` | string | detected from origin HEAD |
+| `MAIN_BRANCH` | string | origin HEAD, else `development`, `main` or `master` |
 | `WORKTREE_BRANCH_PREFIX` | string | `feat_wt` |
 | `WORKTREE_TYPE_SUFFIX` | string | `_wt` |
 | `WORKTREE_BRANCH_SUFFIX` | string | the type suffix |
