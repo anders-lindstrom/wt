@@ -38,7 +38,8 @@ func newRestoreCmd() *cobra.Command {
 			"running wt restore <dir> again. A worktree locked by \"wt quarantine\n" +
 			"<dir>\" with no recovery.json was stopped before anything moved: restore\n" +
 			"unlocks it. The folder itself is left as it is, empty but for\n" +
-			"recovery.json.\n\n" +
+			"recovery.json. With the Superset integration on, the worktree is\n" +
+			"registered there again, the way wt new registers one.\n\n" +
 			"--dry-run says what it would do and changes nothing. --json prints one\n" +
 			"object on stdout: with --dry-run the plan, otherwise the result; the\n" +
 			"human output goes to stderr. wt schema restore-plan and wt schema\n" +

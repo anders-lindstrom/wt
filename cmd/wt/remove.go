@@ -79,7 +79,9 @@ func newRemoveCmd() *cobra.Command {
 			"submodules' repositories, to <dir>/admin, which unregisters it; then\n" +
 			"the branch goes as it would. A file written after the check moves with\n" +
 			"the checkout. Each step is journalled in recovery.json; wt restore <dir>\n" +
-			"puts it all back, and wt sweep drops the pins once <dir> is deleted.",
+			"puts it all back, and wt sweep drops the pins once <dir> is deleted.\n\n" +
+			"With `wt config set superset true`, once the worktree has left its path\n" +
+			"and git no longer lists it, its Superset workspace is deleted too.",
 		Example: "  wt remove login-crash            # say where the branch stands, then ask\n" +
 			"  wt remove login-crash --dry-run  # what it would do; change nothing\n" +
 			"  wt remove login-crash --yes      # do not ask (scripts, hooks)\n" +

@@ -152,6 +152,17 @@ type SweepResultItem struct {
 	// Quarantine is the folder the worktree went to under --quarantine,
 	// and which of its two moves are done; nil otherwise.
 	Quarantine *SweepQuarantine `json:"quarantine"`
+	// Superset is what came of the removed worktree's Superset workspace;
+	// nil when no worktree was removed.
+	Superset *SweepSuperset `json:"superset"`
+}
+
+// SweepSuperset is one removed worktree's Superset step.
+type SweepSuperset struct {
+	// Result is StepDeregistered, StepNotRegistered, StepSkipped or
+	// StepFailed.
+	Result string  `json:"result"`
+	Reason *string `json:"reason"`
 }
 
 // SweepQuarantine is one worktree's folder in a sweep's quarantine.
@@ -439,6 +450,18 @@ func (j *SweepJournal) quarantined(key, dir string) {
 	defer j.mu.Unlock()
 	if r := j.byKey[key]; r != nil {
 		r.Quarantine = &SweepQuarantine{Dir: dir}
+	}
+}
+
+// superset records what came of a removed worktree's Superset workspace.
+func (j *SweepJournal) superset(key string, res RemoveResult) {
+	if j == nil || res.Superset == "" {
+		return
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if r := j.byKey[key]; r != nil {
+		r.Superset = &SweepSuperset{Result: res.Superset, Reason: strp(res.SupersetReason)}
 	}
 }
 

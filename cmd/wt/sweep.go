@@ -92,6 +92,7 @@ func newSweepCmd() *cobra.Command {
 			"outside the repository; otherwise the sweep refuses before anything\n" +
 			"goes. It sweeps one repository. Every sweep also drops the refs that\n" +
 			"pinned a quarantine's commits once its folder has been deleted.\n\n" +
+			"Each worktree it removes loses its Superset workspace, as with wt remove.\n\n" +
 			selectionHelp,
 		Example: "  wt sweep --quarantine ../trash/sw  # ask, then move worktrees aside\n" +
 			"  wt sweep --all --dry-run    # every repository's plan; change nothing\n" +

@@ -41,6 +41,7 @@ Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 | `sweep-plan` | 1.2.0 | `quarantine`: the folder `--quarantine` names, which the token covers |
 | `recovery` | 1.0.0 | `<dir>/recovery.json`, the journal of `--quarantine` and `wt restore` |
 | `restore-plan`, `restore` | 1.0.0 | `wt restore <dir> --dry-run --json`, the plan, and `--json`, the result |
+| `sweep` | 1.2.0 | `superset` on each item: what came of a removed worktree's Superset workspace |
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
 
@@ -346,6 +347,15 @@ Each item:
 | `branchDeleted` | bool | the branch is gone now |
 | `restoreCommand` | array of string \| null | when the branch was deleted: `["git", "-C", repo, "branch", branch, tip]`, which puts it back at that commit (not its upstream setting) |
 | `quarantine` | object \| null | since 1.1.0: for a worktree moved, or being moved, into the quarantine: `dir`, its own folder (`wt restore <dir>` puts it back), and `checkoutMoved`, `adminMoved`, which of the two moves are done; null otherwise |
+| `superset` | object \| null | since 1.2.0: for a worktree the sweep removed, what came of its Superset workspace: `result` and `reason` (string \| null, why, for `skipped` and `failed`); null when no worktree was removed |
+
+`superset.result`, exhaustively: `deregistered` — the workspace was deleted,
+after the directory had left its path and git no longer listed it;
+`notRegistered` — Superset is running and has no workspace there; `skipped` —
+the integration is off (`wt config set superset true` turns it on,
+`SUPERSET_REGISTER=off` keeps a repository out), Superset is not installed or
+not running, or the worktree was still there; `failed` — Superset erred. None
+of them changes `result`, `outcome` or the exit code.
 
 `worktreeRemoved` and `branchDeleted` are read from the repository after the
 row, not from what was attempted.

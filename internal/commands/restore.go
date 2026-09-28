@@ -66,7 +66,23 @@ func Restore(ctx *Context, dir string, opts RestoreOptions, w io.Writer) error {
 		path = plan.Record.Checkout.Path
 	}
 	fmt.Fprintf(w, "✓ restored %s%s\n", path, branchRestored(plan.Record, res))
+	registerRestored(ctx, path, w)
 	return report(nil)
+}
+
+// registerRestored registers the worktree a restore put back with Superset,
+// the way wt new registers a new one; its removal deleted the workspace.
+// The repository is the worktree's own, which need not be the one wt ran
+// in; the person's settings are the ones this run read.
+func registerRestored(ctx *Context, path string, w io.Writer) {
+	rctx, err := Open(path)
+	if err != nil {
+		return
+	}
+	if ctx != nil {
+		rctx.User, rctx.UserError = ctx.User, ctx.UserError
+	}
+	registerSuperset(rctx, path, w)
 }
 
 // renderRestorePlan writes what a restore finds and would do.
