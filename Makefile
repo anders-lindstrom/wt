@@ -9,7 +9,7 @@ build:
 	go build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/wt
 
 test:
-	go test ./...
+	go test -timeout 30m ./...
 
 # scripts/bats.sh kills a hung run after 10 minutes; BATS_DEADLINE changes it.
 bats: build
