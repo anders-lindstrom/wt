@@ -49,6 +49,7 @@ Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 | `quarantine-purge-plan`, `quarantine-purge` | 1.0.0 | `wt quarantine purge <dir> --json`, the plan, and `--yes --json`, the result |
 | `recovery` | 1.2.0 | `purge`: the journal of `wt quarantine purge`, in `recovery.purging.json`, which replaces `recovery.json` before anything is deleted |
 | `restore-plan` | 1.1.0 | the problem `purging`: a purge began, so the restore refuses |
+| `status` 1.4.0, `up` 1.3.0, `sync` 1.1.0, `sweep-plan` 1.3.0, `new-plan` 1.2.0, `checkout-plan` 1.3.0 | | [`trunkSource`](#trunksource--how-trunk-was-found): how trunk was found. Also marks the fixed detection order: a conventional name before the checked-out branch |
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
 
@@ -131,7 +132,8 @@ repository.
 | `schemaVersion` | string | the full version, `1.<minor>.<patch>` |
 | `command` | `"status"` | |
 | `token` | string \| null | names the inputs of this plan; pass it to `wt up --expect`. Null when not eligible |
-| `trunk` | string | trunk as `wt up` resolves it here: `MAIN_BRANCH`, else origin's HEAD |
+| `trunk` | string | trunk as `wt up` resolves it here (see [`trunkSource`](#trunksource--how-trunk-was-found)) |
+| `trunkSource` | string \| null | since 1.4.0: how `trunk` was found, [below](#trunksource--how-trunk-was-found) |
 | `trunkRef` | string | `origin/<trunk>`, what `wt up` rebases onto after its fetch |
 | `trunkRefExists` | bool | whether that ref is here, as last fetched |
 | `trunkTip` | string \| null | its commit |
@@ -180,6 +182,7 @@ exits 130. SIGKILL or a crash may write none; treat a missing object as unknown.
 | `schemaVersion` | string | the full version, `1.<minor>.<patch>` |
 | `command` | `"up"` | |
 | `trunk`, `trunkRef` | string \| null | null when the run stopped before resolving them |
+| `trunkSource` | string \| null | since 1.3.0: how `trunk` was found ([`trunkSource`](#trunksource--how-trunk-was-found)); null with `trunk` |
 | `onto` | string \| null | the trunk commit the run rebased onto, after its fetch; null when never determined |
 | `fetched` | bool | trunk was fetched (false with `--no-fetch`, or when the run stopped first) |
 | `trunkSync` | object \| null | what the run did to local `<trunk>` after its fetch (see [`trunkSync`](#trunksync--local-trunk)); null when it did not fetch |
@@ -230,6 +233,22 @@ are as they were; the fetched trunk ref and the objects a simulation writes are
 expected writes.
 
 The exit code keeps its meaning (0 when the run completed); read `outcome`.
+
+### `trunkSource` — how trunk was found
+
+`wt status`, `wt up`, `wt sync`, `wt sweep --dry-run`, and the `wt new` and
+`wt checkout` plans say how trunk was determined. The first that applies wins,
+and only local refs are read — nothing asks the remote:
+
+| Value | Trunk is |
+|---|---|
+| `config` | `MAIN_BRANCH` in the wt configuration file |
+| `originHead` | the branch `refs/remotes/origin/HEAD` names |
+| `conventional` | the first of `main`, `master`, `trunk`, `development`, `develop` that exists both locally and as `origin/<name>`; else the first on origin; else the first local |
+| `currentBranchGuess` | none of those: the main checkout's branch, which may be a feature branch. Do not rebase onto it or judge branches merged against it; `wt init` or `MAIN_BRANCH` pins trunk |
+
+Null only with `trunk` null. A reader treats a value it does not know as
+`currentBranchGuess`.
 
 ### `trunkSync` — local trunk
 
@@ -284,6 +303,7 @@ is still one object, with `error` set and no items, and a non-zero exit.
 | `command` | `"sweep"` | |
 | `repo` | string \| null | the main checkout; null outside a repository |
 | `trunk` | string \| null | trunk's branch name |
+| `trunkSource` | string \| null | since 1.3.0: how `trunk` was found ([`trunkSource`](#trunksource--how-trunk-was-found)) |
 | `bases` | array | what merged is measured against, first first: `{name, tip}` for `origin/<trunk>` as fetched, then `<trunk>` |
 | `fetched` | bool | origin was fetched first |
 | `token` | string \| null | names this plan; pass it to `wt sweep --expect`. Null when there is nothing to remove or delete, or on error |
@@ -671,6 +691,7 @@ object with `error` set and no worktrees, and the exit code is non-zero.
 | `repo` | string | the main checkout, as in `wt sweep --json` |
 | `name` | string | the repository's name: the main checkout's directory name |
 | `trunk`, `trunkRef` | string \| null | `main`, `origin/main` |
+| `trunkSource` | string \| null | since 1.1.0: how `trunk` was found ([`trunkSource`](#trunksource--how-trunk-was-found)) |
 | `onto` | string \| null | the trunk commit assessed against; null when trunk is not known |
 | `fetched` | bool | trunk was fetched first |
 | `fetchError` | string \| null | the fetch failed; the overview is against trunk as last fetched |
@@ -781,6 +802,7 @@ The provisioning flags (`--no-setup`, `--no-build`, `--no-superset`) change
 | `schemaVersion` | string | the full version, `1.<minor>.<patch>` |
 | `command` | `"new"` | |
 | `token` | string \| null | names the inputs of this plan; pass it to `wt new --json --expect`. Null when there is a problem |
+| `trunkSource` | string \| null | since `new-plan` 1.2.0, `checkout-plan` 1.3.0: how the repository's trunk was found ([`trunkSource`](#trunksource--how-trunk-was-found)) |
 | `configured` | bool | the repository has a wt configuration file that parses. False also on **detected defaults**: no file, and wt runs on what `wt init --yes` would write, with no problem named (since `new-plan` 1.1.0, `checkout-plan` 1.2.0; before, that repository was `noConfiguration`) |
 | `types` | array of string | the worktree types the repository declares |
 | `defaultType` | string \| null | the type a bare work name takes |

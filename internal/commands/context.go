@@ -181,6 +181,11 @@ func (c *Context) configured() bool {
 	return c.ConfigError == nil && !c.Config.Detected
 }
 
+// trunkSource is how the configured trunk was found, as --json prints it.
+func (c *Context) trunkSource() *string {
+	return strp(string(c.Config.TrunkSource))
+}
+
 // HasProvisionScript reports whether the repo declares its own setup step.
 func (c *Context) HasProvisionScript() bool {
 	info, err := os.Stat(filepath.Join(c.Repo.Root, "bin", "worktree", "provision.sh"))

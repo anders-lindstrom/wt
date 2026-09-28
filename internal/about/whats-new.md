@@ -12,6 +12,8 @@ want read out to them; the full story is in git history and in
   development or develop (on origin first), and only then the checked-out
   branch — which `wt config` and `wt doctor` now call a guess, and `wt init`
   says it pins. A clone without origin/HEAD used to take its feature branch.
+- `--json` says how: `trunkSource` in status, up, sync, sweep's plan and the
+  new/checkout plans — `currentBranchGuess` means do not trust trunk.
 
 ## 2026-09-28 15:25 — wt works in a repository nobody ran `wt init` in
 

@@ -95,6 +95,7 @@ type CreatePlan struct {
 	SchemaVersion string    `json:"schemaVersion"`
 	Command       string    `json:"command"`
 	Token         *string   `json:"token"`
+	TrunkSource   *string   `json:"trunkSource"`
 	Configured    bool      `json:"configured"`
 	Types         []string  `json:"types"`
 	DefaultType   *string   `json:"defaultType"`
@@ -175,7 +176,7 @@ func (p *CreatePlan) problem(code, format string, args ...any) {
 func basePlan(ctx *Context, command string, opts NewOptions) CreatePlan {
 	p := CreatePlan{Schema: 1, SchemaVersion: schema.VersionOf(command + "-plan"), Command: command,
 		Types: append([]string{}, ctx.Config.Types...), DefaultType: strp(ctx.Config.DefaultType),
-		Configured: ctx.configured(), Problems: []Problem{}}
+		TrunkSource: ctx.trunkSource(), Configured: ctx.configured(), Problems: []Problem{}}
 	switch {
 	case errors.Is(ctx.ConfigError, config.ErrNoConfig):
 		p.problem(ProblemNoConfiguration, "%s", oneLine(ctx.ConfigError.Error()))

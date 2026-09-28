@@ -281,7 +281,7 @@ func (r *runPlan) declare() error {
 	}
 	r.onto, r.trunkSHA = onto, trunkSHA
 	r.opts.Journal.repo(ctx.Repo.MainRoot)
-	r.opts.Journal.trunk(r.trunk, onto, trunkSHA, !r.opts.NoFetch)
+	r.opts.Journal.trunk(r.trunk, ctx.trunkSource(), onto, trunkSHA, !r.opts.NoFetch)
 	label := r.opts.label
 	if label == "" {
 		label = "wt sync run"

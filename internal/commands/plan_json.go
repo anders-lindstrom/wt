@@ -60,6 +60,7 @@ type UpPlan struct {
 	Command            string            `json:"command"`
 	Token              *string           `json:"token"`
 	Trunk              *string           `json:"trunk"`
+	TrunkSource        *string           `json:"trunkSource"`
 	TrunkRef           *string           `json:"trunkRef"`
 	TrunkRefExists     bool              `json:"trunkRefExists"`
 	TrunkTip           *string           `json:"trunkTip"`
@@ -84,7 +85,7 @@ func UpPlanJSON(ctx *Context, arg string, w io.Writer) error {
 		Stack: []PlanStackMember{}, Sessions: []PlanSession{}}
 	trunk := ctx.Config.MainBranch
 	ref := "origin/" + trunk
-	p.Trunk, p.TrunkRef = strp(trunk), strp(ref)
+	p.Trunk, p.TrunkRef, p.TrunkSource = strp(trunk), strp(ref), ctx.trunkSource()
 	p.Configured = ctx.configured()
 	tip, exists := ctx.Repo.ResolveRef("refs/remotes/" + ref)
 	p.TrunkRefExists, p.TrunkTip = exists, strp(tip)

@@ -120,6 +120,8 @@ type SyncRunResult struct {
 	Error         *string            `json:"error"`
 	Worktrees     []*SyncParticipant `json:"worktrees"`
 	Recovery      *string            `json:"recovery"`
+	// TrunkSource is printed by wt up alone, not by sync-run.
+	TrunkSource *string `json:"-"`
 }
 
 // UpResult is the one object wt up --json prints.
@@ -128,6 +130,7 @@ type UpResult struct {
 	SchemaVersion string           `json:"schemaVersion"`
 	Command       string           `json:"command"`
 	Trunk         *string          `json:"trunk"`
+	TrunkSource   *string          `json:"trunkSource"`
 	TrunkRef      *string          `json:"trunkRef"`
 	Onto          *string          `json:"onto"`
 	Fetched       bool             `json:"fetched"`
@@ -193,13 +196,16 @@ func (j *RunJournal) repo(name string) {
 	j.res.Repo = strp(name)
 }
 
-func (j *RunJournal) trunk(name, ref, onto string, fetched bool) {
+// trunk records the run's trunk, and how it was found, under one lock: an
+// interrupt between the two would print a trunk without its source.
+func (j *RunJournal) trunk(name string, source *string, ref, onto string, fetched bool) {
 	if j == nil {
 		return
 	}
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	j.res.Trunk, j.res.TrunkRef, j.res.Onto, j.res.Fetched = strp(name), strp(ref), strp(onto), fetched
+	j.res.Trunk, j.res.TrunkSource, j.res.TrunkRef = strp(name), source, strp(ref)
+	j.res.Onto, j.res.Fetched = strp(onto), fetched
 }
 
 // trunkSync records what the run did to local trunk after its fetch.
@@ -334,7 +340,7 @@ func (j *RunJournal) write(inFlight string, signalled bool, recovery ...string) 
 			return
 		}
 		up := UpResult{Schema: j.res.Schema, SchemaVersion: j.res.SchemaVersion, Command: j.res.Command,
-			Trunk: j.res.Trunk, TrunkRef: j.res.TrunkRef, Onto: j.res.Onto, Fetched: j.res.Fetched,
+			Trunk: j.res.Trunk, TrunkSource: j.res.TrunkSource, TrunkRef: j.res.TrunkRef, Onto: j.res.Onto, Fetched: j.res.Fetched,
 			TrunkSync: j.res.TrunkSync, Outcome: j.res.Outcome, Error: j.res.Error, Worktrees: []*UpParticipant{}, Recovery: j.res.Recovery}
 		for _, p := range j.res.Worktrees {
 			up.Worktrees = append(up.Worktrees, &p.UpParticipant)

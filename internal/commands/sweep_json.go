@@ -129,6 +129,7 @@ type SweepPlanOutput struct {
 	Command       string      `json:"command"`
 	Repo          *string     `json:"repo"`
 	Trunk         *string     `json:"trunk"`
+	TrunkSource   *string     `json:"trunkSource"`
 	Bases         []SweepBase `json:"bases"`
 	Fetched       bool        `json:"fetched"`
 	Token         *string     `json:"token"`
@@ -303,7 +304,7 @@ func SweepPlanJSON(ctx *Context, opts SweepOptions, out, progress io.Writer) err
 	if ctx == nil {
 		return writeSweepPlan(out, res, ErrNotInRepo)
 	}
-	res.Repo, res.Trunk = strp(ctx.Repo.MainRoot), strp(ctx.Config.MainBranch)
+	res.Repo, res.Trunk, res.TrunkSource = strp(ctx.Repo.MainRoot), strp(ctx.Config.MainBranch), ctx.trunkSource()
 	res.Quarantine = strp(opts.Quarantine)
 	plan, fetched, err := prepareSweep(ctx, opts, progress)
 	res.Fetched = fetched

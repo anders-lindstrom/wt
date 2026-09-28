@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/status.v1.json",
-  "x-version": "1.3.0",
+  "x-version": "1.4.0",
   "title": "wt status --json",
   "description": "What wt up would start on, from local state alone. Printed by `wt status [<work>] --json`, which writes nothing to any repository. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
-  "required": ["schema", "schemaVersion", "command", "token", "trunk", "trunkRef", "trunkRefExists", "trunkTip", "trunkRefUpdatedAt", "trunkSync",
+  "required": ["schema", "schemaVersion", "command", "token", "trunk", "trunkSource", "trunkRef", "trunkRefExists", "trunkTip", "trunkRefUpdatedAt", "trunkSync",
     "configured", "worktree", "upEligible", "upIneligibleCode", "upIneligibleReason", "stack", "sessions", "sessionsError"],
   "properties": {
     "schema": { "const": 1, "description": "The major version: a new one only for a change that breaks readers." },
@@ -13,6 +13,7 @@
     "command": { "const": "status" },
     "token": { "type": ["string", "null"], "description": "Names the inputs of this plan (trunk name, wt configuration, stack); pass it to `wt up --expect`. Null when not eligible." },
     "trunk": { "type": ["string", "null"], "description": "Trunk as wt up resolves it here." },
+    "trunkSource": { "enum": ["config", "originHead", "conventional", "currentBranchGuess", null], "description": "How trunk was determined, first match wins, from local refs alone (since 1.4.0): config — MAIN_BRANCH in the wt configuration file; originHead — refs/remotes/origin/HEAD; conventional — the first of main, master, trunk, development, develop that exists both locally and on origin, else on origin, else locally; currentBranchGuess — none of those, so the main checkout's branch, which may be a feature branch: do not rebase onto or delete branches against it. Null when trunk is." },
     "trunkRef": { "type": ["string", "null"], "description": "origin/<trunk>, what wt up rebases onto after its fetch." },
     "trunkRefExists": { "type": "boolean" },
     "trunkTip": { "$ref": "#/$defs/shaOrNull" },

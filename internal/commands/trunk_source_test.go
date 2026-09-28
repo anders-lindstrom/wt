@@ -114,3 +114,30 @@ func withOriginNoHead(t *testing.T, dir string) {
 	gitIn(t, dir, "fetch", "-q", "origin")
 	gitIn(t, dir, "remote", "set-head", "origin", "--delete")
 }
+
+// Every JSON output gittree judges trunk by says how trunk was found, and a
+// trunk no file names says so: config for runFixture's MAIN_BRANCH.
+func TestJSONOutputsSayHowTrunkWasFound(t *testing.T) {
+	ctx, _ := runFixture(t, false)
+	gitIn(t, ctx.Repo.MainRoot, "branch", "release-2.1")
+	for _, want := range []config.TrunkSource{config.TrunkFromConfig, config.TrunkCurrentBranchGuess} {
+		ctx.Config.TrunkSource = want
+		got := map[string]*string{}
+		got["status"] = planOfWork(t, ctx, "bump").TrunkSource
+		up, err := upJSON(t, ctx, "bump", noAgents())
+		if err != nil {
+			t.Fatal(err)
+		}
+		got["up"] = up.TrunkSource
+		got["sync"] = overviewJSON(t, ctx).TrunkSource
+		sweep, _ := sweepPlanJSON(t, ctx, SweepOptions{NoFetch: true})
+		got["sweep-plan"] = sweep.TrunkSource
+		got["new-plan"] = newPlanOf(t, ctx, "fix/x", NewOptions{}).TrunkSource
+		got["checkout-plan"] = checkoutPlanOf(t, ctx, "release-2.1", "").TrunkSource
+		for name, src := range got {
+			if src == nil || *src != string(want) {
+				t.Errorf("%s: trunkSource = %q, want %s", name, deref(src), want)
+			}
+		}
+	}
+}
