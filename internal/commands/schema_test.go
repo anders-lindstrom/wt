@@ -56,7 +56,7 @@ func TestEverySchemaCompiles(t *testing.T) {
 			t.Errorf("%s: %v", d.File, err)
 		}
 	}
-	for _, name := range []string{"status", "up", "sweep", "sweep-plan", "recovery", "restore-plan", "restore", "sync", "sync-run", "new-plan", "new", "checkout-plan", "checkout"} {
+	for _, name := range []string{"status", "up", "sweep", "sweep-plan", "recovery", "restore-plan", "restore", "sync", "sync-run", "new-plan", "new", "checkout-plan", "checkout", "remove-plan", "remove"} {
 		if _, ok := schema.Get(name); !ok {
 			t.Errorf("no %s schema", name)
 		}

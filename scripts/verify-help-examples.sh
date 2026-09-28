@@ -353,6 +353,8 @@ check fleet "" "" 'wt doctor --profile api'
 check fleet "" "" 'wt sweep --all --dry-run'
 check fleet "" "" 'wt sweep --profile api --no-fetch'
 check worktrees "" "" 'wt remove login-crash --dry-run'
+check worktrees "" "" 'wt remove login-crash --dry-run --json'
+check worktrees "" "" 'wt remove login-crash --yes --json --expect 1:0123abcd' fail
 check plain "" "" 'wt config set root.work ~/src/work'
 check sweep "" "" 'wt sweep --no-fetch'
 check sweep "" "mkdir -p ../trash" 'wt sweep --quarantine ../trash/sw'

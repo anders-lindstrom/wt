@@ -52,6 +52,11 @@ type RemoveOptions struct {
 	Quarantine string
 	// Result, when set, receives what the removal did, effect by effect.
 	Result *RemoveResult
+	// Expect is the token wt remove --dry-run --json gave: the removal
+	// refuses, touching nothing, unless the plan it makes now has that token.
+	Expect string
+	// Journal records the plan and the run for --json; nil records nothing.
+	Journal *RemoveJournal
 }
 
 // RemoveResult is what a removal did, effect by effect, as far as it got.
@@ -315,6 +320,13 @@ func removeWorktreeResult(ctx *Context, wt repo.Worktree, opts RemoveOptions, w 
 	plan := planFor(ctx, wt, opts)
 	res.BranchName, res.BranchTip, res.KeepAs = plan.Branch, plan.Tip, plan.KeepAs
 	plan.Render(w)
+	if opts.Expect != "" || opts.Journal != nil {
+		token := removeToken(ctx, plan)
+		opts.Journal.planned(ctx, plan, deref(token))
+		if opts.Expect != "" && deref(token) != opts.Expect {
+			return res, errRemovePlanChanged
+		}
+	}
 
 	// The lock is decided before the question, because the question does not
 	// change the answer: a directory somebody is working in is not removed
@@ -365,6 +377,7 @@ func removeWorktreeResult(ctx *Context, wt repo.Worktree, opts RemoveOptions, w 
 			return res, fmt.Errorf("the plan changed during confirmation; run the command again")
 		}
 	}
+	opts.Journal.applying()
 	return plan.run(ctx, w)
 }
 
@@ -557,14 +570,15 @@ func (p Plan) problems() []problem {
 		add(KeptReachUnknown, "cannot tell what the removal would leave unreachable ("+p.ReachError+")", false)
 	}
 	if p.QuarantineError != "" {
-		add(problemQuarantine, "it cannot be quarantined: "+p.QuarantineError, false)
+		add(ProblemQuarantineUnusable, "it cannot be quarantined: "+p.QuarantineError, false)
 	}
 	return out
 }
 
-// problemQuarantine is a quarantine folder that cannot be used. Sweep checks
-// its folder before it plans, so this never reaches its --json.
-const problemQuarantine = "quarantine"
+// ProblemQuarantineUnusable is a quarantine folder that cannot be used: it
+// exists, is on another volume, or is inside the repository. Sweep checks its
+// folder before it plans, so this never reaches its --json.
+const ProblemQuarantineUnusable = "quarantineUnusable"
 
 // quarantineProblem is why the checkout at path and its admin dir cannot be
 // moved into dir, "" when they can.

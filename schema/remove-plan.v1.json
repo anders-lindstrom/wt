@@ -1,0 +1,480 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/remove-plan.v1.json",
+  "x-version": "1.0.0",
+  "title": "wt remove <work> --dry-run --json",
+  "description": "What `wt remove <work>` would do, and the token that holds a later removal to it. Printed by `wt remove <work> --dry-run --json`, and by `wt remove <work> --json` without --yes, as the only thing on stdout; nothing is changed. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": 1,
+      "description": "The major version: a new one only for a change that breaks readers."
+    },
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^1\\.[0-9]+\\.[0-9]+$",
+      "description": "The full semantic version of this schema that the output follows: minor for an added field or enumeration value, patch for wording."
+    },
+    "command": {
+      "const": "remove"
+    },
+    "repo": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The main checkout; null outside a repository."
+    },
+    "trunk": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Trunk's branch name."
+    },
+    "token": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Names this plan; pass it to wt remove --yes --json --expect. Null when the removal would refuse, or on error."
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Why the removal would refuse, or why no plan could be made."
+    },
+    "path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The checkout, absolute; null when no worktree was found."
+    },
+    "adminDir": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The worktree's own git dir, .git/worktrees/<id>; null when it cannot be read."
+    },
+    "head": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40,64}$"
+        }
+      ]
+    },
+    "detached": {
+      "type": "boolean",
+      "description": "No branch is checked out: no branch is touched."
+    },
+    "branch": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/branch"
+        }
+      ]
+    },
+    "bases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "tip"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "tip": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40,64}$"
+          }
+        }
+      },
+      "description": "What merged is measured against, first first: origin/<trunk> as last fetched, then <trunk>. Remove never fetches."
+    },
+    "dirty": {
+      "type": "boolean",
+      "description": "Anything uncommitted, submodules included, whatever git's config says."
+    },
+    "statusError": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Why the status could not be read; the removal refuses."
+    },
+    "hiddenFiles": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Unedited files git status is told not to look at (assume-unchanged, skip-worktree)."
+    },
+    "movedSubmodules": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Submodules checked out at another commit than the recorded one."
+    },
+    "hasSubmodules": {
+      "type": "boolean",
+      "description": "The checkout has a .gitmodules."
+    },
+    "nestedWorktrees": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Other worktrees whose checkouts are inside this one."
+    },
+    "operation": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "enum": [
+            "rebase",
+            "merge",
+            "cherry-pick",
+            "revert",
+            "sequencer",
+            "bisect"
+          ]
+        }
+      ],
+      "description": "A git operation stopped halfway there; sequencer is a cherry-pick or revert sequence whose HEAD marker is gone."
+    },
+    "sessions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/session"
+      },
+      "description": "The Claude sessions working in the checkout, other than the one running wt."
+    },
+    "sessionsError": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Why the sessions could not be listed; the removal refuses without --force."
+    },
+    "lock": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/lock"
+        }
+      ]
+    },
+    "unreachable": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/lost"
+      },
+      "description": "Each tip whose commits nothing surviving the removal would hold."
+    },
+    "reachError": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Why that could not be worked out; the removal refuses."
+    },
+    "quarantine": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "With --quarantine <dir>: the folder, absolute."
+    },
+    "force": {
+      "type": "boolean",
+      "description": "--force was given: the problems with force true do not refuse."
+    },
+    "problems": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/problem"
+      },
+      "description": "Every problem with the removal; those that refuse it are all of them, less the ones --force goes past when it was given."
+    }
+  },
+  "$defs": {
+    "sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40,64}$"
+    },
+    "problem": {
+      "type": "object",
+      "required": [
+        "code",
+        "message",
+        "force"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "dirty",
+            "statusUnknown",
+            "session",
+            "sessionsUnknown",
+            "lockHeld",
+            "operation",
+            "hiddenChanges",
+            "headUnreachable",
+            "reachUnknown",
+            "submoduleUnreachable",
+            "nestedWorktree",
+            "quarantineUnusable",
+            "planChanged"
+          ],
+          "description": "dirty: anything uncommitted, submodules included, or a submodule not at its recorded commit. statusUnknown: git status, the git dir or HEAD could not be read. session: a Claude session is in it, idle or busy. sessionsUnknown: claude agents failed. lockHeld: git's worktree lock, and its holder is still running. operation: a rebase, merge, cherry-pick, revert or bisect in progress. hiddenChanges: files git status is told not to look at. headUnreachable: HEAD holds commits no surviving ref or worktree would. reachUnknown: what would be lost could not be worked out. submoduleUnreachable: a submodule commit only this worktree's copy holds. nestedWorktree: another worktree is inside it. quarantineUnusable: the --quarantine folder exists, is on another volume, or is inside the repository. planChanged (result only): --expect named another plan. The codes shared with sweep-plan's kept mean the same there."
+        },
+        "message": {
+          "type": "string"
+        },
+        "force": {
+          "type": "boolean",
+          "description": "--force goes past it: somebody's claim on the checkout, not work that would be lost."
+        }
+      }
+    },
+    "branch": {
+      "type": "object",
+      "required": [
+        "name",
+        "tip",
+        "merge",
+        "base",
+        "ahead",
+        "pullRequest",
+        "outcome",
+        "keepAs",
+        "reason"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "tip": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40,64}$"
+            }
+          ],
+          "description": "Null when the branch is already gone."
+        },
+        "merge": {
+          "enum": [
+            "merged",
+            "applied",
+            "unmerged",
+            "unknown"
+          ],
+          "description": "merged: base contains the tip. applied: every commit is on base under another id, byte for byte. unmerged: base lacks commits of it. unknown: no trunk to compare with, or the branch is gone."
+        },
+        "base": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The base the standing is about."
+        },
+        "ahead": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Commits base lacks; meaningful for unmerged and applied."
+        },
+        "pullRequest": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "A pull request GitHub merged into trunk at exactly tip, as wt list or wt sweep recorded it; it makes an unmerged branch deletable."
+        },
+        "outcome": {
+          "enum": [
+            "delete",
+            "keep",
+            "none"
+          ],
+          "description": "delete: merged, applied or pullRequest; deleted after the checkout, only at tip. keep: an unmerged branch wt made; renamed to keepAs. none: left as it is; reason says why. The same names recovery.json's branch.plan uses."
+        },
+        "keepAs": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "For none: why."
+        }
+      }
+    },
+    "session": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "pid",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pid": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "state": {
+          "enum": [
+            "idle",
+            "busy"
+          ]
+        }
+      }
+    },
+    "lock": {
+      "type": "object",
+      "required": [
+        "reason",
+        "holder",
+        "pid",
+        "held"
+      ],
+      "properties": {
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "git's reason for the lock."
+        },
+        "holder": {
+          "type": "string",
+          "description": "Whoever wt worked out is behind it."
+        },
+        "pid": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "The process the reason names."
+        },
+        "held": {
+          "type": "boolean",
+          "description": "Its holder is still there. A held lock refuses without --force; a stale one is released."
+        }
+      }
+    },
+    "lost": {
+      "type": "object",
+      "required": [
+        "kind",
+        "oid",
+        "count",
+        "path",
+        "restoreCommand"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "branch",
+            "head",
+            "submodule"
+          ],
+          "description": "branch: the branch the removal deletes; listed, not refused. head: the checkout's HEAD; refuses. submodule: a submodule's commits; refuses."
+        },
+        "oid": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40,64}$"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "For submodule: the submodule, relative to the checkout."
+        },
+        "restoreCommand": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "For branch: the argv that brings the commits back once the branch is gone."
+        }
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "schemaVersion",
+    "command",
+    "repo",
+    "trunk",
+    "token",
+    "error",
+    "path",
+    "adminDir",
+    "head",
+    "detached",
+    "branch",
+    "bases",
+    "dirty",
+    "statusError",
+    "hiddenFiles",
+    "movedSubmodules",
+    "hasSubmodules",
+    "nestedWorktrees",
+    "operation",
+    "sessions",
+    "sessionsError",
+    "lock",
+    "unreachable",
+    "reachError",
+    "quarantine",
+    "force",
+    "problems"
+  ]
+}

@@ -1,7 +1,7 @@
 # wt's JSON output
 
 `wt status`, `wt up`, `wt sweep`, `wt sync` and its verbs, `wt new`,
-`wt checkout` and `wt restore` print JSON on stdout when given `--json`, for
+`wt checkout`, `wt remove` and `wt restore` print JSON on stdout when given `--json`, for
 tools that drive wt (a git client, an editor, a script). Their human output is
 unchanged without it. A quarantine's `recovery.json` is JSON with a schema too.
 
@@ -42,6 +42,7 @@ Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 | `recovery` | 1.0.0 | `<dir>/recovery.json`, the journal of `--quarantine` and `wt restore` |
 | `restore-plan`, `restore` | 1.0.0 | `wt restore <dir> --dry-run --json`, the plan, and `--json`, the result |
 | `sweep` | 1.2.0 | `superset` on each item: what came of a removed worktree's Superset workspace |
+| `remove-plan`, `remove` | 1.0.0 | `wt remove <work> --dry-run --json`, the plan, and `--yes --json`, the result |
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
 
@@ -65,6 +66,8 @@ generating types from it:
 | `<dir>/recovery.json` | [`schema/recovery.v1.json`](../schema/recovery.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/recovery.v1.json` |
 | `wt restore --dry-run --json` | [`schema/restore-plan.v1.json`](../schema/restore-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/restore-plan.v1.json` |
 | `wt restore --json` | [`schema/restore.v1.json`](../schema/restore.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/restore.v1.json` |
+| `wt remove --dry-run --json` | [`schema/remove-plan.v1.json`](../schema/remove-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/remove-plan.v1.json` |
+| `wt remove --yes --json` | [`schema/remove.v1.json`](../schema/remove.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/remove.v1.json` |
 
 They are built into the binary: `wt schema` lists them and `wt schema up` prints
 one, so the schema you read is the one for the wt you run. Validate against that
@@ -753,3 +756,130 @@ missing object as unknown. A usage error (a missing argument, an unknown flag,
 The exit code keeps its meaning: non-zero for a refusal, a failed
 `git worktree add` and a failed `provision.sh`; zero for a failed build,
 submodule initialisation or Superset registration. Read `outcome`.
+
+## `wt remove <work> --dry-run --json` — the plan
+
+The plan `wt remove` prints, as one object: the checkout, its HEAD, where the
+branch stands and what becomes of it, every reason the removal would refuse,
+what it would leave unreachable, and a token. It changes nothing. `wt remove
+<work> --json` without `--yes` prints the same plan. Like the removal it reads
+`claude agents` for sessions and never fetches: merged is measured against
+`origin/<trunk>` as last fetched and `<trunk>`.
+
+A plan the removal would refuse is still the whole object, with `error` set, a
+null token and a non-zero exit; so is one that cannot be made (no such
+worktree, the main checkout), with the worktree fields null.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `schema`, `schemaVersion`, `command` | 1, string, `"remove"` | |
+| `repo`, `trunk` | string \| null | the main checkout, trunk's name |
+| `token` | string \| null | names this plan; pass it to `wt remove --yes --json --expect`. Null when it would refuse, or on error |
+| `error` | string \| null | why the removal would refuse, or why there is no plan |
+| `path` | string \| null | the checkout |
+| `adminDir` | string \| null | its git dir, `.git/worktrees/<id>` |
+| `head` | string \| null | the commit checked out; null before the first commit |
+| `detached` | bool | no branch is checked out, so none is touched |
+| `branch` | object \| null | null when detached |
+| `branch.name`, `branch.tip` | string, string \| null | the tip is null when the branch is already gone |
+| `branch.merge` | `merged` \| `applied` \| `unmerged` \| `unknown` | `base` contains the tip; every commit is on `base` under another id, byte for byte; `base` lacks commits of it; nothing to compare with |
+| `branch.base`, `branch.ahead` | string \| null, int | the base the standing is about, and the commits it lacks |
+| `branch.pullRequest` | int \| null | a pull request GitHub merged into trunk at exactly `tip`, as `wt list` or `wt sweep` recorded it; makes an `unmerged` branch deletable |
+| `branch.outcome` | `delete` \| `keep` \| `none` | deleted after the checkout, only at `tip`; renamed to `keepAs`; left as it is, `reason` says why. `recovery.json`'s `branch.plan` names |
+| `branch.keepAs`, `branch.reason` | string \| null | |
+| `bases` | array | `{name, tip}`: `origin/<trunk>`, then `<trunk>` |
+| `dirty`, `statusError` | bool, string \| null | anything uncommitted, submodules included; why the status could not be read |
+| `hiddenFiles` | array of string | unedited files `git status` is told not to look at |
+| `movedSubmodules` | array of string | submodules at another commit than the recorded one |
+| `hasSubmodules` | bool | the checkout has a `.gitmodules` |
+| `nestedWorktrees` | array of string | other worktrees inside this one |
+| `operation` | `rebase` \| `merge` \| `cherry-pick` \| `revert` \| `sequencer` \| `bisect` \| null | an operation stopped halfway there; `sequencer` is a cherry-pick or revert sequence whose HEAD marker is gone |
+| `sessions` | array | `{id, name, pid, state}` for each Claude session in the checkout, `state` `idle` or `busy`; the one running wt is not listed |
+| `sessionsError` | string \| null | why they could not be listed |
+| `lock` | object \| null | git's lock: `reason`, `holder` (who wt worked out is behind it), `pid`, `held` (still running; a stale one is released) |
+| `unreachable` | array | each tip nothing surviving the removal holds: `{kind, oid, count, path, restoreCommand}`. `kind` `branch` is the branch it deletes — listed, not refused, with the `git branch` argv that brings its commits back; `head` and `submodule` (with `path`) refuse |
+| `reachError` | string \| null | why that could not be worked out |
+| `quarantine` | string \| null | with `--quarantine <dir>`, the folder |
+| `force` | bool | `--force` was given |
+| `problems` | array | every problem: `{code, message, force}`, `force` for one `--force` goes past. The removal refuses on any, less those with `force` when `force` is true |
+
+`problems[].code`, exhaustively; the codes it shares with `sweep-plan`'s `kept`
+mean the same there:
+
+| Value | Meaning |
+|---|---|
+| `dirty` | uncommitted changes, submodules included, or a submodule at another commit |
+| `statusUnknown` | the status, the git dir or HEAD could not be read |
+| `session` | a Claude session is in it, idle or busy (`force`) |
+| `sessionsUnknown` | `claude agents` failed (`force`) |
+| `lockHeld` | git's lock, and its holder is still running (`force`) |
+| `hiddenChanges` | files `git status` is told not to look at (`force`) |
+| `operation` | a rebase, merge, cherry-pick, revert or bisect in progress |
+| `headUnreachable` | its HEAD holds commits nothing surviving would |
+| `submoduleUnreachable` | a submodule commit only this worktree's copy holds |
+| `reachUnknown` | what would be lost could not be worked out |
+| `nestedWorktree` | another worktree is inside it |
+| `quarantineUnusable` | the `--quarantine` folder exists, is on another volume, or is inside the repository |
+| `planChanged` | result only: `--expect` named another plan |
+
+The **token** covers the repository, trunk's name and both bases' commits, the
+wt configuration file, and everything the removal turns on: the checkout, its
+admin dir, HEAD, the branch, its tip, standing, pull request and outcome, the
+commit its kept name holds, anything uncommitted or hidden, moved submodules, nested worktrees, the
+operation, the sessions by id, the lock (reason, pid, held), what would be
+lost, the `--quarantine` folder or its absence, `--force`, and whether the
+Superset integration is on. Any difference is
+a different token — a new trunk commit too, since the base commit is part of
+what the removal was judged against.
+
+## `wt remove <work> --yes --json` — the removal
+
+The same removal as `wt remove <work> --yes`. The plan as wt prints it, and the
+progress, go to **stderr**; stdout carries exactly one object. It never asks.
+
+With `--expect <token>` (it needs `--yes --json`), the plan is made again and
+the removal refuses, touching nothing, unless it has that token: `outcome`
+`refused`, `planChanged` in `problems` with the plan's own problems, a non-zero
+exit. Then, as every removal does, the checkout is read once more right before
+it goes, and the branch's merge is asked again right before it is deleted.
+
+A handled SIGINT or SIGTERM, from the moment the repository is open, writes
+the object too, read from the disk as it is then — between the two moves of a
+quarantine that is `partlyMoved`, `branch` `notRun` — and exits 130. SIGKILL
+or a crash may write none: `<dir>/recovery.json` still says how far a
+quarantine got. A usage error is reported as without `--json`, with no object.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `schema`, `schemaVersion`, `command` | 1, string, `"remove"` | |
+| `repo`, `trunk` | string \| null | |
+| `token` | string \| null | the plan's token |
+| `outcome` | see below | |
+| `error` | string \| null | why it refused or stopped |
+| `problems` | array | for `refused`: as in the plan, the ones that refused it, and `planChanged` |
+| `path`, `branch`, `tip`, `keepAs` | string \| null | from the plan |
+| `steps` | array | `worktree`, `branch`, `superset`, always all three, in that order: `{step, result, commit, reason}`; `commit` is `branch`'s tip |
+| `quarantine` | object \| null | with `--quarantine`, once its `recovery.json` is written: `dir`, `checkoutMoved`, `adminMoved` (each directory, by identity, in the quarantine), `recoveryFile`, and `steps` as `recovery.json` records them |
+| `restoreCommand` | array of string \| null | the argv that puts back what went: `wt restore <dir>` once a quarantine wrote its `recovery.json`, else `git -C <repo> branch <name> <tip>` for a deleted branch |
+| `recovery` | string \| null | for `interrupted`: what wt printed |
+
+`steps[].result`, by step:
+
+| Step | Results |
+|---|---|
+| `worktree` | `removed`, `quarantined` (both moves), `partlyMoved` (the checkout moved, its admin dir not), `kept` (still there; `reason` says why) |
+| `branch` | `deleted`, `renamed` (to `keepAs`), `untouched`, `kept` (turned down on purpose: it moved, is no longer merged, or a worktree took it), `failed` (git failed) |
+| `superset` | `deregistered`, `notRegistered`, `skipped`, `failed`, as in `sweep` |
+| any | `notRun` (not reached), `interrupted` (a signal caught it, and its state does not say it finished) |
+
+`outcome`:
+
+| Value | When |
+|---|---|
+| `removed` | the worktree is gone or quarantined, and the branch step did what the plan said |
+| `removedWithBranchProblem` | the worktree is gone, and the branch `kept` |
+| `refused` | nothing changed |
+| `partial` | something changed and a later step failed: a quarantine that stopped after writing `recovery.json` (its lock and pins are taken), the second move, or the branch step (`failed`); `wt restore <dir>` puts a quarantine back |
+| `interrupted` | a signal ended the run |
+
+The exit code is zero only for `removed`.

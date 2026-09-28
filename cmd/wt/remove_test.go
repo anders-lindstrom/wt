@@ -37,3 +37,16 @@ func TestConfirmRemovalAnswers(t *testing.T) {
 		}
 	}
 }
+
+// An --expect given with no token holds the removal to nothing: refused,
+// before anything is read, rather than taken as no --expect at all.
+func TestRemoveRefusesAnEmptyExpect(t *testing.T) {
+	cmd := newRemoveCmd()
+	cmd.SetArgs([]string{"login-crash", "--yes", "--json", "--expect", ""})
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--expect") {
+		t.Fatalf("want a refusal naming --expect, got %v", err)
+	}
+}

@@ -6,6 +6,14 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-28 10:16 — wt remove speaks JSON, and holds to its plan
+
+- `wt remove <work> --dry-run --json` prints the plan: HEAD, where the branch
+  stands and what becomes of it, every refusal as a code, what would be lost,
+  and a token. `--yes --json --expect <token>` removes only that plan and
+  prints one result, effect by effect, even when interrupted.
+- JSON: remove-plan, remove 1.0.0.
+
 ## 2026-09-28 08:52 — Removing a worktree removes its Superset workspace
 
 - With `wt config set superset true`, `wt remove` and `wt sweep` (plain or
