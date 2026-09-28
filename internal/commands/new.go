@@ -74,6 +74,12 @@ func newAdd(ctx *Context, path, branch, base string, w io.Writer) func() error {
 //
 // j records each step for --json; it is nil otherwise.
 func addAndProvision(ctx *Context, path string, add func() error, opts NewOptions, w io.Writer, j *CreateJournal) (string, error) {
+	// The one line a repository with no configuration gets: which trunk wt
+	// took, since that decides what the worktree is cut from.
+	if ctx.Config.Detected {
+		ctx.Warnf(WarnDetected, "no config file here; on detected defaults (trunk %s) — `wt init` writes one",
+			ctx.Config.MainBranch)
+	}
 	j.start(StepWorktree)
 	if _, err := os.Stat(path); err == nil {
 		err := fmt.Errorf("%s already exists", path)

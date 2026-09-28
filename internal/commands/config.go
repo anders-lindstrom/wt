@@ -19,6 +19,9 @@ func Config(ctx *Context, shell bool, w io.Writer) error {
 	if !shell {
 		fmt.Fprintf(w, "repo:          %s\n", ctx.Repo.Name)
 		fmt.Fprintf(w, "main checkout: %s\n", ctx.Repo.MainRoot)
+		if c.Detected {
+			fmt.Fprintln(w, "configuration: detected (no config file; `wt init` writes one)")
+		}
 		fmt.Fprintf(w, "trunk:         %s\n", c.MainBranch)
 		fmt.Fprintf(w, "branch prefix: %s\n", c.BranchPrefix)
 		fmt.Fprintf(w, "default type:  %s\n", c.DefaultType)

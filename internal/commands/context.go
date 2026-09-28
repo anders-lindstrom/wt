@@ -42,6 +42,7 @@ type Context struct {
 const (
 	WarnUserConfig = "user config"
 	WarnGitHub     = "github"
+	WarnDetected   = "detected config"
 )
 
 // WarnTo gives the context somewhere to put its warnings, and says at once
@@ -173,6 +174,13 @@ func (c *Context) UserConfig() *config.User {
 	return c.User
 }
 
+// configured is what --json calls configured: a configuration file that
+// parses. A repository on detected defaults, or on the values that did parse,
+// is not.
+func (c *Context) configured() bool {
+	return c.ConfigError == nil && !c.Config.Detected
+}
+
 // HasProvisionScript reports whether the repo declares its own setup step.
 func (c *Context) HasProvisionScript() bool {
 	info, err := os.Stat(filepath.Join(c.Repo.Root, "bin", "worktree", "provision.sh"))
@@ -181,7 +189,7 @@ func (c *Context) HasProvisionScript() bool {
 
 // loadFor loads a repository's configuration, preferring the worktree the
 // caller is standing in and falling back to the main checkout when that
-// worktree carries none. The trunk it detected comes back with it: reading it
+// worktree carries none, and to the detected defaults when neither does. The trunk it detected comes back with it: reading it
 // costs a git process, and everything that needs a fallback branch here needs
 // the same answer.
 func loadFor(r *repo.Repo) (*config.Config, string, error) {
@@ -189,6 +197,9 @@ func loadFor(r *repo.Repo) (*config.Config, string, error) {
 	c, err := config.Load(r.Root, trunk)
 	if errors.Is(err, config.ErrNoConfig) && r.Root != r.MainRoot {
 		c, err = config.Load(r.MainRoot, trunk)
+	}
+	if errors.Is(err, config.ErrNoConfig) {
+		c, err = detectedConfig(r, trunk)
 	}
 	return c, trunk, err
 }

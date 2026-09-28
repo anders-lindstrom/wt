@@ -12,9 +12,8 @@ import (
 )
 
 // ErrNoConfig means the repository declares no worktree configuration. The
-// message names the way out: this is the one error a repository that has never
-// used wt is guaranteed to hit, and every other command refuses to run until
-// it is gone.
+// commands then run on detected defaults; only when those cannot be detected
+// either does it reach a person, so the message names the way out.
 var ErrNoConfig = errors.New(
 	"no bin/worktree/worktree.conf or worktree.toml — run `wt init` to create one")
 

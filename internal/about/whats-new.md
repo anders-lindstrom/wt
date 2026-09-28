@@ -6,6 +6,14 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-28 15:25 — wt works in a repository nobody ran `wt init` in
+
+- With no bin/worktree config, every command runs on what `wt init --yes`
+  would write (trunk from origin, feat_wt, no build), held in memory, so the
+  Claude Code worktree hooks work in any clone. `wt new` says so in one
+  stderr line; `wt config` and `wt doctor` show the values as detected.
+- `wt init` still pins them. JSON: `configured` false now means detected.
+
 ## 2026-09-28 13:44 — A killed wt no longer leaves provisioning running
 
 - SIGKILL to wt, or to the group it runs in, used to leave provision.sh, a

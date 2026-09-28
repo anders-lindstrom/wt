@@ -17,7 +17,9 @@ func newInitCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Create this repository's worktree configuration",
-		Long: "Write bin/worktree/worktree.conf, which every other command needs.\n\n" +
+		Long: "Write bin/worktree/worktree.conf. Without one, every command runs on\n" +
+			"what `wt init --yes` would write, detected afresh each time and never\n" +
+			"written down; `wt init` pins those values and lets you change them.\n\n" +
 			"Asks for the three keys a repository actually varies — trunk (MAIN_BRANCH),\n" +
 			"the branch prefix, and the build command — offering detected values as\n" +
 			"the defaults. Every other key is written commented at its default, so\n" +

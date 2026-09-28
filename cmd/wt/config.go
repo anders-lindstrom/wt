@@ -16,7 +16,9 @@ func newConfigCmd() *cobra.Command {
 		Short: "Print the resolved configuration, and change your own settings",
 		Long: "Print the configuration as every command sees it: the repository's\n" +
 			"values, the defaults it did not set, trunk as detected from\n" +
-			"origin, and your own settings with where each one came from.\n\n" +
+			"origin, and your own settings with where each one came from. A\n" +
+			"repository with no configuration file says its values are detected:\n" +
+			"what `wt init --yes` would write, which is what wt runs on there.\n\n" +
 			"Your settings live in one file per machine, outside any repository:\n" +
 			"$XDG_CONFIG_HOME/wt/config.toml, or ~/.config/wt/config.toml. It is\n" +
 			"normal for it not to exist; `wt config set` is the only thing that\n" +

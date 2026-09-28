@@ -146,19 +146,6 @@ func TestNewPlanNamesItsProblems(t *testing.T) {
 	}
 }
 
-// A repository with no wt configuration is a plan that says so, not an error.
-func TestNewPlanWithoutConfiguration(t *testing.T) {
-	main := committedRepo(t, minimalConf)
-	if err := os.RemoveAll(filepath.Join(main, "bin")); err != nil {
-		t.Fatal(err)
-	}
-	ctx := OpenLenient(main, &bytes.Buffer{})
-	p := newPlanOf(t, ctx, "fix/x", NewOptions{})
-	if p.Configured || codes(p.Problems) != "noConfiguration" {
-		t.Errorf("configured %v problems %s", p.Configured, codes(p.Problems))
-	}
-}
-
 // The checkout plan pins the branch's commit, and names a branch that is
 // missing or already checked out.
 func TestCheckoutPlanPinsTheBranch(t *testing.T) {

@@ -91,6 +91,16 @@ GH
     [ "$(git -C "$wtpath" symbolic-ref --short HEAD)" = residential_fixes ]
 }
 
+@test "wt pr checkout works in a repository with no configuration" {
+    fake_gh
+    rm -r "$REPO/bin"
+    cd "$REPO"
+    run wt pr checkout 12
+    [ "$status" -eq 0 ]
+    [[ "${lines[${#lines[@]}-1]}" == */demo_wt/feat_wt/pr-12-residential_fixes ]]
+    [ ! -e "$REPO/bin" ]
+}
+
 @test "wt list gains a PR column, and wt pr list names the worktree" {
     fake_gh
     cd "$REPO"

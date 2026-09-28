@@ -85,7 +85,7 @@ func UpPlanJSON(ctx *Context, arg string, w io.Writer) error {
 	trunk := ctx.Config.MainBranch
 	ref := "origin/" + trunk
 	p.Trunk, p.TrunkRef = strp(trunk), strp(ref)
-	p.Configured = ctx.ConfigError == nil
+	p.Configured = ctx.configured()
 	tip, exists := ctx.Repo.ResolveRef("refs/remotes/" + ref)
 	p.TrunkRefExists, p.TrunkTip = exists, strp(tip)
 	p.TrunkRefUpdatedAt = refUpdatedAt(ctx.Repo.MainRoot, "refs/remotes/"+ref)
@@ -136,7 +136,7 @@ func UpPlanJSON(ctx *Context, arg string, w io.Writer) error {
 
 	switch {
 	case errors.Is(ctx.ConfigError, config.ErrNoConfig):
-		inel(IneligibleNoConfig, "no wt configuration (bin/worktree/worktree.conf); wt init sets it up")
+		inel(IneligibleNoConfig, oneLine(ctx.ConfigError.Error()))
 	case ctx.ConfigError != nil:
 		inel(IneligibleConfigInvalid, "the wt configuration does not parse: "+oneLine(ctx.ConfigError.Error()))
 	}

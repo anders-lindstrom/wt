@@ -49,6 +49,11 @@ func doctor(ctx *Context, w io.Writer, withRepos bool) (int, error) {
 		} else {
 			fmt.Fprintln(w, "  (checking the rest against the values that did parse)")
 		}
+	} else if ctx.Config.Detected {
+		// Not a problem: a repository wt was never set up in runs on what
+		// `wt init` would write, and says so here and in `wt config`.
+		fmt.Fprintf(w, "  - no config file; trunk %s and default type %s are detected — `wt init` writes one\n",
+			ctx.Config.MainBranch, ctx.Config.DefaultType)
 	} else {
 		fmt.Fprintf(w, "  ✓ trunk %s, default type %s\n",
 			ctx.Config.MainBranch, ctx.Config.DefaultType)
