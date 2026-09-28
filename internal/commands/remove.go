@@ -57,6 +57,9 @@ type RemoveOptions struct {
 	Expect string
 	// Journal records the plan and the run for --json; nil records nothing.
 	Journal *RemoveJournal
+	// KeepSuperset leaves the worktree's Superset workspace alone: Superset
+	// is not asked anything.
+	KeepSuperset bool
 }
 
 // RemoveResult is what a removal did, effect by effect, as far as it got.
@@ -239,6 +242,8 @@ type Plan struct {
 	// deleted, "" to delete it; QuarantineError is why it cannot be.
 	Quarantine      string
 	QuarantineError string
+	// KeepSuperset leaves the Superset workspace alone.
+	KeepSuperset bool
 	// quarantineBy names the command in recovery.json.
 	quarantineBy string
 }
@@ -389,7 +394,7 @@ func removeWorktreeResult(ctx *Context, wt repo.Worktree, opts RemoveOptions, w 
 // the branch this checkout has.
 func planFor(ctx *Context, wt repo.Worktree, opts RemoveOptions) Plan {
 	p := Plan{Path: wt.Path, Branch: ctx.Repo.BranchAt(wt.Path),
-		MainBranch: ctx.Config.MainBranch, Force: opts.Force}
+		MainBranch: ctx.Config.MainBranch, Force: opts.Force, KeepSuperset: opts.KeepSuperset}
 	p.readSessions(opts)
 	p.readLock(wt)
 	p.readCheckout()
@@ -1102,9 +1107,12 @@ var afterFinalCheck func()
 // first, deleted or quarantined, and then the branch step, so a removal
 // that fails leaves its branch where it was. Once the checkout is gone from
 // its path, its Superset workspace goes too; it is looked up before, while
-// the path still resolves.
+// the path still resolves. KeepSuperset asks Superset nothing.
 func (p Plan) run(ctx *Context, w io.Writer) (RemoveResult, error) {
-	workspaces := findSupersetWorkspaces(ctx, p.Path)
+	workspaces := keptSupersetWorkspaces(ctx)
+	if !p.KeepSuperset {
+		workspaces = findSupersetWorkspaces(ctx, p.Path)
+	}
 	res, err := p.remove(ctx, w)
 	if res.Worktree == WorktreeRemoved || res.Worktree == WorktreeQuarantined {
 		res.Superset, res.SupersetReason = workspaces.deregister(ctx, p.Path, w)

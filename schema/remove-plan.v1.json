@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/remove-plan.v1.json",
-  "x-version": "1.0.0",
+  "x-version": "1.1.0",
   "title": "wt remove <work> --dry-run --json",
   "description": "What `wt remove <work>` would do, and the token that holds a later removal to it. Printed by `wt remove <work> --dry-run --json`, and by `wt remove <work> --json` without --yes, as the only thing on stdout; nothing is changed. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
@@ -203,6 +203,10 @@
         "null"
       ],
       "description": "With --quarantine <dir>: the folder, absolute."
+    },
+    "keepSuperset": {
+      "type": "boolean",
+      "description": "Since 1.1.0. --keep-superset was given: the worktree's Superset workspace is left, and Superset is not asked anything. The token covers it."
     },
     "force": {
       "type": "boolean",
@@ -474,6 +478,7 @@
     "unreachable",
     "reachError",
     "quarantine",
+    "keepSuperset",
     "force",
     "problems"
   ]

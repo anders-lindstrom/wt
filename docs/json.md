@@ -50,6 +50,8 @@ Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 | `recovery` | 1.2.0 | `purge`: the journal of `wt quarantine purge`, in `recovery.purging.json`, which replaces `recovery.json` before anything is deleted |
 | `restore-plan` | 1.1.0 | the problem `purging`: a purge began, so the restore refuses |
 | `status` 1.4.0, `up` 1.3.0, `sync` 1.1.0, `sweep-plan` 1.3.0, `new-plan` 1.2.0, `checkout-plan` 1.3.0 | | [`trunkSource`](#trunksource--how-trunk-was-found): how trunk was found. Also marks the fixed detection order: a conventional name before the checked-out branch |
+| `remove-plan`, `sweep-plan` | 1.1.0, 1.4.0 | `keepSuperset`: `--keep-superset` was given, which the token covers |
+| `remove`, `sweep` | 1.1.0, 1.3.0 | the `superset` result `optedOut`: `--keep-superset`, Superset was not asked |
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
 
@@ -310,6 +312,7 @@ is still one object, with `error` set and no items, and a non-zero exit.
 | `error` | string \| null | why no plan could be made |
 | `items` | array | the rows, in the order `wt sweep` prints them |
 | `quarantine` | string \| null | since 1.2.0: with `--quarantine <dir>`, the folder, absolute; a folder that exists or is on another volume sets `error` (the items stay, the token is null). Null without it |
+| `keepSuperset` | bool | since 1.4.0: `--keep-superset` was given, which the token covers: the removed worktrees' Superset workspaces are left |
 
 Each item:
 
@@ -415,8 +418,17 @@ after the directory had left its path and git no longer listed it;
 `notRegistered` — Superset is running and has no workspace there; `skipped` —
 the integration is off (`wt config set superset true` turns it on,
 `SUPERSET_REGISTER=off` keeps a repository out), Superset is not installed or
-not running, or the worktree was still there; `failed` — Superset erred. None
-of them changes `result`, `outcome` or the exit code.
+not running, or the worktree was still there; `failed` — Superset erred;
+`optedOut` (since 1.3.0) — `--keep-superset` was given and Superset was not
+asked anything. None of them changes `result`, `outcome` or the exit code.
+
+Superset has no delete that leaves the checkout alone: its `ws delete`
+force-removes the checkout it recorded. wt asks for it only once the directory
+has left its path and git no longer lists it, read again right before the call,
+but the check and the delete are not one step: a worktree made at the same path
+in the instant between them would be removed by Superset. A tool that creates
+worktrees while it removes others passes `--keep-superset`, which closes that
+window by not asking Superset at all.
 
 `worktreeRemoved` and `branchDeleted` are read from the repository after the
 row, not from what was attempted.
@@ -984,6 +996,7 @@ worktree, the main checkout), with the worktree fields null.
 | `unreachable` | array | each tip nothing surviving the removal holds: `{kind, oid, count, path, restoreCommand}`. `kind` `branch` is the branch it deletes — listed, not refused, with the `git branch` argv that brings its commits back; `head` and `submodule` (with `path`) refuse |
 | `reachError` | string \| null | why that could not be worked out |
 | `quarantine` | string \| null | with `--quarantine <dir>`, the folder |
+| `keepSuperset` | bool | since 1.1.0: `--keep-superset` was given: the Superset workspace is left, and Superset is not asked |
 | `force` | bool | `--force` was given |
 | `problems` | array | every problem: `{code, message, force}`, `force` for one `--force` goes past. The removal refuses on any, less those with `force` when `force` is true |
 
@@ -1011,8 +1024,8 @@ wt configuration file, and everything the removal turns on: the checkout, its
 admin dir, HEAD, the branch, its tip, standing, pull request and outcome, the
 commit its kept name holds, anything uncommitted or hidden, moved submodules, nested worktrees, the
 operation, the sessions by id, the lock (reason, pid, held), what would be
-lost, the `--quarantine` folder or its absence, `--force`, and whether the
-Superset integration is on. Any difference is
+lost, the `--quarantine` folder or its absence, `--force`, whether the
+Superset integration is on, and `--keep-superset`. Any difference is
 a different token — a new trunk commit too, since the base commit is part of
 what the removal was judged against.
 
@@ -1053,7 +1066,7 @@ quarantine got. A usage error is reported as without `--json`, with no object.
 |---|---|
 | `worktree` | `removed`, `quarantined` (both moves), `partlyMoved` (the checkout moved, its admin dir not), `kept` (still there; `reason` says why) |
 | `branch` | `deleted`, `renamed` (to `keepAs`), `untouched`, `kept` (turned down on purpose: it moved, is no longer merged, or a worktree took it), `failed` (git failed) |
-| `superset` | `deregistered`, `notRegistered`, `skipped`, `failed`, as in `sweep` |
+| `superset` | `deregistered`, `notRegistered`, `skipped`, `failed`, and since 1.1.0 `optedOut` (`--keep-superset`), as in `sweep`, where the risk `--keep-superset` closes is explained |
 | any | `notRun` (not reached), `interrupted` (a signal caught it, and its state does not say it finished) |
 
 `outcome`:

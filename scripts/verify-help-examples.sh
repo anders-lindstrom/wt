@@ -360,13 +360,13 @@ check fleet "" "" 'wt doctor --profile api'
 check fleet "" "" 'wt sweep --all --dry-run'
 check fleet "" "" 'wt sweep --profile api --no-fetch'
 check worktrees "" "" 'wt remove login-crash --dry-run'
-check worktrees "" "" 'wt remove login-crash --dry-run --json'
+check worktrees "" "" 'wt remove login-crash --dry-run --json --keep-superset'
 check worktrees "" "" 'wt remove login-crash --yes --json --expect 1:0123abcd' fail
 check plain "" "" 'wt config set root.work ~/src/work'
 check sweep "" "" 'wt sweep --no-fetch'
 check sweep "" "mkdir -p ../trash" 'wt sweep --quarantine ../trash/sw'
 check sweep "" "" 'wt sweep --yes'
-check sweep "" "" 'wt sweep --yes --json --expect 1:0123abcd' fail
+check sweep "" "" 'wt sweep --yes --json --keep-superset --expect 1:0123abcd' fail
 
 check noconf "" "" 'wt init'
 check noconf "" "" 'wt init --yes'

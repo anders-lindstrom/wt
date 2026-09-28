@@ -13,7 +13,7 @@ import (
 func newRemoveCmd() *cobra.Command {
 	var me bool
 	var meAt string
-	var yes, force, dryRun, asJSON bool
+	var yes, force, dryRun, asJSON, keepSuperset bool
 	var quarantineDir, expect string
 	cmd := &cobra.Command{
 		Use:     "remove <work>",
@@ -82,7 +82,12 @@ func newRemoveCmd() *cobra.Command {
 			"the checkout. Each step is journalled in recovery.json; wt restore <dir>\n" +
 			"puts it all back, and wt sweep drops the pins once <dir> is deleted.\n\n" +
 			"With `wt config set superset true`, once the worktree has left its path\n" +
-			"and git no longer lists it, its Superset workspace is deleted too.\n\n" +
+			"and git no longer lists it, its Superset workspace is deleted too.\n" +
+			"Superset's delete removes whatever checkout is at the path it\n" +
+			"recorded, so a worktree made at that path in the instant between\n" +
+			"wt's check and the delete would go with it. --keep-superset leaves\n" +
+			"the workspace alone and asks Superset nothing; a tool that makes\n" +
+			"worktrees while it removes others passes it.\n\n" +
 			"--json is for a tool driving wt. With --dry-run, or without --yes, it\n" +
 			"prints the plan as one JSON object on stdout — the checkout, its HEAD,\n" +
 			"where the branch stands and what becomes of it, every reason it would\n" +
@@ -95,7 +100,7 @@ func newRemoveCmd() *cobra.Command {
 		Example: "  wt remove login-crash            # say where the branch stands, then ask\n" +
 			"  wt remove . --force              # the one you are in, past a session\n" +
 			"  wt remove login-crash --quarantine ../trash/lc  # move it aside\n" +
-			"  wt remove login-crash --dry-run --json  # the plan, and its token\n" +
+			"  wt remove login-crash --dry-run --json --keep-superset  # a tool's plan\n" +
 			"  wt remove login-crash --yes --json --expect 1:0123abcd  # only that plan",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeWork,
@@ -117,7 +122,7 @@ func newRemoveCmd() *cobra.Command {
 				}
 				return err
 			}
-			opts := commands.RemoveOptions{Force: force, DryRun: dryRun, Expect: expect}
+			opts := commands.RemoveOptions{Force: force, DryRun: dryRun, Expect: expect, KeepSuperset: keepSuperset}
 			if quarantineDir != "" {
 				if opts.Quarantine, err = filepath.Abs(quarantineDir); err != nil {
 					return err
@@ -161,6 +166,8 @@ func newRemoveCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what removal would do and change nothing")
 	cmd.Flags().StringVar(&quarantineDir, "quarantine", "",
 		"move it into this new folder instead of deleting it")
+	cmd.Flags().BoolVar(&keepSuperset, "keep-superset", false,
+		"leave its Superset workspace; do not ask Superset to delete it")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print the plan, or with --yes the result, as JSON")
 	cmd.Flags().StringVar(&expect, "expect", "", "remove only if the plan still has this token")
 	cmd.MarkFlagsMutuallyExclusive("yes", "dry-run")

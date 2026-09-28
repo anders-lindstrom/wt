@@ -117,6 +117,8 @@ const (
 	StepDeregistered = "deregistered"
 	// StepNotRegistered is a running Superset with no workspace there.
 	StepNotRegistered = "notRegistered"
+	// StepOptedOut is --keep-superset: Superset was not asked anything.
+	StepOptedOut = "optedOut"
 )
 
 // supersetWorkspaces is what a removal found in Superset for the worktree it
@@ -130,6 +132,18 @@ type supersetWorkspaces struct {
 	// when found holds the workspaces to delete. say is its one line, ""
 	// for silence.
 	result, reason, say string
+}
+
+// keptSupersetWorkspaces is the step under --keep-superset: the workspace,
+// if any, is left, and Superset is not asked. It says so only when the
+// integration would otherwise have asked.
+func keptSupersetWorkspaces(ctx *Context) supersetWorkspaces {
+	why := "--keep-superset: its Superset workspace, if any, was left"
+	s := supersetWorkspaces{result: StepOptedOut, reason: why}
+	if supersetEnabled(ctx) {
+		s.say = "- " + why
+	}
+	return s
 }
 
 // findSupersetWorkspaces finds the live Superset workspaces whose checkout

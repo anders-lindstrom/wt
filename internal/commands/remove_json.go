@@ -118,6 +118,7 @@ type RemovePlanOutput struct {
 	Unreachable     []RemoveLost      `json:"unreachable"`
 	ReachError      *string           `json:"reachError"`
 	Quarantine      *string           `json:"quarantine"`
+	KeepSuperset    bool              `json:"keepSuperset"`
 	Force           bool              `json:"force"`
 	Problems        []RemoveProblem   `json:"problems"`
 }
@@ -220,6 +221,7 @@ func removeToken(ctx *Context, p Plan) *string {
 	field("quarantine", p.Quarantine)
 	field("force", p.Force)
 	field("superset", supersetEnabled(ctx))
+	field("keepSuperset", p.KeepSuperset)
 	token := "1:" + hex.EncodeToString(h.Sum(nil))[:32]
 	return &token
 }
@@ -304,6 +306,7 @@ func removePlanOutput(ctx *Context, p Plan, token string) RemovePlanOutput {
 		o.Unreachable = append(o.Unreachable, lost)
 	}
 	o.ReachError, o.Quarantine, o.Force = strp(p.ReachError), strp(p.Quarantine), p.Force
+	o.KeepSuperset = p.KeepSuperset
 	o.Problems = problemsOf(p)
 	return o
 }

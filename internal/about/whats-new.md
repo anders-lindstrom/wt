@@ -54,6 +54,14 @@ want read out to them; the full story is in git history and in
   none twice, a value set since is left alone, and it only says restored
   once the config is back. JSON: recovery 1.1.0 (`restore.createdBranch`).
 
+## 2026-09-28 13:18 — --keep-superset leaves the Superset workspace alone
+
+- `wt remove` and `wt sweep --keep-superset` do not ask Superset to delete
+  the workspace. Superset's delete removes whatever is at the path it
+  recorded, so a tool making worktrees while it removes others passes it.
+- JSON: the superset step can say `optedOut`; `keepSuperset` in the plans
+  and their tokens. remove-plan, remove 1.1.0; sweep-plan 1.4.0, sweep 1.3.0.
+
 ## 2026-09-28 10:16 — wt remove speaks JSON, and holds to its plan
 
 - `wt remove <work> --dry-run --json` prints the plan: HEAD, where the branch

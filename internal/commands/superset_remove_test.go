@@ -349,3 +349,105 @@ func TestRestoreLeavesSupersetAloneWhenOff(t *testing.T) {
 		t.Errorf("superset was run: %q", got)
 	}
 }
+
+// --keep-superset leaves the workspace alone: Superset is not asked
+// anything, and the step says it was opted out of rather than skipped.
+func TestRemoveKeepSupersetAsksSupersetNothing(t *testing.T) {
+	for _, quarantined := range []bool{false, true} {
+		name := "delete"
+		if quarantined {
+			name = "quarantine"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx, path := safetyWorktree(t, "fix/kept-ws")
+			optIn(ctx)
+			log := supersetAt(t, ctx, path, deleted)
+			opts := RemoveOptions{Agents: noClaude, KeepSuperset: true}
+			if quarantined {
+				opts.Quarantine = trashFor(t, ctx)
+			}
+			var res RemoveResult
+			opts.Result = &res
+			var out bytes.Buffer
+			if err := RemoveAt(ctx, path, opts, &out); err != nil {
+				t.Fatalf("RemoveAt: %v\n%s", err, out.String())
+			}
+			if got := argvOf(t, log); got != nil {
+				t.Errorf("superset was run: %q", got)
+			}
+			if res.Superset != StepOptedOut {
+				t.Errorf("result superset = %q (%q)", res.Superset, res.SupersetReason)
+			}
+			if lines := supersetLines(out.String()); len(lines) != 1 || !strings.Contains(lines[0], "--keep-superset") {
+				t.Errorf("superset lines = %q", lines)
+			}
+		})
+	}
+}
+
+// The opt-out is part of the plan and of its token, and the result's
+// superset step says optedOut.
+func TestRemoveJSONKeepSupersetIsInThePlanAndTheToken(t *testing.T) {
+	ctx, path := safetyWorktree(t, "fix/kept-ws-json")
+	optIn(ctx)
+	log := supersetAt(t, ctx, path, deleted)
+	plain, err := removePlanJSON(t, ctx, path, RemoveOptions{Agents: noClaude})
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept, err := removePlanJSON(t, ctx, path, RemoveOptions{Agents: noClaude, KeepSuperset: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain.KeepSuperset || !kept.KeepSuperset {
+		t.Errorf("keepSuperset = %v / %v", plain.KeepSuperset, kept.KeepSuperset)
+	}
+	if deref(plain.Token) == deref(kept.Token) {
+		t.Error("the token must change with --keep-superset")
+	}
+	r, err := removeJSON(t, ctx, path, RemoveOptions{Agents: noClaude, KeepSuperset: true, Expect: deref(kept.Token)})
+	if err != nil {
+		t.Fatalf("%v %+v", err, r)
+	}
+	if s := step(t, r, StepSuperset); s.Result != StepOptedOut || s.Reason == nil {
+		t.Errorf("superset step = %+v", s)
+	}
+	if got := argvOf(t, log); got != nil {
+		t.Errorf("superset was run: %q", got)
+	}
+}
+
+func TestSweepKeepSupersetAsksSupersetNothing(t *testing.T) {
+	ctx, _, _ := sweepRepo(t)
+	path := mergedWorktree(t, ctx, "fix/one")
+	optIn(ctx)
+	log := supersetAt(t, ctx, path, deleted)
+	opts := SweepOptions{NoFetch: true, Agents: noClaude, PRs: map[string]github.PR{}}
+	plain, err := sweepPlanJSON(t, ctx, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts.KeepSuperset = true
+	kept, err := sweepPlanJSON(t, ctx, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain.KeepSuperset || !kept.KeepSuperset {
+		t.Errorf("keepSuperset = %v / %v", plain.KeepSuperset, kept.KeepSuperset)
+	}
+	if deref(plain.Token) == deref(kept.Token) {
+		t.Error("the token must change with --keep-superset")
+	}
+	opts.Yes, opts.Expect = true, deref(kept.Token)
+	r, human, err := sweepJSON(t, ctx, opts)
+	if err != nil || r.Outcome != OutcomeDone {
+		t.Fatalf("%v %+v\n%s", err, r, human)
+	}
+	it := resultItem(t, r, "fix_wt/one")
+	if it.Superset == nil || it.Superset.Result != StepOptedOut {
+		t.Errorf("item superset = %+v", it.Superset)
+	}
+	if got := argvOf(t, log); got != nil {
+		t.Errorf("superset was run: %q", got)
+	}
+}

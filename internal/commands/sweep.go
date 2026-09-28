@@ -641,6 +641,8 @@ type SweepOptions struct {
 	// Quarantine is a new folder, absolute, that the worktrees are moved
 	// into, one folder each, instead of deleted; "" deletes them.
 	Quarantine string
+	// KeepSuperset leaves each removed worktree's Superset workspace alone.
+	KeepSuperset bool
 }
 
 // pullRequests is what GitHub says about the branches a sweep considers,
@@ -694,7 +696,7 @@ func Sweep(ctx *Context, opts SweepOptions, w io.Writer) (err error) {
 	if err != nil {
 		return err
 	}
-	token := sweepToken(ctx, plan, opts.Quarantine)
+	token := sweepToken(ctx, plan, opts)
 	if opts.Expect != "" && deref(token) != opts.Expect {
 		return errors.New("the sweep plan changed since it was read (a branch or worktree moved, " +
 			"was merged, or gained or lost a reason to be kept); nothing was swept: read the plan again")
@@ -828,6 +830,7 @@ func (p SweepPlan) apply(ctx *Context, opts SweepOptions, w io.Writer) error {
 			rp.quarantineBy = "sweep"
 			j.quarantined(key, rp.Quarantine)
 		}
+		rp.KeepSuperset = opts.KeepSuperset
 		j.start(key)
 		res, err := rp.run(ctx, w)
 		j.superset(key, res)

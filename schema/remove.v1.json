@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/remove.v1.json",
-  "x-version": "1.0.0",
+  "x-version": "1.1.0",
   "title": "wt remove <work> --yes --json",
   "description": "What `wt remove <work>` did, effect by effect. Printed by `wt remove <work> --yes --json` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends the run. Where the worktree and the quarantine are is read from the disk when the object is written. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
@@ -198,9 +198,10 @@
             "failed",
             "deregistered",
             "notRegistered",
-            "skipped"
+            "skipped",
+            "optedOut"
           ],
-          "description": "worktree: removed, quarantined (both moves done), partlyMoved (the checkout moved, its admin dir not), kept (still there). branch: deleted, renamed (to keepAs), untouched, kept (turned down on purpose), failed (git failed). superset: deregistered, notRegistered, skipped, failed. Any: notRun (not reached), interrupted (a signal caught it and its state does not say it finished)."
+          "description": "worktree: removed, quarantined (both moves done), partlyMoved (the checkout moved, its admin dir not), kept (still there). branch: deleted, renamed (to keepAs), untouched, kept (turned down on purpose), failed (git failed). superset: deregistered, notRegistered, skipped, failed, optedOut (since 1.1.0: --keep-superset; Superset was not asked). Any: notRun (not reached), interrupted (a signal caught it and its state does not say it finished)."
         },
         "commit": {
           "oneOf": [
