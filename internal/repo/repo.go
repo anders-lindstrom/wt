@@ -484,6 +484,11 @@ func (r *Repo) OriginHead() (string, bool) {
 	return branch, ok && branch != ""
 }
 
+// AfterRefDeleted runs, when set, between DeleteBranchAt's ref delete and
+// its config removal, and an error from it ends the delete there, as a
+// crash would. Tests set it; nothing else does.
+var AfterRefDeleted func(name string) error
+
 // DeleteBranchAt deletes a branch only while it still points at tip: git's
 // own compare-and-delete, so a commit that lands after the caller last looked
 // is never deleted with it.
@@ -504,6 +509,11 @@ func (r *Repo) DeleteBranchAt(name, tip string) error {
 	}
 	if _, err := git.Run(r.MainRoot, "update-ref", "-d", "refs/heads/"+name, tip); err != nil {
 		return err
+	}
+	if AfterRefDeleted != nil {
+		if err := AfterRefDeleted(name); err != nil {
+			return err
+		}
 	}
 	// A branch with no config has no section to remove; that is not a failure.
 	_, _ = git.Run(r.MainRoot, "config", "--remove-section", "branch."+name)

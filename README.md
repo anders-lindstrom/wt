@@ -90,6 +90,7 @@ examples: `wt <command> --help`.
 | `wt up [<work>]` | bring the worktree you are in onto trunk, only if it goes through without you — conflict-free, or every stop resolved by `.wt-sync.yaml`; otherwise it touches nothing and says why. Also where trunk declares no `.wt-sync.yaml`, conflict-free only. The short form of `wt sync . --run --if-ready` (`--push`, `--no-push`, `--no-fetch`, `--yes`/`-y` for yes to everything including the push, `--force`/`-f` to go ahead past a Claude session in it) |
 | `wt status <work> --json` / `wt up --json` | a worktree's plan for `wt up`, and a run's result, as one JSON object each for tools driving wt (`--expect` holds a run to its plan); `wt schema` prints their JSON Schemas, and [docs/json.md](docs/json.md) explains them |
 | `wt sweep --dry-run --json` / `wt sweep --yes --json` | a sweep's plan, every row with why it is merged or kept, and a sweep's result row by row, for tools driving wt (`--expect` holds the sweep to its plan); see [docs/json.md](docs/json.md) |
+| `wt restore <dir> --dry-run --json` / `wt restore <dir> --json` | what putting back a quarantined worktree would do to its branch, and what it did; `recovery.json` in the quarantine is itself versioned (`wt schema recovery`) |
 | `wt sync --json` / `wt sync run\|resume\|undo --json` | the sync overview of every worktree, and a verb's result, as JSON for tools (`wt sync run --expect` holds a run to the overview); `wt schema sync` and `wt schema sync-run` |
 | `wt new … --dry-run --json` / `wt new … --json` | the same for creating a worktree, and for `wt checkout`: the plan with a token, and a result naming every side effect (`--expect` refuses a moved base or branch) |
 | `wt sync` | what rebasing each worktree onto trunk would do, simulated after fetching trunk; changes nothing of yours (`--no-fetch`) |
@@ -107,8 +108,9 @@ examples: `wt <command> --help`.
 | `wt migrate <work> [<type>/<name>]` | move a worktree where it belongs, renaming or retyping it on the way (`--dry-run`, `--force`/`-f`); also `wt move` |
 | `wt adopt <path>` | provision a worktree another tool created (`--relocate`, `--no-build`) |
 | `wt setup [<from-dir>]` | provision the worktree you are in (`--no-build`, `--source` to name what ran it) |
-| `wt remove <work>` | remove a worktree; delete its branch when merged — on trunk, or as a pull request the cache says landed — keep it when not (`--yes`, `--dry-run`, `.` for the one you are in, `--force`/`-f` for a locked one) |
-| `wt sweep` | delete local branches already merged into trunk — or whose pull request GitHub merged — and remove the worktrees on such branches that nothing is using; from the main checkout only (`--no-fetch`, `--yes`, `--dry-run`, `--json`, `--expect`), or across repositories with `--all`, `--roots`, `--profile` |
+| `wt remove <work>` | remove a worktree; delete its branch when merged — on trunk, or as a pull request the cache says landed — keep it when not (`--yes`, `--dry-run`, `.` for the one you are in, `--force`/`-f` for a locked one, `--quarantine <dir>` to move it aside instead of deleting it) |
+| `wt restore <dir>` | put back a worktree `--quarantine` moved into `<dir>`, and its branch, from the `recovery.json` there (`--dry-run`, `--json`) |
+| `wt sweep` | delete local branches already merged into trunk — or whose pull request GitHub merged — and remove the worktrees on such branches that nothing is using; from the main checkout only (`--no-fetch`, `--yes`, `--dry-run`, `--json`, `--expect`, `--quarantine <dir>`), or across repositories with `--all`, `--roots`, `--profile` |
 
 **This repository, and this build**
 

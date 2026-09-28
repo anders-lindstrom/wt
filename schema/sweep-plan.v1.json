@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sweep-plan.v1.json",
-  "x-version": "1.1.0",
+  "x-version": "1.2.0",
   "title": "wt sweep --dry-run --json",
   "description": "What wt sweep would do, and what it would keep and why. Printed by `wt sweep --dry-run --json` (or `wt sweep --json` without --yes) as the only thing on stdout; nothing is deleted. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
-  "required": ["schema", "schemaVersion", "command", "repo", "trunk", "bases", "fetched", "token", "error", "items"],
+  "required": ["schema", "schemaVersion", "command", "repo", "trunk", "bases", "fetched", "token", "error", "items", "quarantine"],
   "properties": {
     "schema": { "const": 1, "description": "The major version: a new one only for a change that breaks readers." },
     "schemaVersion": { "type": "string", "pattern": "^1\\.[0-9]+\\.[0-9]+$", "description": "The full semantic version of this schema that the output follows: minor for an added field or enumeration value, patch for wording." },
@@ -23,8 +23,9 @@
     },
     "fetched": { "type": "boolean", "description": "origin was fetched first (false with --no-fetch, without an origin, or when the plan stopped before)." },
     "token": { "type": ["string", "null"], "description": "Names this plan; pass it to `wt sweep --expect <token> --yes --json`. Null when there is nothing to remove or delete, or on error." },
-    "error": { "type": ["string", "null"], "description": "Why no plan could be made: not the main checkout, no trunk, the fetch failed. items is then empty." },
-    "items": { "type": "array", "items": { "$ref": "#/$defs/item" } }
+    "error": { "type": ["string", "null"], "description": "Why no plan could be made: not the main checkout, no trunk, the fetch failed — items is then empty — or a --quarantine folder that cannot be used." },
+    "items": { "type": "array", "items": { "$ref": "#/$defs/item" } },
+    "quarantine": { "type": ["string", "null"], "description": "Since 1.2.0. With --quarantine <dir>: the folder the worktrees go to, absolute, which the token covers; a folder that exists or is on another volume refuses the plan (error set, token null, items kept). null without it." }
   },
   "$defs": {
     "sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },

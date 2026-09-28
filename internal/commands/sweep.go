@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"unicode"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/github"
+	"github.com/anders-lindstrom/wt/internal/quarantine"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -636,6 +638,9 @@ type SweepOptions struct {
 	// Expect is the token wt sweep --dry-run --json gave: the sweep refuses,
 	// touching nothing, unless the plan it makes now has that token.
 	Expect string
+	// Quarantine is a new folder, absolute, that the worktrees are moved
+	// into, one folder each, instead of deleted; "" deletes them.
+	Quarantine string
 }
 
 // pullRequests is what GitHub says about the branches a sweep considers,
@@ -689,15 +694,22 @@ func Sweep(ctx *Context, opts SweepOptions, w io.Writer) (err error) {
 	if err != nil {
 		return err
 	}
-	token := sweepToken(ctx, plan)
+	token := sweepToken(ctx, plan, opts.Quarantine)
 	if opts.Expect != "" && deref(token) != opts.Expect {
 		return errors.New("the sweep plan changed since it was read (a branch or worktree moved, " +
 			"was merged, or gained or lost a reason to be kept); nothing was swept: read the plan again")
 	}
 	opts.Journal.begin(ctx, plan, deref(token))
+	opts.Journal.quarantineIn(opts.Quarantine)
 	plan.Render(w, opts.Width)
 	if plan.Empty() {
 		return nil
+	}
+	if err := quarantineReady(ctx, opts.Quarantine, plan); err != nil {
+		return err
+	}
+	if opts.Quarantine != "" && len(plan.Remove) > 0 {
+		fmt.Fprintf(w, "The worktrees go to %s, a folder each, instead of being deleted.\n", opts.Quarantine)
 	}
 
 	switch {
@@ -791,8 +803,14 @@ func (p SweepPlan) apply(ctx *Context, opts SweepOptions, w io.Writer) error {
 		return fmt.Errorf("could not re-read the branches before deleting, so nothing was deleted: %w", err)
 	}
 	j := opts.Journal
+	if opts.Quarantine != "" && len(p.Remove) > 0 {
+		if err := quarantine.MakeDir(opts.Quarantine); err != nil {
+			return fmt.Errorf("nothing was swept: the quarantine folder: %w", err)
+		}
+	}
 	j.startApply()
 	kept := 0
+	folders := map[string]bool{}
 	for i, wt := range p.Remove {
 		key := sweepKey(wt.SweepBranch)
 		rp, why := fresh.worktreeChangedFrom(ctx, wt)
@@ -805,11 +823,24 @@ func (p SweepPlan) apply(ctx *Context, opts SweepOptions, w io.Writer) error {
 			kept++
 			continue
 		}
+		if opts.Quarantine != "" {
+			rp.Quarantine = quarantineFolder(opts.Quarantine, rp.Path, folders)
+			rp.quarantineBy = "sweep"
+			j.quarantined(key, rp.Quarantine)
+		}
 		j.start(key)
-		err := rp.apply(ctx, w)
+		res, err := rp.run(ctx, w)
 		j.settle(key, err)
 		if err != nil {
-			fmt.Fprintf(w, "- kept %s: %s\n", wt.Work, err)
+			// Said as what happened: only a worktree nothing touched was kept.
+			switch res.Outcome {
+			case RemovePartial:
+				fmt.Fprintf(w, "! %s is partly done: %s\n", wt.Work, err)
+			case RemoveRemovedWithBranchProblem:
+				fmt.Fprintf(w, "- removed %s, but its branch was kept: %s\n", wt.Work, err)
+			default:
+				fmt.Fprintf(w, "- kept %s: %s\n", wt.Work, err)
+			}
 			kept++
 		}
 	}
@@ -833,10 +864,52 @@ func (p SweepPlan) apply(ctx *Context, opts SweepOptions, w io.Writer) error {
 		}
 		fmt.Fprintf(w, "✓ deleted %s; git branch %s %s restores its commits\n", b.Name, b.Name, git.ShortID(b.Tip, 12))
 	}
+	if dropped, err := quarantine.DropDiscarded(ctx.Repo); err != nil {
+		fmt.Fprintf(w, "! could not read the pins of past quarantines: %v\n", err)
+	} else {
+		for _, dir := range dropped {
+			fmt.Fprintf(w, "- dropped the pins of %s: that quarantine has been deleted\n", dir)
+		}
+	}
 	if kept > 0 {
-		return fmt.Errorf("%d of %s kept; run wt sweep again to see why", kept, p.counts())
+		return fmt.Errorf("%d of %s kept or not finished; run wt sweep again to see why", kept, p.counts())
 	}
 	return nil
+}
+
+// quarantineReady refuses a sweep into dir before anything changes, even
+// one that only deletes branches: dir must be new, and every worktree the
+// plan removes, with its admin dir, on the volume dir goes on.
+func quarantineReady(ctx *Context, dir string, p SweepPlan) error {
+	if dir == "" {
+		return nil
+	}
+	if err := quarantineOutside(ctx, dir); err != nil {
+		return fmt.Errorf("nothing was swept: %w", err)
+	}
+	var paths []string
+	for _, wt := range p.Remove {
+		admin, err := repo.AdminDir(wt.Worktree)
+		if err != nil {
+			return fmt.Errorf("nothing was swept: %s cannot be quarantined: %w", wt.Worktree, err)
+		}
+		paths = append(paths, wt.Worktree, admin)
+	}
+	if err := quarantine.Check(dir, paths...); err != nil {
+		return fmt.Errorf("nothing was swept: %w", err)
+	}
+	return nil
+}
+
+// quarantineFolder is the folder in dir a worktree at path goes to: its
+// directory's name, numbered when another worktree of the sweep has it.
+func quarantineFolder(dir, path string, taken map[string]bool) string {
+	name := filepath.Base(path)
+	for n := 2; taken[name]; n++ {
+		name = fmt.Sprintf("%s-%d", filepath.Base(path), n)
+	}
+	taken[name] = true
+	return filepath.Join(dir, name)
 }
 
 // changedDuringSweep reads a worktree once more immediately before it goes,

@@ -1,0 +1,235 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/restore.v1.json",
+  "x-version": "1.0.0",
+  "title": "wt restore <dir> --json",
+  "description": "What `wt restore <dir>` did. Printed by `wt restore <dir> --json` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends the run. Locations, the branch and the steps are read from the quarantine when the object is written. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
+  "type": "object",
+  "required": [
+    "schema",
+    "schemaVersion",
+    "command",
+    "dir",
+    "repo",
+    "outcome",
+    "error",
+    "checkout",
+    "admin",
+    "branch",
+    "unlocked",
+    "steps",
+    "recovery"
+  ],
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^1\\.[0-9]+\\.[0-9]+$"
+    },
+    "command": {
+      "const": "restore"
+    },
+    "dir": {
+      "type": "string"
+    },
+    "repo": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "outcome": {
+      "enum": [
+        "restored",
+        "refused",
+        "partial",
+        "interrupted"
+      ],
+      "description": "restored: the worktree is registered at its path again, with the branch action done, the quarantine's lock is off and its pins are deleted. refused: nothing changed. partial: a step failed after others were done; recovery.json says which, and wt restore <dir> again finishes it. interrupted: a signal ended the run."
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "checkout": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/place"
+        }
+      ]
+    },
+    "admin": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/place"
+        }
+      ]
+    },
+    "branch": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/branch"
+        }
+      ]
+    },
+    "unlocked": {
+      "type": "boolean",
+      "description": "This run took the quarantine's lock off."
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "state",
+          "error"
+        ],
+        "properties": {
+          "name": {
+            "enum": [
+              "branch",
+              "moveAdmin",
+              "relink",
+              "moveCheckout",
+              "unlock",
+              "unpin"
+            ]
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "running",
+              "done",
+              "failed"
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "description": "The restore's steps as recovery.json records them — branch, moveAdmin, relink, moveCheckout, unlock, unpin — or empty when it has none. The list is closed."
+    },
+    "recovery": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "For interrupted: what wt printed."
+    }
+  },
+  "$defs": {
+    "sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40,64}$"
+    },
+    "place": {
+      "type": "object",
+      "required": [
+        "path",
+        "quarantined",
+        "location"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "quarantined": {
+          "type": "string"
+        },
+        "location": {
+          "enum": [
+            "original",
+            "quarantined",
+            "taken",
+            "missing"
+          ],
+          "description": "original: at path, the same directory (by inode) — moved back, or never moved. quarantined: in the quarantine. taken: something else is at path. missing: in neither place."
+        }
+      }
+    },
+    "branch": {
+      "type": "object",
+      "required": [
+        "name",
+        "tip",
+        "keepAs",
+        "removal",
+        "action",
+        "occupiedBy"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "tip": {
+          "$ref": "#/$defs/sha"
+        },
+        "keepAs": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "removal": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "deleted",
+                "renamed",
+                "untouched",
+                "kept",
+                "failed"
+              ]
+            }
+          ],
+          "description": "What the removal's branch step came to, as recovery.json records it."
+        },
+        "action": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "none",
+                "renameBack",
+                "recreate",
+                "attach",
+                "detach"
+              ]
+            }
+          ],
+          "description": "none: the branch is there at its tip. renameBack: kept under keepAs; gets its name back, config included. recreate: deleted and the name free; made again at tip with its recorded config. attach: its name holds another commit and keepAs still has tip; HEAD names keepAs. detach: another worktree uses it, or it moved on; no branch change, HEAD detached at head. null when a problem stops the decision."
+        },
+        "occupiedBy": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The worktree that has the branch — as HEAD, rebasing it, or bisecting from it — when that made the action detach."
+        }
+      }
+    }
+  }
+}

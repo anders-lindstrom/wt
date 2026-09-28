@@ -1,0 +1,337 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/recovery.v1.json",
+  "x-version": "1.0.0",
+  "title": "<quarantine>/recovery.json",
+  "description": "The journal of a worktree moved into quarantine by `wt remove --quarantine <dir>` or `wt sweep --quarantine <dir>`, and of its restore by `wt restore <dir>`. Written durably (temp file, fsync, rename, folder fsync) before and after every step, the first time before anything changes, so a run that stops anywhere is resolved from it and the two places each directory can be. Schema 1: fields may be added; nothing is renamed or removed. The step lists and step states are closed: wt refuses a record whose steps are not exactly these, so another step or state is a new major (recovery.v2.json), never a minor. See docs/json.md.",
+  "type": "object",
+  "required": [
+    "schema",
+    "schemaVersion",
+    "command",
+    "createdAt",
+    "repo",
+    "commonDir",
+    "worktreeId",
+    "dir",
+    "checkout",
+    "admin",
+    "gitFile",
+    "pins",
+    "head",
+    "branch",
+    "steps",
+    "restore"
+  ],
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^1\\.[0-9]+\\.[0-9]+$"
+    },
+    "command": {
+      "enum": [
+        "remove",
+        "sweep"
+      ],
+      "description": "The wt command that made the quarantine."
+    },
+    "createdAt": {
+      "type": "string",
+      "description": "When, RFC 3339, UTC."
+    },
+    "repo": {
+      "type": "string",
+      "description": "The repository's main checkout."
+    },
+    "commonDir": {
+      "type": "string",
+      "description": "The repository's common git dir."
+    },
+    "worktreeId": {
+      "type": "string",
+      "description": "The worktree's id: its admin dir is <commonDir>/worktrees/<worktreeId>."
+    },
+    "dir": {
+      "type": "string",
+      "description": "The quarantine folder, as the removal named it. Its git lock reason while quarantined is \"wt quarantine <dir>\"."
+    },
+    "checkout": {
+      "$ref": "#/$defs/place",
+      "description": "The worktree's checkout; quarantined at <dir>/checkout."
+    },
+    "admin": {
+      "$ref": "#/$defs/place",
+      "description": "The worktree's admin dir, .git/worktrees/<id>, with its initialised submodules' repositories under modules/; quarantined at <dir>/admin. Moving it is what unregisters the worktree."
+    },
+    "gitFile": {
+      "type": "string",
+      "description": "The checkout's .git file as it was. While quarantined, <dir>/checkout/.git names <dir>/admin instead, so a new worktree that takes the id is never the one git in the quarantine works on; restore writes this back."
+    },
+    "pins": {
+      "$ref": "#/$defs/pins",
+      "description": "Refs that hold the worktree's HEAD and its branch's tip while it is quarantined — once the branch is deleted and the admin dir is out of the repository nothing else may, and gc would take them. Created before anything moves, deleted when the restore is done, or by wt sweep once the quarantine folder has been deleted."
+    },
+    "head": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/sha"
+        }
+      ],
+      "description": "The commit checked out; null before the first commit."
+    },
+    "branch": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/branch"
+        }
+      ],
+      "description": "The branch checked out; null for a detached HEAD or a branch with no commit."
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/step"
+      },
+      "description": "The removal's steps, exactly these in this order: lock (git's worktree lock with the quarantine's reason, fsynced), pin (the refs in pins), moveCheckout, moveAdmin, relink (the quarantined checkout's .git names <dir>/admin), branch. Closed: another step is a new major."
+    },
+    "restore": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/restore"
+        }
+      ],
+      "description": "The restore's own journal; null until wt restore first changes something."
+    }
+  },
+  "$defs": {
+    "sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40,64}$"
+    },
+    "place": {
+      "type": "object",
+      "required": [
+        "path",
+        "quarantined",
+        "device",
+        "inode"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Where it was."
+        },
+        "quarantined": {
+          "type": "string",
+          "description": "Where it goes in the quarantine."
+        },
+        "device": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "inode": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "A rename keeps device and inode: a directory at path with these is this one."
+        }
+      }
+    },
+    "branch": {
+      "type": "object",
+      "required": [
+        "name",
+        "tip",
+        "plan",
+        "keepAs",
+        "config",
+        "result"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "tip": {
+          "$ref": "#/$defs/sha"
+        },
+        "plan": {
+          "enum": [
+            "delete",
+            "keep",
+            "none"
+          ],
+          "description": "delete: merged, deleted. keep: renamed to keepAs. none: left alone."
+        },
+        "keepAs": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "config": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/config"
+              }
+            }
+          ],
+          "description": "The branch's section of the local config, every value in order, captured right before the branch step; null until then."
+        },
+        "result": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "deleted",
+                "renamed",
+                "untouched",
+                "kept",
+                "failed"
+              ]
+            }
+          ],
+          "description": "What the branch step came to. kept: turned down on purpose (moved, no longer merged, taken by a worktree). failed: git failed; the removal is partial. null before the step."
+        }
+      }
+    },
+    "config": {
+      "type": "object",
+      "required": [
+        "key",
+        "value"
+      ],
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "step": {
+      "type": "object",
+      "required": [
+        "name",
+        "state",
+        "error"
+      ],
+      "properties": {
+        "name": {
+          "enum": [
+            "lock",
+            "pin",
+            "moveCheckout",
+            "moveAdmin",
+            "relink",
+            "branch",
+            "unlock",
+            "unpin"
+          ]
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "running",
+            "done",
+            "failed"
+          ],
+          "description": "Closed. running is written before the step changes anything: left so, the step may or may not have happened, and the places say which."
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "restore": {
+      "type": "object",
+      "required": [
+        "action",
+        "occupiedBy",
+        "steps"
+      ],
+      "properties": {
+        "action": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "none",
+                "renameBack",
+                "recreate",
+                "attach",
+                "detach"
+              ]
+            }
+          ],
+          "description": "What the restore does to the branch; see the restore schema."
+        },
+        "occupiedBy": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The worktree using the branch, when that made the action detach."
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/step"
+          },
+          "description": "branch, moveAdmin, relink, moveCheckout, unlock, unpin, exactly, in order. Closed."
+        }
+      }
+    },
+    "pins": {
+      "type": "object",
+      "required": [
+        "head",
+        "tip",
+        "dir"
+      ],
+      "properties": {
+        "head": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "refs/wt-quarantine/<id>-<hash>/head, at head; null when there is none."
+        },
+        "tip": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "refs/wt-quarantine/<id>-<hash>/tip, at branch.tip; null without a branch."
+        },
+        "dir": {
+          "type": "string",
+          "description": "refs/wt-quarantine/<id>-<hash>/dir, a blob holding the quarantine folder's path, by which wt sweep tells a deleted quarantine's pins."
+        }
+      }
+    }
+  }
+}
