@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/remove.v1.json",
-  "x-version": "1.0.0",
+  "x-version": "1.3.0",
   "title": "wt remove <work> --yes --json",
   "description": "What `wt remove <work>` did, effect by effect. Printed by `wt remove <work> --yes --json` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends the run. Where the worktree and the quarantine are is read from the disk when the object is written. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
@@ -31,6 +31,16 @@
         "null"
       ],
       "description": "Trunk's branch name."
+    },
+    "trunkSource": {
+      "enum": [
+        "config",
+        "originHead",
+        "conventional",
+        "currentBranchGuess",
+        null
+      ],
+      "description": "Since 1.3.0. How trunk was found, as in the other plans (see docs/json.md, trunkSource); null with trunk."
     },
     "token": {
       "type": [
@@ -99,6 +109,13 @@
       },
       "description": "worktree, branch and superset, in that order."
     },
+    "forced": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/forceCategory"
+      },
+      "description": "Since 1.2.0. The --force categories the removal went past, in the plan or in the sessions and checkout read again right before the checkout went; empty when it went past none or did not get that far."
+    },
     "quarantine": {
       "oneOf": [
         {
@@ -138,7 +155,8 @@
       "required": [
         "code",
         "message",
-        "force"
+        "force",
+        "forceWith"
       ],
       "properties": {
         "code": {
@@ -165,8 +183,29 @@
         "force": {
           "type": "boolean",
           "description": "--force goes past it: somebody's claim on the checkout, not work that would be lost."
+        },
+        "forceWith": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/forceCategory"
+            }
+          ],
+          "description": "Since 1.2.0. The --force category that goes past it; null when force is false. A session problem is either idle-sessions or busy-sessions: idle and busy sessions are two problems."
         }
       }
+    },
+    "forceCategory": {
+      "enum": [
+        "idle-sessions",
+        "busy-sessions",
+        "sessions-unknown",
+        "hidden-files",
+        "lock"
+      ],
+      "description": "What --force=<list> names; bare --force is all of them. idle-sessions: an idle Claude session in it. busy-sessions: a busy one, and idle ones too. sessions-unknown: claude agents failed. hidden-files: files git status is told not to look at, unedited. lock: git's lock, its holder still running."
     },
     "step": {
       "type": "object",
@@ -198,9 +237,10 @@
             "failed",
             "deregistered",
             "notRegistered",
-            "skipped"
+            "skipped",
+            "optedOut"
           ],
-          "description": "worktree: removed, quarantined (both moves done), partlyMoved (the checkout moved, its admin dir not), kept (still there). branch: deleted, renamed (to keepAs), untouched, kept (turned down on purpose), failed (git failed). superset: deregistered, notRegistered, skipped, failed. Any: notRun (not reached), interrupted (a signal caught it and its state does not say it finished)."
+          "description": "worktree: removed, quarantined (both moves done), partlyMoved (the checkout moved, its admin dir not), kept (still there). branch: deleted, renamed (to keepAs), untouched, kept (turned down on purpose), failed (git failed). superset: deregistered, notRegistered, skipped, failed, optedOut (since 1.1.0: --keep-superset; Superset was not asked). Any: notRun (not reached), interrupted (a signal caught it and its state does not say it finished)."
         },
         "commit": {
           "oneOf": [
@@ -292,6 +332,7 @@
     "command",
     "repo",
     "trunk",
+    "trunkSource",
     "token",
     "outcome",
     "error",
@@ -301,6 +342,7 @@
     "tip",
     "keepAs",
     "steps",
+    "forced",
     "quarantine",
     "restoreCommand",
     "recovery"

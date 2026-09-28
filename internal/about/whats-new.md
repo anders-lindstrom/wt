@@ -6,6 +6,11 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-28 16:29 — wt remove --json says how trunk was found
+
+- The remove plan and result carry `trunkSource`, as the other plans do,
+  and the plan's token covers it. JSON: remove-plan, remove 1.3.0.
+
 ## 2026-09-28 15:52 — Trunk is no longer the branch the main checkout is on
 
 - Without MAIN_BRANCH, trunk is origin/HEAD, else main, master, trunk,
@@ -30,6 +35,16 @@ want read out to them; the full story is in git history and in
   now stops them when wt goes. Read-only commands never start one.
 - docs/json.md: "Signals and what wt starts".
 
+## 2026-09-28 13:38 — wt remove --force=<list> goes past only what it names
+
+- `--force=idle-sessions,hidden-files` (also `busy-sessions`, which covers
+  idle ones, `sessions-unknown`, `lock`); bare `--force` is all, as before.
+  `--force=` is none; `--force=true` and `--force=false` are usage errors.
+- The sessions are read again right before the checkout goes: one that
+  turned busy or arrived since refuses unless `--force` names its state.
+- JSON: `forceWith` on the plan and each problem, `forced` on the result;
+  the token covers each session's state. remove-plan, remove 1.2.0.
+
 ## 2026-09-28 13:32 — wt quarantine purge deletes a quarantine for good
 
 - `wt quarantine purge <dir>` deletes the pins under refs/wt-quarantine/ and
@@ -53,6 +68,14 @@ want read out to them; the full story is in git history and in
   config now owns that branch when run again: the missing entries go back,
   none twice, a value set since is left alone, and it only says restored
   once the config is back. JSON: recovery 1.1.0 (`restore.createdBranch`).
+
+## 2026-09-28 13:18 — --keep-superset leaves the Superset workspace alone
+
+- `wt remove` and `wt sweep --keep-superset` do not ask Superset to delete
+  the workspace. Superset's delete removes whatever is at the path it
+  recorded, so a tool making worktrees while it removes others passes it.
+- JSON: the superset step can say `optedOut`; `keepSuperset` in the plans
+  and their tokens. remove-plan, remove 1.1.0; sweep-plan 1.4.0, sweep 1.3.0.
 
 ## 2026-09-28 10:16 — wt remove speaks JSON, and holds to its plan
 

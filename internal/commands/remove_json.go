@@ -14,6 +14,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anders-lindstrom/wt/internal/wtsync"
 	"github.com/anders-lindstrom/wt/schema"
 )
 
@@ -83,11 +84,12 @@ type RemoveLost struct {
 }
 
 // RemoveProblem is one reason the removal does not go ahead. Force is a
-// problem --force goes past.
+// problem --force goes past, ForceWith the category that does.
 type RemoveProblem struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-	Force   bool   `json:"force"`
+	Code      string  `json:"code"`
+	Message   string  `json:"message"`
+	Force     bool    `json:"force"`
+	ForceWith *string `json:"forceWith"`
 }
 
 // RemovePlanOutput is the one object wt remove --dry-run --json prints.
@@ -97,6 +99,7 @@ type RemovePlanOutput struct {
 	Command         string            `json:"command"`
 	Repo            *string           `json:"repo"`
 	Trunk           *string           `json:"trunk"`
+	TrunkSource     *string           `json:"trunkSource"`
 	Token           *string           `json:"token"`
 	Error           *string           `json:"error"`
 	Path            *string           `json:"path"`
@@ -118,7 +121,9 @@ type RemovePlanOutput struct {
 	Unreachable     []RemoveLost      `json:"unreachable"`
 	ReachError      *string           `json:"reachError"`
 	Quarantine      *string           `json:"quarantine"`
+	KeepSuperset    bool              `json:"keepSuperset"`
 	Force           bool              `json:"force"`
+	ForceWith       []string          `json:"forceWith"`
 	Problems        []RemoveProblem   `json:"problems"`
 }
 
@@ -147,6 +152,7 @@ type RemoveOutput struct {
 	Command        string            `json:"command"`
 	Repo           *string           `json:"repo"`
 	Trunk          *string           `json:"trunk"`
+	TrunkSource    *string           `json:"trunkSource"`
 	Token          *string           `json:"token"`
 	Outcome        string            `json:"outcome"`
 	Error          *string           `json:"error"`
@@ -156,6 +162,7 @@ type RemoveOutput struct {
 	Tip            *string           `json:"tip"`
 	KeepAs         *string           `json:"keepAs"`
 	Steps          []RemoveStep      `json:"steps"`
+	Forced         []string          `json:"forced"`
 	Quarantine     *RemoveQuarantine `json:"quarantine"`
 	RestoreCommand []string          `json:"restoreCommand"`
 	Recovery       *string           `json:"recovery"`
@@ -165,8 +172,9 @@ type RemoveOutput struct {
 // the configuration, and everything the removal turns on — the checkout,
 // its admin dir, HEAD, the branch, its tip, standing and outcome, anything
 // uncommitted or hidden, submodules, nested worktrees, the operation, the
-// sessions by who they are, the lock, what would be lost, the quarantine
-// folder and --force. Nil when the removal would refuse.
+// sessions by who they are and whether each is idle or busy, the lock, what
+// would be lost, the quarantine folder and the --force categories. Nil when
+// the removal would refuse.
 func removeToken(ctx *Context, p Plan) *string {
 	if p.refusal() != "" {
 		return nil
@@ -176,6 +184,7 @@ func removeToken(ctx *Context, p Plan) *string {
 	field("wt-remove", 1)
 	field("repo", ctx.Repo.MainRoot)
 	field("trunk", ctx.Config.MainBranch)
+	field("trunkSource", ctx.Config.TrunkSource)
 	h.Write(configFingerprint(ctx))
 	bases, err := trunkBases(ctx)
 	field("basesError", err != nil)
@@ -207,7 +216,7 @@ func removeToken(ctx *Context, p Plan) *string {
 	field("operation", p.Operation)
 	var ids []string
 	for _, a := range p.Sessions {
-		ids = append(ids, a.ID)
+		ids = append(ids, a.ID+" "+sessionState(a))
 	}
 	slices.Sort(ids)
 	field("sessions", strings.Join(ids, "\x01"))
@@ -218,28 +227,41 @@ func removeToken(ctx *Context, p Plan) *string {
 	}
 	field("reachError", p.ReachError)
 	field("quarantine", p.Quarantine)
-	field("force", p.Force)
+	field("force", strings.Join(p.Force.Names(), ","))
 	field("superset", supersetEnabled(ctx))
+	field("keepSuperset", p.KeepSuperset)
 	token := "1:" + hex.EncodeToString(h.Sum(nil))[:32]
 	return &token
 }
 
 // problemsOf is every problem with the plan, --force or not.
 func problemsOf(p Plan) []RemoveProblem {
-	out := []RemoveProblem{}
-	for _, pr := range p.problems() {
-		out = append(out, RemoveProblem{Code: pr.code, Message: pr.text, Force: pr.forced})
-	}
-	return out
+	return removeProblems(p.problems())
 }
 
 // blockingOf is the problems that refuse this removal.
 func blockingOf(p Plan) []RemoveProblem {
+	return removeProblems(p.blocking())
+}
+
+func removeProblems(problems []problem) []RemoveProblem {
 	out := []RemoveProblem{}
-	for _, pr := range p.blocking() {
-		out = append(out, RemoveProblem{Code: pr.code, Message: pr.text, Force: pr.forced})
+	for _, pr := range problems {
+		rp := RemoveProblem{Code: pr.code, Message: pr.text, Force: pr.force != 0}
+		if pr.force != 0 {
+			rp.ForceWith = strp(pr.force.Names()[0])
+		}
+		out = append(out, rp)
 	}
 	return out
+}
+
+// sessionState is a session's state as --json names it.
+func sessionState(a wtsync.Agent) string {
+	if a.Idle() {
+		return "idle"
+	}
+	return "busy"
 }
 
 // restoreBranch is the command that puts a deleted branch back at tip.
@@ -249,7 +271,7 @@ func restoreBranch(ctx *Context, branch, tip string) []string {
 
 func removePlanOutput(ctx *Context, p Plan, token string) RemovePlanOutput {
 	o := emptyRemovePlan()
-	o.Repo, o.Trunk, o.Token = strp(ctx.Repo.MainRoot), strp(ctx.Config.MainBranch), strp(token)
+	o.Repo, o.Trunk, o.TrunkSource, o.Token = strp(ctx.Repo.MainRoot), strp(ctx.Config.MainBranch), ctx.trunkSource(), strp(token)
 	o.Path, o.AdminDir, o.Head, o.Detached = strp(p.Path), strp(p.AdminDir), strp(p.Head), p.Branch == ""
 	if p.Branch != "" {
 		b := &RemoveBranchPlan{Name: p.Branch, Tip: strp(p.Tip), Merge: mergeNames[p.Merge], Base: strp(p.Base),
@@ -277,13 +299,10 @@ func removePlanOutput(ctx *Context, p Plan, token string) RemovePlanOutput {
 	}
 	o.Operation = strp(operationName(p.Operation))
 	for _, a := range p.Sessions {
-		s := RemoveSession{ID: a.ID, Name: strp(a.Name), State: "busy"}
+		s := RemoveSession{ID: a.ID, Name: strp(a.Name), State: sessionState(a)}
 		if a.PID > 0 {
 			pid := a.PID
 			s.PID = &pid
-		}
-		if a.Idle() {
-			s.State = "idle"
 		}
 		o.Sessions = append(o.Sessions, s)
 	}
@@ -303,7 +322,11 @@ func removePlanOutput(ctx *Context, p Plan, token string) RemovePlanOutput {
 		}
 		o.Unreachable = append(o.Unreachable, lost)
 	}
-	o.ReachError, o.Quarantine, o.Force = strp(p.ReachError), strp(p.Quarantine), p.Force
+	o.ReachError, o.Quarantine = strp(p.ReachError), strp(p.Quarantine)
+	// force keeps its v1 meaning — every problem with force true is gone
+	// past — which only bare --force promises.
+	o.Force, o.ForceWith = p.Force == ForceAll, p.Force.Names()
+	o.KeepSuperset = p.KeepSuperset
 	o.Problems = problemsOf(p)
 	return o
 }
@@ -311,7 +334,7 @@ func removePlanOutput(ctx *Context, p Plan, token string) RemovePlanOutput {
 func emptyRemovePlan() RemovePlanOutput {
 	return RemovePlanOutput{Schema: 1, SchemaVersion: schema.VersionOf("remove-plan"), Command: "remove",
 		Bases: []SweepBase{}, HiddenFiles: []string{}, MovedSubmodules: []string{}, NestedWorktrees: []string{},
-		Sessions: []RemoveSession{}, Unreachable: []RemoveLost{}, Problems: []RemoveProblem{}}
+		Sessions: []RemoveSession{}, Unreachable: []RemoveLost{}, ForceWith: []string{}, Problems: []RemoveProblem{}}
 }
 
 // RemovePlanJSON writes wt remove --dry-run --json: the plan, its problems
@@ -330,7 +353,7 @@ func RemovePlanJSON(ctx *Context, t RemoveTarget, opts RemoveOptions, out, progr
 	if j.plan != nil {
 		o = removePlanOutput(ctx, *j.plan, j.token)
 	} else {
-		o.Repo, o.Trunk = strp(ctx.Repo.MainRoot), strp(ctx.Config.MainBranch)
+		o.Repo, o.Trunk, o.TrunkSource = strp(ctx.Repo.MainRoot), strp(ctx.Config.MainBranch), ctx.trunkSource()
 	}
 	if err != nil {
 		o.Error, o.Token = strp(err.Error()), nil
@@ -439,12 +462,12 @@ func (j *RemoveJournal) write(res *RemoveResult, err error, recovery string) {
 func removeOutput(ctx *Context, plan *Plan, token string, started bool, res *RemoveResult, err error,
 	recovery string) RemoveOutput {
 	o := RemoveOutput{Schema: 1, SchemaVersion: schema.VersionOf("remove"), Command: "remove",
-		Token: strp(token), Problems: []RemoveProblem{}, Recovery: strp(recovery)}
+		Token: strp(token), Problems: []RemoveProblem{}, Forced: []string{}, Recovery: strp(recovery)}
 	if err != nil {
 		o.Error = strp(err.Error())
 	}
 	if ctx != nil {
-		o.Repo, o.Trunk = strp(ctx.Repo.MainRoot), strp(ctx.Config.MainBranch)
+		o.Repo, o.Trunk, o.TrunkSource = strp(ctx.Repo.MainRoot), strp(ctx.Config.MainBranch), ctx.trunkSource()
 	}
 	notRun := func(name, commit string) RemoveStep {
 		return RemoveStep{Step: name, Result: StepNotRun, Commit: strp(commit)}
@@ -527,6 +550,7 @@ func removeOutput(ctx *Context, plan *Plan, token string, started bool, res *Rem
 		if res.Superset != "" {
 			sstep.Result, sstep.Reason = res.Superset, strp(res.SupersetReason)
 		}
+		o.Forced = res.Forced.Names()
 	} else {
 		o.Outcome = OutcomeInterrupted
 		if worktree == WorktreeKept {

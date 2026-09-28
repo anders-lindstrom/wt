@@ -10,7 +10,7 @@ import (
 )
 
 func newSweepCmd() *cobra.Command {
-	var noFetch, yes, dryRun, asJSON bool
+	var noFetch, yes, dryRun, asJSON, keepSuperset bool
 	var expect, quarantineDir string
 	var sel selectionFlags
 	cmd := &cobra.Command{
@@ -92,13 +92,15 @@ func newSweepCmd() *cobra.Command {
 			"outside the repository; otherwise the sweep refuses before anything\n" +
 			"goes. It sweeps one repository. Every sweep also drops the refs that\n" +
 			"pinned a quarantine's commits once its folder has been deleted.\n\n" +
-			"Each worktree it removes loses its Superset workspace, as with wt remove.\n\n" +
+			"Each worktree it removes loses its Superset workspace, as with wt\n" +
+			"remove, and with the same risk; --keep-superset leaves them alone and\n" +
+			"asks Superset nothing.\n\n" +
 			selectionHelp,
 		Example: "  wt sweep --quarantine ../trash/sw  # ask, then move worktrees aside\n" +
 			"  wt sweep --all --dry-run    # every repository's plan; change nothing\n" +
 			"  wt sweep --roots work --yes # one root's repositories, without asking\n" +
 			"  wt sweep --profile api --no-fetch  # a profile's, as last fetched\n" +
-			"  wt sweep --yes --json --expect 1:0123abcd  # only the plan a tool read",
+			"  wt sweep --yes --json --keep-superset --expect 1:0123abcd  # a tool's",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -120,10 +122,10 @@ func newSweepCmd() *cobra.Command {
 					return errors.New("--json sweeps one repository: run it in each repository's main checkout")
 				}
 				return sweepJSON(cmd, commands.SweepOptions{NoFetch: noFetch, Yes: yes, DryRun: dryRun, Expect: expect,
-					Quarantine: quarantineDir})
+					Quarantine: quarantineDir, KeepSuperset: keepSuperset})
 			}
 			opts := commands.SweepOptions{NoFetch: noFetch, Yes: yes, DryRun: dryRun,
-				Width: terminalWidth(cmd.OutOrStdout()), Quarantine: quarantineDir}
+				Width: terminalWidth(cmd.OutOrStdout()), Quarantine: quarantineDir, KeepSuperset: keepSuperset}
 			if sel.selection().Any() {
 				all := commands.SweepAllOptions{SweepOptions: opts}
 				if !yes && canAsk(cmd) {
@@ -148,6 +150,8 @@ func newSweepCmd() *cobra.Command {
 	cmd.Flags().StringVar(&expect, "expect", "", "sweep only if the plan still has this token")
 	cmd.Flags().StringVar(&quarantineDir, "quarantine", "",
 		"move each worktree into this new folder instead of deleting it")
+	cmd.Flags().BoolVar(&keepSuperset, "keep-superset", false,
+		"leave their Superset workspaces; do not ask Superset to delete them")
 	cmd.MarkFlagsMutuallyExclusive("yes", "dry-run")
 	return cmd
 }

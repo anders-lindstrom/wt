@@ -136,6 +136,7 @@ type SweepPlanOutput struct {
 	Error         *string     `json:"error"`
 	Items         []SweepItem `json:"items"`
 	Quarantine    *string     `json:"quarantine"`
+	KeepSuperset  bool        `json:"keepSuperset"`
 }
 
 // SweepResultItem is what became of one row of the plan.
@@ -236,18 +237,21 @@ func planItemsOf(p SweepPlan) []SweepItem {
 // sweepToken names a plan: the repository, trunk, the configuration, and
 // every row with what it stands on — its part, branch, commit, worktree,
 // evidence, what GitHub says about it, and its reasons, codes and words —
-// and the quarantine folder the worktrees go to, when there is one. Any
-// difference in any of them is a different token. Nil when the plan has
-// nothing to remove or delete.
-func sweepToken(ctx *Context, p SweepPlan, quarantine string) *string {
+// the quarantine folder the worktrees go to, when there is one, and
+// --keep-superset. Any difference in any of them is a different token. Nil
+// when the plan has nothing to remove or delete.
+func sweepToken(ctx *Context, p SweepPlan, opts SweepOptions) *string {
 	if p.Empty() {
 		return nil
 	}
 	h := sha256.New()
 	h.Write([]byte("wt-sweep-1\x00" + ctx.Repo.MainRoot + "\x00" + ctx.Config.MainBranch + "\x00"))
 	h.Write(configFingerprint(ctx))
-	if quarantine != "" {
-		h.Write([]byte("\nquarantine\x00" + quarantine))
+	if opts.Quarantine != "" {
+		h.Write([]byte("\nquarantine\x00" + opts.Quarantine))
+	}
+	if opts.KeepSuperset {
+		h.Write([]byte("\nkeepSuperset"))
 	}
 	for _, it := range planItemsOf(p) {
 		fields := []string{it.Category, deref(it.Branch), deref(it.Tip), deref(it.Path),
@@ -305,7 +309,7 @@ func SweepPlanJSON(ctx *Context, opts SweepOptions, out, progress io.Writer) err
 		return writeSweepPlan(out, res, ErrNotInRepo)
 	}
 	res.Repo, res.Trunk, res.TrunkSource = strp(ctx.Repo.MainRoot), strp(ctx.Config.MainBranch), ctx.trunkSource()
-	res.Quarantine = strp(opts.Quarantine)
+	res.Quarantine, res.KeepSuperset = strp(opts.Quarantine), opts.KeepSuperset
 	plan, fetched, err := prepareSweep(ctx, opts, progress)
 	res.Fetched = fetched
 	if err != nil {
@@ -320,7 +324,7 @@ func SweepPlanJSON(ctx *Context, opts SweepOptions, out, progress io.Writer) err
 	for _, b := range plan.Bases {
 		res.Bases = append(res.Bases, SweepBase(b))
 	}
-	res.Items, res.Token = planItemsOf(plan), sweepToken(ctx, plan, opts.Quarantine)
+	res.Items, res.Token = planItemsOf(plan), sweepToken(ctx, plan, opts)
 	return writeSweepPlan(out, res, nil)
 }
 

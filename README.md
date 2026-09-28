@@ -121,10 +121,10 @@ examples: `wt <command> --help`.
 | `wt migrate <work> [<type>/<name>]` | move a worktree where it belongs, renaming or retyping it on the way (`--dry-run`, `--force`/`-f`); also `wt move` |
 | `wt adopt <path>` | provision a worktree another tool created (`--relocate`, `--no-build`) |
 | `wt setup [<from-dir>]` | provision the worktree you are in (`--no-build`, `--source` to name what ran it) |
-| `wt remove <work>` | remove a worktree; delete its branch when merged — on trunk, or as a pull request the cache says landed — keep it when not (`--yes`, `--dry-run`, `.` for the one you are in, `--force`/`-f` for a locked one, `--quarantine <dir>` to move it aside instead of deleting it, `--json`, `--expect`) |
+| `wt remove <work>` | remove a worktree; delete its branch when merged — on trunk, or as a pull request the cache says landed — keep it when not (`--yes`, `--dry-run`, `.` for the one you are in, `--force`/`-f` past a session, a held lock or hidden files, `--force=<list>` past only those named, `--quarantine <dir>` to move it aside instead of deleting it, `--keep-superset`, `--json`, `--expect`) |
 | `wt restore <dir>` | put back a worktree `--quarantine` moved into `<dir>`, and its branch, from the `recovery.json` there (`--dry-run`, `--json`) |
 | `wt quarantine purge <dir>` | delete a quarantine for good: the refs pinning its commits, then the folder; refuses anything that is not a settled wt quarantine, and finishes a purge that stopped (`--yes`, `--dry-run`, `--json`, `--expect`) |
-| `wt sweep` | delete local branches already merged into trunk — or whose pull request GitHub merged — and remove the worktrees on such branches that nothing is using; from the main checkout only (`--no-fetch`, `--yes`, `--dry-run`, `--json`, `--expect`, `--quarantine <dir>`), or across repositories with `--all`, `--roots`, `--profile` |
+| `wt sweep` | delete local branches already merged into trunk — or whose pull request GitHub merged — and remove the worktrees on such branches that nothing is using; from the main checkout only (`--no-fetch`, `--yes`, `--dry-run`, `--json`, `--expect`, `--quarantine <dir>`, `--keep-superset`), or across repositories with `--all`, `--roots`, `--profile` |
 
 **This repository, and this build**
 
