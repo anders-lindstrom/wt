@@ -1,0 +1,308 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/remove.v1.json",
+  "x-version": "1.0.0",
+  "title": "wt remove <work> --yes --json",
+  "description": "What `wt remove <work>` did, effect by effect. Printed by `wt remove <work> --yes --json` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends the run. Where the worktree and the quarantine are is read from the disk when the object is written. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": 1,
+      "description": "The major version: a new one only for a change that breaks readers."
+    },
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^1\\.[0-9]+\\.[0-9]+$",
+      "description": "The full semantic version of this schema that the output follows: minor for an added field or enumeration value, patch for wording."
+    },
+    "command": {
+      "const": "remove"
+    },
+    "repo": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The main checkout; null outside a repository."
+    },
+    "trunk": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Trunk's branch name."
+    },
+    "token": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The token of the plan this run made; with --expect, the one it was held to."
+    },
+    "outcome": {
+      "enum": [
+        "removed",
+        "removedWithBranchProblem",
+        "refused",
+        "partial",
+        "interrupted"
+      ],
+      "description": "removed: the worktree is gone, or quarantined, and the branch step did what the plan said. removedWithBranchProblem: the worktree is gone and the branch was left as it was on purpose (it moved, is no longer merged, or a worktree took it); error says which. refused: nothing changed; problems says why. partial: something changed and a later step failed — a quarantine that stopped after writing recovery.json, the second move, or the branch step; the steps and quarantine say which, and restoreCommand undoes a quarantine. interrupted: a signal ended the run."
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "problems": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/problem"
+      },
+      "description": "For refused: why, as the plan names it, and planChanged for --expect."
+    },
+    "path": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "branch": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The branch the plan read; null when detached."
+    },
+    "tip": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40,64}$"
+        }
+      ]
+    },
+    "keepAs": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/step"
+      },
+      "description": "worktree, branch and superset, in that order."
+    },
+    "quarantine": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/quarantine"
+        }
+      ],
+      "description": "With --quarantine, once its recovery.json is written."
+    },
+    "restoreCommand": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      },
+      "description": "The argv that puts back what went: wt restore <dir> once a quarantine wrote its recovery.json, else git branch <name> <tip> for a deleted branch; null when nothing needs it."
+    },
+    "recovery": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "For interrupted: what wt printed."
+    }
+  },
+  "$defs": {
+    "sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40,64}$"
+    },
+    "problem": {
+      "type": "object",
+      "required": [
+        "code",
+        "message",
+        "force"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "dirty",
+            "statusUnknown",
+            "session",
+            "sessionsUnknown",
+            "lockHeld",
+            "operation",
+            "hiddenChanges",
+            "headUnreachable",
+            "reachUnknown",
+            "submoduleUnreachable",
+            "nestedWorktree",
+            "quarantineUnusable",
+            "planChanged"
+          ],
+          "description": "dirty: anything uncommitted, submodules included, or a submodule not at its recorded commit. statusUnknown: git status, the git dir or HEAD could not be read. session: a Claude session is in it, idle or busy. sessionsUnknown: claude agents failed. lockHeld: git's worktree lock, and its holder is still running. operation: a rebase, merge, cherry-pick, revert or bisect in progress. hiddenChanges: files git status is told not to look at. headUnreachable: HEAD holds commits no surviving ref or worktree would. reachUnknown: what would be lost could not be worked out. submoduleUnreachable: a submodule commit only this worktree's copy holds. nestedWorktree: another worktree is inside it. quarantineUnusable: the --quarantine folder exists, is on another volume, or is inside the repository. planChanged (result only): --expect named another plan. The codes shared with sweep-plan's kept mean the same there."
+        },
+        "message": {
+          "type": "string"
+        },
+        "force": {
+          "type": "boolean",
+          "description": "--force goes past it: somebody's claim on the checkout, not work that would be lost."
+        }
+      }
+    },
+    "step": {
+      "type": "object",
+      "required": [
+        "step",
+        "result",
+        "commit",
+        "reason"
+      ],
+      "properties": {
+        "step": {
+          "enum": [
+            "worktree",
+            "branch",
+            "superset"
+          ]
+        },
+        "result": {
+          "enum": [
+            "removed",
+            "quarantined",
+            "partlyMoved",
+            "kept",
+            "notRun",
+            "interrupted",
+            "deleted",
+            "renamed",
+            "untouched",
+            "failed",
+            "deregistered",
+            "notRegistered",
+            "skipped"
+          ],
+          "description": "worktree: removed, quarantined (both moves done), partlyMoved (the checkout moved, its admin dir not), kept (still there). branch: deleted, renamed (to keepAs), untouched, kept (turned down on purpose), failed (git failed). superset: deregistered, notRegistered, skipped, failed. Any: notRun (not reached), interrupted (a signal caught it and its state does not say it finished)."
+        },
+        "commit": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40,64}$"
+            }
+          ],
+          "description": "For branch: the tip the plan read."
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "quarantine": {
+      "type": "object",
+      "required": [
+        "dir",
+        "checkoutMoved",
+        "adminMoved",
+        "recoveryFile",
+        "steps"
+      ],
+      "properties": {
+        "dir": {
+          "type": "string"
+        },
+        "checkoutMoved": {
+          "type": "boolean"
+        },
+        "adminMoved": {
+          "type": "boolean"
+        },
+        "recoveryFile": {
+          "type": "string",
+          "description": "<dir>/recovery.json: see wt schema recovery."
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "state",
+              "error"
+            ],
+            "properties": {
+              "name": {
+                "enum": [
+                  "lock",
+                  "pin",
+                  "moveCheckout",
+                  "moveAdmin",
+                  "relink",
+                  "branch"
+                ]
+              },
+              "state": {
+                "enum": [
+                  "pending",
+                  "running",
+                  "done",
+                  "failed"
+                ]
+              },
+              "error": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "description": "The removal's steps as recovery.json records them; empty when it has none."
+        }
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "schemaVersion",
+    "command",
+    "repo",
+    "trunk",
+    "token",
+    "outcome",
+    "error",
+    "problems",
+    "path",
+    "branch",
+    "tip",
+    "keepAs",
+    "steps",
+    "quarantine",
+    "restoreCommand",
+    "recovery"
+  ]
+}
