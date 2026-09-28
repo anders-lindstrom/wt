@@ -6,6 +6,13 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-28 15:52 — Trunk is no longer the branch the main checkout is on
+
+- Without MAIN_BRANCH, trunk is origin/HEAD, else main, master, trunk,
+  development or develop (on origin first), and only then the checked-out
+  branch — which `wt config` and `wt doctor` now call a guess, and `wt init`
+  says it pins. A clone without origin/HEAD used to take its feature branch.
+
 ## 2026-09-28 15:25 — wt works in a repository nobody ran `wt init` in
 
 - With no bin/worktree config, every command runs on what `wt init --yes`

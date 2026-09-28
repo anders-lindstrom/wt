@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
 )
 
@@ -264,20 +265,58 @@ func gitDirOf(wtPath string) (string, error) {
 	return dir, nil
 }
 
-// DetectMainBranch reads origin/HEAD, falling back to the checked-out branch.
-// This replaces the old hardcoded "development" default, which was correct for
-// exactly one of the seven repositories.
-func (r *Repo) DetectMainBranch() string {
+// conventionalTrunks are the names a trunk goes by, in the order detection
+// prefers them.
+var conventionalTrunks = []string{"main", "master", "trunk", "development", "develop"}
+
+// DetectTrunk names the branch the repository most likely calls trunk, and
+// how it knows: origin/HEAD; else the first conventional name that exists
+// both here and on origin, then on origin alone, then here alone; else the
+// main checkout's branch, which is only a guess — a clone that never
+// recorded origin/HEAD often has its main checkout on a feature branch. It
+// runs on every command, so it reads local refs only and never asks origin.
+func (r *Repo) DetectTrunk() (string, config.TrunkSource) {
 	if branch, ok := r.OriginHead(); ok {
-		return branch
+		return branch, config.TrunkFromOriginHead
+	}
+	if branch, ok := r.conventionalTrunk(); ok {
+		return branch, config.TrunkConventional
 	}
 	// symbolic-ref, not rev-parse --abbrev-ref: the latter fails outright on a
 	// repository whose HEAD is unborn, which is exactly the state a freshly
 	// initialised repo is in.
 	if out, err := git.Run(r.MainRoot, "symbolic-ref", "--short", "HEAD"); err == nil && out != "" {
-		return out
+		return out, config.TrunkCurrentBranchGuess
 	}
-	return "main"
+	return "main", config.TrunkCurrentBranchGuess
+}
+
+// conventionalTrunk is the best of conventionalTrunks that exists, read with
+// one git process.
+func (r *Repo) conventionalTrunk() (string, bool) {
+	args := []string{"for-each-ref", "--format=%(refname)"}
+	for _, name := range conventionalTrunks {
+		args = append(args, "refs/heads/"+name, "refs/remotes/origin/"+name)
+	}
+	out, err := git.Run(r.MainRoot, args...)
+	if err != nil {
+		return "", false
+	}
+	refs := map[string]bool{}
+	for _, ref := range strings.Split(out, "\n") {
+		refs[ref] = true
+	}
+	local := func(name string) bool { return refs["refs/heads/"+name] }
+	remote := func(name string) bool { return refs["refs/remotes/origin/"+name] }
+	both := func(name string) bool { return local(name) && remote(name) }
+	for _, exists := range []func(string) bool{both, remote, local} {
+		for _, name := range conventionalTrunks {
+			if exists(name) {
+				return name, true
+			}
+		}
+	}
+	return "", false
 }
 
 // BranchAt reports the branch checked out at path, or "" when the worktree is

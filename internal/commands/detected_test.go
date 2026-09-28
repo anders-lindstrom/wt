@@ -44,7 +44,7 @@ func TestOpenRunsOnDetectedDefaultsWithoutAConfigFile(t *testing.T) {
 }
 
 // The detected configuration is exactly the one `wt init --yes` writes, bar
-// the flag saying no file holds it.
+// the flags saying no file holds it and where its trunk came from.
 func TestDetectedDefaultsAreWhatInitWrites(t *testing.T) {
 	main := unconfiguredRepo(t)
 	detected, err := Open(main)
@@ -62,7 +62,7 @@ func TestDetectedDefaultsAreWhatInitWrites(t *testing.T) {
 		t.Error("a written configuration still reads as detected")
 	}
 	got, want := *detected.Config, *written.Config
-	got.Detected, got.MainBranchSet = false, want.MainBranchSet
+	got.Detected, got.MainBranchSet, got.TrunkSource = false, want.MainBranchSet, want.TrunkSource
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("detected\n  %+v\nwritten\n  %+v", got, want)
 	}
@@ -234,13 +234,14 @@ func TestPlansOnDetectedDefaults(t *testing.T) {
 	}
 }
 
-// noConfiguration is left for a repository whose trunk could not be detected.
+// noConfiguration is left for a repository whose trunk could not be detected:
+// no origin, a detached checkout, and no branch with a conventional name.
 func TestPlanWhenDetectionFails(t *testing.T) {
 	main := unconfiguredRepo(t)
 	gitIn(t, main, "checkout", "-q", "--detach")
-	gitIn(t, main, "branch", "-m", "main", "trunk")
+	gitIn(t, main, "branch", "-m", "main", "release")
 	ctx := OpenLenient(main, &bytes.Buffer{})
-	p := newPlanOf(t, ctx, "fix/x", NewOptions{Base: "trunk"})
+	p := newPlanOf(t, ctx, "fix/x", NewOptions{Base: "release"})
 	if p.Configured || codes(p.Problems) != "noConfiguration" ||
 		!strings.Contains(p.Problems[0].Message, "trunk") {
 		t.Errorf("configured %v problems %+v", p.Configured, p.Problems)

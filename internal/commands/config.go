@@ -22,7 +22,7 @@ func Config(ctx *Context, shell bool, w io.Writer) error {
 		if c.Detected {
 			fmt.Fprintln(w, "configuration: detected (no config file; `wt init` writes one)")
 		}
-		fmt.Fprintf(w, "trunk:         %s\n", c.MainBranch)
+		fmt.Fprintf(w, "trunk:         %s%s\n", c.MainBranch, trunkSourceNote(c.TrunkSource))
 		fmt.Fprintf(w, "branch prefix: %s\n", c.BranchPrefix)
 		fmt.Fprintf(w, "default type:  %s\n", c.DefaultType)
 		suffix, origin := ctx.BranchSuffix()
@@ -64,6 +64,20 @@ func Config(ctx *Context, shell bool, w io.Writer) error {
 	fmt.Fprintf(w, "DEVELOPER_CONFIG_DIRS=(%s)\n", shellQuoteAll(c.DeveloperConfigDirs))
 	fmt.Fprintf(w, "DEVELOPER_CONFIG_FILES=(%s)\n", shellQuoteAll(c.DeveloperConfigFiles))
 	return nil
+}
+
+// trunkSourceNote is how `wt config` says where a trunk no file named came
+// from; the --json outputs say it as trunkSource.
+func trunkSourceNote(source config.TrunkSource) string {
+	switch source {
+	case config.TrunkFromOriginHead:
+		return " (from origin/HEAD)"
+	case config.TrunkConventional:
+		return " (the conventional trunk name that exists)"
+	case config.TrunkCurrentBranchGuess:
+		return " (guessed from the checked-out branch; `wt init` pins it)"
+	}
+	return ""
 }
 
 // typeNamePairs is this repository's resolved naming as the configuration
