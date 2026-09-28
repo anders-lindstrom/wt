@@ -44,6 +44,7 @@ Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 | `sweep` | 1.2.0 | `superset` on each item: what came of a removed worktree's Superset workspace |
 | `remove-plan`, `remove` | 1.0.0 | `wt remove <work> --dry-run --json`, the plan, and `--yes --json`, the result |
 | `checkout-plan`, `checkout` | 1.1.0 | `source`, `remote`, `remoteRef` (and `remoteCommit` in the plan, `upstream` in the result): a branch created from a remote-tracking ref; problems `branchAmbiguous`, `remoteBranchMissing` |
+| `new-plan` 1.1.0, `checkout-plan` 1.2.0, `status` 1.3.0 | | a repository with no configuration file runs on detected defaults: `configured` false with no problem; `noConfiguration` only when no trunk can be detected either |
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
 
@@ -130,7 +131,7 @@ repository.
 | `trunkTip` | string \| null | its commit |
 | `trunkRefUpdatedAt` | string \| null | when that ref last moved, from its own reflog (RFC 3339, UTC); null without a reflog. Not FETCH_HEAD's time, which any fetch sets |
 | `trunkSync` | object | what `wt up` would do to local `<trunk>` after its fetch, judged against `trunkTip` (see [`trunkSync`](#trunksync--local-trunk)); `fastForwarded` is always false here, and `skippedReason` null means a run would fast-forward it (or there is nothing to do) |
-| `configured` | bool | the repository has a wt configuration that parses |
+| `configured` | bool | the repository has a wt configuration file that parses. False also on **detected defaults**: no file, and wt runs on what `wt init --yes` would write, with no problem named (since 1.3.0; before, that repository was `noConfiguration`) |
 | `worktree` | object \| null | the worktree named; null when it cannot be found |
 | `worktree.work` | string | its work name, as `wt list` prints it |
 | `worktree.branch` | string | `""` when detached |
@@ -139,7 +140,7 @@ repository.
 | `worktree.state` | `clean` \| `dirty` \| `unreadable` | the checkout: `clean` is nothing uncommitted |
 | `worktree.behind`, `worktree.ahead` | int \| null | commits against `trunkRef` (the local trunk when that is not here); null when they cannot be counted |
 | `upEligible` | bool | `wt up` would start on it. Dirt, conflicts and busy sessions are **not** checked here: `wt up` checks them and its result says so |
-| `upIneligibleCode` | string \| null | `mainCheckout`, `noConfiguration`, `configurationInvalid`, `detachedHead`, `onTrunk`, `handedOver` (an earlier `wt sync` run waits on a person there), `notAWorktree` |
+| `upIneligibleCode` | string \| null | `mainCheckout`, `noConfiguration` (no configuration file, and no trunk to detect either), `configurationInvalid`, `detachedHead`, `onTrunk`, `handedOver` (an earlier `wt sync` run waits on a person there), `notAWorktree` |
 | `upIneligibleReason` | string \| null | the same as a sentence |
 | `stack` | array | every worktree `wt up` would move, parents first, from local refs as of now; just the one when it has no stack |
 | `stack[].work`, `.branch`, `.path` | string | |
@@ -682,7 +683,7 @@ The provisioning flags (`--no-setup`, `--no-build`, `--no-superset`) change
 | `schemaVersion` | string | the full version, `1.<minor>.<patch>` |
 | `command` | `"new"` | |
 | `token` | string \| null | names the inputs of this plan; pass it to `wt new --json --expect`. Null when there is a problem |
-| `configured` | bool | the repository has a wt configuration that parses |
+| `configured` | bool | the repository has a wt configuration file that parses. False also on **detected defaults**: no file, and wt runs on what `wt init --yes` would write, with no problem named (since `new-plan` 1.1.0, `checkout-plan` 1.2.0; before, that repository was `noConfiguration`) |
 | `types` | array of string | the worktree types the repository declares |
 | `defaultType` | string \| null | the type a bare work name takes |
 | `type`, `work` | string \| null | as parsed from the argument; null when it does not parse |
@@ -697,7 +698,8 @@ The provisioning flags (`--no-setup`, `--no-build`, `--no-superset`) change
 | `problems[].message` | string | the same as a sentence, as wt would print it |
 
 `problems[].code`: `branchExists`, `pathExists`, `unknownType`, `invalidName`
-(`.`, `/`, too many slashes, a branch name git refuses, nothing derivable), `noConfiguration`,
+(`.`, `/`, too many slashes, a branch name git refuses, nothing derivable), `noConfiguration`
+(no configuration file, and no trunk wt can detect: `wt init` names one),
 `configurationInvalid`, `branchMissing` and `branchCheckedOut` (checkout only:
 git gives a branch one worktree), `baseMissing`.
 

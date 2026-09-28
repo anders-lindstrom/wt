@@ -40,6 +40,9 @@ type Config struct {
 	// rather than left at its default, which is what `wt config` reports as
 	// the value's origin.
 	SupersetRegisterSet bool
+	// Detected says the repository has no configuration file and these are
+	// the values `wt init --yes` would write, held in memory only.
+	Detected bool
 }
 
 // The keys a repository may set. They are named constants because `wt init`

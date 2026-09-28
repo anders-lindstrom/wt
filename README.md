@@ -52,6 +52,17 @@ written without asking — so a script, a hook or an agent gets the same result
 without hanging on a prompt. `--force` replaces a configuration already there;
 without it, an existing file is an error rather than something to overwrite.
 
+A repository with **no configuration** works too: every command runs on what
+`wt init --yes` would write — trunk from origin's HEAD, the default prefix,
+no build command — detected on each run and never written to the repository.
+That is what lets a harness make worktrees in a clone nobody set up (the Claude
+Code hooks, for one). `wt new` says so in one line on stderr, `wt config` shows
+the values as `detected`, and `wt doctor` notes it without counting it as a
+problem. Nothing that runs code is detected: only a `bin/worktree/provision.sh`
+the repository itself carries runs. When not even trunk can be detected —
+no origin HEAD, and a checkout on no branch with commits — commands stop and
+say so, and `wt init` is where you name it.
+
 If the config lands somewhere git ignores — a repo ignoring `bin/` for its
 build output also ignores `bin/worktree/` — `wt init` says so, because that
 configuration would work for you and for nobody who clones the repo.
@@ -117,7 +128,7 @@ examples: `wt <command> --help`.
 
 | | |
 |---|---|
-| `wt init` | create this repository's `worktree.conf` (`--yes` to skip the prompts, `--force`/`-f` to replace one) |
+| `wt init` | create this repository's `worktree.conf`, pinning what wt otherwise detects on each run (`--yes` to skip the prompts, `--force`/`-f` to replace one) |
 | `wt config [--shell]` | the resolved configuration, typed or eval-able |
 | `wt config get`/`set`/`unset`/`path` | your own settings, per machine, from anywhere |
 | `wt doctor` | check config, required tools and worktree health, and your roots and profiles; `--all`, `--roots`, `--profile` check every repository, wt sync doctor included where it is set up |

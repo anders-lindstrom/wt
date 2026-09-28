@@ -23,7 +23,8 @@ func newRootCmd() *cobra.Command {
 		Use:   "wt",
 		Short: "Git worktree tooling: one implementation, per-repo configuration",
 		Long: "wt manages git worktrees from a single implementation, reading each\n" +
-			"repository's own bin/worktree/worktree.conf for how that repo works.\n" +
+			"repository's own bin/worktree/worktree.conf for how that repo works,\n" +
+			"or, in one without it, what `wt init` would detect.\n" +
 			"\n" +
 			"The day goes look, work, tidy:\n" +
 			"  look    wt list, wt status, wt sync    what exists, and how it stands\n" +

@@ -175,10 +175,10 @@ func (p *CreatePlan) problem(code, format string, args ...any) {
 func basePlan(ctx *Context, command string, opts NewOptions) CreatePlan {
 	p := CreatePlan{Schema: 1, SchemaVersion: schema.VersionOf(command + "-plan"), Command: command,
 		Types: append([]string{}, ctx.Config.Types...), DefaultType: strp(ctx.Config.DefaultType),
-		Configured: ctx.ConfigError == nil, Problems: []Problem{}}
+		Configured: ctx.configured(), Problems: []Problem{}}
 	switch {
 	case errors.Is(ctx.ConfigError, config.ErrNoConfig):
-		p.problem(ProblemNoConfiguration, "no wt configuration (bin/worktree/worktree.conf); wt init sets it up")
+		p.problem(ProblemNoConfiguration, "%s", oneLine(ctx.ConfigError.Error()))
 	case ctx.ConfigError != nil:
 		p.problem(ProblemConfigInvalid, "the wt configuration does not parse: %s", oneLine(ctx.ConfigError.Error()))
 	}

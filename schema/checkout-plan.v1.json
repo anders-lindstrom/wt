@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/checkout-plan.v1.json",
-  "x-version": "1.1.0",
+  "x-version": "1.2.0",
   "title": "wt checkout --dry-run --json",
   "description": "What `wt checkout` would create, from local state alone — remote-tracking refs as last fetched; it writes nothing and fetches nothing. Printed by `wt checkout <branch>|<remote>/<branch> [<work>] --dry-run --json` as the only thing on stdout. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
@@ -49,7 +49,7 @@
     },
     "configured": {
       "type": "boolean",
-      "description": "The repository has a wt configuration that parses."
+      "description": "A wt configuration file that parses. Since 1.2.0, false also for a repository with no file, which runs on detected defaults (what `wt init --yes` would write) with no problem named; before, that repository had no configuration at all."
     },
     "types": {
       "type": "array",
@@ -175,7 +175,7 @@
             "branchAmbiguous",
             "remoteBranchMissing"
           ],
-          "description": "branchExists (also: a branch to create from a remote exists locally), pathExists, unknownType, invalidName, noConfiguration, configurationInvalid, branchMissing (not local, and no remote has it), branchCheckedOut (git gives a branch one worktree), baseMissing, branchAmbiguous (since 1.1.0: a bare name several remotes have, none of them checkout.defaultRemote), remoteBranchMissing (since 1.1.0: <remote>/<branch> that remote does not have as last fetched)."
+          "description": "branchExists (also: a branch to create from a remote exists locally), pathExists, unknownType, invalidName, noConfiguration (since 1.2.0 only when there is no file and no trunk to detect either), configurationInvalid, branchMissing (not local, and no remote has it), branchCheckedOut (git gives a branch one worktree), baseMissing, branchAmbiguous (since 1.1.0: a bare name several remotes have, none of them checkout.defaultRemote), remoteBranchMissing (since 1.1.0: <remote>/<branch> that remote does not have as last fetched)."
         },
         "message": {
           "type": "string",

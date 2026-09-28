@@ -48,10 +48,7 @@ func Init(r *repo.Repo, opts InitOptions, w io.Writer) error {
 		}
 	}
 
-	answers := Answers{
-		MainBranch:   r.DetectMainBranch(),
-		BranchPrefix: "feat_wt",
-	}
+	answers := detectAnswers(r.DetectMainBranch())
 
 	cfg, err := resolve(answers)
 	var asked Answers
@@ -98,6 +95,50 @@ func Init(r *repo.Repo, opts InitOptions, w io.Writer) error {
 	fmt.Fprintln(w, "Next: wt doctor")
 	return nil
 }
+
+// detectAnswers is what `wt init` offers, and writes when nobody answers:
+// trunk as detected, the default prefix, and no build command. A repository
+// with no configuration runs on the same answers, so the two cannot differ.
+func detectAnswers(trunk string) Answers {
+	return Answers{MainBranch: trunk, BranchPrefix: "feat_wt"}
+}
+
+// detectedConfig is the configuration a repository with no file runs on:
+// detectAnswers resolved, in memory, nothing written. No build command is
+// detected, so nothing runs that the repository did not put there itself.
+//
+// A trunk that names nothing — the checkout's unborn branch, or an origin/HEAD
+// never fetched — is not a detection but a guess, and a guess is refused with
+// ErrNoConfig: `wt init` is where a person names it.
+func detectedConfig(r *repo.Repo, trunk string) (*config.Config, error) {
+	if !r.BranchExists(trunk) {
+		if _, ok := r.ResolveRef("refs/remotes/origin/" + trunk); !ok {
+			why := fmt.Sprintf("%s has no commits and origin/HEAD is not set", trunk)
+			if head, ok := r.OriginHead(); ok {
+				why = fmt.Sprintf("origin/HEAD names %s, which is not fetched", head)
+			}
+			return nil, undetectedError{why}
+		}
+	}
+	c, err := resolve(detectAnswers(trunk))
+	if err != nil {
+		return nil, err
+	}
+	// The trunk is still only detected: nothing a person wrote says so.
+	c.MainBranchSet, c.Detected = false, true
+	return c, nil
+}
+
+// undetectedError is a repository with no configuration whose trunk could not
+// be detected either. It is ErrNoConfig, with what was missing.
+type undetectedError struct{ why string }
+
+func (e undetectedError) Error() string {
+	return "no bin/worktree/worktree.conf or worktree.toml, and no trunk to " +
+		"detect (" + e.why + ") — run `wt init` to create one"
+}
+
+func (e undetectedError) Unwrap() error { return config.ErrNoConfig }
 
 // ignoreRule returns the .gitignore rule excluding path, or "" when git would
 // track it. A repository that ignores its whole bin/ directory for build
