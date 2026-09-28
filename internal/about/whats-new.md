@@ -6,6 +6,14 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-28 13:21 — wt checkout takes a branch that is only on a remote
+
+- `wt checkout origin/topic`, or a bare `wt checkout topic` when no local
+  branch has the name and one remote does, creates the local branch at the
+  remote-tracking commit, tracking it, then the worktree. Nothing is
+  fetched; several remotes having it is refused unless checkout.defaultRemote.
+- JSON: checkout-plan, checkout 1.1.0 (`source`, `remote`, `remoteRef`).
+
 ## 2026-09-28 10:16 — wt remove speaks JSON, and holds to its plan
 
 - `wt remove <work> --dry-run --json` prints the plan: HEAD, where the branch

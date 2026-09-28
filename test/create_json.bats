@@ -51,6 +51,22 @@ token_of() {
     [ ! -e "$BATS_TEST_TMPDIR/demo_wt/feat_wt/release-2.1" ]
 }
 
+@test "wt checkout of a branch only a remote has creates it tracking the remote" {
+    cd "$REPO"
+    git remote add origin "$REPO"
+    git branch release-2.1
+    git fetch -q origin
+    git branch -q -D release-2.1
+    token=$(wt checkout release-2.1 --dry-run --json | token_of)
+    [ -n "$token" ]
+    run --separate-stderr wt checkout release-2.1 --json --expect "$token" --no-setup
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"outcome": "created"'* ]]
+    [[ "$output" == *'"source": "remote"'* ]]
+    [ "$(git rev-parse --symbolic-full-name 'release-2.1@{upstream}')" = refs/remotes/origin/release-2.1 ]
+    [ -d "$BATS_TEST_TMPDIR/demo_wt/feat_wt/release-2.1" ]
+}
+
 @test "a SIGTERM during wt new --json writes the one object, stops the script, exits 130" {
     printf '#!/bin/sh\nsleep 300 &\necho $! > "%s/sleeper"\ntouch "%s/started"\nwait\n' "$BATS_TEST_TMPDIR" "$BATS_TEST_TMPDIR" > "$REPO/bin/worktree/provision.sh"
     chmod +x "$REPO/bin/worktree/provision.sh"

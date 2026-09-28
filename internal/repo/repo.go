@@ -5,6 +5,7 @@ package repo
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -600,6 +601,59 @@ func (r *Repo) AddExistingWorktree(path, branch string) error {
 	}
 	_, err := git.Run(r.MainRoot, "worktree", "add", path, branch)
 	return err
+}
+
+// ErrBranchExists is CreateTrackingBranch finding the branch already there.
+var ErrBranchExists = errors.New("branch exists")
+
+// CreateTrackingBranch makes branch at commit, its upstream merge (a
+// refs/heads/ name) on remote. It never moves a branch that is there: the
+// ref is created only if it does not exist, and one that does fails with
+// ErrBranchExists, nothing changed. The upstream is written as config, not
+// through git branch --set-upstream-to, which refuses a remote-tracking ref
+// two remotes' refspecs both map to (remotes team and team/origin).
+func (r *Repo) CreateTrackingBranch(branch, commit, remote, merge string) error {
+	ref := "refs/heads/" + branch
+	if _, err := git.Run(r.MainRoot, "update-ref", "-m", "wt checkout: from "+remote, ref, commit, ""); err != nil {
+		if r.BranchExists(branch) {
+			return fmt.Errorf("%w: %s", ErrBranchExists, branch)
+		}
+		return err
+	}
+	if _, err := git.Run(r.MainRoot, "config", "branch."+branch+".remote", remote); err != nil {
+		return err
+	}
+	_, err := git.Run(r.MainRoot, "config", "branch."+branch+".merge", merge)
+	return err
+}
+
+// Upstream is the full name of branch's upstream ref, "" when it has none.
+func (r *Repo) Upstream(branch string) string {
+	out, _ := git.Run(r.MainRoot, "for-each-ref", "--format=%(upstream)", "refs/heads/"+branch)
+	return strings.TrimSpace(out)
+}
+
+// Remotes names the configured remotes.
+func (r *Repo) Remotes() ([]string, error) {
+	return git.Lines(r.MainRoot, "remote")
+}
+
+// RemoteTrackingRefs maps every ref under refs/remotes/ to its commit, as
+// the last fetch left them. A symbolic ref, such as refs/remotes/origin/HEAD,
+// names another ref rather than a branch and is left out.
+func (r *Repo) RemoteTrackingRefs() (map[string]string, error) {
+	lines, err := git.Lines(r.MainRoot, "for-each-ref", "--format=%(refname)%00%(objectname)%00%(symref)", "refs/remotes/")
+	if err != nil {
+		return nil, err
+	}
+	refs := map[string]string{}
+	for _, line := range lines {
+		f := strings.Split(line, "\x00")
+		if len(f) == 3 && f[2] == "" {
+			refs[f[0]] = f[1]
+		}
+	}
+	return refs, nil
 }
 
 // AddDetachedWorktree puts a worktree at path with HEAD detached at ref and

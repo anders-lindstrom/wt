@@ -66,7 +66,7 @@ examples: `wt <command> --help`.
 | | |
 |---|---|
 | `wt new <type>/<work>` | create a branch and worktree, then provision it (`--base`, `--no-setup`, `--no-build`, `--no-superset`, `--dry-run`) |
-| `wt checkout <branch> [<work>]` | put a worktree on a branch that already exists; also `wt co` (`--dry-run`) |
+| `wt checkout <branch> [<work>]` | put a worktree on a branch that already exists; `<remote>/<branch>`, or a bare name only one remote has, creates the local branch tracking it, from the refs as last fetched; also `wt co` (`--dry-run`) |
 | `wt pr checkout [<number>]` | put a worktree on a pull request; with no number, pick one from the open ones, your review queue first |
 | `wt pr list` | every open pull request, its state and checks, and the worktree on it |
 | `wt pr open [<work>]` | open a worktree's pull request in the browser; with no argument, the one you are in |

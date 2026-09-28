@@ -48,11 +48,16 @@ func newJSON(t *testing.T, ctx *Context, spec string, opts NewOptions, expect st
 	return decodeCreate(t, "new", out.Bytes()), human.String(), err
 }
 
-func checkoutJSON(t *testing.T, ctx *Context, branch, work string, opts NewOptions, expect string) (CreateResult, error) {
+func checkoutJSON(t *testing.T, ctx *Context, branch, work string, opts NewOptions, expect string) (CheckoutResult, error) {
 	t.Helper()
 	var out, human bytes.Buffer
 	err := CheckoutJSON(ctx, branch, work, opts, expect, NewCreateJournal(&out, "checkout"), &human)
-	return decodeCreate(t, "checkout", out.Bytes()), err
+	validateJSON(t, "checkout", out.Bytes())
+	var r CheckoutResult
+	if err := json.Unmarshal(out.Bytes(), &r); err != nil {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+	return r, err
 }
 
 func decodeCreate(t *testing.T, name string, out []byte) CreateResult {
@@ -263,11 +268,11 @@ func TestCheckoutExpectRefusesAMovedBranch(t *testing.T) {
 	if err != nil || r.Outcome != CreateCreated {
 		t.Fatalf("err %v result %+v", err, r)
 	}
-	if b := stepOf(r, "branch"); b.Result != StepUntouched || *b.Commit != *p.BranchCommit {
+	if b := stepOf(r.CreateResult, "branch"); b.Result != StepUntouched || *b.Commit != *p.BranchCommit {
 		t.Errorf("branch step %+v", b)
 	}
 	for _, name := range []string{"config", "provision", "submodules", "build", "superset"} {
-		if s := stepOf(r, name); s.Result != StepSkipped {
+		if s := stepOf(r.CreateResult, name); s.Result != StepSkipped {
 			t.Errorf("--no-setup: %s is %s", name, s.Result)
 		}
 	}
