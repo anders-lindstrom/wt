@@ -1,7 +1,7 @@
 # wt's JSON output
 
 `wt status`, `wt up`, `wt sweep`, `wt sync` and its verbs, `wt new`,
-`wt checkout`, `wt remove` and `wt restore` print JSON on stdout when given `--json`, for
+`wt checkout`, `wt remove`, `wt restore` and `wt quarantine purge` print JSON on stdout when given `--json`, for
 tools that drive wt (a git client, an editor, a script). Their human output is
 unchanged without it. A quarantine's `recovery.json` is JSON with a schema too.
 
@@ -46,6 +46,9 @@ Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 | `checkout-plan`, `checkout` | 1.1.0 | `source`, `remote`, `remoteRef` (and `remoteCommit` in the plan, `upstream` in the result): a branch created from a remote-tracking ref; problems `branchAmbiguous`, `remoteBranchMissing` |
 | `new-plan` 1.1.0, `checkout-plan` 1.2.0, `status` 1.3.0 | | a repository with no configuration file runs on detected defaults: `configured` false with no problem; `noConfiguration` only when no trunk can be detected either |
 | `recovery` | 1.1.0 | `restore.createdBranch`: this restore made the branch again, so a run after a failed one finishes its config |
+| `quarantine-purge-plan`, `quarantine-purge` | 1.0.0 | `wt quarantine purge <dir> --json`, the plan, and `--yes --json`, the result |
+| `recovery` | 1.2.0 | `purge`: the journal of `wt quarantine purge`, in `recovery.purging.json`, which replaces `recovery.json` before anything is deleted |
+| `restore-plan` | 1.1.0 | the problem `purging`: a purge began, so the restore refuses |
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
 
@@ -101,6 +104,8 @@ generating types from it:
 | `wt restore --json` | [`schema/restore.v1.json`](../schema/restore.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/restore.v1.json` |
 | `wt remove --dry-run --json` | [`schema/remove-plan.v1.json`](../schema/remove-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/remove-plan.v1.json` |
 | `wt remove --yes --json` | [`schema/remove.v1.json`](../schema/remove.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/remove.v1.json` |
+| `wt quarantine purge --dry-run --json` | [`schema/quarantine-purge-plan.v1.json`](../schema/quarantine-purge-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/quarantine-purge-plan.v1.json` |
+| `wt quarantine purge --yes --json` | [`schema/quarantine-purge.v1.json`](../schema/quarantine-purge.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/quarantine-purge.v1.json` |
 
 They are built into the binary: `wt schema` lists them and `wt schema up` prints
 one, so the schema you read is the one for the wt you run. Validate against that
@@ -431,7 +436,8 @@ the sweep refuses before touching anything (`error` set). Each worktree goes int
 `wt remove <work> --quarantine <dir>` (and `wt sweep --quarantine`, per
 worktree) moves the worktree aside instead of deleting it. `<dir>` is a new
 folder the caller names, on the worktree's volume and outside every checkout of
-the repository and its git dir; it is made with `mkdir`, not `mkdir -p`, and a
+the repository, its git dir and every other quarantine (a purge of that one would
+take it along); it is made with `mkdir`, not `mkdir -p`, and a
 folder that exists refuses the removal, as does one inside the repository or a
 checkout or admin dir on another volume: every move is a rename. After its last
 check the
@@ -455,8 +461,9 @@ rename, folder fsync) before anything changes and before and after each step:
    deleted or renamed as the plan says.
 
 A file written after the last check moves with the checkout. Nothing is deleted:
-emptying the folder is the user's own act. The pins go when the restore is done,
-or at the next `wt sweep` once the folder has been deleted (its parent still
+emptying the folder is the user's own act, or `wt quarantine purge <dir>`'s. The
+pins go when the restore is done, with the purge, or at the next `wt sweep` once
+the folder has been deleted (its parent still
 there: a folder on a volume that is not mounted keeps them).
 
 | Field | Type | Meaning |
@@ -474,6 +481,7 @@ there: a folder on a volume that is not mounted keeps them).
 | `branch` | object \| null | null for a detached HEAD; else `name`, `tip`, `plan` (`delete`, `keep`, `none`), `keepAs`, `config` (`[{key, value}]`, every value in order; null until captured) and `result` (`deleted`, `renamed`, `untouched`, `kept` — turned down on purpose — or `failed`; null before the step) |
 | `steps` | array | `{name, state, error}` for `lock`, `pin`, `moveCheckout`, `moveAdmin`, `relink`, `branch`, in order |
 | `restore` | object \| null | the restore's own journal: `action`, `occupiedBy`, `createdBranch` (this restore made the branch again; absent before 1.1.0) and its `steps` (`branch`, `moveAdmin`, `relink`, `moveCheckout`, `unlock`, `unpin`); null until `wt restore` changes something |
+| `purge` | object \| null | `{startedAt}`, only in `recovery.purging.json`: the copy of the record `wt quarantine purge` writes, and which replaces `recovery.json`, before it deletes anything. With no `recovery.json` no `wt restore` — of any version — restores it (`purging`). Absent before 1.2.0 |
 
 The step lists and the states are **closed**, unlike the enumerations elsewhere:
 wt refuses a record whose steps are not exactly these, in this order, so another
@@ -506,7 +514,7 @@ what happens to the branch, and every reason it would refuse.
 | `branch` | object \| null | `name`, `tip`, `keepAs`, `removal` (the removal's `branch.result`), `action` and `occupiedBy` |
 | `locked` | bool | the worktree carries this quarantine's lock, which comes off last |
 | `orphan` | string \| null | a worktree locked for `<dir>` with no `recovery.json`: restoring it is unlocking it |
-| `problems` | array | `{code, text}`: `noRecord`, `repository`, `checkoutTaken`, `checkoutMissing`, `adminTaken`, `adminMissing`, `volume`, `commitMissing`, `worktreesUnknown` |
+| `problems` | array | `{code, text}`: `noRecord`, `repository`, `checkoutTaken`, `checkoutMissing`, `adminTaken`, `adminMissing`, `volume`, `commitMissing`, `worktreesUnknown`, `purging` (a purge began: its pins may be gone) |
 | `error` | string \| null | the problems in words |
 
 `branch.action`, exhaustively, decided in this order:
@@ -554,6 +562,92 @@ object too.
 | `checkout`, `admin`, `branch` | | as in the plan, read when the object is written |
 | `unlocked` | bool | this run took the quarantine's lock off |
 | `steps` | array | the restore's steps from `recovery.json`; empty when it has none |
+| `recovery` | string \| null | for `interrupted`: what wt printed |
+
+## `wt quarantine purge <dir> --dry-run --json` — the plan
+
+What `wt quarantine purge <dir>` would delete, for good, and every reason it
+would refuse, deleting nothing. `--json` without `--yes` prints it too.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `schema`, `schemaVersion` | | |
+| `command` | `"quarantine purge"` | |
+| `dir` | string | the folder, absolute |
+| `repo` | string \| null | from `recovery.json` |
+| `state` | string \| null | `quarantined`, `restored`, `purging`, `empty` or `unsettled`; null when the folder is not a quarantine purge can read |
+| `token` | string \| null | names this plan: the folder by path and identity, its state, its record byte for byte, its entries, every path in it with its type, size and time, each pin and where it is, what would be lost; null when it would refuse |
+| `worktree`, `branch`, `createdAt` | string \| null | where the checkout was, its branch, when it was quarantined |
+| `entries` | array of string | every name in the folder, sorted; all of it goes |
+| `bytes` | integer \| null | the size of its files, symlinks not followed; null when something cannot be read |
+| `pins` | array | `{name, ref, oid}` for `head`, `tip`, `dir` as `recovery.json` names them; `oid` null when the pin is gone already |
+| `unreachable` | array | `{kind, oid, count}`: a pinned commit (`head` or `tip`) whose `count` commits nothing else holds, which gc may take once the pins go |
+| `reachError` | string \| null | why that could not be counted |
+| `repositoryGone` | bool | the recorded git dir is gone: deleted, its pins went with it; moved, they stay there until `wt sweep` in it drops them. The purge goes ahead on the record's own checks, every pin listed with `oid` null |
+| `problems` | array | `{code, text}`, below |
+| `error` | string \| null | the problems in words |
+
+`state`:
+
+| Value | Meaning | The purge |
+|---|---|---|
+| `quarantined` | a removal moved a worktree here and finished (a `failed` branch step counts: the branch stayed) | deletes the pins, then the folder: the worktree is gone for good |
+| `restored` | `wt restore` put it back | deletes what is left: the folder (`recovery.json`) and any pin |
+| `purging` | a purge began and stopped: `recovery.purging.json` is there | finishes it |
+| `empty` | an empty folder: nothing names what it was (a purge stopped between deleting its journal and the folder leaves one) | refuses (`empty`); `rmdir` takes it |
+| `unsettled` | a removal or a restore stopped mid-way | refuses: `wt restore <dir>` settles it |
+
+It refuses, deleting nothing, on any problem:
+
+| Code | When |
+|---|---|
+| `missing` | no such folder (a purge that finished leaves none) |
+| `notAFolder` | `<dir>` is a symlink or a file |
+| `noRecord` | no `recovery.json` (nor `recovery.purging.json`) in a folder that is not empty, or one wt cannot trust |
+| `wrongFolder` | the record was written for another folder, names places that are not this folder's `checkout` and `admin`, or what is at `checkout` or `admin` is not the directory the removal moved there (by device and inode) |
+| `repository` | its repository cannot be opened, or has another git dir now |
+| `pinsForeign` | a pin it names is not under this quarantine's `refs/wt-quarantine/<id>-<hash>/`, or holds something the removal did not pin |
+| `pinsUnreadable` | git cannot read a pin (a broken ref): not taken for one that is gone |
+| `unsettled` | a removal or a restore stopped mid-way |
+| `worktreesUnknown` | the worktrees cannot be listed |
+| `registered` | git has a worktree registered inside the folder — compared by the directories paths lead to, not by spelling |
+| `locked` | a worktree carries this quarantine's lock (`wt quarantine <dir>`) |
+| `location` | the folder is inside a checkout or the git dir, or holds the git dir |
+| `foreignEntry` | something at its top level a quarantine in its state never leaves there: only `checkout` and `admin` (while quarantined or purging), the journal and its temp file, and `.DS_Store` are |
+| `nestedQuarantine` | another quarantine's record (one that validates, not a project file of that name) anywhere below its top level |
+| `empty` | an empty folder |
+
+## `wt quarantine purge <dir> --yes --json` — the result
+
+The purge holds a lock on the folder that `wt restore` takes too, reads the
+plan again under it and goes ahead only while it is the same (else `planChanged`,
+nothing deleted). Then, in this order: `recovery.purging.json` — the record with
+`purge.startedAt` — replaces `recovery.json`, so no `wt restore` takes a worktree
+whose pins are going; each pin is deleted only while it is at the `oid` read;
+git's worktrees are read once more; every entry the plan listed is deleted —
+`checkout`, then `admin`, then the rest by name — and one that appeared since
+stops it; then `recovery.purging.json`, then the folder.
+Every deletion is made inside the folder as opened and checked, never through its
+path again, never following a symlink, making a read-only folder writable first.
+A purge stopped anywhere but between its last two steps leaves its journal, and
+running it again finishes it; stopped there, it leaves an empty folder, its pins
+already gone, which it then refuses (`empty`).
+
+Inside the checkout it deletes as `rm -rf` would: into a volume mounted there,
+and not past a file flagged immutable (`partial`). The record is trusted as wt
+wrote it: a forged one naming this folder, its inodes and its pins passes, and is
+not a boundary — whoever can write the folder can delete it.
+The human output goes to stderr; a handled SIGINT or SIGTERM writes the object
+too.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `schema`, `schemaVersion`, `command`, `dir`, `repo`, `state`, `token` | | as in the plan it went by |
+| `outcome` | `purged` \| `refused` \| `partial` \| `interrupted` | purged: every pin and the folder are gone. refused: nothing was deleted. partial: it began and stopped; run it again. interrupted: a signal |
+| `error` | string \| null | |
+| `problems` | array | as in the plan, plus `planChanged`: `--expect` named another plan, or the plan changed while the question was open or before the lock was taken |
+| `pins` | array | `{name, ref, oid, result}`: `oid` as planned; `result` `deleted`, `absent` (gone already) or `kept` (still there, or unreadable), read when the object is written |
+| `folderDeleted` | bool | the folder is gone |
 | `recovery` | string \| null | for `interrupted`: what wt printed |
 
 ## `wt sync --json` — the overview

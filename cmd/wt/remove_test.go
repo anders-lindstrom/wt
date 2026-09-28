@@ -50,3 +50,17 @@ func TestRemoveRefusesAnEmptyExpect(t *testing.T) {
 		t.Fatalf("want a refusal naming --expect, got %v", err)
 	}
 }
+
+// --expect without --yes --json, or with no token, is refused before
+// anything is read.
+func TestQuarantinePurgeRefusesAnExpectItCannotHold(t *testing.T) {
+	for _, args := range [][]string{
+		{"quarantine", "purge", "../trash/lc", "--yes", "--json", "--expect", ""},
+		{"quarantine", "purge", "../trash/lc", "--json", "--expect", "1:0123abcd"},
+		{"quarantine", "purge", "../trash/lc", "--yes", "--expect", "1:0123abcd"},
+	} {
+		if _, err := runCmd(t, args...); err == nil || !strings.Contains(err.Error(), "--expect") {
+			t.Errorf("%v: want a refusal naming --expect, got %v", args, err)
+		}
+	}
+}

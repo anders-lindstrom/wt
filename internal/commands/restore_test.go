@@ -786,3 +786,18 @@ func TestRestoreKeepsABranchItMadeAcrossTwoFailures(t *testing.T) {
 		t.Errorf("config:\n%s\nwant:\n%s", got, want)
 	}
 }
+
+// A quarantine lock whose folder is gone too is still taken off.
+func TestRestoreUnlocksAnOrphanWhoseFolderIsGone(t *testing.T) {
+	ctx, path := safetyWorktree(t, "fix/orphan-gone")
+	dir := trashFor(t, ctx)
+	gitIn(t, ctx.Repo.MainRoot, "worktree", "lock", "--reason", quarantine.LockReason(dir), path)
+	res := restore(t, ctx, dir)
+	if res.Outcome != quarantine.OutcomeRestored {
+		t.Errorf("result %+v", res)
+	}
+	list, _ := ctx.Repo.Worktrees()
+	if wt, _ := list.ByPath(path); wt.Locked {
+		t.Error("the lock must be gone")
+	}
+}

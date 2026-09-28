@@ -1,0 +1,235 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/quarantine-purge-plan.v1.json",
+  "x-version": "1.0.0",
+  "title": "wt quarantine purge <dir> --dry-run --json",
+  "description": "What `wt quarantine purge <dir>` would delete, and every reason it would refuse, deleting nothing. Printed by `wt quarantine purge <dir> --dry-run --json` (or `--json` without `--yes`) as the only thing on stdout. `token` holds a later `--yes --json --expect <token>` to exactly this plan. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
+  "type": "object",
+  "required": [
+    "schema",
+    "schemaVersion",
+    "command",
+    "dir",
+    "repo",
+    "state",
+    "token",
+    "worktree",
+    "branch",
+    "createdAt",
+    "entries",
+    "bytes",
+    "pins",
+    "unreachable",
+    "reachError",
+    "repositoryGone",
+    "problems",
+    "error"
+  ],
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^1\\.[0-9]+\\.[0-9]+$"
+    },
+    "command": {
+      "const": "quarantine purge"
+    },
+    "dir": {
+      "type": "string",
+      "description": "The folder, absolute."
+    },
+    "repo": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The repository's main checkout, from recovery.json; null without one."
+    },
+    "state": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "enum": [
+            "quarantined",
+            "restored",
+            "purging",
+            "empty",
+            "unsettled"
+          ]
+        }
+      ],
+      "description": "quarantined: a removal moved a worktree here and finished; the purge deletes it for good. restored: wt restore put it back; only what it left goes. purging: a purge began and stopped; this one finishes it. empty: an empty folder; nothing names what it was, so it is refused (problem empty). A purge stopped between its last two steps leaves one. unsettled: a removal or a restore stopped mid-way; refused (problem unsettled). null: the folder is not a quarantine purge can read."
+    },
+    "token": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Names this plan: the folder by path and identity, its state, its record byte for byte, its entries, every path in it with its type, size and time, each pin and where it is, and what would be lost. null when the purge would refuse. The purge reads the plan again, holding the folder's lock, and goes ahead only while it is the same."
+    },
+    "worktree": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Where the quarantined worktree's checkout was, from recovery.json."
+    },
+    "branch": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The branch it had checked out, from recovery.json."
+    },
+    "createdAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "When the quarantine was made, RFC 3339, UTC."
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Every name in the folder, sorted: all of it is deleted. A symlink is deleted, never what it names."
+    },
+    "bytes": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "The size of every file in the folder, symlinks not followed; null when something in it cannot be read."
+    },
+    "pins": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/pin"
+      },
+      "description": "The refs recovery.json names, in the order head, tip, dir. Each is deleted only while it is at oid."
+    },
+    "unreachable": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/lost"
+      },
+      "description": "Each pinned commit whose history nothing else holds: once the pins go, gc may take those commits."
+    },
+    "reachError": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Why what becomes unreachable could not be counted."
+    },
+    "repositoryGone": {
+      "type": "boolean",
+      "description": "The repository's git dir, as recorded, is gone. Deleted, its pins went with it; moved, they stay there until wt sweep in it drops them. The purge goes ahead on the record's own checks, and every pin is listed with oid null."
+    },
+    "problems": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/problem"
+      }
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The problems in words."
+    }
+  },
+  "$defs": {
+    "pin": {
+      "type": "object",
+      "required": [
+        "name",
+        "ref",
+        "oid"
+      ],
+      "properties": {
+        "name": {
+          "enum": [
+            "head",
+            "tip",
+            "dir"
+          ]
+        },
+        "ref": {
+          "type": "string",
+          "description": "refs/wt-quarantine/<id>-<hash>/<name>."
+        },
+        "oid": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Where it is now; null when it is gone already."
+        }
+      }
+    },
+    "lost": {
+      "type": "object",
+      "required": [
+        "kind",
+        "oid",
+        "count"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "head",
+            "tip"
+          ]
+        },
+        "oid": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Commits reachable from oid and from no other ref or worktree HEAD."
+        }
+      }
+    },
+    "problem": {
+      "type": "object",
+      "required": [
+        "code",
+        "text"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "missing",
+            "notAFolder",
+            "noRecord",
+            "wrongFolder",
+            "repository",
+            "pinsForeign",
+            "pinsUnreadable",
+            "unsettled",
+            "foreignEntry",
+            "nestedQuarantine",
+            "empty",
+            "worktreesUnknown",
+            "registered",
+            "locked",
+            "location"
+          ],
+          "description": "missing: no such folder. notAFolder: a symlink or a file. noRecord: no recovery.json (nor recovery.purging.json), or one wt cannot trust. wrongFolder: the record was written for another folder, or what is at its checkout or admin is not the directory the removal moved there. repository: its repository cannot be opened, or is another one now. pinsForeign: a pin it names is not this quarantine's, or holds something the removal did not pin. pinsUnreadable: git cannot read a pin (a broken ref), which is not taken for one that is gone. unsettled: a removal or a restore stopped mid-way; wt restore <dir> settles it. worktreesUnknown: the worktrees cannot be listed. registered: git has a worktree registered inside the folder. locked: a worktree is locked for this quarantine. location: the folder is inside a checkout or the git dir, or holds the git dir. foreignEntry: something at its top level no quarantine in its state leaves there (quarantined: checkout, admin; always: the journal, its temp file, .DS_Store). nestedQuarantine: another quarantine's record below its top level. empty: an empty folder."
+        },
+        "text": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

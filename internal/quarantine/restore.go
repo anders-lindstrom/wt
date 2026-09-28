@@ -97,6 +97,12 @@ func (p RestorePlan) Refusal() string {
 // in when dir has no recovery.json; nil when there is none to look in.
 func PlanRestore(dir string, rp *repo.Repo) RestorePlan {
 	p := RestorePlan{Dir: dir}
+	if _, err := os.Lstat(filepath.Join(dir, PurgingName)); err == nil {
+		// Its pins may be gone, and gc with them the commits it needs.
+		p.problem(ProblemPurging, fmt.Sprintf("a purge of it began: it cannot be restored; "+
+			"wt quarantine purge %s finishes deleting it", dir))
+		return p
+	}
 	r, err := Load(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		p.planOrphan(rp)
@@ -314,11 +320,22 @@ func occupancy(rp *repo.Repo, self string, names ...string) (string, error) {
 // recovery.json before and after it runs, and each one is idempotent, so a
 // restore stopped anywhere is finished by the next.
 func DoRestore(dir string, rp *repo.Repo) (RestoreResult, error) {
+	// A purge holds the same lock: neither works on a quarantine the other
+	// is changing.
+	unlock, lerr := LockDir(dir)
+	if lerr == nil {
+		defer unlock()
+	}
 	p := PlanRestore(dir, rp)
 	res := RestoreResult{Outcome: OutcomeRefused, Action: p.Action, OccupiedBy: p.OccupiedBy,
 		Checkout: p.Checkout, Admin: p.Admin}
 	if why := p.Refusal(); why != "" {
 		return res, errors.New(why)
+	}
+	// With no folder there is nothing for a purge to race: a lock whose
+	// folder is gone is still taken off.
+	if lerr != nil && !errors.Is(lerr, os.ErrNotExist) {
+		return res, lerr
 	}
 	if p.Record == nil {
 		if err := rp.UnlockWorktree(p.Orphan); err != nil {

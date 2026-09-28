@@ -21,6 +21,15 @@ want read out to them; the full story is in git history and in
   now stops them when wt goes. Read-only commands never start one.
 - docs/json.md: "Signals and what wt starts".
 
+## 2026-09-28 13:32 — wt quarantine purge deletes a quarantine for good
+
+- `wt quarantine purge <dir>` deletes the pins under refs/wt-quarantine/ and
+  the folder, after saying what goes and which commits become unreachable.
+  It refuses anything that is not a settled wt quarantine, deletes only
+  inside the folder it checked, and a purge stopped anywhere is finished by
+  running it again; no wt restore takes one being purged.
+- JSON: quarantine-purge-plan, quarantine-purge 1.0.0; recovery 1.2.0.
+
 ## 2026-09-28 13:21 — wt checkout takes a branch that is only on a remote
 
 - `wt checkout origin/topic`, or a bare `wt checkout topic` when no local

@@ -55,6 +55,9 @@ func Check(dir string, paths ...string) error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	if q := InsideQuarantine(dir); q != "" {
+		return fmt.Errorf("%s is inside the quarantine %s: a purge of that one would delete it", dir, q)
+	}
 	parent := filepath.Dir(dir)
 	info, err := os.Stat(parent)
 	if err != nil {
