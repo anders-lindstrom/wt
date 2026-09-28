@@ -235,6 +235,7 @@ check() {
         gh) repo=$(make_gh "$dir"); prereq="export PATH=$dir/bin:\$PATH; $prereq";;
         ghwork) repo=$(make_ghwork "$dir"); prereq="export PATH=$dir/bin:\$PATH; $prereq";;
         branch) repo=$(make_plain "$dir"); git -C "$repo" branch fix_wt/login-crash;;
+        remote) repo=$(make_plain "$dir"); git -C "$repo" branch -q -D release-2.1;;
     esac
     local cwd=$repo
     [ -n "$where" ] && cwd="$dir/$where"
@@ -275,7 +276,8 @@ check plain  "" "" 'wt checkout release-2.1 --no-setup'
 check plain  "" "" 'wt checkout release-2.1 --skip-build'
 check plain  "" "" 'wt checkout release-2.1 --no-build'
 check plain  "" "" 'wt checkout release-2.1 --no-superset'
-check plain  "" "" 'wt checkout release-2.1 rel21 --dry-run'
+check remote "" "" 'wt checkout origin/release-2.1 rel21 --dry-run'
+check remote "" "" 'wt checkout release-2.1 rel21'
 check plain  "" "" 'wt checkout release-2.1 --no-build --no-superset'
 check plain  "" "" 'wt checkout release-2.1 --json --expect 1:0123abcd' fail
 

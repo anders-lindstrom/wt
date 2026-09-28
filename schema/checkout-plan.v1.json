@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/checkout-plan.v1.json",
-  "x-version": "1.0.0",
+  "x-version": "1.1.0",
   "title": "wt checkout --dry-run --json",
-  "description": "What `wt checkout` would create, from local state alone; it writes nothing. Printed by `wt checkout <branch> [<work>] --dry-run --json` as the only thing on stdout. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
+  "description": "What `wt checkout` would create, from local state alone — remote-tracking refs as last fetched; it writes nothing and fetches nothing. Printed by `wt checkout <branch>|<remote>/<branch> [<work>] --dry-run --json` as the only thing on stdout. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
   "required": [
     "schema",
@@ -21,7 +21,11 @@
     "provision",
     "buildCommand",
     "superset",
-    "problems"
+    "problems",
+    "source",
+    "remote",
+    "remoteRef",
+    "remoteCommit"
   ],
   "properties": {
     "schema": {
@@ -80,7 +84,7 @@
         "string",
         "null"
       ],
-      "description": "The branch the worktree would be on."
+      "description": "The local branch the worktree would be on: for source remote, the one it would create."
     },
     "path": {
       "type": [
@@ -91,7 +95,33 @@
     },
     "branchCommit": {
       "$ref": "#/$defs/shaOrNull",
-      "description": "The commit the branch is at now; null when there is no such local branch."
+      "description": "The local branch's commit now; null when there is no such local branch, as for source remote."
+    },
+    "source": {
+      "enum": [
+        "local",
+        "remote",
+        null
+      ],
+      "description": "Since 1.1.0. Where the branch comes from: local, a local branch of that exact name, checked out as it is; remote, a remote-tracking ref as last fetched (no fetch is made), from which the local branch would be created, tracking it. Null when neither has it."
+    },
+    "remote": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Since 1.1.0. For source remote: the remote. Null otherwise."
+    },
+    "remoteRef": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Since 1.1.0. For source remote: its remote-tracking ref, refs/remotes/<remote>/<branch>, which becomes the branch's upstream. Null otherwise."
+    },
+    "remoteCommit": {
+      "$ref": "#/$defs/shaOrNull",
+      "description": "Since 1.1.0. For source remote: the commit remoteRef is at now, which the branch would be created at and the token pins. Null otherwise."
     },
     "provision": {
       "type": "boolean",
@@ -141,9 +171,11 @@
             "configurationInvalid",
             "branchMissing",
             "branchCheckedOut",
-            "baseMissing"
+            "baseMissing",
+            "branchAmbiguous",
+            "remoteBranchMissing"
           ],
-          "description": "branchExists, pathExists, unknownType, invalidName, noConfiguration, configurationInvalid, branchMissing, branchCheckedOut (git gives a branch one worktree), baseMissing."
+          "description": "branchExists (also: a branch to create from a remote exists locally), pathExists, unknownType, invalidName, noConfiguration, configurationInvalid, branchMissing (not local, and no remote has it), branchCheckedOut (git gives a branch one worktree), baseMissing, branchAmbiguous (since 1.1.0: a bare name several remotes have, none of them checkout.defaultRemote), remoteBranchMissing (since 1.1.0: <remote>/<branch> that remote does not have as last fetched)."
         },
         "message": {
           "type": "string",

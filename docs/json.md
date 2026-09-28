@@ -43,8 +43,39 @@ Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 | `restore-plan`, `restore` | 1.0.0 | `wt restore <dir> --dry-run --json`, the plan, and `--json`, the result |
 | `sweep` | 1.2.0 | `superset` on each item: what came of a removed worktree's Superset workspace |
 | `remove-plan`, `remove` | 1.0.0 | `wt remove <work> --dry-run --json`, the plan, and `--yes --json`, the result |
+| `checkout-plan`, `checkout` | 1.1.0 | `source`, `remote`, `remoteRef` (and `remoteCommit` in the plan, `upstream` in the result): a branch created from a remote-tracking ref; problems `branchAmbiguous`, `remoteBranchMissing` |
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
+
+## Signals and what wt starts
+
+Every git, script and build wt runs gets a process group of its own. Its
+deadline and a handled SIGINT or SIGTERM to wt stop that whole group, however
+many processes it forked, before wt writes its object and exits 130. Each verb's
+section below says what that object holds.
+
+SIGKILL, or a crash, leaves wt no chance to do that. So a command that can write
+or run long — a `provision.sh`, a build, a deferred step, a git that changes
+something — is also listed with a small helper wt starts the first time it needs
+one: wt's own binary as `wt reaper`, in a process group of its own, holding
+none of wt's stdout, stderr or other descriptors. When wt is gone however it went, the reaper
+sends each listed group SIGTERM, then SIGKILL after 200 ms, and exits. So a
+caller only has to kill wt, or the process group it started wt in, and nothing
+wt started keeps writing to a worktree. The groups go within about a quarter of
+a second, not in the same instant. A group is taken off the list once its
+command has exited, before wt reaps it, so the reaper never signals a group id
+that has been reused since. The reaper reads everything wt wrote before it acts.
+A process the command left running in its group after the command itself
+exited is not stopped, just as a handled signal does not stop it. Reads — `wt
+list`, `wt status` (its rebase simulation only adds objects), `wt schema`, the
+queries every verb makes — never start a reaper.
+
+Why not run everything in wt's own group, so that one signal from the caller
+stops the lot? Then wt could stop its children only by signalling its own group.
+That group also holds the other commands of a pipeline (`wt up --json | jq`), or
+the script that called wt without job control. Escalating to SIGKILL would kill
+wt before it wrote its object. And signalling only its direct children would let
+their children run on.
 
 ## JSON Schema
 
@@ -638,7 +669,7 @@ keeps its meaning; read `outcome`.
 
 What `wt new` would create, from local state alone. It **writes nothing**: no
 fetch, no branch, no directory. `wt checkout <branch> [<work>] --dry-run --json`
-is the same for a branch that exists (below). A name that cannot be created is
+is the same for a branch that exists, locally or on a remote (below). A name that cannot be created is
 still a plan, with its `problems` and no token — never an error exit. The
 command fails only outside a git repository.
 
@@ -683,11 +714,35 @@ of `base` and `baseCommit`:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `branchCommit` | string \| null | the local branch's commit now; null when there is no such branch |
+| `branchCommit` | string \| null | the local branch's commit now; null when there is no such local branch, as for `source` `remote` |
+| `source` | `local` \| `remote` \| null | since 1.1.0: where the branch comes from (below); null when nothing has it |
+| `remote` | string \| null | since 1.1.0: for `remote`, the remote's name |
+| `remoteRef` | string \| null | since 1.1.0: for `remote`, its remote-tracking ref, `refs/remotes/<remote>/<branch>` |
+| `remoteCommit` | string \| null | since 1.1.0: for `remote`, the commit `remoteRef` is at now |
 
-`<branch>` is a local branch's exact name; a revision expression such as
-`main~1` is `branchMissing`. Its token pins `branchCommit`, so
-`wt checkout --expect` refuses a branch that has moved since the plan.
+The argument is resolved from local state alone, in this order:
+
+1. a local branch of exactly that name — `source` `local`, used as it is. A
+   local branch literally called `origin/topic` wins over the remote;
+2. `<remote>/<branch>` for a configured remote whose remote-tracking ref
+   `refs/remotes/<remote>/<branch>` exists — `source` `remote`;
+3. a bare `<branch>` that exactly one remote has — `source` `remote`. When
+   several do, git's `checkout.defaultRemote` picks one if it names one of
+   them; otherwise it is `branchAmbiguous`, the message naming each.
+
+For `remote`, `branch` is the local branch the run would create at
+`remoteCommit`, with `remoteRef` as its upstream (`branch.<b>.remote` and
+`branch.<b>.merge`). That branch existing already is `branchExists`: check it out
+by its own name. Nothing is fetched — the remote-tracking refs are as the last
+`git fetch` left them, so a branch pushed since is `remoteBranchMissing`
+(`<remote>/<branch>` named) or `branchMissing` (a bare name) until you fetch.
+
+`<branch>` is a branch name; a revision expression such as `main~1` is
+`branchMissing`. The token pins the commit the worktree would land on —
+`branchCommit`, or `remoteCommit` together with `remoteRef` — so
+`wt checkout --expect` refuses a branch or remote-tracking ref that has moved
+since the plan, and a plan made for a remote branch is refused once a local
+branch of that name appears.
 
 ## `wt new … --json` and `wt checkout … --json` — the run
 
@@ -698,16 +753,21 @@ carries exactly one object. Neither asks anything.
 A plan with a problem is refused, creating nothing. With `--expect <token>` the
 recomputed plan's token must equal the one given (an empty one is refused), or
 the run is refused with `planChanged`, creating nothing: the base or branch moved, the name or the
-configuration changed. That check is the last thing before `git worktree add`;
+configuration changed. `planChanged` comes first, followed by any problem the
+recomputed plan has — a plan made for `origin/topic` gives `planChanged` and
+`branchExists` once a local `topic` appears. That check is the last thing before `git worktree add`;
 afterwards wt reads the new worktree's HEAD back, and a HEAD that is not the
 pinned commit (the branch moved in between, or a hook committed) is
-`headMoved` — created, never a quiet success.
+`headMoved` — created, never a quiet success. `wt checkout` from a remote creates
+the branch only if it does not exist: one that appeared after that last check is
+left as it is and the run refused as `planChanged`, with nothing created.
 
 A handled SIGINT or SIGTERM, from the moment the command starts, writes the
 object too — the step in flight `interrupted`, the rest as they stood — then
 stops a `provision.sh`, build command or git still running, each with its whole
 process group, and exits 130. SIGKILL or a crash may write none; treat a
-missing object as unknown. A usage error (a missing argument, an unknown flag,
+missing object as unknown. Its reaper then stops what was running (see
+[Signals](#signals-and-what-wt-starts)). A usage error (a missing argument, an unknown flag,
 `--expect` without `--json`) is reported as without `--json`, with no object.
 
 | Field | Type | Meaning |
@@ -718,9 +778,11 @@ missing object as unknown. A usage error (a missing argument, an unknown flag,
 | `outcome` | see below | |
 | `error` | string \| null | why it was refused, or stopped before planning (not in a git repository) |
 | `problems` | array | as in the plan, plus `planChanged` and `headMoved` |
+| `source`, `remote`, `remoteRef` | string \| null | `wt checkout` only, since 1.1.0: from the plan |
+| `upstream` | string \| null | `wt checkout` only, since 1.1.0: the branch's upstream ref, read back after the run; null when it has none or there is no branch |
 | `type`, `work`, `branch`, `path` | string \| null | from the plan |
 | `base` | string \| null | `wt new`: what the branch was cut from. Null for `wt checkout` |
-| `expectedCommit` | string \| null | the commit the plan pinned: `baseCommit` or `branchCommit` |
+| `expectedCommit` | string \| null | the commit the plan pinned: `baseCommit`, `branchCommit` or `remoteCommit` |
 | `commit` | string \| null | the new worktree's HEAD, read after `git worktree add`; null when there is none |
 | `steps` | array | every side effect, always all seven, in this order |
 | `steps[].step` | `worktree`, `branch`, `config`, `provision`, `submodules`, `build`, `superset` | |
@@ -733,7 +795,7 @@ missing object as unknown. A usage error (a missing argument, an unknown flag,
 | Step | Results |
 |---|---|
 | `worktree` | `created`, `failed` (`git worktree add` failed and left no worktree, or the path was taken). `created` with a `reason` when git failed after making it, as when a `post-checkout` hook fails; the steps after it are then `notRun` |
-| `branch` | `created` (`wt new`), `untouched` (`wt checkout`) |
+| `branch` | `created` (`wt new`; `wt checkout` from a remote, with the reason `tracking <remote>/<branch>`, or that the upstream could not be set), `untouched` (`wt checkout` of a local branch) |
 | `config` | `done`, `skipped` (no source checkout), `failed` (an entry could not be copied, or escapes the worktree) |
 | `provision` | `done`, `skipped` (no `provision.sh`), `failed` |
 | `submodules` | `done`, `skipped` (no `.gitmodules`), `failed` |

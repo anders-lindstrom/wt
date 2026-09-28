@@ -13,6 +13,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/naming"
+	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/schema"
 )
 
@@ -28,6 +29,12 @@ const (
 	ProblemBranchMissing    = "branchMissing"
 	ProblemBranchCheckedOut = "branchCheckedOut"
 	ProblemBaseMissing      = "baseMissing"
+	// ProblemBranchAmbiguous is a bare name no local branch has and more
+	// than one remote does, with no checkout.defaultRemote among them.
+	ProblemBranchAmbiguous = "branchAmbiguous"
+	// ProblemRemoteBranchMissing is <remote>/<branch> for a configured
+	// remote that has no such branch as last fetched.
+	ProblemRemoteBranchMissing = "remoteBranchMissing"
 	// ProblemPlanChanged is --expect refusing: the plan is not the one the
 	// token was made from.
 	ProblemPlanChanged = "planChanged"
@@ -112,6 +119,25 @@ type NewPlan struct {
 type CheckoutPlan struct {
 	CreatePlan
 	BranchCommit *string `json:"branchCommit"`
+	CheckoutSource
+	RemoteCommit *string `json:"remoteCommit"`
+}
+
+// CheckoutSource is where wt checkout's branch comes from, in its plan and
+// its result: SourceLocal, or SourceRemote with the remote and its
+// remote-tracking ref. All null when the branch was not found.
+type CheckoutSource struct {
+	Source    *string `json:"source"`
+	Remote    *string `json:"remote"`
+	RemoteRef *string `json:"remoteRef"`
+}
+
+// CheckoutResult is the one object wt checkout --json prints.
+type CheckoutResult struct {
+	CreateResult
+	CheckoutSource
+	// Upstream is the branch's upstream ref read back after the run.
+	Upstream *string `json:"upstream"`
 }
 
 // CreateStep is one side effect, as the result reports it.
@@ -207,32 +233,37 @@ func PlanNew(ctx *Context, spec string, opts NewOptions) NewPlan {
 	return p
 }
 
-// PlanCheckout is what wt checkout would do for branch, from local state
-// alone. It writes nothing.
-func PlanCheckout(ctx *Context, branch, work string, opts NewOptions) CheckoutPlan {
+// PlanCheckout is what wt checkout would do for arg, from local state
+// alone, the remote-tracking refs as last fetched. It writes nothing.
+func PlanCheckout(ctx *Context, arg, work string, opts NewOptions) CheckoutPlan {
 	p := CheckoutPlan{CreatePlan: basePlan(ctx, "checkout", opts)}
 	typ := ctx.Config.DefaultType
-	p.Type, p.Branch = strp(typ), strp(branch)
-	if branch == "" {
-		p.problem(ProblemInvalidName, "no branch given")
-		return p
-	}
-	if oid, ok := ctx.Repo.ResolveRef("refs/heads/" + branch); ok && ctx.Repo.BranchExists(branch) {
-		p.BranchCommit = strp(oid)
+	t, prob := resolveCheckout(ctx, arg)
+	p.Type, p.Branch = strp(typ), strp(t.Branch)
+	p.CheckoutSource = t.source()
+	switch t.Source {
+	case SourceLocal:
+		p.BranchCommit = strp(t.Commit)
 		if all, err := ctx.Repo.Worktrees(); err == nil {
-			if wt, ok := all.ByBranch(branch); ok {
+			if wt, ok := all.ByBranch(t.Branch); ok {
 				p.problem(ProblemBranchCheckedOut, "branch %s is checked out at %s; git gives a branch only one worktree",
-					branch, wt.Path)
+					t.Branch, wt.Path)
 			}
 		}
-	} else {
-		p.problem(ProblemBranchMissing, "branch %s does not exist; use `wt new` to create one", branch)
+	case SourceRemote:
+		p.RemoteCommit = strp(t.Commit)
+	}
+	if prob != nil {
+		p.Problems = append(p.Problems, *prob)
+	}
+	if arg == "" {
+		return p
 	}
 	if work == "" {
-		work = WorkNameFromBranch(branch, ctx.Scheme().Suffix)
+		work = WorkNameFromBranch(t.Branch, ctx.Scheme().Suffix)
 	}
 	if work == "" {
-		p.problem(ProblemInvalidName, "could not derive a work name from branch %q", branch)
+		p.problem(ProblemInvalidName, "could not derive a work name from branch %q", t.Branch)
 	} else {
 		path := ctx.Scheme().Dir(typ, work)
 		p.Work, p.Path = strp(work), strp(path)
@@ -241,15 +272,38 @@ func PlanCheckout(ctx *Context, branch, work string, opts NewOptions) CheckoutPl
 		}
 	}
 	if len(p.Problems) == 0 {
-		p.Token = strp(createToken(ctx, "checkout", branch, *p.Path, *p.BranchCommit))
+		p.Token = strp(createToken(ctx, "checkout", t.tokenName(), *p.Path, t.Commit))
 	}
 	return p
 }
 
+// source is t as the plan and the result name it.
+func (t checkoutTarget) source() CheckoutSource {
+	var s CheckoutSource
+	if t.Source != "" {
+		s.Source = strp(t.Source)
+	}
+	if t.Source == SourceRemote {
+		s.Remote, s.RemoteRef = strp(t.Remote), strp(t.RemoteRef)
+	}
+	return s
+}
+
+// tokenName is the branch as the token names it: a branch to be created
+// from a remote also names the remote-tracking ref, so a local branch of
+// the same name appearing changes the token.
+func (t checkoutTarget) tokenName() string {
+	if t.Source == SourceRemote {
+		return t.Branch + "\x00remote\x00" + t.RemoteRef
+	}
+	return t.Branch
+}
+
 // createToken names the inputs a plan was computed from: the command, the
 // branch and path it would create, the commit the worktree would land on —
-// the base for wt new, the branch's tip for wt checkout — and the
-// configuration file. Anything else moving does not change it.
+// the base for wt new, the branch's tip or the remote-tracking ref's for wt
+// checkout — and the configuration file. Anything else moving does not
+// change it.
 func createToken(ctx *Context, command, branch, path, commit string) string {
 	h := sha256.New()
 	h.Write([]byte("wt-create-1\x00" + command + "\x00" + branch + "\x00" + path + "\x00" + commit + "\x00"))
@@ -279,12 +333,17 @@ func NewDryRun(ctx *Context, spec string, opts NewOptions, w io.Writer) error {
 }
 
 // CheckoutDryRun is wt checkout --dry-run for a person.
-func CheckoutDryRun(ctx *Context, branch, work string, opts NewOptions, w io.Writer) error {
-	p := PlanCheckout(ctx, branch, work, opts)
+func CheckoutDryRun(ctx *Context, arg, work string, opts NewOptions, w io.Writer) error {
+	p := PlanCheckout(ctx, arg, work, opts)
 	if err := problemsError(p.Problems); err != nil {
 		return err
 	}
-	fmt.Fprintf(w, "Would check out %s (%s)\n  at %s\n", branch, git.ShortID(*p.BranchCommit, 7), *p.Path)
+	if p.RemoteCommit != nil {
+		fmt.Fprintf(w, "Would create %s from %s (%s), tracking it\n  at %s\n", *p.Branch,
+			strings.TrimPrefix(*p.RemoteRef, "refs/remotes/"), git.ShortID(*p.RemoteCommit, 7), *p.Path)
+		return nil
+	}
+	fmt.Fprintf(w, "Would check out %s (%s)\n  at %s\n", *p.Branch, git.ShortID(*p.BranchCommit, 7), *p.Path)
 	return nil
 }
 
@@ -313,16 +372,25 @@ func NewJSON(ctx *Context, spec string, opts NewOptions, expect string, j *Creat
 }
 
 // CheckoutJSON is wt checkout --json, as NewJSON is wt new --json.
-func CheckoutJSON(ctx *Context, branch, work string, opts NewOptions, expect string, j *CreateJournal, w io.Writer) error {
-	p := PlanCheckout(ctx, branch, work, opts)
-	j.plan(p.CreatePlan, nil, p.BranchCommit)
+func CheckoutJSON(ctx *Context, arg, work string, opts NewOptions, expect string, j *CreateJournal, w io.Writer) error {
+	p := PlanCheckout(ctx, arg, work, opts)
+	expected := p.BranchCommit
+	if p.RemoteCommit != nil {
+		expected = p.RemoteCommit
+	}
+	j.plan(p.CreatePlan, nil, expected)
+	j.checkoutSource(p.CheckoutSource)
 	if err := j.admit(p.CreatePlan, expect); err != nil {
 		return err
 	}
-	if work == "" && *p.Work != branch {
-		fmt.Fprintf(w, "Using work name %q for branch %s\n", *p.Work, branch)
+	if work == "" && *p.Work != *p.Branch {
+		fmt.Fprintf(w, "Using work name %q for branch %s\n", *p.Work, *p.Branch)
 	}
-	_, err := addAndProvision(ctx, *p.Path, checkoutAdd(ctx, *p.Path, branch, w), opts, w, j)
+	t := checkoutTarget{Branch: *p.Branch, Source: *p.Source, Commit: *expected}
+	if p.Remote != nil {
+		t.Remote, t.RemoteRef = *p.Remote, *p.RemoteRef
+	}
+	_, err := addAndProvision(ctx, *p.Path, checkoutAdd(ctx, *p.Path, t, j, w), opts, w, j)
 	j.Finish()
 	return err
 }
@@ -342,6 +410,8 @@ type CreateJournal struct {
 	// then on the run parks at its next step rather than go on, or return
 	// and exit with another status before the handler's 130.
 	signalled bool
+	// co is what wt checkout adds to the result; nil for wt new.
+	co *CheckoutResult
 }
 
 // NewCreateJournal is a journal for command ("new" or "checkout") that
@@ -352,7 +422,64 @@ func NewCreateJournal(out io.Writer, command string) *CreateJournal {
 	for _, s := range createSteps {
 		j.res.Steps = append(j.res.Steps, CreateStep{Step: s, Result: StepNotRun})
 	}
+	if command == "checkout" {
+		j.co = &CheckoutResult{}
+	}
 	return j
+}
+
+// checkoutSource records where wt checkout's branch comes from.
+func (j *CreateJournal) checkoutSource(s CheckoutSource) {
+	if j == nil || j.co == nil {
+		return
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.co.CheckoutSource = s
+}
+
+// createsBranch is whether this run makes its branch: wt new always, wt
+// checkout from a remote. Called with mu held.
+func (j *CreateJournal) createsBranch() bool {
+	if j.co == nil {
+		return j.res.Command == "new"
+	}
+	return j.co.Source != nil && *j.co.Source == SourceRemote
+}
+
+// branchMade records the branch wt checkout has just created from a
+// remote, before its worktree is added.
+func (j *CreateJournal) branchMade(ctx *Context) {
+	if j == nil {
+		return
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.branchRead(ctx, StepCreated)
+}
+
+// branchRead records the branch step from the branch as it is after the
+// run: its tip, and for wt checkout its upstream. Called with mu held.
+func (j *CreateJournal) branchRead(ctx *Context, result string) {
+	if j.res.Branch == nil {
+		return
+	}
+	tip, _ := ctx.Repo.ResolveRef("refs/heads/" + *j.res.Branch)
+	s := j.step(StepBranch)
+	s.Result, s.Commit = result, strp(tip)
+	if j.co == nil {
+		return
+	}
+	up := ctx.Repo.Upstream(*j.res.Branch)
+	j.co.Upstream = strp(up)
+	if j.co.RemoteRef != nil && result == StepCreated {
+		name := strings.TrimPrefix(*j.co.RemoteRef, "refs/remotes/")
+		if up == *j.co.RemoteRef {
+			s.Reason = strp("tracking " + name)
+		} else {
+			s.Reason = strp("its upstream could not be set to " + name)
+		}
+	}
 }
 
 func (j *CreateJournal) plan(p CreatePlan, base, expected *string) {
@@ -366,12 +493,14 @@ func (j *CreateJournal) plan(p CreatePlan, base, expected *string) {
 }
 
 // admit refuses the run, and writes the object, when the plan has a problem
-// or is not the one expect names.
+// or is not the one expect names: planChanged then comes first, followed by
+// what the new plan finds wrong.
 func (j *CreateJournal) admit(p CreatePlan, expect string) error {
 	problems := p.Problems
-	if len(problems) == 0 && expect != "" && (p.Token == nil || *p.Token != expect) {
-		problems = []Problem{{Code: ProblemPlanChanged,
-			Message: "the plan is not the one --expect names: the commit, the name or the configuration changed; plan again"}}
+	if expect != "" && (p.Token == nil || *p.Token != expect) {
+		problems = append([]Problem{{Code: ProblemPlanChanged,
+			Message: "the plan is not the one --expect names: the commit, the name or the configuration changed; plan again"}},
+			p.Problems...)
 	}
 	err := problemsError(problems)
 	if err != nil {
@@ -451,6 +580,14 @@ func (j *CreateJournal) addFailed(ctx *Context, path string, err error) {
 	if j == nil {
 		return
 	}
+	if errors.Is(err, repo.ErrBranchExists) {
+		j.mu.Lock()
+		j.res.Problems = append(j.res.Problems, Problem{Code: ProblemPlanChanged, Message: oneLine(err.Error())})
+		j.res.Error = strp(oneLine(err.Error()))
+		j.inFlight = ""
+		j.mu.Unlock()
+		return
+	}
 	if all, lerr := ctx.Repo.Worktrees(); lerr == nil {
 		if _, ok := all.ByPath(path); ok {
 			j.created(ctx, path)
@@ -462,17 +599,16 @@ func (j *CreateJournal) addFailed(ctx *Context, path string, err error) {
 	}
 	j.finish(StepWorktree, StepFailed, oneLine(err.Error()), "")
 	j.mu.Lock()
-	branch, command := j.res.Branch, j.res.Command
-	j.mu.Unlock()
-	if branch == nil {
+	defer j.mu.Unlock()
+	if j.res.Branch == nil {
 		return
 	}
-	if oid, ok := ctx.Repo.ResolveRef("refs/heads/" + *branch); ok {
+	if _, ok := ctx.Repo.ResolveRef("refs/heads/" + *j.res.Branch); ok {
 		result := StepUntouched
-		if command == "new" {
+		if j.createsBranch() {
 			result = StepCreated
 		}
-		j.finish(StepBranch, result, "", oid)
+		j.branchRead(ctx, result)
 	}
 }
 
@@ -488,16 +624,11 @@ func (j *CreateJournal) created(ctx *Context, path string) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	j.res.Commit = strp(head)
-	branch := StepCreated
-	if j.res.Command != "new" {
-		branch = StepUntouched
+	branch := StepUntouched
+	if j.createsBranch() {
+		branch = StepCreated
 	}
-	if j.res.Branch != nil {
-		tip, _ := ctx.Repo.ResolveRef("refs/heads/" + *j.res.Branch)
-		if s := j.step(StepBranch); s != nil {
-			s.Result, s.Commit = branch, strp(tip)
-		}
-	}
+	j.branchRead(ctx, branch)
 	if want := j.res.ExpectedCommit; want != nil && head != *want {
 		j.res.Problems = append(j.res.Problems, Problem{Code: ProblemHeadMoved,
 			Message: fmt.Sprintf("the worktree is at %s, not at %s as planned", git.ShortID(head, 7), git.ShortID(*want, 7))})
@@ -562,6 +693,11 @@ func (j *CreateJournal) write(signalled bool) {
 			}
 		}
 		j.res.Outcome = j.outcome(signalled)
+		if j.co != nil {
+			j.co.CreateResult = j.res
+			_ = writeJSON(j.out, j.co)
+			return
+		}
 		_ = writeJSON(j.out, j.res)
 	})
 }

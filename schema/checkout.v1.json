@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/checkout.v1.json",
-  "x-version": "1.0.0",
+  "x-version": "1.1.0",
   "title": "wt checkout --json",
   "description": "What a `wt checkout` run did, side effect by side effect. Printed by `wt checkout --json` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends the run. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
@@ -19,7 +19,11 @@
     "base",
     "expectedCommit",
     "commit",
-    "steps"
+    "steps",
+    "source",
+    "remote",
+    "remoteRef",
+    "upstream"
   ],
   "properties": {
     "schema": {
@@ -92,11 +96,40 @@
     },
     "expectedCommit": {
       "$ref": "#/$defs/shaOrNull",
-      "description": "The commit the plan pinned: the base's for wt new, the branch's for wt checkout."
+      "description": "The commit the plan pinned: the base's for wt new, the branch's for wt checkout — for source remote, the remote-tracking ref's."
     },
     "commit": {
       "$ref": "#/$defs/shaOrNull",
       "description": "The new worktree's HEAD, read after it was created; null when none was."
+    },
+    "source": {
+      "enum": [
+        "local",
+        "remote",
+        null
+      ],
+      "description": "Since 1.1.0. Where the branch comes from: local, a local branch of that exact name, checked out as it is; remote, a remote-tracking ref as last fetched (no fetch is made), from which the local branch was created, tracking it. Null when neither has it."
+    },
+    "remote": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Since 1.1.0. For source remote: the remote. Null otherwise."
+    },
+    "remoteRef": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Since 1.1.0. For source remote: its remote-tracking ref, refs/remotes/<remote>/<branch>, which becomes the branch's upstream. Null otherwise."
+    },
+    "upstream": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Since 1.1.0. The branch's upstream ref, read back after the run (refs/remotes/<remote>/<branch>); null when it has none or there is no branch."
     },
     "steps": {
       "type": "array",
@@ -132,10 +165,12 @@
             "branchMissing",
             "branchCheckedOut",
             "baseMissing",
+            "branchAmbiguous",
+            "remoteBranchMissing",
             "planChanged",
             "headMoved"
           ],
-          "description": "The plan's problems, and planChanged (--expect no longer holds), headMoved (the worktree is not on expectedCommit)."
+          "description": "The plan's problems, and planChanged (--expect no longer holds, or a local branch of that name appeared before wt could create it from the remote; it is never overwritten), headMoved (the worktree is not on expectedCommit)."
         },
         "message": {
           "type": "string",
@@ -174,7 +209,7 @@
             "notRun",
             "interrupted"
           ],
-          "description": "worktree: created (with a reason when git failed after making it), failed. branch: created (wt new), untouched (wt checkout). config, provision, submodules, build: done, skipped, failed. superset: registered, skipped, failed. Any step: notRun, interrupted."
+          "description": "worktree: created (with a reason when git failed after making it), failed. branch: created (wt new, and wt checkout from a remote, its reason tracking <remote>/<branch>), untouched (wt checkout of a local branch). config, provision, submodules, build: done, skipped, failed. superset: registered, skipped, failed. Any step: notRun, interrupted."
         },
         "commit": {
           "$ref": "#/$defs/shaOrNull",
