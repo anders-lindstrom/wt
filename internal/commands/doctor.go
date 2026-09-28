@@ -68,12 +68,6 @@ func doctor(ctx *Context, w io.Writer, withRepos bool) (int, error) {
 				strings.Join(typeNamePairs(ctx), " "), origin)
 		}
 	}
-	if ctx.Config.TrunkSource == config.TrunkCurrentBranchGuess {
-		// remove and sweep judge "merged" against trunk, and new branches
-		// from it: a feature branch taken for trunk misleads all three.
-		report("trunk %s is guessed from the checked-out branch (--json: trunkSource "+
-			"currentBranchGuess) — `wt init` pins it, or set MAIN_BRANCH", ctx.Config.MainBranch)
-	}
 	if ctx.UserError != nil {
 		report("%v", ctx.UserError)
 	}
@@ -90,7 +84,8 @@ func doctor(ctx *Context, w io.Writer, withRepos bool) (int, error) {
 		}
 	}
 
-	if !ctx.Repo.BranchExists(ctx.Config.MainBranch) {
+	// No trunk at all is reported once, above, as the configuration's problem.
+	if ctx.Config.MainBranch != "" && !ctx.Repo.BranchExists(ctx.Config.MainBranch) {
 		report("MAIN_BRANCH %q does not exist locally", ctx.Config.MainBranch)
 	}
 

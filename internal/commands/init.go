@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -48,7 +49,12 @@ func Init(r *repo.Repo, opts InitOptions, w io.Writer) error {
 		}
 	}
 
-	trunk, source := r.DetectTrunk()
+	// Nothing to offer is only an error when nobody is asked: a person can
+	// name trunk, and --yes would otherwise write a guess down.
+	trunk, _, detectErr := r.DetectTrunk()
+	if detectErr != nil && opts.Ask == nil {
+		return detectErr
+	}
 	answers := detectAnswers(trunk)
 
 	cfg, err := resolve(answers)
@@ -85,10 +91,6 @@ func Init(r *repo.Repo, opts InitOptions, w io.Writer) error {
 		return err
 	}
 	fmt.Fprintf(w, "Wrote %s\n", path)
-	if source == config.TrunkCurrentBranchGuess && answers.MainBranch == trunk {
-		fmt.Fprintf(w, "  ! MAIN_BRANCH %s is the checked-out branch, a guess: "+
-			"nothing else names trunk — edit it if trunk is another branch\n", trunk)
-	}
 	if rule := ignoreRule(r.Root, path); rule != "" {
 		fmt.Fprintf(w, "  ! %s is ignored by %s, so git will not track it — "+
 			"un-ignore it, or this configuration stays local to you\n",
@@ -112,17 +114,13 @@ func detectAnswers(trunk string) Answers {
 // detectAnswers resolved, in memory, nothing written. No build command is
 // detected, so nothing runs that the repository did not put there itself.
 //
-// A trunk that names nothing — the checkout's unborn branch, or an origin/HEAD
-// never fetched — is not a detection but a guess, and a guess is refused with
-// ErrNoConfig: `wt init` is where a person names it.
+// An origin/HEAD naming a branch never fetched names nothing to branch from,
+// and is refused as an undetectedError: `wt init` is where a person names it.
 func detectedConfig(r *repo.Repo, trunk string) (*config.Config, error) {
 	if !r.BranchExists(trunk) {
 		if _, ok := r.ResolveRef("refs/remotes/origin/" + trunk); !ok {
-			why := fmt.Sprintf("%s has no commits and origin/HEAD is not set", trunk)
-			if head, ok := r.OriginHead(); ok {
-				why = fmt.Sprintf("origin/HEAD names %s, which is not fetched", head)
-			}
-			return nil, undetectedError{why}
+			return nil, undetectedError{fmt.Errorf("cannot tell which branch is trunk: "+
+				"origin/HEAD names %s, which is not fetched — run `wt init` (or set MAIN_BRANCH)", trunk)}
 		}
 	}
 	c, err := resolve(detectAnswers(trunk))
@@ -134,16 +132,13 @@ func detectedConfig(r *repo.Repo, trunk string) (*config.Config, error) {
 	return c, nil
 }
 
-// undetectedError is a repository with no configuration whose trunk could not
-// be detected either. It is ErrNoConfig, with what was missing.
-type undetectedError struct{ why string }
+// undetectedError is a repository whose trunk neither a MAIN_BRANCH nor its
+// refs name. It is ErrNoConfig, which --json reports as noConfiguration.
+type undetectedError struct{ err error }
 
-func (e undetectedError) Error() string {
-	return "no bin/worktree/worktree.conf or worktree.toml, and no trunk to " +
-		"detect (" + e.why + ") — run `wt init` to create one"
-}
+func (e undetectedError) Error() string { return e.err.Error() }
 
-func (e undetectedError) Unwrap() error { return config.ErrNoConfig }
+func (e undetectedError) Unwrap() []error { return []error{e.err, config.ErrNoConfig} }
 
 // ignoreRule returns the .gitignore rule excluding path, or "" when git would
 // track it. A repository that ignores its whole bin/ directory for build
@@ -185,6 +180,10 @@ func existingConfig(root string) (string, error) {
 // taking the commented defaults from it, rather than from a second copy of the
 // same table, is what keeps them honest.
 func resolve(a Answers) (*config.Config, error) {
+	if a.MainBranch == "" {
+		return nil, errors.New("trunk (MAIN_BRANCH) has no default: " +
+			"no origin/HEAD and no development, main or master — name it")
+	}
 	raw := map[string]config.Value{
 		config.KeyMainBranch:   {Scalar: a.MainBranch},
 		config.KeyBranchPrefix: {Scalar: a.BranchPrefix},

@@ -197,6 +197,9 @@ func undeclaredNotice(ctx *Context, onto string) string {
 // with trunk as last fetched; only a trunk that is not there at all is an
 // error.
 func syncInputs(ctx *Context, opts SyncOptions, w io.Writer) (onto string, cfg *wtsync.Config, agents []wtsync.Agent, err error) {
+	if err := ctx.noTrunk(); err != nil {
+		return "", nil, nil, err
+	}
 	trunk := ctx.Config.MainBranch
 	// Read before fetching: git empties FETCH_HEAD as a fetch starts, so a
 	// fetch that fails has already lost the age of the last one that did not.

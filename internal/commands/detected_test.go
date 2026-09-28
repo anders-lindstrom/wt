@@ -68,16 +68,16 @@ func TestDetectedDefaultsAreWhatInitWrites(t *testing.T) {
 	}
 }
 
-// A trunk that is only a guess — no origin/HEAD, and the checkout's branch has
-// no commit — is not detected: today's error stands, saying what could not be
-// detected and what fixes it.
+// A fresh `git init`: main has no commit, so no branch exists to be trunk,
+// and the error says what could not be detected and what fixes it.
 func TestOpenWithoutConfigOrTrunkKeepsTheError(t *testing.T) {
-	r := bareRepo(t)
-	_, err := Open(r.Root)
+	parent := t.TempDir()
+	gitIn(t, parent, "init", "-q", "-b", "main", "demo")
+	_, err := Open(filepath.Join(parent, "demo"))
 	if !errors.Is(err, config.ErrNoConfig) {
 		t.Fatalf("err = %v, want ErrNoConfig", err)
 	}
-	for _, want := range []string{"trunk", "main", "wt init"} {
+	for _, want := range []string{"cannot tell which branch is trunk", "main", "wt init"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %q", err, want)
 		}
@@ -237,13 +237,18 @@ func TestPlansOnDetectedDefaults(t *testing.T) {
 // noConfiguration is left for a repository whose trunk could not be detected:
 // no origin, a detached checkout, and no branch with a conventional name.
 func TestPlanWhenDetectionFails(t *testing.T) {
-	main := unconfiguredRepo(t)
-	gitIn(t, main, "checkout", "-q", "--detach")
-	gitIn(t, main, "branch", "-m", "main", "release")
+	main := noTrunkRepo(t)
 	ctx := OpenLenient(main, &bytes.Buffer{})
-	p := newPlanOf(t, ctx, "fix/x", NewOptions{Base: "release"})
+	p := newPlanOf(t, ctx, "fix/x", NewOptions{Base: "production"})
 	if p.Configured || codes(p.Problems) != "noConfiguration" ||
-		!strings.Contains(p.Problems[0].Message, "trunk") {
+		!strings.Contains(p.Problems[0].Message, "cannot tell which branch is trunk") {
 		t.Errorf("configured %v problems %+v", p.Configured, p.Problems)
+	}
+	if p.TrunkSource != nil {
+		t.Errorf("trunkSource = %q, want null", *p.TrunkSource)
+	}
+	// Without --base there is no base either, and no second problem for it.
+	if p := newPlanOf(t, ctx, "fix/x", NewOptions{}); codes(p.Problems) != "noConfiguration" || p.Base != nil {
+		t.Errorf("without --base: base %v problems %+v", p.Base, p.Problems)
 	}
 }

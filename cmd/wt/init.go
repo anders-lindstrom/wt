@@ -25,7 +25,9 @@ func newInitCmd() *cobra.Command {
 			"the defaults. Every other key is written commented at its default, so\n" +
 			"the file is this repository's reference for what it may set.\n\n" +
 			"With --yes, or with nothing on stdin to answer with, the detected\n" +
-			"values are written without asking.",
+			"values are written without asking. Trunk is origin/HEAD, else the\n" +
+			"first of development, main and master; when none exists, wt init\n" +
+			"asks for it with no default, and --yes refuses rather than guess.",
 		Example: "  wt init          # ask three questions, detected values offered\n" +
 			"  wt init --yes    # write the detected values, ask nothing\n" +
 			"  wt init --force  # replace a configuration that is already there",

@@ -85,11 +85,16 @@ func UpPlanJSON(ctx *Context, arg string, w io.Writer) error {
 		Stack: []PlanStackMember{}, Sessions: []PlanSession{}}
 	trunk := ctx.Config.MainBranch
 	ref := "origin/" + trunk
-	p.Trunk, p.TrunkRef, p.TrunkSource = strp(trunk), strp(ref), ctx.trunkSource()
+	p.Trunk, p.TrunkSource = strp(trunk), ctx.trunkSource()
 	p.Configured = ctx.configured()
-	tip, exists := ctx.Repo.ResolveRef("refs/remotes/" + ref)
-	p.TrunkRefExists, p.TrunkTip = exists, strp(tip)
-	p.TrunkRefUpdatedAt = refUpdatedAt(ctx.Repo.MainRoot, "refs/remotes/"+ref)
+	var tip string
+	var exists bool
+	if trunk != "" {
+		p.TrunkRef = strp(ref)
+		tip, exists = ctx.Repo.ResolveRef("refs/remotes/" + ref)
+		p.TrunkRefExists, p.TrunkTip = exists, strp(tip)
+		p.TrunkRefUpdatedAt = refUpdatedAt(ctx.Repo.MainRoot, "refs/remotes/"+ref)
+	}
 	// Listed at most once, and only when asked: by the trunk check, when
 	// local trunk is checked out, and for the stack's sessions.
 	listAgents := sync.OnceValues(wtsync.ListOtherAgents)

@@ -6,6 +6,14 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-28 16:37 — Trunk is development, main or master, never a guess
+
+- Without MAIN_BRANCH, trunk is origin/HEAD, else the first of development,
+  main and master that exists here or on origin. trunk and develop are gone.
+- When none exists, commands stop with "cannot tell which branch is trunk";
+  `wt init --yes` refuses and `wt init` asks you to name it.
+- --json never says currentBranchGuess any more; such a repo is noConfiguration.
+
 ## 2026-09-28 16:29 — wt remove --json says how trunk was found
 
 - The remove plan and result carry `trunkSource`, as the other plans do,

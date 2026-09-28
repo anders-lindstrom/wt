@@ -267,32 +267,31 @@ func gitDirOf(wtPath string) (string, error) {
 
 // conventionalTrunks are the names a trunk goes by, in the order detection
 // prefers them.
-var conventionalTrunks = []string{"main", "master", "trunk", "development", "develop"}
+var conventionalTrunks = []string{"development", "main", "master"}
 
-// DetectTrunk names the branch the repository most likely calls trunk, and
-// how it knows: origin/HEAD; else the first conventional name that exists
-// both here and on origin, then on origin alone, then here alone; else the
-// main checkout's branch, which is only a guess — a clone that never
-// recorded origin/HEAD often has its main checkout on a feature branch. It
-// runs on every command, so it reads local refs only and never asks origin.
-func (r *Repo) DetectTrunk() (string, config.TrunkSource) {
+// ErrNoTrunk is a repository whose refs name no trunk. The checked-out branch
+// is no stand-in: a clone that never recorded origin/HEAD often has its main
+// checkout on a feature branch, and remove and sweep judge "merged" against
+// trunk.
+var ErrNoTrunk = errors.New("cannot tell which branch is trunk: no origin/HEAD " +
+	"and no development, main or master — run `wt init` (or set MAIN_BRANCH)")
+
+// DetectTrunk names the branch the repository calls trunk, and how it knows:
+// origin/HEAD; else the first of conventionalTrunks that exists here or on
+// origin; else ErrNoTrunk. It runs on every command, so it reads local refs
+// only and never asks origin.
+func (r *Repo) DetectTrunk() (string, config.TrunkSource, error) {
 	if branch, ok := r.OriginHead(); ok {
-		return branch, config.TrunkFromOriginHead
+		return branch, config.TrunkFromOriginHead, nil
 	}
 	if branch, ok := r.conventionalTrunk(); ok {
-		return branch, config.TrunkConventional
+		return branch, config.TrunkConventional, nil
 	}
-	// symbolic-ref, not rev-parse --abbrev-ref: the latter fails outright on a
-	// repository whose HEAD is unborn, which is exactly the state a freshly
-	// initialised repo is in.
-	if out, err := git.Run(r.MainRoot, "symbolic-ref", "--short", "HEAD"); err == nil && out != "" {
-		return out, config.TrunkCurrentBranchGuess
-	}
-	return "main", config.TrunkCurrentBranchGuess
+	return "", "", ErrNoTrunk
 }
 
-// conventionalTrunk is the best of conventionalTrunks that exists, read with
-// one git process.
+// conventionalTrunk is the first of conventionalTrunks that exists, locally or
+// on origin, read with one git process.
 func (r *Repo) conventionalTrunk() (string, bool) {
 	args := []string{"for-each-ref", "--format=%(refname)"}
 	for _, name := range conventionalTrunks {
@@ -306,14 +305,9 @@ func (r *Repo) conventionalTrunk() (string, bool) {
 	for _, ref := range strings.Split(out, "\n") {
 		refs[ref] = true
 	}
-	local := func(name string) bool { return refs["refs/heads/"+name] }
-	remote := func(name string) bool { return refs["refs/remotes/origin/"+name] }
-	both := func(name string) bool { return local(name) && remote(name) }
-	for _, exists := range []func(string) bool{both, remote, local} {
-		for _, name := range conventionalTrunks {
-			if exists(name) {
-				return name, true
-			}
+	for _, name := range conventionalTrunks {
+		if refs["refs/heads/"+name] || refs["refs/remotes/origin/"+name] {
+			return name, true
 		}
 	}
 	return "", false

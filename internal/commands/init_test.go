@@ -16,6 +16,7 @@ import (
 
 // bareRepo is a repository with no worktree configuration at all — the state
 // `wt init` exists to get you out of, and the one fixtureRepo cannot produce.
+// Its one commit is what makes main exist for detection to find.
 func bareRepo(t *testing.T) *repo.Repo {
 	t.Helper()
 	parent, err := filepath.EvalSymlinks(t.TempDir())
@@ -27,7 +28,10 @@ func bareRepo(t *testing.T) *repo.Repo {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("%v: %s", err, out)
 	}
-	r, err := repo.Discover(filepath.Join(parent, "demo"))
+	dir := filepath.Join(parent, "demo")
+	gitIn(t, dir, "-c", "user.email=t@example.com", "-c", "user.name=T",
+		"commit", "-q", "--allow-empty", "-m", "init")
+	r, err := repo.Discover(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +40,7 @@ func bareRepo(t *testing.T) *repo.Repo {
 
 func TestInitMakesAConfiglessRepoOpenable(t *testing.T) {
 	r := bareRepo(t)
-	if _, err := Open(r.Root); err == nil {
+	if existing, _ := existingConfig(r.Root); existing != "" {
 		t.Fatal("fixture already has a configuration; nothing to init")
 	}
 

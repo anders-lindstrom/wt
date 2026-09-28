@@ -74,8 +74,6 @@ func trunkSourceNote(source config.TrunkSource) string {
 		return " (from origin/HEAD)"
 	case config.TrunkConventional:
 		return " (the conventional trunk name that exists)"
-	case config.TrunkCurrentBranchGuess:
-		return " (guessed from the checked-out branch; `wt init` pins it)"
 	}
 	return ""
 }

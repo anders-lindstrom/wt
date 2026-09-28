@@ -106,13 +106,25 @@ untouched() {
     [[ "$output" != *detected* ]]
 }
 
-@test "a trunk that cannot be detected keeps the error, and names wt init" {
+@test "nothing names trunk: every command refuses and names wt init" {
     cd "$REPO"
-    git checkout -q --detach
-    git branch -q -m main other
+    wt new fix/login-crash > /dev/null 2>&1
+    git branch -q -m main production
     git remote remove origin
-    run wt new fix/login-crash
+    for c in "new fix/other" "up login-crash --yes --no-push" "sweep --dry-run" \
+        "status login-crash" "init --yes"; do
+        run wt $c
+        echo "wt $c: $output"
+        [ "$status" -ne 0 ]
+        [[ "$output" == *"cannot tell which branch is trunk"* ]]
+        [[ "$output" == *"wt init"* ]]
+    done
+    run --separate-stderr wt status login-crash --json
+    [ "$status" -eq 0 ]
+    [ "$(jq -r .upIneligibleCode <<< "$output")" = noConfiguration ]
+    [ "$(jq -r .trunkSource <<< "$output")" = null ]
+    run --separate-stderr wt up login-crash --json --yes --no-push
     [ "$status" -ne 0 ]
-    [[ "$output" == *"no trunk to detect"* ]]
-    [[ "$output" == *"wt init"* ]]
+    [[ "$(jq -r .error <<< "$output")" == *"cannot tell which branch is trunk"* ]]
+    [ ! -e "$REPO/bin" ]
 }

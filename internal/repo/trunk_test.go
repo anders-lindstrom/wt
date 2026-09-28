@@ -1,7 +1,9 @@
 package repo
 
 import (
+	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/config"
@@ -9,7 +11,7 @@ import (
 )
 
 // trunkOf detects the trunk of the repository at dir.
-func trunkOf(t *testing.T, dir string) (string, config.TrunkSource) {
+func trunkOf(t *testing.T, dir string) (string, config.TrunkSource, error) {
 	t.Helper()
 	r, err := Discover(dir)
 	if err != nil {
@@ -20,8 +22,17 @@ func trunkOf(t *testing.T, dir string) (string, config.TrunkSource) {
 
 func wantTrunk(t *testing.T, dir, want string, source config.TrunkSource) {
 	t.Helper()
-	if got, src := trunkOf(t, dir); got != want || src != source {
-		t.Errorf("DetectTrunk = %q, %s; want %q, %s", got, src, want, source)
+	got, src, err := trunkOf(t, dir)
+	if err != nil || got != want || src != source {
+		t.Errorf("DetectTrunk = %q, %s, %v; want %q, %s", got, src, err, want, source)
+	}
+}
+
+func wantNoTrunk(t *testing.T, dir string) {
+	t.Helper()
+	got, src, err := trunkOf(t, dir)
+	if !errors.Is(err, ErrNoTrunk) || got != "" || src != "" {
+		t.Errorf("DetectTrunk = %q, %q, %v; want ErrNoTrunk", got, src, err)
 	}
 }
 
@@ -35,8 +46,17 @@ func TestDetectTrunkPrefersOriginHead(t *testing.T) {
 	wantTrunk(t, main, "development", config.TrunkFromOriginHead)
 }
 
+// origin/HEAD outranks the conventional names, even a name no list holds.
+func TestDetectTrunkTakesOriginHeadOverMain(t *testing.T) {
+	dir := gittest.NewRepo(t, resolved(t, t.TempDir()), "demo")
+	run(t, dir, "branch", "residential_development")
+	withOriginNoHead(t, dir)
+	run(t, dir, "remote", "set-head", "origin", "residential_development")
+	wantTrunk(t, dir, "residential_development", config.TrunkFromOriginHead)
+}
+
 // A clone that never recorded origin/HEAD, its main checkout on a feature
-// branch: trunk is main, which exists here and on origin, not the feature.
+// branch: trunk is main, not the feature.
 func TestDetectTrunkIgnoresTheCheckedOutFeatureBranch(t *testing.T) {
 	main := gittest.NewRepo(t, resolved(t, t.TempDir()), "demo")
 	withOriginNoHead(t, main)
@@ -47,75 +67,62 @@ func TestDetectTrunkIgnoresTheCheckedOutFeatureBranch(t *testing.T) {
 	wantTrunk(t, main, "main", config.TrunkConventional)
 }
 
-// A conventional name both here and on origin beats one earlier in the list
-// that is only local.
-func TestDetectTrunkPrefersAConventionalBranchOriginHas(t *testing.T) {
+// development, main and master all there: development, first in the list.
+func TestDetectTrunkPrefersDevelopmentThenMainThenMaster(t *testing.T) {
 	dir := gittest.NewRepo(t, resolved(t, t.TempDir()), "demo")
-	run(t, dir, "branch", "-m", "main", "master")
-	withOriginNoHead(t, dir)
-	run(t, dir, "branch", "main")
-	run(t, dir, "checkout", "-q", "-b", "feat/x")
-	wantTrunk(t, dir, "master", config.TrunkConventional)
-}
-
-// Several conventional names on origin: the first in the list wins.
-func TestDetectTrunkTakesTheFirstConventionalName(t *testing.T) {
-	dir := gittest.NewRepo(t, resolved(t, t.TempDir()), "demo")
-	run(t, dir, "branch", "develop")
-	run(t, dir, "branch", "trunk")
-	withOriginNoHead(t, dir)
-	run(t, dir, "checkout", "-q", "-b", "feat/x")
-	wantTrunk(t, dir, "main", config.TrunkConventional)
-}
-
-// The tiers outrank the list's order: a name both here and on origin beats
-// one earlier in the list that only origin has, which beats one earlier still
-// that is only local.
-func TestDetectTrunkRanksTiersBeforeListOrder(t *testing.T) {
-	dir := gittest.NewRepo(t, resolved(t, t.TempDir()), "demo")
-	run(t, dir, "branch", "-m", "main", "trunk")
+	run(t, dir, "branch", "development")
 	run(t, dir, "branch", "master")
 	withOriginNoHead(t, dir)
-	run(t, dir, "branch", "-D", "master")
-	run(t, dir, "branch", "main")
 	run(t, dir, "checkout", "-q", "-b", "feat/x")
-	wantTrunk(t, dir, "trunk", config.TrunkConventional)
+	wantTrunk(t, dir, "development", config.TrunkConventional)
 
-	run(t, dir, "branch", "-D", "trunk")
-	run(t, dir, "update-ref", "-d", "refs/remotes/origin/trunk")
+	run(t, dir, "branch", "-D", "development")
+	run(t, dir, "update-ref", "-d", "refs/remotes/origin/development")
+	wantTrunk(t, dir, "main", config.TrunkConventional)
+
+	run(t, dir, "branch", "-D", "main")
+	run(t, dir, "update-ref", "-d", "refs/remotes/origin/main")
 	wantTrunk(t, dir, "master", config.TrunkConventional)
 }
 
-// A conventional name only origin has still beats the checked-out branch.
-func TestDetectTrunkTakesAConventionalNameOnlyOriginHas(t *testing.T) {
+// The list's order decides, not where a name exists: development only here
+// beats main here and on origin, and development only on origin does too.
+func TestDetectTrunkOrderOutranksWhereANameExists(t *testing.T) {
 	dir := gittest.NewRepo(t, resolved(t, t.TempDir()), "demo")
-	run(t, dir, "branch", "-m", "main", "development")
 	withOriginNoHead(t, dir)
 	run(t, dir, "checkout", "-q", "-b", "feat/x")
+	run(t, dir, "branch", "development")
+	wantTrunk(t, dir, "development", config.TrunkConventional)
+
 	run(t, dir, "branch", "-D", "development")
+	run(t, dir, "update-ref", "refs/remotes/origin/development", "main")
 	wantTrunk(t, dir, "development", config.TrunkConventional)
 }
 
-// A local-only conventional name, with no remote at all, is still trunk.
-func TestDetectTrunkTakesALocalConventionalName(t *testing.T) {
+// trunk and develop are no trunk names wt knows.
+func TestDetectTrunkIgnoresTrunkAndDevelop(t *testing.T) {
 	dir := gittest.NewRepo(t, resolved(t, t.TempDir()), "demo")
-	run(t, dir, "branch", "-m", "main", "develop")
-	run(t, dir, "checkout", "-q", "-b", "feat/x")
-	wantTrunk(t, dir, "develop", config.TrunkConventional)
+	run(t, dir, "branch", "-m", "main", "trunk")
+	run(t, dir, "branch", "develop")
+	wantNoTrunk(t, dir)
 }
 
-// Nothing else to go on: the checked-out branch, said to be a guess.
-func TestDetectTrunkGuessesTheCheckedOutBranchLast(t *testing.T) {
+// Nothing names trunk: detection fails rather than take the checked-out
+// branch, which may be a feature branch.
+func TestDetectTrunkFailsRatherThanGuess(t *testing.T) {
 	dir := gittest.NewRepo(t, resolved(t, t.TempDir()), "demo")
 	run(t, dir, "branch", "-m", "main", "production")
-	wantTrunk(t, dir, "production", config.TrunkCurrentBranchGuess)
+	wantNoTrunk(t, dir)
+	if !strings.Contains(ErrNoTrunk.Error(), "wt init") || !strings.Contains(ErrNoTrunk.Error(), "MAIN_BRANCH") {
+		t.Errorf("ErrNoTrunk names no way out: %v", ErrNoTrunk)
+	}
 }
 
 // An unborn branch has no ref, so no conventional name exists yet.
-func TestDetectTrunkOfAnUnbornRepoIsAGuess(t *testing.T) {
+func TestDetectTrunkOfAnUnbornRepoFails(t *testing.T) {
 	parent := resolved(t, t.TempDir())
-	run(t, parent, "init", "-q", "-b", "trunk", "fresh")
-	wantTrunk(t, filepath.Join(parent, "fresh"), "trunk", config.TrunkCurrentBranchGuess)
+	run(t, parent, "init", "-q", "-b", "main", "fresh")
+	wantNoTrunk(t, filepath.Join(parent, "fresh"))
 }
 
 // withOriginNoHead is gittest.WithOrigin without refs/remotes/origin/HEAD:

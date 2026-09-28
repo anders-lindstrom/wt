@@ -191,7 +191,7 @@ func TestUpJSONReportsAnErrorBeforeAnyParticipant(t *testing.T) {
 func TestJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 	var out bytes.Buffer
 	j := NewRunJournal(&out)
-	j.trunk("main", strp("currentBranchGuess"), "origin/main", strings.Repeat("a", 40), true)
+	j.trunk("main", strp("conventional"), "origin/main", strings.Repeat("a", 40), true)
 	j.join("one", "feat_wt/one", "/w/one", strings.Repeat("1", 40))
 	j.join("two", "feat_wt/two", "/w/two", strings.Repeat("2", 40))
 	j.set("feat_wt/one", func(p *UpParticipant) { p.Result = ResultRebased })
@@ -209,8 +209,8 @@ func TestJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 	if r.Outcome != OutcomeInterrupted || r.Worktrees[1].Result != ResultInterrupted || r.Recovery == nil {
 		t.Errorf("%+v", r)
 	}
-	if r.TrunkSource == nil || *r.TrunkSource != "currentBranchGuess" {
-		t.Errorf("trunkSource = %v, want the guess recorded with trunk", r.TrunkSource)
+	if r.TrunkSource == nil || *r.TrunkSource != "conventional" {
+		t.Errorf("trunkSource = %v, want the source recorded with trunk", r.TrunkSource)
 	}
 }
 
