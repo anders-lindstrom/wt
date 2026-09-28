@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/recovery.v1.json",
-  "x-version": "1.0.0",
+  "x-version": "1.2.0",
   "title": "<quarantine>/recovery.json",
-  "description": "The journal of a worktree moved into quarantine by `wt remove --quarantine <dir>` or `wt sweep --quarantine <dir>`, and of its restore by `wt restore <dir>`. Written durably (temp file, fsync, rename, folder fsync) before and after every step, the first time before anything changes, so a run that stops anywhere is resolved from it and the two places each directory can be. Schema 1: fields may be added; nothing is renamed or removed. The step lists and step states are closed: wt refuses a record whose steps are not exactly these, so another step or state is a new major (recovery.v2.json), never a minor. See docs/json.md.",
+  "description": "The journal of a worktree moved into quarantine by `wt remove --quarantine <dir>` or `wt sweep --quarantine <dir>`, and of its restore by `wt restore <dir>` or its purge by `wt quarantine purge <dir>`. Written durably (temp file, fsync, rename, folder fsync) before and after every step, the first time before anything changes, so a run that stops anywhere is resolved from it and the two places each directory can be. Schema 1: fields may be added; nothing is renamed or removed. The step lists and step states are closed: wt refuses a record whose steps are not exactly these, so another step or state is a new major (recovery.v2.json), never a minor. See docs/json.md.",
   "type": "object",
   "required": [
     "schema",
@@ -113,9 +113,32 @@
         }
       ],
       "description": "The restore's own journal; null until wt restore first changes something."
+    },
+    "purge": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/purge"
+        }
+      ],
+      "description": "The purge's journal: set only in <dir>/recovery.purging.json, the copy of this record `wt quarantine purge <dir>` writes, and which replaces recovery.json, before it deletes anything. With no recovery.json no wt restore, of any version, restores it: the pins may be gone. Running the purge again finishes it. Absent in records written before 1.2.0: read as null."
     }
   },
   "$defs": {
+    "purge": {
+      "type": "object",
+      "required": [
+        "startedAt"
+      ],
+      "properties": {
+        "startedAt": {
+          "type": "string",
+          "description": "When the purge began, RFC 3339, UTC."
+        }
+      }
+    },
     "sha": {
       "type": "string",
       "pattern": "^[0-9a-f]{40,64}$"
@@ -295,6 +318,10 @@
             "null"
           ],
           "description": "The worktree using the branch, when that made the action detach."
+        },
+        "createdBranch": {
+          "type": "boolean",
+          "description": "Set once this restore has made the branch again (recreate): it owns that branch and its config until the restore is done, also after a failed step, so running it again puts back the recorded config still missing. Absent in records written before 1.1.0: read as false."
         },
         "steps": {
           "type": "array",

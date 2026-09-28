@@ -107,7 +107,7 @@ make_fleet() {
     echo "$d"
 }
 # make_worktrees with login-crash already moved aside into ../trash/lc, for
-# wt restore.
+# wt restore and wt quarantine purge.
 make_quarantine() {
     local d; d=$(make_worktrees "$1")
     mkdir -p "$1/trash"
@@ -330,6 +330,11 @@ check worktrees "" "mkdir -p ../trash" 'wt remove login-crash --quarantine ../tr
 check quarantine "" "" 'wt restore ../trash/lc'
 check quarantine "" "" 'wt restore ../trash/lc --dry-run'
 check quarantine "" "" 'wt restore ../trash/lc --json'
+check quarantine "" "" 'wt quarantine purge ../trash/lc' fail
+check quarantine "" "" 'wt quarantine purge ../trash/lc --dry-run'
+check quarantine "" "" 'wt quarantine purge ../trash/lc --yes'
+check quarantine "" "" 'wt quarantine purge ../trash/lc --json'
+check quarantine "" "" 'wt quarantine purge ../trash/lc --yes --json --expect 1:0123abcd' fail
 
 check sweep "" "" 'wt sweep'
 check fleet "" "" 'wt sweep --all --yes'

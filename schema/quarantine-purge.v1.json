@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/quarantine-purge.v1.json",
+  "x-version": "1.0.0",
+  "title": "wt quarantine purge <dir> --yes --json",
+  "description": "What `wt quarantine purge <dir> --yes` deleted. Printed by `wt quarantine purge <dir> --yes --json` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends the run. Each pin and the folder are read when the object is written. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
+  "type": "object",
+  "required": [
+    "schema",
+    "schemaVersion",
+    "command",
+    "dir",
+    "repo",
+    "state",
+    "token",
+    "outcome",
+    "error",
+    "problems",
+    "pins",
+    "folderDeleted",
+    "recovery"
+  ],
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^1\\.[0-9]+\\.[0-9]+$"
+    },
+    "command": {
+      "const": "quarantine purge"
+    },
+    "dir": {
+      "type": "string"
+    },
+    "repo": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "state": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "enum": [
+            "quarantined",
+            "restored",
+            "purging",
+            "empty",
+            "unsettled"
+          ]
+        }
+      ],
+      "description": "What the folder was when the purge planned, as in the plan."
+    },
+    "token": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The token of the plan the purge went by."
+    },
+    "outcome": {
+      "enum": [
+        "purged",
+        "refused",
+        "partial",
+        "interrupted"
+      ],
+      "description": "purged: every pin and the folder are gone. refused: nothing was deleted (problems says why, planChanged for --expect). partial: the purge began and stopped; recovery.purging.json, or an empty folder, says so, and running it again finishes it. interrupted: a signal ended the run."
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "problems": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "code",
+          "text"
+        ],
+        "properties": {
+          "code": {
+            "enum": [
+              "missing",
+              "notAFolder",
+              "noRecord",
+              "wrongFolder",
+              "repository",
+              "pinsForeign",
+              "pinsUnreadable",
+              "unsettled",
+              "foreignEntry",
+              "nestedQuarantine",
+              "empty",
+              "worktreesUnknown",
+              "registered",
+              "locked",
+              "location",
+              "planChanged"
+            ],
+            "description": "As in the plan, and planChanged: the plan is not the one --expect named, not the one the question was asked about, or not the one read again under the folder's lock."
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "pins": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "ref",
+          "oid",
+          "result"
+        ],
+        "properties": {
+          "name": {
+            "enum": [
+              "head",
+              "tip",
+              "dir"
+            ]
+          },
+          "ref": {
+            "type": "string"
+          },
+          "oid": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Where it was when the purge planned; null when it was gone already."
+          },
+          "result": {
+            "enum": [
+              "deleted",
+              "absent",
+              "kept"
+            ],
+            "description": "deleted: it was there and is gone. absent: it was gone already. kept: it is still there, or cannot be read."
+          }
+        }
+      }
+    },
+    "folderDeleted": {
+      "type": "boolean",
+      "description": "The folder is gone."
+    },
+    "recovery": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "For interrupted: what wt printed."
+    }
+  }
+}

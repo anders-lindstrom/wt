@@ -97,6 +97,12 @@ func (p RestorePlan) Refusal() string {
 // in when dir has no recovery.json; nil when there is none to look in.
 func PlanRestore(dir string, rp *repo.Repo) RestorePlan {
 	p := RestorePlan{Dir: dir}
+	if _, err := os.Lstat(filepath.Join(dir, PurgingName)); err == nil {
+		// Its pins may be gone, and gc with them the commits it needs.
+		p.problem(ProblemPurging, fmt.Sprintf("a purge of it began: it cannot be restored; "+
+			"wt quarantine purge %s finishes deleting it", dir))
+		return p
+	}
 	r, err := Load(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		p.planOrphan(rp)
@@ -314,11 +320,22 @@ func occupancy(rp *repo.Repo, self string, names ...string) (string, error) {
 // recovery.json before and after it runs, and each one is idempotent, so a
 // restore stopped anywhere is finished by the next.
 func DoRestore(dir string, rp *repo.Repo) (RestoreResult, error) {
+	// A purge holds the same lock: neither works on a quarantine the other
+	// is changing.
+	unlock, lerr := LockDir(dir)
+	if lerr == nil {
+		defer unlock()
+	}
 	p := PlanRestore(dir, rp)
 	res := RestoreResult{Outcome: OutcomeRefused, Action: p.Action, OccupiedBy: p.OccupiedBy,
 		Checkout: p.Checkout, Admin: p.Admin}
 	if why := p.Refusal(); why != "" {
 		return res, errors.New(why)
+	}
+	// With no folder there is nothing for a purge to race: a lock whose
+	// folder is gone is still taken off.
+	if lerr != nil && !errors.Is(lerr, os.ErrNotExist) {
+		return res, lerr
 	}
 	if p.Record == nil {
 		if err := rp.UnlockWorktree(p.Orphan); err != nil {
@@ -341,18 +358,19 @@ func DoRestore(dir string, rp *repo.Repo) (RestoreResult, error) {
 	}
 
 	if st := r.RestoreStep(StepBranch); st.State != Done {
-		action, occupied := p.Action, p.OccupiedBy
-		if st.State == Running && deref(r.Restore.Action) == ActionRecreate && !p.neverUnregistered() {
-			// This restore made the branch again and stopped: it finishes
-			// that, config included, rather than taking the branch for
-			// somebody else's.
-			action, occupied = ActionRecreate, ""
+		action, occupied, resumed := p.Action, p.OccupiedBy, false
+		if deref(r.Restore.Action) == ActionRecreate && (st.State == Running || r.Restore.CreatedBranch) &&
+			!p.neverUnregistered() {
+			// This restore made the branch again and stopped, or failed
+			// after: it finishes that, config included, rather than taking
+			// the branch for somebody else's.
+			action, occupied, resumed = ActionRecreate, "", true
 		}
 		r.Restore.Action, r.Restore.OccupiedBy = &action, strPtr(occupied)
 		if err := r.SetRestore(StepBranch, Running, nil); err != nil {
 			return res, err
 		}
-		if err := restoreBranch(rr, r, action, p.Admin); err != nil {
+		if err := restoreBranch(rr, r, action, p.Admin, resumed); err != nil {
 			_ = r.SetRestore(StepBranch, Failed, err)
 			return res, err
 		}
@@ -461,8 +479,10 @@ func moveBack(r *Record, step string, pl Place) error {
 
 // restoreBranch carries out a branch action. Each is idempotent: a ref
 // already where the action puts it is left, config is added only to an
-// empty section, and HEAD is written whole.
-func restoreBranch(rp *repo.Repo, r *Record, action, adminAt string) error {
+// empty section or one this restore owns, and HEAD is written whole.
+// resumed is a recreate an earlier run of this restore began: the branch
+// is its own even if the record does not say it made it yet.
+func restoreBranch(rp *repo.Repo, r *Record, action, adminAt string, resumed bool) error {
 	b := r.Branch
 	switch action {
 	case ActionRenameBack:
@@ -474,6 +494,17 @@ func restoreBranch(rp *repo.Repo, r *Record, action, adminAt string) error {
 			if _, err := git.Run(rp.MainRoot, "update-ref", "--no-deref", "refs/heads/"+b.Name, b.Tip, ""); err != nil {
 				return fmt.Errorf("could not make branch %s again at %s: %s", b.Name, git.ShortID(b.Tip, 12), git.Reason(err))
 			}
+			r.Restore.CreatedBranch = true
+			if err := r.Save("restore.branch.created"); err != nil {
+				return err
+			}
+		} else if resumed && !r.Restore.CreatedBranch {
+			// Made by the run that stopped before it could say so: said
+			// now, before any config goes back, so a failure after keeps it.
+			r.Restore.CreatedBranch = true
+			if err := r.Save("restore.branch.created"); err != nil {
+				return err
+			}
 		}
 	case ActionAttach:
 		return writeHead(r, adminAt, "ref: refs/heads/"+deref(b.KeepAs))
@@ -483,7 +514,7 @@ func restoreBranch(rp *repo.Repo, r *Record, action, adminAt string) error {
 		}
 		return writeHead(r, adminAt, *r.Head)
 	}
-	return restoreConfig(rp, r, action == ActionRecreate)
+	return restoreConfig(rp, r, r.Restore.CreatedBranch || resumed)
 }
 
 // restoreConfig puts a deleted branch's config section back, entry by
@@ -492,8 +523,10 @@ func restoreBranch(rp *repo.Repo, r *Record, action, adminAt string) error {
 // branch somebody else made keeps the config they gave it, and old values
 // stacked on new would make a multi-valued merge an octopus. Each recorded
 // entry the section does not have is added, in order, and one it has
-// counts once, so a restore stopped between two entries adds the rest and
-// none twice.
+// counts once, so a restore stopped or failed between two entries adds the
+// rest and none twice. A key holding a value the record does not have was
+// set since, and is left as it is. It fails unless every other recorded
+// entry is there when it is done.
 func restoreConfig(rp *repo.Repo, r *Record, recreated bool) error {
 	b := r.Branch
 	if b == nil || b.Plan != BranchPlanDelete || r.Step(StepBranch).State == Pending || len(b.Config) == 0 {
@@ -503,11 +536,11 @@ func restoreConfig(rp *repo.Repo, r *Record, recreated bool) error {
 	if err != nil || (!recreated && len(now) > 0) {
 		return err
 	}
-	have := map[ConfigEntry]int{}
-	for _, e := range now {
-		have[ConfigEntry{Key: e.Key, Value: e.Value}]++
-	}
+	have, newer := configAgainst(b.Config, now)
 	for _, e := range b.Config {
+		if newer[e.Key] {
+			continue
+		}
 		if have[e] > 0 {
 			have[e]--
 			continue
@@ -516,7 +549,41 @@ func restoreConfig(rp *repo.Repo, r *Record, recreated bool) error {
 			return fmt.Errorf("could not restore %s of branch %s: %s", e.Key, b.Name, git.Reason(err))
 		}
 	}
+	if now, err = rp.BranchConfig(b.Name); err != nil {
+		return err
+	}
+	have, newer = configAgainst(b.Config, now)
+	for _, e := range b.Config {
+		if newer[e.Key] {
+			continue
+		}
+		if have[e] == 0 {
+			return fmt.Errorf("%s of branch %s is not back", e.Key, b.Name)
+		}
+		have[e]--
+	}
 	return nil
+}
+
+// configAgainst reads the section as it is now against the recorded one:
+// how many of each recorded entry it has, and the keys holding a value the
+// record does not, which somebody set since.
+func configAgainst(recorded []ConfigEntry, now []repo.ConfigEntry) (map[ConfigEntry]int, map[string]bool) {
+	left := map[ConfigEntry]int{}
+	for _, e := range recorded {
+		left[e]++
+	}
+	have, newer := map[ConfigEntry]int{}, map[string]bool{}
+	for _, e := range now {
+		k := ConfigEntry{Key: e.Key, Value: e.Value}
+		if left[k] > 0 {
+			left[k]--
+			have[k]++
+			continue
+		}
+		newer[e.Key] = true
+	}
+	return have, newer
 }
 
 // recheckBranch reads the branch HEAD will name once more, right before

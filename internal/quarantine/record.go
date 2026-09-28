@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -158,7 +159,11 @@ type Restore struct {
 	// worktree using the branch when that decided it.
 	Action     *string `json:"action"`
 	OccupiedBy *string `json:"occupiedBy"`
-	Steps      []Step  `json:"steps"`
+	// CreatedBranch is set once this restore has made the branch again: it
+	// owns that branch, and its config, until the restore is done, also
+	// after a step that failed.
+	CreatedBranch bool   `json:"createdBranch"`
+	Steps         []Step `json:"steps"`
 }
 
 // Record is recovery.json.
@@ -183,6 +188,12 @@ type Record struct {
 	Branch  *Branch  `json:"branch"`
 	Steps   []Step   `json:"steps"`
 	Restore *Restore `json:"restore"`
+	// Purge is a purge's journal; null until wt quarantine purge begins.
+	Purge *Purge `json:"purge"`
+
+	// recordedAs is the folder the file itself names, which Load reads
+	// before Dir becomes where it was read from.
+	recordedAs string
 }
 
 // AfterSave runs, when set, after every write of a record with the point
@@ -247,17 +258,23 @@ func Load(dir string) (*Record, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parse(dir, FileName, data)
+}
+
+// parse reads a record from data, the file name in dir.
+func parse(dir, name string, data []byte) (*Record, error) {
+	file := filepath.Join(dir, name)
 	var r Record
 	if err := json.Unmarshal(data, &r); err != nil {
-		return nil, fmt.Errorf("%s: %w", filepath.Join(dir, FileName), err)
+		return nil, fmt.Errorf("%s: %w", file, err)
 	}
 	if r.Schema != 1 {
-		return nil, fmt.Errorf("%s is schema %d; this wt reads schema 1", filepath.Join(dir, FileName), r.Schema)
+		return nil, fmt.Errorf("%s is schema %d; this wt reads schema 1", file, r.Schema)
 	}
 	if err := r.validate(); err != nil {
-		return nil, fmt.Errorf("%s: %w", filepath.Join(dir, FileName), err)
+		return nil, fmt.Errorf("%s: %w", file, err)
 	}
-	r.Dir = dir
+	r.recordedAs, r.Dir = r.Dir, dir
 	return &r, nil
 }
 
@@ -351,11 +368,11 @@ func (r *Record) Save(point string) error { return r.save(point) }
 // save writes the record durably: a temp file, fsynced, renamed over the
 // journal, and the folder fsynced so the rename itself is on disk.
 func (r *Record) save(point string) error {
-	data, err := json.MarshalIndent(r, "", "  ")
+	data, err := r.marshal()
 	if err != nil {
 		return err
 	}
-	if err := writeDurable(filepath.Join(r.Dir, FileName), append(data, '\n')); err != nil {
+	if err := writeDurable(filepath.Join(r.Dir, FileName), data); err != nil {
 		return err
 	}
 	if AfterSave != nil {
@@ -364,9 +381,25 @@ func (r *Record) save(point string) error {
 	return nil
 }
 
+// marshal is the record as it is written: dir is the folder the removal
+// named, however the folder was reached this time.
+func (r *Record) marshal() ([]byte, error) {
+	out := *r
+	if r.recordedAs != "" {
+		out.Dir = r.recordedAs
+	}
+	data, err := json.MarshalIndent(&out, "", "  ")
+	return append(data, '\n'), err
+}
+
+// writeDurable writes path through a temp file made new, never followed if
+// something left a symlink at its name.
 func writeDurable(path string, data []byte) error {
 	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err := os.Remove(tmp); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o644)
 	if err != nil {
 		return err
 	}

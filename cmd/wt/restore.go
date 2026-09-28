@@ -32,14 +32,16 @@ func newRestoreCmd() *cobra.Command {
 			"unregistered left it in use: restore only unlocks it.\n\n" +
 			"It refuses, changing nothing, when the checkout's path or the admin\n" +
 			"dir's is taken by something else, when either would come back from\n" +
-			"another volume, or when a deleted branch's commit is no longer in the\n" +
-			"repository. Every step is written to recovery.json before and after it\n" +
-			"runs, so a restore — or a removal — stopped anywhere is finished by\n" +
-			"running wt restore <dir> again. A worktree locked by \"wt quarantine\n" +
-			"<dir>\" with no recovery.json was stopped before anything moved: restore\n" +
+			"another volume, when a deleted branch's commit is no longer in the\n" +
+			"repository, or when wt quarantine purge began deleting it. Every\n" +
+			"step is written to recovery.json before and after it runs, so a\n" +
+			"restore — or a removal — stopped anywhere is finished by running\n" +
+			"wt restore <dir> again. A worktree locked by \"wt quarantine <dir>\"\n" +
+			"with no recovery.json was stopped before anything moved: restore\n" +
 			"unlocks it. The folder itself is left as it is, empty but for\n" +
-			"recovery.json. With the Superset integration on, the worktree is\n" +
-			"registered there again, the way wt new registers one.\n\n" +
+			"recovery.json; wt quarantine purge <dir> deletes it. With the\n" +
+			"Superset integration on, the worktree is registered there again,\n" +
+			"the way wt new registers one.\n\n" +
 			"--dry-run says what it would do and changes nothing. --json prints one\n" +
 			"object on stdout: with --dry-run the plan, otherwise the result; the\n" +
 			"human output goes to stderr. wt schema restore-plan and wt schema\n" +
