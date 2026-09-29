@@ -279,11 +279,15 @@ thrown away, and a fast-forward that fails never fails the run.
 | `fastForwarded` | bool | local `<trunk>` was moved to `remote` |
 | `skippedReason` | string \| null | why it was left; null when fast-forwarded or with nothing to do (equal, or either side missing) |
 
-`skippedReason`, exhaustively:
+`skippedReason`, exhaustively. `ahead` and `diverged` are reported whenever they
+hold, even with `--no-ff-trunk` or `ff_trunk` false: they are facts about the
+repository a fast-forward could not get past anyway, and `ahead` is how a caller
+learns local trunk has commits origin lacks. `optedOut` is reported only when a
+fast-forward was otherwise possible.
 
 | Value | Meaning |
 |---|---|
-| `optedOut` | `--no-ff-trunk`, or `ff_trunk` false in the user config |
+| `optedOut` | `--no-ff-trunk`, or `ff_trunk` false in the user config, and trunk could otherwise have been fast-forwarded |
 | `ahead` | local has commits origin lacks, and origin none local lacks |
 | `diverged` | both have commits the other lacks |
 | `dirty` | the checkout it is on has changes, untracked files included |
