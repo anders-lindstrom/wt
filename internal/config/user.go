@@ -34,7 +34,21 @@ const (
 	// up to origin after fetching it, when that is a safe fast-forward. On by
 	// default.
 	UserKeyFFTrunk = "ff_trunk"
+	// UserKeyRefSweepPatterns is the names wt refs sweep treats as backups:
+	// globs matched against a branch's or tag's short name.
+	UserKeyRefSweepPatterns = "ref_sweep_patterns"
+	// UserKeyRefSweepAge is how old a backup no other ref contains has to be
+	// before wt refs sweep selects it.
+	UserKeyRefSweepAge = "ref_sweep_age"
 )
+
+// DefaultRefSweepPatterns are the backup names wt refs sweep looks for when
+// the user file names none.
+var DefaultRefSweepPatterns = []string{"backup/*", "safe/*", "safety/*", "backup-*", "safe-*", "safety-*",
+	"*-backup", "*-safe", "*-safety"}
+
+// DefaultRefSweepAge is ref_sweep_age when the user file does not set it.
+const DefaultRefSweepAge = "14d"
 
 // userKind is how a setting's value is written: the file, the validator, the
 // printer and `wt config set` all read it here.
@@ -56,6 +70,9 @@ type userKey struct {
 	boolAt   func(*User) *bool
 	stringAt func(*User) *string
 	listAt   func(*User) *[]string
+	// validate, when set, checks a value as the file would spell it, both
+	// when `wt config set` writes it and when the file is read.
+	validate func(value string) error
 }
 
 // userKeys is every key the user file accepts; the reader, the writer, the
@@ -76,6 +93,14 @@ var userKeys = []userKey{
 	{Name: UserKeyFFTrunk, Kind: userBool, Default: "true",
 		Doc:    "fast-forward local trunk when wt up and wt sync run fetch it",
 		boolAt: func(u *User) *bool { return &u.FFTrunk }},
+	{Name: UserKeyRefSweepPatterns, Kind: userList, Default: strings.Join(DefaultRefSweepPatterns, " "),
+		Doc:      "the branch and tag names wt refs sweep treats as backups (globs)",
+		listAt:   func(u *User) *[]string { return &u.RefSweepPatterns },
+		validate: validRefPatterns},
+	{Name: UserKeyRefSweepAge, Kind: userString, Default: DefaultRefSweepAge,
+		Doc:      "how old an uncontained backup must be for wt refs sweep (e.g. 14d)",
+		stringAt: func(u *User) *string { return &u.RefSweepAge },
+		validate: func(v string) error { _, err := ParseAge(v); return err }},
 }
 
 // UserKeyNames is every key the user file accepts, in the order `wt config`
@@ -130,6 +155,10 @@ type User struct {
 	TypeNames []string
 	// FFTrunk has a run that fetched trunk fast-forward local trunk to it.
 	FFTrunk bool
+	// RefSweepPatterns and RefSweepAge are what wt refs sweep calls a backup,
+	// and how old one no other ref contains must be to be selected.
+	RefSweepPatterns []string
+	RefSweepAge      string
 	// Roots and Profiles are the [roots] and [profiles] tables, in the order
 	// the file writes them; nil when it has none.
 	Roots    []NamedRoot
@@ -315,6 +344,9 @@ func loadUser(path string) (*User, error) {
 			continue
 		}
 		value, err := decodeUser(md, doc[k.Name], k)
+		if err == nil && k.validate != nil {
+			err = k.validate(value)
+		}
 		if err != nil {
 			problems = append(problems, fmt.Sprintf("%s in %s %s", k.Name, path, err))
 			continue
@@ -405,6 +437,12 @@ func userValue(name, value string) (string, error) {
 	k, ok := userKeyByName(name)
 	if !ok {
 		return "", unknownUserKey(name)
+	}
+	if k.validate != nil {
+		if err := k.validate(value); err != nil {
+			return "", fmt.Errorf("%s: %w", name, err)
+		}
+		return k.literal(value), nil
 	}
 	if k.Kind == userList {
 		// The types are not known here — they are each repository's — so the

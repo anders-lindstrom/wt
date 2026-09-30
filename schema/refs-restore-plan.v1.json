@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/refs-restore-plan.v1.json",
+  "x-version": "1.0.0",
+  "title": "wt refs restore <runId> --dry-run --json",
+  "description": "What `wt refs restore <runId>` would put back. Printed by `wt refs restore <runId> --json` without --yes as the only thing on stdout; it changes nothing. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
+  "type": "object",
+  "required": [
+    "schema",
+    "schemaVersion",
+    "command",
+    "repo",
+    "runId",
+    "token",
+    "error",
+    "items"
+  ],
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^1\\.[0-9]+\\.[0-9]+$"
+    },
+    "command": {
+      "const": "refs restore"
+    },
+    "repo": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "runId": {
+      "type": "string",
+      "description": "The run id as given; one not in wt's format is an error."
+    },
+    "token": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^rr1-[0-9a-f]{32}$",
+      "description": "Names the plan: pass it to --yes --expect. Null when nothing could be restored, or on error."
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "pin",
+          "object",
+          "action",
+          "selected"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "refs/heads/<name> or refs/tags/<name> here; origin:refs/heads/<name> or origin:refs/tags/<name> on origin. --only takes it, one id per flag and never split: a ref name may contain a comma."
+          },
+          "kind": {
+            "enum": [
+              "branch",
+              "tag",
+              "remoteBranch",
+              "remoteTag"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "pin": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+          },
+          "action": {
+            "enum": [
+              "create",
+              "none",
+              "occupied",
+              "remoteOccupied",
+              "pinGone",
+              "endpointChanged",
+              "endpointUnknown"
+            ],
+            "description": "create: the name is free; it is made at object. none: it is already there at object; only the pin goes. occupied: the name holds another object here. remoteOccupied: origin has something there. endpointChanged: a remote ref, and origin no longer resolves to the URLs the run recorded in its meta. endpointUnknown: a remote ref, and the run has no meta. pinGone: the pin is not there any more; a pin that goes between the plan and the run is reported as kept, its reason starting pinGone."
+          },
+          "selected": {
+            "type": "boolean",
+            "description": "A restore with this plan acts on it: every row whose action is create or none, or what --only names."
+          }
+        }
+      }
+    }
+  }
+}

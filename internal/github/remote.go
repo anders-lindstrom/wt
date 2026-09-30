@@ -85,6 +85,17 @@ func RemoteOf(dir string) (Remote, bool) {
 	return best, true
 }
 
+// RemoteFromURL is the GitHub repository one remote URL names, for a
+// command that must talk about that remote and no other; false when it is
+// not on GitHub.
+func RemoteFromURL(name, url string) (Remote, bool) {
+	host, slug, ok := parseURL(url)
+	if !ok || !isGitHub(host) {
+		return Remote{}, false
+	}
+	return Remote{Name: name, Host: host, Slug: slug}, true
+}
+
 // isGitHub reports whether a host is GitHub's: github.com, or any host with
 // "github" in its name, which is how Enterprise installations are spelled in
 // practice. A host wt does not recognise means "not on GitHub", not an error.

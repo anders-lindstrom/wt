@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/refs-swept.v1.json",
+  "x-version": "1.0.0",
+  "title": "wt refs swept --json",
+  "description": "Every run of `wt refs sweep` whose pins are still there, oldest first, read from refs/wt-swept/. Printed by `wt refs swept --json` as the only thing on stdout; it changes nothing. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
+  "type": "object",
+  "required": [
+    "schema",
+    "schemaVersion",
+    "command",
+    "repo",
+    "error",
+    "runs"
+  ],
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^1\\.[0-9]+\\.[0-9]+$"
+    },
+    "command": {
+      "const": "refs swept"
+    },
+    "repo": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "runs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "runId",
+          "sweptAt",
+          "endpoint",
+          "refs"
+        ],
+        "properties": {
+          "runId": {
+            "type": "string",
+            "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{4,32}$"
+          },
+          "sweptAt": {
+            "type": "integer",
+            "description": "Unix seconds the run began: its meta's sweptAt, else the time in its id."
+          },
+          "endpoint": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "url",
+                  "digest"
+                ],
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "description": "origin's one effective URL, fetch and push alike, insteadOf and pushInsteadOf applied, with all userinfo removed (git@host:o/r is host:o/r)."
+                  },
+                  "digest": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$",
+                    "description": "sha256: and the lowercase hex SHA-256 of the effective URL's UTF-8 bytes."
+                  }
+                }
+              }
+            ],
+            "description": "The origin the run's meta records; null for a local run or a run with no meta."
+          },
+          "refs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "kind",
+                "name",
+                "pin",
+                "object"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "refs/heads/<name> or refs/tags/<name> here; origin:refs/heads/<name> or origin:refs/tags/<name> on origin. --only takes it, one id per flag and never split: a ref name may contain a comma."
+                },
+                "kind": {
+                  "enum": [
+                    "branch",
+                    "tag",
+                    "remoteBranch",
+                    "remoteTag"
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "pin": {
+                  "type": "string"
+                },
+                "object": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+                }
+              }
+            },
+            "description": "Empty for a run that wrote its meta and moved nothing."
+          }
+        }
+      }
+    }
+  }
+}

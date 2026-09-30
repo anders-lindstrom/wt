@@ -1,0 +1,296 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/refs-sweep-plan.v1.json",
+  "x-version": "1.0.0",
+  "title": "wt refs sweep --dry-run --json",
+  "description": "What `wt refs sweep` would move: every branch and tag, here and with --remote on origin, whose name matches a backup pattern, and what it is. Printed by `wt refs sweep --json` without --yes as the only thing on stdout; it moves nothing. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
+  "type": "object",
+  "required": [
+    "schema",
+    "schemaVersion",
+    "command",
+    "repo",
+    "trunk",
+    "trunkSource",
+    "fetched",
+    "remote",
+    "patterns",
+    "age",
+    "now",
+    "endpoint",
+    "runId",
+    "token",
+    "error",
+    "problems",
+    "items"
+  ],
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^1\\.[0-9]+\\.[0-9]+$"
+    },
+    "command": {
+      "const": "refs sweep"
+    },
+    "repo": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "trunk": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "trunkSource": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "enum": [
+            "config",
+            "originHead",
+            "conventional"
+          ]
+        }
+      ]
+    },
+    "fetched": {
+      "type": "boolean"
+    },
+    "remote": {
+      "type": "boolean"
+    },
+    "patterns": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "ref_sweep_patterns, in the order they are tried."
+    },
+    "age": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "ref_sweep_age, e.g. 14d."
+    },
+    "now": {
+      "type": "integer",
+      "description": "Unix seconds the plan was made at; age is measured from it."
+    },
+    "endpoint": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "url",
+            "digest"
+          ],
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "origin's one effective URL, fetch and push alike, insteadOf and pushInsteadOf applied, with all userinfo removed (git@host:o/r is host:o/r)."
+            },
+            "digest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "description": "sha256: and the lowercase hex SHA-256 of the effective URL's UTF-8 bytes."
+            }
+          }
+        }
+      ],
+      "description": "With --remote: the one URL all contact with origin goes through, and its digest, which the token covers. Null without --remote."
+    },
+    "runId": {
+      "type": "null",
+      "description": "Always null: the run that applies the plan mints it."
+    },
+    "token": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^rs1-[0-9a-f]{32}$",
+      "description": "Names the plan: pass it to --yes --expect. Null when no row could be swept, or on error. --only does not change it."
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "problems": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "code",
+          "text"
+        ],
+        "properties": {
+          "code": {
+            "enum": [
+              "remoteAmbiguous",
+              "remoteCredentialsInUrl",
+              "planChanged",
+              "runIdTaken"
+            ],
+            "description": "remoteAmbiguous: --remote, and origin's effective fetch and push URLs are not one and the same URL. remoteCredentialsInUrl: --remote, and that URL carries a password (in any form, scp-like too), or any userinfo on http, https, ftp or ftps; a <transport>::<address> URL is judged on its address too. planChanged: the plan is not the one --expect named, or not the one the question was asked about. runIdTaken: --run-id names a run that has refs under refs/wt-swept/ already."
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "Codes for why no plan could be made; empty otherwise."
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "pattern",
+          "category",
+          "selected",
+          "tip",
+          "object",
+          "annotated",
+          "containedIn",
+          "uniqueCommits",
+          "date",
+          "dateSource",
+          "kept",
+          "subject"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "refs/heads/<name> or refs/tags/<name> here; origin:refs/heads/<name> or origin:refs/tags/<name> on origin. --only takes it, one id per flag and never split: a ref name may contain a comma."
+          },
+          "kind": {
+            "enum": [
+              "branch",
+              "tag",
+              "remoteBranch",
+              "remoteTag"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "description": "The short name the pattern matched."
+          },
+          "pattern": {
+            "type": "string",
+            "description": "The first pattern it matched."
+          },
+          "category": {
+            "enum": [
+              "backupContained",
+              "backupOld",
+              "backupYoung",
+              "kept"
+            ],
+            "description": "backupContained: another ref contains it (selected). backupOld: it holds commits no other ref has and is older than age (selected). backupYoung: the same, younger (not selected unless --only names it). kept: something holds it; kept says what."
+          },
+          "selected": {
+            "type": "boolean",
+            "description": "A sweep with this plan moves it: backupContained and backupOld by default, or what --only names."
+          },
+          "tip": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+            "description": "The commit; null when it is not here (objectMissing)."
+          },
+          "object": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+            "description": "The ref's own value: the tag object of an annotated tag, else the tip."
+          },
+          "annotated": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Tags: an annotated tag. Null for branches."
+          },
+          "containedIn": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The first ref that contains the tip: trunk, then origin's branches, then the rest. A remote row names origin's ref as origin:<ref>."
+          },
+          "uniqueCommits": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Commits on no container; null when contained or not known."
+          },
+          "date": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Unix seconds: when the branch was created, the tag was made, or the tip was committed; see dateSource."
+          },
+          "dateSource": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "enum": [
+                  "reflog",
+                  "tagger",
+                  "commit"
+                ]
+              }
+            ]
+          },
+          "kept": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "worktree",
+                "heldByRebase",
+                "heldByBisect",
+                "quarantine",
+                "protected",
+                "objectMissing",
+                "pullRequestOpen",
+                "pullRequestUnknown",
+                "notContained"
+              ]
+            },
+            "description": "Every reason that holds it; empty unless category is kept."
+          },
+          "subject": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The tip's commit subject."
+          }
+        }
+      }
+    }
+  }
+}

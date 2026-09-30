@@ -106,6 +106,7 @@ examples: `wt <command> --help`.
 | `wt remove <work> --dry-run --json` / `wt remove <work> --yes --json` | a removal's plan — where the branch stands, every reason it would refuse, what it would lose — and its result effect by effect, for tools driving wt (`--expect` holds the removal to its plan) |
 | `wt restore <dir> --dry-run --json` / `wt restore <dir> --json` | what putting back a quarantined worktree would do to its branch, and what it did; `recovery.json` in the quarantine is itself versioned (`wt schema recovery`) |
 | `wt quarantine purge <dir> --json` / `… --yes --json` | what deleting a quarantine for good would delete and leave unreachable, with a token, and what became of each pin and the folder (`--expect` holds the purge to its plan) |
+| `wt refs sweep`, `restore`, `purge` `--json`; `wt refs swept --json` | each plan with a token and each result row by row, for the ref sweep; see [docs/json.md](docs/json.md) |
 | `wt sync --json` / `wt sync run\|resume\|undo --json` | the sync overview of every worktree, and a verb's result, as JSON for tools (`wt sync run --expect` holds a run to the overview); `wt schema sync` and `wt schema sync-run` |
 | `wt new … --dry-run --json` / `wt new … --json` | the same for creating a worktree, and for `wt checkout`: the plan with a token, and a result naming every side effect (`--expect` refuses a moved base or branch) |
 | `wt sync` | what rebasing each worktree onto trunk would do, simulated after fetching trunk; changes nothing of yours (`--no-fetch`) |
@@ -127,6 +128,7 @@ examples: `wt <command> --help`.
 | `wt restore <dir>` | put back a worktree `--quarantine` moved into `<dir>`, and its branch, from the `recovery.json` there (`--dry-run`, `--json`) |
 | `wt quarantine purge <dir>` | delete a quarantine for good: the refs pinning its commits, then the folder; refuses anything that is not a settled wt quarantine, and finishes a purge that stopped (`--yes`, `--dry-run`, `--json`, `--expect`) |
 | `wt sweep` | delete local branches already merged into trunk — or whose pull request GitHub merged — and remove the worktrees on such branches that nothing is using; from the main checkout only (`--no-fetch`, `--yes`, `--dry-run`, `--json`, `--expect`, `--quarantine <dir>`, `--keep-superset`), or across repositories with `--all`, `--roots`, `--profile` |
+| `wt refs sweep` | move backup branches and tags (`backup/*`, `safe-*` and the like) that another ref contains, or older than `ref_sweep_age`, to pins under `refs/wt-swept/<run>/`; `wt refs swept` lists runs, `wt refs restore <run>` puts one back, `wt refs purge` deletes pins for good (`--remote`, `--only`, `--run-id`, `--yes`, `--dry-run`, `--json`, `--expect`) |
 
 **This repository, and this build**
 

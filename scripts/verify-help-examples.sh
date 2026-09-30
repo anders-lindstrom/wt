@@ -114,6 +114,26 @@ make_quarantine() {
     (cd "$d" && "$WT" remove login-crash --yes --quarantine "$1/trash/lc" >/dev/null 2>&1)
     echo "$d"
 }
+# make_plain with a bare origin of its own and backups for wt refs: backup/x
+# and the annotated tag safe-1 on trunk's parent, so trunk contains both, and
+# the same pushed to origin.
+make_refs() {
+    local d; d=$(make_plain "$1")
+    git -C "$d" commit -q --allow-empty -m second
+    git -C "$d" branch backup/x HEAD~1
+    git -C "$d" tag -a -m safety safe-1 HEAD~1
+    git clone -q --bare "$d" "$1/origin.git"
+    git -C "$d" remote set-url origin "$1/origin.git"
+    git -C "$d" fetch -q origin
+    git -C "$d" remote set-head origin main
+    echo "$d"
+}
+# make_refs swept once, as the run the restore and purge examples name.
+make_refsrun() {
+    local d; d=$(make_refs "$1")
+    (cd "$d" && "$WT" refs sweep --yes --no-fetch --run-id 20260930T091500Z-3f2a >/dev/null 2>&1)
+    echo "$d"
+}
 make_sweep() {
     local d; d=$(make_worktrees "$1")
     git -C "$d" branch done-work
@@ -228,6 +248,8 @@ check() {
         sync) repo=$(make_sync "$dir");;
         resume) repo=$(make_resume "$dir");;
         sweep) repo=$(make_sweep "$dir");;
+        refs) repo=$(make_refs "$dir");;
+        refsrun) repo=$(make_refsrun "$dir");;
         quarantine) repo=$(make_quarantine "$dir");;
         fleet) repo=$(make_fleet "$dir");;
         keep|launchd) repo=$(make_keep "$dir"); prereq="export HOME=$dir/home PATH=$dir/bin:\$PATH; $prereq";;
@@ -336,6 +358,21 @@ check quarantine "" "" 'wt quarantine purge ../trash/lc --dry-run'
 check quarantine "" "" 'wt quarantine purge ../trash/lc --yes'
 check quarantine "" "" 'wt quarantine purge ../trash/lc --json'
 check quarantine "" "" 'wt quarantine purge ../trash/lc --yes --json --expect 1:0123abcd' fail
+
+check refs    "" "" 'wt refs sweep --dry-run'
+check refsrun "" "" 'wt refs swept'
+check refsrun "" "" 'wt refs restore 20260930T091500Z-3f2a'
+check refs    "" "" 'wt refs sweep --remote --no-fetch --yes'
+check refs    "" "" 'wt refs sweep --only refs/heads/backup/x --only refs/tags/safe-1'
+check refs    "" "" 'wt refs sweep --yes --json --expect rs1-0a1b --run-id 20260930T091500Z-3f2a' fail
+check refsrun "" "" 'wt refs swept --json'
+check refsrun "" "" 'wt refs restore 20260930T091500Z-3f2a --dry-run'
+check refsrun "" "" 'wt refs restore 20260930T091500Z-3f2a --yes'
+check refsrun "" "" 'wt refs restore 20260930T091500Z-3f2a --only refs/heads/backup/x --yes'
+check refsrun "" "" 'wt refs restore 20260930T091500Z-3f2a --yes --json --expect rr1-0123abcd' fail
+check refsrun "" "" 'wt refs purge --older-than 30d --dry-run'
+check refsrun "" "" 'wt refs purge 20260930T091500Z-3f2a --yes'
+check refsrun "" "" 'wt refs purge --older-than 30d --yes --json --expect rp1-0123abcd' fail
 
 check sweep "" "" 'wt sweep'
 check fleet "" "" 'wt sweep --all --yes'

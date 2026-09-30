@@ -19,6 +19,7 @@ func newRootCmd() *cobra.Command {
 	// Declaration order, not alphabetical: inside a group the order is the
 	// order you would do the things in.
 	cobra.EnableCommandSorting = false
+	commands.Version = version
 	root := &cobra.Command{
 		Use:   "wt",
 		Short: "Git worktree tooling: one implementation, per-repo configuration",
@@ -81,7 +82,7 @@ func newRootCmd() *cobra.Command {
 		newPathCmd(), newBranchCmd(), newReposCmd())
 	add(groupTrunk, newUpCmd(), newSyncCmd())
 	add(groupTidy, newMigrateCmd(), newAdoptCmd(), newSetupCmd(), newRemoveCmd(), newSweepCmd(),
-		newRestoreCmd(), newQuarantineCmd())
+		newRestoreCmd(), newQuarantineCmd(), newRefsCmd())
 	add(groupRepo, newInitCmd(), newConfigCmd(), newDoctorCmd(), newSchemaCmd(), newAboutCmd(), newVersionCmd())
 	root.AddCommand(newBranchStripCmd(), newHookCmd())
 	// Flag descriptions wrap at 79 columns, lined up under their first line,
