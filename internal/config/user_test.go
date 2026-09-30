@@ -55,11 +55,13 @@ func writeUser(t *testing.T, body string) string {
 
 func TestUserFileOverridesTheDefaults(t *testing.T) {
 	u, err := loadUser(writeUser(t,
-		"superset = true\ngithub = false\nbranch_suffix = \"\"\ntype_names = [\"feat=feature\"]\nff_trunk = false\n"))
+		"superset = true\ngithub = false\nbranch_suffix = \"\"\ntype_names = [\"feat=feature\"]\nff_trunk = false\n"+
+			"ref_sweep_patterns = [\"old/*\"]\nref_sweep_age = \"3w\"\n"))
 	if err != nil {
 		t.Fatalf("loadUser: %v", err)
 	}
-	if !u.Superset || u.GitHub || u.BranchSuffix != "" || len(u.TypeNames) != 1 || u.FFTrunk {
+	if !u.Superset || u.GitHub || u.BranchSuffix != "" || len(u.TypeNames) != 1 || u.FFTrunk ||
+		len(u.RefSweepPatterns) != 1 || u.RefSweepAge != "3w" {
 		t.Errorf("superset = %v, github = %v, branch_suffix = %q, type_names = %q",
 			u.Superset, u.GitHub, u.BranchSuffix, u.TypeNames)
 	}
@@ -610,5 +612,39 @@ func TestUserFFTrunkDefaultsOnAndTurnsOff(t *testing.T) {
 	}
 	if _, _, err := SetUser(UserKeyFFTrunk, "sometimes"); err == nil {
 		t.Fatal("wt config set ff_trunk sometimes was accepted")
+	}
+}
+
+// The ref sweep's settings default to the nine backup patterns and 14 days,
+// and a pattern or an age wt cannot use is refused, by set and by the reader.
+func TestRefSweepSettings(t *testing.T) {
+	u := DefaultUser()
+	if len(u.RefSweepPatterns) != 9 || u.RefSweepPatterns[0] != "backup/*" || u.RefSweepAge != "14d" {
+		t.Fatalf("defaults = %q %q", u.RefSweepPatterns, u.RefSweepAge)
+	}
+	for _, tc := range []struct{ key, value string }{
+		{UserKeyRefSweepPatterns, "backup/* *"},
+		{UserKeyRefSweepAge, "14"},
+		{UserKeyRefSweepAge, "2 weeks"},
+	} {
+		if _, err := userValue(tc.key, tc.value); err == nil {
+			t.Errorf("%s = %q was accepted", tc.key, tc.value)
+		}
+	}
+	if lit, err := userValue(UserKeyRefSweepPatterns, "old/* *-bak"); err != nil || lit != `["old/*", "*-bak"]` {
+		t.Errorf("patterns literal = %s, %v", lit, err)
+	}
+	u, err := loadUser(writeUser(t, "ref_sweep_age = \"soon\"\n"))
+	if err == nil || u.RefSweepAge != "14d" {
+		t.Errorf("a bad age from the file: %v, age %q", err, u.RefSweepAge)
+	}
+	if d, err := ParseAge("2w"); err != nil || d.Hours() != 14*24 {
+		t.Errorf("2w = %v, %v", d, err)
+	}
+	ps := CompileRefPatterns([]string{"backup/*", "*-safe"})
+	for name, want := range map[string]string{"backup/a/b": "backup/*", "feat/x-safe": "*-safe", "backupx": ""} {
+		if got, _ := MatchRefPattern(ps, name); got != want {
+			t.Errorf("%s matched %q, want %q", name, got, want)
+		}
 	}
 }
