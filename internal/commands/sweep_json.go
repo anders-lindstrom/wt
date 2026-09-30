@@ -137,6 +137,9 @@ type SweepPlanOutput struct {
 	Items         []SweepItem `json:"items"`
 	Quarantine    *string     `json:"quarantine"`
 	KeepSuperset  bool        `json:"keepSuperset"`
+	// ConfigFingerprint is the wt configuration the token covers: the
+	// SHA-256 of the file, nil when there is none.
+	ConfigFingerprint *string `json:"configFingerprint"`
 }
 
 // SweepResultItem is what became of one row of the plan.
@@ -241,12 +244,17 @@ func planItemsOf(p SweepPlan) []SweepItem {
 // --keep-superset. Any difference in any of them is a different token. Nil
 // when the plan has nothing to remove or delete.
 func sweepToken(ctx *Context, p SweepPlan, opts SweepOptions) *string {
+	return sweepTokenWith(ctx, p, opts, configFingerprint(ctx))
+}
+
+// sweepTokenWith is sweepToken over a configuration fingerprint already read.
+func sweepTokenWith(ctx *Context, p SweepPlan, opts SweepOptions, fingerprint []byte) *string {
 	if p.Empty() {
 		return nil
 	}
 	h := sha256.New()
 	h.Write([]byte("wt-sweep-1\x00" + ctx.Repo.MainRoot + "\x00" + ctx.Config.MainBranch + "\x00"))
-	h.Write(configFingerprint(ctx))
+	h.Write(fingerprint)
 	if opts.Quarantine != "" {
 		h.Write([]byte("\nquarantine\x00" + opts.Quarantine))
 	}
@@ -310,6 +318,9 @@ func SweepPlanJSON(ctx *Context, opts SweepOptions, out, progress io.Writer) err
 	}
 	res.Repo, res.Trunk, res.TrunkSource = strp(ctx.Repo.MainRoot), strp(ctx.Config.MainBranch), ctx.trunkSource()
 	res.Quarantine, res.KeepSuperset = strp(opts.Quarantine), opts.KeepSuperset
+	// Read once, for the field and the token alike.
+	fingerprint := configFingerprint(ctx)
+	res.ConfigFingerprint = strp(hex.EncodeToString(fingerprint))
 	plan, fetched, err := prepareSweep(ctx, opts, progress)
 	res.Fetched = fetched
 	if err != nil {
@@ -324,7 +335,7 @@ func SweepPlanJSON(ctx *Context, opts SweepOptions, out, progress io.Writer) err
 	for _, b := range plan.Bases {
 		res.Bases = append(res.Bases, SweepBase(b))
 	}
-	res.Items, res.Token = planItemsOf(plan), sweepToken(ctx, plan, opts)
+	res.Items, res.Token = planItemsOf(plan), sweepTokenWith(ctx, plan, opts, fingerprint)
 	return writeSweepPlan(out, res, nil)
 }
 

@@ -6,6 +6,12 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-30 13:17 — wt sweep's JSON plan shows its config fingerprint
+
+- `wt sweep --dry-run --json` has `configFingerprint`, the SHA-256 of the
+  configuration file its token covers, so two plans can be compared.
+  JSON: sweep-plan 1.5.0.
+
 ## 2026-09-30 09:28 — wt refs sweeps backup branches and tags aside
 
 - `wt refs sweep` moves backup/*, safe-* and similar refs that another ref

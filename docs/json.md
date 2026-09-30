@@ -57,6 +57,7 @@ Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 | `remove-plan`, `remove` | 1.3.0 | [`trunkSource`](#trunksource--how-trunk-was-found): how trunk was found |
 | `status` 1.4.1, `up` 1.3.1, `sync` 1.1.1, `sweep-plan` 1.4.1, `new-plan` 1.2.1, `checkout-plan` 1.3.1 | | detection is origin/HEAD, then the first of `development`, `main`, `master`, else it fails: `currentBranchGuess` is no longer produced, and a repository nothing names trunk for is `noConfiguration` — also one whose file has no `MAIN_BRANCH` |
 | `refs-sweep-plan`, `refs-sweep`, `refs-restore-plan`, `refs-restore`, `refs-purge-plan`, `refs-purge`, `refs-swept` | 1.0.0 | `wt refs sweep`, `restore` and `purge --json`, each plan and result, and `wt refs swept --json` |
+| `sweep-plan` | 1.5.0 | `configFingerprint`: the configuration file the token covers, so two plans can be compared |
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
 
@@ -332,6 +333,7 @@ is still one object, with `error` set and no items, and a non-zero exit.
 | `items` | array | the rows, in the order `wt sweep` prints them |
 | `quarantine` | string \| null | since 1.2.0: with `--quarantine <dir>`, the folder, absolute; a folder that exists or is on another volume sets `error` (the items stay, the token is null). Null without it |
 | `keepSuperset` | bool | since 1.4.0: `--keep-superset` was given, which the token covers: the removed worktrees' Superset workspaces are left |
+| `configFingerprint` | string \| null | since 1.5.0: the wt configuration the token covers, the lowercase hex SHA-256 of the configuration file wt read (`bin/worktree/worktree.toml` or `worktree.conf`, the worktree's own before the main checkout's). Two plans with the same value read the same file. Null when there is none |
 
 Each item:
 
@@ -382,8 +384,8 @@ Each item:
 | `submoduleUnreachable` | a submodule has commits that only this worktree's copy of it holds |
 | `nestedWorktree` | another worktree's checkout is inside this one |
 
-The **token** covers the repository, trunk's name, the wt configuration file,
-and every row: its category, branch, commit, worktree, evidence, pull request
+The **token** covers the repository, trunk's name, the wt configuration file
+(`configFingerprint` shows which), and every row: its category, branch, commit, worktree, evidence, pull request
 (number, state, base) and reasons, codes and words. So a branch that moved, a
 new merged branch, a worktree that turned dirty, a session that arrived or
 changed, a pull request GitHub no longer answers for — any of them is a

@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -445,5 +446,26 @@ func TestSweepPlanJSONListsTheSessionCodeOnce(t *testing.T) {
 	}
 	if it := planItem(t, p, "fix_wt/login-crash"); !slices.Equal(it.Kept, []string{KeptSession}) {
 		t.Errorf("kept = %q", it.Kept)
+	}
+}
+
+// The plan shows the configuration fingerprint its token covers: the same
+// file, the same value; another file, another value and another token.
+func TestSweepPlanShowsTheConfigFingerprint(t *testing.T) {
+	ctx, main, _ := sweepRepo(t)
+	branchWithWork(t, main, "done-work", 1)
+	landOnMain(t, main, "done-work")
+	opts := SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}}
+	p, err := sweepPlanJSON(t, ctx, opts)
+	if err != nil || p.ConfigFingerprint == nil || *p.ConfigFingerprint != hex.EncodeToString(configFingerprint(ctx)) {
+		t.Fatalf("%v %+v", err, p)
+	}
+	conf := filepath.Join(main, "bin", "worktree", "worktree.conf")
+	if err := os.WriteFile(conf, []byte(minimalConf+"\n# edited\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	q, err := sweepPlanJSON(t, ctx, opts)
+	if err != nil || deref(q.ConfigFingerprint) == deref(p.ConfigFingerprint) || deref(q.Token) == deref(p.Token) {
+		t.Errorf("an edited file is another fingerprint and token: %+v %+v", p, q)
 	}
 }
