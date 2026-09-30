@@ -137,20 +137,25 @@ type SweepPlanOutput struct {
 	Items         []SweepItem `json:"items"`
 	Quarantine    *string     `json:"quarantine"`
 	KeepSuperset  bool        `json:"keepSuperset"`
+	// ConfigFingerprint is the wt configuration the token covers: the
+	// SHA-256 of the file, nil when there is none.
+	ConfigFingerprint *string `json:"configFingerprint"`
 }
 
 // SweepResultItem is what became of one row of the plan.
 type SweepResultItem struct {
-	Category        string   `json:"category"`
-	Branch          *string  `json:"branch"`
-	Tip             *string  `json:"tip"`
-	Work            *string  `json:"work"`
-	Path            *string  `json:"path"`
-	Result          string   `json:"result"`
-	Reason          *string  `json:"reason"`
-	WorktreeRemoved bool     `json:"worktreeRemoved"`
-	BranchDeleted   bool     `json:"branchDeleted"`
-	RestoreCommand  []string `json:"restoreCommand"`
+	Category        string  `json:"category"`
+	Branch          *string `json:"branch"`
+	Tip             *string `json:"tip"`
+	Work            *string `json:"work"`
+	Path            *string `json:"path"`
+	Result          string  `json:"result"`
+	Reason          *string `json:"reason"`
+	WorktreeRemoved bool    `json:"worktreeRemoved"`
+	BranchDeleted   bool    `json:"branchDeleted"`
+	// Pin is where the branch was moved to, read back; nil when it was not.
+	Pin            *string  `json:"pin"`
+	RestoreCommand []string `json:"restoreCommand"`
 	// Quarantine is the folder the worktree went to under --quarantine,
 	// and which of its two moves are done; nil otherwise.
 	Quarantine *SweepQuarantine `json:"quarantine"`
@@ -188,6 +193,9 @@ type SweepResult struct {
 	Items         []*SweepResultItem `json:"items"`
 	Recovery      *string            `json:"recovery"`
 	Quarantine    *string            `json:"quarantine"`
+	// RunID is the run under refs/wt-swept/ the deleted branches were
+	// moved into; nil when none was.
+	RunID *string `json:"runId"`
 }
 
 // sweepItem is one row of the plan as --json reports it.
@@ -241,12 +249,17 @@ func planItemsOf(p SweepPlan) []SweepItem {
 // --keep-superset. Any difference in any of them is a different token. Nil
 // when the plan has nothing to remove or delete.
 func sweepToken(ctx *Context, p SweepPlan, opts SweepOptions) *string {
+	return sweepTokenWith(ctx, p, opts, configFingerprint(ctx))
+}
+
+// sweepTokenWith is sweepToken over a configuration fingerprint already read.
+func sweepTokenWith(ctx *Context, p SweepPlan, opts SweepOptions, fingerprint []byte) *string {
 	if p.Empty() {
 		return nil
 	}
 	h := sha256.New()
 	h.Write([]byte("wt-sweep-1\x00" + ctx.Repo.MainRoot + "\x00" + ctx.Config.MainBranch + "\x00"))
-	h.Write(configFingerprint(ctx))
+	h.Write(fingerprint)
 	if opts.Quarantine != "" {
 		h.Write([]byte("\nquarantine\x00" + opts.Quarantine))
 	}
@@ -310,6 +323,9 @@ func SweepPlanJSON(ctx *Context, opts SweepOptions, out, progress io.Writer) err
 	}
 	res.Repo, res.Trunk, res.TrunkSource = strp(ctx.Repo.MainRoot), strp(ctx.Config.MainBranch), ctx.trunkSource()
 	res.Quarantine, res.KeepSuperset = strp(opts.Quarantine), opts.KeepSuperset
+	// Read once, for the field and the token alike.
+	fingerprint := configFingerprint(ctx)
+	res.ConfigFingerprint = strp(hex.EncodeToString(fingerprint))
 	plan, fetched, err := prepareSweep(ctx, opts, progress)
 	res.Fetched = fetched
 	if err != nil {
@@ -324,7 +340,7 @@ func SweepPlanJSON(ctx *Context, opts SweepOptions, out, progress io.Writer) err
 	for _, b := range plan.Bases {
 		res.Bases = append(res.Bases, SweepBase(b))
 	}
-	res.Items, res.Token = planItemsOf(plan), sweepToken(ctx, plan, opts)
+	res.Items, res.Token = planItemsOf(plan), sweepTokenWith(ctx, plan, opts, fingerprint)
 	return writeSweepPlan(out, res, nil)
 }
 
@@ -360,6 +376,7 @@ type SweepJournal struct {
 	byKey    map[string]*SweepResultItem
 	inFlight string
 	applying bool
+	runID    string
 }
 
 // NewSweepJournal is a journal that writes its object to out.
@@ -470,6 +487,18 @@ func (j *SweepJournal) superset(key string, res RemoveResult) {
 	}
 }
 
+// ran records the run the branches are moved into: as it is begun, and
+// again, "" for none, once a run that pinned nothing is dropped.
+func (j *SweepJournal) ran(runID string) {
+	if j == nil {
+		return
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.runID = runID
+	j.res.RunID = strp(runID)
+}
+
 // startApply marks the point after which an error is an item's, not the
 // run's.
 func (j *SweepJournal) startApply() {
@@ -515,7 +544,7 @@ func (j *SweepJournal) settle(key string, err error) {
 		return
 	}
 	j.mu.Lock()
-	r, ctx := j.byKey[key], j.ctx
+	r, ctx, runID := j.byKey[key], j.ctx, j.runID
 	var probe SweepResultItem
 	if r != nil {
 		probe = *r
@@ -524,12 +553,13 @@ func (j *SweepJournal) settle(key string, err error) {
 	if r == nil {
 		return
 	}
-	readState(ctx, &probe)
+	readState(ctx, runID, &probe)
 
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	j.inFlight = ""
 	r.WorktreeRemoved, r.BranchDeleted, r.RestoreCommand = probe.WorktreeRemoved, probe.BranchDeleted, probe.RestoreCommand
+	r.Pin = probe.Pin
 	r.Quarantine = probe.Quarantine
 	complete := r.BranchDeleted && (r.Category != SweepRemove || r.WorktreeRemoved)
 	switch {
@@ -557,8 +587,9 @@ func refusedToDelete(err error) bool {
 		(err != nil && strings.Contains(err.Error(), "moved after the plan was made"))
 }
 
-// readState fills in what is true of a row now, from the repository.
-func readState(ctx *Context, r *SweepResultItem) {
+// readState fills in what is true of a row now, from the repository: its
+// branch's pin is looked for in run.
+func readState(ctx *Context, runID string, r *SweepResultItem) {
 	if ctx == nil {
 		return
 	}
@@ -575,8 +606,19 @@ func readState(ctx *Context, r *SweepResultItem) {
 	if r.Branch != nil && r.Tip != nil {
 		_, ok := ctx.Repo.ResolveRef("refs/heads/" + *r.Branch)
 		r.BranchDeleted = !ok
+		r.Pin, r.RestoreCommand = nil, nil
+		pin := ""
 		if !ok {
-			r.RestoreCommand = []string{"git", "-C", ctx.Repo.MainRoot, "branch", *r.Branch, *r.Tip}
+			pin = pinHolding(ctx.Repo.MainRoot, runID, *r.Branch, *r.Tip)
+		}
+		switch {
+		case ok:
+		case pin != "":
+			r.Pin, r.RestoreCommand = strp(pin), restoreFromRun(runID, *r.Branch)
+		case r.Quarantine != nil:
+			// The quarantine pins the branch, and puts it back with the
+			// worktree.
+			r.RestoreCommand = []string{"wt", "restore", r.Quarantine.Dir}
 		}
 	}
 }
@@ -623,7 +665,7 @@ func (j *SweepJournal) write(signalled bool, recovery string) {
 			// The handler's own git is not parked, and nothing else holds
 			// the lock while running one.
 			if r := j.byKey[j.inFlight]; r != nil {
-				readState(j.ctx, r)
+				readState(j.ctx, j.runID, r)
 				r.Result = SweepInterrupted
 			}
 			j.res.Outcome, j.res.Recovery = OutcomeInterrupted, strp(recovery)

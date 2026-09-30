@@ -815,6 +815,10 @@ func (p SweepPlan) apply(ctx *Context, opts SweepOptions, w io.Writer) error {
 		}
 	}
 	j.startApply()
+	// Every branch the sweep deletes, with a worktree or without, is moved
+	// into one run under refs/wt-swept/, except a quarantined worktree's,
+	// which the quarantine pins.
+	pins := &branchPins{command: "wt sweep", begun: j.ran}
 	kept := 0
 	folders := map[string]bool{}
 	for i, wt := range p.Remove {
@@ -833,6 +837,8 @@ func (p SweepPlan) apply(ctx *Context, opts SweepOptions, w io.Writer) error {
 			rp.Quarantine = quarantineFolder(opts.Quarantine, rp.Path, folders)
 			rp.quarantineBy = "sweep"
 			j.quarantined(key, rp.Quarantine)
+		} else {
+			rp.pins = pins
 		}
 		rp.KeepSuperset, rp.relist = opts.KeepSuperset, opts.relistAgents
 		j.start(key)
@@ -860,17 +866,25 @@ func (p SweepPlan) apply(ctx *Context, opts SweepOptions, w io.Writer) error {
 			kept++
 			continue
 		}
-		// DeleteBranchAt asks the worktrees again immediately before the
-		// delete, which is as close to it as that question gets.
+		// The move asks the worktrees again immediately before the delete,
+		// which is as close to it as that question gets.
 		j.start(key)
-		err := ctx.Repo.DeleteBranchAt(b.Name, b.Tip)
+		pin, err := pins.move(ctx, b.Name, b.Tip)
 		j.settle(key, err)
 		if err != nil {
 			fmt.Fprintf(w, "- kept %s: %s\n", b.Name, whyKept(err))
 			kept++
 			continue
 		}
-		fmt.Fprintf(w, "✓ deleted %s; git branch %s %s restores its commits\n", b.Name, b.Name, git.ShortID(b.Tip, 12))
+		fmt.Fprintf(w, "✓ deleted %s, pinned at %s; %s puts it back\n", b.Name, pin,
+			strings.Join(restoreFromRun(pins.runID, b.Name), " "))
+	}
+	// A run that pinned nothing is dropped, and the result names none.
+	runID := pins.finish(ctx, w)
+	j.ran(runID)
+	if runID != "" {
+		fmt.Fprintf(w, "wt refs restore %s puts the deleted branches back; wt refs purge %s deletes them for good\n",
+			runID, runID)
 	}
 	if dropped, err := quarantine.DropDiscarded(ctx.Repo); err != nil {
 		fmt.Fprintf(w, "! could not read the pins of past quarantines: %v\n", err)

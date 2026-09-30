@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -233,9 +234,14 @@ func TestSweepJSONCarriesOutThePlanItWasGiven(t *testing.T) {
 	if err != nil || r.Outcome != OutcomeDone || r.Error != nil || r.Token == nil || *r.Token != *p.Token {
 		t.Fatalf("%v %+v\n%s", err, r, human)
 	}
+	if r.RunID == nil {
+		t.Fatalf("a sweep that deleted branches names the run it pinned them in: %+v", r)
+	}
 	it := resultItem(t, r, "done-work")
-	if it.Result != SweepDeleted || !it.BranchDeleted || it.WorktreeRemoved ||
-		!slices.Equal(it.RestoreCommand, []string{"git", "-C", main, "branch", "done-work", doneTip}) {
+	pin := pinOf(*r.RunID, RefBranch, "done-work")
+	if it.Result != SweepDeleted || !it.BranchDeleted || it.WorktreeRemoved || deref(it.Pin) != pin ||
+		gitOut(t, main, "rev-parse", pin) != doneTip ||
+		!slices.Equal(it.RestoreCommand, []string{"wt", "refs", "restore", *r.RunID, "--only", "refs/heads/done-work", "--yes"}) {
 		t.Errorf("done-work = %+v", it)
 	}
 	it = resultItem(t, r, "fix_wt/login-crash")
@@ -445,5 +451,26 @@ func TestSweepPlanJSONListsTheSessionCodeOnce(t *testing.T) {
 	}
 	if it := planItem(t, p, "fix_wt/login-crash"); !slices.Equal(it.Kept, []string{KeptSession}) {
 		t.Errorf("kept = %q", it.Kept)
+	}
+}
+
+// The plan shows the configuration fingerprint its token covers: the same
+// file, the same value; another file, another value and another token.
+func TestSweepPlanShowsTheConfigFingerprint(t *testing.T) {
+	ctx, main, _ := sweepRepo(t)
+	branchWithWork(t, main, "done-work", 1)
+	landOnMain(t, main, "done-work")
+	opts := SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}}
+	p, err := sweepPlanJSON(t, ctx, opts)
+	if err != nil || p.ConfigFingerprint == nil || *p.ConfigFingerprint != hex.EncodeToString(configFingerprint(ctx)) {
+		t.Fatalf("%v %+v", err, p)
+	}
+	conf := filepath.Join(main, "bin", "worktree", "worktree.conf")
+	if err := os.WriteFile(conf, []byte(minimalConf+"\n# edited\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	q, err := sweepPlanJSON(t, ctx, opts)
+	if err != nil || deref(q.ConfigFingerprint) == deref(p.ConfigFingerprint) || deref(q.Token) == deref(p.Token) {
+		t.Errorf("an edited file is another fingerprint and token: %+v %+v", p, q)
 	}
 }

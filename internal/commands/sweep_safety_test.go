@@ -92,7 +92,7 @@ func TestSweepRemovesTwoWorktreesSharingAnAppliedTip(t *testing.T) {
 	if exists(a) || exists(b) {
 		t.Errorf("both worktrees should have gone:\n%s", buf.String())
 	}
-	if !strings.Contains(buf.String(), "git branch fix_wt/second "+tip[:12]+" restores its commits") {
+	if !strings.Contains(buf.String(), "--only refs/heads/fix_wt/second --yes puts the branch back") {
 		t.Errorf("the last branch holding the commit says how to get it back:\n%s", buf.String())
 	}
 }

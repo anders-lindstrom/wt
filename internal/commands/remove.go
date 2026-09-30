@@ -78,11 +78,16 @@ type RemoveResult struct {
 	// Branch is what the branch step came to — quarantine.BranchDeleted,
 	// Renamed, Untouched, Kept or Failed — and "" when the run did not get
 	// that far. BranchName and BranchTip are the branch the plan read;
-	// KeepAs the name a kept branch was to get.
+	// KeepAs the name a kept branch was to get. Pin is where a deleted
+	// branch was moved to, "" when it was not.
 	Branch     string
 	BranchName string
 	BranchTip  string
 	KeepAs     string
+	Pin        string
+	// RunID is the run under refs/wt-swept/ the branch was moved into, ""
+	// when there is none.
+	RunID string
 	// Superset is what came of deleting the worktree's Superset workspace
 	// — StepDeregistered, StepNotRegistered, StepSkipped or StepFailed —
 	// and "" when no worktree was removed. SupersetReason says why for a
@@ -253,6 +258,9 @@ type Plan struct {
 	// relist lists the sessions again for the check right before the
 	// checkout goes.
 	relist func() ([]wtsync.Agent, error)
+	// pins is the run a deleted branch is moved into; nil deletes it
+	// outright, as a quarantine does, which pins it itself.
+	pins *branchPins
 }
 
 // Lost is a tip a removal would leave nothing holding.
@@ -393,7 +401,12 @@ func removeWorktreeResult(ctx *Context, wt repo.Worktree, opts RemoveOptions, w 
 		}
 	}
 	opts.Journal.applying()
-	return plan.run(ctx, w)
+	if plan.Quarantine == "" {
+		plan.pins = &branchPins{command: "wt remove", begun: opts.Journal.ran}
+	}
+	res, err := plan.run(ctx, w)
+	res.RunID = plan.pins.finish(ctx, w)
+	return res, err
 }
 
 // planFor reads every fact a removal depends on, before any of them change.
@@ -727,7 +740,7 @@ func (p Plan) forceWould() ForceSet {
 // losses that refuse are compared.
 func (p Plan) same(q Plan) bool {
 	p.Sessions, q.Sessions = identities(p.Sessions), identities(q.Sessions)
-	p.relist, q.relist = nil, nil
+	p.relist, q.relist, p.pins, q.pins = nil, nil, nil, nil
 	p.Unreachable, q.Unreachable = refusingLosses(p.Unreachable), refusingLosses(q.Unreachable)
 	return reflect.DeepEqual(p, q)
 }
@@ -1219,6 +1232,9 @@ func (p Plan) remove(ctx *Context, w io.Writer) (RemoveResult, error) {
 	}
 	result, msg, err := p.branchStep(ctx)
 	res.Branch = result
+	if result == quarantine.BranchDeleted && p.pins != nil {
+		res.Pin = pinOf(p.pins.runID, RefBranch, p.Branch)
+	}
 	if rec != nil {
 		if jerr := rec.RecordBranch(result, err); jerr != nil {
 			res.Outcome = RemovePartial
@@ -1248,7 +1264,10 @@ func (p Plan) remove(ctx *Context, w io.Writer) (RemoveResult, error) {
 		fmt.Fprintf(w, "  delete it later with: git branch -d %s\n", p.KeepAs)
 	}
 	fmt.Fprintf(w, "%s", restore)
-	if l, ok := p.lost(LostBranch); ok && p.Outcome == BranchDeleted {
+	switch l, ok := p.lost(LostBranch); {
+	case res.Pin != "":
+		fmt.Fprintf(w, "  %s puts the branch back\n", strings.Join(restoreFromRun(p.pins.runID, p.Branch), " "))
+	case ok && p.Outcome == BranchDeleted:
 		fmt.Fprintf(w, "  %s restores its commits\n", p.restoreHint(l))
 	}
 	return res, nil
@@ -1282,9 +1301,15 @@ func (p Plan) branchStep(ctx *Context) (result, msg string, err error) {
 			return quarantine.BranchKept, "", err
 		}
 		// Only at the tip the plan showed, so a commit that lands after the
-		// plan is never deleted with the branch. DeleteBranchAt refuses a
-		// branch another worktree is using, which update-ref would not.
-		if err := ctx.Repo.DeleteBranchAt(p.Branch, p.Tip); err != nil {
+		// plan is never deleted with the branch. Both refuse a branch another
+		// worktree is using, which update-ref would not. Without a
+		// quarantine, which pins the branch itself, it is moved into a pin
+		// under refs/wt-swept/ rather than deleted outright.
+		del := func() error { return ctx.Repo.DeleteBranchAt(p.Branch, p.Tip) }
+		if p.pins != nil {
+			del = func() error { _, err := p.pins.move(ctx, p.Branch, p.Tip); return err }
+		}
+		if err := del(); err != nil {
 			var inUse *repo.BranchInUseError
 			switch {
 			case errors.As(err, &inUse):

@@ -6,6 +6,20 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-30 13:18 — wt sweep and wt remove pin the branches they delete
+
+- A branch `wt sweep` or `wt remove` deletes is moved into refs/wt-swept/,
+  one run per sweep or removal: `wt refs restore <run>` puts it back,
+  `wt refs purge` deletes it for good. --quarantine still pins its own way.
+- JSON: sweep 1.4.0 and remove 1.4.0 (`runId`, `pin`, restoreCommand via
+  wt refs restore).
+
+## 2026-09-30 13:17 — wt sweep's JSON plan shows its config fingerprint
+
+- `wt sweep --dry-run --json` has `configFingerprint`, the SHA-256 of the
+  configuration file its token covers, so two plans can be compared.
+  JSON: sweep-plan 1.5.0.
+
 ## 2026-09-30 09:28 — wt refs sweeps backup branches and tags aside
 
 - `wt refs sweep` moves backup/*, safe-* and similar refs that another ref

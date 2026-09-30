@@ -66,9 +66,11 @@ func newSweepCmd() *cobra.Command {
 			"everything is read again: a branch that moved or was checked out, and\n" +
 			"a worktree that gained a change, a session or a lock while the question\n" +
 			"was open, is kept and says so; each worktree is read once more right\n" +
-			"before it goes. Each deletion prints the commit the branch was at:\n" +
-			"`git branch <name> <commit>` restores its commits, not its upstream\n" +
-			"setting.\n\n" +
+			"before it goes. Each branch it deletes is moved into a pin under\n" +
+			"refs/wt-swept/<run>/, one run per sweep, which wt refs swept lists:\n" +
+			"wt refs restore <run> puts the branches back (not their upstream\n" +
+			"setting), wt refs purge <run> deletes them for good. A worktree moved\n" +
+			"with --quarantine keeps its branch pinned by the quarantine instead.\n\n" +
 			"On a terminal, commit subjects are cut to fit its width. Piped, they\n" +
 			"are printed whole.\n\n" +
 			"--all, --roots or --profile sweep many repositories from anywhere: each\n" +

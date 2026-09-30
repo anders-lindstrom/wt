@@ -203,7 +203,15 @@ func TestRemoveJSONRemovesWithTheToken(t *testing.T) {
 	if s := step(t, r, StepSuperset); s.Result == StepNotRun {
 		t.Errorf("superset %+v", s)
 	}
-	want := []string{"git", "-C", ctx.Repo.MainRoot, "branch", "fix_wt/json-gone", tip}
+	// The branch is moved into a pin of its own run, which restore puts back.
+	if r.RunID == nil {
+		t.Fatalf("a removal that deletes its branch names the run it pinned it in: %+v", r)
+	}
+	pin := pinOf(*r.RunID, RefBranch, "fix_wt/json-gone")
+	if s := step(t, r, StepBranch); deref(s.Pin) != pin || gitOut(t, ctx.Repo.MainRoot, "rev-parse", pin) != tip {
+		t.Errorf("branch pin %v, want %s at %s", s.Pin, pin, tip)
+	}
+	want := []string{"wt", "refs", "restore", *r.RunID, "--only", "refs/heads/fix_wt/json-gone", "--yes"}
 	if !slices.Equal(r.RestoreCommand, want) || r.Quarantine != nil {
 		t.Errorf("restore %v quarantine %+v", r.RestoreCommand, r.Quarantine)
 	}
