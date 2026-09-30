@@ -17,6 +17,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
+	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
 // What wt refs sweep made of a backup, for --json.
@@ -862,16 +863,10 @@ func RefsSweep(ctx *Context, opts RefsOptions, w io.Writer) (err error) {
 	if runID == "" {
 		runID = newRunID(opts.now())
 	}
-	// The meta goes first, so a run stopped anywhere after is found by its id
-	// and, with --remote, bound to the origin it deleted from. Its create is
-	// a compare-and-swap: a run id taken meanwhile refuses here.
+	// The meta goes first, so the run is bound, with --remote, to the origin
+	// it deleted from.
 	j.begin(runID)
-	gitDir, err := git.Run(ctx.Repo.MainRoot, "rev-parse", "--path-format=absolute", "--git-common-dir")
-	if err == nil {
-		err = writeMeta(ctx.Repo.MainRoot, runMeta{RunID: runID, Repo: gitDir, SweptAt: opts.now().Unix(),
-			Endpoint: plan.Endpoint, WtVersion: Version})
-	}
-	if err != nil {
+	if err := beginRun(ctx.Repo.MainRoot, runID, opts.now(), plan.Endpoint); err != nil {
 		j.abandon()
 		return fmt.Errorf("nothing was swept: %w", err)
 	}
@@ -947,17 +942,16 @@ func sweepLocalRef(ctx *Context, r RefRow, pin string) refState {
 		return refState{kept: "it moved after the plan was made"}
 	}
 	if r.Kind == RefBranch {
-		users, err := ctx.Repo.BranchUsers()
-		if err != nil {
+		err = moveBranch(ctx, r.Name, r.Object, pin, "wt refs sweep")
+		var inUse *repo.BranchInUseError
+		switch {
+		case errors.As(err, &inUse):
+			return refState{kept: "it was checked out after the plan was made"}
+		case errors.Is(err, repo.ErrWorktreesUnknown):
 			return refState{kept: err.Error()}
 		}
-		if _, used := users[r.Name]; used {
-			return refState{kept: "it was checked out after the plan was made"}
-		}
-	}
-	err = updateRefs(root, "wt refs sweep", "create "+pin+" "+r.Object, "delete "+r.Ref+" "+r.Object)
-	if err == nil && r.Kind == RefBranch {
-		_, _ = git.Run(root, "config", "--remove-section", "branch."+r.Name)
+	} else {
+		err = updateRefs(root, "wt refs sweep", "create "+pin+" "+r.Object, "delete "+r.Ref+" "+r.Object)
 	}
 	st := readLocalState(root, r, pin)
 	st.err = err

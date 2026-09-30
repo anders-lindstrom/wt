@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
 // SweptPrefix is where wt refs sweep pins what it sweeps, one folder per
@@ -575,4 +576,42 @@ func (d *refDates) created(ref string) (int64, bool) {
 	head, _, _ := strings.Cut(line, "\t")
 	t := identTime(head)
 	return t, t > 0
+}
+
+// beginRun writes a run's meta, the first thing a run does, so a run stopped
+// anywhere after is found by its id. Its create is a compare-and-swap: a run
+// id taken meanwhile refuses here.
+func beginRun(mainRoot, runID string, at time.Time, endpoint *Endpoint) error {
+	gitDir, err := git.Run(mainRoot, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return fmt.Errorf("could not write the run's meta: %s", git.Reason(err))
+	}
+	return writeMeta(mainRoot, runMeta{RunID: runID, Repo: gitDir, SweptAt: at.Unix(), Endpoint: endpoint,
+		WtVersion: Version})
+}
+
+// afterBranchMoved runs, when set, between moveBranch's transaction and its
+// config removal. Tests set it to deliver a signal there.
+var afterBranchMoved func(name string)
+
+// moveBranch pins branch name at pin and deletes it, in one transaction and
+// only at tip, then drops its config, as git branch -D does. A branch a
+// worktree uses is refused with a repo.BranchInUseError.
+func moveBranch(ctx *Context, name, tip, pin, message string) error {
+	users, err := ctx.Repo.BranchUsers()
+	if err != nil {
+		return err
+	}
+	if use, ok := users[name]; ok {
+		return &repo.BranchInUseError{Path: use.Path, By: use.By}
+	}
+	if err := updateRefs(ctx.Repo.MainRoot, message, "create "+pin+" "+tip, "delete refs/heads/"+name+" "+tip); err != nil {
+		return err
+	}
+	if afterBranchMoved != nil {
+		afterBranchMoved(name)
+	}
+	// A branch with no config has no section to remove; that is not a failure.
+	_, _ = git.Run(ctx.Repo.MainRoot, "config", "--remove-section", "branch."+name)
+	return nil
 }
