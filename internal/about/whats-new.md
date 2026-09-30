@@ -6,6 +6,14 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-09-30 09:28 — wt refs sweeps backup branches and tags aside
+
+- `wt refs sweep` moves backup/*, safe-* and similar refs that another ref
+  contains, or older than 14 days, to pins you can restore.
+- `wt refs swept` lists runs, `restore` puts one back, `purge` deletes.
+- Patterns and age: `ref_sweep_patterns`, `ref_sweep_age` in `wt config`.
+  JSON: refs-sweep, refs-restore, refs-purge (+ -plan), refs-swept 1.0.0.
+
 ## 2026-09-28 16:37 — Trunk is development, main or master, never a guess
 
 - Without MAIN_BRANCH, trunk is origin/HEAD, else the first of development,

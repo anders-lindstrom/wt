@@ -1,0 +1,220 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/refs-sweep.v1.json",
+  "x-version": "1.0.0",
+  "title": "wt refs sweep --yes --json",
+  "description": "What `wt refs sweep --yes` moved. Printed by `wt refs sweep --yes --json` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends the run. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
+  "type": "object",
+  "required": [
+    "schema",
+    "schemaVersion",
+    "command",
+    "repo",
+    "trunk",
+    "fetched",
+    "remote",
+    "token",
+    "runId",
+    "outcome",
+    "error",
+    "problems",
+    "recovery",
+    "items"
+  ],
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^1\\.[0-9]+\\.[0-9]+$"
+    },
+    "command": {
+      "const": "refs sweep"
+    },
+    "repo": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "trunk": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "fetched": {
+      "type": "boolean"
+    },
+    "remote": {
+      "type": "boolean"
+    },
+    "token": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^rs1-[0-9a-f]{32}$",
+      "description": "The token of the plan the run went by."
+    },
+    "runId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{4,32}$",
+      "description": "The run's id, which names its pins; null when nothing was to be moved or the run was refused."
+    },
+    "outcome": {
+      "enum": [
+        "done",
+        "refused",
+        "partial",
+        "interrupted"
+      ],
+      "description": "done: every selected row was swept. refused: nothing was pinned or deleted (error says why, e.g. --expect). partial: some were, some not. interrupted: a signal ended the run."
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "problems": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "code",
+          "text"
+        ],
+        "properties": {
+          "code": {
+            "enum": [
+              "remoteAmbiguous",
+              "remoteCredentialsInUrl",
+              "planChanged",
+              "runIdTaken"
+            ],
+            "description": "remoteAmbiguous: --remote, and origin's effective fetch and push URLs are not one and the same URL. remoteCredentialsInUrl: --remote, and that URL carries a password (in any form, scp-like too), or any userinfo on http, https, ftp or ftps; a <transport>::<address> URL is judged on its address too. planChanged: the plan is not the one --expect named, or not the one the question was asked about. runIdTaken: --run-id names a run that has refs under refs/wt-swept/ already."
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "Codes for why the run refused; empty otherwise."
+    },
+    "recovery": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "For interrupted: what wt printed."
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "category",
+          "selected",
+          "tip",
+          "object",
+          "result",
+          "reason",
+          "pin",
+          "pinned",
+          "deleted",
+          "restoreCommand"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "refs/heads/<name> or refs/tags/<name> here; origin:refs/heads/<name> or origin:refs/tags/<name> on origin. --only takes it, one id per flag and never split: a ref name may contain a comma."
+          },
+          "kind": {
+            "enum": [
+              "branch",
+              "tag",
+              "remoteBranch",
+              "remoteTag"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "category": {
+            "enum": [
+              "backupContained",
+              "backupOld",
+              "backupYoung",
+              "kept"
+            ],
+            "description": "backupContained: another ref contains it (selected). backupOld: it holds commits no other ref has and is older than age (selected). backupYoung: the same, younger (not selected unless --only names it). kept: something holds it; kept says what."
+          },
+          "selected": {
+            "type": "boolean"
+          },
+          "tip": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+          },
+          "object": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+          },
+          "result": {
+            "enum": [
+              "swept",
+              "kept",
+              "failed",
+              "notRun",
+              "interrupted",
+              "notSelected"
+            ],
+            "description": "swept: pinned and deleted. kept: the plan kept it, or it moved or was taken after the plan (reason says). failed: tried and not finished (pinned and deleted say what did happen). notRun: the run ended before it. interrupted: a signal caught it. notSelected: the plan did not select it."
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pin": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "refs/wt-swept/<runId>/{heads,tags,remote-heads,remote-tags}/<name>, for a selected row once the run began."
+          },
+          "pinned": {
+            "type": "boolean",
+            "description": "The pin holds object, read back after the row."
+          },
+          "deleted": {
+            "type": "boolean",
+            "description": "The ref is gone, here or on origin, read back after the row."
+          },
+          "restoreCommand": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "For a row pinned and deleted: the argv that puts it back."
+          }
+        }
+      }
+    }
+  }
+}

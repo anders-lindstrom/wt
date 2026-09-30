@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/refs-restore.v1.json",
+  "x-version": "1.0.0",
+  "title": "wt refs restore <runId> --yes --json",
+  "description": "What `wt refs restore <runId> --yes` put back. Printed by `wt refs restore <runId> --yes --json` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends the run. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
+  "type": "object",
+  "required": [
+    "schema",
+    "schemaVersion",
+    "command",
+    "repo",
+    "runId",
+    "token",
+    "outcome",
+    "error",
+    "recovery",
+    "items"
+  ],
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^1\\.[0-9]+\\.[0-9]+$"
+    },
+    "command": {
+      "const": "refs restore"
+    },
+    "repo": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "runId": {
+      "type": "string",
+      "description": "The run id as given; one not in wt's format is an error."
+    },
+    "token": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^rr1-[0-9a-f]{32}$",
+      "description": "The token of the plan the run went by."
+    },
+    "outcome": {
+      "enum": [
+        "done",
+        "refused",
+        "partial",
+        "interrupted"
+      ],
+      "description": "done: every selected row was restored. refused: nothing changed. partial: some were, some not. interrupted: a signal ended the run."
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "recovery": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "For interrupted: what wt printed."
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "pin",
+          "object",
+          "action",
+          "selected",
+          "result",
+          "reason",
+          "restored",
+          "pinDeleted"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "refs/heads/<name> or refs/tags/<name> here; origin:refs/heads/<name> or origin:refs/tags/<name> on origin. --only takes it, one id per flag and never split: a ref name may contain a comma."
+          },
+          "kind": {
+            "enum": [
+              "branch",
+              "tag",
+              "remoteBranch",
+              "remoteTag"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "pin": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+          },
+          "action": {
+            "enum": [
+              "create",
+              "none",
+              "occupied",
+              "remoteOccupied",
+              "pinGone",
+              "endpointChanged",
+              "endpointUnknown"
+            ],
+            "description": "create: the name is free; it is made at object. none: it is already there at object; only the pin goes. occupied: the name holds another object here. remoteOccupied: origin has something there. endpointChanged: a remote ref, and origin no longer resolves to the URLs the run recorded in its meta. endpointUnknown: a remote ref, and the run has no meta. pinGone: the pin is not there any more; a pin that goes between the plan and the run is reported as kept, its reason starting pinGone."
+          },
+          "selected": {
+            "type": "boolean"
+          },
+          "result": {
+            "enum": [
+              "restored",
+              "kept",
+              "failed",
+              "notRun",
+              "interrupted",
+              "notSelected"
+            ],
+            "description": "restored: the ref is at object and the pin is gone. kept: left alone on purpose (reason says). failed: tried and not finished. notRun: the run ended before it. interrupted: a signal caught it. notSelected: not selected."
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "restored": {
+            "type": "boolean",
+            "description": "The ref holds object, read back after the row."
+          },
+          "pinDeleted": {
+            "type": "boolean",
+            "description": "The pin is gone, read back after the row."
+          }
+        }
+      }
+    }
+  }
+}

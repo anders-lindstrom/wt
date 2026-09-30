@@ -1,7 +1,7 @@
 # wt's JSON output
 
 `wt status`, `wt up`, `wt sweep`, `wt sync` and its verbs, `wt new`,
-`wt checkout`, `wt remove`, `wt restore` and `wt quarantine purge` print JSON on stdout when given `--json`, for
+`wt checkout`, `wt remove`, `wt restore`, `wt quarantine purge` and `wt refs` print JSON on stdout when given `--json`, for
 tools that drive wt (a git client, an editor, a script). Their human output is
 unchanged without it. A quarantine's `recovery.json` is JSON with a schema too.
 
@@ -56,6 +56,7 @@ Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 | `remove` | 1.2.0 | `forced`: the `--force` categories the removal went past; `forceWith` on each problem |
 | `remove-plan`, `remove` | 1.3.0 | [`trunkSource`](#trunksource--how-trunk-was-found): how trunk was found |
 | `status` 1.4.1, `up` 1.3.1, `sync` 1.1.1, `sweep-plan` 1.4.1, `new-plan` 1.2.1, `checkout-plan` 1.3.1 | | detection is origin/HEAD, then the first of `development`, `main`, `master`, else it fails: `currentBranchGuess` is no longer produced, and a repository nothing names trunk for is `noConfiguration` — also one whose file has no `MAIN_BRANCH` |
+| `refs-sweep-plan`, `refs-sweep`, `refs-restore-plan`, `refs-restore`, `refs-purge-plan`, `refs-purge`, `refs-swept` | 1.0.0 | `wt refs sweep`, `restore` and `purge --json`, each plan and result, and `wt refs swept --json` |
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
 
@@ -113,6 +114,13 @@ generating types from it:
 | `wt remove --yes --json` | [`schema/remove.v1.json`](../schema/remove.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/remove.v1.json` |
 | `wt quarantine purge --dry-run --json` | [`schema/quarantine-purge-plan.v1.json`](../schema/quarantine-purge-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/quarantine-purge-plan.v1.json` |
 | `wt quarantine purge --yes --json` | [`schema/quarantine-purge.v1.json`](../schema/quarantine-purge.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/quarantine-purge.v1.json` |
+| `wt refs sweep --dry-run --json` | [`schema/refs-sweep-plan.v1.json`](../schema/refs-sweep-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/refs-sweep-plan.v1.json` |
+| `wt refs sweep --yes --json` | [`schema/refs-sweep.v1.json`](../schema/refs-sweep.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/refs-sweep.v1.json` |
+| `wt refs restore --dry-run --json` | [`schema/refs-restore-plan.v1.json`](../schema/refs-restore-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/refs-restore-plan.v1.json` |
+| `wt refs restore --yes --json` | [`schema/refs-restore.v1.json`](../schema/refs-restore.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/refs-restore.v1.json` |
+| `wt refs purge --dry-run --json` | [`schema/refs-purge-plan.v1.json`](../schema/refs-purge-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/refs-purge-plan.v1.json` |
+| `wt refs purge --yes --json` | [`schema/refs-purge.v1.json`](../schema/refs-purge.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/refs-purge.v1.json` |
+| `wt refs swept --json` | [`schema/refs-swept.v1.json`](../schema/refs-swept.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/refs-swept.v1.json` |
 
 They are built into the binary: `wt schema` lists them and `wt schema up` prints
 one, so the schema you read is the one for the wt you run. Validate against that
@@ -692,6 +700,266 @@ too.
 | `pins` | array | `{name, ref, oid, result}`: `oid` as planned; `result` `deleted`, `absent` (gone already) or `kept` (still there, or unreadable), read when the object is written |
 | `folderDeleted` | bool | the folder is gone |
 | `recovery` | string \| null | for `interrupted`: what wt printed |
+
+## `wt refs sweep --dry-run --json` — the ref sweep's plan
+
+What `wt refs sweep` would move, as one object: every branch and tag whose name
+matches a backup pattern — here, and with `--remote` on origin — what it is, and
+a token. It moves nothing. It fetches origin first unless `--no-fetch`; with
+`--remote` it also runs `git ls-remote origin` and asks GitHub, once, which of
+origin's backup branches have an open pull request. `wt refs sweep --json`
+without `--yes` prints the same plan. It runs from any worktree of the
+repository.
+
+A **backup** is a ref whose short name matches one of `ref_sweep_patterns`
+(user config; the default is the nine `backup/*` `safe/*` `safety/*` `backup-*`
+`safe-*` `safety-*` `*-backup` `*-safe` `*-safety`, where `*` matches any run of
+characters, slashes included). Every other ref under `refs/heads/`,
+`refs/tags/` and `refs/remotes/origin/` is a **container** — trunk, protected
+and checked-out branches included. For a remote backup only origin's own
+branches and tags count. Nothing under `refs/wt-swept/`, `refs/wt-quarantine/`,
+`refs/wt-sync/` or `refs/stash` is either.
+
+**All contact with origin goes through one URL.** `--remote` resolves origin's
+effective fetch and push URLs (`git remote get-url --all origin` and `--push
+--all`, `insteadOf` and `pushInsteadOf` applied) and requires them to be one and
+the same URL, else `remoteAmbiguous`. The listing, the fetch into each pin, the
+delete push, and later the restore's reads, push and read-back all use it. A URL
+that carries a password in any form (`user:secret@host:path` too), or any
+userinfo on http, https, ftp or ftps — a token in the user name cannot be told
+from a name — is refused with `remoteCredentialsInUrl`, and a
+`<transport>::<address>` URL is judged on its address too; a user name on ssh
+(`git@host:…`) is fine. The userinfo of a `scheme://` URL runs to the last `@`
+before the first `/`, `?` or `#`; in other forms it is what precedes the first
+`@` with no `/` before it. These rules are gittree's `RemoteURL`, rule for rule.
+Only the URL with all its userinfo removed (`git@host:o/r` → `host:o/r`) is ever
+printed or recorded.
+
+A plan that cannot be made — no trunk, the fetch failed, `--remote` without an
+origin or with one of those problems — is still one object, with `error` set,
+and a non-zero exit. So is an
+`--only` that names an id the plan does not have or a row it keeps: the items
+are there, the token is null.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `schema` | 1 | the major version |
+| `schemaVersion` | string | the full version, `1.<minor>.<patch>` |
+| `command` | `"refs sweep"` | |
+| `repo` | string \| null | the main checkout; null outside a repository |
+| `trunk` | string \| null | trunk's branch name |
+| `trunkSource` | string \| null | how `trunk` was found ([`trunkSource`](#trunksource--how-trunk-was-found)) |
+| `fetched` | bool | origin was fetched first |
+| `remote` | bool | `--remote` was given |
+| `patterns` | array of string | `ref_sweep_patterns`, in the order they are tried |
+| `age` | string \| null | `ref_sweep_age`, e.g. `14d` |
+| `now` | int | unix seconds the plan was made at; age is measured from it |
+| `endpoint` | object \| null | with `--remote`: `{url, digest}` — the one URL with its userinfo removed, and `sha256:` with the lowercase hex SHA-256 of the full effective URL. The token covers the digest. Null without `--remote` |
+| `runId` | null | always null: the run that applies the plan mints it |
+| `token` | string \| null | `rs1-…`: names the plan; pass it to `--yes --expect`. It covers the rows, `--remote`, the patterns, the age, the repository and trunk — not the selection, so `--only` picks from the plan a token names. Null when no row could be swept, or on error |
+| `error` | string \| null | why no plan could be made |
+| `problems` | array | `{code, text}` for the refusals that have a code: `remoteAmbiguous`, `remoteCredentialsInUrl`; empty otherwise |
+| `items` | array | every backup, here first, then origin's |
+
+Each item:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id` | string | `refs/heads/<name>` or `refs/tags/<name>`; on origin `origin:refs/heads/<name>` or `origin:refs/tags/<name>`. `--only` takes it — one id per `--only`, never split, since a ref name may contain a comma |
+| `kind` | `branch` \| `tag` \| `remoteBranch` \| `remoteTag` | |
+| `name` | string | the short name the pattern matched |
+| `pattern` | string | the first pattern it matched |
+| `category` | `backupContained` \| `backupOld` \| `backupYoung` \| `kept` | below |
+| `selected` | bool | a sweep with this plan moves it: `backupContained` and `backupOld` by default, or exactly what `--only` names |
+| `tip` | string \| null | the commit; null when it is not here (`objectMissing`) |
+| `object` | string | the ref's own value: the tag object of an annotated tag, else the tip |
+| `annotated` | bool \| null | tags: an annotated tag; null for branches |
+| `containedIn` | string \| null | the first container holding the tip — trunk (`refs/heads/<trunk>`, then `refs/remotes/origin/<trunk>`), then origin's branches, then the rest, each group by name. A remote row names origin's ref as `origin:<ref>` |
+| `uniqueCommits` | int \| null | commits on no container; null when contained or not known |
+| `date` | int \| null | unix seconds, a point in time: see `dateSource` |
+| `dateSource` | `reflog` \| `tagger` \| `commit` \| null | a branch here: the first entry of its reflog, which is when it was made; an annotated tag: its tagger date; anything else: its tip's committer date |
+| `kept` | array of string | every reason that holds it; empty unless `kept` is the category |
+| `subject` | string \| null | the tip's commit subject |
+
+The categories:
+
+- `backupContained` — a container has its tip: nothing is only on it. Selected.
+- `backupOld` — it holds commits no container has, and `date` is older than
+  `age`. Selected. Here only: a remote backup is never swept unless contained.
+- `backupYoung` — the same, younger. Not selected unless `--only` names it.
+  A `git branch backup/x` taken this morning of a three-week-old branch is
+  young: its date is the branch's reflog, not its commits.
+- `kept` — something holds it; `kept` says what:
+
+| `kept` code | Meaning |
+|---|---|
+| `worktree` | a worktree has the branch checked out (the main checkout included) |
+| `heldByRebase`, `heldByBisect` | a rebase or bisect in a worktree holds it |
+| `quarantine` | a live quarantine names it: the branch a `--quarantine` removal moved aside, or the name it was kept under, read from the `recovery.json` its pins under `refs/wt-quarantine/` name; or, when that folder is there and its record cannot be read, the commit its tip pin holds. A quarantine whose pins are gone cannot be seen here |
+| `protected` | trunk, the branch origin's HEAD names, or a long-lived branch (`main`, `master`, `develop`, `development`, `staging`, `production`, `release*`) |
+| `objectMissing` | the object is not here, so containment cannot be read (a remote ref not fetched) |
+| `pullRequestOpen` | a remote branch with an open pull request: deleting it would close the pull request |
+| `pullRequestUnknown` | a remote branch, and GitHub is off, unreachable or not logged in |
+| `notContained` | a remote ref no ref on origin contains |
+
+## `wt refs sweep --yes --json` — the ref sweep
+
+The same run as `wt refs sweep --yes`. The plan as wt prints it and the progress
+go to **stderr**; stdout carries exactly one object.
+
+The run makes the plan (fetching unless `--no-fetch`), and with `--expect
+<token>` refuses, moving nothing, unless the plan made now has that token. With
+`--only` it moves exactly the rows named (an unknown or kept id refuses the
+lot). Then it takes the run id — `--run-id <id>`, or one it mints: the UTC
+second it began and four hex digits, `20260930T091500Z-3f2a`. A `--run-id`
+must match `^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{4,32}$` and have nothing under
+`refs/wt-swept/<id>/` yet (else `runIdTaken`, nothing moved).
+
+Before any ref moves it writes the run's **meta**: a blob — not a commit, so no
+history graph shows it — at `refs/wt-swept/<runId>/meta`, holding JSON `{runId,
+repo (the git dir, absolute), sweptAt (unix seconds), endpoint ({url, digest} or
+null), wtVersion}`. A run stopped anywhere after that is found by its id, and a
+remote ref is only restored to the origin the meta names. Then it moves each
+selected row, reading it once more right before:
+
+- **here**, one `git update-ref --stdin` transaction per ref: create the pin at
+  `object`, delete the ref at `object`. Either both happen or neither; a ref
+  that moved since the plan is `kept`. A branch checked out since the plan is
+  `kept`. A branch's `branch.<name>.*` config goes with it, as with `git branch
+  -D`; a restore does not bring the upstream back.
+- **on origin**, `git fetch origin +<ref>:<pin>`, then, only if the pin is at
+  `object`, `git push --force-with-lease=<ref>:<object> origin :<ref>`, then
+  `git ls-remote` reads it back. A pin at anything else is dropped and the row
+  is `kept`.
+
+Each pin is `refs/wt-swept/<runId>/<space>/<name>`, `<space>` being `heads`,
+`tags`, `remote-heads` or `remote-tags`. The pins and the meta are the record:
+there is no journal file.
+
+A handled SIGINT or SIGTERM writes the object too, with `outcome`
+`interrupted`, then exits 130: the rows done keep their result, the row in
+flight is `interrupted` with `pinned` and `deleted` read back, the rest are
+`notRun`. The same holds for `wt refs restore` and `wt refs purge`.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `schema`, `schemaVersion`, `command`, `repo`, `trunk`, `fetched`, `remote` | | as in the plan |
+| `token` | string \| null | the token of the plan the run went by |
+| `runId` | string \| null | the run's id; null when the run never began: refused, or nothing selected. A run that ends having moved nothing drops its meta, so nothing of it is left under `refs/wt-swept/` |
+| `outcome` | `done` \| `refused` \| `partial` \| `interrupted` | done: every selected row was swept (also when none was selected). refused: nothing was pinned or deleted (`error` says why, e.g. `--expect`). partial: some rows were, some not. interrupted: a signal |
+| `error` | string \| null | why the run stopped before moving anything |
+| `problems` | array | `{code, text}`: the plan's, and `planChanged` (`--expect` named another plan, or the plan changed while the question was open) or `runIdTaken` |
+| `recovery` | string \| null | for `interrupted`: what wt printed |
+| `items` | array | every row of the plan |
+
+Each item: `id`, `kind`, `name`, `category`, `selected`, `tip`, `object` as in
+the plan, and:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `result` | `swept` \| `kept` \| `failed` \| `notRun` \| `interrupted` \| `notSelected` | swept: pinned and deleted. kept: the plan keeps it (`reason` is its codes) or it moved or was taken after the plan. failed: tried and not finished. notRun: the run ended before it. interrupted: a signal caught it. notSelected: the plan did not select it |
+| `reason` | string \| null | why, for kept and failed |
+| `pin` | string \| null | the pin, for a selected row once the run began |
+| `pinned` | bool | the pin holds `object`, read back after the row |
+| `deleted` | bool | the ref is gone, here or on origin, read back after the row |
+| `restoreCommand` | array \| null | for a row pinned and deleted: `["wt","refs","restore",<runId>,"--only",<id>,"--yes"]` |
+
+## `wt refs restore <runId> --dry-run --json` — the plan
+
+What `wt refs restore <runId>` would put back, as one object: each pin of the
+run, and what would be done with it. It changes nothing; for a remote pin it asks
+origin (`ls-remote`) what is at the name. `wt refs restore <runId> --json`
+without `--yes` prints the same plan. `--only <id>`, one id per flag, restores
+just those; an id the run does not have, or one whose name is taken, refuses.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `schema`, `schemaVersion` | | |
+| `command` | `"refs restore"` | |
+| `repo` | string \| null | |
+| `runId` | string | as given, also when it is not a run id (then `error` says so) |
+| `token` | string \| null | `rr1-…`: covers the repository, the run, and each pin with its object and action. Null when nothing can go back, or on error |
+| `error` | string \| null | a run id that is not one, a run with nothing under `refs/wt-swept/<runId>/`, `--only` refused |
+| `items` | array | `{id, kind, name, pin, object, action, selected}` |
+
+`action` is `create` (the name is free: the ref is made at `object`), `none` (it
+is there at `object` already: only the pin goes), `occupied` (the name holds
+something else here), `remoteOccupied` (origin has something there) or `pinGone`
+(the pin is not there), and for a remote ref `endpointChanged` (origin's one
+URL, resolved as the sweep does, no longer has the digest the run's meta
+recorded, or no longer resolves to one URL) or `endpointUnknown` (the run has no
+meta). A pin that moves or goes between the plan and the run is `kept`, its
+`reason` starting `pinGone`. Local refs are not affected by the endpoint. `selected` is every row whose action
+is `create` or `none`, or what `--only` names.
+
+## `wt refs restore <runId> --yes --json` — the result
+
+Here each ref is one `update-ref --stdin` transaction: create the ref at
+`object` (only where it is not), delete the pin at `object`. On origin it is
+`git push --force-with-lease=<ref>: origin <pin>:<ref>` (only where origin has
+nothing), then `git ls-remote` must show the ref at `object`, and only then is
+the pin deleted, at its own value. A push that was rejected, timed out or was
+interrupted, or a read-back that does not show it, keeps the pin (`failed`); a
+later restore that finds origin holding the ref at `object` plans `none` and
+only drops the pin. A branch comes back without its upstream setting. A run
+whose pins are all restored leaves nothing under `refs/wt-swept/<runId>/`: its
+meta goes once its last pin does.
+`--expect <token>` refuses unless the plan made now has that token. The human
+output goes to stderr; a handled SIGINT or SIGTERM writes the object too.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `schema`, `schemaVersion`, `command`, `repo`, `runId`, `token` | | as in the plan it went by |
+| `outcome` | `done` \| `refused` \| `partial` \| `interrupted` | done: every selected row restored. refused: nothing changed. partial: some. interrupted: a signal |
+| `error`, `recovery` | string \| null | as in the sweep |
+| `items` | array | the plan's items, each with `result` (`restored`, `kept`, `failed`, `notRun`, `interrupted`, `notSelected`), `reason`, `restored` (the ref is at `object`, read back) and `pinDeleted` (the pin is gone, read back) |
+
+## `wt refs purge (<runId>… | --older-than <age>) --dry-run --json` — the plan
+
+What `wt refs purge` would delete for good: the pins of the runs named, or of
+every run older than `--older-than` (`14d`, `2w`, `36h`) by its `sweptAt`: the
+meta's, else the time in its id. It deletes nothing. A run named that has
+nothing under `refs/wt-swept/<runId>/` is an error; one with only its meta (a
+run stopped before it moved anything) is purged like any other.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `schema`, `schemaVersion` | | |
+| `command` | `"refs purge"` | |
+| `repo` | string \| null | |
+| `olderThan` | string \| null | `--older-than` as given; null when runs were named |
+| `token` | string \| null | `rp1-…`: covers the runs, their pins and each pin's object. Null when there is nothing to purge, or on error |
+| `error` | string \| null | |
+| `runs` | array | `{runId, sweptAt, meta, endpoint, refs, unreachable}`: `sweptAt` unix seconds, the meta's, else from the id; `meta` the run's meta ref or null; `endpoint` as the meta records it, or null; `refs` `{pin, id, object}`; `unreachable` `{id, count}` for each pin whose commits no ref outside this purge and no worktree's HEAD reaches — what `git gc` may take once it goes. A commit two purged pins share counts for both; reflogs are not counted |
+
+## `wt refs purge … --yes --json` — the result
+
+Each pin is deleted only while it holds `object`; once every pin of a run is
+gone, the run's pins are read again and, with none left, its meta goes last, at
+the value read. A pin that appeared meanwhile (a sweep still running under that
+id) keeps the meta. The human output goes to
+stderr; a handled SIGINT or SIGTERM writes the object too.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `schema`, `schemaVersion`, `command`, `repo`, `token` | | as in the plan it went by |
+| `outcome` | `purged` \| `refused` \| `partial` \| `interrupted` | purged: every pin is gone (also when there was nothing to purge). refused: nothing was deleted. partial: some pins are gone; run it again. interrupted: a signal |
+| `error`, `recovery` | string \| null | |
+| `runs` | array | `{runId, sweptAt, refs, meta, metaDeleted}`: `metaDeleted` read back; each ref `{pin, id, object, result, reason}`: `result` `deleted`, `absent` (gone already), `kept` (still there: it moved, or git refused), `notRun` or `interrupted` |
+
+## `wt refs swept --json` — the runs
+
+Every run with pins or a meta still under `refs/wt-swept/`, oldest first. A run
+that wrote its meta and was stopped before it moved anything is listed with no
+refs. It changes nothing.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `schema`, `schemaVersion` | | |
+| `command` | `"refs swept"` | |
+| `repo` | string \| null | |
+| `error` | string \| null | |
+| `runs` | array | `{runId, sweptAt, endpoint, refs}`: `sweptAt` unix seconds, the meta's, else from the id; `endpoint` as the meta records it, or null; each ref `{id, kind, name, pin, object}` |
 
 ## `wt sync --json` — the overview
 

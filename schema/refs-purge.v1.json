@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/refs-purge.v1.json",
+  "x-version": "1.0.0",
+  "title": "wt refs purge --yes --json",
+  "description": "What `wt refs purge --yes` deleted. Printed by `wt refs purge --yes --json` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends the run. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
+  "type": "object",
+  "required": [
+    "schema",
+    "schemaVersion",
+    "command",
+    "repo",
+    "token",
+    "outcome",
+    "error",
+    "recovery",
+    "runs"
+  ],
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^1\\.[0-9]+\\.[0-9]+$"
+    },
+    "command": {
+      "const": "refs purge"
+    },
+    "repo": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "token": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^rp1-[0-9a-f]{32}$",
+      "description": "The token of the plan the purge went by."
+    },
+    "outcome": {
+      "enum": [
+        "purged",
+        "refused",
+        "partial",
+        "interrupted"
+      ],
+      "description": "purged: every pin planned is gone. refused: nothing was deleted (error says why). partial: some pins are gone, some not; running it again finishes it. interrupted: a signal ended the run."
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "recovery": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "For interrupted: what wt printed."
+    },
+    "runs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "runId",
+          "sweptAt",
+          "refs",
+          "meta",
+          "metaDeleted"
+        ],
+        "properties": {
+          "runId": {
+            "type": "string",
+            "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{4,32}$"
+          },
+          "sweptAt": {
+            "type": "integer"
+          },
+          "refs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "pin",
+                "id",
+                "object",
+                "result",
+                "reason"
+              ],
+              "properties": {
+                "pin": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string",
+                  "description": "refs/heads/<name> or refs/tags/<name> here; origin:refs/heads/<name> or origin:refs/tags/<name> on origin. --only takes it, one id per flag and never split: a ref name may contain a comma."
+                },
+                "object": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+                },
+                "result": {
+                  "enum": [
+                    "deleted",
+                    "absent",
+                    "kept",
+                    "notRun",
+                    "interrupted"
+                  ],
+                  "description": "deleted: it was at object and is gone. absent: it was gone already. kept: it is still there (it moved, or git refused; reason says). notRun: the run ended before it. interrupted: a signal caught it and it is still there."
+                },
+                "reason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "meta": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The run's meta ref; null when it had none."
+          },
+          "metaDeleted": {
+            "type": "boolean",
+            "description": "The meta is gone, read back. It is deleted only once every pin of the run is."
+          }
+        }
+      }
+    }
+  }
+}
