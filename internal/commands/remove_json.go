@@ -133,6 +133,9 @@ type RemoveStep struct {
 	Result string  `json:"result"`
 	Commit *string `json:"commit"`
 	Reason *string `json:"reason"`
+	// Pin is where the branch step moved the branch, read back; nil for
+	// the other steps.
+	Pin *string `json:"pin"`
 }
 
 // RemoveQuarantine is the folder a quarantine moved the worktree into, and
@@ -166,6 +169,7 @@ type RemoveOutput struct {
 	Quarantine     *RemoveQuarantine `json:"quarantine"`
 	RestoreCommand []string          `json:"restoreCommand"`
 	Recovery       *string           `json:"recovery"`
+	RunID          *string           `json:"runId"`
 }
 
 // removeToken names a plan: the repository, trunk and the bases' commits,
@@ -405,6 +409,7 @@ type RemoveJournal struct {
 	plan    *Plan
 	token   string
 	started bool
+	runID   string
 }
 
 // planned records the plan the removal made, and its token.
@@ -427,6 +432,16 @@ func (j *RemoveJournal) applying() {
 	j.started = true
 }
 
+// ran records the run the branch is about to be moved into.
+func (j *RemoveJournal) ran(runID string) {
+	if j == nil {
+		return
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.runID = runID
+}
+
 // finish writes the object for a removal that returned.
 func (j *RemoveJournal) finish(res RemoveResult, err error) {
 	j.write(&res, err, "")
@@ -443,7 +458,7 @@ func (j *RemoveJournal) write(res *RemoveResult, err error, recovery string) {
 		return
 	}
 	j.mu.Lock()
-	ctx, started, token := j.ctx, j.started, j.token
+	ctx, started, token, runID := j.ctx, j.started, j.token, j.runID
 	var plan *Plan
 	if j.plan != nil {
 		p := *j.plan
@@ -452,14 +467,19 @@ func (j *RemoveJournal) write(res *RemoveResult, err error, recovery string) {
 	j.mu.Unlock()
 	// The object is read outside once: a signal parks the git a returning
 	// run is reading with, and the handler must still be able to write.
-	o := removeOutput(ctx, plan, token, started, res, err, recovery)
+	if res != nil {
+		// What the removal returned is what is left: a run that pinned
+		// nothing was dropped.
+		runID = res.RunID
+	}
+	o := removeOutput(ctx, plan, token, runID, started, res, err, recovery)
 	j.once.Do(func() { _ = writeJSON(j.out, o) })
 }
 
 // removeOutput is the result object. res is what the removal returned, nil
 // for one a signal ended; where the worktree and the quarantine are is read
 // from the disk either way, and the branch too for an interrupted run.
-func removeOutput(ctx *Context, plan *Plan, token string, started bool, res *RemoveResult, err error,
+func removeOutput(ctx *Context, plan *Plan, token, runID string, started bool, res *RemoveResult, err error,
 	recovery string) RemoveOutput {
 	o := RemoveOutput{Schema: 1, SchemaVersion: schema.VersionOf("remove"), Command: "remove",
 		Token: strp(token), Problems: []RemoveProblem{}, Forced: []string{}, Recovery: strp(recovery)}
@@ -526,12 +546,21 @@ func removeOutput(ctx *Context, plan *Plan, token string, started bool, res *Rem
 		_, ok := ctx.Repo.ResolveRef("refs/heads/" + plan.Branch)
 		branchGone = !ok
 	}
-	if branchGone && o.RestoreCommand == nil {
+	o.RunID = strp(runID)
+	pin := ""
+	if branchGone {
+		pin = pinHolding(ctx.Repo.MainRoot, runID, plan.Branch, plan.Tip)
+	}
+	switch {
+	case o.RestoreCommand != nil:
+	case pin != "":
+		o.RestoreCommand = restoreFromRun(runID, plan.Branch)
+	case branchGone:
 		o.RestoreCommand = restoreBranch(ctx, plan.Branch, plan.Tip)
 	}
 
 	wstep := RemoveStep{Step: StepWorktree, Result: worktree}
-	bstep := RemoveStep{Step: StepBranch, Commit: strp(plan.Tip)}
+	bstep := RemoveStep{Step: StepBranch, Commit: strp(plan.Tip), Pin: strp(pin)}
 	sstep := RemoveStep{Step: StepSuperset, Result: StepNotRun}
 	if res != nil {
 		o.Outcome = res.Outcome

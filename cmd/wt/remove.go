@@ -22,7 +22,9 @@ func newRemoveCmd() *cobra.Command {
 		Short:   "Remove a worktree, deleting its branch only when merged",
 		Long: "Remove the worktree and decide what happens to its branch. A branch\n" +
 			"merged into trunk is deleted, whoever created it: merged means nothing\n" +
-			"is lost. An unmerged branch wt made is renamed out of the <type>_wt/\n" +
+			"is lost. It is moved into a pin under refs/wt-swept/<run>/, as wt refs\n" +
+			"sweep moves backups, so wt refs restore <run> puts it back until wt refs\n" +
+			"purge. An unmerged branch wt made is renamed out of the <type>_wt/\n" +
 			"prefix, so the work survives its worktree; an unmerged branch wt did\n" +
 			"not make is left exactly as it is.\n\n" +
 			"Merged means the branch's tip is reachable from origin/<trunk> as last\n" +
@@ -84,7 +86,8 @@ func newRemoveCmd() *cobra.Command {
 			"refs/wt-quarantine/ so gc keeps them, moves the checkout to\n" +
 			"<dir>/checkout and its admin dir, .git/worktrees/<id> with its\n" +
 			"submodules' repositories, to <dir>/admin, which unregisters it; then\n" +
-			"the branch goes as it would. A file written after the check moves with\n" +
+			"the branch goes as it would, held by those pins rather than one under\n" +
+			"refs/wt-swept/. A file written after the check moves with\n" +
 			"the checkout. Each step is journalled in recovery.json; wt restore <dir>\n" +
 			"puts it all back, and wt sweep drops the pins once <dir> is deleted.\n\n" +
 			"With `wt config set superset true`, once the worktree has left its path\n" +

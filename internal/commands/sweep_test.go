@@ -925,7 +925,6 @@ func TestSweepYesDeletesAndSaysHowToBringItBack(t *testing.T) {
 	ctx, main, _ := sweepRepo(t)
 	branchWithWork(t, main, "done-work", 1)
 	landOnMain(t, main, "done-work")
-	tip := gitOut(t, main, "rev-parse", "done-work")
 
 	var buf bytes.Buffer
 	if err := Sweep(ctx, SweepOptions{Yes: true}, &buf); err != nil {
@@ -934,7 +933,7 @@ func TestSweepYesDeletesAndSaysHowToBringItBack(t *testing.T) {
 	if ctx.Repo.BranchExists("done-work") {
 		t.Error("done-work is merged; --yes should have deleted it")
 	}
-	if !strings.Contains(buf.String(), "git branch done-work "+tip[:12]) {
+	if !strings.Contains(buf.String(), "--only refs/heads/done-work --yes puts it back") {
 		t.Errorf("each deletion must say how to undo it:\n%s", buf.String())
 	}
 }

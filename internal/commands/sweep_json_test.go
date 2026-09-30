@@ -234,9 +234,14 @@ func TestSweepJSONCarriesOutThePlanItWasGiven(t *testing.T) {
 	if err != nil || r.Outcome != OutcomeDone || r.Error != nil || r.Token == nil || *r.Token != *p.Token {
 		t.Fatalf("%v %+v\n%s", err, r, human)
 	}
+	if r.RunID == nil {
+		t.Fatalf("a sweep that deleted branches names the run it pinned them in: %+v", r)
+	}
 	it := resultItem(t, r, "done-work")
-	if it.Result != SweepDeleted || !it.BranchDeleted || it.WorktreeRemoved ||
-		!slices.Equal(it.RestoreCommand, []string{"git", "-C", main, "branch", "done-work", doneTip}) {
+	pin := pinOf(*r.RunID, RefBranch, "done-work")
+	if it.Result != SweepDeleted || !it.BranchDeleted || it.WorktreeRemoved || deref(it.Pin) != pin ||
+		gitOut(t, main, "rev-parse", pin) != doneTip ||
+		!slices.Equal(it.RestoreCommand, []string{"wt", "refs", "restore", *r.RunID, "--only", "refs/heads/done-work", "--yes"}) {
 		t.Errorf("done-work = %+v", it)
 	}
 	it = resultItem(t, r, "fix_wt/login-crash")

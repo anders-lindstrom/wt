@@ -58,6 +58,8 @@ Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 | `status` 1.4.1, `up` 1.3.1, `sync` 1.1.1, `sweep-plan` 1.4.1, `new-plan` 1.2.1, `checkout-plan` 1.3.1 | | detection is origin/HEAD, then the first of `development`, `main`, `master`, else it fails: `currentBranchGuess` is no longer produced, and a repository nothing names trunk for is `noConfiguration` — also one whose file has no `MAIN_BRANCH` |
 | `refs-sweep-plan`, `refs-sweep`, `refs-restore-plan`, `refs-restore`, `refs-purge-plan`, `refs-purge`, `refs-swept` | 1.0.0 | `wt refs sweep`, `restore` and `purge --json`, each plan and result, and `wt refs swept --json` |
 | `sweep-plan` | 1.5.0 | `configFingerprint`: the configuration file the token covers, so two plans can be compared |
+| `sweep` | 1.4.0 | `runId`, and `pin` on each item: the branches a sweep deletes are moved into a run under `refs/wt-swept/`. `restoreCommand` is now `wt refs restore <runId> --only refs/heads/<branch> --yes`, or `wt restore <dir>` for a quarantined worktree's branch; the `git branch` form is no longer produced |
+| `remove` | 1.4.0 | `runId`, and `pin` on each step: a deleted branch is moved into a run of its own under `refs/wt-swept/`; `restoreCommand` for it is `wt refs restore` |
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
 
@@ -420,6 +422,7 @@ a crash may write none; treat a missing object as unknown.
 | `items` | array | every row of the plan, in its order; empty when `error` stopped it first |
 | `recovery` | string \| null | for `interrupted`: what wt printed |
 | `quarantine` | string \| null | since 1.1.0: with `--quarantine <dir>`, the folder; null without |
+| `runId` | string \| null | since 1.4.0: the run under `refs/wt-swept/` the deleted branches were moved into (see [below](#deleted-branches-are-pinned)); null when no branch was moved |
 
 Each item:
 
@@ -430,7 +433,8 @@ Each item:
 | `reason` | string \| null | why, for everything but `removed` and `deleted` |
 | `worktreeRemoved` | bool | the worktree is gone now |
 | `branchDeleted` | bool | the branch is gone now |
-| `restoreCommand` | array of string \| null | when the branch was deleted: `["git", "-C", repo, "branch", branch, tip]`, which puts it back at that commit (not its upstream setting) |
+| `pin` | string \| null | since 1.4.0: the ref the deleted branch was moved into, `refs/wt-swept/<runId>/heads/<branch>`, read back holding `tip`; null when it was not moved there |
+| `restoreCommand` | array of string \| null | when the branch was deleted, the argv that puts it back (not its upstream setting): `["wt", "refs", "restore", runId, "--only", "refs/heads/<branch>", "--yes"]` for a pinned branch, `["wt", "restore", dir]` for a quarantined worktree's. Run it in `repo`. Null when the branch is there, or gone with no pin. Before 1.4.0 it was `["git", "-C", repo, "branch", branch, tip]`; that form is gone |
 | `quarantine` | object \| null | since 1.1.0: for a worktree moved, or being moved, into the quarantine: `dir`, its own folder (`wt restore <dir>` puts it back), and `checkoutMoved`, `adminMoved`, which of the two moves are done; null otherwise |
 | `superset` | object \| null | since 1.2.0: for a worktree the sweep removed, what came of its Superset workspace: `result` and `reason` (string \| null, why, for `skipped` and `failed`); null when no worktree was removed |
 
@@ -451,8 +455,25 @@ in the instant between them would be removed by Superset. A tool that creates
 worktrees while it removes others passes `--keep-superset`, which closes that
 window by not asking Superset at all.
 
-`worktreeRemoved` and `branchDeleted` are read from the repository after the
-row, not from what was attempted.
+`worktreeRemoved`, `branchDeleted` and `pin` are read from the repository after
+the row, not from what was attempted.
+
+### Deleted branches are pinned
+
+Since 1.4.0 a sweep deletes no branch outright. Each one it deletes — a
+`delete` row's, and a `remove` row's once its worktree is gone — is moved into
+`refs/wt-swept/<runId>/heads/<branch>` the way `wt refs sweep` moves a backup:
+the run's meta blob is written first, then each branch goes in one atomic
+`update-ref` transaction that creates the pin at the planned tip and deletes the
+branch at that tip, then its `branch.<name>.*` config. One sweep is one run,
+begun at the first branch it moves: a sweep that moves none has `runId` null and
+leaves nothing under `refs/wt-swept/`. `wt refs swept` lists the run,
+`wt refs restore <runId>` puts the branches back, and `wt refs purge <runId>`
+deletes them for good. With `--quarantine`, a removed worktree's branch is
+pinned by its quarantine under `refs/wt-quarantine/` and not a second time; a
+`delete` row's branch is still pinned in the run. A signal after the meta is
+written and before any branch moved can leave a run that holds only its meta:
+`runId` then names it, and `wt refs purge` clears it.
 
 `result`, exhaustively:
 
@@ -1350,11 +1371,21 @@ quarantine got. A usage error is reported as without `--json`, with no object.
 | `error` | string \| null | why it refused or stopped |
 | `problems` | array | for `refused`: as in the plan, the ones that refused it, and `planChanged` |
 | `path`, `branch`, `tip`, `keepAs` | string \| null | from the plan |
-| `steps` | array | `worktree`, `branch`, `superset`, always all three, in that order: `{step, result, commit, reason}`; `commit` is `branch`'s tip |
+| `steps` | array | `worktree`, `branch`, `superset`, always all three, in that order: `{step, result, commit, reason, pin}`; `commit` is `branch`'s tip; `pin` (since 1.4.0) is, for `branch`, the ref the deleted branch was moved into, read back, and null otherwise |
 | `forced` | array of string | since 1.2.0: the `--force` categories the removal went past, in the plan or in the final read; empty when none, or when it did not get that far |
 | `quarantine` | object \| null | with `--quarantine`, once its `recovery.json` is written: `dir`, `checkoutMoved`, `adminMoved` (each directory, by identity, in the quarantine), `recoveryFile`, and `steps` as `recovery.json` records them |
-| `restoreCommand` | array of string \| null | the argv that puts back what went: `wt restore <dir>` once a quarantine wrote its `recovery.json`, else `git -C <repo> branch <name> <tip>` for a deleted branch |
+| `restoreCommand` | array of string \| null | the argv that puts back what went: `wt restore <dir>` once a quarantine wrote its `recovery.json`; since 1.4.0 `wt refs restore <runId> --only refs/heads/<name> --yes`, run in `repo`, for a branch moved into a pin; else `git -C <repo> branch <name> <tip>` for a branch gone from its name (renamed to `keepAs`) |
 | `recovery` | string \| null | for `interrupted`: what wt printed |
+| `runId` | string \| null | since 1.4.0: the run under `refs/wt-swept/` the deleted branch was moved into; null when it was not moved |
+
+Since 1.4.0 a removal without `--quarantine` deletes a merged branch the way a
+sweep does (see [Deleted branches are pinned](#deleted-branches-are-pinned)):
+into `refs/wt-swept/<runId>/heads/<name>`, in a run of its own, begun only when
+the branch step deletes. An unmerged branch wt made is renamed to `keepAs`,
+which keeps its commits under a name, so nothing is pinned and `runId` is null;
+so it is for a branch left `untouched` or `kept`. With `--quarantine`, the
+quarantine pins the branch under `refs/wt-quarantine/`, and `wt restore <dir>`
+puts it back with the worktree.
 
 `steps[].result`, by step:
 

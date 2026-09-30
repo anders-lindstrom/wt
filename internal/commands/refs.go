@@ -615,3 +615,88 @@ func moveBranch(ctx *Context, name, tip, pin, message string) error {
 	_, _ = git.Run(ctx.Repo.MainRoot, "config", "--remove-section", "branch."+name)
 	return nil
 }
+
+// branchPins is the run wt sweep or wt remove moves the branches it deletes
+// into, so wt refs restore brings them back. The run is begun, its meta
+// written, when the first branch goes: a command that deletes nothing mints
+// none.
+type branchPins struct {
+	// command is the reflog message the moves are made with.
+	command string
+	// begun, when set, is told the run id before its meta is written, so a
+	// journal names the run even when a signal comes next.
+	begun func(runID string)
+	runID string
+	err   error
+}
+
+// move pins branch name and deletes it, at tip, and returns its pin.
+func (b *branchPins) move(ctx *Context, name, tip string) (string, error) {
+	if b.err != nil {
+		return "", b.err
+	}
+	if b.runID == "" {
+		if err := b.begin(ctx); err != nil {
+			b.err = err
+			return "", err
+		}
+	}
+	pin := pinOf(b.runID, RefBranch, name)
+	return pin, moveBranch(ctx, name, tip, pin, b.command)
+}
+
+// begin mints the run and writes its meta. An id another run holds is
+// passed over, and the run is the command's only once its meta is written,
+// so finish never drops a meta it did not write.
+func (b *branchPins) begin(ctx *Context) error {
+	for range 3 {
+		id := newRunID(time.Now())
+		if taken, err := runTaken(ctx.Repo.MainRoot, id); err != nil {
+			return err
+		} else if taken {
+			continue
+		}
+		if b.begun != nil {
+			b.begun(id)
+		}
+		if err := beginRun(ctx.Repo.MainRoot, id, time.Now(), nil); err != nil {
+			if b.begun != nil {
+				b.begun("")
+			}
+			return err
+		}
+		b.runID = id
+		return nil
+	}
+	return errors.New("could not mint a run id no other run holds")
+}
+
+// finish drops the run's meta when the run holds no pin, and returns the run
+// left behind: "" when none was begun or none is left.
+func (b *branchPins) finish(ctx *Context, w io.Writer) string {
+	if b == nil || b.runID == "" {
+		return ""
+	}
+	dropEmptyRun(ctx.Repo.MainRoot, b.runID, w)
+	if taken, err := runTaken(ctx.Repo.MainRoot, b.runID); err == nil && !taken {
+		return ""
+	}
+	return b.runID
+}
+
+// pinHolding is where run keeps branch name at tip, "" when it does not.
+func pinHolding(mainRoot, runID, name, tip string) string {
+	if runID == "" || name == "" || tip == "" {
+		return ""
+	}
+	pin := pinOf(runID, RefBranch, name)
+	if v, ok, err := refValue(mainRoot, pin); err != nil || !ok || v != tip {
+		return ""
+	}
+	return pin
+}
+
+// restoreFromRun is the argv that puts branch name back from run.
+func restoreFromRun(runID, name string) []string {
+	return []string{"wt", "refs", "restore", runID, "--only", refOf(RefBranch, name), "--yes"}
+}
