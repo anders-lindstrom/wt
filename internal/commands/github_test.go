@@ -316,10 +316,16 @@ func TestPRCheckoutLeavesNothingBehindWhenGhFails(t *testing.T) {
 		openPR(12, "residential_fixes", "Fixes"))
 
 	var errs bytes.Buffer
-	if _, err := PRCheckout(ctx, 12, PROptions{}, &errs); err == nil {
+	_, err = PRCheckout(ctx, 12, PROptions{}, &errs)
+	if err == nil {
 		t.Fatal("PRCheckout succeeded with a gh that failed")
 	}
 	path := ctx.Scheme().Dir("feat", "pr-12-residential_fixes")
+	want := "gh pr checkout 12 failed: fetch failed\n" +
+		"  the half-made worktree at " + path + " was removed; a retry starts clean"
+	if err.Error() != want {
+		t.Errorf("err = %v\nwant  %s", err, want)
+	}
 	if _, err := os.Stat(path); err == nil {
 		t.Errorf("%s was left behind", path)
 	}
@@ -1076,5 +1082,197 @@ func TestDoctorNamesTheCacheItCanWrite(t *testing.T) {
 	// Asking the question leaves no cache behind where there was none.
 	if _, err := os.Stat(prCachePath(ctx)); err == nil {
 		t.Error("wt doctor created the cache file")
+	}
+}
+
+// prHead makes a commit on top of base in a repository of its own, which then
+// serves it the way GitHub does, at refs/pull/<n>/head, and is main's origin.
+// main does not have the commit until it fetches.
+func prHead(t *testing.T, main string, number int, base string) string {
+	t.Helper()
+	remote := filepath.Join(t.TempDir(), "remote")
+	gitIn(t, filepath.Dir(remote), "clone", "-q", main, remote)
+	gitIn(t, remote, "config", "user.email", "t@example.com")
+	gitIn(t, remote, "config", "user.name", "T")
+	gitIn(t, remote, "checkout", "-q", "--detach", base)
+	gitIn(t, remote, "commit", "-q", "--allow-empty", "-m", "the pull request's own")
+	gitIn(t, remote, "update-ref", fmt.Sprintf("refs/pull/%d/head", number), "HEAD")
+	gitIn(t, main, "remote", "add", "origin", remote)
+	return gitOut(t, remote, "rev-parse", "HEAD")
+}
+
+// localCommits puts n commits of its own on a local branch that no worktree
+// is on, starting from base, and returns its tip.
+func localCommits(t *testing.T, main, branch, base string, n int) string {
+	t.Helper()
+	tip := gitOut(t, main, "rev-parse", base)
+	for i := 0; i < n; i++ {
+		tip = gitOut(t, main, "commit-tree", "-p", tip, "-m", fmt.Sprintf("local %d", i+1), tip+"^{tree}")
+	}
+	gitIn(t, main, "update-ref", "refs/heads/"+branch, tip)
+	return tip
+}
+
+// The case gh fails on under a screen of git's advice: the pull request's
+// branch is here already and has gone its own way. wt says so before anything
+// is made, with the counts and the two ways out, and touches nothing.
+func TestPRCheckoutRefusesALocalBranchThatDiverged(t *testing.T) {
+	main := committedRepo(t, minimalConf)
+	head := prHead(t, main, 12, "HEAD")
+	tip := localCommits(t, main, "residential_fixes", "HEAD", 2)
+	ctx, err := Open(main)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pr := openPR(12, "residential_fixes", "Fixes")
+	pr.HeadRefOid = head
+	log := fakeGitHub(t, pr)
+
+	var errs bytes.Buffer
+	_, err = PRCheckout(ctx, 12, PROptions{}, &errs)
+	if err == nil {
+		t.Fatal("PRCheckout went ahead on a branch gh cannot fast-forward")
+	}
+	want := "#12 is on residential_fixes, and a local branch of that name has diverged from it: " +
+		"2 ahead, 1 behind\n" +
+		"  gh can only fast-forward a branch that exists; nothing was made\n" +
+		"  it carries 2 commits of its own: check that nothing is lost, then either\n" +
+		"    rename it:  git branch -m residential_fixes residential_fixes-old\n" +
+		"    delete it:  git branch -D residential_fixes\n" +
+		"  and run `wt pr checkout 12` again"
+	if err.Error() != want {
+		t.Errorf("err = %v\nwant  %s", err, want)
+	}
+	for _, call := range argvOf(t, log) {
+		if strings.HasPrefix(call, "pr checkout") {
+			t.Errorf("gh was asked to check it out anyway: %q", call)
+		}
+	}
+	if _, err := os.Stat(ctx.Scheme().Dir("feat", "pr-12-residential_fixes")); err == nil {
+		t.Error("a worktree was made")
+	}
+	if got, _ := ctx.Repo.ResolveRef("refs/heads/residential_fixes"); got != tip {
+		t.Errorf("the local branch moved: %s, want %s", got, tip)
+	}
+	// Looking brought the pull request's commits and nothing else.
+	if refs := gitOut(t, main, "for-each-ref", "--format=%(refname)"); refs !=
+		"refs/heads/main\nrefs/heads/residential_fixes" {
+		t.Errorf("refs = %q", refs)
+	}
+	if _, err := os.Stat(filepath.Join(main, ".git", "FETCH_HEAD")); err == nil {
+		t.Error("FETCH_HEAD was written")
+	}
+}
+
+// A local branch gh can deal with is gh's to deal with: one the pull request
+// is a fast-forward of, and one that is only ahead of it.
+func TestPRCheckoutLeavesAFastForwardToGh(t *testing.T) {
+	for name, local := range map[string]func(t *testing.T, main, head string){
+		"behind": func(t *testing.T, main, _ string) { localCommits(t, main, "residential_fixes", "HEAD", 0) },
+		"ahead": func(t *testing.T, main, head string) {
+			gitIn(t, main, "fetch", "-q", "origin", "refs/pull/12/head")
+			localCommits(t, main, "residential_fixes", head, 2)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			main := committedRepo(t, minimalConf)
+			head := prHead(t, main, 12, "HEAD")
+			local(t, main, head)
+			ctx, err := Open(main)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pr := openPR(12, "residential_fixes", "Fixes")
+			pr.HeadRefOid = head
+			log := fakeGitHubWith(t,
+				`[ "$1 $2" = 'pr checkout' ] && { git checkout -q residential_fixes; exit; }`, pr)
+
+			var errs bytes.Buffer
+			path, err := PRCheckout(ctx, 12, PROptions{}, &errs)
+			if err != nil {
+				t.Fatalf("PRCheckout: %v", err)
+			}
+			if got := ctx.Repo.BranchAt(path); got != "residential_fixes" {
+				t.Errorf("worktree is on %q", got)
+			}
+			if argv := argvOf(t, log); argv[len(argv)-1] != "pr checkout 12" {
+				t.Errorf("argv = %q, want gh to have done the checkout", argv)
+			}
+		})
+	}
+}
+
+// Where wt cannot be sure what gh will do, gh is asked. A fork's branch may go
+// under the fork owner's name, and a finished pull request's branch may have
+// moved on from the head GitHub recorded.
+func TestPRCheckoutDoesNotSecondGuessWhatItCannotKnow(t *testing.T) {
+	for name, change := range map[string]func(*github.PR){
+		"a fork": func(pr *github.PR) {
+			pr.IsCrossRepository = true
+			pr.HeadRepositoryOwner = github.Account{Login: "stranger"}
+		},
+		"merged": func(pr *github.PR) { pr.State = "MERGED" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			main := committedRepo(t, minimalConf)
+			head := prHead(t, main, 12, "HEAD")
+			localCommits(t, main, "residential_fixes", "HEAD", 2)
+			ctx, err := Open(main)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pr := openPR(12, "residential_fixes", "Fixes")
+			pr.HeadRefOid = head
+			change(&pr)
+			log := fakeGitHubWith(t,
+				`[ "$1 $2" = 'pr checkout' ] && { git checkout -q residential_fixes; exit; }`, pr)
+
+			var errs bytes.Buffer
+			if _, err := PRCheckout(ctx, 12, PROptions{}, &errs); err != nil {
+				t.Fatalf("PRCheckout: %v", err)
+			}
+			if argv := argvOf(t, log); argv[len(argv)-1] != "pr checkout 12" {
+				t.Errorf("argv = %q, want gh to have done the checkout", argv)
+			}
+		})
+	}
+}
+
+// A worktree that will not go is in the way of the retry, and the error says
+// so rather than claiming a clean start. A locked worktree is one git refuses
+// to remove on one --force.
+func TestPRCheckoutSaysWhenTheHalfMadeWorktreeIsStillThere(t *testing.T) {
+	ctx, err := Open(committedRepo(t, minimalConf))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fakeGitHubWith(t, `[ "$1 $2" = 'pr checkout' ] && { git worktree lock . ; echo 'fatal: no' >&2; exit 1; }`,
+		openPR(12, "residential_fixes", "Fixes"))
+
+	var errs bytes.Buffer
+	_, err = PRCheckout(ctx, 12, PROptions{}, &errs)
+	if err == nil {
+		t.Fatal("PRCheckout succeeded with a gh that failed")
+	}
+	path := ctx.Scheme().Dir("feat", "pr-12-residential_fixes")
+	for _, want := range []string{
+		"gh pr checkout 12 failed: fatal: no\n",
+		"  the half-made worktree at " + path + " could not be removed: ",
+		"\n  remove it before a retry: git worktree remove --force --force " + path,
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("err = %v\nwant it to say %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "was removed") {
+		t.Errorf("err = %v, which claims a removal that did not happen", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("the fixture did not keep the worktree: %v", err)
+	}
+	// The command the error names is one that works.
+	gitIn(t, ctx.Repo.MainRoot, "worktree", "remove", "--force", "--force", path)
+	if _, err := os.Stat(path); err == nil {
+		t.Error("the advice did not remove the worktree")
 	}
 }

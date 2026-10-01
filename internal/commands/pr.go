@@ -4,6 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -68,6 +71,9 @@ func PRCheckout(ctx *Context, number int, opts PROptions, w io.Writer) (string, 
 		}
 		fmt.Fprintf(w, "#%d is already checked out at %s, on %s\n", pr.Number, wt.Path, branch)
 		return wt.Path, nil
+	}
+	if err := divergedFromPR(ctx, gh, pr); err != nil {
+		return "", err
 	}
 	typ, work := prWorkName(ctx, pr)
 	path := ctx.Scheme().Dir(typ, work)
@@ -135,6 +141,56 @@ func prChoices(ctx *Context, viewer string, prs []github.PR) []PRChoice {
 	return rows
 }
 
+// divergedFromPR refuses a checkout gh is going to fail: a local branch of the
+// pull request's name that has commits the pull request lacks and lacks commits
+// it has. gh only ever fast-forwards that branch, and says so under a screen of
+// git's advice. Nothing is made, and the branch is left for its owner to rename
+// or delete.
+//
+// A branch that is only behind is fast-forwarded by gh, and one only ahead is
+// left alone by it, so both pass. So does anything wt cannot be sure of. A
+// fork's branch may go under the fork owner's name, by a rule that turns on
+// the base repository's default branch. A finished pull request's branch may
+// have moved on since, and gh fetches the branch, not the recorded head. A
+// head commit may not be here and not be fetchable.
+func divergedFromPR(ctx *Context, gh gitHub, pr github.PR) error {
+	branch := pr.HeadRefName
+	if !pr.Open() || pr.IsCrossRepository || !commitID.MatchString(pr.HeadRefOid) {
+		return nil
+	}
+	tip, ok := ctx.Repo.ResolveRef("refs/heads/" + branch)
+	if !ok || tip == pr.HeadRefOid {
+		return nil
+	}
+	if _, here := ctx.Repo.ResolveRef(pr.HeadRefOid); !here {
+		// GitHub keeps every pull request's head at refs/pull/<n>/head. The
+		// fetch names no destination and writes no FETCH_HEAD: it brings the
+		// commits and changes nothing else.
+		_, _ = git.RunTimeout(ctx.Repo.MainRoot, networkTimeout, "fetch", "--quiet", "--no-tags",
+			"--no-recurse-submodules", "--no-write-fetch-head", "--refmap=",
+			gh.Remote.Name, fmt.Sprintf("refs/pull/%d/head", pr.Number))
+		if _, here = ctx.Repo.ResolveRef(pr.HeadRefOid); !here {
+			return nil
+		}
+	}
+	ahead, okAhead := ctx.Repo.CommitsAhead(tip, pr.HeadRefOid)
+	behind, okBehind := ctx.Repo.CommitsAhead(pr.HeadRefOid, tip)
+	if !okAhead || !okBehind || ahead == 0 || behind == 0 {
+		return nil
+	}
+	return fmt.Errorf("#%d is on %s, and a local branch of that name has diverged from it: "+
+		"%d ahead, %d behind\n"+
+		"  gh can only fast-forward a branch that exists; nothing was made\n"+
+		"  it carries %s of its own: check that nothing is lost, then either\n"+
+		"    rename it:  git branch -m %s %s-old\n"+
+		"    delete it:  git branch -D %s\n"+
+		"  and run `wt pr checkout %d` again",
+		pr.Number, branch, ahead, behind, count(ahead, "commit"), branch, branch, branch, pr.Number)
+}
+
+// commitID is a whole commit id, as GitHub reports a pull request's head.
+var commitID = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)
+
 // checkoutPRInto makes the worktree and hands it to gh. It is created detached
 // and with no files, and gh switches it to the pull request's branch, which
 // populates the tree once; gh runs inside that worktree, so the main checkout's
@@ -142,8 +198,8 @@ func prChoices(ctx *Context, viewer string, prs []github.PR) []PRChoice {
 //
 // A pull request that is not open gets a second attempt from refs/pull/<n>/head,
 // because gh fetches the head branch by name and GitHub deletes that branch on
-// merge. A gh that fails leaves nothing behind, and its own complaint is what
-// gets reported.
+// merge. A gh that fails leaves nothing behind, and what gets reported is its
+// own complaint and what became of the worktree made for it.
 func checkoutPRInto(ctx *Context, gh gitHub, pr github.PR, path string, w io.Writer) error {
 	if err := ctx.Repo.AddDetachedWorktree(path, "HEAD"); err != nil {
 		return err
@@ -164,16 +220,30 @@ func checkoutPRInto(ctx *Context, gh gitHub, pr github.PR, path string, w io.Wri
 		}
 	}
 	if err != nil {
-		_ = ctx.Repo.DiscardWorktree(path)
+		discarded := ctx.Repo.DiscardWorktree(path)
 		_ = ctx.Repo.Prune()
 		for branch, existed := range had {
 			if tip, now := ctx.Repo.ResolveRef("refs/heads/" + branch); now && !existed {
 				_ = ctx.Repo.DeleteBranchAt(branch, tip)
 			}
 		}
-		return gh.fail(err)
+		return fmt.Errorf("%w\n  %s", gh.fail(err), discardedLine(path, discarded))
 	}
 	return nil
+}
+
+// discardedLine says what became of the worktree a failed checkout was made
+// in: gone, so the next attempt starts clean, or still there and in its way.
+func discardedLine(path string, discarded error) string {
+	if _, err := os.Lstat(path); discarded == nil && errors.Is(err, fs.ErrNotExist) {
+		return fmt.Sprintf("the half-made worktree at %s was removed; a retry starts clean", path)
+	}
+	line := fmt.Sprintf("the half-made worktree at %s could not be removed", path)
+	if discarded != nil {
+		line += ": " + oneLine(discarded.Error())
+	}
+	// Twice, because one --force does not remove a locked worktree.
+	return line + "\n  remove it before a retry: git worktree remove --force --force " + path
 }
 
 // checkoutPullRef puts the worktree on the pull request's head commit, which

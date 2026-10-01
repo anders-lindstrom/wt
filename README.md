@@ -385,6 +385,15 @@ work is worth re-reading. GitHub deletes the head branch when a pull request
 merges, so wt falls back to `refs/pull/<number>/head` — the same commit, on a
 branch with no upstream, and it says so.
 
+A local branch of the pull request's name that has diverged from it — commits
+of its own, and missing some of the pull request's — stops the checkout before
+anything is made: gh only fast-forwards a branch that exists. That check is for
+an open pull request from this repository's own branches; a fork's, or a
+finished one, goes to gh as it is. wt prints how far
+ahead and behind it is and the two ways out, `git branch -m` or `git branch -D`,
+and never deletes or renames it itself. When gh fails for any other reason, wt
+reports git's own error line and says that the half-made worktree was removed.
+
 The picker only offers the open ones, and puts the ones **waiting on your
 review** first:
 

@@ -6,6 +6,14 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-10-01 06:55 — wt pr checkout says what went wrong, and what to do
+
+- A local branch that has diverged from an open pull request is refused before
+  anything is made: how far ahead and behind it is, and the `git branch -m`
+  or `git branch -D` that moves it out of the way. wt never does either.
+- A gh that fails is reported by git's own `fatal:` line, not the first
+  notice above it, and the error says the half-made worktree was removed.
+
 ## 2026-09-30 13:18 — wt sweep and wt remove pin the branches they delete
 
 - A branch `wt sweep` or `wt remove` deletes is moved into refs/wt-swept/,
