@@ -2,6 +2,7 @@ package github
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -230,5 +231,70 @@ func TestNotLoggedIn(t *testing.T) {
 				t.Errorf("NotLoggedIn(%v) = %v, want %v", tc.err, got, tc.want)
 			}
 		})
+	}
+}
+
+// divergedStderr is what gh 2.100.0 wrote, on git 2.55, for `gh pr checkout`
+// of a same-repository pull request whose head branch existed locally and had
+// diverged: git's notices, its advice, its error, then gh's own last word.
+const divergedStderr = `Previous HEAD position was b6b69e2 Merge pull request #66 from anders-lindstrom/feat_wt/sweep-pins
+Switched to branch 'ci_wt/test-timeout'
+hint: Diverging branches can't be fast-forwarded, you need to either:
+hint:
+hint: 	git merge --no-ff
+hint:
+hint: or:
+hint:
+hint: 	git rebase
+hint:
+hint: Disable this message with "git config set advice.diverging false"
+fatal: Not possible to fast-forward, aborting.
+failed to run git: exit status 128
+`
+
+// The line that says what went wrong is the one reported, wherever gh and
+// git put it.
+func TestRunReportsTheLineThatSaysWhatWentWrong(t *testing.T) {
+	for name, tc := range map[string]struct{ stderr, want string }{
+		"git's error under its notices": {divergedStderr,
+			"gh pr checkout 12 failed: fatal: Not possible to fast-forward, aborting."},
+		"the last of several errors": {"error: first\nfatal: second\nfailed to run git: exit status 128\n",
+			"gh pr checkout 12 failed: fatal: second"},
+		"a fetch's rejected ref": {"From github.com:t/demo\n" +
+			" ! [rejected]        refs/pull/12/head -> fixes  (non-fast-forward)\n" +
+			"failed to run git: exit status 1\n",
+			"gh pr checkout 12 failed: ! [rejected] refs/pull/12/head -> fixes (non-fast-forward)"},
+		"gh's own complaint, on its first line": {"could not determine base repository\nsecond line\n",
+			"gh pr checkout 12 failed: could not determine base repository"},
+		"nothing on stderr": {"", "gh pr checkout 12 failed: exit status 1"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			said := filepath.Join(t.TempDir(), "stderr")
+			if err := os.WriteFile(said, []byte(tc.stderr), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			c, _ := fake(t, `cat `+said+` >&2; exit 1`)
+			err := c.CheckoutInto(t.TempDir(), 12)
+			if err == nil || err.Error() != tc.want {
+				t.Errorf("err = %v\nwant  %s", err, tc.want)
+			}
+		})
+	}
+}
+
+// gh asks for a login on its first line. A reason taken from further down
+// must not turn "not logged in" into a fault, wrapped or not.
+func TestNotLoggedInReadsTheFirstLineOfAFailedCall(t *testing.T) {
+	c, _ := fake(t, `printf '%s\n' 'To get started with GitHub CLI, please run:  gh auth login' `+
+		`'error: something further down' >&2; exit 1`)
+	_, err := c.OpenWithChecks(t.TempDir(), 5)
+	if err == nil || !strings.Contains(err.Error(), "error: something further down") {
+		t.Fatalf("err = %v", err)
+	}
+	if !NotLoggedIn(err) {
+		t.Errorf("NotLoggedIn(%v) = false", err)
+	}
+	if wrapped := fmt.Errorf("%w\n  and a second line", err); !NotLoggedIn(wrapped) {
+		t.Errorf("NotLoggedIn(%v) = false once wrapped", wrapped)
 	}
 }

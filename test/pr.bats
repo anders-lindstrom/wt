@@ -128,6 +128,53 @@ GH
     [[ "$output" == *"already checked out"* ]]
 }
 
+@test "a local branch that diverged from the pull request is refused before gh runs" {
+    fake_gh
+    cd "$REPO"
+    # The pull request's head and a local branch of its name, each with
+    # commits the other lacks. No worktree is on the branch.
+    base=$(git rev-parse HEAD)
+    head=$(git commit-tree -p "$base" -m "the pull request's" "$base^{tree}")
+    mine=$(git commit-tree -p "$base" -m "mine" "$base^{tree}")
+    mine=$(git commit-tree -p "$mine" -m "mine too" "$mine^{tree}")
+    git update-ref refs/heads/residential_fixes "$mine"
+    sed -i.bak "s/\"headRefName\"/\"headRefOid\":\"$head\",\"headRefName\"/" "$FAKEBIN/gh"
+
+    run --separate-stderr wt pr checkout 12
+    [ "$status" -ne 0 ]
+    [ -z "$output" ]
+    [[ "$stderr" == *"#12 is on residential_fixes, and a local branch of that name has diverged from it: 2 ahead, 1 behind"* ]]
+    [[ "$stderr" == *"it carries 2 commits of its own"* ]]
+    [[ "$stderr" == *"git branch -D residential_fixes"* ]]
+    [[ "$stderr" == *"git branch -m residential_fixes residential_fixes-old"* ]]
+    ! grep -q '^pr checkout' "$GH_ARGV"
+    [ ! -e "$BATS_TEST_TMPDIR/demo_wt" ]
+    [ "$(git rev-parse residential_fixes)" = "$mine" ]
+}
+
+@test "a gh that fails the checkout reports git's error and the cleanup" {
+    fake_gh
+    cd "$REPO"
+    # What gh 2.100.0 prints when git cannot fast-forward: the error is under
+    # git's notices and above gh's own last line.
+    cat > "$BATS_TEST_TMPDIR/gh-stderr" <<'ERR'
+Previous HEAD position was b6b69e2 Merge pull request #66
+Switched to branch 'residential_fixes'
+hint: Diverging branches can't be fast-forwarded, you need to either:
+fatal: Not possible to fast-forward, aborting.
+failed to run git: exit status 128
+ERR
+    sed -i.bak "s|'pr checkout').*|'pr checkout') cat '$BATS_TEST_TMPDIR/gh-stderr' >\&2; exit 1 ;;|" "$FAKEBIN/gh"
+
+    run --separate-stderr wt pr checkout 12
+    [ "$status" -ne 0 ]
+    [ -z "$output" ]
+    [[ "$stderr" == *"wt: gh pr checkout 12 failed: fatal: Not possible to fast-forward, aborting."* ]]
+    [[ "$stderr" != *"Previous HEAD position"* ]]
+    [[ "$stderr" == *"the half-made worktree at "*"/demo_wt/feat_wt/pr-12-residential_fixes was removed; a retry starts clean"* ]]
+    [ ! -e "$BATS_TEST_TMPDIR/demo_wt/feat_wt/pr-12-residential_fixes" ]
+}
+
 @test "with no terminal the picker prints the list and asks for a number" {
     fake_gh
     cd "$REPO"

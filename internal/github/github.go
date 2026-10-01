@@ -134,10 +134,23 @@ func (c CLI) run(dir string, deadline time.Duration, args ...string) ([]byte, er
 		return nil, fmt.Errorf("%s did not answer within %s", called(args), deadline)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("%s failed: %s", called(args), reason(stderr.String(), err))
+		said := stderr.String()
+		return nil, &callError{call: called(args), reason: reason(said, err), first: firstLine(said)}
 	}
 	return stdout.Bytes(), nil
 }
+
+// callError is a gh that ran and failed.
+type callError struct {
+	call string
+	// reason is the line of stderr that says what went wrong.
+	reason string
+	// first is stderr's first line, which is where gh asks for a login.
+	// NotLoggedIn reads it, so a reason taken from further down cannot hide it.
+	first string
+}
+
+func (e *callError) Error() string { return e.call + " failed: " + e.reason }
 
 // called is the call as a message names it: the subcommand and its arguments,
 // without the flags. The --json field list alone runs to 200 characters.
@@ -155,20 +168,46 @@ func called(args []string) string {
 	return strings.Join(kept, " ")
 }
 
-// reason is gh's own complaint: its first line of stderr, which is where it
-// writes "could not determine base repository" and the like. Only a gh that
-// ran and exited has one.
+// reason is the line of gh's stderr that says what went wrong. Only a gh
+// that ran and exited has one.
+//
+// `gh pr checkout` passes git's stderr through, so the error sits under
+// git's notices ("Previous HEAD position was ...", "From github.com:...") and
+// above gh's own "failed to run git: exit status 128". The last line git
+// marked as an error is the one to report; without one it is a fetch's
+// rejected ref, and failing that the first line, which is where gh writes
+// "could not determine base repository" and the like.
 func reason(stderr string, err error) string {
 	var exit *exec.ExitError
 	if !errors.As(err, &exit) {
 		return err.Error()
 	}
+	var marked, rejected string
 	for _, line := range strings.Split(stderr, "\n") {
-		if line = strings.TrimSpace(line); line != "" {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "fatal: "), strings.HasPrefix(line, "error: "):
+			marked = line
+		case strings.HasPrefix(line, "! [rejected]"), strings.HasPrefix(line, "! [remote rejected]"):
+			rejected = strings.Join(strings.Fields(line), " ")
+		}
+	}
+	for _, line := range []string{marked, rejected, firstLine(stderr)} {
+		if line != "" {
 			return line
 		}
 	}
 	return err.Error()
+}
+
+// firstLine is the first line of s that is not blank, trimmed.
+func firstLine(s string) string {
+	for _, line := range strings.Split(s, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			return line
+		}
+	}
+	return ""
 }
 
 // loginWanted is how gh says it holds no credentials for the host. Each
@@ -186,6 +225,10 @@ func NotLoggedIn(err error) bool {
 		return false
 	}
 	said := strings.ToLower(err.Error())
+	var call *callError
+	if errors.As(err, &call) {
+		said += "\n" + strings.ToLower(call.first)
+	}
 	for _, phrase := range loginWanted {
 		if strings.Contains(said, phrase) {
 			return true

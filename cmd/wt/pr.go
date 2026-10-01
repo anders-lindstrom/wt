@@ -103,7 +103,10 @@ func newPrCheckoutCmd() *cobra.Command {
 			"the type its branch suggests. A head branch that already follows this\n" +
 			"repository's convention keeps its own name instead, so a branch wt made\n" +
 			"lands where `wt new` would have put it. A pull request whose branch is\n" +
-			"already in a worktree prints that path and makes nothing.\n\n" +
+			"already in a worktree prints that path and makes nothing. A local branch\n" +
+			"of that name that has diverged from the pull request stops the checkout\n" +
+			"before anything is made, with how far it is ahead and behind and how to\n" +
+			"move it out of the way; wt never deletes or renames it.\n\n" +
 			"The path alone goes to stdout, so `cd \"$(wt pr checkout 12)\"` works.",
 		Example: "  wt pr checkout                  # pick one of the open pull requests\n" +
 			"  wt pr checkout 12               # straight to that one, no listing\n" +
