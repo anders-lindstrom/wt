@@ -58,10 +58,12 @@ type RemoveBranchPlan struct {
 	Reason      *string `json:"reason"`
 }
 
-// RemoveSession is a Claude session working in the checkout.
+// RemoveSession is an agent session working in the checkout; Kind is
+// "claude" or "codex".
 type RemoveSession struct {
 	ID    string  `json:"id"`
 	Name  *string `json:"name"`
+	Kind  string  `json:"kind"`
 	PID   *int    `json:"pid"`
 	State string  `json:"state"`
 }
@@ -303,7 +305,7 @@ func removePlanOutput(ctx *Context, p Plan, token string) RemovePlanOutput {
 	}
 	o.Operation = strp(operationName(p.Operation))
 	for _, a := range p.Sessions {
-		s := RemoveSession{ID: a.ID, Name: strp(a.Name), State: sessionState(a)}
+		s := RemoveSession{ID: a.ID, Name: strp(a.Name), Kind: a.Program(), State: sessionState(a)}
 		if a.PID > 0 {
 			pid := a.PID
 			s.PID = &pid

@@ -1,11 +1,11 @@
 # Each schema's version and the sha256 of its file. A test fails when a file
 # changes without a new version here and in its x-version: see AGENTS.md.
 
-status.v1.json 1.4.1 bc5c829b55e360ef1f8709341063732d7fb59ff61f36a007206c23ab322f8177
+status.v1.json 1.5.0 e1e56d5d05f41421ee6c046771d0a200205d1a1a84d006fa1993d54c3286cea6
 sweep-plan.v1.json 1.5.0 9f3ca4222e8e96c89acfdc3b011fe7794ccbfdb03f50b714c2e180b38e7beb3e
 sweep.v1.json 1.4.0 197c484bd76f58636ad1b5f4c5eaa3dbfe83b698ca8886e772180b17b9f26a07
 up.v1.json 1.3.1 d598f285ccd23a65c38a1ff28a6e4f28698d2438b7ef81ea7511f5c631d0ad21
-sync.v1.json 1.1.1 e4eaf13d52574ca43706105ca01fc56699e5453d58016eb6257e48b75ff8d1cf
+sync.v1.json 1.2.0 4684a5d73757c45d8975f3ff0fb1b95efd9466cbb23a379d41fa3f6ab3ff35ae
 sync-run.v1.json 1.1.0 c34f0dc1d107b57e01cb0a5b8aef8b25817d14d3f417e1597f62b6c2096d73dd
 checkout.v1.json 1.1.0 c42bb931b9956fa592fcd11c817d1abb9e23998120836ddcf40036ea663ea595
 checkout-plan.v1.json 1.3.1 ef60bc92db10b575c52ced37a3a1d2e0ed94fbf3e3a093c0b984e16585d03bdc
@@ -14,8 +14,8 @@ new-plan.v1.json 1.2.1 7f8594a56131de9f18a71ecb41eff8ae2b317116c56c23a39ce29d99c
 recovery.v1.json 1.2.0 36046f1d2310fbf4536f2f686afcdce65722b93b9c93bddf14b3b921ec561e15
 restore-plan.v1.json 1.1.0 ebd528800dfeae4cc6c2109b148b675355a761d4fb7303e3778be55a2be9c11b
 restore.v1.json 1.0.0 4431cdb2bff4bb6372e7bbf97808b6f18afc0d37f07df55c6c0eab8ceed0fc58
-remove-plan.v1.json 1.3.0 001417bfe235d57fd7211c18c15ba539d959501c89e57844755cabfa05b9733d
-remove.v1.json 1.4.0 79765a018aa189de5728a87360b145cdbe7d433b59d67416f37e3b67bccfcc8f
+remove-plan.v1.json 1.4.0 ba58414df99de4eaf9e8b94c2a007448d4a3c31479c233bf79e40f9debac5f7b
+remove.v1.json 1.4.1 603f1a89bc8fe0097b15fe60b7a93cadd8c1566a35bb44bef016bd0f31b843a0
 quarantine-purge.v1.json 1.0.0 7dadc426104d784c3e8d294b7600752aafc8c3086afb5eb6ca5600f8c9871356
 quarantine-purge-plan.v1.json 1.0.0 db134da9412151696f926c8a678213a1505479d02ce660cbb7c7e9dbc0e26904
 refs-sweep-plan.v1.json 1.0.0 2f3258b67abc10e637eda5b5b43c7d87b5d46f4e7a825713e80a9e382633e3a9

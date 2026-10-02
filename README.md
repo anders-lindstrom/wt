@@ -100,7 +100,7 @@ examples: `wt <command> --help`.
 
 | | |
 |---|---|
-| `wt up [<work>]` | bring the worktree you are in onto trunk, only if it goes through without you — conflict-free, or every stop resolved by `.wt-sync.yaml`; otherwise it touches nothing and says why. Also where trunk declares no `.wt-sync.yaml`, conflict-free only. The short form of `wt sync . --run --if-ready` (`--push`, `--no-push`, `--no-fetch`, `--yes`/`-y` for yes to everything including the push, `--force`/`-f` to go ahead past a Claude session in it) |
+| `wt up [<work>]` | bring the worktree you are in onto trunk, only if it goes through without you — conflict-free, or every stop resolved by `.wt-sync.yaml`; otherwise it touches nothing and says why. Also where trunk declares no `.wt-sync.yaml`, conflict-free only. The short form of `wt sync . --run --if-ready` (`--push`, `--no-push`, `--no-fetch`, `--yes`/`-y` for yes to everything including the push, `--force`/`-f` to go ahead past an agent session in it) |
 | `wt status <work> --json` / `wt up --json` | a worktree's plan for `wt up`, and a run's result, as one JSON object each for tools driving wt (`--expect` holds a run to its plan); `wt schema` prints their JSON Schemas, and [docs/json.md](docs/json.md) explains them |
 | `wt sweep --dry-run --json` / `wt sweep --yes --json` | a sweep's plan, every row with why it is merged or kept, and a sweep's result row by row, for tools driving wt (`--expect` holds the sweep to its plan); see [docs/json.md](docs/json.md) |
 | `wt remove <work> --dry-run --json` / `wt remove <work> --yes --json` | a removal's plan — where the branch stands, every reason it would refuse, what it would lose — and its result effect by effect, for tools driving wt (`--expect` holds the removal to its plan) |

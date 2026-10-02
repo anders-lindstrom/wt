@@ -34,7 +34,7 @@ func newUpCmd() *cobra.Command {
 			"nothing in progress and no session busy in it. Otherwise it is left,\n" +
 			"and a line says why. --no-ff-trunk, or wt config set ff_trunk false,\n" +
 			"leaves it alone.\n\n" +
-			"A Claude session busy in the worktree refuses the run, since the files\n" +
+			"An agent session busy in the worktree refuses the run, since the files\n" +
 			"it has read would change under it. --force (-f) goes ahead anyway and\n" +
 			"names the session, so you can tell it; it lifts nothing else — dirt\n" +
 			"and a conflict that is yours still refuse.\n\n" +
@@ -90,7 +90,7 @@ func newUpCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&noFetch, "no-fetch", false, "rebase onto origin/<trunk> as last fetched")
 	cmd.Flags().BoolVar(&noFFTrunk, "no-ff-trunk", false, "leave local <trunk> where it is after the fetch")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "yes to every question, the push included (--no-push keeps it out)")
-	cmd.Flags().BoolVarP(&force, "force", "f", false, "go ahead even with a Claude session in the worktree")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "go ahead even with an agent session in the worktree")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print one result object on stdout, the progress on stderr")
 	cmd.Flags().StringVar(&expect, "expect", "", "refuse unless the plan still matches this token from wt status --json")
 	push = addPushFlags(cmd, "push when it is done, without asking", "neither push nor ask; print the push command")

@@ -6,6 +6,16 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-10-02 13:40 — wt sees Codex sessions
+
+- A Codex session in a worktree now counts like a Claude one: `wt up`,
+  `wt sync`, `wt remove`, `wt sweep` and the local-trunk fast-forward refuse
+  under a busy one, and `wt list`, `wt status` and the plans name it.
+- `codex exec` is always busy. An interactive `codex` is idle once its last
+  turn has finished. A thread the Codex app runs counts while its turn is open.
+- JSON: sessions carry `kind` `claude` or `codex`: status 1.5.0, sync 1.2.0,
+  remove-plan 1.4.0 (new required `kind`), remove 1.4.1.
+
 ## 2026-10-01 06:55 — wt pr checkout says what went wrong, and what to do
 
 - A local branch that has diverged from an open pull request is refused before

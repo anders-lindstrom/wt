@@ -25,7 +25,7 @@ const (
 	// TrunkSkipOperation is a rebase, merge, cherry-pick, revert or bisect
 	// in progress on trunk.
 	TrunkSkipOperation = "operation"
-	// TrunkSkipSession is a Claude session busy in the checkout trunk is on,
+	// TrunkSkipSession is an agent session busy in the checkout trunk is on,
 	// or sessions that could not be listed.
 	TrunkSkipSession = "session"
 	// TrunkSkipNotFastForward is local trunk that moved, or was checked out
@@ -198,7 +198,7 @@ func checkoutBusy(on repo.Worktree, agents func() ([]wtsync.Agent, error)) (reas
 	// An idle session loses nothing: the checkout is clean and the merge
 	// overwrites nothing. A busy one may be about to write there.
 	if busy := wtsync.SessionsAt(list, on.Path).Busy(); len(busy) > 0 {
-		return TrunkSkipSession, "a Claude session is busy in " + on.Path
+		return TrunkSkipSession, "an agent session is busy in " + on.Path
 	}
 	return "", ""
 }

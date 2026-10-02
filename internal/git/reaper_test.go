@@ -38,6 +38,7 @@ func TestWritesTellsReadsFromWrites(t *testing.T) {
 		{"gh", "auth", "status", "--hostname", "github.com"},
 		{"/usr/local/bin/claude", "agents", "--json"},
 		{"ps", "-A", "-o", "pid="},
+		{"lsof", "-a", "-d", "cwd", "-Fpn", "-p", "1"},
 		{"docker", "info"},
 		// What wt status simulates a rebase with: objects, never a ref or
 		// a worktree.

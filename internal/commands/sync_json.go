@@ -199,7 +199,7 @@ func overviewOf(ctx *Context, opts SyncOptions) SyncOverview {
 		return o
 	}
 	o.Onto, o.Declared = strp(sha), cfg != nil
-	agents, err := wtsync.ListOtherAgents()
+	agents, err := listSessions()
 	if err != nil {
 		o.SessionsError = strp(err.Error())
 	}
@@ -296,7 +296,7 @@ func (r *runPlan) overviewRow(wt repo.Worktree, a wtsync.Assessment, byBranch ma
 		if s.Idle() {
 			state = "idle"
 		}
-		row.Sessions = append(row.Sessions, PlanSession{Work: row.Work, Name: s.Name, Kind: "claude", State: state})
+		row.Sessions = append(row.Sessions, PlanSession{Work: row.Work, Name: s.Name, Kind: s.Program(), State: state})
 	}
 	if wt.Branch != "" {
 		for _, m := range wtsync.Members(r.parents, wt.Branch) {

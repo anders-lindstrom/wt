@@ -26,7 +26,7 @@ func newMigrateCmd() *cobra.Command {
 			"ignored files all travel with it — but tools holding the old absolute\n" +
 			"path will not. Use --dry-run first on a worktree carrying work that\n" +
 			"matters.\n\n" +
-			"A worktree a Claude session is working in, idle or busy, is not moved,\n" +
+			"A worktree an agent session is working in, idle or busy, is not moved,\n" +
 			"nor one whose sessions cannot be listed; the session running wt migrate\n" +
 			"does not count. --force moves it anyway.",
 		Example: "  wt migrate login-crash                # fit it to the layout\n" +

@@ -35,7 +35,7 @@ type RunOptions struct {
 	// refused, with its stack, and makes the run fail; with nothing named,
 	// every worktree left behind trunk does.
 	IfReady bool
-	// Force rebases a named worktree even with a Claude session in it, busy
+	// Force rebases a named worktree even with an agent session in it, busy
 	// or idle: the sessions are named, not checked. Nothing else it refuses
 	// is lifted — dirt, a handover, another run's lock. A run with nothing
 	// named does not take it: that would roll over every session at once.

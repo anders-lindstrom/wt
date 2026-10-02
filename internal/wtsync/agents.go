@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -23,10 +22,16 @@ import (
 // run that cannot tell who is in a worktree refuses rather than waits.
 var agentsDeadline = 10 * time.Second
 
-// Agent is a Claude session, from `claude agents --json`. It is enough to
-// answer "is a session living in this worktree, and is it doing anything";
-// it says nothing about Codex, a dev server or a running test, so the dirty
-// check stays the real guard (spec §1).
+// Agent is an agent session: a Claude one from `claude agents --json`, or a
+// Codex one from the process table and Codex's session logs (codex.go). It
+// is enough to answer "is a session living in this worktree, and is it doing
+// anything"; it says nothing about a dev server or a running test, so the
+// dirty check stays the real guard (spec §1).
+//
+// For a Codex session Status is "idle" or "busy" and State and Kind are
+// empty. ID is "codex-<pid>" and PID the topmost process for a codex running
+// in the worktree; for a thread an app-server runs, ID is the thread's id
+// and PID the app-server's, or 0 when more than one could be running it.
 type Agent struct {
 	ID     string `json:"id"`
 	Name   string `json:"name"`
@@ -35,13 +40,32 @@ type Agent struct {
 	Kind   string `json:"kind"`
 	Status string `json:"status"`
 	PID    int    `json:"pid"`
+	// Tool is ToolCodex for a Codex session; empty is Claude.
+	Tool string `json:"-"`
+	// pids is every process of a Codex session. hosted marks a thread an
+	// app-server runs, viaHost an interactive codex whose thread one runs.
+	pids    []int
+	hosted  bool
+	viaHost bool
+}
+
+// Program is what the session is a session of: ToolClaude or ToolCodex.
+func (a Agent) Program() string {
+	if a.Tool == "" {
+		return ToolClaude
+	}
+	return a.Tool
 }
 
 // Idle is an interactive session waiting for its person: status idle and no
 // state. A background session is never idle — blocked on a question it
 // reports status idle too — and a listing with no status, or with a value
-// nobody has seen, is not known to be idle, so it counts as busy.
+// nobody has seen, is not known to be idle, so it counts as busy. A Codex
+// session is idle when codexSessions found it so.
 func (a Agent) Idle() bool {
+	if a.Tool == ToolCodex {
+		return a.Status == "idle"
+	}
 	return a.Status == "idle" && a.State == "" && a.Kind != "background"
 }
 
@@ -199,32 +223,13 @@ func WithoutCaller(agents []Agent, ancestors map[int]bool) []Agent {
 	return others
 }
 
-// Ancestors is the pid of every process above this one, read from one ps
-// under the same deadline as claude agents.
+// Ancestors is the pid of every process above this one.
 func Ancestors() (map[int]bool, error) {
-	cmd := exec.Command("ps", "-A", "-o", "pid=", "-o", "ppid=")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if _, _, err := git.RunBounded(agentsDeadline, cmd); err != nil {
-		return nil, fmt.Errorf("ps: %w", err)
+	procs, err := listProcesses()
+	if err != nil {
+		return nil, err
 	}
-	parent := map[int]int{}
-	for _, line := range strings.Split(out.String(), "\n") {
-		f := strings.Fields(line)
-		if len(f) != 2 {
-			continue
-		}
-		pid, perr := strconv.Atoi(f[0])
-		ppid, qerr := strconv.Atoi(f[1])
-		if perr == nil && qerr == nil {
-			parent[pid] = ppid
-		}
-	}
-	ancestors := map[int]bool{}
-	for pid := os.Getppid(); pid > 1 && !ancestors[pid]; pid = parent[pid] {
-		ancestors[pid] = true
-	}
-	return ancestors, nil
+	return ancestorsOf(procs), nil
 }
 
 // ErrNoClaude is ListOtherAgentsRequired's answer without a claude to ask.
@@ -232,7 +237,7 @@ var ErrNoClaude = errors.New("claude is not on the PATH")
 
 // ListOtherAgentsRequired is ListOtherAgents for a caller that has to know
 // who is in a worktree: no claude on the PATH is not nobody there, it is
-// not knowing, and is an error.
+// not knowing, and is an error. Codex sessions are looked for either way.
 func ListOtherAgentsRequired() ([]Agent, error) {
 	if _, err := exec.LookPath("claude"); err != nil {
 		return nil, ErrNoClaude
@@ -240,17 +245,23 @@ func ListOtherAgentsRequired() ([]Agent, error) {
 	return ListOtherAgents()
 }
 
-// ListOtherAgents is ListAgents without the session wt runs under. When the
-// process tree cannot be read nobody is dropped: the caller then counts like
-// any other session, which refuses rather than rebases.
+// ListOtherAgents is every agent session on the machine but the one wt runs
+// under: Claude's from ListAgents, Codex's from codexSessions. A process
+// table or a Codex log that cannot be read is an error, not no sessions: a
+// caller that does not know who is in a worktree refuses rather than rebases.
 func ListOtherAgents() ([]Agent, error) {
 	agents, err := ListAgents()
-	if err != nil || len(agents) == 0 {
+	if err != nil {
 		return agents, err
 	}
-	ancestors, aerr := Ancestors()
-	if aerr != nil {
-		return agents, nil
+	procs, err := listProcesses()
+	if err != nil {
+		return nil, fmt.Errorf("cannot look for Codex sessions: %w", err)
 	}
-	return WithoutCaller(agents, ancestors), nil
+	ancestors := ancestorsOf(procs)
+	codex, err := codexSessions(procs, ancestors)
+	if err != nil {
+		return nil, fmt.Errorf("cannot look for Codex sessions: %w", err)
+	}
+	return append(WithoutCaller(agents, ancestors), codex...), nil
 }

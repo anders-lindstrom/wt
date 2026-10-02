@@ -64,7 +64,7 @@ func newRemoveCmd() *cobra.Command {
 			"this worktree holds, or another worktree inside it. No flag goes past\n" +
 			"those: commit, discard or finish first. The checkout is read once more\n" +
 			"right before it is deleted.\n\n" +
-			"It also refuses a worktree a Claude session is working in, idle or busy,\n" +
+			"It also refuses a worktree an agent session is working in, idle or busy,\n" +
 			"or whose sessions cannot be listed, and one with files git status is\n" +
 			"told not to look at (assume-unchanged, skip-worktree). The session\n" +
 			"running wt remove — the one a WorktreeRemove hook fires in — does not\n" +

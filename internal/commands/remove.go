@@ -29,14 +29,14 @@ import (
 type RemoveOptions struct {
 	Confirm func(Plan) (bool, error)
 	// Force is what the removal goes past, category by category: an idle
-	// or a busy Claude session in the worktree, a session listing that
+	// or a busy agent session in the worktree, a session listing that
 	// failed, files git status is told not to look at, and a git worktree
 	// lock whose holder is still running. Nothing forces past uncommitted
 	// work, an operation in progress, or commits only the checkout's HEAD
 	// holds.
 	Force ForceSet
-	// Agents are the Claude sessions to check the worktree against. Nil
-	// asks `claude agents`; an empty slice means there are none. AgentsErr
+	// Agents are the agent sessions to check the worktree against. Nil
+	// lists them; an empty slice means there are none. AgentsErr
 	// is a listing the caller could not get, which refuses the way a
 	// listing that fails here does. Relist lists them again right before
 	// the checkout goes; nil lists them the way Agents did.
@@ -210,7 +210,7 @@ type Plan struct {
 	// survives it; ReachError is why that could not be worked out.
 	Unreachable []Lost
 	ReachError  string
-	// Sessions are the Claude sessions working in the checkout, idle or
+	// Sessions are the agent sessions working in the checkout, idle or
 	// busy; SessionsError is why they could not be listed.
 	Sessions      wtsync.Sessions
 	SessionsError string
@@ -458,7 +458,7 @@ func planFor(ctx *Context, wt repo.Worktree, opts RemoveOptions) Plan {
 	return p
 }
 
-// readSessions reads the Claude sessions working in the checkout.
+// readSessions reads the agent sessions working in the checkout.
 func (p *Plan) readSessions(opts RemoveOptions) {
 	p.setSessions(sessionsIn(opts.Agents, opts.AgentsErr, p.Path))
 }
@@ -895,7 +895,7 @@ func appliedTo(ctx *Context, tip string, bases []TrunkBase) string {
 }
 
 // removedMeanwhile handles a plan that changed under the prompt because
-// something else is removing the worktree: a Claude session ending, an editor
+// something else is removing the worktree: an agent session ending, an editor
 // closing its workspace, another wt. Telling the user to run the command again
 // would send them after a checkout that is no longer there, so this waits
 // briefly for the deletion to finish and then says what is left. vanished is

@@ -20,7 +20,7 @@ type MigrateOptions struct {
 	// Force moves a worktree an agent session is living in, or one whose
 	// sessions could not be listed.
 	Force bool
-	// Agents are the sessions to check against. Nil asks `claude agents`;
+	// Agents are the sessions to check against. Nil lists them;
 	// an empty slice means there are none. AgentsErr is a listing the caller
 	// could not get.
 	Agents    []wtsync.Agent
@@ -45,7 +45,7 @@ type MigratePlan struct {
 	// Superset records that the old path is inside the tree Superset owns,
 	// where a stored workspace path will be left pointing at nothing.
 	Superset bool
-	// Sessions are the Claude sessions working inside the worktree, and
+	// Sessions are the agent sessions working inside the worktree, and
 	// SessionsError why they could not be listed.
 	Sessions      wtsync.Sessions
 	SessionsError string
