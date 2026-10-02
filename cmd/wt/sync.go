@@ -49,7 +49,7 @@ func newSyncCmd() *cobra.Command {
 			"  keep    wt sync keep start     a launchd job that runs wt sync keep once\n" +
 			"                                 every 30m: every ready worktree with\n" +
 			"                                 nobody in it, then push\n" +
-			"Only Claude sessions are detected; a Codex session is not seen.\n" +
+			"Nobody means no agent session, Claude's or Codex's.\n" +
 			"\n" +
 			"--run, --resume and --undo are those same three commands, spelled so a\n" +
 			"recalled wt sync <work> line is finished by adding the verb at the end. A\n" +
@@ -101,11 +101,15 @@ func newSyncCmd() *cobra.Command {
 			"that is yours, or the first of a run that resolves throughout \u2014 with its\n" +
 			"files marked \u2713 resolved or \u2717 yours, then anything else worth knowing,\n" +
 			"every list cut to a count. wt sync <work> prints the lists, one item per\n" +
-			"line. A session named on a row is a Claude session in that worktree: a busy\n" +
-			"one keeps every verb off it. One marked (idle) is waiting for its person; a\n" +
-			"verb names it, asks first, and ends with a wt: line to pass on to it. +N\n" +
-			"counts the other sessions there. The session wt itself runs under is not\n" +
-			"counted. The lines under a row are advisory and never change the class.\n" +
+			"line. A session named on a row is an agent session in that worktree,\n" +
+			"Claude's or Codex's: a busy one keeps every verb off it. A Codex session\n" +
+			"is a codex process working there (codex exec is always busy; an\n" +
+			"interactive codex is idle once its last turn has finished) or a thread\n" +
+			"the Codex app runs there with a turn open. One marked (idle) is waiting\n" +
+			"for its person; a verb names it, asks first, and ends with a wt: line to\n" +
+			"pass on to it. +N counts the other sessions there. The session wt itself\n" +
+			"runs under is not counted. The lines under a row are advisory and never\n" +
+			"change the class.\n" +
 			"\n" +
 			"--json prints the overview as one object on stdout, for a tool driving\n" +
 			"wt: every worktree with its group, class, stack and stops, current ones\n" +
@@ -186,7 +190,7 @@ func newSyncCmd() *cobra.Command {
 	sync.Flags().BoolVarP(&yes, "yes", "y", false, "with a verb: do not ask first")
 	push = addPushFlags(sync, "with --run or --resume: push when done, without asking",
 		"with --run or --resume: neither push nor ask; print the push command")
-	sync.Flags().BoolVarP(&force, "force", "f", false, "with --run: past a Claude session in it; with --undo: past a moved branch")
+	sync.Flags().BoolVarP(&force, "force", "f", false, "with --run: past an agent session in it; with --undo: past a moved branch")
 	sync.Flags().BoolVar(&ifReady, "if-ready", false, "with --run: rebase only what will go through without needing you, and fail on the rest")
 	sync.Flags().BoolVar(&asJSON, "json", false, "print the overview as one JSON object on stdout; with a verb, its result")
 	sync.Flags().StringVar(&expect, "expect", "", "with --run: refuse unless the overview still matches this token from wt sync --json")
@@ -211,7 +215,7 @@ func newSyncKeepCmd() *cobra.Command {
 			"last pass, rebases every worktree the table calls ready, pushes what\n" +
 			"finished with nothing owed (--force-with-lease --force-if-includes), and\n" +
 			"records what it did. It is stricter than a run you start: a worktree\n" +
-			"with any Claude session in it, idle or busy, is left alone, since nobody\n" +
+			"with any agent session in it, idle or busy, is left alone, since nobody\n" +
 			"is there to be asked on its behalf; recipe?, needs you and skipped are\n" +
 			"left alone as a run with nothing named leaves them, and a stack goes\n" +
 			"whole or not at all. A conflict that is yours is never handed over by a\n" +
@@ -264,7 +268,7 @@ func newSyncKeepRunCmd() *cobra.Command {
 			"through included; that push is then spelled out as a git command.\n" +
 			"Every commit a pass makes, replayed or deferred, is unsigned, whatever\n" +
 			"your git config says: a signer that asks has nobody to ask. A pass that\n" +
-			"cannot list Claude sessions (no claude on the PATH, or a listing that\n" +
+			"cannot list agent sessions (no claude on the PATH, or a listing that\n" +
 			"fails) rebases nothing: it cannot tell who is in a worktree. The session\n" +
 			"wt itself runs under is not counted, as wt sync run does not count it:\n" +
 			"under launchd there is none, and a pass you run from inside one is\n" +
@@ -570,20 +574,20 @@ func newSyncRunCmd() *cobra.Command {
 			"and hand you a plan you did not ask for, and so is everything under needs\n" +
 			"you and skipped; what is left alone is listed with what holds it.\n\n" +
 			"When it asks first, on a terminal (--yes never asks):\n" +
-			"  one worktree named      only when a Claude session is idle in it\n" +
+			"  one worktree named      only when an agent session is idle in it\n" +
 			"  several named           once, for all of them\n" +
 			"  nothing named, --all    once, even for one\n" +
 			"With no terminal a named worktree goes ahead, and a run with nothing\n" +
 			"named, or across repositories, rebases nothing unless --yes says so.\n\n" +
 			"Refused, and never touched: a worktree with tracked changes, one a busy\n" +
-			"Claude session is in (Codex sessions are not detected), class divergent,\n" +
+			"agent session is in, Claude's or Codex's, class divergent,\n" +
 			"one an earlier run already left waiting on you, and any repository whose\n" +
-			"trunk declares no .wt-sync.yaml. An idle Claude session is named before\n" +
+			"trunk declares no .wt-sync.yaml. An idle agent session is named before\n" +
 			"anything moves under it, whether or not anyone is asked, and a finished\n" +
 			"rebase ends with a wt: line to pass on to it. Sessions are listed again\n" +
 			"at the lock: one busy by then, or new since, is refused. The session wt\n" +
 			"itself runs under is not counted.\n\n" +
-			"--force (-f) takes a named worktree past a Claude session in it, busy or\n" +
+			"--force (-f) takes a named worktree past an agent session in it, busy or\n" +
 			"idle: the session is named and told at the finish, and the run goes\n" +
 			"ahead. It lifts nothing else, and a run with nothing named refuses it.\n\n" +
 			"A worktree whose rebase finished with nothing owed is pushed at the end\n" +
@@ -627,7 +631,7 @@ func newSyncRunCmd() *cobra.Command {
 	run.Flags().BoolVar(&noFFTrunk, "no-ff-trunk", false, "leave local <trunk> where it is after the fetch")
 	run.Flags().BoolVarP(&yes, "yes", "y", false, "yes to every question, the push included (--no-push keeps it out)")
 	run.Flags().BoolVar(&ifReady, "if-ready", false, "rebase only what will go through without needing you, and fail on the rest")
-	run.Flags().BoolVarP(&force, "force", "f", false, "rebase a named worktree even with a Claude session in it")
+	run.Flags().BoolVarP(&force, "force", "f", false, "rebase a named worktree even with an agent session in it")
 	run.Flags().BoolVar(&asJSON, "json", false, "print one result object on stdout, the progress on stderr")
 	run.Flags().StringVar(&expect, "expect", "", "refuse unless the overview still matches this token from wt sync --json")
 	sel.add(run, true)
@@ -748,13 +752,13 @@ func newSyncResumeCmd() *cobra.Command {
 			"Before continuing it checks that the rebase in progress is the one the run\n" +
 			"left, that nothing is unmerged, that nothing tracked is changed but\n" +
 			"unstaged, that no file a strategy resolved was hand-merged, and that no\n" +
-			"busy Claude session is in the worktree. Any of those is a refusal that changes\n" +
+			"busy agent session is in the worktree. Any of those is a refusal that changes\n" +
 			"nothing: this command never resets the worktree, because your own work is\n" +
 			"in it, and a file a strategy owns is never yours to merge: that refusal\n" +
 			"points at wt sync undo. Then it drives the rest of the rebase, runs the\n" +
 			"deferred steps, pins the result ref and ends with the push, asked or not\n" +
 			"as for wt sync run (--push, --no-push). A later conflict that is yours is\n" +
-			"handed over again with a fresh plan file. A Claude session idle in the\n" +
+			"handed over again with a fresh plan file. An agent session idle in the\n" +
 			"worktree is named first and you are asked (with no terminal it goes\n" +
 			"ahead) before anything is verified, and the finish ends with a wt: line\n" +
 			"to pass on to it. The session wt itself runs under is not counted.\n" +
@@ -816,7 +820,7 @@ func newSyncUndoCmd() *cobra.Command {
 			"whole rather than one branch at a time. A rebase wt sync run handed over\n" +
 			"is aborted and its plan file removed, which puts that branch back.\n\n" +
 			"Refused, and nothing undone: a checkout involved is dirty, has a busy\n" +
-			"Claude session in it, or is mid-rebase with no handover from wt sync run; a\n" +
+			"agent session in it, or is mid-rebase with no handover from wt sync run; a\n" +
 			"branch that has moved since the run, whose commits the reset would\n" +
 			"discard (--force pins those at a fresh safety ref and rewinds anyway); a\n" +
 			"branch with a later run, which has to be undone first and which --force\n" +
@@ -826,7 +830,7 @@ func newSyncUndoCmd() *cobra.Command {
 			"branch still is.\n" +
 			"Running it again after it already restored a branch reports that branch\n" +
 			"already at its old tip.\n\n" +
-			"A Claude session idle in a checkout is named and you are asked first\n" +
+			"An agent session idle in a checkout is named and you are asked first\n" +
 			"(--yes skips; with no terminal it goes ahead), and each branch put back\n" +
 			"under one ends with a wt: line to pass on to it. The session wt itself\n" +
 			"runs under is not counted.\n\n" +

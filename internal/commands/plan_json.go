@@ -37,7 +37,8 @@ type PlanWorktree struct {
 	Ahead  *int   `json:"ahead"`
 }
 
-// PlanSession is a Claude session in one of the plan's worktrees.
+// PlanSession is an agent session in one of the plan's worktrees; Kind is
+// "claude" or "codex".
 type PlanSession struct {
 	Work  string `json:"work"`
 	Name  string `json:"name"`
@@ -97,7 +98,7 @@ func UpPlanJSON(ctx *Context, arg string, w io.Writer) error {
 	}
 	// Listed at most once, and only when asked: by the trunk check, when
 	// local trunk is checked out, and for the stack's sessions.
-	listAgents := sync.OnceValues(wtsync.ListOtherAgents)
+	listAgents := sync.OnceValues(func() ([]wtsync.Agent, error) { return listSessions() })
 	// What wt up would do to local trunk after its fetch, judged against
 	// origin/<trunk> as last fetched: the fetch may bring more.
 	p.TrunkSync = syncLocalTrunk(ctx, tip, trunkSyncOptions{optedOut: !ctx.UserConfig().FFTrunk, agents: listAgents})
@@ -194,7 +195,7 @@ func UpPlanJSON(ctx *Context, arg string, w io.Writer) error {
 			if a.Idle() {
 				state = "idle"
 			}
-			p.Sessions = append(p.Sessions, PlanSession{Work: m.Work, Name: a.Name, Kind: "claude", State: state})
+			p.Sessions = append(p.Sessions, PlanSession{Work: m.Work, Name: a.Name, Kind: a.Program(), State: state})
 		}
 	}
 	return writePlan(w, p)

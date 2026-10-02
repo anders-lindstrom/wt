@@ -81,7 +81,7 @@ func newStatusCmd() *cobra.Command {
 			"With a worktree named — by anything `wt list` prints for it, or . for the\n" +
 			"one you are in — that worktree alone, one fact per line: branch, path,\n" +
 			"state, standing against trunk, its pull request where it has one, the\n" +
-			"Claude sessions in it, then the verdict wt sync would give it, simulated\n" +
+			"agent sessions in it, then the verdict wt sync would give it, simulated\n" +
 			"against trunk as last fetched: its class in wt sync's words, and what to\n" +
 			"do about it.\n\n" +
 			"A PR column appears when a worktree here is on a pull request. It and\n" +

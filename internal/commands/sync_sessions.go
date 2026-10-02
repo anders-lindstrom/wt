@@ -23,7 +23,7 @@ var (
 // verbOptions is what run, resume and undo are all tuned by: the sessions to
 // check against, the clock, and who to ask before anything moves.
 type verbOptions struct {
-	// Agents are the sessions to check against. Nil asks `claude agents`;
+	// Agents are the sessions to check against. Nil lists them;
 	// an empty slice means there are none.
 	Agents []wtsync.Agent
 	// Relist lists the sessions again, at the lock or after a question. Nil

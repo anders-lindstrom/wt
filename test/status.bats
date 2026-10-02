@@ -29,6 +29,11 @@ setup() {
     git -C "$REPO" fetch -q origin
 }
 
+# The stand-in codex of the last test, should the test stop before killing it.
+teardown() {
+    [ -z "${CODEX_PID:-}" ] || kill "$CODEX_PID" 2>/dev/null || true
+}
+
 @test "status counts every branch against origin/trunk as last fetched" {
     run wt status
     [ "$status" -eq 0 ]
@@ -49,4 +54,30 @@ setup() {
     run wt status .
     [ "$status" -ne 0 ]
     [[ "$output" == *"the main checkout is not a worktree"* ]]
+}
+
+# A sleep that calls itself codex and stands in the worktree: the real ps,
+# and the real lsof or /proc, are asked what it is and where. With no session
+# log to read, an interactive codex is not known to be idle, so it is busy.
+@test "a codex working in a worktree is a busy session, listed and refused under" {
+    export CODEX_HOME="$BATS_TEST_TMPDIR/codex-home"
+    (cd "$BUMP" && exec -a codex sleep 300) &
+    CODEX_PID=$!
+    # The subshell has to reach the worktree and become codex first.
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        run wt status bump --json
+        [[ "$output" == *'"kind": "codex"'* ]] && break
+        sleep 0.2
+    done
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"name": "codex"'* ]]
+    [[ "$output" == *'"kind": "codex"'* ]]
+    [[ "$output" == *'"state": "busy"'* ]]
+    [[ "$output" == *'"sessionsError": null'* ]]
+
+    run wt up bump
+    kill "$CODEX_PID"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"codex"* ]]
+    [[ "$output" == *"busy in it"* ]]
 }

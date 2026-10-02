@@ -60,6 +60,9 @@ Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 | `sweep-plan` | 1.5.0 | `configFingerprint`: the configuration file the token covers, so two plans can be compared |
 | `sweep` | 1.4.0 | `runId`, and `pin` on each item: the branches a sweep deletes are moved into a run under `refs/wt-swept/`. `restoreCommand` is now `wt refs restore <runId> --only refs/heads/<branch> --yes`, or `wt restore <dir>` for a quarantined worktree's branch; the `git branch` form is no longer produced |
 | `remove` | 1.4.0 | `runId`, and `pin` on each step: a deleted branch is moved into a run of its own under `refs/wt-swept/`; `restoreCommand` for it is `wt refs restore` |
+| `status` 1.5.0, `sync` 1.2.0 | | [Codex sessions](#sessions--claude-and-codex): `sessions[].kind` is `claude` or `codex` |
+| `remove-plan` | 1.4.0 | [Codex sessions](#sessions--claude-and-codex): `kind` on each of `sessions` |
+| `remove` | 1.4.1 | wording: a session problem is any agent session, and `sessionsUnknown` any listing that failed |
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
 
@@ -92,6 +95,50 @@ That group also holds the other commands of a pipeline (`wt up --json | jq`), or
 the script that called wt without job control. Escalating to SIGKILL would kill
 wt before it wrote its object. And signalling only its direct children would let
 their children run on.
+
+## Sessions — Claude and Codex
+
+A session is an agent working in a worktree. A busy one refuses what would
+change files under it; an idle one is waiting for its person. The session wt
+itself runs under is never listed. Wherever sessions are listed, `kind` says
+whose it is:
+
+| `kind` | Found by | `name` | `state` |
+|---|---|---|---|
+| `claude` | `claude agents --json` | the session's name | `idle` for an interactive session with status idle; anything else is `busy` |
+| `codex` | `ps`, each codex process's working directory, and the turn markers in `$CODEX_HOME/sessions` (default `~/.codex/sessions`) | `codex exec`, `codex`, or `codex (<originator>)` | see below |
+
+A Codex session is one of two things:
+
+- **A codex process working in the worktree**: `codex exec`, `codex review`
+  or the interactive `codex`, with its working directory (or `--cd`) there.
+  The launcher and the binary it starts are one session. `codex exec` and
+  `codex review` are `busy` for as long as they live. An interactive `codex`
+  is `idle` when it has a thread of its own logged in its directory since it
+  started and no thread it could be running has a turn open; it is `busy`
+  when one has — or when no log of its own can be found or read, which is
+  not knowing, never idle. Where sessions carry them, `id` is `codex-<pid>`
+  and `pid` the topmost process.
+- **A thread an app-server runs there** (the Codex desktop app, its managed
+  daemon, the Claude Code plugin): no process stands in the worktree, so it
+  is a session only while its turn is open, it was written to in the last 24
+  hours and an app-server that could be running it is alive, and it is
+  always `busy`. `name` is `codex (<originator>)`, `id` the thread id, `pid`
+  the app-server's, or null when more than one could be running it. An
+  interactive `codex` whose thread an app-server runs is listed as both.
+
+An open turn with nothing alive behind it is a crashed session and is not
+listed. Only your own processes are looked at.
+
+The listing fails, which is `sessionsError` or `sessionsUnknown` and never an
+empty list, when `ps` fails, when a codex process will not say where it works
+and neither its launcher, its `--cd` nor its threads do, when the logs cannot
+be walked, and when a log that cannot be read may be a thread an app-server
+is running.
+
+Under an app-server nothing names the thread wt was started from, so the
+session left out as wt's own is every such thread working in wt's own
+working directory.
 
 ## JSON Schema
 
@@ -136,8 +183,9 @@ unknown. wt's own tests validate every `--json` output against these schemas.
 
 What `wt up` would start on, from local state alone. It **writes nothing**: no
 fetch, no rebase simulation, no pull-request cache; every git it runs reads, and
-`git status` runs with `--no-optional-locks`. It lists Claude sessions with
-`claude agents`. `<work>` defaults to `.`, the worktree you are in.
+`git status` runs with `--no-optional-locks`. It lists
+[agent sessions](#sessions--claude-and-codex) with `claude agents`, `ps` and
+Codex's session logs. `<work>` defaults to `.`, the worktree you are in.
 
 A worktree `wt up` would not start on is still a plan, with `upEligible: false`
 and the reason — never an error exit. The command fails only outside a git
@@ -169,9 +217,9 @@ repository.
 | `upIneligibleReason` | string \| null | the same as a sentence |
 | `stack` | array | every worktree `wt up` would move, parents first, from local refs as of now; just the one when it has no stack |
 | `stack[].work`, `.branch`, `.path` | string | |
-| `sessions` | array | Claude sessions in the stack's worktrees (Codex sessions are not detected) |
+| `sessions` | array | [agent sessions](#sessions--claude-and-codex) in the stack's worktrees |
 | `sessions[].work`, `.name` | string | the worktree it is in, and its name |
-| `sessions[].kind` | `"claude"` | |
+| `sessions[].kind` | `claude` \| `codex` | whose session it is; `codex` since 1.5.0 |
 | `sessions[].state` | `busy` \| `idle` | a busy session refuses `wt up` unless `--force` |
 | `sessionsError` | string \| null | the listing failed; `sessions` is then empty, not known empty |
 
@@ -229,7 +277,7 @@ Each participant:
 | `rebased` | moved | rebased onto trunk, every step after it done |
 | `rebasedStepFailed` | moved | rebased, but a later step did not finish: a deferred step, the result ref, the plan's cleanup (`failedSteps`) |
 | `skipped` | unchanged | nothing to do: on trunk already, or nothing of its own |
-| `refused` | unchanged | refused before anything was touched, for a reason of its own: uncommitted changes, a busy Claude session, a conflict that would be yours |
+| `refused` | unchanged | refused before anything was touched, for a reason of its own: uncommitted changes, a busy agent session, a conflict that would be yours |
 | `notRun` | unchanged | not touched because of another member of its stack |
 | `restored` | unchanged | the rebase failed or stopped and was put back: branch, index, HEAD and working tree as the run found them |
 | `needsRecovery` | changed | the rebase failed and was not put back; `recovery` says how |
@@ -276,7 +324,7 @@ After fetching trunk, `wt up`, `wt sync run` and `wt sync --run` bring local
 `<trunk>` up to `origin/<trunk>` when that is a pure fast-forward and safe:
 checked out nowhere, the ref moves by compare-and-swap; checked out in a
 checkout that is clean (untracked files count), with no operation in progress
-and no Claude session busy in it (an idle one does not count, nor the session
+and no agent session busy in it (an idle one does not count, nor the session
 running wt), `git merge --ff-only --no-overwrite-ignore` moves
 it there. Anything else leaves it, with the reason. Local commits are never
 thrown away, and a fast-forward that fails never fails the run.
@@ -303,7 +351,7 @@ fast-forward was otherwise possible.
 | `diverged` | both have commits the other lacks |
 | `dirty` | the checkout it is on has changes, untracked files included |
 | `operation` | a rebase, merge, cherry-pick, revert or bisect is in progress on it |
-| `session` | a Claude session is busy in the checkout it is on (idle ones, and the session running wt, do not count), or the sessions could not be listed |
+| `session` | an agent session is busy in the checkout it is on (idle ones, and the session running wt, do not count), or the sessions could not be listed |
 | `notFastForward` | it moved, or was checked out or switched away from, while wt was updating it |
 | `failed` | git refused the update (an ignored file it would overwrite), or it is not safe to try: trunk checked out in more than one worktree |
 
@@ -312,7 +360,7 @@ fast-forward was otherwise possible.
 The plan `wt sweep` prints, as one object: every row, why it counts as merged or
 why it is kept, and a token. It deletes nothing. It fetches origin first, as a
 sweep does, unless `--no-fetch`; it asks GitHub about the branches' pull requests
-and `claude agents` about sessions, as a sweep does. `wt sweep --json` without
+and lists the [agent sessions](#sessions--claude-and-codex), as a sweep does. `wt sweep --json` without
 `--yes` prints the same plan. Run it from the repository's main checkout;
 `--all`, `--roots` and `--profile` are refused with `--json` (run it in each
 repository).
@@ -371,8 +419,8 @@ Each item:
 | `dirty` | uncommitted changes, untracked files, edits to files status is told to skip, and initialised submodules (their content, or a checked-out commit other than the recorded one) included, whatever git's config says |
 | `statusUnknown` | `git status` failed there, so its changes could not be seen |
 | `detached` | a worktree with no branch whose HEAD trunk contains; sweep never removes one (`wt remove <path>` does) |
-| `session` | a Claude session is in it, idle or busy |
-| `sessionsUnknown` | `claude agents` failed, so no worktree is known to be free of one |
+| `session` | an agent session is in it, idle or busy |
+| `sessionsUnknown` | the sessions could not be listed, so no worktree is known to be free of one |
 | `lockHeld` | git's worktree lock, and its holder is still running |
 | `directoryMissing` | git lists it, but its directory is gone (`git worktree prune`) |
 | `heldByRebase`, `heldByBisect` | a rebase or bisect in that worktree holds the branch |
@@ -1012,7 +1060,7 @@ object with `error` set and no worktrees, and the exit code is non-zero.
 | `declared` | bool | trunk declares `.wt-sync.yaml`; without it nothing is rebased |
 | `token` | string \| null | names what a run would start on; pass it to `wt sync run --expect` or `wt sync --run --expect`. Null when a run would start on nothing |
 | `error` | string \| null | why there is no overview: trunk not known here, the repository not readable. The exit code is then non-zero |
-| `sessionsError` | string \| null | Claude sessions could not be listed; `sessions` are then empty, not known empty |
+| `sessionsError` | string \| null | Agent sessions could not be listed; `sessions` are then empty, not known empty |
 | `worktrees` | array | every worktree but the main checkout, in git's order |
 
 Each worktree:
@@ -1031,7 +1079,7 @@ Each worktree:
 | `dirty` | bool | tracked changes |
 | `handedOver` | bool | an earlier run left a conflict here for a person |
 | `planFile` | string \| null | that handover's plan |
-| `sessions` | array | Claude sessions in it: `work`, `name`, `kind` (`"claude"`), `state` (`busy` \| `idle`) |
+| `sessions` | array | [agent sessions](#sessions--claude-and-codex) in it: `work`, `name`, `kind` (`claude` \| `codex`, the latter since 1.2.0), `state` (`busy` \| `idle`) |
 | `stack` | array | every worktree a run on this one moves, parents first: `work`, `branch`, `path` |
 | `stops` | array | every stop the simulated rebase reached, in order |
 | `stops[].index`, `.total` | int | the commit's place in the replay, `1/3` |
@@ -1260,8 +1308,8 @@ submodule initialisation or Superset registration. Read `outcome`.
 The plan `wt remove` prints, as one object: the checkout, its HEAD, where the
 branch stands and what becomes of it, every reason the removal would refuse,
 what it would leave unreachable, and a token. It changes nothing. `wt remove
-<work> --json` without `--yes` prints the same plan. Like the removal it reads
-`claude agents` for sessions and never fetches: merged is measured against
+<work> --json` without `--yes` prints the same plan. Like the removal it lists the
+[agent sessions](#sessions--claude-and-codex) and never fetches: merged is measured against
 `origin/<trunk>` as last fetched and `<trunk>`.
 
 A plan the removal would refuse is still the whole object, with `error` set, a
@@ -1293,7 +1341,7 @@ worktree, the main checkout), with the worktree fields null.
 | `hasSubmodules` | bool | the checkout has a `.gitmodules` |
 | `nestedWorktrees` | array of string | other worktrees inside this one |
 | `operation` | `rebase` \| `merge` \| `cherry-pick` \| `revert` \| `sequencer` \| `bisect` \| null | an operation stopped halfway there; `sequencer` is a cherry-pick or revert sequence whose HEAD marker is gone |
-| `sessions` | array | `{id, name, pid, state}` for each Claude session in the checkout, `state` `idle` or `busy`; the one running wt is not listed |
+| `sessions` | array | `{id, name, kind, pid, state}` for each [agent session](#sessions--claude-and-codex) in the checkout, `kind` `claude` or `codex` (since 1.4.0), `state` `idle` or `busy`; the one running wt is not listed |
 | `sessionsError` | string \| null | why they could not be listed |
 | `lock` | object \| null | git's lock: `reason`, `holder` (who wt worked out is behind it), `pid`, `held` (still running; a stale one is released) |
 | `unreachable` | array | each tip nothing surviving the removal holds: `{kind, oid, count, path, restoreCommand}`. `kind` `branch` is the branch it deletes — listed, not refused, with the `git branch` argv that brings its commits back; `head` and `submodule` (with `path`) refuse |
@@ -1311,8 +1359,8 @@ mean the same there:
 |---|---|
 | `dirty` | uncommitted changes, submodules included, or a submodule at another commit |
 | `statusUnknown` | the status, the git dir or HEAD could not be read |
-| `session` | a Claude session is in it: one problem for the idle ones (`idle-sessions`), one for the busy ones (`busy-sessions`) |
-| `sessionsUnknown` | `claude agents` failed (`sessions-unknown`) |
+| `session` | an agent session is in it: one problem for the idle ones (`idle-sessions`), one for the busy ones (`busy-sessions`) |
+| `sessionsUnknown` | the sessions could not be listed (`sessions-unknown`) |
 | `lockHeld` | git's lock, and its holder is still running (`lock`) |
 | `hiddenChanges` | files `git status` is told not to look at (`hidden-files`) |
 | `operation` | a rebase, merge, cherry-pick, revert or bisect in progress |

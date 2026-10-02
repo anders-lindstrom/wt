@@ -221,7 +221,7 @@ func setReaperWriter(w io.Writer) func() {
 // env, can write or run long enough to be worth a reaper. The answer is no
 // only for what is known to read: git's reading subcommands — and those that
 // only add objects, which is how wt status simulates a rebase — and the
-// GitHub, Claude, ps and Docker queries wt makes. Anything else — a git that writes or is not
+// GitHub, Claude, ps, lsof and Docker queries wt makes. Anything else — a git that writes or is not
 // recognised, a script, a build — counts as writing.
 func Writes(args, env []string) bool {
 	if len(args) == 0 {
@@ -233,7 +233,7 @@ func Writes(args, env []string) bool {
 	case "gh":
 		pos := positionals(args[1:])
 		return len(pos) >= 2 && pos[0] == "pr" && pos[1] == "checkout"
-	case "claude", "ps", "docker":
+	case "claude", "ps", "lsof", "docker":
 		return false
 	}
 	return true

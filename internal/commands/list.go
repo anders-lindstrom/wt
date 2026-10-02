@@ -282,7 +282,7 @@ type StatusOptions struct {
 	// the pr line of StatusWorktree.
 	NoPR, Refresh bool
 	// Agents are the sessions StatusWorktree looks for in the worktree. Nil
-	// asks `claude agents`; an empty slice means there are none.
+	// lists them; an empty slice means there are none.
 	Agents []wtsync.Agent
 }
 
