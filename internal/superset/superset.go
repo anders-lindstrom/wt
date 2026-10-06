@@ -3,7 +3,9 @@
 //
 // Superset has three states: not installed, installed with its host service
 // stopped, and running. Only a running host answers anything but `status`.
-// Nothing here starts the host service.
+// `status` itself can call a running host stale: that is
+// WORKAROUND(superset-stale-status), at Probe. Nothing here starts the host
+// service.
 package superset
 
 import (
@@ -15,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -53,9 +56,15 @@ func Find() (CLI, bool) {
 type Status struct {
 	// Exe is the CLI that was found, empty when Superset is not installed.
 	Exe string
-	// Running says the host service answered. Nothing but `status` works
-	// when it is false.
+	// Running says the host service answers: `status` said so, or called
+	// its manifest stale and the host answered a read all the same. Nothing
+	// but `status` works when it is false.
 	Running bool
+	// WORKAROUND(superset-stale-status): Stale is `status` calling the
+	// host's manifest stale, PID the host pid it names, stale or running.
+	// Stale with Running is `status` being wrong.
+	Stale bool
+	PID   int
 	// Err is why the state could not be read, when it could not.
 	Err error
 }
@@ -69,6 +78,18 @@ func (s Status) CLI() CLI { return CLI{Exe: s.Exe} }
 // Probe locates the CLI and asks whether the host service is running.
 // `status` is the one command a stopped host still answers, so this is the
 // gate every other call goes through.
+//
+// WORKAROUND(superset-stale-status), written against Superset 1.36.0: its
+// `status` calls a serving host stale when the pid's command line lacks
+// "superset-host", which is so for the desktop app's host and for the one the
+// Homebrew CLI starts. The --local commands only want the pid alive, so a
+// stale answer is settled by asking the host for its projects: one more
+// process, in that state only.
+//
+// Superset has fixed it when `superset status --json` says running: true for
+// such a host, and `wt doctor` says so when it sees that (StaleStatusFixed).
+// Then everything carrying the marker goes, and `running` is believed as it
+// stands.
 func Probe() Status {
 	c, ok := Find()
 	if !ok {
@@ -80,11 +101,55 @@ func Probe() Status {
 	}
 	var st struct {
 		Running bool `json:"running"`
+		Stale   bool `json:"stale"`
+		PID     int  `json:"pid"`
 	}
 	if err := json.Unmarshal(out, &st); err != nil {
 		return Status{Exe: c.Exe, Err: fmt.Errorf("superset status --json: %w", err)}
 	}
-	return Status{Exe: c.Exe, Running: st.Running}
+	s := Status{Exe: c.Exe, Running: st.Running, Stale: st.Stale, PID: st.PID}
+	// WORKAROUND(superset-stale-status)
+	if !s.Running && s.Stale && s.PID > 0 {
+		_, err := c.Projects()
+		s.Running = err == nil
+	}
+	return s
+}
+
+// StaleStatusMarker is on every piece of the stale-status workaround. Probe
+// says when they go.
+const StaleStatusMarker = "WORKAROUND(superset-stale-status)"
+
+// hostProcessName is what 1.36.0's `status` wants in a host pid's command
+// line before it calls the host running. WORKAROUND(superset-stale-status)
+const hostProcessName = "superset-host"
+
+// StaleStatusFixed reports whether `status` called a host running that 1.36.0
+// calls stale: one whose command line, as command reads it, lacks
+// "superset-host". A status with no pid, or a pid command cannot read, is no
+// evidence. WORKAROUND(superset-stale-status)
+func (s Status) StaleStatusFixed(command func(pid int) (string, error)) bool {
+	if !s.Running || s.Stale || s.PID <= 0 {
+		return false
+	}
+	line, err := command(s.PID)
+	return err == nil && line != "" && !strings.Contains(line, hostProcessName)
+}
+
+// ProcessCommand is a process's command line as `ps` gives it, which is what
+// Superset's own check reads. WORKAROUND(superset-stale-status)
+func ProcessCommand(pid int) (string, error) {
+	cmd := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "command=")
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	timedOut, _, err := git.RunBounded(readDeadline, cmd)
+	if timedOut {
+		return "", fmt.Errorf("ps -p %d did not answer within %s", pid, readDeadline)
+	}
+	if err != nil {
+		return "", fmt.Errorf("ps -p %d: %w", pid, err)
+	}
+	return strings.TrimSpace(stdout.String()), nil
 }
 
 // Version is the CLI's own version, or "" when it will not say. Kept out of

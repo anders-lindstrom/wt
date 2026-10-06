@@ -1,7 +1,9 @@
 package superset
 
 import (
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -85,24 +87,66 @@ func unexecutableHome(t *testing.T) string {
 	return home
 }
 
-// The three states Superset has. `status` is the only command a stopped host
-// answers, which is why it and not an error string is the gate.
+// staleStatus is what Superset 1.36.0 answers for a host it will not vouch
+// for: the pid is dead, or alive under a name that is not "superset-host".
+// WORKAROUND(superset-stale-status), as is staleFake.
+const staleStatus = `'{"running":false,"stale":true,"pid":96249,"organizationId":"o1","hostId":"h1"}'`
+
+// staleFake is a `superset` whose status says stale, and whose projects call
+// does what projects says.
+func staleFake(t *testing.T, projects string) (CLI, string) {
+	t.Helper()
+	return fake(t, "case \"$1\" in\n"+
+		"  status) echo "+staleStatus+" ;;\n"+
+		"  projects) "+projects+" ;;\n"+
+		"esac")
+}
+
+// The states Superset has. `status` is the only command a stopped host
+// answers, which is why it and not an error string is the gate. A stale
+// status is not believed until the host has been asked: 1.36.0 reports a
+// host stale while it serves. The stale rows, and the second process they
+// count, are WORKAROUND(superset-stale-status).
 func TestProbeStates(t *testing.T) {
+	const statusOnly = "status --json"
+	const thenProjects = "status --json|projects list --local --json"
 	for name, tc := range map[string]struct {
 		body        string
+		stale       string
 		wantRunning bool
+		wantStale   bool
+		wantPID     int
 		wantErr     string
+		wantArgv    string
 	}{
-		"running": {`echo '{"running":true,"port":48286}'`, true, ""},
-		"stopped": {`echo '{"running":false}'`, false, ""},
-		"broken": {
-			`echo "Error: Host service for this machine isn't running" >&2; exit 1`,
-			false, "Host service for this machine isn't running",
+		"running": {
+			body:        `echo '{"running":true,"healthy":true,"pid":4242,"port":48286}'`,
+			wantRunning: true, wantPID: 4242, wantArgv: statusOnly,
 		},
-		"not json": {`echo 'wat'`, false, "superset status --json"},
+		"stopped": {body: `echo '{"running":false}'`, wantArgv: statusOnly},
+		"stale, the host answers": {
+			stale:       `echo '[{"id":"p1","name":"one","path":"/repos/one"}]'`,
+			wantRunning: true, wantStale: true, wantPID: 96249, wantArgv: thenProjects,
+		},
+		"stale, the pid is dead": {
+			stale:     `echo 'Error: Host service manifest is stale (recorded PID is dead)' >&2; exit 1`,
+			wantStale: true, wantPID: 96249, wantArgv: thenProjects,
+		},
+		"stale, the host answers nonsense": {
+			stale:     `echo 'wat'`,
+			wantStale: true, wantPID: 96249, wantArgv: thenProjects,
+		},
+		"broken": {
+			body:    `echo "Error: Host service for this machine isn't running" >&2; exit 1`,
+			wantErr: "Host service for this machine isn't running", wantArgv: statusOnly,
+		},
+		"not json": {body: `echo 'wat'`, wantErr: "superset status --json", wantArgv: statusOnly},
 	} {
 		t.Run(name, func(t *testing.T) {
-			c, _ := fake(t, tc.body)
+			c, log := fake(t, tc.body)
+			if tc.stale != "" {
+				c, log = staleFake(t, tc.stale)
+			}
 			t.Setenv("PATH", filepath.Dir(c.Exe))
 			s := Probe()
 			if !s.Installed() {
@@ -111,13 +155,122 @@ func TestProbeStates(t *testing.T) {
 			if s.Running != tc.wantRunning {
 				t.Errorf("Running = %v, want %v", s.Running, tc.wantRunning)
 			}
+			if s.Stale != tc.wantStale {
+				t.Errorf("Stale = %v, want %v", s.Stale, tc.wantStale)
+			}
+			if s.PID != tc.wantPID {
+				t.Errorf("PID = %d, want Superset's %d", s.PID, tc.wantPID)
+			}
 			switch {
 			case tc.wantErr == "" && s.Err != nil:
 				t.Errorf("Err = %v, want none", s.Err)
 			case tc.wantErr != "" && (s.Err == nil || !strings.Contains(s.Err.Error(), tc.wantErr)):
 				t.Errorf("Err = %v, want it to mention %q", s.Err, tc.wantErr)
 			}
+			// The second process is spent in the stale state alone.
+			if got := strings.Join(argv(t, log), "|"); got != tc.wantArgv {
+				t.Errorf("argv = %q, want %q", got, tc.wantArgv)
+			}
 		})
+	}
+}
+
+// A superset that never answers must not hold a probe open, whichever of its
+// two questions is the one left hanging.
+func TestProbeDeadline(t *testing.T) {
+	hung, _ := fake(t, `sleep 30`)
+	staleAndHung, _ := staleFake(t, `sleep 30`)
+	for name, tc := range map[string]struct {
+		cli      CLI
+		deadline time.Duration
+		wantErr  bool
+	}{
+		"status hangs": {hung, 200 * time.Millisecond, true},
+		// WORKAROUND(superset-stale-status), this row and what it asks of
+		// Stale. Not an error: Superset said stale and nothing contradicted it.
+		// The deadline has to leave a loaded machine time to answer status.
+		"stale, the host hangs": {staleAndHung, 3 * time.Second, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			old := readDeadline
+			readDeadline = tc.deadline
+			t.Cleanup(func() { readDeadline = old })
+			t.Setenv("PATH", filepath.Dir(tc.cli.Exe)+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+			start := time.Now()
+			s := Probe()
+			if elapsed := time.Since(start); elapsed > 15*time.Second {
+				t.Errorf("waited %s, want the deadline to have cut it short", elapsed)
+			}
+			if s.Running {
+				t.Error("Running = true for a superset that never answered")
+			}
+			if tc.wantErr != (s.Err != nil) {
+				t.Errorf("Err = %v, want an error: %v", s.Err, tc.wantErr)
+			}
+			if tc.wantErr && !strings.Contains(s.Err.Error(), "did not answer within") {
+				t.Errorf("Err = %v, want a deadline", s.Err)
+			}
+			if !tc.wantErr && !s.Stale {
+				t.Error("Stale = false, want Superset's own word carried through")
+			}
+		})
+	}
+}
+
+// `status` vouching for a host 1.36.0 would have called stale is Superset's
+// fix showing. Anything short of that, a pid that cannot be read included, is
+// no evidence, and a status that names no running pid costs no process.
+// WORKAROUND(superset-stale-status)
+func TestStaleStatusFixed(t *testing.T) {
+	const desktop = "/Applications/Superset.app/Contents/MacOS/Superset /Applications/Superset.app/Contents/Resources/app.asar/dist/main/host-service.js"
+	for name, tc := range map[string]struct {
+		status    Status
+		command   string
+		err       error
+		want      bool
+		wantAsked bool
+	}{
+		"running, the desktop app's host": {status: Status{Running: true, PID: 4242}, command: desktop, want: true, wantAsked: true},
+		"running, a superset-host":        {status: Status{Running: true, PID: 4242}, command: "/usr/local/bin/superset-host", wantAsked: true},
+		"running, the pid cannot be read": {status: Status{Running: true, PID: 4242}, err: errors.New("exit status 1"), wantAsked: true},
+		"running, ps says nothing":        {status: Status{Running: true, PID: 4242}, wantAsked: true},
+		"running, no pid":                 {status: Status{Running: true}, command: desktop},
+		"stale and answering":             {status: Status{Running: true, Stale: true, PID: 4242}, command: desktop},
+		"not running":                     {status: Status{PID: 4242}, command: desktop},
+	} {
+		t.Run(name, func(t *testing.T) {
+			asked := false
+			got := tc.status.StaleStatusFixed(func(pid int) (string, error) {
+				asked = true
+				if pid != tc.status.PID {
+					t.Errorf("asked about pid %d, want %d", pid, tc.status.PID)
+				}
+				return tc.command, tc.err
+			})
+			if got != tc.want {
+				t.Errorf("StaleStatusFixed = %v, want %v", got, tc.want)
+			}
+			if asked != tc.wantAsked {
+				t.Errorf("asked ps = %v, want %v", asked, tc.wantAsked)
+			}
+		})
+	}
+}
+
+// ps gives a live process's command line and an error for a pid that is gone.
+// WORKAROUND(superset-stale-status)
+func TestProcessCommand(t *testing.T) {
+	line, err := ProcessCommand(os.Getpid())
+	if err != nil || !strings.Contains(line, filepath.Base(os.Args[0])) {
+		t.Errorf("own command line = %q, %v, want this test binary", line, err)
+	}
+	gone := exec.Command("true")
+	if err := gone.Run(); err != nil {
+		t.Fatal(err)
+	}
+	if line, err := ProcessCommand(gone.Process.Pid); err == nil {
+		t.Errorf("a pid that has exited read as %q, want an error", line)
 	}
 }
 
