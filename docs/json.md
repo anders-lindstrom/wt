@@ -514,8 +514,10 @@ fetched and as whatever it last said from one that did not.
 
 **`--allow-diverged`**, on `wt up` and `wt sync run`: rebase a `diverged`
 branch as it stands. It does nothing for `behind`. Like `--force` it needs the
-worktree named: a run with nothing named, in one repository or across many,
-refuses the flag. With `--expect <token>` it
+worktree named: `wt sync run` and `wt sync --run` with nothing named, in one
+repository or across many, refuse the flag. `wt up` always names one, the
+worktree you are in when no `<work>` is given, so `wt up --allow-diverged` is
+accepted. With `--expect <token>` it
 goes ahead only over the divergence the token covers; a remote that moved again
 since the look is refused as a changed plan. Without `--expect` it is consent to
 whatever is found. The flag is not part of any token. With `--if-ready` a
@@ -1285,7 +1287,7 @@ object with `error` set and no worktrees, and the exit code is non-zero.
 | `fetched` | bool | trunk was fetched first |
 | `fetchError` | string \| null | the fetch failed; the overview is against trunk as last fetched |
 | `declared` | bool | trunk declares `.wt-sync.yaml`; without it nothing is rebased |
-| `token` | string \| null | names what a run would start on; pass it to `wt sync run --expect` or `wt sync --run --expect`. Null when a run would start on nothing, also under `--allow-diverged` |
+| `token` | string \| null | names what a run would start on; pass it to `wt sync run --expect` or `wt sync --run --expect`. Null when a run would start on nothing and no worktree's `ownRemote.blocks` is `diverged`: a diverged one makes it non-null, also when something else (a busy session) keeps a run off it |
 | `error` | string \| null | why there is no overview: trunk not known here, the repository not readable. The exit code is then non-zero |
 | `sessionsError` | string \| null | Agent sessions could not be listed; `sessions` are then empty, not known empty |
 | `worktrees` | array | every worktree but the main checkout, in git's order |
@@ -1325,6 +1327,11 @@ has `verdict` `refuse`, `runnable` false and `reason` in words. Its `group` is
 `needsYou`, except with a busy session in it, whatever its `blocks`, which is
 `skipped` like any worktree a busy session is in. `class` is unchanged: it
 stays about trunk.
+
+That is the worktree's own verdict. Another member of its `stack` is not
+refused with it in the overview: it keeps its own `verdict`, and has `runnable`
+false with the `reason` `stacked with <work>`, as for any member a run would
+not start on. A run refuses the whole stack.
 
 A worktree that is behind its own remote and has nothing to rebase at the
 remote's commit is one a run acts on: `class` `current` or `stale` (the remote
