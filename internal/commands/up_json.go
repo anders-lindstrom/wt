@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/wtsync"
 	"github.com/anders-lindstrom/wt/schema"
 )
 
@@ -21,6 +23,10 @@ const (
 	// after the rebase did not finish: a deferred step, the result ref, the
 	// plan's cleanup. FailedSteps names them.
 	ResultRebasedStepFailed = "rebasedStepFailed"
+	// ResultFastForwarded is moved, not rebased: the branch was behind its
+	// own remote, whose commit is on trunk already or has nothing of its own,
+	// so the run fast-forwarded the branch there and had nothing to rebase.
+	ResultFastForwarded = "fastForwarded"
 	// ResultSkipped is nothing to do: on trunk already, or nothing of its own.
 	ResultSkipped = "skipped"
 	// ResultRefused is refused before anything was touched, for a reason of
@@ -84,6 +90,8 @@ type UpParticipant struct {
 	Recovery    *string  `json:"recovery"`
 	PushCommand []string `json:"pushCommand"`
 	Pushed      bool     `json:"pushed"`
+	// OwnRemoteSync is nil from wt sync resume and undo, which do not check.
+	OwnRemoteSync *OwnRemoteSync `json:"ownRemoteSync"`
 }
 
 // DeferredStep is one deferred step of a finished rebase.
@@ -221,14 +229,14 @@ func (j *RunJournal) trunkSync(ts *TrunkSync) {
 // join records the participants, parents first, before any is touched: each
 // starts as not run, which is what a run that stops before reaching it
 // leaves it as.
-func (j *RunJournal) join(work, branch, path, before string) {
+func (j *RunJournal) join(work, branch, path, before string, own *OwnRemoteSync) {
 	if j == nil {
 		return
 	}
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	p := &SyncParticipant{UpParticipant: UpParticipant{Work: work, Branch: branch, Path: path, Result: ResultNotRun,
-		Before: strp(before), After: strp(before), FailedSteps: []string{}}, Deferred: []DeferredStep{}}
+		Before: strp(before), After: strp(before), FailedSteps: []string{}, OwnRemoteSync: own}, Deferred: []DeferredStep{}}
 	j.res.Worktrees = append(j.res.Worktrees, p)
 	j.byBr[branch] = p
 }
@@ -328,6 +336,7 @@ func (j *RunJournal) write(inFlight string, signalled bool, recovery ...string) 
 				if caught {
 					p.Result = ResultInterrupted
 					p.Recovery = strp(strings.Join(recovery, ""))
+					j.fastForwardSeen(p)
 				}
 			}
 			j.res.Outcome = OutcomeInterrupted
@@ -349,6 +358,21 @@ func (j *RunJournal) write(inFlight string, signalled bool, recovery ...string) 
 	})
 }
 
+// fastForwardSeen reads where a participant a signal caught is, when the
+// run was about to fast-forward it to its own remote: git moves the branch
+// before the merge returns, so the signal can land with the branch at the
+// remote's commit and the run not yet having said so. Called with the lock
+// held.
+func (j *RunJournal) fastForwardSeen(p *SyncParticipant) {
+	o := p.OwnRemoteSync
+	if o == nil || o.FastForwarded || o.Remote == nil || o.State != string(wtsync.OwnBehind) || j.res.Repo == nil {
+		return
+	}
+	if tip, err := git.Run(*j.res.Repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+p.Branch); err == nil && tip == *o.Remote {
+		o.FastForwarded, p.After = true, strp(tip)
+	}
+}
+
 // journaled runs a verb that reports to j, when there is one: j is the one
 // a signal finishes while the verb runs, an error before any participant was
 // touched is the run's own, and the object is written once the verb
@@ -368,8 +392,8 @@ func journaled(j *RunJournal, verb func() error) error {
 	return err
 }
 
-// outcomeOf is the rule: done when every participant is rebased, undone or
-// skipped; refused when nothing changed (every one skipped, refused, not run
+// outcomeOf is the rule: done when every participant is rebased,
+// fast-forwarded, undone or skipped; refused when nothing changed (every one skipped, refused, not run
 // or restored, or none chosen); partial otherwise.
 func outcomeOf(ps []*SyncParticipant, failedEarly bool) string {
 	if len(ps) == 0 {
@@ -381,7 +405,7 @@ func outcomeOf(ps []*SyncParticipant, failedEarly bool) string {
 	finished, changed := true, false
 	for _, p := range ps {
 		switch p.Result {
-		case ResultRebased, ResultUndone:
+		case ResultRebased, ResultFastForwarded, ResultUndone:
 			changed = true
 		case ResultSkipped:
 		case ResultRebasedStepFailed, ResultNeedsRecovery, ResultHandedOver, ResultInterrupted:
@@ -432,12 +456,21 @@ func currentInterruptJournal() interruptible {
 // planToken names the inputs a plan was computed from: the trunk wt up
 // resolves, the configuration file it reads, and the stack's branches in
 // order. A newer trunk commit is not in it; a different trunk name,
-// configuration or stack is.
-func planToken(ctx *Context, trunk string, stack []string) string {
+// configuration or stack is. Nor is the commit of a branch's own remote,
+// except for a branch that has diverged from it: diverged maps each such
+// branch to that commit, so that a caller who allows the divergence it was
+// shown is refused over one that moved since. With nothing diverged the
+// token is what it was before wt looked at the remotes.
+func planToken(ctx *Context, trunk string, stack []string, diverged map[string]string) string {
 	h := sha256.New()
 	h.Write([]byte("wt-plan-1\x00" + trunk + "\x00"))
 	h.Write(configFingerprint(ctx))
 	h.Write([]byte("\x00" + strings.Join(stack, "\x00")))
+	for _, b := range stack {
+		if commit, ok := diverged[b]; ok {
+			h.Write([]byte("\x00diverged\x01" + b + "\x01" + commit))
+		}
+	}
 	return "1:" + hex.EncodeToString(h.Sum(nil))[:32]
 }
 

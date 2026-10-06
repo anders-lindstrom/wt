@@ -91,10 +91,11 @@ func newStatusCmd() *cobra.Command {
 			"--all, --roots or --profile show every repository they name, one\n" +
 			"section each; they take no worktree.\n\n" +
 			"--json prints the worktree's plan for wt up as one object, for a tool\n" +
-			"driving wt: trunk, eligibility, the stack it would move, the sessions\n" +
-			"in it, and a token for wt up --expect. It writes nothing — no fetch,\n" +
-			"no simulation. wt schema status prints its JSON Schema; docs/json.md\n" +
-			"explains it.\n\n" + pathWidthHelp,
+			"driving wt: trunk, eligibility, the stack it would move, each of its\n" +
+			"branches against its own remote (the ref a push would replace, as last\n" +
+			"fetched), the sessions in it, and a token for wt up --expect. It writes\n" +
+			"nothing — no fetch, no simulation. wt schema status prints its JSON\n" +
+			"Schema; docs/json.md explains it.\n\n" + pathWidthHelp,
 		Example: "  wt status --all | grep behind   # what is not on trunk, anywhere\n" +
 			"  wt status --roots work --no-pr  # one root's, no call to GitHub\n" +
 			"  wt status --profile api         # the repositories a profile names\n" +

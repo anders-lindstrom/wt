@@ -20,8 +20,9 @@ func newSyncCmd() *cobra.Command {
 		Long: "Fetch trunk, then simulate rebasing every worktree onto origin/<trunk> in\n" +
 			"the object store, applying the repository's declared strategies at every\n" +
 			"stop, and print the outcome grouped by what to do about it. The fetch moves\n" +
-			"only origin/<trunk>; nothing of yours is changed. --no-fetch compares with\n" +
-			"trunk as last fetched, and so does a fetch that fails, saying why.\n" +
+			"only remote-tracking refs, origin/<trunk> and each branch's own remote;\n" +
+			"nothing of yours is changed. --no-fetch compares with both as last fetched,\n" +
+			"and so does a fetch that fails, saying why.\n" +
 			"\n" +
 			"The flow is look, act, finish.\n" +
 			"  look    wt sync                every worktree, grouped; changes nothing\n" +
@@ -75,8 +76,11 @@ func newSyncCmd() *cobra.Command {
 			"\n" +
 			"Groups:\n" +
 			"  ready      conflict-free or recipe, with nothing in the way: wt sync\n" +
-			"             run <work>, or wt sync --run for all of them but recipe?\n" +
-			"  needs you  contested, divergent, dirty, handed over, or not assessed\n" +
+			"             run <work>, or wt sync --run for all of them but recipe?.\n" +
+			"             Also one behind its own remote with nothing to rebase\n" +
+			"             there: a run fast-forwards it\n" +
+			"  needs you  contested, divergent, dirty, handed over, diverged from its\n" +
+			"             own remote, or not assessed\n" +
 			"  skipped    a busy session is in it, nothing is ahead of trunk, or no branch\n" +
 			"\n" +
 			"Classes:\n" +
@@ -111,6 +115,12 @@ func newSyncCmd() *cobra.Command {
 			"runs under is not counted. The lines under a row are advisory and never\n" +
 			"change the class.\n" +
 			"\n" +
+			"A branch is also compared with its own remote, the ref a push of it would\n" +
+			"replace: <branch>@{push}, else origin/<branch>, never its upstream as\n" +
+			"such. Behind it, a run fast-forwards the branch first, and the row is\n" +
+			"judged as if it had. Diverged from it, with commits there the branch\n" +
+			"never had, a run refuses: needs you (wt sync run --help).\n" +
+			"\n" +
 			"--json prints the overview as one object on stdout, for a tool driving\n" +
 			"wt: every worktree with its group, class, stack and stops, current ones\n" +
 			"included, and a token for --run --expect. With --all, --roots or\n" +
@@ -124,14 +134,14 @@ func newSyncCmd() *cobra.Command {
 			"  wt sync --profile api         # the overview of a profile's repositories",
 		ValidArgsFunction: completeWork,
 	}
-	var run, resume, undo, yes, force, ifReady, asJSON bool
+	var run, resume, undo, yes, force, ifReady, allowDiverged, asJSON bool
 	var expect string
 	var sel selectionFlags
 	var push func() commands.PushMode
 	flags := func() syncVerbFlags {
 		return syncVerbFlags{run: run, resume: resume, undo: undo,
 			yes: yes, force: force, noFetch: noFetch, noFFTrunk: noFFTrunk, ifReady: ifReady, push: push(),
-			json: asJSON, expect: expect}
+			allowDiverged: allowDiverged, json: asJSON, expect: expect}
 	}
 	// The count rule is the verb's own. Two verbs at once is a flag mistake,
 	// which RunE reports the way --push with --no-push is reported.
@@ -195,11 +205,12 @@ func newSyncCmd() *cobra.Command {
 	sync.Flags().BoolVar(&asJSON, "json", false, "print the overview as one JSON object on stdout; with a verb, its result")
 	sync.Flags().StringVar(&expect, "expect", "", "with --run: refuse unless the overview still matches this token from wt sync --json")
 	sync.Flags().BoolVar(&noFFTrunk, "no-ff-trunk", false, "with --run: leave local <trunk> where it is after the fetch")
+	sync.Flags().BoolVar(&allowDiverged, "allow-diverged", false, "with --run: rebase a branch that has diverged from its own remote")
 	sel.add(sync, true)
 	// The verbs spelled as flags, and their own flags, work on this line but
 	// belong to the verbs: their help is wt sync run, resume and undo --help,
 	// and the table here keeps to what the overview itself takes.
-	for _, name := range []string{"run", "resume", "undo", "yes", "push", "no-push", "force", "if-ready", "expect", "no-ff-trunk"} {
+	for _, name := range []string{"run", "resume", "undo", "yes", "push", "no-push", "force", "if-ready", "expect", "no-ff-trunk", "allow-diverged"} {
 		_ = sync.Flags().MarkHidden(name)
 	}
 	sync.AddCommand(newSyncRunCmd(), newSyncResumeCmd(), newSyncUndoCmd(), newSyncDoctorCmd(), newSyncKeepCmd())
@@ -214,7 +225,10 @@ func newSyncKeepCmd() *cobra.Command {
 			"watching. Each pass fetches trunk and, when its tip has moved since the\n" +
 			"last pass, rebases every worktree the table calls ready, pushes what\n" +
 			"finished with nothing owed (--force-with-lease --force-if-includes), and\n" +
-			"records what it did. It is stricter than a run you start: a worktree\n" +
+			"records what it did. Like a run, it fetches each branch's own remote\n" +
+			"too, fast-forwards a branch that is behind it before rebasing, and\n" +
+			"leaves one that has diverged from it. It is stricter than a run you\n" +
+			"start: a worktree\n" +
 			"with any agent session in it, idle or busy, is left alone, since nobody\n" +
 			"is there to be asked on its behalf; recipe?, needs you and skipped are\n" +
 			"left alone as a run with nothing named leaves them, and a stack goes\n" +
@@ -261,7 +275,9 @@ func newSyncKeepRunCmd() *cobra.Command {
 			"as wt sync --run --yes would, except that a worktree with any Claude\n" +
 			"session in it is left alone and named with the session as the reason,\n" +
 			"and push each worktree that finished with nothing owed, with\n" +
-			"--force-with-lease --force-if-includes. Nothing is asked. The pass is\n" +
+			"--force-with-lease --force-if-includes. A branch behind its own remote\n" +
+			"is fast-forwarded before it is rebased, as wt sync run does it; one that\n" +
+			"has diverged from it is left and named. Nothing is asked. The pass is\n" +
 			"appended to .git/wt-sync-keep.log and its outcome written to\n" +
 			".git/wt-sync-keep.json. The exit code is wt sync run's: non-zero when\n" +
 			"anything was refused, restored, failed or owed, a push that did not go\n" +
@@ -455,7 +471,9 @@ type syncVerbFlags struct {
 	run, resume, undo   bool
 	yes, force, noFetch bool
 	ifReady, noFFTrunk  bool
-	push                commands.PushMode
+	// allowDiverged rebases a branch that has diverged from its own remote.
+	allowDiverged bool
+	push          commands.PushMode
 	// json prints one object on stdout: the overview, or the verb's result.
 	json bool
 	// expect is the overview's token a run must still match.
@@ -508,6 +526,8 @@ func (f syncVerbFlags) check() error {
 		return errors.New("--expect needs --run")
 	case f.noFFTrunk && verb != "run":
 		return errors.New("--no-ff-trunk needs --run")
+	case f.allowDiverged && verb != "run":
+		return errors.New("--allow-diverged needs --run")
 	}
 	return nil
 }
@@ -546,7 +566,7 @@ func syncArgs(verb string) cobra.PositionalArgs {
 }
 
 func newSyncRunCmd() *cobra.Command {
-	var noFetch, noFFTrunk, yes, ifReady, force, asJSON bool
+	var noFetch, noFFTrunk, yes, ifReady, force, allowDiverged, asJSON bool
 	var expect string
 	var sel selectionFlags
 	var push func() commands.PushMode
@@ -579,9 +599,29 @@ func newSyncRunCmd() *cobra.Command {
 			"  nothing named, --all    once, even for one\n" +
 			"With no terminal a named worktree goes ahead, and a run with nothing\n" +
 			"named, or across repositories, rebases nothing unless --yes says so.\n\n" +
+			"Before anything is rebased, each branch is compared with its own remote:\n" +
+			"the ref a push of it would replace (<branch>@{push}, else\n" +
+			"origin/<branch>; never its upstream as such), fetched with trunk.\n" +
+			"  behind it    fast-forwarded first, then rebased, where that is safe:\n" +
+			"               no tracked changes, nothing in progress, no session busy\n" +
+			"               in it. Otherwise refused. With nothing to rebase once\n" +
+			"               it is there, the fast-forward is all that happens\n" +
+			"  diverged     the remote has commits the branch never had: refused.\n" +
+			"               --allow-diverged rebases the branch as it stands, for\n" +
+			"               a worktree you name; the push below still will not\n" +
+			"               replace those commits\n" +
+			"  rebased and not pushed yet, ahead, in sync, never pushed: goes on\n" +
+			"A remote whose push lands somewhere a tracking ref cannot show (a\n" +
+			"mirror, several push URLs, a push URL that is another repository) is\n" +
+			"not checked, and a line says so. A branch whose own remote cannot be\n" +
+			"fetched is refused by itself; trunk that cannot be fetched refuses the\n" +
+			"run. The old tip is pinned before the fast-forward, so wt sync undo\n" +
+			"takes back both, and with them any sign that the branch ever had the\n" +
+			"remote's commits.\n\n" +
 			"Refused, and never touched: a worktree with tracked changes, one a busy\n" +
-			"agent session is in, Claude's or Codex's, class divergent,\n" +
-			"one an earlier run already left waiting on you, and any repository whose\n" +
+			"agent session is in, Claude's or Codex's, class divergent, one whose\n" +
+			"branch has diverged from its own remote, one an earlier run already\n" +
+			"left waiting on you, and any repository whose\n" +
 			"trunk declares no .wt-sync.yaml. An idle agent session is named before\n" +
 			"anything moves under it, whether or not anyone is asked, and a finished\n" +
 			"rebase ends with a wt: line to pass on to it. Sessions are listed again\n" +
@@ -592,7 +632,8 @@ func newSyncRunCmd() *cobra.Command {
 			"ahead. It lifts nothing else, and a run with nothing named refuses it.\n\n" +
 			"A worktree whose rebase finished with nothing owed is pushed at the end\n" +
 			"with --force-with-lease --force-if-includes, which refuses to overwrite\n" +
-			"commits on origin the branch has not seen. On a terminal you are asked\n" +
+			"commits on origin the branch has not seen: the check above stops the\n" +
+			"rebase before that, also under --no-push. On a terminal you are asked\n" +
 			"once, and Enter means no. --push and --yes push without asking;\n" +
 			"--no-push, or a run with no terminal and neither of those, prints the\n" +
 			"push command instead.\n\n" +
@@ -606,11 +647,13 @@ func newSyncRunCmd() *cobra.Command {
 			"question, on stderr, for a tool driving wt; with no terminal a run with\n" +
 			"nothing named still needs --yes, and --no-push keeps the push out.\n" +
 			"--expect <token> fetches, then refuses the run, touching nothing, when\n" +
-			"what it would start on is no longer what wt sync --json reported. wt\n" +
-			"schema sync-run prints its JSON Schema; docs/json.md explains it.\n\n" +
+			"what it would start on is no longer what wt sync --json reported. With\n" +
+			"--allow-diverged it goes ahead only over the divergence that overview\n" +
+			"showed: a remote that moved since is refused as changed. wt schema\n" +
+			"sync-run prints its JSON Schema; docs/json.md explains it.\n\n" +
 			"Also spelled wt sync <work>... --run, with the same flags.",
 		Example: "  wt sync run login-crash api-tidy --yes --json --expect 1:0123abcd  # a tool\n" +
-			"  wt sync run login-crash --if-ready --force  # clean only, past a session\n" +
+			"  wt sync run login-crash --force --allow-diverged  # past a session and origin\n" +
 			"  wt sync run --all --no-fetch --push    # every ready one, everywhere, pushed\n" +
 			"  wt sync run --profile api --if-ready --no-ff-trunk  # trunk left as it is\n" +
 			"  wt sync --roots work --run --no-push   # spelled on wt sync; print the pushes",
@@ -618,7 +661,7 @@ func newSyncRunCmd() *cobra.Command {
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			f := syncVerbFlags{run: true, yes: yes, noFetch: noFetch, noFFTrunk: noFFTrunk, ifReady: ifReady, force: force,
-				push: push(), json: asJSON, expect: expect}
+				allowDiverged: allowDiverged, push: push(), json: asJSON, expect: expect}
 			if sel.selection().Any() {
 				return syncAcross(cmd, args, "run", sel.selection(), f)
 			}
@@ -632,6 +675,7 @@ func newSyncRunCmd() *cobra.Command {
 	run.Flags().BoolVarP(&yes, "yes", "y", false, "yes to every question, the push included (--no-push keeps it out)")
 	run.Flags().BoolVar(&ifReady, "if-ready", false, "rebase only what will go through without needing you, and fail on the rest")
 	run.Flags().BoolVarP(&force, "force", "f", false, "rebase a named worktree even with an agent session in it")
+	run.Flags().BoolVar(&allowDiverged, "allow-diverged", false, "rebase a branch that has diverged from its own remote, as it stands")
 	run.Flags().BoolVar(&asJSON, "json", false, "print one result object on stdout, the progress on stderr")
 	run.Flags().StringVar(&expect, "expect", "", "refuse unless the overview still matches this token from wt sync --json")
 	sel.add(run, true)
@@ -680,7 +724,8 @@ func withVerbContext(cmd *cobra.Command, args []string, command string, asJSON b
 // nothing, as a sweep deletes nothing: what nobody named and nobody
 // confirmed does not move. A worktree named on the line goes ahead.
 func runOptions(cmd *cobra.Command, f syncVerbFlags, bulk bool) (commands.RunOptions, *prompter) {
-	opts := commands.RunOptions{NoFetch: f.noFetch, NoFFTrunk: f.noFFTrunk, IfReady: f.ifReady, Force: f.force}
+	opts := commands.RunOptions{NoFetch: f.noFetch, NoFFTrunk: f.noFFTrunk, IfReady: f.ifReady, Force: f.force,
+		AllowDiverged: f.allowDiverged}
 	opts.Push = f.push
 	switch {
 	case f.yes:

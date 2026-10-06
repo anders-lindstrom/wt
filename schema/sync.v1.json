@@ -1,15 +1,36 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sync.v1.json",
-  "x-version": "1.2.0",
+  "x-version": "1.3.0",
   "title": "wt sync --json",
-  "description": "What a rebase onto trunk would do to every worktree of a repository, as `wt sync --json` prints it on stdout: one overview object, or with --all, --roots or --profile an array of them, one per repository. It fetches trunk (unless --no-fetch) and writes nothing else. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
+  "description": "What a rebase onto trunk would do to every worktree of a repository, as `wt sync --json` prints it on stdout: one overview object, or with --all, --roots or --profile an array of them, one per repository. It fetches trunk and each worktree branch's own remote (unless --no-fetch) and writes nothing else. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "oneOf": [
     { "$ref": "#/$defs/overview" },
     { "type": "array", "items": { "$ref": "#/$defs/overview" } }
   ],
   "$defs": {
     "shaOrNull": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40,64}$" },
+    "countOrNull": { "type": ["integer", "null"], "minimum": 0 },
+    "ownRemote": {
+      "type": "object",
+      "description": "Since 1.3.0: a branch against its own remote, the remote-tracking ref a push of it would replace: <branch>@{push} when git resolves it, else refs/remotes/origin/<branch>. Never the upstream as such: a branch cut from trunk often tracks trunk and pushes to its own name. See docs/json.md.",
+      "required": ["ref", "state", "commit", "ahead", "behind", "fetched", "blocks"],
+      "properties": {
+        "ref": { "type": ["string", "null"], "description": "The remote-tracking ref, as remote/branch (origin/feat/x); null only when no ref could be named: for none, and for unknown unless it is a ref that could not be compared." },
+        "state": {
+          "enum": ["none", "gone", "unknown", "inSync", "ahead", "behind", "rebased", "diverged"],
+          "description": "none: nothing to check: the ref is trunk's, or does not exist. gone: the branch names a ref the remote no longer has. unknown: where a push lands cannot be read from a tracking ref (a mirror remote, several push URLs, a push URL that is another repository than the fetch URL), or the branches or the remotes cannot be read at all, or the two tips cannot be compared; a run goes on unchecked. inSync: the same commit. ahead: only the branch has commits of its own. behind: only the remote has; a run fast-forwards the branch first. rebased: both have, and the remote's are old versions of the branch's (its tip is a tip the branch once had, or every commit only it has is matched patch for patch); a run goes on. diverged: both have, otherwise; a run refuses unless --allow-diverged."
+        },
+        "commit": { "$ref": "#/$defs/shaOrNull", "description": "The remote commit compared with; null for none, gone and unknown." },
+        "ahead": { "$ref": "#/$defs/countOrNull", "description": "Commits only the branch has; null for none, gone and unknown." },
+        "behind": { "$ref": "#/$defs/countOrNull", "description": "Commits only the remote has; null for none, gone and unknown." },
+        "fetched": { "type": "boolean", "description": "true: the remote side is from this command's fetch. false: as last fetched (--no-fetch, trunk's fetch or this branch's own failed, or a remote whose fetch refspec is not the standard one)." },
+        "blocks": {
+          "oneOf": [{ "type": "null" }, { "enum": ["diverged", "operation", "dirty", "session"] }],
+          "description": "Why a run would refuse for it; non-null only when a run would. diverged with state diverged, for a branch a run would rebase: --allow-diverged goes on. operation, dirty, session with state behind: it cannot be fast-forwarded, because a git operation is in progress there, the checkout has tracked changes, or an agent session is busy in it."
+        }
+      }
+    },
     "overview": {
       "type": "object",
       "required": ["schema", "schemaVersion", "command", "repo", "name", "trunk", "trunkSource", "trunkRef", "onto", "fetched", "fetchError", "declared", "token", "error", "sessionsError", "worktrees"],
@@ -26,7 +47,7 @@
         "fetched": { "type": "boolean", "description": "Trunk was fetched first." },
         "fetchError": { "type": ["string", "null"], "description": "The fetch failed: the overview is against trunk as last fetched." },
         "declared": { "type": "boolean", "description": "Trunk declares .wt-sync.yaml. Without it the worktrees are assessed but a run rebases none." },
-        "token": { "type": ["string", "null"], "description": "Names what a run would start on; pass it to wt sync run --expect or wt sync --run --expect. Null when a run would start on nothing." },
+        "token": { "type": ["string", "null"], "description": "Names what a run would start on; pass it to wt sync run --expect or wt sync --run --expect. Since 1.3.0 a worktree refused only for having diverged from its own remote is in it too, with the remote commit, for a run under --allow-diverged. Null when a run would start on nothing." },
         "error": { "type": ["string", "null"], "description": "Why there is no overview: trunk not known, the repository not readable." },
         "sessionsError": { "type": ["string", "null"], "description": "Agent sessions could not be listed; sessions are then empty, not known empty." },
         "worktrees": { "type": "array", "description": "Every worktree but the main checkout, in git's order.", "items": { "$ref": "#/$defs/worktree" } }
@@ -34,14 +55,14 @@
     },
     "worktree": {
       "type": "object",
-      "required": ["work", "branch", "path", "group", "class", "verified", "verdict", "runnable", "reason", "behind", "ahead", "dirty", "handedOver", "planFile", "sessions", "stack", "stops", "strategies", "notes", "error"],
+      "required": ["work", "branch", "path", "group", "class", "verified", "verdict", "runnable", "reason", "behind", "ahead", "dirty", "handedOver", "planFile", "sessions", "stack", "stops", "strategies", "notes", "error", "ownRemote"],
       "properties": {
         "work": { "type": "string" },
         "branch": { "type": ["string", "null"], "description": "Null when detached." },
         "path": { "type": "string" },
         "group": {
           "enum": ["ready", "needsYou", "skipped", "current"],
-          "description": "The overview's group. current is on trunk already, which the human overview leaves out."
+          "description": "The overview's group. current is on trunk already, which the human overview leaves out. Since 1.3.0 a worktree whose class is current or stale only at its remote's commit, which a run fast-forwards it to, is ready."
         },
         "class": {
           "enum": ["conflict-free", "recipe", "contested", "divergent", "stale", "current", "detached", "unknown"],
@@ -84,7 +105,8 @@
         "stops": { "type": "array", "description": "Every stop the simulated rebase reached, in order.", "items": { "$ref": "#/$defs/stop" } },
         "strategies": { "type": "array", "items": { "type": "string" }, "description": "The declared strategies that resolved a file at some stop, each once." },
         "notes": { "type": "array", "items": { "type": "string" }, "description": "Advisory; never change the class." },
-        "error": { "type": ["string", "null"], "description": "The assessment failed." }
+        "error": { "type": ["string", "null"], "description": "The assessment failed." },
+        "ownRemote": { "$ref": "#/$defs/ownRemote", "description": "Since 1.3.0. A worktree a run would refuse for it has verdict refuse, runnable false and the reason in words; its group is needsYou, or skipped when a busy session is in it, whatever blocks says; class stays about trunk. For a branch that is behind and will be fast-forwarded, class, behind, ahead and stops are those of the remote commit: what the run rebases. When that class is current or stale there is nothing to rebase: the row is verdict proceed, runnable true, group ready, and a run fast-forwards the branch and is done." }
       }
     },
     "stop": {

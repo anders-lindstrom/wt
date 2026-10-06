@@ -95,7 +95,7 @@ func syncUndo(ctx *Context, work string, opts UndoOptions, w io.Writer) error {
 		rebasing := map[string]bool{}
 		for _, b := range branches {
 			tip, _ := ctx.Repo.ResolveRef("refs/heads/" + b)
-			j.join(worktreeName(ctx, b, paths[b]), b, paths[b], tip)
+			j.join(worktreeName(ctx, b, paths[b]), b, paths[b], tip, nil)
 			if path, ok := paths[b]; ok {
 				rebasing[b], _ = wtsync.RebaseInProgress(path)
 			}
@@ -141,7 +141,7 @@ func recordUndone(j *RunJournal, work string, r wtsync.Restored) {
 		return
 	}
 	if !j.has(r.Branch) {
-		j.join(work, r.Branch, r.Path, r.From)
+		j.join(work, r.Branch, r.Path, r.From, nil)
 	}
 	j.setSync(r.Branch, func(p *SyncParticipant) {
 		p.Before, p.SafetyRef, p.After = strp(r.From), strp(r.Ref), strp(r.To)

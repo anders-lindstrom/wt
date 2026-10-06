@@ -193,28 +193,35 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 			return nil, err
 		}
 		tips[s.Branch] = tip
-		if tip == s.Tip {
-			// Already back at the old tip; nothing to discard — unless the
-			// abort will discard a person's commits inside the rebase. The
-			// forced undo then pins that HEAD as what it discards and s.Tip
-			// as where it leaves the branch, exactly as for a moved branch,
-			// so a plain undo of the forced undo puts those commits back.
-			if h := insideHead[s.Branch]; h != "" {
-				pins = append(pins, Pin{Branch: s.Branch, Safety: h, Result: s.Tip})
-			}
-			continue
-		}
 		// The run's own result is where the branch should still be. Without
-		// one the run never finished for this branch, so any movement at all
-		// is somebody else's.
+		// one the run never finished for this branch: it is then where the
+		// run fast-forwarded it to, when it did, and otherwise any movement
+		// at all is somebody else's.
 		want, ok, err := ResultTip(mainRoot, s.Branch, s.Epoch)
 		if err != nil {
 			return nil, err
 		}
 		if !ok {
+			if want, ok, err = ForwardTip(mainRoot, s.Branch, s.Epoch); err != nil {
+				return nil, err
+			}
+		}
+		if !ok {
 			want = s.Tip
 		}
-		if tip == want {
+		if tip == s.Tip || tip == want {
+			// Where the run found it or where the run left it: nothing of
+			// the branch's own to discard — unless the abort will discard a
+			// person's commits inside the rebase. The forced undo then pins
+			// that HEAD as what it discards and s.Tip as where it leaves the
+			// branch, exactly as for a moved branch, so a plain undo of the
+			// forced undo puts those commits back. The branch ref is at the
+			// old tip under a rebase the run started from there, and at the
+			// remote's commit under one it fast-forwarded first: the pin is
+			// the same for both.
+			if h := insideHead[s.Branch]; h != "" {
+				pins = append(pins, Pin{Branch: s.Branch, Safety: h, Result: s.Tip})
+			}
 			continue
 		}
 		if !force {
@@ -350,7 +357,16 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 		}
 		out = append(out, r)
 	}
-	return out, nil
+	// Every branch is back: what the run fast-forwarded to was the remote's
+	// and is no longer anything the branch had. Past the resets a failure
+	// here undoes nothing, so it is reported with the rows, not instead.
+	var derr error
+	for _, s := range run {
+		if err := Disown(mainRoot, s.Branch, s.Epoch); err != nil {
+			derr = errors.Join(derr, fmt.Errorf("%s is back, but the commit the run fast-forwarded it to still reads as one it had: %w", s.Branch, err))
+		}
+	}
+	return out, derr
 }
 
 // insideRefusal is the plain undo's answer to commits made inside a

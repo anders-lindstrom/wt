@@ -48,19 +48,19 @@ func Sync(ctx *Context, opts SyncOptions, w io.Writer) error {
 	// The assessments run several gits at once, and an interrupt has to
 	// reach every one of them, not only the one a goroutine is waiting on.
 	defer watchSignals(w, nil)()
-	onto, cfg, agents, err := syncInputs(ctx, opts, w)
+	worktrees, err := ctx.Repo.Worktrees()
+	if err != nil {
+		return err
+	}
+	worktrees = slices.DeleteFunc(worktrees, func(wt repo.Worktree) bool { return wt.IsMain })
+	onto, cfg, agents, own, err := syncInputs(ctx, opts, w, worktreeBranches(worktrees))
 	if err != nil {
 		return err
 	}
 	if line := keptLine(ctx, time.Now()); line != "" {
 		fmt.Fprintln(w, line)
 	}
-	worktrees, err := ctx.Repo.Worktrees()
-	if err != nil {
-		return err
-	}
-	worktrees = slices.DeleteFunc(worktrees, func(wt repo.Worktree) bool { return wt.IsMain })
-	assessments := assessAll(ctx.Repo.MainRoot, onto, cfg, worktrees, agents, assessWorkers)
+	assessments := assessAll(ctx.Repo.MainRoot, onto, cfg, worktrees, agents, own, assessWorkers)
 	entries := make([]syncEntry, 0, len(worktrees))
 	for i, wt := range worktrees {
 		entries = append(entries, syncEntry{work: worktreeName(ctx, wt.Branch, wt.Path), a: assessments[i]})
@@ -80,9 +80,14 @@ var assessWorkers = min(runtime.NumCPU(), 4)
 // returns the assessments in the same order. Assess shares nothing between
 // worktrees: its temporary indexes and script copies are private directories,
 // and what it writes to the object store are loose objects git creates
-// atomically, never a ref.
-func assessAll(mainRoot, onto string, cfg *wtsync.Config, wts []repo.Worktree, agents []wtsync.Agent, workers int) []wtsync.Assessment {
+// atomically, never a ref. own is every branch against its own remote, read
+// before the workers start: it is one reading, not safe to share.
+func assessAll(mainRoot, onto string, cfg *wtsync.Config, wts []repo.Worktree, agents []wtsync.Agent, own *wtsync.Own, workers int) []wtsync.Assessment {
 	out := make([]wtsync.Assessment, len(wts))
+	owns := make([]wtsync.OwnRemote, len(wts))
+	for i, wt := range wts {
+		owns[i] = ownStateOf(own, wt.Branch)
+	}
 	slots := make(chan struct{}, max(workers, 1))
 	var wg sync.WaitGroup
 	for i, wt := range wts {
@@ -91,7 +96,7 @@ func assessAll(mainRoot, onto string, cfg *wtsync.Config, wts []repo.Worktree, a
 		go func() {
 			defer wg.Done()
 			defer func() { <-slots }()
-			out[i] = wtsync.Assess(mainRoot, onto, cfg, wt, agents)
+			out[i] = wtsync.AssessOwn(mainRoot, onto, cfg, wt, agents, owns[i])
 		}()
 	}
 	wg.Wait()
@@ -105,7 +110,7 @@ func printOverview(w io.Writer, declared bool, entries []syncEntry) {
 	var groups [syncSections][]syncEntry
 	var all []syncEntry
 	for _, e := range entries {
-		if e.a.Class == wtsync.Current && e.a.Err == nil {
+		if onTrunk(e.a) {
 			continue
 		}
 		s := sectionOf(e.a)
@@ -141,11 +146,11 @@ func SyncWorktree(ctx *Context, arg string, opts SyncOptions, w io.Writer) error
 	if err != nil {
 		return err
 	}
-	onto, cfg, agents, err := syncInputs(ctx, opts, w)
+	onto, cfg, agents, own, err := syncInputs(ctx, opts, w, []string{wt.Branch})
 	if err != nil {
 		return err
 	}
-	a := wtsync.Assess(ctx.Repo.MainRoot, onto, cfg, wt, agents)
+	a := wtsync.AssessOwn(ctx.Repo.MainRoot, onto, cfg, wt, agents, ownStateOf(own, wt.Branch))
 	printDetail(w, worktreeName(ctx, wt.Branch, wt.Path), a)
 	return nil
 }
@@ -191,22 +196,25 @@ func undeclaredNotice(ctx *Context, onto string) string {
 		ctx.Repo.Name, wtsync.ConfigFile, onto)
 }
 
-// syncInputs fetches trunk unless opts.NoFetch, reads what every assessment
-// needs and prints the header: the ref compared against, and a notice when
-// trunk declares nothing. A failed fetch is reported and the overview goes on
-// with trunk as last fetched; only a trunk that is not there at all is an
-// error.
-func syncInputs(ctx *Context, opts SyncOptions, w io.Writer) (onto string, cfg *wtsync.Config, agents []wtsync.Agent, err error) {
+// syncInputs fetches trunk unless opts.NoFetch, and in the same call the own
+// remote of each of branches, reads what every assessment needs and prints
+// the header: the ref compared against, and a notice when trunk declares
+// nothing. A failed fetch is reported and the overview goes on with trunk,
+// and the branches' remotes, as last fetched; only a trunk that is not there
+// at all is an error. A branch whose own remote alone could not be fetched
+// says so on its row.
+func syncInputs(ctx *Context, opts SyncOptions, w io.Writer, branches []string) (onto string, cfg *wtsync.Config, agents []wtsync.Agent, own *wtsync.Own, err error) {
 	if err := ctx.noTrunk(); err != nil {
-		return "", nil, nil, err
+		return "", nil, nil, nil, err
 	}
-	trunk := ctx.Config.MainBranch
 	// Read before fetching: git empties FETCH_HEAD as a fetch starts, so a
 	// fetch that fails has already lost the age of the last one that did not.
 	asLast := lastFetched(ctx.Repo.MainRoot, time.Now())
 	var fetchErr error
-	if !opts.NoFetch {
-		_, fetchErr = git.RunTimeout(ctx.Repo.MainRoot, syncFetchTimeout, "fetch", "--quiet", "origin", trunk)
+	if opts.NoFetch {
+		own = wtsync.ReadOwnOrUnknown(ctx.Repo.MainRoot, ctx.Config.MainBranch)
+	} else {
+		own, fetchErr = fetchRemotes(ctx, syncFetchTimeout, branches)
 	}
 	onto, sha, cfg, err := syncDeclaration(ctx)
 	if err != nil {
@@ -214,7 +222,7 @@ func syncInputs(ctx *Context, opts SyncOptions, w io.Writer) (onto string, cfg *
 		if fetchErr != nil && !errors.As(err, &noTrunk) {
 			fmt.Fprintf(w, "fetch failed: %s\n", fetchReason(fetchErr))
 		}
-		return "", nil, nil, err
+		return "", nil, nil, nil, err
 	}
 	if cfg == nil {
 		fmt.Fprintln(w, undeclaredNotice(ctx, onto))
@@ -233,7 +241,7 @@ func syncInputs(ctx *Context, opts SyncOptions, w io.Writer) (onto string, cfg *
 	default:
 		fmt.Fprintf(w, "against %s\n", ref)
 	}
-	return onto, cfg, agents, nil
+	return onto, cfg, agents, own, nil
 }
 
 // lastFetched is "as last fetched" and how long ago, or that when is not
@@ -335,8 +343,15 @@ func sectionOf(a wtsync.Assessment) syncSection {
 	switch {
 	case a.Err != nil:
 		return sectionNeedsYou
+	case a.OnlyFastForward() && !a.Dirty && !a.Paused:
+		// Behind its own remote, where there is nothing to rebase: a run
+		// fast-forwards it, which no busy session, dirt or operation is in
+		// the way of, or it would not be one.
+		return sectionReady
 	case len(a.Sessions.Busy()) > 0, a.Class == wtsync.Detached, a.Class == wtsync.Stale:
 		return sectionSkipped
+	case a.Own.Refuses():
+		return sectionNeedsYou
 	case a.Class == wtsync.Clean && !a.Dirty && !a.Paused, a.Class == wtsync.Recipe && !a.Dirty && !a.Paused:
 		return sectionReady
 	}
@@ -367,6 +382,9 @@ func leftLabel(work string, a wtsync.Assessment) string {
 	}
 	if a.Paused {
 		parts = append(parts, "handed over")
+	}
+	if a.Own.Refuses() {
+		parts = append(parts, ownHeld(a.Own))
 	}
 	return work + " " + strings.Join(parts, ", ")
 }
@@ -435,6 +453,9 @@ func heldBy(a wtsync.Assessment) string {
 	if a.Dirty && len(a.Sessions.Busy()) == 0 {
 		held = append(held, "dirty")
 	}
+	if a.Own.Refuses() {
+		held = append(held, ownHeld(a.Own))
+	}
 	return strings.Join(held, "  ")
 }
 
@@ -458,6 +479,9 @@ func summaryLines(a wtsync.Assessment) []string {
 	}
 	if a.Paused {
 		lines = append(lines, pausedLine(a))
+	}
+	if note := ownNote(a); note != "" {
+		lines = append(lines, note)
 	}
 	for _, c := range a.Divergent {
 		lines = append(lines, shortPath(c.Path)+": both sides changed "+wtsync.KeyCounts(c.Groups))
@@ -612,6 +636,9 @@ func printDetail(w io.Writer, work string, a wtsync.Assessment) {
 	}
 	fmt.Fprintf(w, "  branch  %s\n", branch)
 	fmt.Fprintf(w, "  path    %s\n", a.Path)
+	if line := ownLineOf(a); line != "" {
+		fmt.Fprintf(w, "  remote  %s\n", line)
+	}
 	fmt.Fprintf(w, "  run     %s\n", runVerdict(work, a))
 	if a.PlanFile != "" {
 		fmt.Fprintf(w, "  plan    %s\n", a.PlanFile)
@@ -678,6 +705,9 @@ func runVerdict(work string, a wtsync.Assessment) string {
 	switch v, why := wtsync.Preflight(a); v {
 	case wtsync.Proceed:
 		verdict := "wt sync run " + work
+		if a.OnlyFastForward() {
+			verdict += " fast-forwards it to " + a.Own.Ref + "; nothing to rebase"
+		}
 		if stop := a.Replay.Stop; a.Class == wtsync.Contested && stop != nil {
 			verdict = fmt.Sprintf("wt sync run %s rebases up to %d/%d and hands that stop to you", work, stop.Index, stop.Total)
 		}

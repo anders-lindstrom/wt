@@ -63,6 +63,7 @@ Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 | `status` 1.5.0, `sync` 1.2.0 | | [Codex sessions](#sessions--claude-and-codex): `sessions[].kind` is `claude` or `codex` |
 | `remove-plan` | 1.4.0 | [Codex sessions](#sessions--claude-and-codex): `kind` on each of `sessions` |
 | `remove` | 1.4.1 | wording: a session problem is any agent session, and `sessionsUnknown` any listing that failed |
+| `status` 1.6.0, `sync` 1.3.0, `up` 1.4.0, `sync-run` 1.2.0 | | [a branch against its own remote](#ownremote--a-branch-against-its-own-remote): `ownRemote` on the worktree and each stack member of `status` and on each worktree of `sync`; `ownRemoteSync` on each participant of `up` and `sync-run`; `upIneligibleCode` `ownRemoteDiverged` and `ownRemoteBehind`; a token for a plan held back by divergence alone |
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
 
@@ -196,7 +197,7 @@ repository.
 | `schema` | 1 | the major version |
 | `schemaVersion` | string | the full version, `1.<minor>.<patch>` |
 | `command` | `"status"` | |
-| `token` | string \| null | names the inputs of this plan; pass it to `wt up --expect`. Null when not eligible |
+| `token` | string \| null | names the inputs of this plan; pass it to `wt up --expect`. Null when not eligible, with one exception since 1.6.0: a plan whose `upIneligibleCode` is `ownRemoteDiverged` has one, for `wt up --allow-diverged --expect` |
 | `trunk` | string | trunk as `wt up` resolves it here (see [`trunkSource`](#trunksource--how-trunk-was-found)) |
 | `trunkSource` | string \| null | since 1.4.0: how `trunk` was found, [below](#trunksource--how-trunk-was-found) |
 | `trunkRef` | string \| null | `origin/<trunk>`, what `wt up` rebases onto after its fetch; null with `trunk` null, when nothing names trunk |
@@ -212,11 +213,13 @@ repository.
 | `worktree.isMain` | bool | the main checkout |
 | `worktree.state` | `clean` \| `dirty` \| `unreadable` | the checkout: `clean` is nothing uncommitted |
 | `worktree.behind`, `worktree.ahead` | int \| null | commits against `trunkRef` (the local trunk when that is not here); null when they cannot be counted |
-| `upEligible` | bool | `wt up` would start on it. Dirt, conflicts and busy sessions are **not** checked here: `wt up` checks them and its result says so |
-| `upIneligibleCode` | string \| null | `mainCheckout`, `noConfiguration` (no `MAIN_BRANCH` in a configuration file, and no trunk to detect either), `configurationInvalid`, `detachedHead`, `onTrunk`, `handedOver` (an earlier `wt sync` run waits on a person there), `notAWorktree` |
-| `upIneligibleReason` | string \| null | the same as a sentence |
+| `worktree.ownRemote` | object | since 1.6.0: the branch against [its own remote](#ownremote--a-branch-against-its-own-remote), as last fetched: `fetched` is always false here. `state` `none` for the main checkout and a detached HEAD |
+| `upEligible` | bool | `wt up` would start on it. Dirt, conflicts and busy sessions are **not** checked here, except where they stop a fast-forward (`ownRemoteBehind`): `wt up` checks them and its result says so |
+| `upIneligibleCode` | string \| null | `mainCheckout`, `noConfiguration` (no `MAIN_BRANCH` in a configuration file, and no trunk to detect either), `configurationInvalid`, `detachedHead`, `onTrunk`, `handedOver` (an earlier `wt sync` run waits on a person there), `notAWorktree`, and since 1.6.0 `ownRemoteBehind` and `ownRemoteDiverged` (below) |
+| `upIneligibleReason` | string \| null | the same as a sentence. For the two `ownRemote` codes it stands on its own: the branch, its remote ref, the counts, and the stack member when it is not the worktree asked about |
 | `stack` | array | every worktree `wt up` would move, parents first, from local refs as of now; just the one when it has no stack |
 | `stack[].work`, `.branch`, `.path` | string | |
+| `stack[].ownRemote` | object | since 1.6.0: that member's branch against [its own remote](#ownremote--a-branch-against-its-own-remote) |
 | `sessions` | array | [agent sessions](#sessions--claude-and-codex) in the stack's worktrees |
 | `sessions[].work`, `.name` | string | the worktree it is in, and its name |
 | `sessions[].kind` | `claude` \| `codex` | whose session it is; `codex` since 1.5.0 |
@@ -225,7 +228,19 @@ repository.
 
 The **token** covers the trunk name, the bytes of the wt configuration file
 `wt up` would read, and the stack's branches in order. A newer trunk commit is
-not in it.
+not in it. Nor is the commit of a branch's own remote, with one exception since
+1.6.0: for each stack member whose `ownRemote.state` is `diverged` it covers
+that remote commit. A plan with nothing diverged has the token an older wt
+gives it.
+
+One refusal refuses the whole stack, so the two `ownRemote` codes are about any
+member of `stack`, the worktree asked about included; `stack[].ownRemote.blocks`
+says which. `ownRemoteBehind`: a member is behind its own remote and cannot be
+fast-forwarded (`blocks` is `operation`, `dirty` or `session`); `token` is null.
+`ownRemoteDiverged`: no member is in that state and one has diverged (`blocks`
+is `diverged`); `token` is set, and `wt up --allow-diverged --expect <token>`
+goes ahead over exactly the divergence shown. A stack with both kinds is
+`ownRemoteBehind`: the flag would not clear it.
 
 ## `wt up [<work>] --json` — the run
 
@@ -234,8 +249,14 @@ stdout carries exactly one object. To run it unattended, pass `--yes` (yes to
 every question, the push included) and `--no-push` to keep the push out.
 
 With `--expect <token>`, `wt up` fetches, then recomputes the token and refuses,
-touching no worktree, when it differs: the trunk's name, the configuration or the
-stack is not what the plan showed. It is then an `error` with no participants.
+touching no worktree, when it differs: the trunk's name, the configuration, the
+stack, or the remote commit of a member that has diverged from its own remote is
+not what the plan showed. It is then an `error` with no participants.
+
+Before it rebases anything, the run checks each participant against
+[its own remote](#ownremote--a-branch-against-its-own-remote): a branch behind
+it is fast-forwarded first, one that has diverged from it refuses the run
+unless `--allow-diverged` is given.
 
 A handled SIGINT or SIGTERM writes the object too, through the same path — the
 participants so far, the one in flight as `interrupted`, and the way back — then
@@ -269,12 +290,14 @@ Each participant:
 | `recovery` | string \| null | for `needsRecovery`, `handedOver`, `interrupted`: how to put it back or finish it |
 | `pushCommand` | array of string \| null | for `rebased`: the push, as an argv (`["git", "-C", path, "push", …]`) |
 | `pushed` | bool | the run pushed it (`--push`, or `--yes` without `--no-push`) |
+| `ownRemoteSync` | object | since 1.4.0: what the run found of the branch's own remote and did about it ([`ownRemoteSync`](#ownremotesync--what-a-run-did-about-it)) |
 
 `result`, exhaustively:
 
 | Value | The branch | Meaning |
 |---|---|---|
 | `rebased` | moved | rebased onto trunk, every step after it done |
+| `fastForwarded` | moved | since 1.4.0: behind [its own remote](#ownremote--a-branch-against-its-own-remote), with nothing to rebase at the remote's commit: moved there, and that is all. `after` is that commit, `pushCommand` is null and nothing is pushed, no deferred step runs |
 | `rebasedStepFailed` | moved | rebased, but a later step did not finish: a deferred step, the result ref, the plan's cleanup (`failedSteps`) |
 | `skipped` | unchanged | nothing to do: on trunk already, or nothing of its own |
 | `refused` | unchanged | refused before anything was touched, for a reason of its own: uncommitted changes, a busy agent session, a conflict that would be yours |
@@ -288,7 +311,7 @@ Each participant:
 
 | Value | When |
 |---|---|
-| `done` | every participant `rebased` or `skipped` |
+| `done` | every participant `rebased`, `fastForwarded` or `skipped` |
 | `refused` | nothing changed: every participant `skipped`, `refused`, `notRun` or `restored`, or `error` stopped the run before any |
 | `partial` | something changed and not everything finished |
 | `interrupted` | a signal ended the run |
@@ -354,6 +377,210 @@ fast-forward was otherwise possible.
 | `session` | an agent session is busy in the checkout it is on (idle ones, and the session running wt, do not count), or the sessions could not be listed |
 | `notFastForward` | it moved, or was checked out or switched away from, while wt was updating it |
 | `failed` | git refused the update (an ignored file it would overwrite), or it is not safe to try: trunk checked out in more than one worktree |
+
+### `ownRemote` — a branch against its own remote
+
+`wt up` and `wt sync run` rewrite a branch, and what is pushed afterwards
+replaces a ref on a remote. Before rebasing, a run looks at that ref for every
+branch it would rebase, the named worktree's and each member of its stack, so
+that a branch is never rebased short of commits its remote has, and never
+pushed over commits it never had. `wt status --json` and `wt sync --json` report
+the same reading as `ownRemote`; a run reports what it found and did as
+`ownRemoteSync`.
+
+**Which ref.** The remote-tracking ref a push of the branch would replace:
+
+1. `<branch>@{push}` when git resolves it, which honours
+   `branch.<name>.pushRemote`, `remote.pushDefault` and `push.default`.
+2. Otherwise the branch's own name on the remote it pushes to:
+   `refs/remotes/origin/<branch>`, the ref wt's own push writes, unless
+   `branch.<name>.pushRemote` or `remote.pushDefault` names another remote.
+   git then pushes the branch there under its own name, and under
+   `push.default` `simple` resolves no `@{push}` for it. A `@{push}` that is
+   a local branch, which `push.default` `upstream` makes of a stack child
+   tracking its parent, is no destination on a remote and falls here too.
+
+It is **not** `@{upstream}`. A branch cut from trunk often tracks
+`origin/<trunk>` and is pushed under its own name: its upstream is trunk, its
+own remote is `origin/<branch>`, and until that exists there is nothing to
+check. When the ref found is trunk's own, `origin/<trunk>` or trunk's name on
+another remote, there is nothing to check either.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `ref` | string \| null | the ref as `remote/branch`, `origin/feat/x`; null only when no ref could be named: for `none`, and for `unknown` unless it is a ref that could not be compared |
+| `state` | see below | |
+| `commit` | string \| null | the remote commit compared with; null for `none`, `gone`, `unknown` |
+| `ahead` | int \| null | commits only the branch has; null for `none`, `gone`, `unknown` |
+| `behind` | int \| null | commits only the remote has; null likewise |
+| `fetched` | bool | true: the remote side is from this command's fetch. False: as last fetched |
+| `blocks` | string \| null | why a run would refuse for it; non-null only when a run would. A `diverged` branch a run would not rebase, because it is on trunk already or has nothing of its own, is skipped, nothing is pushed over its remote, and `blocks` is null |
+
+`state`, exhaustively, and what a run does:
+
+| Value | Means | A run |
+|---|---|---|
+| `none` | nothing to check: the ref is trunk's, or does not exist | goes on |
+| `gone` | the branch names the ref as its upstream and it is not there, or a fetch asked the remote for it and the remote no longer has it | goes on |
+| `unknown` | where a push lands cannot be read from a tracking ref: a mirror remote, a remote with several push URLs, or a push URL that is another repository than the fetch URL (the same host and path over https and ssh is the same repository). Also when the branches or the remotes cannot be read at all, or the two tips cannot be compared | goes on unchecked, and says so |
+| `inSync` | the same commit | goes on |
+| `ahead` | only the branch has commits of its own | goes on |
+| `behind` | only the remote has | fast-forwards the branch to `commit`, then rebases. Where that is not safe it touches nothing and fails (`blocks`). When there is nothing to rebase at `commit`, which is on trunk already or has nothing of its own, the fast-forward is all the run does (`result` `fastForwarded`) |
+| `rebased` | both have, and the remote's are old versions of the branch's | goes on |
+| `diverged` | both have, otherwise | touches nothing and fails; `--allow-diverged` rebases the branch as it stands |
+
+`rebased` is the state right after a rebase that was not pushed: the branch has
+the new commits and the remote the old ones, so both counts are non-zero. It is
+decided by either of two rules. The remote's tip is a **former tip** of the
+branch: in the branch's reflog, under a safety ref a run or a forced undo
+pinned for it (`refs/wt-sync/<branch>/…`), where a run left it
+(`refs/wt-sync-result/<branch>/…`), or where a run fast-forwarded it to before
+a rebase it then finished (`refs/wt-sync-ff/<branch>/…`). Or every commit only
+the remote has is **matched patch for patch** by a commit only the branch has.
+The first rule is what clears a rebase that changed a commit, by a strategy or
+by hand; a merge on the remote side has no patch, and a commit that changes
+nothing has the patch of every other such commit, so either is cleared by the
+first rule or not at all. A remote that gained a commit the branch never had
+fails both, also on a branch that was rebased: that is `diverged`.
+
+What wt itself moved the branch to is a former tip only while that stands. A
+run that fast-forwards a branch to its remote's commit and is then undone
+(`wt sync undo`), or whose rebase is put back (`restored`), or that never got
+as far as the fast-forward, leaves nothing saying the branch was ever there:
+the `refs/wt-sync-ff/` ref goes, and so do the entries the fast-forward wrote
+in the branch's reflog, the ones at that commit and no older than the run. A
+commit made after that reads `diverged`, and git's own `--force-if-includes`
+refuses to push over the remote's commit too. Nothing local is lost by it: the
+commit is on the remote. A ref wt pinned for a branch that was since deleted
+says nothing about a new branch of the same name, as long as the new one's
+reflog still starts at its creation.
+
+The former-tip rule is the one git's own `--force-if-includes` goes by, with
+its limit: a remote tip the branch was once at and was then reset away from
+*by hand* is a former tip too. And it lasts as long as its evidence. A rebase
+whose patches differ rests on the reflog and on wt's refs; git expires reflog
+entries no ref reaches after 30 days by default, and `wt sync doctor --prune`
+removes the refs of runs that are neither the newest for their branch nor
+recent. A branch rebased with `--no-push` by plain git, or by a run whose refs
+were pruned, and left unpushed that long can turn `diverged` and then needs
+`--allow-diverged`.
+
+`blocks` is one code, by a fixed precedence:
+
+| Value | With `state` | `group` in `wt sync --json` | Meaning |
+|---|---|---|---|
+| `diverged` | `diverged` | `needsYou`, or `skipped` with a busy session in the worktree | `--allow-diverged` goes on; under the flag nothing else about the own remote blocks. Only for a branch a run would rebase |
+| `operation` | `behind` | `needsYou` | it cannot be fast-forwarded: a rebase, merge, cherry-pick, revert or bisect is in progress there |
+| `dirty` | `behind` | `needsYou` | it cannot be fast-forwarded: the checkout has tracked changes, the dirt that refuses a rebase too. Untracked files do not block |
+| `session` | `behind` | `skipped` | it cannot be fast-forwarded: an agent session is busy in the checkout. `--force` on a run takes it past |
+
+A busy session beats every other reason for the group, as it always did: a
+worktree one is in is `skipped` whatever its `blocks`, and `blocks` still says
+what the own remote alone would refuse for.
+
+A `behind` branch with `blocks` null will be fast-forwarded. In `wt sync
+--json` its `class`, `behind`, `ahead` and `stops` are then those of the remote
+commit, since that is what the run rebases: a conflict the remote's commits
+bring is seen before anything moves.
+
+**Fetching.** A command that fetches trunk fetches the own remotes with it.
+Per remote, origin and each other remote a branch pushes to, that is one
+`git ls-remote` for the branches to check and then one `git fetch` with exact
+refspecs for the ones the remote has: two round trips. A fetch of trunk alone,
+with no branch to check, is the single `git fetch origin <trunk>` it always
+was, and nothing here needs a newer git than that does. A branch the remote
+lacks is `gone` and is not fetched; no other branch is, whatever its name
+starts with.
+
+| Command | Fetches | `fetched` |
+|---|---|---|
+| `wt status --json`, `wt status`, `wt list` | nothing | always false |
+| `wt sync`, `wt sync <work>`, `wt sync --json` | trunk and every worktree's own remote, each call bounded at 45 s; `--no-fetch` nothing | true unless `--no-fetch`, trunk's fetch failed (`fetchError`), that branch's own fetch failed, or the remote's fetch refspec is not the standard `refs/heads/*:refs/remotes/<remote>/*`, which wt does not write refs outside |
+| `wt up`, `wt sync run` | trunk and the own remote of every branch the run may rebase; `--no-fetch` nothing | with `--no-fetch` the run compares with the last fetch, `fetched` is false, nothing is refused for it, and its lines say so |
+| `wt sync keep once` | trunk and every worktree's own remote | as a run |
+| `wt sync resume`, `wt sync undo` | nothing: the check ran when the run started | |
+
+Whose fetch failed decides who is refused. Trunk's: the run refuses, `error`
+says so, nothing is touched. A branch's own remote, because its fork cannot be
+reached or its ref clashes with one here: that branch is refused by itself
+(`skippedReason` `fetchFailed`, the reason naming git's own), with its stack as
+any refusal, and the other participants go on; with `--if-ready` it is not
+ready. In `wt sync --json` such a row is `verdict` `refuse` with the reason,
+`fetched` false, `blocks` null, the rest as last fetched.
+
+A fetch never removes a remote-tracking ref: one whose branch is gone from the
+remote stays until `git fetch --prune`, and reads as `gone` from a command that
+fetched and as whatever it last said from one that did not.
+
+**`--allow-diverged`**, on `wt up` and `wt sync run`: rebase a `diverged`
+branch as it stands. It does nothing for `behind`. Like `--force` it needs the
+worktree named: a run with nothing named, in one repository or across many,
+refuses the flag. With `--expect <token>` it
+goes ahead only over the divergence the token covers; a remote that moved again
+since the look is refused as a changed plan. Without `--expect` it is consent to
+whatever is found. The flag is not part of any token. With `--if-ready` a
+`diverged` worktree is not ready, unless the flag is given; a `behind` one that
+can be fast-forwarded is. The flag lets the rebase go; it does not push. wt's
+own push (`--force-with-lease --force-if-includes`) still refuses to replace
+commits the branch never had, and the `pushCommand` a run reports is that push:
+replacing them is the caller's own, deliberate force.
+
+### `ownRemoteSync` — what a run did about it
+
+On each participant of `wt up --json` and `wt sync run --json`. From
+`wt sync resume` and `wt sync undo` the key is there and its value is null:
+they do not check.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `ref` | string \| null | as `ownRemote.ref` |
+| `state` | string | as found, before anything moved; the values of `ownRemote.state` |
+| `local` | string \| null | the branch as found, before any fast-forward: the participant's `before`, and where `wt sync undo` puts it back |
+| `remote` | string \| null | the remote commit compared with; null for `none`, `gone`, `unknown` |
+| `localAhead`, `remoteAhead` | int \| null | commits each side had that the other lacked; null likewise |
+| `fastForwarded` | bool | the run moved the branch from `local` to `remote` before rebasing it. It stays true as a record of what was done when the rebase after it was put back |
+| `allowed` | bool | `state` is `diverged` and the run went on over it under `--allow-diverged`. False when the flag was given and the participant was refused for something else |
+| `skippedReason` | string \| null | why the own remote refuses the participant, below; null when it does not |
+
+`skippedReason`, exhaustively; the participant is `refused`:
+
+| Value | Meaning |
+|---|---|
+| `diverged` | as `blocks`: `--allow-diverged` goes on |
+| `operation`, `dirty`, `session` | as `blocks`: behind, and it cannot be fast-forwarded. This refuses whatever the branch's class, since what a run would do with it is decided at the remote's commit |
+| `failed` | the fast-forward itself did not go through: git would have overwritten an untracked or ignored file (`reason` names the first), or the branch moved since the check. Nothing of this participant was touched |
+| `fetchFailed` | the branch's own remote could not be fetched, so the run could not look. The branch was not touched; local `<trunk>` may have been fast-forwarded before the refusal, as before any refusal, and `trunkSync` says so. Trunk's fetch failing is the run's `error` instead |
+
+A participant the own remote refuses has `result: "refused"`; `reason` is the
+first thing that refused it, in words, which for a dirty checkout is its dirt.
+A `diverged` branch every commit of which the remote has in another form, on
+commits the branch never had, was rebased on another machine and pushed while
+this checkout kept the old versions: it is `diverged` like any other, and
+`reason` (and `upIneligibleReason`) says what it looks like and that
+`git reset --hard <ref>` takes the remote's.
+Every refusal but one is decided before anything moves, and one refusal
+refuses the whole stack: the other members are `notRun`. The exception is a
+fast-forward that `failed`: it is found when the run gets to that branch. The
+branch itself is untouched and `refused`, what sits on it is `notRun`, and a
+parent the run had already rebased stays rebased, so the outcome is `partial`.
+
+The safety ref is pinned at `local`, before the fast-forward, so
+`wt sync undo` takes back both. After a fast-forward the participant ends as
+one of:
+
+| `result` | The fast-forward | `after` | `wt sync undo` |
+|---|---|---|---|
+| `fastForwarded` | kept: it is all the run did | `remote` | back to `local` |
+| `rebased` | kept, in the rebased branch | the rebased tip | back to `local` |
+| `rebasedStepFailed` | kept, in the rebased branch | the tip as the failed step left it | back to `local`, as for any `rebasedStepFailed` |
+| `handedOver` | kept: the branch ref is at `remote`, under the rebase in progress | `remote` | aborts the rebase and goes back to `local`. `wt sync resume` finishes it instead, and an undo after that still goes back to `local` |
+| `restored` | taken back with the rebase | `local`, equal to `before` | nothing to undo: "already at" |
+| `needsRecovery` | as the failure left it; `recovery` says how to put it back, and names the safety ref | where the branch ref is, `remote` unless the failure moved it | once the worktree is out of the rebase, back to `local` |
+| `interrupted` | kept if the signal came after it | `remote`, or `before` when the signal came first | once `recovery` is followed, back to `local` |
+
+An undo that takes back a fast-forward also takes back the word that the
+branch was ever at `remote` (above): the branch then reads `behind` again, and
+with a commit of its own `diverged`.
 
 ## `wt sweep --dry-run --json` — the sweep's plan
 
@@ -1058,7 +1285,7 @@ object with `error` set and no worktrees, and the exit code is non-zero.
 | `fetched` | bool | trunk was fetched first |
 | `fetchError` | string \| null | the fetch failed; the overview is against trunk as last fetched |
 | `declared` | bool | trunk declares `.wt-sync.yaml`; without it nothing is rebased |
-| `token` | string \| null | names what a run would start on; pass it to `wt sync run --expect` or `wt sync --run --expect`. Null when a run would start on nothing |
+| `token` | string \| null | names what a run would start on; pass it to `wt sync run --expect` or `wt sync --run --expect`. Null when a run would start on nothing, also under `--allow-diverged` |
 | `error` | string \| null | why there is no overview: trunk not known here, the repository not readable. The exit code is then non-zero |
 | `sessionsError` | string \| null | Agent sessions could not be listed; `sessions` are then empty, not known empty |
 | `worktrees` | array | every worktree but the main checkout, in git's order |
@@ -1091,12 +1318,35 @@ Each worktree:
 | `strategies` | array of string | the declared strategies that resolved something, each once |
 | `notes` | array of string | advisory; they never change the class |
 | `error` | string \| null | the assessment failed |
+| `ownRemote` | object | since 1.3.0: the branch against [its own remote](#ownremote--a-branch-against-its-own-remote), fetched with trunk unless `--no-fetch` |
+
+A worktree its own remote refuses (`ownRemote.blocks` set, or its fetch failed)
+has `verdict` `refuse`, `runnable` false and `reason` in words. Its `group` is
+`needsYou`, except with a busy session in it, whatever its `blocks`, which is
+`skipped` like any worktree a busy session is in. `class` is unchanged: it
+stays about trunk.
+
+A worktree that is behind its own remote and has nothing to rebase at the
+remote's commit is one a run acts on: `class` `current` or `stale` (the remote
+commit's), `verdict` `proceed`, `runnable` true, `group` `ready`, `reason` null,
+`ownRemote.state` `behind` with `blocks` null. `wt sync run <work>`, a run with
+nothing named and `--if-ready` all take it, fast-forward it and report
+`fastForwarded`. Without that `ownRemote` a `current` row is `group` `current`
+and a `stale` one `skipped`, as before.
 
 The **token** covers the trunk's name, the wt configuration, the `.wt-sync.yaml`
 on trunk, and every worktree whose `verdict` is `proceed`: its branch, class,
 `verified`, `runnable` and stack. A newer trunk commit is not in it, but what it
 changes about those is: a worktree that stops being ready after a fetch changes
-the token.
+the token. Nor is the commit of a branch's own remote, so a remote that moved
+from `inSync` to `behind` changes nothing: the run fast-forwards. The one
+exception, since 1.3.0: the remote commit of every worktree whose
+`ownRemote.blocks` is `diverged` is in the token, whatever else keeps a run off
+it (a busy session `--force` would lift, say), and one refused for nothing but
+that is in it as a worktree too, since `--allow-diverged` starts on it. So
+`wt sync run <work>… --if-ready --allow-diverged --expect <token>` goes ahead
+over exactly the diverged rows shown, and an overview with nothing diverged
+has the token an older wt gives it.
 
 ## `wt sync run|resume|undo --json` — the result
 
@@ -1117,7 +1367,8 @@ goes ahead without `--yes`, and with no terminal nothing is asked.
 With `--expect <token>`, `wt sync run` and `wt sync --run` fetch, recompute the
 overview's token and refuse, touching no worktree, when it differs: what a run
 would start on is not what `wt sync --json` showed. It is then an `error` with
-no participants and a non-zero exit.
+no participants and a non-zero exit. The fetch then covers every worktree's own
+remote, as the overview's did.
 
 The fields are `wt up --json`'s (above), with `command` one of `"sync run"`,
 `"sync resume"`, `"sync undo"`, and:
@@ -1137,6 +1388,7 @@ Each participant has `wt up`'s fields, and:
 | `deferred` | array | what each deferred step of a finished rebase came to: `step` (its `run` line), `result` (`done` \| `committed` \| `failed` \| `skipped`), `reason` (why failed or skipped), `commit` (for committed) |
 | `undoCommand` | array of string \| null | what puts it back where the run found it, as an argv (`["wt", "sync", "undo", work]`); null when nothing is there to undo |
 | `planFile` | string \| null | for `handedOver`: the plan saying what is yours |
+| `ownRemoteSync` | object \| null | since 1.2.0: [`ownRemoteSync`](#ownremotesync--what-a-run-did-about-it), an object from `wt sync run`; always null from resume and undo |
 
 `result` has `wt up`'s values and one more, `undone`: `wt sync undo` put the
 branch back at its safety ref, or aborted its handed-over rebase. A branch undo

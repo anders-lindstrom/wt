@@ -356,11 +356,23 @@ func TestSyncKeepRunNoPushPrintsThePushCommands(t *testing.T) {
 	}
 }
 
+// bareOrigin gives the fixture an origin of its own in place of the main
+// checkout standing in for one: a pass fetches each branch's own remote, and
+// against itself every branch would always be found pushed.
+func bareOrigin(t *testing.T, ctx *Context) {
+	t.Helper()
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	gitOut(t, ctx.Repo.MainRoot, "clone", "-q", "--bare", ctx.Repo.MainRoot, origin)
+	gitOut(t, ctx.Repo.MainRoot, "remote", "set-url", "origin", origin)
+	gitOut(t, ctx.Repo.MainRoot, "fetch", "-q", "origin")
+}
+
 // Under --no-push the push is a person's, and the keeper keeps reminding:
 // the command is printed again every pass, trunk moved or not, until origin
 // has the tip, after which the pass has nothing to do again.
 func TestSyncKeepRunNoPushRepeatsThePushCommandUntilItIsPushedByHand(t *testing.T) {
 	ctx, bump := runFixture(t, false)
+	bareOrigin(t, ctx)
 	opts := keepOpts(PushNever)
 	var out bytes.Buffer
 	if err := SyncKeepRun(ctx, opts, &out); err != nil {
@@ -717,6 +729,7 @@ func TestSyncKeepStopBootsOutAJobWhosePlistIsGone(t *testing.T) {
 // cleared.
 func TestSyncKeepRunRetriesARefusedPushUntilItGoesThrough(t *testing.T) {
 	ctx, bump := runFixture(t, false)
+	bareOrigin(t, ctx)
 	t.Setenv("HOME", t.TempDir())
 	onPlatform(t, "darwin")
 	pushURL := gitOut(t, ctx.Repo.MainRoot, "remote", "get-url", "--push", "origin")

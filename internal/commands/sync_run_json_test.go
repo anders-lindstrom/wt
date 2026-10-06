@@ -240,8 +240,8 @@ func TestSyncUndoJSONForcedNamesTheWayBackToWhatItKept(t *testing.T) {
 func TestJournalAsksWhatASignalCaughtChanged(t *testing.T) {
 	var out bytes.Buffer
 	j := NewSyncRunJournal(&out, "sync undo")
-	j.join("one", "feat_wt/one", "/w/one", strings.Repeat("1", 40))
-	j.join("two", "feat_wt/two", "/w/two", strings.Repeat("2", 40))
+	j.join("one", "feat_wt/one", "/w/one", strings.Repeat("1", 40), nil)
+	j.join("two", "feat_wt/two", "/w/two", strings.Repeat("2", 40), nil)
 	j.onSignal(func(p *SyncParticipant) bool { return p.Branch == "feat_wt/one" })
 	j.interrupted("", "interrupted")
 	r := decodeSyncRun(t, out.Bytes())

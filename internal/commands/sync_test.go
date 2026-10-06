@@ -306,7 +306,7 @@ func TestSyncAssessedInParallelPrintsTheSequentialResult(t *testing.T) {
 	gitIn(t, main, "fetch", "-q", "origin")
 
 	buf.Reset()
-	onto, cfg, agents, err := syncInputs(ctx, SyncOptions{NoFetch: true}, &buf)
+	onto, cfg, agents, _, err := syncInputs(ctx, SyncOptions{NoFetch: true}, &buf, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
