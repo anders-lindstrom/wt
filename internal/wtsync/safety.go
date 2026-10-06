@@ -22,6 +22,14 @@ const SafetyPrefix = "refs/wt-sync/"
 // finished for that branch.
 const ResultPrefix = "refs/wt-sync-result/"
 
+// ForwardPrefix is where a run pins the commit it fast-forwards a branch to
+// before rebasing it: a commit of the branch's own remote, which the branch
+// held only because the run put it there. Undo reads it as where the run has
+// left the branch so far, and it is what tells a tip the branch had by
+// itself from one a run gave it: once the run is undone or its rebase put
+// back, that commit was never the branch's.
+const ForwardPrefix = "refs/wt-sync-ff/"
+
 // Safety is one pinned tip: the branch it belonged to, the run that pinned it
 // (Epoch, nanoseconds; every ref of one run shares it), and where.
 type Safety struct {
@@ -147,9 +155,11 @@ func ResultTip(mainRoot, branch string, epoch int64) (string, bool, error) {
 	return out, true, nil
 }
 
-// Pin is one branch's pair of refs for a run: where the branch was before
-// it (Safety) and where the run left it (Result).
-type Pin struct{ Branch, Safety, Result string }
+// Pin is one branch's refs for a run: where the branch was before it
+// (Safety), where the run left it (Result) and the commit of its own remote
+// the run fast-forwards it to first (Forward). Result and Forward are left
+// out when empty.
+type Pin struct{ Branch, Safety, Result, Forward string }
 
 // WriteRun writes every pin's safety and result ref for one epoch in a
 // single update-ref transaction, so a failure part way through cannot leave
@@ -163,7 +173,12 @@ func WriteRun(mainRoot string, epoch int64, pins []Pin) error {
 	var b strings.Builder
 	for _, p := range pins {
 		fmt.Fprintf(&b, "create %s %s\n", SafetyRef(p.Branch, epoch), p.Safety)
-		fmt.Fprintf(&b, "create %s %s\n", resultRef(p.Branch, epoch), p.Result)
+		if p.Result != "" {
+			fmt.Fprintf(&b, "create %s %s\n", resultRef(p.Branch, epoch), p.Result)
+		}
+		if p.Forward != "" {
+			fmt.Fprintf(&b, "create %s %s\n", forwardRef(p.Branch, epoch), p.Forward)
+		}
 	}
 	if _, err := gitEnv(mainRoot, nil, strings.NewReader(b.String()), "update-ref", "--stdin"); err != nil {
 		return fmt.Errorf("safety refs for run %d: %w", epoch, err)
@@ -171,10 +186,13 @@ func WriteRun(mainRoot string, epoch int64, pins []Pin) error {
 	return nil
 }
 
-// DeleteSafety drops one safety ref, and the result ref of the same run when
-// there is one: they pin the two ends of history the same run superseded.
+// DeleteSafety drops one safety ref, and the result and fast-forward refs of
+// the same run when there are any: they pin history the same run superseded.
 func DeleteSafety(mainRoot string, s Safety) error {
 	if _, err := gitEnv(mainRoot, nil, nil, "update-ref", "-d", s.Ref, s.Tip); err != nil {
+		return err
+	}
+	if err := dropRef(mainRoot, forwardRef(s.Branch, s.Epoch)); err != nil {
 		return err
 	}
 	tip, ok, err := ResultTip(mainRoot, s.Branch, s.Epoch)
@@ -183,4 +201,97 @@ func DeleteSafety(mainRoot string, s Safety) error {
 	}
 	_, err = gitEnv(mainRoot, nil, nil, "update-ref", "-d", resultRef(s.Branch, s.Epoch), tip)
 	return err
+}
+
+// forwardRef names the fast-forward ref of one branch in one run.
+func forwardRef(branch string, epoch int64) string {
+	return ForwardPrefix + branch + "/" + strconv.FormatInt(epoch, 10)
+}
+
+// ForwardTip reads the commit a run fast-forwarded branch to, when it did.
+func ForwardTip(mainRoot, branch string, epoch int64) (string, bool, error) {
+	return refTip(mainRoot, forwardRef(branch, epoch))
+}
+
+// refTip reads one ref by its exact name; an absent one is not an error.
+func refTip(mainRoot, ref string) (string, bool, error) {
+	out, err := gitEnv(mainRoot, nil, nil, "for-each-ref", "--format=%(refname) %(objectname)", ref)
+	if err != nil {
+		return "", false, err
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if name, tip, _ := strings.Cut(line, " "); name == ref {
+			return tip, true, nil
+		}
+	}
+	return "", false, nil
+}
+
+// dropRef deletes one ref when it is there.
+func dropRef(mainRoot, ref string) error {
+	tip, ok, err := refTip(mainRoot, ref)
+	if err != nil || !ok {
+		return err
+	}
+	_, err = gitEnv(mainRoot, nil, nil, "update-ref", "-d", ref, tip)
+	return err
+}
+
+// Disown takes back what a run's fast-forward left behind, once the branch
+// is no longer where that fast-forward put it: undone, or put back with the
+// rebase that followed. The commit was the remote's and the branch held it
+// only because the run moved it there, so nothing may go on saying the
+// branch once had it. The fast-forward ref goes; the result ref goes when it
+// is that same commit, which is a run that only fast-forwarded; and the
+// entries the fast-forward wrote in the branch's reflog go, so that git's
+// own --force-if-includes refuses to push over the commit as well. Nothing
+// local is lost: the commit is on the remote. A run that fast-forwarded
+// nothing is left as it is.
+func Disown(mainRoot, branch string, epoch int64) error {
+	tip, ok, err := ForwardTip(mainRoot, branch, epoch)
+	if err != nil || !ok {
+		return err
+	}
+	if err := dropReflog(mainRoot, branch, tip, epoch); err != nil {
+		return err
+	}
+	if result, ok, err := ResultTip(mainRoot, branch, epoch); err != nil {
+		return err
+	} else if ok && result == tip {
+		if err := dropRef(mainRoot, resultRef(branch, epoch)); err != nil {
+			return err
+		}
+	}
+	return dropRef(mainRoot, forwardRef(branch, epoch))
+}
+
+// dropReflog removes the entries of branch's reflog that are at commit and
+// were written by the run of epoch or after it: an older entry at the same
+// commit is the person's own and stays. Each entry after a removed one has
+// its old value rewritten, so the log still reads as a chain. A branch with
+// no reflog has nothing to remove.
+func dropReflog(mainRoot, branch, commit string, epoch int64) error {
+	ref := "refs/heads/" + branch
+	out, err := gitEnv(mainRoot, nil, nil, "reflog", "show", "--format=%H %gd", "--date=unix", ref, "--")
+	if err != nil {
+		return nil
+	}
+	lines := strings.Split(out, "\n")
+	// From the oldest up: removing an entry renumbers only the ones older
+	// than it, which are already done.
+	for i := len(lines) - 1; i >= 0; i-- {
+		sha, selector, _ := strings.Cut(lines[i], " ")
+		open := strings.LastIndex(selector, "@{")
+		if sha != commit || open < 0 {
+			continue
+		}
+		when, perr := strconv.ParseInt(strings.TrimSuffix(selector[open+2:], "}"), 10, 64)
+		if perr != nil || when < epoch/int64(time.Second) {
+			continue
+		}
+		if _, err := gitEnv(mainRoot, nil, nil, "reflog", "delete", "--rewrite", ref+"@{"+strconv.Itoa(i)+"}"); err != nil {
+			return fmt.Errorf("reflog of %s: %w", branch, err)
+		}
+	}
+	return nil
 }

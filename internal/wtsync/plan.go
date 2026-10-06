@@ -44,15 +44,20 @@ type LeftLock struct {
 // declaration would apply strategies the stopped rebase was never planned
 // with.
 type State struct {
-	Branch   string            `json:"branch"`
-	Work     string            `json:"work"`
-	Trunk    string            `json:"trunk"`
-	TrunkRef string            `json:"trunk_ref"`
-	Onto     string            `json:"onto"`
-	Upstream string            `json:"upstream"`
-	Epoch    int64             `json:"epoch"`
-	Safety   string            `json:"safety"`
-	OldTip   string            `json:"old_tip"`
+	Branch   string `json:"branch"`
+	Work     string `json:"work"`
+	Trunk    string `json:"trunk"`
+	TrunkRef string `json:"trunk_ref"`
+	Onto     string `json:"onto"`
+	Upstream string `json:"upstream"`
+	Epoch    int64  `json:"epoch"`
+	Safety   string `json:"safety"`
+	OldTip   string `json:"old_tip"`
+	// Found is the tip the safety ref pins when that is not OldTip: the run
+	// fast-forwarded the branch to its own remote before the rebase, so the
+	// rebase started from OldTip and undo goes back to Found. Empty when the
+	// two are the same.
+	Found    string            `json:"found,omitempty"`
 	Stop     int               `json:"stop"`
 	Total    int               `json:"total"`
 	Resolved map[string]string `json:"resolved"`
@@ -253,6 +258,13 @@ func RebasedLine(work, trunk string, landed int, check []string) string {
 		line += " +" + strconv.Itoa(n)
 	}
 	return line
+}
+
+// FastForwardedLine is the line for a session idle in a worktree a run
+// fast-forwarded to its own remote and had nothing to rebase in: n commits
+// arrived under it.
+func FastForwardedLine(work, ref string, n int) string {
+	return fmt.Sprintf("wt: %s fast-forwarded to %s (+%d)", work, ref, n)
 }
 
 // UndoneLine is the line for a session idle in a worktree wt sync undo put

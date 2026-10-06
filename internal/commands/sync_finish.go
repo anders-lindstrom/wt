@@ -47,6 +47,10 @@ type handoverInput struct {
 	Cfg      *wtsync.Config
 	Res      wtsync.Result
 	Lock     *wtsync.Lock
+	// Found is the tip the run found the branch at, when it fast-forwarded
+	// the branch before the rebase: what the safety ref pins. Empty
+	// otherwise.
+	Found string
 	// Earlier is the paths the run's earlier handovers stopped on.
 	Earlier []string
 	// Tracker is the verb's, still set to the rebase being handed over; it
@@ -106,6 +110,9 @@ func handOver(ctx *Context, w io.Writer, in handoverInput) error {
 		Resolved: in.Res.Left.Staged, Strategy: map[string]string{}, Lifted: map[string]string{},
 		Deleted: in.Res.Left.Deleted, Left: in.Res.Left.Left,
 		Stopped: pathsOnce(in.Earlier, wtsync.StopPaths(in.Res.Stops)),
+	}
+	if in.Found != "" && in.Found != in.Res.OldTip {
+		st.Found = in.Found
 	}
 	for _, f := range in.Res.Left.Files {
 		if f.Resolved {

@@ -74,7 +74,7 @@ func syncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) (err
 	// The branch as resume finds it: the run's old tip while the rebase
 	// waits, the rebased tip when a person finished it by hand.
 	found, _ := ctx.Repo.ResolveRef("refs/heads/" + st.Branch)
-	j.join(name, st.Branch, target.Path, found)
+	j.join(name, st.Branch, target.Path, found, nil)
 	j.setSync(st.Branch, func(p *SyncParticipant) { p.SafetyRef, p.PlanFile = strp(st.Safety), planFileOf(target.Path) })
 	// Whatever returns an error before the rebase is touched refused it;
 	// every other end says what it came to on the way out.
@@ -97,8 +97,11 @@ func syncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) (err
 	if err != nil {
 		return fmt.Errorf("the safety ref %s is gone; nothing is resumed", st.Safety)
 	}
-	if tip != st.OldTip {
-		return fmt.Errorf("%s pins %s but the handover says %s; nothing is resumed", st.Safety, git.ShortID(tip, 7), git.ShortID(st.OldTip, 7))
+	// What the safety ref pins: the tip the rebase started from, or the one
+	// the run found before it fast-forwarded the branch to its own remote.
+	pinned := cmp.Or(st.Found, st.OldTip)
+	if tip != pinned {
+		return fmt.Errorf("%s pins %s but the handover says %s; nothing is resumed", st.Safety, git.ShortID(tip, 7), git.ShortID(pinned, 7))
 	}
 	agents, err := opts.agents(resumedNothing)
 	if err != nil {
@@ -186,7 +189,7 @@ func syncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) (err
 		Path: target.Path, Branch: st.Branch, Trunk: st.Trunk,
 		Onto: st.Onto, Upstream: st.Upstream, Epoch: st.Epoch, Work: name, Total: st.Total,
 	}
-	safety := wtsync.Safety{Branch: st.Branch, Epoch: st.Epoch, Ref: st.Safety, Tip: st.OldTip}
+	safety := wtsync.Safety{Branch: st.Branch, Epoch: st.Epoch, Ref: st.Safety, Tip: pinned}
 	if busy {
 		fmt.Fprintf(w, "%s  %s  resuming at %d/%d\n", name, st.Branch, st.Stop, st.Total)
 	}
@@ -204,7 +207,7 @@ func syncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) (err
 		herr := handOver(ctx, w, handoverInput{
 			Work: name, Branch: st.Branch, Path: target.Path, TrunkRef: st.TrunkRef, TrunkSHA: st.Trunk,
 			Onto: st.Onto, Upstream: st.Upstream, Epoch: st.Epoch, Cfg: cfg, Res: res, Lock: lock,
-			Earlier: st.Stopped, Tracker: tracker,
+			Found: st.Found, Earlier: st.Stopped, Tracker: tracker,
 		})
 		if herr != nil {
 			fmt.Fprintf(w, "  ✗ failed: %v\n", herr)
@@ -230,8 +233,12 @@ func syncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) (err
 	}
 	fmt.Fprintf(w, "  ✓ rebased %d commit%s\n", res.Replayed, plural(res.Replayed))
 	_, ran, cerr := completeRun(ctx, w, cfg, tracker, name, target.Path, func() completeInput {
+		// As a run does: the tip the run found is what the deferred steps
+		// compare with and what the undo line names.
+		done := res
+		done.OldTip = pinned
 		return completeInput{
-			Branch: st.Branch, Epoch: st.Epoch, Res: res,
+			Branch: st.Branch, Epoch: st.Epoch, Res: done,
 			Tell: sessions, TrunkName: strings.TrimPrefix(st.TrunkRef, "origin/"), Landed: landed,
 			Check: pathsOnce(st.Stopped, st.Left, st.ResolvedPaths(), st.Deleted, wtsync.StopPaths(res.Stops)),
 		}

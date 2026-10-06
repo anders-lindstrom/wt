@@ -31,6 +31,9 @@ type rebaseInFlight struct {
 	// discard, and the handover survives the interrupt, so resuming again is
 	// the way back.
 	resuming bool
+	// forwarding is set while the run fast-forwards the branch to its own
+	// remote, before any rebase has started: there is nothing to abort.
+	forwarding bool
 }
 
 // rebaseTracker carries that across goroutines: the command sets it, the
@@ -86,6 +89,11 @@ func onInterrupt(w io.Writer, locks []*wtsync.Lock, at *rebaseInFlight) {
 		// The run never got to pin where it left the branch, so a plain
 		// undo would refuse it as moved since the run.
 		fmt.Fprintf(w, "\ninterrupted after rebasing %s: %s\n", at.work, wtsync.WayOut(wtsync.Way{Work: at.work, Moved: true}))
+	case at.forwarding:
+		// No rebase to abort, and a reset to the safety ref by hand would
+		// leave the reflog saying the branch once had its remote's commit:
+		// undo puts the branch back and takes that word away with it.
+		fmt.Fprintf(w, "\ninterrupted while fast-forwarding %s to its own remote: %s\n", at.work, wtsync.WayOut(wtsync.Way{Work: at.work, Result: true}))
 	case at.resuming:
 		fmt.Fprintf(w, "\ninterrupted while resuming %s: the rebase and its plan are left as they are; %s%s\n", at.work, wtsync.WayOut(wtsync.Way{Work: at.work, Plan: true, Rebasing: true}), marksLeftNote(at.path))
 	default:

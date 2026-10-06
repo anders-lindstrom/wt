@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
@@ -35,6 +36,10 @@ type RunOptions struct {
 	// refused, with its stack, and makes the run fail; with nothing named,
 	// every worktree left behind trunk does.
 	IfReady bool
+	// AllowDiverged rebases a branch that has diverged from its own remote
+	// as it stands: the remote has commits the branch never had, and the
+	// push after it would replace them. It lifts nothing else.
+	AllowDiverged bool
 	// Force rebases a named worktree even with an agent session in it, busy
 	// or idle: the sessions are named, not checked. Nothing else it refuses
 	// is lifted — dirt, a handover, another run's lock. A run with nothing
@@ -56,6 +61,10 @@ type RunOptions struct {
 	// nothing declared: no strategies, no deferred steps. With IfReady that
 	// takes a conflict-free rebase and nothing else, which is all wt up asks.
 	undeclaredOK bool
+	// own is the remotes as a caller that already fetched read them: the
+	// keeper, and a run across repositories, which fetch before the run
+	// they then start with NoFetch.
+	own *wtsync.Own
 	verbOptions
 	pushOptions
 }
@@ -83,6 +92,10 @@ type participant struct {
 	// notRun is a refusal that came from another member of the stack, not
 	// from this worktree: --json reports it as not run.
 	notRun bool
+	// found is the branch's tip as the run found it, when the run moved it
+	// to its own remote's commit before rebasing: what the safety ref pins
+	// and a restore goes back to.
+	found string
 }
 
 // runPlan is one wt sync run: the trunk it rebases onto, the worktrees the
@@ -99,6 +112,8 @@ type runPlan struct {
 	onto     string // what the run rebases onto, "origin/main"
 	trunkSHA string // onto's tip, one SHA for the whole run
 	cfg      *wtsync.Config
+	// own is every branch against its own remote, read after the fetch.
+	own *wtsync.Own
 
 	parents   map[string]string
 	ambiguous map[string][]string // branches that merge two ancestors; not handled
@@ -129,8 +144,9 @@ type runPlan struct {
 	pushable   []pushTarget
 	// What the keeper records of a run with nothing named: the worktrees it
 	// left alone with what holds them, the ones it rebased, the ones it
-	// pushed.
+	// pushed, and the ones it only fast-forwarded to their own remote.
 	left, rebased, pushed []string
+	forwarded             []string
 	// notReady is the work name of every worktree selectReady left behind
 	// trunk, for a run that must say so: IfReady fails on them.
 	notReady []string
@@ -160,7 +176,7 @@ func (r *runPlan) run(works []string) error {
 	w, opts := r.w, r.opts
 	defer watchSignals(w, r.tracker)()
 
-	if err := r.declare(); err != nil {
+	if err := r.declare(works); err != nil {
 		return err
 	}
 	if opts.Expect != "" && !opts.planExpect {
@@ -170,6 +186,9 @@ func (r *runPlan) run(works []string) error {
 	}
 	if len(works) == 0 && opts.Force {
 		return errors.New("--force takes a run past the sessions in a worktree you name; name it")
+	}
+	if len(works) == 0 && opts.AllowDiverged {
+		return errors.New("--allow-diverged rebases a worktree you name over commits its remote has; name it")
 	}
 	// wt up's token names the stack, which is only known further down.
 	if opts.Expect == "" || !opts.planExpect {
@@ -196,18 +215,19 @@ func (r *runPlan) run(works []string) error {
 	if err := r.selectBranches(works); err != nil {
 		return err
 	}
+	r.fetchMissed()
 	if opts.Expect != "" && opts.planExpect {
-		if now := planToken(r.ctx, r.trunk, r.branches); now != opts.Expect {
-			return fmt.Errorf("the plan changed since it was read (trunk %s, the configuration or the stack "+
-				"%s is not what wt status --json saw); nothing is rebased: read the plan again",
-				r.trunk, strings.Join(r.branches, ", "))
+		if now := planToken(r.ctx, r.trunk, r.branches, r.diverged()); now != opts.Expect {
+			return fmt.Errorf("the plan changed since it was read (trunk %s, the configuration, the stack %s "+
+				"or a remote the stack has diverged from is not what wt status --json saw); nothing is "+
+				"rebased: read the plan again", r.trunk, strings.Join(r.branches, ", "))
 		}
 		r.syncTrunk()
 	}
 	for _, b := range r.branches {
 		p := r.parts[b]
 		before, _ := r.ctx.Repo.ResolveRef("refs/heads/" + b)
-		opts.Journal.join(p.work, b, p.wt.Path, before)
+		opts.Journal.join(p.work, b, p.wt.Path, before, ownRemoteSyncOf(ownStateOf(r.own, b)))
 	}
 	if proceed, err := r.triage(); err != nil || !proceed {
 		if err == nil {
@@ -231,7 +251,7 @@ func (r *runPlan) run(works []string) error {
 	}
 	if len(r.branches) > 1 {
 		var counts []string
-		for _, outcome := range []string{"rebased", "skipped", "needs you", "refused", "restored", "failed"} {
+		for _, outcome := range []string{"rebased", "fast-forwarded", "skipped", "needs you", "refused", "restored", "failed"} {
 			if n := r.outcomes[outcome]; n > 0 {
 				counts = append(counts, fmt.Sprintf("%d %s", n, outcome))
 			}
@@ -258,18 +278,37 @@ func (r *runPlan) run(works []string) error {
 	return nil
 }
 
-// declare fetches trunk unless told not to, pins the one SHA the whole run
+// declare fetches trunk unless told not to, and with it the own remote of
+// every branch works may bring into the run, pins the one SHA the whole run
 // works against, prints the run's first line and reads the declaration
-// there.
-func (r *runPlan) declare() error {
+// there. Trunk that cannot be fetched refuses the run; a branch whose own
+// remote cannot is refused by itself, at triage.
+func (r *runPlan) declare(works []string) error {
 	ctx := r.ctx
 	var fetched string
 	if r.opts.NoFetch {
 		fetched = lastFetchedParen(ctx.Repo.MainRoot, r.opts.now())
+		if r.own = r.opts.own; r.own == nil {
+			own, err := wtsync.ReadOwn(ctx.Repo.MainRoot, r.trunk)
+			if err != nil {
+				return err
+			}
+			r.own = own
+		} else if err := r.own.Refresh(); err != nil {
+			// Read again: a question may have waited since the caller's fetch.
+			return err
+		}
 	} else {
-		if _, err := git.RunTimeout(ctx.Repo.MainRoot, networkTimeout, "fetch", "--quiet", "origin", r.trunk); err != nil {
+		// An overview's token covers every worktree, so its run reads them
+		// all, as a run with nothing named does.
+		if r.opts.Expect != "" && !r.opts.planExpect {
+			works = nil
+		}
+		own, err := fetchRemotes(ctx, networkTimeout, ownCandidates(ctx, works))
+		if err != nil {
 			return fmt.Errorf("fetch: %w", err)
 		}
+		r.own = own
 		fetched = "(fetched)"
 	}
 	// One SHA for the whole run: the declaration, the scripts and every
@@ -324,6 +363,39 @@ func (r *runPlan) syncTrunk() {
 	}
 }
 
+// fetchMissed fetches the own remote of a branch the run chose and its first
+// fetch did not ask for: the stack is read against the trunk that fetch
+// brought, so it cannot be known before it. Not expected, and one more
+// fetch when it happens rather than a branch compared as last fetched
+// unsaid. It refuses nothing: a branch it cannot fetch is refused at triage,
+// like one the first fetch could not.
+func (r *runPlan) fetchMissed() {
+	if r.opts.NoFetch {
+		return
+	}
+	var missed []string
+	for _, b := range r.branches {
+		if o := r.own.State(b); !o.Fetched && o.FetchFailed == "" && o.State != wtsync.OwnUnknown {
+			missed = append(missed, b)
+		}
+	}
+	if len(r.own.Asks(missed)) > 0 {
+		_ = fetchOwn(r.ctx, r.own, networkTimeout, missed, false)
+	}
+}
+
+// diverged is the remote commit of every branch of the run that has diverged
+// from its own remote, by branch: what a plan's token covers of them.
+func (r *runPlan) diverged() map[string]string {
+	out := map[string]string{}
+	for _, b := range r.branches {
+		if o := r.own.State(b); o.State == wtsync.OwnDiverged {
+			out[b] = o.Commit
+		}
+	}
+	return out
+}
+
 // undeclaredError is a trunk with no .wt-sync.yaml: nothing a run can do, and
 // in a run across repositories not a failure — that repository has not opted
 // in.
@@ -339,7 +411,7 @@ func (r *runPlan) expectOverview() error {
 	if err != nil {
 		return err
 	}
-	sv, err := surveyRepo(r.ctx, r.trunkSHA, r.cfg, agents)
+	sv, err := surveyRepo(r.ctx, r.trunkSHA, r.cfg, agents, r.own)
 	if err != nil {
 		return err
 	}
@@ -385,7 +457,7 @@ func (r *runPlan) selectReady() ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		assessments = assessAll(ctx.Repo.MainRoot, r.trunkSHA, r.cfg, worktrees, agents, assessWorkers)
+		assessments = assessAll(ctx.Repo.MainRoot, r.trunkSHA, r.cfg, worktrees, agents, r.own, assessWorkers)
 		r.parents, r.ambiguous, err = wtsync.Parents(ctx.Repo.MainRoot, r.trunkSHA, all)
 		if err != nil {
 			return nil, err
@@ -403,7 +475,7 @@ func (r *runPlan) selectReady() ([]string, error) {
 		a := assessments[i]
 		work := worktreeName(ctx, wt.Branch, wt.Path)
 		switch {
-		case a.Class == wtsync.Current && a.Err == nil:
+		case onTrunk(a):
 			// On trunk already; the overview leaves it out too.
 		case !r.ready(a):
 			left = append(left, leftLabel(work, a))
@@ -431,6 +503,16 @@ func (r *runPlan) selectReady() ([]string, error) {
 	}
 	r.left = left
 	return ready, nil
+}
+
+// allow marks an assessment whose branch has diverged from its own remote as
+// one this run rebases as it stands, when it was told to. Only a named
+// worktree gets here with the flag: a run with nothing named refuses it.
+func (r *runPlan) allow(a wtsync.Assessment) wtsync.Assessment {
+	if r.opts.AllowDiverged && a.Own.State == wtsync.OwnDiverged {
+		a.Own.Allowed = true
+	}
+	return a
 }
 
 // ready is what a run with nothing named takes: readyToRun, and unattended
@@ -539,14 +621,33 @@ func (r *runPlan) triage() (proceed bool, err error) {
 		if a, ok := r.assessed[b]; ok {
 			p.a = a
 		} else {
-			p.a = wtsync.Assess(r.ctx.Repo.MainRoot, r.trunkSHA, r.cfg, p.wt, agents)
+			p.a = wtsync.AssessOwn(r.ctx.Repo.MainRoot, r.trunkSHA, r.cfg, p.wt, agents, ownStateOf(r.own, b))
 		}
 		if r.opts.Force && len(p.a.Sessions) > 0 {
-			p.forced, p.a.Sessions = p.a.Sessions, nil
+			p.forced = p.a.Sessions
+			if p.a.Own.Blocks == wtsync.OwnBlockSession {
+				// The session was all that kept the branch from its remote's
+				// commit, so that commit is what the run rebases: assessed
+				// again there, with nobody in the way.
+				p.a = wtsync.AssessOwn(r.ctx.Repo.MainRoot, r.trunkSHA, r.cfg, p.wt, nil, ownStateOf(r.own, b))
+			}
+			p.a.Sessions = nil
 			fmt.Fprintf(r.w, "⚠ %s: --force takes the run past %s; the files it has read will change\n",
 				p.work, whoLabel(p.forced))
 		}
+		p.a = r.allow(p.a)
 		p.verdict, p.reason = wtsync.Preflight(p.a)
+		own, refused := p.a.Own, p.verdict == wtsync.RefuseRun
+		r.opts.Journal.set(b, func(jp *UpParticipant) {
+			jp.OwnRemoteSync = ownRemoteSyncOf(own)
+			switch {
+			case !refused || !own.Refuses():
+			case own.FetchFailed != "":
+				jp.OwnRemoteSync.SkippedReason = strp(OwnSkipFetchFailed)
+			default:
+				jp.OwnRemoteSync.SkippedReason = strp(own.Blocks)
+			}
+		})
 	}
 	for _, b := range r.branches {
 		if p := r.parts[b]; p.verdict == wtsync.RefuseRun {
@@ -743,6 +844,10 @@ func (r *runPlan) rebaseOne(b string) {
 		j.set(b, func(jp *UpParticipant) { jp.Result, jp.Reason = ResultSkipped, strp(p.reason) })
 		return
 	}
+	if p.a.OnlyFastForward() {
+		r.fastForwardOnly(b, p)
+		return
+	}
 	req := wtsync.Request{Path: p.wt.Path, Branch: b, Trunk: r.trunkSHA, Onto: r.trunkSHA, Epoch: r.epoch, Work: p.work}
 	req.Stacked = len(wtsync.Descendants(r.parents, b)) > 0
 	ontoLabel := r.onto
@@ -758,6 +863,25 @@ func (r *runPlan) rebaseOne(b string) {
 		}
 		fmt.Fprintf(w, "  ⚠ contested at %d/%d: %s\n", p.a.Replay.Stop.Index, p.a.Replay.Stop.Total, what)
 	}
+	switch own := p.a.Own; {
+	case own.State == wtsync.OwnUnknown:
+		fmt.Fprintf(w, "  ⚠ %s\n", ownLine(own))
+	case own.Allowed:
+		fmt.Fprintf(w, "  ⚠ --allow-diverged: %s has %d commit%s this branch never had%s; rebasing it as it stands\n",
+			own.Ref, own.Behind, plural(own.Behind), asLastFetched(own))
+		// Only now: the flag given to a run that refused the worktree for
+		// something else went over nothing.
+		j.set(b, func(jp *UpParticipant) { jp.OwnRemoteSync.Allowed = true })
+	case own.FastForwards():
+		safety, ok := r.fastForward(b, p, "")
+		if !ok {
+			return
+		}
+		req.Safety = safety
+	}
+	// found is the tip the run found the branch at: the one the rebase
+	// starts from, unless the run fast-forwarded it first.
+	found := func(res wtsync.Result) string { return cmp.Or(p.found, res.OldTip) }
 	res, rerr := trackedRebase(r.tracker, &rebaseInFlight{work: p.work, path: p.wt.Path, safety: wtsync.SafetyRef(b, r.epoch)}, func() (wtsync.Result, error) {
 		return wtsync.Rebase(ctx.Repo.MainRoot, r.cfg, req, w)
 	})
@@ -765,7 +889,7 @@ func (r *runPlan) rebaseOne(b string) {
 	if rerr != nil {
 		fmt.Fprintf(w, "  ✗ failed: %v\n", rerr)
 		clearHandover(w, p.wt.Path)
-		r.recordFailed(b, p, rerr.Error(), res.OldTip, res.Safety.Ref)
+		r.recordFailed(b, p, rerr.Error(), found(res), res.Safety.Ref)
 		r.settle("failed", fmt.Sprintf("✗ %s  failed: %v", p.work, rerr), p.work+" (failed)")
 		r.refuseAbove(b, p.work+" failed")
 		return
@@ -774,7 +898,7 @@ func (r *runPlan) rebaseOne(b string) {
 		herr := handOver(ctx, w, handoverInput{
 			Work: p.work, Branch: b, Path: p.wt.Path, TrunkRef: r.onto, TrunkSHA: r.trunkSHA,
 			Onto: req.Onto, Upstream: req.Upstream, Epoch: r.epoch, Cfg: r.cfg, Res: res, Lock: p.lock,
-			Tracker: r.tracker,
+			Found: p.found, Tracker: r.tracker,
 		})
 		if herr != nil {
 			fmt.Fprintf(w, "  ✗ failed: %v\n", herr)
@@ -822,8 +946,10 @@ func (r *runPlan) rebaseOne(b string) {
 		restored := fmt.Sprintf("restored: %s at %d/%d not resolved; rebase by hand", strings.Join(files, ", "), last.Index, last.Total)
 		fmt.Fprintf(w, "  ✗ %s\n", restored)
 		clearHandover(w, p.wt.Path)
+		r.dropFastForward(b, p)
 		j.setSync(b, func(jp *SyncParticipant) {
 			jp.Result, jp.Reason, jp.SafetyRef = ResultRestored, strp(restored), strp(res.Safety.Ref)
+			jp.After = strp(found(res))
 		})
 		r.settle("restored", "✗ "+p.work+"  "+restored, p.work+" (restored)")
 		r.refuseAbove(b, p.work+" was restored")
@@ -835,8 +961,12 @@ func (r *runPlan) rebaseOne(b string) {
 	}
 	fmt.Fprintln(w, line)
 	head, ran, derr := completeRun(ctx, w, r.cfg, r.tracker, p.work, p.wt.Path, func() completeInput {
+		// What the deferred steps compare and the undo line names is the tip
+		// the run found, the commits a fast-forward brought included.
+		done := res
+		done.OldTip = found(res)
 		return completeInput{
-			Branch: b, Epoch: r.epoch, Res: res,
+			Branch: b, Epoch: r.epoch, Res: done,
 			Tell: append(slices.Clone(p.a.Sessions), p.forced...), TrunkName: r.trunk, Landed: p.a.Behind, Check: pathsOnce(wtsync.StopPaths(res.Stops)),
 		}
 	})
@@ -874,6 +1004,119 @@ func (r *runPlan) rebaseOne(b string) {
 			jp.Result, jp.After = ResultRebased, strp(after)
 			jp.PushCommand = append([]string{"git", "-C", t.Path}, pushArgs(t)...)
 		})
+	}
+}
+
+// fastForward moves b, which is behind its own remote, up to the remote's
+// commit before its rebase. Two refs are pinned first, in one transaction:
+// the safety ref at the tip the run found, so undo puts the branch back
+// where it stood before both, and the fast-forward ref at the remote's
+// commit, where the fast-forward leaves it, which is what lets undo take a
+// fast-forwarded branch back from a rebase that was handed over, or from an
+// interrupt between the two. It is not the result ref: that one says a run
+// finished, and a commit the branch holds only because the run is moving it
+// there is not yet anything the branch had. A fast-forward that does not go touches
+// nothing: the branch is refused, and what sits on it with it. ok is false
+// then. done is what the line adds when the fast-forward is all the run does.
+func (r *runPlan) fastForward(b string, p *participant, done string) (safety wtsync.Safety, ok bool) {
+	ctx, w, own := r.ctx, r.w, p.a.Own
+	refuse := func(why string) (wtsync.Safety, bool) {
+		why = "cannot fast-forward to " + own.Ref + ": " + why
+		fmt.Fprintf(w, "  ✗ refused: %s\n", why)
+		r.settle("refused", "✗ "+p.work+"  refused: "+why, p.work)
+		r.opts.Journal.set(b, func(jp *UpParticipant) {
+			jp.Result, jp.Reason = ResultRefused, strp(why)
+			jp.OwnRemoteSync.SkippedReason = strp(OwnSkipFailed)
+		})
+		r.refuseAbove(b, p.work+" could not be fast-forwarded")
+		return wtsync.Safety{}, false
+	}
+	tip, there := ctx.Repo.ResolveRef("refs/heads/" + b)
+	if !there || tip != own.Local {
+		return refuse("the branch moved since it was checked")
+	}
+	safety = wtsync.Safety{Branch: b, Epoch: r.epoch, Ref: wtsync.SafetyRef(b, r.epoch), Tip: tip}
+	if err := wtsync.WriteRun(ctx.Repo.MainRoot, r.epoch, []wtsync.Pin{{Branch: b, Safety: tip, Forward: own.Commit}}); err != nil {
+		return refuse(err.Error())
+	}
+	// An interrupt from here names the worktree and the ref that puts it
+	// back, as one during the rebase does.
+	r.tracker.set(&rebaseInFlight{work: p.work, path: p.wt.Path, safety: safety.Ref, forwarding: true})
+	if err := fastForwardOwn(p.wt.Path, b, own.Commit); err != nil {
+		// git moves the branch before it runs a hook, so a merge that
+		// reports a failure may still have gone through: where the branch
+		// is now decides, not the exit status.
+		switch now, _ := ctx.Repo.ResolveRef("refs/heads/" + b); now {
+		case own.Commit:
+			fmt.Fprintf(w, "  note: the fast-forward went through, and git then reported: %v\n", err)
+		case tip:
+			r.tracker.set(nil)
+			if derr := wtsync.DeleteSafety(ctx.Repo.MainRoot, safety); derr != nil {
+				fmt.Fprintf(w, "  note: could not remove %s: %v\n", safety.Ref, derr)
+			}
+			return refuse(err.Error())
+		default:
+			// Neither where it was nor where it was going: the refs stay,
+			// since the old tip is under one of them.
+			r.tracker.set(nil)
+			return refuse(fmt.Sprintf("%v; the branch is at %s, and its old tip is under %s", err, git.ShortID(now, 7), safety.Ref))
+		}
+	}
+	p.found = tip
+	fmt.Fprintf(w, "  ✓ fast-forwarded to %s  %s → %s (%d commit%s)%s%s\n", own.Ref,
+		git.ShortID(tip, 7), git.ShortID(own.Commit, 7), own.Behind, plural(own.Behind), asLastFetched(own), done)
+	// Where the branch stands from here, whatever the rebase comes to: a
+	// rebase that is put back says so itself.
+	r.opts.Journal.set(b, func(jp *UpParticipant) {
+		jp.OwnRemoteSync.FastForwarded, jp.After = true, strp(own.Commit)
+	})
+	return safety, true
+}
+
+// fastForwardOnly is the whole of a run for a branch that is behind its own
+// remote and has nothing to rebase once it is at the remote's commit: it is
+// moved there, as before a rebase and with the same refs pinned, so undo
+// puts it back, and that is all. No deferred step runs and nothing is
+// offered to push: the branch is what its remote has. What sits on it in the
+// run is rebased onto where it now is.
+func (r *runPlan) fastForwardOnly(b string, p *participant) {
+	w, own := r.w, p.a.Own
+	why := "; already on trunk, nothing to rebase"
+	if p.a.Class == wtsync.Stale {
+		why = "; nothing ahead of trunk, nothing to rebase"
+	}
+	safety, ok := r.fastForward(b, p, why)
+	if !ok {
+		return
+	}
+	// Nothing is in flight any more: the branch is where the run leaves it.
+	r.tracker.set(nil)
+	p.result = &wtsync.Result{Branch: b, OldTip: p.found, NewTip: own.Commit, Safety: safety}
+	p.head = own.Commit
+	// The run is finished for this branch, here.
+	if err := wtsync.WriteResult(r.ctx.Repo.MainRoot, b, own.Commit, r.epoch); err != nil {
+		fmt.Fprintf(w, "  note: %v\n", err)
+	}
+	fmt.Fprintf(w, "  ↩ %s\n", wtsync.WayOut(wtsync.Way{Work: p.work, Result: true, Safety: git.ShortID(p.found, 7)}))
+	tellIdle(w, append(slices.Clone(p.a.Sessions), p.forced...), wtsync.FastForwardedLine(p.work, own.Ref, own.Behind))
+	r.settle("fast-forwarded", "", "")
+	r.forwarded = append(r.forwarded, p.work)
+	r.opts.Journal.setSync(b, func(jp *SyncParticipant) {
+		jp.Result = ResultFastForwarded
+		jp.SafetyRef, jp.UndoCommand = strp(safety.Ref), undoCommand(p.work)
+	})
+}
+
+// dropFastForward takes back what a fast-forward left behind, once a rebase
+// that was put back has taken the branch back to the tip the run found: the
+// remote's commit is no longer anything the branch had, in wt's refs or in
+// its reflog.
+func (r *runPlan) dropFastForward(b string, p *participant) {
+	if p.found == "" {
+		return
+	}
+	if err := wtsync.Disown(r.ctx.Repo.MainRoot, b, r.epoch); err != nil {
+		fmt.Fprintf(r.w, "  note: %v\n", err)
 	}
 }
 
@@ -920,6 +1163,8 @@ func notReadyReason(a wtsync.Assessment) string {
 		return "it has uncommitted changes"
 	case a.Paused:
 		return "an earlier run handed it over"
+	case a.Own.Refuses():
+		return a.Own.Refusal()
 	case a.Unverified:
 		return "a script strategy claims a file, and a script can only be checked by a real run"
 	case a.Class == wtsync.Contested && a.Replay.Stop != nil:
@@ -939,6 +1184,9 @@ func (r *runPlan) recordFailed(b string, p *participant, why, oldTip, safety str
 	head, herr := git.Run(p.wt.Path, "rev-parse", "--verify", "--quiet", "HEAD")
 	restored := berr == nil && !busy && derr == nil && !dirty && herr == nil &&
 		oldTip != "" && now == oldTip && head == oldTip
+	if restored {
+		r.dropFastForward(b, p)
+	}
 	r.opts.Journal.setSync(b, func(jp *SyncParticipant) {
 		jp.Reason, jp.After, jp.SafetyRef = strp(why), strp(now), strp(safety)
 		if restored {

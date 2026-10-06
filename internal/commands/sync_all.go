@@ -40,6 +40,7 @@ type repoRun struct {
 	idle       []string // notices for ready worktrees an idle session is in
 	undeclared bool
 	trunkSHA   string // the trunk the plan was made against, which the run must still find
+	own        *wtsync.Own
 	log        bytes.Buffer
 	err        error
 }
@@ -60,6 +61,9 @@ func SyncRunAll(u *config.User, sel Selection, opts SyncRunAllOptions, w io.Writ
 	if len(set.Repos) == 0 {
 		fmt.Fprintln(w, "No repositories wt manages here; wt repos says where it looked.")
 		return nil
+	}
+	if opts.AllowDiverged {
+		return errors.New("--allow-diverged rebases a worktree you name over commits its remote has; name it, in its repository")
 	}
 	defer watchSignals(w, nil)()
 	// One listing of the sessions serves every repository's plan, as one
@@ -150,6 +154,8 @@ func SyncRunAll(u *config.User, sel Selection, opts SyncRunAllOptions, w io.Writ
 			failures = append(failures, rr.target.Name)
 			continue
 		}
+		// The remotes as the plan's fetch read them, not as last fetched.
+		one.own = rr.own
 		if err := SyncRun(rr.ctx, rr.ready, one, w); err != nil {
 			fmt.Fprintf(w, "! %v\n", err)
 			failures = append(failures, rr.target.Name)
@@ -175,7 +181,7 @@ func planRepoRun(t RepoTarget, opts RunOptions) *repoRun {
 	rr.ctx = ctx
 	r := &runPlan{ctx: ctx, opts: opts, w: &rr.log, tracker: &rebaseTracker{},
 		trunk: ctx.Config.MainBranch, outcomes: map[string]int{}}
-	if err := r.declare(); err != nil {
+	if err := r.declare(nil); err != nil {
 		var undeclared undeclaredError
 		if errors.As(err, &undeclared) {
 			rr.undeclared = true
@@ -189,7 +195,7 @@ func planRepoRun(t RepoTarget, opts RunOptions) *repoRun {
 		rr.err = err
 		return rr
 	}
-	rr.ready, rr.notReady, rr.trunkSHA = ready, r.notReady, r.trunkSHA
+	rr.ready, rr.notReady, rr.trunkSHA, rr.own = ready, r.notReady, r.trunkSHA, r.own
 	for _, work := range ready {
 		wt, err := locateBranch(ctx, work)
 		if err != nil {

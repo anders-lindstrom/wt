@@ -192,8 +192,8 @@ func TestJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 	var out bytes.Buffer
 	j := NewRunJournal(&out)
 	j.trunk("main", strp("conventional"), "origin/main", strings.Repeat("a", 40), true)
-	j.join("one", "feat_wt/one", "/w/one", strings.Repeat("1", 40))
-	j.join("two", "feat_wt/two", "/w/two", strings.Repeat("2", 40))
+	j.join("one", "feat_wt/one", "/w/one", strings.Repeat("1", 40), &OwnRemoteSync{State: "none"})
+	j.join("two", "feat_wt/two", "/w/two", strings.Repeat("2", 40), &OwnRemoteSync{State: "none"})
 	j.set("feat_wt/one", func(p *UpParticipant) { p.Result = ResultRebased })
 	j.interrupted("two", "interrupted while rebasing two: git rebase --abort")
 	j.Finish()

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/up.v1.json",
-  "x-version": "1.3.1",
+  "x-version": "1.4.0",
   "title": "wt up --json",
   "description": "What a wt up run did. Printed by `wt up [<work>] --json` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends the run. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
@@ -18,7 +18,7 @@
     "trunkSync": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/trunkSync" }], "description": "What the run did to local trunk after its fetch: fast-forwarded to origin/<trunk> when safe, or why not. Null when it did not fetch." },
     "outcome": {
       "enum": ["done", "refused", "partial", "interrupted"],
-      "description": "done: every participant rebased or skipped. refused: nothing changed, or error stopped the run first. partial: something changed and not everything finished. interrupted: a signal ended the run."
+      "description": "done: every participant rebased, fastForwarded or skipped. refused: nothing changed, or error stopped the run first. partial: something changed and not everything finished. interrupted: a signal ended the run."
     },
     "error": { "type": ["string", "null"], "description": "Why the run stopped before touching any participant." },
     "worktrees": { "type": "array", "description": "The participants, parents first.", "items": { "$ref": "#/$defs/participant" } },
@@ -44,14 +44,14 @@
     "shaOrNull": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40,64}$" },
     "participant": {
       "type": "object",
-      "required": ["work", "branch", "path", "result", "reason", "before", "after", "failedSteps", "recovery", "pushCommand", "pushed"],
+      "required": ["work", "branch", "path", "result", "reason", "before", "after", "failedSteps", "recovery", "pushCommand", "pushed", "ownRemoteSync"],
       "properties": {
         "work": { "type": "string" },
         "branch": { "type": "string" },
         "path": { "type": "string" },
         "result": {
-          "enum": ["rebased", "rebasedStepFailed", "skipped", "refused", "notRun", "restored", "needsRecovery", "handedOver", "interrupted"],
-          "description": "rebased, rebasedStepFailed, needsRecovery, handedOver and interrupted changed the branch or worktree; skipped, refused, notRun and restored left them as they were."
+          "enum": ["rebased", "fastForwarded", "rebasedStepFailed", "skipped", "refused", "notRun", "restored", "needsRecovery", "handedOver", "interrupted"],
+          "description": "rebased, fastForwarded, rebasedStepFailed, needsRecovery, handedOver and interrupted changed the branch or worktree; skipped, refused, notRun and restored left them as they were. fastForwarded (since 1.4.0): the branch was behind its own remote and has nothing to rebase at the remote's commit, so the run moved it there and that is all; after is that commit, pushCommand is null."
         },
         "reason": { "type": ["string", "null"] },
         "before": { "$ref": "#/$defs/shaOrNull" },
@@ -62,7 +62,27 @@
           "oneOf": [{ "type": "null" }, { "type": "array", "items": { "type": "string" }, "minItems": 1 }],
           "description": "For rebased: the push, as an argv."
         },
-        "pushed": { "type": "boolean" }
+        "pushed": { "type": "boolean" },
+        "ownRemoteSync": { "$ref": "#/$defs/ownRemoteSync" }
+      }
+    },
+    "ownRemoteSync": {
+      "type": "object",
+      "description": "Since 1.4.0: what the run found of a participant's own remote, the remote-tracking ref a push of its branch would replace, and what it did about it. See docs/json.md.",
+      "required": ["ref", "state", "local", "remote", "localAhead", "remoteAhead", "fastForwarded", "allowed", "skippedReason"],
+      "properties": {
+        "ref": { "type": ["string", "null"], "description": "The remote-tracking ref, as remote/branch; null only when no ref could be named." },
+        "state": { "enum": ["none", "gone", "unknown", "inSync", "ahead", "behind", "rebased", "diverged"], "description": "As found, before anything moved; the states are those of ownRemote in wt status --json." },
+        "local": { "$ref": "#/$defs/shaOrNull", "description": "The branch as found, before any fast-forward: where wt sync undo puts it back." },
+        "remote": { "$ref": "#/$defs/shaOrNull", "description": "The remote commit compared with; null for none, gone and unknown." },
+        "localAhead": { "type": ["integer", "null"], "minimum": 0, "description": "Commits only the branch had; null for none, gone and unknown." },
+        "remoteAhead": { "type": ["integer", "null"], "minimum": 0, "description": "Commits only the remote had; null for none, gone and unknown." },
+        "fastForwarded": { "type": "boolean", "description": "The run moved the branch from local to remote before rebasing it. It stays true as a record when the rebase after it was put back, which takes the branch back to local." },
+        "allowed": { "type": "boolean", "description": "state is diverged and the run went on over it under --allow-diverged; false when the participant was refused for something else." },
+        "skippedReason": {
+          "oneOf": [{ "type": "null" }, { "enum": ["diverged", "operation", "dirty", "session", "failed", "fetchFailed"] }],
+          "description": "Why the own remote refuses the participant; null when it does not. diverged: --allow-diverged goes on. operation, dirty, session: behind, and it cannot be fast-forwarded. failed: the fast-forward itself did not go through; nothing of this participant was touched. fetchFailed: the branch's own remote could not be fetched, so the run could not look; trunk's fetch failing is the run's error instead."
+        }
       }
     }
   }

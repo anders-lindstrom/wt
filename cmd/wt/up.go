@@ -9,7 +9,7 @@ import (
 )
 
 func newUpCmd() *cobra.Command {
-	var noFetch, noFFTrunk, yes, force, asJSON bool
+	var noFetch, noFFTrunk, yes, force, allowDiverged, asJSON bool
 	var expect string
 	var push func() commands.PushMode
 	cmd := &cobra.Command{
@@ -34,20 +34,31 @@ func newUpCmd() *cobra.Command {
 			"nothing in progress and no session busy in it. Otherwise it is left,\n" +
 			"and a line says why. --no-ff-trunk, or wt config set ff_trunk false,\n" +
 			"leaves it alone.\n\n" +
+			"Before it rebases, the branch is compared with its own remote, the ref\n" +
+			"a push of it would replace (<branch>@{push}, else origin/<branch>;\n" +
+			"never its upstream as such), fetched with trunk. Behind it, the branch\n" +
+			"is fast-forwarded first, where the worktree has no tracked changes,\n" +
+			"nothing in progress and no session busy in it; with nothing to rebase\n" +
+			"once it is there, that is all that happens. Diverged from it, with\n" +
+			"commits there the branch never had, nothing is touched:\n" +
+			"--allow-diverged rebases the branch as it stands. Rebased and not\n" +
+			"pushed yet is neither, and goes on. wt sync undo takes back the\n" +
+			"fast-forward with the rebase.\n\n" +
 			"An agent session busy in the worktree refuses the run, since the files\n" +
 			"it has read would change under it. --force (-f) goes ahead anyway and\n" +
 			"names the session, so you can tell it; it lifts nothing else — dirt\n" +
 			"and a conflict that is yours still refuse.\n\n" +
 			"--json prints one result object on stdout and the progress on stderr,\n" +
 			"for a tool driving wt; --expect <token> refuses the run, touching\n" +
-			"nothing, when trunk, the configuration or the stack is no longer what\n" +
-			"wt status --json reported. wt schema up prints its JSON Schema;\n" +
-			"docs/json.md explains it.",
+			"nothing, when trunk, the configuration, the stack or a remote the\n" +
+			"stack has diverged from is no longer what wt status --json reported.\n" +
+			"wt schema up prints its JSON Schema; docs/json.md explains it.",
 		Example: "  wt up                  # the worktree you are in, if it syncs cleanly\n" +
 			"  wt up --push --no-ff-trunk  # and push it; local trunk stays put\n" +
-			"  wt up -y --force       # yes to everything, past a session busy in it\n" +
+			"  wt up -y --force --no-fetch  # yes to all, past a busy session, no fetch\n" +
+
 			"  wt up --yes --no-push --json  # for a tool: one JSON object on stdout\n" +
-			"  wt up --json --expect 1:0123abcd --no-fetch  # only if the plan still holds",
+			"  wt up --json --expect 1:0123abcd --allow-diverged  # only as the plan showed",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -55,7 +66,8 @@ func newUpCmd() *cobra.Command {
 			if len(args) == 1 {
 				work = args[0]
 			}
-			f := syncVerbFlags{run: true, yes: yes, noFetch: noFetch, noFFTrunk: noFFTrunk, ifReady: true, force: force, push: push()}
+			f := syncVerbFlags{run: true, yes: yes, noFetch: noFetch, noFFTrunk: noFFTrunk, ifReady: true, force: force,
+				allowDiverged: allowDiverged, push: push()}
 			if !asJSON {
 				return withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
 					opts, _ := runOptions(cmd, f, false)
@@ -91,6 +103,7 @@ func newUpCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&noFFTrunk, "no-ff-trunk", false, "leave local <trunk> where it is after the fetch")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "yes to every question, the push included (--no-push keeps it out)")
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "go ahead even with an agent session in the worktree")
+	cmd.Flags().BoolVar(&allowDiverged, "allow-diverged", false, "rebase a branch that has diverged from its own remote, as it stands")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print one result object on stdout, the progress on stderr")
 	cmd.Flags().StringVar(&expect, "expect", "", "refuse unless the plan still matches this token from wt status --json")
 	push = addPushFlags(cmd, "push when it is done, without asking", "neither push nor ask; print the push command")

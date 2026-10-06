@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -321,8 +322,15 @@ func StatusWorktree(ctx *Context, arg string, opts StatusOptions, w io.Writer) e
 	if s := wtsync.SessionsAt(agents, wt.Path); len(s) > 0 {
 		rows = append(rows, []string{"  sessions", whoLabel(s)})
 	}
+	// The branch against its own remote, as last fetched like the rest.
+	own := ownStateOf(wtsync.ReadOwnOrUnknown(ctx.Repo.MainRoot, ctx.Config.MainBranch), wt.Branch)
 	work := worktreeName(ctx, wt.Branch, wt.Path)
-	verdict, under := syncVerdict(ctx, work, wt, agents)
+	verdict, under, a := syncVerdict(ctx, work, wt, agents, own)
+	if line := ownLineOf(a); line != "" {
+		rows = append(rows, []string{"  remote", line})
+		// Said once: the row has it.
+		under = slices.DeleteFunc(under, func(l string) bool { return l == "  "+line })
+	}
 	rows = append(rows, []string{"  sync", verdict})
 
 	fmt.Fprintln(w, work)
@@ -377,12 +385,13 @@ func trunkFact(ctx *Context, base TrunkBase, ok bool, wt repo.Worktree) string {
 // overview's summary lines, ending with the reminder that it was simulated
 // against trunk as last fetched. A trunk the overview cannot assess against
 // gives its reason instead.
-func syncVerdict(ctx *Context, work string, wt repo.Worktree, agents []wtsync.Agent) (line string, under []string) {
+func syncVerdict(ctx *Context, work string, wt repo.Worktree, agents []wtsync.Agent, own wtsync.OwnRemote) (line string, under []string, a wtsync.Assessment) {
+	a.Own = own
 	onto, _, cfg, err := syncDeclaration(ctx)
 	if err != nil {
-		return err.Error(), nil
+		return err.Error(), nil, a
 	}
-	a := wtsync.Assess(ctx.Repo.MainRoot, onto, cfg, wt, agents)
+	a = wtsync.AssessOwn(ctx.Repo.MainRoot, onto, cfg, wt, agents, own)
 	parts := []string{classLabel(a)}
 	if a.Dirty && len(a.Sessions.Busy()) == 0 {
 		parts = append(parts, "dirty")
@@ -401,14 +410,14 @@ func syncVerdict(ctx *Context, work string, wt repo.Worktree, agents []wtsync.Ag
 		under = append(under, "  "+l)
 	}
 	under = append(under, "simulated against "+onto+" as last fetched; wt sync fetches first")
-	return line, under
+	return line, under, a
 }
 
 // syncAdvice is what the overview's heading tells you to do with a worktree
 // of this group: run it, look at its detail, or nothing for one the overview
 // skips or leaves out.
 func syncAdvice(work string, declared bool, a wtsync.Assessment) string {
-	if a.Class == wtsync.Current && a.Err == nil {
+	if onTrunk(a) {
 		return ""
 	}
 	switch sectionOf(a) {

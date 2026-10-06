@@ -374,7 +374,10 @@ func (p *keepPass) pass(recorded string) error {
 		p.before = before
 	}
 	p.after = p.before
-	if _, err := git.RunTimeout(ctx.Repo.MainRoot, networkTimeout, "fetch", "--quiet", "origin", ctx.Config.MainBranch); err != nil {
+	// Trunk, and the own remote of every worktree's branch: a pass takes
+	// every ready one.
+	own, err := fetchRemotes(ctx, networkTimeout, ownCandidates(ctx, nil))
+	if err != nil {
 		p.header(p.onto)
 		p.result = "failed: fetch: " + fetchReason(err)
 		return fmt.Errorf("fetch: %w", err)
@@ -420,7 +423,7 @@ func (p *keepPass) pass(recorded string) error {
 		p.header(fmt.Sprintf("%s %s → %s", p.onto, git.ShortID(p.before, 7), git.ShortID(after, 7)))
 		fmt.Fprintf(p.w, "wt sync keep once  %s %s → %s (fetched)\n", p.onto, git.ShortID(p.before, 7), git.ShortID(after, 7))
 		noteTrunk()
-		ropts := RunOptions{NoFetch: true, Unattended: true, verbOptions: p.opts.verbOptions, pushOptions: pushOptions{Push: p.opts.Push}}
+		ropts := RunOptions{NoFetch: true, Unattended: true, own: own, verbOptions: p.opts.verbOptions, pushOptions: pushOptions{Push: p.opts.Push}}
 		ropts.Confirm = nil
 		// An unattended pass has to know who is in a worktree: no claude to
 		// ask is not nobody there, it is not knowing, and nothing moves.
@@ -487,6 +490,9 @@ func (p *keepPass) pass(recorded string) error {
 		"left     " + orNone(r.left),
 		"unpushed " + orNone(unpushedWorks),
 	}
+	if len(r.forwarded) > 0 {
+		p.facts = append(p.facts, "fast-forwarded "+orNone(r.forwarded))
+	}
 	switch {
 	case rerr != nil:
 		p.result = "failed: " + rerr.Error()
@@ -499,6 +505,9 @@ func (p *keepPass) pass(recorded string) error {
 		}
 	default:
 		p.result = fmt.Sprintf("rebased %d, pushed %d, left %d", len(r.rebased), len(pushed), len(r.left))
+	}
+	if rerr == nil && len(r.forwarded) > 0 {
+		p.result += fmt.Sprintf(", fast-forwarded %d", len(r.forwarded))
 	}
 	if rerr == nil && len(p.unpushed) > 0 {
 		p.result += fmt.Sprintf(", unpushed %d", len(p.unpushed))

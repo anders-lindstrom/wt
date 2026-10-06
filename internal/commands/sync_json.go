@@ -79,6 +79,7 @@ type OverviewWorktree struct {
 	Strategies []string          `json:"strategies"`
 	Notes      []string          `json:"notes"`
 	Error      *string           `json:"error"`
+	OwnRemote  OwnRemote         `json:"ownRemote"`
 }
 
 // OverviewStop is one stop the simulated rebase reached.
@@ -176,8 +177,19 @@ func overviewOf(ctx *Context, opts SyncOptions) SyncOverview {
 	}
 	trunk := ctx.Config.MainBranch
 	o.Trunk, o.TrunkRef, o.TrunkSource = strp(trunk), strp("origin/"+trunk), ctx.trunkSource()
-	if !opts.NoFetch {
-		if _, err := git.RunTimeout(ctx.Repo.MainRoot, syncFetchTimeout, "fetch", "--quiet", "origin", trunk); err != nil {
+	// Trunk, and with it the own remote of every worktree's branch. One
+	// that could not be fetched is as last fetched, which its
+	// ownRemote.fetched says, and its row says why.
+	var own *wtsync.Own
+	if opts.NoFetch {
+		own = wtsync.ReadOwnOrUnknown(ctx.Repo.MainRoot, trunk)
+	} else {
+		var branches []string
+		if all, err := ctx.Repo.Worktrees(); err == nil {
+			branches = worktreeBranches(all)
+		}
+		var err error
+		if own, err = fetchRemotes(ctx, syncFetchTimeout, branches); err != nil {
 			o.FetchError = strp(fetchReason(err))
 		} else {
 			o.Fetched = true
@@ -203,7 +215,7 @@ func overviewOf(ctx *Context, opts SyncOptions) SyncOverview {
 	if err != nil {
 		o.SessionsError = strp(err.Error())
 	}
-	sv, err := surveyRepo(ctx, sha, cfg, agents)
+	sv, err := surveyRepo(ctx, sha, cfg, agents, own)
 	if err != nil {
 		o.Error = strp(err.Error())
 		return o
@@ -223,17 +235,21 @@ type survey struct {
 	ambiguous   map[string][]string
 	assessed    map[string]wtsync.Assessment
 	rows        []OverviewWorktree
+	// divergedOnly is the branches a run refuses for nothing but having
+	// diverged from their own remote: --allow-diverged starts on them.
+	divergedOnly map[string]bool
 }
 
 // surveyRepo assesses every worktree but the main checkout against trunkSHA
-// and files each as the overview does.
-func surveyRepo(ctx *Context, trunkSHA string, cfg *wtsync.Config, agents []wtsync.Agent) (survey, error) {
+// and files each as the overview does. own is every branch against its own
+// remote; nil checks none.
+func surveyRepo(ctx *Context, trunkSHA string, cfg *wtsync.Config, agents []wtsync.Agent, own *wtsync.Own) (survey, error) {
 	all, err := ctx.Repo.Worktrees()
 	if err != nil {
 		return survey{}, err
 	}
 	worktrees := slices.DeleteFunc(slices.Clone(all), func(wt repo.Worktree) bool { return wt.IsMain })
-	assessments := assessAll(ctx.Repo.MainRoot, trunkSHA, cfg, worktrees, agents, assessWorkers)
+	assessments := assessAll(ctx.Repo.MainRoot, trunkSHA, cfg, worktrees, agents, own, assessWorkers)
 	r := &runPlan{ctx: ctx, assessed: map[string]wtsync.Assessment{}}
 	r.parents, r.ambiguous, err = wtsync.Parents(ctx.Repo.MainRoot, trunkSHA, all)
 	if err != nil {
@@ -245,7 +261,15 @@ func surveyRepo(ctx *Context, trunkSHA string, cfg *wtsync.Config, agents []wtsy
 		}
 	}
 	sv := survey{worktrees: worktrees, assessments: assessments, parents: r.parents, ambiguous: r.ambiguous,
-		assessed: r.assessed, rows: make([]OverviewWorktree, 0, len(worktrees))}
+		assessed: r.assessed, rows: make([]OverviewWorktree, 0, len(worktrees)), divergedOnly: map[string]bool{}}
+	for i, wt := range worktrees {
+		if a := assessments[i]; wt.Branch != "" && a.Own.State == wtsync.OwnDiverged {
+			a.Own.Allowed = true
+			if v, _ := wtsync.Preflight(a); v == wtsync.Proceed {
+				sv.divergedOnly[wt.Branch] = true
+			}
+		}
+	}
 	byBranch := map[string]repo.Worktree{}
 	for _, wt := range all {
 		if wt.Branch != "" {
@@ -267,12 +291,13 @@ func (r *runPlan) overviewRow(wt repo.Worktree, a wtsync.Assessment, byBranch ma
 		Behind: a.Behind, Ahead: a.Ahead, Dirty: a.Dirty, HandedOver: a.Paused, PlanFile: strp(a.PlanFile),
 		Sessions: []PlanSession{}, Stack: []PlanStackMember{}, Stops: []OverviewStop{},
 		Strategies: []string{}, Notes: append([]string{}, a.Notes...),
+		OwnRemote: ownRemoteOf(a.Own),
 	}
 	if a.Err != nil {
 		row.Error = strp(a.Err.Error())
 	}
 	switch {
-	case a.Class == wtsync.Current && a.Err == nil:
+	case onTrunk(a):
 		row.Group = GroupCurrent
 	default:
 		row.Group = [...]string{GroupReady, GroupNeedsYou, GroupSkipped}[sectionOf(a)]
@@ -325,17 +350,33 @@ func (r *runPlan) overviewRow(wt repo.Worktree, a wtsync.Assessment, byBranch ma
 // token names what a run would start on: trunk's name, the wt configuration,
 // the declaration on trunk, and every worktree a run would start on — its
 // branch, class, whether a run with nothing named takes it, and its stack.
-// A newer trunk commit is not in it; what it changes about those is. Nil
-// when a run would start on nothing.
+// A newer trunk commit is not in it; what it changes about those is. Nor is
+// the commit of a branch's own remote, with one exception: a worktree
+// refused only because its branch has diverged from that remote is one a
+// run starts on under --allow-diverged, so it is in the token with the
+// remote's commit, and a run allowed over the divergence its caller was
+// shown is refused over one that moved since. Nil when a run would start on
+// nothing.
 func (sv survey) token(ctx *Context, trunk, trunkSHA string) *string {
 	h := sha256.New()
 	h.Write([]byte("wt-sync-1\x00" + trunk + "\x00"))
 	h.Write(configFingerprint(ctx))
 	decl, _ := git.Run(ctx.Repo.MainRoot, "rev-parse", "--verify", "--quiet", trunkSHA+":"+wtsync.ConfigFile)
 	h.Write([]byte("\x00" + decl))
-	eligible := 0
+	eligible, covered := 0, 0
 	for _, row := range sv.rows {
-		if row.Verdict != VerdictProceed || row.Branch == nil {
+		if row.Branch == nil {
+			continue
+		}
+		// The remote commit of every branch a run would refuse for having
+		// diverged, whatever else keeps a run off it: --force lifts a busy
+		// session at triage, and what the run then goes over must be what
+		// the caller was shown.
+		if o := row.OwnRemote; o.Blocks != nil && *o.Blocks == wtsync.OwnBlockDiverged && o.Commit != nil {
+			h.Write([]byte("\x00diverged\x01" + *row.Branch + "\x01" + *o.Commit))
+			covered++
+		}
+		if row.Verdict != VerdictProceed && !sv.divergedOnly[*row.Branch] {
 			continue
 		}
 		eligible++
@@ -346,7 +387,7 @@ func (sv survey) token(ctx *Context, trunk, trunkSHA string) *string {
 		h.Write([]byte("\x00" + *row.Branch + "\x01" + row.Class + "\x01" + strconv.FormatBool(row.Verified) +
 			"\x01" + strconv.FormatBool(row.Runnable) + "\x01" + strings.Join(stack, "\x02")))
 	}
-	if eligible == 0 {
+	if eligible+covered == 0 {
 		return nil
 	}
 	return strp("1:" + hex.EncodeToString(h.Sum(nil))[:32])

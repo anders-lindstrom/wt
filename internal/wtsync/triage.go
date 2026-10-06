@@ -135,7 +135,11 @@ type Assessment struct {
 	Handover  *State
 	PlanFile  string
 	Replaying string
-	Err       error
+	// Own is the branch against its own remote, with what of it keeps a run
+	// off. For a branch a run fast-forwards first, the class, the counts and
+	// the replay are those of the remote's commit: what the run rebases.
+	Own OwnRemote
+	Err error
 }
 
 // Way is where a paused worktree's handover stands, for WayOut: waiting at
@@ -146,11 +150,27 @@ func (a Assessment) Way() Way {
 		Finished: a.Paused && !a.Rebasing && !a.Aborted && !a.Moved}
 }
 
+// OnlyFastForward reports a branch a run fast-forwards to its own remote and
+// is then done with: it is behind that remote, in a checkout it is safe to
+// move in, and at the remote's commit it is on trunk already or has nothing
+// of its own, so there is nothing to rebase.
+func (a Assessment) OnlyFastForward() bool {
+	return a.Err == nil && a.Own.FastForwards() && (a.Class == Current || a.Class == Stale)
+}
+
 // Assess classifies one worktree against onto, the ref it would be rebased
 // onto. A nil cfg means the repository declared nothing: it is still
 // classified, nothing is claimed, and NoConfig says so.
 func Assess(mainRoot, onto string, cfg *Config, wt repo.Worktree, agents []Agent) Assessment {
-	a := Assessment{Path: wt.Path, Branch: wt.Branch, NoConfig: cfg == nil, Sessions: SessionsAt(agents, wt.Path)}
+	return AssessOwn(mainRoot, onto, cfg, wt, agents, OwnRemote{})
+}
+
+// AssessOwn is Assess for a branch whose standing against its own remote is
+// known. A branch that is behind it, in a checkout a fast-forward is safe
+// in, is assessed at the remote's commit: a run moves it there before it
+// rebases, so that is what the class has to be true of.
+func AssessOwn(mainRoot, onto string, cfg *Config, wt repo.Worktree, agents []Agent, own OwnRemote) Assessment {
+	a := Assessment{Path: wt.Path, Branch: wt.Branch, NoConfig: cfg == nil, Sessions: SessionsAt(agents, wt.Path), Own: own}
 	if wt.Detached || wt.Branch == "" {
 		a.Class = Detached
 		return a
@@ -203,7 +223,19 @@ func Assess(mainRoot, onto string, cfg *Config, wt repo.Worktree, agents []Agent
 	// what a person is finishing, not dirt. Every reader of Dirty checks
 	// Paused first, so nothing that refuses a handover relies on Dirty.
 	a.Dirty = out != "" && !a.Paused
-	behind, ahead, err := BehindAhead(mainRoot, onto, wt.Branch)
+	if code, why := OwnBlocks(a.Own, wt.Path, a.Dirty, a.Sessions); code != "" {
+		a.Own.Blocks = code
+		if why != "" {
+			a.Own.Why = why
+		}
+	}
+	// What the run rebases: the branch, or the commit it is fast-forwarded
+	// to first.
+	tip := wt.Branch
+	if a.Own.FastForwards() {
+		tip = a.Own.Commit
+	}
+	behind, ahead, err := BehindAhead(mainRoot, onto, tip)
 	if err != nil {
 		a.Err = err
 		return a
@@ -219,13 +251,19 @@ func Assess(mainRoot, onto string, cfg *Config, wt repo.Worktree, agents []Agent
 	switch {
 	case behind == 0:
 		a.Class = Current
-		return a
 	case ahead == 0:
 		a.Class = Stale
+	}
+	if a.Class == Current || a.Class == Stale {
+		// Nothing a run would rebase, so nothing it would push over its
+		// remote: having diverged from it keeps no run off.
+		if a.Own.Blocks == OwnBlockDiverged {
+			a.Own.Blocks = ""
+		}
 		return a
 	}
 
-	a.Replay, err = SimulateRebase(mainRoot, onto, wt.Branch, cfg)
+	a.Replay, err = SimulateRebase(mainRoot, onto, tip, cfg)
 	if err != nil {
 		a.Err = err
 		return a
@@ -249,7 +287,7 @@ func Assess(mainRoot, onto string, cfg *Config, wt repo.Worktree, agents []Agent
 		a.Class = Clean
 	}
 
-	collisions, graph, err := divergence(mainRoot, onto, cfg, wt.Branch)
+	collisions, graph, err := divergence(mainRoot, onto, cfg, tip)
 	a.Err = errors.Join(a.Err, err)
 	a.Divergent = collisions
 	a.Graph = graph

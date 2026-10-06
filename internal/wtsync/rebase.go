@@ -78,11 +78,30 @@ func Preflight(a Assessment) (Verdict, string) {
 	case len(a.Sessions.Busy()) > 0:
 		return RefuseRun, "an agent session is busy in it: " + a.Sessions.Label(agentLabel)
 	}
-	switch a.Class {
-	case Current:
+	// A branch behind its own remote that cannot be fast-forwarded is refused
+	// whatever its class: what a run would do with it is decided at the
+	// remote's commit, which it cannot get to.
+	// So is one whose remote could not be fetched: nothing says how it
+	// stands now.
+	if a.Own.FetchFailed != "" || (a.Own.State == OwnBehind && a.Own.Refuses()) {
+		return RefuseRun, a.Own.Refusal()
+	}
+	switch {
+	case a.OnlyFastForward():
+		// Nothing to rebase once it is at its remote's commit: the run
+		// moves it there and is done.
+		return Proceed, ""
+	case a.Class == Current:
 		return SkipRun, "already on trunk"
-	case Stale:
+	case a.Class == Stale:
 		return SkipRun, "nothing ahead of trunk"
+	}
+	// Below the skips: a branch a run does not rebase is not pushed over
+	// its remote either.
+	if a.Own.Refuses() {
+		return RefuseRun, a.Own.Refusal()
+	}
+	switch a.Class {
 	case Divergent:
 		reason := "divergent"
 		if len(a.Divergent) > 0 {
@@ -131,6 +150,12 @@ type Request struct {
 	// that finds the rebase finished by hand: more on the branch than that
 	// were committed inside it. Zero, as a run passes, is not checked.
 	Total int
+	// Safety is the safety ref the run already pinned for this branch: at
+	// the tip it found, before fast-forwarding the branch to its own remote.
+	// Rebase then pins nothing itself, and a restore goes back to that tip
+	// rather than to the one the rebase started from. Zero has Rebase pin
+	// the tip it starts from.
+	Safety Safety
 }
 
 // base is what the rebase replays from: the parent's old tip for a stack
@@ -173,7 +198,7 @@ type Result struct {
 	Safety                 Safety
 	Replayed               int
 	Stops                  []StopResult
-	Restored               bool // an unresolved stop: aborted and verified back at OldTip
+	Restored               bool // an unresolved stop: aborted and verified back at the tip Safety pins
 	SignaturesDropped      int
 	// Left is the stop the run handed over to a person: the rebase is still
 	// in progress in the worktree, with every strategy's answer staged.
@@ -223,6 +248,12 @@ func (d *driver) resetToSafety() error {
 // restore puts the worktree back where the run found it: no rebase in
 // progress, HEAD on the branch at the old tip, nothing left in the index.
 func (d *driver) restore() error {
+	// The tip the run found: the safety ref's, which is the one the rebase
+	// started from unless the run fast-forwarded the branch first.
+	found := d.old
+	if d.res.Safety.Tip != "" {
+		found = d.res.Safety.Tip
+	}
 	_, _ = d.git("rebase", "--abort")
 	if busy, _ := RebaseInProgress(d.req.Path); busy {
 		_, _ = d.git("rebase", "--quit")
@@ -238,7 +269,7 @@ func (d *driver) restore() error {
 		}
 		_, _ = d.git("symbolic-ref", "HEAD", "refs/heads/"+d.req.Branch)
 	}
-	if head, _ := d.git("rev-parse", "HEAD"); head != d.old {
+	if head, _ := d.git("rev-parse", "HEAD"); head != found {
 		if err := d.resetToSafety(); err != nil {
 			return err
 		}
@@ -249,8 +280,8 @@ func (d *driver) restore() error {
 	if ref, _ := d.git("symbolic-ref", "--quiet", "HEAD"); ref != "refs/heads/"+d.req.Branch {
 		return fmt.Errorf("not restored: HEAD is %q, not %s; the old tip is %s", ref, d.req.Branch, d.res.Safety.Ref)
 	}
-	if head, _ := d.git("rev-parse", "HEAD"); head != d.old {
-		return fmt.Errorf("not restored: HEAD is %s, not %s; the old tip is %s", git.ShortID(head, 7), git.ShortID(d.old, 7), d.res.Safety.Ref)
+	if head, _ := d.git("rev-parse", "HEAD"); head != found {
+		return fmt.Errorf("not restored: HEAD is %s, not %s; the old tip is %s", git.ShortID(head, 7), git.ShortID(found, 7), d.res.Safety.Ref)
 	}
 	// A status that cannot be read is not a clean status: this check
 	// fails closed, since its whole job is to prove the worktree is
@@ -309,11 +340,21 @@ func Rebase(mainRoot string, cfg *Config, req Request, log io.Writer) (Result, e
 		return d.res, err
 	}
 	d.old, d.res.OldTip = old, old
-	if d.res.Safety, err = WriteSafety(mainRoot, req.Branch, old, req.Epoch); err != nil {
+	if req.Safety.Ref != "" {
+		d.res.Safety = req.Safety
+	} else if d.res.Safety, err = WriteSafety(mainRoot, req.Branch, old, req.Epoch); err != nil {
 		return d.res, err
 	}
+	// A failure before the rebase starts has moved nothing, unless the run
+	// fast-forwarded the branch first: that is put back with it.
+	early := func(err error) (Result, error) {
+		if req.Safety.Ref == "" {
+			return d.res, err
+		}
+		return d.fail(err)
+	}
 	if d.res.SignaturesDropped, err = signedCount(req.Path, req.base(), old); err != nil {
-		return d.res, err
+		return early(err)
 	}
 	// The picks that may need a version lift are the ones changing a file a
 	// lifting rule claims. Around each the sequencer's list gets a break
@@ -331,7 +372,7 @@ func Rebase(mainRoot string, cfg *Config, req Request, log io.Writer) (Result, e
 	// untouched.
 	plan, err := planLift(req.Path, cfg, req.base(), req.Branch)
 	if err != nil {
-		return d.res, err
+		return early(err)
 	}
 	env := rebaseEnv
 	if plan.edits() {
@@ -339,7 +380,7 @@ func Rebase(mainRoot string, cfg *Config, req Request, log io.Writer) (Result, e
 		sequenceEditor(&b, plan.marks, plan.drops)
 		script, cleanup, err := writeScript(b.String())
 		if err != nil {
-			return d.res, err
+			return early(err)
 		}
 		defer cleanup()
 		env = []string{"GIT_EDITOR=true", "GIT_SEQUENCE_EDITOR=" + shellQuote(script)}

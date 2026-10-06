@@ -6,6 +6,15 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-10-06 17:16 — wt up checks a branch against its own remote before rebasing it
+
+- `wt up` and `wt sync run` check each branch against its own remote, fetched
+  with trunk. Behind it: fast-forwarded, then rebased if anything is left to.
+- Diverged from it, with commits there the branch never had: refused, unless
+  `--allow-diverged`. Rebased and not pushed yet runs again.
+- JSON: `ownRemote` (status 1.6.0, sync 1.3.0), `ownRemoteSync` and the
+  result `fastForwarded` (up 1.4.0, sync-run 1.2.0).
+
 ## 2026-10-02 13:40 — wt sees Codex sessions
 
 - A Codex session in a worktree now counts like a Claude one: `wt up`,
