@@ -788,6 +788,46 @@ wt made is renamed out of the `<type>_wt/` prefix so the work survives its
 worktree, and one wt did not make is left exactly as it is. A detached HEAD has
 no branch to touch.
 
+## In Claude Code
+
+`mods/wt` is a Claude Code mod: the worktree the session stands in, as
+`wt status --json` reports it.
+
+- A status line entry in plain words: `wt: login · 4 behind main · not pushed`.
+- A band above the prompt when the branch is behind trunk or behind its own
+  remote, with **wt up**. It runs `wt up --yes --no-push --json --expect
+  <token>`, so it goes ahead only over the plan it showed, and then offers
+  **Push…**, which puts the lease-protected push wt printed in your prompt
+  for you to run, and **Undo** (`wt sync undo`). Nothing moves a branch while
+  a turn runs, and a prompt sent during a move waits for it.
+- A pane, and `/wt [up|undo|push|resume|fetch|refresh]`.
+- It stays current while you are in another terminal: every ten seconds it
+  reads the branch, trunk and remote refs, and runs `wt status` again only
+  when one has moved, so what another session or a fetch did is on screen when
+  you come back.
+
+Install it from a checkout of this repository, which Claude Code then reads in
+place (`/reload-plugins` after a pull):
+
+```sh
+claude plugin marketplace add ~/path/to/wt
+claude plugin install wt@wt
+```
+
+or from GitHub: `/plugin install wt --marketplace anders-lindstrom/wt`.
+
+Its options are off until set: with `/plugin configure`, with
+`claude plugin install wt@wt --config gittree=true --config reviewStatus=true`,
+or under `pluginConfigs` in a settings file:
+
+| Option | What it adds |
+|---|---|
+| `gittree` | **Open in gittree** in the pane, and `/wt gittree` |
+| `reviewStatus` | on the status line and in the pane: when this conversation last ran a review skill, how many of your inputs ago, and how your last input began |
+| `reviewSkills` | which skills count as a review: a regular expression on the skill's name, `review` by default |
+
+`claude plugin validate mods/wt` and `claude plugin test mods/wt` check it.
+
 ## Development
 
 ```sh
