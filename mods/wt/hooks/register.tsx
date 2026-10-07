@@ -23,6 +23,8 @@ type Offer = { tone: Tone; text: string; actions: Action[] }
 const PANE = 'wt'
 const TEN_MINUTES = 600_000
 const PULSE_MS = 10_000
+// Past this, what is shown about trunk says how old it is.
+const STALE_MS = 60 * 60_000
 
 const plan = atom({ plugin: 'wt', key: 'plan' } as const, null)
 const busy = atom({ plugin: 'wt', key: 'busy' } as const, 'idle')
@@ -48,9 +50,9 @@ const LABEL: Record<Action, string> = {
   refresh: 'Refresh',
   details: 'Details',
   hide: 'Hide',
-  gittree: 'Open in gittree',
+  gittree: 'gittree',
 }
-const HOTKEY: Partial<Record<Action, string>> = { up: 'u', undo: 'z', push: 'p', resume: 'r', details: 'd', hide: 'h' }
+const HOTKEY: Partial<Record<Action, string>> = { up: 'u', undo: 'z', push: 'p', resume: 'r', details: 'd', hide: 'h', gittree: 'g' }
 // What moves a branch: never run while a model turn runs, and one at a time.
 const MOVES: readonly Action[] = ['up', 'upDiverged', 'undo', 'resume']
 const RUNNING: Record<Busy, string> = {
@@ -114,6 +116,8 @@ const planOf = (stdout: string): Plan | null => {
     trunk: String(s.trunk ?? ''),
     trunkRef: String(s.trunkRef ?? s.trunk ?? ''),
     trunkFetchedAt: s.trunkRefUpdatedAt ?? null,
+    gitDir: null,
+    fetchedAt: null,
     trunkRemoteAhead: Number(s.trunkSync?.remoteAhead ?? 0),
     behind: typeof w.behind === 'number' ? w.behind : null,
     ahead: typeof w.ahead === 'number' ? w.ahead : null,
@@ -168,15 +172,26 @@ const ownWords = (p: Plan, isShort: boolean): string | undefined => {
 
 // The worktree in a few plain words. The engine leads the entry with the
 // mod's name, so this never says "wt" itself.
-const statusText = (p: Plan | null): string | undefined => {
+// How old what is known about trunk is, once that is worth saying: nothing
+// here fetches, so a count against trunk is as of the last fetch anyone made.
+const staleWords = (p: Plan, now: number): string | undefined =>
+  p.fetchedAt !== null && now - p.fetchedAt > STALE_MS ? `last fetched ${ago(now, p.fetchedAt)}` : undefined
+
+const statusText = (p: Plan | null, now: number): string | undefined => {
   if (p === null) {
     return undefined
   }
 
+  const stale = staleWords(p, now)
+
   if (p.isMain) {
-    return p.trunkRemoteAhead > 0
-      ? `main checkout · local ${p.trunk} is ${p.trunkRemoteAhead} behind ${p.trunkRef}`
-      : 'main checkout'
+    return [
+      'main checkout',
+      p.trunkRemoteAhead > 0 ? `local ${p.trunk} is ${p.trunkRemoteAhead} behind ${p.trunkRef}` : undefined,
+      stale,
+    ]
+      .filter(part => part !== undefined)
+      .join(' · ')
   }
 
   const parts = [
@@ -193,6 +208,10 @@ const statusText = (p: Plan | null): string | undefined => {
     parts.push('rebase waiting for you')
   } else if (p.tree === 'dirty') {
     parts.push('uncommitted changes')
+  }
+
+  if (stale !== undefined) {
+    parts.push(stale)
   }
 
   return parts.join(' · ')
@@ -229,7 +248,7 @@ const canUp = (p: Plan): boolean => !p.isMain && p.token !== null && hasWork(p) 
 const signature = (p: Plan | null): string =>
   p === null ? '' : [p.path, p.behind, ownBehind(p), p.upIneligibleCode].join('|')
 
-const offerOf = (p: Plan | null, last: Outcome | null, state: Busy): Offer | null => {
+const offerOf = (p: Plan | null, last: Outcome | null, state: Busy, now: number): Offer | null => {
   if (state !== 'idle') {
     return { tone: 'suggestion', text: RUNNING[state], actions: [] }
   }
@@ -275,10 +294,13 @@ const offerOf = (p: Plan | null, last: Outcome | null, state: Busy): Offer | nul
 
   const why = obstacle(p)
   const withStack = p.stack.length > 0 ? ` wt up moves it together with ${p.stack.join(', ')}.` : ''
+  const stale = staleWords(p, now)
+  // wt up fetches before it rebases, so an old count only understates the run.
+  const asOf = stale === undefined ? '' : ` as of the fetch ${ago(now, p.fetchedAt ?? now)}`
 
   return why === undefined
-    ? { tone: 'suggestion', text: `${p.work} is ${distance(p)}.${withStack}`, actions: ['up', 'details', 'hide'] }
-    : { tone: 'warning', text: `${p.work} is ${distance(p)}, and wt up would refuse: ${why}`, actions: ['details', 'hide'] }
+    ? { tone: 'suggestion', text: `${p.work} is ${distance(p)}${asOf}.${withStack}`, actions: ['up', 'details', 'hide'] }
+    : { tone: 'warning', text: `${p.work} is ${distance(p)}${asOf}, and wt up would refuse: ${why}`, actions: ['details', 'hide'] }
 }
 
 const failed = (action: Outcome['action'], p: Plan, text: string): Outcome => ({
@@ -388,14 +410,37 @@ const quoted = (arg: string): string => (/^[A-Za-z0-9_/.:=@%+,-]+$/.test(arg) ? 
 
 // Pins the status line: the worktree, then the review knob's entry.
 const pin = async ($: Engine): Promise<void> => {
-  const parts = [statusText(await read($, plan))]
+  const now = await $.clock.now()
+  const parts = [statusText(await read($, plan), now)]
 
   if (knobs.hasReview) {
-    parts.push(reviewWords(await read($, lastReview), await read($, inputs), await $.clock.now()))
+    parts.push(reviewWords(await read($, lastReview), await read($, inputs), now))
   }
 
   const text = parts.filter(part => part !== undefined).join(' · ')
   $.ui.status(text === '' ? undefined : text)
+}
+
+// When the repository last fetched anything: the age of FETCH_HEAD in its git
+// directory, which every worktree of it shares. Read, never caused.
+const fetched = async ($: Engine, path: string): Promise<Pick<Plan, 'gitDir' | 'fetchedAt'>> => {
+  try {
+    const ran = await $.process.run(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: path, timeoutMs: 5_000 })
+    const gitDir = ran.exitCode === 0 ? ran.stdout.trim() : ''
+
+    if (gitDir === '') {
+      return { gitDir: null, fetchedAt: null }
+    }
+
+    try {
+      return { gitDir, fetchedAt: (await $.fs.stat(`${gitDir}/FETCH_HEAD`)).mtimeMs }
+    } catch {
+      // Never fetched.
+      return { gitDir, fetchedAt: null }
+    }
+  } catch {
+    return { gitDir: null, fetchedAt: null }
+  }
 }
 
 // Reads the worktree again and pins the status line. One `wt status` at a
@@ -416,6 +461,10 @@ const refresh = async ($: Engine): Promise<Plan | null> => {
       found = planOf((await $.process.run(['wt', 'status', '--json'], { timeoutMs: 20_000 })).stdout)
     } catch {
       // wt is not installed, or did not answer in time: nothing to show.
+    }
+
+    if (found !== null) {
+      found = { ...found, ...(await fetched($, found.path)) }
     }
 
     const held = await read($, plan)
@@ -467,8 +516,19 @@ const beat = async ($: Engine): Promise<void> => {
     return
   }
 
+  // A fetch that moved no ref of ours still makes what is shown newer.
+  let fetchedAt = 0
+
+  if (p.gitDir !== null) {
+    try {
+      fetchedAt = (await $.fs.stat(`${p.gitDir}/FETCH_HEAD`)).mtimeMs
+    } catch {
+      // Never fetched.
+    }
+  }
+
   const before = pulse
-  pulse = `${p.path}\n${ran.stdout}`
+  pulse = `${p.path}\n${fetchedAt}\n${ran.stdout}`
 
   if (before !== null && before !== pulse) {
     await refresh($)
@@ -512,7 +572,7 @@ const act = async ($: Engine, action: Action): Promise<string> => {
   if (action === 'refresh') {
     await update($, hiddenFor, () => null)
 
-    return statusText(await refresh($)) ?? 'No wt worktree here.'
+    return statusText(await refresh($), await $.clock.now()) ?? 'No wt worktree here.'
   }
 
   if (action === 'gittree') {
@@ -657,10 +717,9 @@ export const register: Register = (on, options) => {
     // A reload ends whatever this module was waiting on: nothing runs now.
     await update($, busy, () => 'idle')
     refresh($).catch(() => undefined)
+    // What is shown counts time: a minute later it says a minute more.
     $.clock.every(60_000, () => {
-      if (knobs.hasReview) {
-        pin($).catch(() => undefined)
-      }
+      pin($).catch(() => undefined)
     })
     $.clock.every(PULSE_MS, () => {
       beat($).catch(() => undefined)
@@ -772,7 +831,7 @@ export const register: Register = (on, options) => {
     const p = await refresh($)
     await $.ui.open({ id: PANE, title: 'wt' })
 
-    return { text: statusText(p) ?? 'No wt worktree here.' }
+    return { text: statusText(p, await $.clock.now()) ?? 'No wt worktree here.' }
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
@@ -784,15 +843,27 @@ export const register: Register = (on, options) => {
 
     const p = await read($, plan)
     const last = await read($, outcome)
-    const offer = offerOf(p, last, await read($, busy))
+    const offer = offerOf(p, last, await read($, busy), await $.clock.now())
+    const { Box, Button, Text } = $.ui.resolve(e)
 
     if (offer === null || (last === null && (await read($, hiddenFor)) === signature(p))) {
-      return next(e)
+      // Nothing to do about the worktree. With the gittree knob the band
+      // stays, one quiet row, so opening it there is always one key away.
+      if (!knobs.hasGittree) {
+        return next(e)
+      }
+
+      return (
+        <Box gap={2}>
+          <Button key="gittree" plain dimColor label={LABEL.gittree} hotkey={HOTKEY.gittree} onPress={() => act($, 'gittree')} />
+          <Button key="details" plain dimColor label="wt details" hotkey={HOTKEY.details} onPress={() => act($, 'details')} />
+        </Box>
+      )
     }
 
-    const { Box, Button, Text } = $.ui.resolve(e)
-    const actions = e.props.isWorking ? offer.actions.filter(one => !MOVES.includes(one)) : offer.actions
-    const isHeld = actions.length < offer.actions.length
+    const offered = knobs.hasGittree && offer.actions.length > 0 ? [...offer.actions.filter(one => one !== 'hide'), 'gittree' as const, ...offer.actions.filter(one => one === 'hide')] : offer.actions
+    const actions = e.props.isWorking ? offered.filter(one => !MOVES.includes(one)) : offered
+    const isHeld = actions.length < offered.length
 
     return (
       <Box flexDirection="column">
@@ -833,8 +904,7 @@ export const register: Register = (on, options) => {
     }
 
     const now = await $.clock.now()
-    const fetchedAt = p.trunkFetchedAt === null ? NaN : Date.parse(p.trunkFetchedAt)
-    const age = Number.isNaN(fetchedAt) ? 'not fetched yet' : `fetched ${ago(now, fetchedAt)}`
+    const age = p.fetchedAt === null ? 'fetch time unknown' : `last fetched ${ago(now, p.fetchedAt)}`
     const why = obstacle(p)
     const isBehind = hasWork(p)
     // The last outcome, when it is this worktree's.

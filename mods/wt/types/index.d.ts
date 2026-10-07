@@ -21,6 +21,10 @@ export type Plan = {
   trunkRef: string
   /** When the trunk ref last moved here (ISO), or null: status does not fetch. */
   trunkFetchedAt: string | null
+  /** The repository's git directory, absolute; null when it could not be read. */
+  gitDir: string | null
+  /** When the repository last fetched anything (ms since the epoch), or null. */
+  fetchedAt: number | null
   /** Commits origin's trunk has that local trunk lacks. */
   trunkRemoteAhead: number
   /** null when wt could not count them. */

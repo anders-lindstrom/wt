@@ -103,7 +103,10 @@ const participant = (over: Record<string, unknown>): Record<string, unknown> => 
 // The world beneath the mod: wt, git and gittree answered from the test
 // (`answers` by the command's first three words, wt up by default), and
 // everything the mod shows or records taken without a surface.
-const world = (on: On, statusJson: () => string, answers: Record<string, string> = {}, refs: () => string = () => 'refs') => {
+// When the repository of the test last fetched, as FETCH_HEAD's time.
+world.fetchedAt = 0
+
+function world(on: On, statusJson: () => string, answers: Record<string, string> = {}, refs: () => string = () => 'refs') {
   const runs: string[][] = []
   const cwds: (string | undefined)[] = []
   const shown: { status: string | undefined; toasts: string[]; fills: string[] } = { status: undefined, toasts: [], fills: [] }
@@ -141,6 +144,7 @@ const world = (on: On, statusJson: () => string, answers: Record<string, string>
   on('skill.prompt', ($, e) => ({ text: e.text }))
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: 1, mtimeMs: world.fetchedAt, isLink: false } }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
 
   return { runs, cwds, shown, clock }
@@ -170,12 +174,13 @@ test('a worktree behind trunk gets a band, and wt up runs with the plan token', 
   // Push runs nothing: the lease-protected push goes in the prompt.
   await ui.press({ key: 'push' })
   expect(shown.fills).toEqual([`! git -C ${PATH} push --force-with-lease --force-if-includes origin feat_wt/login`])
-  expect(runs.some(argv => argv[0] === 'git')).toBe(false)
+  expect(runs.some(argv => argv[0] === 'git' && argv.includes('push'))).toBe(false)
 
   // Undo acts on the worktree the command runs in.
   await ui.press({ key: 'undo' })
-  expect(runs.at(-2)).toEqual(['wt', 'sync', 'undo', '.', '--yes', '--json'])
-  expect(cwds.at(-2)).toBe(PATH)
+  const undo = runs.findIndex(argv => argv[2] === 'undo')
+  expect(runs[undo]).toEqual(['wt', 'sync', 'undo', '.', '--yes', '--json'])
+  expect(cwds[undo]).toBe(PATH)
   await ui.unmount()
 })
 
@@ -364,4 +369,38 @@ test('what another terminal did shows within one pulse, and a quiet repository c
   tips = 'refs/remotes/origin/main aaa\nrefs/heads/feat_wt/login bbb'
   await clock.advance(10_000)
   expect(shown.status).toBe('login · up to date with main')
+})
+
+test('nothing fetches by itself: an old fetch is said, on the status line and in the band', async ($, on) => {
+  world.fetchedAt = START - 3 * 60 * 60_000
+  const { runs, shown } = world(on, () => status(), { 'git rev-parse --path-format=absolute': '/repos/app/.git\n' })
+
+  expect((await $.command.run({ ...RUN, command: 'wt', args: 'refresh' })).text).toBe('login · 4 behind main · last fetched 3 h ago')
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ type: 'Text', text: 'login is 4 behind origin/main as of the fetch 3 h ago.' })).toBeDefined()
+  await band.unmount()
+  expect(runs.some(argv => argv[0] === 'git' && argv[1] === 'fetch')).toBe(false)
+
+  // A recent fetch needs no words.
+  world.fetchedAt = START - 5 * 60_000
+  expect((await $.command.run({ ...RUN, command: 'wt', args: 'refresh' })).text).toBe('login · 4 behind main')
+  expect(shown.status).toBe('login · 4 behind main')
+})
+
+test('with the gittree knob the band keeps one quiet row when there is nothing to do', { options: { gittree: true } }, async ($, on) => {
+  const { runs } = world(on, () => status({}, { behind: 0 }))
+
+  await $.command.run({ ...RUN, command: 'wt', args: 'refresh' })
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const band = await $.ui.mount({ ...BAND, surface })
+    expect(await band.find({ type: 'Button', key: 'up' })).toBeUndefined()
+    await band.press({ key: 'gittree' })
+    await band.unmount()
+  }
+
+  expect(runs.filter(argv => argv[0] === 'gittree')).toEqual([
+    ['gittree', PATH],
+    ['gittree', PATH],
+  ])
 })

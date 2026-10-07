@@ -6,6 +6,15 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-10-07 11:17 — The Claude Code mod says how old its view of trunk is
+
+- `mods/wt` never fetches by itself. When the repository's last fetch is over
+  an hour old, the status line and the band say so: `last fetched 3 h ago`.
+- With the `gittree` option on, **gittree** is always in the band: one quiet
+  row when there is nothing else to do.
+- The `reviewSkills` default no longer counts the skill about receiving a
+  review.
+
 ## 2026-10-07 10:55 — wt inside Claude Code
 
 - `mods/wt` is a Claude Code mod: a status line entry for the worktree you are

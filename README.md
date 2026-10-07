@@ -805,6 +805,9 @@ no branch to touch.
   reads the branch, trunk and remote refs, and runs `wt status` again only
   when one has moved, so what another session or a fetch did is on screen when
   you come back.
+- It never fetches by itself. A count against trunk is as of the last fetch
+  anyone made in the repository, and once that is over an hour old it says so:
+  `last fetched 3 h ago`. `wt up` fetches before it rebases.
 
 Install it from a checkout of this repository, which Claude Code then reads in
 place (`/reload-plugins` after a pull):
@@ -822,7 +825,7 @@ or under `pluginConfigs` in a settings file:
 
 | Option | What it adds |
 |---|---|
-| `gittree` | **Open in gittree** in the pane, and `/wt gittree` |
+| `gittree` | **gittree** in the band, which then stays as one quiet row when there is nothing else to do, in the pane, and as `/wt gittree`: it opens the worktree in gittree |
 | `reviewStatus` | on the status line and in the pane: when this conversation last ran a review skill, how many of your inputs ago, and how your last input began |
 | `reviewSkills` | which skills count as a review: a regular expression on the skill's name. The default takes every skill with `review` in its name except the one about receiving a review |
 
