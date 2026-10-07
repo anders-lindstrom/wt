@@ -6,6 +6,15 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-10-07 11:40 — wt inside Claude Code
+
+- `mods/wt` is a Claude Code mod: a status line entry for the worktree you are
+  in, and a band with **wt up** when it is behind trunk or its own remote, then
+  Push and Undo. Also a pane and `/wt`.
+- Install: `claude plugin marketplace add <this checkout>`, then
+  `claude plugin install wt@wt`. Options `gittree` and `reviewStatus` are off
+  until set. The README has the rest.
+
 ## 2026-10-06 21:43 — wt no longer calls a running Superset stopped
 
 - Superset 1.36.0's `superset status` calls a host service stale while it is
