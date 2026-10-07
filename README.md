@@ -824,7 +824,7 @@ or under `pluginConfigs` in a settings file:
 |---|---|
 | `gittree` | **Open in gittree** in the pane, and `/wt gittree` |
 | `reviewStatus` | on the status line and in the pane: when this conversation last ran a review skill, how many of your inputs ago, and how your last input began |
-| `reviewSkills` | which skills count as a review: a regular expression on the skill's name, `review` by default |
+| `reviewSkills` | which skills count as a review: a regular expression on the skill's name. The default takes every skill with `review` in its name except the one about receiving a review |
 
 `claude plugin validate mods/wt` and `claude plugin test mods/wt` check it.
 

@@ -1,6 +1,6 @@
 {
   "name": "wt",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "The worktree you are in, as wt sees it: how far behind trunk, its own remote, and wt up, undo and push from a band and a pane. Optional: open it in gittree, and when this conversation last ran a review",
   "types": "./types/index.d.ts",
   "author": {
@@ -22,8 +22,8 @@
     "reviewSkills": {
       "type": "string",
       "title": "Review skills",
-      "description": "A skill counts as a review when its name matches this regular expression",
-      "default": "review"
+      "description": "A skill counts as a review when its name matches this regular expression. The default takes every skill with \"review\" in its name but the one about receiving a review",
+      "default": "^(?!.*receiving).*review"
     }
   }
 }

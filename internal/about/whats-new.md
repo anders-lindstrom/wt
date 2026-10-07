@@ -6,7 +6,7 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
-## 2026-10-07 11:40 — wt inside Claude Code
+## 2026-10-07 10:55 — wt inside Claude Code
 
 - `mods/wt` is a Claude Code mod: a status line entry for the worktree you are
   in, and a band with **wt up** when it is behind trunk or its own remote, then
