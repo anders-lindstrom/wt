@@ -16,6 +16,11 @@ import (
 // put a state in front of it without a Superset on the machine running it.
 var probeSuperset = superset.Probe
 
+// supersetHostCommand reads a host pid's command line, for `wt doctor` alone.
+// A variable so a test can answer for a process that is not there.
+// WORKAROUND(superset-stale-status)
+var supersetHostCommand = superset.ProcessCommand
+
 // registerSuperset adopts a worktree wt has just created as a workspace in the
 // Superset desktop app.
 //

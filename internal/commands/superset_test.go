@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,8 +14,9 @@ import (
 )
 
 // TestMain keeps this package off the machine running it: XDG_CONFIG_HOME is
-// a directory of this run's own, probeSuperset answers "no Superset here" and
-// findGitHub "no gh here" until a test asks for another state.
+// a directory of this run's own, probeSuperset answers "no Superset here",
+// findGitHub "no gh here" and supersetHostCommand reads no process, until a
+// test asks for another state.
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "wt-commands-test")
 	if err != nil {
@@ -25,6 +27,7 @@ func TestMain(m *testing.M) {
 	}
 	probeSuperset = func() superset.Status { return superset.Status{} }
 	findGitHub = func() (github.CLI, bool) { return github.CLI{}, false }
+	supersetHostCommand = func(int) (string, error) { return "", errors.New("no ps in tests") }
 	code := m.Run()
 	_ = os.RemoveAll(dir)
 	os.Exit(code)
@@ -287,6 +290,16 @@ func TestDoctorReportsSupersetState(t *testing.T) {
 			config.SupersetOff, superset.Status{Exe: "/nope/superset", Running: true},
 			"  - SUPERSET_REGISTER=off", false,
 		},
+		"stopped": {
+			config.SupersetAuto, superset.Status{Exe: "/nope/superset"},
+			"  - /nope/superset (version unknown) is installed but its host service is not running; start the Superset app", false,
+		},
+		// WORKAROUND(superset-stale-status): stale and nothing answered is a
+		// stopped host, in the same words.
+		"stale and silent": {
+			config.SupersetOn, superset.Status{Exe: "/nope/superset", Stale: true, PID: 96249},
+			"  ! /nope/superset (version unknown) is installed but its host service is not running; start the Superset app", true,
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			ctx, err := Open(committedRepo(t, minimalConf))
@@ -343,6 +356,184 @@ func TestDoctorReportsAUsableSuperset(t *testing.T) {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("doctor said\n%s\nwant %q", out.String(), want)
 		}
+	}
+}
+
+// staleSuperset is a `superset` the way 1.36.0 is beside the desktop app: its
+// status calls the manifest stale while the host answers everything else.
+// WORKAROUND(superset-stale-status), with every test that uses it.
+func staleSuperset(t *testing.T, repoRoot string) string {
+	t.Helper()
+	return supersetSaying(t, repoRoot, `{"running":false,"stale":true,"pid":96249}`)
+}
+
+// supersetSaying is a 1.36.0 `superset` whose `status --json` prints status
+// and whose host answers everything else. The real Probe is put in front of
+// it, and it is first on the PATH. WORKAROUND(superset-stale-status)
+func supersetSaying(t *testing.T, repoRoot, status string) string {
+	t.Helper()
+	dir := t.TempDir()
+	log := filepath.Join(dir, "argv")
+	script := "#!/bin/sh\n" +
+		"printf '%s\\n' \"$*\" >> " + log + "\n" +
+		"case \"$1 $2\" in\n" +
+		"  'status --json') echo '" + status + "' ;;\n" +
+		"  '--version ') echo 1.36.0 ;;\n" +
+		"  'projects list') echo '[{\"id\":\"p1\",\"name\":\"demo\",\"path\":\"" + repoRoot + "\"}]' ;;\n" +
+		"  'ws create') echo '{\"workspace\":{\"id\":\"w1\"},\"alreadyExists\":false}' ;;\n" +
+		"esac\n"
+	if err := os.WriteFile(filepath.Join(dir, "superset"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	old := probeSuperset
+	probeSuperset = superset.Probe
+	t.Cleanup(func() { probeSuperset = old })
+	return log
+}
+
+// hostCommand answers for `ps` in this test, and returns the pids it was
+// asked about. WORKAROUND(superset-stale-status)
+func hostCommand(t *testing.T, line string, err error) *[]int {
+	t.Helper()
+	var asked []int
+	old := supersetHostCommand
+	supersetHostCommand = func(pid int) (string, error) {
+		asked = append(asked, pid)
+		return line, err
+	}
+	t.Cleanup(func() { supersetHostCommand = old })
+	return &asked
+}
+
+// Superset's status calling a serving host stale does not stop a registration:
+// the host is asked, answers, and the worktree is registered with no remark.
+func TestNewRegistersThoughStatusCallsTheHostStale(t *testing.T) {
+	ctx, err := Open(committedRepo(t, minimalConf))
+	if err != nil {
+		t.Fatal(err)
+	}
+	optIn(ctx)
+	log := staleSuperset(t, ctx.Repo.MainRoot)
+	asked := hostCommand(t, "", nil)
+
+	var errs bytes.Buffer
+	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &errs); err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if !strings.Contains(errs.String(), "✓ registered with Superset as a workspace of project demo") {
+		t.Errorf("stderr = %q", errs.String())
+	}
+	if strings.Contains(errs.String(), "not running") || strings.Contains(errs.String(), "stale") {
+		t.Errorf("stderr remarks on Superset's state: %q", errs.String())
+	}
+	got := argvOf(t, log)
+	if len(got) != 4 || got[0] != "status --json" || !strings.HasPrefix(got[3], "ws create --local --project p1 ") {
+		t.Errorf("argv = %q, want status, the probe's read, the projects and ws create", got)
+	}
+	if len(*asked) != 0 {
+		t.Errorf("ps was asked about %v; only doctor inspects a process", *asked)
+	}
+}
+
+// Doctor says the host is running and that the stale manifest is Superset's
+// own report, in one line, and never tells the person to start an app that is
+// already up. It is no problem even for a repository that asked for Superset.
+func TestDoctorSaysStatusIsWrongAboutARunningHost(t *testing.T) {
+	ctx, err := Open(committedRepo(t, minimalConf))
+	if err != nil {
+		t.Fatal(err)
+	}
+	optIn(ctx)
+	ctx.Config.SupersetRegister = config.SupersetOn
+	staleSuperset(t, ctx.Repo.MainRoot)
+
+	var out bytes.Buffer
+	problems, err := Doctor(ctx, &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if problems != 0 {
+		t.Errorf("problems = %d, want 0:\n%s", problems, out.String())
+	}
+	for _, want := range []string{
+		"(1.36.0), host service running; `superset status` reports a stale manifest for pid 96249, which is Superset's bug — nothing to start\n",
+		`✓ project "demo"`,
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("doctor said\n%s\nwant %q", out.String(), want)
+		}
+	}
+	if strings.Contains(out.String(), "start the Superset app") {
+		t.Errorf("doctor tells the person to start a running app:\n%s", out.String())
+	}
+}
+
+// Doctor notices by itself when Superset has fixed its status: it calls a host
+// running whose command line 1.36.0 would have refused. That is one line and
+// never a problem. A host `status` always vouched for, one it still calls
+// stale, one that is stopped and a pid that cannot be read say nothing.
+// WORKAROUND(superset-stale-status)
+func TestDoctorSaysWhenTheStaleWorkaroundCanGo(t *testing.T) {
+	const (
+		running = `{"running":true,"healthy":true,"pid":4242,"port":51234,"endpoint":"http://127.0.0.1:51234","uptimeSec":60}`
+		desktop = "/Applications/Superset.app/Contents/MacOS/Superset /Applications/Superset.app/Contents/Resources/app.asar/dist/main/host-service.js"
+		note    = "  - `superset status` now reports this host correctly (running, pid 4242, not a \"superset-host\" process); wt's stale-status workaround can be removed: grep wt's source for WORKAROUND(superset-stale-status)\n"
+		plain   = "(1.36.0), host service running\n"
+	)
+	for name, tc := range map[string]struct {
+		status       string
+		command      string
+		commandErr   error
+		wantNote     bool
+		wantLine     string
+		wantProblems int
+		wantAsked    int
+	}{
+		"running, the desktop app's host": {status: running, command: desktop, wantNote: true, wantLine: plain, wantAsked: 1},
+		"running, a superset-host":        {status: running, command: "/usr/local/bin/superset-host", wantLine: plain, wantAsked: 1},
+		"running, the pid cannot be read": {status: running, commandErr: errors.New("exit status 1"), wantLine: plain, wantAsked: 1},
+		"running, no pid":                 {status: `{"running":true}`, command: desktop, wantLine: plain},
+		"stale and answering": {
+			status: `{"running":false,"stale":true,"pid":4242}`, command: desktop,
+			wantLine: "host service running; `superset status` reports a stale manifest for pid 4242, which is Superset's bug — nothing to start\n",
+		},
+		"not running": {
+			status: `{"running":false}`, command: desktop,
+			wantLine: "its host service is not running; start the Superset app\n", wantProblems: 1,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx, err := Open(committedRepo(t, minimalConf))
+			if err != nil {
+				t.Fatal(err)
+			}
+			optIn(ctx)
+			ctx.Config.SupersetRegister = config.SupersetOn
+			supersetSaying(t, ctx.Repo.MainRoot, tc.status)
+			asked := hostCommand(t, tc.command, tc.commandErr)
+
+			var out bytes.Buffer
+			problems, err := Doctor(ctx, &out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Contains(out.String(), note); got != tc.wantNote {
+				t.Errorf("the note is there = %v, want %v:\n%s", got, tc.wantNote, out.String())
+			}
+			if !tc.wantNote && strings.Contains(out.String(), "workaround") {
+				t.Errorf("doctor speaks of the workaround:\n%s", out.String())
+			}
+			if !strings.Contains(out.String(), tc.wantLine) {
+				t.Errorf("doctor said\n%s\nwant %q", out.String(), tc.wantLine)
+			}
+			if problems != tc.wantProblems {
+				t.Errorf("problems = %d, want %d:\n%s", problems, tc.wantProblems, out.String())
+			}
+			if len(*asked) != tc.wantAsked {
+				t.Errorf("ps was asked about %v, want %d question(s)", *asked, tc.wantAsked)
+			}
+		})
 	}
 }
 

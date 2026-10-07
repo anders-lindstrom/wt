@@ -198,7 +198,19 @@ func doctorSuperset(ctx *Context, w io.Writer, report func(string, ...any)) {
 		note("%s (%s) is installed but its host service is not running; start the Superset app", status.Exe, version)
 		return
 	}
-	fmt.Fprintf(w, "  ✓ %s (%s), host service running\n", status.Exe, version)
+	// WORKAROUND(superset-stale-status): the Stale line, and the note that
+	// the workaround can go, which is never a problem.
+	if status.Stale {
+		// The host answered, so there is nothing for the person to start.
+		fmt.Fprintf(w, "  ✓ %s (%s), host service running; `superset status` reports a stale manifest for pid %d, which is Superset's bug — nothing to start\n",
+			status.Exe, version, status.PID)
+	} else {
+		fmt.Fprintf(w, "  ✓ %s (%s), host service running\n", status.Exe, version)
+	}
+	if status.StaleStatusFixed(supersetHostCommand) {
+		fmt.Fprintf(w, "  - `superset status` now reports this host correctly (running, pid %d, not a \"superset-host\" process); wt's stale-status workaround can be removed: grep wt's source for %s\n",
+			status.PID, superset.StaleStatusMarker)
+	}
 
 	projects, err := status.CLI().Projects()
 	if err != nil {

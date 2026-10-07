@@ -6,6 +6,16 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-10-06 21:43 — wt no longer calls a running Superset stopped
+
+- Superset 1.36.0's `superset status` calls a host service stale while it is
+  serving. wt took that for "not running": `wt new` skipped the registration
+  and `wt doctor` said to start an app that was already up.
+- wt now asks the host itself when status says stale. If it answers, worktrees
+  are registered and removed as before, and `wt doctor` says the host is up
+  and the stale manifest is Superset's bug. If not: "start the Superset app".
+- `wt doctor` says when Superset has fixed it and the workaround can go.
+
 ## 2026-10-06 17:16 — wt up checks a branch against its own remote before rebasing it
 
 - `wt up` and `wt sync run` check each branch against its own remote, fetched
