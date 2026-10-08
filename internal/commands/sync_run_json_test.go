@@ -24,7 +24,7 @@ func syncRunJSON(t *testing.T, ctx *Context, works []string, opts RunOptions) (S
 	t.Helper()
 	var out, human bytes.Buffer
 	opts.Journal = NewSyncRunJournal(&out, "sync run")
-	err := SyncRun(ctx, works, opts, &human)
+	err := SyncRebase(ctx, works, opts, &human)
 	return decodeSyncRun(t, out.Bytes()), err
 }
 
@@ -166,7 +166,7 @@ func TestSyncUndoJSONReportsWhatItPutBack(t *testing.T) {
 	ctx, bump := runFixture(t, true)
 	old := gitOut(t, bump, "rev-parse", "HEAD")
 	var human bytes.Buffer
-	if err := SyncRun(ctx, []string{"bump"}, noAgents(), &human); err != nil {
+	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &human); err != nil {
 		t.Fatalf("%v\n%s", err, human.String())
 	}
 	rebased := gitOut(t, bump, "rev-parse", "HEAD")

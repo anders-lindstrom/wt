@@ -21,7 +21,7 @@ func TestSyncUndoPutsBackWhatSyncRunMoved(t *testing.T) {
 	ctx, bump := runFixture(t, true)
 	old := gitOut(t, bump, "rev-parse", "HEAD")
 	var out bytes.Buffer
-	if err := SyncRun(ctx, []string{"bump"}, noAgents(), &out); err != nil {
+	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	if gitOut(t, bump, "log", "-1", "--format=%s") != "chore: regen" {
@@ -54,7 +54,7 @@ func TestSyncUndoPutsBackWhatSyncRunMoved(t *testing.T) {
 func TestSyncUndoRefusesAWorktreeCommittedToSinceTheRun(t *testing.T) {
 	ctx, bump := runFixture(t, true)
 	var out bytes.Buffer
-	if err := SyncRun(ctx, []string{"bump"}, noAgents(), &out); err != nil {
+	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	gitIn(t, bump, "commit", "-q", "--allow-empty", "-m", "after the run")
@@ -311,7 +311,7 @@ func TestSyncUndoUnderAnIdleSessionAsksThenTellsIt(t *testing.T) {
 	ctx, bump := runFixture(t, false)
 	old := gitOut(t, bump, "rev-parse", "HEAD")
 	var out bytes.Buffer
-	if err := SyncRun(ctx, []string{"bump"}, noAgents(), &out); err != nil {
+	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	rebased := gitOut(t, bump, "rev-parse", "HEAD")
@@ -365,7 +365,7 @@ func TestSyncUndoNoLeavesAHandoverAndItsLock(t *testing.T) {
 func TestSyncUndoRefusesASessionThatWokeWhileAsked(t *testing.T) {
 	ctx, bump := runFixture(t, false)
 	var out bytes.Buffer
-	if err := SyncRun(ctx, []string{"bump"}, noAgents(), &out); err != nil {
+	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	rebased := gitOut(t, bump, "rev-parse", "HEAD")

@@ -21,9 +21,9 @@ func SyncAll(u *config.User, sel Selection, opts SyncOptions, w io.Writer) error
 	return AcrossRepos(u, sel, w, func(ctx *Context, w io.Writer) error { return Sync(ctx, opts, w) })
 }
 
-// SyncRunAllOptions is a run across repositories: the options every
+// SyncRebaseAllOptions is a run across repositories: the options every
 // repository's run takes, and the one question asked for all of them.
-type SyncRunAllOptions struct {
+type SyncRebaseAllOptions struct {
 	RunOptions
 	// Ask puts the question for the whole run. Nil means nobody is asked,
 	// which is what a run with no terminal does in one repository too.
@@ -45,7 +45,7 @@ type repoRun struct {
 	err        error
 }
 
-// SyncRunAll is wt sync --run across repositories. Every repository is
+// SyncRebaseAll is wt sync --run across repositories. Every repository is
 // fetched and planned as a run with nothing named would plan it — its ready
 // worktrees, less recipe? — a few at a time; each plan is printed under its
 // repository's name; one question covers them all; then each repository's
@@ -53,7 +53,7 @@ type repoRun struct {
 // naming them would, onto the trunk the plan fetched. A repository whose trunk
 // declares no .wt-sync.yaml has not opted in and is listed, not failed. With
 // IfReady, a worktree left behind trunk fails the run.
-func SyncRunAll(u *config.User, sel Selection, opts SyncRunAllOptions, w io.Writer) error {
+func SyncRebaseAll(u *config.User, sel Selection, opts SyncRebaseAllOptions, w io.Writer) error {
 	set, err := SelectRepos(u, sel)
 	if err != nil {
 		return err
@@ -156,7 +156,7 @@ func SyncRunAll(u *config.User, sel Selection, opts SyncRunAllOptions, w io.Writ
 		}
 		// The remotes as the plan's fetch read them, not as last fetched.
 		one.own = rr.own
-		if err := SyncRun(rr.ctx, rr.ready, one, w); err != nil {
+		if err := SyncRebase(rr.ctx, rr.ready, one, w); err != nil {
 			fmt.Fprintf(w, "! %v\n", err)
 			failures = append(failures, rr.target.Name)
 		}

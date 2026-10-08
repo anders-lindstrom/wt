@@ -29,7 +29,7 @@ func handedOver(t *testing.T) (ctx *Context, bump, gitDir string, st wtsync.Stat
 func handOverNow(t *testing.T, ctx *Context, bump string) (gitDir string, st wtsync.State) {
 	t.Helper()
 	var out bytes.Buffer
-	if err := SyncRun(ctx, []string{"bump"}, noAgents(), &out); err == nil {
+	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err == nil {
 		t.Fatalf("the run should have handed over:\n%s", out.String())
 	}
 	gitDir, err := wtsync.GitDir(bump)
@@ -678,7 +678,7 @@ func TestSyncResumeSendsAnAbortedHandoverToUndo(t *testing.T) {
 	opts := noAgents()
 	opts.Now = func() time.Time { return time.Unix(0, 200) }
 	var runOut bytes.Buffer
-	_ = SyncRun(ctx, []string{"bump"}, opts, &runOut)
+	_ = SyncRebase(ctx, []string{"bump"}, opts, &runOut)
 	if strings.Contains(runOut.String(), "left mid-rebase") {
 		t.Fatalf("the run still refuses the cleared handover:\n%s", runOut.String())
 	}

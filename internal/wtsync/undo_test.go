@@ -15,7 +15,7 @@ import (
 
 // completed pins the result ref a finished run would write: the tip the
 // branch was left at once its rebase and deferred steps were done. Rebase
-// alone does not write one; SyncRun does, after the deferred steps.
+// alone does not write one; SyncRebase does, after the deferred steps.
 func completed(t *testing.T, mainRoot, wtPath, branch string, epoch int64) {
 	t.Helper()
 	if err := WriteResult(mainRoot, branch, gitIn(t, wtPath, "rev-parse", "HEAD"), epoch); err != nil {

@@ -204,7 +204,7 @@ func keepLockHeld(gitDir string) bool {
 // its tip has moved since the last pass, rebase every ready worktree the way
 // wt sync --run --yes does, leaving alone any worktree with a session in it,
 // and push what finished with nothing owed. Every pass is recorded in the
-// log, as it happens, and in the state file. The error is what SyncRun's
+// log, as it happens, and in the state file. The error is what SyncRebase's
 // would be.
 func SyncKeepRun(ctx *Context, opts KeepOptions, w io.Writer) error {
 	gitDir, logPath, statePath, err := keepPaths(ctx)

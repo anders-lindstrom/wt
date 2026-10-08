@@ -55,7 +55,7 @@ func TestInterruptDuringADeferredStepPinsNoResult(t *testing.T) {
 	gitIn(t, main, "fetch", "-q", "origin")
 
 	var out lockedBuffer
-	go func() { _ = SyncRun(ctx, []string{"bump"}, noAgents(), &out) }()
+	go func() { _ = SyncRebase(ctx, []string{"bump"}, noAgents(), &out) }()
 	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(10 * time.Millisecond) {
 		if _, err := os.Stat(started); err == nil {
 			break
@@ -137,7 +137,7 @@ func TestSyncRunInterruptedWhileHandingOverSaysHowToPutItBack(t *testing.T) {
 		_, err := os.Stat(wtsync.PlanPath(gitDir))
 		return err == nil
 	})
-	err = SyncRun(ctx, []string{"bump"}, noAgents(), os.Stdout)
+	err = SyncRebase(ctx, []string{"bump"}, noAgents(), os.Stdout)
 	t.Fatalf("the run returned (%v) instead of being interrupted", err)
 }
 

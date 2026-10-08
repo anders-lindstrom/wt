@@ -134,12 +134,12 @@ func newSyncCmd() *cobra.Command {
 			"  wt sync --profile api         # the overview of a profile's repositories",
 		ValidArgsFunction: completeWork,
 	}
-	var run, resume, undo, yes, force, ifReady, allowDiverged, asJSON bool
+	var rebase, resume, undo, yes, force, ifReady, allowDiverged, asJSON bool
 	var expect string
 	var sel selectionFlags
 	var push func() commands.PushMode
 	flags := func() syncVerbFlags {
-		return syncVerbFlags{run: run, resume: resume, undo: undo,
+		return syncVerbFlags{rebase: rebase, resume: resume, undo: undo,
 			yes: yes, force: force, noFetch: noFetch, noFFTrunk: noFFTrunk, ifReady: ifReady, push: push(),
 			allowDiverged: allowDiverged, json: asJSON, expect: expect}
 	}
@@ -167,7 +167,7 @@ func newSyncCmd() *cobra.Command {
 		switch verb {
 		case "run":
 			return withVerbContext(cmd, args, "sync run", f.json, func(ctx *commands.Context, j *commands.RunJournal) error {
-				return syncRun(cmd, args, ctx, f, j)
+				return syncRebase(cmd, args, ctx, f, j)
 			})
 		case "resume":
 			return withVerbContext(cmd, args, "sync resume", f.json, func(ctx *commands.Context, j *commands.RunJournal) error {
@@ -194,7 +194,7 @@ func newSyncCmd() *cobra.Command {
 		return commands.Sync(ctx, opts, cmd.OutOrStdout())
 	}
 	sync.Flags().BoolVar(&noFetch, "no-fetch", false, "compare with origin/<trunk> as last fetched; with --run, rebase onto it")
-	sync.Flags().BoolVar(&run, "run", false, "wt sync run <work>..., spelled at the end; alone, every ready worktree")
+	sync.Flags().BoolVar(&rebase, "run", false, "wt sync run <work>..., spelled at the end; alone, every ready worktree")
 	sync.Flags().BoolVar(&resume, "resume", false, "wt sync resume <work>, spelled at the end of the line")
 	sync.Flags().BoolVar(&undo, "undo", false, "wt sync undo <work>, spelled at the end of the line")
 	sync.Flags().BoolVarP(&yes, "yes", "y", false, "with a verb: do not ask first")
@@ -213,7 +213,7 @@ func newSyncCmd() *cobra.Command {
 	for _, name := range []string{"run", "resume", "undo", "yes", "push", "no-push", "force", "if-ready", "expect", "no-ff-trunk", "allow-diverged"} {
 		_ = sync.Flags().MarkHidden(name)
 	}
-	sync.AddCommand(newSyncRunCmd(), newSyncResumeCmd(), newSyncUndoCmd(), newSyncDoctorCmd(), newSyncKeepCmd())
+	sync.AddCommand(newSyncRebaseCmd(), newSyncResumeCmd(), newSyncUndoCmd(), newSyncDoctorCmd(), newSyncKeepCmd())
 	return sync
 }
 
@@ -468,9 +468,9 @@ func newSyncKeepStopCmd() *cobra.Command {
 // syncVerbFlags is what wt sync's own flags say: at most one verb, spelled at
 // the end of a recalled `wt sync <work>` line, with that verb's own flags.
 type syncVerbFlags struct {
-	run, resume, undo   bool
-	yes, force, noFetch bool
-	ifReady, noFFTrunk  bool
+	rebase, resume, undo bool
+	yes, force, noFetch  bool
+	ifReady, noFFTrunk   bool
 	// allowDiverged rebases a branch that has diverged from its own remote.
 	allowDiverged bool
 	push          commands.PushMode
@@ -487,7 +487,7 @@ func (f syncVerbFlags) verb() (string, error) {
 	for _, v := range []struct {
 		name string
 		set  bool
-	}{{"run", f.run}, {"resume", f.resume}, {"undo", f.undo}} {
+	}{{"run", f.rebase}, {"resume", f.resume}, {"undo", f.undo}} {
 		if v.set {
 			verbs = append(verbs, "--"+v.name)
 		}
@@ -565,12 +565,12 @@ func syncArgs(verb string) cobra.PositionalArgs {
 	return cobra.MaximumNArgs(1)
 }
 
-func newSyncRunCmd() *cobra.Command {
+func newSyncRebaseCmd() *cobra.Command {
 	var noFetch, noFFTrunk, yes, ifReady, force, allowDiverged, asJSON bool
 	var expect string
 	var sel selectionFlags
 	var push func() commands.PushMode
-	run := &cobra.Command{
+	rebase := &cobra.Command{
 		Use:   "run [<work>...]",
 		Short: "Rebase named worktrees onto trunk with the declared strategies",
 		Long: "Fetch trunk once, then for each named worktree (and the rest of any\n" +
@@ -660,36 +660,36 @@ func newSyncRunCmd() *cobra.Command {
 		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			f := syncVerbFlags{run: true, yes: yes, noFetch: noFetch, noFFTrunk: noFFTrunk, ifReady: ifReady, force: force,
+			f := syncVerbFlags{rebase: true, yes: yes, noFetch: noFetch, noFFTrunk: noFFTrunk, ifReady: ifReady, force: force,
 				allowDiverged: allowDiverged, push: push(), json: asJSON, expect: expect}
 			if sel.selection().Any() {
 				return syncAcross(cmd, args, "run", sel.selection(), f)
 			}
 			return withVerbContext(cmd, args, "sync run", asJSON, func(ctx *commands.Context, j *commands.RunJournal) error {
-				return syncRun(cmd, args, ctx, f, j)
+				return syncRebase(cmd, args, ctx, f, j)
 			})
 		},
 	}
-	run.Flags().BoolVar(&noFetch, "no-fetch", false, "rebase onto origin/<trunk> as last fetched")
-	run.Flags().BoolVar(&noFFTrunk, "no-ff-trunk", false, "leave local <trunk> where it is after the fetch")
-	run.Flags().BoolVarP(&yes, "yes", "y", false, "yes to every question, the push included (--no-push keeps it out)")
-	run.Flags().BoolVar(&ifReady, "if-ready", false, "rebase only what will go through without needing you, and fail on the rest")
-	run.Flags().BoolVarP(&force, "force", "f", false, "rebase a named worktree even with an agent session in it")
-	run.Flags().BoolVar(&allowDiverged, "allow-diverged", false, "rebase a branch that has diverged from its own remote, as it stands")
-	run.Flags().BoolVar(&asJSON, "json", false, "print one result object on stdout, the progress on stderr")
-	run.Flags().StringVar(&expect, "expect", "", "refuse unless the overview still matches this token from wt sync --json")
-	sel.add(run, true)
-	push = addPushFlags(run, "push the worktrees that finish, without asking",
+	rebase.Flags().BoolVar(&noFetch, "no-fetch", false, "rebase onto origin/<trunk> as last fetched")
+	rebase.Flags().BoolVar(&noFFTrunk, "no-ff-trunk", false, "leave local <trunk> where it is after the fetch")
+	rebase.Flags().BoolVarP(&yes, "yes", "y", false, "yes to every question, the push included (--no-push keeps it out)")
+	rebase.Flags().BoolVar(&ifReady, "if-ready", false, "rebase only what will go through without needing you, and fail on the rest")
+	rebase.Flags().BoolVarP(&force, "force", "f", false, "rebase a named worktree even with an agent session in it")
+	rebase.Flags().BoolVar(&allowDiverged, "allow-diverged", false, "rebase a branch that has diverged from its own remote, as it stands")
+	rebase.Flags().BoolVar(&asJSON, "json", false, "print one result object on stdout, the progress on stderr")
+	rebase.Flags().StringVar(&expect, "expect", "", "refuse unless the overview still matches this token from wt sync --json")
+	sel.add(rebase, true)
+	push = addPushFlags(rebase, "push the worktrees that finish, without asking",
 		"neither push nor ask; print the push command")
-	return run
+	return rebase
 }
 
-// syncRun is wt sync run, whichever way it was spelled. j, when not nil,
+// syncRebase is wt sync run, whichever way it was spelled. j, when not nil,
 // gets its result for --json.
-func syncRun(cmd *cobra.Command, works []string, ctx *commands.Context, f syncVerbFlags, j *commands.RunJournal) error {
+func syncRebase(cmd *cobra.Command, works []string, ctx *commands.Context, f syncVerbFlags, j *commands.RunJournal) error {
 	opts, _ := runOptions(cmd, f, len(works) == 0)
 	opts.Journal, opts.Expect = j, f.expect
-	return commands.SyncRun(ctx, works, opts, cmd.OutOrStdout())
+	return commands.SyncRebase(ctx, works, opts, cmd.OutOrStdout())
 }
 
 // withVerbContext runs a wt sync verb in the repository it is in. With
@@ -770,7 +770,7 @@ func syncAcross(cmd *cobra.Command, args []string, verb string, sel commands.Sel
 		return commands.SyncAll(u, sel, commands.SyncOptions{NoFetch: f.noFetch}, cmd.OutOrStdout())
 	}
 	opts, p := runOptions(cmd, f, true)
-	all := commands.SyncRunAllOptions{RunOptions: opts}
+	all := commands.SyncRebaseAllOptions{RunOptions: opts}
 	switch {
 	case p != nil:
 		all.Ask = func(q string) (bool, error) { return p.yesNo(q, false), nil }
@@ -781,7 +781,7 @@ func syncAcross(cmd *cobra.Command, args []string, verb string, sel commands.Sel
 			return false, nil
 		}
 	}
-	return commands.SyncRunAll(u, sel, all, cmd.OutOrStdout())
+	return commands.SyncRebaseAll(u, sel, all, cmd.OutOrStdout())
 }
 
 func newSyncResumeCmd() *cobra.Command {

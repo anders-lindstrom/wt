@@ -66,7 +66,7 @@ func newUpCmd() *cobra.Command {
 			if len(args) == 1 {
 				work = args[0]
 			}
-			f := syncVerbFlags{run: true, yes: yes, noFetch: noFetch, noFFTrunk: noFFTrunk, ifReady: true, force: force,
+			f := syncVerbFlags{rebase: true, yes: yes, noFetch: noFetch, noFFTrunk: noFFTrunk, ifReady: true, force: force,
 				allowDiverged: allowDiverged, push: push()}
 			if !asJSON {
 				return withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {

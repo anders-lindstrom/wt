@@ -104,7 +104,7 @@ func TestSyncRunWithNothingNamedTakesAFastForwardOnlyWorktree(t *testing.T) {
 	f, x, opts, local, remote := nothingToRebase(t)
 	n := gitOut(t, f.main, "rev-list", "--count", local+".."+remote)
 	var out bytes.Buffer
-	if err := SyncRun(f.ctx, nil, opts, &out); err != nil {
+	if err := SyncRebase(f.ctx, nil, opts, &out); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
 	s := out.String()
@@ -238,7 +238,7 @@ func TestSyncRunRefusesAFastForwardOnlyBranchItCannotMove(t *testing.T) {
 		opts.Agents = idleIn(t, x, "parked-1")
 		opts.Relist = func() ([]wtsync.Agent, error) { return opts.Agents, nil }
 		var out bytes.Buffer
-		if err := SyncRun(f.ctx, []string{"x"}, opts, &out); err != nil {
+		if err := SyncRebase(f.ctx, []string{"x"}, opts, &out); err != nil {
 			t.Fatalf("%v\n%s", err, out.String())
 		}
 		if !strings.Contains(out.String(), "wt: x fast-forwarded to origin/feat_wt/x (+") || gitOut(t, x, "rev-parse", "HEAD") != remote {

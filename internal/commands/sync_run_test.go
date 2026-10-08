@@ -141,7 +141,7 @@ func noAgents() RunOptions {
 func TestSyncRunRebasesARecipeWorktreeAndRunsTheDeferredStep(t *testing.T) {
 	ctx, bump := runFixture(t, true)
 	var out bytes.Buffer
-	if err := SyncRun(ctx, []string{"bump"}, noAgents(), &out); err != nil {
+	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	s := out.String()
@@ -168,7 +168,7 @@ func TestSyncRunRefusesADirtyWorktreeAndTouchesNothing(t *testing.T) {
 	}
 	old := gitOut(t, bump, "rev-parse", "HEAD")
 	var out bytes.Buffer
-	err := SyncRun(ctx, []string{"bump"}, noAgents(), &out)
+	err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out)
 	if err == nil || !strings.Contains(out.String(), "tracked changes") {
 		t.Fatalf("err %v out %s", err, out.String())
 	}
@@ -186,7 +186,7 @@ func TestSyncRunRefusesAWorktreeWithAnAgent(t *testing.T) {
 	opts := noAgents()
 	opts.Agents = []wtsync.Agent{{Name: "bump-1", Cwd: resolved}}
 	var out bytes.Buffer
-	err := SyncRun(ctx, []string{"bump"}, opts, &out)
+	err := SyncRebase(ctx, []string{"bump"}, opts, &out)
 	if err == nil || !strings.Contains(out.String(), "bump-1") {
 		t.Fatalf("err %v out %s", err, out.String())
 	}
@@ -207,7 +207,7 @@ func TestSyncRunRefusesWhenAgentsCannotBeListed(t *testing.T) {
 	opts.Agents = nil
 	old := gitOut(t, bump, "rev-parse", "HEAD")
 	var out bytes.Buffer
-	err := SyncRun(ctx, []string{"bump"}, opts, &out)
+	err := SyncRebase(ctx, []string{"bump"}, opts, &out)
 	if err == nil || !strings.Contains(err.Error(), "agent sessions") {
 		t.Fatalf("err %v", err)
 	}
@@ -219,7 +219,7 @@ func TestSyncRunRefusesWhenAgentsCannotBeListed(t *testing.T) {
 func TestSyncRunSkipsACurrentWorktreeWithoutASafetyRef(t *testing.T) {
 	ctx, _ := runFixture(t, false)
 	var out bytes.Buffer
-	if err := SyncRun(ctx, []string{"other"}, noAgents(), &out); err != nil {
+	if err := SyncRebase(ctx, []string{"other"}, noAgents(), &out); err != nil {
 		t.Fatalf("a skip is not an error: %v", err)
 	}
 	if !strings.Contains(out.String(), "skipped:") {
@@ -243,7 +243,7 @@ func TestSyncRunRefusesWhenTrunkDeclaresNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	err = SyncRun(ctx, []string{"bump"}, noAgents(), &out)
+	err = SyncRebase(ctx, []string{"bump"}, noAgents(), &out)
 	if err == nil || !strings.Contains(err.Error(), "declares no") {
 		t.Fatalf("err %v", err)
 	}
@@ -269,7 +269,7 @@ func TestSyncRunRebasesAStackParentFirstAndChildOntoTheParentsFinalTip(t *testin
 	ctx, bump := runFixture(t, true) // with the deferred commit, so the parent's tip moves after its rebase
 	child := stackFixture(t, ctx)
 	var out bytes.Buffer
-	if err := SyncRun(ctx, []string{"child"}, noAgents(), &out); err != nil {
+	if err := SyncRebase(ctx, []string{"child"}, noAgents(), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	if !strings.Contains(out.String(), "is a stack with") {
@@ -302,7 +302,7 @@ func TestSyncRunARefusedStackMemberDefersTheWholeStack(t *testing.T) {
 	}
 	oldBump, oldChild := gitOut(t, bump, "rev-parse", "HEAD"), gitOut(t, child, "rev-parse", "HEAD")
 	var out bytes.Buffer
-	err := SyncRun(ctx, []string{"bump"}, noAgents(), &out)
+	err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out)
 	if err == nil || !strings.Contains(out.String(), "child: tracked changes") {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
@@ -329,7 +329,7 @@ func TestSyncRunIgnoresAnEmptyWorktreeBehindTrunk(t *testing.T) {
 	opts := noAgents()
 	opts.Agents = []wtsync.Agent{{Name: "stale-1", Cwd: resolved}}
 	var out bytes.Buffer
-	if err := SyncRun(ctx, []string{"bump"}, opts, &out); err != nil {
+	if err := SyncRebase(ctx, []string{"bump"}, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	if s := out.String(); strings.Contains(s, "is a stack with") || strings.Contains(s, "stale-1") {
@@ -351,7 +351,7 @@ func TestSyncRunAsksOnceForMoreThanOneWorktreeAndStopsOnNo(t *testing.T) {
 	opts := noAgents()
 	opts.Confirm = func(works []string) (bool, error) { asked = works; return false, nil }
 	var out bytes.Buffer
-	if err := SyncRun(ctx, []string{"bump"}, opts, &out); err != nil {
+	if err := SyncRebase(ctx, []string{"bump"}, opts, &out); err != nil {
 		t.Fatalf("a declined confirmation is not an error: %v", err)
 	}
 	if len(asked) != 2 || !strings.Contains(out.String(), "nothing rebased") {
@@ -364,7 +364,7 @@ func TestSyncRunAsksOnceForMoreThanOneWorktreeAndStopsOnNo(t *testing.T) {
 	opts.Confirm = nil
 	asked = nil
 	out.Reset()
-	if err := SyncRun(ctx, []string{"bump"}, opts, &out); err != nil {
+	if err := SyncRebase(ctx, []string{"bump"}, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	if asked != nil {
@@ -407,7 +407,7 @@ func TestSyncRunWithNothingNamedTakesEveryReadyWorktreeAndAsksFirst(t *testing.T
 	opts := noAgents()
 	opts.Confirm = func(works []string) (bool, error) { asked = works; return false, nil }
 	var out bytes.Buffer
-	if err := SyncRun(ctx, nil, opts, &out); err != nil {
+	if err := SyncRebase(ctx, nil, opts, &out); err != nil {
 		t.Fatalf("a declined confirmation is not an error: %v", err)
 	}
 	s := out.String()
@@ -426,7 +426,7 @@ func TestSyncRunWithNothingNamedTakesEveryReadyWorktreeAndAsksFirst(t *testing.T
 	}
 	opts.Confirm = nil
 	out.Reset()
-	if err := SyncRun(ctx, nil, opts, &out); err != nil {
+	if err := SyncRebase(ctx, nil, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	if !strings.Contains(out.String(), "rebased 1 commit") {
@@ -448,7 +448,7 @@ func TestSyncRunWithNothingNamedLeavesRecipeQuestionAlone(t *testing.T) {
 	declareScript(t, ctx)
 	old := gitOut(t, bump, "rev-parse", "HEAD")
 	var out bytes.Buffer
-	if err := SyncRun(ctx, nil, noAgents(), &out); err != nil {
+	if err := SyncRebase(ctx, nil, noAgents(), &out); err != nil {
 		t.Fatalf("nothing to do is not an error: %v\n%s", err, out.String())
 	}
 	s := out.String()
@@ -473,7 +473,7 @@ func TestSyncRunWithNothingNamedLeavesAStackWithAHeldMember(t *testing.T) {
 	}
 	oldChild := gitOut(t, child, "rev-parse", "HEAD")
 	var out bytes.Buffer
-	if err := SyncRun(ctx, nil, noAgents(), &out); err != nil {
+	if err := SyncRebase(ctx, nil, noAgents(), &out); err != nil {
 		t.Fatalf("nothing taken is not an error: %v\n%s", err, out.String())
 	}
 	s := out.String()
@@ -499,7 +499,7 @@ func TestSyncRunWithNothingNamedNamesAnIdleSessionAndAsks(t *testing.T) {
 	var asked []string
 	opts.Confirm = func(works []string) (bool, error) { asked = works; return false, nil }
 	var out bytes.Buffer
-	if err := SyncRun(ctx, nil, opts, &out); err != nil {
+	if err := SyncRebase(ctx, nil, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	s := out.String()
@@ -516,7 +516,7 @@ func TestSyncRunWithNothingNamedNamesWhatHoldsAWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	if err := SyncRun(ctx, nil, noAgents(), &out); err != nil {
+	if err := SyncRebase(ctx, nil, noAgents(), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	// Nothing moved on trunk after other was cut, so other is current and
@@ -534,7 +534,7 @@ func TestSyncRunHandsAContestedStopOver(t *testing.T) {
 	branch := "feat_wt/bump"
 	old := gitOut(t, ctx.Repo.MainRoot, "rev-parse", branch)
 	var out bytes.Buffer
-	err := SyncRun(ctx, []string{"bump"}, noAgents(), &out)
+	err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out)
 	if err == nil {
 		t.Fatalf("err = nil, want the run reported as not completed:\n%s", out.String())
 	}
@@ -589,7 +589,7 @@ func TestSyncRunHandsAContestedStopOver(t *testing.T) {
 func TestSyncRunNeedsYouLineSaysResolveAddResumeOrUndo(t *testing.T) {
 	ctx, bump := contestedFixture(t)
 	var out bytes.Buffer
-	err := SyncRun(ctx, []string{"bump"}, noAgents(), &out)
+	err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out)
 	if err == nil || err.Error() != "not completed: bump (needs you)" {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
@@ -613,7 +613,7 @@ func TestSyncRunNeedsYouLineSaysResolveAddResumeOrUndo(t *testing.T) {
 func TestSyncRunRefusesAWorktreeWaitingOnAPerson(t *testing.T) {
 	ctx, bump := contestedFixture(t)
 	var first bytes.Buffer
-	if err := SyncRun(ctx, []string{"bump"}, noAgents(), &first); err == nil {
+	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &first); err == nil {
 		t.Fatalf("the first run should have handed over:\n%s", first.String())
 	}
 	gitDir, err := wtsync.GitDir(bump)
@@ -627,7 +627,7 @@ func TestSyncRunRefusesAWorktreeWaitingOnAPerson(t *testing.T) {
 	head := gitOut(t, bump, "rev-parse", "HEAD")
 
 	var out bytes.Buffer
-	if err := SyncRun(ctx, []string{"bump"}, noAgents(), &out); err == nil {
+	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err == nil {
 		t.Fatalf("a second run must not touch a worktree somebody is finishing:\n%s", out.String())
 	}
 	if !strings.Contains(out.String(), "refused:") || !strings.Contains(out.String(), "wt sync resume") {
@@ -665,7 +665,7 @@ func TestSyncRunSaysWhereAFailedHandoverLeftTheWorktree(t *testing.T) {
 	}
 	old := gitOut(t, ctx.Repo.MainRoot, "rev-parse", "feat_wt/bump")
 	var out bytes.Buffer
-	err = SyncRun(ctx, []string{"bump"}, noAgents(), &out)
+	err = SyncRebase(ctx, []string{"bump"}, noAgents(), &out)
 	s := out.String()
 	if err == nil || !strings.Contains(err.Error(), "bump (failed)") {
 		t.Fatalf("err %v\n%s", err, s)
@@ -709,7 +709,7 @@ func TestSyncRunPutsAStackParentBackInsteadOfHandingItOver(t *testing.T) {
 	child := stackFixture(t, ctx)
 	oldBump, oldChild := gitOut(t, bump, "rev-parse", "HEAD"), gitOut(t, child, "rev-parse", "HEAD")
 	var out bytes.Buffer
-	err := SyncRun(ctx, []string{"bump"}, noAgents(), &out)
+	err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out)
 	s := out.String()
 	if err == nil {
 		t.Fatalf("a restored branch is a failure:\n%s", s)
@@ -759,7 +759,7 @@ func TestSyncRunHandsOverALaterUnclaimedStop(t *testing.T) {
 	gitOut(t, main, "fetch", "-q", "origin")
 	old := gitOut(t, main, "rev-parse", "feat_wt/bump")
 	var out bytes.Buffer
-	err := SyncRun(ctx, []string{"bump"}, noAgents(), &out)
+	err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out)
 	if err == nil || !strings.Contains(out.String(), "needs you") {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
@@ -827,7 +827,7 @@ func TestSyncRunAHandedOverChildDoesNotStopItsSibling(t *testing.T) {
 	main := ctx.Repo.MainRoot
 	oldConflicted := gitOut(t, main, "rev-parse", "feat_wt/alpha")
 	var out bytes.Buffer
-	err := SyncRun(ctx, []string{"bump"}, noAgents(), &out)
+	err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out)
 	s := out.String()
 	if err == nil {
 		t.Fatalf("a handed-over branch is a failure:\n%s", s)
@@ -878,7 +878,7 @@ func TestSyncRunStillRefusesASessionThatIsNotIdle(t *testing.T) {
 		opts := noAgents()
 		opts.Agents = []wtsync.Agent{a}
 		var out bytes.Buffer
-		if err := SyncRun(ctx, []string{"bump"}, opts, &out); err == nil || !strings.Contains(out.String(), "busy in it: bump-1") {
+		if err := SyncRebase(ctx, []string{"bump"}, opts, &out); err == nil || !strings.Contains(out.String(), "busy in it: bump-1") {
 			t.Fatalf("%+v: err %v\n%s", a, err, out.String())
 		}
 	}
@@ -895,7 +895,7 @@ func TestSyncRunNamesAnIdleSessionInTheQuestionAndStopsOnNo(t *testing.T) {
 	var asked []string
 	opts.Confirm = func(works []string) (bool, error) { asked = works; return false, nil }
 	var out bytes.Buffer
-	if err := SyncRun(ctx, []string{"bump"}, opts, &out); err != nil {
+	if err := SyncRebase(ctx, []string{"bump"}, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	if len(asked) != 1 || asked[0] != "bump" {
@@ -914,7 +914,7 @@ func TestSyncRunUnderAnIdleSessionWithNoTerminalSaysSoAndEndsWithALineToRelay(t 
 	opts := noAgents()
 	opts.Agents = idleIn(t, bump, "bump-1")
 	var out bytes.Buffer
-	if err := SyncRun(ctx, []string{"bump"}, opts, &out); err != nil {
+	if err := SyncRebase(ctx, []string{"bump"}, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	s := out.String()
@@ -950,7 +950,7 @@ func TestSyncRunRefusesASessionThatChangedSinceTriage(t *testing.T) {
 		then := tc.then
 		opts.Relist = func() ([]wtsync.Agent, error) { return then, nil }
 		var out bytes.Buffer
-		if err := SyncRun(ctx, []string{"bump"}, opts, &out); err == nil || !strings.Contains(out.String(), tc.want) {
+		if err := SyncRebase(ctx, []string{"bump"}, opts, &out); err == nil || !strings.Contains(out.String(), tc.want) {
 			t.Fatalf("%s: err %v\n%s", tc.name, err, out.String())
 		}
 		if gitOut(t, bump, "rev-parse", "HEAD") != old {
@@ -1033,7 +1033,7 @@ func TestSyncRunReleasesEachLockAsSoonAsItIsDoneWithTheWorktree(t *testing.T) {
 
 	done := make(chan error, 1)
 	var out bytes.Buffer
-	go func() { done <- SyncRun(ctx, []string{"bump", "second", "fourth"}, noAgents(), &out) }()
+	go func() { done <- SyncRebase(ctx, []string{"bump", "second", "fourth"}, noAgents(), &out) }()
 
 	// bump is in its finish: the refused stack's lock has gone already, and
 	// bump's own is held.
@@ -1094,7 +1094,7 @@ func TestSyncRunSaysWhyARecheckCouldNotBeMadeInGitsOwnWords(t *testing.T) {
 		return []wtsync.Agent{}, nil
 	}
 	var out bytes.Buffer
-	err = SyncRun(ctx, []string{"bump"}, opts, &out)
+	err = SyncRebase(ctx, []string{"bump"}, opts, &out)
 	s := out.String()
 	if err == nil || !strings.Contains(s, "refused: bump: changed since triage: could not check: fatal: ") {
 		t.Fatalf("err %v\n%s", err, s)

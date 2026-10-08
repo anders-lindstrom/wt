@@ -71,12 +71,12 @@ func TestSyncVerbFlagsNameOneVerb(t *testing.T) {
 		err   string
 	}{
 		{syncVerbFlags{}, "", ""},
-		{syncVerbFlags{run: true}, "run", ""},
+		{syncVerbFlags{rebase: true}, "run", ""},
 		{syncVerbFlags{resume: true}, "resume", ""},
 		{syncVerbFlags{undo: true}, "undo", ""},
-		{syncVerbFlags{run: true, undo: true}, "", "--run and --undo cannot both be given"},
+		{syncVerbFlags{rebase: true, undo: true}, "", "--run and --undo cannot both be given"},
 		{syncVerbFlags{resume: true, undo: true}, "", "--resume and --undo cannot both be given"},
-		{syncVerbFlags{run: true, resume: true, undo: true}, "", "--run, --resume and --undo cannot both be given"},
+		{syncVerbFlags{rebase: true, resume: true, undo: true}, "", "--run, --resume and --undo cannot both be given"},
 	} {
 		verb, err := tc.flags.verb()
 		if verb != tc.verb {
@@ -97,10 +97,10 @@ func TestSyncVerbFlagsRefuseAFlagWithoutItsVerb(t *testing.T) {
 	}{
 		{syncVerbFlags{}, ""},
 		{syncVerbFlags{noFetch: true}, ""},
-		{syncVerbFlags{run: true, yes: true, noFetch: true, push: commands.PushAlways}, ""},
+		{syncVerbFlags{rebase: true, yes: true, noFetch: true, push: commands.PushAlways}, ""},
 		{syncVerbFlags{resume: true, yes: true, push: commands.PushNever}, ""},
 		{syncVerbFlags{undo: true, yes: true, force: true}, ""},
-		{syncVerbFlags{run: true, undo: true, force: true}, "--run and --undo cannot both be given"},
+		{syncVerbFlags{rebase: true, undo: true, force: true}, "--run and --undo cannot both be given"},
 		{syncVerbFlags{push: commands.PushAlways}, "--push needs --run or --resume"},
 		{syncVerbFlags{undo: true, push: commands.PushAlways}, "--push needs --run or --resume"},
 		{syncVerbFlags{push: commands.PushNever}, "--no-push needs --run or --resume"},
@@ -260,24 +260,24 @@ func TestRunOptionsAskNobodyAndRefuseBulkWithoutATerminal(t *testing.T) {
 	cmd.SetIn(strings.NewReader(""))
 	cmd.SetOut(&out)
 
-	bulk, _ := runOptions(cmd, syncVerbFlags{run: true}, true)
+	bulk, _ := runOptions(cmd, syncVerbFlags{rebase: true}, true)
 	if bulk.Confirm == nil {
 		t.Fatal("a bulk run with no terminal must not go ahead unasked")
 	}
 	if ok, _ := bulk.Confirm([]string{"bump"}); ok || !strings.Contains(out.String(), "Pass --yes to rebase bump.") {
 		t.Errorf("want a no that says how to say yes: %v %q", ok, out.String())
 	}
-	if named, _ := runOptions(cmd, syncVerbFlags{run: true}, false); named.Confirm != nil {
+	if named, _ := runOptions(cmd, syncVerbFlags{rebase: true}, false); named.Confirm != nil {
 		t.Error("a named worktree with no terminal goes ahead")
 	}
-	yes, p := runOptions(cmd, syncVerbFlags{run: true, yes: true}, true)
+	yes, p := runOptions(cmd, syncVerbFlags{rebase: true, yes: true}, true)
 	if yes.Confirm != nil || yes.ConfirmPush != nil || p != nil {
 		t.Error("--yes asks nothing")
 	}
 	if yes.Push != commands.PushAlways {
 		t.Error("--yes is yes to the push too")
 	}
-	if held, _ := runOptions(cmd, syncVerbFlags{run: true, yes: true, push: commands.PushNever}, false); held.Push != commands.PushNever {
+	if held, _ := runOptions(cmd, syncVerbFlags{rebase: true, yes: true, push: commands.PushNever}, false); held.Push != commands.PushNever {
 		t.Error("--no-push keeps the push out, --yes or not")
 	}
 }

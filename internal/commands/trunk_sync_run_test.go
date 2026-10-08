@@ -238,7 +238,7 @@ func TestSyncRunUndeclaredStillFastForwardsLocalTrunk(t *testing.T) {
 	opts := f.withWork(t)
 	remote := f.advanceOrigin(t, 1)
 	var out bytes.Buffer
-	if err := SyncRun(f.ctx, []string{"x"}, opts, &out); err == nil {
+	if err := SyncRebase(f.ctx, []string{"x"}, opts, &out); err == nil {
 		t.Fatalf("an undeclared trunk ran:\n%s", out.String())
 	}
 	if got := f.local(t); got != remote {
