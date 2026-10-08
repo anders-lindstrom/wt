@@ -28,7 +28,7 @@ func newSchemaCmd() *cobra.Command {
 			wrapLine("Schemas: "+strings.Join(names, ", "), "         "),
 		Example: "  wt schema             # the schemas there are, and their ids\n" +
 			"  wt schema up          # the schema of wt up --json\n" +
-			"  wt schema sync-run    # of wt sync run, resume and undo --json\n" +
+			"  wt schema sync-run    # of wt sync rebase, resume and undo --json\n" +
 			"  wt schema status > wt-status.schema.json  # save one for a validator",
 		Args:      cobra.MaximumNArgs(1),
 		ValidArgs: names,

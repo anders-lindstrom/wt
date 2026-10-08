@@ -102,7 +102,7 @@ type DeferredStep struct {
 	Commit *string `json:"commit"`
 }
 
-// SyncParticipant is one worktree of a wt sync run, resume or undo: what wt
+// SyncParticipant is one worktree of a wt sync rebase, resume or undo: what wt
 // up reports of it, and the way back.
 type SyncParticipant struct {
 	UpParticipant
@@ -112,7 +112,7 @@ type SyncParticipant struct {
 	PlanFile    *string        `json:"planFile"`
 }
 
-// SyncRunResult is the one object wt sync run, resume and undo print with
+// SyncRunResult is the one object wt sync rebase, resume and undo print with
 // --json.
 type SyncRunResult struct {
 	Schema        int                `json:"schema"`
@@ -176,7 +176,7 @@ func NewRunJournal(out io.Writer) *RunJournal {
 }
 
 // NewSyncRunJournal is a journal that writes the object of a wt sync verb
-// to out: command is "sync run", "sync resume" or "sync undo".
+// to out: command is "sync rebase", "sync resume" or "sync undo".
 func NewSyncRunJournal(out io.Writer, command string) *RunJournal {
 	return newJournal(out, "sync-run", command)
 }

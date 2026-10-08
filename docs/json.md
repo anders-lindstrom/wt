@@ -64,6 +64,8 @@ Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 | `remove-plan` | 1.4.0 | [Codex sessions](#sessions--claude-and-codex): `kind` on each of `sessions` |
 | `remove` | 1.4.1 | wording: a session problem is any agent session, and `sessionsUnknown` any listing that failed |
 | `status` 1.6.0, `sync` 1.3.0, `up` 1.4.0, `sync-run` 1.2.0 | | [a branch against its own remote](#ownremote--a-branch-against-its-own-remote): `ownRemote` on the worktree and each stack member of `status` and on each worktree of `sync`; `ownRemoteSync` on each participant of `up` and `sync-run`; `upIneligibleCode` `ownRemoteDiverged` and `ownRemoteBehind`; a token for a plan held back by divergence alone |
+| `sync-run` 1.3.0, `sync` 1.3.1 | | `wt sync run` is spelled `wt sync rebase`, and `--run` on `wt sync` is `--rebase`: `command` gains `sync rebase`, which the new spelling prints. From `sync-run` 1.3.0 on, `wt sync rebase <work>...` and `wt sync --rebase` exist. `sync` changes in wording only |
+| `sync` 1.4.0, `status` 1.7.0 | | [`deferredDeclared`](#deferreddeclared--the-deferred-steps-trunk-declares): the deferred steps a run may perform, on each worktree of `sync` and each stack member of `status` |
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
 
@@ -153,7 +155,7 @@ generating types from it:
 | `wt sweep --dry-run --json` | [`schema/sweep-plan.v1.json`](../schema/sweep-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sweep-plan.v1.json` |
 | `wt sweep --yes --json` | [`schema/sweep.v1.json`](../schema/sweep.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sweep.v1.json` |
 | `wt sync --json` | [`schema/sync.v1.json`](../schema/sync.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sync.v1.json` |
-| `wt sync run\|resume\|undo --json` | [`schema/sync-run.v1.json`](../schema/sync-run.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sync-run.v1.json` |
+| `wt sync rebase\|resume\|undo --json` | [`schema/sync-run.v1.json`](../schema/sync-run.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sync-run.v1.json` |
 | `wt new --dry-run --json` | [`schema/new-plan.v1.json`](../schema/new-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/new-plan.v1.json` |
 | `wt new --json` | [`schema/new.v1.json`](../schema/new.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/new.v1.json` |
 | `wt checkout --dry-run --json` | [`schema/checkout-plan.v1.json`](../schema/checkout-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/checkout-plan.v1.json` |
@@ -220,6 +222,7 @@ repository.
 | `stack` | array | every worktree `wt up` would move, parents first, from local refs as of now; just the one when it has no stack |
 | `stack[].work`, `.branch`, `.path` | string | |
 | `stack[].ownRemote` | object | since 1.6.0: that member's branch against [its own remote](#ownremote--a-branch-against-its-own-remote) |
+| `stack[].deferredDeclared` | array | since 1.7.0: the [deferred steps trunk declares](#deferreddeclared--the-deferred-steps-trunk-declares), as last fetched, which `wt up` may run once it has rebased that member; `[]` when there are none |
 | `sessions` | array | [agent sessions](#sessions--claude-and-codex) in the stack's worktrees |
 | `sessions[].work`, `.name` | string | the worktree it is in, and its name |
 | `sessions[].kind` | `claude` \| `codex` | whose session it is; `codex` since 1.5.0 |
@@ -343,7 +346,7 @@ rebase onto or judge branches merged against.
 
 ### `trunkSync` — local trunk
 
-After fetching trunk, `wt up`, `wt sync run` and `wt sync --run` bring local
+After fetching trunk, `wt up`, `wt sync rebase` and `wt sync --rebase` bring local
 `<trunk>` up to `origin/<trunk>` when that is a pure fast-forward and safe:
 checked out nowhere, the ref moves by compare-and-swap; checked out in a
 checkout that is clean (untracked files count), with no operation in progress
@@ -380,7 +383,7 @@ fast-forward was otherwise possible.
 
 ### `ownRemote` — a branch against its own remote
 
-`wt up` and `wt sync run` rewrite a branch, and what is pushed afterwards
+`wt up` and `wt sync rebase` rewrite a branch, and what is pushed afterwards
 replaces a ref on a remote. Before rebasing, a run looks at that ref for every
 branch it would rebase, the named worktree's and each member of its stack, so
 that a branch is never rebased short of commits its remote has, and never
@@ -496,7 +499,7 @@ starts with.
 |---|---|---|
 | `wt status --json`, `wt status`, `wt list` | nothing | always false |
 | `wt sync`, `wt sync <work>`, `wt sync --json` | trunk and every worktree's own remote, each call bounded at 45 s; `--no-fetch` nothing | true unless `--no-fetch`, trunk's fetch failed (`fetchError`), that branch's own fetch failed, or the remote's fetch refspec is not the standard `refs/heads/*:refs/remotes/<remote>/*`, which wt does not write refs outside |
-| `wt up`, `wt sync run` | trunk and the own remote of every branch the run may rebase; `--no-fetch` nothing | with `--no-fetch` the run compares with the last fetch, `fetched` is false, nothing is refused for it, and its lines say so |
+| `wt up`, `wt sync rebase` | trunk and the own remote of every branch the run may rebase; `--no-fetch` nothing | with `--no-fetch` the run compares with the last fetch, `fetched` is false, nothing is refused for it, and its lines say so |
 | `wt sync keep once` | trunk and every worktree's own remote | as a run |
 | `wt sync resume`, `wt sync undo` | nothing: the check ran when the run started | |
 
@@ -512,9 +515,9 @@ A fetch never removes a remote-tracking ref: one whose branch is gone from the
 remote stays until `git fetch --prune`, and reads as `gone` from a command that
 fetched and as whatever it last said from one that did not.
 
-**`--allow-diverged`**, on `wt up` and `wt sync run`: rebase a `diverged`
+**`--allow-diverged`**, on `wt up` and `wt sync rebase`: rebase a `diverged`
 branch as it stands. It does nothing for `behind`. Like `--force` it needs the
-worktree named: `wt sync run` and `wt sync --run` with nothing named, in one
+worktree named: `wt sync rebase` and `wt sync --rebase` with nothing named, in one
 repository or across many, refuse the flag. `wt up` always names one, the
 worktree you are in when no `<work>` is given, so `wt up --allow-diverged` is
 accepted. With `--expect <token>` it
@@ -529,7 +532,7 @@ replacing them is the caller's own, deliberate force.
 
 ### `ownRemoteSync` — what a run did about it
 
-On each participant of `wt up --json` and `wt sync run --json`. From
+On each participant of `wt up --json` and `wt sync rebase --json`. From
 `wt sync resume` and `wt sync undo` the key is there and its value is null:
 they do not check.
 
@@ -583,6 +586,48 @@ one of:
 An undo that takes back a fast-forward also takes back the word that the
 branch was ever at `remote` (above): the branch then reads `behind` again, and
 with a commit of its own `diverged`.
+
+### `deferredDeclared` — the deferred steps trunk declares
+
+A repository's `.wt-sync.yaml` may declare steps under `defer:` that run once a
+rebase has finished: regenerate a file, commit the result. A run reports what
+each came to in [`deferred`](#wt-sync-rebaseresumeundo---json--the-result).
+`deferredDeclared` is the same steps before the run, on each worktree of
+`wt sync --json` (since `sync` 1.4.0) and each `stack` member of
+`wt status --json` (since `status` 1.7.0):
+
+| Field | Type | Meaning |
+|---|---|---|
+| `step` | string | the step's `run` line, the same string `deferred[].step` carries for it afterwards |
+| `paths` | array of string | the globs that gate it, as declared; empty when it has none |
+
+In the declared order, which is the order they run in.
+
+**Declared, not predicted.** A step with empty `paths` runs after every
+finished rebase. A step with `paths` runs only when the rebase changed a path
+one of them matches, comparing the branch before and after, and that is not
+known until the rebase is done: the result then says `skipped`, "no listed path
+changed". No step runs after one that failed, and none runs for a worktree
+the run did not rebase: one it skipped, refused, only fast-forwarded, or
+handed over (`wt sync resume` runs them when it finishes that rebase). So the
+list is what **may** run, never more than that.
+
+The list is the repository's, so it is **the same on every worktree and every
+stack member**, also on one a run would skip or refuse and on one whose
+assessment failed (`class` `unknown`): `verdict`, `upEligible` and the rest say
+whether a run rebases it. It is always an array: `[]` when trunk declares no
+deferred step or has no `.wt-sync.yaml`. A plan with an empty `stack` has no
+member to carry it.
+
+**Where it is read from.** Always trunk's copy, never the worktree's own: a
+branch that edits `.wt-sync.yaml` changes neither the plan nor what a run
+executes, until that edit is on trunk.
+
+| | reads `.wt-sync.yaml` from | against the run |
+|---|---|---|
+| `wt sync --json` | the trunk commit in `onto`, after its fetch | a run fetches again and reads the trunk commit it rebases onto. The overview's `token` covers the declaration, so a run with `--expect` refuses when it has changed |
+| `wt status --json` | `trunkTip`, as last fetched; `[]` when `trunkRefExists` is false or the file there cannot be read | `wt up` fetches first, so it may read a newer declaration. The plan's `token` does **not** cover it |
+| `wt sync resume` | the trunk commit the handed-over run rebased onto | |
 
 ## `wt sweep --dry-run --json` — the sweep's plan
 
@@ -1287,7 +1332,7 @@ object with `error` set and no worktrees, and the exit code is non-zero.
 | `fetched` | bool | trunk was fetched first |
 | `fetchError` | string \| null | the fetch failed; the overview is against trunk as last fetched |
 | `declared` | bool | trunk declares `.wt-sync.yaml`; without it nothing is rebased |
-| `token` | string \| null | names what a run would start on; pass it to `wt sync run --expect` or `wt sync --run --expect`. Null when a run would start on nothing and no worktree's `ownRemote.blocks` is `diverged`: a diverged one makes it non-null, also when something else (a busy session) keeps a run off it |
+| `token` | string \| null | names what a run would start on; pass it to `wt sync rebase --expect` or `wt sync --rebase --expect`. Null when a run would start on nothing and no worktree's `ownRemote.blocks` is `diverged`: a diverged one makes it non-null, also when something else (a busy session) keeps a run off it |
 | `error` | string \| null | why there is no overview: trunk not known here, the repository not readable. The exit code is then non-zero |
 | `sessionsError` | string \| null | Agent sessions could not be listed; `sessions` are then empty, not known empty |
 | `worktrees` | array | every worktree but the main checkout, in git's order |
@@ -1301,8 +1346,8 @@ Each worktree:
 | `group` | `ready` \| `needsYou` \| `skipped` \| `current` | the overview's group; `current` (on trunk already) is left out of the human overview |
 | `class` | `conflict-free` \| `recipe` \| `contested` \| `divergent` \| `stale` \| `current` \| `detached` \| `unknown` | what the simulated rebase found; `unknown` when the assessment failed |
 | `verified` | bool | false is the overview's `recipe?`: a script owns a path and the replay could not be carried past it |
-| `verdict` | `proceed` \| `skip` \| `refuse` | what `wt sync run <work>` would do with it: start on it (a contested one is rebased up to its stop and handed over), skip it, or refuse it untouched |
-| `runnable` | bool | `wt sync --run`, with nothing named, takes it |
+| `verdict` | `proceed` \| `skip` \| `refuse` | what `wt sync rebase <work>` would do with it: start on it (a contested one is rebased up to its stop and handed over), skip it, or refuse it untouched |
+| `runnable` | bool | `wt sync --rebase`, with nothing named, takes it |
 | `reason` | string \| null | why it is not runnable; null when it is |
 | `behind`, `ahead` | int | commits against trunk |
 | `dirty` | bool | tracked changes |
@@ -1317,6 +1362,7 @@ Each worktree:
 | `stops[].resolved` | bool | every conflicted file there resolved by a strategy |
 | `stops[].yours` | bool | the first stop no strategy resolves: a run hands it to a person |
 | `stops[].files[]` | object | `path`, `resolved`, `strategy` (null when nothing claims it), `note` (why a strategy refused it, or what a lift did) |
+| `deferredDeclared` | array | since 1.4.0: the [deferred steps trunk declares](#deferreddeclared--the-deferred-steps-trunk-declares), which a run may perform once it has rebased this worktree; `[]` when there are none |
 | `strategies` | array of string | the declared strategies that resolved something, each once |
 | `notes` | array of string | advisory; they never change the class |
 | `error` | string \| null | the assessment failed |
@@ -1336,7 +1382,7 @@ not start on. A run refuses the whole stack.
 A worktree that is behind its own remote and has nothing to rebase at the
 remote's commit is one a run acts on: `class` `current` or `stale` (the remote
 commit's), `verdict` `proceed`, `runnable` true, `group` `ready`, `reason` null,
-`ownRemote.state` `behind` with `blocks` null. `wt sync run <work>`, a run with
+`ownRemote.state` `behind` with `blocks` null. `wt sync rebase <work>`, a run with
 nothing named and `--if-ready` all take it, fast-forward it and report
 `fastForwarded`. Without that `ownRemote` a `current` row is `group` `current`
 and a `stale` one `skipped`, as before.
@@ -1351,13 +1397,13 @@ exception, since 1.3.0: the remote commit of every worktree whose
 `ownRemote.blocks` is `diverged` is in the token, whatever else keeps a run off
 it (a busy session `--force` would lift, say), and one refused for nothing but
 that is in it as a worktree too, since `--allow-diverged` starts on it. So
-`wt sync run <work>… --if-ready --allow-diverged --expect <token>` goes ahead
+`wt sync rebase <work>… --if-ready --allow-diverged --expect <token>` goes ahead
 over exactly the diverged rows shown, and an overview with nothing diverged
 has the token an older wt gives it.
 
-## `wt sync run|resume|undo --json` — the result
+## `wt sync rebase|resume|undo --json` — the result
 
-`wt sync run [<work>...] --json` (also spelled `wt sync [<work>...] --run
+`wt sync rebase [<work>...] --json` (also spelled `wt sync [<work>...] --rebase
 --json`), `wt sync resume <work> --json` and `wt sync undo <work> --json` do
 what they do without it, and print one object in the shape of `wt up --json`'s,
 with more said about each worktree. Progress, and any question, go to
@@ -1368,17 +1414,18 @@ with `--json`: a run across repositories has no single result.
 To run unattended: a run with nothing named, and no terminal, rebases nothing
 without `--yes` (it is then `refused` with `error` saying so), as without
 `--json`. `--yes` says yes to every question, the push included; `--no-push`
-keeps the push out, on `run` and `resume` (undo never pushes). A named worktree
+keeps the push out, on `rebase` and `resume` (undo never pushes). A named worktree
 goes ahead without `--yes`, and with no terminal nothing is asked.
 
-With `--expect <token>`, `wt sync run` and `wt sync --run` fetch, recompute the
-overview's token and refuse, touching no worktree, when it differs: what a run
+With `--expect <token>`, `wt sync rebase` and `wt sync --rebase` fetch, recompute
+the overview's token and refuse, touching no worktree, when it differs: what a run
 would start on is not what `wt sync --json` showed. It is then an `error` with
 no participants and a non-zero exit. The fetch then covers every worktree's own
 remote, as the overview's did.
 
-The fields are `wt up --json`'s (above), with `command` one of `"sync run"`,
-`"sync resume"`, `"sync undo"`, and:
+The fields are `wt up --json`'s (above), with `command` one of `"sync rebase"`,
+`"sync resume"`, `"sync undo"` (and `"sync run"`, from a line that still spells
+the verb as it was before `sync-run` 1.3.0), and:
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -1395,7 +1442,7 @@ Each participant has `wt up`'s fields, and:
 | `deferred` | array | what each deferred step of a finished rebase came to: `step` (its `run` line), `result` (`done` \| `committed` \| `failed` \| `skipped`), `reason` (why failed or skipped), `commit` (for committed) |
 | `undoCommand` | array of string \| null | what puts it back where the run found it, as an argv (`["wt", "sync", "undo", work]`); null when nothing is there to undo |
 | `planFile` | string \| null | for `handedOver`: the plan saying what is yours |
-| `ownRemoteSync` | object \| null | since 1.2.0: [`ownRemoteSync`](#ownremotesync--what-a-run-did-about-it), an object from `wt sync run`; always null from resume and undo |
+| `ownRemoteSync` | object \| null | since 1.2.0: [`ownRemoteSync`](#ownremotesync--what-a-run-did-about-it), an object from `wt sync rebase`; always null from resume and undo |
 
 `result` has `wt up`'s values and one more, `undone`: `wt sync undo` put the
 branch back at its safety ref, or aborted its handed-over rebase. A branch undo

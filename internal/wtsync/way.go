@@ -65,12 +65,12 @@ func HandoverWay(wtPath string, st State) (Way, error) {
 // put it after its own finding. The situations are listed once, adjacent,
 // so a change of wording is a one-place edit.
 func WayOut(w Way) string {
-	resume, undo, force, run := "wt sync resume", "wt sync undo", "wt sync undo --force", "wt sync run"
+	resume, undo, force, rebase := "wt sync resume", "wt sync undo", "wt sync undo --force", "wt sync rebase"
 	if w.Work != "" {
 		resume += " " + w.Work
 		undo += " " + w.Work
 		force += " " + w.Work
-		run += " " + w.Work
+		rebase += " " + w.Work
 	}
 	abort := "git rebase --abort"
 	if w.Path != "" {
@@ -104,7 +104,7 @@ func WayOut(w Way) string {
 	case w.Plan && w.Rebasing && w.Restart:
 		// K: the stop is not one a person may finish (a strategy's file
 		// hand-merged or unmerged again), so the run starts over.
-		return fmt.Sprintf("%s puts everything back, then %s starts again", undo, run)
+		return fmt.Sprintf("%s puts everything back, then %s starts again", undo, rebase)
 	case w.Plan && w.Rebasing && w.OwesAdd:
 		// B: the stop is waiting on the person's own resolution.
 		return fmt.Sprintf("resolve what is yours, git add it, then %s; or %s puts everything back", resume, undo)
@@ -129,7 +129,7 @@ func WayOut(w Way) string {
 		// E: the branch is back where it started with the handover still
 		// there. A run refuses while the plan is there, so undo clears it
 		// first.
-		return fmt.Sprintf("the handed-over rebase was aborted, not finished: %s clears its plan, then %s starts again", undo, run)
+		return fmt.Sprintf("the handed-over rebase was aborted, not finished: %s clears its plan, then %s starts again", undo, rebase)
 	case w.Moved && !w.Plan && !w.Result:
 		// G: interrupted after the rebase and before the result was pinned.
 		return fmt.Sprintf("the rebase stands; %s puts it back", force)

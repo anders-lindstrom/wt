@@ -90,7 +90,7 @@ func TestSyncKeepRunRebasesAReadyWorktreeAndRecordsThePass(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"2025-03-04 14:20:00  origin/main ", "\n  rebased  bump\n", "\n  pushed   bump\n", "\n  left     none\n", "\n  result   rebased 1, pushed 1, left 0\n", "\n    wt sync run  onto origin/main"} {
+	for _, want := range []string{"2025-03-04 14:20:00  origin/main ", "\n  rebased  bump\n", "\n  pushed   bump\n", "\n  left     none\n", "\n  result   rebased 1, pushed 1, left 0\n", "\n    wt sync rebase  onto origin/main"} {
 		if !strings.Contains(string(logged), want) {
 			t.Errorf("log lacks %q:\n%s", want, logged)
 		}
@@ -160,7 +160,7 @@ func TestSyncKeepRunDoesNothingWhileTrunkIsUnchanged(t *testing.T) {
 	if err := SyncKeepRun(ctx, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
-	if !strings.Contains(out.String(), "(fetched)\nwt sync run  onto origin/main") {
+	if !strings.Contains(out.String(), "(fetched)\nwt sync rebase  onto origin/main") {
 		t.Fatalf("trunk moved and the pass did not run:\n%s", out.String())
 	}
 }
@@ -305,7 +305,7 @@ func TestSyncKeepRunInterruptedLeavesTheOutputSoFarInTheLog(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%v\n%s", err, out)
 		}
-		for _, want := range []string{"    wt sync run  onto origin/main", "      ✓ rebased 1 commit onto origin/main", "interrupted after rebasing bump"} {
+		for _, want := range []string{"    wt sync rebase  onto origin/main", "      ✓ rebased 1 commit onto origin/main", "interrupted after rebasing bump"} {
 			if !strings.Contains(string(logged), want) {
 				t.Errorf("log lacks %q:\n%s", want, logged)
 			}
@@ -393,7 +393,7 @@ func TestSyncKeepRunNoPushRepeatsThePushCommandUntilItIsPushedByHand(t *testing.
 			t.Errorf("output lacks %q:\n%s", want, s)
 		}
 	}
-	if strings.Contains(s, "wt sync run  onto") {
+	if strings.Contains(s, "wt sync rebase  onto") {
 		t.Fatalf("trunk unchanged, yet the run ran:\n%s", s)
 	}
 	out.Reset()

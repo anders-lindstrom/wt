@@ -124,7 +124,7 @@ func TestSyncRunRefusesForceWithNothingNamed(t *testing.T) {
 	ctx, _ := runFixture(t, false)
 	opts := noAgents()
 	opts.Force = true
-	if err := SyncRun(ctx, nil, opts, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "name it") {
+	if err := SyncRebase(ctx, nil, opts, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "name it") {
 		t.Errorf("err = %v", err)
 	}
 }

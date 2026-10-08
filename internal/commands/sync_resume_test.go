@@ -25,11 +25,11 @@ func handedOver(t *testing.T) (ctx *Context, bump, gitDir string, st wtsync.Stat
 	return ctx, bump, gitDir, st
 }
 
-// handOverNow runs sync run on bump and returns what it handed over.
+// handOverNow runs sync rebase on bump and returns what it handed over.
 func handOverNow(t *testing.T, ctx *Context, bump string) (gitDir string, st wtsync.State) {
 	t.Helper()
 	var out bytes.Buffer
-	if err := SyncRun(ctx, []string{"bump"}, noAgents(), &out); err == nil {
+	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err == nil {
 		t.Fatalf("the run should have handed over:\n%s", out.String())
 	}
 	gitDir, err := wtsync.GitDir(bump)
@@ -226,7 +226,7 @@ func TestSyncResumeWithoutAHandover(t *testing.T) {
 	if err == nil {
 		t.Fatalf("there is nothing to resume:\n%s", out.String())
 	}
-	if !strings.Contains(err.Error(), "was not left mid-rebase by wt sync run") {
+	if !strings.Contains(err.Error(), "was not left mid-rebase by wt sync rebase") {
 		t.Fatalf("err %v", err)
 	}
 }
@@ -249,7 +249,7 @@ func TestSyncResumeRefusesARebaseItDidNotLeave(t *testing.T) {
 
 	var out bytes.Buffer
 	err := SyncResume(ctx, "bump", noResumeAgents(), &out)
-	if err == nil || !strings.Contains(err.Error(), "not the one wt sync run left") {
+	if err == nil || !strings.Contains(err.Error(), "not the one wt sync rebase left") {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	assertUntouched(t, bump, gitDir, st)
@@ -508,7 +508,7 @@ func TestSyncResumeRefusesARebaseRestartedFromAnotherTip(t *testing.T) {
 
 	var out bytes.Buffer
 	err := SyncResume(ctx, "bump", noResumeAgents(), &out)
-	if err == nil || !strings.Contains(err.Error(), "not the one wt sync run left") || !strings.Contains(err.Error(), "started from") {
+	if err == nil || !strings.Contains(err.Error(), "not the one wt sync rebase left") || !strings.Contains(err.Error(), "started from") {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	assertUntouched(t, bump, gitDir, st)
@@ -678,7 +678,7 @@ func TestSyncResumeSendsAnAbortedHandoverToUndo(t *testing.T) {
 	opts := noAgents()
 	opts.Now = func() time.Time { return time.Unix(0, 200) }
 	var runOut bytes.Buffer
-	_ = SyncRun(ctx, []string{"bump"}, opts, &runOut)
+	_ = SyncRebase(ctx, []string{"bump"}, opts, &runOut)
 	if strings.Contains(runOut.String(), "left mid-rebase") {
 		t.Fatalf("the run still refuses the cleared handover:\n%s", runOut.String())
 	}

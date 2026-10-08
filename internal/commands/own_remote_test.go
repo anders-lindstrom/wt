@@ -588,7 +588,7 @@ func TestUpFetchesTheBranchsOwnRemoteWithTrunk(t *testing.T) {
 // wt up promises a rebase that goes through without anybody: a branch that
 // is behind its remote is judged at the remote's commit, the one the run
 // would rebase, so a conflict that commit brings refuses before anything
-// moves. wt sync run takes the same branch, fast-forwards it, hands the
+// moves. wt sync rebase takes the same branch, fast-forwards it, hands the
 // conflict over, and undo puts the branch back where it stood before both.
 func TestABranchBehindItsRemoteIsJudgedAtTheRemotesCommit(t *testing.T) {
 	f := newTrunkFixture(t)
@@ -613,7 +613,7 @@ func TestABranchBehindItsRemoteIsJudgedAtTheRemotesCommit(t *testing.T) {
 	run, err := syncRunJSON(t, f.ctx, []string{"x"}, at(opts, 100))
 	w := run.Worktrees[0]
 	if err == nil || w.Result != ResultHandedOver || !w.OwnRemoteSync.FastForwarded || str(w.OwnRemoteSync.Local) != before {
-		t.Fatalf("wt sync run: %v %+v %+v", err, w, w.OwnRemoteSync)
+		t.Fatalf("wt sync rebase: %v %+v %+v", err, w, w.OwnRemoteSync)
 	}
 	// The fast-forward stands under the rebase in progress.
 	if got := gitOut(t, f.main, "rev-parse", "refs/heads/feat_wt/x"); got != theirs || str(w.After) != theirs {
@@ -758,7 +758,7 @@ func TestSyncRunWithNothingNamedLeavesADivergedWorktree(t *testing.T) {
 	f.advanceOrigin(t, 1)
 
 	var out bytes.Buffer
-	if err := SyncRun(f.ctx, nil, opts, &out); err != nil {
+	if err := SyncRebase(f.ctx, nil, opts, &out); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
 	if !strings.Contains(out.String(), "nothing is ready to rebase") || !strings.Contains(out.String(), "left as they are: x conflict-free, diverged from origin/feat_wt/x") {
@@ -766,7 +766,7 @@ func TestSyncRunWithNothingNamedLeavesADivergedWorktree(t *testing.T) {
 	}
 	opts.IfReady = true
 	out.Reset()
-	if err := SyncRun(f.ctx, nil, opts, &out); err == nil || !strings.Contains(err.Error(), "x (not ready)") {
+	if err := SyncRebase(f.ctx, nil, opts, &out); err == nil || !strings.Contains(err.Error(), "x (not ready)") {
 		t.Fatalf("--if-ready: %v\n%s", err, out.String())
 	}
 	if got := gitOut(t, x, "rev-parse", "HEAD"); got != before {
@@ -775,7 +775,7 @@ func TestSyncRunWithNothingNamedLeavesADivergedWorktree(t *testing.T) {
 	// --allow-diverged takes it, named.
 	opts.AllowDiverged = true
 	out.Reset()
-	if err := SyncRun(f.ctx, []string{"x"}, opts, &out); err != nil {
+	if err := SyncRebase(f.ctx, []string{"x"}, opts, &out); err != nil {
 		t.Fatalf("--allow-diverged: %v\n%s", err, out.String())
 	}
 	if !gitAncestor(t, f.main, "origin/main", "feat_wt/x") {

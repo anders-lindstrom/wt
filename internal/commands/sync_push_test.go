@@ -91,7 +91,7 @@ func TestSyncRunPushesAFinishedWorktreeWithPush(t *testing.T) {
 	opts := noAgents()
 	opts.Push = PushAlways
 	var out bytes.Buffer
-	if err := SyncRun(ctx, []string{"bump"}, opts, &out); err != nil {
+	if err := SyncRebase(ctx, []string{"bump"}, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	if want := "✓ pushed feat_wt/bump  " + old + " → " + gitOut(t, bump, "rev-parse", "--short=7", "HEAD"); !strings.Contains(out.String(), want) {
@@ -116,7 +116,7 @@ func TestSyncRunDoesNotPushOverCommitsItHasNotSeen(t *testing.T) {
 	opts := noAgents()
 	opts.Push = PushAlways
 	var out bytes.Buffer
-	err := SyncRun(ctx, []string{"bump"}, opts, &out)
+	err := SyncRebase(ctx, []string{"bump"}, opts, &out)
 	if err == nil || !strings.Contains(err.Error(), "bump (push failed)") {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
@@ -135,7 +135,7 @@ func TestSyncRunAsksToPushOnlyWhatFinishedAndPrintsTheCommandOnNo(t *testing.T) 
 	opts := noAgents()
 	opts.ConfirmPush = func(works []string) (bool, error) { asked = works; return false, nil }
 	var out bytes.Buffer
-	if err := SyncRun(ctx, []string{"bump", "other"}, opts, &out); err != nil {
+	if err := SyncRebase(ctx, []string{"bump", "other"}, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	// other is already on trunk: skipped, so there is nothing of it to push.
@@ -159,7 +159,7 @@ func TestSyncRunPushesWhenTheAnswerIsYes(t *testing.T) {
 	opts := noAgents()
 	opts.ConfirmPush = func([]string) (bool, error) { return true, nil }
 	var out bytes.Buffer
-	if err := SyncRun(ctx, []string{"bump"}, opts, &out); err != nil {
+	if err := SyncRebase(ctx, []string{"bump"}, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	if !pushed(t, bare, bump) {
@@ -174,7 +174,7 @@ func TestSyncRunNoPushNeitherAsksNorPushes(t *testing.T) {
 	opts.Push = PushNever
 	opts.ConfirmPush = func([]string) (bool, error) { t.Error("asked despite --no-push"); return true, nil }
 	var out bytes.Buffer
-	if err := SyncRun(ctx, []string{"bump"}, opts, &out); err != nil {
+	if err := SyncRebase(ctx, []string{"bump"}, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	if !strings.Contains(out.String(), "push: git -C") {
@@ -192,7 +192,7 @@ func TestSyncRunPushesNothingThatDidNotFinish(t *testing.T) {
 	opts := noAgents()
 	opts.Push = PushAlways
 	var out bytes.Buffer
-	if err := SyncRun(ctx, []string{"bump"}, opts, &out); err == nil {
+	if err := SyncRebase(ctx, []string{"bump"}, opts, &out); err == nil {
 		t.Fatalf("the run should have handed over:\n%s", out.String())
 	}
 	if s := out.String(); strings.Contains(s, "pushed") || strings.Contains(s, "push:") {

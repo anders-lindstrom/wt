@@ -16,7 +16,7 @@ func TestWayOutCoversEverySituation(t *testing.T) {
 		force  = "wt sync undo --force"
 		abort  = "rebase --abort"
 		add    = "git add"
-		run    = "wt sync run"
+		run    = "wt sync rebase"
 	)
 	named := func(w Way) Way { w.Work, w.Path = "bump", "/w/bump"; return w }
 	for _, tc := range []struct {

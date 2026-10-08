@@ -28,7 +28,7 @@ func (f *trunkFixture) withWork(t *testing.T) RunOptions {
 	}}
 }
 
-// declare has origin's trunk declare a .wt-sync.yaml, which wt sync run
+// declare has origin's trunk declare a .wt-sync.yaml, which wt sync rebase
 // needs; the main checkout does not fetch it.
 func (f *trunkFixture) declare(t *testing.T) {
 	t.Helper()
@@ -131,7 +131,7 @@ func TestSyncRunReportsASkippedTrunkAndStillRebases(t *testing.T) {
 
 	r, err := syncRunJSON(t, f.ctx, []string{"x"}, opts)
 	if err != nil {
-		t.Fatalf("sync run: %v", err)
+		t.Fatalf("sync rebase: %v", err)
 	}
 	if r.TrunkSync == nil || r.TrunkSync.SkippedReason == nil || *r.TrunkSync.SkippedReason != TrunkSkipDiverged {
 		t.Fatalf("trunkSync = %+v, want diverged", r.TrunkSync)
@@ -207,7 +207,7 @@ func TestStatusJSONSaysWhatARunWouldDoToLocalTrunk(t *testing.T) {
 
 // An --expect that no longer holds touches nothing: local trunk included.
 func TestExpectRefusedLeavesLocalTrunk(t *testing.T) {
-	for _, verb := range []string{"up", "sync run"} {
+	for _, verb := range []string{"up", "sync rebase"} {
 		t.Run(verb, func(t *testing.T) {
 			f := newTrunkFixture(t)
 			f.declare(t)
@@ -231,14 +231,14 @@ func TestExpectRefusedLeavesLocalTrunk(t *testing.T) {
 	}
 }
 
-// A repository whose trunk declares nothing has nothing for wt sync run to
+// A repository whose trunk declares nothing has nothing for wt sync rebase to
 // rebase, but it fetched: local trunk still follows.
 func TestSyncRunUndeclaredStillFastForwardsLocalTrunk(t *testing.T) {
 	f := newTrunkFixture(t)
 	opts := f.withWork(t)
 	remote := f.advanceOrigin(t, 1)
 	var out bytes.Buffer
-	if err := SyncRun(f.ctx, []string{"x"}, opts, &out); err == nil {
+	if err := SyncRebase(f.ctx, []string{"x"}, opts, &out); err == nil {
 		t.Fatalf("an undeclared trunk ran:\n%s", out.String())
 	}
 	if got := f.local(t); got != remote {

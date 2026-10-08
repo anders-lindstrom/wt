@@ -395,7 +395,7 @@ func sectionHeading(s syncSection, declared bool) string {
 		if !declared {
 			return "ready, once trunk declares " + wtsync.ConfigFile
 		}
-		return "ready · wt sync run <work>, or wt sync --run for all of them"
+		return "ready · wt sync rebase <work>, or wt sync --rebase for all of them"
 	case sectionNeedsYou:
 		return "needs you · wt sync <work> for the detail"
 	}
@@ -520,7 +520,7 @@ func pausedLine(a wtsync.Assessment) string {
 	}
 	st := a.Handover
 	if st == nil {
-		return "left mid-rebase by wt sync run: " + way
+		return "left mid-rebase by wt sync rebase: " + way
 	}
 	line := fmt.Sprintf("at %d/%d", st.Stop, st.Total)
 	if a.Replaying != "" {
@@ -699,17 +699,17 @@ func printDetail(w io.Writer, work string, a wtsync.Assessment) {
 	}
 }
 
-// runVerdict is what wt sync run would do with the worktree, in
+// runVerdict is what wt sync rebase would do with the worktree, in
 // wtsync.Preflight's words.
 func runVerdict(work string, a wtsync.Assessment) string {
 	switch v, why := wtsync.Preflight(a); v {
 	case wtsync.Proceed:
-		verdict := "wt sync run " + work
+		verdict := "wt sync rebase " + work
 		if a.OnlyFastForward() {
 			verdict += " fast-forwards it to " + a.Own.Ref + "; nothing to rebase"
 		}
 		if stop := a.Replay.Stop; a.Class == wtsync.Contested && stop != nil {
-			verdict = fmt.Sprintf("wt sync run %s rebases up to %d/%d and hands that stop to you", work, stop.Index, stop.Total)
+			verdict = fmt.Sprintf("wt sync rebase %s rebases up to %d/%d and hands that stop to you", work, stop.Index, stop.Total)
 		}
 		if len(a.Sessions) > 0 {
 			verdict += "; asks first: " + whoLabel(a.Sessions) + " is in it"

@@ -249,7 +249,7 @@ func TestSyncPrintsTheTriageAndChangesNothing(t *testing.T) {
 	if !strings.Contains(block, "recipe") {
 		t.Errorf("expected the bump worktree as recipe:\n%s", out)
 	}
-	if strings.Index(out, "ready · wt sync run") > strings.Index(out, "  bump ") {
+	if strings.Index(out, "ready · wt sync rebase") > strings.Index(out, "  bump ") {
 		t.Errorf("a recipe worktree nothing holds is filed under ready:\n%s", out)
 	}
 	if strings.Contains(out, "other") {
@@ -470,7 +470,7 @@ func TestSyncReportsAFailedFetchAndStillPrintsTheTable(t *testing.T) {
 	if err := SyncWorktree(ctx, "bump", SyncOptions{}, &buf); err != nil {
 		t.Fatalf("SyncWorktree: %v", err)
 	}
-	if !strings.Contains(buf.String(), "fetch failed: ") || !strings.Contains(buf.String(), "  run     wt sync run bump") {
+	if !strings.Contains(buf.String(), "fetch failed: ") || !strings.Contains(buf.String(), "  run     wt sync rebase bump") {
 		t.Errorf("want the failure and the detail:\n%s", buf.String())
 	}
 
@@ -592,7 +592,7 @@ func TestSyncNamesTheDecidingStopNotTheFirstOne(t *testing.T) {
 		"\n    ✓ v.txt  resolved by owned-line\n",
 		"\n  2/2  branch edits a  ← yours\n",
 		"\n    ✗ a.txt  yours: no strategy claims it\n",
-		"  run     wt sync run bump rebases up to 2/2 and hands that stop to you\n",
+		"  run     wt sync rebase bump rebases up to 2/2 and hands that stop to you\n",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("want %q in:\n%s", want, out)
@@ -779,7 +779,7 @@ func TestHeldByNamesTheSessionsInTheWorktree(t *testing.T) {
 
 func TestRunVerdictSaysItAsksFirstUnderAnIdleSession(t *testing.T) {
 	a := wtsync.Assessment{Class: wtsync.Clean, Sessions: wtsync.Sessions{{Name: "parked-1", Kind: "interactive", Status: "idle"}}}
-	if got := runVerdict("bump", a); got != "wt sync run bump; asks first: session parked-1 (idle) is in it" {
+	if got := runVerdict("bump", a); got != "wt sync rebase bump; asks first: session parked-1 (idle) is in it" {
 		t.Errorf("got %q", got)
 	}
 }

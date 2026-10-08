@@ -171,14 +171,14 @@ func TestSyncRunAllowDivergedNeedsTheWorktreeNamed(t *testing.T) {
 	f.advanceOrigin(t, 1)
 	opts.AllowDiverged = true
 	var out bytes.Buffer
-	err := SyncRun(f.ctx, nil, opts, &out)
+	err := SyncRebase(f.ctx, nil, opts, &out)
 	if err == nil || !strings.Contains(err.Error(), "--allow-diverged") || !strings.Contains(err.Error(), "name it") {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	if got := gitOut(t, x, "rev-parse", "HEAD"); got != before {
 		t.Fatal("the branch moved")
 	}
-	if err := SyncRun(f.ctx, []string{"x"}, opts, &out); err != nil {
+	if err := SyncRebase(f.ctx, []string{"x"}, opts, &out); err != nil {
 		t.Fatalf("named: %v\n%s", err, out.String())
 	}
 }

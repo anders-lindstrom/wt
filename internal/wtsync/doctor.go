@@ -49,7 +49,7 @@ const dockerDeadline = 10 * time.Second
 // Doctor checks what a run needs from a repository: a fetched trunk, a
 // parseable declaration, the scripts and tools that declaration names, and
 // nothing left behind by an earlier run. It never fixes anything itself;
-// SyncRun does not call it either, since the checks that would block a run
+// SyncRebase does not call it either, since the checks that would block a run
 // (trunk, declaration, scripts) are the same refusals a run already makes on
 // its own. Doctor is the thing to run once before the first run in a
 // repository and after anything changes.

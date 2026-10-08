@@ -76,7 +76,7 @@ untouched() {
     done
     # These refuse for want of a .wt-sync.yaml, which is a declaration of its
     # own and not wt's configuration: they get past loading it.
-    for c in "sync run login-crash --yes --no-push" "sync doctor"; do
+    for c in "sync rebase login-crash --yes --no-push" "sync doctor"; do
         run wt $c
         echo "wt $c: $output"
         [[ "$output" == *".wt-sync.yaml"* || "$output" == *"declaration"* ]]

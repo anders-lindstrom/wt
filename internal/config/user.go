@@ -30,7 +30,7 @@ const (
 	// as <type>=<name> pairs, for every repository that does not name its
 	// types itself.
 	UserKeyTypeNames = "type_names"
-	// UserKeyFFTrunk decides whether wt up and wt sync run bring local trunk
+	// UserKeyFFTrunk decides whether wt up and wt sync rebase bring local trunk
 	// up to origin after fetching it, when that is a safe fast-forward. On by
 	// default.
 	UserKeyFFTrunk = "ff_trunk"
@@ -91,7 +91,7 @@ var userKeys = []userKey{
 		Doc:    "what your branches call each type, as feat=feature pairs",
 		listAt: func(u *User) *[]string { return &u.TypeNames }},
 	{Name: UserKeyFFTrunk, Kind: userBool, Default: "true",
-		Doc:    "fast-forward local trunk when wt up and wt sync run fetch it",
+		Doc:    "fast-forward local trunk when wt up and wt sync rebase fetch it",
 		boolAt: func(u *User) *bool { return &u.FFTrunk }},
 	{Name: UserKeyRefSweepPatterns, Kind: userList, Default: strings.Join(DefaultRefSweepPatterns, " "),
 		Doc:      "the branch and tag names wt refs sweep treats as backups (globs)",

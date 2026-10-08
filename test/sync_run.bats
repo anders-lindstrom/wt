@@ -32,7 +32,7 @@ setup() {
     cd "$REPO"
 }
 
-@test "sync run rebases a recipe worktree, sync goes quiet, undo puts it back" {
+@test "sync rebase rebases a recipe worktree, sync goes quiet, undo puts it back" {
     run wt sync
     [ "$status" -eq 0 ]
     [[ "$output" == *"against origin/main "* ]]
@@ -43,7 +43,7 @@ setup() {
     [ "$status" -eq 0 ]
     [[ "$output" == *"as last fetched"* ]]
 
-    run wt sync run bump --no-fetch
+    run wt sync rebase bump --no-fetch
     [ "$status" -eq 0 ]
     [[ "$output" == *"(as last fetched"* ]]
     [[ "$output" == *"rebased 1 commit"* ]]
@@ -61,21 +61,21 @@ setup() {
     [[ "$output" == *"bump"*"recipe"* ]]
 }
 
-# With nothing named, --run takes the ready group; with no terminal there is
+# With nothing named, --rebase takes the ready group; with no terminal there is
 # nobody to ask. Once bump is on trunk there is nothing left to take.
-@test "sync --run with nothing named takes every ready worktree" {
+@test "sync --rebase with nothing named takes every ready worktree" {
     # bats gives the run no terminal: a bulk run nobody confirmed moves nothing.
-    run wt sync --run --no-fetch
+    run wt sync --rebase --no-fetch
     [ "$status" -eq 0 ]
     [[ "$output" == *"every ready worktree: bump"* ]]
     [[ "$output" == *"Pass --yes to rebase bump."* ]]
     [[ "$output" != *"rebased 1 commit"* ]]
 
-    run wt sync --run --no-fetch --yes
+    run wt sync --rebase --no-fetch --yes
     [ "$status" -eq 0 ]
     [[ "$output" == *"rebased 1 commit"* ]]
 
-    run wt sync run --no-fetch
+    run wt sync rebase --no-fetch
     [ "$status" -eq 0 ]
     [[ "$output" == *"nothing is ready to rebase"* ]]
     [[ "$output" != *"left as they are"* ]]
@@ -84,8 +84,8 @@ setup() {
 # The same flow with the fetch left in. The demo repo is its own origin, so
 # `git fetch origin main` is a local, deterministic no-op that still proves
 # the fetch path runs and does not change the outcome.
-@test "sync run fetches trunk first and rebases the same worktree" {
-    run wt sync run bump
+@test "sync rebase fetches trunk first and rebases the same worktree" {
+    run wt sync rebase bump
     [ "$status" -eq 0 ]
     [[ "$output" == *"onto origin/main"*"(fetched)"* ]]
     [[ "$output" == *"rebased 1 commit"* ]]
@@ -104,8 +104,8 @@ setup() {
 # The same run and undo spelled as flags at the end of the wt sync line, with
 # the verb's own flags reaching it: --push pushes without asking, --force
 # rewinds a branch that moved after the run.
-@test "sync <work> --run and --undo are the verbs spelled on wt sync" {
-    run wt sync bump --run --no-fetch --push
+@test "sync <work> --rebase and --undo are the verbs spelled on wt sync" {
+    run wt sync bump --rebase --no-fetch --push
     [ "$status" -eq 0 ]
     [[ "$output" == *"(as last fetched"* ]]
     [[ "$output" == *"rebased 1 commit"* ]]
@@ -129,7 +129,7 @@ setup() {
 
     run wt sync bump --push
     [ "$status" -eq 1 ]
-    [[ "$output" == "wt: --push needs --run or --resume" ]]
+    [[ "$output" == "wt: --push needs --rebase or --resume" ]]
 }
 
 # The handover of the test below, resumed with the flag spelling.
@@ -142,7 +142,7 @@ setup() {
     git -C "$REPO" commit -qm "a on trunk"
     git -C "$REPO" fetch -q origin
 
-    run wt sync bump --run --no-fetch --yes
+    run wt sync bump --rebase --no-fetch --yes
     [ "$status" -ne 0 ]
     [[ "$output" == *"needs you"* ]]
     GITDIR="$(git -C "$BUMP" rev-parse --absolute-git-dir)"
@@ -162,7 +162,7 @@ setup() {
 # the run carries the v.txt stop, stops contested on the a.txt stop and leaves
 # the plan; the table reports the handover, and resume finishes the rebase
 # once the person's file is staged.
-@test "sync run hands a contested stop over and resume finishes it" {
+@test "sync rebase hands a contested stop over and resume finishes it" {
     printf 'branch\n' > "$BUMP/a.txt"
     git -C "$BUMP" add a.txt
     git -C "$BUMP" commit -qm "a on the branch"
@@ -175,7 +175,7 @@ setup() {
     [ "$status" -eq 0 ]
     [[ "$output" == *"bump"*"contested"*"2/2"*"a.txt✗"* ]]
 
-    run wt sync run bump --no-fetch --yes
+    run wt sync rebase bump --no-fetch --yes
     [ "$status" -ne 0 ]
     [[ "$output" == *"needs you"* ]]
     GITDIR="$(git -C "$BUMP" rev-parse --absolute-git-dir)"
@@ -214,6 +214,8 @@ setup() {
     [[ "$output" == *'"command": "sync"'* ]]
     [[ "$output" == *'"work": "bump"'*'"group": "ready"'*'"class": "recipe"'* ]]
     [[ "$output" == *'"token": "1:'* ]]
+    # The fixture declares no deferred step: an empty array, never absent.
+    [[ "$output" == *'"deferredDeclared": []'* ]]
 
     run wt sync bump --json
     [ "$status" -ne 0 ]
@@ -223,8 +225,8 @@ setup() {
 # --json on a verb: one result object on stdout, the progress on stderr. With
 # no terminal a run with nothing named needs --yes; --expect holds the run to
 # the overview it was read from.
-@test "sync --run --json reports the run and holds it to the overview's token" {
-    run --separate-stderr wt sync --run --no-fetch --json
+@test "sync --rebase --json reports the run and holds it to the overview's token" {
+    run --separate-stderr wt sync --rebase --no-fetch --json
     [ "$status" -eq 0 ]
     [[ "$output" == "{"*"}" ]]
     [[ "$output" == *'"outcome": "refused"'* ]]
@@ -235,14 +237,14 @@ setup() {
     token=$(printf '%s\n' "$output" | sed -n 's/^  "token": "\(.*\)",$/\1/p')
     [ -n "$token" ]
 
-    run --separate-stderr wt sync run --no-fetch --yes --no-push --json --expect 1:0000
+    run --separate-stderr wt sync rebase --no-fetch --yes --no-push --json --expect 1:0000
     [ "$status" -ne 0 ]
     [[ "$output" == *'"outcome": "refused"'* ]]
     [[ "$output" == *'"worktrees": []'* ]]
 
-    run --separate-stderr wt sync run --no-fetch --yes --no-push --json --expect "$token"
+    run --separate-stderr wt sync rebase --no-fetch --yes --no-push --json --expect "$token"
     [ "$status" -eq 0 ]
-    [[ "$output" == *'"command": "sync run"'* ]]
+    [[ "$output" == *'"command": "sync rebase"'* ]]
     [[ "$output" == *'"outcome": "done"'* ]]
     [[ "$output" == *'"result": "rebased"'* ]]
     [[ "$output" == *'"pushed": false'* ]]
@@ -254,7 +256,40 @@ setup() {
     [[ "$output" == *'"command": "sync undo"'* ]]
     [[ "$output" == *'"result": "undone"'* ]]
 
-    run --separate-stderr wt sync --all --run --json
+    run --separate-stderr wt sync --all --rebase --json
     [ "$status" -ne 0 ]
     [[ "$output" == "" ]]
+}
+
+# BRIDGE(sync-run-spelling): the gittree installed today spells the verb run.
+# Both forms still rebase, name themselves "sync run" in the result, and are
+# in no help.
+@test "sync run and --run are still taken, and say sync run in the result" {
+    run --separate-stderr wt sync --no-fetch --json
+    token=$(printf '%s\n' "$output" | sed -n 's/^  "token": "\(.*\)",$/\1/p')
+    [ -n "$token" ]
+
+    run --separate-stderr wt sync run bump --if-ready --yes --no-push --no-fetch --json --expect "$token"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"command": "sync run"'* ]]
+    [[ "$output" == *'"result": "rebased"'* ]]
+
+    run wt sync undo bump
+    [ "$status" -eq 0 ]
+
+    run --separate-stderr wt sync --run --yes --no-push --no-fetch --json --expect "$token"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"command": "sync run"'* ]]
+    [[ "$output" == *'"result": "rebased"'* ]]
+
+    run wt sync bump --rebase --run
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"unknown flag: --run"* ]]
+
+    for help in "sync --help" "sync rebase --help" "up --help"; do
+        run wt $help
+        [ "$status" -eq 0 ]
+        [[ "$output" != *"sync run"* ]]
+        [[ "$output" != *"--run"* ]]
+    done
 }

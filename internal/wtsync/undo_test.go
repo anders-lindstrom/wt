@@ -15,7 +15,7 @@ import (
 
 // completed pins the result ref a finished run would write: the tip the
 // branch was left at once its rebase and deferred steps were done. Rebase
-// alone does not write one; SyncRun does, after the deferred steps.
+// alone does not write one; SyncRebase does, after the deferred steps.
 func completed(t *testing.T, mainRoot, wtPath, branch string, epoch int64) {
 	t.Helper()
 	if err := WriteResult(mainRoot, branch, gitIn(t, wtPath, "rev-parse", "HEAD"), epoch); err != nil {
@@ -454,7 +454,7 @@ func TestVerifyLeftRefusesARebaseFromAnotherTipOntoAnotherCommit(t *testing.T) {
 		s := st
 		c.edit(&s)
 		err := VerifyLeft(wt, s)
-		if err == nil || !strings.Contains(err.Error(), "not the one wt sync run left") || !strings.Contains(err.Error(), c.want) {
+		if err == nil || !strings.Contains(err.Error(), "not the one wt sync rebase left") || !strings.Contains(err.Error(), c.want) {
 			t.Fatalf("%s: err %v; want %q named", c.name, err, c.want)
 		}
 	}
@@ -480,7 +480,7 @@ func TestUndoRefusesARebaseThatIsNotTheRuns(t *testing.T) {
 	wts := []repo.Worktree{{Path: wt, Branch: "feature", Rebasing: true}}
 	for _, force := range []bool{true, false} {
 		_, err := Undo(dir, wts, nil, "feature", time.Now(), force)
-		if err == nil || !strings.Contains(err.Error(), "not the one wt sync run left") || !strings.Contains(err.Error(), "rebase --abort") {
+		if err == nil || !strings.Contains(err.Error(), "not the one wt sync rebase left") || !strings.Contains(err.Error(), "rebase --abort") {
 			t.Fatalf("force=%v: err %v; want the foreign rebase refused and the abort named", force, err)
 		}
 		if busy, err := RebaseInProgress(wt); err != nil || !busy {

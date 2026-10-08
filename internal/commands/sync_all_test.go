@@ -18,7 +18,7 @@ func TestSyncRunIfReadyRefusesANamedWorktreeThatWouldHandOver(t *testing.T) {
 	opts := noAgents()
 	opts.IfReady = true
 	var out bytes.Buffer
-	err := SyncRun(ctx, []string{"bump"}, opts, &out)
+	err := SyncRebase(ctx, []string{"bump"}, opts, &out)
 	if err == nil {
 		t.Fatalf("want a failure:\n%s", out.String())
 	}
@@ -39,7 +39,7 @@ func TestSyncRunIfReadyRunsAWorktreeTheStrategiesResolve(t *testing.T) {
 	opts := noAgents()
 	opts.IfReady = true
 	var out bytes.Buffer
-	if err := SyncRun(ctx, []string{"bump"}, opts, &out); err != nil {
+	if err := SyncRebase(ctx, []string{"bump"}, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	if !strings.Contains(out.String(), "✓ rebased 1 commit") {
@@ -55,7 +55,7 @@ func TestSyncRunIfReadyWithNothingNamedFailsOnWhatItLeft(t *testing.T) {
 	opts := noAgents()
 	opts.IfReady = true
 	var out bytes.Buffer
-	err := SyncRun(ctx, nil, opts, &out)
+	err := SyncRebase(ctx, nil, opts, &out)
 	if err == nil || err.Error() != "not completed: alpha (not ready)" {
 		t.Fatalf("err = %v\n%s", err, out.String())
 	}
@@ -72,11 +72,11 @@ func TestSyncRunAllRebasesTheReadyOnesAcrossRepositories(t *testing.T) {
 	oldContested := gitOut(t, contestedBump, "rev-parse", "HEAD")
 	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{ready.Repo.MainRoot, contested.Repo.MainRoot}}}}
 	var asked []string
-	opts := SyncRunAllOptions{RunOptions: noAgents(),
+	opts := SyncRebaseAllOptions{RunOptions: noAgents(),
 		Ask: func(q string) (bool, error) { asked = append(asked, q); return true, nil }}
 	opts.IfReady = true
 	var out bytes.Buffer
-	err := SyncRunAll(u, Selection{Profiles: []string{"p"}}, opts, &out)
+	err := SyncRebaseAll(u, Selection{Profiles: []string{"p"}}, opts, &out)
 	if err == nil || !strings.Contains(err.Error(), "demo/bump (not ready)") {
 		t.Fatalf("err = %v\n%s", err, out.String())
 	}
@@ -99,7 +99,7 @@ func TestSyncRunIfReadyFailsWhenDeclinedWithSomethingNotReady(t *testing.T) {
 	opts.IfReady = true
 	opts.Confirm = func([]string) (bool, error) { return false, nil }
 	var out bytes.Buffer
-	if err := SyncRun(ctx, nil, opts, &out); err == nil || !strings.Contains(err.Error(), "alpha (not ready)") {
+	if err := SyncRebase(ctx, nil, opts, &out); err == nil || !strings.Contains(err.Error(), "alpha (not ready)") {
 		t.Fatalf("err = %v\n%s", err, out.String())
 	}
 }
@@ -111,13 +111,13 @@ func TestSyncRunAllRefusesARepositoryWhoseTrunkMoved(t *testing.T) {
 	old := gitOut(t, bump, "rev-parse", "HEAD")
 	main := ready.Repo.MainRoot
 	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{main}}}}
-	opts := SyncRunAllOptions{RunOptions: noAgents(), Ask: func(string) (bool, error) {
+	opts := SyncRebaseAllOptions{RunOptions: noAgents(), Ask: func(string) (bool, error) {
 		gitOut(t, main, "commit", "-q", "--allow-empty", "-m", "trunk moved on")
 		gitOut(t, main, "fetch", "-q", "origin")
 		return true, nil
 	}}
 	var out bytes.Buffer
-	err := SyncRunAll(u, Selection{Profiles: []string{"p"}}, opts, &out)
+	err := SyncRebaseAll(u, Selection{Profiles: []string{"p"}}, opts, &out)
 	if err == nil || !strings.Contains(out.String(), "trunk moved since the plan") {
 		t.Fatalf("err = %v\n%s", err, out.String())
 	}

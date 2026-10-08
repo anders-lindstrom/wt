@@ -21,7 +21,7 @@ func TestSyncUndoPutsBackWhatSyncRunMoved(t *testing.T) {
 	ctx, bump := runFixture(t, true)
 	old := gitOut(t, bump, "rev-parse", "HEAD")
 	var out bytes.Buffer
-	if err := SyncRun(ctx, []string{"bump"}, noAgents(), &out); err != nil {
+	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	if gitOut(t, bump, "log", "-1", "--format=%s") != "chore: regen" {
@@ -54,7 +54,7 @@ func TestSyncUndoPutsBackWhatSyncRunMoved(t *testing.T) {
 func TestSyncUndoRefusesAWorktreeCommittedToSinceTheRun(t *testing.T) {
 	ctx, bump := runFixture(t, true)
 	var out bytes.Buffer
-	if err := SyncRun(ctx, []string{"bump"}, noAgents(), &out); err != nil {
+	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	gitIn(t, bump, "commit", "-q", "--allow-empty", "-m", "after the run")
@@ -175,7 +175,7 @@ func TestSyncUndoRefusesARebaseItDidNotLeave(t *testing.T) {
 		opts.Force = force
 		var out bytes.Buffer
 		err := SyncUndo(ctx, "bump", opts, &out)
-		if err == nil || !strings.Contains(err.Error(), "not the one wt sync run left") || !strings.Contains(err.Error(), "rebase --abort") {
+		if err == nil || !strings.Contains(err.Error(), "not the one wt sync rebase left") || !strings.Contains(err.Error(), "rebase --abort") {
 			t.Fatalf("force=%v: err %v\n%s", force, err, out.String())
 		}
 		// Not assertUntouched: the refusal comes after undo took the
@@ -311,7 +311,7 @@ func TestSyncUndoUnderAnIdleSessionAsksThenTellsIt(t *testing.T) {
 	ctx, bump := runFixture(t, false)
 	old := gitOut(t, bump, "rev-parse", "HEAD")
 	var out bytes.Buffer
-	if err := SyncRun(ctx, []string{"bump"}, noAgents(), &out); err != nil {
+	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	rebased := gitOut(t, bump, "rev-parse", "HEAD")
@@ -365,7 +365,7 @@ func TestSyncUndoNoLeavesAHandoverAndItsLock(t *testing.T) {
 func TestSyncUndoRefusesASessionThatWokeWhileAsked(t *testing.T) {
 	ctx, bump := runFixture(t, false)
 	var out bytes.Buffer
-	if err := SyncRun(ctx, []string{"bump"}, noAgents(), &out); err != nil {
+	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	rebased := gitOut(t, bump, "rev-parse", "HEAD")

@@ -20,7 +20,7 @@ import (
 // is waiting on it.
 const networkTimeout = 5 * time.Minute
 
-// RunOptions tunes SyncRun for callers and tests.
+// RunOptions tunes SyncRebase for callers and tests.
 type RunOptions struct {
 	NoFetch bool
 	// NoFFTrunk leaves local trunk where it is after the fetch, as the user
@@ -98,9 +98,9 @@ type participant struct {
 	found string
 }
 
-// runPlan is one wt sync run: the trunk it rebases onto, the worktrees the
+// runPlan is one wt sync rebase: the trunk it rebases onto, the worktrees the
 // arguments named and the stacks they belong to, and what each of them came
-// to. SyncRun drives it through its phases in order: selectBranches, triage,
+// to. SyncRebase drives it through its phases in order: selectBranches, triage,
 // lockAll, then rebaseOne per worktree.
 type runPlan struct {
 	ctx     *Context
@@ -152,19 +152,19 @@ type runPlan struct {
 	notReady []string
 }
 
-// SyncRun rebases the named worktrees (and the stacks they belong to) onto
+// SyncRebase rebases the named worktrees (and the stacks they belong to) onto
 // origin/<trunk>: safety ref, strategies at each stop, deferred steps once
 // at the end. With nothing named it takes every worktree the overview calls
 // ready, less recipe?, and asks first. Anything refused, restored, failed or
 // owed is reported and makes the returned error non-nil, so a script sees it.
-func SyncRun(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
+func SyncRebase(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
 	return journaled(opts.Journal, func() error {
 		_, err := runSync(ctx, works, opts, w)
 		return err
 	})
 }
 
-// runSync is SyncRun with the plan handed back, for the keeper's record of
+// runSync is SyncRebase with the plan handed back, for the keeper's record of
 // what a pass did.
 func runSync(ctx *Context, works []string, opts RunOptions, w io.Writer) (*runPlan, error) {
 	r := &runPlan{ctx: ctx, opts: opts, w: w, tracker: &rebaseTracker{}, trunk: ctx.Config.MainBranch, outcomes: map[string]int{}}
@@ -323,7 +323,7 @@ func (r *runPlan) declare(works []string) error {
 	r.opts.Journal.trunk(r.trunk, ctx.trunkSource(), onto, trunkSHA, !r.opts.NoFetch)
 	label := r.opts.label
 	if label == "" {
-		label = "wt sync run"
+		label = "wt sync rebase"
 	}
 	fmt.Fprintf(r.w, "%s  onto %s %s %s\n", label, onto, git.ShortID(trunkSHA, 7), fetched)
 	cfg, err := wtsync.LoadFromRef(ctx.Repo.MainRoot, trunkSHA)

@@ -89,11 +89,11 @@ carry are shims that call `wt`.
 8. **`wt sync` and `wt up` are opt-in.** An ordinary rebase onto trunk is plain git
    (`git fetch && git rebase origin/<trunk>`); reach for `wt sync` when asked, or to
    finish a run that stopped. `wt sync` alone shows what would happen and changes
-   nothing; `wt sync run <work>` does it, `wt sync --run` does every worktree the table
-   calls ready except `recipe?`, and `wt sync undo <work>` puts a run back. Without a
+   nothing; `wt sync rebase <work>` does it, `wt sync --rebase` does every worktree the
+   table calls ready except `recipe?`, and `wt sync undo <work>` puts a run back. Without a
    terminal, a run with nothing named rebases nothing unless `--yes` says so, and
    nothing is pushed without `--push` or `--yes`. Each verb is
-   also a flag on the line you just recalled: `wt sync <work> --run`,
+   also a flag on the line you just recalled: `wt sync <work> --rebase`,
    `--resume`, `--undo`. `wt sync keep start` does the ready ones on a timer,
    leaving alone any worktree a session is in, and the table says when it last did.
 9. **Clean up merged branches and their worktrees with `wt sweep`.** From the main

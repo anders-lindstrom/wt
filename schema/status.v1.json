@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/status.v1.json",
-  "x-version": "1.6.0",
+  "x-version": "1.7.0",
   "title": "wt status --json",
   "description": "What wt up would start on, from local state alone. Printed by `wt status [<work>] --json`, which writes nothing to any repository. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
@@ -75,12 +75,22 @@
     },
     "stackMember": {
       "type": "object",
-      "required": ["work", "branch", "path", "ownRemote"],
+      "required": ["work", "branch", "path", "ownRemote", "deferredDeclared"],
       "properties": {
         "work": { "type": "string" },
         "branch": { "type": "string" },
         "path": { "type": "string" },
-        "ownRemote": { "$ref": "#/$defs/ownRemote" }
+        "ownRemote": { "$ref": "#/$defs/ownRemote" },
+        "deferredDeclared": { "type": "array", "items": { "$ref": "#/$defs/declaredStep" }, "description": "Since 1.7.0. The deferred steps .wt-sync.yaml declares on trunkTip, trunk as last fetched, in the declared order: what wt up goes through once it has rebased this member. Declared, not predicted: each may run. A step with no paths does, after every finished rebase; one with paths only when the rebase changed one of them; none after a step that failed. wt up fetches first and reads the declaration from the trunk it then rebases onto, which may be newer, and the token does not cover it. The same list on every member. Empty when trunk declares none or has no .wt-sync.yaml, when trunkRefExists is false, and when the declaration there cannot be read." }
+      }
+    },
+    "declaredStep": {
+      "type": "object",
+      "description": "One deferred step .wt-sync.yaml on trunk declares under defer:, before any rebase. See docs/json.md.",
+      "required": ["step", "paths"],
+      "properties": {
+        "step": { "type": "string", "description": "Its run line: the string deferred[].step carries for it in wt sync rebase --json." },
+        "paths": { "type": "array", "items": { "type": "string" }, "description": "The globs that gate it, as declared. Empty: it runs after every finished rebase. Otherwise it runs only when the rebase changed a path one of them matches, which is not known before the rebase." }
       }
     },
     "ownRemote": {

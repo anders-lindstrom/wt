@@ -47,7 +47,7 @@ teardown() {
     [ "$status" -eq 0 ]
     [ "${lines[0]}" = "bump" ]
     [[ "$output" == *"  trunk   1 behind · 1 ahead of origin/main (as last fetched"* ]]
-    [[ "$output" == *"  sync    recipe · wt sync run bump"* ]]
+    [[ "$output" == *"  sync    recipe · wt sync rebase bump"* ]]
     [[ "$output" == *"simulated against origin/main as last fetched"* ]]
 
     cd "$REPO"
