@@ -6,6 +6,14 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-10-08 11:10 — the sync plan lists the deferred steps a run may perform
+
+- For tools: `wt sync --json` on each worktree, and `wt status --json` on each
+  stack member, list the steps `.wt-sync.yaml` on trunk declares under `defer:`,
+  as `deferredDeclared` (sync 1.4.0, status 1.7.0).
+- Declared, not predicted: a step with `paths` runs only when the rebase
+  changes one of them, which nothing knows before the rebase.
+
 ## 2026-10-08 11:03 — wt sync run is now wt sync rebase
 
 - Sync is the workflow: fetch, simulate, safety ref, strategies, deferred

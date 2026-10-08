@@ -77,9 +77,34 @@ type OverviewWorktree struct {
 	Stack      []PlanStackMember `json:"stack"`
 	Stops      []OverviewStop    `json:"stops"`
 	Strategies []string          `json:"strategies"`
-	Notes      []string          `json:"notes"`
-	Error      *string           `json:"error"`
-	OwnRemote  OwnRemote         `json:"ownRemote"`
+	// DeferredDeclared is the repository's, the same on every worktree.
+	DeferredDeclared []DeclaredStep `json:"deferredDeclared"`
+	Notes            []string       `json:"notes"`
+	Error            *string        `json:"error"`
+	OwnRemote        OwnRemote      `json:"ownRemote"`
+}
+
+// DeclaredStep is one deferred step .wt-sync.yaml on trunk declares, as a
+// plan reports it before any rebase: Step is its run line, the string a
+// result's deferred[].step carries, and Paths its gate. A step with no paths
+// runs after every finished rebase; one with paths only when the rebase
+// changed one of them, which nothing knows until the rebase is done.
+type DeclaredStep struct {
+	Step  string   `json:"step"`
+	Paths []string `json:"paths"`
+}
+
+// declaredSteps is cfg's deferred steps for --json, in the declared order;
+// none for a trunk that declares nothing, which a nil cfg is.
+func declaredSteps(cfg *wtsync.Config) []DeclaredStep {
+	steps := []DeclaredStep{}
+	if cfg == nil {
+		return steps
+	}
+	for _, d := range cfg.Defer {
+		steps = append(steps, DeclaredStep{Step: d.Run, Paths: append([]string{}, d.Paths...)})
+	}
+	return steps
 }
 
 // OverviewStop is one stop the simulated rebase reached.
@@ -276,8 +301,11 @@ func surveyRepo(ctx *Context, trunkSHA string, cfg *wtsync.Config, agents []wtsy
 			byBranch[wt.Branch] = wt
 		}
 	}
+	declared := declaredSteps(cfg)
 	for i, wt := range worktrees {
-		sv.rows = append(sv.rows, r.overviewRow(wt, assessments[i], byBranch))
+		row := r.overviewRow(wt, assessments[i], byBranch)
+		row.DeferredDeclared = declared
+		sv.rows = append(sv.rows, row)
 	}
 	return sv, nil
 }

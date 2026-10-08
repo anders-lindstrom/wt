@@ -63,10 +63,12 @@ type PlanStackMember struct {
 }
 
 // PlanStack is a worktree wt up would move, as the plan reports it: the
-// member, and its branch against its own remote.
+// member, its branch against its own remote, and the deferred steps trunk
+// declares, the same on every member.
 type PlanStack struct {
 	PlanStackMember
-	OwnRemote OwnRemote `json:"ownRemote"`
+	OwnRemote        OwnRemote      `json:"ownRemote"`
+	DeferredDeclared []DeclaredStep `json:"deferredDeclared"`
 }
 
 // UpPlan is the one object wt status <work> --json prints: what wt up would
@@ -202,6 +204,14 @@ func UpPlanJSON(ctx *Context, arg string, w io.Writer) error {
 		}
 		return o
 	}
+	// The deferred steps trunk declares, as last fetched: wt up fetches
+	// first and reads them from the trunk it then rebases onto. None when
+	// trunk declares none, has no declaration, or it cannot be read.
+	var declaration *wtsync.Config
+	if exists {
+		declaration, _ = wtsync.LoadFromRef(ctx.Repo.MainRoot, tip)
+	}
+	declared := declaredSteps(declaration)
 	// The candidate stack, from local refs as of now: what wt up would move.
 	stack := []string{}
 	if wt.Branch != "" && !wt.IsMain {
@@ -219,8 +229,9 @@ func UpPlanJSON(ctx *Context, arg string, w io.Writer) error {
 		for _, b := range stack {
 			o := byBranch[b]
 			p.Stack = append(p.Stack, PlanStack{
-				PlanStackMember: PlanStackMember{Work: worktreeName(ctx, b, o.Path), Branch: b, Path: o.Path},
-				OwnRemote:       ownRemoteOf(ownOf(b, o.Path)),
+				PlanStackMember:  PlanStackMember{Work: worktreeName(ctx, b, o.Path), Branch: b, Path: o.Path},
+				OwnRemote:        ownRemoteOf(ownOf(b, o.Path)),
+				DeferredDeclared: declared,
 			})
 		}
 	}

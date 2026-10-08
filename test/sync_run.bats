@@ -214,6 +214,8 @@ setup() {
     [[ "$output" == *'"command": "sync"'* ]]
     [[ "$output" == *'"work": "bump"'*'"group": "ready"'*'"class": "recipe"'* ]]
     [[ "$output" == *'"token": "1:'* ]]
+    # The fixture declares no deferred step: an empty array, never absent.
+    [[ "$output" == *'"deferredDeclared": []'* ]]
 
     run wt sync bump --json
     [ "$status" -ne 0 ]

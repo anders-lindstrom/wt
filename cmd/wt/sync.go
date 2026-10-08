@@ -129,7 +129,8 @@ func newSyncCmd() *cobra.Command {
 			"\n" +
 			"--json prints the overview as one object on stdout, for a tool driving\n" +
 			"wt: every worktree with its group, class, stack and stops, current ones\n" +
-			"included, and a token for --rebase --expect. With --all, --roots or\n" +
+			"included, the deferred steps trunk declares, which a run may perform,\n" +
+			"and a token for --rebase --expect. With --all, --roots or\n" +
 			"--profile it is an array, one object per repository. With a verb it is\n" +
 			"that verb's result instead (wt sync rebase --help). wt schema sync and\n" +
 			"wt schema sync-run print their JSON Schemas; docs/json.md explains them.",

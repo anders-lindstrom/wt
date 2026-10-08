@@ -65,6 +65,7 @@ Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 | `remove` | 1.4.1 | wording: a session problem is any agent session, and `sessionsUnknown` any listing that failed |
 | `status` 1.6.0, `sync` 1.3.0, `up` 1.4.0, `sync-run` 1.2.0 | | [a branch against its own remote](#ownremote--a-branch-against-its-own-remote): `ownRemote` on the worktree and each stack member of `status` and on each worktree of `sync`; `ownRemoteSync` on each participant of `up` and `sync-run`; `upIneligibleCode` `ownRemoteDiverged` and `ownRemoteBehind`; a token for a plan held back by divergence alone |
 | `sync-run` 1.3.0, `sync` 1.3.1 | | `wt sync run` is spelled `wt sync rebase`, and `--run` on `wt sync` is `--rebase`: `command` gains `sync rebase`, which the new spelling prints. From `sync-run` 1.3.0 on, `wt sync rebase <work>...` and `wt sync --rebase` exist. `sync` changes in wording only |
+| `sync` 1.4.0, `status` 1.7.0 | | [`deferredDeclared`](#deferreddeclared--the-deferred-steps-trunk-declares): the deferred steps a run may perform, on each worktree of `sync` and each stack member of `status` |
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
 
@@ -221,6 +222,7 @@ repository.
 | `stack` | array | every worktree `wt up` would move, parents first, from local refs as of now; just the one when it has no stack |
 | `stack[].work`, `.branch`, `.path` | string | |
 | `stack[].ownRemote` | object | since 1.6.0: that member's branch against [its own remote](#ownremote--a-branch-against-its-own-remote) |
+| `stack[].deferredDeclared` | array | since 1.7.0: the [deferred steps trunk declares](#deferreddeclared--the-deferred-steps-trunk-declares), as last fetched, which `wt up` may run once it has rebased that member; `[]` when there are none |
 | `sessions` | array | [agent sessions](#sessions--claude-and-codex) in the stack's worktrees |
 | `sessions[].work`, `.name` | string | the worktree it is in, and its name |
 | `sessions[].kind` | `claude` \| `codex` | whose session it is; `codex` since 1.5.0 |
@@ -584,6 +586,48 @@ one of:
 An undo that takes back a fast-forward also takes back the word that the
 branch was ever at `remote` (above): the branch then reads `behind` again, and
 with a commit of its own `diverged`.
+
+### `deferredDeclared` — the deferred steps trunk declares
+
+A repository's `.wt-sync.yaml` may declare steps under `defer:` that run once a
+rebase has finished: regenerate a file, commit the result. A run reports what
+each came to in [`deferred`](#wt-sync-rebaseresumeundo---json--the-result).
+`deferredDeclared` is the same steps before the run, on each worktree of
+`wt sync --json` (since `sync` 1.4.0) and each `stack` member of
+`wt status --json` (since `status` 1.7.0):
+
+| Field | Type | Meaning |
+|---|---|---|
+| `step` | string | the step's `run` line, the same string `deferred[].step` carries for it afterwards |
+| `paths` | array of string | the globs that gate it, as declared; empty when it has none |
+
+In the declared order, which is the order they run in.
+
+**Declared, not predicted.** A step with empty `paths` runs after every
+finished rebase. A step with `paths` runs only when the rebase changed a path
+one of them matches, comparing the branch before and after, and that is not
+known until the rebase is done: the result then says `skipped`, "no listed path
+changed". No step runs after one that failed, and none runs for a worktree
+the run did not rebase: one it skipped, refused, only fast-forwarded, or
+handed over (`wt sync resume` runs them when it finishes that rebase). So the
+list is what **may** run, never more than that.
+
+The list is the repository's, so it is **the same on every worktree and every
+stack member**, also on one a run would skip or refuse and on one whose
+assessment failed (`class` `unknown`): `verdict`, `upEligible` and the rest say
+whether a run rebases it. It is always an array: `[]` when trunk declares no
+deferred step or has no `.wt-sync.yaml`. A plan with an empty `stack` has no
+member to carry it.
+
+**Where it is read from.** Always trunk's copy, never the worktree's own: a
+branch that edits `.wt-sync.yaml` changes neither the plan nor what a run
+executes, until that edit is on trunk.
+
+| | reads `.wt-sync.yaml` from | against the run |
+|---|---|---|
+| `wt sync --json` | the trunk commit in `onto`, after its fetch | a run fetches again and reads the trunk commit it rebases onto. The overview's `token` covers the declaration, so a run with `--expect` refuses when it has changed |
+| `wt status --json` | `trunkTip`, as last fetched; `[]` when `trunkRefExists` is false or the file there cannot be read | `wt up` fetches first, so it may read a newer declaration. The plan's `token` does **not** cover it |
+| `wt sync resume` | the trunk commit the handed-over run rebased onto | |
 
 ## `wt sweep --dry-run --json` — the sweep's plan
 
@@ -1318,6 +1362,7 @@ Each worktree:
 | `stops[].resolved` | bool | every conflicted file there resolved by a strategy |
 | `stops[].yours` | bool | the first stop no strategy resolves: a run hands it to a person |
 | `stops[].files[]` | object | `path`, `resolved`, `strategy` (null when nothing claims it), `note` (why a strategy refused it, or what a lift did) |
+| `deferredDeclared` | array | since 1.4.0: the [deferred steps trunk declares](#deferreddeclared--the-deferred-steps-trunk-declares), which a run may perform once it has rebased this worktree; `[]` when there are none |
 | `strategies` | array of string | the declared strategies that resolved something, each once |
 | `notes` | array of string | advisory; they never change the class |
 | `error` | string \| null | the assessment failed |
