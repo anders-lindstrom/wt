@@ -100,7 +100,7 @@ func PlanRestore(dir string, rp *repo.Repo) RestorePlan {
 	if _, err := os.Lstat(filepath.Join(dir, PurgingName)); err == nil {
 		// Its pins may be gone, and gc with them the commits it needs.
 		p.problem(ProblemPurging, fmt.Sprintf("a purge of it began: it cannot be restored; "+
-			"wt quarantine purge %s finishes deleting it", dir))
+			"wt purge %s finishes deleting it", dir))
 		return p
 	}
 	r, err := Load(dir)

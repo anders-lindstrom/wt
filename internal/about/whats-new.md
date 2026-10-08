@@ -6,6 +6,15 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-10-08 12:05 — --move-to and wt purge: no more "quarantine" in what you read
+
+- `wt remove <work> --move-to <dir>` and `wt sweep --move-to <dir>` move a
+  worktree into a folder; `wt restore <dir>` puts it back, `wt purge <dir>`
+  deletes it for good. They were `--quarantine` and `wt quarantine purge`.
+- Help and messages say "a removed worktree" and "its folder". Nothing on disk
+  or in `--json` is renamed: folders made before restore and purge as before.
+- For tools: `wt schema remove` at 1.4.2 or later has the new spellings.
+
 ## 2026-10-08 11:25 — wt inside Claude Code
 
 - `mods/wt` is a Claude Code mod. Above the prompt, one line says the worktree

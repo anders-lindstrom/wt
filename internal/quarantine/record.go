@@ -241,7 +241,7 @@ func Begin(dir string, r Record) (*Record, error) {
 func MakeDir(dir string) error {
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		if errors.Is(err, os.ErrExist) {
-			return fmt.Errorf("%s is there already: a quarantine goes into a new folder", dir)
+			return fmt.Errorf("%s is there already: a worktree is moved only into a new folder", dir)
 		}
 		return err
 	}

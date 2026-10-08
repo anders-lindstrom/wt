@@ -8,48 +8,31 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands"
 )
 
-func newQuarantineCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "quarantine",
-		Short: "Deal with a folder wt remove --quarantine moved a worktree into",
-		Long: "A quarantine is the folder wt remove --quarantine <dir> or wt sweep\n" +
-			"--quarantine moves a worktree into instead of deleting it: its checkout,\n" +
-			"its git dir and recovery.json, with refs under refs/wt-quarantine/\n" +
-			"pinning its commits. wt restore <dir> puts it back; wt quarantine purge\n" +
-			"<dir> deletes it for good.",
-		Example: "  wt quarantine purge ../trash/lc --dry-run  # what deleting it loses",
-		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return cmd.Help()
-		},
-	}
-	cmd.AddCommand(newQuarantinePurgeCmd())
-	return cmd
-}
-
-func newQuarantinePurgeCmd() *cobra.Command {
+func newPurgeCmd() *cobra.Command {
 	var yes, dryRun, asJSON bool
 	var expect string
 	cmd := &cobra.Command{
 		Use:   "purge <dir>",
-		Short: "Delete a quarantine for good: its folder and its pins",
-		Long: "Delete, for good, the quarantine wt remove --quarantine or wt sweep\n" +
-			"--quarantine made at <dir>: the refs under refs/wt-quarantine/ that pin\n" +
-			"its commits, then the folder with everything in it. Once the pins go,\n" +
-			"commits nothing else holds are unreachable and git gc takes them; the\n" +
-			"plan counts them. A symlink in the folder is deleted, never what it\n" +
-			"names. It runs from anywhere: recovery.json names its repository.\n\n" +
-			"It only ever deletes a folder that is plainly a wt quarantine, and\n" +
-			"refuses, deleting nothing, when <dir> has no recovery.json wt can read,\n" +
+		Short: "Delete a removed worktree for good: its folder and its pins",
+		Long: "Delete, for good, the worktree wt remove --move-to or wt sweep\n" +
+			"--move-to moved into <dir>: the refs wt made to pin its commits, then\n" +
+			"the folder with everything in it. Once the pins go, commits nothing\n" +
+			"else holds are unreachable and git gc takes them; the plan counts\n" +
+			"them. A symlink in the folder is deleted, never what it names. It runs\n" +
+			"from anywhere: recovery.json names its repository.\n\n" +
+			"<dir> is that folder. The branches and backups a sweep pinned under\n" +
+			"refs/wt-swept/ are not in one: wt refs purge <run> deletes those.\n\n" +
+			"It only ever deletes a folder a removal plainly made, and refuses,\n" +
+			"deleting nothing, when <dir> has no recovery.json wt can read,\n" +
 			"when the record was written for another folder, or what is in it is\n" +
 			"not what the removal moved, or names pins that are not its own or\n" +
 			"cannot be read, when a removal or a restore stopped mid-way (wt restore\n" +
 			"<dir> settles it first), when git has a worktree registered inside it\n" +
 			"or one locked for it, when it is inside a checkout or the git dir,\n" +
-			"when it holds anything no quarantine leaves there (only checkout,\n" +
-			"admin, the journal and .DS_Store) or another quarantine anywhere in it,\n" +
-			"and when it is empty: nothing then says what it was. A quarantine\n" +
-			"wt restore already put back leaves only recovery.json and perhaps a\n" +
+			"when it holds anything no removal leaves there (only checkout,\n" +
+			"admin, the journal and .DS_Store) or another such folder anywhere in\n" +
+			"it, and when it is empty: nothing then says what it was. A worktree\n" +
+			"wt restore already put back left only recovery.json and perhaps a\n" +
 			"pin: the plan says so, and those go. When the repository's git dir is\n" +
 			"gone, the purge goes ahead on the record alone and says so: deleted,\n" +
 			"the pins went with it; moved, wt sweep there drops them later.\n\n" +
@@ -69,17 +52,17 @@ func newQuarantinePurgeCmd() *cobra.Command {
 			"plan as one object on stdout, with a token, and deletes nothing; with\n" +
 			"--yes it purges and prints one result object, also when interrupted.\n" +
 			"--expect <token> refuses the purge unless the plan made now has that\n" +
-			"token. wt schema quarantine-purge-plan and wt schema quarantine-purge\n" +
-			"print the schemas; docs/json.md explains them.",
-		Example: "  wt quarantine purge ../trash/lc            # say what goes, then ask\n" +
-			"  wt quarantine purge ../trash/lc --dry-run  # what it would delete\n" +
-			"  wt quarantine purge ../trash/lc --yes      # no question\n" +
-			"  wt quarantine purge ../trash/lc --json     # the plan, and its token\n" +
-			"  wt quarantine purge ../trash/lc --yes --json --expect 1:0123abcd",
+			"token. wt schema lists the plan's schema and the result's beside this\n" +
+			"command line; docs/json.md explains them.",
+		Example: "  wt purge ../trash/lc            # say what goes, then ask\n" +
+			"  wt purge ../trash/lc --dry-run  # what it would delete\n" +
+			"  wt purge ../trash/lc --yes      # no question\n" +
+			"  wt purge ../trash/lc --json     # the plan, and its token\n" +
+			"  wt purge ../trash/lc --yes --json --expect 1:0123abcd",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if cmd.Flags().Changed("expect") && expect == "" {
-				return errors.New("--expect needs the token wt quarantine purge --json printed")
+				return errors.New("--expect needs the token wt purge --json printed")
 			}
 			if expect != "" && (!asJSON || !yes) {
 				return errors.New("--expect holds a purge to the plan a tool read: pass it with --yes --json")

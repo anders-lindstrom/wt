@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sweep-plan.v1.json",
-  "x-version": "1.5.0",
+  "x-version": "1.5.1",
   "title": "wt sweep --dry-run --json",
   "description": "What wt sweep would do, and what it would keep and why. Printed by `wt sweep --dry-run --json` (or `wt sweep --json` without --yes) as the only thing on stdout; nothing is deleted. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
@@ -24,9 +24,9 @@
     },
     "fetched": { "type": "boolean", "description": "origin was fetched first (false with --no-fetch, without an origin, or when the plan stopped before)." },
     "token": { "type": ["string", "null"], "description": "Names this plan; pass it to `wt sweep --expect <token> --yes --json`. Null when there is nothing to remove or delete, or on error." },
-    "error": { "type": ["string", "null"], "description": "Why no plan could be made: not the main checkout, no trunk, the fetch failed — items is then empty — or a --quarantine folder that cannot be used." },
+    "error": { "type": ["string", "null"], "description": "Why no plan could be made: not the main checkout, no trunk, the fetch failed — items is then empty — or a --move-to folder that cannot be used." },
     "items": { "type": "array", "items": { "$ref": "#/$defs/item" } },
-    "quarantine": { "type": ["string", "null"], "description": "Since 1.2.0. With --quarantine <dir>: the folder the worktrees go to, absolute, which the token covers; a folder that exists or is on another volume refuses the plan (error set, token null, items kept). null without it." },
+    "quarantine": { "type": ["string", "null"], "description": "Since 1.2.0. With --move-to <dir>: the folder the worktrees go to, absolute, which the token covers; a folder that exists or is on another volume refuses the plan (error set, token null, items kept). null without it." },
     "keepSuperset": { "type": "boolean", "description": "Since 1.4.0. --keep-superset was given: the removed worktrees' Superset workspaces are left, and Superset is not asked anything. The token covers it." },
     "configFingerprint": {
       "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^[0-9a-f]{64}$" }],

@@ -104,8 +104,8 @@ examples: `wt <command> --help`.
 | `wt status <work> --json` / `wt up --json` | a worktree's plan for `wt up`, and a run's result, as one JSON object each for tools driving wt (`--expect` holds a run to its plan); `wt schema` prints their JSON Schemas, and [docs/json.md](docs/json.md) explains them |
 | `wt sweep --dry-run --json` / `wt sweep --yes --json` | a sweep's plan, every row with why it is merged or kept, and a sweep's result row by row, for tools driving wt (`--expect` holds the sweep to its plan); see [docs/json.md](docs/json.md) |
 | `wt remove <work> --dry-run --json` / `wt remove <work> --yes --json` | a removal's plan — where the branch stands, every reason it would refuse, what it would lose — and its result effect by effect, for tools driving wt (`--expect` holds the removal to its plan) |
-| `wt restore <dir> --dry-run --json` / `wt restore <dir> --json` | what putting back a quarantined worktree would do to its branch, and what it did; `recovery.json` in the quarantine is itself versioned (`wt schema recovery`) |
-| `wt quarantine purge <dir> --json` / `… --yes --json` | what deleting a quarantine for good would delete and leave unreachable, with a token, and what became of each pin and the folder (`--expect` holds the purge to its plan) |
+| `wt restore <dir> --dry-run --json` / `wt restore <dir> --json` | what putting back a worktree moved to a folder would do to its branch, and what it did; `recovery.json` in the folder is itself versioned (`wt schema recovery`) |
+| `wt purge <dir> --json` / `… --yes --json` | what deleting a removed worktree's folder for good would delete and leave unreachable, with a token, and what became of each pin and the folder (`--expect` holds the purge to its plan) |
 | `wt refs sweep`, `restore`, `purge` `--json`; `wt refs swept --json` | each plan with a token and each result row by row, for the ref sweep; see [docs/json.md](docs/json.md) |
 | `wt sync --json` / `wt sync rebase\|resume\|undo --json` | the sync overview of every worktree, and a verb's result, as JSON for tools (`wt sync rebase --expect` holds a run to the overview); `wt schema sync` and `wt schema sync-run` |
 | `wt new … --dry-run --json` / `wt new … --json` | the same for creating a worktree, and for `wt checkout`: the plan with a token, and a result naming every side effect (`--expect` refuses a moved base or branch) |
@@ -124,10 +124,10 @@ examples: `wt <command> --help`.
 | `wt migrate <work> [<type>/<name>]` | move a worktree where it belongs, renaming or retyping it on the way (`--dry-run`, `--force`/`-f`); also `wt move` |
 | `wt adopt <path>` | provision a worktree another tool created (`--relocate`, `--no-build`) |
 | `wt setup [<from-dir>]` | provision the worktree you are in (`--no-build`, `--source` to name what ran it) |
-| `wt remove <work>` | remove a worktree; delete its branch when merged — on trunk, or as a pull request the cache says landed — keep it when not (`--yes`, `--dry-run`, `.` for the one you are in, `--force`/`-f` past a session, a held lock or hidden files, `--force=<list>` past only those named, `--quarantine <dir>` to move it aside instead of deleting it, `--keep-superset`, `--json`, `--expect`) |
-| `wt restore <dir>` | put back a worktree `--quarantine` moved into `<dir>`, and its branch, from the `recovery.json` there (`--dry-run`, `--json`) |
-| `wt quarantine purge <dir>` | delete a quarantine for good: the refs pinning its commits, then the folder; refuses anything that is not a settled wt quarantine, and finishes a purge that stopped (`--yes`, `--dry-run`, `--json`, `--expect`) |
-| `wt sweep` | delete local branches already merged into trunk — or whose pull request GitHub merged — and remove the worktrees on such branches that nothing is using; from the main checkout only (`--no-fetch`, `--yes`, `--dry-run`, `--json`, `--expect`, `--quarantine <dir>`, `--keep-superset`), or across repositories with `--all`, `--roots`, `--profile` |
+| `wt remove <work>` | remove a worktree; delete its branch when merged — on trunk, or as a pull request the cache says landed — keep it when not (`--yes`, `--dry-run`, `.` for the one you are in, `--force`/`-f` past a session, a held lock or hidden files, `--force=<list>` past only those named, `--move-to <dir>` to move it into a folder instead of deleting it, `--keep-superset`, `--json`, `--expect`) |
+| `wt restore <dir>` | put back a worktree `--move-to` moved into `<dir>`, and its branch, from the `recovery.json` there (`--dry-run`, `--json`) |
+| `wt purge <dir>` | delete a worktree `--move-to` moved into `<dir>` for good: the refs pinning its commits, then the folder; refuses a folder no removal made or one a removal or restore left half-way, and finishes a purge that stopped (`--yes`, `--dry-run`, `--json`, `--expect`) |
+| `wt sweep` | delete local branches already merged into trunk — or whose pull request GitHub merged — and remove the worktrees on such branches that nothing is using; from the main checkout only (`--no-fetch`, `--yes`, `--dry-run`, `--json`, `--expect`, `--move-to <dir>`, `--keep-superset`), or across repositories with `--all`, `--roots`, `--profile` |
 | `wt refs sweep` | move backup branches and tags (`backup/*`, `safe-*` and the like) that another ref contains, or older than `ref_sweep_age`, to pins under `refs/wt-swept/<run>/`; `wt refs swept` lists runs, `wt refs restore <run>` puts one back, `wt refs purge` deletes pins for good (`--remote`, `--only`, `--run-id`, `--yes`, `--dry-run`, `--json`, `--expect`) |
 
 **This repository, and this build**
@@ -336,7 +336,7 @@ project's setup step if it has one, which for these repos is
 `wt setup --source superset`: a second, idempotent provisioning pass on top of
 the one `wt new` just did. `--no-setup` therefore skips registration too.
 
-**Removal mirrors it.** `wt remove` and `wt sweep`, plain or `--quarantine`,
+**Removal mirrors it.** `wt remove` and `wt sweep`, plain or `--move-to`,
 delete the worktree's workspace with `superset ws delete` — only after the
 directory has left its path and git no longer lists it, because Superset's
 delete force-removes the checkout. A Superset that is down or errs is one line

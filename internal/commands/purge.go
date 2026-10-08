@@ -23,7 +23,7 @@ var errPurgePlanChanged = errors.New("the purge plan changed since it was read (
 var errPurgeNoTerminal = errors.New("nothing was purged: there is no terminal to ask, " +
 	"and a purge deletes for good: pass --yes")
 
-// PurgeOptions carries what wt quarantine purge was asked.
+// PurgeOptions carries what wt purge was asked.
 type PurgeOptions struct {
 	// DryRun prints the plan and deletes nothing.
 	DryRun bool
@@ -41,8 +41,8 @@ type PurgeOptions struct {
 	Planned func(quarantine.PurgePlan)
 }
 
-// QuarantinePurge deletes, for good, the quarantine wt remove --quarantine
-// or wt sweep --quarantine made at dir: its pins, then the folder.
+// QuarantinePurge deletes, for good, the worktree wt remove --move-to or
+// wt sweep --move-to moved into dir: its pins, then the folder.
 func QuarantinePurge(dir string, opts PurgeOptions, w io.Writer) error {
 	dir, err := filepath.Abs(dir)
 	if err != nil {
@@ -63,7 +63,7 @@ func QuarantinePurge(dir string, opts PurgeOptions, w io.Writer) error {
 		}
 		return err
 	}
-	if why := plan.Refusal(); why != "" {
+	if why := purgeRefusal(plan); why != "" {
 		return report(fmt.Errorf("nothing was purged: %s", why))
 	}
 	token := purgeToken(plan)
@@ -94,12 +94,24 @@ func QuarantinePurge(dir string, opts PurgeOptions, w io.Writer) error {
 	res, err = quarantine.DoPurge(plan)
 	if err != nil {
 		if res.Outcome == quarantine.OutcomePartial {
-			fmt.Fprintf(w, "! partly purged; wt quarantine purge %s finishes it\n", dir)
+			fmt.Fprintf(w, "! partly purged; wt purge %s finishes it\n", dir)
 		}
 		return report(err)
 	}
 	fmt.Fprintf(w, "✓ purged %s%s\n", dir, purgedWords(plan))
 	return report(nil)
+}
+
+// purgeRefusal is why the purge refuses, "" when it does not. A folder that
+// is not there and is spelled like a run id was meant for wt refs purge, and
+// the refusal says so.
+func purgeRefusal(p quarantine.PurgePlan) string {
+	why := p.Refusal()
+	id := filepath.Base(p.Dir)
+	if len(p.Problems) == 1 && p.Problems[0].Code == quarantine.ProblemMissing && runIDPattern.MatchString(id) {
+		why += fmt.Sprintf("; %s is spelled like a run id: wt refs purge %s deletes a run's pins", id, id)
+	}
+	return why
 }
 
 // purgedWords is the clause the success line ends with.
@@ -121,7 +133,7 @@ func purgedWords(p quarantine.PurgePlan) string {
 
 // renderPurgePlan writes what a purge finds and would delete.
 func renderPurgePlan(p quarantine.PurgePlan, w io.Writer) {
-	rows := [][]string{{"  quarantine", p.Dir + purgeStateWords(p.State)}}
+	rows := [][]string{{"  folder", p.Dir + purgeStateWords(p.State)}}
 	if r := p.Record; r != nil {
 		rows = append(rows, []string{"  worktree", r.Checkout.Path + " (" + r.Command + ", " + r.CreatedAt + ")"})
 		if r.Branch != nil {
@@ -166,7 +178,7 @@ func renderPurgePlan(p quarantine.PurgePlan, w io.Writer) {
 func purgeStateWords(state string) string {
 	switch state {
 	case quarantine.StateQuarantined:
-		return " — quarantined; the worktree goes for good"
+		return " — holds a removed worktree, which goes for good"
 	case quarantine.StateRestored:
 		return " — restored already; only what it left goes"
 	case quarantine.StatePurging:
@@ -230,8 +242,7 @@ type PurgeProblem struct {
 	Text string `json:"text"`
 }
 
-// PurgePlanOutput is the one object wt quarantine purge --dry-run --json
-// prints.
+// PurgePlanOutput is the one object wt purge --dry-run --json prints.
 type PurgePlanOutput struct {
 	Schema        int            `json:"schema"`
 	SchemaVersion string         `json:"schemaVersion"`
@@ -268,7 +279,7 @@ const (
 	PinKept    = "kept"
 )
 
-// PurgeOutput is the one object wt quarantine purge --yes --json prints.
+// PurgeOutput is the one object wt purge --yes --json prints.
 type PurgeOutput struct {
 	Schema        int              `json:"schema"`
 	SchemaVersion string           `json:"schemaVersion"`
@@ -285,6 +296,8 @@ type PurgeOutput struct {
 	Recovery      *string          `json:"recovery"`
 }
 
+// purgeCommand names wt purge in its --json output, by the spelling it had
+// when the schemas were made: a reader of schema 1 decodes that value.
 const purgeCommand = "quarantine purge"
 
 func purgePlanOutput(p quarantine.PurgePlan) PurgePlanOutput {
@@ -308,7 +321,7 @@ func purgePlanOutput(p quarantine.PurgePlan) PurgePlanOutput {
 	for _, l := range p.Lost {
 		o.Unreachable = append(o.Unreachable, PurgeLost(l))
 	}
-	if why := p.Refusal(); why != "" {
+	if why := purgeRefusal(p); why != "" {
 		o.Error = strp(why)
 	}
 	return o
@@ -322,7 +335,7 @@ func purgeProblems(p quarantine.PurgePlan) []PurgeProblem {
 	return out
 }
 
-// QuarantinePurgePlanJSON writes wt quarantine purge --dry-run --json: the
+// QuarantinePurgePlanJSON writes wt purge --dry-run --json: the
 // plan, every reason it would refuse and the token that holds a purge to
 // it. It deletes nothing; the plan as wt prints it goes to progress. A plan
 // the purge would refuse is one object too, with error set, and the error
@@ -344,7 +357,7 @@ func QuarantinePurgePlanJSON(dir string, out, progress io.Writer) error {
 	return nil
 }
 
-// QuarantinePurgeJSON is wt quarantine purge --yes --json: the purge, and
+// QuarantinePurgeJSON is wt purge --yes --json: the purge, and
 // one object on out saying what became of each pin and of the folder —
 // when it returns, or when a signal ends it. The plan as wt prints it and
 // the progress go to progress.
@@ -365,7 +378,7 @@ func QuarantinePurgeJSON(dir string, opts PurgeOptions, out, progress io.Writer)
 	return err
 }
 
-// purgeJournal writes wt quarantine purge --json's one object once: when
+// purgeJournal writes wt purge --json's one object once: when
 // the purge returns, or when a signal ends it.
 type purgeJournal struct {
 	mu   sync.Mutex

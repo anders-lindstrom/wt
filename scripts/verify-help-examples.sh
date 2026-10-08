@@ -107,11 +107,11 @@ make_fleet() {
     echo "$d"
 }
 # make_worktrees with login-crash already moved aside into ../trash/lc, for
-# wt restore and wt quarantine purge.
-make_quarantine() {
+# wt restore and wt purge.
+make_moved() {
     local d; d=$(make_worktrees "$1")
     mkdir -p "$1/trash"
-    (cd "$d" && "$WT" remove login-crash --yes --quarantine "$1/trash/lc" >/dev/null 2>&1)
+    (cd "$d" && "$WT" remove login-crash --yes --move-to "$1/trash/lc" >/dev/null 2>&1)
     echo "$d"
 }
 # make_plain with a bare origin of its own and backups for wt refs: backup/x
@@ -250,7 +250,7 @@ check() {
         sweep) repo=$(make_sweep "$dir");;
         refs) repo=$(make_refs "$dir");;
         refsrun) repo=$(make_refsrun "$dir");;
-        quarantine) repo=$(make_quarantine "$dir");;
+        moved) repo=$(make_moved "$dir");;
         fleet) repo=$(make_fleet "$dir");;
         keep|launchd) repo=$(make_keep "$dir"); prereq="export HOME=$dir/home PATH=$dir/bin:\$PATH; $prereq";;
         keepfleet|launchdfleet) repo=$(make_keepfleet "$dir"); prereq="export HOME=$dir/home PATH=$dir/bin:\$PATH; $prereq";;
@@ -349,15 +349,15 @@ check worktrees myrepo_wt/fix_wt/login-crash "" 'wt remove --me'
 check worktrees myrepo_wt/fix_wt/login-crash "" 'wt remove .'
 check worktrees myrepo_wt/fix_wt/login-crash "" 'wt remove . --force'
 check worktrees myrepo_wt/fix_wt/login-crash "" 'wt remove . --force=idle-sessions'
-check worktrees "" "mkdir -p ../trash" 'wt remove login-crash --quarantine ../trash/lc'
-check quarantine "" "" 'wt restore ../trash/lc'
-check quarantine "" "" 'wt restore ../trash/lc --dry-run'
-check quarantine "" "" 'wt restore ../trash/lc --json'
-check quarantine "" "" 'wt quarantine purge ../trash/lc' fail
-check quarantine "" "" 'wt quarantine purge ../trash/lc --dry-run'
-check quarantine "" "" 'wt quarantine purge ../trash/lc --yes'
-check quarantine "" "" 'wt quarantine purge ../trash/lc --json'
-check quarantine "" "" 'wt quarantine purge ../trash/lc --yes --json --expect 1:0123abcd' fail
+check worktrees "" "mkdir -p ../trash" 'wt remove login-crash --move-to ../trash/lc'
+check moved "" "" 'wt restore ../trash/lc'
+check moved "" "" 'wt restore ../trash/lc --dry-run'
+check moved "" "" 'wt restore ../trash/lc --json'
+check moved "" "" 'wt purge ../trash/lc' fail
+check moved "" "" 'wt purge ../trash/lc --dry-run'
+check moved "" "" 'wt purge ../trash/lc --yes'
+check moved "" "" 'wt purge ../trash/lc --json'
+check moved "" "" 'wt purge ../trash/lc --yes --json --expect 1:0123abcd' fail
 
 check refs    "" "" 'wt refs sweep --dry-run'
 check refsrun "" "" 'wt refs swept'
@@ -402,7 +402,7 @@ check worktrees "" "" 'wt remove login-crash --dry-run --json --keep-superset'
 check worktrees "" "" 'wt remove login-crash --yes --json --expect 1:0123abcd' fail
 check plain "" "" 'wt config set root.work ~/src/work'
 check sweep "" "" 'wt sweep --no-fetch'
-check sweep "" "mkdir -p ../trash" 'wt sweep --quarantine ../trash/sw'
+check sweep "" "mkdir -p ../trash" 'wt sweep --move-to ../trash/sw'
 check sweep "" "" 'wt sweep --yes'
 check sweep "" "" 'wt sweep --yes --json --keep-superset --expect 1:0123abcd' fail
 

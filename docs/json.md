@@ -1,9 +1,10 @@
 # wt's JSON output
 
 `wt status`, `wt up`, `wt sweep`, `wt sync` and its verbs, `wt new`,
-`wt checkout`, `wt remove`, `wt restore`, `wt quarantine purge` and `wt refs` print JSON on stdout when given `--json`, for
+`wt checkout`, `wt remove`, `wt restore`, `wt purge` and `wt refs` print JSON on stdout when given `--json`, for
 tools that drive wt (a git client, an editor, a script). Their human output is
-unchanged without it. A quarantine's `recovery.json` is JSON with a schema too.
+unchanged without it. The `recovery.json` in the folder a removed worktree was
+moved to is JSON with a schema too.
 
 ## Versions
 
@@ -66,8 +67,16 @@ Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 | `status` 1.6.0, `sync` 1.3.0, `up` 1.4.0, `sync-run` 1.2.0 | | [a branch against its own remote](#ownremote--a-branch-against-its-own-remote): `ownRemote` on the worktree and each stack member of `status` and on each worktree of `sync`; `ownRemoteSync` on each participant of `up` and `sync-run`; `upIneligibleCode` `ownRemoteDiverged` and `ownRemoteBehind`; a token for a plan held back by divergence alone |
 | `sync-run` 1.3.0, `sync` 1.3.1 | | `wt sync run` is spelled `wt sync rebase`, and `--run` on `wt sync` is `--rebase`: `command` gains `sync rebase`, which the new spelling prints. From `sync-run` 1.3.0 on, `wt sync rebase <work>...` and `wt sync --rebase` exist. `sync` changes in wording only |
 | `sync` 1.4.0, `status` 1.7.0 | | [`deferredDeclared`](#deferreddeclared--the-deferred-steps-trunk-declares): the deferred steps a run may perform, on each worktree of `sync` and each stack member of `status` |
+| `remove` 1.4.2, `remove-plan` 1.4.1, `sweep` 1.4.1, `sweep-plan` 1.5.1, `recovery` 1.2.1, `quarantine-purge-plan` 1.0.1, `quarantine-purge` 1.0.1 | | `--quarantine <dir>` on `wt remove` and `wt sweep` is spelled `--move-to <dir>`, and `wt quarantine purge <dir>` is `wt purge <dir>`. From `remove` 1.4.2 on, `--move-to` and `wt purge` exist. Wording only: every field, value and schema name is as it was |
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
+
+`quarantine` and `quarantined`, in fields, values and two schema names, are a
+worktree that `wt remove --move-to <dir>` or `wt sweep --move-to <dir>` moved
+into a folder instead of deleting it; wt's help and messages call it a removed
+worktree and its folder. The names are schema 1's and stay. A tool that has
+to know which spelling its wt takes reads `wt schema remove`: an `x-version`
+of 1.4.2 or later means `--move-to` and `wt purge` exist.
 
 ## Signals and what wt starts
 
@@ -165,8 +174,8 @@ generating types from it:
 | `wt restore --json` | [`schema/restore.v1.json`](../schema/restore.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/restore.v1.json` |
 | `wt remove --dry-run --json` | [`schema/remove-plan.v1.json`](../schema/remove-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/remove-plan.v1.json` |
 | `wt remove --yes --json` | [`schema/remove.v1.json`](../schema/remove.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/remove.v1.json` |
-| `wt quarantine purge --dry-run --json` | [`schema/quarantine-purge-plan.v1.json`](../schema/quarantine-purge-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/quarantine-purge-plan.v1.json` |
-| `wt quarantine purge --yes --json` | [`schema/quarantine-purge.v1.json`](../schema/quarantine-purge.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/quarantine-purge.v1.json` |
+| `wt purge --dry-run --json` | [`schema/quarantine-purge-plan.v1.json`](../schema/quarantine-purge-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/quarantine-purge-plan.v1.json` |
+| `wt purge --yes --json` | [`schema/quarantine-purge.v1.json`](../schema/quarantine-purge.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/quarantine-purge.v1.json` |
 | `wt refs sweep --dry-run --json` | [`schema/refs-sweep-plan.v1.json`](../schema/refs-sweep-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/refs-sweep-plan.v1.json` |
 | `wt refs sweep --yes --json` | [`schema/refs-sweep.v1.json`](../schema/refs-sweep.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/refs-sweep.v1.json` |
 | `wt refs restore --dry-run --json` | [`schema/refs-restore-plan.v1.json`](../schema/refs-restore-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/refs-restore-plan.v1.json` |
@@ -655,7 +664,7 @@ is still one object, with `error` set and no items, and a non-zero exit.
 | `token` | string \| null | names this plan; pass it to `wt sweep --expect`. Null when there is nothing to remove or delete, or on error |
 | `error` | string \| null | why no plan could be made |
 | `items` | array | the rows, in the order `wt sweep` prints them |
-| `quarantine` | string \| null | since 1.2.0: with `--quarantine <dir>`, the folder, absolute; a folder that exists or is on another volume sets `error` (the items stay, the token is null). Null without it |
+| `quarantine` | string \| null | since 1.2.0: with `--move-to <dir>`, the folder, absolute; a folder that exists or is on another volume sets `error` (the items stay, the token is null). Null without it |
 | `keepSuperset` | bool | since 1.4.0: `--keep-superset` was given, which the token covers: the removed worktrees' Superset workspaces are left |
 | `configFingerprint` | string \| null | since 1.5.0: the wt configuration the token covers, the lowercase hex SHA-256 of the configuration file wt read (`bin/worktree/worktree.toml` or `worktree.conf`, the worktree's own before the main checkout's). Two plans with the same value read the same file. Null when there is none |
 
@@ -713,8 +722,8 @@ The **token** covers the repository, trunk's name, the wt configuration file
 (number, state, base) and reasons, codes and words. So a branch that moved, a
 new merged branch, a worktree that turned dirty, a session that arrived or
 changed, a pull request GitHub no longer answers for — any of them is a
-different token. So is the `--quarantine` folder, or its absence: a token read
-for a quarantine does not let a sweep delete instead. A newer trunk commit that changes no row is not.
+different token. So is the `--move-to` folder, or its absence: a token read
+for a move does not let a sweep delete instead. A newer trunk commit that changes no row is not.
 
 ## `wt sweep --yes --json` — the sweep
 
@@ -743,7 +752,7 @@ a crash may write none; treat a missing object as unknown.
 | `error` | string \| null | why the sweep stopped before touching anything: `--expect`, the fetch, not the main checkout |
 | `items` | array | every row of the plan, in its order; empty when `error` stopped it first |
 | `recovery` | string \| null | for `interrupted`: what wt printed |
-| `quarantine` | string \| null | since 1.1.0: with `--quarantine <dir>`, the folder; null without |
+| `quarantine` | string \| null | since 1.1.0: with `--move-to <dir>`, the folder; null without |
 | `runId` | string \| null | since 1.4.0: the run under `refs/wt-swept/` the deleted branches were moved into (see [below](#deleted-branches-are-pinned)); null when no branch was moved |
 
 Each item:
@@ -756,7 +765,7 @@ Each item:
 | `worktreeRemoved` | bool | the worktree is gone now |
 | `branchDeleted` | bool | the branch is gone now |
 | `pin` | string \| null | since 1.4.0: the ref the deleted branch was moved into, `refs/wt-swept/<runId>/heads/<branch>`, read back holding `tip`; null when it was not moved there |
-| `restoreCommand` | array of string \| null | when the branch was deleted, the argv that puts it back (not its upstream setting): `["wt", "refs", "restore", runId, "--only", "refs/heads/<branch>", "--yes"]` for a pinned branch, `["wt", "restore", dir]` for a quarantined worktree's. Run it in `repo`. Null when the branch is there, or gone with no pin. Before 1.4.0 it was `["git", "-C", repo, "branch", branch, tip]`; that form is gone |
+| `restoreCommand` | array of string \| null | when the branch was deleted, the argv that puts it back (not its upstream setting): `["wt", "refs", "restore", runId, "--only", "refs/heads/<branch>", "--yes"]` for a pinned branch, `["wt", "restore", dir]` for the branch of a worktree moved to a folder. Run it in `repo`. Null when the branch is there, or gone with no pin. Before 1.4.0 it was `["git", "-C", repo, "branch", branch, tip]`; that form is gone |
 | `quarantine` | object \| null | since 1.1.0: for a worktree moved, or being moved, into the quarantine: `dir`, its own folder (`wt restore <dir>` puts it back), and `checkoutMoved`, `adminMoved`, which of the two moves are done; null otherwise |
 | `superset` | object \| null | since 1.2.0: for a worktree the sweep removed, what came of its Superset workspace: `result` and `reason` (string \| null, why, for `skipped` and `failed`); null when no worktree was removed |
 
@@ -791,8 +800,8 @@ branch at that tip, then its `branch.<name>.*` config. One sweep is one run,
 begun at the first branch it moves: a sweep that moves none has `runId` null and
 leaves nothing under `refs/wt-swept/`. `wt refs swept` lists the run,
 `wt refs restore <runId>` puts the branches back, and `wt refs purge <runId>`
-deletes them for good. With `--quarantine`, a removed worktree's branch is
-pinned by its quarantine under `refs/wt-quarantine/` and not a second time; a
+deletes them for good. With `--move-to`, a removed worktree's branch is
+pinned with it under `refs/wt-quarantine/` and not a second time; a
 `delete` row's branch is still pinned in the run. A signal after the meta is
 written and before any branch moved can leave a run that holds only its meta:
 `runId` then names it, and `wt refs purge` clears it.
@@ -820,19 +829,19 @@ written and before any branch moved can leave a run that holds only its meta:
 The exit code is non-zero when anything to remove or delete was kept or failed;
 read `outcome`.
 
-With `--quarantine <dir>`, `<dir>` must be a new folder whose parent exists, on
+With `--move-to <dir>`, `<dir>` must be a new folder whose parent exists, on
 the volume of every worktree the plan removes and of their admin dirs; otherwise
 the sweep refuses before touching anything (`error` set). Each worktree goes into
 `<dir>/<its directory's name>` (numbered `-2`, `-3` on a clash), with its own
-`recovery.json`, exactly as `wt remove --quarantine` would move it;
+`recovery.json`, exactly as `wt remove --move-to` would move it;
 `worktreeRemoved` is then true once its checkout has left its path.
 
-## `<dir>/recovery.json` — a quarantine's journal
+## `<dir>/recovery.json` — a removed worktree's journal
 
-`wt remove <work> --quarantine <dir>` (and `wt sweep --quarantine`, per
+`wt remove <work> --move-to <dir>` (and `wt sweep --move-to`, per
 worktree) moves the worktree aside instead of deleting it. `<dir>` is a new
 folder the caller names, on the worktree's volume and outside every checkout of
-the repository, its git dir and every other quarantine (a purge of that one would
+the repository, its git dir and every other such folder (a purge of that one would
 take it along); it is made with `mkdir`, not `mkdir -p`, and a
 folder that exists refuses the removal, as does one inside the repository or a
 checkout or admin dir on another volume: every move is a rename. After its last
@@ -852,12 +861,12 @@ rename, folder fsync) before anything changes and before and after each step:
    submodule repositories under `modules/`, to `<dir>/admin`: git no longer lists
    the worktree. wt never runs `git worktree prune`;
 5. `relink` — `<dir>/checkout/.git` names `<dir>/admin`, so a new worktree that
-   takes the id is never the one git in the quarantine works on;
+   takes the id is never the one git in the folder works on;
 6. `branch` — the branch's local config section is recorded, then the branch is
    deleted or renamed as the plan says.
 
 A file written after the last check moves with the checkout. Nothing is deleted:
-emptying the folder is the user's own act, or `wt quarantine purge <dir>`'s. The
+emptying the folder is the user's own act, or `wt purge <dir>`'s. The
 pins go when the restore is done, with the purge, or at the next `wt sweep` once
 the folder has been deleted (its parent still
 there: a folder on a volume that is not mounted keeps them).
@@ -877,7 +886,7 @@ there: a folder on a volume that is not mounted keeps them).
 | `branch` | object \| null | null for a detached HEAD; else `name`, `tip`, `plan` (`delete`, `keep`, `none`), `keepAs`, `config` (`[{key, value}]`, every value in order; null until captured) and `result` (`deleted`, `renamed`, `untouched`, `kept` — turned down on purpose — or `failed`; null before the step) |
 | `steps` | array | `{name, state, error}` for `lock`, `pin`, `moveCheckout`, `moveAdmin`, `relink`, `branch`, in order |
 | `restore` | object \| null | the restore's own journal: `action`, `occupiedBy`, `createdBranch` (this restore made the branch again; absent before 1.1.0) and its `steps` (`branch`, `moveAdmin`, `relink`, `moveCheckout`, `unlock`, `unpin`); null until `wt restore` changes something |
-| `purge` | object \| null | `{startedAt}`, only in `recovery.purging.json`: the copy of the record `wt quarantine purge` writes, and which replaces `recovery.json`, before it deletes anything. With no `recovery.json` no `wt restore` — of any version — restores it (`purging`). Absent before 1.2.0 |
+| `purge` | object \| null | `{startedAt}`, only in `recovery.purging.json`: the copy of the record `wt purge` writes, and which replaces `recovery.json`, before it deletes anything. With no `recovery.json` no `wt restore` — of any version — restores it (`purging`). Absent before 1.2.0 |
 
 The step lists and the states are **closed**, unlike the enumerations elsewhere:
 wt refuses a record whose steps are not exactly these, in this order, so another
@@ -908,7 +917,7 @@ what happens to the branch, and every reason it would refuse.
 | `checkout`, `admin` | object \| null | `path`, `quarantined`, and `location`: `original` (at its path, the same directory by inode — moved back, or never moved), `quarantined`, `taken` (something else is at its path), `missing` |
 | `head` | string \| null | the commit to detach at, if it comes to that |
 | `branch` | object \| null | `name`, `tip`, `keepAs`, `removal` (the removal's `branch.result`), `action` and `occupiedBy` |
-| `locked` | bool | the worktree carries this quarantine's lock, which comes off last |
+| `locked` | bool | the worktree carries the removal's lock, which comes off last |
 | `orphan` | string \| null | a worktree locked for `<dir>` with no `recovery.json`: restoring it is unlocking it |
 | `problems` | array | `{code, text}`: `noRecord`, `repository`, `checkoutTaken`, `checkoutMissing`, `adminTaken`, `adminMissing`, `volume`, `commitMissing`, `worktreesUnknown`, `purging` (a purge began: its pins may be gone) |
 | `error` | string \| null | the problems in words |
@@ -944,7 +953,7 @@ value of their own since, and fails unless every other recorded entry is back.
 
 The restore: the branch action, then the admin dir back — its parent folders made
 again if `git worktree prune` or a tidy took them, never the directory itself —
-then the checkout's `.git` as it was, then the checkout, then the quarantine's
+then the checkout's `.git` as it was, then the checkout, then the removal's
 lock off and its pins deleted, each journalled in `recovery.json` and idempotent, so
 running `wt restore <dir>` again finishes a restore — or a removal — stopped
 anywhere. The human output goes to stderr. A handled SIGINT or SIGTERM writes the
@@ -956,14 +965,16 @@ object too.
 | `outcome` | `restored` \| `refused` \| `partial` \| `interrupted` | restored: registered at its path again, branch action done, lock off. refused: nothing changed. partial: a step failed after others; run it again. interrupted: a signal |
 | `error` | string \| null | |
 | `checkout`, `admin`, `branch` | | as in the plan, read when the object is written |
-| `unlocked` | bool | this run took the quarantine's lock off |
+| `unlocked` | bool | this run took the removal's lock off |
 | `steps` | array | the restore's steps from `recovery.json`; empty when it has none |
 | `recovery` | string \| null | for `interrupted`: what wt printed |
 
-## `wt quarantine purge <dir> --dry-run --json` — the plan
+## `wt purge <dir> --dry-run --json` — the plan
 
-What `wt quarantine purge <dir>` would delete, for good, and every reason it
+What `wt purge <dir>` would delete, for good, and every reason it
 would refuse, deleting nothing. `--json` without `--yes` prints it too.
+`command` is `"quarantine purge"` and the schemas are `quarantine-purge-plan`
+and `quarantine-purge`, as they were when the command was `wt quarantine purge`.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -971,9 +982,9 @@ would refuse, deleting nothing. `--json` without `--yes` prints it too.
 | `command` | `"quarantine purge"` | |
 | `dir` | string | the folder, absolute |
 | `repo` | string \| null | from `recovery.json` |
-| `state` | string \| null | `quarantined`, `restored`, `purging`, `empty` or `unsettled`; null when the folder is not a quarantine purge can read |
+| `state` | string \| null | `quarantined`, `restored`, `purging`, `empty` or `unsettled`; null when the folder has no record purge can read |
 | `token` | string \| null | names this plan: the folder by path and identity, its state, its record byte for byte, its entries, every path in it with its type, size and time, each pin and where it is, what would be lost; null when it would refuse |
-| `worktree`, `branch`, `createdAt` | string \| null | where the checkout was, its branch, when it was quarantined |
+| `worktree`, `branch`, `createdAt` | string \| null | where the checkout was, its branch, when it was moved there |
 | `entries` | array of string | every name in the folder, sorted; all of it goes |
 | `bytes` | integer \| null | the size of its files, symlinks not followed; null when something cannot be read |
 | `pins` | array | `{name, ref, oid}` for `head`, `tip`, `dir` as `recovery.json` names them; `oid` null when the pin is gone already |
@@ -1002,18 +1013,18 @@ It refuses, deleting nothing, on any problem:
 | `noRecord` | no `recovery.json` (nor `recovery.purging.json`) in a folder that is not empty, or one wt cannot trust |
 | `wrongFolder` | the record was written for another folder, names places that are not this folder's `checkout` and `admin`, or what is at `checkout` or `admin` is not the directory the removal moved there (by device and inode) |
 | `repository` | its repository cannot be opened, or has another git dir now |
-| `pinsForeign` | a pin it names is not under this quarantine's `refs/wt-quarantine/<id>-<hash>/`, or holds something the removal did not pin |
+| `pinsForeign` | a pin it names is not under this folder's `refs/wt-quarantine/<id>-<hash>/`, or holds something the removal did not pin |
 | `pinsUnreadable` | git cannot read a pin (a broken ref): not taken for one that is gone |
 | `unsettled` | a removal or a restore stopped mid-way |
 | `worktreesUnknown` | the worktrees cannot be listed |
 | `registered` | git has a worktree registered inside the folder — compared by the directories paths lead to, not by spelling |
-| `locked` | a worktree carries this quarantine's lock (`wt quarantine <dir>`) |
+| `locked` | a worktree is locked for a removal into this folder (`wt quarantine <dir>`) |
 | `location` | the folder is inside a checkout or the git dir, or holds the git dir |
-| `foreignEntry` | something at its top level a quarantine in its state never leaves there: only `checkout` and `admin` (while quarantined or purging), the journal and its temp file, and `.DS_Store` are |
-| `nestedQuarantine` | another quarantine's record (one that validates, not a project file of that name) anywhere below its top level |
+| `foreignEntry` | something at its top level a removal never leaves there in that state: only `checkout` and `admin` (while `quarantined` or `purging`), the journal and its temp file, and `.DS_Store` are |
+| `nestedQuarantine` | the record of another folder a worktree was moved to (one that validates, not a project file of that name) anywhere below its top level |
 | `empty` | an empty folder |
 
-## `wt quarantine purge <dir> --yes --json` — the result
+## `wt purge <dir> --yes --json` — the result
 
 The purge holds a lock on the folder that `wt restore` takes too, reads the
 plan again under it and goes ahead only while it is the same (else `planChanged`,
@@ -1140,7 +1151,7 @@ The categories:
 |---|---|
 | `worktree` | a worktree has the branch checked out (the main checkout included) |
 | `heldByRebase`, `heldByBisect` | a rebase or bisect in a worktree holds it |
-| `quarantine` | a live quarantine names it: the branch a `--quarantine` removal moved aside, or the name it was kept under, read from the `recovery.json` its pins under `refs/wt-quarantine/` name; or, when that folder is there and its record cannot be read, the commit its tip pin holds. A quarantine whose pins are gone cannot be seen here |
+| `quarantine` | a worktree moved to a folder that is still there names it: the branch a `--move-to` removal moved aside, or the name it was kept under, read from the `recovery.json` its pins under `refs/wt-quarantine/` name; or, when that folder is there and its record cannot be read, the commit its tip pin holds. One whose pins are gone cannot be seen here. The plan wt prints says `a worktree moved aside` for it |
 | `protected` | trunk, the branch origin's HEAD names, or a long-lived branch (`main`, `master`, `develop`, `development`, `staging`, `production`, `release*`) |
 | `objectMissing` | the object is not here, so containment cannot be read (a remote ref not fetched) |
 | `pullRequestOpen` | a remote branch with an open pull request: deleting it would close the pull request |
@@ -1652,7 +1663,7 @@ worktree, the main checkout), with the worktree fields null.
 | `lock` | object \| null | git's lock: `reason`, `holder` (who wt worked out is behind it), `pid`, `held` (still running; a stale one is released) |
 | `unreachable` | array | each tip nothing surviving the removal holds: `{kind, oid, count, path, restoreCommand}`. `kind` `branch` is the branch it deletes — listed, not refused, with the `git branch` argv that brings its commits back; `head` and `submodule` (with `path`) refuse |
 | `reachError` | string \| null | why that could not be worked out |
-| `quarantine` | string \| null | with `--quarantine <dir>`, the folder |
+| `quarantine` | string \| null | with `--move-to <dir>`, the folder |
 | `keepSuperset` | bool | since 1.1.0: `--keep-superset` was given: the Superset workspace is left, and Superset is not asked |
 | `force` | bool | bare `--force` was given: the problems with `force` true do not refuse. False for `--force=<list>`, which `forceWith` names |
 | `forceWith` | array of string | since 1.2.0: the `--force` categories given, all five for bare `--force`; empty without it |
@@ -1674,7 +1685,7 @@ mean the same there:
 | `submoduleUnreachable` | a submodule commit only this worktree's copy holds |
 | `reachUnknown` | what would be lost could not be worked out |
 | `nestedWorktree` | another worktree is inside it |
-| `quarantineUnusable` | the `--quarantine` folder exists, is on another volume, or is inside the repository |
+| `quarantineUnusable` | the `--move-to` folder exists, is on another volume, or is inside the repository |
 | `planChanged` | result only: `--expect` named another plan |
 
 `--force=<list>` names what the removal may go past, comma-separated or
@@ -1692,7 +1703,7 @@ bases' commits, the wt configuration file, and everything the removal turns on: 
 admin dir, HEAD, the branch, its tip, standing, pull request and outcome, the
 commit its kept name holds, anything uncommitted or hidden, moved submodules, nested worktrees, the
 operation, the sessions by id and state (idle or busy), the lock (reason,
-pid, held), what would be lost, the `--quarantine` folder or its absence, the
+pid, held), what would be lost, the `--move-to` folder or its absence, the
 `--force` categories, whether the
 Superset integration is on, and `--keep-superset`. Any difference is
 a different token — a new trunk commit too, since the base commit is part of
@@ -1711,9 +1722,9 @@ it goes, and the branch's merge is asked again right before it is deleted.
 
 A handled SIGINT or SIGTERM, from the moment the repository is open, writes
 the object too, read from the disk as it is then — between the two moves of a
-quarantine that is `partlyMoved`, `branch` `notRun` — and exits 130. SIGKILL
-or a crash may write none: `<dir>/recovery.json` still says how far a
-quarantine got. A usage error is reported as without `--json`, with no object.
+`--move-to` that is `partlyMoved`, `branch` `notRun` — and exits 130. SIGKILL
+or a crash may write none: `<dir>/recovery.json` still says how far the
+move got. A usage error is reported as without `--json`, with no object.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -1727,18 +1738,18 @@ quarantine got. A usage error is reported as without `--json`, with no object.
 | `path`, `branch`, `tip`, `keepAs` | string \| null | from the plan |
 | `steps` | array | `worktree`, `branch`, `superset`, always all three, in that order: `{step, result, commit, reason, pin}`; `commit` is `branch`'s tip; `pin` (since 1.4.0) is, for `branch`, the ref the deleted branch was moved into, read back, and null otherwise |
 | `forced` | array of string | since 1.2.0: the `--force` categories the removal went past, in the plan or in the final read; empty when none, or when it did not get that far |
-| `quarantine` | object \| null | with `--quarantine`, once its `recovery.json` is written: `dir`, `checkoutMoved`, `adminMoved` (each directory, by identity, in the quarantine), `recoveryFile`, and `steps` as `recovery.json` records them |
-| `restoreCommand` | array of string \| null | the argv that puts back what went: `wt restore <dir>` once a quarantine wrote its `recovery.json`; since 1.4.0 `wt refs restore <runId> --only refs/heads/<name> --yes`, run in `repo`, for a branch moved into a pin; else `git -C <repo> branch <name> <tip>` for a branch gone from its name (renamed to `keepAs`) |
+| `quarantine` | object \| null | with `--move-to`, once its `recovery.json` is written: `dir`, `checkoutMoved`, `adminMoved` (each directory, by identity, in the folder), `recoveryFile`, and `steps` as `recovery.json` records them |
+| `restoreCommand` | array of string \| null | the argv that puts back what went: `wt restore <dir>` once a removal with `--move-to` wrote its `recovery.json`; since 1.4.0 `wt refs restore <runId> --only refs/heads/<name> --yes`, run in `repo`, for a branch moved into a pin; else `git -C <repo> branch <name> <tip>` for a branch gone from its name (renamed to `keepAs`) |
 | `recovery` | string \| null | for `interrupted`: what wt printed |
 | `runId` | string \| null | since 1.4.0: the run under `refs/wt-swept/` the deleted branch was moved into; null when it was not moved |
 
-Since 1.4.0 a removal without `--quarantine` deletes a merged branch the way a
+Since 1.4.0 a removal without `--move-to` deletes a merged branch the way a
 sweep does (see [Deleted branches are pinned](#deleted-branches-are-pinned)):
 into `refs/wt-swept/<runId>/heads/<name>`, in a run of its own, begun only when
 the branch step deletes. An unmerged branch wt made is renamed to `keepAs`,
 which keeps its commits under a name, so nothing is pinned and `runId` is null;
-so it is for a branch left `untouched` or `kept`. With `--quarantine`, the
-quarantine pins the branch under `refs/wt-quarantine/`, and `wt restore <dir>`
+so it is for a branch left `untouched` or `kept`. With `--move-to`, the
+removal pins the branch under `refs/wt-quarantine/`, and `wt restore <dir>`
 puts it back with the worktree.
 
 `steps[].result`, by step:
@@ -1754,10 +1765,10 @@ puts it back with the worktree.
 
 | Value | When |
 |---|---|
-| `removed` | the worktree is gone or quarantined, and the branch step did what the plan said |
+| `removed` | the worktree is gone, or moved to its folder, and the branch step did what the plan said |
 | `removedWithBranchProblem` | the worktree is gone, and the branch `kept` |
 | `refused` | nothing changed |
-| `partial` | something changed and a later step failed: a quarantine that stopped after writing `recovery.json` (its lock and pins are taken), the second move, or the branch step (`failed`); `wt restore <dir>` puts a quarantine back |
+| `partial` | something changed and a later step failed: a `--move-to` that stopped after writing `recovery.json` (its lock and pins are taken), the second move, or the branch step (`failed`); `wt restore <dir>` puts the worktree back |
 | `interrupted` | a signal ended the run |
 
 The exit code is zero only for `removed`.

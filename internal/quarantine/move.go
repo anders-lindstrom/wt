@@ -51,12 +51,12 @@ var DeviceOf = func(path string) (uint64, error) {
 // delete.
 func Check(dir string, paths ...string) error {
 	if _, err := os.Lstat(dir); err == nil {
-		return fmt.Errorf("%s is there already: a quarantine goes into a new folder", dir)
+		return fmt.Errorf("%s is there already: a worktree is moved only into a new folder", dir)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	if q := InsideQuarantine(dir); q != "" {
-		return fmt.Errorf("%s is inside the quarantine %s: a purge of that one would delete it", dir, q)
+		return fmt.Errorf("%s is inside %s, a folder a worktree was moved to: a purge of that one would delete it", dir, q)
 	}
 	parent := filepath.Dir(dir)
 	info, err := os.Stat(parent)
@@ -76,7 +76,7 @@ func Check(dir string, paths ...string) error {
 			return err
 		}
 		if dev != want {
-			return fmt.Errorf("%s is on another volume than %s: a quarantine only renames, never copies", p, parent)
+			return fmt.Errorf("%s is on another volume than %s: the move only renames, never copies", p, parent)
 		}
 	}
 	return nil

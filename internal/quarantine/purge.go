@@ -174,7 +174,7 @@ func PlanPurge(dir string) PurgePlan {
 	case err != nil:
 		p.problem(ProblemMissing, "%s cannot be read: %v", dir, err)
 	case info.Mode()&os.ModeSymlink != 0:
-		p.problem(ProblemNotAFolder, "%s is a symlink: name the quarantine folder itself", dir)
+		p.problem(ProblemNotAFolder, "%s is a symlink: name the folder itself", dir)
 	case !info.IsDir():
 		p.problem(ProblemNotAFolder, "%s is not a folder", dir)
 	}
@@ -193,7 +193,7 @@ func PlanPurge(dir string) PurgePlan {
 	sort.Strings(p.Entries)
 	if len(p.Entries) == 0 {
 		p.State, p.Bytes = StateEmpty, 0
-		p.problem(ProblemEmpty, "%s is empty: nothing in it names a quarantine, so purge leaves it "+
+		p.problem(ProblemEmpty, "%s is empty: nothing in it says wt moved a worktree there, so purge leaves it "+
 			"(a purge stopped at its very last step leaves one; rmdir takes it)", dir)
 		return p
 	}
@@ -204,7 +204,7 @@ func PlanPurge(dir string) PurgePlan {
 		p.Data, err = readRegular(dir, name)
 	}
 	if errors.Is(err, os.ErrNotExist) {
-		p.problem(ProblemNoRecord, "%s has no %s: it is not a wt quarantine, and purge deletes nothing else", dir, FileName)
+		p.problem(ProblemNoRecord, "%s has no %s: nothing says wt moved a worktree there, and purge deletes nothing else", dir, FileName)
 		return p
 	}
 	var r *Record
@@ -212,14 +212,14 @@ func PlanPurge(dir string) PurgePlan {
 		r, err = parse(dir, name, p.Data)
 	}
 	if err != nil {
-		p.problem(ProblemNoRecord, "%s is not a wt quarantine purge can trust: %v", dir, err)
+		p.problem(ProblemNoRecord, "purge cannot trust the record in %s: %v", dir, err)
 		return p
 	}
 	p.Record = r
 	var nested []string
 	p.Bytes, p.Tree, nested = treeOf(dir)
 	for _, q := range nested {
-		p.problem(ProblemNestedQuarantine, "%s holds another quarantine, %s: purge or restore that one first", dir, q)
+		p.problem(ProblemNestedQuarantine, "%s holds another folder a worktree was moved to, %s: purge or restore that one first", dir, q)
 	}
 	if !p.checkFolder(r) {
 		return p
@@ -262,7 +262,7 @@ func (p *PurgePlan) checkEntries() {
 	}
 	for _, e := range p.Entries {
 		if !allowed[e] {
-			p.problem(ProblemForeignEntry, "%s in it is nothing a quarantine leaves there: purge deletes only what wt put there",
+			p.problem(ProblemForeignEntry, "%s in it is nothing a removal leaves there: purge deletes only what wt put there",
 				filepath.Join(p.Dir, e))
 		}
 	}
@@ -330,7 +330,7 @@ func (p *PurgePlan) readPins(rp *repo.Repo, r *Record) {
 			continue
 		}
 		if *pin.ref != pinRef(key, pin.name) {
-			p.problem(ProblemPins, "its record names the pin %s, which is not this quarantine's (%s)",
+			p.problem(ProblemPins, "its record names the pin %s, which is not this folder's (%s)",
 				*pin.ref, pinRef(key, pin.name))
 			continue
 		}
@@ -436,7 +436,7 @@ func (p *PurgePlan) checkRepository(rp *repo.Repo, r *Record) {
 		}
 		if q, ok := DirOf(wt.LockReason); ok && wt.Locked &&
 			(repo.SamePath(q, p.Dir) || repo.SamePath(q, r.recordedDir()) || sameDir(q, p.Identity)) {
-			p.problem(ProblemLocked, "the worktree %s is locked for this quarantine: wt restore %s takes that lock off",
+			p.problem(ProblemLocked, "the worktree %s is locked for a removal into this folder: wt restore %s takes that lock off",
 				wt.Path, p.Dir)
 		}
 	}
@@ -587,7 +587,7 @@ func InsideQuarantine(dir string) string {
 
 // ErrPurgeChanged is a purge whose folder, record or pins are not what the
 // plan it was given read.
-var ErrPurgeChanged = errors.New("the quarantine changed since the plan was read; nothing was purged: read it again")
+var ErrPurgeChanged = errors.New("the folder or its pins changed since the plan was read; nothing was purged: read it again")
 
 // LockDir takes the lock a restore and a purge of dir hold while they run,
 // so neither changes a quarantine the other is working on; the function it

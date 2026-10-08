@@ -680,16 +680,16 @@ func TestPurgeNeverDeletesAQuarantineInsideIt(t *testing.T) {
 	})
 }
 
-// wt remove --quarantine refuses a folder inside a quarantine, which a
-// purge of that one would delete.
+// wt remove --move-to refuses a folder inside one a worktree was moved to,
+// which a purge of that one would delete.
 func TestQuarantineRefusesAFolderInsideAQuarantine(t *testing.T) {
 	ctx, _, _, _, dir := quarantined(t, "fix/host", false)
 	restore(t, ctx, dir)
 	_, path := safetyWorktreeIn(t, ctx, "fix/guest")
 	var buf bytes.Buffer
 	err := RemoveAt(ctx, path, RemoveOptions{Quarantine: filepath.Join(dir, "inner")}, &buf)
-	if err == nil || !strings.Contains(err.Error()+buf.String(), "inside the quarantine") {
-		t.Fatalf("want a refusal naming the quarantine it is in: %v\n%s", err, buf.String())
+	if err == nil || !strings.Contains(err.Error()+buf.String(), "is inside "+dir+", a folder a worktree was moved to") {
+		t.Fatalf("want a refusal naming the folder it is in: %v\n%s", err, buf.String())
 	}
 	if !exists(path) {
 		t.Error("the worktree must stay")

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/remove.v1.json",
-  "x-version": "1.4.1",
+  "x-version": "1.4.2",
   "title": "wt remove <work> --yes --json",
   "description": "What `wt remove <work>` did, effect by effect. Printed by `wt remove <work> --yes --json` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends the run. Where the worktree and the quarantine are is read from the disk when the object is written. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
@@ -125,7 +125,7 @@
           "$ref": "#/$defs/quarantine"
         }
       ],
-      "description": "With --quarantine, once its recovery.json is written."
+      "description": "With --move-to, once its recovery.json is written."
     },
     "restoreCommand": {
       "type": [
@@ -187,7 +187,7 @@
             "quarantineUnusable",
             "planChanged"
           ],
-          "description": "dirty: anything uncommitted, submodules included, or a submodule not at its recorded commit. statusUnknown: git status, the git dir or HEAD could not be read. session: an agent session is in it, idle or busy. sessionsUnknown: the sessions could not be listed. lockHeld: git's worktree lock, and its holder is still running. operation: a rebase, merge, cherry-pick, revert or bisect in progress. hiddenChanges: files git status is told not to look at. headUnreachable: HEAD holds commits no surviving ref or worktree would. reachUnknown: what would be lost could not be worked out. submoduleUnreachable: a submodule commit only this worktree's copy holds. nestedWorktree: another worktree is inside it. quarantineUnusable: the --quarantine folder exists, is on another volume, or is inside the repository. planChanged (result only): --expect named another plan. The codes shared with sweep-plan's kept mean the same there."
+          "description": "dirty: anything uncommitted, submodules included, or a submodule not at its recorded commit. statusUnknown: git status, the git dir or HEAD could not be read. session: an agent session is in it, idle or busy. sessionsUnknown: the sessions could not be listed. lockHeld: git's worktree lock, and its holder is still running. operation: a rebase, merge, cherry-pick, revert or bisect in progress. hiddenChanges: files git status is told not to look at. headUnreachable: HEAD holds commits no surviving ref or worktree would. reachUnknown: what would be lost could not be worked out. submoduleUnreachable: a submodule commit only this worktree's copy holds. nestedWorktree: another worktree is inside it. quarantineUnusable: the --move-to folder exists, is on another volume, or is inside the repository. planChanged (result only): --expect named another plan. The codes shared with sweep-plan's kept mean the same there."
         },
         "message": {
           "type": "string"

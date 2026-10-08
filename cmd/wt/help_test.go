@@ -131,6 +131,36 @@ func TestHelpUsesIllustrativeNames(t *testing.T) {
 	}
 }
 
+// A worktree moved to a folder is "a removed worktree" in "its folder" to a
+// person; quarantine is what the JSON, the refs and the code call it. Only
+// wt schema's help says the word, in the names of two schemas.
+func TestHelpNeverSaysQuarantine(t *testing.T) {
+	for _, c := range reachable(newRootCmd()) {
+		text := c.Short + "\n" + c.Example + "\n" + c.Flags().FlagUsages()
+		if c.Name() != "schema" {
+			text += "\n" + c.Long
+		}
+		for _, line := range strings.Split(text, "\n") {
+			if strings.Contains(strings.ToLower(line), "quarantin") {
+				t.Errorf("%q: help says %q", c.CommandPath(), strings.TrimSpace(line))
+			}
+		}
+	}
+}
+
+// --move-to moves a worktree out of the repository; wt move, the alias of wt
+// migrate, moves one within it. Completion keeps the flag and the command
+// apart.
+func TestMoveToIsNotTheMoveCommand(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if words, _ := complete(t, "remove", "--move"); len(words) != 1 || !strings.HasPrefix(words[0], "--move-to") {
+		t.Errorf("wt remove --move completes to %q", words)
+	}
+	if words, _ := complete(t, "migrate", "--move"); len(words) != 0 {
+		t.Errorf("wt migrate --move completes to %q", words)
+	}
+}
+
 // The README and the docs beside it are read by the same people, and their
 // examples date the same way.
 func TestDocsUseIllustrativeNames(t *testing.T) {

@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/quarantine-purge-plan.v1.json",
-  "x-version": "1.0.0",
-  "title": "wt quarantine purge <dir> --dry-run --json",
-  "description": "What `wt quarantine purge <dir>` would delete, and every reason it would refuse, deleting nothing. Printed by `wt quarantine purge <dir> --dry-run --json` (or `--json` without `--yes`) as the only thing on stdout. `token` holds a later `--yes --json --expect <token>` to exactly this plan. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
+  "x-version": "1.0.1",
+  "title": "wt purge <dir> --dry-run --json",
+  "description": "What `wt purge <dir>` would delete, and every reason it would refuse, deleting nothing. Printed by `wt purge <dir> --dry-run --json` (or `--json` without `--yes`) as the only thing on stdout. `token` holds a later `--yes --json --expect <token>` to exactly this plan. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
   "required": [
     "schema",
