@@ -6,6 +6,16 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-10-08 11:25 — wt inside Claude Code
+
+- `mods/wt` is a Claude Code mod. Above the prompt, one line says the worktree
+  you are in, in git's marks: `/wt · login ↓4↑2 main`. `/wt` opens a small
+  dialog: `u` runs wt up, `p` puts the push in your prompt, `z` undoes.
+- Options, off until set: `gittree` (**gittree ↗** on that line) and
+  `reviewStatus` (your last input and last review, once they are old).
+- Install: `claude plugin marketplace add <this checkout>`, then
+  `claude plugin install wt@wt`. The README has the rest.
+
 ## 2026-10-08 11:10 — the sync plan lists the deferred steps a run may perform
 
 - For tools: `wt sync --json` on each worktree, and `wt status --json` on each
