@@ -14,21 +14,24 @@ func newUpCmd() *cobra.Command {
 	var push func() commands.PushMode
 	cmd := &cobra.Command{
 		Use:   "up [<work>]",
-		Short: "Bring this worktree onto trunk, if it goes through without you",
-		Long: "Rebase the worktree you are in — or the one named — onto trunk, but\n" +
-			"only when nothing would be handed to you: the rebase is conflict-free,\n" +
-			"or every stop is resolved by a strategy .wt-sync.yaml declares and the\n" +
-			"simulation verified. Otherwise nothing is touched, the reason is\n" +
-			"printed, and it exits non-zero: wt sync . shows the detail.\n\n" +
-			"A repository whose trunk declares no .wt-sync.yaml works too: nothing\n" +
-			"is declared there, so only a conflict-free rebase goes, with no\n" +
-			"strategies and no deferred steps.\n\n" +
-			"It is wt sync <work> --run --if-ready, for the moment you arrive in a\n" +
-			"worktree. Trunk is fetched first (--no-fetch rebases onto it as last\n" +
-			"fetched). At the end it asks whether to push, and Enter means no.\n" +
-			"--yes (-y) answers yes to every question, the push included; --push\n" +
-			"pushes without asking anything else; --no-push prints the push command\n" +
-			"instead, with or without --yes.\n\n" +
+		Short: "Sync this worktree by rebasing, if it goes through without you",
+		Long: "Sync the worktree you are in — or the one named — with trunk by\n" +
+			"rebasing it, but only when nothing would be handed to you: the rebase is\n" +
+			"conflict-free, or every stop is resolved by a strategy .wt-sync.yaml\n" +
+			"declares and the simulation verified. Otherwise nothing is touched, the\n" +
+			"reason is printed, and it exits non-zero: wt sync . shows the detail.\n\n" +
+			"It is the short form of wt sync rebase . --if-ready, for the moment you\n" +
+			"arrive in a worktree: the same fetch, safety ref, strategies, deferred\n" +
+			"steps, push and wt sync undo. It differs in one place: a repository\n" +
+			"whose trunk declares no .wt-sync.yaml works here, where wt sync rebase\n" +
+			"refuses it. Nothing is declared there, so only a conflict-free rebase\n" +
+			"goes, with no strategies and no deferred steps. For a tool, its --json\n" +
+			"result and the token --expect takes are its own too (below).\n\n" +
+			"Trunk is fetched first (--no-fetch rebases onto it as last fetched). At\n" +
+			"the end it asks whether to push, and Enter means no. --yes (-y) answers\n" +
+			"yes to every question, the push included; --push pushes without asking\n" +
+			"anything else; --no-push prints the push command instead, with or\n" +
+			"without --yes.\n\n" +
 			"After the fetch, local <trunk> is fast-forwarded to origin/<trunk>\n" +
 			"when that is safe: checked out nowhere, or in a clean checkout with\n" +
 			"nothing in progress and no session busy in it. Otherwise it is left,\n" +

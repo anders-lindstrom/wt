@@ -28,7 +28,7 @@ const (
 	GroupCurrent  = "current"
 )
 
-// What wt sync run <work> would do with a worktree, wtsync.Preflight's
+// What wt sync rebase <work> would do with a worktree, wtsync.Preflight's
 // verdict.
 const (
 	VerdictProceed = "proceed"

@@ -689,7 +689,7 @@ func VerifyFinished(wtPath, branch, work, onto, old string, total int) error {
 		return err
 	}
 	if head == old {
-		// A run refuses while the plan is there, so wt sync run alone is not
+		// A run refuses while the plan is there, so wt sync rebase alone is not
 		// a way out: undo clears the plan first.
 		return fmt.Errorf("%s is back at the tip the run started from: %s", branch, aborted)
 	}
@@ -747,7 +747,7 @@ func VerifyFinished(wtPath, branch, work, onto, old string, total int) error {
 // nothing else; the caller says what it did not do.
 func VerifyLeft(wtPath string, st State) error {
 	notOurs := func(why string) error {
-		return fmt.Errorf("the rebase in progress is not the one wt sync run left: %s", why)
+		return fmt.Errorf("the rebase in progress is not the one wt sync rebase left: %s", why)
 	}
 	t, ok, err := ReadRebaseTarget(wtPath)
 	if err != nil {

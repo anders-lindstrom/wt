@@ -86,7 +86,7 @@ make_resume() {
     printf 'trunk\n' > "$d/a.txt"
     git -C "$d" add -A; git -C "$d" -c commit.gpgsign=false commit -qm "a on trunk"
     git -C "$d" fetch -q origin
-    (cd "$d" && "$WT" sync run login-crash --yes >/dev/null 2>&1)
+    (cd "$d" && "$WT" sync rebase login-crash --yes >/dev/null 2>&1)
     printf 'resolved\n' > "$w/a.txt"
     git -C "$w" add -- a.txt
     echo "$d"
@@ -466,34 +466,34 @@ check sync myrepo_wt/fix_wt/login-crash "" 'wt up --yes --no-push --json'
 check sync myrepo_wt/fix_wt/login-crash "" 'wt up --json --expect 1:0123abcd --allow-diverged' fail
 check sync myrepo_wt/fix_wt/login-crash "" 'wt status . --json'
 check sync myrepo_wt/fix_wt/login-crash "" 'wt up -y --force --no-fetch'
-check sync "" "" 'wt sync run login-crash --force --allow-diverged'
+check sync "" "" 'wt sync rebase login-crash --force --allow-diverged'
 check sync "" "" 'wt sync --no-fetch --json'
 check sync "" "" 'wt sync login-crash'
-check sync "" "" 'wt sync login-crash --run'
-check sync "" "" 'wt sync --run'
-check sync "" "" 'wt sync run login-crash'
-check sync "" "" 'wt sync run login-crash api-tidy'
-check sync "" "" 'wt sync run --no-fetch'
-check sync "" "" 'wt sync run login-crash api-tidy --yes --json --expect 1:0123abcd' fail
-check sync "" "" 'wt sync run login-crash --push'
-check sync "" "" 'wt sync login-crash --run --no-push'
-check fleet work/myrepo_wt/fix_wt/login-crash "" 'wt sync . --run --if-ready'
-check fleet "" "" 'wt sync --all --run --if-ready'
+check sync "" "" 'wt sync login-crash --rebase'
+check sync "" "" 'wt sync --rebase'
+check sync "" "" 'wt sync rebase login-crash'
+check sync "" "" 'wt sync rebase login-crash api-tidy'
+check sync "" "" 'wt sync rebase --no-fetch'
+check sync "" "" 'wt sync rebase login-crash api-tidy --yes --json --expect 1:0123abcd' fail
+check sync "" "" 'wt sync rebase login-crash --push'
+check sync "" "" 'wt sync login-crash --rebase --no-push'
+check fleet work/myrepo_wt/fix_wt/login-crash "" 'wt sync . --rebase --if-ready'
+check fleet "" "" 'wt sync --all --rebase --if-ready'
 check fleet "" "" 'wt sync --profile api'
-check fleet "" "" 'wt sync run login-crash --if-ready'
-check fleet "" "" 'wt sync run --all --no-fetch --push'
-check fleet "" "" 'wt sync run --profile api --if-ready --no-ff-trunk'
-check fleet "" "" 'wt sync --roots work --run --no-push'
+check fleet "" "" 'wt sync rebase login-crash --if-ready'
+check fleet "" "" 'wt sync rebase --all --no-fetch --push'
+check fleet "" "" 'wt sync rebase --profile api --if-ready --no-ff-trunk'
+check fleet "" "" 'wt sync --roots work --rebase --no-push'
 check resume "" "" 'wt sync resume login-crash'
 check resume "" "" 'wt sync resume fix/login-crash --json'
 check resume "" "" 'wt sync resume login-crash --no-push'
 check resume "" "" 'wt sync resume login-crash --yes'
 check resume "" "" 'wt sync login-crash --resume --push'
-check sync "" 'wt sync run login-crash --yes' 'wt sync undo login-crash'
-check sync "" 'wt sync run login-crash --yes' 'wt sync undo login-crash --force'
-check sync "" 'wt sync run login-crash --yes' 'wt sync login-crash --undo --force'
-check sync "" 'wt sync run login-crash --yes' 'wt sync login-crash --undo --yes'
-check sync "" 'wt sync run login-crash --yes' 'wt sync undo login-crash --json'
+check sync "" 'wt sync rebase login-crash --yes' 'wt sync undo login-crash'
+check sync "" 'wt sync rebase login-crash --yes' 'wt sync undo login-crash --force'
+check sync "" 'wt sync rebase login-crash --yes' 'wt sync login-crash --undo --force'
+check sync "" 'wt sync rebase login-crash --yes' 'wt sync login-crash --undo --yes'
+check sync "" 'wt sync rebase login-crash --yes' 'wt sync undo login-crash --json'
 check sync "" "" 'wt sync doctor'
 check sync "" "" 'wt sync doctor --fix'
 check sync "" "" 'wt sync doctor --prune'

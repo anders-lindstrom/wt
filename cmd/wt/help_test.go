@@ -85,7 +85,7 @@ func TestEveryExampleIsAPastableLine(t *testing.T) {
 // A flag nobody shows in use is a flag nobody finds. The flag list says what
 // exists; the examples say what it is for. A flag named after a subcommand, or
 // one a subcommand declares too, is that verb spelled on the parent
-// (wt sync <work> --run --push), and the verb's examples may show it, but only
+// (wt sync <work> --rebase --push), and the verb's examples may show it, but only
 // on a line spelled the parent's way: wt sync undo login-crash --force shows
 // undo's --force, not wt sync's.
 func TestEveryFlagAppearsInAnExample(t *testing.T) {

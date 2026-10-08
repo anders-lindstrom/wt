@@ -71,12 +71,12 @@ func TestSyncVerbFlagsNameOneVerb(t *testing.T) {
 		err   string
 	}{
 		{syncVerbFlags{}, "", ""},
-		{syncVerbFlags{rebase: true}, "run", ""},
+		{syncVerbFlags{rebase: true}, "rebase", ""},
 		{syncVerbFlags{resume: true}, "resume", ""},
 		{syncVerbFlags{undo: true}, "undo", ""},
-		{syncVerbFlags{rebase: true, undo: true}, "", "--run and --undo cannot both be given"},
+		{syncVerbFlags{rebase: true, undo: true}, "", "--rebase and --undo cannot both be given"},
 		{syncVerbFlags{resume: true, undo: true}, "", "--resume and --undo cannot both be given"},
-		{syncVerbFlags{rebase: true, resume: true, undo: true}, "", "--run, --resume and --undo cannot both be given"},
+		{syncVerbFlags{rebase: true, resume: true, undo: true}, "", "--rebase, --resume and --undo cannot both be given"},
 	} {
 		verb, err := tc.flags.verb()
 		if verb != tc.verb {
@@ -100,18 +100,18 @@ func TestSyncVerbFlagsRefuseAFlagWithoutItsVerb(t *testing.T) {
 		{syncVerbFlags{rebase: true, yes: true, noFetch: true, push: commands.PushAlways}, ""},
 		{syncVerbFlags{resume: true, yes: true, push: commands.PushNever}, ""},
 		{syncVerbFlags{undo: true, yes: true, force: true}, ""},
-		{syncVerbFlags{rebase: true, undo: true, force: true}, "--run and --undo cannot both be given"},
-		{syncVerbFlags{push: commands.PushAlways}, "--push needs --run or --resume"},
-		{syncVerbFlags{undo: true, push: commands.PushAlways}, "--push needs --run or --resume"},
-		{syncVerbFlags{push: commands.PushNever}, "--no-push needs --run or --resume"},
-		{syncVerbFlags{undo: true, push: commands.PushNever}, "--no-push needs --run or --resume"},
-		{syncVerbFlags{force: true}, "--force needs --run or --undo"},
-		{syncVerbFlags{noFFTrunk: true}, "--no-ff-trunk needs --run"},
-		{syncVerbFlags{resume: true, noFFTrunk: true}, "--no-ff-trunk needs --run"},
-		{syncVerbFlags{resume: true, force: true}, "--force needs --run or --undo"},
-		{syncVerbFlags{yes: true}, "--yes needs --run, --resume or --undo"},
-		{syncVerbFlags{resume: true, noFetch: true}, "--no-fetch needs --run, or no verb"},
-		{syncVerbFlags{undo: true, noFetch: true}, "--no-fetch needs --run, or no verb"},
+		{syncVerbFlags{rebase: true, undo: true, force: true}, "--rebase and --undo cannot both be given"},
+		{syncVerbFlags{push: commands.PushAlways}, "--push needs --rebase or --resume"},
+		{syncVerbFlags{undo: true, push: commands.PushAlways}, "--push needs --rebase or --resume"},
+		{syncVerbFlags{push: commands.PushNever}, "--no-push needs --rebase or --resume"},
+		{syncVerbFlags{undo: true, push: commands.PushNever}, "--no-push needs --rebase or --resume"},
+		{syncVerbFlags{force: true}, "--force needs --rebase or --undo"},
+		{syncVerbFlags{noFFTrunk: true}, "--no-ff-trunk needs --rebase"},
+		{syncVerbFlags{resume: true, noFFTrunk: true}, "--no-ff-trunk needs --rebase"},
+		{syncVerbFlags{resume: true, force: true}, "--force needs --rebase or --undo"},
+		{syncVerbFlags{yes: true}, "--yes needs --rebase, --resume or --undo"},
+		{syncVerbFlags{resume: true, noFetch: true}, "--no-fetch needs --rebase, or no verb"},
+		{syncVerbFlags{undo: true, noFetch: true}, "--no-fetch needs --rebase, or no verb"},
 	} {
 		if got := errString(tc.flags.check()); got != tc.err {
 			t.Errorf("%+v: error %q, want %q", tc.flags, got, tc.err)
@@ -154,11 +154,11 @@ func TestSyncVerbFlagsTakeTheVerbsArgumentCount(t *testing.T) {
 	}
 }
 
-// run with nothing named is every ready worktree, in both spellings: no
+// rebase with nothing named is every ready worktree, in both spellings: no
 // argument count refuses it, so it gets as far as opening the repository.
 func TestSyncRunWithNothingNamedIsNotAnArgumentMistake(t *testing.T) {
 	t.Chdir(t.TempDir())
-	for _, args := range [][]string{{"sync", "--run"}, {"sync", "run"}, {"sync", "run", "--no-fetch"}} {
+	for _, args := range [][]string{{"sync", "--rebase"}, {"sync", "rebase"}, {"sync", "rebase", "--no-fetch"}} {
 		out, err := runCmd(t, args...)
 		if err == nil || err.Error() != "not a git repository" {
 			t.Errorf("%v: error %v, want the verb's own not-a-repository error\n%s", args, err, out)
@@ -178,8 +178,8 @@ func TestSyncVerbFlagsReachTheVerb(t *testing.T) {
 		t.Fatalf("overview outside a repository: %v", overview)
 	}
 	for _, tc := range [][2][]string{
-		{{"sync", "run", "a"}, {"sync", "a", "--run"}},
-		{{"sync", "run", "a", "b", "--yes", "--push", "--no-fetch"}, {"sync", "a", "b", "--run", "-y", "--push", "--no-fetch"}},
+		{{"sync", "rebase", "a"}, {"sync", "a", "--rebase"}},
+		{{"sync", "rebase", "a", "b", "--yes", "--push", "--no-fetch"}, {"sync", "a", "b", "--rebase", "-y", "--push", "--no-fetch"}},
 		{{"sync", "resume", "a", "--no-push"}, {"sync", "a", "--resume", "--no-push"}},
 		{{"sync", "resume", "a", "-y"}, {"sync", "a", "--resume", "--yes"}},
 		{{"sync", "undo", "a", "--force"}, {"sync", "a", "--undo", "--force"}},
@@ -204,7 +204,7 @@ func TestSyncVerbFlagsReachTheVerb(t *testing.T) {
 func TestSyncVerbFlagMistakesDoNotShowUsage(t *testing.T) {
 	t.Chdir(t.TempDir())
 	for _, args := range [][]string{
-		{"sync", "a", "--run", "--undo"},
+		{"sync", "a", "--rebase", "--undo"},
 		{"sync", "a", "--push"},
 		{"sync", "a", "--force"},
 		{"sync", "a", "--yes"},
@@ -224,7 +224,7 @@ func TestSyncVerbFlagMistakesDoNotShowUsage(t *testing.T) {
 // -y is --yes on every verb, as on wt remove, wt sweep and wt init.
 func TestSyncVerbsTakeYForYes(t *testing.T) {
 	root := newRootCmd()
-	for _, path := range [][]string{{"sync"}, {"sync", "run"}, {"sync", "resume"}, {"sync", "undo"}} {
+	for _, path := range [][]string{{"sync"}, {"sync", "rebase"}, {"sync", "resume"}, {"sync", "undo"}} {
 		c, _, err := root.Find(path)
 		if err != nil {
 			t.Fatal(err)
@@ -236,7 +236,7 @@ func TestSyncVerbsTakeYForYes(t *testing.T) {
 	}
 }
 
-// sync run asks before the rebase and again before the push. Both answers can
+// sync rebase asks before the rebase and again before the push. Both answers can
 // be typed ahead, so both questions have to read through one prompter.
 func TestRunQuestionsShareOneReader(t *testing.T) {
 	var out bytes.Buffer

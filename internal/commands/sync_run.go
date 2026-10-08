@@ -98,7 +98,7 @@ type participant struct {
 	found string
 }
 
-// runPlan is one wt sync run: the trunk it rebases onto, the worktrees the
+// runPlan is one wt sync rebase: the trunk it rebases onto, the worktrees the
 // arguments named and the stacks they belong to, and what each of them came
 // to. SyncRebase drives it through its phases in order: selectBranches, triage,
 // lockAll, then rebaseOne per worktree.
@@ -323,7 +323,7 @@ func (r *runPlan) declare(works []string) error {
 	r.opts.Journal.trunk(r.trunk, ctx.trunkSource(), onto, trunkSHA, !r.opts.NoFetch)
 	label := r.opts.label
 	if label == "" {
-		label = "wt sync run"
+		label = "wt sync rebase"
 	}
 	fmt.Fprintf(r.w, "%s  onto %s %s %s\n", label, onto, git.ShortID(trunkSHA, 7), fetched)
 	cfg, err := wtsync.LoadFromRef(ctx.Repo.MainRoot, trunkSHA)

@@ -45,7 +45,7 @@ type repoRun struct {
 	err        error
 }
 
-// SyncRebaseAll is wt sync --run across repositories. Every repository is
+// SyncRebaseAll is wt sync --rebase across repositories. Every repository is
 // fetched and planned as a run with nothing named would plan it — its ready
 // worktrees, less recipe? — a few at a time; each plan is printed under its
 // repository's name; one question covers them all; then each repository's

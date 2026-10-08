@@ -425,7 +425,7 @@ func syncAdvice(work string, declared bool, a wtsync.Assessment) string {
 		if !declared {
 			return sectionHeading(sectionReady, false)
 		}
-		return "wt sync run " + work
+		return "wt sync rebase " + work
 	case sectionNeedsYou:
 		return "wt sync " + work + " for the detail"
 	}

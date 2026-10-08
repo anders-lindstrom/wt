@@ -359,7 +359,7 @@ func TestStatusWorktreePrintsTheFactsAndTheVerdictForARecipeWorktree(t *testing.
 		"  path    " + bump + "\n",
 		"  state   clean\n",
 		"  trunk   1 behind · 1 ahead of origin/main (as last fetched ",
-		"  sync    recipe · wt sync run bump\n",
+		"  sync    recipe · wt sync rebase bump\n",
 		"1 stop, resolved · 1/1: v.txt✓\n",
 		"simulated against origin/main as last fetched",
 	} {
@@ -403,7 +403,7 @@ func TestStatusWorktreeSaysCleanAndCurrentInTheOverviewsWords(t *testing.T) {
 	if err := StatusWorktree(ctx, "clean", noStatusSessions(), &buf); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(buf.String(), "  sync    conflict-free · wt sync run clean\n") {
+	if !strings.Contains(buf.String(), "  sync    conflict-free · wt sync rebase clean\n") {
 		t.Errorf("want the clean verdict with the run advice:\n%s", buf.String())
 	}
 }

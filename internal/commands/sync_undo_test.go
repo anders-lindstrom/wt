@@ -175,7 +175,7 @@ func TestSyncUndoRefusesARebaseItDidNotLeave(t *testing.T) {
 		opts.Force = force
 		var out bytes.Buffer
 		err := SyncUndo(ctx, "bump", opts, &out)
-		if err == nil || !strings.Contains(err.Error(), "not the one wt sync run left") || !strings.Contains(err.Error(), "rebase --abort") {
+		if err == nil || !strings.Contains(err.Error(), "not the one wt sync rebase left") || !strings.Contains(err.Error(), "rebase --abort") {
 			t.Fatalf("force=%v: err %v\n%s", force, err, out.String())
 		}
 		// Not assertUntouched: the refusal comes after undo took the

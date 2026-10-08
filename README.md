@@ -100,19 +100,19 @@ examples: `wt <command> --help`.
 
 | | |
 |---|---|
-| `wt up [<work>]` | bring the worktree you are in onto trunk, only if it goes through without you — conflict-free, or every stop resolved by `.wt-sync.yaml`; otherwise it touches nothing and says why. Also where trunk declares no `.wt-sync.yaml`, conflict-free only. The short form of `wt sync . --run --if-ready` (`--push`, `--no-push`, `--no-fetch`, `--yes`/`-y` for yes to everything including the push, `--force`/`-f` to go ahead past an agent session in it) |
+| `wt up [<work>]` | sync the worktree you are in with trunk by rebasing it, only if it goes through without you — conflict-free, or every stop resolved by `.wt-sync.yaml`; otherwise it touches nothing and says why. Also where trunk declares no `.wt-sync.yaml`, conflict-free only. The short form of `wt sync rebase . --if-ready` (`--push`, `--no-push`, `--no-fetch`, `--yes`/`-y` for yes to everything including the push, `--force`/`-f` to go ahead past an agent session in it) |
 | `wt status <work> --json` / `wt up --json` | a worktree's plan for `wt up`, and a run's result, as one JSON object each for tools driving wt (`--expect` holds a run to its plan); `wt schema` prints their JSON Schemas, and [docs/json.md](docs/json.md) explains them |
 | `wt sweep --dry-run --json` / `wt sweep --yes --json` | a sweep's plan, every row with why it is merged or kept, and a sweep's result row by row, for tools driving wt (`--expect` holds the sweep to its plan); see [docs/json.md](docs/json.md) |
 | `wt remove <work> --dry-run --json` / `wt remove <work> --yes --json` | a removal's plan — where the branch stands, every reason it would refuse, what it would lose — and its result effect by effect, for tools driving wt (`--expect` holds the removal to its plan) |
 | `wt restore <dir> --dry-run --json` / `wt restore <dir> --json` | what putting back a quarantined worktree would do to its branch, and what it did; `recovery.json` in the quarantine is itself versioned (`wt schema recovery`) |
 | `wt quarantine purge <dir> --json` / `… --yes --json` | what deleting a quarantine for good would delete and leave unreachable, with a token, and what became of each pin and the folder (`--expect` holds the purge to its plan) |
 | `wt refs sweep`, `restore`, `purge` `--json`; `wt refs swept --json` | each plan with a token and each result row by row, for the ref sweep; see [docs/json.md](docs/json.md) |
-| `wt sync --json` / `wt sync run\|resume\|undo --json` | the sync overview of every worktree, and a verb's result, as JSON for tools (`wt sync run --expect` holds a run to the overview); `wt schema sync` and `wt schema sync-run` |
+| `wt sync --json` / `wt sync rebase\|resume\|undo --json` | the sync overview of every worktree, and a verb's result, as JSON for tools (`wt sync rebase --expect` holds a run to the overview); `wt schema sync` and `wt schema sync-run` |
 | `wt new … --dry-run --json` / `wt new … --json` | the same for creating a worktree, and for `wt checkout`: the plan with a token, and a result naming every side effect (`--expect` refuses a moved base or branch) |
 | `wt sync` | what rebasing each worktree onto trunk would do, simulated after fetching trunk; changes nothing of yours (`--no-fetch`) |
-| `wt sync run [<work>...]` | rebase the named worktrees onto trunk with the declared strategies (`--no-fetch`, `--yes`/`-y`, `--push`, `--no-push`, `--if-ready`); also spelled `wt sync <work>... --run`. With nothing named, every worktree the table calls ready except `recipe?`, asked first — and with no terminal, only with `--yes`. `--if-ready` rebases what is ready and fails if anything was not. The push question defaults to no; `--yes` answers yes to it, like every question, unless `--no-push` |
+| `wt sync rebase [<work>...]` | sync the named worktrees by rebasing them onto trunk, with the declared strategies (`--no-fetch`, `--yes`/`-y`, `--push`, `--no-push`, `--if-ready`); also spelled `wt sync <work>... --rebase`. With nothing named, every worktree the table calls ready except `recipe?`, asked first — and with no terminal, only with `--yes`. `--if-ready` rebases what is ready and fails if anything was not. The push question defaults to no; `--yes` answers yes to it, like every question, unless `--no-push` |
 | `wt sync resume <work>` | continue the rebase a run left at a conflict that was yours (`--yes`/`-y`, `--push`, `--no-push`); also spelled `wt sync <work> --resume` |
-| `wt sync undo <work>` | put back every ref the last `wt sync run` on this worktree moved, aborting a rebase a run handed over (`--force`/`-f`, `--yes`/`-y`); also spelled `wt sync <work> --undo` |
+| `wt sync undo <work>` | put back every ref the last `wt sync rebase` on this worktree moved, aborting a rebase a run handed over (`--force`/`-f`, `--yes`/`-y`); also spelled `wt sync <work> --undo` |
 | `wt sync doctor` | check what a run needs; `--fix` turns on rerere and removes expired locks, `--prune` deletes old safety refs; a `keeper` row says whether one is installed and how its last pass went |
 | `wt sync keep once` | one unattended pass: fetch trunk and, when it moved, rebase every ready worktree nobody is in and push what finished (`--no-push`); `keep run` still works; logged to `.git/wt-sync-keep.log`; what the job runs, and what cron runs elsewhere |
 | `wt sync keep start` | install a launchd job (macOS) that runs `wt sync keep once` every 30 minutes (`--every`, `--no-push`), pushing the way this shell's git does; `wt sync keep status` for the last pass and the next, `wt sync keep stop` to remove it; `--all`, `--roots` or `--profile` on all three for many repositories |
@@ -166,7 +166,7 @@ api = ["~/src/work/api", "~/src/work/billing"]
 repositories with a `bin/worktree` configuration count.
 
 - `wt repos` lists them, and `wt cd <repo>` goes to one.
-- `wt sweep --all` and `wt sync --all --run` work across every one, planned a
+- `wt sweep --all` and `wt sync --all --rebase` work across every one, planned a
   few at a time and asked once; `wt sync --all` is the overview of each.
   `--roots work` or `--profile api` narrows the run.
 - `wt list`, `wt status` and `wt doctor` take the same flags.

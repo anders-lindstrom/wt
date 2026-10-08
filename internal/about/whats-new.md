@@ -6,6 +6,16 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-10-08 11:03 — wt sync run is now wt sync rebase
+
+- Sync is the workflow: fetch, simulate, safety ref, strategies, deferred
+  steps, push, undo. Rebase is the method, so the verb says it:
+  `wt sync rebase <work>...`, and `wt sync <work> --rebase` at the end of a line.
+- `wt up` says what it is: the short form of `wt sync rebase . --if-ready`.
+- Nothing a repository carries changes: `.wt-sync.yaml`, plan and state files,
+  config keys, `wt sync`, `resume`, `undo`, `doctor` and `keep` are as they were.
+- JSON: the result's `command` is `sync rebase` (sync-run 1.3.0).
+
 ## 2026-10-06 21:43 — wt no longer calls a running Superset stopped
 
 - Superset 1.36.0's `superset status` calls a host service stale while it is

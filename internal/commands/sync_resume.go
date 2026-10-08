@@ -58,7 +58,7 @@ func syncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) (err
 		return err
 	}
 	if !ok {
-		return fmt.Errorf("%s was not left mid-rebase by wt sync run: nothing to resume", work)
+		return fmt.Errorf("%s was not left mid-rebase by wt sync rebase: nothing to resume", work)
 	}
 	if st.Branch != target.Branch {
 		return fmt.Errorf("the handover in %s is for %s, not %s; nothing is resumed", gitDir, st.Branch, target.Branch)

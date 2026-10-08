@@ -174,7 +174,7 @@ func UpPlanJSON(ctx *Context, arg string, w io.Writer) error {
 	}
 	if gitDir, err := wtsync.GitDir(wt.Path); err == nil {
 		if _, ok, _ := wtsync.ReadState(gitDir); ok {
-			inel(IneligibleHandedOver, "an earlier wt sync run is waiting on you here: wt sync resume or wt sync undo")
+			inel(IneligibleHandedOver, "an earlier wt sync rebase is waiting on you here: wt sync resume or wt sync undo")
 		}
 	}
 	// Every branch against its own remote as last fetched: nothing here

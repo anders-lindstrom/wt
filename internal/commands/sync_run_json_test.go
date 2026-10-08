@@ -23,7 +23,7 @@ func decodeSyncRun(t *testing.T, out []byte) SyncRunResult {
 func syncRunJSON(t *testing.T, ctx *Context, works []string, opts RunOptions) (SyncRunResult, error) {
 	t.Helper()
 	var out, human bytes.Buffer
-	opts.Journal = NewSyncRunJournal(&out, "sync run")
+	opts.Journal = NewSyncRunJournal(&out, "sync rebase")
 	err := SyncRebase(ctx, works, opts, &human)
 	return decodeSyncRun(t, out.Bytes()), err
 }
@@ -50,7 +50,7 @@ func TestSyncRunJSONReportsTheSafetyRefDeferredStepsAndUndo(t *testing.T) {
 	ctx, bump := runFixture(t, true)
 	old := gitOut(t, bump, "rev-parse", "HEAD")
 	r, err := syncRunJSON(t, ctx, []string{"bump"}, noAgents())
-	if err != nil || r.Outcome != OutcomeDone || r.Command != "sync run" || r.Repo == nil || *r.Repo != ctx.Repo.MainRoot ||
+	if err != nil || r.Outcome != OutcomeDone || r.Command != "sync rebase" || r.Repo == nil || *r.Repo != ctx.Repo.MainRoot ||
 		len(r.Worktrees) != 1 {
 		t.Fatalf("%v %+v", err, r)
 	}
