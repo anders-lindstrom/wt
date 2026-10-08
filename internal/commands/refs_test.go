@@ -313,6 +313,15 @@ func TestRefsSweepKeepsWhatAQuarantineNames(t *testing.T) {
 		!slices.Contains(it.Kept, KeptQuarantine) {
 		t.Errorf("quarantined = %+v", it)
 	}
+	// The code is the JSON's; the plan a person reads says it in words.
+	var out, human bytes.Buffer
+	if err := RefsSweepPlanJSON(ctx, RefsOptions{NoFetch: true}, &out, &human); err != nil {
+		t.Fatal(err)
+	}
+	if printed := human.String(); !strings.Contains(printed, "a worktree moved aside") ||
+		strings.Contains(printed, "quarantine") {
+		t.Errorf("the printed plan:\n%s", printed)
+	}
 }
 
 // The journal a signal finishes writes one object: the row in flight read

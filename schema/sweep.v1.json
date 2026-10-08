@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sweep.v1.json",
-  "x-version": "1.4.0",
+  "x-version": "1.4.1",
   "title": "wt sweep --yes --json",
   "description": "What a wt sweep did, item by item. Printed by `wt sweep --yes --json [--expect <token>]` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends the run. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
@@ -21,7 +21,7 @@
     "error": { "type": ["string", "null"], "description": "Why the run stopped before touching anything: an --expect that no longer holds, the fetch, not the main checkout." },
     "items": { "type": "array", "items": { "$ref": "#/$defs/item" } },
     "recovery": { "type": ["string", "null"], "description": "For interrupted: what wt printed." },
-    "quarantine": { "type": ["string", "null"], "description": "Since 1.1.0. With --quarantine <dir>: the folder, absolute. Each removed worktree went into a folder of its own in it, with its own recovery.json. null without it." },
+    "quarantine": { "type": ["string", "null"], "description": "Since 1.1.0. With --move-to <dir>: the folder, absolute. Each removed worktree went into a folder of its own in it, with its own recovery.json. null without it." },
     "runId": {
       "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{4,32}$" }],
       "description": "Since 1.4.0. The run under refs/wt-swept/ the deleted branches were moved into, as wt refs sweep moves backups: wt refs swept lists it, wt refs restore puts them back, wt refs purge deletes them for good. null when no branch was moved: nothing was deleted, or only quarantined worktrees' branches, which the quarantine pins. A run a signal ended may name a run that holds only its meta."

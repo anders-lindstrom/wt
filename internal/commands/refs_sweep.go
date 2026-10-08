@@ -45,6 +45,18 @@ const (
 	KeptNotContained       = "notContained"
 )
 
+// keptWords is the codes as the Kept table prints them: as they are, but
+// for the one whose code is no word wt says to a person.
+func keptWords(codes []string) string {
+	words := slices.Clone(codes)
+	for i, c := range words {
+		if c == KeptQuarantine {
+			words[i] = "a worktree moved aside"
+		}
+	}
+	return strings.Join(words, ", ")
+}
+
 // Where a backup's date comes from, for --json.
 const (
 	DateReflog = "reflog"
@@ -657,7 +669,7 @@ func quarantineHolds(ctx *Context) (names, tips map[string]bool, err error) {
 	root := ctx.Repo.MainRoot
 	lines, err := git.Lines(root, "for-each-ref", "--format=%(refname)%00%(objectname)", quarantine.PinPrefix)
 	if err != nil {
-		return nil, nil, fmt.Errorf("could not read the quarantines' pins, so cannot tell what they hold: %w", err)
+		return nil, nil, fmt.Errorf("could not read the pins of worktrees moved aside, so cannot tell what they hold: %w", err)
 	}
 	type pins struct{ dir, tip string }
 	byKey := map[string]*pins{}
@@ -1049,7 +1061,7 @@ func (p RefsPlan) Render(w io.Writer) {
 		case r.Selected:
 			sel = append(sel, row)
 		case r.Category == RefKept:
-			kept = append(kept, []string{"  " + r.ID, strings.Join(r.Kept, ", "), why})
+			kept = append(kept, []string{"  " + r.ID, keptWords(r.Kept), why})
 		default:
 			young = append(young, row)
 		}

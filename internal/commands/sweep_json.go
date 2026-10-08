@@ -156,7 +156,7 @@ type SweepResultItem struct {
 	// Pin is where the branch was moved to, read back; nil when it was not.
 	Pin            *string  `json:"pin"`
 	RestoreCommand []string `json:"restoreCommand"`
-	// Quarantine is the folder the worktree went to under --quarantine,
+	// Quarantine is the folder the worktree went to under --move-to,
 	// and which of its two moves are done; nil otherwise.
 	Quarantine *SweepQuarantine `json:"quarantine"`
 	// Superset is what came of the removed worktree's Superset workspace;

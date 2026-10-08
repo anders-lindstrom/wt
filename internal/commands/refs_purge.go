@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"time"
@@ -80,6 +82,10 @@ func planRefsPurge(ctx *Context, opts RefsPurgeOptions) (RefsPurgePlan, error) {
 		for _, id := range opts.RunIDs {
 			i := slices.IndexFunc(runs, func(r sweptRun) bool { return r.RunID == id })
 			if i < 0 {
+				if !runIDPattern.MatchString(id) && isFolder(ctx, id) {
+					return p, fmt.Errorf("%s is a folder, not a run: a worktree moved there is deleted for good "+
+						"with wt purge %s; wt refs swept lists the runs", id, id)
+				}
 				return p, errNoRun(id)
 			}
 			if !slices.ContainsFunc(p.Runs, func(r purgeRun) bool { return r.RunID == id }) {
@@ -88,6 +94,15 @@ func planRefsPurge(ctx *Context, opts RefsPurgeOptions) (RefsPurgePlan, error) {
 		}
 	}
 	return p, p.countLost(ctx)
+}
+
+// isFolder is whether arg, as typed where wt was run, names a folder.
+func isFolder(ctx *Context, arg string) bool {
+	if !filepath.IsAbs(arg) {
+		arg = filepath.Join(ctx.Cwd, arg)
+	}
+	info, err := os.Stat(arg)
+	return err == nil && info.IsDir()
 }
 
 // countLost fills in, for each pin, the commits no ref outside the purge

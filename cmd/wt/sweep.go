@@ -11,7 +11,7 @@ import (
 
 func newSweepCmd() *cobra.Command {
 	var noFetch, yes, dryRun, asJSON, keepSuperset bool
-	var expect, quarantineDir string
+	var expect, moveTo string
 	var sel selectionFlags
 	cmd := &cobra.Command{
 		Use:   "sweep",
@@ -70,7 +70,7 @@ func newSweepCmd() *cobra.Command {
 			"refs/wt-swept/<run>/, one run per sweep, which wt refs swept lists:\n" +
 			"wt refs restore <run> puts the branches back (not their upstream\n" +
 			"setting), wt refs purge <run> deletes them for good. A worktree moved\n" +
-			"with --quarantine keeps its branch pinned by the quarantine instead.\n\n" +
+			"with --move-to has its branch pinned with it instead.\n\n" +
 			"On a terminal, commit subjects are cut to fit its width. Piped, they\n" +
 			"are printed whole.\n\n" +
 			"--all, --roots or --profile sweep many repositories from anywhere: each\n" +
@@ -87,19 +87,19 @@ func newSweepCmd() *cobra.Command {
 			"touching nothing, unless the plan made now has that token. wt schema\n" +
 			"sweep-plan and wt schema sweep print the schemas; docs/json.md\n" +
 			"explains them.\n\n" +
-			"--quarantine <dir> moves each worktree it removes into a folder of its\n" +
+			"--move-to <dir> moves each worktree it removes into a folder of its\n" +
 			"own in <dir>, named after its directory, instead of deleting it, the\n" +
-			"way wt remove --quarantine does; wt restore <dir>/<name> puts one back.\n" +
+			"way wt remove --move-to does; wt restore <dir>/<name> puts one back.\n" +
 			"<dir> is a new folder whose parent exists, on the worktrees' volume and\n" +
 			"outside the repository; otherwise the sweep refuses before anything\n" +
 			"goes. It sweeps one repository. Every sweep also drops the refs that\n" +
-			"pinned a quarantine's commits once its folder has been deleted.\n\n" +
+			"pinned such a worktree's commits once its folder has been deleted.\n\n" +
 			"Backup branches and tags (backup/*, safe-* and so on): wt refs sweep.\n\n" +
 			"Each worktree it removes loses its Superset workspace, as with wt\n" +
 			"remove, and with the same risk; --keep-superset leaves them alone and\n" +
 			"asks Superset nothing.\n\n" +
 			selectionHelp,
-		Example: "  wt sweep --quarantine ../trash/sw  # ask, then move worktrees aside\n" +
+		Example: "  wt sweep --move-to ../trash/sw  # ask, then move worktrees aside\n" +
 			"  wt sweep --all --dry-run    # every repository's plan; change nothing\n" +
 			"  wt sweep --roots work --yes # one root's repositories, without asking\n" +
 			"  wt sweep --profile api --no-fetch  # a profile's, as last fetched\n" +
@@ -110,25 +110,25 @@ func newSweepCmd() *cobra.Command {
 			if expect != "" && (!asJSON || !yes) {
 				return errors.New("--expect holds a sweep to the plan a tool read: pass it with --yes --json")
 			}
-			if quarantineDir != "" {
+			if moveTo != "" {
 				if sel.selection().Any() {
-					return errors.New("--quarantine sweeps one repository: run it in its main checkout")
+					return errors.New("--move-to sweeps one repository: run it in its main checkout")
 				}
-				abs, err := filepath.Abs(quarantineDir)
+				abs, err := filepath.Abs(moveTo)
 				if err != nil {
 					return err
 				}
-				quarantineDir = abs
+				moveTo = abs
 			}
 			if asJSON {
 				if sel.selection().Any() {
 					return errors.New("--json sweeps one repository: run it in each repository's main checkout")
 				}
 				return sweepJSON(cmd, commands.SweepOptions{NoFetch: noFetch, Yes: yes, DryRun: dryRun, Expect: expect,
-					Quarantine: quarantineDir, KeepSuperset: keepSuperset})
+					Quarantine: moveTo, KeepSuperset: keepSuperset})
 			}
 			opts := commands.SweepOptions{NoFetch: noFetch, Yes: yes, DryRun: dryRun,
-				Width: terminalWidth(cmd.OutOrStdout()), Quarantine: quarantineDir, KeepSuperset: keepSuperset}
+				Width: terminalWidth(cmd.OutOrStdout()), Quarantine: moveTo, KeepSuperset: keepSuperset}
 			if sel.selection().Any() {
 				all := commands.SweepAllOptions{SweepOptions: opts}
 				if !yes && canAsk(cmd) {
@@ -151,8 +151,8 @@ func newSweepCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print the plan and change nothing")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print the plan, or with --yes the result, as JSON")
 	cmd.Flags().StringVar(&expect, "expect", "", "sweep only if the plan still has this token")
-	cmd.Flags().StringVar(&quarantineDir, "quarantine", "",
-		"move each worktree into this new folder instead of deleting it")
+	cmd.Flags().StringVar(&moveTo, "move-to", "",
+		"move each worktree into `dir`, a new folder, instead of deleting it")
 	cmd.Flags().BoolVar(&keepSuperset, "keep-superset", false,
 		"leave their Superset workspaces; do not ask Superset to delete them")
 	cmd.MarkFlagsMutuallyExclusive("yes", "dry-run")

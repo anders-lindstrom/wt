@@ -15,7 +15,7 @@ func newRemoveCmd() *cobra.Command {
 	var meAt string
 	var yes, dryRun, asJSON, keepSuperset bool
 	var force []string
-	var quarantineDir, expect string
+	var moveTo, expect string
 	cmd := &cobra.Command{
 		Use:     "remove <work>",
 		Aliases: []string{"rm"},
@@ -77,19 +77,20 @@ func newRemoveCmd() *cobra.Command {
 			"the list goes after an =. The sessions are listed again right before\n" +
 			"the checkout goes, and one that turned busy or arrived since refuses\n" +
 			"unless --force names its state.\n\n" +
-			"--quarantine <dir> moves the worktree aside instead of deleting it.\n" +
+			"--move-to <dir> moves the worktree aside instead of deleting it.\n" +
 			"<dir> is a new folder on the worktree's volume — its parent must exist\n" +
 			"— outside every checkout and the git dir; removal refuses, changing\n" +
 			"nothing, when it is not: only renames, never a copy. After the last\n" +
-			"check it writes <dir>/recovery.json, locks the worktree with the reason\n" +
-			"\"wt quarantine <dir>\", pins its commits with refs under\n" +
-			"refs/wt-quarantine/ so gc keeps them, moves the checkout to\n" +
-			"<dir>/checkout and its admin dir, .git/worktrees/<id> with its\n" +
-			"submodules' repositories, to <dir>/admin, which unregisters it; then\n" +
-			"the branch goes as it would, held by those pins rather than one under\n" +
-			"refs/wt-swept/. A file written after the check moves with\n" +
-			"the checkout. Each step is journalled in recovery.json; wt restore <dir>\n" +
-			"puts it all back, and wt sweep drops the pins once <dir> is deleted.\n\n" +
+			"check it writes <dir>/recovery.json, locks the worktree with a reason\n" +
+			"that names <dir>, pins its commits with refs of its own so gc keeps\n" +
+			"them, moves the checkout to <dir>/checkout and its admin dir,\n" +
+			".git/worktrees/<id> with its submodules' repositories, to <dir>/admin,\n" +
+			"which unregisters it; then the branch goes as it would, held by those\n" +
+			"pins rather than one under refs/wt-swept/. A file written after the\n" +
+			"check moves with the checkout. Each step is journalled in\n" +
+			"recovery.json; wt restore <dir> puts it all back, wt purge <dir>\n" +
+			"deletes it for good, and wt sweep drops the pins once <dir> is deleted.\n" +
+			"Without --move-to the checkout is deleted, and no command puts it back.\n\n" +
 			"With `wt config set superset true`, once the worktree has left its path\n" +
 			"and git no longer lists it, its Superset workspace is deleted too.\n" +
 			"Superset's delete removes whatever checkout is at the path it\n" +
@@ -108,7 +109,7 @@ func newRemoveCmd() *cobra.Command {
 			"schemas; docs/json.md explains them.",
 		Example: "  wt remove login-crash            # say where the branch stands, then ask\n" +
 			"  wt remove . --force=idle-sessions  # the one you are in, past idle ones\n" +
-			"  wt remove login-crash --quarantine ../trash/lc  # move it aside\n" +
+			"  wt remove login-crash --move-to ../trash/lc  # move it aside\n" +
 			"  wt remove login-crash --dry-run --json --keep-superset  # a tool's plan\n" +
 			"  wt remove login-crash --yes --json --expect 1:0123abcd  # only that plan",
 		Args:              cobra.MaximumNArgs(1),
@@ -147,8 +148,8 @@ func newRemoveCmd() *cobra.Command {
 				return err
 			}
 			opts := commands.RemoveOptions{Force: forced, DryRun: dryRun, Expect: expect, KeepSuperset: keepSuperset}
-			if quarantineDir != "" {
-				if opts.Quarantine, err = filepath.Abs(quarantineDir); err != nil {
+			if moveTo != "" {
+				if opts.Quarantine, err = filepath.Abs(moveTo); err != nil {
 					return err
 				}
 			}
@@ -190,8 +191,8 @@ func newRemoveCmd() *cobra.Command {
 	cmd.Flags().Lookup("force").NoOptDefVal = "all"
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask for confirmation")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what removal would do and change nothing")
-	cmd.Flags().StringVar(&quarantineDir, "quarantine", "",
-		"move it into this new folder instead of deleting it")
+	cmd.Flags().StringVar(&moveTo, "move-to", "",
+		"move it into `dir`, a new folder, instead of deleting it; wt restore <dir> puts it back")
 	cmd.Flags().BoolVar(&keepSuperset, "keep-superset", false,
 		"leave its Superset workspace; do not ask Superset to delete it")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print the plan, or with --yes the result, as JSON")

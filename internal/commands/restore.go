@@ -21,7 +21,7 @@ type RestoreOptions struct {
 	Result *quarantine.RestoreResult
 }
 
-// Restore puts back the worktree wt remove --quarantine moved into dir.
+// Restore puts back the worktree wt remove --move-to moved into dir.
 // ctx is the repository wt was run in, nil outside one: it is only where a
 // quarantine with no recovery.json is looked for; one with a record names
 // its own repository.
@@ -87,7 +87,7 @@ func registerRestored(ctx *Context, path string, w io.Writer) {
 
 // renderRestorePlan writes what a restore finds and would do.
 func renderRestorePlan(p quarantine.RestorePlan, w io.Writer) {
-	rows := [][]string{{"  quarantine", p.Dir}}
+	rows := [][]string{{"  folder", p.Dir}}
 	switch {
 	case p.Record != nil:
 		r := p.Record
@@ -112,7 +112,7 @@ func placeWords(at string) string {
 	case quarantine.AtOriginal:
 		return "in place"
 	case quarantine.InQuarantine:
-		return "in the quarantine, goes back"
+		return "in the folder, goes back"
 	case quarantine.Taken:
 		return "its path is taken"
 	}

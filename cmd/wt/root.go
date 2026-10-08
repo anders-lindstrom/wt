@@ -82,7 +82,7 @@ func newRootCmd() *cobra.Command {
 		newPathCmd(), newBranchCmd(), newReposCmd())
 	add(groupTrunk, newUpCmd(), newSyncCmd())
 	add(groupTidy, newMigrateCmd(), newAdoptCmd(), newSetupCmd(), newRemoveCmd(), newSweepCmd(),
-		newRestoreCmd(), newQuarantineCmd(), newRefsCmd())
+		newRestoreCmd(), newPurgeCmd(), newRefsCmd())
 	add(groupRepo, newInitCmd(), newConfigCmd(), newDoctorCmd(), newSchemaCmd(), newAboutCmd(), newVersionCmd())
 	root.AddCommand(newBranchStripCmd(), newHookCmd())
 	// Flag descriptions wrap at 79 columns, lined up under their first line,
@@ -259,6 +259,10 @@ func Execute() int {
 	if args, old := bridgeSyncRun(os.Args[1:]); old {
 		root.SetArgs(args)
 		rebaseCommand = "sync run"
+	}
+	// BRIDGE(quarantine-spelling)
+	if args, old := bridgeQuarantine(os.Args[1:]); old {
+		root.SetArgs(args)
 	}
 	if err := root.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "wt: %v\n", err)

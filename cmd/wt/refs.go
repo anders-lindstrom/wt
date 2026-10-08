@@ -50,7 +50,8 @@ func newRefsSweepCmd() *cobra.Command {
 			"             ref_sweep_age (14d unless set). Swept\n" +
 			"  young      the same, and younger. Left, unless --only names it\n" +
 			"  kept       checked out in a worktree, held by a rebase or bisect,\n" +
-			"             named by a quarantine, trunk or a long-lived branch\n\n" +
+			"             the branch of a worktree moved to a folder, trunk or a\n" +
+			"             long-lived branch\n\n" +
 			"Age is when the branch was made, from the first entry of its reflog:\n" +
 			"a backup of a three-week-old branch taken this morning is young. An\n" +
 			"annotated tag's age is its tagger date; anything else, its commit's.\n\n" +
@@ -252,6 +253,9 @@ func newRefsPurgeCmd() *cobra.Command {
 			"pin goes only while it holds the object the plan read. Once a pin is\n" +
 			"gone, the commits nothing else holds are unreachable and git gc takes\n" +
 			"them; the plan counts them.\n\n" +
+			"A run is named by its id, as wt refs swept lists it. A worktree that\n" +
+			"wt remove --move-to moved into a folder is not a run: wt purge <dir>\n" +
+			"deletes that.\n\n" +
 			"What it would delete is printed first. In a terminal you are asked\n" +
 			"once; --yes skips the question, and with no terminal and no --yes it\n" +
 			"refuses. --dry-run prints the plan and stops.\n\n" +

@@ -811,7 +811,7 @@ func (p SweepPlan) apply(ctx *Context, opts SweepOptions, w io.Writer) error {
 	j := opts.Journal
 	if opts.Quarantine != "" && len(p.Remove) > 0 {
 		if err := quarantine.MakeDir(opts.Quarantine); err != nil {
-			return fmt.Errorf("nothing was swept: the quarantine folder: %w", err)
+			return fmt.Errorf("nothing was swept: the --move-to folder: %w", err)
 		}
 	}
 	j.startApply()
@@ -887,10 +887,10 @@ func (p SweepPlan) apply(ctx *Context, opts SweepOptions, w io.Writer) error {
 			runID, runID)
 	}
 	if dropped, err := quarantine.DropDiscarded(ctx.Repo); err != nil {
-		fmt.Fprintf(w, "! could not read the pins of past quarantines: %v\n", err)
+		fmt.Fprintf(w, "! could not read the pins of worktrees moved aside: %v\n", err)
 	} else {
 		for _, dir := range dropped {
-			fmt.Fprintf(w, "- dropped the pins of %s: that quarantine has been deleted\n", dir)
+			fmt.Fprintf(w, "- dropped the pins of %s: that folder has been deleted\n", dir)
 		}
 	}
 	if kept > 0 {
@@ -913,7 +913,7 @@ func quarantineReady(ctx *Context, dir string, p SweepPlan) error {
 	for _, wt := range p.Remove {
 		admin, err := repo.AdminDir(wt.Worktree)
 		if err != nil {
-			return fmt.Errorf("nothing was swept: %s cannot be quarantined: %w", wt.Worktree, err)
+			return fmt.Errorf("nothing was swept: %s cannot be moved aside: %w", wt.Worktree, err)
 		}
 		paths = append(paths, wt.Worktree, admin)
 	}

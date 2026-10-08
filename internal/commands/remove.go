@@ -629,7 +629,7 @@ func (p Plan) problems() []problem {
 		add(KeptReachUnknown, "cannot tell what the removal would leave unreachable ("+p.ReachError+")", 0)
 	}
 	if p.QuarantineError != "" {
-		add(ProblemQuarantineUnusable, "it cannot be quarantined: "+p.QuarantineError, 0)
+		add(ProblemQuarantineUnusable, "it cannot be moved aside: "+p.QuarantineError, 0)
 	}
 	return out
 }
@@ -676,7 +676,7 @@ func quarantineOutside(ctx *Context, dir string) error {
 	}
 	for _, root := range roots {
 		if repo.Inside(root, dir, false) || repo.Inside(root, where, false) || insideResolved(root, where) {
-			return fmt.Errorf("%s is inside %s: a quarantine goes outside every checkout and the git dir", dir, root)
+			return fmt.Errorf("%s is inside %s: the folder goes outside every checkout and the git dir", dir, root)
 		}
 	}
 	return nil
