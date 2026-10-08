@@ -1,0 +1,14 @@
+{
+  "name": "wt",
+  "description": "wt's own Claude Code mod",
+  "owner": {
+    "name": "Anders Lindström"
+  },
+  "plugins": [
+    {
+      "name": "wt",
+      "source": "./mods/wt",
+      "description": "The worktree you are in, as wt sees it, inside Claude Code: how far behind trunk, its own remote, and wt up, undo and push from a small dialog"
+    }
+  ]
+}
