@@ -7,6 +7,10 @@ export type OwnRemote = {
   behind: number | null
   /** null | diverged | operation | dirty | session: why a run would refuse. */
   blocks: string | null
+  /** Why wt would not push the branch, in wt's words; null when it would, and from a wt older than status 1.8.0. */
+  noPushReason: string | null
+  /** The command that settles it, as argv, when one does. */
+  fixCommand: string[] | null
 }
 
 export type WtSession = { name: string; kind: string; state: string }
