@@ -483,6 +483,9 @@ func summaryLines(a wtsync.Assessment) []string {
 	if note := ownNote(a); note != "" {
 		lines = append(lines, note)
 	}
+	if note := ownElsewhere(a.Own); note != "" {
+		lines = append(lines, note)
+	}
 	for _, c := range a.Divergent {
 		lines = append(lines, shortPath(c.Path)+": both sides changed "+wtsync.KeyCounts(c.Groups))
 	}
@@ -638,6 +641,12 @@ func printDetail(w io.Writer, work string, a wtsync.Assessment) {
 	fmt.Fprintf(w, "  path    %s\n", a.Path)
 	if line := ownLineOf(a); line != "" {
 		fmt.Fprintf(w, "  remote  %s\n", line)
+	}
+	if line := ownElsewhere(a.Own); line != "" {
+		fmt.Fprintf(w, "  push    %s\n", strings.TrimPrefix(line, "pushes "))
+	}
+	if line := ownStray(a.Own); line != "" {
+		fmt.Fprintf(w, "  also    %s\n", line)
 	}
 	fmt.Fprintf(w, "  run     %s\n", runVerdict(work, a))
 	if a.PlanFile != "" {

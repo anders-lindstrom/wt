@@ -31,11 +31,18 @@ type OwnRemote struct {
 	Behind  *int    `json:"behind"`
 	Fetched bool    `json:"fetched"`
 	Blocks  *string `json:"blocks"`
+	// NoPushReason is why wt would not push the branch, and FixCommand what
+	// settles it, when a command does.
+	NoPushReason *string  `json:"noPushReason"`
+	FixCommand   []string `json:"fixCommand"`
 }
 
 func ownRemoteOf(o wtsync.OwnRemote) OwnRemote {
 	out := OwnRemote{Ref: strp(o.Ref), State: string(ownState(o)), Commit: strp(o.Commit),
-		Fetched: o.Fetched, Blocks: strp(o.Blocks)}
+		Fetched: o.Fetched, Blocks: strp(o.Blocks), NoPushReason: strp(o.NoPush)}
+	if o.Undecided != nil {
+		out.FixCommand = o.Undecided.Fix()
+	}
 	if o.Compared() {
 		out.Ahead, out.Behind = &o.Ahead, &o.Behind
 	}
@@ -300,6 +307,12 @@ func ownLine(o wtsync.OwnRemote) string {
 	case wtsync.OwnGone:
 		return o.Ref + " is gone from the remote"
 	case wtsync.OwnUnknown:
+		if o.Undecided != nil {
+			return "nowhere to push yet: " + o.Undecided.Hint()
+		}
+		if o.NoPush != "" {
+			return "nowhere to push: " + o.NoPush
+		}
 		return "not checked against its remote: " + o.Why
 	case wtsync.OwnInSync:
 		line = "in sync with " + o.Ref
@@ -321,6 +334,32 @@ func ownLine(o wtsync.OwnRemote) string {
 		line += " (as last fetched)"
 	}
 	return line
+}
+
+// ownElsewhere is where a branch pushes when that is not a branch of its own
+// name, "" when it is: said wherever a push is planned, asked about or made,
+// so that nobody has to infer it.
+func ownElsewhere(o wtsync.OwnRemote) string {
+	if o.PushesTo == "" {
+		return ""
+	}
+	line := fmt.Sprintf("pushes to %s, a branch of another name (%s)", o.PushesTo, o.Rule)
+	if o.NoPush != "" {
+		line += "; a run would not push it as it stands: " + o.NoPush
+	}
+	return line
+}
+
+// ownStray is the remote branch of the branch's own name that exists beside
+// the one it pushes to, "" when there is none. wt deletes neither.
+func ownStray(o wtsync.OwnRemote) string {
+	switch {
+	case o.Stray == "":
+		return ""
+	case o.PushesTo != "":
+		return o.Stray + " exists as well: nothing pushes to it, and wt leaves it there"
+	}
+	return o.Stray + " exists as well"
 }
 
 // ownNote is what the overview puts under a row about the branch's own

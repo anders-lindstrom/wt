@@ -454,7 +454,7 @@ func (p *keepPass) pass(recorded string) error {
 	for i, u := range retry {
 		targets[i] = u.target()
 	}
-	retried, failed, perr := offerPush(w, p.opts.Push, nil, targets)
+	retried, failed, perr := offerPush(ctx, w, p.opts.Push, pushOptions{}, targets)
 	if perr != nil {
 		rerr = perr
 	}
@@ -475,7 +475,10 @@ func (p *keepPass) pass(recorded string) error {
 	// by hand, in the log too; --no-push has offerPush print it already.
 	if p.opts.Push == PushAlways {
 		for _, u := range p.unpushed {
-			fmt.Fprintf(w, "push: git -C %s %s\n", u.Path, strings.Join(pushArgs(u.target()), " "))
+			// One with nowhere to push has been named with why already.
+			if to := pushOf(ctx, u.target()); to.Remote != "" {
+				fmt.Fprintln(w, pushLine(u.target(), to))
+			}
 		}
 	}
 	rerr = withPushFailures(rerr, failed)

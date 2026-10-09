@@ -9,6 +9,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // Where one of the two directories is now.
@@ -486,7 +487,7 @@ func restoreBranch(rp *repo.Repo, r *Record, action, adminAt string, resumed boo
 	b := r.Branch
 	switch action {
 	case ActionRenameBack:
-		if err := rp.RenameBranch(deref(b.KeepAs), b.Name); err != nil {
+		if _, err := wtsync.RenameKeepingPush(rp, "", deref(b.KeepAs), b.Name); err != nil {
 			return fmt.Errorf("could not rename %s back to %s: %s", deref(b.KeepAs), b.Name, git.Reason(err))
 		}
 	case ActionRecreate:

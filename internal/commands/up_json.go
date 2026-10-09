@@ -90,6 +90,10 @@ type UpParticipant struct {
 	Recovery    *string  `json:"recovery"`
 	PushCommand []string `json:"pushCommand"`
 	Pushed      bool     `json:"pushed"`
+	// NoPushReason is why a rebased branch has no push command, and
+	// FixCommand what settles it, when a command does.
+	NoPushReason *string  `json:"noPushReason"`
+	FixCommand   []string `json:"fixCommand"`
 	// OwnRemoteSync is nil from wt sync resume and undo, which do not check.
 	OwnRemoteSync *OwnRemoteSync `json:"ownRemoteSync"`
 }

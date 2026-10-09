@@ -261,15 +261,19 @@ func (r *runPlan) run(works []string) error {
 			fmt.Fprintln(w, line)
 		}
 	}
-	pushed, pushFailed, err := offerPush(w, opts.Push, opts.ConfirmPush, r.pushable)
+	pushed, pushFailed, err := offerPush(r.ctx, w, opts.Push, opts.pushOptions, r.pushable)
 	if err != nil {
 		return err
 	}
 	r.pushed = pushed
 	for _, t := range r.pushable {
-		if slices.Contains(pushed, t.Work) {
-			opts.Journal.set(t.Branch, func(jp *UpParticipant) { jp.Pushed = true })
-		}
+		opts.Journal.set(t.Branch, func(jp *UpParticipant) {
+			// An answer to the push question may have given it a destination.
+			if jp.NoPushReason != nil {
+				jp.PushCommand, jp.NoPushReason, jp.FixCommand = pushJSON(t, pushOf(r.ctx, t))
+			}
+			jp.Pushed = slices.Contains(pushed, t.Work)
+		})
 	}
 	r.failures = append(r.failures, pushFailed...)
 	if len(r.failures) > 0 {
@@ -863,6 +867,9 @@ func (r *runPlan) rebaseOne(b string) {
 		}
 		fmt.Fprintf(w, "  ⚠ contested at %d/%d: %s\n", p.a.Replay.Stop.Index, p.a.Replay.Stop.Total, what)
 	}
+	if line := ownElsewhere(p.a.Own); line != "" {
+		fmt.Fprintf(w, "  %s\n", line)
+	}
 	switch own := p.a.Own; {
 	case own.State == wtsync.OwnUnknown:
 		fmt.Fprintf(w, "  ⚠ %s\n", ownLine(own))
@@ -1002,7 +1009,7 @@ func (r *runPlan) rebaseOne(b string) {
 		r.pushable = append(r.pushable, t)
 		j.set(b, func(jp *UpParticipant) {
 			jp.Result, jp.After = ResultRebased, strp(after)
-			jp.PushCommand = append([]string{"git", "-C", t.Path}, pushArgs(t)...)
+			jp.PushCommand, jp.NoPushReason, jp.FixCommand = pushJSON(t, pushOf(ctx, t))
 		})
 	}
 }

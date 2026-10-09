@@ -68,7 +68,7 @@ func TestOfferPushKeepsTheReportWhenANewTipCannotBeRead(t *testing.T) {
 	failGit(t, "rev-parse --verify feat_wt/bump")
 
 	var out bytes.Buffer
-	_, failed, err := offerPush(&out, PushAlways, nil, []pushTarget{{Work: "bump", Branch: "feat_wt/bump", Path: bump}})
+	_, failed, err := offerPush(ctx, &out, PushAlways, pushOptions{}, []pushTarget{{Work: "bump", Branch: "feat_wt/bump", Path: bump}})
 	if err != nil {
 		t.Fatalf("a tip that could not be read ended the run: %v\n%s", err, out.String())
 	}
@@ -143,7 +143,7 @@ func TestSyncRunAsksToPushOnlyWhatFinishedAndPrintsTheCommandOnNo(t *testing.T) 
 		t.Fatalf("asked %v", asked)
 	}
 	s := out.String()
-	for _, want := range []string{"1 rebased · 1 skipped", "push --force-with-lease --force-if-includes -u origin feat_wt/bump"} {
+	for _, want := range []string{"1 rebased · 1 skipped", "push --force-with-lease --force-if-includes -u origin refs/heads/feat_wt/bump:refs/heads/feat_wt/bump"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("output lacks %q:\n%s", want, s)
 		}

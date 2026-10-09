@@ -67,6 +67,20 @@ type OwnRemote struct {
 	// checkout left on the old versions. It changes what a person is told,
 	// not what a run does.
 	Elsewhere bool
+	// Undecided is an unknown that a choice settles: the branch tracks a
+	// remote branch of another name, and nothing says which of the two it
+	// pushes to.
+	Undecided *Undecided
+	// Stray is the remote branch of the branch's own name, when the branch
+	// pushes to another name or to none yet and that one exists as well.
+	Stray string
+	// PushesTo is where the branch pushes when that is not a branch of its
+	// own name, origin/feat/x, and Rule what decided it.
+	PushesTo, Rule string
+	// NoPush is why a run would not push the branch, "" when it would:
+	// nowhere to push, or a destination of another name whose commits
+	// cannot be shown to be old versions of this branch's.
+	NoPush string
 }
 
 // Compared reports a state that has a remote commit to count against.
@@ -160,8 +174,13 @@ type Own struct {
 	// remote git pushes a branch to, in the order git asks them.
 	pushDefault              string
 	pushRemote, branchRemote map[string]string
+	// merge is branch.<name>.merge, the upstream as configured whether or
+	// not its ref is there, and pushTo branch.<name>.wtPushTo as written.
+	merge, pushTo map[string]string
 	// states is what State answered, until the next Refresh.
 	states map[string]OwnRemote
+	// names is what pushToName answered.
+	names map[string]bool
 }
 
 type ownRemoteConfig struct {
@@ -183,7 +202,7 @@ type ownHead struct{ tip, push, upstream string }
 func ReadOwn(mainRoot, trunk string) (*Own, error) {
 	o := &Own{mainRoot: mainRoot, trunkRef: "refs/remotes/origin/" + trunk,
 		remotes: map[string]*ownRemoteConfig{}, asked: map[string]bool{}, seen: map[string]bool{}, failed: map[string]string{},
-		pushRemote: map[string]string{}, branchRemote: map[string]string{}}
+		pushRemote: map[string]string{}, branchRemote: map[string]string{}, merge: map[string]string{}, pushTo: map[string]string{}}
 	remote := func(name string) *ownRemoteConfig {
 		if o.remotes[name] == nil {
 			o.remotes[name] = &ownRemoteConfig{}
@@ -193,7 +212,7 @@ func ReadOwn(mainRoot, trunk string) (*Own, error) {
 	// git prints the section and the variable in lower case and leaves the
 	// name between them as it is.
 	out, _, err := gitEnvAllow(mainRoot, nil, nil, 1, "config", "--get-regexp",
-		`^(remote\..*\.(url|fetch|mirror)|remote\.pushdefault|branch\..*\.(pushremote|remote))$`)
+		`^(remote\..*\.(url|fetch|mirror)|remote\.pushdefault|branch\..*\.(pushremote|remote|merge|`+strings.ToLower(repo.PushToVar)+`))$`)
 	if err != nil {
 		return nil, err
 	}
@@ -204,6 +223,10 @@ func ReadOwn(mainRoot, trunk string) (*Own, error) {
 				o.pushRemote[b] = value
 			} else if b, ok := strings.CutSuffix(name, ".remote"); ok {
 				o.branchRemote[b] = value
+			} else if b, ok := strings.CutSuffix(name, ".merge"); ok {
+				o.merge[b] = value
+			} else if b, ok := strings.CutSuffix(name, "."+strings.ToLower(repo.PushToVar)); ok {
+				o.pushTo[b] = value
 			}
 			continue
 		}
@@ -302,68 +325,185 @@ type ownDest struct {
 	// upstream, so that its absence is a ref that went away rather than a
 	// branch never pushed.
 	named bool
-	// none is nothing to check: no such branch, or the destination is trunk.
+	// none is nothing to check and nowhere to push: no such branch, no
+	// remote, or the destination is trunk.
 	none bool
 	// unknown is why the destination cannot be read from a tracking ref.
 	unknown string
+	// unpushable is an unknown that leaves a push nowhere to go, where the
+	// others only leave it unchecked.
+	unpushable bool
+	undecided  *Undecided
+	// rule is what decided the destination, in a few words.
+	rule string
+	// own is the remote-tracking ref of the branch's own name, "" with no
+	// remote to have one on.
+	own string
 }
 
-// dest is the remote-tracking ref a push of branch would replace:
-// <branch>@{push} when git resolves it, else the branch's own name on the
-// remote it pushes to. That remote is origin, the one wt's own push writes,
-// unless branch.<name>.pushRemote or remote.pushDefault names another: git
-// then pushes the branch there under its own name, and under push.default
-// simple resolves no @{push} for it.
+// Undecided is a branch that tracks a remote branch of another name, with
+// nothing to say whether that branch is its own. A push after a rebase is
+// forced, and an upstream is not ownership: git checkout -b mine
+// origin/theirs gives one, and so does a stack child cut from its parent's
+// remote branch. So it is asked, once, and the answer recorded.
+type Undecided struct {
+	Branch string
+	// Upstream is the branch it tracks, Own its own name on the remote it
+	// would otherwise push to.
+	Upstream, Own repo.PushTo
+}
+
+// PushToCommand is the command that records where a branch pushes.
+const PushToCommand = "wt sync push-to"
+
+// Reason is why the branch is not pushed, in words.
+func (u Undecided) Reason() string {
+	return fmt.Sprintf("it tracks %s, a branch of another name, and nothing says whether it pushes there or to %s", u.Upstream, u.Own)
+}
+
+// Fix is the command that records the upstream as where it pushes, as an
+// argv; the other choice is the same command with Own.
+func (u Undecided) Fix() []string {
+	return append(strings.Fields(PushToCommand), u.Branch, u.Upstream.String())
+}
+
+// Hint is Reason and Fix as one line for a person.
+func (u Undecided) Hint() string {
+	return fmt.Sprintf("%s: say which with %s (or %s)", u.Reason(), strings.Join(u.Fix(), " "), u.Own)
+}
+
+// split is the remote a remote-tracking ref sits under and the branch's name
+// there: one of prefer, in order, when the ref sits under it, so that a
+// remote named origin/team does not claim origin's team/x, and otherwise the
+// longest remote name the ref sits under. remote is "" when it sits under
+// none.
+func (o *Own) split(tracking string, prefer ...string) (remote, name string) {
+	for _, r := range prefer {
+		if o.remotes[r] != nil && strings.HasPrefix(tracking, "refs/remotes/"+r+"/") {
+			remote = r
+			break
+		}
+	}
+	if remote == "" {
+		for r := range o.remotes {
+			if strings.HasPrefix(tracking, "refs/remotes/"+r+"/") && len(r) > len(remote) {
+				remote = r
+			}
+		}
+	}
+	if remote == "" {
+		return "", ""
+	}
+	return remote, strings.TrimPrefix(tracking, "refs/remotes/"+remote+"/")
+}
+
+// trunkName is trunk's name, whatever remote it is on.
+func (o *Own) trunkName() string { return strings.TrimPrefix(o.trunkRef, "refs/remotes/origin/") }
+
+// someoneElses reports a remote branch that is not branch's own although
+// branch tracks it: trunk, on origin or under its name on another remote, or
+// the remote branch of another local branch, by that branch's name or by
+// what is recorded for it.
+func (o *Own) someoneElses(branch, remote, name string) bool {
+	if name == o.trunkName() {
+		return true
+	}
+	if _, local := o.heads[name]; local && name != branch {
+		return true
+	}
+	for other, value := range o.pushTo {
+		if to, ok := repo.ParsePushTo(value); ok && other != branch && to == (repo.PushTo{Remote: remote, Branch: name}) {
+			return true
+		}
+	}
+	return false
+}
+
+// dest is where a push of branch goes, and so the remote-tracking ref it
+// would replace. In order:
+//
+//  1. What is recorded for the branch, branch.<name>.wtPushTo.
+//  2. Nothing, when the branch tracks a remote branch of another name that is
+//     not someone else's: it may be the branch's own, as after a rename, or
+//     the one it was cut from, and a forced push must not guess.
+//  3. The branch's own name, on the remote git pushes it to: where
+//     <branch>@{push} is when that has the branch's name, else
+//     branch.<name>.pushRemote or remote.pushDefault, else origin.
+//
+// git's configuration chooses the remote and never another name: an upstream
+// under push.default upstream, or a remote.<name>.push refspec that renames,
+// is not a destination until it is recorded. Trunk is never one.
 func (o *Own) dest(branch string) ownDest {
 	h, ok := o.heads[branch]
 	if !ok {
 		return ownDest{none: true}
 	}
-	d := ownDest{tracking: h.push}
-	if !strings.HasPrefix(d.tracking, "refs/remotes/") {
-		// A local branch, which push.default=upstream makes of a stack child
-		// that tracks its parent: git resolves no destination on a remote.
-		d.tracking = ""
-	}
 	pushesTo := cmp.Or(o.pushRemote[branch], o.pushDefault)
-	if d.tracking == "" {
-		d.remote = "origin"
-		if o.remotes[pushesTo] != nil {
-			d.remote = pushesTo
+	prefer := []string{pushesTo, o.branchRemote[branch], "origin"}
+	ownRemote := "origin"
+	if o.remotes[pushesTo] != nil {
+		ownRemote = pushesTo
+	}
+	onRemote := func(ref string) (remote, name string) {
+		if !strings.HasPrefix(ref, "refs/remotes/") {
+			// A local branch, which push.default=upstream makes of a stack
+			// child that tracks its parent: no destination on a remote.
+			return "", ""
 		}
-		if o.remotes[d.remote] == nil {
-			// No origin at all: nothing a push could replace.
+		return o.split(ref, prefer...)
+	}
+	var d ownDest
+	if o.remotes[ownRemote] != nil {
+		d.own = "refs/remotes/" + ownRemote + "/" + branch
+	}
+	// Under its own name: there, unless git pushes the name to another
+	// remote, as it does for a same-named upstream on one.
+	toRemote, to := ownRemote, d.own
+	if remote, name := onRemote(h.push); remote != "" && name == branch {
+		toRemote, to = remote, h.push
+	}
+	recorded, isRecorded := o.pushTo[branch]
+	switch {
+	case isRecorded:
+		to, ok := repo.ParsePushTo(recorded)
+		switch {
+		case !ok:
+			d.unknown = fmt.Sprintf("what is recorded for it, branch.%s.%s = %q, is not a remote and a branch", branch, repo.PushToVar, recorded)
+		case o.remotes[to.Remote] == nil:
+			d.unknown = fmt.Sprintf("it is recorded as pushing to %s, and there is no remote %s", to, to.Remote)
+		case to.Branch == o.trunkName():
+			d.unknown = fmt.Sprintf("it is recorded as pushing to %s, which is trunk: wt pushes nothing there", to)
+		case !o.pushToName(to.Branch):
+			d.unknown = fmt.Sprintf("it is recorded as pushing to %s, and %q is not a branch name", to, to.Branch)
+		}
+		if d.unknown != "" {
+			d.unpushable = true
+			return d
+		}
+		d.remote, d.tracking, d.rule = to.Remote, "refs/remotes/"+to.Remote+"/"+to.Branch, "recorded"
+	default:
+		if remote, name := onRemote(h.upstream); remote != "" && name != branch && !o.someoneElses(branch, remote, name) {
+			// Its own name is on the remote it would push to, or beside the
+			// upstream where there is no such remote.
+			u := Undecided{Branch: branch, Upstream: repo.PushTo{Remote: remote, Branch: name}, Own: repo.PushTo{Remote: remote, Branch: branch}}
+			if d.own != "" {
+				u.Own.Remote = ownRemote
+			}
+			d.undecided, d.unknown, d.unpushable = &u, u.Reason(), true
+			return d
+		}
+		if to == "" {
+			// No remote of its own to push to: nothing a push could replace.
 			return ownDest{none: true}
 		}
-		d.tracking = "refs/remotes/" + d.remote + "/" + branch
-	} else {
-		// The remote git pushes the branch to, when the ref sits under it: a
-		// remote named origin/team must not claim origin's team/x. Otherwise
-		// the longest remote name the ref sits under.
-		if r := cmp.Or(pushesTo, o.branchRemote[branch], "origin"); o.remotes[r] != nil && strings.HasPrefix(d.tracking, "refs/remotes/"+r+"/") {
-			d.remote = r
-		} else {
-			for name := range o.remotes {
-				if strings.HasPrefix(d.tracking, "refs/remotes/"+name+"/") && len(name) > len(d.remote) {
-					d.remote = name
-				}
-			}
-		}
+		d.remote, d.tracking, d.rule = toRemote, to, "its own name"
 	}
-	if d.tracking == o.trunkRef {
+	name := strings.TrimPrefix(d.tracking, "refs/remotes/"+d.remote+"/")
+	if d.tracking == o.trunkRef || name == o.trunkName() {
 		return ownDest{none: true}
 	}
 	d.named = h.upstream == d.tracking
-	if d.remote == "" {
-		d.unknown = "its push destination " + d.tracking + " belongs to no remote"
-		return d
-	}
-	d.remoteRef = "refs/heads/" + strings.TrimPrefix(d.tracking, "refs/remotes/"+d.remote+"/")
-	if d.remoteRef == "refs/heads/"+strings.TrimPrefix(o.trunkRef, "refs/remotes/origin/") {
-		// Trunk on another remote, which push.default=upstream makes of a
-		// branch tracking it: no more the branch's own than origin's trunk.
-		return ownDest{none: true}
-	}
+	d.remoteRef = "refs/heads/" + name
 	r := o.urls(d.remote)
 	switch {
 	case r.mirror:
@@ -374,6 +514,120 @@ func (o *Own) dest(branch string) ownDest {
 		d.unknown = d.remote + " pushes to another URL than it fetches from"
 	}
 	return d
+}
+
+// pushToName is repo.PushToName, asked once for a name.
+func (o *Own) pushToName(name string) bool {
+	if ok, asked := o.names[name]; asked {
+		return ok
+	}
+	ok := (&repo.Repo{MainRoot: o.mainRoot}).PushToName(name)
+	if o.names == nil {
+		o.names = map[string]bool{}
+	}
+	o.names[name] = ok
+	return ok
+}
+
+// Push is where a push of a branch goes, as wt's own push and the command it
+// prints both spell it.
+type Push struct {
+	// Remote and Branch are the remote and the branch's name on it; both ""
+	// when there is nowhere to push.
+	Remote, Branch string
+	// Local is the branch pushed.
+	Local string
+	// Rule is what decided it: recorded, or its own name.
+	Rule string
+	// Tracking is the remote-tracking ref the push replaces, in full.
+	Tracking string
+	// SetUpstream says the branch has no upstream, so the push gives it one.
+	SetUpstream bool
+	// Expected is, for a destination of another name, the commit the push
+	// replaces: the remote's as the branch was compared with it, "" for a
+	// branch the remote must not have yet.
+	Expected string
+	// Why is why there is nowhere to push, and Undecided the choice that
+	// would settle it, when one would.
+	Why       string
+	Undecided *Undecided
+}
+
+// Ref is the destination as a person says it, origin/feat/x.
+func (p Push) Ref() string { return p.Remote + "/" + p.Branch }
+
+// Renamed reports a destination under another name than the branch's own:
+// the case nobody should have to infer.
+func (p Push) Renamed() bool { return p.Remote != "" && p.Branch != p.Local }
+
+// Args is the push. The refspec always names both sides in full: git maps a
+// refspec with no colon to the branch's upstream under push.default
+// upstream, which would send a push meant for the branch's own name to
+// whatever it tracks, trunk included.
+//
+// Under its own name the lease is the remote-tracking ref, and
+// --force-if-includes also refuses when a fetch moved that ref to commits
+// the branch never had. Under another name git has no such check to offer:
+// --force-if-includes reads the reflog of the local branch that has the
+// remote branch's name, and with none refuses every push. So the lease names
+// the commit Push compared the branch with, and Push has made the check
+// itself.
+func (p Push) Args() []string {
+	args := []string{"push", "--force-with-lease", "--force-if-includes"}
+	if p.Renamed() {
+		args = []string{"push", "--force-with-lease=refs/heads/" + p.Branch + ":" + p.Expected}
+	}
+	if p.SetUpstream {
+		args = append(args, "-u")
+	}
+	return append(args, p.Remote, "refs/heads/"+p.Local+":refs/heads/"+p.Branch)
+}
+
+// Push is where a push of branch goes.
+func (o *Own) Push(branch string) Push {
+	if o.broken != "" {
+		return Push{Local: branch, Why: o.broken}
+	}
+	return o.push(branch, o.dest(branch), o.State(branch))
+}
+
+// push is Push for a branch standing against its destination as own says.
+// Under another name the push exists only while the remote holds nothing but
+// what this branch was: the same commit, an ancestor of its tip, or a tip the
+// branch once had, by the commit itself. A remote whose commits only match
+// the branch's patch for patch reads rebased, and is not that: a patch is
+// the same after somebody else rewords it or changes its whitespace.
+func (o *Own) push(branch string, d ownDest, own OwnRemote) Push {
+	p := Push{Local: branch, Rule: d.rule, Undecided: d.undecided}
+	switch {
+	case d.none:
+		p.Why = "there is no remote branch of its own to push to"
+		return p
+	case d.unpushable:
+		p.Why = d.unknown
+		return p
+	}
+	p.Remote, p.Branch, p.Tracking = d.remote, strings.TrimPrefix(d.remoteRef, "refs/heads/"), d.tracking
+	p.SetUpstream = o.merge[branch] == ""
+	if !p.Renamed() {
+		return p
+	}
+	nowhere := func(why string) Push { return Push{Local: branch, Rule: d.rule, Why: why} }
+	switch own.State {
+	case OwnNone, OwnGone:
+	case OwnInSync, OwnAhead:
+		p.Expected = own.Commit
+	case OwnRebased:
+		if !formerTip(o.mainRoot, branch, own.Commit) {
+			return nowhere(p.Ref() + " is at a commit this branch was never at, so it cannot be shown to hold only old versions of this branch")
+		}
+		p.Expected = own.Commit
+	case OwnDiverged, OwnBehind:
+		return nowhere(p.Ref() + " has commits this branch never had")
+	default:
+		return nowhere("it cannot be compared with " + p.Ref() + ": " + own.Why)
+	}
+	return p
 }
 
 func containsString(list []string, s string) bool {
@@ -498,11 +752,31 @@ func (o *Own) State(branch string) OwnRemote {
 }
 
 func (o *Own) state(branch string) OwnRemote {
-	own := OwnRemote{State: OwnNone, Local: o.heads[branch].tip}
 	d := o.dest(branch)
+	own := o.compare(branch, d)
+	// What a run would not push, where the state does not say so already.
+	if p := o.push(branch, d, own); p.Remote == "" && !d.none {
+		own.NoPush = p.Why
+	}
+	return own
+}
+
+// compare is branch against the destination d.
+func (o *Own) compare(branch string, d ownDest) OwnRemote {
+	own := OwnRemote{State: OwnNone, Local: o.heads[branch].tip}
 	if d.none {
 		own.Fetched = o.asked[o.trunkRef]
 		return own
+	}
+	if _, there := o.tracking[d.own]; there && d.own != d.tracking {
+		own.Stray = strings.TrimPrefix(d.own, "refs/remotes/")
+	}
+	if d.unpushable {
+		own.State, own.Why, own.Undecided = OwnUnknown, d.unknown, d.undecided
+		return own
+	}
+	if d.remoteRef != "refs/heads/"+branch {
+		own.PushesTo, own.Rule = strings.TrimPrefix(d.tracking, "refs/remotes/"), d.rule
 	}
 	if d.unknown != "" {
 		// A ref nobody names and nothing holds is nothing to check, however

@@ -122,8 +122,9 @@ func newSyncCmd() *cobra.Command {
 			"change the class.\n" +
 			"\n" +
 			"A branch is also compared with its own remote, the ref a push of it would\n" +
-			"replace: <branch>@{push}, else origin/<branch>, never its upstream as\n" +
-			"such. Behind it, a run fast-forwards the branch first, and the row is\n" +
+			"replace: what is recorded for it, else its own name on the remote git\n" +
+			"pushes it to, never its upstream as such (wt sync push-to --help).\n" +
+			"Behind it, a run fast-forwards the branch first, and the row is\n" +
 			"judged as if it had. Diverged from it, with commits there the branch\n" +
 			"never had, a run refuses: needs you (wt sync rebase --help).\n" +
 			"\n" +
@@ -220,7 +221,7 @@ func newSyncCmd() *cobra.Command {
 	for _, name := range []string{"rebase", "resume", "undo", "yes", "push", "no-push", "force", "if-ready", "expect", "no-ff-trunk", "allow-diverged"} {
 		_ = sync.Flags().MarkHidden(name)
 	}
-	sync.AddCommand(newSyncRebaseCmd(), newSyncResumeCmd(), newSyncUndoCmd(), newSyncDoctorCmd(), newSyncKeepCmd())
+	sync.AddCommand(newSyncRebaseCmd(), newSyncResumeCmd(), newSyncUndoCmd(), newSyncPushToCmd(), newSyncDoctorCmd(), newSyncKeepCmd())
 	return sync
 }
 
@@ -608,8 +609,9 @@ func newSyncRebaseCmd() *cobra.Command {
 			"With no terminal a named worktree goes ahead, and a run with nothing\n" +
 			"named, or across repositories, rebases nothing unless --yes says so.\n\n" +
 			"Before anything is rebased, each branch is compared with its own remote:\n" +
-			"the ref a push of it would replace (<branch>@{push}, else\n" +
-			"origin/<branch>; never its upstream as such), fetched with trunk.\n" +
+			"the ref a push of it would replace (what is recorded for it, else its\n" +
+			"own name on the remote git pushes it to; never its upstream as such),\n" +
+			"fetched with trunk.\n" +
 			"  behind it    fast-forwarded first, then rebased, where that is safe:\n" +
 			"               no tracked changes, nothing in progress, no session busy\n" +
 			"               in it. Otherwise refused. With nothing to rebase once\n" +
@@ -645,6 +647,14 @@ func newSyncRebaseCmd() *cobra.Command {
 			"once, and Enter means no. --push and --yes push without asking;\n" +
 			"--no-push, or a run with no terminal and neither of those, prints the\n" +
 			"push command instead.\n\n" +
+			"A branch recorded as pushing to a remote branch of another name is said\n" +
+			"to, before the push. Its lease is the commit it was compared with, and\n" +
+			"it is pushed only over a commit the branch itself was once at. One that\n" +
+			"tracks a remote branch of another name with nothing recorded is asked\n" +
+			"about once on a terminal, and the answer recorded. With nobody to ask it\n" +
+			"is rebased and left unpushed, --push or --yes then ends not completed,\n" +
+			"and wt sync push-to records the answer and prints the push to run by\n" +
+			"hand: the next run finds the branch on trunk and pushes nothing.\n\n" +
 			"Ctrl-C releases every lock the run holds and kills the step it was\n" +
 			"running; a worktree caught mid-rebase is named along with the command\n" +
 			"that puts it back.\n\n" +
@@ -751,7 +761,7 @@ func runOptions(cmd *cobra.Command, f syncVerbFlags, bulk bool) (commands.RunOpt
 	}
 	p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
 	opts.Confirm = confirmAsk(p, "rebase")
-	opts.ConfirmPush = confirmPush(p)
+	opts.ConfirmPush, opts.ChoosePush = confirmPush(p), choosePush(p)
 	return opts, p
 }
 
@@ -862,7 +872,7 @@ func syncResume(cmd *cobra.Command, work string, ctx *commands.Context, yes bool
 	if canAsk(cmd) && !yes {
 		p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
 		opts.Confirm = confirmAsk(p, "resume")
-		opts.ConfirmPush = confirmPush(p)
+		opts.ConfirmPush, opts.ChoosePush = confirmPush(p), choosePush(p)
 	}
 	return commands.SyncResume(ctx, work, opts, cmd.OutOrStdout())
 }
@@ -922,6 +932,62 @@ func syncUndo(cmd *cobra.Command, work string, ctx *commands.Context, force, yes
 	return commands.SyncUndo(ctx, work, opts, cmd.OutOrStdout())
 }
 
+func newSyncPushToCmd() *cobra.Command {
+	var unset bool
+	pushTo := &cobra.Command{
+		Use:   commands.PushToName + " [<work>] [<remote>/<branch>]",
+		Short: "Say or record where a worktree's branch pushes",
+		Long: "Print where a push of the worktree's branch goes and what decides it;\n" +
+			"with <remote>/<branch>, record that as where it goes. Nothing is pushed\n" +
+			"and no remote is asked.\n\n" +
+			"A branch pushes to its own name, on origin or on the remote git pushes\n" +
+			"it to: branch.<name>.pushRemote, remote.pushDefault, a same-named\n" +
+			"upstream on another remote. It pushes to a branch of another name only\n" +
+			"when that is recorded for it. push.default and push refspecs say where\n" +
+			"git's own push goes, and never where wt's forced one does.\n\n" +
+			"A branch that tracks a remote branch of another name, with nothing\n" +
+			"recorded, is the one case wt does not decide: that remote branch may be\n" +
+			"its own, as after a rename, or the one it was cut from. wt up and wt sync\n" +
+			"rebase ask once and record the answer; with nobody to ask they leave the\n" +
+			"branch unpushed and name this command. A branch that tracks trunk, a\n" +
+			"local branch, or the remote branch of another local branch is not asked\n" +
+			"about: it pushes under its own name.\n\n" +
+			"wt migrate, wt adopt --relocate and wt remove record where a branch\n" +
+			"pushed when they rename one that pushed under its own name, so its\n" +
+			"pushes keep going where its pull request is. wt new gives its branch no\n" +
+			"upstream.\n\n" +
+			"wt pushes at the end of a rebase and at no other time. For a branch with\n" +
+			"something to push now, this command prints the push to run by hand:\n" +
+			"after a run left a branch unpushed, that line is what pushes it.\n\n" +
+			"<remote>/<branch> is read against the remotes that exist, the longest\n" +
+			"remote name first. Trunk is refused, and so is anything but a plain\n" +
+			"branch name. The record is branch.<name>.wtPushTo in the repository's\n" +
+			"git config, checked again each time it is read; --unset removes it.\n" +
+			"<work> is the worktree you are in when left out, and . says the same\n" +
+			"where a destination follows.",
+		Example: "  wt sync push-to login-crash                       # where it pushes, and why\n" +
+			"  wt sync push-to login-crash origin/login-crash-2  # record another branch\n" +
+			"  wt sync push-to login-crash --unset               # forget what is recorded",
+		Args:              cobra.MaximumNArgs(2),
+		ValidArgsFunction: completeWork,
+		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
+			work, dest := ".", ""
+			if len(args) > 0 {
+				work = args[0]
+			}
+			if len(args) > 1 {
+				dest = args[1]
+			}
+			if unset && dest != "" {
+				return errors.New("--unset takes no <remote>/<branch>: it forgets the one recorded")
+			}
+			return commands.SyncPushTo(ctx, work, dest, unset, cmd.OutOrStdout())
+		}),
+	}
+	pushTo.Flags().BoolVar(&unset, "unset", false, "forget the destination recorded for the branch")
+	return pushTo
+}
+
 func newSyncDoctorCmd() *cobra.Command {
 	var fix, prune bool
 	doctor := &cobra.Command{
@@ -968,6 +1034,25 @@ func confirmAsk(p *prompter, verb string) func([]string) (bool, error) {
 func confirmPush(p *prompter) func([]string) (bool, error) {
 	return func(works []string) (bool, error) {
 		return p.yesNo("push "+strings.Join(works, ", ")+" with --force-with-lease?", false), nil
+	}
+}
+
+// choosePush asks where a branch that tracks a remote branch of another name
+// pushes. Enter, or anything but one of the two numbers, is neither: the
+// branch is left unpushed and nothing is recorded.
+func choosePush(p *prompter) func(commands.PushChoice) (string, error) {
+	return func(c commands.PushChoice) (string, error) {
+		_, _ = fmt.Fprintf(p.out, "%s tracks %s, a branch of another name. Where does it push?\n"+
+			"A push after a rebase is forced: it replaces what that branch has.\n"+
+			"  1  %s, the branch it tracks\n  2  %s, its own name\n1, 2, or Enter to leave it unpushed: ",
+			c.Branch, c.Upstream, c.Upstream, c.Own)
+		switch line, _ := p.line(); line {
+		case "1":
+			return c.Upstream, nil
+		case "2":
+			return c.Own, nil
+		}
+		return "", nil
 	}
 }
 

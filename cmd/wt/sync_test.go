@@ -281,3 +281,25 @@ func TestRunOptionsAskNobodyAndRefuseBulkWithoutATerminal(t *testing.T) {
 		t.Error("--no-push keeps the push out, --yes or not")
 	}
 }
+
+// Where a branch that tracks another name pushes is a choice between the two
+// branches, never a default: Enter, a letter, or ^D leave it unpushed.
+func TestChoosePushNamesBothBranchesAndTakesOnlyANumber(t *testing.T) {
+	c := commands.PushChoice{Branch: "feat_wt/own_apikey", Upstream: "origin/own_apikey", Own: "origin/feat_wt/own_apikey"}
+	for in, want := range map[string]string{
+		"1\n": c.Upstream, "2\n": c.Own, "\n": "", "y\n": "", "3\n": "", "origin/own_apikey\n": "", "": "",
+	} {
+		var out bytes.Buffer
+		got, err := choosePush(newPrompter(strings.NewReader(in), &out))(c)
+		if err != nil || got != want {
+			t.Errorf("answer %q: got %q, %v; want %q", in, got, err, want)
+		}
+		question := "feat_wt/own_apikey tracks origin/own_apikey, a branch of another name. Where does it push?\n" +
+			"A push after a rebase is forced: it replaces what that branch has.\n" +
+			"  1  origin/own_apikey, the branch it tracks\n  2  origin/feat_wt/own_apikey, its own name\n" +
+			"1, 2, or Enter to leave it unpushed: "
+		if out.String() != question {
+			t.Errorf("question %q", out.String())
+		}
+	}
+}

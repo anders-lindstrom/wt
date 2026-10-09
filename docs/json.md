@@ -67,6 +67,7 @@ Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 | `status` 1.6.0, `sync` 1.3.0, `up` 1.4.0, `sync-run` 1.2.0 | | [a branch against its own remote](#ownremote--a-branch-against-its-own-remote): `ownRemote` on the worktree and each stack member of `status` and on each worktree of `sync`; `ownRemoteSync` on each participant of `up` and `sync-run`; `upIneligibleCode` `ownRemoteDiverged` and `ownRemoteBehind`; a token for a plan held back by divergence alone |
 | `sync-run` 1.3.0, `sync` 1.3.1 | | `wt sync run` is spelled `wt sync rebase`, and `--run` on `wt sync` is `--rebase`: `command` gains `sync rebase`, which the new spelling prints. From `sync-run` 1.3.0 on, `wt sync rebase <work>...` and `wt sync --rebase` exist. `sync` changes in wording only |
 | `sync` 1.4.0, `status` 1.7.0 | | [`deferredDeclared`](#deferreddeclared--the-deferred-steps-trunk-declares): the deferred steps a run may perform, on each worktree of `sync` and each stack member of `status` |
+| `status` 1.8.0, `sync` 1.5.0, `up` 1.5.0, `sync-run` 1.4.0 | | [where a branch pushes](#where-a-branch-pushes). New: `noPushReason` and `fixCommand` on `ownRemote` and on each participant of a run. Three things existing fields now mean, none of which a reader of the earlier minors could see: (1) a `rebased` participant can have `pushCommand` null, when wt has no push to make or offer for it, and `noPushReason` then says why; (2) `ownRemote.state` `unknown` also covers a branch a run would rebase and not push, which `noPushReason` tells apart from the unknowns a run pushes over unchecked; (3) `ownRemote.ref` is where wt's own push goes by the rule in [`ownRemote`](#ownremote--a-branch-against-its-own-remote): what is recorded for the branch first, never `<branch>@{push}` when that has another name than the branch. Every `pushCommand` now spells its refspec in full, `refs/heads/<branch>:refs/heads/<remote branch>` |
 | `remove` 1.4.2, `remove-plan` 1.4.1, `sweep` 1.4.1, `sweep-plan` 1.5.1, `recovery` 1.2.1, `quarantine-purge-plan` 1.0.1, `quarantine-purge` 1.0.1 | | `--quarantine <dir>` on `wt remove` and `wt sweep` is spelled `--move-to <dir>`, and `wt quarantine purge <dir>` is `wt purge <dir>`. From `remove` 1.4.2 on, `--move-to` and `wt purge` exist. Wording only: every field, value and schema name is as it was |
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
@@ -300,8 +301,10 @@ Each participant:
 | `after` | string \| null | its commit when the run ended |
 | `failedSteps` | array of string | for `rebasedStepFailed`: each step that did not finish |
 | `recovery` | string \| null | for `needsRecovery`, `handedOver`, `interrupted`: how to put it back or finish it |
-| `pushCommand` | array of string \| null | for `rebased`: the push, as an argv (`["git", "-C", path, "push", …]`) |
+| `pushCommand` | array of string \| null | for `rebased`: the push, as an argv (`["git", "-C", path, "push", …]`); null when the branch has [nowhere to push](#where-a-branch-pushes) |
 | `pushed` | bool | the run pushed it (`--push`, or `--yes` without `--no-push`) |
+| `noPushReason` | string \| null | since 1.5.0 (`sync-run` 1.4.0): for `rebased` with a null `pushCommand`, why wt made and offered no push, in the words the run printed; null otherwise |
+| `fixCommand` | array of string \| null | since 1.5.0 (`sync-run` 1.4.0): the command that settles `noPushReason`, as an argv to run in the repository, when one does; null otherwise |
 | `ownRemoteSync` | object | since 1.4.0: what the run found of the branch's own remote and did about it ([`ownRemoteSync`](#ownremotesync--what-a-run-did-about-it)) |
 
 `result`, exhaustively:
@@ -400,23 +403,33 @@ pushed over commits it never had. `wt status --json` and `wt sync --json` report
 the same reading as `ownRemote`; a run reports what it found and did as
 `ownRemoteSync`.
 
-**Which ref.** The remote-tracking ref a push of the branch would replace:
+**Which ref.** The remote-tracking ref wt's own push of the branch replaces.
+The check and the push go by the same rule, in this order:
 
-1. `<branch>@{push}` when git resolves it, which honours
-   `branch.<name>.pushRemote`, `remote.pushDefault` and `push.default`.
-2. Otherwise the branch's own name on the remote it pushes to:
-   `refs/remotes/origin/<branch>`, the ref wt's own push writes, unless
-   `branch.<name>.pushRemote` or `remote.pushDefault` names another remote.
-   git then pushes the branch there under its own name, and under
-   `push.default` `simple` resolves no `@{push}` for it. A `@{push}` that is
-   a local branch, which `push.default` `upstream` makes of a stack child
-   tracking its parent, is no destination on a remote and falls here too.
+1. What is recorded for the branch: `branch.<name>.wtPushTo`, `<remote>
+   <branch>`, written by `wt sync push-to`, by the question a run asks, and by
+   wt when it renames a branch that pushed to its own name.
+2. Nothing, when the branch tracks a remote branch of another name that is
+   not someone else's (trunk, or the remote branch of another local branch,
+   by that branch's name or by what is recorded for it). That remote branch
+   may be the branch's own, as after a rename, or the one it was cut from,
+   and wt's push is forced, so wt does not guess:
+   [nowhere to push](#where-a-branch-pushes).
+3. Otherwise the branch's own name, on the remote git pushes it to: where
+   `<branch>@{push}` is when that has the branch's name, else
+   `branch.<name>.pushRemote` or `remote.pushDefault`, else origin.
+
+git's configuration chooses the remote and never another name. The upstream
+under `push.default` `upstream`, and a `remote.<name>.push` refspec that
+renames, are where git's own `git push` goes; wt's push does not go there
+until it is recorded for the branch.
 
 It is **not** `@{upstream}`. A branch cut from trunk often tracks
 `origin/<trunk>` and is pushed under its own name: its upstream is trunk, its
 own remote is `origin/<branch>`, and until that exists there is nothing to
-check. When the ref found is trunk's own, `origin/<trunk>` or trunk's name on
-another remote, there is nothing to check either.
+check. Trunk is never the answer, on origin or under its name on another
+remote: a branch that tracks it pushes under its own name, and the push names
+both sides of its refspec, so git cannot send it to the upstream instead.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -427,6 +440,8 @@ another remote, there is nothing to check either.
 | `behind` | int \| null | commits only the remote has; null likewise |
 | `fetched` | bool | true: the remote side is from this command's fetch. False: as last fetched |
 | `blocks` | string \| null | why a run would refuse for it; non-null only when a run would. A `diverged` branch a run would not rebase, because it is on trunk already or has nothing of its own, is skipped, nothing is pushed over its remote, and `blocks` is null |
+| `noPushReason` | string \| null | since `status` 1.8.0, `sync` 1.5.0: why a run would rebase the branch and not push it, in words; null when a run would push it, and for `none` ([nowhere to push](#where-a-branch-pushes)) |
+| `fixCommand` | array of string \| null | since `status` 1.8.0, `sync` 1.5.0: the command that settles `noPushReason`, as an argv to run in the repository, when one does; null otherwise |
 
 `state`, exhaustively, and what a run does:
 
@@ -434,7 +449,7 @@ another remote, there is nothing to check either.
 |---|---|---|
 | `none` | nothing to check: the ref is trunk's, or does not exist | goes on |
 | `gone` | the branch names the ref as its upstream and it is not there, or a fetch asked the remote for it and the remote no longer has it | goes on |
-| `unknown` | where a push lands cannot be read from a tracking ref: a mirror remote, a remote with several push URLs, or a push URL that is another repository than the fetch URL (the same host and path over https and ssh is the same repository). Also when the branches or the remotes cannot be read at all, or the two tips cannot be compared | goes on unchecked, and says so |
+| `unknown` | where a push lands cannot be read from a tracking ref: a mirror remote, a remote with several push URLs, or a push URL that is another repository than the fetch URL (the same host and path over https and ssh is the same repository). Also when the branches or the remotes cannot be read at all, or the two tips cannot be compared. Since `status` 1.8.0, `sync` 1.5.0 also a branch with [nowhere to push](#where-a-branch-pushes): `noPushReason` is then non-null | goes on unchecked, and says so; with `noPushReason` non-null the branch is rebased and not pushed |
 | `inSync` | the same commit | goes on |
 | `ahead` | only the branch has commits of its own | goes on |
 | `behind` | only the remote has | fast-forwards the branch to `commit`, then rebases. Where that is not safe it touches nothing and fails (`blocks`). When there is nothing to rebase at `commit`, which is on trunk already or has nothing of its own, the fast-forward is all the run does (`result` `fastForwarded`) |
@@ -535,9 +550,78 @@ since the look is refused as a changed plan. Without `--expect` it is consent to
 whatever is found. The flag is not part of any token. With `--if-ready` a
 `diverged` worktree is not ready, unless the flag is given; a `behind` one that
 can be fast-forwarded is. The flag lets the rebase go; it does not push. wt's
-own push (`--force-with-lease --force-if-includes`) still refuses to replace
+own push ([`--force-with-lease --force-if-includes`, or its own check under
+another name](#where-a-branch-pushes)) still refuses to replace
 commits the branch never had, and the `pushCommand` a run reports is that push:
 replacing them is the caller's own, deliberate force.
+
+### Where a branch pushes
+
+wt's own push, and the `pushCommand` a run reports, go to the ref `ownRemote`
+names. The refspec always names both sides in full. git maps a refspec with no
+colon to the branch's upstream under `push.default` `upstream`, which would
+send a push meant for the branch's own name to whatever it tracks.
+
+Under the branch's own name:
+
+```
+git -C <path> push --force-with-lease --force-if-includes [-u] <remote> refs/heads/<branch>:refs/heads/<branch>
+```
+
+Under another name, which only a record for the branch gives it:
+
+```
+git -C <path> push --force-with-lease=refs/heads/<theirs>:<commit> [-u] <remote> refs/heads/<branch>:refs/heads/<theirs>
+```
+
+git's `--force-if-includes` cannot guard the second: it reads the reflog of
+the local branch that has the remote branch's name, and with none it refuses
+every push. So wt makes that check itself, and pins what it checked.
+`<commit>` is the remote commit the branch was compared with, empty for a
+branch the remote must not have yet, and a remote that moved since is refused
+by git on the pinned commit. The push is made, and the command exists, only
+when one of these holds:
+
+- the branch is `inSync` with that commit or `ahead` of it;
+- the commit is a tip this branch once had, by the commit itself: in the
+  branch's reflog, or under a ref a run pinned (the first rule of `rebased`
+  in [`state`](#ownremote--a-branch-against-its-own-remote)).
+
+That is stricter than `state`. A remote whose commits match the branch's only
+patch for patch reads `rebased`, and is not pushed over under another name: a
+patch is the same after somebody else rewords the commit or changes its
+whitespace, and that commit is not this branch's. Under the branch's own name
+git's `--force-if-includes` draws the same line. `noPushReason` says so when
+it applies.
+
+`-u` is there only for a branch with no upstream; a push never rewrites one.
+
+A branch has **nowhere to push** when it tracks a remote branch of another
+name and nothing is recorded for it. Then `ownRemote` is `state` `unknown`
+with `ref` null, and after a run the participant is `rebased` with
+`pushCommand` null and `pushed` false. Both carry the same two fields:
+
+| Field | Meaning |
+|---|---|
+| `noPushReason` | the sentence the text output prints: `it tracks origin/own_apikey, a branch of another name, and nothing says whether it pushes there or to origin/feat_wt/own_apikey` |
+| `fixCommand` | `["wt", "sync", "push-to", "<branch>", "<remote>/<upstream branch>"]`: records the branch it tracks as where it pushes. The other choice is the same command with the last argument replaced by the branch's own name on the remote, which the sentence ends with. Like wt's other argv hints it names no directory: run it in the repository, in any of its worktrees |
+
+`noPushReason` is set with `fixCommand` null for every other reason wt makes
+and offers no push: what is recorded for the branch cannot be used (no such
+remote, trunk, not a branch name); and, under another name, the remote branch
+has commits the branch never had, is at a commit the branch was never at, or
+cannot be compared with the branch at all (a mirror remote, several push
+URLs, a push URL that is another repository). On `ownRemote` it is null
+exactly when a run would push the branch; a `diverged` branch under its own
+name is refused before the rebase, which `blocks` says.
+
+With a person at a terminal `wt up` and `wt sync rebase` ask the question
+instead and record the answer. With `--push` or `--yes` a branch left
+unpushed is named in the run's `not completed` error, like a push that
+failed, and the command exits non-zero. Recording a destination afterwards
+does not push the branch: it is rebased already, so the next `wt up` has
+nothing to do with it. `wt sync push-to <work>` prints the push to run by
+hand.
 
 ### `ownRemoteSync` — what a run did about it
 

@@ -1334,11 +1334,16 @@ func (p Plan) branchStep(ctx *Context) (result, msg string, err error) {
 		}
 		return quarantine.BranchDeleted, msg, nil
 	case BranchKept:
-		if err := ctx.Repo.RenameBranch(p.Branch, p.KeepAs); err != nil {
+		kept, err := wtsync.RenameKeepingPush(ctx.Repo, ctx.Config.MainBranch, p.Branch, p.KeepAs)
+		if err != nil {
 			return quarantine.BranchFailed, "", fmt.Errorf("branch %s is kept under that name (%s): renaming it to %s failed: %s",
 				p.Branch, aheadOf(p.Ahead, p.Base), p.KeepAs, gitSaid(err))
 		}
-		return quarantine.BranchRenamed, fmt.Sprintf("branch kept as %s (%s)", p.KeepAs, aheadOf(p.Ahead, p.Base)), nil
+		msg = fmt.Sprintf("branch kept as %s (%s)", p.KeepAs, aheadOf(p.Ahead, p.Base))
+		if kept != nil {
+			msg += fmt.Sprintf("; wt still pushes it to %s", kept)
+		}
+		return quarantine.BranchRenamed, msg, nil
 	}
 	return quarantine.BranchUntouched, "", nil
 }
