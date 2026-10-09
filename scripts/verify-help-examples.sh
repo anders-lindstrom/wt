@@ -167,6 +167,26 @@ keep_bin() {
     chmod +x "$1/bin/claude" "$1/bin/launchctl"
 }
 
+# make_worktrees, plus a claude first on the PATH that lists two background
+# sessions in the login-crash worktree, so wt attach has something to find.
+# It starts nothing, whatever it is asked: nothing here reaches a real claude.
+# The roots are the case's own directory, so a session id is looked for as a
+# worktree there and not under the developer's roots.
+make_sessions() {
+    local d; d=$(make_worktrees "$1")
+    # claude reports a directory with its symlinks resolved, as git does.
+    local there; there=$(cd "$1/myrepo_wt/fix_wt/login-crash" && pwd -P)
+    mkdir -p "$1/bin"
+    cat > "$1/bin/claude" <<CLAUDE
+#!/bin/sh
+[ "\$1 \$2" = "agents --json" ] || exit 0
+printf '[{"id":"3f9a1c20","sessionId":"3f9a1c20-1111-4222-8333-444455556666","name":"fix the crash","kind":"background","state":"blocked","cwd":"%s"},' "$there"
+printf '{"id":"7c2e5b11","sessionId":"7c2e5b11-1111-4222-8333-444455556666","name":"review the fix","kind":"background","state":"working","cwd":"%s"}]\n' "$there"
+CLAUDE
+    chmod +x "$1/bin/claude"
+    echo "$d"
+}
+
 # make_plain, plus a GitHub remote and a fake `gh` first on the PATH that
 # answers for one open pull request, #12 on residential_fixes, and performs
 # `pr checkout` by creating that branch where it is run — which is the whole
@@ -227,7 +247,9 @@ make_ghwork() {
 
 # check <mode> <cwd-under-case-dir|""> <prereq|""> <example verbatim> [expect]
 # expect is "ok" by default, or "fail" for an example whose documented answer
-# outside a terminal is a refusal — the picker has nobody to ask.
+# outside a terminal is a refusal — the picker has nobody to ask. "says:<text>"
+# is a refusal that must also print <text>, for a command that starts nothing
+# here and has only its words to be checked by.
 check() {
     local mode=$1 where=$2 prereq=$3 example=$4 expect=${5:-ok}
     n=$((n+1))
@@ -254,6 +276,7 @@ check() {
         fleet) repo=$(make_fleet "$dir");;
         keep|launchd) repo=$(make_keep "$dir"); prereq="export HOME=$dir/home PATH=$dir/bin:\$PATH; $prereq";;
         keepfleet|launchdfleet) repo=$(make_keepfleet "$dir"); prereq="export HOME=$dir/home PATH=$dir/bin:\$PATH; $prereq";;
+        sessions) repo=$(make_sessions "$dir"); prereq="export PATH=$dir/bin:\$PATH WT_ROOTS=$dir; $prereq";;
         gh) repo=$(make_gh "$dir"); prereq="export PATH=$dir/bin:\$PATH; $prereq";;
         ghwork) repo=$(make_ghwork "$dir"); prereq="export PATH=$dir/bin:\$PATH; $prereq";;
         branch) repo=$(make_plain "$dir"); git -C "$repo" branch fix_wt/login-crash;;
@@ -263,9 +286,11 @@ check() {
     [ -n "$where" ] && cwd="$dir/$where"
     local out status
     out=$(cd "$cwd" && { [ -n "$prereq" ] && eval "$prereq" >/dev/null 2>&1; eval "$example"; } 2>&1 </dev/null); status=$?
-    if [ "$expect" = fail ]; then
-        [ $status -ne 0 ] && status=0 || status=1
-    fi
+    case $expect in
+        fail) [ $status -ne 0 ] && status=0 || status=1;;
+        says:*)
+            if [ $status -ne 0 ] && [[ $out == *"${expect#says:}"* ]]; then status=0; else status=1; fi;;
+    esac
     if [ $status -eq 0 ]; then
         pass=$((pass+1)); printf 'ok   %s\n' "$example"
     else
@@ -311,6 +336,14 @@ check worktrees "" "$SHELL_LAYER" 'wt exec login-crash git status'
 check worktrees "" "$SHELL_LAYER" 'wt exec login-crash make test'
 check worktrees "" "$SHELL_LAYER" 'wt exec / git log --oneline -5'
 check worktrees myrepo_wt/fix_wt/login-crash "$SHELL_LAYER" 'wt exec . make test'
+
+# Outside a terminal wt attach starts nothing and exits non-zero, having
+# found the session: each line is checked by what only that answer says.
+check sessions "" "$SHELL_LAYER" 'wt attach login-crash' 'says:2 can be attached; name one: wt attach login-crash <session>'
+check sessions "" "$SHELL_LAYER" 'wt attach login-crash review' 'says:claude attach 7c2e5b11'
+check sessions "" "$SHELL_LAYER" 'wt attach 3f9a1c20' 'says:claude attach 3f9a1c20'
+check sessions myrepo_wt/fix_wt/login-crash "$SHELL_LAYER" 'wt attach' 'says:review the fix  working      background 7c2e5b11'
+check sessions "" "$SHELL_LAYER" 'wt attach login-crash --resume' 'says:--resume would open its conversation a second time'
 
 check worktrees "" "" 'wt ls'
 check worktrees "" "" 'wt list | cat'

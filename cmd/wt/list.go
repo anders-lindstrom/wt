@@ -42,14 +42,14 @@ func newListCmd() *cobra.Command {
 			"done, and any other state is printed as claude spells it; one open in\n" +
 			"a terminal is busy or idle there. With several in one worktree, the one\n" +
 			"that needs input is shown, else the newest, and +N counts the rest.\n" +
-			"On a terminal the column is shown only when every row still fits the\n" +
-			"width; when one would not, the listing is what it is without the\n" +
-			"column, and a line under it says so. --wide prints the table as it is\n" +
-			"printed when piped: the column in it, paths whole, rows as long as they\n" +
-			"are. The column costs a call to claude of around a quarter of a second\n" +
-			"on every listing, and a claude that has not answered in two seconds is\n" +
-			"one line under the table. --no-sessions leaves the column out and does\n" +
-			"not ask.\n\n" +
+			"`wt attach` opens one. On a terminal the column is shown only when\n" +
+			"every row still fits the width; when one would not, the listing is\n" +
+			"what it is without the column, and a line under it says so. --wide\n" +
+			"prints the table as it is printed when piped: the column in it, paths\n" +
+			"whole, rows as long as they are. The column costs a call to claude of\n" +
+			"around a quarter of a second on every listing, and a claude that has\n" +
+			"not answered in two seconds is one line under the table.\n" +
+			"--no-sessions leaves the column out and does not ask.\n\n" +
 			"--all, --roots or --profile list every repository they name, one\n" +
 			"section each.\n\n" + pathWidthHelp,
 		Example: "  wt ls                        # work name, branch and path for each worktree\n" +
