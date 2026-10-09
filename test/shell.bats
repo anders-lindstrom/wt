@@ -157,3 +157,29 @@ setup() {
     [ "$status" -ne 0 ]
     [[ "$output" == *"wt.sh"* ]]
 }
+
+# A claude that lists one background session in the login-crash worktree. The
+# binary asks this one; nothing here reaches the machine's own claude. Asked
+# to start anything, it writes how it was called to claude.started instead:
+# the number of arguments, each of them, and where it stood.
+fake_claude() {
+    mkdir -p "$BATS_TEST_TMPDIR/fakebin"
+    cat > "$BATS_TEST_TMPDIR/fakebin/claude" <<CLAUDE
+#!/bin/sh
+[ "\$1 \$2" = "agents --json" ] || { printf '%s|' "\$#" "\$@" "\$PWD" > "$BATS_TEST_TMPDIR/claude.started"; echo "started: \$*"; exit 0; }
+printf '[{"id":"3f9a1c20","sessionId":"3f9a1c20-1111-4222-8333-444455556666","name":"fix the crash","kind":"background","state":"blocked","cwd":"%s"}]\n' "$WT_ROOTS/demo_wt/fix_wt/login-crash"
+CLAUDE
+    chmod +x "$BATS_TEST_TMPDIR/fakebin/claude"
+    export PATH="$BATS_TEST_TMPDIR/fakebin:$PATH"
+}
+
+@test "wt list shows the session in a worktree, and --no-sessions leaves it out" {
+    fake_claude
+    run wt list
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"SESSION"* ]]
+    [[ "$output" == *"fix the crash · needs input"* ]]
+    run wt list --no-sessions
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"SESSION"* ]]
+}
