@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -14,6 +15,7 @@ import (
 // no sessions gets none, until a test puts a claude of its own in place.
 func init() {
 	listSessions = func() ([]wtsync.Agent, error) { return nil, nil }
+	listClaudeSessions = func(time.Duration) ([]wtsync.Agent, bool, error) { return nil, false, nil }
 }
 
 // fakeClaude puts a claude on the PATH whose `agents --json` lists agents,

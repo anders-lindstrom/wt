@@ -51,11 +51,11 @@ const (
 	shellDefault = ":0" // cobra.ShellCompDirectiveDefault
 )
 
-// cd and exec run in the shell layer, but completion runs in the binary, so
-// the placeholder commands must offer the worktrees like any other verb.
+// cd, exec and attach run in the shell layer, but completion runs in the
+// binary, so they must offer the worktrees like any other verb.
 func TestCdAndExecCompleteTheWorktrees(t *testing.T) {
 	repoWithWorktrees(t)
-	for _, verb := range []string{"cd", "exec"} {
+	for _, verb := range []string{"cd", "exec", "attach"} {
 		words, directive := complete(t, verb, "")
 		if directive != noFileComp {
 			t.Errorf("%s: directive %q, want %s", verb, directive, noFileComp)
@@ -96,11 +96,25 @@ func TestExecHandsTheCommandToTheShell(t *testing.T) {
 	}
 }
 
-// cd takes one pattern; a second word has nothing to complete to.
+// cd takes one pattern; a second word has nothing to complete to. Nor has
+// attach's: its second word is a session, and asking claude for them on
+// every tab is not worth the wait.
 func TestCdCompletesNothingAfterTheWorktree(t *testing.T) {
 	repoWithWorktrees(t)
-	words, directive := complete(t, "cd", "login-crash", "")
-	if directive != noFileComp || len(words) != 0 {
-		t.Errorf("got %q %q, want nothing and %s", words, directive, noFileComp)
+	for _, verb := range []string{"cd", "attach"} {
+		words, directive := complete(t, verb, "login-crash", "")
+		if directive != noFileComp || len(words) != 0 {
+			t.Errorf("%s: got %q %q, want nothing and %s", verb, words, directive, noFileComp)
+		}
+	}
+}
+
+// --for-shell is the shell layer's own, and no word a person completes to.
+func TestAttachCompletesResumeAndNotItsShellFlag(t *testing.T) {
+	t.Chdir(t.TempDir())
+	words, _ := complete(t, "attach", "--")
+	got := strings.Join(words, "\n")
+	if !strings.Contains(got, "--resume") || strings.Contains(got, "--for-shell") {
+		t.Errorf("wt attach -- completes to %q, want --resume and not --for-shell", words)
 	}
 }

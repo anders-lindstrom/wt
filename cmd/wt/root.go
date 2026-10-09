@@ -35,9 +35,9 @@ func newRootCmd() *cobra.Command {
 			"<work> names a worktree of this repository exactly: any of the three\n" +
 			"things `wt list` prints for it (the work name, the branch, or the path),\n" +
 			". for the one you are in, or / for the main checkout. <pattern> — what\n" +
-			"cd, exec and find take — is fuzzy, and searches every repository under\n" +
-			"your roots too. The commands that change or delete take <work>, so a\n" +
-			"guess never lands on the wrong worktree.\n" +
+			"cd, exec, attach and find take — is fuzzy, and searches every repository\n" +
+			"under your roots too. The commands that change or delete take <work>, so\n" +
+			"a guess never lands on the wrong worktree.\n" +
 			"\n" +
 			"--all, --roots <name> and --profile <name> take a command across the\n" +
 			"repositories under your roots: every one, the ones under the roots\n" +
@@ -78,7 +78,7 @@ func newRootCmd() *cobra.Command {
 		root.AddCommand(cmds...)
 	}
 	add(groupMake, newNewCmd(), newCheckoutCmd(), newPrCmd())
-	add(groupUse, newCdCmd(), newExecCmd(), newListCmd(), newStatusCmd(), newFindCmd(),
+	add(groupUse, newCdCmd(), newExecCmd(), newAttachCmd(), newListCmd(), newStatusCmd(), newFindCmd(),
 		newPathCmd(), newBranchCmd(), newReposCmd())
 	add(groupTrunk, newUpCmd(), newSyncCmd())
 	add(groupTidy, newMigrateCmd(), newAdoptCmd(), newSetupCmd(), newRemoveCmd(), newSweepCmd(),
@@ -155,7 +155,7 @@ func newShellCmd(use, short, long, example string) *cobra.Command {
 }
 
 // sourceShellLayer is the line that loads wt's shell layer.
-const sourceShellLayer = "source ~/.local/share/wt/wt.sh"
+const sourceShellLayer = commands.SourceShellLayer
 
 func newCdCmd() *cobra.Command {
 	c := newShellCmd("cd [<pattern>]", "Change directory to a worktree (shell)",

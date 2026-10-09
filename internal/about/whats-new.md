@@ -6,6 +6,16 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-10-09 13:59 — wt list shows Claude sessions, and wt attach opens one
+
+- `wt list` has a `SESSION` column when a worktree has a Claude Code session
+  in it and every row still fits the terminal: its name, its state (`needs
+  input`, `working`, `done`, `idle in a terminal`) and `+N` for more.
+  `wt list --wide` shows it whatever the width; `--no-sessions` leaves it out.
+- `wt attach <pattern>` opens that session and asks which when there are
+  several; `wt attach <id>` picks one outright; `wt attach <pattern> --resume`
+  continues the worktree's last conversation. Source `wt.sh` again first.
+
 ## 2026-10-08 12:05 — --move-to and wt purge: no more "quarantine" in what you read
 
 - `wt remove <work> --move-to <dir>` and `wt sweep --move-to <dir>` move a

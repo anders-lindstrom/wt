@@ -1,14 +1,16 @@
 # Shell layer for wt.
 #
-# These exist only for the two things a separate process cannot do: change the
-# calling shell's directory, and open an interactive picker. All matching logic
-# lives in the binary (`wt find`) where it is tested — this file must never grow
-# a second implementation of it.
+# These exist only for the things a separate process cannot do: change the
+# calling shell's directory, open an interactive picker, and start `claude` the
+# way this shell does. All matching logic lives in the binary (`wt find`, `wt
+# attach`) where it is tested — this file must never grow a second
+# implementation of it.
 #
-#   wt      cd|exec ...            the subcommands that must run in your shell
+#   wt      cd|exec|attach ...     the subcommands that must run in your shell
 #   wt_dir  <pattern>              print a worktree's path
 #   wt_cd   <pattern>              cd there, in this shell
 #   wt_exec <pattern> <cmd> [...]  run a command there, in a subshell
+#   wt_attach [pattern] [session]  open the Claude session there, in this terminal
 #   wt_ls   [pattern]              list worktrees, or show what a pattern matches
 #   wt_rm_me                       remove the worktree you are standing in
 #
@@ -83,6 +85,53 @@ wt_exec() {
     ( cd "$wt_path" && "$@" )
 }
 
+# Opening a session is the shell's to do because `claude` may be a shell
+# function that sets a session up, which the binary cannot call. The binary
+# finds the session and asks which when there are several; with nobody at a
+# terminal it starts nothing and prints the command instead.
+wt_attach() {
+    _wt_require || return 1
+    if ! { [ -t 0 ] && [ -t 1 ] && [ -t 2 ]; }; then
+        command wt attach "$@"
+        return $?
+    fi
+    local plan
+    plan=$(command wt attach --for-shell "$@") || return $?
+    _wt_attach_run "$plan"
+}
+
+# _wt_attach_run starts what `wt attach --for-shell` printed: a verb, an id
+# and a path, a line each, then a line saying `end`. The id and the path are
+# only ever arguments. A session's name is free text and never reaches this
+# function; nothing here may be handed to eval. The last line is there
+# because $(…) drops trailing newlines: with it, a path that ends in one
+# arrives whole. Anything else the binary printed, its --help say, is printed
+# as it is.
+_wt_attach_run() {
+    local nl='
+'
+    local verb="${1%%"$nl"*}" rest="${1#*"$nl"}"
+    local id="${rest%%"$nl"*}" wt_path="${rest#*"$nl"}"
+    case "$wt_path" in
+        *"$nl"end) wt_path="${wt_path%"$nl"end}" ;;
+        *) verb= ;;
+    esac
+    case "$verb" in
+        attach)
+            claude attach "$id"
+            ;;
+        continue)
+            ( cd "$wt_path" && claude --continue )
+            ;;
+        resume)
+            ( cd "$wt_path" && claude --resume "$id" )
+            ;;
+        *)
+            [ -z "$1" ] || printf '%s\n' "$1"
+            ;;
+    esac
+}
+
 wt_ls() {
     _wt_require || return 1
     if [ -n "$1" ]; then
@@ -112,8 +161,9 @@ wt_rm_me() {
 }
 
 # `wt cd` and `wt exec` cannot live in the binary: a process cannot change its
-# caller's directory. This wrapper handles those two and passes everything else
-# to the real wt, so there is one command to remember rather than two families.
+# caller's directory. `wt attach` starts claude the way your shell does. This
+# wrapper handles those three and passes everything else to the real wt, so
+# there is one command to remember rather than two families.
 #
 # A bare `wt cd`, like `wt cd /`, returns to the repository's main checkout.
 wt() {
@@ -125,6 +175,10 @@ wt() {
         exec)
             shift
             wt_exec "$@"
+            ;;
+        attach)
+            shift
+            wt_attach "$@"
             ;;
         *)
             command wt "$@"

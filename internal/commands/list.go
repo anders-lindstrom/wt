@@ -30,22 +30,48 @@ type ListOptions struct {
 	NoPR bool
 	// Refresh asks GitHub even when the cached answer is still young.
 	Refresh bool
+	// NoSessions leaves the Claude sessions out. The column costs one
+	// claude agents --json, around a quarter of a second, on every listing.
+	NoSessions bool
+	// Sessions is a read several listings share, whose caller prints its
+	// Note once. Nil reads them here, and the note goes under this table.
+	Sessions *ClaudeSessions
+	// Wide prints the table as it is printed when piped, whatever the
+	// terminal's width: the SESSION column in it, and nothing cut to fit.
+	Wide bool
 }
 
 // List prints every worktree of the repository, in whatever layout it is in.
 // Anything not at the canonical path is marked, and the two marks mean
 // different things: "s" is Superset's layout, which is deliberate and must be
 // left alone, while "!" is a layout nothing owns and `wt migrate` can move.
+// The PR and SESSION columns are printed only when a worktree has one, and
+// on a terminal the SESSION column only when every row still fits its width:
+// a listing never wraps a row for the column's sake.
 func List(ctx *Context, opts ListOptions, w io.Writer, width int) error {
 	names, err := WorkNames(ctx)
 	if err != nil {
 		return err
 	}
 	sch := ctx.Scheme()
+	// Started before the pull requests are asked for, so the two waits
+	// overlap.
+	read := opts.Sessions
+	if read == nil && !opts.NoSessions {
+		read = ReadClaudeSessions(SessionsDeadline)
+	}
 	var prs map[string]string
 	var cached time.Time
 	if !opts.NoPR {
 		prs, cached = listPRs(ctx, names, opts.Refresh)
+	}
+	paths := make([]string, len(names))
+	for i, n := range names {
+		paths[i] = n.Path
+	}
+	var sessions map[string][]claudeSession
+	if !opts.NoSessions {
+		sessions = read.byWorktree(paths)
 	}
 	header := []string{"", "WORK", "BRANCH", "PATH"}
 	if len(prs) > 0 {
@@ -74,6 +100,17 @@ func List(ctx *Context, opts ListOptions, w io.Writer, width int) error {
 		}
 		rows = append(rows, append(row, n.Path))
 	}
+	if opts.Wide {
+		width = 0
+	}
+	leftOut := false
+	if len(sessions) > 0 {
+		if with := withSessions(rows, paths, sessions); width <= 0 || pathTableFits(with, width) {
+			rows = with
+		} else {
+			leftOut = true
+		}
+	}
 	if err := printPathTable(w, rows, width); err != nil {
 		return err
 	}
@@ -88,6 +125,14 @@ func List(ctx *Context, opts ListOptions, w io.Writer, width int) error {
 	}
 	if line := prAgeLine(cached, "wt list"); line != "" {
 		legend = append(legend, line)
+	}
+	if leftOut {
+		legend = append(legend, "   sessions left out at this width — `wt list --wide` shows them")
+	}
+	if opts.Sessions == nil && read != nil {
+		if note := read.Note(); note != "" {
+			legend = append(legend, note)
+		}
 	}
 	if len(legend) > 0 {
 		fmt.Fprintln(w, "")
@@ -439,12 +484,18 @@ func syncAdvice(work string, declared bool, a wtsync.Assessment) string {
 // because a printed path is an argument to wt.
 func printPathTable(w io.Writer, rows [][]string, width int) error {
 	if width > 0 {
-		home, _ := os.UserHomeDir()
-		fitLastColumn(rows, width, minPathWidth, func(path string, limit int) string {
-			return elideLeft(abbreviateHome(path, home), limit)
-		})
+		fitPaths(rows, width)
 	}
 	return printTable(w, rows)
+}
+
+// fitPaths shows the last column of rows, a path, from ~ and shortens it
+// from the left so each row fits in width columns, where it can.
+func fitPaths(rows [][]string, width int) {
+	home, _ := os.UserHomeDir()
+	fitLastColumn(rows, width, minPathWidth, func(path string, limit int) string {
+		return elideLeft(abbreviateHome(path, home), limit)
+	})
 }
 
 // printTable writes rows as aligned columns.

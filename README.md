@@ -90,7 +90,8 @@ examples: `wt <command> --help`.
 |---|---|
 | `wt cd [<pattern>]` | cd to a worktree, in this shell; `.` is the one you are in, bare or `/` the main checkout |
 | `wt exec <pattern> <cmd>…` | run a command there, in a subshell; your shell stays put |
-| `wt list` | every worktree, in any layout; `s` marks Superset's, `!` one nothing owns; a `PR` column when a worktree here has one, asked for by branch and cached for a few minutes (`--no-pr`, `--refresh`; `--all`, `--roots`, `--profile` for many repositories) |
+| `wt attach [<pattern>] [<session>]` | open the Claude session in a worktree, in this terminal; asks which when there are several; `--resume` continues a conversation there instead |
+| `wt list` | every worktree, in any layout; `s` marks Superset's, `!` one nothing owns; a `PR` column when a worktree here has one, asked for by branch and cached for a few minutes (`--no-pr`, `--refresh`); a `SESSION` column when one has a Claude session in it and the terminal is wide enough for it (`--wide` whatever the width, `--no-sessions`); `--all`, `--roots`, `--profile` for many repositories |
 | `wt status [<work>]` | each worktree's branch, whether its checkout is clean, and how far behind and ahead of trunk it is; with a worktree named, that one in full with `wt sync`'s verdict; `wt list`'s `PR` column and cache (`--no-pr`, `--refresh`; `--all`, `--roots`, `--profile` for many repositories) |
 | `wt find <pattern>` | resolve a worktree by fuzzy name, across repositories (`--candidates`) |
 | `wt path <work>` / `wt branch <work>` | where a piece of work lives or would go, and its branch; exact, this repository only, for scripts |
@@ -181,13 +182,16 @@ A binary cannot change its caller's directory. These do:
 |---|---|
 | `wt_cd <pattern>` | the same as `wt cd`, if you prefer the underscore form |
 | `wt_exec <pattern> <cmd>…` | run a command there, in a subshell; your shell stays put |
+| `wt_attach [<pattern>] [<session>]` | the same as `wt attach` |
 | `wt_dir <pattern>` | print the path (stdout is path-only) |
 | `wt_ls [pattern]` | list worktrees, or show what a pattern matches |
 | `wt_rm_me` | remove the worktree you are standing in |
 
-`wt cd` and `wt exec` are the same functions under a nicer name: `wt` is itself a
-shell function that handles those two and passes everything else to the binary,
-because a process cannot change its caller's directory.
+`wt cd`, `wt exec` and `wt attach` are the same functions under a nicer name:
+`wt` is itself a shell function that handles those three and passes everything
+else to the binary. The first two are there because a process cannot change its
+caller's directory, and `wt attach` because your shell's `claude` may be a
+function of your own, which only your shell can call.
 
 They are thin wrappers over `wt find`; the matching itself lives in the binary
 where it is tested. A pattern of `.` is the worktree you are standing in, and
@@ -787,6 +791,88 @@ the branch only at the commit the plan showed. **An unmerged branch is never del
 wt made is renamed out of the `<type>_wt/` prefix so the work survives its
 worktree, and one wt did not make is left exactly as it is. A detached HEAD has
 no branch to touch.
+
+## Claude sessions
+
+`wt list` shows a `SESSION` column when a worktree here has a Claude Code session
+in it, the way `claude agents` lists it:
+
+```
+   WORK         BRANCH               SESSION                          PATH
+   (main)       main                 planning · idle in a terminal    ~/src/api
+   login-crash  fix_wt/login-crash   fix the crash · needs input +1   ~/src/api_wt/fix_wt/login-crash
+   api-tidy     feat_wt/api-tidy     -                                ~/src/api_wt/feat_wt/api-tidy
+```
+
+A background session is `working`, `needs input` — it waits for you: a question,
+a permission, its next prompt — or `done`; any other state is printed as claude
+spells it. A session open in a terminal is `busy` or `idle` `in a terminal`. A
+session in a subfolder belongs to the worktree it is in. With several in one
+worktree the row names the one that needs input, else the newest, and `+N`
+counts the rest. The name is whatever somebody typed, so it is cut at 32
+columns and stripped of control characters. Inside a session, that session
+reads `this session`.
+
+On a terminal the column is shown only when every row still fits the width,
+paths shortened as they always are. When a row would not fit, the listing is
+exactly the one without the column, and one line under it says so:
+
+```
+   sessions left out at this width — `wt list --wide` shows them
+```
+
+`wt list --wide` prints the table as it is printed when piped, whatever the
+width: the column in it, paths whole, rows as long as they are. Piped, the
+column is always there. A row is measured as the terminal draws it, so a
+character two columns wide counts as two.
+
+The column costs one `claude agents --json` on every listing; nothing is cached,
+because a state is stale in seconds. Measured on a repository with four
+worktrees:
+
+| | |
+|---|---|
+| `wt list --no-pr --no-sessions` | **0.03s** |
+| `wt list --no-pr` | **0.24s** |
+
+Without a `claude` on the PATH there is no column and no cost. A claude that
+fails, or has not answered in two seconds, is one line under the table and the
+listing is otherwise whole. `--no-sessions` leaves the column out and does not
+ask, which is the form for a loop or a prompt.
+
+`wt attach <pattern>` opens the session, with the worktree matched as `wt cd`
+matches it:
+
+- one background session is opened with `claude attach`; leaving it does not
+  stop it, and your shell stays where it is;
+- several are listed with a number each and wt asks which;
+  `wt attach <pattern> <session>` picks one without the question, by its id,
+  the start of its full session id, or part of its name;
+- a session open in a terminal is named with claude's process id there and is
+  not opened: it is used in that terminal;
+- with no pattern it is the worktree you are in, and from the main checkout
+  every session in the repository's worktrees;
+- `wt attach <id>` goes straight to a session by its id, the short one or the
+  full one. Text that is both an id and a worktree opens neither, and wt says
+  how to name each.
+
+`wt attach <pattern> --resume` continues a conversation in the worktree where no
+session is listed. What stands before `--resume` names the worktree, and what
+stands after it is the conversation, handed to claude as it is:
+
+| | |
+|---|---|
+| `wt attach <pattern> --resume` | the most recent one there (`claude --continue`) |
+| `wt attach <pattern> --resume <id>` | the one with that session id (`claude --resume <id>`) |
+| `wt attach --resume [<id>]` | the same, in the worktree you are in |
+
+Both refuse a conversation claude still lists as a session, so that none is
+ever open twice.
+
+The binary finds the session and the shell layer starts claude, so a `claude`
+that is a shell function of your own is the one that runs. Without the shell
+layer, or with no terminal (a script, an agent), nothing is started and wt
+prints the command to run.
 
 ## In Claude Code
 

@@ -42,6 +42,16 @@ type Agent struct {
 	PID    int    `json:"pid"`
 	// Tool is ToolCodex for a Codex session; empty is Claude.
 	Tool string `json:"-"`
+	// SessionID, StartedAt and Own are set by ParseClaudeSessions and
+	// ListClaudeSessions only, the listing a person reads. They are not
+	// decoded with the rest, so nothing about them can fail the listing the
+	// verbs act on. SessionID is the conversation's full id, the one claude
+	// --resume takes, where ID is the short one claude attach takes;
+	// StartedAt is in Unix milliseconds; Own marks the session wt runs
+	// under, which ListOtherAgents leaves out instead.
+	SessionID string `json:"-"`
+	StartedAt int64  `json:"-"`
+	Own       bool   `json:"-"`
 	// pids is every process of a Codex session. hosted marks a thread an
 	// app-server runs, viaHost an interactive codex whose thread one runs.
 	pids    []int
@@ -86,20 +96,30 @@ func ParseAgents(data []byte) ([]Agent, error) {
 }
 
 // ListAgents asks claude for its sessions. No claude on the PATH means no
-// sessions, not an error: "nobody to ask" is a normal state. It runs through
+// sessions, not an error: "nobody to ask" is a normal state.
+func ListAgents() ([]Agent, error) {
+	data, found, err := claudeListing(agentsDeadline)
+	if !found || err != nil {
+		return nil, err
+	}
+	return ParseAgents(data)
+}
+
+// claudeListing is what claude agents --json prints, given deadline to print
+// it. found is false with no claude on the PATH. It runs through
 // git.RunBounded, so the deadline and an interrupt take down whatever it
 // forked.
-func ListAgents() ([]Agent, error) {
+func claudeListing(deadline time.Duration) (data []byte, found bool, err error) {
 	exe, err := exec.LookPath("claude")
 	if err != nil {
-		return nil, nil
+		return nil, false, nil
 	}
 	cmd := exec.Command(exe, "agents", "--json")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	timedOut, _, err := git.RunBounded(agentsDeadline, cmd)
+	timedOut, _, err := git.RunBounded(deadline, cmd)
 	if timedOut {
-		return nil, fmt.Errorf("claude agents --json did not answer within %s", agentsDeadline)
+		return nil, true, fmt.Errorf("claude agents --json did not answer within %s", deadline)
 	}
 	if err != nil {
 		// Only a claude that ran and exited has a stderr worth quoting.
@@ -108,9 +128,97 @@ func ListAgents() ([]Agent, error) {
 		if errors.As(err, &exit) {
 			reason = strings.TrimSpace(stderr.String())
 		}
-		return nil, errors.New("claude agents --json failed: " + reason)
+		return nil, true, errors.New("claude agents --json failed: " + reason)
 	}
-	return ParseAgents(stdout.Bytes())
+	return stdout.Bytes(), true, nil
+}
+
+// ListClaudeSessions is the listing a person reads, where ListOtherAgents is
+// the one a verb acts on: Claude's sessions only, the finished ones still in
+// it, the one wt runs under marked Own rather than left out, and deadline to
+// answer in. found is false with no claude on the PATH. The process table,
+// which says whose session wt runs under, is read beside claude's answer:
+// it takes a fifth of the time, and read after it would add to it.
+func ListClaudeSessions(deadline time.Duration) (sessions []Agent, found bool, err error) {
+	if _, err := exec.LookPath("claude"); err != nil {
+		return nil, false, nil
+	}
+	caller := make(chan map[int]bool, 1)
+	go func() {
+		pids, _ := Ancestors()
+		caller <- pids
+	}()
+	data, found, err := claudeListing(deadline)
+	if !found || err != nil {
+		return nil, found, err
+	}
+	if sessions, err = ParseClaudeSessions(data); err != nil {
+		return nil, true, err
+	}
+	pids := <-caller
+	for i, a := range sessions {
+		sessions[i].Own = a.PID > 1 && pids[a.PID]
+	}
+	return sessions, true, nil
+}
+
+// claudeExtra is what the listing for people reads beyond Agent's fields. It
+// is decoded apart from them and loosely: a value of a type wt does not
+// expect is left empty rather than refused.
+type claudeExtra struct {
+	SessionID json.RawMessage `json:"sessionId"`
+	StartedAt json.RawMessage `json:"startedAt"`
+}
+
+// ErrUnreadableListing is a claude agents --json that is not a list of
+// sessions as wt knows them.
+var ErrUnreadableListing = errors.New("claude agents --json printed something wt cannot read as a list of sessions")
+
+// ParseClaudeSessions decodes the listing whole, finished sessions included.
+// A background session whose conversation was resumed in a terminal is
+// listed twice under one session id. Claude Code's documentation says that
+// opening such a row answers "Can't open — this session is running in
+// another terminal", so the terminal's row is the one kept, and it takes
+// the background row's attach id so that the id still names it.
+func ParseClaudeSessions(data []byte) ([]Agent, error) {
+	var raw []Agent
+	var extra []claudeExtra
+	if json.Unmarshal(data, &raw) != nil || json.Unmarshal(data, &extra) != nil || len(extra) != len(raw) {
+		return nil, ErrUnreadableListing
+	}
+	inTerminal := map[string]int{}
+	for i := range raw {
+		_ = json.Unmarshal(extra[i].SessionID, &raw[i].SessionID)
+		var started float64
+		if json.Unmarshal(extra[i].StartedAt, &started) == nil {
+			raw[i].StartedAt = int64(started)
+		}
+		if raw[i].Kind == "interactive" && raw[i].SessionID != "" {
+			inTerminal[raw[i].SessionID] = i
+		}
+	}
+	folded := map[int]bool{}
+	for i, a := range raw {
+		if at, ok := inTerminal[a.SessionID]; ok && a.Kind == "background" {
+			if raw[at].ID == "" {
+				raw[at].ID = a.ID
+			}
+			folded[i] = true
+		}
+	}
+	var sessions []Agent
+	for i, a := range raw {
+		if !folded[i] {
+			sessions = append(sessions, a)
+		}
+	}
+	return sessions, nil
+}
+
+// Attachable reports whether claude attach can open the session: a
+// background one of Claude's, which is the kind that has an attach id.
+func (a Agent) Attachable() bool {
+	return a.Tool == "" && a.Kind == "background" && a.ID != ""
 }
 
 // Sessions are the live sessions in one worktree, shallowest working
