@@ -419,6 +419,15 @@ The check and the push go by the same rule, in this order:
    `<branch>@{push}` is when that has the branch's name, else
    `branch.<name>.pushRemote` or `remote.pushDefault`, else origin.
 
+Another program may read the record itself: `branch.<name>.wtPushTo` in the
+repository's own git configuration, with the value `<remote> <branch>`, one
+space between the two. The key and that format stay. wt uses a record only
+when the remote exists, the branch is not trunk, and the name is one
+`git check-ref-format --branch` gives back unchanged and is not `@`, does not
+start with `+` or `refs/`; a reader refuses what wt refuses. No JSON field
+carries it: `ownRemote.ref` is the ref the branch was compared with, and is
+null for a recorded branch the remote does not have yet.
+
 git's configuration chooses the remote and never another name. The upstream
 under `push.default` `upstream`, and a `remote.<name>.push` refspec that
 renames, are where git's own `git push` goes; wt's push does not go there
