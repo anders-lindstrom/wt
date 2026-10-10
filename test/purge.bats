@@ -68,31 +68,38 @@ setup() {
     [ -d "$Q/checkout" ]
 }
 
-# BRIDGE(quarantine-spelling): the gittree installed today spells the command
-# wt quarantine purge and the flag --quarantine. Both are still taken.
-@test "quarantine purge and --quarantine are still taken" {
-    run --separate-stderr wt quarantine purge "$Q" --json
-    [ "$status" -eq 0 ]
-    [[ "$output" == *'"command": "quarantine purge"'* ]]
-    token=$(printf '%s\n' "$output" | sed -n 's/^  "token": "\(.*\)",$/\1/p')
-    [ -n "$token" ]
+# wt purge was wt quarantine purge.
+@test "quarantine purge is an unknown command, and deletes nothing" {
+    refs=$(git -C "$REPO" for-each-ref)
 
-    run --separate-stderr wt quarantine purge "$Q" --yes --json --expect "$token"
-    [ "$status" -eq 0 ]
-    [[ "$output" == *'"outcome": "purged"'* ]]
-    [ ! -e "$Q" ]
+    for flags in "" "--yes" "--yes --json"; do
+        run --separate-stderr wt quarantine purge "$Q" $flags
+        [ "$status" -ne 0 ]
+        [[ "$output" == "" ]]
+        [[ "$stderr" == *'unknown command "quarantine"'* ]]
+    done
 
+    [ -d "$Q/checkout" ]
+    [ -f "$Q/recovery.json" ]
+    [ "$(git -C "$REPO" for-each-ref)" = "$refs" ]
+}
+
+# --move-to on wt remove and wt sweep was --quarantine.
+@test "--quarantine is an unknown flag on remove and sweep, and moves nothing" {
     wt new fix/again >/dev/null
-    run wt remove again --yes --quarantine "$ROOT/trash/again"
-    [ "$status" -eq 0 ]
-    [ -f "$ROOT/trash/again/recovery.json" ]
+    refs=$(git -C "$REPO" for-each-ref)
 
-    wt new fix/swept >/dev/null
-    run wt sweep --no-fetch --yes --quarantine="$ROOT/trash/sw"
-    [ "$status" -eq 0 ]
-    [ -f "$ROOT/trash/sw/swept/recovery.json" ]
+    for line in "remove again --yes --quarantine $ROOT/trash/again" \
+        "rm again --yes --quarantine=$ROOT/trash/again" \
+        "sweep --no-fetch --yes --quarantine $ROOT/trash/sw" \
+        "sweep --no-fetch --yes --quarantine=$ROOT/trash/sw"; do
+        run wt $line
+        [ "$status" -ne 0 ]
+        [[ "$output" == *"unknown flag: --quarantine"* ]]
+    done
 
-    run wt quarantine
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"wt purge <dir>"* ]]
+    [ -d "$ROOT/demo_wt/fix_wt/again" ]
+    [ ! -e "$ROOT/trash/again" ]
+    [ ! -e "$ROOT/trash/sw" ]
+    [ "$(git -C "$REPO" for-each-ref)" = "$refs" ]
 }

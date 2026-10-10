@@ -562,7 +562,7 @@ func syncOverviewJSON(cmd *cobra.Command, args []string, sel commands.Selection,
 
 // syncArgs is the argument count wt sync takes for verb: the rule the verb's
 // subcommand declares, so both spellings refuse the same counts with the same
-// words. run takes any number, none meaning every ready worktree.
+// words. rebase takes any number, none meaning every ready worktree.
 func syncArgs(verb string) cobra.PositionalArgs {
 	switch verb {
 	case "rebase":
@@ -711,8 +711,7 @@ func syncRebase(cmd *cobra.Command, works []string, ctx *commands.Context, f syn
 }
 
 // rebaseCommand names wt sync rebase in its --json result.
-// BRIDGE(sync-run-spelling): a variable only for the bridge to set.
-var rebaseCommand = "sync rebase"
+const rebaseCommand = "sync rebase"
 
 // withVerbContext runs a wt sync verb in the repository it is in. With
 // asJSON its result is one object on stdout, written however the verb ends,

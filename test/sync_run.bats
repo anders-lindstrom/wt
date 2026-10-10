@@ -261,35 +261,47 @@ setup() {
     [[ "$output" == "" ]]
 }
 
-# BRIDGE(sync-run-spelling): the gittree installed today spells the verb run.
-# Both forms still rebase, name themselves "sync run" in the result, and are
-# in no help.
-@test "sync run and --run are still taken, and say sync run in the result" {
-    run --separate-stderr wt sync --no-fetch --json
-    token=$(printf '%s\n' "$output" | sed -n 's/^  "token": "\(.*\)",$/\1/p')
-    [ -n "$token" ]
+# wt sync rebase was wt sync run. run is no verb now: it is read as a
+# worktree's name, as any other word after wt sync is, and nothing rebases.
+@test "sync run is not a verb, and rebases nothing" {
+    tip=$(git -C "$BUMP" rev-parse HEAD)
 
-    run --separate-stderr wt sync run bump --if-ready --yes --no-push --no-fetch --json --expect "$token"
-    [ "$status" -eq 0 ]
-    [[ "$output" == *'"command": "sync run"'* ]]
-    [[ "$output" == *'"result": "rebased"'* ]]
-
-    run wt sync undo bump
-    [ "$status" -eq 0 ]
-
-    run --separate-stderr wt sync --run --yes --no-push --no-fetch --json --expect "$token"
-    [ "$status" -eq 0 ]
-    [[ "$output" == *'"command": "sync run"'* ]]
-    [[ "$output" == *'"result": "rebased"'* ]]
-
-    run wt sync bump --rebase --run
+    run --separate-stderr wt sync run bump --if-ready --yes --no-push --no-fetch --json
     [ "$status" -ne 0 ]
-    [[ "$output" == *"unknown flag: --run"* ]]
+    [[ "$output" == "" ]]
+    [[ "$stderr" == *"accepts at most 1 arg(s), received 2"* ]]
 
-    for help in "sync --help" "sync rebase --help" "up --help"; do
-        run wt $help
-        [ "$status" -eq 0 ]
-        [[ "$output" != *"sync run"* ]]
-        [[ "$output" != *"--run"* ]]
+    run --separate-stderr wt sync run --no-fetch
+    [ "$status" -ne 0 ]
+    [[ "$output" == "" ]]
+    [[ "$stderr" == *'no worktree "run"'* ]]
+
+    for flag in --yes --no-push --json; do
+        run --separate-stderr wt sync run --no-fetch "$flag"
+        [ "$status" -ne 0 ]
+        [[ "$output" == "" ]]
     done
+
+    wt new run >/dev/null
+    refs=$(git -C "$REPO" for-each-ref)
+    run wt sync run --no-fetch
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"branch  feat_wt/run"* ]]
+    [[ "$output" != *"rebased"* ]]
+    [ "$(git -C "$REPO" for-each-ref)" = "$refs" ]
+    [ "$(git -C "$BUMP" rev-parse HEAD)" = "$tip" ]
+}
+
+# --rebase on wt sync was --run.
+@test "sync --run is an unknown flag, and rebases nothing" {
+    refs=$(git -C "$REPO" for-each-ref)
+
+    for line in "sync --run" "sync bump --run"; do
+        run --separate-stderr wt $line --yes --no-push --no-fetch --json
+        [ "$status" -ne 0 ]
+        [[ "$output" == "" ]]
+        [[ "$stderr" == *"unknown flag: --run"* ]]
+    done
+
+    [ "$(git -C "$REPO" for-each-ref)" = "$refs" ]
 }
