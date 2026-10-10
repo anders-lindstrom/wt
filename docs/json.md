@@ -69,6 +69,7 @@ Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 | `sync` 1.4.0, `status` 1.7.0 | | [`deferredDeclared`](#deferreddeclared--the-deferred-steps-trunk-declares): the deferred steps a run may perform, on each worktree of `sync` and each stack member of `status` |
 | `status` 1.8.0, `sync` 1.5.0, `up` 1.5.0, `sync-run` 1.4.0 | | [where a branch pushes](#where-a-branch-pushes). New: `noPushReason` and `fixCommand` on `ownRemote` and on each participant of a run. Three things existing fields now mean, none of which a reader of the earlier minors could see: (1) a `rebased` participant can have `pushCommand` null, when wt has no push to make or offer for it, and `noPushReason` then says why; (2) `ownRemote.state` `unknown` also covers a branch a run would rebase and not push, which `noPushReason` tells apart from the unknowns a run pushes over unchecked; (3) `ownRemote.ref` is where wt's own push goes by the rule in [`ownRemote`](#ownremote--a-branch-against-its-own-remote): what is recorded for the branch first, never `<branch>@{push}` when that has another name than the branch. Every `pushCommand` now spells its refspec in full, `refs/heads/<branch>:refs/heads/<remote branch>` |
 | `remove` 1.4.2, `remove-plan` 1.4.1, `sweep` 1.4.1, `sweep-plan` 1.5.1, `recovery` 1.2.1, `quarantine-purge-plan` 1.0.1, `quarantine-purge` 1.0.1 | | `--quarantine <dir>` on `wt remove` and `wt sweep` is spelled `--move-to <dir>`, and `wt quarantine purge <dir>` is `wt purge <dir>`. From `remove` 1.4.2 on, `--move-to` and `wt purge` exist. Wording only: every field, value and schema name is as it was |
+| `sync-run` | 1.4.1 | wording: `wt sync run` and `wt sync --run` are no longer taken, so no wt prints `command` `sync run` any more; the value stays in the schema for results saved before |
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
 
@@ -1528,8 +1529,9 @@ no participants and a non-zero exit. The fetch then covers every worktree's own
 remote, as the overview's did.
 
 The fields are `wt up --json`'s (above), with `command` one of `"sync rebase"`,
-`"sync resume"`, `"sync undo"` (and `"sync run"`, from a line that still spells
-the verb as it was before `sync-run` 1.3.0), and:
+`"sync resume"`, `"sync undo"` (`"sync run"` is what the verb called itself
+before `sync-run` 1.3.0; no wt prints it since 1.4.1, and the schema keeps the
+value for results saved before that), and:
 
 | Field | Type | Meaning |
 |---|---|---|

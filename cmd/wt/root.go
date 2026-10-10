@@ -255,15 +255,6 @@ func printLine(cmd *cobra.Command, s string, err error) error {
 // Execute runs the CLI and returns the process exit code.
 func Execute() int {
 	root := newRootCmd()
-	// BRIDGE(sync-run-spelling)
-	if args, old := bridgeSyncRun(os.Args[1:]); old {
-		root.SetArgs(args)
-		rebaseCommand = "sync run"
-	}
-	// BRIDGE(quarantine-spelling)
-	if args, old := bridgeQuarantine(os.Args[1:]); old {
-		root.SetArgs(args)
-	}
 	if err := root.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "wt: %v\n", err)
 		if errors.Is(err, commands.ErrNoLaunchd) {

@@ -188,7 +188,7 @@ type Record struct {
 	Branch  *Branch  `json:"branch"`
 	Steps   []Step   `json:"steps"`
 	Restore *Restore `json:"restore"`
-	// Purge is a purge's journal; null until wt quarantine purge begins.
+	// Purge is a purge's journal; null until wt purge begins.
 	Purge *Purge `json:"purge"`
 
 	// recordedAs is the folder the file itself names, which Load reads

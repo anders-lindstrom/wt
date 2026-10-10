@@ -6,6 +6,15 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-10-10 11:11 — the old spellings are gone: sync run, --run, --quarantine, quarantine purge
+
+- Type `wt sync rebase` for `wt sync run`, `--rebase` for `wt sync --run`,
+  `--move-to <dir>` for `--quarantine <dir>` and `wt purge <dir>` for
+  `wt quarantine purge <dir>`. The old ones were kept for an older gittree.
+- `--run` and `--quarantine` are now unknown flags and `wt quarantine` an
+  unknown command. `wt sync run` now means the worktree named run: it never
+  rebases, and with a name after it fails with "accepts at most 1 arg(s)".
+
 ## 2026-10-10 01:27 — a renamed branch is pushed where its pull request is
 
 - wt pushed every branch to `origin/<its own name>`: a branch wt had renamed

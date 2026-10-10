@@ -121,7 +121,7 @@ func TestSweepThatDeletesNothingMintsNoRun(t *testing.T) {
 	}
 }
 
-// With --quarantine, a worktree's branch is pinned by its quarantine only,
+// With --move-to, a worktree's branch is pinned by its quarantine only,
 // and put back by wt restore; a branch in no worktree is still pinned in the
 // run.
 func TestSweepQuarantineDoesNotPinABranchTwice(t *testing.T) {
