@@ -6,6 +6,16 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-10-10 01:27 — a renamed branch is pushed where its pull request is
+
+- wt pushed every branch to `origin/<its own name>`: a branch wt had renamed
+  got a second remote branch and a stale pull request. A rename by wt now
+  records where the branch pushed; `wt sync push-to` records or shows it.
+- A branch tracking another name with nothing recorded is asked about once;
+  unattended it is rebased and not pushed.
+- Changed: `wt new` sets no upstream; a same-named upstream on another remote
+  is pushed there; `--json` gains `noPushReason` and `fixCommand`.
+
 ## 2026-10-09 13:59 — wt list shows Claude sessions, and wt attach opens one
 
 - `wt list` has a `SESSION` column when a worktree has a Claude Code session

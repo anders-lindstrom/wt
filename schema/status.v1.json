@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/status.v1.json",
-  "x-version": "1.7.0",
+  "x-version": "1.8.0",
   "title": "wt status --json",
   "description": "What wt up would start on, from local state alone. Printed by `wt status [<work>] --json`, which writes nothing to any repository. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
@@ -95,13 +95,13 @@
     },
     "ownRemote": {
       "type": "object",
-      "description": "Since 1.6.0: a branch against its own remote, the remote-tracking ref a push of it would replace: <branch>@{push} when git resolves it, else refs/remotes/origin/<branch>. Never the upstream as such: a branch cut from trunk often tracks trunk and pushes to its own name. See docs/json.md.",
-      "required": ["ref", "state", "commit", "ahead", "behind", "fetched", "blocks"],
+      "description": "Since 1.6.0: a branch against its own remote, the remote-tracking ref a push of it would replace: what is recorded for the branch (branch.<name>.wtPushTo), else the branch's own name on the remote git pushes it to (refs/remotes/origin/<branch> unless <branch>@{push} has that name on another remote, or branch.<name>.pushRemote or remote.pushDefault names one). Since 1.8.0 never a branch of another name that is not recorded, whatever <branch>@{push} is. Never the upstream as such: a branch cut from trunk often tracks trunk and pushes to its own name. See docs/json.md.",
+      "required": ["ref", "state", "commit", "ahead", "behind", "fetched", "blocks", "noPushReason", "fixCommand"],
       "properties": {
         "ref": { "type": ["string", "null"], "description": "The remote-tracking ref, as remote/branch (origin/feat/x); null only when no ref could be named: for none, and for unknown unless it is a ref that could not be compared." },
         "state": {
           "enum": ["none", "gone", "unknown", "inSync", "ahead", "behind", "rebased", "diverged"],
-          "description": "none: nothing to check: the ref is trunk's, or does not exist. gone: the branch names a ref the remote no longer has. unknown: where a push lands cannot be read from a tracking ref (a mirror remote, several push URLs, a push URL that is another repository than the fetch URL), or the branches or the remotes cannot be read at all, or the two tips cannot be compared; a run goes on unchecked. inSync: the same commit. ahead: only the branch has commits of its own. behind: only the remote has; a run fast-forwards the branch first. rebased: both have, and the remote's are old versions of the branch's (its tip is a tip the branch once had, or every commit only it has is matched patch for patch); a run goes on. diverged: both have, otherwise; a run refuses unless --allow-diverged."
+          "description": "none: nothing to check: the ref is trunk's, or does not exist. gone: the branch names a ref the remote no longer has. unknown: where a push lands cannot be read from a tracking ref (a mirror remote, several push URLs, a push URL that is another repository than the fetch URL), or the branches or the remotes cannot be read at all, or the two tips cannot be compared; a run goes on unchecked. Since 1.8.0 also a branch a run would rebase and not push: noPushReason is then non-null. inSync: the same commit. ahead: only the branch has commits of its own. behind: only the remote has; a run fast-forwards the branch first. rebased: both have, and the remote's are old versions of the branch's (its tip is a tip the branch once had, or every commit only it has is matched patch for patch); a run goes on. diverged: both have, otherwise; a run refuses unless --allow-diverged."
         },
         "commit": { "$ref": "#/$defs/shaOrNull", "description": "The remote commit compared with; null for none, gone and unknown." },
         "ahead": { "$ref": "#/$defs/countOrNull", "description": "Commits only the branch has; null for none, gone and unknown." },
@@ -110,6 +110,11 @@
         "blocks": {
           "oneOf": [{ "type": "null" }, { "enum": ["diverged", "operation", "dirty", "session"] }],
           "description": "Why a run would refuse for it; non-null only when a run would. diverged with state diverged, for a branch a run would rebase: --allow-diverged goes on. operation, dirty, session with state behind: it cannot be fast-forwarded, because a git operation is in progress there, the checkout has tracked changes, or an agent session is busy in it."
+        },
+        "noPushReason": { "type": ["string", "null"], "description": "Since 1.8.0: why a run would rebase the branch and not push it, in words; null when a run would push it, and for state none. It tracks a remote branch of another name and nothing is recorded for it (state unknown, fixCommand settles it); what is recorded for it cannot be used (state unknown); or it is recorded as pushing to a branch of another name that has commits it never had, is at a commit it was never at, or cannot be compared with it (state diverged, behind, rebased or unknown). See docs/json.md." },
+        "fixCommand": {
+          "oneOf": [{ "type": "null" }, { "type": "array", "items": { "type": "string" }, "minItems": 1 }],
+          "description": "Since 1.8.0: the command that settles noPushReason, as an argv, when one does: wt sync push-to <branch> <remote>/<branch>, which records the branch it tracks as where it pushes. The same command with the branch's own name on the remote records that instead. It names no directory: run it in the repository. Null otherwise."
         }
       }
     },

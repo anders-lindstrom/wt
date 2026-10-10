@@ -60,7 +60,7 @@ const UP_RESULT = JSON.stringify({
       reason: null,
       before: '1111111aaaa',
       after: '2222222bbbb',
-      pushCommand: ['git', '-C', PATH, 'push', '--force-with-lease', '--force-if-includes', 'origin', 'feat_wt/login'],
+      pushCommand: ['git', '-C', PATH, 'push', '--force-with-lease', '--force-if-includes', 'origin', 'refs/heads/feat_wt/login:refs/heads/feat_wt/login'],
       pushed: false,
       ownRemoteSync: { ref: 'origin/feat_wt/login', state: 'inSync', fastForwarded: false },
       recovery: null,
@@ -296,7 +296,7 @@ test('a worktree behind trunk gets one line that opens the dialog, and wt up the
   // The dialog closes first: the prompt takes nothing under one.
   await pane.press({ key: 'push' })
   expect(shown.closed).toEqual(['wt', 'wt'])
-  expect(shown.fills).toEqual([`! git -C ${PATH} push --force-with-lease --force-if-includes origin feat_wt/login`])
+  expect(shown.fills).toEqual([`! git -C ${PATH} push --force-with-lease --force-if-includes origin refs/heads/feat_wt/login:refs/heads/feat_wt/login`])
   expect(shown.toasts.at(-1)).toBe('The push is in the prompt: press Enter to run it.')
   expect(runs.some(argv => argv[0] === 'git' && argv.includes('push'))).toBe(false)
 
@@ -344,7 +344,7 @@ test('a prompt that does not take the push is said, with the command to run', as
   await $.command.run({ ...RUN, command: 'wt', args: 'up' })
   rig.isFillRefused = true
 
-  const said = `The prompt did not take the push. Run it yourself: ! git -C ${PATH} push --force-with-lease --force-if-includes origin feat_wt/login`
+  const said = `The prompt did not take the push. Run it yourself: ! git -C ${PATH} push --force-with-lease --force-if-includes origin refs/heads/feat_wt/login:refs/heads/feat_wt/login`
   expect((await $.command.run({ ...RUN, command: 'wt', args: 'push' })).text).toBe(said)
   expect(shown.toasts.at(-1)).toBe(said)
   expect(shown.fills).toEqual([])
@@ -574,6 +574,54 @@ test('a branch that diverged from its own remote is refused in wt’s words, wit
   expect((await $.command.run({ ...RUN, command: 'wt', args: 'upDiverged' })).text).toContain('not one of')
   await $.command.run({ ...RUN, command: 'wt', args: 'up' })
   expect(runs.slice(before).filter(argv => argv[1] === 'up')).toEqual([['wt', 'up', '--yes', '--no-push', '--json', '--expect', TOKEN]])
+})
+
+test('a branch with nowhere to push is said in wt’s words, with the command wt names', async ($, on) => {
+  const reason = 'it tracks origin/login, a branch of another name, and nothing says whether it pushes there or to origin/feat_wt/login'
+  const fixCommand = ['wt', 'sync', 'push-to', 'feat_wt/login', 'origin/login']
+  const unknown = { ref: null, state: 'unknown', commit: null, ahead: null, behind: null, fetched: false, blocks: null }
+  let own: Record<string, unknown> = { ...unknown, noPushReason: reason, fixCommand }
+  world(on, () => status({}, { ownRemote: own }))
+  // The line about pushing in the dialog, and its colour; undefined when there is none.
+  const said = async (): Promise<{ text: unknown; colour: unknown } | undefined> => {
+    await $.command.run({ ...RUN, command: 'wt', args: 'refresh' })
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    const note = await pane.find({ type: 'Text', text: /nowhere to push/ })
+    await pane.unmount()
+
+    return note === undefined ? undefined : { text: note.children?.[0], colour: note.props.color }
+  }
+
+  expect(await said()).toEqual({ text: `nowhere to push: ${reason}. wt sync push-to feat_wt/login origin/login records the first`, colour: 'warning' })
+
+  // A reason no command settles is said alone.
+  own = { ...unknown, noPushReason: 'it is recorded as pushing to nowhere/x, and there is no remote nowhere', fixCommand: null }
+  expect((await said())?.text).toBe('nowhere to push: it is recorded as pushing to nowhere/x, and there is no remote nowhere')
+
+  // A reason wt gives for a branch whose remote it names is said too, in place of the state's words.
+  own = { ...unknown, ref: 'origin/login', state: 'diverged', ahead: 1, behind: 1, noPushReason: 'origin/login has commits this branch never had', fixCommand: null }
+  expect((await said())?.text).toBe('nowhere to push: origin/login has commits this branch never had')
+
+  // An unknown with no reason, as an older wt reports it, says nothing about pushing.
+  own = { ...unknown }
+  expect(await said()).toBeUndefined()
+  own = { ...unknown, noPushReason: null, fixCommand: null }
+  expect(await said()).toBeUndefined()
+})
+
+test('the push for a branch that pushes to another name goes in the prompt as wt spelled it', async ($, on) => {
+  const pushCommand = ['git', '-C', PATH, 'push', '--force-with-lease=refs/heads/login:1111111aaaa', 'origin', 'refs/heads/feat_wt/login:refs/heads/login']
+  // Rebased and not pushed yet, as status reads it against the recorded branch.
+  const own = { ref: 'origin/login', state: 'rebased', commit: 'c', ahead: 2, behind: 2, fetched: false, blocks: null, noPushReason: null, fixCommand: null }
+  const { shown } = world(on, () => status({}, { ownRemote: own }), { 'wt up --yes': result('up', 'done', null, [participant({ pushCommand })]) })
+
+  await $.command.run({ ...RUN, command: 'wt', args: 'refresh' })
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await pane.press({ key: 'up' })
+  await pane.press({ key: 'push' })
+  await pane.unmount()
+
+  expect(shown.fills).toEqual([`! git -C ${PATH} push --force-with-lease=refs/heads/login:1111111aaaa origin refs/heads/feat_wt/login:refs/heads/login`])
 })
 
 test('the dialog says wt up has nothing to do only when wt counted and found nothing', async ($, on) => {

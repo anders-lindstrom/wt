@@ -376,6 +376,13 @@ func StatusWorktree(ctx *Context, arg string, opts StatusOptions, w io.Writer) e
 		// Said once: the row has it.
 		under = slices.DeleteFunc(under, func(l string) bool { return l == "  "+line })
 	}
+	if line := ownElsewhere(a.Own); line != "" {
+		rows = append(rows, []string{"  push", strings.TrimPrefix(line, "pushes ")})
+		under = slices.DeleteFunc(under, func(l string) bool { return l == "  "+line })
+	}
+	if line := ownStray(a.Own); line != "" {
+		rows = append(rows, []string{"  also", line})
+	}
 	rows = append(rows, []string{"  sync", verdict})
 
 	fmt.Fprintln(w, work)

@@ -319,17 +319,21 @@ func (p MigratePlan) Render(w io.Writer) {
 // costs nothing, while a half-moved worktree is a checkout nobody can name.
 func (p MigratePlan) apply(ctx *Context, w io.Writer) (string, error) {
 	if p.Branch != p.NewBranch {
-		if err := ctx.Repo.RenameBranch(p.Branch, p.NewBranch); err != nil {
+		kept, err := wtsync.RenameKeepingPush(ctx.Repo, ctx.Config.MainBranch, p.Branch, p.NewBranch)
+		if err != nil {
 			return "", fmt.Errorf("renaming %s to %s: %w", p.Branch, p.NewBranch, err)
 		}
 		fmt.Fprintf(w, "✓ branch renamed to %s\n", p.NewBranch)
+		if kept != nil {
+			fmt.Fprintf(w, "  it still pushes to %s, as it did before the rename\n", kept)
+		}
 	}
 	if p.From == p.To {
 		return p.To, nil
 	}
 	if err := ctx.Repo.MoveWorktree(p.From, p.To); err != nil {
 		if p.Branch != p.NewBranch {
-			if back := ctx.Repo.RenameBranch(p.NewBranch, p.Branch); back == nil {
+			if _, back := wtsync.RenameKeepingPush(ctx.Repo, ctx.Config.MainBranch, p.NewBranch, p.Branch); back == nil {
 				fmt.Fprintf(w, "  the branch is back on %s and nothing was moved\n", p.Branch)
 			}
 		}

@@ -38,8 +38,9 @@ func newUpCmd() *cobra.Command {
 			"and a line says why. --no-ff-trunk, or wt config set ff_trunk false,\n" +
 			"leaves it alone.\n\n" +
 			"Before it rebases, the branch is compared with its own remote, the ref\n" +
-			"a push of it would replace (<branch>@{push}, else origin/<branch>;\n" +
-			"never its upstream as such), fetched with trunk. Behind it, the branch\n" +
+			"a push of it would replace (what is recorded for it, else its own name\n" +
+			"on the remote git pushes it to; never its upstream as such), fetched\n" +
+			"with trunk. Behind it, the branch\n" +
 			"is fast-forwarded first, where the worktree has no tracked changes,\n" +
 			"nothing in progress and no session busy in it; with nothing to rebase\n" +
 			"once it is there, that is all that happens. Diverged from it, with\n" +

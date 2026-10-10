@@ -76,7 +76,18 @@ type pushOptions struct {
 	// reason.
 	Push        PushMode
 	ConfirmPush func(works []string) (bool, error)
+	// ChoosePush is asked, where ConfirmPush would be, which of two remote
+	// branches a branch pushes to. It answers with one of the two, or "" when
+	// the person names neither: the branch is then not pushed.
+	ChoosePush func(c PushChoice) (string, error)
 }
+
+// PushChoice is a branch that tracks a remote branch of another name, and
+// the two places a push of it could go, each as remote/branch.
+type PushChoice struct{ Branch, Upstream, Own string }
+
+// PushToName is the subcommand of wt sync that records such a choice.
+var PushToName = strings.TrimPrefix(wtsync.PushToCommand, "wt sync ")
 
 // idle is one checkout a verb is about to change, as its messages name it:
 // the label its refusals use — a work name, or undo's branch — where it is,

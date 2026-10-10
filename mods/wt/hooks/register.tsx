@@ -183,6 +183,8 @@ const planOf = (stdout: string): Plan | null => {
             ahead: own.ahead ?? null,
             behind: own.behind ?? null,
             blocks: own.blocks ?? null,
+            noPushReason: typeof own.noPushReason === 'string' ? own.noPushReason : null,
+            fixCommand: Array.isArray(own.fixCommand) ? own.fixCommand.map(String) : null,
           },
     upEligible: s.upEligible === true,
     upIneligibleCode: s.upIneligibleCode ?? null,
@@ -234,7 +236,16 @@ const ownMarks = (p: Plan): string | undefined => {
 const ownWords = (p: Plan): string | undefined => {
   const own = p.ownRemote
 
-  if (own === null || own.ref === null) {
+  if (own === null) {
+    return undefined
+  }
+
+  // wt's own sentence, and the command it names for it.
+  if (own.noPushReason !== null) {
+    return `nowhere to push: ${own.noPushReason}${own.fixCommand === null ? '' : `. ${own.fixCommand.map(quoted).join(' ')} records the first`}`
+  }
+
+  if (own.ref === null) {
     return undefined
   }
 
@@ -372,7 +383,8 @@ const detailOf = (p: Plan, mine: Outcome | null): Detail => {
 
   if (own !== undefined) {
     const state = p.ownRemote?.state
-    notes.push({ text: own, tone: state === 'diverged' || state === 'gone' ? 'error' : state === 'behind' ? 'warning' : undefined })
+    const isUnpushed = p.ownRemote?.noPushReason != null
+    notes.push({ text: own, tone: state === 'diverged' || state === 'gone' ? 'error' : state === 'behind' || isUnpushed ? 'warning' : undefined })
   }
 
   if (!p.isMain && p.tree !== 'clean') {

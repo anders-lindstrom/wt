@@ -559,7 +559,7 @@ func (r *Repo) AddWorktree(path, branch, base string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	_, err := git.Run(r.MainRoot, "worktree", "add", "-b", branch, path, base)
+	_, err := git.Run(r.MainRoot, "worktree", "add", "--no-track", "-b", branch, path, base)
 	return err
 }
 

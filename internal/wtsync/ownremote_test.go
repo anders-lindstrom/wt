@@ -427,8 +427,16 @@ func TestOwnRemoteIsNeverTrunkOnAnotherRemote(t *testing.T) {
 	if got := gittest.Git(t, f.dir, "rev-parse", "--symbolic-full-name", "feat@{push}"); got != "refs/remotes/upstream/main" {
 		t.Fatalf("the fixture's push destination is %s", got)
 	}
-	if o := f.state(t, "feat"); o.State != OwnNone || o.Ref != "" {
+	// What is compared is where the push goes: its own name on origin.
+	if o := f.state(t, "feat"); o.State != OwnInSync || o.Ref != "origin/feat" {
 		t.Fatalf("%+v", o)
+	}
+	own, err := ReadOwn(f.dir, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := own.Push("feat"); p.Ref() != "origin/feat" {
+		t.Fatalf("%+v", p)
 	}
 }
 
@@ -574,13 +582,16 @@ func TestOwnRemoteAMergeOnTheRemoteIsDiverged(t *testing.T) {
 // push.default matching pushes a branch to its own name, and a push refspec
 // that renames sends it somewhere else: git resolves both, and the ref it
 // names is the one compared.
-func TestOwnRemoteFollowsMatchingAndARenamingPushRefspec(t *testing.T) {
+func TestOwnRemoteFollowsMatchingAndNotARenamingPushRefspec(t *testing.T) {
 	f := newOwnFixture(t)
 	gittest.Git(t, f.dir, "config", "push.default", "matching")
 	if o := f.state(t, "feat"); o.State != OwnInSync || o.Ref != "origin/feat" {
 		t.Fatalf("matching: %+v", o)
 	}
 	gittest.Git(t, f.dir, "config", "--unset", "push.default")
+	// git's own push now goes to review/feat. wt's does not follow a name
+	// nobody recorded for the branch: it compares with, asks for and pushes
+	// the branch's own.
 	gittest.Git(t, f.dir, "config", "remote.origin.push", "refs/heads/feat:refs/heads/review/feat")
 	gittest.Git(t, f.dir, "push", "-q", "origin")
 	gittest.Git(t, f.dir, "fetch", "-q", "origin")
@@ -589,10 +600,10 @@ func TestOwnRemoteFollowsMatchingAndARenamingPushRefspec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if o := own.State("feat"); o.State != OwnAhead || o.Ref != "origin/review/feat" {
-		t.Fatalf("renamed: %+v", o)
+	if o := own.State("feat"); o.State != OwnAhead || o.Ref != "origin/feat" {
+		t.Fatalf("renamed by a push refspec: %+v", o)
 	}
-	if got := own.Asks([]string{"feat"})["origin"]; len(got) != 1 || got[0].Refspec() != "+refs/heads/review/feat:refs/remotes/origin/review/feat" {
+	if got := own.Asks([]string{"feat"})["origin"]; len(got) != 1 || got[0].Refspec() != "+refs/heads/feat:refs/remotes/origin/feat" {
 		t.Fatalf("asks %+v", got)
 	}
 }

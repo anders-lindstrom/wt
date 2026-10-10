@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sync-run.v1.json",
-  "x-version": "1.3.0",
+  "x-version": "1.4.0",
   "title": "wt sync rebase|resume|undo --json",
   "description": "What a wt sync rebase, resume or undo did. Printed by `wt sync rebase [<work>...] --json`, `wt sync [<work>...] --rebase --json`, `wt sync resume <work> --json` and `wt sync undo <work> --json` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends it. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
@@ -47,7 +47,7 @@
     },
     "participant": {
       "type": "object",
-      "required": ["work", "branch", "path", "result", "reason", "before", "after", "failedSteps", "recovery", "pushCommand", "pushed", "safetyRef", "deferred", "undoCommand", "planFile", "ownRemoteSync"],
+      "required": ["work", "branch", "path", "result", "reason", "before", "after", "failedSteps", "recovery", "pushCommand", "pushed", "noPushReason", "fixCommand", "safetyRef", "deferred", "undoCommand", "planFile", "ownRemoteSync"],
       "properties": {
         "work": { "type": "string" },
         "branch": { "type": "string" },
@@ -61,8 +61,10 @@
         "after": { "$ref": "#/$defs/shaOrNull" },
         "failedSteps": { "type": "array", "items": { "type": "string" } },
         "recovery": { "type": ["string", "null"] },
-        "pushCommand": { "$ref": "#/$defs/argvOrNull", "description": "For rebased: the push, as an argv." },
+        "pushCommand": { "$ref": "#/$defs/argvOrNull", "description": "For rebased: the push, as an argv. Since 1.4.0 null also for rebased, when wt has no push to make or offer for the branch, which noPushReason explains." },
         "pushed": { "type": "boolean" },
+        "noPushReason": { "type": ["string", "null"], "description": "Since 1.4.0: for rebased with a null pushCommand, why wt made and offered no push for the branch, in words, whatever the reason: among them that it tracks a remote branch of another name with nothing recorded for it, and that the branch of another name it is recorded as pushing to holds commits that cannot be shown to be old versions of its own. Null otherwise." },
+        "fixCommand": { "$ref": "#/$defs/argvOrNull", "description": "Since 1.4.0: the command that settles noPushReason, as an argv, when one does: wt sync push-to <branch> <remote>/<branch>, which records the branch it tracks as where it pushes. The same command with the branch's own name on the remote records that instead. It names no directory: run it in the repository. Null otherwise." },
         "safetyRef": { "type": ["string", "null"], "description": "The ref pinning the branch's tip from before the run: refs/wt-sync/<branch>/<epoch>." },
         "deferred": {
           "type": "array",

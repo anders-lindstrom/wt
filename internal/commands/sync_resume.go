@@ -260,12 +260,18 @@ func syncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) (err
 		return fmt.Errorf("not completed: %s", strings.Join(owedBy(name, owed), ", "))
 	}
 	t := pushTarget{Work: name, Branch: st.Branch, Path: target.Path}
-	j.set(st.Branch, func(p *UpParticipant) { p.PushCommand = append([]string{"git", "-C", t.Path}, pushArgs(t)...) })
-	pushed, failed, err := offerPush(w, opts.Push, opts.ConfirmPush, []pushTarget{t})
+	j.set(st.Branch, func(p *UpParticipant) { p.PushCommand, p.NoPushReason, p.FixCommand = pushJSON(t, pushOf(ctx, t)) })
+	pushed, failed, err := offerPush(ctx, w, opts.Push, opts.pushOptions, []pushTarget{t})
 	if err != nil {
 		return err
 	}
-	j.set(st.Branch, func(p *UpParticipant) { p.Pushed = len(pushed) > 0 })
+	j.set(st.Branch, func(p *UpParticipant) {
+		// An answer to the push question may have given it a destination.
+		if p.NoPushReason != nil {
+			p.PushCommand, p.NoPushReason, p.FixCommand = pushJSON(t, pushOf(ctx, t))
+		}
+		p.Pushed = len(pushed) > 0
+	})
 	if len(failed) > 0 {
 		return fmt.Errorf("not completed: %s", strings.Join(failed, ", "))
 	}
