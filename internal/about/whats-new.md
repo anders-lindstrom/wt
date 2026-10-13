@@ -6,6 +6,13 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-10-13 06:19 — wt cd takes the name tab completion gives it
+
+- `wt cd <tab>` offers `feat/login-crash`, and `wt cd feat/login-crash` then
+  said "no worktree matches": the branch is `feat_wt/login-crash`, so the
+  completed name matched nothing. `wt cd`, `wt exec`, `wt attach` and `wt find`
+  now take `<type>/<work>`, whole or the start of it.
+
 ## 2026-10-10 11:11 — the old spellings are gone: sync run, --run, --quarantine, quarantine purge
 
 - Type `wt sync rebase` for `wt sync run`, `--rebase` for `wt sync --run`,

@@ -13,9 +13,12 @@ import "strings"
 type Candidate struct {
 	Work   string
 	Branch string
-	Repo   string
-	Path   string
-	Local  bool // in the repository the user is standing in
+	// Spec is <type>/<work>, the name completion offers and `wt new` takes.
+	// Empty for a worktree whose name does not follow the convention.
+	Spec  string
+	Repo  string
+	Path  string
+	Local bool // in the repository the user is standing in
 }
 
 // Scored is a Candidate that matched, with the tier it matched at.
@@ -32,6 +35,9 @@ const (
 	TierWorkSubstring
 	TierBranchOrPath
 	TierSubsequence
+	// TierTypedPrefix is the start of <type>/<work>. It ranks last, so a
+	// pattern that matched some other way still resolves as it did.
+	TierTypedPrefix
 )
 
 // minSubsequence is the shortest pattern allowed to reach the subsequence tier.
@@ -51,13 +57,14 @@ func Score(c Candidate, pattern, repoPattern string) (Scored, bool) {
 
 	work := strings.ToLower(c.Work)
 	branch := strings.ToLower(c.Branch)
+	spec := strings.ToLower(c.Spec)
 	path := strings.ToLower(c.Path)
 
 	var tier int
 	switch {
 	case work == p:
 		tier = TierExactWork
-	case branch == p:
+	case branch == p, spec == p:
 		tier = TierExactBranch
 	case strings.HasPrefix(work, p):
 		tier = TierWorkPrefix
@@ -67,6 +74,8 @@ func Score(c Candidate, pattern, repoPattern string) (Scored, bool) {
 		tier = TierBranchOrPath
 	case len(p) >= minSubsequence && isSubsequence(work, p):
 		tier = TierSubsequence
+	case strings.HasPrefix(spec, p):
+		tier = TierTypedPrefix
 	default:
 		return Scored{}, false
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -71,6 +72,36 @@ func TestCdAndExecCompleteTheWorktrees(t *testing.T) {
 			if w == "." || w == "/" {
 				t.Errorf("%s: offers %q", verb, w)
 			}
+		}
+	}
+}
+
+// What completion offers has to be something the verb then takes: cd and exec
+// resolve through find, so every offered word must find its worktree.
+func TestFindTakesEveryWordCompletionOffers(t *testing.T) {
+	t.Setenv("WT_ROOTS", t.TempDir())
+	repoWithWorktrees(t)
+	// Somebody else's branch, at a path wt chose: named by its directory.
+	main, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	gittest.Git(t, main, "worktree", "add", "-q", "-b", "colleague/topic",
+		filepath.Join(filepath.Dir(main), "demo_wt", "feat_wt", "topic"))
+	words, _ := complete(t, "cd", "")
+	if len(words) != 3 {
+		t.Fatalf("completion offers %q, want the three worktrees", words)
+	}
+	for _, w := range words {
+		typ, work, _ := strings.Cut(w, "/")
+		want := filepath.Join("demo_wt", typ+"_wt", work)
+		out, err := runCmd(t, "find", w)
+		if err != nil {
+			t.Errorf("wt find %s: %v", w, err)
+			continue
+		}
+		if got := strings.TrimSpace(out); !strings.HasSuffix(got, want) {
+			t.Errorf("wt find %s = %q, want the worktree at …/%s", w, got, want)
 		}
 	}
 }
