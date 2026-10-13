@@ -88,6 +88,69 @@ func TestFindWeakLocalHitStillScansRoots(t *testing.T) {
 	}
 }
 
+// <repository>/<work> names a worktree outright. Another worktree whose
+// <type>/<work> merely starts with the same letters must not take its place.
+func TestFindRepoAndWorkBeatsTheStartOfATypedName(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("WT_ROOTS", root)
+	ctx, _ := Open(committedRepoIn(t, root, "feat", minimalConf))
+	for _, spec := range []string{"fix/arch", "feat/archive"} {
+		if _, err := New(ctx, spec, NewOptions{NoSetup: true}, os.Stderr); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A fragment of a branch is still read whole, as it always was: this one
+	// is also repository feat, work arc.
+	gitIn(t, ctx.Repo.MainRoot, "worktree", "add", "-q", "-b", "refeat/arcade",
+		filepath.Join(root, "feat_wt", "fix_wt", "borrowed"))
+	if _, err := New(ctx, "fix/arc", NewOptions{NoSetup: true}, os.Stderr); err != nil {
+		t.Fatal(err)
+	}
+	for pattern, want := range map[string]string{
+		"feat/arch":    "arch",     // repository feat, work arch
+		"feat/archive": "archive",  // the typed name, exactly
+		"feat/archi":   "archive",  // the start of it, and no work is named archi
+		"feat/arc":     "borrowed", // in refeat/arcade
+	} {
+		got, err := Find(ctx, pattern)
+		if err != nil {
+			t.Fatalf("Find(%q): %v", pattern, err)
+		}
+		if len(got) != 1 || got[0].Work != want {
+			t.Errorf("Find(%q) = %+v, want only %s", pattern, got, want)
+		}
+	}
+}
+
+// The start of a typed name is the weakest reading there is: a pattern that
+// found a worktree in another repository before still finds it, however
+// loosely it matched there.
+func TestFindTheStartOfATypedNameYieldsToAnyOtherMatch(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("WT_ROOTS", root)
+	lctx, _ := Open(committedRepoIn(t, root, "demo", minimalConf))
+	if _, err := New(lctx, "feat/archive", NewOptions{NoSetup: true}, os.Stderr); err != nil {
+		t.Fatal(err)
+	}
+	octx, _ := Open(committedRepoIn(t, root, "feat", minimalConf))
+	if _, err := New(octx, "fix/a-r-c", NewOptions{NoSetup: true}, os.Stderr); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Find(lctx, "feat/arc")
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	if len(got) != 1 || got[0].Work != "a-r-c" || got[0].Repo != "feat" {
+		t.Errorf("Find(feat/arc) = %+v, want a-r-c in repository feat", got)
+	}
+}
+
 func TestFindReportsEveryTiedCandidate(t *testing.T) {
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {

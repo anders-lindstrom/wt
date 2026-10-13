@@ -29,6 +29,32 @@ func TestScoreTiers(t *testing.T) {
 	}
 }
 
+// <type>/<work> is what completion offers and `wt new` takes. It is not a
+// substring of the branch, which carries the type's suffix, so it is matched
+// as a name of its own.
+func TestScoreTakesTheTypedName(t *testing.T) {
+	c := cand("login-crash", "feat_wt/login-crash", "infrastructure", "/x/infrastructure_wt/feat_wt/login-crash", true)
+	c.Spec = "feat/login-crash"
+	for _, tc := range []struct {
+		pattern string
+		want    int
+	}{
+		{"feat/login-crash", TierExactBranch},
+		{"Feat/Login-Crash", TierExactBranch},
+		{"feat/login", TierTypedPrefix},
+	} {
+		got, ok := Score(c, tc.pattern, "")
+		if !ok || got.Tier != tc.want {
+			t.Errorf("Score(%q) tier = %d (ok=%v), want %d", tc.pattern, got.Tier, ok, tc.want)
+		}
+	}
+	for _, miss := range []string{"fix/login-crash", "at/login"} {
+		if _, ok := Score(c, miss, ""); ok {
+			t.Errorf("Score(%q) matched; only the name or the start of it may", miss)
+		}
+	}
+}
+
 // A two-character pattern must not fall through to subsequence matching, or
 // almost everything matches almost everything.
 func TestShortPatternsDoNotSubsequenceMatch(t *testing.T) {

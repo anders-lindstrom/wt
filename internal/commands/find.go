@@ -35,11 +35,11 @@ var ErrNotInRepo = errors.New("not inside a git repository")
 // Find resolves a fuzzy pattern to the best-matching worktrees.
 //
 // The current repository is searched first and wins ties, but only a strong hit
-// — exact work name, exact branch, or a work-name prefix — ends the search
-// there. A vaguer local hit also scans the roots and competes on merit, because
-// otherwise an incidental substring beats a real match next door: standing in
-// infrastructure, "arch" matches opensearch_ism and would quietly shadow the
-// feat_wt/arch worktrees that actually exist elsewhere.
+// — exact work name, exact branch or <type>/<work>, or a work-name prefix —
+// ends the search there. A vaguer local hit also scans the roots and competes
+// on merit, because otherwise an incidental substring beats a real match next
+// door: standing in infrastructure, "arch" matches opensearch_ism and would
+// quietly shadow the feat_wt/arch worktrees that actually exist elsewhere.
 //
 // ctx may be nil when the caller is not inside a repository.
 func Find(ctx *Context, pattern string) ([]find.Scored, error) {
@@ -131,16 +131,17 @@ func candidates(r *repo.Repo, sch naming.Scheme, local bool) ([]find.Candidate, 
 // candidate is a worktree as the matcher sees it: the main checkout goes by
 // the repository's name, a linked worktree by the work name its branch
 // carries, and failing that by its directory. That is the same name `wt list`
-// prints for it.
+// prints for it. One that follows the convention also goes by <type>/<work>,
+// which is what completion offers.
 func candidate(r *repo.Repo, wt repo.Worktree, sch naming.Scheme, local bool) find.Candidate {
-	work := r.Name
+	work, spec := r.Name, ""
 	if !wt.IsMain {
-		switch _, w, ok := sch.Parse(wt.Branch); {
+		switch t, w, ok := sch.Parse(wt.Branch); {
 		case ok:
-			work = w
+			work, spec = w, t+"/"+w
 		default:
-			if _, w, ok := sch.ClassifyPath(wt.Path); ok {
-				work = w
+			if t, w, ok := sch.ClassifyPath(wt.Path); ok {
+				work, spec = w, t+"/"+w
 			} else if work = wt.Branch; work == "" {
 				work = filepath.Base(wt.Path)
 			}
@@ -149,6 +150,7 @@ func candidate(r *repo.Repo, wt repo.Worktree, sch naming.Scheme, local bool) fi
 	return find.Candidate{
 		Work:   work,
 		Branch: wt.Branch,
+		Spec:   spec,
 		Repo:   r.Name,
 		Path:   wt.Path,
 		Local:  local,
@@ -156,8 +158,11 @@ func candidate(r *repo.Repo, wt repo.Worktree, sch naming.Scheme, local bool) fi
 }
 
 // scoreAll scores every candidate. A pattern containing "/" is tried whole
-// first, so a full branch name works; only if nothing matches is it split into
-// repo/work, so "personal/arch" disambiguates across repositories.
+// first, so a full branch name or <type>/<work> works; only if nothing matches
+// is it split into repo/work, so "personal/arch" disambiguates across
+// repositories. The start of a <type>/<work> does not count as a match for
+// that: it is scored beside the split, each candidate keeping the better of
+// its two tiers, so it cannot hide the worktree the split names outright.
 func scoreAll(cands []find.Candidate, pattern string) []find.Scored {
 	var out []find.Scored
 	for _, c := range cands {
@@ -165,14 +170,29 @@ func scoreAll(cands []find.Candidate, pattern string) []find.Scored {
 			out = append(out, s)
 		}
 	}
-	if len(out) > 0 || !strings.Contains(pattern, "/") {
+	if !strings.Contains(pattern, "/") {
 		return out
+	}
+	for _, s := range out {
+		if s.Tier != find.TierTypedPrefix {
+			return out
+		}
+	}
+	at := make(map[string]int, len(out))
+	for i, s := range out {
+		at[s.Path] = i
 	}
 	cut := strings.LastIndex(pattern, "/")
 	repoPat, workPat := pattern[:cut], pattern[cut+1:]
 	for _, c := range cands {
-		if s, ok := find.Score(c, workPat, repoPat); ok {
+		s, ok := find.Score(c, workPat, repoPat)
+		if !ok {
+			continue
+		}
+		if i, seen := at[s.Path]; !seen {
 			out = append(out, s)
+		} else if s.Tier < out[i].Tier {
+			out[i] = s
 		}
 	}
 	return out
