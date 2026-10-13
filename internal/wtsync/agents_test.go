@@ -117,6 +117,53 @@ func TestParseAgentsDropsFinishedSessions(t *testing.T) {
 	}
 }
 
+// A background conversation opened in a terminal is listed twice under one
+// session id: the terminal's row, with the process, and the background row,
+// "blocked" with no process of its own. It is one session, the terminal's,
+// so from inside it wt sees nobody else, and from outside it is as busy or
+// idle as the terminal says.
+func TestParseAgentsCountsAConversationOpenInATerminalOnce(t *testing.T) {
+	const listing = `[
+ {"id":"3be7e2a1","cwd":"/repo_wt/fix_wt/one","kind":"background","sessionId":"3be7e2a1-854d","name":"one","state":"blocked"},
+ {"pid":95554,"cwd":"/repo_wt/fix_wt/one","kind":"interactive","sessionId":"3be7e2a1-854d","name":"one","status":"idle"},
+ {"id":"15fab73e","cwd":"/repo_wt/fix_wt/one","kind":"background","sessionId":"15fab73e-444d","name":"another conversation","state":"blocked"},
+ {"id":"77aa","pid":300,"cwd":"/repo_wt/fix_wt/two","kind":"background","sessionId":"77aa-0001","name":"two","state":"working","status":"busy"},
+ {"pid":301,"cwd":"/repo_wt/fix_wt/two","kind":"interactive","sessionId":"77aa-0001","name":"two","status":"idle"}
+]`
+	agents, err := ParseAgents([]byte(listing))
+	if err != nil {
+		t.Fatal(err)
+	}
+	one := SessionsAt(agents, "/repo_wt/fix_wt/one")
+	if len(one) != 2 || one[0].PID != 95554 || one[0].ID != "3be7e2a1" || one[1].Name != "another conversation" {
+		t.Fatalf("one = %+v, want the terminal's row under the background id, and the other conversation", one)
+	}
+	if !one[0].Idle() || !one[1].Idle() {
+		t.Errorf("one = %+v, want the terminal's row idle, and the other conversation too: it is parked", one)
+	}
+	// From inside that terminal the conversation is the caller, and is gone.
+	if rest := WithoutCaller(one, map[int]bool{95554: true}); len(rest) != 1 || rest[0].Name != "another conversation" {
+		t.Errorf("from inside it wt still sees %+v", rest)
+	}
+	// A background row with a process of its own is somebody: both stay.
+	if two := SessionsAt(agents, "/repo_wt/fix_wt/two"); len(two) != 2 {
+		t.Errorf("two = %+v, want both rows of a conversation running twice", two)
+	}
+}
+
+// A session id that is not text folds nothing and fails nothing: the listing
+// the verbs act on does not depend on it.
+func TestParseAgentsSurvivesASessionIDItCannotRead(t *testing.T) {
+	const listing = `[
+ {"id":"a1","cwd":"/r","kind":"background","sessionId":7,"name":"one","state":"blocked"},
+ {"pid":12,"cwd":"/r","kind":"interactive","sessionId":7,"name":"one","status":"idle"}
+]`
+	agents, err := ParseAgents([]byte(listing))
+	if err != nil || len(agents) != 2 {
+		t.Fatalf("agents = %+v, err = %v", agents, err)
+	}
+}
+
 func TestAgentAtMatchesTheWorktreeOrADirectoryInsideIt(t *testing.T) {
 	agents, _ := ParseAgents([]byte(agentsJSON))
 	if a := AgentAt(agents, "/repo_wt/feat_wt/one"); a == nil || a.Name != "fix it" {
@@ -160,6 +207,10 @@ func TestIdleIsAnInteractiveSessionWithAnIdleStatus(t *testing.T) {
 		{"interactive busy", Agent{Kind: "interactive", Status: "busy"}, false},
 		{"background working", Agent{Kind: "background", State: "working", Status: "busy"}, false},
 		{"background blocked on a question", Agent{Kind: "background", State: "blocked", Status: "idle"}, false},
+		{"background blocked, its process still there", Agent{Kind: "background", State: "blocked", Status: "idle", PID: 62401}, false},
+		{"background parked: blocked, no status, no process", Agent{Kind: "background", State: "blocked"}, true},
+		{"background working with no status", Agent{Kind: "background", State: "working"}, false},
+		{"background with a process and no status", Agent{Kind: "background", State: "blocked", PID: 62401}, false},
 		{"background with no state", Agent{Kind: "background", Status: "idle"}, false},
 		{"interactive with a state nobody has seen", Agent{Kind: "interactive", State: "blocked", Status: "idle"}, false},
 		{"no status from an older claude", Agent{Kind: "interactive"}, false},

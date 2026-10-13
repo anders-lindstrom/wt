@@ -114,12 +114,13 @@ their children run on.
 
 A session is an agent working in a worktree. A busy one refuses what would
 change files under it; an idle one is waiting for its person. The session wt
-itself runs under is never listed. Wherever sessions are listed, `kind` says
-whose it is:
+itself runs under is never listed. A background Claude session opened in a
+terminal is one session, the terminal's, though claude lists it twice.
+Wherever sessions are listed, `kind` says whose it is:
 
 | `kind` | Found by | `name` | `state` |
 |---|---|---|---|
-| `claude` | `claude agents --json` | the session's name | `idle` for an interactive session with status idle; anything else is `busy` |
+| `claude` | `claude agents --json` | the session's name | `idle` for an interactive session with status idle, and for a parked background one: blocked, with neither a status nor a pid in the listing, which is one no process is running. Anything else is `busy` |
 | `codex` | `ps`, each codex process's working directory, and the turn markers in `$CODEX_HOME/sessions` (default `~/.codex/sessions`) | `codex exec`, `codex`, or `codex (<originator>)` | see below |
 
 A Codex session is one of two things:
