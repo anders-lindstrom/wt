@@ -6,6 +6,15 @@ the last 3 days if that is more, so keep each entry to a few lines a human would
 want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-10-13 09:59 — a parked background session no longer blocks wt up
+
+- A background session waiting on you with no process running counted as
+  busy for as long as it sat there, so `wt up` refused its worktree. It is
+  idle now: `wt up` and `wt sync` name it and go ahead, `wt remove` and
+  `wt sweep` still keep its worktree. One with a process stays busy.
+- A background session opened in a terminal is listed twice by claude, and wt
+  counted the second row as another session, so it refused itself. It is one.
+
 ## 2026-10-13 06:19 — wt cd takes the name tab completion gives it
 
 - `wt cd <tab>` offers `feat/login-crash`, and `wt cd feat/login-crash` then

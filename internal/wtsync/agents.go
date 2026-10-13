@@ -68,27 +68,65 @@ func (a Agent) Program() string {
 }
 
 // Idle is an interactive session waiting for its person: status idle and no
-// state. A background session is never idle — blocked on a question it
-// reports status idle too — and a listing with no status, or with a value
-// nobody has seen, is not known to be idle, so it counts as busy. A Codex
-// session is idle when codexSessions found it so.
+// state. A background session with a process is never idle — blocked on a
+// question it reports status idle too — and a listing with no status, or with
+// a value nobody has seen, is not known to be idle, so it counts as busy. A
+// Codex session is idle when codexSessions found it so.
+//
+// A parked background session is idle too: blocked, and listed with neither
+// a status nor a pid, which is how claude lists one that no process is
+// running (2.1.296). It stays that way until somebody opens it, for days,
+// and nothing in it can touch the worktree meanwhile.
 func (a Agent) Idle() bool {
 	if a.Tool == ToolCodex {
 		return a.Status == "idle"
 	}
-	return a.Status == "idle" && a.State == "" && a.Kind != "background"
+	if a.Kind == "background" {
+		return a.State == "blocked" && a.Status == "" && a.PID <= 1
+	}
+	return a.Status == "idle" && a.State == ""
 }
 
 // ParseAgents decodes the listing and drops finished sessions, which stay in
 // the list with state "done" and are nobody.
+//
+// A background conversation opened in a terminal is listed twice under one
+// session id: the terminal's row, which has the process, and the background
+// row, "blocked" with none. That is one session, and counting the second row
+// has a session refuse itself: WithoutCaller drops the row whose pid is above
+// wt and the other stays, never idle. The background row is dropped here and
+// the terminal's row takes its id, as in ParseClaudeSessions. One with a
+// process of its own is kept: something is running there. The session id is
+// read loosely and apart from the rest, so that it can fold a row and fail
+// nothing.
 func ParseAgents(data []byte) ([]Agent, error) {
 	var raw []Agent
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, err
 	}
+	conversation := make([]string, len(raw))
+	inTerminal := map[string]int{}
+	var extra []claudeExtra
+	if json.Unmarshal(data, &extra) == nil && len(extra) == len(raw) {
+		for i := range raw {
+			_ = json.Unmarshal(extra[i].SessionID, &conversation[i])
+			if raw[i].Kind == "interactive" && conversation[i] != "" {
+				inTerminal[conversation[i]] = i
+			}
+		}
+	}
+	folded := map[int]bool{}
+	for i, a := range raw {
+		if at, ok := inTerminal[conversation[i]]; ok && a.Kind == "background" && a.PID <= 1 {
+			if raw[at].ID == "" {
+				raw[at].ID = a.ID
+			}
+			folded[i] = true
+		}
+	}
 	var live []Agent
-	for _, a := range raw {
-		if a.State != "done" {
+	for i, a := range raw {
+		if a.State != "done" && !folded[i] {
 			live = append(live, a)
 		}
 	}
