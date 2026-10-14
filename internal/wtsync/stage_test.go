@@ -72,6 +72,50 @@ func TestRebaseProgressReadsTheStopIndexAndSubject(t *testing.T) {
 	}
 }
 
+// An edit stop is after its pick when git committed the pick and when it
+// dropped it as empty, and not at a conflict, staged or not. From git 2.56 a
+// dropped pick leaves no amend marker, so the test takes it away whatever
+// git runs it.
+func TestRebaseProgressSaysWhetherAnEditStopIsAfterItsPick(t *testing.T) {
+	for name, tc := range map[string]struct {
+		trunk   map[string]string
+		resolve bool
+		applied bool
+	}{
+		"committed":        {trunk: map[string]string{"a.txt": "a2\n"}, applied: true},
+		"dropped as empty": {trunk: map[string]string{"v.txt": "1.0.1\n"}, applied: true},
+		"conflict":         {trunk: map[string]string{"v.txt": "1.0.5\n"}},
+		"conflict staged":  {trunk: map[string]string{"v.txt": "1.0.5\n"}, resolve: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := linearRepo(t, []map[string]string{tc.trunk}, []map[string]string{{"v.txt": "1.0.1\n"}})
+			wt := featureWorktree(t, dir).Path
+			_, _ = gittest.Try(t, wt, "-c", "sequence.editor=sed -i.bak s/^pick/edit/", "rebase", "--interactive",
+				"--empty=drop", "--reapply-cherry-picks", "--no-update-refs", "--no-gpg-sign", "main")
+			rm, err := rebaseDir(wt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.applied && gitIn(t, wt, "rev-parse", "HEAD") == gitIn(t, wt, "rev-parse", "main") {
+				if err := os.Remove(filepath.Join(rm, "amend")); err != nil && !os.IsNotExist(err) {
+					t.Fatal(err)
+				}
+			}
+			if tc.resolve {
+				gittest.WriteFile(t, filepath.Join(wt, "v.txt"), "1.0.6\n")
+				gitIn(t, wt, "add", "--", "v.txt")
+			}
+			p, err := RebaseProgress(wt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if p.Command != "edit" || p.Applied != tc.applied {
+				t.Fatalf("progress %+v, want applied %v", p, tc.applied)
+			}
+		})
+	}
+}
+
 func TestApplyWritesTheContentKeepsTheModeAndStagesIt(t *testing.T) {
 	_, wt := stoppedRebase(t,
 		[]map[string]string{{"v.txt": "1.0.5\n"}},

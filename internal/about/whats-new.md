@@ -6,6 +6,12 @@ from the last 3 days if that is more, so keep each entry to a few lines a human
 would want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-10-14 23:26 — wt sync fails a lone bump trunk took, on git 2.56 too
+
+- A version-bump commit trunk already has, at a number wt cannot lift, makes
+  the sync fail and restore the branch again under git 2.56. Before this it
+  stopped and handed a person a pick that had nothing to fix.
+
 ## 2026-10-14 22:26 — wt status says a branch trunk already has needs no rebase
 
 - `wt status --json` (1.9.0) reports `upIneligibleCode` `alreadyOnTrunk` for a

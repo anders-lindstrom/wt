@@ -66,6 +66,15 @@ func landOnMain(t *testing.T, main, branch string) {
 	gitIn(t, main, "fetch", "-q", "origin")
 }
 
+// mergeOnOrigin moves origin's main to branch behind this clone's back, as a
+// pull request merged on GitHub does: origin/main stays where it was until a
+// fetch. Origin fetches rather than main pushes, since a push from main to
+// origin's URL moves origin/main too from git 2.56.
+func mergeOnOrigin(t *testing.T, main, origin, branch string) {
+	t.Helper()
+	gitIn(t, origin, "fetch", "-q", main, "refs/heads/"+branch+":refs/heads/main")
+}
+
 // goneUpstream gives branch an upstream origin does not have, which is what a
 // remote branch deleted on merge looks like after fetch --prune.
 func goneUpstream(t *testing.T, main, branch string) {
@@ -172,8 +181,7 @@ func TestSweepPlanLeavesUnmergedWorkOut(t *testing.T) {
 func TestSweepPlanCountsAMergeOnlyOriginHas(t *testing.T) {
 	ctx, main, origin := sweepRepo(t)
 	branchWithWork(t, main, "landed", 1)
-	// To the path: a push by remote name would move origin/main without a fetch.
-	gitIn(t, main, "push", "-q", origin, "landed:main")
+	mergeOnOrigin(t, main, origin, "landed")
 	gitIn(t, main, "fetch", "-q", "origin")
 
 	p := planOf(t, ctx)
@@ -1103,8 +1111,7 @@ func TestSweepKeepsABranchWhoseMergeWasUndoneWhileThePromptWasOpen(t *testing.T)
 func TestSweepFetchesAndPrunesFirst(t *testing.T) {
 	ctx, main, origin := sweepRepo(t)
 	branchWithWork(t, main, "landed", 1)
-	// To the path: a push by remote name would update origin/main without a fetch.
-	gitIn(t, main, "push", "-q", origin, "landed:main")
+	mergeOnOrigin(t, main, origin, "landed")
 	branchWithWork(t, main, "old-idea", 2)
 	gitIn(t, main, "push", "-q", "-u", "origin", "old-idea")
 	gitIn(t, origin, "branch", "-D", "old-idea") // deleted on the remote, as a merge would
@@ -1190,8 +1197,7 @@ func TestSweepStopsWhenTheFetchFails(t *testing.T) {
 func TestSweepNoFetchComparesWithOriginAsLastFetched(t *testing.T) {
 	ctx, main, origin := sweepRepo(t)
 	branchWithWork(t, main, "landed", 1)
-	// To the path: a push by remote name would update origin/main without a fetch.
-	gitIn(t, main, "push", "-q", origin, "landed:main")
+	mergeOnOrigin(t, main, origin, "landed")
 
 	var buf bytes.Buffer
 	if err := Sweep(ctx, SweepOptions{NoFetch: true, Yes: true}, &buf); err != nil {

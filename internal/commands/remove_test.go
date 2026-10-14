@@ -639,8 +639,7 @@ func TestRemoveDeletesABranchMergedOnlyOnOrigin(t *testing.T) {
 		t.Fatal(err)
 	}
 	gitIn(t, path, "commit", "-q", "--allow-empty", "-m", "landed work")
-	// To the path: a push by remote name would move origin/main without a fetch.
-	gitIn(t, main, "push", "-q", origin, "fix_wt/landed:main")
+	mergeOnOrigin(t, main, origin, "fix_wt/landed")
 	gitIn(t, main, "fetch", "-q", "origin")
 	buf.Reset()
 
@@ -680,7 +679,7 @@ func TestRemoveKeepsABranchOnlyAnUnreadOriginHas(t *testing.T) {
 				t.Fatal(err)
 			}
 			gitIn(t, path, "commit", "-q", "--allow-empty", "-m", "unseen work")
-			gitIn(t, main, "push", "-q", origin, "fix_wt/unseen:main")
+			mergeOnOrigin(t, main, origin, "fix_wt/unseen")
 			hide(t, main)
 			buf.Reset()
 

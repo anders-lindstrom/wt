@@ -10,14 +10,16 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/github"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/superset"
 )
 
-// TestMain keeps this package off the machine running it: XDG_CONFIG_HOME is
-// a directory of this run's own, probeSuperset answers "no Superset here",
-// findGitHub "no gh here" and supersetHostCommand reads no process, until a
-// test asks for another state.
+// TestMain keeps this package off the machine running it: gittest.Isolate,
+// XDG_CONFIG_HOME a directory of this run's own, probeSuperset answering "no
+// Superset here", findGitHub "no gh here" and supersetHostCommand reading no
+// process, until a test asks for another state.
 func TestMain(m *testing.M) {
+	restore := gittest.Isolate()
 	dir, err := os.MkdirTemp("", "wt-commands-test")
 	if err != nil {
 		panic(err)
@@ -30,6 +32,7 @@ func TestMain(m *testing.M) {
 	supersetHostCommand = func(int) (string, error) { return "", errors.New("no ps in tests") }
 	code := m.Run()
 	_ = os.RemoveAll(dir)
+	restore()
 	os.Exit(code)
 }
 
