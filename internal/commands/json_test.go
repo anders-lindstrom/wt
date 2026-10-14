@@ -97,6 +97,31 @@ func TestPlanSaysWhyWtUpWouldNotStart(t *testing.T) {
 	}
 }
 
+// A branch trunk already contains has nothing to rebase: the plan says so
+// with its own code, wherever the branch's remote is. A branch with a commit
+// trunk lacks stays eligible.
+func TestPlanSaysABranchTrunkContainsHasNothingToRebase(t *testing.T) {
+	ctx, bump := runFixture(t, false)
+	if p := planOfWork(t, ctx, bump); !p.UpEligible || p.Worktree.Ahead == nil || *p.Worktree.Ahead != 1 {
+		t.Fatalf("a branch with its own commit: %+v", p)
+	}
+	main := ctx.Repo.MainRoot
+	gitIn(t, main, "merge", "-q", "-s", "ours", "--no-edit", "feat_wt/bump")
+	gitIn(t, main, "fetch", "-q", "origin")
+	p := planOfWork(t, ctx, bump)
+	if p.UpEligible || p.UpIneligibleCode == nil || *p.UpIneligibleCode != IneligibleInTrunk || p.Token != nil {
+		t.Fatalf("a branch trunk contains: %+v", p)
+	}
+	if p.UpIneligibleReason == nil || !strings.Contains(*p.UpIneligibleReason, "origin/main") {
+		t.Errorf("reason = %v", p.UpIneligibleReason)
+	}
+	// Local trunk alone containing it is not enough once origin is behind: wt up rebases onto origin.
+	gitIn(t, main, "update-ref", "refs/remotes/origin/main", "HEAD~1")
+	if p := planOfWork(t, ctx, bump); !p.UpEligible {
+		t.Errorf("origin lacks the commit: %+v", p)
+	}
+}
+
 // The token from the plan is what wt up checks: the same plan runs, and a
 // stack that grew since is refused with nothing touched.
 func TestUpExpectHoldsTheRunToThePlan(t *testing.T) {

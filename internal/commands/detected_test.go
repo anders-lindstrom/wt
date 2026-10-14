@@ -228,6 +228,8 @@ func TestPlansOnDetectedDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A branch with no commit of its own is already in trunk: give it one.
+	gitIn(t, path, "commit", "-q", "--allow-empty", "-m", "work")
 	s := planOfWork(t, ctx, path)
 	if s.Configured || !s.UpEligible {
 		t.Errorf("status: configured %v eligible %v (%v)", s.Configured, s.UpEligible, s.UpIneligibleReason)

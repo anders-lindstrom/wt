@@ -1,7 +1,7 @@
 # Each schema's version and the sha256 of its file. A test fails when a file
 # changes without a new version here and in its x-version: see AGENTS.md.
 
-status.v1.json 1.8.0 fe050459ee989738b46a64495334f0420f010d7c335ecaa80daace911dcaec88
+status.v1.json 1.9.0 9ab519083446d88c3a8aebae6318c33658d54bf47d74900842bdf9f70e10a66f
 sweep-plan.v1.json 1.5.1 c8d1136b02300aefdce33776fa02b7d05c47f5abd423a4f910ac58d858875f09
 sweep.v1.json 1.4.1 aa9e5b119510ab98aee1e3dcd849630e525e6fc134e195ebdfdfdb458bed5732
 up.v1.json 1.5.0 80432ad731f0751c1acded63ac8462777414df6d290a9213cdc9a07075eeb459

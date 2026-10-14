@@ -25,6 +25,10 @@ const (
 	IneligibleOnTrunk       = "onTrunk"
 	IneligibleHandedOver    = "handedOver"
 	IneligibleNotAWorktree  = "notAWorktree"
+	// IneligibleInTrunk is a branch with no commit trunk lacks: it is an
+	// ancestor of the trunk wt up rebases onto, so there is nothing of it to
+	// rebase. Its own remote being gone changes nothing.
+	IneligibleInTrunk = "alreadyOnTrunk"
 	// IneligibleOwnDiverged is a branch of the stack that has diverged from
 	// its own remote: wt up --allow-diverged goes on.
 	IneligibleOwnDiverged = "ownRemoteDiverged"
@@ -151,7 +155,7 @@ func UpPlanJSON(ctx *Context, arg string, w io.Writer) error {
 		base, _ = ctx.Repo.ResolveRef("refs/heads/" + trunk)
 	}
 	if wt.Branch != "" && base != "" {
-		if a, ok := ctx.Repo.CommitsAhead(wt.Branch, base); ok {
+		if a, ok := ctx.Repo.CommitsAhead("refs/heads/"+wt.Branch, base); ok {
 			pw.Ahead = &a
 		}
 		if b, ok := ctx.Repo.CommitsAhead(base, "refs/heads/"+wt.Branch); ok {
@@ -266,6 +270,16 @@ func UpPlanJSON(ctx *Context, arg string, w io.Writer) error {
 			why = "elsewhere"
 		}
 		inel(IneligibleOwnDiverged, ownIneligible(*apart, wt.Branch, why))
+	}
+	// Nothing of the branch is left to bring up: every commit it has is on
+	// trunk already. A stack is not judged by its first member alone, and a
+	// branch behind or diverged from its own remote keeps those codes above.
+	if len(p.Stack) == 1 && pw.Ahead != nil && *pw.Ahead == 0 && wt.Branch != "" && !wt.IsMain {
+		onto := trunk
+		if p.TrunkRef != nil && exists {
+			onto = *p.TrunkRef
+		}
+		inel(IneligibleInTrunk, fmt.Sprintf("every commit of %s is already on %s: there is nothing to rebase", wt.Branch, onto))
 	}
 	p.UpEligible = p.UpIneligibleCode == nil
 	// A plan held back by divergence alone has a token too: wt up
