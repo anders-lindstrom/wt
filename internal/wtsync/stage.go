@@ -37,8 +37,10 @@ type Progress struct {
 	Command string
 	// Applied says the sequencer stopped after applying the pick, for an
 	// edit: HEAD is past the pick (or, when git dropped the pick as empty,
-	// unmoved), and there is nothing unmerged. It is git's amend marker; an
-	// edit that stopped at a conflict is not applied, and has none.
+	// unmoved), and there is nothing unmerged. git marks the first with
+	// amend; from 2.56 it does not mark the second, so an edit stop without
+	// MERGE_MSG, which git writes at a conflict and keeps until the commit,
+	// is applied too.
 	Applied bool
 }
 
@@ -108,10 +110,11 @@ func RebaseInProgress(wtPath string) (bool, error) {
 // each pick that may need a version lift, which would put every stop after
 // it one line further along than the commit it is at.
 func RebaseProgress(wtPath string) (Progress, error) {
-	dir, err := rebaseDir(wtPath)
+	dirs, err := sequencerDirs(wtPath, "rebase-merge", "MERGE_MSG")
 	if err != nil {
 		return Progress{}, err
 	}
+	dir, mergeMsg := dirs[0], dirs[1]
 	var p Progress
 	done, err := os.ReadFile(filepath.Join(dir, "done"))
 	if err != nil {
@@ -132,6 +135,8 @@ func RebaseProgress(wtPath string) (Progress, error) {
 		p.Subject, _, _ = strings.Cut(strings.TrimSpace(string(b)), "\n")
 	}
 	if _, err := os.Stat(filepath.Join(dir, "amend")); err == nil {
+		p.Applied = true
+	} else if _, err := os.Stat(mergeMsg); p.Command == "edit" && os.IsNotExist(err) {
 		p.Applied = true
 	}
 	return p, nil
