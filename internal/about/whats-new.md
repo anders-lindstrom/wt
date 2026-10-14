@@ -6,6 +6,12 @@ from the last 3 days if that is more, so keep each entry to a few lines a human
 would want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-10-14 22:26 — wt status says a branch trunk already has needs no rebase
+
+- `wt status --json` (1.9.0) reports `upIneligibleCode` `alreadyOnTrunk` for a
+  branch with no commit its trunk lacks, so tools stop offering a rebase for
+  it. A remote branch that is gone changes nothing.
+
 ## 2026-10-14 20:31 — interrupted installs recover; flag conflicts exit 2
 
 - An interrupted install can be retried or uninstalled: ownership covers both
