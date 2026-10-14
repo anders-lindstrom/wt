@@ -13,7 +13,8 @@ import (
 // config set` writes a real file. The settings there turn both integrations
 // off, so a test running `wt list` cannot reach the gh or the Superset of
 // whoever is running it. A test that wants one back writes its own file
-// through userConfigIn. Git runs isolated (gittest.Isolate).
+// through userConfigIn. The rest of the machine is kept out by
+// gittest.Isolate.
 func TestMain(m *testing.M) {
 	restore := gittest.Isolate()
 	dir, err := os.MkdirTemp("", "wt-cli-test")

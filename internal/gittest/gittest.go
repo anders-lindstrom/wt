@@ -3,6 +3,7 @@
 package gittest
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,13 +20,16 @@ var identity = []string{
 	"GIT_COMMITTER_NAME=T", "GIT_COMMITTER_EMAIL=t@example.com",
 }
 
-// Isolate keeps every git a package's tests start, the helpers' and the code's
-// under test alike, off the machine running them. It drops each GIT_ variable
-// the environment carries (an agent launcher's GIT_CONFIG_* and
-// GIT_SSH_COMMAND, a hook's GIT_DIR) and points git at an empty global config
-// and no system one, so no hooksPath, signing, credential helper or url
-// rewrite of the user's applies. Call it from TestMain before m.Run and the
-// returned func after.
+// Isolate keeps a package's tests off the machine running them, for the
+// tests' own git and the code's under test alike. Git gets an empty global
+// config and no system one, so no hooksPath, signing, credential helper or url
+// rewrite of the user's applies, and none of the GIT_ variables the
+// environment carries (an agent launcher's GIT_CONFIG_* and GIT_SSH_COMMAND,
+// a hook's GIT_DIR). HOME is an empty directory, with no XDG_CONFIG_HOME,
+// CODEX_HOME or WT_ROOTS pointing elsewhere, and the PATH finds no claude:
+// where none is installed, as in CI, is the state a test starts from, and one
+// that wants a claude puts its own first. Call it from TestMain before m.Run
+// and the returned func after.
 func Isolate() func() {
 	dir, err := os.MkdirTemp("", "wt-gittest")
 	if err != nil {
@@ -35,14 +39,68 @@ func Isolate() func() {
 	if err := os.WriteFile(global, nil, 0o644); err != nil {
 		panic(err)
 	}
+	home := filepath.Join(dir, "home")
+	if err := os.Mkdir(home, 0o755); err != nil {
+		panic(err)
+	}
 	for _, kv := range os.Environ() {
 		if name, _, _ := strings.Cut(kv, "="); strings.HasPrefix(name, "GIT_") {
 			_ = os.Unsetenv(name)
 		}
 	}
+	_ = os.Unsetenv("WT_ROOTS")
+	_ = os.Unsetenv("XDG_CONFIG_HOME")
+	_ = os.Unsetenv("CODEX_HOME")
+	_ = os.Setenv("HOME", home)
 	_ = os.Setenv("GIT_CONFIG_GLOBAL", global)
 	_ = os.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	hideClaude(dir)
 	return func() { _ = os.RemoveAll(dir) }
+}
+
+// hideClaude puts in place of each PATH directory holding a claude one under
+// dir that links to everything else in it, so every other tool, git among
+// them, is still found where it was. It panics if git is not.
+func hideClaude(dir string) {
+	git, _ := exec.LookPath("git")
+	path := filepath.SplitList(os.Getenv("PATH"))
+	for i, d := range path {
+		if _, err := os.Stat(filepath.Join(d, "claude")); err != nil { //nolint:gosec // G703: only asks whether a PATH entry holds a claude
+			continue
+		}
+		abs, err := filepath.Abs(d)
+		if err != nil {
+			panic(err)
+		}
+		entries, err := os.ReadDir(abs)
+		if err != nil {
+			panic(err)
+		}
+		shadow := filepath.Join(dir, fmt.Sprintf("path%d", i))
+		if err := os.Mkdir(shadow, 0o755); err != nil {
+			panic(err)
+		}
+		for _, e := range entries {
+			if e.Name() != "claude" {
+				if err := os.Symlink(filepath.Join(abs, e.Name()), filepath.Join(shadow, e.Name())); err != nil {
+					panic(err)
+				}
+			}
+		}
+		path[i] = shadow
+	}
+	_ = os.Setenv("PATH", strings.Join(path, string(os.PathListSeparator)))
+	if now, _ := exec.LookPath("git"); realPath(now) != realPath(git) {
+		panic(fmt.Sprintf("hiding claude moved git from %s to %s", git, now))
+	}
+}
+
+// realPath is p with every symlink resolved, or p when that fails.
+func realPath(p string) string {
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	return p
 }
 
 func command(dir string, env []string, args ...string) *exec.Cmd {

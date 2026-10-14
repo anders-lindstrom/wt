@@ -7,8 +7,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
-// TestMain runs every git these tests start without the config or the GIT_
-// environment of whoever runs them.
+// TestMain keeps these tests off the machine running them: gittest.Isolate.
 func TestMain(m *testing.M) {
 	restore := gittest.Isolate()
 	code := m.Run()
