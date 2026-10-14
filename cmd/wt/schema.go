@@ -46,7 +46,7 @@ func newSchemaCmd() *cobra.Command {
 			}
 			d, ok := schema.Get(args[0])
 			if !ok {
-				return fmt.Errorf("no schema for %q; there are: %s", args[0], strings.Join(names, ", "))
+				return usagef("no schema for %q; there are: %s", args[0], strings.Join(names, ", "))
 			}
 			_, err := out.Write(d.Bytes)
 			return err

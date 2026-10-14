@@ -80,12 +80,18 @@ worktree and its folder. The names are schema 1's and stay. A tool that has
 to know which spelling its wt takes reads `wt schema remove`: an `x-version`
 of 1.4.2 or later means `--move-to` and `wt purge` exist.
 
+## Exit codes
+
+Exit 0 means success, 1 a runtime failure, and 2 a usage mistake (arguments
+or flags). Exit 3 means launchd is unavailable for `wt sync keep start` or
+`stop`; use `wt sync keep once` from cron instead.
+
 ## Signals and what wt starts
 
 Every git, script and build wt runs gets a process group of its own. Its
 deadline and a handled SIGINT or SIGTERM to wt stop that whole group, however
-many processes it forked, before wt writes its object and exits 130. Each verb's
-section below says what that object holds.
+many processes it forked, before wt writes its object and exits 130 for SIGINT
+or 143 for SIGTERM. Each verb's section below says what that object holds.
 
 SIGKILL, or a crash, leaves wt no chance to do that. So a command that can write
 or run long — a `provision.sh`, a build, a deferred step, a git that changes
@@ -275,7 +281,8 @@ unless `--allow-diverged` is given.
 
 A handled SIGINT or SIGTERM writes the object too, through the same path — the
 participants so far, the one in flight as `interrupted`, and the way back — then
-exits 130. SIGKILL or a crash may write none; treat a missing object as unknown.
+exits 130 for SIGINT or 143 for SIGTERM. SIGKILL or a crash may write none;
+treat a missing object as unknown.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -832,8 +839,9 @@ as every sweep does, it reads everything once more immediately before it acts,
 and a row that changed in between is kept with the reason.
 
 A handled SIGINT or SIGTERM writes the object too — the rows so far, the one in
-flight as `interrupted` with what is true of it now — then exits 130. SIGKILL or
-a crash may write none; treat a missing object as unknown.
+flight as `interrupted` with what is true of it now — then exits 130 for SIGINT
+or 143 for SIGTERM. SIGKILL or a crash may write none; treat a missing object as
+unknown.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -1287,10 +1295,10 @@ Each pin is `refs/wt-swept/<runId>/<space>/<name>`, `<space>` being `heads`,
 `tags`, `remote-heads` or `remote-tags`. The pins and the meta are the record:
 there is no journal file.
 
-A handled SIGINT or SIGTERM writes the object too, with `outcome`
-`interrupted`, then exits 130: the rows done keep their result, the row in
-flight is `interrupted` with `pinned` and `deleted` read back, the rest are
-`notRun`. The same holds for `wt refs restore` and `wt refs purge`.
+A handled SIGINT or SIGTERM writes the object too, with `outcome` `interrupted`,
+then exits 130 for SIGINT or 143 for SIGTERM: the rows done keep their result,
+the row in flight is `interrupted` with `pinned` and `deleted` read back, the
+rest are `notRun`. The same holds for `wt refs restore` and `wt refs purge`.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -1514,8 +1522,9 @@ has the token an older wt gives it.
 what they do without it, and print one object in the shape of `wt up --json`'s,
 with more said about each worktree. Progress, and any question, go to
 **stderr**; stdout carries exactly that object, also when a handled SIGINT or
-SIGTERM ends the verb (exit 130). `--all`, `--roots` and `--profile` are refused
-with `--json`: a run across repositories has no single result.
+SIGTERM ends the verb (exit 130 for SIGINT, 143 for SIGTERM). `--all`, `--roots`
+and `--profile` are refused with `--json`: a run across repositories has no
+single result.
 
 To run unattended: a run with nothing named, and no terminal, rebases nothing
 without `--yes` (it is then `refused` with `error` saying so), as without
@@ -1662,10 +1671,11 @@ left as it is and the run refused as `planChanged`, with nothing created.
 A handled SIGINT or SIGTERM, from the moment the command starts, writes the
 object too — the step in flight `interrupted`, the rest as they stood — then
 stops a `provision.sh`, build command or git still running, each with its whole
-process group, and exits 130. SIGKILL or a crash may write none; treat a
-missing object as unknown. Its reaper then stops what was running (see
-[Signals](#signals-and-what-wt-starts)). A usage error (a missing argument, an unknown flag,
-`--expect` without `--json`) is reported as without `--json`, with no object.
+process group, and exits 130 for SIGINT or 143 for SIGTERM. SIGKILL or a crash
+may write none; treat a missing object as unknown. Its reaper then stops what
+was running (see [Signals](#signals-and-what-wt-starts)). A usage error (a
+missing argument, an unknown flag, `--expect` without `--json`) is reported as
+without `--json`, with no object.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -1816,11 +1826,12 @@ the removal refuses, touching nothing, unless it has that token: `outcome`
 exit. Then, as every removal does, the checkout is read once more right before
 it goes, and the branch's merge is asked again right before it is deleted.
 
-A handled SIGINT or SIGTERM, from the moment the repository is open, writes
-the object too, read from the disk as it is then — between the two moves of a
-`--move-to` that is `partlyMoved`, `branch` `notRun` — and exits 130. SIGKILL
-or a crash may write none: `<dir>/recovery.json` still says how far the
-move got. A usage error is reported as without `--json`, with no object.
+A handled SIGINT or SIGTERM, from the moment the repository is open, writes the
+object too, read from the disk as it is then — between the two moves of a
+`--move-to` that is `partlyMoved`, `branch` `notRun` — and exits 130 for SIGINT
+or 143 for SIGTERM. SIGKILL or a crash may write none: `<dir>/recovery.json`
+still says how far the move got. A usage error is reported as without `--json`,
+with no object.
 
 | Field | Type | Meaning |
 |---|---|---|

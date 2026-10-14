@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"os"
 	"strconv"
 
@@ -81,7 +80,7 @@ func newAttachCmd() *cobra.Command {
 			if opts.Resume = resume.on; opts.Resume {
 				before, after := args[:min(resume.before, len(args))], args[min(resume.before, len(args)):]
 				if len(before) > 1 || len(after) > 1 {
-					return errors.New("with --resume, the worktree goes before it and the session id after it: " +
+					return usagef("with --resume, the worktree goes before it and the session id after it: " +
 						"wt attach <pattern> --resume <id>")
 				}
 				args = []string{"", ""}

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -136,10 +135,10 @@ func newStatusCmd() *cobra.Command {
 			out := cmd.OutOrStdout()
 			if asJSON {
 				if opts.Refresh {
-					return errors.New("--json asks GitHub nothing, so there is nothing to --refresh")
+					return usagef("--json asks GitHub nothing, so there is nothing to --refresh")
 				}
 				if sel.selection().Any() {
-					return errors.New("--json reports one worktree; name it, without --all, --roots or --profile")
+					return usagef("--json reports one worktree; name it, without --all, --roots or --profile")
 				}
 				work := "."
 				if len(args) == 1 {
@@ -159,7 +158,7 @@ func newStatusCmd() *cobra.Command {
 			}
 			if sel.selection().Any() {
 				if len(args) > 0 {
-					return errors.New("--all, --roots and --profile cover whole repositories; name no worktree with them")
+					return usagef("--all, --roots and --profile cover whole repositories; name no worktree with them")
 				}
 				return commands.AcrossRepos(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), out,
 					func(ctx *commands.Context, w io.Writer) error {

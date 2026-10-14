@@ -52,7 +52,7 @@ func arm(t *testing.T, mark string) {
 
 // sigtermRun runs wt with args in main as a child — this test binary, which
 // runs Execute when WT_REFS_SIGNAL_ARGS is set — sends it SIGTERM once the
-// hook holds a move open, and returns stdout after checking exit 130.
+// hook holds a move open, and returns stdout after checking exit 143.
 func sigtermRun(t *testing.T, main, mark string, args ...string) []byte {
 	t.Helper()
 	cmd := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.count=1") //nolint:gosec // G702: re-runs this test binary with its own test name
@@ -79,8 +79,8 @@ func sigtermRun(t *testing.T, main, mark string, args ...string) []byte {
 	}
 	err := cmd.Wait()
 	var exit *exec.ExitError
-	if !errors.As(err, &exit) || exit.ExitCode() != 130 {
-		t.Fatalf("exit = %v, want 130\nstderr: %s", err, stderr.String())
+	if !errors.As(err, &exit) || exit.ExitCode() != 143 {
+		t.Fatalf("exit = %v, want 143\nstderr: %s", err, stderr.String())
 	}
 	return stdout.Bytes()
 }
@@ -119,7 +119,7 @@ func sweptRun(t *testing.T, main, run string) {
 }
 
 // SIGTERM in the middle of wt refs sweep --yes --json still gets its one
-// object, and exit 130: the row done is swept, the row the signal caught is
+// object, and exit 143: the row done is swept, the row the signal caught is
 // interrupted with what is true of it read back, the rest not run.
 func TestRefsSweepSIGTERMWritesTheObject(t *testing.T) {
 	childMain()

@@ -396,7 +396,7 @@ func SetUser(name, value string) (path string, set string, err error) {
 	}
 	literal, err := userValue(name, value)
 	if err != nil {
-		return "", "", err
+		return "", "", &InputError{Err: err}
 	}
 	path, content, err := editable()
 	if err != nil {
@@ -415,7 +415,7 @@ func UnsetUser(name string) (path string, removed bool, err error) {
 		return unsetTable(name)
 	}
 	if _, ok := userKeyByName(name); !ok {
-		return "", false, unknownUserKey(name)
+		return "", false, &InputError{Err: unknownUserKey(name)}
 	}
 	path, content, err := editable()
 	if err != nil {
@@ -621,3 +621,9 @@ func insertAt(lines []string, at int, line string) []string {
 	}
 	return slices.Insert(slices.Clone(lines), at, line)
 }
+
+// InputError reports an invalid key or value supplied by the caller.
+type InputError struct{ Err error }
+
+func (e *InputError) Error() string { return e.Err.Error() }
+func (e *InputError) Unwrap() error { return e.Err }

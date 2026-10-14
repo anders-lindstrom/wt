@@ -57,12 +57,12 @@ setup() {
 @test "an invalid key or value is refused and writes nothing" {
     cd "$BATS_TEST_TMPDIR"
     run wt config set superst true
-    [ "$status" -eq 1 ]
+    [ "$status" -eq 2 ]
     [[ "$output" == *'unknown key "superst"'* ]]
     [ ! -e "$USER_CONFIG" ]
 
     run wt config set superset sometimes
-    [ "$status" -eq 1 ]
+    [ "$status" -eq 2 ]
     [[ "$output" == *"true or false"* ]]
     [ ! -e "$USER_CONFIG" ]
 }
@@ -187,7 +187,7 @@ setup() {
 @test "a branch suffix that a branch cannot carry is refused" {
     cd "$BATS_TEST_TMPDIR"
     run wt config set branch_suffix "wt/"
-    [ "$status" -eq 1 ]
+    [ "$status" -eq 2 ]
     [[ "$output" == *"may not contain a slash"* ]]
     [ ! -e "$USER_CONFIG" ]
 }
@@ -221,7 +221,7 @@ setup() {
 @test "a type_names pair that is not one is refused" {
     cd "$BATS_TEST_TMPDIR"
     run wt config set type_names "feature"
-    [ "$status" -eq 1 ]
+    [ "$status" -eq 2 ]
     [[ "$output" == *"<type>=<name>"* ]]
     [ ! -e "$USER_CONFIG" ]
 }

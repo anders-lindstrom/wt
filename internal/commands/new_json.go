@@ -410,7 +410,7 @@ type CreateJournal struct {
 	inFlight string
 	// signalled is set by the signal handler as it writes the object: from
 	// then on the run parks at its next step rather than go on, or return
-	// and exit with another status before the handler's 130.
+	// and exit with another status before the handler's signal status.
 	signalled bool
 	// co is what wt checkout adds to the result; nil for wt new.
 	co *CheckoutResult
@@ -668,7 +668,7 @@ func (j *CreateJournal) interrupted(_, _ string) {
 // Watch makes a handled SIGINT or SIGTERM, until the returned function is
 // called, stop every git and provisioning script still running with its
 // process group, write the object with the step in flight interrupted, and
-// exit 130.
+// exit 128+signal.
 func (j *CreateJournal) Watch(w io.Writer) func() {
 	unset := setInterruptJournal(j)
 	stop := watchSignals(w, nil)

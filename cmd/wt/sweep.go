@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -108,11 +107,11 @@ func newSweepCmd() *cobra.Command {
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if expect != "" && (!asJSON || !yes) {
-				return errors.New("--expect holds a sweep to the plan a tool read: pass it with --yes --json")
+				return usagef("--expect holds a sweep to the plan a tool read: pass it with --yes --json")
 			}
 			if moveTo != "" {
 				if sel.selection().Any() {
-					return errors.New("--move-to sweeps one repository: run it in its main checkout")
+					return usagef("--move-to sweeps one repository: run it in its main checkout")
 				}
 				abs, err := filepath.Abs(moveTo)
 				if err != nil {
@@ -122,7 +121,7 @@ func newSweepCmd() *cobra.Command {
 			}
 			if asJSON {
 				if sel.selection().Any() {
-					return errors.New("--json sweeps one repository: run it in each repository's main checkout")
+					return usagef("--json sweeps one repository: run it in each repository's main checkout")
 				}
 				return sweepJSON(cmd, commands.SweepOptions{NoFetch: noFetch, Yes: yes, DryRun: dryRun, Expect: expect,
 					Quarantine: moveTo, KeepSuperset: keepSuperset})

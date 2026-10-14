@@ -184,7 +184,7 @@ type KeepStartOptions struct {
 	Now    func() time.Time
 }
 
-// ErrNoLaunchd is start's and stop's answer off macOS. The command exits 2
+// ErrNoLaunchd is start's and stop's answer off macOS. The command exits 3
 // with it: not a failure of the repository, a platform with no launchd.
 var ErrNoLaunchd = errors.New("not supported on this platform; run wt sync keep once from cron")
 

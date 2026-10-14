@@ -1,8 +1,6 @@
 package main
 
 import (
-	"errors"
-
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
@@ -62,10 +60,10 @@ func newPurgeCmd() *cobra.Command {
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if cmd.Flags().Changed("expect") && expect == "" {
-				return errors.New("--expect needs the token wt purge --json printed")
+				return usagef("--expect needs the token wt purge --json printed")
 			}
 			if expect != "" && (!asJSON || !yes) {
-				return errors.New("--expect holds a purge to the plan a tool read: pass it with --yes --json")
+				return usagef("--expect holds a purge to the plan a tool read: pass it with --yes --json")
 			}
 			if asJSON {
 				out, progress := cmd.OutOrStdout(), cmd.ErrOrStderr()
