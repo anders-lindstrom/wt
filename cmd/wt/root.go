@@ -9,20 +9,26 @@ import (
 	"unicode/utf8"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/config"
 )
 
 var version = "dev"
 
-func newRootCmd() *cobra.Command {
+func newRootCmd(args ...string) *cobra.Command {
+	if args == nil {
+		args = os.Args[1:]
+	}
 	// Declaration order, not alphabetical: inside a group the order is the
 	// order you would do the things in.
 	cobra.EnableCommandSorting = false
 	commands.Version = version
 	root := &cobra.Command{
-		Use:   "wt",
-		Short: "Git worktree tooling: one implementation, per-repo configuration",
+		Use:     "wt",
+		Version: version,
+		Short:   "Git worktree tooling: one implementation, per-repo configuration",
 		Long: "wt manages git worktrees from a single implementation, reading each\n" +
 			"repository's own bin/worktree/worktree.conf for how that repo works,\n" +
 			"or, in one without it, what `wt init` would detect.\n" +
@@ -42,19 +48,25 @@ func newRootCmd() *cobra.Command {
 			"--all, --roots <name> and --profile <name> take a command across the\n" +
 			"repositories under your roots: every one, the ones under the roots\n" +
 			"named, or the ones a profile names (wt repos lists them).\n" +
-			"Run `wt <command> --help` for that command's own examples.",
+			"Run `wt <command> --help` for that command's own examples.\n\n" +
+			"Exit: 0 done, 1 failed, 2 usage error, 3 no launchd,\n" +
+			"      130 SIGINT, 143 SIGTERM.",
 		Example: "  wt new fix/login-crash    # branch, worktree and provisioning in one\n" +
 			"  wt cd login-crash         # work in it (needs wt's shell layer)\n" +
 			"  wt up                     # onto trunk, if that goes through cleanly\n" +
-			"  wt list                   # everything this repository has, and where\n" +
+			"  wt --version              # the same bare version as wt version\n" +
 			"  wt remove login-crash     # done with it; the branch is kept if unmerged",
 		SilenceErrors: true,
 		// Usage is silenced only once a command starts doing work. Cobra
 		// validates arguments before PersistentPreRun, so an argument mistake
 		// still prints usage — which is exactly when it helps — while a runtime
 		// failure does not bury its message under it.
-		PersistentPreRun: func(cmd *cobra.Command, _ []string) {
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			if err := cmd.ValidateFlagGroups(); err != nil {
+				return usageError{err}
+			}
 			cmd.SilenceUsage = true
+			return nil
 		},
 	}
 	// The groups are the flow: make one, get to it, keep it current, put it
@@ -89,7 +101,47 @@ func newRootCmd() *cobra.Command {
 	// so a long one does not wrap in an 80-column terminal.
 	root.SetUsageTemplate(strings.ReplaceAll(root.UsageTemplate(),
 		".FlagUsages |", ".FlagUsagesWrapped 79 |"))
+	root.SetArgs(args)
+	root.SetVersionTemplate("{{.Version}}\n")
+	root.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
+		if helpAsked(args) {
+			return c.Help()
+		}
+		return usageError{err}
+	})
+	var wrapArgs func(*cobra.Command)
+	wrapArgs = func(c *cobra.Command) {
+		if validate := c.Args; validate != nil {
+			c.Args = func(cmd *cobra.Command, positional []string) error {
+				if helpAsked(args) {
+					return pflag.ErrHelp
+				}
+				if err := validate(cmd, positional); err != nil {
+					return usageError{err}
+				}
+				return nil
+			}
+		}
+		for _, child := range c.Commands() {
+			wrapArgs(child)
+		}
+	}
+	wrapArgs(root)
 	return root
+}
+
+type usageError struct{ error }
+
+func helpAsked(args []string) bool {
+	for _, arg := range args {
+		if arg == "--" {
+			break
+		}
+		if arg == "--help" || arg == "-h" {
+			return true
+		}
+	}
+	return false
 }
 
 // wrapLine breaks a help line at the last space that keeps it in 79 columns,
@@ -257,10 +309,23 @@ func Execute() int {
 	root := newRootCmd()
 	if err := root.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "wt: %v\n", err)
-		if errors.Is(err, commands.ErrNoLaunchd) {
-			return 2
-		}
-		return 1
+		return errorStatus(err)
 	}
 	return 0
+}
+
+func errorStatus(err error) int {
+	if errors.Is(err, commands.ErrNoLaunchd) {
+		return 3
+	}
+	var usage usageError
+	var commandUsage *config.InputError
+	if errors.As(err, &usage) || errors.As(err, &commandUsage) || strings.HasPrefix(err.Error(), "unknown command ") {
+		return 2
+	}
+	return 1
+}
+
+func usagef(format string, args ...any) error {
+	return usageError{fmt.Errorf(format, args...)}
 }

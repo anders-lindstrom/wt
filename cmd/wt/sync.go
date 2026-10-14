@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -345,7 +344,7 @@ func newSyncKeepStartCmd() *cobra.Command {
 			"every --every (30m), with its output under the checkout's .git, and load\n" +
 			"it with launchctl bootstrap. The first pass is one interval after this.\n" +
 			"Refused when a job is already installed: wt sync keep status says so.\n" +
-			"macOS only; elsewhere this exits 2 and wt sync keep once is for cron.\n" +
+			"macOS only; elsewhere this exits 3 and wt sync keep once is for cron.\n" +
 			"\n" +
 			"A launchd job inherits nothing from your shell, so start captures what\n" +
 			"the pass needs into the plist: PATH (git, and claude to see who is in a\n" +
@@ -388,7 +387,7 @@ func newSyncKeepStartCmd() *cobra.Command {
 				return commands.SyncKeepStartAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), all, cmd.OutOrStdout())
 			}
 			if dryRun || yes {
-				return errors.New("--dry-run and --yes go with --all, --roots or --profile; start in one repository asks nothing")
+				return usagef("--dry-run and --yes go with --all, --roots or --profile; start in one repository asks nothing")
 			}
 			return withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
 				return commands.SyncKeepStart(ctx, opts, cmd.OutOrStdout())
@@ -444,7 +443,7 @@ func newSyncKeepStopCmd() *cobra.Command {
 		Short: "Unload the keeper's launchd job and remove its plist",
 		Long: "launchctl bootout the job and remove its plist. The log and the json\n" +
 			"stay, so wt sync still says when the repository was last kept, marked\n" +
-			"keeper stopped. macOS only; elsewhere this exits 2.\n" +
+			"keeper stopped. macOS only; elsewhere this exits 3.\n" +
 			"\n" +
 			"--all, --roots or --profile stop every job their repositories have,\n" +
 			"from anywhere and without asking: wt sync keep start puts them back.\n" +
@@ -461,7 +460,7 @@ func newSyncKeepStopCmd() *cobra.Command {
 				return commands.SyncKeepStopAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), dryRun, cmd.OutOrStdout())
 			}
 			if dryRun {
-				return errors.New("--dry-run goes with --all, --roots or --profile")
+				return usagef("--dry-run goes with --all, --roots or --profile")
 			}
 			return withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
 				return commands.SyncKeepStop(ctx, cmd.OutOrStdout())
@@ -506,8 +505,8 @@ func (f syncVerbFlags) verb() (string, error) {
 	case 1:
 		return verbs[0][2:], nil
 	}
-	return "", errors.New(strings.Join(verbs[:len(verbs)-1], ", ") + " and " +
-		verbs[len(verbs)-1] + " cannot both be given")
+	return "", usagef("%s and %s cannot both be given",
+		strings.Join(verbs[:len(verbs)-1], ", "), verbs[len(verbs)-1])
 }
 
 // check refuses a verb's flag given without its verb.
@@ -519,23 +518,23 @@ func (f syncVerbFlags) check() error {
 	rebases := verb == "rebase" || verb == "resume"
 	switch {
 	case f.push == commands.PushAlways && !rebases:
-		return errors.New("--push needs --rebase or --resume")
+		return usagef("--push needs --rebase or --resume")
 	case f.push == commands.PushNever && !rebases:
-		return errors.New("--no-push needs --rebase or --resume")
+		return usagef("--no-push needs --rebase or --resume")
 	case f.ifReady && verb != "rebase":
-		return errors.New("--if-ready needs --rebase")
+		return usagef("--if-ready needs --rebase")
 	case f.force && verb != "undo" && verb != "rebase":
-		return errors.New("--force needs --rebase or --undo")
+		return usagef("--force needs --rebase or --undo")
 	case f.yes && verb == "":
-		return errors.New("--yes needs --rebase, --resume or --undo")
+		return usagef("--yes needs --rebase, --resume or --undo")
 	case f.noFetch && verb != "" && verb != "rebase":
-		return errors.New("--no-fetch needs --rebase, or no verb")
+		return usagef("--no-fetch needs --rebase, or no verb")
 	case f.expect != "" && verb != "rebase":
-		return errors.New("--expect needs --rebase")
+		return usagef("--expect needs --rebase")
 	case f.noFFTrunk && verb != "rebase":
-		return errors.New("--no-ff-trunk needs --rebase")
+		return usagef("--no-ff-trunk needs --rebase")
 	case f.allowDiverged && verb != "rebase":
-		return errors.New("--allow-diverged needs --rebase")
+		return usagef("--allow-diverged needs --rebase")
 	}
 	return nil
 }
@@ -546,7 +545,7 @@ func syncOverviewJSON(cmd *cobra.Command, args []string, sel commands.Selection,
 	opts := commands.SyncOptions{NoFetch: f.noFetch}
 	switch {
 	case len(args) > 0:
-		return errors.New("--json prints the overview of every worktree; name none, or add the verb whose result you want")
+		return usagef("--json prints the overview of every worktree; name none, or add the verb whose result you want")
 	case sel.Any():
 		return commands.SyncAllJSON(loadUserWarn(cmd.ErrOrStderr()), sel, opts, cmd.OutOrStdout())
 	}
@@ -780,13 +779,13 @@ func syncAcross(cmd *cobra.Command, args []string, verb string, sel commands.Sel
 	u := loadUserWarn(cmd.ErrOrStderr())
 	switch {
 	case verb == "resume" || verb == "undo":
-		return fmt.Errorf("--%s finishes one worktree's run; name it, without --all, --roots or --profile", verb)
+		return usagef("--%s finishes one worktree's run; name it, without --all, --roots or --profile", verb)
 	case len(args) > 0:
-		return errors.New("--all, --roots and --profile cover whole repositories; name no worktree with them")
+		return usagef("--all, --roots and --profile cover whole repositories; name no worktree with them")
 	case f.json && verb != "":
-		return errors.New("--json reports a run in one repository; leave out --all, --roots and --profile")
+		return usagef("--json reports a run in one repository; leave out --all, --roots and --profile")
 	case f.expect != "":
-		return errors.New("--expect holds a run in one repository to its overview; leave out --all, --roots and --profile")
+		return usagef("--expect holds a run in one repository to its overview; leave out --all, --roots and --profile")
 	case verb == "":
 		return commands.SyncAll(u, sel, commands.SyncOptions{NoFetch: f.noFetch}, cmd.OutOrStdout())
 	}
@@ -978,7 +977,7 @@ func newSyncPushToCmd() *cobra.Command {
 				dest = args[1]
 			}
 			if unset && dest != "" {
-				return errors.New("--unset takes no <remote>/<branch>: it forgets the one recorded")
+				return usagef("--unset takes no <remote>/<branch>: it forgets the one recorded")
 			}
 			return commands.SyncPushTo(ctx, work, dest, unset, cmd.OutOrStdout())
 		}),

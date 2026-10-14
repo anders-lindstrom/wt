@@ -1,10 +1,32 @@
 # What's new
 
 Newest first, each heading stamped with the local date and time of the change
-(several land per day). `wt about` prints the newest 5 entries, or every entry from
-the last 3 days if that is more, so keep each entry to a few lines a human would
-want read out to them; the full story is in git history and in
+(several land per day). `wt about` prints the newest 5 entries, or every entry
+from the last 3 days if that is more, so keep each entry to a few lines a human
+would want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
+
+## 2026-10-14 20:31 — interrupted installs recover; flag conflicts exit 2
+
+- An interrupted install can be retried or uninstalled: ownership covers both
+  the old files and the pending upgrade, with each file replaced atomically.
+- Mutually exclusive flag combinations exit 2 and show usage.
+- Three older what's-new headings are restored to their original meanings.
+
+## 2026-10-14 19:53 — install.sh upgrades proven legacy installs
+
+- An older wt binary is adopted when Go's build metadata names wt's command.
+  The two shell files in share/wt are adopted too, and ownership is recorded.
+- Adoption is reported on stderr. Foreign binaries and symlinks are refused.
+
+## 2026-10-14 19:40 — consistent CLI exits, version and safe installs
+
+- Usage mistakes exit 2; unavailable launchd exits 3. SIGINT exits 130
+  and SIGTERM exits 143, after stopping what wt started.
+- wt --version prints the same bare line as wt version. Help wins over
+  invalid flags before --; remove help links to docs/remove.md for details.
+- install.sh refuses foreign files; --uninstall removes its unchanged files.
+  What's-new entries fit in 80 columns and stay newest first.
 
 ## 2026-10-13 09:59 — a parked background session no longer blocks wt up
 
@@ -22,7 +44,7 @@ want read out to them; the full story is in git history and in
   completed name matched nothing. `wt cd`, `wt exec`, `wt attach` and `wt find`
   now take `<type>/<work>`, whole or the start of it.
 
-## 2026-10-10 11:11 — the old spellings are gone: sync run, --run, --quarantine, quarantine purge
+## 2026-10-10 11:11 — old sync and quarantine spellings are gone
 
 - Type `wt sync rebase` for `wt sync run`, `--rebase` for `wt sync --run`,
   `--move-to <dir>` for `--quarantine <dir>` and `wt purge <dir>` for
@@ -51,7 +73,7 @@ want read out to them; the full story is in git history and in
   several; `wt attach <id>` picks one outright; `wt attach <pattern> --resume`
   continues the worktree's last conversation. Source `wt.sh` again first.
 
-## 2026-10-08 12:05 — --move-to and wt purge: no more "quarantine" in what you read
+## 2026-10-08 12:05 — --move-to and wt purge replace quarantine
 
 - `wt remove <work> --move-to <dir>` and `wt sweep --move-to <dir>` move a
   worktree into a folder; `wt restore <dir>` puts it back, `wt purge <dir>`
@@ -80,12 +102,13 @@ want read out to them; the full story is in git history and in
 
 ## 2026-10-08 11:03 — wt sync run is now wt sync rebase
 
-- Sync is the workflow: fetch, simulate, safety ref, strategies, deferred
-  steps, push, undo. Rebase is the method, so the verb says it:
-  `wt sync rebase <work>...`, and `wt sync <work> --rebase` at the end of a line.
+- Sync is the workflow: fetch, simulate, safety ref, strategies, deferred steps,
+  push, undo. Rebase is the method, so the verb says it: `wt sync rebase
+  <work>...`, and `wt sync <work> --rebase` at the end of a line.
 - `wt up` says what it is: the short form of `wt sync rebase . --if-ready`.
 - Nothing a repository carries changes: `.wt-sync.yaml`, plan and state files,
-  config keys, `wt sync`, `resume`, `undo`, `doctor` and `keep` are as they were.
+  config keys, `wt sync`, `resume`, `undo`, `doctor` and `keep` are as they
+  were.
 - JSON: the result's `command` is `sync rebase` (sync-run 1.3.0).
 
 ## 2026-10-06 21:43 — wt no longer calls a running Superset stopped
@@ -98,7 +121,7 @@ want read out to them; the full story is in git history and in
   and the stale manifest is Superset's bug. If not: "start the Superset app".
 - `wt doctor` says when Superset has fixed it and the workaround can go.
 
-## 2026-10-06 17:16 — wt up checks a branch against its own remote before rebasing it
+## 2026-10-06 17:16 — wt up checks a branch against its own remote
 
 - `wt up` and `wt sync run` check each branch against its own remote, fetched
   with trunk. Behind it: fast-forwarded, then rebased if anything is left to.
@@ -276,11 +299,13 @@ want read out to them; the full story is in git history and in
 
 ## 2026-09-27 23:36 — wt remove refuses what it could not see
 
-- `wt remove`, `wt sweep` and the Claude hook now refuse a worktree with work in a
-  submodule (whatever git's config says), an unreadable status, an operation in
-  progress, commits only its HEAD or its submodules hold, or a worktree inside it.
-- Any Claude session in it, or a listing that failed, refuses remove, migrate and
-  sweep alike; the session running wt does not count. `--force` goes past that.
+- `wt remove`, `wt sweep` and the Claude hook now refuse a worktree with work in
+  a submodule (whatever git's config says), an unreadable status, an operation
+  in progress, commits only its HEAD or its submodules hold, or a worktree
+  inside it.
+- Any Claude session in it, or a listing that failed, refuses remove, migrate
+  and sweep alike; the session running wt does not count. `--force` goes past
+  that.
 
 ## 2026-09-27 23:10 — JSON results for wt sync run, resume and undo
 
@@ -293,8 +318,8 @@ want read out to them; the full story is in git history and in
 ## 2026-09-27 22:51 — wt new and wt checkout for tools
 
 - `--dry-run` says what `wt new` / `wt checkout` would create, or why not.
-- `--dry-run --json` is that plan with a token; `--json --expect <token>` creates
-  only if the base (or the branch, for checkout) has not moved since.
+- `--dry-run --json` is that plan with a token; `--json --expect <token>`
+  creates only if the base (or the branch, for checkout) has not moved since.
 - `--json` reports each side effect: worktree, branch, config, provision,
   submodules, build, Superset. `wt schema new` prints the schema.
 
@@ -366,9 +391,11 @@ want read out to them; the full story is in git history and in
 
 - With no terminal, `wt sync --run` with nothing named, or across repositories,
   rebases nothing without `--yes`.
-- The push question defaults to no; `--yes` asks nothing and pushes only with `--push`.
-- Renamed: sync class clean → conflict-free, `keep run` → `keep once`, `--skip-build`
-  → `--no-build` (the old names still work); `wt setup [<from-dir>]`.
+- The push question defaults to no; `--yes` asks nothing and pushes only with
+  `--push`.
+- Renamed: sync class clean → conflict-free, `keep run` → `keep once`,
+  `--skip-build` → `--no-build` (the old names still work); `wt setup
+  [<from-dir>]`.
 - New: `--dry-run` on sweep and remove; `--all` on doctor, list and status; `-f`
   for every `--force`. `wt repos --doctor` is now `wt doctor --all`.
 
@@ -398,7 +425,7 @@ want read out to them; the full story is in git history and in
   stay under `<repo>_wt/<type>_wt/<work>`, which is wt's layout.
 - The repository wins where it named one; otherwise you do, everywhere.
 
-## 2026-09-19 14:40 — Pull requests found by branch, and remove knows what landed
+## 2026-09-19 14:40 — pull requests found by branch; remove knows what landed
 
 - wt asks GitHub about the branches its worktrees are on, by name, not the 50
   most recent pull requests: an open one of any age shows again.
@@ -461,12 +488,13 @@ want read out to them; the full story is in git history and in
 
 ## 2026-09-17 15:41 — Clearer answers at the edges: sweep, new, status, cd, sync
 
-- `wt sweep` lists a worktree left detached at a merged tip under kept, with
-  the `wt remove <path>` that takes it.
+- `wt sweep` lists a worktree left detached at a merged tip under kept, with the
+  `wt remove <path>` that takes it.
 - `wt new .` and `wt new /` are refused with what they name; a bare `wt cd`
   outside every repository says `not inside a git repository`.
 - `wt status` and `wt sync --no-fetch` say `as last fetched (when is not
-  recorded)` without a fetch age; a `wt sync` row that hit an error reads `unknown`.
+  recorded)` without a fetch age; a `wt sync` row that hit an error reads
+  `unknown`.
 - Ctrl-C leaves no temp directories, and a running git gets to remove its locks.
 
 ## 2026-09-17 15:24 — wt cd and wt exec complete the worktrees
@@ -477,7 +505,7 @@ want read out to them; the full story is in git history and in
   would for any command, so file names work as usual.
 - `.` and `/` are not offered: each is one key, quicker to type than to pick.
 
-## 2026-09-16 14:31 — . is the worktree you are in and / the main checkout, everywhere
+## 2026-09-16 14:31 — . names this worktree; / names the main checkout
 
 - `.` now names the worktree you are standing in for every command, `wt cd`,
   `wt exec` and `wt find` included: `wt cd .` from a subdirectory takes you to
@@ -487,7 +515,7 @@ want read out to them; the full story is in git history and in
   refuse it as they refuse its path. A bare `wt cd` still goes to the main
   checkout.
 
-## 2026-09-16 12:45 — wt status counts against trunk, and . names the worktree you are in
+## 2026-09-16 12:45 — wt status counts against trunk; . names this worktree
 
 - `wt status` has a TRUNK column: how many commits each branch is behind and
   ahead of origin/<trunk> as last fetched, or the local trunk without it; the
@@ -507,7 +535,7 @@ want read out to them; the full story is in git history and in
 - A worktree that is not safe stays, and its row says why: dirty, the session
   in it, or the pid holding its lock. Everything is read again before it goes.
 
-## 2026-09-15 21:30 — wt sync --run with nothing named rebases every ready worktree
+## 2026-09-15 21:30 — wt sync --run rebases every ready worktree by default
 
 - Look with `wt sync`, then `wt sync --run` (or `wt sync run`) takes every
   worktree the table files under ready: clean or recipe, nothing dirty, no
@@ -517,7 +545,7 @@ want read out to them; the full story is in git history and in
 - It asks before moving even one worktree, since nobody named it; `--yes`
   skips, and `--push` / `--no-push` decide the push up front as before.
 
-## 2026-09-15 09:36 — wt path and wt branch find the worktree by any name wt list prints
+## 2026-09-15 09:36 — wt path and wt branch accept any name wt list prints
 
 - `wt path <work>` and `wt branch <work>` now answer for the worktree that
   exists, named by its work name, branch or path, whatever its type. A bare name
@@ -527,23 +555,25 @@ want read out to them; the full story is in git history and in
   bare name, and the path `wt new` would use. A name under two types is refused
   as ambiguous, as `wt remove` refuses it.
 
-## 2026-09-15 09:04 — the sync verbs are also flags, for finishing a recalled line
+## 2026-09-15 09:04 — sync verbs are flags too, for recalled command lines
 
-- `wt sync <work> --run`, `--resume` and `--undo` are `wt sync run`, `resume` and
-  `undo`: recall the `wt sync <work>` line you just looked with and add the verb
-  at the end instead of inserting it in the middle. A verb's own flags go with
-  it (`--yes`, `--push`, `--no-push`, `--force`); given without the verb they are
-  refused by name.
+- `wt sync <work> --run`, `--resume` and `--undo` are `wt sync run`, `resume`
+  and `undo`: recall the `wt sync <work>` line you just looked with and add the
+  verb at the end instead of inserting it in the middle. A verb's own flags go
+  with it (`--yes`, `--push`, `--no-push`, `--force`); given without the verb
+  they are refused by name.
 - `-y` is now the short form of `--yes` on all three verbs, as on `wt remove`.
 
-## 2026-09-15 07:38 — wt sync lifts a version both sides bumped to the same number
+## 2026-09-15 07:38 — wt sync lifts versions both sides bumped together
 
 - A branch that bumped `version: 1.2.3` while trunk took 1.2.3 on its own used
   to merge clean, so no rule ran and the branch landed on trunk's number. Now
   `max-plus-patch` runs at that commit too, in the yaml and the spec, and the
-  table, plan and run say `owned-line lifted the version to 1.2.4: trunk took 1.2.3`.
-- A line only the branch bumped, or already above trunk, is left alone; a version
-  that is not X.Y.Z, or a file whose version lines no longer pair up, is refused.
+  table, plan and run say `owned-line lifted the version to 1.2.4: trunk took
+  1.2.3`.
+- A line only the branch bumped, or already above trunk, is left alone; a
+  version that is not X.Y.Z, or a file whose version lines no longer pair up, is
+  refused.
 
 ## 2026-09-14 10:27 — wt sync looks at several worktrees at once
 
@@ -554,25 +584,27 @@ want read out to them; the full story is in git history and in
 - The rows and their order are exactly as before, and Ctrl-C during the
   overview now stops every git it started and says `interrupted`.
 
-## 2026-09-13 16:25 — wt sync says what puts a worktree back, and names a rebase finished by hand
+## 2026-09-13 16:25 — wt sync names the way back and hand-finished rebases
 
 - A handed-over row keeps its stop, subject and file: `at 7/23 "…"  x.ts✗  waits
-  on you: wt sync resume, or wt sync undo`; `wt sync <work>` names the plan file.
-- The needs-you line says resolve, `git add`, then resume, or undo. The plan file
-  says `<<<<<<< HEAD` is trunk, lists each never-hand-merge path once, and counts
-  `24 merges landed (145 commits)`.
+  on you: wt sync resume, or wt sync undo`; `wt sync <work>` names the plan
+  file.
+- The needs-you line says resolve, `git add`, then resume, or undo. The plan
+  file says `<<<<<<< HEAD` is trunk, lists each never-hand-merge path once, and
+  counts `24 merges landed (145 commits)`.
 - A handover you finished with `git rebase --continue` is called that by the
   table, `run`, `doctor` and `undo`; `resume` runs what is left.
 
-## 2026-09-13 15:48 — wt sync undo no longer throws away work that is not the run's
+## 2026-09-13 15:48 — wt sync undo keeps work outside the run
 
 - A rebase you started yourself after aborting the run's is refused, not
   aborted, with or without `--force`; finish or abort it yourself first.
 - A commit you made inside the handed-over rebase is named and refused, not
   aborted away. `resume` keeps it; `undo --force` keeps it under a safety ref.
-- A forced undo that stops partway no longer leaves a safety ref for a branch
-  it never moved, which made every later undo say "already at".
-## 2026-09-13 08:28 — worktree.toml rejects a misspelled key, as worktree.conf does
+- A forced undo that stops partway no longer leaves a safety ref for a branch it
+  never moved, which made every later undo say "already at".
+
+## 2026-09-13 08:28 — worktree.toml rejects misspelled keys too
 
 - A key wt does not read in `worktree.toml` used to pass in silence, so a
   typo like `developer_config_file` quietly did nothing. It is now the same
@@ -597,14 +629,14 @@ want read out to them; the full story is in git history and in
   hunks properly. Expect a worktree or two to start reporting that both sides
   changed the graph — it was always true, and it is worth your eye.
 
-## 2026-09-12 02:18 — wt sync run still reports what did not finish when a push goes wrong
+## 2026-09-12 02:18 — wt sync run reports unfinished work after a push fails
 
 - A run that pushed a branch and then could not read its new tip stopped
   there, and the report it had been building — everything refused, restored,
   failed or left needing you — was never printed. That push is now named as
   one more thing that did not come off, and the run finishes its report.
 
-## 2026-09-11 22:56 — wt sync: every git call has a deadline, and interrupted handovers say how to get back
+## 2026-09-11 22:56 — wt sync bounds git calls and explains interrupts
 
 - `git merge-file`, the `git archive` and `tar` behind a conflict script, and
   `wt sync doctor`'s trunk lookups get the same deadline as every other git in

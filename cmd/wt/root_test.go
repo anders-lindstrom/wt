@@ -6,12 +6,13 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/about"
+	"github.com/anders-lindstrom/wt/internal/commands"
 )
 
 func runCmd(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 	var buf bytes.Buffer
-	root := newRootCmd()
+	root := newRootCmd(args...)
 	root.SetOut(&buf)
 	root.SetErr(&buf)
 	root.SetArgs(args)
@@ -172,5 +173,59 @@ func TestVersionStaysOneBareLine(t *testing.T) {
 	}
 	if strings.TrimSpace(out) != version {
 		t.Errorf("version printed %q, want just %q", out, version)
+	}
+}
+
+func TestVersionFlagMatchesCommand(t *testing.T) {
+	flag, err := runCmd(t, "--version")
+	if err != nil {
+		t.Fatal(err)
+	}
+	command, err := runCmd(t, "version")
+	if err != nil || flag != command {
+		t.Fatalf("flag %q, command %q, error %v", flag, command, err)
+	}
+}
+
+func TestHelpWinsOverFlagErrors(t *testing.T) {
+	for _, args := range [][]string{
+		{"new", "--bogus", "--help"}, {"new", "--bogus", "-h"},
+		{"new", "--expect", "--help"},
+	} {
+		out, err := runCmd(t, args...)
+		if err != nil || !strings.Contains(out, "Usage:") {
+			t.Errorf("%v: error %v, output %q", args, err, out)
+		}
+	}
+	_, err := runCmd(t, "new", "--bogus", "--", "--help")
+	if err == nil {
+		t.Fatal("help after -- hid an invalid flag")
+	}
+}
+
+func TestErrorStatus(t *testing.T) {
+	for _, args := range [][]string{{"new"}, {"version", "extra"}, {"new", "--bogus"}, {"wibble"}, {"remove"}, {"sync", "--push"}, {"config", "set", "superset", "sometimes"}} {
+		_, err := runCmd(t, args...)
+		if err == nil || errorStatus(err) != 2 {
+			t.Errorf("%v: error %v, want usage status 2", args, err)
+		}
+	}
+	if got := errorStatus(commands.ErrNoLaunchd); got != 3 {
+		t.Errorf("launchd status %d, want 3", got)
+	}
+	t.Chdir(t.TempDir())
+	_, err := runCmd(t, "config")
+	if err == nil || errorStatus(err) != 1 {
+		t.Fatalf("runtime error %v, want status 1", err)
+	}
+}
+
+func TestMutuallyExclusiveFlagsAreUsageErrors(t *testing.T) {
+	out, err := runCmd(t, "remove", "foo", "--yes", "--dry-run")
+	if err == nil || errorStatus(err) != 2 {
+		t.Fatalf("error %v, want usage status 2", err)
+	}
+	if !strings.Contains(err.Error(), "yes") || !strings.Contains(err.Error(), "dry-run") || !strings.Contains(out, "Usage:") {
+		t.Fatalf("error %v, output %q", err, out)
 	}
 }

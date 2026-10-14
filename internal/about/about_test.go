@@ -2,9 +2,11 @@ package about
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 const fixture = `# What's new
@@ -185,5 +187,29 @@ func TestTheShippedWhatsNewIsStampedAndShort(t *testing.T) {
 			h, _, _ := strings.Cut(e, "\n")
 			t.Errorf("heading has no YYYY-MM-DD HH:MM stamp: %q", h)
 		}
+	}
+}
+
+func TestShippedWhatsNewWidthAndOrder(t *testing.T) {
+	stamps := regexp.MustCompile(`## [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}`)
+	if parsed, stamped := len(sections(whatsNew)), len(stamps.FindAllString(whatsNew, -1)); parsed != stamped {
+		t.Errorf("parsed %d entries but found %d stamped headings", parsed, stamped)
+	}
+	for i, line := range strings.Split(whatsNew, "\n") {
+		if width := utf8.RuneCountInString(line); width > 80 {
+			t.Errorf("line %d has %d columns: %s", i+1, width, line)
+		}
+	}
+	var previous time.Time
+	for _, entry := range sections(whatsNew) {
+		stamp, ok := headingTime(entry, time.Local)
+		if !ok {
+			t.Errorf("invalid heading: %q", entry)
+			continue
+		}
+		if !previous.IsZero() && stamp.After(previous) {
+			t.Errorf("%s comes after older entry %s", stamp, previous)
+		}
+		previous = stamp
 	}
 }

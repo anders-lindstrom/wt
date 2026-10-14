@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"io"
 	"os"
 
@@ -95,7 +94,7 @@ func runCreate(cmd *cobra.Command, args []string, command string, how create,
 ) error {
 	switch {
 	case cmd.Flags().Changed("expect") && (!how.json || how.dryRun):
-		return errors.New("--expect goes with --json, on the run that creates the worktree")
+		return usagef("--expect goes with --json, on the run that creates the worktree")
 	case !how.json && how.dryRun:
 		return withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
 			return dry(ctx, cmd.OutOrStdout())
@@ -114,7 +113,7 @@ func runCreate(cmd *cobra.Command, args []string, command string, how create,
 	}
 	cwd, err := os.Getwd()
 	if err == nil && cmd.Flags().Changed("expect") && how.expect == "" {
-		err = errors.New("--expect needs the token from --dry-run --json")
+		err = usagef("--expect needs the token from --dry-run --json")
 	}
 	var ctx *commands.Context
 	if err == nil {

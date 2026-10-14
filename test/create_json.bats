@@ -67,7 +67,7 @@ token_of() {
     [ -d "$BATS_TEST_TMPDIR/demo_wt/feat_wt/release-2.1" ]
 }
 
-@test "a SIGTERM during wt new --json writes the one object, stops the script, exits 130" {
+@test "a SIGTERM during wt new --json writes the one object, stops the script, exits 143" {
     printf '#!/bin/sh\nsleep 300 &\necho $! > "%s/sleeper"\ntouch "%s/started"\nwait\n' "$BATS_TEST_TMPDIR" "$BATS_TEST_TMPDIR" > "$REPO/bin/worktree/provision.sh"
     chmod +x "$REPO/bin/worktree/provision.sh"
     git -C "$REPO" add -A
@@ -82,7 +82,7 @@ token_of() {
     # is not a child and wait answers 255 whatever wt exited with.
     status=0
     wait "$pid" || status=$?
-    [ "$status" -eq 130 ]
+    [ "$status" -eq 143 ]
     out=$(cat "$BATS_TEST_TMPDIR/out.json")
     [[ "$out" == *'"outcome": "interrupted"'* ]]
     [[ "$out" == *'"result": "interrupted"'* ]]

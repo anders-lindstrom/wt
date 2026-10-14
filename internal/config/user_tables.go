@@ -166,7 +166,7 @@ func setTable(key, value string) (path, set string, err error) {
 	table, name, _ := tableKey(key)
 	literal, err := tableLiteral(table, name, value)
 	if err != nil {
-		return "", "", err
+		return "", "", &InputError{Err: err}
 	}
 	path, content, err := editable()
 	if err != nil {

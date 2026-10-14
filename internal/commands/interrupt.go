@@ -114,7 +114,7 @@ func marksLeftNote(path string) string {
 }
 
 // watchSignals handles Ctrl-C and SIGTERM for the length of one command,
-// exiting 130 after onInterrupt has cleaned up. The returned function stops
+// exiting 128+signal after onInterrupt has cleaned up. The returned function stops
 // the handler and must be deferred: a signal after the command has finished
 // is the shell's business, not wt's.
 func watchSignals(w io.Writer, t *rebaseTracker) func() {
@@ -123,7 +123,7 @@ func watchSignals(w io.Writer, t *rebaseTracker) func() {
 	done := make(chan struct{})
 	go func() {
 		select {
-		case <-ch:
+		case sig := <-ch:
 			at := t.get()
 			var said bytes.Buffer
 			onInterrupt(io.MultiWriter(w, &said), wtsync.HeldLocks(), at)
@@ -136,7 +136,7 @@ func watchSignals(w io.Writer, t *rebaseTracker) func() {
 				}
 				j.interrupted(inFlight, strings.TrimSpace(said.String()))
 			}
-			os.Exit(interruptStatus)
+			os.Exit(128 + int(sig.(syscall.Signal)))
 		case <-done:
 		}
 	}()

@@ -1,8 +1,6 @@
 package main
 
 import (
-	"errors"
-
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
@@ -88,10 +86,10 @@ func newRefsSweepCmd() *cobra.Command {
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if expect != "" && (!asJSON || !yes) {
-				return errors.New("--expect holds a sweep to the plan a tool read: pass it with --yes --json")
+				return usagef("--expect holds a sweep to the plan a tool read: pass it with --yes --json")
 			}
 			if runID != "" && !yes {
-				return errors.New("--run-id names a run that moves refs: pass it with --yes")
+				return usagef("--run-id names a run that moves refs: pass it with --yes")
 			}
 			opts := commands.RefsOptions{Remote: remote, NoFetch: noFetch, DryRun: dryRun, Yes: yes, Expect: expect,
 				RunID: runID}
@@ -197,7 +195,7 @@ func newRefsRestoreCmd() *cobra.Command {
 		Args: needArgs(1, "<runId>", "wt refs restore 20260930T091500Z-3f2a"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if expect != "" && (!asJSON || !yes) {
-				return errors.New("--expect holds a restore to the plan a tool read: pass it with --yes --json")
+				return usagef("--expect holds a restore to the plan a tool read: pass it with --yes --json")
 			}
 			opts := commands.RefsRestoreOptions{DryRun: dryRun, Yes: yes, Expect: expect}
 			if cmd.Flags().Changed("only") {
@@ -268,7 +266,7 @@ func newRefsPurgeCmd() *cobra.Command {
 			"  wt refs purge --older-than 30d --yes --json --expect rp1-0123abcd",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if expect != "" && (!asJSON || !yes) {
-				return errors.New("--expect holds a purge to the plan a tool read: pass it with --yes --json")
+				return usagef("--expect holds a purge to the plan a tool read: pass it with --yes --json")
 			}
 			opts := commands.RefsPurgeOptions{RunIDs: args, OlderThan: olderThan, DryRun: dryRun, Yes: yes, Expect: expect}
 			out, progress := cmd.OutOrStdout(), cmd.ErrOrStderr()

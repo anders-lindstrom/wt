@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -119,7 +118,7 @@ func newPrCheckoutCmd() *cobra.Command {
 			if len(args) == 1 {
 				n, err := strconv.Atoi(strings.TrimPrefix(args[0], "#"))
 				if err != nil || n <= 0 {
-					return fmt.Errorf("%q is not a pull request number — for example: wt pr checkout 12", args[0])
+					return usagef("%q is not a pull request number — for example: wt pr checkout 12", args[0])
 				}
 				number = n
 			}

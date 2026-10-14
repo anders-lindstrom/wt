@@ -1,8 +1,6 @@
 package main
 
 import (
-	"errors"
-
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
@@ -31,7 +29,7 @@ func newReposCmd() *cobra.Command {
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if doctor {
-				return errors.New("wt repos --doctor is wt doctor --all now (--roots and --profile work there too)")
+				return usagef("wt repos --doctor is wt doctor --all now (--roots and --profile work there too)")
 			}
 			u := loadUserWarn(cmd.ErrOrStderr())
 			return commands.Repos(u, sel.selection(), commands.ReposOptions{Paths: paths}, cmd.OutOrStdout())

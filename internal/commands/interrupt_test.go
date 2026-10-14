@@ -283,3 +283,27 @@ func TestOnInterruptTakesTheRunsMarksOutOfTheList(t *testing.T) {
 		t.Fatalf("out %q", out.String())
 	}
 }
+
+func TestWatchSignalsSIGINTStatus(t *testing.T) {
+	watchSignalStatus(t, syscall.SIGINT)
+}
+
+func TestWatchSignalsSIGTERMStatus(t *testing.T) {
+	watchSignalStatus(t, syscall.SIGTERM)
+}
+
+func watchSignalStatus(t *testing.T, sig syscall.Signal) {
+	t.Helper()
+	if os.Getenv(interruptChild) == "" {
+		out, status := interruptedChild(t)
+		if status != 128+int(sig) || !strings.Contains(out, "interrupted") {
+			t.Fatalf("signal %s: status %d, output %q", sig, status, out)
+		}
+		return
+	}
+	defer watchSignals(os.Stderr, nil)()
+	if err := syscall.Kill(os.Getpid(), sig); err != nil {
+		t.Fatal(err)
+	}
+	select {}
+}

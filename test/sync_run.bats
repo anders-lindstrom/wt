@@ -128,7 +128,7 @@ setup() {
     [[ "$output" == *"bump  "*"→"*"kept under refs/wt-sync/feat_wt/bump/"* ]]
 
     run wt sync bump --push
-    [ "$status" -eq 1 ]
+    [ "$status" -eq 2 ]
     [[ "$output" == "wt: --push needs --rebase or --resume" ]]
 }
 
