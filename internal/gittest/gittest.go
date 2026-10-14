@@ -19,6 +19,32 @@ var identity = []string{
 	"GIT_COMMITTER_NAME=T", "GIT_COMMITTER_EMAIL=t@example.com",
 }
 
+// Isolate keeps every git a package's tests start, the helpers' and the code's
+// under test alike, off the machine running them. It drops each GIT_ variable
+// the environment carries (an agent launcher's GIT_CONFIG_* and
+// GIT_SSH_COMMAND, a hook's GIT_DIR) and points git at an empty global config
+// and no system one, so no hooksPath, signing, credential helper or url
+// rewrite of the user's applies. Call it from TestMain before m.Run and the
+// returned func after.
+func Isolate() func() {
+	dir, err := os.MkdirTemp("", "wt-gittest")
+	if err != nil {
+		panic(err)
+	}
+	global := filepath.Join(dir, "gitconfig")
+	if err := os.WriteFile(global, nil, 0o644); err != nil {
+		panic(err)
+	}
+	for _, kv := range os.Environ() {
+		if name, _, _ := strings.Cut(kv, "="); strings.HasPrefix(name, "GIT_") {
+			_ = os.Unsetenv(name)
+		}
+	}
+	_ = os.Setenv("GIT_CONFIG_GLOBAL", global)
+	_ = os.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	return func() { _ = os.RemoveAll(dir) }
+}
+
 func command(dir string, env []string, args ...string) *exec.Cmd {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir

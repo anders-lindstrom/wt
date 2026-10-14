@@ -5,14 +5,17 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 // TestMain points XDG_CONFIG_HOME at a directory of this run's own: `wt
 // config set` writes a real file. The settings there turn both integrations
 // off, so a test running `wt list` cannot reach the gh or the Superset of
 // whoever is running it. A test that wants one back writes its own file
-// through userConfigIn.
+// through userConfigIn. Git runs isolated (gittest.Isolate).
 func TestMain(m *testing.M) {
+	restore := gittest.Isolate()
 	dir, err := os.MkdirTemp("", "wt-cli-test")
 	if err != nil {
 		panic(err)
@@ -29,6 +32,7 @@ func TestMain(m *testing.M) {
 	}
 	code := m.Run()
 	_ = os.RemoveAll(dir)
+	restore()
 	os.Exit(code)
 }
 
