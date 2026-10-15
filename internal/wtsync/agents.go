@@ -52,6 +52,10 @@ type Agent struct {
 	SessionID string `json:"-"`
 	StartedAt int64  `json:"-"`
 	Own       bool   `json:"-"`
+	// WaitingFor is what a session with status waiting is waiting on
+	// ("permission prompt", "input needed"), as claude spells it; read by
+	// ParseClaudeSessions only.
+	WaitingFor string `json:"-"`
 	// pids is every process of a Codex session. hosted marks a thread an
 	// app-server runs, viaHost an interactive codex whose thread one runs.
 	pids    []int
@@ -204,8 +208,9 @@ func ListClaudeSessions(deadline time.Duration) (sessions []Agent, found bool, e
 // is decoded apart from them and loosely: a value of a type wt does not
 // expect is left empty rather than refused.
 type claudeExtra struct {
-	SessionID json.RawMessage `json:"sessionId"`
-	StartedAt json.RawMessage `json:"startedAt"`
+	SessionID  json.RawMessage `json:"sessionId"`
+	StartedAt  json.RawMessage `json:"startedAt"`
+	WaitingFor json.RawMessage `json:"waitingFor"`
 }
 
 // ErrUnreadableListing is a claude agents --json that is not a list of
@@ -227,6 +232,7 @@ func ParseClaudeSessions(data []byte) ([]Agent, error) {
 	inTerminal := map[string]int{}
 	for i := range raw {
 		_ = json.Unmarshal(extra[i].SessionID, &raw[i].SessionID)
+		_ = json.Unmarshal(extra[i].WaitingFor, &raw[i].WaitingFor)
 		var started float64
 		if json.Unmarshal(extra[i].StartedAt, &started) == nil {
 			raw[i].StartedAt = int64(started)
@@ -389,6 +395,20 @@ func ListOtherAgentsRequired() ([]Agent, error) {
 		return nil, ErrNoClaude
 	}
 	return ListOtherAgents()
+}
+
+// ListCodexSessions is the Codex sessions on the machine other than the one
+// wt runs under: the part of ListOtherAgents that does not ask claude.
+func ListCodexSessions() ([]Agent, error) {
+	procs, err := listProcesses()
+	if err != nil {
+		return nil, fmt.Errorf("cannot look for Codex sessions: %w", err)
+	}
+	codex, err := codexSessions(procs, ancestorsOf(procs))
+	if err != nil {
+		return nil, fmt.Errorf("cannot look for Codex sessions: %w", err)
+	}
+	return codex, nil
 }
 
 // ListOtherAgents is every agent session on the machine but the one wt runs

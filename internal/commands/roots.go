@@ -145,18 +145,31 @@ func SelectRepos(u *config.User, sel Selection) (RepoSet, error) {
 		}
 		return set, nil
 	}
-	chosen := roots
-	if len(sel.Roots) > 0 {
-		chosen = nil
-		for _, name := range sel.Roots {
-			i := slices.IndexFunc(roots, func(r Root) bool { return r.Name == name })
-			if i < 0 {
-				return RepoSet{}, fmt.Errorf("no root named %q%s", name, known("roots", rootNames(roots)))
-			}
-			chosen = append(chosen, roots[i])
-		}
+	chosen, err := chosenRoots(u, sel)
+	if err != nil {
+		return RepoSet{}, err
 	}
 	return discoverRepos(chosen), nil
+}
+
+// chosenRoots is the roots a selection by roots, or by All, covers.
+func chosenRoots(u *config.User, sel Selection) ([]Root, error) {
+	if u != nil && (u.Unusable || u.TablesUnreadable) && os.Getenv("WT_ROOTS") == "" {
+		return nil, fmt.Errorf("%s cannot be read, so wt does not know your roots; wt doctor says why", u.Path)
+	}
+	roots, _ := RootsFor(u)
+	if len(sel.Roots) == 0 {
+		return roots, nil
+	}
+	var chosen []Root
+	for _, name := range sel.Roots {
+		i := slices.IndexFunc(roots, func(r Root) bool { return r.Name == name })
+		if i < 0 {
+			return nil, fmt.Errorf("no root named %q%s", name, known("roots", rootNames(roots)))
+		}
+		chosen = append(chosen, roots[i])
+	}
+	return chosen, nil
 }
 
 // discoverRepos is every main checkout one level under each root, once, and

@@ -90,7 +90,7 @@ func newRootCmd(args ...string) *cobra.Command {
 		root.AddCommand(cmds...)
 	}
 	add(groupMake, newNewCmd(), newCheckoutCmd(), newPrCmd())
-	add(groupUse, newCdCmd(), newExecCmd(), newAttachCmd(), newListCmd(), newStatusCmd(), newFindCmd(),
+	add(groupUse, newCdCmd(), newExecCmd(), newAttachCmd(), newSessionCmd(), newListCmd(), newStatusCmd(), newFindCmd(),
 		newPathCmd(), newBranchCmd(), newReposCmd())
 	add(groupTrunk, newUpCmd(), newSyncCmd())
 	add(groupTidy, newMigrateCmd(), newAdoptCmd(), newSetupCmd(), newRemoveCmd(), newSweepCmd(),
@@ -319,8 +319,9 @@ func errorStatus(err error) int {
 		return 3
 	}
 	var usage usageError
+	var sessionUsage commands.UsageError
 	var commandUsage *config.InputError
-	if errors.As(err, &usage) || errors.As(err, &commandUsage) || strings.HasPrefix(err.Error(), "unknown command ") {
+	if errors.As(err, &usage) || errors.As(err, &sessionUsage) || errors.As(err, &commandUsage) || strings.HasPrefix(err.Error(), "unknown command ") {
 		return 2
 	}
 	return 1

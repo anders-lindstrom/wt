@@ -1879,3 +1879,86 @@ puts it back with the worktree.
 | `interrupted` | a signal ended the run |
 
 The exit code is zero only for `removed`.
+
+## `wt session list [<work>] --json` — a worktree's sessions
+
+The Claude sessions in a worktree, found as `wt attach` finds them: `<work>`
+as `wt find` matches, none meaning the worktree you are in, and from the main
+checkout every worktree of the repository. It connects to each inbox, to see
+that it takes a connection, and writes nothing; `--no-inbox-check` leaves the
+connection out. `--all`, `--roots` and `--profile` list every selected
+repository's sessions from one read of claude's, opening only the
+repositories that hold one. Codex sessions are listed too,
+and take no messages.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `schema`, `schemaVersion` | | |
+| `command` | `"session list"` | |
+| `sessions` | array | the sessions, the one that needs its person first, then the newest, the session wt runs under last; see below |
+| `sessionsError` | string \| null | why claude's sessions could not be read; `sessions` is then empty and the exit status 1 |
+| `codexError` | string \| null | why Codex's sessions could not be looked for; the Claude ones are listed regardless |
+| `error` | string \| null | why the worktree could not be found or chosen |
+
+Each session:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `repo`, `work`, `path` | string | the repository, the worktree as `wt list` names it, and where it is |
+| `kind` | `"claude"` \| `"codex"` | a Codex session has no `sessionId`, inbox or transcript, and is `busy` or `idle` |
+| `id` | string \| null | the short id `claude attach` takes; null for a session open only in a terminal |
+| `sessionId` | string \| null | the conversation's full id, which `--expect-session` takes |
+| `name` | string \| null | cleaned of control characters |
+| `pid` | integer \| null | null for a parked background session: no process, no inbox |
+| `terminal` | boolean | an interactive session, open in a terminal |
+| `state` | `"busy"` \| `"idle"` | as everywhere in wt, see Sessions above |
+| `claudeState`, `claudeStatus`, `waitingFor` | string \| null | claude's own words from `claude agents --json`, raw: `working`, `blocked`, `done`…; `busy`, `waiting`, `idle`; `permission prompt`, `input needed`… |
+| `inbox` | string \| null | the socket path; the address to name in `--reply-to` has the same directory |
+| `inboxUnavailable` | string \| null | why `inbox` is null: `notRunning`, `own` (the session wt runs under), `codex` (a Codex session), `noRegistry` (claude's `~/.claude/sessions/<pid>.json` is missing, or names another session: a reused pid), `notASocket` (not a socket of yours, or in a directory others can write), `refused` (it did not accept a connection) |
+| `transcript` | string \| null | the session's `.jsonl` under `~/.claude/projects`, when found |
+| `startedAt` | string \| null | RFC 3339, UTC, `claude agents --json`'s `startedAt` |
+| `lastActivityAt` | string \| null | RFC 3339, UTC: the modification time of `transcript`, one stat and no read; null without a transcript, never guessed |
+| `activity` | enum | `needsInput` (a process, and blocked or waiting on a prompt), `working`, `idle`, `done` (claude's `done`, `failed` and `stopped`; `claudeState` keeps the word), `parked` (a background session with no process, whatever it was waiting for) |
+| `stateSince` | string \| null | RFC 3339, UTC: `statusUpdatedAt` in claude's registry file for the session; null for a session with no process or no file |
+| `background` | boolean | a `claude --bg` session (it has an attach id), open in a terminal or not |
+| `shown` | boolean | the session `wt list` shows for the worktree |
+
+The registry file and the socket are Claude Code's, not a documented
+interface; `inboxUnavailable` is what a change there looks like.
+
+## `wt session send <work> [<session>] --json` — the outcome
+
+One message to one running session's inbox. The text comes from stdin, or
+`--message-file`. The line written is
+`{"msgV":1,"msg_id":…,"type":"user","message":{"role":"user","content":…},"priority":"next","session_id":…[,"from":…]}`,
+with the content in a `<cross-session-message>` header that names the sender.
+Nothing is retried. `--dry-run` goes as far as the frame and sends nothing.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `schema`, `schemaVersion` | | |
+| `command` | `"session send"` | |
+| `target` | object \| null | the session, as in `session list`; null when none was chosen |
+| `dryRun` | boolean | |
+| `sent` | boolean | the line was written and the connection closed cleanly. **Not** that the session's Claude has read it |
+| `msgId` | string \| null | the frame's `msg_id`; null unless sent |
+| `bytes` | integer | the message text's size, whole even when over the limit; 0 when not read |
+| `limit` | integer | 262144, what a message may be |
+| `error`, `errorCode` | string \| null | set on failure, with a non-zero exit |
+
+`errorCode`:
+
+| Value | Exit | When |
+|---|---|---|
+| `noSession` | 1 | no worktree matches, or no session in it, or none by that name |
+| `ambiguous` | 2 | several match, or several are running and none was named; nothing is chosen. `error` lists them |
+| `notRunning` | 1 | the session has no process. wt does not send to a parked session or resume it |
+| `noInbox` | 1 | no inbox wt may write to; `target.inboxUnavailable` says why |
+| `changed` | 1 | `--expect-session` named a session that is not the one there |
+| `tooLarge` | 1 | the message is over `limit`, or its frame is over the inbox's 1 MiB line |
+| `empty` | 1 | nothing but whitespace, or unreadable |
+| `writeFailed` | 1 | the connection or the write failed, or the inbox reset the connection during it |
+| `badArgument` | 2 | `--from-name` has a quote, bracket, ampersand or control character, or `--reply-to` is not `uds:<a socket of yours in the inbox's directory>` |
+
+A message that contains the header's own tags has their opening brackets
+written as `&lt;`, so it cannot close the header and write outside it.

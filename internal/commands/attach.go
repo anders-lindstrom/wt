@@ -56,6 +56,10 @@ type attachTarget struct {
 	// work is the worktree each session is in, by index, when there are
 	// several worktrees.
 	work []string
+	// repo is the repository's name, when known.
+	repo string
+	// paths is each session's worktree path, by index, alongside work.
+	paths []string
 }
 
 // Attach finds the Claude session a person means and has wt's shell layer
@@ -199,7 +203,7 @@ func (o AttachOptions) target(ctx *Context, read *ClaudeSessions) (attachTarget,
 		}
 		m = matches[n]
 	}
-	t := attachTarget{label: m.Work, arg: o.Pattern, path: m.Path}
+	t := attachTarget{label: m.Work, arg: o.Pattern, path: m.Path, repo: m.Repo}
 	t.sessions = read.byWorktree(worktreePaths(m.Path))[m.Path]
 	return t, nil
 }
@@ -240,9 +244,10 @@ func (o AttachOptions) standing(ctx *Context, read *ClaudeSessions) (attachTarge
 	}
 	by := read.byWorktree(paths)
 	if here, _, err := standingWorktree(ctx, names); err == nil && !here.IsMain {
-		return attachTarget{label: worktreeName(ctx, here.Branch, here.Path), arg: ".", path: here.Path, sessions: by[here.Path]}, nil
+		return attachTarget{label: worktreeName(ctx, here.Branch, here.Path), arg: ".", path: here.Path,
+			sessions: by[here.Path], repo: ctx.Repo.Name}, nil
 	}
-	t := attachTarget{label: "any worktree of " + ctx.Repo.Name}
+	t := attachTarget{label: "any worktree of " + ctx.Repo.Name, repo: ctx.Repo.Name}
 	for _, n := range names {
 		work := n.Work
 		if n.IsMain {
@@ -253,6 +258,7 @@ func (o AttachOptions) standing(ctx *Context, read *ClaudeSessions) (attachTarge
 		for _, s := range by[n.Path] {
 			t.sessions = append(t.sessions, s)
 			t.work = append(t.work, work)
+			t.paths = append(t.paths, n.Path)
 		}
 	}
 	return t, nil
@@ -310,20 +316,7 @@ func (t attachTarget) argOr(placeholder string) string {
 // wins over the start of a session id and over part of a name; more than
 // one match is listed and nothing is opened.
 func (o AttachOptions) named(t attachTarget) (claudeSession, error) {
-	var exact, partial []int
-	want := strings.ToLower(o.Session)
-	for i, s := range t.sessions {
-		switch {
-		case s.hasID(o.Session):
-			exact = append(exact, i)
-		case s.idStartsWith(o.Session), strings.Contains(strings.ToLower(s.name()), want):
-			partial = append(partial, i)
-		}
-	}
-	hits := exact
-	if len(hits) == 0 {
-		hits = partial
-	}
+	hits := matchSessions(t.sessions, o.Session)
 	switch len(hits) {
 	case 0:
 		o.list(t, nil)
@@ -344,6 +337,26 @@ func (o AttachOptions) named(t attachTarget) (claudeSession, error) {
 	}
 	o.list(only, nil)
 	return claudeSession{}, fmt.Errorf("%d sessions match %q; give one's id", len(hits), o.Session)
+}
+
+// matchSessions is the indexes of the sessions text names: those whose id,
+// given whole, is it, else those whose full session id starts with it or
+// whose name contains it.
+func matchSessions(sessions []claudeSession, text string) []int {
+	var exact, partial []int
+	want := strings.ToLower(text)
+	for i, s := range sessions {
+		switch {
+		case s.hasID(text):
+			exact = append(exact, i)
+		case s.idStartsWith(text), strings.Contains(strings.ToLower(s.name()), want):
+			partial = append(partial, i)
+		}
+	}
+	if len(exact) > 0 {
+		return exact
+	}
+	return partial
 }
 
 func pidNote(s claudeSession) string {
