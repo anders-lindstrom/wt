@@ -1,0 +1,240 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/session-send.v1.json",
+  "x-version": "1.0.0",
+  "title": "wt session send --json",
+  "description": "The outcome of one message to one session's inbox. Printed by `wt session send <work> [<session>] --json` as the only thing on stdout, also on failure and with --dry-run. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
+  "type": "object",
+  "required": [
+    "schema",
+    "schemaVersion",
+    "command",
+    "target",
+    "dryRun",
+    "sent",
+    "msgId",
+    "bytes",
+    "limit",
+    "error",
+    "errorCode"
+  ],
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^1\\.[0-9]+\\.[0-9]+$"
+    },
+    "command": {
+      "const": "session send"
+    },
+    "target": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/session"
+        }
+      ],
+      "description": "The session chosen; null when none was."
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "sent": {
+      "type": "boolean",
+      "description": "True: the line was written to the inbox and the connection closed cleanly. Not that the session's Claude has read it."
+    },
+    "msgId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The message's id, a UUID, in the frame; null unless sent."
+    },
+    "bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "The size of the message text read, in bytes, the whole of it even when over the limit; 0 when it was not read."
+    },
+    "limit": {
+      "type": "integer",
+      "const": 262144,
+      "description": "The most message text wt sends, in bytes."
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "errorCode": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "enum": [
+            "noSession",
+            "ambiguous",
+            "notRunning",
+            "noInbox",
+            "changed",
+            "tooLarge",
+            "empty",
+            "writeFailed",
+            "badArgument"
+          ]
+        }
+      ],
+      "description": "noSession: no worktree or no session matches. ambiguous: several match, nothing chosen (exit 2). notRunning: the session has no process. noInbox: it has no inbox wt may write to (target.inboxUnavailable says why). changed: the session is not the one --expect-session named. tooLarge: the message, or its frame, is over the limit. empty: no text. writeFailed: the connection or the write failed. badArgument: --from-name or --reply-to is not acceptable (exit 2)."
+    }
+  },
+  "$defs": {
+    "session": {
+      "type": "object",
+      "description": "One Claude session in a worktree, as wt list's SESSION column knows it, with where a message to it would go.",
+      "required": [
+        "work",
+        "path",
+        "kind",
+        "id",
+        "sessionId",
+        "name",
+        "pid",
+        "terminal",
+        "state",
+        "claudeState",
+        "claudeStatus",
+        "waitingFor",
+        "inbox",
+        "inboxUnavailable",
+        "transcript",
+        "startedAt",
+        "shown"
+      ],
+      "properties": {
+        "work": {
+          "type": "string",
+          "description": "The worktree's name."
+        },
+        "path": {
+          "type": "string",
+          "description": "The worktree's path."
+        },
+        "kind": {
+          "enum": [
+            "claude"
+          ],
+          "description": "Whose session: always claude; Codex sessions take no messages and are not listed."
+        },
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The short id claude attach takes; null for a session open only in a terminal."
+        },
+        "sessionId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The conversation's full id: what --expect-session takes."
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The name the session goes by, cleaned of control characters; null when it has none."
+        },
+        "pid": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 2,
+          "description": "Claude's process; null for a session with none, a parked background one."
+        },
+        "terminal": {
+          "type": "boolean",
+          "description": "Open in a terminal: an interactive session, or a background one attached there."
+        },
+        "state": {
+          "enum": [
+            "busy",
+            "idle"
+          ],
+          "description": "As everywhere in wt: idle is a session waiting for its person; anything else, and anything not known to be idle, is busy."
+        },
+        "claudeState": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "claude agents --json's state (working, blocked, done, failed, stopped), raw; null for a session with none."
+        },
+        "claudeStatus": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "claude agents --json's status (busy, waiting, idle), raw; null while it has no process."
+        },
+        "waitingFor": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "What a waiting session waits on (permission prompt, input needed), raw; null unless it is."
+        },
+        "inbox": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The inbox's socket, as uds: without the prefix: an absolute path. Null when inboxUnavailable says why."
+        },
+        "inboxUnavailable": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "notRunning",
+                "own",
+                "codex",
+                "noRegistry",
+                "notASocket",
+                "refused"
+              ]
+            }
+          ],
+          "description": "Why there is no inbox. notRunning: no process. own: the session wt runs under; wt does not send to it. codex: reserved, Codex sessions are not listed. noRegistry: claude's registry file for the pid is missing, unreadable, or names another session. notASocket: the path is not a socket of yours in a directory closed to others. refused: it did not accept a connection."
+        },
+        "transcript": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The session's transcript file, when one is found."
+        },
+        "startedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "RFC 3339, UTC."
+        },
+        "shown": {
+          "type": "boolean",
+          "description": "The session wt list shows for its worktree."
+        }
+      }
+    }
+  }
+}

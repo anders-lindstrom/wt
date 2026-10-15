@@ -91,6 +91,7 @@ examples: `wt <command> --help`.
 | `wt cd [<pattern>]` | cd to a worktree, in this shell; `.` is the one you are in, bare or `/` the main checkout |
 | `wt exec <pattern> <cmd>…` | run a command there, in a subshell; your shell stays put |
 | `wt attach [<pattern>] [<session>]` | open the Claude session in a worktree, in this terminal; asks which when there are several; `--resume` continues a conversation there instead |
+| `wt session list [<work>]`, `wt session send <work> [<session>]` | the Claude sessions in a worktree with their inboxes; one message from stdin to one running session's inbox (`--from-name`, `--reply-to`, `--expect-session`, `--message-file`, `--dry-run`, `--json`). A parked session is never sent to |
 | `wt list` | every worktree, in any layout; `s` marks Superset's, `!` one nothing owns; a `PR` column when a worktree here has one, asked for by branch and cached for a few minutes (`--no-pr`, `--refresh`); a `SESSION` column when one has a Claude session in it and the terminal is wide enough for it (`--wide` whatever the width, `--no-sessions`); `--all`, `--roots`, `--profile` for many repositories |
 | `wt status [<work>]` | each worktree's branch, whether its checkout is clean, and how far behind and ahead of trunk it is; with a worktree named, that one in full with `wt sync`'s verdict; `wt list`'s `PR` column and cache (`--no-pr`, `--refresh`; `--all`, `--roots`, `--profile` for many repositories) |
 | `wt find <pattern>` | resolve a worktree by fuzzy name, across repositories (`--candidates`) |
@@ -107,6 +108,7 @@ examples: `wt <command> --help`.
 | `wt remove <work> --dry-run --json` / `wt remove <work> --yes --json` | a removal's plan — where the branch stands, every reason it would refuse, what it would lose — and its result effect by effect, for tools driving wt (`--expect` holds the removal to its plan) |
 | `wt restore <dir> --dry-run --json` / `wt restore <dir> --json` | what putting back a worktree moved to a folder would do to its branch, and what it did; `recovery.json` in the folder is itself versioned (`wt schema recovery`) |
 | `wt purge <dir> --json` / `… --yes --json` | what deleting a removed worktree's folder for good would delete and leave unreachable, with a token, and what became of each pin and the folder (`--expect` holds the purge to its plan) |
+| `wt session list --json`, `wt session send --json` | the sessions with their inboxes, and the outcome of a message; see [docs/json.md](docs/json.md) |
 | `wt refs sweep`, `restore`, `purge` `--json`; `wt refs swept --json` | each plan with a token and each result row by row, for the ref sweep; see [docs/json.md](docs/json.md) |
 | `wt sync --json` / `wt sync rebase\|resume\|undo --json` | the sync overview of every worktree, and a verb's result, as JSON for tools (`wt sync rebase --expect` holds a run to the overview); `wt schema sync` and `wt schema sync-run` |
 | `wt new … --dry-run --json` / `wt new … --json` | the same for creating a worktree, and for `wt checkout`: the plan with a token, and a result naming every side effect (`--expect` refuses a moved base or branch) |

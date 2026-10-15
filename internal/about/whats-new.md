@@ -6,6 +6,14 @@ from the last 3 days if that is more, so keep each entry to a few lines a human
 would want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-10-15 06:20 — wt session list and wt session send
+
+- `wt session list` shows a worktree's Claude sessions and whether each has an
+  inbox; `wt session send <work> [<session>]` writes a message from stdin to
+  one running session. It never guesses among several, never sends to a
+  parked session, and caps the message at 256 KiB. `--json` for both
+  (`session-list`, `session-send` 1.0.0).
+
 ## 2026-10-14 23:26 — wt sync fails a lone bump trunk took, on git 2.56 too
 
 - A version-bump commit trunk already has, at a number wt cannot lift, makes

@@ -25,3 +25,5 @@ refs-restore.v1.json 1.0.0 f80a4fe4aac345193b4052ba2bf832318e0ccc45c5822e4656641
 refs-purge-plan.v1.json 1.0.0 614c0c4f5450087d378d16a69c4e1e162a89eb09b7d4d75ca73e2eab1a2f9325
 refs-purge.v1.json 1.0.0 8e641e7e037f8d4704b5025ebecf957d15daf876378b821151c3e4704f86b3c0
 refs-swept.v1.json 1.0.0 6bda2337f21770dc83b2f7f0ab6fbaab99b6d0aa8e8e601c3661cec3db7b34ad
+session-list.v1.json 1.0.0 22d8e73a8393fd8141925fd4a1fddd60675eabfae1eb20d8d710e7a1228fed3c
+session-send.v1.json 1.0.0 8586ab0c1ca84e33c83d9cd85af04e106d8c8cf93c05eda67c509e7dfd1bbc41
