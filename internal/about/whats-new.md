@@ -8,11 +8,11 @@ would want read out to them; the full story is in git history and in
 
 ## 2026-10-15 06:20 — wt session list and wt session send
 
-- `wt session list` shows a worktree's Claude sessions and whether each has an
-  inbox; `wt session send <work> [<session>]` writes a message from stdin to
-  one running session. It never guesses among several, never sends to a
-  parked session, and caps the message at 256 KiB. `--json` for both
-  (`session-list`, `session-send` 1.0.0).
+- `wt session list` shows a worktree's agent sessions, their state, last
+  activity and inbox; with `--all` every repository's, from one claude call.
+- `wt session send <work> [<session>]` writes stdin to one running Claude
+  session. It never guesses among several, never sends to a parked one, and
+  caps the message at 256 KiB. `--json` for both, 1.0.0.
 
 ## 2026-10-14 23:26 — wt sync fails a lone bump trunk took, on git 2.56 too
 

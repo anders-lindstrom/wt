@@ -136,6 +136,11 @@ func TestSessionListFindsInboxesAndSaysWhyNot(t *testing.T) {
 	waiting.WaitingFor = "permission prompt"
 	claudeLists(t, liveSession("works", sidA, wt, 4001), waiting, parked, own)
 
+	was := listCodexSessions
+	listCodexSessions = func() ([]wtsync.Agent, error) {
+		return []wtsync.Agent{{ID: "codex-77", Name: "codex", Cwd: wt, Status: "busy", Tool: wtsync.ToolCodex, PID: 77}}, nil
+	}
+	t.Cleanup(func() { listCodexSessions = was })
 	var out bytes.Buffer
 	err := SessionListRun(ctx, SessionListOptions{Pattern: "thing", JSON: true, Out: &out, Err: &bytes.Buffer{}, env: &r.env})
 	if err != nil {
@@ -154,7 +159,7 @@ func TestSessionListFindsInboxesAndSaysWhyNot(t *testing.T) {
 		}
 		why[*s.Name] = w
 	}
-	want := map[string]string{"works": "ok", "asks": "noRegistry", "parked": "notRunning", "me": "own"}
+	want := map[string]string{"works": "ok", "asks": "noRegistry", "parked": "notRunning", "me": "own", "codex": "codex"}
 	for name, w := range want {
 		if why[name] != w {
 			t.Errorf("%s: inbox %q, want %q (all: %v)", name, why[name], w, why)
@@ -163,13 +168,26 @@ func TestSessionListFindsInboxesAndSaysWhyNot(t *testing.T) {
 	if l.Sessions[0].WaitingFor == nil || *l.Sessions[0].WaitingFor != "permission prompt" || !l.Sessions[0].Shown {
 		t.Errorf("the session that needs its person leads and is the one shown: %+v", l.Sessions[0])
 	}
+	acts := map[string]string{}
+	for _, s := range l.Sessions {
+		acts[*s.Name] = s.Activity
+		if s.LastActivityAt != nil || s.Transcript != nil {
+			t.Errorf("%s: no transcript was made, so none is reported: %+v", *s.Name, s)
+		}
+	}
+	wantActs := map[string]string{"works": "idle", "asks": "needsInput", "parked": "parked", "me": "idle", "codex": "working"}
+	for n, a := range wantActs {
+		if acts[n] != a {
+			t.Errorf("%s: activity %q, want %q", n, acts[n], a)
+		}
+	}
 	shown := 0
 	for _, s := range l.Sessions {
 		if s.Shown {
 			shown++
 		}
 	}
-	if shown != 1 || l.Sessions[len(l.Sessions)-1].State == "" {
+	if shown != 1 {
 		t.Errorf("one session is shown per worktree, got %d", shown)
 	}
 }
@@ -418,7 +436,7 @@ func TestSessionSendKeepsTheMessageFromClosingItsWrapper(t *testing.T) {
 	}
 }
 
-func TestSessionSendReportsAnInboxThatDropsTheConnection(t *testing.T) {
+func TestSessionSendReportsAnInboxThatResetsTheConnection(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	path := filepath.Join(r.socks, "4001.sock")
@@ -428,28 +446,210 @@ func TestSessionSendReportsAnInboxThatDropsTheConnection(t *testing.T) {
 	}
 	_ = os.Chmod(path, 0o600)
 	r.register(4001, sidA, path)
-	accepts := make(chan struct{}, 4)
+	t.Cleanup(func() { _ = l.Close() })
+	var accepts int
 	go func() {
 		for {
 			c, err := l.Accept()
 			if err != nil {
 				return
 			}
-			accepts <- struct{}{}
-			// Close with the line unread: the peer sees a reset.
+			accepts++
+			// The listing's own connect is the first; the send's is closed
+			// with the line unread, a reset for the writer.
+			if accepts > 1 {
+				time.Sleep(50 * time.Millisecond)
+			}
 			_ = c.Close()
 		}
 	}()
-	t.Cleanup(func() { _ = l.Close() })
 	claudeLists(t, liveSession("only", sidA, wt, 4001))
-	res, _, err := sendSession(t, ctx, r, SessionSendOptions{}, strings.Repeat("x", 200000))
-	// The listing's own connect counts one accept; the send is the next. A
-	// reset may or may not surface on a socket this fast, so only the
-	// contract is held: sent and an error never both.
-	if err != nil && (res.Sent || res.ErrorCode == nil) {
-		t.Errorf("a failed send must not say sent: %v / %+v", err, res)
+	res, _, err := sendSession(t, ctx, r, SessionSendOptions{}, strings.Repeat("x", MaxSessionMessage))
+	if err != nil && (res.Sent || res.ErrorCode == nil || *res.ErrorCode != "writeFailed") {
+		t.Errorf("a failed send is writeFailed and not sent: %v / %+v", err, res)
 	}
-	if err == nil && !res.Sent {
-		t.Errorf("no error and not sent: %+v", res)
+	if err == nil {
+		// The kernel took the whole line before the close: the one thing
+		// sent can mean is that it was written.
+		t.Logf("write completed before the reset surfaced: %+v", res)
+	}
+}
+
+func TestSessionSendDoesNotTrustWhatTheRegistryPointsAt(t *testing.T) {
+	ctx, _, wt := attachFixture(t)
+	r := newSessionRig(t)
+	got := r.inbox(4001, sidA)
+	// A link to the real inbox, and a socket in a directory others write.
+	link := filepath.Join(r.socks, "link.sock")
+	if err := os.Symlink(filepath.Join(r.socks, "4001.sock"), link); err != nil {
+		t.Fatal(err)
+	}
+	r.register(4001, sidA, link)
+	claudeLists(t, liveSession("only", sidA, wt, 4001))
+	res, _, err := sendSession(t, ctx, r, SessionSendOptions{}, "hello")
+	if err == nil || *res.ErrorCode != "noInbox" || *res.Target.InboxUnavailable != "notASocket" {
+		t.Errorf("symlinked socket: want noInbox/notASocket, got %v / %+v", err, res)
+	}
+	r.register(4001, sidA, filepath.Join(r.socks, "4001.sock"))
+	if err := os.Chmod(r.socks, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	res, _, err = sendSession(t, ctx, r, SessionSendOptions{}, "hello")
+	if err == nil || *res.ErrorCode != "noInbox" {
+		t.Errorf("open directory: want noInbox, got %v / %+v", err, res)
+	}
+	nothingArrived(t, got)
+}
+
+func TestSessionSendFallsBackToTheDefaultSocketAndStillNamesTheSession(t *testing.T) {
+	ctx, _, wt := attachFixture(t)
+	r := newSessionRig(t)
+	got := r.inbox(4001, sidA)
+	if err := os.Remove(filepath.Join(r.env.configDir, "sessions", "4001.json")); err != nil {
+		t.Fatal(err)
+	}
+	claudeLists(t, liveSession("only", sidA, wt, 4001))
+	if res, _, err := sendSession(t, ctx, r, SessionSendOptions{}, "hello"); err != nil || !res.Sent {
+		t.Fatalf("want sent by the default path, got %v / %+v", err, res)
+	}
+	if line := <-got; !strings.Contains(line, `"session_id":"`+sidA+`"`) {
+		t.Errorf("the frame must carry the listed session id: %s", line)
+	}
+}
+
+func TestSessionSendNeedsTheWorktreeNamedExactlyOrTheSessionExpected(t *testing.T) {
+	ctx, _, wt := attachFixture(t)
+	r := newSessionRig(t)
+	got := r.inbox(4001, sidA)
+	claudeLists(t, liveSession("only", sidA, wt, 4001))
+	// "thin" is a subsequence of the worktree's path, which wt find takes.
+	res, _, err := sendSession(t, ctx, r, SessionSendOptions{Pattern: "thin"}, "hello")
+	if err == nil || res.Sent || *res.ErrorCode != "noSession" {
+		t.Errorf("fuzzy match: want refusal, got %v / %+v", err, res)
+	}
+	nothingArrived(t, got)
+	if res, _, err = sendSession(t, ctx, r, SessionSendOptions{Pattern: "thin", ExpectSession: sidA}, "hello"); err != nil || !res.Sent {
+		t.Errorf("fuzzy match with --expect-session: want sent, got %v / %+v", err, res)
+	}
+}
+
+func TestSessionSendIgnoresTheCallersOwnSessionWhenChoosing(t *testing.T) {
+	ctx, _, wt := attachFixture(t)
+	r := newSessionRig(t)
+	got := r.inbox(4001, sidA)
+	r.inbox(4002, sidB)
+	own := liveSession("me", sidB, wt, 4002)
+	own.Own = true
+	claudeLists(t, liveSession("only", sidA, wt, 4001), own)
+	if res, _, err := sendSession(t, ctx, r, SessionSendOptions{}, "hello"); err != nil || !res.Sent || *res.Target.Name != "only" {
+		t.Fatalf("want the one other session, got %v / %+v", err, res)
+	}
+	<-got
+}
+
+func TestSessionActivityWords(t *testing.T) {
+	cases := map[string]claudeSession{
+		"done":       {wtsync.Agent{Kind: "background", State: "done"}},
+		"parked":     {wtsync.Agent{Kind: "background", State: "blocked"}},
+		"needsInput": {wtsync.Agent{Kind: "interactive", Status: "waiting", PID: 5}},
+		"idle":       {wtsync.Agent{Kind: "interactive", Status: "idle", PID: 5}},
+		"working":    {wtsync.Agent{Kind: "interactive", Status: "busy", PID: 5}},
+	}
+	for want, s := range cases {
+		if got := sessionActivity(s); got != want {
+			t.Errorf("%+v: activity %q, want %q", s.Agent, got, want)
+		}
+	}
+}
+
+func TestSessionListDatesActivityByTheTranscriptsMtime(t *testing.T) {
+	ctx, _, wt := attachFixture(t)
+	r := newSessionRig(t)
+	dir := filepath.Join(r.env.configDir, "projects", "-some-cwd")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	tr := filepath.Join(dir, sidA+".jsonl")
+	if err := os.WriteFile(tr, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	when := time.Date(2026, 10, 15, 4, 30, 0, 0, time.UTC)
+	if err := os.Chtimes(tr, when, when); err != nil {
+		t.Fatal(err)
+	}
+	claudeLists(t, liveSession("works", sidA, wt, 4001))
+	_, infos, _, err := worktreeSessions(ctx, "thing", &bytes.Buffer{}, nil, r.env)
+	if err != nil || len(infos) != 1 {
+		t.Fatal(err, infos)
+	}
+	s := infos[0]
+	if s.Transcript == nil || *s.Transcript != tr || s.LastActivityAt == nil || *s.LastActivityAt != "2026-10-15T04:30:00Z" || s.Background {
+		t.Errorf("session = %+v", s)
+	}
+}
+
+func TestSessionListNoInboxCheckTakesTheInboxFromTheRegistry(t *testing.T) {
+	ctx, _, wt := attachFixture(t)
+	r := newSessionRig(t)
+	// A socket file nobody listens on: a session that died with its file.
+	path := filepath.Join(r.socks, "4001.sock")
+	l, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.(*net.UnixListener).SetUnlinkOnClose(false)
+	_ = l.Close()
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.Marshal(map[string]any{"pid": 4001, "sessionId": sidA, "messagingSocketPath": path,
+		"statusUpdatedAt": time.Date(2026, 10, 15, 4, 0, 0, 0, time.UTC).UnixMilli()})
+	if err := os.WriteFile(filepath.Join(r.env.configDir, "sessions", "4001.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	claudeLists(t, liveSession("works", sidA, wt, 4001))
+
+	_, infos, _, err := worktreeSessions(ctx, "thing", &bytes.Buffer{}, nil, r.env)
+	if err != nil || len(infos) != 1 || infos[0].Inbox != nil || *infos[0].InboxUnavailable != "refused" {
+		t.Fatalf("with the check: %v %+v", err, infos)
+	}
+	env := r.env
+	env.noProbe = true
+	_, infos, _, err = worktreeSessions(ctx, "thing", &bytes.Buffer{}, nil, env)
+	if err != nil || infos[0].Inbox == nil || *infos[0].Inbox != path {
+		t.Fatalf("without the check: %v %+v", err, infos)
+	}
+	if infos[0].StateSince == nil || *infos[0].StateSince != "2026-10-15T04:00:00Z" {
+		t.Errorf("stateSince = %v", infos[0].StateSince)
+	}
+}
+
+func TestSessionListAllPlacesSessionsByRepositoryFromOneRead(t *testing.T) {
+	ctx, main, wt := attachFixture(t)
+	_ = ctx
+	r := newSessionRig(t)
+	r.inbox(4001, sidA)
+	elsewhere := t.TempDir()
+	asked := claudeLists(t, liveSession("here", sidA, wt, 4001), liveSession("stray", sidB, elsewhere, 4002))
+	was := listCodexSessions
+	listCodexSessions = func() ([]wtsync.Agent, error) { return nil, nil }
+	t.Cleanup(func() { listCodexSessions = was })
+
+	var out bytes.Buffer
+	err := SessionListRun(nil, SessionListOptions{Selection: Selection{All: true}, JSON: true, NoInboxCheck: true,
+		Out: &out, Err: &bytes.Buffer{}, env: &r.env})
+	if err != nil {
+		t.Fatal(err)
+	}
+	validateJSON(t, "session-list", out.Bytes())
+	var l SessionList
+	if err := json.Unmarshal(out.Bytes(), &l); err != nil {
+		t.Fatal(err)
+	}
+	if len(l.Sessions) != 1 || *l.Sessions[0].Name != "here" || l.Sessions[0].Repo != filepath.Base(main) || l.Sessions[0].Work != "thing" {
+		t.Errorf("sessions = %+v", l.Sessions)
+	}
+	if *asked != 1 {
+		t.Errorf("claude was asked %d times, want one read", *asked)
 	}
 }

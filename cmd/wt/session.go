@@ -32,7 +32,8 @@ func newSessionCmd() *cobra.Command {
 }
 
 func newSessionListCmd() *cobra.Command {
-	var asJSON bool
+	var asJSON, noInbox bool
+	var sel selectionFlags
 	cmd := &cobra.Command{
 		Use:   "list [<work>]",
 		Short: "List the Claude sessions in a worktree, with their inboxes",
@@ -43,22 +44,39 @@ func newSessionListCmd() *cobra.Command {
 			"to, or why not: it has no process (a parked background session), wt\n" +
 			"runs under it, claude's registry does not name it, its socket is not\n" +
 			"yours, or it did not accept a connection. wt connects to each inbox to\n" +
-			"find out and writes nothing.\n\n" +
+			"find out and writes nothing; --no-inbox-check leaves the connection\n" +
+			"out, for a listing made often. Codex sessions are listed too, with no\n" +
+			"inbox.\n\n" +
+			"--all, --roots or --profile list every repository's sessions instead,\n" +
+			"from one read of claude's sessions, opening only the repositories that\n" +
+			"hold one; the pattern is not taken with them.\n\n" +
 			"--json prints one object on stdout: every session with its full session\n" +
-			"id, pid, state, what it waits for, inbox, transcript and start time, and\n" +
-			"which one wt list shows. wt schema session-list prints its schema;\n" +
-			"docs/json.md explains it.",
+			"id, pid, state, what it waits for, inbox, transcript, start time, last\n" +
+			"activity (the transcript's mtime), since when its state holds, and which\n" +
+			"one wt list shows. wt schema session-list prints its schema;\n" +
+			"docs/json.md explains it.\n\n" +
+			selectionHelp,
 		Example: "  wt session list                  # this worktree's sessions\n" +
 			"  wt session list login-crash      # another worktree's\n" +
-			"  wt session list --json           # the same, for a tool",
+			"  wt session list --all --json --no-inbox-check  # all repositories, often\n" +
+			"  wt session list --roots work   # the repositories under one root\n" +
+			"  wt session list --profile api  # a profile's repositories",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			o := commands.SessionListOptions{JSON: asJSON, NoInboxCheck: noInbox,
+				Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
+			if sel.selection().Any() {
+				if len(args) > 0 {
+					return usagef("--all, --roots and --profile list every repository: give no worktree with them")
+				}
+				o.Selection, o.User = sel.selection(), loadUserWarn(cmd.ErrOrStderr())
+				return commands.SessionListRun(nil, o)
+			}
 			ctx, err := openLenient(cmd.ErrOrStderr())
 			if err != nil {
 				return err
 			}
-			o := commands.SessionListOptions{JSON: asJSON, Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
 			if len(args) > 0 {
 				o.Pattern = args[0]
 			}
@@ -66,6 +84,8 @@ func newSessionListCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print the sessions as JSON (default: a table)")
+	cmd.Flags().BoolVar(&noInbox, "no-inbox-check", false, "do not connect to each inbox: take it from claude's registry")
+	sel.add(cmd, true)
 	return cmd
 }
 

@@ -56,6 +56,8 @@ type attachTarget struct {
 	// work is the worktree each session is in, by index, when there are
 	// several worktrees.
 	work []string
+	// repo is the repository's name, when known.
+	repo string
 	// paths is each session's worktree path, by index, alongside work.
 	paths []string
 }
@@ -201,7 +203,7 @@ func (o AttachOptions) target(ctx *Context, read *ClaudeSessions) (attachTarget,
 		}
 		m = matches[n]
 	}
-	t := attachTarget{label: m.Work, arg: o.Pattern, path: m.Path}
+	t := attachTarget{label: m.Work, arg: o.Pattern, path: m.Path, repo: m.Repo}
 	t.sessions = read.byWorktree(worktreePaths(m.Path))[m.Path]
 	return t, nil
 }
@@ -242,9 +244,10 @@ func (o AttachOptions) standing(ctx *Context, read *ClaudeSessions) (attachTarge
 	}
 	by := read.byWorktree(paths)
 	if here, _, err := standingWorktree(ctx, names); err == nil && !here.IsMain {
-		return attachTarget{label: worktreeName(ctx, here.Branch, here.Path), arg: ".", path: here.Path, sessions: by[here.Path]}, nil
+		return attachTarget{label: worktreeName(ctx, here.Branch, here.Path), arg: ".", path: here.Path,
+			sessions: by[here.Path], repo: ctx.Repo.Name}, nil
 	}
-	t := attachTarget{label: "any worktree of " + ctx.Repo.Name}
+	t := attachTarget{label: "any worktree of " + ctx.Repo.Name, repo: ctx.Repo.Name}
 	for _, n := range names {
 		work := n.Work
 		if n.IsMain {

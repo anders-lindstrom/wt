@@ -397,6 +397,20 @@ func ListOtherAgentsRequired() ([]Agent, error) {
 	return ListOtherAgents()
 }
 
+// ListCodexSessions is the Codex sessions on the machine other than the one
+// wt runs under: the part of ListOtherAgents that does not ask claude.
+func ListCodexSessions() ([]Agent, error) {
+	procs, err := listProcesses()
+	if err != nil {
+		return nil, fmt.Errorf("cannot look for Codex sessions: %w", err)
+	}
+	codex, err := codexSessions(procs, ancestorsOf(procs))
+	if err != nil {
+		return nil, fmt.Errorf("cannot look for Codex sessions: %w", err)
+	}
+	return codex, nil
+}
+
 // ListOtherAgents is every agent session on the machine but the one wt runs
 // under: Claude's from ListAgents, Codex's from codexSessions. A process
 // table or a Codex log that cannot be read is an error, not no sessions: a

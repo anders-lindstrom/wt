@@ -3,7 +3,7 @@
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/session-list.v1.json",
   "x-version": "1.0.0",
   "title": "wt session list --json",
-  "description": "The Claude sessions in a worktree, or in every worktree of the repository. Printed by `wt session list [<work>] --json` as the only thing on stdout; it writes nothing to any session. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
+  "description": "The agent sessions in a worktree, in every worktree of the repository, or with --all, --roots or --profile in every selected repository. Printed by `wt session list [<work>] --json` as the only thing on stdout; it writes nothing to any session. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
   "required": [
     "schema",
@@ -11,7 +11,8 @@
     "command",
     "sessions",
     "sessionsError",
-    "error"
+    "error",
+    "codexError"
   ],
   "properties": {
     "schema": {
@@ -44,13 +45,21 @@
         "null"
       ],
       "description": "Why the worktree could not be found, or is ambiguous."
+    },
+    "codexError": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Why Codex's sessions could not be looked for (the process table, its logs). The Claude sessions are listed regardless."
     }
   },
   "$defs": {
     "session": {
       "type": "object",
-      "description": "One Claude session in a worktree, as wt list's SESSION column knows it, with where a message to it would go.",
+      "description": "One agent session in a worktree, as wt list's SESSION column knows it, with where a message to it would go.",
       "required": [
+        "repo",
         "work",
         "path",
         "kind",
@@ -67,7 +76,11 @@
         "inboxUnavailable",
         "transcript",
         "startedAt",
-        "shown"
+        "lastActivityAt",
+        "activity",
+        "background",
+        "shown",
+        "stateSince"
       ],
       "properties": {
         "work": {
@@ -80,9 +93,10 @@
         },
         "kind": {
           "enum": [
-            "claude"
+            "claude",
+            "codex"
           ],
-          "description": "Whose session: always claude; Codex sessions take no messages and are not listed."
+          "description": "Whose session. A Codex session has no sessionId, no inbox and no transcript; its state is busy or idle."
         },
         "id": {
           "type": [
@@ -115,7 +129,7 @@
         },
         "terminal": {
           "type": "boolean",
-          "description": "Open in a terminal: an interactive session, or a background one attached there."
+          "description": "An interactive session, open in a terminal; false for a background one, even while attached."
         },
         "state": {
           "enum": [
@@ -168,7 +182,7 @@
               ]
             }
           ],
-          "description": "Why there is no inbox. notRunning: no process. own: the session wt runs under; wt does not send to it. codex: reserved, Codex sessions are not listed. noRegistry: claude's registry file for the pid is missing, unreadable, or names another session. notASocket: the path is not a socket of yours in a directory closed to others. refused: it did not accept a connection."
+          "description": "Why there is no inbox. notRunning: no process. own: the session wt runs under; wt does not send to it. codex: a Codex session takes no messages. noRegistry: claude's registry file for the pid is missing, unreadable, or names another session. notASocket: the path is not a socket of yours in a directory closed to others. refused: it did not accept a connection."
         },
         "transcript": {
           "type": [
@@ -182,11 +196,43 @@
             "string",
             "null"
           ],
-          "description": "RFC 3339, UTC."
+          "description": "RFC 3339, UTC, from claude agents --json's startedAt; null when it has none."
+        },
+        "lastActivityAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "RFC 3339, UTC: the modification time of the transcript file, one stat and no read, so it is there for a parked session too. Claude writes the transcript at every turn. Null when no transcript was found; never guessed."
+        },
+        "activity": {
+          "enum": [
+            "needsInput",
+            "working",
+            "idle",
+            "done",
+            "parked"
+          ],
+          "description": "The one state word wt list and gittree agree on. parked: a background session with no process, whatever it was waiting for. needsInput: it has a process and is blocked or waiting on a prompt (waitingFor says which). done: claude's done, failed and stopped (claudeState has the raw word). working and idle as state busy and idle. A Codex session is working or idle."
+        },
+        "background": {
+          "type": "boolean",
+          "description": "A claude --bg session, which has an attach id, whether or not it is open in a terminal now; false for one started in a terminal."
         },
         "shown": {
           "type": "boolean",
           "description": "The session wt list shows for its worktree."
+        },
+        "repo": {
+          "type": "string",
+          "description": "The repository's name; empty when it is not known."
+        },
+        "stateSince": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "RFC 3339, UTC: when claude last changed the session's status, from statusUpdatedAt in its registry file ~/.claude/sessions/<pid>.json. Null for a session with no process, or no registry file."
         }
       }
     }

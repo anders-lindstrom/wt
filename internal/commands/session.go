@@ -13,10 +13,14 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unicode"
 
+	"github.com/anders-lindstrom/wt/internal/config"
+	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anders-lindstrom/wt/internal/wtsync"
 	"github.com/anders-lindstrom/wt/schema"
 )
 
@@ -44,10 +48,50 @@ type sessionEnv struct {
 	// socketDirs are where a session's socket is when its registry file is
 	// missing, in the order claude falls back to them.
 	socketDirs []string
+	// noProbe leaves out the connection to each inbox: it is then taken
+	// from the registry and the checks on the file alone.
+	noProbe bool
+	// projects is the directories of claude's projects/, read once.
+	projects *projectDirs
+}
+
+// projectDirs is the directories under claude's projects/, listed once for
+// the transcripts of a whole listing.
+type projectDirs struct {
+	once sync.Once
+	dirs []string
+}
+
+func (p *projectDirs) list(configDir string) []string {
+	p.once.Do(func() {
+		entries, _ := os.ReadDir(filepath.Join(configDir, "projects"))
+		for _, e := range entries {
+			if e.IsDir() {
+				p.dirs = append(p.dirs, filepath.Join(configDir, "projects", e.Name()))
+			}
+		}
+	})
+	return p.dirs
+}
+
+// transcriptOf is the .jsonl of a conversation, and its modification time,
+// when one of the projects holds it. A stat each, never a read.
+func (e sessionEnv) transcriptOf(sessionID string) (string, time.Time, bool) {
+	dirs := e.projects
+	if dirs == nil {
+		dirs = &projectDirs{}
+	}
+	for _, d := range dirs.list(e.configDir) {
+		p := filepath.Join(d, sessionID+".jsonl")
+		if fi, err := os.Stat(p); err == nil && fi.Mode().IsRegular() {
+			return p, fi.ModTime(), true
+		}
+	}
+	return "", time.Time{}, false
 }
 
 func defaultSessionEnv() sessionEnv {
-	e := sessionEnv{uid: os.Getuid(), configDir: os.Getenv("CLAUDE_CONFIG_DIR")}
+	e := sessionEnv{uid: os.Getuid(), configDir: os.Getenv("CLAUDE_CONFIG_DIR"), projects: &projectDirs{}}
 	if e.configDir == "" {
 		home, _ := os.UserHomeDir()
 		e.configDir = filepath.Join(home, ".claude")
@@ -57,8 +101,8 @@ func defaultSessionEnv() sessionEnv {
 		runtime = os.TempDir()
 	}
 	for _, d := range []string{
-		filepath.Join(runtime, "cc-socks"),
 		"/tmp/cc-socks",
+		filepath.Join(runtime, "cc-socks"),
 		"/tmp/cc-socks-" + strconv.Itoa(e.uid),
 	} {
 		if !containsString(e.socketDirs, d) {
@@ -80,6 +124,7 @@ func containsString(list []string, s string) bool {
 // SessionInfo is one session as `wt session list --json` and `wt session
 // send --json` print it.
 type SessionInfo struct {
+	Repo             string  `json:"repo"`
 	Work             string  `json:"work"`
 	Path             string  `json:"path"`
 	Kind             string  `json:"kind"`
@@ -96,6 +141,10 @@ type SessionInfo struct {
 	InboxUnavailable *string `json:"inboxUnavailable"`
 	Transcript       *string `json:"transcript"`
 	StartedAt        *string `json:"startedAt"`
+	StateSince       *string `json:"stateSince"`
+	LastActivityAt   *string `json:"lastActivityAt"`
+	Activity         string  `json:"activity"`
+	Background       bool    `json:"background"`
 	Shown            bool    `json:"shown"`
 
 	// sessionID is the listing's id, whole, for the checks that need it.
@@ -109,6 +158,7 @@ type SessionList struct {
 	Command       string        `json:"command"`
 	Sessions      []SessionInfo `json:"sessions"`
 	SessionsError *string       `json:"sessionsError"`
+	CodexError    *string       `json:"codexError"`
 	Error         *string       `json:"error"`
 }
 
@@ -132,19 +182,43 @@ type SessionListOptions struct {
 	// Pattern names the worktree as `wt attach` takes it; empty is the one
 	// the caller stands in, or every worktree from the main checkout.
 	Pattern string
-	JSON    bool
-	Out     io.Writer
-	Err     io.Writer
+	// Selection, when it names any, lists the sessions of every repository
+	// it covers instead, from one read of claude's sessions. User is the
+	// configuration it is resolved against.
+	Selection Selection
+	User      *config.User
+	// NoInboxCheck leaves out the connection to each inbox.
+	NoInboxCheck bool
+	JSON         bool
+	Out          io.Writer
+	Err          io.Writer
 	// Sessions is the read of claude's sessions; nil reads them.
 	Sessions *ClaudeSessions
 	env      *sessionEnv
 }
 
 func (o SessionListOptions) environment() sessionEnv {
+	e := defaultSessionEnv()
 	if o.env != nil {
-		return *o.env
+		e = *o.env
 	}
-	return defaultSessionEnv()
+	e.noProbe = e.noProbe || o.NoInboxCheck
+	return e
+}
+
+// listCodexSessions is a var so tests stay off the machine's process table.
+var listCodexSessions = wtsync.ListCodexSessions
+
+// with is the read plus extra sessions of another program, as one.
+func (c *ClaudeSessions) with(extra []wtsync.Agent) *ClaudeSessions {
+	<-c.done
+	m := &ClaudeSessions{done: make(chan struct{}), found: c.found, err: c.err}
+	close(m.done)
+	m.sessions = append(m.sessions, c.sessions...)
+	for _, a := range extra {
+		m.sessions = append(m.sessions, claudeSession{a})
+	}
+	return m
 }
 
 // worktreeSessions finds the worktree pattern names and its sessions, each with the
@@ -167,27 +241,171 @@ func worktreeSessions(ctx *Context, pattern string, errw io.Writer, read *Claude
 	if err != nil {
 		return t, nil, nil, err
 	}
+	return t, describeTarget(t, env), nil, nil
+}
+
+// describeTarget is the sessions of t as the JSON shows them; the first of
+// each worktree is the one wt list shows.
+func describeTarget(t attachTarget, env sessionEnv) []SessionInfo {
+	var infos []SessionInfo
 	seen := map[string]bool{}
 	for i, s := range t.sessions {
 		work, path := t.label, t.path
 		if t.work != nil {
 			work, path = t.work[i], t.paths[i]
 		}
-		info := describeSession(s, work, path, env)
+		info := describeSession(s, t.repo, work, path, env)
 		if !seen[path] {
 			seen[path] = true
 			info.Shown = true
 		}
 		infos = append(infos, info)
 	}
-	return t, infos, nil, nil
+	return infos
 }
 
-// SessionListRun is `wt session list`.
+// repoSessions is every session in any worktree of ctx's repository, of the
+// sessions read holds.
+func repoSessions(ctx *Context, read *ClaudeSessions, env sessionEnv) ([]SessionInfo, error) {
+	names, err := WorkNames(ctx)
+	if err != nil {
+		return nil, err
+	}
+	paths := make([]string, len(names))
+	for i, n := range names {
+		paths[i] = n.Path
+	}
+	by := read.byWorktree(paths)
+	t := attachTarget{repo: ctx.Repo.Name}
+	for _, n := range names {
+		work := n.Work
+		switch {
+		case n.IsMain:
+			work = "(main)"
+		case work == "":
+			work = worktreeName(ctx, n.Branch, n.Path)
+		}
+		for _, s := range by[n.Path] {
+			t.sessions = append(t.sessions, s)
+			t.work = append(t.work, work)
+			t.paths = append(t.paths, n.Path)
+		}
+	}
+	return describeTarget(t, env), nil
+}
+
+// acrossRepos lists the sessions of every repository the selection covers
+// from the one read of claude's sessions there is: each session is placed in
+// its repository by its working directory, and only a repository holding one
+// is opened.
+func acrossRepos(u *config.User, sel Selection, read *ClaudeSessions, env sessionEnv) ([]SessionInfo, error) {
+	all := read.all()
+	roots := make([]string, len(all))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8)
+	cache := sync.Map{}
+	for i, s := range all {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			if s.Cwd == "" {
+				return
+			}
+			if v, ok := cache.Load(s.Cwd); ok {
+				roots[i] = v.(string)
+				return
+			}
+			if r, err := repo.Discover(s.Cwd); err == nil {
+				roots[i] = r.MainRoot
+			}
+			cache.Store(s.Cwd, roots[i])
+		}()
+	}
+	wg.Wait()
+	targets, err := selectedWithSessions(u, sel, roots)
+	if err != nil {
+		return nil, err
+	}
+	set := RepoSet{Repos: targets}
+	type repoResult struct {
+		infos []SessionInfo
+		err   error
+	}
+	results := eachRepo(set.Repos, repoParallelism, func(t RepoTarget) repoResult {
+		var mine []claudeSession
+		for i, s := range all {
+			if roots[i] != "" && repo.SamePath(roots[i], t.Path) {
+				mine = append(mine, s)
+			}
+		}
+		ctx, err := Open(t.Path)
+		if err != nil {
+			return repoResult{err: fmt.Errorf("%s: %w", t.Path, err)}
+		}
+		got, err := repoSessions(ctx, &ClaudeSessions{done: closedChan(), sessions: mine, found: true}, env)
+		if err != nil {
+			err = fmt.Errorf("%s: %w", t.Path, err)
+		}
+		return repoResult{got, err}
+	})
+	var infos []SessionInfo
+	for _, r := range results {
+		infos = append(infos, r.infos...)
+		if r.err != nil {
+			return infos, r.err
+		}
+	}
+	return infos, nil
+}
+
+func closedChan() chan struct{} {
+	c := make(chan struct{})
+	close(c)
+	return c
+}
+
+// SessionListRun is `wt session list`. Codex sessions are listed beside
+// Claude's, with no inbox; when they cannot be found, codexError says so and
+// the Claude sessions stand.
 func SessionListRun(ctx *Context, o SessionListOptions) error {
-	_, infos, sessionsErr, err := worktreeSessions(ctx, o.Pattern, o.Err, o.Sessions, o.environment())
+	read := o.Sessions
+	if read == nil {
+		read = ReadClaudeSessions(attachDeadline)
+	}
+	type codexRead struct {
+		agents []wtsync.Agent
+		err    error
+	}
+	codexDone := make(chan codexRead, 1)
+	go func() {
+		a, err := listCodexSessions()
+		codexDone <- codexRead{a, err}
+	}()
 	out := SessionList{Schema: 1, SchemaVersion: schema.VersionOf("session-list"), Command: "session list",
 		Sessions: []SessionInfo{}}
+	env := o.environment()
+	var infos []SessionInfo
+	var sessionsErr, err error
+	<-read.done
+	codex := <-codexDone
+	if codex.err != nil {
+		out.CodexError = strp(oneLine(codex.err.Error()))
+	}
+	merged := read.with(codex.agents)
+	if o.Selection.Any() {
+		switch {
+		case read.err != nil:
+			sessionsErr = read.err
+		case !read.found:
+			sessionsErr = errors.New("claude is not on the PATH, so there are no sessions to list")
+		default:
+			infos, err = acrossRepos(o.User, o.Selection, merged, env)
+		}
+	} else {
+		_, infos, sessionsErr, err = worktreeSessions(ctx, o.Pattern, o.Err, merged, env)
+	}
 	if infos != nil {
 		out.Sessions = infos
 	}
@@ -212,8 +430,11 @@ func SessionListRun(ctx *Context, o SessionListOptions) error {
 	if sessionsErr != nil {
 		return sessionsErr
 	}
+	if out.CodexError != nil {
+		fmt.Fprintln(o.Err, "wt: Codex sessions not shown: "+*out.CodexError)
+	}
 	if len(infos) == 0 {
-		fmt.Fprintln(o.Out, "no Claude session in the worktree")
+		fmt.Fprintln(o.Out, "no agent session found")
 		return nil
 	}
 	return printTable(o.Out, sessionRows(infos))
@@ -255,9 +476,13 @@ func sessionRows(infos []SessionInfo) [][]string {
 var sessionIDShape = regexp.MustCompile(`^[0-9A-Za-z-]{8,64}$`)
 
 // describeSession is s as the JSON shows it, with its inbox looked up.
-func describeSession(s claudeSession, work, path string, env sessionEnv) SessionInfo {
-	info := SessionInfo{Work: work, Path: path, Kind: "claude", Terminal: s.Kind == "interactive",
+func describeSession(s claudeSession, repo, work, path string, env sessionEnv) SessionInfo {
+	info := SessionInfo{Repo: repo, Work: work, Path: path, Kind: "claude", Terminal: s.Kind == "interactive",
 		State: "busy", sessionID: s.SessionID}
+	codex := s.Tool == wtsync.ToolCodex
+	if codex {
+		info.Kind = "codex"
+	}
 	if s.Idle() {
 		info.State = "idle"
 	}
@@ -276,51 +501,99 @@ func describeSession(s claudeSession, work, path string, env sessionEnv) Session
 	if s.StartedAt > 0 {
 		info.StartedAt = strp(time.UnixMilli(s.StartedAt).UTC().Format(time.RFC3339))
 	}
+	info.Background = s.ID != "" && !codex
+	info.Activity = sessionActivity(s)
+	if codex {
+		info.InboxUnavailable = strp("codex")
+		return info
+	}
 	if sessionIDShape.MatchString(s.SessionID) {
-		if hits, _ := filepath.Glob(filepath.Join(env.configDir, "projects", "*", s.SessionID+".jsonl")); len(hits) > 0 {
-			info.Transcript = &hits[0]
+		if path, mtime, ok := env.transcriptOf(s.SessionID); ok {
+			info.Transcript = &path
+			info.LastActivityAt = strp(mtime.UTC().Format(time.RFC3339))
+		}
+	}
+	var reg registryEntry
+	regState := registryMissing
+	if s.PID > 1 && s.SessionID != "" {
+		reg, regState = readRegistry(s, env)
+		if regState == registryOK && reg.statusUpdated > 0 {
+			info.StateSince = strp(time.UnixMilli(reg.statusUpdated).UTC().Format(time.RFC3339))
 		}
 	}
 	if s.Own {
 		info.InboxUnavailable = strp("own")
 		return info
 	}
-	info.Inbox, info.InboxUnavailable = findInbox(s, env)
+	info.Inbox, info.InboxUnavailable = findInbox(s, env, reg, regState)
 	return info
+}
+
+// registryEntry is what claude's registry file for a session says.
+type registryEntry struct {
+	socket string
+	// statusUpdated is when the session's status last changed, in Unix
+	// milliseconds, or 0.
+	statusUpdated int64
+}
+
+const (
+	registryOK = iota
+	registryMissing
+	registryBad
+)
+
+// readRegistry reads ~/.claude/sessions/<pid>.json. A pid is reused and the
+// file outlives its session: it is the session's only when it names the same
+// pid and conversation.
+func readRegistry(s claudeSession, env sessionEnv) (registryEntry, int) {
+	data, err := os.ReadFile(filepath.Join(env.configDir, "sessions", strconv.Itoa(s.PID)+".json"))
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return registryEntry{}, registryMissing
+	case err != nil:
+		return registryEntry{}, registryBad
+	}
+	var raw struct {
+		PID             int             `json:"pid"`
+		SessionID       string          `json:"sessionId"`
+		Socket          string          `json:"messagingSocketPath"`
+		StatusUpdatedAt json.RawMessage `json:"statusUpdatedAt"`
+	}
+	if json.Unmarshal(data, &raw) != nil || raw.PID != s.PID || !strings.EqualFold(raw.SessionID, s.SessionID) {
+		return registryEntry{}, registryBad
+	}
+	reg := registryEntry{socket: raw.Socket}
+	var at float64
+	if json.Unmarshal(raw.StatusUpdatedAt, &at) == nil && at > 0 {
+		reg.statusUpdated = int64(at)
+	}
+	return reg, registryOK
 }
 
 // findInbox is the socket of s's inbox, or why it has none. Nothing is
 // written to it: it must be a socket owned by the user, in a directory only
 // the user can write to, that a session whose id matches names, and that
-// accepts a connection.
-func findInbox(s claudeSession, env sessionEnv) (inbox, why *string) {
+// accepts a connection (unless env.noProbe).
+func findInbox(s claudeSession, env sessionEnv, reg registryEntry, regState int) (inbox, why *string) {
 	no := func(reason string) (*string, *string) { return nil, &reason }
-	if s.PID <= 1 || s.SessionID == "" {
-		if s.PID <= 1 {
-			return no("notRunning")
-		}
+	if s.PID <= 1 {
+		return no("notRunning")
+	}
+	if s.SessionID == "" {
 		return no("noRegistry")
 	}
 	var path string
-	data, err := os.ReadFile(filepath.Join(env.configDir, "sessions", strconv.Itoa(s.PID)+".json"))
-	switch {
-	case err == nil:
-		var reg struct {
-			PID       int    `json:"pid"`
-			SessionID string `json:"sessionId"`
-			Socket    string `json:"messagingSocketPath"`
-		}
-		// A pid is reused, and a registry file outlives its session: the
-		// file is the session's only when it names the same conversation.
-		if json.Unmarshal(data, &reg) != nil || reg.PID != s.PID ||
-			!strings.EqualFold(reg.SessionID, s.SessionID) || reg.Socket == "" {
+	switch regState {
+	case registryOK:
+		if reg.socket == "" {
 			return no("noRegistry")
 		}
-		path = reg.Socket
-	case errors.Is(err, os.ErrNotExist):
+		path = reg.socket
+	case registryMissing:
 		for _, d := range env.socketDirs {
 			p := filepath.Join(d, strconv.Itoa(s.PID)+".sock")
-			if _, err := os.Lstat(p); err == nil {
+			if env.trustedSocket(p) {
 				path = p
 				break
 			}
@@ -333,6 +606,9 @@ func findInbox(s claudeSession, env sessionEnv) (inbox, why *string) {
 	}
 	if !env.trustedSocket(path) {
 		return no("notASocket")
+	}
+	if env.noProbe {
+		return &path, nil
 	}
 	c, err := net.DialTimeout("unix", path, time.Second)
 	if err != nil {
@@ -350,7 +626,7 @@ func (e sessionEnv) trustedSocket(path string) bool {
 	}
 	fi, err := os.Lstat(path)
 	if err != nil || fi.Mode()&os.ModeSocket == 0 || fi.Mode()&os.ModeSymlink != 0 ||
-		fi.Mode().Perm()&0o077 != 0 || !e.ownedByUser(fi) {
+		fi.Mode().Perm()&0o022 != 0 || !e.ownedByUser(fi) {
 		return false
 	}
 	dir, err := os.Lstat(filepath.Dir(path))
@@ -422,9 +698,15 @@ func SessionSendRun(ctx *Context, o SessionSendOptions) error {
 	if err := checkFromName(o.FromName); err != nil {
 		return fail(sendFailure{"badArgument", err.Error(), true})
 	}
-	if o.ReplyTo != "" && !strings.HasPrefix(o.ReplyTo, "uds:") {
+	if o.ReplyTo != "" && (!strings.HasPrefix(o.ReplyTo, "uds:") || checkFromName(o.ReplyTo) != nil) {
 		return fail(sendFailure{"badArgument", fmt.Sprintf("--reply-to %q is not a uds:<socket path> address", o.ReplyTo), true})
 	}
+
+	// The message is read before anything is resolved, so that a caller
+	// writing it down a pipe is never left with a closed reader, and the
+	// dial follows the checks of the inbox at once.
+	text, size, err := readSessionMessage(o.In)
+	out.Bytes = size
 
 	target, f := chooseSessionTarget(ctx, o, env)
 	if f != nil {
@@ -443,8 +725,6 @@ func SessionSendRun(ctx *Context, o SessionSendOptions) error {
 		}
 	}
 
-	text, size, err := readSessionMessage(o.In)
-	out.Bytes = size
 	switch {
 	case err != nil:
 		return fail(sendFailure{"empty", "the message could not be read: " + err.Error(), false})
@@ -466,6 +746,9 @@ func SessionSendRun(ctx *Context, o SessionSendOptions) error {
 	}
 	if o.DryRun {
 		return finishSend(o, out, target, false)
+	}
+	if !env.trustedSocket(*target.Inbox) {
+		return fail(sendFailure{"noInbox", "the inbox is no longer a socket of yours. Nothing was sent", false})
 	}
 	if err := writeToInbox(*target.Inbox, line); err != nil {
 		return fail(sendFailure{"writeFailed", fmt.Sprintf("writing to %s failed: %v", *target.Inbox, err), false})
@@ -518,6 +801,10 @@ func chooseSessionTarget(ctx *Context, o SessionSendOptions, env sessionEnv) (*S
 		}
 		return b.String()
 	}
+	if o.ExpectSession == "" && !namesWorktreeExactly(o.Pattern, t) {
+		return nil, &sendFailure{"noSession", fmt.Sprintf("%q is not the name of a worktree but matched %s (%s): "+
+			"name it exactly, or give --expect-session. Nothing was sent", o.Pattern, t.label, t.path), false}
+	}
 	all := make([]int, len(infos))
 	for i := range infos {
 		all[i] = i
@@ -540,7 +827,7 @@ func chooseSessionTarget(ctx *Context, o SessionSendOptions, env sessionEnv) (*S
 	case o.ExpectSession != "":
 		pick = -1
 		for i, s := range infos {
-			if strings.EqualFold(s.sessionID, o.ExpectSession) {
+			if strings.EqualFold(s.sessionID, o.ExpectSession) && (pick < 0 || s.PID != nil) {
 				pick = i
 			}
 		}
@@ -550,7 +837,7 @@ func chooseSessionTarget(ctx *Context, o SessionSendOptions, env sessionEnv) (*S
 	default:
 		var live []int
 		for i, s := range infos {
-			if s.PID != nil {
+			if s.PID != nil && (s.InboxUnavailable == nil || *s.InboxUnavailable != "own") {
 				live = append(live, i)
 			}
 		}
@@ -596,7 +883,7 @@ func checkFromName(name string) error {
 		return fmt.Errorf("--from-name is longer than 64 characters")
 	}
 	for _, r := range name {
-		if unicode.IsControl(r) || strings.ContainsRune(`"<>&`, r) {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || strings.ContainsRune(`"<>&`, r) {
 			return fmt.Errorf("--from-name %q has a character that cannot go in the message's header", name)
 		}
 	}
@@ -617,7 +904,7 @@ func readSessionMessage(r io.Reader) (text string, size int, err error) {
 		return "", size, err
 	}
 	if size > MaxSessionMessage {
-		rest, err := io.Copy(io.Discard, r)
+		rest, err := io.Copy(io.Discard, io.LimitReader(r, 64<<20))
 		size += int(rest)
 		if err != nil {
 			return "", size, err
@@ -629,10 +916,7 @@ func readSessionMessage(r io.Reader) (text string, size int, err error) {
 // wrapperTags are the two tags that make a message a cross-session one. A
 // message that carries them could close the wrapper and write outside it,
 // so each opening angle bracket is escaped.
-var wrapperTags = strings.NewReplacer(
-	"</cross-session-message", "&lt;/cross-session-message",
-	"<cross-session-message", "&lt;cross-session-message",
-)
+var wrapperTags = regexp.MustCompile(`(?i)<(/?cross-session-message)`)
 
 // buildFrame is the line to write: the message in its wrapper, in the frame
 // Claude's inbox reads. session_id makes the inbox drop it if the pid now
@@ -644,7 +928,7 @@ func buildFrame(msgID, sessionID, text, fromName, reply string) ([]byte, error) 
 		b.WriteString(` from="uds:` + reply + `"`)
 	}
 	b.WriteString(` from-name="` + fromName + `">` + "\n")
-	b.WriteString(wrapperTags.Replace(text))
+	b.WriteString(wrapperTags.ReplaceAllString(text, "&lt;$1"))
 	b.WriteString("\n</cross-session-message>")
 	type message struct {
 		Role    string `json:"role"`
@@ -674,11 +958,19 @@ func buildFrame(msgID, sessionID, text, fromName, reply string) ([]byte, error) 
 // writeToInbox connects, writes the line, closes the write side and waits a
 // moment for the inbox to drop the connection, which is how it says no.
 func writeToInbox(path string, line []byte) error {
+	before, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
 	c, err := net.DialTimeout("unix", path, 2*time.Second)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = c.Close() }()
+	// What was dialled is what was checked, not a socket swapped in since.
+	if after, err := os.Lstat(path); err != nil || !os.SameFile(before, after) {
+		return errors.New("the inbox changed while connecting")
+	}
 	_ = c.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	if _, err := c.Write(line); err != nil {
 		return err
@@ -703,4 +995,87 @@ func newUUID() string {
 	b[6] = b[6]&0x0f | 0x40
 	b[8] = b[8]&0x3f | 0x80
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+}
+
+// sessionActivity is the session's state as wt list words it, as an
+// enumeration: needsInput (a process that is blocked, or waiting on a
+// prompt), working, idle, done (claude's done, failed and stopped, whose raw
+// word claudeState keeps) and parked (a background session with no process,
+// whatever it was waiting for: a wait that began when its process ended
+// says nothing about now).
+func sessionActivity(s claudeSession) string {
+	switch {
+	case s.Tool != "":
+		if s.Idle() {
+			return "idle"
+		}
+		return "working"
+	case s.State == "done" || s.State == "failed" || s.State == "stopped":
+		return "done"
+	case s.PID <= 1 && s.Kind == "background":
+		return "parked"
+	case s.needsPerson():
+		return "needsInput"
+	case s.Idle():
+		return "idle"
+	}
+	return "working"
+}
+
+// selectedWithSessions is the repositories among mains that a selection
+// covers, each once, in the order first seen. Walking every root to find the
+// repositories (a git call each) is what a listing of every repository's
+// sessions must not do; the repositories that hold a session are few, and a
+// root holds a repository when it is the checkout or its parent directory.
+func selectedWithSessions(u *config.User, sel Selection, mains []string) ([]RepoTarget, error) {
+	var named *RepoSet
+	var roots []Root
+	if len(sel.Profiles) > 0 {
+		set, err := SelectRepos(u, sel)
+		if err != nil {
+			return nil, err
+		}
+		named = &set
+	} else {
+		var err error
+		if roots, err = chosenRoots(u, sel); err != nil {
+			return nil, err
+		}
+	}
+	var out []RepoTarget
+	seen := map[string]bool{}
+	for _, main := range mains {
+		if main == "" || seen[main] {
+			continue
+		}
+		seen[main] = true
+		if named != nil {
+			for _, t := range named.Repos {
+				if repo.SamePath(t.Path, main) {
+					out = append(out, t)
+				}
+			}
+			continue
+		}
+		for _, r := range roots {
+			if (repo.SamePath(main, r.Path) || repo.SamePath(filepath.Dir(main), r.Path)) && managed(main) {
+				out = append(out, RepoTarget{Name: filepath.Base(main), Path: main, Root: r.Name})
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
+// namesWorktreeExactly reports that pattern is the worktree's name, as
+// <repo>/<work>, its path, or the one the caller stands in. A message goes
+// to a session on a fuzzy match only when the session is named exactly too.
+func namesWorktreeExactly(pattern string, t attachTarget) bool {
+	if pattern == "." || pattern == t.label || (t.repo != "" && pattern == t.repo+"/"+t.label) {
+		return true
+	}
+	if abs, err := filepath.Abs(pattern); err == nil && t.path != "" {
+		return repo.SamePath(abs, t.path)
+	}
+	return false
 }

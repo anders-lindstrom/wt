@@ -1885,8 +1885,11 @@ The exit code is zero only for `removed`.
 The Claude sessions in a worktree, found as `wt attach` finds them: `<work>`
 as `wt find` matches, none meaning the worktree you are in, and from the main
 checkout every worktree of the repository. It connects to each inbox, to see
-that it takes a connection, and writes nothing. Codex sessions take no
-messages and are not listed.
+that it takes a connection, and writes nothing; `--no-inbox-check` leaves the
+connection out. `--all`, `--roots` and `--profile` list every selected
+repository's sessions from one read of claude's, opening only the
+repositories that hold one. Codex sessions are listed too,
+and take no messages.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -1894,25 +1897,30 @@ messages and are not listed.
 | `command` | `"session list"` | |
 | `sessions` | array | the sessions, the one that needs its person first, then the newest, the session wt runs under last; see below |
 | `sessionsError` | string \| null | why claude's sessions could not be read; `sessions` is then empty and the exit status 1 |
+| `codexError` | string \| null | why Codex's sessions could not be looked for; the Claude ones are listed regardless |
 | `error` | string \| null | why the worktree could not be found or chosen |
 
 Each session:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `work`, `path` | string | the worktree, as `wt list` names it, and where it is |
-| `kind` | `"claude"` | |
+| `repo`, `work`, `path` | string | the repository, the worktree as `wt list` names it, and where it is |
+| `kind` | `"claude"` \| `"codex"` | a Codex session has no `sessionId`, inbox or transcript, and is `busy` or `idle` |
 | `id` | string \| null | the short id `claude attach` takes; null for a session open only in a terminal |
 | `sessionId` | string \| null | the conversation's full id, which `--expect-session` takes |
 | `name` | string \| null | cleaned of control characters |
 | `pid` | integer \| null | null for a parked background session: no process, no inbox |
-| `terminal` | boolean | open in a terminal |
+| `terminal` | boolean | an interactive session, open in a terminal |
 | `state` | `"busy"` \| `"idle"` | as everywhere in wt, see Sessions above |
 | `claudeState`, `claudeStatus`, `waitingFor` | string \| null | claude's own words from `claude agents --json`, raw: `working`, `blocked`, `done`…; `busy`, `waiting`, `idle`; `permission prompt`, `input needed`… |
 | `inbox` | string \| null | the socket path; the address to name in `--reply-to` has the same directory |
-| `inboxUnavailable` | string \| null | why `inbox` is null: `notRunning`, `own` (the session wt runs under), `codex` (reserved), `noRegistry` (claude's `~/.claude/sessions/<pid>.json` is missing, or names another session: a reused pid), `notASocket` (not a socket of yours, or in a directory others can write), `refused` (it did not accept a connection) |
+| `inboxUnavailable` | string \| null | why `inbox` is null: `notRunning`, `own` (the session wt runs under), `codex` (a Codex session), `noRegistry` (claude's `~/.claude/sessions/<pid>.json` is missing, or names another session: a reused pid), `notASocket` (not a socket of yours, or in a directory others can write), `refused` (it did not accept a connection) |
 | `transcript` | string \| null | the session's `.jsonl` under `~/.claude/projects`, when found |
-| `startedAt` | string \| null | RFC 3339, UTC |
+| `startedAt` | string \| null | RFC 3339, UTC, `claude agents --json`'s `startedAt` |
+| `lastActivityAt` | string \| null | RFC 3339, UTC: the modification time of `transcript`, one stat and no read; null without a transcript, never guessed |
+| `activity` | enum | `needsInput` (a process, and blocked or waiting on a prompt), `working`, `idle`, `done` (claude's `done`, `failed` and `stopped`; `claudeState` keeps the word), `parked` (a background session with no process, whatever it was waiting for) |
+| `stateSince` | string \| null | RFC 3339, UTC: `statusUpdatedAt` in claude's registry file for the session; null for a session with no process or no file |
+| `background` | boolean | a `claude --bg` session (it has an attach id), open in a terminal or not |
 | `shown` | boolean | the session `wt list` shows for the worktree |
 
 The registry file and the socket are Claude Code's, not a documented
@@ -1949,7 +1957,7 @@ Nothing is retried. `--dry-run` goes as far as the frame and sends nothing.
 | `changed` | 1 | `--expect-session` named a session that is not the one there |
 | `tooLarge` | 1 | the message is over `limit`, or its frame is over the inbox's 1 MiB line |
 | `empty` | 1 | nothing but whitespace, or unreadable |
-| `writeFailed` | 1 | the connection or the write failed, or the inbox dropped it at once |
+| `writeFailed` | 1 | the connection or the write failed, or the inbox reset the connection during it |
 | `badArgument` | 2 | `--from-name` has a quote, bracket, ampersand or control character, or `--reply-to` is not `uds:<a socket of yours in the inbox's directory>` |
 
 A message that contains the header's own tags has their opening brackets
