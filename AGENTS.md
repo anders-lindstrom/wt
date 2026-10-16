@@ -10,4 +10,4 @@ Every user-visible change adds one entry to the top of `internal/about/whats-new
 
 ## Tests
 
-While working, run the package you changed, narrowed with `-run` to the family you touched. Before handing work back, run `make check` once, in the background; never run the full suite in a loop. `make test-unit` takes seconds; `make test-fast` skips the slowest tests but still takes minutes until internal/commands is split. What to run for which change: `docs/testing.md`.
+While working, run the package you changed, narrowed with `-run` to the family you touched. Before handing work back, run `make check` once, in the background; never run the full suite in a loop. `make test-unit` takes seconds; `make test-fast` skips the slowest tests but still takes minutes; the command packages run side by side. What to run for which change: `docs/testing.md`.
