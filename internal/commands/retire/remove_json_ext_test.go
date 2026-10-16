@@ -219,19 +219,18 @@ func TestRemoveExpectRefusesEveryChangeTouchingNothing(t *testing.T) {
 // A signal between the two moves writes the one object, from what is true
 // then: the checkout moved, the admin dir not, the branch step not run.
 func TestRemoveJSONInterruptedBetweenTheMovesWritesOneObject(t *testing.T) {
-	// Not parallel: swaps quarantine.AfterSave.
+	// Not parallel: marks the process-wide interrupt journal interrupted.
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/json-signal")
 	dir := testkit.TrashFor(t, ctx)
-	t.Cleanup(func() { quarantine.AfterSave = nil })
-	quarantine.AfterSave = func(_ *quarantine.Record, at string) error {
+	h := &quarantine.Hooks{AfterSave: func(_ *quarantine.Record, at string) error {
 		if at == quarantine.StepMoveCheckout+":"+quarantine.Done {
 			// What kit.WatchSignals does, but for the exit.
 			kit.CurrentInterruptJournal().Interrupted("", "interrupted")
 		}
 		return nil
-	}
+	}}
 	var out, progress bytes.Buffer
-	_ = retire.RemoveJSON(ctx, retire.RemoveTarget{Path: path}, retire.RemoveOptions{Quarantine: dir}, &out, &progress)
+	_ = retire.RemoveJSON(ctx, retire.RemoveTarget{Path: path}, retire.RemoveOptions{Quarantine: dir, QuarantineHooks: h}, &out, &progress)
 	r := retiretest.DecodeRemoveOutput(t, out.Bytes())
 	if r.Outcome != kit.OutcomeInterrupted || retire.Deref(r.Recovery) != "interrupted" {
 		t.Errorf("%+v", r)
@@ -289,11 +288,11 @@ func TestRemoveJSONFailedBeforeTheRepository(t *testing.T) {
 // A quarantine that stopped after it locked the worktree has changed
 // something: it is partial, and wt restore undoes it.
 func TestRemoveJSONQuarantineStoppedAfterTheLockIsPartial(t *testing.T) {
-	// Not parallel: swaps quarantine.AfterSave.
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/json-pin")
 	dir := testkit.TrashFor(t, ctx)
-	testkit.CrashAt(t, quarantine.StepPin+":"+quarantine.Running)
-	r, err := retiretest.RemoveJSON(t, ctx, path, retire.RemoveOptions{Quarantine: dir})
+	r, err := retiretest.RemoveJSON(t, ctx, path, retire.RemoveOptions{Quarantine: dir,
+		QuarantineHooks: testkit.CrashAt(quarantine.StepPin + ":" + quarantine.Running)})
 	if err == nil || r.Outcome != retire.RemovePartial {
 		t.Fatalf("%v %+v", err, r)
 	}

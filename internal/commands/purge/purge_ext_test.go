@@ -2,6 +2,7 @@ package purge_test
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -118,24 +119,23 @@ func TestPurgeAfterRestoreDeletesOnlyTheLeftovers(t *testing.T) {
 // A purge stopped after any step is finished by the next, and in between
 // no restore takes the worktree back: its pins may be gone.
 func TestPurgeFinishesAPurgeStoppedAtEveryStep(t *testing.T) {
-	// Not parallel: swaps quarantine.AfterSave, quarantine.AfterPurge.
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: stops the run at every step, over real repositories")
 	}
 	var points []string
 	{
 		_, _, _, _, dir := retiretest.Quarantined(t, "fix/count-purge", true)
-		t.Cleanup(func() { quarantine.AfterPurge, quarantine.AfterSave = nil, nil })
-		quarantine.AfterSave = func(_ *quarantine.Record, at string) error {
-			points = append(points, at)
-			return nil
-		}
-		quarantine.AfterPurge = func(at string) error {
-			points = append(points, at)
-			return nil
-		}
-		purgetest.Purge(t, dir)
-		quarantine.AfterPurge, quarantine.AfterSave = nil, nil
+		purgetest.PurgeWith(t, dir, &quarantine.Hooks{
+			AfterSave: func(_ *quarantine.Record, at string) error {
+				points = append(points, at)
+				return nil
+			},
+			AfterPurge: func(at string) error {
+				points = append(points, at)
+				return nil
+			},
+		})
 	}
 	want := []string{"purge.begin", "pin:head", "pin:tip", "pin:dir", "entry:checkout", "entry:admin", "record"}
 	if !slices.Equal(points, want) {
@@ -144,23 +144,20 @@ func TestPurgeFinishesAPurgeStoppedAtEveryStep(t *testing.T) {
 	for _, point := range points {
 		t.Run(point, func(t *testing.T) {
 			ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/crash-purge", true)
-			t.Cleanup(func() { quarantine.AfterPurge, quarantine.AfterSave = nil, nil })
-			if strings.HasPrefix(point, "purge.") {
-				testkit.CrashAt(t, point)
-			} else {
-				quarantine.AfterPurge = func(at string) error {
+			h := testkit.CrashAt(point)
+			if !strings.HasPrefix(point, "purge.") {
+				h = &quarantine.Hooks{AfterPurge: func(at string) error {
 					if at == point {
 						return testkit.ErrCrash
 					}
 					return nil
-				}
+				}}
 			}
 			var res quarantine.PurgeResult
 			var buf bytes.Buffer
-			if err := purge.QuarantinePurge(dir, purge.Options{Result: &res}, &buf); err == nil {
+			if err := purge.QuarantinePurge(dir, purge.Options{Result: &res, QuarantineHooks: h}, &buf); err == nil {
 				t.Fatalf("the purge must stop at %s", point)
 			}
-			quarantine.AfterPurge, quarantine.AfterSave = nil, nil
 			if res.Outcome != quarantine.OutcomePartial {
 				t.Errorf("outcome %s", res.Outcome)
 			}
@@ -211,16 +208,16 @@ func TestPurgeNeverWritesThroughAJournalSymlink(t *testing.T) {
 // A purge begun through one spelling of the folder — a symlink on the way —
 // is finished through another: the record keeps the folder it names.
 func TestPurgeBegunThroughAnAliasIsFinishedThroughTheName(t *testing.T) {
-	// Not parallel: swaps quarantine.AfterSave.
+	t.Parallel()
 	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/alias", false)
 	link := filepath.Join(ctx.Repo.Parent, "trash-link")
 	if err := os.Symlink(filepath.Dir(dir), link); err != nil {
 		t.Fatal(err)
 	}
 	alias := filepath.Join(link, filepath.Base(dir))
-	testkit.CrashAt(t, "purge.begin")
-	_ = purge.QuarantinePurge(alias, purge.Options{}, &bytes.Buffer{})
-	quarantine.AfterSave = nil
+	if err := purge.QuarantinePurge(alias, purge.Options{QuarantineHooks: testkit.CrashAt("purge.begin")}, &bytes.Buffer{}); !errors.Is(err, testkit.ErrCrash) {
+		t.Fatalf("the purge through the alias: err %v, want the injected crash", err)
+	}
 	purgetest.Purge(t, dir)
 	testkit.AssertPurged(t, ctx, dir)
 }

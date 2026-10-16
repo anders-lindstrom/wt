@@ -11,9 +11,15 @@ import (
 // Purge runs wt purge on the quarantine dir and fails the test when it fails.
 func Purge(t *testing.T, dir string) quarantine.PurgeResult {
 	t.Helper()
+	return PurgeWith(t, dir, nil)
+}
+
+// PurgeWith is Purge with hooks the purge runs.
+func PurgeWith(t *testing.T, dir string, h *quarantine.Hooks) quarantine.PurgeResult {
+	t.Helper()
 	var res quarantine.PurgeResult
 	var buf bytes.Buffer
-	if err := purge.QuarantinePurge(dir, purge.Options{Result: &res}, &buf); err != nil {
+	if err := purge.QuarantinePurge(dir, purge.Options{Result: &res, QuarantineHooks: h}, &buf); err != nil {
 		t.Fatalf("QuarantinePurge: %v\n%s", err, buf.String())
 	}
 	return res

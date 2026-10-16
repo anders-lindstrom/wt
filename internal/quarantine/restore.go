@@ -71,6 +71,8 @@ type RestorePlan struct {
 	// unlocking it.
 	Orphan   string
 	Problems []Problem
+	// hooks are what PlanRestore was given; nil but in tests.
+	hooks *Hooks
 }
 
 // RestoreResult is what a restore did.
@@ -95,9 +97,10 @@ func (p RestorePlan) Refusal() string {
 
 // PlanRestore reads the quarantine at dir and everything its restore turns
 // on, changing nothing. rp is the repository to look for an orphaned lock
-// in when dir has no recovery.json; nil when there is none to look in.
-func PlanRestore(dir string, rp *repo.Repo) RestorePlan {
-	p := RestorePlan{Dir: dir}
+// in when dir has no recovery.json; nil when there is none to look in. h is
+// nil but in tests.
+func PlanRestore(dir string, rp *repo.Repo, h *Hooks) RestorePlan {
+	p := RestorePlan{Dir: dir, hooks: h}
 	if _, err := os.Lstat(filepath.Join(dir, PurgingName)); err == nil {
 		// Its pins may be gone, and gc with them the commits it needs.
 		p.problem(ProblemPurging, fmt.Sprintf("a purge of it began: it cannot be restored; "+
@@ -113,6 +116,7 @@ func PlanRestore(dir string, rp *repo.Repo) RestorePlan {
 		p.problem(ProblemNoRecord, err.Error())
 		return p
 	}
+	r.hooks = h
 	p.Record = r
 	p.Checkout, p.Admin = Locate(r.Checkout), Locate(r.Admin)
 	p.checkPlace("checkout", r.Checkout, p.Checkout, ProblemCheckoutTaken, ProblemCheckoutMissing)
@@ -182,7 +186,7 @@ func (p *RestorePlan) checkPlace(what string, pl Place, at, taken, missing strin
 		p.problem(missing, fmt.Sprintf("its %s is neither at %s nor at %s (the directory that was moved, by inode)",
 			what, pl.Path, pl.Quarantined))
 	case InQuarantine:
-		from, err := DeviceOf(filepath.Dir(pl.Quarantined))
+		from, err := p.hooks.deviceOf(filepath.Dir(pl.Quarantined))
 		if err != nil {
 			p.problem(missing, err.Error())
 			return
@@ -190,7 +194,7 @@ func (p *RestorePlan) checkPlace(what string, pl Place, at, taken, missing strin
 		// The folder it came from may be gone — git worktree prune takes an
 		// empty .git/worktrees, and a checkout's parents can be tidied away:
 		// the restore makes them again, on the volume of what is left.
-		to, err := DeviceOf(existingAncestor(filepath.Dir(pl.Path)))
+		to, err := p.hooks.deviceOf(existingAncestor(filepath.Dir(pl.Path)))
 		if err != nil {
 			p.problem(missing, fmt.Sprintf("where its %s came from cannot be read: %v", what, err))
 			return
@@ -319,15 +323,15 @@ func occupancy(rp *repo.Repo, self string, names ...string) (string, error) {
 // branch's occupancy is read once more — the admin dir back, then the
 // checkout, then the quarantine's lock off. Every step is journalled in
 // recovery.json before and after it runs, and each one is idempotent, so a
-// restore stopped anywhere is finished by the next.
-func DoRestore(dir string, rp *repo.Repo) (RestoreResult, error) {
+// restore stopped anywhere is finished by the next. h is nil but in tests.
+func DoRestore(dir string, rp *repo.Repo, h *Hooks) (RestoreResult, error) {
 	// A purge holds the same lock: neither works on a quarantine the other
 	// is changing.
 	unlock, lerr := LockDir(dir)
 	if lerr == nil {
 		defer unlock()
 	}
-	p := PlanRestore(dir, rp)
+	p := PlanRestore(dir, rp, h)
 	res := RestoreResult{Outcome: OutcomeRefused, Action: p.Action, OccupiedBy: p.OccupiedBy,
 		Checkout: p.Checkout, Admin: p.Admin}
 	if why := p.Refusal(); why != "" {
@@ -464,7 +468,7 @@ func moveBack(r *Record, step string, pl Place) error {
 	case InQuarantine:
 		// Its parents, never itself: they may have been tidied away.
 		if err = os.MkdirAll(filepath.Dir(pl.Path), 0o755); err == nil {
-			err = Move(pl.Quarantined, pl.Path)
+			err = Move(pl.Quarantined, pl.Path, r.hooks)
 		}
 	case Taken:
 		err = fmt.Errorf("%s was taken by something else while the restore ran", pl.Path)

@@ -25,7 +25,7 @@ func TestMoveRenamesADirectoryWithWhatIsInIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Move(from, to); err != nil {
+	if err := Move(from, to, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(to, "sub", "f")); err != nil {
@@ -43,7 +43,7 @@ func TestMoveNeverReplacesWhatIsThere(t *testing.T) {
 	from, to := filepath.Join(root, "a"), filepath.Join(root, "b")
 	mkdir(t, from)
 	mkdir(t, to)
-	if err := Move(from, to); err == nil {
+	if err := Move(from, to, nil); err == nil {
 		t.Fatal("want a refusal: the destination is there")
 	}
 	if _, err := os.Stat(from); err != nil {
@@ -55,7 +55,7 @@ func TestCheckRefusesAFolderThatExists(t *testing.T) {
 	root := t.TempDir()
 	src := filepath.Join(root, "src")
 	mkdir(t, src)
-	err := Check(root, src)
+	err := Check(root, nil, src)
 	if err == nil || !strings.Contains(err.Error(), "is there already") {
 		t.Errorf("want a refusal naming the folder: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestCheckRefusesAMissingParent(t *testing.T) {
 	root := t.TempDir()
 	src := filepath.Join(root, "src")
 	mkdir(t, src)
-	if err := Check(filepath.Join(root, "nope", "q"), src); err == nil {
+	if err := Check(filepath.Join(root, "nope", "q"), nil, src); err == nil {
 		t.Error("want a refusal: the parent is not there")
 	}
 }
@@ -76,19 +76,17 @@ func TestCheckRefusesAnotherVolume(t *testing.T) {
 	src, other := filepath.Join(root, "src"), filepath.Join(root, "other")
 	mkdir(t, src)
 	mkdir(t, other)
-	orig := DeviceOf
-	t.Cleanup(func() { DeviceOf = orig })
-	DeviceOf = func(p string) (uint64, error) {
+	h := &Hooks{DeviceOf: func(p string) (uint64, error) {
 		if p == other {
 			return 99, nil
 		}
-		return orig(p)
-	}
-	err := Check(filepath.Join(other, "q"), src)
+		return DeviceOf(p)
+	}}
+	err := Check(filepath.Join(other, "q"), h, src)
 	if err == nil || !strings.Contains(err.Error(), "volume") {
 		t.Errorf("want a volume refusal: %v", err)
 	}
-	if err := Check(filepath.Join(root, "q"), src); err != nil {
+	if err := Check(filepath.Join(root, "q"), h, src); err != nil {
 		t.Errorf("same volume: %v", err)
 	}
 }

@@ -31,18 +31,16 @@ func TestRestoreRefusesWhenTheOriginalPathIsTaken(t *testing.T) {
 }
 
 func TestRestoreRefusesAnotherVolume(t *testing.T) {
-	// Not parallel: swaps quarantine.DeviceOf.
+	t.Parallel()
 	ctx, path, _, _, dir := retiretest.Quarantined(t, "fix/restore-volume", false)
-	orig := quarantine.DeviceOf
-	t.Cleanup(func() { quarantine.DeviceOf = orig })
-	quarantine.DeviceOf = func(p string) (uint64, error) {
+	h := &quarantine.Hooks{DeviceOf: func(p string) (uint64, error) {
 		if p == filepath.Dir(path) {
 			return 4242, nil
 		}
-		return orig(p)
-	}
+		return quarantine.DeviceOf(p)
+	}}
 	var buf bytes.Buffer
-	if err := Restore(ctx, dir, RestoreOptions{}, &buf); err == nil || !strings.Contains(err.Error(), "volume") {
+	if err := Restore(ctx, dir, RestoreOptions{QuarantineHooks: h}, &buf); err == nil || !strings.Contains(err.Error(), "volume") {
 		t.Fatalf("want a refusal: %v\n%s", err, buf.String())
 	}
 }
@@ -146,20 +144,19 @@ func TestRestoreRefusesADirectoryPutInTheQuarantine(t *testing.T) {
 // A path taken between the plan and the move is a failure, never a move
 // journalled as done.
 func TestRestoreFailsWhenAPathIsTakenMidway(t *testing.T) {
-	// Not parallel: swaps quarantine.AfterSave.
+	t.Parallel()
 	ctx, path, _, _, dir := retiretest.Quarantined(t, "fix/taken-midway", false)
-	t.Cleanup(func() { quarantine.AfterSave = nil })
-	quarantine.AfterSave = func(_ *quarantine.Record, at string) error {
+	h := &quarantine.Hooks{AfterSave: func(_ *quarantine.Record, at string) error {
 		if at == "restore.moveCheckout:running" {
 			if err := os.Mkdir(path, 0o755); err != nil {
 				t.Fatal(err)
 			}
 		}
 		return nil
-	}
+	}}
 	var res quarantine.RestoreResult
 	var buf bytes.Buffer
-	if err := Restore(ctx, dir, RestoreOptions{Result: &res}, &buf); err == nil {
+	if err := Restore(ctx, dir, RestoreOptions{Result: &res, QuarantineHooks: h}, &buf); err == nil {
 		t.Fatalf("want a failure\n%s", buf.String())
 	}
 	if res.Outcome == quarantine.OutcomeRestored {

@@ -21,7 +21,7 @@ import (
 // The folder that exists, or a worktree on another volume, refuses the
 // sweep before anything is deleted.
 func TestSweepQuarantineRefusesBeforeAnyChange(t *testing.T) {
-	// Not parallel: swaps quarantine.DeviceOf.
+	t.Parallel()
 	for _, why := range []string{"exists", "volume"} {
 		t.Run(why, func(t *testing.T) {
 			ctx, main, _ := testkit.SweepRepo(t)
@@ -29,22 +29,22 @@ func TestSweepQuarantineRefusesBeforeAnyChange(t *testing.T) {
 			testkit.LandOnMain(t, main, "done-work")
 			path := provisiontest.MergedWorktree(t, ctx, "fix/stay")
 			dir := testkit.TrashFor(t, ctx)
+			var h *quarantine.Hooks
 			switch why {
 			case "exists":
 				if err := os.Mkdir(dir, 0o755); err != nil {
 					t.Fatal(err)
 				}
 			case "volume":
-				orig := quarantine.DeviceOf
-				t.Cleanup(func() { quarantine.DeviceOf = orig })
-				quarantine.DeviceOf = func(p string) (uint64, error) {
+				h = &quarantine.Hooks{DeviceOf: func(p string) (uint64, error) {
 					if p == filepath.Dir(dir) {
 						return 4242, nil
 					}
-					return orig(p)
-				}
+					return quarantine.DeviceOf(p)
+				}}
 			}
-			opts := retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}, Quarantine: dir}
+			opts := retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}, Quarantine: dir,
+				QuarantineHooks: h}
 			r, human, err := retiretest.SweepJSON(t, ctx, opts)
 			if err == nil || r.Outcome != kit.OutcomeRefused || r.Error == nil {
 				t.Fatalf("want a refusal: %v %+v\n%s", err, r, human)
@@ -109,18 +109,18 @@ func TestSweepPlanJSONCarriesTheQuarantine(t *testing.T) {
 // A worktree that moved and whose run then failed is reported as what it
 // is, not as kept.
 func TestSweepSaysAPartialMoveIsPartial(t *testing.T) {
-	// Not parallel: swaps quarantine.AfterRename.
+	t.Parallel()
 	ctx, _, _ := testkit.SweepRepo(t)
 	provisiontest.MergedWorktree(t, ctx, "fix/half")
 	dir := testkit.TrashFor(t, ctx)
-	t.Cleanup(func() { quarantine.AfterRename = nil })
-	quarantine.AfterRename = func(to string) error {
+	h := &quarantine.Hooks{AfterRename: func(to string) error {
 		if filepath.Base(to) == "admin" {
 			return errors.New("fsync: input/output error")
 		}
 		return nil
-	}
-	opts := retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}, Quarantine: dir}
+	}}
+	opts := retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}, Quarantine: dir,
+		QuarantineHooks: h}
 	r, human, _ := retiretest.SweepJSON(t, ctx, opts)
 	if strings.Contains(human, "- kept half") || !strings.Contains(human, "partly done") {
 		t.Errorf("the output must say it is partly done, not kept:\n%s", human)

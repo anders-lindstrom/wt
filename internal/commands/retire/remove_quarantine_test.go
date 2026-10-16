@@ -117,18 +117,16 @@ func TestQuarantineRefusesAFolderThatExistsBeforeAnyChange(t *testing.T) {
 }
 
 func TestQuarantineRefusesAnotherVolumeBeforeAnyChange(t *testing.T) {
-	// Not parallel: swaps quarantine.DeviceOf.
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/volume")
 	dir := testkit.TrashFor(t, ctx)
-	orig := quarantine.DeviceOf
-	t.Cleanup(func() { quarantine.DeviceOf = orig })
-	quarantine.DeviceOf = func(p string) (uint64, error) {
+	h := &quarantine.Hooks{DeviceOf: func(p string) (uint64, error) {
 		if repo := filepath.Dir(dir); p == repo {
 			return 4242, nil
 		}
-		return orig(p)
-	}
-	refused(t, ctx, path, RemoveOptions{Quarantine: dir, Force: kit.ForceAll}, "another volume")
+		return quarantine.DeviceOf(p)
+	}}
+	refused(t, ctx, path, RemoveOptions{Quarantine: dir, QuarantineHooks: h, Force: kit.ForceAll}, "another volume")
 	assertNotQuarantined(t, ctx, path, dir)
 }
 
