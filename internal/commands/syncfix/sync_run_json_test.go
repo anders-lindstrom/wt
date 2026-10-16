@@ -30,6 +30,7 @@ func syncUndoJSON(t *testing.T, ctx *kit.Context, work string, opts UndoOptions)
 
 // Resume finishes the handover: rebased, with the run's safety ref.
 func TestSyncResumeJSONReportsTheFinishedRebase(t *testing.T) {
+	t.Parallel()
 	ctx, bump, _, st := synccmdtest.HandedOver(t)
 	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
 	testkit.GitOut(t, bump, "add", "--", "a.txt")
@@ -47,6 +48,7 @@ func TestSyncResumeJSONReportsTheFinishedRebase(t *testing.T) {
 
 // A resume refused leaves the handover as it was, and says so.
 func TestSyncResumeJSONReportsARefusal(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -66,6 +68,7 @@ func TestSyncResumeJSONReportsARefusal(t *testing.T) {
 
 // Undo reports each branch it put back, and a second undo finds it there.
 func TestSyncUndoJSONReportsWhatItPutBack(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.RunFixture(t, true)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	var human bytes.Buffer
@@ -91,6 +94,7 @@ func TestSyncUndoJSONReportsWhatItPutBack(t *testing.T) {
 // A rebase the person finished by hand is where resume starts: before is the
 // branch as resume found it, not the tip the run started from.
 func TestSyncResumeJSONStartsFromTheBranchAsFound(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -110,6 +114,7 @@ func TestSyncResumeJSONStartsFromTheBranchAsFound(t *testing.T) {
 
 // A question answered no: nothing resumed, and the object says why.
 func TestSyncResumeJSONSaysWhenNobodyConfirmed(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -128,6 +133,7 @@ func TestSyncResumeJSONSaysWhenNobodyConfirmed(t *testing.T) {
 // A forced undo keeps what it discarded as a run of its own: undo takes that
 // back too, and the object says how.
 func TestSyncUndoJSONForcedNamesTheWayBackToWhatItKept(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}

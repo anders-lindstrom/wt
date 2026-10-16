@@ -19,6 +19,7 @@ import (
 // would be the one thing the handover exists to avoid — but it must say
 // where the worktree is and what puts it back.
 func TestSyncRunSaysWhereAFailedHandoverLeftTheWorktree(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}

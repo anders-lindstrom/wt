@@ -22,6 +22,7 @@ func noAgentsUndo() UndoOptions {
 }
 
 func TestSyncUndoPutsBackWhatSyncRunMoved(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -59,6 +60,7 @@ func TestSyncUndoPutsBackWhatSyncRunMoved(t *testing.T) {
 }
 
 func TestSyncUndoRefusesAWorktreeCommittedToSinceTheRun(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -98,6 +100,7 @@ func TestSyncUndoRefusesAWorktreeCommittedToSinceTheRun(t *testing.T) {
 // resume, rather than calling the rebased branch one that "moved since"
 // the run. --force rewinds and pins it, as for any moved branch.
 func TestSyncUndoNamesAFinishedByHandRebaseInsteadOfCallingItMoved(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -143,6 +146,7 @@ func TestSyncUndoNamesAFinishedByHandRebaseInsteadOfCallingItMoved(t *testing.T)
 // on the worktree exactly as the run left it: the rebase in progress, the
 // strategies' answers staged, and the run's lock still in the git dir.
 func TestSyncUndoAbortsWhatSyncRunHandedOver(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -179,6 +183,7 @@ func TestSyncUndoAbortsWhatSyncRunHandedOver(t *testing.T) {
 // rather than abort it, because the abort would discard that commit and
 // nothing would pin it.
 func TestSyncUndoRefusesARebaseItDidNotLeave(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -217,6 +222,7 @@ func TestSyncUndoRefusesARebaseItDidNotLeave(t *testing.T) {
 // a commit on detached HEAD that only the rebase knows about. undo must
 // name it and both ways of keeping it, and touch nothing.
 func TestSyncUndoNamesTheCommitAPersonMadeInsideTheHandover(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -249,6 +255,7 @@ func TestSyncUndoNamesTheCommitAPersonMadeInsideTheHandover(t *testing.T) {
 // over, so undo can tell a commit made inside the rebase from the run's
 // own picks exactly, not by counting.
 func TestSyncHandoverRecordsHead(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -262,6 +269,7 @@ func TestSyncHandoverRecordsHead(t *testing.T) {
 // An undo that stopped after aborting a handover it still had to rewind
 // must not print that rewind as done.
 func TestRestoredLineNeverClaimsARewindThatDidNotHappen(t *testing.T) {
+	t.Parallel()
 	r := wtsync.Restored{
 		Branch: "feat_wt/bump", From: strings.Repeat("a", 40), To: strings.Repeat("b", 40),
 		Ref: "refs/wt-sync/feat_wt/bump/99", Aborted: true, NotRewound: true,
@@ -276,6 +284,7 @@ func TestRestoredLineNeverClaimsARewindThatDidNotHappen(t *testing.T) {
 // than abort: it rewinds past the moved commits, and the output has to say
 // from where.
 func TestSyncUndoForcedPastAMovedHandoverSaysWhatItRewound(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -313,6 +322,7 @@ func TestSyncUndoForcedPastAMovedHandoverSaysWhatItRewound(t *testing.T) {
 // where it was, so the row's "back at" names nothing of what was kept. The
 // row has to say where the commit went and what brings it back.
 func TestSyncUndoForcedPastACommitInsideSaysWhereItKeptIt(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -339,6 +349,7 @@ func TestSyncUndoForcedPastACommitInsideSaysWhereItKeptIt(t *testing.T) {
 }
 
 func TestSyncUndoUnderAnIdleSessionAsksThenTellsIt(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -380,6 +391,7 @@ func TestSyncUndoUnderAnIdleSessionAsksThenTellsIt(t *testing.T) {
 // A no to undo on a handed-over worktree must leave the handover's own lock:
 // the question comes before any lock is taken over.
 func TestSyncUndoNoLeavesAHandoverAndItsLock(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -400,6 +412,7 @@ func TestSyncUndoNoLeavesAHandoverAndItsLock(t *testing.T) {
 }
 
 func TestSyncUndoRefusesASessionThatWokeWhileAsked(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
