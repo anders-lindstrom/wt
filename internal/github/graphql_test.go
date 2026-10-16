@@ -11,6 +11,7 @@ var demo = Remote{Name: "origin", Host: "github.com", Slug: "t/demo"}
 // The whole point of the branch query: the question names the branch, so an
 // answer cannot depend on how recently the pull request was touched.
 func TestPRsOnBranchesAsksByBranch(t *testing.T) {
+	t.Parallel()
 	c, log := fake(t, `echo '{"data":{"repository":{"b0":{"nodes":[{"number":7,"headRefName":"old-work","state":"OPEN"}]},"b1":{"nodes":[]}}}}'`)
 	prs, err := c.PRsOnBranches(t.TempDir(), demo, []string{"old-work", "nothing-here"}, 0)
 	if err != nil {
@@ -38,6 +39,7 @@ func TestPRsOnBranchesAsksByBranch(t *testing.T) {
 // A branch name travels as a GraphQL variable, never spliced into the query,
 // so nothing a branch is called can change what is asked.
 func TestPRsOnBranchesSendsBranchesAsVariables(t *testing.T) {
+	t.Parallel()
 	c, log := fake(t, `echo '{"data":{"repository":{"b0":{"nodes":[]}}}}'`)
 	nasty := `x"){nodes{number}} evil:pullRequests(headRefName:"y`
 	if _, err := c.PRsOnBranches(t.TempDir(), demo, []string{nasty}, 0); err != nil {
@@ -53,6 +55,7 @@ func TestPRsOnBranchesSendsBranchesAsVariables(t *testing.T) {
 // More branches than one call carries is several calls, and every branch is
 // still asked about.
 func TestPRsOnBranchesBatches(t *testing.T) {
+	t.Parallel()
 	c, log := fake(t, `echo '{"data":{"repository":{}}}'`)
 	branches := make([]string, BranchBatch+3)
 	for i := range branches {
@@ -78,6 +81,7 @@ func TestPRsOnBranchesBatches(t *testing.T) {
 // pull request wins a branch with several is the same on every run. GraphQL
 // gives an object, and ranging a Go map would not be.
 func TestPRsOnBranchesKeepsTheOrderAsked(t *testing.T) {
+	t.Parallel()
 	c, _ := fake(t, `echo '{"data":{"repository":{`+
 		`"b0":{"nodes":[{"number":1},{"number":2}]},`+
 		`"b1":{"nodes":[{"number":3}]},`+
@@ -96,6 +100,7 @@ func TestPRsOnBranchesKeepsTheOrderAsked(t *testing.T) {
 }
 
 func TestPRsOnBranchesAsksNothingForNoBranches(t *testing.T) {
+	t.Parallel()
 	c, log := fake(t, `echo 'unexpected'`)
 	prs, err := c.PRsOnBranches(t.TempDir(), demo, nil, 0)
 	if err != nil || prs != nil {
@@ -107,6 +112,7 @@ func TestPRsOnBranchesAsksNothingForNoBranches(t *testing.T) {
 }
 
 func TestPRsOnBranchesRejectsRubbish(t *testing.T) {
+	t.Parallel()
 	c, _ := fake(t, `echo 'not json'`)
 	if _, err := c.PRsOnBranches(t.TempDir(), demo, []string{"a"}, 0); err == nil {
 		t.Error("rubbish parsed as an empty answer")
@@ -116,6 +122,7 @@ func TestPRsOnBranchesRejectsRubbish(t *testing.T) {
 // One call answers both halves of the picker's question: who gh is logged in
 // as, and who has been asked to review what.
 func TestOpenPRsAndViewer(t *testing.T) {
+	t.Parallel()
 	c, log := fake(t, `echo '{"data":{"viewer":{"login":"anders"},"repository":{"pullRequests":{"nodes":[`+
 		`{"number":9,"headRefName":"fix-login","state":"OPEN","reviewRequests":{"nodes":[{"requestedReviewer":{"login":"Anders"}}]}},`+
 		`{"number":8,"headRefName":"other","state":"OPEN","reviewRequests":{"nodes":[]}}]}}}}'`)
@@ -143,6 +150,7 @@ func TestOpenPRsAndViewer(t *testing.T) {
 // A login nobody is is nobody: an empty viewer must not match an empty
 // requested reviewer.
 func TestWantsReviewFromNobody(t *testing.T) {
+	t.Parallel()
 	var p PR
 	p.ReviewRequests.Nodes = append(p.ReviewRequests.Nodes, struct {
 		RequestedReviewer Account `json:"requestedReviewer"`
@@ -156,6 +164,7 @@ func TestWantsReviewFromNobody(t *testing.T) {
 // trunk's, where it prefixes the owner. A local someone/main is therefore a
 // pull request GitHub calls main, and both have to be asked about.
 func TestHeadRefNames(t *testing.T) {
+	t.Parallel()
 	got := HeadRefNames([]string{"fix_wt/login", "someone/main", "main", "fix_wt/login"}, "main")
 	want := "[fix_wt/login someone/main main]"
 	if fmt.Sprint(got) != want {
@@ -164,6 +173,7 @@ func TestHeadRefNames(t *testing.T) {
 }
 
 func TestPRsOnBranchesNeedsAnOwnerAndRepo(t *testing.T) {
+	t.Parallel()
 	c, _ := fake(t, `echo '{}'`)
 	if _, err := c.PRsOnBranches(t.TempDir(), Remote{Slug: "nonsense"}, []string{"a"}, 0); err == nil {
 		t.Error("a slug that is not owner/repo was accepted")
@@ -175,6 +185,7 @@ func TestPRsOnBranchesNeedsAnOwnerAndRepo(t *testing.T) {
 // whether they pass without a gh call per worktree. A commit with no checks
 // has no rollup at all.
 func TestPRsOnBranchesWithChecksAsksForTheChecks(t *testing.T) {
+	t.Parallel()
 	c, log := fake(t, `echo '{"data":{"repository":{"b0":{"nodes":[`+
 		`{"number":7,"headRefName":"a","state":"OPEN","headCommit":{"nodes":[{"commit":{"statusCheckRollup":{"state":"FAILURE"}}}]}},`+
 		`{"number":6,"headRefName":"a","state":"CLOSED","headCommit":{"nodes":[{"commit":{"statusCheckRollup":null}}]}}]}}}}'`)
@@ -194,6 +205,7 @@ func TestPRsOnBranchesWithChecksAsksForTheChecks(t *testing.T) {
 // Everything but wt list and wt status asks the question it asked before the
 // checks existed: sweep, remove and refs sweep pay nothing for them.
 func TestPRsOnBranchesLeavesTheChecksOut(t *testing.T) {
+	t.Parallel()
 	c, log := fake(t, `echo '{"data":{"repository":{"b0":{"nodes":[{"number":7,"headRefName":"a","state":"OPEN",`+
 		`"headCommit":{"nodes":[{"commit":{"statusCheckRollup":{"state":"FAILURE"}}}]}}]}}}}'`)
 	prs, err := c.PRsOnBranches(t.TempDir(), demo, []string{"a"}, 0)
@@ -210,6 +222,7 @@ func TestPRsOnBranchesLeavesTheChecksOut(t *testing.T) {
 
 // With the checks, a call carries ChecksBatch branches, not BranchBatch.
 func TestPRsOnBranchesWithChecksBatchesSmaller(t *testing.T) {
+	t.Parallel()
 	c, log := fake(t, `echo '{"data":{"repository":{}}}'`)
 	branches := make([]string, ChecksBatch+1)
 	for i := range branches {
@@ -226,6 +239,7 @@ func TestPRsOnBranchesWithChecksBatchesSmaller(t *testing.T) {
 // A token GitHub will not show the checks to still gets the pull requests:
 // the call is made again without the checks, and what GitHub said comes back.
 func TestPRsOnBranchesWithChecksAsksAgainWithoutThemWhenRefused(t *testing.T) {
+	t.Parallel()
 	c, log := fake(t, `case "$*" in *headCommit*)
   echo '{"data":{"repository":{"b0":{"nodes":[{"number":7,"headCommit":null}]}}},"errors":[{"type":"FORBIDDEN","path":["repository","b0","nodes",0,"headCommit"],"message":"Resource not accessible by personal access token"}]}'
   echo 'gh: Resource not accessible by personal access token' >&2
@@ -249,6 +263,7 @@ echo '{"data":{"repository":{"b0":{"nodes":[{"number":7,"headRefName":"a","state
 
 // Any other failure is the lookup's own, and is not asked again.
 func TestPRsOnBranchesWithChecksFailsOnAnythingElse(t *testing.T) {
+	t.Parallel()
 	c, log := fake(t, `echo 'GraphQL: Could not resolve to a Repository with the name "t/demo". (repository)' >&2; exit 1`)
 	_, refused, err := c.PRsOnBranchesWithChecks(t.TempDir(), demo, []string{"a"}, 0)
 	if err == nil || refused != nil {
