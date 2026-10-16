@@ -193,7 +193,7 @@ func doctorSuperset(ctx *kit.Context, w io.Writer, report func(string, ...any)) 
 		fmt.Fprintf(w, "  - "+format+"\n", args...)
 	}
 
-	status := provision.ProbeSuperset()
+	status := provision.SupersetStatus(ctx)
 	if !status.Installed() {
 		note("no superset on the PATH or at ~/.superset/bin; registration is inactive")
 		return

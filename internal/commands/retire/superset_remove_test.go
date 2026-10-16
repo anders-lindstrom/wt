@@ -22,7 +22,7 @@ var NoClaude = []wtsync.Agent{}
 // workspace — and only once the directory is gone from its path and git no
 // longer lists it, because Superset's delete force-removes the worktree.
 func TestRemoveDeregistersTheSupersetWorkspace(t *testing.T) {
-	// Not parallel: swaps provision.ProbeSuperset.
+	t.Parallel()
 	for _, quarantined := range []bool{false, true} {
 		name := "delete"
 		if quarantined {
@@ -59,7 +59,7 @@ func TestRemoveDeregistersTheSupersetWorkspace(t *testing.T) {
 // Every way Superset can fail to take the delete leaves the removal done and
 // its error untouched, with at most one line about it.
 func TestRemoveSurvivesEverySupersetState(t *testing.T) {
-	// Not parallel: swaps provision.ProbeSuperset.
+	t.Parallel()
 	for name, tc := range map[string]struct {
 		status     *superset.Status
 		deleteBody string
@@ -84,7 +84,7 @@ func TestRemoveSurvivesEverySupersetState(t *testing.T) {
 			}
 			log := provisiontest.SupersetAt(t, ctx, at, tc.deleteBody)
 			if tc.status != nil {
-				provisiontest.Stub(t, *tc.status)
+				provisiontest.Stub(ctx, *tc.status)
 			}
 			var res RemoveResult
 			var out bytes.Buffer
@@ -118,7 +118,7 @@ func TestRemoveSurvivesEverySupersetState(t *testing.T) {
 // Until the person opts in, and wherever the repository says off, removal
 // runs no superset at all.
 func TestRemoveLeavesSupersetAloneWhenTheIntegrationIsOff(t *testing.T) {
-	// Not parallel: swaps provision.ProbeSuperset.
+	t.Parallel()
 	for name, set := range map[string]func(*kit.Context){
 		"not opted in": func(*kit.Context) {},
 		"repo off":     func(c *kit.Context) { testkit.OptIn(c); c.Config.SupersetRegister = config.SupersetOff },
@@ -147,7 +147,7 @@ func TestRemoveLeavesSupersetAloneWhenTheIntegrationIsOff(t *testing.T) {
 
 // A removal that is refused, or only a dry run, deletes no workspace.
 func TestRemoveThatDoesNotHappenKeepsTheSupersetWorkspace(t *testing.T) {
-	// Not parallel: swaps provision.ProbeSuperset.
+	t.Parallel()
 	for name, dirty := range map[string]bool{"refused": true, "dry run": false} {
 		t.Run(name, func(t *testing.T) {
 			ctx, path := provisiontest.SafetyWorktree(t, "fix/mirrored")
@@ -177,7 +177,7 @@ func TestRemoveThatDoesNotHappenKeepsTheSupersetWorkspace(t *testing.T) {
 // --keep-superset leaves the workspace alone: Superset is not asked
 // anything, and the step says it was opted out of rather than skipped.
 func TestRemoveKeepSupersetAsksSupersetNothing(t *testing.T) {
-	// Not parallel: swaps provision.ProbeSuperset.
+	t.Parallel()
 	for _, quarantined := range []bool{false, true} {
 		name := "delete"
 		if quarantined {
