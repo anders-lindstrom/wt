@@ -14,6 +14,7 @@ import (
 // --json names, for each problem, the category that goes past it, and the
 // categories given; the result says which it went past.
 func TestRemoveJSONNamesTheForceCategories(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/force-json")
 	agents := []wtsync.Agent{retire.AgentIn(t, path, "idle-1", true), retire.AgentIn(t, path, "busy-1", false)}
 	p, err := retire.RemovePlanOf(t, ctx, path, retire.RemoveOptions{Force: kit.ForceIdleSessions, Agents: agents})

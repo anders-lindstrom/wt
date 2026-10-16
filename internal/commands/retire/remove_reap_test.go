@@ -66,6 +66,7 @@ func Alive(pid int) bool {
 
 // --reap stops a process working in the worktree, then removes it.
 func TestRemoveReapStopsAProcessLeftInTheWorktree(t *testing.T) {
+	// Not parallel: swaps retire.ScanProcesses and signals real processes.
 	RealProcesses(t)
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
@@ -97,6 +98,7 @@ func TestRemoveReapStopsAProcessLeftInTheWorktree(t *testing.T) {
 
 // --dry-run names the processes --reap would stop, and stops none.
 func TestRemoveDryRunListsTheProcessesAndStopsNone(t *testing.T) {
+	// Not parallel: swaps retire.ScanProcesses and signals real processes.
 	RealProcesses(t)
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
@@ -136,6 +138,7 @@ func TestRemoveDryRunListsTheProcessesAndStopsNone(t *testing.T) {
 // Without --reap the removal goes ahead, warns about what still runs in
 // the worktree, and stops nothing.
 func TestRemoveWithoutReapWarnsAndLeavesThemRunning(t *testing.T) {
+	// Not parallel: swaps retire.ScanProcesses and signals real processes.
 	RealProcesses(t)
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
@@ -165,6 +168,7 @@ func TestRemoveWithoutReapWarnsAndLeavesThemRunning(t *testing.T) {
 // When the agent sessions cannot be listed, nothing is known to be safe to
 // stop: --reap stops nothing and removes nothing, --force or not.
 func TestRemoveReapRefusesWhenTheAgentsAreUnknownEvenForced(t *testing.T) {
+	// Not parallel: swaps retire.ScanProcesses and signals real processes.
 	RealProcesses(t)
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
@@ -195,6 +199,7 @@ func TestRemoveReapRefusesWhenTheAgentsAreUnknownEvenForced(t *testing.T) {
 // checkout goes, nothing is known to be safe to stop: --reap stops nothing
 // and removes nothing, --force or not.
 func TestRemoveReapStopsNothingWhenTheRelistingFails(t *testing.T) {
+	// Not parallel: swaps retire.ScanProcesses and signals real processes.
 	RealProcesses(t)
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer

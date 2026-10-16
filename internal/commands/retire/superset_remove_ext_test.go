@@ -15,6 +15,7 @@ import (
 // wt sweep deletes the workspace of each worktree it removes, and its --json
 // says so per item.
 func TestSweepDeregistersEachRemovedWorktree(t *testing.T) {
+	// Not parallel: swaps provision.ProbeSuperset.
 	for _, quarantined := range []bool{false, true} {
 		name := "delete"
 		if quarantined {
@@ -46,6 +47,7 @@ func TestSweepDeregistersEachRemovedWorktree(t *testing.T) {
 
 // A sweep item that removed no worktree has no Superset step.
 func TestSweepItemWithoutAWorktreeHasNoSupersetStep(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 1)
 	testkit.LandOnMain(t, main, "done-work")
@@ -61,6 +63,7 @@ func TestSweepItemWithoutAWorktreeHasNoSupersetStep(t *testing.T) {
 // The opt-out is part of the plan and of its token, and the result's
 // superset step says optedOut.
 func TestRemoveJSONKeepSupersetIsInThePlanAndTheToken(t *testing.T) {
+	// Not parallel: swaps provision.ProbeSuperset.
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/kept-ws-json")
 	testkit.OptIn(ctx)
 	log := provisiontest.SupersetAt(t, ctx, path, testkit.Deleted)
@@ -91,6 +94,7 @@ func TestRemoveJSONKeepSupersetIsInThePlanAndTheToken(t *testing.T) {
 }
 
 func TestSweepKeepSupersetAsksSupersetNothing(t *testing.T) {
+	// Not parallel: swaps provision.ProbeSuperset.
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/one")
 	testkit.OptIn(ctx)

@@ -20,6 +20,7 @@ import (
 
 // With the plan's token, the removal goes ahead and reports each effect.
 func TestRemoveJSONRemovesWithTheToken(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/json-gone")
 	tip := strings.TrimSpace(testkit.GitOut(t, path, "rev-parse", "HEAD"))
 	p, err := retire.RemovePlanOf(t, ctx, path, retire.RemoveOptions{})
@@ -61,6 +62,7 @@ func TestRemoveJSONRemovesWithTheToken(t *testing.T) {
 
 // A quarantine reports both moves, the journal's steps, and wt restore.
 func TestRemoveJSONQuarantine(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/json-trash")
 	dir := testkit.TrashFor(t, ctx)
 	r, err := retiretest.RemoveJSON(t, ctx, path, retire.RemoveOptions{Quarantine: dir})
@@ -87,6 +89,7 @@ func TestRemoveJSONQuarantine(t *testing.T) {
 // A plan the removal refuses is one object too: refused, the codes, nothing
 // run.
 func TestRemoveJSONRefusedTouchesNothing(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/json-dirty")
 	testkit.MustWrite(t, filepath.Join(path, "wip.txt"), "x")
 	r, err := retiretest.RemoveJSON(t, ctx, path, retire.RemoveOptions{})
@@ -109,6 +112,7 @@ func TestRemoveJSONRefusedTouchesNothing(t *testing.T) {
 // Each thing the plan stands on, changed after the plan was read, makes
 // --expect refuse, touching nothing.
 func TestRemoveExpectRefusesEveryChangeTouchingNothing(t *testing.T) {
+	t.Parallel()
 	landed := func(string, string) int { return 5 }
 	cases := []struct {
 		name   string
@@ -215,6 +219,7 @@ func TestRemoveExpectRefusesEveryChangeTouchingNothing(t *testing.T) {
 // A signal between the two moves writes the one object, from what is true
 // then: the checkout moved, the admin dir not, the branch step not run.
 func TestRemoveJSONInterruptedBetweenTheMovesWritesOneObject(t *testing.T) {
+	// Not parallel: swaps quarantine.AfterSave.
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/json-signal")
 	dir := testkit.TrashFor(t, ctx)
 	t.Cleanup(func() { quarantine.AfterSave = nil })
@@ -248,6 +253,7 @@ func TestRemoveJSONInterruptedBetweenTheMovesWritesOneObject(t *testing.T) {
 // A branch step that fails once both moves are done is partial, and says
 // which effect failed.
 func TestRemoveJSONBranchFailureAfterTheMovesIsPartial(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/json-partial")
 	testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "work")
 	testkit.GitIn(t, path, "branch", "json-partial")
@@ -269,6 +275,7 @@ func TestRemoveJSONBranchFailureAfterTheMovesIsPartial(t *testing.T) {
 
 // Outside a repository, both are still one object.
 func TestRemoveJSONFailedBeforeTheRepository(t *testing.T) {
+	t.Parallel()
 	var out bytes.Buffer
 	retire.RemoveFailedJSON(&out, true, kit.ErrNotInRepo)
 	testkit.ValidateJSON(t, "remove-plan", out.Bytes())
@@ -282,6 +289,7 @@ func TestRemoveJSONFailedBeforeTheRepository(t *testing.T) {
 // A quarantine that stopped after it locked the worktree has changed
 // something: it is partial, and wt restore undoes it.
 func TestRemoveJSONQuarantineStoppedAfterTheLockIsPartial(t *testing.T) {
+	// Not parallel: swaps quarantine.AfterSave.
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/json-pin")
 	dir := testkit.TrashFor(t, ctx)
 	testkit.CrashAt(t, quarantine.StepPin+":"+quarantine.Running)
@@ -300,6 +308,7 @@ func TestRemoveJSONQuarantineStoppedAfterTheLockIsPartial(t *testing.T) {
 // The plan and the result say how trunk was found, as every other plan
 // does, and the token covers it.
 func TestRemoveJSONSaysHowTrunkWasFound(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/trunk-source")
 	p, err := retire.RemovePlanOf(t, ctx, path, retire.RemoveOptions{Agents: []wtsync.Agent{}})
 	if err != nil || p.TrunkSource == nil || *p.TrunkSource != string(ctx.Config.TrunkSource) || *p.TrunkSource == "" {

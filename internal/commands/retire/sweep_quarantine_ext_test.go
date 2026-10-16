@@ -21,6 +21,7 @@ import (
 // The folder that exists, or a worktree on another volume, refuses the
 // sweep before anything is deleted.
 func TestSweepQuarantineRefusesBeforeAnyChange(t *testing.T) {
+	// Not parallel: swaps quarantine.DeviceOf.
 	for _, why := range []string{"exists", "volume"} {
 		t.Run(why, func(t *testing.T) {
 			ctx, main, _ := testkit.SweepRepo(t)
@@ -58,6 +59,7 @@ func TestSweepQuarantineRefusesBeforeAnyChange(t *testing.T) {
 // A quarantine folder that cannot be used refuses the sweep even when only
 // branches would go.
 func TestSweepQuarantineRefusesABranchOnlySweep(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 1)
 	testkit.LandOnMain(t, main, "done-work")
@@ -76,6 +78,7 @@ func TestSweepQuarantineRefusesABranchOnlySweep(t *testing.T) {
 // cannot be used, and its token holds the run to the same folder: a token
 // read for a quarantine does not let a run delete instead.
 func TestSweepPlanJSONCarriesTheQuarantine(t *testing.T) {
+	t.Parallel()
 	ctx, _, _ := testkit.SweepRepo(t)
 	provisiontest.MergedWorktree(t, ctx, "fix/planned")
 	dir := testkit.TrashFor(t, ctx)
@@ -106,6 +109,7 @@ func TestSweepPlanJSONCarriesTheQuarantine(t *testing.T) {
 // A worktree that moved and whose run then failed is reported as what it
 // is, not as kept.
 func TestSweepSaysAPartialMoveIsPartial(t *testing.T) {
+	// Not parallel: swaps quarantine.AfterRename.
 	ctx, _, _ := testkit.SweepRepo(t)
 	provisiontest.MergedWorktree(t, ctx, "fix/half")
 	dir := testkit.TrashFor(t, ctx)
@@ -127,6 +131,7 @@ func TestSweepSaysAPartialMoveIsPartial(t *testing.T) {
 }
 
 func TestSweepQuarantineRefusesAFolderInsideTheRepository(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/stays")
 	opts := retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{},
@@ -140,6 +145,7 @@ func TestSweepQuarantineRefusesAFolderInsideTheRepository(t *testing.T) {
 // commits pinned: a sweep drops its pins. One whose folder's parent is gone
 // too may be on a volume that is not mounted, and keeps them.
 func TestSweepDropsThePinsOfADeletedQuarantine(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	gone := provisiontest.MergedWorktree(t, ctx, "fix/emptied")
 	away := provisiontest.MergedWorktree(t, ctx, "fix/unmounted")
