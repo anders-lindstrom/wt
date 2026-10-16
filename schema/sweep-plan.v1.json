@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sweep-plan.v1.json",
-  "x-version": "1.5.1",
+  "x-version": "1.6.0",
   "title": "wt sweep --dry-run --json",
   "description": "What wt sweep would do, and what it would keep and why. Printed by `wt sweep --dry-run --json` (or `wt sweep --json` without --yes) as the only thing on stdout; nothing is deleted. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
-  "required": ["schema", "schemaVersion", "command", "repo", "trunk", "trunkSource", "bases", "fetched", "token", "error", "items", "quarantine", "keepSuperset", "configFingerprint"],
+  "required": ["schema", "schemaVersion", "command", "repo", "trunk", "trunkSource", "bases", "fetched", "token", "error", "items", "quarantine", "keepSuperset", "reap", "configFingerprint"],
   "properties": {
     "schema": { "const": 1, "description": "The major version: a new one only for a change that breaks readers." },
     "schemaVersion": { "type": "string", "pattern": "^1\\.[0-9]+\\.[0-9]+$", "description": "The full semantic version of this schema that the output follows: minor for an added field or enumeration value, patch for wording." },
@@ -28,6 +28,7 @@
     "items": { "type": "array", "items": { "$ref": "#/$defs/item" } },
     "quarantine": { "type": ["string", "null"], "description": "Since 1.2.0. With --move-to <dir>: the folder the worktrees go to, absolute, which the token covers; a folder that exists or is on another volume refuses the plan (error set, token null, items kept). null without it." },
     "keepSuperset": { "type": "boolean", "description": "Since 1.4.0. --keep-superset was given: the removed worktrees' Superset workspaces are left, and Superset is not asked anything. The token covers it." },
+    "reap": { "type": "boolean", "description": "Since 1.6.0. --reap was given: the processes still working in each worktree that goes are stopped first, and they no longer keep it. The token covers it, and the processes of each remove item." },
     "configFingerprint": {
       "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^[0-9a-f]{64}$" }],
       "description": "Since 1.5.0. The wt configuration the token covers: the lowercase hex SHA-256 of the configuration file wt read (bin/worktree/worktree.toml or worktree.conf). Two plans with the same value read the same file. null when there is none."
@@ -37,7 +38,7 @@
     "sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
     "item": {
       "type": "object",
-      "required": ["category", "branch", "tip", "work", "path", "merged", "pullRequest", "kept", "reason", "ahead", "subject"],
+      "required": ["category", "branch", "tip", "work", "path", "merged", "pullRequest", "kept", "reason", "ahead", "subject", "processes"],
       "properties": {
         "category": {
           "enum": ["remove", "delete", "inUse", "upstreamGone"],
@@ -57,17 +58,30 @@
         },
         "kept": {
           "type": "array",
-          "description": "Why it is kept, every reason that applies; empty for remove and delete.",
+          "description": "Why it is kept, every reason that applies; empty for remove and delete. processes (since 1.6.0): without --reap, processes still run in its worktree (listed in processes). processesUnknown (since 1.6.0): the processes in it could not be found, or told apart from agent sessions.",
           "items": {
             "enum": ["dirty", "statusUnknown", "detached", "session", "sessionsUnknown", "lockHeld", "directoryMissing",
               "heldByRebase", "heldByBisect", "mainCheckout", "branchNotDeletable", "notMerged",
               "operation", "hiddenChanges", "headUnreachable", "reachUnknown", "submoduleUnreachable",
-              "nestedWorktree"]
+              "nestedWorktree", "processes", "processesUnknown"]
           }
         },
         "reason": { "type": "string", "description": "The row as wt sweep prints it: why it goes, or why it stays and what to do." },
         "ahead": { "type": ["integer", "null"], "minimum": 0, "description": "For upstreamGone: commits the first base lacks." },
-        "subject": { "type": ["string", "null"], "description": "The tip's commit subject." }
+        "subject": { "type": ["string", "null"], "description": "The tip's commit subject." },
+        "processes": {
+          "type": "array",
+          "description": "Since 1.6.0. The processes working in its worktree, as remove-plan lists them: another user's, any with a controlling terminal, wt's own and agent processes are never listed. reap is true on a remove item under --reap, which stops them before the worktree goes; they keep an inUse item only without --reap, when kept has processes; under --reap, or on a row kept for another reason, they are listed and do not hold it. Empty for a branch in no worktree, and when none was found.",
+          "items": {
+            "type": "object",
+            "required": ["pid", "command", "reap"],
+            "properties": {
+              "pid": { "type": "integer", "minimum": 2 },
+              "command": { "type": "string", "description": "Its command line as ps shows it, arguments joined with spaces." },
+              "reap": { "type": "boolean" }
+            }
+          }
+        }
       }
     },
     "merged": {

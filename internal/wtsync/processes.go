@@ -17,12 +17,44 @@ import (
 
 // Process is one row of the machine's process table. Argv is the command
 // line split on spaces, so an argument with a space in it is several, unless
-// Exact says it is the arguments as the process was given them.
+// Exact says it is the arguments as the process was given them. TTY is its
+// controlling terminal as ps names it, "?", "??" or "-" for none; an empty
+// one is a field nobody filled, which HasTerminal takes for a terminal.
 type Process struct {
 	PID, PPID, UID int
 	Started        time.Time
+	TTY            string
 	Argv           []string
 	Exact          bool
+}
+
+// HasTerminal reports a controlling terminal: an interactive shell, an
+// editor in a terminal, anything a person started at a prompt. An unset TTY
+// counts as one, since a process not known to be terminal-less is spared.
+func (p Process) HasTerminal() bool {
+	switch p.TTY {
+	case "?", "??", "-":
+		return false
+	}
+	return true
+}
+
+// Command is the command line as one string.
+func (p Process) Command() string {
+	return strings.Join(p.Argv, " ")
+}
+
+// Short is the command line cut for a line of text: the program's name
+// without its directory, then as much of the arguments as fits in n runes.
+func (p Process) Short(n int) string {
+	if len(p.Argv) == 0 {
+		return "?"
+	}
+	s := []rune(strings.Join(append([]string{filepath.Base(p.Argv[0])}, p.Argv[1:]...), " "))
+	if len(s) <= n {
+		return string(s)
+	}
+	return string(s[:n-1]) + "…"
 }
 
 // systemTool is where ps or lsof is: on the PATH, or where the system keeps
@@ -44,7 +76,7 @@ func systemTool(name string) string {
 // listProcesses reads the process table with one ps, under the same
 // deadline as claude agents. A var so tests name the processes themselves.
 var listProcesses = func() ([]Process, error) {
-	cmd := exec.Command(systemTool("ps"), "-A", "-ww", "-o", "pid=", "-o", "ppid=", "-o", "uid=", "-o", "etime=", "-o", "command=")
+	cmd := exec.Command(systemTool("ps"), "-A", "-ww", "-o", "pid=", "-o", "ppid=", "-o", "uid=", "-o", "etime=", "-o", "tty=", "-o", "command=")
 	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -68,13 +100,13 @@ var listProcesses = func() ([]Process, error) {
 	return procs, nil
 }
 
-// parseProcesses reads ps rows of pid, ppid, uid, etime and command. A row
-// that does not parse is not a process.
+// parseProcesses reads ps rows of pid, ppid, uid, etime, tty and command. A
+// row that does not parse is not a process.
 func parseProcesses(out string, now time.Time) []Process {
 	var procs []Process
 	for _, line := range strings.Split(out, "\n") {
 		f := strings.Fields(line)
-		if len(f) < 4 {
+		if len(f) < 5 {
 			continue
 		}
 		pid, perr := strconv.Atoi(f[0])
@@ -84,7 +116,7 @@ func parseProcesses(out string, now time.Time) []Process {
 		if perr != nil || qerr != nil || uerr != nil || !ok {
 			continue
 		}
-		procs = append(procs, Process{PID: pid, PPID: ppid, UID: uid, Started: now.Add(-age), Argv: f[4:]})
+		procs = append(procs, Process{PID: pid, PPID: ppid, UID: uid, Started: now.Add(-age), TTY: f[4], Argv: f[5:]})
 	}
 	return procs
 }

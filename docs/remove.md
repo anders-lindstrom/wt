@@ -66,6 +66,24 @@ the list goes after an =. The sessions are listed again right before
 the checkout goes, and one that turned busy or arrived since refuses
 unless --force names its state.
 
+Processes still working in the worktree — a dev server, a watcher, a
+language server, any whose working directory is in it — are named in
+one warning and left running; the removal goes ahead. --reap stops
+them first: found again right before the checkout goes, sent SIGTERM,
+given 5 seconds, then SIGKILL; each is reported with what it took. One
+that will not stop refuses the removal, exit 1, with nothing removed;
+the others were already stopped. Never stopped, by --reap or anything
+else, and not named: another user's processes, any with a controlling
+terminal (a shell, an editor in a terminal, a dev server started in a
+terminal tab), wt, its children and its ancestors, and agent
+processes, Claude's and Codex's, the session running wt remove
+included. When the sessions cannot be listed, none is known not to be
+an agent's; when ps or lsof (or /proc) cannot be read, the processes
+are not known at all. Either way --reap stops nothing and refuses; no
+--force goes past that. wt sweep --reap does the same
+for every worktree it removes, and without --reap keeps a worktree
+something still runs in.
+
 --move-to <dir> moves the worktree aside instead of deleting it.
 <dir> is a new folder on the worktree's volume — its parent must exist
 — outside every checkout and the git dir; removal refuses, changing

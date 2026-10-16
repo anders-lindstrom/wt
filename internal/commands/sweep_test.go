@@ -97,7 +97,7 @@ func planWith(t *testing.T, ctx *Context, opts SweepOptions) SweepPlan {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := planSweep(ctx, bases, opts.listAgents, opts.pullRequests(ctx))
+	p, err := planSweep(ctx, bases, opts.listAgents, opts.pullRequests(ctx), opts.Reap)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,7 +326,7 @@ func TestSweepKeepsAWorktreeWhenTheSessionsCannotBeListed(t *testing.T) {
 		t.Fatal(err)
 	}
 	p, err := planSweep(ctx, bases, func() ([]wtsync.Agent, error) { return nil, fmt.Errorf("claude is away") },
-		noPullRequests)
+		noPullRequests, false)
 	if err != nil {
 		t.Fatal(err)
 	}

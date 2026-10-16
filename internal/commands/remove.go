@@ -62,6 +62,16 @@ type RemoveOptions struct {
 	// KeepSuperset leaves the worktree's Superset workspace alone: Superset
 	// is not asked anything.
 	KeepSuperset bool
+	// Reap ends the processes working in the checkout before it goes:
+	// SIGTERM, then SIGKILL after reapGrace. Without it they are named and
+	// left running.
+	Reap bool
+	// Scan is the process table already read, for a sweep's many plans;
+	// nil reads it for this plan.
+	Scan func() (*wtsync.ProcessScan, error)
+	// keepBusy keeps the worktree for the processes working in it, unless
+	// Reap ends them: a sweep takes only what nothing is using.
+	keepBusy bool
 }
 
 // RemoveResult is what a removal did, effect by effect, as far as it got.
@@ -96,6 +106,8 @@ type RemoveResult struct {
 	SupersetReason string
 	// Forced is the --force categories the removal went past.
 	Forced ForceSet
+	// Reaped is the processes --reap ended, or tried to, and what each took.
+	Reaped []wtsync.Reaped
 	// Error is why the run refused or stopped, "" when it did neither.
 	Error string
 }
@@ -253,6 +265,14 @@ type Plan struct {
 	QuarantineError string
 	// KeepSuperset leaves the Superset workspace alone.
 	KeepSuperset bool
+	// Processes are the processes working in the checkout that wt does not
+	// spare (wtsync.ScanProcesses says which it spares); ProcessesError is
+	// why they could not be found. Reap ends them before the checkout goes;
+	// keepBusy refuses for them instead.
+	Processes      []wtsync.Process
+	ProcessesError string
+	Reap           bool
+	keepBusy       bool
 	// quarantineBy names the command in recovery.json.
 	quarantineBy string
 	// relist lists the sessions again for the check right before the
@@ -418,8 +438,15 @@ func removeWorktreeResult(ctx *Context, wt repo.Worktree, opts RemoveOptions, w 
 func planFor(ctx *Context, wt repo.Worktree, opts RemoveOptions) Plan {
 	p := Plan{Path: wt.Path, Branch: ctx.Repo.BranchAt(wt.Path),
 		MainBranch: ctx.Config.MainBranch, Force: opts.Force.implied(), KeepSuperset: opts.KeepSuperset,
-		relist: opts.relistAgents}
-	p.readSessions(opts)
+		Reap: opts.Reap, keepBusy: opts.keepBusy, relist: opts.relistAgents}
+	agents, agentsErr := opts.Agents, opts.AgentsErr
+	if agents == nil && agentsErr == nil {
+		if agents, agentsErr = listSessions(); agents == nil {
+			agents = []wtsync.Agent{}
+		}
+	}
+	p.setSessions(sessionsIn(agents, agentsErr, p.Path))
+	p.readProcesses(opts.Scan, agents, agentsErr)
 	p.readLock(wt)
 	p.readCheckout()
 	p.AdminDir, _ = repo.AdminDir(wt.Path)
@@ -458,10 +485,45 @@ func planFor(ctx *Context, wt repo.Worktree, opts RemoveOptions) Plan {
 	return p
 }
 
-// readSessions reads the agent sessions working in the checkout.
-func (p *Plan) readSessions(opts RemoveOptions) {
-	p.setSessions(sessionsIn(opts.Agents, opts.AgentsErr, p.Path))
+// readProcesses finds the processes working in the checkout: from scan
+// when the caller has read the table already, else from a scan sparing the
+// agents listed. A listing that failed leaves the agents unknown, and
+// then nothing is known to be safe to end.
+func (p *Plan) readProcesses(scan func() (*wtsync.ProcessScan, error), agents []wtsync.Agent, agentsErr error) {
+	procs, err := processesIn(p.Path, scan, agents, agentsErr)
+	if err != nil {
+		p.ProcessesError = oneLine(err.Error())
+		return
+	}
+	p.Processes = procs
 }
+
+// processesIn is the processes working in the worktree at path.
+func processesIn(path string, scan func() (*wtsync.ProcessScan, error), agents []wtsync.Agent,
+	agentsErr error) ([]wtsync.Process, error) {
+	if scan == nil {
+		if agentsErr != nil {
+			return nil, fmt.Errorf("cannot tell which are agent sessions: %w", agentsErr)
+		}
+		scan = func() (*wtsync.ProcessScan, error) { return scanProcesses(agents) }
+	}
+	s, err := scan()
+	if err != nil {
+		return nil, err
+	}
+	return s.In(path), nil
+}
+
+// scanProcesses reads the process table. A var so the package's tests stay
+// off the machine's own processes until one starts a process of its own.
+var scanProcesses = wtsync.ScanProcesses
+
+// reapProcesses ends processes, and reapGrace is how long SIGTERM has
+// before SIGKILL. Vars so a test can have a process that will not die.
+var (
+	reapProcesses = wtsync.Reap
+	reapGrace     = 5 * time.Second
+)
 
 func (p *Plan) setSessions(s wtsync.Sessions, err error) {
 	if err != nil {
@@ -631,7 +693,31 @@ func (p Plan) problems() []problem {
 	if p.QuarantineError != "" {
 		add(ProblemQuarantineUnusable, "it cannot be moved aside: "+p.QuarantineError, 0)
 	}
+	// No --force goes past these: an agent's process is never ended, and
+	// when it cannot be told which are agents, nothing is.
+	// A sweep that cannot list the sessions keeps the worktree for that
+	// already; under --reap it is named, since no --force goes past it.
+	if p.ProcessesError != "" && (p.Reap || (p.keepBusy && p.SessionsError == "")) {
+		add(KeptProcessesUnknown, "cannot tell which processes run in it ("+p.ProcessesError+")", 0)
+	}
+	if len(p.Processes) > 0 && p.keepBusy && !p.Reap {
+		add(KeptProcesses, processesLabel(p.Processes)+" running in it", 0)
+	}
 	return out
+}
+
+// processesLabel names processes for a line of text: how many, and the
+// pid and command of the first few.
+func processesLabel(procs []wtsync.Process) string {
+	names := make([]string, len(procs))
+	for i, p := range procs {
+		names[i] = fmt.Sprintf("%d (%s)", p.PID, p.Short(40))
+	}
+	n := "1 process"
+	if len(procs) != 1 {
+		n = fmt.Sprintf("%d processes", len(procs))
+	}
+	return n + ", " + someOf(names, 3)
 }
 
 // ProblemQuarantineUnusable is a quarantine folder that cannot be used: it
@@ -741,6 +827,9 @@ func (p Plan) forceWould() ForceSet {
 func (p Plan) same(q Plan) bool {
 	p.Sessions, q.Sessions = identities(p.Sessions), identities(q.Sessions)
 	p.relist, q.relist, p.pins, q.pins = nil, nil, nil, nil
+	// Processes come and go; the ones there right before the checkout goes
+	// are the ones reaped, or the ones a sweep refuses for.
+	p.Processes, q.Processes, p.ProcessesError, q.ProcessesError = nil, nil, "", ""
 	p.Unreachable, q.Unreachable = refusingLosses(p.Unreachable), refusingLosses(q.Unreachable)
 	return reflect.DeepEqual(p, q)
 }
@@ -1057,6 +1146,14 @@ func (p Plan) Render(w io.Writer) {
 			fmt.Fprintf(w, "  ! --force: going past %s\n", pr.text)
 		}
 	}
+	switch {
+	case len(p.Processes) > 0 && p.Reap:
+		fmt.Fprintf(w, "  first, %s will be stopped\n", processesLabel(p.Processes))
+	case len(p.Processes) > 0:
+		fmt.Fprintf(w, "  ! %s will keep running in it; --reap stops them\n", processesLabel(p.Processes))
+	case p.ProcessesError != "":
+		fmt.Fprintf(w, "  ! cannot tell what still runs in it (%s)\n", p.ProcessesError)
+	}
 	if p.Quarantine != "" {
 		fmt.Fprintf(w, "  the checkout will be moved to %s%s\n", p.Quarantine, p.lockNote())
 	} else {
@@ -1197,6 +1294,15 @@ func (p Plan) run(ctx *Context, w io.Writer) (RemoveResult, error) {
 func (p Plan) remove(ctx *Context, w io.Writer) (RemoveResult, error) {
 	res := RemoveResult{Outcome: RemoveRefused, Worktree: WorktreeKept, Quarantine: p.Quarantine,
 		BranchName: p.Branch, BranchTip: p.Tip, KeepAs: p.KeepAs}
+	// Before the last look at the checkout: a process may write a file as
+	// it stops, and that file is then work the recheck sees.
+	if p.Reap || p.keepBusy {
+		reaped, err := p.clearProcesses(w)
+		res.Reaped = reaped
+		if err != nil {
+			return res, fmt.Errorf("%s was not removed: %w", p.Path, err)
+		}
+	}
 	now, why := p.recheck()
 	if why != "" {
 		hint := ""
@@ -1501,6 +1607,46 @@ func (p Plan) quarantine(ctx *Context, w io.Writer, res *RemoveResult) (*quarant
 	return r, nil
 }
 
+// listSessionsAgain lists the sessions once more, as the plan was given
+// to: relist, else claude's own listing.
+func (p Plan) listSessionsAgain() ([]wtsync.Agent, error) {
+	if p.relist == nil {
+		return listSessions()
+	}
+	return p.relist()
+}
+
+// clearProcesses finds the processes in the checkout once more, right
+// before it goes, and ends them under Reap. Without Reap, any found refuse
+// the removal: that is how a sweep keeps a worktree something is using.
+// Every process ended is reported; one that would not stop refuses it.
+func (p Plan) clearProcesses(w io.Writer) ([]wtsync.Reaped, error) {
+	agents, err := p.listSessionsAgain()
+	procs, err := processesIn(p.Path, nil, agents, err)
+	switch {
+	case err != nil:
+		return nil, fmt.Errorf("cannot tell which processes run in it (%s); nothing was stopped", oneLine(err.Error()))
+	case len(procs) == 0:
+		return nil, nil
+	case !p.Reap:
+		return nil, fmt.Errorf("%s running in it; --reap stops them", processesLabel(procs))
+	}
+	reaped := reapProcesses(procs, reapGrace)
+	var stuck []wtsync.Process
+	for _, r := range reaped {
+		mark := "-"
+		if r.Result == wtsync.ReapSurvived {
+			mark = "!"
+			stuck = append(stuck, r.Process)
+		}
+		fmt.Fprintf(w, "%s %s\n", mark, wtsync.ReapedLine(r))
+	}
+	if len(stuck) > 0 {
+		return reaped, fmt.Errorf("%s would not stop", processesLabel(stuck))
+	}
+	return reaped, nil
+}
+
 // recheck reads the checkout and the sessions once more, immediately
 // before it is deleted or moved: a plan can sit under a prompt for minutes,
 // and a file written or a commit made since is work it never saw, a session
@@ -1510,11 +1656,7 @@ func (p Plan) quarantine(ctx *Context, w io.Writer, res *RemoveResult) (*quarant
 // it gets. It returns that reading, and why is "" when it can still go.
 func (p Plan) recheck() (now Plan, why string) {
 	now = Plan{Path: p.Path, Force: p.Force}
-	relist := p.relist
-	if relist == nil {
-		relist = listSessions
-	}
-	agents, err := relist()
+	agents, err := p.listSessionsAgain()
 	if agents == nil {
 		agents = []wtsync.Agent{}
 	}

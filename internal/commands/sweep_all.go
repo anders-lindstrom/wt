@@ -156,7 +156,7 @@ func planRepoSweep(t RepoTarget, opts SweepOptions, listErr error, log io.Writer
 		return nil, SweepPlan{}, err
 	}
 	list := func() ([]wtsync.Agent, error) { return opts.Agents, listErr }
-	plan, err := planSweep(ctx, bases, list, opts.pullRequests(ctx))
+	plan, err := planSweep(ctx, bases, list, opts.pullRequests(ctx), opts.Reap)
 	return ctx, plan, err
 }
 

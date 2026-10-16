@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/remove-plan.v1.json",
-  "x-version": "1.4.1",
+  "x-version": "1.5.0",
   "title": "wt remove <work> --dry-run --json",
   "description": "What `wt remove <work>` would do, and the token that holds a later removal to it. Printed by `wt remove <work> --dry-run --json`, and by `wt remove <work> --json` without --yes, as the only thing on stdout; nothing is changed. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
@@ -218,6 +218,20 @@
       "type": "boolean",
       "description": "Since 1.1.0. --keep-superset was given: the worktree's Superset workspace is left, and Superset is not asked anything. The token covers it."
     },
+    "processes": {
+      "type": "array",
+      "description": "Since 1.5.0. The processes working in the checkout, or in a directory inside it, that wt does not spare: a dev server, a watcher, a language server. Spared and never listed: another user's processes, any with a controlling terminal, wt itself with its children and ancestors, and agent processes, Claude's and Codex's, the caller's own included. Empty when there are none, or when they could not be found (processesError says why). Removal ends them only with --reap; the token covers them then.",
+      "items": {
+        "$ref": "#/$defs/process"
+      }
+    },
+    "processesError": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Since 1.5.0. Why the processes could not be found: the process table could not be read, or the agent sessions could not be listed, so none is known to be safe to end. With --reap this refuses the removal (problem processesUnknown), whatever --force says; without it the removal goes ahead and leaves them."
+    },
     "force": {
       "type": "boolean",
       "description": "Bare --force was given: the problems with force true do not refuse. False for --force=<list>, whose categories forceWith names."
@@ -265,9 +279,10 @@
             "submoduleUnreachable",
             "nestedWorktree",
             "quarantineUnusable",
+            "processesUnknown",
             "planChanged"
           ],
-          "description": "dirty: anything uncommitted, submodules included, or a submodule not at its recorded commit. statusUnknown: git status, the git dir or HEAD could not be read. session: an agent session is in it, idle or busy. sessionsUnknown: the sessions could not be listed. lockHeld: git's worktree lock, and its holder is still running. operation: a rebase, merge, cherry-pick, revert or bisect in progress. hiddenChanges: files git status is told not to look at. headUnreachable: HEAD holds commits no surviving ref or worktree would. reachUnknown: what would be lost could not be worked out. submoduleUnreachable: a submodule commit only this worktree's copy holds. nestedWorktree: another worktree is inside it. quarantineUnusable: the --move-to folder exists, is on another volume, or is inside the repository. planChanged (result only): --expect named another plan. The codes shared with sweep-plan's kept mean the same there."
+          "description": "dirty: anything uncommitted, submodules included, or a submodule not at its recorded commit. statusUnknown: git status, the git dir or HEAD could not be read. session: an agent session is in it, idle or busy. sessionsUnknown: the sessions could not be listed. lockHeld: git's worktree lock, and its holder is still running. operation: a rebase, merge, cherry-pick, revert or bisect in progress. hiddenChanges: files git status is told not to look at. headUnreachable: HEAD holds commits no surviving ref or worktree would. reachUnknown: what would be lost could not be worked out. submoduleUnreachable: a submodule commit only this worktree's copy holds. nestedWorktree: another worktree is inside it. quarantineUnusable: the --move-to folder exists, is on another volume, or is inside the repository. processesUnknown: with --reap, the processes in it could not be found or told apart from agent sessions; no --force goes past it. planChanged (result only): --expect named another plan. The codes shared with sweep-plan's kept mean the same there."
         },
         "message": {
           "type": "string"
@@ -497,6 +512,28 @@
           "description": "For branch: the argv that brings the commits back once the branch is gone."
         }
       }
+    },
+    "process": {
+      "type": "object",
+      "required": [
+        "pid",
+        "command",
+        "reap"
+      ],
+      "properties": {
+        "pid": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "command": {
+          "type": "string",
+          "description": "Its command line as ps shows it, arguments joined with spaces."
+        },
+        "reap": {
+          "type": "boolean",
+          "description": "--reap was given: the removal ends it, SIGTERM and then SIGKILL after 5 seconds, before the checkout goes. False: it is left running."
+        }
+      }
     }
   },
   "required": [
@@ -528,6 +565,8 @@
     "reachError",
     "quarantine",
     "keepSuperset",
+    "processes",
+    "processesError",
     "force",
     "forceWith",
     "problems"
