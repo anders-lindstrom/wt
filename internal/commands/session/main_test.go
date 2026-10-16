@@ -12,5 +12,6 @@ func TestMain(m *testing.M) {
 	testkit.Main(m, func() {
 		ListSessions = testkit.NoSessions
 		ListClaudeSessions = testkit.NoClaudeSessions
+		SessionsDeadline = testkit.FakeClaudeDeadline
 	})
 }

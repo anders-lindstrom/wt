@@ -22,3 +22,8 @@ func NoClaudeSessions(time.Duration) ([]wtsync.Agent, bool, error) { return nil,
 
 // NoProcesses is a process scan that finds none.
 func NoProcesses([]wtsync.Agent) (*wtsync.ProcessScan, error) { return &wtsync.ProcessScan{}, nil }
+
+// FakeClaudeDeadline is how long a listing waits for claude agents --json in
+// the tests. Their claude is a shell script, and on a loaded machine starting
+// one can take longer than the 2s session.SessionsDeadline gives it.
+const FakeClaudeDeadline = time.Minute
