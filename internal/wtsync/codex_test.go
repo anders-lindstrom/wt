@@ -475,10 +475,10 @@ func TestLastTurnReadsBackwardsThroughLongLines(t *testing.T) {
 
 func TestParseProcessesReadsPsRows(t *testing.T) {
 	now := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
-	out := "  100     1   501       01:02 codex exec do it\n" +
-		"  101   100   501 1-02:03:04 /bin/codex\n" +
-		"  102   100   501    2:03:04 -zsh\n" +
-		"garbage\n  103 x 501 00:01 y\n"
+	out := "  100     1   501       01:02 ??       codex exec do it\n" +
+		"  101   100   501 1-02:03:04 ?        /bin/codex\n" +
+		"  102   100   501    2:03:04 ttys004  -zsh\n" +
+		"garbage\n  103 x 501 00:01 ?? y\n"
 	procs := parseProcesses(out, now)
 	if len(procs) != 3 {
 		t.Fatalf("processes %+v, want three", procs)
@@ -491,6 +491,12 @@ func TestParseProcessesReadsPsRows(t *testing.T) {
 	}
 	if strings.Join(procs[0].Argv, " ") != "codex exec do it" || procs[1].PPID != 100 {
 		t.Errorf("processes %+v", procs)
+	}
+	// ps says "??" on macOS and "?" on Linux for no terminal.
+	for i, want := range []bool{false, false, true} {
+		if procs[i].HasTerminal() != want {
+			t.Errorf("process %d tty %q: terminal %v, want %v", procs[i].PID, procs[i].TTY, !want, want)
+		}
 	}
 }
 
