@@ -73,6 +73,27 @@ func TestConfigShellReportsProvisionScript(t *testing.T) {
 	}
 }
 
+func TestConfigShowsCacheDirs(t *testing.T) {
+	main := fixtureRepo(t, minimalConf+"WORKTREE_CACHE_DIRS=(node_modules .gradle)\n")
+	ctx, err := Open(main)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	var text, shell bytes.Buffer
+	if err := Config(ctx, false, &text); err != nil {
+		t.Fatal(err)
+	}
+	if err := Config(ctx, true, &shell); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text.String(), "cache dirs:    node_modules .gradle\n") {
+		t.Errorf("wt config does not show the cache dirs:\n%s", text.String())
+	}
+	if !strings.Contains(shell.String(), "WORKTREE_CACHE_DIRS=('node_modules' '.gradle')\n") {
+		t.Errorf("wt config --shell does not show the cache dirs:\n%s", shell.String())
+	}
+}
+
 func TestConfigShellQuotesSafely(t *testing.T) {
 	main := fixtureRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=true\nBUILD_INIT_COMMAND=\"echo it's fine\"\n")
 	ctx, err := Open(main)

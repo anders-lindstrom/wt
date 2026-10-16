@@ -11,6 +11,7 @@ import (
 type NewOptions struct {
 	Base      string
 	SkipBuild bool
+	NoCache   bool
 	NoSetup   bool
 	// NoSuperset leaves the worktree out of the Superset desktop app for this
 	// one invocation, whatever SUPERSET_REGISTER says.
@@ -97,7 +98,7 @@ func addAndProvision(ctx *Context, path string, add func() error, opts NewOption
 		j.skipSetup("--no-setup")
 		return path, nil
 	}
-	err := setup(ctx, path, SetupOptions{SkipBuild: opts.SkipBuild}, w, j)
+	err := setup(ctx, path, SetupOptions{SkipBuild: opts.SkipBuild, NoCache: opts.NoCache}, w, j)
 	if opts.NoSuperset {
 		j.finish(StepSuperset, StepSkipped, "--no-superset", "")
 		return path, err

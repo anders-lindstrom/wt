@@ -132,8 +132,8 @@ func TestInitCommentsEveryRemainingKeyAtItsDefault(t *testing.T) {
 
 	for _, key := range []string{
 		"WORKTREE_TYPE_SUFFIX", "WORKTREE_DEFAULT_TYPE", "WORKTREE_TYPES",
-		"DEVELOPER_CONFIG_DIRS", "DEVELOPER_CONFIG_FILES", "BUILD_INIT_ENABLED",
-		"BUILD_INIT_COMMAND", "REQUIRED_BINS", "TEST_COMMAND", "RUN_TESTS_BEFORE_REMOVE",
+		"DEVELOPER_CONFIG_DIRS", "DEVELOPER_CONFIG_FILES", "WORKTREE_CACHE_DIRS",
+		"BUILD_INIT_ENABLED", "BUILD_INIT_COMMAND", "REQUIRED_BINS", "TEST_COMMAND", "RUN_TESTS_BEFORE_REMOVE",
 	} {
 		if !strings.Contains(body, "# "+key+"=") {
 			t.Errorf("key %s is not written as a commented default", key)

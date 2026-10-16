@@ -183,7 +183,7 @@ func TestNewJSONReportsEverySideEffect(t *testing.T) {
 	if r.Outcome != CreateCreated || r.Error != nil || *r.Commit != *p.BaseCommit || *r.Path != *p.Path {
 		t.Errorf("result = %+v", r)
 	}
-	want := map[string]string{"worktree": "created", "branch": "created", "config": "done", "provision": "done",
+	want := map[string]string{"worktree": "created", "branch": "created", "config": "done", "cache": "skipped", "provision": "done",
 		"submodules": "skipped", "build": "done", "superset": "skipped"}
 	var order []string
 	for _, s := range r.Steps {
@@ -192,7 +192,7 @@ func TestNewJSONReportsEverySideEffect(t *testing.T) {
 			t.Errorf("%s: %s, want %s (%v)", s.Step, s.Result, want[s.Step], s.Reason)
 		}
 	}
-	if strings.Join(order, ",") != "worktree,branch,config,provision,submodules,build,superset" {
+	if strings.Join(order, ",") != "worktree,branch,config,cache,provision,submodules,build,superset" {
 		t.Errorf("steps in order %v", order)
 	}
 	if b := stepOf(r, "branch"); b.Commit == nil || *b.Commit != *p.BaseCommit {
@@ -258,7 +258,7 @@ func TestCheckoutExpectRefusesAMovedBranch(t *testing.T) {
 	if b := stepOf(r.CreateResult, "branch"); b.Result != StepUntouched || *b.Commit != *p.BranchCommit {
 		t.Errorf("branch step %+v", b)
 	}
-	for _, name := range []string{"config", "provision", "submodules", "build", "superset"} {
+	for _, name := range []string{"config", "cache", "provision", "submodules", "build", "superset"} {
 		if s := stepOf(r.CreateResult, name); s.Result != StepSkipped {
 			t.Errorf("--no-setup: %s is %s", name, s.Result)
 		}
@@ -418,6 +418,38 @@ func TestNewPlanRefusesABranchNameGitWouldRefuse(t *testing.T) {
 	for _, spec := range []string{"fix/bad name", "fix/a..b", "fix/x.lock"} {
 		if p := newPlanOf(t, ctx, spec, NewOptions{}); codes(p.Problems) != "invalidName" || p.Token != nil {
 			t.Errorf("%q: problems %s", spec, codes(p.Problems))
+		}
+	}
+}
+
+// --no-cache reaches the cache step above Setup: the same repository clones
+// without it and reports the step skipped with it.
+func TestNewJSONNoCacheSkipsTheCacheStep(t *testing.T) {
+	for _, tc := range []struct {
+		noCache bool
+		result  string
+		reason  string
+	}{{true, "skipped", "--no-cache"}, {false, "done", ""}} {
+		main := committedRepo(t, minimalConf+"WORKTREE_CACHE_DIRS=(node_modules)\n")
+		mustWrite(t, filepath.Join(main, "node_modules", "left-pad", "index.js"), "module.exports = 1")
+		ctx, err := Open(main)
+		if err != nil {
+			t.Fatal(err)
+		}
+		withCloner(t, func(_, to string) error { return os.Mkdir(to, 0o755) })
+		opts := NewOptions{NoCache: tc.noCache, SkipBuild: true}
+		p := newPlanOf(t, ctx, "fix/login-crash", opts)
+		r, human, err := newJSON(t, ctx, "fix/login-crash", opts, *p.Token)
+		if err != nil {
+			t.Fatalf("%v\n%s", err, human)
+		}
+		s := stepOf(r, "cache")
+		reason := ""
+		if s.Reason != nil {
+			reason = *s.Reason
+		}
+		if s.Result != tc.result || reason != tc.reason {
+			t.Errorf("NoCache=%v: cache step %s %q, want %s %q", tc.noCache, s.Result, reason, tc.result, tc.reason)
 		}
 	}
 }

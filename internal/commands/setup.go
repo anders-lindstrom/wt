@@ -19,13 +19,15 @@ type SetupOptions struct {
 	// repository's main checkout.
 	SourceDir string
 	SkipBuild bool
+	// NoCache skips cloning WORKTREE_CACHE_DIRS.
+	NoCache bool
 	// Source names what ran setup, such as "superset". Only printed for now.
 	Source string
 }
 
-// Setup provisions a worktree: developer config, the repo's own provision.sh,
-// submodules, then build initialisation. The order matches the bash
-// implementation this replaces.
+// Setup provisions a worktree: developer config, build caches, the repo's own
+// provision.sh, submodules, then build initialisation. The caches come before
+// provision.sh and the build so both find them warm.
 //
 // A build-init failure is reported as a warning and does not fail the command,
 // because every agent that provisions a worktree would otherwise start failing
@@ -53,6 +55,9 @@ func setup(ctx *Context, target string, opts SetupOptions, w io.Writer, j *Creat
 		failed := append(copyConfigDirs(ctx, src, target, w), copyConfigFiles(ctx, src, target, w)...)
 		j.finish(StepConfig, failedResult(failed), strings.Join(failed, "; "), "")
 	}
+	j.start(StepCache)
+	result, reason := cloneCacheDirs(ctx, src, target, opts, w)
+	j.finish(StepCache, result, reason, "")
 
 	// A failed provision step is reported but does not abort the rest: stopping
 	// here would leave a worktree with no submodules and no dependencies
@@ -60,7 +65,7 @@ func setup(ctx *Context, target string, opts SetupOptions, w io.Writer, j *Creat
 	// secrets. The error still surfaces, so nothing treats this as success.
 	j.start(StepProvision)
 	provisionErr := runProvision(ctx, target, w, j)
-	result, reason := stepOutcome(ctx.HasProvisionScript(), "no bin/worktree/provision.sh", provisionErr)
+	result, reason = stepOutcome(ctx.HasProvisionScript(), "no bin/worktree/provision.sh", provisionErr)
 	j.finish(StepProvision, result, reason, "")
 	j.start(StepSubmodules)
 	result, reason = stepOutcome(ctx.Repo.HasSubmodules(target), "no .gitmodules", initSubmodules(ctx, target, w))

@@ -70,6 +70,7 @@ Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 | `status` 1.8.0, `sync` 1.5.0, `up` 1.5.0, `sync-run` 1.4.0 | | [where a branch pushes](#where-a-branch-pushes). New: `noPushReason` and `fixCommand` on `ownRemote` and on each participant of a run. Three things existing fields now mean, none of which a reader of the earlier minors could see: (1) a `rebased` participant can have `pushCommand` null, when wt has no push to make or offer for it, and `noPushReason` then says why; (2) `ownRemote.state` `unknown` also covers a branch a run would rebase and not push, which `noPushReason` tells apart from the unknowns a run pushes over unchecked; (3) `ownRemote.ref` is where wt's own push goes by the rule in [`ownRemote`](#ownremote--a-branch-against-its-own-remote): what is recorded for the branch first, never `<branch>@{push}` when that has another name than the branch. Every `pushCommand` now spells its refspec in full, `refs/heads/<branch>:refs/heads/<remote branch>` |
 | `remove` 1.4.2, `remove-plan` 1.4.1, `sweep` 1.4.1, `sweep-plan` 1.5.1, `recovery` 1.2.1, `quarantine-purge-plan` 1.0.1, `quarantine-purge` 1.0.1 | | `--quarantine <dir>` on `wt remove` and `wt sweep` is spelled `--move-to <dir>`, and `wt quarantine purge <dir>` is `wt purge <dir>`. From `remove` 1.4.2 on, `--move-to` and `wt purge` exist. Wording only: every field, value and schema name is as it was |
 | `sync-run` | 1.4.1 | wording: `wt sync run` and `wt sync --run` are no longer taken, so no wt prints `command` `sync run` any more; the value stays in the schema for results saved before |
+| `new` 1.1.0, `checkout` 1.2.0 | | the `cache` step, after `config`: cloning `WORKTREE_CACHE_DIRS` copy-on-write. `steps` holds eight steps where it held seven |
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
 
@@ -1691,11 +1692,11 @@ without `--json`, with no object.
 | `base` | string \| null | `wt new`: what the branch was cut from. Null for `wt checkout` |
 | `expectedCommit` | string \| null | the commit the plan pinned: `baseCommit`, `branchCommit` or `remoteCommit` |
 | `commit` | string \| null | the new worktree's HEAD, read after `git worktree add`; null when there is none |
-| `steps` | array | every side effect, always all seven, in this order |
-| `steps[].step` | `worktree`, `branch`, `config`, `provision`, `submodules`, `build`, `superset` | |
+| `steps` | array | every side effect, always all eight, in this order |
+| `steps[].step` | `worktree`, `branch`, `config`, `cache`, `provision`, `submodules`, `build`, `superset` | `cache` since 1.1.0 (`wt new`) and 1.2.0 (`wt checkout`); before, seven steps |
 | `steps[].result` | see below | |
 | `steps[].commit` | string \| null | `worktree`: its HEAD; `branch`: its tip |
-| `steps[].reason` | string \| null | why, for `skipped`, `failed` and `interrupted` |
+| `steps[].reason` | string \| null | why, for `skipped`, `failed` and `interrupted`; a note on a step that went through, as `worktree`, `branch` and `cache` give |
 
 `steps[].result`, by step:
 
@@ -1704,6 +1705,7 @@ without `--json`, with no object.
 | `worktree` | `created`, `failed` (`git worktree add` failed and left no worktree, or the path was taken). `created` with a `reason` when git failed after making it, as when a `post-checkout` hook fails; the steps after it are then `notRun` |
 | `branch` | `created` (`wt new`; `wt checkout` from a remote, with the reason `tracking <remote>/<branch>`, or that the upstream could not be set), `untouched` (`wt checkout` of a local branch) |
 | `config` | `done`, `skipped` (no source checkout), `failed` (an entry could not be copied, or escapes the worktree) |
+| `cache` | `done` (each `WORKTREE_CACHE_DIRS` entry cloned copy-on-write, already there or not in the source; a `reason` names any the filesystem could not clone), `skipped` (no `WORKTREE_CACHE_DIRS`, `--no-cache`, no source checkout, or not one could be cloned), `failed` (an entry escapes the worktree, by its path or through a symlinked parent, or a clone or a lookup in the source failed for another reason) |
 | `provision` | `done`, `skipped` (no `provision.sh`), `failed` |
 | `submodules` | `done`, `skipped` (no `.gitmodules`), `failed` |
 | `build` | `done`, `skipped` (`--no-build`, or off in the configuration), `failed` |

@@ -20,6 +20,9 @@ type Config struct {
 	Types                []string
 	DeveloperConfigDirs  []string
 	DeveloperConfigFiles []string
+	// CacheDirs are gitignored build caches, such as node_modules, that setup
+	// clones copy-on-write from the source checkout.
+	CacheDirs            []string
 	BuildInitEnabled     bool
 	BuildInitCommand     string
 	RequiredBins         []string
@@ -61,6 +64,7 @@ const (
 	KeyTypes                = "WORKTREE_TYPES"
 	KeyConfigDirs           = "DEVELOPER_CONFIG_DIRS"
 	KeyConfigFiles          = "DEVELOPER_CONFIG_FILES"
+	KeyCacheDirs            = "WORKTREE_CACHE_DIRS"
 	KeyBuildInitEnabled     = "BUILD_INIT_ENABLED"
 	KeyBuildInitCommand     = "BUILD_INIT_COMMAND"
 	KeyRequiredBins         = "REQUIRED_BINS"
@@ -128,6 +132,7 @@ var keys = []key{
 	{KeyTypes, "worktree_types", kindList},
 	{KeyConfigDirs, "developer_config_dirs", kindList},
 	{KeyConfigFiles, "developer_config_files", kindList},
+	{KeyCacheDirs, "worktree_cache_dirs", kindList},
 	{KeyBuildInitEnabled, "build_init_enabled", kindBool},
 	{KeyBuildInitCommand, "build_init_command", kindString},
 	{KeyRequiredBins, "required_bins", kindList},
@@ -196,6 +201,7 @@ func fromRaw(r map[string]Value, mainBranchFallback, file string) (*Config, erro
 		DeveloperConfigDirs: list(r, KeyConfigDirs,
 			[]string{".cursor", ".claude", ".run", ".vscode", ".idea"}),
 		DeveloperConfigFiles: list(r, KeyConfigFiles, nil),
+		CacheDirs:            list(r, KeyCacheDirs, nil),
 		RequiredBins:         list(r, KeyRequiredBins, nil),
 		BuildInitCommand:     str(r, KeyBuildInitCommand, ""),
 		TestCommand:          str(r, KeyTestCommand, ""),

@@ -6,6 +6,15 @@ from the last 3 days if that is more, so keep each entry to a few lines a human
 would want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-10-16 15:16 — build caches cloned into new worktrees
+
+- `WORKTREE_CACHE_DIRS=(node_modules .gradle)` in worktree.conf has
+  `wt new`, `checkout`, `pr checkout`, `adopt` and `setup` clone those
+  gitignored caches from the source checkout (the main one by default)
+  copy-on-write, before provision.sh and the build. Where the disk cannot
+  clone they are skipped, never copied. `--no-cache` skips them; `--json`
+  names the step `cache` (`new` 1.1.0, `checkout` 1.2.0).
+
 ## 2026-10-16 08:20 — wt session stop
 
 - `wt session stop <work> [<session>]` stops one background Claude session

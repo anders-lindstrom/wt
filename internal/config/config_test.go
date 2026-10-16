@@ -44,6 +44,28 @@ func TestMainBranchFallsBackToDetected(t *testing.T) {
 	}
 }
 
+func TestCacheDirsDefaultToNoneAndTakeEitherSpelling(t *testing.T) {
+	c, err := FromRaw(raw(t, ""), "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.CacheDirs) != 0 {
+		t.Errorf("CacheDirs = %q, want none by default", c.CacheDirs)
+	}
+	for _, line := range []string{
+		"WORKTREE_CACHE_DIRS=\"node_modules web/.next\"\n",
+		"WORKTREE_CACHE_DIRS=(node_modules web/.next)\n",
+	} {
+		c, err := FromRaw(raw(t, line), "main")
+		if err != nil {
+			t.Fatalf("%s: %v", line, err)
+		}
+		if strings.Join(c.CacheDirs, ",") != "node_modules,web/.next" {
+			t.Errorf("%s: CacheDirs = %q", line, c.CacheDirs)
+		}
+	}
+}
+
 func TestBuildInitCommandRequiredWhenEnabled(t *testing.T) {
 	_, err := FromRaw(raw(t, "BUILD_INIT_ENABLED=true\n"), "main")
 	if err == nil || !strings.Contains(err.Error(), "BUILD_INIT_COMMAND") {
