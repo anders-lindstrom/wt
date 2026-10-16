@@ -44,8 +44,8 @@ type ListOptions struct {
 
 // List prints every worktree of the repository, in whatever layout it is in.
 // Anything not at the canonical path is marked, and the two marks mean
-// different things: "s" is Superset's layout, which is deliberate and must be
-// left alone, while "!" is a layout nothing owns and `wt migrate` can move.
+// different things: "s" is Superset's layout and "t" T3 Code's, which are
+// deliberate and must be left alone, while "!" is a layout nothing owns and `wt migrate` can move.
 // The PR and SESSION columns are printed only when a worktree has one, and
 // on a terminal the SESSION column only when every row still fits its width:
 // a listing never wraps a row for the column's sake.
@@ -79,7 +79,7 @@ func List(ctx *Context, opts ListOptions, w io.Writer, width int) error {
 		header = []string{"", "WORK", "BRANCH", "PR", "PATH"}
 	}
 	rows := [][]string{header}
-	var seen [3]bool
+	var seen [4]bool
 	for _, n := range names {
 		work, branch := "(main)", n.Branch
 		if branch == "" {
@@ -91,6 +91,8 @@ func List(ctx *Context, opts ListOptions, w io.Writer, width int) error {
 			layout := naming.Foreign
 			if n.Work != "" {
 				work, layout = n.Work, sch.Classify(n.Path, n.Type, n.Work)
+			} else if sch.UnderT3(n.Path) {
+				layout = naming.T3
 			}
 			seen[layout] = true
 			mark = layoutMark(layout)
@@ -118,6 +120,9 @@ func List(ctx *Context, opts ListOptions, w io.Writer, width int) error {
 	var legend []string
 	if seen[naming.Superset] {
 		legend = append(legend, "s  Superset's layout — its workspace holds this path; leave it where it is")
+	}
+	if seen[naming.T3] {
+		legend = append(legend, "t  T3 Code's layout — its thread holds this path; leave it where it is")
 	}
 	if seen[naming.Foreign] {
 		legend = append(legend,
@@ -217,6 +222,8 @@ func layoutMark(l naming.Layout) string {
 	switch l {
 	case naming.Superset:
 		return "s"
+	case naming.T3:
+		return "t"
 	case naming.Foreign:
 		return "!"
 	default:

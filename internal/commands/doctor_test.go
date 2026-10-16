@@ -30,6 +30,32 @@ func TestDoctorAcceptsSupersetsLayout(t *testing.T) {
 	}
 }
 
+// T3 Code puts its worktrees in a directory of its own, in a folder named
+// after the temporary branch it renames later. Neither shape is wt's, and
+// neither is a problem: the thread holds the path.
+func TestDoctorAcceptsT3sLayout(t *testing.T) {
+	main := committedRepo(t, minimalConf)
+	ctx, _ := Open(main)
+	data := t.TempDir()
+	t.Setenv("T3CODE_HOME", data)
+	renamed := filepath.Join(data, "worktrees", "demo", "t3-0aedd242")
+	gitIn(t, main, "worktree", "add", "-q", "-b", "t3_wt/fix-login", renamed)
+	temporary := filepath.Join(data, "worktrees", "demo", "t3-5f2c8e10")
+	gitIn(t, main, "worktree", "add", "-q", "-b", "t3/5f2c8e10", temporary)
+
+	var buf bytes.Buffer
+	problems, err := Doctor(ctx, &buf)
+	if err != nil {
+		t.Fatalf("Doctor: %v", err)
+	}
+	if problems != 0 {
+		t.Errorf("T3 Code's layout reported as %d problem(s):\n%s", problems, buf.String())
+	}
+	if n := strings.Count(buf.String(), "T3 Code's layout"); n != 2 {
+		t.Errorf("want both worktrees named T3 Code's layout, got %d:\n%s", n, buf.String())
+	}
+}
+
 // A pre-migration checkout is the case the migrate advice was written for:
 // nothing else holds the path, so moving it is safe and still recommended.
 func TestDoctorStillReportsAForeignLayout(t *testing.T) {

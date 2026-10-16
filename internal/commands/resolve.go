@@ -65,8 +65,8 @@ func Branch(ctx *Context, spec string) (string, error) {
 // or by "." from inside it, is its root. A worktree that already exists wins
 // by any name `wt list` prints for it (see existingWork), whatever layout it
 // is in, which is what lets worktrees created by other tools in other shapes
-// — Superset's included — resolve without migration. Otherwise the canonical
-// path is returned, so `new` and `switch` agree on one answer.
+// — Superset's and T3 Code's included — resolve without migration. Otherwise
+// the canonical path is returned, so `new` and `switch` agree on one answer.
 func Path(ctx *Context, spec string) (string, error) {
 	if wt, ok, err := existingWork(ctx, spec); err != nil || ok {
 		return wt.Path, err

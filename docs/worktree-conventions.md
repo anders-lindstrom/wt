@@ -121,6 +121,7 @@ carry are shims that call `wt`.
 |---|---|---|
 | none | `<repo>_wt/<type>_wt/<work>` | Nothing. |
 | `s` | Superset's: `<repo>_wt/<repo>/<type>_wt/<work>` | Leave it where it is. Superset stores the absolute path of every workspace, so a move leaves its workspace pointing at nothing. `wt setup` provisions it in place. |
+| `t` | T3 Code's: `<T3 worktrees directory>/<repo>/<folder>` | Leave it where it is. T3 stores the path on the thread that works there, so a move leaves the thread pointing at nothing. `wt setup` provisions it in place. |
 | `!` | Anything else: a legacy `../<repo>-<work>` checkout, one inside the repo, or plain `git worktree add` somewhere | `wt migrate <work, branch or path>` moves it into place and renames the branch to match. |
 
 A worktree's name comes from its branch where the branch follows the
@@ -173,6 +174,45 @@ With it on, a repository can still decline with `SUPERSET_REGISTER=off` in
 `worktree.conf`, and one run can with `wt new --no-superset`. `wt config` prints
 the resolution and which file decided it; `wt doctor` reports which of the three
 states the machine is in.
+
+## T3 Code's worktrees
+
+T3 Code puts every worktree it makes under one directory for all repositories:
+`worktreesDirectory` in `~/.t3/userdata/settings.json`, or `~/.t3/worktrees`
+when that is empty (`$T3CODE_HOME` replaces `~/.t3`). Below it comes a folder
+named after the repository's main checkout, then one per worktree. T3 has no
+setting per project and passes git no path of its own, so the layout cannot
+be made wt's.
+
+The folder is named after the temporary branch the worktree starts on,
+`t3/<8 hex>`, as `t3-<8 hex>`. After the thread's first message T3 renames the
+branch to `<branchNamePrefix>/<slug>` — set the prefix to `t3_wt` and the
+branch has wt's shape, `t3_wt/fix-login-redirect` — but never the folder. A
+thread launched with a branch of its own starts on that branch, in a folder
+named after it with `/` turned to `-`. So `wt list` recognises these worktrees
+by their directory alone and marks them `t`, on the temporary branch as well.
+`wt doctor` passes them, `wt setup` provisions them in place, and `wt migrate`
+warns before it moves one, because the thread keeps the old path.
+
+T3 provisions its worktrees through wt when its settings carry a setup script
+that runs on worktree creation and waits for it:
+
+```json
+"defaultProjectScripts": [{
+  "id": "wt-setup", "name": "wt setup", "icon": "configure",
+  "command": "wt setup --source t3",
+  "runOnWorktreeCreate": true, "async": false
+}]
+```
+
+Only the global `defaultProjectScripts` and a project's entry in
+`projectSettingsOverrides` are run: the `scripts` T3 saves on a project record
+are not read, and `t3.json` is not either.
+
+T3 deletes worktrees on a schedule, on merge or when a thread is deleted only
+when its worktree cleanup is turned on, which it is not until you do. A
+worktree wt makes and a thread is then bound to, through `existing_worktree`,
+stays in wt's layout.
 
 ## Pull requests come in through `gh`
 

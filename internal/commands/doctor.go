@@ -116,6 +116,10 @@ func doctor(ctx *Context, w io.Writer, withRepos bool) (int, error) {
 				fmt.Fprintf(w, "  ✓ %s (%s, on %q)\n", wt.Path, work, wt.Branch)
 				continue
 			}
+			if sch.UnderT3(wt.Path) {
+				fmt.Fprintf(w, "  ✓ %s (T3 Code's layout, on %q)\n", wt.Path, wt.Branch)
+				continue
+			}
 			fmt.Fprintf(w, "  - %s is on %q, not managed by wt\n", wt.Path, wt.Branch)
 			continue
 		}
@@ -127,6 +131,10 @@ func doctor(ctx *Context, w io.Writer, withRepos bool) (int, error) {
 			// absolute path, so the migrate this used to prescribe would have
 			// broken the workspace it was aimed at.
 			fmt.Fprintf(w, "  ✓ %s (Superset's layout)\n", wt.Path)
+		case naming.T3:
+			// Not a problem either: T3 Code puts every worktree under its
+			// own directory and its thread holds the path.
+			fmt.Fprintf(w, "  ✓ %s (T3 Code's layout)\n", wt.Path)
 		default:
 			report("%s is not at its canonical path (%s); run: wt migrate %s/%s",
 				wt.Path, sch.Dir(typ, work), typ, work)

@@ -93,13 +93,19 @@ func setup(ctx *Context, target string, opts SetupOptions, w io.Writer, j *Creat
 // chosen and no explanation of who chose it.
 func reportLayout(ctx *Context, target string, w io.Writer) {
 	fmt.Fprintf(w, "  %s\n", target)
-	typ, work, layout, ok := ctx.Scheme().ClassifyBranch(target, ctx.Repo.BranchAt(target))
+	sch := ctx.Scheme()
+	typ, work, layout, ok := sch.ClassifyBranch(target, ctx.Repo.BranchAt(target))
 	if !ok {
+		if sch.UnderT3(target) {
+			fmt.Fprintln(w, "  T3 Code's layout — provisioned where T3 put it; setup never moves a worktree")
+		}
 		return
 	}
 	switch layout {
 	case naming.Superset:
 		fmt.Fprintln(w, "  Superset's layout — provisioned where Superset put it; setup never moves a worktree")
+	case naming.T3:
+		fmt.Fprintln(w, "  T3 Code's layout — provisioned where T3 put it; setup never moves a worktree")
 	case naming.Foreign:
 		fmt.Fprintf(w, "  not a layout wt recognises — provisioned where it is; `wt migrate %s/%s` moves it\n",
 			typ, work)

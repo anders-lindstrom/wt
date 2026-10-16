@@ -71,12 +71,13 @@ func TestClassifyNamesTheLayoutAPathFollows(t *testing.T) {
 	}{
 		{"canonical", "/src/demo_wt/feat_wt/login", Canonical},
 		{"superset", "/src/demo_wt/demo/feat_wt/login", Superset},
+		{"t3", "/t3_wt/demo/t3-0aedd242", T3},
 		{"pre-migration", "/src/demo-login", Foreign},
 		{"unrelated", "/elsewhere/login", Foreign},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			sch := Scheme{Parent: "/src", Repo: "demo", Suffix: "_wt"}
+			sch := Scheme{Parent: "/src", Repo: "demo", Suffix: "_wt", T3Root: "/t3_wt/demo"}
 			if got := sch.Classify(c.path, "feat", "login"); got != c.want {
 				t.Errorf("Classify(%q) = %v, want %v", c.path, got, c.want)
 			}
@@ -187,6 +188,32 @@ func TestUnderSuperset(t *testing.T) {
 		if got := UnderSuperset(c.path, parent, repo, suffix); got != c.want {
 			t.Errorf("UnderSuperset(%q) = %v, want %v", c.path, got, c.want)
 		}
+	}
+}
+
+// T3 Code names a worktree's folder after the temporary branch it starts on
+// and renames only the branch, so its worktrees are recognised by the
+// directory alone: one folder below the root, whatever branch it is on.
+func TestUnderT3(t *testing.T) {
+	sch := Scheme{Parent: "/p", Repo: "myrepo", Suffix: "_wt", T3Root: "/home/t3_wt/myrepo"}
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"/home/t3_wt/myrepo/t3-0aedd242", true},
+		{"/home/t3_wt/myrepo/t3-0aedd242/", true},
+		{"/home/t3_wt/myrepo", false},
+		{"/home/t3_wt/myrepo/t3-0aedd242/sub", false},
+		{"/home/t3_wt/myrepo-other/t3-0aedd242", false},
+		{"/p/myrepo_wt/feat_wt/login", false},
+	}
+	for _, c := range cases {
+		if got := sch.UnderT3(c.path); got != c.want {
+			t.Errorf("UnderT3(%q) = %v, want %v", c.path, got, c.want)
+		}
+	}
+	if (Scheme{}).UnderT3("/home/t3_wt/myrepo/t3-0aedd242") {
+		t.Error("a scheme with no T3 root recognised a T3 worktree")
 	}
 }
 

@@ -39,6 +39,9 @@ type Scheme struct {
 	// Vocab is what each type is called. The zero value calls every type by
 	// its own name, which is what a repository saying nothing gets.
 	Vocab Vocab
+	// T3Root is the directory T3 Code puts this repository's worktrees in,
+	// <worktrees directory>/<Repo>, or empty where it is not known.
+	T3Root string
 }
 
 // Vocab is a repository's type vocabulary: the types it works in, and the word
@@ -127,9 +130,24 @@ func (s Scheme) Classify(path, typ, work string) Layout {
 		return Canonical
 	case SupersetDir(s.Parent, s.Repo, typ, work, s.dirSuffix()):
 		return Superset
-	default:
-		return Foreign
 	}
+	if s.UnderT3(path) {
+		return T3
+	}
+	return Foreign
+}
+
+// UnderT3 reports whether a path is one of T3 Code's worktrees of this
+// repository. T3 names each folder after the temporary branch it starts on,
+// t3-<hex>, and renames only the branch, so the folder never gives the work
+// name and the test is the directory alone. It needs no branch either, which
+// recognises a worktree still on that temporary branch.
+func (s Scheme) UnderT3(path string) bool {
+	if s.T3Root == "" {
+		return false
+	}
+	rest, found := strings.CutPrefix(filepath.Clean(path), filepath.Clean(s.T3Root)+string(filepath.Separator))
+	return found && rest != "" && !strings.Contains(rest, string(filepath.Separator))
 }
 
 // ClassifyBranch reads a worktree's branch and path together: the type and work
@@ -253,6 +271,10 @@ const (
 	// which also stores the absolute path of every workspace, so moving one of
 	// these breaks the workspace that owns it.
 	Superset
+	// T3 is the path T3 Code creates, <worktrees directory>/<repo>/<folder>.
+	// T3 stores it on the thread that works there, so like Superset's it is
+	// left where it is.
+	T3
 )
 
 func (l Layout) String() string {
@@ -261,6 +283,8 @@ func (l Layout) String() string {
 		return "canonical"
 	case Superset:
 		return "superset"
+	case T3:
+		return "t3"
 	default:
 		return "foreign"
 	}
