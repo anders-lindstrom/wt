@@ -7,6 +7,7 @@ import (
 )
 
 func TestAddAndRemoveWorktree(t *testing.T) {
+	t.Parallel()
 	_, main := fixture(t)
 	r, _ := Discover(main)
 	dst := filepath.Join(r.Parent, "demo_wt", "fix_wt", "thing2")
@@ -29,6 +30,7 @@ func TestAddAndRemoveWorktree(t *testing.T) {
 }
 
 func TestBranchAtDetachedIsEmpty(t *testing.T) {
+	t.Parallel()
 	parent, main := fixture(t)
 	r, _ := Discover(main)
 	dst := filepath.Join(parent, "detached")
@@ -39,6 +41,7 @@ func TestBranchAtDetachedIsEmpty(t *testing.T) {
 }
 
 func TestRenameBranch(t *testing.T) {
+	t.Parallel()
 	_, main := fixture(t)
 	r, _ := Discover(main)
 	run(t, main, "branch", "fix_wt/temp")
@@ -51,6 +54,7 @@ func TestRenameBranch(t *testing.T) {
 }
 
 func TestHasSubmodules(t *testing.T) {
+	t.Parallel()
 	_, main := fixture(t)
 	r, _ := Discover(main)
 	if r.HasSubmodules(main) {
@@ -69,6 +73,7 @@ func TestHasSubmodules(t *testing.T) {
 // caller asked for. Refuse instead — a wrong-path move that reports success is
 // how a worktree carrying real work ends up somewhere nobody looks.
 func TestMoveWorktreeRefusesExistingDestination(t *testing.T) {
+	t.Parallel()
 	parent, main := fixture(t)
 	r, _ := Discover(main)
 	src := filepath.Join(parent, "demo_wt", "feat_wt", "thing")
@@ -94,6 +99,7 @@ func TestMoveWorktreeRefusesExistingDestination(t *testing.T) {
 
 // An empty directory at the destination is harmless — MkdirAll may have made it.
 func TestMoveWorktreeAllowsEmptyDestination(t *testing.T) {
+	t.Parallel()
 	parent, main := fixture(t)
 	r, _ := Discover(main)
 	src := filepath.Join(parent, "demo_wt", "feat_wt", "thing")

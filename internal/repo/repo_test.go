@@ -34,6 +34,7 @@ func fixture(t *testing.T) (parent, main string) {
 }
 
 func TestDiscoverFromMainCheckout(t *testing.T) {
+	t.Parallel()
 	parent, main := fixture(t)
 	r, err := Discover(main)
 	if err != nil {
@@ -50,6 +51,7 @@ func TestDiscoverFromMainCheckout(t *testing.T) {
 // Discovery must give the same answer from inside a linked worktree, which is
 // where agents and wt_cd usually leave you.
 func TestDiscoverFromLinkedWorktree(t *testing.T) {
+	t.Parallel()
 	parent, main := fixture(t)
 	r, err := Discover(filepath.Join(parent, "demo_wt", "feat_wt", "thing"))
 	if err != nil {
@@ -61,6 +63,7 @@ func TestDiscoverFromLinkedWorktree(t *testing.T) {
 }
 
 func TestWorktreesListsMainFirstAndBranches(t *testing.T) {
+	t.Parallel()
 	_, main := fixture(t)
 	r, err := Discover(main)
 	if err != nil {
@@ -89,6 +92,7 @@ func runIgnoringFailure(t *testing.T, dir string, args ...string) {
 }
 
 func TestWorktreesNameTheBranchOfAStoppedRebase(t *testing.T) {
+	t.Parallel()
 	// main + a linked worktree on feature, with a conflict between them.
 	parent := resolved(t, t.TempDir())
 	main := filepath.Join(parent, "demo")
@@ -138,6 +142,7 @@ func TestWorktreesNameTheBranchOfAStoppedRebase(t *testing.T) {
 }
 
 func TestWorktreesLeaveAGenuinelyDetachedWorktreeAlone(t *testing.T) {
+	t.Parallel()
 	// A worktree checked out at a bare SHA, no rebase.
 	parent, main := fixture(t)
 	r, err := Discover(main)
@@ -176,6 +181,7 @@ func TestWorktreesLeaveAGenuinelyDetachedWorktreeAlone(t *testing.T) {
 // branch) records the literal "detached HEAD" in head-name, not a ref: there
 // is no branch to recover, and the worktree must be left genuinely detached.
 func TestWorktreesIgnoreADetachedHeadRebase(t *testing.T) {
+	t.Parallel()
 	parent := resolved(t, t.TempDir())
 	main := filepath.Join(parent, "demo")
 	run(t, parent, "init", "-q", "-b", "main", "demo")
@@ -232,6 +238,7 @@ func TestWorktreesIgnoreADetachedHeadRebase(t *testing.T) {
 }
 
 func TestDiscoverOutsideRepo(t *testing.T) {
+	t.Parallel()
 	if _, err := Discover(t.TempDir()); err == nil {
 		t.Error("want error outside a repository")
 	}
@@ -242,6 +249,7 @@ func TestDiscoverOutsideRepo(t *testing.T) {
 // honoured where it was checked out. Root must therefore be the worktree you
 // are standing in, not the main checkout.
 func TestDiscoverRecordsCurrentWorktreeRoot(t *testing.T) {
+	t.Parallel()
 	parent, main := fixture(t)
 	linked := filepath.Join(parent, "demo_wt", "feat_wt", "thing")
 
@@ -267,6 +275,7 @@ func TestDiscoverRecordsCurrentWorktreeRoot(t *testing.T) {
 
 // "not merged" says nothing about what is at stake; the count does.
 func TestCommitsAhead(t *testing.T) {
+	t.Parallel()
 	parent, main := fixture(t)
 	r, err := Discover(main)
 	if err != nil {
@@ -292,6 +301,7 @@ func TestCommitsAhead(t *testing.T) {
 // clue about who holds it — Claude Code writes its session name and pid in
 // there. Both have to survive the walk from porcelain to Worktree.
 func TestWorktreesReportTheLockAndItsReason(t *testing.T) {
+	t.Parallel()
 	parent, main := fixture(t)
 	r, _ := Discover(main)
 	thing := filepath.Join(parent, "demo_wt", "feat_wt", "thing")
@@ -323,6 +333,7 @@ func TestWorktreesReportTheLockAndItsReason(t *testing.T) {
 
 // git also allows a lock with no reason at all.
 func TestWorktreesReportALockWithNoReason(t *testing.T) {
+	t.Parallel()
 	parent, main := fixture(t)
 	r, _ := Discover(main)
 	thing := filepath.Join(parent, "demo_wt", "feat_wt", "thing")
@@ -337,6 +348,7 @@ func TestWorktreesReportALockWithNoReason(t *testing.T) {
 }
 
 func TestUnlockWorktreeLetsItBeRemoved(t *testing.T) {
+	t.Parallel()
 	parent, main := fixture(t)
 	r, _ := Discover(main)
 	thing := filepath.Join(parent, "demo_wt", "feat_wt", "thing")
