@@ -16,6 +16,7 @@ import (
 // The PR column of `wt list`: a worktree whose branch is a pull request's
 // head gets its number and state, and everything else gets a dash.
 func TestListShowsThePullRequestColumn(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -54,6 +55,7 @@ func TestListShowsThePullRequestColumn(t *testing.T) {
 // so: the subtests share one repository, so one that read a cached answer
 // would pass without gh having been reached at all.
 func TestListIsUnchangedWhenGitHubIsNotInPlay(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -117,6 +119,7 @@ func TestListIsUnchangedWhenGitHubIsNotInPlay(t *testing.T) {
 // is a minute old. Under a minute, and with no cache behind the column at all,
 // the listing is what it was.
 func TestListSaysHowOldACachedColumnIs(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -172,6 +175,7 @@ func backdatePRCache(t *testing.T, ctx *kit.Context, r github.Remote, by time.Du
 // wt status of one worktree carries its pull request, when it has one and
 // GitHub answers. One bounded call, restricted to that branch.
 func TestStatusWorktreeCarriesThePullRequest(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -197,6 +201,7 @@ func TestStatusWorktreeCarriesThePullRequest(t *testing.T) {
 // A worktree with no pull request, and a GitHub that cannot be reached, both
 // leave wt status with no pr line at all.
 func TestStatusWorktreeIsSilentWithoutOne(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -228,6 +233,7 @@ func TestStatusWorktreeIsSilentWithoutOne(t *testing.T) {
 // --no-pr is the way out of the call the column costs: around a second,
 // against 0.02s for the rest of the listing.
 func TestListNoPRAsksGitHubNothing(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -253,6 +259,7 @@ func TestListNoPRAsksGitHubNothing(t *testing.T) {
 // wt status has wt list's PR column, from the same cache, dated the same way
 // once the answer is a minute old; --no-pr leaves it out and asks nothing.
 func TestStatusShowsThePullRequestColumn(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -309,6 +316,7 @@ func TestStatusShowsThePullRequestColumn(t *testing.T) {
 // wt status <work> takes --refresh and --no-pr as wt list does: the one asks
 // GitHub past the cache, the other asks nothing and prints no pr line.
 func TestStatusWorktreeRefreshAndNoPR(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)

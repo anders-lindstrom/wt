@@ -15,6 +15,7 @@ import (
 // An integration that was never set up here says nothing; one that was
 // supposed to work and did not says so on stderr, with stdout unchanged.
 func TestListWarnsOnlyWhenGitHubWasSupposedToWork(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -87,6 +88,7 @@ func TestListWarnsOnlyWhenGitHubWasSupposedToWork(t *testing.T) {
 
 // A command that asks GitHub twice complains once.
 func TestGitHubWarnsOncePerInvocation(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)

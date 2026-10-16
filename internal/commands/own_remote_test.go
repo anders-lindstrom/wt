@@ -14,6 +14,7 @@ import (
 // The overview a person reads: one line under the row for what a run would
 // refuse or do first, and the detail of one worktree says how it stands.
 func TestSyncSaysHowAWorktreeStandsAgainstItsRemote(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}

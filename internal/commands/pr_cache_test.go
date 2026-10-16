@@ -26,6 +26,7 @@ func listing(t *testing.T, ctx *kit.Context, opts ListOptions) string {
 // The second listing starts no process: the first one's answer is kept in
 // this repository.
 func TestListCachesThePullRequests(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, log := provisiontest.OneWorktreeWithAPR(t)
 
 	first := listing(t, ctx, ListOptions{})
@@ -44,6 +45,7 @@ func TestListCachesThePullRequests(t *testing.T) {
 
 // --refresh is the way to a fresh answer without waiting the cache out.
 func TestListRefreshAsksGitHubAgain(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, log := provisiontest.OneWorktreeWithAPR(t)
 	listing(t, ctx, ListOptions{})
 	calls := len(testkit.ArgvOf(t, log))
@@ -57,6 +59,7 @@ func TestListRefreshAsksGitHubAgain(t *testing.T) {
 // A cache wt can neither read nor write costs the cache, never the listing:
 // here the file's name is taken by a directory, so both fail.
 func TestListSurvivesACacheItCannotUse(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, log := provisiontest.OneWorktreeWithAPR(t)
 	want := listing(t, ctx, ListOptions{})
 
@@ -82,6 +85,7 @@ func TestListSurvivesACacheItCannotUse(t *testing.T) {
 
 // Half a file is not an answer.
 func TestListSurvivesACorruptCache(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, log := provisiontest.OneWorktreeWithAPR(t)
 	want := listing(t, ctx, ListOptions{})
 	testkit.MustWrite(t, kit.PRCachePath(ctx), `{"prs": [{"number`)
@@ -99,6 +103,7 @@ func TestListSurvivesACorruptCache(t *testing.T) {
 // answers, and their age. A miss on any of them is a fetch, never a wrong
 // column.
 func TestPRCacheMisses(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -140,6 +145,7 @@ func TestPRCacheMisses(t *testing.T) {
 // A branch that has no pull request is an answer worth keeping: without it
 // every listing would ask again about every branch that has none.
 func TestPRCacheRemembersThatThereIsNone(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -159,6 +165,7 @@ func TestPRCacheRemembersThatThereIsNone(t *testing.T) {
 // `wt pr open` refreshing its own branch would otherwise cost `wt list` the
 // whole column.
 func TestPRCacheWriteKeepsTheOtherBranches(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -180,6 +187,7 @@ func TestPRCacheWriteKeepsTheOtherBranches(t *testing.T) {
 // An entry nothing has asked about for a month goes, so a repository's dead
 // branches cannot grow the file for ever.
 func TestPRCacheForgetsTheLongDead(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -203,6 +211,7 @@ func TestPRCacheForgetsTheLongDead(t *testing.T) {
 // The merged answer outlives the TTL, because there is nothing left in it
 // that can change. This is what `wt remove` reads.
 func TestPRCacheMergedOutlivesTheTTL(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)

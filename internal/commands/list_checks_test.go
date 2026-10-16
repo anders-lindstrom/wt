@@ -25,6 +25,7 @@ var checkCells = map[string]string{ //nolint:gosec // G101: "passing" is a check
 // The PR column marks what each pull request's checks say after its number,
 // and marks nothing for one with no checks.
 func TestListMarksThePullRequestsChecks(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, _ := provisiontest.FourWorktreesWithChecks(t)
 	out := listing(t, ctx, ListOptions{NoSessions: true})
 	for branch, cell := range checkCells {
@@ -37,6 +38,7 @@ func TestListMarksThePullRequestsChecks(t *testing.T) {
 // wt status has wt list's PR column, marks and all, and wt status <work> the
 // same cell on its pr line.
 func TestStatusMarksThePullRequestsChecks(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, _ := provisiontest.FourWorktreesWithChecks(t)
 	var buf bytes.Buffer
 	if err := Status(ctx, StatusOptions{}, &buf, 0); err != nil {
@@ -61,6 +63,7 @@ func TestStatusMarksThePullRequestsChecks(t *testing.T) {
 // The cache keeps the checks with the pull request, so a listing it answers
 // marks them as the one that asked GitHub did.
 func TestPRCacheKeepsTheChecks(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -78,6 +81,7 @@ func TestPRCacheKeepsTheChecks(t *testing.T) {
 // wt status --json is defined from local state alone: checks the cache holds
 // change nothing in it, and it asks GitHub nothing.
 func TestStatusJSONLeavesTheChecksOut(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, log := provisiontest.FourWorktreesWithChecks(t)
 	plan := func() string {
 		var buf bytes.Buffer
@@ -106,6 +110,7 @@ func TestStatusJSONLeavesTheChecksOut(t *testing.T) {
 // pull request merged elsewhere and one with changes requested have two words,
 // and a pull request with no checks is left as kit.PRLabel has it.
 func TestPRCellMarksAfterTheNumberOfAMultiWordLabel(t *testing.T) {
+	t.Parallel()
 	merged := provisiontest.WithChecks(testkit.OpenPR(31, "feat_wt/x", "X"), "SUCCESS")
 	merged.State, merged.BaseRefName = "MERGED", "feat_wt/parent"
 	changes := provisiontest.WithChecks(testkit.OpenPR(32, "feat_wt/y", "Y"), "FAILURE")
@@ -132,6 +137,7 @@ func TestPRCellMarksAfterTheNumberOfAMultiWordLabel(t *testing.T) {
 // but not a listing, which asks again rather than show no marks; a branch
 // with no pull request needs no checks and answers both.
 func TestPRCacheWithoutChecksDoesNotAnswerAListing(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -155,6 +161,7 @@ func TestPRCacheWithoutChecksDoesNotAnswerAListing(t *testing.T) {
 // Only the PR column asks for the checks: a lookup for anything else asks
 // GitHub exactly what it asked before they existed.
 func TestOnlyTheListingAsksForTheChecks(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, log := provisiontest.FourWorktreesWithChecks(t)
 	kit.BranchPRs(ctx, []string{"fix_wt/failing"}, kit.PRLookup{Refresh: true})
 	got := testkit.ArgvOf(t, log)
@@ -174,6 +181,7 @@ func TestOnlyTheListingAsksForTheChecks(t *testing.T) {
 // A token GitHub will not show the checks to keeps the PR column, without
 // marks, says once why, and does not ask again until the answer is old.
 func TestListShowsThePullRequestsWhenTheChecksAreRefused(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -208,6 +216,7 @@ esac`, provisiontest.WithChecks(testkit.OpenPR(13, "fix_wt/failing", "Failing"),
 // When the checks are refused and the call without them fails too, the
 // warning is the failure that left the column out, not the refusal.
 func TestListSaysWhyTheColumnIsMissingWhenTheRetryFailsToo(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)

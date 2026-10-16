@@ -16,6 +16,7 @@ import (
 // and the warning names the part being ignored rather than claiming the whole
 // file was thrown away. `wt doctor` still counts it as a problem.
 func TestOpenWarnsAboutABrokenUserConfigAndCarriesOn(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	path := testkit.UserConfigIn(t)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
@@ -56,6 +57,7 @@ func TestOpenWarnsAboutABrokenUserConfigAndCarriesOn(t *testing.T) {
 // command still works; what stops is anything that would have run gh or
 // Superset on the strength of a default the person never asked for.
 func TestAUserFileThatDoesNotParseTurnsEveryIntegrationOff(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline; sets environment variables for the whole test binary.
 	path := testkit.WriteUserConfig(t, "github = false\nsuperset = \n")
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {

@@ -15,6 +15,7 @@ import (
 // record, its lock and its pins are read under the names they were written
 // with.
 func TestRestorePutsBackAFolderMadeTheOldWay(t *testing.T) {
+	t.Parallel()
 	ctx, path, branch, tip, dir := provisiontest.OldFolder(t, "fix/old-way")
 	res := refstest.Restore(t, ctx, dir)
 	if res.Outcome != quarantine.OutcomeRestored {
@@ -31,6 +32,7 @@ func TestRestorePutsBackAFolderMadeTheOldWay(t *testing.T) {
 
 // And it is purged by this one, its three pins with it.
 func TestPurgeDeletesAFolderMadeTheOldWay(t *testing.T) {
+	t.Parallel()
 	ctx, _, _, _, dir := provisiontest.OldFolder(t, "fix/old-way")
 	res := purgetest.Purge(t, dir)
 	if res.Outcome != quarantine.OutcomePurged {

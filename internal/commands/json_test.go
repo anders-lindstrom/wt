@@ -19,6 +19,7 @@ import (
 // The plan names the stack wt up would move, parents first, with a token, and
 // writes nothing at all.
 func TestPlanNamesTheStackAndWritesNothing(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.RunFixture(t, false)
 	child := provisiontest.StackFixture(t, ctx)
 	before := testkit.RepoState(t, ctx.Repo.MainRoot)
@@ -46,6 +47,7 @@ func TestPlanNamesTheStackAndWritesNothing(t *testing.T) {
 
 // Every reason wt up would not start is a plan saying so, never an error.
 func TestPlanSaysWhyWtUpWouldNotStart(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.RunFixture(t, false)
 	for work, code := range map[string]string{"/": synccmd.IneligibleMainCheckout, "nope": synccmd.IneligibleNotAWorktree} {
 		if p := synccmdtest.PlanOfWork(t, ctx, work); p.UpEligible || p.UpIneligibleCode == nil || *p.UpIneligibleCode != code || p.Token != nil {
@@ -71,6 +73,7 @@ func TestPlanSaysWhyWtUpWouldNotStart(t *testing.T) {
 // with its own code, wherever the branch's remote is. A branch with a commit
 // trunk lacks stays eligible.
 func TestPlanSaysABranchTrunkContainsHasNothingToRebase(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.RunFixture(t, false)
 	if p := synccmdtest.PlanOfWork(t, ctx, bump); !p.UpEligible || p.Worktree.Ahead == nil || *p.Worktree.Ahead != 1 {
 		t.Fatalf("a branch with its own commit: %+v", p)
@@ -95,6 +98,7 @@ func TestPlanSaysABranchTrunkContainsHasNothingToRebase(t *testing.T) {
 // The token from the plan is what wt up checks: the same plan runs, and a
 // stack that grew since is refused with nothing touched.
 func TestUpExpectHoldsTheRunToThePlan(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.RunFixture(t, false)
 	token := *synccmdtest.PlanOfWork(t, ctx, "bump").Token
 
@@ -119,6 +123,7 @@ func TestUpExpectHoldsTheRunToThePlan(t *testing.T) {
 // A clean run: done, every participant rebased, with before, after and the
 // push as an argv.
 func TestUpJSONReportsARebasedStack(t *testing.T) {
+	t.Parallel()
 	ctx, _ := provisiontest.RunFixture(t, false)
 	provisiontest.StackFixture(t, ctx)
 	r, err := synccmdtest.UpJSON(t, ctx, "bump", synccmdtest.NoAgents())
@@ -137,6 +142,7 @@ func TestUpJSONReportsARebasedStack(t *testing.T) {
 
 // A refused parent: refused itself, the child not run, nothing changed.
 func TestUpJSONReportsARefusedParentAndTheChildNotRun(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.RunFixture(t, false)
 	provisiontest.StackFixture(t, ctx)
 	if err := os.WriteFile(filepath.Join(bump, "a.txt"), []byte("dirt\n"), 0o644); err != nil {
@@ -154,6 +160,7 @@ func TestUpJSONReportsARefusedParentAndTheChildNotRun(t *testing.T) {
 // A deferred step that fails after the rebase: the branch moved, the step is
 // named, and the run is partial.
 func TestUpJSONReportsAFailedDeferredStep(t *testing.T) {
+	t.Parallel()
 	ctx, _ := provisiontest.RunFixture(t, false)
 	main := ctx.Repo.MainRoot
 	yaml := "conflicts:\n  - paths: [v.txt]\n    strategy: owned-line\n    line: '^\\d'\n    rule: max-plus-patch\n" +
@@ -174,6 +181,7 @@ func TestUpJSONReportsAFailedDeferredStep(t *testing.T) {
 
 // An error before any participant is the run's own; the main checkout is one.
 func TestUpJSONReportsAnErrorBeforeAnyParticipant(t *testing.T) {
+	t.Parallel()
 	ctx, _ := provisiontest.RunFixture(t, false)
 	r, err := synccmdtest.UpJSON(t, ctx, "/", synccmdtest.NoAgents())
 	if err == nil || r.Outcome != kit.OutcomeRefused || r.Error == nil || !strings.Contains(*r.Error, "main checkout") {
@@ -184,6 +192,7 @@ func TestUpJSONReportsAnErrorBeforeAnyParticipant(t *testing.T) {
 // A signal writes the one object: the participant in flight interrupted,
 // the way back as recovery, and nothing written a second time.
 func TestJournalWritesOneObjectWhenInterrupted(t *testing.T) {
+	t.Parallel()
 	var out bytes.Buffer
 	j := synccmd.NewRunJournal(&out)
 	j.Trunk("main", kit.Strp("conventional"), "origin/main", strings.Repeat("a", 40), true)
@@ -211,6 +220,7 @@ func TestJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 
 // The outcome rules, as docs/json.md states them.
 func TestOutcomeRules(t *testing.T) {
+	t.Parallel()
 	ps := func(results ...string) []*synccmd.SyncParticipant {
 		var out []*synccmd.SyncParticipant
 		for _, r := range results {
