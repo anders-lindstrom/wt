@@ -92,7 +92,7 @@ examples: `wt <command> --help`.
 | `wt exec <pattern> <cmd>…` | run a command there, in a subshell; your shell stays put |
 | `wt attach [<pattern>] [<session>]` | open the Claude session in a worktree, in this terminal; asks which when there are several; `--resume` continues a conversation there instead |
 | `wt session list [<work>]`, `wt session send <work> [<session>]`, `wt session stop <work> [<session>]` | the Claude sessions in a worktree with their inboxes; one message from stdin to one running session's inbox (`--from-name`, `--reply-to`, `--expect-session`, `--message-file`, `--dry-run`, `--json`). A parked session is never sent to. `stop` runs `claude stop` on one background session (`--expect-session`, `--dry-run`, `--json`); a terminal or Codex session is refused |
-| `wt list` | every worktree, in any layout; `s` marks Superset's, `!` one nothing owns; a `PR` column when a worktree here has one, asked for by branch and cached for a few minutes (`--no-pr`, `--refresh`); a `SESSION` column when one has a Claude session in it and the terminal is wide enough for it (`--wide` whatever the width, `--no-sessions`); `--all`, `--roots`, `--profile` for many repositories |
+| `wt list` | every worktree, in any layout; `s` marks Superset's, `!` one nothing owns; a `PR` column when a worktree here has one, with `✓` `✗` `●` for its checks, asked for by branch and cached for a few minutes (`--no-pr`, `--refresh`); a `SESSION` column when one has a Claude session in it and the terminal is wide enough for it (`--wide` whatever the width, `--no-sessions`); `--all`, `--roots`, `--profile` for many repositories |
 | `wt status [<work>]` | each worktree's branch, whether its checkout is clean, and how far behind and ahead of trunk it is; with a worktree named, that one in full with `wt sync`'s verdict; `wt list`'s `PR` column and cache (`--no-pr`, `--refresh`; `--all`, `--roots`, `--profile` for many repositories) |
 | `wt find <pattern>` | resolve a worktree by fuzzy name, across repositories (`--candidates`) |
 | `wt path <work>` / `wt branch <work>` | where a piece of work lives or would go, and its branch; exact, this repository only, for scripts |
@@ -426,10 +426,14 @@ stdout stays the path alone, so `cd "$(wt pr checkout 12)"` works.
 `wt list` shows a `PR` column when any worktree here is on a pull request:
 
 ```
-   WORK                       BRANCH             PR          PATH
-   (main)                     master             -           ~/src/fd
-   pr-2137-argument-sanitize  argument-sanitize  #2137 open  ~/src/fd_wt/feat_wt/pr-2137-…
+   WORK                       BRANCH             PR            PATH
+   (main)                     master             -             ~/src/fd
+   pr-2137-argument-sanitize  argument-sanitize  #2137 ✓ open  ~/src/fd_wt/feat_wt/pr-2137-…
 ```
+
+The mark after the number is what the checks on the pull request's last commit
+say: `✓` passing, `✗` failing, `●` still running, and none when it has no checks.
+They come in the same call, and are cached with the pull request.
 
 wt asks GitHub **about those branches by name** — one `gh api graphql` under a
 two-second deadline, with a query per branch — so a pull request is found

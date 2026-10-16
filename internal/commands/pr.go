@@ -406,6 +406,9 @@ type prLookup struct {
 	refresh bool
 	// deadline bounds the call; 0 leaves it to the package.
 	deadline time.Duration
+	// checks asks for what the checks on each pull request say too. Only the
+	// PR column and wt status <work> show them.
+	checks bool
 }
 
 // prAnswers is what a lookup came back with.
@@ -445,7 +448,7 @@ func branchPRs(ctx *Context, branches []string, opts prLookup) prAnswers {
 			continue
 		}
 		if !opts.refresh {
-			if pr, fetched, ok := cache.fresh(b, now); ok {
+			if pr, fetched, ok := cache.fresh(b, now, opts.checks); ok {
 				if pr.Number > 0 {
 					out.byBranch[b] = pr
 				}
@@ -460,14 +463,23 @@ func branchPRs(ctx *Context, branches []string, opts prLookup) prAnswers {
 	if len(ask) == 0 {
 		return out
 	}
-	prs, err := gh.CLI.PRsOnBranches(ctx.Repo.MainRoot, gh.Remote,
-		github.HeadRefNames(ask, ctx.Config.MainBranch), opts.deadline)
+	heads := github.HeadRefNames(ask, ctx.Config.MainBranch)
+	var prs []github.PR
+	var refused error
+	if opts.checks {
+		prs, refused, err = gh.CLI.PRsOnBranchesWithChecks(ctx.Repo.MainRoot, gh.Remote, heads, opts.deadline)
+	} else {
+		prs, err = gh.CLI.PRsOnBranches(ctx.Repo.MainRoot, gh.Remote, heads, opts.deadline)
+	}
 	if err != nil {
 		out.err = err
 		if opts.warn != "" {
 			warnGitHub(ctx, opts.warn, err)
 		}
 		return out
+	}
+	if refused != nil && opts.warn != "" {
+		warnGitHub(ctx, "no checks shown", refused)
 	}
 	byBranch := github.ByBranch(prs, ctx.Config.MainBranch)
 	answers := make(map[string]*github.PR, len(ask))
@@ -480,7 +492,7 @@ func branchPRs(ctx *Context, branches []string, opts prLookup) prAnswers {
 		answers[b] = &pr
 		out.byBranch[b] = pr
 	}
-	writePRCache(ctx, gh.Remote, answers, now)
+	writePRCacheChecks(ctx, gh.Remote, answers, now, opts.checks)
 	return out
 }
 
@@ -520,19 +532,20 @@ func warnGitHub(ctx *Context, subject string, err error) {
 	ctx.Warnf(WarnGitHub, "%s: %v", subject, err)
 }
 
-// prFact is the pull request line of `wt status <work>`: number, state, title.
+// prFact is the pull request line of `wt status <work>`: number, checks,
+// state, title.
 // Empty when there is none, or when GitHub cannot be reached. It reads the
 // cache `wt list` fills, so a listing already paid for it; refresh asks
 // GitHub regardless.
 func prFact(ctx *Context, branch string, refresh bool) string {
 	a := branchPRs(ctx, []string{branch}, prLookup{
-		warn: "no pull requests shown", refresh: refresh, deadline: lookupDeadline,
+		warn: "no pull requests shown", refresh: refresh, deadline: lookupDeadline, checks: true,
 	})
 	pr, ok := a.byBranch[branch]
 	if !ok {
 		return ""
 	}
-	return fmt.Sprintf("%s · %s", prLabel(pr, trunks(ctx)), pr.Title)
+	return fmt.Sprintf("%s · %s", prCell(pr, trunks(ctx)), pr.Title)
 }
 
 // count writes "1 open pull request" or "3 open pull requests".

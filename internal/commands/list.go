@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -183,7 +184,7 @@ func listPRs(ctx *Context, names []WorkName, refresh bool) (map[string]string, t
 		}
 	}
 	a := branchPRs(ctx, branches, prLookup{
-		warn: "no pull requests shown", refresh: refresh, deadline: lookupDeadline,
+		warn: "no pull requests shown", refresh: refresh, deadline: lookupDeadline, checks: true,
 	})
 	if len(a.byBranch) == 0 {
 		return nil, time.Time{}
@@ -192,10 +193,24 @@ func listPRs(ctx *Context, names []WorkName, refresh bool) (map[string]string, t
 	out := map[string]string{}
 	for _, n := range names {
 		if pr, ok := a.byBranch[n.Branch]; ok && !n.IsMain {
-			out[n.Branch] = prLabel(pr, trunk)
+			out[n.Branch] = prCell(pr, trunk)
 		}
 	}
 	return out, a.cached
+}
+
+// prCell is a pull request in the PR column of wt list and wt status, and on
+// the pr line of wt status <work>: prLabel with what its checks say marked
+// after the number, as wt pr list says it in words. A pull request with no
+// checks has no mark.
+func prCell(pr github.PR, trunks []string) string {
+	label := prLabel(pr, trunks)
+	mark := pr.ChecksMark()
+	if mark == "" {
+		return label
+	}
+	number, rest, _ := strings.Cut(label, " ")
+	return number + " " + mark + " " + rest
 }
 
 func layoutMark(l naming.Layout) string {
