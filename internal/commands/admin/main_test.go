@@ -18,6 +18,7 @@ func TestMain(m *testing.M) {
 		provision.SupersetHostCommand = testkit.NoHostCommand
 		session.ListSessions = testkit.NoSessions
 		session.ListClaudeSessions = testkit.NoClaudeSessions
+		session.SessionsDeadline = testkit.FakeClaudeDeadline
 		retire.ScanProcesses = testkit.NoProcesses
 	})
 }

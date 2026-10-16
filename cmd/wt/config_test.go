@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/session"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
@@ -31,6 +33,7 @@ func TestMain(m *testing.M) {
 	if err := os.WriteFile(settings, []byte("github = false\nsuperset = false\n"), 0o644); err != nil {
 		panic(err)
 	}
+	session.SessionsDeadline = testkit.FakeClaudeDeadline
 	code := m.Run()
 	_ = os.RemoveAll(dir)
 	restore()
