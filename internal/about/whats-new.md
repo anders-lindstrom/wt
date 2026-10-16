@@ -6,6 +6,14 @@ from the last 3 days if that is more, so keep each entry to a few lines a human
 would want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-10-16 08:20 — wt session stop
+
+- `wt session stop <work> [<session>]` stops one background Claude session
+  with `claude stop`; its conversation is kept and `claude attach` resumes it.
+  A session open in a terminal and a Codex session are refused, a parked one
+  is reported as already stopped, and it never stops a guess among several.
+  `--dry-run` stops nothing; `--json` is `session-stop` 1.0.0.
+
 ## 2026-10-15 06:20 — wt session list and wt session send
 
 - `wt session list` shows a worktree's agent sessions, their state, last

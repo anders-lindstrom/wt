@@ -11,14 +11,14 @@ import (
 func newSessionCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "session",
-		Short: "List a worktree's Claude sessions, and send one a message",
+		Short: "List a worktree's Claude sessions, send one a message, stop one",
 		Long: "Find the Claude sessions in a worktree and send one of them a message,\n" +
 			"for a tool or a person who wants to ask the session working there\n" +
 			"something. wt session list says which sessions there are and whether\n" +
 			"each has an inbox; wt session send writes one message to one inbox.\n\n" +
 			"A message is read between steps by a running session. A session with no\n" +
 			"process, a parked background one, has no inbox: wt does not send to it\n" +
-			"and does not wake it.",
+			"and does not wake it. wt session stop stops a background session.",
 		Example: "  wt session list login-crash       # the sessions there, and their inboxes\n" +
 			"  wt session list --json            # the same, for a tool\n" +
 			"  wt session send login-crash < question.txt  # a message to the session",
@@ -27,7 +27,7 @@ func newSessionCmd() *cobra.Command {
 			return cmd.Help()
 		},
 	}
-	cmd.AddCommand(newSessionListCmd(), newSessionSendCmd())
+	cmd.AddCommand(newSessionListCmd(), newSessionSendCmd(), newSessionStopCmd())
 	return cmd
 }
 
@@ -156,5 +156,57 @@ func newSessionSendCmd() *cobra.Command {
 	cmd.Flags().StringVar(&o.ExpectSession, "expect-session", "", "refuse unless the target is this full session id")
 	cmd.Flags().BoolVar(&o.DryRun, "dry-run", false, "resolve the target and the message, and send nothing")
 	cmd.Flags().BoolVar(&o.JSON, "json", false, "print the result as JSON (default: one line)")
+	return cmd
+}
+
+func newSessionStopCmd() *cobra.Command {
+	var o commands.SessionStopOptions
+	var asJSON bool
+	cmd := &cobra.Command{
+		Use:   "stop <work> [<session>]",
+		Short: "Stop a worktree's background Claude session",
+		Long: "Stop one background Claude session in a worktree, by running\n" +
+			"claude stop on its attach id. Its conversation is kept: claude attach\n" +
+			"<id> resumes it.\n\n" +
+			"<work> is matched as wt find matches. <session> picks one of the\n" +
+			"worktree's sessions as wt attach does: an id, the start of the full\n" +
+			"session id, or part of the name. With none and several background\n" +
+			"sessions running, wt lists them and exits 2: it never stops a guess.\n" +
+			"--expect-session names the session by its full id, so that a stop\n" +
+			"meant for one cannot reach another: it is refused when the session\n" +
+			"there is not that one.\n\n" +
+			"Only a background Claude session is stopped. A conversation resumed in a\n" +
+			"terminal, a Codex session and the session wt runs under are refused,\n" +
+			"with the reason, and nothing is stopped. A background session someone\n" +
+			"has open with claude attach is still a background session, and is\n" +
+			"stopped. A parked session has no process: it is reported as already\n" +
+			"stopped, which is not an error.\n\n" +
+			"--dry-run resolves the session and runs nothing. --json prints one\n" +
+			"object on stdout, also on failure; outcome is stopped, already-stopped,\n" +
+			"would-stop (--dry-run), refused or failed. wt schema session-stop\n" +
+			"prints its schema, and docs/json.md explains it.",
+		Example: "  wt session stop crash            # the one background session running there\n" +
+			"  wt session stop crash review     # by part of its name\n" +
+			"  wt session stop crash --expect-session $ID  # $ID: its full session id\n" +
+			"  wt session stop crash --dry-run --json  # who, and would it stop",
+		Args:              cobra.RangeArgs(1, 2),
+		ValidArgsFunction: completeWork,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, err := openLenient(cmd.ErrOrStderr())
+			if err != nil {
+				return err
+			}
+			o.Pattern = args[0]
+			if len(args) > 1 {
+				o.Session = args[1]
+			}
+			o.JSON = asJSON
+			o.Out, o.Err = cmd.OutOrStdout(), cmd.ErrOrStderr()
+			return commands.SessionStopRun(ctx, o)
+		},
+	}
+	cmd.Flags().StringVar(&o.ExpectSession, "expect-session", "", "refuse unless the session is this full session id")
+	cmd.Flags().BoolVar(&o.DryRun, "dry-run", false, "resolve the session and stop nothing")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "print the result as JSON (default: one line)")
 	return cmd
 }

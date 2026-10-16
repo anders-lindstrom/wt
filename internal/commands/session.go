@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -19,6 +20,7 @@ import (
 	"unicode"
 
 	"github.com/anders-lindstrom/wt/internal/config"
+	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 	"github.com/anders-lindstrom/wt/schema"
@@ -1078,4 +1080,289 @@ func namesWorktreeExactly(pattern string, t attachTarget) bool {
 		return repo.SamePath(abs, t.path)
 	}
 	return false
+}
+
+// stopDeadline is how long `claude stop` has to answer.
+const stopDeadline = 30 * time.Second
+
+// SessionStop is `wt session stop --json`.
+type SessionStop struct {
+	Schema        int          `json:"schema"`
+	SchemaVersion string       `json:"schemaVersion"`
+	Command       string       `json:"command"`
+	Session       *SessionInfo `json:"session"`
+	DryRun        bool         `json:"dryRun"`
+	Outcome       string       `json:"outcome"`
+	Reason        *string      `json:"reason"`
+	ReasonCode    *string      `json:"reasonCode"`
+	Message       *string      `json:"message"`
+}
+
+// SessionStopOptions is one `wt session stop`.
+type SessionStopOptions struct {
+	// Pattern names the worktree as `wt attach` takes it.
+	Pattern string
+	// Session picks one of its sessions: an id, the start of the session
+	// id, or part of the name.
+	Session string
+	// ExpectSession refuses the stop unless the session is this session id.
+	ExpectSession string
+	DryRun        bool
+	JSON          bool
+	Out, Err      io.Writer
+	Sessions      *ClaudeSessions
+	env           *sessionEnv
+}
+
+type stopRefusal struct {
+	code   string
+	msg    string
+	failed bool
+	usage  bool
+}
+
+// SessionStopRun is `wt session stop`. It stops one background Claude
+// session by running `claude stop` on its attach id, and nothing else: a
+// session open in a terminal, a Codex session and wt's own are refused, and
+// a parked one has no process to stop.
+func SessionStopRun(ctx *Context, o SessionStopOptions) error {
+	out := SessionStop{Schema: 1, SchemaVersion: schema.VersionOf("session-stop"), Command: "session stop", DryRun: o.DryRun}
+	env := defaultSessionEnv()
+	if o.env != nil {
+		env = *o.env
+	}
+	env.noProbe = true
+	finish := func(err error) error {
+		if o.JSON {
+			if werr := writeJSON(o.Out, out); werr != nil {
+				return werr
+			}
+		}
+		return err
+	}
+	refuse := func(r stopRefusal) error {
+		out.Outcome = "refused"
+		if r.failed {
+			out.Outcome = "failed"
+		}
+		out.Reason, out.ReasonCode = strp(r.msg), strp(r.code)
+		err := errors.New(r.msg)
+		if r.usage {
+			err = UsageError{err}
+		}
+		return finish(err)
+	}
+
+	pick, r := chooseStopTarget(ctx, o, env)
+	if r != nil {
+		if pick != nil {
+			out.Session = &pick.info
+		}
+		return refuse(*r)
+	}
+	out.Session = &pick.info
+	name := "the session"
+	if pick.info.Name != nil {
+		name = *pick.info.Name
+	}
+	if pick.info.PID == nil {
+		out.Outcome = "already-stopped"
+		out.Reason, out.ReasonCode = strp(name+" has no process: there is nothing to stop"), strp("noProcess")
+		if !o.JSON {
+			fmt.Fprintf(o.Out, "%s has no process: already stopped. `claude attach %s` resumes it\n", name, pick.s.ID)
+		}
+		return finish(nil)
+	}
+	// Whose session wt runs under comes from the process table; when that
+	// cannot be read, an own session would pass as another's.
+	if ancestors, aerr := listAncestors(); aerr != nil {
+		return refuse(stopRefusal{code: "ownUnknown", msg: "wt cannot tell whether " + name +
+			" is the session it runs under (the process table could not be read): " + aerr.Error() + ". Nothing was stopped"})
+	} else if ancestors[*pick.info.PID] {
+		return refuse(stopRefusal{code: "own", msg: name + " is the session wt is running in; wt does not stop it"})
+	}
+	if o.DryRun {
+		out.Outcome = "would-stop"
+		if !o.JSON {
+			fmt.Fprintf(o.Out, "would stop %s (claude stop %s)\n", name, pick.s.ID)
+		}
+		return finish(nil)
+	}
+	msg, err := runClaudeStop(pick.s.ID)
+	if msg != "" {
+		out.Message = strp(msg)
+	}
+	if err != nil {
+		reason := err.Error()
+		if msg != "" {
+			reason += ": " + oneLine(msg)
+		}
+		return refuse(stopRefusal{code: "stopFailed", msg: reason, failed: true})
+	}
+	out.Outcome = "stopped"
+	if !o.JSON {
+		line := "stopped " + name
+		if msg != "" {
+			line += ": " + oneLine(msg)
+		}
+		fmt.Fprintf(o.Out, "%s. Its conversation is kept; `claude attach %s` resumes it\n", line, pick.s.ID)
+	}
+	return finish(nil)
+}
+
+// listAncestors is a var so tests stay off the machine's process table.
+var listAncestors = wtsync.Ancestors
+
+// runClaudeStop runs `claude stop <id>` and returns what it printed.
+func runClaudeStop(id string) (string, error) {
+	exe, err := exec.LookPath("claude")
+	if err != nil {
+		return "", errors.New("claude is not on the PATH")
+	}
+	cmd := exec.Command(exe, "stop", id)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	timedOut, _, err := git.RunBounded(stopDeadline, cmd)
+	msg := strings.TrimSpace(stdout.String())
+	if e := strings.TrimSpace(stderr.String()); e != "" {
+		if msg != "" {
+			msg += "\n"
+		}
+		msg += e
+	}
+	switch {
+	case timedOut:
+		return msg, fmt.Errorf("claude stop did not answer within %s", stopDeadline)
+	case err != nil:
+		return msg, fmt.Errorf("claude stop failed: %v", err)
+	}
+	return msg, nil
+}
+
+// stopPick is the session chosen, as the JSON shows it and as claude lists it.
+type stopPick struct {
+	info SessionInfo
+	s    claudeSession
+}
+
+// chooseStopTarget is the one session o names, if it is one wt may stop, or
+// the reason it is not. It never picks among several: with none named, the
+// background sessions with a process are the candidates, and a parked one
+// is chosen only when it is the only background session.
+func chooseStopTarget(ctx *Context, o SessionStopOptions, env sessionEnv) (*stopPick, *stopRefusal) {
+	t, infos, sessionsErr, err := worktreeSessions(ctx, o.Pattern, o.Err, o.Sessions, env)
+	switch {
+	case sessionsErr != nil:
+		return nil, &stopRefusal{code: "noSession", msg: sessionsErr.Error(), failed: true}
+	case err != nil:
+		return nil, &stopRefusal{code: "noSession", msg: err.Error(), failed: true}
+	}
+	list := func(idx []int) string {
+		var b strings.Builder
+		for _, i := range idx {
+			s := infos[i]
+			name := "unnamed"
+			if s.Name != nil {
+				name = *s.Name
+			}
+			id := ""
+			if s.ID != nil {
+				id = *s.ID
+			} else if s.SessionID != nil {
+				id = (*s.SessionID)[:min(8, len(*s.SessionID))]
+			}
+			fmt.Fprintf(&b, "\n  %s  %s  %s", name, id, s.Activity)
+		}
+		return b.String()
+	}
+	if o.ExpectSession == "" && !namesWorktreeExactly(o.Pattern, t) {
+		return nil, &stopRefusal{code: "notExact", msg: fmt.Sprintf("%q is not the name of a worktree but matched %s (%s): "+
+			"name it exactly, or give --expect-session. Nothing was stopped", o.Pattern, t.label, t.path)}
+	}
+	if len(infos) == 0 {
+		return nil, &stopRefusal{code: "noSession", failed: true, msg: fmt.Sprintf("no Claude session in %s", t.label)}
+	}
+	// stoppable is a background Claude session of its own, that is not open
+	// in a terminal.
+	stoppable := func(i int) bool {
+		s := t.sessions[i]
+		return s.Tool == "" && s.Kind == "background" && attachID(s.ID) && !s.Own
+	}
+	var pick int
+	switch {
+	case o.Session != "":
+		hits := matchSessions(t.sessions, o.Session)
+		switch len(hits) {
+		case 0:
+			return nil, &stopRefusal{code: "noSession", failed: true, msg: fmt.Sprintf("no session in %s has %q as its id or in its name", t.label, o.Session)}
+		case 1:
+			pick = hits[0]
+		default:
+			return nil, &stopRefusal{code: "ambiguous", usage: true, msg: fmt.Sprintf("%d sessions in %s match %q; give one's id:%s",
+				len(hits), t.label, o.Session, list(hits))}
+		}
+	case o.ExpectSession != "":
+		pick = -1
+		for i, s := range infos {
+			if strings.EqualFold(s.sessionID, o.ExpectSession) && (pick < 0 || s.PID != nil) {
+				pick = i
+			}
+		}
+		if pick < 0 {
+			return nil, &stopRefusal{code: "changed", msg: fmt.Sprintf("session %s is not in %s any more. Nothing was stopped", o.ExpectSession, t.label)}
+		}
+	default:
+		var running, parked []int
+		for i := range infos {
+			if !stoppable(i) {
+				continue
+			}
+			if infos[i].PID != nil {
+				running = append(running, i)
+			} else {
+				parked = append(parked, i)
+			}
+		}
+		switch {
+		case len(running) == 1:
+			pick = running[0]
+		case len(running) > 1:
+			return nil, &stopRefusal{code: "ambiguous", usage: true, msg: fmt.Sprintf("%d background sessions are running in %s; name one:%s",
+				len(running), t.label, list(running))}
+		case len(parked) == 1:
+			pick = parked[0]
+		case len(parked) > 1:
+			return nil, &stopRefusal{code: "ambiguous", usage: true, msg: fmt.Sprintf("%d background sessions are parked in %s; name one:%s",
+				len(parked), t.label, list(parked))}
+		case len(infos) == 1:
+			pick = 0
+		default:
+			all := make([]int, len(infos))
+			for i := range infos {
+				all[i] = i
+			}
+			return nil, &stopRefusal{code: "notBackground", msg: fmt.Sprintf("no session in %s is a background Claude session; "+
+				"wt stops only those. Nothing was stopped:%s", t.label, list(all))}
+		}
+	}
+	target := &stopPick{info: infos[pick], s: t.sessions[pick]}
+	if o.ExpectSession != "" && !strings.EqualFold(target.info.sessionID, o.ExpectSession) {
+		return target, &stopRefusal{code: "changed", msg: fmt.Sprintf("the session is %s, not the %s that was expected. Nothing was stopped",
+			target.info.sessionID, o.ExpectSession)}
+	}
+	name := "the session"
+	if target.info.Name != nil {
+		name = *target.info.Name
+	}
+	switch {
+	case target.s.Tool != "":
+		return target, &stopRefusal{code: "codex", msg: name + " is a Codex session; wt stops only background Claude sessions. Nothing was stopped"}
+	case target.s.Own:
+		return target, &stopRefusal{code: "own", msg: name + " is the session wt is running in; wt does not stop it"}
+	case target.s.Kind != "background":
+		return target, &stopRefusal{code: "interactive", msg: name + " is open in a terminal; wt stops only background sessions. Nothing was stopped"}
+	case !attachID(target.s.ID):
+		return target, &stopRefusal{code: "noId", msg: name + " has no id `claude stop` could take. Nothing was stopped"}
+	}
+	return target, nil
 }
