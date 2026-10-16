@@ -230,10 +230,10 @@ func TestNewJSONNamesACommitThatIsNotTheBase(t *testing.T) {
 // Superset's outcome is a step of its own: registered with a running app that
 // knows the repository, skipped when it is not running.
 func TestNewJSONReportsSuperset(t *testing.T) {
-	// Not parallel: swaps ProbeSuperset.
+	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	testkit.OptIn(ctx)
-	provisiontest.FakeSuperset(t, ctx.Repo.MainRoot, true)
+	provisiontest.FakeSuperset(t, ctx, ctx.Repo.MainRoot, true)
 	r, _, err := provision.RunNewJSON(t, ctx, "fix/one", provision.NewOptions{}, "")
 	if s := provision.StepOf(r, "superset"); err != nil || s.Result != kit.StepRegistered {
 		t.Errorf("err %v superset %+v", err, s)
@@ -242,7 +242,7 @@ func TestNewJSONReportsSuperset(t *testing.T) {
 		t.Error("the plan does not say Superset registration is on")
 	}
 
-	provisiontest.Stub(t, superset.Status{Exe: "/nope/superset"})
+	provisiontest.Stub(ctx, superset.Status{Exe: "/nope/superset"})
 	r, _, _ = provision.RunNewJSON(t, ctx, "fix/two", provision.NewOptions{}, "")
 	if s := provision.StepOf(r, "superset"); s.Result != kit.StepSkipped || s.Reason == nil || r.Outcome != provision.CreateCreated {
 		t.Errorf("auto, host stopped: %+v %s", s, r.Outcome)

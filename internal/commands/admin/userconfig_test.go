@@ -17,13 +17,13 @@ import (
 // Doctor says the switch is off and how to change it, and does not count the
 // person's own choice as a problem.
 func TestDoctorSaysSupersetIsOffAtUserLevel(t *testing.T) {
-	// Not parallel: swaps provision.ProbeSuperset.
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx.Config.SupersetRegister = config.SupersetOn
-	provisiontest.Stub(t, superset.Status{Exe: "/nope/superset", Running: true})
+	provisiontest.Stub(ctx, superset.Status{Exe: "/nope/superset", Running: true})
 
 	var out bytes.Buffer
 	problems, err := Doctor(ctx, &out)

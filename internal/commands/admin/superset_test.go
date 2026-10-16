@@ -18,7 +18,7 @@ import (
 // Doctor's Superset section: what state it found, and whether that state is a
 // problem — which only SUPERSET_REGISTER=on makes it.
 func TestDoctorReportsSupersetState(t *testing.T) {
-	// Not parallel: swaps provision.ProbeSuperset.
+	t.Parallel()
 	for name, tc := range map[string]struct {
 		mode        config.SupersetMode
 		status      superset.Status
@@ -55,7 +55,7 @@ func TestDoctorReportsSupersetState(t *testing.T) {
 			}
 			testkit.OptIn(ctx)
 			ctx.Config.SupersetRegister = tc.mode
-			provisiontest.Stub(t, tc.status)
+			provisiontest.Stub(ctx, tc.status)
 
 			var out bytes.Buffer
 			problems, err := Doctor(ctx, &out)
@@ -74,7 +74,7 @@ func TestDoctorReportsSupersetState(t *testing.T) {
 
 // The full report, when Superset is running and knows this repository.
 func TestDoctorReportsAUsableSuperset(t *testing.T) {
-	// Not parallel: swaps provision.ProbeSuperset.
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -90,7 +90,7 @@ func TestDoctorReportsAUsableSuperset(t *testing.T) {
 	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	provisiontest.Stub(t, superset.Status{Exe: exe, Running: true})
+	provisiontest.Stub(ctx, superset.Status{Exe: exe, Running: true})
 
 	var out bytes.Buffer
 	problems, err := Doctor(ctx, &out)
@@ -213,7 +213,7 @@ func TestDoctorSaysWhenTheStaleWorkaroundCanGo(t *testing.T) {
 // `wt doctor` names the state whatever the mode: it is where you go to read
 // why nothing is being registered.
 func TestDoctorAlwaysNamesAMissingSupersetProject(t *testing.T) {
-	// Not parallel: swaps provision.ProbeSuperset.
+	t.Parallel()
 	for name, mode := range map[string]config.SupersetMode{
 		"auto": config.SupersetAuto,
 		"on":   config.SupersetOn,
@@ -225,7 +225,7 @@ func TestDoctorAlwaysNamesAMissingSupersetProject(t *testing.T) {
 			}
 			testkit.OptIn(ctx)
 			ctx.Config.SupersetRegister = mode
-			provisiontest.SupersetWithoutProject(t)
+			provisiontest.SupersetWithoutProject(t, ctx)
 
 			var out bytes.Buffer
 			problems, err := Doctor(ctx, &out)
@@ -245,14 +245,14 @@ func TestDoctorAlwaysNamesAMissingSupersetProject(t *testing.T) {
 // `wt pr checkout` is the third creating command, and goes through the same
 // tail: its worktree is registered too.
 func TestPRCheckoutRegistersWithSuperset(t *testing.T) {
-	// Not parallel: swaps provision.ProbeSuperset.
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
 	testkit.OptIn(ctx)
 	testkit.FakeGitHub(t, ctx, testkit.OpenPR(12, "residential_fixes", "Residents keep their doors"))
-	log := provisiontest.FakeSuperset(t, ctx.Repo.MainRoot, true)
+	log := provisiontest.FakeSuperset(t, ctx, ctx.Repo.MainRoot, true)
 
 	var errs bytes.Buffer
 	if _, err := PRCheckout(ctx, 12, PROptions{}, &errs); err != nil {

@@ -14,6 +14,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anders-lindstrom/wt/internal/superset"
 )
 
 // Context is the repository and configuration a subcommand operates on.
@@ -41,6 +42,9 @@ type Context struct {
 	// GitHubFake, when set, is the GitHub this context sees; nil but in
 	// tests.
 	GitHubFake *GitHubFake
+	// SupersetFake, when set, is the Superset this context sees in place of
+	// provision.ProbeSuperset; nil but in tests.
+	SupersetFake *superset.Status
 }
 
 // The warning topics. One line per topic per invocation, so a command that

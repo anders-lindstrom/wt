@@ -19,13 +19,13 @@ import (
 // wt has just made. Superset is asked to adopt the branch — never to create a
 // checkout, which it already has.
 func TestNewRegistersTheWorktreeWithSuperset(t *testing.T) {
-	// Not parallel: swaps ProbeSuperset.
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
 	testkit.OptIn(ctx)
-	log := provisiontest.FakeSuperset(t, ctx.Repo.MainRoot, true)
+	log := provisiontest.FakeSuperset(t, ctx, ctx.Repo.MainRoot, true)
 
 	var out, errs bytes.Buffer
 	path, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs)
@@ -54,7 +54,7 @@ func TestNewRegistersTheWorktreeWithSuperset(t *testing.T) {
 // before, saying at most one line about it — and saying nothing at all on a
 // machine that has no Superset.
 func TestNewSurvivesEverySupersetState(t *testing.T) {
-	// Not parallel: swaps ProbeSuperset.
+	t.Parallel()
 	for name, tc := range map[string]struct {
 		mode   config.SupersetMode
 		status superset.Status
@@ -90,7 +90,7 @@ func TestNewSurvivesEverySupersetState(t *testing.T) {
 			}
 			testkit.OptIn(ctx)
 			ctx.Config.SupersetRegister = tc.mode
-			provisiontest.Stub(t, tc.status)
+			provisiontest.Stub(ctx, tc.status)
 
 			var errs bytes.Buffer
 			path, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs)
@@ -129,7 +129,7 @@ func supersetLine(out string) string {
 // A branch that already has a workspace is Superset's answer, not wt's
 // problem: nothing is duplicated and nothing fails.
 func TestRegisterSupersetIsIdempotent(t *testing.T) {
-	// Not parallel: swaps ProbeSuperset.
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -145,7 +145,7 @@ func TestRegisterSupersetIsIdempotent(t *testing.T) {
 	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	provisiontest.Stub(t, superset.Status{Exe: exe, Running: true})
+	provisiontest.Stub(ctx, superset.Status{Exe: exe, Running: true})
 
 	var errs bytes.Buffer
 	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs); err != nil {
@@ -160,7 +160,7 @@ func TestRegisterSupersetIsIdempotent(t *testing.T) {
 // "the checkout, nothing else", and a workspace is one of the else — Superset
 // answers a new one by running the project's setup script.
 func TestNewSkipsSupersetWhenAsked(t *testing.T) {
-	// Not parallel: swaps ProbeSuperset.
+	t.Parallel()
 	for name, opts := range map[string]provision.NewOptions{
 		"--no-superset": {NoSuperset: true},
 		"--no-setup":    {NoSetup: true},
@@ -171,7 +171,7 @@ func TestNewSkipsSupersetWhenAsked(t *testing.T) {
 				t.Fatal(err)
 			}
 			testkit.OptIn(ctx)
-			log := provisiontest.FakeSuperset(t, ctx.Repo.MainRoot, true)
+			log := provisiontest.FakeSuperset(t, ctx, ctx.Repo.MainRoot, true)
 			var errs bytes.Buffer
 			if _, err := provision.New(ctx, "fix/login-crash", opts, &errs); err != nil {
 				t.Fatal(err)
@@ -186,7 +186,7 @@ func TestNewSkipsSupersetWhenAsked(t *testing.T) {
 // Checkout goes through the same tail as New, so a branch someone else pushed
 // reaches Superset the same way.
 func TestCheckoutRegistersToo(t *testing.T) {
-	// Not parallel: swaps ProbeSuperset.
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, err := kit.Open(main)
 	if err != nil {
@@ -194,7 +194,7 @@ func TestCheckoutRegistersToo(t *testing.T) {
 	}
 	testkit.OptIn(ctx)
 	testkit.GitIn(t, main, "branch", "fix_wt/from-elsewhere")
-	log := provisiontest.FakeSuperset(t, ctx.Repo.MainRoot, true)
+	log := provisiontest.FakeSuperset(t, ctx, ctx.Repo.MainRoot, true)
 
 	var errs bytes.Buffer
 	if _, err := provision.Checkout(ctx, "fix_wt/from-elsewhere", "", provision.NewOptions{}, &errs); err != nil {
@@ -241,7 +241,7 @@ func TestNewRegistersThoughStatusCallsTheHostStale(t *testing.T) {
 // not apply here says nothing. Under auto that is silence; a repository that
 // asked for registration with SUPERSET_REGISTER=on is told.
 func TestNewSaysNothingAboutARepositorySupersetDoesNotTrack(t *testing.T) {
-	// Not parallel: swaps ProbeSuperset.
+	t.Parallel()
 	for name, tc := range map[string]struct {
 		mode config.SupersetMode
 		want string
@@ -256,7 +256,7 @@ func TestNewSaysNothingAboutARepositorySupersetDoesNotTrack(t *testing.T) {
 			}
 			testkit.OptIn(ctx)
 			ctx.Config.SupersetRegister = tc.mode
-			log := provisiontest.SupersetWithoutProject(t)
+			log := provisiontest.SupersetWithoutProject(t, ctx)
 
 			var errs bytes.Buffer
 			if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs); err != nil {
@@ -281,14 +281,14 @@ func TestNewSaysNothingAboutARepositorySupersetDoesNotTrack(t *testing.T) {
 // A worktree with no branch has nothing Superset can adopt: Superset takes the
 // checkout git already has for a named branch.
 func TestRegisterSupersetNeedsABranch(t *testing.T) {
-	// Not parallel: swaps ProbeSuperset.
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
 	}
 	testkit.OptIn(ctx)
-	log := provisiontest.FakeSuperset(t, ctx.Repo.MainRoot, true)
+	log := provisiontest.FakeSuperset(t, ctx, ctx.Repo.MainRoot, true)
 	path := ctx.Scheme().Dir("fix", "detached")
 	testkit.GitIn(t, main, "worktree", "add", "--detach", path, "HEAD")
 
@@ -305,7 +305,7 @@ func TestRegisterSupersetNeedsABranch(t *testing.T) {
 // Provisioning that failed does not cost the registration: the worktree is on
 // disk and on its branch, which is all Superset is told.
 func TestRegisterSupersetRunsEvenWhenSetupFailed(t *testing.T) {
-	// Not parallel: swaps ProbeSuperset.
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	// A provision.sh that fails is the one thing Setup reports and carries on
 	// from; the worktree is made either way.
@@ -324,7 +324,7 @@ func TestRegisterSupersetRunsEvenWhenSetupFailed(t *testing.T) {
 		t.Fatal(err)
 	}
 	testkit.OptIn(ctx)
-	log := provisiontest.FakeSuperset(t, ctx.Repo.MainRoot, true)
+	log := provisiontest.FakeSuperset(t, ctx, ctx.Repo.MainRoot, true)
 
 	var errs bytes.Buffer
 	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs); err == nil {

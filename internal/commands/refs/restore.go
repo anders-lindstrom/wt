@@ -78,7 +78,8 @@ func Restore(ctx *kit.Context, dir string, opts RestoreOptions, w io.Writer) err
 // registerRestored registers the worktree a restore put back with Superset,
 // the way wt new registers a new one; its removal deleted the workspace.
 // The repository is the worktree's own, which need not be the one wt ran
-// in; the person's settings are the ones this run read.
+// in; the person's settings, and the Superset it sees, are the ones this
+// run read.
 func registerRestored(ctx *kit.Context, path string, w io.Writer) {
 	rctx, err := kit.Open(path)
 	if err != nil {
@@ -86,6 +87,7 @@ func registerRestored(ctx *kit.Context, path string, w io.Writer) {
 	}
 	if ctx != nil {
 		rctx.User, rctx.UserError = ctx.User, ctx.UserError
+		rctx.SupersetFake = ctx.SupersetFake
 	}
 	provision.RegisterSuperset(rctx, path, w)
 }

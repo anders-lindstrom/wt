@@ -5,14 +5,15 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/superset"
 )
 
 // FakeSuperset writes a `superset` that answers projects/ws create for one
-// project rooted at repoRoot, and points provision.ProbeSuperset at it for this test.
-// It returns the file every invocation's argv is appended to.
-func FakeSuperset(t *testing.T, repoRoot string, running bool) string {
+// project rooted at repoRoot, and points ctx at it. It returns the file every
+// invocation's argv is appended to.
+func FakeSuperset(t *testing.T, ctx *kit.Context, repoRoot string, running bool) string {
 	t.Helper()
 	dir := t.TempDir()
 	log := filepath.Join(dir, "argv")
@@ -26,16 +27,13 @@ func FakeSuperset(t *testing.T, repoRoot string, running bool) string {
 	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	Stub(t, superset.Status{Exe: exe, Running: running})
+	Stub(ctx, superset.Status{Exe: exe, Running: running})
 	return log
 }
 
-// Stub replaces the Superset state for one test.
-func Stub(t *testing.T, s superset.Status) {
-	t.Helper()
-	old := provision.ProbeSuperset
-	provision.ProbeSuperset = func() superset.Status { return s }
-	t.Cleanup(func() { provision.ProbeSuperset = old })
+// Stub is the Superset state ctx sees.
+func Stub(ctx *kit.Context, s superset.Status) {
+	ctx.SupersetFake = &s
 }
 
 // StaleSuperset is a `superset` the way 1.36.0 is beside the desktop app: its
@@ -87,7 +85,7 @@ func HostCommand(t *testing.T, line string, err error) *[]int {
 
 // SupersetWithoutProject is a `superset` that knows some other repository, so
 // the one under test is not one of its projects.
-func SupersetWithoutProject(t *testing.T) string {
+func SupersetWithoutProject(t *testing.T, ctx *kit.Context) string {
 	t.Helper()
 	dir := t.TempDir()
 	log := filepath.Join(dir, "argv")
@@ -101,6 +99,6 @@ func SupersetWithoutProject(t *testing.T) string {
 	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	Stub(t, superset.Status{Exe: exe, Running: true})
+	Stub(ctx, superset.Status{Exe: exe, Running: true})
 	return log
 }
