@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
@@ -845,7 +846,7 @@ func (p SweepPlan) apply(ctx *kit.Context, opts SweepOptions, w io.Writer) error
 	// Every branch the sweep deletes, with a worktree or without, is moved
 	// into one run under refs/wt-swept/, except a quarantined worktree's,
 	// which the quarantine pins.
-	pins := &branchPins{command: "wt sweep", begun: j.ran}
+	pins := &refpins.BranchPins{Command: "wt sweep", Begun: j.ran}
 	kept := 0
 	folders := map[string]bool{}
 	for i, wt := range p.Remove {
@@ -897,7 +898,7 @@ func (p SweepPlan) apply(ctx *kit.Context, opts SweepOptions, w io.Writer) error
 		// The move asks the worktrees again immediately before the delete,
 		// which is as close to it as that question gets.
 		j.start(key)
-		pin, err := pins.move(ctx, b.Name, b.Tip)
+		pin, err := pins.Move(ctx, b.Name, b.Tip)
 		j.settle(key, err)
 		if err != nil {
 			fmt.Fprintf(w, "- kept %s: %s\n", b.Name, whyKept(err))
@@ -905,10 +906,10 @@ func (p SweepPlan) apply(ctx *kit.Context, opts SweepOptions, w io.Writer) error
 			continue
 		}
 		fmt.Fprintf(w, "✓ deleted %s, pinned at %s; %s puts it back\n", b.Name, pin,
-			strings.Join(restoreFromRun(pins.runID, b.Name), " "))
+			strings.Join(refpins.RestoreFromRun(pins.RunID, b.Name), " "))
 	}
 	// A run that pinned nothing is dropped, and the result names none.
-	runID := pins.finish(ctx, w)
+	runID := pins.Finish(ctx, w)
 	j.ran(runID)
 	if runID != "" {
 		fmt.Fprintf(w, "wt refs restore %s puts the deleted branches back; wt refs purge %s deletes them for good\n",

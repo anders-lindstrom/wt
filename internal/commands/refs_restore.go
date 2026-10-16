@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/schema"
 )
@@ -44,7 +45,7 @@ const RefRestored = "restored"
 
 // restoreRow is one pin of the run and what a restore makes of it.
 type restoreRow struct {
-	sweptRef
+	refpins.SweptRef
 	Action   string
 	Selected bool
 }
@@ -55,7 +56,7 @@ type RefsRestorePlan struct {
 	Rows        []restoreRow
 	// endpoint is origin as resolved now, when the run has remote pins and
 	// origin resolves to one clean URL; every remote call goes to it.
-	endpoint *Endpoint
+	endpoint *refpins.Endpoint
 }
 
 // RefsRestoreOptions carries what wt refs restore was asked.
@@ -77,33 +78,33 @@ func errNoRun(runID string) error {
 // now: here, and on origin for the remote ones, asked once.
 func planRefsRestore(ctx *kit.Context, runID string) (RefsRestorePlan, error) {
 	p := RefsRestorePlan{Repo: ctx.Repo.MainRoot, RunID: runID}
-	if !runIDPattern.MatchString(runID) {
+	if !refpins.RunIDPattern.MatchString(runID) {
 		return p, fmt.Errorf("%q is not a run id; they look like 20260930T091500Z-3f2a", runID)
 	}
-	runs, err := readSwept(p.Repo)
+	runs, err := refpins.ReadSwept(p.Repo)
 	if err != nil {
 		return p, err
 	}
-	i := slices.IndexFunc(runs, func(r sweptRun) bool { return r.RunID == runID })
+	i := slices.IndexFunc(runs, func(r refpins.SweptRun) bool { return r.RunID == runID })
 	if i < 0 {
 		return p, errNoRun(runID)
 	}
 	run := runs[i]
-	var origin *remoteRefs
-	var today *Endpoint
+	var origin *refpins.RemoteRefs
+	var today *refpins.Endpoint
 	var todayErr error
 	resolved := false
 	for _, s := range run.Refs {
-		row := restoreRow{sweptRef: s}
-		if remoteKind(s.Kind) && !resolved {
-			today, todayErr = resolveEndpoint(p.Repo)
+		row := restoreRow{SweptRef: s}
+		if refpins.RemoteKind(s.Kind) && !resolved {
+			today, todayErr = refpins.ResolveEndpoint(p.Repo)
 			resolved = true
 			if todayErr == nil {
 				p.endpoint = today
 			}
 		}
 		switch {
-		case !remoteKind(s.Kind):
+		case !refpins.RemoteKind(s.Kind):
 		case run.Meta == nil || run.Meta.Endpoint == nil:
 			row.Action = RestoreEndpointUnknown
 		case todayErr != nil || today.Digest != run.Meta.Endpoint.Digest:
@@ -113,9 +114,9 @@ func planRefsRestore(ctx *kit.Context, runID string) (RefsRestorePlan, error) {
 			p.Rows = append(p.Rows, row)
 			continue
 		}
-		if remoteKind(s.Kind) {
+		if refpins.RemoteKind(s.Kind) {
 			if origin == nil {
-				rr, err := readRemoteRefs(p.Repo, today.raw)
+				rr, err := refpins.ReadRemoteRefs(p.Repo, today.Raw)
 				if err != nil {
 					return p, err
 				}
@@ -130,7 +131,7 @@ func planRefsRestore(ctx *kit.Context, runID string) (RefsRestorePlan, error) {
 				row.Action = RestoreRemoteOccupied
 			}
 		} else {
-			switch now, ok, err := refValue(p.Repo, s.Ref()); {
+			switch now, ok, err := refpins.RefValue(p.Repo, s.Ref()); {
 			case err != nil:
 				return p, err
 			case !ok:
@@ -262,7 +263,7 @@ func RefsRestore(ctx *kit.Context, runID string, opts RefsRestoreOptions, w io.W
 	}
 	// Origin is read again right before anything goes to it.
 	if plan.endpoint != nil {
-		now, err := resolveEndpoint(ctx.Repo.MainRoot)
+		now, err := refpins.ResolveEndpoint(ctx.Repo.MainRoot)
 		if err != nil || now.Digest != plan.endpoint.Digest {
 			return errors.New("nothing was restored: origin's URL changed since the plan was made; read the plan again")
 		}
@@ -292,27 +293,11 @@ func RefsRestore(ctx *kit.Context, runID string, opts RefsRestoreOptions, w io.W
 			fmt.Fprintf(w, "✓ restored %s\n", r.ID())
 		}
 	}
-	dropEmptyRun(root, runID, w)
+	refpins.DropEmptyRun(root, runID, w)
 	if failed > 0 {
 		return fmt.Errorf("%d of %s kept or not finished", failed, refCount(n))
 	}
 	return nil
-}
-
-// dropEmptyRun deletes a run's meta once it has no pin left, so a run
-// restored whole leaves nothing under refs/wt-swept/<runId>/.
-func dropEmptyRun(root, runID string, w io.Writer) {
-	runs, err := readSwept(root)
-	if err != nil {
-		return
-	}
-	for _, r := range runs {
-		if r.RunID == runID && len(r.Refs) == 0 && r.MetaOID != "" {
-			if err := deleteRefAt(root, metaRef(runID), r.MetaOID); err != nil {
-				fmt.Fprintf(w, "! could not drop %s: %s\n", metaRef(runID), git.Reason(err))
-			}
-		}
-	}
 }
 
 // restoreState is what one row came to, read back.
@@ -326,7 +311,7 @@ type restoreState struct {
 // only where it is not, and the pin deleted only at its object. On origin
 // it is a push leased on the ref being absent, then the pin.
 func restoreRef(root, url string, r restoreRow) restoreState {
-	now, ok, err := refValue(root, r.Pin)
+	now, ok, err := refpins.RefValue(root, r.Pin)
 	switch {
 	case err != nil:
 		return restoreState{err: err}
@@ -335,30 +320,30 @@ func restoreRef(root, url string, r restoreRow) restoreState {
 	}
 	var opErr error
 	switch {
-	case r.Action == RestoreNone && remoteKind(r.Kind):
+	case r.Action == RestoreNone && refpins.RemoteKind(r.Kind):
 		// Only while origin is read back holding it does the pin go.
-		switch v, there, verr := remoteValue(root, url, r.Ref(), kit.NetworkTimeout); {
+		switch v, there, verr := refpins.RemoteValue(root, url, r.Ref(), kit.NetworkTimeout); {
 		case verr != nil:
 			return restoreState{err: fmt.Errorf("origin could not be read, so the pin stays: %w", verr)}
 		case !there || v != r.Object:
 			return restoreState{kept: "origin no longer holds it at the pinned object, so the pin stays"}
 		}
-		opErr = deleteRefAt(root, r.Pin, now)
+		opErr = refpins.DeleteRefAt(root, r.Pin, now)
 	case r.Action == RestoreNone:
 		// The pin goes only in the same transaction that sees the ref at it.
-		opErr = updateRefs(root, "wt refs restore", "verify "+r.Ref()+" "+r.Object, "delete "+r.Pin+" "+r.Object)
+		opErr = refpins.UpdateRefs(root, "wt refs restore", "verify "+r.Ref()+" "+r.Object, "delete "+r.Pin+" "+r.Object)
 		if opErr != nil {
-			if v, there, _ := refValue(root, r.Ref()); !there || v != r.Object {
+			if v, there, _ := refpins.RefValue(root, r.Ref()); !there || v != r.Object {
 				return restoreState{kept: "it moved or went after the plan was made, so the pin stays"}
 			}
 		}
-	case remoteKind(r.Kind):
+	case refpins.RemoteKind(r.Kind):
 		// The pin goes only once origin is read back holding the object: a
 		// push that was rejected, timed out or cannot be confirmed keeps it,
 		// and a later restore finds the ref there and only drops the pin.
 		_, pushErr := git.RunTimeout(root, kit.NetworkTimeout, "push", "--quiet", "--no-verify",
 			"--force-with-lease="+r.Ref()+":", url, r.Pin+":"+r.Ref())
-		v, there, verr := remoteValue(root, url, r.Ref(), kit.NetworkTimeout)
+		v, there, verr := refpins.RemoteValue(root, url, r.Ref(), kit.NetworkTimeout)
 		switch {
 		case pushErr != nil:
 			return restoreState{restored: verr == nil && there && v == r.Object,
@@ -368,11 +353,11 @@ func restoreRef(root, url string, r restoreRow) restoreState {
 		case !there || v != r.Object:
 			return restoreState{err: errors.New("pushed, but origin does not hold it, so the pin stays")}
 		}
-		opErr = deleteRefAt(root, r.Pin, now)
+		opErr = refpins.DeleteRefAt(root, r.Pin, now)
 	default:
-		opErr = updateRefs(root, "wt refs restore", "create "+r.Ref()+" "+r.Object, "delete "+r.Pin+" "+r.Object)
+		opErr = refpins.UpdateRefs(root, "wt refs restore", "create "+r.Ref()+" "+r.Object, "delete "+r.Pin+" "+r.Object)
 		if opErr != nil {
-			if v, there, _ := refValue(root, r.Ref()); there && v != r.Object {
+			if v, there, _ := refpins.RefValue(root, r.Ref()); there && v != r.Object {
 				return restoreState{kept: "its name was taken after the plan was made"}
 			}
 		}
@@ -387,20 +372,20 @@ func (p RefsRestorePlan) url() string {
 	if p.endpoint == nil {
 		return ""
 	}
-	return p.endpoint.raw
+	return p.endpoint.Raw
 }
 
 // readRestoreState reads back one row: the ref at its object, and the pin.
 func readRestoreState(root, url string, r restoreRow, timeout time.Duration) restoreState {
 	var st restoreState
-	if remoteKind(r.Kind) {
-		if v, ok, err := remoteValue(root, url, r.Ref(), timeout); err == nil && ok && v == r.Object {
+	if refpins.RemoteKind(r.Kind) {
+		if v, ok, err := refpins.RemoteValue(root, url, r.Ref(), timeout); err == nil && ok && v == r.Object {
 			st.restored = true
 		}
-	} else if v, ok, err := refValue(root, r.Ref()); err == nil && ok && v == r.Object {
+	} else if v, ok, err := refpins.RefValue(root, r.Ref()); err == nil && ok && v == r.Object {
 		st.restored = true
 	}
-	if _, ok, err := refValue(root, r.Pin); err == nil && !ok {
+	if _, ok, err := refpins.RefValue(root, r.Pin); err == nil && !ok {
 		st.pinDeleted = true
 	}
 	return st

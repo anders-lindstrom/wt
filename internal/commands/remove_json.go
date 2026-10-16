@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -603,12 +604,12 @@ func removeOutput(ctx *kit.Context, plan *Plan, token, runID string, started boo
 	o.RunID = kit.Strp(runID)
 	pin := ""
 	if branchGone {
-		pin = pinHolding(ctx.Repo.MainRoot, runID, plan.Branch, plan.Tip)
+		pin = refpins.PinHolding(ctx.Repo.MainRoot, runID, plan.Branch, plan.Tip)
 	}
 	switch {
 	case o.RestoreCommand != nil:
 	case pin != "":
-		o.RestoreCommand = restoreFromRun(runID, plan.Branch)
+		o.RestoreCommand = refpins.RestoreFromRun(runID, plan.Branch)
 	case branchGone:
 		o.RestoreCommand = restoreBranch(ctx, plan.Branch, plan.Tip)
 	}

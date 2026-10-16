@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -240,7 +241,7 @@ func TestSweepJSONCarriesOutThePlanItWasGiven(t *testing.T) {
 		t.Fatalf("a sweep that deleted branches names the run it pinned them in: %+v", r)
 	}
 	it := resultItem(t, r, "done-work")
-	pin := pinOf(*r.RunID, RefBranch, "done-work")
+	pin := refpins.PinOf(*r.RunID, refpins.RefBranch, "done-work")
 	if it.Result != SweepDeleted || !it.BranchDeleted || it.WorktreeRemoved || deref(it.Pin) != pin ||
 		testkit.GitOut(t, main, "rev-parse", pin) != doneTip ||
 		!slices.Equal(it.RestoreCommand, []string{"wt", "refs", "restore", *r.RunID, "--only", "refs/heads/done-work", "--yes"}) {

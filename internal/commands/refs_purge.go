@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/schema"
@@ -26,7 +27,7 @@ type RefLost struct {
 
 // purgeRun is one run a purge deletes the pins of.
 type purgeRun struct {
-	sweptRun
+	refpins.SweptRun
 	Lost []RefLost
 }
 
@@ -61,7 +62,7 @@ func planRefsPurge(ctx *kit.Context, opts RefsPurgeOptions) (RefsPurgePlan, erro
 	case len(opts.RunIDs) == 0 && opts.OlderThan == "":
 		return p, errors.New("name the runs to purge, or give --older-than; wt refs swept lists them")
 	}
-	runs, err := readSwept(p.Repo)
+	runs, err := refpins.ReadSwept(p.Repo)
 	if err != nil {
 		return p, err
 	}
@@ -76,21 +77,21 @@ func planRefsPurge(ctx *kit.Context, opts RefsPurgeOptions) (RefsPurgePlan, erro
 		}
 		for _, r := range runs {
 			if !r.At.IsZero() && r.At.Before(now.Add(-age)) {
-				p.Runs = append(p.Runs, purgeRun{sweptRun: r})
+				p.Runs = append(p.Runs, purgeRun{SweptRun: r})
 			}
 		}
 	} else {
 		for _, id := range opts.RunIDs {
-			i := slices.IndexFunc(runs, func(r sweptRun) bool { return r.RunID == id })
+			i := slices.IndexFunc(runs, func(r refpins.SweptRun) bool { return r.RunID == id })
 			if i < 0 {
-				if !runIDPattern.MatchString(id) && isFolder(ctx, id) {
+				if !refpins.RunIDPattern.MatchString(id) && isFolder(ctx, id) {
 					return p, fmt.Errorf("%s is a folder, not a run: a worktree moved there is deleted for good "+
 						"with wt purge %s; wt refs swept lists the runs", id, id)
 				}
 				return p, errNoRun(id)
 			}
 			if !slices.ContainsFunc(p.Runs, func(r purgeRun) bool { return r.RunID == id }) {
-				p.Runs = append(p.Runs, purgeRun{sweptRun: runs[i]})
+				p.Runs = append(p.Runs, purgeRun{SweptRun: runs[i]})
 			}
 		}
 	}
@@ -123,12 +124,12 @@ func (p *RefsPurgePlan) countLost(ctx *kit.Context) error {
 	if err != nil {
 		return fmt.Errorf("could not read what else holds the pinned commits: %w", err)
 	}
-	known := map[string]objectInfo{}
+	known := map[string]refpins.ObjectInfo{}
 	tipOf := map[string]string{}
 	var tips []string
 	for _, r := range p.Runs {
 		for _, s := range r.Refs {
-			if tip := peelCommit(p.Repo, s.Object, known); tip != "" {
+			if tip := refpins.PeelCommit(p.Repo, s.Object, known); tip != "" {
 				tipOf[s.Pin] = tip
 				tips = append(tips, tip)
 			}
@@ -137,7 +138,7 @@ func (p *RefsPurgePlan) countLost(ctx *kit.Context) error {
 	if len(tips) == 0 {
 		return nil
 	}
-	counts, err := uniqueCommits(p.Repo, tips, keep)
+	counts, err := refpins.UniqueCommits(p.Repo, tips, keep)
 	if err != nil {
 		return err
 	}
@@ -230,10 +231,10 @@ func RefsPurge(ctx *kit.Context, opts RefsPurgeOptions, w io.Writer) (err error)
 			j.start(s.Pin)
 			var res string
 			var derr error
-			if _, there, rerr := refValue(root, s.Pin); rerr == nil && !there {
+			if _, there, rerr := refpins.RefValue(root, s.Pin); rerr == nil && !there {
 				res = j.settle(s.Pin, PinAbsent, nil)
 			} else {
-				derr = deleteRefAt(root, s.Pin, s.Object)
+				derr = refpins.DeleteRefAt(root, s.Pin, s.Object)
 				res = j.settle(s.Pin, "", derr)
 			}
 			if res != PinDeleted && res != PinAbsent {
@@ -248,10 +249,10 @@ func RefsPurge(ctx *kit.Context, opts RefsPurgeOptions, w io.Writer) (err error)
 			// after its meta, and those need the meta to go back.
 			if pins, perr := runPins(root, r.RunID); perr != nil || pins > 0 {
 				left++
-				fmt.Fprintf(w, "- kept %s: the run has pins the plan did not list\n", metaRef(r.RunID))
-			} else if derr := deleteRefAt(root, metaRef(r.RunID), r.MetaOID); derr != nil {
+				fmt.Fprintf(w, "- kept %s: the run has pins the plan did not list\n", refpins.MetaRef(r.RunID))
+			} else if derr := refpins.DeleteRefAt(root, refpins.MetaRef(r.RunID), r.MetaOID); derr != nil {
 				left++
-				fmt.Fprintf(w, "- kept %s: %s\n", metaRef(r.RunID), git.Reason(derr))
+				fmt.Fprintf(w, "- kept %s: %s\n", refpins.MetaRef(r.RunID), git.Reason(derr))
 			}
 			j.metaDone(r.RunID)
 		}
@@ -268,13 +269,13 @@ func RefsPurge(ctx *kit.Context, opts RefsPurgeOptions, w io.Writer) (err error)
 
 // runPins counts the pins under a run now, its meta aside.
 func runPins(root, runID string) (int, error) {
-	lines, err := git.Lines(root, "for-each-ref", "--format=%(refname)", SweptPrefix+runID+"/")
+	lines, err := git.Lines(root, "for-each-ref", "--format=%(refname)", refpins.SweptPrefix+runID+"/")
 	if err != nil {
 		return 0, err
 	}
 	n := 0
 	for _, l := range lines {
-		if l != metaRef(runID) {
+		if l != refpins.MetaRef(runID) {
 			n++
 		}
 	}
@@ -315,12 +316,12 @@ type RefPurgePin struct {
 
 // RefPurgeRunPlan is one run of a purge plan, for --json.
 type RefPurgeRunPlan struct {
-	RunID       string        `json:"runId"`
-	SweptAt     int64         `json:"sweptAt"`
-	Meta        *string       `json:"meta"`
-	Endpoint    *Endpoint     `json:"endpoint"`
-	Refs        []RefPurgePin `json:"refs"`
-	Unreachable []RefLost     `json:"unreachable"`
+	RunID       string            `json:"runId"`
+	SweptAt     int64             `json:"sweptAt"`
+	Meta        *string           `json:"meta"`
+	Endpoint    *refpins.Endpoint `json:"endpoint"`
+	Refs        []RefPurgePin     `json:"refs"`
+	Unreachable []RefLost         `json:"unreachable"`
 }
 
 // RefsPurgePlanOutput is the one object wt refs purge --dry-run --json prints.
@@ -368,7 +369,9 @@ type RefsPurgeResult struct {
 
 const refsPurgeCommand = "refs purge"
 
-func purgePin(s sweptRef) RefPurgePin { return RefPurgePin{Pin: s.Pin, ID: s.ID(), Object: s.Object} }
+func purgePin(s refpins.SweptRef) RefPurgePin {
+	return RefPurgePin{Pin: s.Pin, ID: s.ID(), Object: s.Object}
+}
 
 // RefsPurgePlanJSON writes wt refs purge --dry-run --json. It deletes
 // nothing; a plan that cannot be made is one object too.
@@ -387,9 +390,9 @@ func RefsPurgePlanJSON(ctx *kit.Context, opts RefsPurgeOptions, out, progress io
 			plan.Render(progress)
 			for _, r := range plan.Runs {
 				run := RefPurgeRunPlan{RunID: r.RunID, SweptAt: r.At.Unix(), Refs: []RefPurgePin{},
-					Unreachable: append([]RefLost{}, r.Lost...), Endpoint: runEndpoint(r.sweptRun)}
+					Unreachable: append([]RefLost{}, r.Lost...), Endpoint: runEndpoint(r.SweptRun)}
 				if r.MetaOID != "" {
-					run.Meta = kit.Strp(metaRef(r.RunID))
+					run.Meta = kit.Strp(refpins.MetaRef(r.RunID))
 				}
 				for _, s := range r.Refs {
 					run.Refs = append(run.Refs, purgePin(s))
@@ -437,7 +440,7 @@ func (j *RefsPurgeJournal) planned(p RefsPurgePlan, token *string) {
 	for _, r := range p.Runs {
 		run := RefPurgeRun{RunID: r.RunID, SweptAt: r.At.Unix(), Refs: []*RefPurgePinResult{}}
 		if r.MetaOID != "" {
-			run.Meta = kit.Strp(metaRef(r.RunID))
+			run.Meta = kit.Strp(refpins.MetaRef(r.RunID))
 		}
 		for _, s := range r.Refs {
 			it := &RefPurgePinResult{RefPurgePin: purgePin(s), Result: RefNotRun}
@@ -465,7 +468,7 @@ func (j *RefsPurgeJournal) metaDone(runID string) {
 	j.mu.Lock()
 	root := j.root
 	j.mu.Unlock()
-	_, there, err := refValue(root, metaRef(runID))
+	_, there, err := refpins.RefValue(root, refpins.MetaRef(runID))
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	for i := range j.res.Runs {
@@ -513,7 +516,7 @@ func (j *RefsPurgeJournal) settle(pin, result string, err error) string {
 // readPurgePin is what became of a pin: deleted when it is gone now, kept
 // with why when it is still there or cannot be read.
 func readPurgePin(root, pin string, err error) (string, *string) {
-	_, ok, rerr := refValue(root, pin)
+	_, ok, rerr := refpins.RefValue(root, pin)
 	switch {
 	case rerr != nil:
 		return PinKept, kit.Strp(kit.OneLine(rerr.Error()))
@@ -607,14 +610,14 @@ type RefSweptRef struct {
 
 // RefSweptRun is one run, for wt refs swept --json.
 type RefSweptRun struct {
-	RunID    string        `json:"runId"`
-	SweptAt  int64         `json:"sweptAt"`
-	Endpoint *Endpoint     `json:"endpoint"`
-	Refs     []RefSweptRef `json:"refs"`
+	RunID    string            `json:"runId"`
+	SweptAt  int64             `json:"sweptAt"`
+	Endpoint *refpins.Endpoint `json:"endpoint"`
+	Refs     []RefSweptRef     `json:"refs"`
 }
 
 // runEndpoint is the origin a run's meta names, nil for none.
-func runEndpoint(r sweptRun) *Endpoint {
+func runEndpoint(r refpins.SweptRun) *refpins.Endpoint {
 	if r.Meta == nil {
 		return nil
 	}
@@ -636,13 +639,13 @@ type RefsSweptOutput struct {
 func RefsSwept(ctx *kit.Context, asJSON bool, out io.Writer) error {
 	o := RefsSweptOutput{Schema: 1, SchemaVersion: schema.VersionOf("refs-swept"), Command: "refs swept",
 		Runs: []RefSweptRun{}}
-	var runs []sweptRun
+	var runs []refpins.SweptRun
 	var err error
 	if ctx == nil {
 		err = kit.ErrNotInRepo
 	} else {
 		o.Repo = kit.Strp(ctx.Repo.MainRoot)
-		runs, err = readSwept(ctx.Repo.MainRoot)
+		runs, err = refpins.ReadSwept(ctx.Repo.MainRoot)
 	}
 	for _, r := range runs {
 		run := RefSweptRun{RunID: r.RunID, SweptAt: r.At.Unix(), Endpoint: runEndpoint(r), Refs: []RefSweptRef{}}
@@ -664,7 +667,7 @@ func RefsSwept(ctx *kit.Context, asJSON bool, out io.Writer) error {
 		return err
 	}
 	if len(runs) == 0 {
-		fmt.Fprintln(out, "No swept refs: nothing under "+SweptPrefix)
+		fmt.Fprintln(out, "No swept refs: nothing under "+refpins.SweptPrefix)
 		return nil
 	}
 	for _, r := range runs {

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
@@ -281,7 +282,7 @@ type Plan struct {
 	relist func() ([]wtsync.Agent, error)
 	// pins is the run a deleted branch is moved into; nil deletes it
 	// outright, as a quarantine does, which pins it itself.
-	pins *branchPins
+	pins *refpins.BranchPins
 }
 
 // Lost is a tip a removal would leave nothing holding.
@@ -423,10 +424,10 @@ func removeWorktreeResult(ctx *kit.Context, wt repo.Worktree, opts RemoveOptions
 	}
 	opts.Journal.applying()
 	if plan.Quarantine == "" {
-		plan.pins = &branchPins{command: "wt remove", begun: opts.Journal.ran}
+		plan.pins = &refpins.BranchPins{Command: "wt remove", Begun: opts.Journal.ran}
 	}
 	res, err := plan.run(ctx, w)
-	res.RunID = plan.pins.finish(ctx, w)
+	res.RunID = plan.pins.Finish(ctx, w)
 	return res, err
 }
 
@@ -1340,7 +1341,7 @@ func (p Plan) remove(ctx *kit.Context, w io.Writer) (RemoveResult, error) {
 	result, msg, err := p.branchStep(ctx)
 	res.Branch = result
 	if result == quarantine.BranchDeleted && p.pins != nil {
-		res.Pin = pinOf(p.pins.runID, RefBranch, p.Branch)
+		res.Pin = refpins.PinOf(p.pins.RunID, refpins.RefBranch, p.Branch)
 	}
 	if rec != nil {
 		if jerr := rec.RecordBranch(result, err); jerr != nil {
@@ -1373,7 +1374,7 @@ func (p Plan) remove(ctx *kit.Context, w io.Writer) (RemoveResult, error) {
 	fmt.Fprintf(w, "%s", restore)
 	switch l, ok := p.lost(LostBranch); {
 	case res.Pin != "":
-		fmt.Fprintf(w, "  %s puts the branch back\n", strings.Join(restoreFromRun(p.pins.runID, p.Branch), " "))
+		fmt.Fprintf(w, "  %s puts the branch back\n", strings.Join(refpins.RestoreFromRun(p.pins.RunID, p.Branch), " "))
 	case ok && p.Outcome == BranchDeleted:
 		fmt.Fprintf(w, "  %s restores its commits\n", p.restoreHint(l))
 	}
@@ -1414,7 +1415,7 @@ func (p Plan) branchStep(ctx *kit.Context) (result, msg string, err error) {
 		// under refs/wt-swept/ rather than deleted outright.
 		del := func() error { return ctx.Repo.DeleteBranchAt(p.Branch, p.Tip) }
 		if p.pins != nil {
-			del = func() error { _, err := p.pins.move(ctx, p.Branch, p.Tip); return err }
+			del = func() error { _, err := p.pins.Move(ctx, p.Branch, p.Tip); return err }
 		}
 		if err := del(); err != nil {
 			var inUse *repo.BranchInUseError

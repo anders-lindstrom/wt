@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 	"github.com/anders-lindstrom/wt/schema"
@@ -109,7 +110,7 @@ func QuarantinePurge(dir string, opts PurgeOptions, w io.Writer) error {
 func purgeRefusal(p quarantine.PurgePlan) string {
 	why := p.Refusal()
 	id := filepath.Base(p.Dir)
-	if len(p.Problems) == 1 && p.Problems[0].Code == quarantine.ProblemMissing && runIDPattern.MatchString(id) {
+	if len(p.Problems) == 1 && p.Problems[0].Code == quarantine.ProblemMissing && refpins.RunIDPattern.MatchString(id) {
 		why += fmt.Sprintf("; %s is spelled like a run id: wt refs purge %s deletes a run's pins", id, id)
 	}
 	return why

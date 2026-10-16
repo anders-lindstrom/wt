@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/schema"
 )
 
@@ -33,23 +34,23 @@ type RefItem struct {
 
 // RefsPlanOutput is the one object wt refs sweep --dry-run --json prints.
 type RefsPlanOutput struct {
-	Schema        int          `json:"schema"`
-	SchemaVersion string       `json:"schemaVersion"`
-	Command       string       `json:"command"`
-	Repo          *string      `json:"repo"`
-	Trunk         *string      `json:"trunk"`
-	TrunkSource   *string      `json:"trunkSource"`
-	Fetched       bool         `json:"fetched"`
-	Remote        bool         `json:"remote"`
-	Patterns      []string     `json:"patterns"`
-	Age           *string      `json:"age"`
-	Now           int64        `json:"now"`
-	Endpoint      *Endpoint    `json:"endpoint"`
-	RunID         *string      `json:"runId"`
-	Token         *string      `json:"token"`
-	Error         *string      `json:"error"`
-	Problems      []RefProblem `json:"problems"`
-	Items         []RefItem    `json:"items"`
+	Schema        int               `json:"schema"`
+	SchemaVersion string            `json:"schemaVersion"`
+	Command       string            `json:"command"`
+	Repo          *string           `json:"repo"`
+	Trunk         *string           `json:"trunk"`
+	TrunkSource   *string           `json:"trunkSource"`
+	Fetched       bool              `json:"fetched"`
+	Remote        bool              `json:"remote"`
+	Patterns      []string          `json:"patterns"`
+	Age           *string           `json:"age"`
+	Now           int64             `json:"now"`
+	Endpoint      *refpins.Endpoint `json:"endpoint"`
+	RunID         *string           `json:"runId"`
+	Token         *string           `json:"token"`
+	Error         *string           `json:"error"`
+	Problems      []RefProblem      `json:"problems"`
+	Items         []RefItem         `json:"items"`
 }
 
 // RefResultItem is what became of one row, for --json.
@@ -182,7 +183,7 @@ func (j *RefsJournal) planned(p RefsPlan, token *string) {
 	defer j.mu.Unlock()
 	j.root = p.Repo
 	if p.Endpoint != nil {
-		j.url = p.Endpoint.raw
+		j.url = p.Endpoint.Raw
 	}
 	j.res.Repo, j.res.Trunk, j.res.Fetched, j.res.Remote, j.res.Token =
 		kit.Strp(p.Repo), kit.Strp(p.Trunk), p.Fetched, p.Remote, token
@@ -212,7 +213,7 @@ func (j *RefsJournal) begin(runID string) {
 	j.res.RunID, j.applying = kit.Strp(runID), true
 	for _, it := range j.res.Items {
 		if it.Selected {
-			it.Pin = kit.Strp(pinOf(runID, it.Kind, it.Name))
+			it.Pin = kit.Strp(refpins.PinOf(runID, it.Kind, it.Name))
 		}
 	}
 }
@@ -324,7 +325,7 @@ func (j *RefsJournal) write(signalled bool, recovery string) {
 				r := j.rows[j.inFlight]
 				pin := deref(it.Pin)
 				var st refState
-				if remoteKind(r.Kind) {
+				if refpins.RemoteKind(r.Kind) {
 					st = readRemoteState(j.root, j.url, r, pin)
 				} else {
 					st = readLocalState(j.root, r, pin)
@@ -344,10 +345,10 @@ func (j *RefsJournal) write(signalled bool, recovery string) {
 // here, and origin briefly.
 func readRemoteState(root, url string, r RefRow, pin string) refState {
 	var st refState
-	if v, ok, err := refValue(root, pin); err == nil && ok && v == r.Object {
+	if v, ok, err := refpins.RefValue(root, pin); err == nil && ok && v == r.Object {
 		st.pinned = true
 	}
-	if _, there, err := remoteValue(root, url, r.Ref, 10*time.Second); err == nil && !there {
+	if _, there, err := refpins.RemoteValue(root, url, r.Ref, 10*time.Second); err == nil && !there {
 		st.deleted = true
 	}
 	return st

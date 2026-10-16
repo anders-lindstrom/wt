@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -209,7 +210,7 @@ func TestRemoveJSONRemovesWithTheToken(t *testing.T) {
 	if r.RunID == nil {
 		t.Fatalf("a removal that deletes its branch names the run it pinned it in: %+v", r)
 	}
-	pin := pinOf(*r.RunID, RefBranch, "fix_wt/json-gone")
+	pin := refpins.PinOf(*r.RunID, refpins.RefBranch, "fix_wt/json-gone")
 	if s := step(t, r, kit.StepBranch); deref(s.Pin) != pin || testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", pin) != tip {
 		t.Errorf("branch pin %v, want %s at %s", s.Pin, pin, tip)
 	}

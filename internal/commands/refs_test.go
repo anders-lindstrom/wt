@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
@@ -130,7 +131,7 @@ func TestRefsSweepPinsAndDeletes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v\n%s", err, human)
 	}
-	if r.Outcome != kit.OutcomeDone || r.RunID == nil || !runIDPattern.MatchString(*r.RunID) || r.Error != nil {
+	if r.Outcome != kit.OutcomeDone || r.RunID == nil || !refpins.RunIDPattern.MatchString(*r.RunID) || r.Error != nil {
 		t.Fatalf("result = %+v\n%s", r, human)
 	}
 	run := *r.RunID
@@ -145,7 +146,7 @@ func TestRefsSweepPinsAndDeletes(t *testing.T) {
 			t.Errorf("%s: pin at %s, want %s", id, got, it.Object)
 		}
 	}
-	if pin := deref(refResultItem(t, r, "refs/tags/safe-tag").Pin); pin != SweptPrefix+run+"/tags/safe-tag" {
+	if pin := deref(refResultItem(t, r, "refs/tags/safe-tag").Pin); pin != refpins.SweptPrefix+run+"/tags/safe-tag" {
 		t.Errorf("tag pin = %s", pin)
 	}
 	if it := refResultItem(t, r, "refs/heads/backup/rebased"); it.Result != RefNotSelected || it.Pinned {
@@ -221,7 +222,7 @@ func TestRefsSweepKeepsARefThatMoved(t *testing.T) {
 	var out bytes.Buffer
 	j := NewRefsJournal(&out)
 	j.planned(plan, refsToken(plan))
-	run := newRunID(time.Now())
+	run := refpins.NewRunID(time.Now())
 	j.begin(run)
 	if err := plan.apply(ctx, run, j, &bytes.Buffer{}); err == nil {
 		t.Error("a run that kept a row must say so")
@@ -279,7 +280,7 @@ func TestRefsJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 	var out bytes.Buffer
 	j := NewRefsJournal(&out)
 	j.planned(plan, refsToken(plan))
-	j.begin(newRunID(time.Now()))
+	j.begin(refpins.NewRunID(time.Now()))
 	j.start("refs/heads/backup/old")
 	j.Interrupted("", "interrupted")
 	j.Finish()
@@ -364,8 +365,8 @@ func TestRefsRestorePutsBack(t *testing.T) {
 	if testkit.GitOut(t, main, "cat-file", "-t", "refs/tags/safe-tag") != "tag" {
 		t.Error("the annotated tag must come back as the tag object")
 	}
-	pins := testkit.GitOut(t, main, "for-each-ref", "--format=%(refname)", SweptPrefix+run+"/")
-	if pins != SweptPrefix+run+"/heads/backup/contained\n"+SweptPrefix+run+"/meta" {
+	pins := testkit.GitOut(t, main, "for-each-ref", "--format=%(refname)", refpins.SweptPrefix+run+"/")
+	if pins != refpins.SweptPrefix+run+"/heads/backup/contained\n"+refpins.SweptPrefix+run+"/meta" {
 		t.Errorf("pins left: %q", pins)
 	}
 	if _, err := restorePlanJSON(t, ctx, run, []string{"refs/heads/backup/contained"}); err == nil {
@@ -441,7 +442,7 @@ func TestRefsSweptAndPurge(t *testing.T) {
 	if err != nil || pr.Outcome != OutcomePurged || pr.Runs[0].Refs[0].Result != PinDeleted {
 		t.Fatalf("%v %+v", err, pr)
 	}
-	if left := testkit.GitOut(t, main, "for-each-ref", SweptPrefix); left != "" {
+	if left := testkit.GitOut(t, main, "for-each-ref", refpins.SweptPrefix); left != "" {
 		t.Errorf("pins left: %s", left)
 	}
 	if err := RefsPurge(ctx, RefsPurgeOptions{RunIDs: []string{run}, Yes: true}, &bytes.Buffer{}); err == nil {
@@ -480,7 +481,7 @@ func TestRefsSweepRemote(t *testing.T) {
 	if !p.Remote || !p.Fetched {
 		t.Errorf("plan = %+v", p)
 	}
-	if it := refPlanItem(t, p, "origin:refs/heads/backup/landed"); it.Kind != RefRemoteBranch ||
+	if it := refPlanItem(t, p, "origin:refs/heads/backup/landed"); it.Kind != refpins.RefRemoteBranch ||
 		it.Category != RefBackupContained || !it.Selected || deref(it.ContainedIn) != "origin:refs/heads/main" {
 		t.Errorf("landed = %+v", it)
 	}
@@ -492,7 +493,7 @@ func TestRefsSweepRemote(t *testing.T) {
 		!slices.Equal(it.Kept, []string{KeptNotContained}) {
 		t.Errorf("unique = %+v", it)
 	}
-	if it := refPlanItem(t, p, "origin:refs/tags/safe-remote"); it.Kind != RefRemoteTag || it.Category != RefBackupContained ||
+	if it := refPlanItem(t, p, "origin:refs/tags/safe-remote"); it.Kind != refpins.RefRemoteTag || it.Category != RefBackupContained ||
 		it.Annotated == nil || !*it.Annotated {
 		t.Errorf("tag = %+v", it)
 	}
@@ -516,7 +517,7 @@ func TestRefsSweepRemote(t *testing.T) {
 			t.Errorf("%s = %+v", ref, it)
 		}
 	}
-	if pin := pinOf(run, RefRemoteBranch, "backup/landed"); testkit.GitOut(t, main, "rev-parse", pin) != first {
+	if pin := refpins.PinOf(run, refpins.RefRemoteBranch, "backup/landed"); testkit.GitOut(t, main, "rev-parse", pin) != first {
 		t.Errorf("pin %s is not at %s", pin, first)
 	}
 	res, err := restoreJSON(t, ctx, run, RefsRestoreOptions{})
@@ -527,7 +528,7 @@ func TestRefsSweepRemote(t *testing.T) {
 		testkit.GitOut(t, origin, "cat-file", "-t", "refs/tags/safe-remote") != "tag" {
 		t.Error("origin must have both back")
 	}
-	if left := testkit.GitOut(t, main, "for-each-ref", SweptPrefix); left != "" {
+	if left := testkit.GitOut(t, main, "for-each-ref", refpins.SweptPrefix); left != "" {
 		t.Errorf("a run restored whole leaves nothing behind: %s", left)
 	}
 }
@@ -585,7 +586,7 @@ func TestRefsPlanTime(t *testing.T) {
 		t.Errorf("the plan took %v", took)
 	}
 	start = time.Now()
-	if err := p.apply(ctx, newRunID(time.Now()), nil, &bytes.Buffer{}); err != nil {
+	if err := p.apply(ctx, refpins.NewRunID(time.Now()), nil, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("swept %d of them in %v", len(p.Selected()), time.Since(start))
@@ -643,7 +644,7 @@ func TestRefsRemoteEndpoint(t *testing.T) {
 	for url, want := range map[string]string{"git@example.com:o/r.git": "example.com:o/r.git",
 		"ssh://git@example.com/o/r.git": "ssh://example.com/o/r.git"} {
 		testkit.GitIn(t, main, "remote", "set-url", "origin", url)
-		ep, err := resolveEndpoint(main)
+		ep, err := refpins.ResolveEndpoint(main)
 		if err != nil || ep.URL != want {
 			t.Errorf("%s: %v %+v", url, err, ep)
 		}
@@ -677,7 +678,7 @@ func TestRefsRestoreRemoteNeedsTheSameOrigin(t *testing.T) {
 	}
 	for _, it := range p.Items {
 		want := RestoreCreate
-		if it.Kind == RefRemoteBranch {
+		if it.Kind == refpins.RefRemoteBranch {
 			want = RestoreEndpointChanged
 		}
 		if it.Action != want || it.Selected != (want == RestoreCreate) {
@@ -685,10 +686,10 @@ func TestRefsRestoreRemoteNeedsTheSameOrigin(t *testing.T) {
 		}
 	}
 	testkit.GitIn(t, main, "remote", "set-url", "origin", origin)
-	testkit.GitIn(t, main, "update-ref", "-d", metaRef(run))
+	testkit.GitIn(t, main, "update-ref", "-d", refpins.MetaRef(run))
 	p, _ = restorePlanJSON(t, ctx, run, nil)
 	for _, it := range p.Items {
-		if it.Kind == RefRemoteBranch && it.Action != RestoreEndpointUnknown {
+		if it.Kind == refpins.RefRemoteBranch && it.Action != RestoreEndpointUnknown {
 			t.Errorf("no meta: %s is %s", it.ID, it.Action)
 		}
 	}
@@ -702,8 +703,8 @@ func TestRefsSweepRunID(t *testing.T) {
 	if deref(r.RunID) != id {
 		t.Fatalf("run = %v", r.RunID)
 	}
-	var m runMeta
-	if err := json.Unmarshal([]byte(testkit.GitOut(t, main, "cat-file", "blob", metaRef(id))), &m); err != nil ||
+	var m refpins.RunMeta
+	if err := json.Unmarshal([]byte(testkit.GitOut(t, main, "cat-file", "blob", refpins.MetaRef(id))), &m); err != nil ||
 		m.RunID != id || m.SweptAt == 0 || m.Endpoint != nil || m.Repo == "" {
 		t.Errorf("meta = %+v, %v", m, err)
 	}
@@ -729,14 +730,14 @@ func TestRefsRestoreRemoteKeepsThePinUntilOriginHasIt(t *testing.T) {
 	if err := os.Chmod(hook, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	pin := pinOf(run, RefRemoteBranch, "backup/landed")
+	pin := refpins.PinOf(run, refpins.RefRemoteBranch, "backup/landed")
 	id := "origin:refs/heads/backup/landed"
 	res, err := restoreJSON(t, ctx, run, RefsRestoreOptions{Only: []string{id}})
 	it := res.Items[slices.IndexFunc(res.Items, func(i *RefRestoreItem) bool { return i.ID == id })]
 	if err == nil || it.Result != RefFailed || it.PinDeleted || it.Restored {
 		t.Fatalf("rejected push: %v %+v", err, it)
 	}
-	if _, ok, _ := refValue(main, pin); !ok {
+	if _, ok, _ := refpins.RefValue(main, pin); !ok {
 		t.Fatal("a rejected push must keep the pin")
 	}
 	if err := os.Remove(hook); err != nil {
@@ -751,7 +752,7 @@ func TestRefsRestoreRemoteKeepsThePinUntilOriginHasIt(t *testing.T) {
 	if err != nil || res.Outcome != kit.OutcomeDone {
 		t.Fatalf("%v %+v", err, res)
 	}
-	if _, ok, _ := refValue(main, pin); ok {
+	if _, ok, _ := refpins.RefValue(main, pin); ok {
 		t.Error("the pin must go once origin has the ref")
 	}
 }
@@ -761,7 +762,7 @@ func TestRefsRestoreRemoteKeepsThePinUntilOriginHasIt(t *testing.T) {
 func TestRefsPurgeDeletesTheMetaLast(t *testing.T) {
 	ctx, main := testkit.BackupsRepo(t)
 	id := "20260101T000000Z-dead"
-	if err := writeMeta(main, runMeta{RunID: id, Repo: main, SweptAt: 1767225600}); err != nil {
+	if err := refpins.WriteMeta(main, refpins.RunMeta{RunID: id, Repo: main, SweptAt: 1767225600}); err != nil {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
@@ -780,7 +781,7 @@ func TestRefsPurgeDeletesTheMetaLast(t *testing.T) {
 	if err != nil || pr.Outcome != OutcomePurged || len(pr.Runs) != 1 || !pr.Runs[0].MetaDeleted {
 		t.Fatalf("%v %+v", err, pr)
 	}
-	if left := testkit.GitOut(t, main, "for-each-ref", "--format=%(refname)", SweptPrefix); !strings.HasPrefix(left, SweptPrefix+*r.RunID) {
+	if left := testkit.GitOut(t, main, "for-each-ref", "--format=%(refname)", refpins.SweptPrefix); !strings.HasPrefix(left, refpins.SweptPrefix+*r.RunID) {
 		t.Errorf("only today's run is left, got %q", left)
 	}
 }
@@ -805,7 +806,7 @@ func TestRefsSweepRemoteGuards(t *testing.T) {
 	var out bytes.Buffer
 	j := NewRefsJournal(&out)
 	j.planned(plan, refsToken(plan))
-	run := newRunID(time.Now())
+	run := refpins.NewRunID(time.Now())
 	j.begin(run)
 	_ = plan.apply(ctx, run, j, &bytes.Buffer{})
 	j.Finish()
@@ -824,7 +825,7 @@ func TestRefsSweepRemoteGuards(t *testing.T) {
 	if r.Outcome != kit.OutcomeRefused {
 		t.Errorf("outcome = %s", r.Outcome)
 	}
-	if left := testkit.GitOut(t, main, "for-each-ref", SweptPrefix); left != "" {
+	if left := testkit.GitOut(t, main, "for-each-ref", refpins.SweptPrefix); left != "" {
 		t.Errorf("a run that moved nothing leaves nothing behind: %s", left)
 	}
 }
@@ -840,7 +841,7 @@ func TestRefsSweepKeepsABranchCheckedOutSinceThePlan(t *testing.T) {
 	var out bytes.Buffer
 	j := NewRefsJournal(&out)
 	j.planned(plan, refsToken(plan))
-	run := newRunID(time.Now())
+	run := refpins.NewRunID(time.Now())
 	j.begin(run)
 	_ = plan.apply(ctx, run, j, &bytes.Buffer{})
 	j.Finish()
@@ -889,7 +890,7 @@ func TestRefsRestoreNoneKeepsThePinOfARefThatWent(t *testing.T) {
 	if st.kept == "" || st.pinDeleted {
 		t.Errorf("state = %+v", st)
 	}
-	if _, ok, _ := refValue(main, plan.Rows[0].Pin); !ok {
+	if _, ok, _ := refpins.RefValue(main, plan.Rows[0].Pin); !ok {
 		t.Error("the pin must stay while the ref is gone")
 	}
 	if _, err := restorePlanJSON(t, ctx, "not-a-run", nil); err == nil {

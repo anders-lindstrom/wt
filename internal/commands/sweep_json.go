@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 	"github.com/anders-lindstrom/wt/schema"
@@ -647,12 +648,12 @@ func readState(ctx *kit.Context, runID string, r *SweepResultItem) {
 		r.Pin, r.RestoreCommand = nil, nil
 		pin := ""
 		if !ok {
-			pin = pinHolding(ctx.Repo.MainRoot, runID, *r.Branch, *r.Tip)
+			pin = refpins.PinHolding(ctx.Repo.MainRoot, runID, *r.Branch, *r.Tip)
 		}
 		switch {
 		case ok:
 		case pin != "":
-			r.Pin, r.RestoreCommand = kit.Strp(pin), restoreFromRun(runID, *r.Branch)
+			r.Pin, r.RestoreCommand = kit.Strp(pin), refpins.RestoreFromRun(runID, *r.Branch)
 		case r.Quarantine != nil:
 			// The quarantine pins the branch, and puts it back with the
 			// worktree.

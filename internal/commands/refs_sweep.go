@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/github"
@@ -129,7 +130,7 @@ type RefsPlan struct {
 	Age             string
 	Now             int64
 	// Endpoint is origin as --remote resolved it; nil without --remote.
-	Endpoint *Endpoint
+	Endpoint *refpins.Endpoint
 	Problems []RefProblem
 	Rows     []RefRow
 }
@@ -213,12 +214,12 @@ func planRefs(ctx *kit.Context, opts RefsOptions, progress io.Writer) (RefsPlan,
 		if !ctx.Repo.HasRemote("origin") {
 			return p, errors.New("--remote sweeps origin's backups, and there is no origin remote here")
 		}
-		ep, err := resolveEndpoint(ctx.Repo.MainRoot)
+		ep, err := refpins.ResolveEndpoint(ctx.Repo.MainRoot)
 		if err != nil {
 			switch {
-			case errors.Is(err, errRemoteAmbiguous):
+			case errors.Is(err, refpins.ErrRemoteAmbiguous):
 				p.Problems = append(p.Problems, RefProblem{Code: ProblemRemoteAmbiguous, Text: err.Error()})
-			case errors.Is(err, errRemoteCredentials):
+			case errors.Is(err, refpins.ErrRemoteCredentials):
 				p.Problems = append(p.Problems, RefProblem{Code: ProblemRemoteCredentials, Text: err.Error()})
 			}
 			return p, err
@@ -239,7 +240,7 @@ func planRefs(ctx *kit.Context, opts RefsOptions, progress io.Writer) (RefsPlan,
 	var remote []refCandidate
 	var remoteContainers []container
 	if opts.Remote {
-		if remote, remoteContainers, err = readOriginRefs(ctx, p.Endpoint.raw, patterns); err != nil {
+		if remote, remoteContainers, err = readOriginRefs(ctx, p.Endpoint.Raw, patterns); err != nil {
 			return p, err
 		}
 	}
@@ -247,13 +248,13 @@ func planRefs(ctx *kit.Context, opts RefsOptions, progress io.Writer) (RefsPlan,
 	for _, c := range append(append([]refCandidate{}, local...), remote...) {
 		oids = append(oids, c.object, c.tip)
 	}
-	objects, err := readObjects(root, oids)
+	objects, err := refpins.ReadObjects(root, oids)
 	if err != nil {
 		return p, err
 	}
 	for i := range local {
 		if local[i].tip == "" {
-			local[i].tip = peelCommit(root, local[i].object, objects)
+			local[i].tip = refpins.PeelCommit(root, local[i].object, objects)
 		}
 	}
 
@@ -267,15 +268,15 @@ func planRefs(ctx *kit.Context, opts RefsOptions, progress io.Writer) (RefsPlan,
 		return p, err
 	}
 	originHead, _ := ctx.Repo.OriginHead()
-	dates := &refDates{mainRoot: root}
+	dates := &refpins.RefDates{MainRoot: root}
 	cutoff := p.Now - int64(age/time.Second)
 
 	var rows []RefRow
 	var localTips []string
 	for _, c := range local {
 		r := newRefRow(c, patterns, objects)
-		if c.kind == RefBranch {
-			if t, ok := dates.created(c.ref); ok {
+		if c.kind == refpins.RefBranch {
+			if t, ok := dates.Created(c.ref); ok {
 				r.Date, r.DateSource = t, DateReflog
 			}
 			if use, ok := users[c.name]; ok {
@@ -304,7 +305,7 @@ func planRefs(ctx *kit.Context, opts RefsOptions, progress io.Writer) (RefsPlan,
 		return p, err
 	}
 	if opts.Remote {
-		remoteRows, err := planOrigin(ctx, opts, p.Endpoint.raw, patterns, remote, remoteContainers, objects, p.Trunk, originHead)
+		remoteRows, err := planOrigin(ctx, opts, p.Endpoint.Raw, patterns, remote, remoteContainers, objects, p.Trunk, originHead)
 		if err != nil {
 			return p, err
 		}
@@ -317,7 +318,7 @@ func planRefs(ctx *kit.Context, opts RefsOptions, progress io.Writer) (RefsPlan,
 			r.Category = RefKept
 		case r.ContainedIn != "":
 			r.Category = RefBackupContained
-		case remoteKind(r.Kind):
+		case refpins.RemoteKind(r.Kind):
 			r.Category, r.Kept = RefKept, []string{KeptNotContained}
 		case r.Date < cutoff:
 			r.Category = RefBackupOld
@@ -332,11 +333,11 @@ func planRefs(ctx *kit.Context, opts RefsOptions, progress io.Writer) (RefsPlan,
 
 // newRefRow is a candidate as a row, with its tip, its subject and the date
 // of its own object: a tag's tagger date, else its commit's.
-func newRefRow(c refCandidate, patterns []config.RefPattern, objects map[string]objectInfo) RefRow {
+func newRefRow(c refCandidate, patterns []config.RefPattern, objects map[string]refpins.ObjectInfo) RefRow {
 	pattern, _ := config.MatchRefPattern(patterns, c.name)
-	r := RefRow{ID: refID(c.kind, c.name), Kind: c.kind, Name: c.name, Ref: c.ref, Pattern: pattern,
+	r := RefRow{ID: refpins.RefID(c.kind, c.name), Kind: c.kind, Name: c.name, Ref: c.ref, Pattern: pattern,
 		Tip: c.tip, Object: c.object, Kept: []string{}}
-	if c.kind == RefTag || c.kind == RefRemoteTag {
+	if c.kind == refpins.RefTag || c.kind == refpins.RefRemoteTag {
 		a := objects[c.object].Type == "tag" || c.annotated
 		r.Annotated = &a
 		if a && objects[c.object].Time > 0 {
@@ -389,12 +390,12 @@ func readLocalRefs(ctx *kit.Context, patterns []config.RefPattern) ([]refCandida
 		order := 3
 		switch {
 		case strings.HasPrefix(ref, "refs/heads/"):
-			kind, name = RefBranch, strings.TrimPrefix(ref, "refs/heads/")
+			kind, name = refpins.RefBranch, strings.TrimPrefix(ref, "refs/heads/")
 			if name == trunk {
 				order = 0
 			}
 		case strings.HasPrefix(ref, "refs/tags/"):
-			kind, name = RefTag, strings.TrimPrefix(ref, "refs/tags/")
+			kind, name = refpins.RefTag, strings.TrimPrefix(ref, "refs/tags/")
 		default:
 			name = strings.TrimPrefix(ref, "refs/remotes/origin/")
 			if name == "HEAD" {
@@ -435,7 +436,7 @@ func sortContainers(c []container) {
 // candidates, and the containers a remote backup is measured against —
 // origin's own refs, since other clones cannot see a branch here.
 func readOriginRefs(ctx *kit.Context, url string, patterns []config.RefPattern) ([]refCandidate, []container, error) {
-	rr, err := readRemoteRefs(ctx.Repo.MainRoot, url)
+	rr, err := refpins.ReadRemoteRefs(ctx.Repo.MainRoot, url)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -443,10 +444,10 @@ func readOriginRefs(ctx *kit.Context, url string, patterns []config.RefPattern) 
 	var cands []refCandidate
 	var conts []container
 	for ref, oid := range rr.Values {
-		kind, name := RefRemoteBranch, strings.TrimPrefix(ref, "refs/heads/")
+		kind, name := refpins.RefRemoteBranch, strings.TrimPrefix(ref, "refs/heads/")
 		order := 1
 		if strings.HasPrefix(ref, "refs/tags/") {
-			kind, name, order = RefRemoteTag, strings.TrimPrefix(ref, "refs/tags/"), 2
+			kind, name, order = refpins.RefRemoteTag, strings.TrimPrefix(ref, "refs/tags/"), 2
 		} else if name == trunk {
 			order = 0
 		}
@@ -472,11 +473,11 @@ func readOriginRefs(ctx *kit.Context, url string, patterns []config.RefPattern) 
 // request is kept, since deleting it closes the pull request, and so is
 // every branch when GitHub cannot be asked.
 func planOrigin(ctx *kit.Context, opts RefsOptions, url string, patterns []config.RefPattern, cands []refCandidate, conts []container,
-	objects map[string]objectInfo, trunk, originHead string) ([]RefRow, error) {
+	objects map[string]refpins.ObjectInfo, trunk, originHead string) ([]RefRow, error) {
 	root := ctx.Repo.MainRoot
 	var branches []string
 	for _, c := range cands {
-		if c.kind == RefRemoteBranch {
+		if c.kind == refpins.RefRemoteBranch {
 			branches = append(branches, c.name)
 		}
 	}
@@ -494,7 +495,7 @@ func planOrigin(ctx *kit.Context, opts RefsOptions, url string, patterns []confi
 	for _, c := range conts {
 		cOIDs = append(cOIDs, c.tip)
 	}
-	have, err := readObjects(root, cOIDs)
+	have, err := refpins.ReadObjects(root, cOIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -508,7 +509,7 @@ func planOrigin(ctx *kit.Context, opts RefsOptions, url string, patterns []confi
 	var tips []string
 	for _, c := range cands {
 		r := newRefRow(c, patterns, objects)
-		if c.kind == RefRemoteBranch && protectedBranch(c.name, trunk, originHead) {
+		if c.kind == refpins.RefRemoteBranch && protectedBranch(c.name, trunk, originHead) {
 			r.Kept = append(r.Kept, KeptProtected)
 		}
 		if objects[c.object].Type == "" || r.Tip == "" {
@@ -517,7 +518,7 @@ func planOrigin(ctx *kit.Context, opts RefsOptions, url string, patterns []confi
 		} else {
 			tips = append(tips, r.Tip)
 		}
-		if c.kind == RefRemoteBranch {
+		if c.kind == refpins.RefRemoteBranch {
 			switch {
 			case prErr != nil:
 				r.Kept = append(r.Kept, KeptPullRequestUnknown)
@@ -591,14 +592,14 @@ func contain(root string, rows []RefRow, tips []string, conts []container, remot
 	for _, c := range conts {
 		keep = append(keep, c.tip)
 	}
-	unique, err := uniqueCommits(root, tips, keep)
+	unique, err := refpins.UniqueCommits(root, tips, keep)
 	if err != nil {
 		return err
 	}
 	var waiting []*RefRow
 	for i := range rows {
 		r := &rows[i]
-		if r.Tip == "" || remoteKind(r.Kind) != remote {
+		if r.Tip == "" || refpins.RemoteKind(r.Kind) != remote {
 			continue
 		}
 		if n := unique[r.Tip]; n > 0 {
@@ -801,15 +802,15 @@ func RefsSweep(ctx *kit.Context, opts RefsOptions, w io.Writer) (err error) {
 		}()
 	}
 	if opts.RunID != "" {
-		if !runIDPattern.MatchString(opts.RunID) {
+		if !refpins.RunIDPattern.MatchString(opts.RunID) {
 			return fmt.Errorf("nothing was swept: --run-id %q is not a run id; they look like "+
 				"20260930T091500Z-3f2a (four to 32 hex digits)", opts.RunID)
 		}
-		switch taken, err := runTaken(ctx.Repo.MainRoot, opts.RunID); {
+		switch taken, err := refpins.RunTaken(ctx.Repo.MainRoot, opts.RunID); {
 		case err != nil:
 			return err
 		case taken:
-			err := fmt.Errorf("nothing was swept: run %s has refs under %s already", opts.RunID, SweptPrefix)
+			err := fmt.Errorf("nothing was swept: run %s has refs under %s already", opts.RunID, refpins.SweptPrefix)
 			j.problem(ProblemRunIDTaken, err)
 			return err
 		}
@@ -867,19 +868,19 @@ func RefsSweep(ctx *kit.Context, opts RefsOptions, w io.Writer) (err error) {
 	// Origin is read again right before anything goes to it: a URL changed
 	// since the plan would send the deletes somewhere else.
 	if plan.Endpoint != nil {
-		now, err := resolveEndpoint(ctx.Repo.MainRoot)
+		now, err := refpins.ResolveEndpoint(ctx.Repo.MainRoot)
 		if err != nil || now.Digest != plan.Endpoint.Digest {
 			return errors.New("nothing was swept: origin's URL changed since the plan was made; read the plan again")
 		}
 	}
 	runID := opts.RunID
 	if runID == "" {
-		runID = newRunID(opts.now())
+		runID = refpins.NewRunID(opts.now())
 	}
 	// The meta goes first, so the run is bound, with --remote, to the origin
 	// it deleted from.
 	j.begin(runID)
-	if err := beginRun(ctx.Repo.MainRoot, runID, opts.now(), plan.Endpoint); err != nil {
+	if err := refpins.BeginRun(ctx.Repo.MainRoot, runID, opts.now(), plan.Endpoint); err != nil {
 		j.abandon()
 		return fmt.Errorf("nothing was swept: %w", err)
 	}
@@ -898,11 +899,11 @@ func (p RefsPlan) apply(ctx *kit.Context, runID string, j *RefsJournal, w io.Wri
 	root := ctx.Repo.MainRoot
 	failed := 0
 	for _, r := range p.Selected() {
-		pin := pinOf(runID, r.Kind, r.Name)
+		pin := refpins.PinOf(runID, r.Kind, r.Name)
 		j.start(r.ID)
 		var st refState
-		if remoteKind(r.Kind) {
-			st = sweepRemoteRef(root, p.Endpoint.raw, r, pin)
+		if refpins.RemoteKind(r.Kind) {
+			st = sweepRemoteRef(root, p.Endpoint.Raw, r, pin)
 		} else {
 			st = sweepLocalRef(ctx, r, pin)
 		}
@@ -923,7 +924,7 @@ func (p RefsPlan) apply(ctx *kit.Context, runID string, j *RefsJournal, w io.Wri
 		}
 	}
 	// A run that moved nothing leaves nothing behind, its meta included.
-	dropEmptyRun(root, runID, w)
+	refpins.DropEmptyRun(root, runID, w)
 	if failed > 0 {
 		return fmt.Errorf("%d of %s kept or not finished; wt refs restore %s puts back what went",
 			failed, refCount(len(p.Selected())), runID)
@@ -945,7 +946,7 @@ type refState struct {
 // branch -D does.
 func sweepLocalRef(ctx *kit.Context, r RefRow, pin string) refState {
 	root := ctx.Repo.MainRoot
-	now, ok, err := refValue(root, r.Ref)
+	now, ok, err := refpins.RefValue(root, r.Ref)
 	switch {
 	case err != nil:
 		return refState{err: err}
@@ -954,8 +955,8 @@ func sweepLocalRef(ctx *kit.Context, r RefRow, pin string) refState {
 	case now != r.Object:
 		return refState{kept: "it moved after the plan was made"}
 	}
-	if r.Kind == RefBranch {
-		err = moveBranch(ctx, r.Name, r.Object, pin, "wt refs sweep")
+	if r.Kind == refpins.RefBranch {
+		err = refpins.MoveBranch(ctx, r.Name, r.Object, pin, "wt refs sweep")
 		var inUse *repo.BranchInUseError
 		switch {
 		case errors.As(err, &inUse):
@@ -964,7 +965,7 @@ func sweepLocalRef(ctx *kit.Context, r RefRow, pin string) refState {
 			return refState{kept: err.Error()}
 		}
 	} else {
-		err = updateRefs(root, "wt refs sweep", "create "+pin+" "+r.Object, "delete "+r.Ref+" "+r.Object)
+		err = refpins.UpdateRefs(root, "wt refs sweep", "create "+pin+" "+r.Object, "delete "+r.Ref+" "+r.Object)
 	}
 	st := readLocalState(root, r, pin)
 	st.err = err
@@ -974,10 +975,10 @@ func sweepLocalRef(ctx *kit.Context, r RefRow, pin string) refState {
 // readLocalState reads back a local row's pin and ref.
 func readLocalState(root string, r RefRow, pin string) refState {
 	var st refState
-	if v, ok, err := refValue(root, pin); err == nil && ok && v == r.Object {
+	if v, ok, err := refpins.RefValue(root, pin); err == nil && ok && v == r.Object {
 		st.pinned = true
 	}
-	if _, ok, err := refValue(root, r.Ref); err == nil && !ok {
+	if _, ok, err := refpins.RefValue(root, r.Ref); err == nil && !ok {
 		st.deleted = true
 	}
 	return st
@@ -993,13 +994,13 @@ func sweepRemoteRef(root, url string, r RefRow, pin string) refState {
 		"--no-recurse-submodules", url, "+"+r.Ref+":"+pin); err != nil {
 		return refState{err: fmt.Errorf("could not pin it: %s", git.Reason(err))}
 	}
-	got, ok, err := refValue(root, pin)
+	got, ok, err := refpins.RefValue(root, pin)
 	if err != nil {
 		return refState{err: err}
 	}
 	if !ok || got != r.Object {
 		if ok {
-			if derr := deleteRefAt(root, pin, got); derr != nil {
+			if derr := refpins.DeleteRefAt(root, pin, got); derr != nil {
 				return refState{pinned: false, err: fmt.Errorf("origin moved it, and the pin at %s could not be "+
 					"dropped: %s", git.ShortID(got, 12), git.Reason(derr))}
 			}
@@ -1014,7 +1015,7 @@ func sweepRemoteRef(root, url string, r RefRow, pin string) refState {
 		return refState{pinned: true, deleted: true}
 	}
 	st := refState{pinned: true}
-	now, there, err := remoteValue(root, url, r.Ref, kit.NetworkTimeout)
+	now, there, err := refpins.RemoteValue(root, url, r.Ref, kit.NetworkTimeout)
 	switch {
 	case err != nil:
 		// Not knowing whether the delete landed, the pin stays.
@@ -1023,7 +1024,7 @@ func sweepRemoteRef(root, url string, r RefRow, pin string) refState {
 		// The push reported failure but the ref is gone: the pin stays.
 		st.deleted, st.err = true, fmt.Errorf("the push reported %s, yet origin has no %s", git.Reason(pushErr), r.Ref)
 	default:
-		if derr := deleteRefAt(root, pin, r.Object); derr != nil {
+		if derr := refpins.DeleteRefAt(root, pin, r.Object); derr != nil {
 			st.err = fmt.Errorf("could not delete it on origin (%s), nor drop the pin: %s", git.Reason(pushErr),
 				git.Reason(derr))
 			return st
@@ -1071,7 +1072,7 @@ func (p RefsPlan) Render(w io.Writer) {
 		fmt.Fprintln(w, "No backups to sweep.")
 	} else {
 		fmt.Fprintf(w, "Will be swept, %s, each pinned under %s so it can be restored:\n",
-			refCount(len(sel)), SweptPrefix)
+			refCount(len(sel)), refpins.SweptPrefix)
 		_ = kit.PrintTable(w, sel)
 	}
 	if len(young) > 0 {

@@ -1,4 +1,6 @@
-package commands
+// Package refpins keeps what wt refs sweep and wt remove put aside under
+// refs/wt-swept/: one folder per run, a pin per ref and the run's metadata.
+package refpins
 
 import (
 	"bufio"
@@ -41,8 +43,8 @@ var refSpaces = map[string]string{
 	RefBranch: "heads", RefTag: "tags", RefRemoteBranch: "remote-heads", RefRemoteTag: "remote-tags",
 }
 
-// remoteKind reports that the ref is on origin rather than here.
-func remoteKind(kind string) bool { return kind == RefRemoteBranch || kind == RefRemoteTag }
+// RemoteKind reports that the ref is on origin rather than here.
+func RemoteKind(kind string) bool { return kind == RefRemoteBranch || kind == RefRemoteTag }
 
 // refOf is the ref a kind and short name stand for, on the side it lives:
 // refs/heads/<name> for a branch here and on origin alike.
@@ -53,27 +55,27 @@ func refOf(kind, name string) string {
 	return "refs/heads/" + name
 }
 
-// refID is how --json and --only name a ref: the ref itself here, and
+// RefID is how --json and --only name a ref: the ref itself here, and
 // origin:<ref> on origin.
-func refID(kind, name string) string {
-	if remoteKind(kind) {
+func RefID(kind, name string) string {
+	if RemoteKind(kind) {
 		return "origin:" + refOf(kind, name)
 	}
 	return refOf(kind, name)
 }
 
-// pinOf is where a run pins one ref.
-func pinOf(runID, kind, name string) string {
+// PinOf is where a run pins one ref.
+func PinOf(runID, kind, name string) string {
 	return SweptPrefix + runID + "/" + refSpaces[kind] + "/" + name
 }
 
-// runIDPattern is a run id: the UTC second the run began and four to 32 hex
+// RunIDPattern is a run id: the UTC second the run began and four to 32 hex
 // digits, 20260930T091500Z-3f2a. wt mints four; a caller naming its own run
 // with --run-id may use more.
-var runIDPattern = regexp.MustCompile(`^([0-9]{8}T[0-9]{6}Z)-[0-9a-f]{4,32}$`)
+var RunIDPattern = regexp.MustCompile(`^([0-9]{8}T[0-9]{6}Z)-[0-9a-f]{4,32}$`)
 
-// newRunID names a sweep that is about to move something.
-func newRunID(now time.Time) string {
+// NewRunID names a sweep that is about to move something.
+func NewRunID(now time.Time) string {
 	b := make([]byte, 2)
 	_, _ = rand.Read(b)
 	return now.UTC().Format("20060102T150405Z") + "-" + hex.EncodeToString(b)
@@ -81,7 +83,7 @@ func newRunID(now time.Time) string {
 
 // runTime is when a run began, read from its id.
 func runTime(runID string) (time.Time, bool) {
-	m := runIDPattern.FindStringSubmatch(runID)
+	m := RunIDPattern.FindStringSubmatch(runID)
 	if m == nil {
 		return time.Time{}, false
 	}
@@ -89,64 +91,67 @@ func runTime(runID string) (time.Time, bool) {
 	return t, err == nil
 }
 
-// sweptRef is one pin: the ref it holds, as the pin's path names it, and
+// SweptRef is one pin: the ref it holds, as the pin's path names it, and
 // the object it holds.
-type sweptRef struct {
+type SweptRef struct {
 	RunID, Kind, Name, Pin, Object string
 }
 
-func (s sweptRef) ID() string  { return refID(s.Kind, s.Name) }
-func (s sweptRef) Ref() string { return refOf(s.Kind, s.Name) }
+// ID is how --json and --only name the ref.
+func (s SweptRef) ID() string { return RefID(s.Kind, s.Name) }
+
+// Ref is the ref the pin holds, on the side it lives.
+func (s SweptRef) Ref() string { return refOf(s.Kind, s.Name) }
 
 // parsePin reads a pin's path: its run, kind and short name. False for a
 // ref under refs/wt-swept/ that wt did not write.
-func parsePin(pin string) (sweptRef, bool) {
+func parsePin(pin string) (SweptRef, bool) {
 	rest, ok := strings.CutPrefix(pin, SweptPrefix)
 	if !ok {
-		return sweptRef{}, false
+		return SweptRef{}, false
 	}
 	runID, rest, ok := strings.Cut(rest, "/")
-	if !ok || !runIDPattern.MatchString(runID) {
-		return sweptRef{}, false
+	if !ok || !RunIDPattern.MatchString(runID) {
+		return SweptRef{}, false
 	}
 	space, name, ok := strings.Cut(rest, "/")
 	if !ok || name == "" {
-		return sweptRef{}, false
+		return SweptRef{}, false
 	}
 	for kind, s := range refSpaces {
 		if s == space {
-			return sweptRef{RunID: runID, Kind: kind, Name: name, Pin: pin}, true
+			return SweptRef{RunID: runID, Kind: kind, Name: name, Pin: pin}, true
 		}
 	}
-	return sweptRef{}, false
+	return SweptRef{}, false
 }
 
-// sweptRun is one run's pins, and its meta when it has one.
-type sweptRun struct {
+// SweptRun is one run's pins, and its meta when it has one.
+type SweptRun struct {
 	RunID string
 	// At is when the run began: its meta's sweptAt, else the time in its id.
 	At   time.Time
-	Refs []sweptRef
+	Refs []SweptRef
 	// Meta is what the run wrote before it moved anything; nil when it has
 	// none or it cannot be read. MetaOID is the blob, "" when there is none.
-	Meta    *runMeta
+	Meta    *RunMeta
 	MetaOID string
 }
 
-// readSwept is every run with pins or a meta left, oldest first, and each
+// ReadSwept is every run with pins or a meta left, oldest first, and each
 // run's pins in ref order.
-func readSwept(mainRoot string) ([]sweptRun, error) {
+func ReadSwept(mainRoot string) ([]SweptRun, error) {
 	lines, err := git.Lines(mainRoot, "for-each-ref", "--format=%(refname)%00%(objectname)", SweptPrefix)
 	if err != nil {
 		return nil, fmt.Errorf("could not read the pins under %s: %w", SweptPrefix, err)
 	}
-	byRun := map[string]*sweptRun{}
-	var runs []*sweptRun
-	run := func(id string) *sweptRun {
+	byRun := map[string]*SweptRun{}
+	var runs []*SweptRun
+	run := func(id string) *SweptRun {
 		r := byRun[id]
 		if r == nil {
 			at, _ := runTime(id)
-			r = &sweptRun{RunID: id, At: at}
+			r = &SweptRun{RunID: id, At: at}
 			byRun[id] = r
 			runs = append(runs, r)
 		}
@@ -167,7 +172,7 @@ func readSwept(mainRoot string) ([]sweptRun, error) {
 		r.Refs = append(r.Refs, s)
 	}
 	sort.Slice(runs, func(i, j int) bool { return runs[i].RunID < runs[j].RunID })
-	out := make([]sweptRun, 0, len(runs))
+	out := make([]SweptRun, 0, len(runs))
 	for _, r := range runs {
 		if r.MetaOID != "" {
 			if m, err := readMeta(mainRoot, r.MetaOID); err == nil {
@@ -182,8 +187,8 @@ func readSwept(mainRoot string) ([]sweptRun, error) {
 	return out, nil
 }
 
-// metaRef is where a run keeps its meta.
-func metaRef(runID string) string { return SweptPrefix + runID + "/meta" }
+// MetaRef is where a run keeps its meta.
+func MetaRef(runID string) string { return SweptPrefix + runID + "/meta" }
 
 // metaRun is the run a meta ref belongs to.
 func metaRun(ref string) (string, bool) {
@@ -192,7 +197,7 @@ func metaRun(ref string) (string, bool) {
 		return "", false
 	}
 	id, name, ok := strings.Cut(rest, "/")
-	return id, ok && name == "meta" && runIDPattern.MatchString(id)
+	return id, ok && name == "meta" && RunIDPattern.MatchString(id)
 }
 
 // Endpoint is the one URL a run with --remote talks to origin through, as
@@ -201,25 +206,25 @@ func metaRun(ref string) (string, bool) {
 type Endpoint struct {
 	URL    string `json:"url"`
 	Digest string `json:"digest"`
-	// raw is the effective URL itself, which every remote call is made
+	// Raw is the effective URL itself, which every remote call is made
 	// through; it is never printed or recorded.
-	raw string
+	Raw string `json:"-"`
 }
 
-// errRemoteAmbiguous is an origin that does not fetch from and push to one
+// ErrRemoteAmbiguous is an origin that does not fetch from and push to one
 // and the same URL.
-var errRemoteAmbiguous = errors.New("origin does not fetch from and push to one and the same URL, so what " +
+var ErrRemoteAmbiguous = errors.New("origin does not fetch from and push to one and the same URL, so what " +
 	"--remote deletes there could not be told to have gone back to the same place")
 
-// errRemoteCredentials is an origin URL that carries a secret. It names only
+// ErrRemoteCredentials is an origin URL that carries a secret. It names only
 // the remote.
-var errRemoteCredentials = errors.New("origin's URL contains a password or token; wt won't use it for " +
+var ErrRemoteCredentials = errors.New("origin's URL contains a password or token; wt won't use it for " +
 	"--remote. Store the credential with a credential helper instead")
 
-// resolveEndpoint reads origin's effective fetch and push URLs, insteadOf
+// ResolveEndpoint reads origin's effective fetch and push URLs, insteadOf
 // and pushInsteadOf applied, and requires them to be one URL with no
 // secret in it.
-func resolveEndpoint(mainRoot string) (*Endpoint, error) {
+func ResolveEndpoint(mainRoot string) (*Endpoint, error) {
 	fetch, err := git.Lines(mainRoot, "remote", "get-url", "--all", "origin")
 	if err != nil {
 		return nil, fmt.Errorf("could not read origin's URLs: %s", git.Reason(err))
@@ -229,19 +234,19 @@ func resolveEndpoint(mainRoot string) (*Endpoint, error) {
 		return nil, fmt.Errorf("could not read origin's push URLs: %s", git.Reason(err))
 	}
 	if len(fetch) != 1 || len(push) != 1 || fetch[0] != push[0] {
-		return nil, fmt.Errorf("%w (%d fetch and %d push URLs)", errRemoteAmbiguous, len(fetch), len(push))
+		return nil, fmt.Errorf("%w (%d fetch and %d push URLs)", ErrRemoteAmbiguous, len(fetch), len(push))
 	}
 	u := fetch[0]
 	if kit.HasCredentials(u) {
-		return nil, errRemoteCredentials
+		return nil, ErrRemoteCredentials
 	}
 	sum := sha256.Sum256([]byte(u))
-	return &Endpoint{URL: kit.Redacted(u), Digest: "sha256:" + hex.EncodeToString(sum[:]), raw: u}, nil
+	return &Endpoint{URL: kit.Redacted(u), Digest: "sha256:" + hex.EncodeToString(sum[:]), Raw: u}, nil
 }
 
-// runMeta is what a run writes before it moves anything, as a blob at
+// RunMeta is what a run writes before it moves anything, as a blob at
 // refs/wt-swept/<runId>/meta: a blob, so no history graph shows it.
-type runMeta struct {
+type RunMeta struct {
 	RunID     string    `json:"runId"`
 	Repo      string    `json:"repo"`
 	SweptAt   int64     `json:"sweptAt"`
@@ -249,8 +254,8 @@ type runMeta struct {
 	WtVersion string    `json:"wtVersion"`
 }
 
-// writeMeta creates a run's meta, only where nothing is.
-func writeMeta(mainRoot string, m runMeta) error {
+// WriteMeta creates a run's meta, only where nothing is.
+func WriteMeta(mainRoot string, m RunMeta) error {
 	data, err := json.Marshal(m)
 	if err != nil {
 		return err
@@ -259,27 +264,27 @@ func writeMeta(mainRoot string, m runMeta) error {
 	if err != nil {
 		return fmt.Errorf("could not write the run's meta: %s", git.Reason(err))
 	}
-	if err := updateRefs(mainRoot, "wt refs sweep", "create "+metaRef(m.RunID)+" "+strings.TrimSpace(string(blob))); err != nil {
+	if err := UpdateRefs(mainRoot, "wt refs sweep", "create "+MetaRef(m.RunID)+" "+strings.TrimSpace(string(blob))); err != nil {
 		return fmt.Errorf("could not write the run's meta: %s", git.Reason(err))
 	}
 	return nil
 }
 
 // readMeta reads a meta blob.
-func readMeta(mainRoot, oid string) (*runMeta, error) {
+func readMeta(mainRoot, oid string) (*RunMeta, error) {
 	out, err := git.Exec(git.Opts{Dir: mainRoot}, "cat-file", "blob", oid)
 	if err != nil {
 		return nil, err
 	}
-	var m runMeta
+	var m RunMeta
 	if err := json.Unmarshal(out, &m); err != nil {
 		return nil, err
 	}
 	return &m, nil
 }
 
-// runTaken reports that something is under refs/wt-swept/<runId>/ already.
-func runTaken(mainRoot, runID string) (bool, error) {
+// RunTaken reports that something is under refs/wt-swept/<runId>/ already.
+func RunTaken(mainRoot, runID string) (bool, error) {
 	out, err := git.Run(mainRoot, "for-each-ref", "--count=1", "--format=%(refname)", SweptPrefix+runID+"/")
 	if err != nil {
 		return false, err
@@ -287,9 +292,9 @@ func runTaken(mainRoot, runID string) (bool, error) {
 	return out != "", nil
 }
 
-// refValue is what a ref holds now, unpeeled: the tag object of an
+// RefValue is what a ref holds now, unpeeled: the tag object of an
 // annotated tag. ok is false when there is no such ref.
-func refValue(mainRoot, ref string) (string, bool, error) {
+func RefValue(mainRoot, ref string) (string, bool, error) {
 	out, err := git.Exec(git.Opts{Dir: mainRoot}, "rev-parse", "--verify", "--quiet", ref)
 	if code, aerr := git.Answer(err, 1); aerr != nil {
 		return "", false, aerr
@@ -300,34 +305,34 @@ func refValue(mainRoot, ref string) (string, bool, error) {
 	return v, v != "", nil
 }
 
-// updateRefs runs one update-ref transaction: every line goes, or none does.
-func updateRefs(mainRoot, message string, lines ...string) error {
+// UpdateRefs runs one update-ref transaction: every line goes, or none does.
+func UpdateRefs(mainRoot, message string, lines ...string) error {
 	in := "start\n" + strings.Join(lines, "\n") + "\nprepare\ncommit\n"
 	_, err := git.Exec(git.Opts{Dir: mainRoot, Stdin: strings.NewReader(in)},
 		"update-ref", "--no-deref", "-m", message, "--stdin")
 	return err
 }
 
-// deleteRefAt deletes ref only while it holds oid.
-func deleteRefAt(mainRoot, ref, oid string) error {
+// DeleteRefAt deletes ref only while it holds oid.
+func DeleteRefAt(mainRoot, ref, oid string) error {
 	_, err := git.Run(mainRoot, "update-ref", "--no-deref", "-m", "wt refs", "-d", ref, oid)
 	return err
 }
 
-// remoteRefs is what origin has under refs/heads/ and refs/tags/, from one
+// RemoteRefs is what origin has under refs/heads/ and refs/tags/, from one
 // ls-remote: each ref's own value, and the commit an annotated tag peels to.
-type remoteRefs struct {
+type RemoteRefs struct {
 	Values map[string]string
 	Peeled map[string]string
 }
 
-// readRemoteRefs asks origin, at url, for its branches and tags.
-func readRemoteRefs(mainRoot, url string) (remoteRefs, error) {
+// ReadRemoteRefs asks origin, at url, for its branches and tags.
+func ReadRemoteRefs(mainRoot, url string) (RemoteRefs, error) {
 	out, err := git.RunTimeout(mainRoot, kit.NetworkTimeout, "ls-remote", url)
 	if err != nil {
-		return remoteRefs{}, fmt.Errorf("could not list origin's refs: %s", git.Reason(err))
+		return RemoteRefs{}, fmt.Errorf("could not list origin's refs: %s", git.Reason(err))
 	}
-	r := remoteRefs{Values: map[string]string{}, Peeled: map[string]string{}}
+	r := RemoteRefs{Values: map[string]string{}, Peeled: map[string]string{}}
 	for _, line := range strings.Split(out, "\n") {
 		oid, ref, ok := strings.Cut(line, "\t")
 		if !ok {
@@ -345,9 +350,9 @@ func readRemoteRefs(mainRoot, url string) (remoteRefs, error) {
 	return r, nil
 }
 
-// remoteValue is what origin, at url, holds at one ref now; ok is false
+// RemoteValue is what origin, at url, holds at one ref now; ok is false
 // when it has no such ref.
-func remoteValue(mainRoot, url, ref string, timeout time.Duration) (string, bool, error) {
+func RemoteValue(mainRoot, url, ref string, timeout time.Duration) (string, bool, error) {
 	out, err := git.RunTimeout(mainRoot, timeout, "ls-remote", url, ref)
 	if err != nil {
 		return "", false, fmt.Errorf("could not ask origin about %s: %s", ref, git.Reason(err))
@@ -360,26 +365,26 @@ func remoteValue(mainRoot, url, ref string, timeout time.Duration) (string, bool
 	return "", false, nil
 }
 
-// objectInfo is what wt reads out of a commit or a tag object.
-type objectInfo struct {
+// ObjectInfo is what wt reads out of a commit or a tag object.
+type ObjectInfo struct {
 	Type    string // commit, tag, tree, blob; "" when the object is not here
 	Target  string // a tag's object
 	Time    int64  // a commit's committer time, a tag's tagger time; 0 when none
 	Subject string
 }
 
-// readObjects reads each object in one cat-file --batch: its type, what a
+// ReadObjects reads each object in one cat-file --batch: its type, what a
 // tag points at, its date and its subject. An object that is not here comes
 // back with no type.
-func readObjects(mainRoot string, oids []string) (map[string]objectInfo, error) {
-	out := map[string]objectInfo{}
+func ReadObjects(mainRoot string, oids []string) (map[string]ObjectInfo, error) {
+	out := map[string]ObjectInfo{}
 	var in strings.Builder
 	var want []string
 	for _, oid := range oids {
 		if _, seen := out[oid]; seen || oid == "" {
 			continue
 		}
-		out[oid] = objectInfo{}
+		out[oid] = ObjectInfo{}
 		want = append(want, oid)
 		in.WriteString(oid + "\n")
 	}
@@ -417,8 +422,8 @@ func readObjects(mainRoot string, oids []string) (map[string]objectInfo, error) 
 }
 
 // parseObject reads the headers of a commit or a tag, and the subject.
-func parseObject(typ string, body []byte) objectInfo {
-	info := objectInfo{Type: typ}
+func parseObject(typ string, body []byte) ObjectInfo {
+	info := ObjectInfo{Type: typ}
 	if typ != "commit" && typ != "tag" {
 		return info
 	}
@@ -455,13 +460,13 @@ func identTime(ident string) int64 {
 	return t
 }
 
-// peelCommit follows tags from oid to the commit they end at, reading what
+// PeelCommit follows tags from oid to the commit they end at, reading what
 // it has to; "" when they end at something else or at nothing here.
-func peelCommit(mainRoot, oid string, known map[string]objectInfo) string {
+func PeelCommit(mainRoot, oid string, known map[string]ObjectInfo) string {
 	for range 10 {
 		info, ok := known[oid]
 		if !ok {
-			more, err := readObjects(mainRoot, []string{oid})
+			more, err := ReadObjects(mainRoot, []string{oid})
 			if err != nil {
 				return ""
 			}
@@ -480,9 +485,9 @@ func peelCommit(mainRoot, oid string, known map[string]objectInfo) string {
 	return ""
 }
 
-// uniqueCommits reads, in one rev-list pass, how many commits each tip has
+// UniqueCommits reads, in one rev-list pass, how many commits each tip has
 // that none of keep reaches: 0 for a tip keep contains.
-func uniqueCommits(mainRoot string, tips, keep []string) (map[string]int, error) {
+func UniqueCommits(mainRoot string, tips, keep []string) (map[string]int, error) {
 	var in strings.Builder
 	for _, t := range tips {
 		in.WriteString(t + "\n")
@@ -524,30 +529,30 @@ func uniqueCommits(mainRoot string, tips, keep []string) (map[string]int, error)
 	return out, nil
 }
 
-// refDates reads when each branch was created, from the first entry of its
+// RefDates reads when each branch was created, from the first entry of its
 // reflog. A branch with no reflog is left out.
-type refDates struct {
-	mainRoot, logs string
+type RefDates struct {
+	MainRoot, logs string
 	reftable       bool
 	once           sync.Once
 }
 
-func (d *refDates) init() {
+func (d *RefDates) init() {
 	d.once.Do(func() {
-		if dir, err := git.Run(d.mainRoot, "rev-parse", "--path-format=absolute", "--git-common-dir"); err == nil {
+		if dir, err := git.Run(d.MainRoot, "rev-parse", "--path-format=absolute", "--git-common-dir"); err == nil {
 			d.logs = filepath.Join(dir, "logs")
 		}
-		if format, err := git.Run(d.mainRoot, "rev-parse", "--show-ref-format"); err == nil {
+		if format, err := git.Run(d.MainRoot, "rev-parse", "--show-ref-format"); err == nil {
 			d.reftable = format == "reftable"
 		}
 	})
 }
 
-// created is the time of the first entry of ref's reflog.
-func (d *refDates) created(ref string) (int64, bool) {
+// Created is the time of the first entry of ref's reflog.
+func (d *RefDates) Created(ref string) (int64, bool) {
 	d.init()
 	if d.reftable {
-		lines, err := git.Lines(d.mainRoot, "reflog", "show", "--date=unix", "--format=%gd", ref, "--")
+		lines, err := git.Lines(d.MainRoot, "reflog", "show", "--date=unix", "--format=%gd", ref, "--")
 		if err != nil || len(lines) == 0 {
 			return 0, false
 		}
@@ -576,26 +581,26 @@ func (d *refDates) created(ref string) (int64, bool) {
 	return t, t > 0
 }
 
-// beginRun writes a run's meta, the first thing a run does, so a run stopped
+// BeginRun writes a run's meta, the first thing a run does, so a run stopped
 // anywhere after is found by its id. Its create is a compare-and-swap: a run
 // id taken meanwhile refuses here.
-func beginRun(mainRoot, runID string, at time.Time, endpoint *Endpoint) error {
+func BeginRun(mainRoot, runID string, at time.Time, endpoint *Endpoint) error {
 	gitDir, err := git.Run(mainRoot, "rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil {
 		return fmt.Errorf("could not write the run's meta: %s", git.Reason(err))
 	}
-	return writeMeta(mainRoot, runMeta{RunID: runID, Repo: gitDir, SweptAt: at.Unix(), Endpoint: endpoint,
+	return WriteMeta(mainRoot, RunMeta{RunID: runID, Repo: gitDir, SweptAt: at.Unix(), Endpoint: endpoint,
 		WtVersion: kit.Version})
 }
 
-// afterBranchMoved runs, when set, between moveBranch's transaction and its
+// AfterBranchMoved runs, when set, between moveBranch's transaction and its
 // config removal. Tests set it to deliver a signal there.
-var afterBranchMoved func(name string)
+var AfterBranchMoved func(name string)
 
-// moveBranch pins branch name at pin and deletes it, in one transaction and
+// MoveBranch pins branch name at pin and deletes it, in one transaction and
 // only at tip, then drops its config, as git branch -D does. A branch a
 // worktree uses is refused with a repo.BranchInUseError.
-func moveBranch(ctx *kit.Context, name, tip, pin, message string) error {
+func MoveBranch(ctx *kit.Context, name, tip, pin, message string) error {
 	users, err := ctx.Repo.BranchUsers()
 	if err != nil {
 		return err
@@ -603,98 +608,98 @@ func moveBranch(ctx *kit.Context, name, tip, pin, message string) error {
 	if use, ok := users[name]; ok {
 		return &repo.BranchInUseError{Path: use.Path, By: use.By}
 	}
-	if err := updateRefs(ctx.Repo.MainRoot, message, "create "+pin+" "+tip, "delete refs/heads/"+name+" "+tip); err != nil {
+	if err := UpdateRefs(ctx.Repo.MainRoot, message, "create "+pin+" "+tip, "delete refs/heads/"+name+" "+tip); err != nil {
 		return err
 	}
-	if afterBranchMoved != nil {
-		afterBranchMoved(name)
+	if AfterBranchMoved != nil {
+		AfterBranchMoved(name)
 	}
 	// A branch with no config has no section to remove; that is not a failure.
 	_, _ = git.Run(ctx.Repo.MainRoot, "config", "--remove-section", "branch."+name)
 	return nil
 }
 
-// branchPins is the run wt sweep or wt remove moves the branches it deletes
+// BranchPins is the run wt sweep or wt remove moves the branches it deletes
 // into, so wt refs restore brings them back. The run is begun, its meta
 // written, when the first branch goes: a command that deletes nothing mints
 // none.
-type branchPins struct {
-	// command is the reflog message the moves are made with.
-	command string
-	// begun, when set, is told the run id before its meta is written, so a
+type BranchPins struct {
+	// Command is the reflog message the moves are made with.
+	Command string
+	// Begun, when set, is told the run id before its meta is written, so a
 	// journal names the run even when a signal comes next.
-	begun func(runID string)
-	runID string
+	Begun func(runID string)
+	RunID string
 	err   error
 }
 
-// move pins branch name and deletes it, at tip, and returns its pin.
-func (b *branchPins) move(ctx *kit.Context, name, tip string) (string, error) {
+// Move pins branch name and deletes it, at tip, and returns its pin.
+func (b *BranchPins) Move(ctx *kit.Context, name, tip string) (string, error) {
 	if b.err != nil {
 		return "", b.err
 	}
-	if b.runID == "" {
+	if b.RunID == "" {
 		if err := b.begin(ctx); err != nil {
 			b.err = err
 			return "", err
 		}
 	}
-	pin := pinOf(b.runID, RefBranch, name)
-	return pin, moveBranch(ctx, name, tip, pin, b.command)
+	pin := PinOf(b.RunID, RefBranch, name)
+	return pin, MoveBranch(ctx, name, tip, pin, b.Command)
 }
 
 // begin mints the run and writes its meta. An id another run holds is
 // passed over, and the run is the command's only once its meta is written,
 // so finish never drops a meta it did not write.
-func (b *branchPins) begin(ctx *kit.Context) error {
+func (b *BranchPins) begin(ctx *kit.Context) error {
 	for range 3 {
-		id := newRunID(time.Now())
-		if taken, err := runTaken(ctx.Repo.MainRoot, id); err != nil {
+		id := NewRunID(time.Now())
+		if taken, err := RunTaken(ctx.Repo.MainRoot, id); err != nil {
 			return err
 		} else if taken {
 			continue
 		}
-		if b.begun != nil {
-			b.begun(id)
+		if b.Begun != nil {
+			b.Begun(id)
 		}
-		if err := beginRun(ctx.Repo.MainRoot, id, time.Now(), nil); err != nil {
-			if b.begun != nil {
-				b.begun("")
+		if err := BeginRun(ctx.Repo.MainRoot, id, time.Now(), nil); err != nil {
+			if b.Begun != nil {
+				b.Begun("")
 			}
 			return err
 		}
-		b.runID = id
+		b.RunID = id
 		return nil
 	}
 	return errors.New("could not mint a run id no other run holds")
 }
 
-// finish drops the run's meta when the run holds no pin, and returns the run
+// Finish drops the run's meta when the run holds no pin, and returns the run
 // left behind: "" when none was begun or none is left.
-func (b *branchPins) finish(ctx *kit.Context, w io.Writer) string {
-	if b == nil || b.runID == "" {
+func (b *BranchPins) Finish(ctx *kit.Context, w io.Writer) string {
+	if b == nil || b.RunID == "" {
 		return ""
 	}
-	dropEmptyRun(ctx.Repo.MainRoot, b.runID, w)
-	if taken, err := runTaken(ctx.Repo.MainRoot, b.runID); err == nil && !taken {
+	DropEmptyRun(ctx.Repo.MainRoot, b.RunID, w)
+	if taken, err := RunTaken(ctx.Repo.MainRoot, b.RunID); err == nil && !taken {
 		return ""
 	}
-	return b.runID
+	return b.RunID
 }
 
-// pinHolding is where run keeps branch name at tip, "" when it does not.
-func pinHolding(mainRoot, runID, name, tip string) string {
+// PinHolding is where run keeps branch name at tip, "" when it does not.
+func PinHolding(mainRoot, runID, name, tip string) string {
 	if runID == "" || name == "" || tip == "" {
 		return ""
 	}
-	pin := pinOf(runID, RefBranch, name)
-	if v, ok, err := refValue(mainRoot, pin); err != nil || !ok || v != tip {
+	pin := PinOf(runID, RefBranch, name)
+	if v, ok, err := RefValue(mainRoot, pin); err != nil || !ok || v != tip {
 		return ""
 	}
 	return pin
 }
 
-// restoreFromRun is the argv that puts branch name back from run.
-func restoreFromRun(runID, name string) []string {
+// RestoreFromRun is the argv that puts branch name back from run.
+func RestoreFromRun(runID, name string) []string {
 	return []string{"wt", "refs", "restore", runID, "--only", refOf(RefBranch, name), "--yes"}
 }
