@@ -11,6 +11,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
+	"github.com/anders-lindstrom/wt/internal/commands/syncfix"
 )
 
 func newSyncCmd() *cobra.Command {
@@ -862,7 +863,7 @@ func newSyncResumeCmd() *cobra.Command {
 
 // syncResume is wt sync resume, whichever way it was spelled.
 func syncResume(cmd *cobra.Command, work string, ctx *kit.Context, yes bool, push synccmd.PushMode, j *synccmd.RunJournal) error {
-	opts := commands.ResumeOptions{Journal: j}
+	opts := syncfix.ResumeOptions{Journal: j}
 	opts.Push = push
 	// --yes answers yes to every question, the push included, unless
 	// --no-push says otherwise.
@@ -874,7 +875,7 @@ func syncResume(cmd *cobra.Command, work string, ctx *kit.Context, yes bool, pus
 		opts.Confirm = confirmAsk(p, "resume")
 		opts.ConfirmPush, opts.ChoosePush = confirmPush(p), choosePush(p)
 	}
-	return commands.SyncResume(ctx, work, opts, cmd.OutOrStdout())
+	return syncfix.SyncResume(ctx, work, opts, cmd.OutOrStdout())
 }
 
 func newSyncUndoCmd() *cobra.Command {
@@ -925,11 +926,11 @@ func newSyncUndoCmd() *cobra.Command {
 
 // syncUndo is wt sync undo, whichever way it was spelled.
 func syncUndo(cmd *cobra.Command, work string, ctx *kit.Context, force, yes bool, j *synccmd.RunJournal) error {
-	opts := commands.UndoOptions{Force: force, Journal: j}
+	opts := syncfix.UndoOptions{Force: force, Journal: j}
 	if canAsk(cmd) && !yes {
 		opts.Confirm = confirmAsk(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()), "undo")
 	}
-	return commands.SyncUndo(ctx, work, opts, cmd.OutOrStdout())
+	return syncfix.SyncUndo(ctx, work, opts, cmd.OutOrStdout())
 }
 
 func newSyncPushToCmd() *cobra.Command {

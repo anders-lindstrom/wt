@@ -1,4 +1,6 @@
-package commands
+// Package syncfix implements wt sync resume and wt sync undo: finishing a run
+// a person took over, and putting back what a run did.
+package syncfix
 
 import (
 	"cmp"
