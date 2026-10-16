@@ -112,6 +112,7 @@ func scheme(r *repo.Repo, c *config.Config, u *config.User) naming.Scheme {
 		Suffix:    suffix,
 		DirSuffix: c.TypeSuffix,
 		Vocab:     naming.Vocab{Types: c.Types, Names: names},
+		T3Root:    t3Root(r.Name),
 	}
 }
 

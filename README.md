@@ -92,7 +92,7 @@ examples: `wt <command> --help`.
 | `wt exec <pattern> <cmd>…` | run a command there, in a subshell; your shell stays put |
 | `wt attach [<pattern>] [<session>]` | open the Claude session in a worktree, in this terminal; asks which when there are several; `--resume` continues a conversation there instead |
 | `wt session list [<work>]`, `wt session send <work> [<session>]`, `wt session stop <work> [<session>]` | the Claude sessions in a worktree with their inboxes; one message from stdin to one running session's inbox (`--from-name`, `--reply-to`, `--expect-session`, `--message-file`, `--dry-run`, `--json`). A parked session is never sent to. `stop` runs `claude stop` on one background session (`--expect-session`, `--dry-run`, `--json`); a terminal or Codex session is refused |
-| `wt list` | every worktree, in any layout; `s` marks Superset's, `!` one nothing owns; a `PR` column when a worktree here has one, with `✓` `✗` `●` for its checks, asked for by branch and cached for a few minutes (`--no-pr`, `--refresh`); a `SESSION` column when one has a Claude session in it and the terminal is wide enough for it (`--wide` whatever the width, `--no-sessions`); `--all`, `--roots`, `--profile` for many repositories |
+| `wt list` | every worktree, in any layout; `s` marks Superset's, `t` T3 Code's, `!` one nothing owns; a `PR` column when a worktree here has one, with `✓` `✗` `●` for its checks, asked for by branch and cached for a few minutes (`--no-pr`, `--refresh`); a `SESSION` column when one has a Claude session in it and the terminal is wide enough for it (`--wide` whatever the width, `--no-sessions`); `--all`, `--roots`, `--profile` for many repositories |
 | `wt status [<work>]` | each worktree's branch, whether its checkout is clean, and how far behind and ahead of trunk it is; with a worktree named, that one in full with `wt sync`'s verdict; `wt list`'s `PR` column and cache (`--no-pr`, `--refresh`; `--all`, `--roots`, `--profile` for many repositories) |
 | `wt find <pattern>` | resolve a worktree by fuzzy name, across repositories (`--candidates`) |
 | `wt path <work>` / `wt branch <work>` | where a piece of work lives or would go, and its branch; exact, this repository only, for scripts |
@@ -296,7 +296,7 @@ nowhere to enter one; Superset mints every branch from a single fixed prefix.
 
 **Worktrees in other layouts keep working.** Every lookup goes through
 `git worktree list`, never the shape of a path, so worktrees made by Superset,
-by plain `git worktree add`, or before a repo was migrated all resolve.
+by T3 Code, by plain `git worktree add`, or before a repo was migrated all resolve.
 
 ### Superset's layout
 
@@ -311,6 +311,13 @@ and `wt list` marks it `s`. Only `!` — a layout nothing owns, such as a
 pre-migration `<repo>-<work>` checkout — is a `wt migrate` candidate, because
 Superset stores the absolute path of every workspace and a move leaves that
 workspace pointing at nothing. `wt migrate` says so before it moves.
+
+### T3 Code's layout
+
+T3 Code builds `<worktrees directory>/<repo>/t3-<hex>`, one directory for every
+repository, set by `worktreesDirectory` in `~/.t3/userdata/settings.json`.
+`wt list` marks these `t`, `wt doctor` passes them and `wt setup` provisions
+them in place. See [T3 Code's worktrees](docs/worktree-conventions.md#t3-codes-worktrees).
 
 ### Worktrees wt makes show up in Superset
 

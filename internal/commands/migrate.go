@@ -45,6 +45,9 @@ type MigratePlan struct {
 	// Superset records that the old path is inside the tree Superset owns,
 	// where a stored workspace path will be left pointing at nothing.
 	Superset bool
+	// T3 records that the old path is one of T3 Code's worktrees, whose
+	// thread will be left pointing at nothing.
+	T3 bool
 	// Sessions are the agent sessions working inside the worktree, and
 	// SessionsError why they could not be listed.
 	Sessions      wtsync.Sessions
@@ -130,6 +133,7 @@ func planMigrate(ctx *Context, wt repo.Worktree, dest string) (MigratePlan, erro
 		NewBranch: sch.Branch(typ, work),
 		Work:      work,
 		Superset:  naming.UnderSuperset(wt.Path, sch.Parent, sch.Repo, ctx.Config.TypeSuffix),
+		T3:        sch.UnderT3(wt.Path),
 	}
 	if dirty, err := repo.Dirty(p.From, false); err == nil && dirty {
 		p.Dirty = true
@@ -305,6 +309,10 @@ func (p MigratePlan) Render(w io.Writer) {
 	if p.Superset {
 		fmt.Fprintln(w, "! this is Superset's layout: its workspace holds this path and will")
 		fmt.Fprintln(w, "  not follow the move. Re-point or recreate the workspace afterwards.")
+	}
+	if p.T3 {
+		fmt.Fprintln(w, "! this is T3 Code's layout: its thread holds this path and will not")
+		fmt.Fprintln(w, "  follow the move. Start a new thread on the new path afterwards.")
 	}
 	if p.From != p.To {
 		fmt.Fprintln(w, "  note: tools holding the old absolute path (IDE workspaces, running dev")
