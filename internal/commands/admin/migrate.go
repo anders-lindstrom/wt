@@ -1,0 +1,411 @@
+package admin
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/session"
+	"github.com/anders-lindstrom/wt/internal/naming"
+	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anders-lindstrom/wt/internal/wtsync"
+)
+
+// MigrateOptions controls a migration.
+type MigrateOptions struct {
+	// DryRun reports what would happen and changes nothing. Worth reaching for
+	// on a worktree carrying work you cannot afford to lose.
+	DryRun bool
+	// Force moves a worktree an agent session is living in, or one whose
+	// sessions could not be listed.
+	Force bool
+	// Agents are the sessions to check against. Nil lists them;
+	// an empty slice means there are none. AgentsErr is a listing the caller
+	// could not get.
+	Agents    []wtsync.Agent
+	AgentsErr error
+}
+
+// MigratePlan is what a migration will do, worked out before anything moves.
+//
+// It exists for the same reason removal has one: the argument a user types
+// does not show what the command will do to their branch. A migration that
+// renames is two operations on one piece of work, and the plan is where the
+// pair can be read as a whole before either happens.
+type MigratePlan struct {
+	From string // where the worktree is now
+	To   string // the canonical path for the type and name it is getting
+	// Branch is what is checked out there; NewBranch is what it will be
+	// called afterwards. They are equal when only the path is wrong.
+	Branch    string
+	NewBranch string
+	Work      string
+	Dirty     bool
+	// Superset records that the old path is inside the tree Superset owns,
+	// where a stored workspace path will be left pointing at nothing.
+	Superset bool
+	// T3 records that the old path is one of T3 Code's worktrees, whose
+	// thread will be left pointing at nothing.
+	T3 bool
+	// Sessions are the agent sessions working inside the worktree, and
+	// SessionsError why they could not be listed.
+	Sessions      wtsync.Sessions
+	SessionsError string
+	// InCwd records that the caller is standing in the worktree being moved.
+	InCwd bool
+}
+
+// Migrate puts a worktree where this repository's layout says it belongs,
+// under a new type or a new name when dest asks for one.
+//
+// arg is anything `wt list` prints — a work name, a branch, a path — because
+// the row you are reading is what you have to type back. dest is
+// "<type>/<name>", or a bare name to rename without retyping, or empty to fit
+// the branch the worktree is already on to the convention.
+func Migrate(ctx *kit.Context, arg, dest string, opts MigrateOptions, w io.Writer) (string, error) {
+	wt, err := kit.Locate(ctx, arg)
+	if err != nil {
+		return "", err
+	}
+	plan, err := planMigrate(ctx, wt, dest)
+	if err != nil {
+		return "", err
+	}
+	if s, err := session.SessionsIn(opts.Agents, opts.AgentsErr, plan.From); err != nil {
+		plan.SessionsError = err.Error()
+	} else {
+		plan.Sessions = s
+	}
+	plan.InCwd = kit.StandingIn(ctx.Cwd, plan.From)
+
+	if plan.movesNothing() {
+		fmt.Fprintf(w, "- %s is already at the canonical path\n", plan.From)
+		return plan.From, nil
+	}
+	plan.Render(w)
+
+	if opts.DryRun {
+		fmt.Fprintf(w, "would %s; nothing has changed yet\n", strings.Join(plan.actions(), " and "))
+		if why := plan.sessionsInTheWay(); why != "" && !opts.Force {
+			fmt.Fprintf(w, "  but a real run would refuse: %s\n", why)
+		}
+		fmt.Fprintln(w, "  (drop --dry-run to do it)")
+		return plan.To, nil
+	}
+	if why := plan.sessionsInTheWay(); why != "" && !opts.Force {
+		return "", fmt.Errorf("%s\n"+
+			"  Moving the directory would pull the ground out from under it.\n"+
+			"  Stop the session and run this again, or pass --force to move it anyway",
+			why)
+	}
+	return plan.apply(ctx, w)
+}
+
+// relocateWorktree is `wt adopt --relocate`: the same migration, asking no
+// questions about agent sessions, because the path came from the person
+// typing the command a moment ago.
+func relocateWorktree(ctx *kit.Context, path string, w io.Writer) (string, error) {
+	return Migrate(ctx, path, "", MigrateOptions{Force: true, Agents: []wtsync.Agent{}}, w)
+}
+
+// planMigrate reads every fact the migration depends on and refuses here,
+// before anything has moved, when one of them makes it impossible.
+func planMigrate(ctx *kit.Context, wt repo.Worktree, dest string) (MigratePlan, error) {
+	sch := ctx.Scheme()
+	if wt.Branch == "" {
+		return MigratePlan{}, fmt.Errorf(
+			"%s has a detached HEAD: there is no branch to rename, and nothing to name a path from.\n"+
+				"  Put it on a branch first:  git -C %s switch -c %s\n"+
+				"  then run this again",
+			wt.Path, wt.Path,
+			sch.Branch(ctx.Config.DefaultType, filepath.Base(wt.Path)))
+	}
+	typ, work, err := migrateTarget(ctx, wt, dest)
+	if err != nil {
+		return MigratePlan{}, err
+	}
+
+	p := MigratePlan{
+		From:      wt.Path,
+		To:        sch.Dir(typ, work),
+		Branch:    wt.Branch,
+		NewBranch: sch.Branch(typ, work),
+		Work:      work,
+		Superset:  naming.UnderSuperset(wt.Path, sch.Parent, sch.Repo, ctx.Config.TypeSuffix),
+		T3:        sch.UnderT3(wt.Path),
+	}
+	if dirty, err := repo.Dirty(p.From, false); err == nil && dirty {
+		p.Dirty = true
+	}
+	if err := p.checkBranchIsFree(ctx); err != nil {
+		return MigratePlan{}, err
+	}
+	if err := p.checkPathIsFree(ctx); err != nil {
+		return MigratePlan{}, err
+	}
+	return p, nil
+}
+
+// migrateTarget works out the type and name the worktree ends up under: what
+// the destination says, or what its branch already says when there is none.
+func migrateTarget(ctx *kit.Context, wt repo.Worktree, dest string) (typ, work string, err error) {
+	typ, work, implied := impliedTarget(ctx, wt.Branch)
+	if dest == "" {
+		if !implied {
+			return "", "", fmt.Errorf(
+				"%s is on branch %q, which does not say which type or name it should have.\n"+
+					"  Say where it should go, for example:\n"+
+					"    wt migrate %s %s/%s",
+				wt.Path, wt.Branch, wt.Branch, ctx.Config.DefaultType, lastSegment(wt.Branch))
+		}
+		return typ, work, kit.CheckType(ctx, typ)
+	}
+
+	// A destination with no type keeps the type the worktree already has:
+	// renaming is not retyping.
+	fallback := ctx.Config.DefaultType
+	if implied {
+		fallback = typ
+	}
+	typ, work, err = naming.ParseSpec(stripTypeSuffix(ctx, dest), fallback, ctx.Vocab())
+	if err != nil {
+		return "", "", fmt.Errorf("%w; a destination is <type>/<name>, or a name on its own", err)
+	}
+	return typ, work, kit.CheckType(ctx, typ)
+}
+
+// impliedTarget reads a type and a name out of a branch. Branches wt made
+// carry both; so, near enough, do the two shapes other tools leave behind —
+// "fix/flaky-test" is missing only the type suffix, and "api_tidy" is a bare
+// name under the repository's default type. Anything else is a guess, and a
+// guess here silently renames somebody's branch.
+func impliedTarget(ctx *kit.Context, branch string) (typ, work string, ok bool) {
+	if typ, work, ok := ctx.Scheme().Parse(branch); ok {
+		return typ, work, true
+	}
+	if head, rest, found := strings.Cut(branch, "/"); found {
+		typ, known := ctx.Vocab().Type(head)
+		if rest == "" || strings.Contains(rest, "/") || !known {
+			return "", "", false
+		}
+		return typ, rest, true
+	}
+	if branch == "" {
+		return "", "", false
+	}
+	if t, rest, ok := naming.InferType(branch, ctx.Vocab()); ok {
+		return t, rest, true
+	}
+	return ctx.Config.DefaultType, branch, true
+}
+
+// stripTypeSuffix lets a destination be written the way the branch or the
+// folder reads — "fix_wt/login-crash" as well as "fix/login-crash".
+func stripTypeSuffix(ctx *kit.Context, dest string) string {
+	head, rest, found := strings.Cut(dest, "/")
+	if !found {
+		return dest
+	}
+	for _, suffix := range []string{ctx.Config.TypeSuffix, ctx.Scheme().Suffix} {
+		if suffix == "" {
+			continue
+		}
+		if base, cut := strings.CutSuffix(head, suffix); cut {
+			if _, known := ctx.Vocab().Type(base); known {
+				return base + "/" + rest
+			}
+		}
+	}
+	return dest
+}
+
+func lastSegment(branch string) string {
+	if i := strings.LastIndex(branch, "/"); i >= 0 {
+		return branch[i+1:]
+	}
+	return branch
+}
+
+// checkBranchIsFree refuses a rename onto a name that is taken. Git would
+// refuse too, but only after the message has stopped being about worktrees.
+func (p MigratePlan) checkBranchIsFree(ctx *kit.Context) error {
+	if p.NewBranch == p.Branch || !ctx.Repo.BranchExists(p.NewBranch) {
+		return nil
+	}
+	if where, err := worktreePathFor(ctx, p.NewBranch); err == nil && where != "" {
+		return fmt.Errorf("branch %s already exists and is checked out at %s; pick another name",
+			p.NewBranch, where)
+	}
+	return fmt.Errorf("branch %s already exists; pick another name, or delete it with: git branch -d %s",
+		p.NewBranch, p.NewBranch)
+}
+
+func (p MigratePlan) checkPathIsFree(ctx *kit.Context) error {
+	if p.To == p.From {
+		return nil
+	}
+	worktrees, err := ctx.Repo.Worktrees()
+	if err != nil {
+		return err
+	}
+	if wt, ok := worktrees.ByPath(p.To); ok {
+		return fmt.Errorf("%s is already the worktree of %s; move that one out of the way first",
+			p.To, wt.Branch)
+	}
+	if entries, err := os.ReadDir(p.To); err == nil && len(entries) > 0 {
+		return fmt.Errorf("%s already exists and is not empty; move or delete it first", p.To)
+	}
+	return nil
+}
+
+// movesNothing reports a worktree that is already where it belongs, under the
+// name it should have.
+func (p MigratePlan) movesNothing() bool {
+	return p.From == p.To && p.Branch == p.NewBranch
+}
+
+// actions names the halves of the migration that are actually happening, so
+// nothing announces a rename it is not doing.
+func (p MigratePlan) actions() []string {
+	var a []string
+	if p.From != p.To {
+		a = append(a, "move the worktree")
+	}
+	if p.Branch != p.NewBranch {
+		a = append(a, "rename the branch")
+	}
+	return a
+}
+
+// Render writes the plan: where the worktree goes, what its branch ends up
+// called, and what is in it.
+func (p MigratePlan) Render(w io.Writer) {
+	to := p.To
+	if p.To == p.From {
+		to += " (already there)"
+	}
+	branch := p.Branch
+	if p.NewBranch != p.Branch {
+		branch += " -> " + p.NewBranch
+	}
+	state := "clean"
+	if p.Dirty {
+		state = "uncommitted changes — the move carries them"
+	}
+	rows := [][]string{{"  from", p.From}, {"  to", to}, {"  branch", branch}, {"  state", state}}
+	switch {
+	case p.SessionsError != "":
+		rows = append(rows, []string{"  sessions", "cannot list agent sessions (" + p.SessionsError + ")"})
+	case len(p.Sessions) > 0:
+		rows = append(rows, []string{"  session", kit.WhoLabel(p.Sessions) + " is working in it"})
+	}
+	_ = kit.PrintTable(w, rows)
+	fmt.Fprintln(w)
+
+	// Before the move, and therefore during a dry run — after it, the warning
+	// is a post-mortem. Superset stores the absolute path of every workspace
+	// it makes, so a migrate leaves that workspace pointing at nothing.
+	if p.Superset {
+		fmt.Fprintln(w, "! this is Superset's layout: its workspace holds this path and will")
+		fmt.Fprintln(w, "  not follow the move. Re-point or recreate the workspace afterwards.")
+	}
+	if p.T3 {
+		fmt.Fprintln(w, "! this is T3 Code's layout: its thread holds this path and will not")
+		fmt.Fprintln(w, "  follow the move. Start a new thread on the new path afterwards.")
+	}
+	if p.From != p.To {
+		fmt.Fprintln(w, "  note: tools holding the old absolute path (IDE workspaces, running dev")
+		fmt.Fprintln(w, "  servers) will need to be pointed at the new one.")
+	}
+	if p.InCwd {
+		fmt.Fprintf(w, "  note: you are standing in it; afterwards, wt cd %s\n", p.Work)
+	}
+}
+
+// apply carries out the plan, branch first: a rename is one ref and undoing it
+// costs nothing, while a half-moved worktree is a checkout nobody can name.
+func (p MigratePlan) apply(ctx *kit.Context, w io.Writer) (string, error) {
+	if p.Branch != p.NewBranch {
+		kept, err := wtsync.RenameKeepingPush(ctx.Repo, ctx.Config.MainBranch, p.Branch, p.NewBranch)
+		if err != nil {
+			return "", fmt.Errorf("renaming %s to %s: %w", p.Branch, p.NewBranch, err)
+		}
+		fmt.Fprintf(w, "✓ branch renamed to %s\n", p.NewBranch)
+		if kept != nil {
+			fmt.Fprintf(w, "  it still pushes to %s, as it did before the rename\n", kept)
+		}
+	}
+	if p.From == p.To {
+		return p.To, nil
+	}
+	if err := ctx.Repo.MoveWorktree(p.From, p.To); err != nil {
+		if p.Branch != p.NewBranch {
+			if _, back := wtsync.RenameKeepingPush(ctx.Repo, ctx.Config.MainBranch, p.NewBranch, p.Branch); back == nil {
+				fmt.Fprintf(w, "  the branch is back on %s and nothing was moved\n", p.Branch)
+			}
+		}
+		return "", err
+	}
+
+	// Verify against git rather than trusting the argument: `git worktree move`
+	// has surprising destination semantics, and reporting a path the worktree
+	// is not actually at is how one goes missing.
+	actual, err := worktreePathFor(ctx, p.NewBranch)
+	if err != nil || actual == "" {
+		return p.To, fmt.Errorf("moved %s, but git no longer reports a worktree there — check `wt list`", p.From)
+	}
+	if actual != p.To {
+		return actual, fmt.Errorf("asked git to move to %s but it landed at %s", p.To, actual)
+	}
+	fmt.Fprintf(w, "✓ %s is now at %s\n", p.Work, p.To)
+	if husk := pruneEmptyParents(filepath.Dir(p.From), ctx.Repo.Parent); husk != "" {
+		fmt.Fprintf(w, "  and %s, left empty by the move, is gone\n", husk)
+	}
+	return p.To, nil
+}
+
+// pruneEmptyParents deletes the directories a move emptied, walking up from
+// dir and stopping at stopAt, which is never removed. os.Remove refuses a
+// directory that still holds anything, so nothing anybody wants can go with
+// them. It returns the highest one removed.
+func pruneEmptyParents(dir, stopAt string) string {
+	stopAt = filepath.Clean(stopAt)
+	removed := ""
+	for dir = filepath.Clean(dir); dir != stopAt && repo.Inside(stopAt, dir, false); dir = filepath.Dir(dir) {
+		if os.Remove(dir) != nil {
+			break
+		}
+		removed = dir
+	}
+	return removed
+}
+
+// sessionsInTheWay is why the sessions stop a move: one is working in the
+// worktree, idle or busy, or they could not be listed, which is not knowing
+// rather than nobody there. "" when nothing stands in the way.
+func (p MigratePlan) sessionsInTheWay() string {
+	switch {
+	case p.SessionsError != "":
+		return "cannot list agent sessions (" + p.SessionsError + ")"
+	case len(p.Sessions) > 0:
+		return "an agent session is working in it: " + p.Sessions.Label(kit.SessionLabel)
+	}
+	return ""
+}
+
+func worktreePathFor(ctx *kit.Context, branch string) (string, error) {
+	if branch == "" {
+		return "", nil
+	}
+	worktrees, err := ctx.Repo.Worktrees()
+	if err != nil {
+		return "", err
+	}
+	if wt, ok := worktrees.ByBranch(branch); ok {
+		return wt.Path, nil
+	}
+	return "", nil
+}

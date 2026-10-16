@@ -6,11 +6,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
 )
 
 func newNewCmd() *cobra.Command {
-	var opts commands.NewOptions
+	var opts provision.NewOptions
 	var asJSON, dryRun bool
 	var expect string
 	cmd := &cobra.Command{
@@ -47,17 +48,17 @@ func newNewCmd() *cobra.Command {
 		Args: needArgs(1, "<type>/<work>", "wt new fix/login-crash"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCreate(cmd, args, "new", create{json: asJSON, dryRun: dryRun, expect: expect},
-				func(ctx *commands.Context) (string, error) {
-					return commands.New(ctx, args[0], opts, cmd.ErrOrStderr())
+				func(ctx *kit.Context) (string, error) {
+					return provision.New(ctx, args[0], opts, cmd.ErrOrStderr())
 				},
-				func(ctx *commands.Context, w io.Writer) error {
-					return commands.NewDryRun(ctx, args[0], opts, w)
+				func(ctx *kit.Context, w io.Writer) error {
+					return provision.NewDryRun(ctx, args[0], opts, w)
 				},
-				func(ctx *commands.Context, w io.Writer) error {
-					return commands.NewPlanJSON(ctx, args[0], opts, w)
+				func(ctx *kit.Context, w io.Writer) error {
+					return provision.NewPlanJSON(ctx, args[0], opts, w)
 				},
-				func(ctx *commands.Context, j *commands.CreateJournal, w io.Writer) error {
-					return commands.NewJSON(ctx, args[0], opts, expect, j, w)
+				func(ctx *kit.Context, j *provision.CreateJournal, w io.Writer) error {
+					return provision.NewJSON(ctx, args[0], opts, expect, j, w)
 				})
 		},
 	}
@@ -87,38 +88,38 @@ func addCreateFlags(cmd *cobra.Command, asJSON, dryRun *bool, expect *string) {
 // --json the repository is opened leniently, so a missing configuration is a
 // problem the plan names rather than an error with no object.
 func runCreate(cmd *cobra.Command, args []string, command string, how create,
-	run func(*commands.Context) (string, error),
-	dry func(*commands.Context, io.Writer) error,
-	plan func(*commands.Context, io.Writer) error,
-	result func(*commands.Context, *commands.CreateJournal, io.Writer) error,
+	run func(*kit.Context) (string, error),
+	dry func(*kit.Context, io.Writer) error,
+	plan func(*kit.Context, io.Writer) error,
+	result func(*kit.Context, *provision.CreateJournal, io.Writer) error,
 ) error {
 	switch {
 	case cmd.Flags().Changed("expect") && (!how.json || how.dryRun):
 		return usagef("--expect goes with --json, on the run that creates the worktree")
 	case !how.json && how.dryRun:
-		return withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+		return withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
 			return dry(ctx, cmd.OutOrStdout())
 		})(cmd, args)
 	case !how.json:
-		return withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+		return withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
 			path, err := run(ctx)
 			return printLine(cmd, path, err)
 		})(cmd, args)
 	}
 	stdout, stderr := cmd.OutOrStdout(), cmd.ErrOrStderr()
-	var j *commands.CreateJournal
+	var j *provision.CreateJournal
 	if !how.dryRun {
-		j = commands.NewCreateJournal(stdout, command)
+		j = provision.NewCreateJournal(stdout, command)
 		defer j.Watch(stderr)()
 	}
 	cwd, err := os.Getwd()
 	if err == nil && cmd.Flags().Changed("expect") && how.expect == "" {
 		err = usagef("--expect needs the token from --dry-run --json")
 	}
-	var ctx *commands.Context
+	var ctx *kit.Context
 	if err == nil {
-		if ctx = commands.OpenLenient(cwd, stderr); ctx == nil {
-			err = commands.ErrNotInRepo
+		if ctx = kit.OpenLenient(cwd, stderr); ctx == nil {
+			err = kit.ErrNotInRepo
 		}
 	}
 	if err != nil {

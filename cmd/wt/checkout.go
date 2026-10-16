@@ -5,11 +5,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
 )
 
 func newCheckoutCmd() *cobra.Command {
-	var opts commands.NewOptions
+	var opts provision.NewOptions
 	var asJSON, dryRun bool
 	var expect string
 	cmd := &cobra.Command{
@@ -43,17 +44,17 @@ func newCheckoutCmd() *cobra.Command {
 				work = args[1]
 			}
 			return runCreate(cmd, args, "checkout", create{json: asJSON, dryRun: dryRun, expect: expect},
-				func(ctx *commands.Context) (string, error) {
-					return commands.Checkout(ctx, args[0], work, opts, cmd.ErrOrStderr())
+				func(ctx *kit.Context) (string, error) {
+					return provision.Checkout(ctx, args[0], work, opts, cmd.ErrOrStderr())
 				},
-				func(ctx *commands.Context, w io.Writer) error {
-					return commands.CheckoutDryRun(ctx, args[0], work, opts, w)
+				func(ctx *kit.Context, w io.Writer) error {
+					return provision.CheckoutDryRun(ctx, args[0], work, opts, w)
 				},
-				func(ctx *commands.Context, w io.Writer) error {
-					return commands.CheckoutPlanJSON(ctx, args[0], work, opts, w)
+				func(ctx *kit.Context, w io.Writer) error {
+					return provision.CheckoutPlanJSON(ctx, args[0], work, opts, w)
 				},
-				func(ctx *commands.Context, j *commands.CreateJournal, w io.Writer) error {
-					return commands.CheckoutJSON(ctx, args[0], work, opts, expect, j, w)
+				func(ctx *kit.Context, j *provision.CreateJournal, w io.Writer) error {
+					return provision.CheckoutJSON(ctx, args[0], work, opts, expect, j, w)
 				})
 		},
 	}

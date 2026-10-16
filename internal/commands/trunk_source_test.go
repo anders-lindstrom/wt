@@ -9,13 +9,22 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/admin"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anders-lindstrom/wt/internal/commands/retire"
+	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
+	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
+	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
 // A configuration file that names MAIN_BRANCH is the trunk's source.
 func TestTrunkSourceIsTheConfigWhenItNamesTrunk(t *testing.T) {
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,10 +36,10 @@ func TestTrunkSourceIsTheConfigWhenItNamesTrunk(t *testing.T) {
 // The shape FINDING 5 was seen in: no config, no origin/HEAD, main here and
 // on origin, the main checkout on a feature branch. Trunk is main.
 func TestDetectedTrunkIsNotTheCheckedOutFeatureBranch(t *testing.T) {
-	main := unconfiguredRepo(t)
+	main := testkit.UnconfiguredRepo(t)
 	withOriginNoHead(t, main)
-	gitIn(t, main, "checkout", "-q", "-b", "feat/stage-6")
-	ctx, err := Open(main)
+	testkit.GitIn(t, main, "checkout", "-q", "-b", "feat/stage-6")
+	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,9 +50,9 @@ func TestDetectedTrunkIsNotTheCheckedOutFeatureBranch(t *testing.T) {
 
 // A config file without MAIN_BRANCH detects it the same way.
 func TestConfigWithoutMainBranchDetectsTrunk(t *testing.T) {
-	main := committedRepo(t, "BUILD_INIT_ENABLED=false\n")
-	gitIn(t, main, "checkout", "-q", "-b", "feat/x")
-	ctx, err := Open(main)
+	main := testkit.CommittedRepo(t, "BUILD_INIT_ENABLED=false\n")
+	testkit.GitIn(t, main, "checkout", "-q", "-b", "feat/x")
+	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,19 +61,10 @@ func TestConfigWithoutMainBranchDetectsTrunk(t *testing.T) {
 	}
 }
 
-// noTrunkRepo is an unconfigured repository whose only branch has no
-// conventional name and no origin/HEAD, so nothing names its trunk.
-func noTrunkRepo(t *testing.T) string {
-	t.Helper()
-	main := unconfiguredRepo(t)
-	gitIn(t, main, "branch", "-m", "main", "production")
-	return main
-}
-
 // Nothing names trunk: the checked-out branch is not taken for it. The error
 // is ErrNoConfig too, which --json reports as noConfiguration.
 func TestOpenFailsWhenNothingNamesTrunk(t *testing.T) {
-	_, err := Open(noTrunkRepo(t))
+	_, err := kit.Open(testkit.NoTrunkRepo(t))
 	if !errors.Is(err, repo.ErrNoTrunk) || !errors.Is(err, config.ErrNoConfig) {
 		t.Fatalf("Open = %v, want ErrNoTrunk and ErrNoConfig", err)
 	}
@@ -76,10 +76,10 @@ func TestOpenFailsWhenNothingNamesTrunk(t *testing.T) {
 // A config file without MAIN_BRANCH has nothing to fall back on either.
 func TestConfigWithoutMainBranchFailsWhenNothingNamesTrunk(t *testing.T) {
 	main := committedNoTrunkRepo(t)
-	if _, err := Open(main); !errors.Is(err, repo.ErrNoTrunk) {
+	if _, err := kit.Open(main); !errors.Is(err, repo.ErrNoTrunk) {
 		t.Fatalf("Open = %v, want ErrNoTrunk", err)
 	}
-	ctx := OpenLenient(main, &bytes.Buffer{})
+	ctx := kit.OpenLenient(main, &bytes.Buffer{})
 	if !errors.Is(ctx.ConfigError, repo.ErrNoTrunk) {
 		t.Errorf("OpenLenient ConfigError = %v, want ErrNoTrunk", ctx.ConfigError)
 	}
@@ -87,9 +87,9 @@ func TestConfigWithoutMainBranchFailsWhenNothingNamesTrunk(t *testing.T) {
 
 // wt doctor names the failed detection and the way out.
 func TestDoctorSaysNothingNamesTrunk(t *testing.T) {
-	ctx := OpenLenient(noTrunkRepo(t), &bytes.Buffer{})
+	ctx := kit.OpenLenient(testkit.NoTrunkRepo(t), &bytes.Buffer{})
 	var buf bytes.Buffer
-	problems, err := Doctor(ctx, &buf)
+	problems, err := admin.Doctor(ctx, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,9 +101,9 @@ func TestDoctorSaysNothingNamesTrunk(t *testing.T) {
 
 // wt init --yes has no trunk to write, and refuses rather than write a guess.
 func TestInitWithoutAskingRefusesWhenNothingNamesTrunk(t *testing.T) {
-	main := noTrunkRepo(t)
+	main := testkit.NoTrunkRepo(t)
 	r := mustDiscover(t, main)
-	err := Init(r, InitOptions{}, &bytes.Buffer{})
+	err := provision.Init(r, provision.InitOptions{}, &bytes.Buffer{})
 	if !errors.Is(err, repo.ErrNoTrunk) {
 		t.Fatalf("Init = %v, want ErrNoTrunk", err)
 	}
@@ -114,15 +114,15 @@ func TestInitWithoutAskingRefusesWhenNothingNamesTrunk(t *testing.T) {
 
 // Asked, wt init offers no trunk, and writes the one named.
 func TestInitAsksForTrunkWithNoDefaultWhenNothingNamesIt(t *testing.T) {
-	main := noTrunkRepo(t)
-	var offered []Answers
-	ask := func(a Answers) (Answers, error) {
+	main := testkit.NoTrunkRepo(t)
+	var offered []kit.Answers
+	ask := func(a kit.Answers) (kit.Answers, error) {
 		offered = append(offered, a)
 		a.MainBranch = "production"
 		return a, nil
 	}
 	var buf bytes.Buffer
-	if err := Init(mustDiscover(t, main), InitOptions{Ask: ask}, &buf); err != nil {
+	if err := provision.Init(mustDiscover(t, main), provision.InitOptions{Ask: ask}, &buf); err != nil {
 		t.Fatal(err)
 	}
 	if len(offered) != 1 || offered[0].MainBranch != "" {
@@ -139,9 +139,9 @@ func TestInitAsksForTrunkWithNoDefaultWhenNothingNamesIt(t *testing.T) {
 
 // Asked, a blank trunk is refused, not written.
 func TestInitRefusesABlankTrunk(t *testing.T) {
-	main := noTrunkRepo(t)
-	ask := func(a Answers) (Answers, error) { return a, nil }
-	if err := Init(mustDiscover(t, main), InitOptions{Ask: ask}, &bytes.Buffer{}); err == nil {
+	main := testkit.NoTrunkRepo(t)
+	ask := func(a kit.Answers) (kit.Answers, error) { return a, nil }
+	if err := provision.Init(mustDiscover(t, main), provision.InitOptions{Ask: ask}, &bytes.Buffer{}); err == nil {
 		t.Fatal("init wrote a configuration with no trunk")
 	}
 	if _, err := os.Stat(filepath.Join(main, "bin")); !os.IsNotExist(err) {
@@ -163,34 +163,34 @@ func mustDiscover(t *testing.T, dir string) *repo.Repo {
 func withOriginNoHead(t *testing.T, dir string) {
 	t.Helper()
 	origin := t.TempDir() + "/origin.git"
-	gitIn(t, dir, "clone", "-q", "--bare", dir, origin)
-	gitIn(t, dir, "remote", "add", "origin", origin)
-	gitIn(t, dir, "fetch", "-q", "origin")
-	gitIn(t, dir, "remote", "set-head", "origin", "--delete")
+	testkit.GitIn(t, dir, "clone", "-q", "--bare", dir, origin)
+	testkit.GitIn(t, dir, "remote", "add", "origin", origin)
+	testkit.GitIn(t, dir, "fetch", "-q", "origin")
+	testkit.GitIn(t, dir, "remote", "set-head", "origin", "--delete")
 }
 
 // Every JSON output gittree judges trunk by says how trunk was found, and a
-// trunk no file names says so: config for runFixture's MAIN_BRANCH.
+// trunk no file names says so: config for provisiontest.RunFixture's MAIN_BRANCH.
 func TestJSONOutputsSayHowTrunkWasFound(t *testing.T) {
-	ctx, _ := runFixture(t, false)
-	gitIn(t, ctx.Repo.MainRoot, "branch", "release-2.1")
+	ctx, _ := provisiontest.RunFixture(t, false)
+	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "release-2.1")
 	for _, want := range []config.TrunkSource{config.TrunkFromConfig, config.TrunkConventional} {
 		ctx.Config.TrunkSource = want
 		got := map[string]*string{}
-		got["status"] = planOfWork(t, ctx, "bump").TrunkSource
-		up, err := upJSON(t, ctx, "bump", noAgents())
+		got["status"] = synccmdtest.PlanOfWork(t, ctx, "bump").TrunkSource
+		up, err := synccmdtest.UpJSON(t, ctx, "bump", synccmdtest.NoAgents())
 		if err != nil {
 			t.Fatal(err)
 		}
 		got["up"] = up.TrunkSource
-		got["sync"] = overviewJSON(t, ctx).TrunkSource
-		sweep, _ := sweepPlanJSON(t, ctx, SweepOptions{NoFetch: true})
+		got["sync"] = synccmdtest.OverviewJSON(t, ctx).TrunkSource
+		sweep, _ := retiretest.SweepPlanJSON(t, ctx, retire.SweepOptions{NoFetch: true})
 		got["sweep-plan"] = sweep.TrunkSource
-		got["new-plan"] = newPlanOf(t, ctx, "fix/x", NewOptions{}).TrunkSource
-		got["checkout-plan"] = checkoutPlanOf(t, ctx, "release-2.1", "").TrunkSource
+		got["new-plan"] = provisiontest.NewPlanOf(t, ctx, "fix/x", provision.NewOptions{}).TrunkSource
+		got["checkout-plan"] = provisiontest.CheckoutPlanOf(t, ctx, "release-2.1", "").TrunkSource
 		for name, src := range got {
 			if src == nil || *src != string(want) {
-				t.Errorf("%s: trunkSource = %q, want %s", name, deref(src), want)
+				t.Errorf("%s: trunkSource = %q, want %s", name, retire.Deref(src), want)
 			}
 		}
 	}
@@ -199,15 +199,15 @@ func TestJSONOutputsSayHowTrunkWasFound(t *testing.T) {
 // wt sync on a repository nothing names trunk for says so, rather than fetch
 // and compare against an "origin/" with no branch.
 func TestSyncSaysNothingNamesTrunk(t *testing.T) {
-	ctx := OpenLenient(noTrunkRepo(t), &bytes.Buffer{})
+	ctx := kit.OpenLenient(testkit.NoTrunkRepo(t), &bytes.Buffer{})
 	for _, noFetch := range []bool{true, false} {
-		o := overviewOf(ctx, SyncOptions{NoFetch: noFetch})
+		o := synccmd.OverviewOf(ctx, synccmd.SyncOptions{NoFetch: noFetch})
 		if o.Error == nil || !strings.Contains(*o.Error, "cannot tell which branch is trunk") ||
 			o.Trunk != nil || o.TrunkRef != nil || o.Fetched || o.FetchError != nil {
 			t.Errorf("no-fetch %v: overview %+v, want the detection error and no trunk", noFetch, o)
 		}
 		var buf bytes.Buffer
-		if err := Sync(ctx, SyncOptions{NoFetch: noFetch}, &buf); err == nil ||
+		if err := synccmd.Sync(ctx, synccmd.SyncOptions{NoFetch: noFetch}, &buf); err == nil ||
 			!strings.Contains(err.Error(), "cannot tell which branch is trunk") {
 			t.Errorf("no-fetch %v: Sync = %v, want the detection error", noFetch, err)
 		}
@@ -216,23 +216,23 @@ func TestSyncSaysNothingNamesTrunk(t *testing.T) {
 
 // wt status --json names no trunk ref when there is no trunk.
 func TestStatusPlanHasNoTrunkRefWhenNothingNamesTrunk(t *testing.T) {
-	main := noTrunkRepo(t)
-	for name, ctx := range map[string]*Context{
-		"no file":        OpenLenient(main, &bytes.Buffer{}),
-		"no MAIN_BRANCH": OpenLenient(committedNoTrunkRepo(t), &bytes.Buffer{}),
+	main := testkit.NoTrunkRepo(t)
+	for name, ctx := range map[string]*kit.Context{
+		"no file":        kit.OpenLenient(main, &bytes.Buffer{}),
+		"no MAIN_BRANCH": kit.OpenLenient(committedNoTrunkRepo(t), &bytes.Buffer{}),
 	} {
 		var buf bytes.Buffer
-		if err := UpPlanJSON(ctx, ".", &buf); err != nil {
+		if err := synccmd.UpPlanJSON(ctx, ".", &buf); err != nil {
 			t.Fatal(err)
 		}
-		var p UpPlan
+		var p synccmd.UpPlan
 		if err := json.Unmarshal(buf.Bytes(), &p); err != nil {
 			t.Fatal(err)
 		}
 		if p.Trunk != nil || p.TrunkRef != nil || p.TrunkSource != nil || p.TrunkRefExists ||
-			deref(p.UpIneligibleCode) != IneligibleNoConfig {
-			t.Errorf("%s: trunk %q ref %q source %q exists %v code %q", name, deref(p.Trunk),
-				deref(p.TrunkRef), deref(p.TrunkSource), p.TrunkRefExists, deref(p.UpIneligibleCode))
+			retire.Deref(p.UpIneligibleCode) != synccmd.IneligibleNoConfig {
+			t.Errorf("%s: trunk %q ref %q source %q exists %v code %q", name, retire.Deref(p.Trunk),
+				retire.Deref(p.TrunkRef), retire.Deref(p.TrunkSource), p.TrunkRefExists, retire.Deref(p.UpIneligibleCode))
 		}
 	}
 }
@@ -241,7 +241,7 @@ func TestStatusPlanHasNoTrunkRefWhenNothingNamesTrunk(t *testing.T) {
 // else names trunk.
 func committedNoTrunkRepo(t *testing.T) string {
 	t.Helper()
-	main := committedRepo(t, "BUILD_INIT_ENABLED=false\n")
-	gitIn(t, main, "branch", "-m", "main", "production")
+	main := testkit.CommittedRepo(t, "BUILD_INIT_ENABLED=false\n")
+	testkit.GitIn(t, main, "branch", "-m", "main", "production")
 	return main
 }

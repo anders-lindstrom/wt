@@ -5,7 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/retire"
 )
 
 // The prompt defaults to no, because the cost of a mistaken yes is a checkout
@@ -25,7 +26,7 @@ func TestConfirmRemovalAnswers(t *testing.T) {
 		{"", false}, // ^D
 	} {
 		var out bytes.Buffer
-		got, err := confirmRemoval(newPrompter(strings.NewReader(tc.typed), &out))(commands.Plan{})
+		got, err := confirmRemoval(newPrompter(strings.NewReader(tc.typed), &out))(retire.Plan{})
 		if err != nil {
 			t.Fatalf("%q: %v", tc.typed, err)
 		}
@@ -102,11 +103,11 @@ func TestRemoveForceFlagForms(t *testing.T) {
 			t.Fatalf("%q: %v", args, err)
 		}
 		values, _ := cmd.Flags().GetStringSlice("force")
-		got, err := commands.ParseForce(values)
-		want := commands.ForceAll
+		got, err := kit.ParseForce(values)
+		want := kit.ForceAll
 		switch args[1] {
 		case "--force=idle-sessions,lock":
-			want = commands.ForceIdleSessions | commands.ForceLock
+			want = kit.ForceIdleSessions | kit.ForceLock
 		case "--force=":
 			want = 0 // no force at all
 		}

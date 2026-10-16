@@ -5,7 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
 )
 
 func newPortCmd() *cobra.Command {
@@ -28,12 +29,12 @@ func newPortCmd() *cobra.Command {
 			"  wt port /                     # the main checkout's",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeWork,
-		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
+		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *kit.Context) error {
 			spec := "."
 			if len(args) == 1 {
 				spec = args[0]
 			}
-			port, err := commands.Port(ctx, spec)
+			port, err := provision.Port(ctx, spec)
 			return printLine(cmd, strconv.Itoa(port), err)
 		}),
 	}

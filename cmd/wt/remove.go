@@ -5,7 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/retire"
 )
 
 func newRemoveCmd() *cobra.Command {
@@ -57,7 +58,7 @@ func newRemoveCmd() *cobra.Command {
 			}
 			// pflag reads --force idle-sessions as a bare --force and a
 			// worktree: a list after a space would force everything.
-			if cmd.Flags().Changed("force") && len(args) == 1 && commands.IsForceList(args[0]) {
+			if cmd.Flags().Changed("force") && len(args) == 1 && kit.IsForceList(args[0]) {
 				return usagef("%q is --force's list, which goes after an =: --force=%s "+
 					"(--force=<list>); a worktree of that name is named by its path or <type>/<work>",
 					args[0], args[0])
@@ -68,18 +69,18 @@ func newRemoveCmd() *cobra.Command {
 			if expect != "" && (!asJSON || !yes) {
 				return usagef("--expect holds a removal to the plan a tool read: pass it with --yes --json")
 			}
-			forced, err := commands.ParseForce(force)
+			forced, err := kit.ParseForce(force)
 			if err != nil {
 				return usageError{err}
 			}
 			ctx, err := openContext()
 			if err != nil {
 				if asJSON {
-					commands.RemoveFailedJSON(cmd.OutOrStdout(), !yes, err)
+					retire.RemoveFailedJSON(cmd.OutOrStdout(), !yes, err)
 				}
 				return err
 			}
-			opts := commands.RemoveOptions{Force: forced, DryRun: dryRun, Expect: expect, KeepSuperset: keepSuperset,
+			opts := retire.RemoveOptions{Force: forced, DryRun: dryRun, Expect: expect, KeepSuperset: keepSuperset,
 				Reap: reap}
 			if moveTo != "" {
 				if opts.Quarantine, err = filepath.Abs(moveTo); err != nil {
@@ -87,7 +88,7 @@ func newRemoveCmd() *cobra.Command {
 				}
 			}
 			if asJSON {
-				target := commands.RemoveTarget{Path: meAt}
+				target := retire.RemoveTarget{Path: meAt}
 				switch {
 				case meAt != "":
 				case me:
@@ -98,20 +99,20 @@ func newRemoveCmd() *cobra.Command {
 				out, progress := cmd.OutOrStdout(), cmd.ErrOrStderr()
 				ctx.WarnTo(progress)
 				if !yes {
-					return commands.RemovePlanJSON(ctx, target, opts, out, progress)
+					return retire.RemovePlanJSON(ctx, target, opts, out, progress)
 				}
-				return commands.RemoveJSON(ctx, target, opts, out, progress)
+				return retire.RemoveJSON(ctx, target, opts, out, progress)
 			}
 			if !yes && canAsk(cmd) {
 				opts.Confirm = confirmRemoval(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()))
 			}
 			if meAt != "" {
-				return commands.RemoveAt(ctx, meAt, opts, cmd.OutOrStdout())
+				return retire.RemoveAt(ctx, meAt, opts, cmd.OutOrStdout())
 			}
 			if me {
-				return commands.RemoveAt(ctx, ctx.Cwd, opts, cmd.OutOrStdout())
+				return retire.RemoveAt(ctx, ctx.Cwd, opts, cmd.OutOrStdout())
 			}
-			return commands.Remove(ctx, args[0], opts, cmd.OutOrStdout())
+			return retire.Remove(ctx, args[0], opts, cmd.OutOrStdout())
 		},
 	}
 	// . says the same and is what every other command takes; --me stays for
@@ -140,6 +141,6 @@ func newRemoveCmd() *cobra.Command {
 
 // confirmRemoval asks the question, defaulting to no. The plan has already been
 // printed by the time this runs, so the prompt itself stays one line.
-func confirmRemoval(p *prompter) func(commands.Plan) (bool, error) {
-	return func(commands.Plan) (bool, error) { return p.yesNo("Remove it?", false), nil }
+func confirmRemoval(p *prompter) func(retire.Plan) (bool, error) {
+	return func(retire.Plan) (bool, error) { return p.yesNo("Remove it?", false), nil }
 }

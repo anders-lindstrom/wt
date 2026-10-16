@@ -5,13 +5,14 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 )
 
 func newUpCmd() *cobra.Command {
 	var noFetch, noFFTrunk, yes, force, allowDiverged, asJSON bool
 	var expect string
-	var push func() commands.PushMode
+	var push func() synccmd.PushMode
 	cmd := &cobra.Command{
 		Use:   "up [<work>]",
 		Short: "Sync this worktree by rebasing, if it goes through without you",
@@ -73,24 +74,24 @@ func newUpCmd() *cobra.Command {
 			f := syncVerbFlags{rebase: true, yes: yes, noFetch: noFetch, noFFTrunk: noFFTrunk, ifReady: true, force: force,
 				allowDiverged: allowDiverged, push: push()}
 			if !asJSON {
-				return withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+				return withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
 					opts, _ := runOptions(cmd, f, false)
-					return commands.Up(ctx, work, opts, cmd.OutOrStdout())
+					return synccmd.Up(ctx, work, opts, cmd.OutOrStdout())
 				})(cmd, args)
 			}
 			// stdout carries the one result object and nothing else: the
 			// progress, and any question, go to stderr.
-			journal := commands.NewRunJournal(cmd.OutOrStdout())
+			journal := synccmd.NewRunJournal(cmd.OutOrStdout())
 			cmd.SetOut(cmd.ErrOrStderr())
 			cwd, err := os.Getwd()
 			if err != nil {
 				journal.Fail(err)
 				return err
 			}
-			ctx := commands.OpenLenient(cwd, cmd.ErrOrStderr())
+			ctx := kit.OpenLenient(cwd, cmd.ErrOrStderr())
 			switch {
 			case ctx == nil:
-				err = commands.ErrNotInRepo
+				err = kit.ErrNotInRepo
 			case ctx.ConfigError != nil:
 				err = ctx.ConfigError
 			}
@@ -100,7 +101,7 @@ func newUpCmd() *cobra.Command {
 			}
 			opts, _ := runOptions(cmd, f, false)
 			opts.Journal, opts.Expect = journal, expect
-			return commands.Up(ctx, work, opts, cmd.OutOrStdout())
+			return synccmd.Up(ctx, work, opts, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().BoolVar(&noFetch, "no-fetch", false, "rebase onto origin/<trunk> as last fetched")

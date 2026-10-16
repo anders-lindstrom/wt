@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/naming"
 )
 
@@ -21,7 +21,7 @@ func completeWork(_ *cobra.Command, args []string, _ string) ([]string, cobra.Sh
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	names, err := commands.WorkNames(ctx)
+	names, err := kit.WorkNames(ctx)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
@@ -66,8 +66,8 @@ func newPathCmd() *cobra.Command {
 			"  wt path /                  # the main checkout",
 		Args:              needArgs(1, "<work>", "wt path fix/login-crash"),
 		ValidArgsFunction: completeWork,
-		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
-			out, err := commands.Path(ctx, args[0])
+		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *kit.Context) error {
+			out, err := kit.Path(ctx, args[0])
 			return printLine(cmd, out, err)
 		}),
 	}
@@ -88,8 +88,8 @@ func newBranchCmd() *cobra.Command {
 			"  wt branch /                # trunk, as this repository configures it",
 		Args:              needArgs(1, "<work>", "wt branch fix/login-crash"),
 		ValidArgsFunction: completeWork,
-		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
-			out, err := commands.Branch(ctx, args[0])
+		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *kit.Context) error {
+			out, err := kit.Branch(ctx, args[0])
 			return printLine(cmd, out, err)
 		}),
 	}
@@ -107,7 +107,7 @@ func newBranchStripCmd() *cobra.Command {
 			"  wt branch-strip main                # not a work branch: main",
 		Args:   needArgs(1, "<branch>", "wt branch-strip fix_wt/login-crash"),
 		Hidden: true, // compat surface for strip_worktree_prefix
-		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
+		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *kit.Context) error {
 			fmt.Fprintln(cmd.OutOrStdout(), naming.StripPrefix(args[0], ctx.Scheme().Suffix))
 			return nil
 		}),

@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/session"
 )
 
 // resumeFlag is --resume: a switch that also notes how many words stood
@@ -31,7 +31,7 @@ func (r *resumeFlag) Set(v string) (err error) {
 }
 
 func newAttachCmd() *cobra.Command {
-	var opts commands.AttachOptions
+	var opts session.AttachOptions
 	resume := &resumeFlag{}
 	cmd := &cobra.Command{
 		Use:   "attach [<pattern>] [<session>]",
@@ -101,7 +101,7 @@ func newAttachCmd() *cobra.Command {
 			if f, ok := opts.Out.(*os.File); ok && !opts.ForShell {
 				opts.Terminal = canAsk(cmd) && isTerminal(f)
 			}
-			return commands.Attach(ctx, opts)
+			return session.Attach(ctx, opts)
 		},
 	}
 	resume.flags = cmd.Flags()

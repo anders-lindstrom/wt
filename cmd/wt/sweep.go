@@ -5,7 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/retire"
 )
 
 func newSweepCmd() *cobra.Command {
@@ -130,24 +131,24 @@ func newSweepCmd() *cobra.Command {
 				if sel.selection().Any() {
 					return usagef("--json sweeps one repository: run it in each repository's main checkout")
 				}
-				return sweepJSON(cmd, commands.SweepOptions{NoFetch: noFetch, Yes: yes, DryRun: dryRun, Expect: expect,
+				return sweepJSON(cmd, retire.SweepOptions{NoFetch: noFetch, Yes: yes, DryRun: dryRun, Expect: expect,
 					Quarantine: moveTo, KeepSuperset: keepSuperset, Reap: reap})
 			}
-			opts := commands.SweepOptions{NoFetch: noFetch, Yes: yes, DryRun: dryRun,
+			opts := retire.SweepOptions{NoFetch: noFetch, Yes: yes, DryRun: dryRun,
 				Width: terminalWidth(cmd.OutOrStdout()), Quarantine: moveTo, KeepSuperset: keepSuperset, Reap: reap}
 			if sel.selection().Any() {
-				all := commands.SweepAllOptions{SweepOptions: opts}
+				all := retire.SweepAllOptions{SweepOptions: opts}
 				if !yes && canAsk(cmd) {
 					p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
 					all.Ask = func(q string) (bool, error) { return p.yesNo(q, false), nil }
 				}
-				return commands.SweepAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), all, cmd.OutOrStdout())
+				return retire.SweepAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), all, cmd.OutOrStdout())
 			}
-			return withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+			return withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
 				if !yes && canAsk(cmd) {
 					opts.Confirm = confirmSweep(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()))
 				}
-				return commands.Sweep(ctx, opts, cmd.OutOrStdout())
+				return retire.Sweep(ctx, opts, cmd.OutOrStdout())
 			})(cmd, args)
 		},
 	}
@@ -171,30 +172,30 @@ func newSweepCmd() *cobra.Command {
 // the plan or, with --yes, the result; the plan as wt prints it and the
 // progress go to stderr. An error that stops it before it opens the
 // repository is still that one object.
-func sweepJSON(cmd *cobra.Command, opts commands.SweepOptions) error {
+func sweepJSON(cmd *cobra.Command, opts retire.SweepOptions) error {
 	out, progress := cmd.OutOrStdout(), cmd.ErrOrStderr()
 	ctx, err := openContext()
 	if !opts.Yes {
 		if err != nil {
-			commands.SweepPlanFailed(out, err)
+			retire.SweepPlanFailed(out, err)
 			return err
 		}
 		ctx.WarnTo(progress)
-		return commands.SweepPlanJSON(ctx, opts, out, progress)
+		return retire.SweepPlanJSON(ctx, opts, out, progress)
 	}
-	journal := commands.NewSweepJournal(out)
+	journal := retire.NewSweepJournal(out)
 	if err != nil {
 		journal.Fail(err)
 		return err
 	}
 	ctx.WarnTo(progress)
 	opts.Journal = journal
-	return commands.Sweep(ctx, opts, progress)
+	return retire.Sweep(ctx, opts, progress)
 }
 
 // confirmSweep asks once for the whole plan, defaulting to no.
-func confirmSweep(p *prompter) func(commands.SweepPlan) (bool, error) {
-	return func(plan commands.SweepPlan) (bool, error) {
+func confirmSweep(p *prompter) func(retire.SweepPlan) (bool, error) {
+	return func(plan retire.SweepPlan) (bool, error) {
 		return p.yesNo(plan.Question(), false), nil
 	}
 }

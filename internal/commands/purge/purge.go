@@ -1,0 +1,443 @@
+// Package purge implements wt purge, which deletes a quarantined worktree
+// for good, and wt refs purge, which deletes a run of swept pins.
+package purge
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/refpins"
+	"github.com/anders-lindstrom/wt/internal/commands/retire"
+	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/quarantine"
+	"github.com/anders-lindstrom/wt/schema"
+)
+
+// errPurgePlanChanged is --expect, or the second read after the question,
+// refusing a purge whose plan is not the one read.
+var errPurgePlanChanged = errors.New("the purge plan changed since it was read (the folder, its " +
+	"recovery.json, its pins or what they hold); nothing was purged: read the plan again")
+
+// errPurgeNoTerminal is a purge with nobody to ask and no --yes.
+var errPurgeNoTerminal = errors.New("nothing was purged: there is no terminal to ask, " +
+	"and a purge deletes for good: pass --yes")
+
+// Options carries what wt purge was asked.
+type Options struct {
+	// DryRun prints the plan and deletes nothing.
+	DryRun bool
+	// Expect refuses the purge unless the plan made now has this token.
+	Expect string
+	// Confirm, when set, is asked once the plan is printed; false purges
+	// nothing.
+	Confirm func() bool
+	// NoTerminal is a purge with nobody to ask and no --yes: it refuses.
+	NoTerminal bool
+	// Result, when set, receives what the purge did.
+	Result *quarantine.PurgeResult
+	// Planned, when set, is told each plan the purge reads, the last one
+	// being the one it went by.
+	Planned func(quarantine.PurgePlan)
+}
+
+// QuarantinePurge deletes, for good, the worktree wt remove --move-to or
+// wt sweep --move-to moved into dir: its pins, then the folder.
+func QuarantinePurge(dir string, opts Options, w io.Writer) error {
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	plan := quarantine.PlanPurge(dir)
+	if opts.Planned != nil {
+		opts.Planned(plan)
+	}
+	RenderPurgePlan(plan, w)
+	res := quarantine.PurgeResult{Outcome: quarantine.OutcomeRefused}
+	report := func(err error) error {
+		if err != nil {
+			res.Error = err.Error()
+		}
+		if opts.Result != nil {
+			*opts.Result = res
+		}
+		return err
+	}
+	if why := purgeRefusal(plan); why != "" {
+		return report(fmt.Errorf("nothing was purged: %s", why))
+	}
+	token := purgeToken(plan)
+	if opts.Expect != "" && opts.Expect != retire.Deref(token) {
+		return report(errPurgePlanChanged)
+	}
+	switch {
+	case opts.DryRun:
+		fmt.Fprintln(w, "Nothing was purged: --dry-run.")
+		return report(nil)
+	case opts.NoTerminal:
+		return report(errPurgeNoTerminal)
+	case opts.Confirm != nil:
+		if !opts.Confirm() {
+			fmt.Fprintln(w, "Nothing was purged.")
+			return report(nil)
+		}
+		// A question can sit for minutes: the purge goes by the plan read
+		// now, and only if it is the one that was asked about.
+		plan = quarantine.PlanPurge(dir)
+		if opts.Planned != nil {
+			opts.Planned(plan)
+		}
+		if retire.Deref(purgeToken(plan)) != retire.Deref(token) {
+			return report(errPurgePlanChanged)
+		}
+	}
+	res, err = quarantine.DoPurge(plan)
+	if err != nil {
+		if res.Outcome == quarantine.OutcomePartial {
+			fmt.Fprintf(w, "! partly purged; wt purge %s finishes it\n", dir)
+		}
+		return report(err)
+	}
+	fmt.Fprintf(w, "✓ purged %s%s\n", dir, purgedWords(plan))
+	return report(nil)
+}
+
+// purgeRefusal is why the purge refuses, "" when it does not. A folder that
+// is not there and is spelled like a run id was meant for wt refs purge, and
+// the refusal says so.
+func purgeRefusal(p quarantine.PurgePlan) string {
+	why := p.Refusal()
+	id := filepath.Base(p.Dir)
+	if len(p.Problems) == 1 && p.Problems[0].Code == quarantine.ProblemMissing && refpins.RunIDPattern.MatchString(id) {
+		why += fmt.Sprintf("; %s is spelled like a run id: wt refs purge %s deletes a run's pins", id, id)
+	}
+	return why
+}
+
+// purgedWords is the clause the success line ends with.
+func purgedWords(p quarantine.PurgePlan) string {
+	n := 0
+	for _, pin := range p.Pins {
+		if pin.OID != "" {
+			n++
+		}
+	}
+	switch n {
+	case 0:
+		return ": the folder is deleted"
+	case 1:
+		return ": the folder and 1 pin are deleted"
+	}
+	return fmt.Sprintf(": the folder and %d pins are deleted", n)
+}
+
+// RenderPurgePlan writes what a purge finds and would delete.
+func RenderPurgePlan(p quarantine.PurgePlan, w io.Writer) {
+	rows := [][]string{{"  folder", p.Dir + purgeStateWords(p.State)}}
+	if r := p.Record; r != nil {
+		rows = append(rows, []string{"  worktree", r.Checkout.Path + " (" + r.Command + ", " + r.CreatedAt + ")"})
+		if r.Branch != nil {
+			rows = append(rows, []string{"  branch", r.Branch.Name + " at " + git.ShortID(r.Branch.Tip, 12)})
+		}
+	}
+	if len(p.Entries) > 0 {
+		rows = append(rows, []string{"  deletes", strings.Join(p.Entries, ", ") + sizeWords(p.Bytes)})
+	}
+	if p.RepoGone && p.Record != nil {
+		rows = append(rows, []string{"  pins", "its repository's git dir " + p.Record.CommonDir + " is gone: deleted, " +
+			"its pins went with it; moved, they stay there until wt sweep in it drops them"})
+	}
+	for i, pin := range p.Pins {
+		if p.RepoGone {
+			break
+		}
+		label := ""
+		if i == 0 {
+			label = "  pins"
+		}
+		at := "gone already"
+		if pin.OID != "" {
+			at = "at " + git.ShortID(pin.OID, 12) + ", deleted"
+		}
+		rows = append(rows, []string{label, pin.Ref + " — " + at})
+	}
+	for _, l := range p.Lost {
+		rows = append(rows, []string{"  lost", fmt.Sprintf("%s on its %s %s become unreachable; gc takes them",
+			kit.CommitsWord(l.Count), l.Kind, git.ShortID(l.OID, 12))})
+	}
+	if p.ReachError != "" {
+		rows = append(rows, []string{"  lost", "cannot tell what becomes unreachable: " + p.ReachError})
+	}
+	_ = kit.PrintTable(w, rows)
+	for _, pr := range p.Problems {
+		fmt.Fprintf(w, "  ! %s\n", pr.Text)
+	}
+	fmt.Fprintln(w)
+}
+
+func purgeStateWords(state string) string {
+	switch state {
+	case quarantine.StateQuarantined:
+		return " — holds a removed worktree, which goes for good"
+	case quarantine.StateRestored:
+		return " — restored already; only what it left goes"
+	case quarantine.StatePurging:
+		return " — a purge stopped here; this finishes it"
+	case quarantine.StateEmpty:
+		return " — empty; nothing names what it was"
+	}
+	return ""
+}
+
+func sizeWords(n int64) string {
+	switch {
+	case n < 0:
+		return ""
+	case n < 1024:
+		return fmt.Sprintf(" (%d bytes)", n)
+	case n < 1024*1024:
+		return fmt.Sprintf(" (%.1f KB)", float64(n)/1024)
+	case n < 1024*1024*1024:
+		return fmt.Sprintf(" (%.1f MB)", float64(n)/(1024*1024))
+	}
+	return fmt.Sprintf(" (%.1f GB)", float64(n)/(1024*1024*1024))
+}
+
+// purgeToken names a plan by its fingerprint: the folder by path and
+// identity, its state, its record byte for byte, every path in it, each pin
+// and where it is, and what would be lost. Nil when the purge would refuse.
+func purgeToken(p quarantine.PurgePlan) *string {
+	fp := p.Fingerprint()
+	if fp == "" {
+		return nil
+	}
+	token := "1:" + fp[:32]
+	return &token
+}
+
+// PinPlan is one pin, for --json.
+type PinPlan struct {
+	Name string  `json:"name"`
+	Ref  string  `json:"ref"`
+	OID  *string `json:"oid"`
+}
+
+// Lost is a commit only a pin holds, for --json.
+type Lost struct {
+	Kind  string `json:"kind"`
+	OID   string `json:"oid"`
+	Count int    `json:"count"`
+}
+
+// Problem is one reason a purge refuses, for --json.
+type Problem struct {
+	Code string `json:"code"`
+	Text string `json:"text"`
+}
+
+// PlanOutput is the one object wt purge --dry-run --json prints.
+type PlanOutput struct {
+	Schema        int       `json:"schema"`
+	SchemaVersion string    `json:"schemaVersion"`
+	Command       string    `json:"command"`
+	Dir           string    `json:"dir"`
+	Repo          *string   `json:"repo"`
+	State         *string   `json:"state"`
+	Token         *string   `json:"token"`
+	Worktree      *string   `json:"worktree"`
+	Branch        *string   `json:"branch"`
+	CreatedAt     *string   `json:"createdAt"`
+	Entries       []string  `json:"entries"`
+	Bytes         *int64    `json:"bytes"`
+	Pins          []PinPlan `json:"pins"`
+	Unreachable   []Lost    `json:"unreachable"`
+	ReachError    *string   `json:"reachError"`
+	RepoGone      bool      `json:"repositoryGone"`
+	Problems      []Problem `json:"problems"`
+	Error         *string   `json:"error"`
+}
+
+// PinResult is one pin and what became of it, for --json.
+type PinResult struct {
+	Name   string  `json:"name"`
+	Ref    string  `json:"ref"`
+	OID    *string `json:"oid"`
+	Result string  `json:"result"`
+}
+
+// What became of a pin.
+const (
+	PinDeleted = "deleted"
+	PinAbsent  = "absent"
+	PinKept    = "kept"
+)
+
+// Output is the one object wt purge --yes --json prints.
+type Output struct {
+	Schema        int         `json:"schema"`
+	SchemaVersion string      `json:"schemaVersion"`
+	Command       string      `json:"command"`
+	Dir           string      `json:"dir"`
+	Repo          *string     `json:"repo"`
+	State         *string     `json:"state"`
+	Token         *string     `json:"token"`
+	Outcome       string      `json:"outcome"`
+	Error         *string     `json:"error"`
+	Problems      []Problem   `json:"problems"`
+	Pins          []PinResult `json:"pins"`
+	FolderDeleted bool        `json:"folderDeleted"`
+	Recovery      *string     `json:"recovery"`
+}
+
+// purgeCommand names wt purge in its --json output, by the spelling it had
+// when the schemas were made: a reader of schema 1 decodes that value.
+const purgeCommand = "quarantine purge"
+
+func purgePlanOutput(p quarantine.PurgePlan) PlanOutput {
+	o := PlanOutput{Schema: 1, SchemaVersion: schema.VersionOf("quarantine-purge-plan"), Command: purgeCommand,
+		Dir: p.Dir, State: kit.Strp(p.State), Token: purgeToken(p), Entries: []string{}, Pins: []PinPlan{},
+		Unreachable: []Lost{}, ReachError: kit.Strp(p.ReachError), RepoGone: p.RepoGone, Problems: purgeProblems(p)}
+	o.Entries = append(o.Entries, p.Entries...)
+	if p.Bytes >= 0 {
+		n := p.Bytes
+		o.Bytes = &n
+	}
+	if r := p.Record; r != nil {
+		o.Repo, o.Worktree, o.CreatedAt = kit.Strp(r.Repo), kit.Strp(r.Checkout.Path), kit.Strp(r.CreatedAt)
+		if r.Branch != nil {
+			o.Branch = kit.Strp(r.Branch.Name)
+		}
+	}
+	for _, pin := range p.Pins {
+		o.Pins = append(o.Pins, PinPlan{Name: pin.Name, Ref: pin.Ref, OID: kit.Strp(pin.OID)})
+	}
+	for _, l := range p.Lost {
+		o.Unreachable = append(o.Unreachable, Lost(l))
+	}
+	if why := purgeRefusal(p); why != "" {
+		o.Error = kit.Strp(why)
+	}
+	return o
+}
+
+func purgeProblems(p quarantine.PurgePlan) []Problem {
+	out := []Problem{}
+	for _, pr := range p.Problems {
+		out = append(out, Problem(pr))
+	}
+	return out
+}
+
+// QuarantinePurgePlanJSON writes wt purge --dry-run --json: the
+// plan, every reason it would refuse and the token that holds a purge to
+// it. It deletes nothing; the plan as wt prints it goes to progress. A plan
+// the purge would refuse is one object too, with error set, and the error
+// is returned.
+func QuarantinePurgePlanJSON(dir string, out, progress io.Writer) error {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	plan := quarantine.PlanPurge(abs)
+	RenderPurgePlan(plan, progress)
+	o := purgePlanOutput(plan)
+	if werr := kit.WriteJSON(out, o); werr != nil {
+		return werr
+	}
+	if o.Error != nil {
+		return errors.New(*o.Error)
+	}
+	return nil
+}
+
+// QuarantinePurgeJSON is wt purge --yes --json: the purge, and
+// one object on out saying what became of each pin and of the folder —
+// when it returns, or when a signal ends it. The plan as wt prints it and
+// the progress go to progress.
+func QuarantinePurgeJSON(dir string, opts Options, out, progress io.Writer) error {
+	abs, err := filepath.Abs(dir)
+	if err == nil {
+		dir = abs
+	}
+	j := &purgeJournal{out: out, dir: dir}
+	defer kit.SetInterruptJournal(j)()
+	defer kit.WatchSignals(progress, nil)()
+	var res quarantine.PurgeResult
+	opts.Confirm, opts.NoTerminal, opts.DryRun, opts.Result, opts.Planned = nil, false, false, &res, j.planned
+	if err == nil {
+		err = QuarantinePurge(dir, opts, progress)
+	}
+	j.write(res.Outcome, err, "")
+	return err
+}
+
+// purgeJournal writes wt purge --json's one object once: when
+// the purge returns, or when a signal ends it.
+type purgeJournal struct {
+	mu   sync.Mutex
+	once sync.Once
+	out  io.Writer
+	dir  string
+	plan quarantine.PurgePlan
+}
+
+// planned records the plan the purge read.
+func (j *purgeJournal) planned(p quarantine.PurgePlan) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.plan = p
+}
+
+// Interrupted finishes the journal for a signal (kit.Interruptible).
+func (j *purgeJournal) Interrupted(_ string, recovery string) {
+	j.write(kit.OutcomeInterrupted, nil, recovery)
+}
+
+// write reads the pins and the folder as they are now, so what it says
+// became of each is true whatever the run got to. The object is read
+// outside once: a signal parks the git a returning run is reading with, and
+// the handler must still be able to write.
+func (j *purgeJournal) write(outcome string, err error, recovery string) {
+	j.mu.Lock()
+	p := j.plan
+	j.mu.Unlock()
+	o := purgeOutput(j.dir, p, outcome, err, recovery)
+	j.once.Do(func() { _ = kit.WriteJSON(j.out, o) })
+}
+
+func purgeOutput(dir string, p quarantine.PurgePlan, outcome string, err error, recovery string) Output {
+	if outcome == "" {
+		outcome = quarantine.OutcomeRefused
+	}
+	o := Output{Schema: 1, SchemaVersion: schema.VersionOf("quarantine-purge"), Command: purgeCommand,
+		Dir: dir, State: kit.Strp(p.State), Token: purgeToken(p), Outcome: outcome, Problems: purgeProblems(p),
+		Pins: []PinResult{}, Recovery: kit.Strp(recovery)}
+	if err != nil {
+		o.Error = kit.Strp(err.Error())
+		if errors.Is(err, errPurgePlanChanged) || errors.Is(err, quarantine.ErrPurgeChanged) {
+			o.Problems = append(o.Problems, Problem{Code: kit.ProblemPlanChanged, Text: err.Error()})
+		}
+	}
+	if p.Record != nil {
+		o.Repo = kit.Strp(p.Record.Repo)
+	}
+	_, serr := os.Lstat(dir)
+	o.FolderDeleted = p.Dir != "" && errors.Is(serr, os.ErrNotExist)
+	for _, pin := range p.Pins {
+		r := PinResult{Name: pin.Name, Ref: pin.Ref, OID: kit.Strp(pin.OID), Result: PinAbsent}
+		if pin.OID != "" && !p.RepoGone {
+			r.Result = PinKept
+			// A pin that cannot be read is not known to be gone.
+			if now, err := quarantine.ReadPin(p.Record.Repo, pin.Ref); err == nil && now == "" {
+				r.Result = PinDeleted
+			}
+		}
+		o.Pins = append(o.Pins, r)
+	}
+	return o
+}

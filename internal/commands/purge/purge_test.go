@@ -1,0 +1,472 @@
+package purge
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anders-lindstrom/wt/internal/commands/refs"
+	"github.com/anders-lindstrom/wt/internal/commands/refs/refstest"
+	"github.com/anders-lindstrom/wt/internal/commands/retire"
+	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/quarantine"
+)
+
+// PurgeRefused runs a purge that must not happen, checks it names code, and
+// that it deleted nothing: every file under dir and every pin is still
+// there.
+func PurgeRefused(t *testing.T, ctx *kit.Context, dir, code string) {
+	t.Helper()
+	before, pins := testkit.TreeOf(t, dir), testkit.PinsOf(t, ctx)
+	var plan quarantine.PurgePlan
+	var buf bytes.Buffer
+	err := QuarantinePurge(dir, Options{Planned: func(p quarantine.PurgePlan) { plan = p }}, &buf)
+	if err == nil {
+		t.Fatalf("want a refusal (%s):\n%s", code, buf.String())
+	}
+	var codes []string
+	for _, p := range plan.Problems {
+		codes = append(codes, p.Code)
+	}
+	if !slices.Contains(codes, code) {
+		t.Errorf("problems %v, want %s: %v", codes, code, err)
+	}
+	if after := testkit.TreeOf(t, dir); !slices.Equal(after, before) {
+		t.Errorf("a refused purge deleted something:\nbefore %v\nafter  %v", before, after)
+	}
+	if after := testkit.PinsOf(t, ctx); after != pins {
+		t.Errorf("a refused purge touched the pins:\nbefore %s\nafter  %s", pins, after)
+	}
+}
+
+// Everything that is not a settled quarantine, named by a record written
+// for exactly this folder, is refused before anything is deleted.
+func TestPurgeRefuses(t *testing.T) {
+	t.Run("no folder", func(t *testing.T) {
+		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/r-missing", false)
+		PurgeRefused(t, ctx, filepath.Join(dir, "nope"), quarantine.ProblemMissing)
+	})
+	t.Run("no record", func(t *testing.T) {
+		ctx, _ := provisiontest.SafetyWorktree(t, "fix/r-norecord")
+		dir := filepath.Join(ctx.Repo.Parent, "just-files")
+		testkit.MustWrite(t, filepath.Join(dir, "precious.txt"), "precious")
+		PurgeRefused(t, ctx, dir, quarantine.ProblemNoRecord)
+	})
+	t.Run("record not wt's", func(t *testing.T) {
+		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/r-invalid", false)
+		testkit.MustWrite(t, filepath.Join(dir, quarantine.FileName), `{"schema":1,"steps":[]}`)
+		PurgeRefused(t, ctx, dir, quarantine.ProblemNoRecord)
+	})
+	t.Run("symlink", func(t *testing.T) {
+		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/r-symlink", false)
+		link := dir + "-link"
+		if err := os.Symlink(dir, link); err != nil {
+			t.Fatal(err)
+		}
+		PurgeRefused(t, ctx, link, quarantine.ProblemNotAFolder)
+	})
+	t.Run("record copied elsewhere", func(t *testing.T) {
+		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/r-copied", false)
+		other := filepath.Join(ctx.Repo.Parent, "other")
+		testkit.MustWrite(t, filepath.Join(other, "checkout", "precious.txt"), "precious")
+		testkit.MustWrite(t, filepath.Join(other, quarantine.FileName), testkit.MustRead(t, filepath.Join(dir, quarantine.FileName)))
+		PurgeRefused(t, ctx, other, quarantine.ProblemWrongFolder)
+	})
+	t.Run("folder moved", func(t *testing.T) {
+		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/r-moved", false)
+		moved := dir + "-moved"
+		if err := os.Rename(dir, moved); err != nil {
+			t.Fatal(err)
+		}
+		PurgeRefused(t, ctx, moved, quarantine.ProblemWrongFolder)
+	})
+	t.Run("pin moved", func(t *testing.T) {
+		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/r-pin", false)
+		r := testkit.LoadRecord(t, dir)
+		testkit.GitIn(t, ctx.Repo.MainRoot, "commit", "-q", "--allow-empty", "-m", "elsewhere")
+		testkit.GitIn(t, ctx.Repo.MainRoot, "update-ref", *r.Pins.Head, "HEAD")
+		PurgeRefused(t, ctx, dir, quarantine.ProblemPins)
+	})
+	t.Run("pin renamed in the record", func(t *testing.T) {
+		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/r-pinname", false)
+		r := testkit.LoadRecord(t, dir)
+		r.Pins.Dir = "refs/heads/main"
+		if err := r.Save("test"); err != nil {
+			t.Fatal(err)
+		}
+		PurgeRefused(t, ctx, dir, quarantine.ProblemPins)
+	})
+	t.Run("removal stopped", func(t *testing.T) {
+		ctx, path := provisiontest.SafetyWorktree(t, "fix/r-removal")
+		dir := testkit.TrashFor(t, ctx)
+		testkit.CrashAt(t, "moveAdmin:running")
+		var buf bytes.Buffer
+		_ = retire.RemoveAt(ctx, path, retire.RemoveOptions{Quarantine: dir}, &buf)
+		quarantine.AfterSave = nil
+		PurgeRefused(t, ctx, dir, quarantine.ProblemUnsettled)
+	})
+	t.Run("removal stopped at its branch step", func(t *testing.T) {
+		ctx, path := provisiontest.SafetyWorktree(t, "fix/r-branchstep")
+		dir := testkit.TrashFor(t, ctx)
+		testkit.CrashAt(t, "branch:running")
+		var buf bytes.Buffer
+		_ = retire.RemoveAt(ctx, path, retire.RemoveOptions{Quarantine: dir}, &buf)
+		quarantine.AfterSave = nil
+		PurgeRefused(t, ctx, dir, quarantine.ProblemUnsettled)
+	})
+	t.Run("restore stopped", func(t *testing.T) {
+		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/r-restore", false)
+		testkit.CrashAt(t, "restore.moveAdmin:done")
+		var buf bytes.Buffer
+		_ = refs.Restore(ctx, dir, refs.RestoreOptions{}, &buf)
+		quarantine.AfterSave = nil
+		PurgeRefused(t, ctx, dir, quarantine.ProblemUnsettled)
+	})
+	t.Run("worktree registered inside", func(t *testing.T) {
+		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/r-registered", false)
+		testkit.GitIn(t, ctx.Repo.MainRoot, "worktree", "add", "-q", "--detach", filepath.Join(dir, "checkout", "nested"))
+		PurgeRefused(t, ctx, dir, quarantine.ProblemRegistered)
+	})
+	t.Run("worktree locked for it", func(t *testing.T) {
+		ctx, path, _, _, dir := retiretest.Quarantined(t, "fix/r-locked", false)
+		refstest.Restore(t, ctx, dir)
+		testkit.GitIn(t, ctx.Repo.MainRoot, "worktree", "lock", "--reason", quarantine.LockReason(dir), path)
+		PurgeRefused(t, ctx, dir, quarantine.ProblemLocked)
+	})
+	t.Run("inside a checkout", func(t *testing.T) {
+		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/r-inside", false)
+		inside := filepath.Join(ctx.Repo.MainRoot, "trash")
+		if err := os.Rename(dir, inside); err != nil {
+			t.Fatal(err)
+		}
+		// The record rewritten for where it is now, as if it were made there.
+		data := strings.ReplaceAll(testkit.MustRead(t, filepath.Join(inside, quarantine.FileName)), dir, inside)
+		testkit.MustWrite(t, filepath.Join(inside, quarantine.FileName), data)
+		PurgeRefused(t, ctx, inside, quarantine.ProblemLocation)
+	})
+}
+
+// --expect holds the purge to the plan a tool read: a pin moved since
+// refuses it, the plan's own token purges.
+func TestPurgeExpectHoldsItToThePlan(t *testing.T) {
+	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/expect", false)
+	var plan bytes.Buffer
+	if err := QuarantinePurgePlanJSON(dir, &plan, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	var p PlanOutput
+	if err := json.Unmarshal(plan.Bytes(), &p); err != nil || p.Token == nil {
+		t.Fatalf("plan %s", plan.String())
+	}
+	r := testkit.LoadRecord(t, dir)
+	head := strings.TrimSpace(testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", *r.Pins.Head))
+	testkit.GitIn(t, ctx.Repo.MainRoot, "update-ref", "-d", *r.Pins.Head)
+	var out bytes.Buffer
+	if err := QuarantinePurgeJSON(dir, Options{Expect: *p.Token}, &out, &bytes.Buffer{}); err == nil {
+		t.Fatal("a plan that changed must refuse")
+	}
+	var o Output
+	_ = json.Unmarshal(out.Bytes(), &o)
+	if o.Outcome != quarantine.OutcomeRefused || len(o.Problems) != 1 || o.Problems[0].Code != kit.ProblemPlanChanged {
+		t.Errorf("result %s", out.String())
+	}
+	if !testkit.Exists(dir) {
+		t.Fatal("a refused purge deleted the folder")
+	}
+	testkit.GitIn(t, ctx.Repo.MainRoot, "update-ref", *r.Pins.Head, head)
+	out.Reset()
+	if err := QuarantinePurgeJSON(dir, Options{Expect: *p.Token}, &out, &bytes.Buffer{}); err != nil {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+	testkit.AssertPurged(t, ctx, dir)
+}
+
+// The question is asked once; no is nothing deleted, and with nobody to ask
+// and no --yes the purge refuses.
+func TestPurgeAsksAndRefusesWithNobodyToAsk(t *testing.T) {
+	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/ask", false)
+	var buf bytes.Buffer
+	asked := 0
+	no := func() bool { asked++; return false }
+	if err := QuarantinePurge(dir, Options{Confirm: no}, &buf); err != nil || asked != 1 {
+		t.Fatalf("%v, asked %d\n%s", err, asked, buf.String())
+	}
+	if !testkit.Exists(dir) {
+		t.Fatal("no must delete nothing")
+	}
+	if err := QuarantinePurge(dir, Options{NoTerminal: true}, &buf); err == nil {
+		t.Fatal("with nobody to ask it must refuse")
+	}
+	if err := QuarantinePurge(dir, Options{DryRun: true}, &buf); err != nil || !testkit.Exists(dir) {
+		t.Fatalf("--dry-run: %v", err)
+	}
+	yes := func() bool { return true }
+	if err := QuarantinePurge(dir, Options{Confirm: yes}, &buf); err != nil {
+		t.Fatalf("%v\n%s", err, buf.String())
+	}
+	testkit.AssertPurged(t, ctx, dir)
+}
+
+// The plan asked about is the one purged: a pin that moved while the
+// question was open refuses the purge.
+func TestPurgeReadsThePlanAgainAfterTheQuestion(t *testing.T) {
+	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/ask-changed", false)
+	r := testkit.LoadRecord(t, dir)
+	yes := func() bool {
+		testkit.GitIn(t, ctx.Repo.MainRoot, "update-ref", "-d", *r.Pins.Head)
+		return true
+	}
+	var buf bytes.Buffer
+	if err := QuarantinePurge(dir, Options{Confirm: yes}, &buf); err == nil {
+		t.Fatal("a plan that changed under the question must refuse")
+	}
+	if !testkit.Exists(filepath.Join(dir, "checkout")) {
+		t.Error("nothing may be deleted")
+	}
+}
+
+func TestPurgeJSONMatchesItsSchemas(t *testing.T) {
+	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/purge-json", false)
+	var plan bytes.Buffer
+	if err := QuarantinePurgePlanJSON(dir, &plan, &bytes.Buffer{}); err != nil {
+		t.Fatalf("%v\n%s", err, plan.String())
+	}
+	testkit.ValidateJSON(t, "quarantine-purge-plan", plan.Bytes())
+
+	testkit.CrashAt(t, "purge.begin")
+	_ = QuarantinePurge(dir, Options{}, &bytes.Buffer{})
+	quarantine.AfterSave = nil
+	if testkit.Exists(filepath.Join(dir, quarantine.FileName)) {
+		t.Error("recovery.json must be gone once the purge began: an older wt restore would read it")
+	}
+	testkit.ValidateJSON(t, "recovery", []byte(testkit.MustRead(t, filepath.Join(dir, quarantine.PurgingName))))
+	var restorePlan bytes.Buffer
+	_ = refs.RestoreJSON(ctx, dir, refs.RestoreOptions{DryRun: true}, &restorePlan, &bytes.Buffer{})
+	testkit.ValidateJSON(t, "restore-plan", restorePlan.Bytes())
+
+	var out bytes.Buffer
+	if err := QuarantinePurgeJSON(dir, Options{}, &out, &bytes.Buffer{}); err != nil {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+	testkit.ValidateJSON(t, "quarantine-purge", out.Bytes())
+	var o Output
+	_ = json.Unmarshal(out.Bytes(), &o)
+	if o.Outcome != quarantine.OutcomePurged || !o.FolderDeleted || o.State == nil || *o.State != quarantine.StatePurging {
+		t.Errorf("result %s", out.String())
+	}
+	for _, pin := range o.Pins {
+		if pin.Result != PinDeleted {
+			t.Errorf("pin %+v", pin)
+		}
+	}
+
+	var refused bytes.Buffer
+	if err := QuarantinePurgePlanJSON(dir, &refused, &bytes.Buffer{}); err == nil {
+		t.Error("want an error for a folder that is not there")
+	}
+	testkit.ValidateJSON(t, "quarantine-purge-plan", refused.Bytes())
+	refused.Reset()
+	if err := QuarantinePurgeJSON(dir, Options{}, &refused, &bytes.Buffer{}); err == nil {
+		t.Error("want an error for a folder that is not there")
+	}
+	testkit.ValidateJSON(t, "quarantine-purge", refused.Bytes())
+}
+
+// The journal a purge writes when a signal ends it reads each pin and the
+// folder as they are.
+func TestPurgeJournalWritesOneObjectWhenInterrupted(t *testing.T) {
+	_, _, _, _, dir := retiretest.Quarantined(t, "fix/purge-signal", false)
+	var out bytes.Buffer
+	j := &purgeJournal{out: &out, dir: dir, plan: quarantine.PlanPurge(dir)}
+	j.Interrupted("", "interrupted")
+	j.write(quarantine.OutcomePurged, nil, "")
+	testkit.ValidateJSON(t, "quarantine-purge", out.Bytes())
+	var o Output
+	if err := json.Unmarshal(out.Bytes(), &o); err != nil {
+		t.Fatalf("one object: %v\n%s", err, out.String())
+	}
+	if o.Outcome != kit.OutcomeInterrupted || o.FolderDeleted {
+		t.Errorf("result %s", out.String())
+	}
+	for _, pin := range o.Pins {
+		if pin.Result != PinKept {
+			t.Errorf("pin %+v", pin)
+		}
+	}
+}
+
+// The folder swapped for a symlink to another while the purge runs: every
+// deletion stays inside the folder it opened, and the other is untouched.
+func TestPurgeStaysInTheFolderItOpened(t *testing.T) {
+	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/swapped", false)
+	victim := filepath.Join(ctx.Repo.Parent, "victim")
+	testkit.MustWrite(t, filepath.Join(victim, "checkout", "precious.txt"), "precious")
+	testkit.MustWrite(t, filepath.Join(victim, "admin", "precious.txt"), "precious")
+	moved := dir + "-moved"
+	t.Cleanup(func() { quarantine.AfterPurge = nil })
+	quarantine.AfterPurge = func(at string) error {
+		if at == "pin:dir" {
+			if err := os.Rename(dir, moved); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(victim, dir); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return nil
+	}
+	var buf bytes.Buffer
+	if err := QuarantinePurge(dir, Options{}, &buf); err == nil {
+		t.Fatalf("the swapped path must not be removed as the folder\n%s", buf.String())
+	}
+	for _, f := range []string{"checkout", "admin"} {
+		if got := testkit.MustRead(t, filepath.Join(victim, f, "precious.txt")); got != "precious" {
+			t.Errorf("the other folder lost %s", f)
+		}
+	}
+	if testkit.Exists(filepath.Join(moved, "checkout")) {
+		t.Error("the folder it opened must have been emptied")
+	}
+}
+
+// A plan is only carried out as read: a file added to the checkout since,
+// or a worktree registered inside it once the purge began, stops it.
+func TestPurgeGoesByThePlanItWasGiven(t *testing.T) {
+	t.Run("file added", func(t *testing.T) {
+		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/stale-file", false)
+		plan := quarantine.PlanPurge(dir)
+		testkit.MustWrite(t, filepath.Join(dir, "checkout", "sub", "new.txt"), "new")
+		if _, err := quarantine.DoPurge(plan); !errors.Is(err, quarantine.ErrPurgeChanged) {
+			t.Fatalf("want ErrPurgeChanged, got %v", err)
+		}
+		if !testkit.Exists(filepath.Join(dir, "checkout", "sub", "new.txt")) || testkit.PinsOf(t, ctx) == "" {
+			t.Error("nothing may be deleted")
+		}
+	})
+	t.Run("worktree registered", func(t *testing.T) {
+		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/stale-wt", false)
+		nested := filepath.Join(dir, "checkout", "nested")
+		t.Cleanup(func() { quarantine.AfterSave = nil })
+		quarantine.AfterSave = func(_ *quarantine.Record, at string) error {
+			if at == "purge.begin" {
+				testkit.GitIn(t, ctx.Repo.MainRoot, "worktree", "add", "-q", "--detach", nested)
+			}
+			return nil
+		}
+		var buf bytes.Buffer
+		if err := QuarantinePurge(dir, Options{}, &buf); err == nil {
+			t.Fatal("a worktree registered inside must stop the purge")
+		}
+		if !testkit.Exists(filepath.Join(nested, ".git")) {
+			t.Error("the registered worktree must survive")
+		}
+	})
+	t.Run("restore holds the lock", func(t *testing.T) {
+		_, _, _, _, dir := retiretest.Quarantined(t, "fix/stale-lock", false)
+		unlock, err := quarantine.LockDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer unlock()
+		if _, err := quarantine.DoPurge(quarantine.PlanPurge(dir)); err == nil || !testkit.Exists(dir) {
+			t.Fatalf("a purge must wait for nobody: %v", err)
+		}
+	})
+}
+
+// A record copied into a new folder at the quarantine's old path, the
+// quarantine itself moved away: what is there is not what the removal
+// moved, and it is refused.
+func TestPurgeRefusesACopiedRecordAtAReusedPath(t *testing.T) {
+	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/reused", false)
+	record := testkit.MustRead(t, filepath.Join(dir, quarantine.FileName))
+	if err := os.Rename(dir, dir+"-away"); err != nil {
+		t.Fatal(err)
+	}
+	testkit.MustWrite(t, filepath.Join(dir, "checkout", "precious.txt"), "precious")
+	testkit.MustWrite(t, filepath.Join(dir, quarantine.FileName), record)
+	PurgeRefused(t, ctx, dir, quarantine.ProblemWrongFolder)
+}
+
+// Named in another case on a volume that ignores case, the folder is still
+// the one a registered worktree is inside.
+func TestPurgeComparesFoldersNotSpellings(t *testing.T) {
+	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/cased", false)
+	upper := filepath.Join(filepath.Dir(dir), strings.ToUpper(filepath.Base(dir)))
+	if _, err := os.Lstat(upper); err != nil {
+		t.Skip("this volume tells case apart")
+	}
+	testkit.GitIn(t, ctx.Repo.MainRoot, "worktree", "add", "-q", "--detach", filepath.Join(dir, "checkout", "nested"))
+	PurgeRefused(t, ctx, upper, quarantine.ProblemRegistered)
+}
+
+// A pin git cannot read is not taken for one that is gone.
+func TestPurgeRefusesAPinItCannotRead(t *testing.T) {
+	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/broken-pin", false)
+	r := testkit.LoadRecord(t, dir)
+	testkit.MustWrite(t, filepath.Join(ctx.Repo.MainRoot, ".git", *r.Pins.Head), "garbage\n")
+	PurgeRefused(t, ctx, dir, quarantine.ProblemPinsUnreadable)
+}
+
+// wt remove --move-to refuses a folder inside one a worktree was moved to,
+// which a purge of that one would delete.
+func TestQuarantineRefusesAFolderInsideAQuarantine(t *testing.T) {
+	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/host", false)
+	refstest.Restore(t, ctx, dir)
+	_, path := provisiontest.SafetyWorktreeIn(t, ctx, "fix/guest")
+	var buf bytes.Buffer
+	err := retire.RemoveAt(ctx, path, retire.RemoveOptions{Quarantine: filepath.Join(dir, "inner")}, &buf)
+	if err == nil || !strings.Contains(err.Error()+buf.String(), "is inside "+dir+", a folder a worktree was moved to") {
+		t.Fatalf("want a refusal naming the folder it is in: %v\n%s", err, buf.String())
+	}
+	if !testkit.Exists(path) {
+		t.Error("the worktree must stay")
+	}
+}
+
+// An empty folder names nothing wt owns: refused, and left as it is.
+func TestPurgeRefusesAnEmptyFolder(t *testing.T) {
+	ctx, _ := provisiontest.SafetyWorktree(t, "fix/empty")
+	dir := filepath.Join(ctx.Repo.MainRoot, "empty")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	PurgeRefused(t, ctx, dir, quarantine.ProblemEmpty)
+	if !testkit.Exists(dir) {
+		t.Error("the folder must stay")
+	}
+}
+
+// Its repository deleted, and the pins with it: the purge goes ahead on the
+// record alone, and says why there are no pins to delete.
+func TestPurgeAfterTheRepositoryIsGone(t *testing.T) {
+	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/orphaned", false)
+	if err := os.RemoveAll(ctx.Repo.MainRoot); err != nil {
+		t.Fatal(err)
+	}
+	plan := quarantine.PlanPurge(dir)
+	if plan.Refusal() != "" || !plan.RepoGone || plan.State != quarantine.StateQuarantined {
+		t.Fatalf("plan %+v", plan)
+	}
+	var buf bytes.Buffer
+	RenderPurgePlan(plan, &buf)
+	if !strings.Contains(buf.String(), "is gone") {
+		t.Errorf("the plan must say the repository is gone:\n%s", buf.String())
+	}
+	var out bytes.Buffer
+	if err := QuarantinePurgeJSON(dir, Options{}, &out, &bytes.Buffer{}); err != nil {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+	testkit.ValidateJSON(t, "quarantine-purge", out.Bytes())
+	if testkit.Exists(dir) {
+		t.Error("the folder must be gone")
+	}
+}

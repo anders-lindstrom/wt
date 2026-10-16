@@ -9,25 +9,20 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/admin"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
 )
-
-// unconfiguredRepo is a repository with a commit on main and no worktree
-// configuration: what a clone of someone else's project is.
-func unconfiguredRepo(t *testing.T) string {
-	t.Helper()
-	main := committedRepo(t, minimalConf)
-	if err := os.RemoveAll(filepath.Join(main, "bin")); err != nil {
-		t.Fatal(err)
-	}
-	return main
-}
 
 // A repository with no configuration runs on what `wt init --yes` would
 // write, held in memory: the repository is left as it was.
 func TestOpenRunsOnDetectedDefaultsWithoutAConfigFile(t *testing.T) {
-	main := unconfiguredRepo(t)
-	ctx, err := Open(main)
+	main := testkit.UnconfiguredRepo(t)
+	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -46,15 +41,15 @@ func TestOpenRunsOnDetectedDefaultsWithoutAConfigFile(t *testing.T) {
 // The detected configuration is exactly the one `wt init --yes` writes, bar
 // the flags saying no file holds it and where its trunk came from.
 func TestDetectedDefaultsAreWhatInitWrites(t *testing.T) {
-	main := unconfiguredRepo(t)
-	detected, err := Open(main)
+	main := testkit.UnconfiguredRepo(t)
+	detected, err := kit.Open(main)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if err := Init(detected.Repo, InitOptions{}, &bytes.Buffer{}); err != nil {
+	if err := provision.Init(detected.Repo, provision.InitOptions{}, &bytes.Buffer{}); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	written, err := Open(main)
+	written, err := kit.Open(main)
 	if err != nil {
 		t.Fatalf("Open after init: %v", err)
 	}
@@ -72,8 +67,8 @@ func TestDetectedDefaultsAreWhatInitWrites(t *testing.T) {
 // and the error says what could not be detected and what fixes it.
 func TestOpenWithoutConfigOrTrunkKeepsTheError(t *testing.T) {
 	parent := t.TempDir()
-	gitIn(t, parent, "init", "-q", "-b", "main", "demo")
-	_, err := Open(filepath.Join(parent, "demo"))
+	testkit.GitIn(t, parent, "init", "-q", "-b", "main", "demo")
+	_, err := kit.Open(filepath.Join(parent, "demo"))
 	if !errors.Is(err, config.ErrNoConfig) {
 		t.Fatalf("err = %v, want ErrNoConfig", err)
 	}
@@ -87,15 +82,15 @@ func TestOpenWithoutConfigOrTrunkKeepsTheError(t *testing.T) {
 // Inside a worktree of an unconfigured repository, neither checkout has a
 // file, and the detection is the main checkout's.
 func TestOpenInsideAWorktreeOfAnUnconfiguredRepo(t *testing.T) {
-	ctx, err := Open(unconfiguredRepo(t))
+	ctx, err := kit.Open(testkit.UnconfiguredRepo(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	path, err := New(ctx, "fix/login-crash", NewOptions{NoSetup: true}, &bytes.Buffer{})
+	path, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{NoSetup: true}, &bytes.Buffer{})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	in, err := Open(path)
+	in, err := kit.Open(path)
 	if err != nil {
 		t.Fatalf("Open in the worktree: %v", err)
 	}
@@ -107,16 +102,16 @@ func TestOpenInsideAWorktreeOfAnUnconfiguredRepo(t *testing.T) {
 // wt new on detected defaults says so once, on the warning stream, naming the
 // trunk it took; the log and the path are what they always are.
 func TestNewOnDetectedDefaultsSaysSoOnce(t *testing.T) {
-	ctx, err := Open(unconfiguredRepo(t))
+	ctx, err := kit.Open(testkit.UnconfiguredRepo(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	var warn, log bytes.Buffer
 	ctx.WarnTo(&warn)
-	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &log); err != nil {
+	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &log); err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	if _, err := New(ctx, "fix/other", NewOptions{}, &log); err != nil {
+	if _, err := provision.New(ctx, "fix/other", provision.NewOptions{}, &log); err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	lines := strings.Split(strings.TrimSpace(warn.String()), "\n")
@@ -131,13 +126,13 @@ func TestNewOnDetectedDefaultsSaysSoOnce(t *testing.T) {
 
 // A configured repository hears nothing about detection.
 func TestNewWithAConfigFileSaysNothingAboutDetection(t *testing.T) {
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
 	var warn bytes.Buffer
 	ctx.WarnTo(&warn)
-	if _, err := New(ctx, "fix/login-crash", NewOptions{NoSetup: true}, &bytes.Buffer{}); err != nil {
+	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{NoSetup: true}, &bytes.Buffer{}); err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	if warn.Len() != 0 {
@@ -148,12 +143,12 @@ func TestNewWithAConfigFileSaysNothingAboutDetection(t *testing.T) {
 // The Claude Code hooks are what an unconfigured repository most needs to
 // work in: the harness makes its worktree there and cannot run `wt init`.
 func TestClaudeHooksInAnUnconfiguredRepo(t *testing.T) {
-	ctx, err := Open(unconfiguredRepo(t))
+	ctx, err := kit.Open(testkit.UnconfiguredRepo(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	var out, log bytes.Buffer
-	if err := HookCreate(ctx, strings.NewReader(`{"name":"fix/login-crash"}`), &out, &log); err != nil {
+	if err := admin.HookCreate(ctx, strings.NewReader(`{"name":"fix/login-crash"}`), &out, &log); err != nil {
 		t.Fatalf("HookCreate: %v\n%s", err, log.String())
 	}
 	path := strings.TrimSuffix(out.String(), "\n")
@@ -163,7 +158,7 @@ func TestClaudeHooksInAnUnconfiguredRepo(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("worktree not created: %v", err)
 	}
-	if err := HookRemove(ctx, strings.NewReader(`{"path":"`+path+`"}`), &log); err != nil {
+	if err := admin.HookRemove(ctx, strings.NewReader(`{"path":"`+path+`"}`), &log); err != nil {
 		t.Fatalf("HookRemove: %v\n%s", err, log.String())
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -173,21 +168,21 @@ func TestClaudeHooksInAnUnconfiguredRepo(t *testing.T) {
 
 // wt config names where its values came from when no file did.
 func TestConfigSaysTheValuesAreDetected(t *testing.T) {
-	ctx, err := Open(unconfiguredRepo(t))
+	ctx, err := kit.Open(testkit.UnconfiguredRepo(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	if err := Config(ctx, false, &buf); err != nil {
+	if err := provision.Config(ctx, false, &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "detected (no config file; `wt init` writes one)") {
 		t.Errorf("wt config does not say its values are detected:\n%s", buf.String())
 	}
 
-	ctx, _ = Open(committedRepo(t, minimalConf))
+	ctx, _ = kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	buf.Reset()
-	if err := Config(ctx, false, &buf); err != nil {
+	if err := provision.Config(ctx, false, &buf); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(buf.String(), "detected") {
@@ -197,9 +192,9 @@ func TestConfigSaysTheValuesAreDetected(t *testing.T) {
 
 // wt doctor reports detection as information, not as a problem.
 func TestDoctorReportsDetectedDefaultsAsInformation(t *testing.T) {
-	ctx := OpenLenient(unconfiguredRepo(t), &bytes.Buffer{})
+	ctx := kit.OpenLenient(testkit.UnconfiguredRepo(t), &bytes.Buffer{})
 	var buf bytes.Buffer
-	problems, err := Doctor(ctx, &buf)
+	problems, err := admin.Doctor(ctx, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,23 +209,23 @@ func TestDoctorReportsDetectedDefaultsAsInformation(t *testing.T) {
 
 // configured:false with no problem is a plan on detected defaults.
 func TestPlansOnDetectedDefaults(t *testing.T) {
-	ctx := OpenLenient(unconfiguredRepo(t), &bytes.Buffer{})
-	p := newPlanOf(t, ctx, "fix/x", NewOptions{})
+	ctx := kit.OpenLenient(testkit.UnconfiguredRepo(t), &bytes.Buffer{})
+	p := provisiontest.NewPlanOf(t, ctx, "fix/x", provision.NewOptions{})
 	if p.Configured || len(p.Problems) != 0 || p.Token == nil || p.BuildCommand != nil {
-		t.Errorf("configured %v problems %s token %v build %v", p.Configured, codes(p.Problems), p.Token, p.BuildCommand)
+		t.Errorf("configured %v problems %s token %v build %v", p.Configured, provisiontest.Codes(p.Problems), p.Token, p.BuildCommand)
 	}
-	gitIn(t, ctx.Repo.MainRoot, "branch", "release-2.1")
-	c := checkoutPlanOf(t, ctx, "release-2.1", "")
+	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "release-2.1")
+	c := provisiontest.CheckoutPlanOf(t, ctx, "release-2.1", "")
 	if c.Configured || len(c.Problems) != 0 {
-		t.Errorf("checkout: configured %v problems %s", c.Configured, codes(c.Problems))
+		t.Errorf("checkout: configured %v problems %s", c.Configured, provisiontest.Codes(c.Problems))
 	}
-	path, err := New(ctx, "fix/login-crash", NewOptions{NoSetup: true}, &bytes.Buffer{})
+	path, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{NoSetup: true}, &bytes.Buffer{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// A branch with no commit of its own is already in trunk: give it one.
-	gitIn(t, path, "commit", "-q", "--allow-empty", "-m", "work")
-	s := planOfWork(t, ctx, path)
+	testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "work")
+	s := synccmdtest.PlanOfWork(t, ctx, path)
 	if s.Configured || !s.UpEligible {
 		t.Errorf("status: configured %v eligible %v (%v)", s.Configured, s.UpEligible, s.UpIneligibleReason)
 	}
@@ -239,10 +234,10 @@ func TestPlansOnDetectedDefaults(t *testing.T) {
 // noConfiguration is left for a repository whose trunk could not be detected:
 // no origin, a detached checkout, and no branch with a conventional name.
 func TestPlanWhenDetectionFails(t *testing.T) {
-	main := noTrunkRepo(t)
-	ctx := OpenLenient(main, &bytes.Buffer{})
-	p := newPlanOf(t, ctx, "fix/x", NewOptions{Base: "production"})
-	if p.Configured || codes(p.Problems) != "noConfiguration" ||
+	main := testkit.NoTrunkRepo(t)
+	ctx := kit.OpenLenient(main, &bytes.Buffer{})
+	p := provisiontest.NewPlanOf(t, ctx, "fix/x", provision.NewOptions{Base: "production"})
+	if p.Configured || provisiontest.Codes(p.Problems) != "noConfiguration" ||
 		!strings.Contains(p.Problems[0].Message, "cannot tell which branch is trunk") {
 		t.Errorf("configured %v problems %+v", p.Configured, p.Problems)
 	}
@@ -250,7 +245,7 @@ func TestPlanWhenDetectionFails(t *testing.T) {
 		t.Errorf("trunkSource = %q, want null", *p.TrunkSource)
 	}
 	// Without --base there is no base either, and no second problem for it.
-	if p := newPlanOf(t, ctx, "fix/x", NewOptions{}); codes(p.Problems) != "noConfiguration" || p.Base != nil {
+	if p := provisiontest.NewPlanOf(t, ctx, "fix/x", provision.NewOptions{}); provisiontest.Codes(p.Problems) != "noConfiguration" || p.Base != nil {
 		t.Errorf("without --base: base %v problems %+v", p.Base, p.Problems)
 	}
 }

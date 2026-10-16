@@ -1,27 +1,24 @@
+// Package commands implements wt list and wt status, and holds the tests
+// that cross the command packages.
 package commands
 
 import (
 	"fmt"
 	"io"
-	"os"
 	"slices"
 	"strings"
-	"text/tabwriter"
 	"time"
 	"unicode/utf8"
 
-	"github.com/anders-lindstrom/wt/internal/github"
+	"github.com/anders-lindstrom/wt/internal/commands/admin"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/retire"
+	"github.com/anders-lindstrom/wt/internal/commands/session"
+	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
-
-// listPadding is the gap tabwriter leaves after every column but the last.
-const listPadding = 2
-
-// minPathWidth keeps a shortened path long enough to still tell worktrees
-// apart; a terminal narrower than that wraps the row instead.
-const minPathWidth = 24
 
 // ListOptions tunes List.
 type ListOptions struct {
@@ -36,7 +33,7 @@ type ListOptions struct {
 	NoSessions bool
 	// Sessions is a read several listings share, whose caller prints its
 	// Note once. Nil reads them here, and the note goes under this table.
-	Sessions *ClaudeSessions
+	Sessions *session.ClaudeSessions
 	// Wide prints the table as it is printed when piped, whatever the
 	// terminal's width: the SESSION column in it, and nothing cut to fit.
 	Wide bool
@@ -49,8 +46,8 @@ type ListOptions struct {
 // The PR and SESSION columns are printed only when a worktree has one, and
 // on a terminal the SESSION column only when every row still fits its width:
 // a listing never wraps a row for the column's sake.
-func List(ctx *Context, opts ListOptions, w io.Writer, width int) error {
-	names, err := WorkNames(ctx)
+func List(ctx *kit.Context, opts ListOptions, w io.Writer, width int) error {
+	names, err := kit.WorkNames(ctx)
 	if err != nil {
 		return err
 	}
@@ -59,7 +56,7 @@ func List(ctx *Context, opts ListOptions, w io.Writer, width int) error {
 	// overlap.
 	read := opts.Sessions
 	if read == nil && !opts.NoSessions {
-		read = ReadClaudeSessions(SessionsDeadline)
+		read = session.ReadClaudeSessions(session.SessionsDeadline)
 	}
 	var prs map[string]string
 	var cached time.Time
@@ -70,9 +67,9 @@ func List(ctx *Context, opts ListOptions, w io.Writer, width int) error {
 	for i, n := range names {
 		paths[i] = n.Path
 	}
-	var sessions map[string][]claudeSession
+	var sessions map[string][]session.ClaudeSession
 	if !opts.NoSessions {
-		sessions = read.byWorktree(paths)
+		sessions = read.ByWorktree(paths)
 	}
 	header := []string{"", "WORK", "BRANCH", "PATH"}
 	if len(prs) > 0 {
@@ -99,7 +96,7 @@ func List(ctx *Context, opts ListOptions, w io.Writer, width int) error {
 		}
 		row := []string{mark, work, branch}
 		if len(prs) > 0 {
-			row = append(row, dash(prs[n.Branch]))
+			row = append(row, admin.Dash(prs[n.Branch]))
 		}
 		rows = append(rows, append(row, n.Path))
 	}
@@ -108,13 +105,13 @@ func List(ctx *Context, opts ListOptions, w io.Writer, width int) error {
 	}
 	leftOut := false
 	if len(sessions) > 0 {
-		if with := withSessions(rows, paths, sessions); width <= 0 || pathTableFits(with, width) {
+		if with := session.WithSessions(rows, paths, sessions); width <= 0 || session.PathTableFits(with, width) {
 			rows = with
 		} else {
 			leftOut = true
 		}
 	}
-	if err := printPathTable(w, rows, width); err != nil {
+	if err := kit.PrintPathTable(w, rows, width); err != nil {
 		return err
 	}
 	var legend []string
@@ -156,7 +153,7 @@ func prColumnAge(cached, now time.Time) string {
 	if cached.IsZero() || now.Sub(cached) < time.Minute {
 		return ""
 	}
-	return ago(now.Sub(cached))
+	return kit.Ago(now.Sub(cached))
 }
 
 // prAgeLine is the legend line saying how old a cached PR column is, naming
@@ -174,7 +171,7 @@ func prAgeLine(cached time.Time, command string) string {
 // (off, absent, offline, not this repository) or when no worktree here has a
 // pull request, and empty means the column is not printed: `wt list` is then
 // byte for byte what it was without it.
-func listPRs(ctx *Context, names []WorkName, refresh bool) (map[string]string, time.Time) {
+func listPRs(ctx *kit.Context, names []kit.WorkName, refresh bool) (map[string]string, time.Time) {
 	linked := false
 	for _, n := range names {
 		linked = linked || (!n.IsMain && n.Branch != "")
@@ -188,34 +185,20 @@ func listPRs(ctx *Context, names []WorkName, refresh bool) (map[string]string, t
 			branches = append(branches, n.Branch)
 		}
 	}
-	a := branchPRs(ctx, branches, prLookup{
-		warn: "no pull requests shown", refresh: refresh, deadline: lookupDeadline, checks: true,
+	a := kit.BranchPRs(ctx, branches, kit.PRLookup{
+		Warn: "no pull requests shown", Refresh: refresh, Deadline: kit.LookupDeadline, Checks: true,
 	})
-	if len(a.byBranch) == 0 {
+	if len(a.ByBranch) == 0 {
 		return nil, time.Time{}
 	}
-	trunk := trunks(ctx)
+	trunk := kit.Trunks(ctx)
 	out := map[string]string{}
 	for _, n := range names {
-		if pr, ok := a.byBranch[n.Branch]; ok && !n.IsMain {
-			out[n.Branch] = prCell(pr, trunk)
+		if pr, ok := a.ByBranch[n.Branch]; ok && !n.IsMain {
+			out[n.Branch] = kit.PRCell(pr, trunk)
 		}
 	}
-	return out, a.cached
-}
-
-// prCell is a pull request in the PR column of wt list and wt status, and on
-// the pr line of wt status <work>: prLabel with what its checks say marked
-// after the number, as wt pr list says it in words. A pull request with no
-// checks has no mark.
-func prCell(pr github.PR, trunks []string) string {
-	label := prLabel(pr, trunks)
-	mark := pr.ChecksMark()
-	if mark == "" {
-		return label
-	}
-	number, rest, _ := strings.Cut(label, " ")
-	return number + " " + mark + " " + rest
+	return out, a.Cached
 }
 
 func layoutMark(l naming.Layout) string {
@@ -236,7 +219,7 @@ func layoutMark(l naming.Layout) string {
 // the local trunk without one, the bases wt remove and wt sweep compare with.
 // Nothing is fetched. The first line says which of the two it compared with
 // and how old the fetch is. The PR column is `wt list`'s, from the same cache.
-func Status(ctx *Context, opts StatusOptions, w io.Writer, width int) error {
+func Status(ctx *kit.Context, opts StatusOptions, w io.Writer, width int) error {
 	worktrees, err := ctx.Repo.Worktrees()
 	if err != nil {
 		return err
@@ -244,9 +227,9 @@ func Status(ctx *Context, opts StatusOptions, w io.Writer, width int) error {
 	var prs map[string]string
 	var cached time.Time
 	if !opts.NoPR {
-		names := make([]WorkName, len(worktrees))
+		names := make([]kit.WorkName, len(worktrees))
 		for i, wt := range worktrees {
-			names[i] = WorkName{Worktree: wt}
+			names[i] = kit.WorkName{Worktree: wt}
 		}
 		prs, cached = listPRs(ctx, names, opts.Refresh)
 	}
@@ -268,11 +251,11 @@ func Status(ctx *Context, opts StatusOptions, w io.Writer, width int) error {
 		}
 		row := []string{branch, checkoutState(wt.Path), trunk}
 		if len(prs) > 0 {
-			row = append(row, dash(prs[wt.Branch]))
+			row = append(row, admin.Dash(prs[wt.Branch]))
 		}
 		rows = append(rows, append(row, wt.Path))
 	}
-	if err := printPathTable(w, rows, width); err != nil {
+	if err := kit.PrintPathTable(w, rows, width); err != nil {
 		return err
 	}
 	if line := prAgeLine(cached, "wt status"); line != "" {
@@ -294,13 +277,13 @@ func checkoutState(path string) string {
 	return "clean"
 }
 
-// statusBase is the trunk status compares with: the first of trunkBases,
+// statusBase is the trunk status compares with: the first of retire.TrunkBases,
 // origin/<trunk> as last fetched when it is there. ok is false when neither
 // it nor the local trunk exists.
-func statusBase(ctx *Context) (TrunkBase, bool) {
-	bases, err := trunkBases(ctx)
+func statusBase(ctx *kit.Context) (retire.TrunkBase, bool) {
+	bases, err := retire.TrunkBases(ctx)
 	if err != nil {
-		return TrunkBase{}, false
+		return retire.TrunkBase{}, false
 	}
 	return bases[0], true
 }
@@ -308,12 +291,12 @@ func statusBase(ctx *Context) (TrunkBase, bool) {
 // statusHeader is the first line of wt status: the ref compared with, and
 // for origin/<trunk> how long ago it was fetched, as wt sync --no-fetch says
 // it.
-func statusHeader(ctx *Context, base TrunkBase, ok bool) string {
+func statusHeader(ctx *kit.Context, base retire.TrunkBase, ok bool) string {
 	switch {
 	case !ok:
-		return noTrunkHere(ctx.Config.MainBranch) + " to compare with"
+		return retire.NoTrunkHere(ctx.Config.MainBranch) + " to compare with"
 	case strings.HasPrefix(base.Name, "origin/"):
-		return "against " + base.Name + ", " + lastFetched(ctx.Repo.MainRoot, time.Now())
+		return "against " + base.Name + ", " + synccmd.LastFetched(ctx.Repo.MainRoot, time.Now())
 	}
 	return "against " + base.Name
 }
@@ -321,7 +304,7 @@ func statusHeader(ctx *Context, base TrunkBase, ok bool) string {
 // trunkStanding counts what branch and base have that the other does not,
 // with one rev-list, the count every sync verb reads. ok is false when the
 // count cannot be read, or there is no base to count against.
-func trunkStanding(ctx *Context, base TrunkBase, ok bool, branch string) (behind, ahead int, counted bool) {
+func trunkStanding(ctx *kit.Context, base retire.TrunkBase, ok bool, branch string) (behind, ahead int, counted bool) {
 	if !ok {
 		return 0, 0, false
 	}
@@ -358,8 +341,8 @@ type StatusOptions struct {
 // wt sync would make of it: the same assessment the overview runs, against
 // origin/<trunk> as last fetched, without fetching. The verdict is a
 // simulation of the rebase, and the line says so.
-func StatusWorktree(ctx *Context, arg string, opts StatusOptions, w io.Writer) error {
-	wt, err := Locate(ctx, arg)
+func StatusWorktree(ctx *kit.Context, arg string, opts StatusOptions, w io.Writer) error {
+	wt, err := kit.Locate(ctx, arg)
 	if err != nil {
 		return err
 	}
@@ -375,7 +358,7 @@ func StatusWorktree(ctx *Context, arg string, opts StatusOptions, w io.Writer) e
 		{"  trunk", trunkFact(ctx, base, ok, wt)},
 	}
 	if !opts.NoPR {
-		if pr := prFact(ctx, wt.Branch, opts.Refresh); pr != "" {
+		if pr := kit.PRFact(ctx, wt.Branch, opts.Refresh); pr != "" {
 			rows = append(rows, []string{"  pr", pr})
 		}
 	}
@@ -387,31 +370,31 @@ func StatusWorktree(ctx *Context, arg string, opts StatusOptions, w io.Writer) e
 		}
 	}
 	if s := wtsync.SessionsAt(agents, wt.Path); len(s) > 0 {
-		rows = append(rows, []string{"  sessions", whoLabel(s)})
+		rows = append(rows, []string{"  sessions", kit.WhoLabel(s)})
 	}
 	// The branch against its own remote, as last fetched like the rest.
-	own := ownStateOf(wtsync.ReadOwnOrUnknown(ctx.Repo.MainRoot, ctx.Config.MainBranch), wt.Branch)
-	work := worktreeName(ctx, wt.Branch, wt.Path)
+	own := synccmd.OwnStateOf(wtsync.ReadOwnOrUnknown(ctx.Repo.MainRoot, ctx.Config.MainBranch), wt.Branch)
+	work := kit.WorktreeName(ctx, wt.Branch, wt.Path)
 	verdict, under, a := syncVerdict(ctx, work, wt, agents, own)
-	if line := ownLineOf(a); line != "" {
+	if line := synccmd.OwnLineOf(a); line != "" {
 		rows = append(rows, []string{"  remote", line})
 		// Said once: the row has it.
 		under = slices.DeleteFunc(under, func(l string) bool { return l == "  "+line })
 	}
-	if line := ownElsewhere(a.Own); line != "" {
+	if line := synccmd.OwnElsewhere(a.Own); line != "" {
 		rows = append(rows, []string{"  push", strings.TrimPrefix(line, "pushes ")})
 		under = slices.DeleteFunc(under, func(l string) bool { return l == "  "+line })
 	}
-	if line := ownStray(a.Own); line != "" {
+	if line := synccmd.OwnStray(a.Own); line != "" {
 		rows = append(rows, []string{"  also", line})
 	}
 	rows = append(rows, []string{"  sync", verdict})
 
 	fmt.Fprintln(w, work)
-	if err := printTable(w, rows); err != nil {
+	if err := kit.PrintTable(w, rows); err != nil {
 		return err
 	}
-	indent := strings.Repeat(" ", keyWidth(rows)+listPadding)
+	indent := strings.Repeat(" ", keyWidth(rows)+kit.ListPadding)
 	for _, line := range under {
 		fmt.Fprintf(w, "%s%s\n", indent, line)
 	}
@@ -430,12 +413,12 @@ func keyWidth(rows [][]string) int {
 
 // trunkFact is the trunk line of one worktree: the counts, the ref they are
 // against, and for origin/<trunk> how old the fetch is.
-func trunkFact(ctx *Context, base TrunkBase, ok bool, wt repo.Worktree) string {
+func trunkFact(ctx *kit.Context, base retire.TrunkBase, ok bool, wt repo.Worktree) string {
 	if wt.Branch == "" {
 		return "-"
 	}
 	if !ok {
-		return noTrunkHere(ctx.Config.MainBranch) + " to compare with"
+		return retire.NoTrunkHere(ctx.Config.MainBranch) + " to compare with"
 	}
 	behind, ahead, counted := trunkStanding(ctx, base, ok, wt.Branch)
 	if !counted {
@@ -448,7 +431,7 @@ func trunkFact(ctx *Context, base TrunkBase, ok bool, wt repo.Worktree) string {
 		fact += " of " + base.Name
 	}
 	if strings.HasPrefix(base.Name, "origin/") {
-		fact += " " + lastFetchedParen(ctx.Repo.MainRoot, time.Now())
+		fact += " " + synccmd.LastFetchedParen(ctx.Repo.MainRoot, time.Now())
 	}
 	return fact
 }
@@ -459,14 +442,14 @@ func trunkFact(ctx *Context, base TrunkBase, ok bool, wt repo.Worktree) string {
 // overview's summary lines, ending with the reminder that it was simulated
 // against trunk as last fetched. A trunk the overview cannot assess against
 // gives its reason instead.
-func syncVerdict(ctx *Context, work string, wt repo.Worktree, agents []wtsync.Agent, own wtsync.OwnRemote) (line string, under []string, a wtsync.Assessment) {
+func syncVerdict(ctx *kit.Context, work string, wt repo.Worktree, agents []wtsync.Agent, own wtsync.OwnRemote) (line string, under []string, a wtsync.Assessment) {
 	a.Own = own
-	onto, _, cfg, err := syncDeclaration(ctx)
+	onto, _, cfg, err := synccmd.SyncDeclaration(ctx)
 	if err != nil {
 		return err.Error(), nil, a
 	}
 	a = wtsync.AssessOwn(ctx.Repo.MainRoot, onto, cfg, wt, agents, own)
-	parts := []string{classLabel(a)}
+	parts := []string{synccmd.ClassLabel(a)}
 	if a.Dirty && len(a.Sessions.Busy()) == 0 {
 		parts = append(parts, "dirty")
 	}
@@ -478,9 +461,9 @@ func syncVerdict(ctx *Context, work string, wt repo.Worktree, agents []wtsync.Ag
 		line += " · " + advice
 	}
 	if cfg == nil {
-		under = append(under, undeclaredNotice(ctx, onto))
+		under = append(under, synccmd.UndeclaredNotice(ctx, onto))
 	}
-	for _, l := range summaryLines(a) {
+	for _, l := range synccmd.SummaryLines(a) {
 		under = append(under, "  "+l)
 	}
 	under = append(under, "simulated against "+onto+" as last fetched; wt sync fetches first")
@@ -491,104 +474,17 @@ func syncVerdict(ctx *Context, work string, wt repo.Worktree, agents []wtsync.Ag
 // of this group: run it, look at its detail, or nothing for one the overview
 // skips or leaves out.
 func syncAdvice(work string, declared bool, a wtsync.Assessment) string {
-	if onTrunk(a) {
+	if synccmd.OnTrunk(a) {
 		return ""
 	}
-	switch sectionOf(a) {
-	case sectionReady:
+	switch synccmd.SectionOf(a) {
+	case synccmd.SectionReady:
 		if !declared {
-			return sectionHeading(sectionReady, false)
+			return synccmd.SectionHeading(synccmd.SectionReady, false)
 		}
 		return "wt sync rebase " + work
-	case sectionNeedsYou:
+	case synccmd.SectionNeedsYou:
 		return "wt sync " + work + " for the detail"
 	}
 	return ""
-}
-
-// printPathTable writes rows as aligned columns: the first row is the header
-// and the last column of every row is a path. width is the terminal's column
-// count, or 0 when output is not a terminal. Above 0, paths are shown from ~
-// and shortened from the left so each row fits; at 0 they are printed whole,
-// because a printed path is an argument to wt.
-func printPathTable(w io.Writer, rows [][]string, width int) error {
-	if width > 0 {
-		fitPaths(rows, width)
-	}
-	return printTable(w, rows)
-}
-
-// fitPaths shows the last column of rows, a path, from ~ and shortens it
-// from the left so each row fits in width columns, where it can.
-func fitPaths(rows [][]string, width int) {
-	home, _ := os.UserHomeDir()
-	fitLastColumn(rows, width, minPathWidth, func(path string, limit int) string {
-		return elideLeft(abbreviateHome(path, home), limit)
-	})
-}
-
-// printTable writes rows as aligned columns.
-func printTable(w io.Writer, rows [][]string) error {
-	tw := tabwriter.NewWriter(w, 0, 0, listPadding, ' ', 0)
-	for _, r := range rows {
-		fmt.Fprintln(tw, strings.Join(r, "\t"))
-	}
-	return tw.Flush()
-}
-
-// fitLastColumn shortens the last column of every row with shorten so the
-// table fits in width columns, but never below floor. The other columns stay
-// whole: they are what a reader types back into wt. A header in the last
-// column is shorter than any floor, so shortening leaves it alone.
-func fitLastColumn(rows [][]string, width, floor int, shorten func(s string, limit int) string) {
-	if len(rows) == 0 {
-		return
-	}
-	last := len(rows[0]) - 1
-	lead := 0
-	for col := range last {
-		widest := 0
-		for _, r := range rows {
-			widest = max(widest, utf8.RuneCountInString(r[col]))
-		}
-		lead += widest + listPadding
-	}
-	room := max(width-lead, floor)
-	for _, r := range rows {
-		r[last] = shorten(r[last], room)
-	}
-}
-
-func abbreviateHome(path, home string) string {
-	if home == "" || home == "/" {
-		return path
-	}
-	if path == home {
-		return "~"
-	}
-	if rest, ok := strings.CutPrefix(path, home+"/"); ok {
-		return "~/" + rest
-	}
-	return path
-}
-
-// elideLeft shortens path to at most limit runes by dropping leading
-// directories, which every worktree of a repository shares, and keeps whole
-// trailing ones. A last component longer than limit is cut mid-name.
-func elideLeft(path string, limit int) string {
-	if utf8.RuneCountInString(path) <= limit {
-		return path
-	}
-	for rest := path; ; {
-		_, after, ok := strings.Cut(rest, "/")
-		if !ok {
-			break
-		}
-		rest = after
-		if utf8.RuneCountInString(rest)+2 <= limit {
-			return "…/" + rest
-		}
-	}
-	r := []rune(path)
-	return "…" + string(r[len(r)-(limit-1):])
 }

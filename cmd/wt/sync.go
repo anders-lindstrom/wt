@@ -8,7 +8,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
+	"github.com/anders-lindstrom/wt/internal/commands/syncfix"
+	"github.com/anders-lindstrom/wt/internal/commands/synckeep"
 )
 
 func newSyncCmd() *cobra.Command {
@@ -144,7 +147,7 @@ func newSyncCmd() *cobra.Command {
 	var rebase, resume, undo, yes, force, ifReady, allowDiverged, asJSON bool
 	var expect string
 	var sel selectionFlags
-	var push func() commands.PushMode
+	var push func() synccmd.PushMode
 	flags := func() syncVerbFlags {
 		return syncVerbFlags{rebase: rebase, resume: resume, undo: undo,
 			yes: yes, force: force, noFetch: noFetch, noFFTrunk: noFFTrunk, ifReady: ifReady, push: push(),
@@ -173,15 +176,15 @@ func newSyncCmd() *cobra.Command {
 		}
 		switch verb {
 		case "rebase":
-			return withVerbContext(cmd, args, rebaseCommand, f.json, func(ctx *commands.Context, j *commands.RunJournal) error {
+			return withVerbContext(cmd, args, rebaseCommand, f.json, func(ctx *kit.Context, j *synccmd.RunJournal) error {
 				return syncRebase(cmd, args, ctx, f, j)
 			})
 		case "resume":
-			return withVerbContext(cmd, args, "sync resume", f.json, func(ctx *commands.Context, j *commands.RunJournal) error {
+			return withVerbContext(cmd, args, "sync resume", f.json, func(ctx *kit.Context, j *synccmd.RunJournal) error {
 				return syncResume(cmd, args[0], ctx, f.yes, f.push, j)
 			})
 		case "undo":
-			return withVerbContext(cmd, args, "sync undo", f.json, func(ctx *commands.Context, j *commands.RunJournal) error {
+			return withVerbContext(cmd, args, "sync undo", f.json, func(ctx *kit.Context, j *synccmd.RunJournal) error {
 				return syncUndo(cmd, args[0], ctx, f.force, f.yes, j)
 			})
 		}
@@ -192,13 +195,13 @@ func newSyncCmd() *cobra.Command {
 			return err
 		}
 		if ctx == nil {
-			return commands.ErrNotInRepo
+			return kit.ErrNotInRepo
 		}
-		opts := commands.SyncOptions{NoFetch: noFetch}
+		opts := synccmd.SyncOptions{NoFetch: noFetch}
 		if len(args) == 1 {
-			return commands.SyncWorktree(ctx, args[0], opts, cmd.OutOrStdout())
+			return synccmd.SyncWorktree(ctx, args[0], opts, cmd.OutOrStdout())
 		}
-		return commands.Sync(ctx, opts, cmd.OutOrStdout())
+		return synccmd.Sync(ctx, opts, cmd.OutOrStdout())
 	}
 	sync.Flags().BoolVar(&noFetch, "no-fetch", false, "compare with origin/<trunk> as last fetched; with --rebase, rebase onto it")
 	sync.Flags().BoolVar(&rebase, "rebase", false, "wt sync rebase <work>..., spelled at the end; alone, every ready worktree")
@@ -261,8 +264,8 @@ func newSyncKeepCmd() *cobra.Command {
 			"  wt sync keep once       # one pass now, by hand or from cron\n" +
 			"  wt sync keep status     # the same as wt sync keep",
 		Args: cobra.NoArgs,
-		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
-			return commands.SyncKeepStatus(ctx, time.Now(), cmd.OutOrStdout())
+		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
+			return synckeep.Status(ctx, time.Now(), cmd.OutOrStdout())
 		}),
 	}
 	keep.AddCommand(newSyncKeepRunCmd(), newSyncKeepStartCmd(), newSyncKeepStatusCmd(), newSyncKeepStopCmd())
@@ -317,12 +320,12 @@ func newSyncKeepRunCmd() *cobra.Command {
 			"  wt sync keep once --no-push    # rebase only; print the push commands\n" +
 			"  wt sync keep once --no-ff-trunk  # leave local trunk where it is",
 		Args: cobra.NoArgs,
-		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
-			opts := commands.KeepOptions{Every: every, Push: commands.PushAlways, NoFFTrunk: noFFTrunk}
+		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
+			opts := synckeep.KeepOptions{Every: every, Push: synccmd.PushAlways, NoFFTrunk: noFFTrunk}
 			if noPush {
-				opts.Push = commands.PushNever
+				opts.Push = synccmd.PushNever
 			}
-			return commands.SyncKeepRun(ctx, opts, cmd.OutOrStdout())
+			return synckeep.Run(ctx, opts, cmd.OutOrStdout())
 		}),
 	}
 	run.Flags().DurationVar(&every, "every", 0, "the job's interval, for the next-run line (default 30m)")
@@ -377,24 +380,24 @@ func newSyncKeepStartCmd() *cobra.Command {
 			"  wt sync keep start --roots work --yes  # a root's, without asking",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opts := commands.KeepStartOptions{Every: every, NoPush: noPush}
+			opts := synckeep.KeepStartOptions{Every: every, NoPush: noPush}
 			if sel.selection().Any() {
-				all := commands.KeepStartAllOptions{KeepStartOptions: opts, DryRun: dryRun, Yes: yes}
+				all := synckeep.KeepStartAllOptions{KeepStartOptions: opts, DryRun: dryRun, Yes: yes}
 				if !yes && !dryRun && canAsk(cmd) {
 					p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
 					all.Ask = func(q string) (bool, error) { return p.yesNo(q, false), nil }
 				}
-				return commands.SyncKeepStartAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), all, cmd.OutOrStdout())
+				return synckeep.StartAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), all, cmd.OutOrStdout())
 			}
 			if dryRun || yes {
 				return usagef("--dry-run and --yes go with --all, --roots or --profile; start in one repository asks nothing")
 			}
-			return withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
-				return commands.SyncKeepStart(ctx, opts, cmd.OutOrStdout())
+			return withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
+				return synckeep.Start(ctx, opts, cmd.OutOrStdout())
 			})(cmd, args)
 		},
 	}
-	start.Flags().DurationVar(&every, "every", commands.KeepDefaultInterval, "how often the job runs")
+	start.Flags().DurationVar(&every, "every", synccmd.KeepDefaultInterval, "how often the job runs")
 	start.Flags().BoolVar(&noPush, "no-push", false, "the job rebases only and logs the push commands")
 	start.Flags().BoolVar(&dryRun, "dry-run", false, "with --all, --roots or --profile: print the plan, install nothing")
 	start.Flags().BoolVarP(&yes, "yes", "y", false, "with --all, --roots or --profile: do not ask first")
@@ -424,10 +427,10 @@ func newSyncKeepStatusCmd() *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if sel.selection().Any() {
-				return commands.SyncKeepStatusAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), time.Now(), cmd.OutOrStdout())
+				return synckeep.StatusAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), time.Now(), cmd.OutOrStdout())
 			}
-			return withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
-				return commands.SyncKeepStatus(ctx, time.Now(), cmd.OutOrStdout())
+			return withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
+				return synckeep.Status(ctx, time.Now(), cmd.OutOrStdout())
 			})(cmd, args)
 		},
 	}
@@ -457,13 +460,13 @@ func newSyncKeepStopCmd() *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if sel.selection().Any() {
-				return commands.SyncKeepStopAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), dryRun, cmd.OutOrStdout())
+				return synckeep.StopAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), dryRun, cmd.OutOrStdout())
 			}
 			if dryRun {
 				return usagef("--dry-run goes with --all, --roots or --profile")
 			}
-			return withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
-				return commands.SyncKeepStop(ctx, cmd.OutOrStdout())
+			return withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
+				return synckeep.Stop(ctx, cmd.OutOrStdout())
 			})(cmd, args)
 		},
 	}
@@ -480,7 +483,7 @@ type syncVerbFlags struct {
 	ifReady, noFFTrunk   bool
 	// allowDiverged rebases a branch that has diverged from its own remote.
 	allowDiverged bool
-	push          commands.PushMode
+	push          synccmd.PushMode
 	// json prints one object on stdout: the overview, or the verb's result.
 	json bool
 	// expect is the overview's token a run must still match.
@@ -517,9 +520,9 @@ func (f syncVerbFlags) check() error {
 	}
 	rebases := verb == "rebase" || verb == "resume"
 	switch {
-	case f.push == commands.PushAlways && !rebases:
+	case f.push == synccmd.PushAlways && !rebases:
 		return usagef("--push needs --rebase or --resume")
-	case f.push == commands.PushNever && !rebases:
+	case f.push == synccmd.PushNever && !rebases:
 		return usagef("--no-push needs --rebase or --resume")
 	case f.ifReady && verb != "rebase":
 		return usagef("--if-ready needs --rebase")
@@ -541,22 +544,22 @@ func (f syncVerbFlags) check() error {
 
 // syncOverviewJSON is wt sync --json: the overview as one object, or with
 // --all, --roots or --profile an array of one per repository.
-func syncOverviewJSON(cmd *cobra.Command, args []string, sel commands.Selection, f syncVerbFlags) error {
-	opts := commands.SyncOptions{NoFetch: f.noFetch}
+func syncOverviewJSON(cmd *cobra.Command, args []string, sel kit.Selection, f syncVerbFlags) error {
+	opts := synccmd.SyncOptions{NoFetch: f.noFetch}
 	switch {
 	case len(args) > 0:
 		return usagef("--json prints the overview of every worktree; name none, or add the verb whose result you want")
 	case sel.Any():
-		return commands.SyncAllJSON(loadUserWarn(cmd.ErrOrStderr()), sel, opts, cmd.OutOrStdout())
+		return synccmd.SyncAllJSON(loadUserWarn(cmd.ErrOrStderr()), sel, opts, cmd.OutOrStdout())
 	}
 	ctx, err := openLenient(cmd.ErrOrStderr())
 	if err != nil {
 		return err
 	}
 	if ctx == nil {
-		return commands.ErrNotInRepo
+		return kit.ErrNotInRepo
 	}
-	return commands.SyncJSON(ctx, opts, cmd.OutOrStdout())
+	return synccmd.SyncJSON(ctx, opts, cmd.OutOrStdout())
 }
 
 // syncArgs is the argument count wt sync takes for verb: the rule the verb's
@@ -576,7 +579,7 @@ func newSyncRebaseCmd() *cobra.Command {
 	var noFetch, noFFTrunk, yes, ifReady, force, allowDiverged, asJSON bool
 	var expect string
 	var sel selectionFlags
-	var push func() commands.PushMode
+	var push func() synccmd.PushMode
 	rebase := &cobra.Command{
 		Use:   "rebase [<work>...]",
 		Short: "Rebase named worktrees onto trunk with the declared strategies",
@@ -682,7 +685,7 @@ func newSyncRebaseCmd() *cobra.Command {
 			if sel.selection().Any() {
 				return syncAcross(cmd, args, "rebase", sel.selection(), f)
 			}
-			return withVerbContext(cmd, args, rebaseCommand, asJSON, func(ctx *commands.Context, j *commands.RunJournal) error {
+			return withVerbContext(cmd, args, rebaseCommand, asJSON, func(ctx *kit.Context, j *synccmd.RunJournal) error {
 				return syncRebase(cmd, args, ctx, f, j)
 			})
 		},
@@ -703,10 +706,10 @@ func newSyncRebaseCmd() *cobra.Command {
 
 // syncRebase is wt sync rebase, whichever way it was spelled. j, when not nil,
 // gets its result for --json.
-func syncRebase(cmd *cobra.Command, works []string, ctx *commands.Context, f syncVerbFlags, j *commands.RunJournal) error {
+func syncRebase(cmd *cobra.Command, works []string, ctx *kit.Context, f syncVerbFlags, j *synccmd.RunJournal) error {
 	opts, _ := runOptions(cmd, f, len(works) == 0)
 	opts.Journal, opts.Expect = j, f.expect
-	return commands.SyncRebase(ctx, works, opts, cmd.OutOrStdout())
+	return synccmd.SyncRebase(ctx, works, opts, cmd.OutOrStdout())
 }
 
 // rebaseCommand names wt sync rebase in its --json result.
@@ -717,13 +720,13 @@ const rebaseCommand = "sync rebase"
 // and everything it prints, questions included, goes to stderr; command
 // names the verb in that object.
 func withVerbContext(cmd *cobra.Command, args []string, command string, asJSON bool,
-	fn func(ctx *commands.Context, j *commands.RunJournal) error) error {
+	fn func(ctx *kit.Context, j *synccmd.RunJournal) error) error {
 	if !asJSON {
-		return withContext(func(_ *cobra.Command, _ []string, ctx *commands.Context) error {
+		return withContext(func(_ *cobra.Command, _ []string, ctx *kit.Context) error {
 			return fn(ctx, nil)
 		})(cmd, args)
 	}
-	journal := commands.NewSyncRunJournal(cmd.OutOrStdout(), command)
+	journal := synccmd.NewSyncRunJournal(cmd.OutOrStdout(), command)
 	cmd.SetOut(cmd.ErrOrStderr())
 	ctx, err := openContext()
 	if err != nil {
@@ -743,8 +746,8 @@ func withVerbContext(cmd *cobra.Command, args []string, command string, asJSON b
 // repositories — with nobody at a terminal to ask and no --yes rebases
 // nothing, as a sweep deletes nothing: what nobody named and nobody
 // confirmed does not move. A worktree named on the line goes ahead.
-func runOptions(cmd *cobra.Command, f syncVerbFlags, bulk bool) (commands.RunOptions, *prompter) {
-	opts := commands.RunOptions{NoFetch: f.noFetch, NoFFTrunk: f.noFFTrunk, IfReady: f.ifReady, Force: f.force,
+func runOptions(cmd *cobra.Command, f syncVerbFlags, bulk bool) (synccmd.RunOptions, *prompter) {
+	opts := synccmd.RunOptions{NoFetch: f.noFetch, NoFFTrunk: f.noFFTrunk, IfReady: f.ifReady, Force: f.force,
 		AllowDiverged: f.allowDiverged}
 	opts.Push = f.push
 	switch {
@@ -775,7 +778,7 @@ func noTerminal(w io.Writer) func([]string) (bool, error) {
 // syncAcross is wt sync with --all, --roots or --profile: the overview of
 // every repository they name, or with --rebase a run across all of them. The
 // other verbs finish one worktree's run, so they name it instead.
-func syncAcross(cmd *cobra.Command, args []string, verb string, sel commands.Selection, f syncVerbFlags) error {
+func syncAcross(cmd *cobra.Command, args []string, verb string, sel kit.Selection, f syncVerbFlags) error {
 	u := loadUserWarn(cmd.ErrOrStderr())
 	switch {
 	case verb == "resume" || verb == "undo":
@@ -787,10 +790,10 @@ func syncAcross(cmd *cobra.Command, args []string, verb string, sel commands.Sel
 	case f.expect != "":
 		return usagef("--expect holds a run in one repository to its overview; leave out --all, --roots and --profile")
 	case verb == "":
-		return commands.SyncAll(u, sel, commands.SyncOptions{NoFetch: f.noFetch}, cmd.OutOrStdout())
+		return synccmd.SyncAll(u, sel, synccmd.SyncOptions{NoFetch: f.noFetch}, cmd.OutOrStdout())
 	}
 	opts, p := runOptions(cmd, f, true)
-	all := commands.SyncRebaseAllOptions{RunOptions: opts}
+	all := synccmd.SyncRebaseAllOptions{RunOptions: opts}
 	switch {
 	case p != nil:
 		all.Ask = func(q string) (bool, error) { return p.yesNo(q, false), nil }
@@ -801,12 +804,12 @@ func syncAcross(cmd *cobra.Command, args []string, verb string, sel commands.Sel
 			return false, nil
 		}
 	}
-	return commands.SyncRebaseAll(u, sel, all, cmd.OutOrStdout())
+	return synccmd.SyncRebaseAll(u, sel, all, cmd.OutOrStdout())
 }
 
 func newSyncResumeCmd() *cobra.Command {
 	var yes, asJSON bool
-	var push func() commands.PushMode
+	var push func() synccmd.PushMode
 	resume := &cobra.Command{
 		Use:   "resume <work>",
 		Short: "Continue the rebase a run left at a conflict that was yours",
@@ -846,7 +849,7 @@ func newSyncResumeCmd() *cobra.Command {
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withVerbContext(cmd, args, "sync resume", asJSON, func(ctx *commands.Context, j *commands.RunJournal) error {
+			return withVerbContext(cmd, args, "sync resume", asJSON, func(ctx *kit.Context, j *synccmd.RunJournal) error {
 				return syncResume(cmd, args[0], ctx, yes, push(), j)
 			})
 		},
@@ -859,8 +862,8 @@ func newSyncResumeCmd() *cobra.Command {
 }
 
 // syncResume is wt sync resume, whichever way it was spelled.
-func syncResume(cmd *cobra.Command, work string, ctx *commands.Context, yes bool, push commands.PushMode, j *commands.RunJournal) error {
-	opts := commands.ResumeOptions{Journal: j}
+func syncResume(cmd *cobra.Command, work string, ctx *kit.Context, yes bool, push synccmd.PushMode, j *synccmd.RunJournal) error {
+	opts := syncfix.ResumeOptions{Journal: j}
 	opts.Push = push
 	// --yes answers yes to every question, the push included, unless
 	// --no-push says otherwise.
@@ -872,7 +875,7 @@ func syncResume(cmd *cobra.Command, work string, ctx *commands.Context, yes bool
 		opts.Confirm = confirmAsk(p, "resume")
 		opts.ConfirmPush, opts.ChoosePush = confirmPush(p), choosePush(p)
 	}
-	return commands.SyncResume(ctx, work, opts, cmd.OutOrStdout())
+	return syncfix.SyncResume(ctx, work, opts, cmd.OutOrStdout())
 }
 
 func newSyncUndoCmd() *cobra.Command {
@@ -910,7 +913,7 @@ func newSyncUndoCmd() *cobra.Command {
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withVerbContext(cmd, args, "sync undo", asJSON, func(ctx *commands.Context, j *commands.RunJournal) error {
+			return withVerbContext(cmd, args, "sync undo", asJSON, func(ctx *kit.Context, j *synccmd.RunJournal) error {
 				return syncUndo(cmd, args[0], ctx, force, yes, j)
 			})
 		},
@@ -922,18 +925,18 @@ func newSyncUndoCmd() *cobra.Command {
 }
 
 // syncUndo is wt sync undo, whichever way it was spelled.
-func syncUndo(cmd *cobra.Command, work string, ctx *commands.Context, force, yes bool, j *commands.RunJournal) error {
-	opts := commands.UndoOptions{Force: force, Journal: j}
+func syncUndo(cmd *cobra.Command, work string, ctx *kit.Context, force, yes bool, j *synccmd.RunJournal) error {
+	opts := syncfix.UndoOptions{Force: force, Journal: j}
 	if canAsk(cmd) && !yes {
 		opts.Confirm = confirmAsk(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()), "undo")
 	}
-	return commands.SyncUndo(ctx, work, opts, cmd.OutOrStdout())
+	return syncfix.SyncUndo(ctx, work, opts, cmd.OutOrStdout())
 }
 
 func newSyncPushToCmd() *cobra.Command {
 	var unset bool
 	pushTo := &cobra.Command{
-		Use:   commands.PushToName + " [<work>] [<remote>/<branch>]",
+		Use:   synccmd.PushToName + " [<work>] [<remote>/<branch>]",
 		Short: "Say or record where a worktree's branch pushes",
 		Long: "Print where a push of the worktree's branch goes and what decides it;\n" +
 			"with <remote>/<branch>, record that as where it goes. Nothing is pushed\n" +
@@ -968,7 +971,7 @@ func newSyncPushToCmd() *cobra.Command {
 			"  wt sync push-to login-crash --unset               # forget what is recorded",
 		Args:              cobra.MaximumNArgs(2),
 		ValidArgsFunction: completeWork,
-		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
+		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *kit.Context) error {
 			work, dest := ".", ""
 			if len(args) > 0 {
 				work = args[0]
@@ -979,7 +982,7 @@ func newSyncPushToCmd() *cobra.Command {
 			if unset && dest != "" {
 				return usagef("--unset takes no <remote>/<branch>: it forgets the one recorded")
 			}
-			return commands.SyncPushTo(ctx, work, dest, unset, cmd.OutOrStdout())
+			return synccmd.SyncPushTo(ctx, work, dest, unset, cmd.OutOrStdout())
 		}),
 	}
 	pushTo.Flags().BoolVar(&unset, "unset", false, "forget the destination recorded for the branch")
@@ -1009,8 +1012,8 @@ func newSyncDoctorCmd() *cobra.Command {
 			"  wt sync doctor --fix    # turn on rerere, remove expired locks\n" +
 			"  wt sync doctor --prune  # delete safety refs no run needs now",
 		Args: cobra.NoArgs,
-		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
-			return commands.SyncDoctor(ctx, commands.DoctorOptions{Fix: fix, Prune: prune}, cmd.OutOrStdout())
+		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
+			return synccmd.SyncDoctor(ctx, synccmd.DoctorOptions{Fix: fix, Prune: prune}, cmd.OutOrStdout())
 		}),
 	}
 	doctor.Flags().BoolVar(&fix, "fix", false, "turn on rerere.enabled and remove expired locks")
@@ -1038,8 +1041,8 @@ func confirmPush(p *prompter) func([]string) (bool, error) {
 // choosePush asks where a branch that tracks a remote branch of another name
 // pushes. Enter, or anything but one of the two numbers, is neither: the
 // branch is left unpushed and nothing is recorded.
-func choosePush(p *prompter) func(commands.PushChoice) (string, error) {
-	return func(c commands.PushChoice) (string, error) {
+func choosePush(p *prompter) func(synccmd.PushChoice) (string, error) {
+	return func(c synccmd.PushChoice) (string, error) {
 		_, _ = fmt.Fprintf(p.out, "%s tracks %s, a branch of another name. Where does it push?\n"+
 			"A push after a rebase is forced: it replaces what that branch has.\n"+
 			"  1  %s, the branch it tracks\n  2  %s, its own name\n1, 2, or Enter to leave it unpushed: ",
@@ -1056,31 +1059,31 @@ func choosePush(p *prompter) func(commands.PushChoice) (string, error) {
 
 // addPushFlags declares --push and --no-push on cmd, refused together, and
 // returns the choice they make once cmd has parsed its flags.
-func addPushFlags(cmd *cobra.Command, pushUsage, noPushUsage string) func() commands.PushMode {
+func addPushFlags(cmd *cobra.Command, pushUsage, noPushUsage string) func() synccmd.PushMode {
 	var push, noPush bool
 	cmd.Flags().BoolVar(&push, "push", false, pushUsage)
 	cmd.Flags().BoolVar(&noPush, "no-push", false, noPushUsage)
 	cmd.MarkFlagsMutuallyExclusive("push", "no-push")
-	return func() commands.PushMode { return pushMode(push, noPush) }
+	return func() synccmd.PushMode { return pushMode(push, noPush) }
 }
 
 // yesPush is the push --yes makes: yes, like every other question it
 // answers, unless --no-push was given.
-func yesPush(mode commands.PushMode) commands.PushMode {
-	if mode == commands.PushNever {
-		return commands.PushNever
+func yesPush(mode synccmd.PushMode) synccmd.PushMode {
+	if mode == synccmd.PushNever {
+		return synccmd.PushNever
 	}
-	return commands.PushAlways
+	return synccmd.PushAlways
 }
 
 // pushMode is --push and --no-push as one choice; cobra has already refused
 // the two together.
-func pushMode(push, noPush bool) commands.PushMode {
+func pushMode(push, noPush bool) synccmd.PushMode {
 	switch {
 	case push:
-		return commands.PushAlways
+		return synccmd.PushAlways
 	case noPush:
-		return commands.PushNever
+		return synccmd.PushNever
 	}
-	return commands.PushAsk
+	return synccmd.PushAsk
 }

@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/session"
 )
 
 func newSessionCmd() *cobra.Command {
@@ -64,14 +64,14 @@ func newSessionListCmd() *cobra.Command {
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			o := commands.SessionListOptions{JSON: asJSON, NoInboxCheck: noInbox,
+			o := session.ListOptions{JSON: asJSON, NoInboxCheck: noInbox,
 				Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
 			if sel.selection().Any() {
 				if len(args) > 0 {
 					return usagef("--all, --roots and --profile list every repository: give no worktree with them")
 				}
 				o.Selection, o.User = sel.selection(), loadUserWarn(cmd.ErrOrStderr())
-				return commands.SessionListRun(nil, o)
+				return session.ListRun(nil, o)
 			}
 			ctx, err := openLenient(cmd.ErrOrStderr())
 			if err != nil {
@@ -80,7 +80,7 @@ func newSessionListCmd() *cobra.Command {
 			if len(args) > 0 {
 				o.Pattern = args[0]
 			}
-			return commands.SessionListRun(ctx, o)
+			return session.ListRun(ctx, o)
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print the sessions as JSON (default: a table)")
@@ -90,7 +90,7 @@ func newSessionListCmd() *cobra.Command {
 }
 
 func newSessionSendCmd() *cobra.Command {
-	var o commands.SessionSendOptions
+	var o session.SendOptions
 	var messageFile string
 	cmd := &cobra.Command{
 		Use:   "send <work> [<session>]",
@@ -147,7 +147,7 @@ func newSessionSendCmd() *cobra.Command {
 						"echo \"question\" | wt session send <work>")
 				}
 			}
-			return commands.SessionSendRun(ctx, o)
+			return session.SendRun(ctx, o)
 		},
 	}
 	cmd.Flags().StringVar(&messageFile, "message-file", "", "read the message from this file (default: stdin)")
@@ -160,7 +160,7 @@ func newSessionSendCmd() *cobra.Command {
 }
 
 func newSessionStopCmd() *cobra.Command {
-	var o commands.SessionStopOptions
+	var o session.StopOptions
 	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "stop <work> [<session>]",
@@ -202,7 +202,7 @@ func newSessionStopCmd() *cobra.Command {
 			}
 			o.JSON = asJSON
 			o.Out, o.Err = cmd.OutOrStdout(), cmd.ErrOrStderr()
-			return commands.SessionStopRun(ctx, o)
+			return session.StopRun(ctx, o)
 		},
 	}
 	cmd.Flags().StringVar(&o.ExpectSession, "expect-session", "", "refuse unless the session is this full session id")

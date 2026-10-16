@@ -8,7 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
@@ -43,11 +44,11 @@ func newInitCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			opts := commands.InitOptions{Force: force}
+			opts := provision.InitOptions{Force: force}
 			if !yes && canAsk(cmd) {
 				opts.Ask = askAnswers(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()))
 			}
-			return commands.Init(r, opts, cmd.OutOrStdout())
+			return provision.Init(r, opts, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask; write the detected values")
@@ -61,8 +62,8 @@ func newInitCmd() *cobra.Command {
 //
 // The one prompter spans every prompt and every re-ask, so no round loses the
 // answers typed ahead for the next.
-func askAnswers(p *prompter) func(commands.Answers) (commands.Answers, error) {
-	return func(defaults commands.Answers) (commands.Answers, error) {
+func askAnswers(p *prompter) func(kit.Answers) (kit.Answers, error) {
+	return func(defaults kit.Answers) (kit.Answers, error) {
 		ask := func(label, def string) (string, error) {
 			if def != "" {
 				fmt.Fprintf(p.out, "%s [%s]: ", label, def)
@@ -82,7 +83,7 @@ func askAnswers(p *prompter) func(commands.Answers) (commands.Answers, error) {
 			return line, nil
 		}
 
-		var a commands.Answers
+		var a kit.Answers
 		var err error
 		if a.MainBranch, err = ask("trunk (MAIN_BRANCH)", defaults.MainBranch); err != nil {
 			return a, err

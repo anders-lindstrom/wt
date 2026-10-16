@@ -8,6 +8,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/session"
+	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 )
 
 // pathWidthHelp ends the help of the commands that print a path column.
@@ -67,10 +70,10 @@ func newListCmd() *cobra.Command {
 				// One read of claude's sessions serves every repository,
 				// and what it could not read is said once, at the end.
 				if !opts.NoSessions {
-					opts.Sessions = commands.ReadClaudeSessions(commands.SessionsDeadline)
+					opts.Sessions = session.ReadClaudeSessions(session.SessionsDeadline)
 				}
-				err := commands.AcrossRepos(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), out,
-					func(ctx *commands.Context, w io.Writer) error { return commands.List(ctx, opts, w, terminalWidth(out)) })
+				err := kit.AcrossRepos(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), out,
+					func(ctx *kit.Context, w io.Writer) error { return commands.List(ctx, opts, w, terminalWidth(out)) })
 				if opts.Sessions != nil {
 					if note := opts.Sessions.Note(); note != "" {
 						fmt.Fprintf(out, "\n%s\n", note)
@@ -78,7 +81,7 @@ func newListCmd() *cobra.Command {
 				}
 				return err
 			}
-			return withContext(func(_ *cobra.Command, _ []string, ctx *commands.Context) error {
+			return withContext(func(_ *cobra.Command, _ []string, ctx *kit.Context) error {
 				return commands.List(ctx, opts, out, terminalWidth(out))
 			})(cmd, args)
 		},
@@ -154,22 +157,22 @@ func newStatusCmd() *cobra.Command {
 				}
 				// Lenient: a repository with no configuration is a plan
 				// that says so, not an error.
-				ctx := commands.OpenLenient(cwd, io.Discard)
+				ctx := kit.OpenLenient(cwd, io.Discard)
 				if ctx == nil {
-					return commands.ErrNotInRepo
+					return kit.ErrNotInRepo
 				}
-				return commands.UpPlanJSON(ctx, work, out)
+				return synccmd.UpPlanJSON(ctx, work, out)
 			}
 			if sel.selection().Any() {
 				if len(args) > 0 {
 					return usagef("--all, --roots and --profile cover whole repositories; name no worktree with them")
 				}
-				return commands.AcrossRepos(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), out,
-					func(ctx *commands.Context, w io.Writer) error {
+				return kit.AcrossRepos(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), out,
+					func(ctx *kit.Context, w io.Writer) error {
 						return commands.Status(ctx, opts, w, terminalWidth(out))
 					})
 			}
-			return withContext(func(_ *cobra.Command, args []string, ctx *commands.Context) error {
+			return withContext(func(_ *cobra.Command, args []string, ctx *kit.Context) error {
 				if len(args) == 1 {
 					return commands.StatusWorktree(ctx, args[0], opts, out)
 				}

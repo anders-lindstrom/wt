@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 func newReposCmd() *cobra.Command {
@@ -32,7 +32,7 @@ func newReposCmd() *cobra.Command {
 				return usagef("wt repos --doctor is wt doctor --all now (--roots and --profile work there too)")
 			}
 			u := loadUserWarn(cmd.ErrOrStderr())
-			return commands.Repos(u, sel.selection(), commands.ReposOptions{Paths: paths}, cmd.OutOrStdout())
+			return kit.Repos(u, sel.selection(), kit.ReposOptions{Paths: paths}, cmd.OutOrStdout())
 		},
 	}
 	// --all is what a bare wt repos lists already; it is taken so the flag

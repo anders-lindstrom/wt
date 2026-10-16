@@ -11,7 +11,9 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/session"
+	"github.com/anders-lindstrom/wt/internal/commands/synckeep"
 	"github.com/anders-lindstrom/wt/internal/config"
 )
 
@@ -24,7 +26,7 @@ func newRootCmd(args ...string) *cobra.Command {
 	// Declaration order, not alphabetical: inside a group the order is the
 	// order you would do the things in.
 	cobra.EnableCommandSorting = false
-	commands.Version = version
+	kit.Version = version
 	root := &cobra.Command{
 		Use:     "wt",
 		Version: version,
@@ -207,7 +209,7 @@ func newShellCmd(use, short, long, example string) *cobra.Command {
 }
 
 // sourceShellLayer is the line that loads wt's shell layer.
-const sourceShellLayer = commands.SourceShellLayer
+const sourceShellLayer = session.SourceShellLayer
 
 func newCdCmd() *cobra.Command {
 	c := newShellCmd("cd [<pattern>]", "Change directory to a worktree (shell)",
@@ -257,18 +259,18 @@ func needArgs(n int, what, example string) cobra.PositionalArgs {
 
 // openContext resolves the repository and configuration for the current
 // directory. Every subcommand that touches a repo starts here.
-func openContext() (*commands.Context, error) {
+func openContext() (*kit.Context, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, err
 	}
-	return commands.Open(cwd)
+	return kit.Open(cwd)
 }
 
 // withContext is a RunE that opens the context first and hands it to fn.
 // Stderr is where the context puts a warning: an integration that was
 // supposed to work and did not, or settings it could not read.
-func withContext(fn func(cmd *cobra.Command, args []string, ctx *commands.Context) error) func(*cobra.Command, []string) error {
+func withContext(fn func(cmd *cobra.Command, args []string, ctx *kit.Context) error) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		ctx, err := openContext()
 		if err != nil {
@@ -282,12 +284,12 @@ func withContext(fn func(cmd *cobra.Command, args []string, ctx *commands.Contex
 // openLenient opens the context even when the configuration does not load,
 // saying so on w. The context is nil outside a git repository, and what that
 // means is the caller's to say.
-func openLenient(w io.Writer) (*commands.Context, error) {
+func openLenient(w io.Writer) (*kit.Context, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, err
 	}
-	ctx := commands.OpenLenient(cwd, w)
+	ctx := kit.OpenLenient(cwd, w)
 	if ctx != nil {
 		ctx.WarnTo(w)
 	}
@@ -315,11 +317,11 @@ func Execute() int {
 }
 
 func errorStatus(err error) int {
-	if errors.Is(err, commands.ErrNoLaunchd) {
+	if errors.Is(err, synckeep.ErrNoLaunchd) {
 		return 3
 	}
 	var usage usageError
-	var sessionUsage commands.UsageError
+	var sessionUsage session.UsageError
 	var commandUsage *config.InputError
 	if errors.As(err, &usage) || errors.As(err, &sessionUsage) || errors.As(err, &commandUsage) || strings.HasPrefix(err.Error(), "unknown command ") {
 		return 2

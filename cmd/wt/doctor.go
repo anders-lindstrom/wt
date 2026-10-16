@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/admin"
 	"github.com/anders-lindstrom/wt/internal/config"
 )
 
@@ -37,7 +37,7 @@ func newDoctorCmd() *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if sel.selection().Any() {
-				return commands.DoctorAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), cmd.OutOrStdout())
+				return admin.DoctorAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), cmd.OutOrStdout())
 			}
 			// Lenient on purpose: a repository whose configuration is the
 			// problem is exactly the one that needs diagnosing.
@@ -50,12 +50,12 @@ func newDoctorCmd() *cobra.Command {
 				// Outside every repository, the roots and profiles are all
 				// there is to check.
 				u, userErr := config.LoadUser()
-				if n := commands.DoctorRepositories(u, userErr, cmd.OutOrStdout()); n > 0 {
+				if n := admin.DoctorRepositories(u, userErr, cmd.OutOrStdout()); n > 0 {
 					return fmt.Errorf("%d problem(s) found", n)
 				}
 				return nil
 			}
-			problems, err := commands.Doctor(ctx, cmd.OutOrStdout())
+			problems, err := admin.Doctor(ctx, cmd.OutOrStdout())
 			if err != nil {
 				return err
 			}

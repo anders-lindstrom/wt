@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/admin"
 	"github.com/anders-lindstrom/wt/internal/github"
 )
 
-func rows() []commands.PRChoice {
-	return []commands.PRChoice{
+func rows() []admin.PRChoice {
+	return []admin.PRChoice{
 		{PR: github.PR{Number: 206, Title: "Arch", HeadRefName: "feat_wt/arch", State: "OPEN"},
 			ReviewRequested: true},
 		{PR: github.PR{Number: 12, Title: "Residents keep their doors", HeadRefName: "residential_fixes",
@@ -152,9 +152,9 @@ func TestPickerMatchesEverythingOnARow(t *testing.T) {
 // A long list is a screenful with a way to the rest, because a picker you
 // have to scroll is one you cannot answer.
 func TestPickerShowsAScreenfulAndThenTheRest(t *testing.T) {
-	var many []commands.PRChoice
+	var many []admin.PRChoice
 	for i := 1; i <= 25; i++ {
-		many = append(many, commands.PRChoice{PR: github.PR{
+		many = append(many, admin.PRChoice{PR: github.PR{
 			Number: i, Title: fmt.Sprintf("Work %d", i), HeadRefName: fmt.Sprintf("b%d", i), State: "OPEN"}})
 	}
 	var out bytes.Buffer

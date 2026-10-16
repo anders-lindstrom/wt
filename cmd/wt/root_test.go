@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/about"
-	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/synckeep"
 )
 
 func runCmd(t *testing.T, args ...string) (string, error) {
@@ -210,7 +210,7 @@ func TestErrorStatus(t *testing.T) {
 			t.Errorf("%v: error %v, want usage status 2", args, err)
 		}
 	}
-	if got := errorStatus(commands.ErrNoLaunchd); got != 3 {
+	if got := errorStatus(synckeep.ErrNoLaunchd); got != 3 {
 		t.Errorf("launchd status %d, want 3", got)
 	}
 	t.Chdir(t.TempDir())
