@@ -154,11 +154,13 @@ line, marked `!`, and `wt doctor` counts it as a problem. `wt doctor` names the
 state whatever the mode. Registering the same branch twice is Superset's own
 no-op, so nothing duplicates.
 
-**Nothing is deregistered.** `wt remove` and `wt sweep` never call Superset.
-`superset ws delete` deletes the checkout off disk along with the row,
-uncommitted work included, so wt does not call it. Remove the workspace in
-Superset when you want it gone; after `wt remove` it stays behind, pointing at
-a directory that is no longer there.
+**Removal mirrors registration.** `wt remove` and `wt sweep`, plain or
+`--move-to`, delete the worktree's workspace with `superset ws delete`.
+Superset's delete force-removes whatever checkout is at the path it recorded,
+so wt calls it only after the directory has left that path and git no longer
+lists it. A Superset that is down or errs is one line and the removal stands.
+`--keep-superset` leaves the workspace alone, and `wt restore` registers the
+worktree again.
 
 **The user switch is the master, and it is off by default.** `superset` in
 `$XDG_CONFIG_HOME/wt/config.toml` (or `~/.config/wt/config.toml`) decides
