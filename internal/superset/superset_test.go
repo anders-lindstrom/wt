@@ -194,8 +194,9 @@ func TestProbeDeadline(t *testing.T) {
 		"status hangs": {hung, 200 * time.Millisecond, true},
 		// WORKAROUND(superset-stale-status), this row and what it asks of
 		// Stale. Not an error: Superset said stale and nothing contradicted it.
-		// The deadline has to leave a loaded machine time to answer status.
-		"stale, the host hangs": {staleAndHung, 3 * time.Second, false},
+		// The deadline has to leave a loaded machine time to answer status:
+		// 3s did not, with the rest of the suite running beside it.
+		"stale, the host hangs": {staleAndHung, 5 * time.Second, false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			old := readDeadline
