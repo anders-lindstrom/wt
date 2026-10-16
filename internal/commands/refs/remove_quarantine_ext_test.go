@@ -30,6 +30,7 @@ func journalPoints(t *testing.T, run func()) []string {
 // the checkout: the lock stays, so no prune can take the registration, and
 // the run says it is partial.
 func TestQuarantineKeepsTheLockWhenAMovedCheckoutFailsToSync(t *testing.T) {
+	// Not parallel: swaps quarantine.AfterRename.
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/unsynced")
 	dir := testkit.TrashFor(t, ctx)
 	t.Cleanup(func() { quarantine.AfterRename = nil })

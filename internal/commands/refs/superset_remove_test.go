@@ -12,6 +12,7 @@ import (
 
 // wt restore registers the worktree it put back, the way wt new does.
 func TestRestoreRegistersWithSuperset(t *testing.T) {
+	// Not parallel: swaps provision.ProbeSuperset.
 	ctx, path, branch, _, dir := retiretest.Quarantined(t, "fix/back", false)
 	testkit.OptIn(ctx)
 	log := provisiontest.SupersetAt(t, ctx, path, testkit.Deleted)
@@ -34,6 +35,7 @@ func TestRestoreRegistersWithSuperset(t *testing.T) {
 // A worktree that comes back detached has no branch for Superset to adopt:
 // it says so the way wt new does, and registers nothing.
 func TestRestoreDetachedSkipsSuperset(t *testing.T) {
+	// Not parallel: swaps provision.ProbeSuperset.
 	ctx, path, _, _, dir := retiretest.Quarantined(t, "fix/moved-on", true)
 	testkit.GitIn(t, ctx.Repo.MainRoot, "update-ref", "refs/heads/moved-on", "main")
 	testkit.OptIn(ctx)
@@ -52,6 +54,7 @@ func TestRestoreDetachedSkipsSuperset(t *testing.T) {
 
 // With the integration off, a restore runs no superset.
 func TestRestoreLeavesSupersetAloneWhenOff(t *testing.T) {
+	// Not parallel: swaps provision.ProbeSuperset.
 	ctx, path, _, _, dir := retiretest.Quarantined(t, "fix/back", false)
 	log := provisiontest.SupersetAt(t, ctx, path, testkit.Deleted)
 	var buf bytes.Buffer

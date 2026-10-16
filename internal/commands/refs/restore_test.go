@@ -16,6 +16,7 @@ import (
 
 // §8 step 1: the original path taken by anything but this worktree refuses.
 func TestRestoreRefusesWhenTheOriginalPathIsTaken(t *testing.T) {
+	t.Parallel()
 	ctx, path, _, _, dir := retiretest.Quarantined(t, "fix/path-taken", false)
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		t.Fatal(err)
@@ -30,6 +31,7 @@ func TestRestoreRefusesWhenTheOriginalPathIsTaken(t *testing.T) {
 }
 
 func TestRestoreRefusesAnotherVolume(t *testing.T) {
+	// Not parallel: swaps quarantine.DeviceOf.
 	ctx, path, _, _, dir := retiretest.Quarantined(t, "fix/restore-volume", false)
 	orig := quarantine.DeviceOf
 	t.Cleanup(func() { quarantine.DeviceOf = orig })
@@ -47,6 +49,7 @@ func TestRestoreRefusesAnotherVolume(t *testing.T) {
 
 // --dry-run says what it would do to the branch and changes nothing.
 func TestRestoreDryRunChangesNothing(t *testing.T) {
+	t.Parallel()
 	ctx, _, branch, _, dir := retiretest.Quarantined(t, "fix/dry", false)
 	before, _ := os.ReadFile(filepath.Join(dir, quarantine.FileName))
 	var buf bytes.Buffer
@@ -63,6 +66,7 @@ func TestRestoreDryRunChangesNothing(t *testing.T) {
 }
 
 func TestRestoreRefusesAFolderWithNoRecordAndNoLock(t *testing.T) {
+	t.Parallel()
 	ctx, _ := provisiontest.SafetyWorktree(t, "fix/nothing")
 	dir := testkit.TrashFor(t, ctx)
 	if err := os.Mkdir(dir, 0o755); err != nil {
@@ -75,6 +79,7 @@ func TestRestoreRefusesAFolderWithNoRecordAndNoLock(t *testing.T) {
 }
 
 func TestRestoreJSONMatchesItsSchemas(t *testing.T) {
+	t.Parallel()
 	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/json", false)
 	testkit.ValidateJSON(t, "recovery", []byte(testkit.MustRead(t, filepath.Join(dir, quarantine.FileName))))
 
@@ -106,6 +111,7 @@ func TestRestoreJSONMatchesItsSchemas(t *testing.T) {
 // Only the directories the removal moved go back: something put in their
 // place in the quarantine is refused before anything is written.
 func TestRestoreRefusesADirectoryPutInTheQuarantine(t *testing.T) {
+	t.Parallel()
 	for _, which := range []string{"checkout", "admin"} {
 		t.Run(which, func(t *testing.T) {
 			ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/swapped-"+which, false)
@@ -140,6 +146,7 @@ func TestRestoreRefusesADirectoryPutInTheQuarantine(t *testing.T) {
 // A path taken between the plan and the move is a failure, never a move
 // journalled as done.
 func TestRestoreFailsWhenAPathIsTakenMidway(t *testing.T) {
+	// Not parallel: swaps quarantine.AfterSave.
 	ctx, path, _, _, dir := retiretest.Quarantined(t, "fix/taken-midway", false)
 	t.Cleanup(func() { quarantine.AfterSave = nil })
 	quarantine.AfterSave = func(_ *quarantine.Record, at string) error {
