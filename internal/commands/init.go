@@ -261,6 +261,13 @@ func render(repoName string, a Answers, c *config.Config) string {
 	p("# DEVELOPER_CONFIG_DIRS=(%s)", strings.Join(c.DeveloperConfigDirs, " "))
 	p("# DEVELOPER_CONFIG_FILES=(%s)", strings.Join(c.DeveloperConfigFiles, " "))
 	p("")
+	p("# Gitignored build caches, such as node_modules, .gradle or target, that")
+	p("# `wt setup` clones from the source checkout before provision.sh and the")
+	p("# build run. The clone is copy-on-write and shares the files' data until one")
+	p("# changes; where the filesystem cannot clone, the cache is skipped, never")
+	p("# copied.")
+	p("# WORKTREE_CACHE_DIRS=(%s)", strings.Join(c.CacheDirs, " "))
+	p("")
 	p("# Command run in a new worktree by `wt setup`, after configuration is")
 	p("# copied and after bin/worktree/provision.sh, if this repo has one.")
 	if a.BuildCommand != "" {

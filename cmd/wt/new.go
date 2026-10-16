@@ -42,7 +42,7 @@ func newNewCmd() *cobra.Command {
 		Example: "  wt new fix/login-crash                # branch, worktree, provisioning\n" +
 			"  wt new login-crash --base v2.1        # default type, cut from a tag\n" +
 			"  wt new spike/idea --no-setup --dry-run  # say what it would make\n" +
-			"  wt new spike/idea --no-build --no-superset  # neither build nor Superset\n" +
+			"  wt new spike/idea --no-build --no-cache --no-superset  # skip all three\n" +
 			"  wt new fix/x --json --expect 1:0123abcd  # only if the plan still holds",
 		Args: needArgs(1, "<type>/<work>", "wt new fix/login-crash"),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -62,7 +62,7 @@ func newNewCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&opts.Base, "base", "", "branch or commit to cut from (default: trunk)")
-	addProvisionFlags(cmd, &opts.SkipBuild, &opts.NoSetup, &opts.NoSuperset)
+	addProvisionFlags(cmd, &opts.SkipBuild, &opts.NoCache, &opts.NoSetup, &opts.NoSuperset)
 	addCreateFlags(cmd, &asJSON, &dryRun, &expect)
 	return cmd
 }

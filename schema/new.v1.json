@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/new.v1.json",
-  "x-version": "1.0.0",
+  "x-version": "1.1.0",
   "title": "wt new --json",
   "description": "What a `wt new` run did, side effect by side effect. Printed by `wt new --json` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends the run. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
@@ -103,7 +103,7 @@
       "items": {
         "$ref": "#/$defs/step"
       },
-      "description": "Every side effect, in the order they happen: worktree, branch, config, provision, submodules, build, superset."
+      "description": "Every side effect, in the order they happen: worktree, branch, config, cache (since 1.1.0), provision, submodules, build, superset."
     }
   },
   "$defs": {
@@ -157,6 +157,7 @@
             "worktree",
             "branch",
             "config",
+            "cache",
             "provision",
             "submodules",
             "build",
@@ -174,7 +175,7 @@
             "notRun",
             "interrupted"
           ],
-          "description": "worktree: created (with a reason when git failed after making it), failed. branch: created (wt new), untouched (wt checkout). config, provision, submodules, build: done, skipped, failed. superset: registered, skipped, failed. Any step: notRun, interrupted."
+          "description": "worktree: created (with a reason when git failed after making it), failed. branch: created (wt new), untouched (wt checkout). config, cache, provision, submodules, build: done, skipped, failed; cache is done with a reason naming any cache the filesystem could not clone. superset: registered, skipped, failed. Any step: notRun, interrupted."
         },
         "commit": {
           "$ref": "#/$defs/shaOrNull",

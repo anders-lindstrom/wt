@@ -39,6 +39,7 @@ func Config(ctx *Context, shell bool, w io.Writer) error {
 		}
 		fmt.Fprintf(w, "config dirs:   %s\n", strings.Join(c.DeveloperConfigDirs, " "))
 		fmt.Fprintf(w, "config files:  %s\n", strings.Join(c.DeveloperConfigFiles, " "))
+		fmt.Fprintf(w, "cache dirs:    %s\n", strings.Join(c.CacheDirs, " "))
 		fmt.Fprintf(w, "required bins: %s\n", strings.Join(c.RequiredBins, " "))
 		fmt.Fprintf(w, "build init:    %v %s\n", c.BuildInitEnabled, c.BuildInitCommand)
 		fmt.Fprintf(w, "provision.sh:  %v\n", ctx.HasProvisionScript())
@@ -63,6 +64,7 @@ func Config(ctx *Context, shell bool, w io.Writer) error {
 	fmt.Fprintf(w, "AWS_SETUP_ENABLED=%v\n", ctx.HasProvisionScript())
 	fmt.Fprintf(w, "DEVELOPER_CONFIG_DIRS=(%s)\n", shellQuoteAll(c.DeveloperConfigDirs))
 	fmt.Fprintf(w, "DEVELOPER_CONFIG_FILES=(%s)\n", shellQuoteAll(c.DeveloperConfigFiles))
+	fmt.Fprintf(w, "WORKTREE_CACHE_DIRS=(%s)\n", shellQuoteAll(c.CacheDirs))
 	return nil
 }
 

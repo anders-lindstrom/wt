@@ -48,13 +48,14 @@ const (
 	StepWorktree   = "worktree"
 	StepBranch     = "branch"
 	StepConfig     = "config"
+	StepCache      = "cache"
 	StepProvision  = "provision"
 	StepSubmodules = "submodules"
 	StepBuild      = "build"
 	StepSuperset   = "superset"
 )
 
-var createSteps = []string{StepWorktree, StepBranch, StepConfig, StepProvision, StepSubmodules, StepBuild, StepSuperset}
+var createSteps = []string{StepWorktree, StepBranch, StepConfig, StepCache, StepProvision, StepSubmodules, StepBuild, StepSuperset}
 
 // What one step came to. Every step ends as exactly one of these.
 const (
@@ -639,7 +640,7 @@ func (j *CreateJournal) created(ctx *Context, path string) {
 
 // skipSetup records every provisioning step as skipped, for --no-setup.
 func (j *CreateJournal) skipSetup(why string) {
-	for _, s := range []string{StepConfig, StepProvision, StepSubmodules, StepBuild, StepSuperset} {
+	for _, s := range []string{StepConfig, StepCache, StepProvision, StepSubmodules, StepBuild, StepSuperset} {
 		j.finish(s, StepSkipped, why, "")
 	}
 }

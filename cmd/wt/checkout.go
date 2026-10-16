@@ -34,7 +34,7 @@ func newCheckoutCmd() *cobra.Command {
 		Example: "  wt checkout fix_wt/login-crash        # worktree for an existing branch\n" +
 			"  wt checkout origin/release-2.1 rel21 --dry-run  # from origin, as rel21\n" +
 			"  wt checkout release-2.1 --no-setup    # the worktree, nothing else\n" +
-			"  wt checkout release-2.1 --no-build --no-superset  # no build, no Superset\n" +
+			"  wt checkout release-2.1 --no-build --no-cache --no-superset  # skip all three\n" +
 			"  wt checkout release-2.1 --json --expect 1:0123abcd  # if the plan holds",
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -57,7 +57,7 @@ func newCheckoutCmd() *cobra.Command {
 				})
 		},
 	}
-	addProvisionFlags(cmd, &opts.SkipBuild, &opts.NoSetup, &opts.NoSuperset)
+	addProvisionFlags(cmd, &opts.SkipBuild, &opts.NoCache, &opts.NoSetup, &opts.NoSuperset)
 	addCreateFlags(cmd, &asJSON, &dryRun, &expect)
 	return cmd
 }

@@ -78,7 +78,7 @@ examples: `wt <command> --help`.
 
 | | |
 |---|---|
-| `wt new <type>/<work>` | create a branch and worktree, then provision it (`--base`, `--no-setup`, `--no-build`, `--no-superset`, `--dry-run`) |
+| `wt new <type>/<work>` | create a branch and worktree, then provision it (`--base`, `--no-setup`, `--no-build`, `--no-cache`, `--no-superset`, `--dry-run`) |
 | `wt checkout <branch> [<work>]` | put a worktree on a branch that already exists; `<remote>/<branch>`, or a bare name only one remote has, creates the local branch tracking it, from the refs as last fetched; also `wt co` (`--dry-run`) |
 | `wt pr checkout [<number>]` | put a worktree on a pull request; with no number, pick one from the open ones, your review queue first |
 | `wt pr list` | every open pull request, its state and checks, and the worktree on it |
@@ -96,6 +96,7 @@ examples: `wt <command> --help`.
 | `wt status [<work>]` | each worktree's branch, whether its checkout is clean, and how far behind and ahead of trunk it is; with a worktree named, that one in full with `wt sync`'s verdict; `wt list`'s `PR` column and cache (`--no-pr`, `--refresh`; `--all`, `--roots`, `--profile` for many repositories) |
 | `wt find <pattern>` | resolve a worktree by fuzzy name, across repositories (`--candidates`) |
 | `wt path <work>` / `wt branch <work>` | where a piece of work lives or would go, and its branch; exact, this repository only, for scripts |
+| `wt port [<work>]` | the port a worktree's dev server should use: a hash of the repository and the branch, in 10000–19999, stable per branch; provision.sh and the build get it as `WT_PORT`. Nothing is reserved: `devports` says whether it is free |
 | `wt repos` | every repository wt manages under your roots, with its worktrees and whether wt sync is set up (`--all`, `--roots`, `--profile`, `--paths`) |
 
 **Keep up with trunk**
@@ -125,8 +126,8 @@ examples: `wt <command> --help`.
 | | |
 |---|---|
 | `wt migrate <work> [<type>/<name>]` | move a worktree where it belongs, renaming or retyping it on the way (`--dry-run`, `--force`/`-f`); also `wt move` |
-| `wt adopt <path>` | provision a worktree another tool created (`--relocate`, `--no-build`) |
-| `wt setup [<from-dir>]` | provision the worktree you are in (`--no-build`, `--source` to name what ran it) |
+| `wt adopt <path>` | provision a worktree another tool created (`--relocate`, `--no-build`, `--no-cache`) |
+| `wt setup [<from-dir>]` | provision the worktree you are in (`--no-build`, `--no-cache`, `--source` to name what ran it) |
 | `wt remove <work>` | remove a worktree; delete its branch when merged — on trunk, or as a pull request the cache says landed — keep it when not (`--yes`, `--dry-run`, `.` for the one you are in, `--force`/`-f` past a session, a held lock or hidden files, `--force=<list>` past only those named, `--move-to <dir>` to move it into a folder instead of deleting it, `--keep-superset`, `--json`, `--expect`) |
 | `wt restore <dir>` | put back a worktree `--move-to` moved into `<dir>`, and its branch, from the `recovery.json` there (`--dry-run`, `--json`) |
 | `wt purge <dir>` | delete a worktree `--move-to` moved into `<dir>` for good: the refs pinning its commits, then the folder; refuses a folder no removal made or one a removal or restore left half-way, and finishes a purge that stopped (`--yes`, `--dry-run`, `--json`, `--expect`) |
@@ -632,6 +633,7 @@ is validated: **an unknown or misspelled key is an error, not silence.**
 | `WORKTREE_TYPES` | list | Conventional Commits + `research` `spike` |
 | `DEVELOPER_CONFIG_DIRS` | list | `.cursor .claude .run .vscode .idea` |
 | `DEVELOPER_CONFIG_FILES` | list | empty |
+| `WORKTREE_CACHE_DIRS` | list | empty |
 | `BUILD_INIT_ENABLED` | bool | true when a command is set |
 | `BUILD_INIT_COMMAND` | string | required when build init is enabled |
 | `REQUIRED_BINS` | list | empty |
@@ -662,13 +664,22 @@ Registration never fails a command under any of them. It only applies once
 [your own settings](#what-you-keep) say `superset = true`; a committed file
 cannot switch a desktop integration on for whoever clones the repository.
 
+`WORKTREE_CACHE_DIRS` names gitignored build caches — `(node_modules .gradle
+target)` — that `wt setup` clones from the source checkout before
+`provision.sh` and the build run, so both start warm. The clone is
+copy-on-write (APFS, Btrfs, XFS) and shares the files' data until one changes;
+where the filesystem cannot clone, the cache is skipped with a line saying why,
+never copied. A cache already in the worktree is kept. `--no-cache` skips them.
+
 Retired: `REPO_NAME` (derived), `WORKTREE_LAYOUT` (the tool owns the shape),
 `AWS_SETUP_ENABLED` (became `provision.sh`).
 
 ### `provision.sh`
 
 An optional executable run by `wt setup` after config copying and before build
-init, with the new worktree as its working directory. This is where a repo puts
+init, with the new worktree as its working directory and `WT_PORT` (as
+`wt port` prints it), `WT_BRANCH` and `WT_WORK` in its environment; the build
+command gets the same three. This is where a repo puts
 its own step — decrypting secrets, checking a cloud identity — instead of the
 tool carrying a flag for it.
 
