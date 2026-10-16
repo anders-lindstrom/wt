@@ -15,6 +15,7 @@ import (
 )
 
 func TestPortIsStableAndDiffersBetweenBranches(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	first, err := Port(ctx, "fix/login-crash")
@@ -39,6 +40,7 @@ func TestPortIsStableAndDiffersBetweenBranches(t *testing.T) {
 
 // The hash is pinned: changing it moves every worktree's port.
 func TestPortForIsPinned(t *testing.T) {
+	t.Parallel()
 	if got := PortFor("/r", "fix_wt/a"); got != 14215 {
 		t.Errorf("PortFor = %d, want 14215", got)
 	}
@@ -47,6 +49,7 @@ func TestPortForIsPinned(t *testing.T) {
 // An existing worktree's port is its branch's, by any name, and "." from
 // inside it; the work `wt new` would create gets the port it would have.
 func TestPortOfAnExistingWorktree(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	before, err := Port(ctx, "fix/login-crash")
@@ -69,6 +72,7 @@ func TestPortOfAnExistingWorktree(t *testing.T) {
 // provision.sh and the build command get the worktree's port, branch and
 // work name, and the port is the one `wt port` prints.
 func TestProvisionAndBuildGetWTPort(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	main := testkit.CommittedRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_COMMAND=\"env | grep ^WT_ > build-env.txt\"\n")
 	p := filepath.Join(main, "bin", "worktree", "provision.sh")
 	testkit.MustWrite(t, p, "#!/bin/sh\nenv | grep ^WT_ > provision-env.txt\n")
@@ -117,6 +121,7 @@ func envValue(env []string, key string) string {
 // wt port and WT_PORT agree in a worktree stopped in a rebase, where
 // symbolic-ref has no branch but git worktree list still names it.
 func TestWorktreeEnvDuringARebaseMatchesWtPort(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	testkit.MustWrite(t, filepath.Join(main, "x.txt"), "base")
@@ -147,6 +152,7 @@ func TestWorktreeEnvDuringARebaseMatchesWtPort(t *testing.T) {
 // From a subdirectory of a worktree, as wt setup is run, the environment is
 // the containing worktree's.
 func TestWorktreeEnvInASubdirectoryIsTheWorktrees(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	wt := filepath.Join(filepath.Dir(main), "demo_wt", "fix_wt", "login-crash")

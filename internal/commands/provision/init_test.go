@@ -41,6 +41,7 @@ func bareRepo(t *testing.T) *repo.Repo {
 }
 
 func TestInitMakesAConfiglessRepoOpenable(t *testing.T) {
+	t.Parallel()
 	r := bareRepo(t)
 	if existing, _ := existingConfig(r.Root); existing != "" {
 		t.Fatal("fixture already has a configuration; nothing to init")
@@ -64,6 +65,7 @@ func TestInitMakesAConfiglessRepoOpenable(t *testing.T) {
 }
 
 func TestInitWritesTheAnsweredValues(t *testing.T) {
+	t.Parallel()
 	r := bareRepo(t)
 	ask := func(kit.Answers) (kit.Answers, error) {
 		return kit.Answers{MainBranch: "trunk", BranchPrefix: "chore_wt", BuildCommand: "make build"}, nil
@@ -96,6 +98,7 @@ func TestInitWritesTheAnsweredValues(t *testing.T) {
 }
 
 func TestInitOffersDetectedValuesAsTheDefaultsToAnswer(t *testing.T) {
+	t.Parallel()
 	r := bareRepo(t)
 	var offered kit.Answers
 	ask := func(defaults kit.Answers) (kit.Answers, error) {
@@ -125,6 +128,7 @@ func confPath(r *repo.Repo) string {
 }
 
 func TestInitCommentsEveryRemainingKeyAtItsDefault(t *testing.T) {
+	t.Parallel()
 	r := bareRepo(t)
 	var buf bytes.Buffer
 	if err := Init(r, InitOptions{}, &buf); err != nil {
@@ -147,6 +151,7 @@ func TestInitCommentsEveryRemainingKeyAtItsDefault(t *testing.T) {
 // they have to be assignments that actually work — not prose that looks like
 // one. Uncommenting the whole file must parse, and must not change a thing.
 func TestInitCommentedDefaultsParseAndChangeNothingWhenUncommented(t *testing.T) {
+	t.Parallel()
 	r := bareRepo(t)
 	var buf bytes.Buffer
 	if err := Init(r, InitOptions{}, &buf); err != nil {
@@ -195,6 +200,7 @@ func mustReadFile(t *testing.T, path string) []byte {
 }
 
 func TestInitReAsksWhenAnAnswerWouldNotValidate(t *testing.T) {
+	t.Parallel()
 	r := bareRepo(t)
 	// "wip_wt" yields default type "wip", which is not in WORKTREE_TYPES.
 	answers := []kit.Answers{
@@ -231,6 +237,7 @@ func TestInitReAsksWhenAnAnswerWouldNotValidate(t *testing.T) {
 // An Ask that cannot make progress must not spin: a piped or scripted answer
 // repeats rather than corrects, and a hung `wt init` is worse than a refusal.
 func TestInitGivesUpWhenReAskingChangesNothing(t *testing.T) {
+	t.Parallel()
 	r := bareRepo(t)
 	asked := 0
 	ask := func(kit.Answers) (kit.Answers, error) {
@@ -256,6 +263,7 @@ func TestInitGivesUpWhenReAskingChangesNothing(t *testing.T) {
 
 // Ctrl-D at the prompt aborts. The half-answered state must not reach disk.
 func TestInitWritesNothingWhenTheAnswersAreAbandoned(t *testing.T) {
+	t.Parallel()
 	r := bareRepo(t)
 	ask := func(kit.Answers) (kit.Answers, error) {
 		return kit.Answers{}, io.EOF
@@ -271,6 +279,7 @@ func TestInitWritesNothingWhenTheAnswersAreAbandoned(t *testing.T) {
 }
 
 func TestInitRefusesToOverwriteAnExistingConfig(t *testing.T) {
+	t.Parallel()
 	for _, name := range []string{"worktree.conf", "worktree.toml"} {
 		t.Run(name, func(t *testing.T) {
 			r := bareRepo(t)
@@ -298,6 +307,7 @@ func TestInitRefusesToOverwriteAnExistingConfig(t *testing.T) {
 }
 
 func TestInitForceReplacesAnExistingConfig(t *testing.T) {
+	t.Parallel()
 	r := bareRepo(t)
 	if err := os.MkdirAll(filepath.Dir(confPath(r)), 0o755); err != nil {
 		t.Fatal(err)
@@ -323,6 +333,7 @@ func TestInitForceReplacesAnExistingConfig(t *testing.T) {
 // whether the answered main branch exists or the build command runs. Doctor
 // can, so the last thing init does is hand over to it.
 func TestInitHandsOverToDoctor(t *testing.T) {
+	t.Parallel()
 	r := bareRepo(t)
 	var buf bytes.Buffer
 	if err := Init(r, InitOptions{}, &buf); err != nil {
@@ -338,6 +349,7 @@ func TestInitHandsOverToDoctor(t *testing.T) {
 // wt's own repository ignores bin/ for its build output, which is how this was
 // found.
 func TestInitWarnsWhenTheConfigWouldBeGitIgnored(t *testing.T) {
+	t.Parallel()
 	r := bareRepo(t)
 	if err := os.WriteFile(filepath.Join(r.Root, ".gitignore"), []byte("bin/\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -357,6 +369,7 @@ func TestInitWarnsWhenTheConfigWouldBeGitIgnored(t *testing.T) {
 }
 
 func TestInitStaysQuietWhenTheConfigIsTrackable(t *testing.T) {
+	t.Parallel()
 	r := bareRepo(t)
 	var buf bytes.Buffer
 	if err := Init(r, InitOptions{}, &buf); err != nil {

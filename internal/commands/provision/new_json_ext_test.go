@@ -30,6 +30,7 @@ func checkoutJSON(t *testing.T, ctx *kit.Context, branch, work string, opts prov
 
 // The plan says what wt new would make, with a token, and makes nothing.
 func TestNewPlanNamesWhatItWouldCreateAndWritesNothing(t *testing.T) {
+	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	before := testkit.RepoState(t, ctx.Repo.MainRoot)
 	p := provisiontest.NewPlanOf(t, ctx, "fix/login-crash", provision.NewOptions{})
@@ -55,6 +56,7 @@ func TestNewPlanNamesWhatItWouldCreateAndWritesNothing(t *testing.T) {
 
 // Every problem the plan knows of is named, and a plan with one has no token.
 func TestNewPlanNamesItsProblems(t *testing.T) {
+	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if _, err := provision.New(ctx, "fix/taken", provision.NewOptions{NoSetup: true}, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
@@ -86,6 +88,7 @@ func TestNewPlanNamesItsProblems(t *testing.T) {
 // The checkout plan pins the branch's commit, and names a branch that is
 // missing or already checked out.
 func TestCheckoutPlanPinsTheBranch(t *testing.T) {
+	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	main := ctx.Repo.MainRoot
 	testkit.GitIn(t, main, "branch", "release-2.1")
@@ -111,6 +114,7 @@ func TestCheckoutPlanPinsTheBranch(t *testing.T) {
 // A clean wt new --json: one object, every side effect with its own result,
 // and the worktree on the commit the plan showed.
 func TestNewJSONReportsEverySideEffect(t *testing.T) {
+	t.Parallel()
 	ctx := provision.ProvisionFixture(t, 0, "true", false)
 	p := provisiontest.NewPlanOf(t, ctx, "fix/login-crash", provision.NewOptions{})
 	r, human, err := provision.RunNewJSON(t, ctx, "fix/login-crash", provision.NewOptions{}, *p.Token)
@@ -142,6 +146,7 @@ func TestNewJSONReportsEverySideEffect(t *testing.T) {
 
 // --expect refuses, creating nothing, when the base moved since the plan.
 func TestNewExpectRefusesAMovedBase(t *testing.T) {
+	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	p := provisiontest.NewPlanOf(t, ctx, "fix/login-crash", provision.NewOptions{})
 	testkit.GitIn(t, ctx.Repo.MainRoot, "commit", "-q", "--allow-empty", "-m", "trunk moved")
@@ -163,6 +168,7 @@ func TestNewExpectRefusesAMovedBase(t *testing.T) {
 
 // A plan problem refuses the run too, with the problem named.
 func TestNewJSONRefusesAPlanProblem(t *testing.T) {
+	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	r, _, err := provision.RunNewJSON(t, ctx, "wibble/thing", provision.NewOptions{}, "")
 	if err == nil || r.Outcome != provision.CreateRefused || provisiontest.Codes(r.Problems) != "unknownType" || r.Error == nil {
@@ -173,6 +179,7 @@ func TestNewJSONRefusesAPlanProblem(t *testing.T) {
 // wt checkout --expect refuses a branch that moved since the plan: the
 // exact-name guarantee.
 func TestCheckoutExpectRefusesAMovedBranch(t *testing.T) {
+	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	main := ctx.Repo.MainRoot
 	testkit.GitIn(t, main, "branch", "release-2.1")
@@ -206,6 +213,7 @@ func TestCheckoutExpectRefusesAMovedBranch(t *testing.T) {
 // here a post-checkout hook commits — is created with problems, never a
 // quiet success.
 func TestNewJSONNamesACommitThatIsNotTheBase(t *testing.T) {
+	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	hook := filepath.Join(ctx.Repo.MainRoot, ".git", "hooks", "post-checkout")
 	testkit.MustWrite(t, hook, "#!/bin/sh\ngit -c user.email=t@e.com -c user.name=T commit -q --allow-empty -m moved\n")
@@ -222,6 +230,7 @@ func TestNewJSONNamesACommitThatIsNotTheBase(t *testing.T) {
 // Superset's outcome is a step of its own: registered with a running app that
 // knows the repository, skipped when it is not running.
 func TestNewJSONReportsSuperset(t *testing.T) {
+	// Not parallel: swaps ProbeSuperset.
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	testkit.OptIn(ctx)
 	provisiontest.FakeSuperset(t, ctx.Repo.MainRoot, true)
@@ -248,6 +257,7 @@ func TestNewJSONReportsSuperset(t *testing.T) {
 // Only a local branch by that exact name is checked out: a revision
 // expression that happens to resolve is not one.
 func TestCheckoutPlanTakesOnlyABranchName(t *testing.T) {
+	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if got := provisiontest.Codes(provisiontest.CheckoutPlanOf(t, ctx, "main~0", "rev").Problems); got != "branchMissing" {
 		t.Errorf("main~0: %s", got)
@@ -257,6 +267,7 @@ func TestCheckoutPlanTakesOnlyABranchName(t *testing.T) {
 // A name git would refuse as a branch is an invalid name in the plan, not a
 // token for a run that cannot succeed.
 func TestNewPlanRefusesABranchNameGitWouldRefuse(t *testing.T) {
+	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	for _, spec := range []string{"fix/bad name", "fix/a..b", "fix/x.lock"} {
 		if p := provisiontest.NewPlanOf(t, ctx, spec, provision.NewOptions{}); provisiontest.Codes(p.Problems) != "invalidName" || p.Token != nil {
@@ -268,6 +279,7 @@ func TestNewPlanRefusesABranchNameGitWouldRefuse(t *testing.T) {
 // --no-cache reaches the cache step above Setup: the same repository clones
 // without it and reports the step skipped with it.
 func TestNewJSONNoCacheSkipsTheCacheStep(t *testing.T) {
+	// Not parallel: swaps cloneDir.
 	for _, tc := range []struct {
 		noCache bool
 		result  string

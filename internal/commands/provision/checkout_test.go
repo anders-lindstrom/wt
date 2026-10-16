@@ -10,6 +10,7 @@ import (
 )
 
 func TestWorkNameFromBranch(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]string{
 		"feature/pr-123":     "feature-pr-123",
 		"fix_wt/login-crash": "login-crash",
@@ -24,6 +25,7 @@ func TestWorkNameFromBranch(t *testing.T) {
 }
 
 func TestCheckoutPutsAWorktreeOnAnExistingBranch(t *testing.T) {
+	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "feature/pr-123")
 
@@ -42,6 +44,7 @@ func TestCheckoutPutsAWorktreeOnAnExistingBranch(t *testing.T) {
 }
 
 func TestCheckoutHonoursAnExplicitWorkName(t *testing.T) {
+	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "feature/pr-123")
 
@@ -57,6 +60,7 @@ func TestCheckoutHonoursAnExplicitWorkName(t *testing.T) {
 
 // Checkout must never create a branch: it exists to work on one that is there.
 func TestCheckoutRefusesAMissingBranch(t *testing.T) {
+	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
 	if _, err := Checkout(ctx, "no-such-branch", "", NewOptions{NoSetup: true}, &buf); err == nil {
@@ -68,6 +72,7 @@ func TestCheckoutRefusesAMissingBranch(t *testing.T) {
 }
 
 func TestCheckoutRefusesAnOccupiedPath(t *testing.T) {
+	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "dup")
 	var buf bytes.Buffer

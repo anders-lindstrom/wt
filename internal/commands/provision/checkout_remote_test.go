@@ -44,6 +44,7 @@ func UpstreamOf(t *testing.T, ctx *kit.Context, branch string) string {
 // wt checkout <remote>/<branch> makes the local branch at the
 // remote-tracking commit, tracking it, and puts the worktree on it.
 func TestCheckoutCreatesATrackingBranchFromARemote(t *testing.T) {
+	t.Parallel()
 	ctx := RemoteFixture(t, []string{"origin"}, "origin/feature/x")
 	want := OidOf(t, ctx, "refs/remotes/origin/feature/x")
 
@@ -72,6 +73,7 @@ func TestCheckoutCreatesATrackingBranchFromARemote(t *testing.T) {
 // A bare name no local branch has is looked for on every remote; exactly
 // one having it is enough.
 func TestCheckoutBareNameFindsTheOneRemoteThatHasIt(t *testing.T) {
+	t.Parallel()
 	ctx := RemoteFixture(t, []string{"origin", "upstream"}, "upstream/release-2.1", "origin/other")
 	path, err := Checkout(ctx, "release-2.1", "", NewOptions{NoSetup: true}, &bytes.Buffer{})
 	if err != nil {
@@ -85,6 +87,7 @@ func TestCheckoutBareNameFindsTheOneRemoteThatHasIt(t *testing.T) {
 // A local branch literally called <remote>/<branch> is the exact name, and
 // wins over the remote-tracking ref.
 func TestCheckoutExactLocalNameWinsOverARemote(t *testing.T) {
+	t.Parallel()
 	ctx := RemoteFixture(t, []string{"origin"}, "origin/topic")
 	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "origin/topic", "main")
 	path, err := Checkout(ctx, "origin/topic", "odd", NewOptions{NoSetup: true}, &bytes.Buffer{})
@@ -103,6 +106,7 @@ func TestCheckoutExactLocalNameWinsOverARemote(t *testing.T) {
 // git's own inference cannot tell team's origin/topic from team/origin's
 // topic, so wt sets the upstream itself.
 func TestCheckoutWithOverlappingRemoteNames(t *testing.T) {
+	t.Parallel()
 	ctx := RemoteFixture(t, []string{"team"}, "team/origin/topic")
 	// git remote add refuses the overlap; configuration by hand does not.
 	testkit.GitIn(t, ctx.Repo.MainRoot, "config", "remote.team/origin.url", "https://example.invalid/t.git")
@@ -125,6 +129,7 @@ func TestCheckoutWithOverlappingRemoteNames(t *testing.T) {
 // is added: a signal while git worktree add runs must not report a branch
 // that exists as never made.
 func TestCheckoutRecordsTheBranchBeforeAddingTheWorktree(t *testing.T) {
+	t.Parallel()
 	ctx := RemoteFixture(t, []string{"origin"}, "origin/topic")
 	target, prob := ResolveCheckout(ctx, "origin/topic")
 	if prob != nil {

@@ -11,6 +11,7 @@ import (
 )
 
 func TestNewCreatesCanonicalWorktreeAndBranch(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -33,6 +34,7 @@ func TestNewCreatesCanonicalWorktreeAndBranch(t *testing.T) {
 }
 
 func TestNewBareWorkNameTakesDefaultType(t *testing.T) {
+	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
 	path, err := New(ctx, "thing", NewOptions{NoSetup: true}, &buf)
@@ -45,6 +47,7 @@ func TestNewBareWorkNameTakesDefaultType(t *testing.T) {
 }
 
 func TestNewRefusesDuplicateWork(t *testing.T) {
+	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
 	if _, err := New(ctx, "fix/dup", NewOptions{NoSetup: true}, &buf); err != nil {
@@ -56,6 +59,7 @@ func TestNewRefusesDuplicateWork(t *testing.T) {
 }
 
 func TestNewRejectsUnknownType(t *testing.T) {
+	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
 	if _, err := New(ctx, "wibble/thing", NewOptions{NoSetup: true}, &buf); err == nil {
@@ -68,6 +72,7 @@ func TestNewRejectsUnknownType(t *testing.T) {
 // feat_wt/. or a path that already exists, with an error about the wrong
 // thing.
 func TestNewRefusesDotAndRootAsAWorkName(t *testing.T) {
+	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
 	for spec, want := range map[string]string{
@@ -88,6 +93,7 @@ func TestNewRefusesDotAndRootAsAWorkName(t *testing.T) {
 // A repository that names its branches without a suffix gets exactly that,
 // and its worktrees do not move for it: the folders are wt's layout.
 func TestNewWithoutABranchSuffixLeavesTheFoldersAlone(t *testing.T) {
+	t.Parallel()
 	conf := testkit.MinimalConf + "WORKTREE_BRANCH_SUFFIX=\"\"\n"
 	ctx, err := kit.Open(testkit.CommittedRepo(t, conf))
 	if err != nil {
@@ -117,6 +123,7 @@ func TestNewWithoutABranchSuffixLeavesTheFoldersAlone(t *testing.T) {
 // The person's own setting names their branches wherever the repository has
 // not made the choice for them.
 func TestTheUserBranchSuffixAppliesWhereTheRepositoryIsSilent(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	path := testkit.UserConfigIn(t)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
@@ -147,6 +154,7 @@ func TestTheUserBranchSuffixAppliesWhereTheRepositoryIsSilent(t *testing.T) {
 // A repository that does name its branches outranks the person: a committed
 // answer is the one everybody working on it shares.
 func TestTheRepositoryOutranksTheUserBranchSuffix(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	path := testkit.UserConfigIn(t)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
@@ -174,6 +182,7 @@ func TestTheRepositoryOutranksTheUserBranchSuffix(t *testing.T) {
 // What a type is called is a naming, not a move: the branch reads the word,
 // the worktree sits under the type, and either spelling names the same work.
 func TestNewNamesTheBranchByTheTypesWord(t *testing.T) {
+	t.Parallel()
 	conf := testkit.MinimalConf + "WORKTREE_TYPE_NAMES=(feat=feature)\nWORKTREE_BRANCH_SUFFIX=\"\"\n"
 	ctx, err := kit.Open(testkit.CommittedRepo(t, conf))
 	if err != nil {
@@ -206,6 +215,7 @@ func TestNewNamesTheBranchByTheTypesWord(t *testing.T) {
 // One person's naming travels with them: it applies in every repository that
 // has not named its types itself, and only to the types that repository has.
 func TestTheUserTypeNamesApplyWhereTheRepositoryIsSilent(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	path := testkit.UserConfigIn(t)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
@@ -235,6 +245,7 @@ func TestTheUserTypeNamesApplyWhereTheRepositoryIsSilent(t *testing.T) {
 // A repository that names its types has named them for everybody who clones
 // it, whatever they call them elsewhere.
 func TestTheRepositoryOutranksTheUserTypeNames(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	path := testkit.UserConfigIn(t)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)

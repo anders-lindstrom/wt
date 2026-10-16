@@ -19,6 +19,7 @@ import (
 // wt has just made. Superset is asked to adopt the branch — never to create a
 // checkout, which it already has.
 func TestNewRegistersTheWorktreeWithSuperset(t *testing.T) {
+	// Not parallel: swaps ProbeSuperset.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -53,6 +54,7 @@ func TestNewRegistersTheWorktreeWithSuperset(t *testing.T) {
 // before, saying at most one line about it — and saying nothing at all on a
 // machine that has no Superset.
 func TestNewSurvivesEverySupersetState(t *testing.T) {
+	// Not parallel: swaps ProbeSuperset.
 	for name, tc := range map[string]struct {
 		mode   config.SupersetMode
 		status superset.Status
@@ -127,6 +129,7 @@ func supersetLine(out string) string {
 // A branch that already has a workspace is Superset's answer, not wt's
 // problem: nothing is duplicated and nothing fails.
 func TestRegisterSupersetIsIdempotent(t *testing.T) {
+	// Not parallel: swaps ProbeSuperset.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -157,6 +160,7 @@ func TestRegisterSupersetIsIdempotent(t *testing.T) {
 // "the checkout, nothing else", and a workspace is one of the else — Superset
 // answers a new one by running the project's setup script.
 func TestNewSkipsSupersetWhenAsked(t *testing.T) {
+	// Not parallel: swaps ProbeSuperset.
 	for name, opts := range map[string]provision.NewOptions{
 		"--no-superset": {NoSuperset: true},
 		"--no-setup":    {NoSetup: true},
@@ -182,6 +186,7 @@ func TestNewSkipsSupersetWhenAsked(t *testing.T) {
 // Checkout goes through the same tail as New, so a branch someone else pushed
 // reaches Superset the same way.
 func TestCheckoutRegistersToo(t *testing.T) {
+	// Not parallel: swaps ProbeSuperset.
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, err := kit.Open(main)
 	if err != nil {
@@ -204,6 +209,7 @@ func TestCheckoutRegistersToo(t *testing.T) {
 // Superset's status calling a serving host stale does not stop a registration:
 // the host is asked, answers, and the worktree is registered with no remark.
 func TestNewRegistersThoughStatusCallsTheHostStale(t *testing.T) {
+	// Not parallel: swaps ProbeSuperset, SupersetHostCommand; sets environment variables for the whole test binary.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -235,6 +241,7 @@ func TestNewRegistersThoughStatusCallsTheHostStale(t *testing.T) {
 // not apply here says nothing. Under auto that is silence; a repository that
 // asked for registration with SUPERSET_REGISTER=on is told.
 func TestNewSaysNothingAboutARepositorySupersetDoesNotTrack(t *testing.T) {
+	// Not parallel: swaps ProbeSuperset.
 	for name, tc := range map[string]struct {
 		mode config.SupersetMode
 		want string
@@ -274,6 +281,7 @@ func TestNewSaysNothingAboutARepositorySupersetDoesNotTrack(t *testing.T) {
 // A worktree with no branch has nothing Superset can adopt: Superset takes the
 // checkout git already has for a named branch.
 func TestRegisterSupersetNeedsABranch(t *testing.T) {
+	// Not parallel: swaps ProbeSuperset.
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, err := kit.Open(main)
 	if err != nil {
@@ -297,6 +305,7 @@ func TestRegisterSupersetNeedsABranch(t *testing.T) {
 // Provisioning that failed does not cost the registration: the worktree is on
 // disk and on its branch, which is all Superset is told.
 func TestRegisterSupersetRunsEvenWhenSetupFailed(t *testing.T) {
+	// Not parallel: swaps ProbeSuperset.
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	// A provision.sh that fails is the one thing Setup reports and carries on
 	// from; the worktree is made either way.

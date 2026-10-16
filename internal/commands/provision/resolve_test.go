@@ -13,6 +13,7 @@ import (
 // default-type fallback used to send a bare name to feat_wt/ and print a path
 // that did not exist while the worktree sat under chore_wt/.
 func TestPathAndBranchPreferAnExistingWorktreeOfAnotherType(t *testing.T) {
+	t.Parallel()
 	ctx := locatable(t, "chore/wt-migration")
 	want, err := kit.Locate(ctx, "chore/wt-migration")
 	if err != nil {
@@ -32,6 +33,7 @@ func TestPathAndBranchPreferAnExistingWorktreeOfAnotherType(t *testing.T) {
 // One work name under two types is refused exactly as Locate refuses it,
 // rather than resolved to whichever the default type implies.
 func TestPathAndBranchRefuseAnAmbiguousWorkName(t *testing.T) {
+	t.Parallel()
 	ctx := locatable(t, "feat/arch", "fix/arch")
 
 	for name, resolve := range map[string]func(*kit.Context, string) (string, error){"Path": kit.Path, "Branch": kit.Branch} {
@@ -53,6 +55,7 @@ func TestPathAndBranchRefuseAnAmbiguousWorkName(t *testing.T) {
 // With no worktree to find, a bare name still takes the default type, even
 // while other worktrees exist.
 func TestPathAndBranchFallBackToTheDefaultTypeWhenNothingExists(t *testing.T) {
+	t.Parallel()
 	ctx := locatable(t, "chore/wt-migration")
 
 	if got, err := kit.Branch(ctx, "login-crash"); err != nil || got != "feat_wt/login-crash" {
@@ -69,6 +72,7 @@ func TestPathAndBranchFallBackToTheDefaultTypeWhenNothingExists(t *testing.T) {
 // exactly answers rather than refusing the type. The refusal stays for a spec
 // that names nothing.
 func TestPathAndBranchAnswerForAnExistingWorktreeOfAnUndeclaredType(t *testing.T) {
+	t.Parallel()
 	ctx := locatable(t)
 	foreign := testkit.WorktreeAt(t, ctx.Repo.MainRoot, "wibble_wt/thing", filepath.Join(ctx.Repo.Parent, "demo-thing"))
 
@@ -87,6 +91,7 @@ func TestPathAndBranchAnswerForAnExistingWorktreeOfAnUndeclaredType(t *testing.T
 // parse, which has nothing to say about it, as before. "/" and "." from
 // inside it are the ways to ask for it (see TestPathAndBranchAnswerForRoot).
 func TestPathDoesNotAnswerForTheMainCheckout(t *testing.T) {
+	t.Parallel()
 	ctx := locatable(t)
 	if got, err := kit.Path(ctx, ctx.Repo.MainRoot); err == nil {
 		t.Errorf("want an error for the main checkout's path, got %q", got)
@@ -96,6 +101,7 @@ func TestPathDoesNotAnswerForTheMainCheckout(t *testing.T) {
 // Nothing at all is not a spec, and not "." either, whatever filepath.Clean
 // makes of an empty string.
 func TestPathAndBranchRefuseAnEmptySpec(t *testing.T) {
+	t.Parallel()
 	ctx := locatable(t, "fix/login-crash")
 	wt, err := kit.Locate(ctx, "login-crash")
 	if err != nil {
@@ -116,6 +122,7 @@ func TestPathAndBranchRefuseAnEmptySpec(t *testing.T) {
 // "/" is the main checkout by name: its path, and trunk as the repository
 // configures it, from wherever the caller stands.
 func TestPathAndBranchAnswerForRoot(t *testing.T) {
+	t.Parallel()
 	ctx := locatable(t, "fix/login-crash")
 	wt, err := kit.Locate(ctx, "login-crash")
 	if err != nil {
@@ -143,6 +150,7 @@ func TestPathAndBranchAnswerForRoot(t *testing.T) {
 // A detached worktree is found by its path but has no branch to print: an
 // error, not an empty line that exits 0.
 func TestBranchRefusesADetachedWorktree(t *testing.T) {
+	t.Parallel()
 	ctx := locatable(t)
 	detached := filepath.Join(ctx.Repo.Parent, "demo-detached")
 	testkit.GitIn(t, ctx.Repo.MainRoot, "worktree", "add", "-q", "--detach", detached)

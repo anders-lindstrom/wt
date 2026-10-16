@@ -14,6 +14,7 @@ import (
 // With superset off, SUPERSET_REGISTER=on still gets nothing: no subprocess,
 // nothing on stderr.
 func TestUserSupersetOffBeatsTheRepository(t *testing.T) {
+	// Not parallel: swaps ProbeSuperset.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
