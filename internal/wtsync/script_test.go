@@ -187,7 +187,7 @@ func TestFromRuleBuildsScript(t *testing.T) {
 // stoppedRebaseWithScript builds a repository whose trunk declares run as a
 // script strategy for v.txt (trunk 1.0.5, branch 1.0.1, so a rebase always
 // stops on it), fetches it into an "origin" remote pointing at the same
-// repository the way commands.syncRepo does, and stops a rebase of the
+// repository the way provisiontest.SyncRepo does, and stops a rebase of the
 // feature worktree onto main.
 func stoppedRebaseWithScript(t *testing.T, script string) (dir, wt string) {
 	t.Helper()
