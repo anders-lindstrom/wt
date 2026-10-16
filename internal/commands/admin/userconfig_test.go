@@ -17,6 +17,7 @@ import (
 // Doctor says the switch is off and how to change it, and does not count the
 // person's own choice as a problem.
 func TestDoctorSaysSupersetIsOffAtUserLevel(t *testing.T) {
+	// Not parallel: swaps provision.ProbeSuperset.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -45,6 +46,7 @@ func TestDoctorSaysSupersetIsOffAtUserLevel(t *testing.T) {
 
 // A broken user file is a doctor finding, not a reason for doctor to refuse.
 func TestDoctorReportsABrokenUserConfig(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	path := testkit.UserConfigIn(t)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)

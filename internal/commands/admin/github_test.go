@@ -18,6 +18,7 @@ import (
 // difference between `wt pr` and `wt list`: here an inactive integration is
 // an error a person can act on.
 func TestGitHubGateNamesTheGateThatFailed(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	for name, tc := range map[string]struct {
 		set  func(t *testing.T, ctx *kit.Context)
 		want string
@@ -66,6 +67,7 @@ func TestGitHubGateNamesTheGateThatFailed(t *testing.T) {
 // The happy path: somebody else's branch, so the worktree is named for the
 // pull request, and gh is the one that puts it on the branch.
 func TestPRCheckoutMakesAWorktreeOnThePullRequestsBranch(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -96,6 +98,7 @@ func TestPRCheckoutMakesAWorktreeOnThePullRequestsBranch(t *testing.T) {
 // A head branch that already follows this repository's convention keeps its
 // own name, so a branch wt made lands where `wt new` would have put it.
 func TestPRCheckoutKeepsAWtBranchsOwnName(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -115,6 +118,7 @@ func TestPRCheckoutKeepsAWtBranchsOwnName(t *testing.T) {
 // The branch is already in a worktree: that path is the answer, nothing is
 // made, and the exit is a success so `cd "$(wt pr checkout 7)"` still works.
 func TestPRCheckoutOnABranchAlreadyCheckedOutSaysWhere(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -146,6 +150,7 @@ func TestPRCheckoutOnABranchAlreadyCheckedOutSaysWhere(t *testing.T) {
 // worktree added with --no-checkout reads to git as one whose every tracked
 // file was deleted, and an unforced remove refuses it.
 func TestPRCheckoutLeavesNothingBehindWhenGhFails(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	if err := os.WriteFile(filepath.Join(main, "README.md"), []byte("hello\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -185,6 +190,7 @@ func TestPRCheckoutLeavesNothingBehindWhenGhFails(t *testing.T) {
 // Without a number the open pull requests are listed and handed to the
 // picker, and what it picks is what gets checked out.
 func TestPRCheckoutWithoutANumberAsks(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -217,6 +223,7 @@ func TestPRCheckoutWithoutANumberAsks(t *testing.T) {
 
 // With nobody to ask, `wt pr checkout` says so rather than choosing.
 func TestPRCheckoutWithoutANumberOrAPickerRefuses(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -231,6 +238,7 @@ func TestPRCheckoutWithoutANumberOrAPickerRefuses(t *testing.T) {
 // doctor's GitHub section: what it found, and never a problem — a machine
 // without gh is an ordinary machine.
 func TestDoctorReportsGitHubState(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	for name, tc := range map[string]struct {
 		set  func(t *testing.T, ctx *kit.Context)
 		want string
@@ -292,6 +300,7 @@ func TestDoctorReportsGitHubState(t *testing.T) {
 
 // wt pr list is the same facts read from the pull request's end.
 func TestPRListNamesTheWorktreeOnEachPullRequest(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -326,6 +335,7 @@ func TestPRListNamesTheWorktreeOnEachPullRequest(t *testing.T) {
 }
 
 func TestPRListSaysWhenThereAreNone(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -344,6 +354,7 @@ func TestPRListSaysWhenThereAreNone(t *testing.T) {
 // this repository's, and pr-<number>-<branch> otherwise, under the type the
 // branch suggests, cut to something a person can type.
 func TestPRWorkName(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -391,6 +402,7 @@ func TestPRWorkName(t *testing.T) {
 // checkout` fetches that branch by name — so a merged pull request is picked
 // up from refs/pull/<n>/head instead. An open one gets no such second chance.
 func TestPRCheckoutOfAMergedPullRequestUsesThePullRef(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	if err := os.WriteFile(filepath.Join(main, "README.md"), []byte("hello\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -427,6 +439,7 @@ func TestPRCheckoutOfAMergedPullRequestUsesThePullRef(t *testing.T) {
 // wt pr open hands gh the number and --web; nothing else about it is wt's
 // business.
 func TestPROpenAsksGhToOpenThePullRequest(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -458,6 +471,7 @@ func TestPROpenAsksGhToOpenThePullRequest(t *testing.T) {
 // A worktree with no pull request is one line and a non-zero exit, and no
 // browser window.
 func TestPROpenSaysSoWhenThereIsNone(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -484,6 +498,7 @@ func TestPROpenSaysSoWhenThereIsNone(t *testing.T) {
 
 // Standing in a worktree, `wt pr open` needs no argument.
 func TestPROpenDefaultsToTheWorktreeYouAreIn(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, err := kit.Open(main)
 	if err != nil {
@@ -513,6 +528,7 @@ func TestPROpenDefaultsToTheWorktreeYouAreIn(t *testing.T) {
 // GitHub will not hand over either way leaves nothing behind, and the error
 // reported is gh's own.
 func TestPRCheckoutOfAMergedPullRequestWithNoPullRefFails(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	testkit.GitIn(t, main, "remote", "add", "origin", main)
 	ctx, err := kit.Open(main)
@@ -549,6 +565,7 @@ func TestPRCheckoutOfAMergedPullRequestWithNoPullRefFails(t *testing.T) {
 // A cache nothing can write is a listing that asks GitHub every single time,
 // and nothing else says so. doctor does — as a remark, not a problem.
 func TestDoctorReportsAPRCacheItCannotWrite(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -582,6 +599,7 @@ func TestDoctorReportsAPRCacheItCannotWrite(t *testing.T) {
 
 // With a cache it can write, doctor says where it is.
 func TestDoctorNamesTheCacheItCanWrite(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -632,6 +650,7 @@ func localCommits(t *testing.T, main, branch, base string, n int) string {
 // branch is here already and has gone its own way. wt says so before anything
 // is made, with the counts and the two ways out, and touches nothing.
 func TestPRCheckoutRefusesALocalBranchThatDiverged(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	head := prHead(t, main, 12, "HEAD")
 	tip := localCommits(t, main, "residential_fixes", "HEAD", 2)
@@ -682,6 +701,7 @@ func TestPRCheckoutRefusesALocalBranchThatDiverged(t *testing.T) {
 // A local branch gh can deal with is gh's to deal with: one the pull request
 // is a fast-forward of, and one that is only ahead of it.
 func TestPRCheckoutLeavesAFastForwardToGh(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	for name, local := range map[string]func(t *testing.T, main, head string){
 		"behind": func(t *testing.T, main, _ string) { localCommits(t, main, "residential_fixes", "HEAD", 0) },
 		"ahead": func(t *testing.T, main, head string) {
@@ -721,6 +741,7 @@ func TestPRCheckoutLeavesAFastForwardToGh(t *testing.T) {
 // under the fork owner's name, and a finished pull request's branch may have
 // moved on from the head GitHub recorded.
 func TestPRCheckoutDoesNotSecondGuessWhatItCannotKnow(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	for name, change := range map[string]func(*github.PR){
 		"a fork": func(pr *github.PR) {
 			pr.IsCrossRepository = true
@@ -757,6 +778,7 @@ func TestPRCheckoutDoesNotSecondGuessWhatItCannotKnow(t *testing.T) {
 // so rather than claiming a clean start. A locked worktree is one git refuses
 // to remove on one --force.
 func TestPRCheckoutSaysWhenTheHalfMadeWorktreeIsStillThere(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)

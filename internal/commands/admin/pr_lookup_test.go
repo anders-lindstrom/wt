@@ -15,6 +15,7 @@ import (
 // git gives a branch one worktree. Answering with the main checkout's path
 // would walk `cd "$(wt pr checkout 12)"` into the repository you started in.
 func TestPRCheckoutRefusesAPullRequestOnTrunk(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -38,6 +39,7 @@ func TestPRCheckoutRefusesAPullRequestOnTrunk(t *testing.T) {
 // remote. The worktree goes; so must the branch, or the next attempt finds a
 // branch it did not make and refuses.
 func TestPRCheckoutRemovesABranchGhLeftBehind(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -58,6 +60,7 @@ func TestPRCheckoutRemovesABranchGhLeftBehind(t *testing.T) {
 // A branch that was already here is not gh's to have made, so a failure must
 // not take it.
 func TestPRCheckoutKeepsABranchItDidNotMake(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -78,6 +81,7 @@ func TestPRCheckoutKeepsABranchItDidNotMake(t *testing.T) {
 // The picker leads with what is waiting on you, and says which rows already
 // have a worktree here.
 func TestPRChoicesLeadWithYourReviewQueue(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)

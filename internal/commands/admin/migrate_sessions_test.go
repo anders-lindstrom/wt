@@ -16,6 +16,7 @@ import (
 // Not being able to tell who is in a worktree is not nobody in it: migrate
 // refuses, as remove and sweep do, unless told to go ahead.
 func TestMigrateRefusesWhenTheSessionsCannotBeListed(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	from := testkit.WorktreeAt(t, main, "fix/moving", filepath.Join(ctx.Repo.Parent, "elsewhere"))
@@ -37,6 +38,7 @@ func TestMigrateRefusesWhenTheSessionsCannotBeListed(t *testing.T) {
 
 // The session running wt migrate is not somebody else in the worktree.
 func TestMigrateDoesNotCountTheSessionRunningIt(t *testing.T) {
+	// Not parallel: swaps session.ListSessions; sets environment variables for the whole test binary.
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	from := testkit.WorktreeAt(t, main, "fix/self", filepath.Join(ctx.Repo.Parent, "elsewhere"))
@@ -51,6 +53,7 @@ func TestMigrateDoesNotCountTheSessionRunningIt(t *testing.T) {
 
 // Every session in it is named, not only the first.
 func TestMigrateCountsEverySessionInIt(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	from := testkit.WorktreeAt(t, main, "fix/crowded", filepath.Join(ctx.Repo.Parent, "elsewhere"))
