@@ -18,6 +18,7 @@ import (
 // Each worktree a sweep removes goes into its own folder in the quarantine,
 // with its own recovery.json, and wt restore puts any one of them back.
 func TestSweepQuarantinesEachWorktreeInItsOwnFolder(t *testing.T) {
+	t.Parallel()
 	ctx, _, _ := testkit.SweepRepo(t)
 	one := provisiontest.MergedWorktree(t, ctx, "fix/one")
 	two := provisiontest.MergedWorktree(t, ctx, "feat/one")

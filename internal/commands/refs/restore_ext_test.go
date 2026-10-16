@@ -28,6 +28,7 @@ func branchTip(t *testing.T, ctx *kit.Context, name string) string {
 // §8 step 3: deleted and the name free — made again at the recorded tip,
 // its config with it.
 func TestRestoreRecreatesADeletedBranchWithItsConfig(t *testing.T) {
+	t.Parallel()
 	ctx, path, branch, tip, dir := retiretest.Quarantined(t, "fix/back", false)
 	if ctx.Repo.BranchExists(branch) {
 		t.Fatal("the merged branch should have been deleted")
@@ -53,6 +54,7 @@ func TestRestoreRecreatesADeletedBranchWithItsConfig(t *testing.T) {
 
 // Renamed out of its prefix by the removal: renamed back, config included.
 func TestRestoreRenamesAKeptBranchBack(t *testing.T) {
+	t.Parallel()
 	ctx, path, branch, tip, dir := retiretest.Quarantined(t, "fix/kept-back", true)
 	if !ctx.Repo.BranchExists("kept-back") {
 		t.Fatal("the unmerged branch should have been kept as kept-back")
@@ -73,6 +75,7 @@ func TestRestoreRenamesAKeptBranchBack(t *testing.T) {
 // A branch the removal did not touch is still there at its tip: nothing to
 // do to it.
 func TestRestoreLeavesAnUntouchedBranch(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	path := filepath.Join(ctx.Repo.Parent, "theirs")
@@ -94,6 +97,7 @@ func TestRestoreLeavesAnUntouchedBranch(t *testing.T) {
 // rebase returns to, or as the branch a bisect started from — is not
 // touched, and the worktree comes back detached at its commit.
 func TestRestoreDetachesWhenAnotherWorktreeHasTheBranch(t *testing.T) {
+	t.Parallel()
 	for _, how := range []string{"HEAD", "rebase", "bisect"} {
 		t.Run(how, func(t *testing.T) {
 			ctx, path, branch, tip, dir := retiretest.Quarantined(t, "fix/taken-"+strings.ToLower(how), false)
@@ -120,6 +124,7 @@ func TestRestoreDetachesWhenAnotherWorktreeHasTheBranch(t *testing.T) {
 
 // The kept name counts as the branch too.
 func TestRestoreDetachesWhenAnotherWorktreeHasTheKeptName(t *testing.T) {
+	t.Parallel()
 	ctx, path, _, tip, dir := retiretest.Quarantined(t, "fix/kept-taken", true)
 	testkit.GitIn(t, ctx.Repo.MainRoot, "worktree", "add", "-q", filepath.Join(ctx.Repo.Parent, "holder"), "kept-taken")
 	res := refstest.Restore(t, ctx, dir)
@@ -132,6 +137,7 @@ func TestRestoreDetachesWhenAnotherWorktreeHasTheKeptName(t *testing.T) {
 // The name taken by another tip, the kept name still at the recorded one:
 // HEAD names the kept branch.
 func TestRestoreAttachesToTheKeptNameWhenTheOriginalIsTaken(t *testing.T) {
+	t.Parallel()
 	ctx, path, branch, _, dir := retiretest.Quarantined(t, "fix/attach", true)
 	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", branch, "main")
 	res := refstest.Restore(t, ctx, dir)
@@ -144,6 +150,7 @@ func TestRestoreAttachesToTheKeptNameWhenTheOriginalIsTaken(t *testing.T) {
 // The kept branch moved on: HEAD is detached at the recorded commit, and
 // neither branch is touched.
 func TestRestoreDetachesWhenTheKeptBranchMovedOn(t *testing.T) {
+	t.Parallel()
 	ctx, path, branch, tip, dir := retiretest.Quarantined(t, "fix/moved-on", true)
 	testkit.GitIn(t, ctx.Repo.MainRoot, "update-ref", "refs/heads/moved-on", "main")
 	res := refstest.Restore(t, ctx, dir)
@@ -161,6 +168,7 @@ func TestRestoreDetachesWhenTheKeptBranchMovedOn(t *testing.T) {
 // dir that held HEAD is out of the repository. Refs pin them, so gc cannot
 // take them, and they go when the restore is done.
 func TestQuarantinePinsTheCommitsAgainstGC(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/squashed-away")
 	testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "only on the branch")
 	tip := strings.TrimSpace(testkit.GitOut(t, path, "rev-parse", "HEAD"))
@@ -192,6 +200,7 @@ func TestQuarantinePinsTheCommitsAgainstGC(t *testing.T) {
 // parent folders can go once it is empty: restore makes the parents again,
 // never the directories themselves.
 func TestRestoreMakesTheParentsThatWentMeanwhile(t *testing.T) {
+	t.Parallel()
 	ctx, path, branch, _, dir := retiretest.Quarantined(t, "fix/lonely", false)
 	testkit.GitIn(t, ctx.Repo.MainRoot, "worktree", "prune")
 	testkit.GitIn(t, ctx.Repo.MainRoot, "gc", "-q")
@@ -209,6 +218,7 @@ func TestRestoreMakesTheParentsThatWentMeanwhile(t *testing.T) {
 // is still in use: restore only unlocks it and retires the record, whatever
 // happened to its branch since.
 func TestRestoreOnlyUnlocksAWorktreeThatNeverMoved(t *testing.T) {
+	// Not parallel: swaps quarantine.AfterSave.
 	for _, how := range []string{"stopped after the lock", "the move failed"} {
 		t.Run(how, func(t *testing.T) {
 			ctx, path := provisiontest.SafetyWorktree(t, "fix/stayed")
@@ -249,6 +259,7 @@ func TestRestoreOnlyUnlocksAWorktreeThatNeverMoved(t *testing.T) {
 // A branch somebody made again at the same tip, with config of its own, is
 // left with that config: the old section is not stacked on it.
 func TestRestoreDoesNotStackOldConfigOnNew(t *testing.T) {
+	t.Parallel()
 	ctx, path, branch, tip, dir := retiretest.Quarantined(t, "fix/reconfigured", false)
 	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", branch, tip)
 	testkit.GitIn(t, ctx.Repo.MainRoot, "config", "branch."+branch+".description", "theirs")
@@ -263,6 +274,7 @@ func TestRestoreDoesNotStackOldConfigOnNew(t *testing.T) {
 // so a new worktree that takes the same id is never the one git in the
 // quarantine works on; restore names the original again.
 func TestQuarantinedCheckoutPointsAtItsOwnAdminDir(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/same-id")
 	before := testkit.MustRead(t, filepath.Join(path, ".git"))
 	dir := testkit.TrashFor(t, ctx)
@@ -282,6 +294,7 @@ func TestQuarantinedCheckoutPointsAtItsOwnAdminDir(t *testing.T) {
 // gittree's rule: a quarantine's lock with no recovery.json was stopped
 // before anything moved, and restoring it is unlocking it.
 func TestRestoreUnlocksAQuarantineLockWithNoRecord(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/orphan-lock")
 	dir := testkit.TrashFor(t, ctx)
 	if err := os.Mkdir(dir, 0o755); err != nil {
@@ -301,6 +314,7 @@ func TestRestoreUnlocksAQuarantineLockWithNoRecord(t *testing.T) {
 // A removal that stops after any journal write — or after a step it ran but
 // did not get to record — is put back by wt restore.
 func TestRestorePutsBackARemovalStoppedAtEveryStep(t *testing.T) {
+	// Not parallel: swaps quarantine.AfterSave.
 	if testing.Short() {
 		t.Skip("integration: stops the run at every step, over real repositories")
 	}
@@ -353,6 +367,7 @@ func TestRestorePutsBackARemovalStoppedAtEveryStep(t *testing.T) {
 
 // A restore that stops after any journal write is finished by the next.
 func TestRestoreFinishesARestoreStoppedAtEveryStep(t *testing.T) {
+	// Not parallel: swaps quarantine.AfterSave.
 	if testing.Short() {
 		t.Skip("integration: stops the run at every step, over real repositories")
 	}
@@ -387,6 +402,7 @@ func TestRestoreFinishesARestoreStoppedAtEveryStep(t *testing.T) {
 // resumes: the branch is read again before the worktree is registered, and
 // a branch that vanished or moved since leaves HEAD detached, never on it.
 func TestRestoreResumedReadsTheBranchAgain(t *testing.T) {
+	// Not parallel: swaps quarantine.AfterSave.
 	for _, change := range []string{"deleted", "moved"} {
 		t.Run(change, func(t *testing.T) {
 			ctx, path, branch, tip, dir := retiretest.Quarantined(t, "fix/resume-"+change, false)
@@ -415,6 +431,7 @@ func TestRestoreResumedReadsTheBranchAgain(t *testing.T) {
 // Config is put back entry by entry, so a restore stopped between two of
 // them adds the rest, and none twice.
 func TestRestoreFinishesAConfigSectionPutBackInPart(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/two-keys")
 	branch := "fix_wt/two-keys"
 	testkit.GitIn(t, ctx.Repo.MainRoot, "config", "branch."+branch+".remote", "origin")
@@ -449,6 +466,7 @@ func TestRestoreFinishesAConfigSectionPutBackInPart(t *testing.T) {
 // A rename that went through and a run that stopped before its fsync, and a
 // delete that stopped between the ref and its config, are put back too.
 func TestRestorePutsBackARemovalStoppedInsideAStep(t *testing.T) {
+	// Not parallel: swaps repo.AfterRefDeleted and quarantine.AfterRename.
 	for _, point := range []string{"checkout", "admin", "ref deleted"} {
 		t.Run(point, func(t *testing.T) {
 			ctx, path := provisiontest.SafetyWorktree(t, "fix/inside")
@@ -490,6 +508,7 @@ func TestRestorePutsBackARemovalStoppedInsideAStep(t *testing.T) {
 // config back owns that branch when it is run again: the entries still
 // missing go back, none twice, and a value set since is left as it is.
 func TestRestoreRetryFinishesTheConfigOfABranchItMade(t *testing.T) {
+	// Not parallel: swaps repo.BeforeConfigAdd.
 	for _, newer := range []bool{false, true} {
 		name := "failed"
 		if newer {
@@ -546,6 +565,7 @@ func TestRestoreRetryFinishesTheConfigOfABranchItMade(t *testing.T) {
 // then failed a config write, then runs a third time: the branch stays its
 // own throughout, and the config comes back whole.
 func TestRestoreKeepsABranchItMadeAcrossTwoFailures(t *testing.T) {
+	// Not parallel: swaps repo.BeforeConfigAdd.
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/thrice")
 	branch := "fix_wt/thrice"
 	section := "branch." + branch + "."
@@ -591,6 +611,7 @@ func TestRestoreKeepsABranchItMadeAcrossTwoFailures(t *testing.T) {
 
 // A quarantine lock whose folder is gone too is still taken off.
 func TestRestoreUnlocksAnOrphanWhoseFolderIsGone(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/orphan-gone")
 	dir := testkit.TrashFor(t, ctx)
 	testkit.GitIn(t, ctx.Repo.MainRoot, "worktree", "lock", "--reason", quarantine.LockReason(dir), path)

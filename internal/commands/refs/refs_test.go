@@ -56,6 +56,7 @@ func RefResultOf(t *testing.T, r Result, id string) *RefResultItem {
 // The plan names every backup and what it is, measures age from when the
 // branch was made rather than from its commits, and writes nothing.
 func TestRefsPlanSortsTheBackups(t *testing.T) {
+	t.Parallel()
 	ctx, main := testkit.BackupsRepo(t)
 	before := testkit.RepoState(t, main)
 	p, err := RefsPlanJSON(t, ctx, Options{NoFetch: true})
@@ -106,6 +107,7 @@ func TestRefsPlanSortsTheBackups(t *testing.T) {
 // A ref that moves between the plan and its move is kept, and the pin is
 // not made.
 func TestRefsSweepKeepsARefThatMoved(t *testing.T) {
+	t.Parallel()
 	ctx, main := testkit.BackupsRepo(t)
 	plan, err := planRefs(ctx, Options{NoFetch: true}, &bytes.Buffer{})
 	if err != nil {
@@ -135,6 +137,7 @@ func TestRefsSweepKeepsARefThatMoved(t *testing.T) {
 // A branch a live quarantine names is kept: restoring the quarantine would
 // need it.
 func TestRefsSweepKeepsWhatAQuarantineNames(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/trashed")
 	tip := strings.TrimSpace(testkit.GitOut(t, path, "rev-parse", "HEAD"))
 	var buf bytes.Buffer
@@ -165,6 +168,7 @@ func TestRefsSweepKeepsWhatAQuarantineNames(t *testing.T) {
 // The journal a signal finishes writes one object: the row in flight read
 // back and interrupted.
 func TestRefsJournalWritesOneObjectWhenInterrupted(t *testing.T) {
+	t.Parallel()
 	ctx, _ := testkit.BackupsRepo(t)
 	plan, err := planRefs(ctx, Options{NoFetch: true}, &bytes.Buffer{})
 	if err != nil {
@@ -197,6 +201,7 @@ func TestRefsJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 // branches. The time is logged (go test -v -run TestRefsPlanTime); the
 // bound is only there to catch a pass per backup per container.
 func TestRefsPlanTime(t *testing.T) {
+	// Not parallel: times the plan against a wall-clock bound.
 	if testing.Short() {
 		t.Skip("performance: builds 300 commits and 150 refs")
 	}
@@ -254,6 +259,7 @@ func TestRefsPlanTime(t *testing.T) {
 // --remote needs origin to fetch from and push to one and the same URL, with
 // no secret in it; the plan names that URL, redacted, and the token covers it.
 func TestRefsRemoteEndpoint(t *testing.T) {
+	t.Parallel()
 	ctx, main, origin := testkit.SweepRepo(t)
 	p, err := RefsPlanJSON(t, ctx, Options{Remote: true, NoFetch: true, OpenPRs: testkit.NoPRs})
 	if err != nil || p.Endpoint == nil || p.Endpoint.URL != origin || !strings.HasPrefix(p.Endpoint.Digest, "sha256:") {
@@ -301,6 +307,7 @@ func TestRefsRemoteEndpoint(t *testing.T) {
 // A remote row the push cannot delete drops its pin and leaves origin as it
 // was; one origin moved after the plan is kept and pinned nowhere.
 func TestRefsSweepRemoteGuards(t *testing.T) {
+	t.Parallel()
 	ctx, main, origin := testkit.SweepRepo(t)
 	testkit.GitIn(t, main, "commit", "-q", "--allow-empty", "-m", "second")
 	testkit.GitIn(t, main, "push", "-q", "origin", "main", "main:refs/heads/backup/rejected", "main~1:refs/heads/backup/moved")
@@ -344,6 +351,7 @@ func TestRefsSweepRemoteGuards(t *testing.T) {
 
 // A branch checked out after the plan is kept at apply time.
 func TestRefsSweepKeepsABranchCheckedOutSinceThePlan(t *testing.T) {
+	t.Parallel()
 	ctx, main := testkit.BackupsRepo(t)
 	plan, err := planRefs(ctx, Options{NoFetch: true}, &bytes.Buffer{})
 	if err != nil {
@@ -368,6 +376,7 @@ func TestRefsSweepKeepsABranchCheckedOutSinceThePlan(t *testing.T) {
 // A remote backup whose object is not here is kept: containment cannot be
 // read.
 func TestRefsRemoteObjectMissing(t *testing.T) {
+	t.Parallel()
 	ctx, main, origin := testkit.SweepRepo(t)
 	other := filepath.Join(t.TempDir(), "other")
 	testkit.GitIn(t, main, "clone", "-q", origin, other)
