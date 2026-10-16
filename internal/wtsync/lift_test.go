@@ -79,6 +79,7 @@ func readWT(t *testing.T, wt, path string) string {
 // lifts the line to trunk plus one patch; a later pick that does not touch
 // the line leaves it there.
 func TestSimulateLiftsAVersionBothSidesBumpedToTheSameNumber(t *testing.T) {
+	t.Parallel()
 	dir, _, cfg := liftRepo(t,
 		[]map[string]string{{"app.yaml": appYAML("1.2.3", "1.5.1"), "a.txt": "trunk\n"}},
 		[]map[string]string{{"app.yaml": appYAML("1.2.3", "1.5.1"), "b.txt": "b2\n"}, {"b.txt": "b3\n"}})
@@ -102,6 +103,7 @@ func TestSimulateLiftsAVersionBothSidesBumpedToTheSameNumber(t *testing.T) {
 }
 
 func TestRebaseLiftsAVersionBothSidesBumpedToTheSameNumber(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := liftRepo(t,
 		[]map[string]string{{"app.yaml": appYAML("1.2.3", "1.5.1"), "a.txt": "trunk\n"}},
 		[]map[string]string{{"app.yaml": appYAML("1.2.3", "1.5.1"), "b.txt": "b2\n"}, {"b.txt": "b3\n"}})
@@ -140,6 +142,7 @@ func TestRebaseLiftsAVersionBothSidesBumpedToTheSameNumber(t *testing.T) {
 // with nothing committed, and the lift is committed under the pick's own
 // author and message.
 func TestRebaseLiftsABumpCommitGitWouldDropAsAlreadyUpstream(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := liftRepo(t,
 		[]map[string]string{{"app.yaml": appYAML("1.2.3", "1.5.1")}},
 		[]map[string]string{{"app.yaml": appYAML("1.2.3", "1.5.1")}, {"b.txt": "b2\n"}})
@@ -172,6 +175,7 @@ func TestRebaseLiftsABumpCommitGitWouldDropAsAlreadyUpstream(t *testing.T) {
 // a person's own git rebase --continue does not stop at the run's marks; a
 // resume puts them back and lifts at the pick they were around.
 func TestLiftMarksAreTakenOutAtAHandoverAndPutBackByResume(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := liftRepo(t,
 		[]map[string]string{{"app.yaml": appYAML("1.2.3", "1.5.1"), "a.txt": "trunk\n"}},
 		[]map[string]string{{"a.txt": "branch\n"}, {"app.yaml": appYAML("1.2.3", "1.5.1"), "b.txt": "b2\n"}})
@@ -210,6 +214,7 @@ func TestLiftMarksAreTakenOutAtAHandoverAndPutBackByResume(t *testing.T) {
 // The branch alone bumped, above trunk, and trunk changed another line of
 // the same file: a clean merge that needs no lift.
 func TestLiftLeavesABranchAlreadyAboveTrunkAlone(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := liftRepo(t,
 		[]map[string]string{{"app.yaml": appYAMLPort("9090", "1.2.2", "1.5.1")}},
 		[]map[string]string{{"app.yaml": appYAML("1.3.0", "1.5.1")}})
@@ -235,6 +240,7 @@ func TestLiftLeavesABranchAlreadyAboveTrunkAlone(t *testing.T) {
 // Trunk bumped and the branch did not touch the line: nothing to lift, the
 // branch takes trunk's number as any clean merge would.
 func TestLiftLeavesALineTheBranchDidNotChangeAlone(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := liftRepo(t,
 		[]map[string]string{{"app.yaml": appYAML("1.2.3", "1.5.1")}},
 		[]map[string]string{{"app.yaml": appYAMLPort("9090", "1.2.2", "1.5.1")}})
@@ -260,6 +266,7 @@ func TestLiftLeavesALineTheBranchDidNotChangeAlone(t *testing.T) {
 // A genuine conflict on the line still goes through the strategy: branch
 // 1.2.3 against trunk 1.2.5 is 1.2.6, resolved rather than lifted.
 func TestLiftDoesNotTouchAConflictTheStrategyOwns(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := liftRepo(t,
 		[]map[string]string{{"app.yaml": appYAML("1.2.5", "1.5.1")}},
 		[]map[string]string{{"app.yaml": appYAML("1.2.3", "1.5.1")}})
@@ -286,6 +293,7 @@ func TestLiftDoesNotTouchAConflictTheStrategyOwns(t *testing.T) {
 // The generated spec gets the same treatment on info.version, and only that
 // line changes: the rest of the document is left byte for byte.
 func TestLiftRewritesTheSpecsVersionAndNothingElse(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := liftRepo(t,
 		[]map[string]string{{"spec.json": specJSON("1.2.3"), "a.txt": "trunk\n"}},
 		[]map[string]string{{"spec.json": specJSON("1.2.3"), "b.txt": "b2\n"}})
@@ -313,6 +321,7 @@ func TestLiftRewritesTheSpecsVersionAndNothingElse(t *testing.T) {
 // bumped both, trunk only main, so main is lifted and remote is the
 // branch's own.
 func TestLiftDecidesEachOwnedLineOnItsOwn(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := liftRepo(t,
 		[]map[string]string{{"app.yaml": appYAML("1.2.3", "1.5.1"), "a.txt": "trunk\n"}},
 		[]map[string]string{{"app.yaml": appYAML("1.2.3", "1.5.2"), "b.txt": "b2\n"}})
@@ -329,6 +338,7 @@ func TestLiftDecidesEachOwnedLineOnItsOwn(t *testing.T) {
 }
 
 func TestLiftLiftsBothOwnedLinesWhenBothSidesBumpedBoth(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := liftRepo(t,
 		[]map[string]string{{"app.yaml": appYAML("1.2.3", "1.5.2"), "a.txt": "trunk\n"}},
 		[]map[string]string{{"app.yaml": appYAML("1.2.3", "1.5.2"), "b.txt": "b2\n"}})
@@ -346,6 +356,7 @@ func TestLiftLiftsBothOwnedLinesWhenBothSidesBumpedBoth(t *testing.T) {
 
 // The overview and the run must say the same thing about the same branch.
 func TestTriageAndRunAgreeOnALift(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := liftRepo(t,
 		[]map[string]string{{"app.yaml": appYAML("1.2.3", "1.5.1"), "spec.json": specJSON("1.2.3"), "a.txt": "trunk\n"}},
 		[]map[string]string{{"app.yaml": appYAML("1.2.3", "1.5.1"), "spec.json": specJSON("1.2.3"), "b.txt": "b2\n"}, {"b.txt": "b3\n"}})
@@ -374,6 +385,7 @@ func TestTriageAndRunAgreeOnALift(t *testing.T) {
 // Both sides took a version the rule cannot lift: refused with the
 // strategy's own wording, and the stop is a person's.
 func TestLiftRefusesAVersionThatIsNotSemver(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := liftRepo(t,
 		[]map[string]string{{"app.yaml": appYAML("1.2.3-SNAPSHOT", "1.5.1"), "a.txt": "trunk\n"}},
 		[]map[string]string{{"app.yaml": appYAML("1.2.3-SNAPSHOT", "1.5.1"), "b.txt": "b2\n"}})
@@ -400,6 +412,7 @@ func TestLiftRefusesAVersionThatIsNotSemver(t *testing.T) {
 // A handover after a lift is numbered by commits, not by the lines the run
 // added to the sequencer's list to stop at the lift.
 func TestLiftDoesNotShiftTheStopNumbersOfALaterHandover(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := liftRepo(t,
 		[]map[string]string{{"app.yaml": appYAML("1.2.3", "1.5.1"), "a.txt": "trunk\n"}},
 		[]map[string]string{{"app.yaml": appYAML("1.2.3", "1.5.1"), "b.txt": "b2\n"}, {"a.txt": "branch\n"}})
@@ -426,6 +439,7 @@ func TestLiftDoesNotShiftTheStopNumbersOfALaterHandover(t *testing.T) {
 // second (1.2.3 → 1.2.5 on the branch) now conflicts with 1.2.4 and goes
 // through the strategy, which keeps the branch's 1.2.5 as the higher one.
 func TestLiftThenTheStrategyAtASecondBumpCommit(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := liftRepo(t,
 		[]map[string]string{{"app.yaml": appYAML("1.2.3", "1.5.1"), "a.txt": "trunk\n"}},
 		[]map[string]string{{"app.yaml": appYAML("1.2.3", "1.5.1"), "b.txt": "b2\n"}, {"app.yaml": appYAML("1.2.5", "1.5.1")}})
@@ -461,6 +475,7 @@ func TestLiftThenTheStrategyAtASecondBumpCommit(t *testing.T) {
 // since nothing in it is lifted. Replaying it would stop as a conflict where
 // no rebase ever stopped.
 func TestACommitTrunkCherryPickedAndChangedIsDroppedAsGitDropsIt(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := liftRepo(t, nil, []map[string]string{{"a.txt": "2\n"}, {"b.txt": "b2\n"}})
 	gitIn(t, dir, "cherry-pick", gitIn(t, dir, "rev-parse", "feature~1"))
 	gittest.WriteFile(t, filepath.Join(dir, "a.txt"), "3\n")
@@ -493,6 +508,7 @@ func TestACommitTrunkCherryPickedAndChangedIsDroppedAsGitDropsIt(t *testing.T) {
 // fix to ride in. The run fails and restores; the overview says the same,
 // as a failure, not as a stop to hand over.
 func TestAPureBumpBothSidesTookToANonSemverFailsInBothPaths(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := liftRepo(t,
 		[]map[string]string{{"app.yaml": appYAML("1.2.3-SNAPSHOT", "1.5.1")}},
 		[]map[string]string{{"app.yaml": appYAML("1.2.3-SNAPSHOT", "1.5.1")}, {"b.txt": "b2\n"}})
@@ -523,6 +539,7 @@ func TestAPureBumpBothSidesTookToANonSemverFailsInBothPaths(t *testing.T) {
 // have it, so that a person's own git rebase --continue neither stops at the
 // run's marks nor lands a bump on trunk's number in silence.
 func TestAFailedResumeTakesTheMarksOutOfTheList(t *testing.T) {
+	t.Parallel()
 	// Stop 1 is a person's; the pure bump at 2 is one trunk took patch for
 	// patch, to a number that cannot be lifted, so the resume fails there;
 	// the pick at 3 changes the yaml too, so the list carries a mark past
@@ -568,6 +585,7 @@ func readTodo(t *testing.T, wt string) string {
 // pick as if nothing had happened. The interrupt takes the marks out of the
 // list; the resume puts them back.
 func TestResumeRecoversFromAnInterruptAtTheRunsOwnStops(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: stops the run at every step, over real repositories")
 	}

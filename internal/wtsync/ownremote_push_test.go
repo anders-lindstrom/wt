@@ -49,6 +49,7 @@ func (f ownFixture) mine(t *testing.T, name, from string) string {
 }
 
 func TestPushOfABranchUnderItsOwnNameGoesWhereItAlwaysDid(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	gittest.Git(t, f.dir, "branch", "local-only", "main")
 	own := f.own(t)
@@ -79,6 +80,7 @@ func TestPushOfABranchUnderItsOwnNameGoesWhereItAlwaysDid(t *testing.T) {
 // local branch is not the branch's own: it pushes under its own name, and
 // nothing is asked.
 func TestPushIsNeverToAnUpstreamThatIsSomeoneElses(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	gittest.Git(t, f.dir, "branch", "--track", "stats", "origin/main")
 	gittest.Git(t, f.dir, "branch", "--track", "on-local", "feat")
@@ -129,6 +131,7 @@ func TestPushIsNeverToAnUpstreamThatIsSomeoneElses(t *testing.T) {
 // git itself resolves no push for it under push.default simple, and wt does
 // not guess: the branch has nowhere to push until somebody says.
 func TestPushOfABranchTrackingAnotherNameIsUndecided(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	f.theirs(t, "theirs")
 	f.mine(t, "mine", "origin/theirs")
@@ -159,6 +162,7 @@ func TestPushOfABranchTrackingAnotherNameIsUndecided(t *testing.T) {
 }
 
 func TestARecordedDestinationWinsOverGit(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	theirs := f.theirs(t, "theirs")
 	mine := f.mine(t, "mine", "origin/theirs")
@@ -201,6 +205,7 @@ func TestARecordedDestinationWinsOverGit(t *testing.T) {
 // a branch of another name the destination: not the upstream under
 // push.default upstream, not a remote.<name>.push refspec that renames.
 func TestGitsConfigurationChoosesTheRemoteAndNeverAnotherName(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	fork := filepath.Join(t.TempDir(), "fork.git")
 	gittest.Git(t, f.dir, "clone", "-q", "--bare", f.origin, fork)
@@ -239,6 +244,7 @@ func TestGitsConfigurationChoosesTheRemoteAndNeverAnotherName(t *testing.T) {
 // push meant for the branch's own name went to trunk, to a stack parent, or
 // to another branch's remote branch.
 func TestPushUnderPushDefaultUpstreamWritesOnlyTheBranchsOwnName(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	gittest.Git(t, f.dir, "config", "push.default", "upstream")
 	push := func(branch string) {
@@ -285,6 +291,7 @@ func TestPushUnderPushDefaultUpstreamWritesOnlyTheBranchsOwnName(t *testing.T) {
 // Checked against fork/feat and pushed to origin was the old behaviour: two
 // answers to one question.
 func TestPushToASameNamedUpstreamOnAnotherRemoteGoesThere(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	fork := filepath.Join(t.TempDir(), "fork.git")
 	gittest.Git(t, f.dir, "clone", "-q", "--bare", f.origin, fork)
@@ -318,6 +325,7 @@ func TestPushToASameNamedUpstreamOnAnotherRemoteGoesThere(t *testing.T) {
 // The remote branch a record names was deleted. The branch still pushes
 // there and nowhere else: the push makes it again under the recorded name.
 func TestARecordedDestinationWhoseRemoteBranchIsGone(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	gittest.Git(t, f.dir, "branch", "-m", "feat", "renamed")
 	gittest.Git(t, f.dir, "config", "branch.renamed.wtPushTo", "origin feat")
@@ -349,6 +357,7 @@ func TestARecordedDestinationWhoseRemoteBranchIsGone(t *testing.T) {
 }
 
 func TestARecordedDestinationThatCannotBeUsedLeavesNowhereToPush(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	for value, want := range map[string]string{
 		"origin":                 "is not a remote and a branch",
@@ -388,6 +397,7 @@ func (f ownFixture) renamed(t *testing.T) {
 // --force-if-includes refuses a commit a fetch brought that the branch never
 // had. Naming an expected commit in the lease switches that check off.
 func TestALeaseWithAnExpectedCommitWouldPushOverAFetchedCommit(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	gittest.Git(t, f.dir, "commit", "-q", "--amend", "-m", "feat 1, rewritten")
 	theirs := f.pushFromOther(t, "feat", "t.txt", "t\n")
@@ -409,6 +419,7 @@ func TestALeaseWithAnExpectedCommitWouldPushOverAFetchedCommit(t *testing.T) {
 // a fast-forward of commits the branch has always had included. That is why
 // a destination of another name is not pushed with it.
 func TestForceIfIncludesRefusesEveryPushToABranchOfAnotherName(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	f.renamed(t)
 	f.commit(t, f.dir, "g.txt", "g\n", "feat 2")
@@ -430,6 +441,7 @@ func TestForceIfIncludesRefusesEveryPushToABranchOfAnotherName(t *testing.T) {
 // The remote branch got a commit this branch never had, and a fetch brought
 // it: the lease alone would pass, so Push refuses.
 func TestPushUnderAnotherNameRefusesAFetchedCommitTheBranchNeverHad(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	f.renamed(t)
 	gittest.Git(t, f.dir, "commit", "-q", "--amend", "-m", "feat 1, rewritten")
@@ -444,6 +456,7 @@ func TestPushUnderAnotherNameRefusesAFetchedCommitTheBranchNeverHad(t *testing.T
 // The same commit, not fetched: wt compares with what it last saw and
 // pushes, and the commit it pinned in the lease makes git refuse.
 func TestPushUnderAnotherNamePinsTheCommitItCompared(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	f.renamed(t)
 	seen := on(t, f.origin, "feat")
@@ -473,6 +486,7 @@ func TestPushUnderAnotherNamePinsTheCommitItCompared(t *testing.T) {
 // What the remote has is an older version of the branch's own work, rebased
 // several times since: it pushes.
 func TestPushUnderAnotherNameReplacesOlderVersionsOfTheBranch(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	f.renamed(t)
 	gittest.Git(t, f.dir, "checkout", "-q", "main")
@@ -503,6 +517,7 @@ func TestPushUnderAnotherNameReplacesOlderVersionsOfTheBranch(t *testing.T) {
 // a remote whose commits only match patch for patch is not pushed over,
 // though it still reads rebased.
 func TestPushUnderAnotherNameNeedsAFormerTipNotTheSamePatches(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	f.renamed(t)
 	old := on(t, f.origin, "feat")
@@ -533,6 +548,7 @@ func TestPushUnderAnotherNameNeedsAFormerTipNotTheSamePatches(t *testing.T) {
 // other whitespace, and the same patch. Their commit is one this branch
 // never had, whatever its patch says.
 func TestPushUnderAnotherNameRefusesSomebodyElsesCommitWithTheSamePatch(t *testing.T) {
+	t.Parallel()
 	for name, amend := range map[string]func(f ownFixture){
 		"message": func(f ownFixture) {
 			gittest.Git(t, f.other, "commit", "-q", "--amend", "-m", "feat 1 (a teammate reworded it)")
@@ -572,6 +588,7 @@ func TestPushUnderAnotherNameRefusesSomebodyElsesCommitWithTheSamePatch(t *testi
 // Where the branch cannot be compared with the remote, under another name
 // there is no push: the lease would be a commit nothing was checked against.
 func TestPushUnderAnotherNameIsNotMadeUnchecked(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	f.renamed(t)
 	f.commit(t, f.dir, "g.txt", "g\n", "feat 2")
@@ -602,6 +619,7 @@ func TestPushUnderAnotherNameIsNotMadeUnchecked(t *testing.T) {
 // Trunk itself has nowhere to push, checked out in a worktree or not, and
 // whatever is recorded for it.
 func TestTrunkHasNowhereToPush(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	own := f.own(t)
 	if p := own.Push("main"); p.Remote != "" || p.Why == "" {
@@ -618,6 +636,7 @@ func TestTrunkHasNowhereToPush(t *testing.T) {
 // Somebody force-moved the remote branch to history that has nothing to do
 // with this branch.
 func TestPushUnderAnotherNameRefusesUnrelatedHistory(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	f.renamed(t)
 	gittest.Git(t, f.other, "checkout", "-q", "--orphan", "unrelated")
@@ -637,6 +656,7 @@ func TestPushUnderAnotherNameRefusesUnrelatedHistory(t *testing.T) {
 // The remote has the branch and nothing here says so: the push says "must
 // not exist", and git refuses.
 func TestPushUnderAnotherNameWithNoTrackingRefMustNotFindTheBranch(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	f.renamed(t)
 	before := on(t, f.origin, "feat")
@@ -657,6 +677,7 @@ func TestPushUnderAnotherNameWithNoTrackingRefMustNotFindTheBranch(t *testing.T)
 // Both exist after the pushes of a renamed branch went to its new name while
 // its pull request stayed on the old one.
 func TestOwnRemoteNamesAStrayBranchOfItsOwnName(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	gittest.Git(t, f.dir, "branch", "-m", "feat", "renamed")
 	gittest.Git(t, f.dir, "push", "-q", "origin", "renamed")

@@ -3,6 +3,7 @@ package wtsync
 import "testing"
 
 func TestMaxPlusPatch(t *testing.T) {
+	t.Parallel()
 	cases := []struct{ branch, trunk, want string }{
 		{"2.39.0", "2.38.5", "2.39.0"}, // branch already above trunk: keep
 		{"2.38.3", "2.38.5", "2.38.6"}, // trunk overtook: one patch above trunk
@@ -18,6 +19,7 @@ func TestMaxPlusPatch(t *testing.T) {
 }
 
 func TestRuleNamedAppliesToTheVersionInsideALine(t *testing.T) {
+	t.Parallel()
 	r, err := RuleNamed("max-plus-patch")
 	if err != nil {
 		t.Fatal(err)
@@ -34,6 +36,7 @@ func TestRuleNamedAppliesToTheVersionInsideALine(t *testing.T) {
 }
 
 func TestRuleNamedReplacesAtTheMatchedOffsetNotTheFirstOccurrence(t *testing.T) {
+	t.Parallel()
 	// "1.2.3.4" contains the literal substring "1.2.3": a plain string
 	// replace would corrupt it instead of touching the trailing version.
 	r, _ := RuleNamed("max-plus-patch")
@@ -44,6 +47,7 @@ func TestRuleNamedReplacesAtTheMatchedOffsetNotTheFirstOccurrence(t *testing.T) 
 }
 
 func TestRuleNamedRefusesALineWithoutAWholeVersionToken(t *testing.T) {
+	t.Parallel()
 	r, _ := RuleNamed("max-plus-patch")
 	for _, line := range []string{"    version: SNAPSHOT", "    version: 2.38.3-SNAPSHOT", "    version: 2.38.3.1"} {
 		if _, err := r.Apply(line, "    version: 2.38.5"); err == nil {
@@ -53,6 +57,7 @@ func TestRuleNamedRefusesALineWithoutAWholeVersionToken(t *testing.T) {
 }
 
 func TestKeepRules(t *testing.T) {
+	t.Parallel()
 	kb, _ := RuleNamed("keep-branch")
 	kt, _ := RuleNamed("keep-trunk")
 	if got, _ := kb.Apply("b", "t"); got != "b" {

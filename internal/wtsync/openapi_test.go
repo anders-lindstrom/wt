@@ -43,6 +43,7 @@ func sortStrings(s []string) {
 }
 
 func TestOpenAPIMergesDisjointPathsSchemasAndTagsAndLiftsTheVersion(t *testing.T) {
+	t.Parallel()
 	c := conflict(
 		spec("2.38.0", `{"/a":{"get":{}}}`, `{"A":{}}`, `[{"name":"TA"}]`),
 		spec("2.38.5", `{"/a":{"get":{}},"/t":{"get":{}}}`, `{"A":{},"T":{}}`, `[{"name":"TA"},{"name":"TT"}]`),
@@ -72,6 +73,7 @@ func TestOpenAPIMergesDisjointPathsSchemasAndTagsAndLiftsTheVersion(t *testing.T
 }
 
 func TestOpenAPIKeepBranchKeepsTheBranchsVersion(t *testing.T) {
+	t.Parallel()
 	c := conflict(
 		spec("2.38.0", `{"/a":{"get":{}}}`, `{}`, `[]`),
 		spec("2.38.5", `{"/a":{"get":{}},"/t":{"get":{}}}`, `{}`, `[]`),
@@ -86,6 +88,7 @@ func TestOpenAPIKeepBranchKeepsTheBranchsVersion(t *testing.T) {
 }
 
 func TestOpenAPIKeepTrunkKeepsTrunksVersion(t *testing.T) {
+	t.Parallel()
 	c := conflict(
 		spec("2.38.0", `{"/a":{"get":{}}}`, `{}`, `[]`),
 		spec("2.38.5", `{"/a":{"get":{}},"/t":{"get":{}}}`, `{}`, `[]`),
@@ -100,6 +103,7 @@ func TestOpenAPIKeepTrunkKeepsTrunksVersion(t *testing.T) {
 }
 
 func TestOpenAPIKeyChangedIdenticallyOnBothSidesIsNotAConflict(t *testing.T) {
+	t.Parallel()
 	c := conflict(spec("2.38.0", `{"/a":{"get":{}}}`, `{}`, `[]`),
 		spec("2.38.5", `{"/a":{"get":{"x":1}}}`, `{}`, `[]`),
 		spec("2.38.3", `{"/a":{"get":{"x":1}}}`, `{}`, `[]`))
@@ -113,6 +117,7 @@ func TestOpenAPIKeyChangedIdenticallyOnBothSidesIsNotAConflict(t *testing.T) {
 }
 
 func TestOpenAPIDropsAKeyRemovedOnOneSideAndUntouchedOnTheOther(t *testing.T) {
+	t.Parallel()
 	c := conflict(spec("2.38.0", `{"/a":{"get":{}},"/old":{"get":{}}}`, `{}`, `[]`),
 		spec("2.38.5", `{"/a":{"get":{}}}`, `{}`, `[]`),
 		spec("2.38.3", `{"/a":{"get":{}},"/old":{"get":{}},"/b":{"get":{}}}`, `{}`, `[]`))
@@ -126,6 +131,7 @@ func TestOpenAPIDropsAKeyRemovedOnOneSideAndUntouchedOnTheOther(t *testing.T) {
 }
 
 func TestOpenAPITakesTrunksOtherSectionsAsTheSkeleton(t *testing.T) {
+	t.Parallel()
 	trunk := `{"openapi":"3.1.0","info":{"title":"T","version":"2.38.5"},"servers":[{"url":"/new"}],"tags":[],"paths":{"/t":{"get":{}}},"components":{"schemas":{},"securitySchemes":{"k":{"type":"apiKey"},"k2":{"type":"http"}}}}`
 	c := conflict(spec("2.38.0", `{}`, `{}`, `[]`), trunk, spec("2.38.3", `{"/b":{"get":{}}}`, `{}`, `[]`))
 	out, err := (OpenAPI{Rule: "max-plus-patch"}).Resolve(c)
@@ -142,6 +148,7 @@ func TestOpenAPITakesTrunksOtherSectionsAsTheSkeleton(t *testing.T) {
 }
 
 func TestOpenAPIRefusesNamingTheKeysBothSidesChanged(t *testing.T) {
+	t.Parallel()
 	c := conflict(spec("2.38.0", `{"/a":{"get":{}}}`, `{"S":{"a":1}}`, `[]`),
 		spec("2.38.5", `{"/a":{"get":{"x":1}}}`, `{"S":{"a":2}}`, `[]`),
 		spec("2.38.3", `{"/a":{"get":{"x":2}}}`, `{"S":{"a":3}}`, `[]`))
@@ -152,6 +159,7 @@ func TestOpenAPIRefusesNamingTheKeysBothSidesChanged(t *testing.T) {
 }
 
 func TestOpenAPIRefusesWhenTheBranchChangedOutsideTheMergedSections(t *testing.T) {
+	t.Parallel()
 	c := conflict(spec("2.38.0", `{}`, `{}`, `[]`), spec("2.38.5", `{"/t":{"get":{}}}`, `{}`, `[]`),
 		strings.Replace(spec("2.38.3", `{}`, `{}`, `[]`), `"title":"T"`, `"title":"Changed"`, 1))
 	_, err := (OpenAPI{Rule: "max-plus-patch"}).Resolve(c)
@@ -165,6 +173,7 @@ func TestOpenAPIRefusesWhenTheBranchChangedOutsideTheMergedSections(t *testing.T
 }
 
 func TestOpenAPIRefusalCarriesTheSortedConflictingKeys(t *testing.T) {
+	t.Parallel()
 	c := conflict(spec("2.38.0", `{"/a":{"get":{}}}`, `{"S":{"a":1}}`, `[]`),
 		spec("2.38.5", `{"/a":{"get":{"x":1}}}`, `{"S":{"a":2}}`, `[]`),
 		spec("2.38.3", `{"/a":{"get":{"x":2}}}`, `{"S":{"a":3}}`, `[]`))
@@ -182,6 +191,7 @@ func TestOpenAPIRefusalCarriesTheSortedConflictingKeys(t *testing.T) {
 }
 
 func TestOpenAPIKeepBranchRefusesAnEmptyVersion(t *testing.T) {
+	t.Parallel()
 	c := conflict(spec("2.38.0", `{}`, `{}`, `[]`), spec("2.38.5", `{"/t":{"get":{}}}`, `{}`, `[]`),
 		spec("", `{"/b":{"get":{}}}`, `{}`, `[]`))
 	_, err := (OpenAPI{Rule: "keep-branch"}).Resolve(c)
@@ -191,6 +201,7 @@ func TestOpenAPIKeepBranchRefusesAnEmptyVersion(t *testing.T) {
 }
 
 func TestOpenAPIKeepTrunkRefusesAnEmptyVersion(t *testing.T) {
+	t.Parallel()
 	c := conflict(spec("2.38.0", `{}`, `{}`, `[]`), spec("", `{"/t":{"get":{}}}`, `{}`, `[]`),
 		spec("2.38.3", `{"/b":{"get":{}}}`, `{}`, `[]`))
 	_, err := (OpenAPI{Rule: "keep-trunk"}).Resolve(c)
@@ -200,6 +211,7 @@ func TestOpenAPIKeepTrunkRefusesAnEmptyVersion(t *testing.T) {
 }
 
 func TestOpenAPIWritesJacksonStyleJSONWithNoTrailingNewlineAndTrunksKeyOrder(t *testing.T) {
+	t.Parallel()
 	c := conflict(spec("2.38.0", `{}`, `{}`, `[]`), spec("2.38.5", `{"/t":{"get":{}}}`, `{}`, `[]`), spec("2.38.3", `{"/b":{"get":{}}}`, `{}`, `[]`))
 	out, err := (OpenAPI{Rule: "max-plus-patch"}).Resolve(c)
 	if err != nil {
@@ -219,6 +231,7 @@ func TestOpenAPIWritesJacksonStyleJSONWithNoTrailingNewlineAndTrunksKeyOrder(t *
 }
 
 func TestOpenAPIRefusesInvalidJSON(t *testing.T) {
+	t.Parallel()
 	good := spec("2.38.5", `{"/t":{"get":{}}}`, `{}`, `[]`)
 	cases := map[string]struct {
 		side string // which of base, trunk, branch carries the malformed document
@@ -251,6 +264,7 @@ func TestOpenAPIRefusesInvalidJSON(t *testing.T) {
 }
 
 func TestOpenAPIComparesNumbersExactly(t *testing.T) {
+	t.Parallel()
 	c := conflict(spec("2.38.0", `{"/a":{"max":9007199254740992}}`, `{}`, `[]`),
 		spec("2.38.5", `{"/a":{"max":9007199254740993}}`, `{}`, `[]`),
 		spec("2.38.3", `{"/a":{"max":9007199254740994}}`, `{}`, `[]`))
@@ -261,6 +275,7 @@ func TestOpenAPIComparesNumbersExactly(t *testing.T) {
 }
 
 func TestWriteJacksonRoundTripsTheGeneratorsStyle(t *testing.T) {
+	t.Parallel()
 	sample := `{
   "title" : "T",
   "count" : 3,
@@ -289,6 +304,7 @@ func TestWriteJacksonRoundTripsTheGeneratorsStyle(t *testing.T) {
 }
 
 func TestFromRuleBuildsOpenAPI(t *testing.T) {
+	t.Parallel()
 	s, err := FromRule(Rule{Strategy: "openapi", Rule: "max-plus-patch"}, "", "")
 	if err != nil {
 		t.Fatal(err)

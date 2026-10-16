@@ -3,6 +3,7 @@ package wtsync
 import "testing"
 
 func TestTakeTrunkReturnsTrunksBlobUnchanged(t *testing.T) {
+	t.Parallel()
 	c := conflict("lockfileVersion: 9.0\nbase\n", "lockfileVersion: 9.0\ntrunk\n", "lockfileVersion: 9.0\nbranch\n")
 	out, err := (TakeTrunk{}).Resolve(c)
 	if err != nil {
@@ -14,6 +15,7 @@ func TestTakeTrunkReturnsTrunksBlobUnchanged(t *testing.T) {
 }
 
 func TestFromRuleBuildsTakeTrunkAndRejectsTheUnknown(t *testing.T) {
+	t.Parallel()
 	s, err := FromRule(Rule{Strategy: "take-trunk"}, "", "")
 	if err != nil || s.Name() != "take-trunk" {
 		t.Errorf("FromRule take-trunk = %v, %v", s, err)

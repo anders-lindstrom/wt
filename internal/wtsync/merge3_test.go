@@ -12,6 +12,7 @@ func conflict(base, trunk, branch string) Conflict {
 }
 
 func TestMerge3SplitsTextAndBlocks(t *testing.T) {
+	t.Parallel()
 	segs, err := Merge3(conflict("keep\nbase\ntail\n", "keep\ntrunk\ntail\n", "keep\nbranch\ntail\n"))
 	if err != nil {
 		t.Fatal(err)
@@ -32,6 +33,7 @@ func TestMerge3SplitsTextAndBlocks(t *testing.T) {
 }
 
 func TestMerge3KeepsOneSidedChangesOutsideBlocks(t *testing.T) {
+	t.Parallel()
 	segs, err := Merge3(conflict("a\nv1\n", "a\nv2\ntrunk-added\n", "a\nv3\n"))
 	if err != nil {
 		t.Fatal(err)
@@ -49,6 +51,7 @@ func TestMerge3KeepsOneSidedChangesOutsideBlocks(t *testing.T) {
 }
 
 func TestMerge3ReportsNoBlocksWhenGitMergesCleanly(t *testing.T) {
+	t.Parallel()
 	// The two edits need unchanged context lines between them: git folds
 	// adjacent edits into one conflict block when there's no context to
 	// keep them apart.
@@ -64,6 +67,7 @@ func TestMerge3ReportsNoBlocksWhenGitMergesCleanly(t *testing.T) {
 }
 
 func TestRenderReplacesBlocksAndPreservesTheEnding(t *testing.T) {
+	t.Parallel()
 	c := conflict("x\nbase\n", "x\ntrunk\n", "x\nbranch\n")
 	segs, err := Merge3(c)
 	if err != nil {
@@ -88,6 +92,7 @@ func TestRenderReplacesBlocksAndPreservesTheEnding(t *testing.T) {
 // merge-file's exit status is a conflict count, so a merge-file the deadline
 // kills must come back as an error, not as a merge with some conflicts.
 func TestMerge3ReportsAMergeFileThatDoesNotAnswer(t *testing.T) {
+	// Not parallel: shortens the package-level gitDeadline and sets PATH.
 	hangOnPath(t, "git")
 	start := time.Now()
 	_, err := Merge3(conflict("keep\nbase\n", "keep\ntrunk\n", "keep\nbranch\n"))
@@ -95,6 +100,7 @@ func TestMerge3ReportsAMergeFileThatDoesNotAnswer(t *testing.T) {
 }
 
 func TestMerge3RefusesBinaryBlobsAsAPersonsCall(t *testing.T) {
+	t.Parallel()
 	_, err := Merge3(conflict("base\x00stuff", "trunk\x00stuff", "branch\x00stuff"))
 	if !IsRefusal(err) || !strings.Contains(err.Error(), "binary") {
 		t.Errorf("err = %v, want a refusal mentioning binary", err)
@@ -102,6 +108,7 @@ func TestMerge3RefusesBinaryBlobsAsAPersonsCall(t *testing.T) {
 }
 
 func TestRenderPropagatesARefusal(t *testing.T) {
+	t.Parallel()
 	segs, _ := Merge3(conflict("base\n", "trunk\n", "branch\n"))
 	_, err := Render(segs, func(b Block) ([]string, error) { return nil, Refuse("f.txt", "not mine: %d lines", len(b.Branch)) })
 	var r *Refusal

@@ -41,6 +41,7 @@ func trunkReq(wt string, epoch int64) Request {
 }
 
 func TestRebaseReplaysACleanBranchAndPinsASafetyRef(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := runRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"b.txt": "b2\n"}})
 	old := gitIn(t, wt, "rev-parse", "HEAD")
 	var log bytes.Buffer
@@ -63,6 +64,7 @@ func TestRebaseReplaysACleanBranchAndPinsASafetyRef(t *testing.T) {
 }
 
 func TestRebaseResolvesARecipeStopAndContinues(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := runRepo(t,
 		[]map[string]string{{"v.txt": "1.0.5\n"}},
 		[]map[string]string{{"a.txt": "a2\n"}, {"v.txt": "1.0.1\n"}})
@@ -90,6 +92,7 @@ func TestRebaseResolvesARecipeStopAndContinues(t *testing.T) {
 }
 
 func TestRebaseDropsACommitTheResolutionMadeEmpty(t *testing.T) {
+	t.Parallel()
 	// The branch's only change in its first commit is to w.txt, which is
 	// taken from trunk: the commit becomes empty and git drops it on
 	// --continue. The second commit survives.
@@ -112,6 +115,7 @@ func TestRebaseDropsACommitTheResolutionMadeEmpty(t *testing.T) {
 }
 
 func TestRebaseHandsOverAnUnclaimedStop(t *testing.T) {
+	t.Parallel()
 	// Nothing at this stop is claimed, so the handover stages nothing and
 	// names the one file a person owns. The branch ref has not moved: the
 	// rewrite only lands when the rebase completes.
@@ -141,6 +145,7 @@ func TestRebaseHandsOverAnUnclaimedStop(t *testing.T) {
 }
 
 func TestRebaseHandsOverASecondStopAndKeepsTheFirstsWork(t *testing.T) {
+	t.Parallel()
 	// First stop resolves (v.txt, owned-line) and is replayed; the second is
 	// unclaimed (a.txt) and is handed over. The handover is the second stop,
 	// and the first stop's resolution is still in the worktree.
@@ -163,6 +168,7 @@ func TestRebaseHandsOverASecondStopAndKeepsTheFirstsWork(t *testing.T) {
 }
 
 func TestRebaseACommitAlreadyOnTrunkIsDroppedNotCounted(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := runRepo(t, nil, nil)
 	if err := os.WriteFile(filepath.Join(wt, "c.txt"), []byte("c\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -182,6 +188,7 @@ func TestRebaseACommitAlreadyOnTrunkIsDroppedNotCounted(t *testing.T) {
 }
 
 func TestRebaseOntoAParentTipUsesUpstreamAndReadsScriptsFromTrunk(t *testing.T) {
+	t.Parallel()
 	// A stack child: rebase only the child's own commits onto the parent's
 	// new tip. Built by hand: parent branch p with one commit, child c on
 	// top with one more, then p rewritten onto origin/main (as the parent's
@@ -216,6 +223,7 @@ func TestRebaseOntoAParentTipUsesUpstreamAndReadsScriptsFromTrunk(t *testing.T) 
 }
 
 func TestRebaseGivesUpWhenContinueDoesNotAdvance(t *testing.T) {
+	t.Parallel()
 	// A prepare-commit-msg hook that always fails makes --continue stop at
 	// the same commit with nothing unmerged. The loop must notice and
 	// restore instead of spinning. (Not pre-commit: git 2.55 does not run
@@ -245,6 +253,7 @@ func TestRebaseGivesUpWhenContinueDoesNotAdvance(t *testing.T) {
 }
 
 func TestPreflightOrdersItsReasons(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		a      Assessment
 		v      Verdict
@@ -312,6 +321,7 @@ func abortProofRepo(t *testing.T) (dir string, wt string, cfg *Config) {
 }
 
 func TestRebaseRestoresThroughQuitWhenAbortCannotWork(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := abortProofRepo(t)
 	old := gitIn(t, wt, "rev-parse", "HEAD")
 	res, err := Rebase(dir, cfg, trunkReq(wt, 11), nil)
@@ -342,6 +352,7 @@ func TestRebaseRestoresThroughQuitWhenAbortCannotWork(t *testing.T) {
 // in progress, the strategy's answer for the claimed file is staged, and the
 // handover names what is left.
 func TestRebaseLeavesAContestedStopInPlace(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := runRepo(t,
 		[]map[string]string{{"v.txt": "1.0.5\n", "a.txt": "trunk\n"}},
 		[]map[string]string{{"v.txt": "1.0.1\n", "a.txt": "branch\n"}})
@@ -377,6 +388,7 @@ func TestRebaseLeavesAContestedStopInPlace(t *testing.T) {
 // children would be stranded on a base that no longer exists, which is the
 // half-applied stack the spec forbids.
 func TestRebaseRestoresAContestedStopOnAStackParent(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := runRepo(t,
 		[]map[string]string{{"v.txt": "1.0.5\n", "a.txt": "trunk\n"}},
 		[]map[string]string{{"v.txt": "1.0.1\n", "a.txt": "branch\n"}})
@@ -398,6 +410,7 @@ func TestRebaseRestoresAContestedStopOnAStackParent(t *testing.T) {
 // Resume drives the same loop: with the unclaimed file resolved by hand and
 // staged, the rebase finishes and the branch moves.
 func TestResumeFinishesTheRebase(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := runRepo(t,
 		[]map[string]string{{"v.txt": "1.0.5\n", "a.txt": "trunk\n"}},
 		[]map[string]string{{"v.txt": "1.0.1\n", "a.txt": "branch\n"}})
@@ -430,6 +443,7 @@ func TestResumeFinishesTheRebase(t *testing.T) {
 // person's own resolution. An unstaged tracked change makes git refuse to
 // continue; the loop must report that and leave everything alone.
 func TestResumeNeverRestores(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := runRepo(t,
 		[]map[string]string{{"v.txt": "1.0.5\n", "a.txt": "trunk\n"}},
 		[]map[string]string{{"v.txt": "1.0.1\n", "a.txt": "branch\n"}})
@@ -469,6 +483,7 @@ func TestResumeNeverRestores(t *testing.T) {
 // may not: the reset would discard a person's own resolution, which is the
 // one thing a resume must never do. It refuses and leaves everything alone.
 func TestResumeNeverRestoresAStackParent(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := runRepo(t,
 		[]map[string]string{{"v.txt": "1.0.5\n", "a.txt": "trunk\n"}},
 		[]map[string]string{{"v.txt": "1.0.1\n", "a.txt": "branch\n"}})
@@ -502,6 +517,7 @@ func TestResumeNeverRestoresAStackParent(t *testing.T) {
 // Someone ran git rebase --continue themselves and it finished: resume
 // accepts that and reports the finished rebase rather than failing.
 func TestResumeToleratesAFinishedRebase(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := runRepo(t,
 		[]map[string]string{{"v.txt": "1.0.5\n", "a.txt": "trunk\n"}},
 		[]map[string]string{{"v.txt": "1.0.1\n", "a.txt": "branch\n"}})
@@ -529,6 +545,7 @@ func TestResumeToleratesAFinishedRebase(t *testing.T) {
 // it nothing proves the rebase is the run's, so resume refuses rather than
 // certifying it.
 func TestResumeRefusesAFinishedRebaseWithNoReflog(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := runRepo(t,
 		[]map[string]string{{"v.txt": "1.0.5\n", "a.txt": "trunk\n"}},
 		[]map[string]string{{"v.txt": "1.0.1\n", "a.txt": "branch\n"}})
@@ -552,6 +569,7 @@ func TestResumeRefusesAFinishedRebaseWithNoReflog(t *testing.T) {
 // A rebase somebody aborted is not this run's result. Certifying it would
 // let a later undo discard commits the run never made.
 func TestResumeRefusesARebaseThatWasAborted(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := runRepo(t,
 		[]map[string]string{{"v.txt": "1.0.5\n", "a.txt": "trunk\n"}},
 		[]map[string]string{{"v.txt": "1.0.1\n", "a.txt": "branch\n"}})
@@ -568,6 +586,7 @@ func TestResumeRefusesARebaseThatWasAborted(t *testing.T) {
 }
 
 func TestPreflightLetsContestedProceedAndRefusesPaused(t *testing.T) {
+	t.Parallel()
 	if v, why := Preflight(Assessment{Class: Contested, Files: []FileOutcome{{Path: "a.txt"}}}); v != Proceed {
 		t.Fatalf("contested = %v (%s), want Proceed", v, why)
 	}
@@ -577,6 +596,7 @@ func TestPreflightLetsContestedProceedAndRefusesPaused(t *testing.T) {
 }
 
 func TestStopPathsSkipsTheMessagesPlaceholder(t *testing.T) {
+	t.Parallel()
 	stops := []StopResult{
 		{Files: []FileOutcome{{Path: "v.txt"}, {Path: messagesPath}}},
 		{Files: []FileOutcome{{Path: "a.txt"}, {Path: "v.txt"}}},
@@ -613,6 +633,7 @@ func finishedByHand(t *testing.T, wt string, extra int) {
 // replay, or fewer when a pick was dropped as empty. More means something
 // was committed inside it, which resume must not certify as the run's.
 func TestVerifyFinishedRefusesMoreCommitsThanTheRunReplayed(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := runRepo(t,
 		[]map[string]string{{"v.txt": "1.0.5\n", "a.txt": "trunk\n"}},
 		[]map[string]string{{"v.txt": "1.0.1\n", "a.txt": "branch\n"}})
@@ -634,6 +655,7 @@ func TestVerifyFinishedRefusesMoreCommitsThanTheRunReplayed(t *testing.T) {
 }
 
 func TestVerifyFinishedAcceptsAPickDroppedAsEmpty(t *testing.T) {
+	t.Parallel()
 	// The branch's second commit ends where trunk already is, by a
 	// different route (trunk got there in two commits, so no patch-id
 	// matches and the pick stays in the todo): it becomes empty when
@@ -659,6 +681,7 @@ func TestVerifyFinishedAcceptsAPickDroppedAsEmpty(t *testing.T) {
 // HandoverWay reads where a handover stands without touching it: waiting
 // at its stop, finished by hand, or aborted by hand.
 func TestHandoverWayTellsWaitingFinishedAndAbortedApart(t *testing.T) {
+	t.Parallel()
 	_, wt, gitDir, _ := handedOverRepo(t, 5, false)
 	st, ok, err := ReadState(gitDir)
 	if err != nil || !ok {

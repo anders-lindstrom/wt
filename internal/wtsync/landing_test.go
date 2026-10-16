@@ -12,6 +12,7 @@ import (
 // ("Merge pull request #N from …"), so its scopes come from the range it
 // merged (spec §5).
 func TestLandingListCountsDirectAndMergedScopes(t *testing.T) {
+	t.Parallel()
 	dir := repoWith(t, map[string]string{"a.txt": "a\n"}, nil, nil)
 	base := gitIn(t, dir, "rev-parse", "HEAD")
 	write := func(name, content string) {
@@ -48,6 +49,7 @@ func TestLandingListCountsDirectAndMergedScopes(t *testing.T) {
 }
 
 func TestLandingListWithNoScopes(t *testing.T) {
+	t.Parallel()
 	dir := repoWith(t, map[string]string{"a.txt": "a\n"}, nil, nil)
 	base := gitIn(t, dir, "rev-parse", "HEAD")
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a2\n"), 0o644); err != nil {
