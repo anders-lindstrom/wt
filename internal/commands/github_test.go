@@ -125,7 +125,7 @@ func headCase(t *testing.T, prs []github.PR) string {
 	var b strings.Builder
 	b.WriteString("head_nodes() {\n  case \"$1\" in\n")
 	for _, head := range heads {
-		nodes, err := json.Marshal(byHead[head])
+		nodes, err := json.Marshal(wireNodes(t, byHead[head]))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -134,6 +134,32 @@ func headCase(t *testing.T, prs []github.PR) string {
 	}
 	b.WriteString("  esac\n}\n")
 	return b.String()
+}
+
+// wireNodes is prs as GitHub's branch query answers them: a check state
+// arrives as the last commit's rollup, not as a field of its own.
+func wireNodes(t *testing.T, prs []github.PR) []map[string]any {
+	t.Helper()
+	out := make([]map[string]any, 0, len(prs))
+	for _, pr := range prs {
+		data, err := json.Marshal(pr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var node map[string]any
+		if err := json.Unmarshal(data, &node); err != nil {
+			t.Fatal(err)
+		}
+		delete(node, "checkState")
+		var rollup any
+		if pr.CheckState != "" {
+			rollup = map[string]any{"state": pr.CheckState}
+		}
+		node["headCommit"] = map[string]any{"nodes": []any{
+			map[string]any{"commit": map[string]any{"statusCheckRollup": rollup}}}}
+		out = append(out, node)
+	}
+	return out
 }
 
 // viewCase answers `pr view <n>` for each pull request by number.
@@ -529,11 +555,15 @@ func TestListSaysHowOldACachedColumnIs(t *testing.T) {
 func backdatePRCache(t *testing.T, ctx *Context, r github.Remote, by time.Duration) {
 	t.Helper()
 	c := readPRCache(ctx, r)
-	answers := map[string]*github.PR{}
-	for branch, e := range c.Branches {
-		answers[branch] = e.PR
+	for _, checks := range []bool{false, true} {
+		answers := map[string]*github.PR{}
+		for branch, e := range c.Branches {
+			if e.Checks == checks {
+				answers[branch] = e.PR
+			}
+		}
+		writePRCacheChecks(ctx, r, answers, time.Now().Add(-by), checks)
 	}
-	writePRCache(ctx, r, answers, time.Now().Add(-by))
 }
 
 // doctor's GitHub section: what it found, and never a problem — a machine

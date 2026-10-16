@@ -169,3 +169,92 @@ func TestPRsOnBranchesNeedsAnOwnerAndRepo(t *testing.T) {
 		t.Error("a slug that is not owner/repo was accepted")
 	}
 }
+
+// PRsOnBranchesWithChecks asks for the checks on each pull request's last
+// commit in the same call, and reads the answer, so the PR column can say
+// whether they pass without a gh call per worktree. A commit with no checks
+// has no rollup at all.
+func TestPRsOnBranchesWithChecksAsksForTheChecks(t *testing.T) {
+	c, log := fake(t, `echo '{"data":{"repository":{"b0":{"nodes":[`+
+		`{"number":7,"headRefName":"a","state":"OPEN","headCommit":{"nodes":[{"commit":{"statusCheckRollup":{"state":"FAILURE"}}}]}},`+
+		`{"number":6,"headRefName":"a","state":"CLOSED","headCommit":{"nodes":[{"commit":{"statusCheckRollup":null}}]}}]}}}}'`)
+	prs, refused, err := c.PRsOnBranchesWithChecks(t.TempDir(), demo, []string{"a"}, 0)
+	if err != nil || refused != nil {
+		t.Fatal(err, refused)
+	}
+	got := argv(t, log)
+	if len(got) != 1 || !strings.Contains(got[0], headRollup) {
+		t.Errorf("argv = %q, want the head commit's rollup asked for", got)
+	}
+	if len(prs) != 2 || prs[0].CheckState != "FAILURE" || prs[1].CheckState != "" {
+		t.Errorf("prs = %+v, want #7 FAILURE and #6 with none", prs)
+	}
+}
+
+// Everything but wt list and wt status asks the question it asked before the
+// checks existed: sweep, remove and refs sweep pay nothing for them.
+func TestPRsOnBranchesLeavesTheChecksOut(t *testing.T) {
+	c, log := fake(t, `echo '{"data":{"repository":{"b0":{"nodes":[{"number":7,"headRefName":"a","state":"OPEN",`+
+		`"headCommit":{"nodes":[{"commit":{"statusCheckRollup":{"state":"FAILURE"}}}]}}]}}}}'`)
+	prs, err := c.PRsOnBranches(t.TempDir(), demo, []string{"a"}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := argv(t, log); len(got) != 1 || strings.Contains(got[0], "headCommit") || strings.Contains(got[0], "commits(") {
+		t.Errorf("argv = %q, want no checks asked for", got)
+	}
+	if len(prs) != 1 || prs[0].CheckState != "" {
+		t.Errorf("prs = %+v, want no check state", prs)
+	}
+}
+
+// With the checks, a call carries ChecksBatch branches, not BranchBatch.
+func TestPRsOnBranchesWithChecksBatchesSmaller(t *testing.T) {
+	c, log := fake(t, `echo '{"data":{"repository":{}}}'`)
+	branches := make([]string, ChecksBatch+1)
+	for i := range branches {
+		branches[i] = fmt.Sprintf("work-%d", i)
+	}
+	if _, _, err := c.PRsOnBranchesWithChecks(t.TempDir(), demo, branches, 0); err != nil {
+		t.Fatal(err)
+	}
+	if got := argv(t, log); len(got) != 2 {
+		t.Errorf("argv = %d calls for %d branches, want 2", len(got), len(branches))
+	}
+}
+
+// A token GitHub will not show the checks to still gets the pull requests:
+// the call is made again without the checks, and what GitHub said comes back.
+func TestPRsOnBranchesWithChecksAsksAgainWithoutThemWhenRefused(t *testing.T) {
+	c, log := fake(t, `case "$*" in *headCommit*)
+  echo '{"data":{"repository":{"b0":{"nodes":[{"number":7,"headCommit":null}]}}},"errors":[{"type":"FORBIDDEN","path":["repository","b0","nodes",0,"headCommit"],"message":"Resource not accessible by personal access token"}]}'
+  echo 'gh: Resource not accessible by personal access token' >&2
+  exit 1 ;;
+esac
+echo '{"data":{"repository":{"b0":{"nodes":[{"number":7,"headRefName":"a","state":"OPEN"}]}}}}'`)
+	prs, refused, err := c.PRsOnBranchesWithChecks(t.TempDir(), demo, []string{"a"}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refused == nil || !strings.Contains(refused.Error(), "Resource not accessible") {
+		t.Errorf("refused = %v, want what GitHub said", refused)
+	}
+	if len(prs) != 1 || prs[0].Number != 7 || prs[0].CheckState != "" {
+		t.Errorf("prs = %+v, want #7 with no check state", prs)
+	}
+	if got := argv(t, log); len(got) != 2 || strings.Contains(got[1], "headCommit") {
+		t.Errorf("argv = %q, want the second call without the checks", got)
+	}
+}
+
+// Any other failure is the lookup's own, and is not asked again.
+func TestPRsOnBranchesWithChecksFailsOnAnythingElse(t *testing.T) {
+	c, log := fake(t, `echo 'GraphQL: Could not resolve to a Repository with the name "t/demo". (repository)' >&2; exit 1`)
+	_, refused, err := c.PRsOnBranchesWithChecks(t.TempDir(), demo, []string{"a"}, 0)
+	if err == nil || refused != nil {
+		t.Errorf("err = %v, refused = %v; want the failure as err", err, refused)
+	}
+	if got := argv(t, log); len(got) != 1 {
+		t.Errorf("argv = %q, want one call", got)
+	}
+}

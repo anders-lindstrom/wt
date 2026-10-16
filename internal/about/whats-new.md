@@ -22,6 +22,15 @@ would want read out to them; the full story is in git history and in
   clone they are skipped, never copied. `--no-cache` skips them; `--json`
   names the step `cache` (`new` 1.1.0, `checkout` 1.2.0).
 
+## 2026-10-16 15:04 — wt list and wt status mark a pull request's checks
+
+- The PR column marks what the checks on each pull request's last commit say,
+  after its number: `#87 ✓ open` passing, `✗` failing, `●` running, nothing
+  when it has none. Asked in the same call and cached with the pull request;
+  `wt status <work>` shows it on its pr line. JSON output is unchanged.
+- `wt pr list` counts a cancelled check as failing, as GitHub's own summary
+  of the checks does, so it and the mark agree.
+
 ## 2026-10-16 08:20 — wt session stop
 
 - `wt session stop <work> [<session>]` stops one background Claude session

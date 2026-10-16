@@ -43,22 +43,28 @@ type prCache struct {
 
 // prCacheEntry is one branch's answer and when it was read. PR is nil when
 // GitHub had no pull request on that branch, which is worth remembering:
-// otherwise every listing asks again for every branch that has none.
+// otherwise every listing asks again for every branch that has none. Checks
+// says the checks were asked for with it, whether or not GitHub showed them.
 type prCacheEntry struct {
 	Fetched time.Time  `json:"fetched"`
 	PR      *github.PR `json:"pr,omitempty"`
+	Checks  bool       `json:"checks,omitempty"`
 }
 
 // fresh is what the cache says about branch, read less than PRCacheTTL ago,
 // and when it was read. found false means "ask GitHub"; found true with a zero
-// PR is "there is none".
-func (c prCache) fresh(branch string, now time.Time) (pr github.PR, fetched time.Time, found bool) {
+// PR is "there is none". A pull request read without its checks does not
+// answer a lookup that wants them.
+func (c prCache) fresh(branch string, now time.Time, checks bool) (pr github.PR, fetched time.Time, found bool) {
 	e, ok := c.Branches[branch]
 	if !ok {
 		return github.PR{}, time.Time{}, false
 	}
 	age := now.Sub(e.Fetched)
 	if age < 0 || age > PRCacheTTL {
+		return github.PR{}, time.Time{}, false
+	}
+	if checks && e.PR != nil && !e.Checks {
 		return github.PR{}, time.Time{}, false
 	}
 	if e.PR == nil {
@@ -118,6 +124,12 @@ func readPRCache(ctx *Context, r github.Remote) prCache {
 // about the others. The write goes through a rename so a reader never sees
 // half of it; an unwritable git dir costs the cache, not the command.
 func writePRCache(ctx *Context, r github.Remote, answers map[string]*github.PR, now time.Time) {
+	writePRCacheChecks(ctx, r, answers, now, false)
+}
+
+// writePRCacheChecks is writePRCache for answers read with the checks asked
+// for, when checks is true.
+func writePRCacheChecks(ctx *Context, r github.Remote, answers map[string]*github.PR, now time.Time, checks bool) {
 	path := prCachePath(ctx)
 	if path == "" {
 		return
@@ -133,7 +145,7 @@ func writePRCache(ctx *Context, r github.Remote, answers map[string]*github.PR, 
 		}
 	}
 	for branch, pr := range answers {
-		c.Branches[branch] = prCacheEntry{Fetched: now, PR: pr}
+		c.Branches[branch] = prCacheEntry{Fetched: now, PR: pr, Checks: checks}
 	}
 	data, err := json.Marshal(c)
 	if err != nil {

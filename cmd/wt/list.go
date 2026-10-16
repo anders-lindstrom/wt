@@ -32,6 +32,10 @@ func newListCmd() *cobra.Command {
 			"asked about on its own rather than waiting the five minutes out.\n" +
 			"--refresh asks about them all again, --no-pr leaves the column out, and\n" +
 			"`wt config set github false` turns the whole thing off.\n\n" +
+			"After the number, a mark says what the checks on the pull request's last\n" +
+			"commit say: ✓ passing, ✗ failing, ● running, and none when it has no\n" +
+			"checks. They come in the same call and are cached with the pull\n" +
+			"request.\n\n" +
 			"A pull request merged somewhere other than trunk says where: a stacked\n" +
 			"one reads `#31 merged into feat_wt/its-parent`, because nothing of it\n" +
 			"has reached trunk yet.\n\n" +
@@ -113,9 +117,9 @@ func newStatusCmd() *cobra.Command {
 			"against trunk as last fetched: its class in wt sync's words, and what to\n" +
 			"do about it.\n\n" +
 			"A PR column appears when a worktree here is on a pull request. It and\n" +
-			"the pull request line come from the same answers `wt list` caches, so\n" +
-			"a listing has already paid for them. --refresh asks GitHub again,\n" +
-			"--no-pr leaves them out.\n\n" +
+			"the pull request line mark its checks as `wt list` does, and come from\n" +
+			"the same answers `wt list` caches, so a listing has already paid for\n" +
+			"them. --refresh asks GitHub again, --no-pr leaves them out.\n\n" +
 			"--all, --roots or --profile show every repository they name, one\n" +
 			"section each; they take no worktree.\n\n" +
 			"--json prints the worktree's plan for wt up as one object, for a tool\n" +

@@ -120,7 +120,7 @@ func TestPRCacheMisses(t *testing.T) {
 	pr := openPR(12, "fix_wt/login-crash", "Login crash")
 	writePRCache(ctx, ghRepo, map[string]*github.PR{"fix_wt/login-crash": &pr}, now)
 
-	if _, _, ok := readPRCache(ctx, ghRepo).fresh("fix_wt/login-crash", now.Add(PRCacheTTL/2)); !ok {
+	if _, _, ok := readPRCache(ctx, ghRepo).fresh("fix_wt/login-crash", now.Add(PRCacheTTL/2), false); !ok {
 		t.Error("a young entry for the same repository must be a hit")
 	}
 	for name, tc := range map[string]struct {
@@ -135,7 +135,7 @@ func TestPRCacheMisses(t *testing.T) {
 		"a clock gone back":              {ghRepo, "fix_wt/login-crash", now.Add(-time.Minute)},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, _, ok := readPRCache(ctx, tc.remote).fresh(tc.branch, tc.when); ok {
+			if _, _, ok := readPRCache(ctx, tc.remote).fresh(tc.branch, tc.when, false); ok {
 				t.Error("want a miss")
 			}
 		})
@@ -145,7 +145,7 @@ func TestPRCacheMisses(t *testing.T) {
 	// answer to this wt's question.
 	mustWrite(t, prCachePath(ctx), `{"version":0,"host":"github.com","slug":"t/demo",`+
 		`"branches":{"fix_wt/login-crash":{"fetched":"`+now.Format(time.RFC3339)+`","pr":{"number":99}}}}`)
-	if _, _, ok := readPRCache(ctx, ghRepo).fresh("fix_wt/login-crash", now); ok {
+	if _, _, ok := readPRCache(ctx, ghRepo).fresh("fix_wt/login-crash", now, false); ok {
 		t.Error("a cache of another version was read as an answer")
 	}
 }
@@ -159,7 +159,7 @@ func TestPRCacheRemembersThatThereIsNone(t *testing.T) {
 	}
 	now := time.Now()
 	writePRCache(ctx, ghRepo, map[string]*github.PR{"feat_wt/alone": nil}, now)
-	pr, _, ok := readPRCache(ctx, ghRepo).fresh("feat_wt/alone", now)
+	pr, _, ok := readPRCache(ctx, ghRepo).fresh("feat_wt/alone", now, false)
 	if !ok {
 		t.Fatal("a fetched answer of \"none\" was not remembered")
 	}
@@ -184,7 +184,7 @@ func TestPRCacheWriteKeepsTheOtherBranches(t *testing.T) {
 
 	c := readPRCache(ctx, ghRepo)
 	for branch, want := range map[string]int{"fix_wt/one": 12, "fix_wt/two": 13} {
-		if pr, _, ok := c.fresh(branch, now); !ok || pr.Number != want {
+		if pr, _, ok := c.fresh(branch, now, false); !ok || pr.Number != want {
 			t.Errorf("%s = %+v, %v; want #%d", branch, pr, ok, want)
 		}
 	}
@@ -228,7 +228,7 @@ func TestPRCacheMergedOutlivesTheTTL(t *testing.T) {
 		"fix_wt/done": &merged, "fix_wt/doing": &open}, long)
 
 	c := readPRCache(ctx, ghRepo)
-	if _, _, ok := c.fresh("fix_wt/done", time.Now()); ok {
+	if _, _, ok := c.fresh("fix_wt/done", time.Now(), false); ok {
 		t.Error("an old entry is not fresh, merged or not")
 	}
 	got, ok := c.merged("fix_wt/done")
