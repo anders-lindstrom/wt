@@ -88,6 +88,9 @@ func cutOff(t *testing.T, err error, start time.Time) {
 // Both halves of materialising a script run under the deadline: a git
 // archive or a tar that never answers is reported, not waited on.
 func TestMaterialiseReportsAnArchiveOrTarThatDoesNotAnswer(t *testing.T) {
+	if testing.Short() {
+		t.Skip("waits out a real deadline")
+	}
 	for _, name := range []string{"git", "tar"} {
 		t.Run(name, func(t *testing.T) {
 			local, origin := repoWithOrigin(t)
@@ -252,6 +255,9 @@ func TestResolveInWorktreeAScriptThatExitsZeroWithoutStagingIsAnError(t *testing
 const hangTimeout = 2 * time.Second
 
 func TestScriptTimesOutInsteadOfHanging(t *testing.T) {
+	if testing.Short() {
+		t.Skip("waits out a real deadline")
+	}
 	// Echoes on every tick rather than once before a single sleep, so the
 	// marker is captured regardless of scheduling jitter in when the script
 	// actually starts running under test load, and the script would hang
@@ -282,6 +288,9 @@ func TestScriptTimesOutInsteadOfHanging(t *testing.T) {
 // Wait returns exec.ErrWaitDelay for an otherwise-successful run: that must
 // still be treated as exit 0, not a failure.
 func TestResolveInWorktreeAcceptsAScriptThatBackgroundsAJob(t *testing.T) {
+	if testing.Short() {
+		t.Skip("waits for a backgrounded job to let go")
+	}
 	script := "#!/bin/sh\ncase \"$1\" in\n" +
 		"--resolve) git show \":3:$2\" > \"$2\" && git add -- \"$2\"; sleep 3 & ;;\n" +
 		"*) exit 1 ;;\nesac\n"
@@ -296,6 +305,9 @@ func TestResolveInWorktreeAcceptsAScriptThatBackgroundsAJob(t *testing.T) {
 }
 
 func TestScriptCheckTimesOutInsteadOfHanging(t *testing.T) {
+	if testing.Short() {
+		t.Skip("waits out a real deadline")
+	}
 	script := "#!/bin/sh\nsleep 5\n"
 	dir, _ := stoppedRebaseWithScript(t, script)
 	s := Script{Root: dir, Trunk: "origin/main", Run: "bin/resolve", Timeout: hangTimeout}

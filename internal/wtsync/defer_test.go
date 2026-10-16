@@ -112,6 +112,9 @@ func TestRunDeferredTimesOut(t *testing.T) {
 // setsid isn't on macOS, so a perl one-liner stands in for it: it calls
 // setpgrp(0,0) to leave the shell's process group before exec'ing sleep.
 func TestRunDeferredTimesOutEvenWhenAnOrphanedChildMakesTheStepLookClean(t *testing.T) {
+	if testing.Short() {
+		t.Skip("waits out a real deadline")
+	}
 	if _, err := exec.LookPath("perl"); err != nil {
 		t.Skip("perl not on PATH")
 	}

@@ -87,6 +87,9 @@ func safetyRefs(t *testing.T, main string) string {
 // A branch behind its own remote is fast-forwarded and then rebased, with
 // the remote's commit in it; undo puts it back where it stood before both.
 func TestUpFastForwardsABranchBehindItsRemoteThenRebases(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f := newTrunkFixture(t)
 	x, opts := f.pushedWork(t)
 	before := gitOut(t, x, "rev-parse", "HEAD")
@@ -131,6 +134,9 @@ func TestUpFastForwardsABranchBehindItsRemoteThenRebases(t *testing.T) {
 // The state right after wt up --no-push is ahead and behind at once, and a
 // second wt up on it has to run.
 func TestUpRunsAgainOnABranchRebasedAndNotPushed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f := newTrunkFixture(t)
 	x, opts := f.pushedWork(t)
 	f.advanceOrigin(t, 1)
@@ -155,6 +161,9 @@ func TestUpRunsAgainOnABranchRebasedAndNotPushed(t *testing.T) {
 // the patch that was pushed, so only the tips the branch once had say it was
 // rebased.
 func TestSyncRunRunsAgainAfterAStrategyResolvedRebase(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	ctx, bump := runFixture(t, false)
 	bareOrigin(t, ctx)
 	main := ctx.Repo.MainRoot
@@ -183,6 +192,9 @@ func TestSyncRunRunsAgainAfterAStrategyResolvedRebase(t *testing.T) {
 // Diverged for real refuses with nothing touched; --allow-diverged rebases
 // the branch as it stands.
 func TestUpRefusesABranchThatDivergedFromItsRemote(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f := newTrunkFixture(t)
 	x, opts := f.pushedWork(t)
 	theirs := f.theirs(t, "feat_wt/x", "t.txt", "t\n")
@@ -232,6 +244,9 @@ func TestUpRefusesABranchThatDivergedFromItsRemote(t *testing.T) {
 // The opposite of rebased-and-not-pushed: a branch that was rebased, whose
 // remote then gained a commit the branch never had.
 func TestUpRefusesARebasedBranchWhoseRemoteGainedACommit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f := newTrunkFixture(t)
 	x, opts := f.pushedWork(t)
 	f.advanceOrigin(t, 1)
@@ -256,6 +271,9 @@ func TestUpRefusesARebasedBranchWhoseRemoteGainedACommit(t *testing.T) {
 // Behind, in a checkout a fast-forward is not safe in: nothing is touched,
 // and the plan names it before anybody runs anything.
 func TestUpBehindAndNotFastForwardableTouchesNothing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f := newTrunkFixture(t)
 	x, opts := f.pushedWork(t)
 	before := gitOut(t, x, "rev-parse", "HEAD")
@@ -316,6 +334,9 @@ func legacyPlanToken(ctx *Context, trunk string, stack []string) string {
 // covers the remote commit the caller was shown: wt up --allow-diverged
 // --expect goes ahead over that divergence and no other.
 func TestPlanHoldsADivergedPlanToItsToken(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f := newTrunkFixture(t)
 	x, opts := f.pushedWork(t)
 	if p := planOfWork(t, f.ctx, "x"); !p.UpEligible || str(p.Token) != legacyPlanToken(f.ctx, "main", []string{"feat_wt/x"}) ||
@@ -366,6 +387,9 @@ func TestPlanHoldsADivergedPlanToItsToken(t *testing.T) {
 // does not bounce the caller: wt fast-forwards, and the token has no remote
 // commit in it.
 func TestUpExpectIsNotBouncedByARemoteThatMovedAhead(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f := newTrunkFixture(t)
 	_, opts := f.pushedWork(t)
 	f.advanceOrigin(t, 1)
@@ -382,6 +406,9 @@ func TestUpExpectIsNotBouncedByARemoteThatMovedAhead(t *testing.T) {
 // fast-forwarded comes before one that diverged: --allow-diverged does not
 // clear it, so there is no token.
 func TestPlanIsHeldBackByAnyStackMembersOwnRemote(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f := newTrunkFixture(t)
 	x, opts := f.pushedWork(t)
 	var buf bytes.Buffer
@@ -432,6 +459,9 @@ func TestPlanIsHeldBackByAnyStackMembersOwnRemote(t *testing.T) {
 // and rebased, and the child lands on the parent's final tip with its own
 // commits and nothing else.
 func TestUpFastForwardsAStackParent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f := newTrunkFixture(t)
 	x, opts := f.pushedWork(t)
 	var buf bytes.Buffer
@@ -464,6 +494,9 @@ func TestUpFastForwardsAStackParent(t *testing.T) {
 // nothing to check, on every run, however far its upstream is ahead. It is
 // never fast-forwarded onto trunk and never refused.
 func TestUpLeavesABranchThatTracksTrunkUnchecked(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f := newTrunkFixture(t)
 	opts := f.withWork(t)
 	wt, err := Locate(f.ctx, "x")
@@ -496,6 +529,9 @@ func TestUpLeavesABranchThatTracksTrunkUnchecked(t *testing.T) {
 // somewhere a tracking ref cannot show: the run goes on, and says so for the
 // one it could not check.
 func TestUpGoesOnWhenTheRemoteIsGoneOrCannotBeRead(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	t.Run("gone", func(t *testing.T) {
 		f := newTrunkFixture(t)
 		_, opts := f.pushedWork(t)
@@ -532,6 +568,9 @@ func TestUpGoesOnWhenTheRemoteIsGoneOrCannotBeRead(t *testing.T) {
 // code of its own and trunk not blamed; --no-fetch compares with what was
 // last fetched and says so.
 func TestUpRefusesWhenTheBranchsRemoteCannotBeFetched(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f := newTrunkFixture(t)
 	x, opts := f.pushedWork(t)
 	before := gitOut(t, x, "rev-parse", "HEAD")
@@ -566,6 +605,9 @@ func TestUpRefusesWhenTheBranchsRemoteCannotBeFetched(t *testing.T) {
 
 // The run's own fetch brings the branch's remote: nobody fetched it before.
 func TestUpFetchesTheBranchsOwnRemoteWithTrunk(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f := newTrunkFixture(t)
 	x, opts := f.pushedWork(t)
 	stale := gitOut(t, f.main, "rev-parse", "origin/feat_wt/x")
@@ -591,6 +633,9 @@ func TestUpFetchesTheBranchsOwnRemoteWithTrunk(t *testing.T) {
 // moves. wt sync rebase takes the same branch, fast-forwards it, hands the
 // conflict over, and undo puts the branch back where it stood before both.
 func TestABranchBehindItsRemoteIsJudgedAtTheRemotesCommit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f := newTrunkFixture(t)
 	f.declare(t)
 	gitIn(t, f.main, "fetch", "-q", "origin")
@@ -646,6 +691,9 @@ func TestABranchBehindItsRemoteIsJudgedAtTheRemotesCommit(t *testing.T) {
 // the tip the run found: fastForwarded stays as a record, after is local,
 // and nothing is left for undo to trip over.
 func TestSyncRunRestoresAStackParentToBeforeItsFastForward(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f := newTrunkFixture(t)
 	f.declare(t)
 	gitIn(t, f.main, "fetch", "-q", "origin")
@@ -687,6 +735,9 @@ func TestSyncRunRestoresAStackParentToBeforeItsFastForward(t *testing.T) {
 // and refuses the diverged one in words; its token lets a run under
 // --allow-diverged go ahead over exactly the divergence it showed.
 func TestSyncOverviewReportsOwnRemoteAndItsTokenCoversADivergence(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f := newTrunkFixture(t)
 	f.declare(t)
 	gitIn(t, f.main, "fetch", "-q", "origin")
@@ -749,6 +800,9 @@ func TestSyncOverviewReportsOwnRemoteAndItsTokenCoversADivergence(t *testing.T) 
 // A run with nothing named leaves a diverged worktree alone and names what
 // holds it; --if-ready makes that a failure.
 func TestSyncRunWithNothingNamedLeavesADivergedWorktree(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f := newTrunkFixture(t)
 	f.declare(t)
 	gitIn(t, f.main, "fetch", "-q", "origin")
@@ -786,6 +840,9 @@ func TestSyncRunWithNothingNamedLeavesADivergedWorktree(t *testing.T) {
 // The overview a person reads: one line under the row for what a run would
 // refuse or do first, and the detail of one worktree says how it stands.
 func TestSyncSaysHowAWorktreeStandsAgainstItsRemote(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f := newTrunkFixture(t)
 	f.declare(t)
 	gitIn(t, f.main, "fetch", "-q", "origin")
@@ -831,6 +888,9 @@ func TestSyncSaysHowAWorktreeStandsAgainstItsRemote(t *testing.T) {
 // remote has includes trunk's commits, so it is diverged and refused like
 // any other. The sentence says what it looks like.
 func TestUpRefusesABranchRebasedElsewhereAndSaysSo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f := newTrunkFixture(t)
 	x, opts := f.pushedWork(t)
 	before := gitOut(t, x, "rev-parse", "HEAD")

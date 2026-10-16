@@ -568,6 +568,9 @@ func readTodo(t *testing.T, wt string) string {
 // pick as if nothing had happened. The interrupt takes the marks out of the
 // list; the resume puts them back.
 func TestResumeRecoversFromAnInterruptAtTheRunsOwnStops(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: stops the run at every step, over real repositories")
+	}
 	for _, atEdit := range []bool{false, true} {
 		dir, wt, cfg := liftRepo(t,
 			[]map[string]string{{"app.yaml": appYAML("1.2.3", "1.5.1"), "a.txt": "trunk\n"}},

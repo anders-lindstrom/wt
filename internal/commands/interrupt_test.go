@@ -43,6 +43,9 @@ func (b *lockedBuffer) String() string {
 // goroutine that ran the killed step parks instead, so the rebase stands as
 // the handler says, with no result pinned and nothing owed.
 func TestInterruptDuringADeferredStepPinsNoResult(t *testing.T) {
+	if testing.Short() {
+		t.Skip("interrupts a real run with a signal")
+	}
 	ctx, _ := runFixture(t, false)
 	main := ctx.Repo.MainRoot
 	started := filepath.Join(t.TempDir(), "started")
@@ -121,6 +124,9 @@ func interruptWhileHandingOver(t *testing.T, gitDir string, briefWritten func() 
 // the worktree, with no sidecar yet to explain it. It has to name the
 // worktree and what puts it back, as an interrupt during the rebase does.
 func TestSyncRunInterruptedWhileHandingOverSaysHowToPutItBack(t *testing.T) {
+	if testing.Short() {
+		t.Skip("interrupts a real run with a signal")
+	}
 	if os.Getenv(interruptChild) == "" {
 		out, status := interruptedChild(t)
 		if status != interruptStatus || !strings.Contains(out, "interrupted while rebasing bump") || !strings.Contains(out, "rebase --abort") {
@@ -144,6 +150,9 @@ func TestSyncRunInterruptedWhileHandingOverSaysHowToPutItBack(t *testing.T) {
 // The same during resume's fresh handover: the rebase and a handover are
 // still there for resume to pick up again, and the interrupt says so.
 func TestSyncResumeInterruptedWhileHandingOverAgainSaysToResume(t *testing.T) {
+	if testing.Short() {
+		t.Skip("interrupts a real run with a signal")
+	}
 	if os.Getenv(interruptChild) == "" {
 		out, status := interruptedChild(t)
 		if status != interruptStatus || !strings.Contains(out, "interrupted while resuming bump") || !strings.Contains(out, "wt sync resume bump") {

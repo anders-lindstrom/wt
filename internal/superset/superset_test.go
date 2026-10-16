@@ -178,6 +178,9 @@ func TestProbeStates(t *testing.T) {
 // A superset that never answers must not hold a probe open, whichever of its
 // two questions is the one left hanging.
 func TestProbeDeadline(t *testing.T) {
+	if testing.Short() {
+		t.Skip("waits out a real deadline")
+	}
 	hung, _ := fake(t, `sleep 30`)
 	staleAndHung, _ := staleFake(t, `sleep 30`)
 	for name, tc := range map[string]struct {

@@ -39,6 +39,9 @@ func mustBeDiverged(t *testing.T, f *trunkFixture, x string, opts RunOptions, th
 
 // Behind, fast-forwarded and rebased by a run, then undone.
 func TestAFastForwardThatWasUndoneLeavesNoFormerTip(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f := newTrunkFixture(t)
 	x, opts := f.pushedWork(t)
 	before := gitOut(t, x, "rev-parse", "HEAD")
@@ -56,6 +59,9 @@ func TestAFastForwardThatWasUndoneLeavesNoFormerTip(t *testing.T) {
 
 // The same for the fast-forward that is all a run did.
 func TestAFastForwardAloneThatWasUndoneLeavesNoFormerTip(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f, x, opts, local, remote := nothingToRebase(t)
 	if r, err := syncRunJSON(t, f.ctx, []string{"x"}, opts); err != nil || r.Worktrees[0].Result != ResultFastForwarded {
 		t.Fatalf("%v %+v", err, r.Worktrees)
@@ -70,6 +76,9 @@ func TestAFastForwardAloneThatWasUndoneLeavesNoFormerTip(t *testing.T) {
 // A rebase that failed after the fast-forward and was put back, with no
 // undo at all.
 func TestAFastForwardThatWasRestoredLeavesNoFormerTip(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f := newTrunkFixture(t)
 	f.declare(t)
 	gitIn(t, f.main, "fetch", "-q", "origin")
@@ -97,6 +106,9 @@ func TestAFastForwardThatWasRestoredLeavesNoFormerTip(t *testing.T) {
 // tracking ref when it is fetched by pattern; a sibling whose name merely
 // starts the same is nobody's business.
 func TestUpFetchesExactlyTheBranchItChecks(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	t.Run("a directory where the branch was", func(t *testing.T) {
 		f := newTrunkFixture(t)
 		_, opts := f.pushedWork(t)
@@ -135,6 +147,9 @@ func TestUpFetchesExactlyTheBranchItChecks(t *testing.T) {
 // a newer one. A git that does not know fetch --porcelain stands in for one
 // older than 2.41.
 func TestUpRunsOnAGitWithoutFetchPorcelain(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	realGit, err := exec.LookPath("git")
 	if err != nil {
 		t.Fatal(err)
@@ -162,6 +177,9 @@ func TestUpRunsOnAGitWithoutFetchPorcelain(t *testing.T) {
 // --allow-diverged is consent to rebase one branch over what its remote
 // has: like --force it needs the worktree named.
 func TestSyncRunAllowDivergedNeedsTheWorktreeNamed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f := newTrunkFixture(t)
 	f.declare(t)
 	gitIn(t, f.main, "fetch", "-q", "origin")
@@ -186,6 +204,9 @@ func TestSyncRunAllowDivergedNeedsTheWorktreeNamed(t *testing.T) {
 // allowed says the run went on over a divergence: not that the flag was
 // given to a run that then refused the worktree for something else.
 func TestAllowedIsOnlyARunThatWentOn(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f := newTrunkFixture(t)
 	x, opts := f.pushedWork(t)
 	f.theirs(t, "feat_wt/x", "t.txt", "t\n")
@@ -203,6 +224,9 @@ func TestAllowedIsOnlyARunThatWentOn(t *testing.T) {
 // top is plainly ahead, and once the run is undone the branch is behind
 // again, nothing else.
 func TestAFastForwardAloneIsFinishedAndItsUndoIsBehindAgain(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f, x, opts, local, remote := nothingToRebase(t)
 	if r, err := syncRunJSON(t, f.ctx, []string{"x"}, opts); err != nil || r.Worktrees[0].Result != ResultFastForwarded {
 		t.Fatalf("%v %+v", err, r.Worktrees)
@@ -231,6 +255,9 @@ func TestAFastForwardAloneIsFinishedAndItsUndoIsBehindAgain(t *testing.T) {
 // the remote's commit a former tip, and a second run goes on; the same
 // handover undone leaves none.
 func TestAHandoverAfterAFastForwardKeepsOrDropsTheFormerTip(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	handedOver := func(t *testing.T) (f *trunkFixture, x string, opts RunOptions, theirs string) {
 		t.Helper()
 		f = newTrunkFixture(t)
@@ -276,6 +303,9 @@ func TestAHandoverAfterAFastForwardKeepsOrDropsTheFormerTip(t *testing.T) {
 // a busy session keeps a run off it: --force lifts the session, and what the
 // run then goes over has to be what the caller was shown.
 func TestSyncTokenCoversADivergedRowBehindABusySession(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f := newTrunkFixture(t)
 	f.declare(t)
 	gitIn(t, f.main, "fetch", "-q", "origin")
@@ -328,6 +358,9 @@ func TestSyncTokenCoversADivergedRowBehindABusySession(t *testing.T) {
 // nothing is pushed over anything and the divergence keeps no run off. The
 // look says the same as the run does.
 func TestADivergedBranchARunWouldNotRebaseIsNotBlocked(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f := newTrunkFixture(t)
 	x, opts := f.pushedWork(t)
 	f.theirs(t, "feat_wt/x", "t.txt", "t\n")
@@ -352,6 +385,9 @@ func TestADivergedBranchARunWouldNotRebaseIsNotBlocked(t *testing.T) {
 // A branch deleted on the remote between the listing and the fetch is gone,
 // not a fetch that failed: the run goes on, and trunk is not blamed.
 func TestABranchDeletedBetweenTheListingAndTheFetchIsGone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	realGit, err := exec.LookPath("git")
 	if err != nil {
 		t.Fatal(err)
@@ -382,6 +418,9 @@ func TestABranchDeletedBetweenTheListingAndTheFetchIsGone(t *testing.T) {
 // the branch ref sits at the remote's commit there, not at the tip the run
 // found, and the pin must not depend on which.
 func TestSyncUndoForcedPinsACommitInsideAHandoverThatFollowedAFastForward(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f := newTrunkFixture(t)
 	f.declare(t)
 	gitIn(t, f.main, "fetch", "-q", "origin")
@@ -466,6 +505,9 @@ func TestAnInterruptedRunReportsAFastForwardItHadMade(t *testing.T) {
 // is in its way, is that branch's trouble: refused by itself with a reason
 // that is a whole clause, and trunk fetched all the same.
 func TestUpRefusesOnlyTheBranchWhoseRefWillNotFetch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f := newTrunkFixture(t)
 	x, opts := f.pushedWork(t)
 	before := gitOut(t, x, "rev-parse", "HEAD")
