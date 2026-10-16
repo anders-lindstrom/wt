@@ -21,6 +21,7 @@ import (
 // A repository with no configuration runs on what `wt init --yes` would
 // write, held in memory: the repository is left as it was.
 func TestOpenRunsOnDetectedDefaultsWithoutAConfigFile(t *testing.T) {
+	t.Parallel()
 	main := testkit.UnconfiguredRepo(t)
 	ctx, err := kit.Open(main)
 	if err != nil {
@@ -41,6 +42,7 @@ func TestOpenRunsOnDetectedDefaultsWithoutAConfigFile(t *testing.T) {
 // The detected configuration is exactly the one `wt init --yes` writes, bar
 // the flags saying no file holds it and where its trunk came from.
 func TestDetectedDefaultsAreWhatInitWrites(t *testing.T) {
+	t.Parallel()
 	main := testkit.UnconfiguredRepo(t)
 	detected, err := kit.Open(main)
 	if err != nil {
@@ -66,6 +68,7 @@ func TestDetectedDefaultsAreWhatInitWrites(t *testing.T) {
 // A fresh `git init`: main has no commit, so no branch exists to be trunk,
 // and the error says what could not be detected and what fixes it.
 func TestOpenWithoutConfigOrTrunkKeepsTheError(t *testing.T) {
+	t.Parallel()
 	parent := t.TempDir()
 	testkit.GitIn(t, parent, "init", "-q", "-b", "main", "demo")
 	_, err := kit.Open(filepath.Join(parent, "demo"))
@@ -82,6 +85,7 @@ func TestOpenWithoutConfigOrTrunkKeepsTheError(t *testing.T) {
 // Inside a worktree of an unconfigured repository, neither checkout has a
 // file, and the detection is the main checkout's.
 func TestOpenInsideAWorktreeOfAnUnconfiguredRepo(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.UnconfiguredRepo(t))
 	if err != nil {
 		t.Fatal(err)
@@ -102,6 +106,7 @@ func TestOpenInsideAWorktreeOfAnUnconfiguredRepo(t *testing.T) {
 // wt new on detected defaults says so once, on the warning stream, naming the
 // trunk it took; the log and the path are what they always are.
 func TestNewOnDetectedDefaultsSaysSoOnce(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.UnconfiguredRepo(t))
 	if err != nil {
 		t.Fatal(err)
@@ -126,6 +131,7 @@ func TestNewOnDetectedDefaultsSaysSoOnce(t *testing.T) {
 
 // A configured repository hears nothing about detection.
 func TestNewWithAConfigFileSaysNothingAboutDetection(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -143,6 +149,7 @@ func TestNewWithAConfigFileSaysNothingAboutDetection(t *testing.T) {
 // The Claude Code hooks are what an unconfigured repository most needs to
 // work in: the harness makes its worktree there and cannot run `wt init`.
 func TestClaudeHooksInAnUnconfiguredRepo(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.UnconfiguredRepo(t))
 	if err != nil {
 		t.Fatal(err)
@@ -168,6 +175,7 @@ func TestClaudeHooksInAnUnconfiguredRepo(t *testing.T) {
 
 // wt config names where its values came from when no file did.
 func TestConfigSaysTheValuesAreDetected(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.UnconfiguredRepo(t))
 	if err != nil {
 		t.Fatal(err)
@@ -192,6 +200,7 @@ func TestConfigSaysTheValuesAreDetected(t *testing.T) {
 
 // wt doctor reports detection as information, not as a problem.
 func TestDoctorReportsDetectedDefaultsAsInformation(t *testing.T) {
+	t.Parallel()
 	ctx := kit.OpenLenient(testkit.UnconfiguredRepo(t), &bytes.Buffer{})
 	var buf bytes.Buffer
 	problems, err := admin.Doctor(ctx, &buf)
@@ -209,6 +218,7 @@ func TestDoctorReportsDetectedDefaultsAsInformation(t *testing.T) {
 
 // configured:false with no problem is a plan on detected defaults.
 func TestPlansOnDetectedDefaults(t *testing.T) {
+	t.Parallel()
 	ctx := kit.OpenLenient(testkit.UnconfiguredRepo(t), &bytes.Buffer{})
 	p := provisiontest.NewPlanOf(t, ctx, "fix/x", provision.NewOptions{})
 	if p.Configured || len(p.Problems) != 0 || p.Token == nil || p.BuildCommand != nil {
@@ -234,6 +244,7 @@ func TestPlansOnDetectedDefaults(t *testing.T) {
 // noConfiguration is left for a repository whose trunk could not be detected:
 // no origin, a detached checkout, and no branch with a conventional name.
 func TestPlanWhenDetectionFails(t *testing.T) {
+	t.Parallel()
 	main := testkit.NoTrunkRepo(t)
 	ctx := kit.OpenLenient(main, &bytes.Buffer{})
 	p := provisiontest.NewPlanOf(t, ctx, "fix/x", provision.NewOptions{Base: "production"})

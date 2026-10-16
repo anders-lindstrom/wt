@@ -11,6 +11,7 @@ import (
 
 // Every schema wt ships compiles, and names its command.
 func TestEverySchemaCompiles(t *testing.T) {
+	t.Parallel()
 	for _, d := range schema.All() {
 		doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(d.Bytes))
 		if err != nil {
