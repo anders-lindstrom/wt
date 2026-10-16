@@ -1,4 +1,4 @@
-package commands
+package admin
 
 import (
 	"errors"
@@ -346,9 +346,9 @@ func PRList(ctx *kit.Context, w io.Writer, width int) error {
 		rows = append(rows, []string{
 			fmt.Sprintf("#%d", pr.Number),
 			prState(pr),
-			dash(pr.AuthorLogin()),
+			Dash(pr.AuthorLogin()),
 			kit.ElideRight(pr.Title, titleWidth),
-			dash(prWorktree(worktrees, pr, ctx.Config.MainBranch)),
+			Dash(prWorktree(worktrees, pr, ctx.Config.MainBranch)),
 		})
 	}
 	return kit.PrintPathTable(w, rows, width)
@@ -383,7 +383,8 @@ func count(n int, thing string) string {
 	return fmt.Sprintf("%d %ss", n, thing)
 }
 
-func dash(s string) string {
+// Dash is s, or - for an empty cell.
+func Dash(s string) string {
 	if s == "" {
 		return "-"
 	}

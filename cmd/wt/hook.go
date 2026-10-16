@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/admin"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
@@ -28,7 +28,7 @@ func newHookCmd() *cobra.Command {
 			Example: "  wt hook claude-create <<< '{\"name\":\"fix/login-crash\"}'",
 			Args:    cobra.NoArgs,
 			RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
-				return commands.HookCreate(ctx, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
+				return admin.HookCreate(ctx, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 			}),
 		},
 		&cobra.Command{
@@ -41,7 +41,7 @@ func newHookCmd() *cobra.Command {
 				"  wt hook claude-remove <<< '{\"name\":\"login-crash\"}'",
 			Args: cobra.NoArgs,
 			RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
-				return commands.HookRemove(ctx, cmd.InOrStdin(), cmd.ErrOrStderr())
+				return admin.HookRemove(ctx, cmd.InOrStdin(), cmd.ErrOrStderr())
 			}),
 		},
 	)

@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/anders-lindstrom/wt/internal/commands/admin"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/commands/session"
@@ -94,7 +95,7 @@ func List(ctx *kit.Context, opts ListOptions, w io.Writer, width int) error {
 		}
 		row := []string{mark, work, branch}
 		if len(prs) > 0 {
-			row = append(row, dash(prs[n.Branch]))
+			row = append(row, admin.Dash(prs[n.Branch]))
 		}
 		rows = append(rows, append(row, n.Path))
 	}
@@ -249,7 +250,7 @@ func Status(ctx *kit.Context, opts StatusOptions, w io.Writer, width int) error 
 		}
 		row := []string{branch, checkoutState(wt.Path), trunk}
 		if len(prs) > 0 {
-			row = append(row, dash(prs[wt.Branch]))
+			row = append(row, admin.Dash(prs[wt.Branch]))
 		}
 		rows = append(rows, append(row, wt.Path))
 	}

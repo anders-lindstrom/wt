@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/admin"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
@@ -46,7 +46,7 @@ func newPrListCmd() *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
 			out := cmd.OutOrStdout()
-			return commands.PRList(ctx, out, terminalWidth(out))
+			return admin.PRList(ctx, out, terminalWidth(out))
 		}),
 	}
 }
@@ -72,13 +72,13 @@ func newPrOpenCmd() *cobra.Command {
 			if len(args) == 1 {
 				arg = args[0]
 			}
-			return commands.PROpen(ctx, arg, cmd.ErrOrStderr())
+			return admin.PROpen(ctx, arg, cmd.ErrOrStderr())
 		}),
 	}
 }
 
 func newPrCheckoutCmd() *cobra.Command {
-	var opts commands.PROptions
+	var opts admin.PROptions
 	cmd := &cobra.Command{
 		Use:     "checkout [<number>]",
 		Aliases: []string{"co"},
@@ -124,7 +124,7 @@ func newPrCheckoutCmd() *cobra.Command {
 				number = n
 			}
 			opts.Choose = prChooser(cmd)
-			path, err := commands.PRCheckout(ctx, number, opts, cmd.ErrOrStderr())
+			path, err := admin.PRCheckout(ctx, number, opts, cmd.ErrOrStderr())
 			// The path alone goes to stdout so `cd "$(wt pr checkout ...)"` works.
 			return printLine(cmd, path, err)
 		}),

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/admin"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
@@ -88,7 +89,7 @@ func TestConfigWithoutMainBranchFailsWhenNothingNamesTrunk(t *testing.T) {
 func TestDoctorSaysNothingNamesTrunk(t *testing.T) {
 	ctx := kit.OpenLenient(testkit.NoTrunkRepo(t), &bytes.Buffer{})
 	var buf bytes.Buffer
-	problems, err := Doctor(ctx, &buf)
+	problems, err := admin.Doctor(ctx, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}

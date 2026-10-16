@@ -1,4 +1,6 @@
-package commands
+// Package admin implements the commands that look after worktrees already
+// made: wt doctor, migrate, adopt, pr and hook.
+package admin
 
 import (
 	"errors"

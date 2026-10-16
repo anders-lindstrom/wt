@@ -10,7 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/admin"
 	"github.com/anders-lindstrom/wt/internal/github"
 )
 
@@ -28,8 +28,8 @@ const defaultScreen = 10
 // The rows arrive in the order that matters, this person's review queue first.
 // The picker makes a long list answerable: a screenful at a time, any text
 // narrows it.
-func prChooser(cmd *cobra.Command) func([]commands.PRChoice) (github.PR, error) {
-	return func(rows []commands.PRChoice) (github.PR, error) {
+func prChooser(cmd *cobra.Command) func([]admin.PRChoice) (github.PR, error) {
+	return func(rows []admin.PRChoice) (github.PR, error) {
 		out := cmd.ErrOrStderr()
 		ask := canAsk(cmd)
 		pk := &picker{out: out, rows: rows, limit: screenful(out)}
@@ -71,7 +71,7 @@ var errCancelled = errors.New("cancelled")
 // a typed filter has narrowed it to, and how much of it fits on a screen.
 type picker struct {
 	out  io.Writer
-	rows []commands.PRChoice
+	rows []admin.PRChoice
 	// limit is how many rows to print; 0 prints them all.
 	limit int
 	// filter is the text the rows were narrowed by, for the heading.
@@ -112,7 +112,7 @@ func (pk *picker) answer(reply string) (*github.PR, error) {
 // branch or author. One match is shown and then chosen, so typing enough of a
 // title is a way of picking. Nothing matching leaves the list as it was.
 func (pk *picker) narrow(text string) (*github.PR, error) {
-	var kept []commands.PRChoice
+	var kept []admin.PRChoice
 	for _, r := range pk.rows {
 		if matches(r, text) {
 			kept = append(kept, r)
@@ -135,7 +135,7 @@ func (pk *picker) narrow(text string) (*github.PR, error) {
 
 // matches reports whether a row carries text anywhere a person would look for
 // it, case ignored.
-func matches(r commands.PRChoice, text string) bool {
+func matches(r admin.PRChoice, text string) bool {
 	text = strings.ToLower(text)
 	for _, field := range []string{
 		strconv.Itoa(r.PR.Number), r.PR.Title, r.PR.HeadRefName, r.PR.AuthorLogin(),
@@ -148,7 +148,7 @@ func matches(r commands.PRChoice, text string) bool {
 }
 
 // byNumber finds a pull request in the list by its own number.
-func byNumber(rows []commands.PRChoice, number int) (*github.PR, bool) {
+func byNumber(rows []admin.PRChoice, number int) (*github.PR, bool) {
 	for i := range rows {
 		if rows[i].PR.Number == number {
 			return &rows[i].PR, true
@@ -184,7 +184,7 @@ func (pk *picker) render() {
 
 // marker is what a row says beyond the pull request: that this person has been
 // asked to review it, and that its branch already has a worktree here.
-func marker(r commands.PRChoice) string {
+func marker(r admin.PRChoice) string {
 	var notes []string
 	if r.ReviewRequested {
 		notes = append(notes, "your review")

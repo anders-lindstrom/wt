@@ -5,12 +5,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/admin"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 func newMigrateCmd() *cobra.Command {
-	var opts commands.MigrateOptions
+	var opts admin.MigrateOptions
 	cmd := &cobra.Command{
 		Use:     "migrate <work> [<type>/<name>]",
 		Aliases: []string{"move"},
@@ -42,7 +42,7 @@ func newMigrateCmd() *cobra.Command {
 			if len(args) > 1 {
 				dest = args[1]
 			}
-			path, err := commands.Migrate(ctx, args[0], dest, opts, cmd.ErrOrStderr())
+			path, err := admin.Migrate(ctx, args[0], dest, opts, cmd.ErrOrStderr())
 			return printLine(cmd, path, err)
 		}),
 	}

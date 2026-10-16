@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/admin"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
@@ -147,7 +148,7 @@ func TestClaudeHooksInAnUnconfiguredRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out, log bytes.Buffer
-	if err := HookCreate(ctx, strings.NewReader(`{"name":"fix/login-crash"}`), &out, &log); err != nil {
+	if err := admin.HookCreate(ctx, strings.NewReader(`{"name":"fix/login-crash"}`), &out, &log); err != nil {
 		t.Fatalf("HookCreate: %v\n%s", err, log.String())
 	}
 	path := strings.TrimSuffix(out.String(), "\n")
@@ -157,7 +158,7 @@ func TestClaudeHooksInAnUnconfiguredRepo(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("worktree not created: %v", err)
 	}
-	if err := HookRemove(ctx, strings.NewReader(`{"path":"`+path+`"}`), &log); err != nil {
+	if err := admin.HookRemove(ctx, strings.NewReader(`{"path":"`+path+`"}`), &log); err != nil {
 		t.Fatalf("HookRemove: %v\n%s", err, log.String())
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -193,7 +194,7 @@ func TestConfigSaysTheValuesAreDetected(t *testing.T) {
 func TestDoctorReportsDetectedDefaultsAsInformation(t *testing.T) {
 	ctx := kit.OpenLenient(testkit.UnconfiguredRepo(t), &bytes.Buffer{})
 	var buf bytes.Buffer
-	problems, err := Doctor(ctx, &buf)
+	problems, err := admin.Doctor(ctx, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
