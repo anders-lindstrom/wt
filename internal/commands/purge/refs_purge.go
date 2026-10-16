@@ -1,4 +1,4 @@
-package commands
+package purge
 
 import (
 	"crypto/sha256"

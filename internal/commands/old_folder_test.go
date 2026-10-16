@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anders-lindstrom/wt/internal/commands/purge/purgetest"
 	"github.com/anders-lindstrom/wt/internal/commands/refs/refstest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
@@ -31,7 +32,7 @@ func TestRestorePutsBackAFolderMadeTheOldWay(t *testing.T) {
 // And it is purged by this one, its three pins with it.
 func TestPurgeDeletesAFolderMadeTheOldWay(t *testing.T) {
 	ctx, _, _, _, dir := provisiontest.OldFolder(t, "fix/old-way")
-	res := purge(t, dir)
+	res := purgetest.Purge(t, dir)
 	if res.Outcome != quarantine.OutcomePurged {
 		t.Fatalf("outcome %s", res.Outcome)
 	}
