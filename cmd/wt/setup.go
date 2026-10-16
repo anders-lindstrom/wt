@@ -15,7 +15,8 @@ func newSetupCmd() *cobra.Command {
 		Long: "Provision the worktree you are standing in: copy the developer config\n" +
 			"the repository declares, clone its WORKTREE_CACHE_DIRS copy-on-write,\n" +
 			"run its bin/worktree/provision.sh if it has one, initialise\n" +
-			"submodules, run build initialisation.\n\n" +
+			"submodules, run build initialisation. provision.sh and the build get\n" +
+			"WT_PORT (see wt port), WT_BRANCH and WT_WORK in their environment.\n\n" +
 			"A cache such as node_modules is cloned only where the filesystem can\n" +
 			"share its blocks (APFS, Btrfs, XFS); elsewhere it is skipped with a\n" +
 			"line saying why, never copied. One already in the worktree is kept.\n\n" +

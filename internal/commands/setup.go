@@ -187,6 +187,7 @@ func runProvision(ctx *Context, target string, w io.Writer, j *CreateJournal) er
 	fmt.Fprintln(w, "Running bin/worktree/provision.sh...")
 	cmd := exec.Command(script)
 	cmd.Dir = target
+	cmd.Env = append(os.Environ(), worktreeEnv(ctx, target)...)
 	cmd.Stdout, cmd.Stderr = w, w
 	if err := runTracked(cmd, j); err != nil {
 		return fmt.Errorf("provision.sh failed: %w", err)
@@ -225,6 +226,7 @@ func runBuildInit(ctx *Context, target string, opts SetupOptions, w io.Writer, j
 	fmt.Fprintf(w, "Running: %s\n", ctx.Config.BuildInitCommand)
 	cmd := exec.Command("sh", "-c", ctx.Config.BuildInitCommand)
 	cmd.Dir = target
+	cmd.Env = append(os.Environ(), worktreeEnv(ctx, target)...)
 	cmd.Stdout, cmd.Stderr = w, w
 	if err := runTracked(cmd, j); err != nil {
 		fmt.Fprintf(w, " ! Warning: build initialisation failed: %v\n", err)

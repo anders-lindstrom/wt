@@ -96,6 +96,7 @@ examples: `wt <command> --help`.
 | `wt status [<work>]` | each worktree's branch, whether its checkout is clean, and how far behind and ahead of trunk it is; with a worktree named, that one in full with `wt sync`'s verdict; `wt list`'s `PR` column and cache (`--no-pr`, `--refresh`; `--all`, `--roots`, `--profile` for many repositories) |
 | `wt find <pattern>` | resolve a worktree by fuzzy name, across repositories (`--candidates`) |
 | `wt path <work>` / `wt branch <work>` | where a piece of work lives or would go, and its branch; exact, this repository only, for scripts |
+| `wt port [<work>]` | the port a worktree's dev server should use: a hash of the repository and the branch, in 10000–19999, stable per branch; provision.sh and the build get it as `WT_PORT`. Nothing is reserved: `devports` says whether it is free |
 | `wt repos` | every repository wt manages under your roots, with its worktrees and whether wt sync is set up (`--all`, `--roots`, `--profile`, `--paths`) |
 
 **Keep up with trunk**
@@ -676,7 +677,9 @@ Retired: `REPO_NAME` (derived), `WORKTREE_LAYOUT` (the tool owns the shape),
 ### `provision.sh`
 
 An optional executable run by `wt setup` after config copying and before build
-init, with the new worktree as its working directory. This is where a repo puts
+init, with the new worktree as its working directory and `WT_PORT` (as
+`wt port` prints it), `WT_BRANCH` and `WT_WORK` in its environment; the build
+command gets the same three. This is where a repo puts
 its own step — decrypting secrets, checking a cloud identity — instead of the
 tool carrying a flag for it.
 

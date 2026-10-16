@@ -6,6 +6,13 @@ from the last 3 days if that is more, so keep each entry to a few lines a human
 would want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-10-16 15:17 — wt port: a dev-server port per worktree
+
+- `wt port [<work>]` prints a port of the worktree's own, 10000–19999, hashed
+  from the repository and the branch, so it is the same every time.
+  provision.sh and the build command get it as `WT_PORT`, with `WT_BRANCH`
+  and `WT_WORK`. Nothing is reserved; `devports` says whether it is free.
+
 ## 2026-10-16 15:16 — build caches cloned into new worktrees
 
 - `WORKTREE_CACHE_DIRS=(node_modules .gradle)` in worktree.conf has
