@@ -16,6 +16,7 @@ import (
 // The same during resume's fresh handover: the rebase and a handover are
 // still there for resume to pick up again, and the interrupt says so.
 func TestSyncResumeInterruptedWhileHandingOverAgainSaysToResume(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("interrupts a real run with a signal")
 	}
