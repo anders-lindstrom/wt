@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
@@ -43,8 +44,8 @@ func upJSON(t *testing.T, ctx *kit.Context, work string, opts RunOptions) (UpRes
 // The plan names the stack wt up would move, parents first, with a token, and
 // writes nothing at all.
 func TestPlanNamesTheStackAndWritesNothing(t *testing.T) {
-	ctx, bump := runFixture(t, false)
-	child := stackFixture(t, ctx)
+	ctx, bump := provisiontest.RunFixture(t, false)
+	child := provisiontest.StackFixture(t, ctx)
 	before := testkit.RepoState(t, ctx.Repo.MainRoot)
 	p := planOfWork(t, ctx, "child")
 	if after := testkit.RepoState(t, ctx.Repo.MainRoot); after != before {
@@ -70,7 +71,7 @@ func TestPlanNamesTheStackAndWritesNothing(t *testing.T) {
 
 // Every reason wt up would not start is a plan saying so, never an error.
 func TestPlanSaysWhyWtUpWouldNotStart(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	for work, code := range map[string]string{"/": IneligibleMainCheckout, "nope": IneligibleNotAWorktree} {
 		if p := planOfWork(t, ctx, work); p.UpEligible || p.UpIneligibleCode == nil || *p.UpIneligibleCode != code || p.Token != nil {
 			t.Errorf("%s: %+v", work, p)
@@ -95,7 +96,7 @@ func TestPlanSaysWhyWtUpWouldNotStart(t *testing.T) {
 // with its own code, wherever the branch's remote is. A branch with a commit
 // trunk lacks stays eligible.
 func TestPlanSaysABranchTrunkContainsHasNothingToRebase(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	if p := planOfWork(t, ctx, bump); !p.UpEligible || p.Worktree.Ahead == nil || *p.Worktree.Ahead != 1 {
 		t.Fatalf("a branch with its own commit: %+v", p)
 	}
@@ -119,10 +120,10 @@ func TestPlanSaysABranchTrunkContainsHasNothingToRebase(t *testing.T) {
 // The token from the plan is what wt up checks: the same plan runs, and a
 // stack that grew since is refused with nothing touched.
 func TestUpExpectHoldsTheRunToThePlan(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	token := *planOfWork(t, ctx, "bump").Token
 
-	stackFixture(t, ctx)
+	provisiontest.StackFixture(t, ctx)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	opts := noAgents()
 	opts.Expect = token
@@ -143,8 +144,8 @@ func TestUpExpectHoldsTheRunToThePlan(t *testing.T) {
 // A clean run: done, every participant rebased, with before, after and the
 // push as an argv.
 func TestUpJSONReportsARebasedStack(t *testing.T) {
-	ctx, _ := runFixture(t, false)
-	stackFixture(t, ctx)
+	ctx, _ := provisiontest.RunFixture(t, false)
+	provisiontest.StackFixture(t, ctx)
 	r, err := upJSON(t, ctx, "bump", noAgents())
 	if err != nil || r.Outcome != kit.OutcomeDone || r.Onto == nil || len(r.Worktrees) != 2 {
 		t.Fatalf("%v %+v", err, r)
@@ -161,8 +162,8 @@ func TestUpJSONReportsARebasedStack(t *testing.T) {
 
 // A refused parent: refused itself, the child not run, nothing changed.
 func TestUpJSONReportsARefusedParentAndTheChildNotRun(t *testing.T) {
-	ctx, bump := runFixture(t, false)
-	stackFixture(t, ctx)
+	ctx, bump := provisiontest.RunFixture(t, false)
+	provisiontest.StackFixture(t, ctx)
 	if err := os.WriteFile(filepath.Join(bump, "a.txt"), []byte("dirt\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +179,7 @@ func TestUpJSONReportsARefusedParentAndTheChildNotRun(t *testing.T) {
 // A deferred step that fails after the rebase: the branch moved, the step is
 // named, and the run is partial.
 func TestUpJSONReportsAFailedDeferredStep(t *testing.T) {
-	ctx, _ := runFixture(t, false)
+	ctx, _ := provisiontest.RunFixture(t, false)
 	main := ctx.Repo.MainRoot
 	yaml := "conflicts:\n  - paths: [v.txt]\n    strategy: owned-line\n    line: '^\\d'\n    rule: max-plus-patch\n" +
 		"defer:\n  - run: exit 3\n    paths: [v.txt]\n"
@@ -198,7 +199,7 @@ func TestUpJSONReportsAFailedDeferredStep(t *testing.T) {
 
 // An error before any participant is the run's own; the main checkout is one.
 func TestUpJSONReportsAnErrorBeforeAnyParticipant(t *testing.T) {
-	ctx, _ := runFixture(t, false)
+	ctx, _ := provisiontest.RunFixture(t, false)
 	r, err := upJSON(t, ctx, "/", noAgents())
 	if err == nil || r.Outcome != kit.OutcomeRefused || r.Error == nil || !strings.Contains(*r.Error, "main checkout") {
 		t.Errorf("%v %+v", err, r)

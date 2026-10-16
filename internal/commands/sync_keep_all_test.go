@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -20,8 +21,8 @@ import (
 // home and launchctl are the test's own.
 func keepFleet(t *testing.T) (u *config.User, kept, fresh, undeclared *kit.Context, home, calls string) {
 	t.Helper()
-	kept, _ = runFixture(t, false)
-	fresh, _ = runFixture(t, false)
+	kept, _ = provisiontest.RunFixture(t, false)
+	fresh, _ = provisiontest.RunFixture(t, false)
 	plain := testkit.CommittedRepo(t, testkit.MinimalConf)
 	testkit.GitIn(t, plain, "remote", "add", "origin", plain)
 	testkit.GitIn(t, plain, "fetch", "-q", "origin")

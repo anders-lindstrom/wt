@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -16,7 +17,7 @@ import (
 func (f *trunkFixture) withWork(t *testing.T) RunOptions {
 	t.Helper()
 	var buf bytes.Buffer
-	x, err := New(f.ctx, "feat/x", NewOptions{NoSetup: true}, &buf)
+	x, err := provision.New(f.ctx, "feat/x", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}

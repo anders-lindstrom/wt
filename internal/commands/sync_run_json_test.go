@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -52,7 +53,7 @@ func TestSyncRunJSONReportsTheSafetyRefDeferredStepsAndUndo(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := runFixture(t, true)
+	ctx, bump := provisiontest.RunFixture(t, true)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	r, err := syncRunJSON(t, ctx, []string{"bump"}, noAgents())
 	if err != nil || r.Outcome != kit.OutcomeDone || r.Command != "sync rebase" || r.Repo == nil || *r.Repo != ctx.Repo.MainRoot ||
@@ -85,9 +86,9 @@ func TestSyncRunJSONExpectHoldsTheRunToTheOverview(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	token := *overviewJSON(t, ctx).Token
-	stackFixture(t, ctx)
+	provisiontest.StackFixture(t, ctx)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	opts := noAgents()
 	opts.Expect = token
@@ -111,7 +112,7 @@ func TestSyncRunJSONReportsAHandover(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := contestedFixture(t)
+	ctx, bump := provisiontest.ContestedFixture(t)
 	r, err := syncRunJSON(t, ctx, []string{"bump"}, noAgents())
 	if err == nil || r.Outcome != kit.OutcomePartial || len(r.Worktrees) != 1 {
 		t.Fatalf("%v %+v", err, r)
@@ -126,7 +127,7 @@ func TestSyncRunJSONReportsAHandover(t *testing.T) {
 
 // Nobody said yes: nothing rebased, and the object says why.
 func TestSyncRunJSONSaysWhenNobodyConfirmed(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	opts := noAgents()
 	opts.Confirm = func([]string) (bool, error) { return false, nil }
@@ -177,7 +178,7 @@ func TestSyncResumeJSONReportsARefusal(t *testing.T) {
 
 // Undo reports each branch it put back, and a second undo finds it there.
 func TestSyncUndoJSONReportsWhatItPutBack(t *testing.T) {
-	ctx, bump := runFixture(t, true)
+	ctx, bump := provisiontest.RunFixture(t, true)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	var human bytes.Buffer
 	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &human); err != nil {

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -22,7 +23,7 @@ func TestSyncUndoPutsBackWhatSyncRunMoved(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := runFixture(t, true)
+	ctx, bump := provisiontest.RunFixture(t, true)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	var out bytes.Buffer
 	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err != nil {
@@ -59,7 +60,7 @@ func TestSyncUndoRefusesAWorktreeCommittedToSinceTheRun(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := runFixture(t, true)
+	ctx, bump := provisiontest.RunFixture(t, true)
 	var out bytes.Buffer
 	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
@@ -143,7 +144,7 @@ func TestSyncUndoAbortsWhatSyncRunHandedOver(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := contestedFixture(t)
+	ctx, bump := provisiontest.ContestedFixture(t)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	gitDir, _ := handOverNow(t, ctx, bump)
 	if _, ok, err := wtsync.ReadLock(gitDir); err != nil || !ok {
@@ -249,7 +250,7 @@ func TestSyncHandoverRecordsHead(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := contestedFixture(t)
+	ctx, bump := provisiontest.ContestedFixture(t)
 	_, st := handOverNow(t, ctx, bump)
 	if head := testkit.GitOut(t, bump, "rev-parse", "HEAD"); st.Head == "" || st.Head != head {
 		t.Fatalf("sidecar head %q, HEAD %s", st.Head, head)
@@ -276,7 +277,7 @@ func TestSyncUndoForcedPastAMovedHandoverSaysWhatItRewound(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := contestedFixture(t)
+	ctx, bump := provisiontest.ContestedFixture(t)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	handOverNow(t, ctx, bump)
 	main := ctx.Repo.MainRoot
@@ -339,7 +340,7 @@ func TestSyncUndoUnderAnIdleSessionAsksThenTellsIt(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	var out bytes.Buffer
 	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err != nil {
@@ -400,7 +401,7 @@ func TestSyncUndoRefusesASessionThatWokeWhileAsked(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	var out bytes.Buffer
 	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())

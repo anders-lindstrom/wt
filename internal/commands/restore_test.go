@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
@@ -21,7 +22,7 @@ import (
 // its bare name rather than deleted.
 func quarantined(t *testing.T, work string, commit bool) (*kit.Context, string, string, string, string) {
 	t.Helper()
-	ctx, path := safetyWorktree(t, work)
+	ctx, path := provisiontest.SafetyWorktree(t, work)
 	branch := strings.TrimSpace(testkit.GitOut(t, path, "symbolic-ref", "--short", "HEAD"))
 	if commit {
 		testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "work")
@@ -188,7 +189,7 @@ func TestRestoreDetachesWhenTheKeptBranchMovedOn(t *testing.T) {
 // dir that held HEAD is out of the repository. Refs pin them, so gc cannot
 // take them, and they go when the restore is done.
 func TestQuarantinePinsTheCommitsAgainstGC(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/squashed-away")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/squashed-away")
 	testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "only on the branch")
 	tip := strings.TrimSpace(testkit.GitOut(t, path, "rev-parse", "HEAD"))
 	dir := testkit.TrashFor(t, ctx)
@@ -238,7 +239,7 @@ func TestRestoreMakesTheParentsThatWentMeanwhile(t *testing.T) {
 func TestRestoreOnlyUnlocksAWorktreeThatNeverMoved(t *testing.T) {
 	for _, how := range []string{"stopped after the lock", "the move failed"} {
 		t.Run(how, func(t *testing.T) {
-			ctx, path := safetyWorktree(t, "fix/stayed")
+			ctx, path := provisiontest.SafetyWorktree(t, "fix/stayed")
 			dir := testkit.TrashFor(t, ctx)
 			if how == "stopped after the lock" {
 				testkit.CrashAt(t, "lock:done")
@@ -290,7 +291,7 @@ func TestRestoreDoesNotStackOldConfigOnNew(t *testing.T) {
 // so a new worktree that takes the same id is never the one git in the
 // quarantine works on; restore names the original again.
 func TestQuarantinedCheckoutPointsAtItsOwnAdminDir(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/same-id")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/same-id")
 	before := testkit.MustRead(t, filepath.Join(path, ".git"))
 	dir := testkit.TrashFor(t, ctx)
 	var buf bytes.Buffer
@@ -357,7 +358,7 @@ func TestRestoreDryRunChangesNothing(t *testing.T) {
 // gittree's rule: a quarantine's lock with no recovery.json was stopped
 // before anything moved, and restoring it is unlocking it.
 func TestRestoreUnlocksAQuarantineLockWithNoRecord(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/orphan-lock")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/orphan-lock")
 	dir := testkit.TrashFor(t, ctx)
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -374,7 +375,7 @@ func TestRestoreUnlocksAQuarantineLockWithNoRecord(t *testing.T) {
 }
 
 func TestRestoreRefusesAFolderWithNoRecordAndNoLock(t *testing.T) {
-	ctx, _ := safetyWorktree(t, "fix/nothing")
+	ctx, _ := provisiontest.SafetyWorktree(t, "fix/nothing")
 	dir := testkit.TrashFor(t, ctx)
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -405,7 +406,7 @@ func TestRestorePutsBackARemovalStoppedAtEveryStep(t *testing.T) {
 				name += "-unrecorded"
 			}
 			t.Run(name, func(t *testing.T) {
-				ctx, path := safetyWorktree(t, "fix/crash")
+				ctx, path := provisiontest.SafetyWorktree(t, "fix/crash")
 				testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "work")
 				testkit.GitIn(t, ctx.Repo.MainRoot, "config", "branch.fix_wt/crash.description", "mine")
 				tip := strings.TrimSpace(testkit.GitOut(t, path, "rev-parse", "HEAD"))
@@ -565,7 +566,7 @@ func TestRestoreRefusesADirectoryPutInTheQuarantine(t *testing.T) {
 // Config is put back entry by entry, so a restore stopped between two of
 // them adds the rest, and none twice.
 func TestRestoreFinishesAConfigSectionPutBackInPart(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/two-keys")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/two-keys")
 	branch := "fix_wt/two-keys"
 	testkit.GitIn(t, ctx.Repo.MainRoot, "config", "branch."+branch+".remote", "origin")
 	testkit.GitIn(t, ctx.Repo.MainRoot, "config", "branch."+branch+".merge", "refs/heads/"+branch)
@@ -630,7 +631,7 @@ func TestRestoreFailsWhenAPathIsTakenMidway(t *testing.T) {
 func TestRestorePutsBackARemovalStoppedInsideAStep(t *testing.T) {
 	for _, point := range []string{"checkout", "admin", "ref deleted"} {
 		t.Run(point, func(t *testing.T) {
-			ctx, path := safetyWorktree(t, "fix/inside")
+			ctx, path := provisiontest.SafetyWorktree(t, "fix/inside")
 			branch := "fix_wt/inside"
 			testkit.GitIn(t, ctx.Repo.MainRoot, "config", "branch."+branch+".description", "mine")
 			tip := strings.TrimSpace(testkit.GitOut(t, path, "rev-parse", "HEAD"))
@@ -675,7 +676,7 @@ func TestRestoreRetryFinishesTheConfigOfABranchItMade(t *testing.T) {
 			name = "set-since"
 		}
 		t.Run(name, func(t *testing.T) {
-			ctx, path := safetyWorktree(t, "fix/retry-"+name)
+			ctx, path := provisiontest.SafetyWorktree(t, "fix/retry-"+name)
 			branch := "fix_wt/retry-" + name
 			section := "branch." + branch + "."
 			testkit.GitIn(t, ctx.Repo.MainRoot, "config", section+"remote", "origin")
@@ -725,7 +726,7 @@ func TestRestoreRetryFinishesTheConfigOfABranchItMade(t *testing.T) {
 // then failed a config write, then runs a third time: the branch stays its
 // own throughout, and the config comes back whole.
 func TestRestoreKeepsABranchItMadeAcrossTwoFailures(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/thrice")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/thrice")
 	branch := "fix_wt/thrice"
 	section := "branch." + branch + "."
 	testkit.GitIn(t, ctx.Repo.MainRoot, "config", section+"remote", "origin")
@@ -770,7 +771,7 @@ func TestRestoreKeepsABranchItMadeAcrossTwoFailures(t *testing.T) {
 
 // A quarantine lock whose folder is gone too is still taken off.
 func TestRestoreUnlocksAnOrphanWhoseFolderIsGone(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/orphan-gone")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/orphan-gone")
 	dir := testkit.TrashFor(t, ctx)
 	testkit.GitIn(t, ctx.Repo.MainRoot, "worktree", "lock", "--reason", quarantine.LockReason(dir), path)
 	res := restore(t, ctx, dir)

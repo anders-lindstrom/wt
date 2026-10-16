@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/git"
@@ -51,7 +52,7 @@ func TestSweepPinsWhatItDeletesAndRefsRestoresIt(t *testing.T) {
 	testkit.LandOnMain(t, main, "done-work")
 	testkit.GitIn(t, main, "config", "branch.done-work.description", "gone with the branch")
 	doneTip := testkit.GitOut(t, main, "rev-parse", "done-work")
-	path := mergedWorktree(t, ctx, "fix/login")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/login")
 	wtTip := testkit.GitOut(t, main, "rev-parse", "fix_wt/login")
 
 	r, human, err := sweepJSON(t, ctx, SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}})
@@ -131,7 +132,7 @@ func TestSweepQuarantineDoesNotPinABranchTwice(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 1)
 	testkit.LandOnMain(t, main, "done-work")
-	mergedWorktree(t, ctx, "fix/login")
+	provisiontest.MergedWorktree(t, ctx, "fix/login")
 	dir := testkit.TrashFor(t, ctx)
 	r, human, err := sweepJSON(t, ctx, SweepOptions{NoFetch: true, Agents: []wtsync.Agent{},
 		PRs: map[string]github.PR{}, Quarantine: dir})
@@ -188,7 +189,7 @@ func TestSweepInterruptedAfterAMoveNamesThePin(t *testing.T) {
 // wt remove moves a merged branch into a run of its own, which wt refs
 // restore puts back.
 func TestRemovePinsAMergedBranchAndRefsRestoresIt(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/pinned")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/pinned")
 	tip := strings.TrimSpace(testkit.GitOut(t, path, "rev-parse", "HEAD"))
 	r, err := removeJSON(t, ctx, path, RemoveOptions{})
 	if err != nil || r.Outcome != RemoveRemoved || r.RunID == nil {
@@ -217,7 +218,7 @@ func TestRemovePinsAMergedBranchAndRefsRestoresIt(t *testing.T) {
 // An unmerged branch is renamed, not deleted: its commits keep a name, and
 // no run is made.
 func TestRemoveRenamesAnUnmergedBranchWithoutAPin(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/unfinished")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/unfinished")
 	testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "unfinished")
 	r, err := removeJSON(t, ctx, path, RemoveOptions{})
 	if err != nil || r.Outcome != RemoveRemoved || r.RunID != nil || r.KeepAs == nil {
@@ -234,7 +235,7 @@ func TestRemoveRenamesAnUnmergedBranchWithoutAPin(t *testing.T) {
 // A run begun for a branch that then is not moved leaves nothing behind:
 // its meta is dropped, and finish names no run.
 func TestBranchPinsDropARunThatPinnedNothing(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/busy")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/busy")
 	tip := strings.TrimSpace(testkit.GitOut(t, path, "rev-parse", "HEAD"))
 	var begun string
 	pins := &refpins.BranchPins{Command: "wt test", Begun: func(id string) { begun = id }}

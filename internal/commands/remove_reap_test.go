@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -75,7 +76,7 @@ func TestRemoveReapStopsAProcessLeftInTheWorktree(t *testing.T) {
 	realProcesses(t)
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
-	path, err := New(ctx, "fix/served", NewOptions{NoSetup: true}, &buf)
+	path, err := provision.New(ctx, "fix/served", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +107,7 @@ func TestRemoveDryRunListsTheProcessesAndStopsNone(t *testing.T) {
 	realProcesses(t)
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
-	path, err := New(ctx, "fix/served", NewOptions{NoSetup: true}, &buf)
+	path, err := provision.New(ctx, "fix/served", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +146,7 @@ func TestRemoveWithoutReapWarnsAndLeavesThemRunning(t *testing.T) {
 	realProcesses(t)
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
-	path, err := New(ctx, "fix/served", NewOptions{NoSetup: true}, &buf)
+	path, err := provision.New(ctx, "fix/served", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +175,7 @@ func TestRemoveReapRefusesWhenTheAgentsAreUnknownEvenForced(t *testing.T) {
 	realProcesses(t)
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
-	path, err := New(ctx, "fix/served", NewOptions{NoSetup: true}, &buf)
+	path, err := provision.New(ctx, "fix/served", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +205,7 @@ func TestRemoveReapStopsNothingWhenTheRelistingFails(t *testing.T) {
 	realProcesses(t)
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
-	path, err := New(ctx, "fix/served", NewOptions{NoSetup: true}, &buf)
+	path, err := provision.New(ctx, "fix/served", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +231,7 @@ func TestRemoveJSONReportsReapedAndRefusesOnOneThatWillNotStop(t *testing.T) {
 	realProcesses(t)
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
-	path, err := New(ctx, "fix/served", NewOptions{NoSetup: true}, &buf)
+	path, err := provision.New(ctx, "fix/served", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}

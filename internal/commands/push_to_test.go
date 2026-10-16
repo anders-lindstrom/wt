@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -37,7 +39,7 @@ func TestAMigratedBranchIsStillPushedToItsOldRemoteBranch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
-	ctx, _ := runFixture(t, false)
+	ctx, _ := provisiontest.RunFixture(t, false)
 	bare := testkit.OwnBareOrigin(t, ctx)
 	main := ctx.Repo.MainRoot
 	old := filepath.Join(ctx.Repo.Parent, "elsewhere", "own_apikey")
@@ -95,7 +97,7 @@ func TestABranchTrackingAnotherNameIsNotPushedWithNobodyToAsk(t *testing.T) {
 		"pushes there or to origin/feat_wt/bump: say which with wt sync push-to feat_wt/bump origin/theirs (or origin/feat_wt/bump)"
 	for name, mode := range map[string]PushMode{"--push": PushAlways, "--no-push": PushNever, "nobody to ask": PushAsk} {
 		t.Run(name, func(t *testing.T) {
-			ctx, bump := runFixture(t, false)
+			ctx, bump := provisiontest.RunFixture(t, false)
 			bare := testkit.OwnBareOrigin(t, ctx)
 			theirs := tracksTheirs(t, ctx, bare)
 			before := testkit.GitOut(t, bump, "rev-parse", "HEAD")
@@ -127,7 +129,7 @@ func TestABranchTrackingAnotherNameIsNotPushedWithNobodyToAsk(t *testing.T) {
 		})
 	}
 	// The words, once.
-	ctx, _ := runFixture(t, false)
+	ctx, _ := provisiontest.RunFixture(t, false)
 	tracksTheirs(t, ctx, testkit.OwnBareOrigin(t, ctx))
 	var out bytes.Buffer
 	_ = SyncRebase(ctx, []string{"bump"}, pushAlways(), &out)
@@ -142,7 +144,7 @@ func TestAPersonSaysWhereABranchTrackingAnotherNamePushes(t *testing.T) {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
 	run := func(t *testing.T, answer func(PushChoice) string) (ctx *kit.Context, bump, bare, theirs string, asked []PushChoice, confirmed []string, out string) {
-		ctx, bump = runFixture(t, false)
+		ctx, bump = provisiontest.RunFixture(t, false)
 		bare = testkit.OwnBareOrigin(t, ctx)
 		theirs = tracksTheirs(t, ctx, bare)
 		opts := noAgents()
@@ -229,7 +231,7 @@ func TestPushDefaultUpstreamDoesNotMakeTheUpstreamADestination(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	bare := testkit.OwnBareOrigin(t, ctx)
 	release := tracksTheirs(t, ctx, bare)
 	testkit.GitOut(t, ctx.Repo.MainRoot, "config", "push.default", "upstream")
@@ -253,7 +255,7 @@ func TestARunUnderPushDefaultUpstreamPushesTheBranchsOwnNameAndNotTrunk(t *testi
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	bare := testkit.OwnBareOrigin(t, ctx)
 	main := ctx.Repo.MainRoot
 	testkit.GitOut(t, main, "config", "push.default", "upstream")
@@ -289,14 +291,14 @@ func TestNewLeavesTheBranchWithNoUpstream(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
-	ctx, _ := runFixture(t, false)
+	ctx, _ := provisiontest.RunFixture(t, false)
 	bare := testkit.OwnBareOrigin(t, ctx)
 	main := ctx.Repo.MainRoot
 	testkit.GitOut(t, main, "push", "-q", "origin", "main~1:refs/heads/release-1")
 	release := testkit.OnBare(t, bare, "release-1")
 	for work, base := range map[string]string{"on-release": "origin/release-1", "on-trunk": "origin/main", "on-local": "main"} {
 		var out bytes.Buffer
-		_, err := New(ctx, "feat/"+work, NewOptions{NoSetup: true, Base: base}, &out)
+		_, err := provision.New(ctx, "feat/"+work, provision.NewOptions{NoSetup: true, Base: base}, &out)
 		if err != nil {
 			t.Fatalf("%s: %v\n%s", base, err, out.String())
 		}
@@ -324,24 +326,13 @@ func TestNewLeavesTheBranchWithNoUpstream(t *testing.T) {
 	}
 }
 
-// recordedBump is the fixture's bump pushed as origin/old-name and recorded
-// as pushing there: a renamed branch.
-func recordedBump(t *testing.T) (ctx *kit.Context, bump, bare string) {
-	t.Helper()
-	ctx, bump = runFixture(t, false)
-	bare = testkit.OwnBareOrigin(t, ctx)
-	testkit.GitOut(t, bump, "push", "-q", "-u", "origin", "feat_wt/bump:old-name")
-	testkit.GitOut(t, ctx.Repo.MainRoot, "config", "branch.feat_wt/bump.wtPushTo", "origin old-name")
-	return ctx, bump, bare
-}
-
 // Somebody pushed to the recorded branch and nothing here fetched it: git
 // refuses on the commit wt pinned, and the run says the push failed.
 func TestAPushUnderAnotherNameThatTheLeaseRefusesIsAFailedPush(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
-	ctx, _, bare := recordedBump(t)
+	ctx, _, bare := provisiontest.RecordedBump(t)
 	theirs := testkit.MoveOnRemote(t, bare, "old-name")
 	r, err := syncRunJSON(t, ctx, []string{"bump"}, pushAlways())
 	if err == nil || !strings.Contains(err.Error(), "bump (push failed)") {
@@ -362,7 +353,7 @@ func TestARunFetchesChecksAndPushesTheRecordedBranch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
-	ctx, bump, bare := recordedBump(t)
+	ctx, bump, bare := provisiontest.RecordedBump(t)
 	theirs := testkit.MoveOnRemote(t, bare, "old-name")
 	opts := pushAlways()
 	opts.NoFetch = false
@@ -385,7 +376,7 @@ func TestARunFetchesChecksAndPushesTheRecordedBranch(t *testing.T) {
 
 	// With a commit of its own beside theirs it has diverged: the same run
 	// refuses before it rebases, and the remote keeps theirs.
-	ctx, bump, bare = recordedBump(t)
+	ctx, bump, bare = provisiontest.RecordedBump(t)
 	theirs = testkit.MoveOnRemote(t, bare, "old-name")
 	testkit.WriteFile(t, bump, "mine.txt", "mine\n")
 	testkit.GitOut(t, bump, "add", "-A")
@@ -408,7 +399,7 @@ func TestAPushUnderAnotherNameOverACommitTheBranchNeverHadIsNotMade(t *testing.T
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
-	ctx, bump, bare := recordedBump(t)
+	ctx, bump, bare := provisiontest.RecordedBump(t)
 	theirs := testkit.MoveOnRemote(t, bare, "old-name")
 	testkit.GitOut(t, ctx.Repo.MainRoot, "fetch", "-q", "origin")
 	// Something of its own since the push, or the run would just take theirs
@@ -451,7 +442,7 @@ func TestAPushUnderAnotherNameOverACommitTheBranchNeverHadIsNotMade(t *testing.T
 }
 
 func TestSyncPushToRecordsSaysAndForgets(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	bare := testkit.OwnBareOrigin(t, ctx)
 	main := ctx.Repo.MainRoot
 	tracksTheirs(t, ctx, bare)
@@ -532,7 +523,7 @@ func TestStatusNamesTheDestinationAndTheStrayBranchOfItsOwnName(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
-	ctx, bump, _ := recordedBump(t)
+	ctx, bump, _ := provisiontest.RecordedBump(t)
 	testkit.GitOut(t, ctx.Repo.MainRoot, "config", "--unset", "branch.feat_wt/bump.wtPushTo")
 	testkit.GitOut(t, bump, "push", "-q", "origin", "feat_wt/bump")
 	status := func() string {
@@ -580,7 +571,7 @@ func TestRemoveAndRestoreKeepWhereAKeptBranchPushes(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
-	ctx, path := safetyWorktree(t, "fix/kept-push")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/kept-push")
 	main := ctx.Repo.MainRoot
 	testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "work")
 	bare := filepath.Join(t.TempDir(), "origin.git")

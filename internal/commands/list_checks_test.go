@@ -7,39 +7,11 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/github"
 )
-
-// withChecks is pr with its last commit's checks summed up as state, the way
-// the branch query reads them; "" is a commit with no checks.
-func withChecks(pr github.PR, state string) github.PR {
-	pr.CheckState = state
-	return pr
-}
-
-// fourWorktreesWithChecks is a repository with a worktree on each of four
-// pull requests: checks passing, failing, running, and none at all.
-func fourWorktreesWithChecks(t *testing.T) (*kit.Context, string) {
-	t.Helper()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
-	if err != nil {
-		t.Fatal(err)
-	}
-	log := testkit.FakeGitHub(t,
-		withChecks(testkit.OpenPR(12, "fix_wt/passing", "Passing"), "SUCCESS"),
-		withChecks(testkit.OpenPR(13, "fix_wt/failing", "Failing"), "FAILURE"),
-		withChecks(testkit.OpenPR(14, "fix_wt/running", "Running"), "PENDING"),
-		withChecks(testkit.OpenPR(15, "fix_wt/unchecked", "Unchecked"), ""),
-	)
-	for _, work := range []string{"fix/passing", "fix/failing", "fix/running", "fix/unchecked"} {
-		var errs bytes.Buffer
-		if _, err := New(ctx, work, NewOptions{}, &errs); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return ctx, log
-}
 
 // checkCells is the PR cell each of fourWorktreesWithChecks' branches reads.
 var checkCells = map[string]string{ //nolint:gosec // G101: "passing" is a check state, not a password
@@ -52,7 +24,7 @@ var checkCells = map[string]string{ //nolint:gosec // G101: "passing" is a check
 // The PR column marks what each pull request's checks say after its number,
 // and marks nothing for one with no checks.
 func TestListMarksThePullRequestsChecks(t *testing.T) {
-	ctx, _ := fourWorktreesWithChecks(t)
+	ctx, _ := provisiontest.FourWorktreesWithChecks(t)
 	out := listing(t, ctx, ListOptions{NoSessions: true})
 	for branch, cell := range checkCells {
 		if line := lineContaining(t, out, branch+" "); !strings.Contains(line, cell+" ") {
@@ -64,7 +36,7 @@ func TestListMarksThePullRequestsChecks(t *testing.T) {
 // wt status has wt list's PR column, marks and all, and wt status <work> the
 // same cell on its pr line.
 func TestStatusMarksThePullRequestsChecks(t *testing.T) {
-	ctx, _ := fourWorktreesWithChecks(t)
+	ctx, _ := provisiontest.FourWorktreesWithChecks(t)
 	var buf bytes.Buffer
 	if err := Status(ctx, StatusOptions{}, &buf, 0); err != nil {
 		t.Fatal(err)
@@ -93,7 +65,7 @@ func TestPRCacheKeepsTheChecks(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now()
-	failing := withChecks(testkit.OpenPR(13, "fix_wt/failing", "Failing"), "FAILURE")
+	failing := provisiontest.WithChecks(testkit.OpenPR(13, "fix_wt/failing", "Failing"), "FAILURE")
 	kit.WritePRCacheChecks(ctx, testkit.GhRepo, map[string]*github.PR{"fix_wt/failing": &failing}, now, true)
 
 	pr, _, ok := kit.ReadPRCache(ctx, testkit.GhRepo).Fresh("fix_wt/failing", now, true)
@@ -105,7 +77,7 @@ func TestPRCacheKeepsTheChecks(t *testing.T) {
 // wt status --json is defined from local state alone: checks the cache holds
 // change nothing in it, and it asks GitHub nothing.
 func TestStatusJSONLeavesTheChecksOut(t *testing.T) {
-	ctx, log := fourWorktreesWithChecks(t)
+	ctx, log := provisiontest.FourWorktreesWithChecks(t)
 	plan := func() string {
 		var buf bytes.Buffer
 		if err := UpPlanJSON(ctx, "failing", &buf); err != nil {
@@ -133,9 +105,9 @@ func TestStatusJSONLeavesTheChecksOut(t *testing.T) {
 // pull request merged elsewhere and one with changes requested have two words,
 // and a pull request with no checks is left as prLabel has it.
 func TestPRCellMarksAfterTheNumberOfAMultiWordLabel(t *testing.T) {
-	merged := withChecks(testkit.OpenPR(31, "feat_wt/x", "X"), "SUCCESS")
+	merged := provisiontest.WithChecks(testkit.OpenPR(31, "feat_wt/x", "X"), "SUCCESS")
 	merged.State, merged.BaseRefName = "MERGED", "feat_wt/parent"
-	changes := withChecks(testkit.OpenPR(32, "feat_wt/y", "Y"), "FAILURE")
+	changes := provisiontest.WithChecks(testkit.OpenPR(32, "feat_wt/y", "Y"), "FAILURE")
 	changes.ReviewDecision = "CHANGES_REQUESTED"
 	unchecked := testkit.OpenPR(33, "feat_wt/z", "Z")
 	unchecked.ReviewDecision = "CHANGES_REQUESTED"
@@ -182,7 +154,7 @@ func TestPRCacheWithoutChecksDoesNotAnswerAListing(t *testing.T) {
 // Only the PR column asks for the checks: a lookup for anything else asks
 // GitHub exactly what it asked before they existed.
 func TestOnlyTheListingAsksForTheChecks(t *testing.T) {
-	ctx, log := fourWorktreesWithChecks(t)
+	ctx, log := provisiontest.FourWorktreesWithChecks(t)
 	kit.BranchPRs(ctx, []string{"fix_wt/failing"}, kit.PRLookup{Refresh: true})
 	got := testkit.ArgvOf(t, log)
 	if len(got) == 0 || strings.Contains(got[len(got)-1], "headCommit") {
@@ -206,14 +178,14 @@ func TestListShowsThePullRequestsWhenTheChecksAreRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	var errs bytes.Buffer
-	if _, err := New(ctx, "fix/failing", NewOptions{}, &errs); err != nil {
+	if _, err := provision.New(ctx, "fix/failing", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
 	}
 	log := testkit.FakeGitHubWith(t, `case "$*" in *headCommit*)
   echo '{"data":{"repository":{"b0":{"nodes":[{"number":13,"headCommit":null}]}}},"errors":[{"type":"FORBIDDEN","path":["repository","b0","nodes",0,"headCommit"],"message":"Resource not accessible by personal access token"}]}'
   echo 'gh: Resource not accessible by personal access token' >&2
   exit 1 ;;
-esac`, withChecks(testkit.OpenPR(13, "fix_wt/failing", "Failing"), "FAILURE"))
+esac`, provisiontest.WithChecks(testkit.OpenPR(13, "fix_wt/failing", "Failing"), "FAILURE"))
 
 	var warnings bytes.Buffer
 	ctx.WarnTo(&warnings)
@@ -240,7 +212,7 @@ func TestListSaysWhyTheColumnIsMissingWhenTheRetryFailsToo(t *testing.T) {
 		t.Fatal(err)
 	}
 	var errs bytes.Buffer
-	if _, err := New(ctx, "fix/failing", NewOptions{}, &errs); err != nil {
+	if _, err := provision.New(ctx, "fix/failing", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
 	}
 	testkit.FakeGitHubWith(t, `case "$*" in
@@ -251,7 +223,7 @@ func TestListSaysWhyTheColumnIsMissingWhenTheRetryFailsToo(t *testing.T) {
 *graphql*)
   echo 'gh: Something broke on the server' >&2
   exit 1 ;;
-esac`, withChecks(testkit.OpenPR(13, "fix_wt/failing", "Failing"), "FAILURE"))
+esac`, provisiontest.WithChecks(testkit.OpenPR(13, "fix_wt/failing", "Failing"), "FAILURE"))
 
 	var warnings bytes.Buffer
 	ctx.WarnTo(&warnings)

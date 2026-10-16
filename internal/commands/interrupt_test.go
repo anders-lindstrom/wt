@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -26,7 +27,7 @@ func TestInterruptDuringADeferredStepPinsNoResult(t *testing.T) {
 	if testing.Short() {
 		t.Skip("interrupts a real run with a signal")
 	}
-	ctx, _ := runFixture(t, false)
+	ctx, _ := provisiontest.RunFixture(t, false)
 	main := ctx.Repo.MainRoot
 	started := filepath.Join(t.TempDir(), "started")
 	yaml, err := os.ReadFile(filepath.Join(main, ".wt-sync.yaml"))
@@ -75,7 +76,7 @@ func TestSyncRunInterruptedWhileHandingOverSaysHowToPutItBack(t *testing.T) {
 		}
 		return
 	}
-	ctx, bump := contestedFixture(t)
+	ctx, bump := provisiontest.ContestedFixture(t)
 	gitDir, err := wtsync.GitDir(bump)
 	if err != nil {
 		t.Fatal(err)
@@ -101,7 +102,7 @@ func TestSyncResumeInterruptedWhileHandingOverAgainSaysToResume(t *testing.T) {
 		}
 		return
 	}
-	ctx, bump := laterStopFixture(t, true)
+	ctx, bump := provisiontest.LaterStopFixture(t, true)
 	gitDir, st := handOverNow(t, ctx, bump)
 	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
 	testkit.GitOut(t, bump, "add", "--", "a.txt")

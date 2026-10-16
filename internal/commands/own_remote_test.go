@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -145,7 +147,7 @@ func TestSyncRunRunsAgainAfterAStrategyResolvedRebase(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	testkit.BareOrigin(t, ctx)
 	main := ctx.Repo.MainRoot
 	testkit.GitIn(t, main, "push", "-q", "origin", "main")
@@ -393,7 +395,7 @@ func TestPlanIsHeldBackByAnyStackMembersOwnRemote(t *testing.T) {
 	f := newTrunkFixture(t)
 	x, opts := f.pushedWork(t)
 	var buf bytes.Buffer
-	y, err := New(f.ctx, "feat/y", NewOptions{NoSetup: true, Base: "feat_wt/x"}, &buf)
+	y, err := provision.New(f.ctx, "feat/y", provision.NewOptions{NoSetup: true, Base: "feat_wt/x"}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -446,7 +448,7 @@ func TestUpFastForwardsAStackParent(t *testing.T) {
 	f := newTrunkFixture(t)
 	x, opts := f.pushedWork(t)
 	var buf bytes.Buffer
-	y, err := New(f.ctx, "feat/y", NewOptions{NoSetup: true, Base: "feat_wt/x"}, &buf)
+	y, err := provision.New(f.ctx, "feat/y", provision.NewOptions{NoSetup: true, Base: "feat_wt/x"}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -680,7 +682,7 @@ func TestSyncRunRestoresAStackParentToBeforeItsFastForward(t *testing.T) {
 	testkit.GitIn(t, f.main, "fetch", "-q", "origin")
 	x, opts := f.pushedWork(t)
 	var buf bytes.Buffer
-	y, err := New(f.ctx, "feat/y", NewOptions{NoSetup: true, Base: "feat_wt/x"}, &buf)
+	y, err := provision.New(f.ctx, "feat/y", provision.NewOptions{NoSetup: true, Base: "feat_wt/x"}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}

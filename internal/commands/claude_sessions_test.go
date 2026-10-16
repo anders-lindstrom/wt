@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -177,27 +178,6 @@ func TestListCleansAndCutsASessionName(t *testing.T) {
 	}
 }
 
-// ownShape is a repository shaped like this one: a long work name, its
-// branch, a pull request on it, and two sessions in the worktree, one of
-// which needs input.
-func ownShape(t *testing.T) *kit.Context {
-	t.Helper()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
-	if err != nil {
-		t.Fatal(err)
-	}
-	testkit.FakeGitHub(t, testkit.OpenPR(77, "feat_wt/list-sessions", "Sessions in wt list"))
-	var errs bytes.Buffer
-	wt, err := New(ctx, "feat/list-sessions", NewOptions{}, &errs)
-	if err != nil {
-		t.Fatal(err)
-	}
-	testkit.ClaudeLists(t, &session.ListClaudeSessions,
-		testkit.Background("20260930-090330/list-sessions", "aaaaaaaa", "blocked", wt),
-		testkit.Background("a second look", "bbbbbbbb", "working", wt))
-	return ctx
-}
-
 func widestLine(out string) int {
 	widest := 0
 	for _, line := range strings.Split(out, "\n") {
@@ -210,7 +190,7 @@ func widestLine(out string) int {
 // columns this repository's own names do not, and the listing is the one
 // without the column plus a line saying so: no row ever wraps for it.
 func TestListLeavesTheSessionColumnOutWhereARowWouldNotFit(t *testing.T) {
-	ctx := ownShape(t)
+	ctx := provisiontest.OwnShape(t)
 	const width = 80
 	without := listed(t, ctx, ListOptions{NoSessions: true}, width)
 	if n := widestLine(without); n > width {
@@ -229,7 +209,7 @@ func TestListLeavesTheSessionColumnOutWhereARowWouldNotFit(t *testing.T) {
 
 // Where every row fits, the column is there, whole.
 func TestListShowsTheSessionColumnWhereEveryRowFits(t *testing.T) {
-	ctx := ownShape(t)
+	ctx := provisiontest.OwnShape(t)
 	piped := listed(t, ctx, ListOptions{}, 0)
 	// Wide enough for the table with its paths cut to their shortest, and
 	// one column short of that.
@@ -257,7 +237,7 @@ func TestListShowsTheSessionColumnWhereEveryRowFits(t *testing.T) {
 
 // --wide is the listing as it is when piped, whatever the width.
 func TestListWideShowsTheColumnWhateverTheWidth(t *testing.T) {
-	ctx := ownShape(t)
+	ctx := provisiontest.OwnShape(t)
 	piped := listed(t, ctx, ListOptions{}, 0)
 	if got := listed(t, ctx, ListOptions{Wide: true}, 40); got != piped {
 		t.Errorf("want what a pipe gets:\n%s\ngot:\n%s", piped, got)

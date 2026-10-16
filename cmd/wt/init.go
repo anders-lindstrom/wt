@@ -8,8 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
@@ -44,11 +44,11 @@ func newInitCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			opts := commands.InitOptions{Force: force}
+			opts := provision.InitOptions{Force: force}
 			if !yes && canAsk(cmd) {
 				opts.Ask = askAnswers(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()))
 			}
-			return commands.Init(r, opts, cmd.OutOrStdout())
+			return provision.Init(r, opts, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask; write the detected values")

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -15,7 +16,7 @@ import (
 // A busy Codex session refuses what a busy Claude one refuses, under the
 // same --force.
 func TestUpRefusesUnderABusyCodexSession(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	opts := noAgents()
 	opts.Agents = []wtsync.Agent{testkit.CodexSession(bump, "busy")}
 	opts.Relist = func() ([]wtsync.Agent, error) { return opts.Agents, nil }
@@ -32,7 +33,7 @@ func TestUpRefusesUnderABusyCodexSession(t *testing.T) {
 }
 
 func TestRemovePlanJSONSaysWhoseEachSessionIs(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/codex-plan")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/codex-plan")
 	resolved, _ := filepath.EvalSymlinks(path)
 	p, err := removePlanJSON(t, ctx, path, RemoveOptions{Agents: []wtsync.Agent{
 		{ID: "s1", Name: "one", Cwd: resolved, Status: "idle"},
@@ -67,7 +68,7 @@ func TestRemovePlanJSONSaysWhoseEachSessionIs(t *testing.T) {
 }
 
 func TestStatusAndSyncJSONListACodexSession(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	testkit.ListedSessions(t, &session.ListSessions, testkit.CodexSession(bump, "busy"), wtsync.Agent{Name: "parked-1", Cwd: testkit.CodexSession(bump, "").Cwd, Kind: "interactive", Status: "idle"})
 
 	p := planOfWork(t, ctx, "bump")
@@ -88,7 +89,7 @@ func TestStatusAndSyncJSONListACodexSession(t *testing.T) {
 // An idle interactive Codex is treated as an idle Claude session is: named,
 // and not a refusal.
 func TestUpGoesAheadUnderAnIdleCodexSession(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	idle := testkit.CodexSession(bump, "idle")
 	idle.Name = "codex"
 	opts := noAgents()

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -21,7 +22,7 @@ import (
 // unmerged for a person, the rebase still in progress, the sidecar written.
 func handedOver(t *testing.T) (ctx *kit.Context, bump, gitDir string, st wtsync.State) {
 	t.Helper()
-	ctx, bump = contestedFixture(t)
+	ctx, bump = provisiontest.ContestedFixture(t)
 	gitDir, st = handOverNow(t, ctx, bump)
 	return ctx, bump, gitDir, st
 }
@@ -45,27 +46,6 @@ func handOverNow(t *testing.T, ctx *kit.Context, bump string) (gitDir string, st
 		t.Fatalf("RebaseInProgress = %v, %v; the fixture is not mid-rebase", busy, berr)
 	}
 	return gitDir, st
-}
-
-// laterStopFixture is contestedFixture with a second branch commit that bumps
-// v.txt again, so a rebase continued past the handed-over stop meets v.txt —
-// owned-line's — in conflict at 2/2. withUnclaimed also has that commit add
-// b.txt, which trunk adds too and nobody claims.
-func laterStopFixture(t *testing.T, withUnclaimed bool) (ctx *kit.Context, bump string) {
-	t.Helper()
-	ctx, bump = contestedFixture(t)
-	main := ctx.Repo.MainRoot
-	if withUnclaimed {
-		testkit.WriteFile(t, main, "b.txt", "trunk\n")
-		testkit.GitOut(t, main, "add", "-A")
-		testkit.GitOut(t, main, "commit", "-q", "-m", "b on trunk")
-		testkit.GitOut(t, main, "fetch", "-q", "origin")
-		testkit.WriteFile(t, bump, "b.txt", "branch\n")
-	}
-	testkit.WriteFile(t, bump, "v.txt", "1.0.2\n")
-	testkit.GitOut(t, bump, "add", "-A")
-	testkit.GitOut(t, bump, "commit", "-q", "-m", "bump again")
-	return ctx, bump
 }
 
 // noResumeAgents is the resume half of noAgents: no sessions anywhere, and a
@@ -219,7 +199,7 @@ func TestSyncResumeRefusesUnstagedTrackedChanges(t *testing.T) {
 }
 
 func TestSyncResumeWithoutAHandover(t *testing.T) {
-	ctx, _ := runFixture(t, false)
+	ctx, _ := provisiontest.RunFixture(t, false)
 	var out bytes.Buffer
 	err := SyncResume(ctx, "other", noResumeAgents(), &out)
 	if err == nil {
@@ -238,7 +218,7 @@ func TestSyncResumeRefusesARebaseItDidNotLeave(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := laterStopFixture(t, false)
+	ctx, bump := provisiontest.LaterStopFixture(t, false)
 	gitDir, st := handOverNow(t, ctx, bump)
 	testkit.GitOut(t, bump, "rebase", "--abort")
 	// Their own interactive rebase of the same branch, onto its own base
@@ -298,7 +278,7 @@ func TestSyncResumeTakesALaterStopThroughTheStrategies(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := laterStopFixture(t, false)
+	ctx, bump := provisiontest.LaterStopFixture(t, false)
 	gitDir, st := handOverNow(t, ctx, bump)
 	if st.Stop != 1 || st.Total != 2 {
 		t.Fatalf("state = %+v; want the handover at 1/2", st)
@@ -345,7 +325,7 @@ func TestSyncResumeHandsALaterUnclaimedStopOverAgain(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := laterStopFixture(t, true)
+	ctx, bump := provisiontest.LaterStopFixture(t, true)
 	gitDir, st := handOverNow(t, ctx, bump)
 	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
 	testkit.GitOut(t, bump, "add", "--", "a.txt")
@@ -426,7 +406,7 @@ func TestSyncResumeFinishesARebaseFinishedByHandAndRunsTheDeferredSteps(t *testi
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := contested(t, true)
+	ctx, bump := provisiontest.Contested(t, true)
 	// A second branch commit, as the real case's stop 1/2: the hand
 	// continue passes through a later pick before the rebase finishes.
 	testkit.WriteFile(t, bump, "b.txt", "branch\n")
@@ -613,7 +593,7 @@ func TestSyncResumeSaysWhereAFailedHandoverLeftTheWorktree(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := laterStopFixture(t, true)
+	ctx, bump := provisiontest.LaterStopFixture(t, true)
 	gitDir, st := handOverNow(t, ctx, bump)
 	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
 	testkit.GitOut(t, bump, "add", "--", "a.txt")
@@ -722,38 +702,6 @@ func TestSyncResumeSendsAnAbortedHandoverToUndo(t *testing.T) {
 	}
 }
 
-// globFixture declares owned-line for v*.txt over two tracked files it
-// matches, v1.txt and v[1].txt. Read as a pathspec, v[1].txt also names
-// v1.txt. Only v[1].txt conflicts; a.txt, which nobody claims, makes the run
-// hand the stop over.
-func globFixture(t *testing.T) (ctx *kit.Context, bump string) {
-	t.Helper()
-	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	testkit.WriteFile(t, main, ".wt-sync.yaml", "conflicts:\n  - paths: ['v*.txt']\n    strategy: owned-line\n    line: '^\\d'\n    rule: max-plus-patch\n")
-	testkit.WriteFile(t, main, "v1.txt", "0.0.1\n")
-	testkit.WriteFile(t, main, "v[1].txt", "1.0.0\n")
-	testkit.WriteFile(t, main, "a.txt", "a\n")
-	testkit.GitOut(t, main, "add", "-A")
-	testkit.GitOut(t, main, "commit", "-q", "-m", "declare")
-	ctx, err := kit.Open(main)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var buf bytes.Buffer
-	if bump, err = New(ctx, "feat/bump", NewOptions{NoSetup: true}, &buf); err != nil {
-		t.Fatal(err)
-	}
-	testkit.WriteFile(t, bump, "v[1].txt", "1.0.1\n")
-	testkit.WriteFile(t, bump, "a.txt", "branch\n")
-	testkit.GitOut(t, bump, "commit", "-q", "-am", "bump")
-	testkit.WriteFile(t, main, "v[1].txt", "1.0.5\n")
-	testkit.WriteFile(t, main, "a.txt", "trunk\n")
-	testkit.GitOut(t, main, "commit", "-q", "-am", "trunk bump")
-	testkit.GitOut(t, main, "remote", "add", "origin", main)
-	testkit.GitOut(t, main, "fetch", "-q", "origin")
-	return ctx, bump
-}
-
 // A path with glob characters in it names exactly one file. The sidecar's
 // Resolved is the handover's Staged, so it must hold v[1].txt's own blob, not
 // v1.txt's, or resume would call the strategy's answer hand-merged.
@@ -761,7 +709,7 @@ func TestSyncHandoverRecordsTheBlobOfTheFileItNames(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := globFixture(t)
+	ctx, bump := provisiontest.GlobFixture(t)
 	_, st := handOverNow(t, ctx, bump)
 	own := testkit.GitOut(t, bump, "rev-parse", ":0:v[1].txt")
 	sibling := testkit.GitOut(t, bump, "rev-parse", ":0:v1.txt")
@@ -905,7 +853,7 @@ func TestSyncResumeRelaysTheStopsBeforeTheHandoverToo(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	main := ctx.Repo.MainRoot
 	testkit.WriteFile(t, bump, "a.txt", "branch\n")
 	testkit.GitOut(t, bump, "add", "-A")

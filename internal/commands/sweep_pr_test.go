@@ -9,32 +9,16 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
-// squashed is a worktree whose branch carries a commit trunk does not have,
-// which is what a squash or rebase merge leaves behind as far as git is
-// concerned. It returns the worktree, its branch and its tip.
-func squashed(t *testing.T, ctx *kit.Context, work string) (path, branch, tip string) {
-	t.Helper()
-	path = mergedWorktree(t, ctx, work)
-	testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "the work that was squashed")
-	return path, ctx.Repo.BranchAt(path), testkit.GitOut(t, path, "rev-parse", "HEAD")
-}
-
 // mergedPR is what GitHub says about a branch it merged into trunk at tip.
 func mergedPR(number int, branch, tip string) github.PR {
-	return mergedInto(number, branch, tip, "main")
-}
-
-// mergedInto is the same, for a pull request merged somewhere other than
-// trunk — a stacked one, merged into its parent branch.
-func mergedInto(number int, branch, tip, base string) github.PR {
-	return github.PR{Number: number, Title: "Fix the login crash", HeadRefName: branch,
-		HeadRefOid: tip, BaseRefName: base, State: "MERGED"}
+	return provisiontest.MergedInto(number, branch, tip, "main")
 }
 
 // sweptWith is a sweep plan made against a fixed set of pull requests.
@@ -47,7 +31,7 @@ func sweptWith(t *testing.T, ctx *kit.Context, prs map[string]github.PR) SweepPl
 // so only the pull request says the work landed.
 func TestSweepPlanSweepsASquashMergedWorktree(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	path, branch, tip := squashed(t, ctx, "fix/login-crash")
+	path, branch, tip := provisiontest.Squashed(t, ctx, "fix/login-crash")
 
 	if p := sweptWith(t, ctx, nil); inAnyGroup(p, branch) {
 		t.Fatal("without GitHub this branch is invisible to sweep, as it was")
@@ -70,7 +54,7 @@ func TestSweepPlanSweepsASquashMergedWorktree(t *testing.T) {
 // End to end, with the branch deleted at the tip the plan showed.
 func TestSweepRemovesASquashMergedWorktree(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	path, branch, tip := squashed(t, ctx, "fix/login-crash")
+	path, branch, tip := provisiontest.Squashed(t, ctx, "fix/login-crash")
 	prs := map[string]github.PR{branch: mergedPR(34, branch, tip)}
 
 	var buf bytes.Buffer
@@ -93,7 +77,7 @@ func TestSweepRemovesASquashMergedWorktree(t *testing.T) {
 // branch off the pull request's head.
 func TestSweepPlanLeavesACommitMadeAfterTheMerge(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	path, branch, tip := squashed(t, ctx, "fix/login-crash")
+	path, branch, tip := provisiontest.Squashed(t, ctx, "fix/login-crash")
 	testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "and then some more")
 
 	p := sweptWith(t, ctx, map[string]github.PR{branch: mergedPR(34, branch, tip)})
@@ -105,7 +89,7 @@ func TestSweepPlanLeavesACommitMadeAfterTheMerge(t *testing.T) {
 // A closed pull request is not a merged one: nothing landed.
 func TestSweepPlanIgnoresAClosedPullRequest(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	_, branch, tip := squashed(t, ctx, "fix/login-crash")
+	_, branch, tip := provisiontest.Squashed(t, ctx, "fix/login-crash")
 	closed := mergedPR(34, branch, tip)
 	closed.State = "CLOSED"
 
@@ -117,7 +101,7 @@ func TestSweepPlanIgnoresAClosedPullRequest(t *testing.T) {
 // sweep's own safety checks are untouched by any of this.
 func TestSweepPlanKeepsADirtySquashMergedWorktree(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	path, branch, tip := squashed(t, ctx, "fix/login-crash")
+	path, branch, tip := provisiontest.Squashed(t, ctx, "fix/login-crash")
 	testkit.MustWrite(t, filepath.Join(path, "scratch.txt"), "not yet\n")
 
 	p := sweptWith(t, ctx, map[string]github.PR{branch: mergedPR(34, branch, tip)})
@@ -137,7 +121,7 @@ func TestSweepPlanKeepsADirtySquashMergedWorktree(t *testing.T) {
 // reason, not instead of it.
 func TestSweepPlanNamesThePullRequestOfAMergedWorktree(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	mergedWorktree(t, ctx, "fix/login-crash")
+	provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	branch := "fix_wt/login-crash"
 
 	p := sweptWith(t, ctx, map[string]github.PR{branch: testkit.OpenPR(35, branch, "Still open")})
@@ -193,9 +177,9 @@ func TestSweepPlanNamesThePullRequestOfAGoneBranch(t *testing.T) {
 // the work away.
 func TestSweepLeavesAPullRequestMergedIntoItsParent(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	_, branch, tip := squashed(t, ctx, "fix/login-crash")
+	_, branch, tip := provisiontest.Squashed(t, ctx, "fix/login-crash")
 
-	stacked := mergedInto(34, branch, tip, "feat_wt/the-parent")
+	stacked := provisiontest.MergedInto(34, branch, tip, "feat_wt/the-parent")
 	p := sweptWith(t, ctx, map[string]github.PR{branch: stacked})
 	if inAnyGroup(p, branch) {
 		t.Fatalf("a branch merged into its parent was swept:\n%s", rendered(p))
@@ -210,9 +194,9 @@ func TestSweepLeavesAPullRequestMergedIntoItsParent(t *testing.T) {
 // the work went, and an unanswered question is not a yes.
 func TestSweepLeavesAPullRequestWithNoBaseRecorded(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	_, branch, tip := squashed(t, ctx, "fix/login-crash")
+	_, branch, tip := provisiontest.Squashed(t, ctx, "fix/login-crash")
 
-	p := sweptWith(t, ctx, map[string]github.PR{branch: mergedInto(34, branch, tip, "")})
+	p := sweptWith(t, ctx, map[string]github.PR{branch: provisiontest.MergedInto(34, branch, tip, "")})
 	if inAnyGroup(p, branch) {
 		t.Fatalf("a pull request with no base recorded was swept:\n%s", rendered(p))
 	}
@@ -224,7 +208,7 @@ func TestSweepLeavesAPullRequestWithNoBaseRecorded(t *testing.T) {
 // something new.
 func TestSweepSaysWhyAConfirmedPullRequestWasNotDeleted(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	_, branch, tip := squashed(t, ctx, "fix/login-crash")
+	_, branch, tip := provisiontest.Squashed(t, ctx, "fix/login-crash")
 	was := SweepBranch{Branch: repo.Branch{Name: branch, Tip: tip}, MergedPR: 34}
 
 	// A fresh plan that knows nothing about the pull request: the branch is

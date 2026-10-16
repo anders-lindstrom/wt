@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -14,7 +15,7 @@ import (
 // worktree, as one during the deferred steps does. The tracker is clear
 // again once the finish has returned.
 func TestCompleteRunBuildsItsInputUnderTheRebasedTracker(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	trunk := testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", "origin/main")
 	branch := testkit.GitOut(t, bump, "rev-parse", "--abbrev-ref", "HEAD")
 	cfg, err := wtsync.LoadFromRef(ctx.Repo.MainRoot, trunk)

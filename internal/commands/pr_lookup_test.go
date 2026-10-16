@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -15,9 +17,9 @@ import (
 // makes an old pull request findable: a listing by recency would have to
 // reach back past every pull request opened since.
 func TestListAsksAboutTheWorktreeBranchesByName(t *testing.T) {
-	ctx, log := oneWorktreeWithAPR(t)
+	ctx, log := provisiontest.OneWorktreeWithAPR(t)
 	var errs bytes.Buffer
-	if _, err := New(ctx, "feat/api-tidy", NewOptions{}, &errs); err != nil {
+	if _, err := provision.New(ctx, "feat/api-tidy", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
 	}
 
@@ -45,12 +47,12 @@ func TestListAsksAboutTheWorktreeBranchesByName(t *testing.T) {
 // A branch made since the cache was written must not wait the TTL out. Only
 // the branches the cache cannot answer are asked about.
 func TestListFetchesOnlyTheBranchesTheCacheCannotAnswer(t *testing.T) {
-	ctx, log := oneWorktreeWithAPR(t)
+	ctx, log := provisiontest.OneWorktreeWithAPR(t)
 	listing(t, ctx, ListOptions{})
 	calls := len(testkit.ArgvOf(t, log))
 
 	var errs bytes.Buffer
-	if _, err := New(ctx, "feat/brand-new", NewOptions{}, &errs); err != nil {
+	if _, err := provision.New(ctx, "feat/brand-new", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
 	}
 	listing(t, ctx, ListOptions{})
@@ -71,7 +73,7 @@ func TestListFetchesOnlyTheBranchesTheCacheCannotAnswer(t *testing.T) {
 // `wt status` reads the same cache `wt list` fills, so standing in a worktree
 // and asking about it costs nothing a listing has already paid for.
 func TestStatusReadsTheCacheListFilled(t *testing.T) {
-	ctx, log := oneWorktreeWithAPR(t)
+	ctx, log := provisiontest.OneWorktreeWithAPR(t)
 	listing(t, ctx, ListOptions{})
 	calls := len(testkit.ArgvOf(t, log))
 
@@ -166,7 +168,7 @@ func TestPRChoicesLeadWithYourReviewQueue(t *testing.T) {
 	testkit.FakeGitHubAs(t, "anders", "", mine, wanted)
 
 	var errs bytes.Buffer
-	path, err := New(ctx, "fix/login-crash", NewOptions{}, &errs)
+	path, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs)
 	if err != nil {
 		t.Fatal(err)
 	}

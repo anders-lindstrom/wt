@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -90,7 +91,7 @@ func TestSyncDoctorFixesRerereOffWithFixFlag(t *testing.T) {
 func TestSyncDoctorReportsAWorktreeWaitingOnAPerson(t *testing.T) {
 	ctx := doctorFixture(t, true)
 	var buf bytes.Buffer
-	bump, err := New(ctx, "feat/bump", NewOptions{NoSetup: true}, &buf)
+	bump, err := provision.New(ctx, "feat/bump", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}

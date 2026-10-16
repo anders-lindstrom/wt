@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/git"
@@ -1282,13 +1283,13 @@ var afterFinalCheck func()
 // its path, its Superset workspace goes too; it is looked up before, while
 // the path still resolves. KeepSuperset asks Superset nothing.
 func (p Plan) run(ctx *kit.Context, w io.Writer) (RemoveResult, error) {
-	workspaces := keptSupersetWorkspaces(ctx)
+	workspaces := provision.KeptSupersetWorkspaces(ctx)
 	if !p.KeepSuperset {
-		workspaces = findSupersetWorkspaces(ctx, p.Path)
+		workspaces = provision.FindSupersetWorkspaces(ctx, p.Path)
 	}
 	res, err := p.remove(ctx, w)
 	if res.Worktree == WorktreeRemoved || res.Worktree == WorktreeQuarantined {
-		res.Superset, res.SupersetReason = workspaces.deregister(ctx, p.Path, w)
+		res.Superset, res.SupersetReason = workspaces.Deregister(ctx, p.Path, w)
 	}
 	return res, err
 }

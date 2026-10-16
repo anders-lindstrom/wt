@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
@@ -22,7 +23,7 @@ func declareNoPathsStep(t *testing.T, ctx *kit.Context) {
 // The overview lists the deferred steps trunk declares on every worktree, in
 // the declared order, each with its gate: also on one a run would skip.
 func TestSyncJSONListsTheDeclaredDeferredStepsOnEveryWorktree(t *testing.T) {
-	ctx, _ := runFixture(t, true)
+	ctx, _ := provisiontest.RunFixture(t, true)
 	declareNoPathsStep(t, ctx)
 	o := overviewJSON(t, ctx)
 	if len(o.Worktrees) != 2 {
@@ -43,7 +44,7 @@ func TestSyncJSONListsTheDeclaredDeferredStepsOnEveryWorktree(t *testing.T) {
 // A trunk that declares no deferred step, and one with no declaration at
 // all, list none: an empty array, which the schema holds it to.
 func TestSyncJSONListsNoDeclaredStepsWhenTrunkDeclaresNone(t *testing.T) {
-	ctx, _ := runFixture(t, false)
+	ctx, _ := provisiontest.RunFixture(t, false)
 	for _, w := range overviewJSON(t, ctx).Worktrees {
 		if w.DeferredDeclared == nil || len(w.DeferredDeclared) != 0 {
 			t.Errorf("%s: deferredDeclared = %#v, want an empty array", w.Work, w.DeferredDeclared)
@@ -66,7 +67,7 @@ func TestSyncJSONListsNoDeclaredStepsWhenTrunkDeclaresNone(t *testing.T) {
 // The plan wt up runs against lists them on each stack member, from trunk
 // as last fetched, and none when trunk declares none.
 func TestPlanListsTheDeclaredDeferredStepsOnEachStackMember(t *testing.T) {
-	ctx, _ := runFixture(t, true)
+	ctx, _ := provisiontest.RunFixture(t, true)
 	p := planOfWork(t, ctx, "bump")
 	if len(p.Stack) != 1 {
 		t.Fatalf("stack = %+v", p.Stack)
@@ -86,7 +87,7 @@ func TestPlanListsTheDeclaredDeferredStepsOnEachStackMember(t *testing.T) {
 		t.Errorf("after the fetch: deferredDeclared = %+v", d)
 	}
 
-	ctx, _ = runFixture(t, false)
+	ctx, _ = provisiontest.RunFixture(t, false)
 	p = planOfWork(t, ctx, "bump")
 	if len(p.Stack) != 1 || p.Stack[0].DeferredDeclared == nil || len(p.Stack[0].DeferredDeclared) != 0 {
 		t.Errorf("no step declared: stack = %#v", p.Stack)
@@ -96,7 +97,7 @@ func TestPlanListsTheDeclaredDeferredStepsOnEachStackMember(t *testing.T) {
 // What the overview lists for a worktree is what the run then reports of
 // it, step for step by the same string.
 func TestTheDeclaredStepsPairWithTheRunsDeferred(t *testing.T) {
-	ctx, _ := runFixture(t, true)
+	ctx, _ := provisiontest.RunFixture(t, true)
 	declared := overviewRow(t, overviewJSON(t, ctx), "bump").DeferredDeclared
 	r, err := syncRunJSON(t, ctx, []string{"bump"}, RunOptions{NoFetch: true})
 	if err != nil {

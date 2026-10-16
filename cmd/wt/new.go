@@ -6,12 +6,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
 )
 
 func newNewCmd() *cobra.Command {
-	var opts commands.NewOptions
+	var opts provision.NewOptions
 	var asJSON, dryRun bool
 	var expect string
 	cmd := &cobra.Command{
@@ -49,16 +49,16 @@ func newNewCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCreate(cmd, args, "new", create{json: asJSON, dryRun: dryRun, expect: expect},
 				func(ctx *kit.Context) (string, error) {
-					return commands.New(ctx, args[0], opts, cmd.ErrOrStderr())
+					return provision.New(ctx, args[0], opts, cmd.ErrOrStderr())
 				},
 				func(ctx *kit.Context, w io.Writer) error {
-					return commands.NewDryRun(ctx, args[0], opts, w)
+					return provision.NewDryRun(ctx, args[0], opts, w)
 				},
 				func(ctx *kit.Context, w io.Writer) error {
-					return commands.NewPlanJSON(ctx, args[0], opts, w)
+					return provision.NewPlanJSON(ctx, args[0], opts, w)
 				},
-				func(ctx *kit.Context, j *commands.CreateJournal, w io.Writer) error {
-					return commands.NewJSON(ctx, args[0], opts, expect, j, w)
+				func(ctx *kit.Context, j *provision.CreateJournal, w io.Writer) error {
+					return provision.NewJSON(ctx, args[0], opts, expect, j, w)
 				})
 		},
 	}
@@ -91,7 +91,7 @@ func runCreate(cmd *cobra.Command, args []string, command string, how create,
 	run func(*kit.Context) (string, error),
 	dry func(*kit.Context, io.Writer) error,
 	plan func(*kit.Context, io.Writer) error,
-	result func(*kit.Context, *commands.CreateJournal, io.Writer) error,
+	result func(*kit.Context, *provision.CreateJournal, io.Writer) error,
 ) error {
 	switch {
 	case cmd.Flags().Changed("expect") && (!how.json || how.dryRun):
@@ -107,9 +107,9 @@ func runCreate(cmd *cobra.Command, args []string, command string, how create,
 		})(cmd, args)
 	}
 	stdout, stderr := cmd.OutOrStdout(), cmd.ErrOrStderr()
-	var j *commands.CreateJournal
+	var j *provision.CreateJournal
 	if !how.dryRun {
-		j = commands.NewCreateJournal(stdout, command)
+		j = provision.NewCreateJournal(stdout, command)
 		defer j.Watch(stderr)()
 	}
 	cwd, err := os.Getwd()

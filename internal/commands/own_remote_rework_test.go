@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -86,7 +87,7 @@ func TestAFastForwardThatWasRestoredLeavesNoFormerTip(t *testing.T) {
 	testkit.GitIn(t, f.main, "fetch", "-q", "origin")
 	x, opts := f.pushedWork(t)
 	var buf bytes.Buffer
-	y, err := New(f.ctx, "feat/y", NewOptions{NoSetup: true, Base: "feat_wt/x"}, &buf)
+	y, err := provision.New(f.ctx, "feat/y", provision.NewOptions{NoSetup: true, Base: "feat_wt/x"}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}

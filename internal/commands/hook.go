@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
 )
 
 // hookInput is the JSON Claude Code sends on stdin. Unknown fields are ignored
@@ -28,7 +29,7 @@ func HookCreate(ctx *kit.Context, in io.Reader, out, logw io.Writer) error {
 	if input.Name == "" {
 		return errors.New("'name' is required in the hook input")
 	}
-	path, err := New(ctx, input.Name, NewOptions{}, logw)
+	path, err := provision.New(ctx, input.Name, provision.NewOptions{}, logw)
 	if err != nil {
 		return err
 	}

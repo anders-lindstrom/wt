@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -40,7 +42,7 @@ func syncBlock(t *testing.T, out, work string) string {
 // A handed-over worktree's staged resolutions are what a person is
 // finishing, not dirt: its row says it is waiting, and nothing else.
 func TestSyncShowsAHandedOverWorktreeWithoutCallingItDirty(t *testing.T) {
-	ctx, bump := contestedFixture(t)
+	ctx, bump := provisiontest.ContestedFixture(t)
 	handOverNow(t, ctx, bump)
 	var buf bytes.Buffer
 	if err := Sync(ctx, SyncOptions{NoFetch: true}, &buf); err != nil {
@@ -66,7 +68,7 @@ func TestSyncShowsAHandedOverWorktreeWithoutCallingItDirty(t *testing.T) {
 // was left mid-rebase, and everything the same row had shown before the run
 // was gone.
 func TestSyncKeepsTheStopAndFileOnAHandedOverRow(t *testing.T) {
-	ctx, bump := contestedFixture(t)
+	ctx, bump := provisiontest.ContestedFixture(t)
 	_, st := handOverNow(t, ctx, bump)
 	var buf bytes.Buffer
 	if err := Sync(ctx, SyncOptions{NoFetch: true}, &buf); err != nil {
@@ -84,7 +86,7 @@ func TestSyncKeepsTheStopAndFileOnAHandedOverRow(t *testing.T) {
 // resume runs what is left, and the detail view's run line says the same.
 // One aborted by hand is called that, and sent to undo.
 func TestSyncShowsAFinishedByHandHandoverAsSuch(t *testing.T) {
-	ctx, bump := contestedFixture(t)
+	ctx, bump := provisiontest.ContestedFixture(t)
 	handOverNow(t, ctx, bump)
 	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
 	testkit.GitOut(t, bump, "add", "--", "a.txt")
@@ -119,7 +121,7 @@ func TestSyncShowsAFinishedByHandHandoverAsSuch(t *testing.T) {
 		t.Fatalf("the detail view lists a finished stop as live, or lost the plan line:\n%s", buf.String())
 	}
 
-	ctx, bump = contestedFixture(t)
+	ctx, bump = provisiontest.ContestedFixture(t)
 	handOverNow(t, ctx, bump)
 	testkit.GitOut(t, bump, "rebase", "--abort")
 	buf.Reset()
@@ -137,7 +139,7 @@ func TestSyncShowsAFinishedByHandHandoverAsSuch(t *testing.T) {
 // will refuse, so the row and doctor must not send a person to resume:
 // the branch moved, and the forced undo is the way out.
 func TestSyncShowsAHandoverFinishedWithACommitInsideAsMoved(t *testing.T) {
-	ctx, bump := contestedFixture(t)
+	ctx, bump := provisiontest.ContestedFixture(t)
 	handOverNow(t, ctx, bump)
 	testkit.GitOut(t, ctx.Repo.MainRoot, "config", "core.hooksPath", filepath.Join(ctx.Repo.MainRoot, ".git", "hooks"))
 	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
@@ -169,7 +171,7 @@ func TestSyncShowsAHandoverFinishedWithACommitInsideAsMoved(t *testing.T) {
 // mid-handover it must at least name the plan file and the files that are
 // the person's, not only the run's refusal.
 func TestSyncDetailNamesThePlanAndTheYoursFilesMidHandover(t *testing.T) {
-	ctx, bump := contestedFixture(t)
+	ctx, bump := provisiontest.ContestedFixture(t)
 	gitDir, _ := handOverNow(t, ctx, bump)
 	var buf bytes.Buffer
 	if err := SyncWorktree(ctx, "bump", SyncOptions{NoFetch: true}, &buf); err != nil {
@@ -188,52 +190,8 @@ func TestSyncDetailNamesThePlanAndTheYoursFilesMidHandover(t *testing.T) {
 	}
 }
 
-// syncRepo builds a repository whose origin is itself, so origin/main
-// exists, with a declaration on main and two feature worktrees: one that
-// conflicts on the declared owned line, and one cut after trunk's last
-// commit, so it is current.
-func syncRepo(t *testing.T) *kit.Context {
-	t.Helper()
-	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	write := func(rel, content string) {
-		t.Helper()
-		if err := os.WriteFile(filepath.Join(main, rel), []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	write(".wt-sync.yaml", "conflicts:\n  - paths: [v.txt]\n    strategy: owned-line\n    line: '^\\d'\n    rule: max-plus-patch\n")
-	write("v.txt", "1.0.0\n")
-	// a.txt is claimed by nothing and touched by nobody here; it is in the
-	// base so a test can make both sides edit it and get a real
-	// modify/modify conflict rather than an add/add.
-	write("a.txt", "base\n")
-	testkit.GitIn(t, main, "add", "-A")
-	testkit.GitIn(t, main, "commit", "-q", "-m", "declare")
-	ctx, err := kit.Open(main)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var buf bytes.Buffer
-	bump, err := New(ctx, "feat/bump", NewOptions{NoSetup: true}, &buf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(bump, "v.txt"), []byte("1.0.1\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	testkit.GitIn(t, bump, "commit", "-q", "-am", "bump")
-	write("v.txt", "1.0.5\n")
-	testkit.GitIn(t, main, "commit", "-q", "-am", "trunk bump")
-	if _, err := New(ctx, "feat/other", NewOptions{NoSetup: true}, &buf); err != nil {
-		t.Fatal(err)
-	}
-	testkit.GitIn(t, main, "remote", "add", "origin", main)
-	testkit.GitIn(t, main, "fetch", "-q", "origin")
-	return ctx
-}
-
 func TestSyncPrintsTheTriageAndChangesNothing(t *testing.T) {
-	ctx := syncRepo(t)
+	ctx := provisiontest.SyncRepo(t)
 	before := testkit.GitOut(t, ctx.Repo.MainRoot, "for-each-ref", "refs/heads")
 	var buf bytes.Buffer
 	if err := Sync(ctx, SyncOptions{NoFetch: true}, &buf); err != nil {
@@ -266,18 +224,18 @@ func TestSyncPrintsTheTriageAndChangesNothing(t *testing.T) {
 // a failed assessment on its own row. The fixture has one worktree of every
 // kind the table files differently, plus one whose directory is gone.
 func TestSyncAssessedInParallelPrintsTheSequentialResult(t *testing.T) {
-	ctx := syncRepo(t)
+	ctx := provisiontest.SyncRepo(t)
 	main := ctx.Repo.MainRoot
 	var buf bytes.Buffer
 	// contested: both sides edit a.txt, which nothing claims.
-	contested, err := New(ctx, "feat/contested", NewOptions{NoSetup: true}, &buf)
+	contested, err := provision.New(ctx, "feat/contested", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
 	testkit.WriteFile(t, contested, "a.txt", "branch\n")
 	testkit.GitIn(t, contested, "commit", "-q", "-am", "branch edits a")
 	// clean: a file of its own, nothing trunk touches.
-	clean, err := New(ctx, "feat/clean", NewOptions{NoSetup: true}, &buf)
+	clean, err := provision.New(ctx, "feat/clean", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,11 +243,11 @@ func TestSyncAssessedInParallelPrintsTheSequentialResult(t *testing.T) {
 	testkit.GitIn(t, clean, "add", "--", "c.txt")
 	testkit.GitIn(t, clean, "commit", "-q", "-m", "adds c")
 	// stale: nothing of its own once trunk moves on.
-	if _, err := New(ctx, "feat/stale", NewOptions{NoSetup: true}, &buf); err != nil {
+	if _, err := provision.New(ctx, "feat/stale", provision.NewOptions{NoSetup: true}, &buf); err != nil {
 		t.Fatal(err)
 	}
 	// gone: the row is its error.
-	gone, err := New(ctx, "feat/gone", NewOptions{NoSetup: true}, &buf)
+	gone, err := provision.New(ctx, "feat/gone", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -360,7 +318,7 @@ func ageFile(t *testing.T, path string, d time.Duration) {
 // what the overview compares with, and the header names it with no warning.
 // The fetch moves origin/main and no branch.
 func TestSyncFetchesTrunkFirst(t *testing.T) {
-	ctx := syncRepo(t)
+	ctx := provisiontest.SyncRepo(t)
 	main := ctx.Repo.MainRoot
 	if err := os.WriteFile(filepath.Join(main, "a.txt"), []byte("trunk\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -393,7 +351,7 @@ func TestSyncFetchesTrunkFirst(t *testing.T) {
 // --no-fetch reaches nothing: the header names trunk as last fetched, with
 // the age of FETCH_HEAD, or no age when there is none.
 func TestSyncNoFetchComparesWithTrunkAsLastFetched(t *testing.T) {
-	ctx := syncRepo(t)
+	ctx := provisiontest.SyncRepo(t)
 	main := ctx.Repo.MainRoot
 	stale := testkit.GitOut(t, main, "rev-parse", "origin/main")
 	if err := os.WriteFile(filepath.Join(main, "a.txt"), []byte("trunk\n"), 0o644); err != nil {
@@ -428,7 +386,7 @@ func TestSyncNoFetchComparesWithTrunkAsLastFetched(t *testing.T) {
 // A fetch that fails does not cost the read-only view: one line says why and
 // what the overview compares with instead, then the table as usual.
 func TestSyncReportsAFailedFetchAndStillPrintsTheTable(t *testing.T) {
-	ctx := syncRepo(t)
+	ctx := provisiontest.SyncRepo(t)
 	main := ctx.Repo.MainRoot
 	sha := testkit.GitOut(t, main, "rev-parse", "origin/main")
 	testkit.GitIn(t, main, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone"))
@@ -471,7 +429,7 @@ func TestSyncReportsAFailedFetchAndStillPrintsTheTable(t *testing.T) {
 // With no origin/main even after trying, there is nothing to compare with:
 // that is still an error, with the reason the fetch gave printed first.
 func TestSyncWithNoTrunkAfterAFailedFetchIsAnError(t *testing.T) {
-	ctx := syncRepo(t)
+	ctx := provisiontest.SyncRepo(t)
 	main := ctx.Repo.MainRoot
 	testkit.GitIn(t, main, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone"))
 	testkit.GitIn(t, main, "update-ref", "-d", "refs/remotes/origin/main")
@@ -517,7 +475,7 @@ func TestFetchReasonSkipsWarningsAndHints(t *testing.T) {
 // strategy resolves, and stop 2 is a file nothing claims: 2/2 is what a
 // person needs, and the resolved stop is a count, not the headline.
 func TestSyncNamesTheDecidingStopNotTheFirstOne(t *testing.T) {
-	ctx := syncRepo(t)
+	ctx := provisiontest.SyncRepo(t)
 	main := ctx.Repo.MainRoot
 	wts, err := ctx.Repo.Worktrees()
 	if err != nil {
@@ -585,7 +543,7 @@ func TestSyncNamesTheDecidingStopNotTheFirstOne(t *testing.T) {
 }
 
 func TestSyncPrintsAnUnknownRowWithItsError(t *testing.T) {
-	ctx := syncRepo(t)
+	ctx := provisiontest.SyncRepo(t)
 	// break one worktree: its directory is gone, so status fails before a class is decided
 	wts, err := ctx.Repo.Worktrees()
 	if err != nil {

@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -18,7 +20,7 @@ import (
 func TestRemoveDeletesMergedBranch(t *testing.T) {
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
-	if _, err := New(ctx, "fix/merged", NewOptions{NoSetup: true}, &buf); err != nil {
+	if _, err := provision.New(ctx, "fix/merged", provision.NewOptions{NoSetup: true}, &buf); err != nil {
 		t.Fatal(err)
 	}
 	if err := Remove(ctx, "fix/merged", RemoveOptions{}, &buf); err != nil {
@@ -33,7 +35,7 @@ func TestRemoveDeletesMergedBranch(t *testing.T) {
 func TestRemoveRenamesUnmergedBranch(t *testing.T) {
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
-	path, err := New(ctx, "fix/unmerged", NewOptions{NoSetup: true}, &buf)
+	path, err := provision.New(ctx, "fix/unmerged", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +148,7 @@ func TestRemovePlanStatesTheMergeStateOfAForeignBranch(t *testing.T) {
 func TestRemoveReadsBranchFromWorktree(t *testing.T) {
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
-	path, err := New(ctx, "fix/renamed", NewOptions{NoSetup: true}, &buf)
+	path, err := provision.New(ctx, "fix/renamed", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +171,7 @@ func TestRemoveReadsBranchFromWorktree(t *testing.T) {
 func TestRemoveHandlesSubmodulesWorktree(t *testing.T) {
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
-	path, err := New(ctx, "fix/subs", NewOptions{NoSetup: true}, &buf)
+	path, err := provision.New(ctx, "fix/subs", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +201,7 @@ func TestRemoveUnknownWorkIsAnError(t *testing.T) {
 func TestRemoveAcceptsWorkNameOfAnyType(t *testing.T) {
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
-	if _, err := New(ctx, "chore/wt-migration", NewOptions{NoSetup: true}, &buf); err != nil {
+	if _, err := provision.New(ctx, "chore/wt-migration", provision.NewOptions{NoSetup: true}, &buf); err != nil {
 		t.Fatal(err)
 	}
 
@@ -216,7 +218,7 @@ func TestRemoveAcceptsWorkNameOfAnyType(t *testing.T) {
 func TestRemovePlanNamesUnmergedBranchOutcome(t *testing.T) {
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
-	path, err := New(ctx, "fix/unmerged-plan", NewOptions{NoSetup: true}, &buf)
+	path, err := provision.New(ctx, "fix/unmerged-plan", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +240,7 @@ func TestRemovePlanNamesUnmergedBranchOutcome(t *testing.T) {
 func TestRemovePlanNamesMergedBranchOutcome(t *testing.T) {
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
-	if _, err := New(ctx, "fix/merged-plan", NewOptions{NoSetup: true}, &buf); err != nil {
+	if _, err := provision.New(ctx, "fix/merged-plan", provision.NewOptions{NoSetup: true}, &buf); err != nil {
 		t.Fatal(err)
 	}
 	buf.Reset()
@@ -259,7 +261,7 @@ func TestRemovePlanNamesMergedBranchOutcome(t *testing.T) {
 func TestRemovePlanReportsUncommittedChanges(t *testing.T) {
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
-	path, err := New(ctx, "fix/dirty", NewOptions{NoSetup: true}, &buf)
+	path, err := provision.New(ctx, "fix/dirty", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,7 +280,7 @@ func TestRemovePlanReportsUncommittedChanges(t *testing.T) {
 func TestRemoveDeclinedChangesNothing(t *testing.T) {
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
-	path, err := New(ctx, "fix/kept", NewOptions{NoSetup: true}, &buf)
+	path, err := provision.New(ctx, "fix/kept", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +302,7 @@ func TestRemoveDeclinedChangesNothing(t *testing.T) {
 func TestRemoveConfirmReceivesThePlan(t *testing.T) {
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
-	path, err := New(ctx, "fix/inspected", NewOptions{NoSetup: true}, &buf)
+	path, err := provision.New(ctx, "fix/inspected", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,7 +354,7 @@ func TestRemovePlanNamesForeignBranch(t *testing.T) {
 func TestRemoveRefusesWhenFactsChangedDuringConfirmation(t *testing.T) {
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
-	path, err := New(ctx, "fix/racing", NewOptions{NoSetup: true}, &buf)
+	path, err := provision.New(ctx, "fix/racing", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -486,17 +488,6 @@ func deadPid(t *testing.T) int {
 	return cmd.Process.Pid
 }
 
-func lockedWorktree(t *testing.T, ctx *kit.Context, main, work, reason string) string {
-	t.Helper()
-	var buf bytes.Buffer
-	path, err := New(ctx, work, NewOptions{NoSetup: true}, &buf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	testkit.GitIn(t, main, "worktree", "lock", "--reason", reason, path)
-	return path
-}
-
 // Claude Code locks the worktree its session lives in and names the session
 // and its pid in the reason. Once that session is over the lock is litter,
 // and nobody should have to learn `git worktree unlock` to get past it.
@@ -505,7 +496,7 @@ func TestRemoveReleasesAStaleLockAndRemoves(t *testing.T) {
 	ctx, _ := kit.Open(main)
 	pid := deadPid(t)
 	reason := fmt.Sprintf("claude session gone (pid %d start Thu Sep 10 04:58:38 2026)", pid)
-	path := lockedWorktree(t, ctx, main, "fix/gone", reason)
+	path := provisiontest.LockedWorktree(t, ctx, main, "fix/gone", reason)
 
 	var buf bytes.Buffer
 	if err := RemoveAt(ctx, path, RemoveOptions{Agents: []wtsync.Agent{}}, &buf); err != nil {
@@ -529,7 +520,7 @@ func TestRemoveRefusesALockHeldByARunningProcess(t *testing.T) {
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	reason := fmt.Sprintf("claude session live (pid %d start Thu Sep 10 04:58:38 2026)", os.Getpid())
-	path := lockedWorktree(t, ctx, main, "fix/live", reason)
+	path := provisiontest.LockedWorktree(t, ctx, main, "fix/live", reason)
 
 	asked := false
 	opts := RemoveOptions{
@@ -559,7 +550,7 @@ func TestRemoveForceBreaksALockHeldByARunningProcess(t *testing.T) {
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	reason := fmt.Sprintf("claude session live (pid %d)", os.Getpid())
-	path := lockedWorktree(t, ctx, main, "fix/live", reason)
+	path := provisiontest.LockedWorktree(t, ctx, main, "fix/live", reason)
 
 	var buf bytes.Buffer
 	opts := RemoveOptions{Force: kit.ForceAll, Agents: []wtsync.Agent{}}
@@ -579,7 +570,7 @@ func TestRemoveForceBreaksALockHeldByARunningProcess(t *testing.T) {
 func TestRemoveTreatsALockWithAnAgentInTheWorktreeAsHeld(t *testing.T) {
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
-	path := lockedWorktree(t, ctx, main, "fix/agented", "held by something")
+	path := provisiontest.LockedWorktree(t, ctx, main, "fix/agented", "held by something")
 	resolved, _ := filepath.EvalSymlinks(path)
 
 	var buf bytes.Buffer
@@ -601,7 +592,7 @@ func TestRemoveTreatsALockWithAnAgentInTheWorktreeAsHeld(t *testing.T) {
 func TestRemoveRefusesALockNothingExplains(t *testing.T) {
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
-	path := lockedWorktree(t, ctx, main, "fix/mystery", "reasons")
+	path := provisiontest.LockedWorktree(t, ctx, main, "fix/mystery", "reasons")
 
 	var buf bytes.Buffer
 	if err := RemoveAt(ctx, path, RemoveOptions{Agents: []wtsync.Agent{}}, &buf); err == nil {
@@ -618,7 +609,7 @@ func TestRemoveNeverRepeatsGitsAdviceAboutMinusFMinusF(t *testing.T) {
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	reason := fmt.Sprintf("claude session live (pid %d)", os.Getpid())
-	path := lockedWorktree(t, ctx, main, "fix/live", reason)
+	path := provisiontest.LockedWorktree(t, ctx, main, "fix/live", reason)
 
 	var buf bytes.Buffer
 	err := RemoveAt(ctx, path, RemoveOptions{Agents: []wtsync.Agent{}}, &buf)
@@ -636,7 +627,7 @@ func TestRemoveNeverRepeatsGitsAdviceAboutMinusFMinusF(t *testing.T) {
 func TestRemoveDeletesABranchMergedOnlyOnOrigin(t *testing.T) {
 	ctx, main, origin := testkit.SweepRepo(t)
 	var buf bytes.Buffer
-	path, err := New(ctx, "fix/landed", NewOptions{NoSetup: true}, &buf)
+	path, err := provision.New(ctx, "fix/landed", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -676,7 +667,7 @@ func TestRemoveKeepsABranchOnlyAnUnreadOriginHas(t *testing.T) {
 				t.Fatal(err)
 			}
 			var buf bytes.Buffer
-			path, err := New(ctx, "fix/unseen", NewOptions{NoSetup: true}, &buf)
+			path, err := provision.New(ctx, "fix/unseen", provision.NewOptions{NoSetup: true}, &buf)
 			if err != nil {
 				t.Fatal(err)
 			}

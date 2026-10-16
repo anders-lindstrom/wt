@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/github"
@@ -143,8 +144,8 @@ func TestDoctorChecksRootsAndProfiles(t *testing.T) {
 func TestSweepAllAsksOnceAndSweepsEveryRepository(t *testing.T) {
 	ctxA, _, _ := testkit.SweepRepo(t)
 	ctxB, _, _ := testkit.SweepRepo(t)
-	pathA := mergedWorktree(t, ctxA, "fix/one")
-	pathB := mergedWorktree(t, ctxB, "fix/two")
+	pathA := provisiontest.MergedWorktree(t, ctxA, "fix/one")
+	pathB := provisiontest.MergedWorktree(t, ctxB, "fix/two")
 	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{
 		ctxA.Repo.MainRoot, ctxB.Repo.MainRoot, filepath.Join(testkit.RealTempDir(t), "gone"),
 	}}}}
@@ -170,7 +171,7 @@ func TestSweepAllAsksOnceAndSweepsEveryRepository(t *testing.T) {
 
 func TestSweepAllChangesNothingWhenTheAnswerIsNo(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	path := mergedWorktree(t, ctx, "fix/one")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/one")
 	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{ctx.Repo.MainRoot}}}}
 	opts := SweepAllOptions{SweepOptions: SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}},
 		Ask: func(string) (bool, error) { return false, nil }}
@@ -244,7 +245,7 @@ func TestSelectReposRefusesAnUnreadableFileAndMergesDuplicates(t *testing.T) {
 // one repository or across many.
 func TestDryRunPrintsThePlanAndChangesNothing(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	path := mergedWorktree(t, ctx, "fix/one")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/one")
 	var buf bytes.Buffer
 	if err := RemoveAt(ctx, path, RemoveOptions{DryRun: true, Agents: []wtsync.Agent{}}, &buf); err != nil {
 		t.Fatal(err)

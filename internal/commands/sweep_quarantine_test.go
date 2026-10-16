@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
@@ -19,8 +20,8 @@ import (
 // with its own recovery.json, and wt restore puts any one of them back.
 func TestSweepQuarantinesEachWorktreeInItsOwnFolder(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	one := mergedWorktree(t, ctx, "fix/one")
-	two := mergedWorktree(t, ctx, "feat/one")
+	one := provisiontest.MergedWorktree(t, ctx, "fix/one")
+	two := provisiontest.MergedWorktree(t, ctx, "feat/one")
 	dir := testkit.TrashFor(t, ctx)
 	opts := SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}, Quarantine: dir}
 	r, human, err := sweepJSON(t, ctx, opts)
@@ -66,7 +67,7 @@ func TestSweepQuarantineRefusesBeforeAnyChange(t *testing.T) {
 			ctx, main, _ := testkit.SweepRepo(t)
 			testkit.BranchWithWork(t, main, "done-work", 1)
 			testkit.LandOnMain(t, main, "done-work")
-			path := mergedWorktree(t, ctx, "fix/stay")
+			path := provisiontest.MergedWorktree(t, ctx, "fix/stay")
 			dir := testkit.TrashFor(t, ctx)
 			switch why {
 			case "exists":
@@ -117,7 +118,7 @@ func TestSweepQuarantineRefusesABranchOnlySweep(t *testing.T) {
 // read for a quarantine does not let a run delete instead.
 func TestSweepPlanJSONCarriesTheQuarantine(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	mergedWorktree(t, ctx, "fix/planned")
+	provisiontest.MergedWorktree(t, ctx, "fix/planned")
 	dir := testkit.TrashFor(t, ctx)
 	opts := SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}, Quarantine: dir}
 	p, err := sweepPlanJSON(t, ctx, opts)
@@ -147,7 +148,7 @@ func TestSweepPlanJSONCarriesTheQuarantine(t *testing.T) {
 // is, not as kept.
 func TestSweepSaysAPartialMoveIsPartial(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	mergedWorktree(t, ctx, "fix/half")
+	provisiontest.MergedWorktree(t, ctx, "fix/half")
 	dir := testkit.TrashFor(t, ctx)
 	t.Cleanup(func() { quarantine.AfterRename = nil })
 	quarantine.AfterRename = func(to string) error {
@@ -168,7 +169,7 @@ func TestSweepSaysAPartialMoveIsPartial(t *testing.T) {
 
 func TestSweepQuarantineRefusesAFolderInsideTheRepository(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
-	path := mergedWorktree(t, ctx, "fix/stays")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/stays")
 	opts := SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{},
 		Quarantine: filepath.Join(main, "trash-q")}
 	if r, _, err := sweepJSON(t, ctx, opts); err == nil || r.Outcome != kit.OutcomeRefused || !testkit.Exists(path) {
@@ -181,8 +182,8 @@ func TestSweepQuarantineRefusesAFolderInsideTheRepository(t *testing.T) {
 // too may be on a volume that is not mounted, and keeps them.
 func TestSweepDropsThePinsOfADeletedQuarantine(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
-	gone := mergedWorktree(t, ctx, "fix/emptied")
-	away := mergedWorktree(t, ctx, "fix/unmounted")
+	gone := provisiontest.MergedWorktree(t, ctx, "fix/emptied")
+	away := provisiontest.MergedWorktree(t, ctx, "fix/unmounted")
 	trash := filepath.Join(ctx.Repo.Parent, "trash")
 	volume := filepath.Join(ctx.Repo.Parent, "volume", "trash")
 	for _, d := range []string{trash, volume} {

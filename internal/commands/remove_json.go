@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -255,7 +256,7 @@ func removeToken(ctx *kit.Context, p Plan) *string {
 	field("reachError", p.ReachError)
 	field("quarantine", p.Quarantine)
 	field("force", strings.Join(p.Force.Names(), ","))
-	field("superset", supersetEnabled(ctx))
+	field("superset", provision.SupersetEnabled(ctx))
 	field("keepSuperset", p.KeepSuperset)
 	// The processes it ends, when it ends any: a tool that read the plan
 	// agreed to those. Without --reap they are left alone and do not count.

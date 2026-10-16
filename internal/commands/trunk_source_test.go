@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -96,7 +98,7 @@ func TestDoctorSaysNothingNamesTrunk(t *testing.T) {
 func TestInitWithoutAskingRefusesWhenNothingNamesTrunk(t *testing.T) {
 	main := testkit.NoTrunkRepo(t)
 	r := mustDiscover(t, main)
-	err := Init(r, InitOptions{}, &bytes.Buffer{})
+	err := provision.Init(r, provision.InitOptions{}, &bytes.Buffer{})
 	if !errors.Is(err, repo.ErrNoTrunk) {
 		t.Fatalf("Init = %v, want ErrNoTrunk", err)
 	}
@@ -115,7 +117,7 @@ func TestInitAsksForTrunkWithNoDefaultWhenNothingNamesIt(t *testing.T) {
 		return a, nil
 	}
 	var buf bytes.Buffer
-	if err := Init(mustDiscover(t, main), InitOptions{Ask: ask}, &buf); err != nil {
+	if err := provision.Init(mustDiscover(t, main), provision.InitOptions{Ask: ask}, &buf); err != nil {
 		t.Fatal(err)
 	}
 	if len(offered) != 1 || offered[0].MainBranch != "" {
@@ -134,7 +136,7 @@ func TestInitAsksForTrunkWithNoDefaultWhenNothingNamesIt(t *testing.T) {
 func TestInitRefusesABlankTrunk(t *testing.T) {
 	main := testkit.NoTrunkRepo(t)
 	ask := func(a kit.Answers) (kit.Answers, error) { return a, nil }
-	if err := Init(mustDiscover(t, main), InitOptions{Ask: ask}, &bytes.Buffer{}); err == nil {
+	if err := provision.Init(mustDiscover(t, main), provision.InitOptions{Ask: ask}, &bytes.Buffer{}); err == nil {
 		t.Fatal("init wrote a configuration with no trunk")
 	}
 	if _, err := os.Stat(filepath.Join(main, "bin")); !os.IsNotExist(err) {
@@ -165,7 +167,7 @@ func withOriginNoHead(t *testing.T, dir string) {
 // Every JSON output gittree judges trunk by says how trunk was found, and a
 // trunk no file names says so: config for runFixture's MAIN_BRANCH.
 func TestJSONOutputsSayHowTrunkWasFound(t *testing.T) {
-	ctx, _ := runFixture(t, false)
+	ctx, _ := provisiontest.RunFixture(t, false)
 	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "release-2.1")
 	for _, want := range []config.TrunkSource{config.TrunkFromConfig, config.TrunkConventional} {
 		ctx.Config.TrunkSource = want
@@ -179,8 +181,8 @@ func TestJSONOutputsSayHowTrunkWasFound(t *testing.T) {
 		got["sync"] = overviewJSON(t, ctx).TrunkSource
 		sweep, _ := sweepPlanJSON(t, ctx, SweepOptions{NoFetch: true})
 		got["sweep-plan"] = sweep.TrunkSource
-		got["new-plan"] = newPlanOf(t, ctx, "fix/x", NewOptions{}).TrunkSource
-		got["checkout-plan"] = checkoutPlanOf(t, ctx, "release-2.1", "").TrunkSource
+		got["new-plan"] = provisiontest.NewPlanOf(t, ctx, "fix/x", provision.NewOptions{}).TrunkSource
+		got["checkout-plan"] = provisiontest.CheckoutPlanOf(t, ctx, "release-2.1", "").TrunkSource
 		for name, src := range got {
 			if src == nil || *src != string(want) {
 				t.Errorf("%s: trunkSource = %q, want %s", name, deref(src), want)

@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/github"
@@ -85,19 +87,6 @@ func inAnyGroup(p SweepPlan, name string) bool {
 		slices.Contains(branchNames(p.Gone), name)
 }
 
-// mergedWorktree is a worktree wt new made on a branch cut from trunk and
-// never committed to, which is merged: what is left behind once a pull
-// request lands and nobody ran wt remove.
-func mergedWorktree(t *testing.T, ctx *kit.Context, work string) string {
-	t.Helper()
-	var buf bytes.Buffer
-	path, err := New(ctx, work, NewOptions{NoSetup: true}, &buf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
 func TestSweepPlanDeletesAMergedBranch(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 1)
@@ -151,7 +140,7 @@ func TestSweepPlanCountsAMergeOnlyLocalTrunkHas(t *testing.T) {
 
 func TestSweepPlanRemovesACleanMergedWorktree(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	path := mergedWorktree(t, ctx, "fix/login-crash")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
 	p := planOf(t, ctx)
 	if slices.Contains(branchNames(p.Delete), "fix_wt/login-crash") {
@@ -179,7 +168,7 @@ func TestSweepPlanRemovesACleanMergedWorktree(t *testing.T) {
 
 func TestSweepRemovesAMergedWorktreeAndDeletesItsBranch(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
-	path := mergedWorktree(t, ctx, "fix/login-crash")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	testkit.BranchWithWork(t, main, "done-work", 0)
 
 	var buf bytes.Buffer
@@ -202,7 +191,7 @@ func TestSweepRemovesAMergedWorktreeAndDeletesItsBranch(t *testing.T) {
 
 func TestSweepPlanKeepsADirtyMergedWorktree(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	path := mergedWorktree(t, ctx, "fix/login-crash")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	testkit.MustWrite(t, filepath.Join(path, "scratch.txt"), "not yet\n")
 
 	p := planOf(t, ctx)
@@ -219,7 +208,7 @@ func TestSweepPlanKeepsADirtyMergedWorktree(t *testing.T) {
 
 func TestSweepPlanKeepsAMergedWorktreeWhoseLockIsHeld(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
-	path := mergedWorktree(t, ctx, "fix/login-crash")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	testkit.GitIn(t, main, "worktree", "lock", "--reason", fmt.Sprintf("(pid %d start now)", os.Getpid()), path)
 
 	p := planOf(t, ctx)
@@ -236,7 +225,7 @@ func TestSweepPlanKeepsAMergedWorktreeWhoseLockIsHeld(t *testing.T) {
 // worktree.
 func TestSweepRemovesAMergedWorktreeWithAStaleLock(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
-	path := mergedWorktree(t, ctx, "fix/login-crash")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	testkit.GitIn(t, main, "worktree", "lock", "--reason", "(pid 2147483000 start long ago)", path)
 
 	var buf bytes.Buffer
@@ -253,7 +242,7 @@ func TestSweepRemovesAMergedWorktreeWithAStaleLock(t *testing.T) {
 
 func TestSweepPlanKeepsAMergedWorktreeWithAnIdleSession(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	path := mergedWorktree(t, ctx, "fix/login-crash")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
 	p := planWith(t, ctx, SweepOptions{Agents: testkit.IdleIn(t, path, "parked-1")})
 	if len(p.Remove) != 0 {
@@ -266,7 +255,7 @@ func TestSweepPlanKeepsAMergedWorktreeWithAnIdleSession(t *testing.T) {
 
 func TestSweepKeepsAWorktreeWhenTheSessionsCannotBeListed(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	mergedWorktree(t, ctx, "fix/login-crash")
+	provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
 	bases, err := trunkBases(ctx)
 	if err != nil {
@@ -287,7 +276,7 @@ func TestSweepKeepsAWorktreeWhenTheSessionsCannotBeListed(t *testing.T) {
 
 func TestSweepLeavesAnUnmergedWorktreeAlone(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	path := mergedWorktree(t, ctx, "feat/api-tidy")
+	path := provisiontest.MergedWorktree(t, ctx, "feat/api-tidy")
 	testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "real work")
 
 	p := planOf(t, ctx)
@@ -310,8 +299,8 @@ func TestSweepLeavesAnUnmergedWorktreeAlone(t *testing.T) {
 // plan was going to remove. It is kept; the rest of the plan still runs.
 func TestSweepKeepsAWorktreeThatBecameDirtyWhileThePromptWasOpen(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
-	path := mergedWorktree(t, ctx, "fix/login-crash")
-	other := mergedWorktree(t, ctx, "chore/tidy")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
+	other := provisiontest.MergedWorktree(t, ctx, "chore/tidy")
 	testkit.BranchWithWork(t, main, "done-work", 0)
 
 	opts := SweepOptions{Agents: []wtsync.Agent{}, Confirm: func(SweepPlan) (bool, error) {
@@ -339,7 +328,7 @@ func TestSweepKeepsAWorktreeThatBecameDirtyWhileThePromptWasOpen(t *testing.T) {
 
 func TestSweepKeepsAWorktreeASessionEnteredWhileThePromptWasOpen(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	path := mergedWorktree(t, ctx, "fix/login-crash")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
 	opts := SweepOptions{Agents: []wtsync.Agent{},
 		Relist:  func() ([]wtsync.Agent, error) { return testkit.IdleIn(t, path, "late-1"), nil },
@@ -360,7 +349,7 @@ func TestSweepKeepsAWorktreeASessionEnteredWhileThePromptWasOpen(t *testing.T) {
 // and with it the branch counts as in use. wt remove finds nothing there.
 func TestSweepPlanKeepsAWorktreeWhoseDirectoryIsGone(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	path := mergedWorktree(t, ctx, "fix/login-crash")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	if err := os.RemoveAll(path); err != nil {
 		t.Fatal(err)
 	}
@@ -378,7 +367,7 @@ func TestSweepPlanKeepsAWorktreeWhoseDirectoryIsGone(t *testing.T) {
 // the prompt is open, and what the kept line says about it.
 func TestSweepKeepsAWorktreeDeletedByHandWhileThePromptWasOpen(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	path := mergedWorktree(t, ctx, "fix/login-crash")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
 	opts := SweepOptions{Agents: []wtsync.Agent{}, Confirm: func(SweepPlan) (bool, error) {
 		return true, os.RemoveAll(path)
@@ -397,7 +386,7 @@ func TestSweepKeepsAWorktreeDeletedByHandWhileThePromptWasOpen(t *testing.T) {
 
 func TestSweepKeepsAWorktreeLockedWhileThePromptWasOpen(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
-	path := mergedWorktree(t, ctx, "fix/login-crash")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
 	opts := SweepOptions{Agents: []wtsync.Agent{}, Confirm: func(SweepPlan) (bool, error) {
 		testkit.GitIn(t, main, "worktree", "lock", "--reason", fmt.Sprintf("(pid %d start now)", os.Getpid()), path)
@@ -417,7 +406,7 @@ func TestSweepKeepsAWorktreeLockedWhileThePromptWasOpen(t *testing.T) {
 
 func TestSweepKeepsAWorktreeWhoseBranchMovedWhileThePromptWasOpen(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	path := mergedWorktree(t, ctx, "fix/login-crash")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
 	opts := SweepOptions{Agents: []wtsync.Agent{}, Confirm: func(SweepPlan) (bool, error) {
 		testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "landed in the window")
@@ -437,7 +426,7 @@ func TestSweepKeepsAWorktreeWhoseBranchMovedWhileThePromptWasOpen(t *testing.T) 
 
 func TestSweepKeepsAWorktreeThatSwitchedBranchWhileThePromptWasOpen(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	path := mergedWorktree(t, ctx, "fix/login-crash")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
 	opts := SweepOptions{Agents: []wtsync.Agent{}, Confirm: func(SweepPlan) (bool, error) {
 		testkit.GitIn(t, path, "switch", "-q", "-c", "elsewhere")
@@ -457,7 +446,7 @@ func TestSweepKeepsAWorktreeThatSwitchedBranchWhileThePromptWasOpen(t *testing.T
 
 func TestSweepKeepsAWorktreeWhenTheSessionsCannotBeListedAgain(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	path := mergedWorktree(t, ctx, "fix/login-crash")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
 	opts := SweepOptions{Agents: []wtsync.Agent{},
 		Relist:  func() ([]wtsync.Agent, error) { return nil, fmt.Errorf("claude is away") },
@@ -478,7 +467,7 @@ func TestSweepKeepsAWorktreeWhenTheSessionsCannotBeListedAgain(t *testing.T) {
 // to the plain branches all the same.
 func TestSweepGoesOnToTheBranchesWhenARemovalFails(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
-	path := mergedWorktree(t, ctx, "fix/login-crash")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	testkit.BranchWithWork(t, main, "done-work", 0)
 
 	opts := SweepOptions{Agents: []wtsync.Agent{}, Confirm: func(SweepPlan) (bool, error) {
@@ -510,7 +499,7 @@ func TestSweepGoesOnToTheBranchesWhenARemovalFails(t *testing.T) {
 
 func TestSweepAsksOnceForBranchesAndWorktreesTogether(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
-	mergedWorktree(t, ctx, "fix/login-crash")
+	provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	testkit.BranchWithWork(t, main, "done-work", 0)
 	testkit.BranchWithWork(t, main, "also-done", 0)
 
@@ -538,7 +527,7 @@ func TestSweepAsksOnceForBranchesAndWorktreesTogether(t *testing.T) {
 
 func TestSweepWithoutATerminalRemovesNoWorktree(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	path := mergedWorktree(t, ctx, "fix/login-crash")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
 	var buf bytes.Buffer
 	if err := Sweep(ctx, SweepOptions{Agents: []wtsync.Agent{}}, &buf); err != nil {
@@ -785,7 +774,7 @@ func TestSweepRefusesOutsideTheMainCheckout(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 0)
 	var buf bytes.Buffer
-	path, err := New(ctx, "fix/login-crash", NewOptions{NoSetup: true}, &buf)
+	path, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1219,8 +1208,8 @@ func TestSweepKeepsAWorktreeThatBecameDirtyDuringTheSweep(t *testing.T) {
 	testkit.GitIn(t, main, "commit", "-q", "-m", "submodules")
 	testkit.GitIn(t, main, "push", "-q", "origin", "main")
 	testkit.GitIn(t, main, "fetch", "-q", "origin")
-	first := mergedWorktree(t, ctx, "fix/aaa")
-	second := mergedWorktree(t, ctx, "fix/bbb")
+	first := provisiontest.MergedWorktree(t, ctx, "fix/aaa")
+	second := provisiontest.MergedWorktree(t, ctx, "fix/bbb")
 
 	// When the first worktree's branch is deleted, the second gains a change.
 	hooks := t.TempDir()

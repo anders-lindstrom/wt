@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/config"
 )
 
@@ -32,7 +32,7 @@ func newConfigCmd() *cobra.Command {
 			"  wt config --shell  # the same as shell assignments, for eval",
 		Args: cobra.NoArgs,
 		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
-			return commands.Config(ctx, shell, cmd.OutOrStdout())
+			return provision.Config(ctx, shell, cmd.OutOrStdout())
 		}),
 	}
 	cmd.Flags().BoolVar(&shell, "shell", false, "emit eval-able shell assignments")
@@ -71,7 +71,7 @@ func newConfigGetCmd() *cobra.Command {
 		Args:      needArgs(1, "<key>", "wt config get superset"),
 		ValidArgs: append(config.UserKeyNames(), "root.", "profile."),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return commands.UserGet(args[0], cmd.OutOrStdout(), cmd.ErrOrStderr())
+			return provision.UserGet(args[0], cmd.OutOrStdout(), cmd.ErrOrStderr())
 		},
 	}
 }
@@ -97,7 +97,7 @@ func newConfigSetCmd() *cobra.Command {
 		Args:      needArgs(2, "<key> <value>", "wt config set superset true"),
 		ValidArgs: append(config.UserKeyNames(), "root.", "profile."),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return commands.UserSet(args[0], args[1], cmd.OutOrStdout())
+			return provision.UserSet(args[0], args[1], cmd.OutOrStdout())
 		},
 	}
 }
@@ -116,7 +116,7 @@ func newConfigUnsetCmd() *cobra.Command {
 		Args:      needArgs(1, "<key>", "wt config unset superset"),
 		ValidArgs: append(config.UserKeyNames(), "root.", "profile."),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return commands.UserUnset(args[0], cmd.OutOrStdout())
+			return provision.UserUnset(args[0], cmd.OutOrStdout())
 		},
 	}
 }
@@ -131,7 +131,7 @@ func newConfigPathCmd() *cobra.Command {
 		Example: "  wt config path  # where your own settings live, if anywhere",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return commands.UserConfigPath(cmd.OutOrStdout())
+			return provision.UserConfigPath(cmd.OutOrStdout())
 		},
 	}
 }

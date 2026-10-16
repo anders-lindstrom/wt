@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
@@ -242,7 +243,7 @@ func TestRefsSweepKeepsARefThatMoved(t *testing.T) {
 // A branch a live quarantine names is kept: restoring the quarantine would
 // need it.
 func TestRefsSweepKeepsWhatAQuarantineNames(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/trashed")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/trashed")
 	tip := strings.TrimSpace(testkit.GitOut(t, path, "rev-parse", "HEAD"))
 	var buf bytes.Buffer
 	if err := RemoveAt(ctx, path, RemoveOptions{Quarantine: testkit.TrashFor(t, ctx)}, &buf); err != nil {

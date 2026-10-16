@@ -10,56 +10,11 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
-
-// runFixture: a main checkout that is its own origin; trunk declares v.txt
-// owned-line max-plus-patch and, when withDefer, a deferred step that copies
-// v.txt to the tracked gen.txt and commits it; worktree bump (feat_wt/bump)
-// one commit ahead on v.txt; worktree other (feat_wt/other) current; trunk
-// moved on v.txt; origin fetched.
-func runFixture(t *testing.T, withDefer bool) (ctx *kit.Context, bump string) {
-	t.Helper()
-	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	write := func(rel, content string) {
-		t.Helper()
-		if err := os.WriteFile(filepath.Join(main, rel), []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	yaml := "conflicts:\n  - paths: [v.txt]\n    strategy: owned-line\n    line: '^\\d'\n    rule: max-plus-patch\n"
-	if withDefer {
-		yaml += "defer:\n  - run: cp v.txt gen.txt\n    paths: [v.txt]\n    commit: \"chore: regen\"\n"
-	}
-	write(".wt-sync.yaml", yaml)
-	write("v.txt", "1.0.0\n")
-	write("gen.txt", "stale\n")
-	write("a.txt", "a\n")
-	testkit.GitIn(t, main, "add", "-A")
-	testkit.GitIn(t, main, "commit", "-q", "-m", "declare")
-	ctx, err := kit.Open(main)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var buf bytes.Buffer
-	bump, err = New(ctx, "feat/bump", NewOptions{NoSetup: true}, &buf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(bump, "v.txt"), []byte("1.0.1\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	testkit.GitIn(t, bump, "commit", "-q", "-am", "bump")
-	write("v.txt", "1.0.5\n")
-	testkit.GitIn(t, main, "commit", "-q", "-am", "trunk bump")
-	if _, err := New(ctx, "feat/other", NewOptions{NoSetup: true}, &buf); err != nil {
-		t.Fatal(err)
-	}
-	testkit.GitIn(t, main, "remote", "add", "origin", main)
-	testkit.GitIn(t, main, "fetch", "-q", "origin")
-	return ctx, bump
-}
 
 // declareScript hands v.txt to a script on trunk instead of the owned line.
 // A script can only be asked whether it claims a path, never for the bytes,
@@ -87,34 +42,6 @@ func declareScript(t *testing.T, ctx *kit.Context) {
 	testkit.GitOut(t, main, "fetch", "-q", "origin")
 }
 
-// contestedFixture is runFixture's repository with one more file in play:
-// the branch's single commit also touches a.txt, which the declaration does
-// not claim, and trunk moves a.txt too. Triage sees the whole stop, so the
-// class is contested and the run walks into it knowingly.
-func contestedFixture(t *testing.T) (ctx *kit.Context, bump string) {
-	t.Helper()
-	return contested(t, false)
-}
-
-// contested is contestedFixture with or without runFixture's deferred step.
-func contested(t *testing.T, withDefer bool) (ctx *kit.Context, bump string) {
-	t.Helper()
-	ctx, bump = runFixture(t, withDefer)
-	main := ctx.Repo.MainRoot
-	if err := os.WriteFile(filepath.Join(bump, "a.txt"), []byte("branch\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	testkit.GitOut(t, bump, "add", "-A")
-	testkit.GitOut(t, bump, "commit", "-q", "--amend", "--no-edit")
-	if err := os.WriteFile(filepath.Join(main, "a.txt"), []byte("trunk\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	testkit.GitOut(t, main, "add", "-A")
-	testkit.GitOut(t, main, "commit", "-q", "-m", "a on trunk")
-	testkit.GitOut(t, main, "fetch", "-q", "origin")
-	return ctx, bump
-}
-
 func noAgents() RunOptions {
 	return RunOptions{NoFetch: true, verbOptions: verbOptions{
 		Agents: []wtsync.Agent{},
@@ -126,7 +53,7 @@ func TestSyncRunRebasesARecipeWorktreeAndRunsTheDeferredStep(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := runFixture(t, true)
+	ctx, bump := provisiontest.RunFixture(t, true)
 	var out bytes.Buffer
 	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
@@ -152,7 +79,7 @@ func TestSyncRunRefusesADirtyWorktreeAndTouchesNothing(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	if err := os.WriteFile(filepath.Join(bump, "v.txt"), []byte("9.9.9\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +98,7 @@ func TestSyncRunRefusesADirtyWorktreeAndTouchesNothing(t *testing.T) {
 }
 
 func TestSyncRunRefusesAWorktreeWithAnAgent(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	resolved, _ := filepath.EvalSymlinks(bump)
 	opts := noAgents()
 	opts.Agents = []wtsync.Agent{{Name: "bump-1", Cwd: resolved}}
@@ -187,7 +114,7 @@ func TestSyncRunRefusesWhenAgentsCannotBeListed(t *testing.T) {
 	// claude on the PATH that exits non-zero. The real PATH stays in front
 	// of nothing and behind the stub, so git is still reachable — emptying
 	// the PATH outright would break every git call instead.
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	stub := t.TempDir()
 	if err := os.WriteFile(filepath.Join(stub, "claude"), []byte("#!/bin/sh\necho boom >&2\nexit 1\n"), 0o755); err != nil {
 		t.Fatal(err)
@@ -210,7 +137,7 @@ func TestSyncRunSkipsACurrentWorktreeWithoutASafetyRef(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, _ := runFixture(t, false)
+	ctx, _ := provisiontest.RunFixture(t, false)
 	var out bytes.Buffer
 	if err := SyncRebase(ctx, []string{"other"}, noAgents(), &out); err != nil {
 		t.Fatalf("a skip is not an error: %v", err)
@@ -232,7 +159,7 @@ func TestSyncRunRefusesWhenTrunkDeclaresNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	if _, err := New(ctx, "feat/bump", NewOptions{NoSetup: true}, &buf); err != nil {
+	if _, err := provision.New(ctx, "feat/bump", provision.NewOptions{NoSetup: true}, &buf); err != nil {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
@@ -242,28 +169,12 @@ func TestSyncRunRefusesWhenTrunkDeclaresNothing(t *testing.T) {
 	}
 }
 
-// stackFixture adds worktree child (feat_wt/child) on top of feat_wt/bump.
-func stackFixture(t *testing.T, ctx *kit.Context) (child string) {
-	t.Helper()
-	var buf bytes.Buffer
-	child, err := New(ctx, "feat/child", NewOptions{NoSetup: true, Base: "feat_wt/bump"}, &buf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(child, "c.txt"), []byte("c\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	testkit.GitOut(t, child, "add", "-A")
-	testkit.GitOut(t, child, "commit", "-q", "-m", "child")
-	return child
-}
-
 func TestSyncRunRebasesAStackParentFirstAndChildOntoTheParentsFinalTip(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := runFixture(t, true) // with the deferred commit, so the parent's tip moves after its rebase
-	child := stackFixture(t, ctx)
+	ctx, bump := provisiontest.RunFixture(t, true) // with the deferred commit, so the parent's tip moves after its rebase
+	child := provisiontest.StackFixture(t, ctx)
 	var out bytes.Buffer
 	if err := SyncRebase(ctx, []string{"child"}, noAgents(), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
@@ -294,8 +205,8 @@ func TestSyncRunARefusedStackMemberDefersTheWholeStack(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := runFixture(t, false)
-	child := stackFixture(t, ctx)
+	ctx, bump := provisiontest.RunFixture(t, false)
+	child := provisiontest.StackFixture(t, ctx)
 	if err := os.WriteFile(filepath.Join(child, "c.txt"), []byte("dirty\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -320,9 +231,9 @@ func TestSyncRunIgnoresAnEmptyWorktreeBehindTrunk(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, _ := runFixture(t, false)
+	ctx, _ := provisiontest.RunFixture(t, false)
 	var buf bytes.Buffer
-	stale, err := New(ctx, "feat/stale", NewOptions{NoSetup: true, Base: "main~1"}, &buf)
+	stale, err := provision.New(ctx, "feat/stale", provision.NewOptions{NoSetup: true, Base: "main~1"}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -349,8 +260,8 @@ func TestSyncRunAsksOnceForMoreThanOneWorktreeAndStopsOnNo(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := runFixture(t, false)
-	stackFixture(t, ctx)
+	ctx, bump := provisiontest.RunFixture(t, false)
+	provisiontest.StackFixture(t, ctx)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	var asked []string
 	opts := noAgents()
@@ -377,29 +288,6 @@ func TestSyncRunAsksOnceForMoreThanOneWorktreeAndStopsOnNo(t *testing.T) {
 	}
 }
 
-// contestedSibling adds a worktree feat/alpha whose one commit changes a.txt,
-// which nothing declares, and moves a.txt on trunk too: alpha is contested
-// while bump stays a recipe.
-func contestedSibling(t *testing.T, ctx *kit.Context) (alpha string) {
-	t.Helper()
-	main := ctx.Repo.MainRoot
-	var buf bytes.Buffer
-	alpha, err := New(ctx, "feat/alpha", NewOptions{NoSetup: true}, &buf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(alpha, "a.txt"), []byte("alpha\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	testkit.GitOut(t, alpha, "commit", "-q", "-am", "a on alpha")
-	if err := os.WriteFile(filepath.Join(main, "a.txt"), []byte("trunk\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	testkit.GitOut(t, main, "commit", "-q", "-am", "a on trunk")
-	testkit.GitOut(t, main, "fetch", "-q", "origin")
-	return alpha
-}
-
 // With nothing named the run takes the ready group and nothing else, says
 // what it leaves alone in the overview's words, and asks even for one
 // worktree, since nobody named it.
@@ -407,8 +295,8 @@ func TestSyncRunWithNothingNamedTakesEveryReadyWorktreeAndAsksFirst(t *testing.T
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := runFixture(t, false)
-	alpha := contestedSibling(t, ctx)
+	ctx, bump := provisiontest.RunFixture(t, false)
+	alpha := provisiontest.ContestedSibling(t, ctx)
 	oldBump := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	oldAlpha := testkit.GitOut(t, alpha, "rev-parse", "HEAD")
 	var asked []string
@@ -455,7 +343,7 @@ func TestSyncRunWithNothingNamedLeavesRecipeQuestionAlone(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	declareScript(t, ctx)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	var out bytes.Buffer
@@ -480,8 +368,8 @@ func TestSyncRunWithNothingNamedLeavesAStackWithAHeldMember(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := runFixture(t, false)
-	child := stackFixture(t, ctx)
+	ctx, bump := provisiontest.RunFixture(t, false)
+	child := provisiontest.StackFixture(t, ctx)
 	if err := os.WriteFile(filepath.Join(bump, "a.txt"), []byte("edited\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -507,7 +395,7 @@ func TestSyncRunWithNothingNamedLeavesAStackWithAHeldMember(t *testing.T) {
 // A ready worktree with a session idle in it is taken, and the session is
 // named in the question, as when it is named by hand.
 func TestSyncRunWithNothingNamedNamesAnIdleSessionAndAsks(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	opts := noAgents()
 	opts.Agents = testkit.IdleIn(t, bump, "parked")
 	var asked []string
@@ -525,7 +413,7 @@ func TestSyncRunWithNothingNamedNamesAnIdleSessionAndAsks(t *testing.T) {
 // What holds a worktree back is named beside its class, as the overview
 // names it.
 func TestSyncRunWithNothingNamedNamesWhatHoldsAWorktree(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	if err := os.WriteFile(filepath.Join(bump, "a.txt"), []byte("edited\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -547,7 +435,7 @@ func TestSyncRunHandsAContestedStopOver(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := contestedFixture(t)
+	ctx, bump := provisiontest.ContestedFixture(t)
 	branch := "feat_wt/bump"
 	old := testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", branch)
 	var out bytes.Buffer
@@ -607,7 +495,7 @@ func TestSyncRunNeedsYouLineSaysResolveAddResumeOrUndo(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := contestedFixture(t)
+	ctx, bump := provisiontest.ContestedFixture(t)
 	var out bytes.Buffer
 	err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out)
 	if err == nil || err.Error() != "not completed: bump (needs you)" {
@@ -634,7 +522,7 @@ func TestSyncRunRefusesAWorktreeWaitingOnAPerson(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := contestedFixture(t)
+	ctx, bump := provisiontest.ContestedFixture(t)
 	var first bytes.Buffer
 	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &first); err == nil {
 		t.Fatalf("the first run should have handed over:\n%s", first.String())
@@ -679,7 +567,7 @@ func TestSyncRunSaysWhereAFailedHandoverLeftTheWorktree(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := contestedFixture(t)
+	ctx, bump := provisiontest.ContestedFixture(t)
 	gitDir, err := wtsync.GitDir(bump)
 	if err != nil {
 		t.Fatal(err)
@@ -734,8 +622,8 @@ func TestSyncRunPutsAStackParentBackInsteadOfHandingItOver(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := contestedFixture(t)
-	child := stackFixture(t, ctx)
+	ctx, bump := provisiontest.ContestedFixture(t)
+	child := provisiontest.StackFixture(t, ctx)
 	oldBump, oldChild := testkit.GitOut(t, bump, "rev-parse", "HEAD"), testkit.GitOut(t, child, "rev-parse", "HEAD")
 	var out bytes.Buffer
 	err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out)
@@ -775,7 +663,7 @@ func TestSyncRunHandsOverALaterUnclaimedStop(t *testing.T) {
 	// call it contested - which is the point of doing it this way round:
 	// this pins what happens when a run, not triage, is the one that finds
 	// the unclaimed stop.
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	declareScript(t, ctx)
 	main := ctx.Repo.MainRoot
 	if err := os.WriteFile(filepath.Join(bump, "a.txt"), []byte("branch\n"), 0o644); err != nil {
@@ -817,48 +705,16 @@ func TestSyncRunHandsOverALaterUnclaimedStop(t *testing.T) {
 	}
 }
 
-// twoChildFixture puts two independent children on feat_wt/bump and moves
-// a.txt on trunk, so the child that also touches a.txt hits an unclaimed
-// conflict on its own commit while its sibling replays cleanly. The names
-// put the conflicted one first in the run order, so a whole-stack poison
-// would visibly reach the sibling.
-func twoChildFixture(t *testing.T, ctx *kit.Context, main string) (conflicted, clean string) {
-	t.Helper()
-	var buf bytes.Buffer
-	child := func(spec, file, content string) string {
-		t.Helper()
-		path, err := New(ctx, spec, NewOptions{NoSetup: true, Base: "feat_wt/bump"}, &buf)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(path, file), []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		testkit.GitOut(t, path, "add", "-A")
-		testkit.GitOut(t, path, "commit", "-q", "-m", spec)
-		return path
-	}
-	conflicted = child("feat/alpha", "a.txt", "alpha\n")
-	clean = child("feat/zulu", "c.txt", "c\n")
-	if err := os.WriteFile(filepath.Join(main, "a.txt"), []byte("trunk\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	testkit.GitOut(t, main, "add", "-A")
-	testkit.GitOut(t, main, "commit", "-q", "-m", "a on trunk")
-	testkit.GitOut(t, main, "fetch", "-q", "origin")
-	return conflicted, clean
-}
-
 func TestSyncRunAHandedOverChildDoesNotStopItsSibling(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	// As above: the script truncates the simulation at v.txt, so triage
 	// cannot foresee the child's unclaimed a.txt and the run reaches it. A
 	// leaf has no descendants, so its stop is handed over, not put back.
 	declareScript(t, ctx)
-	conflicted, clean := twoChildFixture(t, ctx, ctx.Repo.MainRoot)
+	conflicted, clean := provisiontest.TwoChildFixture(t, ctx, ctx.Repo.MainRoot)
 	main := ctx.Repo.MainRoot
 	oldConflicted := testkit.GitOut(t, main, "rev-parse", "feat_wt/alpha")
 	var out bytes.Buffer
@@ -895,7 +751,7 @@ func TestSyncRunStillRefusesASessionThatIsNotIdle(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	resolved, _ := filepath.EvalSymlinks(bump)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	for _, a := range []wtsync.Agent{
@@ -915,7 +771,7 @@ func TestSyncRunStillRefusesASessionThatIsNotIdle(t *testing.T) {
 }
 
 func TestSyncRunNamesAnIdleSessionInTheQuestionAndStopsOnNo(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	opts := noAgents()
 	opts.Agents = testkit.IdleIn(t, bump, "bump-1")
@@ -940,7 +796,7 @@ func TestSyncRunUnderAnIdleSessionWithNoTerminalSaysSoAndEndsWithALineToRelay(t 
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	opts := noAgents()
 	opts.Agents = testkit.IdleIn(t, bump, "bump-1")
 	var out bytes.Buffer
@@ -964,7 +820,7 @@ func TestSyncRunRefusesASessionThatChangedSinceTriage(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	woke := testkit.IdleIn(t, bump, "bump-1")
 	woke[0].Status = "busy"
@@ -1001,12 +857,12 @@ func TestSyncRunReleasesEachLockAsSoonAsItIsDoneWithTheWorktree(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	main := ctx.Repo.MainRoot
 	var buf bytes.Buffer
 	ahead := func(spec, base, file string) string {
 		t.Helper()
-		wt, err := New(ctx, spec, NewOptions{NoSetup: true, Base: base}, &buf)
+		wt, err := provision.New(ctx, spec, provision.NewOptions{NoSetup: true, Base: base}, &buf)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1114,7 +970,7 @@ func TestSyncRunReleasesEachLockAsSoonAsItIsDoneWithTheWorktree(t *testing.T) {
 // through wtsync, whose error form appends the exit status, and the run's
 // line never carried it.
 func TestSyncRunSaysWhyARecheckCouldNotBeMadeInGitsOwnWords(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	gitDir, err := wtsync.GitDir(bump)
 	if err != nil {
 		t.Fatal(err)

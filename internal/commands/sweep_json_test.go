@@ -13,6 +13,8 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/github"
@@ -73,12 +75,12 @@ func TestSweepPlanJSONNamesEveryPartWithItsEvidence(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 1)
 	testkit.LandOnMain(t, main, "done-work")
-	clean := mergedWorktree(t, ctx, "fix/login-crash")
-	dirty := mergedWorktree(t, ctx, "fix/dirty")
+	clean := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
+	dirty := provisiontest.MergedWorktree(t, ctx, "fix/dirty")
 	testkit.MustWrite(t, filepath.Join(dirty, "scratch.txt"), "not yet\n")
 	testkit.BranchWithWork(t, main, "abandoned", 2)
 	goneUpstream(t, main, "abandoned")
-	_, squash, tip := squashed(t, ctx, "feat/squash")
+	_, squash, tip := provisiontest.Squashed(t, ctx, "feat/squash")
 	pr := mergedPR(34, squash, tip)
 	pr.URL = "https://github.com/o/r/pull/34"
 
@@ -128,7 +130,7 @@ func TestSweepPlanJSONNamesEveryPartWithItsEvidence(t *testing.T) {
 func TestSweepPlanJSONSaysMergedByPatch(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
 	var buf bytes.Buffer
-	path, err := New(ctx, "feat/rates", NewOptions{NoSetup: true}, &buf)
+	path, err := provision.New(ctx, "feat/rates", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,10 +149,10 @@ func TestSweepPlanJSONSaysMergedByPatch(t *testing.T) {
 // Every reason sweep keeps a merged worktree has its code.
 func TestSweepPlanJSONCodesWhyAWorktreeIsKept(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
-	session := mergedWorktree(t, ctx, "fix/session")
-	locked := mergedWorktree(t, ctx, "fix/locked")
+	session := provisiontest.MergedWorktree(t, ctx, "fix/session")
+	locked := provisiontest.MergedWorktree(t, ctx, "fix/locked")
 	testkit.GitIn(t, main, "worktree", "lock", "--reason", fmt.Sprintf("(pid %d start now)", os.Getpid()), locked)
-	broken := mergedWorktree(t, ctx, "fix/broken")
+	broken := provisiontest.MergedWorktree(t, ctx, "fix/broken")
 	gitDir := testkit.GitOut(t, broken, "rev-parse", "--absolute-git-dir")
 	testkit.MustWrite(t, filepath.Join(gitDir, "index"), "not an index")
 	testkit.BranchWithWork(t, main, "done", 0)
@@ -194,7 +196,7 @@ func TestSweepPlanJSONCodesWhyAWorktreeIsKept(t *testing.T) {
 // Nothing to remove or delete: no token, and kept items are still listed.
 func TestSweepPlanJSONWithNothingToDoHasNoToken(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	dirty := mergedWorktree(t, ctx, "fix/dirty")
+	dirty := provisiontest.MergedWorktree(t, ctx, "fix/dirty")
 	testkit.MustWrite(t, filepath.Join(dirty, "scratch.txt"), "not yet\n")
 
 	p, err := sweepPlanJSON(t, ctx, SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}})
@@ -222,8 +224,8 @@ func TestSweepJSONCarriesOutThePlanItWasGiven(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 1)
 	testkit.LandOnMain(t, main, "done-work")
-	clean := mergedWorktree(t, ctx, "fix/login-crash")
-	dirty := mergedWorktree(t, ctx, "fix/dirty")
+	clean := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
+	dirty := provisiontest.MergedWorktree(t, ctx, "fix/dirty")
 	testkit.MustWrite(t, filepath.Join(dirty, "scratch.txt"), "not yet\n")
 	opts := SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}}
 	p, err := sweepPlanJSON(t, ctx, opts)
@@ -293,7 +295,7 @@ func TestSweepJSONExpectRefusesAChangedPlan(t *testing.T) {
 func TestSweepJSONKeepsAWorktreeASessionEnteredLate(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 0)
-	path := mergedWorktree(t, ctx, "fix/login-crash")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	opts := SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{},
 		Relist: func() ([]wtsync.Agent, error) { return testkit.IdleIn(t, path, "arrived"), nil }}
 	p, err := sweepPlanJSON(t, ctx, opts)
@@ -377,7 +379,7 @@ func TestSweepOutcomeRules(t *testing.T) {
 func TestSweepTokenCoversPullRequestsAndReasons(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 0)
-	kept := mergedWorktree(t, ctx, "fix/kept")
+	kept := provisiontest.MergedWorktree(t, ctx, "fix/kept")
 	token := func(opts SweepOptions) string {
 		p, err := sweepPlanJSON(t, ctx, opts)
 		if err != nil || p.Token == nil {
@@ -418,7 +420,7 @@ func TestSweepJSONRefusalSaysItFetched(t *testing.T) {
 // the fresh plan: a session that arrives in between keeps it.
 func TestSweepReadsTheSessionsAgainRightBeforeAWorktreeGoes(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	path := mergedWorktree(t, ctx, "fix/login-crash")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	calls := 0
 	opts := SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{},
 		Relist: func() ([]wtsync.Agent, error) {
@@ -444,7 +446,7 @@ func TestSweepReadsTheSessionsAgainRightBeforeAWorktreeGoes(t *testing.T) {
 // keep the worktree here: the code is listed once.
 func TestSweepPlanJSONListsTheSessionCodeOnce(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	path := mergedWorktree(t, ctx, "fix/login-crash")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	busy := testkit.IdleIn(t, path, "busy-1")
 	busy[0].Status = "busy"
 	agents := append(testkit.IdleIn(t, path, "idle-1"), busy...)

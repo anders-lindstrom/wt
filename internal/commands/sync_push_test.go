@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
@@ -41,7 +42,7 @@ func TestOfferPushKeepsTheReportWhenANewTipCannotBeRead(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	bare := testkit.PushOrigin(t, ctx)
 	// Something for the push to carry: the fixture's origin already holds the
 	// branch as it is, so without this the tip never moves and the read under
@@ -73,7 +74,7 @@ func TestSyncRunPushesAFinishedWorktreeWithPush(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	bare := testkit.PushOrigin(t, ctx)
 	old := testkit.GitOut(t, bump, "rev-parse", "--short=7", "HEAD")
 	opts := noAgents()
@@ -99,7 +100,7 @@ func TestSyncRunDoesNotPushOverCommitsItHasNotSeen(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	bare := testkit.PushOrigin(t, ctx)
 	testkit.GitOut(t, bump, "push", "-q", "-u", "origin", "feat_wt/bump")
 	theirs := testkit.GitOut(t, bump, "rev-parse", "HEAD~1")
@@ -123,7 +124,7 @@ func TestSyncRunAsksToPushOnlyWhatFinishedAndPrintsTheCommandOnNo(t *testing.T) 
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	bare := testkit.PushOrigin(t, ctx)
 	var asked []string
 	opts := noAgents()
@@ -151,7 +152,7 @@ func TestSyncRunPushesWhenTheAnswerIsYes(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	bare := testkit.PushOrigin(t, ctx)
 	opts := noAgents()
 	opts.ConfirmPush = func([]string) (bool, error) { return true, nil }
@@ -168,7 +169,7 @@ func TestSyncRunNoPushNeitherAsksNorPushes(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	bare := testkit.PushOrigin(t, ctx)
 	opts := noAgents()
 	opts.Push = PushNever
@@ -189,7 +190,7 @@ func TestSyncRunPushesNothingThatDidNotFinish(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
-	ctx, bump := contestedFixture(t)
+	ctx, bump := provisiontest.ContestedFixture(t)
 	bare := testkit.PushOrigin(t, ctx)
 	before := testkit.GitOut(t, bare, "rev-parse", "feat_wt/bump")
 	opts := noAgents()

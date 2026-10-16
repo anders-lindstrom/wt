@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -15,7 +16,7 @@ import (
 // --if-ready runs a named worktree only when nothing would be handed to you:
 // a contested one is refused, untouched, and the run fails saying why.
 func TestSyncRunIfReadyRefusesANamedWorktreeThatWouldHandOver(t *testing.T) {
-	ctx, bump := contestedFixture(t)
+	ctx, bump := provisiontest.ContestedFixture(t)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	opts := noAgents()
 	opts.IfReady = true
@@ -37,7 +38,7 @@ func TestSyncRunIfReadyRefusesANamedWorktreeThatWouldHandOver(t *testing.T) {
 
 // Stops the declared strategies resolve are ready: --if-ready runs them.
 func TestSyncRunIfReadyRunsAWorktreeTheStrategiesResolve(t *testing.T) {
-	ctx, _ := runFixture(t, false)
+	ctx, _ := provisiontest.RunFixture(t, false)
 	opts := noAgents()
 	opts.IfReady = true
 	var out bytes.Buffer
@@ -52,8 +53,8 @@ func TestSyncRunIfReadyRunsAWorktreeTheStrategiesResolve(t *testing.T) {
 // With nothing named, the ready ones go and the ones left behind trunk fail
 // the run; a stale one is a lifecycle question, not a failure.
 func TestSyncRunIfReadyWithNothingNamedFailsOnWhatItLeft(t *testing.T) {
-	ctx, _ := runFixture(t, false)
-	contestedSibling(t, ctx)
+	ctx, _ := provisiontest.RunFixture(t, false)
+	provisiontest.ContestedSibling(t, ctx)
 	opts := noAgents()
 	opts.IfReady = true
 	var out bytes.Buffer
@@ -69,8 +70,8 @@ func TestSyncRunIfReadyWithNothingNamedFailsOnWhatItLeft(t *testing.T) {
 // Across repositories: one question, the ready worktrees rebased repository
 // by repository, the rest reported and failing the run with --if-ready.
 func TestSyncRunAllRebasesTheReadyOnesAcrossRepositories(t *testing.T) {
-	ready, readyBump := runFixture(t, false)
-	contested, contestedBump := contestedFixture(t)
+	ready, readyBump := provisiontest.RunFixture(t, false)
+	contested, contestedBump := provisiontest.ContestedFixture(t)
 	oldContested := testkit.GitOut(t, contestedBump, "rev-parse", "HEAD")
 	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{ready.Repo.MainRoot, contested.Repo.MainRoot}}}}
 	var asked []string
@@ -95,8 +96,8 @@ func TestSyncRunAllRebasesTheReadyOnesAcrossRepositories(t *testing.T) {
 
 // Declining the question does not hide what was not ready.
 func TestSyncRunIfReadyFailsWhenDeclinedWithSomethingNotReady(t *testing.T) {
-	ctx, _ := runFixture(t, false)
-	contestedSibling(t, ctx)
+	ctx, _ := provisiontest.RunFixture(t, false)
+	provisiontest.ContestedSibling(t, ctx)
 	opts := noAgents()
 	opts.IfReady = true
 	opts.Confirm = func([]string) (bool, error) { return false, nil }
@@ -109,7 +110,7 @@ func TestSyncRunIfReadyFailsWhenDeclinedWithSomethingNotReady(t *testing.T) {
 // A trunk that moved while the question was open is not the one the plan
 // showed: that repository is refused, untouched.
 func TestSyncRunAllRefusesARepositoryWhoseTrunkMoved(t *testing.T) {
-	ready, bump := runFixture(t, false)
+	ready, bump := provisiontest.RunFixture(t, false)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	main := ready.Repo.MainRoot
 	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{main}}}}

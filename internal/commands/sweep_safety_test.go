@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -22,7 +23,7 @@ func keptCodes(p SweepPlan, name string) []string {
 
 func TestSweepPlanKeepsAMergedWorktreeMidOperation(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	path := mergedWorktree(t, ctx, "fix/login-crash")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	testkit.MustWrite(t, filepath.Join(testkit.GitDirFor(t, path), "MERGE_HEAD"), "x\n")
 
 	p := planOf(t, ctx)
@@ -43,7 +44,7 @@ func TestSweepPlanKeepsAMergedWorktreeWithHiddenChanges(t *testing.T) {
 	testkit.GitIn(t, main, "add", "a.txt")
 	testkit.GitIn(t, main, "commit", "-qm", "a")
 	testkit.GitIn(t, main, "push", "-q", "origin", "main")
-	path := mergedWorktree(t, ctx, "fix/login-crash")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	testkit.GitIn(t, path, "update-index", "--skip-worktree", "a.txt")
 
 	p := planOf(t, ctx)
@@ -60,7 +61,7 @@ func TestSweepPlanKeepsAMergedWorktreeWithWorkInASubmodule(t *testing.T) {
 	testkit.GitIn(t, main, "-c", "protocol.file.allow=always", "submodule", "add", "-q", inner, "sm")
 	testkit.GitIn(t, main, "commit", "-qm", "sm")
 	testkit.GitIn(t, main, "push", "-q", "origin", "main")
-	path := mergedWorktree(t, ctx, "fix/login-crash")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	testkit.GitIn(t, path, "-c", "protocol.file.allow=always", "submodule", "update", "-q", "--init")
 	testkit.GitIn(t, path, "config", "submodule.sm.ignore", "all")
 	testkit.MustWrite(t, filepath.Join(path, "sm", "scratch"), "x")
@@ -76,12 +77,12 @@ func TestSweepPlanKeepsAMergedWorktreeWithWorkInASubmodule(t *testing.T) {
 // first is the sweep's own doing, not a change that should keep the second.
 func TestSweepRemovesTwoWorktreesSharingAnAppliedTip(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
-	a := mergedWorktree(t, ctx, "fix/first")
+	a := provisiontest.MergedWorktree(t, ctx, "fix/first")
 	testkit.MustWrite(t, filepath.Join(a, "change.txt"), "the change\n")
 	testkit.GitIn(t, a, "add", "change.txt")
 	testkit.GitIn(t, a, "commit", "-qm", "the change")
 	tip := strings.TrimSpace(testkit.GitOut(t, a, "rev-parse", "HEAD"))
-	b := mergedWorktree(t, ctx, "fix/second")
+	b := provisiontest.MergedWorktree(t, ctx, "fix/second")
 	testkit.GitIn(t, b, "reset", "-q", "--hard", tip)
 	testkit.GitIn(t, main, "cherry-pick", "-x", tip)
 	testkit.GitIn(t, main, "push", "-q", "origin", "main")

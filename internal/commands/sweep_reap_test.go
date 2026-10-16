@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -19,7 +20,7 @@ import (
 func TestSweepKeepsABusyWorktreeWithoutReap(t *testing.T) {
 	realProcesses(t)
 	ctx, _, _ := testkit.SweepRepo(t)
-	path := mergedWorktree(t, ctx, "fix/login-crash")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	pid := leftover(t, path)
 
 	p := planOf(t, ctx)
@@ -54,7 +55,7 @@ func TestSweepKeepsABusyWorktreeWithoutReap(t *testing.T) {
 func TestSweepReapStopsWhatRunsInAMergedWorktree(t *testing.T) {
 	realProcesses(t)
 	ctx, _, _ := testkit.SweepRepo(t)
-	path := mergedWorktree(t, ctx, "fix/login-crash")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	pid := leftover(t, path)
 
 	opts := SweepOptions{Agents: []wtsync.Agent{}, Reap: true}
@@ -99,7 +100,7 @@ func TestSweepReapStopsWhatRunsInAMergedWorktree(t *testing.T) {
 func TestSweepKeepsAWorktreeThatTurnedBusyAfterThePlan(t *testing.T) {
 	realProcesses(t)
 	ctx, _, _ := testkit.SweepRepo(t)
-	path := mergedWorktree(t, ctx, "fix/login-crash")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
 	reap := SweepOptions{Agents: []wtsync.Agent{}, Reap: true}
 	p, reaping := planOf(t, ctx), planWith(t, ctx, reap)
@@ -122,7 +123,7 @@ func TestSweepKeepsAWorktreeThatTurnedBusyAfterThePlan(t *testing.T) {
 // without, and says what to do.
 func TestSweepKeepsAWorktreeWhenTheProcessesAreUnknown(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	path := mergedWorktree(t, ctx, "fix/login-crash")
+	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	was, wasList := scanProcesses, session.ListSessions
 	t.Cleanup(func() { scanProcesses, session.ListSessions = was, wasList })
 

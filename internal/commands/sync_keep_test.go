@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -70,7 +71,7 @@ func readKeep(t *testing.T, ctx *kit.Context) keepState {
 // A pass rebases the ready worktree, pushes it, and leaves the log and the
 // json behind: the json's trunk is the tip the pass saw.
 func TestSyncKeepRunRebasesAReadyWorktreeAndRecordsThePass(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	var out bytes.Buffer
 	if err := SyncKeepRun(ctx, keepOpts(PushAlways), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
@@ -109,7 +110,7 @@ func TestSyncKeepRunRebasesAReadyWorktreeAndRecordsThePass(t *testing.T) {
 // A keeper has nobody to ask: a worktree with a session in it, even an idle
 // one a run would ask about, is left alone and named with the session.
 func TestSyncKeepRunLeavesAWorktreeWithAnIdleSessionAlone(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	opts := keepOpts(PushAlways)
 	opts.Agents = testkit.IdleIn(t, bump, "parked")
@@ -132,7 +133,7 @@ func TestSyncKeepRunLeavesAWorktreeWithAnIdleSessionAlone(t *testing.T) {
 // Trunk where the last pass left it is nothing to do: one line, one log
 // entry, no run.
 func TestSyncKeepRunDoesNothingWhileTrunkIsUnchanged(t *testing.T) {
-	ctx, _ := runFixture(t, false)
+	ctx, _ := provisiontest.RunFixture(t, false)
 	opts := keepOpts(PushAlways) // one clock across the passes
 	var out bytes.Buffer
 	if err := SyncKeepRun(ctx, opts, &out); err != nil {
@@ -172,7 +173,7 @@ func TestSyncKeepRunDoesNothingWhileTrunkIsUnchanged(t *testing.T) {
 // touching nothing. The json alone holds nobody: a pid left behind by an
 // interrupted pass, alive again as some other process, does not block.
 func TestSyncKeepRunRefusesToOverlapALivePass(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	gitDir, _, statePath, err := keepPaths(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -205,7 +206,7 @@ func TestSyncKeepRunRefusesToOverlapALivePass(t *testing.T) {
 
 // Two passes started at the same moment: exactly one runs.
 func TestSyncKeepRunStartedTwiceAtOnceRunsOnce(t *testing.T) {
-	ctx, _ := runFixture(t, false)
+	ctx, _ := provisiontest.RunFixture(t, false)
 	var wg sync.WaitGroup
 	errs := make([]error, 2)
 	outs := make([]testkit.LockedBuffer, 2)
@@ -236,7 +237,7 @@ func TestSyncKeepRunStartedTwiceAtOnceRunsOnce(t *testing.T) {
 // An unattended pass has to know who is in a worktree. Without a claude to
 // ask it rebases nothing, says so, and records that as the problem.
 func TestSyncKeepRunRebasesNothingWhenSessionsCannotBeListed(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	// A PATH with git and nothing else on it: no claude, wherever this runs.
 	gitPath, err := exec.LookPath("git")
 	if err != nil {
@@ -272,7 +273,7 @@ func TestSyncKeepRunRebasesNothingWhenSessionsCannotBeListed(t *testing.T) {
 // A log that cannot be written fails the pass before anything moves: the
 // log is the record a background job promises.
 func TestSyncKeepRunFailsWhenTheLogCannotBeWritten(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	logPath, _ := keepFiles(t, ctx)
 	if err := os.MkdirAll(logPath, 0o755); err != nil {
 		t.Fatal(err)
@@ -314,7 +315,7 @@ func TestSyncKeepRunInterruptedLeavesTheOutputSoFarInTheLog(t *testing.T) {
 		}
 		return
 	}
-	ctx, _ := runFixture(t, false)
+	ctx, _ := provisiontest.RunFixture(t, false)
 	main := ctx.Repo.MainRoot
 	started := filepath.Join(t.TempDir(), "started")
 	yaml, err := os.ReadFile(filepath.Join(main, ".wt-sync.yaml"))
@@ -342,7 +343,7 @@ func TestSyncKeepRunInterruptedLeavesTheOutputSoFarInTheLog(t *testing.T) {
 // --no-push rebases and prints the push command for each worktree that
 // finished, into the log when the job runs it.
 func TestSyncKeepRunNoPushPrintsThePushCommands(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	var out bytes.Buffer
 	if err := SyncKeepRun(ctx, keepOpts(PushNever), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
@@ -362,7 +363,7 @@ func TestSyncKeepRunNoPushPrintsThePushCommands(t *testing.T) {
 // the command is printed again every pass, trunk moved or not, until origin
 // has the tip, after which the pass has nothing to do again.
 func TestSyncKeepRunNoPushRepeatsThePushCommandUntilItIsPushedByHand(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	testkit.BareOrigin(t, ctx)
 	opts := keepOpts(PushNever)
 	var out bytes.Buffer
@@ -410,7 +411,7 @@ func TestSyncKeepRunNoPushRepeatsThePushCommandUntilItIsPushedByHand(t *testing.
 // The overview says when the repository was last kept, and the doctor has
 // a keeper row; neither says anything about a repository never kept.
 func TestSyncTableAndDoctorSayWhenTheRepositoryWasKept(t *testing.T) {
-	ctx, _ := runFixture(t, false)
+	ctx, _ := provisiontest.RunFixture(t, false)
 	t.Setenv("HOME", t.TempDir())
 	onPlatform(t, "darwin")
 	var out bytes.Buffer
@@ -540,7 +541,7 @@ func fakeLaunchctl(t *testing.T) string {
 // had, bootstraps it and refuses a second time; stop boots it out and
 // removes it, and the table then says stopped.
 func TestSyncKeepStartAndStopDriveLaunchd(t *testing.T) {
-	ctx, _ := runFixture(t, false)
+	ctx, _ := provisiontest.RunFixture(t, false)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	calls := fakeLaunchctl(t)
@@ -646,7 +647,7 @@ func TestSyncKeepStartWarnsAboutAnAgentLaunchersKey(t *testing.T) {
 		"keyfile":  {"PATH": "/usr/bin:/bin", "GIT_SSH_COMMAND": "ssh -i /tmp/k", "OP_AGENT_KEYFILE": "/tmp/k"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx, _ := runFixture(t, false)
+			ctx, _ := provisiontest.RunFixture(t, false)
 			t.Setenv("HOME", t.TempDir())
 			fakeLaunchctl(t)
 			onPlatform(t, "darwin")
@@ -678,7 +679,7 @@ func TestSyncKeepStartWarnsAboutAnAgentLaunchersKey(t *testing.T) {
 // A plist removed by hand leaves the job loaded until logout: status says
 // so, and stop boots it out by its label.
 func TestSyncKeepStopBootsOutAJobWhosePlistIsGone(t *testing.T) {
-	ctx, _ := runFixture(t, false)
+	ctx, _ := provisiontest.RunFixture(t, false)
 	t.Setenv("HOME", t.TempDir())
 	calls := fakeLaunchctl(t)
 	onPlatform(t, "darwin")
@@ -719,7 +720,7 @@ func TestSyncKeepStopBootsOutAJobWhosePlistIsGone(t *testing.T) {
 // offered again every pass until it goes through; only then is the problem
 // cleared.
 func TestSyncKeepRunRetriesARefusedPushUntilItGoesThrough(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	testkit.BareOrigin(t, ctx)
 	t.Setenv("HOME", t.TempDir())
 	onPlatform(t, "darwin")
@@ -818,7 +819,7 @@ func TestSyncKeepRunRetriesARefusedPushUntilItGoesThrough(t *testing.T) {
 // A branch somebody moved after the refused push is theirs: it is dropped
 // from the retries without a push, and the pass ends clean.
 func TestSyncKeepRunDropsAnUnpushedBranchThatMoved(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	pushURL := testkit.GitOut(t, ctx.Repo.MainRoot, "remote", "get-url", "--push", "origin")
 	testkit.GitOut(t, ctx.Repo.MainRoot, "remote", "set-url", "--push", "origin", filepath.Join(t.TempDir(), "nowhere"))
 	opts := keepOpts(PushAlways)
@@ -845,7 +846,7 @@ func TestSyncKeepRunDropsAnUnpushedBranchThatMoved(t *testing.T) {
 // A pass Ctrl-C or a bootout ended leaves its pid in the json: the status
 // says it was interrupted rather than running, and the next pass goes ahead.
 func TestSyncKeepStatusSaysWhenAPassWasInterrupted(t *testing.T) {
-	ctx, _ := runFixture(t, false)
+	ctx, _ := provisiontest.RunFixture(t, false)
 	t.Setenv("HOME", t.TempDir())
 	onPlatform(t, "darwin")
 	_, statePath := keepFiles(t, ctx)
@@ -884,7 +885,7 @@ func TestSyncKeepStatusSaysWhenAPassWasInterrupted(t *testing.T) {
 // An installed keeper whose next pass is more than an interval overdue is
 // said to be: launchd is not running it.
 func TestSyncKeepStatusSaysWhenTheNextPassIsOverdue(t *testing.T) {
-	ctx, _ := runFixture(t, false)
+	ctx, _ := provisiontest.RunFixture(t, false)
 	t.Setenv("HOME", t.TempDir())
 	fakeLaunchctl(t)
 	onPlatform(t, "darwin")
@@ -917,7 +918,7 @@ func TestUnsignCommitsAppendsToTheConfigStack(t *testing.T) {
 
 // Off macOS, start and stop say so and exit 2; run and status still work.
 func TestSyncKeepStartAndStopAreRefusedWithoutLaunchd(t *testing.T) {
-	ctx, _ := runFixture(t, false)
+	ctx, _ := provisiontest.RunFixture(t, false)
 	t.Setenv("HOME", t.TempDir())
 	onPlatform(t, "linux")
 	var out bytes.Buffer
@@ -935,7 +936,7 @@ func TestSyncKeepStartAndStopAreRefusedWithoutLaunchd(t *testing.T) {
 // Looking is not keeping: the table line and the status ask whether a pass
 // is running without leaving a lock file in a repository never kept.
 func TestLookingAtTheKeeperLeavesNoLockFile(t *testing.T) {
-	ctx, _ := runFixture(t, false)
+	ctx, _ := provisiontest.RunFixture(t, false)
 	t.Setenv("HOME", t.TempDir())
 	onPlatform(t, "darwin")
 	gitDir, _, _, err := keepPaths(ctx)

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
@@ -40,8 +41,8 @@ func overviewRow(t *testing.T, o SyncOverview, work string) OverviewWorktree {
 // Every worktree but the main checkout, filed under the overview's own
 // groups, with what a run would do with it and why; and no ref moved.
 func TestSyncJSONGroupsEveryWorktreeAndMovesNoRef(t *testing.T) {
-	ctx, bump := runFixture(t, false)
-	contestedSibling(t, ctx)
+	ctx, bump := provisiontest.RunFixture(t, false)
+	provisiontest.ContestedSibling(t, ctx)
 	refs := func() string {
 		return testkit.GitOut(t, ctx.Repo.MainRoot, "for-each-ref", "--format=%(refname) %(objectname)")
 	}
@@ -93,7 +94,7 @@ func TestSyncJSONGroupsEveryWorktreeAndMovesNoRef(t *testing.T) {
 // A worktree already on trunk is listed as current: the human overview
 // leaves it out, a tool still sees it.
 func TestSyncJSONListsACurrentWorktree(t *testing.T) {
-	ctx, _ := runFixture(t, false)
+	ctx, _ := provisiontest.RunFixture(t, false)
 	o := overviewJSON(t, ctx)
 	if other := overviewRow(t, o, "other"); other.Group != GroupCurrent || other.Class != "current" {
 		t.Errorf("other = %+v", other)
@@ -102,8 +103,8 @@ func TestSyncJSONListsACurrentWorktree(t *testing.T) {
 
 // The stack a worktree belongs to is listed parents first, on every member.
 func TestSyncJSONNamesTheStack(t *testing.T) {
-	ctx, _ := runFixture(t, false)
-	stackFixture(t, ctx)
+	ctx, _ := provisiontest.RunFixture(t, false)
+	provisiontest.StackFixture(t, ctx)
 	o := overviewJSON(t, ctx)
 	for _, work := range []string{"bump", "child"} {
 		var branches []string
@@ -118,7 +119,7 @@ func TestSyncJSONNamesTheStack(t *testing.T) {
 
 // Nothing a run would start on: no token.
 func TestSyncJSONHasNoTokenWhenNothingIsEligible(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	if err := os.WriteFile(filepath.Join(bump, "v.txt"), []byte("dirt\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -133,12 +134,12 @@ func TestSyncJSONHasNoTokenWhenNothingIsEligible(t *testing.T) {
 
 // The token changes with what a run would take, and not otherwise.
 func TestSyncJSONTokenFollowsWhatARunWouldTake(t *testing.T) {
-	ctx, _ := runFixture(t, false)
+	ctx, _ := provisiontest.RunFixture(t, false)
 	first := overviewJSON(t, ctx).Token
 	if again := overviewJSON(t, ctx).Token; *again != *first {
 		t.Fatalf("the same overview gave %s and %s", *first, *again)
 	}
-	stackFixture(t, ctx)
+	provisiontest.StackFixture(t, ctx)
 	if grown := overviewJSON(t, ctx).Token; *grown == *first {
 		t.Fatal("a grown stack kept the token")
 	}

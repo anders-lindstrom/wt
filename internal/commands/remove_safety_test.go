@@ -9,25 +9,11 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
-
-// safetyWorktree is a worktree wt made, merged, and nobody's but the test's.
-func safetyWorktree(t *testing.T, work string) (*kit.Context, string) {
-	t.Helper()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var buf bytes.Buffer
-	path, err := New(ctx, work, NewOptions{NoSetup: true}, &buf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return ctx, path
-}
 
 // refused runs a removal that must not happen and checks nothing went.
 func refused(t *testing.T, ctx *kit.Context, path string, opts RemoveOptions, why string) string {
@@ -47,7 +33,7 @@ func refused(t *testing.T, ctx *kit.Context, path string, opts RemoveOptions, wh
 }
 
 func TestRemoveRefusesADirtyWorktreeBeforeAsking(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/dirty")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/dirty")
 	testkit.MustWrite(t, filepath.Join(path, "scratch.txt"), "mine")
 	asked := false
 	opts := RemoveOptions{Confirm: func(Plan) (bool, error) { asked = true; return true, nil }}
@@ -59,13 +45,13 @@ func TestRemoveRefusesADirtyWorktreeBeforeAsking(t *testing.T) {
 
 // --force breaks a lock and walks past a session; it never throws work away.
 func TestRemoveForceDoesNotDeleteUncommittedWork(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/dirty-forced")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/dirty-forced")
 	testkit.MustWrite(t, filepath.Join(path, "scratch.txt"), "mine")
 	refused(t, ctx, path, RemoveOptions{Force: kit.ForceAll}, "uncommitted changes")
 }
 
 func TestRemoveRefusesWhenTheStatusCannotBeRead(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/unreadable")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/unreadable")
 	testkit.MustWrite(t, filepath.Join(testkit.GitDirFor(t, path), "index"), "garbage")
 	refused(t, ctx, path, RemoveOptions{Force: kit.ForceAll}, "cannot read its status")
 }
@@ -81,7 +67,7 @@ func TestRemoveRefusesDuringEachOperation(t *testing.T) {
 		{"sequencer/todo", "cherry-pick or revert"},
 	} {
 		t.Run(tc.name+" "+tc.file, func(t *testing.T) {
-			ctx, path := safetyWorktree(t, "fix/op")
+			ctx, path := provisiontest.SafetyWorktree(t, "fix/op")
 			testkit.MustWrite(t, filepath.Join(testkit.GitDirFor(t, path), tc.file), "x\n")
 			refused(t, ctx, path, RemoveOptions{Force: kit.ForceAll}, "a "+tc.name+" is in progress")
 		})
@@ -100,7 +86,7 @@ func TestRemoveRefusesADetachedHeadWithCommitsNothingElseHas(t *testing.T) {
 // A branch GitHub squash-merged is deleted, and its commits then hang on
 // nothing: the plan lists the tip, so it can be put back.
 func TestRemoveListsTheTipADeletedBranchLeavesUnreachable(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/squashed")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/squashed")
 	testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "work")
 	tip := strings.TrimSpace(testkit.GitOut(t, path, "rev-parse", "HEAD"))
 	opts := RemoveOptions{Landed: func(string, string) int { return 7 }}
@@ -116,7 +102,7 @@ func TestRemoveListsTheTipADeletedBranchLeavesUnreachable(t *testing.T) {
 
 // The same tip held by another branch is not lost, so nothing is listed.
 func TestRemoveListsNothingWhenAnotherRefHoldsTheTip(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/squashed-kept")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/squashed-kept")
 	testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "work")
 	testkit.GitIn(t, path, "branch", "backup")
 	opts := RemoveOptions{Landed: func(string, string) int { return 7 }}
@@ -131,14 +117,14 @@ func TestRemoveListsNothingWhenAnotherRefHoldsTheTip(t *testing.T) {
 }
 
 func TestRemoveRefusesASessionInTheWorktree(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/visited")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/visited")
 	resolved, _ := filepath.EvalSymlinks(path)
 	opts := RemoveOptions{Agents: []wtsync.Agent{{Name: "parked-1", Cwd: resolved, Status: "idle"}}}
 	refused(t, ctx, path, opts, "parked-1")
 }
 
 func TestRemoveForceGoesPastASession(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/visited-forced")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/visited-forced")
 	resolved, _ := filepath.EvalSymlinks(path)
 	opts := RemoveOptions{Force: kit.ForceAll, Agents: []wtsync.Agent{{Name: "parked-1", Cwd: resolved}}}
 	var buf bytes.Buffer
@@ -148,7 +134,7 @@ func TestRemoveForceGoesPastASession(t *testing.T) {
 }
 
 func TestRemoveRefusesWhenTheSessionsCannotBeListed(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/unknown")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/unknown")
 	opts := RemoveOptions{AgentsErr: errors.New("claude agents --json failed: boom")}
 	refused(t, ctx, path, opts, "cannot list agent sessions")
 
@@ -160,7 +146,7 @@ func TestRemoveRefusesWhenTheSessionsCannotBeListed(t *testing.T) {
 }
 
 func TestRemoveRefusesFilesStatusIsToldNotToLookAt(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/hidden")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/hidden")
 	testkit.MustWrite(t, filepath.Join(path, "a.txt"), "a")
 	testkit.GitIn(t, path, "add", "a.txt")
 	testkit.GitIn(t, path, "commit", "-qm", "a")
@@ -176,7 +162,7 @@ func TestRemoveRefusesFilesStatusIsToldNotToLookAt(t *testing.T) {
 // An edit status is told not to look at is still an edit, and --force does
 // not delete it.
 func TestRemoveForceDoesNotDeleteAnEditedHiddenFile(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/hidden-edited")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/hidden-edited")
 	testkit.MustWrite(t, filepath.Join(path, "a.txt"), "a")
 	testkit.GitIn(t, path, "add", "a.txt")
 	testkit.GitIn(t, path, "commit", "-qm", "a")
@@ -189,7 +175,7 @@ func TestRemoveForceDoesNotDeleteAnEditedHiddenFile(t *testing.T) {
 // checkout, usually ignored: deleting the outer one would take the inner
 // one's work with it.
 func TestRemoveRefusesAWorktreeWithAnotherInsideIt(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/outer")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/outer")
 	testkit.MustWrite(t, filepath.Join(path, ".gitignore"), ".claude/\n")
 	testkit.GitIn(t, path, "add", ".gitignore")
 	testkit.GitIn(t, path, "commit", "-qm", "ignore .claude")
@@ -202,7 +188,7 @@ func TestRemoveRefusesAWorktreeWithAnotherInsideIt(t *testing.T) {
 // A commit inside a submodule lives only in this worktree's modules/, so it
 // is lost work --force does not go past.
 func TestRemoveRefusesASubmoduleCommitOnlyThisWorktreeHas(t *testing.T) {
-	ctx, _, path := submoduleWorktree(t, "fix/sub-commit")
+	ctx, _, path := provisiontest.SubmoduleWorktree(t, "fix/sub-commit")
 	sm := filepath.Join(path, "sm")
 	testkit.GitIn(t, sm, "checkout", "-q", "--detach")
 	testkit.GitIn(t, sm, "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "only here")
@@ -212,7 +198,7 @@ func TestRemoveRefusesASubmoduleCommitOnlyThisWorktreeHas(t *testing.T) {
 }
 
 func TestRemoveNamesASubmoduleAtAnotherCommit(t *testing.T) {
-	ctx, _, path := submoduleWorktree(t, "fix/sub-moved")
+	ctx, _, path := provisiontest.SubmoduleWorktree(t, "fix/sub-moved")
 	sm := filepath.Join(path, "sm")
 	testkit.GitIn(t, sm, "checkout", "-q", "--detach")
 	testkit.GitIn(t, sm, "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "moved")
@@ -223,7 +209,7 @@ func TestRemoveNamesASubmoduleAtAnotherCommit(t *testing.T) {
 // The hook runs inside the session that is ending, and wt_rm_me in the
 // shell of whoever is leaving: neither is somebody else in the worktree.
 func TestHookRemovesTheWorktreeItsOwnSessionIsIn(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/hooked")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/hooked")
 	resolved, _ := filepath.EvalSymlinks(path)
 	testkit.FakeClaude(t, &session.ListSessions, []wtsync.Agent{ownSession(resolved)})
 
@@ -238,7 +224,7 @@ func TestHookRemovesTheWorktreeItsOwnSessionIsIn(t *testing.T) {
 }
 
 func TestHookRefusesWhenAnotherSessionIsIn(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/shared")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/shared")
 	resolved, _ := filepath.EvalSymlinks(path)
 	other := wtsync.Agent{ID: "other", Name: "neighbour-2", Cwd: resolved, Status: "idle", PID: 999999}
 	testkit.FakeClaude(t, &session.ListSessions, []wtsync.Agent{ownSession(resolved), other})
@@ -256,7 +242,7 @@ func TestHookRefusesWhenAnotherSessionIsIn(t *testing.T) {
 // A worktree with an initialised submodule goes whole — through git, with
 // nothing pruned — once a strict read found nothing in it.
 func TestRemoveTakesASubmoduleWorktreeAndPrunesNothingElse(t *testing.T) {
-	ctx, main, path := submoduleWorktree(t, "fix/subs")
+	ctx, main, path := provisiontest.SubmoduleWorktree(t, "fix/subs")
 	gone := filepath.Join(ctx.Repo.Parent, "gone")
 	testkit.GitIn(t, main, "worktree", "add", "-q", "--detach", gone)
 	if err := os.RemoveAll(gone); err != nil {
@@ -279,7 +265,7 @@ func TestRemoveTakesASubmoduleWorktreeAndPrunesNothingElse(t *testing.T) {
 // The submodule's own config hides the file from the parent's status, so
 // only reading inside the submodule finds it.
 func TestRemoveRefusesASubmoduleWorktreeWithWorkInTheSubmodule(t *testing.T) {
-	ctx, _, path := submoduleWorktree(t, "fix/subs-dirty")
+	ctx, _, path := provisiontest.SubmoduleWorktree(t, "fix/subs-dirty")
 	testkit.GitIn(t, filepath.Join(path, "sm"), "config", "status.showUntrackedFiles", "no")
 	testkit.MustWrite(t, filepath.Join(path, "sm", "scratch"), "x")
 	if out := testkit.GitOut(t, path, "status", "--porcelain", "--ignore-submodules=none"); strings.TrimSpace(out) != "" {
@@ -288,30 +274,10 @@ func TestRemoveRefusesASubmoduleWorktreeWithWorkInTheSubmodule(t *testing.T) {
 	refused(t, ctx, path, RemoveOptions{Force: kit.ForceAll}, "uncommitted changes")
 }
 
-// submoduleWorktree is a worktree wt made on a trunk that has a submodule,
-// with the submodule initialised in it.
-func submoduleWorktree(t *testing.T, work string) (*kit.Context, string, string) {
-	t.Helper()
-	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	inner := filepath.Join(t.TempDir(), "inner")
-	testkit.GitIn(t, filepath.Dir(inner), "init", "-q", "-b", "main", "inner")
-	testkit.GitIn(t, inner, "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "i")
-	testkit.GitIn(t, main, "-c", "protocol.file.allow=always", "submodule", "add", "-q", inner, "sm")
-	testkit.GitIn(t, main, "commit", "-qm", "sm")
-	ctx, _ := kit.Open(main)
-	var buf bytes.Buffer
-	path, err := New(ctx, work, NewOptions{NoSetup: true}, &buf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	testkit.GitIn(t, path, "-c", "protocol.file.allow=always", "submodule", "update", "-q", "--init")
-	return ctx, main, path
-}
-
 // A branch kept under its bare name, when that name is taken, is not a
 // removal that went to plan.
 func TestRemoveSaysSoWhenTheBranchCannotBeKept(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/kept")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/kept")
 	testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "work")
 	testkit.GitIn(t, path, "branch", "kept")
 
@@ -328,7 +294,7 @@ func TestRemoveSaysSoWhenTheBranchCannotBeKept(t *testing.T) {
 // What was read when the plan was made is read again right before the
 // delete: a file written in between keeps the worktree.
 func TestApplyReadsTheWorktreeAgainBeforeDeleting(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/late")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/late")
 	plan := planFor(ctx, worktreeRecord(ctx, path), RemoveOptions{})
 	if why := plan.refusal(); why != "" {
 		t.Fatalf("the plan refuses already: %s", why)
@@ -347,7 +313,7 @@ func TestApplyReadsTheWorktreeAgainBeforeDeleting(t *testing.T) {
 // The submodule path forces git past its own check, so there the second
 // read is all that stands between a late file and its deletion.
 func TestApplyReadsASubmoduleWorktreeAgainBeforeDeleting(t *testing.T) {
-	ctx, _, path := submoduleWorktree(t, "fix/late-subs")
+	ctx, _, path := provisiontest.SubmoduleWorktree(t, "fix/late-subs")
 	plan := planFor(ctx, worktreeRecord(ctx, path), RemoveOptions{})
 	if why := plan.refusal(); why != "" {
 		t.Fatalf("the plan refuses already: %s", why)

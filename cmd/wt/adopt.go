@@ -5,6 +5,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
 )
 
 func newAdoptCmd() *cobra.Command {
@@ -24,7 +25,7 @@ func newAdoptCmd() *cobra.Command {
 		Args: needArgs(1, "<path>", "wt adopt ../myrepo-login-crash"),
 		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *kit.Context) error {
 			path, err := commands.Adopt(ctx, args[0], relocate,
-				commands.SetupOptions{SkipBuild: skipBuild, NoCache: noCache}, cmd.ErrOrStderr())
+				provision.SetupOptions{SkipBuild: skipBuild, NoCache: noCache}, cmd.ErrOrStderr())
 			return printLine(cmd, path, err)
 		}),
 	}

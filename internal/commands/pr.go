@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/naming"
@@ -30,7 +31,7 @@ const titleWidth = 48
 
 // PROptions controls `wt pr checkout`.
 type PROptions struct {
-	NewOptions
+	provision.NewOptions
 	// Choose picks one of the open pull requests when the caller named no
 	// number. It is only ever called with a non-empty list. Nil means there
 	// is nobody to ask.
@@ -77,7 +78,7 @@ func PRCheckout(ctx *kit.Context, number int, opts PROptions, w io.Writer) (stri
 	}
 	typ, work := prWorkName(ctx, pr)
 	path := ctx.Scheme().Dir(typ, work)
-	return addAndProvision(ctx, path, func() error {
+	return provision.AddAndProvision(ctx, path, func() error {
 		fmt.Fprintf(w, "Checking out #%d %s at %s\n", pr.Number, pr.HeadRefName, path)
 		return checkoutPRInto(ctx, gh, pr, path, w)
 	}, opts.NewOptions, w, nil)
@@ -267,9 +268,9 @@ func prWorkName(ctx *kit.Context, pr github.PR) (typ, work string) {
 	if t, w, ok := ctx.Scheme().Parse(pr.HeadRefName); ok && slices.Contains(ctx.Config.Types, t) {
 		return t, w
 	}
-	slug := shorten(WorkNameFromBranch(pr.HeadRefName, ctx.Scheme().Suffix))
+	slug := shorten(provision.WorkNameFromBranch(pr.HeadRefName, ctx.Scheme().Suffix))
 	if slug == "" {
-		slug = shorten(WorkNameFromBranch(pr.Title, ctx.Scheme().Suffix))
+		slug = shorten(provision.WorkNameFromBranch(pr.Title, ctx.Scheme().Suffix))
 	}
 	work = fmt.Sprintf("pr-%d", pr.Number)
 	if slug != "" {

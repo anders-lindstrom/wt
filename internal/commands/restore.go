@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -83,7 +84,7 @@ func registerRestored(ctx *kit.Context, path string, w io.Writer) {
 	if ctx != nil {
 		rctx.User, rctx.UserError = ctx.User, ctx.UserError
 	}
-	registerSuperset(rctx, path, w)
+	provision.RegisterSuperset(rctx, path, w)
 }
 
 // renderRestorePlan writes what a restore finds and would do.

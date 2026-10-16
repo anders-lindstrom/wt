@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -66,7 +67,7 @@ func doctor(ctx *kit.Context, w io.Writer, withRepos bool) (int, error) {
 		}
 		if names, origin := ctx.TypeNames(); len(names) > 0 {
 			fmt.Fprintf(w, "  ✓ branches call %s (%s); worktree paths keep the type\n",
-				strings.Join(typeNamePairs(ctx), " "), origin)
+				strings.Join(provision.TypeNamePairs(ctx), " "), origin)
 		}
 	}
 	if ctx.UserError != nil {
@@ -190,7 +191,7 @@ func doctorSuperset(ctx *kit.Context, w io.Writer, report func(string, ...any)) 
 		fmt.Fprintf(w, "  - "+format+"\n", args...)
 	}
 
-	status := probeSuperset()
+	status := provision.ProbeSuperset()
 	if !status.Installed() {
 		note("no superset on the PATH or at ~/.superset/bin; registration is inactive")
 		return
@@ -216,7 +217,7 @@ func doctorSuperset(ctx *kit.Context, w io.Writer, report func(string, ...any)) 
 	} else {
 		fmt.Fprintf(w, "  ✓ %s (%s), host service running\n", status.Exe, version)
 	}
-	if status.StaleStatusFixed(supersetHostCommand) {
+	if status.StaleStatusFixed(provision.SupersetHostCommand) {
 		fmt.Fprintf(w, "  - `superset status` now reports this host correctly (running, pid %d, not a \"superset-host\" process); wt's stale-status workaround can be removed: grep wt's source for %s\n",
 			status.PID, superset.StaleStatusMarker)
 	}

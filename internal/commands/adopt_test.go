@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
@@ -20,7 +21,7 @@ func TestAdoptProvisionsAnExternallyCreatedWorktree(t *testing.T) {
 	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/outside", external)
 
 	var buf bytes.Buffer
-	got, err := Adopt(ctx, external, false, SetupOptions{SourceDir: main}, &buf)
+	got, err := Adopt(ctx, external, false, provision.SetupOptions{SourceDir: main}, &buf)
 	if err != nil {
 		t.Fatalf("Adopt: %v", err)
 	}
@@ -36,7 +37,7 @@ func TestAdoptRelocates(t *testing.T) {
 	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/moved", external)
 
 	var buf bytes.Buffer
-	got, err := Adopt(ctx, external, true, SetupOptions{SourceDir: main}, &buf)
+	got, err := Adopt(ctx, external, true, provision.SetupOptions{SourceDir: main}, &buf)
 	if err != nil {
 		t.Fatalf("Adopt: %v", err)
 	}
@@ -49,7 +50,7 @@ func TestAdoptRelocates(t *testing.T) {
 func TestAdoptRefusesAPathThatIsNotAWorktree(t *testing.T) {
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
-	if _, err := Adopt(ctx, t.TempDir(), false, SetupOptions{}, &buf); err == nil {
+	if _, err := Adopt(ctx, t.TempDir(), false, provision.SetupOptions{}, &buf); err == nil {
 		t.Error("want an error adopting a directory that is not a worktree of this repo")
 	}
 }
@@ -180,7 +181,7 @@ func TestAdoptAcceptsAPathThroughASymlink(t *testing.T) {
 
 	var buf bytes.Buffer
 	got, err := Adopt(ctx, filepath.Join(link, "demo-spare"), false,
-		SetupOptions{SourceDir: main}, &buf)
+		provision.SetupOptions{SourceDir: main}, &buf)
 	if err != nil {
 		t.Fatalf("Adopt through a symlink: %v", err)
 	}

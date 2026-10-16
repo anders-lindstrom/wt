@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -238,10 +239,10 @@ func TestListShowsThePullRequestColumn(t *testing.T) {
 	}
 	testkit.FakeGitHub(t, testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
 	var errs bytes.Buffer
-	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &errs); err != nil {
+	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := New(ctx, "feat/api-tidy", NewOptions{}, &errs); err != nil {
+	if _, err := provision.New(ctx, "feat/api-tidy", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
 	}
 
@@ -275,7 +276,7 @@ func TestListIsUnchangedWhenGitHubIsNotInPlay(t *testing.T) {
 		t.Fatal(err)
 	}
 	var errs bytes.Buffer
-	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &errs); err != nil {
+	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
 	}
 	// The listing without the column, taken with the integration off rather
@@ -339,7 +340,7 @@ func TestListSaysHowOldACachedColumnIs(t *testing.T) {
 	}
 	testkit.FakeGitHub(t, testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
 	var errs bytes.Buffer
-	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &errs); err != nil {
+	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
 	}
 
@@ -457,7 +458,7 @@ func TestPRListNamesTheWorktreeOnEachPullRequest(t *testing.T) {
 		testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"),
 		testkit.OpenPR(13, "nobody-is-on-this", "Something else"))
 	var errs bytes.Buffer
-	path, err := New(ctx, "fix/login-crash", NewOptions{}, &errs)
+	path, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -553,7 +554,7 @@ func TestStatusWorktreeCarriesThePullRequest(t *testing.T) {
 	}
 	log := testkit.FakeGitHub(t, testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
 	var errs bytes.Buffer
-	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &errs); err != nil {
+	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
 	}
 
@@ -577,7 +578,7 @@ func TestStatusWorktreeIsSilentWithoutOne(t *testing.T) {
 		t.Fatal(err)
 	}
 	var errs bytes.Buffer
-	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &errs); err != nil {
+	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
 	}
 	for name, set := range map[string]func(t *testing.T){
@@ -609,7 +610,7 @@ func TestListNoPRAsksGitHubNothing(t *testing.T) {
 	}
 	log := testkit.FakeGitHub(t, testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
 	var errs bytes.Buffer
-	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &errs); err != nil {
+	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
 	}
 
@@ -634,10 +635,10 @@ func TestStatusShowsThePullRequestColumn(t *testing.T) {
 	}
 	log := testkit.FakeGitHub(t, testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
 	var errs bytes.Buffer
-	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &errs); err != nil {
+	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := New(ctx, "feat/api-tidy", NewOptions{}, &errs); err != nil {
+	if _, err := provision.New(ctx, "feat/api-tidy", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
 	}
 
@@ -690,7 +691,7 @@ func TestStatusWorktreeRefreshAndNoPR(t *testing.T) {
 	}
 	log := testkit.FakeGitHub(t, testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
 	var errs bytes.Buffer
-	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &errs); err != nil {
+	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
 	}
 	status := func(opts StatusOptions) string {
@@ -769,7 +770,7 @@ func TestPROpenAsksGhToOpenThePullRequest(t *testing.T) {
 	}
 	log := testkit.FakeGitHub(t, testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
 	var errs bytes.Buffer
-	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &errs); err != nil {
+	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
 	}
 
@@ -800,7 +801,7 @@ func TestPROpenSaysSoWhenThereIsNone(t *testing.T) {
 	}
 	log := testkit.FakeGitHub(t, testkit.OpenPR(12, "somebody-elses-branch", "Not yours"))
 	var errs bytes.Buffer
-	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &errs); err != nil {
+	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
 	}
 
@@ -827,7 +828,7 @@ func TestPROpenDefaultsToTheWorktreeYouAreIn(t *testing.T) {
 	}
 	testkit.FakeGitHub(t, testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
 	var errs bytes.Buffer
-	path, err := New(ctx, "fix/login-crash", NewOptions{}, &errs)
+	path, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs)
 	if err != nil {
 		t.Fatal(err)
 	}

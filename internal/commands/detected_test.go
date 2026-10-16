@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
 )
@@ -42,7 +44,7 @@ func TestDetectedDefaultsAreWhatInitWrites(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if err := Init(detected.Repo, InitOptions{}, &bytes.Buffer{}); err != nil {
+	if err := provision.Init(detected.Repo, provision.InitOptions{}, &bytes.Buffer{}); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	written, err := kit.Open(main)
@@ -82,7 +84,7 @@ func TestOpenInsideAWorktreeOfAnUnconfiguredRepo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path, err := New(ctx, "fix/login-crash", NewOptions{NoSetup: true}, &bytes.Buffer{})
+	path, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{NoSetup: true}, &bytes.Buffer{})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -104,10 +106,10 @@ func TestNewOnDetectedDefaultsSaysSoOnce(t *testing.T) {
 	}
 	var warn, log bytes.Buffer
 	ctx.WarnTo(&warn)
-	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &log); err != nil {
+	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &log); err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	if _, err := New(ctx, "fix/other", NewOptions{}, &log); err != nil {
+	if _, err := provision.New(ctx, "fix/other", provision.NewOptions{}, &log); err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	lines := strings.Split(strings.TrimSpace(warn.String()), "\n")
@@ -128,7 +130,7 @@ func TestNewWithAConfigFileSaysNothingAboutDetection(t *testing.T) {
 	}
 	var warn bytes.Buffer
 	ctx.WarnTo(&warn)
-	if _, err := New(ctx, "fix/login-crash", NewOptions{NoSetup: true}, &bytes.Buffer{}); err != nil {
+	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{NoSetup: true}, &bytes.Buffer{}); err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	if warn.Len() != 0 {
@@ -169,7 +171,7 @@ func TestConfigSaysTheValuesAreDetected(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	if err := Config(ctx, false, &buf); err != nil {
+	if err := provision.Config(ctx, false, &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "detected (no config file; `wt init` writes one)") {
@@ -178,7 +180,7 @@ func TestConfigSaysTheValuesAreDetected(t *testing.T) {
 
 	ctx, _ = kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	buf.Reset()
-	if err := Config(ctx, false, &buf); err != nil {
+	if err := provision.Config(ctx, false, &buf); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(buf.String(), "detected") {
@@ -206,16 +208,16 @@ func TestDoctorReportsDetectedDefaultsAsInformation(t *testing.T) {
 // configured:false with no problem is a plan on detected defaults.
 func TestPlansOnDetectedDefaults(t *testing.T) {
 	ctx := kit.OpenLenient(testkit.UnconfiguredRepo(t), &bytes.Buffer{})
-	p := newPlanOf(t, ctx, "fix/x", NewOptions{})
+	p := provisiontest.NewPlanOf(t, ctx, "fix/x", provision.NewOptions{})
 	if p.Configured || len(p.Problems) != 0 || p.Token == nil || p.BuildCommand != nil {
-		t.Errorf("configured %v problems %s token %v build %v", p.Configured, codes(p.Problems), p.Token, p.BuildCommand)
+		t.Errorf("configured %v problems %s token %v build %v", p.Configured, provisiontest.Codes(p.Problems), p.Token, p.BuildCommand)
 	}
 	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "release-2.1")
-	c := checkoutPlanOf(t, ctx, "release-2.1", "")
+	c := provisiontest.CheckoutPlanOf(t, ctx, "release-2.1", "")
 	if c.Configured || len(c.Problems) != 0 {
-		t.Errorf("checkout: configured %v problems %s", c.Configured, codes(c.Problems))
+		t.Errorf("checkout: configured %v problems %s", c.Configured, provisiontest.Codes(c.Problems))
 	}
-	path, err := New(ctx, "fix/login-crash", NewOptions{NoSetup: true}, &bytes.Buffer{})
+	path, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{NoSetup: true}, &bytes.Buffer{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,8 +234,8 @@ func TestPlansOnDetectedDefaults(t *testing.T) {
 func TestPlanWhenDetectionFails(t *testing.T) {
 	main := testkit.NoTrunkRepo(t)
 	ctx := kit.OpenLenient(main, &bytes.Buffer{})
-	p := newPlanOf(t, ctx, "fix/x", NewOptions{Base: "production"})
-	if p.Configured || codes(p.Problems) != "noConfiguration" ||
+	p := provisiontest.NewPlanOf(t, ctx, "fix/x", provision.NewOptions{Base: "production"})
+	if p.Configured || provisiontest.Codes(p.Problems) != "noConfiguration" ||
 		!strings.Contains(p.Problems[0].Message, "cannot tell which branch is trunk") {
 		t.Errorf("configured %v problems %+v", p.Configured, p.Problems)
 	}
@@ -241,7 +243,7 @@ func TestPlanWhenDetectionFails(t *testing.T) {
 		t.Errorf("trunkSource = %q, want null", *p.TrunkSource)
 	}
 	// Without --base there is no base either, and no second problem for it.
-	if p := newPlanOf(t, ctx, "fix/x", NewOptions{}); codes(p.Problems) != "noConfiguration" || p.Base != nil {
+	if p := provisiontest.NewPlanOf(t, ctx, "fix/x", provision.NewOptions{}); provisiontest.Codes(p.Problems) != "noConfiguration" || p.Base != nil {
 		t.Errorf("without --base: base %v problems %+v", p.Base, p.Problems)
 	}
 }

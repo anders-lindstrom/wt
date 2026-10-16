@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -41,7 +42,7 @@ func rebasedOntoOrigin(t *testing.T, main, branch string) {
 func TestRemoveDeletesABranchWhoseCommitsWereRebasedOntoTrunk(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
 	var buf bytes.Buffer
-	path, err := New(ctx, "feat/rates", NewOptions{NoSetup: true}, &buf)
+	path, err := provision.New(ctx, "feat/rates", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +73,7 @@ func TestRemoveDeletesABranchWhoseCommitsWereRebasedOntoTrunk(t *testing.T) {
 func TestRemoveKeepsABranchWithACommitTrunkLacks(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
 	var buf bytes.Buffer
-	path, err := New(ctx, "feat/rates", NewOptions{NoSetup: true}, &buf)
+	path, err := provision.New(ctx, "feat/rates", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +97,7 @@ func TestRemoveKeepsABranchWithACommitTrunkLacks(t *testing.T) {
 func TestSweepRemovesAWorktreeWhoseCommitsWereRebasedOntoTrunk(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
 	var buf bytes.Buffer
-	path, err := New(ctx, "feat/rates", NewOptions{NoSetup: true}, &buf)
+	path, err := provision.New(ctx, "feat/rates", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +140,7 @@ func TestSweepPlanDeletesAGoneBranchWhoseCommitsWereRebasedOntoTrunk(t *testing.
 func TestSweepKeepsABranchTrunkHasOnlyWithOtherWhitespace(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
 	var buf bytes.Buffer
-	path, err := New(ctx, "feat/indent", NewOptions{NoSetup: true}, &buf)
+	path, err := provision.New(ctx, "feat/indent", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +169,7 @@ func TestSweepKeepsABranchTrunkHasOnlyWithOtherWhitespace(t *testing.T) {
 func TestRemoveSaysSomethingElseRemovedTheWorktree(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
 	var buf bytes.Buffer
-	path, err := New(ctx, "feat/elsewhere", NewOptions{NoSetup: true}, &buf)
+	path, err := provision.New(ctx, "feat/elsewhere", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +180,7 @@ func TestRemoveSaysSomethingElseRemovedTheWorktree(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			if !testkit.Exists(path) {
 				var err error
-				if path, err = New(ctx, "feat/elsewhere", NewOptions{NoSetup: true}, &buf); err != nil {
+				if path, err = provision.New(ctx, "feat/elsewhere", provision.NewOptions{NoSetup: true}, &buf); err != nil {
 					t.Fatal(err)
 				}
 				commitFile(t, path, "kept-work")
@@ -225,7 +226,7 @@ func TestRemoveSaysWhenSomethingElseIsStillRemovingTheWorktree(t *testing.T) {
 
 	ctx, _, _ := testkit.SweepRepo(t)
 	var buf bytes.Buffer
-	path, err := New(ctx, "feat/elsewhere", NewOptions{NoSetup: true}, &buf)
+	path, err := provision.New(ctx, "feat/elsewhere", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}

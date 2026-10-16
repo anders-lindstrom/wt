@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -260,7 +262,7 @@ func TestListLegendNamesSomethingTheRowActuallyShows(t *testing.T) {
 // branch with nothing either way is on trunk; the main checkout has no row
 // to count.
 func TestStatusCountsEachBranchAgainstTrunkAsLastFetched(t *testing.T) {
-	ctx := syncRepo(t)
+	ctx := provisiontest.SyncRepo(t)
 
 	var buf bytes.Buffer
 	if err := Status(ctx, StatusOptions{}, &buf, 0); err != nil {
@@ -306,7 +308,7 @@ func TestStatusFallsBackToTheLocalTrunkWithoutOrigin(t *testing.T) {
 
 // A detached worktree has no branch to count.
 func TestStatusPrintsADashForADetachedWorktree(t *testing.T) {
-	ctx := syncRepo(t)
+	ctx := provisiontest.SyncRepo(t)
 	detached := filepath.Join(ctx.Repo.Parent, "demo-detached")
 	testkit.GitIn(t, ctx.Repo.MainRoot, "worktree", "add", "-q", "--detach", detached)
 
@@ -328,7 +330,7 @@ func noStatusSessions() StatusOptions {
 // verdict the overview would give it, in its words, with the advice its
 // heading gives, and labelled as the simulation it is.
 func TestStatusWorktreePrintsTheFactsAndTheVerdictForARecipeWorktree(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 
 	var buf bytes.Buffer
 	if err := StatusWorktree(ctx, "bump", noStatusSessions(), &buf); err != nil {
@@ -355,7 +357,7 @@ func TestStatusWorktreePrintsTheFactsAndTheVerdictForARecipeWorktree(t *testing.
 }
 
 func TestStatusWorktreeSaysCleanAndCurrentInTheOverviewsWords(t *testing.T) {
-	ctx := syncRepo(t)
+	ctx := provisiontest.SyncRepo(t)
 
 	// other was cut from trunk after trunk last moved: nothing either way.
 	var buf bytes.Buffer
@@ -369,7 +371,7 @@ func TestStatusWorktreeSaysCleanAndCurrentInTheOverviewsWords(t *testing.T) {
 
 	// clean adds a file of its own, then trunk moves past it on another: a
 	// rebase to simulate, and nothing for it to stop on.
-	clean, err := New(ctx, "feat/clean", NewOptions{NoSetup: true}, io.Discard)
+	clean, err := provision.New(ctx, "feat/clean", provision.NewOptions{NoSetup: true}, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -393,7 +395,7 @@ func TestStatusWorktreeSaysCleanAndCurrentInTheOverviewsWords(t *testing.T) {
 // A contested worktree is filed under needs you, and the advice is the
 // heading's: the detail is wt sync's.
 func TestStatusWorktreePointsAContestedOneAtTheDetail(t *testing.T) {
-	ctx, _ := contestedFixture(t)
+	ctx, _ := provisiontest.ContestedFixture(t)
 
 	var buf bytes.Buffer
 	if err := StatusWorktree(ctx, "bump", noStatusSessions(), &buf); err != nil {
@@ -409,7 +411,7 @@ func TestStatusWorktreePointsAContestedOneAtTheDetail(t *testing.T) {
 
 // A session in the worktree is a fact of its own, in the overview's words.
 func TestStatusWorktreeNamesTheSessionsInIt(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 
 	var buf bytes.Buffer
 	if err := StatusWorktree(ctx, "bump", StatusOptions{Agents: testkit.IdleIn(t, bump, "parked-1")}, &buf); err != nil {
@@ -475,7 +477,7 @@ func TestStatusWorktreeWithoutOriginCountsAgainstTheLocalTrunk(t *testing.T) {
 }
 
 func TestStatusWorktreeRefusesTheMainCheckout(t *testing.T) {
-	ctx := syncRepo(t)
+	ctx := provisiontest.SyncRepo(t)
 
 	err := StatusWorktree(ctx, ctx.Repo.MainRoot, noStatusSessions(), io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "main checkout") {
@@ -490,7 +492,7 @@ func TestStatusWorktreeRefusesTheMainCheckout(t *testing.T) {
 // A branch whose count git cannot give prints ?, and the row is not an
 // error: here the branch ref is gone from under the checkout.
 func TestStatusPrintsAQuestionMarkWhenACountCannotBeRead(t *testing.T) {
-	ctx := syncRepo(t)
+	ctx := provisiontest.SyncRepo(t)
 	testkit.GitIn(t, ctx.Repo.MainRoot, "update-ref", "-d", "refs/heads/feat_wt/other")
 
 	var buf bytes.Buffer
@@ -532,7 +534,7 @@ func TestStatusSaysWhenThereIsNoTrunkToCompareWith(t *testing.T) {
 // words, and the stop it waits at under it; its staged resolutions are not
 // called dirty.
 func TestStatusWorktreeShowsAHandedOverWorktree(t *testing.T) {
-	ctx, bump := contestedFixture(t)
+	ctx, bump := provisiontest.ContestedFixture(t)
 	_, st := handOverNow(t, ctx, bump)
 
 	var buf bytes.Buffer
@@ -557,7 +559,7 @@ func TestStatusWorktreeShowsAHandedOverWorktree(t *testing.T) {
 // Tracked changes put a worktree under needs you, and the sync line says
 // dirty beside the class the way the overview's row does.
 func TestStatusWorktreeMarksADirtyWorktreeOnTheSyncLine(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	testkit.WriteFile(t, bump, "v.txt", "1.0.2\n")
 
 	var buf bytes.Buffer
@@ -578,7 +580,7 @@ func TestStatusWorktreeMarksADirtyWorktreeOnTheSyncLine(t *testing.T) {
 // so rather than trailing off after "as last fetched"; the trunk line of one
 // worktree says the same inside its parenthesis, as wt sync --no-fetch does.
 func TestStatusSaysWhenTheFetchAgeIsNotRecorded(t *testing.T) {
-	ctx := syncRepo(t)
+	ctx := provisiontest.SyncRepo(t)
 	if err := os.Remove(testkit.FetchHead(t, ctx.Repo.MainRoot)); err != nil {
 		t.Fatal(err)
 	}

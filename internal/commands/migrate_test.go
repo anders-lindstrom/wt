@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -344,7 +345,7 @@ func TestMigratePutsTheBranchNameBackWhenTheMoveFails(t *testing.T) {
 func TestMigrateIsANoOpWhenAlreadyWhereItBelongs(t *testing.T) {
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
-	path, err := New(ctx, "fix/already", NewOptions{NoSetup: true}, &buf)
+	path, err := provision.New(ctx, "fix/already", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}

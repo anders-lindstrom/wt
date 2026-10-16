@@ -8,13 +8,15 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // wt up takes what the declared strategies resolve, and says it is wt up.
 func TestUpRebasesAWorktreeTheStrategiesResolve(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	var out bytes.Buffer
 	if err := Up(ctx, bump, noAgents(), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
@@ -26,7 +28,7 @@ func TestUpRebasesAWorktreeTheStrategiesResolve(t *testing.T) {
 
 // A conflict that would be yours is refused untouched, and the run fails.
 func TestUpRefusesAWorktreeThatWouldHandOver(t *testing.T) {
-	ctx, bump := contestedFixture(t)
+	ctx, bump := provisiontest.ContestedFixture(t)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	var out bytes.Buffer
 	if err := Up(ctx, "bump", noAgents(), &out); err == nil {
@@ -39,7 +41,7 @@ func TestUpRefusesAWorktreeThatWouldHandOver(t *testing.T) {
 
 // The main checkout is trunk's own: there is nothing to bring onto it.
 func TestUpRefusesTheMainCheckout(t *testing.T) {
-	ctx, _ := runFixture(t, false)
+	ctx, _ := provisiontest.RunFixture(t, false)
 	err := Up(ctx, "/", noAgents(), &bytes.Buffer{})
 	if err == nil || !strings.Contains(err.Error(), "is the main checkout") {
 		t.Errorf("err = %v", err)
@@ -52,11 +54,11 @@ func TestUpWithoutADeclarationTakesOnlyAConflictFreeRebase(t *testing.T) {
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	main := ctx.Repo.MainRoot
 	var buf bytes.Buffer
-	free, err := New(ctx, "feat/free", NewOptions{NoSetup: true}, &buf)
+	free, err := provision.New(ctx, "feat/free", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
-	clash, err := New(ctx, "feat/clash", NewOptions{NoSetup: true}, &buf)
+	clash, err := provision.New(ctx, "feat/clash", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +93,7 @@ func TestUpWithoutADeclarationTakesOnlyAConflictFreeRebase(t *testing.T) {
 // A session busy in the worktree refuses wt up; --force goes ahead, names
 // the session before anything moves, and lifts nothing else.
 func TestUpForceGoesPastABusySessionAndNothingElse(t *testing.T) {
-	ctx, bump := runFixture(t, false)
+	ctx, bump := provisiontest.RunFixture(t, false)
 	resolved, _ := filepath.EvalSymlinks(bump)
 	opts := noAgents()
 	opts.Agents = []wtsync.Agent{{Name: "bump-1", Cwd: resolved}}
@@ -111,7 +113,7 @@ func TestUpForceGoesPastABusySessionAndNothingElse(t *testing.T) {
 		t.Errorf("output:\n%s", out.String())
 	}
 
-	ctx, bump = runFixture(t, false)
+	ctx, bump = provisiontest.RunFixture(t, false)
 	if err := os.WriteFile(filepath.Join(bump, "a.txt"), []byte("dirt\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +125,7 @@ func TestUpForceGoesPastABusySessionAndNothingElse(t *testing.T) {
 
 // With nothing named, --force would roll over every session at once.
 func TestSyncRunRefusesForceWithNothingNamed(t *testing.T) {
-	ctx, _ := runFixture(t, false)
+	ctx, _ := provisiontest.RunFixture(t, false)
 	opts := noAgents()
 	opts.Force = true
 	if err := SyncRebase(ctx, nil, opts, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "name it") {

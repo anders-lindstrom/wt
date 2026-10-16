@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/github"
 )
@@ -22,26 +23,10 @@ func listing(t *testing.T, ctx *kit.Context, opts ListOptions) string {
 	return out.String()
 }
 
-// oneWorktreeWithAPR is a repository with a worktree on a pull request's head
-// branch, and the fake gh's argv log.
-func oneWorktreeWithAPR(t *testing.T) (*kit.Context, string) {
-	t.Helper()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
-	if err != nil {
-		t.Fatal(err)
-	}
-	log := testkit.FakeGitHub(t, testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
-	var errs bytes.Buffer
-	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &errs); err != nil {
-		t.Fatal(err)
-	}
-	return ctx, log
-}
-
 // The second listing starts no process: the first one's answer is kept in
 // this repository.
 func TestListCachesThePullRequests(t *testing.T) {
-	ctx, log := oneWorktreeWithAPR(t)
+	ctx, log := provisiontest.OneWorktreeWithAPR(t)
 
 	first := listing(t, ctx, ListOptions{})
 	if !strings.Contains(first, "#12 open") {
@@ -59,7 +44,7 @@ func TestListCachesThePullRequests(t *testing.T) {
 
 // --refresh is the way to a fresh answer without waiting the cache out.
 func TestListRefreshAsksGitHubAgain(t *testing.T) {
-	ctx, log := oneWorktreeWithAPR(t)
+	ctx, log := provisiontest.OneWorktreeWithAPR(t)
 	listing(t, ctx, ListOptions{})
 	calls := len(testkit.ArgvOf(t, log))
 
@@ -72,7 +57,7 @@ func TestListRefreshAsksGitHubAgain(t *testing.T) {
 // A cache wt can neither read nor write costs the cache, never the listing:
 // here the file's name is taken by a directory, so both fail.
 func TestListSurvivesACacheItCannotUse(t *testing.T) {
-	ctx, log := oneWorktreeWithAPR(t)
+	ctx, log := provisiontest.OneWorktreeWithAPR(t)
 	want := listing(t, ctx, ListOptions{})
 
 	path := kit.PRCachePath(ctx)
@@ -97,7 +82,7 @@ func TestListSurvivesACacheItCannotUse(t *testing.T) {
 
 // Half a file is not an answer.
 func TestListSurvivesACorruptCache(t *testing.T) {
-	ctx, log := oneWorktreeWithAPR(t)
+	ctx, log := provisiontest.OneWorktreeWithAPR(t)
 	want := listing(t, ctx, ListOptions{})
 	testkit.MustWrite(t, kit.PRCachePath(ctx), `{"prs": [{"number`)
 	calls := len(testkit.ArgvOf(t, log))

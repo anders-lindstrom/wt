@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 )
@@ -227,7 +228,7 @@ func TestPurgeRefuses(t *testing.T) {
 		purgeRefused(t, ctx, filepath.Join(dir, "nope"), quarantine.ProblemMissing)
 	})
 	t.Run("no record", func(t *testing.T) {
-		ctx, _ := safetyWorktree(t, "fix/r-norecord")
+		ctx, _ := provisiontest.SafetyWorktree(t, "fix/r-norecord")
 		dir := filepath.Join(ctx.Repo.Parent, "just-files")
 		testkit.MustWrite(t, filepath.Join(dir, "precious.txt"), "precious")
 		purgeRefused(t, ctx, dir, quarantine.ProblemNoRecord)
@@ -277,7 +278,7 @@ func TestPurgeRefuses(t *testing.T) {
 		purgeRefused(t, ctx, dir, quarantine.ProblemPins)
 	})
 	t.Run("removal stopped", func(t *testing.T) {
-		ctx, path := safetyWorktree(t, "fix/r-removal")
+		ctx, path := provisiontest.SafetyWorktree(t, "fix/r-removal")
 		dir := testkit.TrashFor(t, ctx)
 		testkit.CrashAt(t, "moveAdmin:running")
 		var buf bytes.Buffer
@@ -286,7 +287,7 @@ func TestPurgeRefuses(t *testing.T) {
 		purgeRefused(t, ctx, dir, quarantine.ProblemUnsettled)
 	})
 	t.Run("removal stopped at its branch step", func(t *testing.T) {
-		ctx, path := safetyWorktree(t, "fix/r-branchstep")
+		ctx, path := provisiontest.SafetyWorktree(t, "fix/r-branchstep")
 		dir := testkit.TrashFor(t, ctx)
 		testkit.CrashAt(t, "branch:running")
 		var buf bytes.Buffer
@@ -659,7 +660,7 @@ func TestPurgeNeverDeletesAQuarantineInsideIt(t *testing.T) {
 func TestQuarantineRefusesAFolderInsideAQuarantine(t *testing.T) {
 	ctx, _, _, _, dir := quarantined(t, "fix/host", false)
 	restore(t, ctx, dir)
-	_, path := safetyWorktreeIn(t, ctx, "fix/guest")
+	_, path := provisiontest.SafetyWorktreeIn(t, ctx, "fix/guest")
 	var buf bytes.Buffer
 	err := RemoveAt(ctx, path, RemoveOptions{Quarantine: filepath.Join(dir, "inner")}, &buf)
 	if err == nil || !strings.Contains(err.Error()+buf.String(), "is inside "+dir+", a folder a worktree was moved to") {
@@ -672,7 +673,7 @@ func TestQuarantineRefusesAFolderInsideAQuarantine(t *testing.T) {
 
 // An empty folder names nothing wt owns: refused, and left as it is.
 func TestPurgeRefusesAnEmptyFolder(t *testing.T) {
-	ctx, _ := safetyWorktree(t, "fix/empty")
+	ctx, _ := provisiontest.SafetyWorktree(t, "fix/empty")
 	dir := filepath.Join(ctx.Repo.MainRoot, "empty")
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -707,15 +708,4 @@ func TestPurgeAfterTheRepositoryIsGone(t *testing.T) {
 	if testkit.Exists(dir) {
 		t.Error("the folder must be gone")
 	}
-}
-
-// safetyWorktreeIn is a wt worktree for work in ctx's repository.
-func safetyWorktreeIn(t *testing.T, ctx *kit.Context, work string) (*kit.Context, string) {
-	t.Helper()
-	var buf bytes.Buffer
-	path, err := New(ctx, work, NewOptions{NoSetup: true}, &buf)
-	if err != nil {
-		t.Fatalf("%v\n%s", err, buf.String())
-	}
-	return ctx, path
 }

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -19,7 +20,7 @@ func TestListWarnsOnlyWhenGitHubWasSupposedToWork(t *testing.T) {
 		t.Fatal(err)
 	}
 	var errs bytes.Buffer
-	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &errs); err != nil {
+	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
 	}
 	pr := testkit.OpenPR(12, "fix_wt/login-crash", "Login crash")
@@ -91,7 +92,7 @@ func TestGitHubWarnsOncePerInvocation(t *testing.T) {
 		t.Fatal(err)
 	}
 	var errs bytes.Buffer
-	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &errs); err != nil {
+	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
 	}
 	testkit.FakeGitHubWith(t, `[ "$1 $2" = 'api graphql' ] && { echo offline >&2; exit 1; }`,

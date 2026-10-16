@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 )
@@ -16,7 +17,7 @@ import (
 // A quarantine moves the checkout and its admin dir into the folder, deletes
 // the merged branch after recording it, and says how to put it back.
 func TestQuarantineMovesTheWorktreeInsteadOfDeletingIt(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/trashed")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/trashed")
 	testkit.GitIn(t, ctx.Repo.MainRoot, "config", "branch.fix_wt/trashed.description", "mine")
 	testkit.MustWrite(t, filepath.Join(ctx.Repo.MainRoot, ".git", "info", "exclude"), "*.log\n")
 	testkit.MustWrite(t, filepath.Join(path, "ignored.log"), "")
@@ -66,7 +67,7 @@ func TestQuarantineMovesTheWorktreeInsteadOfDeletingIt(t *testing.T) {
 // What an editor or a build writes after the last check is not deleted: it
 // moves with the checkout.
 func TestQuarantineKeepsAFileWrittenAfterTheLastCheck(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/late-write")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/late-write")
 	dir := testkit.TrashFor(t, ctx)
 	t.Cleanup(func() { afterFinalCheck = nil })
 	afterFinalCheck = func() { testkit.MustWrite(t, filepath.Join(path, "late.txt"), "written after the check") }
@@ -83,7 +84,7 @@ func TestQuarantineKeepsAFileWrittenAfterTheLastCheck(t *testing.T) {
 // A linked worktree keeps its submodules' repositories in its admin dir, so
 // they go with it, under admin/modules/.
 func TestQuarantineTakesTheSubmoduleRepositoriesAlong(t *testing.T) {
-	ctx, _, path := submoduleWorktree(t, "fix/sub-trash")
+	ctx, _, path := provisiontest.SubmoduleWorktree(t, "fix/sub-trash")
 	dir := testkit.TrashFor(t, ctx)
 	var buf bytes.Buffer
 	if err := RemoveAt(ctx, path, RemoveOptions{Quarantine: dir}, &buf); err != nil {
@@ -99,7 +100,7 @@ func TestQuarantineTakesTheSubmoduleRepositoriesAlong(t *testing.T) {
 
 // Nothing changes before a refusal: no folder, no lock, no move.
 func TestQuarantineRefusesAFolderThatExistsBeforeAnyChange(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/exists")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/exists")
 	dir := testkit.TrashFor(t, ctx)
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -113,7 +114,7 @@ func TestQuarantineRefusesAFolderThatExistsBeforeAnyChange(t *testing.T) {
 }
 
 func TestQuarantineRefusesAnotherVolumeBeforeAnyChange(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/volume")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/volume")
 	dir := testkit.TrashFor(t, ctx)
 	orig := quarantine.DeviceOf
 	t.Cleanup(func() { quarantine.DeviceOf = orig })
@@ -147,7 +148,7 @@ func assertNotQuarantined(t *testing.T, ctx *kit.Context, path, dir string) {
 func TestRemoveReportsABranchFailureAfterTheFolderIsGoneAsPartial(t *testing.T) {
 	for _, q := range []bool{false, true} {
 		t.Run(map[bool]string{false: "delete", true: "quarantine"}[q], func(t *testing.T) {
-			ctx, path := safetyWorktree(t, "fix/kept-partial")
+			ctx, path := provisiontest.SafetyWorktree(t, "fix/kept-partial")
 			testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "work")
 			testkit.GitIn(t, path, "branch", "kept-partial")
 			opts := RemoveOptions{}
@@ -194,7 +195,7 @@ func journalPoints(t *testing.T, run func()) []string {
 // the checkout: the lock stays, so no prune can take the registration, and
 // the run says it is partial.
 func TestQuarantineKeepsTheLockWhenAMovedCheckoutFailsToSync(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/unsynced")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/unsynced")
 	dir := testkit.TrashFor(t, ctx)
 	t.Cleanup(func() { quarantine.AfterRename = nil })
 	quarantine.AfterRename = func(to string) error {
@@ -223,7 +224,7 @@ func TestQuarantineKeepsTheLockWhenAMovedCheckoutFailsToSync(t *testing.T) {
 // A quarantine inside a checkout or the git dir would move a worktree into
 // something another removal can delete, or into git's own files.
 func TestQuarantineRefusesAFolderInsideTheRepository(t *testing.T) {
-	ctx, path := safetyWorktree(t, "fix/inside-repo")
+	ctx, path := provisiontest.SafetyWorktree(t, "fix/inside-repo")
 	other := filepath.Join(ctx.Repo.Parent, "neighbour")
 	testkit.GitIn(t, ctx.Repo.MainRoot, "worktree", "add", "-q", "--detach", other)
 	for _, dir := range []string{

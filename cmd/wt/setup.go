@@ -3,8 +3,8 @@ package main
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
 )
 
 func newSetupCmd() *cobra.Command {
@@ -35,11 +35,11 @@ func newSetupCmd() *cobra.Command {
 			"  wt setup --source superset  # name what ran it; changes nothing yet",
 		Args: cobra.MaximumNArgs(1),
 		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *kit.Context) error {
-			opts := commands.SetupOptions{SkipBuild: skipBuild, NoCache: noCache, Source: source}
+			opts := provision.SetupOptions{SkipBuild: skipBuild, NoCache: noCache, Source: source}
 			if len(args) == 1 {
 				opts.SourceDir = args[0]
 			}
-			return commands.Setup(ctx, ctx.Cwd, opts, cmd.OutOrStdout())
+			return provision.Setup(ctx, ctx.Cwd, opts, cmd.OutOrStdout())
 		}),
 	}
 	addProvisionFlags(cmd, &skipBuild, &noCache, nil, nil)
