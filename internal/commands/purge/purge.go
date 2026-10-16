@@ -44,6 +44,8 @@ type Options struct {
 	// Planned, when set, is told each plan the purge reads, the last one
 	// being the one it went by.
 	Planned func(quarantine.PurgePlan)
+	// QuarantineHooks are the quarantine.Hooks a test runs the purge with; nil but in tests.
+	QuarantineHooks *quarantine.Hooks
 }
 
 // QuarantinePurge deletes, for good, the worktree wt remove --move-to or
@@ -96,7 +98,7 @@ func QuarantinePurge(dir string, opts Options, w io.Writer) error {
 			return report(errPurgePlanChanged)
 		}
 	}
-	res, err = quarantine.DoPurge(plan)
+	res, err = quarantine.DoPurge(plan, opts.QuarantineHooks)
 	if err != nil {
 		if res.Outcome == quarantine.OutcomePartial {
 			fmt.Fprintf(w, "! partly purged; wt purge %s finishes it\n", dir)

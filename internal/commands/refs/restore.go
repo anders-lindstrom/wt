@@ -22,6 +22,8 @@ type RestoreOptions struct {
 	DryRun bool
 	// Result, when set, receives what the restore did.
 	Result *quarantine.RestoreResult
+	// QuarantineHooks are the quarantine.Hooks a test runs the restore with; nil but in tests.
+	QuarantineHooks *quarantine.Hooks
 }
 
 // Restore puts back the worktree wt remove --move-to moved into dir.
@@ -37,7 +39,7 @@ func Restore(ctx *kit.Context, dir string, opts RestoreOptions, w io.Writer) err
 	if ctx != nil {
 		rp = ctx.Repo
 	}
-	plan := quarantine.PlanRestore(dir, rp)
+	plan := quarantine.PlanRestore(dir, rp, opts.QuarantineHooks)
 	renderRestorePlan(plan, w)
 	res := quarantine.RestoreResult{Outcome: quarantine.OutcomeRefused, Action: plan.Action,
 		OccupiedBy: plan.OccupiedBy, Checkout: plan.Checkout, Admin: plan.Admin}
@@ -57,7 +59,7 @@ func Restore(ctx *kit.Context, dir string, opts RestoreOptions, w io.Writer) err
 		fmt.Fprintln(w, "Nothing was restored: --dry-run.")
 		return report(nil)
 	}
-	res, err = quarantine.DoRestore(dir, rp)
+	res, err = quarantine.DoRestore(dir, rp, opts.QuarantineHooks)
 	if err != nil {
 		if res.Outcome == quarantine.OutcomePartial {
 			fmt.Fprintf(w, "! partly restored; wt restore %s finishes it\n", dir)
@@ -251,7 +253,7 @@ func RestoreJSON(ctx *kit.Context, dir string, opts RestoreOptions, out, progres
 		rp = ctx.Repo
 	}
 	if opts.DryRun {
-		plan := quarantine.PlanRestore(dir, rp)
+		plan := quarantine.PlanRestore(dir, rp, opts.QuarantineHooks)
 		renderRestorePlan(plan, progress)
 		p := restorePlanOutput(plan)
 		if err != nil {

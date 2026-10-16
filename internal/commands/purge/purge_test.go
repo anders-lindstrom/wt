@@ -50,7 +50,7 @@ func PurgeRefused(t *testing.T, ctx *kit.Context, dir, code string) {
 // Everything that is not a settled quarantine, named by a record written
 // for exactly this folder, is refused before anything is deleted.
 func TestPurgeRefuses(t *testing.T) {
-	// Not parallel: swaps quarantine.AfterSave.
+	t.Parallel()
 	t.Run("no folder", func(t *testing.T) {
 		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/r-missing", false)
 		PurgeRefused(t, ctx, filepath.Join(dir, "nope"), quarantine.ProblemMissing)
@@ -108,27 +108,27 @@ func TestPurgeRefuses(t *testing.T) {
 	t.Run("removal stopped", func(t *testing.T) {
 		ctx, path := provisiontest.SafetyWorktree(t, "fix/r-removal")
 		dir := testkit.TrashFor(t, ctx)
-		testkit.CrashAt(t, "moveAdmin:running")
 		var buf bytes.Buffer
-		_ = retire.RemoveAt(ctx, path, retire.RemoveOptions{Quarantine: dir}, &buf)
-		quarantine.AfterSave = nil
+		if err := retire.RemoveAt(ctx, path, retire.RemoveOptions{Quarantine: dir, QuarantineHooks: testkit.CrashAt("moveAdmin:running")}, &buf); !errors.Is(err, testkit.ErrCrash) {
+			t.Fatalf("the removal: err %v, want the injected crash", err)
+		}
 		PurgeRefused(t, ctx, dir, quarantine.ProblemUnsettled)
 	})
 	t.Run("removal stopped at its branch step", func(t *testing.T) {
 		ctx, path := provisiontest.SafetyWorktree(t, "fix/r-branchstep")
 		dir := testkit.TrashFor(t, ctx)
-		testkit.CrashAt(t, "branch:running")
 		var buf bytes.Buffer
-		_ = retire.RemoveAt(ctx, path, retire.RemoveOptions{Quarantine: dir}, &buf)
-		quarantine.AfterSave = nil
+		if err := retire.RemoveAt(ctx, path, retire.RemoveOptions{Quarantine: dir, QuarantineHooks: testkit.CrashAt("branch:running")}, &buf); !errors.Is(err, testkit.ErrCrash) {
+			t.Fatalf("the removal: err %v, want the injected crash", err)
+		}
 		PurgeRefused(t, ctx, dir, quarantine.ProblemUnsettled)
 	})
 	t.Run("restore stopped", func(t *testing.T) {
 		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/r-restore", false)
-		testkit.CrashAt(t, "restore.moveAdmin:done")
 		var buf bytes.Buffer
-		_ = refs.Restore(ctx, dir, refs.RestoreOptions{}, &buf)
-		quarantine.AfterSave = nil
+		if err := refs.Restore(ctx, dir, refs.RestoreOptions{QuarantineHooks: testkit.CrashAt("restore.moveAdmin:done")}, &buf); !errors.Is(err, testkit.ErrCrash) {
+			t.Fatalf("the restore: err %v, want the injected crash", err)
+		}
 		PurgeRefused(t, ctx, dir, quarantine.ProblemUnsettled)
 	})
 	t.Run("worktree registered inside", func(t *testing.T) {
@@ -238,7 +238,7 @@ func TestPurgeReadsThePlanAgainAfterTheQuestion(t *testing.T) {
 }
 
 func TestPurgeJSONMatchesItsSchemas(t *testing.T) {
-	// Not parallel: swaps quarantine.AfterSave.
+	t.Parallel()
 	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/purge-json", false)
 	var plan bytes.Buffer
 	if err := QuarantinePurgePlanJSON(dir, &plan, &bytes.Buffer{}); err != nil {
@@ -246,9 +246,9 @@ func TestPurgeJSONMatchesItsSchemas(t *testing.T) {
 	}
 	testkit.ValidateJSON(t, "quarantine-purge-plan", plan.Bytes())
 
-	testkit.CrashAt(t, "purge.begin")
-	_ = QuarantinePurge(dir, Options{}, &bytes.Buffer{})
-	quarantine.AfterSave = nil
+	if err := QuarantinePurge(dir, Options{QuarantineHooks: testkit.CrashAt("purge.begin")}, &bytes.Buffer{}); !errors.Is(err, testkit.ErrCrash) {
+		t.Fatalf("the purge: err %v, want the injected crash", err)
+	}
 	if testkit.Exists(filepath.Join(dir, quarantine.FileName)) {
 		t.Error("recovery.json must be gone once the purge began: an older wt restore would read it")
 	}
@@ -312,14 +312,13 @@ func TestPurgeJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 // The folder swapped for a symlink to another while the purge runs: every
 // deletion stays inside the folder it opened, and the other is untouched.
 func TestPurgeStaysInTheFolderItOpened(t *testing.T) {
-	// Not parallel: swaps quarantine.AfterPurge.
+	t.Parallel()
 	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/swapped", false)
 	victim := filepath.Join(ctx.Repo.Parent, "victim")
 	testkit.MustWrite(t, filepath.Join(victim, "checkout", "precious.txt"), "precious")
 	testkit.MustWrite(t, filepath.Join(victim, "admin", "precious.txt"), "precious")
 	moved := dir + "-moved"
-	t.Cleanup(func() { quarantine.AfterPurge = nil })
-	quarantine.AfterPurge = func(at string) error {
+	h := &quarantine.Hooks{AfterPurge: func(at string) error {
 		if at == "pin:dir" {
 			if err := os.Rename(dir, moved); err != nil {
 				t.Fatal(err)
@@ -329,9 +328,9 @@ func TestPurgeStaysInTheFolderItOpened(t *testing.T) {
 			}
 		}
 		return nil
-	}
+	}}
 	var buf bytes.Buffer
-	if err := QuarantinePurge(dir, Options{}, &buf); err == nil {
+	if err := QuarantinePurge(dir, Options{QuarantineHooks: h}, &buf); err == nil {
 		t.Fatalf("the swapped path must not be removed as the folder\n%s", buf.String())
 	}
 	for _, f := range []string{"checkout", "admin"} {
@@ -347,12 +346,12 @@ func TestPurgeStaysInTheFolderItOpened(t *testing.T) {
 // A plan is only carried out as read: a file added to the checkout since,
 // or a worktree registered inside it once the purge began, stops it.
 func TestPurgeGoesByThePlanItWasGiven(t *testing.T) {
-	// Not parallel: swaps quarantine.AfterSave.
+	t.Parallel()
 	t.Run("file added", func(t *testing.T) {
 		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/stale-file", false)
 		plan := quarantine.PlanPurge(dir)
 		testkit.MustWrite(t, filepath.Join(dir, "checkout", "sub", "new.txt"), "new")
-		if _, err := quarantine.DoPurge(plan); !errors.Is(err, quarantine.ErrPurgeChanged) {
+		if _, err := quarantine.DoPurge(plan, nil); !errors.Is(err, quarantine.ErrPurgeChanged) {
 			t.Fatalf("want ErrPurgeChanged, got %v", err)
 		}
 		if !testkit.Exists(filepath.Join(dir, "checkout", "sub", "new.txt")) || testkit.PinsOf(t, ctx) == "" {
@@ -362,15 +361,14 @@ func TestPurgeGoesByThePlanItWasGiven(t *testing.T) {
 	t.Run("worktree registered", func(t *testing.T) {
 		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/stale-wt", false)
 		nested := filepath.Join(dir, "checkout", "nested")
-		t.Cleanup(func() { quarantine.AfterSave = nil })
-		quarantine.AfterSave = func(_ *quarantine.Record, at string) error {
+		h := &quarantine.Hooks{AfterSave: func(_ *quarantine.Record, at string) error {
 			if at == "purge.begin" {
 				testkit.GitIn(t, ctx.Repo.MainRoot, "worktree", "add", "-q", "--detach", nested)
 			}
 			return nil
-		}
+		}}
 		var buf bytes.Buffer
-		if err := QuarantinePurge(dir, Options{}, &buf); err == nil {
+		if err := QuarantinePurge(dir, Options{QuarantineHooks: h}, &buf); err == nil {
 			t.Fatal("a worktree registered inside must stop the purge")
 		}
 		if !testkit.Exists(filepath.Join(nested, ".git")) {
@@ -384,7 +382,7 @@ func TestPurgeGoesByThePlanItWasGiven(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer unlock()
-		if _, err := quarantine.DoPurge(quarantine.PlanPurge(dir)); err == nil || !testkit.Exists(dir) {
+		if _, err := quarantine.DoPurge(quarantine.PlanPurge(dir), nil); err == nil || !testkit.Exists(dir) {
 			t.Fatalf("a purge must wait for nobody: %v", err)
 		}
 	})
