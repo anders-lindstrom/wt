@@ -19,6 +19,7 @@ import (
 // A sweep that deletes nothing mints no run: not one with nothing to do,
 // and not one whose only branch moved after the plan was made.
 func TestSweepThatDeletesNothingMintsNoRun(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	r, human, err := retiretest.SweepJSON(t, ctx, retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}})
 	if err != nil || r.RunID != nil {
@@ -51,6 +52,7 @@ func TestSweepThatDeletesNothingMintsNoRun(t *testing.T) {
 // and put back by wt restore; a branch in no worktree is still pinned in the
 // run.
 func TestSweepQuarantineDoesNotPinABranchTwice(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 1)
 	testkit.LandOnMain(t, main, "done-work")
@@ -77,6 +79,7 @@ func TestSweepQuarantineDoesNotPinABranchTwice(t *testing.T) {
 // A signal right after a branch is moved still writes the one object, with
 // the run and the pin read back.
 func TestSweepInterruptedAfterAMoveNamesThePin(t *testing.T) {
+	// Not parallel: swaps refpins.AfterBranchMoved and marks the process-wide interrupt journal interrupted.
 	ctx, main, _ := testkit.SweepRepo(t)
 	for _, b := range []string{"one", "two"} {
 		testkit.BranchWithWork(t, main, b, 1)
@@ -111,6 +114,7 @@ func TestSweepInterruptedAfterAMoveNamesThePin(t *testing.T) {
 // An unmerged branch is renamed, not deleted: its commits keep a name, and
 // no run is made.
 func TestRemoveRenamesAnUnmergedBranchWithoutAPin(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/unfinished")
 	testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "unfinished")
 	r, err := retiretest.RemoveJSON(t, ctx, path, retire.RemoveOptions{})

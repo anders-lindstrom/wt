@@ -17,6 +17,7 @@ import (
 )
 
 func TestParseForce(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		in   []string
 		want kit.ForceSet
@@ -75,6 +76,7 @@ func removed(t *testing.T, ctx *kit.Context, path string, opts RemoveOptions) st
 
 // Each category goes past its own problem and nothing else's.
 func TestRemoveForceCategoryGoesPastOnlyItsOwnProblem(t *testing.T) {
+	t.Parallel()
 	// busy-sessions implies idle-sessions, so it is no other category's.
 	everyOther := func(f kit.ForceSet) kit.ForceSet {
 		if f == kit.ForceIdleSessions {
@@ -121,6 +123,7 @@ func TestRemoveForceCategoryGoesPastOnlyItsOwnProblem(t *testing.T) {
 
 // A refusal --force would go past says which categories it needs.
 func TestRemoveRefusalNamesTheForceItNeeds(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/force-hint")
 	opts := RemoveOptions{Agents: []wtsync.Agent{AgentIn(t, path, "busy-1", false)}, Force: kit.ForceIdleSessions}
 	var buf bytes.Buffer
@@ -133,6 +136,7 @@ func TestRemoveRefusalNamesTheForceItNeeds(t *testing.T) {
 // Idle forced, busy not: an idle and a busy session together refuse, and
 // the refusal names the busy one.
 func TestRemoveIdleForcedButBusyRefuses(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/force-mixed")
 	opts := RemoveOptions{Force: kit.ForceIdleSessions, Agents: []wtsync.Agent{
 		AgentIn(t, path, "idle-1", true), AgentIn(t, path, "busy-1", false)}}
@@ -146,6 +150,7 @@ func TestRemoveIdleForcedButBusyRefuses(t *testing.T) {
 // one that arrived refuses unless its state was forced — deleting or
 // quarantining alike.
 func TestRemoveReadsTheSessionsAgainBeforeTheCheckoutGoes(t *testing.T) {
+	t.Parallel()
 	for _, quarantined := range []bool{false, true} {
 		name := "delete"
 		if quarantined {
@@ -217,6 +222,7 @@ func busyNow(t *testing.T) func(string) []wtsync.Agent { return idleThen(t, fals
 // The token covers each session's state as well as who it is, and which
 // categories --force names.
 func TestRemoveTokenCoversSessionStateAndTheForceSet(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/force-token")
 	token := func(force kit.ForceSet, idle bool) string {
 		t.Helper()
@@ -240,6 +246,7 @@ func TestRemoveTokenCoversSessionStateAndTheForceSet(t *testing.T) {
 
 // A problem --force cannot pass has no category.
 func TestRemoveJSONProblemWithoutForceHasNoCategory(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/force-dirty")
 	testkit.MustWrite(t, filepath.Join(path, "scratch.txt"), "mine")
 	p, _ := RemovePlanOf(t, ctx, path, RemoveOptions{Force: kit.ForceAll, Agents: []wtsync.Agent{}})
@@ -255,6 +262,7 @@ func TestRemoveJSONProblemWithoutForceHasNoCategory(t *testing.T) {
 // written while claude answered is still seen — in a submodule too, where
 // git's own check is forced past.
 func TestRemoveReadsTheCheckoutAfterListingTheSessions(t *testing.T) {
+	t.Parallel()
 	ctx, _, path := provisiontest.SubmoduleWorktree(t, "fix/late-while-listing")
 	late := filepath.Join(path, "sm", "late.txt")
 	opts := RemoveOptions{Agents: []wtsync.Agent{}, Relist: func() ([]wtsync.Agent, error) {
@@ -269,6 +277,7 @@ func TestRemoveReadsTheCheckoutAfterListingTheSessions(t *testing.T) {
 
 // Busy forced covers idle ones in the plan too.
 func TestRemoveBusyForcedGoesPastAnIdleSession(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/force-busy-idle")
 	removed(t, ctx, path, RemoveOptions{Force: kit.ForceBusySessions, Agents: []wtsync.Agent{
 		AgentIn(t, path, "idle-1", true), AgentIn(t, path, "busy-1", false)}})
@@ -277,6 +286,7 @@ func TestRemoveBusyForcedGoesPastAnIdleSession(t *testing.T) {
 // A refusal at the last check says the worktree changed since the plan, and
 // which --force would go past it now.
 func TestRemoveLateRefusalNamesWhatChangedAndItsForce(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/late-hint")
 	opts := RemoveOptions{Force: kit.ForceIdleSessions, Agents: idleThen(t, true)(path),
 		Relist: func() ([]wtsync.Agent, error) { return busyNow(t)(path), nil }}
@@ -290,6 +300,7 @@ func TestRemoveLateRefusalNamesWhatChangedAndItsForce(t *testing.T) {
 
 // A held lock and a session: the hint names both categories.
 func TestRemoveLockAndSessionHintNamesBoth(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/lock-and-session")
 	testkit.GitIn(t, ctx.Repo.MainRoot, "worktree", "lock", "--reason", fmt.Sprintf("live (pid %d)", os.Getpid()), path)
 	opts := RemoveOptions{Agents: idleThen(t, true)(path)}

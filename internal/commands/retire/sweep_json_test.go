@@ -12,6 +12,7 @@ import (
 // A signal writes the one object: the item in flight interrupted, those not
 // reached not run, and nothing written a second time.
 func TestSweepJournalWritesOneObjectWhenInterrupted(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "one", 0)
 	testkit.BranchWithWork(t, main, "two", 0)
@@ -39,6 +40,7 @@ func TestSweepJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 
 // The outcome rules, as docs/json.md states them.
 func TestSweepOutcomeRules(t *testing.T) {
+	t.Parallel()
 	items := func(results ...string) []*SweepResultItem {
 		var out []*SweepResultItem
 		for _, r := range results {

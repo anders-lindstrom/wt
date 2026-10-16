@@ -16,6 +16,7 @@ import (
 // whose pull request merged into trunk at exactly this tip goes the way sweep
 // would take it, however old the entry is.
 func TestRemoveDeletesASquashMergedBranchFromTheCacheAlone(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, path, branch, _ := provisiontest.MergedInCache(t, "main")
 
 	var out bytes.Buffer
@@ -36,6 +37,7 @@ func TestRemoveDeletesASquashMergedBranchFromTheCacheAlone(t *testing.T) {
 // The plan says which fact it is acting on, because git's answer is the
 // opposite one.
 func TestRemovePlanNamesThePullRequestItBelieves(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, path, _, _ := provisiontest.MergedInCache(t, "main")
 	p := planFor(ctx, worktreeRecord(ctx, path), RemoveOptions{})
 	if p.Outcome != BranchDeleted || p.MergedPR != 34 {
@@ -51,6 +53,7 @@ func TestRemovePlanNamesThePullRequestItBelieves(t *testing.T) {
 // Merged into its parent branch is not merged onto trunk: the work is still
 // only on the parent, and the branch keeps its commits.
 func TestRemoveKeepsABranchMergedIntoItsParent(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, path, branch, _ := provisiontest.MergedInCache(t, "feat_wt/the-parent")
 
 	var out bytes.Buffer
@@ -73,6 +76,7 @@ func TestRemoveKeepsABranchMergedIntoItsParent(t *testing.T) {
 // With nothing in the cache, `wt remove` is exactly what it was before any of
 // this existed: the branch is renamed aside, not deleted.
 func TestRemoveWithNoCacheEntryIsUnchanged(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, _, _ := testkit.SweepRepo(t)
 	path, branch, _ := provisiontest.Squashed(t, ctx, "fix/login-crash")
 	testkit.StubGitHub(t, github.CLI{}, testkit.GhRepo, true)
@@ -91,6 +95,7 @@ func TestRemoveWithNoCacheEntryIsUnchanged(t *testing.T) {
 
 // The person's own switch governs this as it governs everything else.
 func TestRemoveIgnoresTheCacheWithGitHubOff(t *testing.T) {
+	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
 	ctx, path, branch, _ := provisiontest.MergedInCache(t, "main")
 	ctx.User.GitHub = false
 

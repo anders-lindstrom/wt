@@ -40,6 +40,7 @@ func RebasedOntoOrigin(t *testing.T, main, branch string) {
 // the pull request's head is the rebased tip, not this one. Every change is
 // on trunk all the same, so nothing is lost by deleting it.
 func TestRemoveDeletesABranchWhoseCommitsWereRebasedOntoTrunk(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	var buf bytes.Buffer
 	path, err := provision.New(ctx, "feat/rates", provision.NewOptions{NoSetup: true}, &buf)
@@ -71,6 +72,7 @@ func TestRemoveDeletesABranchWhoseCommitsWereRebasedOntoTrunk(t *testing.T) {
 // One commit trunk does not have is work at stake, however many others made
 // it: the branch is kept.
 func TestRemoveKeepsABranchWithACommitTrunkLacks(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	var buf bytes.Buffer
 	path, err := provision.New(ctx, "feat/rates", provision.NewOptions{NoSetup: true}, &buf)
@@ -95,6 +97,7 @@ func TestRemoveKeepsABranchWithACommitTrunkLacks(t *testing.T) {
 
 // Sweep sees the same branch as done, so its worktree goes with it.
 func TestSweepRemovesAWorktreeWhoseCommitsWereRebasedOntoTrunk(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	var buf bytes.Buffer
 	path, err := provision.New(ctx, "feat/rates", provision.NewOptions{NoSetup: true}, &buf)
@@ -122,6 +125,7 @@ func TestSweepRemovesAWorktreeWhoseCommitsWereRebasedOntoTrunk(t *testing.T) {
 // A branch left behind once its worktree is gone, upstream deleted on merge,
 // is deleted the same way.
 func TestSweepPlanDeletesAGoneBranchWhoseCommitsWereRebasedOntoTrunk(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.GitIn(t, main, "checkout", "-q", "-b", "left-behind")
 	CommitFile(t, main, "one")
@@ -138,6 +142,7 @@ func TestSweepPlanDeletesAGoneBranchWhoseCommitsWereRebasedOntoTrunk(t *testing.
 // A change trunk has only with other whitespace is not on trunk: git
 // cherry would pair the two, so the branch and its worktree must stay.
 func TestSweepKeepsABranchTrunkHasOnlyWithOtherWhitespace(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	var buf bytes.Buffer
 	path, err := provision.New(ctx, "feat/indent", provision.NewOptions{NoSetup: true}, &buf)
@@ -167,6 +172,7 @@ func TestSweepKeepsABranchTrunkHasOnlyWithOtherWhitespace(t *testing.T) {
 // remove the worktree while the prompt is open. Saying "run the command
 // again" would send the user after a checkout that is gone.
 func TestRemoveSaysSomethingElseRemovedTheWorktree(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	var buf bytes.Buffer
 	path, err := provision.New(ctx, "feat/elsewhere", provision.NewOptions{NoSetup: true}, &buf)
@@ -220,6 +226,7 @@ func TestRemoveSaysSomethingElseRemovedTheWorktree(t *testing.T) {
 // Files disappearing from a checkout that was clean are a deletion in
 // progress, not somebody's edits.
 func TestRemoveSaysWhenSomethingElseIsStillRemovingTheWorktree(t *testing.T) {
+	// Not parallel: swaps vanishWait.
 	was := vanishWait
 	vanishWait = 50 * time.Millisecond
 	t.Cleanup(func() { vanishWait = was })

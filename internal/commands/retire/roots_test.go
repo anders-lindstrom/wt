@@ -18,6 +18,7 @@ import (
 // One question covers every repository, each is swept as it would be alone,
 // and one that cannot be swept is reported while the rest go ahead.
 func TestSweepAllAsksOnceAndSweepsEveryRepository(t *testing.T) {
+	t.Parallel()
 	ctxA, _, _ := testkit.SweepRepo(t)
 	ctxB, _, _ := testkit.SweepRepo(t)
 	pathA := provisiontest.MergedWorktree(t, ctxA, "fix/one")
@@ -46,6 +47,7 @@ func TestSweepAllAsksOnceAndSweepsEveryRepository(t *testing.T) {
 }
 
 func TestSweepAllChangesNothingWhenTheAnswerIsNo(t *testing.T) {
+	t.Parallel()
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/one")
 	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{ctx.Repo.MainRoot}}}}
@@ -63,6 +65,7 @@ func TestSweepAllChangesNothingWhenTheAnswerIsNo(t *testing.T) {
 // --dry-run prints the plan and changes nothing, on remove and on sweep, in
 // one repository or across many.
 func TestDryRunPrintsThePlanAndChangesNothing(t *testing.T) {
+	t.Parallel()
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/one")
 	var buf bytes.Buffer
