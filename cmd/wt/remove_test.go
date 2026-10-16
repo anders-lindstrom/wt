@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/retire"
 )
 
 // The prompt defaults to no, because the cost of a mistaken yes is a checkout
@@ -26,7 +26,7 @@ func TestConfirmRemovalAnswers(t *testing.T) {
 		{"", false}, // ^D
 	} {
 		var out bytes.Buffer
-		got, err := confirmRemoval(newPrompter(strings.NewReader(tc.typed), &out))(commands.Plan{})
+		got, err := confirmRemoval(newPrompter(strings.NewReader(tc.typed), &out))(retire.Plan{})
 		if err != nil {
 			t.Fatalf("%q: %v", tc.typed, err)
 		}

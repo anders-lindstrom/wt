@@ -1,9 +1,8 @@
-package commands
+package retire_test
 
 import (
 	"bytes"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -16,38 +15,14 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
+	"github.com/anders-lindstrom/wt/internal/commands/retire"
+	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
-func sweepPlanJSON(t *testing.T, ctx *kit.Context, opts SweepOptions) (SweepPlanOutput, error) {
-	t.Helper()
-	var out, progress bytes.Buffer
-	err := SweepPlanJSON(ctx, opts, &out, &progress)
-	testkit.ValidateJSON(t, "sweep-plan", out.Bytes())
-	var p SweepPlanOutput
-	if jerr := json.Unmarshal(out.Bytes(), &p); jerr != nil {
-		t.Fatalf("stdout is not one JSON object: %v\n%s", jerr, out.String())
-	}
-	return p, err
-}
-
-func sweepJSON(t *testing.T, ctx *kit.Context, opts SweepOptions) (SweepResult, string, error) {
-	t.Helper()
-	var out, human bytes.Buffer
-	opts.Journal = NewSweepJournal(&out)
-	opts.Yes = true
-	err := Sweep(ctx, opts, &human)
-	testkit.ValidateJSON(t, "sweep", out.Bytes())
-	var r SweepResult
-	if jerr := json.Unmarshal(out.Bytes(), &r); jerr != nil {
-		t.Fatalf("stdout is not one JSON object: %v\n%s", jerr, out.String())
-	}
-	return r, human.String(), err
-}
-
-func planItem(t *testing.T, p SweepPlanOutput, branch string) SweepItem {
+func planItem(t *testing.T, p retire.SweepPlanOutput, branch string) retire.SweepItem {
 	t.Helper()
 	for _, it := range p.Items {
 		if it.Branch != nil && *it.Branch == branch {
@@ -55,18 +30,7 @@ func planItem(t *testing.T, p SweepPlanOutput, branch string) SweepItem {
 		}
 	}
 	t.Fatalf("no item for %s in %+v", branch, p.Items)
-	return SweepItem{}
-}
-
-func resultItem(t *testing.T, r SweepResult, branch string) *SweepResultItem {
-	t.Helper()
-	for _, it := range r.Items {
-		if it.Branch != nil && *it.Branch == branch {
-			return it
-		}
-	}
-	t.Fatalf("no item for %s in %+v", branch, r.Items)
-	return nil
+	return retire.SweepItem{}
 }
 
 // Every part of the plan, each item with the evidence that it is merged or
@@ -79,13 +43,13 @@ func TestSweepPlanJSONNamesEveryPartWithItsEvidence(t *testing.T) {
 	dirty := provisiontest.MergedWorktree(t, ctx, "fix/dirty")
 	testkit.MustWrite(t, filepath.Join(dirty, "scratch.txt"), "not yet\n")
 	testkit.BranchWithWork(t, main, "abandoned", 2)
-	goneUpstream(t, main, "abandoned")
+	retire.GoneUpstream(t, main, "abandoned")
 	_, squash, tip := provisiontest.Squashed(t, ctx, "feat/squash")
-	pr := mergedPR(34, squash, tip)
+	pr := retire.MergedPR(34, squash, tip)
 	pr.URL = "https://github.com/o/r/pull/34"
 
 	before := testkit.RepoState(t, main)
-	p, err := sweepPlanJSON(t, ctx, SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{squash: pr}})
+	p, err := retiretest.SweepPlanJSON(t, ctx, retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{squash: pr}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,26 +64,26 @@ func TestSweepPlanJSONNamesEveryPartWithItsEvidence(t *testing.T) {
 	}
 
 	it := planItem(t, p, "done-work")
-	if it.Category != SweepDelete || it.Merged == nil || it.Merged.How != MergedAncestor || it.Merged.Into != "origin/main" ||
+	if it.Category != retire.SweepDelete || it.Merged == nil || it.Merged.How != retire.MergedAncestor || it.Merged.Into != "origin/main" ||
 		it.Path != nil || len(it.Kept) != 0 || it.Subject == nil {
 		t.Errorf("done-work = %+v", it)
 	}
 	it = planItem(t, p, "fix_wt/login-crash")
-	if it.Category != SweepRemove || it.Path == nil || *it.Path != clean || it.Work == nil || *it.Work != "login-crash" ||
-		it.Merged == nil || it.Merged.How != MergedAncestor {
+	if it.Category != retire.SweepRemove || it.Path == nil || *it.Path != clean || it.Work == nil || *it.Work != "login-crash" ||
+		it.Merged == nil || it.Merged.How != retire.MergedAncestor {
 		t.Errorf("login-crash = %+v", it)
 	}
 	it = planItem(t, p, "fix_wt/dirty")
-	if it.Category != SweepInUse || !slices.Equal(it.Kept, []string{KeptDirty}) || !strings.Contains(it.Reason, "dirty") {
+	if it.Category != retire.SweepInUse || !slices.Equal(it.Kept, []string{retire.KeptDirty}) || !strings.Contains(it.Reason, "dirty") {
 		t.Errorf("dirty = %+v", it)
 	}
 	it = planItem(t, p, "abandoned")
-	if it.Category != SweepUpstreamGone || it.Merged != nil || !slices.Equal(it.Kept, []string{KeptNotMerged}) ||
+	if it.Category != retire.SweepUpstreamGone || it.Merged != nil || !slices.Equal(it.Kept, []string{retire.KeptNotMerged}) ||
 		it.Ahead == nil || *it.Ahead != 2 {
 		t.Errorf("abandoned = %+v", it)
 	}
 	it = planItem(t, p, squash)
-	if it.Category != SweepRemove || it.Merged == nil || it.Merged.How != MergedPullRequest || it.Merged.PullRequest == nil ||
+	if it.Category != retire.SweepRemove || it.Merged == nil || it.Merged.How != retire.MergedPullRequest || it.Merged.PullRequest == nil ||
 		*it.Merged.PullRequest != 34 || it.PullRequest == nil || it.PullRequest.URL == nil || *it.PullRequest.URL != pr.URL ||
 		it.PullRequest.State != "MERGED" {
 		t.Errorf("squash = %+v", it)
@@ -134,14 +98,14 @@ func TestSweepPlanJSONSaysMergedByPatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	commitFile(t, path, "one")
-	rebasedOntoOrigin(t, main, "feat_wt/rates")
+	retire.CommitFile(t, path, "one")
+	retire.RebasedOntoOrigin(t, main, "feat_wt/rates")
 
-	p, err := sweepPlanJSON(t, ctx, SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}})
+	p, err := retiretest.SweepPlanJSON(t, ctx, retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if it := planItem(t, p, "feat_wt/rates"); it.Merged == nil || it.Merged.How != MergedPatch || it.Merged.Into != "origin/main" {
+	if it := planItem(t, p, "feat_wt/rates"); it.Merged == nil || it.Merged.How != retire.MergedPatch || it.Merged.Into != "origin/main" {
 		t.Errorf("rates = %+v", it)
 	}
 }
@@ -159,36 +123,36 @@ func TestSweepPlanJSONCodesWhyAWorktreeIsKept(t *testing.T) {
 	detached := filepath.Join(ctx.Repo.Parent, "demo-done")
 	testkit.GitIn(t, main, "worktree", "add", "-q", "--detach", detached, "done")
 
-	p, err := sweepPlanJSON(t, ctx, SweepOptions{NoFetch: true, Agents: testkit.IdleIn(t, session, "parked-1"), PRs: map[string]github.PR{}})
+	p, err := retiretest.SweepPlanJSON(t, ctx, retire.SweepOptions{NoFetch: true, Agents: testkit.IdleIn(t, session, "parked-1"), PRs: map[string]github.PR{}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for branch, want := range map[string]string{
-		"fix_wt/session": KeptSession, "fix_wt/locked": KeptLockHeld, "fix_wt/broken": KeptStatusUnknown,
+		"fix_wt/session": retire.KeptSession, "fix_wt/locked": retire.KeptLockHeld, "fix_wt/broken": retire.KeptStatusUnknown,
 	} {
-		if it := planItem(t, p, branch); it.Category != SweepInUse || !slices.Contains(it.Kept, want) {
+		if it := planItem(t, p, branch); it.Category != retire.SweepInUse || !slices.Contains(it.Kept, want) {
 			t.Errorf("%s: want %s in %+v", branch, want, it)
 		}
 	}
 	var found bool
 	for _, it := range p.Items {
 		if it.Branch == nil && it.Path != nil && *it.Path == detached {
-			found = it.Category == SweepInUse && slices.Contains(it.Kept, KeptDetached)
+			found = it.Category == retire.SweepInUse && slices.Contains(it.Kept, retire.KeptDetached)
 		}
 	}
 	if !found {
 		t.Errorf("want the detached worktree kept as detached: %+v", p.Items)
 	}
 
-	bases, err := trunkBases(ctx)
+	bases, err := retire.TrunkBases(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan, err := planSweep(ctx, bases, func() ([]wtsync.Agent, error) { return nil, errors.New("claude is away") }, noPullRequests, false)
+	plan, err := retire.PlanSweep(ctx, bases, func() ([]wtsync.Agent, error) { return nil, errors.New("claude is away") }, retire.NoPullRequests, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if it := planItemsOf(plan); !slices.ContainsFunc(it, func(i SweepItem) bool { return slices.Contains(i.Kept, KeptSessionsUnknown) }) {
+	if it := retire.PlanItemsOf(plan); !slices.ContainsFunc(it, func(i retire.SweepItem) bool { return slices.Contains(i.Kept, retire.KeptSessionsUnknown) }) {
 		t.Errorf("want sessionsUnknown: %+v", it)
 	}
 }
@@ -199,7 +163,7 @@ func TestSweepPlanJSONWithNothingToDoHasNoToken(t *testing.T) {
 	dirty := provisiontest.MergedWorktree(t, ctx, "fix/dirty")
 	testkit.MustWrite(t, filepath.Join(dirty, "scratch.txt"), "not yet\n")
 
-	p, err := sweepPlanJSON(t, ctx, SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}})
+	p, err := retiretest.SweepPlanJSON(t, ctx, retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}})
 	if err != nil || p.Token != nil || len(p.Items) != 1 {
 		t.Fatalf("%v %+v", err, p)
 	}
@@ -212,7 +176,7 @@ func TestSweepPlanJSONReportsWhyNoPlanWasMade(t *testing.T) {
 	if err := os.RemoveAll(origin); err != nil {
 		t.Fatal(err)
 	}
-	p, err := sweepPlanJSON(t, ctx, SweepOptions{Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}})
+	p, err := retiretest.SweepPlanJSON(t, ctx, retire.SweepOptions{Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}})
 	if err == nil || p.Error == nil || p.Token != nil || len(p.Items) != 0 {
 		t.Fatalf("%v %+v", err, p)
 	}
@@ -227,34 +191,34 @@ func TestSweepJSONCarriesOutThePlanItWasGiven(t *testing.T) {
 	clean := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	dirty := provisiontest.MergedWorktree(t, ctx, "fix/dirty")
 	testkit.MustWrite(t, filepath.Join(dirty, "scratch.txt"), "not yet\n")
-	opts := SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}}
-	p, err := sweepPlanJSON(t, ctx, opts)
+	opts := retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}}
+	p, err := retiretest.SweepPlanJSON(t, ctx, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
 	doneTip := *planItem(t, p, "done-work").Tip
 
 	opts.Expect = *p.Token
-	r, human, err := sweepJSON(t, ctx, opts)
+	r, human, err := retiretest.SweepJSON(t, ctx, opts)
 	if err != nil || r.Outcome != kit.OutcomeDone || r.Error != nil || r.Token == nil || *r.Token != *p.Token {
 		t.Fatalf("%v %+v\n%s", err, r, human)
 	}
 	if r.RunID == nil {
 		t.Fatalf("a sweep that deleted branches names the run it pinned them in: %+v", r)
 	}
-	it := resultItem(t, r, "done-work")
+	it := retiretest.ResultItem(t, r, "done-work")
 	pin := refpins.PinOf(*r.RunID, refpins.RefBranch, "done-work")
-	if it.Result != SweepDeleted || !it.BranchDeleted || it.WorktreeRemoved || deref(it.Pin) != pin ||
+	if it.Result != retire.SweepDeleted || !it.BranchDeleted || it.WorktreeRemoved || retire.Deref(it.Pin) != pin ||
 		testkit.GitOut(t, main, "rev-parse", pin) != doneTip ||
 		!slices.Equal(it.RestoreCommand, []string{"wt", "refs", "restore", *r.RunID, "--only", "refs/heads/done-work", "--yes"}) {
 		t.Errorf("done-work = %+v", it)
 	}
-	it = resultItem(t, r, "fix_wt/login-crash")
-	if it.Result != SweepRemoved || !it.BranchDeleted || !it.WorktreeRemoved || it.RestoreCommand == nil || testkit.Exists(clean) {
+	it = retiretest.ResultItem(t, r, "fix_wt/login-crash")
+	if it.Result != retire.SweepRemoved || !it.BranchDeleted || !it.WorktreeRemoved || it.RestoreCommand == nil || testkit.Exists(clean) {
 		t.Errorf("login-crash = %+v", it)
 	}
-	it = resultItem(t, r, "fix_wt/dirty")
-	if it.Result != SweepKept || it.Reason == nil || it.WorktreeRemoved || !testkit.Exists(dirty) {
+	it = retiretest.ResultItem(t, r, "fix_wt/dirty")
+	if it.Result != retire.SweepKept || it.Reason == nil || it.WorktreeRemoved || !testkit.Exists(dirty) {
 		t.Errorf("dirty = %+v", it)
 	}
 	if !strings.Contains(human, "✓ deleted done-work") {
@@ -266,15 +230,15 @@ func TestSweepJSONCarriesOutThePlanItWasGiven(t *testing.T) {
 func TestSweepJSONExpectRefusesAChangedPlan(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 0)
-	opts := SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}}
-	p, err := sweepPlanJSON(t, ctx, opts)
+	opts := retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}}
+	p, err := retiretest.SweepPlanJSON(t, ctx, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	testkit.BranchWithWork(t, main, "late", 0)
 	opts.Expect = *p.Token
-	r, _, err := sweepJSON(t, ctx, opts)
+	r, _, err := retiretest.SweepJSON(t, ctx, opts)
 	if err == nil || r.Outcome != kit.OutcomeRefused || r.Error == nil || len(r.Items) != 0 {
 		t.Fatalf("%v %+v", err, r)
 	}
@@ -285,7 +249,7 @@ func TestSweepJSONExpectRefusesAChangedPlan(t *testing.T) {
 	// A plan with nothing to do has no token, and --expect still holds it.
 	ctx2, _, _ := testkit.SweepRepo(t)
 	opts.Expect = "1:0123456789abcdef0123456789abcdef"
-	if r, _, err = sweepJSON(t, ctx2, opts); err == nil || r.Outcome != kit.OutcomeRefused || r.Error == nil {
+	if r, _, err = retiretest.SweepJSON(t, ctx2, opts); err == nil || r.Outcome != kit.OutcomeRefused || r.Error == nil {
 		t.Fatalf("an empty plan is not the plan a token named: %v %+v", err, r)
 	}
 }
@@ -296,80 +260,23 @@ func TestSweepJSONKeepsAWorktreeASessionEnteredLate(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 0)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
-	opts := SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{},
+	opts := retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{},
 		Relist: func() ([]wtsync.Agent, error) { return testkit.IdleIn(t, path, "arrived"), nil }}
-	p, err := sweepPlanJSON(t, ctx, opts)
+	p, err := retiretest.SweepPlanJSON(t, ctx, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
 	opts.Expect = *p.Token
-	r, _, err := sweepJSON(t, ctx, opts)
+	r, _, err := retiretest.SweepJSON(t, ctx, opts)
 	if err == nil || r.Outcome != kit.OutcomePartial {
 		t.Fatalf("%v %+v", err, r)
 	}
-	if it := resultItem(t, r, "fix_wt/login-crash"); it.Result != SweepKept || it.Reason == nil ||
+	if it := retiretest.ResultItem(t, r, "fix_wt/login-crash"); it.Result != retire.SweepKept || it.Reason == nil ||
 		!strings.Contains(*it.Reason, "arrived") || !testkit.Exists(path) {
 		t.Errorf("login-crash = %+v", it)
 	}
-	if it := resultItem(t, r, "done-work"); it.Result != SweepDeleted {
+	if it := retiretest.ResultItem(t, r, "done-work"); it.Result != retire.SweepDeleted {
 		t.Errorf("done-work = %+v", it)
-	}
-}
-
-// A signal writes the one object: the item in flight interrupted, those not
-// reached not run, and nothing written a second time.
-func TestSweepJournalWritesOneObjectWhenInterrupted(t *testing.T) {
-	ctx, main, _ := testkit.SweepRepo(t)
-	testkit.BranchWithWork(t, main, "one", 0)
-	testkit.BranchWithWork(t, main, "two", 0)
-	plan := planOf(t, ctx)
-
-	var out bytes.Buffer
-	j := NewSweepJournal(&out)
-	j.begin(ctx, plan, "1:abc")
-	j.start(sweepKey(plan.Delete[0]))
-	j.Interrupted("", "interrupted")
-	j.Finish()
-	testkit.ValidateJSON(t, "sweep", out.Bytes())
-	dec := json.NewDecoder(&out)
-	var r SweepResult
-	if err := dec.Decode(&r); err != nil {
-		t.Fatal(err)
-	}
-	if dec.More() {
-		t.Error("a second object was written")
-	}
-	if r.Outcome != kit.OutcomeInterrupted || r.Recovery == nil || r.Items[0].Result != SweepInterrupted || r.Items[1].Result != SweepNotRun {
-		t.Errorf("%+v", r)
-	}
-}
-
-// The outcome rules, as docs/json.md states them.
-func TestSweepOutcomeRules(t *testing.T) {
-	items := func(results ...string) []*SweepResultItem {
-		var out []*SweepResultItem
-		for _, r := range results {
-			out = append(out, &SweepResultItem{Category: SweepDelete, Result: r})
-		}
-		out = append(out, &SweepResultItem{Category: SweepInUse, Result: SweepKept})
-		return out
-	}
-	for _, tc := range []struct {
-		items []*SweepResultItem
-		early bool
-		want  string
-	}{
-		{items(SweepDeleted, SweepRemoved), false, kit.OutcomeDone},
-		{items(), false, kit.OutcomeDone},
-		{items(), true, kit.OutcomeRefused},
-		{items(SweepKept, SweepNotRun), false, kit.OutcomeRefused},
-		{items(SweepDeleted, SweepKept), false, kit.OutcomePartial},
-		{items(SweepFailed), false, kit.OutcomeRefused},
-		{[]*SweepResultItem{{Category: SweepRemove, Result: SweepFailed, WorktreeRemoved: true}}, false, kit.OutcomePartial},
-	} {
-		if got := sweepOutcome(tc.items, tc.early); got != tc.want {
-			t.Errorf("%+v early=%v: got %s, want %s", tc.items, tc.early, got, tc.want)
-		}
 	}
 }
 
@@ -380,15 +287,15 @@ func TestSweepTokenCoversPullRequestsAndReasons(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 0)
 	kept := provisiontest.MergedWorktree(t, ctx, "fix/kept")
-	token := func(opts SweepOptions) string {
-		p, err := sweepPlanJSON(t, ctx, opts)
+	token := func(opts retire.SweepOptions) string {
+		p, err := retiretest.SweepPlanJSON(t, ctx, opts)
 		if err != nil || p.Token == nil {
 			t.Fatalf("%v %+v", err, p)
 		}
 		return *p.Token
 	}
 	pr := github.PR{Number: 7, HeadRefName: "done-work", State: "MERGED", BaseRefName: "main"}
-	base := SweepOptions{NoFetch: true, Agents: testkit.IdleIn(t, kept, "one"), PRs: map[string]github.PR{"done-work": pr}}
+	base := retire.SweepOptions{NoFetch: true, Agents: testkit.IdleIn(t, kept, "one"), PRs: map[string]github.PR{"done-work": pr}}
 	withPR := token(base)
 	noPR := base
 	noPR.PRs = map[string]github.PR{}
@@ -409,7 +316,7 @@ func TestSweepTokenCoversPullRequestsAndReasons(t *testing.T) {
 func TestSweepJSONRefusalSaysItFetched(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 0)
-	r, _, err := sweepJSON(t, ctx, SweepOptions{Agents: []wtsync.Agent{}, PRs: map[string]github.PR{},
+	r, _, err := retiretest.SweepJSON(t, ctx, retire.SweepOptions{Agents: []wtsync.Agent{}, PRs: map[string]github.PR{},
 		Expect: "1:0123456789abcdef0123456789abcdef"})
 	if err == nil || r.Error == nil || !r.Fetched {
 		t.Fatalf("%v %+v", err, r)
@@ -422,7 +329,7 @@ func TestSweepReadsTheSessionsAgainRightBeforeAWorktreeGoes(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	calls := 0
-	opts := SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{},
+	opts := retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{},
 		Relist: func() ([]wtsync.Agent, error) {
 			calls++
 			if calls == 1 {
@@ -430,13 +337,13 @@ func TestSweepReadsTheSessionsAgainRightBeforeAWorktreeGoes(t *testing.T) {
 			}
 			return testkit.IdleIn(t, path, "arrived"), nil
 		}}
-	r, human, err := sweepJSON(t, ctx, opts)
+	r, human, err := retiretest.SweepJSON(t, ctx, opts)
 	if err == nil {
 		t.Fatalf("want the worktree kept\n%s", human)
 	}
 	// Refused at the last check, as a file written then is: failed, with
 	// nothing removed.
-	if it := resultItem(t, r, "fix_wt/login-crash"); it.Result != SweepFailed || it.WorktreeRemoved ||
+	if it := retiretest.ResultItem(t, r, "fix_wt/login-crash"); it.Result != retire.SweepFailed || it.WorktreeRemoved ||
 		it.BranchDeleted || it.Reason == nil || !strings.Contains(*it.Reason, "arrived") || !testkit.Exists(path) {
 		t.Errorf("login-crash = %+v\n%s", it, human)
 	}
@@ -450,11 +357,11 @@ func TestSweepPlanJSONListsTheSessionCodeOnce(t *testing.T) {
 	busy := testkit.IdleIn(t, path, "busy-1")
 	busy[0].Status = "busy"
 	agents := append(testkit.IdleIn(t, path, "idle-1"), busy...)
-	p, err := sweepPlanJSON(t, ctx, SweepOptions{NoFetch: true, Agents: agents, PRs: map[string]github.PR{}})
+	p, err := retiretest.SweepPlanJSON(t, ctx, retire.SweepOptions{NoFetch: true, Agents: agents, PRs: map[string]github.PR{}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if it := planItem(t, p, "fix_wt/login-crash"); !slices.Equal(it.Kept, []string{KeptSession}) {
+	if it := planItem(t, p, "fix_wt/login-crash"); !slices.Equal(it.Kept, []string{retire.KeptSession}) {
 		t.Errorf("kept = %q", it.Kept)
 	}
 }
@@ -465,8 +372,8 @@ func TestSweepPlanShowsTheConfigFingerprint(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 1)
 	testkit.LandOnMain(t, main, "done-work")
-	opts := SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}}
-	p, err := sweepPlanJSON(t, ctx, opts)
+	opts := retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}}
+	p, err := retiretest.SweepPlanJSON(t, ctx, opts)
 	if err != nil || p.ConfigFingerprint == nil || *p.ConfigFingerprint != hex.EncodeToString(kit.ConfigFingerprint(ctx)) {
 		t.Fatalf("%v %+v", err, p)
 	}
@@ -474,8 +381,8 @@ func TestSweepPlanShowsTheConfigFingerprint(t *testing.T) {
 	if err := os.WriteFile(conf, []byte(testkit.MinimalConf+"\n# edited\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	q, err := sweepPlanJSON(t, ctx, opts)
-	if err != nil || deref(q.ConfigFingerprint) == deref(p.ConfigFingerprint) || deref(q.Token) == deref(p.Token) {
+	q, err := retiretest.SweepPlanJSON(t, ctx, opts)
+	if err != nil || retire.Deref(q.ConfigFingerprint) == retire.Deref(p.ConfigFingerprint) || retire.Deref(q.Token) == retire.Deref(p.Token) {
 		t.Errorf("an edited file is another fingerprint and token: %+v %+v", p, q)
 	}
 }

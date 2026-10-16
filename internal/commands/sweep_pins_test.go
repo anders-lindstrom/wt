@@ -3,19 +3,18 @@ package commands
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
+	"github.com/anders-lindstrom/wt/internal/commands/retire"
+	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/github"
-	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -55,15 +54,15 @@ func TestSweepPinsWhatItDeletesAndRefsRestoresIt(t *testing.T) {
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login")
 	wtTip := testkit.GitOut(t, main, "rev-parse", "fix_wt/login")
 
-	r, human, err := sweepJSON(t, ctx, SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}})
+	r, human, err := retiretest.SweepJSON(t, ctx, retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}})
 	if err != nil || r.Outcome != kit.OutcomeDone || r.RunID == nil {
 		t.Fatalf("%v %+v\n%s", err, r, human)
 	}
 	run := *r.RunID
 	for branch, tip := range map[string]string{"done-work": doneTip, "fix_wt/login": wtTip} {
-		it := resultItem(t, r, branch)
+		it := retiretest.ResultItem(t, r, branch)
 		pin := refpins.PinOf(run, refpins.RefBranch, branch)
-		if deref(it.Pin) != pin || testkit.GitOut(t, main, "rev-parse", pin) != tip ||
+		if retire.Deref(it.Pin) != pin || testkit.GitOut(t, main, "rev-parse", pin) != tip ||
 			!slices.Equal(it.RestoreCommand, refpins.RestoreFromRun(run, branch)) {
 			t.Errorf("%s = %+v", branch, it)
 		}
@@ -94,112 +93,20 @@ func TestSweepPinsWhatItDeletesAndRefsRestoresIt(t *testing.T) {
 	}
 }
 
-// A sweep that deletes nothing mints no run: not one with nothing to do,
-// and not one whose only branch moved after the plan was made.
-func TestSweepThatDeletesNothingMintsNoRun(t *testing.T) {
-	ctx, main, _ := testkit.SweepRepo(t)
-	r, human, err := sweepJSON(t, ctx, SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}})
-	if err != nil || r.RunID != nil {
-		t.Fatalf("%v %+v\n%s", err, r, human)
-	}
-
-	testkit.BranchWithWork(t, main, "done-work", 1)
-	testkit.LandOnMain(t, main, "done-work")
-	var out, buf bytes.Buffer
-	opts := SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{},
-		Journal: NewSweepJournal(&out), Confirm: func(SweepPlan) (bool, error) {
-			testkit.AddWork(t, main, "done-work", 1)
-			return true, nil
-		}}
-	if err := Sweep(ctx, opts, &buf); err == nil {
-		t.Fatalf("a branch that moved is kept, which is an error:\n%s", buf.String())
-	}
-	testkit.ValidateJSON(t, "sweep", out.Bytes())
-	var res SweepResult
-	_ = json.Unmarshal(out.Bytes(), &res)
-	if res.RunID != nil || resultItem(t, res, "done-work").Result != SweepKept || !ctx.Repo.BranchExists("done-work") {
-		t.Errorf("%+v\n%s", res, buf.String())
-	}
-	if left := testkit.GitOut(t, main, "for-each-ref", refpins.SweptPrefix); left != "" {
-		t.Errorf("nothing may be left under %s: %s", refpins.SweptPrefix, left)
-	}
-}
-
-// With --move-to, a worktree's branch is pinned by its quarantine only,
-// and put back by wt restore; a branch in no worktree is still pinned in the
-// run.
-func TestSweepQuarantineDoesNotPinABranchTwice(t *testing.T) {
-	ctx, main, _ := testkit.SweepRepo(t)
-	testkit.BranchWithWork(t, main, "done-work", 1)
-	testkit.LandOnMain(t, main, "done-work")
-	provisiontest.MergedWorktree(t, ctx, "fix/login")
-	dir := testkit.TrashFor(t, ctx)
-	r, human, err := sweepJSON(t, ctx, SweepOptions{NoFetch: true, Agents: []wtsync.Agent{},
-		PRs: map[string]github.PR{}, Quarantine: dir})
-	if err != nil || r.Outcome != kit.OutcomeDone || r.RunID == nil {
-		t.Fatalf("%v %+v\n%s", err, r, human)
-	}
-	it := resultItem(t, r, "fix_wt/login")
-	if it.Pin != nil || it.Quarantine == nil || !slices.Equal(it.RestoreCommand, []string{"wt", "restore", it.Quarantine.Dir}) {
-		t.Errorf("fix_wt/login = %+v", it)
-	}
-	if it := resultItem(t, r, "done-work"); deref(it.Pin) != refpins.PinOf(*r.RunID, refpins.RefBranch, "done-work") {
-		t.Errorf("done-work = %+v", it)
-	}
-	if pins := testkit.GitOut(t, main, "for-each-ref", "--format=%(refname)", refpins.SweptPrefix); pins !=
-		refpins.PinOf(*r.RunID, refpins.RefBranch, "done-work")+"\n"+refpins.MetaRef(*r.RunID) {
-		t.Errorf("only done-work is pinned in the run: %q", pins)
-	}
-}
-
-// A signal right after a branch is moved still writes the one object, with
-// the run and the pin read back.
-func TestSweepInterruptedAfterAMoveNamesThePin(t *testing.T) {
-	ctx, main, _ := testkit.SweepRepo(t)
-	for _, b := range []string{"one", "two"} {
-		testkit.BranchWithWork(t, main, b, 1)
-		testkit.LandOnMain(t, main, b)
-	}
-	oneTip := testkit.GitOut(t, main, "rev-parse", "one")
-	t.Cleanup(func() { refpins.AfterBranchMoved = nil })
-	refpins.AfterBranchMoved = func(name string) {
-		if name == "one" {
-			// What watchSignals does, but for the exit.
-			kit.CurrentInterruptJournal().Interrupted("", "interrupted")
-		}
-	}
-	r, human, _ := sweepJSON(t, ctx, SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}})
-	if r.Outcome != kit.OutcomeInterrupted || r.RunID == nil {
-		t.Fatalf("%+v\n%s", r, human)
-	}
-	it := resultItem(t, r, "one")
-	pin := refpins.PinOf(*r.RunID, refpins.RefBranch, "one")
-	if it.Result != SweepInterrupted || !it.BranchDeleted || deref(it.Pin) != pin ||
-		!slices.Equal(it.RestoreCommand, refpins.RestoreFromRun(*r.RunID, "one")) {
-		t.Errorf("one = %+v", it)
-	}
-	if testkit.GitOut(t, main, "rev-parse", pin) != oneTip {
-		t.Error("the pin must hold the branch's tip")
-	}
-	if it := resultItem(t, r, "two"); it.Result != SweepNotRun {
-		t.Errorf("two = %+v", it)
-	}
-}
-
 // wt remove moves a merged branch into a run of its own, which wt refs
 // restore puts back.
 func TestRemovePinsAMergedBranchAndRefsRestoresIt(t *testing.T) {
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/pinned")
 	tip := strings.TrimSpace(testkit.GitOut(t, path, "rev-parse", "HEAD"))
-	r, err := removeJSON(t, ctx, path, RemoveOptions{})
-	if err != nil || r.Outcome != RemoveRemoved || r.RunID == nil {
+	r, err := retiretest.RemoveJSON(t, ctx, path, retire.RemoveOptions{})
+	if err != nil || r.Outcome != retire.RemoveRemoved || r.RunID == nil {
 		t.Fatalf("%v %+v", err, r)
 	}
 	run := *r.RunID
-	if s := step(t, r, kit.StepBranch); deref(s.Pin) != refpins.PinOf(run, refpins.RefBranch, "fix_wt/pinned") {
+	if s := retiretest.Step(t, r, kit.StepBranch); retire.Deref(s.Pin) != refpins.PinOf(run, refpins.RefBranch, "fix_wt/pinned") {
 		t.Errorf("branch %+v", s)
 	}
-	if s := step(t, r, kit.StepWorktree); s.Pin != nil {
+	if s := retiretest.Step(t, r, kit.StepWorktree); s.Pin != nil {
 		t.Errorf("only the branch step has a pin: %+v", s)
 	}
 	runs := sweptRuns(t, ctx)
@@ -212,74 +119,5 @@ func TestRemovePinsAMergedBranchAndRefsRestoresIt(t *testing.T) {
 	}
 	if testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", "refs/heads/fix_wt/pinned") != tip {
 		t.Error("restore must put the branch back at its tip")
-	}
-}
-
-// An unmerged branch is renamed, not deleted: its commits keep a name, and
-// no run is made.
-func TestRemoveRenamesAnUnmergedBranchWithoutAPin(t *testing.T) {
-	ctx, path := provisiontest.SafetyWorktree(t, "fix/unfinished")
-	testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "unfinished")
-	r, err := removeJSON(t, ctx, path, RemoveOptions{})
-	if err != nil || r.Outcome != RemoveRemoved || r.RunID != nil || r.KeepAs == nil {
-		t.Fatalf("%v %+v", err, r)
-	}
-	if s := step(t, r, kit.StepBranch); s.Result != "renamed" || s.Pin != nil {
-		t.Errorf("branch %+v", s)
-	}
-	if left := testkit.GitOut(t, ctx.Repo.MainRoot, "for-each-ref", refpins.SweptPrefix); left != "" {
-		t.Errorf("a rename pins nothing: %s", left)
-	}
-}
-
-// A run begun for a branch that then is not moved leaves nothing behind:
-// its meta is dropped, and finish names no run.
-func TestBranchPinsDropARunThatPinnedNothing(t *testing.T) {
-	ctx, path := provisiontest.SafetyWorktree(t, "fix/busy")
-	tip := strings.TrimSpace(testkit.GitOut(t, path, "rev-parse", "HEAD"))
-	var begun string
-	pins := &refpins.BranchPins{Command: "wt test", Begun: func(id string) { begun = id }}
-	var inUse *repo.BranchInUseError
-	if _, err := pins.Move(ctx, "fix_wt/busy", tip); !errors.As(err, &inUse) {
-		t.Fatalf("a branch a worktree uses is refused: %v", err)
-	}
-	if begun == "" || !ctx.Repo.BranchExists("fix_wt/busy") {
-		t.Fatalf("the run is begun before the move, and the branch stays: %q", begun)
-	}
-	if run := pins.Finish(ctx, &bytes.Buffer{}); run != "" {
-		t.Errorf("finish named %s", run)
-	}
-	if left := testkit.GitOut(t, ctx.Repo.MainRoot, "for-each-ref", refpins.SweptPrefix); left != "" {
-		t.Errorf("nothing may be left under %s: %s", refpins.SweptPrefix, left)
-	}
-}
-
-// A run id another run takes between the check and the meta write refuses
-// the move, and the other run's meta is left as it was.
-func TestBranchPinsLeaveARunTheyDidNotBegin(t *testing.T) {
-	ctx, main, _ := testkit.SweepRepo(t)
-	testkit.BranchWithWork(t, main, "done-work", 1)
-	tip := testkit.GitOut(t, main, "rev-parse", "done-work")
-	var told []string
-	pins := &refpins.BranchPins{Command: "wt test", Begun: func(id string) {
-		told = append(told, id)
-		if id != "" {
-			// Another run writes its meta at this id first.
-			if err := refpins.BeginRun(main, id, time.Now(), nil); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}}
-	if _, err := pins.Move(ctx, "done-work", tip); err == nil {
-		t.Fatal("the move must refuse a run id another run holds")
-	}
-	if len(told) != 2 || told[1] != "" || !ctx.Repo.BranchExists("done-work") {
-		t.Fatalf("told %q", told)
-	}
-	if run := pins.Finish(ctx, &bytes.Buffer{}); run != "" {
-		t.Errorf("finish named %s", run)
-	}
-	if meta := testkit.GitOut(t, main, "for-each-ref", "--format=%(refname)", refpins.SweptPrefix); meta != refpins.MetaRef(told[0]) {
-		t.Errorf("the other run's meta must stay: %q", meta)
 	}
 }

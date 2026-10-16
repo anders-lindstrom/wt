@@ -1,4 +1,4 @@
-package commands
+package retire
 
 import (
 	"bytes"
@@ -26,14 +26,14 @@ func TestSweepPlanKeepsAMergedWorktreeMidOperation(t *testing.T) {
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	testkit.MustWrite(t, filepath.Join(testkit.GitDirFor(t, path), "MERGE_HEAD"), "x\n")
 
-	p := planOf(t, ctx)
+	p := PlanOf(t, ctx)
 	if len(p.Remove) != 0 {
-		t.Fatalf("a worktree mid-merge must not be removed: %v", worktreeNames(p.Remove))
+		t.Fatalf("a worktree mid-merge must not be removed: %v", WorktreeNames(p.Remove))
 	}
 	if codes := keptCodes(p, "fix_wt/login-crash"); !slices.Contains(codes, KeptOperation) {
 		t.Errorf("codes = %v, want %s", codes, KeptOperation)
 	}
-	if out := rendered(p); !strings.Contains(out, "a merge is in progress") {
+	if out := Rendered(p); !strings.Contains(out, "a merge is in progress") {
 		t.Errorf("the row must say why:\n%s", out)
 	}
 }
@@ -47,7 +47,7 @@ func TestSweepPlanKeepsAMergedWorktreeWithHiddenChanges(t *testing.T) {
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	testkit.GitIn(t, path, "update-index", "--skip-worktree", "a.txt")
 
-	p := planOf(t, ctx)
+	p := PlanOf(t, ctx)
 	if codes := keptCodes(p, "fix_wt/login-crash"); !slices.Contains(codes, KeptHiddenChanges) {
 		t.Errorf("codes = %v, want %s", codes, KeptHiddenChanges)
 	}
@@ -66,7 +66,7 @@ func TestSweepPlanKeepsAMergedWorktreeWithWorkInASubmodule(t *testing.T) {
 	testkit.GitIn(t, path, "config", "submodule.sm.ignore", "all")
 	testkit.MustWrite(t, filepath.Join(path, "sm", "scratch"), "x")
 
-	p := planOf(t, ctx)
+	p := PlanOf(t, ctx)
 	if codes := keptCodes(p, "fix_wt/login-crash"); !slices.Contains(codes, KeptDirty) {
 		t.Errorf("codes = %v, want %s", codes, KeptDirty)
 	}

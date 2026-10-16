@@ -15,6 +15,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
+	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/github"
@@ -226,7 +227,7 @@ func planRefs(ctx *kit.Context, opts RefsOptions, progress io.Writer) (RefsPlan,
 		}
 		p.Endpoint = ep
 	}
-	if err := sweepFetch(ctx, opts.NoFetch, progress); err != nil {
+	if err := retire.SweepFetch(ctx, opts.NoFetch, progress); err != nil {
 		return p, err
 	}
 	p.Fetched = !opts.NoFetch && ctx.Repo.HasRemote("origin")
@@ -284,10 +285,10 @@ func planRefs(ctx *kit.Context, opts RefsOptions, progress io.Writer) (RefsPlan,
 				case "":
 					r.Kept = append(r.Kept, KeptWorktree)
 				default:
-					r.Kept = append(r.Kept, heldByCode(use.By))
+					r.Kept = append(r.Kept, retire.HeldByCode(use.By))
 				}
 			}
-			if protectedBranch(c.name, p.Trunk, originHead) {
+			if retire.ProtectedBranch(c.name, p.Trunk, originHead) {
 				r.Kept = append(r.Kept, KeptProtected)
 			}
 		}
@@ -509,7 +510,7 @@ func planOrigin(ctx *kit.Context, opts RefsOptions, url string, patterns []confi
 	var tips []string
 	for _, c := range cands {
 		r := newRefRow(c, patterns, objects)
-		if c.kind == refpins.RefRemoteBranch && protectedBranch(c.name, trunk, originHead) {
+		if c.kind == refpins.RefRemoteBranch && retire.ProtectedBranch(c.name, trunk, originHead) {
 			r.Kept = append(r.Kept, KeptProtected)
 		}
 		if objects[c.object].Type == "" || r.Tip == "" {
@@ -822,7 +823,7 @@ func RefsSweep(ctx *kit.Context, opts RefsOptions, w io.Writer) (err error) {
 	}
 	token := refsToken(plan)
 	j.planned(plan, token)
-	if opts.Expect != "" && deref(token) != opts.Expect {
+	if opts.Expect != "" && retire.Deref(token) != opts.Expect {
 		j.problem(kit.ProblemPlanChanged, errRefsPlanChanged)
 		return errRefsPlanChanged
 	}
@@ -856,7 +857,7 @@ func RefsSweep(ctx *kit.Context, opts RefsOptions, w io.Writer) (err error) {
 		if err := fresh.applyOnly(opts.Only); err != nil {
 			return err
 		}
-		if deref(refsToken(fresh)) != deref(token) {
+		if retire.Deref(refsToken(fresh)) != retire.Deref(token) {
 			j.problem(kit.ProblemPlanChanged, errRefsPlanChanged)
 			return errRefsPlanChanged
 		}

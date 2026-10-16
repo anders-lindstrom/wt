@@ -1,4 +1,4 @@
-package commands
+package retire
 
 import (
 	"crypto/sha256"
@@ -86,8 +86,8 @@ const (
 	SweepInterrupted = "interrupted"
 )
 
-// heldByCode is the code of what holds a branch in a worktree.
-func heldByCode(by string) string {
+// HeldByCode is the code of what holds a branch in a worktree.
+func HeldByCode(by string) string {
 	if by == "bisect" {
 		return KeptHeldByBisect
 	}
@@ -241,8 +241,8 @@ func sweepItem(category string, b SweepBranch, reason string, reap bool) SweepIt
 	return it
 }
 
-// planItemsOf is every row of the plan, in the order wt sweep prints them.
-func planItemsOf(p SweepPlan) []SweepItem {
+// PlanItemsOf is every row of the plan, in the order wt sweep prints them.
+func PlanItemsOf(p SweepPlan) []SweepItem {
 	items := []SweepItem{}
 	for _, w := range p.Remove {
 		items = append(items, sweepItem(SweepRemove, w.SweepBranch, w.removeReason(), p.Reap))
@@ -286,8 +286,8 @@ func sweepTokenWith(ctx *kit.Context, p SweepPlan, opts SweepOptions, fingerprin
 	if opts.Reap {
 		h.Write([]byte("\nreap"))
 	}
-	for _, it := range planItemsOf(p) {
-		fields := []string{it.Category, deref(it.Branch), deref(it.Tip), deref(it.Path),
+	for _, it := range PlanItemsOf(p) {
+		fields := []string{it.Category, Deref(it.Branch), Deref(it.Tip), Deref(it.Path),
 			strings.Join(it.Kept, ","), it.Reason}
 		if m := it.Merged; m != nil {
 			pr := ""
@@ -297,7 +297,7 @@ func sweepTokenWith(ctx *kit.Context, p SweepPlan, opts SweepOptions, fingerprin
 			fields = append(fields, "merged", m.How, m.Into, pr)
 		}
 		if pr := it.PullRequest; pr != nil {
-			fields = append(fields, "pr", fmt.Sprint(pr.Number), pr.State, deref(pr.Base))
+			fields = append(fields, "pr", fmt.Sprint(pr.Number), pr.State, Deref(pr.Base))
 		}
 		// Only what --reap stops is hashed. The processes of a row that is
 		// kept are listed, not acted on, and its reason names up to three.
@@ -312,7 +312,8 @@ func sweepTokenWith(ctx *kit.Context, p SweepPlan, opts SweepOptions, fingerprin
 	return &token
 }
 
-func deref(s *string) string {
+// Deref is an optional --json string, empty for none.
+func Deref(s *string) string {
 	if s == nil {
 		return ""
 	}
@@ -326,15 +327,15 @@ func prepareSweep(ctx *kit.Context, opts SweepOptions, progress io.Writer) (plan
 	if err := sweepGuard(ctx); err != nil {
 		return SweepPlan{}, false, err
 	}
-	if err := sweepFetch(ctx, opts.NoFetch, progress); err != nil {
+	if err := SweepFetch(ctx, opts.NoFetch, progress); err != nil {
 		return SweepPlan{}, false, err
 	}
 	fetched = !opts.NoFetch && ctx.Repo.HasRemote("origin")
-	bases, err := trunkBases(ctx)
+	bases, err := TrunkBases(ctx)
 	if err != nil {
 		return SweepPlan{}, fetched, err
 	}
-	plan, err = planSweep(ctx, bases, opts.listAgents, opts.pullRequests(ctx), opts.Reap)
+	plan, err = PlanSweep(ctx, bases, opts.listAgents, opts.pullRequests(ctx), opts.Reap)
 	return plan, fetched, err
 }
 
@@ -360,14 +361,14 @@ func SweepPlanJSON(ctx *kit.Context, opts SweepOptions, out, progress io.Writer)
 	}
 	if !plan.Empty() {
 		if err := quarantineReady(ctx, opts.Quarantine, plan); err != nil {
-			res.Items = planItemsOf(plan)
+			res.Items = PlanItemsOf(plan)
 			return writeSweepPlan(out, res, err)
 		}
 	}
 	for _, b := range plan.Bases {
 		res.Bases = append(res.Bases, SweepBase(b))
 	}
-	res.Items, res.Token = planItemsOf(plan), sweepTokenWith(ctx, plan, opts, fingerprint)
+	res.Items, res.Token = PlanItemsOf(plan), sweepTokenWith(ctx, plan, opts, fingerprint)
 	return writeSweepPlan(out, res, nil)
 }
 
@@ -465,7 +466,7 @@ func (j *SweepJournal) begin(ctx *kit.Context, p SweepPlan, token string) {
 			j.byKey[key] = r
 		}
 	}
-	items := planItemsOf(p)
+	items := PlanItemsOf(p)
 	i := 0
 	for _, w := range p.Remove {
 		add(sweepKey(w.SweepBranch), items[i])

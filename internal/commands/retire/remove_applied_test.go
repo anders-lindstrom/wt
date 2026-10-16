@@ -1,4 +1,4 @@
-package commands
+package retire
 
 import (
 	"bytes"
@@ -14,9 +14,9 @@ import (
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
-// commitFile commits a file of its own in the checkout at dir, so the commit
+// CommitFile commits a file of its own in the checkout at dir, so the commit
 // carries a change git cherry can find elsewhere.
-func commitFile(t *testing.T, dir, name string) {
+func CommitFile(t *testing.T, dir, name string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(name+"\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -25,12 +25,12 @@ func commitFile(t *testing.T, dir, name string) {
 	testkit.GitIn(t, dir, "commit", "-q", "-m", "add "+name)
 }
 
-// rebasedOntoOrigin moves trunk on, then replays the branch's commits onto it
+// RebasedOntoOrigin moves trunk on, then replays the branch's commits onto it
 // and pushes that as origin's main: what "rebase and merge" on GitHub leaves.
 // The local branch keeps its old ids, so no trunk contains it.
-func rebasedOntoOrigin(t *testing.T, main, branch string) {
+func RebasedOntoOrigin(t *testing.T, main, branch string) {
 	t.Helper()
-	commitFile(t, main, "trunk-moved-on")
+	CommitFile(t, main, "trunk-moved-on")
 	testkit.GitIn(t, main, "cherry-pick", "main.."+branch)
 	testkit.GitIn(t, main, "push", "-q", "origin", "main")
 	testkit.GitIn(t, main, "fetch", "-q", "origin")
@@ -46,9 +46,9 @@ func TestRemoveDeletesABranchWhoseCommitsWereRebasedOntoTrunk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	commitFile(t, path, "one")
-	commitFile(t, path, "two")
-	rebasedOntoOrigin(t, main, "feat_wt/rates")
+	CommitFile(t, path, "one")
+	CommitFile(t, path, "two")
+	RebasedOntoOrigin(t, main, "feat_wt/rates")
 	buf.Reset()
 
 	if err := RemoveAt(ctx, path, RemoveOptions{Agents: []wtsync.Agent{}}, &buf); err != nil {
@@ -77,9 +77,9 @@ func TestRemoveKeepsABranchWithACommitTrunkLacks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	commitFile(t, path, "one")
-	rebasedOntoOrigin(t, main, "feat_wt/rates")
-	commitFile(t, path, "not-landed")
+	CommitFile(t, path, "one")
+	RebasedOntoOrigin(t, main, "feat_wt/rates")
+	CommitFile(t, path, "not-landed")
 	buf.Reset()
 
 	if err := RemoveAt(ctx, path, RemoveOptions{Agents: []wtsync.Agent{}}, &buf); err != nil {
@@ -101,14 +101,14 @@ func TestSweepRemovesAWorktreeWhoseCommitsWereRebasedOntoTrunk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	commitFile(t, path, "one")
-	rebasedOntoOrigin(t, main, "feat_wt/rates")
+	CommitFile(t, path, "one")
+	RebasedOntoOrigin(t, main, "feat_wt/rates")
 
-	p := planOf(t, ctx)
-	if !slices.Equal(worktreeNames(p.Remove), []string{"feat_wt/rates"}) {
-		t.Fatalf("want the worktree removed:\n%s", rendered(p))
+	p := PlanOf(t, ctx)
+	if !slices.Equal(WorktreeNames(p.Remove), []string{"feat_wt/rates"}) {
+		t.Fatalf("want the worktree removed:\n%s", Rendered(p))
 	}
-	if out := rendered(p); !strings.Contains(out, "every commit is on origin/main under a new id (rebased or cherry-picked)") {
+	if out := Rendered(p); !strings.Contains(out, "every commit is on origin/main under a new id (rebased or cherry-picked)") {
 		t.Errorf("the plan says why it counts as done:\n%s", out)
 	}
 	if err := p.apply(ctx, nobodyIn, &buf); err != nil {
@@ -124,14 +124,14 @@ func TestSweepRemovesAWorktreeWhoseCommitsWereRebasedOntoTrunk(t *testing.T) {
 func TestSweepPlanDeletesAGoneBranchWhoseCommitsWereRebasedOntoTrunk(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.GitIn(t, main, "checkout", "-q", "-b", "left-behind")
-	commitFile(t, main, "one")
+	CommitFile(t, main, "one")
 	testkit.GitIn(t, main, "checkout", "-q", "main")
-	goneUpstream(t, main, "left-behind")
-	rebasedOntoOrigin(t, main, "left-behind")
+	GoneUpstream(t, main, "left-behind")
+	RebasedOntoOrigin(t, main, "left-behind")
 
-	p := planOf(t, ctx)
+	p := PlanOf(t, ctx)
 	if !slices.Contains(branchNames(p.Delete), "left-behind") {
-		t.Fatalf("want the branch deleted:\n%s", rendered(p))
+		t.Fatalf("want the branch deleted:\n%s", Rendered(p))
 	}
 }
 
@@ -152,14 +152,14 @@ func TestSweepKeepsABranchTrunkHasOnlyWithOtherWhitespace(t *testing.T) {
 		testkit.GitIn(t, dir, "commit", "-q", "-m", "add code.go")
 	}
 	write(path, "package x\n\nfunc f() {\n\treturn\n}\n")
-	commitFile(t, main, "trunk-moved-on")
+	CommitFile(t, main, "trunk-moved-on")
 	write(main, "package x\n\nfunc f() {\n    return\n}\n")
 	testkit.GitIn(t, main, "push", "-q", "origin", "main")
 	testkit.GitIn(t, main, "fetch", "-q", "origin")
 
-	p := planOf(t, ctx)
+	p := PlanOf(t, ctx)
 	if len(p.Remove) != 0 || len(p.Delete) != 0 {
-		t.Fatalf("nothing of feat_wt/indent is on trunk byte for byte:\n%s", rendered(p))
+		t.Fatalf("nothing of feat_wt/indent is on trunk byte for byte:\n%s", Rendered(p))
 	}
 }
 
@@ -173,7 +173,7 @@ func TestRemoveSaysSomethingElseRemovedTheWorktree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	commitFile(t, path, "kept-work")
+	CommitFile(t, path, "kept-work")
 	buf.Reset()
 
 	for name, alsoBranch := range map[string]bool{"branch gone too": true, "branch left": false} {
@@ -183,7 +183,7 @@ func TestRemoveSaysSomethingElseRemovedTheWorktree(t *testing.T) {
 				if path, err = provision.New(ctx, "feat/elsewhere", provision.NewOptions{NoSetup: true}, &buf); err != nil {
 					t.Fatal(err)
 				}
-				commitFile(t, path, "kept-work")
+				CommitFile(t, path, "kept-work")
 			}
 			buf.Reset()
 			opts := RemoveOptions{Agents: []wtsync.Agent{}, Confirm: func(Plan) (bool, error) {
@@ -230,7 +230,7 @@ func TestRemoveSaysWhenSomethingElseIsStillRemovingTheWorktree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	commitFile(t, path, "going")
+	CommitFile(t, path, "going")
 	buf.Reset()
 
 	opts := RemoveOptions{Agents: []wtsync.Agent{}, Confirm: func(Plan) (bool, error) {

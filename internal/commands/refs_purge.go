@@ -14,6 +14,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
+	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/schema"
@@ -195,7 +196,7 @@ func RefsPurge(ctx *kit.Context, opts RefsPurgeOptions, w io.Writer) (err error)
 	}
 	token := purgeRefsToken(plan)
 	j.planned(plan, token)
-	if opts.Expect != "" && deref(token) != opts.Expect {
+	if opts.Expect != "" && retire.Deref(token) != opts.Expect {
 		return errRefsPurgePlanChanged
 	}
 	plan.Render(w)
@@ -218,7 +219,7 @@ func RefsPurge(ctx *kit.Context, opts RefsPurgeOptions, w io.Writer) (err error)
 		if err != nil {
 			return err
 		}
-		if deref(purgeRefsToken(fresh)) != deref(token) {
+		if retire.Deref(purgeRefsToken(fresh)) != retire.Deref(token) {
 			return errRefsPurgePlanChanged
 		}
 	}

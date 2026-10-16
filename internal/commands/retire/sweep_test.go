@@ -1,4 +1,4 @@
-package commands
+package retire
 
 import (
 	"bytes"
@@ -29,9 +29,9 @@ func mergeOnOrigin(t *testing.T, main, origin, branch string) {
 	testkit.GitIn(t, origin, "fetch", "-q", main, "refs/heads/"+branch+":refs/heads/main")
 }
 
-// goneUpstream gives branch an upstream origin does not have, which is what a
+// GoneUpstream gives branch an upstream origin does not have, which is what a
 // remote branch deleted on merge looks like after fetch --prune.
-func goneUpstream(t *testing.T, main, branch string) {
+func GoneUpstream(t *testing.T, main, branch string) {
 	t.Helper()
 	testkit.GitIn(t, main, "config", "branch."+branch+".remote", "origin")
 	testkit.GitIn(t, main, "config", "branch."+branch+".merge", "refs/heads/"+branch)
@@ -40,18 +40,18 @@ func goneUpstream(t *testing.T, main, branch string) {
 // nobodyIn is the sessions a plan is checked against when the test names none.
 var nobodyIn = SweepOptions{Agents: []wtsync.Agent{}}
 
-func planOf(t *testing.T, ctx *kit.Context) SweepPlan {
+func PlanOf(t *testing.T, ctx *kit.Context) SweepPlan {
 	t.Helper()
 	return planWith(t, ctx, nobodyIn)
 }
 
 func planWith(t *testing.T, ctx *kit.Context, opts SweepOptions) SweepPlan {
 	t.Helper()
-	bases, err := trunkBases(ctx)
+	bases, err := TrunkBases(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := planSweep(ctx, bases, opts.listAgents, opts.pullRequests(ctx), opts.Reap)
+	p, err := PlanSweep(ctx, bases, opts.listAgents, opts.pullRequests(ctx), opts.Reap)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func branchNames(bs []SweepBranch) []string {
 	return out
 }
 
-func worktreeNames(ws []SweepWorktree) []string {
+func WorktreeNames(ws []SweepWorktree) []string {
 	var out []string
 	for _, w := range ws {
 		out = append(out, w.Name)
@@ -74,7 +74,7 @@ func worktreeNames(ws []SweepWorktree) []string {
 	return out
 }
 
-func rendered(p SweepPlan) string {
+func Rendered(p SweepPlan) string {
 	var buf bytes.Buffer
 	p.Render(&buf, 0)
 	return buf.String()
@@ -82,7 +82,7 @@ func rendered(p SweepPlan) string {
 
 func inAnyGroup(p SweepPlan, name string) bool {
 	return slices.Contains(branchNames(p.Delete), name) ||
-		slices.Contains(worktreeNames(p.Remove), name) ||
+		slices.Contains(WorktreeNames(p.Remove), name) ||
 		slices.Contains(branchNames(p.CheckedOut), name) ||
 		slices.Contains(branchNames(p.Gone), name)
 }
@@ -92,14 +92,14 @@ func TestSweepPlanDeletesAMergedBranch(t *testing.T) {
 	testkit.BranchWithWork(t, main, "done-work", 1)
 	testkit.LandOnMain(t, main, "done-work")
 
-	p := planOf(t, ctx)
+	p := PlanOf(t, ctx)
 	if !slices.Equal(branchNames(p.Delete), []string{"done-work"}) {
 		t.Fatalf("delete = %v", branchNames(p.Delete))
 	}
 	if p.Delete[0].MergedInto != "origin/main" {
 		t.Errorf("merged into %q, want origin/main first", p.Delete[0].MergedInto)
 	}
-	if out := rendered(p); !strings.Contains(out, "done-work") || !strings.Contains(out, "merged into origin/main") {
+	if out := Rendered(p); !strings.Contains(out, "done-work") || !strings.Contains(out, "merged into origin/main") {
 		t.Errorf("the plan must name the branch and why it goes:\n%s", out)
 	}
 }
@@ -108,7 +108,7 @@ func TestSweepPlanLeavesUnmergedWorkOut(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "wip", 2)
 
-	if p := planOf(t, ctx); inAnyGroup(p, "wip") {
+	if p := PlanOf(t, ctx); inAnyGroup(p, "wip") {
 		t.Fatalf("unmerged work with no gone upstream belongs in no group: %+v", p)
 	}
 }
@@ -120,7 +120,7 @@ func TestSweepPlanCountsAMergeOnlyOriginHas(t *testing.T) {
 	mergeOnOrigin(t, main, origin, "landed")
 	testkit.GitIn(t, main, "fetch", "-q", "origin")
 
-	p := planOf(t, ctx)
+	p := PlanOf(t, ctx)
 	if !slices.Contains(branchNames(p.Delete), "landed") {
 		t.Fatalf("landed is in origin/main; want it deleted: %v", branchNames(p.Delete))
 	}
@@ -132,7 +132,7 @@ func TestSweepPlanCountsAMergeOnlyLocalTrunkHas(t *testing.T) {
 	testkit.BranchWithWork(t, main, "local-only", 1)
 	testkit.GitIn(t, main, "merge", "-q", "--no-ff", "-m", "merge local-only", "local-only")
 
-	p := planOf(t, ctx)
+	p := PlanOf(t, ctx)
 	if !slices.Equal(branchNames(p.Delete), []string{"local-only"}) || p.Delete[0].MergedInto != "main" {
 		t.Fatalf("delete = %+v", p.Delete)
 	}
@@ -142,20 +142,20 @@ func TestSweepPlanRemovesACleanMergedWorktree(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
-	p := planOf(t, ctx)
+	p := PlanOf(t, ctx)
 	if slices.Contains(branchNames(p.Delete), "fix_wt/login-crash") {
 		t.Fatal("a branch a worktree has checked out is not deleted on its own")
 	}
 	if slices.Contains(branchNames(p.CheckedOut), "fix_wt/login-crash") {
 		t.Fatal("nothing is using the worktree; it is not kept")
 	}
-	if !slices.Equal(worktreeNames(p.Remove), []string{"fix_wt/login-crash"}) {
-		t.Fatalf("want the worktree removed: %v", worktreeNames(p.Remove))
+	if !slices.Equal(WorktreeNames(p.Remove), []string{"fix_wt/login-crash"}) {
+		t.Fatalf("want the worktree removed: %v", WorktreeNames(p.Remove))
 	}
 	if p.Remove[0].Work != "login-crash" || p.Remove[0].Worktree != path || p.Remove[0].Plan.Outcome != BranchDeleted {
 		t.Errorf("remove = %+v", p.Remove[0])
 	}
-	out := rendered(p)
+	out := Rendered(p)
 	for _, want := range []string{"Will be removed with its branch, 1 worktree:", "login-crash", "fix_wt/login-crash", path, "merged into origin/main"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the plan must show every directory that will go, with its branch and why:\nwant %q in\n%s", want, out)
@@ -194,14 +194,14 @@ func TestSweepPlanKeepsADirtyMergedWorktree(t *testing.T) {
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	testkit.MustWrite(t, filepath.Join(path, "scratch.txt"), "not yet\n")
 
-	p := planOf(t, ctx)
+	p := PlanOf(t, ctx)
 	if len(p.Remove) != 0 {
-		t.Fatalf("a dirty worktree must not be removed: %v", worktreeNames(p.Remove))
+		t.Fatalf("a dirty worktree must not be removed: %v", WorktreeNames(p.Remove))
 	}
 	if !slices.Contains(branchNames(p.CheckedOut), "fix_wt/login-crash") {
 		t.Fatalf("want it kept: %+v", p)
 	}
-	if out := rendered(p); !strings.Contains(out, "fix_wt/login-crash  dirty; commit or discard the changes, then sweep again") {
+	if out := Rendered(p); !strings.Contains(out, "fix_wt/login-crash  dirty; commit or discard the changes, then sweep again") {
 		t.Errorf("the row must say why it is kept:\n%s", out)
 	}
 }
@@ -211,12 +211,12 @@ func TestSweepPlanKeepsAMergedWorktreeWhoseLockIsHeld(t *testing.T) {
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	testkit.GitIn(t, main, "worktree", "lock", "--reason", fmt.Sprintf("(pid %d start now)", os.Getpid()), path)
 
-	p := planOf(t, ctx)
+	p := PlanOf(t, ctx)
 	if len(p.Remove) != 0 {
-		t.Fatalf("a worktree whose lock is held must not be removed: %v", worktreeNames(p.Remove))
+		t.Fatalf("a worktree whose lock is held must not be removed: %v", WorktreeNames(p.Remove))
 	}
 	want := fmt.Sprintf("fix_wt/login-crash  lock held by pid %d; wt remove login-crash --force", os.Getpid())
-	if out := rendered(p); !strings.Contains(out, want) {
+	if out := Rendered(p); !strings.Contains(out, want) {
 		t.Errorf("the row must name the holder and say --force breaks it:\nwant %q in\n%s", want, out)
 	}
 }
@@ -246,9 +246,9 @@ func TestSweepPlanKeepsAMergedWorktreeWithAnIdleSession(t *testing.T) {
 
 	p := planWith(t, ctx, SweepOptions{Agents: testkit.IdleIn(t, path, "parked-1")})
 	if len(p.Remove) != 0 {
-		t.Fatalf("a worktree with a session in it, idle or not, must not be removed: %v", worktreeNames(p.Remove))
+		t.Fatalf("a worktree with a session in it, idle or not, must not be removed: %v", WorktreeNames(p.Remove))
 	}
-	if out := rendered(p); !strings.Contains(out, "fix_wt/login-crash  session parked-1 (idle) in it; wt remove login-crash") {
+	if out := Rendered(p); !strings.Contains(out, "fix_wt/login-crash  session parked-1 (idle) in it; wt remove login-crash") {
 		t.Errorf("the row must name the session the way wt sync does:\n%s", out)
 	}
 }
@@ -257,19 +257,19 @@ func TestSweepKeepsAWorktreeWhenTheSessionsCannotBeListed(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
 	provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
-	bases, err := trunkBases(ctx)
+	bases, err := TrunkBases(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := planSweep(ctx, bases, func() ([]wtsync.Agent, error) { return nil, fmt.Errorf("claude is away") },
-		noPullRequests, false)
+	p, err := PlanSweep(ctx, bases, func() ([]wtsync.Agent, error) { return nil, fmt.Errorf("claude is away") },
+		NoPullRequests, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(p.Remove) != 0 {
-		t.Fatalf("with nobody to ask, no worktree is known to be safe: %v", worktreeNames(p.Remove))
+		t.Fatalf("with nobody to ask, no worktree is known to be safe: %v", WorktreeNames(p.Remove))
 	}
-	if out := rendered(p); !strings.Contains(out, "cannot list agent sessions (claude is away)") {
+	if out := Rendered(p); !strings.Contains(out, "cannot list agent sessions (claude is away)") {
 		t.Errorf("say why:\n%s", out)
 	}
 }
@@ -279,7 +279,7 @@ func TestSweepLeavesAnUnmergedWorktreeAlone(t *testing.T) {
 	path := provisiontest.MergedWorktree(t, ctx, "feat/api-tidy")
 	testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "real work")
 
-	p := planOf(t, ctx)
+	p := PlanOf(t, ctx)
 	if inAnyGroup(p, "feat_wt/api-tidy") {
 		t.Fatalf("unmerged work belongs in no group: %+v", p)
 	}
@@ -354,11 +354,11 @@ func TestSweepPlanKeepsAWorktreeWhoseDirectoryIsGone(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p := planOf(t, ctx)
+	p := PlanOf(t, ctx)
 	if len(p.Remove) != 0 {
-		t.Fatalf("there is no directory to remove: %v", worktreeNames(p.Remove))
+		t.Fatalf("there is no directory to remove: %v", WorktreeNames(p.Remove))
 	}
-	if out := rendered(p); !strings.Contains(out, "fix_wt/login-crash  its directory is gone; git worktree prune, then sweep again") {
+	if out := Rendered(p); !strings.Contains(out, "fix_wt/login-crash  its directory is gone; git worktree prune, then sweep again") {
 		t.Errorf("say what happened and what clears it:\n%s", out)
 	}
 }
@@ -564,7 +564,7 @@ func TestSweepPlanSeesABranchInTheMiddleOfARebase(t *testing.T) {
 		t.Fatalf("precondition: git reports rebasing as checked out at %q; the trap is gone", wp)
 	}
 
-	p := planOf(t, ctx)
+	p := PlanOf(t, ctx)
 	if slices.Contains(branchNames(p.Delete), "rebasing") {
 		t.Fatal("a branch mid-rebase was offered for deletion")
 	}
@@ -572,7 +572,7 @@ func TestSweepPlanSeesABranchInTheMiddleOfARebase(t *testing.T) {
 		t.Errorf("want rebasing in the checked-out group: %v", branchNames(p.CheckedOut))
 	}
 	// wt remove would throw the rebase away and leave the branch.
-	if out := rendered(p); !strings.Contains(out, "held by the rebase in "+dst+"; finish or abort it there, then sweep again") {
+	if out := Rendered(p); !strings.Contains(out, "held by the rebase in "+dst+"; finish or abort it there, then sweep again") {
 		t.Errorf("the plan must send the reader to the rebase, not to wt remove:\n%s", out)
 	}
 }
@@ -590,7 +590,7 @@ func TestSweepPlanSeesABranchABisectStartedFrom(t *testing.T) {
 		t.Fatal("precondition: the bisect left HEAD on the branch; the trap is not set")
 	}
 
-	p := planOf(t, ctx)
+	p := PlanOf(t, ctx)
 	if slices.Contains(branchNames(p.Delete), "bisecting") {
 		t.Fatal("a branch a bisect started from was offered for deletion")
 	}
@@ -598,7 +598,7 @@ func TestSweepPlanSeesABranchABisectStartedFrom(t *testing.T) {
 		t.Errorf("want bisecting in the checked-out group: %v", branchNames(p.CheckedOut))
 	}
 	// No worktree has bisecting checked out, so wt remove bisecting finds nothing.
-	if out := rendered(p); !strings.Contains(out, "held by the bisect in "+dst+"; finish or abort it there, then sweep again") {
+	if out := Rendered(p); !strings.Contains(out, "held by the bisect in "+dst+"; finish or abort it there, then sweep again") {
 		t.Errorf("the plan must send the reader to the bisect, not to wt remove:\n%s", out)
 	}
 }
@@ -630,14 +630,14 @@ func TestSweepPlanSeesABranchARebaseWillUpdate(t *testing.T) {
 		t.Fatalf("precondition: the stopped rebase does not list lower in %s: %v", updateRefs, err)
 	}
 
-	p := planOf(t, ctx)
+	p := PlanOf(t, ctx)
 	if slices.Contains(branchNames(p.Delete), "lower") {
 		t.Fatal("a branch a stopped rebase will update was offered for deletion")
 	}
 	if !slices.Contains(branchNames(p.CheckedOut), "lower") {
 		t.Errorf("want lower in the checked-out group: %v", branchNames(p.CheckedOut))
 	}
-	if out := rendered(p); !strings.Contains(out, "lower  held by the rebase in "+dst+"; finish or abort it there, then sweep again") {
+	if out := Rendered(p); !strings.Contains(out, "lower  held by the rebase in "+dst+"; finish or abort it there, then sweep again") {
 		t.Errorf("the plan must send the reader to the rebase, not to wt remove:\n%s", out)
 	}
 }
@@ -647,11 +647,11 @@ func TestSweepPlanNamesTheMainCheckoutWhenItIsOnAMergedBranch(t *testing.T) {
 	testkit.BranchWithWork(t, main, "done-work", 0)
 	testkit.GitIn(t, main, "switch", "-q", "done-work")
 
-	p := planOf(t, ctx)
+	p := PlanOf(t, ctx)
 	if !slices.Contains(branchNames(p.CheckedOut), "done-work") {
 		t.Fatalf("want done-work in the checked-out group: %+v", p)
 	}
-	if out := rendered(p); !strings.Contains(out, "main checkout") {
+	if out := Rendered(p); !strings.Contains(out, "main checkout") {
 		t.Errorf("wt remove cannot remove the main checkout; say what to do instead:\n%s", out)
 	}
 }
@@ -662,7 +662,7 @@ func TestSweepPlanNeverOffersProtectedBranches(t *testing.T) {
 		testkit.GitIn(t, main, "branch", name)
 	}
 
-	p := planOf(t, ctx)
+	p := PlanOf(t, ctx)
 	if len(p.Delete)+len(p.CheckedOut)+len(p.Gone) != 0 {
 		t.Fatalf("protected branches must not appear anywhere: %+v", p)
 	}
@@ -683,7 +683,7 @@ func TestSweepPlanProtectsTheConfiguredTrunkAndOriginHead(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p := planOf(t, ctx)
+	p := PlanOf(t, ctx)
 	for _, name := range []string{"trunk", "integration"} {
 		if inAnyGroup(p, name) {
 			t.Errorf("%s is a trunk and must never be offered: %+v", name, p)
@@ -697,7 +697,7 @@ func TestSweepPlanProtectsTheBranchADanglingOriginHeadNames(t *testing.T) {
 	testkit.GitIn(t, main, "branch", "integration")
 	testkit.GitIn(t, main, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/integration")
 
-	if p := planOf(t, ctx); inAnyGroup(p, "integration") {
+	if p := PlanOf(t, ctx); inAnyGroup(p, "integration") {
 		t.Fatalf("integration is origin's HEAD, dangling or not: %+v", p)
 	}
 }
@@ -705,18 +705,18 @@ func TestSweepPlanProtectsTheBranchADanglingOriginHeadNames(t *testing.T) {
 func TestSweepPlanReportsAGoneBranchThatStillHasWork(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "old-idea", 3)
-	goneUpstream(t, main, "old-idea")
+	GoneUpstream(t, main, "old-idea")
 	testkit.BranchWithWork(t, main, "gone-merged", 0)
-	goneUpstream(t, main, "gone-merged")
+	GoneUpstream(t, main, "gone-merged")
 
-	p := planOf(t, ctx)
+	p := PlanOf(t, ctx)
 	if !slices.Equal(branchNames(p.Gone), []string{"old-idea"}) || p.Gone[0].Ahead != 3 {
 		t.Fatalf("gone = %+v", p.Gone)
 	}
 	if !slices.Contains(branchNames(p.Delete), "gone-merged") {
 		t.Errorf("a gone upstream on a merged branch is still merged: %v", branchNames(p.Delete))
 	}
-	if out := rendered(p); !strings.Contains(out, "3 commits ahead of origin/main") {
+	if out := Rendered(p); !strings.Contains(out, "3 commits ahead of origin/main") {
 		t.Errorf("the plan must say what is at stake:\n%s", out)
 	}
 }
@@ -729,7 +729,7 @@ func TestSweepPlanWithNoOriginComparesWithLocalTrunk(t *testing.T) {
 	}
 	testkit.BranchWithWork(t, main, "done-work", 0)
 
-	p := planOf(t, ctx)
+	p := PlanOf(t, ctx)
 	if len(p.Bases) != 1 || p.Bases[0].Name != "main" {
 		t.Fatalf("bases = %+v", p.Bases)
 	}
@@ -746,7 +746,7 @@ func TestSweepPlanFitsSubjectsToTheTerminal(t *testing.T) {
 	tree := testkit.GitOut(t, main, "rev-parse", "main^{tree}")
 	testkit.GitIn(t, main, "branch", "done-work", testkit.GitOut(t, main, "commit-tree", "-p", "main", "-m", subject, tree))
 	testkit.GitIn(t, main, "merge", "-q", "--ff-only", "done-work")
-	p := planOf(t, ctx)
+	p := PlanOf(t, ctx)
 
 	var buf bytes.Buffer
 	p.Render(&buf, 80)
@@ -758,14 +758,14 @@ func TestSweepPlanFitsSubjectsToTheTerminal(t *testing.T) {
 	if !strings.Contains(buf.String(), "done-work") || !strings.Contains(buf.String(), "…") {
 		t.Errorf("want the branch whole and its subject cut:\n%s", buf.String())
 	}
-	if out := rendered(p); !strings.Contains(out, subject) {
+	if out := Rendered(p); !strings.Contains(out, subject) {
 		t.Errorf("piped, the subject is printed whole:\n%s", out)
 	}
 }
 
 func TestSweepPlanWithNothingMergedSaysSo(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
-	if out := rendered(planOf(t, ctx)); !strings.Contains(out, "No merged branches or worktrees to sweep.") {
+	if out := Rendered(PlanOf(t, ctx)); !strings.Contains(out, "No merged branches or worktrees to sweep.") {
 		t.Errorf("an empty plan must say so:\n%s", out)
 	}
 }
@@ -1161,14 +1161,14 @@ func TestSweepPlanNamesADetachedWorktreeAtAMergedTip(t *testing.T) {
 	testkit.GitIn(t, main, "worktree", "add", "-q", "--detach", unmerged, "wip")
 	tip := testkit.GitOut(t, main, "rev-parse", "done")
 
-	p := planOf(t, ctx)
+	p := PlanOf(t, ctx)
 	if !slices.Equal(branchNames(p.Delete), []string{"done"}) {
 		t.Fatalf("a detached checkout holds no branch, so done still goes: %v", branchNames(p.Delete))
 	}
 	if len(p.CheckedOut) != 1 || !p.CheckedOut[0].Detached || p.CheckedOut[0].Worktree != merged || p.CheckedOut[0].Tip != tip {
 		t.Fatalf("want the detached worktree kept by its path: %+v", p.CheckedOut)
 	}
-	out := rendered(p)
+	out := Rendered(p)
 	if want := "(detached)  no branch, and its HEAD " + tip[:12] + " is on origin/main; wt remove " + merged; !strings.Contains(out, want) {
 		t.Errorf("want %q in:\n%s", want, out)
 	}
@@ -1187,15 +1187,15 @@ func TestSweepPlanNamesADetachedWorktreeAtAMergedTip(t *testing.T) {
 	// A dirty one is checked like any other worktree, so the row names the
 	// dirt rather than advising a wt remove that would refuse.
 	testkit.MustWrite(t, filepath.Join(merged, "scratch.txt"), "not yet\n")
-	out = rendered(planOf(t, ctx))
+	out = Rendered(PlanOf(t, ctx))
 	if want := "(detached)  no branch, and its HEAD " + tip[:12] + " is on origin/main, dirty; commit or discard the changes, then sweep again"; !strings.Contains(out, want) {
 		t.Errorf("want %q in:\n%s", want, out)
 	}
 }
 
-// noPullRequests is a GitHub with nothing to say, which is what every sweep
+// NoPullRequests is a GitHub with nothing to say, which is what every sweep
 // test that is not about pull requests wants.
-func noPullRequests([]string) map[string]github.PR { return nil }
+func NoPullRequests([]string) map[string]github.PR { return nil }
 
 // Each worktree is checked again immediately before it goes, not only once
 // before the first: one that turns dirty while an earlier one is removed is

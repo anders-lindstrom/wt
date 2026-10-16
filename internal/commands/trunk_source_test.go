@@ -12,6 +12,8 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anders-lindstrom/wt/internal/commands/retire"
+	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -179,13 +181,13 @@ func TestJSONOutputsSayHowTrunkWasFound(t *testing.T) {
 		}
 		got["up"] = up.TrunkSource
 		got["sync"] = overviewJSON(t, ctx).TrunkSource
-		sweep, _ := sweepPlanJSON(t, ctx, SweepOptions{NoFetch: true})
+		sweep, _ := retiretest.SweepPlanJSON(t, ctx, retire.SweepOptions{NoFetch: true})
 		got["sweep-plan"] = sweep.TrunkSource
 		got["new-plan"] = provisiontest.NewPlanOf(t, ctx, "fix/x", provision.NewOptions{}).TrunkSource
 		got["checkout-plan"] = provisiontest.CheckoutPlanOf(t, ctx, "release-2.1", "").TrunkSource
 		for name, src := range got {
 			if src == nil || *src != string(want) {
-				t.Errorf("%s: trunkSource = %q, want %s", name, deref(src), want)
+				t.Errorf("%s: trunkSource = %q, want %s", name, retire.Deref(src), want)
 			}
 		}
 	}
@@ -225,9 +227,9 @@ func TestStatusPlanHasNoTrunkRefWhenNothingNamesTrunk(t *testing.T) {
 			t.Fatal(err)
 		}
 		if p.Trunk != nil || p.TrunkRef != nil || p.TrunkSource != nil || p.TrunkRefExists ||
-			deref(p.UpIneligibleCode) != IneligibleNoConfig {
-			t.Errorf("%s: trunk %q ref %q source %q exists %v code %q", name, deref(p.Trunk),
-				deref(p.TrunkRef), deref(p.TrunkSource), p.TrunkRefExists, deref(p.UpIneligibleCode))
+			retire.Deref(p.UpIneligibleCode) != IneligibleNoConfig {
+			t.Errorf("%s: trunk %q ref %q source %q exists %v code %q", name, retire.Deref(p.Trunk),
+				retire.Deref(p.TrunkRef), retire.Deref(p.TrunkSource), p.TrunkRefExists, retire.Deref(p.UpIneligibleCode))
 		}
 	}
 }

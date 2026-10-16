@@ -1,4 +1,4 @@
-package commands
+package retire
 
 import (
 	"crypto/sha256"
@@ -214,7 +214,7 @@ func removeToken(ctx *kit.Context, p Plan) *string {
 	field("trunk", ctx.Config.MainBranch)
 	field("trunkSource", ctx.Config.TrunkSource)
 	h.Write(kit.ConfigFingerprint(ctx))
-	bases, err := trunkBases(ctx)
+	bases, err := TrunkBases(ctx)
 	field("basesError", err != nil)
 	for _, b := range bases {
 		field("base", b.Name+" "+b.Tip)
@@ -321,7 +321,7 @@ func removePlanOutput(ctx *kit.Context, p Plan, token string) RemovePlanOutput {
 		}
 		o.Branch = b
 	}
-	if bases, err := trunkBases(ctx); err == nil {
+	if bases, err := TrunkBases(ctx); err == nil {
 		for _, b := range bases {
 			o.Bases = append(o.Bases, SweepBase(b))
 		}

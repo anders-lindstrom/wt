@@ -8,6 +8,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
+	"github.com/anders-lindstrom/wt/internal/commands/retire"
 )
 
 // hookInput is the JSON Claude Code sends on stdin. Unknown fields are ignored
@@ -59,5 +60,5 @@ func HookRemove(ctx *kit.Context, in io.Reader, logw io.Writer) error {
 		target = wt.Path
 	}
 	// The harness has no terminal to answer a prompt on, so it never confirms.
-	return RemoveAt(ctx, target, RemoveOptions{}, logw)
+	return retire.RemoveAt(ctx, target, retire.RemoveOptions{}, logw)
 }

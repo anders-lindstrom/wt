@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -121,7 +122,7 @@ func SyncRebaseAll(u *config.User, sel kit.Selection, opts SyncRebaseAllOptions,
 		return notCompleted(failures)
 	}
 
-	question := fmt.Sprintf("Rebase %s across %s?", worktreeCount(worktrees), kit.RepoCount(repos))
+	question := fmt.Sprintf("Rebase %s across %s?", retire.WorktreeCount(worktrees), kit.RepoCount(repos))
 	if opts.Ask != nil {
 		ok, err := opts.Ask(question)
 		if err != nil {

@@ -1,4 +1,4 @@
-package commands
+package retire
 
 import (
 	"bytes"
@@ -46,8 +46,8 @@ func TestParseForce(t *testing.T) {
 	}
 }
 
-// agentIn is a session working in path: idle, or busy.
-func agentIn(t *testing.T, path, id string, idle bool) wtsync.Agent {
+// AgentIn is a session working in path: idle, or busy.
+func AgentIn(t *testing.T, path, id string, idle bool) wtsync.Agent {
 	t.Helper()
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
@@ -89,10 +89,10 @@ func TestRemoveForceCategoryGoesPastOnlyItsOwnProblem(t *testing.T) {
 		why   string
 	}{
 		{"idle-sessions", kit.ForceIdleSessions, func(t *testing.T, _ *kit.Context, path string, o *RemoveOptions) {
-			o.Agents = []wtsync.Agent{agentIn(t, path, "idle-1", true)}
+			o.Agents = []wtsync.Agent{AgentIn(t, path, "idle-1", true)}
 		}, "idle-1"},
 		{"busy-sessions", kit.ForceBusySessions, func(t *testing.T, _ *kit.Context, path string, o *RemoveOptions) {
-			o.Agents = []wtsync.Agent{agentIn(t, path, "busy-1", false)}
+			o.Agents = []wtsync.Agent{AgentIn(t, path, "busy-1", false)}
 		}, "busy-1"},
 		{"sessions-unknown", kit.ForceSessionsUnknown, func(_ *testing.T, _ *kit.Context, _ string, o *RemoveOptions) {
 			o.AgentsErr = errors.New("claude agents --json failed: boom")
@@ -122,7 +122,7 @@ func TestRemoveForceCategoryGoesPastOnlyItsOwnProblem(t *testing.T) {
 // A refusal --force would go past says which categories it needs.
 func TestRemoveRefusalNamesTheForceItNeeds(t *testing.T) {
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/force-hint")
-	opts := RemoveOptions{Agents: []wtsync.Agent{agentIn(t, path, "busy-1", false)}, Force: kit.ForceIdleSessions}
+	opts := RemoveOptions{Agents: []wtsync.Agent{AgentIn(t, path, "busy-1", false)}, Force: kit.ForceIdleSessions}
 	var buf bytes.Buffer
 	err := RemoveAt(ctx, path, opts, &buf)
 	if err == nil || !strings.Contains(err.Error(), "pass --force=idle-sessions,busy-sessions to") {
@@ -135,7 +135,7 @@ func TestRemoveRefusalNamesTheForceItNeeds(t *testing.T) {
 func TestRemoveIdleForcedButBusyRefuses(t *testing.T) {
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/force-mixed")
 	opts := RemoveOptions{Force: kit.ForceIdleSessions, Agents: []wtsync.Agent{
-		agentIn(t, path, "idle-1", true), agentIn(t, path, "busy-1", false)}}
+		AgentIn(t, path, "idle-1", true), AgentIn(t, path, "busy-1", false)}}
 	refused(t, ctx, path, opts, "busy-1")
 	opts.Force = kit.ForceIdleSessions | kit.ForceBusySessions
 	removed(t, ctx, path, opts)
@@ -209,7 +209,7 @@ func TestRemoveReadsTheSessionsAgainBeforeTheCheckoutGoes(t *testing.T) {
 func nobody(string) []wtsync.Agent { return []wtsync.Agent{} }
 
 func idleThen(t *testing.T, idle bool) func(string) []wtsync.Agent {
-	return func(path string) []wtsync.Agent { return []wtsync.Agent{agentIn(t, path, "s-1", idle)} }
+	return func(path string) []wtsync.Agent { return []wtsync.Agent{AgentIn(t, path, "s-1", idle)} }
 }
 
 func busyNow(t *testing.T) func(string) []wtsync.Agent { return idleThen(t, false) }
@@ -220,8 +220,8 @@ func TestRemoveTokenCoversSessionStateAndTheForceSet(t *testing.T) {
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/force-token")
 	token := func(force kit.ForceSet, idle bool) string {
 		t.Helper()
-		p, err := removePlanJSON(t, ctx, path, RemoveOptions{Force: force,
-			Agents: []wtsync.Agent{agentIn(t, path, "s-1", idle)}})
+		p, err := RemovePlanOf(t, ctx, path, RemoveOptions{Force: force,
+			Agents: []wtsync.Agent{AgentIn(t, path, "s-1", idle)}})
 		if err != nil || p.Token == nil {
 			t.Fatalf("no token: %v %+v", err, p)
 		}
@@ -238,51 +238,11 @@ func TestRemoveTokenCoversSessionStateAndTheForceSet(t *testing.T) {
 	}
 }
 
-// --json names, for each problem, the category that goes past it, and the
-// categories given; the result says which it went past.
-func TestRemoveJSONNamesTheForceCategories(t *testing.T) {
-	ctx, path := provisiontest.SafetyWorktree(t, "fix/force-json")
-	agents := []wtsync.Agent{agentIn(t, path, "idle-1", true), agentIn(t, path, "busy-1", false)}
-	p, err := removePlanJSON(t, ctx, path, RemoveOptions{Force: kit.ForceIdleSessions, Agents: agents})
-	if err == nil {
-		t.Fatal("want a refusal: the busy session is not forced")
-	}
-	// force keeps its v1 meaning: every problem with force true is gone
-	// past. Only bare --force promises that.
-	if !slices.Equal(p.ForceWith, []string{"idle-sessions"}) || p.Force {
-		t.Errorf("force = %v, forceWith = %q", p.Force, p.ForceWith)
-	}
-	var with []string
-	for _, pr := range p.Problems {
-		if !pr.Force || pr.ForceWith == nil {
-			t.Fatalf("problem %+v: want force and forceWith", pr)
-		}
-		with = append(with, *pr.ForceWith)
-	}
-	if !slices.Equal(with, []string{"idle-sessions", "busy-sessions"}) {
-		t.Errorf("forceWith = %q", with)
-	}
-
-	opts := RemoveOptions{Force: kit.ForceIdleSessions | kit.ForceBusySessions | kit.ForceLock, Agents: agents}
-	plan, err := removePlanJSON(t, ctx, path, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	opts.Expect = deref(plan.Token)
-	r, err := removeJSON(t, ctx, path, opts)
-	if err != nil || r.Outcome != RemoveRemoved {
-		t.Fatalf("%v %+v", err, r)
-	}
-	if !slices.Equal(r.Forced, []string{"idle-sessions", "busy-sessions"}) {
-		t.Errorf("forced = %q", r.Forced)
-	}
-}
-
 // A problem --force cannot pass has no category.
 func TestRemoveJSONProblemWithoutForceHasNoCategory(t *testing.T) {
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/force-dirty")
 	testkit.MustWrite(t, filepath.Join(path, "scratch.txt"), "mine")
-	p, _ := removePlanJSON(t, ctx, path, RemoveOptions{Force: kit.ForceAll, Agents: []wtsync.Agent{}})
+	p, _ := RemovePlanOf(t, ctx, path, RemoveOptions{Force: kit.ForceAll, Agents: []wtsync.Agent{}})
 	if len(p.Problems) != 1 || p.Problems[0].Force || p.Problems[0].ForceWith != nil {
 		t.Errorf("problems = %+v", p.Problems)
 	}
@@ -311,7 +271,7 @@ func TestRemoveReadsTheCheckoutAfterListingTheSessions(t *testing.T) {
 func TestRemoveBusyForcedGoesPastAnIdleSession(t *testing.T) {
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/force-busy-idle")
 	removed(t, ctx, path, RemoveOptions{Force: kit.ForceBusySessions, Agents: []wtsync.Agent{
-		agentIn(t, path, "idle-1", true), agentIn(t, path, "busy-1", false)}})
+		AgentIn(t, path, "idle-1", true), AgentIn(t, path, "busy-1", false)}})
 }
 
 // A refusal at the last check says the worktree changed since the plan, and

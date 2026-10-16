@@ -10,6 +10,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -580,7 +581,7 @@ func TestRemoveAndRestoreKeepWhereAKeptBranchPushes(t *testing.T) {
 	testkit.GitOut(t, path, "push", "-q", "-u", "origin", "fix_wt/kept-push")
 	dir := testkit.TrashFor(t, ctx)
 	var out bytes.Buffer
-	if err := RemoveAt(ctx, path, RemoveOptions{Quarantine: dir}, &out); err != nil {
+	if err := retire.RemoveAt(ctx, path, retire.RemoveOptions{Quarantine: dir}, &out); err != nil {
 		t.Fatalf("RemoveAt: %v\n%s", err, out.String())
 	}
 	if !strings.Contains(out.String(), "; wt still pushes it to origin/fix_wt/kept-push") {

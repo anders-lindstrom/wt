@@ -12,6 +12,8 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anders-lindstrom/wt/internal/commands/retire"
+	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 )
@@ -58,7 +60,7 @@ func purgeRefused(t *testing.T, ctx *kit.Context, dir, code string) {
 // after the purge the folder, the pins and every reference to the commit are
 // gone.
 func TestPurgeDeletesTheFolderAndThePins(t *testing.T) {
-	ctx, path, _, tip, dir := quarantined(t, "fix/gone", true)
+	ctx, path, _, tip, dir := retiretest.Quarantined(t, "fix/gone", true)
 	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "-D", "gone")
 	plan := quarantine.PlanPurge(dir)
 	if plan.State != quarantine.StateQuarantined || plan.Refusal() != "" {
@@ -91,7 +93,7 @@ func TestPurgeDeletesTheFolderAndThePins(t *testing.T) {
 
 // A symlink inside the quarantine is deleted, never what it names.
 func TestPurgeNeverFollowsASymlinkOut(t *testing.T) {
-	ctx, _, _, _, dir := quarantined(t, "fix/linked", false)
+	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/linked", false)
 	outside := filepath.Join(ctx.Repo.Parent, "keep-me")
 	testkit.MustWrite(t, filepath.Join(outside, "precious.txt"), "precious")
 	for _, link := range []string{filepath.Join(dir, "checkout", "out"), filepath.Join(dir, "admin", "out"),
@@ -113,7 +115,7 @@ func TestPurgeNeverFollowsASymlinkOut(t *testing.T) {
 
 // A folder nobody may write to inside the checkout is deleted too.
 func TestPurgeDeletesAReadOnlyFolder(t *testing.T) {
-	ctx, _, _, _, dir := quarantined(t, "fix/readonly", false)
+	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/readonly", false)
 	ro := filepath.Join(dir, "checkout", "ro")
 	testkit.MustWrite(t, filepath.Join(ro, "deep", "f"), "x")
 	for _, d := range []string{filepath.Join(ro, "deep"), ro} {
@@ -128,7 +130,7 @@ func TestPurgeDeletesAReadOnlyFolder(t *testing.T) {
 // Restored already: the folder, with only recovery.json in it, goes, and
 // the worktree that came back is untouched.
 func TestPurgeAfterRestoreDeletesOnlyTheLeftovers(t *testing.T) {
-	ctx, path, branch, _, dir := quarantined(t, "fix/back-then-purged", false)
+	ctx, path, branch, _, dir := retiretest.Quarantined(t, "fix/back-then-purged", false)
 	restore(t, ctx, dir)
 	plan := quarantine.PlanPurge(dir)
 	if plan.State != quarantine.StateRestored || plan.Refusal() != "" {
@@ -155,7 +157,7 @@ func TestPurgeFinishesAPurgeStoppedAtEveryStep(t *testing.T) {
 	}
 	var points []string
 	{
-		_, _, _, _, dir := quarantined(t, "fix/count-purge", true)
+		_, _, _, _, dir := retiretest.Quarantined(t, "fix/count-purge", true)
 		t.Cleanup(func() { quarantine.AfterPurge, quarantine.AfterSave = nil, nil })
 		quarantine.AfterSave = func(_ *quarantine.Record, at string) error {
 			points = append(points, at)
@@ -174,7 +176,7 @@ func TestPurgeFinishesAPurgeStoppedAtEveryStep(t *testing.T) {
 	}
 	for _, point := range points {
 		t.Run(point, func(t *testing.T) {
-			ctx, _, _, _, dir := quarantined(t, "fix/crash-purge", true)
+			ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/crash-purge", true)
 			t.Cleanup(func() { quarantine.AfterPurge, quarantine.AfterSave = nil, nil })
 			if strings.HasPrefix(point, "purge.") {
 				testkit.CrashAt(t, point)
@@ -224,7 +226,7 @@ func TestPurgeFinishesAPurgeStoppedAtEveryStep(t *testing.T) {
 // for exactly this folder, is refused before anything is deleted.
 func TestPurgeRefuses(t *testing.T) {
 	t.Run("no folder", func(t *testing.T) {
-		ctx, _, _, _, dir := quarantined(t, "fix/r-missing", false)
+		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/r-missing", false)
 		purgeRefused(t, ctx, filepath.Join(dir, "nope"), quarantine.ProblemMissing)
 	})
 	t.Run("no record", func(t *testing.T) {
@@ -234,12 +236,12 @@ func TestPurgeRefuses(t *testing.T) {
 		purgeRefused(t, ctx, dir, quarantine.ProblemNoRecord)
 	})
 	t.Run("record not wt's", func(t *testing.T) {
-		ctx, _, _, _, dir := quarantined(t, "fix/r-invalid", false)
+		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/r-invalid", false)
 		testkit.MustWrite(t, filepath.Join(dir, quarantine.FileName), `{"schema":1,"steps":[]}`)
 		purgeRefused(t, ctx, dir, quarantine.ProblemNoRecord)
 	})
 	t.Run("symlink", func(t *testing.T) {
-		ctx, _, _, _, dir := quarantined(t, "fix/r-symlink", false)
+		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/r-symlink", false)
 		link := dir + "-link"
 		if err := os.Symlink(dir, link); err != nil {
 			t.Fatal(err)
@@ -247,14 +249,14 @@ func TestPurgeRefuses(t *testing.T) {
 		purgeRefused(t, ctx, link, quarantine.ProblemNotAFolder)
 	})
 	t.Run("record copied elsewhere", func(t *testing.T) {
-		ctx, _, _, _, dir := quarantined(t, "fix/r-copied", false)
+		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/r-copied", false)
 		other := filepath.Join(ctx.Repo.Parent, "other")
 		testkit.MustWrite(t, filepath.Join(other, "checkout", "precious.txt"), "precious")
 		testkit.MustWrite(t, filepath.Join(other, quarantine.FileName), testkit.MustRead(t, filepath.Join(dir, quarantine.FileName)))
 		purgeRefused(t, ctx, other, quarantine.ProblemWrongFolder)
 	})
 	t.Run("folder moved", func(t *testing.T) {
-		ctx, _, _, _, dir := quarantined(t, "fix/r-moved", false)
+		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/r-moved", false)
 		moved := dir + "-moved"
 		if err := os.Rename(dir, moved); err != nil {
 			t.Fatal(err)
@@ -262,14 +264,14 @@ func TestPurgeRefuses(t *testing.T) {
 		purgeRefused(t, ctx, moved, quarantine.ProblemWrongFolder)
 	})
 	t.Run("pin moved", func(t *testing.T) {
-		ctx, _, _, _, dir := quarantined(t, "fix/r-pin", false)
+		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/r-pin", false)
 		r := testkit.LoadRecord(t, dir)
 		testkit.GitIn(t, ctx.Repo.MainRoot, "commit", "-q", "--allow-empty", "-m", "elsewhere")
 		testkit.GitIn(t, ctx.Repo.MainRoot, "update-ref", *r.Pins.Head, "HEAD")
 		purgeRefused(t, ctx, dir, quarantine.ProblemPins)
 	})
 	t.Run("pin renamed in the record", func(t *testing.T) {
-		ctx, _, _, _, dir := quarantined(t, "fix/r-pinname", false)
+		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/r-pinname", false)
 		r := testkit.LoadRecord(t, dir)
 		r.Pins.Dir = "refs/heads/main"
 		if err := r.Save("test"); err != nil {
@@ -282,7 +284,7 @@ func TestPurgeRefuses(t *testing.T) {
 		dir := testkit.TrashFor(t, ctx)
 		testkit.CrashAt(t, "moveAdmin:running")
 		var buf bytes.Buffer
-		_ = RemoveAt(ctx, path, RemoveOptions{Quarantine: dir}, &buf)
+		_ = retire.RemoveAt(ctx, path, retire.RemoveOptions{Quarantine: dir}, &buf)
 		quarantine.AfterSave = nil
 		purgeRefused(t, ctx, dir, quarantine.ProblemUnsettled)
 	})
@@ -291,12 +293,12 @@ func TestPurgeRefuses(t *testing.T) {
 		dir := testkit.TrashFor(t, ctx)
 		testkit.CrashAt(t, "branch:running")
 		var buf bytes.Buffer
-		_ = RemoveAt(ctx, path, RemoveOptions{Quarantine: dir}, &buf)
+		_ = retire.RemoveAt(ctx, path, retire.RemoveOptions{Quarantine: dir}, &buf)
 		quarantine.AfterSave = nil
 		purgeRefused(t, ctx, dir, quarantine.ProblemUnsettled)
 	})
 	t.Run("restore stopped", func(t *testing.T) {
-		ctx, _, _, _, dir := quarantined(t, "fix/r-restore", false)
+		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/r-restore", false)
 		testkit.CrashAt(t, "restore.moveAdmin:done")
 		var buf bytes.Buffer
 		_ = Restore(ctx, dir, RestoreOptions{}, &buf)
@@ -304,18 +306,18 @@ func TestPurgeRefuses(t *testing.T) {
 		purgeRefused(t, ctx, dir, quarantine.ProblemUnsettled)
 	})
 	t.Run("worktree registered inside", func(t *testing.T) {
-		ctx, _, _, _, dir := quarantined(t, "fix/r-registered", false)
+		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/r-registered", false)
 		testkit.GitIn(t, ctx.Repo.MainRoot, "worktree", "add", "-q", "--detach", filepath.Join(dir, "checkout", "nested"))
 		purgeRefused(t, ctx, dir, quarantine.ProblemRegistered)
 	})
 	t.Run("worktree locked for it", func(t *testing.T) {
-		ctx, path, _, _, dir := quarantined(t, "fix/r-locked", false)
+		ctx, path, _, _, dir := retiretest.Quarantined(t, "fix/r-locked", false)
 		restore(t, ctx, dir)
 		testkit.GitIn(t, ctx.Repo.MainRoot, "worktree", "lock", "--reason", quarantine.LockReason(dir), path)
 		purgeRefused(t, ctx, dir, quarantine.ProblemLocked)
 	})
 	t.Run("inside a checkout", func(t *testing.T) {
-		ctx, _, _, _, dir := quarantined(t, "fix/r-inside", false)
+		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/r-inside", false)
 		inside := filepath.Join(ctx.Repo.MainRoot, "trash")
 		if err := os.Rename(dir, inside); err != nil {
 			t.Fatal(err)
@@ -330,7 +332,7 @@ func TestPurgeRefuses(t *testing.T) {
 // --expect holds the purge to the plan a tool read: a pin moved since
 // refuses it, the plan's own token purges.
 func TestPurgeExpectHoldsItToThePlan(t *testing.T) {
-	ctx, _, _, _, dir := quarantined(t, "fix/expect", false)
+	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/expect", false)
 	var plan bytes.Buffer
 	if err := QuarantinePurgePlanJSON(dir, &plan, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
@@ -365,7 +367,7 @@ func TestPurgeExpectHoldsItToThePlan(t *testing.T) {
 // The question is asked once; no is nothing deleted, and with nobody to ask
 // and no --yes the purge refuses.
 func TestPurgeAsksAndRefusesWithNobodyToAsk(t *testing.T) {
-	ctx, _, _, _, dir := quarantined(t, "fix/ask", false)
+	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/ask", false)
 	var buf bytes.Buffer
 	asked := 0
 	no := func() bool { asked++; return false }
@@ -391,7 +393,7 @@ func TestPurgeAsksAndRefusesWithNobodyToAsk(t *testing.T) {
 // The plan asked about is the one purged: a pin that moved while the
 // question was open refuses the purge.
 func TestPurgeReadsThePlanAgainAfterTheQuestion(t *testing.T) {
-	ctx, _, _, _, dir := quarantined(t, "fix/ask-changed", false)
+	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/ask-changed", false)
 	r := testkit.LoadRecord(t, dir)
 	yes := func() bool {
 		testkit.GitIn(t, ctx.Repo.MainRoot, "update-ref", "-d", *r.Pins.Head)
@@ -407,7 +409,7 @@ func TestPurgeReadsThePlanAgainAfterTheQuestion(t *testing.T) {
 }
 
 func TestPurgeJSONMatchesItsSchemas(t *testing.T) {
-	ctx, _, _, _, dir := quarantined(t, "fix/purge-json", false)
+	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/purge-json", false)
 	var plan bytes.Buffer
 	if err := QuarantinePurgePlanJSON(dir, &plan, &bytes.Buffer{}); err != nil {
 		t.Fatalf("%v\n%s", err, plan.String())
@@ -456,7 +458,7 @@ func TestPurgeJSONMatchesItsSchemas(t *testing.T) {
 // The journal a purge writes when a signal ends it reads each pin and the
 // folder as they are.
 func TestPurgeJournalWritesOneObjectWhenInterrupted(t *testing.T) {
-	_, _, _, _, dir := quarantined(t, "fix/purge-signal", false)
+	_, _, _, _, dir := retiretest.Quarantined(t, "fix/purge-signal", false)
 	var out bytes.Buffer
 	j := &purgeJournal{out: &out, dir: dir, plan: quarantine.PlanPurge(dir)}
 	j.Interrupted("", "interrupted")
@@ -479,7 +481,7 @@ func TestPurgeJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 // A symlink left at the journal's temp name is replaced, never written
 // through.
 func TestPurgeNeverWritesThroughAJournalSymlink(t *testing.T) {
-	ctx, _, _, _, dir := quarantined(t, "fix/tmp-link", false)
+	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/tmp-link", false)
 	outside := filepath.Join(ctx.Repo.Parent, "precious.txt")
 	testkit.MustWrite(t, outside, "precious")
 	for _, name := range []string{quarantine.FileName + ".tmp", quarantine.PurgingName + ".tmp"} {
@@ -497,7 +499,7 @@ func TestPurgeNeverWritesThroughAJournalSymlink(t *testing.T) {
 // The folder swapped for a symlink to another while the purge runs: every
 // deletion stays inside the folder it opened, and the other is untouched.
 func TestPurgeStaysInTheFolderItOpened(t *testing.T) {
-	ctx, _, _, _, dir := quarantined(t, "fix/swapped", false)
+	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/swapped", false)
 	victim := filepath.Join(ctx.Repo.Parent, "victim")
 	testkit.MustWrite(t, filepath.Join(victim, "checkout", "precious.txt"), "precious")
 	testkit.MustWrite(t, filepath.Join(victim, "admin", "precious.txt"), "precious")
@@ -532,7 +534,7 @@ func TestPurgeStaysInTheFolderItOpened(t *testing.T) {
 // or a worktree registered inside it once the purge began, stops it.
 func TestPurgeGoesByThePlanItWasGiven(t *testing.T) {
 	t.Run("file added", func(t *testing.T) {
-		ctx, _, _, _, dir := quarantined(t, "fix/stale-file", false)
+		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/stale-file", false)
 		plan := quarantine.PlanPurge(dir)
 		testkit.MustWrite(t, filepath.Join(dir, "checkout", "sub", "new.txt"), "new")
 		if _, err := quarantine.DoPurge(plan); !errors.Is(err, quarantine.ErrPurgeChanged) {
@@ -543,7 +545,7 @@ func TestPurgeGoesByThePlanItWasGiven(t *testing.T) {
 		}
 	})
 	t.Run("worktree registered", func(t *testing.T) {
-		ctx, _, _, _, dir := quarantined(t, "fix/stale-wt", false)
+		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/stale-wt", false)
 		nested := filepath.Join(dir, "checkout", "nested")
 		t.Cleanup(func() { quarantine.AfterSave = nil })
 		quarantine.AfterSave = func(_ *quarantine.Record, at string) error {
@@ -561,7 +563,7 @@ func TestPurgeGoesByThePlanItWasGiven(t *testing.T) {
 		}
 	})
 	t.Run("restore holds the lock", func(t *testing.T) {
-		_, _, _, _, dir := quarantined(t, "fix/stale-lock", false)
+		_, _, _, _, dir := retiretest.Quarantined(t, "fix/stale-lock", false)
 		unlock, err := quarantine.LockDir(dir)
 		if err != nil {
 			t.Fatal(err)
@@ -577,7 +579,7 @@ func TestPurgeGoesByThePlanItWasGiven(t *testing.T) {
 // quarantine itself moved away: what is there is not what the removal
 // moved, and it is refused.
 func TestPurgeRefusesACopiedRecordAtAReusedPath(t *testing.T) {
-	ctx, _, _, _, dir := quarantined(t, "fix/reused", false)
+	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/reused", false)
 	record := testkit.MustRead(t, filepath.Join(dir, quarantine.FileName))
 	if err := os.Rename(dir, dir+"-away"); err != nil {
 		t.Fatal(err)
@@ -590,7 +592,7 @@ func TestPurgeRefusesACopiedRecordAtAReusedPath(t *testing.T) {
 // Named in another case on a volume that ignores case, the folder is still
 // the one a registered worktree is inside.
 func TestPurgeComparesFoldersNotSpellings(t *testing.T) {
-	ctx, _, _, _, dir := quarantined(t, "fix/cased", false)
+	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/cased", false)
 	upper := filepath.Join(filepath.Dir(dir), strings.ToUpper(filepath.Base(dir)))
 	if _, err := os.Lstat(upper); err != nil {
 		t.Skip("this volume tells case apart")
@@ -602,7 +604,7 @@ func TestPurgeComparesFoldersNotSpellings(t *testing.T) {
 // A purge begun through one spelling of the folder — a symlink on the way —
 // is finished through another: the record keeps the folder it names.
 func TestPurgeBegunThroughAnAliasIsFinishedThroughTheName(t *testing.T) {
-	ctx, _, _, _, dir := quarantined(t, "fix/alias", false)
+	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/alias", false)
 	link := filepath.Join(ctx.Repo.Parent, "trash-link")
 	if err := os.Symlink(filepath.Dir(dir), link); err != nil {
 		t.Fatal(err)
@@ -617,7 +619,7 @@ func TestPurgeBegunThroughAnAliasIsFinishedThroughTheName(t *testing.T) {
 
 // A pin git cannot read is not taken for one that is gone.
 func TestPurgeRefusesAPinItCannotRead(t *testing.T) {
-	ctx, _, _, _, dir := quarantined(t, "fix/broken-pin", false)
+	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/broken-pin", false)
 	r := testkit.LoadRecord(t, dir)
 	testkit.MustWrite(t, filepath.Join(ctx.Repo.MainRoot, ".git", *r.Pins.Head), "garbage\n")
 	purgeRefused(t, ctx, dir, quarantine.ProblemPinsUnreadable)
@@ -628,17 +630,17 @@ func TestPurgeRefusesAPinItCannotRead(t *testing.T) {
 // deeper, where a record of one is found.
 func TestPurgeNeverDeletesAQuarantineInsideIt(t *testing.T) {
 	t.Run("beside the record of a restored one", func(t *testing.T) {
-		ctx, _, _, _, dir := quarantined(t, "fix/outer-restored", false)
+		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/outer-restored", false)
 		restore(t, ctx, dir)
-		_, _, _, _, inner := quarantined(t, "fix/inner-a", false)
+		_, _, _, _, inner := retiretest.Quarantined(t, "fix/inner-a", false)
 		if err := os.Rename(inner, filepath.Join(dir, "inner")); err != nil {
 			t.Fatal(err)
 		}
 		purgeRefused(t, ctx, dir, quarantine.ProblemForeignEntry)
 	})
 	t.Run("inside the quarantined checkout", func(t *testing.T) {
-		ctx, _, _, _, dir := quarantined(t, "fix/outer-q", false)
-		_, _, _, _, inner := quarantined(t, "fix/inner-b", false)
+		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/outer-q", false)
+		_, _, _, _, inner := retiretest.Quarantined(t, "fix/inner-b", false)
 		if err := os.MkdirAll(filepath.Join(dir, "checkout", "sub"), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -648,7 +650,7 @@ func TestPurgeNeverDeletesAQuarantineInsideIt(t *testing.T) {
 		purgeRefused(t, ctx, dir, quarantine.ProblemNestedQuarantine)
 	})
 	t.Run("a project file named recovery.json is not one", func(t *testing.T) {
-		ctx, _, _, _, dir := quarantined(t, "fix/outer-file", false)
+		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/outer-file", false)
 		testkit.MustWrite(t, filepath.Join(dir, "checkout", quarantine.FileName), `{"name":"not wt's"}`)
 		purge(t, dir)
 		testkit.AssertPurged(t, ctx, dir)
@@ -658,11 +660,11 @@ func TestPurgeNeverDeletesAQuarantineInsideIt(t *testing.T) {
 // wt remove --move-to refuses a folder inside one a worktree was moved to,
 // which a purge of that one would delete.
 func TestQuarantineRefusesAFolderInsideAQuarantine(t *testing.T) {
-	ctx, _, _, _, dir := quarantined(t, "fix/host", false)
+	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/host", false)
 	restore(t, ctx, dir)
 	_, path := provisiontest.SafetyWorktreeIn(t, ctx, "fix/guest")
 	var buf bytes.Buffer
-	err := RemoveAt(ctx, path, RemoveOptions{Quarantine: filepath.Join(dir, "inner")}, &buf)
+	err := retire.RemoveAt(ctx, path, retire.RemoveOptions{Quarantine: filepath.Join(dir, "inner")}, &buf)
 	if err == nil || !strings.Contains(err.Error()+buf.String(), "is inside "+dir+", a folder a worktree was moved to") {
 		t.Fatalf("want a refusal naming the folder it is in: %v\n%s", err, buf.String())
 	}
@@ -687,7 +689,7 @@ func TestPurgeRefusesAnEmptyFolder(t *testing.T) {
 // Its repository deleted, and the pins with it: the purge goes ahead on the
 // record alone, and says why there are no pins to delete.
 func TestPurgeAfterTheRepositoryIsGone(t *testing.T) {
-	ctx, _, _, _, dir := quarantined(t, "fix/orphaned", false)
+	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/orphaned", false)
 	if err := os.RemoveAll(ctx.Repo.MainRoot); err != nil {
 		t.Fatal(err)
 	}

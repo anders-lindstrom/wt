@@ -1,4 +1,6 @@
-package commands
+// Package retire implements wt remove and wt sweep: taking a worktree away,
+// or putting it in quarantine, once nothing in it would be lost.
+package retire
 
 import (
 	"errors"
@@ -366,8 +368,8 @@ func removeWorktreeResult(ctx *kit.Context, wt repo.Worktree, opts RemoveOptions
 	plan.Render(w)
 	if opts.Expect != "" || opts.Journal != nil {
 		token := removeToken(ctx, plan)
-		opts.Journal.planned(ctx, plan, deref(token))
-		if opts.Expect != "" && deref(token) != opts.Expect {
+		opts.Journal.planned(ctx, plan, Deref(token))
+		if opts.Expect != "" && Deref(token) != opts.Expect {
 			return res, errRemovePlanChanged
 		}
 	}
@@ -477,7 +479,7 @@ func planFor(ctx *kit.Context, wt repo.Worktree, opts RemoveOptions) Plan {
 		// leaving it behind because wt did not make it only leaves litter.
 		p.Outcome = BranchDeleted
 	case p.Merge == MergeUnknown && !branchIsOurs(ctx, p.Branch):
-		p.Reason = "not created by wt, and " + noTrunkHere(ctx.Config.MainBranch) +
+		p.Reason = "not created by wt, and " + NoTrunkHere(ctx.Config.MainBranch) +
 			" to compare it with"
 	case !branchIsOurs(ctx, p.Branch):
 		p.Reason = "not created by wt and not merged"
@@ -509,7 +511,7 @@ func processesIn(path string, scan func() (*wtsync.ProcessScan, error), agents [
 		if agentsErr != nil {
 			return nil, fmt.Errorf("cannot tell which are agent sessions: %w", agentsErr)
 		}
-		scan = func() (*wtsync.ProcessScan, error) { return scanProcesses(agents) }
+		scan = func() (*wtsync.ProcessScan, error) { return ScanProcesses(agents) }
 	}
 	s, err := scan()
 	if err != nil {
@@ -518,14 +520,14 @@ func processesIn(path string, scan func() (*wtsync.ProcessScan, error), agents [
 	return s.In(path), nil
 }
 
-// scanProcesses reads the process table. A var so the package's tests stay
+// ScanProcesses reads the process table. A var so the package's tests stay
 // off the machine's own processes until one starts a process of its own.
-var scanProcesses = wtsync.ScanProcesses
+var ScanProcesses = wtsync.ScanProcesses
 
 // reapProcesses ends processes, and reapGrace is how long SIGTERM has
 // before SIGKILL. Vars so a test can have a process that will not die.
 var (
-	reapProcesses = wtsync.Reap
+	ReapProcesses = wtsync.Reap
 	reapGrace     = 5 * time.Second
 )
 
@@ -950,7 +952,7 @@ func mergeStanding(ctx *kit.Context, branch string) standing {
 		return s
 	}
 	s.Tip = tip
-	bases, err := trunkBases(ctx)
+	bases, err := TrunkBases(ctx)
 	if err != nil {
 		return s
 	}
@@ -1041,8 +1043,8 @@ func worktreeGone(ctx *kit.Context, path string) bool {
 	return !ok
 }
 
-// noTrunkHere says there is nothing to compare a branch with.
-func noTrunkHere(trunk string) string {
+// NoTrunkHere says there is nothing to compare a branch with.
+func NoTrunkHere(trunk string) string {
 	return "neither origin/" + trunk + " nor " + trunk + " is here"
 }
 
@@ -1249,7 +1251,7 @@ func (p Plan) standing() string {
 	case p.Merge == Unmerged:
 		return "not merged: " + aheadOf(p.Ahead, p.Base)
 	}
-	return noTrunkHere(p.MainBranch) + " to compare with"
+	return NoTrunkHere(p.MainBranch) + " to compare with"
 }
 
 // aheadOf counts the work at stake: n commits base does not have. A branch
@@ -1635,7 +1637,7 @@ func (p Plan) clearProcesses(w io.Writer) ([]wtsync.Reaped, error) {
 	case !p.Reap:
 		return nil, fmt.Errorf("%s running in it; --reap stops them", processesLabel(procs))
 	}
-	reaped := reapProcesses(procs, reapGrace)
+	reaped := ReapProcesses(procs, reapGrace)
 	var stuck []wtsync.Process
 	for _, r := range reaped {
 		mark := "-"

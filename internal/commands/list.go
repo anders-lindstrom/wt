@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -276,10 +277,10 @@ func checkoutState(path string) string {
 // statusBase is the trunk status compares with: the first of trunkBases,
 // origin/<trunk> as last fetched when it is there. ok is false when neither
 // it nor the local trunk exists.
-func statusBase(ctx *kit.Context) (TrunkBase, bool) {
-	bases, err := trunkBases(ctx)
+func statusBase(ctx *kit.Context) (retire.TrunkBase, bool) {
+	bases, err := retire.TrunkBases(ctx)
 	if err != nil {
-		return TrunkBase{}, false
+		return retire.TrunkBase{}, false
 	}
 	return bases[0], true
 }
@@ -287,10 +288,10 @@ func statusBase(ctx *kit.Context) (TrunkBase, bool) {
 // statusHeader is the first line of wt status: the ref compared with, and
 // for origin/<trunk> how long ago it was fetched, as wt sync --no-fetch says
 // it.
-func statusHeader(ctx *kit.Context, base TrunkBase, ok bool) string {
+func statusHeader(ctx *kit.Context, base retire.TrunkBase, ok bool) string {
 	switch {
 	case !ok:
-		return noTrunkHere(ctx.Config.MainBranch) + " to compare with"
+		return retire.NoTrunkHere(ctx.Config.MainBranch) + " to compare with"
 	case strings.HasPrefix(base.Name, "origin/"):
 		return "against " + base.Name + ", " + lastFetched(ctx.Repo.MainRoot, time.Now())
 	}
@@ -300,7 +301,7 @@ func statusHeader(ctx *kit.Context, base TrunkBase, ok bool) string {
 // trunkStanding counts what branch and base have that the other does not,
 // with one rev-list, the count every sync verb reads. ok is false when the
 // count cannot be read, or there is no base to count against.
-func trunkStanding(ctx *kit.Context, base TrunkBase, ok bool, branch string) (behind, ahead int, counted bool) {
+func trunkStanding(ctx *kit.Context, base retire.TrunkBase, ok bool, branch string) (behind, ahead int, counted bool) {
 	if !ok {
 		return 0, 0, false
 	}
@@ -409,12 +410,12 @@ func keyWidth(rows [][]string) int {
 
 // trunkFact is the trunk line of one worktree: the counts, the ref they are
 // against, and for origin/<trunk> how old the fetch is.
-func trunkFact(ctx *kit.Context, base TrunkBase, ok bool, wt repo.Worktree) string {
+func trunkFact(ctx *kit.Context, base retire.TrunkBase, ok bool, wt repo.Worktree) string {
 	if wt.Branch == "" {
 		return "-"
 	}
 	if !ok {
-		return noTrunkHere(ctx.Config.MainBranch) + " to compare with"
+		return retire.NoTrunkHere(ctx.Config.MainBranch) + " to compare with"
 	}
 	behind, ahead, counted := trunkStanding(ctx, base, ok, wt.Branch)
 	if !counted {

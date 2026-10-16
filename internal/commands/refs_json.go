@@ -8,6 +8,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
+	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/schema"
 )
 
@@ -261,7 +262,7 @@ func (j *RefsJournal) settle(id string, st refState) {
 	defer j.mu.Unlock()
 	j.inFlight = ""
 	if it := j.byID[id]; it != nil {
-		settleRefItem(it, deref(j.res.RunID), st)
+		settleRefItem(it, retire.Deref(j.res.RunID), st)
 	}
 }
 
@@ -323,14 +324,14 @@ func (j *RefsJournal) write(signalled bool, recovery string) {
 			// lock while running one.
 			if it := j.byID[j.inFlight]; it != nil {
 				r := j.rows[j.inFlight]
-				pin := deref(it.Pin)
+				pin := retire.Deref(it.Pin)
 				var st refState
 				if refpins.RemoteKind(r.Kind) {
 					st = readRemoteState(j.root, j.url, r, pin)
 				} else {
 					st = readLocalState(j.root, r, pin)
 				}
-				settleRefItem(it, deref(j.res.RunID), st)
+				settleRefItem(it, retire.Deref(j.res.RunID), st)
 				it.Result, it.Reason = RefInterrupted, nil
 			}
 			j.res.Outcome, j.res.Recovery = kit.OutcomeInterrupted, kit.Strp(recovery)

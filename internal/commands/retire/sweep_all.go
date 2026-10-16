@@ -1,4 +1,4 @@
-package commands
+package retire
 
 import (
 	"bytes"
@@ -149,15 +149,15 @@ func planRepoSweep(t kit.RepoTarget, opts SweepOptions, listErr error, log io.Wr
 	if err := sweepGuard(ctx); err != nil {
 		return nil, SweepPlan{}, err
 	}
-	if err := sweepFetch(ctx, opts.NoFetch, log); err != nil {
+	if err := SweepFetch(ctx, opts.NoFetch, log); err != nil {
 		return nil, SweepPlan{}, err
 	}
-	bases, err := trunkBases(ctx)
+	bases, err := TrunkBases(ctx)
 	if err != nil {
 		return nil, SweepPlan{}, err
 	}
 	list := func() ([]wtsync.Agent, error) { return opts.Agents, listErr }
-	plan, err := planSweep(ctx, bases, list, opts.pullRequests(ctx), opts.Reap)
+	plan, err := PlanSweep(ctx, bases, list, opts.pullRequests(ctx), opts.Reap)
 	return ctx, plan, err
 }
 
@@ -168,7 +168,7 @@ func sweepCounts(branches, worktrees int) string {
 		parts = append(parts, branchCount(branches))
 	}
 	if worktrees > 0 {
-		parts = append(parts, worktreeCount(worktrees))
+		parts = append(parts, WorktreeCount(worktrees))
 	}
 	return strings.Join(parts, " and ")
 }
