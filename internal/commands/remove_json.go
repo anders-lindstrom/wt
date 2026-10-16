@@ -94,6 +94,22 @@ type RemoveProblem struct {
 	ForceWith *string `json:"forceWith"`
 }
 
+// RemoveProcess is a process working in the checkout. Reap says the
+// removal ends it; without --reap it is left running.
+type RemoveProcess struct {
+	PID     int    `json:"pid"`
+	Command string `json:"command"`
+	Reap    bool   `json:"reap"`
+}
+
+// ReapedProcess is a process --reap ended, or tried to, and what that came
+// to: one of the wtsync.Reap* results.
+type ReapedProcess struct {
+	PID     int    `json:"pid"`
+	Command string `json:"command"`
+	Result  string `json:"result"`
+}
+
 // RemovePlanOutput is the one object wt remove --dry-run --json prints.
 type RemovePlanOutput struct {
 	Schema          int               `json:"schema"`
@@ -124,6 +140,8 @@ type RemovePlanOutput struct {
 	ReachError      *string           `json:"reachError"`
 	Quarantine      *string           `json:"quarantine"`
 	KeepSuperset    bool              `json:"keepSuperset"`
+	Processes       []RemoveProcess   `json:"processes"`
+	ProcessesError  *string           `json:"processesError"`
 	Force           bool              `json:"force"`
 	ForceWith       []string          `json:"forceWith"`
 	Problems        []RemoveProblem   `json:"problems"`
@@ -172,6 +190,7 @@ type RemoveOutput struct {
 	RestoreCommand []string          `json:"restoreCommand"`
 	Recovery       *string           `json:"recovery"`
 	RunID          *string           `json:"runId"`
+	Reaped         []ReapedProcess   `json:"reaped"`
 }
 
 // removeToken names a plan: the repository, trunk and the bases' commits,
@@ -236,6 +255,14 @@ func removeToken(ctx *Context, p Plan) *string {
 	field("force", strings.Join(p.Force.Names(), ","))
 	field("superset", supersetEnabled(ctx))
 	field("keepSuperset", p.KeepSuperset)
+	// The processes it ends, when it ends any: a tool that read the plan
+	// agreed to those. Without --reap they are left alone and do not count.
+	field("reap", p.Reap)
+	if p.Reap {
+		for _, pr := range p.Processes {
+			field("process", fmt.Sprint(pr.PID, " ", pr.Command()))
+		}
+	}
 	token := "1:" + hex.EncodeToString(h.Sum(nil))[:32]
 	return &token
 }
@@ -333,14 +360,34 @@ func removePlanOutput(ctx *Context, p Plan, token string) RemovePlanOutput {
 	// past — which only bare --force promises.
 	o.Force, o.ForceWith = p.Force == ForceAll, p.Force.Names()
 	o.KeepSuperset = p.KeepSuperset
+	o.Processes, o.ProcessesError = removeProcesses(p.Processes, p.Reap), strp(p.ProcessesError)
 	o.Problems = problemsOf(p)
 	return o
+}
+
+// removeProcesses is processes as --json lists them.
+func removeProcesses(procs []wtsync.Process, reap bool) []RemoveProcess {
+	out := []RemoveProcess{}
+	for _, p := range procs {
+		out = append(out, RemoveProcess{PID: p.PID, Command: p.Command(), Reap: reap})
+	}
+	return out
+}
+
+// reapedProcesses is what --reap did, as --json reports it.
+func reapedProcesses(reaped []wtsync.Reaped) []ReapedProcess {
+	out := []ReapedProcess{}
+	for _, r := range reaped {
+		out = append(out, ReapedProcess{PID: r.PID, Command: r.Command(), Result: r.Result})
+	}
+	return out
 }
 
 func emptyRemovePlan() RemovePlanOutput {
 	return RemovePlanOutput{Schema: 1, SchemaVersion: schema.VersionOf("remove-plan"), Command: "remove",
 		Bases: []SweepBase{}, HiddenFiles: []string{}, MovedSubmodules: []string{}, NestedWorktrees: []string{},
-		Sessions: []RemoveSession{}, Unreachable: []RemoveLost{}, ForceWith: []string{}, Problems: []RemoveProblem{}}
+		Sessions: []RemoveSession{}, Unreachable: []RemoveLost{}, Processes: []RemoveProcess{}, ForceWith: []string{},
+		Problems: []RemoveProblem{}}
 }
 
 // RemovePlanJSON writes wt remove --dry-run --json: the plan, its problems
@@ -484,7 +531,11 @@ func (j *RemoveJournal) write(res *RemoveResult, err error, recovery string) {
 func removeOutput(ctx *Context, plan *Plan, token, runID string, started bool, res *RemoveResult, err error,
 	recovery string) RemoveOutput {
 	o := RemoveOutput{Schema: 1, SchemaVersion: schema.VersionOf("remove"), Command: "remove",
-		Token: strp(token), Problems: []RemoveProblem{}, Forced: []string{}, Recovery: strp(recovery)}
+		Token: strp(token), Problems: []RemoveProblem{}, Forced: []string{}, Recovery: strp(recovery),
+		Reaped: []ReapedProcess{}}
+	if res != nil {
+		o.Reaped = reapedProcesses(res.Reaped)
+	}
 	if err != nil {
 		o.Error = strp(err.Error())
 	}

@@ -11,7 +11,7 @@ import (
 func newRemoveCmd() *cobra.Command {
 	var me bool
 	var meAt string
-	var yes, dryRun, asJSON, keepSuperset bool
+	var yes, dryRun, asJSON, keepSuperset, reap bool
 	var force []string
 	var moveTo, expect string
 	cmd := &cobra.Command{
@@ -32,8 +32,14 @@ func newRemoveCmd() *cobra.Command {
 			"--move-to <dir> moves aside for wt restore; deletion has no restore.\n" +
 			"--keep-superset leaves the workspace registration alone.\n" +
 			"\n" +
+			"Processes still working in it, a dev server or a watcher, are named\n" +
+			"and left running. --reap stops them first: SIGTERM, then SIGKILL\n" +
+			"after 5s; one that will not stop keeps the worktree. Never stopped, nor\n" +
+			"named: agent sessions, anything with a terminal (a dev server started\n" +
+			"in a terminal tab too), another user's processes.\n" +
+			"\n" +
 			"See docs/remove.md for branch decisions, refusal checks and recovery.",
-		Example: "  wt remove login-crash            # say where the branch stands, then ask\n" +
+		Example: "  wt remove login-crash --reap     # ask, then stop its dev server\n" +
 			"  wt remove . --force=idle-sessions  # the one you are in, past idle ones\n" +
 			"  wt remove login-crash --move-to ../trash/lc  # move it aside\n" +
 			"  wt remove login-crash --dry-run --json --keep-superset  # a tool's plan\n" +
@@ -73,7 +79,8 @@ func newRemoveCmd() *cobra.Command {
 				}
 				return err
 			}
-			opts := commands.RemoveOptions{Force: forced, DryRun: dryRun, Expect: expect, KeepSuperset: keepSuperset}
+			opts := commands.RemoveOptions{Force: forced, DryRun: dryRun, Expect: expect, KeepSuperset: keepSuperset,
+				Reap: reap}
 			if moveTo != "" {
 				if opts.Quarantine, err = filepath.Abs(moveTo); err != nil {
 					return err
@@ -121,6 +128,8 @@ func newRemoveCmd() *cobra.Command {
 		"move it into `dir`, a new folder, instead of deleting it; wt restore <dir> puts it back")
 	cmd.Flags().BoolVar(&keepSuperset, "keep-superset", false,
 		"leave its Superset workspace; do not ask Superset to delete it")
+	cmd.Flags().BoolVar(&reap, "reap", false,
+		"stop the processes still working in it before it goes")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print the plan, or with --yes the result, as JSON")
 	cmd.Flags().StringVar(&expect, "expect", "", "remove only if the plan still has this token")
 	cmd.MarkFlagsMutuallyExclusive("yes", "dry-run")

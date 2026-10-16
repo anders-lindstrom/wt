@@ -71,6 +71,7 @@ Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
 | `remove` 1.4.2, `remove-plan` 1.4.1, `sweep` 1.4.1, `sweep-plan` 1.5.1, `recovery` 1.2.1, `quarantine-purge-plan` 1.0.1, `quarantine-purge` 1.0.1 | | `--quarantine <dir>` on `wt remove` and `wt sweep` is spelled `--move-to <dir>`, and `wt quarantine purge <dir>` is `wt purge <dir>`. From `remove` 1.4.2 on, `--move-to` and `wt purge` exist. Wording only: every field, value and schema name is as it was |
 | `sync-run` | 1.4.1 | wording: `wt sync run` and `wt sync --run` are no longer taken, so no wt prints `command` `sync run` any more; the value stays in the schema for results saved before |
 | `new` 1.1.0, `checkout` 1.2.0 | | the `cache` step, after `config`: cloning `WORKTREE_CACHE_DIRS` copy-on-write. `steps` holds eight steps where it held seven |
+| `remove-plan`, `remove` | 1.5.0 | [`--reap`](#processes--what-still-runs-in-a-worktree): `processes` and `processesError` in the plan, `reaped` in the result, the problem `processesUnknown` |
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
 
@@ -1773,6 +1774,8 @@ worktree, the main checkout), with the worktree fields null.
 | `reachError` | string \| null | why that could not be worked out |
 | `quarantine` | string \| null | with `--move-to <dir>`, the folder |
 | `keepSuperset` | bool | since 1.1.0: `--keep-superset` was given: the Superset workspace is left, and Superset is not asked |
+| `processes` | array | since 1.5.0: `{pid, command, reap}` for each [process still working in the checkout](#processes--what-still-runs-in-a-worktree); `reap` is true with `--reap`, which ends it before the checkout goes, and false without, when it is left running |
+| `processesError` | string \| null | since 1.5.0: why they could not be found; with `--reap` that refuses (`processesUnknown`) |
 | `force` | bool | bare `--force` was given: the problems with `force` true do not refuse. False for `--force=<list>`, which `forceWith` names |
 | `forceWith` | array of string | since 1.2.0: the `--force` categories given, all five for bare `--force`; empty without it |
 | `problems` | array | every problem: `{code, message, force, forceWith}`, `force` for one `--force` goes past, `forceWith` (since 1.2.0; null when `force` is false) the category that does. The removal refuses on any, less those whose `forceWith` is in the top-level `forceWith` |
@@ -1794,6 +1797,7 @@ mean the same there:
 | `reachUnknown` | what would be lost could not be worked out |
 | `nestedWorktree` | another worktree is inside it |
 | `quarantineUnusable` | the `--move-to` folder exists, is on another volume, or is inside the repository |
+| `processesUnknown` | since 1.5.0, with `--reap`: the processes in it could not be found, or told apart from agent sessions; no `--force` goes past it |
 | `planChanged` | result only: `--expect` named another plan |
 
 `--force=<list>` names what the removal may go past, comma-separated or
@@ -1813,7 +1817,8 @@ commit its kept name holds, anything uncommitted or hidden, moved submodules, ne
 operation, the sessions by id and state (idle or busy), the lock (reason,
 pid, held), what would be lost, the `--move-to` folder or its absence, the
 `--force` categories, whether the
-Superset integration is on, and `--keep-superset`. Any difference is
+Superset integration is on, `--keep-superset`, and `--reap` with the processes
+it would end, by pid and command. Any difference is
 a different token — a new trunk commit too, since the base commit is part of
 what the removal was judged against.
 
@@ -1851,6 +1856,7 @@ with no object.
 | `restoreCommand` | array of string \| null | the argv that puts back what went: `wt restore <dir>` once a removal with `--move-to` wrote its `recovery.json`; since 1.4.0 `wt refs restore <runId> --only refs/heads/<name> --yes`, run in `repo`, for a branch moved into a pin; else `git -C <repo> branch <name> <tip>` for a branch gone from its name (renamed to `keepAs`) |
 | `recovery` | string \| null | for `interrupted`: what wt printed |
 | `runId` | string \| null | since 1.4.0: the run under `refs/wt-swept/` the deleted branch was moved into; null when it was not moved |
+| `reaped` | array | since 1.5.0, with `--reap`: `{pid, command, result}` for each process ended, or tried, right before the checkout went; empty without `--reap`, when there were none, and for `interrupted` |
 
 Since 1.4.0 a removal without `--move-to` deletes a merged branch the way a
 sweep does (see [Deleted branches are pinned](#deleted-branches-are-pinned)):
@@ -1876,11 +1882,36 @@ puts it back with the worktree.
 |---|---|
 | `removed` | the worktree is gone, or moved to its folder, and the branch step did what the plan said |
 | `removedWithBranchProblem` | the worktree is gone, and the branch `kept` |
-| `refused` | nothing changed |
+| `refused` | nothing in the repository changed; processes `reaped` lists may have been stopped |
 | `partial` | something changed and a later step failed: a `--move-to` that stopped after writing `recovery.json` (its lock and pins are taken), the second move, or the branch step (`failed`); `wt restore <dir>` puts the worktree back |
 | `interrupted` | a signal ended the run |
 
 The exit code is zero only for `removed`.
+
+### Processes — what still runs in a worktree
+
+A removal looks for the processes whose working directory is the checkout or a
+directory inside it: a dev server, a watcher, a language server. It never
+counts another user's processes, any with a controlling terminal (a shell, an
+editor in a terminal, a dev server started in a terminal tab), wt itself with its children and ancestors, or an agent
+process, Claude's or Codex's, the session running wt included. The process
+table is read with `ps`, the directories with `lsof` (or `/proc`); a process
+whose directory may not be read is not counted.
+
+Without `--reap` they are listed and left running: the removal goes ahead.
+With it they are found again right before the checkout goes and ended:
+SIGTERM, up to 5 seconds, then SIGKILL. `reaped[].result`:
+
+| Value | Meaning |
+|---|---|
+| `terminated` | it exited after SIGTERM |
+| `killed` | it outlived SIGTERM's 5 seconds, and SIGKILL ended it |
+| `gone` | it had exited before it was signalled |
+| `survived` | still running, or wt may not signal it: the removal stops, exit 1, nothing removed |
+
+Processes that cannot be found, or an agent listing that fails, refuse a
+`--reap` removal, whatever `--force` says: nothing is ended unless it is known
+not to be an agent's.
 
 ## `wt session list [<work>] --json` — a worktree's sessions
 

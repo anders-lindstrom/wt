@@ -59,6 +59,11 @@ const (
 	KeptReachUnknown         = "reachUnknown"
 	KeptSubmoduleUnreachable = "submoduleUnreachable"
 	KeptNestedWorktree       = "nestedWorktree"
+	// KeptProcesses is processes running in the worktree, which a sweep
+	// without --reap leaves alone; KeptProcessesUnknown is not being able
+	// to tell, which keeps it with --reap too.
+	KeptProcesses        = "processes"
+	KeptProcessesUnknown = "processesUnknown"
 )
 
 // What became of one item of a sweep that ran. The set is exhaustive.
