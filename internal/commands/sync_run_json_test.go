@@ -2,147 +2,35 @@ package commands
 
 import (
 	"bytes"
-	"encoding/json"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
+	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
-func decodeSyncRun(t *testing.T, out []byte) SyncRunResult {
-	t.Helper()
-	testkit.ValidateJSON(t, "sync-run", out)
-	var r SyncRunResult
-	if err := json.Unmarshal(out, &r); err != nil {
-		t.Fatalf("stdout is not one JSON object: %v\n%s", err, out)
-	}
-	return r
-}
-
-func syncRunJSON(t *testing.T, ctx *kit.Context, works []string, opts RunOptions) (SyncRunResult, error) {
+func syncResumeJSON(t *testing.T, ctx *kit.Context, work string, opts ResumeOptions) (synccmd.SyncRunResult, error) {
 	t.Helper()
 	var out, human bytes.Buffer
-	opts.Journal = NewSyncRunJournal(&out, "sync rebase")
-	err := SyncRebase(ctx, works, opts, &human)
-	return decodeSyncRun(t, out.Bytes()), err
-}
-
-func syncResumeJSON(t *testing.T, ctx *kit.Context, work string, opts ResumeOptions) (SyncRunResult, error) {
-	t.Helper()
-	var out, human bytes.Buffer
-	opts.Journal = NewSyncRunJournal(&out, "sync resume")
+	opts.Journal = synccmd.NewSyncRunJournal(&out, "sync resume")
 	err := SyncResume(ctx, work, opts, &human)
-	return decodeSyncRun(t, out.Bytes()), err
+	return synccmdtest.DecodeSyncRun(t, out.Bytes()), err
 }
 
-func syncUndoJSON(t *testing.T, ctx *kit.Context, work string, opts UndoOptions) (SyncRunResult, error) {
+func syncUndoJSON(t *testing.T, ctx *kit.Context, work string, opts UndoOptions) (synccmd.SyncRunResult, error) {
 	t.Helper()
 	var out, human bytes.Buffer
-	opts.Journal = NewSyncRunJournal(&out, "sync undo")
+	opts.Journal = synccmd.NewSyncRunJournal(&out, "sync undo")
 	err := SyncUndo(ctx, work, opts, &human)
-	return decodeSyncRun(t, out.Bytes()), err
-}
-
-// A finished rebase says where the old tip is pinned, what each deferred
-// step did, and how to take it all back.
-func TestSyncRunJSONReportsTheSafetyRefDeferredStepsAndUndo(t *testing.T) {
-	if testing.Short() {
-		t.Skip("integration: a sync run over real repositories and worktrees")
-	}
-	ctx, bump := provisiontest.RunFixture(t, true)
-	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
-	r, err := syncRunJSON(t, ctx, []string{"bump"}, noAgents())
-	if err != nil || r.Outcome != kit.OutcomeDone || r.Command != "sync rebase" || r.Repo == nil || *r.Repo != ctx.Repo.MainRoot ||
-		len(r.Worktrees) != 1 {
-		t.Fatalf("%v %+v", err, r)
-	}
-	p := r.Worktrees[0]
-	if p.Result != ResultRebased || p.Before == nil || *p.Before != old || p.After == nil || *p.After != testkit.GitOut(t, bump, "rev-parse", "HEAD") {
-		t.Errorf("participant %+v", p)
-	}
-	if p.SafetyRef == nil || *p.SafetyRef != wtsync.SafetyRef("feat_wt/bump", 99) {
-		t.Errorf("safety ref %v", p.SafetyRef)
-	}
-	if !slices.Equal(p.UndoCommand, []string{"wt", "sync", "undo", "bump"}) {
-		t.Errorf("undo %q", p.UndoCommand)
-	}
-	if len(p.Deferred) != 1 || p.Deferred[0].Step != "cp v.txt gen.txt" || p.Deferred[0].Result != DeferredCommitted ||
-		p.Deferred[0].Commit == nil {
-		t.Errorf("deferred %+v", p.Deferred)
-	}
-	if p.Pushed || len(p.PushCommand) == 0 {
-		t.Errorf("push %v %q", p.Pushed, p.PushCommand)
-	}
-}
-
-// --expect on a run holds it to the overview wt sync --json printed: a
-// stack that grew since is refused with nothing touched; the overview as
-// read runs.
-func TestSyncRunJSONExpectHoldsTheRunToTheOverview(t *testing.T) {
-	if testing.Short() {
-		t.Skip("integration: a sync run over real repositories and worktrees")
-	}
-	ctx, bump := provisiontest.RunFixture(t, false)
-	token := *overviewJSON(t, ctx).Token
-	provisiontest.StackFixture(t, ctx)
-	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
-	opts := noAgents()
-	opts.Expect = token
-	for _, works := range [][]string{nil, {"bump"}} {
-		r, err := syncRunJSON(t, ctx, works, opts)
-		if err == nil || r.Outcome != kit.OutcomeRefused || r.Error == nil || len(r.Worktrees) != 0 {
-			t.Fatalf("%v: a grown stack is refused before any participant: %v %+v", works, err, r)
-		}
-		if testkit.GitOut(t, bump, "rev-parse", "HEAD") != old {
-			t.Fatal("the worktree moved")
-		}
-	}
-	opts.Expect = *overviewJSON(t, ctx).Token
-	if r, err := syncRunJSON(t, ctx, nil, opts); err != nil || r.Outcome != kit.OutcomeDone || len(r.Worktrees) != 2 {
-		t.Fatalf("the overview as read runs: %v %+v", err, r)
-	}
-}
-
-// A contested stop handed over: its plan, its safety ref and both ways on.
-func TestSyncRunJSONReportsAHandover(t *testing.T) {
-	if testing.Short() {
-		t.Skip("integration: a sync run over real repositories and worktrees")
-	}
-	ctx, bump := provisiontest.ContestedFixture(t)
-	r, err := syncRunJSON(t, ctx, []string{"bump"}, noAgents())
-	if err == nil || r.Outcome != kit.OutcomePartial || len(r.Worktrees) != 1 {
-		t.Fatalf("%v %+v", err, r)
-	}
-	p := r.Worktrees[0]
-	gitDir, _ := wtsync.GitDir(bump)
-	if p.Result != ResultHandedOver || p.PlanFile == nil || *p.PlanFile != wtsync.PlanPath(gitDir) ||
-		p.SafetyRef == nil || p.Recovery == nil || !slices.Equal(p.UndoCommand, []string{"wt", "sync", "undo", "bump"}) {
-		t.Errorf("participant %+v", p)
-	}
-}
-
-// Nobody said yes: nothing rebased, and the object says why.
-func TestSyncRunJSONSaysWhenNobodyConfirmed(t *testing.T) {
-	ctx, bump := provisiontest.RunFixture(t, false)
-	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
-	opts := noAgents()
-	opts.Confirm = func([]string) (bool, error) { return false, nil }
-	r, _ := syncRunJSON(t, ctx, nil, opts)
-	if r.Outcome != kit.OutcomeRefused || r.Error == nil {
-		t.Fatalf("%+v", r)
-	}
-	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != old {
-		t.Fatal("the worktree moved")
-	}
+	return synccmdtest.DecodeSyncRun(t, out.Bytes()), err
 }
 
 // Resume finishes the handover: rebased, with the run's safety ref.
 func TestSyncResumeJSONReportsTheFinishedRebase(t *testing.T) {
-	ctx, bump, _, st := handedOver(t)
+	ctx, bump, _, st := synccmdtest.HandedOver(t)
 	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
 	testkit.GitOut(t, bump, "add", "--", "a.txt")
 	r, err := syncResumeJSON(t, ctx, "bump", noResumeAgents())
@@ -150,7 +38,7 @@ func TestSyncResumeJSONReportsTheFinishedRebase(t *testing.T) {
 		t.Fatalf("%v %+v", err, r)
 	}
 	p := r.Worktrees[0]
-	if p.Result != ResultRebased || p.Work != "bump" || p.SafetyRef == nil || *p.SafetyRef != st.Safety ||
+	if p.Result != synccmd.ResultRebased || p.Work != "bump" || p.SafetyRef == nil || *p.SafetyRef != st.Safety ||
 		p.Before == nil || *p.Before != st.OldTip || p.After == nil || *p.After == st.OldTip ||
 		!slices.Equal(p.UndoCommand, []string{"wt", "sync", "undo", "bump"}) {
 		t.Errorf("participant %+v", p)
@@ -162,10 +50,10 @@ func TestSyncResumeJSONReportsARefusal(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump, gitDir, st := handedOver(t)
+	ctx, bump, gitDir, st := synccmdtest.HandedOver(t)
 	r, err := syncResumeJSON(t, ctx, "bump", noResumeAgents())
 	if err == nil || r.Outcome != kit.OutcomeRefused || len(r.Worktrees) != 1 ||
-		r.Worktrees[0].Result != ResultRefused || r.Worktrees[0].Reason == nil {
+		r.Worktrees[0].Result != synccmd.ResultRefused || r.Worktrees[0].Reason == nil {
 		t.Fatalf("%v %+v", err, r)
 	}
 	assertUntouched(t, bump, gitDir, st)
@@ -181,7 +69,7 @@ func TestSyncUndoJSONReportsWhatItPutBack(t *testing.T) {
 	ctx, bump := provisiontest.RunFixture(t, true)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	var human bytes.Buffer
-	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &human); err != nil {
+	if err := synccmd.SyncRebase(ctx, []string{"bump"}, synccmdtest.NoAgents(), &human); err != nil {
 		t.Fatalf("%v\n%s", err, human.String())
 	}
 	rebased := testkit.GitOut(t, bump, "rev-parse", "HEAD")
@@ -190,12 +78,12 @@ func TestSyncUndoJSONReportsWhatItPutBack(t *testing.T) {
 		t.Fatalf("%v %+v", err, r)
 	}
 	p := r.Worktrees[0]
-	if p.Result != ResultUndone || *p.Before != rebased || *p.After != old || p.SafetyRef == nil || p.UndoCommand != nil {
+	if p.Result != synccmd.ResultUndone || *p.Before != rebased || *p.After != old || p.SafetyRef == nil || p.UndoCommand != nil {
 		t.Errorf("participant %+v", p)
 	}
 
 	r, err = syncUndoJSON(t, ctx, "bump", noAgentsUndo())
-	if err != nil || r.Outcome != kit.OutcomeDone || len(r.Worktrees) != 1 || r.Worktrees[0].Result != ResultSkipped {
+	if err != nil || r.Outcome != kit.OutcomeDone || len(r.Worktrees) != 1 || r.Worktrees[0].Result != synccmd.ResultSkipped {
 		t.Fatalf("second undo: %v %+v", err, r)
 	}
 }
@@ -206,7 +94,7 @@ func TestSyncResumeJSONStartsFromTheBranchAsFound(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump, _, st := handedOver(t)
+	ctx, bump, _, st := synccmdtest.HandedOver(t)
 	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
 	testkit.GitOut(t, bump, "add", "--", "a.txt")
 	testkit.GitTry(t, bump, "-c", "core.editor=true", "rebase", "--continue")
@@ -225,7 +113,7 @@ func TestSyncResumeJSONSaysWhenNobodyConfirmed(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump, _, _ := handedOver(t)
+	ctx, bump, _, _ := synccmdtest.HandedOver(t)
 	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
 	testkit.GitOut(t, bump, "add", "--", "a.txt")
 	opts := noResumeAgents()
@@ -243,7 +131,7 @@ func TestSyncUndoJSONForcedNamesTheWayBackToWhatItKept(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump, _, _ := handedOver(t)
+	ctx, bump, _, _ := synccmdtest.HandedOver(t)
 	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
 	testkit.GitOut(t, bump, "add", "--", "a.txt")
 	testkit.GitOut(t, bump, "commit", "-q", "-m", "resolved by hand")
@@ -253,24 +141,7 @@ func TestSyncUndoJSONForcedNamesTheWayBackToWhatItKept(t *testing.T) {
 	if err != nil || len(r.Worktrees) != 1 {
 		t.Fatalf("%v %+v", err, r)
 	}
-	if p := r.Worktrees[0]; p.Result != ResultUndone || !slices.Equal(p.UndoCommand, []string{"wt", "sync", "undo", "bump"}) || p.Reason == nil {
+	if p := r.Worktrees[0]; p.Result != synccmd.ResultUndone || !slices.Equal(p.UndoCommand, []string{"wt", "sync", "undo", "bump"}) || p.Reason == nil {
 		t.Errorf("participant %+v", p)
-	}
-}
-
-// A signal with nothing tracked in flight — undo, between one branch and the
-// next — asks the verb which participants the signal caught changed: those
-// are interrupted, the rest stand as recorded.
-func TestJournalAsksWhatASignalCaughtChanged(t *testing.T) {
-	var out bytes.Buffer
-	j := NewSyncRunJournal(&out, "sync undo")
-	j.join("one", "feat_wt/one", "/w/one", strings.Repeat("1", 40), nil)
-	j.join("two", "feat_wt/two", "/w/two", strings.Repeat("2", 40), nil)
-	j.onSignal(func(p *SyncParticipant) bool { return p.Branch == "feat_wt/one" })
-	j.Interrupted("", "interrupted")
-	r := decodeSyncRun(t, out.Bytes())
-	if r.Outcome != kit.OutcomeInterrupted || r.Worktrees[0].Result != ResultInterrupted || r.Worktrees[0].Recovery == nil ||
-		r.Worktrees[1].Result != ResultNotRun {
-		t.Errorf("%+v %+v", r.Worktrees[0], r.Worktrees[1])
 	}
 }

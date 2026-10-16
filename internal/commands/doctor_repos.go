@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -137,7 +138,7 @@ func DoctorAll(u *config.User, sel kit.Selection, w io.Writer) error {
 			return c
 		}
 		buf.Reset()
-		if err := SyncDoctor(ctx, DoctorOptions{}, &buf); err != nil {
+		if err := synccmd.SyncDoctor(ctx, synccmd.DoctorOptions{}, &buf); err != nil {
 			c.problems++
 			c.lines = append(c.lines, "  ! sync: "+kit.OneLine(err.Error()))
 		}

@@ -1,41 +1,19 @@
 package commands
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 )
-
-// keepGOOS is the platform the keeper's start and stop check for launchd;
-// tests set it.
-var keepGOOS = runtime.GOOS
-
-// keepJob is one repository's launchd job: everything the plist is made of.
-type keepJob struct {
-	Label     string
-	PlistPath string
-	Exe       string // the wt binary, absolute
-	MainRoot  string
-	GitDir    string
-	Every     time.Duration
-	NoPush    bool
-	// Env is what the job runs with. launchd gives a job neither the shell's
-	// PATH nor its ssh settings, so start captures them.
-	Env map[string]string
-}
 
 // keepEnvNames is what start captures from the shell it runs in. PATH finds
 // git and claude (a keeper that cannot list sessions changes nothing); HOME
@@ -45,32 +23,9 @@ type keepJob struct {
 // token is never captured: a plist is a plain file in the home directory.
 var keepEnvNames = []string{"PATH", "HOME", "SSH_AUTH_SOCK", "GIT_SSH_COMMAND", "OP_AGENT_KEYFILE"}
 
-// keepJobFor names the job for ctx's repository: a label from the
-// repository's name and a hash of the main checkout's path, so two checkouts
-// of one repository get two jobs, under ~/Library/LaunchAgents.
-func keepJobFor(ctx *kit.Context) (keepJob, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return keepJob{}, err
-	}
-	sum := sha256.Sum256([]byte(ctx.Repo.MainRoot))
-	name := strings.Map(func(r rune) rune {
-		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
-			return r
-		}
-		return '-'
-	}, ctx.Repo.Name)
-	label := "se.wt.sync-keep." + name + "-" + hex.EncodeToString(sum[:4])
-	return keepJob{
-		Label:     label,
-		PlistPath: filepath.Join(home, "Library", "LaunchAgents", label+".plist"),
-		MainRoot:  ctx.Repo.MainRoot,
-	}, nil
-}
-
 // keepPlist is the job as a launchd property list.
-func keepPlist(j keepJob) string {
-	args := []string{j.Exe, "sync", "keep", "once", "--every", fmtEvery(j.Every)}
+func keepPlist(j synccmd.KeepJob) string {
+	args := []string{j.Exe, "sync", "keep", "once", "--every", synccmd.FmtEvery(j.Every)}
 	if j.NoPush {
 		args = append(args, "--no-push")
 	}
@@ -118,65 +73,6 @@ func keepPlist(j keepJob) string {
 	return b.String()
 }
 
-// launchctlDriver runs launchctl, found on the PATH each time so a test can
-// stand in for it.
-type launchctlDriver struct{}
-
-var launchctl launchctlDriver
-
-func (launchctlDriver) run(args ...string) (string, error) {
-	exe, err := exec.LookPath("launchctl")
-	if err != nil {
-		return "", errors.New("launchctl is not on the PATH")
-	}
-	out, err := exec.Command(exe, args...).CombinedOutput()
-	if err != nil {
-		text := strings.TrimSpace(string(out))
-		if text == "" {
-			text = err.Error()
-		}
-		return "", errors.New(text)
-	}
-	return strings.TrimSpace(string(out)), nil
-}
-
-func (d launchctlDriver) domain() string { return "gui/" + strconv.Itoa(os.Getuid()) }
-
-// loaded asks launchd whether the job is in the user's domain.
-func (d launchctlDriver) loaded(label string) bool {
-	_, err := d.run("print", d.domain()+"/"+label)
-	return err == nil
-}
-
-// load bootstraps the plist into the user's domain, falling back to the
-// older load verb where bootstrap is refused.
-func (d launchctlDriver) load(plist string) error {
-	_, err := d.run("bootstrap", d.domain(), plist)
-	if err == nil {
-		return nil
-	}
-	if _, lerr := d.run("load", plist); lerr == nil {
-		return nil
-	}
-	return fmt.Errorf("launchctl bootstrap: %v", err)
-}
-
-// unload takes the job out of the user's domain; a job that is not there
-// is not an error, the plist is going anyway.
-func (d launchctlDriver) unload(label, plist string) error {
-	_, err := d.run("bootout", d.domain()+"/"+label)
-	if err == nil {
-		return nil
-	}
-	if _, lerr := d.run("unload", plist); lerr == nil {
-		return nil
-	}
-	if strings.Contains(err.Error(), "No such process") || strings.Contains(err.Error(), "not find") {
-		return nil
-	}
-	return fmt.Errorf("launchctl bootout: %v", err)
-}
-
 // KeepStartOptions tunes SyncKeepStart.
 type KeepStartOptions struct {
 	Every  time.Duration
@@ -203,7 +99,7 @@ type keepStarter struct {
 // newKeepStarter checks the platform and the interval and captures the
 // shell's environment, once for however many repositories follow.
 func newKeepStarter(opts KeepStartOptions) (*keepStarter, error) {
-	if keepGOOS != "darwin" {
+	if synccmd.KeepGOOS != "darwin" {
 		return nil, ErrNoLaunchd
 	}
 	getenv := opts.Getenv
@@ -215,7 +111,7 @@ func newKeepStarter(opts KeepStartOptions) (*keepStarter, error) {
 		s.now = opts.Now
 	}
 	if s.every <= 0 {
-		s.every = KeepDefaultInterval
+		s.every = synccmd.KeepDefaultInterval
 	}
 	if s.every < time.Minute {
 		return nil, fmt.Errorf("--every %s is under a minute; a pass fetches trunk every time", s.every)
@@ -236,14 +132,14 @@ func newKeepStarter(opts KeepStartOptions) (*keepStarter, error) {
 }
 
 // job is ctx's job as s would install it.
-func (s *keepStarter) job(ctx *kit.Context) (keepJob, error) {
-	job, err := keepJobFor(ctx)
+func (s *keepStarter) job(ctx *kit.Context) (synccmd.KeepJob, error) {
+	job, err := synccmd.KeepJobFor(ctx)
 	if err != nil {
-		return keepJob{}, err
+		return synccmd.KeepJob{}, err
 	}
-	gitDir, _, _, err := keepPaths(ctx)
+	gitDir, _, _, err := synccmd.KeepPaths(ctx)
 	if err != nil {
-		return keepJob{}, err
+		return synccmd.KeepJob{}, err
 	}
 	job.Exe, job.GitDir, job.Every, job.NoPush, job.Env = s.exe, gitDir, s.every, s.noPush, s.env
 	return job, nil
@@ -251,8 +147,8 @@ func (s *keepStarter) job(ctx *kit.Context) (keepJob, error) {
 
 // install writes the job's plist, loads it, and records in ctx's state file
 // when the first pass is due, which it returns.
-func (s *keepStarter) install(ctx *kit.Context, job keepJob) (time.Time, error) {
-	_, _, statePath, err := keepPaths(ctx)
+func (s *keepStarter) install(ctx *kit.Context, job synccmd.KeepJob) (time.Time, error) {
+	_, _, statePath, err := synccmd.KeepPaths(ctx)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -265,17 +161,17 @@ func (s *keepStarter) install(ctx *kit.Context, job keepJob) (time.Time, error) 
 	if err := os.WriteFile(job.PlistPath, []byte(keepPlist(job)), 0o600); err != nil {
 		return time.Time{}, err
 	}
-	if err := launchctl.load(job.PlistPath); err != nil {
+	if err := synccmd.Launchctl.Load(job.PlistPath); err != nil {
 		_ = os.Remove(job.PlistPath)
 		return time.Time{}, err
 	}
 	// The state file says when the first pass is due, for the table line;
 	// what an earlier keeper recorded is kept.
-	st, _, err := readKeepState(statePath)
+	st, _, err := synccmd.ReadKeepState(statePath)
 	if err != nil {
 		return time.Time{}, err
 	}
-	st.Interval = fmtEvery(s.every)
+	st.Interval = synccmd.FmtEvery(s.every)
 	st.NextRun = s.now().Add(s.every)
 	st.Job = job.Label
 	if err := writeKeepState(statePath, st); err != nil {
@@ -302,12 +198,12 @@ func SyncKeepStart(ctx *kit.Context, opts KeepStartOptions, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	_, logPath, _, err := keepPaths(ctx)
+	_, logPath, _, err := synccmd.KeepPaths(ctx)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(w, "installed %s\n", job.PlistPath)
-	fmt.Fprintf(w, "runs wt sync keep once every %s in %s; first at %s\n", fmtEvery(s.every), ctx.Repo.MainRoot, keepClock(next, s.now()))
+	fmt.Fprintf(w, "runs wt sync keep once every %s in %s; first at %s\n", synccmd.FmtEvery(s.every), ctx.Repo.MainRoot, synccmd.KeepClock(next, s.now()))
 	fmt.Fprintln(w, keepAuthLine(job))
 	fmt.Fprintf(w, "log %s · wt sync keep status\n", logPath)
 	return nil
@@ -316,7 +212,7 @@ func SyncKeepStart(ctx *kit.Context, opts KeepStartOptions, w io.Writer) error {
 // keepAuthLine says how the job's push authenticates, from what start
 // captured: the ssh command an agent launcher set, the shell's agent
 // socket, or neither.
-func keepAuthLine(j keepJob) string {
+func keepAuthLine(j synccmd.KeepJob) string {
 	if j.NoPush {
 		return "rebases only (--no-push); the push commands go to the log"
 	}
@@ -339,10 +235,10 @@ func keepAuthLine(j keepJob) string {
 // the state file stay, so wt sync still says when the repository was last
 // kept.
 func SyncKeepStop(ctx *kit.Context, w io.Writer) error {
-	if keepGOOS != "darwin" {
+	if synccmd.KeepGOOS != "darwin" {
 		return ErrNoLaunchd
 	}
-	job, err := keepJobFor(ctx)
+	job, err := synccmd.KeepJobFor(ctx)
 	if err != nil {
 		return err
 	}
@@ -364,16 +260,16 @@ func SyncKeepStop(ctx *kit.Context, w io.Writer) error {
 // keepJobPresent says whether the job's plist is there, and whether there is
 // anything to stop at all: a plist, or a job launchd still has loaded
 // because its plist was removed by hand (it stays until logout).
-func keepJobPresent(job keepJob) (installed, present bool) {
+func keepJobPresent(job synccmd.KeepJob) (installed, present bool) {
 	_, statErr := os.Stat(job.PlistPath)
 	installed = statErr == nil
-	return installed, installed || launchctl.loaded(job.Label)
+	return installed, installed || synccmd.Launchctl.Loaded(job.Label)
 }
 
 // stopKeepJob boots the job out by its label, plist or no plist, and
 // removes the plist when there is one.
-func stopKeepJob(job keepJob, installed bool) error {
-	if err := launchctl.unload(job.Label, job.PlistPath); err != nil {
+func stopKeepJob(job synccmd.KeepJob, installed bool) error {
+	if err := synccmd.Launchctl.Unload(job.Label, job.PlistPath); err != nil {
 		return err
 	}
 	if !installed {

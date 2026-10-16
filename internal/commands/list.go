@@ -12,6 +12,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/commands/session"
+	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -293,7 +294,7 @@ func statusHeader(ctx *kit.Context, base retire.TrunkBase, ok bool) string {
 	case !ok:
 		return retire.NoTrunkHere(ctx.Config.MainBranch) + " to compare with"
 	case strings.HasPrefix(base.Name, "origin/"):
-		return "against " + base.Name + ", " + lastFetched(ctx.Repo.MainRoot, time.Now())
+		return "against " + base.Name + ", " + synccmd.LastFetched(ctx.Repo.MainRoot, time.Now())
 	}
 	return "against " + base.Name
 }
@@ -370,19 +371,19 @@ func StatusWorktree(ctx *kit.Context, arg string, opts StatusOptions, w io.Write
 		rows = append(rows, []string{"  sessions", kit.WhoLabel(s)})
 	}
 	// The branch against its own remote, as last fetched like the rest.
-	own := ownStateOf(wtsync.ReadOwnOrUnknown(ctx.Repo.MainRoot, ctx.Config.MainBranch), wt.Branch)
+	own := synccmd.OwnStateOf(wtsync.ReadOwnOrUnknown(ctx.Repo.MainRoot, ctx.Config.MainBranch), wt.Branch)
 	work := kit.WorktreeName(ctx, wt.Branch, wt.Path)
 	verdict, under, a := syncVerdict(ctx, work, wt, agents, own)
-	if line := ownLineOf(a); line != "" {
+	if line := synccmd.OwnLineOf(a); line != "" {
 		rows = append(rows, []string{"  remote", line})
 		// Said once: the row has it.
 		under = slices.DeleteFunc(under, func(l string) bool { return l == "  "+line })
 	}
-	if line := ownElsewhere(a.Own); line != "" {
+	if line := synccmd.OwnElsewhere(a.Own); line != "" {
 		rows = append(rows, []string{"  push", strings.TrimPrefix(line, "pushes ")})
 		under = slices.DeleteFunc(under, func(l string) bool { return l == "  "+line })
 	}
-	if line := ownStray(a.Own); line != "" {
+	if line := synccmd.OwnStray(a.Own); line != "" {
 		rows = append(rows, []string{"  also", line})
 	}
 	rows = append(rows, []string{"  sync", verdict})
@@ -428,7 +429,7 @@ func trunkFact(ctx *kit.Context, base retire.TrunkBase, ok bool, wt repo.Worktre
 		fact += " of " + base.Name
 	}
 	if strings.HasPrefix(base.Name, "origin/") {
-		fact += " " + lastFetchedParen(ctx.Repo.MainRoot, time.Now())
+		fact += " " + synccmd.LastFetchedParen(ctx.Repo.MainRoot, time.Now())
 	}
 	return fact
 }
@@ -441,12 +442,12 @@ func trunkFact(ctx *kit.Context, base retire.TrunkBase, ok bool, wt repo.Worktre
 // gives its reason instead.
 func syncVerdict(ctx *kit.Context, work string, wt repo.Worktree, agents []wtsync.Agent, own wtsync.OwnRemote) (line string, under []string, a wtsync.Assessment) {
 	a.Own = own
-	onto, _, cfg, err := syncDeclaration(ctx)
+	onto, _, cfg, err := synccmd.SyncDeclaration(ctx)
 	if err != nil {
 		return err.Error(), nil, a
 	}
 	a = wtsync.AssessOwn(ctx.Repo.MainRoot, onto, cfg, wt, agents, own)
-	parts := []string{classLabel(a)}
+	parts := []string{synccmd.ClassLabel(a)}
 	if a.Dirty && len(a.Sessions.Busy()) == 0 {
 		parts = append(parts, "dirty")
 	}
@@ -458,9 +459,9 @@ func syncVerdict(ctx *kit.Context, work string, wt repo.Worktree, agents []wtsyn
 		line += " · " + advice
 	}
 	if cfg == nil {
-		under = append(under, undeclaredNotice(ctx, onto))
+		under = append(under, synccmd.UndeclaredNotice(ctx, onto))
 	}
-	for _, l := range summaryLines(a) {
+	for _, l := range synccmd.SummaryLines(a) {
 		under = append(under, "  "+l)
 	}
 	under = append(under, "simulated against "+onto+" as last fetched; wt sync fetches first")
@@ -471,16 +472,16 @@ func syncVerdict(ctx *kit.Context, work string, wt repo.Worktree, agents []wtsyn
 // of this group: run it, look at its detail, or nothing for one the overview
 // skips or leaves out.
 func syncAdvice(work string, declared bool, a wtsync.Assessment) string {
-	if onTrunk(a) {
+	if synccmd.OnTrunk(a) {
 		return ""
 	}
-	switch sectionOf(a) {
-	case sectionReady:
+	switch synccmd.SectionOf(a) {
+	case synccmd.SectionReady:
 		if !declared {
-			return sectionHeading(sectionReady, false)
+			return synccmd.SectionHeading(synccmd.SectionReady, false)
 		}
 		return "wt sync rebase " + work
-	case sectionNeedsYou:
+	case synccmd.SectionNeedsYou:
 		return "wt sync " + work + " for the detail"
 	}
 	return ""

@@ -1,0 +1,742 @@
+// Package synccmd implements wt sync and wt up: the overview of what a
+// rebase onto trunk would do, the run that does it, its JSON journal, and
+// the fast-forwards, pushes and own remotes around it.
+package synccmd
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"runtime"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+	"unicode/utf8"
+
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anders-lindstrom/wt/internal/wtsync"
+)
+
+// syncFetchTimeout bounds the fetch before the overview. The overview is an
+// interactive look, so a remote that has not answered by then is reported and
+// the overview goes on with trunk as last fetched.
+const syncFetchTimeout = 45 * time.Second
+
+// SyncOptions tunes Sync and SyncWorktree.
+type SyncOptions struct {
+	// NoFetch compares with origin/<trunk> as last fetched, without reaching
+	// the network.
+	NoFetch bool
+}
+
+// shownFiles is how many files a stop names in the overview before it counts
+// the rest.
+const shownFiles = 3
+
+// Sync prints what a rebase onto trunk would do to every worktree, computed
+// by simulating each rebase in the object store, grouped by what to do about
+// it. Unless opts.NoFetch, it fetches trunk first, which moves only
+// origin/<trunk>; nothing else changes, and the verbs that do are separate
+// commands.
+func Sync(ctx *kit.Context, opts SyncOptions, w io.Writer) error {
+	// The assessments run several gits at once, and an interrupt has to
+	// reach every one of them, not only the one a goroutine is waiting on.
+	defer kit.WatchSignals(w, nil)()
+	worktrees, err := ctx.Repo.Worktrees()
+	if err != nil {
+		return err
+	}
+	worktrees = slices.DeleteFunc(worktrees, func(wt repo.Worktree) bool { return wt.IsMain })
+	onto, cfg, agents, own, err := syncInputs(ctx, opts, w, worktreeBranches(worktrees))
+	if err != nil {
+		return err
+	}
+	if line := keptLine(ctx, time.Now()); line != "" {
+		fmt.Fprintln(w, line)
+	}
+	assessments := assessAll(ctx.Repo.MainRoot, onto, cfg, worktrees, agents, own, assessWorkers)
+	entries := make([]syncEntry, 0, len(worktrees))
+	for i, wt := range worktrees {
+		entries = append(entries, syncEntry{work: kit.WorktreeName(ctx, wt.Branch, wt.Path), a: assessments[i]})
+	}
+	printOverview(w, cfg != nil, entries)
+	return nil
+}
+
+// assessWorkers is how many worktrees the overview assesses at once. An
+// assessment is a chain of short gits run one after the other, so assessed
+// one worktree at a time the overview takes the sum of every chain, and side
+// by side it takes the longest. Past four the gits contend on the object
+// store for no further gain.
+var assessWorkers = min(runtime.NumCPU(), 4)
+
+// assessAll assesses every worktree in wts, at most workers at a time, and
+// returns the assessments in the same order. Assess shares nothing between
+// worktrees: its temporary indexes and script copies are private directories,
+// and what it writes to the object store are loose objects git creates
+// atomically, never a ref. own is every branch against its own remote, read
+// before the workers start: it is one reading, not safe to share.
+func assessAll(mainRoot, onto string, cfg *wtsync.Config, wts []repo.Worktree, agents []wtsync.Agent, own *wtsync.Own, workers int) []wtsync.Assessment {
+	out := make([]wtsync.Assessment, len(wts))
+	owns := make([]wtsync.OwnRemote, len(wts))
+	for i, wt := range wts {
+		owns[i] = OwnStateOf(own, wt.Branch)
+	}
+	slots := make(chan struct{}, max(workers, 1))
+	var wg sync.WaitGroup
+	for i, wt := range wts {
+		slots <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { <-slots }()
+			out[i] = wtsync.AssessOwn(mainRoot, onto, cfg, wt, agents, owns[i])
+		}()
+	}
+	wg.Wait()
+	return out
+}
+
+// printOverview prints the entries grouped by what to do about them, in the
+// order given within each group, leaving out a current worktree nothing went
+// wrong with.
+func printOverview(w io.Writer, declared bool, entries []syncEntry) {
+	var groups [syncSections][]syncEntry
+	var all []syncEntry
+	for _, e := range entries {
+		if OnTrunk(e.a) {
+			continue
+		}
+		s := SectionOf(e.a)
+		groups[s] = append(groups[s], e)
+		all = append(all, e)
+	}
+	if len(all) == 0 {
+		fmt.Fprintln(w, "every worktree is on trunk")
+		return
+	}
+	cols := measureRows(all)
+	for s, entries := range groups {
+		if len(entries) == 0 {
+			continue
+		}
+		fmt.Fprintf(w, "\n%s\n", SectionHeading(Section(s), declared))
+		for _, e := range entries {
+			fmt.Fprintf(w, "  %s\n", cols.row(e))
+			for _, line := range SummaryLines(e.a) {
+				fmt.Fprintf(w, "    %s\n", line)
+			}
+		}
+	}
+}
+
+// SyncWorktree prints everything wt sync knows about one worktree with
+// nothing cut short, one item per line: every stop the replay reached and its
+// files, every key a collision is made of, every dependency file both sides
+// changed.
+func SyncWorktree(ctx *kit.Context, arg string, opts SyncOptions, w io.Writer) error {
+	defer kit.WatchSignals(w, nil)()
+	wt, err := kit.Locate(ctx, arg)
+	if err != nil {
+		return err
+	}
+	onto, cfg, agents, own, err := syncInputs(ctx, opts, w, []string{wt.Branch})
+	if err != nil {
+		return err
+	}
+	a := wtsync.AssessOwn(ctx.Repo.MainRoot, onto, cfg, wt, agents, OwnStateOf(own, wt.Branch))
+	printDetail(w, kit.WorktreeName(ctx, wt.Branch, wt.Path), a)
+	return nil
+}
+
+// noTrunkError is trunkTip's answer for a trunk that is not there.
+type noTrunkError struct{ onto string }
+
+func (e noTrunkError) Error() string {
+	return e.onto + " is not known here; run git fetch origin"
+}
+
+// TrunkTip is the ref every sync verb works against and the commit it
+// resolves to now. A trunk that is not there at all is the one thing none of
+// them can go on without.
+func TrunkTip(ctx *kit.Context) (onto, sha string, err error) {
+	onto = "origin/" + ctx.Config.MainBranch
+	sha, err = git.Run(ctx.Repo.MainRoot, "rev-parse", "--verify", onto)
+	if err != nil {
+		return onto, "", noTrunkError{onto}
+	}
+	return onto, sha, nil
+}
+
+// SyncDeclaration is what every assessment is made against, read from trunk
+// as it is now: the ref, its commit, and the declaration on it, nil when
+// trunk declares nothing.
+func SyncDeclaration(ctx *kit.Context) (onto, sha string, cfg *wtsync.Config, err error) {
+	cfg, err = wtsync.LoadFromTrunk(ctx.Repo.MainRoot, ctx.Config.MainBranch)
+	if err != nil && !errors.Is(err, wtsync.ErrNoConfig) {
+		return "", "", nil, err
+	}
+	onto, sha, err = TrunkTip(ctx)
+	if err != nil {
+		return "", "", nil, err
+	}
+	return onto, sha, cfg, nil
+}
+
+// UndeclaredNotice is the overview's line for a repository whose trunk
+// declares no strategies: its worktrees are assessed and never rebased.
+func UndeclaredNotice(ctx *kit.Context, onto string) string {
+	return fmt.Sprintf("%s declares no %s on %s: reported only, never rebased.",
+		ctx.Repo.Name, wtsync.ConfigFile, onto)
+}
+
+// syncInputs fetches trunk unless opts.NoFetch, and in the same call the own
+// remote of each of branches, reads what every assessment needs and prints
+// the header: the ref compared against, and a notice when trunk declares
+// nothing. A failed fetch is reported and the overview goes on with trunk,
+// and the branches' remotes, as last fetched; only a trunk that is not there
+// at all is an error. A branch whose own remote alone could not be fetched
+// says so on its row.
+func syncInputs(ctx *kit.Context, opts SyncOptions, w io.Writer, branches []string) (onto string, cfg *wtsync.Config, agents []wtsync.Agent, own *wtsync.Own, err error) {
+	if err := ctx.NoTrunk(); err != nil {
+		return "", nil, nil, nil, err
+	}
+	// Read before fetching: git empties FETCH_HEAD as a fetch starts, so a
+	// fetch that fails has already lost the age of the last one that did not.
+	asLast := LastFetched(ctx.Repo.MainRoot, time.Now())
+	var fetchErr error
+	if opts.NoFetch {
+		own = wtsync.ReadOwnOrUnknown(ctx.Repo.MainRoot, ctx.Config.MainBranch)
+	} else {
+		own, fetchErr = FetchRemotes(ctx, syncFetchTimeout, branches)
+	}
+	onto, sha, cfg, err := SyncDeclaration(ctx)
+	if err != nil {
+		var noTrunk noTrunkError
+		if fetchErr != nil && !errors.As(err, &noTrunk) {
+			fmt.Fprintf(w, "fetch failed: %s\n", kit.FetchReason(fetchErr))
+		}
+		return "", nil, nil, nil, err
+	}
+	if cfg == nil {
+		fmt.Fprintln(w, UndeclaredNotice(ctx, onto))
+		fmt.Fprintln(w)
+	}
+	agents, aerr := wtsync.ListOtherAgents()
+	if aerr != nil {
+		fmt.Fprintf(w, "note: %v\n", aerr)
+	}
+	ref := onto + " " + git.ShortID(sha, 7)
+	switch {
+	case opts.NoFetch:
+		fmt.Fprintf(w, "against %s, %s\n", ref, asLast)
+	case fetchErr != nil:
+		fmt.Fprintf(w, "fetch failed: %s; comparing with %s, %s\n", kit.FetchReason(fetchErr), ref, asLast)
+	default:
+		fmt.Fprintf(w, "against %s\n", ref)
+	}
+	return onto, cfg, agents, own, nil
+}
+
+// LastFetched is "as last fetched" and how long ago, or that when is not
+// recorded, for the headers of wt sync --no-fetch and wt status.
+func LastFetched(mainRoot string, now time.Time) string {
+	if age := fetchAge(mainRoot, now); age != "" {
+		return "as last fetched " + age
+	}
+	return "as last fetched (when is not recorded)"
+}
+
+// LastFetchedParen is lastFetched inside a parenthesis, for the lines that
+// put it after a ref: "(as last fetched 3h ago)".
+func LastFetchedParen(mainRoot string, now time.Time) string {
+	if age := fetchAge(mainRoot, now); age != "" {
+		return "(as last fetched " + age + ")"
+	}
+	return "(as last fetched; when is not recorded)"
+}
+
+// fetchAge is how long ago the repository last fetched, read from the mtime
+// of its FETCH_HEAD, which every fetch writes. Without one there is no age
+// to give, and neither is there when it is empty: git 2.55 empties it as a
+// fetch starts, so an empty one was touched by a fetch that failed. Then it
+// is "".
+func fetchAge(mainRoot string, now time.Time) string {
+	path, err := git.Run(mainRoot, "rev-parse", "--git-path", "FETCH_HEAD")
+	if err != nil {
+		return ""
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(mainRoot, path)
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Size() == 0 {
+		return ""
+	}
+	return kit.Ago(now.Sub(info.ModTime()))
+}
+
+// Section is where the overview files a worktree: what to do about it.
+type Section int
+
+// The sections of the overview, in the order it prints them.
+const (
+	SectionReady Section = iota
+	SectionNeedsYou
+	sectionSkipped
+	syncSections
+)
+
+// SectionOf follows wtsync.Preflight, except that a busy session in the
+// worktree outranks its state: whatever is in there is that session's to
+// finish, so the worktree is left be rather than put to you. An idle session
+// is filed by the class, like any other worktree.
+func SectionOf(a wtsync.Assessment) Section {
+	switch {
+	case a.Err != nil:
+		return SectionNeedsYou
+	case a.OnlyFastForward() && !a.Dirty && !a.Paused:
+		// Behind its own remote, where there is nothing to rebase: a run
+		// fast-forwards it, which no busy session, dirt or operation is in
+		// the way of, or it would not be one.
+		return SectionReady
+	case len(a.Sessions.Busy()) > 0, a.Class == wtsync.Detached, a.Class == wtsync.Stale:
+		return sectionSkipped
+	case a.Own.Refuses():
+		return SectionNeedsYou
+	case a.Class == wtsync.Clean && !a.Dirty && !a.Paused, a.Class == wtsync.Recipe && !a.Dirty && !a.Paused:
+		return SectionReady
+	}
+	return SectionNeedsYou
+}
+
+// readyToRun is what a run with nothing named takes: the ready group, less
+// recipe?, whose run may stop and hand over a plan nobody asked for.
+func readyToRun(a wtsync.Assessment) bool {
+	return SectionOf(a) == SectionReady && !a.Unverified
+}
+
+// leftLabel names a worktree a run with nothing named leaves alone, in the
+// overview's words: its class, and what holds it.
+func leftLabel(work string, a wtsync.Assessment) string {
+	if a.Err != nil {
+		return work + " error"
+	}
+	if a.Class == wtsync.Detached {
+		return work + " no branch"
+	}
+	parts := []string{ClassLabel(a)}
+	if len(a.Sessions) > 0 {
+		parts = append(parts, kit.WhoLabel(a.Sessions))
+	}
+	if a.Dirty {
+		parts = append(parts, "dirty")
+	}
+	if a.Paused {
+		parts = append(parts, "handed over")
+	}
+	if a.Own.Refuses() {
+		parts = append(parts, ownHeld(a.Own))
+	}
+	return work + " " + strings.Join(parts, ", ")
+}
+
+// SectionHeading is the heading the overview prints over section s.
+func SectionHeading(s Section, declared bool) string {
+	switch s {
+	case SectionReady:
+		if !declared {
+			return "ready, once trunk declares " + wtsync.ConfigFile
+		}
+		return "ready · wt sync rebase <work>, or wt sync --rebase for all of them"
+	case SectionNeedsYou:
+		return "needs you · wt sync <work> for the detail"
+	}
+	return "skipped"
+}
+
+type syncEntry struct {
+	work string
+	a    wtsync.Assessment
+}
+
+// syncColumns is the width of each column of the one-line rows, measured
+// across every section so rows line up from one section to the next.
+type syncColumns struct{ work, class, behind, ahead int }
+
+func measureRows(entries []syncEntry) syncColumns {
+	var c syncColumns
+	for _, e := range entries {
+		c.work = max(c.work, utf8.RuneCountInString(e.work))
+		c.class = max(c.class, len(ClassLabel(e.a)))
+		c.behind = max(c.behind, len(strconv.Itoa(e.a.Behind)))
+		c.ahead = max(c.ahead, len(strconv.Itoa(e.a.Ahead)))
+	}
+	return c
+}
+
+// row is `work  class  N behind  M ahead`, then what keeps a run off the
+// worktree when that is not its class.
+func (c syncColumns) row(e syncEntry) string {
+	line := fmt.Sprintf("%-*s  %-*s  %*d behind  %*d ahead",
+		c.work, e.work, c.class, ClassLabel(e.a), c.behind, e.a.Behind, c.ahead, e.a.Ahead)
+	if held := heldBy(e.a); held != "" {
+		line += "  " + held
+	}
+	return line
+}
+
+// ClassLabel is the class, with a question mark when the replay could not
+// be carried to the end. `recipe?` is not `recipe`: a script owns a path,
+// and all the simulation could ask it was whether it claims the file.
+func ClassLabel(a wtsync.Assessment) string {
+	if a.Unverified {
+		return a.Class.String() + "?"
+	}
+	return a.Class.String()
+}
+
+// heldBy is who and what is in the worktree: its sessions, and its dirt
+// unless a busy session already keeps a run off it.
+func heldBy(a wtsync.Assessment) string {
+	var held []string
+	if len(a.Sessions) > 0 {
+		held = append(held, kit.WhoLabel(a.Sessions))
+	}
+	if a.Dirty && len(a.Sessions.Busy()) == 0 {
+		held = append(held, "dirty")
+	}
+	if a.Own.Refuses() {
+		held = append(held, ownHeld(a.Own))
+	}
+	return strings.Join(held, "  ")
+}
+
+// SummaryLines is the overview's detail under a row, one fact per line, with
+// every list cut to a count.
+func SummaryLines(a wtsync.Assessment) []string {
+	var lines []string
+	if a.Err != nil {
+		lines = append(lines, kit.OneLine("error: "+a.Err.Error()))
+	}
+	if a.Paused {
+		lines = append(lines, pausedLine(a))
+	}
+	if note := ownNote(a); note != "" {
+		lines = append(lines, note)
+	}
+	if note := OwnElsewhere(a.Own); note != "" {
+		lines = append(lines, note)
+	}
+	for _, c := range a.Divergent {
+		lines = append(lines, shortPath(c.Path)+": both sides changed "+wtsync.KeyCounts(c.Groups))
+	}
+	if s := stopSummary(a); s != "" {
+		lines = append(lines, s)
+	}
+	if n := len(a.Replay.Stops) - 1; a.Replay.Stop != nil && n > 0 {
+		lines = append(lines, fmt.Sprintf("%d earlier stop%s resolved", n, kit.Plural(n)))
+	}
+	for _, f := range a.Files {
+		if note := fileNote(f); note != "" {
+			lines = append(lines, kit.Truncate(kit.OneLine(shortPath(f.Path)+": "+note), kit.NoteWidth))
+		}
+	}
+	if g := a.Graph; g != nil {
+		lines = append(lines, fmt.Sprintf("dependency graph changed on both sides: %d file%s on branch, %d on trunk",
+			len(g.Branch), kit.Plural(len(g.Branch)), len(g.Trunk)))
+	}
+	for _, n := range a.Notes {
+		lines = append(lines, kit.Truncate(kit.OneLine(n), kit.NoteWidth))
+	}
+	return lines
+}
+
+// pausedLine is the row's detail for a handover: where the rebase waits, as
+// the stop line showed it before the run, then the way out. A person
+// returning cold sees the stop, the subject and the file that is theirs
+// without opening the plan.
+func pausedLine(a wtsync.Assessment) string {
+	way := wtsync.WayOut(a.Way())
+	if !a.Rebasing {
+		// Finished or aborted by hand: the stop is not waiting any more,
+		// and the sentence says which and what runs the rest.
+		return way
+	}
+	st := a.Handover
+	if st == nil {
+		return "left mid-rebase by wt sync rebase: " + way
+	}
+	line := fmt.Sprintf("at %d/%d", st.Stop, st.Total)
+	if a.Replaying != "" {
+		line += fmt.Sprintf(" %q", kit.Truncate(kit.OneLine(a.Replaying), 32))
+	}
+	if marks := fileMarks(handoverFiles(st)); marks != "" {
+		line += "  " + marks
+	}
+	return line + "  waits on you: " + way
+}
+
+// handoverFiles is a handover's files as outcomes: the person's unresolved,
+// the strategies' resolved, so the row and the detail mark them as a stop's.
+func handoverFiles(st *wtsync.State) []wtsync.FileOutcome {
+	var files []wtsync.FileOutcome
+	for _, p := range st.Left {
+		files = append(files, wtsync.FileOutcome{Path: p})
+	}
+	for _, p := range st.ResolvedPaths() {
+		f := wtsync.FileOutcome{Path: p, Strategy: st.Strategy[p], Resolved: true}
+		if note, ok := st.Lifted[p]; ok {
+			f.Lifted, f.Note = true, note
+		}
+		files = append(files, f)
+	}
+	for _, p := range st.Deleted {
+		files = append(files, wtsync.FileOutcome{Path: p, Strategy: st.Strategy[p], Resolved: true})
+	}
+	return files
+}
+
+// stopSummary is the stop that decides the class: the one a person owns, with
+// its subject and files, or, when every stop resolved, how many there were
+// and the files of the first.
+func stopSummary(a wtsync.Assessment) string {
+	if stop := a.Replay.Stop; stop != nil {
+		return strings.TrimSpace(fmt.Sprintf("%d/%d %q  %s",
+			stop.Index, stop.Total, kit.Truncate(kit.OneLine(stop.Subject), 32), fileMarks(a.Files)))
+	}
+	n := len(a.Replay.Stops)
+	if n == 0 {
+		return ""
+	}
+	first := a.Replay.Stops[0]
+	lead := fmt.Sprintf("1 stop, resolved · %d/%d", first.Index, first.Total)
+	if n > 1 {
+		lead = fmt.Sprintf("%d stops, all resolved · first %d/%d", n, first.Index, first.Total)
+	}
+	if marks := fileMarks(a.Files); marks != "" {
+		return lead + ": " + marks
+	}
+	return lead
+}
+
+// fileMarks names a stop's files marked ✓ resolved or ✗ yours, the ones that
+// are yours first, and counts the rest past shownFiles.
+func fileMarks(files []wtsync.FileOutcome) string {
+	sorted := slices.Clone(files)
+	slices.SortStableFunc(sorted, func(x, y wtsync.FileOutcome) int {
+		switch {
+		case x.Resolved == y.Resolved:
+			return 0
+		case !x.Resolved:
+			return -1
+		}
+		return 1
+	})
+	shown := sorted
+	if len(sorted) > shownFiles {
+		shown = sorted[:shownFiles-1]
+	}
+	parts := make([]string, 0, len(shown)+1)
+	for _, f := range shown {
+		parts = append(parts, shortPath(f.Path)+fileMark(f.Resolved))
+	}
+	if rest := len(sorted) - len(shown); rest > 0 {
+		parts = append(parts, fmt.Sprintf("+%d more", rest))
+	}
+	return strings.Join(parts, " ")
+}
+
+func fileMark(resolved bool) string {
+	if resolved {
+		return "✓"
+	}
+	return "✗"
+}
+
+// fileNote is why a file a strategy refused is yours, when that is more than
+// nothing claiming it.
+func fileNote(f wtsync.FileOutcome) string {
+	switch {
+	case f.Lifted && f.Resolved:
+		// Nobody conflicted on it and the version rule still rewrote it:
+		// the one resolution worth a line of its own in the overview.
+		return f.By()
+	case f.Resolved, f.Note == "", f.Note == "unclaimed":
+		return ""
+	case len(f.Groups) > 0:
+		return "both sides changed " + wtsync.KeyCounts(f.Groups)
+	}
+	return f.Note
+}
+
+// printDetail is wt sync <work>: the row, where the worktree is and what a run
+// would do with it, then each kind of finding under its own heading.
+func printDetail(w io.Writer, work string, a wtsync.Assessment) {
+	e := syncEntry{work: work, a: a}
+	fmt.Fprintf(w, "\n%s\n", measureRows([]syncEntry{e}).row(e))
+	branch := a.Branch
+	if branch == "" {
+		branch = "(detached)"
+	}
+	fmt.Fprintf(w, "  branch  %s\n", branch)
+	fmt.Fprintf(w, "  path    %s\n", a.Path)
+	if line := OwnLineOf(a); line != "" {
+		fmt.Fprintf(w, "  remote  %s\n", line)
+	}
+	if line := OwnElsewhere(a.Own); line != "" {
+		fmt.Fprintf(w, "  push    %s\n", strings.TrimPrefix(line, "pushes "))
+	}
+	if line := OwnStray(a.Own); line != "" {
+		fmt.Fprintf(w, "  also    %s\n", line)
+	}
+	fmt.Fprintf(w, "  run     %s\n", runVerdict(work, a))
+	if a.PlanFile != "" {
+		fmt.Fprintf(w, "  plan    %s\n", a.PlanFile)
+	}
+
+	if a.Err != nil {
+		fmt.Fprintln(w, "\nerror")
+		printLines(w, 1, a.Err.Error())
+	}
+	if st := a.Handover; st != nil && a.Rebasing {
+		// The stop the run handed over, as the plan file lists it: what is
+		// the person's, and what the strategies already staged. Once the
+		// rebase is finished or aborted by hand the stop is not live, and
+		// the run line says what is.
+		head := fmt.Sprintf("handed over at %d/%d", st.Stop, st.Total)
+		if a.Replaying != "" {
+			head += "  " + kit.OneLine(a.Replaying)
+		}
+		fmt.Fprintf(w, "\n%s\n", head)
+		for _, f := range handoverFiles(st) {
+			verdict := "yours"
+			if f.Resolved {
+				verdict = fileVerdict(f)
+			}
+			fmt.Fprintf(w, "    %s %s  %s\n", fileMark(f.Resolved), f.Path, verdict)
+		}
+	}
+	if len(a.Divergent) > 0 {
+		fmt.Fprintln(w, "\ndivergent: the openapi strategy refuses these at the endpoint")
+		for _, c := range a.Divergent {
+			fmt.Fprintf(w, "  %s\n", c.Path)
+			printKeyGroups(w, 2, c.Groups)
+		}
+	}
+	if len(a.Replay.Stops) > 0 {
+		fmt.Fprintln(w, "\nstops the replay reached")
+		for _, stop := range a.Replay.Stops {
+			files, yours := stop.Files, ""
+			if a.Replay.Stop != nil && stop.Index == a.Replay.Stop.Index {
+				files, yours = a.Files, "  ← yours"
+			}
+			fmt.Fprintf(w, "  %d/%d  %s%s\n", stop.Index, stop.Total, kit.OneLine(stop.Subject), yours)
+			for _, f := range files {
+				printFileDetail(w, f)
+			}
+		}
+	}
+	if g := a.Graph; g != nil {
+		fmt.Fprintln(w, "\ndependency graph: both sides changed it")
+		printList(w, 1, "on the branch", g.Branch)
+		printList(w, 1, "on trunk", g.Trunk)
+	}
+	if len(a.Notes) > 0 {
+		fmt.Fprintln(w, "\nnotes")
+		for _, n := range a.Notes {
+			printLines(w, 1, n)
+		}
+	}
+}
+
+// runVerdict is what wt sync rebase would do with the worktree, in
+// wtsync.Preflight's words.
+func runVerdict(work string, a wtsync.Assessment) string {
+	switch v, why := wtsync.Preflight(a); v {
+	case wtsync.Proceed:
+		verdict := "wt sync rebase " + work
+		if a.OnlyFastForward() {
+			verdict += " fast-forwards it to " + a.Own.Ref + "; nothing to rebase"
+		}
+		if stop := a.Replay.Stop; a.Class == wtsync.Contested && stop != nil {
+			verdict = fmt.Sprintf("wt sync rebase %s rebases up to %d/%d and hands that stop to you", work, stop.Index, stop.Total)
+		}
+		if len(a.Sessions) > 0 {
+			verdict += "; asks first: " + kit.WhoLabel(a.Sessions) + " is in it"
+		}
+		return verdict
+	case wtsync.SkipRun:
+		return "skipped: " + why
+	default:
+		return "refused: " + why
+	}
+}
+
+// printFileDetail is one conflicted file: ✓ and the strategy that resolved
+// it — or lifted its version without any conflict — or ✗ and why it is
+// yours, then any keys it collided on.
+func printFileDetail(w io.Writer, f wtsync.FileOutcome) {
+	fmt.Fprintf(w, "    %s %s  %s\n", fileMark(f.Resolved), f.Path, fileVerdict(f))
+	if len(f.Groups) > 0 {
+		printKeyGroups(w, 3, f.Groups)
+		return
+	}
+	if _, rest, ok := strings.Cut(f.Note, "\n"); ok && !f.Resolved {
+		printLines(w, 3, rest)
+	}
+}
+
+func fileVerdict(f wtsync.FileOutcome) string {
+	first, _, _ := strings.Cut(f.Note, "\n")
+	switch {
+	case f.Lifted && f.Resolved:
+		return f.By()
+	case f.Resolved && f.Strategy != "":
+		return "resolved by " + f.Strategy
+	case f.Resolved:
+		return "resolved"
+	case f.Note == "unclaimed", f.Note == "" && f.Strategy == "":
+		return "yours: no strategy claims it"
+	case len(f.Groups) > 0:
+		return f.Strategy + " refuses: both sides changed " + wtsync.KeyCounts(f.Groups)
+	case f.Strategy != "":
+		return f.Strategy + " refuses: " + first
+	}
+	return first
+}
+
+func printKeyGroups(w io.Writer, depth int, groups []wtsync.KeyGroup) {
+	for _, g := range groups {
+		printList(w, depth, g.Section, g.Keys)
+	}
+}
+
+// printList is a label with its count, then its items one per line beneath.
+func printList(w io.Writer, depth int, label string, items []string) {
+	indent := strings.Repeat("  ", depth)
+	fmt.Fprintf(w, "%s%s (%d)\n", indent, label, len(items))
+	for _, item := range items {
+		fmt.Fprintf(w, "%s  %s\n", indent, item)
+	}
+}
+
+func printLines(w io.Writer, depth int, text string) {
+	indent := strings.Repeat("  ", depth)
+	for _, line := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
+		fmt.Fprintf(w, "%s%s\n", indent, line)
+	}
+}
+
+func shortPath(p string) string {
+	if i := strings.LastIndex(p, "/"); i >= 0 {
+		return p[i+1:]
+	}
+	return p
+}

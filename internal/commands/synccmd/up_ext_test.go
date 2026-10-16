@@ -1,0 +1,136 @@
+package synccmd_test
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/provision"
+	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
+	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/wtsync"
+)
+
+// wt up takes what the declared strategies resolve, and says it is wt up.
+func TestUpRebasesAWorktreeTheStrategiesResolve(t *testing.T) {
+	ctx, bump := provisiontest.RunFixture(t, false)
+	var out bytes.Buffer
+	if err := synccmd.Up(ctx, bump, synccmdtest.NoAgents(), &out); err != nil {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	if !strings.HasPrefix(out.String(), "wt up  onto origin/main") || !strings.Contains(out.String(), "✓ rebased 1 commit") {
+		t.Errorf("output:\n%s", out.String())
+	}
+}
+
+// A conflict that would be yours is refused untouched, and the run fails.
+func TestUpRefusesAWorktreeThatWouldHandOver(t *testing.T) {
+	ctx, bump := provisiontest.ContestedFixture(t)
+	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
+	var out bytes.Buffer
+	if err := synccmd.Up(ctx, "bump", synccmdtest.NoAgents(), &out); err == nil {
+		t.Fatalf("want a failure:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "would not sync cleanly") || testkit.GitOut(t, bump, "rev-parse", "HEAD") != old {
+		t.Errorf("want it refused and untouched:\n%s", out.String())
+	}
+}
+
+// The main checkout is trunk's own: there is nothing to bring onto it.
+func TestUpRefusesTheMainCheckout(t *testing.T) {
+	ctx, _ := provisiontest.RunFixture(t, false)
+	err := synccmd.Up(ctx, "/", synccmdtest.NoAgents(), &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "is the main checkout") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+// With no .wt-sync.yaml on trunk nothing is declared, so a conflict-free
+// rebase goes and a conflicting one is refused untouched.
+func TestUpWithoutADeclarationTakesOnlyAConflictFreeRebase(t *testing.T) {
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	main := ctx.Repo.MainRoot
+	var buf bytes.Buffer
+	free, err := provision.New(ctx, "feat/free", provision.NewOptions{NoSetup: true}, &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clash, err := provision.New(ctx, "feat/clash", provision.NewOptions{NoSetup: true}, &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write := func(dir, name, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		testkit.GitIn(t, dir, "add", name)
+		testkit.GitIn(t, dir, "commit", "-q", "-m", name+" in "+filepath.Base(dir))
+	}
+	write(free, "mine.txt", "mine\n")
+	write(clash, "shared.txt", "branch\n")
+	write(main, "shared.txt", "trunk\n")
+	testkit.GitIn(t, main, "remote", "add", "origin", main)
+	testkit.GitIn(t, main, "fetch", "-q", "origin")
+
+	var out bytes.Buffer
+	if err := synccmd.Up(ctx, "free", synccmdtest.NoAgents(), &out); err != nil {
+		t.Fatalf("a conflict-free rebase goes: %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "no .wt-sync.yaml on origin/main") || !testkit.GitAncestor(t, free, "origin/main", "HEAD") {
+		t.Errorf("not rebased:\n%s", out.String())
+	}
+	old := testkit.GitOut(t, clash, "rev-parse", "HEAD")
+	out.Reset()
+	if err := synccmd.Up(ctx, "clash", synccmdtest.NoAgents(), &out); err == nil || testkit.GitOut(t, clash, "rev-parse", "HEAD") != old {
+		t.Errorf("a conflict with nothing declared is refused untouched: %v\n%s", err, out.String())
+	}
+}
+
+// A session busy in the worktree refuses wt up; --force goes ahead, names
+// the session before anything moves, and lifts nothing else.
+func TestUpForceGoesPastABusySessionAndNothingElse(t *testing.T) {
+	ctx, bump := provisiontest.RunFixture(t, false)
+	resolved, _ := filepath.EvalSymlinks(bump)
+	opts := synccmdtest.NoAgents()
+	opts.Agents = []wtsync.Agent{{Name: "bump-1", Cwd: resolved}}
+	opts.Relist = func() ([]wtsync.Agent, error) { return opts.Agents, nil }
+	var out bytes.Buffer
+	if err := synccmd.Up(ctx, "bump", opts, &out); err == nil || !strings.Contains(out.String(), "busy in it") {
+		t.Fatalf("without --force a busy session refuses: %v\n%s", err, out.String())
+	}
+
+	opts.Force = true
+	out.Reset()
+	if err := synccmd.Up(ctx, "bump", opts, &out); err != nil {
+		t.Fatalf("--force goes past the session: %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "--force takes the run past") || !strings.Contains(out.String(), "bump-1") ||
+		!strings.Contains(out.String(), "✓ rebased 1 commit") {
+		t.Errorf("output:\n%s", out.String())
+	}
+
+	ctx, bump = provisiontest.RunFixture(t, false)
+	if err := os.WriteFile(filepath.Join(bump, "a.txt"), []byte("dirt\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := synccmd.Up(ctx, "bump", opts, &out); err == nil || !strings.Contains(out.String(), "tracked changes") {
+		t.Errorf("--force does not lift dirt: %v\n%s", err, out.String())
+	}
+}
+
+// With nothing named, --force would roll over every session at once.
+func TestSyncRunRefusesForceWithNothingNamed(t *testing.T) {
+	ctx, _ := provisiontest.RunFixture(t, false)
+	opts := synccmdtest.NoAgents()
+	opts.Force = true
+	if err := synccmd.SyncRebase(ctx, nil, opts, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "name it") {
+		t.Errorf("err = %v", err)
+	}
+}

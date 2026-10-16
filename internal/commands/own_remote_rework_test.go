@@ -2,62 +2,33 @@ package commands
 
 import (
 	"bytes"
-	"encoding/json"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/provision"
+	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
+	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
-
-// mustBeDiverged is the check every shape below ends with: one commit made
-// on a branch that no longer has its remote's commit, though a wt run once
-// fast-forwarded it there. The remote's commit is not a former tip of the
-// branch: wt put it there and wt took it away. A run refuses, and git's own
-// --force-if-includes refuses the push a person might try by hand.
-func mustBeDiverged(t *testing.T, f *trunkFixture, x string, opts RunOptions, theirs string) {
-	t.Helper()
-	testkit.Mine(t, x, "after.txt", "after\n")
-	p := planOfWork(t, f.ctx, "x")
-	if o := p.Worktree.OwnRemote; o.State != "diverged" || testkit.Str(o.Blocks) != wtsync.OwnBlockDiverged || testkit.Str(p.UpIneligibleCode) != IneligibleOwnDiverged {
-		t.Fatalf("the remote's commit reads as a former tip: %+v, code %s", o, testkit.Str(p.UpIneligibleCode))
-	}
-	r, human, err := upOut(t, f.ctx, "x", at(opts, 500))
-	if err == nil || r.Worktrees[0].Result != ResultRefused || testkit.Str(r.Worktrees[0].OwnRemoteSync.SkippedReason) != wtsync.OwnBlockDiverged {
-		t.Fatalf("a run went on over the remote's commit: %v %+v\n%s", err, r.Worktrees, human)
-	}
-	if out, err := gittest.Try(t, x, "push", "--force-with-lease", "--force-if-includes", "origin", "feat_wt/x"); err == nil {
-		t.Fatalf("git's own --force-if-includes let the push through:\n%s", out)
-	}
-	if got := testkit.GitOut(t, f.origin, "rev-parse", "refs/heads/feat_wt/x"); got != theirs {
-		t.Fatalf("origin's branch is at %s, want it still at %s", got, theirs)
-	}
-}
 
 // Behind, fast-forwarded and rebased by a run, then undone.
 func TestAFastForwardThatWasUndoneLeavesNoFormerTip(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
-	f := newTrunkFixture(t)
-	x, opts := f.pushedWork(t)
+	f := synccmdtest.NewTrunkFixture(t)
+	x, opts := f.PushedWork(t)
 	before := testkit.GitOut(t, x, "rev-parse", "HEAD")
-	theirs := f.theirs(t, "feat_wt/x", "t.txt", "t\n")
-	f.advanceOrigin(t, 1)
-	if r, human, err := upOut(t, f.ctx, "x", opts); err != nil || !r.Worktrees[0].OwnRemoteSync.FastForwarded {
+	theirs := f.Theirs(t, "feat_wt/x", "t.txt", "t\n")
+	f.AdvanceOrigin(t, 1)
+	if r, human, err := synccmdtest.UpOut(t, f.Ctx, "x", opts); err != nil || !r.Worktrees[0].OwnRemoteSync.FastForwarded {
 		t.Fatalf("%v\n%s", err, human)
 	}
 	var out bytes.Buffer
-	if err := SyncUndo(f.ctx, "x", UndoOptions{verbOptions: opts.verbOptions}, &out); err != nil || testkit.GitOut(t, x, "rev-parse", "HEAD") != before {
+	if err := SyncUndo(f.Ctx, "x", UndoOptions{VerbOptions: opts.VerbOptions}, &out); err != nil || testkit.GitOut(t, x, "rev-parse", "HEAD") != before {
 		t.Fatalf("undo: %v\n%s", err, out.String())
 	}
-	mustBeDiverged(t, f, x, opts, theirs)
+	synccmdtest.MustBeDiverged(t, f, x, opts, theirs)
 }
 
 // The same for the fast-forward that is all a run did.
@@ -65,162 +36,15 @@ func TestAFastForwardAloneThatWasUndoneLeavesNoFormerTip(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
-	f, x, opts, local, remote := nothingToRebase(t)
-	if r, err := syncRunJSON(t, f.ctx, []string{"x"}, opts); err != nil || r.Worktrees[0].Result != ResultFastForwarded {
+	f, x, opts, local, remote := synccmdtest.NothingToRebase(t)
+	if r, err := synccmdtest.SyncRunJSON(t, f.Ctx, []string{"x"}, opts); err != nil || r.Worktrees[0].Result != synccmd.ResultFastForwarded {
 		t.Fatalf("%v %+v", err, r.Worktrees)
 	}
 	var out bytes.Buffer
-	if err := SyncUndo(f.ctx, "x", UndoOptions{verbOptions: opts.verbOptions}, &out); err != nil || testkit.GitOut(t, x, "rev-parse", "HEAD") != local {
+	if err := SyncUndo(f.Ctx, "x", UndoOptions{VerbOptions: opts.VerbOptions}, &out); err != nil || testkit.GitOut(t, x, "rev-parse", "HEAD") != local {
 		t.Fatalf("undo: %v\n%s", err, out.String())
 	}
-	mustBeDiverged(t, f, x, opts, remote)
-}
-
-// A rebase that failed after the fast-forward and was put back, with no
-// undo at all.
-func TestAFastForwardThatWasRestoredLeavesNoFormerTip(t *testing.T) {
-	if testing.Short() {
-		t.Skip("integration: real repositories with an origin to push to")
-	}
-	f := newTrunkFixture(t)
-	f.declare(t)
-	testkit.GitIn(t, f.main, "fetch", "-q", "origin")
-	x, opts := f.pushedWork(t)
-	var buf bytes.Buffer
-	y, err := provision.New(f.ctx, "feat/y", provision.NewOptions{NoSetup: true, Base: "feat_wt/x"}, &buf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	testkit.Mine(t, y, "y.txt", "y\n")
-	theirs := f.theirs(t, "feat_wt/x", "c.txt", "theirs\n")
-	f.theirs(t, "main", "c.txt", "trunk\n")
-	run, err := syncRunJSON(t, f.ctx, []string{"x"}, opts)
-	if err == nil || run.Worktrees[0].Result != ResultRestored || !run.Worktrees[0].OwnRemoteSync.FastForwarded {
-		t.Fatalf("%v %+v", err, run.Worktrees[0])
-	}
-	// The child goes, so that x is a worktree a run can take by itself.
-	testkit.GitIn(t, f.main, "worktree", "remove", "--force", y)
-	testkit.GitIn(t, f.main, "branch", "-D", "feat_wt/y")
-	mustBeDiverged(t, f, x, opts, theirs)
-}
-
-// The fetch asks for exactly the branches it checks. A remote branch that
-// went away and came back as a directory of branches clashes with the stale
-// tracking ref when it is fetched by pattern; a sibling whose name merely
-// starts the same is nobody's business.
-func TestUpFetchesExactlyTheBranchItChecks(t *testing.T) {
-	if testing.Short() {
-		t.Skip("integration: real repositories with an origin to push to")
-	}
-	t.Run("a directory where the branch was", func(t *testing.T) {
-		f := newTrunkFixture(t)
-		_, opts := f.pushedWork(t)
-		tip := testkit.GitOut(t, f.origin, "rev-parse", "refs/heads/feat_wt/x")
-		testkit.GitIn(t, f.origin, "update-ref", "-d", "refs/heads/feat_wt/x")
-		testkit.GitIn(t, f.origin, "update-ref", "refs/heads/feat_wt/x/a", tip)
-		// Trunk moves; nothing here fetches, so origin/feat_wt/x stays as it
-		// was, in the way of feat_wt/x/a.
-		testkit.GitIn(t, f.other, "commit", "-q", "--allow-empty", "-m", "origin moves")
-		testkit.GitIn(t, f.other, "push", "-q", "origin", "main")
-		r, human, err := upOut(t, f.ctx, "x", opts)
-		if err != nil || r.Worktrees[0].Result != ResultRebased || r.Worktrees[0].OwnRemoteSync.State != "gone" {
-			t.Fatalf("%v %+v\n%s", err, r, human)
-		}
-	})
-	t.Run("a sibling that starts the same", func(t *testing.T) {
-		f := newTrunkFixture(t)
-		_, opts := f.pushedWork(t)
-		tip := testkit.GitOut(t, f.origin, "rev-parse", "refs/heads/feat_wt/x")
-		testkit.GitIn(t, f.origin, "update-ref", "refs/heads/feat_wt/x-2", tip)
-		testkit.GitIn(t, f.origin, "update-ref", "refs/heads/feat_wt/xy", tip)
-		f.theirs(t, "feat_wt/x", "t.txt", "t\n")
-		testkit.GitIn(t, f.other, "commit", "-q", "--allow-empty", "-m", "origin moves")
-		testkit.GitIn(t, f.other, "push", "-q", "origin", "main")
-		r, human, err := upOut(t, f.ctx, "x", opts)
-		if err != nil || !r.Worktrees[0].OwnRemoteSync.FastForwarded {
-			t.Fatalf("%v %+v\n%s", err, r, human)
-		}
-		if refs := testkit.GitOut(t, f.main, "for-each-ref", "--format=%(refname)", "refs/remotes/origin/feat_wt/"); refs != "refs/remotes/origin/feat_wt/x" {
-			t.Fatalf("fetched more than the branch:\n%s", refs)
-		}
-	})
-}
-
-// wt up must run on any git main runs on: nothing this check adds may need
-// a newer one. A git that does not know fetch --porcelain stands in for one
-// older than 2.41.
-func TestUpRunsOnAGitWithoutFetchPorcelain(t *testing.T) {
-	if testing.Short() {
-		t.Skip("integration: real repositories with an origin to push to")
-	}
-	realGit, err := exec.LookPath("git")
-	if err != nil {
-		t.Fatal(err)
-	}
-	f := newTrunkFixture(t)
-	x, opts := f.pushedWork(t)
-	theirs := f.theirs(t, "feat_wt/x", "t.txt", "t\n")
-	f.advanceOrigin(t, 1)
-	bin := t.TempDir()
-	// Only fetch: git status --porcelain is as old as git.
-	script := "#!/bin/sh\nfetch=\nfor a in \"$@\"; do case \"$a\" in fetch) fetch=1;; --porcelain) [ -n \"$fetch\" ] && { echo \"error: unknown option \\`porcelain'\" >&2; exit 129; };; esac; done\nexec " + realGit + " \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	r, human, err := upOut(t, f.ctx, "x", opts)
-	if err != nil || !r.Worktrees[0].OwnRemoteSync.FastForwarded || testkit.Str(r.Worktrees[0].OwnRemoteSync.Remote) != theirs {
-		t.Fatalf("%v %+v\n%s", err, r, human)
-	}
-	if testkit.GitOut(t, x, "show", "HEAD:t.txt") != "t" {
-		t.Fatal("the remote's commit is not in the rebased branch")
-	}
-}
-
-// --allow-diverged is consent to rebase one branch over what its remote
-// has: like --force it needs the worktree named.
-func TestSyncRunAllowDivergedNeedsTheWorktreeNamed(t *testing.T) {
-	if testing.Short() {
-		t.Skip("integration: real repositories with an origin to push to")
-	}
-	f := newTrunkFixture(t)
-	f.declare(t)
-	testkit.GitIn(t, f.main, "fetch", "-q", "origin")
-	x, opts := f.pushedWork(t)
-	f.theirs(t, "feat_wt/x", "t.txt", "t\n")
-	before := testkit.Mine(t, x, "m.txt", "m\n")
-	f.advanceOrigin(t, 1)
-	opts.AllowDiverged = true
-	var out bytes.Buffer
-	err := SyncRebase(f.ctx, nil, opts, &out)
-	if err == nil || !strings.Contains(err.Error(), "--allow-diverged") || !strings.Contains(err.Error(), "name it") {
-		t.Fatalf("err %v\n%s", err, out.String())
-	}
-	if got := testkit.GitOut(t, x, "rev-parse", "HEAD"); got != before {
-		t.Fatal("the branch moved")
-	}
-	if err := SyncRebase(f.ctx, []string{"x"}, opts, &out); err != nil {
-		t.Fatalf("named: %v\n%s", err, out.String())
-	}
-}
-
-// allowed says the run went on over a divergence: not that the flag was
-// given to a run that then refused the worktree for something else.
-func TestAllowedIsOnlyARunThatWentOn(t *testing.T) {
-	if testing.Short() {
-		t.Skip("integration: real repositories with an origin to push to")
-	}
-	f := newTrunkFixture(t)
-	x, opts := f.pushedWork(t)
-	f.theirs(t, "feat_wt/x", "t.txt", "t\n")
-	testkit.Mine(t, x, "m.txt", "m\n")
-	f.advanceOrigin(t, 1)
-	testkit.WriteIn(t, x, "x.txt", "edited\n")
-	opts.AllowDiverged = true
-	r, human, err := upOut(t, f.ctx, "x", opts)
-	if err == nil || r.Worktrees[0].Result != ResultRefused || r.Worktrees[0].OwnRemoteSync.Allowed {
-		t.Fatalf("%v %+v %+v\n%s", err, r.Worktrees[0], r.Worktrees[0].OwnRemoteSync, human)
-	}
+	synccmdtest.MustBeDiverged(t, f, x, opts, remote)
 }
 
 // A fast-forward that is all a run did counts as finished: a commit made on
@@ -230,26 +54,26 @@ func TestAFastForwardAloneIsFinishedAndItsUndoIsBehindAgain(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
-	f, x, opts, local, remote := nothingToRebase(t)
-	if r, err := syncRunJSON(t, f.ctx, []string{"x"}, opts); err != nil || r.Worktrees[0].Result != ResultFastForwarded {
+	f, x, opts, local, remote := synccmdtest.NothingToRebase(t)
+	if r, err := synccmdtest.SyncRunJSON(t, f.Ctx, []string{"x"}, opts); err != nil || r.Worktrees[0].Result != synccmd.ResultFastForwarded {
 		t.Fatalf("%v %+v", err, r.Worktrees)
 	}
-	if refs := testkit.GitOut(t, f.main, "for-each-ref", "--format=%(refname) %(objectname)", "refs/wt-sync-result/", "refs/wt-sync-ff/"); strings.Count(refs, remote) != 2 {
+	if refs := testkit.GitOut(t, f.Main, "for-each-ref", "--format=%(refname) %(objectname)", "refs/wt-sync-result/", "refs/wt-sync-ff/"); strings.Count(refs, remote) != 2 {
 		t.Fatalf("a finished fast-forward pins where it left the branch twice over:\n%s", refs)
 	}
 	testkit.Mine(t, x, "on-top.txt", "on top\n")
-	if o := planOfWork(t, f.ctx, "x").Worktree.OwnRemote; o.State != "ahead" || *o.Ahead != 1 {
+	if o := synccmdtest.PlanOfWork(t, f.Ctx, "x").Worktree.OwnRemote; o.State != "ahead" || *o.Ahead != 1 {
 		t.Fatalf("a commit on top: %+v", o)
 	}
 	testkit.GitIn(t, x, "reset", "-q", "--hard", remote)
 	var out bytes.Buffer
-	if err := SyncUndo(f.ctx, "x", UndoOptions{verbOptions: opts.verbOptions}, &out); err != nil || testkit.GitOut(t, x, "rev-parse", "HEAD") != local {
+	if err := SyncUndo(f.Ctx, "x", UndoOptions{VerbOptions: opts.VerbOptions}, &out); err != nil || testkit.GitOut(t, x, "rev-parse", "HEAD") != local {
 		t.Fatalf("undo: %v\n%s", err, out.String())
 	}
-	if o := planOfWork(t, f.ctx, "x").Worktree.OwnRemote; o.State != "behind" || o.Blocks != nil {
+	if o := synccmdtest.PlanOfWork(t, f.Ctx, "x").Worktree.OwnRemote; o.State != "behind" || o.Blocks != nil {
 		t.Fatalf("after the undo: %+v", o)
 	}
-	if refs := testkit.GitOut(t, f.main, "for-each-ref", "--format=%(refname)", "refs/wt-sync-result/", "refs/wt-sync-ff/"); refs != "" {
+	if refs := testkit.GitOut(t, f.Main, "for-each-ref", "--format=%(refname)", "refs/wt-sync-result/", "refs/wt-sync-ff/"); refs != "" {
 		t.Fatalf("the undo left the run's word that the branch was there:\n%s", refs)
 	}
 }
@@ -261,16 +85,16 @@ func TestAHandoverAfterAFastForwardKeepsOrDropsTheFormerTip(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
-	handedOver := func(t *testing.T) (f *trunkFixture, x string, opts RunOptions, theirs string) {
+	handedOver := func(t *testing.T) (f *synccmdtest.TrunkFixture, x string, opts synccmd.RunOptions, theirs string) {
 		t.Helper()
-		f = newTrunkFixture(t)
-		f.declare(t)
-		testkit.GitIn(t, f.main, "fetch", "-q", "origin")
-		x, opts = f.pushedWork(t)
-		theirs = f.theirs(t, "feat_wt/x", "c.txt", "theirs\n")
-		f.theirs(t, "main", "c.txt", "trunk\n")
-		run, err := syncRunJSON(t, f.ctx, []string{"x"}, opts)
-		if err == nil || run.Worktrees[0].Result != ResultHandedOver || !run.Worktrees[0].OwnRemoteSync.FastForwarded {
+		f = synccmdtest.NewTrunkFixture(t)
+		f.Declare(t)
+		testkit.GitIn(t, f.Main, "fetch", "-q", "origin")
+		x, opts = f.PushedWork(t)
+		theirs = f.Theirs(t, "feat_wt/x", "c.txt", "theirs\n")
+		f.Theirs(t, "main", "c.txt", "trunk\n")
+		run, err := synccmdtest.SyncRunJSON(t, f.Ctx, []string{"x"}, opts)
+		if err == nil || run.Worktrees[0].Result != synccmd.ResultHandedOver || !run.Worktrees[0].OwnRemoteSync.FastForwarded {
 			t.Fatalf("%v %+v", err, run.Worktrees[0])
 		}
 		return f, x, opts, theirs
@@ -279,141 +103,27 @@ func TestAHandoverAfterAFastForwardKeepsOrDropsTheFormerTip(t *testing.T) {
 		f, x, opts, _ := handedOver(t)
 		testkit.WriteIn(t, x, "c.txt", "both\n")
 		testkit.GitIn(t, x, "add", "c.txt")
-		if r, err := syncResumeJSON(t, f.ctx, "x", ResumeOptions{pushOptions: pushOptions{Push: PushNever}, verbOptions: opts.verbOptions}); err != nil || r.Worktrees[0].Result != ResultRebased {
+		if r, err := syncResumeJSON(t, f.Ctx, "x", ResumeOptions{PushOptions: synccmd.PushOptions{Push: synccmd.PushNever}, VerbOptions: opts.VerbOptions}); err != nil || r.Worktrees[0].Result != synccmd.ResultRebased {
 			t.Fatalf("resume: %v %+v", err, r.Worktrees)
 		}
-		if o := planOfWork(t, f.ctx, "x").Worktree.OwnRemote; o.State != "rebased" {
+		if o := synccmdtest.PlanOfWork(t, f.Ctx, "x").Worktree.OwnRemote; o.State != "rebased" {
 			t.Fatalf("after the resume: %+v", o)
 		}
-		f.advanceOrigin(t, 1)
-		if r, human, err := upOut(t, f.ctx, "x", at(opts, 500)); err != nil || r.Worktrees[0].Result != ResultRebased || r.Worktrees[0].OwnRemoteSync.State != "rebased" {
+		f.AdvanceOrigin(t, 1)
+		if r, human, err := synccmdtest.UpOut(t, f.Ctx, "x", synccmdtest.At(opts, 500)); err != nil || r.Worktrees[0].Result != synccmd.ResultRebased || r.Worktrees[0].OwnRemoteSync.State != "rebased" {
 			t.Fatalf("a second run: %v %+v\n%s", err, r.Worktrees, human)
 		}
 	})
 	t.Run("undone", func(t *testing.T) {
 		f, x, opts, theirs := handedOver(t)
 		var out bytes.Buffer
-		if err := SyncUndo(f.ctx, "x", UndoOptions{verbOptions: opts.verbOptions}, &out); err != nil {
+		if err := SyncUndo(f.Ctx, "x", UndoOptions{VerbOptions: opts.VerbOptions}, &out); err != nil {
 			t.Fatalf("undo: %v\n%s", err, out.String())
 		}
 		// Trunk's c.txt is in the way of nothing here: the run that follows
 		// is refused for the divergence before it rebases anything.
-		mustBeDiverged(t, f, x, opts, theirs)
+		synccmdtest.MustBeDiverged(t, f, x, opts, theirs)
 	})
-}
-
-// The overview's token covers the remote commit of a diverged row also when
-// a busy session keeps a run off it: --force lifts the session, and what the
-// run then goes over has to be what the caller was shown.
-func TestSyncTokenCoversADivergedRowBehindABusySession(t *testing.T) {
-	if testing.Short() {
-		t.Skip("integration: real repositories with an origin to push to")
-	}
-	f := newTrunkFixture(t)
-	f.declare(t)
-	testkit.GitIn(t, f.main, "fetch", "-q", "origin")
-	x, opts := f.pushedWork(t)
-	f.theirs(t, "feat_wt/x", "t.txt", "t\n")
-	before := testkit.Mine(t, x, "m.txt", "m\n")
-	f.advanceOrigin(t, 1)
-	busy := []wtsync.Agent{{Name: "busy-1", Cwd: x, Status: "busy"}}
-	token := func() string {
-		t.Helper()
-		_, sha, err := trunkTip(f.ctx)
-		if err != nil {
-			t.Fatal(err)
-		}
-		cfg, err := wtsync.LoadFromRef(f.main, sha)
-		if err != nil {
-			t.Fatal(err)
-		}
-		sv, err := surveyRepo(f.ctx, sha, cfg, busy, wtsync.ReadOwnOrUnknown(f.main, "main"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if row := sv.rows[0]; row.Group != GroupSkipped || testkit.Str(row.OwnRemote.Blocks) != wtsync.OwnBlockDiverged {
-			t.Fatalf("row %+v", row)
-		}
-		tok := sv.token(f.ctx, "main", sha)
-		if tok == nil {
-			t.Fatal("no token for a row a run with --force --allow-diverged starts on")
-		}
-		return *tok
-	}
-	shown := token()
-	f.theirs(t, "feat_wt/x", "t2.txt", "t2\n")
-	testkit.GitIn(t, f.main, "fetch", "-q", "origin")
-	if token() == shown {
-		t.Fatal("the remote moved and the token did not")
-	}
-	opts.Agents, opts.Relist = busy, func() ([]wtsync.Agent, error) { return busy, nil }
-	opts.Force, opts.AllowDiverged, opts.Expect = true, true, shown
-	r, err := syncRunJSON(t, f.ctx, []string{"x"}, opts)
-	if err == nil || len(r.Worktrees) != 0 || !strings.Contains(testkit.Str(r.Error), "the overview changed since it was read") {
-		t.Fatalf("%v %+v", err, r)
-	}
-	if got := testkit.GitOut(t, x, "rev-parse", "HEAD"); got != before {
-		t.Fatal("the branch moved")
-	}
-}
-
-// Diverged from its remote and on trunk already: wt up would skip it, so
-// nothing is pushed over anything and the divergence keeps no run off. The
-// look says the same as the run does.
-func TestADivergedBranchARunWouldNotRebaseIsNotBlocked(t *testing.T) {
-	if testing.Short() {
-		t.Skip("integration: real repositories with an origin to push to")
-	}
-	f := newTrunkFixture(t)
-	x, opts := f.pushedWork(t)
-	f.theirs(t, "feat_wt/x", "t.txt", "t\n")
-	before := testkit.Mine(t, x, "m.txt", "m\n")
-	testkit.GitIn(t, f.main, "fetch", "-q", "origin")
-	p := planOfWork(t, f.ctx, "x")
-	if o := p.Worktree.OwnRemote; !p.UpEligible || p.UpIneligibleCode != nil || o.State != "diverged" || o.Blocks != nil {
-		t.Fatalf("plan: eligible %v, code %s, %+v", p.UpEligible, testkit.Str(p.UpIneligibleCode), o)
-	}
-	if testkit.Str(p.Token) != legacyPlanToken(f.ctx, "main", []string{"feat_wt/x"}) {
-		t.Fatal("a divergence that blocks nothing is in the token")
-	}
-	r, human, err := upOut(t, f.ctx, "x", opts)
-	if err != nil || r.Worktrees[0].Result != ResultSkipped || r.Worktrees[0].OwnRemoteSync.State != "diverged" || r.Worktrees[0].OwnRemoteSync.SkippedReason != nil {
-		t.Fatalf("%v %+v %+v\n%s", err, r.Worktrees[0], r.Worktrees[0].OwnRemoteSync, human)
-	}
-	if got := testkit.GitOut(t, x, "rev-parse", "HEAD"); got != before {
-		t.Fatal("the branch moved")
-	}
-}
-
-// A branch deleted on the remote between the listing and the fetch is gone,
-// not a fetch that failed: the run goes on, and trunk is not blamed.
-func TestABranchDeletedBetweenTheListingAndTheFetchIsGone(t *testing.T) {
-	if testing.Short() {
-		t.Skip("integration: real repositories with an origin to push to")
-	}
-	realGit, err := exec.LookPath("git")
-	if err != nil {
-		t.Fatal(err)
-	}
-	f := newTrunkFixture(t)
-	_, opts := f.pushedWork(t)
-	testkit.GitIn(t, f.other, "commit", "-q", "--allow-empty", "-m", "origin moves")
-	testkit.GitIn(t, f.other, "push", "-q", "origin", "main")
-	bin, marker := t.TempDir(), filepath.Join(t.TempDir(), "deleted")
-	// The first ls-remote answers, and then the branch goes.
-	script := "#!/bin/sh\ncase \" $* \" in *\" ls-remote \"*) " + realGit + " \"$@\"; s=$?; [ -e " + marker + " ] || { " + realGit + " -C " + f.origin +
-		" update-ref -d refs/heads/feat_wt/x; : > " + marker + "; }; exit $s;; esac\nexec " + realGit + " \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	r, human, err := upOut(t, f.ctx, "x", opts)
-	if err != nil || r.Error != nil || r.Worktrees[0].Result != ResultRebased || r.Worktrees[0].OwnRemoteSync.State != "gone" {
-		t.Fatalf("%v %+v\n%s", err, r, human)
-	}
-	if _, err := os.Stat(marker); err != nil {
-		t.Fatal("the fixture never deleted the branch")
-	}
 }
 
 // A forced undo of a handover that followed a fast-forward keeps what a
@@ -424,14 +134,14 @@ func TestSyncUndoForcedPinsACommitInsideAHandoverThatFollowedAFastForward(t *tes
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
-	f := newTrunkFixture(t)
-	f.declare(t)
-	testkit.GitIn(t, f.main, "fetch", "-q", "origin")
-	x, opts := f.pushedWork(t)
+	f := synccmdtest.NewTrunkFixture(t)
+	f.Declare(t)
+	testkit.GitIn(t, f.Main, "fetch", "-q", "origin")
+	x, opts := f.PushedWork(t)
 	before := testkit.GitOut(t, x, "rev-parse", "HEAD")
-	f.theirs(t, "feat_wt/x", "c.txt", "theirs\n")
-	f.theirs(t, "main", "c.txt", "trunk\n")
-	if run, err := syncRunJSON(t, f.ctx, []string{"x"}, opts); err == nil || run.Worktrees[0].Result != ResultHandedOver || !run.Worktrees[0].OwnRemoteSync.FastForwarded {
+	f.Theirs(t, "feat_wt/x", "c.txt", "theirs\n")
+	f.Theirs(t, "main", "c.txt", "trunk\n")
+	if run, err := synccmdtest.SyncRunJSON(t, f.Ctx, []string{"x"}, opts); err == nil || run.Worktrees[0].Result != synccmd.ResultHandedOver || !run.Worktrees[0].OwnRemoteSync.FastForwarded {
 		t.Fatalf("%v %+v", err, run.Worktrees[0])
 	}
 	testkit.WriteIn(t, x, "c.txt", "merged by hand\n")
@@ -439,100 +149,23 @@ func TestSyncUndoForcedPinsACommitInsideAHandoverThatFollowedAFastForward(t *tes
 	testkit.GitIn(t, x, "commit", "-q", "-m", "resolved by hand")
 	inside := testkit.GitOut(t, x, "rev-parse", "HEAD")
 
-	undo := UndoOptions{verbOptions: at(opts, 100).verbOptions}
+	undo := UndoOptions{VerbOptions: synccmdtest.At(opts, 100).VerbOptions}
 	var out bytes.Buffer
-	if err := SyncUndo(f.ctx, "x", undo, &out); err == nil || !strings.Contains(err.Error(), "made inside the handed-over rebase") {
+	if err := SyncUndo(f.Ctx, "x", undo, &out); err == nil || !strings.Contains(err.Error(), "made inside the handed-over rebase") {
 		t.Fatalf("a plain undo: %v\n%s", err, out.String())
 	}
 	undo.Force = true
 	out.Reset()
-	if err := SyncUndo(f.ctx, "x", undo, &out); err != nil {
+	if err := SyncUndo(f.Ctx, "x", undo, &out); err != nil {
 		t.Fatalf("forced: %v\n%s", err, out.String())
 	}
 	if got := testkit.GitOut(t, x, "rev-parse", "HEAD"); got != before {
 		t.Fatalf("the branch is at %s, want the tip the run found %s", got, before)
 	}
-	if pinned, err := gittest.Try(t, f.main, "rev-parse", "--verify", "--quiet", "refs/wt-sync/feat_wt/x/100"); err != nil || strings.TrimSpace(pinned) != inside {
+	if pinned, err := gittest.Try(t, f.Main, "rev-parse", "--verify", "--quiet", "refs/wt-sync/feat_wt/x/100"); err != nil || strings.TrimSpace(pinned) != inside {
 		t.Fatalf("the commit made inside the rebase is not pinned: %q %v\n%s", pinned, err, out.String())
 	}
 	if !strings.Contains(out.String(), inside[:7]+" kept under refs/wt-sync/feat_wt/x/100") {
 		t.Fatalf("the row does not say where it kept it:\n%s", out.String())
-	}
-}
-
-// An interrupt between the fast-forward and the rebase has no rebase to
-// abort: the way back is wt sync undo, which also takes away the word that
-// the branch was at its remote's commit.
-func TestOnInterruptAfterAFastForwardPointsAtUndo(t *testing.T) {
-	var out bytes.Buffer
-	kit.OnInterrupt(&out, nil, &kit.RebaseInFlight{Work: "bump", Path: "/w/bump", Safety: "refs/wt-sync/feat_wt/bump/99", Forwarding: true})
-	s := out.String()
-	if !strings.Contains(s, "interrupted while fast-forwarding bump") || !strings.Contains(s, "wt sync undo bump") {
-		t.Fatalf("out %q", s)
-	}
-	if strings.Contains(s, "rebase --abort") || strings.Contains(s, "reset --hard") {
-		t.Fatalf("the interrupt advises a way back that leaves the remote's commit a former tip: %q", s)
-	}
-}
-
-// A signal that lands after the merge and before the run has said so still
-// reports where the branch is: at its remote's commit, fast-forwarded.
-func TestAnInterruptedRunReportsAFastForwardItHadMade(t *testing.T) {
-	f := newTrunkFixture(t)
-	x, _ := f.pushedWork(t)
-	before := testkit.GitOut(t, x, "rev-parse", "HEAD")
-	theirs := f.theirs(t, "feat_wt/x", "t.txt", "t\n")
-	testkit.GitIn(t, f.main, "fetch", "-q", "origin")
-	own, err := wtsync.ReadOwn(f.main, "main")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out bytes.Buffer
-	j := NewRunJournal(&out)
-	j.repo(f.main)
-	j.join("x", "feat_wt/x", x, before, ownRemoteSyncOf(own.State("feat_wt/x")))
-	testkit.GitIn(t, x, "merge", "-q", "--ff-only", theirs)
-	j.Interrupted("x", "interrupted while fast-forwarding x: wt sync undo x puts it back")
-	testkit.ValidateJSON(t, "up", out.Bytes())
-	var r UpResult
-	if err := json.Unmarshal(out.Bytes(), &r); err != nil {
-		t.Fatal(err)
-	}
-	w := r.Worktrees[0]
-	if w.Result != ResultInterrupted || testkit.Str(w.Before) != before || testkit.Str(w.After) != theirs || !w.OwnRemoteSync.FastForwarded {
-		t.Fatalf("%+v %+v", w, w.OwnRemoteSync)
-	}
-}
-
-// A branch whose own ref will not fetch, because a stale tracking ref here
-// is in its way, is that branch's trouble: refused by itself with a reason
-// that is a whole clause, and trunk fetched all the same.
-func TestUpRefusesOnlyTheBranchWhoseRefWillNotFetch(t *testing.T) {
-	if testing.Short() {
-		t.Skip("integration: real repositories with an origin to push to")
-	}
-	f := newTrunkFixture(t)
-	x, opts := f.pushedWork(t)
-	before := testkit.GitOut(t, x, "rev-parse", "HEAD")
-	testkit.GitIn(t, f.other, "commit", "-q", "--allow-empty", "-m", "origin moves")
-	testkit.GitIn(t, f.other, "push", "-q", "origin", "main")
-	trunk := testkit.GitOut(t, f.other, "rev-parse", "HEAD")
-	// A stale origin/feat_wt/x/a here, where origin has feat_wt/x.
-	testkit.GitIn(t, f.main, "update-ref", "-d", "refs/remotes/origin/feat_wt/x")
-	testkit.GitIn(t, f.main, "update-ref", "refs/remotes/origin/feat_wt/x/a", before)
-	r, human, err := upOut(t, f.ctx, "x", opts)
-	if err == nil || r.Error != nil || !r.Fetched || testkit.Str(r.Onto) != trunk {
-		t.Fatalf("%v %+v\n%s", err, r, human)
-	}
-	w := r.Worktrees[0]
-	reason := testkit.Str(w.Reason)
-	if w.Result != ResultRefused || testkit.Str(w.OwnRemoteSync.SkippedReason) != OwnSkipFetchFailed || !strings.Contains(reason, "its own remote could not be fetched (") {
-		t.Fatalf("%+v %+v\n%s", w, w.OwnRemoteSync, human)
-	}
-	if strings.Contains(reason, "try running") || strings.Contains(reason, "…") {
-		t.Fatalf("the reason is cut mid-sentence: %q", reason)
-	}
-	if got := testkit.GitOut(t, x, "rev-parse", "HEAD"); got != before {
-		t.Fatal("the branch moved")
 	}
 }

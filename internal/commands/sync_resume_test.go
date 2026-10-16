@@ -10,49 +10,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
+	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
-// handedOver drives the contested fixture to the point a run hands it over:
-// v.txt resolved by the declared owned-line strategy and staged, a.txt left
-// unmerged for a person, the rebase still in progress, the sidecar written.
-func handedOver(t *testing.T) (ctx *kit.Context, bump, gitDir string, st wtsync.State) {
-	t.Helper()
-	ctx, bump = provisiontest.ContestedFixture(t)
-	gitDir, st = handOverNow(t, ctx, bump)
-	return ctx, bump, gitDir, st
-}
-
-// handOverNow runs sync rebase on bump and returns what it handed over.
-func handOverNow(t *testing.T, ctx *kit.Context, bump string) (gitDir string, st wtsync.State) {
-	t.Helper()
-	var out bytes.Buffer
-	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err == nil {
-		t.Fatalf("the run should have handed over:\n%s", out.String())
-	}
-	gitDir, err := wtsync.GitDir(bump)
-	if err != nil {
-		t.Fatal(err)
-	}
-	st, ok, err := wtsync.ReadState(gitDir)
-	if err != nil || !ok {
-		t.Fatalf("ReadState = %v, %v\n%s", ok, err, out.String())
-	}
-	if busy, berr := wtsync.RebaseInProgress(bump); berr != nil || !busy {
-		t.Fatalf("RebaseInProgress = %v, %v; the fixture is not mid-rebase", busy, berr)
-	}
-	return gitDir, st
-}
-
 // noResumeAgents is the resume half of noAgents: no sessions anywhere, and a
 // clock a few seconds on, so the lock a resume takes is told apart from the
 // one the run kept without the run's expiring.
 func noResumeAgents() ResumeOptions {
-	return ResumeOptions{verbOptions: verbOptions{
+	return ResumeOptions{VerbOptions: synccmd.VerbOptions{
 		Agents: []wtsync.Agent{},
 		Now:    func() time.Time { return time.Unix(5, 0) },
 	}}
@@ -82,7 +52,7 @@ func TestSyncResumeFinishesAHandedOverRebase(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump, gitDir, st := handedOver(t)
+	ctx, bump, gitDir, st := synccmdtest.HandedOver(t)
 	// The person does what the plan file asks: resolve what is left to them and
 	// stage it. Nothing else in the worktree is touched.
 	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
@@ -129,7 +99,7 @@ func TestSyncResumeRefusesAHandMergedOwnedFile(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump, gitDir, st := handedOver(t)
+	ctx, bump, gitDir, st := synccmdtest.HandedOver(t)
 	// What is left to the person is resolved, but so is what is not: v.txt belongs to
 	// the owned-line strategy and the plan file says never to touch it.
 	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
@@ -159,7 +129,7 @@ func TestSyncResumeRefusesWhileSomethingIsUnmerged(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump, gitDir, st := handedOver(t)
+	ctx, bump, gitDir, st := synccmdtest.HandedOver(t)
 	var out bytes.Buffer
 	err := SyncResume(ctx, "bump", noResumeAgents(), &out)
 	if err == nil {
@@ -179,7 +149,7 @@ func TestSyncResumeRefusesUnstagedTrackedChanges(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump, gitDir, st := handedOver(t)
+	ctx, bump, gitDir, st := synccmdtest.HandedOver(t)
 	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
 	testkit.GitOut(t, bump, "add", "--", "a.txt")
 	testkit.WriteFile(t, bump, "a.txt", "second thoughts\n")
@@ -219,7 +189,7 @@ func TestSyncResumeRefusesARebaseItDidNotLeave(t *testing.T) {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
 	ctx, bump := provisiontest.LaterStopFixture(t, false)
-	gitDir, st := handOverNow(t, ctx, bump)
+	gitDir, st := synccmdtest.HandOverNow(t, ctx, bump)
 	testkit.GitOut(t, bump, "rebase", "--abort")
 	// Their own interactive rebase of the same branch, onto its own base
 	// rather than the run's trunk, stopped at its second commit: 2/2, where
@@ -247,7 +217,7 @@ func TestSyncResumeNeverAsksAPersonToMergeAStrategysFile(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump, gitDir, st := handedOver(t)
+	ctx, bump, gitDir, st := synccmdtest.HandedOver(t)
 	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
 	testkit.GitOut(t, bump, "add", "--", "a.txt")
 	testkit.GitOut(t, bump, "checkout", "-m", "--", "v.txt")
@@ -279,7 +249,7 @@ func TestSyncResumeTakesALaterStopThroughTheStrategies(t *testing.T) {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
 	ctx, bump := provisiontest.LaterStopFixture(t, false)
-	gitDir, st := handOverNow(t, ctx, bump)
+	gitDir, st := synccmdtest.HandOverNow(t, ctx, bump)
 	if st.Stop != 1 || st.Total != 2 {
 		t.Fatalf("state = %+v; want the handover at 1/2", st)
 	}
@@ -326,7 +296,7 @@ func TestSyncResumeHandsALaterUnclaimedStopOverAgain(t *testing.T) {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
 	ctx, bump := provisiontest.LaterStopFixture(t, true)
-	gitDir, st := handOverNow(t, ctx, bump)
+	gitDir, st := synccmdtest.HandOverNow(t, ctx, bump)
 	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
 	testkit.GitOut(t, bump, "add", "--", "a.txt")
 	testkit.GitTry(t, bump, "rebase", "--continue")
@@ -370,7 +340,7 @@ func TestSyncResumeSaysWhatAFinishedByHandRebaseDidNotRecheck(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump, gitDir, st := handedOver(t)
+	ctx, bump, gitDir, st := synccmdtest.HandedOver(t)
 	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
 	testkit.WriteFile(t, bump, "v.txt", "9.9.9\n")
 	testkit.GitOut(t, bump, "add", "--", "a.txt", "v.txt")
@@ -412,7 +382,7 @@ func TestSyncResumeFinishesARebaseFinishedByHandAndRunsTheDeferredSteps(t *testi
 	testkit.WriteFile(t, bump, "b.txt", "branch\n")
 	testkit.GitOut(t, bump, "add", "-A")
 	testkit.GitOut(t, bump, "commit", "-q", "-m", "b on the branch")
-	gitDir, st := handOverNow(t, ctx, bump)
+	gitDir, st := synccmdtest.HandOverNow(t, ctx, bump)
 	if st.Stop != 1 || st.Total != 2 {
 		t.Fatalf("handed over at %d/%d; want 1/2", st.Stop, st.Total)
 	}
@@ -503,7 +473,7 @@ func TestSyncResumeRefusesARebaseRestartedFromAnotherTip(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump, gitDir, st := handedOver(t)
+	ctx, bump, gitDir, st := synccmdtest.HandedOver(t)
 	restartedByHand(t, bump, st)
 
 	var out bytes.Buffer
@@ -523,7 +493,7 @@ func TestSyncResumeRefusesARebaseFinishedByHandFromAnotherTip(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump, gitDir, st := handedOver(t)
+	ctx, bump, gitDir, st := synccmdtest.HandedOver(t)
 	restartedByHand(t, bump, st)
 	testkit.GitTry(t, bump, "rebase", "--continue")
 	if busy, err := wtsync.RebaseInProgress(bump); err != nil || busy {
@@ -561,7 +531,7 @@ func TestSyncResumeRefusesACommitAfterTheRebaseWithoutBlamingAPerson(t *testing.
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump, gitDir, _ := handedOver(t)
+	ctx, bump, gitDir, _ := synccmdtest.HandedOver(t)
 	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
 	testkit.GitOut(t, bump, "add", "--", "a.txt")
 	testkit.GitTry(t, bump, "rebase", "--continue")
@@ -594,7 +564,7 @@ func TestSyncResumeSaysWhereAFailedHandoverLeftTheWorktree(t *testing.T) {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
 	ctx, bump := provisiontest.LaterStopFixture(t, true)
-	gitDir, st := handOverNow(t, ctx, bump)
+	gitDir, st := synccmdtest.HandOverNow(t, ctx, bump)
 	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
 	testkit.GitOut(t, bump, "add", "--", "a.txt")
 	testkit.GitTry(t, bump, "rebase", "--continue")
@@ -637,7 +607,7 @@ func TestSyncUndoPutsBackWhatAResumeFinished(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump, gitDir, st := handedOver(t)
+	ctx, bump, gitDir, st := synccmdtest.HandedOver(t)
 	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
 	testkit.GitOut(t, bump, "add", "--", "a.txt")
 
@@ -671,7 +641,7 @@ func TestSyncResumeSendsAnAbortedHandoverToUndo(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump, gitDir, _ := handedOver(t)
+	ctx, bump, gitDir, _ := synccmdtest.HandedOver(t)
 	testkit.GitOut(t, bump, "rebase", "--abort")
 
 	var out bytes.Buffer
@@ -690,10 +660,10 @@ func TestSyncResumeSendsAnAbortedHandoverToUndo(t *testing.T) {
 
 	// A later run, with an epoch of its own, is no longer refused as waiting
 	// on a person: it walks into the contested stop and hands it over again.
-	opts := noAgents()
+	opts := synccmdtest.NoAgents()
 	opts.Now = func() time.Time { return time.Unix(0, 200) }
 	var runOut bytes.Buffer
-	_ = SyncRebase(ctx, []string{"bump"}, opts, &runOut)
+	_ = synccmd.SyncRebase(ctx, []string{"bump"}, opts, &runOut)
 	if strings.Contains(runOut.String(), "left mid-rebase") {
 		t.Fatalf("the run still refuses the cleared handover:\n%s", runOut.String())
 	}
@@ -710,7 +680,7 @@ func TestSyncHandoverRecordsTheBlobOfTheFileItNames(t *testing.T) {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
 	ctx, bump := provisiontest.GlobFixture(t)
-	_, st := handOverNow(t, ctx, bump)
+	_, st := synccmdtest.HandOverNow(t, ctx, bump)
 	own := testkit.GitOut(t, bump, "rev-parse", ":0:v[1].txt")
 	sibling := testkit.GitOut(t, bump, "rev-parse", ":0:v1.txt")
 	if own == sibling {
@@ -731,21 +701,11 @@ func TestSyncHandoverRecordsTheBlobOfTheFileItNames(t *testing.T) {
 	}
 }
 
-// resolvedByHand is handedOver with the person's part done: a.txt merged and
-// staged, ready for resume.
-func resolvedByHand(t *testing.T) (ctx *kit.Context, bump, gitDir string) {
-	t.Helper()
-	ctx, bump, gitDir, _ = handedOver(t)
-	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
-	testkit.GitOut(t, bump, "add", "--", "a.txt")
-	return ctx, bump, gitDir
-}
-
 func TestSyncResumeRefusesABusySession(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump, gitDir := resolvedByHand(t)
+	ctx, bump, gitDir := synccmdtest.ResolvedByHand(t)
 	opts := noResumeAgents()
 	opts.Agents = testkit.IdleIn(t, bump, "bump-1")
 	opts.Agents[0].Status = "busy"
@@ -763,7 +723,7 @@ func TestSyncResumeAsksBeforeFinishingUnderAnIdleSession(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump, gitDir := resolvedByHand(t)
+	ctx, bump, gitDir := synccmdtest.ResolvedByHand(t)
 	st, _, _ := wtsync.ReadState(gitDir)
 	opts := noResumeAgents()
 	opts.Agents = testkit.IdleIn(t, bump, "bump-1")
@@ -796,7 +756,7 @@ func TestSyncResumeVerifiesTheHandoverAfterTheAnswer(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump, _ := resolvedByHand(t)
+	ctx, bump, _ := synccmdtest.ResolvedByHand(t)
 	opts := noResumeAgents()
 	opts.Agents = testkit.IdleIn(t, bump, "bump-1")
 	opts.Confirm = func([]string) (bool, error) {
@@ -814,7 +774,7 @@ func TestSyncResumeRefusesASessionThatWokeWhileAsked(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump, gitDir := resolvedByHand(t)
+	ctx, bump, gitDir := synccmdtest.ResolvedByHand(t)
 	opts := noResumeAgents()
 	opts.Agents = testkit.IdleIn(t, bump, "bump-1")
 	opts.Confirm = func([]string) (bool, error) { return true, nil }
@@ -835,7 +795,7 @@ func TestSyncResumeUnderAnIdleSessionEndsWithALineToRelay(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump, _ := resolvedByHand(t)
+	ctx, bump, _ := synccmdtest.ResolvedByHand(t)
 	opts := noResumeAgents()
 	opts.Agents = testkit.IdleIn(t, bump, "bump-1")
 	var out bytes.Buffer
@@ -862,7 +822,7 @@ func TestSyncResumeRelaysTheStopsBeforeTheHandoverToo(t *testing.T) {
 	testkit.GitOut(t, main, "add", "-A")
 	testkit.GitOut(t, main, "commit", "-q", "-m", "a on trunk")
 	testkit.GitOut(t, main, "fetch", "-q", "origin")
-	_, st := handOverNow(t, ctx, bump)
+	_, st := synccmdtest.HandOverNow(t, ctx, bump)
 	if st.Stop != 2 || !reflect.DeepEqual(st.Stopped, []string{"v.txt", "a.txt"}) {
 		t.Fatalf("handed over at %d/%d with stopped %v; the fixture is not two stops", st.Stop, st.Total, st.Stopped)
 	}

@@ -12,6 +12,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
 )
@@ -223,7 +224,7 @@ func TestPlansOnDetectedDefaults(t *testing.T) {
 	}
 	// A branch with no commit of its own is already in trunk: give it one.
 	testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "work")
-	s := planOfWork(t, ctx, path)
+	s := synccmdtest.PlanOfWork(t, ctx, path)
 	if s.Configured || !s.UpEligible {
 		t.Errorf("status: configured %v eligible %v (%v)", s.Configured, s.UpEligible, s.UpIneligibleReason)
 	}

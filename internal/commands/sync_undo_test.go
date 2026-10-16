@@ -7,13 +7,15 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
+	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 func noAgentsUndo() UndoOptions {
-	return UndoOptions{verbOptions: verbOptions{
+	return UndoOptions{VerbOptions: synccmd.VerbOptions{
 		Agents: []wtsync.Agent{},
 		Now:    func() time.Time { return time.Unix(0, 100) },
 	}}
@@ -26,7 +28,7 @@ func TestSyncUndoPutsBackWhatSyncRunMoved(t *testing.T) {
 	ctx, bump := provisiontest.RunFixture(t, true)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	var out bytes.Buffer
-	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err != nil {
+	if err := synccmd.SyncRebase(ctx, []string{"bump"}, synccmdtest.NoAgents(), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	if testkit.GitOut(t, bump, "log", "-1", "--format=%s") != "chore: regen" {
@@ -62,7 +64,7 @@ func TestSyncUndoRefusesAWorktreeCommittedToSinceTheRun(t *testing.T) {
 	}
 	ctx, bump := provisiontest.RunFixture(t, true)
 	var out bytes.Buffer
-	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err != nil {
+	if err := synccmd.SyncRebase(ctx, []string{"bump"}, synccmdtest.NoAgents(), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	testkit.GitIn(t, bump, "commit", "-q", "--allow-empty", "-m", "after the run")
@@ -99,7 +101,7 @@ func TestSyncUndoNamesAFinishedByHandRebaseInsteadOfCallingItMoved(t *testing.T)
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump, gitDir, st := handedOver(t)
+	ctx, bump, gitDir, st := synccmdtest.HandedOver(t)
 	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
 	testkit.GitOut(t, bump, "add", "--", "a.txt")
 	testkit.GitTry(t, bump, "rebase", "--continue")
@@ -146,7 +148,7 @@ func TestSyncUndoAbortsWhatSyncRunHandedOver(t *testing.T) {
 	}
 	ctx, bump := provisiontest.ContestedFixture(t)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
-	gitDir, _ := handOverNow(t, ctx, bump)
+	gitDir, _ := synccmdtest.HandOverNow(t, ctx, bump)
 	if _, ok, err := wtsync.ReadLock(gitDir); err != nil || !ok {
 		t.Fatalf("ReadLock = %v, %v; the run kept no lock and the test is vacuous", ok, err)
 	}
@@ -180,7 +182,7 @@ func TestSyncUndoRefusesARebaseItDidNotLeave(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump, gitDir, st := handedOver(t)
+	ctx, bump, gitDir, st := synccmdtest.HandedOver(t)
 	restartedByHand(t, bump, st)
 	main := ctx.Repo.MainRoot
 	moved := testkit.GitOut(t, main, "rev-parse", st.Branch)
@@ -218,7 +220,7 @@ func TestSyncUndoNamesTheCommitAPersonMadeInsideTheHandover(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump, gitDir, _ := handedOver(t)
+	ctx, bump, gitDir, _ := synccmdtest.HandedOver(t)
 	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
 	testkit.GitOut(t, bump, "add", "--", "a.txt")
 	testkit.GitOut(t, bump, "commit", "-q", "-m", "resolved by hand")
@@ -251,7 +253,7 @@ func TestSyncHandoverRecordsHead(t *testing.T) {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
 	ctx, bump := provisiontest.ContestedFixture(t)
-	_, st := handOverNow(t, ctx, bump)
+	_, st := synccmdtest.HandOverNow(t, ctx, bump)
 	if head := testkit.GitOut(t, bump, "rev-parse", "HEAD"); st.Head == "" || st.Head != head {
 		t.Fatalf("sidecar head %q, HEAD %s", st.Head, head)
 	}
@@ -279,7 +281,7 @@ func TestSyncUndoForcedPastAMovedHandoverSaysWhatItRewound(t *testing.T) {
 	}
 	ctx, bump := provisiontest.ContestedFixture(t)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
-	handOverNow(t, ctx, bump)
+	synccmdtest.HandOverNow(t, ctx, bump)
 	main := ctx.Repo.MainRoot
 	testkit.GitOut(t, main, "update-ref", "refs/heads/feat_wt/bump", "main")
 	moved := testkit.GitOut(t, main, "rev-parse", "feat_wt/bump")
@@ -314,7 +316,7 @@ func TestSyncUndoForcedPastACommitInsideSaysWhereItKeptIt(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump, _, _ := handedOver(t)
+	ctx, bump, _, _ := synccmdtest.HandedOver(t)
 	old := testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", "feat_wt/bump")
 	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
 	testkit.GitOut(t, bump, "add", "--", "a.txt")
@@ -343,7 +345,7 @@ func TestSyncUndoUnderAnIdleSessionAsksThenTellsIt(t *testing.T) {
 	ctx, bump := provisiontest.RunFixture(t, false)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	var out bytes.Buffer
-	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err != nil {
+	if err := synccmd.SyncRebase(ctx, []string{"bump"}, synccmdtest.NoAgents(), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	rebased := testkit.GitOut(t, bump, "rev-parse", "HEAD")
@@ -381,7 +383,7 @@ func TestSyncUndoNoLeavesAHandoverAndItsLock(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
-	ctx, bump, gitDir, st := handedOver(t)
+	ctx, bump, gitDir, st := synccmdtest.HandedOver(t)
 	opts := noAgentsUndo()
 	opts.Agents = testkit.IdleIn(t, bump, "bump-1")
 	opts.Confirm = func([]string) (bool, error) { return false, nil }
@@ -403,7 +405,7 @@ func TestSyncUndoRefusesASessionThatWokeWhileAsked(t *testing.T) {
 	}
 	ctx, bump := provisiontest.RunFixture(t, false)
 	var out bytes.Buffer
-	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err != nil {
+	if err := synccmd.SyncRebase(ctx, []string{"bump"}, synccmdtest.NoAgents(), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	rebased := testkit.GitOut(t, bump, "rev-parse", "HEAD")

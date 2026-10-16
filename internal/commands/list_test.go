@@ -12,6 +12,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -535,7 +536,7 @@ func TestStatusSaysWhenThereIsNoTrunkToCompareWith(t *testing.T) {
 // called dirty.
 func TestStatusWorktreeShowsAHandedOverWorktree(t *testing.T) {
 	ctx, bump := provisiontest.ContestedFixture(t)
-	_, st := handOverNow(t, ctx, bump)
+	_, st := synccmdtest.HandOverNow(t, ctx, bump)
 
 	var buf bytes.Buffer
 	if err := StatusWorktree(ctx, "bump", noStatusSessions(), &buf); err != nil {

@@ -14,6 +14,8 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
+	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
+	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -174,13 +176,13 @@ func TestJSONOutputsSayHowTrunkWasFound(t *testing.T) {
 	for _, want := range []config.TrunkSource{config.TrunkFromConfig, config.TrunkConventional} {
 		ctx.Config.TrunkSource = want
 		got := map[string]*string{}
-		got["status"] = planOfWork(t, ctx, "bump").TrunkSource
-		up, err := upJSON(t, ctx, "bump", noAgents())
+		got["status"] = synccmdtest.PlanOfWork(t, ctx, "bump").TrunkSource
+		up, err := synccmdtest.UpJSON(t, ctx, "bump", synccmdtest.NoAgents())
 		if err != nil {
 			t.Fatal(err)
 		}
 		got["up"] = up.TrunkSource
-		got["sync"] = overviewJSON(t, ctx).TrunkSource
+		got["sync"] = synccmdtest.OverviewJSON(t, ctx).TrunkSource
 		sweep, _ := retiretest.SweepPlanJSON(t, ctx, retire.SweepOptions{NoFetch: true})
 		got["sweep-plan"] = sweep.TrunkSource
 		got["new-plan"] = provisiontest.NewPlanOf(t, ctx, "fix/x", provision.NewOptions{}).TrunkSource
@@ -198,13 +200,13 @@ func TestJSONOutputsSayHowTrunkWasFound(t *testing.T) {
 func TestSyncSaysNothingNamesTrunk(t *testing.T) {
 	ctx := kit.OpenLenient(testkit.NoTrunkRepo(t), &bytes.Buffer{})
 	for _, noFetch := range []bool{true, false} {
-		o := overviewOf(ctx, SyncOptions{NoFetch: noFetch})
+		o := synccmd.OverviewOf(ctx, synccmd.SyncOptions{NoFetch: noFetch})
 		if o.Error == nil || !strings.Contains(*o.Error, "cannot tell which branch is trunk") ||
 			o.Trunk != nil || o.TrunkRef != nil || o.Fetched || o.FetchError != nil {
 			t.Errorf("no-fetch %v: overview %+v, want the detection error and no trunk", noFetch, o)
 		}
 		var buf bytes.Buffer
-		if err := Sync(ctx, SyncOptions{NoFetch: noFetch}, &buf); err == nil ||
+		if err := synccmd.Sync(ctx, synccmd.SyncOptions{NoFetch: noFetch}, &buf); err == nil ||
 			!strings.Contains(err.Error(), "cannot tell which branch is trunk") {
 			t.Errorf("no-fetch %v: Sync = %v, want the detection error", noFetch, err)
 		}
@@ -219,15 +221,15 @@ func TestStatusPlanHasNoTrunkRefWhenNothingNamesTrunk(t *testing.T) {
 		"no MAIN_BRANCH": kit.OpenLenient(committedNoTrunkRepo(t), &bytes.Buffer{}),
 	} {
 		var buf bytes.Buffer
-		if err := UpPlanJSON(ctx, ".", &buf); err != nil {
+		if err := synccmd.UpPlanJSON(ctx, ".", &buf); err != nil {
 			t.Fatal(err)
 		}
-		var p UpPlan
+		var p synccmd.UpPlan
 		if err := json.Unmarshal(buf.Bytes(), &p); err != nil {
 			t.Fatal(err)
 		}
 		if p.Trunk != nil || p.TrunkRef != nil || p.TrunkSource != nil || p.TrunkRefExists ||
-			retire.Deref(p.UpIneligibleCode) != IneligibleNoConfig {
+			retire.Deref(p.UpIneligibleCode) != synccmd.IneligibleNoConfig {
 			t.Errorf("%s: trunk %q ref %q source %q exists %v code %q", name, retire.Deref(p.Trunk),
 				retire.Deref(p.TrunkRef), retire.Deref(p.TrunkSource), p.TrunkRefExists, retire.Deref(p.UpIneligibleCode))
 		}

@@ -9,6 +9,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/github"
 )
@@ -80,7 +81,7 @@ func TestStatusJSONLeavesTheChecksOut(t *testing.T) {
 	ctx, log := provisiontest.FourWorktreesWithChecks(t)
 	plan := func() string {
 		var buf bytes.Buffer
-		if err := UpPlanJSON(ctx, "failing", &buf); err != nil {
+		if err := synccmd.UpPlanJSON(ctx, "failing", &buf); err != nil {
 			t.Fatal(err)
 		}
 		testkit.ValidateJSON(t, "status", buf.Bytes())

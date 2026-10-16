@@ -10,6 +10,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/session"
+	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 )
 
 // pathWidthHelp ends the help of the commands that print a path column.
@@ -160,7 +161,7 @@ func newStatusCmd() *cobra.Command {
 				if ctx == nil {
 					return kit.ErrNotInRepo
 				}
-				return commands.UpPlanJSON(ctx, work, out)
+				return synccmd.UpPlanJSON(ctx, work, out)
 			}
 			if sel.selection().Any() {
 				if len(args) > 0 {
