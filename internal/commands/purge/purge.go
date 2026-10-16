@@ -393,6 +393,7 @@ func (j *purgeJournal) planned(p quarantine.PurgePlan) {
 	j.plan = p
 }
 
+// Interrupted finishes the journal for a signal (kit.Interruptible).
 func (j *purgeJournal) Interrupted(_ string, recovery string) {
 	j.write(kit.OutcomeInterrupted, nil, recovery)
 }

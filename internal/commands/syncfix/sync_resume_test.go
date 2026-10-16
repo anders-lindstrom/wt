@@ -18,7 +18,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
-// noResumeAgents is the resume half of noAgents: no sessions anywhere, and a
+// noResumeAgents is the resume half of synccmdtest.NoAgents: no sessions anywhere, and a
 // clock a few seconds on, so the lock a resume takes is told apart from the
 // one the run kept without the run's expiring.
 func noResumeAgents() ResumeOptions {

@@ -38,10 +38,10 @@ func CheckType(ctx *Context, typ string) error {
 // Branch returns the branch for a piece of work. The main checkout, named by
 // "/" or by "." from inside it, is trunk as the repository configures or
 // detects it. A worktree that already exists wins by any name `wt list`
-// prints for it (see existingWork); otherwise the spec is parsed and the type
+// prints for it (see ExistingWork); otherwise the spec is parsed and the type
 // validated against the repository's WORKTREE_TYPES. A detached worktree,
 // which only its path can name, has no branch to print and is refused as
-// locateBranch refuses it.
+// LocateBranch refuses it.
 func Branch(ctx *Context, spec string) (string, error) {
 	wt, ok, err := ExistingWork(ctx, spec)
 	switch {
@@ -63,7 +63,7 @@ func Branch(ctx *Context, spec string) (string, error) {
 
 // Path returns where a piece of work lives. The main checkout, named by "/"
 // or by "." from inside it, is its root. A worktree that already exists wins
-// by any name `wt list` prints for it (see existingWork), whatever layout it
+// by any name `wt list` prints for it (see ExistingWork), whatever layout it
 // is in, which is what lets worktrees created by other tools in other shapes
 // — Superset's and T3 Code's included — resolve without migration. Otherwise
 // the canonical path is returned, so `new` and `switch` agree on one answer.

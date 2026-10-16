@@ -19,22 +19,22 @@ var GhRepo = github.Remote{Name: "origin", Host: "github.com", Slug: "t/demo"}
 // FakeGitHub writes a `gh` that answers the two questions wt asks — the branch
 // lookup over `api graphql`, and the wide open listing — and performs
 // `pr checkout <n>` by creating that pull request's branch where it is run,
-// which is the only part of the real one wt depends on. It points findGitHub
-// and gitHubRemote at the fake for one test and returns the file every
+// which is the only part of the real one wt depends on. It points kit.FindGitHub
+// and kit.GitHubRemote at the fake for one test and returns the file every
 // invocation's argv is appended to.
 func FakeGitHub(t *testing.T, prs ...github.PR) string {
 	t.Helper()
 	return FakeGitHubWith(t, "", prs...)
 }
 
-// FakeGitHubWith is fakeGitHub with extra shell run before the answers, for
+// FakeGitHubWith is FakeGitHub with extra shell run before the answers, for
 // the tests that need gh to fail.
 func FakeGitHubWith(t *testing.T, prelude string, prs ...github.PR) string {
 	t.Helper()
 	return FakeGitHubAs(t, "anders", prelude, prs...)
 }
 
-// FakeGitHubAs is fakeGitHubWith with the login gh reports itself as, which
+// FakeGitHubAs is FakeGitHubWith with the login gh reports itself as, which
 // is what decides whose review the picker leads with.
 func FakeGitHubAs(t *testing.T, viewer, prelude string, prs ...github.PR) string {
 	t.Helper()

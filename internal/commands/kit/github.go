@@ -25,7 +25,7 @@ type GitHub struct {
 
 // OpenGitHub runs the gates the integration stands on and returns, for the
 // first that failed, one line saying how to fix it: the person's own setting,
-// gh on the PATH, then a GitHub remote. The login is not among them — gitHub.fail
+// gh on the PATH, then a GitHub remote. The login is not among them — GitHub.Fail
 // turns the real call's failure into the line this would have printed, and only
 // `wt doctor` pays for a `gh auth status` of its own.
 func OpenGitHub(ctx *Context) (GitHub, error) {

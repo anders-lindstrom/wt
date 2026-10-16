@@ -20,8 +20,8 @@ import (
 // gives it would hold up a listing nobody asked to wait for.
 var SessionsDeadline = 2 * time.Second
 
-// ListClaudeSessions is a var so the package's tests stay off the machine's
-// own claude.
+// ListClaudeSessions is a var so tests stay off the machine's own
+// claude.
 var ListClaudeSessions = wtsync.ListClaudeSessions
 
 // MaxSessionName is the widest a session's name is printed, in terminal
@@ -212,7 +212,7 @@ func WithSessions(rows [][]string, paths []string, sessions map[string][]ClaudeS
 	return out
 }
 
-// PathTableFits reports whether printPathTable would print every row of rows
+// PathTableFits reports whether kit.PrintPathTable would print every row of rows
 // within width terminal columns, paths shortened as it shortens them. rows
 // is not changed.
 func PathTableFits(rows [][]string, width int) bool {

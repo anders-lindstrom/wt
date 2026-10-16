@@ -292,6 +292,7 @@ func (j *restoreJournal) finish(res quarantine.RestoreResult, err error) {
 	j.write(res.Outcome, res, err, "")
 }
 
+// Interrupted finishes the journal for a signal (kit.Interruptible).
 func (j *restoreJournal) Interrupted(_ string, recovery string) {
 	j.write(kit.OutcomeInterrupted, quarantine.RestoreResult{}, nil, recovery)
 }

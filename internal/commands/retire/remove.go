@@ -105,7 +105,8 @@ type RemoveResult struct {
 	// when there is none.
 	RunID string
 	// Superset is what came of deleting the worktree's Superset workspace
-	// — StepDeregistered, StepNotRegistered, StepSkipped or StepFailed —
+	// — provision.StepDeregistered, provision.StepNotRegistered,
+	// kit.StepSkipped or kit.StepFailed —
 	// and "" when no worktree was removed. SupersetReason says why for a
 	// skip or a failure.
 	Superset       string
@@ -520,11 +521,11 @@ func processesIn(path string, scan func() (*wtsync.ProcessScan, error), agents [
 	return s.In(path), nil
 }
 
-// ScanProcesses reads the process table. A var so the package's tests stay
-// off the machine's own processes until one starts a process of its own.
+// ScanProcesses reads the process table. A var so tests stay off the
+// machine's own processes until one starts a process of its own.
 var ScanProcesses = wtsync.ScanProcesses
 
-// reapProcesses ends processes, and reapGrace is how long SIGTERM has
+// ReapProcesses ends processes, and reapGrace is how long SIGTERM has
 // before SIGKILL. Vars so a test can have a process that will not die.
 var (
 	ReapProcesses = wtsync.Reap

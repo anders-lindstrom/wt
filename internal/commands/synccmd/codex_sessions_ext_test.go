@@ -13,7 +13,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
-// listedSessions has every command that names no sessions of its own see agents.
+// testkit.ListedSessions has every command that names no sessions of its own see agents.
 // A busy Codex session refuses what a busy Claude one refuses, under the
 // same --force.
 func TestUpRefusesUnderABusyCodexSession(t *testing.T) {

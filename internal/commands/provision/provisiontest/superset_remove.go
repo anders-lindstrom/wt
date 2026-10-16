@@ -11,7 +11,7 @@ import (
 
 // SupersetAt writes a `superset` whose one live worktree workspace, w1, is
 // at path, beside the main checkout's own "local" one, and points
-// probeSuperset at it. deleteBody is what `ws delete` does; before it runs
+// provision.ProbeSuperset at it. deleteBody is what `ws delete` does; before it runs
 // the fake notes in the log whether path still exists and whether git still
 // lists it, so a test can prove the delete came after both were gone.
 func SupersetAt(t *testing.T, ctx *kit.Context, path, deleteBody string) string {

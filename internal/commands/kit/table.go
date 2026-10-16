@@ -19,7 +19,7 @@ const ListPadding = 2
 const minPathWidth = 24
 
 // PRCell is a pull request in the PR column of wt list and wt status, and on
-// the pr line of wt status <work>: prLabel with what its checks say marked
+// the pr line of wt status <work>: PRLabel with what its checks say marked
 // after the number, as wt pr list says it in words. A pull request with no
 // checks has no mark.
 func PRCell(pr github.PR, trunks []string) string {

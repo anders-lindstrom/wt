@@ -34,7 +34,7 @@ func (b *LockedBuffer) String() string {
 }
 
 // InterruptChild is set in the environment of a test binary that
-// interruptedChild re-ran: the test runs its child half there.
+// InterruptedChild re-ran: the test runs its child half there.
 const InterruptChild = "WT_TEST_INTERRUPT_CHILD"
 
 // InterruptedChild re-runs the calling test in a child process, where its

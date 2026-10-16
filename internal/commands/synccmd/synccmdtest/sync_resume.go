@@ -42,7 +42,7 @@ func HandOverNow(t *testing.T, ctx *kit.Context, bump string) (gitDir string, st
 	return gitDir, st
 }
 
-// ResolvedByHand is handedOver with the person's part done: a.txt merged and
+// ResolvedByHand is HandedOver with the person's part done: a.txt merged and
 // staged, ready for resume.
 func ResolvedByHand(t *testing.T) (ctx *kit.Context, bump, gitDir string) {
 	t.Helper()

@@ -24,7 +24,7 @@ func DetectAnswers(trunk string) Answers {
 }
 
 // detectedConfig is the configuration a repository with no file runs on:
-// detectAnswers resolved, in memory, nothing written. No build command is
+// DetectAnswers resolved, in memory, nothing written. No build command is
 // detected, so nothing runs that the repository did not put there itself.
 //
 // An origin/HEAD naming a branch never fetched names nothing to branch from,

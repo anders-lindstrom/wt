@@ -58,7 +58,7 @@ func RunFixture(t *testing.T, withDefer bool) (ctx *kit.Context, bump string) {
 	return ctx, bump
 }
 
-// ContestedFixture is runFixture's repository with one more file in play:
+// ContestedFixture is RunFixture's repository with one more file in play:
 // the branch's single commit also touches a.txt, which the declaration does
 // not claim, and trunk moves a.txt too. Triage sees the whole stop, so the
 // class is contested and the run walks into it knowingly.
@@ -67,7 +67,7 @@ func ContestedFixture(t *testing.T) (ctx *kit.Context, bump string) {
 	return Contested(t, false)
 }
 
-// Contested is contestedFixture with or without runFixture's deferred step.
+// Contested is ContestedFixture with or without RunFixture's deferred step.
 func Contested(t *testing.T, withDefer bool) (ctx *kit.Context, bump string) {
 	t.Helper()
 	ctx, bump = RunFixture(t, withDefer)

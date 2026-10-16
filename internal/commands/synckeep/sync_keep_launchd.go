@@ -73,7 +73,7 @@ func keepPlist(j synccmd.KeepJob) string {
 	return b.String()
 }
 
-// KeepStartOptions tunes SyncKeepStart.
+// KeepStartOptions tunes Start.
 type KeepStartOptions struct {
 	Every  time.Duration
 	NoPush bool

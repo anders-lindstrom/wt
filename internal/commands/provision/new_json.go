@@ -603,7 +603,7 @@ func (j *CreateJournal) Finish() {
 }
 
 // Interrupted writes the object for a run a signal ended, the step in
-// flight as interrupted: what makes it interruptible, for watchSignals. The
+// flight as interrupted: what makes it interruptible, for kit.WatchSignals. The
 // handler has stopped every git and script already, so what the steps
 // recorded stands. inFlight and recovery are the rebase tracker's and what
 // the handler printed, which a create has no use for.

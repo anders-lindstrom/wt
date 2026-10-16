@@ -220,7 +220,7 @@ func TestRemoveJSONInterruptedBetweenTheMovesWritesOneObject(t *testing.T) {
 	t.Cleanup(func() { quarantine.AfterSave = nil })
 	quarantine.AfterSave = func(_ *quarantine.Record, at string) error {
 		if at == quarantine.StepMoveCheckout+":"+quarantine.Done {
-			// What watchSignals does, but for the exit.
+			// What kit.WatchSignals does, but for the exit.
 			kit.CurrentInterruptJournal().Interrupted("", "interrupted")
 		}
 		return nil

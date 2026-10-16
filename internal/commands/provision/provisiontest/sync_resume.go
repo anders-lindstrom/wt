@@ -9,7 +9,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
-// LaterStopFixture is contestedFixture with a second branch commit that bumps
+// LaterStopFixture is ContestedFixture with a second branch commit that bumps
 // v.txt again, so a rebase continued past the handed-over stop meets v.txt —
 // owned-line's — in conflict at 2/2. withUnclaimed also has that commit add
 // b.txt, which trunk adds too and nobody claims.

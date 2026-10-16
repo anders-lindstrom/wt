@@ -11,7 +11,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
-// PushedWork is trunkFixture.withWork with worktree x pushed to origin under
+// PushedWork is TrunkFixture.WithWork with worktree x pushed to origin under
 // its own name and tracking it: x is the checkout, opts the run options.
 func (f *TrunkFixture) PushedWork(t *testing.T) (x string, opts synccmd.RunOptions) {
 	t.Helper()
@@ -35,7 +35,7 @@ func (f *TrunkFixture) Theirs(t *testing.T, branch, file, content string) string
 	testkit.GitIn(t, f.Other, "commit", "-q", "-m", "theirs "+file)
 	testkit.GitIn(t, f.Other, "push", "-q", "origin", branch)
 	sha := testkit.GitOut(t, f.Other, "rev-parse", "HEAD")
-	// Back on main, where advanceOrigin commits.
+	// Back on main, where AdvanceOrigin commits.
 	testkit.GitIn(t, f.Other, "checkout", "-q", "-B", "main", "origin/main")
 	return sha
 }
@@ -47,7 +47,7 @@ func At(opts synccmd.RunOptions, nanos int64) synccmd.RunOptions {
 	return opts
 }
 
-// UpOut is upJSON with what a person would have read.
+// UpOut is UpJSON with what a person would have read.
 func UpOut(t *testing.T, ctx *kit.Context, work string, opts synccmd.RunOptions) (synccmd.UpResult, string, error) {
 	t.Helper()
 	var out, human bytes.Buffer

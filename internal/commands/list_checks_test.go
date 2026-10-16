@@ -14,7 +14,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/github"
 )
 
-// checkCells is the PR cell each of fourWorktreesWithChecks' branches reads.
+// checkCells is the PR cell each of provisiontest.FourWorktreesWithChecks' branches reads.
 var checkCells = map[string]string{ //nolint:gosec // G101: "passing" is a check state, not a password
 	"fix_wt/passing":   "#12 ✓ open",
 	"fix_wt/failing":   "#13 ✗ open",
@@ -104,7 +104,7 @@ func TestStatusJSONLeavesTheChecksOut(t *testing.T) {
 
 // The mark goes after the number whatever the label after it says: a stacked
 // pull request merged elsewhere and one with changes requested have two words,
-// and a pull request with no checks is left as prLabel has it.
+// and a pull request with no checks is left as kit.PRLabel has it.
 func TestPRCellMarksAfterTheNumberOfAMultiWordLabel(t *testing.T) {
 	merged := provisiontest.WithChecks(testkit.OpenPR(31, "feat_wt/x", "X"), "SUCCESS")
 	merged.State, merged.BaseRefName = "MERGED", "feat_wt/parent"

@@ -15,9 +15,9 @@ import (
 //   - rebasing (resuming for a resume) from just before the rebase starts.
 //     A finished or failed rebase clears it as it returns. A stop being
 //     handed over is still a rebase stopped in the worktree, so it stays
-//     set until handOver returns, written or not: an interrupt meanwhile
+//     set until HandOver returns, written or not: an interrupt meanwhile
 //     still names the worktree and what puts it back.
-//   - rebased from just before completeRun starts, its input included,
+//   - rebased from just before CompleteRun starts, its input included,
 //     until it returns. The rebase is done; from there an interrupt cannot
 //     abort it, only leave the deferred steps and the result ref undone.
 //   - nothing in between: there is no worktree to say anything about.

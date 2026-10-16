@@ -21,12 +21,12 @@ import (
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
-// KeepOptions tunes SyncKeepRun for callers and tests.
+// KeepOptions tunes Run for callers and tests.
 type KeepOptions struct {
 	// Every is the job's interval, for the next-run line. Zero keeps what
-	// the state file records, or KeepDefaultInterval.
+	// the state file records, or synccmd.KeepDefaultInterval.
 	Every time.Duration
-	// Push is PushAlways or PushNever: a keeper has nobody to ask.
+	// Push is synccmd.PushAlways or synccmd.PushNever: a keeper has nobody to ask.
 	Push synccmd.PushMode
 	// NoFFTrunk leaves local trunk where it is after the fetch, as the user
 	// setting ff_trunk false does.
@@ -71,7 +71,7 @@ func acquireKeepLock(gitDir string) (f *os.File, held bool, err error) {
 // its tip has moved since the last pass, rebase every ready worktree the way
 // wt sync --rebase --yes does, leaving alone any worktree with a session in it,
 // and push what finished with nothing owed. Every pass is recorded in the
-// log, as it happens, and in the state file. The error is what SyncRebase's
+// log, as it happens, and in the state file. The error is what synccmd.SyncRebase's
 // would be.
 func Run(ctx *kit.Context, opts KeepOptions, w io.Writer) error {
 	gitDir, logPath, statePath, err := synccmd.KeepPaths(ctx)
@@ -179,7 +179,7 @@ func (p *keepPass) run(recorded string) error {
 	return err
 }
 
-// openLog rotates the log once it is past keepLogLimit (the file becomes
+// openLog rotates the log once it is past synccmd.KeepLogLimit (the file becomes
 // .1, replacing the previous .1) and opens it for this pass.
 func (p *keepPass) openLog() error {
 	if info, err := os.Stat(p.logPath); err == nil && info.Size() > synccmd.KeepLogLimit {
@@ -339,7 +339,7 @@ func (p *keepPass) pass(recorded string) error {
 		}
 	}
 	// A push that did not come off is named with the command that does it
-	// by hand, in the log too; --no-push has offerPush print it already.
+	// by hand, in the log too; --no-push has synccmd.OfferPush print it already.
 	if p.opts.Push == synccmd.PushAlways {
 		for _, u := range p.unpushed {
 			// One with nowhere to push has been named with why already.

@@ -1,6 +1,7 @@
 // Package synccmd implements wt sync and wt up: the overview of what a
 // rebase onto trunk would do, the run that does it, its JSON journal, and
-// the fast-forwards, pushes and own remotes around it.
+// the fast-forwards, pushes and own remotes around it. It also holds the
+// keeper's state, lock and launchd job, and wt sync doctor.
 package synccmd
 
 import (
@@ -155,7 +156,7 @@ func SyncWorktree(ctx *kit.Context, arg string, opts SyncOptions, w io.Writer) e
 	return nil
 }
 
-// noTrunkError is trunkTip's answer for a trunk that is not there.
+// noTrunkError is TrunkTip's answer for a trunk that is not there.
 type noTrunkError struct{ onto string }
 
 func (e noTrunkError) Error() string {
@@ -253,7 +254,7 @@ func LastFetched(mainRoot string, now time.Time) string {
 	return "as last fetched (when is not recorded)"
 }
 
-// LastFetchedParen is lastFetched inside a parenthesis, for the lines that
+// LastFetchedParen is LastFetched inside a parenthesis, for the lines that
 // put it after a ref: "(as last fetched 3h ago)".
 func LastFetchedParen(mainRoot string, now time.Time) string {
 	if age := fetchAge(mainRoot, now); age != "" {

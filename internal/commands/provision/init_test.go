@@ -17,7 +17,7 @@ import (
 )
 
 // bareRepo is a repository with no worktree configuration at all — the state
-// `wt init` exists to get you out of, and the one fixtureRepo cannot produce.
+// `wt init` exists to get you out of, and the one testkit.FixtureRepo cannot produce.
 // Its one commit is what makes main exist for detection to find.
 func bareRepo(t *testing.T) *repo.Repo {
 	t.Helper()

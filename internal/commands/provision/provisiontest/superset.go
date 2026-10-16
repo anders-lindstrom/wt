@@ -10,7 +10,7 @@ import (
 )
 
 // FakeSuperset writes a `superset` that answers projects/ws create for one
-// project rooted at repoRoot, and points probeSuperset at it for this test.
+// project rooted at repoRoot, and points provision.ProbeSuperset at it for this test.
 // It returns the file every invocation's argv is appended to.
 func FakeSuperset(t *testing.T, repoRoot string, running bool) string {
 	t.Helper()

@@ -27,7 +27,7 @@ func SyncDoctor(ctx *kit.Context, opts DoctorOptions, w io.Writer) error {
 		return err
 	}
 	// The plan row is built here rather than in wtsync: it names the resume
-	// command, and only this package knows a worktree's work name.
+	// command, and the work name comes from kit.WorktreeName.
 	holders, err := wtsync.PlanHolders(worktrees)
 	if err != nil {
 		return err

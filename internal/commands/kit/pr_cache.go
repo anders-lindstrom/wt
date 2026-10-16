@@ -127,7 +127,7 @@ func WritePRCache(ctx *Context, r github.Remote, answers map[string]*github.PR, 
 	WritePRCacheChecks(ctx, r, answers, now, false)
 }
 
-// WritePRCacheChecks is writePRCache for answers read with the checks asked
+// WritePRCacheChecks is WritePRCache for answers read with the checks asked
 // for, when checks is true.
 func WritePRCacheChecks(ctx *Context, r github.Remote, answers map[string]*github.PR, now time.Time, checks bool) {
 	path := PRCachePath(ctx)
@@ -159,7 +159,7 @@ func WritePRCacheChecks(ctx *Context, r github.Remote, answers map[string]*githu
 // that fails at either step takes its temporary file with it.
 func writeThroughRename(path string, data []byte) error {
 	tmp := fmt.Sprintf("%s.%d", path, os.Getpid())
-	// #nosec G703 -- path is prCachePath's: the git dir git itself reported,
+	// #nosec G703 -- path is PRCachePath's: the git dir git itself reported,
 	// plus a fixed file name. Nothing a caller passes reaches it.
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		_ = os.Remove(tmp)

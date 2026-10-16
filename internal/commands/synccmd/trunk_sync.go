@@ -53,7 +53,7 @@ type TrunkSync struct {
 	detail string // what the skip line adds to its reason
 }
 
-// TrunkSyncOptions tunes syncLocalTrunk.
+// TrunkSyncOptions tunes SyncLocalTrunk.
 type TrunkSyncOptions struct {
 	OptedOut bool
 	// Apply moves local trunk; false only says what would happen, for wt

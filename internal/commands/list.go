@@ -1,4 +1,5 @@
-// Package commands implements the wt subcommands.
+// Package commands implements wt list and wt status, and holds the tests
+// that cross the command packages.
 package commands
 
 import (
@@ -276,7 +277,7 @@ func checkoutState(path string) string {
 	return "clean"
 }
 
-// statusBase is the trunk status compares with: the first of trunkBases,
+// statusBase is the trunk status compares with: the first of retire.TrunkBases,
 // origin/<trunk> as last fetched when it is there. ok is false when neither
 // it nor the local trunk exists.
 func statusBase(ctx *kit.Context) (retire.TrunkBase, bool) {

@@ -170,7 +170,7 @@ func withOriginNoHead(t *testing.T, dir string) {
 }
 
 // Every JSON output gittree judges trunk by says how trunk was found, and a
-// trunk no file names says so: config for runFixture's MAIN_BRANCH.
+// trunk no file names says so: config for provisiontest.RunFixture's MAIN_BRANCH.
 func TestJSONOutputsSayHowTrunkWasFound(t *testing.T) {
 	ctx, _ := provisiontest.RunFixture(t, false)
 	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "release-2.1")

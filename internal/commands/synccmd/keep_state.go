@@ -58,7 +58,7 @@ type KeepState struct {
 	Started time.Time `json:"started,omitzero"`
 }
 
-// UnpushedTarget is a pushTarget with the tip the pass left the branch at,
+// UnpushedTarget is a PushTarget with the tip the pass left the branch at,
 // which is what says whether it is still the pass's to push.
 type UnpushedTarget struct {
 	Work   string `json:"worktree"`

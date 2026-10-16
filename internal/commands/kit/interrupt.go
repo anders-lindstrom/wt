@@ -116,7 +116,7 @@ func marksLeftNote(path string) string {
 }
 
 // WatchSignals handles Ctrl-C and SIGTERM for the length of one command,
-// exiting 128+signal after onInterrupt has cleaned up. The returned function stops
+// exiting 128+signal after OnInterrupt has cleaned up. The returned function stops
 // the handler and must be deferred: a signal after the command has finished
 // is the shell's business, not wt's.
 func WatchSignals(w io.Writer, t *RebaseTracker) func() {
@@ -156,7 +156,7 @@ var (
 	interruptJournal Interruptible
 )
 
-// Interruptible is a journal a signal can finish: RunJournal, SweepJournal.
+// Interruptible is a journal a signal can finish, such as synccmd.RunJournal or retire.SweepJournal.
 type Interruptible interface {
 	Interrupted(inFlight, recovery string)
 }

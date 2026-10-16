@@ -593,7 +593,7 @@ func BeginRun(mainRoot, runID string, at time.Time, endpoint *Endpoint) error {
 		WtVersion: kit.Version})
 }
 
-// AfterBranchMoved runs, when set, between moveBranch's transaction and its
+// AfterBranchMoved runs, when set, between MoveBranch's transaction and its
 // config removal. Tests set it to deliver a signal there.
 var AfterBranchMoved func(name string)
 

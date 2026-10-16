@@ -7,7 +7,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
-// NothingToRebase is a trunkFixture whose trunk declares a sync
+// NothingToRebase is a TrunkFixture whose trunk declares a sync
 // configuration, with worktree x pushed and then, on another machine, brought
 // onto a trunk that moved and pushed again: x here is behind its own remote,
 // and at the remote's commit it is on trunk already. local is x's tip here,

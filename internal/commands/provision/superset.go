@@ -117,7 +117,7 @@ func SupersetEnabled(ctx *kit.Context) bool {
 	return ctx.UserConfig().Superset && (mode == config.SupersetAuto || mode == config.SupersetOn)
 }
 
-// What removal's superset step came to, beside StepSkipped and StepFailed.
+// What removal's superset step came to, beside kit.StepSkipped and kit.StepFailed.
 const (
 	// StepDeregistered is the worktree's Superset workspace deleted.
 	StepDeregistered = "deregistered"

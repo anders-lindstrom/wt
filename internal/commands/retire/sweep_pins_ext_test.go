@@ -86,7 +86,7 @@ func TestSweepInterruptedAfterAMoveNamesThePin(t *testing.T) {
 	t.Cleanup(func() { refpins.AfterBranchMoved = nil })
 	refpins.AfterBranchMoved = func(name string) {
 		if name == "one" {
-			// What watchSignals does, but for the exit.
+			// What kit.WatchSignals does, but for the exit.
 			kit.CurrentInterruptJournal().Interrupted("", "interrupted")
 		}
 	}
