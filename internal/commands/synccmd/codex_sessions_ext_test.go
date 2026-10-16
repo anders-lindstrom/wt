@@ -17,6 +17,7 @@ import (
 // A busy Codex session refuses what a busy Claude one refuses, under the
 // same --force.
 func TestUpRefusesUnderABusyCodexSession(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.RunFixture(t, false)
 	opts := synccmdtest.NoAgents()
 	opts.Agents = []wtsync.Agent{testkit.CodexSession(bump, "busy")}
@@ -34,6 +35,7 @@ func TestUpRefusesUnderABusyCodexSession(t *testing.T) {
 }
 
 func TestStatusAndSyncJSONListACodexSession(t *testing.T) {
+	// Not parallel: swaps the package-level session.ListSessions.
 	ctx, bump := provisiontest.RunFixture(t, false)
 	testkit.ListedSessions(t, &session.ListSessions, testkit.CodexSession(bump, "busy"), wtsync.Agent{Name: "parked-1", Cwd: testkit.CodexSession(bump, "").Cwd, Kind: "interactive", Status: "idle"})
 
@@ -55,6 +57,7 @@ func TestStatusAndSyncJSONListACodexSession(t *testing.T) {
 // An idle interactive Codex is treated as an idle Claude session is: named,
 // and not a refusal.
 func TestUpGoesAheadUnderAnIdleCodexSession(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.RunFixture(t, false)
 	idle := testkit.CodexSession(bump, "idle")
 	idle.Name = "codex"

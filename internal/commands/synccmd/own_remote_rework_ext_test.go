@@ -19,6 +19,7 @@ import (
 // A rebase that failed after the fast-forward and was put back, with no
 // undo at all.
 func TestAFastForwardThatWasRestoredLeavesNoFormerTip(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -49,6 +50,7 @@ func TestAFastForwardThatWasRestoredLeavesNoFormerTip(t *testing.T) {
 // tracking ref when it is fetched by pattern; a sibling whose name merely
 // starts the same is nobody's business.
 func TestUpFetchesExactlyTheBranchItChecks(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -90,6 +92,7 @@ func TestUpFetchesExactlyTheBranchItChecks(t *testing.T) {
 // a newer one. A git that does not know fetch --porcelain stands in for one
 // older than 2.41.
 func TestUpRunsOnAGitWithoutFetchPorcelain(t *testing.T) {
+	// Not parallel: puts a fake git on the process-wide PATH.
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -120,6 +123,7 @@ func TestUpRunsOnAGitWithoutFetchPorcelain(t *testing.T) {
 // --allow-diverged is consent to rebase one branch over what its remote
 // has: like --force it needs the worktree named.
 func TestSyncRunAllowDivergedNeedsTheWorktreeNamed(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -147,6 +151,7 @@ func TestSyncRunAllowDivergedNeedsTheWorktreeNamed(t *testing.T) {
 // allowed says the run went on over a divergence: not that the flag was
 // given to a run that then refused the worktree for something else.
 func TestAllowedIsOnlyARunThatWentOn(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -167,6 +172,7 @@ func TestAllowedIsOnlyARunThatWentOn(t *testing.T) {
 // a busy session keeps a run off it: --force lifts the session, and what the
 // run then goes over has to be what the caller was shown.
 func TestSyncTokenCoversADivergedRowBehindABusySession(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -222,6 +228,7 @@ func TestSyncTokenCoversADivergedRowBehindABusySession(t *testing.T) {
 // nothing is pushed over anything and the divergence keeps no run off. The
 // look says the same as the run does.
 func TestADivergedBranchARunWouldNotRebaseIsNotBlocked(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -249,6 +256,7 @@ func TestADivergedBranchARunWouldNotRebaseIsNotBlocked(t *testing.T) {
 // A branch deleted on the remote between the listing and the fetch is gone,
 // not a fetch that failed: the run goes on, and trunk is not blamed.
 func TestABranchDeletedBetweenTheListingAndTheFetchIsGone(t *testing.T) {
+	// Not parallel: puts a fake git on the process-wide PATH.
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -280,6 +288,7 @@ func TestABranchDeletedBetweenTheListingAndTheFetchIsGone(t *testing.T) {
 // A signal that lands after the merge and before the run has said so still
 // reports where the branch is: at its remote's commit, fast-forwarded.
 func TestAnInterruptedRunReportsAFastForwardItHadMade(t *testing.T) {
+	t.Parallel()
 	f := synccmdtest.NewTrunkFixture(t)
 	x, _ := f.PushedWork(t)
 	before := testkit.GitOut(t, x, "rev-parse", "HEAD")
@@ -310,6 +319,7 @@ func TestAnInterruptedRunReportsAFastForwardItHadMade(t *testing.T) {
 // is in its way, is that branch's trouble: refused by itself with a reason
 // that is a whole clause, and trunk fetched all the same.
 func TestUpRefusesOnlyTheBranchWhoseRefWillNotFetch(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}

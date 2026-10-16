@@ -18,6 +18,7 @@ import (
 
 // wt up takes what the declared strategies resolve, and says it is wt up.
 func TestUpRebasesAWorktreeTheStrategiesResolve(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.RunFixture(t, false)
 	var out bytes.Buffer
 	if err := synccmd.Up(ctx, bump, synccmdtest.NoAgents(), &out); err != nil {
@@ -30,6 +31,7 @@ func TestUpRebasesAWorktreeTheStrategiesResolve(t *testing.T) {
 
 // A conflict that would be yours is refused untouched, and the run fails.
 func TestUpRefusesAWorktreeThatWouldHandOver(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.ContestedFixture(t)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	var out bytes.Buffer
@@ -43,6 +45,7 @@ func TestUpRefusesAWorktreeThatWouldHandOver(t *testing.T) {
 
 // The main checkout is trunk's own: there is nothing to bring onto it.
 func TestUpRefusesTheMainCheckout(t *testing.T) {
+	t.Parallel()
 	ctx, _ := provisiontest.RunFixture(t, false)
 	err := synccmd.Up(ctx, "/", synccmdtest.NoAgents(), &bytes.Buffer{})
 	if err == nil || !strings.Contains(err.Error(), "is the main checkout") {
@@ -53,6 +56,7 @@ func TestUpRefusesTheMainCheckout(t *testing.T) {
 // With no .wt-sync.yaml on trunk nothing is declared, so a conflict-free
 // rebase goes and a conflicting one is refused untouched.
 func TestUpWithoutADeclarationTakesOnlyAConflictFreeRebase(t *testing.T) {
+	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	main := ctx.Repo.MainRoot
 	var buf bytes.Buffer
@@ -95,6 +99,7 @@ func TestUpWithoutADeclarationTakesOnlyAConflictFreeRebase(t *testing.T) {
 // A session busy in the worktree refuses wt up; --force goes ahead, names
 // the session before anything moves, and lifts nothing else.
 func TestUpForceGoesPastABusySessionAndNothingElse(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.RunFixture(t, false)
 	resolved, _ := filepath.EvalSymlinks(bump)
 	opts := synccmdtest.NoAgents()
@@ -127,6 +132,7 @@ func TestUpForceGoesPastABusySessionAndNothingElse(t *testing.T) {
 
 // With nothing named, --force would roll over every session at once.
 func TestSyncRunRefusesForceWithNothingNamed(t *testing.T) {
+	t.Parallel()
 	ctx, _ := provisiontest.RunFixture(t, false)
 	opts := synccmdtest.NoAgents()
 	opts.Force = true
