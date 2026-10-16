@@ -10,6 +10,8 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
+	"github.com/anders-lindstrom/wt/internal/commands/refs"
+	"github.com/anders-lindstrom/wt/internal/commands/refs/refstest"
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
@@ -80,7 +82,7 @@ func TestSweepPinsWhatItDeletesAndRefsRestoresIt(t *testing.T) {
 		t.Fatalf("swept = %+v", runs)
 	}
 
-	res, err := restoreJSON(t, ctx, run, RefsRestoreOptions{})
+	res, err := refstest.RestoreJSON(t, ctx, run, refs.RestoreRefsOptions{})
 	if err != nil || res.Outcome != kit.OutcomeDone {
 		t.Fatalf("%v %+v", err, res)
 	}
@@ -113,7 +115,7 @@ func TestRemovePinsAMergedBranchAndRefsRestoresIt(t *testing.T) {
 	if len(runs) != 1 || runs[0].RunID != run || !slices.Equal(sweptIDs(runs[0]), []string{"refs/heads/fix_wt/pinned"}) {
 		t.Fatalf("swept = %+v", runs)
 	}
-	res, err := restoreJSON(t, ctx, run, RefsRestoreOptions{Only: []string{"refs/heads/fix_wt/pinned"}})
+	res, err := refstest.RestoreJSON(t, ctx, run, refs.RestoreRefsOptions{Only: []string{"refs/heads/fix_wt/pinned"}})
 	if err != nil || res.Outcome != kit.OutcomeDone {
 		t.Fatalf("%v %+v", err, res)
 	}

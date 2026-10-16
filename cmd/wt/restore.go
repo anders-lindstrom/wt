@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/refs"
 )
 
 func newRestoreCmd() *cobra.Command {
@@ -60,11 +60,11 @@ func newRestoreCmd() *cobra.Command {
 			} else {
 				ctx.WarnTo(cmd.ErrOrStderr())
 			}
-			opts := commands.RestoreOptions{DryRun: dryRun}
+			opts := refs.RestoreOptions{DryRun: dryRun}
 			if asJSON {
-				return commands.RestoreJSON(ctx, args[0], opts, cmd.OutOrStdout(), cmd.ErrOrStderr())
+				return refs.RestoreJSON(ctx, args[0], opts, cmd.OutOrStdout(), cmd.ErrOrStderr())
 			}
-			return commands.Restore(ctx, args[0], opts, cmd.OutOrStdout())
+			return refs.Restore(ctx, args[0], opts, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "say what it would do and change nothing")

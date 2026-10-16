@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anders-lindstrom/wt/internal/commands/refs/refstest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 )
@@ -14,7 +15,7 @@ import (
 // with.
 func TestRestorePutsBackAFolderMadeTheOldWay(t *testing.T) {
 	ctx, path, branch, tip, dir := provisiontest.OldFolder(t, "fix/old-way")
-	res := restore(t, ctx, dir)
+	res := refstest.Restore(t, ctx, dir)
 	if res.Outcome != quarantine.OutcomeRestored {
 		t.Fatalf("outcome %s", res.Outcome)
 	}

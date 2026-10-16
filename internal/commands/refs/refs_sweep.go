@@ -1,4 +1,7 @@
-package commands
+// Package refs implements wt refs, which sweeps old branches and tags into
+// pins and puts them back, and wt restore, which puts back a quarantined
+// worktree.
+package refs
 
 import (
 	"crypto/sha256"
@@ -122,8 +125,8 @@ type RefRow struct {
 	Subject     string
 }
 
-// RefsPlan is what wt refs sweep would do.
-type RefsPlan struct {
+// Plan is what wt refs sweep would do.
+type Plan struct {
 	Repo, Trunk     string
 	TrunkSource     *string
 	Fetched, Remote bool
@@ -137,7 +140,7 @@ type RefsPlan struct {
 }
 
 // Selected is the rows the sweep moves.
-func (p RefsPlan) Selected() []RefRow {
+func (p Plan) Selected() []RefRow {
 	var out []RefRow
 	for _, r := range p.Rows {
 		if r.Selected {
@@ -149,12 +152,12 @@ func (p RefsPlan) Selected() []RefRow {
 
 // selectable reports that some row could be swept: it is a backup nothing
 // holds.
-func (p RefsPlan) selectable() bool {
+func (p Plan) selectable() bool {
 	return slices.ContainsFunc(p.Rows, func(r RefRow) bool { return r.Category != RefKept })
 }
 
-// RefsOptions carries what wt refs sweep was asked.
-type RefsOptions struct {
+// Options carries what wt refs sweep was asked.
+type Options struct {
 	Remote  bool
 	NoFetch bool
 	// Only replaces the default selection with these ids; nil keeps it.
@@ -162,7 +165,7 @@ type RefsOptions struct {
 	DryRun bool
 	Yes    bool
 	// Confirm, when set and without Yes, is asked once the plan is printed.
-	Confirm func(RefsPlan) bool
+	Confirm func(Plan) bool
 	// Expect refuses the sweep unless the plan made now has this token.
 	Expect string
 	// OpenPRs says which of origin's branches have an open pull request,
@@ -174,10 +177,10 @@ type RefsOptions struct {
 	// Now is the clock, for a test; nil is time.Now.
 	Now func() time.Time
 	// Journal records the run for --json; nil records nothing.
-	Journal *RefsJournal
+	Journal *Journal
 }
 
-func (o RefsOptions) now() time.Time {
+func (o Options) now() time.Time {
 	if o.Now != nil {
 		return o.Now()
 	}
@@ -199,9 +202,9 @@ type container struct {
 // planRefs reads everything a ref sweep depends on: it fetches unless told
 // not to, lists the refs here, and origin's with --remote, and sorts every
 // backup. progress gets what the fetch says.
-func planRefs(ctx *kit.Context, opts RefsOptions, progress io.Writer) (RefsPlan, error) {
+func planRefs(ctx *kit.Context, opts Options, progress io.Writer) (Plan, error) {
 	u := ctx.UserConfig()
-	p := RefsPlan{Repo: ctx.Repo.MainRoot, Trunk: ctx.Config.MainBranch, TrunkSource: ctx.TrunkSource(),
+	p := Plan{Repo: ctx.Repo.MainRoot, Trunk: ctx.Config.MainBranch, TrunkSource: ctx.TrunkSource(),
 		Remote: opts.Remote, Patterns: append([]string{}, u.RefSweepPatterns...), Age: u.RefSweepAge,
 		Now: opts.now().Unix()}
 	if err := ctx.NoTrunk(); err != nil {
@@ -473,7 +476,7 @@ func readOriginRefs(ctx *kit.Context, url string, patterns []config.RefPattern) 
 // ever swept when origin's own refs contain it; a branch with an open pull
 // request is kept, since deleting it closes the pull request, and so is
 // every branch when GitHub cannot be asked.
-func planOrigin(ctx *kit.Context, opts RefsOptions, url string, patterns []config.RefPattern, cands []refCandidate, conts []container,
+func planOrigin(ctx *kit.Context, opts Options, url string, patterns []config.RefPattern, cands []refCandidate, conts []container,
 	objects map[string]refpins.ObjectInfo, trunk, originHead string) ([]RefRow, error) {
 	root := ctx.Repo.MainRoot
 	var branches []string
@@ -546,7 +549,7 @@ func planOrigin(ctx *kit.Context, opts RefsOptions, url string, patterns []confi
 // where a pull request from origin's branch lives). A branch is open when a
 // pull request there has origin's owner as its head's owner. An origin that
 // is not on GitHub cannot be asked.
-func openPullRequests(ctx *kit.Context, opts RefsOptions, branches []string, url string) (map[string]bool, error) {
+func openPullRequests(ctx *kit.Context, opts Options, branches []string, url string) (map[string]bool, error) {
 	if opts.OpenPRs != nil {
 		return opts.OpenPRs(branches)
 	}
@@ -725,7 +728,7 @@ func quarantineHolds(ctx *kit.Context) (names, tips map[string]bool, err error) 
 
 // applyOnly replaces the default selection with the ids given. An id the
 // plan does not have, or a row it keeps, refuses the lot.
-func (p *RefsPlan) applyOnly(only []string) error {
+func (p *Plan) applyOnly(only []string) error {
 	if only == nil {
 		return nil
 	}
@@ -762,7 +765,7 @@ func (p *RefsPlan) applyOnly(only []string) error {
 // the age, and every row with what it stands on. The selection is not in
 // it, so --only picks from the plan a token names. Nil when no row could be
 // swept.
-func refsToken(p RefsPlan) *string {
+func refsToken(p Plan) *string {
 	if !p.selectable() {
 		return nil
 	}
@@ -784,15 +787,15 @@ func refsToken(p RefsPlan) *string {
 	return &token
 }
 
-// errRefsPlanChanged is --expect refusing a sweep whose plan is not the one
+// ErrRefsPlanChanged is --expect refusing a sweep whose plan is not the one
 // read.
-var errRefsPlanChanged = errors.New("the ref sweep plan changed since it was read (a backup moved, " +
+var ErrRefsPlanChanged = errors.New("the ref sweep plan changed since it was read (a backup moved, " +
 	"was created or deleted, or gained or lost a reason to be kept); nothing was swept: read the plan again")
 
-// RefsSweep sweeps the backups the plan selects: each is pinned under
+// Sweep sweeps the backups the plan selects: each is pinned under
 // refs/wt-swept/<run>/ and deleted in one step, so nothing is lost until
 // wt refs purge.
-func RefsSweep(ctx *kit.Context, opts RefsOptions, w io.Writer) (err error) {
+func Sweep(ctx *kit.Context, opts Options, w io.Writer) (err error) {
 	j := opts.Journal
 	if j != nil {
 		defer kit.SetInterruptJournal(j)()
@@ -824,8 +827,8 @@ func RefsSweep(ctx *kit.Context, opts RefsOptions, w io.Writer) (err error) {
 	token := refsToken(plan)
 	j.planned(plan, token)
 	if opts.Expect != "" && retire.Deref(token) != opts.Expect {
-		j.problem(kit.ProblemPlanChanged, errRefsPlanChanged)
-		return errRefsPlanChanged
+		j.problem(kit.ProblemPlanChanged, ErrRefsPlanChanged)
+		return ErrRefsPlanChanged
 	}
 	if err := plan.applyOnly(opts.Only); err != nil {
 		return err
@@ -849,7 +852,7 @@ func RefsSweep(ctx *kit.Context, opts RefsOptions, w io.Writer) (err error) {
 		}
 		// A question can sit for minutes: the sweep goes by the plan read
 		// now, and only if it is the one that was asked about.
-		fresh, err := planRefs(ctx, RefsOptions{Remote: opts.Remote, NoFetch: true, OpenPRs: opts.OpenPRs,
+		fresh, err := planRefs(ctx, Options{Remote: opts.Remote, NoFetch: true, OpenPRs: opts.OpenPRs,
 			Now: opts.Now}, io.Discard)
 		if err != nil {
 			return err
@@ -858,12 +861,12 @@ func RefsSweep(ctx *kit.Context, opts RefsOptions, w io.Writer) (err error) {
 			return err
 		}
 		if retire.Deref(refsToken(fresh)) != retire.Deref(token) {
-			j.problem(kit.ProblemPlanChanged, errRefsPlanChanged)
-			return errRefsPlanChanged
+			j.problem(kit.ProblemPlanChanged, ErrRefsPlanChanged)
+			return ErrRefsPlanChanged
 		}
 	default:
 		fmt.Fprintf(w, "Nothing was swept: there is no terminal to ask. Pass --yes to sweep %s.\n",
-			refCount(len(selected)))
+			RefCount(len(selected)))
 		return nil
 	}
 	// Origin is read again right before anything goes to it: a URL changed
@@ -888,7 +891,8 @@ func RefsSweep(ctx *kit.Context, opts RefsOptions, w io.Writer) (err error) {
 	return plan.apply(ctx, runID, j, w)
 }
 
-func refCount(n int) string {
+// RefCount is n refs, in words.
+func RefCount(n int) string {
 	if n == 1 {
 		return "1 ref"
 	}
@@ -896,7 +900,7 @@ func refCount(n int) string {
 }
 
 // apply moves each selected row, reading it once more right before.
-func (p RefsPlan) apply(ctx *kit.Context, runID string, j *RefsJournal, w io.Writer) error {
+func (p Plan) apply(ctx *kit.Context, runID string, j *Journal, w io.Writer) error {
 	root := ctx.Repo.MainRoot
 	failed := 0
 	for _, r := range p.Selected() {
@@ -928,7 +932,7 @@ func (p RefsPlan) apply(ctx *kit.Context, runID string, j *RefsJournal, w io.Wri
 	refpins.DropEmptyRun(root, runID, w)
 	if failed > 0 {
 		return fmt.Errorf("%d of %s kept or not finished; wt refs restore %s puts back what went",
-			failed, refCount(len(p.Selected())), runID)
+			failed, RefCount(len(p.Selected())), runID)
 	}
 	fmt.Fprintf(w, "wt refs restore %s puts them back; wt refs purge %s deletes them for good\n", runID, runID)
 	return nil
@@ -1042,7 +1046,7 @@ func sweepRemoteRef(root, url string, r RefRow, pin string) refState {
 
 // Render writes the plan: what goes, what stays for being young, and what
 // is kept and why.
-func (p RefsPlan) Render(w io.Writer) {
+func (p Plan) Render(w io.Writer) {
 	fmt.Fprintf(w, "backups are the branches and tags named\n  %s\n"+
 		"one another ref contains goes; one holding commits of its own goes\n"+
 		"once it is older than %s\n\n", strings.Join(p.Patterns, " "), p.Age)
@@ -1073,7 +1077,7 @@ func (p RefsPlan) Render(w io.Writer) {
 		fmt.Fprintln(w, "No backups to sweep.")
 	} else {
 		fmt.Fprintf(w, "Will be swept, %s, each pinned under %s so it can be restored:\n",
-			refCount(len(sel)), refpins.SweptPrefix)
+			RefCount(len(sel)), refpins.SweptPrefix)
 		_ = kit.PrintTable(w, sel)
 	}
 	if len(young) > 0 {

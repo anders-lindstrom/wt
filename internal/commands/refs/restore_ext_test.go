@@ -1,8 +1,7 @@
-package commands
+package refs_test
 
 import (
 	"bytes"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +9,8 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anders-lindstrom/wt/internal/commands/refs"
+	"github.com/anders-lindstrom/wt/internal/commands/refs/refstest"
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
@@ -17,16 +18,6 @@ import (
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
-
-func restore(t *testing.T, ctx *kit.Context, dir string) quarantine.RestoreResult {
-	t.Helper()
-	var res quarantine.RestoreResult
-	var buf bytes.Buffer
-	if err := Restore(ctx, dir, RestoreOptions{Result: &res}, &buf); err != nil {
-		t.Fatalf("Restore: %v\n%s", err, buf.String())
-	}
-	return res
-}
 
 func branchTip(t *testing.T, ctx *kit.Context, name string) string {
 	t.Helper()
@@ -41,7 +32,7 @@ func TestRestoreRecreatesADeletedBranchWithItsConfig(t *testing.T) {
 	if ctx.Repo.BranchExists(branch) {
 		t.Fatal("the merged branch should have been deleted")
 	}
-	res := restore(t, ctx, dir)
+	res := refstest.Restore(t, ctx, dir)
 	if res.Outcome != quarantine.OutcomeRestored || res.Action != quarantine.ActionRecreate {
 		t.Errorf("result %+v", res)
 	}
@@ -66,7 +57,7 @@ func TestRestoreRenamesAKeptBranchBack(t *testing.T) {
 	if !ctx.Repo.BranchExists("kept-back") {
 		t.Fatal("the unmerged branch should have been kept as kept-back")
 	}
-	res := restore(t, ctx, dir)
+	res := refstest.Restore(t, ctx, dir)
 	if res.Action != quarantine.ActionRenameBack {
 		t.Errorf("action %s", res.Action)
 	}
@@ -92,7 +83,7 @@ func TestRestoreLeavesAnUntouchedBranch(t *testing.T) {
 	if err := retire.RemoveAt(ctx, path, retire.RemoveOptions{Quarantine: dir}, &buf); err != nil {
 		t.Fatalf("RemoveAt: %v\n%s", err, buf.String())
 	}
-	res := restore(t, ctx, dir)
+	res := refstest.Restore(t, ctx, dir)
 	if res.Action != quarantine.ActionNone {
 		t.Errorf("action %s", res.Action)
 	}
@@ -118,7 +109,7 @@ func TestRestoreDetachesWhenAnotherWorktreeHasTheBranch(t *testing.T) {
 				testkit.GitIn(t, ctx.Repo.MainRoot, "worktree", "add", "-q", "--detach", other)
 				testkit.MustWrite(t, filepath.Join(testkit.GitDirFor(t, other), "BISECT_START"), branch+"\n")
 			}
-			res := restore(t, ctx, dir)
+			res := refstest.Restore(t, ctx, dir)
 			if res.Action != quarantine.ActionDetach || !strings.Contains(res.OccupiedBy, "other-"+how) {
 				t.Errorf("result %+v", res)
 			}
@@ -131,7 +122,7 @@ func TestRestoreDetachesWhenAnotherWorktreeHasTheBranch(t *testing.T) {
 func TestRestoreDetachesWhenAnotherWorktreeHasTheKeptName(t *testing.T) {
 	ctx, path, _, tip, dir := retiretest.Quarantined(t, "fix/kept-taken", true)
 	testkit.GitIn(t, ctx.Repo.MainRoot, "worktree", "add", "-q", filepath.Join(ctx.Repo.Parent, "holder"), "kept-taken")
-	res := restore(t, ctx, dir)
+	res := refstest.Restore(t, ctx, dir)
 	if res.Action != quarantine.ActionDetach {
 		t.Errorf("action %s", res.Action)
 	}
@@ -143,7 +134,7 @@ func TestRestoreDetachesWhenAnotherWorktreeHasTheKeptName(t *testing.T) {
 func TestRestoreAttachesToTheKeptNameWhenTheOriginalIsTaken(t *testing.T) {
 	ctx, path, branch, _, dir := retiretest.Quarantined(t, "fix/attach", true)
 	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", branch, "main")
-	res := restore(t, ctx, dir)
+	res := refstest.Restore(t, ctx, dir)
 	if res.Action != quarantine.ActionAttach {
 		t.Errorf("action %s", res.Action)
 	}
@@ -155,7 +146,7 @@ func TestRestoreAttachesToTheKeptNameWhenTheOriginalIsTaken(t *testing.T) {
 func TestRestoreDetachesWhenTheKeptBranchMovedOn(t *testing.T) {
 	ctx, path, branch, tip, dir := retiretest.Quarantined(t, "fix/moved-on", true)
 	testkit.GitIn(t, ctx.Repo.MainRoot, "update-ref", "refs/heads/moved-on", "main")
-	res := restore(t, ctx, dir)
+	res := refstest.Restore(t, ctx, dir)
 	if res.Action != quarantine.ActionDetach {
 		t.Errorf("action %s", res.Action)
 	}
@@ -187,7 +178,7 @@ func TestQuarantinePinsTheCommitsAgainstGC(t *testing.T) {
 	if _, err := gittest.Try(t, ctx.Repo.MainRoot, "cat-file", "-e", tip+"^{commit}"); err != nil {
 		t.Fatal("gc took the quarantined branch's commit")
 	}
-	restore(t, ctx, dir)
+	refstest.Restore(t, ctx, dir)
 	testkit.AssertBack(t, ctx, path, dir, "ref: refs/heads/fix_wt/squashed-away")
 	if branchTip(t, ctx, "fix_wt/squashed-away") != tip {
 		t.Error("the branch must be back at its tip")
@@ -210,7 +201,7 @@ func TestRestoreMakesTheParentsThatWentMeanwhile(t *testing.T) {
 	if testkit.Exists(filepath.Join(ctx.Repo.MainRoot, ".git", "worktrees")) {
 		t.Fatal("for this test to mean anything, .git/worktrees must be gone")
 	}
-	restore(t, ctx, dir)
+	refstest.Restore(t, ctx, dir)
 	testkit.AssertBack(t, ctx, path, dir, "ref: refs/heads/"+branch)
 }
 
@@ -239,7 +230,7 @@ func TestRestoreOnlyUnlocksAWorktreeThatNeverMoved(t *testing.T) {
 			}
 			quarantine.AfterSave = nil
 			testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "kept working")
-			res := restore(t, ctx, dir)
+			res := refstest.Restore(t, ctx, dir)
 			if res.Action != quarantine.ActionNone {
 				t.Errorf("action %s", res.Action)
 			}
@@ -261,7 +252,7 @@ func TestRestoreDoesNotStackOldConfigOnNew(t *testing.T) {
 	ctx, path, branch, tip, dir := retiretest.Quarantined(t, "fix/reconfigured", false)
 	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", branch, tip)
 	testkit.GitIn(t, ctx.Repo.MainRoot, "config", "branch."+branch+".description", "theirs")
-	restore(t, ctx, dir)
+	refstest.Restore(t, ctx, dir)
 	testkit.AssertBack(t, ctx, path, dir, "ref: refs/heads/"+branch)
 	if got := strings.TrimSpace(testkit.GitOut(t, ctx.Repo.MainRoot, "config", "--get-all", "branch."+branch+".description")); got != "theirs" {
 		t.Errorf("config %q, want only theirs", got)
@@ -282,57 +273,9 @@ func TestQuarantinedCheckoutPointsAtItsOwnAdminDir(t *testing.T) {
 	if got := testkit.MustRead(t, filepath.Join(dir, "checkout", ".git")); got != "gitdir: "+filepath.Join(dir, "admin") {
 		t.Errorf(".git in the quarantine says %q", got)
 	}
-	restore(t, ctx, dir)
+	refstest.Restore(t, ctx, dir)
 	if got := testkit.MustRead(t, filepath.Join(path, ".git")); got != before {
 		t.Errorf(".git after restore says %q, was %q", got, before)
-	}
-}
-
-// §8 step 1: the original path taken by anything but this worktree refuses.
-func TestRestoreRefusesWhenTheOriginalPathIsTaken(t *testing.T) {
-	ctx, path, _, _, dir := retiretest.Quarantined(t, "fix/path-taken", false)
-	if err := os.MkdirAll(path, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	var buf bytes.Buffer
-	if err := Restore(ctx, dir, RestoreOptions{}, &buf); err == nil || !strings.Contains(err.Error(), "taken") {
-		t.Fatalf("want a refusal: %v\n%s", err, buf.String())
-	}
-	if !testkit.Exists(filepath.Join(dir, "checkout")) {
-		t.Error("nothing may move on a refusal")
-	}
-}
-
-func TestRestoreRefusesAnotherVolume(t *testing.T) {
-	ctx, path, _, _, dir := retiretest.Quarantined(t, "fix/restore-volume", false)
-	orig := quarantine.DeviceOf
-	t.Cleanup(func() { quarantine.DeviceOf = orig })
-	quarantine.DeviceOf = func(p string) (uint64, error) {
-		if p == filepath.Dir(path) {
-			return 4242, nil
-		}
-		return orig(p)
-	}
-	var buf bytes.Buffer
-	if err := Restore(ctx, dir, RestoreOptions{}, &buf); err == nil || !strings.Contains(err.Error(), "volume") {
-		t.Fatalf("want a refusal: %v\n%s", err, buf.String())
-	}
-}
-
-// --dry-run says what it would do to the branch and changes nothing.
-func TestRestoreDryRunChangesNothing(t *testing.T) {
-	ctx, _, branch, _, dir := retiretest.Quarantined(t, "fix/dry", false)
-	before, _ := os.ReadFile(filepath.Join(dir, quarantine.FileName))
-	var buf bytes.Buffer
-	if err := Restore(ctx, dir, RestoreOptions{DryRun: true}, &buf); err != nil {
-		t.Fatal(err)
-	}
-	after, _ := os.ReadFile(filepath.Join(dir, quarantine.FileName))
-	if !bytes.Equal(before, after) || ctx.Repo.BranchExists(branch) || !testkit.Exists(filepath.Join(dir, "checkout")) {
-		t.Error("a dry run must change nothing")
-	}
-	if !strings.Contains(buf.String(), "recreate") && !strings.Contains(buf.String(), "made again") {
-		t.Errorf("it must say what happens to the branch:\n%s", buf.String())
 	}
 }
 
@@ -345,25 +288,13 @@ func TestRestoreUnlocksAQuarantineLockWithNoRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	testkit.GitIn(t, ctx.Repo.MainRoot, "worktree", "lock", "--reason", quarantine.LockReason(dir), path)
-	res := restore(t, ctx, dir)
+	res := refstest.Restore(t, ctx, dir)
 	if res.Outcome != quarantine.OutcomeRestored {
 		t.Errorf("result %+v", res)
 	}
 	list, _ := ctx.Repo.Worktrees()
 	if wt, _ := list.ByPath(path); wt.Locked {
 		t.Error("the lock must be gone")
-	}
-}
-
-func TestRestoreRefusesAFolderWithNoRecordAndNoLock(t *testing.T) {
-	ctx, _ := provisiontest.SafetyWorktree(t, "fix/nothing")
-	dir := testkit.TrashFor(t, ctx)
-	if err := os.Mkdir(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	var buf bytes.Buffer
-	if err := Restore(ctx, dir, RestoreOptions{}, &buf); err == nil {
-		t.Fatalf("want a refusal: nothing to restore\n%s", buf.String())
 	}
 }
 
@@ -407,7 +338,7 @@ func TestRestorePutsBackARemovalStoppedAtEveryStep(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				restore(t, ctx, dir)
+				refstest.Restore(t, ctx, dir)
 				testkit.AssertBack(t, ctx, path, dir, "ref: refs/heads/fix_wt/crash")
 				if branchTip(t, ctx, "fix_wt/crash") != tip || ctx.Repo.BranchExists("crash") {
 					t.Error("the branch must be back under its name")
@@ -428,7 +359,7 @@ func TestRestoreFinishesARestoreStoppedAtEveryStep(t *testing.T) {
 	var points []string
 	{
 		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/count-restore", false)
-		points = journalPoints(t, func() { restore(t, ctx, dir) })
+		points = journalPoints(t, func() { refstest.Restore(t, ctx, dir) })
 	}
 	if len(points) < 12 {
 		t.Fatalf("points %v", points)
@@ -438,9 +369,9 @@ func TestRestoreFinishesARestoreStoppedAtEveryStep(t *testing.T) {
 			ctx, path, branch, tip, dir := retiretest.Quarantined(t, "fix/crash-restore", false)
 			testkit.CrashAt(t, point)
 			var buf bytes.Buffer
-			_ = Restore(ctx, dir, RestoreOptions{}, &buf)
+			_ = refs.Restore(ctx, dir, refs.RestoreOptions{}, &buf)
 			quarantine.AfterSave = nil
-			restore(t, ctx, dir)
+			refstest.Restore(t, ctx, dir)
 			testkit.AssertBack(t, ctx, path, dir, "ref: refs/heads/"+branch)
 			if branchTip(t, ctx, branch) != tip {
 				t.Error("the branch must be back")
@@ -452,35 +383,6 @@ func TestRestoreFinishesARestoreStoppedAtEveryStep(t *testing.T) {
 	}
 }
 
-func TestRestoreJSONMatchesItsSchemas(t *testing.T) {
-	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/json", false)
-	testkit.ValidateJSON(t, "recovery", []byte(testkit.MustRead(t, filepath.Join(dir, quarantine.FileName))))
-
-	var plan bytes.Buffer
-	if err := RestoreJSON(ctx, dir, RestoreOptions{DryRun: true}, &plan, &bytes.Buffer{}); err != nil {
-		t.Fatalf("%v\n%s", err, plan.String())
-	}
-	testkit.ValidateJSON(t, "restore-plan", plan.Bytes())
-
-	var out bytes.Buffer
-	if err := RestoreJSON(ctx, dir, RestoreOptions{}, &out, &bytes.Buffer{}); err != nil {
-		t.Fatalf("%v\n%s", err, out.String())
-	}
-	testkit.ValidateJSON(t, "restore", out.Bytes())
-	var res struct{ Outcome string }
-	_ = json.Unmarshal(out.Bytes(), &res)
-	if res.Outcome != quarantine.OutcomeRestored {
-		t.Errorf("outcome %s", res.Outcome)
-	}
-	testkit.ValidateJSON(t, "recovery", []byte(testkit.MustRead(t, filepath.Join(dir, quarantine.FileName))))
-
-	var refused bytes.Buffer
-	if err := RestoreJSON(ctx, filepath.Join(dir, "nope"), RestoreOptions{}, &refused, &bytes.Buffer{}); err == nil {
-		t.Error("want an error for a folder that is not there")
-	}
-	testkit.ValidateJSON(t, "restore", refused.Bytes())
-}
-
 // A restore that stopped after its branch step is not trusted when it
 // resumes: the branch is read again before the worktree is registered, and
 // a branch that vanished or moved since leaves HEAD detached, never on it.
@@ -490,7 +392,7 @@ func TestRestoreResumedReadsTheBranchAgain(t *testing.T) {
 			ctx, path, branch, tip, dir := retiretest.Quarantined(t, "fix/resume-"+change, false)
 			testkit.CrashAt(t, "restore.branch:done")
 			var buf bytes.Buffer
-			_ = Restore(ctx, dir, RestoreOptions{}, &buf)
+			_ = refs.Restore(ctx, dir, refs.RestoreOptions{}, &buf)
 			quarantine.AfterSave = nil
 			if branchTip(t, ctx, branch) != tip {
 				t.Fatal("the first run should have made the branch again")
@@ -501,45 +403,11 @@ func TestRestoreResumedReadsTheBranchAgain(t *testing.T) {
 				testkit.GitIn(t, ctx.Repo.MainRoot, "commit", "-q", "--allow-empty", "-m", "elsewhere")
 				testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "-f", branch, "main")
 			}
-			res := restore(t, ctx, dir)
+			res := refstest.Restore(t, ctx, dir)
 			if res.Action != quarantine.ActionDetach {
 				t.Errorf("action %s", res.Action)
 			}
 			testkit.AssertBack(t, ctx, path, dir, tip)
-		})
-	}
-}
-
-// Only the directories the removal moved go back: something put in their
-// place in the quarantine is refused before anything is written.
-func TestRestoreRefusesADirectoryPutInTheQuarantine(t *testing.T) {
-	for _, which := range []string{"checkout", "admin"} {
-		t.Run(which, func(t *testing.T) {
-			ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/swapped-"+which, false)
-			moved := filepath.Join(dir, which)
-			if err := os.Rename(moved, moved+".real"); err != nil {
-				t.Fatal(err)
-			}
-			if which == "admin" {
-				// A symlink to another worktree's admin dir.
-				other := filepath.Join(ctx.Repo.Parent, "other")
-				testkit.GitIn(t, ctx.Repo.MainRoot, "worktree", "add", "-q", "--detach", other)
-				if err := os.Symlink(testkit.GitDirFor(t, other), moved); err != nil {
-					t.Fatal(err)
-				}
-				before := testkit.MustRead(t, filepath.Join(testkit.GitDirFor(t, other), "HEAD"))
-				t.Cleanup(func() {
-					if after := testkit.MustRead(t, filepath.Join(testkit.GitDirFor(t, other), "HEAD")); after != before {
-						t.Errorf("another worktree's HEAD was written: %s", after)
-					}
-				})
-			} else if err := os.Mkdir(moved, 0o755); err != nil {
-				t.Fatal(err)
-			}
-			var buf bytes.Buffer
-			if err := Restore(ctx, dir, RestoreOptions{}, &buf); err == nil {
-				t.Fatalf("want a refusal\n%s", buf.String())
-			}
 		})
 	}
 }
@@ -570,40 +438,11 @@ func TestRestoreFinishesAConfigSectionPutBackInPart(t *testing.T) {
 	if err := r.Save("test"); err != nil {
 		t.Fatal(err)
 	}
-	restore(t, ctx, dir)
+	refstest.Restore(t, ctx, dir)
 	got := strings.TrimSpace(testkit.GitOut(t, ctx.Repo.MainRoot, "config", "--get-regexp", `^branch\.fix_wt/two-keys\.`))
 	want := "branch." + branch + ".remote origin\nbranch." + branch + ".merge refs/heads/" + branch
 	if got != want {
 		t.Errorf("config:\n%s\nwant:\n%s", got, want)
-	}
-}
-
-// A path taken between the plan and the move is a failure, never a move
-// journalled as done.
-func TestRestoreFailsWhenAPathIsTakenMidway(t *testing.T) {
-	ctx, path, _, _, dir := retiretest.Quarantined(t, "fix/taken-midway", false)
-	t.Cleanup(func() { quarantine.AfterSave = nil })
-	quarantine.AfterSave = func(_ *quarantine.Record, at string) error {
-		if at == "restore.moveCheckout:running" {
-			if err := os.Mkdir(path, 0o755); err != nil {
-				t.Fatal(err)
-			}
-		}
-		return nil
-	}
-	var res quarantine.RestoreResult
-	var buf bytes.Buffer
-	if err := Restore(ctx, dir, RestoreOptions{Result: &res}, &buf); err == nil {
-		t.Fatalf("want a failure\n%s", buf.String())
-	}
-	if res.Outcome == quarantine.OutcomeRestored {
-		t.Errorf("result %+v", res)
-	}
-	if !testkit.Exists(filepath.Join(dir, "checkout")) {
-		t.Error("the checkout must still be in the quarantine")
-	}
-	if s := testkit.LoadRecord(t, dir).RestoreStep(quarantine.StepMoveCheckout); s.State == quarantine.Done {
-		t.Error("the move must not be journalled as done")
 	}
 }
 
@@ -635,7 +474,7 @@ func TestRestorePutsBackARemovalStoppedInsideAStep(t *testing.T) {
 				t.Fatalf("the run must stop\n%s", buf.String())
 			}
 			quarantine.AfterRename, repo.AfterRefDeleted = nil, nil
-			restore(t, ctx, dir)
+			refstest.Restore(t, ctx, dir)
 			testkit.AssertBack(t, ctx, path, dir, "ref: refs/heads/"+branch)
 			if branchTip(t, ctx, branch) != tip {
 				t.Error("the branch must be back")
@@ -677,7 +516,7 @@ func TestRestoreRetryFinishesTheConfigOfABranchItMade(t *testing.T) {
 				return nil
 			}
 			var res quarantine.RestoreResult
-			if err := Restore(ctx, dir, RestoreOptions{Result: &res}, &buf); err == nil {
+			if err := refs.Restore(ctx, dir, refs.RestoreOptions{Result: &res}, &buf); err == nil {
 				t.Fatalf("the config write must fail\n%s", buf.String())
 			}
 			repo.BeforeConfigAdd = nil
@@ -689,7 +528,7 @@ func TestRestoreRetryFinishesTheConfigOfABranchItMade(t *testing.T) {
 				wantMerge = "refs/heads/elsewhere"
 				testkit.GitIn(t, ctx.Repo.MainRoot, "config", section+"merge", wantMerge)
 			}
-			res = restore(t, ctx, dir)
+			res = refstest.Restore(t, ctx, dir)
 			if res.Outcome != quarantine.OutcomeRestored {
 				t.Errorf("result %+v", res)
 			}
@@ -737,11 +576,11 @@ func TestRestoreKeepsABranchItMadeAcrossTwoFailures(t *testing.T) {
 		}
 		return nil
 	}
-	if err := Restore(ctx, dir, RestoreOptions{}, &buf); err == nil {
+	if err := refs.Restore(ctx, dir, refs.RestoreOptions{}, &buf); err == nil {
 		t.Fatal("the config write must fail")
 	}
 	repo.BeforeConfigAdd = nil
-	restore(t, ctx, dir)
+	refstest.Restore(t, ctx, dir)
 	testkit.AssertBack(t, ctx, path, dir, "ref: refs/heads/"+branch)
 	got := strings.TrimSpace(testkit.GitOut(t, ctx.Repo.MainRoot, "config", "--get-regexp", `^branch\.fix_wt/thrice\.`))
 	want := section + "remote origin\n" + section + "merge refs/heads/" + branch
@@ -755,7 +594,7 @@ func TestRestoreUnlocksAnOrphanWhoseFolderIsGone(t *testing.T) {
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/orphan-gone")
 	dir := testkit.TrashFor(t, ctx)
 	testkit.GitIn(t, ctx.Repo.MainRoot, "worktree", "lock", "--reason", quarantine.LockReason(dir), path)
-	res := restore(t, ctx, dir)
+	res := refstest.Restore(t, ctx, dir)
 	if res.Outcome != quarantine.OutcomeRestored {
 		t.Errorf("result %+v", res)
 	}

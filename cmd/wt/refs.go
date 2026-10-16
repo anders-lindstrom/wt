@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/refs"
 )
 
 func newRefsCmd() *cobra.Command {
@@ -91,7 +92,7 @@ func newRefsSweepCmd() *cobra.Command {
 			if runID != "" && !yes {
 				return usagef("--run-id names a run that moves refs: pass it with --yes")
 			}
-			opts := commands.RefsOptions{Remote: remote, NoFetch: noFetch, DryRun: dryRun, Yes: yes, Expect: expect,
+			opts := refs.Options{Remote: remote, NoFetch: noFetch, DryRun: dryRun, Yes: yes, Expect: expect,
 				RunID: runID}
 			if cmd.Flags().Changed("only") {
 				opts.Only = append([]string{}, only...)
@@ -100,20 +101,20 @@ func newRefsSweepCmd() *cobra.Command {
 			ctx, err := openContext()
 			if asJSON && !yes {
 				if err != nil {
-					commands.RefsSweepPlanFailed(out, err)
+					refs.SweepPlanFailed(out, err)
 					return err
 				}
 				ctx.WarnTo(progress)
-				return commands.RefsSweepPlanJSON(ctx, opts, out, progress)
+				return refs.SweepPlanJSON(ctx, opts, out, progress)
 			}
 			if asJSON {
-				opts.Journal = commands.NewRefsJournal(out)
+				opts.Journal = refs.NewRefsJournal(out)
 				if err != nil {
 					opts.Journal.Fail(err)
 					return err
 				}
 				ctx.WarnTo(progress)
-				return commands.RefsSweep(ctx, opts, progress)
+				return refs.Sweep(ctx, opts, progress)
 			}
 			if err != nil {
 				return err
@@ -121,9 +122,9 @@ func newRefsSweepCmd() *cobra.Command {
 			ctx.WarnTo(progress)
 			if !yes && !dryRun && canAsk(cmd) {
 				p := newPrompter(cmd.InOrStdin(), out)
-				opts.Confirm = func(commands.RefsPlan) bool { return p.yesNo("Sweep these refs?", false) }
+				opts.Confirm = func(refs.Plan) bool { return p.yesNo("Sweep these refs?", false) }
 			}
-			return commands.RefsSweep(ctx, opts, out)
+			return refs.Sweep(ctx, opts, out)
 		},
 	}
 	cmd.Flags().BoolVar(&remote, "remote", false, "sweep origin's backups too")
@@ -197,7 +198,7 @@ func newRefsRestoreCmd() *cobra.Command {
 			if expect != "" && (!asJSON || !yes) {
 				return usagef("--expect holds a restore to the plan a tool read: pass it with --yes --json")
 			}
-			opts := commands.RefsRestoreOptions{DryRun: dryRun, Yes: yes, Expect: expect}
+			opts := refs.RestoreRefsOptions{DryRun: dryRun, Yes: yes, Expect: expect}
 			if cmd.Flags().Changed("only") {
 				opts.Only = append([]string{}, only...)
 			}
@@ -209,16 +210,16 @@ func newRefsRestoreCmd() *cobra.Command {
 				} else {
 					ctx.WarnTo(progress)
 				}
-				return commands.RefsRestorePlanJSON(ctx, args[0], opts.Only, out, progress)
+				return refs.RestoreRefsPlanJSON(ctx, args[0], opts.Only, out, progress)
 			}
 			if asJSON {
-				opts.Journal = commands.NewRefsRestoreJournal(out, args[0])
+				opts.Journal = refs.NewRefsRestoreJournal(out, args[0])
 				if err != nil {
 					opts.Journal.Fail(err)
 					return err
 				}
 				ctx.WarnTo(progress)
-				return commands.RefsRestore(ctx, args[0], opts, progress)
+				return refs.RestoreRefs(ctx, args[0], opts, progress)
 			}
 			if err != nil {
 				return err
@@ -226,9 +227,9 @@ func newRefsRestoreCmd() *cobra.Command {
 			ctx.WarnTo(progress)
 			if !yes && !dryRun && canAsk(cmd) {
 				p := newPrompter(cmd.InOrStdin(), out)
-				opts.Confirm = func(commands.RefsRestorePlan) bool { return p.yesNo("Restore these refs?", false) }
+				opts.Confirm = func(refs.RestoreRefsPlan) bool { return p.yesNo("Restore these refs?", false) }
 			}
-			return commands.RefsRestore(ctx, args[0], opts, out)
+			return refs.RestoreRefs(ctx, args[0], opts, out)
 		},
 	}
 	cmd.Flags().StringArrayVar(&only, "only", nil, "restore only this id (repeat for more)")

@@ -1,4 +1,4 @@
-package commands
+package refs_test
 
 import (
 	"bytes"
@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anders-lindstrom/wt/internal/commands/refs/refstest"
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
@@ -51,6 +52,6 @@ func TestQuarantineKeepsTheLockWhenAMovedCheckoutFailsToSync(t *testing.T) {
 	if wt, ok := list.ByPath(path); !ok || !wt.Locked {
 		t.Fatalf("the registration must stay, locked: %+v", wt)
 	}
-	restore(t, ctx, dir)
+	refstest.Restore(t, ctx, dir)
 	testkit.AssertBack(t, ctx, path, dir, "ref: refs/heads/fix_wt/unsynced")
 }

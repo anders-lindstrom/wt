@@ -15,6 +15,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/refs"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
@@ -114,7 +115,7 @@ func sweptRun(t *testing.T, main, run string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := commands.RefsSweep(ctx, commands.RefsOptions{NoFetch: true, Yes: true, RunID: run}, io.Discard); err != nil {
+	if err := refs.Sweep(ctx, refs.Options{NoFetch: true, Yes: true, RunID: run}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -126,13 +127,13 @@ func TestRefsSweepSIGTERMWritesTheObject(t *testing.T) {
 	childMain()
 	main, mark := sigtermRepo(t)
 	arm(t, mark)
-	var r commands.RefsResult
+	var r refs.Result
 	oneObject(t, sigtermRun(t, main, mark, "refs", "sweep", "--yes", "--json", "--no-fetch"), &r)
 	if r.Outcome != kit.OutcomeInterrupted || r.RunID == nil || r.Recovery == nil {
 		t.Fatalf("result = %+v", r)
 	}
-	want := map[string]string{"refs/heads/backup/a": commands.RefSwept, "refs/heads/backup/b": commands.RefInterrupted,
-		"refs/heads/backup/c": commands.RefNotRun}
+	want := map[string]string{"refs/heads/backup/a": refs.RefSwept, "refs/heads/backup/b": refs.RefInterrupted,
+		"refs/heads/backup/c": refs.RefNotRun}
 	for _, it := range r.Items {
 		if it.Result != want[it.ID] {
 			t.Errorf("%s is %s, want %s", it.ID, it.Result, want[it.ID])
@@ -150,13 +151,13 @@ func TestRefsRestoreSIGTERMWritesTheObject(t *testing.T) {
 	run := "20260930T091500Z-5157"
 	sweptRun(t, main, run)
 	arm(t, mark)
-	var r commands.RefsRestoreResult
+	var r refs.RestoreRefsResult
 	oneObject(t, sigtermRun(t, main, mark, "refs", "restore", run, "--yes", "--json"), &r)
 	if r.Outcome != kit.OutcomeInterrupted || r.Recovery == nil {
 		t.Fatalf("result = %+v", r)
 	}
-	want := map[string]string{"refs/heads/backup/a": commands.RefRestored, "refs/heads/backup/b": commands.RefInterrupted,
-		"refs/heads/backup/c": commands.RefNotRun}
+	want := map[string]string{"refs/heads/backup/a": refs.RefRestored, "refs/heads/backup/b": refs.RefInterrupted,
+		"refs/heads/backup/c": refs.RefNotRun}
 	for _, it := range r.Items {
 		if it.Result != want[it.ID] {
 			t.Errorf("%s is %s, want %s", it.ID, it.Result, want[it.ID])
@@ -179,8 +180,8 @@ func TestRefsPurgeSIGTERMWritesTheObject(t *testing.T) {
 	if r.Outcome != kit.OutcomeInterrupted || r.Recovery == nil || len(r.Runs) != 1 {
 		t.Fatalf("result = %+v", r)
 	}
-	want := map[string]string{"refs/heads/backup/a": commands.PinDeleted, "refs/heads/backup/b": commands.RefInterrupted,
-		"refs/heads/backup/c": commands.RefNotRun}
+	want := map[string]string{"refs/heads/backup/a": commands.PinDeleted, "refs/heads/backup/b": refs.RefInterrupted,
+		"refs/heads/backup/c": refs.RefNotRun}
 	for _, it := range r.Runs[0].Refs {
 		if it.Result != want[it.ID] {
 			t.Errorf("%s is %s, want %s", it.ID, it.Result, want[it.ID])

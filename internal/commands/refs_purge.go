@@ -14,6 +14,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
+	"github.com/anders-lindstrom/wt/internal/commands/refs"
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
@@ -89,7 +90,7 @@ func planRefsPurge(ctx *kit.Context, opts RefsPurgeOptions) (RefsPurgePlan, erro
 					return p, fmt.Errorf("%s is a folder, not a run: a worktree moved there is deleted for good "+
 						"with wt purge %s; wt refs swept lists the runs", id, id)
 				}
-				return p, errNoRun(id)
+				return p, refs.ErrNoRun(id)
 			}
 			if !slices.ContainsFunc(p.Runs, func(r purgeRun) bool { return r.RunID == id }) {
 				p.Runs = append(p.Runs, purgeRun{SweptRun: runs[i]})
@@ -444,7 +445,7 @@ func (j *RefsPurgeJournal) planned(p RefsPurgePlan, token *string) {
 			run.Meta = kit.Strp(refpins.MetaRef(r.RunID))
 		}
 		for _, s := range r.Refs {
-			it := &RefPurgePinResult{RefPurgePin: purgePin(s), Result: RefNotRun}
+			it := &RefPurgePinResult{RefPurgePin: purgePin(s), Result: refs.RefNotRun}
 			run.Refs = append(run.Refs, it)
 			j.byPin[s.Pin] = it
 		}
@@ -564,7 +565,7 @@ func (j *RefsPurgeJournal) write(signalled bool, recovery string) {
 			if it := j.byPin[j.inFlight]; it != nil {
 				it.Result, it.Reason = readPurgePin(j.root, it.Pin, nil)
 				if it.Result != PinDeleted {
-					it.Result, it.Reason = RefInterrupted, nil
+					it.Result, it.Reason = refs.RefInterrupted, nil
 				}
 			}
 			j.res.Outcome, j.res.Recovery = kit.OutcomeInterrupted, kit.Strp(recovery)
@@ -672,7 +673,7 @@ func RefsSwept(ctx *kit.Context, asJSON bool, out io.Writer) error {
 		return nil
 	}
 	for _, r := range runs {
-		fmt.Fprintf(out, "%s  swept %s, %s\n", r.RunID, r.At.Local().Format("2006-01-02 15:04"), refCount(len(r.Refs)))
+		fmt.Fprintf(out, "%s  swept %s, %s\n", r.RunID, r.At.Local().Format("2006-01-02 15:04"), refs.RefCount(len(r.Refs)))
 		var rows [][]string
 		for _, s := range r.Refs {
 			rows = append(rows, []string{"  " + s.ID(), git.ShortID(s.Object, 12)})

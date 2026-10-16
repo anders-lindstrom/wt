@@ -1,4 +1,4 @@
-package commands
+package refs
 
 import (
 	"io"
@@ -33,8 +33,8 @@ type RefItem struct {
 	Subject       *string  `json:"subject"`
 }
 
-// RefsPlanOutput is the one object wt refs sweep --dry-run --json prints.
-type RefsPlanOutput struct {
+// PlanOutput is the one object wt refs sweep --dry-run --json prints.
+type PlanOutput struct {
 	Schema        int               `json:"schema"`
 	SchemaVersion string            `json:"schemaVersion"`
 	Command       string            `json:"command"`
@@ -71,8 +71,8 @@ type RefResultItem struct {
 	RestoreCommand []string `json:"restoreCommand"`
 }
 
-// RefsResult is the one object wt refs sweep --yes --json prints.
-type RefsResult struct {
+// Result is the one object wt refs sweep --yes --json prints.
+type Result struct {
 	Schema        int              `json:"schema"`
 	SchemaVersion string           `json:"schemaVersion"`
 	Command       string           `json:"command"`
@@ -101,17 +101,17 @@ func refItem(r RefRow) RefItem {
 	return it
 }
 
-func newRefsPlanOutput() RefsPlanOutput {
-	return RefsPlanOutput{Schema: 1, SchemaVersion: schema.VersionOf("refs-sweep-plan"), Command: refsSweepCommand,
+func newRefsPlanOutput() PlanOutput {
+	return PlanOutput{Schema: 1, SchemaVersion: schema.VersionOf("refs-sweep-plan"), Command: refsSweepCommand,
 		Patterns: []string{}, Problems: []RefProblem{}, Items: []RefItem{}}
 }
 
-// RefsSweepPlanJSON writes wt refs sweep --dry-run --json: every backup the
+// SweepPlanJSON writes wt refs sweep --dry-run --json: every backup the
 // patterns match, what it is and whether it would go, and the token that
 // holds a later sweep to this plan. It fetches unless told not to, and moves
 // nothing. A plan that cannot be made is still one object, with error set,
 // and the error is returned too.
-func RefsSweepPlanJSON(ctx *kit.Context, opts RefsOptions, out, progress io.Writer) error {
+func SweepPlanJSON(ctx *kit.Context, opts Options, out, progress io.Writer) error {
 	o := newRefsPlanOutput()
 	if ctx == nil {
 		return writeRefsPlan(out, o, kit.ErrNotInRepo)
@@ -134,13 +134,13 @@ func RefsSweepPlanJSON(ctx *kit.Context, opts RefsOptions, out, progress io.Writ
 	return writeRefsPlan(out, o, err)
 }
 
-// RefsSweepPlanFailed writes the plan object for a sweep that could not open
+// SweepPlanFailed writes the plan object for a sweep that could not open
 // the repository.
-func RefsSweepPlanFailed(out io.Writer, err error) {
+func SweepPlanFailed(out io.Writer, err error) {
 	_ = writeRefsPlan(out, newRefsPlanOutput(), err)
 }
 
-func writeRefsPlan(w io.Writer, o RefsPlanOutput, err error) error {
+func writeRefsPlan(w io.Writer, o PlanOutput, err error) error {
 	if err != nil {
 		o.Error = kit.Strp(err.Error())
 	}
@@ -150,17 +150,17 @@ func writeRefsPlan(w io.Writer, o RefsPlanOutput, err error) error {
 	return err
 }
 
-// RefsJournal collects what a ref sweep did, row by row, so that one object
+// Journal collects what a ref sweep did, row by row, so that one object
 // is written at the end: by the sweep when it returns, or by the signal
 // handler when it does not. Every method is safe from both, and the object
 // is written once. A nil journal records nothing.
-type RefsJournal struct {
+type Journal struct {
 	mu       sync.Mutex
 	once     sync.Once
 	out      io.Writer
 	root     string
 	url      string
-	res      RefsResult
+	res      Result
 	rows     map[string]RefRow
 	byID     map[string]*RefResultItem
 	inFlight string
@@ -168,15 +168,15 @@ type RefsJournal struct {
 }
 
 // NewRefsJournal is a journal that writes its object to out.
-func NewRefsJournal(out io.Writer) *RefsJournal {
-	return &RefsJournal{out: out, rows: map[string]RefRow{}, byID: map[string]*RefResultItem{},
-		res: RefsResult{Schema: 1, SchemaVersion: schema.VersionOf("refs-sweep"), Command: refsSweepCommand,
+func NewRefsJournal(out io.Writer) *Journal {
+	return &Journal{out: out, rows: map[string]RefRow{}, byID: map[string]*RefResultItem{},
+		res: Result{Schema: 1, SchemaVersion: schema.VersionOf("refs-sweep"), Command: refsSweepCommand,
 			Problems: []RefProblem{}, Items: []*RefResultItem{}}}
 }
 
 // planned records the plan: every selected row not run yet, every row the
 // plan keeps kept with its codes, the rest not selected.
-func (j *RefsJournal) planned(p RefsPlan, token *string) {
+func (j *Journal) planned(p Plan, token *string) {
 	if j == nil {
 		return
 	}
@@ -205,7 +205,7 @@ func (j *RefsJournal) planned(p RefsPlan, token *string) {
 }
 
 // begin records the run about to move the selected rows, and each one's pin.
-func (j *RefsJournal) begin(runID string) {
+func (j *Journal) begin(runID string) {
 	if j == nil {
 		return
 	}
@@ -221,7 +221,7 @@ func (j *RefsJournal) begin(runID string) {
 
 // abandon takes back a run whose meta could not be written: nothing of it
 // exists.
-func (j *RefsJournal) abandon() {
+func (j *Journal) abandon() {
 	if j == nil {
 		return
 	}
@@ -234,7 +234,7 @@ func (j *RefsJournal) abandon() {
 }
 
 // problem records why the run refused.
-func (j *RefsJournal) problem(code string, err error) {
+func (j *Journal) problem(code string, err error) {
 	if j == nil {
 		return
 	}
@@ -244,7 +244,7 @@ func (j *RefsJournal) problem(code string, err error) {
 }
 
 // start marks the row about to be moved: the one a signal would catch.
-func (j *RefsJournal) start(id string) {
+func (j *Journal) start(id string) {
 	if j == nil {
 		return
 	}
@@ -254,7 +254,7 @@ func (j *RefsJournal) start(id string) {
 }
 
 // settle records what one row came to.
-func (j *RefsJournal) settle(id string, st refState) {
+func (j *Journal) settle(id string, st refState) {
 	if j == nil {
 		return
 	}
@@ -287,7 +287,7 @@ func settleRefItem(it *RefResultItem, runID string, st refState) {
 }
 
 // fail records an error that ended the run before anything was moved.
-func (j *RefsJournal) fail(err error) {
+func (j *Journal) fail(err error) {
 	if j == nil || err == nil {
 		return
 	}
@@ -300,19 +300,19 @@ func (j *RefsJournal) fail(err error) {
 
 // Fail records an error that stopped the run before it began, and writes
 // the object.
-func (j *RefsJournal) Fail(err error) {
+func (j *Journal) Fail(err error) {
 	j.fail(err)
 	j.Finish()
 }
 
 // Finish writes the object for a run that returned.
-func (j *RefsJournal) Finish() { j.write(false, "") }
+func (j *Journal) Finish() { j.write(false, "") }
 
 // Interrupted writes the object for a run a signal ended: the row in flight
 // is read back and marked interrupted.
-func (j *RefsJournal) Interrupted(_ string, recovery string) { j.write(true, recovery) }
+func (j *Journal) Interrupted(_ string, recovery string) { j.write(true, recovery) }
 
-func (j *RefsJournal) write(signalled bool, recovery string) {
+func (j *Journal) write(signalled bool, recovery string) {
 	if j == nil {
 		return
 	}

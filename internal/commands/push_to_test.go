@@ -10,6 +10,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anders-lindstrom/wt/internal/commands/refs/refstest"
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
@@ -590,7 +591,7 @@ func TestRemoveAndRestoreKeepWhereAKeptBranchPushes(t *testing.T) {
 	if got := testkit.GitOut(t, main, "config", "--get", "branch.kept-push.wtPushTo"); got != "origin fix_wt/kept-push" {
 		t.Fatalf("recorded %q", got)
 	}
-	restore(t, ctx, dir)
+	refstest.Restore(t, ctx, dir)
 	if _, ok, err := ctx.Repo.PushTo("fix_wt/kept-push"); ok || err != nil {
 		t.Fatalf("back under its own name the record must be gone: %v %v", ok, err)
 	}
