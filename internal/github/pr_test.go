@@ -97,6 +97,44 @@ func TestChecksLabel(t *testing.T) {
 	}
 }
 
+// GraphQL sums the checks up in one state, which is what the by-branch lookup
+// reads; a commit with no checks has no rollup at all.
+func TestChecksLabelFromTheRollupState(t *testing.T) {
+	for state, want := range map[string]struct{ label, mark string }{
+		"SUCCESS":  {"passing", "✓"},
+		"FAILURE":  {"failing", "✗"},
+		"ERROR":    {"failing", "✗"},
+		"PENDING":  {"running", "●"},
+		"EXPECTED": {"running", "●"},
+		"":         {"", ""},
+	} {
+		t.Run(state, func(t *testing.T) {
+			pr := rolledUp(state)
+			if got := pr.ChecksLabel(); got != want.label {
+				t.Errorf("ChecksLabel() = %q, want %q", got, want.label)
+			}
+			if got := pr.ChecksMark(); got != want.mark {
+				t.Errorf("ChecksMark() = %q, want %q", got, want.mark)
+			}
+		})
+	}
+}
+
+// The two views agree on a cancelled run: GitHub sums it up as FAILURE, so the
+// checks one by one call it failing too.
+func TestChecksLabelCancelledAgreesWithTheRollupState(t *testing.T) {
+	one := PR{StatusCheckRollup: []Check{{Status: "COMPLETED", Conclusion: "CANCELLED"}}}
+	if got, want := one.ChecksLabel(), rolledUp("FAILURE").ChecksLabel(); got != want {
+		t.Errorf("a cancelled check reads %q, its rollup state reads %q", got, want)
+	}
+}
+
+// rolledUp is a pull request whose last commit's checks GraphQL summed up as
+// state, "" being a commit with none.
+func rolledUp(state string) PR {
+	return PR{Number: 1, CheckState: state}
+}
+
 // A branch reused for a second pull request keeps the open one, whichever
 // order they came back in.
 func TestByBranchKeepsTheOpenOne(t *testing.T) {

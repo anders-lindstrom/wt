@@ -32,6 +32,10 @@ type PR struct {
 	// StatusCheckRollup is the checks on the head commit, empty unless they
 	// were asked for.
 	StatusCheckRollup []Check `json:"statusCheckRollup"`
+	// CheckState is the same checks summed up in one word: SUCCESS, FAILURE,
+	// ERROR, PENDING or EXPECTED, and empty when the commit has none or they
+	// were not asked for.
+	CheckState string `json:"checkState,omitempty"`
 
 	// ReviewRequests is who has been asked to review. Only the picker's
 	// query fills it in.
@@ -151,8 +155,20 @@ func (p PR) StateLabel() string {
 }
 
 // ChecksLabel is what the checks on the head commit say: failing, running,
-// passing, or "" when there are none or they were not asked for.
+// passing, or "" when there are none or they were not asked for. The checks
+// one by one decide it when they are there, the overall state otherwise.
 func (p PR) ChecksLabel() string {
+	if len(p.StatusCheckRollup) == 0 {
+		switch strings.ToUpper(p.CheckState) {
+		case "SUCCESS":
+			return "passing"
+		case "FAILURE", "ERROR":
+			return "failing"
+		case "PENDING", "EXPECTED":
+			return "running"
+		}
+		return ""
+	}
 	running := false
 	for _, c := range p.StatusCheckRollup {
 		// A CheckRun that has not completed has no conclusion yet; a
@@ -178,11 +194,26 @@ func (p PR) ChecksLabel() string {
 	return ""
 }
 
-// failed reports whether a check outcome is a bad one. A skipped or neutral
-// check is not a failure, and neither is an empty outcome.
+// ChecksMark is ChecksLabel as one glyph, for a column with no room for the
+// word: ✓ passing, ✗ failing, ● running, "" for none.
+func (p PR) ChecksMark() string {
+	switch p.ChecksLabel() {
+	case "passing":
+		return "✓"
+	case "failing":
+		return "✗"
+	case "running":
+		return "●"
+	}
+	return ""
+}
+
+// failed reports whether a check outcome is a bad one. A cancelled check is,
+// as GitHub's overall state counts it. A skipped or neutral check is not a
+// failure, and neither is an empty outcome.
 func failed(outcome string) bool {
 	switch strings.ToUpper(outcome) {
-	case "FAILURE", "ERROR", "TIMED_OUT", "STARTUP_FAILURE", "ACTION_REQUIRED":
+	case "FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "STARTUP_FAILURE", "ACTION_REQUIRED":
 		return true
 	}
 	return false

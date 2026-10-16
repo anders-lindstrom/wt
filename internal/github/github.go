@@ -71,7 +71,8 @@ var listFields = []string{
 
 // OpenWithChecks reads the repository's open pull requests and what the checks
 // on each head commit say, newest first: the wide view `wt pr list` prints.
-// The rollup roughly doubles the call, so nothing on a deadline asks for it.
+// The per-check rollup roughly doubles the call, so nothing on a deadline asks
+// for it; PRsOnBranchesWithChecks asks only for the one-word state.
 // dir is any checkout of the repository: gh reads the remote from it.
 func (c CLI) OpenWithChecks(dir string, limit int) ([]PR, error) {
 	fields := append(append([]string{}, listFields...), "statusCheckRollup")
@@ -135,7 +136,7 @@ func (c CLI) run(dir string, deadline time.Duration, args ...string) ([]byte, er
 	}
 	if err != nil {
 		said := stderr.String()
-		return nil, &callError{call: called(args), reason: reason(said, err), first: firstLine(said)}
+		return nil, &callError{call: called(args), reason: reason(said, err), first: firstLine(said), out: stdout.Bytes()}
 	}
 	return stdout.Bytes(), nil
 }
@@ -148,6 +149,10 @@ type callError struct {
 	// first is stderr's first line, which is where gh asks for a login.
 	// NotLoggedIn reads it, so a reason taken from further down cannot hide it.
 	first string
+	// out is what gh wrote to stdout before it failed. A GraphQL error exits
+	// 1 with only `gh: <message>` on stderr; the errors, with the path of
+	// each, are in the answer on stdout.
+	out []byte
 }
 
 func (e *callError) Error() string { return e.call + " failed: " + e.reason }
