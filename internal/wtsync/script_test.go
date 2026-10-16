@@ -258,10 +258,11 @@ func TestResolveInWorktreeAScriptThatExitsZeroWithoutStagingIsAnError(t *testing
 // hangTimeout is the Timeout the two hang tests give their script. The clock
 // starts once the script is materialised, so it only has to cover sh starting
 // and, for the looping script, its first stderr line, but it must do so under
-// -race with the rest of the suite running: 300 ms did not. The kill is still
+// -race with the rest of the suite running: 300 ms did not, and 2 s did not
+// once the other packages ran their tests in parallel. The kill is still
 // proven, because a script that is not killed returns only after
 // Timeout+git.WaitDelay, past the bound both tests check.
-const hangTimeout = 2 * time.Second
+const hangTimeout = 5 * time.Second
 
 func TestScriptTimesOutInsteadOfHanging(t *testing.T) {
 	// Not parallel: bounds wall time to the timeout plus git.WaitDelay.
@@ -320,7 +321,7 @@ func TestScriptCheckTimesOutInsteadOfHanging(t *testing.T) {
 	if testing.Short() {
 		t.Skip("waits out a real deadline")
 	}
-	script := "#!/bin/sh\nsleep 5\n"
+	script := "#!/bin/sh\nexec sleep 30\n"
 	dir, _ := stoppedRebaseWithScript(t, script)
 	s := Script{Root: dir, Trunk: "origin/main", Run: "bin/resolve", Timeout: hangTimeout}
 	c := Conflict{Path: "v.txt", Base: []byte("1.0.0\n"), Trunk: []byte("1.0.5\n"), Branch: []byte("1.0.1\n")}
