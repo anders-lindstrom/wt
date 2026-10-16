@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -19,8 +20,8 @@ func commitFile(t *testing.T, dir, name string) {
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(name+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, dir, "add", name)
-	gitIn(t, dir, "commit", "-q", "-m", "add "+name)
+	testkit.GitIn(t, dir, "add", name)
+	testkit.GitIn(t, dir, "commit", "-q", "-m", "add "+name)
 }
 
 // rebasedOntoOrigin moves trunk on, then replays the branch's commits onto it
@@ -29,16 +30,16 @@ func commitFile(t *testing.T, dir, name string) {
 func rebasedOntoOrigin(t *testing.T, main, branch string) {
 	t.Helper()
 	commitFile(t, main, "trunk-moved-on")
-	gitIn(t, main, "cherry-pick", "main.."+branch)
-	gitIn(t, main, "push", "-q", "origin", "main")
-	gitIn(t, main, "fetch", "-q", "origin")
+	testkit.GitIn(t, main, "cherry-pick", "main.."+branch)
+	testkit.GitIn(t, main, "push", "-q", "origin", "main")
+	testkit.GitIn(t, main, "fetch", "-q", "origin")
 }
 
 // A branch GitHub rebased before merging looks unmerged to git for ever, and
 // the pull request's head is the rebased tip, not this one. Every change is
 // on trunk all the same, so nothing is lost by deleting it.
 func TestRemoveDeletesABranchWhoseCommitsWereRebasedOntoTrunk(t *testing.T) {
-	ctx, main, _ := sweepRepo(t)
+	ctx, main, _ := testkit.SweepRepo(t)
 	var buf bytes.Buffer
 	path, err := New(ctx, "feat/rates", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -69,7 +70,7 @@ func TestRemoveDeletesABranchWhoseCommitsWereRebasedOntoTrunk(t *testing.T) {
 // One commit trunk does not have is work at stake, however many others made
 // it: the branch is kept.
 func TestRemoveKeepsABranchWithACommitTrunkLacks(t *testing.T) {
-	ctx, main, _ := sweepRepo(t)
+	ctx, main, _ := testkit.SweepRepo(t)
 	var buf bytes.Buffer
 	path, err := New(ctx, "feat/rates", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -93,7 +94,7 @@ func TestRemoveKeepsABranchWithACommitTrunkLacks(t *testing.T) {
 
 // Sweep sees the same branch as done, so its worktree goes with it.
 func TestSweepRemovesAWorktreeWhoseCommitsWereRebasedOntoTrunk(t *testing.T) {
-	ctx, main, _ := sweepRepo(t)
+	ctx, main, _ := testkit.SweepRepo(t)
 	var buf bytes.Buffer
 	path, err := New(ctx, "feat/rates", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -112,7 +113,7 @@ func TestSweepRemovesAWorktreeWhoseCommitsWereRebasedOntoTrunk(t *testing.T) {
 	if err := p.apply(ctx, nobodyIn, &buf); err != nil {
 		t.Fatalf("apply: %v\n%s", err, buf.String())
 	}
-	if exists(path) || ctx.Repo.BranchExists("feat_wt/rates") {
+	if testkit.Exists(path) || ctx.Repo.BranchExists("feat_wt/rates") {
 		t.Errorf("the worktree and its branch should be gone:\n%s", buf.String())
 	}
 }
@@ -120,10 +121,10 @@ func TestSweepRemovesAWorktreeWhoseCommitsWereRebasedOntoTrunk(t *testing.T) {
 // A branch left behind once its worktree is gone, upstream deleted on merge,
 // is deleted the same way.
 func TestSweepPlanDeletesAGoneBranchWhoseCommitsWereRebasedOntoTrunk(t *testing.T) {
-	ctx, main, _ := sweepRepo(t)
-	gitIn(t, main, "checkout", "-q", "-b", "left-behind")
+	ctx, main, _ := testkit.SweepRepo(t)
+	testkit.GitIn(t, main, "checkout", "-q", "-b", "left-behind")
 	commitFile(t, main, "one")
-	gitIn(t, main, "checkout", "-q", "main")
+	testkit.GitIn(t, main, "checkout", "-q", "main")
 	goneUpstream(t, main, "left-behind")
 	rebasedOntoOrigin(t, main, "left-behind")
 
@@ -136,7 +137,7 @@ func TestSweepPlanDeletesAGoneBranchWhoseCommitsWereRebasedOntoTrunk(t *testing.
 // A change trunk has only with other whitespace is not on trunk: git
 // cherry would pair the two, so the branch and its worktree must stay.
 func TestSweepKeepsABranchTrunkHasOnlyWithOtherWhitespace(t *testing.T) {
-	ctx, main, _ := sweepRepo(t)
+	ctx, main, _ := testkit.SweepRepo(t)
 	var buf bytes.Buffer
 	path, err := New(ctx, "feat/indent", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -146,14 +147,14 @@ func TestSweepKeepsABranchTrunkHasOnlyWithOtherWhitespace(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "code.go"), []byte(content), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		gitIn(t, dir, "add", "code.go")
-		gitIn(t, dir, "commit", "-q", "-m", "add code.go")
+		testkit.GitIn(t, dir, "add", "code.go")
+		testkit.GitIn(t, dir, "commit", "-q", "-m", "add code.go")
 	}
 	write(path, "package x\n\nfunc f() {\n\treturn\n}\n")
 	commitFile(t, main, "trunk-moved-on")
 	write(main, "package x\n\nfunc f() {\n    return\n}\n")
-	gitIn(t, main, "push", "-q", "origin", "main")
-	gitIn(t, main, "fetch", "-q", "origin")
+	testkit.GitIn(t, main, "push", "-q", "origin", "main")
+	testkit.GitIn(t, main, "fetch", "-q", "origin")
 
 	p := planOf(t, ctx)
 	if len(p.Remove) != 0 || len(p.Delete) != 0 {
@@ -165,7 +166,7 @@ func TestSweepKeepsABranchTrunkHasOnlyWithOtherWhitespace(t *testing.T) {
 // remove the worktree while the prompt is open. Saying "run the command
 // again" would send the user after a checkout that is gone.
 func TestRemoveSaysSomethingElseRemovedTheWorktree(t *testing.T) {
-	ctx, main, _ := sweepRepo(t)
+	ctx, main, _ := testkit.SweepRepo(t)
 	var buf bytes.Buffer
 	path, err := New(ctx, "feat/elsewhere", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -176,7 +177,7 @@ func TestRemoveSaysSomethingElseRemovedTheWorktree(t *testing.T) {
 
 	for name, alsoBranch := range map[string]bool{"branch gone too": true, "branch left": false} {
 		t.Run(name, func(t *testing.T) {
-			if !exists(path) {
+			if !testkit.Exists(path) {
 				var err error
 				if path, err = New(ctx, "feat/elsewhere", NewOptions{NoSetup: true}, &buf); err != nil {
 					t.Fatal(err)
@@ -185,9 +186,9 @@ func TestRemoveSaysSomethingElseRemovedTheWorktree(t *testing.T) {
 			}
 			buf.Reset()
 			opts := RemoveOptions{Agents: []wtsync.Agent{}, Confirm: func(Plan) (bool, error) {
-				gitIn(t, main, "worktree", "remove", "--force", path)
+				testkit.GitIn(t, main, "worktree", "remove", "--force", path)
 				if alsoBranch {
-					gitIn(t, main, "branch", "-D", "feat_wt/elsewhere")
+					testkit.GitIn(t, main, "branch", "-D", "feat_wt/elsewhere")
 				}
 				return true, nil
 			}}
@@ -209,7 +210,7 @@ func TestRemoveSaysSomethingElseRemovedTheWorktree(t *testing.T) {
 				t.Errorf("there is nothing left to run it on:\n%s", out)
 			}
 			if !alsoBranch {
-				gitIn(t, main, "branch", "-D", "feat_wt/elsewhere")
+				testkit.GitIn(t, main, "branch", "-D", "feat_wt/elsewhere")
 			}
 		})
 	}
@@ -222,7 +223,7 @@ func TestRemoveSaysWhenSomethingElseIsStillRemovingTheWorktree(t *testing.T) {
 	vanishWait = 50 * time.Millisecond
 	t.Cleanup(func() { vanishWait = was })
 
-	ctx, _, _ := sweepRepo(t)
+	ctx, _, _ := testkit.SweepRepo(t)
 	var buf bytes.Buffer
 	path, err := New(ctx, "feat/elsewhere", NewOptions{NoSetup: true}, &buf)
 	if err != nil {

@@ -8,31 +8,11 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
-func fixtureRepo(t *testing.T, conf string) string {
-	t.Helper()
-	parent, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	main := filepath.Join(parent, "demo")
-	gittest.Git(t, parent, "init", "-q", "-b", "main", "demo")
-	dir := filepath.Join(main, "bin", "worktree")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "worktree.conf"), []byte(conf), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return main
-}
-
-const minimalConf = "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\n"
-
 func TestConfigShellEmitsLegacyNames(t *testing.T) {
-	main := fixtureRepo(t, minimalConf)
+	main := testkit.FixtureRepo(t, testkit.MinimalConf)
 	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -59,7 +39,7 @@ func TestConfigShellEmitsLegacyNames(t *testing.T) {
 // provision.sh is what AWS_SETUP_ENABLED became; the compat output has to
 // reflect it so Herdr keeps seeing the flag it documents.
 func TestConfigShellReportsProvisionScript(t *testing.T) {
-	main := fixtureRepo(t, minimalConf)
+	main := testkit.FixtureRepo(t, testkit.MinimalConf)
 	p := filepath.Join(main, "bin", "worktree", "provision.sh")
 	if err := os.WriteFile(p, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
@@ -75,7 +55,7 @@ func TestConfigShellReportsProvisionScript(t *testing.T) {
 }
 
 func TestConfigShowsCacheDirs(t *testing.T) {
-	main := fixtureRepo(t, minimalConf+"WORKTREE_CACHE_DIRS=(node_modules .gradle)\n")
+	main := testkit.FixtureRepo(t, testkit.MinimalConf+"WORKTREE_CACHE_DIRS=(node_modules .gradle)\n")
 	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -96,7 +76,7 @@ func TestConfigShowsCacheDirs(t *testing.T) {
 }
 
 func TestConfigShellQuotesSafely(t *testing.T) {
-	main := fixtureRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=true\nBUILD_INIT_COMMAND=\"echo it's fine\"\n")
+	main := testkit.FixtureRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=true\nBUILD_INIT_COMMAND=\"echo it's fine\"\n")
 	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -113,14 +93,14 @@ func TestConfigShellQuotesSafely(t *testing.T) {
 // A worktree whose branch changes worktree.conf must be read from that
 // worktree, matching what the bash implementation did.
 func TestOpenReadsConfigFromTheCurrentWorktree(t *testing.T) {
-	main := fixtureRepo(t, minimalConf)
-	gitIn(t, main, "config", "user.email", "t@example.com")
-	gitIn(t, main, "config", "user.name", "T")
-	gitIn(t, main, "add", "-A")
-	gitIn(t, main, "commit", "-qm", "init")
+	main := testkit.FixtureRepo(t, testkit.MinimalConf)
+	testkit.GitIn(t, main, "config", "user.email", "t@example.com")
+	testkit.GitIn(t, main, "config", "user.name", "T")
+	testkit.GitIn(t, main, "add", "-A")
+	testkit.GitIn(t, main, "commit", "-qm", "init")
 
 	linked := filepath.Join(filepath.Dir(main), "demo_wt", "feat_wt", "changed")
-	gitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/changed", linked)
+	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/changed", linked)
 	if err := os.WriteFile(filepath.Join(linked, "bin", "worktree", "worktree.conf"),
 		[]byte("MAIN_BRANCH=\"from-the-worktree\"\nBUILD_INIT_ENABLED=false\n"), 0o644); err != nil {
 		t.Fatal(err)

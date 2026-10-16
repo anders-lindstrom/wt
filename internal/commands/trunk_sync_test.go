@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -23,14 +24,14 @@ type trunkFixture struct {
 
 func newTrunkFixture(t *testing.T) *trunkFixture {
 	t.Helper()
-	main := committedRepo(t, minimalConf)
-	gitIn(t, main, "add", "-A")
-	gitIn(t, main, "commit", "-q", "-m", "configure")
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
+	testkit.GitIn(t, main, "add", "-A")
+	testkit.GitIn(t, main, "commit", "-q", "-m", "configure")
 	origin := gittest.WithOrigin(t, main)
 	other := filepath.Join(t.TempDir(), "other")
-	gitIn(t, filepath.Dir(other), "clone", "-q", origin, other)
-	gitIn(t, other, "config", "user.email", "t@example.com")
-	gitIn(t, other, "config", "user.name", "T")
+	testkit.GitIn(t, filepath.Dir(other), "clone", "-q", origin, other)
+	testkit.GitIn(t, other, "config", "user.email", "t@example.com")
+	testkit.GitIn(t, other, "config", "user.name", "T")
 	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
@@ -42,18 +43,18 @@ func newTrunkFixture(t *testing.T) *trunkFixture {
 // main checkout, leaving local main where it was.
 func (f *trunkFixture) advanceOrigin(t *testing.T, n int) string {
 	t.Helper()
-	gitIn(t, f.other, "pull", "-q", "--ff-only")
+	testkit.GitIn(t, f.other, "pull", "-q", "--ff-only")
 	for i := 0; i < n; i++ {
-		gitIn(t, f.other, "commit", "-q", "--allow-empty", "-m", "origin moves")
+		testkit.GitIn(t, f.other, "commit", "-q", "--allow-empty", "-m", "origin moves")
 	}
-	gitIn(t, f.other, "push", "-q", "origin", "main")
-	gitIn(t, f.main, "fetch", "-q", "origin")
-	return gitOut(t, f.main, "rev-parse", "origin/main")
+	testkit.GitIn(t, f.other, "push", "-q", "origin", "main")
+	testkit.GitIn(t, f.main, "fetch", "-q", "origin")
+	return testkit.GitOut(t, f.main, "rev-parse", "origin/main")
 }
 
 func (f *trunkFixture) local(t *testing.T) string {
 	t.Helper()
-	return gitOut(t, f.main, "rev-parse", "refs/heads/main")
+	return testkit.GitOut(t, f.main, "rev-parse", "refs/heads/main")
 }
 
 func ffOn() trunkSyncOptions {
@@ -87,14 +88,14 @@ func TestTrunkSyncFastForwardsTheCleanMainCheckout(t *testing.T) {
 		t.Fatalf("before %s, want %s", ts.before, before)
 	}
 	// The working tree moved with the branch: nothing staged or changed.
-	if out := gitOut(t, f.main, "status", "--porcelain"); out != "" {
+	if out := testkit.GitOut(t, f.main, "status", "--porcelain"); out != "" {
 		t.Fatalf("main checkout not clean after the fast-forward:\n%s", out)
 	}
 }
 
 func TestTrunkSyncUpdatesTrunkCheckedOutNowhere(t *testing.T) {
 	f := newTrunkFixture(t)
-	gitIn(t, f.main, "switch", "-q", "-c", "elsewhere")
+	testkit.GitIn(t, f.main, "switch", "-q", "-c", "elsewhere")
 	remote := f.advanceOrigin(t, 1)
 
 	ts := syncLocalTrunk(f.ctx, remote, ffOn())
@@ -105,7 +106,7 @@ func TestTrunkSyncUpdatesTrunkCheckedOutNowhere(t *testing.T) {
 	if got := f.local(t); got != remote {
 		t.Fatalf("local main at %s, want %s", got, remote)
 	}
-	if head := gitOut(t, f.main, "symbolic-ref", "--short", "HEAD"); head != "elsewhere" {
+	if head := testkit.GitOut(t, f.main, "symbolic-ref", "--short", "HEAD"); head != "elsewhere" {
 		t.Fatalf("HEAD moved to %s", head)
 	}
 }
@@ -131,21 +132,21 @@ func TestTrunkSyncSkips(t *testing.T) {
 			o.optedOut = true
 		}, TrunkSkipOptedOut},
 		{"dirty tracked", func(t *testing.T, f *trunkFixture, _ *trunkSyncOptions) {
-			writeIn(t, f.main, "bin/worktree/worktree.conf", minimalConf+"# edited\n")
+			testkit.WriteIn(t, f.main, "bin/worktree/worktree.conf", testkit.MinimalConf+"# edited\n")
 		}, TrunkSkipDirty},
 		{"dirty untracked", func(t *testing.T, f *trunkFixture, _ *trunkSyncOptions) {
-			writeIn(t, f.main, "scratch.txt", "mine\n")
+			testkit.WriteIn(t, f.main, "scratch.txt", "mine\n")
 		}, TrunkSkipDirty},
 		{"merge in progress", func(t *testing.T, f *trunkFixture, _ *trunkSyncOptions) {
-			gitDir := gitOut(t, f.main, "rev-parse", "--absolute-git-dir")
-			writeIn(t, gitDir, "MERGE_HEAD", f.local(t)+"\n")
+			gitDir := testkit.GitOut(t, f.main, "rev-parse", "--absolute-git-dir")
+			testkit.WriteIn(t, gitDir, "MERGE_HEAD", f.local(t)+"\n")
 		}, TrunkSkipOperation},
 		{"rebase stopped on trunk", func(t *testing.T, f *trunkFixture, _ *trunkSyncOptions) {
-			gitIn(t, f.main, "-c", "sequence.editor=perl -pi -e s/^pick/edit/", "rebase", "-q", "-i", "HEAD~1")
+			testkit.GitIn(t, f.main, "-c", "sequence.editor=perl -pi -e s/^pick/edit/", "rebase", "-q", "-i", "HEAD~1")
 		}, TrunkSkipOperation},
 		{"bisect from trunk", func(t *testing.T, f *trunkFixture, _ *trunkSyncOptions) {
-			gitIn(t, f.main, "bisect", "start")
-			gitIn(t, f.main, "bisect", "bad")
+			testkit.GitIn(t, f.main, "bisect", "start")
+			testkit.GitIn(t, f.main, "bisect", "bad")
 		}, TrunkSkipOperation},
 		{"busy session", func(_ *testing.T, f *trunkFixture, o *trunkSyncOptions) {
 			o.agents = func() ([]wtsync.Agent, error) {
@@ -186,10 +187,10 @@ func TestTrunkSyncSkips(t *testing.T) {
 
 func TestTrunkSyncNeverMovesALocalTrunkWithCommitsOfItsOwn(t *testing.T) {
 	f := newTrunkFixture(t)
-	gitIn(t, f.main, "commit", "-q", "--allow-empty", "-m", "unpushed")
+	testkit.GitIn(t, f.main, "commit", "-q", "--allow-empty", "-m", "unpushed")
 	before := f.local(t)
 
-	ts := syncLocalTrunk(f.ctx, gitOut(t, f.main, "rev-parse", "origin/main"), ffOn())
+	ts := syncLocalTrunk(f.ctx, testkit.GitOut(t, f.main, "rev-parse", "origin/main"), ffOn())
 	if reasonOf(ts) != TrunkSkipAhead || *ts.LocalAhead != 1 || *ts.RemoteAhead != 0 {
 		t.Fatalf("want ahead 1/0, got %+v (%s)", ts, reasonOf(ts))
 	}
@@ -211,12 +212,12 @@ func TestTrunkSyncNeverMovesALocalTrunkWithCommitsOfItsOwn(t *testing.T) {
 // between the read and the update. The update must not land.
 func TestTrunkSyncLosesTheRaceToAMovedTrunk(t *testing.T) {
 	f := newTrunkFixture(t)
-	gitIn(t, f.main, "switch", "-q", "-c", "elsewhere")
+	testkit.GitIn(t, f.main, "switch", "-q", "-c", "elsewhere")
 	remote := f.advanceOrigin(t, 1)
 	var moved string
 	o := ffOn()
 	o.beforeUpdate = func() {
-		gitIn(t, f.main, "update-ref", "refs/heads/main", gitOut(t, f.main, "commit-tree", "-p", "main", "-m", "raced", "main^{tree}"))
+		testkit.GitIn(t, f.main, "update-ref", "refs/heads/main", testkit.GitOut(t, f.main, "commit-tree", "-p", "main", "-m", "raced", "main^{tree}"))
 		moved = f.local(t)
 	}
 
@@ -236,7 +237,7 @@ func TestTrunkSyncMergeRefusedIsNotFastForward(t *testing.T) {
 	f := newTrunkFixture(t)
 	remote := f.advanceOrigin(t, 1)
 	o := ffOn()
-	o.beforeUpdate = func() { gitIn(t, f.main, "commit", "-q", "--allow-empty", "-m", "raced") }
+	o.beforeUpdate = func() { testkit.GitIn(t, f.main, "commit", "-q", "--allow-empty", "-m", "raced") }
 
 	ts := syncLocalTrunk(f.ctx, remote, o)
 
@@ -249,17 +250,17 @@ func TestTrunkSyncMergeRefusedIsNotFastForward(t *testing.T) {
 // would overwrite it, so it fails and says so.
 func TestTrunkSyncNeverOverwritesAnIgnoredFile(t *testing.T) {
 	f := newTrunkFixture(t)
-	writeIn(t, f.main, ".git/info/exclude", "keep.txt\n")
-	writeIn(t, f.main, "keep.txt", "mine\n")
-	gitIn(t, f.other, "pull", "-q", "--ff-only")
-	writeIn(t, f.other, "keep.txt", "theirs\n")
-	gitIn(t, f.other, "add", "keep.txt")
-	gitIn(t, f.other, "commit", "-q", "-m", "track keep.txt")
-	gitIn(t, f.other, "push", "-q", "origin", "main")
-	gitIn(t, f.main, "fetch", "-q", "origin")
+	testkit.WriteIn(t, f.main, ".git/info/exclude", "keep.txt\n")
+	testkit.WriteIn(t, f.main, "keep.txt", "mine\n")
+	testkit.GitIn(t, f.other, "pull", "-q", "--ff-only")
+	testkit.WriteIn(t, f.other, "keep.txt", "theirs\n")
+	testkit.GitIn(t, f.other, "add", "keep.txt")
+	testkit.GitIn(t, f.other, "commit", "-q", "-m", "track keep.txt")
+	testkit.GitIn(t, f.other, "push", "-q", "origin", "main")
+	testkit.GitIn(t, f.main, "fetch", "-q", "origin")
 	before := f.local(t)
 
-	ts := syncLocalTrunk(f.ctx, gitOut(t, f.main, "rev-parse", "origin/main"), ffOn())
+	ts := syncLocalTrunk(f.ctx, testkit.GitOut(t, f.main, "rev-parse", "origin/main"), ffOn())
 
 	if ts.FastForwarded || reasonOf(ts) != TrunkSkipFailed {
 		t.Fatalf("want failed, got %+v (%s)", ts, reasonOf(ts))
@@ -292,20 +293,15 @@ func TestTrunkSyncWithoutApplySaysWhatARunWouldDo(t *testing.T) {
 
 func TestTrunkSyncWithNoLocalTrunkHasNothingToDo(t *testing.T) {
 	f := newTrunkFixture(t)
-	gitIn(t, f.main, "switch", "-q", "-c", "elsewhere")
-	gitIn(t, f.main, "branch", "-q", "-D", "main")
-	ts := syncLocalTrunk(f.ctx, gitOut(t, f.main, "rev-parse", "origin/main"), ffOn())
+	testkit.GitIn(t, f.main, "switch", "-q", "-c", "elsewhere")
+	testkit.GitIn(t, f.main, "branch", "-q", "-D", "main")
+	ts := syncLocalTrunk(f.ctx, testkit.GitOut(t, f.main, "rev-parse", "origin/main"), ffOn())
 	if ts.Local != nil || ts.LocalAhead != nil || ts.FastForwarded || ts.SkippedReason != nil {
 		t.Fatalf("want nothing to do, got %+v (%s)", ts, reasonOf(ts))
 	}
 	if gittest.Git(t, f.main, "branch", "--list", "main") != "" {
 		t.Fatal("local main was created")
 	}
-}
-
-func writeIn(t *testing.T, dir, rel, content string) {
-	t.Helper()
-	gittest.WriteFile(t, filepath.Join(dir, rel), content)
 }
 
 // The main checkout switches away from trunk between the checks and the
@@ -315,14 +311,14 @@ func TestTrunkSyncNeverMergesIntoAnotherBranch(t *testing.T) {
 	remote := f.advanceOrigin(t, 1)
 	other := f.local(t)
 	o := ffOn()
-	o.beforeUpdate = func() { gitIn(t, f.main, "switch", "-q", "-c", "switched") }
+	o.beforeUpdate = func() { testkit.GitIn(t, f.main, "switch", "-q", "-c", "switched") }
 
 	ts := syncLocalTrunk(f.ctx, remote, o)
 
 	if ts.FastForwarded || reasonOf(ts) != TrunkSkipNotFastForward {
 		t.Fatalf("want notFastForward, got %+v (%s)", ts, reasonOf(ts))
 	}
-	if got := gitOut(t, f.main, "rev-parse", "switched"); got != other {
+	if got := testkit.GitOut(t, f.main, "rev-parse", "switched"); got != other {
 		t.Fatalf("the switched-to branch moved to %s", got)
 	}
 }
@@ -331,11 +327,11 @@ func TestTrunkSyncNeverMergesIntoAnotherBranch(t *testing.T) {
 // ref must not move under a checkout whose files would not follow.
 func TestTrunkSyncLeavesTrunkCheckedOutSinceTheListing(t *testing.T) {
 	f := newTrunkFixture(t)
-	gitIn(t, f.main, "switch", "-q", "-c", "elsewhere")
+	testkit.GitIn(t, f.main, "switch", "-q", "-c", "elsewhere")
 	before := f.local(t)
 	remote := f.advanceOrigin(t, 1)
 	o := ffOn()
-	o.beforeUpdate = func() { gitIn(t, f.main, "switch", "-q", "main") }
+	o.beforeUpdate = func() { testkit.GitIn(t, f.main, "switch", "-q", "main") }
 
 	ts := syncLocalTrunk(f.ctx, remote, o)
 
@@ -353,7 +349,7 @@ func TestTrunkSyncRefusesTrunkCheckedOutTwice(t *testing.T) {
 	f := newTrunkFixture(t)
 	before := f.local(t)
 	second := filepath.Join(t.TempDir(), "second")
-	gitIn(t, f.main, "worktree", "add", "-q", "-f", second, "main")
+	testkit.GitIn(t, f.main, "worktree", "add", "-q", "-f", second, "main")
 	remote := f.advanceOrigin(t, 1)
 
 	ts := syncLocalTrunk(f.ctx, remote, ffOn())
@@ -370,8 +366,8 @@ func TestTrunkSyncRefusesTrunkCheckedOutTwice(t *testing.T) {
 // them.
 func TestTrunkSyncSeesUntrackedFilesStatusHides(t *testing.T) {
 	f := newTrunkFixture(t)
-	gitIn(t, f.main, "config", "status.showUntrackedFiles", "no")
-	writeIn(t, f.main, "scratch.txt", "mine\n")
+	testkit.GitIn(t, f.main, "config", "status.showUntrackedFiles", "no")
+	testkit.WriteIn(t, f.main, "scratch.txt", "mine\n")
 	remote := f.advanceOrigin(t, 1)
 
 	if ts := syncLocalTrunk(f.ctx, remote, ffOn()); reasonOf(ts) != TrunkSkipDirty {

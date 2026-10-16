@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/gittest"
@@ -35,12 +36,6 @@ func TestMain(m *testing.M) {
 	_ = os.RemoveAll(dir)
 	restore()
 	os.Exit(code)
-}
-
-// optIn is `wt config set superset true`. Every test that expects wt to reach
-// Superset needs it: the shipped default is off.
-func optIn(ctx *kit.Context) {
-	ctx.User.Superset = true
 }
 
 // fakeSuperset writes a `superset` that answers projects/ws create for one
@@ -72,24 +67,15 @@ func stub(t *testing.T, s superset.Status) {
 	t.Cleanup(func() { probeSuperset = old })
 }
 
-func argvOf(t *testing.T, log string) []string {
-	t.Helper()
-	b, err := os.ReadFile(log)
-	if err != nil {
-		return nil
-	}
-	return strings.Split(strings.TrimSpace(string(b)), "\n")
-}
-
 // The happy path: a repository Superset knows, a running host, and a worktree
 // wt has just made. Superset is asked to adopt the branch — never to create a
 // checkout, which it already has.
 func TestNewRegistersTheWorktreeWithSuperset(t *testing.T) {
-	ctx, err := kit.Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	optIn(ctx)
+	testkit.OptIn(ctx)
 	log := fakeSuperset(t, ctx.Repo.MainRoot, true)
 
 	var out, errs bytes.Buffer
@@ -107,7 +93,7 @@ func TestNewRegistersTheWorktreeWithSuperset(t *testing.T) {
 		"projects list --local --json",
 		"ws create --local --project p1 --name fix_wt/login-crash --branch fix_wt/login-crash --skip-branch-prefix --json",
 	}
-	if got := argvOf(t, log); strings.Join(got, "|") != strings.Join(want, "|") {
+	if got := testkit.ArgvOf(t, log); strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("argv =\n  %q\nwant\n  %q", got, want)
 	}
 	if _, err := os.Stat(path); err != nil {
@@ -130,7 +116,7 @@ func TestNewSurvivesEverySupersetState(t *testing.T) {
 			"- Superset's host service is not running; not registered",
 		},
 		"status unreadable": {
-			config.SupersetAuto, superset.Status{Exe: "/nope/superset", Err: errBoom},
+			config.SupersetAuto, superset.Status{Exe: "/nope/superset", Err: testkit.ErrBoom},
 			"- boom; not registered",
 		},
 		"running but no such binary": {
@@ -148,11 +134,11 @@ func TestNewSurvivesEverySupersetState(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx, err := kit.Open(committedRepo(t, minimalConf))
+			ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 			if err != nil {
 				t.Fatal(err)
 			}
-			optIn(ctx)
+			testkit.OptIn(ctx)
 			ctx.Config.SupersetRegister = tc.mode
 			stub(t, tc.status)
 
@@ -190,20 +176,14 @@ func supersetLine(out string) string {
 	return ""
 }
 
-var errBoom = boom{}
-
-type boom struct{}
-
-func (boom) Error() string { return "boom" }
-
 // A branch that already has a workspace is Superset's answer, not wt's
 // problem: nothing is duplicated and nothing fails.
 func TestRegisterSupersetIsIdempotent(t *testing.T) {
-	ctx, err := kit.Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	optIn(ctx)
+	testkit.OptIn(ctx)
 	dir := t.TempDir()
 	exe := filepath.Join(dir, "superset")
 	script := "#!/bin/sh\n" +
@@ -234,17 +214,17 @@ func TestNewSkipsSupersetWhenAsked(t *testing.T) {
 		"--no-setup":    {NoSetup: true},
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx, err := kit.Open(committedRepo(t, minimalConf))
+			ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 			if err != nil {
 				t.Fatal(err)
 			}
-			optIn(ctx)
+			testkit.OptIn(ctx)
 			log := fakeSuperset(t, ctx.Repo.MainRoot, true)
 			var errs bytes.Buffer
 			if _, err := New(ctx, "fix/login-crash", opts, &errs); err != nil {
 				t.Fatal(err)
 			}
-			if got := argvOf(t, log); got != nil {
+			if got := testkit.ArgvOf(t, log); got != nil {
 				t.Errorf("superset was run: %q", got)
 			}
 		})
@@ -254,20 +234,20 @@ func TestNewSkipsSupersetWhenAsked(t *testing.T) {
 // Checkout goes through the same tail as New, so a branch someone else pushed
 // reaches Superset the same way.
 func TestCheckoutRegistersToo(t *testing.T) {
-	main := committedRepo(t, minimalConf)
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
 	}
-	optIn(ctx)
-	gitIn(t, main, "branch", "fix_wt/from-elsewhere")
+	testkit.OptIn(ctx)
+	testkit.GitIn(t, main, "branch", "fix_wt/from-elsewhere")
 	log := fakeSuperset(t, ctx.Repo.MainRoot, true)
 
 	var errs bytes.Buffer
 	if _, err := Checkout(ctx, "fix_wt/from-elsewhere", "", NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
 	}
-	got := argvOf(t, log)
+	got := testkit.ArgvOf(t, log)
 	if len(got) != 2 || !strings.Contains(got[1], "--branch fix_wt/from-elsewhere") {
 		t.Errorf("argv = %q", got)
 	}
@@ -306,11 +286,11 @@ func TestDoctorReportsSupersetState(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx, err := kit.Open(committedRepo(t, minimalConf))
+			ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 			if err != nil {
 				t.Fatal(err)
 			}
-			optIn(ctx)
+			testkit.OptIn(ctx)
 			ctx.Config.SupersetRegister = tc.mode
 			stub(t, tc.status)
 
@@ -331,11 +311,11 @@ func TestDoctorReportsSupersetState(t *testing.T) {
 
 // The full report, when Superset is running and knows this repository.
 func TestDoctorReportsAUsableSuperset(t *testing.T) {
-	ctx, err := kit.Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	optIn(ctx)
+	testkit.OptIn(ctx)
 	dir := t.TempDir()
 	exe := filepath.Join(dir, "superset")
 	script := "#!/bin/sh\n" +
@@ -413,11 +393,11 @@ func hostCommand(t *testing.T, line string, err error) *[]int {
 // Superset's status calling a serving host stale does not stop a registration:
 // the host is asked, answers, and the worktree is registered with no remark.
 func TestNewRegistersThoughStatusCallsTheHostStale(t *testing.T) {
-	ctx, err := kit.Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	optIn(ctx)
+	testkit.OptIn(ctx)
 	log := staleSuperset(t, ctx.Repo.MainRoot)
 	asked := hostCommand(t, "", nil)
 
@@ -431,7 +411,7 @@ func TestNewRegistersThoughStatusCallsTheHostStale(t *testing.T) {
 	if strings.Contains(errs.String(), "not running") || strings.Contains(errs.String(), "stale") {
 		t.Errorf("stderr remarks on Superset's state: %q", errs.String())
 	}
-	got := argvOf(t, log)
+	got := testkit.ArgvOf(t, log)
 	if len(got) != 4 || got[0] != "status --json" || !strings.HasPrefix(got[3], "ws create --local --project p1 ") {
 		t.Errorf("argv = %q, want status, the probe's read, the projects and ws create", got)
 	}
@@ -444,11 +424,11 @@ func TestNewRegistersThoughStatusCallsTheHostStale(t *testing.T) {
 // own report, in one line, and never tells the person to start an app that is
 // already up. It is no problem even for a repository that asked for Superset.
 func TestDoctorSaysStatusIsWrongAboutARunningHost(t *testing.T) {
-	ctx, err := kit.Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	optIn(ctx)
+	testkit.OptIn(ctx)
 	ctx.Config.SupersetRegister = config.SupersetOn
 	staleSuperset(t, ctx.Repo.MainRoot)
 
@@ -508,11 +488,11 @@ func TestDoctorSaysWhenTheStaleWorkaroundCanGo(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx, err := kit.Open(committedRepo(t, minimalConf))
+			ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 			if err != nil {
 				t.Fatal(err)
 			}
-			optIn(ctx)
+			testkit.OptIn(ctx)
 			ctx.Config.SupersetRegister = config.SupersetOn
 			supersetSaying(t, ctx.Repo.MainRoot, tc.status)
 			asked := hostCommand(t, tc.command, tc.commandErr)
@@ -573,11 +553,11 @@ func TestNewSaysNothingAboutARepositorySupersetDoesNotTrack(t *testing.T) {
 		"on":   {config.SupersetOn, "! Superset has no project for "},
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx, err := kit.Open(committedRepo(t, minimalConf))
+			ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 			if err != nil {
 				t.Fatal(err)
 			}
-			optIn(ctx)
+			testkit.OptIn(ctx)
 			ctx.Config.SupersetRegister = tc.mode
 			log := supersetWithoutProject(t)
 
@@ -594,7 +574,7 @@ func TestNewSaysNothingAboutARepositorySupersetDoesNotTrack(t *testing.T) {
 			}
 			// Either way the projects were read: the silence is about what
 			// was found, not about wt declining to look.
-			if got := argvOf(t, log); len(got) != 1 || !strings.HasPrefix(got[0], "projects list") {
+			if got := testkit.ArgvOf(t, log); len(got) != 1 || !strings.HasPrefix(got[0], "projects list") {
 				t.Errorf("argv = %q, want the project listing alone", got)
 			}
 		})
@@ -609,11 +589,11 @@ func TestDoctorAlwaysNamesAMissingSupersetProject(t *testing.T) {
 		"on":   config.SupersetOn,
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx, err := kit.Open(committedRepo(t, minimalConf))
+			ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 			if err != nil {
 				t.Fatal(err)
 			}
-			optIn(ctx)
+			testkit.OptIn(ctx)
 			ctx.Config.SupersetRegister = mode
 			supersetWithoutProject(t)
 
@@ -635,22 +615,22 @@ func TestDoctorAlwaysNamesAMissingSupersetProject(t *testing.T) {
 // A worktree with no branch has nothing Superset can adopt: Superset takes the
 // checkout git already has for a named branch.
 func TestRegisterSupersetNeedsABranch(t *testing.T) {
-	main := committedRepo(t, minimalConf)
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
 	}
-	optIn(ctx)
+	testkit.OptIn(ctx)
 	log := fakeSuperset(t, ctx.Repo.MainRoot, true)
 	path := ctx.Scheme().Dir("fix", "detached")
-	gitIn(t, main, "worktree", "add", "--detach", path, "HEAD")
+	testkit.GitIn(t, main, "worktree", "add", "--detach", path, "HEAD")
 
 	var errs bytes.Buffer
 	registerSuperset(ctx, path, &errs)
 	if !strings.Contains(errs.String(), path+" is not on a branch; not registered with Superset") {
 		t.Errorf("stderr = %q", errs.String())
 	}
-	if got := argvOf(t, log); got != nil {
+	if got := testkit.ArgvOf(t, log); got != nil {
 		t.Errorf("superset was asked to adopt a worktree with no branch: %q", got)
 	}
 }
@@ -658,7 +638,7 @@ func TestRegisterSupersetNeedsABranch(t *testing.T) {
 // Provisioning that failed does not cost the registration: the worktree is on
 // disk and on its branch, which is all Superset is told.
 func TestRegisterSupersetRunsEvenWhenSetupFailed(t *testing.T) {
-	main := committedRepo(t, minimalConf)
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	// A provision.sh that fails is the one thing Setup reports and carries on
 	// from; the worktree is made either way.
 	dir := filepath.Join(main, "bin", "worktree")
@@ -669,13 +649,13 @@ func TestRegisterSupersetRunsEvenWhenSetupFailed(t *testing.T) {
 		[]byte("#!/bin/sh\necho 'provisioning broke' >&2\nexit 1\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, main, "add", "-A")
-	gitIn(t, main, "commit", "-qm", "provision")
+	testkit.GitIn(t, main, "add", "-A")
+	testkit.GitIn(t, main, "commit", "-qm", "provision")
 	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
 	}
-	optIn(ctx)
+	testkit.OptIn(ctx)
 	log := fakeSuperset(t, ctx.Repo.MainRoot, true)
 
 	var errs bytes.Buffer
@@ -685,7 +665,7 @@ func TestRegisterSupersetRunsEvenWhenSetupFailed(t *testing.T) {
 	if !strings.Contains(errs.String(), "✓ registered with Superset") {
 		t.Errorf("stderr = %q, want the registration to have gone ahead", errs.String())
 	}
-	if got := argvOf(t, log); len(got) != 2 {
+	if got := testkit.ArgvOf(t, log); len(got) != 2 {
 		t.Errorf("argv = %q, want the listing and the create", got)
 	}
 }
@@ -693,19 +673,19 @@ func TestRegisterSupersetRunsEvenWhenSetupFailed(t *testing.T) {
 // `wt pr checkout` is the third creating command, and goes through the same
 // tail: its worktree is registered too.
 func TestPRCheckoutRegistersWithSuperset(t *testing.T) {
-	ctx, err := kit.Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	optIn(ctx)
-	fakeGitHub(t, openPR(12, "residential_fixes", "Residents keep their doors"))
+	testkit.OptIn(ctx)
+	testkit.FakeGitHub(t, testkit.OpenPR(12, "residential_fixes", "Residents keep their doors"))
 	log := fakeSuperset(t, ctx.Repo.MainRoot, true)
 
 	var errs bytes.Buffer
 	if _, err := PRCheckout(ctx, 12, PROptions{}, &errs); err != nil {
 		t.Fatalf("PRCheckout: %v", err)
 	}
-	got := argvOf(t, log)
+	got := testkit.ArgvOf(t, log)
 	if len(got) != 2 || !strings.Contains(got[1], "--branch residential_fixes") {
 		t.Errorf("argv = %q, want the pull request's own branch registered", got)
 	}

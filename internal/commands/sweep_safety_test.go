@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -20,9 +21,9 @@ func keptCodes(p SweepPlan, name string) []string {
 }
 
 func TestSweepPlanKeepsAMergedWorktreeMidOperation(t *testing.T) {
-	ctx, _, _ := sweepRepo(t)
+	ctx, _, _ := testkit.SweepRepo(t)
 	path := mergedWorktree(t, ctx, "fix/login-crash")
-	mustWrite(t, filepath.Join(gitDirFor(t, path), "MERGE_HEAD"), "x\n")
+	testkit.MustWrite(t, filepath.Join(testkit.GitDirFor(t, path), "MERGE_HEAD"), "x\n")
 
 	p := planOf(t, ctx)
 	if len(p.Remove) != 0 {
@@ -37,13 +38,13 @@ func TestSweepPlanKeepsAMergedWorktreeMidOperation(t *testing.T) {
 }
 
 func TestSweepPlanKeepsAMergedWorktreeWithHiddenChanges(t *testing.T) {
-	ctx, main, _ := sweepRepo(t)
-	mustWrite(t, filepath.Join(main, "a.txt"), "a")
-	gitIn(t, main, "add", "a.txt")
-	gitIn(t, main, "commit", "-qm", "a")
-	gitIn(t, main, "push", "-q", "origin", "main")
+	ctx, main, _ := testkit.SweepRepo(t)
+	testkit.MustWrite(t, filepath.Join(main, "a.txt"), "a")
+	testkit.GitIn(t, main, "add", "a.txt")
+	testkit.GitIn(t, main, "commit", "-qm", "a")
+	testkit.GitIn(t, main, "push", "-q", "origin", "main")
 	path := mergedWorktree(t, ctx, "fix/login-crash")
-	gitIn(t, path, "update-index", "--skip-worktree", "a.txt")
+	testkit.GitIn(t, path, "update-index", "--skip-worktree", "a.txt")
 
 	p := planOf(t, ctx)
 	if codes := keptCodes(p, "fix_wt/login-crash"); !slices.Contains(codes, KeptHiddenChanges) {
@@ -52,17 +53,17 @@ func TestSweepPlanKeepsAMergedWorktreeWithHiddenChanges(t *testing.T) {
 }
 
 func TestSweepPlanKeepsAMergedWorktreeWithWorkInASubmodule(t *testing.T) {
-	ctx, main, _ := sweepRepo(t)
+	ctx, main, _ := testkit.SweepRepo(t)
 	inner := filepath.Join(t.TempDir(), "inner")
-	gitIn(t, filepath.Dir(inner), "init", "-q", "-b", "main", "inner")
-	gitIn(t, inner, "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "i")
-	gitIn(t, main, "-c", "protocol.file.allow=always", "submodule", "add", "-q", inner, "sm")
-	gitIn(t, main, "commit", "-qm", "sm")
-	gitIn(t, main, "push", "-q", "origin", "main")
+	testkit.GitIn(t, filepath.Dir(inner), "init", "-q", "-b", "main", "inner")
+	testkit.GitIn(t, inner, "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "i")
+	testkit.GitIn(t, main, "-c", "protocol.file.allow=always", "submodule", "add", "-q", inner, "sm")
+	testkit.GitIn(t, main, "commit", "-qm", "sm")
+	testkit.GitIn(t, main, "push", "-q", "origin", "main")
 	path := mergedWorktree(t, ctx, "fix/login-crash")
-	gitIn(t, path, "-c", "protocol.file.allow=always", "submodule", "update", "-q", "--init")
-	gitIn(t, path, "config", "submodule.sm.ignore", "all")
-	mustWrite(t, filepath.Join(path, "sm", "scratch"), "x")
+	testkit.GitIn(t, path, "-c", "protocol.file.allow=always", "submodule", "update", "-q", "--init")
+	testkit.GitIn(t, path, "config", "submodule.sm.ignore", "all")
+	testkit.MustWrite(t, filepath.Join(path, "sm", "scratch"), "x")
 
 	p := planOf(t, ctx)
 	if codes := keptCodes(p, "fix_wt/login-crash"); !slices.Contains(codes, KeptDirty) {
@@ -74,22 +75,22 @@ func TestSweepPlanKeepsAMergedWorktreeWithWorkInASubmodule(t *testing.T) {
 // each holds the other's commits while the plan is made, and removing the
 // first is the sweep's own doing, not a change that should keep the second.
 func TestSweepRemovesTwoWorktreesSharingAnAppliedTip(t *testing.T) {
-	ctx, main, _ := sweepRepo(t)
+	ctx, main, _ := testkit.SweepRepo(t)
 	a := mergedWorktree(t, ctx, "fix/first")
-	mustWrite(t, filepath.Join(a, "change.txt"), "the change\n")
-	gitIn(t, a, "add", "change.txt")
-	gitIn(t, a, "commit", "-qm", "the change")
-	tip := strings.TrimSpace(gitOut(t, a, "rev-parse", "HEAD"))
+	testkit.MustWrite(t, filepath.Join(a, "change.txt"), "the change\n")
+	testkit.GitIn(t, a, "add", "change.txt")
+	testkit.GitIn(t, a, "commit", "-qm", "the change")
+	tip := strings.TrimSpace(testkit.GitOut(t, a, "rev-parse", "HEAD"))
 	b := mergedWorktree(t, ctx, "fix/second")
-	gitIn(t, b, "reset", "-q", "--hard", tip)
-	gitIn(t, main, "cherry-pick", "-x", tip)
-	gitIn(t, main, "push", "-q", "origin", "main")
+	testkit.GitIn(t, b, "reset", "-q", "--hard", tip)
+	testkit.GitIn(t, main, "cherry-pick", "-x", tip)
+	testkit.GitIn(t, main, "push", "-q", "origin", "main")
 
 	var buf bytes.Buffer
 	if err := Sweep(ctx, SweepOptions{Yes: true, NoFetch: true, Agents: []wtsync.Agent{}}, &buf); err != nil {
 		t.Fatalf("Sweep: %v\n%s", err, buf.String())
 	}
-	if exists(a) || exists(b) {
+	if testkit.Exists(a) || testkit.Exists(b) {
 		t.Errorf("both worktrees should have gone:\n%s", buf.String())
 	}
 	if !strings.Contains(buf.String(), "--only refs/heads/fix_wt/second --yes puts the branch back") {

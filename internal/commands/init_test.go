@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
@@ -30,7 +31,7 @@ func bareRepo(t *testing.T) *repo.Repo {
 		t.Fatalf("%v: %s", err, out)
 	}
 	dir := filepath.Join(parent, "demo")
-	gitIn(t, dir, "-c", "user.email=t@example.com", "-c", "user.name=T",
+	testkit.GitIn(t, dir, "-c", "user.email=t@example.com", "-c", "user.name=T",
 		"commit", "-q", "--allow-empty", "-m", "init")
 	r, err := repo.Discover(dir)
 	if err != nil {

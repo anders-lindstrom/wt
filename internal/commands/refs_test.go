@@ -14,40 +14,14 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
-
-// gitAt runs git in dir as if at when: commits and reflog entries carry that
-// time, which is how a test makes a backup old.
-func gitAt(t *testing.T, dir string, when time.Time, args ...string) string {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	stamp := fmt.Sprintf("%d +0000", when.Unix())
-	cmd.Env = append(os.Environ(), "GIT_COMMITTER_DATE="+stamp, "GIT_AUTHOR_DATE="+stamp,
-		"GIT_AUTHOR_NAME=T", "GIT_AUTHOR_EMAIL=t@example.com", "GIT_COMMITTER_NAME=T", "GIT_COMMITTER_EMAIL=t@example.com")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v: %s", args, err, out)
-	}
-	return strings.TrimSpace(string(out))
-}
-
-// commitOn puts one empty commit on branch, made at when, and returns it.
-func commitOn(t *testing.T, main, branch, msg string, when time.Time) string {
-	t.Helper()
-	tree := gitOut(t, main, "rev-parse", branch+"^{tree}")
-	c := gitAt(t, main, when, "commit-tree", "-p", branch, "-m", msg, tree)
-	gitAt(t, main, when, "update-ref", "refs/heads/"+branch, c)
-	return c
-}
-
-var noPRs = func([]string) (map[string]bool, error) { return map[string]bool{}, nil }
 
 func refsPlanJSON(t *testing.T, ctx *kit.Context, opts RefsOptions) (RefsPlanOutput, error) {
 	t.Helper()
 	var out, progress bytes.Buffer
 	err := RefsSweepPlanJSON(ctx, opts, &out, &progress)
-	validateJSON(t, "refs-sweep-plan", out.Bytes())
+	testkit.ValidateJSON(t, "refs-sweep-plan", out.Bytes())
 	var p RefsPlanOutput
 	if jerr := json.Unmarshal(out.Bytes(), &p); jerr != nil {
 		t.Fatalf("stdout is not one JSON object: %v\n%s", jerr, out.String())
@@ -60,7 +34,7 @@ func refsSweepJSON(t *testing.T, ctx *kit.Context, opts RefsOptions) (RefsResult
 	var out, human bytes.Buffer
 	opts.Journal, opts.Yes = NewRefsJournal(&out), true
 	err := RefsSweep(ctx, opts, &human)
-	validateJSON(t, "refs-sweep", out.Bytes())
+	testkit.ValidateJSON(t, "refs-sweep", out.Bytes())
 	var r RefsResult
 	dec := json.NewDecoder(&out)
 	if jerr := dec.Decode(&r); jerr != nil {
@@ -94,48 +68,16 @@ func refResultItem(t *testing.T, r RefsResult, id string) *RefResultItem {
 	return nil
 }
 
-// backupsRepo is a repository with origin and one of each kind of backup:
-//
-//	backup/contained  a branch at a commit main has
-//	backup/old        a branch with a commit of its own, made and branched 30 days ago
-//	backup/rebased    a branch cut today from a feature branch last committed 30 days ago
-//	safe-tag          an annotated tag on main's first commit, tagged 30 days ago
-//	backup/checked    a contained branch checked out in a worktree
-//	release-backup    a contained branch with a protected name
-//	feature           a branch no pattern matches
-func backupsRepo(t *testing.T) (*kit.Context, string) {
-	t.Helper()
-	ctx, main, _ := sweepRepo(t)
-	old := time.Now().Add(-30 * 24 * time.Hour)
-	first := gitOut(t, main, "rev-parse", "main")
-	gitIn(t, main, "commit", "-q", "--allow-empty", "-m", "second")
-	gitIn(t, main, "push", "-q", "origin", "main")
-	gitIn(t, main, "branch", "backup/contained", first)
-	gitAt(t, main, old, "branch", "backup/old", "main")
-	commitOn(t, main, "backup/old", "old work", old)
-	gitAt(t, main, old, "branch", "feature", "main")
-	commitOn(t, main, "feature", "feature work", old)
-	gitIn(t, main, "branch", "backup/rebased", "feature")
-	commitOn(t, main, "feature", "rebased away", time.Now())
-	gitIn(t, main, "update-ref", "refs/heads/feature", gitOut(t, main, "rev-parse", "main"))
-	gitAt(t, main, old, "tag", "-a", "-m", "safety", "safe-tag", first)
-	gitIn(t, main, "branch", "backup/checked", first)
-	gitIn(t, main, "worktree", "add", "-q", filepath.Join(t.TempDir(), "checked"), "backup/checked")
-	gitIn(t, main, "branch", "release-backup", first)
-	gitIn(t, main, "config", "branch.backup/contained.description", "mine")
-	return ctx, main
-}
-
 // The plan names every backup and what it is, measures age from when the
 // branch was made rather than from its commits, and writes nothing.
 func TestRefsPlanSortsTheBackups(t *testing.T) {
-	ctx, main := backupsRepo(t)
-	before := repoState(t, main)
+	ctx, main := testkit.BackupsRepo(t)
+	before := testkit.RepoState(t, main)
 	p, err := refsPlanJSON(t, ctx, RefsOptions{NoFetch: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after := repoState(t, main); after != before {
+	if after := testkit.RepoState(t, main); after != before {
 		t.Errorf("the plan wrote to the repository:\nbefore %s\nafter %s", before, after)
 	}
 	if p.Command != "refs sweep" || p.Token == nil || !strings.HasPrefix(*p.Token, "rs1-") || p.RunID != nil ||
@@ -179,7 +121,7 @@ func TestRefsPlanSortsTheBackups(t *testing.T) {
 // A sweep pins each selected ref and deletes it in one step, drops a
 // branch's config, and says how to put each back.
 func TestRefsSweepPinsAndDeletes(t *testing.T) {
-	ctx, main := backupsRepo(t)
+	ctx, main := testkit.BackupsRepo(t)
 	plan, err := refsPlanJSON(t, ctx, RefsOptions{NoFetch: true})
 	if err != nil {
 		t.Fatal(err)
@@ -199,7 +141,7 @@ func TestRefsSweepPinsAndDeletes(t *testing.T) {
 			t.Errorf("%s = %+v", id, it)
 			continue
 		}
-		if got := gitOut(t, main, "rev-parse", *it.Pin); got != it.Object {
+		if got := testkit.GitOut(t, main, "rev-parse", *it.Pin); got != it.Object {
 			t.Errorf("%s: pin at %s, want %s", id, got, it.Object)
 		}
 	}
@@ -222,15 +164,15 @@ func TestRefsSweepPinsAndDeletes(t *testing.T) {
 
 // --expect refuses a sweep whose plan changed, moving nothing.
 func TestRefsSweepExpectRefusesAChangedPlan(t *testing.T) {
-	ctx, main := backupsRepo(t)
+	ctx, main := testkit.BackupsRepo(t)
 	plan, _ := refsPlanJSON(t, ctx, RefsOptions{NoFetch: true})
-	gitIn(t, main, "branch", "backup/new", "main")
-	before := repoState(t, main)
+	testkit.GitIn(t, main, "branch", "backup/new", "main")
+	before := testkit.RepoState(t, main)
 	r, _, err := refsSweepJSON(t, ctx, RefsOptions{NoFetch: true, Expect: *plan.Token})
 	if !errors.Is(err, errRefsPlanChanged) || r.Outcome != kit.OutcomeRefused || r.Error == nil || r.RunID != nil {
 		t.Fatalf("err = %v, result = %+v", err, r)
 	}
-	if repoState(t, main) != before {
+	if testkit.RepoState(t, main) != before {
 		t.Error("a refused sweep changed the repository")
 	}
 }
@@ -238,7 +180,7 @@ func TestRefsSweepExpectRefusesAChangedPlan(t *testing.T) {
 // --only replaces the selection, under the same token; it takes a young
 // backup, and refuses the lot when it names one that is kept or unknown.
 func TestRefsSweepOnly(t *testing.T) {
-	ctx, _ := backupsRepo(t)
+	ctx, _ := testkit.BackupsRepo(t)
 	full, _ := refsPlanJSON(t, ctx, RefsOptions{NoFetch: true})
 	only := []string{"refs/heads/backup/rebased"}
 	p, err := refsPlanJSON(t, ctx, RefsOptions{NoFetch: true, Only: only})
@@ -270,12 +212,12 @@ func TestRefsSweepOnly(t *testing.T) {
 // A ref that moves between the plan and its move is kept, and the pin is
 // not made.
 func TestRefsSweepKeepsARefThatMoved(t *testing.T) {
-	ctx, main := backupsRepo(t)
+	ctx, main := testkit.BackupsRepo(t)
 	plan, err := planRefs(ctx, RefsOptions{NoFetch: true}, &bytes.Buffer{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	commitOn(t, main, "backup/old", "more", time.Now())
+	testkit.CommitOn(t, main, "backup/old", "more", time.Now())
 	var out bytes.Buffer
 	j := NewRefsJournal(&out)
 	j.planned(plan, refsToken(plan))
@@ -300,12 +242,12 @@ func TestRefsSweepKeepsARefThatMoved(t *testing.T) {
 // need it.
 func TestRefsSweepKeepsWhatAQuarantineNames(t *testing.T) {
 	ctx, path := safetyWorktree(t, "fix/trashed")
-	tip := strings.TrimSpace(gitOut(t, path, "rev-parse", "HEAD"))
+	tip := strings.TrimSpace(testkit.GitOut(t, path, "rev-parse", "HEAD"))
 	var buf bytes.Buffer
-	if err := RemoveAt(ctx, path, RemoveOptions{Quarantine: trashFor(t, ctx)}, &buf); err != nil {
+	if err := RemoveAt(ctx, path, RemoveOptions{Quarantine: testkit.TrashFor(t, ctx)}, &buf); err != nil {
 		t.Fatalf("RemoveAt: %v\n%s", err, buf.String())
 	}
-	gitIn(t, ctx.Repo.MainRoot, "branch", "fix_wt/trashed", tip)
+	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "fix_wt/trashed", tip)
 	ctx.User.RefSweepPatterns = []string{"fix_wt/*"}
 	p, err := refsPlanJSON(t, ctx, RefsOptions{NoFetch: true})
 	if err != nil {
@@ -329,7 +271,7 @@ func TestRefsSweepKeepsWhatAQuarantineNames(t *testing.T) {
 // The journal a signal finishes writes one object: the row in flight read
 // back and interrupted.
 func TestRefsJournalWritesOneObjectWhenInterrupted(t *testing.T) {
-	ctx, _ := backupsRepo(t)
+	ctx, _ := testkit.BackupsRepo(t)
 	plan, err := planRefs(ctx, RefsOptions{NoFetch: true}, &bytes.Buffer{})
 	if err != nil {
 		t.Fatal(err)
@@ -341,7 +283,7 @@ func TestRefsJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 	j.start("refs/heads/backup/old")
 	j.Interrupted("", "interrupted")
 	j.Finish()
-	validateJSON(t, "refs-sweep", out.Bytes())
+	testkit.ValidateJSON(t, "refs-sweep", out.Bytes())
 	var r RefsResult
 	dec := json.NewDecoder(&out)
 	if err := dec.Decode(&r); err != nil {
@@ -372,7 +314,7 @@ func restoreJSON(t *testing.T, ctx *kit.Context, runID string, opts RefsRestoreO
 	var out, human bytes.Buffer
 	opts.Journal, opts.Yes = NewRefsRestoreJournal(&out, runID), true
 	err := RefsRestore(ctx, runID, opts, &human)
-	validateJSON(t, "refs-restore", out.Bytes())
+	testkit.ValidateJSON(t, "refs-restore", out.Bytes())
 	var r RefsRestoreResult
 	if jerr := json.Unmarshal(out.Bytes(), &r); jerr != nil {
 		t.Fatalf("%v\n%s", jerr, out.String())
@@ -384,7 +326,7 @@ func restorePlanJSON(t *testing.T, ctx *kit.Context, runID string, only []string
 	t.Helper()
 	var out, progress bytes.Buffer
 	err := RefsRestorePlanJSON(ctx, runID, only, &out, &progress)
-	validateJSON(t, "refs-restore-plan", out.Bytes())
+	testkit.ValidateJSON(t, "refs-restore-plan", out.Bytes())
 	var p RefsRestorePlanOutput
 	if jerr := json.Unmarshal(out.Bytes(), &p); jerr != nil {
 		t.Fatalf("%v\n%s", jerr, out.String())
@@ -395,11 +337,11 @@ func restorePlanJSON(t *testing.T, ctx *kit.Context, runID string, only []string
 // A restore puts each ref back at its object where the name is free, keeps
 // the one whose name was taken, and leaves no pin of what went back.
 func TestRefsRestorePutsBack(t *testing.T) {
-	ctx, main := backupsRepo(t)
+	ctx, main := testkit.BackupsRepo(t)
 	r := sweepAll(t, ctx, RefsOptions{})
 	run := *r.RunID
 	old := refResultItem(t, r, "refs/heads/backup/old")
-	gitIn(t, main, "branch", "backup/contained", "main")
+	testkit.GitIn(t, main, "branch", "backup/contained", "main")
 	p, err := restorePlanJSON(t, ctx, run, nil)
 	if err != nil || p.Token == nil || !strings.HasPrefix(*p.Token, "rr1-") {
 		t.Fatalf("%v %+v", err, p)
@@ -416,13 +358,13 @@ func TestRefsRestorePutsBack(t *testing.T) {
 	if err != nil || res.Outcome != kit.OutcomeDone {
 		t.Fatalf("%v %+v", err, res)
 	}
-	if got := gitOut(t, main, "rev-parse", "refs/heads/backup/old"); got != old.Object {
+	if got := testkit.GitOut(t, main, "rev-parse", "refs/heads/backup/old"); got != old.Object {
 		t.Errorf("backup/old back at %s, want %s", got, old.Object)
 	}
-	if gitOut(t, main, "cat-file", "-t", "refs/tags/safe-tag") != "tag" {
+	if testkit.GitOut(t, main, "cat-file", "-t", "refs/tags/safe-tag") != "tag" {
 		t.Error("the annotated tag must come back as the tag object")
 	}
-	pins := gitOut(t, main, "for-each-ref", "--format=%(refname)", SweptPrefix+run+"/")
+	pins := testkit.GitOut(t, main, "for-each-ref", "--format=%(refname)", SweptPrefix+run+"/")
 	if pins != SweptPrefix+run+"/heads/backup/contained\n"+SweptPrefix+run+"/meta" {
 		t.Errorf("pins left: %q", pins)
 	}
@@ -436,8 +378,8 @@ func TestRefsRestorePutsBack(t *testing.T) {
 
 // --only takes one id per flag, and a ref name may carry a comma.
 func TestRefsOnlyTakesAnIDWithAComma(t *testing.T) {
-	ctx, main := backupsRepo(t)
-	gitIn(t, main, "branch", "backup/a,b", "main")
+	ctx, main := testkit.BackupsRepo(t)
+	testkit.GitIn(t, main, "branch", "backup/a,b", "main")
 	id := "refs/heads/backup/a,b"
 	r := sweepAll(t, ctx, RefsOptions{Only: []string{id}})
 	it := refResultItem(t, r, id)
@@ -453,14 +395,14 @@ func TestRefsOnlyTakesAnIDWithAComma(t *testing.T) {
 // wt refs swept lists the runs; purge deletes a run's pins, counts what
 // becomes unreachable, and --older-than picks runs by the time in their id.
 func TestRefsSweptAndPurge(t *testing.T) {
-	ctx, main := backupsRepo(t)
+	ctx, main := testkit.BackupsRepo(t)
 	r := sweepAll(t, ctx, RefsOptions{})
 	run := *r.RunID
 	var out bytes.Buffer
 	if err := RefsSwept(ctx, true, &out); err != nil {
 		t.Fatal(err)
 	}
-	validateJSON(t, "refs-swept", out.Bytes())
+	testkit.ValidateJSON(t, "refs-swept", out.Bytes())
 	var sw RefsSweptOutput
 	_ = json.Unmarshal(out.Bytes(), &sw)
 	if len(sw.Runs) != 1 || sw.Runs[0].RunID != run || len(sw.Runs[0].Refs) != 3 || sw.Runs[0].SweptAt == 0 {
@@ -471,7 +413,7 @@ func TestRefsSweptAndPurge(t *testing.T) {
 	if err := RefsPurgePlanJSON(ctx, RefsPurgeOptions{OlderThan: "1d"}, &plan, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
-	validateJSON(t, "refs-purge-plan", plan.Bytes())
+	testkit.ValidateJSON(t, "refs-purge-plan", plan.Bytes())
 	var pp RefsPurgePlanOutput
 	_ = json.Unmarshal(plan.Bytes(), &pp)
 	if len(pp.Runs) != 0 || pp.Token != nil {
@@ -481,7 +423,7 @@ func TestRefsSweptAndPurge(t *testing.T) {
 	if err := RefsPurgePlanJSON(ctx, RefsPurgeOptions{RunIDs: []string{run}}, &plan, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
-	validateJSON(t, "refs-purge-plan", plan.Bytes())
+	testkit.ValidateJSON(t, "refs-purge-plan", plan.Bytes())
 	pp = RefsPurgePlanOutput{}
 	_ = json.Unmarshal(plan.Bytes(), &pp)
 	if len(pp.Runs) != 1 || len(pp.Runs[0].Refs) != 3 || pp.Token == nil ||
@@ -493,13 +435,13 @@ func TestRefsSweptAndPurge(t *testing.T) {
 	j := NewRefsPurgeJournal(&res)
 	err := RefsPurge(ctx, RefsPurgeOptions{RunIDs: []string{run}, Yes: true, Expect: *pp.Token, Journal: j},
 		&bytes.Buffer{})
-	validateJSON(t, "refs-purge", res.Bytes())
+	testkit.ValidateJSON(t, "refs-purge", res.Bytes())
 	var pr RefsPurgeResult
 	_ = json.Unmarshal(res.Bytes(), &pr)
 	if err != nil || pr.Outcome != OutcomePurged || pr.Runs[0].Refs[0].Result != PinDeleted {
 		t.Fatalf("%v %+v", err, pr)
 	}
-	if left := gitOut(t, main, "for-each-ref", SweptPrefix); left != "" {
+	if left := testkit.GitOut(t, main, "for-each-ref", SweptPrefix); left != "" {
 		t.Errorf("pins left: %s", left)
 	}
 	if err := RefsPurge(ctx, RefsPurgeOptions{RunIDs: []string{run}, Yes: true}, &bytes.Buffer{}); err == nil {
@@ -514,21 +456,21 @@ func TestRefsSweptAndPurge(t *testing.T) {
 // contain them, never with an open pull request or when GitHub cannot say;
 // a swept one is pinned here, gone from origin, and restore pushes it back.
 func TestRefsSweepRemote(t *testing.T) {
-	ctx, main, origin := sweepRepo(t)
-	first := gitOut(t, main, "rev-parse", "main")
-	gitIn(t, main, "commit", "-q", "--allow-empty", "-m", "second")
-	gitIn(t, main, "branch", "backup/landed", first)
-	gitIn(t, main, "branch", "backup/pr", first)
-	gitIn(t, main, "branch", "backup/unique", "main")
-	commitOn(t, main, "backup/unique", "only here and there", time.Now())
-	gitIn(t, main, "tag", "-a", "-m", "safety", "safe-remote", first)
-	gitIn(t, main, "push", "-q", "origin", "main", "backup/landed", "backup/pr", "backup/unique", "safe-remote")
-	gitIn(t, main, "fetch", "-q", "origin")
+	ctx, main, origin := testkit.SweepRepo(t)
+	first := testkit.GitOut(t, main, "rev-parse", "main")
+	testkit.GitIn(t, main, "commit", "-q", "--allow-empty", "-m", "second")
+	testkit.GitIn(t, main, "branch", "backup/landed", first)
+	testkit.GitIn(t, main, "branch", "backup/pr", first)
+	testkit.GitIn(t, main, "branch", "backup/unique", "main")
+	testkit.CommitOn(t, main, "backup/unique", "only here and there", time.Now())
+	testkit.GitIn(t, main, "tag", "-a", "-m", "safety", "safe-remote", first)
+	testkit.GitIn(t, main, "push", "-q", "origin", "main", "backup/landed", "backup/pr", "backup/unique", "safe-remote")
+	testkit.GitIn(t, main, "fetch", "-q", "origin")
 	for _, b := range []string{"backup/landed", "backup/pr", "backup/unique"} {
-		gitIn(t, main, "branch", "-D", b)
+		testkit.GitIn(t, main, "branch", "-D", b)
 	}
-	gitIn(t, main, "tag", "-d", "safe-remote")
-	gitIn(t, main, "fetch", "-q", "origin", "refs/tags/safe-remote:refs/tags/elsewhere")
+	testkit.GitIn(t, main, "tag", "-d", "safe-remote")
+	testkit.GitIn(t, main, "fetch", "-q", "origin", "refs/tags/safe-remote:refs/tags/elsewhere")
 
 	prs := func([]string) (map[string]bool, error) { return map[string]bool{"backup/pr": true}, nil }
 	p, err := refsPlanJSON(t, ctx, RefsOptions{Remote: true, OpenPRs: prs})
@@ -566,7 +508,7 @@ func TestRefsSweepRemote(t *testing.T) {
 	}
 	run := *r.RunID
 	for _, ref := range []string{"refs/heads/backup/landed", "refs/tags/safe-remote"} {
-		if out := gitOut(t, origin, "for-each-ref", ref); out != "" {
+		if out := testkit.GitOut(t, origin, "for-each-ref", ref); out != "" {
 			t.Errorf("origin still has %s", ref)
 		}
 		it := refResultItem(t, r, "origin:"+ref)
@@ -574,18 +516,18 @@ func TestRefsSweepRemote(t *testing.T) {
 			t.Errorf("%s = %+v", ref, it)
 		}
 	}
-	if pin := pinOf(run, RefRemoteBranch, "backup/landed"); gitOut(t, main, "rev-parse", pin) != first {
+	if pin := pinOf(run, RefRemoteBranch, "backup/landed"); testkit.GitOut(t, main, "rev-parse", pin) != first {
 		t.Errorf("pin %s is not at %s", pin, first)
 	}
 	res, err := restoreJSON(t, ctx, run, RefsRestoreOptions{})
 	if err != nil || res.Outcome != kit.OutcomeDone {
 		t.Fatalf("%v %+v", err, res)
 	}
-	if gitOut(t, origin, "rev-parse", "refs/heads/backup/landed") != first ||
-		gitOut(t, origin, "cat-file", "-t", "refs/tags/safe-remote") != "tag" {
+	if testkit.GitOut(t, origin, "rev-parse", "refs/heads/backup/landed") != first ||
+		testkit.GitOut(t, origin, "cat-file", "-t", "refs/tags/safe-remote") != "tag" {
 		t.Error("origin must have both back")
 	}
-	if left := gitOut(t, main, "for-each-ref", SweptPrefix); left != "" {
+	if left := testkit.GitOut(t, main, "for-each-ref", SweptPrefix); left != "" {
 		t.Errorf("a run restored whole leaves nothing behind: %s", left)
 	}
 }
@@ -598,23 +540,23 @@ func TestRefsPlanTime(t *testing.T) {
 	if testing.Short() {
 		t.Skip("performance: builds 300 commits and 150 refs")
 	}
-	ctx, main, _ := sweepRepo(t)
+	ctx, main, _ := testkit.SweepRepo(t)
 	var refs strings.Builder
-	tree := gitOut(t, main, "rev-parse", "main^{tree}")
-	parent := gitOut(t, main, "rev-parse", "main")
+	tree := testkit.GitOut(t, main, "rev-parse", "main^{tree}")
+	parent := testkit.GitOut(t, main, "rev-parse", "main")
 	for i := range 200 {
-		parent = gitOut(t, main, "commit-tree", "-p", parent, "-m", fmt.Sprintf("trunk %d", i), tree)
+		parent = testkit.GitOut(t, main, "commit-tree", "-p", parent, "-m", fmt.Sprintf("trunk %d", i), tree)
 	}
-	gitIn(t, main, "update-ref", "refs/heads/main", parent)
-	history := strings.Split(gitOut(t, main, "rev-list", "main"), "\n")
+	testkit.GitIn(t, main, "update-ref", "refs/heads/main", parent)
+	history := strings.Split(testkit.GitOut(t, main, "rev-list", "main"), "\n")
 	for i := range 50 {
-		c := gitOut(t, main, "commit-tree", "-p", history[i*3], "-m", fmt.Sprintf("feature %d", i), tree)
+		c := testkit.GitOut(t, main, "commit-tree", "-p", history[i*3], "-m", fmt.Sprintf("feature %d", i), tree)
 		fmt.Fprintf(&refs, "create refs/heads/feature/%d %s\n", i, c)
 	}
 	for i := range 100 {
 		at := history[i]
 		if i%2 == 1 {
-			at = gitOut(t, main, "commit-tree", "-p", history[i], "-m", fmt.Sprintf("backup %d", i), tree)
+			at = testkit.GitOut(t, main, "commit-tree", "-p", history[i], "-m", fmt.Sprintf("backup %d", i), tree)
 		}
 		fmt.Fprintf(&refs, "create refs/heads/backup/b%d %s\n", i, at)
 	}
@@ -653,12 +595,12 @@ func TestRefsPlanTime(t *testing.T) {
 // branch that is not here, and the run that swept it with --remote.
 func remoteBackups(t *testing.T) (ctx *kit.Context, main, origin, run string) {
 	t.Helper()
-	ctx, main, origin = sweepRepo(t)
-	first := gitOut(t, main, "rev-parse", "main")
-	gitIn(t, main, "commit", "-q", "--allow-empty", "-m", "second")
-	gitIn(t, main, "push", "-q", "origin", "main", "main:refs/heads/backup/landed")
-	gitIn(t, main, "branch", "backup/local", first)
-	r, human, err := refsSweepJSON(t, ctx, RefsOptions{Remote: true, OpenPRs: noPRs})
+	ctx, main, origin = testkit.SweepRepo(t)
+	first := testkit.GitOut(t, main, "rev-parse", "main")
+	testkit.GitIn(t, main, "commit", "-q", "--allow-empty", "-m", "second")
+	testkit.GitIn(t, main, "push", "-q", "origin", "main", "main:refs/heads/backup/landed")
+	testkit.GitIn(t, main, "branch", "backup/local", first)
+	r, human, err := refsSweepJSON(t, ctx, RefsOptions{Remote: true, OpenPRs: testkit.NoPRs})
 	if err != nil || r.Outcome != kit.OutcomeDone || r.RunID == nil {
 		t.Fatalf("%v %+v\n%s", err, r, human)
 	}
@@ -668,8 +610,8 @@ func remoteBackups(t *testing.T) (ctx *kit.Context, main, origin, run string) {
 // --remote needs origin to fetch from and push to one and the same URL, with
 // no secret in it; the plan names that URL, redacted, and the token covers it.
 func TestRefsRemoteEndpoint(t *testing.T) {
-	ctx, main, origin := sweepRepo(t)
-	p, err := refsPlanJSON(t, ctx, RefsOptions{Remote: true, NoFetch: true, OpenPRs: noPRs})
+	ctx, main, origin := testkit.SweepRepo(t)
+	p, err := refsPlanJSON(t, ctx, RefsOptions{Remote: true, NoFetch: true, OpenPRs: testkit.NoPRs})
 	if err != nil || p.Endpoint == nil || p.Endpoint.URL != origin || !strings.HasPrefix(p.Endpoint.Digest, "sha256:") {
 		t.Fatalf("%v endpoint = %+v", err, p.Endpoint)
 	}
@@ -677,13 +619,13 @@ func TestRefsRemoteEndpoint(t *testing.T) {
 		"a push URL of its own": {"remote", "set-url", "--push", "origin", t.TempDir()},
 		"two push URLs":         {"remote", "set-url", "--add", "--push", "origin", t.TempDir()},
 	} {
-		gitIn(t, main, "remote", "set-url", "origin", origin)
+		testkit.GitIn(t, main, "remote", "set-url", "origin", origin)
 		_, _ = exec.Command("git", "-C", main, "config", "--unset-all", "remote.origin.pushurl").CombinedOutput()
 		if name == "two push URLs" {
-			gitIn(t, main, "remote", "set-url", "--add", "--push", "origin", origin)
+			testkit.GitIn(t, main, "remote", "set-url", "--add", "--push", "origin", origin)
 		}
-		gitIn(t, main, setup...)
-		p, err := refsPlanJSON(t, ctx, RefsOptions{Remote: true, NoFetch: true, OpenPRs: noPRs})
+		testkit.GitIn(t, main, setup...)
+		p, err := refsPlanJSON(t, ctx, RefsOptions{Remote: true, NoFetch: true, OpenPRs: testkit.NoPRs})
 		if err == nil || p.Token != nil || len(p.Problems) != 1 || p.Problems[0].Code != ProblemRemoteAmbiguous {
 			t.Errorf("%s: %v %+v", name, err, p.Problems)
 		}
@@ -691,8 +633,8 @@ func TestRefsRemoteEndpoint(t *testing.T) {
 	_, _ = exec.Command("git", "-C", main, "config", "--unset-all", "remote.origin.pushurl").CombinedOutput()
 	for _, url := range []string{"https://token@example.com/o/r.git", "https://u:p@example.com/o/r.git",
 		"ssh://git:secret@example.com/o/r.git", "user:secret@example.com:o/r.git"} {
-		gitIn(t, main, "remote", "set-url", "origin", url)
-		p, err := refsPlanJSON(t, ctx, RefsOptions{Remote: true, NoFetch: true, OpenPRs: noPRs})
+		testkit.GitIn(t, main, "remote", "set-url", "origin", url)
+		p, err := refsPlanJSON(t, ctx, RefsOptions{Remote: true, NoFetch: true, OpenPRs: testkit.NoPRs})
 		if err == nil || len(p.Problems) != 1 || p.Problems[0].Code != ProblemRemoteCredentials ||
 			strings.Contains(deref(p.Error), "example.com") {
 			t.Errorf("%s: %v %+v", url, err, p.Problems)
@@ -700,13 +642,13 @@ func TestRefsRemoteEndpoint(t *testing.T) {
 	}
 	for url, want := range map[string]string{"git@example.com:o/r.git": "example.com:o/r.git",
 		"ssh://git@example.com/o/r.git": "ssh://example.com/o/r.git"} {
-		gitIn(t, main, "remote", "set-url", "origin", url)
+		testkit.GitIn(t, main, "remote", "set-url", "origin", url)
 		ep, err := resolveEndpoint(main)
 		if err != nil || ep.URL != want {
 			t.Errorf("%s: %v %+v", url, err, ep)
 		}
 	}
-	gitIn(t, main, "remote", "set-url", "origin", origin)
+	testkit.GitIn(t, main, "remote", "set-url", "origin", origin)
 	if p, err := refsPlanJSON(t, ctx, RefsOptions{NoFetch: true}); err != nil || p.Endpoint != nil {
 		t.Errorf("without --remote origin's URLs do not matter: %v", err)
 	}
@@ -727,8 +669,8 @@ func TestRefsRestoreRemoteNeedsTheSameOrigin(t *testing.T) {
 		t.Fatalf("swept = %+v", sw)
 	}
 	moved := filepath.Join(t.TempDir(), "moved.git")
-	gitIn(t, main, "clone", "-q", "--bare", origin, moved)
-	gitIn(t, main, "remote", "set-url", "origin", moved)
+	testkit.GitIn(t, main, "clone", "-q", "--bare", origin, moved)
+	testkit.GitIn(t, main, "remote", "set-url", "origin", moved)
 	p, err := restorePlanJSON(t, ctx, run, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -742,8 +684,8 @@ func TestRefsRestoreRemoteNeedsTheSameOrigin(t *testing.T) {
 			t.Errorf("%s: action %s, selected %v", it.ID, it.Action, it.Selected)
 		}
 	}
-	gitIn(t, main, "remote", "set-url", "origin", origin)
-	gitIn(t, main, "update-ref", "-d", metaRef(run))
+	testkit.GitIn(t, main, "remote", "set-url", "origin", origin)
+	testkit.GitIn(t, main, "update-ref", "-d", metaRef(run))
 	p, _ = restorePlanJSON(t, ctx, run, nil)
 	for _, it := range p.Items {
 		if it.Kind == RefRemoteBranch && it.Action != RestoreEndpointUnknown {
@@ -754,23 +696,23 @@ func TestRefsRestoreRemoteNeedsTheSameOrigin(t *testing.T) {
 
 // --run-id names the run; one that has refs already refuses, moving nothing.
 func TestRefsSweepRunID(t *testing.T) {
-	ctx, main := backupsRepo(t)
+	ctx, main := testkit.BackupsRepo(t)
 	id := "20260930T091500Z-00c0ffee"
 	r := sweepAll(t, ctx, RefsOptions{RunID: id, Only: []string{"refs/heads/backup/contained"}})
 	if deref(r.RunID) != id {
 		t.Fatalf("run = %v", r.RunID)
 	}
 	var m runMeta
-	if err := json.Unmarshal([]byte(gitOut(t, main, "cat-file", "blob", metaRef(id))), &m); err != nil ||
+	if err := json.Unmarshal([]byte(testkit.GitOut(t, main, "cat-file", "blob", metaRef(id))), &m); err != nil ||
 		m.RunID != id || m.SweptAt == 0 || m.Endpoint != nil || m.Repo == "" {
 		t.Errorf("meta = %+v, %v", m, err)
 	}
-	before := repoState(t, main)
+	before := testkit.RepoState(t, main)
 	r, _, err := refsSweepJSON(t, ctx, RefsOptions{NoFetch: true, RunID: id})
 	if err == nil || r.Outcome != kit.OutcomeRefused || len(r.Problems) != 1 || r.Problems[0].Code != ProblemRunIDTaken {
 		t.Errorf("a reused run id: %v %+v", err, r)
 	}
-	if repoState(t, main) != before {
+	if testkit.RepoState(t, main) != before {
 		t.Error("a refused run changed the repository")
 	}
 	if _, _, err := refsSweepJSON(t, ctx, RefsOptions{NoFetch: true, RunID: "tomorrow"}); err == nil {
@@ -783,7 +725,7 @@ func TestRefsSweepRunID(t *testing.T) {
 func TestRefsRestoreRemoteKeepsThePinUntilOriginHasIt(t *testing.T) {
 	ctx, main, origin, run := remoteBackups(t)
 	hook := filepath.Join(origin, "hooks", "pre-receive")
-	mustWrite(t, hook, "#!/bin/sh\necho no >&2\nexit 1\n")
+	testkit.MustWrite(t, hook, "#!/bin/sh\necho no >&2\nexit 1\n")
 	if err := os.Chmod(hook, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -800,7 +742,7 @@ func TestRefsRestoreRemoteKeepsThePinUntilOriginHasIt(t *testing.T) {
 	if err := os.Remove(hook); err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, main, "push", "-q", "origin", pin+":refs/heads/backup/landed")
+	testkit.GitIn(t, main, "push", "-q", "origin", pin+":refs/heads/backup/landed")
 	p, _ := restorePlanJSON(t, ctx, run, []string{id})
 	if p.Items[slices.IndexFunc(p.Items, func(i RefRestorePlanItem) bool { return i.ID == id })].Action != RestoreNone {
 		t.Fatalf("origin has it back: %+v", p.Items)
@@ -817,7 +759,7 @@ func TestRefsRestoreRemoteKeepsThePinUntilOriginHasIt(t *testing.T) {
 // A run that wrote its meta and moved nothing is still listed, and a purge
 // deletes the meta last.
 func TestRefsPurgeDeletesTheMetaLast(t *testing.T) {
-	ctx, main := backupsRepo(t)
+	ctx, main := testkit.BackupsRepo(t)
 	id := "20260101T000000Z-dead"
 	if err := writeMeta(main, runMeta{RunID: id, Repo: main, SweptAt: 1767225600}); err != nil {
 		t.Fatal(err)
@@ -832,13 +774,13 @@ func TestRefsPurgeDeletesTheMetaLast(t *testing.T) {
 	r := sweepAll(t, ctx, RefsOptions{})
 	var res bytes.Buffer
 	err := RefsPurge(ctx, RefsPurgeOptions{OlderThan: "1d", Yes: true, Journal: NewRefsPurgeJournal(&res)}, &bytes.Buffer{})
-	validateJSON(t, "refs-purge", res.Bytes())
+	testkit.ValidateJSON(t, "refs-purge", res.Bytes())
 	var pr RefsPurgeResult
 	_ = json.Unmarshal(res.Bytes(), &pr)
 	if err != nil || pr.Outcome != OutcomePurged || len(pr.Runs) != 1 || !pr.Runs[0].MetaDeleted {
 		t.Fatalf("%v %+v", err, pr)
 	}
-	if left := gitOut(t, main, "for-each-ref", "--format=%(refname)", SweptPrefix); !strings.HasPrefix(left, SweptPrefix+*r.RunID) {
+	if left := testkit.GitOut(t, main, "for-each-ref", "--format=%(refname)", SweptPrefix); !strings.HasPrefix(left, SweptPrefix+*r.RunID) {
 		t.Errorf("only today's run is left, got %q", left)
 	}
 }
@@ -846,17 +788,17 @@ func TestRefsPurgeDeletesTheMetaLast(t *testing.T) {
 // A remote row the push cannot delete drops its pin and leaves origin as it
 // was; one origin moved after the plan is kept and pinned nowhere.
 func TestRefsSweepRemoteGuards(t *testing.T) {
-	ctx, main, origin := sweepRepo(t)
-	gitIn(t, main, "commit", "-q", "--allow-empty", "-m", "second")
-	gitIn(t, main, "push", "-q", "origin", "main", "main:refs/heads/backup/rejected", "main~1:refs/heads/backup/moved")
-	gitIn(t, main, "fetch", "-q", "origin")
-	plan, err := planRefs(ctx, RefsOptions{Remote: true, NoFetch: true, OpenPRs: noPRs}, &bytes.Buffer{})
+	ctx, main, origin := testkit.SweepRepo(t)
+	testkit.GitIn(t, main, "commit", "-q", "--allow-empty", "-m", "second")
+	testkit.GitIn(t, main, "push", "-q", "origin", "main", "main:refs/heads/backup/rejected", "main~1:refs/heads/backup/moved")
+	testkit.GitIn(t, main, "fetch", "-q", "origin")
+	plan, err := planRefs(ctx, RefsOptions{Remote: true, NoFetch: true, OpenPRs: testkit.NoPRs}, &bytes.Buffer{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, main, "push", "-q", "--force", "origin", "main:refs/heads/backup/moved")
+	testkit.GitIn(t, main, "push", "-q", "--force", "origin", "main:refs/heads/backup/moved")
 	hook := filepath.Join(origin, "hooks", "pre-receive")
-	mustWrite(t, hook, "#!/bin/sh\nexit 1\n")
+	testkit.MustWrite(t, hook, "#!/bin/sh\nexit 1\n")
 	if err := os.Chmod(hook, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -867,7 +809,7 @@ func TestRefsSweepRemoteGuards(t *testing.T) {
 	j.begin(run)
 	_ = plan.apply(ctx, run, j, &bytes.Buffer{})
 	j.Finish()
-	validateJSON(t, "refs-sweep", out.Bytes())
+	testkit.ValidateJSON(t, "refs-sweep", out.Bytes())
 	var r RefsResult
 	_ = json.Unmarshal(out.Bytes(), &r)
 	if it := refResultItem(t, r, "origin:refs/heads/backup/rejected"); it.Result != RefFailed || it.Pinned || it.Deleted {
@@ -876,25 +818,25 @@ func TestRefsSweepRemoteGuards(t *testing.T) {
 	if it := refResultItem(t, r, "origin:refs/heads/backup/moved"); it.Result != RefResultKept || it.Pinned {
 		t.Errorf("moved = %+v", it)
 	}
-	if gitOut(t, origin, "for-each-ref", "--format=%(refname)", "refs/heads/backup/") == "" {
+	if testkit.GitOut(t, origin, "for-each-ref", "--format=%(refname)", "refs/heads/backup/") == "" {
 		t.Error("origin must keep both")
 	}
 	if r.Outcome != kit.OutcomeRefused {
 		t.Errorf("outcome = %s", r.Outcome)
 	}
-	if left := gitOut(t, main, "for-each-ref", SweptPrefix); left != "" {
+	if left := testkit.GitOut(t, main, "for-each-ref", SweptPrefix); left != "" {
 		t.Errorf("a run that moved nothing leaves nothing behind: %s", left)
 	}
 }
 
 // A branch checked out after the plan is kept at apply time.
 func TestRefsSweepKeepsABranchCheckedOutSinceThePlan(t *testing.T) {
-	ctx, main := backupsRepo(t)
+	ctx, main := testkit.BackupsRepo(t)
 	plan, err := planRefs(ctx, RefsOptions{NoFetch: true}, &bytes.Buffer{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, main, "worktree", "add", "-q", filepath.Join(t.TempDir(), "late"), "backup/old")
+	testkit.GitIn(t, main, "worktree", "add", "-q", filepath.Join(t.TempDir(), "late"), "backup/old")
 	var out bytes.Buffer
 	j := NewRefsJournal(&out)
 	j.planned(plan, refsToken(plan))
@@ -913,14 +855,14 @@ func TestRefsSweepKeepsABranchCheckedOutSinceThePlan(t *testing.T) {
 // A remote backup whose object is not here is kept: containment cannot be
 // read.
 func TestRefsRemoteObjectMissing(t *testing.T) {
-	ctx, main, origin := sweepRepo(t)
+	ctx, main, origin := testkit.SweepRepo(t)
 	other := filepath.Join(t.TempDir(), "other")
-	gitIn(t, main, "clone", "-q", origin, other)
-	gitIn(t, other, "config", "user.email", "t@example.com")
-	gitIn(t, other, "config", "user.name", "T")
-	gitIn(t, other, "commit", "-q", "--allow-empty", "-m", "elsewhere")
-	gitIn(t, other, "push", "-q", "origin", "HEAD:refs/heads/backup/elsewhere")
-	p, err := refsPlanJSON(t, ctx, RefsOptions{Remote: true, NoFetch: true, OpenPRs: noPRs})
+	testkit.GitIn(t, main, "clone", "-q", origin, other)
+	testkit.GitIn(t, other, "config", "user.email", "t@example.com")
+	testkit.GitIn(t, other, "config", "user.name", "T")
+	testkit.GitIn(t, other, "commit", "-q", "--allow-empty", "-m", "elsewhere")
+	testkit.GitIn(t, other, "push", "-q", "origin", "HEAD:refs/heads/backup/elsewhere")
+	p, err := refsPlanJSON(t, ctx, RefsOptions{Remote: true, NoFetch: true, OpenPRs: testkit.NoPRs})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -933,16 +875,16 @@ func TestRefsRemoteObjectMissing(t *testing.T) {
 // A restore whose ref is already back drops the pin only while the ref is
 // still there; a run id that is not one is still an object its schema takes.
 func TestRefsRestoreNoneKeepsThePinOfARefThatWent(t *testing.T) {
-	ctx, main := backupsRepo(t)
+	ctx, main := testkit.BackupsRepo(t)
 	r := sweepAll(t, ctx, RefsOptions{Only: []string{"refs/heads/backup/old"}})
 	run := *r.RunID
 	obj := refResultItem(t, r, "refs/heads/backup/old").Object
-	gitIn(t, main, "branch", "backup/old", obj)
+	testkit.GitIn(t, main, "branch", "backup/old", obj)
 	plan, err := planRefsRestore(ctx, run)
 	if err != nil || plan.Rows[0].Action != RestoreNone {
 		t.Fatalf("%v %+v", err, plan.Rows)
 	}
-	gitIn(t, main, "branch", "-D", "backup/old")
+	testkit.GitIn(t, main, "branch", "-D", "backup/old")
 	st := restoreRef(main, "", plan.Rows[0])
 	if st.kept == "" || st.pinDeleted {
 		t.Errorf("state = %+v", st)

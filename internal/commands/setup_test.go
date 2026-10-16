@@ -8,14 +8,15 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
 func TestSetupCopiesConfigDirsAndFiles(t *testing.T) {
-	main := fixtureRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\n"+
+	main := testkit.FixtureRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\n"+
 		"DEVELOPER_CONFIG_DIRS=(.vscode)\nDEVELOPER_CONFIG_FILES=(\"nested/app.env\")\n")
-	mustMkdir(t, filepath.Join(main, ".vscode"))
-	mustWrite(t, filepath.Join(main, ".vscode", "settings.json"), "{}")
-	mustWrite(t, filepath.Join(main, "nested", "app.env"), "K=V")
+	testkit.MustMkdir(t, filepath.Join(main, ".vscode"))
+	testkit.MustWrite(t, filepath.Join(main, ".vscode", "settings.json"), "{}")
+	testkit.MustWrite(t, filepath.Join(main, "nested", "app.env"), "K=V")
 
 	target := t.TempDir()
 	ctx, err := kit.Open(main)
@@ -29,32 +30,32 @@ func TestSetupCopiesConfigDirsAndFiles(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(target, ".vscode", "settings.json")); err != nil {
 		t.Errorf("config dir not copied: %v", err)
 	}
-	if got := mustRead(t, filepath.Join(target, "nested", "app.env")); got != "K=V" {
+	if got := testkit.MustRead(t, filepath.Join(target, "nested", "app.env")); got != "K=V" {
 		t.Errorf("config file not copied: %q", got)
 	}
 }
 
 func TestSetupNeverOverwritesExistingFiles(t *testing.T) {
-	main := fixtureRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\n"+
+	main := testkit.FixtureRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\n"+
 		"DEVELOPER_CONFIG_FILES=(\"app.env\")\n")
-	mustWrite(t, filepath.Join(main, "app.env"), "FROM=source")
+	testkit.MustWrite(t, filepath.Join(main, "app.env"), "FROM=source")
 	target := t.TempDir()
-	mustWrite(t, filepath.Join(target, "app.env"), "MINE=keep")
+	testkit.MustWrite(t, filepath.Join(target, "app.env"), "MINE=keep")
 
 	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
 	if err := Setup(ctx, target, SetupOptions{SourceDir: main}, &buf); err != nil {
 		t.Fatal(err)
 	}
-	if got := mustRead(t, filepath.Join(target, "app.env")); got != "MINE=keep" {
+	if got := testkit.MustRead(t, filepath.Join(target, "app.env")); got != "MINE=keep" {
 		t.Errorf("existing file was overwritten: %q", got)
 	}
 }
 
 func TestSetupRunsProvisionScript(t *testing.T) {
-	main := fixtureRepo(t, minimalConf)
+	main := testkit.FixtureRepo(t, testkit.MinimalConf)
 	p := filepath.Join(main, "bin", "worktree", "provision.sh")
-	mustWrite(t, p, "#!/bin/sh\necho provisioned > provisioned.txt\n")
+	testkit.MustWrite(t, p, "#!/bin/sh\necho provisioned > provisioned.txt\n")
 	if err := os.Chmod(p, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +65,7 @@ func TestSetupRunsProvisionScript(t *testing.T) {
 	if err := Setup(ctx, target, SetupOptions{SourceDir: main}, &buf); err != nil {
 		t.Fatalf("Setup: %v", err)
 	}
-	if got := mustRead(t, filepath.Join(target, "provisioned.txt")); !strings.Contains(got, "provisioned") {
+	if got := testkit.MustRead(t, filepath.Join(target, "provisioned.txt")); !strings.Contains(got, "provisioned") {
 		t.Errorf("provision.sh did not run in the target: %q", got)
 	}
 }
@@ -72,7 +73,7 @@ func TestSetupRunsProvisionScript(t *testing.T) {
 // A failing build is a warning in the bash implementation. Setup must not
 // return an error for it, or every agent that provisions would start failing.
 func TestSetupBuildFailureIsAWarningNotAnError(t *testing.T) {
-	main := fixtureRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_COMMAND=\"exit 3\"\n")
+	main := testkit.FixtureRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_COMMAND=\"exit 3\"\n")
 	target := t.TempDir()
 	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
@@ -85,7 +86,7 @@ func TestSetupBuildFailureIsAWarningNotAnError(t *testing.T) {
 }
 
 func TestSetupSkipBuild(t *testing.T) {
-	main := fixtureRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_COMMAND=\"touch built.txt\"\n")
+	main := testkit.FixtureRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_COMMAND=\"touch built.txt\"\n")
 	target := t.TempDir()
 	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
@@ -98,7 +99,7 @@ func TestSetupSkipBuild(t *testing.T) {
 }
 
 func TestSetupPrintsItsSourceOnlyWhenGiven(t *testing.T) {
-	main := fixtureRepo(t, minimalConf)
+	main := testkit.FixtureRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 
 	var named bytes.Buffer
@@ -123,10 +124,10 @@ func TestSetupPrintsItsSourceOnlyWhenGiven(t *testing.T) {
 // where it stands — and has to say so, because a silent success there reads as
 // a worktree that ended up somewhere nobody chose.
 func TestSetupProvisionsASupersetWorktreeWhereItStands(t *testing.T) {
-	main := committedRepo(t, minimalConf)
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	superset := filepath.Join(ctx.Repo.Parent, "demo_wt", "demo", "feat_wt", "thing")
-	gitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/thing", superset)
+	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/thing", superset)
 
 	var buf bytes.Buffer
 	if err := Setup(ctx, superset, SetupOptions{SourceDir: main}, &buf); err != nil {
@@ -145,7 +146,7 @@ func TestSetupProvisionsASupersetWorktreeWhereItStands(t *testing.T) {
 }
 
 func TestSetupNamesTheWorktreeItProvisioned(t *testing.T) {
-	main := committedRepo(t, minimalConf)
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
 	path, err := New(ctx, "feat/thing", NewOptions{}, &buf)
@@ -160,39 +161,15 @@ func TestSetupNamesTheWorktreeItProvisioned(t *testing.T) {
 	}
 }
 
-func mustMkdir(t *testing.T, p string) {
-	t.Helper()
-	if err := os.MkdirAll(p, 0o755); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func mustWrite(t *testing.T, p, body string) {
-	t.Helper()
-	mustMkdir(t, filepath.Dir(p))
-	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func mustRead(t *testing.T, p string) string {
-	t.Helper()
-	b, err := os.ReadFile(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return strings.TrimSpace(string(b))
-}
-
 // A config entry that escapes the worktree must be refused, not silently
 // written outside it.
 func TestSetupRefusesConfigEntriesThatEscapeTheWorktree(t *testing.T) {
-	main := fixtureRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\n"+
+	main := testkit.FixtureRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\n"+
 		"DEVELOPER_CONFIG_FILES=(\"../escaped.env\")\n")
-	mustWrite(t, filepath.Join(filepath.Dir(main), "escaped.env"), "SECRET=1")
+	testkit.MustWrite(t, filepath.Join(filepath.Dir(main), "escaped.env"), "SECRET=1")
 
 	target := filepath.Join(t.TempDir(), "wt")
-	mustMkdir(t, target)
+	testkit.MustMkdir(t, target)
 	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
 	if err := Setup(ctx, target, SetupOptions{SourceDir: main}, &buf); err != nil {
@@ -210,7 +187,7 @@ func TestSetupRefusesConfigEntriesThatEscapeTheWorktree(t *testing.T) {
 // that do not exist in the source. Everything present must arrive; everything
 // absent must be skipped without failing the setup.
 func TestSetupCopiesServerShapedConfig(t *testing.T) {
-	main := committedRepo(t, `MAIN_BRANCH="main"
+	main := testkit.CommittedRepo(t, `MAIN_BRANCH="main"
 BUILD_INIT_ENABLED=false
 DEVELOPER_CONFIG_DIRS=(.cursor .claude .run .vscode .idea)
 DEVELOPER_CONFIG_FILES=(
@@ -229,9 +206,9 @@ DEVELOPER_CONFIG_FILES=(
 		"accessmanagement/src/main/resources/application-local-secret.yaml",
 	}
 	for _, f := range present {
-		mustWrite(t, filepath.Join(main, f), "value-of-"+f)
+		testkit.MustWrite(t, filepath.Join(main, f), "value-of-"+f)
 	}
-	mustWrite(t, filepath.Join(main, ".claude", "settings.json"), "{}")
+	testkit.MustWrite(t, filepath.Join(main, ".claude", "settings.json"), "{}")
 	// "override.properties" is deliberately absent, as it is in the real repo.
 
 	target := t.TempDir()
@@ -244,7 +221,7 @@ DEVELOPER_CONFIG_FILES=(
 		t.Fatalf("a declared-but-absent file must not fail setup: %v", err)
 	}
 	for _, f := range present {
-		if got := mustRead(t, filepath.Join(target, f)); got != "value-of-"+f {
+		if got := testkit.MustRead(t, filepath.Join(target, f)); got != "value-of-"+f {
 			t.Errorf("%s: got %q", f, got)
 		}
 	}
@@ -260,9 +237,9 @@ DEVELOPER_CONFIG_FILES=(
 // Stopping early leaves a worktree with no dependencies either, which is
 // strictly less usable than one that merely lacks secrets.
 func TestSetupContinuesAfterProvisionFailure(t *testing.T) {
-	main := committedRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_COMMAND=\"touch built.txt\"\n")
+	main := testkit.CommittedRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_COMMAND=\"touch built.txt\"\n")
 	p := filepath.Join(main, "bin", "worktree", "provision.sh")
-	mustWrite(t, p, "#!/bin/sh\necho 'no AWS credentials' >&2\nexit 1\n")
+	testkit.MustWrite(t, p, "#!/bin/sh\necho 'no AWS credentials' >&2\nexit 1\n")
 	if err := os.Chmod(p, 0o755); err != nil {
 		t.Fatal(err)
 	}

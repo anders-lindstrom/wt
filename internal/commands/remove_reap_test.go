@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -72,7 +73,7 @@ func alive(pid int) bool {
 // --reap stops a process working in the worktree, then removes it.
 func TestRemoveReapStopsAProcessLeftInTheWorktree(t *testing.T) {
 	realProcesses(t)
-	ctx, _ := kit.Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
 	path, err := New(ctx, "fix/served", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -103,7 +104,7 @@ func TestRemoveReapStopsAProcessLeftInTheWorktree(t *testing.T) {
 // --dry-run names the processes --reap would stop, and stops none.
 func TestRemoveDryRunListsTheProcessesAndStopsNone(t *testing.T) {
 	realProcesses(t)
-	ctx, _ := kit.Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
 	path, err := New(ctx, "fix/served", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -142,7 +143,7 @@ func TestRemoveDryRunListsTheProcessesAndStopsNone(t *testing.T) {
 // the worktree, and stops nothing.
 func TestRemoveWithoutReapWarnsAndLeavesThemRunning(t *testing.T) {
 	realProcesses(t)
-	ctx, _ := kit.Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
 	path, err := New(ctx, "fix/served", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -171,7 +172,7 @@ func TestRemoveWithoutReapWarnsAndLeavesThemRunning(t *testing.T) {
 // stop: --reap stops nothing and removes nothing, --force or not.
 func TestRemoveReapRefusesWhenTheAgentsAreUnknownEvenForced(t *testing.T) {
 	realProcesses(t)
-	ctx, _ := kit.Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
 	path, err := New(ctx, "fix/served", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -201,7 +202,7 @@ func TestRemoveReapRefusesWhenTheAgentsAreUnknownEvenForced(t *testing.T) {
 // and removes nothing, --force or not.
 func TestRemoveReapStopsNothingWhenTheRelistingFails(t *testing.T) {
 	realProcesses(t)
-	ctx, _ := kit.Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
 	path, err := New(ctx, "fix/served", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -227,7 +228,7 @@ func TestRemoveReapStopsNothingWhenTheRelistingFails(t *testing.T) {
 // refuses the removal, with nothing removed.
 func TestRemoveJSONReportsReapedAndRefusesOnOneThatWillNotStop(t *testing.T) {
 	realProcesses(t)
-	ctx, _ := kit.Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
 	path, err := New(ctx, "fix/served", NewOptions{NoSetup: true}, &buf)
 	if err != nil {

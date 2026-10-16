@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -24,7 +25,7 @@ func TestListAsksAboutTheWorktreeBranchesByName(t *testing.T) {
 	if !strings.Contains(out, "#12 open") {
 		t.Fatalf("no pull request in the listing:\n%s", out)
 	}
-	calls := argvOf(t, log)
+	calls := testkit.ArgvOf(t, log)
 	asked := calls[len(calls)-1]
 	if !strings.HasPrefix(asked, "api graphql") {
 		t.Fatalf("wt list asked %q", asked)
@@ -46,7 +47,7 @@ func TestListAsksAboutTheWorktreeBranchesByName(t *testing.T) {
 func TestListFetchesOnlyTheBranchesTheCacheCannotAnswer(t *testing.T) {
 	ctx, log := oneWorktreeWithAPR(t)
 	listing(t, ctx, ListOptions{})
-	calls := len(argvOf(t, log))
+	calls := len(testkit.ArgvOf(t, log))
 
 	var errs bytes.Buffer
 	if _, err := New(ctx, "feat/brand-new", NewOptions{}, &errs); err != nil {
@@ -54,7 +55,7 @@ func TestListFetchesOnlyTheBranchesTheCacheCannotAnswer(t *testing.T) {
 	}
 	listing(t, ctx, ListOptions{})
 
-	got := argvOf(t, log)
+	got := testkit.ArgvOf(t, log)
 	if len(got) != calls+1 {
 		t.Fatalf("ran %d calls, want one more than %d: %q", len(got), calls, got)
 	}
@@ -72,7 +73,7 @@ func TestListFetchesOnlyTheBranchesTheCacheCannotAnswer(t *testing.T) {
 func TestStatusReadsTheCacheListFilled(t *testing.T) {
 	ctx, log := oneWorktreeWithAPR(t)
 	listing(t, ctx, ListOptions{})
-	calls := len(argvOf(t, log))
+	calls := len(testkit.ArgvOf(t, log))
 
 	var out bytes.Buffer
 	if err := StatusWorktree(ctx, "login-crash", StatusOptions{Agents: []wtsync.Agent{}}, &out); err != nil {
@@ -81,7 +82,7 @@ func TestStatusReadsTheCacheListFilled(t *testing.T) {
 	if !strings.Contains(out.String(), "pr      #12 open · Login crash") {
 		t.Errorf("wt status said\n%s", out.String())
 	}
-	if got := argvOf(t, log); len(got) != calls {
+	if got := testkit.ArgvOf(t, log); len(got) != calls {
 		t.Errorf("wt status ran gh again: %q", got)
 	}
 }
@@ -90,11 +91,11 @@ func TestStatusReadsTheCacheListFilled(t *testing.T) {
 // git gives a branch one worktree. Answering with the main checkout's path
 // would walk `cd "$(wt pr checkout 12)"` into the repository you started in.
 func TestPRCheckoutRefusesAPullRequestOnTrunk(t *testing.T) {
-	ctx, err := kit.Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	fakeGitHub(t, openPR(12, "main", "Straight onto trunk"))
+	testkit.FakeGitHub(t, testkit.OpenPR(12, "main", "Straight onto trunk"))
 
 	var errs bytes.Buffer
 	path, err := PRCheckout(ctx, 12, PROptions{}, &errs)
@@ -113,13 +114,13 @@ func TestPRCheckoutRefusesAPullRequestOnTrunk(t *testing.T) {
 // remote. The worktree goes; so must the branch, or the next attempt finds a
 // branch it did not make and refuses.
 func TestPRCheckoutRemovesABranchGhLeftBehind(t *testing.T) {
-	ctx, err := kit.Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	fakeGitHubWith(t, `[ "$1 $2" = 'pr checkout' ] && { git checkout -q -b residential_fixes; `+
+	testkit.FakeGitHubWith(t, `[ "$1 $2" = 'pr checkout' ] && { git checkout -q -b residential_fixes; `+
 		`echo 'could not set up the remote' >&2; exit 1; }`,
-		openPR(12, "residential_fixes", "Fixes"))
+		testkit.OpenPR(12, "residential_fixes", "Fixes"))
 
 	var errs bytes.Buffer
 	if _, err := PRCheckout(ctx, 12, PROptions{}, &errs); err == nil {
@@ -133,13 +134,13 @@ func TestPRCheckoutRemovesABranchGhLeftBehind(t *testing.T) {
 // A branch that was already here is not gh's to have made, so a failure must
 // not take it.
 func TestPRCheckoutKeepsABranchItDidNotMake(t *testing.T) {
-	ctx, err := kit.Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, ctx.Repo.MainRoot, "branch", "residential_fixes")
-	fakeGitHubWith(t, `[ "$1 $2" = 'pr checkout' ] && { echo 'fetch failed' >&2; exit 1; }`,
-		openPR(12, "residential_fixes", "Fixes"))
+	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "residential_fixes")
+	testkit.FakeGitHubWith(t, `[ "$1 $2" = 'pr checkout' ] && { echo 'fetch failed' >&2; exit 1; }`,
+		testkit.OpenPR(12, "residential_fixes", "Fixes"))
 
 	var errs bytes.Buffer
 	if _, err := PRCheckout(ctx, 12, PROptions{}, &errs); err == nil {
@@ -153,16 +154,16 @@ func TestPRCheckoutKeepsABranchItDidNotMake(t *testing.T) {
 // The picker leads with what is waiting on you, and says which rows already
 // have a worktree here.
 func TestPRChoicesLeadWithYourReviewQueue(t *testing.T) {
-	ctx, err := kit.Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	mine := openPR(12, "fix_wt/login-crash", "Login crash")
-	wanted := openPR(41, "somebody/fix", "Please look at this")
+	mine := testkit.OpenPR(12, "fix_wt/login-crash", "Login crash")
+	wanted := testkit.OpenPR(41, "somebody/fix", "Please look at this")
 	wanted.ReviewRequests.Nodes = append(wanted.ReviewRequests.Nodes, struct {
 		RequestedReviewer github.Account `json:"requestedReviewer"`
 	}{RequestedReviewer: github.Account{Login: "anders"}})
-	fakeGitHubAs(t, "anders", "", mine, wanted)
+	testkit.FakeGitHubAs(t, "anders", "", mine, wanted)
 
 	var errs bytes.Buffer
 	path, err := New(ctx, "fix/login-crash", NewOptions{}, &errs)

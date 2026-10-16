@@ -9,22 +9,15 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/superset"
 )
 
-// userConfigIn points this test's user config at a directory of its own.
-func userConfigIn(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	return filepath.Join(dir, "wt", "config.toml")
-}
-
 // With superset off, SUPERSET_REGISTER=on still gets nothing: no subprocess,
 // nothing on stderr.
 func TestUserSupersetOffBeatsTheRepository(t *testing.T) {
-	ctx, err := kit.Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +28,7 @@ func TestUserSupersetOffBeatsTheRepository(t *testing.T) {
 	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
 	}
-	if got := argvOf(t, log); got != nil {
+	if got := testkit.ArgvOf(t, log); got != nil {
 		t.Errorf("superset was run despite the user switch: %q", got)
 	}
 	if line := supersetLine(errs.String()); line != "" {
@@ -46,7 +39,7 @@ func TestUserSupersetOffBeatsTheRepository(t *testing.T) {
 // Doctor says the switch is off and how to change it, and does not count the
 // person's own choice as a problem.
 func TestDoctorSaysSupersetIsOffAtUserLevel(t *testing.T) {
-	ctx, err := kit.Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,14 +67,14 @@ func TestDoctorSaysSupersetIsOffAtUserLevel(t *testing.T) {
 
 // A broken user file is a doctor finding, not a reason for doctor to refuse.
 func TestDoctorReportsABrokenUserConfig(t *testing.T) {
-	path := userConfigIn(t)
+	path := testkit.UserConfigIn(t)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte("superst = true\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	main := committedRepo(t, minimalConf)
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx := kit.OpenLenient(main, &bytes.Buffer{})
 
 	var out bytes.Buffer
@@ -97,8 +90,8 @@ func TestDoctorReportsABrokenUserConfig(t *testing.T) {
 // The plain print says where each value came from, including which file
 // decided Superset.
 func TestConfigPrintsTheUserSettings(t *testing.T) {
-	userConfigIn(t)
-	ctx, err := kit.Open(fixtureRepo(t, minimalConf))
+	testkit.UserConfigIn(t)
+	ctx, err := kit.Open(testkit.FixtureRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,17 +114,17 @@ func TestConfigPrintsTheUserSettings(t *testing.T) {
 // Once opted in, the repository's key decides the mode and the print names
 // the file.
 func TestConfigNamesTheFileThatDecidedSuperset(t *testing.T) {
-	userConfigIn(t)
+	testkit.UserConfigIn(t)
 	for name, tc := range map[string]struct{ conf, want string }{
-		"repo left it alone": {minimalConf, "superset mode: auto (repo default)"},
-		"repo set it":        {minimalConf + "SUPERSET_REGISTER=on\n", "superset mode: on (repo file)"},
+		"repo left it alone": {testkit.MinimalConf, "superset mode: auto (repo default)"},
+		"repo set it":        {testkit.MinimalConf + "SUPERSET_REGISTER=on\n", "superset mode: on (repo file)"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx, err := kit.Open(fixtureRepo(t, tc.conf))
+			ctx, err := kit.Open(testkit.FixtureRepo(t, tc.conf))
 			if err != nil {
 				t.Fatal(err)
 			}
-			optIn(ctx)
+			testkit.OptIn(ctx)
 			var buf bytes.Buffer
 			if err := Config(ctx, false, &buf); err != nil {
 				t.Fatal(err)
@@ -146,8 +139,8 @@ func TestConfigNamesTheFileThatDecidedSuperset(t *testing.T) {
 // --shell is a contract the Herdr skills eval: the repository's assignments
 // and nothing else.
 func TestConfigShellSaysNothingAboutTheUserSettings(t *testing.T) {
-	userConfigIn(t)
-	ctx, err := kit.Open(fixtureRepo(t, minimalConf))
+	testkit.UserConfigIn(t)
+	ctx, err := kit.Open(testkit.FixtureRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +161,7 @@ func TestConfigShellSaysNothingAboutTheUserSettings(t *testing.T) {
 
 // set, get and unset round-trip, none of them needing a repository.
 func TestUserSetGetUnsetFromOutsideARepository(t *testing.T) {
-	path := userConfigIn(t)
+	path := testkit.UserConfigIn(t)
 	t.Chdir(t.TempDir())
 
 	var out bytes.Buffer
@@ -205,7 +198,7 @@ func TestUserSetGetUnsetFromOutsideARepository(t *testing.T) {
 }
 
 func TestUserSetRejectsWhatItCannotWrite(t *testing.T) {
-	path := userConfigIn(t)
+	path := testkit.UserConfigIn(t)
 	for name, tc := range map[string]struct{ key, value, want string }{
 		"unknown key":     {"superst", "true", `unknown key "superst"`},
 		"not a boolean":   {config.UserKeySuperset, "sometimes", "is not a boolean"},
@@ -232,14 +225,14 @@ func TestUserSetRejectsWhatItCannotWrite(t *testing.T) {
 // and the warning names the part being ignored rather than claiming the whole
 // file was thrown away. `wt doctor` still counts it as a problem.
 func TestOpenWarnsAboutABrokenUserConfigAndCarriesOn(t *testing.T) {
-	path := userConfigIn(t)
+	path := testkit.UserConfigIn(t)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte("github = \"yes\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ctx, err := kit.Open(fixtureRepo(t, minimalConf))
+	ctx, err := kit.Open(testkit.FixtureRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatalf("a broken user config stopped the command: %v", err)
 	}
@@ -268,25 +261,12 @@ func TestOpenWarnsAboutABrokenUserConfigAndCarriesOn(t *testing.T) {
 	}
 }
 
-// writeUserConfig puts body at the user config path for this test.
-func writeUserConfig(t *testing.T, body string) string {
-	t.Helper()
-	path := userConfigIn(t)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
 // A file wt cannot parse at all turns every integration off for the run. The
 // command still works; what stops is anything that would have run gh or
 // Superset on the strength of a default the person never asked for.
 func TestAUserFileThatDoesNotParseTurnsEveryIntegrationOff(t *testing.T) {
-	path := writeUserConfig(t, "github = false\nsuperset = \n")
-	ctx, err := kit.Open(committedRepo(t, minimalConf))
+	path := testkit.WriteUserConfig(t, "github = false\nsuperset = \n")
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatalf("a user file that does not parse stopped the command: %v", err)
 	}
@@ -307,7 +287,7 @@ func TestAUserFileThatDoesNotParseTurnsEveryIntegrationOff(t *testing.T) {
 	}
 
 	// The one thing that must not happen: a gh process.
-	log := fakeGitHub(t, openPR(12, "fix_wt/login-crash", "Login crash"))
+	log := testkit.FakeGitHub(t, testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
 	var out bytes.Buffer
 	if _, err := New(ctx, "fix/login-crash", NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
@@ -315,7 +295,7 @@ func TestAUserFileThatDoesNotParseTurnsEveryIntegrationOff(t *testing.T) {
 	if err := List(ctx, ListOptions{}, &out, 0); err != nil {
 		t.Fatal(err)
 	}
-	if got := argvOf(t, log); got != nil {
+	if got := testkit.ArgvOf(t, log); got != nil {
 		t.Errorf("gh was run for a user file wt could not read: %q", got)
 	}
 	if strings.Contains(out.String(), "#12") {
@@ -333,7 +313,7 @@ func TestUserGetAnswersDespiteABrokenFile(t *testing.T) {
 		"not a boolean value": {"superset = \"yes\"\n", "false"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			path := writeUserConfig(t, tc.body)
+			path := testkit.WriteUserConfig(t, tc.body)
 			var out, errs bytes.Buffer
 			if err := UserGet(config.UserKeySuperset, &out, &errs); err != nil {
 				t.Fatalf("UserGet: %v", err)
@@ -350,7 +330,7 @@ func TestUserGetAnswersDespiteABrokenFile(t *testing.T) {
 
 // An unknown key is still an error: there is no value to answer with.
 func TestUserGetStillRefusesAnUnknownKey(t *testing.T) {
-	writeUserConfig(t, "superset = true\n")
+	testkit.WriteUserConfig(t, "superset = true\n")
 	var out, errs bytes.Buffer
 	if err := UserGet("superst", &out, &errs); err == nil {
 		t.Fatalf("an unknown key was answered with %q", out.String())
@@ -360,8 +340,8 @@ func TestUserGetStillRefusesAnUnknownKey(t *testing.T) {
 // `wt config` says on stdout that it could not read the file, so the false
 // beside every setting is not read as somebody's choice.
 func TestConfigSaysTheFileCouldNotBeRead(t *testing.T) {
-	path := writeUserConfig(t, "github = \n")
-	ctx, err := kit.Open(committedRepo(t, minimalConf))
+	path := testkit.WriteUserConfig(t, "github = \n")
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}

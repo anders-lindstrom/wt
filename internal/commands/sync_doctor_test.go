@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -20,7 +21,7 @@ import (
 // be able to leak into a fixture that means to be testing "off".
 func doctorFixture(t *testing.T, rerereOn bool) *kit.Context {
 	t.Helper()
-	main := committedRepo(t, minimalConf)
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	yaml := "conflicts:\n  - paths: [v.txt]\n    strategy: owned-line\n    line: '^\\d'\n    rule: max-plus-patch\n"
 	if err := os.WriteFile(filepath.Join(main, ".wt-sync.yaml"), []byte(yaml), 0o644); err != nil {
 		t.Fatal(err)
@@ -28,12 +29,12 @@ func doctorFixture(t *testing.T, rerereOn bool) *kit.Context {
 	if err := os.WriteFile(filepath.Join(main, "v.txt"), []byte("1.0.0\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, main, "add", "-A")
-	gitIn(t, main, "commit", "-q", "-m", "declare")
-	gitIn(t, main, "config", "core.hooksPath", filepath.Join(main, ".git", "hooks"))
-	gitIn(t, main, "config", "rerere.enabled", strconv.FormatBool(rerereOn))
-	gitIn(t, main, "remote", "add", "origin", main)
-	gitIn(t, main, "fetch", "-q", "origin")
+	testkit.GitIn(t, main, "add", "-A")
+	testkit.GitIn(t, main, "commit", "-q", "-m", "declare")
+	testkit.GitIn(t, main, "config", "core.hooksPath", filepath.Join(main, ".git", "hooks"))
+	testkit.GitIn(t, main, "config", "rerere.enabled", strconv.FormatBool(rerereOn))
+	testkit.GitIn(t, main, "remote", "add", "origin", main)
+	testkit.GitIn(t, main, "fetch", "-q", "origin")
 	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +82,7 @@ func TestSyncDoctorFixesRerereOffWithFixFlag(t *testing.T) {
 	if !strings.Contains(out.String(), "fixed rerere") {
 		t.Fatalf("out does not report the fix:\n%s", out.String())
 	}
-	if got := gitOut(t, ctx.Repo.MainRoot, "config", "--get", "rerere.enabled"); got != "true" {
+	if got := testkit.GitOut(t, ctx.Repo.MainRoot, "config", "--get", "rerere.enabled"); got != "true" {
 		t.Fatalf("rerere.enabled = %q", got)
 	}
 }
@@ -122,7 +123,7 @@ func TestSyncDoctorReportsAWorktreeWaitingOnAPerson(t *testing.T) {
 // row does: waiting at its stop, or aborted by hand.
 func TestSyncDoctorSaysWhereAHandoverStands(t *testing.T) {
 	ctx, bump, _, _ := handedOver(t)
-	gitOut(t, ctx.Repo.MainRoot, "config", "core.hooksPath", filepath.Join(ctx.Repo.MainRoot, ".git", "hooks"))
+	testkit.GitOut(t, ctx.Repo.MainRoot, "config", "core.hooksPath", filepath.Join(ctx.Repo.MainRoot, ".git", "hooks"))
 	planRow := func() string {
 		t.Helper()
 		var out bytes.Buffer
@@ -140,7 +141,7 @@ func TestSyncDoctorSaysWhereAHandoverStands(t *testing.T) {
 	if row, want := planRow(), "bump: "+wtsync.WayOut(wtsync.Way{Work: "bump", Path: bump, Plan: true, Rebasing: true}); !strings.Contains(row, want) {
 		t.Fatalf("waiting: row %q, want %q", row, want)
 	}
-	gitOut(t, bump, "rebase", "--abort")
+	testkit.GitOut(t, bump, "rebase", "--abort")
 	if row, want := planRow(), "bump: "+wtsync.WayOut(wtsync.Way{Work: "bump", Path: bump, Plan: true, Aborted: true}); !strings.Contains(row, want) {
 		t.Fatalf("aborted: row %q, want %q", row, want)
 	}

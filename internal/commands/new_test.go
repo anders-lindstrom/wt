@@ -7,19 +7,11 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
-func committedRepo(t *testing.T, conf string) string {
-	t.Helper()
-	main := fixtureRepo(t, conf)
-	gitIn(t, main, "config", "user.email", "t@example.com")
-	gitIn(t, main, "config", "user.name", "T")
-	gitIn(t, main, "commit", "-q", "--allow-empty", "-m", "init")
-	return main
-}
-
 func TestNewCreatesCanonicalWorktreeAndBranch(t *testing.T) {
-	ctx, err := kit.Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +33,7 @@ func TestNewCreatesCanonicalWorktreeAndBranch(t *testing.T) {
 }
 
 func TestNewBareWorkNameTakesDefaultType(t *testing.T) {
-	ctx, _ := kit.Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
 	path, err := New(ctx, "thing", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -53,7 +45,7 @@ func TestNewBareWorkNameTakesDefaultType(t *testing.T) {
 }
 
 func TestNewRefusesDuplicateWork(t *testing.T) {
-	ctx, _ := kit.Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
 	if _, err := New(ctx, "fix/dup", NewOptions{NoSetup: true}, &buf); err != nil {
 		t.Fatal(err)
@@ -64,7 +56,7 @@ func TestNewRefusesDuplicateWork(t *testing.T) {
 }
 
 func TestNewRejectsUnknownType(t *testing.T) {
-	ctx, _ := kit.Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
 	if _, err := New(ctx, "wibble/thing", NewOptions{NoSetup: true}, &buf); err == nil {
 		t.Error("want an error for an unknown type")
@@ -76,7 +68,7 @@ func TestNewRejectsUnknownType(t *testing.T) {
 // feat_wt/. or a path that already exists, with an error about the wrong
 // thing.
 func TestNewRefusesDotAndRootAsAWorkName(t *testing.T) {
-	ctx, _ := kit.Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
 	for spec, want := range map[string]string{
 		".":  ". names the worktree you are in; wt new takes a new <type>/<work>",
@@ -96,8 +88,8 @@ func TestNewRefusesDotAndRootAsAWorkName(t *testing.T) {
 // A repository that names its branches without a suffix gets exactly that,
 // and its worktrees do not move for it: the folders are wt's layout.
 func TestNewWithoutABranchSuffixLeavesTheFoldersAlone(t *testing.T) {
-	conf := minimalConf + "WORKTREE_BRANCH_SUFFIX=\"\"\n"
-	ctx, err := kit.Open(committedRepo(t, conf))
+	conf := testkit.MinimalConf + "WORKTREE_BRANCH_SUFFIX=\"\"\n"
+	ctx, err := kit.Open(testkit.CommittedRepo(t, conf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,14 +117,14 @@ func TestNewWithoutABranchSuffixLeavesTheFoldersAlone(t *testing.T) {
 // The person's own setting names their branches wherever the repository has
 // not made the choice for them.
 func TestTheUserBranchSuffixAppliesWhereTheRepositoryIsSilent(t *testing.T) {
-	path := userConfigIn(t)
+	path := testkit.UserConfigIn(t)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte("branch_suffix = \"\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ctx, err := kit.Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,14 +147,14 @@ func TestTheUserBranchSuffixAppliesWhereTheRepositoryIsSilent(t *testing.T) {
 // A repository that does name its branches outranks the person: a committed
 // answer is the one everybody working on it shares.
 func TestTheRepositoryOutranksTheUserBranchSuffix(t *testing.T) {
-	path := userConfigIn(t)
+	path := testkit.UserConfigIn(t)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte("branch_suffix = \"\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ctx, err := kit.Open(committedRepo(t, minimalConf+"WORKTREE_BRANCH_SUFFIX=_wt\n"))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf+"WORKTREE_BRANCH_SUFFIX=_wt\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,8 +174,8 @@ func TestTheRepositoryOutranksTheUserBranchSuffix(t *testing.T) {
 // What a type is called is a naming, not a move: the branch reads the word,
 // the worktree sits under the type, and either spelling names the same work.
 func TestNewNamesTheBranchByTheTypesWord(t *testing.T) {
-	conf := minimalConf + "WORKTREE_TYPE_NAMES=(feat=feature)\nWORKTREE_BRANCH_SUFFIX=\"\"\n"
-	ctx, err := kit.Open(committedRepo(t, conf))
+	conf := testkit.MinimalConf + "WORKTREE_TYPE_NAMES=(feat=feature)\nWORKTREE_BRANCH_SUFFIX=\"\"\n"
+	ctx, err := kit.Open(testkit.CommittedRepo(t, conf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +206,7 @@ func TestNewNamesTheBranchByTheTypesWord(t *testing.T) {
 // One person's naming travels with them: it applies in every repository that
 // has not named its types itself, and only to the types that repository has.
 func TestTheUserTypeNamesApplyWhereTheRepositoryIsSilent(t *testing.T) {
-	path := userConfigIn(t)
+	path := testkit.UserConfigIn(t)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +214,7 @@ func TestTheUserTypeNamesApplyWhereTheRepositoryIsSilent(t *testing.T) {
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ctx, err := kit.Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,14 +235,14 @@ func TestTheUserTypeNamesApplyWhereTheRepositoryIsSilent(t *testing.T) {
 // A repository that names its types has named them for everybody who clones
 // it, whatever they call them elsewhere.
 func TestTheRepositoryOutranksTheUserTypeNames(t *testing.T) {
-	path := userConfigIn(t)
+	path := testkit.UserConfigIn(t)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte("type_names = [\"feat=feature\"]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ctx, err := kit.Open(committedRepo(t, minimalConf+"WORKTREE_TYPE_NAMES=(feat=feat)\n"))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf+"WORKTREE_TYPE_NAMES=(feat=feat)\n"))
 	if err != nil {
 		t.Fatal(err)
 	}

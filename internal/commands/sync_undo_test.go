@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -22,12 +23,12 @@ func TestSyncUndoPutsBackWhatSyncRunMoved(t *testing.T) {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
 	ctx, bump := runFixture(t, true)
-	old := gitOut(t, bump, "rev-parse", "HEAD")
+	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	var out bytes.Buffer
 	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
-	if gitOut(t, bump, "log", "-1", "--format=%s") != "chore: regen" {
+	if testkit.GitOut(t, bump, "log", "-1", "--format=%s") != "chore: regen" {
 		t.Fatal("fixture did not produce the regeneration commit; the test is vacuous")
 	}
 
@@ -35,10 +36,10 @@ func TestSyncUndoPutsBackWhatSyncRunMoved(t *testing.T) {
 	if err := SyncUndo(ctx, "bump", noAgentsUndo(), &undoOut); err != nil {
 		t.Fatalf("err %v\n%s", err, undoOut.String())
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != old {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != old {
 		t.Fatal("HEAD not restored to the pre-run tip")
 	}
-	if gitOut(t, bump, "log", "-1", "--format=%s") == "chore: regen" {
+	if testkit.GitOut(t, bump, "log", "-1", "--format=%s") == "chore: regen" {
 		t.Fatal("regeneration commit still present after undo")
 	}
 	if !strings.Contains(undoOut.String(), "bump") || !strings.Contains(undoOut.String(), "→") {
@@ -63,15 +64,15 @@ func TestSyncUndoRefusesAWorktreeCommittedToSinceTheRun(t *testing.T) {
 	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
-	gitIn(t, bump, "commit", "-q", "--allow-empty", "-m", "after the run")
-	after := gitOut(t, bump, "rev-parse", "HEAD")
+	testkit.GitIn(t, bump, "commit", "-q", "--allow-empty", "-m", "after the run")
+	after := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 
 	var undoOut bytes.Buffer
 	err := SyncUndo(ctx, "bump", noAgentsUndo(), &undoOut)
 	if err == nil || !strings.Contains(err.Error(), "moved since that run") {
 		t.Fatalf("err %v\n%s", err, undoOut.String())
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != after {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != after {
 		t.Fatal("HEAD moved despite the refusal")
 	}
 
@@ -81,10 +82,10 @@ func TestSyncUndoRefusesAWorktreeCommittedToSinceTheRun(t *testing.T) {
 	if err := SyncUndo(ctx, "bump", forced, &undoOut); err != nil {
 		t.Fatalf("forced undo err %v\n%s", err, undoOut.String())
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") == after {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") == after {
 		t.Fatal("forced undo did not rewind")
 	}
-	if gitOut(t, ctx.Repo.MainRoot, "rev-parse", wtsync.SafetyPrefix+"feat_wt/bump/100") != after {
+	if testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", wtsync.SafetyPrefix+"feat_wt/bump/100") != after {
 		t.Fatal("forced undo did not pin the tip it discarded")
 	}
 }
@@ -98,13 +99,13 @@ func TestSyncUndoNamesAFinishedByHandRebaseInsteadOfCallingItMoved(t *testing.T)
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
 	ctx, bump, gitDir, st := handedOver(t)
-	writeFile(t, bump, "a.txt", "merged by hand\n")
-	gitOut(t, bump, "add", "--", "a.txt")
-	gitTry(t, bump, "rebase", "--continue")
+	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
+	testkit.GitOut(t, bump, "add", "--", "a.txt")
+	testkit.GitTry(t, bump, "rebase", "--continue")
 	if busy, err := wtsync.RebaseInProgress(bump); err != nil || busy {
 		t.Fatalf("RebaseInProgress = %v, %v; the hand continue did not finish", busy, err)
 	}
-	finished := gitOut(t, bump, "rev-parse", "HEAD")
+	finished := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 
 	var out bytes.Buffer
 	err := SyncUndo(ctx, "bump", noAgentsUndo(), &out)
@@ -114,7 +115,7 @@ func TestSyncUndoNamesAFinishedByHandRebaseInsteadOfCallingItMoved(t *testing.T)
 	if strings.Contains(err.Error(), "moved since") {
 		t.Fatalf("the run's own rebase is called a branch that moved: %v", err)
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != finished {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != finished {
 		t.Fatal("HEAD moved despite the refusal")
 	}
 	if has, herr := wtsync.HasPlan(gitDir); herr != nil || !has {
@@ -127,10 +128,10 @@ func TestSyncUndoNamesAFinishedByHandRebaseInsteadOfCallingItMoved(t *testing.T)
 	if err := SyncUndo(ctx, "bump", forced, &out); err != nil {
 		t.Fatalf("forced undo err %v\n%s", err, out.String())
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != st.OldTip {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != st.OldTip {
 		t.Fatal("the forced undo did not rewind to the run's old tip")
 	}
-	if gitOut(t, ctx.Repo.MainRoot, "rev-parse", wtsync.SafetyPrefix+"feat_wt/bump/100") != finished {
+	if testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", wtsync.SafetyPrefix+"feat_wt/bump/100") != finished {
 		t.Fatal("the forced undo did not pin the finished rebase")
 	}
 }
@@ -143,7 +144,7 @@ func TestSyncUndoAbortsWhatSyncRunHandedOver(t *testing.T) {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
 	ctx, bump := contestedFixture(t)
-	old := gitOut(t, bump, "rev-parse", "HEAD")
+	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	gitDir, _ := handOverNow(t, ctx, bump)
 	if _, ok, err := wtsync.ReadLock(gitDir); err != nil || !ok {
 		t.Fatalf("ReadLock = %v, %v; the run kept no lock and the test is vacuous", ok, err)
@@ -159,7 +160,7 @@ func TestSyncUndoAbortsWhatSyncRunHandedOver(t *testing.T) {
 	if busy, err := wtsync.RebaseInProgress(bump); err != nil || busy {
 		t.Fatalf("RebaseInProgress = %v, %v; undo left the rebase in place", busy, err)
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != old {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != old {
 		t.Fatal("HEAD is not back at the pre-run tip")
 	}
 	if has, err := wtsync.HasPlan(gitDir); err != nil || has {
@@ -181,7 +182,7 @@ func TestSyncUndoRefusesARebaseItDidNotLeave(t *testing.T) {
 	ctx, bump, gitDir, st := handedOver(t)
 	restartedByHand(t, bump, st)
 	main := ctx.Repo.MainRoot
-	moved := gitOut(t, main, "rev-parse", st.Branch)
+	moved := testkit.GitOut(t, main, "rev-parse", st.Branch)
 	if moved == st.OldTip {
 		t.Fatal("the branch did not move; the test is vacuous")
 	}
@@ -203,7 +204,7 @@ func TestSyncUndoRefusesARebaseItDidNotLeave(t *testing.T) {
 		if _, ok, err := wtsync.ReadState(gitDir); err != nil || !ok {
 			t.Fatalf("force=%v: ReadState = %v, %v; the sidecar is gone", force, ok, err)
 		}
-		if got := gitOut(t, main, "rev-parse", st.Branch); got != moved {
+		if got := testkit.GitOut(t, main, "rev-parse", st.Branch); got != moved {
 			t.Fatalf("force=%v: %s is at %s, want %s", force, st.Branch, got, moved)
 		}
 	}
@@ -217,10 +218,10 @@ func TestSyncUndoNamesTheCommitAPersonMadeInsideTheHandover(t *testing.T) {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
 	ctx, bump, gitDir, _ := handedOver(t)
-	writeFile(t, bump, "a.txt", "merged by hand\n")
-	gitOut(t, bump, "add", "--", "a.txt")
-	gitOut(t, bump, "commit", "-q", "-m", "resolved by hand")
-	sha := gitOut(t, bump, "rev-parse", "HEAD")
+	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
+	testkit.GitOut(t, bump, "add", "--", "a.txt")
+	testkit.GitOut(t, bump, "commit", "-q", "-m", "resolved by hand")
+	sha := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 
 	var out bytes.Buffer
 	err := SyncUndo(ctx, "bump", noAgentsUndo(), &out)
@@ -236,7 +237,7 @@ func TestSyncUndoNamesTheCommitAPersonMadeInsideTheHandover(t *testing.T) {
 	if _, ok, err := wtsync.ReadState(gitDir); err != nil || !ok {
 		t.Fatalf("ReadState = %v, %v; the sidecar is gone", ok, err)
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != sha {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != sha {
 		t.Fatal("HEAD moved despite the refusal")
 	}
 }
@@ -250,7 +251,7 @@ func TestSyncHandoverRecordsHead(t *testing.T) {
 	}
 	ctx, bump := contestedFixture(t)
 	_, st := handOverNow(t, ctx, bump)
-	if head := gitOut(t, bump, "rev-parse", "HEAD"); st.Head == "" || st.Head != head {
+	if head := testkit.GitOut(t, bump, "rev-parse", "HEAD"); st.Head == "" || st.Head != head {
 		t.Fatalf("sidecar head %q, HEAD %s", st.Head, head)
 	}
 }
@@ -276,11 +277,11 @@ func TestSyncUndoForcedPastAMovedHandoverSaysWhatItRewound(t *testing.T) {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
 	ctx, bump := contestedFixture(t)
-	old := gitOut(t, bump, "rev-parse", "HEAD")
+	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	handOverNow(t, ctx, bump)
 	main := ctx.Repo.MainRoot
-	gitOut(t, main, "update-ref", "refs/heads/feat_wt/bump", "main")
-	moved := gitOut(t, main, "rev-parse", "feat_wt/bump")
+	testkit.GitOut(t, main, "update-ref", "refs/heads/feat_wt/bump", "main")
+	moved := testkit.GitOut(t, main, "rev-parse", "feat_wt/bump")
 	if moved == old {
 		t.Fatal("the branch did not move; the test is vacuous")
 	}
@@ -297,10 +298,10 @@ func TestSyncUndoForcedPastAMovedHandoverSaysWhatItRewound(t *testing.T) {
 	if want := git.ShortID(moved, 7) + " kept under refs/wt-sync/feat_wt/bump/100, wt sync undo bump puts it back"; !strings.Contains(out.String(), want) {
 		t.Fatalf("output lacks %q:\n%s", want, out.String())
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != old {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != old {
 		t.Fatal("HEAD is not back at the pre-run tip")
 	}
-	if gitOut(t, main, "rev-parse", wtsync.SafetyPrefix+"feat_wt/bump/100") != moved {
+	if testkit.GitOut(t, main, "rev-parse", wtsync.SafetyPrefix+"feat_wt/bump/100") != moved {
 		t.Fatal("the forced undo did not pin the tip it discarded")
 	}
 }
@@ -313,11 +314,11 @@ func TestSyncUndoForcedPastACommitInsideSaysWhereItKeptIt(t *testing.T) {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
 	ctx, bump, _, _ := handedOver(t)
-	old := gitOut(t, ctx.Repo.MainRoot, "rev-parse", "feat_wt/bump")
-	writeFile(t, bump, "a.txt", "merged by hand\n")
-	gitOut(t, bump, "add", "--", "a.txt")
-	gitOut(t, bump, "commit", "-q", "-m", "resolved by hand")
-	sha := gitOut(t, bump, "rev-parse", "HEAD")
+	old := testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", "feat_wt/bump")
+	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
+	testkit.GitOut(t, bump, "add", "--", "a.txt")
+	testkit.GitOut(t, bump, "commit", "-q", "-m", "resolved by hand")
+	sha := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 
 	forced := noAgentsUndo()
 	forced.Force = true
@@ -329,7 +330,7 @@ func TestSyncUndoForcedPastACommitInsideSaysWhereItKeptIt(t *testing.T) {
 	if !strings.Contains(out.String(), want) {
 		t.Fatalf("output lacks %q:\n%s", want, out.String())
 	}
-	if gitOut(t, ctx.Repo.MainRoot, "rev-parse", "refs/wt-sync/feat_wt/bump/100") != sha {
+	if testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", "refs/wt-sync/feat_wt/bump/100") != sha {
 		t.Fatal("the ref the row names does not pin the commit")
 	}
 }
@@ -339,15 +340,15 @@ func TestSyncUndoUnderAnIdleSessionAsksThenTellsIt(t *testing.T) {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
 	ctx, bump := runFixture(t, false)
-	old := gitOut(t, bump, "rev-parse", "HEAD")
+	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	var out bytes.Buffer
 	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
-	rebased := gitOut(t, bump, "rev-parse", "HEAD")
+	rebased := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 
 	opts := noAgentsUndo()
-	opts.Agents = idleIn(t, bump, "bump-1")
+	opts.Agents = testkit.IdleIn(t, bump, "bump-1")
 	var asked []string
 	opts.Confirm = func(works []string) (bool, error) { asked = works; return false, nil }
 	var no bytes.Buffer
@@ -358,7 +359,7 @@ func TestSyncUndoUnderAnIdleSessionAsksThenTellsIt(t *testing.T) {
 		!strings.Contains(no.String(), "⚠ bump: session bump-1 (idle) is in it") {
 		t.Fatalf("asked %v\n%s", asked, no.String())
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != rebased {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != rebased {
 		t.Fatal("HEAD moved after no")
 	}
 
@@ -381,7 +382,7 @@ func TestSyncUndoNoLeavesAHandoverAndItsLock(t *testing.T) {
 	}
 	ctx, bump, gitDir, st := handedOver(t)
 	opts := noAgentsUndo()
-	opts.Agents = idleIn(t, bump, "bump-1")
+	opts.Agents = testkit.IdleIn(t, bump, "bump-1")
 	opts.Confirm = func([]string) (bool, error) { return false, nil }
 	var out bytes.Buffer
 	if err := SyncUndo(ctx, "bump", opts, &out); err != nil {
@@ -404,18 +405,18 @@ func TestSyncUndoRefusesASessionThatWokeWhileAsked(t *testing.T) {
 	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
-	rebased := gitOut(t, bump, "rev-parse", "HEAD")
+	rebased := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	opts := noAgentsUndo()
-	opts.Agents = idleIn(t, bump, "bump-1")
+	opts.Agents = testkit.IdleIn(t, bump, "bump-1")
 	opts.Confirm = func([]string) (bool, error) { return true, nil }
-	woke := idleIn(t, bump, "bump-1")
+	woke := testkit.IdleIn(t, bump, "bump-1")
 	woke[0].Status = "busy"
 	opts.Relist = func() ([]wtsync.Agent, error) { return woke, nil }
 	var undoOut bytes.Buffer
 	if err := SyncUndo(ctx, "bump", opts, &undoOut); err == nil || !strings.Contains(err.Error(), "busy in it now: bump-1") {
 		t.Fatalf("err %v\n%s", err, undoOut.String())
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != rebased {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != rebased {
 		t.Fatal("HEAD moved")
 	}
 }

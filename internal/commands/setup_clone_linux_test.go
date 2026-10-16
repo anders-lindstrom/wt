@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
 // withFileCloner stands in for the FICLONE of one file: a byte copy, which is
@@ -41,7 +43,7 @@ func nothingBeside(t *testing.T, dir string) {
 func TestCloneTreeWalkMakesDirsLinksAndFiles(t *testing.T) {
 	withFileCloner(t, byteCopy)
 	from := filepath.Join(t.TempDir(), "node_modules")
-	mustWrite(t, filepath.Join(from, "pkg", "index.js"), "x")
+	testkit.MustWrite(t, filepath.Join(from, "pkg", "index.js"), "x")
 	if err := os.Symlink("pkg/index.js", filepath.Join(from, "link")); err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +58,7 @@ func TestCloneTreeWalkMakesDirsLinksAndFiles(t *testing.T) {
 	if err := cloneTreeCOW(from, to); err != nil {
 		t.Fatal(err)
 	}
-	if got := mustRead(t, filepath.Join(to, "pkg", "index.js")); got != "x" {
+	if got := testkit.MustRead(t, filepath.Join(to, "pkg", "index.js")); got != "x" {
 		t.Errorf("file = %q", got)
 	}
 	if got, err := os.Readlink(filepath.Join(to, "link")); err != nil || got != "pkg/index.js" {
@@ -89,9 +91,9 @@ func TestCloneTreeFailureLeavesNothing(t *testing.T) {
 				return byteCopy(from, to, perm)
 			})
 			from := filepath.Join(t.TempDir(), "node_modules")
-			mustWrite(t, filepath.Join(from, "a", "1.js"), "1")
-			mustWrite(t, filepath.Join(from, "a", "2.js"), "2")
-			mustWrite(t, filepath.Join(from, "b", "3.js"), "3")
+			testkit.MustWrite(t, filepath.Join(from, "a", "1.js"), "1")
+			testkit.MustWrite(t, filepath.Join(from, "a", "2.js"), "2")
+			testkit.MustWrite(t, filepath.Join(from, "b", "3.js"), "3")
 			parent := t.TempDir()
 			err := cloneTreeCOW(from, filepath.Join(parent, "node_modules"))
 			if err == nil {
@@ -125,7 +127,7 @@ func TestRemoveStaleClonesKeepsTheLiveOnes(t *testing.T) {
 	live := ".node_modules.wt-clone-" + strconv.Itoa(os.Getpid()) + "-4321"
 	other := ".gradle.wt-clone-" + deadPID(t) + "-1234"
 	for _, n := range []string{stale, old, live, other} {
-		mustWrite(t, filepath.Join(parent, n, "half.js"), "half")
+		testkit.MustWrite(t, filepath.Join(parent, n, "half.js"), "half")
 	}
 	if err := removeStaleClones(parent, "node_modules"); err != nil {
 		t.Fatal(err)
@@ -146,7 +148,7 @@ func TestCloneTreeNamesItsTemporaryTreeForItsPID(t *testing.T) {
 		return byteCopy(from, to, perm)
 	})
 	from := filepath.Join(t.TempDir(), "node_modules")
-	mustWrite(t, filepath.Join(from, "a.js"), "a")
+	testkit.MustWrite(t, filepath.Join(from, "a.js"), "a")
 	if err := cloneTreeCOW(from, filepath.Join(t.TempDir(), "node_modules")); err != nil {
 		t.Fatal(err)
 	}
@@ -159,9 +161,9 @@ func TestCloneTreeNamesItsTemporaryTreeForItsPID(t *testing.T) {
 // nothing else would reach them once npm install made it.
 func TestSetupSweepsStaleClonesBesideAnExistingCache(t *testing.T) {
 	ctx, main, target := cacheFixture(t)
-	mustMkdir(t, filepath.Join(target, "node_modules"))
+	testkit.MustMkdir(t, filepath.Join(target, "node_modules"))
 	stale := filepath.Join(target, ".node_modules.wt-clone-"+deadPID(t)+"-1")
-	mustWrite(t, filepath.Join(stale, "half.js"), "half")
+	testkit.MustWrite(t, filepath.Join(stale, "half.js"), "half")
 	withCloner(t, func(_, to string) error { return os.Mkdir(to, 0o755) })
 	var buf bytes.Buffer
 	cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf)

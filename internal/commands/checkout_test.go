@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
 func TestWorkNameFromBranch(t *testing.T) {
@@ -23,8 +24,8 @@ func TestWorkNameFromBranch(t *testing.T) {
 }
 
 func TestCheckoutPutsAWorktreeOnAnExistingBranch(t *testing.T) {
-	ctx, _ := kit.Open(committedRepo(t, minimalConf))
-	gitIn(t, ctx.Repo.MainRoot, "branch", "feature/pr-123")
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "feature/pr-123")
 
 	var buf bytes.Buffer
 	path, err := Checkout(ctx, "feature/pr-123", "", NewOptions{NoSetup: true}, &buf)
@@ -41,8 +42,8 @@ func TestCheckoutPutsAWorktreeOnAnExistingBranch(t *testing.T) {
 }
 
 func TestCheckoutHonoursAnExplicitWorkName(t *testing.T) {
-	ctx, _ := kit.Open(committedRepo(t, minimalConf))
-	gitIn(t, ctx.Repo.MainRoot, "branch", "feature/pr-123")
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "feature/pr-123")
 
 	var buf bytes.Buffer
 	path, err := Checkout(ctx, "feature/pr-123", "review", NewOptions{NoSetup: true}, &buf)
@@ -56,7 +57,7 @@ func TestCheckoutHonoursAnExplicitWorkName(t *testing.T) {
 
 // Checkout must never create a branch: it exists to work on one that is there.
 func TestCheckoutRefusesAMissingBranch(t *testing.T) {
-	ctx, _ := kit.Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
 	if _, err := Checkout(ctx, "no-such-branch", "", NewOptions{NoSetup: true}, &buf); err == nil {
 		t.Fatal("want a refusal for a branch that does not exist")
@@ -67,8 +68,8 @@ func TestCheckoutRefusesAMissingBranch(t *testing.T) {
 }
 
 func TestCheckoutRefusesAnOccupiedPath(t *testing.T) {
-	ctx, _ := kit.Open(committedRepo(t, minimalConf))
-	gitIn(t, ctx.Repo.MainRoot, "branch", "dup")
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "dup")
 	var buf bytes.Buffer
 	if _, err := Checkout(ctx, "dup", "", NewOptions{NoSetup: true}, &buf); err != nil {
 		t.Fatal(err)

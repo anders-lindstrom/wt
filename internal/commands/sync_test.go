@@ -11,19 +11,9 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
-
-// syncRepo builds a repository whose origin is itself, so origin/main
-// exists, with a declaration on main and two feature worktrees: one that
-// conflicts on the declared owned line, and one cut after trunk's last
-// commit, so it is current.
-// gitOut runs git and returns its stdout; the package's gitIn returns nothing.
-func gitOut(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	return gittest.Git(t, dir, args...)
-}
 
 // syncBlock is a worktree's row in the wt sync overview and the lines under it.
 func syncBlock(t *testing.T, out, work string) string {
@@ -96,9 +86,9 @@ func TestSyncKeepsTheStopAndFileOnAHandedOverRow(t *testing.T) {
 func TestSyncShowsAFinishedByHandHandoverAsSuch(t *testing.T) {
 	ctx, bump := contestedFixture(t)
 	handOverNow(t, ctx, bump)
-	writeFile(t, bump, "a.txt", "merged by hand\n")
-	gitOut(t, bump, "add", "--", "a.txt")
-	gitTry(t, bump, "rebase", "--continue")
+	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
+	testkit.GitOut(t, bump, "add", "--", "a.txt")
+	testkit.GitTry(t, bump, "rebase", "--continue")
 	if busy, err := wtsync.RebaseInProgress(bump); err != nil || busy {
 		t.Fatalf("RebaseInProgress = %v, %v; the hand continue did not finish", busy, err)
 	}
@@ -131,7 +121,7 @@ func TestSyncShowsAFinishedByHandHandoverAsSuch(t *testing.T) {
 
 	ctx, bump = contestedFixture(t)
 	handOverNow(t, ctx, bump)
-	gitOut(t, bump, "rebase", "--abort")
+	testkit.GitOut(t, bump, "rebase", "--abort")
 	buf.Reset()
 	if err := Sync(ctx, SyncOptions{NoFetch: true}, &buf); err != nil {
 		t.Fatalf("Sync: %v", err)
@@ -149,12 +139,12 @@ func TestSyncShowsAFinishedByHandHandoverAsSuch(t *testing.T) {
 func TestSyncShowsAHandoverFinishedWithACommitInsideAsMoved(t *testing.T) {
 	ctx, bump := contestedFixture(t)
 	handOverNow(t, ctx, bump)
-	gitOut(t, ctx.Repo.MainRoot, "config", "core.hooksPath", filepath.Join(ctx.Repo.MainRoot, ".git", "hooks"))
-	writeFile(t, bump, "a.txt", "merged by hand\n")
-	gitOut(t, bump, "add", "--", "a.txt")
-	gitOut(t, bump, "commit", "-q", "-m", "resolved by hand")
-	gitOut(t, bump, "commit", "-q", "--allow-empty", "-m", "inside the rebase")
-	gitTry(t, bump, "rebase", "--continue")
+	testkit.GitOut(t, ctx.Repo.MainRoot, "config", "core.hooksPath", filepath.Join(ctx.Repo.MainRoot, ".git", "hooks"))
+	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
+	testkit.GitOut(t, bump, "add", "--", "a.txt")
+	testkit.GitOut(t, bump, "commit", "-q", "-m", "resolved by hand")
+	testkit.GitOut(t, bump, "commit", "-q", "--allow-empty", "-m", "inside the rebase")
+	testkit.GitTry(t, bump, "rebase", "--continue")
 	if busy, err := wtsync.RebaseInProgress(bump); err != nil || busy {
 		t.Fatalf("RebaseInProgress = %v, %v; the hand continue did not finish", busy, err)
 	}
@@ -198,9 +188,13 @@ func TestSyncDetailNamesThePlanAndTheYoursFilesMidHandover(t *testing.T) {
 	}
 }
 
+// syncRepo builds a repository whose origin is itself, so origin/main
+// exists, with a declaration on main and two feature worktrees: one that
+// conflicts on the declared owned line, and one cut after trunk's last
+// commit, so it is current.
 func syncRepo(t *testing.T) *kit.Context {
 	t.Helper()
-	main := committedRepo(t, minimalConf)
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	write := func(rel, content string) {
 		t.Helper()
 		if err := os.WriteFile(filepath.Join(main, rel), []byte(content), 0o644); err != nil {
@@ -213,8 +207,8 @@ func syncRepo(t *testing.T) *kit.Context {
 	// base so a test can make both sides edit it and get a real
 	// modify/modify conflict rather than an add/add.
 	write("a.txt", "base\n")
-	gitIn(t, main, "add", "-A")
-	gitIn(t, main, "commit", "-q", "-m", "declare")
+	testkit.GitIn(t, main, "add", "-A")
+	testkit.GitIn(t, main, "commit", "-q", "-m", "declare")
 	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
@@ -227,20 +221,20 @@ func syncRepo(t *testing.T) *kit.Context {
 	if err := os.WriteFile(filepath.Join(bump, "v.txt"), []byte("1.0.1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, bump, "commit", "-q", "-am", "bump")
+	testkit.GitIn(t, bump, "commit", "-q", "-am", "bump")
 	write("v.txt", "1.0.5\n")
-	gitIn(t, main, "commit", "-q", "-am", "trunk bump")
+	testkit.GitIn(t, main, "commit", "-q", "-am", "trunk bump")
 	if _, err := New(ctx, "feat/other", NewOptions{NoSetup: true}, &buf); err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, main, "remote", "add", "origin", main)
-	gitIn(t, main, "fetch", "-q", "origin")
+	testkit.GitIn(t, main, "remote", "add", "origin", main)
+	testkit.GitIn(t, main, "fetch", "-q", "origin")
 	return ctx
 }
 
 func TestSyncPrintsTheTriageAndChangesNothing(t *testing.T) {
 	ctx := syncRepo(t)
-	before := gitOut(t, ctx.Repo.MainRoot, "for-each-ref", "refs/heads")
+	before := testkit.GitOut(t, ctx.Repo.MainRoot, "for-each-ref", "refs/heads")
 	var buf bytes.Buffer
 	if err := Sync(ctx, SyncOptions{NoFetch: true}, &buf); err != nil {
 		t.Fatalf("Sync: %v", err)
@@ -259,7 +253,7 @@ func TestSyncPrintsTheTriageAndChangesNothing(t *testing.T) {
 	if !strings.Contains(block, "1/1") || !strings.Contains(block, "v.txt✓") {
 		t.Errorf("the stop line names the stop and the resolved file:\n%s", out)
 	}
-	if after := gitOut(t, ctx.Repo.MainRoot, "for-each-ref", "refs/heads"); after != before {
+	if after := testkit.GitOut(t, ctx.Repo.MainRoot, "for-each-ref", "refs/heads"); after != before {
 		t.Error("sync changed a ref")
 	}
 	if !strings.Contains(out, "against origin/main ") || !strings.Contains(out, "as last fetched") {
@@ -280,16 +274,16 @@ func TestSyncAssessedInParallelPrintsTheSequentialResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, contested, "a.txt", "branch\n")
-	gitIn(t, contested, "commit", "-q", "-am", "branch edits a")
+	testkit.WriteFile(t, contested, "a.txt", "branch\n")
+	testkit.GitIn(t, contested, "commit", "-q", "-am", "branch edits a")
 	// clean: a file of its own, nothing trunk touches.
 	clean, err := New(ctx, "feat/clean", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, clean, "c.txt", "clean\n")
-	gitIn(t, clean, "add", "--", "c.txt")
-	gitIn(t, clean, "commit", "-q", "-m", "adds c")
+	testkit.WriteFile(t, clean, "c.txt", "clean\n")
+	testkit.GitIn(t, clean, "add", "--", "c.txt")
+	testkit.GitIn(t, clean, "commit", "-q", "-m", "adds c")
 	// stale: nothing of its own once trunk moves on.
 	if _, err := New(ctx, "feat/stale", NewOptions{NoSetup: true}, &buf); err != nil {
 		t.Fatal(err)
@@ -302,9 +296,9 @@ func TestSyncAssessedInParallelPrintsTheSequentialResult(t *testing.T) {
 	if err := os.RemoveAll(gone); err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, main, "a.txt", "trunk\n")
-	gitIn(t, main, "commit", "-q", "-am", "trunk edits a")
-	gitIn(t, main, "fetch", "-q", "origin")
+	testkit.WriteFile(t, main, "a.txt", "trunk\n")
+	testkit.GitIn(t, main, "commit", "-q", "-am", "trunk edits a")
+	testkit.GitIn(t, main, "fetch", "-q", "origin")
 
 	buf.Reset()
 	onto, cfg, agents, _, err := syncInputs(ctx, SyncOptions{NoFetch: true}, &buf, nil)
@@ -354,17 +348,6 @@ func TestSyncAssessedInParallelPrintsTheSequentialResult(t *testing.T) {
 	}
 }
 
-// fetchHead is the fixture's FETCH_HEAD, whose mtime is the age --no-fetch
-// reports.
-func fetchHead(t *testing.T, main string) string {
-	t.Helper()
-	path := gitOut(t, main, "rev-parse", "--git-path", "FETCH_HEAD")
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(main, path)
-	}
-	return path
-}
-
 func ageFile(t *testing.T, path string, d time.Duration) {
 	t.Helper()
 	old := time.Now().Add(-d)
@@ -382,9 +365,9 @@ func TestSyncFetchesTrunkFirst(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(main, "a.txt"), []byte("trunk\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, main, "commit", "-q", "-am", "trunk edits a")
-	head := gitOut(t, main, "rev-parse", "HEAD")
-	before := gitOut(t, main, "for-each-ref", "refs/heads")
+	testkit.GitIn(t, main, "commit", "-q", "-am", "trunk edits a")
+	head := testkit.GitOut(t, main, "rev-parse", "HEAD")
+	before := testkit.GitOut(t, main, "for-each-ref", "refs/heads")
 
 	var buf bytes.Buffer
 	if err := Sync(ctx, SyncOptions{}, &buf); err != nil {
@@ -399,10 +382,10 @@ func TestSyncFetchesTrunkFirst(t *testing.T) {
 			t.Errorf("a fetched header says %q:\n%s", not, out)
 		}
 	}
-	if got := gitOut(t, main, "rev-parse", "origin/main"); got != head {
+	if got := testkit.GitOut(t, main, "rev-parse", "origin/main"); got != head {
 		t.Errorf("origin/main is %s after the fetch, want %s", got, head)
 	}
-	if after := gitOut(t, main, "for-each-ref", "refs/heads"); after != before {
+	if after := testkit.GitOut(t, main, "for-each-ref", "refs/heads"); after != before {
 		t.Error("the fetch changed a branch")
 	}
 }
@@ -412,12 +395,12 @@ func TestSyncFetchesTrunkFirst(t *testing.T) {
 func TestSyncNoFetchComparesWithTrunkAsLastFetched(t *testing.T) {
 	ctx := syncRepo(t)
 	main := ctx.Repo.MainRoot
-	stale := gitOut(t, main, "rev-parse", "origin/main")
+	stale := testkit.GitOut(t, main, "rev-parse", "origin/main")
 	if err := os.WriteFile(filepath.Join(main, "a.txt"), []byte("trunk\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, main, "commit", "-q", "-am", "trunk edits a")
-	ageFile(t, fetchHead(t, main), 3*time.Hour+5*time.Minute)
+	testkit.GitIn(t, main, "commit", "-q", "-am", "trunk edits a")
+	ageFile(t, testkit.FetchHead(t, main), 3*time.Hour+5*time.Minute)
 
 	var buf bytes.Buffer
 	if err := Sync(ctx, SyncOptions{NoFetch: true}, &buf); err != nil {
@@ -426,11 +409,11 @@ func TestSyncNoFetchComparesWithTrunkAsLastFetched(t *testing.T) {
 	if want := "against origin/main " + stale[:7] + ", as last fetched 3h ago\n"; !strings.Contains(buf.String(), want) {
 		t.Errorf("want %q in:\n%s", want, buf.String())
 	}
-	if got := gitOut(t, main, "rev-parse", "origin/main"); got != stale {
+	if got := testkit.GitOut(t, main, "rev-parse", "origin/main"); got != stale {
 		t.Error("--no-fetch moved origin/main")
 	}
 
-	if err := os.Remove(fetchHead(t, main)); err != nil {
+	if err := os.Remove(testkit.FetchHead(t, main)); err != nil {
 		t.Fatal(err)
 	}
 	buf.Reset()
@@ -447,9 +430,9 @@ func TestSyncNoFetchComparesWithTrunkAsLastFetched(t *testing.T) {
 func TestSyncReportsAFailedFetchAndStillPrintsTheTable(t *testing.T) {
 	ctx := syncRepo(t)
 	main := ctx.Repo.MainRoot
-	sha := gitOut(t, main, "rev-parse", "origin/main")
-	gitIn(t, main, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone"))
-	ageFile(t, fetchHead(t, main), 3*time.Hour+5*time.Minute)
+	sha := testkit.GitOut(t, main, "rev-parse", "origin/main")
+	testkit.GitIn(t, main, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone"))
+	ageFile(t, testkit.FetchHead(t, main), 3*time.Hour+5*time.Minute)
 
 	var buf bytes.Buffer
 	if err := Sync(ctx, SyncOptions{}, &buf); err != nil {
@@ -490,8 +473,8 @@ func TestSyncReportsAFailedFetchAndStillPrintsTheTable(t *testing.T) {
 func TestSyncWithNoTrunkAfterAFailedFetchIsAnError(t *testing.T) {
 	ctx := syncRepo(t)
 	main := ctx.Repo.MainRoot
-	gitIn(t, main, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone"))
-	gitIn(t, main, "update-ref", "-d", "refs/remotes/origin/main")
+	testkit.GitIn(t, main, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone"))
+	testkit.GitIn(t, main, "update-ref", "-d", "refs/remotes/origin/main")
 
 	var buf bytes.Buffer
 	err := Sync(ctx, SyncOptions{}, &buf)
@@ -554,12 +537,12 @@ func TestSyncNamesTheDecidingStopNotTheFirstOne(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(bump, "a.txt"), []byte("branch\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, bump, "commit", "-q", "-am", "branch edits a")
+	testkit.GitIn(t, bump, "commit", "-q", "-am", "branch edits a")
 	if err := os.WriteFile(filepath.Join(main, "a.txt"), []byte("trunk\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, main, "commit", "-q", "-am", "trunk edits a")
-	gitIn(t, main, "fetch", "-q", "origin")
+	testkit.GitIn(t, main, "commit", "-q", "-am", "trunk edits a")
+	testkit.GitIn(t, main, "fetch", "-q", "origin")
 
 	var buf bytes.Buffer
 	if err := Sync(ctx, SyncOptions{NoFetch: true}, &buf); err != nil {
@@ -629,9 +612,9 @@ func TestSyncPrintsAnUnknownRowWithItsError(t *testing.T) {
 }
 
 func TestSyncSaysWhenTrunkDeclaresNothing(t *testing.T) {
-	main := committedRepo(t, minimalConf)
-	gitIn(t, main, "remote", "add", "origin", main)
-	gitIn(t, main, "fetch", "-q", "origin")
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
+	testkit.GitIn(t, main, "remote", "add", "origin", main)
+	testkit.GitIn(t, main, "fetch", "-q", "origin")
 	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
 	if err := Sync(ctx, SyncOptions{NoFetch: true}, &buf); err != nil {

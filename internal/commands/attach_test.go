@@ -8,13 +8,14 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
 // attachFixture is a repository with the worktree `thing`, the search roots
 // kept to it, and the test standing in its main checkout.
 func attachFixture(t *testing.T) (ctx *kit.Context, main, wt string) {
 	t.Helper()
-	ctx, main, wt = canonicalWorktree(t)
+	ctx, main, wt = testkit.CanonicalWorktree(t)
 	t.Setenv("WT_ROOTS", filepath.Dir(main))
 	return ctx, main, wt
 }
@@ -43,7 +44,7 @@ func attachPlan(id string) string { return "attach\n" + id + "\n\nend\n" }
 
 func TestAttachOpensTheOneBackgroundSession(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
-	claudeLists(t, background("fix the crash", "3f9a1c20", "blocked", wt))
+	claudeLists(t, testkit.Background("fix the crash", "3f9a1c20", "blocked", wt))
 
 	plan, shown, err := attach(t, ctx, forShell("thing"), "")
 	if err != nil {
@@ -60,7 +61,7 @@ func TestAttachOpensTheOneBackgroundSession(t *testing.T) {
 // Without the shell layer the binary starts nothing: it names what to run.
 func TestAttachWithoutTheShellLayerPrintsTheCommand(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
-	claudeLists(t, background("fix the crash", "3f9a1c20", "working", wt))
+	claudeLists(t, testkit.Background("fix the crash", "3f9a1c20", "working", wt))
 
 	plan, _, err := attach(t, ctx, AttachOptions{Pattern: "thing", Terminal: true}, "")
 	if plan != "" {
@@ -78,10 +79,10 @@ func TestAttachWithoutTheShellLayerPrintsTheCommand(t *testing.T) {
 
 func TestAttachAsksWhichOfSeveral(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
-	first := background("asks-you", "aaaaaaaa", "blocked", wt)
-	second := background("second look", "bbbbbbbb", "working", wt)
+	first := testkit.Background("asks-you", "aaaaaaaa", "blocked", wt)
+	second := testkit.Background("second look", "bbbbbbbb", "working", wt)
 	second.StartedAt = time.Now().Add(-3 * time.Hour).UnixMilli()
-	claudeLists(t, second, first, inTerminal("typing", "idle", wt, 4242))
+	claudeLists(t, second, first, testkit.InTerminal("typing", "idle", wt, 4242))
 
 	plan, shown, err := attach(t, ctx, forShell("thing"), "2\n")
 	if err != nil {
@@ -105,7 +106,7 @@ func TestAttachAsksWhichOfSeveral(t *testing.T) {
 
 func TestAttachListsAndStopsWithNobodyToAsk(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
-	claudeLists(t, background("one", "aaaaaaaa", "working", wt), background("two", "bbbbbbbb", "working", wt))
+	claudeLists(t, testkit.Background("one", "aaaaaaaa", "working", wt), testkit.Background("two", "bbbbbbbb", "working", wt))
 
 	plan, shown, err := attach(t, ctx, forShell("thing"), "")
 	if err == nil || !strings.Contains(err.Error(), "wt attach thing <session>") {
@@ -124,7 +125,7 @@ func TestAttachListsAndStopsWithNobodyToAsk(t *testing.T) {
 
 func TestAttachNamesSessionsItCannotOpen(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
-	claudeLists(t, inTerminal("typing", "busy", wt, 4242))
+	claudeLists(t, testkit.InTerminal("typing", "busy", wt, 4242))
 
 	plan, shown, err := attach(t, ctx, forShell("thing"), "")
 	if err == nil || plan != "" {
@@ -150,9 +151,9 @@ func TestAttachWithNoSessionNamesResume(t *testing.T) {
 // session id, or part of the name. An id given whole wins over a name.
 func TestAttachPicksTheSessionNamed(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
-	review := background("review of bbbbbbbb", "aaaaaaaa", "working", wt)
-	build := background("build", "bbbbbbbb", "working", wt)
-	claudeLists(t, review, build, inTerminal("typing", "idle", wt, 4242))
+	review := testkit.Background("review of bbbbbbbb", "aaaaaaaa", "working", wt)
+	build := testkit.Background("build", "bbbbbbbb", "working", wt)
+	claudeLists(t, review, build, testkit.InTerminal("typing", "idle", wt, 4242))
 
 	for session, want := range map[string]string{
 		"aaaaaaaa":          "aaaaaaaa",
@@ -190,7 +191,7 @@ func TestAttachPicksTheSessionNamed(t *testing.T) {
 // a worktree opens neither.
 func TestAttachTakesASessionIdAlone(t *testing.T) {
 	ctx, main, _ := attachFixture(t)
-	elsewhere := background("far away", "3f9a1c20", "working", t.TempDir())
+	elsewhere := testkit.Background("far away", "3f9a1c20", "working", t.TempDir())
 	claudeLists(t, elsewhere)
 
 	for _, id := range []string{"3f9a1c20", elsewhere.SessionID} {
@@ -203,7 +204,7 @@ func TestAttachTakesASessionIdAlone(t *testing.T) {
 		t.Errorf("part of an id is not an id alone, got %v", err)
 	}
 
-	gitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/3f9a1c20", filepath.Join(filepath.Dir(main), "demo_wt", "feat_wt", "3f9a1c20"))
+	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/3f9a1c20", filepath.Join(filepath.Dir(main), "demo_wt", "feat_wt", "3f9a1c20"))
 	plan, _, err := attach(t, ctx, forShell("3f9a1c20"), "")
 	if err == nil || plan != "" {
 		t.Fatalf("an id that is also a worktree must open neither: %q, %v", plan, err)
@@ -220,8 +221,8 @@ func TestAttachTakesASessionIdAlone(t *testing.T) {
 func TestAttachWithNoPatternLooksWhereYouStand(t *testing.T) {
 	ctx, main, wt := attachFixture(t)
 	other := filepath.Join(filepath.Dir(main), "demo_wt", "feat_wt", "other")
-	gitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/other", other)
-	claudeLists(t, background("in thing", "aaaaaaaa", "working", wt), background("in other", "bbbbbbbb", "working", other))
+	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/other", other)
+	claudeLists(t, testkit.Background("in thing", "aaaaaaaa", "working", wt), testkit.Background("in other", "bbbbbbbb", "working", other))
 
 	here, err := kit.Open(wt)
 	if err != nil {
@@ -251,9 +252,9 @@ func TestAttachWithNoPatternLooksWhereYouStand(t *testing.T) {
 
 func TestAttachAsksWhichWorktreeOnATie(t *testing.T) {
 	ctx, main, wt := attachFixture(t)
-	gitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/thing-two", filepath.Join(filepath.Dir(main), "demo_wt", "feat_wt", "thing-two"))
-	gitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/thing-one", filepath.Join(filepath.Dir(main), "demo_wt", "feat_wt", "thing-one"))
-	claudeLists(t, background("fix the crash", "3f9a1c20", "working", wt))
+	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/thing-two", filepath.Join(filepath.Dir(main), "demo_wt", "feat_wt", "thing-two"))
+	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/thing-one", filepath.Join(filepath.Dir(main), "demo_wt", "feat_wt", "thing-one"))
+	claudeLists(t, testkit.Background("fix the crash", "3f9a1c20", "working", wt))
 
 	_, shown, err := attach(t, ctx, forShell("thing-"), "")
 	if err == nil || !strings.Contains(shown, `"thing-" matches 2 worktrees:`) || !strings.Contains(err.Error(), "<repository>/<work>") {
@@ -302,8 +303,8 @@ func TestAttachResume(t *testing.T) {
 
 func TestAttachResumeRefusesAListedConversation(t *testing.T) {
 	ctx, main, wt := attachFixture(t)
-	live := background("fix the crash", "3f9a1c20", "done", wt)
-	claudeLists(t, live, inTerminal("typing", "idle", main, 4242))
+	live := testkit.Background("fix the crash", "3f9a1c20", "done", wt)
+	claudeLists(t, live, testkit.InTerminal("typing", "idle", main, 4242))
 
 	o := forShell("thing")
 	o.Resume = true
@@ -337,7 +338,7 @@ func TestAttachResumeRefusesAListedConversation(t *testing.T) {
 func TestAttachRefusesAnIdThatIsNotOne(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
 	for _, id := range []string{"--dangerously-skip-permissions", "a b", "$(reboot)", "a;b", "x\ny"} {
-		claudeLists(t, background("odd", id, "working", wt))
+		claudeLists(t, testkit.Background("odd", id, "working", wt))
 		plan, _, err := attach(t, ctx, forShell("thing"), "")
 		if err == nil || plan != "" {
 			t.Errorf("id %q reached the shell: %q, %v", id, plan, err)
@@ -355,7 +356,7 @@ func TestAttachNeedsClaude(t *testing.T) {
 // The session wt runs under is listed and cannot be chosen.
 func TestAttachDoesNotOpenItsOwnSession(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
-	own := background("me", "aaaaaaaa", "working", wt)
+	own := testkit.Background("me", "aaaaaaaa", "working", wt)
 	own.Own = true
 	claudeLists(t, own)
 
@@ -369,7 +370,7 @@ func TestAttachDoesNotOpenItsOwnSession(t *testing.T) {
 // and its attach id still names it: the refusal says where it is.
 func TestAttachByTheIdOfASessionResumedInATerminal(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
-	resumed := inTerminal("resumed", "idle", wt, 4242)
+	resumed := testkit.InTerminal("resumed", "idle", wt, 4242)
 	resumed.ID, resumed.SessionID = "bbbb2222", "bbbb2222-1111-4222-8333-444455556666"
 	claudeLists(t, resumed)
 
@@ -384,7 +385,7 @@ func TestAttachByTheIdOfASessionResumedInATerminal(t *testing.T) {
 // A line a person may paste carries only an id that looks like one.
 func TestAttachNeverPrintsACommandWithAnOddId(t *testing.T) {
 	ctx, main, wt := attachFixture(t)
-	odd := background("odd", "x; touch /p", "working", wt)
+	odd := testkit.Background("odd", "x; touch /p", "working", wt)
 	odd.SessionID = "0dd00000-1111-4222-8333-444455556666"
 	claudeLists(t, odd)
 
@@ -400,7 +401,7 @@ func TestAttachNeverPrintsACommandWithAnOddId(t *testing.T) {
 
 	// The same id that is also a worktree's name: neither is opened, and
 	// the session's line is not a command.
-	gitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/0dd00000", filepath.Join(filepath.Dir(main), "demo_wt", "feat_wt", "0dd00000"))
+	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/0dd00000", filepath.Join(filepath.Dir(main), "demo_wt", "feat_wt", "0dd00000"))
 	odd.SessionID = "0dd00000"
 	claudeLists(t, odd)
 	_, _, err = attach(t, ctx, forShell("0dd00000"), "")
@@ -409,7 +410,7 @@ func TestAttachNeverPrintsACommandWithAnOddId(t *testing.T) {
 	}
 
 	// In the list it is a background session that cannot be attached by id.
-	claudeLists(t, odd, background("ok", "aaaaaaaa", "working", wt), background("no id", "", "working", wt))
+	claudeLists(t, odd, testkit.Background("ok", "aaaaaaaa", "working", wt), testkit.Background("no id", "", "working", wt))
 	o = forShell("thing")
 	o.Session = "o"
 	_, shown, _ = attach(t, ctx, o, "")
@@ -422,7 +423,7 @@ func TestAttachNeverPrintsACommandWithAnOddId(t *testing.T) {
 // and says what it knows when the text is only the start of a listed id.
 func TestAttachResumeMatchesIdsWhateverTheirCase(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
-	live := background("fix the crash", "3f9a1c20", "working", wt)
+	live := testkit.Background("fix the crash", "3f9a1c20", "working", wt)
 	claudeLists(t, live)
 
 	o := forShell("/")
@@ -445,7 +446,7 @@ func TestAttachResumeMatchesIdsWhateverTheirCase(t *testing.T) {
 // says which worktree it is in.
 func TestAttachFromTheMainCheckoutSaysWhereTheSessionIs(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
-	claudeLists(t, background("fix the crash", "3f9a1c20", "working", wt))
+	claudeLists(t, testkit.Background("fix the crash", "3f9a1c20", "working", wt))
 
 	plan, shown, err := attach(t, ctx, forShell(""), "")
 	if err != nil || plan != attachPlan("3f9a1c20") {
@@ -459,7 +460,7 @@ func TestAttachFromTheMainCheckoutSaysWhereTheSessionIs(t *testing.T) {
 // The hint under a refused --resume is true of the session that refused it.
 func TestAttachResumeHintFitsTheSession(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
-	own := background("me", "aaaaaaaa", "working", wt)
+	own := testkit.Background("me", "aaaaaaaa", "working", wt)
 	own.Own = true
 	claudeLists(t, own)
 

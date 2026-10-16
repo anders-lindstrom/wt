@@ -8,12 +8,13 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
 // locatable builds a repo with one worktree per spec and returns the context.
 func locatable(t *testing.T, specs ...string) *kit.Context {
 	t.Helper()
-	ctx, err := kit.Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +190,7 @@ func TestLocateUnknownNameIsAnError(t *testing.T) {
 // convention: a branch outside it has no type and no work name.
 func TestWorkNamesReadsEachBranchAgainstTheConvention(t *testing.T) {
 	ctx := locatable(t, "fix/login-crash")
-	worktreeAt(t, ctx.Repo.MainRoot, "spare", filepath.Join(ctx.Repo.Parent, "demo-spare"))
+	testkit.WorktreeAt(t, ctx.Repo.MainRoot, "spare", filepath.Join(ctx.Repo.Parent, "demo-spare"))
 
 	names, err := kit.WorkNames(ctx)
 	if err != nil {
@@ -285,7 +286,7 @@ func TestLocateDotPicksTheDeepestWorktreeContainingTheDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	inner := worktreeAt(t, ctx.Repo.MainRoot, "fix_wt/inner", filepath.Join(outer.Path, "nested", "inner"))
+	inner := testkit.WorktreeAt(t, ctx.Repo.MainRoot, "fix_wt/inner", filepath.Join(outer.Path, "nested", "inner"))
 	beside := filepath.Join(outer.Path, "nested", "other")
 	if err := os.MkdirAll(beside, 0o755); err != nil {
 		t.Fatal(err)
@@ -314,7 +315,7 @@ func TestLocateDotPicksTheDeepestWorktreeContainingTheDirectory(t *testing.T) {
 // one you stand in, not the main checkout around it.
 func TestLocateDotInsideAWorktreeUnderTheMainCheckoutIsThatWorktree(t *testing.T) {
 	ctx := locatable(t)
-	nested := worktreeAt(t, ctx.Repo.MainRoot, "fix_wt/nested", filepath.Join(ctx.Repo.MainRoot, "wts", "nested"))
+	nested := testkit.WorktreeAt(t, ctx.Repo.MainRoot, "fix_wt/nested", filepath.Join(ctx.Repo.MainRoot, "wts", "nested"))
 	ctx.Cwd = nested
 
 	got, err := kit.Locate(ctx, ".")

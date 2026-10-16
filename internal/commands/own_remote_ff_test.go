@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -18,9 +19,9 @@ func nothingToRebase(t *testing.T) (f *trunkFixture, x string, opts RunOptions, 
 	t.Helper()
 	f = newTrunkFixture(t)
 	f.declare(t)
-	gitIn(t, f.main, "fetch", "-q", "origin")
+	testkit.GitIn(t, f.main, "fetch", "-q", "origin")
 	x, opts = f.pushedWork(t)
-	local = gitOut(t, x, "rev-parse", "HEAD")
+	local = testkit.GitOut(t, x, "rev-parse", "HEAD")
 	f.advanceOrigin(t, 1)
 	remote = f.onTrunkElsewhere(t, "feat_wt/x")
 	return f, x, opts, local, remote
@@ -30,13 +31,13 @@ func nothingToRebase(t *testing.T) (f *trunkFixture, x string, opts RunOptions, 
 // it, then fetches: origin's branch is on trunk, the one here is not.
 func (f *trunkFixture) onTrunkElsewhere(t *testing.T, branch string) string {
 	t.Helper()
-	gitIn(t, f.other, "fetch", "-q", "origin")
-	gitIn(t, f.other, "checkout", "-q", "-B", branch, "origin/"+branch)
-	gitIn(t, f.other, "merge", "-q", "--no-edit", "origin/main")
-	gitIn(t, f.other, "push", "-q", "origin", branch)
-	sha := gitOut(t, f.other, "rev-parse", "HEAD")
-	gitIn(t, f.other, "checkout", "-q", "-B", "main", "origin/main")
-	gitIn(t, f.main, "fetch", "-q", "origin")
+	testkit.GitIn(t, f.other, "fetch", "-q", "origin")
+	testkit.GitIn(t, f.other, "checkout", "-q", "-B", branch, "origin/"+branch)
+	testkit.GitIn(t, f.other, "merge", "-q", "--no-edit", "origin/main")
+	testkit.GitIn(t, f.other, "push", "-q", "origin", branch)
+	sha := testkit.GitOut(t, f.other, "rev-parse", "HEAD")
+	testkit.GitIn(t, f.other, "checkout", "-q", "-B", "main", "origin/main")
+	testkit.GitIn(t, f.main, "fetch", "-q", "origin")
 	return sha
 }
 
@@ -51,7 +52,7 @@ func TestSyncRunFastForwardsABranchWithNothingToRebase(t *testing.T) {
 
 	row := overviewRow(t, overviewJSON(t, f.ctx), "x")
 	if row.Class != "current" || row.Verdict != VerdictProceed || !row.Runnable || row.Group != GroupReady || row.Reason != nil ||
-		row.OwnRemote.State != "behind" || row.OwnRemote.Blocks != nil || str(row.OwnRemote.Commit) != remote {
+		row.OwnRemote.State != "behind" || row.OwnRemote.Blocks != nil || testkit.Str(row.OwnRemote.Commit) != remote {
 		t.Fatalf("overview row: %+v", row)
 	}
 	if p := planOfWork(t, f.ctx, "x"); !p.UpEligible || p.Token == nil || p.Worktree.OwnRemote.State != "behind" || p.Worktree.OwnRemote.Blocks != nil {
@@ -61,7 +62,7 @@ func TestSyncRunFastForwardsABranchWithNothingToRebase(t *testing.T) {
 	if err := Sync(f.ctx, SyncOptions{NoFetch: true}, &out); err != nil {
 		t.Fatal(err)
 	}
-	n := gitOut(t, f.main, "rev-list", "--count", local+".."+remote)
+	n := testkit.GitOut(t, f.main, "rev-list", "--count", local+".."+remote)
 	if s := out.String(); !strings.Contains(s, "\nready") || strings.Contains(s, "every worktree is on trunk") ||
 		!strings.Contains(s, "\n    "+n+" behind origin/feat_wt/x, where there is nothing to rebase: a run fast-forwards it and is done (as last fetched)\n") {
 		t.Fatalf("overview:\n%s", s)
@@ -74,18 +75,18 @@ func TestSyncRunFastForwardsABranchWithNothingToRebase(t *testing.T) {
 	}
 	w := r.Worktrees[0]
 	o := w.OwnRemoteSync
-	if w.Result != ResultFastForwarded || str(w.Before) != local || str(w.After) != remote || w.Reason != nil ||
+	if w.Result != ResultFastForwarded || testkit.Str(w.Before) != local || testkit.Str(w.After) != remote || w.Reason != nil ||
 		len(w.PushCommand) != 0 || w.Pushed || len(w.Deferred) != 0 ||
-		str(w.SafetyRef) != "refs/wt-sync/feat_wt/x/99" || strings.Join(w.UndoCommand, " ") != "wt sync undo x" {
+		testkit.Str(w.SafetyRef) != "refs/wt-sync/feat_wt/x/99" || strings.Join(w.UndoCommand, " ") != "wt sync undo x" {
 		t.Fatalf("participant %+v", w)
 	}
-	if o.State != "behind" || !o.FastForwarded || o.SkippedReason != nil || str(o.Local) != local || str(o.Remote) != remote {
+	if o.State != "behind" || !o.FastForwarded || o.SkippedReason != nil || testkit.Str(o.Local) != local || testkit.Str(o.Remote) != remote {
 		t.Fatalf("ownRemoteSync %+v", o)
 	}
-	if got := gitOut(t, x, "rev-parse", "HEAD"); got != remote {
+	if got := testkit.GitOut(t, x, "rev-parse", "HEAD"); got != remote {
 		t.Fatalf("the branch is at %s, want its remote's %s", got, remote)
 	}
-	if st := gitOut(t, x, "status", "--porcelain"); st != "" || gitOut(t, x, "symbolic-ref", "HEAD") != "refs/heads/feat_wt/x" {
+	if st := testkit.GitOut(t, x, "status", "--porcelain"); st != "" || testkit.GitOut(t, x, "symbolic-ref", "HEAD") != "refs/heads/feat_wt/x" {
 		t.Fatalf("the checkout is not clean on its branch:\n%s", st)
 	}
 	// Equal to its remote now, and on trunk: nothing for a run to do.
@@ -94,10 +95,10 @@ func TestSyncRunFastForwardsABranchWithNothingToRebase(t *testing.T) {
 	}
 
 	undo, err := syncUndoJSON(t, f.ctx, "x", UndoOptions{verbOptions: opts.verbOptions})
-	if err != nil || undo.Worktrees[0].Result != ResultUndone || str(undo.Worktrees[0].After) != local {
+	if err != nil || undo.Worktrees[0].Result != ResultUndone || testkit.Str(undo.Worktrees[0].After) != local {
 		t.Fatalf("undo: %v %+v", err, undo.Worktrees)
 	}
-	if got := gitOut(t, x, "rev-parse", "HEAD"); got != local {
+	if got := testkit.GitOut(t, x, "rev-parse", "HEAD"); got != local {
 		t.Fatalf("undo left the branch at %s, want %s", got, local)
 	}
 }
@@ -109,7 +110,7 @@ func TestSyncRunWithNothingNamedTakesAFastForwardOnlyWorktree(t *testing.T) {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
 	f, x, opts, local, remote := nothingToRebase(t)
-	n := gitOut(t, f.main, "rev-list", "--count", local+".."+remote)
+	n := testkit.GitOut(t, f.main, "rev-list", "--count", local+".."+remote)
 	var out bytes.Buffer
 	if err := SyncRebase(f.ctx, nil, opts, &out); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
@@ -127,7 +128,7 @@ func TestSyncRunWithNothingNamedTakesAFastForwardOnlyWorktree(t *testing.T) {
 	if strings.Contains(s, "push:") || strings.Contains(s, "rebased") {
 		t.Fatalf("a fast-forward is neither rebased nor pushed:\n%s", s)
 	}
-	if got := gitOut(t, x, "rev-parse", "HEAD"); got != remote {
+	if got := testkit.GitOut(t, x, "rev-parse", "HEAD"); got != remote {
 		t.Fatalf("the branch is at %s", got)
 	}
 }
@@ -145,14 +146,14 @@ func TestUpFastForwardsABranchWithNothingToRebase(t *testing.T) {
 		t.Fatalf("%v %+v\n%s", err, r, human)
 	}
 	w := r.Worktrees[0]
-	if w.Result != ResultFastForwarded || str(w.After) != remote || !w.OwnRemoteSync.FastForwarded || len(w.PushCommand) != 0 {
+	if w.Result != ResultFastForwarded || testkit.Str(w.After) != remote || !w.OwnRemoteSync.FastForwarded || len(w.PushCommand) != 0 {
 		t.Fatalf("%+v %+v", w, w.OwnRemoteSync)
 	}
 	if !strings.Contains(human, "✓ fast-forwarded to origin/feat_wt/x  "+local[:7]+" → "+remote[:7]) ||
 		!strings.Contains(human, "(as last fetched); already on trunk, nothing to rebase\n") {
 		t.Fatalf("not said, or not said to be as last fetched:\n%s", human)
 	}
-	if got := gitOut(t, x, "rev-parse", "HEAD"); got != remote {
+	if got := testkit.GitOut(t, x, "rev-parse", "HEAD"); got != remote {
 		t.Fatalf("the branch is at %s", got)
 	}
 }
@@ -170,8 +171,8 @@ func TestUpFastForwardsAStackParentWithNothingToRebaseAndRebasesItsChild(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	mine(t, y, "y.txt", "y\n")
-	local := gitOut(t, x, "rev-parse", "HEAD")
+	testkit.Mine(t, y, "y.txt", "y\n")
+	local := testkit.GitOut(t, x, "rev-parse", "HEAD")
 	f.advanceOrigin(t, 1)
 	remote := f.onTrunkElsewhere(t, "feat_wt/x")
 
@@ -179,21 +180,21 @@ func TestUpFastForwardsAStackParentWithNothingToRebaseAndRebasesItsChild(t *test
 	if err != nil || len(r.Worktrees) != 2 || r.Outcome != kit.OutcomeDone {
 		t.Fatalf("%v %+v\n%s", err, r.Worktrees, human)
 	}
-	if px := r.Worktrees[0]; px.Branch != "feat_wt/x" || px.Result != ResultFastForwarded || str(px.Before) != local || str(px.After) != remote {
+	if px := r.Worktrees[0]; px.Branch != "feat_wt/x" || px.Result != ResultFastForwarded || testkit.Str(px.Before) != local || testkit.Str(px.After) != remote {
 		t.Fatalf("parent %+v", px)
 	}
 	if py := r.Worktrees[1]; py.Result != ResultRebased || py.OwnRemoteSync.FastForwarded {
 		t.Fatalf("child %+v %+v", py, py.OwnRemoteSync)
 	}
-	if gitOut(t, x, "rev-parse", "HEAD") != remote || gitOut(t, y, "rev-parse", "HEAD~1") != remote {
+	if testkit.GitOut(t, x, "rev-parse", "HEAD") != remote || testkit.GitOut(t, y, "rev-parse", "HEAD~1") != remote {
 		t.Fatalf("the child is not one commit on the parent's fast-forwarded tip:\n%s", human)
 	}
-	if !gitAncestor(t, f.main, "origin/main", "feat_wt/y") {
+	if !testkit.GitAncestor(t, f.main, "origin/main", "feat_wt/y") {
 		t.Fatal("the child is not on trunk")
 	}
 	// Not a torn stack: the child is not rebased onto trunk with a copy of
 	// the parent's commit under it, which is what skipping the parent did.
-	if n := gitOut(t, f.main, "rev-list", "--count", "feat_wt/x..feat_wt/y"); n != "1" {
+	if n := testkit.GitOut(t, f.main, "rev-list", "--count", "feat_wt/x..feat_wt/y"); n != "1" {
 		t.Fatalf("the child carries %s commits the parent lacks, want its own one", n)
 	}
 	// Undoing the child's run takes back the whole run, the parent's
@@ -202,7 +203,7 @@ func TestUpFastForwardsAStackParentWithNothingToRebaseAndRebasesItsChild(t *test
 	if err := SyncUndo(f.ctx, "y", UndoOptions{verbOptions: opts.verbOptions}, &out); err != nil {
 		t.Fatalf("undo: %v\n%s", err, out.String())
 	}
-	if got := gitOut(t, x, "rev-parse", "HEAD"); got != local {
+	if got := testkit.GitOut(t, x, "rev-parse", "HEAD"); got != local {
 		t.Fatalf("undo left the parent at %s, want %s", got, local)
 	}
 }
@@ -215,19 +216,19 @@ func TestSyncRunRefusesAFastForwardOnlyBranchItCannotMove(t *testing.T) {
 	}
 	t.Run("dirty", func(t *testing.T) {
 		f, x, opts, local, _ := nothingToRebase(t)
-		writeIn(t, x, "x.txt", "edited\n")
-		if p := planOfWork(t, f.ctx, "x"); str(p.UpIneligibleCode) != IneligibleOwnBehind || p.Token != nil ||
-			str(p.Worktree.OwnRemote.Blocks) != wtsync.OwnBlockDirty {
-			t.Fatalf("plan: %s %+v", str(p.UpIneligibleCode), p.Worktree.OwnRemote)
+		testkit.WriteIn(t, x, "x.txt", "edited\n")
+		if p := planOfWork(t, f.ctx, "x"); testkit.Str(p.UpIneligibleCode) != IneligibleOwnBehind || p.Token != nil ||
+			testkit.Str(p.Worktree.OwnRemote.Blocks) != wtsync.OwnBlockDirty {
+			t.Fatalf("plan: %s %+v", testkit.Str(p.UpIneligibleCode), p.Worktree.OwnRemote)
 		}
 		if row := overviewRow(t, overviewJSON(t, f.ctx), "x"); row.Verdict != VerdictRefuse || row.Runnable || row.Group != GroupNeedsYou {
 			t.Fatalf("overview row: %+v", row)
 		}
 		r, err := syncRunJSON(t, f.ctx, []string{"x"}, opts)
-		if err == nil || r.Worktrees[0].Result != ResultRefused || str(r.Worktrees[0].OwnRemoteSync.SkippedReason) != wtsync.OwnBlockDirty {
+		if err == nil || r.Worktrees[0].Result != ResultRefused || testkit.Str(r.Worktrees[0].OwnRemoteSync.SkippedReason) != wtsync.OwnBlockDirty {
 			t.Fatalf("%v %+v %+v", err, r.Worktrees[0], r.Worktrees[0].OwnRemoteSync)
 		}
-		if got := gitOut(t, x, "rev-parse", "HEAD"); got != local || safetyRefs(t, f.main) != "" {
+		if got := testkit.GitOut(t, x, "rev-parse", "HEAD"); got != local || testkit.SafetyRefs(t, f.main) != "" {
 			t.Fatal("a refused run touched something")
 		}
 	})
@@ -236,28 +237,28 @@ func TestSyncRunRefusesAFastForwardOnlyBranchItCannotMove(t *testing.T) {
 		busy := []wtsync.Agent{{Name: "busy-1", Cwd: x, Status: "busy"}}
 		opts.Agents, opts.Relist = busy, func() ([]wtsync.Agent, error) { return busy, nil }
 		r, err := syncRunJSON(t, f.ctx, []string{"x"}, opts)
-		if err == nil || r.Worktrees[0].Result != ResultRefused || str(r.Worktrees[0].OwnRemoteSync.SkippedReason) != wtsync.OwnBlockSession {
+		if err == nil || r.Worktrees[0].Result != ResultRefused || testkit.Str(r.Worktrees[0].OwnRemoteSync.SkippedReason) != wtsync.OwnBlockSession {
 			t.Fatalf("%v %+v %+v", err, r.Worktrees[0], r.Worktrees[0].OwnRemoteSync)
 		}
-		if got := gitOut(t, x, "rev-parse", "HEAD"); got != local || safetyRefs(t, f.main) != "" {
+		if got := testkit.GitOut(t, x, "rev-parse", "HEAD"); got != local || testkit.SafetyRefs(t, f.main) != "" {
 			t.Fatal("a refused run touched something")
 		}
 		// --force takes the run past the session, and the fast-forward with it.
 		opts.Force = true
 		r, err = syncRunJSON(t, f.ctx, []string{"x"}, opts)
-		if err != nil || r.Worktrees[0].Result != ResultFastForwarded || str(r.Worktrees[0].After) != remote {
+		if err != nil || r.Worktrees[0].Result != ResultFastForwarded || testkit.Str(r.Worktrees[0].After) != remote {
 			t.Fatalf("--force: %v %+v", err, r.Worktrees[0])
 		}
 	})
 	t.Run("an idle session is told", func(t *testing.T) {
 		f, x, opts, _, remote := nothingToRebase(t)
-		opts.Agents = idleIn(t, x, "parked-1")
+		opts.Agents = testkit.IdleIn(t, x, "parked-1")
 		opts.Relist = func() ([]wtsync.Agent, error) { return opts.Agents, nil }
 		var out bytes.Buffer
 		if err := SyncRebase(f.ctx, []string{"x"}, opts, &out); err != nil {
 			t.Fatalf("%v\n%s", err, out.String())
 		}
-		if !strings.Contains(out.String(), "wt: x fast-forwarded to origin/feat_wt/x (+") || gitOut(t, x, "rev-parse", "HEAD") != remote {
+		if !strings.Contains(out.String(), "wt: x fast-forwarded to origin/feat_wt/x (+") || testkit.GitOut(t, x, "rev-parse", "HEAD") != remote {
 			t.Fatalf("the idle session is not told, or nothing moved:\n%s", out.String())
 		}
 	})

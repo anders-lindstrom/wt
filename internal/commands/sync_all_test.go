@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -15,7 +16,7 @@ import (
 // a contested one is refused, untouched, and the run fails saying why.
 func TestSyncRunIfReadyRefusesANamedWorktreeThatWouldHandOver(t *testing.T) {
 	ctx, bump := contestedFixture(t)
-	old := gitOut(t, bump, "rev-parse", "HEAD")
+	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	opts := noAgents()
 	opts.IfReady = true
 	var out bytes.Buffer
@@ -26,7 +27,7 @@ func TestSyncRunIfReadyRefusesANamedWorktreeThatWouldHandOver(t *testing.T) {
 	if !strings.Contains(out.String(), "bump would not sync cleanly: it would stop at 1/1 with a conflict that is yours; wt sync bump for the detail") {
 		t.Errorf("say why:\n%s", out.String())
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != old {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != old {
 		t.Fatal("the worktree moved")
 	}
 	if busy, err := wtsync.RebaseInProgress(bump); err != nil || busy {
@@ -70,7 +71,7 @@ func TestSyncRunIfReadyWithNothingNamedFailsOnWhatItLeft(t *testing.T) {
 func TestSyncRunAllRebasesTheReadyOnesAcrossRepositories(t *testing.T) {
 	ready, readyBump := runFixture(t, false)
 	contested, contestedBump := contestedFixture(t)
-	oldContested := gitOut(t, contestedBump, "rev-parse", "HEAD")
+	oldContested := testkit.GitOut(t, contestedBump, "rev-parse", "HEAD")
 	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{ready.Repo.MainRoot, contested.Repo.MainRoot}}}}
 	var asked []string
 	opts := SyncRebaseAllOptions{RunOptions: noAgents(),
@@ -84,10 +85,10 @@ func TestSyncRunAllRebasesTheReadyOnesAcrossRepositories(t *testing.T) {
 	if !slices.Equal(asked, []string{"Rebase 1 worktree across 1 repository?"}) {
 		t.Errorf("asked %q", asked)
 	}
-	if !gitAncestor(t, readyBump, "origin/main", "HEAD") {
+	if !testkit.GitAncestor(t, readyBump, "origin/main", "HEAD") {
 		t.Errorf("the ready worktree was not rebased:\n%s", out.String())
 	}
-	if gitOut(t, contestedBump, "rev-parse", "HEAD") != oldContested {
+	if testkit.GitOut(t, contestedBump, "rev-parse", "HEAD") != oldContested {
 		t.Fatal("the contested worktree moved")
 	}
 }
@@ -109,12 +110,12 @@ func TestSyncRunIfReadyFailsWhenDeclinedWithSomethingNotReady(t *testing.T) {
 // showed: that repository is refused, untouched.
 func TestSyncRunAllRefusesARepositoryWhoseTrunkMoved(t *testing.T) {
 	ready, bump := runFixture(t, false)
-	old := gitOut(t, bump, "rev-parse", "HEAD")
+	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	main := ready.Repo.MainRoot
 	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{main}}}}
 	opts := SyncRebaseAllOptions{RunOptions: noAgents(), Ask: func(string) (bool, error) {
-		gitOut(t, main, "commit", "-q", "--allow-empty", "-m", "trunk moved on")
-		gitOut(t, main, "fetch", "-q", "origin")
+		testkit.GitOut(t, main, "commit", "-q", "--allow-empty", "-m", "trunk moved on")
+		testkit.GitOut(t, main, "fetch", "-q", "origin")
 		return true, nil
 	}}
 	var out bytes.Buffer
@@ -122,7 +123,7 @@ func TestSyncRunAllRefusesARepositoryWhoseTrunkMoved(t *testing.T) {
 	if err == nil || !strings.Contains(out.String(), "trunk moved since the plan") {
 		t.Fatalf("err = %v\n%s", err, out.String())
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != old {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != old {
 		t.Fatal("rebased onto a trunk the plan did not show")
 	}
 }

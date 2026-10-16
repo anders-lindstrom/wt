@@ -11,10 +11,11 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
 func TestPortIsStableAndDiffersBetweenBranches(t *testing.T) {
-	main := committedRepo(t, minimalConf)
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	first, err := Port(ctx, "fix/login-crash")
 	if err != nil {
@@ -46,14 +47,14 @@ func TestPortForIsPinned(t *testing.T) {
 // An existing worktree's port is its branch's, by any name, and "." from
 // inside it; the work `wt new` would create gets the port it would have.
 func TestPortOfAnExistingWorktree(t *testing.T) {
-	main := committedRepo(t, minimalConf)
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	before, err := Port(ctx, "fix/login-crash")
 	if err != nil {
 		t.Fatal(err)
 	}
 	wt := filepath.Join(filepath.Dir(main), "demo_wt", "fix_wt", "login-crash")
-	gitIn(t, main, "worktree", "add", "-q", "-b", "fix_wt/login-crash", wt)
+	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "fix_wt/login-crash", wt)
 	for _, spec := range []string{"fix/login-crash", "login-crash", "fix_wt/login-crash", wt} {
 		if got, err := Port(ctx, spec); err != nil || got != before {
 			t.Errorf("%s: %d %v, want %d", spec, got, err, before)
@@ -68,9 +69,9 @@ func TestPortOfAnExistingWorktree(t *testing.T) {
 // provision.sh and the build command get the worktree's port, branch and
 // work name, and the port is the one `wt port` prints.
 func TestProvisionAndBuildGetWTPort(t *testing.T) {
-	main := committedRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_COMMAND=\"env | grep ^WT_ > build-env.txt\"\n")
+	main := testkit.CommittedRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_COMMAND=\"env | grep ^WT_ > build-env.txt\"\n")
 	p := filepath.Join(main, "bin", "worktree", "provision.sh")
-	mustWrite(t, p, "#!/bin/sh\nenv | grep ^WT_ > provision-env.txt\n")
+	testkit.MustWrite(t, p, "#!/bin/sh\nenv | grep ^WT_ > provision-env.txt\n")
 	if err := os.Chmod(p, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +88,7 @@ func TestProvisionAndBuildGetWTPort(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, f := range []string{"provision-env.txt", "build-env.txt"} {
-		env := mustRead(t, filepath.Join(path, f))
+		env := testkit.MustRead(t, filepath.Join(path, f))
 		lines := strings.Split(env, "\n")
 		if slices.Contains(lines, "WT_PORT=1") {
 			t.Errorf("%s kept the inherited WT_PORT:\n%s", f, env)
@@ -116,17 +117,17 @@ func envValue(env []string, key string) string {
 // wt port and WT_PORT agree in a worktree stopped in a rebase, where
 // symbolic-ref has no branch but git worktree list still names it.
 func TestWorktreeEnvDuringARebaseMatchesWtPort(t *testing.T) {
-	main := committedRepo(t, minimalConf)
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
-	mustWrite(t, filepath.Join(main, "x.txt"), "base")
-	gitIn(t, main, "add", "-A")
-	gitIn(t, main, "commit", "-qm", "base")
+	testkit.MustWrite(t, filepath.Join(main, "x.txt"), "base")
+	testkit.GitIn(t, main, "add", "-A")
+	testkit.GitIn(t, main, "commit", "-qm", "base")
 	wt := filepath.Join(filepath.Dir(main), "demo_wt", "fix_wt", "login-crash")
-	gitIn(t, main, "worktree", "add", "-q", "-b", "fix_wt/login-crash", wt)
-	mustWrite(t, filepath.Join(wt, "x.txt"), "branch")
-	gitIn(t, wt, "commit", "-qam", "branch")
-	mustWrite(t, filepath.Join(main, "x.txt"), "main")
-	gitIn(t, main, "commit", "-qam", "main")
+	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "fix_wt/login-crash", wt)
+	testkit.MustWrite(t, filepath.Join(wt, "x.txt"), "branch")
+	testkit.GitIn(t, wt, "commit", "-qam", "branch")
+	testkit.MustWrite(t, filepath.Join(main, "x.txt"), "main")
+	testkit.GitIn(t, main, "commit", "-qam", "main")
 	if out, err := exec.Command("git", "-C", wt, "rebase", "main").CombinedOutput(); err == nil {
 		t.Fatalf("the rebase did not stop:\n%s", out)
 	}
@@ -146,12 +147,12 @@ func TestWorktreeEnvDuringARebaseMatchesWtPort(t *testing.T) {
 // From a subdirectory of a worktree, as wt setup is run, the environment is
 // the containing worktree's.
 func TestWorktreeEnvInASubdirectoryIsTheWorktrees(t *testing.T) {
-	main := committedRepo(t, minimalConf)
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	wt := filepath.Join(filepath.Dir(main), "demo_wt", "fix_wt", "login-crash")
-	gitIn(t, main, "worktree", "add", "-q", "-b", "fix_wt/login-crash", wt)
+	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "fix_wt/login-crash", wt)
 	sub := filepath.Join(wt, "pkg", "deep")
-	mustMkdir(t, sub)
+	testkit.MustMkdir(t, sub)
 	want := worktreeEnv(ctx, wt)
 	if got := worktreeEnv(ctx, sub); !slices.Equal(got, want) {
 		t.Errorf("from a subdirectory %v, want %v", got, want)
@@ -160,7 +161,7 @@ func TestWorktreeEnvInASubdirectoryIsTheWorktrees(t *testing.T) {
 		t.Fatalf("WT_WORK %q", got)
 	}
 	// Detached, the port hashes the worktree's root, not the subdirectory.
-	gitIn(t, wt, "checkout", "-q", "--detach")
+	testkit.GitIn(t, wt, "checkout", "-q", "--detach")
 	if got := worktreeEnv(ctx, sub); !slices.Equal(got, worktreeEnv(ctx, wt)) {
 		t.Errorf("detached, from a subdirectory %v, want %v", got, worktreeEnv(ctx, wt))
 	}

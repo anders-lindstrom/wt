@@ -7,10 +7,11 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
 func TestBranchAppliesDefaultType(t *testing.T) {
-	ctx, err := kit.Open(fixtureRepo(t, minimalConf))
+	ctx, err := kit.Open(testkit.FixtureRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +30,7 @@ func TestBranchAppliesDefaultType(t *testing.T) {
 // Superset offers no type when a workspace is created — every branch it makes
 // takes one fixed prefix — so the type has to be readable from the name.
 func TestBranchReadsTheTypeOutOfABareName(t *testing.T) {
-	ctx, _ := kit.Open(fixtureRepo(t, minimalConf))
+	ctx, _ := kit.Open(testkit.FixtureRepo(t, testkit.MinimalConf))
 	if got, _ := kit.Branch(ctx, "fix_dev-123"); got != "fix_wt/dev-123" {
 		t.Errorf("got %q, want fix_wt/dev-123", got)
 	}
@@ -45,10 +46,10 @@ func TestBranchReadsTheTypeOutOfABareName(t *testing.T) {
 // carry Superset's prefix, or `wt migrate fix_dev-123` stops finding the very
 // worktree the inference is meant to serve.
 func TestPathStillFindsAWorktreeNamedTheWayItWasCreated(t *testing.T) {
-	main := committedRepo(t, minimalConf)
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	superset := filepath.Join(ctx.Repo.Parent, "demo_wt", "demo", "feat_wt", "fix_dev-123")
-	gitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/fix_dev-123", superset)
+	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/fix_dev-123", superset)
 
 	got, err := kit.Path(ctx, "fix_dev-123")
 	if err != nil {
@@ -60,7 +61,7 @@ func TestPathStillFindsAWorktreeNamedTheWayItWasCreated(t *testing.T) {
 }
 
 func TestBranchRejectsUnknownType(t *testing.T) {
-	ctx, _ := kit.Open(fixtureRepo(t, minimalConf))
+	ctx, _ := kit.Open(testkit.FixtureRepo(t, testkit.MinimalConf))
 	if _, err := kit.Branch(ctx, "wibble/thing"); err == nil {
 		t.Error("want error for a type not in WORKTREE_TYPES")
 	}
@@ -127,7 +128,7 @@ func TestPathAndBranchFallBackToTheDefaultTypeWhenNothingExists(t *testing.T) {
 // that names nothing.
 func TestPathAndBranchAnswerForAnExistingWorktreeOfAnUndeclaredType(t *testing.T) {
 	ctx := locatable(t)
-	foreign := worktreeAt(t, ctx.Repo.MainRoot, "wibble_wt/thing", filepath.Join(ctx.Repo.Parent, "demo-thing"))
+	foreign := testkit.WorktreeAt(t, ctx.Repo.MainRoot, "wibble_wt/thing", filepath.Join(ctx.Repo.Parent, "demo-thing"))
 
 	if got, err := kit.Path(ctx, "wibble/thing"); err != nil || got != foreign {
 		t.Errorf("Path = %q, %v; want %q", got, err, foreign)
@@ -202,7 +203,7 @@ func TestPathAndBranchAnswerForRoot(t *testing.T) {
 func TestBranchRefusesADetachedWorktree(t *testing.T) {
 	ctx := locatable(t)
 	detached := filepath.Join(ctx.Repo.Parent, "demo-detached")
-	gitIn(t, ctx.Repo.MainRoot, "worktree", "add", "-q", "--detach", detached)
+	testkit.GitIn(t, ctx.Repo.MainRoot, "worktree", "add", "-q", "--detach", detached)
 
 	got, err := kit.Branch(ctx, detached)
 	if err == nil || !strings.Contains(err.Error(), "has no branch") {
@@ -216,10 +217,10 @@ func TestBranchRefusesADetachedWorktree(t *testing.T) {
 // Branch, like Path, finds a worktree Superset made by the name it was given
 // before reading a type out of that name.
 func TestBranchStillFindsAWorktreeNamedTheWayItWasCreated(t *testing.T) {
-	main := committedRepo(t, minimalConf)
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	superset := filepath.Join(ctx.Repo.Parent, "demo_wt", "demo", "feat_wt", "fix_dev-123")
-	gitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/fix_dev-123", superset)
+	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/fix_dev-123", superset)
 
 	if got, err := kit.Branch(ctx, "fix_dev-123"); err != nil || got != "feat_wt/fix_dev-123" {
 		t.Errorf("Branch = %q, %v; want feat_wt/fix_dev-123", got, err)
@@ -227,7 +228,7 @@ func TestBranchStillFindsAWorktreeNamedTheWayItWasCreated(t *testing.T) {
 }
 
 func TestPathForNonexistentWorkIsCanonical(t *testing.T) {
-	main := fixtureRepo(t, minimalConf)
+	main := testkit.FixtureRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	got, err := kit.Path(ctx, "fix/login-crash")
 	if err != nil {
@@ -243,7 +244,7 @@ func TestPathForNonexistentWorkIsCanonical(t *testing.T) {
 // This is what keeps the legacy path shapes working with no migration —
 // including Superset's <repo>_wt/<repo>/<type>_wt/<work>.
 func TestPathPrefersAnExistingWorktreeInAnyLayout(t *testing.T) {
-	main := fixtureRepo(t, minimalConf)
+	main := testkit.FixtureRepo(t, testkit.MinimalConf)
 	run := func(dir string, args ...string) {
 		t.Helper()
 		cmd := exec.Command("git", args...)
@@ -270,7 +271,7 @@ func TestPathPrefersAnExistingWorktreeInAnyLayout(t *testing.T) {
 
 // Superset's own shape must resolve too, since it is hardcoded in that tool.
 func TestPathResolvesSupersetShape(t *testing.T) {
-	main := fixtureRepo(t, minimalConf)
+	main := testkit.FixtureRepo(t, testkit.MinimalConf)
 	run := func(dir string, args ...string) {
 		t.Helper()
 		cmd := exec.Command("git", args...)

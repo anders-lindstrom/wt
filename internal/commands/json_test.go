@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
 func planOfWork(t *testing.T, ctx *kit.Context, work string) UpPlan {
@@ -18,7 +19,7 @@ func planOfWork(t *testing.T, ctx *kit.Context, work string) UpPlan {
 	if err := UpPlanJSON(ctx, work, &buf); err != nil {
 		t.Fatal(err)
 	}
-	validateJSON(t, "status", buf.Bytes())
+	testkit.ValidateJSON(t, "status", buf.Bytes())
 	var p UpPlan
 	if err := json.Unmarshal(buf.Bytes(), &p); err != nil {
 		t.Fatalf("%v\n%s", err, buf.String())
@@ -31,7 +32,7 @@ func upJSON(t *testing.T, ctx *kit.Context, work string, opts RunOptions) (UpRes
 	var out, human bytes.Buffer
 	opts.Journal = NewRunJournal(&out)
 	err := Up(ctx, work, opts, &human)
-	validateJSON(t, "up", out.Bytes())
+	testkit.ValidateJSON(t, "up", out.Bytes())
 	var r UpResult
 	if jerr := json.Unmarshal(out.Bytes(), &r); jerr != nil {
 		t.Fatalf("stdout is not one JSON object: %v\n%s", jerr, out.String())
@@ -39,23 +40,14 @@ func upJSON(t *testing.T, ctx *kit.Context, work string, opts RunOptions) (UpRes
 	return r, err
 }
 
-// repoState is everything a read-only command must leave as it was: every
-// ref, the loose objects, and each worktree's index.
-func repoState(t *testing.T, main string) string {
-	t.Helper()
-	refs := gitOut(t, main, "for-each-ref", "--format=%(refname) %(objectname)")
-	objects := gitOut(t, main, "count-objects", "-v")
-	return refs + "\n" + objects
-}
-
 // The plan names the stack wt up would move, parents first, with a token, and
 // writes nothing at all.
 func TestPlanNamesTheStackAndWritesNothing(t *testing.T) {
 	ctx, bump := runFixture(t, false)
 	child := stackFixture(t, ctx)
-	before := repoState(t, ctx.Repo.MainRoot)
+	before := testkit.RepoState(t, ctx.Repo.MainRoot)
 	p := planOfWork(t, ctx, "child")
-	if after := repoState(t, ctx.Repo.MainRoot); after != before {
+	if after := testkit.RepoState(t, ctx.Repo.MainRoot); after != before {
 		t.Errorf("the plan wrote to the repository:\nbefore %s\nafter %s", before, after)
 	}
 	if !p.UpEligible || p.Token == nil || p.Schema != 1 || p.Command != "status" {
@@ -84,12 +76,12 @@ func TestPlanSaysWhyWtUpWouldNotStart(t *testing.T) {
 			t.Errorf("%s: %+v", work, p)
 		}
 	}
-	gitIn(t, bump, "checkout", "-q", "--detach")
+	testkit.GitIn(t, bump, "checkout", "-q", "--detach")
 	if p := planOfWork(t, ctx, bump); p.UpEligible || *p.UpIneligibleCode != IneligibleDetached {
 		t.Errorf("detached: %+v", p)
 	}
 
-	main := committedRepo(t, minimalConf)
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	if err := os.Remove(filepath.Join(main, "bin", "worktree", "worktree.conf")); err != nil {
 		t.Fatal(err)
 	}
@@ -108,8 +100,8 @@ func TestPlanSaysABranchTrunkContainsHasNothingToRebase(t *testing.T) {
 		t.Fatalf("a branch with its own commit: %+v", p)
 	}
 	main := ctx.Repo.MainRoot
-	gitIn(t, main, "merge", "-q", "-s", "ours", "--no-edit", "feat_wt/bump")
-	gitIn(t, main, "fetch", "-q", "origin")
+	testkit.GitIn(t, main, "merge", "-q", "-s", "ours", "--no-edit", "feat_wt/bump")
+	testkit.GitIn(t, main, "fetch", "-q", "origin")
 	p := planOfWork(t, ctx, bump)
 	if p.UpEligible || p.UpIneligibleCode == nil || *p.UpIneligibleCode != IneligibleInTrunk || p.Token != nil {
 		t.Fatalf("a branch trunk contains: %+v", p)
@@ -118,7 +110,7 @@ func TestPlanSaysABranchTrunkContainsHasNothingToRebase(t *testing.T) {
 		t.Errorf("reason = %v", p.UpIneligibleReason)
 	}
 	// Local trunk alone containing it is not enough once origin is behind: wt up rebases onto origin.
-	gitIn(t, main, "update-ref", "refs/remotes/origin/main", "HEAD~1")
+	testkit.GitIn(t, main, "update-ref", "refs/remotes/origin/main", "HEAD~1")
 	if p := planOfWork(t, ctx, bump); !p.UpEligible {
 		t.Errorf("origin lacks the commit: %+v", p)
 	}
@@ -131,14 +123,14 @@ func TestUpExpectHoldsTheRunToThePlan(t *testing.T) {
 	token := *planOfWork(t, ctx, "bump").Token
 
 	stackFixture(t, ctx)
-	old := gitOut(t, bump, "rev-parse", "HEAD")
+	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	opts := noAgents()
 	opts.Expect = token
 	r, err := upJSON(t, ctx, "bump", opts)
 	if err == nil || r.Outcome != kit.OutcomeRefused || r.Error == nil || len(r.Worktrees) != 0 {
 		t.Fatalf("a grown stack is refused before any participant: %v %+v", err, r)
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != old {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != old {
 		t.Fatal("the worktree moved")
 	}
 
@@ -193,8 +185,8 @@ func TestUpJSONReportsAFailedDeferredStep(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(main, ".wt-sync.yaml"), []byte(yaml), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, main, "commit", "-q", "-am", "a failing deferred step")
-	gitIn(t, main, "fetch", "-q", "origin")
+	testkit.GitIn(t, main, "commit", "-q", "-am", "a failing deferred step")
+	testkit.GitIn(t, main, "fetch", "-q", "origin")
 	r, _ := upJSON(t, ctx, "bump", noAgents())
 	if r.Outcome != kit.OutcomePartial || len(r.Worktrees) != 1 {
 		t.Fatalf("%+v", r)
@@ -224,7 +216,7 @@ func TestJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 	j.set("feat_wt/one", func(p *UpParticipant) { p.Result = ResultRebased })
 	j.Interrupted("two", "interrupted while rebasing two: git rebase --abort")
 	j.Finish()
-	validateJSON(t, "up", out.Bytes())
+	testkit.ValidateJSON(t, "up", out.Bytes())
 	dec := json.NewDecoder(&out)
 	var r UpResult
 	if err := dec.Decode(&r); err != nil {

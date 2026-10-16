@@ -9,53 +9,30 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 )
-
-// quarantineDir is a new folder name next to the repository, on its volume.
-func quarantineDir(t *testing.T, ctx *kit.Context) string {
-	t.Helper()
-	return filepath.Join(ctx.Repo.Parent, "trash", "q-"+strings.ReplaceAll(t.Name(), "/", "-"))
-}
-
-func trashFor(t *testing.T, ctx *kit.Context) string {
-	t.Helper()
-	dir := quarantineDir(t, ctx)
-	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return dir
-}
-
-func loadRecord(t *testing.T, dir string) *quarantine.Record {
-	t.Helper()
-	r, err := quarantine.Load(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return r
-}
 
 // A quarantine moves the checkout and its admin dir into the folder, deletes
 // the merged branch after recording it, and says how to put it back.
 func TestQuarantineMovesTheWorktreeInsteadOfDeletingIt(t *testing.T) {
 	ctx, path := safetyWorktree(t, "fix/trashed")
-	gitIn(t, ctx.Repo.MainRoot, "config", "branch.fix_wt/trashed.description", "mine")
-	mustWrite(t, filepath.Join(ctx.Repo.MainRoot, ".git", "info", "exclude"), "*.log\n")
-	mustWrite(t, filepath.Join(path, "ignored.log"), "")
-	admin := gitDirFor(t, path)
-	tip := strings.TrimSpace(gitOut(t, path, "rev-parse", "HEAD"))
-	dir := trashFor(t, ctx)
+	testkit.GitIn(t, ctx.Repo.MainRoot, "config", "branch.fix_wt/trashed.description", "mine")
+	testkit.MustWrite(t, filepath.Join(ctx.Repo.MainRoot, ".git", "info", "exclude"), "*.log\n")
+	testkit.MustWrite(t, filepath.Join(path, "ignored.log"), "")
+	admin := testkit.GitDirFor(t, path)
+	tip := strings.TrimSpace(testkit.GitOut(t, path, "rev-parse", "HEAD"))
+	dir := testkit.TrashFor(t, ctx)
 
 	var buf bytes.Buffer
 	var res RemoveResult
 	if err := RemoveAt(ctx, path, RemoveOptions{Quarantine: dir, Result: &res}, &buf); err != nil {
 		t.Fatalf("RemoveAt: %v\n%s", err, buf.String())
 	}
-	if exists(path) || exists(admin) {
+	if testkit.Exists(path) || testkit.Exists(admin) {
 		t.Error("the checkout and its admin dir must be gone from where they were")
 	}
-	if !exists(filepath.Join(dir, "checkout", "ignored.log")) || !exists(filepath.Join(dir, "admin", "HEAD")) {
+	if !testkit.Exists(filepath.Join(dir, "checkout", "ignored.log")) || !testkit.Exists(filepath.Join(dir, "admin", "HEAD")) {
 		t.Error("both must be in the quarantine, ignored files included")
 	}
 	if list, _ := ctx.Repo.Worktrees(); func() bool { _, ok := list.ByPath(path); return ok }() {
@@ -68,7 +45,7 @@ func TestQuarantineMovesTheWorktreeInsteadOfDeletingIt(t *testing.T) {
 	if strings.TrimSpace(string(lock)) != quarantine.LockReason(dir) {
 		t.Errorf("the admin dir must carry the quarantine's lock, has %q", lock)
 	}
-	r := loadRecord(t, dir)
+	r := testkit.LoadRecord(t, dir)
 	for _, s := range r.Steps {
 		if s.State != quarantine.Done {
 			t.Errorf("step %s is %s", s.Name, s.State)
@@ -90,9 +67,9 @@ func TestQuarantineMovesTheWorktreeInsteadOfDeletingIt(t *testing.T) {
 // moves with the checkout.
 func TestQuarantineKeepsAFileWrittenAfterTheLastCheck(t *testing.T) {
 	ctx, path := safetyWorktree(t, "fix/late-write")
-	dir := trashFor(t, ctx)
+	dir := testkit.TrashFor(t, ctx)
 	t.Cleanup(func() { afterFinalCheck = nil })
-	afterFinalCheck = func() { mustWrite(t, filepath.Join(path, "late.txt"), "written after the check") }
+	afterFinalCheck = func() { testkit.MustWrite(t, filepath.Join(path, "late.txt"), "written after the check") }
 
 	var buf bytes.Buffer
 	if err := RemoveAt(ctx, path, RemoveOptions{Quarantine: dir}, &buf); err != nil {
@@ -107,15 +84,15 @@ func TestQuarantineKeepsAFileWrittenAfterTheLastCheck(t *testing.T) {
 // they go with it, under admin/modules/.
 func TestQuarantineTakesTheSubmoduleRepositoriesAlong(t *testing.T) {
 	ctx, _, path := submoduleWorktree(t, "fix/sub-trash")
-	dir := trashFor(t, ctx)
+	dir := testkit.TrashFor(t, ctx)
 	var buf bytes.Buffer
 	if err := RemoveAt(ctx, path, RemoveOptions{Quarantine: dir}, &buf); err != nil {
 		t.Fatalf("RemoveAt: %v\n%s", err, buf.String())
 	}
-	if !exists(filepath.Join(dir, "admin", "modules", "sm", "HEAD")) {
+	if !testkit.Exists(filepath.Join(dir, "admin", "modules", "sm", "HEAD")) {
 		t.Error("the submodule's repository must be under admin/modules/")
 	}
-	if !exists(filepath.Join(dir, "checkout", "sm", ".git")) {
+	if !testkit.Exists(filepath.Join(dir, "checkout", "sm", ".git")) {
 		t.Error("the submodule's checkout must be in the quarantine")
 	}
 }
@@ -123,7 +100,7 @@ func TestQuarantineTakesTheSubmoduleRepositoriesAlong(t *testing.T) {
 // Nothing changes before a refusal: no folder, no lock, no move.
 func TestQuarantineRefusesAFolderThatExistsBeforeAnyChange(t *testing.T) {
 	ctx, path := safetyWorktree(t, "fix/exists")
-	dir := trashFor(t, ctx)
+	dir := testkit.TrashFor(t, ctx)
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +114,7 @@ func TestQuarantineRefusesAFolderThatExistsBeforeAnyChange(t *testing.T) {
 
 func TestQuarantineRefusesAnotherVolumeBeforeAnyChange(t *testing.T) {
 	ctx, path := safetyWorktree(t, "fix/volume")
-	dir := trashFor(t, ctx)
+	dir := testkit.TrashFor(t, ctx)
 	orig := quarantine.DeviceOf
 	t.Cleanup(func() { quarantine.DeviceOf = orig })
 	quarantine.DeviceOf = func(p string) (uint64, error) {
@@ -171,11 +148,11 @@ func TestRemoveReportsABranchFailureAfterTheFolderIsGoneAsPartial(t *testing.T) 
 	for _, q := range []bool{false, true} {
 		t.Run(map[bool]string{false: "delete", true: "quarantine"}[q], func(t *testing.T) {
 			ctx, path := safetyWorktree(t, "fix/kept-partial")
-			gitIn(t, path, "commit", "-q", "--allow-empty", "-m", "work")
-			gitIn(t, path, "branch", "kept-partial")
+			testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "work")
+			testkit.GitIn(t, path, "branch", "kept-partial")
 			opts := RemoveOptions{}
 			if q {
-				opts.Quarantine = trashFor(t, ctx)
+				opts.Quarantine = testkit.TrashFor(t, ctx)
 			}
 			var res RemoveResult
 			opts.Result = &res
@@ -193,25 +170,10 @@ func TestRemoveReportsABranchFailureAfterTheFolderIsGoneAsPartial(t *testing.T) 
 			if !strings.Contains(buf.String(), "partly done") {
 				t.Errorf("it must say it is partly done:\n%s", buf.String())
 			}
-			if q && deref(loadRecord(t, opts.Quarantine).Branch.Result) != quarantine.BranchFailed {
+			if q && deref(testkit.LoadRecord(t, opts.Quarantine).Branch.Result) != quarantine.BranchFailed {
 				t.Error("recovery.json must say the branch step failed")
 			}
 		})
-	}
-}
-
-// errCrash ends a run at a journal write, as a crash there would.
-var errCrash = errors.New("crash")
-
-// crashAt makes the run stop right after the journal write named point.
-func crashAt(t *testing.T, point string) {
-	t.Helper()
-	t.Cleanup(func() { quarantine.AfterSave = nil })
-	quarantine.AfterSave = func(_ *quarantine.Record, at string) error {
-		if at == point {
-			return errCrash
-		}
-		return nil
 	}
 }
 
@@ -233,7 +195,7 @@ func journalPoints(t *testing.T, run func()) []string {
 // the run says it is partial.
 func TestQuarantineKeepsTheLockWhenAMovedCheckoutFailsToSync(t *testing.T) {
 	ctx, path := safetyWorktree(t, "fix/unsynced")
-	dir := trashFor(t, ctx)
+	dir := testkit.TrashFor(t, ctx)
 	t.Cleanup(func() { quarantine.AfterRename = nil })
 	quarantine.AfterRename = func(to string) error {
 		if to == filepath.Join(dir, "checkout") {
@@ -255,7 +217,7 @@ func TestQuarantineKeepsTheLockWhenAMovedCheckoutFailsToSync(t *testing.T) {
 		t.Fatalf("the registration must stay, locked: %+v", wt)
 	}
 	restore(t, ctx, dir)
-	assertBack(t, ctx, path, dir, "ref: refs/heads/fix_wt/unsynced")
+	testkit.AssertBack(t, ctx, path, dir, "ref: refs/heads/fix_wt/unsynced")
 }
 
 // A quarantine inside a checkout or the git dir would move a worktree into
@@ -263,7 +225,7 @@ func TestQuarantineKeepsTheLockWhenAMovedCheckoutFailsToSync(t *testing.T) {
 func TestQuarantineRefusesAFolderInsideTheRepository(t *testing.T) {
 	ctx, path := safetyWorktree(t, "fix/inside-repo")
 	other := filepath.Join(ctx.Repo.Parent, "neighbour")
-	gitIn(t, ctx.Repo.MainRoot, "worktree", "add", "-q", "--detach", other)
+	testkit.GitIn(t, ctx.Repo.MainRoot, "worktree", "add", "-q", "--detach", other)
 	for _, dir := range []string{
 		filepath.Join(ctx.Repo.MainRoot, "trash-q"),
 		filepath.Join(ctx.Repo.MainRoot, ".git", "trash-q"),
@@ -271,7 +233,7 @@ func TestQuarantineRefusesAFolderInsideTheRepository(t *testing.T) {
 		filepath.Join(path, "trash-q"),
 	} {
 		refused(t, ctx, path, RemoveOptions{Quarantine: dir}, "inside")
-		if exists(dir) {
+		if testkit.Exists(dir) {
 			t.Errorf("%s must not be made", dir)
 		}
 	}

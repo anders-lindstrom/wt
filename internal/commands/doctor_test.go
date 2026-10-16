@@ -8,16 +8,17 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
 // Every Superset workspace sits one segment off the canonical path, by that
 // tool's design. Reporting each of them as a problem made doctor exit non-zero
 // on a healthy repository and prescribe a migrate that breaks the workspace.
 func TestDoctorAcceptsSupersetsLayout(t *testing.T) {
-	main := committedRepo(t, minimalConf)
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	superset := filepath.Join(ctx.Repo.Parent, "demo_wt", "demo", "feat_wt", "thing")
-	gitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/thing", superset)
+	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/thing", superset)
 
 	var buf bytes.Buffer
 	problems, err := Doctor(ctx, &buf)
@@ -36,14 +37,14 @@ func TestDoctorAcceptsSupersetsLayout(t *testing.T) {
 // after the temporary branch it renames later. Neither shape is wt's, and
 // neither is a problem: the thread holds the path.
 func TestDoctorAcceptsT3sLayout(t *testing.T) {
-	main := committedRepo(t, minimalConf)
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	data := t.TempDir()
 	t.Setenv("T3CODE_HOME", data)
 	renamed := filepath.Join(data, "worktrees", "demo", "t3-0aedd242")
-	gitIn(t, main, "worktree", "add", "-q", "-b", "t3_wt/fix-login", renamed)
+	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "t3_wt/fix-login", renamed)
 	temporary := filepath.Join(data, "worktrees", "demo", "t3-5f2c8e10")
-	gitIn(t, main, "worktree", "add", "-q", "-b", "t3/5f2c8e10", temporary)
+	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "t3/5f2c8e10", temporary)
 
 	var buf bytes.Buffer
 	problems, err := Doctor(ctx, &buf)
@@ -61,9 +62,9 @@ func TestDoctorAcceptsT3sLayout(t *testing.T) {
 // A pre-migration checkout is the case the migrate advice was written for:
 // nothing else holds the path, so moving it is safe and still recommended.
 func TestDoctorStillReportsAForeignLayout(t *testing.T) {
-	main := committedRepo(t, minimalConf)
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
-	gitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/thing",
+	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/thing",
 		filepath.Join(ctx.Repo.Parent, "demo-thing"))
 
 	var buf bytes.Buffer
@@ -83,7 +84,7 @@ func TestDoctorStillReportsAForeignLayout(t *testing.T) {
 // where doctor's closing advice had nothing behind it: there are no migrate
 // commands above to need fixing first, and no way out was named.
 func TestDoctorTellsAConfiglessRepoToRunInit(t *testing.T) {
-	ctx := kit.OpenLenient(noTrunkRepo(t), io.Discard)
+	ctx := kit.OpenLenient(testkit.NoTrunkRepo(t), io.Discard)
 	if ctx == nil {
 		t.Fatal("OpenLenient returned nil for a real repository")
 	}
@@ -108,7 +109,7 @@ func TestDoctorTellsAConfiglessRepoToRunInit(t *testing.T) {
 // A configuration that exists but does not parse keeps the original advice:
 // there the mutating commands really are what the fix unblocks.
 func TestDoctorStillSaysToFixAConfigurationThatIsPresentButBroken(t *testing.T) {
-	main := fixtureRepo(t, "MAIN_BRANCH=\"main\"\nNO_SUCH_KEY=1\n")
+	main := testkit.FixtureRepo(t, "MAIN_BRANCH=\"main\"\nNO_SUCH_KEY=1\n")
 	ctx := kit.OpenLenient(main, io.Discard)
 
 	var buf bytes.Buffer

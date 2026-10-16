@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
 // committedRepoIn builds a repo with one commit inside a chosen parent, so a
@@ -14,9 +15,9 @@ import (
 func committedRepoIn(t *testing.T, parent, name, conf string) string {
 	t.Helper()
 	main := filepath.Join(parent, name)
-	gitIn(t, parent, "init", "-q", "-b", "main", name)
-	gitIn(t, main, "config", "user.email", "t@example.com")
-	gitIn(t, main, "config", "user.name", "T")
+	testkit.GitIn(t, parent, "init", "-q", "-b", "main", name)
+	testkit.GitIn(t, main, "config", "user.email", "t@example.com")
+	testkit.GitIn(t, main, "config", "user.name", "T")
 	dir := filepath.Join(main, "bin", "worktree")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -24,15 +25,15 @@ func committedRepoIn(t *testing.T, parent, name, conf string) string {
 	if err := os.WriteFile(filepath.Join(dir, "worktree.conf"), []byte(conf), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, main, "add", "-A")
-	gitIn(t, main, "commit", "-qm", "init")
+	testkit.GitIn(t, main, "add", "-A")
+	testkit.GitIn(t, main, "commit", "-qm", "init")
 	return main
 }
 
 // A strong local hit ends the search.
 func TestFindStrongLocalHitWins(t *testing.T) {
 	t.Setenv("WT_ROOTS", t.TempDir())
-	ctx, _ := kit.Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if _, err := New(ctx, "feat/opensearch_ism", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
 	}
@@ -54,12 +55,12 @@ func TestFindWeakLocalHitStillScansRoots(t *testing.T) {
 	}
 	t.Setenv("WT_ROOTS", root)
 
-	local := committedRepoIn(t, root, "local", minimalConf)
+	local := committedRepoIn(t, root, "local", testkit.MinimalConf)
 	lctx, _ := kit.Open(local)
 	if _, err := New(lctx, "feat/opensearch", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
 	}
-	other := committedRepoIn(t, root, "other", minimalConf)
+	other := committedRepoIn(t, root, "other", testkit.MinimalConf)
 	octx, _ := kit.Open(other)
 	if _, err := New(octx, "feat/arch", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
@@ -85,7 +86,7 @@ func TestFindRepoAndWorkBeatsTheStartOfATypedName(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("WT_ROOTS", root)
-	ctx, _ := kit.Open(committedRepoIn(t, root, "feat", minimalConf))
+	ctx, _ := kit.Open(committedRepoIn(t, root, "feat", testkit.MinimalConf))
 	for _, spec := range []string{"fix/arch", "feat/archive"} {
 		if _, err := New(ctx, spec, NewOptions{NoSetup: true}, os.Stderr); err != nil {
 			t.Fatal(err)
@@ -93,7 +94,7 @@ func TestFindRepoAndWorkBeatsTheStartOfATypedName(t *testing.T) {
 	}
 	// A fragment of a branch is still read whole, as it always was: this one
 	// is also repository feat, work arc.
-	gitIn(t, ctx.Repo.MainRoot, "worktree", "add", "-q", "-b", "refeat/arcade",
+	testkit.GitIn(t, ctx.Repo.MainRoot, "worktree", "add", "-q", "-b", "refeat/arcade",
 		filepath.Join(root, "feat_wt", "fix_wt", "borrowed"))
 	if _, err := New(ctx, "fix/arc", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
@@ -123,11 +124,11 @@ func TestFindTheStartOfATypedNameYieldsToAnyOtherMatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("WT_ROOTS", root)
-	lctx, _ := kit.Open(committedRepoIn(t, root, "demo", minimalConf))
+	lctx, _ := kit.Open(committedRepoIn(t, root, "demo", testkit.MinimalConf))
 	if _, err := New(lctx, "feat/archive", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
 	}
-	octx, _ := kit.Open(committedRepoIn(t, root, "feat", minimalConf))
+	octx, _ := kit.Open(committedRepoIn(t, root, "feat", testkit.MinimalConf))
 	if _, err := New(octx, "fix/a-r-c", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +148,7 @@ func TestFindReportsEveryTiedCandidate(t *testing.T) {
 	}
 	t.Setenv("WT_ROOTS", root)
 	for _, name := range []string{"one", "two"} {
-		r := committedRepoIn(t, root, name, minimalConf)
+		r := committedRepoIn(t, root, name, testkit.MinimalConf)
 		c, _ := kit.Open(r)
 		if _, err := New(c, "feat/arch", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 			t.Fatal(err)
@@ -167,7 +168,7 @@ func TestFindReportsEveryTiedCandidate(t *testing.T) {
 // just discards the config error — makes wt find return a surprising answer
 // with no hint why.
 func TestOpenLenientSurvivesInvalidConfig(t *testing.T) {
-	main := committedRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\nAWS_SETUP_ENABLED=true\n")
+	main := testkit.CommittedRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\nAWS_SETUP_ENABLED=true\n")
 	if _, err := kit.Open(main); err == nil {
 		t.Fatal("this fixture is supposed to have an invalid config")
 	}
@@ -197,20 +198,20 @@ func TestFindKeepsRepoFirstWithInvalidLocalConfig(t *testing.T) {
 	}
 	t.Setenv("WT_ROOTS", root)
 
-	other := committedRepoIn(t, root, "other", minimalConf)
+	other := committedRepoIn(t, root, "other", testkit.MinimalConf)
 	octx, _ := kit.Open(other)
 	if _, err := New(octx, "feat/login", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
 	}
 
-	local := committedRepoIn(t, root, "local", minimalConf)
+	local := committedRepoIn(t, root, "local", testkit.MinimalConf)
 	lctx, _ := kit.Open(local)
 	if _, err := New(lctx, "feat/login-crash", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
 	}
 	// Now break the local config the way an unmigrated repo is broken.
 	if err := os.WriteFile(filepath.Join(local, "bin", "worktree", "worktree.conf"),
-		[]byte(minimalConf+"AWS_SETUP_ENABLED=true\n"), 0o644); err != nil {
+		[]byte(testkit.MinimalConf+"AWS_SETUP_ENABLED=true\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -230,7 +231,7 @@ func TestFindKeepsRepoFirstWithInvalidLocalConfig(t *testing.T) {
 // name.
 func TestFindRootResolvesToTheMainCheckout(t *testing.T) {
 	t.Setenv("WT_ROOTS", t.TempDir())
-	main := committedRepo(t, minimalConf)
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	if _, err := New(ctx, "feat/somewhere", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
@@ -257,7 +258,7 @@ func TestFindRootResolvesToTheMainCheckout(t *testing.T) {
 // checkout, which find may answer for.
 func TestFindDotResolvesToTheWorktreeYouStandIn(t *testing.T) {
 	t.Setenv("WT_ROOTS", t.TempDir())
-	main := committedRepo(t, minimalConf)
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	if _, err := New(ctx, "feat/somewhere", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)

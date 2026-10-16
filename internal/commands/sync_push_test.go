@@ -8,28 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
-
-// pushOrigin gives a fixture somewhere to push: a bare repository as
-// origin's push URL. Fetches still read the main checkout, which a push could
-// not update while its branches are checked out in worktrees. The bare
-// repository starts out holding what the remote-tracking refs say origin
-// has, so the lease sees an origin that matches the last fetch.
-func pushOrigin(t *testing.T, ctx *kit.Context) string {
-	t.Helper()
-	bare := filepath.Join(t.TempDir(), "origin.git")
-	gitOut(t, ctx.Repo.MainRoot, "init", "-q", "--bare", bare)
-	gitOut(t, ctx.Repo.MainRoot, "push", "-q", bare, "refs/remotes/origin/*:refs/heads/*")
-	gitOut(t, ctx.Repo.MainRoot, "remote", "set-url", "--push", "origin", bare)
-	return bare
-}
-
-// pushed reports whether origin holds the branch as the worktree has it now.
-func pushed(t *testing.T, bare, wtPath string) bool {
-	t.Helper()
-	return gitOut(t, bare, "rev-parse", "feat_wt/bump") == gitOut(t, wtPath, "rev-parse", "HEAD")
-}
 
 // failGit puts a git on the PATH that fails the one command whose arguments
 // contain match and runs the real git for everything else, so a test can
@@ -62,13 +42,13 @@ func TestOfferPushKeepsTheReportWhenANewTipCannotBeRead(t *testing.T) {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
 	ctx, bump := runFixture(t, false)
-	bare := pushOrigin(t, ctx)
+	bare := testkit.PushOrigin(t, ctx)
 	// Something for the push to carry: the fixture's origin already holds the
 	// branch as it is, so without this the tip never moves and the read under
 	// test is not the read of a new tip.
-	writeFile(t, bump, "p.txt", "push me\n")
-	gitOut(t, bump, "add", "-A")
-	gitOut(t, bump, "commit", "-q", "-m", "ahead of origin")
+	testkit.WriteFile(t, bump, "p.txt", "push me\n")
+	testkit.GitOut(t, bump, "add", "-A")
+	testkit.GitOut(t, bump, "commit", "-q", "-m", "ahead of origin")
 	// Only the read of the new tip fails; the push before it is the real one.
 	failGit(t, "rev-parse --verify feat_wt/bump")
 
@@ -84,7 +64,7 @@ func TestOfferPushKeepsTheReportWhenANewTipCannotBeRead(t *testing.T) {
 		t.Fatalf("out %s", out.String())
 	}
 	// Named as something that did not come off, but the push itself stands.
-	if !pushed(t, bare, bump) {
+	if !testkit.Pushed(t, bare, bump) {
 		t.Fatal("the push did not reach origin; the test never read a new tip")
 	}
 }
@@ -94,21 +74,21 @@ func TestSyncRunPushesAFinishedWorktreeWithPush(t *testing.T) {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
 	ctx, bump := runFixture(t, false)
-	bare := pushOrigin(t, ctx)
-	old := gitOut(t, bump, "rev-parse", "--short=7", "HEAD")
+	bare := testkit.PushOrigin(t, ctx)
+	old := testkit.GitOut(t, bump, "rev-parse", "--short=7", "HEAD")
 	opts := noAgents()
 	opts.Push = PushAlways
 	var out bytes.Buffer
 	if err := SyncRebase(ctx, []string{"bump"}, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
-	if want := "✓ pushed feat_wt/bump  " + old + " → " + gitOut(t, bump, "rev-parse", "--short=7", "HEAD"); !strings.Contains(out.String(), want) {
+	if want := "✓ pushed feat_wt/bump  " + old + " → " + testkit.GitOut(t, bump, "rev-parse", "--short=7", "HEAD"); !strings.Contains(out.String(), want) {
 		t.Fatalf("output lacks %q:\n%s", want, out.String())
 	}
-	if !pushed(t, bare, bump) {
+	if !testkit.Pushed(t, bare, bump) {
 		t.Fatal("origin does not have the rebased tip")
 	}
-	if up := gitOut(t, bump, "rev-parse", "--abbrev-ref", "@{upstream}"); up != "origin/feat_wt/bump" {
+	if up := testkit.GitOut(t, bump, "rev-parse", "--abbrev-ref", "@{upstream}"); up != "origin/feat_wt/bump" {
 		t.Fatalf("upstream %q", up)
 	}
 }
@@ -120,10 +100,10 @@ func TestSyncRunDoesNotPushOverCommitsItHasNotSeen(t *testing.T) {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
 	ctx, bump := runFixture(t, false)
-	bare := pushOrigin(t, ctx)
-	gitOut(t, bump, "push", "-q", "-u", "origin", "feat_wt/bump")
-	theirs := gitOut(t, bump, "rev-parse", "HEAD~1")
-	gitOut(t, bare, "update-ref", "refs/heads/feat_wt/bump", theirs)
+	bare := testkit.PushOrigin(t, ctx)
+	testkit.GitOut(t, bump, "push", "-q", "-u", "origin", "feat_wt/bump")
+	theirs := testkit.GitOut(t, bump, "rev-parse", "HEAD~1")
+	testkit.GitOut(t, bare, "update-ref", "refs/heads/feat_wt/bump", theirs)
 	opts := noAgents()
 	opts.Push = PushAlways
 	var out bytes.Buffer
@@ -134,7 +114,7 @@ func TestSyncRunDoesNotPushOverCommitsItHasNotSeen(t *testing.T) {
 	if !strings.Contains(out.String(), "✗ push of feat_wt/bump failed: ! [rejected]") {
 		t.Fatalf("out %s", out.String())
 	}
-	if gitOut(t, bare, "rev-parse", "feat_wt/bump") != theirs {
+	if testkit.GitOut(t, bare, "rev-parse", "feat_wt/bump") != theirs {
 		t.Fatal("origin's branch was overwritten")
 	}
 }
@@ -144,7 +124,7 @@ func TestSyncRunAsksToPushOnlyWhatFinishedAndPrintsTheCommandOnNo(t *testing.T) 
 		t.Skip("integration: real repositories with an origin to push to")
 	}
 	ctx, bump := runFixture(t, false)
-	bare := pushOrigin(t, ctx)
+	bare := testkit.PushOrigin(t, ctx)
 	var asked []string
 	opts := noAgents()
 	opts.ConfirmPush = func(works []string) (bool, error) { asked = works; return false, nil }
@@ -162,7 +142,7 @@ func TestSyncRunAsksToPushOnlyWhatFinishedAndPrintsTheCommandOnNo(t *testing.T) 
 			t.Errorf("output lacks %q:\n%s", want, s)
 		}
 	}
-	if pushed(t, bare, bump) {
+	if testkit.Pushed(t, bare, bump) {
 		t.Fatal("pushed after no")
 	}
 }
@@ -172,14 +152,14 @@ func TestSyncRunPushesWhenTheAnswerIsYes(t *testing.T) {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
 	ctx, bump := runFixture(t, false)
-	bare := pushOrigin(t, ctx)
+	bare := testkit.PushOrigin(t, ctx)
 	opts := noAgents()
 	opts.ConfirmPush = func([]string) (bool, error) { return true, nil }
 	var out bytes.Buffer
 	if err := SyncRebase(ctx, []string{"bump"}, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
-	if !pushed(t, bare, bump) {
+	if !testkit.Pushed(t, bare, bump) {
 		t.Fatalf("origin does not have the rebased tip:\n%s", out.String())
 	}
 }
@@ -189,7 +169,7 @@ func TestSyncRunNoPushNeitherAsksNorPushes(t *testing.T) {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
 	ctx, bump := runFixture(t, false)
-	bare := pushOrigin(t, ctx)
+	bare := testkit.PushOrigin(t, ctx)
 	opts := noAgents()
 	opts.Push = PushNever
 	opts.ConfirmPush = func([]string) (bool, error) { t.Error("asked despite --no-push"); return true, nil }
@@ -200,7 +180,7 @@ func TestSyncRunNoPushNeitherAsksNorPushes(t *testing.T) {
 	if !strings.Contains(out.String(), "push: git -C") {
 		t.Fatalf("no push command:\n%s", out.String())
 	}
-	if pushed(t, bare, bump) {
+	if testkit.Pushed(t, bare, bump) {
 		t.Fatal("pushed despite --no-push")
 	}
 }
@@ -210,8 +190,8 @@ func TestSyncRunPushesNothingThatDidNotFinish(t *testing.T) {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
 	ctx, bump := contestedFixture(t)
-	bare := pushOrigin(t, ctx)
-	before := gitOut(t, bare, "rev-parse", "feat_wt/bump")
+	bare := testkit.PushOrigin(t, ctx)
+	before := testkit.GitOut(t, bare, "rev-parse", "feat_wt/bump")
 	opts := noAgents()
 	opts.Push = PushAlways
 	var out bytes.Buffer
@@ -221,7 +201,7 @@ func TestSyncRunPushesNothingThatDidNotFinish(t *testing.T) {
 	if s := out.String(); strings.Contains(s, "pushed") || strings.Contains(s, "push:") {
 		t.Fatalf("a handed-over worktree was offered for push:\n%s", s)
 	}
-	if gitOut(t, bare, "rev-parse", "feat_wt/bump") != before {
+	if testkit.GitOut(t, bare, "rev-parse", "feat_wt/bump") != before {
 		t.Fatalf("origin's branch moved; %s is mid-rebase", bump)
 	}
 }
@@ -231,9 +211,9 @@ func TestSyncResumePushesWithPush(t *testing.T) {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
 	ctx, bump, _, _ := handedOver(t)
-	bare := pushOrigin(t, ctx)
-	writeFile(t, bump, "a.txt", "merged by hand\n")
-	gitOut(t, bump, "add", "--", "a.txt")
+	bare := testkit.PushOrigin(t, ctx)
+	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
+	testkit.GitOut(t, bump, "add", "--", "a.txt")
 	opts := noResumeAgents()
 	opts.Push = PushAlways
 	var out bytes.Buffer
@@ -243,7 +223,7 @@ func TestSyncResumePushesWithPush(t *testing.T) {
 	if !strings.Contains(out.String(), "✓ pushed feat_wt/bump") {
 		t.Fatalf("out %s", out.String())
 	}
-	if !pushed(t, bare, bump) {
+	if !testkit.Pushed(t, bare, bump) {
 		t.Fatal("origin does not have the resumed tip")
 	}
 }

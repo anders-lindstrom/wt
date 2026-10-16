@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
 // declareNoPathsStep adds a deferred step with no paths to trunk's
@@ -12,10 +13,10 @@ import (
 func declareNoPathsStep(t *testing.T, ctx *kit.Context) {
 	t.Helper()
 	main := ctx.Repo.MainRoot
-	writeFile(t, main, ".wt-sync.yaml", "defer:\n  - run: \"true\"\n  - run: cp v.txt gen.txt\n    paths: [v.txt]\n    commit: \"chore: regen\"\n"+
+	testkit.WriteFile(t, main, ".wt-sync.yaml", "defer:\n  - run: \"true\"\n  - run: cp v.txt gen.txt\n    paths: [v.txt]\n    commit: \"chore: regen\"\n"+
 		"conflicts:\n  - paths: [v.txt]\n    strategy: owned-line\n    line: '^\\d'\n    rule: max-plus-patch\n")
-	gitIn(t, main, "commit", "-q", "-am", "declare a step with no paths")
-	gitIn(t, main, "fetch", "-q", "origin")
+	testkit.GitIn(t, main, "commit", "-q", "-am", "declare a step with no paths")
+	testkit.GitIn(t, main, "fetch", "-q", "origin")
 }
 
 // The overview lists the deferred steps trunk declares on every worktree, in
@@ -48,9 +49,9 @@ func TestSyncJSONListsNoDeclaredStepsWhenTrunkDeclaresNone(t *testing.T) {
 			t.Errorf("%s: deferredDeclared = %#v, want an empty array", w.Work, w.DeferredDeclared)
 		}
 	}
-	gitIn(t, ctx.Repo.MainRoot, "rm", "-q", ".wt-sync.yaml")
-	gitIn(t, ctx.Repo.MainRoot, "commit", "-q", "-m", "declare nothing")
-	gitIn(t, ctx.Repo.MainRoot, "fetch", "-q", "origin")
+	testkit.GitIn(t, ctx.Repo.MainRoot, "rm", "-q", ".wt-sync.yaml")
+	testkit.GitIn(t, ctx.Repo.MainRoot, "commit", "-q", "-m", "declare nothing")
+	testkit.GitIn(t, ctx.Repo.MainRoot, "fetch", "-q", "origin")
 	o := overviewJSON(t, ctx)
 	if o.Declared || len(o.Worktrees) == 0 {
 		t.Fatalf("overview = %+v", o)
@@ -75,12 +76,12 @@ func TestPlanListsTheDeclaredDeferredStepsOnEachStackMember(t *testing.T) {
 		t.Errorf("deferredDeclared = %+v", d)
 	}
 	// A declaration that has not been fetched is not the plan's yet.
-	writeFile(t, ctx.Repo.MainRoot, ".wt-sync.yaml", "defer:\n  - run: \"true\"\n")
-	gitIn(t, ctx.Repo.MainRoot, "commit", "-q", "-am", "declare another step")
+	testkit.WriteFile(t, ctx.Repo.MainRoot, ".wt-sync.yaml", "defer:\n  - run: \"true\"\n")
+	testkit.GitIn(t, ctx.Repo.MainRoot, "commit", "-q", "-am", "declare another step")
 	if d := planOfWork(t, ctx, "bump").Stack[0].DeferredDeclared; len(d) != 1 || d[0].Step != "cp v.txt gen.txt" {
 		t.Errorf("before the fetch: deferredDeclared = %+v", d)
 	}
-	gitIn(t, ctx.Repo.MainRoot, "fetch", "-q", "origin")
+	testkit.GitIn(t, ctx.Repo.MainRoot, "fetch", "-q", "origin")
 	if d := planOfWork(t, ctx, "bump").Stack[0].DeferredDeclared; len(d) != 1 || d[0].Step != "true" || d[0].Paths == nil || len(d[0].Paths) != 0 {
 		t.Errorf("after the fetch: deferredDeclared = %+v", d)
 	}

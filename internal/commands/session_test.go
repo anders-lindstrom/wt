@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -106,7 +107,7 @@ func sendSession(t *testing.T, ctx *kit.Context, r *sessionRig, o SessionSendOpt
 		o.Pattern = "thing"
 	}
 	err := SessionSendRun(ctx, o)
-	validateJSON(t, "session-send", out.Bytes())
+	testkit.ValidateJSON(t, "session-send", out.Bytes())
 	var res SessionSend
 	if jerr := json.Unmarshal(out.Bytes(), &res); jerr != nil {
 		t.Fatalf("stdout is not one JSON object: %v\n%s", jerr, out.String())
@@ -129,7 +130,7 @@ func TestSessionListFindsInboxesAndSaysWhyNot(t *testing.T) {
 	r.inbox(4001, sidA)
 	// A registry file that names another conversation: a reused pid.
 	r.inbox(4002, "cccccccc-0000-4000-8000-000000000000")
-	parked := background("parked", "dddddddd", "blocked", wt)
+	parked := testkit.Background("parked", "dddddddd", "blocked", wt)
 	own := liveSession("me", "eeeeeeee-0000-4000-8000-000000000000", wt, 4003)
 	own.Own = true
 	waiting := liveSession("asks", sidB, wt, 4002)
@@ -147,7 +148,7 @@ func TestSessionListFindsInboxesAndSaysWhyNot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	validateJSON(t, "session-list", out.Bytes())
+	testkit.ValidateJSON(t, "session-list", out.Bytes())
 	var l SessionList
 	if err := json.Unmarshal(out.Bytes(), &l); err != nil {
 		t.Fatal(err)
@@ -267,7 +268,7 @@ func TestSessionSendWithoutAReplyAddressHasNoFromAndNamesWt(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	got := r.inbox(4001, sidA)
-	claudeLists(t, liveSession("only", sidA, wt, 4001), background("parked", "dddddddd", "blocked", wt))
+	claudeLists(t, liveSession("only", sidA, wt, 4001), testkit.Background("parked", "dddddddd", "blocked", wt))
 	// One live session among a parked one is the one: nothing to guess.
 	if _, _, err := sendSession(t, ctx, r, SessionSendOptions{}, "hello"); err != nil {
 		t.Fatal(err)
@@ -329,7 +330,7 @@ func TestSessionSendNeverWritesToAParkedOrOwnSession(t *testing.T) {
 	got := r.inbox(4001, sidA)
 	own := liveSession("me", sidA, wt, 4001)
 	own.Own = true
-	claudeLists(t, own, background("parked", "dddddddd", "blocked", wt))
+	claudeLists(t, own, testkit.Background("parked", "dddddddd", "blocked", wt))
 
 	res, _, err := sendSession(t, ctx, r, SessionSendOptions{Session: "parked"}, "hello")
 	if err == nil || *res.ErrorCode != "notRunning" {
@@ -339,7 +340,7 @@ func TestSessionSendNeverWritesToAParkedOrOwnSession(t *testing.T) {
 	if err == nil || *res.ErrorCode != "noInbox" || res.Target == nil {
 		t.Errorf("own: want noInbox, got %v / %+v", err, res)
 	}
-	claudeLists(t, background("parked", "dddddddd", "blocked", wt))
+	claudeLists(t, testkit.Background("parked", "dddddddd", "blocked", wt))
 	res, _, err = sendSession(t, ctx, r, SessionSendOptions{}, "hello")
 	if err == nil || *res.ErrorCode != "notRunning" {
 		t.Errorf("only parked: want notRunning, got %v / %+v", err, res)
@@ -642,7 +643,7 @@ func TestSessionListAllPlacesSessionsByRepositoryFromOneRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	validateJSON(t, "session-list", out.Bytes())
+	testkit.ValidateJSON(t, "session-list", out.Bytes())
 	var l SessionList
 	if err := json.Unmarshal(out.Bytes(), &l); err != nil {
 		t.Fatal(err)
@@ -690,7 +691,7 @@ func stopSession(t *testing.T, ctx *kit.Context, r *sessionRig, o SessionStopOpt
 		defer func() { listAncestors = was }()
 	}
 	err := SessionStopRun(ctx, o)
-	validateJSON(t, "session-stop", out.Bytes())
+	testkit.ValidateJSON(t, "session-stop", out.Bytes())
 	var res SessionStop
 	if jerr := json.Unmarshal(out.Bytes(), &res); jerr != nil {
 		t.Fatalf("stdout is not one JSON object: %v\n%s", jerr, out.String())
@@ -702,7 +703,7 @@ func stopSession(t *testing.T, ctx *kit.Context, r *sessionRig, o SessionStopOpt
 }
 
 func running(name, id, cwd string, pid int) wtsync.Agent {
-	a := background(name, id, "working", cwd)
+	a := testkit.Background(name, id, "working", cwd)
 	a.Status, a.PID = "busy", pid
 	return a
 }
@@ -718,7 +719,7 @@ func TestSessionStopStopsTheBackgroundSessionByItsAttachID(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	calls := fakeClaudeStop(t, "Stopped aaaaaaaa", 0)
-	claudeLists(t, running("works", "aaaaaaaa", wt, 4001), background("parked", "dddddddd", "blocked", wt))
+	claudeLists(t, running("works", "aaaaaaaa", wt, 4001), testkit.Background("parked", "dddddddd", "blocked", wt))
 	res, _, err := stopSession(t, ctx, r, SessionStopOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -735,7 +736,7 @@ func TestSessionStopAParkedSessionIsAlreadyStopped(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	calls := fakeClaudeStop(t, "", 0)
-	claudeLists(t, background("parked", "dddddddd", "blocked", wt))
+	claudeLists(t, testkit.Background("parked", "dddddddd", "blocked", wt))
 	res, _, err := stopSession(t, ctx, r, SessionStopOptions{})
 	if err != nil || res.Outcome != "already-stopped" || codeOf(res) != "noProcess" {
 		t.Errorf("want already-stopped with no error, got %v / %+v", err, res)

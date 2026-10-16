@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
 func overviewJSON(t *testing.T, ctx *kit.Context) SyncOverview {
@@ -17,7 +18,7 @@ func overviewJSON(t *testing.T, ctx *kit.Context) SyncOverview {
 	if err := SyncJSON(ctx, SyncOptions{NoFetch: true}, &buf); err != nil {
 		t.Fatalf("%v\n%s", err, buf.String())
 	}
-	validateJSON(t, "sync", buf.Bytes())
+	testkit.ValidateJSON(t, "sync", buf.Bytes())
 	var o SyncOverview
 	if err := json.Unmarshal(buf.Bytes(), &o); err != nil {
 		t.Fatalf("%v\n%s", err, buf.String())
@@ -42,7 +43,7 @@ func TestSyncJSONGroupsEveryWorktreeAndMovesNoRef(t *testing.T) {
 	ctx, bump := runFixture(t, false)
 	contestedSibling(t, ctx)
 	refs := func() string {
-		return gitOut(t, ctx.Repo.MainRoot, "for-each-ref", "--format=%(refname) %(objectname)")
+		return testkit.GitOut(t, ctx.Repo.MainRoot, "for-each-ref", "--format=%(refname) %(objectname)")
 	}
 	before := refs()
 	o := overviewJSON(t, ctx)

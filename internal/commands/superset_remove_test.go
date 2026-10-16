@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/superset"
@@ -44,28 +45,8 @@ func supersetAt(t *testing.T, ctx *kit.Context, path, deleteBody string) string 
 	return log
 }
 
-const deleted = `echo '{"deleted":["w1"],"warnings":[]}'`
-
 // noClaude keeps a removal off `claude agents`.
 var noClaude = []wtsync.Agent{}
-
-// supersetLines is every output line about Superset. Paths are left out of
-// the question: they carry the test's own name.
-func supersetLines(out string) []string {
-	var lines []string
-	for _, line := range strings.Split(out, "\n") {
-		var words []string
-		for _, word := range strings.Fields(line) {
-			if !strings.Contains(word, "/") {
-				words = append(words, word)
-			}
-		}
-		if strings.Contains(strings.ToLower(strings.Join(words, " ")), "superset") {
-			lines = append(lines, line)
-		}
-	}
-	return lines
-}
 
 // wt remove, deleting or quarantining, deletes the worktree's Superset
 // workspace — and only once the directory is gone from its path and git no
@@ -78,11 +59,11 @@ func TestRemoveDeregistersTheSupersetWorkspace(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			ctx, path := safetyWorktree(t, "fix/mirrored")
-			optIn(ctx)
-			log := supersetAt(t, ctx, path, deleted)
+			testkit.OptIn(ctx)
+			log := supersetAt(t, ctx, path, testkit.Deleted)
 			opts := RemoveOptions{Agents: noClaude}
 			if quarantined {
-				opts.Quarantine = trashFor(t, ctx)
+				opts.Quarantine = testkit.TrashFor(t, ctx)
 			}
 			var res RemoveResult
 			opts.Result = &res
@@ -91,7 +72,7 @@ func TestRemoveDeregistersTheSupersetWorkspace(t *testing.T) {
 				t.Fatalf("RemoveAt: %v\n%s", err, out.String())
 			}
 			want := []string{"ws list --local --json", "ws delete --local w1 --json"}
-			if got := argvOf(t, log); strings.Join(got, "|") != strings.Join(want, "|") {
+			if got := testkit.ArgvOf(t, log); strings.Join(got, "|") != strings.Join(want, "|") {
 				t.Errorf("argv =\n  %q\nwant\n  %q", got, want)
 			}
 			if res.Superset != StepDeregistered || res.SupersetReason != "" {
@@ -113,18 +94,18 @@ func TestRemoveSurvivesEverySupersetState(t *testing.T) {
 		result     string
 		line       string
 	}{
-		"not installed":  {&superset.Status{}, deleted, kit.StepSkipped, ""},
-		"host stopped":   {&superset.Status{Exe: "/nope/superset"}, deleted, kit.StepSkipped, "- Superset's host service is not running; its workspace, if any, was left"},
-		"status broken":  {&superset.Status{Exe: "/nope/superset", Err: errBoom}, deleted, kit.StepFailed, "! boom; its Superset workspace, if any, was left"},
-		"list fails":     {&superset.Status{Exe: "/nope/superset", Running: true}, deleted, kit.StepFailed, "! superset ws list --local --json failed"},
+		"not installed":  {&superset.Status{}, testkit.Deleted, kit.StepSkipped, ""},
+		"host stopped":   {&superset.Status{Exe: "/nope/superset"}, testkit.Deleted, kit.StepSkipped, "- Superset's host service is not running; its workspace, if any, was left"},
+		"status broken":  {&superset.Status{Exe: "/nope/superset", Err: testkit.ErrBoom}, testkit.Deleted, kit.StepFailed, "! boom; its Superset workspace, if any, was left"},
+		"list fails":     {&superset.Status{Exe: "/nope/superset", Running: true}, testkit.Deleted, kit.StepFailed, "! superset ws list --local --json failed"},
 		"delete fails":   {nil, `echo 'Error: nope' >&2; exit 1`, kit.StepFailed, "! superset ws delete --local w1 --json failed: nope; its Superset workspace was left"},
 		"delete warns":   {nil, `echo '{"deleted":["w1"],"warnings":["teardown failed"]}'`, StepDeregistered, "✓ deleted its Superset workspace; Superset warned: teardown failed"},
-		"not registered": {nil, deleted, StepNotRegistered, ""},
+		"not registered": {nil, testkit.Deleted, StepNotRegistered, ""},
 		"warns on lines": {nil, `printf '%s\n' '{"deleted":["w1"],"warnings":["teardown failed\nat line 3"]}'`, StepDeregistered, "✓ deleted its Superset workspace; Superset warned: teardown failed at line 3"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			ctx, path := safetyWorktree(t, "fix/mirrored")
-			optIn(ctx)
+			testkit.OptIn(ctx)
 			at := path
 			if name == "not registered" {
 				at = t.TempDir()
@@ -138,13 +119,13 @@ func TestRemoveSurvivesEverySupersetState(t *testing.T) {
 			if err := RemoveAt(ctx, path, RemoveOptions{Agents: noClaude, Result: &res}, &out); err != nil {
 				t.Fatalf("RemoveAt: %v\n%s", err, out.String())
 			}
-			if exists(path) || res.Outcome != RemoveRemoved {
+			if testkit.Exists(path) || res.Outcome != RemoveRemoved {
 				t.Fatalf("the removal must go ahead: %+v", res)
 			}
 			if res.Superset != tc.result {
 				t.Errorf("superset = %q (%q), want %q", res.Superset, res.SupersetReason, tc.result)
 			}
-			lines := supersetLines(out.String())
+			lines := testkit.SupersetLines(out.String())
 			switch {
 			case tc.line == "" && len(lines) != 0:
 				t.Errorf("want silence, got %q", lines)
@@ -152,7 +133,7 @@ func TestRemoveSurvivesEverySupersetState(t *testing.T) {
 				t.Errorf("lines = %q, want one starting %q", lines, tc.line)
 			}
 			if name == "not registered" {
-				for _, a := range argvOf(t, log) {
+				for _, a := range testkit.ArgvOf(t, log) {
 					if strings.HasPrefix(a, "ws delete") {
 						t.Errorf("deleted a workspace at another path: %q", a)
 					}
@@ -167,24 +148,24 @@ func TestRemoveSurvivesEverySupersetState(t *testing.T) {
 func TestRemoveLeavesSupersetAloneWhenTheIntegrationIsOff(t *testing.T) {
 	for name, set := range map[string]func(*kit.Context){
 		"not opted in": func(*kit.Context) {},
-		"repo off":     func(c *kit.Context) { optIn(c); c.Config.SupersetRegister = config.SupersetOff },
+		"repo off":     func(c *kit.Context) { testkit.OptIn(c); c.Config.SupersetRegister = config.SupersetOff },
 	} {
 		t.Run(name, func(t *testing.T) {
 			ctx, path := safetyWorktree(t, "fix/mirrored")
 			set(ctx)
-			log := supersetAt(t, ctx, path, deleted)
+			log := supersetAt(t, ctx, path, testkit.Deleted)
 			var res RemoveResult
 			var out bytes.Buffer
 			if err := RemoveAt(ctx, path, RemoveOptions{Agents: noClaude, Result: &res}, &out); err != nil {
 				t.Fatalf("RemoveAt: %v\n%s", err, out.String())
 			}
-			if got := argvOf(t, log); got != nil {
+			if got := testkit.ArgvOf(t, log); got != nil {
 				t.Errorf("superset was run: %q", got)
 			}
 			if res.Superset != kit.StepSkipped {
 				t.Errorf("superset = %q", res.Superset)
 			}
-			if lines := supersetLines(out.String()); len(lines) != 0 {
+			if lines := testkit.SupersetLines(out.String()); len(lines) != 0 {
 				t.Errorf("want silence, got %q", lines)
 			}
 		})
@@ -196,18 +177,18 @@ func TestRemoveThatDoesNotHappenKeepsTheSupersetWorkspace(t *testing.T) {
 	for name, dirty := range map[string]bool{"refused": true, "dry run": false} {
 		t.Run(name, func(t *testing.T) {
 			ctx, path := safetyWorktree(t, "fix/mirrored")
-			optIn(ctx)
-			log := supersetAt(t, ctx, path, deleted)
+			testkit.OptIn(ctx)
+			log := supersetAt(t, ctx, path, testkit.Deleted)
 			if dirty {
-				mustWrite(t, filepath.Join(path, "wip.txt"), "wip")
+				testkit.MustWrite(t, filepath.Join(path, "wip.txt"), "wip")
 			}
 			var res RemoveResult
 			var out bytes.Buffer
 			_ = RemoveAt(ctx, path, RemoveOptions{Agents: noClaude, DryRun: !dirty, Result: &res}, &out)
-			if !exists(path) {
+			if !testkit.Exists(path) {
 				t.Fatal("the worktree must still be there")
 			}
-			for _, a := range argvOf(t, log) {
+			for _, a := range testkit.ArgvOf(t, log) {
 				if strings.HasPrefix(a, "ws delete") {
 					t.Errorf("deleted the workspace of a worktree that stays: %q", a)
 				}
@@ -226,8 +207,8 @@ func TestDeregisterNeverRunsWhileTheWorktreeIsThere(t *testing.T) {
 	for _, how := range []string{"directory", "registration"} {
 		t.Run(how, func(t *testing.T) {
 			ctx, path := safetyWorktree(t, "fix/mirrored")
-			optIn(ctx)
-			log := supersetAt(t, ctx, path, deleted)
+			testkit.OptIn(ctx)
+			log := supersetAt(t, ctx, path, testkit.Deleted)
 			found := findSupersetWorkspaces(ctx, path)
 			if how == "registration" {
 				// Gone from disk, still in git's list: a partial quarantine.
@@ -237,15 +218,15 @@ func TestDeregisterNeverRunsWhileTheWorktreeIsThere(t *testing.T) {
 			}
 			var out bytes.Buffer
 			result, reason := found.deregister(ctx, path, &out)
-			for _, a := range argvOf(t, log) {
+			for _, a := range testkit.ArgvOf(t, log) {
 				if strings.HasPrefix(a, "ws delete") {
-					t.Fatalf("delete was called with the worktree still there: %q", argvOf(t, log))
+					t.Fatalf("delete was called with the worktree still there: %q", testkit.ArgvOf(t, log))
 				}
 			}
 			if result != kit.StepSkipped || !strings.Contains(reason, "still") {
 				t.Errorf("result = %q (%q)", result, reason)
 			}
-			if lines := supersetLines(out.String()); len(lines) != 1 {
+			if lines := testkit.SupersetLines(out.String()); len(lines) != 1 {
 				t.Errorf("want one line saying why, got %q", lines)
 			}
 		})
@@ -261,13 +242,13 @@ func TestSweepDeregistersEachRemovedWorktree(t *testing.T) {
 			name = "quarantine"
 		}
 		t.Run(name, func(t *testing.T) {
-			ctx, _, _ := sweepRepo(t)
+			ctx, _, _ := testkit.SweepRepo(t)
 			path := mergedWorktree(t, ctx, "fix/one")
-			optIn(ctx)
-			log := supersetAt(t, ctx, path, deleted)
+			testkit.OptIn(ctx)
+			log := supersetAt(t, ctx, path, testkit.Deleted)
 			opts := SweepOptions{NoFetch: true, Agents: noClaude, PRs: map[string]github.PR{}}
 			if quarantined {
-				opts.Quarantine = trashFor(t, ctx)
+				opts.Quarantine = testkit.TrashFor(t, ctx)
 			}
 			r, human, err := sweepJSON(t, ctx, opts)
 			if err != nil || r.Outcome != kit.OutcomeDone {
@@ -277,7 +258,7 @@ func TestSweepDeregistersEachRemovedWorktree(t *testing.T) {
 			if it.Superset == nil || it.Superset.Result != StepDeregistered || it.Superset.Reason != nil {
 				t.Errorf("item superset = %+v", it.Superset)
 			}
-			if got := argvOf(t, log); len(got) != 2 || got[1] != "ws delete --local w1 --json" {
+			if got := testkit.ArgvOf(t, log); len(got) != 2 || got[1] != "ws delete --local w1 --json" {
 				t.Errorf("argv = %q", got)
 			}
 		})
@@ -286,9 +267,9 @@ func TestSweepDeregistersEachRemovedWorktree(t *testing.T) {
 
 // A sweep item that removed no worktree has no Superset step.
 func TestSweepItemWithoutAWorktreeHasNoSupersetStep(t *testing.T) {
-	ctx, main, _ := sweepRepo(t)
-	branchWithWork(t, main, "done-work", 1)
-	landOnMain(t, main, "done-work")
+	ctx, main, _ := testkit.SweepRepo(t)
+	testkit.BranchWithWork(t, main, "done-work", 1)
+	testkit.LandOnMain(t, main, "done-work")
 	r, human, err := sweepJSON(t, ctx, SweepOptions{NoFetch: true, Agents: noClaude, PRs: map[string]github.PR{}})
 	if err != nil {
 		t.Fatalf("%v\n%s", err, human)
@@ -301,8 +282,8 @@ func TestSweepItemWithoutAWorktreeHasNoSupersetStep(t *testing.T) {
 // wt restore registers the worktree it put back, the way wt new does.
 func TestRestoreRegistersWithSuperset(t *testing.T) {
 	ctx, path, branch, _, dir := quarantined(t, "fix/back", false)
-	optIn(ctx)
-	log := supersetAt(t, ctx, path, deleted)
+	testkit.OptIn(ctx)
+	log := supersetAt(t, ctx, path, testkit.Deleted)
 	var buf bytes.Buffer
 	if err := Restore(ctx, dir, RestoreOptions{}, &buf); err != nil {
 		t.Fatalf("Restore: %v\n%s", err, buf.String())
@@ -311,7 +292,7 @@ func TestRestoreRegistersWithSuperset(t *testing.T) {
 		"projects list --local --json",
 		"ws create --local --project p1 --name " + branch + " --branch " + branch + " --skip-branch-prefix --json",
 	}
-	if got := argvOf(t, log); strings.Join(got, "|") != strings.Join(want, "|") {
+	if got := testkit.ArgvOf(t, log); strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("argv =\n  %q\nwant\n  %q", got, want)
 	}
 	if !strings.Contains(buf.String(), "✓ registered with Superset") {
@@ -323,9 +304,9 @@ func TestRestoreRegistersWithSuperset(t *testing.T) {
 // it says so the way wt new does, and registers nothing.
 func TestRestoreDetachedSkipsSuperset(t *testing.T) {
 	ctx, path, _, _, dir := quarantined(t, "fix/moved-on", true)
-	gitIn(t, ctx.Repo.MainRoot, "update-ref", "refs/heads/moved-on", "main")
-	optIn(ctx)
-	log := supersetAt(t, ctx, path, deleted)
+	testkit.GitIn(t, ctx.Repo.MainRoot, "update-ref", "refs/heads/moved-on", "main")
+	testkit.OptIn(ctx)
+	log := supersetAt(t, ctx, path, testkit.Deleted)
 	var buf bytes.Buffer
 	if err := Restore(ctx, dir, RestoreOptions{}, &buf); err != nil {
 		t.Fatalf("Restore: %v\n%s", err, buf.String())
@@ -333,7 +314,7 @@ func TestRestoreDetachedSkipsSuperset(t *testing.T) {
 	if !strings.Contains(buf.String(), path+" is not on a branch; not registered with Superset") {
 		t.Errorf("output:\n%s", buf.String())
 	}
-	if got := argvOf(t, log); got != nil {
+	if got := testkit.ArgvOf(t, log); got != nil {
 		t.Errorf("superset was asked to adopt a detached worktree: %q", got)
 	}
 }
@@ -341,12 +322,12 @@ func TestRestoreDetachedSkipsSuperset(t *testing.T) {
 // With the integration off, a restore runs no superset.
 func TestRestoreLeavesSupersetAloneWhenOff(t *testing.T) {
 	ctx, path, _, _, dir := quarantined(t, "fix/back", false)
-	log := supersetAt(t, ctx, path, deleted)
+	log := supersetAt(t, ctx, path, testkit.Deleted)
 	var buf bytes.Buffer
 	if err := Restore(ctx, dir, RestoreOptions{}, &buf); err != nil {
 		t.Fatalf("Restore: %v\n%s", err, buf.String())
 	}
-	if got := argvOf(t, log); got != nil {
+	if got := testkit.ArgvOf(t, log); got != nil {
 		t.Errorf("superset was run: %q", got)
 	}
 }
@@ -361,11 +342,11 @@ func TestRemoveKeepSupersetAsksSupersetNothing(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			ctx, path := safetyWorktree(t, "fix/kept-ws")
-			optIn(ctx)
-			log := supersetAt(t, ctx, path, deleted)
+			testkit.OptIn(ctx)
+			log := supersetAt(t, ctx, path, testkit.Deleted)
 			opts := RemoveOptions{Agents: noClaude, KeepSuperset: true}
 			if quarantined {
-				opts.Quarantine = trashFor(t, ctx)
+				opts.Quarantine = testkit.TrashFor(t, ctx)
 			}
 			var res RemoveResult
 			opts.Result = &res
@@ -373,13 +354,13 @@ func TestRemoveKeepSupersetAsksSupersetNothing(t *testing.T) {
 			if err := RemoveAt(ctx, path, opts, &out); err != nil {
 				t.Fatalf("RemoveAt: %v\n%s", err, out.String())
 			}
-			if got := argvOf(t, log); got != nil {
+			if got := testkit.ArgvOf(t, log); got != nil {
 				t.Errorf("superset was run: %q", got)
 			}
 			if res.Superset != StepOptedOut {
 				t.Errorf("result superset = %q (%q)", res.Superset, res.SupersetReason)
 			}
-			if lines := supersetLines(out.String()); len(lines) != 1 || !strings.Contains(lines[0], "--keep-superset") {
+			if lines := testkit.SupersetLines(out.String()); len(lines) != 1 || !strings.Contains(lines[0], "--keep-superset") {
 				t.Errorf("superset lines = %q", lines)
 			}
 		})
@@ -390,8 +371,8 @@ func TestRemoveKeepSupersetAsksSupersetNothing(t *testing.T) {
 // superset step says optedOut.
 func TestRemoveJSONKeepSupersetIsInThePlanAndTheToken(t *testing.T) {
 	ctx, path := safetyWorktree(t, "fix/kept-ws-json")
-	optIn(ctx)
-	log := supersetAt(t, ctx, path, deleted)
+	testkit.OptIn(ctx)
+	log := supersetAt(t, ctx, path, testkit.Deleted)
 	plain, err := removePlanJSON(t, ctx, path, RemoveOptions{Agents: noClaude})
 	if err != nil {
 		t.Fatal(err)
@@ -413,16 +394,16 @@ func TestRemoveJSONKeepSupersetIsInThePlanAndTheToken(t *testing.T) {
 	if s := step(t, r, kit.StepSuperset); s.Result != StepOptedOut || s.Reason == nil {
 		t.Errorf("superset step = %+v", s)
 	}
-	if got := argvOf(t, log); got != nil {
+	if got := testkit.ArgvOf(t, log); got != nil {
 		t.Errorf("superset was run: %q", got)
 	}
 }
 
 func TestSweepKeepSupersetAsksSupersetNothing(t *testing.T) {
-	ctx, _, _ := sweepRepo(t)
+	ctx, _, _ := testkit.SweepRepo(t)
 	path := mergedWorktree(t, ctx, "fix/one")
-	optIn(ctx)
-	log := supersetAt(t, ctx, path, deleted)
+	testkit.OptIn(ctx)
+	log := supersetAt(t, ctx, path, testkit.Deleted)
 	opts := SweepOptions{NoFetch: true, Agents: noClaude, PRs: map[string]github.PR{}}
 	plain, err := sweepPlanJSON(t, ctx, opts)
 	if err != nil {
@@ -448,7 +429,7 @@ func TestSweepKeepSupersetAsksSupersetNothing(t *testing.T) {
 	if it.Superset == nil || it.Superset.Result != StepOptedOut {
 		t.Errorf("item superset = %+v", it.Superset)
 	}
-	if got := argvOf(t, log); got != nil {
+	if got := testkit.ArgvOf(t, log); got != nil {
 		t.Errorf("superset was run: %q", got)
 	}
 }

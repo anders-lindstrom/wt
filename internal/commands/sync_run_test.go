@@ -2,17 +2,15 @@ package commands
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -23,7 +21,7 @@ import (
 // moved on v.txt; origin fetched.
 func runFixture(t *testing.T, withDefer bool) (ctx *kit.Context, bump string) {
 	t.Helper()
-	main := committedRepo(t, minimalConf)
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	write := func(rel, content string) {
 		t.Helper()
 		if err := os.WriteFile(filepath.Join(main, rel), []byte(content), 0o644); err != nil {
@@ -38,8 +36,8 @@ func runFixture(t *testing.T, withDefer bool) (ctx *kit.Context, bump string) {
 	write("v.txt", "1.0.0\n")
 	write("gen.txt", "stale\n")
 	write("a.txt", "a\n")
-	gitIn(t, main, "add", "-A")
-	gitIn(t, main, "commit", "-q", "-m", "declare")
+	testkit.GitIn(t, main, "add", "-A")
+	testkit.GitIn(t, main, "commit", "-q", "-m", "declare")
 	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
@@ -52,14 +50,14 @@ func runFixture(t *testing.T, withDefer bool) (ctx *kit.Context, bump string) {
 	if err := os.WriteFile(filepath.Join(bump, "v.txt"), []byte("1.0.1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, bump, "commit", "-q", "-am", "bump")
+	testkit.GitIn(t, bump, "commit", "-q", "-am", "bump")
 	write("v.txt", "1.0.5\n")
-	gitIn(t, main, "commit", "-q", "-am", "trunk bump")
+	testkit.GitIn(t, main, "commit", "-q", "-am", "trunk bump")
 	if _, err := New(ctx, "feat/other", NewOptions{NoSetup: true}, &buf); err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, main, "remote", "add", "origin", main)
-	gitIn(t, main, "fetch", "-q", "origin")
+	testkit.GitIn(t, main, "remote", "add", "origin", main)
+	testkit.GitIn(t, main, "fetch", "-q", "origin")
 	return ctx, bump
 }
 
@@ -84,9 +82,9 @@ func declareScript(t *testing.T, ctx *kit.Context) {
 	if err := os.WriteFile(filepath.Join(main, ".wt-sync.yaml"), []byte(yaml), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitOut(t, main, "add", "-A")
-	gitOut(t, main, "commit", "-q", "-m", "declare a script for v.txt")
-	gitOut(t, main, "fetch", "-q", "origin")
+	testkit.GitOut(t, main, "add", "-A")
+	testkit.GitOut(t, main, "commit", "-q", "-m", "declare a script for v.txt")
+	testkit.GitOut(t, main, "fetch", "-q", "origin")
 }
 
 // contestedFixture is runFixture's repository with one more file in play:
@@ -106,30 +104,15 @@ func contested(t *testing.T, withDefer bool) (ctx *kit.Context, bump string) {
 	if err := os.WriteFile(filepath.Join(bump, "a.txt"), []byte("branch\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitOut(t, bump, "add", "-A")
-	gitOut(t, bump, "commit", "-q", "--amend", "--no-edit")
+	testkit.GitOut(t, bump, "add", "-A")
+	testkit.GitOut(t, bump, "commit", "-q", "--amend", "--no-edit")
 	if err := os.WriteFile(filepath.Join(main, "a.txt"), []byte("trunk\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitOut(t, main, "add", "-A")
-	gitOut(t, main, "commit", "-q", "-m", "a on trunk")
-	gitOut(t, main, "fetch", "-q", "origin")
+	testkit.GitOut(t, main, "add", "-A")
+	testkit.GitOut(t, main, "commit", "-q", "-m", "a on trunk")
+	testkit.GitOut(t, main, "fetch", "-q", "origin")
 	return ctx, bump
-}
-
-// gitAncestor reports whether a is an ancestor of b; exit 1 is a plain no.
-func gitAncestor(t *testing.T, dir, a, b string) bool {
-	t.Helper()
-	_, err := gittest.Try(t, dir, "merge-base", "--is-ancestor", a, b)
-	if err == nil {
-		return true
-	}
-	var exit *exec.ExitError
-	if errors.As(err, &exit) && exit.ExitCode() == 1 {
-		return false
-	}
-	t.Fatalf("merge-base --is-ancestor %s %s: %v", a, b, err)
-	return false
 }
 
 func noAgents() RunOptions {
@@ -154,13 +137,13 @@ func TestSyncRunRebasesARecipeWorktreeAndRunsTheDeferredStep(t *testing.T) {
 			t.Errorf("output lacks %q:\n%s", want, s)
 		}
 	}
-	if gitOut(t, bump, "log", "-1", "--format=%s") != "chore: regen" {
+	if testkit.GitOut(t, bump, "log", "-1", "--format=%s") != "chore: regen" {
 		t.Fatal("no regeneration commit")
 	}
 	if got, _ := os.ReadFile(filepath.Join(bump, "gen.txt")); string(got) != "1.0.6\n" {
 		t.Fatalf("gen.txt %q", got)
 	}
-	if left, _ := filepath.Glob(filepath.Join(gitOut(t, bump, "rev-parse", "--absolute-git-dir"), wtsync.LockName+"*")); len(left) != 0 {
+	if left, _ := filepath.Glob(filepath.Join(testkit.GitOut(t, bump, "rev-parse", "--absolute-git-dir"), wtsync.LockName+"*")); len(left) != 0 {
 		t.Fatalf("lock left behind: %v", left)
 	}
 }
@@ -173,16 +156,16 @@ func TestSyncRunRefusesADirtyWorktreeAndTouchesNothing(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(bump, "v.txt"), []byte("9.9.9\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	old := gitOut(t, bump, "rev-parse", "HEAD")
+	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	var out bytes.Buffer
 	err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out)
 	if err == nil || !strings.Contains(out.String(), "tracked changes") {
 		t.Fatalf("err %v out %s", err, out.String())
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != old {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != old {
 		t.Fatal("HEAD moved")
 	}
-	if refs := gitOut(t, ctx.Repo.MainRoot, "for-each-ref", "refs/wt-sync/"); refs != "" {
+	if refs := testkit.GitOut(t, ctx.Repo.MainRoot, "for-each-ref", "refs/wt-sync/"); refs != "" {
 		t.Fatalf("a safety ref was written: %s", refs)
 	}
 }
@@ -212,13 +195,13 @@ func TestSyncRunRefusesWhenAgentsCannotBeListed(t *testing.T) {
 	t.Setenv("PATH", stub+string(os.PathListSeparator)+os.Getenv("PATH"))
 	opts := noAgents()
 	opts.Agents = nil
-	old := gitOut(t, bump, "rev-parse", "HEAD")
+	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	var out bytes.Buffer
 	err := SyncRebase(ctx, []string{"bump"}, opts, &out)
 	if err == nil || !strings.Contains(err.Error(), "agent sessions") {
 		t.Fatalf("err %v", err)
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != old {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != old {
 		t.Fatal("HEAD moved")
 	}
 }
@@ -235,15 +218,15 @@ func TestSyncRunSkipsACurrentWorktreeWithoutASafetyRef(t *testing.T) {
 	if !strings.Contains(out.String(), "skipped:") {
 		t.Fatalf("out %s", out.String())
 	}
-	if refs := gitOut(t, ctx.Repo.MainRoot, "for-each-ref", "refs/wt-sync/"); refs != "" {
+	if refs := testkit.GitOut(t, ctx.Repo.MainRoot, "for-each-ref", "refs/wt-sync/"); refs != "" {
 		t.Fatalf("a safety ref was written: %s", refs)
 	}
 }
 
 func TestSyncRunRefusesWhenTrunkDeclaresNothing(t *testing.T) {
-	main := committedRepo(t, minimalConf)
-	gitIn(t, main, "remote", "add", "origin", main)
-	gitIn(t, main, "fetch", "-q", "origin")
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
+	testkit.GitIn(t, main, "remote", "add", "origin", main)
+	testkit.GitIn(t, main, "fetch", "-q", "origin")
 	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
@@ -270,8 +253,8 @@ func stackFixture(t *testing.T, ctx *kit.Context) (child string) {
 	if err := os.WriteFile(filepath.Join(child, "c.txt"), []byte("c\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitOut(t, child, "add", "-A")
-	gitOut(t, child, "commit", "-q", "-m", "child")
+	testkit.GitOut(t, child, "add", "-A")
+	testkit.GitOut(t, child, "commit", "-q", "-m", "child")
 	return child
 }
 
@@ -288,20 +271,20 @@ func TestSyncRunRebasesAStackParentFirstAndChildOntoTheParentsFinalTip(t *testin
 	if !strings.Contains(out.String(), "is a stack with") {
 		t.Fatalf("out %s", out.String())
 	}
-	parentTip := gitOut(t, bump, "rev-parse", "HEAD")
-	if gitOut(t, bump, "log", "-1", "--format=%s") != "chore: regen" {
+	parentTip := testkit.GitOut(t, bump, "rev-parse", "HEAD")
+	if testkit.GitOut(t, bump, "log", "-1", "--format=%s") != "chore: regen" {
 		t.Fatal("parent has no regeneration commit")
 	}
 	// The child's own commit sits directly on the parent's final tip (the
 	// child's deferred step does not fire: its rebase changed no v.txt of its own
 	// relative to its parent, and gen.txt is already regenerated there).
-	if gitOut(t, child, "rev-parse", "HEAD~1") != parentTip {
+	if testkit.GitOut(t, child, "rev-parse", "HEAD~1") != parentTip {
 		t.Fatalf("child not on the parent's final tip:\n%s", out.String())
 	}
-	if !gitAncestor(t, ctx.Repo.MainRoot, "origin/main", "feat_wt/bump") {
+	if !testkit.GitAncestor(t, ctx.Repo.MainRoot, "origin/main", "feat_wt/bump") {
 		t.Fatal("parent not on trunk")
 	}
-	refs := gitOut(t, ctx.Repo.MainRoot, "for-each-ref", "--format=%(refname)", "refs/wt-sync/")
+	refs := testkit.GitOut(t, ctx.Repo.MainRoot, "for-each-ref", "--format=%(refname)", "refs/wt-sync/")
 	if !strings.Contains(refs, "feat_wt/child/99") || !strings.Contains(refs, "feat_wt/bump/99") {
 		t.Fatalf("safety refs %q", refs)
 	}
@@ -316,16 +299,16 @@ func TestSyncRunARefusedStackMemberDefersTheWholeStack(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(child, "c.txt"), []byte("dirty\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	oldBump, oldChild := gitOut(t, bump, "rev-parse", "HEAD"), gitOut(t, child, "rev-parse", "HEAD")
+	oldBump, oldChild := testkit.GitOut(t, bump, "rev-parse", "HEAD"), testkit.GitOut(t, child, "rev-parse", "HEAD")
 	var out bytes.Buffer
 	err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out)
 	if err == nil || !strings.Contains(out.String(), "child: tracked changes") {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != oldBump || gitOut(t, child, "rev-parse", "HEAD") != oldChild {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != oldBump || testkit.GitOut(t, child, "rev-parse", "HEAD") != oldChild {
 		t.Fatal("a stack member moved")
 	}
-	if refs := gitOut(t, ctx.Repo.MainRoot, "for-each-ref", "refs/wt-sync/"); refs != "" {
+	if refs := testkit.GitOut(t, ctx.Repo.MainRoot, "for-each-ref", "refs/wt-sync/"); refs != "" {
 		t.Fatalf("a safety ref was written: %s", refs)
 	}
 }
@@ -344,7 +327,7 @@ func TestSyncRunIgnoresAnEmptyWorktreeBehindTrunk(t *testing.T) {
 		t.Fatal(err)
 	}
 	resolved, _ := filepath.EvalSymlinks(stale)
-	old := gitOut(t, stale, "rev-parse", "HEAD")
+	old := testkit.GitOut(t, stale, "rev-parse", "HEAD")
 	opts := noAgents()
 	opts.Agents = []wtsync.Agent{{Name: "stale-1", Cwd: resolved}}
 	var out bytes.Buffer
@@ -354,10 +337,10 @@ func TestSyncRunIgnoresAnEmptyWorktreeBehindTrunk(t *testing.T) {
 	if s := out.String(); strings.Contains(s, "is a stack with") || strings.Contains(s, "stale-1") {
 		t.Fatalf("stale was pulled in:\n%s", s)
 	}
-	if !gitAncestor(t, ctx.Repo.MainRoot, "origin/main", "feat_wt/bump") {
+	if !testkit.GitAncestor(t, ctx.Repo.MainRoot, "origin/main", "feat_wt/bump") {
 		t.Fatalf("bump not rebased:\n%s", out.String())
 	}
-	if gitOut(t, stale, "rev-parse", "HEAD") != old {
+	if testkit.GitOut(t, stale, "rev-parse", "HEAD") != old {
 		t.Fatal("stale moved")
 	}
 }
@@ -368,7 +351,7 @@ func TestSyncRunAsksOnceForMoreThanOneWorktreeAndStopsOnNo(t *testing.T) {
 	}
 	ctx, bump := runFixture(t, false)
 	stackFixture(t, ctx)
-	old := gitOut(t, bump, "rev-parse", "HEAD")
+	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	var asked []string
 	opts := noAgents()
 	opts.Confirm = func(works []string) (bool, error) { asked = works; return false, nil }
@@ -379,7 +362,7 @@ func TestSyncRunAsksOnceForMoreThanOneWorktreeAndStopsOnNo(t *testing.T) {
 	if len(asked) != 2 || !strings.Contains(out.String(), "nothing rebased") {
 		t.Fatalf("asked %v out %s", asked, out.String())
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != old {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != old {
 		t.Fatal("HEAD moved after no")
 	}
 	// --yes, and a run with no terminal, arrive here as a nil Confirm.
@@ -408,12 +391,12 @@ func contestedSibling(t *testing.T, ctx *kit.Context) (alpha string) {
 	if err := os.WriteFile(filepath.Join(alpha, "a.txt"), []byte("alpha\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitOut(t, alpha, "commit", "-q", "-am", "a on alpha")
+	testkit.GitOut(t, alpha, "commit", "-q", "-am", "a on alpha")
 	if err := os.WriteFile(filepath.Join(main, "a.txt"), []byte("trunk\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitOut(t, main, "commit", "-q", "-am", "a on trunk")
-	gitOut(t, main, "fetch", "-q", "origin")
+	testkit.GitOut(t, main, "commit", "-q", "-am", "a on trunk")
+	testkit.GitOut(t, main, "fetch", "-q", "origin")
 	return alpha
 }
 
@@ -426,8 +409,8 @@ func TestSyncRunWithNothingNamedTakesEveryReadyWorktreeAndAsksFirst(t *testing.T
 	}
 	ctx, bump := runFixture(t, false)
 	alpha := contestedSibling(t, ctx)
-	oldBump := gitOut(t, bump, "rev-parse", "HEAD")
-	oldAlpha := gitOut(t, alpha, "rev-parse", "HEAD")
+	oldBump := testkit.GitOut(t, bump, "rev-parse", "HEAD")
+	oldAlpha := testkit.GitOut(t, alpha, "rev-parse", "HEAD")
 	var asked []string
 	opts := noAgents()
 	opts.Confirm = func(works []string) (bool, error) { asked = works; return false, nil }
@@ -446,7 +429,7 @@ func TestSyncRunWithNothingNamedTakesEveryReadyWorktreeAndAsksFirst(t *testing.T
 			t.Errorf("missing %q in:\n%s", want, s)
 		}
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != oldBump {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != oldBump {
 		t.Fatal("HEAD moved after no")
 	}
 	opts.Confirm = nil
@@ -457,7 +440,7 @@ func TestSyncRunWithNothingNamedTakesEveryReadyWorktreeAndAsksFirst(t *testing.T
 	if !strings.Contains(out.String(), "rebased 1 commit") {
 		t.Fatalf("bump was not rebased:\n%s", out.String())
 	}
-	if gitOut(t, alpha, "rev-parse", "HEAD") != oldAlpha {
+	if testkit.GitOut(t, alpha, "rev-parse", "HEAD") != oldAlpha {
 		t.Fatal("the contested worktree moved")
 	}
 	if busy, err := wtsync.RebaseInProgress(alpha); err != nil || busy {
@@ -474,7 +457,7 @@ func TestSyncRunWithNothingNamedLeavesRecipeQuestionAlone(t *testing.T) {
 	}
 	ctx, bump := runFixture(t, false)
 	declareScript(t, ctx)
-	old := gitOut(t, bump, "rev-parse", "HEAD")
+	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	var out bytes.Buffer
 	if err := SyncRebase(ctx, nil, noAgents(), &out); err != nil {
 		t.Fatalf("nothing to do is not an error: %v\n%s", err, out.String())
@@ -485,7 +468,7 @@ func TestSyncRunWithNothingNamedLeavesRecipeQuestionAlone(t *testing.T) {
 			t.Errorf("missing %q in:\n%s", want, s)
 		}
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != old {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != old {
 		t.Fatal("HEAD moved")
 	}
 }
@@ -502,7 +485,7 @@ func TestSyncRunWithNothingNamedLeavesAStackWithAHeldMember(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(bump, "a.txt"), []byte("edited\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	oldChild := gitOut(t, child, "rev-parse", "HEAD")
+	oldChild := testkit.GitOut(t, child, "rev-parse", "HEAD")
 	var out bytes.Buffer
 	if err := SyncRebase(ctx, nil, noAgents(), &out); err != nil {
 		t.Fatalf("nothing taken is not an error: %v\n%s", err, out.String())
@@ -516,7 +499,7 @@ func TestSyncRunWithNothingNamedLeavesAStackWithAHeldMember(t *testing.T) {
 	if strings.Contains(s, "is a stack with") || strings.Contains(s, "refused") {
 		t.Errorf("the stack was pulled in after being left alone:\n%s", s)
 	}
-	if gitOut(t, child, "rev-parse", "HEAD") != oldChild {
+	if testkit.GitOut(t, child, "rev-parse", "HEAD") != oldChild {
 		t.Fatal("the child moved")
 	}
 }
@@ -526,7 +509,7 @@ func TestSyncRunWithNothingNamedLeavesAStackWithAHeldMember(t *testing.T) {
 func TestSyncRunWithNothingNamedNamesAnIdleSessionAndAsks(t *testing.T) {
 	ctx, bump := runFixture(t, false)
 	opts := noAgents()
-	opts.Agents = idleIn(t, bump, "parked")
+	opts.Agents = testkit.IdleIn(t, bump, "parked")
 	var asked []string
 	opts.Confirm = func(works []string) (bool, error) { asked = works; return false, nil }
 	var out bytes.Buffer
@@ -566,7 +549,7 @@ func TestSyncRunHandsAContestedStopOver(t *testing.T) {
 	}
 	ctx, bump := contestedFixture(t)
 	branch := "feat_wt/bump"
-	old := gitOut(t, ctx.Repo.MainRoot, "rev-parse", branch)
+	old := testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", branch)
 	var out bytes.Buffer
 	err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out)
 	if err == nil {
@@ -607,7 +590,7 @@ func TestSyncRunHandsAContestedStopOver(t *testing.T) {
 	if busy, err := wtsync.RebaseInProgress(bump); err != nil || !busy {
 		t.Fatalf("RebaseInProgress = %v, %v; want the rebase left in place", busy, err)
 	}
-	if got := gitOut(t, ctx.Repo.MainRoot, "rev-parse", branch); got != old {
+	if got := testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", branch); got != old {
 		t.Fatal("the branch moved before the rebase finished")
 	}
 	// No result ref: the run did not finish for this branch.
@@ -664,7 +647,7 @@ func TestSyncRunRefusesAWorktreeWaitingOnAPerson(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	head := gitOut(t, bump, "rev-parse", "HEAD")
+	head := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 
 	var out bytes.Buffer
 	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err == nil {
@@ -676,7 +659,7 @@ func TestSyncRunRefusesAWorktreeWaitingOnAPerson(t *testing.T) {
 	if busy, err := wtsync.RebaseInProgress(bump); err != nil || !busy {
 		t.Fatalf("RebaseInProgress = %v, %v; the second run disturbed the rebase", busy, err)
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != head {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != head {
 		t.Fatal("the second run moved HEAD")
 	}
 	after, err := os.ReadFile(wtsync.PlanPath(gitDir))
@@ -706,7 +689,7 @@ func TestSyncRunSaysWhereAFailedHandoverLeftTheWorktree(t *testing.T) {
 	if err := os.Mkdir(wtsync.PlanPath(gitDir)+".tmp", 0o755); err != nil {
 		t.Fatal(err)
 	}
-	old := gitOut(t, ctx.Repo.MainRoot, "rev-parse", "feat_wt/bump")
+	old := testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", "feat_wt/bump")
 	var out bytes.Buffer
 	err = SyncRebase(ctx, []string{"bump"}, noAgents(), &out)
 	s := out.String()
@@ -736,11 +719,11 @@ func TestSyncRunSaysWhereAFailedHandoverLeftTheWorktree(t *testing.T) {
 	if uerr := SyncUndo(ctx, "bump", UndoOptions{verbOptions: verbOptions{Agents: []wtsync.Agent{}}}, io.Discard); uerr == nil {
 		t.Fatal("undo accepted a mid-rebase worktree; the old wording would have been true")
 	}
-	gitOut(t, bump, "rebase", "--abort")
+	testkit.GitOut(t, bump, "rebase", "--abort")
 	if busy, berr := wtsync.RebaseInProgress(bump); berr != nil || busy {
 		t.Fatalf("RebaseInProgress = %v, %v after the abort the line names", busy, berr)
 	}
-	if got := gitOut(t, ctx.Repo.MainRoot, "rev-parse", "feat_wt/bump"); got != old {
+	if got := testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", "feat_wt/bump"); got != old {
 		t.Fatalf("the abort left %s at %s, not %s", "feat_wt/bump", got, old)
 	}
 }
@@ -753,7 +736,7 @@ func TestSyncRunPutsAStackParentBackInsteadOfHandingItOver(t *testing.T) {
 	}
 	ctx, bump := contestedFixture(t)
 	child := stackFixture(t, ctx)
-	oldBump, oldChild := gitOut(t, bump, "rev-parse", "HEAD"), gitOut(t, child, "rev-parse", "HEAD")
+	oldBump, oldChild := testkit.GitOut(t, bump, "rev-parse", "HEAD"), testkit.GitOut(t, child, "rev-parse", "HEAD")
 	var out bytes.Buffer
 	err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out)
 	s := out.String()
@@ -776,7 +759,7 @@ func TestSyncRunPutsAStackParentBackInsteadOfHandingItOver(t *testing.T) {
 	if has, err := wtsync.HasPlan(gitDir); err != nil || has {
 		t.Fatalf("HasPlan = %v, %v; a restored run hands nothing over", has, err)
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != oldBump || gitOut(t, child, "rev-parse", "HEAD") != oldChild {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != oldBump || testkit.GitOut(t, child, "rev-parse", "HEAD") != oldChild {
 		t.Fatal("a stack member moved")
 	}
 }
@@ -798,21 +781,21 @@ func TestSyncRunHandsOverALaterUnclaimedStop(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(bump, "a.txt"), []byte("branch\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitOut(t, bump, "add", "-A")
-	gitOut(t, bump, "commit", "-q", "-m", "a on branch")
+	testkit.GitOut(t, bump, "add", "-A")
+	testkit.GitOut(t, bump, "commit", "-q", "-m", "a on branch")
 	if err := os.WriteFile(filepath.Join(main, "a.txt"), []byte("trunk\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitOut(t, main, "add", "-A")
-	gitOut(t, main, "commit", "-q", "-m", "a on trunk")
-	gitOut(t, main, "fetch", "-q", "origin")
-	old := gitOut(t, main, "rev-parse", "feat_wt/bump")
+	testkit.GitOut(t, main, "add", "-A")
+	testkit.GitOut(t, main, "commit", "-q", "-m", "a on trunk")
+	testkit.GitOut(t, main, "fetch", "-q", "origin")
+	old := testkit.GitOut(t, main, "rev-parse", "feat_wt/bump")
 	var out bytes.Buffer
 	err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out)
 	if err == nil || !strings.Contains(out.String(), "needs you") {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
-	if gitOut(t, main, "rev-parse", "feat_wt/bump") != old {
+	if testkit.GitOut(t, main, "rev-parse", "feat_wt/bump") != old {
 		t.Fatal("the branch moved before the rebase finished")
 	}
 	if busy, err := wtsync.RebaseInProgress(bump); err != nil || !busy {
@@ -829,7 +812,7 @@ func TestSyncRunHandsOverALaterUnclaimedStop(t *testing.T) {
 	if st.Stop != 2 || st.Total != 2 || len(st.Left) != 1 || st.Left[0] != "a.txt" {
 		t.Fatalf("state = %+v", st)
 	}
-	if !strings.Contains(gitOut(t, main, "for-each-ref", "--format=%(refname)", "refs/wt-sync/"), "feat_wt/bump/99") {
+	if !strings.Contains(testkit.GitOut(t, main, "for-each-ref", "--format=%(refname)", "refs/wt-sync/"), "feat_wt/bump/99") {
 		t.Fatal("the safety ref, the undo target, is missing")
 	}
 }
@@ -851,8 +834,8 @@ func twoChildFixture(t *testing.T, ctx *kit.Context, main string) (conflicted, c
 		if err := os.WriteFile(filepath.Join(path, file), []byte(content), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		gitOut(t, path, "add", "-A")
-		gitOut(t, path, "commit", "-q", "-m", spec)
+		testkit.GitOut(t, path, "add", "-A")
+		testkit.GitOut(t, path, "commit", "-q", "-m", spec)
 		return path
 	}
 	conflicted = child("feat/alpha", "a.txt", "alpha\n")
@@ -860,9 +843,9 @@ func twoChildFixture(t *testing.T, ctx *kit.Context, main string) (conflicted, c
 	if err := os.WriteFile(filepath.Join(main, "a.txt"), []byte("trunk\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitOut(t, main, "add", "-A")
-	gitOut(t, main, "commit", "-q", "-m", "a on trunk")
-	gitOut(t, main, "fetch", "-q", "origin")
+	testkit.GitOut(t, main, "add", "-A")
+	testkit.GitOut(t, main, "commit", "-q", "-m", "a on trunk")
+	testkit.GitOut(t, main, "fetch", "-q", "origin")
 	return conflicted, clean
 }
 
@@ -877,7 +860,7 @@ func TestSyncRunAHandedOverChildDoesNotStopItsSibling(t *testing.T) {
 	declareScript(t, ctx)
 	conflicted, clean := twoChildFixture(t, ctx, ctx.Repo.MainRoot)
 	main := ctx.Repo.MainRoot
-	oldConflicted := gitOut(t, main, "rev-parse", "feat_wt/alpha")
+	oldConflicted := testkit.GitOut(t, main, "rev-parse", "feat_wt/alpha")
 	var out bytes.Buffer
 	err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out)
 	s := out.String()
@@ -889,11 +872,11 @@ func TestSyncRunAHandedOverChildDoesNotStopItsSibling(t *testing.T) {
 	}
 	// The sibling rebased onto the parent's tip; the handed-over one did not
 	// move: its rebase is still in flight.
-	parentTip := gitOut(t, bump, "rev-parse", "HEAD")
-	if gitOut(t, clean, "rev-parse", "HEAD~1") != parentTip {
+	parentTip := testkit.GitOut(t, bump, "rev-parse", "HEAD")
+	if testkit.GitOut(t, clean, "rev-parse", "HEAD~1") != parentTip {
 		t.Fatalf("the sibling was not rebased onto the parent:\n%s", s)
 	}
-	if gitOut(t, main, "rev-parse", "feat_wt/alpha") != oldConflicted {
+	if testkit.GitOut(t, main, "rev-parse", "feat_wt/alpha") != oldConflicted {
 		t.Fatal("the handed-over branch moved")
 	}
 	if busy, berr := wtsync.RebaseInProgress(conflicted); berr != nil || !busy {
@@ -908,24 +891,13 @@ func TestSyncRunAHandedOverChildDoesNotStopItsSibling(t *testing.T) {
 	}
 }
 
-// idleIn is one interactive session parked in path, as claude lists it: the
-// cwd resolved.
-func idleIn(t *testing.T, path, name string) []wtsync.Agent {
-	t.Helper()
-	resolved, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return []wtsync.Agent{{ID: name, Name: name, Cwd: resolved, Kind: "interactive", Status: "idle"}}
-}
-
 func TestSyncRunStillRefusesASessionThatIsNotIdle(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
 	ctx, bump := runFixture(t, false)
 	resolved, _ := filepath.EvalSymlinks(bump)
-	old := gitOut(t, bump, "rev-parse", "HEAD")
+	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	for _, a := range []wtsync.Agent{
 		{Name: "bump-1", Cwd: resolved, Kind: "interactive", Status: "busy"},
 		{Name: "bump-1", Cwd: resolved, Kind: "background", State: "blocked", Status: "idle"},
@@ -937,16 +909,16 @@ func TestSyncRunStillRefusesASessionThatIsNotIdle(t *testing.T) {
 			t.Fatalf("%+v: err %v\n%s", a, err, out.String())
 		}
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != old {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != old {
 		t.Fatal("HEAD moved under a busy session")
 	}
 }
 
 func TestSyncRunNamesAnIdleSessionInTheQuestionAndStopsOnNo(t *testing.T) {
 	ctx, bump := runFixture(t, false)
-	old := gitOut(t, bump, "rev-parse", "HEAD")
+	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	opts := noAgents()
-	opts.Agents = idleIn(t, bump, "bump-1")
+	opts.Agents = testkit.IdleIn(t, bump, "bump-1")
 	var asked []string
 	opts.Confirm = func(works []string) (bool, error) { asked = works; return false, nil }
 	var out bytes.Buffer
@@ -959,7 +931,7 @@ func TestSyncRunNamesAnIdleSessionInTheQuestionAndStopsOnNo(t *testing.T) {
 	if s := out.String(); !strings.Contains(s, "⚠ bump: session bump-1 (idle) is in it") || !strings.Contains(s, "nothing rebased") {
 		t.Fatalf("out:\n%s", s)
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != old {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != old {
 		t.Fatal("HEAD moved after no")
 	}
 }
@@ -970,7 +942,7 @@ func TestSyncRunUnderAnIdleSessionWithNoTerminalSaysSoAndEndsWithALineToRelay(t 
 	}
 	ctx, bump := runFixture(t, false)
 	opts := noAgents()
-	opts.Agents = idleIn(t, bump, "bump-1")
+	opts.Agents = testkit.IdleIn(t, bump, "bump-1")
 	var out bytes.Buffer
 	if err := SyncRebase(ctx, []string{"bump"}, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
@@ -993,8 +965,8 @@ func TestSyncRunRefusesASessionThatChangedSinceTriage(t *testing.T) {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
 	ctx, bump := runFixture(t, false)
-	old := gitOut(t, bump, "rev-parse", "HEAD")
-	woke := idleIn(t, bump, "bump-1")
+	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
+	woke := testkit.IdleIn(t, bump, "bump-1")
 	woke[0].Status = "busy"
 	for _, tc := range []struct {
 		name   string
@@ -1002,9 +974,9 @@ func TestSyncRunRefusesASessionThatChangedSinceTriage(t *testing.T) {
 		then   []wtsync.Agent
 		want   string
 	}{
-		{"became busy", idleIn(t, bump, "bump-1"), woke, "busy in it now: bump-1"},
-		{"arrived", idleIn(t, bump, "bump-1"), append(idleIn(t, bump, "bump-1"), idleIn(t, bump, "bump-2")...), "arrived since it was checked: bump-2 (idle)"},
-		{"arrived in an empty worktree", []wtsync.Agent{}, idleIn(t, bump, "bump-3"), "arrived since it was checked: bump-3 (idle)"},
+		{"became busy", testkit.IdleIn(t, bump, "bump-1"), woke, "busy in it now: bump-1"},
+		{"arrived", testkit.IdleIn(t, bump, "bump-1"), append(testkit.IdleIn(t, bump, "bump-1"), testkit.IdleIn(t, bump, "bump-2")...), "arrived since it was checked: bump-2 (idle)"},
+		{"arrived in an empty worktree", []wtsync.Agent{}, testkit.IdleIn(t, bump, "bump-3"), "arrived since it was checked: bump-3 (idle)"},
 	} {
 		opts := noAgents()
 		opts.Agents = tc.before
@@ -1014,7 +986,7 @@ func TestSyncRunRefusesASessionThatChangedSinceTriage(t *testing.T) {
 		if err := SyncRebase(ctx, []string{"bump"}, opts, &out); err == nil || !strings.Contains(out.String(), tc.want) {
 			t.Fatalf("%s: err %v\n%s", tc.name, err, out.String())
 		}
-		if gitOut(t, bump, "rev-parse", "HEAD") != old {
+		if testkit.GitOut(t, bump, "rev-parse", "HEAD") != old {
 			t.Fatalf("%s: HEAD moved", tc.name)
 		}
 	}
@@ -1038,9 +1010,9 @@ func TestSyncRunReleasesEachLockAsSoonAsItIsDoneWithTheWorktree(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		writeFile(t, wt, file, file+"\n")
-		gitOut(t, wt, "add", "-A")
-		gitOut(t, wt, "commit", "-q", "-m", file)
+		testkit.WriteFile(t, wt, file, file+"\n")
+		testkit.GitOut(t, wt, "add", "-A")
+		testkit.GitOut(t, wt, "commit", "-q", "-m", file)
 		return wt
 	}
 	second := ahead("feat/second", "", "s.txt")
@@ -1054,9 +1026,9 @@ func TestSyncRunReleasesEachLockAsSoonAsItIsDoneWithTheWorktree(t *testing.T) {
 	}
 	yaml := "conflicts:\n  - paths: [v.txt]\n    strategy: owned-line\n    line: '^\\d'\n    rule: max-plus-patch\n" +
 		"defer:\n  - run: touch " + marks + "/started-$(basename \"$(pwd)\"); while [ ! -f " + marks + "/go-$(basename \"$(pwd)\") ]; do sleep 0.05; done\n"
-	writeFile(t, main, ".wt-sync.yaml", yaml)
-	gitOut(t, main, "commit", "-q", "-am", "declare a step that waits")
-	gitOut(t, main, "fetch", "-q", "origin")
+	testkit.WriteFile(t, main, ".wt-sync.yaml", yaml)
+	testkit.GitOut(t, main, "commit", "-q", "-am", "declare a step that waits")
+	testkit.GitOut(t, main, "fetch", "-q", "origin")
 	// Somebody else holds leaf: its stack, second and leaf, is refused at
 	// the lock, after second's own lock was taken.
 	leafGitDir, err := wtsync.GitDir(leaf)
@@ -1092,7 +1064,7 @@ func TestSyncRunReleasesEachLockAsSoonAsItIsDoneWithTheWorktree(t *testing.T) {
 	}
 	letGo := func(work string) {
 		t.Helper()
-		writeFile(t, marks, "go-"+work, "")
+		testkit.WriteFile(t, marks, "go-"+work, "")
 	}
 
 	done := make(chan error, 1)
@@ -1147,7 +1119,7 @@ func TestSyncRunSaysWhyARecheckCouldNotBeMadeInGitsOwnWords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	old := gitOut(t, bump, "rev-parse", "HEAD")
+	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	opts := noAgents()
 	// The second listing is the last thing before the lock: the index goes
 	// unreadable there, after triage read it and before the recheck does.
@@ -1166,7 +1138,7 @@ func TestSyncRunSaysWhyARecheckCouldNotBeMadeInGitsOwnWords(t *testing.T) {
 	if strings.Contains(s, "exit status") {
 		t.Fatalf("the refusal quotes the exit status:\n%s", s)
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != old {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != old {
 		t.Fatal("HEAD moved")
 	}
 }

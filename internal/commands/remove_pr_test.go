@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/github"
 )
 
@@ -15,12 +16,12 @@ import (
 // merge — with the cache holding GitHub's answer that it landed on trunk.
 func mergedInCache(t *testing.T, base string) (ctx *kit.Context, path, branch string, pr github.PR) {
 	t.Helper()
-	ctx, _, _ = sweepRepo(t)
+	ctx, _, _ = testkit.SweepRepo(t)
 	path, branch, tip := squashed(t, ctx, "fix/login-crash")
 	pr = mergedInto(34, branch, tip, base)
 	// No gh anywhere: this must work off the file alone.
-	stubGitHub(t, github.CLI{}, ghRepo, true)
-	kit.WritePRCache(ctx, ghRepo, map[string]*github.PR{branch: &pr}, time.Now().Add(-30*kit.PRCacheTTL))
+	testkit.StubGitHub(t, github.CLI{}, testkit.GhRepo, true)
+	kit.WritePRCache(ctx, testkit.GhRepo, map[string]*github.PR{branch: &pr}, time.Now().Add(-30*kit.PRCacheTTL))
 	return ctx, path, branch, pr
 }
 
@@ -86,9 +87,9 @@ func TestRemoveKeepsABranchMergedIntoItsParent(t *testing.T) {
 // With nothing in the cache, `wt remove` is exactly what it was before any of
 // this existed: the branch is renamed aside, not deleted.
 func TestRemoveWithNoCacheEntryIsUnchanged(t *testing.T) {
-	ctx, _, _ := sweepRepo(t)
+	ctx, _, _ := testkit.SweepRepo(t)
 	path, branch, _ := squashed(t, ctx, "fix/login-crash")
-	stubGitHub(t, github.CLI{}, ghRepo, true)
+	testkit.StubGitHub(t, github.CLI{}, testkit.GhRepo, true)
 
 	var out bytes.Buffer
 	if err := Remove(ctx, path, RemoveOptions{}, &out); err != nil {

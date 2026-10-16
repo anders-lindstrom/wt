@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -96,13 +97,13 @@ func TestRemoveForceCategoryGoesPastOnlyItsOwnProblem(t *testing.T) {
 			o.AgentsErr = errors.New("claude agents --json failed: boom")
 		}, "cannot list agent sessions"},
 		{"hidden-files", kit.ForceHiddenFiles, func(t *testing.T, _ *kit.Context, path string, _ *RemoveOptions) {
-			mustWrite(t, filepath.Join(path, "a.txt"), "a")
-			gitIn(t, path, "add", "a.txt")
-			gitIn(t, path, "commit", "-q", "-m", "a")
-			gitIn(t, path, "update-index", "--assume-unchanged", "a.txt")
+			testkit.MustWrite(t, filepath.Join(path, "a.txt"), "a")
+			testkit.GitIn(t, path, "add", "a.txt")
+			testkit.GitIn(t, path, "commit", "-q", "-m", "a")
+			testkit.GitIn(t, path, "update-index", "--assume-unchanged", "a.txt")
 		}, "told not to look at"},
 		{"lock", kit.ForceLock, func(t *testing.T, ctx *kit.Context, path string, _ *RemoveOptions) {
-			gitIn(t, ctx.Repo.MainRoot, "worktree", "lock", "--reason", fmt.Sprintf("live (pid %d)", os.Getpid()), path)
+			testkit.GitIn(t, ctx.Repo.MainRoot, "worktree", "lock", "--reason", fmt.Sprintf("live (pid %d)", os.Getpid()), path)
 		}, "locked"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -174,7 +175,7 @@ func TestRemoveReadsTheSessionsAgainBeforeTheCheckoutGoes(t *testing.T) {
 						return tc.now(path), nil
 					}
 					if quarantined {
-						opts.Quarantine = trashFor(t, ctx)
+						opts.Quarantine = testkit.TrashFor(t, ctx)
 					}
 					var res RemoveResult
 					opts.Result = &res
@@ -279,7 +280,7 @@ func TestRemoveJSONNamesTheForceCategories(t *testing.T) {
 // A problem --force cannot pass has no category.
 func TestRemoveJSONProblemWithoutForceHasNoCategory(t *testing.T) {
 	ctx, path := safetyWorktree(t, "fix/force-dirty")
-	mustWrite(t, filepath.Join(path, "scratch.txt"), "mine")
+	testkit.MustWrite(t, filepath.Join(path, "scratch.txt"), "mine")
 	p, _ := removePlanJSON(t, ctx, path, RemoveOptions{Force: kit.ForceAll, Agents: []wtsync.Agent{}})
 	if len(p.Problems) != 1 || p.Problems[0].Force || p.Problems[0].ForceWith != nil {
 		t.Errorf("problems = %+v", p.Problems)
@@ -296,7 +297,7 @@ func TestRemoveReadsTheCheckoutAfterListingTheSessions(t *testing.T) {
 	ctx, _, path := submoduleWorktree(t, "fix/late-while-listing")
 	late := filepath.Join(path, "sm", "late.txt")
 	opts := RemoveOptions{Agents: []wtsync.Agent{}, Relist: func() ([]wtsync.Agent, error) {
-		mustWrite(t, late, "written while the sessions were listed")
+		testkit.MustWrite(t, late, "written while the sessions were listed")
 		return []wtsync.Agent{}, nil
 	}}
 	refused(t, ctx, path, opts, "changed since the plan was made: dirty")
@@ -329,7 +330,7 @@ func TestRemoveLateRefusalNamesWhatChangedAndItsForce(t *testing.T) {
 // A held lock and a session: the hint names both categories.
 func TestRemoveLockAndSessionHintNamesBoth(t *testing.T) {
 	ctx, path := safetyWorktree(t, "fix/lock-and-session")
-	gitIn(t, ctx.Repo.MainRoot, "worktree", "lock", "--reason", fmt.Sprintf("live (pid %d)", os.Getpid()), path)
+	testkit.GitIn(t, ctx.Repo.MainRoot, "worktree", "lock", "--reason", fmt.Sprintf("live (pid %d)", os.Getpid()), path)
 	opts := RemoveOptions{Agents: idleThen(t, true)(path)}
 	var buf bytes.Buffer
 	err := RemoveAt(ctx, path, opts, &buf)

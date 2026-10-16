@@ -11,36 +11,12 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
-
-// managedRepo is a repository at parent/name with the configuration wt reads.
-func managedRepo(t *testing.T, parent, name string) string {
-	t.Helper()
-	dir := gittest.NewRepo(t, parent, name)
-	conf := filepath.Join(dir, "bin", "worktree")
-	if err := os.MkdirAll(conf, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(conf, "worktree.conf"), []byte(minimalConf), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	gittest.Git(t, dir, "add", "-A")
-	gittest.Git(t, dir, "commit", "-q", "-m", "init")
-	return dir
-}
-
-func realTempDir(t *testing.T) string {
-	t.Helper()
-	dir, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return dir
-}
 
 func targetNames(ts []kit.RepoTarget) []string {
 	var out []string
@@ -55,18 +31,18 @@ func targetNames(ts []kit.RepoTarget) []string {
 // not a checkout wt does not manage, which is counted instead. A root that is
 // a repository is that one repository and nothing under it.
 func TestDiscoverReposFindsManagedCheckoutsAndSingleRepoRoots(t *testing.T) {
-	folder := realTempDir(t)
-	api := managedRepo(t, folder, "api")
+	folder := testkit.RealTempDir(t)
+	api := testkit.ManagedRepo(t, folder, "api")
 	gittest.NewRepo(t, folder, "loose")
 	gittest.Git(t, api, "worktree", "add", "-q", "-b", "feat_wt/x", filepath.Join(folder, "api_wt", "feat_wt", "x"))
 	gittest.Git(t, api, "worktree", "add", "-q", "-b", "legacy", filepath.Join(folder, "api-legacy"))
 	if err := os.Mkdir(filepath.Join(folder, "notes"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	dotfiles := managedRepo(t, realTempDir(t), "dotfiles")
+	dotfiles := testkit.ManagedRepo(t, testkit.RealTempDir(t), "dotfiles")
 	// Something that looks like a repository under the single-repo root must
 	// not be found: that root is searched no deeper.
-	managedRepo(t, dotfiles, "vendored")
+	testkit.ManagedRepo(t, dotfiles, "vendored")
 
 	set := kit.DiscoverRepos([]kit.Root{{Name: "work", Path: folder}, {Name: "dotfiles", Path: dotfiles}})
 	if got := targetNames(set.Repos); !slices.Equal(got, []string{"api", "dotfiles"}) {
@@ -84,9 +60,9 @@ func TestDiscoverReposFindsManagedCheckoutsAndSingleRepoRoots(t *testing.T) {
 // that says which there are; a profile entry that is not a managed main
 // checkout comes back with what is wrong, not as an error.
 func TestSelectReposByRootAndByProfile(t *testing.T) {
-	a, b := realTempDir(t), realTempDir(t)
-	managedRepo(t, a, "one")
-	two := managedRepo(t, b, "two")
+	a, b := testkit.RealTempDir(t), testkit.RealTempDir(t)
+	testkit.ManagedRepo(t, a, "one")
+	two := testkit.ManagedRepo(t, b, "two")
 	loose := gittest.NewRepo(t, b, "loose")
 	gittest.Git(t, two, "worktree", "add", "-q", "-b", "wt", filepath.Join(b, "two-wt"))
 	u := &config.User{
@@ -128,14 +104,14 @@ func TestSelectReposByRootAndByProfile(t *testing.T) {
 // inside another, a single-repo root wt does not manage, and profile entries
 // that are gone or sit outside every root.
 func TestDoctorChecksRootsAndProfiles(t *testing.T) {
-	a := realTempDir(t)
+	a := testkit.RealTempDir(t)
 	inside := filepath.Join(a, "inner")
 	if err := os.Mkdir(inside, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	managedRepo(t, a, "one")
-	loose := gittest.NewRepo(t, realTempDir(t), "loose")
-	outside := managedRepo(t, realTempDir(t), "elsewhere")
+	testkit.ManagedRepo(t, a, "one")
+	loose := gittest.NewRepo(t, testkit.RealTempDir(t), "loose")
+	outside := testkit.ManagedRepo(t, testkit.RealTempDir(t), "elsewhere")
 	u := &config.User{
 		Roots: []config.NamedRoot{{Name: "a", Path: a}, {Name: "in", Path: inside},
 			{Name: "gone", Path: filepath.Join(a, "nope")}, {Name: "loose", Path: loose}},
@@ -165,12 +141,12 @@ func TestDoctorChecksRootsAndProfiles(t *testing.T) {
 // One question covers every repository, each is swept as it would be alone,
 // and one that cannot be swept is reported while the rest go ahead.
 func TestSweepAllAsksOnceAndSweepsEveryRepository(t *testing.T) {
-	ctxA, _, _ := sweepRepo(t)
-	ctxB, _, _ := sweepRepo(t)
+	ctxA, _, _ := testkit.SweepRepo(t)
+	ctxB, _, _ := testkit.SweepRepo(t)
 	pathA := mergedWorktree(t, ctxA, "fix/one")
 	pathB := mergedWorktree(t, ctxB, "fix/two")
 	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{
-		ctxA.Repo.MainRoot, ctxB.Repo.MainRoot, filepath.Join(realTempDir(t), "gone"),
+		ctxA.Repo.MainRoot, ctxB.Repo.MainRoot, filepath.Join(testkit.RealTempDir(t), "gone"),
 	}}}}
 
 	var asked []string
@@ -184,7 +160,7 @@ func TestSweepAllAsksOnceAndSweepsEveryRepository(t *testing.T) {
 	if !slices.Equal(asked, []string{"Sweep 2 worktrees across 2 repositories?"}) {
 		t.Errorf("asked %q", asked)
 	}
-	if exists(pathA) || exists(pathB) {
+	if testkit.Exists(pathA) || testkit.Exists(pathB) {
 		t.Errorf("both merged worktrees should be gone:\n%s", buf.String())
 	}
 	if !strings.Contains(buf.String(), "== demo") || !strings.Contains(buf.String(), "not there any more") {
@@ -193,7 +169,7 @@ func TestSweepAllAsksOnceAndSweepsEveryRepository(t *testing.T) {
 }
 
 func TestSweepAllChangesNothingWhenTheAnswerIsNo(t *testing.T) {
-	ctx, _, _ := sweepRepo(t)
+	ctx, _, _ := testkit.SweepRepo(t)
 	path := mergedWorktree(t, ctx, "fix/one")
 	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{ctx.Repo.MainRoot}}}}
 	opts := SweepAllOptions{SweepOptions: SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}},
@@ -202,7 +178,7 @@ func TestSweepAllChangesNothingWhenTheAnswerIsNo(t *testing.T) {
 	if err := SweepAll(u, kit.Selection{Profiles: []string{"p"}}, opts, &buf); err != nil {
 		t.Fatal(err)
 	}
-	if !exists(path) || !strings.Contains(buf.String(), "Nothing was swept.") {
+	if !testkit.Exists(path) || !strings.Contains(buf.String(), "Nothing was swept.") {
 		t.Errorf("no means nothing goes:\n%s", buf.String())
 	}
 }
@@ -211,17 +187,17 @@ func TestSweepAllChangesNothingWhenTheAnswerIsNo(t *testing.T) {
 // wt configuration that does not parse; wt doctor --all runs doctor in each,
 // and wt sync doctor where trunk declares wt sync.
 func TestReposShowsSyncAndABrokenConfiguration(t *testing.T) {
-	root := realTempDir(t)
-	synced := managedRepo(t, root, "synced")
+	root := testkit.RealTempDir(t)
+	synced := testkit.ManagedRepo(t, root, "synced")
 	if err := os.WriteFile(filepath.Join(synced, ".wt-sync.yaml"), []byte("conflicts: []\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	gittest.Git(t, synced, "add", "-A")
 	gittest.Git(t, synced, "commit", "-q", "-m", "declare")
 	gittest.WithOrigin(t, synced)
-	gittest.WithOrigin(t, managedRepo(t, root, "plain"))
-	managedRepo(t, root, "unfetched")
-	broken := managedRepo(t, root, "broken")
+	gittest.WithOrigin(t, testkit.ManagedRepo(t, root, "plain"))
+	testkit.ManagedRepo(t, root, "unfetched")
+	broken := testkit.ManagedRepo(t, root, "broken")
 	if err := os.WriteFile(filepath.Join(broken, "bin", "worktree", "worktree.conf"), []byte("NOT_A_KEY=1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +232,7 @@ func TestSelectReposRefusesAnUnreadableFileAndMergesDuplicates(t *testing.T) {
 		!strings.Contains(err.Error(), "wt does not know your roots") {
 		t.Errorf("want a refusal, got %v", err)
 	}
-	dir := managedRepo(t, realTempDir(t), "api")
+	dir := testkit.ManagedRepo(t, testkit.RealTempDir(t), "api")
 	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{dir, dir + "/", filepath.Join(dir, ".")}}}}
 	set, err := kit.SelectRepos(u, kit.Selection{Profiles: []string{"p"}})
 	if err != nil || len(set.Repos) != 1 {
@@ -267,20 +243,20 @@ func TestSelectReposRefusesAnUnreadableFileAndMergesDuplicates(t *testing.T) {
 // --dry-run prints the plan and changes nothing, on remove and on sweep, in
 // one repository or across many.
 func TestDryRunPrintsThePlanAndChangesNothing(t *testing.T) {
-	ctx, _, _ := sweepRepo(t)
+	ctx, _, _ := testkit.SweepRepo(t)
 	path := mergedWorktree(t, ctx, "fix/one")
 	var buf bytes.Buffer
 	if err := RemoveAt(ctx, path, RemoveOptions{DryRun: true, Agents: []wtsync.Agent{}}, &buf); err != nil {
 		t.Fatal(err)
 	}
-	if !exists(path) || !strings.Contains(buf.String(), "Nothing was removed: --dry-run.") {
+	if !testkit.Exists(path) || !strings.Contains(buf.String(), "Nothing was removed: --dry-run.") {
 		t.Errorf("remove --dry-run:\n%s", buf.String())
 	}
 	buf.Reset()
 	if err := Sweep(ctx, SweepOptions{NoFetch: true, DryRun: true, Yes: false, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}}, &buf); err != nil {
 		t.Fatal(err)
 	}
-	if !exists(path) || !strings.Contains(buf.String(), "Nothing was swept: --dry-run.") {
+	if !testkit.Exists(path) || !strings.Contains(buf.String(), "Nothing was swept: --dry-run.") {
 		t.Errorf("sweep --dry-run:\n%s", buf.String())
 	}
 	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{ctx.Repo.MainRoot}}}}
@@ -290,7 +266,7 @@ func TestDryRunPrintsThePlanAndChangesNothing(t *testing.T) {
 	if err := SweepAll(u, kit.Selection{Profiles: []string{"p"}}, opts, &buf); err != nil {
 		t.Fatal(err)
 	}
-	if !exists(path) || !strings.Contains(buf.String(), "Nothing was swept: --dry-run.") {
+	if !testkit.Exists(path) || !strings.Contains(buf.String(), "Nothing was swept: --dry-run.") {
 		t.Errorf("sweep --all --dry-run:\n%s", buf.String())
 	}
 }
@@ -298,8 +274,8 @@ func TestDryRunPrintsThePlanAndChangesNothing(t *testing.T) {
 // AcrossRepos prints each repository's output under its name, in order, and
 // names the ones it could not run in; --profile takes several names.
 func TestAcrossReposPrintsEachRepositoryUnderItsName(t *testing.T) {
-	root := realTempDir(t)
-	a, b := managedRepo(t, root, "alpha"), managedRepo(t, root, "beta")
+	root := testkit.RealTempDir(t)
+	a, b := testkit.ManagedRepo(t, root, "alpha"), testkit.ManagedRepo(t, root, "beta")
 	u := &config.User{Profiles: []config.Profile{
 		{Name: "one", Repos: []string{a}},
 		{Name: "two", Repos: []string{b, filepath.Join(root, "gone")}},

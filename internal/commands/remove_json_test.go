@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -21,7 +22,7 @@ func removePlanJSON(t *testing.T, ctx *kit.Context, path string, opts RemoveOpti
 	t.Helper()
 	var out, progress bytes.Buffer
 	err := RemovePlanJSON(ctx, RemoveTarget{Path: path}, opts, &out, &progress)
-	validateJSON(t, "remove-plan", out.Bytes())
+	testkit.ValidateJSON(t, "remove-plan", out.Bytes())
 	var p RemovePlanOutput
 	if jerr := json.Unmarshal(out.Bytes(), &p); jerr != nil {
 		t.Fatalf("%v\n%s", jerr, out.String())
@@ -40,7 +41,7 @@ func removeJSON(t *testing.T, ctx *kit.Context, path string, opts RemoveOptions)
 
 func decodeRemoveOutput(t *testing.T, out []byte) RemoveOutput {
 	t.Helper()
-	validateJSON(t, "remove", out)
+	testkit.ValidateJSON(t, "remove", out)
 	dec := json.NewDecoder(bytes.NewReader(out))
 	var r RemoveOutput
 	if err := dec.Decode(&r); err != nil {
@@ -75,7 +76,7 @@ func problemCodes(ps []RemoveProblem) []string {
 // will become of it, and a token; it changes nothing.
 func TestRemovePlanJSONDescribesTheRemoval(t *testing.T) {
 	ctx, path := safetyWorktree(t, "fix/planned")
-	tip := strings.TrimSpace(gitOut(t, path, "rev-parse", "HEAD"))
+	tip := strings.TrimSpace(testkit.GitOut(t, path, "rev-parse", "HEAD"))
 
 	p, err := removePlanJSON(t, ctx, path, RemoveOptions{})
 	if err != nil {
@@ -84,7 +85,7 @@ func TestRemovePlanJSONDescribesTheRemoval(t *testing.T) {
 	if p.Token == nil || p.Error != nil || len(p.Problems) != 0 {
 		t.Fatalf("a removable worktree has a token and no problems: %+v", p)
 	}
-	if deref(p.Path) != path || deref(p.Head) != tip || p.Detached || deref(p.AdminDir) != gitDirFor(t, path) {
+	if deref(p.Path) != path || deref(p.Head) != tip || p.Detached || deref(p.AdminDir) != testkit.GitDirFor(t, path) {
 		t.Errorf("worktree facts %+v", p)
 	}
 	b := p.Branch
@@ -95,7 +96,7 @@ func TestRemovePlanJSONDescribesTheRemoval(t *testing.T) {
 	if len(p.Bases) != 1 || p.Bases[0].Name != "main" {
 		t.Errorf("bases %+v", p.Bases)
 	}
-	if !exists(path) || !ctx.Repo.BranchExists("fix_wt/planned") {
+	if !testkit.Exists(path) || !ctx.Repo.BranchExists("fix_wt/planned") {
 		t.Error("a plan changes nothing")
 	}
 }
@@ -104,8 +105,8 @@ func TestRemovePlanJSONDescribesTheRemoval(t *testing.T) {
 // knows, an error, and no token.
 func TestRemovePlanJSONRefusalHasCodesAndNoToken(t *testing.T) {
 	ctx, path := safetyWorktree(t, "fix/dirty-plan")
-	mustWrite(t, filepath.Join(path, "wip.txt"), "x")
-	gitIn(t, path, "worktree", "lock", "--reason", "held", path)
+	testkit.MustWrite(t, filepath.Join(path, "wip.txt"), "x")
+	testkit.GitIn(t, path, "worktree", "lock", "--reason", "held", path)
 
 	p, err := removePlanJSON(t, ctx, path, RemoveOptions{Agents: []wtsync.Agent{{ID: "s1", Name: "one", Cwd: path, Status: "idle"}}})
 	if err == nil {
@@ -137,8 +138,8 @@ func TestRemovePlanJSONRefusalHasCodesAndNoToken(t *testing.T) {
 // used is a problem with its own code.
 func TestRemovePlanJSONDetachedAndQuarantineProblem(t *testing.T) {
 	ctx, path := safetyWorktree(t, "fix/detached-plan")
-	gitIn(t, path, "checkout", "-q", "--detach")
-	dir := trashFor(t, ctx)
+	testkit.GitIn(t, path, "checkout", "-q", "--detach")
+	dir := testkit.TrashFor(t, ctx)
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -158,8 +159,8 @@ func TestRemovePlanJSONDetachedAndQuarantineProblem(t *testing.T) {
 // with the command that brings them back.
 func TestRemovePlanJSONListsTheCommitsADeletedBranchTakes(t *testing.T) {
 	ctx, path := safetyWorktree(t, "fix/squashed")
-	gitIn(t, path, "commit", "-q", "--allow-empty", "-m", "work")
-	tip := strings.TrimSpace(gitOut(t, path, "rev-parse", "HEAD"))
+	testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "work")
+	tip := strings.TrimSpace(testkit.GitOut(t, path, "rev-parse", "HEAD"))
 	landed := func(string, string) int { return 12 }
 
 	p, err := removePlanJSON(t, ctx, path, RemoveOptions{Landed: landed})
@@ -183,7 +184,7 @@ func TestRemovePlanJSONListsTheCommitsADeletedBranchTakes(t *testing.T) {
 // With the plan's token, the removal goes ahead and reports each effect.
 func TestRemoveJSONRemovesWithTheToken(t *testing.T) {
 	ctx, path := safetyWorktree(t, "fix/json-gone")
-	tip := strings.TrimSpace(gitOut(t, path, "rev-parse", "HEAD"))
+	tip := strings.TrimSpace(testkit.GitOut(t, path, "rev-parse", "HEAD"))
 	p, err := removePlanJSON(t, ctx, path, RemoveOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -209,14 +210,14 @@ func TestRemoveJSONRemovesWithTheToken(t *testing.T) {
 		t.Fatalf("a removal that deletes its branch names the run it pinned it in: %+v", r)
 	}
 	pin := pinOf(*r.RunID, RefBranch, "fix_wt/json-gone")
-	if s := step(t, r, kit.StepBranch); deref(s.Pin) != pin || gitOut(t, ctx.Repo.MainRoot, "rev-parse", pin) != tip {
+	if s := step(t, r, kit.StepBranch); deref(s.Pin) != pin || testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", pin) != tip {
 		t.Errorf("branch pin %v, want %s at %s", s.Pin, pin, tip)
 	}
 	want := []string{"wt", "refs", "restore", *r.RunID, "--only", "refs/heads/fix_wt/json-gone", "--yes"}
 	if !slices.Equal(r.RestoreCommand, want) || r.Quarantine != nil {
 		t.Errorf("restore %v quarantine %+v", r.RestoreCommand, r.Quarantine)
 	}
-	if exists(path) || ctx.Repo.BranchExists("fix_wt/json-gone") {
+	if testkit.Exists(path) || ctx.Repo.BranchExists("fix_wt/json-gone") {
 		t.Error("the worktree and its branch must be gone")
 	}
 }
@@ -224,7 +225,7 @@ func TestRemoveJSONRemovesWithTheToken(t *testing.T) {
 // A quarantine reports both moves, the journal's steps, and wt restore.
 func TestRemoveJSONQuarantine(t *testing.T) {
 	ctx, path := safetyWorktree(t, "fix/json-trash")
-	dir := trashFor(t, ctx)
+	dir := testkit.TrashFor(t, ctx)
 	r, err := removeJSON(t, ctx, path, RemoveOptions{Quarantine: dir})
 	if err != nil {
 		t.Fatalf("%v %+v", err, r)
@@ -250,7 +251,7 @@ func TestRemoveJSONQuarantine(t *testing.T) {
 // run.
 func TestRemoveJSONRefusedTouchesNothing(t *testing.T) {
 	ctx, path := safetyWorktree(t, "fix/json-dirty")
-	mustWrite(t, filepath.Join(path, "wip.txt"), "x")
+	testkit.MustWrite(t, filepath.Join(path, "wip.txt"), "x")
 	r, err := removeJSON(t, ctx, path, RemoveOptions{})
 	if err == nil || r.Outcome != RemoveRefused || r.Error == nil {
 		t.Fatalf("%v %+v", err, r)
@@ -263,7 +264,7 @@ func TestRemoveJSONRefusedTouchesNothing(t *testing.T) {
 			t.Errorf("step %+v", s)
 		}
 	}
-	if !exists(path) {
+	if !testkit.Exists(path) {
 		t.Error("the worktree must be there")
 	}
 }
@@ -278,23 +279,23 @@ func TestRemoveExpectRefusesEveryChangeTouchingNothing(t *testing.T) {
 		change func(t *testing.T, ctx *kit.Context, path string, run *RemoveOptions)
 	}{
 		{name: "branch tip and HEAD", change: func(t *testing.T, _ *kit.Context, path string, _ *RemoveOptions) {
-			gitIn(t, path, "commit", "-q", "--allow-empty", "-m", "late")
+			testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "late")
 		}},
 		{name: "HEAD of a detached checkout",
 			setup: func(t *testing.T, _ *kit.Context, path string, _, _ *RemoveOptions) {
-				gitIn(t, path, "checkout", "-q", "--detach")
+				testkit.GitIn(t, path, "checkout", "-q", "--detach")
 			},
 			change: func(t *testing.T, _ *kit.Context, path string, _ *RemoveOptions) {
-				gitIn(t, path, "checkout", "-q", "--detach", "HEAD~1")
+				testkit.GitIn(t, path, "checkout", "-q", "--detach", "HEAD~1")
 			}},
 		{name: "base commit", change: func(t *testing.T, ctx *kit.Context, _ string, _ *RemoveOptions) {
-			gitIn(t, ctx.Repo.MainRoot, "commit", "-q", "--allow-empty", "-m", "trunk moved")
+			testkit.GitIn(t, ctx.Repo.MainRoot, "commit", "-q", "--allow-empty", "-m", "trunk moved")
 		}},
 		{name: "dirty", change: func(t *testing.T, _ *kit.Context, path string, _ *RemoveOptions) {
-			mustWrite(t, filepath.Join(path, "wip.txt"), "x")
+			testkit.MustWrite(t, filepath.Join(path, "wip.txt"), "x")
 		}},
 		{name: "lock", change: func(t *testing.T, _ *kit.Context, path string, _ *RemoveOptions) {
-			gitIn(t, path, "worktree", "lock", "--reason", "pid 999999 gone", path)
+			testkit.GitIn(t, path, "worktree", "lock", "--reason", "pid 999999 gone", path)
 		}},
 		{name: "sessions",
 			setup: func(_ *testing.T, _ *kit.Context, _ string, plan, run *RemoveOptions) {
@@ -304,12 +305,12 @@ func TestRemoveExpectRefusesEveryChangeTouchingNothing(t *testing.T) {
 				run.Agents = []wtsync.Agent{{ID: "late", Cwd: path, Status: "idle"}}
 			}},
 		{name: "operation", change: func(t *testing.T, _ *kit.Context, path string, _ *RemoveOptions) {
-			head := strings.TrimSpace(gitOut(t, path, "rev-parse", "HEAD"))
-			mustWrite(t, filepath.Join(gitDirFor(t, path), "MERGE_HEAD"), head+"\n")
+			head := strings.TrimSpace(testkit.GitOut(t, path, "rev-parse", "HEAD"))
+			testkit.MustWrite(t, filepath.Join(testkit.GitDirFor(t, path), "MERGE_HEAD"), head+"\n")
 		}},
 		{name: "quarantine folder",
 			setup: func(t *testing.T, ctx *kit.Context, _ string, plan, run *RemoveOptions) {
-				plan.Quarantine = trashFor(t, ctx)
+				plan.Quarantine = testkit.TrashFor(t, ctx)
 				run.Quarantine = plan.Quarantine
 			},
 			change: func(_ *testing.T, _ *kit.Context, _ string, run *RemoveOptions) {
@@ -317,17 +318,17 @@ func TestRemoveExpectRefusesEveryChangeTouchingNothing(t *testing.T) {
 			}},
 		{name: "kept name taken",
 			setup: func(t *testing.T, _ *kit.Context, path string, _, _ *RemoveOptions) {
-				gitIn(t, path, "commit", "-q", "--allow-empty", "-m", "unmerged")
+				testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "unmerged")
 			},
 			change: func(t *testing.T, ctx *kit.Context, _ string, _ *RemoveOptions) {
-				gitIn(t, ctx.Repo.MainRoot, "branch", "expect")
+				testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "expect")
 			}},
 		{name: "superset opt-in", change: func(_ *testing.T, ctx *kit.Context, _ string, _ *RemoveOptions) {
-			optIn(ctx)
+			testkit.OptIn(ctx)
 		}},
 		{name: "planned outcome",
 			setup: func(t *testing.T, _ *kit.Context, path string, plan, run *RemoveOptions) {
-				gitIn(t, path, "commit", "-q", "--allow-empty", "-m", "squashed on GitHub")
+				testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "squashed on GitHub")
 				plan.Landed, run.Landed = landed, landed
 			},
 			change: func(_ *testing.T, _ *kit.Context, _ string, run *RemoveOptions) {
@@ -337,8 +338,8 @@ func TestRemoveExpectRefusesEveryChangeTouchingNothing(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			ctx, path := safetyWorktree(t, "fix/expect")
-			gitIn(t, path, "commit", "-q", "--allow-empty", "-m", "on the branch")
-			gitIn(t, ctx.Repo.MainRoot, "merge", "-q", "--ff-only", "fix_wt/expect")
+			testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "on the branch")
+			testkit.GitIn(t, ctx.Repo.MainRoot, "merge", "-q", "--ff-only", "fix_wt/expect")
 			var plan, run RemoveOptions
 			if c.setup != nil {
 				c.setup(t, ctx, path, &plan, &run)
@@ -358,13 +359,13 @@ func TestRemoveExpectRefusesEveryChangeTouchingNothing(t *testing.T) {
 			if !slices.Contains(problemCodes(r.Problems), kit.ProblemPlanChanged) {
 				t.Errorf("problems %+v", r.Problems)
 			}
-			if !exists(path) {
+			if !testkit.Exists(path) {
 				t.Error("the worktree must be there")
 			}
 			if now, ok := ctx.Repo.ResolveRef("refs/heads/fix_wt/expect"); !ok || now != tip {
 				t.Error("the branch must be untouched")
 			}
-			if run.Quarantine != "" && exists(run.Quarantine) {
+			if run.Quarantine != "" && testkit.Exists(run.Quarantine) {
 				t.Error("no quarantine folder may be made")
 			}
 			if list, _ := ctx.Repo.Worktrees(); func() bool { wt, ok := list.ByPath(path); return ok && wt.Locked && c.name != "lock" }() {
@@ -378,7 +379,7 @@ func TestRemoveExpectRefusesEveryChangeTouchingNothing(t *testing.T) {
 // then: the checkout moved, the admin dir not, the branch step not run.
 func TestRemoveJSONInterruptedBetweenTheMovesWritesOneObject(t *testing.T) {
 	ctx, path := safetyWorktree(t, "fix/json-signal")
-	dir := trashFor(t, ctx)
+	dir := testkit.TrashFor(t, ctx)
 	t.Cleanup(func() { quarantine.AfterSave = nil })
 	quarantine.AfterSave = func(_ *quarantine.Record, at string) error {
 		if at == quarantine.StepMoveCheckout+":"+quarantine.Done {
@@ -411,9 +412,9 @@ func TestRemoveJSONInterruptedBetweenTheMovesWritesOneObject(t *testing.T) {
 // which effect failed.
 func TestRemoveJSONBranchFailureAfterTheMovesIsPartial(t *testing.T) {
 	ctx, path := safetyWorktree(t, "fix/json-partial")
-	gitIn(t, path, "commit", "-q", "--allow-empty", "-m", "work")
-	gitIn(t, path, "branch", "json-partial")
-	dir := trashFor(t, ctx)
+	testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "work")
+	testkit.GitIn(t, path, "branch", "json-partial")
+	dir := testkit.TrashFor(t, ctx)
 	r, err := removeJSON(t, ctx, path, RemoveOptions{Quarantine: dir})
 	if err == nil || r.Outcome != RemovePartial || r.Error == nil {
 		t.Fatalf("%v %+v", err, r)
@@ -433,7 +434,7 @@ func TestRemoveJSONBranchFailureAfterTheMovesIsPartial(t *testing.T) {
 func TestRemoveJSONFailedBeforeTheRepository(t *testing.T) {
 	var out bytes.Buffer
 	RemoveFailedJSON(&out, true, kit.ErrNotInRepo)
-	validateJSON(t, "remove-plan", out.Bytes())
+	testkit.ValidateJSON(t, "remove-plan", out.Bytes())
 	out.Reset()
 	RemoveFailedJSON(&out, false, errors.New("no repo"))
 	if r := decodeRemoveOutput(t, out.Bytes()); r.Outcome != RemoveRefused || r.Error == nil {
@@ -445,7 +446,7 @@ func TestRemoveJSONFailedBeforeTheRepository(t *testing.T) {
 // the schema knows.
 func TestRemovePlanJSONNamesALeftoverSequencer(t *testing.T) {
 	ctx, path := safetyWorktree(t, "fix/sequencer")
-	mustMkdir(t, filepath.Join(gitDirFor(t, path), "sequencer"))
+	testkit.MustMkdir(t, filepath.Join(testkit.GitDirFor(t, path), "sequencer"))
 	p, err := removePlanJSON(t, ctx, path, RemoveOptions{})
 	if err == nil || deref(p.Operation) != "sequencer" || !slices.Contains(problemCodes(p.Problems), KeptOperation) {
 		t.Errorf("%v %+v", err, p)
@@ -456,8 +457,8 @@ func TestRemovePlanJSONNamesALeftoverSequencer(t *testing.T) {
 // something: it is partial, and wt restore undoes it.
 func TestRemoveJSONQuarantineStoppedAfterTheLockIsPartial(t *testing.T) {
 	ctx, path := safetyWorktree(t, "fix/json-pin")
-	dir := trashFor(t, ctx)
-	crashAt(t, quarantine.StepPin+":"+quarantine.Running)
+	dir := testkit.TrashFor(t, ctx)
+	testkit.CrashAt(t, quarantine.StepPin+":"+quarantine.Running)
 	r, err := removeJSON(t, ctx, path, RemoveOptions{Quarantine: dir})
 	if err == nil || r.Outcome != RemovePartial {
 		t.Fatalf("%v %+v", err, r)

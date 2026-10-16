@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
 // remoteFixture is a repository with remotes configured and remote-tracking
@@ -15,30 +16,30 @@ import (
 // entry of refs is "<remote>/<branch>", pointed at a commit of its own.
 func remoteFixture(t *testing.T, remotes []string, refs ...string) *kit.Context {
 	t.Helper()
-	ctx, err := kit.Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
 	main := ctx.Repo.MainRoot
 	for _, r := range remotes {
-		gitIn(t, main, "remote", "add", r, "https://example.invalid/"+r+".git")
+		testkit.GitIn(t, main, "remote", "add", r, "https://example.invalid/"+r+".git")
 	}
 	for _, ref := range refs {
-		gitIn(t, main, "commit", "-q", "--allow-empty", "-m", "on "+ref)
-		gitIn(t, main, "update-ref", "refs/remotes/"+ref, "HEAD")
+		testkit.GitIn(t, main, "commit", "-q", "--allow-empty", "-m", "on "+ref)
+		testkit.GitIn(t, main, "update-ref", "refs/remotes/"+ref, "HEAD")
 	}
-	gitIn(t, main, "reset", "-q", "--hard", "HEAD~"+strconv.Itoa(len(refs)))
+	testkit.GitIn(t, main, "reset", "-q", "--hard", "HEAD~"+strconv.Itoa(len(refs)))
 	return ctx
 }
 
 func oidOf(t *testing.T, ctx *kit.Context, ref string) string {
 	t.Helper()
-	return strings.TrimSpace(gitOut(t, ctx.Repo.MainRoot, "rev-parse", ref))
+	return strings.TrimSpace(testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", ref))
 }
 
 func upstreamOf(t *testing.T, ctx *kit.Context, branch string) string {
 	t.Helper()
-	return strings.TrimSpace(gitOut(t, ctx.Repo.MainRoot, "for-each-ref", "--format=%(upstream)", "refs/heads/"+branch))
+	return strings.TrimSpace(testkit.GitOut(t, ctx.Repo.MainRoot, "for-each-ref", "--format=%(upstream)", "refs/heads/"+branch))
 }
 
 // wt checkout <remote>/<branch> makes the local branch at the
@@ -86,12 +87,12 @@ func TestCheckoutBareNameFindsTheOneRemoteThatHasIt(t *testing.T) {
 // made — unless checkout.defaultRemote picks one, as it does for git.
 func TestCheckoutBareNameOnSeveralRemotes(t *testing.T) {
 	ctx := remoteFixture(t, []string{"origin", "upstream"}, "origin/topic", "upstream/topic")
-	before := repoState(t, ctx.Repo.MainRoot)
+	before := testkit.RepoState(t, ctx.Repo.MainRoot)
 	_, err := Checkout(ctx, "topic", "", NewOptions{NoSetup: true}, &bytes.Buffer{})
 	if err == nil || !strings.Contains(err.Error(), "origin/topic") || !strings.Contains(err.Error(), "upstream/topic") {
 		t.Fatalf("want a refusal naming both, got %v", err)
 	}
-	if after := repoState(t, ctx.Repo.MainRoot); after != before {
+	if after := testkit.RepoState(t, ctx.Repo.MainRoot); after != before {
 		t.Error("a refused checkout wrote to the repository")
 	}
 	p := checkoutPlanOf(t, ctx, "topic", "")
@@ -99,7 +100,7 @@ func TestCheckoutBareNameOnSeveralRemotes(t *testing.T) {
 		t.Errorf("plan problems %s", codes(p.Problems))
 	}
 
-	gitIn(t, ctx.Repo.MainRoot, "config", "checkout.defaultRemote", "upstream")
+	testkit.GitIn(t, ctx.Repo.MainRoot, "config", "checkout.defaultRemote", "upstream")
 	if _, err := Checkout(ctx, "topic", "", NewOptions{NoSetup: true}, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +113,7 @@ func TestCheckoutBareNameOnSeveralRemotes(t *testing.T) {
 // remote has: the branch is not moved and its upstream not touched.
 func TestCheckoutPrefersTheLocalBranch(t *testing.T) {
 	ctx := remoteFixture(t, []string{"origin"}, "origin/topic")
-	gitIn(t, ctx.Repo.MainRoot, "branch", "topic")
+	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "topic")
 	local := oidOf(t, ctx, "refs/heads/topic")
 	p := checkoutPlanOf(t, ctx, "topic", "")
 	if p.Source == nil || *p.Source != "local" || p.Remote != nil || p.RemoteRef != nil || p.RemoteCommit != nil {
@@ -130,7 +131,7 @@ func TestCheckoutPrefersTheLocalBranch(t *testing.T) {
 // wins over the remote-tracking ref.
 func TestCheckoutExactLocalNameWinsOverARemote(t *testing.T) {
 	ctx := remoteFixture(t, []string{"origin"}, "origin/topic")
-	gitIn(t, ctx.Repo.MainRoot, "branch", "origin/topic", "main")
+	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "origin/topic", "main")
 	path, err := Checkout(ctx, "origin/topic", "odd", NewOptions{NoSetup: true}, &bytes.Buffer{})
 	if err != nil {
 		t.Fatal(err)
@@ -146,9 +147,9 @@ func TestCheckoutExactLocalNameWinsOverARemote(t *testing.T) {
 // What cannot be checked out is a problem in the plan, with no token.
 func TestCheckoutPlanRemoteProblems(t *testing.T) {
 	ctx := remoteFixture(t, []string{"origin"}, "origin/topic")
-	gitIn(t, ctx.Repo.MainRoot, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/topic")
-	gitIn(t, ctx.Repo.MainRoot, "branch", "taken")
-	gitIn(t, ctx.Repo.MainRoot, "update-ref", "refs/remotes/origin/taken", "HEAD")
+	testkit.GitIn(t, ctx.Repo.MainRoot, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/topic")
+	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "taken")
+	testkit.GitIn(t, ctx.Repo.MainRoot, "update-ref", "refs/remotes/origin/taken", "HEAD")
 	for arg, want := range map[string]string{
 		"origin/nope":  kit.ProblemRemoteBranchMissing,
 		"origin/HEAD":  kit.ProblemRemoteBranchMissing,
@@ -170,9 +171,9 @@ func TestCheckoutPlanRemoteProblems(t *testing.T) {
 // remote-tracking commit, and writes nothing.
 func TestCheckoutPlanForARemoteBranch(t *testing.T) {
 	ctx := remoteFixture(t, []string{"origin"}, "origin/feature/x")
-	before := repoState(t, ctx.Repo.MainRoot)
+	before := testkit.RepoState(t, ctx.Repo.MainRoot)
 	p := checkoutPlanOf(t, ctx, "origin/feature/x", "")
-	if after := repoState(t, ctx.Repo.MainRoot); after != before {
+	if after := testkit.RepoState(t, ctx.Repo.MainRoot); after != before {
 		t.Error("the plan wrote to the repository")
 	}
 	oid := oidOf(t, ctx, "refs/remotes/origin/feature/x")
@@ -217,7 +218,7 @@ func TestCheckoutJSONFromARemote(t *testing.T) {
 
 	// A local checkout reports the branch's upstream as it is, and changes
 	// nothing about it.
-	gitIn(t, ctx.Repo.MainRoot, "branch", "plain")
+	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "plain")
 	r, err = checkoutJSON(t, ctx, "plain", "", NewOptions{NoSetup: true}, "")
 	if err != nil || *r.Source != "local" || r.Upstream != nil || r.Remote != nil || stepOf(r.CreateResult, "branch").Result != kit.StepUntouched {
 		t.Errorf("err %v result %+v", err, r)
@@ -230,18 +231,18 @@ func TestCheckoutExpectRefusesAMovedRemote(t *testing.T) {
 	ctx := remoteFixture(t, []string{"origin"}, "origin/topic")
 	main := ctx.Repo.MainRoot
 	p := checkoutPlanOf(t, ctx, "origin/topic", "")
-	gitIn(t, main, "update-ref", "refs/remotes/origin/topic", "main")
-	before := repoState(t, main)
+	testkit.GitIn(t, main, "update-ref", "refs/remotes/origin/topic", "main")
+	before := testkit.RepoState(t, main)
 	r, err := checkoutJSON(t, ctx, "origin/topic", "", NewOptions{NoSetup: true}, *p.Token)
 	if err == nil || r.Outcome != CreateRefused || codes(r.Problems) != kit.ProblemPlanChanged {
 		t.Errorf("moved remote: err %v result %+v", err, r)
 	}
-	if after := repoState(t, main); after != before {
+	if after := testkit.RepoState(t, main); after != before {
 		t.Error("a refused checkout wrote to the repository")
 	}
 
 	p = checkoutPlanOf(t, ctx, "topic", "")
-	gitIn(t, main, "branch", "topic", "main")
+	testkit.GitIn(t, main, "branch", "topic", "main")
 	r, err = checkoutJSON(t, ctx, "topic", "", NewOptions{NoSetup: true}, *p.Token)
 	if err == nil || r.Outcome != CreateRefused || codes(r.Problems) != kit.ProblemPlanChanged {
 		t.Errorf("branch appeared: err %v result %+v", err, r)
@@ -260,7 +261,7 @@ func TestCheckoutNeverOverwritesABranchThatAppeared(t *testing.T) {
 	if prob != nil {
 		t.Fatal(prob.Message)
 	}
-	gitIn(t, main, "branch", "topic", "main")
+	testkit.GitIn(t, main, "branch", "topic", "main")
 	mainOID := oidOf(t, ctx, "main")
 	path := ctx.Scheme().Dir("feat", "topic")
 	j := NewCreateJournal(&bytes.Buffer{}, "checkout")
@@ -286,8 +287,8 @@ func TestCheckoutNeverOverwritesABranchThatAppeared(t *testing.T) {
 func TestCheckoutWithOverlappingRemoteNames(t *testing.T) {
 	ctx := remoteFixture(t, []string{"team"}, "team/origin/topic")
 	// git remote add refuses the overlap; configuration by hand does not.
-	gitIn(t, ctx.Repo.MainRoot, "config", "remote.team/origin.url", "https://example.invalid/t.git")
-	gitIn(t, ctx.Repo.MainRoot, "config", "remote.team/origin.fetch", "+refs/heads/*:refs/remotes/team/origin/*")
+	testkit.GitIn(t, ctx.Repo.MainRoot, "config", "remote.team/origin.url", "https://example.invalid/t.git")
+	testkit.GitIn(t, ctx.Repo.MainRoot, "config", "remote.team/origin.fetch", "+refs/heads/*:refs/remotes/team/origin/*")
 	path, err := Checkout(ctx, "team/origin/topic", "", NewOptions{NoSetup: true}, &bytes.Buffer{})
 	if err != nil {
 		t.Fatal(err)
@@ -295,8 +296,8 @@ func TestCheckoutWithOverlappingRemoteNames(t *testing.T) {
 	if ctx.Repo.BranchAt(path) != "topic" {
 		t.Errorf("worktree on %q", ctx.Repo.BranchAt(path))
 	}
-	remote := strings.TrimSpace(gitOut(t, ctx.Repo.MainRoot, "config", "branch.topic.remote"))
-	merge := strings.TrimSpace(gitOut(t, ctx.Repo.MainRoot, "config", "branch.topic.merge"))
+	remote := strings.TrimSpace(testkit.GitOut(t, ctx.Repo.MainRoot, "config", "branch.topic.remote"))
+	merge := strings.TrimSpace(testkit.GitOut(t, ctx.Repo.MainRoot, "config", "branch.topic.merge"))
 	if remote != "team/origin" || merge != "refs/heads/topic" {
 		t.Errorf("upstream %s %s, want team/origin refs/heads/topic", remote, merge)
 	}
@@ -307,7 +308,7 @@ func TestCheckoutWithOverlappingRemoteNames(t *testing.T) {
 func TestCheckoutExpectRefusesAnExplicitRemoteOnceTheBranchAppears(t *testing.T) {
 	ctx := remoteFixture(t, []string{"origin"}, "origin/topic")
 	p := checkoutPlanOf(t, ctx, "origin/topic", "")
-	gitIn(t, ctx.Repo.MainRoot, "branch", "topic", "main")
+	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "topic", "main")
 	r, err := checkoutJSON(t, ctx, "origin/topic", "", NewOptions{NoSetup: true}, *p.Token)
 	if err == nil || r.Outcome != CreateRefused || codes(r.Problems) != kit.ProblemPlanChanged+","+kit.ProblemBranchExists {
 		t.Errorf("err %v problems %s outcome %s", err, codes(r.Problems), r.Outcome)

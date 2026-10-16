@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -19,9 +20,9 @@ func (f *trunkFixture) withWork(t *testing.T) RunOptions {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeIn(t, x, "x.txt", "x\n")
-	gitIn(t, x, "add", "x.txt")
-	gitIn(t, x, "commit", "-q", "-m", "x")
+	testkit.WriteIn(t, x, "x.txt", "x\n")
+	testkit.GitIn(t, x, "add", "x.txt")
+	testkit.GitIn(t, x, "commit", "-q", "-m", "x")
 	return RunOptions{pushOptions: pushOptions{Push: PushNever}, verbOptions: verbOptions{
 		Agents: []wtsync.Agent{},
 		Now:    func() time.Time { return time.Unix(0, 99) },
@@ -32,11 +33,11 @@ func (f *trunkFixture) withWork(t *testing.T) RunOptions {
 // needs; the main checkout does not fetch it.
 func (f *trunkFixture) declare(t *testing.T) {
 	t.Helper()
-	gitIn(t, f.other, "pull", "-q", "--ff-only")
-	writeIn(t, f.other, ".wt-sync.yaml", "conflicts: []\n")
-	gitIn(t, f.other, "add", "-A")
-	gitIn(t, f.other, "commit", "-q", "-m", "declare")
-	gitIn(t, f.other, "push", "-q", "origin", "main")
+	testkit.GitIn(t, f.other, "pull", "-q", "--ff-only")
+	testkit.WriteIn(t, f.other, ".wt-sync.yaml", "conflicts: []\n")
+	testkit.GitIn(t, f.other, "add", "-A")
+	testkit.GitIn(t, f.other, "commit", "-q", "-m", "declare")
+	testkit.GitIn(t, f.other, "push", "-q", "origin", "main")
 }
 
 func TestUpFastForwardsLocalTrunkAfterItsFetch(t *testing.T) {
@@ -47,7 +48,7 @@ func TestUpFastForwardsLocalTrunkAfterItsFetch(t *testing.T) {
 	opts := f.withWork(t)
 	before := f.local(t)
 	remote := f.advanceOrigin(t, 2)
-	gitIn(t, f.main, "update-ref", "refs/remotes/origin/main", before) // as if never fetched
+	testkit.GitIn(t, f.main, "update-ref", "refs/remotes/origin/main", before) // as if never fetched
 
 	r, err := upJSON(t, f.ctx, "x", opts)
 	if err != nil {
@@ -139,9 +140,9 @@ func TestSyncRunReportsASkippedTrunkAndStillRebases(t *testing.T) {
 	}
 	f := newTrunkFixture(t)
 	opts := f.withWork(t)
-	gitIn(t, f.main, "commit", "-q", "--allow-empty", "-m", "unpushed")
+	testkit.GitIn(t, f.main, "commit", "-q", "--allow-empty", "-m", "unpushed")
 	f.advanceOrigin(t, 1)
-	x := gitOut(t, f.main, "rev-parse", "feat_wt/x")
+	x := testkit.GitOut(t, f.main, "rev-parse", "feat_wt/x")
 	f.declare(t)
 
 	r, err := syncRunJSON(t, f.ctx, []string{"x"}, opts)
@@ -154,7 +155,7 @@ func TestSyncRunReportsASkippedTrunkAndStillRebases(t *testing.T) {
 	if len(r.Worktrees) != 1 || r.Worktrees[0].Result != ResultRebased {
 		t.Fatalf("worktrees = %+v, want x rebased", *r.Worktrees[0])
 	}
-	if now := gitOut(t, f.main, "rev-parse", "feat_wt/x"); now == x {
+	if now := testkit.GitOut(t, f.main, "rev-parse", "feat_wt/x"); now == x {
 		t.Fatal("x did not move")
 	}
 }
@@ -169,9 +170,9 @@ func TestSyncKeepRunFastForwardsLocalTrunk(t *testing.T) {
 	f.declare(t)
 	f.advanceOrigin(t, 1)
 	// Moved again after the last fetch: only the pass's own fetch sees it.
-	gitIn(t, f.other, "commit", "-q", "--allow-empty", "-m", "again")
-	gitIn(t, f.other, "push", "-q", "origin", "main")
-	remote := gitOut(t, f.other, "rev-parse", "HEAD")
+	testkit.GitIn(t, f.other, "commit", "-q", "--allow-empty", "-m", "again")
+	testkit.GitIn(t, f.other, "push", "-q", "origin", "main")
+	remote := testkit.GitOut(t, f.other, "rev-parse", "HEAD")
 	var out bytes.Buffer
 	if err := SyncKeepRun(f.ctx, keepOpts(PushNever), &out); err != nil {
 		t.Fatalf("keep: %v\n%s", err, out.String())
@@ -220,7 +221,7 @@ func TestStatusJSONSaysWhatARunWouldDoToLocalTrunk(t *testing.T) {
 	if got := f.local(t); got != before {
 		t.Fatalf("local main moved to %s", got)
 	}
-	writeIn(t, f.main, "scratch.txt", "mine\n")
+	testkit.WriteIn(t, f.main, "scratch.txt", "mine\n")
 	if p = planOfWork(t, f.ctx, "x"); p.TrunkSync.SkippedReason == nil || *p.TrunkSync.SkippedReason != TrunkSkipDirty {
 		t.Fatalf("trunkSync = %+v, want dirty", p.TrunkSync)
 	}

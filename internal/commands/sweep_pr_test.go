@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -20,8 +21,8 @@ import (
 func squashed(t *testing.T, ctx *kit.Context, work string) (path, branch, tip string) {
 	t.Helper()
 	path = mergedWorktree(t, ctx, work)
-	gitIn(t, path, "commit", "-q", "--allow-empty", "-m", "the work that was squashed")
-	return path, ctx.Repo.BranchAt(path), gitOut(t, path, "rev-parse", "HEAD")
+	testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "the work that was squashed")
+	return path, ctx.Repo.BranchAt(path), testkit.GitOut(t, path, "rev-parse", "HEAD")
 }
 
 // mergedPR is what GitHub says about a branch it merged into trunk at tip.
@@ -45,7 +46,7 @@ func sweptWith(t *testing.T, ctx *kit.Context, prs map[string]github.PR) SweepPl
 // The case git cannot answer: the branch is not on trunk and never will be,
 // so only the pull request says the work landed.
 func TestSweepPlanSweepsASquashMergedWorktree(t *testing.T) {
-	ctx, _, _ := sweepRepo(t)
+	ctx, _, _ := testkit.SweepRepo(t)
 	path, branch, tip := squashed(t, ctx, "fix/login-crash")
 
 	if p := sweptWith(t, ctx, nil); inAnyGroup(p, branch) {
@@ -68,7 +69,7 @@ func TestSweepPlanSweepsASquashMergedWorktree(t *testing.T) {
 
 // End to end, with the branch deleted at the tip the plan showed.
 func TestSweepRemovesASquashMergedWorktree(t *testing.T) {
-	ctx, _, _ := sweepRepo(t)
+	ctx, _, _ := testkit.SweepRepo(t)
 	path, branch, tip := squashed(t, ctx, "fix/login-crash")
 	prs := map[string]github.PR{branch: mergedPR(34, branch, tip)}
 
@@ -76,7 +77,7 @@ func TestSweepRemovesASquashMergedWorktree(t *testing.T) {
 	if err := Sweep(ctx, SweepOptions{Yes: true, Agents: []wtsync.Agent{}, PRs: prs}, &buf); err != nil {
 		t.Fatalf("Sweep: %v\n%s", err, buf.String())
 	}
-	if exists(path) {
+	if testkit.Exists(path) {
 		t.Error("the worktree should have been removed")
 	}
 	if ctx.Repo.BranchExists(branch) {
@@ -91,9 +92,9 @@ func TestSweepRemovesASquashMergedWorktree(t *testing.T) {
 // A commit made after the merge is work that went nowhere, and it takes the
 // branch off the pull request's head.
 func TestSweepPlanLeavesACommitMadeAfterTheMerge(t *testing.T) {
-	ctx, _, _ := sweepRepo(t)
+	ctx, _, _ := testkit.SweepRepo(t)
 	path, branch, tip := squashed(t, ctx, "fix/login-crash")
-	gitIn(t, path, "commit", "-q", "--allow-empty", "-m", "and then some more")
+	testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "and then some more")
 
 	p := sweptWith(t, ctx, map[string]github.PR{branch: mergedPR(34, branch, tip)})
 	if inAnyGroup(p, branch) {
@@ -103,7 +104,7 @@ func TestSweepPlanLeavesACommitMadeAfterTheMerge(t *testing.T) {
 
 // A closed pull request is not a merged one: nothing landed.
 func TestSweepPlanIgnoresAClosedPullRequest(t *testing.T) {
-	ctx, _, _ := sweepRepo(t)
+	ctx, _, _ := testkit.SweepRepo(t)
 	_, branch, tip := squashed(t, ctx, "fix/login-crash")
 	closed := mergedPR(34, branch, tip)
 	closed.State = "CLOSED"
@@ -115,9 +116,9 @@ func TestSweepPlanIgnoresAClosedPullRequest(t *testing.T) {
 
 // sweep's own safety checks are untouched by any of this.
 func TestSweepPlanKeepsADirtySquashMergedWorktree(t *testing.T) {
-	ctx, _, _ := sweepRepo(t)
+	ctx, _, _ := testkit.SweepRepo(t)
 	path, branch, tip := squashed(t, ctx, "fix/login-crash")
-	mustWrite(t, filepath.Join(path, "scratch.txt"), "not yet\n")
+	testkit.MustWrite(t, filepath.Join(path, "scratch.txt"), "not yet\n")
 
 	p := sweptWith(t, ctx, map[string]github.PR{branch: mergedPR(34, branch, tip)})
 	if len(p.Remove) != 0 {
@@ -135,11 +136,11 @@ func TestSweepPlanKeepsADirtySquashMergedWorktree(t *testing.T) {
 // Where git can tell, git tells: the pull request is printed beside the
 // reason, not instead of it.
 func TestSweepPlanNamesThePullRequestOfAMergedWorktree(t *testing.T) {
-	ctx, _, _ := sweepRepo(t)
+	ctx, _, _ := testkit.SweepRepo(t)
 	mergedWorktree(t, ctx, "fix/login-crash")
 	branch := "fix_wt/login-crash"
 
-	p := sweptWith(t, ctx, map[string]github.PR{branch: openPR(35, branch, "Still open")})
+	p := sweptWith(t, ctx, map[string]github.PR{branch: testkit.OpenPR(35, branch, "Still open")})
 	if !slices.Equal(worktreeNames(p.Remove), []string{branch}) {
 		t.Fatalf("remove = %v", worktreeNames(p.Remove))
 	}
@@ -155,9 +156,9 @@ func TestSweepPlanNamesThePullRequestOfAMergedWorktree(t *testing.T) {
 // A branch nothing has checked out, merged only on GitHub, is the same litter
 // as a merged one.
 func TestSweepPlanDeletesASquashMergedBranchWithNoWorktree(t *testing.T) {
-	ctx, main, _ := sweepRepo(t)
-	branchWithWork(t, main, "left-behind", 1)
-	tip := gitOut(t, main, "rev-parse", "left-behind")
+	ctx, main, _ := testkit.SweepRepo(t)
+	testkit.BranchWithWork(t, main, "left-behind", 1)
+	tip := testkit.GitOut(t, main, "rev-parse", "left-behind")
 
 	p := sweptWith(t, ctx, map[string]github.PR{"left-behind": mergedPR(34, "left-behind", tip)})
 	if !slices.Contains(branchNames(p.Delete), "left-behind") {
@@ -171,8 +172,8 @@ func TestSweepPlanDeletesASquashMergedBranchWithNoWorktree(t *testing.T) {
 // An upstream deleted on merge is what a squash merge usually leaves; the row
 // stops being a puzzle and says what happened.
 func TestSweepPlanNamesThePullRequestOfAGoneBranch(t *testing.T) {
-	ctx, main, _ := sweepRepo(t)
-	branchWithWork(t, main, "went-nowhere", 1)
+	ctx, main, _ := testkit.SweepRepo(t)
+	testkit.BranchWithWork(t, main, "went-nowhere", 1)
 	goneUpstream(t, main, "went-nowhere")
 	closed := mergedPR(34, "went-nowhere", "some-other-commit")
 	closed.State = "CLOSED"
@@ -191,7 +192,7 @@ func TestSweepPlanNamesThePullRequestOfAGoneBranch(t *testing.T) {
 // a header that says "merged means reachable from origin/main" would throw
 // the work away.
 func TestSweepLeavesAPullRequestMergedIntoItsParent(t *testing.T) {
-	ctx, _, _ := sweepRepo(t)
+	ctx, _, _ := testkit.SweepRepo(t)
 	_, branch, tip := squashed(t, ctx, "fix/login-crash")
 
 	stacked := mergedInto(34, branch, tip, "feat_wt/the-parent")
@@ -208,7 +209,7 @@ func TestSweepLeavesAPullRequestMergedIntoItsParent(t *testing.T) {
 // An answer written before wt read the base branch says nothing about where
 // the work went, and an unanswered question is not a yes.
 func TestSweepLeavesAPullRequestWithNoBaseRecorded(t *testing.T) {
-	ctx, _, _ := sweepRepo(t)
+	ctx, _, _ := testkit.SweepRepo(t)
 	_, branch, tip := squashed(t, ctx, "fix/login-crash")
 
 	p := sweptWith(t, ctx, map[string]github.PR{branch: mergedInto(34, branch, tip, "")})
@@ -222,7 +223,7 @@ func TestSweepLeavesAPullRequestWithNoBaseRecorded(t *testing.T) {
 // could not be asked again — the row says that, and never that GitHub said
 // something new.
 func TestSweepSaysWhyAConfirmedPullRequestWasNotDeleted(t *testing.T) {
-	ctx, _, _ := sweepRepo(t)
+	ctx, _, _ := testkit.SweepRepo(t)
 	_, branch, tip := squashed(t, ctx, "fix/login-crash")
 	was := SweepBranch{Branch: repo.Branch{Name: branch, Tip: tip}, MergedPR: 34}
 
@@ -241,7 +242,7 @@ func TestSweepSaysWhyAConfirmedPullRequestWasNotDeleted(t *testing.T) {
 func ghAnsweringOnce(t *testing.T, prs ...github.PR) {
 	t.Helper()
 	counter := filepath.Join(t.TempDir(), "calls")
-	fakeGitHubWith(t, `if [ "$1 $2" = 'api graphql' ]; then
+	testkit.FakeGitHubWith(t, `if [ "$1 $2" = 'api graphql' ]; then
   n=$(cat `+counter+` 2>/dev/null || echo 0); n=$((n+1)); echo "$n" > `+counter+`
   [ "$n" -gt 1 ] && { echo 'offline' >&2; exit 1; }
 fi`, prs...)
@@ -251,9 +252,9 @@ fi`, prs...)
 // since the plan keeps the branch and says so, and never claims GitHub said
 // something new.
 func TestSweepKeepsASquashMergedBranchWhenTheSecondReadFails(t *testing.T) {
-	ctx, main, _ := sweepRepo(t)
-	branchWithWork(t, main, "fix_wt/login-crash", 1)
-	tip := gitOut(t, main, "rev-parse", "fix_wt/login-crash")
+	ctx, main, _ := testkit.SweepRepo(t)
+	testkit.BranchWithWork(t, main, "fix_wt/login-crash", 1)
+	tip := testkit.GitOut(t, main, "rev-parse", "fix_wt/login-crash")
 	goneUpstream(t, main, "fix_wt/login-crash")
 	ghAnsweringOnce(t, mergedPR(34, "fix_wt/login-crash", tip))
 
@@ -273,13 +274,13 @@ func TestSweepKeepsASquashMergedBranchWhenTheSecondReadFails(t *testing.T) {
 // Sweep decides what to delete, so it asks GitHub afresh: a young cached
 // answer must not stand in for one.
 func TestSweepAsksGitHubPastAYoungCache(t *testing.T) {
-	ctx, main, _ := sweepRepo(t)
-	branchWithWork(t, main, "fix_wt/login-crash", 1)
-	tip := gitOut(t, main, "rev-parse", "fix_wt/login-crash")
+	ctx, main, _ := testkit.SweepRepo(t)
+	testkit.BranchWithWork(t, main, "fix_wt/login-crash", 1)
+	tip := testkit.GitOut(t, main, "rev-parse", "fix_wt/login-crash")
 	goneUpstream(t, main, "fix_wt/login-crash")
 	// The cache says there is no pull request, written just now.
-	kit.WritePRCache(ctx, ghRepo, map[string]*github.PR{"fix_wt/login-crash": nil}, time.Now())
-	fakeGitHub(t, mergedPR(34, "fix_wt/login-crash", tip))
+	kit.WritePRCache(ctx, testkit.GhRepo, map[string]*github.PR{"fix_wt/login-crash": nil}, time.Now())
+	testkit.FakeGitHub(t, mergedPR(34, "fix_wt/login-crash", tip))
 
 	p := planWith(t, ctx, SweepOptions{Agents: []wtsync.Agent{}})
 	if !slices.Contains(branchNames(p.Delete), "fix_wt/login-crash") {
@@ -290,11 +291,11 @@ func TestSweepAsksGitHubPastAYoungCache(t *testing.T) {
 // A squash-merged branch nothing has checked out goes the same way, end to
 // end and at the tip the plan showed.
 func TestSweepDeletesASquashMergedBranchWithNoWorktree(t *testing.T) {
-	ctx, main, _ := sweepRepo(t)
-	branchWithWork(t, main, "fix_wt/login-crash", 1)
-	tip := gitOut(t, main, "rev-parse", "fix_wt/login-crash")
+	ctx, main, _ := testkit.SweepRepo(t)
+	testkit.BranchWithWork(t, main, "fix_wt/login-crash", 1)
+	tip := testkit.GitOut(t, main, "rev-parse", "fix_wt/login-crash")
 	goneUpstream(t, main, "fix_wt/login-crash")
-	fakeGitHub(t, mergedPR(34, "fix_wt/login-crash", tip))
+	testkit.FakeGitHub(t, mergedPR(34, "fix_wt/login-crash", tip))
 
 	var out bytes.Buffer
 	if err := Sweep(ctx, SweepOptions{NoFetch: true, Yes: true, Agents: []wtsync.Agent{}}, &out); err != nil {
@@ -321,13 +322,13 @@ func TestSweepDoesNotDeleteOnAPullRequestThatDidNotLandHere(t *testing.T) {
 		// fork calling its own branch the same thing, and having it merged,
 		// says nothing about the commits sitting on this one.
 		"a fork's merge beside this repository's own open pull request": func(branch, tip string) []github.PR {
-			own := openPR(35, branch, "Still going")
+			own := testkit.OpenPR(35, branch, "Still going")
 			own.HeadRefOid, own.BaseRefName = tip, "main"
 			return []github.PR{forkOf(mergedPR(34, branch, tip)), own}
 		},
 		// Open at this very commit is work in progress, not work that landed.
 		"an open pull request at the tip": func(branch, tip string) []github.PR {
-			p := openPR(34, branch, "Still going")
+			p := testkit.OpenPR(34, branch, "Still going")
 			p.HeadRefOid, p.BaseRefName = tip, "main"
 			return []github.PR{p}
 		},
@@ -338,20 +339,20 @@ func TestSweepDoesNotDeleteOnAPullRequestThatDidNotLandHere(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx, main, _ := sweepRepo(t)
-			branchWithWork(t, main, "fix_wt/login-crash", 1)
-			tip := gitOut(t, main, "rev-parse", "fix_wt/login-crash")
+			ctx, main, _ := testkit.SweepRepo(t)
+			testkit.BranchWithWork(t, main, "fix_wt/login-crash", 1)
+			tip := testkit.GitOut(t, main, "rev-parse", "fix_wt/login-crash")
 			// Gone upstream is what brings a branch into the question at all;
 			// without it sweep never asks about this one and the case is
 			// about nothing.
 			goneUpstream(t, main, "fix_wt/login-crash")
-			log := fakeGitHub(t, prs("fix_wt/login-crash", tip)...)
+			log := testkit.FakeGitHub(t, prs("fix_wt/login-crash", tip)...)
 
 			var out bytes.Buffer
 			if err := Sweep(ctx, SweepOptions{NoFetch: true, Yes: true, Agents: []wtsync.Agent{}}, &out); err != nil {
 				t.Fatalf("Sweep: %v\n%s", err, out.String())
 			}
-			if len(argvOf(t, log)) == 0 {
+			if len(testkit.ArgvOf(t, log)) == 0 {
 				t.Fatal("GitHub was never asked about the branch")
 			}
 			if _, ok := ctx.Repo.ResolveRef("refs/heads/fix_wt/login-crash"); !ok {
@@ -365,10 +366,10 @@ func TestSweepDoesNotDeleteOnAPullRequestThatDidNotLandHere(t *testing.T) {
 // line says what sweep is going on without, in sweep's own terms rather than
 // `wt list`'s.
 func TestSweepSaysWhatItLosesWithoutGitHub(t *testing.T) {
-	ctx, main, _ := sweepRepo(t)
-	branchWithWork(t, main, "fix_wt/login-crash", 1)
+	ctx, main, _ := testkit.SweepRepo(t)
+	testkit.BranchWithWork(t, main, "fix_wt/login-crash", 1)
 	goneUpstream(t, main, "fix_wt/login-crash")
-	fakeGitHubWith(t, `[ "$1 $2" = 'api graphql' ] && { echo offline >&2; exit 1; }`)
+	testkit.FakeGitHubWith(t, `[ "$1 $2" = 'api graphql' ] && { echo offline >&2; exit 1; }`)
 
 	var errs bytes.Buffer
 	ctx.WarnTo(&errs)
@@ -389,13 +390,13 @@ func TestSweepSaysWhatItLosesWithoutGitHub(t *testing.T) {
 // sits on somebody else's branch, so the name comes from the path — and a
 // name that only sweep uses is a name you cannot type back at it.
 func TestSweepNamesAWorktreeTheWayListDoes(t *testing.T) {
-	ctx, _, _ := sweepRepo(t)
+	ctx, _, _ := testkit.SweepRepo(t)
 	path := ctx.Scheme().Dir("feat", "pr-2135-sanitize")
 	if err := ctx.Repo.AddWorktree(path, "sanitize-refactor", "HEAD"); err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, path, "commit", "-q", "--allow-empty", "-m", "the work that was squashed")
-	tip := gitOut(t, path, "rev-parse", "HEAD")
+	testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "the work that was squashed")
+	tip := testkit.GitOut(t, path, "rev-parse", "HEAD")
 
 	p := sweptWith(t, ctx, map[string]github.PR{
 		"sanitize-refactor": mergedPR(2135, "sanitize-refactor", tip)})

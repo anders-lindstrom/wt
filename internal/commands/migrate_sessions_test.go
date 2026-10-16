@@ -8,15 +8,16 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // Not being able to tell who is in a worktree is not nobody in it: migrate
 // refuses, as remove and sweep do, unless told to go ahead.
 func TestMigrateRefusesWhenTheSessionsCannotBeListed(t *testing.T) {
-	main := committedRepo(t, minimalConf)
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
-	from := worktreeAt(t, main, "fix/moving", filepath.Join(ctx.Repo.Parent, "elsewhere"))
+	from := testkit.WorktreeAt(t, main, "fix/moving", filepath.Join(ctx.Repo.Parent, "elsewhere"))
 
 	var buf bytes.Buffer
 	opts := MigrateOptions{AgentsErr: errors.New("claude agents --json failed: boom")}
@@ -35,9 +36,9 @@ func TestMigrateRefusesWhenTheSessionsCannotBeListed(t *testing.T) {
 
 // The session running wt migrate is not somebody else in the worktree.
 func TestMigrateDoesNotCountTheSessionRunningIt(t *testing.T) {
-	main := committedRepo(t, minimalConf)
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
-	from := worktreeAt(t, main, "fix/self", filepath.Join(ctx.Repo.Parent, "elsewhere"))
+	from := testkit.WorktreeAt(t, main, "fix/self", filepath.Join(ctx.Repo.Parent, "elsewhere"))
 	resolved, _ := filepath.EvalSymlinks(from)
 	fakeClaude(t, []wtsync.Agent{ownSession(resolved)})
 
@@ -49,9 +50,9 @@ func TestMigrateDoesNotCountTheSessionRunningIt(t *testing.T) {
 
 // Every session in it is named, not only the first.
 func TestMigrateCountsEverySessionInIt(t *testing.T) {
-	main := committedRepo(t, minimalConf)
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
-	from := worktreeAt(t, main, "fix/crowded", filepath.Join(ctx.Repo.Parent, "elsewhere"))
+	from := testkit.WorktreeAt(t, main, "fix/crowded", filepath.Join(ctx.Repo.Parent, "elsewhere"))
 	resolved, _ := filepath.EvalSymlinks(from)
 	opts := MigrateOptions{Agents: []wtsync.Agent{
 		{Name: "gecko-1", Cwd: resolved, Status: "idle"},

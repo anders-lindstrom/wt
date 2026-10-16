@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 )
 
@@ -77,10 +78,10 @@ func oldFolder(t *testing.T, work string) (ctx *kit.Context, path, branch, tip, 
 	t.Helper()
 	ctx, path = safetyWorktree(t, work)
 	root := ctx.Repo.MainRoot
-	branch = strings.TrimSpace(gitOut(t, path, "symbolic-ref", "--short", "HEAD"))
-	tip = strings.TrimSpace(gitOut(t, path, "rev-parse", "HEAD"))
-	admin := gitDirFor(t, path)
-	dir = trashFor(t, ctx)
+	branch = strings.TrimSpace(testkit.GitOut(t, path, "symbolic-ref", "--short", "HEAD"))
+	tip = strings.TrimSpace(testkit.GitOut(t, path, "rev-parse", "HEAD"))
+	admin := testkit.GitDirFor(t, path)
+	dir = testkit.TrashFor(t, ctx)
 	checkoutID, err := quarantine.Identify(path)
 	if err != nil {
 		t.Fatal(err)
@@ -92,15 +93,15 @@ func oldFolder(t *testing.T, work string) (ctx *kit.Context, path, branch, tip, 
 	sum := sha256.Sum256([]byte(dir))
 	key := filepath.Base(admin) + "-" + hex.EncodeToString(sum[:])[:12]
 
-	gitIn(t, root, "worktree", "lock", "--reason", "wt quarantine "+dir, path)
-	gitIn(t, root, "update-ref", "refs/wt-quarantine/"+key+"/head", tip)
-	gitIn(t, root, "update-ref", "refs/wt-quarantine/"+key+"/tip", tip)
+	testkit.GitIn(t, root, "worktree", "lock", "--reason", "wt quarantine "+dir, path)
+	testkit.GitIn(t, root, "update-ref", "refs/wt-quarantine/"+key+"/head", tip)
+	testkit.GitIn(t, root, "update-ref", "refs/wt-quarantine/"+key+"/tip", tip)
 	blob := filepath.Join(t.TempDir(), "dir")
 	if err := os.WriteFile(blob, []byte(dir), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, root, "update-ref", "refs/wt-quarantine/"+key+"/dir",
-		strings.TrimSpace(gitOut(t, root, "hash-object", "-w", blob)))
+	testkit.GitIn(t, root, "update-ref", "refs/wt-quarantine/"+key+"/dir",
+		strings.TrimSpace(testkit.GitOut(t, root, "hash-object", "-w", blob)))
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -110,9 +111,9 @@ func oldFolder(t *testing.T, work string) (ctx *kit.Context, path, branch, tip, 
 	if err := os.Rename(admin, filepath.Join(dir, "admin")); err != nil {
 		t.Fatal(err)
 	}
-	mustWrite(t, filepath.Join(dir, "checkout", ".git"), "gitdir: "+filepath.Join(dir, "admin")+"\n")
-	gitIn(t, root, "update-ref", "-d", "refs/heads/"+branch)
-	mustWrite(t, filepath.Join(dir, "recovery.json"), fmt.Sprintf(oldRecord, root, filepath.Join(root, ".git"),
+	testkit.MustWrite(t, filepath.Join(dir, "checkout", ".git"), "gitdir: "+filepath.Join(dir, "admin")+"\n")
+	testkit.GitIn(t, root, "update-ref", "-d", "refs/heads/"+branch)
+	testkit.MustWrite(t, filepath.Join(dir, "recovery.json"), fmt.Sprintf(oldRecord, root, filepath.Join(root, ".git"),
 		filepath.Base(admin), dir, path, filepath.Join(dir, "checkout"), checkoutID.Device, checkoutID.Inode,
 		admin, filepath.Join(dir, "admin"), adminID.Device, adminID.Inode, "gitdir: "+admin+"\n", key, tip, branch))
 	return ctx, path, branch, tip, dir
@@ -127,11 +128,11 @@ func TestRestorePutsBackAFolderMadeTheOldWay(t *testing.T) {
 	if res.Outcome != quarantine.OutcomeRestored {
 		t.Fatalf("outcome %s", res.Outcome)
 	}
-	assertBack(t, ctx, path, dir, "ref: refs/heads/"+branch)
-	if got := strings.TrimSpace(gitOut(t, ctx.Repo.MainRoot, "rev-parse", branch)); got != tip {
+	testkit.AssertBack(t, ctx, path, dir, "ref: refs/heads/"+branch)
+	if got := strings.TrimSpace(testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", branch)); got != tip {
 		t.Errorf("the branch is at %s, want %s", got, tip)
 	}
-	if pins := gitOut(t, ctx.Repo.MainRoot, "for-each-ref", "refs/wt-quarantine/"); strings.TrimSpace(pins) != "" {
+	if pins := testkit.GitOut(t, ctx.Repo.MainRoot, "for-each-ref", "refs/wt-quarantine/"); strings.TrimSpace(pins) != "" {
 		t.Errorf("the pins must be gone: %s", pins)
 	}
 }
@@ -143,5 +144,5 @@ func TestPurgeDeletesAFolderMadeTheOldWay(t *testing.T) {
 	if res.Outcome != quarantine.OutcomePurged {
 		t.Fatalf("outcome %s", res.Outcome)
 	}
-	assertPurged(t, ctx, dir)
+	testkit.AssertPurged(t, ctx, dir)
 }

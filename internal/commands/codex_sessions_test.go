@@ -6,13 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
-
-func codexSession(cwd, status string) wtsync.Agent {
-	resolved, _ := filepath.EvalSymlinks(cwd)
-	return wtsync.Agent{Tool: wtsync.ToolCodex, ID: "codex-4242", Name: "codex exec", Cwd: resolved, Status: status, PID: 4242}
-}
 
 // listedSessions has every command that names no sessions of its own see agents.
 func listedSessions(t *testing.T, agents ...wtsync.Agent) {
@@ -27,7 +23,7 @@ func listedSessions(t *testing.T, agents ...wtsync.Agent) {
 func TestUpRefusesUnderABusyCodexSession(t *testing.T) {
 	ctx, bump := runFixture(t, false)
 	opts := noAgents()
-	opts.Agents = []wtsync.Agent{codexSession(bump, "busy")}
+	opts.Agents = []wtsync.Agent{testkit.CodexSession(bump, "busy")}
 	opts.Relist = func() ([]wtsync.Agent, error) { return opts.Agents, nil }
 	var out bytes.Buffer
 	if err := Up(ctx, "bump", opts, &out); err == nil || !strings.Contains(out.String(), "busy in it") ||
@@ -46,7 +42,7 @@ func TestRemovePlanJSONSaysWhoseEachSessionIs(t *testing.T) {
 	resolved, _ := filepath.EvalSymlinks(path)
 	p, err := removePlanJSON(t, ctx, path, RemoveOptions{Agents: []wtsync.Agent{
 		{ID: "s1", Name: "one", Cwd: resolved, Status: "idle"},
-		codexSession(path, "busy"),
+		testkit.CodexSession(path, "busy"),
 		{Tool: wtsync.ToolCodex, ID: "01a0-thread", Name: "codex (Codex Desktop)", Cwd: resolved, Status: "busy"},
 	}})
 	if err == nil {
@@ -78,7 +74,7 @@ func TestRemovePlanJSONSaysWhoseEachSessionIs(t *testing.T) {
 
 func TestStatusAndSyncJSONListACodexSession(t *testing.T) {
 	ctx, bump := runFixture(t, false)
-	listedSessions(t, codexSession(bump, "busy"), wtsync.Agent{Name: "parked-1", Cwd: codexSession(bump, "").Cwd, Kind: "interactive", Status: "idle"})
+	listedSessions(t, testkit.CodexSession(bump, "busy"), wtsync.Agent{Name: "parked-1", Cwd: testkit.CodexSession(bump, "").Cwd, Kind: "interactive", Status: "idle"})
 
 	p := planOfWork(t, ctx, "bump")
 	if len(p.Sessions) != 2 {
@@ -99,7 +95,7 @@ func TestStatusAndSyncJSONListACodexSession(t *testing.T) {
 // and not a refusal.
 func TestUpGoesAheadUnderAnIdleCodexSession(t *testing.T) {
 	ctx, bump := runFixture(t, false)
-	idle := codexSession(bump, "idle")
+	idle := testkit.CodexSession(bump, "idle")
 	idle.Name = "codex"
 	opts := noAgents()
 	opts.Agents = []wtsync.Agent{idle}

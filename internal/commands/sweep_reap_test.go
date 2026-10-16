@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -16,7 +17,7 @@ import (
 // leaves both the worktree and the process.
 func TestSweepKeepsABusyWorktreeWithoutReap(t *testing.T) {
 	realProcesses(t)
-	ctx, _, _ := sweepRepo(t)
+	ctx, _, _ := testkit.SweepRepo(t)
 	path := mergedWorktree(t, ctx, "fix/login-crash")
 	pid := leftover(t, path)
 
@@ -33,8 +34,8 @@ func TestSweepKeepsABusyWorktreeWithoutReap(t *testing.T) {
 	if err := Sweep(ctx, SweepOptions{Yes: true, Agents: []wtsync.Agent{}}, &buf); err != nil {
 		t.Fatalf("Sweep: %v\n%s", err, buf.String())
 	}
-	if !exists(path) || !alive(pid) {
-		t.Errorf("worktree there %v, process alive %v; want both", exists(path), alive(pid))
+	if !testkit.Exists(path) || !alive(pid) {
+		t.Errorf("worktree there %v, process alive %v; want both", testkit.Exists(path), alive(pid))
 	}
 
 	plan, err := sweepPlanJSON(t, ctx, SweepOptions{Agents: []wtsync.Agent{}})
@@ -51,7 +52,7 @@ func TestSweepKeepsABusyWorktreeWithoutReap(t *testing.T) {
 // worktree goes, and reports it on the row of the result.
 func TestSweepReapStopsWhatRunsInAMergedWorktree(t *testing.T) {
 	realProcesses(t)
-	ctx, _, _ := sweepRepo(t)
+	ctx, _, _ := testkit.SweepRepo(t)
 	path := mergedWorktree(t, ctx, "fix/login-crash")
 	pid := leftover(t, path)
 
@@ -83,8 +84,8 @@ func TestSweepReapStopsWhatRunsInAMergedWorktree(t *testing.T) {
 		row.Reaped[0].Result != wtsync.ReapTerminated {
 		t.Errorf("row %+v, want removed with its process terminated", row)
 	}
-	if exists(path) || alive(pid) {
-		t.Errorf("worktree there %v, process alive %v; want neither", exists(path), alive(pid))
+	if testkit.Exists(path) || alive(pid) {
+		t.Errorf("worktree there %v, process alive %v; want neither", testkit.Exists(path), alive(pid))
 	}
 	if !strings.Contains(human, "stopped pid "+strconv.Itoa(pid)) {
 		t.Errorf("want the stop said:\n%s", human)
@@ -96,7 +97,7 @@ func TestSweepReapStopsWhatRunsInAMergedWorktree(t *testing.T) {
 // plan never listed is the one that gets stopped.
 func TestSweepKeepsAWorktreeThatTurnedBusyAfterThePlan(t *testing.T) {
 	realProcesses(t)
-	ctx, _, _ := sweepRepo(t)
+	ctx, _, _ := testkit.SweepRepo(t)
 	path := mergedWorktree(t, ctx, "fix/login-crash")
 
 	reap := SweepOptions{Agents: []wtsync.Agent{}, Reap: true}
@@ -119,7 +120,7 @@ func TestSweepKeepsAWorktreeThatTurnedBusyAfterThePlan(t *testing.T) {
 // A process table that cannot be read keeps the worktree, with --reap or
 // without, and says what to do.
 func TestSweepKeepsAWorktreeWhenTheProcessesAreUnknown(t *testing.T) {
-	ctx, _, _ := sweepRepo(t)
+	ctx, _, _ := testkit.SweepRepo(t)
 	path := mergedWorktree(t, ctx, "fix/login-crash")
 	was, wasList := scanProcesses, listSessions
 	t.Cleanup(func() { scanProcesses, listSessions = was, wasList })
@@ -134,8 +135,8 @@ func TestSweepKeepsAWorktreeWhenTheProcessesAreUnknown(t *testing.T) {
 		t.Errorf("want the advice in:\n%s", out)
 	}
 	var buf bytes.Buffer
-	if err := Sweep(ctx, SweepOptions{Yes: true, Agents: []wtsync.Agent{}}, &buf); err != nil || !exists(path) {
-		t.Errorf("Sweep: %v, worktree there %v; want it left alone", err, exists(path))
+	if err := Sweep(ctx, SweepOptions{Yes: true, Agents: []wtsync.Agent{}}, &buf); err != nil || !testkit.Exists(path) {
+		t.Errorf("Sweep: %v, worktree there %v; want it left alone", err, testkit.Exists(path))
 	}
 
 	// With --reap, and the sessions not listed: no --force goes past it.

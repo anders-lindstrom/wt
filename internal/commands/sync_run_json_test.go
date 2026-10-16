@@ -8,12 +8,13 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 func decodeSyncRun(t *testing.T, out []byte) SyncRunResult {
 	t.Helper()
-	validateJSON(t, "sync-run", out)
+	testkit.ValidateJSON(t, "sync-run", out)
 	var r SyncRunResult
 	if err := json.Unmarshal(out, &r); err != nil {
 		t.Fatalf("stdout is not one JSON object: %v\n%s", err, out)
@@ -52,14 +53,14 @@ func TestSyncRunJSONReportsTheSafetyRefDeferredStepsAndUndo(t *testing.T) {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
 	ctx, bump := runFixture(t, true)
-	old := gitOut(t, bump, "rev-parse", "HEAD")
+	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	r, err := syncRunJSON(t, ctx, []string{"bump"}, noAgents())
 	if err != nil || r.Outcome != kit.OutcomeDone || r.Command != "sync rebase" || r.Repo == nil || *r.Repo != ctx.Repo.MainRoot ||
 		len(r.Worktrees) != 1 {
 		t.Fatalf("%v %+v", err, r)
 	}
 	p := r.Worktrees[0]
-	if p.Result != ResultRebased || p.Before == nil || *p.Before != old || p.After == nil || *p.After != gitOut(t, bump, "rev-parse", "HEAD") {
+	if p.Result != ResultRebased || p.Before == nil || *p.Before != old || p.After == nil || *p.After != testkit.GitOut(t, bump, "rev-parse", "HEAD") {
 		t.Errorf("participant %+v", p)
 	}
 	if p.SafetyRef == nil || *p.SafetyRef != wtsync.SafetyRef("feat_wt/bump", 99) {
@@ -87,7 +88,7 @@ func TestSyncRunJSONExpectHoldsTheRunToTheOverview(t *testing.T) {
 	ctx, bump := runFixture(t, false)
 	token := *overviewJSON(t, ctx).Token
 	stackFixture(t, ctx)
-	old := gitOut(t, bump, "rev-parse", "HEAD")
+	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	opts := noAgents()
 	opts.Expect = token
 	for _, works := range [][]string{nil, {"bump"}} {
@@ -95,7 +96,7 @@ func TestSyncRunJSONExpectHoldsTheRunToTheOverview(t *testing.T) {
 		if err == nil || r.Outcome != kit.OutcomeRefused || r.Error == nil || len(r.Worktrees) != 0 {
 			t.Fatalf("%v: a grown stack is refused before any participant: %v %+v", works, err, r)
 		}
-		if gitOut(t, bump, "rev-parse", "HEAD") != old {
+		if testkit.GitOut(t, bump, "rev-parse", "HEAD") != old {
 			t.Fatal("the worktree moved")
 		}
 	}
@@ -126,14 +127,14 @@ func TestSyncRunJSONReportsAHandover(t *testing.T) {
 // Nobody said yes: nothing rebased, and the object says why.
 func TestSyncRunJSONSaysWhenNobodyConfirmed(t *testing.T) {
 	ctx, bump := runFixture(t, false)
-	old := gitOut(t, bump, "rev-parse", "HEAD")
+	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	opts := noAgents()
 	opts.Confirm = func([]string) (bool, error) { return false, nil }
 	r, _ := syncRunJSON(t, ctx, nil, opts)
 	if r.Outcome != kit.OutcomeRefused || r.Error == nil {
 		t.Fatalf("%+v", r)
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != old {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != old {
 		t.Fatal("the worktree moved")
 	}
 }
@@ -141,8 +142,8 @@ func TestSyncRunJSONSaysWhenNobodyConfirmed(t *testing.T) {
 // Resume finishes the handover: rebased, with the run's safety ref.
 func TestSyncResumeJSONReportsTheFinishedRebase(t *testing.T) {
 	ctx, bump, _, st := handedOver(t)
-	writeFile(t, bump, "a.txt", "merged by hand\n")
-	gitOut(t, bump, "add", "--", "a.txt")
+	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
+	testkit.GitOut(t, bump, "add", "--", "a.txt")
 	r, err := syncResumeJSON(t, ctx, "bump", noResumeAgents())
 	if err != nil || r.Outcome != kit.OutcomeDone || r.Command != "sync resume" || len(r.Worktrees) != 1 {
 		t.Fatalf("%v %+v", err, r)
@@ -177,12 +178,12 @@ func TestSyncResumeJSONReportsARefusal(t *testing.T) {
 // Undo reports each branch it put back, and a second undo finds it there.
 func TestSyncUndoJSONReportsWhatItPutBack(t *testing.T) {
 	ctx, bump := runFixture(t, true)
-	old := gitOut(t, bump, "rev-parse", "HEAD")
+	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	var human bytes.Buffer
 	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &human); err != nil {
 		t.Fatalf("%v\n%s", err, human.String())
 	}
-	rebased := gitOut(t, bump, "rev-parse", "HEAD")
+	rebased := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	r, err := syncUndoJSON(t, ctx, "bump", noAgentsUndo())
 	if err != nil || r.Outcome != kit.OutcomeDone || r.Command != "sync undo" || len(r.Worktrees) != 1 {
 		t.Fatalf("%v %+v", err, r)
@@ -205,10 +206,10 @@ func TestSyncResumeJSONStartsFromTheBranchAsFound(t *testing.T) {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
 	ctx, bump, _, st := handedOver(t)
-	writeFile(t, bump, "a.txt", "merged by hand\n")
-	gitOut(t, bump, "add", "--", "a.txt")
-	gitTry(t, bump, "-c", "core.editor=true", "rebase", "--continue")
-	found := gitOut(t, ctx.Repo.MainRoot, "rev-parse", st.Branch)
+	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
+	testkit.GitOut(t, bump, "add", "--", "a.txt")
+	testkit.GitTry(t, bump, "-c", "core.editor=true", "rebase", "--continue")
+	found := testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", st.Branch)
 	if found == st.OldTip {
 		t.Fatal("the fixture did not finish the rebase")
 	}
@@ -224,10 +225,10 @@ func TestSyncResumeJSONSaysWhenNobodyConfirmed(t *testing.T) {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
 	ctx, bump, _, _ := handedOver(t)
-	writeFile(t, bump, "a.txt", "merged by hand\n")
-	gitOut(t, bump, "add", "--", "a.txt")
+	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
+	testkit.GitOut(t, bump, "add", "--", "a.txt")
 	opts := noResumeAgents()
-	opts.Agents = idleIn(t, bump, "parked")
+	opts.Agents = testkit.IdleIn(t, bump, "parked")
 	opts.Confirm = func([]string) (bool, error) { return false, nil }
 	r, _ := syncResumeJSON(t, ctx, "bump", opts)
 	if r.Outcome != kit.OutcomeRefused || r.Error == nil {
@@ -242,9 +243,9 @@ func TestSyncUndoJSONForcedNamesTheWayBackToWhatItKept(t *testing.T) {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
 	ctx, bump, _, _ := handedOver(t)
-	writeFile(t, bump, "a.txt", "merged by hand\n")
-	gitOut(t, bump, "add", "--", "a.txt")
-	gitOut(t, bump, "commit", "-q", "-m", "resolved by hand")
+	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
+	testkit.GitOut(t, bump, "add", "--", "a.txt")
+	testkit.GitOut(t, bump, "commit", "-q", "-m", "resolved by hand")
 	forced := noAgentsUndo()
 	forced.Force = true
 	r, err := syncUndoJSON(t, ctx, "bump", forced)

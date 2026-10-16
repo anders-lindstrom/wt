@@ -9,15 +9,16 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
 // cacheFixture is a repository declaring two cache dirs, both present in the
 // source checkout, and an empty worktree to provision.
 func cacheFixture(t *testing.T) (ctx *kit.Context, main, target string) {
 	t.Helper()
-	main = fixtureRepo(t, minimalConf+"WORKTREE_CACHE_DIRS=(node_modules web/.gradle)\n")
-	mustWrite(t, filepath.Join(main, "node_modules", "left-pad", "index.js"), "module.exports = 1")
-	mustWrite(t, filepath.Join(main, "web", ".gradle", "cache.bin"), "gradle")
+	main = testkit.FixtureRepo(t, testkit.MinimalConf+"WORKTREE_CACHE_DIRS=(node_modules web/.gradle)\n")
+	testkit.MustWrite(t, filepath.Join(main, "node_modules", "left-pad", "index.js"), "module.exports = 1")
+	testkit.MustWrite(t, filepath.Join(main, "web", ".gradle", "cache.bin"), "gradle")
 	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
@@ -49,15 +50,15 @@ func TestSetupClonesCacheDirsCopyOnWrite(t *testing.T) {
 	if result != kit.StepDone || reason != "" {
 		t.Fatalf("result %s %q\n%s", result, reason, buf.String())
 	}
-	if got := mustRead(t, filepath.Join(target, "node_modules", "left-pad", "index.js")); got != "module.exports = 1" {
+	if got := testkit.MustRead(t, filepath.Join(target, "node_modules", "left-pad", "index.js")); got != "module.exports = 1" {
 		t.Errorf("node_modules not cloned: %q", got)
 	}
-	if got := mustRead(t, filepath.Join(target, "web", ".gradle", "cache.bin")); got != "gradle" {
+	if got := testkit.MustRead(t, filepath.Join(target, "web", ".gradle", "cache.bin")); got != "gradle" {
 		t.Errorf("a nested cache dir not cloned: %q", got)
 	}
 	// A clone, not a link: writing the worktree's copy leaves the source's.
-	mustWrite(t, filepath.Join(target, "node_modules", "left-pad", "index.js"), "changed")
-	if got := mustRead(t, filepath.Join(main, "node_modules", "left-pad", "index.js")); got != "module.exports = 1" {
+	testkit.MustWrite(t, filepath.Join(target, "node_modules", "left-pad", "index.js"), "changed")
+	if got := testkit.MustRead(t, filepath.Join(main, "node_modules", "left-pad", "index.js")); got != "module.exports = 1" {
 		t.Errorf("the source changed with the clone: %q", got)
 	}
 	for _, d := range []string{"node_modules", "web/.gradle"} {
@@ -118,7 +119,7 @@ func TestSetupCacheCloneErrorFails(t *testing.T) {
 // A cache already in the worktree is the worktree's own, and is kept.
 func TestSetupKeepsAnExistingCacheDir(t *testing.T) {
 	ctx, main, target := cacheFixture(t)
-	mustWrite(t, filepath.Join(target, "node_modules", "mine.txt"), "keep")
+	testkit.MustWrite(t, filepath.Join(target, "node_modules", "mine.txt"), "keep")
 	cloned := map[string]bool{}
 	withCloner(t, func(from, to string) error {
 		cloned[filepath.Base(from)] = true
@@ -131,7 +132,7 @@ func TestSetupKeepsAnExistingCacheDir(t *testing.T) {
 	if cloned["node_modules"] || !cloned[".gradle"] {
 		t.Errorf("cloned %v; want .gradle alone", cloned)
 	}
-	if got := mustRead(t, filepath.Join(target, "node_modules", "mine.txt")); got != "keep" {
+	if got := testkit.MustRead(t, filepath.Join(target, "node_modules", "mine.txt")); got != "keep" {
 		t.Errorf("the existing cache was touched: %q", got)
 	}
 	if _, err := os.Stat(filepath.Join(target, "node_modules", "left-pad")); !os.IsNotExist(err) {
@@ -159,7 +160,7 @@ func TestSetupNoCacheClonesNothing(t *testing.T) {
 
 // A repository that declares no caches hears nothing about them.
 func TestSetupWithoutCacheDirsSaysNothing(t *testing.T) {
-	main := fixtureRepo(t, minimalConf)
+	main := testkit.FixtureRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
 	result, reason := cloneCacheDirs(ctx, main, t.TempDir(), SetupOptions{NoCache: true}, &buf)
@@ -169,8 +170,8 @@ func TestSetupWithoutCacheDirsSaysNothing(t *testing.T) {
 }
 
 func TestSetupRefusesCacheDirsThatEscapeTheWorktree(t *testing.T) {
-	main := fixtureRepo(t, minimalConf+"WORKTREE_CACHE_DIRS=(../outside)\n")
-	mustMkdir(t, filepath.Join(filepath.Dir(main), "outside"))
+	main := testkit.FixtureRepo(t, testkit.MinimalConf+"WORKTREE_CACHE_DIRS=(../outside)\n")
+	testkit.MustMkdir(t, filepath.Join(filepath.Dir(main), "outside"))
 	ctx, _ := kit.Open(main)
 	withCloner(t, func(_, _ string) error {
 		t.Error("cloned an entry outside the worktree")
@@ -188,7 +189,7 @@ func TestSetupClonesCachesBeforeProvision(t *testing.T) {
 	ctx, main, target := cacheFixture(t)
 	withCloner(t, func(_, to string) error { return os.Mkdir(to, 0o755) })
 	p := filepath.Join(main, "bin", "worktree", "provision.sh")
-	mustWrite(t, p, "#!/bin/sh\ntest -d node_modules && touch warm.txt\n")
+	testkit.MustWrite(t, p, "#!/bin/sh\ntest -d node_modules && touch warm.txt\n")
 	if err := os.Chmod(p, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +231,7 @@ func TestSetupRefusesCacheDirsBehindAnEscapingSymlink(t *testing.T) {
 // A symlinked parent that stays inside the worktree is fine.
 func TestSetupClonesBehindASymlinkWithinTheWorktree(t *testing.T) {
 	ctx, main, target := cacheFixture(t)
-	mustMkdir(t, filepath.Join(target, "real"))
+	testkit.MustMkdir(t, filepath.Join(target, "real"))
 	if err := os.Symlink("real", filepath.Join(target, "web")); err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +260,7 @@ func TestSetupCacheWithNoSourceCheckoutIsSkipped(t *testing.T) {
 func TestSetupCacheSourceEntryThatIsNotADirectory(t *testing.T) {
 	ctx, main, target := cacheFixture(t)
 	shared := t.TempDir()
-	mustWrite(t, filepath.Join(shared, "cache.bin"), "shared")
+	testkit.MustWrite(t, filepath.Join(shared, "cache.bin"), "shared")
 	if err := os.RemoveAll(filepath.Join(main, "node_modules")); err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +270,7 @@ func TestSetupCacheSourceEntryThatIsNotADirectory(t *testing.T) {
 	if err := os.RemoveAll(filepath.Join(main, "web", ".gradle")); err != nil {
 		t.Fatal(err)
 	}
-	mustWrite(t, filepath.Join(main, "web", ".gradle"), "a file")
+	testkit.MustWrite(t, filepath.Join(main, "web", ".gradle"), "a file")
 	withCloner(t, func(_, _ string) error {
 		t.Error("cloned something that is not a directory")
 		return nil
@@ -337,8 +338,8 @@ func TestSetupCacheNothingToCloneIsDone(t *testing.T) {
 		t.Error("cloned with nothing to clone")
 		return nil
 	})
-	mustMkdir(t, filepath.Join(target, "node_modules"))
-	mustMkdir(t, filepath.Join(target, "web", ".gradle"))
+	testkit.MustMkdir(t, filepath.Join(target, "node_modules"))
+	testkit.MustMkdir(t, filepath.Join(target, "web", ".gradle"))
 	var buf bytes.Buffer
 	if result, reason := cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf); result != kit.StepDone || reason != "" {
 		t.Errorf("all present: %s %q", result, reason)

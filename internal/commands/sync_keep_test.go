@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -80,10 +81,10 @@ func TestSyncKeepRunRebasesAReadyWorktreeAndRecordsThePass(t *testing.T) {
 			t.Errorf("output lacks %q:\n%s", want, s)
 		}
 	}
-	if !gitAncestor(t, ctx.Repo.MainRoot, "origin/main", "feat_wt/bump") {
+	if !testkit.GitAncestor(t, ctx.Repo.MainRoot, "origin/main", "feat_wt/bump") {
 		t.Fatal("bump is not on trunk")
 	}
-	if gitOut(t, ctx.Repo.MainRoot, "rev-parse", "refs/remotes/origin/feat_wt/bump") != gitOut(t, bump, "rev-parse", "HEAD") {
+	if testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", "refs/remotes/origin/feat_wt/bump") != testkit.GitOut(t, bump, "rev-parse", "HEAD") {
 		t.Fatal("bump was not pushed")
 	}
 	logPath, _ := keepFiles(t, ctx)
@@ -97,7 +98,7 @@ func TestSyncKeepRunRebasesAReadyWorktreeAndRecordsThePass(t *testing.T) {
 		}
 	}
 	st := readKeep(t, ctx)
-	if st.TrunkSHA != gitOut(t, ctx.Repo.MainRoot, "rev-parse", "origin/main") || st.Result != "rebased 1, pushed 1, left 0" || st.PID != 0 {
+	if st.TrunkSHA != testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", "origin/main") || st.Result != "rebased 1, pushed 1, left 0" || st.PID != 0 {
 		t.Fatalf("state %+v", st)
 	}
 	if st.Interval != "30m" || !st.NextRun.Equal(st.LastRun.Add(30*time.Minute)) {
@@ -109,9 +110,9 @@ func TestSyncKeepRunRebasesAReadyWorktreeAndRecordsThePass(t *testing.T) {
 // one a run would ask about, is left alone and named with the session.
 func TestSyncKeepRunLeavesAWorktreeWithAnIdleSessionAlone(t *testing.T) {
 	ctx, bump := runFixture(t, false)
-	old := gitOut(t, bump, "rev-parse", "HEAD")
+	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	opts := keepOpts(PushAlways)
-	opts.Agents = idleIn(t, bump, "parked")
+	opts.Agents = testkit.IdleIn(t, bump, "parked")
 	opts.Confirm = func([]string) (bool, error) { t.Fatal("a keeper asked a question"); return false, nil }
 	var out bytes.Buffer
 	if err := SyncKeepRun(ctx, opts, &out); err != nil {
@@ -123,7 +124,7 @@ func TestSyncKeepRunLeavesAWorktreeWithAnIdleSessionAlone(t *testing.T) {
 			t.Errorf("output lacks %q:\n%s", want, s)
 		}
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != old {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != old {
 		t.Fatal("bump moved under the session")
 	}
 }
@@ -141,7 +142,7 @@ func TestSyncKeepRunDoesNothingWhileTrunkIsUnchanged(t *testing.T) {
 	if err := SyncKeepRun(ctx, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
-	sha := gitOut(t, ctx.Repo.MainRoot, "rev-parse", "origin/main")
+	sha := testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", "origin/main")
 	if want := "wt sync keep once  origin/main " + sha[:7] + " unchanged; nothing to do\n"; out.String() != want {
 		t.Fatalf("second pass printed %q, want %q", out.String(), want)
 	}
@@ -154,9 +155,9 @@ func TestSyncKeepRunDoesNothingWhileTrunkIsUnchanged(t *testing.T) {
 		t.Fatalf("state %+v", st)
 	}
 	// Trunk moves: the next pass runs again.
-	writeFile(t, ctx.Repo.MainRoot, "b.txt", "b\n")
-	gitOut(t, ctx.Repo.MainRoot, "add", "-A")
-	gitOut(t, ctx.Repo.MainRoot, "commit", "-q", "-m", "trunk again")
+	testkit.WriteFile(t, ctx.Repo.MainRoot, "b.txt", "b\n")
+	testkit.GitOut(t, ctx.Repo.MainRoot, "add", "-A")
+	testkit.GitOut(t, ctx.Repo.MainRoot, "commit", "-q", "-m", "trunk again")
 	out.Reset()
 	if err := SyncKeepRun(ctx, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
@@ -183,14 +184,14 @@ func TestSyncKeepRunRefusesToOverlapALivePass(t *testing.T) {
 	if err != nil || held {
 		t.Fatalf("lock: %v, held %v", err, held)
 	}
-	old := gitOut(t, bump, "rev-parse", "HEAD")
+	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	opts := keepOpts(PushAlways)
 	var out bytes.Buffer
 	err = SyncKeepRun(ctx, opts, &out)
 	if err == nil || err.Error() != "a keeper pass is already running (pid "+strconv.Itoa(os.Getpid())+" since 14:00); nothing rebased" {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != old {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != old {
 		t.Fatal("bump moved under a live pass")
 	}
 	// The lock released, the pid in the json is this very test, alive and
@@ -207,7 +208,7 @@ func TestSyncKeepRunStartedTwiceAtOnceRunsOnce(t *testing.T) {
 	ctx, _ := runFixture(t, false)
 	var wg sync.WaitGroup
 	errs := make([]error, 2)
-	outs := make([]lockedBuffer, 2)
+	outs := make([]testkit.LockedBuffer, 2)
 	for i := range errs {
 		wg.Add(1)
 		go func() {
@@ -246,7 +247,7 @@ func TestSyncKeepRunRebasesNothingWhenSessionsCannotBeListed(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin)
-	old := gitOut(t, bump, "rev-parse", "HEAD")
+	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	opts := keepOpts(PushAlways)
 	opts.Agents = nil
 	var out bytes.Buffer
@@ -255,7 +256,7 @@ func TestSyncKeepRunRebasesNothingWhenSessionsCannotBeListed(t *testing.T) {
 	if err == nil || err.Error() != want {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != old {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != old {
 		t.Fatal("bump moved with nobody able to say who was in it")
 	}
 	st := readKeep(t, ctx)
@@ -276,13 +277,13 @@ func TestSyncKeepRunFailsWhenTheLogCannotBeWritten(t *testing.T) {
 	if err := os.MkdirAll(logPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	old := gitOut(t, bump, "rev-parse", "HEAD")
+	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	var out bytes.Buffer
 	err := SyncKeepRun(ctx, keepOpts(PushAlways), &out)
 	if err == nil || !strings.HasPrefix(err.Error(), "cannot write the log "+logPath+": ") || !strings.HasSuffix(err.Error(), "; nothing rebased") {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
-	if gitOut(t, bump, "rev-parse", "HEAD") != old {
+	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != old {
 		t.Fatal("bump moved with no log to say so")
 	}
 	if st := readKeep(t, ctx); st.TrunkSHA != "" || !strings.HasPrefix(st.Problem, "failed: cannot write the log: ") {
@@ -295,8 +296,8 @@ func TestSyncKeepRunFailsWhenTheLogCannotBeWritten(t *testing.T) {
 // back, on disk, where a launchd job with its stdout on /dev/null has
 // nothing else.
 func TestSyncKeepRunInterruptedLeavesTheOutputSoFarInTheLog(t *testing.T) {
-	if os.Getenv(interruptChild) == "" {
-		out, status := interruptedChild(t)
+	if os.Getenv(testkit.InterruptChild) == "" {
+		out, status := testkit.InterruptedChild(t)
 		_, rest, ok := strings.Cut(out, "LOG=")
 		logPath, _, _ := strings.Cut(rest, "\n")
 		if !ok || status != kit.InterruptStatus {
@@ -320,9 +321,9 @@ func TestSyncKeepRunInterruptedLeavesTheOutputSoFarInTheLog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, main, ".wt-sync.yaml", string(yaml)+"defer:\n  - run: touch "+started+"; sleep 30\n    paths: [v.txt]\n")
-	gitIn(t, main, "commit", "-q", "-am", "declare a slow step")
-	gitIn(t, main, "fetch", "-q", "origin")
+	testkit.WriteFile(t, main, ".wt-sync.yaml", string(yaml)+"defer:\n  - run: touch "+started+"; sleep 30\n    paths: [v.txt]\n")
+	testkit.GitIn(t, main, "commit", "-q", "-am", "declare a slow step")
+	testkit.GitIn(t, main, "fetch", "-q", "origin")
 	logPath, _ := keepFiles(t, ctx)
 	fmt.Println("LOG=" + logPath)
 	go func() {
@@ -352,20 +353,9 @@ func TestSyncKeepRunNoPushPrintsThePushCommands(t *testing.T) {
 	if !strings.Contains(out.String(), "kept: rebased 1, pushed 0, left 0, unpushed 1") {
 		t.Fatalf("out:\n%s", out.String())
 	}
-	if gitOut(t, ctx.Repo.MainRoot, "rev-parse", "refs/remotes/origin/feat_wt/bump") == gitOut(t, bump, "rev-parse", "HEAD") {
+	if testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", "refs/remotes/origin/feat_wt/bump") == testkit.GitOut(t, bump, "rev-parse", "HEAD") {
 		t.Fatal("bump was pushed under --no-push")
 	}
-}
-
-// bareOrigin gives the fixture an origin of its own in place of the main
-// checkout standing in for one: a pass fetches each branch's own remote, and
-// against itself every branch would always be found pushed.
-func bareOrigin(t *testing.T, ctx *kit.Context) {
-	t.Helper()
-	origin := filepath.Join(t.TempDir(), "origin.git")
-	gitOut(t, ctx.Repo.MainRoot, "clone", "-q", "--bare", ctx.Repo.MainRoot, origin)
-	gitOut(t, ctx.Repo.MainRoot, "remote", "set-url", "origin", origin)
-	gitOut(t, ctx.Repo.MainRoot, "fetch", "-q", "origin")
 }
 
 // Under --no-push the push is a person's, and the keeper keeps reminding:
@@ -373,17 +363,17 @@ func bareOrigin(t *testing.T, ctx *kit.Context) {
 // has the tip, after which the pass has nothing to do again.
 func TestSyncKeepRunNoPushRepeatsThePushCommandUntilItIsPushedByHand(t *testing.T) {
 	ctx, bump := runFixture(t, false)
-	bareOrigin(t, ctx)
+	testkit.BareOrigin(t, ctx)
 	opts := keepOpts(PushNever)
 	var out bytes.Buffer
 	if err := SyncKeepRun(ctx, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	st := readKeep(t, ctx)
-	if len(st.Unpushed) != 1 || st.Unpushed[0].Work != "bump" || st.Unpushed[0].Tip != gitOut(t, bump, "rev-parse", "HEAD") || st.Problem != "" {
+	if len(st.Unpushed) != 1 || st.Unpushed[0].Work != "bump" || st.Unpushed[0].Tip != testkit.GitOut(t, bump, "rev-parse", "HEAD") || st.Problem != "" {
 		t.Fatalf("state %+v", st)
 	}
-	sha := gitOut(t, ctx.Repo.MainRoot, "rev-parse", "origin/main")
+	sha := testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", "origin/main")
 	out.Reset()
 	if err := SyncKeepRun(ctx, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
@@ -404,7 +394,7 @@ func TestSyncKeepRunNoPushRepeatsThePushCommandUntilItIsPushedByHand(t *testing.
 	if !strings.Contains(out.String(), "\nunpushed bump\n") {
 		t.Fatalf("status:\n%s", out.String())
 	}
-	gitOut(t, bump, "push", "-q", "--force-with-lease", "origin", "feat_wt/bump")
+	testkit.GitOut(t, bump, "push", "-q", "--force-with-lease", "origin", "feat_wt/bump")
 	out.Reset()
 	if err := SyncKeepRun(ctx, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
@@ -730,11 +720,11 @@ func TestSyncKeepStopBootsOutAJobWhosePlistIsGone(t *testing.T) {
 // cleared.
 func TestSyncKeepRunRetriesARefusedPushUntilItGoesThrough(t *testing.T) {
 	ctx, bump := runFixture(t, false)
-	bareOrigin(t, ctx)
+	testkit.BareOrigin(t, ctx)
 	t.Setenv("HOME", t.TempDir())
 	onPlatform(t, "darwin")
-	pushURL := gitOut(t, ctx.Repo.MainRoot, "remote", "get-url", "--push", "origin")
-	gitOut(t, ctx.Repo.MainRoot, "remote", "set-url", "--push", "origin", filepath.Join(t.TempDir(), "nowhere"))
+	pushURL := testkit.GitOut(t, ctx.Repo.MainRoot, "remote", "get-url", "--push", "origin")
+	testkit.GitOut(t, ctx.Repo.MainRoot, "remote", "set-url", "--push", "origin", filepath.Join(t.TempDir(), "nowhere"))
 	opts := keepOpts(PushAlways)
 	var out bytes.Buffer
 	err := SyncKeepRun(ctx, opts, &out)
@@ -750,7 +740,7 @@ func TestSyncKeepRunRetriesARefusedPushUntilItGoesThrough(t *testing.T) {
 	if logged, _ := os.ReadFile(logPath); !strings.Contains(string(logged), "    "+command) || !strings.Contains(string(logged), "      ✗ push of feat_wt/bump failed") {
 		t.Fatalf("log:\n%s", logged)
 	}
-	tip := gitOut(t, bump, "rev-parse", "HEAD")
+	tip := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	st := readKeep(t, ctx)
 	if st.TrunkSHA != "" || st.Problem != "failed: not completed: bump (push failed)" || !st.ProblemAt.Equal(keepDay) {
 		t.Fatalf("state %+v", st)
@@ -795,7 +785,7 @@ func TestSyncKeepRunRetriesARefusedPushUntilItGoesThrough(t *testing.T) {
 	// Origin reachable again: the next pass has nothing to rebase (bump is
 	// current) and pushes it anyway, which clears the problem and records
 	// trunk.
-	gitOut(t, ctx.Repo.MainRoot, "remote", "set-url", "--push", "origin", pushURL)
+	testkit.GitOut(t, ctx.Repo.MainRoot, "remote", "set-url", "--push", "origin", pushURL)
 	out.Reset()
 	if err := SyncKeepRun(ctx, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
@@ -809,11 +799,11 @@ func TestSyncKeepRunRetriesARefusedPushUntilItGoesThrough(t *testing.T) {
 	if strings.Contains(s, "rebased 1 commit") {
 		t.Fatalf("rebased again:\n%s", s)
 	}
-	if gitOut(t, ctx.Repo.MainRoot, "rev-parse", "refs/remotes/origin/feat_wt/bump") != tip {
+	if testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", "refs/remotes/origin/feat_wt/bump") != tip {
 		t.Fatal("bump did not reach origin")
 	}
 	st = readKeep(t, ctx)
-	if st.TrunkSHA != gitOut(t, ctx.Repo.MainRoot, "rev-parse", "origin/main") || st.Problem != "" || !st.ProblemAt.IsZero() || len(st.Unpushed) != 0 {
+	if st.TrunkSHA != testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", "origin/main") || st.Problem != "" || !st.ProblemAt.IsZero() || len(st.Unpushed) != 0 {
 		t.Fatalf("state %+v", st)
 	}
 	out.Reset()
@@ -829,17 +819,17 @@ func TestSyncKeepRunRetriesARefusedPushUntilItGoesThrough(t *testing.T) {
 // from the retries without a push, and the pass ends clean.
 func TestSyncKeepRunDropsAnUnpushedBranchThatMoved(t *testing.T) {
 	ctx, bump := runFixture(t, false)
-	pushURL := gitOut(t, ctx.Repo.MainRoot, "remote", "get-url", "--push", "origin")
-	gitOut(t, ctx.Repo.MainRoot, "remote", "set-url", "--push", "origin", filepath.Join(t.TempDir(), "nowhere"))
+	pushURL := testkit.GitOut(t, ctx.Repo.MainRoot, "remote", "get-url", "--push", "origin")
+	testkit.GitOut(t, ctx.Repo.MainRoot, "remote", "set-url", "--push", "origin", filepath.Join(t.TempDir(), "nowhere"))
 	opts := keepOpts(PushAlways)
 	var out bytes.Buffer
 	if err := SyncKeepRun(ctx, opts, &out); err == nil {
 		t.Fatalf("the push went through to nowhere:\n%s", out.String())
 	}
-	writeFile(t, bump, "mine.txt", "mine\n")
-	gitOut(t, bump, "add", "-A")
-	gitOut(t, bump, "commit", "-q", "-m", "moved by hand")
-	gitOut(t, ctx.Repo.MainRoot, "remote", "set-url", "--push", "origin", pushURL)
+	testkit.WriteFile(t, bump, "mine.txt", "mine\n")
+	testkit.GitOut(t, bump, "add", "-A")
+	testkit.GitOut(t, bump, "commit", "-q", "-m", "moved by hand")
+	testkit.GitOut(t, ctx.Repo.MainRoot, "remote", "set-url", "--push", "origin", pushURL)
 	out.Reset()
 	if err := SyncKeepRun(ctx, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())

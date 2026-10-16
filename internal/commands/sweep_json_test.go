@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -21,7 +22,7 @@ func sweepPlanJSON(t *testing.T, ctx *kit.Context, opts SweepOptions) (SweepPlan
 	t.Helper()
 	var out, progress bytes.Buffer
 	err := SweepPlanJSON(ctx, opts, &out, &progress)
-	validateJSON(t, "sweep-plan", out.Bytes())
+	testkit.ValidateJSON(t, "sweep-plan", out.Bytes())
 	var p SweepPlanOutput
 	if jerr := json.Unmarshal(out.Bytes(), &p); jerr != nil {
 		t.Fatalf("stdout is not one JSON object: %v\n%s", jerr, out.String())
@@ -35,7 +36,7 @@ func sweepJSON(t *testing.T, ctx *kit.Context, opts SweepOptions) (SweepResult, 
 	opts.Journal = NewSweepJournal(&out)
 	opts.Yes = true
 	err := Sweep(ctx, opts, &human)
-	validateJSON(t, "sweep", out.Bytes())
+	testkit.ValidateJSON(t, "sweep", out.Bytes())
 	var r SweepResult
 	if jerr := json.Unmarshal(out.Bytes(), &r); jerr != nil {
 		t.Fatalf("stdout is not one JSON object: %v\n%s", jerr, out.String())
@@ -68,24 +69,24 @@ func resultItem(t *testing.T, r SweepResult, branch string) *SweepResultItem {
 // Every part of the plan, each item with the evidence that it is merged or
 // the reason it is kept; and making it writes nothing.
 func TestSweepPlanJSONNamesEveryPartWithItsEvidence(t *testing.T) {
-	ctx, main, _ := sweepRepo(t)
-	branchWithWork(t, main, "done-work", 1)
-	landOnMain(t, main, "done-work")
+	ctx, main, _ := testkit.SweepRepo(t)
+	testkit.BranchWithWork(t, main, "done-work", 1)
+	testkit.LandOnMain(t, main, "done-work")
 	clean := mergedWorktree(t, ctx, "fix/login-crash")
 	dirty := mergedWorktree(t, ctx, "fix/dirty")
-	mustWrite(t, filepath.Join(dirty, "scratch.txt"), "not yet\n")
-	branchWithWork(t, main, "abandoned", 2)
+	testkit.MustWrite(t, filepath.Join(dirty, "scratch.txt"), "not yet\n")
+	testkit.BranchWithWork(t, main, "abandoned", 2)
 	goneUpstream(t, main, "abandoned")
 	_, squash, tip := squashed(t, ctx, "feat/squash")
 	pr := mergedPR(34, squash, tip)
 	pr.URL = "https://github.com/o/r/pull/34"
 
-	before := repoState(t, main)
+	before := testkit.RepoState(t, main)
 	p, err := sweepPlanJSON(t, ctx, SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{squash: pr}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after := repoState(t, main); after != before {
+	if after := testkit.RepoState(t, main); after != before {
 		t.Errorf("the plan wrote to the repository:\nbefore %s\nafter %s", before, after)
 	}
 	if p.Command != "sweep" || p.Token == nil || p.Error != nil || p.Fetched || *p.Trunk != "main" || p.Repo == nil || *p.Repo != main {
@@ -124,7 +125,7 @@ func TestSweepPlanJSONNamesEveryPartWithItsEvidence(t *testing.T) {
 
 // Commits found on trunk under other ids are merged by patch.
 func TestSweepPlanJSONSaysMergedByPatch(t *testing.T) {
-	ctx, main, _ := sweepRepo(t)
+	ctx, main, _ := testkit.SweepRepo(t)
 	var buf bytes.Buffer
 	path, err := New(ctx, "feat/rates", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -144,18 +145,18 @@ func TestSweepPlanJSONSaysMergedByPatch(t *testing.T) {
 
 // Every reason sweep keeps a merged worktree has its code.
 func TestSweepPlanJSONCodesWhyAWorktreeIsKept(t *testing.T) {
-	ctx, main, _ := sweepRepo(t)
+	ctx, main, _ := testkit.SweepRepo(t)
 	session := mergedWorktree(t, ctx, "fix/session")
 	locked := mergedWorktree(t, ctx, "fix/locked")
-	gitIn(t, main, "worktree", "lock", "--reason", fmt.Sprintf("(pid %d start now)", os.Getpid()), locked)
+	testkit.GitIn(t, main, "worktree", "lock", "--reason", fmt.Sprintf("(pid %d start now)", os.Getpid()), locked)
 	broken := mergedWorktree(t, ctx, "fix/broken")
-	gitDir := gitOut(t, broken, "rev-parse", "--absolute-git-dir")
-	mustWrite(t, filepath.Join(gitDir, "index"), "not an index")
-	branchWithWork(t, main, "done", 0)
+	gitDir := testkit.GitOut(t, broken, "rev-parse", "--absolute-git-dir")
+	testkit.MustWrite(t, filepath.Join(gitDir, "index"), "not an index")
+	testkit.BranchWithWork(t, main, "done", 0)
 	detached := filepath.Join(ctx.Repo.Parent, "demo-done")
-	gitIn(t, main, "worktree", "add", "-q", "--detach", detached, "done")
+	testkit.GitIn(t, main, "worktree", "add", "-q", "--detach", detached, "done")
 
-	p, err := sweepPlanJSON(t, ctx, SweepOptions{NoFetch: true, Agents: idleIn(t, session, "parked-1"), PRs: map[string]github.PR{}})
+	p, err := sweepPlanJSON(t, ctx, SweepOptions{NoFetch: true, Agents: testkit.IdleIn(t, session, "parked-1"), PRs: map[string]github.PR{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,9 +192,9 @@ func TestSweepPlanJSONCodesWhyAWorktreeIsKept(t *testing.T) {
 
 // Nothing to remove or delete: no token, and kept items are still listed.
 func TestSweepPlanJSONWithNothingToDoHasNoToken(t *testing.T) {
-	ctx, _, _ := sweepRepo(t)
+	ctx, _, _ := testkit.SweepRepo(t)
 	dirty := mergedWorktree(t, ctx, "fix/dirty")
-	mustWrite(t, filepath.Join(dirty, "scratch.txt"), "not yet\n")
+	testkit.MustWrite(t, filepath.Join(dirty, "scratch.txt"), "not yet\n")
 
 	p, err := sweepPlanJSON(t, ctx, SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}})
 	if err != nil || p.Token != nil || len(p.Items) != 1 {
@@ -203,8 +204,8 @@ func TestSweepPlanJSONWithNothingToDoHasNoToken(t *testing.T) {
 
 // A plan that cannot be made is still one object, with the error.
 func TestSweepPlanJSONReportsWhyNoPlanWasMade(t *testing.T) {
-	ctx, main, origin := sweepRepo(t)
-	branchWithWork(t, main, "done-work", 0)
+	ctx, main, origin := testkit.SweepRepo(t)
+	testkit.BranchWithWork(t, main, "done-work", 0)
 	if err := os.RemoveAll(origin); err != nil {
 		t.Fatal(err)
 	}
@@ -217,12 +218,12 @@ func TestSweepPlanJSONReportsWhyNoPlanWasMade(t *testing.T) {
 // The token is the plan: the same plan runs, item by item, and says what
 // became of each.
 func TestSweepJSONCarriesOutThePlanItWasGiven(t *testing.T) {
-	ctx, main, _ := sweepRepo(t)
-	branchWithWork(t, main, "done-work", 1)
-	landOnMain(t, main, "done-work")
+	ctx, main, _ := testkit.SweepRepo(t)
+	testkit.BranchWithWork(t, main, "done-work", 1)
+	testkit.LandOnMain(t, main, "done-work")
 	clean := mergedWorktree(t, ctx, "fix/login-crash")
 	dirty := mergedWorktree(t, ctx, "fix/dirty")
-	mustWrite(t, filepath.Join(dirty, "scratch.txt"), "not yet\n")
+	testkit.MustWrite(t, filepath.Join(dirty, "scratch.txt"), "not yet\n")
 	opts := SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}}
 	p, err := sweepPlanJSON(t, ctx, opts)
 	if err != nil {
@@ -241,16 +242,16 @@ func TestSweepJSONCarriesOutThePlanItWasGiven(t *testing.T) {
 	it := resultItem(t, r, "done-work")
 	pin := pinOf(*r.RunID, RefBranch, "done-work")
 	if it.Result != SweepDeleted || !it.BranchDeleted || it.WorktreeRemoved || deref(it.Pin) != pin ||
-		gitOut(t, main, "rev-parse", pin) != doneTip ||
+		testkit.GitOut(t, main, "rev-parse", pin) != doneTip ||
 		!slices.Equal(it.RestoreCommand, []string{"wt", "refs", "restore", *r.RunID, "--only", "refs/heads/done-work", "--yes"}) {
 		t.Errorf("done-work = %+v", it)
 	}
 	it = resultItem(t, r, "fix_wt/login-crash")
-	if it.Result != SweepRemoved || !it.BranchDeleted || !it.WorktreeRemoved || it.RestoreCommand == nil || exists(clean) {
+	if it.Result != SweepRemoved || !it.BranchDeleted || !it.WorktreeRemoved || it.RestoreCommand == nil || testkit.Exists(clean) {
 		t.Errorf("login-crash = %+v", it)
 	}
 	it = resultItem(t, r, "fix_wt/dirty")
-	if it.Result != SweepKept || it.Reason == nil || it.WorktreeRemoved || !exists(dirty) {
+	if it.Result != SweepKept || it.Reason == nil || it.WorktreeRemoved || !testkit.Exists(dirty) {
 		t.Errorf("dirty = %+v", it)
 	}
 	if !strings.Contains(human, "✓ deleted done-work") {
@@ -260,15 +261,15 @@ func TestSweepJSONCarriesOutThePlanItWasGiven(t *testing.T) {
 
 // Any difference from the plan refuses the run before anything is touched.
 func TestSweepJSONExpectRefusesAChangedPlan(t *testing.T) {
-	ctx, main, _ := sweepRepo(t)
-	branchWithWork(t, main, "done-work", 0)
+	ctx, main, _ := testkit.SweepRepo(t)
+	testkit.BranchWithWork(t, main, "done-work", 0)
 	opts := SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}}
 	p, err := sweepPlanJSON(t, ctx, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	branchWithWork(t, main, "late", 0)
+	testkit.BranchWithWork(t, main, "late", 0)
 	opts.Expect = *p.Token
 	r, _, err := sweepJSON(t, ctx, opts)
 	if err == nil || r.Outcome != kit.OutcomeRefused || r.Error == nil || len(r.Items) != 0 {
@@ -279,7 +280,7 @@ func TestSweepJSONExpectRefusesAChangedPlan(t *testing.T) {
 	}
 
 	// A plan with nothing to do has no token, and --expect still holds it.
-	ctx2, _, _ := sweepRepo(t)
+	ctx2, _, _ := testkit.SweepRepo(t)
 	opts.Expect = "1:0123456789abcdef0123456789abcdef"
 	if r, _, err = sweepJSON(t, ctx2, opts); err == nil || r.Outcome != kit.OutcomeRefused || r.Error == nil {
 		t.Fatalf("an empty plan is not the plan a token named: %v %+v", err, r)
@@ -289,11 +290,11 @@ func TestSweepJSONExpectRefusesAChangedPlan(t *testing.T) {
 // A worktree a session entered after the check is kept at the last moment,
 // and says why; the rest of the plan goes ahead.
 func TestSweepJSONKeepsAWorktreeASessionEnteredLate(t *testing.T) {
-	ctx, main, _ := sweepRepo(t)
-	branchWithWork(t, main, "done-work", 0)
+	ctx, main, _ := testkit.SweepRepo(t)
+	testkit.BranchWithWork(t, main, "done-work", 0)
 	path := mergedWorktree(t, ctx, "fix/login-crash")
 	opts := SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{},
-		Relist: func() ([]wtsync.Agent, error) { return idleIn(t, path, "arrived"), nil }}
+		Relist: func() ([]wtsync.Agent, error) { return testkit.IdleIn(t, path, "arrived"), nil }}
 	p, err := sweepPlanJSON(t, ctx, opts)
 	if err != nil {
 		t.Fatal(err)
@@ -304,7 +305,7 @@ func TestSweepJSONKeepsAWorktreeASessionEnteredLate(t *testing.T) {
 		t.Fatalf("%v %+v", err, r)
 	}
 	if it := resultItem(t, r, "fix_wt/login-crash"); it.Result != SweepKept || it.Reason == nil ||
-		!strings.Contains(*it.Reason, "arrived") || !exists(path) {
+		!strings.Contains(*it.Reason, "arrived") || !testkit.Exists(path) {
 		t.Errorf("login-crash = %+v", it)
 	}
 	if it := resultItem(t, r, "done-work"); it.Result != SweepDeleted {
@@ -315,9 +316,9 @@ func TestSweepJSONKeepsAWorktreeASessionEnteredLate(t *testing.T) {
 // A signal writes the one object: the item in flight interrupted, those not
 // reached not run, and nothing written a second time.
 func TestSweepJournalWritesOneObjectWhenInterrupted(t *testing.T) {
-	ctx, main, _ := sweepRepo(t)
-	branchWithWork(t, main, "one", 0)
-	branchWithWork(t, main, "two", 0)
+	ctx, main, _ := testkit.SweepRepo(t)
+	testkit.BranchWithWork(t, main, "one", 0)
+	testkit.BranchWithWork(t, main, "two", 0)
 	plan := planOf(t, ctx)
 
 	var out bytes.Buffer
@@ -326,7 +327,7 @@ func TestSweepJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 	j.start(sweepKey(plan.Delete[0]))
 	j.Interrupted("", "interrupted")
 	j.Finish()
-	validateJSON(t, "sweep", out.Bytes())
+	testkit.ValidateJSON(t, "sweep", out.Bytes())
 	dec := json.NewDecoder(&out)
 	var r SweepResult
 	if err := dec.Decode(&r); err != nil {
@@ -373,8 +374,8 @@ func TestSweepOutcomeRules(t *testing.T) {
 // parts: a pull request GitHub no longer answers for, or another session in
 // a kept worktree, is another plan.
 func TestSweepTokenCoversPullRequestsAndReasons(t *testing.T) {
-	ctx, main, _ := sweepRepo(t)
-	branchWithWork(t, main, "done-work", 0)
+	ctx, main, _ := testkit.SweepRepo(t)
+	testkit.BranchWithWork(t, main, "done-work", 0)
 	kept := mergedWorktree(t, ctx, "fix/kept")
 	token := func(opts SweepOptions) string {
 		p, err := sweepPlanJSON(t, ctx, opts)
@@ -384,7 +385,7 @@ func TestSweepTokenCoversPullRequestsAndReasons(t *testing.T) {
 		return *p.Token
 	}
 	pr := github.PR{Number: 7, HeadRefName: "done-work", State: "MERGED", BaseRefName: "main"}
-	base := SweepOptions{NoFetch: true, Agents: idleIn(t, kept, "one"), PRs: map[string]github.PR{"done-work": pr}}
+	base := SweepOptions{NoFetch: true, Agents: testkit.IdleIn(t, kept, "one"), PRs: map[string]github.PR{"done-work": pr}}
 	withPR := token(base)
 	noPR := base
 	noPR.PRs = map[string]github.PR{}
@@ -392,7 +393,7 @@ func TestSweepTokenCoversPullRequestsAndReasons(t *testing.T) {
 		t.Error("a pull request GitHub no longer answers for is a different plan")
 	}
 	other := base
-	other.Agents = idleIn(t, kept, "two")
+	other.Agents = testkit.IdleIn(t, kept, "two")
 	if token(other) == withPR {
 		t.Error("another session in a kept worktree is a different plan")
 	}
@@ -403,8 +404,8 @@ func TestSweepTokenCoversPullRequestsAndReasons(t *testing.T) {
 
 // A sweep --expect refuses says it fetched when it did.
 func TestSweepJSONRefusalSaysItFetched(t *testing.T) {
-	ctx, main, _ := sweepRepo(t)
-	branchWithWork(t, main, "done-work", 0)
+	ctx, main, _ := testkit.SweepRepo(t)
+	testkit.BranchWithWork(t, main, "done-work", 0)
 	r, _, err := sweepJSON(t, ctx, SweepOptions{Agents: []wtsync.Agent{}, PRs: map[string]github.PR{},
 		Expect: "1:0123456789abcdef0123456789abcdef"})
 	if err == nil || r.Error == nil || !r.Fetched {
@@ -415,7 +416,7 @@ func TestSweepJSONRefusalSaysItFetched(t *testing.T) {
 // The sessions are listed once more right before each worktree goes, after
 // the fresh plan: a session that arrives in between keeps it.
 func TestSweepReadsTheSessionsAgainRightBeforeAWorktreeGoes(t *testing.T) {
-	ctx, _, _ := sweepRepo(t)
+	ctx, _, _ := testkit.SweepRepo(t)
 	path := mergedWorktree(t, ctx, "fix/login-crash")
 	calls := 0
 	opts := SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{},
@@ -424,7 +425,7 @@ func TestSweepReadsTheSessionsAgainRightBeforeAWorktreeGoes(t *testing.T) {
 			if calls == 1 {
 				return []wtsync.Agent{}, nil
 			}
-			return idleIn(t, path, "arrived"), nil
+			return testkit.IdleIn(t, path, "arrived"), nil
 		}}
 	r, human, err := sweepJSON(t, ctx, opts)
 	if err == nil {
@@ -433,7 +434,7 @@ func TestSweepReadsTheSessionsAgainRightBeforeAWorktreeGoes(t *testing.T) {
 	// Refused at the last check, as a file written then is: failed, with
 	// nothing removed.
 	if it := resultItem(t, r, "fix_wt/login-crash"); it.Result != SweepFailed || it.WorktreeRemoved ||
-		it.BranchDeleted || it.Reason == nil || !strings.Contains(*it.Reason, "arrived") || !exists(path) {
+		it.BranchDeleted || it.Reason == nil || !strings.Contains(*it.Reason, "arrived") || !testkit.Exists(path) {
 		t.Errorf("login-crash = %+v\n%s", it, human)
 	}
 }
@@ -441,11 +442,11 @@ func TestSweepReadsTheSessionsAgainRightBeforeAWorktreeGoes(t *testing.T) {
 // Idle and busy sessions are two problems to wt remove, and one reason to
 // keep the worktree here: the code is listed once.
 func TestSweepPlanJSONListsTheSessionCodeOnce(t *testing.T) {
-	ctx, _, _ := sweepRepo(t)
+	ctx, _, _ := testkit.SweepRepo(t)
 	path := mergedWorktree(t, ctx, "fix/login-crash")
-	busy := idleIn(t, path, "busy-1")
+	busy := testkit.IdleIn(t, path, "busy-1")
 	busy[0].Status = "busy"
-	agents := append(idleIn(t, path, "idle-1"), busy...)
+	agents := append(testkit.IdleIn(t, path, "idle-1"), busy...)
 	p, err := sweepPlanJSON(t, ctx, SweepOptions{NoFetch: true, Agents: agents, PRs: map[string]github.PR{}})
 	if err != nil {
 		t.Fatal(err)
@@ -458,16 +459,16 @@ func TestSweepPlanJSONListsTheSessionCodeOnce(t *testing.T) {
 // The plan shows the configuration fingerprint its token covers: the same
 // file, the same value; another file, another value and another token.
 func TestSweepPlanShowsTheConfigFingerprint(t *testing.T) {
-	ctx, main, _ := sweepRepo(t)
-	branchWithWork(t, main, "done-work", 1)
-	landOnMain(t, main, "done-work")
+	ctx, main, _ := testkit.SweepRepo(t)
+	testkit.BranchWithWork(t, main, "done-work", 1)
+	testkit.LandOnMain(t, main, "done-work")
 	opts := SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}}
 	p, err := sweepPlanJSON(t, ctx, opts)
 	if err != nil || p.ConfigFingerprint == nil || *p.ConfigFingerprint != hex.EncodeToString(kit.ConfigFingerprint(ctx)) {
 		t.Fatalf("%v %+v", err, p)
 	}
 	conf := filepath.Join(main, "bin", "worktree", "worktree.conf")
-	if err := os.WriteFile(conf, []byte(minimalConf+"\n# edited\n"), 0o644); err != nil {
+	if err := os.WriteFile(conf, []byte(testkit.MinimalConf+"\n# edited\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	q, err := sweepPlanJSON(t, ctx, opts)

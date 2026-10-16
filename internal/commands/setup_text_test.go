@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
 // provisionFixture is a repository whose provisioning can be made to fail
@@ -23,26 +24,26 @@ func provisionFixture(t *testing.T, provisionExit int, build string, badSubmodul
 	} else {
 		conf += "BUILD_INIT_COMMAND=\"" + build + "\"\n"
 	}
-	main := committedRepo(t, conf)
+	main := testkit.CommittedRepo(t, conf)
 	if provisionExit >= 0 {
 		p := filepath.Join(main, "bin", "worktree", "provision.sh")
-		mustWrite(t, p, "#!/bin/sh\necho 'provisioning'\nexit "+strconv.Itoa(provisionExit)+"\n")
+		testkit.MustWrite(t, p, "#!/bin/sh\necho 'provisioning'\nexit "+strconv.Itoa(provisionExit)+"\n")
 		if err := os.Chmod(p, 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if badSubmodule {
-		mustWrite(t, filepath.Join(main, ".gitmodules"),
+		testkit.MustWrite(t, filepath.Join(main, ".gitmodules"),
 			"[submodule \"sub\"]\n\tpath = sub\n\turl = "+filepath.Join(t.TempDir(), "missing.git")+"\n")
-		head := gitOut(t, main, "rev-parse", "HEAD")
-		gitIn(t, main, "update-index", "--add", "--cacheinfo", "160000,"+strings.TrimSpace(head)+",sub")
+		head := testkit.GitOut(t, main, "rev-parse", "HEAD")
+		testkit.GitIn(t, main, "update-index", "--add", "--cacheinfo", "160000,"+strings.TrimSpace(head)+",sub")
 	}
-	mustWrite(t, filepath.Join(main, ".env"), "SECRET=1\n")
-	gitIn(t, main, "add", "bin")
+	testkit.MustWrite(t, filepath.Join(main, ".env"), "SECRET=1\n")
+	testkit.GitIn(t, main, "add", "bin")
 	if badSubmodule {
-		gitIn(t, main, "add", ".gitmodules")
+		testkit.GitIn(t, main, "add", ".gitmodules")
 	}
-	gitIn(t, main, "commit", "-qm", "provisioning")
+	testkit.GitIn(t, main, "commit", "-qm", "provisioning")
 	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
