@@ -1,11 +1,11 @@
 # Testing wt
 
 Run the tests that cover what you changed while you work, and the whole
-check once before you hand the work back. The full suite takes about 4
-minutes on a busy machine. The command packages under `internal/commands`
-run side by side, and their tests build real git repositories; the
-slowest is `internal/commands/synccmd`. Run the suite once, in the
-background, and keep working; never run it in a loop.
+check once before you hand the work back. The full suite takes about 2
+minutes on a busy machine. The packages run side by side, most of their
+tests run in parallel within them, and they build real git repositories;
+the slowest are `internal/commands/retire` and `synckeep`. Run the suite
+once, in the background, and keep working; never run it in a loop.
 
 ## Targets
 
@@ -13,14 +13,15 @@ background, and keep working; never run it in a loop.
 |---|---|---:|
 | `make test-unit` | the packages whose tests build no git repository, with `-short` | about 8 s |
 | `make test-fast` | `go test -short -timeout 20m ./...` | minutes |
-| `make test` | `go test -timeout 30m ./...` | about 240 s |
+| `make test` | `go test -timeout 30m ./...` | about 120 s |
 | `make bats` | builds `bin/wt`, then every `test/*.bats` | about 140 s |
 | `make lint` | `golangci-lint run` | |
 | `make check` | lint, test and bats | about 7 minutes |
 
-The `make test` time was taken on a 16-core Mac with a load average of
-15-20 from other sessions; an idle machine is faster, by an amount nobody
-measured. The other times are older and were taken under a heavier load.
+The `make test` time was taken on a 16-core Mac where other sessions kept
+the load average at 10-20; the suite itself drives it past 50, so it is
+bound by CPU, and a machine with fewer cores gains less from the parallel
+tests. The other times are older and were taken under a heavier load.
 Several full runs at once can pass the 30 minute timeout.
 
 `make test-unit` covers internal/config, find, naming, about, quarantine,
@@ -34,9 +35,9 @@ in it: their tests build real git repositories.
 | a comment, docs, whats-new, wording only | nothing, or `go vet ./...` |
 | one test or one function | `go test ./internal/<pkg> -run 'TestName$' -count=1` |
 | internal/config, find, naming, about, quarantine, superset, github, git, repo or gittest | `go test ./internal/<pkg>/...`; each is under 50 s, most under 5 s |
-| internal/wtsync | `go test ./internal/wtsync -run '<Area>'` first, then the whole package once (about 280 s) |
-| internal/commands, one command family | `go test ./internal/commands/<pkg> -run '<Family>'`, see the examples below; the whole `./internal/commands/...` once before you finish (about 240 s) |
-| a package-level hook variable or `Context` | `./internal/commands/...` once: the hooks live in kit (`FindGitHub`), provision (`ProbeSuperset`, `SupersetHostCommand`), session (`ListSessions`, `ListClaudeSessions`) and retire (`ScanProcesses`), and many packages' tests swap them |
+| internal/wtsync | `go test ./internal/wtsync -run '<Area>'` first, then the whole package once (about 110 s) |
+| internal/commands, one command family | `go test ./internal/commands/<pkg> -run '<Family>'`, see the examples below; the whole `./internal/commands/...` once before you finish (about 120 s) |
+| a package-level hook variable or `Context` | `./internal/commands/...` once: the hooks live in kit (`FindGitHub`), provision (`ProbeSuperset`, `SupersetHostCommand`), session (`ListSessions`, `ListClaudeSessions`) and retire (`ScanProcesses`); every TestMain sets them, and serial tests swap them, see "Parallel tests" |
 | the `--json` shape or `schema/*.json` | the schema test and the JSON tests, see the examples below, and update docs/json.md in the same commit |
 | cmd/wt flags, help text, completion | `go test ./cmd/wt` (about 16 s) |
 | shell/, install.sh, stdout, stderr or exit codes | `make build && scripts/bats.sh test/<file>.bats`, the one file |
@@ -82,35 +83,96 @@ tests of a family whose names say something else. Name the package: a
 prints `ok` with `[no tests to run]`, which looks like a pass. The run of
 `./internal/commands/...` before you finish covers the rest.
 
+## Parallel tests
+
+A test that calls `t.Parallel()` runs beside the other parallel tests of
+its package, and Go starts them only once every serial test of that
+package has finished. Most tests in the command packages, internal/wtsync,
+internal/repo, internal/github and internal/superset are parallel: each
+builds its own repositories under `t.TempDir()`. HOME and XDG_CONFIG_HOME
+are set once per test binary and shared, so a parallel test does not write
+under them; `testkit.UserConfigIn` makes a test serial.
+internal/commands/synckeep, internal/commands/session and
+internal/commands/kit have no parallel tests.
+
+A test stays serial when it touches what the whole test binary shares,
+and its first line says which, as `// Not parallel: <why>`:
+
+- `t.Setenv` or `t.Chdir`, which Go refuses in a parallel test: a fake
+  `git`, `claude` or `superset` on the PATH, HOME, XDG_CONFIG_HOME,
+  CODEX_HOME, TMPDIR;
+- a package-level variable that other tests read, for example
+  `session.ListSessions` and `ListClaudeSessions`, `retire.ScanProcesses`
+  and `ReapProcesses`, `retire`'s `vanishWait` and `afterFinalCheck`,
+  `repo.AfterRefDeleted` and `BeforeConfigAdd`, `refpins.AfterBranchMoved`,
+  `provision.ProbeSuperset` and `SupersetHostCommand`, provision's
+  `cloneDir` and `cloneOneFile`, `synccmd`'s `assessWorkers` and
+  `KeepGOOS`, superset's `readDeadline`, wtsync's process listers and
+  deadlines;
+- signals: `git.Interrupt` and `git.KillRunning` signal the process groups
+  `RunBounded` is waiting on, `kit.OnInterrupt` also removes every temporary
+  directory wtsync has open, and a few tests send a signal to the test
+  process itself; a test that only re-runs itself through
+  `testkit.InterruptedChild` shares nothing with that child and is parallel;
+- the registries of the locks held and the interrupt journal, which belong
+  to the process;
+- a wall-clock bound that a loaded machine can break.
+
+Every serial test of a package finishes before its first parallel test
+starts, so a signal from a serial test never reaches a parallel test's git.
+Keep it that way: a test that signals or swaps a hook does not call
+`t.Parallel()`.
+
+A test's own fakes go with the call, not into a package variable:
+
+- `testkit.FakeGitHub(t, ctx, …)` and `testkit.StubGitHub(ctx, …)` set
+  `ctx.GitHubFake`;
+- `provisiontest.FakeSuperset`, `Stub` and `SupersetAt` set
+  `ctx.SupersetFake`;
+- `testkit.CrashAt(point)`, or any `quarantine.Hooks`, goes in the
+  `QuarantineHooks` field of the remove, sweep, restore or purge options.
+
+The package variables behind them (`kit.FindGitHub`,
+`provision.ProbeSuperset`, the session listers) are set once, in each
+package's TestMain, kit's setting only `FindGitHub`. Only serial tests swap
+them, as `provisiontest.SupersetSaying` and `StaleSuperset` swap
+`ProbeSuperset`, and parallel tests only read them. A command that opens a
+context of its own, as `--all` does for each repository, does not see the
+fakes on the test's context.
+
+A new test calls `t.Parallel()` first, unless one of the reasons above
+applies.
+
 ## Time per package
 
-Wall time of each package in one `go test -count=1 ./...` run, taken after
-the command packages were split, under the load above:
+Wall time of each package in one `go test -count=1 ./...` run, under the
+load above. "serial" is the part spent before the first parallel test
+started: the tests that stay serial run one after another.
 
-| package | s | note |
-|---|---:|---|
-| internal/commands/synccmd | 237 | the critical path |
-| internal/wtsync | 203 | |
-| internal/commands/retire | 194 | |
-| internal/commands/syncfix | 132 | |
-| internal/commands/refs | 117 | |
-| internal/commands | 91 | wt list and status, and tests across packages |
-| internal/commands/purge | 66 | |
-| internal/commands/synckeep | 64 | |
-| internal/commands/admin | 62 | |
-| internal/commands/provision | 54 | |
-| internal/repo | 36 | |
-| internal/github | 28 | fake `gh` shell scripts |
-| internal/superset | 21 | about 4 s of it is real deadlines |
-| internal/commands/session | 21 | |
-| cmd/wt | 17 | in-process cobra; builds no binary |
-| internal/git | 6 | |
-| internal/commands/kit | 1 | |
-| schema, config, find, gittest, about, quarantine, naming | 1-3 each | no git |
+| package | s | serial s | note |
+|---|---:|---:|---|
+| internal/commands/retire | 121 | 75 | the remove and sweep --reap tests: real processes, signals, a 5 s grace |
+| internal/commands/synckeep | 119 | 119 | all serial: the keeper sets GIT_CONFIG_* for its process, the tests set HOME |
+| internal/commands/synccmd | 112 | 52 | |
+| internal/wtsync | 107 | 58 | |
+| internal/commands/refs | 93 | 34 | |
+| internal/commands/admin | 53 | 41 | |
+| internal/commands | 51 | 27 | wt list and status, and tests across packages |
+| internal/commands/session | 47 | 45 | all serial: a fake claude on the PATH |
+| internal/commands/provision | 41 | 23 | |
+| internal/commands/syncfix | 40 | 0 | |
+| internal/superset | 34 | 21 | about 4 s of it is real deadlines |
+| internal/commands/purge | 34 | 0 | |
+| cmd/wt | 27 | 27 | in-process cobra; builds no binary |
+| internal/github | 15 | | fake `gh` shell scripts |
+| internal/repo | 13 | | |
+| internal/git | 10 | | |
+| schema, config, find, gittest, about, quarantine, naming, kit, refpins | 0-4 each | | no git |
 
 Go runs the packages side by side, so the suite takes about as long as
 the slowest package. Before the split internal/commands alone took 785 s
-of a 786 s run.
+of a 786 s run; before the tests ran in parallel the suite took about
+230 s, with internal/commands/synccmd at 223 s.
 
 ## What -short skips
 
