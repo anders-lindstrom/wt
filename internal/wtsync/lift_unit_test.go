@@ -9,6 +9,7 @@ import (
 )
 
 func TestOwnedLineLiftDecidesFromTheFourVersions(t *testing.T) {
+	t.Parallel()
 	s := ownedVersion(t)
 	yaml := func(v string) []byte { return []byte(appYAML(v, "1.5.1")) }
 	for _, tc := range []struct {
@@ -36,6 +37,7 @@ func TestOwnedLineLiftDecidesFromTheFourVersions(t *testing.T) {
 }
 
 func TestOwnedLineLiftRefusesWithTheStrategysOwnWording(t *testing.T) {
+	t.Parallel()
 	s := ownedVersion(t)
 	yaml := func(v string) []byte { return []byte(appYAML(v, "1.5.1")) }
 	_, err := s.Lift("app.yaml", yaml("1.2.2"), yaml("1.2.3-SNAPSHOT"), yaml("1.2.3-SNAPSHOT"), yaml("1.2.3-SNAPSHOT"))
@@ -45,6 +47,7 @@ func TestOwnedLineLiftRefusesWithTheStrategysOwnWording(t *testing.T) {
 }
 
 func TestOwnedLineLiftRefusesAFileWhoseShapeChanged(t *testing.T) {
+	t.Parallel()
 	// The branch added a third owned line: the lines no longer pair up by
 	// position across the sides, so nothing is guessed. Refused rather than
 	// left alone, as the strategy refuses a block it cannot pair: a lift
@@ -78,6 +81,7 @@ func TestOwnedLineLiftRefusesAFileWhoseShapeChanged(t *testing.T) {
 // look like a bump, and an escaped literal in the merged document must not
 // let a due lift pass in silence.
 func TestOpenAPILiftRefusesASideItCannotRead(t *testing.T) {
+	t.Parallel()
 	for name, sides := range map[string][4][]byte{
 		"base does not parse":       {[]byte("not json"), []byte(specJSON("1.2.3")), []byte(specJSON("1.2.3")), []byte(specJSON("1.2.3"))},
 		"base has no info.version":  {[]byte(`{"info":{"title":"T"}}`), []byte(specJSON("1.2.3")), []byte(specJSON("1.2.3")), []byte(specJSON("1.2.3"))},
@@ -92,6 +96,7 @@ func TestOpenAPILiftRefusesASideItCannotRead(t *testing.T) {
 }
 
 func TestKeepRulesNeverLift(t *testing.T) {
+	t.Parallel()
 	for _, name := range []string{RuleKeepBranch, RuleKeepTrunk} {
 		rule, err := RuleNamed(name)
 		if err != nil {
@@ -128,6 +133,7 @@ func TestKeepRulesNeverLift(t *testing.T) {
 }
 
 func TestOpenAPILiftRewritesOnlyInfoVersion(t *testing.T) {
+	t.Parallel()
 	// The generated document carries other "version" keys, deep in schemas
 	// and as a property name; only info.version is the API's.
 	doc := func(v string) []byte {
@@ -162,6 +168,7 @@ func TestOpenAPILiftRewritesOnlyInfoVersion(t *testing.T) {
 }
 
 func TestInfoVersionFindsTheLiteral(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		doc  string
 		want string
@@ -190,6 +197,7 @@ func TestInfoVersionFindsTheLiteral(t *testing.T) {
 }
 
 func TestCountPicksCountsCommitsNotLines(t *testing.T) {
+	t.Parallel()
 	done := "pick aaa one\nbreak\nedit bbb two\n# a comment\n\nexec true\n"
 	if n, last := countPicks(done); n != 2 || last != "exec" {
 		t.Errorf("done: %d picks, last %q", n, last)
@@ -207,6 +215,7 @@ func TestCountPicksCountsCommitsNotLines(t *testing.T) {
 // break and becomes an edit, a dropped pick goes, everything else is left,
 // and the plain editor undoes exactly the marks.
 func TestSequenceEditorMarksAndDropsTheGivenPicks(t *testing.T) {
+	t.Parallel()
 	const full1, full2, full3 = "aaa1111111111111111111111111111111111111", "bbb2222222222222222222222222222222222222", "ccc3333333333333333333333333333333333333"
 	list := "pick aaa1111 one\npick bbb2222 two\npick ccc3333 three\n# a comment\n\nexec true\n"
 	var b strings.Builder
@@ -253,6 +262,7 @@ func runEditor(t *testing.T, script, list string) string {
 }
 
 func TestLiftNoteNamesEveryLine(t *testing.T) {
+	t.Parallel()
 	if got := (Lift{From: []string{"1.2.3"}, To: []string{"1.2.4"}}).note(); got != "lifted the version to 1.2.4: trunk took 1.2.3" {
 		t.Errorf("one: %q", got)
 	}

@@ -11,6 +11,7 @@ import (
 )
 
 func TestClassifyCodexTellsSessionsFromEverythingElse(t *testing.T) {
+	t.Parallel()
 	const native = "/Users/a/.bun/install/global/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/"
 	cases := []struct {
 		command string
@@ -55,6 +56,7 @@ func TestClassifyCodexTellsSessionsFromEverythingElse(t *testing.T) {
 // With the arguments as given, a prompt is one argument whatever it says,
 // and a path keeps its spaces.
 func TestClassifyCodexReadsExactArguments(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		argv []string
 		role codexRole
@@ -86,6 +88,7 @@ func TestClassifyCodexReadsExactArguments(t *testing.T) {
 // Split on spaces a prompt may start with a subcommand's name: more words
 // after one is a session, not nothing.
 func TestClassifyCodexCountsAnInexactPromptAsASession(t *testing.T) {
+	t.Parallel()
 	for _, command := range []string{"codex update the README", "codex debug the failing test", "codex app-server crash fix"} {
 		if role, _, _ := classifyCodex(strings.Fields(command), false); role != codexRunner {
 			t.Errorf("%q: role %d, want a session", command, role)
@@ -195,6 +198,7 @@ const minute = time.Minute
 // codex exec is a node launcher, the binary it starts and a helper under
 // that: one session, busy whatever its log says.
 func TestCodexExecIsOneBusySession(t *testing.T) {
+	// Not parallel: sets CODEX_HOME or PATH and swaps the package-level process listers.
 	w := newCodexWorld(t)
 	wt := t.TempDir()
 	w.proc(100, 1, 10*minute, wt, "node /Users/a/.bun/bin/codex exec -m gpt do it")
@@ -208,6 +212,7 @@ func TestCodexExecIsOneBusySession(t *testing.T) {
 }
 
 func TestInteractiveCodexIsIdleOnlyWhenItsLogSaysTheTurnIsOver(t *testing.T) {
+	// Not parallel: sets CODEX_HOME or PATH and swaps the package-level process listers.
 	cases := []struct {
 		name   string
 		events []string
@@ -235,6 +240,7 @@ func TestInteractiveCodexIsIdleOnlyWhenItsLogSaysTheTurnIsOver(t *testing.T) {
 // Not finding the log is not knowing: a codex with another CODEX_HOME, a
 // resumed thread nothing has been written to yet, a log that cannot be read.
 func TestInteractiveCodexWithNoReadableLogIsBusy(t *testing.T) {
+	// Not parallel: sets CODEX_HOME or PATH and swaps the package-level process listers.
 	wt := t.TempDir()
 	t.Run("no log", func(t *testing.T) {
 		w := newCodexWorld(t)
@@ -270,6 +276,7 @@ func TestInteractiveCodexWithNoReadableLogIsBusy(t *testing.T) {
 // A run killed mid-turn leaves its turn open for ever. It is nobody once its
 // process is gone, and it does not make the codex that came later busy.
 func TestCrashedCodexTurnIsNobody(t *testing.T) {
+	// Not parallel: sets CODEX_HOME or PATH and swaps the package-level process listers.
 	w := newCodexWorld(t)
 	wt := t.TempDir()
 	w.rollout("dead", wt, "codex_exec", `"exec"`, time.Hour, "task_started")
@@ -284,6 +291,7 @@ func TestCrashedCodexTurnIsNobody(t *testing.T) {
 // The desktop app's app-server stands in / and the daemon wherever it was
 // started; their threads say where they work.
 func TestAppServerThreadIsASessionWhileItsTurnIsOpen(t *testing.T) {
+	// Not parallel: sets CODEX_HOME or PATH and swaps the package-level process listers.
 	w := newCodexWorld(t)
 	wt, elsewhere := t.TempDir(), t.TempDir()
 	w.proc(200, 1, 5*time.Hour, "", "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex -c x=y app-server")
@@ -303,6 +311,7 @@ func TestAppServerThreadIsASessionWhileItsTurnIsOpen(t *testing.T) {
 }
 
 func TestAppServerThreadFromBeforeTheAppServerStartedIsNobody(t *testing.T) {
+	// Not parallel: sets CODEX_HOME or PATH and swaps the package-level process listers.
 	w := newCodexWorld(t)
 	w.proc(200, 1, 10*minute, "", "codex app-server --listen unix:// --managed-daemon")
 	w.rollout("stale", t.TempDir(), "Codex Desktop", `"vscode"`, time.Hour, "task_started")
@@ -314,6 +323,7 @@ func TestAppServerThreadFromBeforeTheAppServerStartedIsNobody(t *testing.T) {
 // The daemon's own working directory is wherever it happened to be started
 // and pins nothing; it is not even asked for.
 func TestAppServerDoesNotPinItsOwnDirectory(t *testing.T) {
+	// Not parallel: sets CODEX_HOME or PATH and swaps the package-level process listers.
 	w := newCodexWorld(t)
 	w.proc(200, 1, time.Hour, "", "codex app-server --listen unix:// --managed-daemon")
 	w.proc(201, 1, time.Hour, "", "codex app-server daemon pid-update-loop")
@@ -330,6 +340,7 @@ func TestAppServerDoesNotPinItsOwnDirectory(t *testing.T) {
 
 // A subagent is its parent's session: one session, named for the root.
 func TestSubagentThreadsAreTheirRootsSession(t *testing.T) {
+	// Not parallel: sets CODEX_HOME or PATH and swaps the package-level process listers.
 	w := newCodexWorld(t)
 	wt := t.TempDir()
 	w.proc(200, 1, time.Hour, "", "codex app-server")
@@ -344,6 +355,7 @@ func TestSubagentThreadsAreTheirRootsSession(t *testing.T) {
 // A subagent of a codex exec that died is as dead as its parent, even with
 // an app-server alive and the parent's log out of reach.
 func TestOrphanedSubagentOfACodexProcessIsNobody(t *testing.T) {
+	// Not parallel: sets CODEX_HOME or PATH and swaps the package-level process listers.
 	w := newCodexWorld(t)
 	w.proc(200, 1, time.Hour, "", "codex app-server")
 	w.rollout("kid", t.TempDir(), "codex_exec", `{"subagent":{"thread_spawn":{"parent_thread_id":"gone"}}}`, minute, "task_started")
@@ -354,6 +366,7 @@ func TestOrphanedSubagentOfACodexProcessIsNobody(t *testing.T) {
 }
 
 func TestCodexCdNamesTheDirectory(t *testing.T) {
+	// Not parallel: sets CODEX_HOME or PATH and swaps the package-level process listers.
 	w := newCodexWorld(t)
 	base := t.TempDir()
 	wt := filepath.Join(base, "wt")
@@ -369,6 +382,7 @@ func TestCodexCdNamesTheDirectory(t *testing.T) {
 // A codex started from another codex's shell in another worktree is a
 // session of its own.
 func TestCodexStartedByCodexElsewhereIsItsOwnSession(t *testing.T) {
+	// Not parallel: sets CODEX_HOME or PATH and swaps the package-level process listers.
 	w := newCodexWorld(t)
 	w.proc(100, 1, 10*minute, t.TempDir(), "codex exec outer")
 	w.proc(101, 100, minute, t.TempDir(), "codex exec inner")
@@ -378,6 +392,7 @@ func TestCodexStartedByCodexElsewhereIsItsOwnSession(t *testing.T) {
 }
 
 func TestCodexOfAnotherUserIsNotLookedAt(t *testing.T) {
+	// Not parallel: sets CODEX_HOME or PATH and swaps the package-level process listers.
 	w := newCodexWorld(t)
 	w.proc(100, 1, minute, t.TempDir(), "codex exec x")
 	w.procs[0].UID = os.Getuid() + 1
@@ -388,6 +403,7 @@ func TestCodexOfAnotherUserIsNotLookedAt(t *testing.T) {
 
 // wt run by Codex's own shell tool must not be refused by that Codex.
 func TestCodexRunningWtIsNotCounted(t *testing.T) {
+	// Not parallel: sets CODEX_HOME or PATH and swaps the package-level process listers.
 	w := newCodexWorld(t)
 	mine, other := t.TempDir(), t.TempDir()
 	w.proc(100, 1, 10*minute, mine, "node /bin/codex exec x")
@@ -402,6 +418,7 @@ func TestCodexRunningWtIsNotCounted(t *testing.T) {
 // Under an app-server the calling thread is not named anywhere, so it is the
 // one working where wt was started; a thread in another worktree still counts.
 func TestAppServerThreadRunningWtIsNotCounted(t *testing.T) {
+	// Not parallel: sets CODEX_HOME or PATH and swaps the package-level process listers.
 	w := newCodexWorld(t)
 	mine, other := t.TempDir(), t.TempDir()
 	t.Chdir(mine)
@@ -423,6 +440,7 @@ func TestAppServerThreadRunningWtIsNotCounted(t *testing.T) {
 }
 
 func TestCodexWhoseDirectoryCannotBeReadFailsTheListing(t *testing.T) {
+	// Not parallel: sets CODEX_HOME or PATH and swaps the package-level process listers.
 	w := newCodexWorld(t)
 	w.proc(100, 1, minute, t.TempDir(), "codex")
 	processCwds = func([]int) (map[int]string, map[int]bool, error) {
@@ -435,6 +453,7 @@ func TestCodexWhoseDirectoryCannotBeReadFailsTheListing(t *testing.T) {
 
 // A codex that exited between ps and lsof has no directory and is nobody.
 func TestCodexThatExitedMeanwhileIsDropped(t *testing.T) {
+	// Not parallel: sets CODEX_HOME or PATH and swaps the package-level process listers.
 	w := newCodexWorld(t)
 	w.proc(100, 1, minute, "", "codex exec x")
 	if got := w.sessions(); len(got) != 0 {
@@ -445,6 +464,7 @@ func TestCodexThatExitedMeanwhileIsDropped(t *testing.T) {
 // The turn is found from the end of the file, through lines far longer than
 // one read, and words a session wrote about are not markers.
 func TestLastTurnReadsBackwardsThroughLongLines(t *testing.T) {
+	t.Parallel()
 	big := `{"type":"response_item","payload":{"text":"` + strings.Repeat(`x \"type\":\"task_complete\" `, 40000) + `"}}`
 	started := `{"timestamp":"t","type":"event_msg","payload":{"type":"task_started","turn_id":"x"}}`
 	done := `{"timestamp":"t","type":"event_msg","payload":{"type":"task_complete"}}`
@@ -474,6 +494,7 @@ func TestLastTurnReadsBackwardsThroughLongLines(t *testing.T) {
 }
 
 func TestParseProcessesReadsPsRows(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
 	out := "  100     1   501       01:02 ??       codex exec do it\n" +
 		"  101   100   501 1-02:03:04 ?        /bin/codex\n" +
@@ -502,6 +523,7 @@ func TestParseProcessesReadsPsRows(t *testing.T) {
 
 // The real lookup, on this process alone: lsof or /proc.
 func TestProcessCwdsReadsALiveProcessAndSkipsADeadOne(t *testing.T) {
+	t.Parallel()
 	wd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -520,6 +542,7 @@ func TestProcessCwdsReadsALiveProcessAndSkipsADeadOne(t *testing.T) {
 }
 
 func TestListProcessesSeesThisProcess(t *testing.T) {
+	t.Parallel()
 	procs, err := listProcesses()
 	if err != nil {
 		t.Fatal(err)
@@ -538,6 +561,7 @@ func TestListProcessesSeesThisProcess(t *testing.T) {
 // ListOtherAgents is Claude's sessions and Codex's; a process table that
 // cannot be read is not knowing, with or without a claude to ask.
 func TestListOtherAgentsAddsCodexAndFailsWithoutAProcessTable(t *testing.T) {
+	// Not parallel: sets CODEX_HOME or PATH and swaps the package-level process listers.
 	w := newCodexWorld(t)
 	wt := resolved(t.TempDir())
 	w.proc(100, 1, minute, wt, "codex exec x")
@@ -569,6 +593,7 @@ func TestListOtherAgentsAddsCodexAndFailsWithoutAProcessTable(t *testing.T) {
 // With an app-server alive, a log that cannot be read may be a busy thread
 // in any worktree: the listing fails rather than leave it out.
 func TestUnreadableLogUnderAnAppServerFailsTheListing(t *testing.T) {
+	// Not parallel: sets CODEX_HOME or PATH and swaps the package-level process listers.
 	if os.Getuid() == 0 {
 		t.Skip("root reads everything")
 	}
@@ -590,6 +615,7 @@ func TestUnreadableLogUnderAnAppServerFailsTheListing(t *testing.T) {
 // A record cut short at the end of the log is one being written, and may be
 // the start of a turn: the completion before it does not make the codex idle.
 func TestHalfWrittenLastRecordIsNotIdle(t *testing.T) {
+	// Not parallel: sets CODEX_HOME or PATH and swaps the package-level process listers.
 	w := newCodexWorld(t)
 	wt := t.TempDir()
 	w.proc(100, 1, 10*minute, wt, "codex")
@@ -610,6 +636,7 @@ func TestHalfWrittenLastRecordIsNotIdle(t *testing.T) {
 // A codex exec killed mid-turn after an interactive codex started in the
 // same directory is still nobody, and does not make that codex busy.
 func TestCrashedExecDoesNotMakeAnInteractiveCodexBusy(t *testing.T) {
+	// Not parallel: sets CODEX_HOME or PATH and swaps the package-level process listers.
 	w := newCodexWorld(t)
 	wt := t.TempDir()
 	w.proc(100, 1, 10*minute, wt, "codex")
@@ -622,6 +649,7 @@ func TestCrashedExecDoesNotMakeAnInteractiveCodexBusy(t *testing.T) {
 // A finished codex exec in the directory is not the interactive codex's own
 // thread: with its own log out of reach it stays busy.
 func TestAnotherSessionsFinishedThreadDoesNotMakeACodexIdle(t *testing.T) {
+	// Not parallel: sets CODEX_HOME or PATH and swaps the package-level process listers.
 	w := newCodexWorld(t)
 	wt := t.TempDir()
 	w.proc(100, 1, 10*minute, wt, "codex")
@@ -632,6 +660,7 @@ func TestAnotherSessionsFinishedThreadDoesNotMakeACodexIdle(t *testing.T) {
 // An interactive codex may resume a thread recorded in another directory:
 // an open turn there, with no codex of its own, keeps this one busy.
 func TestOpenThreadElsewhereKeepsAnInteractiveCodexBusy(t *testing.T) {
+	// Not parallel: sets CODEX_HOME or PATH and swaps the package-level process listers.
 	w := newCodexWorld(t)
 	wt := t.TempDir()
 	w.proc(100, 1, 10*minute, wt, "codex")
@@ -643,6 +672,7 @@ func TestOpenThreadElsewhereKeepsAnInteractiveCodexBusy(t *testing.T) {
 // wt run by a codex exec must still see the app-server thread busy in the
 // same directory.
 func TestCallingCodexDoesNotHideAnAppServerThreadBesideIt(t *testing.T) {
+	// Not parallel: sets CODEX_HOME or PATH and swaps the package-level process listers.
 	w := newCodexWorld(t)
 	wt := t.TempDir()
 	w.proc(100, 1, 10*minute, wt, "codex exec x")
@@ -656,6 +686,7 @@ func TestCallingCodexDoesNotHideAnAppServerThreadBesideIt(t *testing.T) {
 
 // A subagent working in another worktree than its root holds that one too.
 func TestSubagentElsewhereIsASessionThere(t *testing.T) {
+	// Not parallel: sets CODEX_HOME or PATH and swaps the package-level process listers.
 	w := newCodexWorld(t)
 	a, b := t.TempDir(), t.TempDir()
 	w.proc(200, 1, time.Hour, "", "codex app-server")
@@ -671,6 +702,7 @@ func TestSubagentElsewhereIsASessionThere(t *testing.T) {
 // its helper, by --cd, or by the threads it could be running; with none of
 // those the listing fails.
 func TestCodexThatHidesItsDirectoryIsStillPlaced(t *testing.T) {
+	// Not parallel: sets CODEX_HOME or PATH and swaps the package-level process listers.
 	wt := t.TempDir()
 	t.Run("launcher", func(t *testing.T) {
 		w := newCodexWorld(t)
@@ -719,6 +751,7 @@ func TestCodexThatHidesItsDirectoryIsStillPlaced(t *testing.T) {
 }
 
 func TestProcessArgvReadsThisProcessExactly(t *testing.T) {
+	t.Parallel()
 	argv, ok := processArgv(os.Getpid())
 	if !ok {
 		t.Skip("no exact arguments on this platform")

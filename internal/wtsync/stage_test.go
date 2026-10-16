@@ -22,6 +22,7 @@ func stoppedRebase(t *testing.T, trunkEdits, branchEdits []map[string]string) (d
 }
 
 func TestStagedConflictsReadsTheThreeStagesOfEachUnmergedPath(t *testing.T) {
+	t.Parallel()
 	_, wt := stoppedRebase(t,
 		[]map[string]string{{"v.txt": "1.0.5\n"}},
 		[]map[string]string{{"v.txt": "1.0.1\n", "a.txt": "a2\n"}})
@@ -39,6 +40,7 @@ func TestStagedConflictsReadsTheThreeStagesOfEachUnmergedPath(t *testing.T) {
 }
 
 func TestStagedConflictsMarksAModifyDeleteIncomplete(t *testing.T) {
+	t.Parallel()
 	dir := linearRepo(t, []map[string]string{{"v.txt": "1.0.5\n"}}, nil)
 	w := featureWorktree(t, dir)
 	gitIn(t, w.Path, "rm", "-q", "v.txt")
@@ -56,6 +58,7 @@ func TestStagedConflictsMarksAModifyDeleteIncomplete(t *testing.T) {
 }
 
 func TestRebaseProgressReadsTheStopIndexAndSubject(t *testing.T) {
+	t.Parallel()
 	_, wt := stoppedRebase(t,
 		[]map[string]string{{"v.txt": "1.0.5\n"}},
 		[]map[string]string{{"a.txt": "a2\n"}, {"v.txt": "1.0.1\n"}})
@@ -77,6 +80,7 @@ func TestRebaseProgressReadsTheStopIndexAndSubject(t *testing.T) {
 // dropped pick leaves no amend marker, so the test takes it away whatever
 // git runs it.
 func TestRebaseProgressSaysWhetherAnEditStopIsAfterItsPick(t *testing.T) {
+	t.Parallel()
 	for name, tc := range map[string]struct {
 		trunk   map[string]string
 		resolve bool
@@ -117,6 +121,7 @@ func TestRebaseProgressSaysWhetherAnEditStopIsAfterItsPick(t *testing.T) {
 }
 
 func TestApplyWritesTheContentKeepsTheModeAndStagesIt(t *testing.T) {
+	t.Parallel()
 	_, wt := stoppedRebase(t,
 		[]map[string]string{{"v.txt": "1.0.5\n"}},
 		[]map[string]string{{"v.txt": "1.0.1\n"}})
@@ -142,6 +147,7 @@ func TestApplyWritesTheContentKeepsTheModeAndStagesIt(t *testing.T) {
 }
 
 func TestResolveConflictReturnsTheStrategysBytes(t *testing.T) {
+	t.Parallel()
 	dir := linearRepo(t, []map[string]string{{"v.txt": "1.0.5\n"}}, []map[string]string{{"v.txt": "1.0.1\n"}})
 	c := Conflict{Path: "v.txt", Base: []byte("1.0.0\n"), Trunk: []byte("1.0.5\n"), Branch: []byte("1.0.1\n")}
 	r, err := resolveConflict(dir, "main", triageCfg(t), c, "")

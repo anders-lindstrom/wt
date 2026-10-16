@@ -45,6 +45,7 @@ defer:
 }
 
 func TestRenderPlanHasEverySection(t *testing.T) {
+	t.Parallel()
 	dir := repoWith(t, map[string]string{"v.txt": "1.0.0\n", "a.txt": "a\n"}, nil, nil)
 	base := gitIn(t, dir, "rev-parse", "HEAD")
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("trunk\nextra\n"), 0o644); err != nil {
@@ -100,6 +101,7 @@ func TestRenderPlanHasEverySection(t *testing.T) {
 // the two apart. It now names both when they differ, and says "merges" when
 // every landing was one.
 func TestRenderPlanHeaderCountsLandingsAndCommits(t *testing.T) {
+	t.Parallel()
 	dir := repoWith(t, map[string]string{"a.txt": "a\n"}, nil, nil)
 	base := gitIn(t, dir, "rev-parse", "HEAD")
 	render := func(l Landing) string {
@@ -133,6 +135,7 @@ func TestRenderPlanHeaderCountsLandingsAndCommits(t *testing.T) {
 // opposite of what a merge trains people to expect. The brief says so where
 // the person's files are listed, before they open one.
 func TestRenderPlanSaysWhichSideOfTheMarkersIsTrunk(t *testing.T) {
+	t.Parallel()
 	dir := repoWith(t, map[string]string{"a.txt": "a\n"}, nil, nil)
 	base := gitIn(t, dir, "rev-parse", "HEAD")
 	out, err := RenderPlan(PlanInput{
@@ -157,6 +160,7 @@ func TestRenderPlanSaysWhichSideOfTheMarkersIsTrunk(t *testing.T) {
 // twice under "never hand-merge here", which read as a bug in the plan
 // writer. Each path is one row, naming everything that owns it in order.
 func TestRenderPlanListsEachNeverHandMergePathOnce(t *testing.T) {
+	t.Parallel()
 	dir := repoWith(t, map[string]string{"a.txt": "a\n"}, nil, nil)
 	base := gitIn(t, dir, "rev-parse", "HEAD")
 	cfg, err := Parse([]byte(`conflicts:
@@ -202,6 +206,7 @@ defer:
 // otherwise put it — the plan would then say both "resolve this" and "never
 // resolve this".
 func TestRenderPlanDoesNotForbidWhatItAsksFor(t *testing.T) {
+	t.Parallel()
 	dir := repoWith(t, map[string]string{"v.txt": "1.0.0\n"}, nil, nil)
 	base := gitIn(t, dir, "rev-parse", "HEAD")
 	out, err := RenderPlan(PlanInput{
@@ -229,6 +234,7 @@ func TestRenderPlanDoesNotForbidWhatItAsksFor(t *testing.T) {
 // Both sides only added lines: the plan says so, because that is a
 // five-second read rather than a merge (spec §6).
 func TestRenderPlanMarksAnAdditiveConflict(t *testing.T) {
+	t.Parallel()
 	dir := repoWith(t, map[string]string{"a.txt": "a\n"}, nil, nil)
 	base := gitIn(t, dir, "rev-parse", "HEAD")
 	out, err := RenderPlan(PlanInput{
@@ -253,6 +259,7 @@ func TestRenderPlanMarksAnAdditiveConflict(t *testing.T) {
 // the two were derived separately the terminal could say "2 left" while the
 // file says "## yours — 1 file", and nothing would fail.
 func TestRenderPlanFollowsLeftNotTheUnresolvedFiles(t *testing.T) {
+	t.Parallel()
 	dir := repoWith(t, map[string]string{"a.txt": "a\n", "b.txt": "b\n"}, nil, nil)
 	base := gitIn(t, dir, "rev-parse", "HEAD")
 	cfg, err := Parse([]byte("conflicts:\n  - paths: [a.txt, c.txt]\n    strategy: openapi\n"))
@@ -303,6 +310,7 @@ func TestRenderPlanFollowsLeftNotTheUnresolvedFiles(t *testing.T) {
 
 // A caller that never sets Left still gets the brief it always got.
 func TestRenderPlanFallsBackToFilesWhenLeftIsEmpty(t *testing.T) {
+	t.Parallel()
 	dir := repoWith(t, map[string]string{"a.txt": "a\n", "v.txt": "1.0.0\n"}, nil, nil)
 	base := gitIn(t, dir, "rev-parse", "HEAD")
 	out, err := RenderPlan(PlanInput{
@@ -328,6 +336,7 @@ func TestRenderPlanFallsBackToFilesWhenLeftIsEmpty(t *testing.T) {
 }
 
 func TestStateRoundTripsAndIsTheMarker(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if has, err := HasPlan(dir); err != nil || has {
 		t.Fatalf("HasPlan on an empty dir = %v, %v", has, err)
@@ -367,6 +376,7 @@ func TestStateRoundTripsAndIsTheMarker(t *testing.T) {
 // can keep it in place: a marker left behind reports the worktree as waiting
 // on somebody forever.
 func TestRemovePlanClearsTheMarkerEvenWhenTheBriefWillNotGo(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if err := WriteState(dir, State{Work: "w", Branch: "feat_wt/w"}); err != nil {
 		t.Fatal(err)
@@ -400,6 +410,7 @@ func TestRemovePlanClearsTheMarkerEvenWhenTheBriefWillNotGo(t *testing.T) {
 // A sidecar whose maps are null must not hand back nil maps: the first
 // consumer to record a resolution into one would panic.
 func TestReadStateReturnsWritableMapsAndSlices(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if err := os.WriteFile(StatePath(dir), []byte(`{"branch":"feat_wt/w","resolved":null,"deleted":null}`+"\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -421,6 +432,7 @@ func TestReadStateReturnsWritableMapsAndSlices(t *testing.T) {
 // The line says what to do, not only which verb: resolve, git add, resume,
 // or undo. The wt: prefix belongs to the run's closing line, not here.
 func TestNeedsYouLine(t *testing.T) {
+	t.Parallel()
 	got := NeedsYouLine("login-crash", []string{"src/LoginHandler.java", "a", "b", "c"})
 	want := "login-crash needs you. 4 left after resolvers: LoginHandler.java +3 · " + WayOut(Way{Work: "login-crash", Plan: true, Rebasing: true, OwesAdd: true})
 	if got != want {
@@ -432,6 +444,7 @@ func TestNeedsYouLine(t *testing.T) {
 }
 
 func TestRebasedLineNamesWhatToCheck(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		check []string
 		want  string
@@ -447,6 +460,7 @@ func TestRebasedLineNamesWhatToCheck(t *testing.T) {
 }
 
 func TestUndoneLineSaysWhereTheBranchIs(t *testing.T) {
+	t.Parallel()
 	if got := UndoneLine("bump", "abc1234", true); got != "wt: bump undone, back at abc1234" {
 		t.Errorf("got %q", got)
 	}
@@ -458,6 +472,7 @@ func TestUndoneLineSaysWhereTheBranchIs(t *testing.T) {
 // A lift at the handed-over stop is listed with the resolved files, saying
 // what it did; the deferred regeneration is still announced as it is today.
 func TestRenderPlanNamesALiftedVersion(t *testing.T) {
+	t.Parallel()
 	dir := repoWith(t, map[string]string{"v.txt": "1.0.0\n", "a.txt": "a\n"}, nil, nil)
 	base := gitIn(t, dir, "rev-parse", "HEAD")
 	out, err := RenderPlan(PlanInput{
@@ -491,6 +506,7 @@ func TestRenderPlanNamesALiftedVersion(t *testing.T) {
 // conflict at the stop the pick is already committed, and resume amends the
 // staged file into it; beside a conflict it is still in the index.
 func TestRenderPlanSaysWhatToDoWithARefusedLift(t *testing.T) {
+	t.Parallel()
 	dir := repoWith(t, map[string]string{"v.txt": "1.0.0\n", "a.txt": "a\n"}, nil, nil)
 	base := gitIn(t, dir, "rev-parse", "HEAD")
 	refused := FileOutcome{Path: "v.txt", Strategy: "owned-line", Lifted: true, Note: `max-plus-patch needs an X.Y.Z version on both sides, got "1.0.1-SNAPSHOT" and "1.0.1-SNAPSHOT"`}

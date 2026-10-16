@@ -30,6 +30,7 @@ func stackRepo(t *testing.T) (string, []repo.Worktree) {
 }
 
 func TestParentsFindsTheNearestAncestorAmongWorktrees(t *testing.T) {
+	t.Parallel()
 	dir, wts := stackRepo(t)
 	got, amb, err := Parents(dir, "main", wts)
 	if err != nil {
@@ -42,6 +43,7 @@ func TestParentsFindsTheNearestAncestorAmongWorktrees(t *testing.T) {
 }
 
 func TestParentsReportsAMergeOfTwoBranchesAsAmbiguous(t *testing.T) {
+	t.Parallel()
 	dir, wts := stackRepo(t)
 	// m merges lone and p, which are incomparable.
 	gitIn(t, dir, "branch", "m", "lone")
@@ -62,6 +64,7 @@ func TestParentsReportsAMergeOfTwoBranchesAsAmbiguous(t *testing.T) {
 }
 
 func TestParentsIgnoresABranchAtTheSameCommit(t *testing.T) {
+	t.Parallel()
 	dir, wts := stackRepo(t)
 	gitIn(t, dir, "branch", "twin", "p")
 	gitIn(t, dir, "worktree", "add", "-q", dir+"-twin", "twin")
@@ -84,6 +87,7 @@ func TestParentsIgnoresABranchAtTheSameCommit(t *testing.T) {
 }
 
 func TestParentsLeavesOutABranchWithNoCommitsOffTrunk(t *testing.T) {
+	t.Parallel()
 	// old sits on main with nothing of its own, then main moves on: every
 	// branch cut from main contains old, but none is built on it.
 	dir, wts := stackRepo(t)
@@ -102,6 +106,7 @@ func TestParentsLeavesOutABranchWithNoCommitsOffTrunk(t *testing.T) {
 }
 
 func TestParentsDropsAParentThatLandedOnTrunk(t *testing.T) {
+	t.Parallel()
 	dir, wts := stackRepo(t)
 	gitIn(t, dir, "merge", "-q", "--no-edit", "--no-gpg-sign", "p")
 	got, amb, err := Parents(dir, "main", wts)
@@ -115,6 +120,7 @@ func TestParentsDropsAParentThatLandedOnTrunk(t *testing.T) {
 }
 
 func TestMembersAndOrder(t *testing.T) {
+	t.Parallel()
 	parents := map[string]string{"c": "p", "d": "c", "y": "x"}
 	if got := Members(parents, "c"); !reflect.DeepEqual(got, []string{"p", "c", "d"}) {
 		t.Fatalf("members of c: %v", got)
@@ -133,6 +139,7 @@ func TestMembersAndOrder(t *testing.T) {
 }
 
 func TestDescendantsReturnsOneSubtreeNotTheWholeStack(t *testing.T) {
+	t.Parallel()
 	// root -> a, b; a -> a1. A failure of a must not reach b or root.
 	parents := map[string]string{"a": "root", "b": "root", "a1": "a"}
 	for _, tc := range []struct {
