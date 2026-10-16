@@ -22,6 +22,7 @@ import (
 // after the purge the folder, the pins and every reference to the commit are
 // gone.
 func TestPurgeDeletesTheFolderAndThePins(t *testing.T) {
+	t.Parallel()
 	ctx, path, _, tip, dir := retiretest.Quarantined(t, "fix/gone", true)
 	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "-D", "gone")
 	plan := quarantine.PlanPurge(dir)
@@ -55,6 +56,7 @@ func TestPurgeDeletesTheFolderAndThePins(t *testing.T) {
 
 // A symlink inside the quarantine is deleted, never what it names.
 func TestPurgeNeverFollowsASymlinkOut(t *testing.T) {
+	t.Parallel()
 	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/linked", false)
 	outside := filepath.Join(ctx.Repo.Parent, "keep-me")
 	testkit.MustWrite(t, filepath.Join(outside, "precious.txt"), "precious")
@@ -77,6 +79,7 @@ func TestPurgeNeverFollowsASymlinkOut(t *testing.T) {
 
 // A folder nobody may write to inside the checkout is deleted too.
 func TestPurgeDeletesAReadOnlyFolder(t *testing.T) {
+	t.Parallel()
 	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/readonly", false)
 	ro := filepath.Join(dir, "checkout", "ro")
 	testkit.MustWrite(t, filepath.Join(ro, "deep", "f"), "x")
@@ -92,6 +95,7 @@ func TestPurgeDeletesAReadOnlyFolder(t *testing.T) {
 // Restored already: the folder, with only recovery.json in it, goes, and
 // the worktree that came back is untouched.
 func TestPurgeAfterRestoreDeletesOnlyTheLeftovers(t *testing.T) {
+	t.Parallel()
 	ctx, path, branch, _, dir := retiretest.Quarantined(t, "fix/back-then-purged", false)
 	refstest.Restore(t, ctx, dir)
 	plan := quarantine.PlanPurge(dir)
@@ -114,6 +118,7 @@ func TestPurgeAfterRestoreDeletesOnlyTheLeftovers(t *testing.T) {
 // A purge stopped after any step is finished by the next, and in between
 // no restore takes the worktree back: its pins may be gone.
 func TestPurgeFinishesAPurgeStoppedAtEveryStep(t *testing.T) {
+	// Not parallel: swaps quarantine.AfterSave, quarantine.AfterPurge.
 	if testing.Short() {
 		t.Skip("integration: stops the run at every step, over real repositories")
 	}
@@ -187,6 +192,7 @@ func TestPurgeFinishesAPurgeStoppedAtEveryStep(t *testing.T) {
 // A symlink left at the journal's temp name is replaced, never written
 // through.
 func TestPurgeNeverWritesThroughAJournalSymlink(t *testing.T) {
+	t.Parallel()
 	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/tmp-link", false)
 	outside := filepath.Join(ctx.Repo.Parent, "precious.txt")
 	testkit.MustWrite(t, outside, "precious")
@@ -205,6 +211,7 @@ func TestPurgeNeverWritesThroughAJournalSymlink(t *testing.T) {
 // A purge begun through one spelling of the folder — a symlink on the way —
 // is finished through another: the record keeps the folder it names.
 func TestPurgeBegunThroughAnAliasIsFinishedThroughTheName(t *testing.T) {
+	// Not parallel: swaps quarantine.AfterSave.
 	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/alias", false)
 	link := filepath.Join(ctx.Repo.Parent, "trash-link")
 	if err := os.Symlink(filepath.Dir(dir), link); err != nil {
@@ -222,6 +229,7 @@ func TestPurgeBegunThroughAnAliasIsFinishedThroughTheName(t *testing.T) {
 // top level, which only ever holds what a quarantine leaves there, and not
 // deeper, where a record of one is found.
 func TestPurgeNeverDeletesAQuarantineInsideIt(t *testing.T) {
+	t.Parallel()
 	t.Run("beside the record of a restored one", func(t *testing.T) {
 		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/outer-restored", false)
 		refstest.Restore(t, ctx, dir)
