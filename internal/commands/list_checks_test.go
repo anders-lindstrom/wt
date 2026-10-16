@@ -25,7 +25,7 @@ var checkCells = map[string]string{ //nolint:gosec // G101: "passing" is a check
 // The PR column marks what each pull request's checks say after its number,
 // and marks nothing for one with no checks.
 func TestListMarksThePullRequestsChecks(t *testing.T) {
-	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
+	t.Parallel()
 	ctx, _ := provisiontest.FourWorktreesWithChecks(t)
 	out := listing(t, ctx, ListOptions{NoSessions: true})
 	for branch, cell := range checkCells {
@@ -38,7 +38,7 @@ func TestListMarksThePullRequestsChecks(t *testing.T) {
 // wt status has wt list's PR column, marks and all, and wt status <work> the
 // same cell on its pr line.
 func TestStatusMarksThePullRequestsChecks(t *testing.T) {
-	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
+	t.Parallel()
 	ctx, _ := provisiontest.FourWorktreesWithChecks(t)
 	var buf bytes.Buffer
 	if err := Status(ctx, StatusOptions{}, &buf, 0); err != nil {
@@ -81,7 +81,7 @@ func TestPRCacheKeepsTheChecks(t *testing.T) {
 // wt status --json is defined from local state alone: checks the cache holds
 // change nothing in it, and it asks GitHub nothing.
 func TestStatusJSONLeavesTheChecksOut(t *testing.T) {
-	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
+	t.Parallel()
 	ctx, log := provisiontest.FourWorktreesWithChecks(t)
 	plan := func() string {
 		var buf bytes.Buffer
@@ -161,7 +161,7 @@ func TestPRCacheWithoutChecksDoesNotAnswerAListing(t *testing.T) {
 // Only the PR column asks for the checks: a lookup for anything else asks
 // GitHub exactly what it asked before they existed.
 func TestOnlyTheListingAsksForTheChecks(t *testing.T) {
-	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
+	t.Parallel()
 	ctx, log := provisiontest.FourWorktreesWithChecks(t)
 	kit.BranchPRs(ctx, []string{"fix_wt/failing"}, kit.PRLookup{Refresh: true})
 	got := testkit.ArgvOf(t, log)
@@ -181,7 +181,7 @@ func TestOnlyTheListingAsksForTheChecks(t *testing.T) {
 // A token GitHub will not show the checks to keeps the PR column, without
 // marks, says once why, and does not ask again until the answer is old.
 func TestListShowsThePullRequestsWhenTheChecksAreRefused(t *testing.T) {
-	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -190,7 +190,7 @@ func TestListShowsThePullRequestsWhenTheChecksAreRefused(t *testing.T) {
 	if _, err := provision.New(ctx, "fix/failing", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
 	}
-	log := testkit.FakeGitHubWith(t, `case "$*" in *headCommit*)
+	log := testkit.FakeGitHubWith(t, ctx, `case "$*" in *headCommit*)
   echo '{"data":{"repository":{"b0":{"nodes":[{"number":13,"headCommit":null}]}}},"errors":[{"type":"FORBIDDEN","path":["repository","b0","nodes",0,"headCommit"],"message":"Resource not accessible by personal access token"}]}'
   echo 'gh: Resource not accessible by personal access token' >&2
   exit 1 ;;
@@ -216,7 +216,7 @@ esac`, provisiontest.WithChecks(testkit.OpenPR(13, "fix_wt/failing", "Failing"),
 // When the checks are refused and the call without them fails too, the
 // warning is the failure that left the column out, not the refusal.
 func TestListSaysWhyTheColumnIsMissingWhenTheRetryFailsToo(t *testing.T) {
-	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -225,7 +225,7 @@ func TestListSaysWhyTheColumnIsMissingWhenTheRetryFailsToo(t *testing.T) {
 	if _, err := provision.New(ctx, "fix/failing", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
 	}
-	testkit.FakeGitHubWith(t, `case "$*" in
+	testkit.FakeGitHubWith(t, ctx, `case "$*" in
 *headCommit*)
   echo '{"errors":[{"type":"FORBIDDEN","path":["repository","b0","nodes",0,"headCommit"],"message":"Resource not accessible by personal access token"}]}'
   echo 'gh: Resource not accessible by personal access token' >&2

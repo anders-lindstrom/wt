@@ -19,7 +19,7 @@ func OwnShape(t *testing.T) *kit.Context {
 	if err != nil {
 		t.Fatal(err)
 	}
-	testkit.FakeGitHub(t, testkit.OpenPR(77, "feat_wt/list-sessions", "Sessions in wt list"))
+	testkit.FakeGitHub(t, ctx, testkit.OpenPR(77, "feat_wt/list-sessions", "Sessions in wt list"))
 	var errs bytes.Buffer
 	wt, err := provision.New(ctx, "feat/list-sessions", provision.NewOptions{}, &errs)
 	if err != nil {

@@ -3,19 +3,56 @@ package kit
 import (
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/github"
 )
 
-// How these commands reach the GitHub CLI. Variables so a test can put a
-// state in front of them without a gh on the machine running it.
+// How these commands reach the GitHub CLI. Variables so a test binary can
+// put one state in front of all its tests without a gh on the machine
+// running it; FindGitHub is the one a TestMain sets. One test's own gh goes
+// on its Context instead.
 var (
 	FindGitHub   = github.Find
 	GitHubRemote = github.RemoteOf
 	// LookupDeadline bounds the branch lookup behind `wt list` and `wt status`.
 	LookupDeadline = github.ListDeadline
 )
+
+// GitHubFake is the GitHub one Context sees in place of FindGitHub,
+// GitHubRemote and LookupDeadline. Tests set it, so that tests running side
+// by side each have their own gh.
+type GitHubFake struct {
+	CLI       github.CLI
+	Found     bool
+	Remote    github.Remote
+	HasRemote bool
+	Deadline  time.Duration
+}
+
+func (c *Context) findGitHub() (github.CLI, bool) {
+	if c.GitHubFake != nil {
+		return c.GitHubFake.CLI, c.GitHubFake.Found
+	}
+	return FindGitHub()
+}
+
+func (c *Context) gitHubRemote() (github.Remote, bool) {
+	if c.GitHubFake != nil {
+		return c.GitHubFake.Remote, c.GitHubFake.HasRemote
+	}
+	return GitHubRemote(c.Repo.MainRoot)
+}
+
+// GitHubDeadline bounds the branch lookup behind `wt list` and `wt status`
+// in this repository: LookupDeadline, or the fake's.
+func (c *Context) GitHubDeadline() time.Duration {
+	if c.GitHubFake != nil {
+		return c.GitHubFake.Deadline
+	}
+	return LookupDeadline
+}
 
 // GitHub is a usable GitHub CLI and the repository it answers for.
 type GitHub struct {
@@ -33,12 +70,12 @@ func OpenGitHub(ctx *Context) (GitHub, error) {
 		return GitHub{}, fmt.Errorf("GitHub is off in your wt config; turn it on with `wt config set %s true`",
 			config.UserKeyGitHub)
 	}
-	cli, ok := FindGitHub()
+	cli, ok := ctx.findGitHub()
 	if !ok {
 		return GitHub{}, fmt.Errorf("gh is not on your PATH; install the GitHub CLI (https://cli.github.com), " +
 			"or turn this off with `wt config set " + config.UserKeyGitHub + " false`")
 	}
-	remote, ok := GitHubRemote(ctx.Repo.MainRoot)
+	remote, ok := ctx.gitHubRemote()
 	if !ok {
 		return GitHub{}, fmt.Errorf("%s has no GitHub remote; `wt pr` works on repositories hosted on GitHub",
 			ctx.Repo.Name)
@@ -67,7 +104,7 @@ func DoctorGitHub(ctx *Context, w io.Writer) {
 			config.UserKeyGitHub)
 		return
 	}
-	cli, ok := FindGitHub()
+	cli, ok := ctx.findGitHub()
 	if !ok {
 		fmt.Fprintln(w, "  - no gh on the PATH; `wt pr` is inactive and `wt list` shows no pull requests")
 		return
@@ -78,7 +115,7 @@ func DoctorGitHub(ctx *Context, w io.Writer) {
 	}
 	fmt.Fprintf(w, "  ✓ %s (%s)\n", cli.Exe, version)
 
-	remote, ok := GitHubRemote(ctx.Repo.MainRoot)
+	remote, ok := ctx.gitHubRemote()
 	if !ok {
 		fmt.Fprintf(w, "  - no GitHub remote for %s; `wt pr` is inactive here\n", ctx.Repo.Name)
 		return
