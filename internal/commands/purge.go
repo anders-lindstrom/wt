@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 	"github.com/anders-lindstrom/wt/schema"
@@ -163,12 +164,12 @@ func renderPurgePlan(p quarantine.PurgePlan, w io.Writer) {
 	}
 	for _, l := range p.Lost {
 		rows = append(rows, []string{"  lost", fmt.Sprintf("%s on its %s %s become unreachable; gc takes them",
-			commitsWord(l.Count), l.Kind, git.ShortID(l.OID, 12))})
+			kit.CommitsWord(l.Count), l.Kind, git.ShortID(l.OID, 12))})
 	}
 	if p.ReachError != "" {
 		rows = append(rows, []string{"  lost", "cannot tell what becomes unreachable: " + p.ReachError})
 	}
-	_ = printTable(w, rows)
+	_ = kit.PrintTable(w, rows)
 	for _, pr := range p.Problems {
 		fmt.Fprintf(w, "  ! %s\n", pr.Text)
 	}
@@ -201,13 +202,6 @@ func sizeWords(n int64) string {
 		return fmt.Sprintf(" (%.1f MB)", float64(n)/(1024*1024))
 	}
 	return fmt.Sprintf(" (%.1f GB)", float64(n)/(1024*1024*1024))
-}
-
-func commitsWord(n int) string {
-	if n == 1 {
-		return "1 commit"
-	}
-	return fmt.Sprintf("%d commits", n)
 }
 
 // purgeToken names a plan by its fingerprint: the folder by path and
@@ -302,27 +296,27 @@ const purgeCommand = "quarantine purge"
 
 func purgePlanOutput(p quarantine.PurgePlan) PurgePlanOutput {
 	o := PurgePlanOutput{Schema: 1, SchemaVersion: schema.VersionOf("quarantine-purge-plan"), Command: purgeCommand,
-		Dir: p.Dir, State: strp(p.State), Token: purgeToken(p), Entries: []string{}, Pins: []PurgePinPlan{},
-		Unreachable: []PurgeLost{}, ReachError: strp(p.ReachError), RepoGone: p.RepoGone, Problems: purgeProblems(p)}
+		Dir: p.Dir, State: kit.Strp(p.State), Token: purgeToken(p), Entries: []string{}, Pins: []PurgePinPlan{},
+		Unreachable: []PurgeLost{}, ReachError: kit.Strp(p.ReachError), RepoGone: p.RepoGone, Problems: purgeProblems(p)}
 	o.Entries = append(o.Entries, p.Entries...)
 	if p.Bytes >= 0 {
 		n := p.Bytes
 		o.Bytes = &n
 	}
 	if r := p.Record; r != nil {
-		o.Repo, o.Worktree, o.CreatedAt = strp(r.Repo), strp(r.Checkout.Path), strp(r.CreatedAt)
+		o.Repo, o.Worktree, o.CreatedAt = kit.Strp(r.Repo), kit.Strp(r.Checkout.Path), kit.Strp(r.CreatedAt)
 		if r.Branch != nil {
-			o.Branch = strp(r.Branch.Name)
+			o.Branch = kit.Strp(r.Branch.Name)
 		}
 	}
 	for _, pin := range p.Pins {
-		o.Pins = append(o.Pins, PurgePinPlan{Name: pin.Name, Ref: pin.Ref, OID: strp(pin.OID)})
+		o.Pins = append(o.Pins, PurgePinPlan{Name: pin.Name, Ref: pin.Ref, OID: kit.Strp(pin.OID)})
 	}
 	for _, l := range p.Lost {
 		o.Unreachable = append(o.Unreachable, PurgeLost(l))
 	}
 	if why := purgeRefusal(p); why != "" {
-		o.Error = strp(why)
+		o.Error = kit.Strp(why)
 	}
 	return o
 }
@@ -348,7 +342,7 @@ func QuarantinePurgePlanJSON(dir string, out, progress io.Writer) error {
 	plan := quarantine.PlanPurge(abs)
 	renderPurgePlan(plan, progress)
 	o := purgePlanOutput(plan)
-	if werr := writeJSON(out, o); werr != nil {
+	if werr := kit.WriteJSON(out, o); werr != nil {
 		return werr
 	}
 	if o.Error != nil {
@@ -367,8 +361,8 @@ func QuarantinePurgeJSON(dir string, opts PurgeOptions, out, progress io.Writer)
 		dir = abs
 	}
 	j := &purgeJournal{out: out, dir: dir}
-	defer setInterruptJournal(j)()
-	defer watchSignals(progress, nil)()
+	defer kit.SetInterruptJournal(j)()
+	defer kit.WatchSignals(progress, nil)()
 	var res quarantine.PurgeResult
 	opts.Confirm, opts.NoTerminal, opts.DryRun, opts.Result, opts.Planned = nil, false, false, &res, j.planned
 	if err == nil {
@@ -395,8 +389,8 @@ func (j *purgeJournal) planned(p quarantine.PurgePlan) {
 	j.plan = p
 }
 
-func (j *purgeJournal) interrupted(_ string, recovery string) {
-	j.write(OutcomeInterrupted, nil, recovery)
+func (j *purgeJournal) Interrupted(_ string, recovery string) {
+	j.write(kit.OutcomeInterrupted, nil, recovery)
 }
 
 // write reads the pins and the folder as they are now, so what it says
@@ -408,7 +402,7 @@ func (j *purgeJournal) write(outcome string, err error, recovery string) {
 	p := j.plan
 	j.mu.Unlock()
 	o := purgeOutput(j.dir, p, outcome, err, recovery)
-	j.once.Do(func() { _ = writeJSON(j.out, o) })
+	j.once.Do(func() { _ = kit.WriteJSON(j.out, o) })
 }
 
 func purgeOutput(dir string, p quarantine.PurgePlan, outcome string, err error, recovery string) PurgeOutput {
@@ -416,21 +410,21 @@ func purgeOutput(dir string, p quarantine.PurgePlan, outcome string, err error, 
 		outcome = quarantine.OutcomeRefused
 	}
 	o := PurgeOutput{Schema: 1, SchemaVersion: schema.VersionOf("quarantine-purge"), Command: purgeCommand,
-		Dir: dir, State: strp(p.State), Token: purgeToken(p), Outcome: outcome, Problems: purgeProblems(p),
-		Pins: []PurgePinResult{}, Recovery: strp(recovery)}
+		Dir: dir, State: kit.Strp(p.State), Token: purgeToken(p), Outcome: outcome, Problems: purgeProblems(p),
+		Pins: []PurgePinResult{}, Recovery: kit.Strp(recovery)}
 	if err != nil {
-		o.Error = strp(err.Error())
+		o.Error = kit.Strp(err.Error())
 		if errors.Is(err, errPurgePlanChanged) || errors.Is(err, quarantine.ErrPurgeChanged) {
-			o.Problems = append(o.Problems, PurgeProblem{Code: ProblemPlanChanged, Text: err.Error()})
+			o.Problems = append(o.Problems, PurgeProblem{Code: kit.ProblemPlanChanged, Text: err.Error()})
 		}
 	}
 	if p.Record != nil {
-		o.Repo = strp(p.Record.Repo)
+		o.Repo = kit.Strp(p.Record.Repo)
 	}
 	_, serr := os.Lstat(dir)
 	o.FolderDeleted = p.Dir != "" && errors.Is(serr, os.ErrNotExist)
 	for _, pin := range p.Pins {
-		r := PurgePinResult{Name: pin.Name, Ref: pin.Ref, OID: strp(pin.OID), Result: PinAbsent}
+		r := PurgePinResult{Name: pin.Name, Ref: pin.Ref, OID: kit.Strp(pin.OID), Result: PinAbsent}
 		if pin.OID != "" && !p.RepoGone {
 			r.Result = PinKept
 			// A pin that cannot be read is not known to be gone.

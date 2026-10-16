@@ -8,13 +8,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // safetyWorktree is a worktree wt made, merged, and nobody's but the test's.
-func safetyWorktree(t *testing.T, work string) (*Context, string) {
+func safetyWorktree(t *testing.T, work string) (*kit.Context, string) {
 	t.Helper()
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(committedRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +28,7 @@ func safetyWorktree(t *testing.T, work string) (*Context, string) {
 }
 
 // refused runs a removal that must not happen and checks nothing went.
-func refused(t *testing.T, ctx *Context, path string, opts RemoveOptions, why string) string {
+func refused(t *testing.T, ctx *kit.Context, path string, opts RemoveOptions, why string) string {
 	t.Helper()
 	var buf bytes.Buffer
 	err := RemoveAt(ctx, path, opts, &buf)
@@ -67,13 +68,13 @@ func TestRemoveRefusesADirtyWorktreeBeforeAsking(t *testing.T) {
 func TestRemoveForceDoesNotDeleteUncommittedWork(t *testing.T) {
 	ctx, path := safetyWorktree(t, "fix/dirty-forced")
 	mustWrite(t, filepath.Join(path, "scratch.txt"), "mine")
-	refused(t, ctx, path, RemoveOptions{Force: ForceAll}, "uncommitted changes")
+	refused(t, ctx, path, RemoveOptions{Force: kit.ForceAll}, "uncommitted changes")
 }
 
 func TestRemoveRefusesWhenTheStatusCannotBeRead(t *testing.T) {
 	ctx, path := safetyWorktree(t, "fix/unreadable")
 	mustWrite(t, filepath.Join(gitDirFor(t, path), "index"), "garbage")
-	refused(t, ctx, path, RemoveOptions{Force: ForceAll}, "cannot read its status")
+	refused(t, ctx, path, RemoveOptions{Force: kit.ForceAll}, "cannot read its status")
 }
 
 func TestRemoveRefusesDuringEachOperation(t *testing.T) {
@@ -89,18 +90,18 @@ func TestRemoveRefusesDuringEachOperation(t *testing.T) {
 		t.Run(tc.name+" "+tc.file, func(t *testing.T) {
 			ctx, path := safetyWorktree(t, "fix/op")
 			mustWrite(t, filepath.Join(gitDirFor(t, path), tc.file), "x\n")
-			refused(t, ctx, path, RemoveOptions{Force: ForceAll}, "a "+tc.name+" is in progress")
+			refused(t, ctx, path, RemoveOptions{Force: kit.ForceAll}, "a "+tc.name+" is in progress")
 		})
 	}
 }
 
 func TestRemoveRefusesADetachedHeadWithCommitsNothingElseHas(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	dst := filepath.Join(ctx.Repo.Parent, "detached")
 	gitIn(t, main, "worktree", "add", "-q", "--detach", dst)
 	gitIn(t, dst, "commit", "-q", "--allow-empty", "-m", "only here")
-	refused(t, ctx, dst, RemoveOptions{Force: ForceAll}, "1 commit on its HEAD")
+	refused(t, ctx, dst, RemoveOptions{Force: kit.ForceAll}, "1 commit on its HEAD")
 }
 
 // A branch GitHub squash-merged is deleted, and its commits then hang on
@@ -146,7 +147,7 @@ func TestRemoveRefusesASessionInTheWorktree(t *testing.T) {
 func TestRemoveForceGoesPastASession(t *testing.T) {
 	ctx, path := safetyWorktree(t, "fix/visited-forced")
 	resolved, _ := filepath.EvalSymlinks(path)
-	opts := RemoveOptions{Force: ForceAll, Agents: []wtsync.Agent{{Name: "parked-1", Cwd: resolved}}}
+	opts := RemoveOptions{Force: kit.ForceAll, Agents: []wtsync.Agent{{Name: "parked-1", Cwd: resolved}}}
 	var buf bytes.Buffer
 	if err := RemoveAt(ctx, path, opts, &buf); err != nil {
 		t.Fatalf("RemoveAt --force: %v\n%s", err, buf.String())
@@ -158,7 +159,7 @@ func TestRemoveRefusesWhenTheSessionsCannotBeListed(t *testing.T) {
 	opts := RemoveOptions{AgentsErr: errors.New("claude agents --json failed: boom")}
 	refused(t, ctx, path, opts, "cannot list agent sessions")
 
-	opts.Force = ForceAll
+	opts.Force = kit.ForceAll
 	var buf bytes.Buffer
 	if err := RemoveAt(ctx, path, opts, &buf); err != nil {
 		t.Fatalf("--force goes past a listing that failed: %v\n%s", err, buf.String())
@@ -174,7 +175,7 @@ func TestRemoveRefusesFilesStatusIsToldNotToLookAt(t *testing.T) {
 	refused(t, ctx, path, RemoveOptions{}, "a.txt")
 
 	var buf bytes.Buffer
-	if err := RemoveAt(ctx, path, RemoveOptions{Force: ForceAll}, &buf); err != nil {
+	if err := RemoveAt(ctx, path, RemoveOptions{Force: kit.ForceAll}, &buf); err != nil {
 		t.Fatalf("--force goes past an unedited assume-unchanged file: %v\n%s", err, buf.String())
 	}
 }
@@ -188,7 +189,7 @@ func TestRemoveForceDoesNotDeleteAnEditedHiddenFile(t *testing.T) {
 	gitIn(t, path, "commit", "-qm", "a")
 	gitIn(t, path, "update-index", "--skip-worktree", "a.txt")
 	mustWrite(t, filepath.Join(path, "a.txt"), "edited")
-	refused(t, ctx, path, RemoveOptions{Force: ForceAll}, "uncommitted changes")
+	refused(t, ctx, path, RemoveOptions{Force: kit.ForceAll}, "uncommitted changes")
 }
 
 // Claude Code puts its own worktrees under .claude/worktrees/ inside the
@@ -202,7 +203,7 @@ func TestRemoveRefusesAWorktreeWithAnotherInsideIt(t *testing.T) {
 	inner := filepath.Join(path, ".claude", "worktrees", "inner")
 	gitIn(t, path, "worktree", "add", "-q", "-b", "inner", inner)
 	mustWrite(t, filepath.Join(inner, "work.txt"), "uncommitted, in the inner one")
-	refused(t, ctx, path, RemoveOptions{Force: ForceAll}, inner)
+	refused(t, ctx, path, RemoveOptions{Force: kit.ForceAll}, inner)
 }
 
 // A commit inside a submodule lives only in this worktree's modules/, so it
@@ -214,7 +215,7 @@ func TestRemoveRefusesASubmoduleCommitOnlyThisWorktreeHas(t *testing.T) {
 	gitIn(t, sm, "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "only here")
 	gitIn(t, path, "add", "sm")
 	gitIn(t, path, "commit", "-qm", "bump sm")
-	refused(t, ctx, path, RemoveOptions{Force: ForceAll}, "submodule sm")
+	refused(t, ctx, path, RemoveOptions{Force: kit.ForceAll}, "submodule sm")
 }
 
 func TestRemoveNamesASubmoduleAtAnotherCommit(t *testing.T) {
@@ -291,12 +292,12 @@ func TestRemoveRefusesASubmoduleWorktreeWithWorkInTheSubmodule(t *testing.T) {
 	if out := gitOut(t, path, "status", "--porcelain", "--ignore-submodules=none"); strings.TrimSpace(out) != "" {
 		t.Fatalf("the parent's status must not see it for this test to mean anything: %q", out)
 	}
-	refused(t, ctx, path, RemoveOptions{Force: ForceAll}, "uncommitted changes")
+	refused(t, ctx, path, RemoveOptions{Force: kit.ForceAll}, "uncommitted changes")
 }
 
 // submoduleWorktree is a worktree wt made on a trunk that has a submodule,
 // with the submodule initialised in it.
-func submoduleWorktree(t *testing.T, work string) (*Context, string, string) {
+func submoduleWorktree(t *testing.T, work string) (*kit.Context, string, string) {
 	t.Helper()
 	main := committedRepo(t, minimalConf)
 	inner := filepath.Join(t.TempDir(), "inner")
@@ -304,7 +305,7 @@ func submoduleWorktree(t *testing.T, work string) (*Context, string, string) {
 	gitIn(t, inner, "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "i")
 	gitIn(t, main, "-c", "protocol.file.allow=always", "submodule", "add", "-q", inner, "sm")
 	gitIn(t, main, "commit", "-qm", "sm")
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
 	path, err := New(ctx, work, NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -371,7 +372,7 @@ func TestApplyReadsASubmoduleWorktreeAgainBeforeDeleting(t *testing.T) {
 
 func TestApplyRefusesAHeadThatMovedAfterThePlan(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	dst := filepath.Join(ctx.Repo.Parent, "detached-late")
 	gitIn(t, main, "worktree", "add", "-q", "--detach", dst)
 	plan := planFor(ctx, worktreeRecord(ctx, dst), RemoveOptions{})

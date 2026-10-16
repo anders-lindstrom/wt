@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -14,7 +15,7 @@ import (
 // refuses, as remove and sweep do, unless told to go ahead.
 func TestMigrateRefusesWhenTheSessionsCannotBeListed(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	from := worktreeAt(t, main, "fix/moving", filepath.Join(ctx.Repo.Parent, "elsewhere"))
 
 	var buf bytes.Buffer
@@ -35,7 +36,7 @@ func TestMigrateRefusesWhenTheSessionsCannotBeListed(t *testing.T) {
 // The session running wt migrate is not somebody else in the worktree.
 func TestMigrateDoesNotCountTheSessionRunningIt(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	from := worktreeAt(t, main, "fix/self", filepath.Join(ctx.Repo.Parent, "elsewhere"))
 	resolved, _ := filepath.EvalSymlinks(from)
 	fakeClaude(t, []wtsync.Agent{ownSession(resolved)})
@@ -49,7 +50,7 @@ func TestMigrateDoesNotCountTheSessionRunningIt(t *testing.T) {
 // Every session in it is named, not only the first.
 func TestMigrateCountsEverySessionInIt(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	from := worktreeAt(t, main, "fix/crowded", filepath.Join(ctx.Repo.Parent, "elsewhere"))
 	resolved, _ := filepath.EvalSymlinks(from)
 	opts := MigrateOptions{Agents: []wtsync.Agent{

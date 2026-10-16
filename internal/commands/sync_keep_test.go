@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -46,7 +47,7 @@ func onPlatform(t *testing.T, goos string) {
 	t.Cleanup(func() { keepGOOS = was })
 }
 
-func keepFiles(t *testing.T, ctx *Context) (log, state string) {
+func keepFiles(t *testing.T, ctx *kit.Context) (log, state string) {
 	t.Helper()
 	_, log, state, err := keepPaths(ctx)
 	if err != nil {
@@ -55,7 +56,7 @@ func keepFiles(t *testing.T, ctx *Context) (log, state string) {
 	return log, state
 }
 
-func readKeep(t *testing.T, ctx *Context) keepState {
+func readKeep(t *testing.T, ctx *kit.Context) keepState {
 	t.Helper()
 	_, statePath := keepFiles(t, ctx)
 	st, ok, err := readKeepState(statePath)
@@ -298,7 +299,7 @@ func TestSyncKeepRunInterruptedLeavesTheOutputSoFarInTheLog(t *testing.T) {
 		out, status := interruptedChild(t)
 		_, rest, ok := strings.Cut(out, "LOG=")
 		logPath, _, _ := strings.Cut(rest, "\n")
-		if !ok || status != interruptStatus {
+		if !ok || status != kit.InterruptStatus {
 			t.Fatalf("status %d, log path %q:\n%s", status, logPath, out)
 		}
 		logged, err := os.ReadFile(logPath)
@@ -359,7 +360,7 @@ func TestSyncKeepRunNoPushPrintsThePushCommands(t *testing.T) {
 // bareOrigin gives the fixture an origin of its own in place of the main
 // checkout standing in for one: a pass fetches each branch's own remote, and
 // against itself every branch would always be found pushed.
-func bareOrigin(t *testing.T, ctx *Context) {
+func bareOrigin(t *testing.T, ctx *kit.Context) {
 	t.Helper()
 	origin := filepath.Join(t.TempDir(), "origin.git")
 	gitOut(t, ctx.Repo.MainRoot, "clone", "-q", "--bare", ctx.Repo.MainRoot, origin)

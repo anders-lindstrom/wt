@@ -8,12 +8,14 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 // provisionFixture is a repository whose provisioning can be made to fail
 // step by step: a provision.sh exiting with provisionExit, a build command,
 // and, with badSubmodule, a submodule whose URL does not exist.
-func provisionFixture(t *testing.T, provisionExit int, build string, badSubmodule bool) *Context {
+func provisionFixture(t *testing.T, provisionExit int, build string, badSubmodule bool) *kit.Context {
 	t.Helper()
 	conf := "MAIN_BRANCH=\"main\"\nDEVELOPER_CONFIG_DIRS=\"\"\nDEVELOPER_CONFIG_FILES=\".env\"\n"
 	if build == "" {
@@ -41,7 +43,7 @@ func provisionFixture(t *testing.T, provisionExit int, build string, badSubmodul
 		gitIn(t, main, "add", ".gitmodules")
 	}
 	gitIn(t, main, "commit", "-qm", "provisioning")
-	ctx, err := Open(main)
+	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
 	}

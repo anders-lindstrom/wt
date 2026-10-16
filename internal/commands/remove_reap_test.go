@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -71,7 +72,7 @@ func alive(pid int) bool {
 // --reap stops a process working in the worktree, then removes it.
 func TestRemoveReapStopsAProcessLeftInTheWorktree(t *testing.T) {
 	realProcesses(t)
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	var buf bytes.Buffer
 	path, err := New(ctx, "fix/served", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -102,7 +103,7 @@ func TestRemoveReapStopsAProcessLeftInTheWorktree(t *testing.T) {
 // --dry-run names the processes --reap would stop, and stops none.
 func TestRemoveDryRunListsTheProcessesAndStopsNone(t *testing.T) {
 	realProcesses(t)
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	var buf bytes.Buffer
 	path, err := New(ctx, "fix/served", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -141,7 +142,7 @@ func TestRemoveDryRunListsTheProcessesAndStopsNone(t *testing.T) {
 // the worktree, and stops nothing.
 func TestRemoveWithoutReapWarnsAndLeavesThemRunning(t *testing.T) {
 	realProcesses(t)
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	var buf bytes.Buffer
 	path, err := New(ctx, "fix/served", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -170,7 +171,7 @@ func TestRemoveWithoutReapWarnsAndLeavesThemRunning(t *testing.T) {
 // stop: --reap stops nothing and removes nothing, --force or not.
 func TestRemoveReapRefusesWhenTheAgentsAreUnknownEvenForced(t *testing.T) {
 	realProcesses(t)
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	var buf bytes.Buffer
 	path, err := New(ctx, "fix/served", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -178,7 +179,7 @@ func TestRemoveReapRefusesWhenTheAgentsAreUnknownEvenForced(t *testing.T) {
 	}
 	pid := leftover(t, path)
 
-	opts := RemoveOptions{Reap: true, Force: ForceAll, AgentsErr: errors.New("claude agents --json failed")}
+	opts := RemoveOptions{Reap: true, Force: kit.ForceAll, AgentsErr: errors.New("claude agents --json failed")}
 	err = Remove(ctx, "fix/served", opts, &buf)
 	if err == nil || !strings.Contains(err.Error(), "cannot tell which processes run in it") {
 		t.Fatalf("err %v, want the processes unknown", err)
@@ -200,7 +201,7 @@ func TestRemoveReapRefusesWhenTheAgentsAreUnknownEvenForced(t *testing.T) {
 // and removes nothing, --force or not.
 func TestRemoveReapStopsNothingWhenTheRelistingFails(t *testing.T) {
 	realProcesses(t)
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	var buf bytes.Buffer
 	path, err := New(ctx, "fix/served", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -208,7 +209,7 @@ func TestRemoveReapStopsNothingWhenTheRelistingFails(t *testing.T) {
 	}
 	pid := leftover(t, path)
 
-	opts := RemoveOptions{Reap: true, Force: ForceAll, Agents: []wtsync.Agent{},
+	opts := RemoveOptions{Reap: true, Force: kit.ForceAll, Agents: []wtsync.Agent{},
 		Relist: func() ([]wtsync.Agent, error) { return nil, errors.New("claude agents --json failed") }}
 	err = Remove(ctx, "fix/served", opts, &buf)
 	if err == nil || !strings.Contains(err.Error(), "cannot tell which processes run in it") {
@@ -226,7 +227,7 @@ func TestRemoveReapStopsNothingWhenTheRelistingFails(t *testing.T) {
 // refuses the removal, with nothing removed.
 func TestRemoveJSONReportsReapedAndRefusesOnOneThatWillNotStop(t *testing.T) {
 	realProcesses(t)
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	var buf bytes.Buffer
 	path, err := New(ctx, "fix/served", NewOptions{NoSetup: true}, &buf)
 	if err != nil {

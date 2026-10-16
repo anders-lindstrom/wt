@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 )
 
@@ -26,7 +27,7 @@ func purge(t *testing.T, dir string) quarantine.PurgeResult {
 // purgeRefused runs a purge that must not happen, checks it names code, and
 // that it deleted nothing: every file under dir and every pin is still
 // there.
-func purgeRefused(t *testing.T, ctx *Context, dir, code string) {
+func purgeRefused(t *testing.T, ctx *kit.Context, dir, code string) {
 	t.Helper()
 	before, pins := treeOf(t, dir), pinsOf(t, ctx)
 	var plan quarantine.PurgePlan
@@ -64,14 +65,14 @@ func treeOf(t *testing.T, dir string) []string {
 	return out
 }
 
-func pinsOf(t *testing.T, ctx *Context) string {
+func pinsOf(t *testing.T, ctx *kit.Context) string {
 	t.Helper()
 	return strings.TrimSpace(gitOut(t, ctx.Repo.MainRoot, "for-each-ref", "--format=%(objectname) %(refname)",
 		quarantine.PinPrefix))
 }
 
 // assertPurged checks the folder and every pin are gone.
-func assertPurged(t *testing.T, ctx *Context, dir string) {
+func assertPurged(t *testing.T, ctx *kit.Context, dir string) {
 	t.Helper()
 	if _, err := os.Lstat(dir); !os.IsNotExist(err) {
 		t.Errorf("the folder must be gone: %v %v", err, treeOf(t, dir))
@@ -376,7 +377,7 @@ func TestPurgeExpectHoldsItToThePlan(t *testing.T) {
 	}
 	var o PurgeOutput
 	_ = json.Unmarshal(out.Bytes(), &o)
-	if o.Outcome != quarantine.OutcomeRefused || len(o.Problems) != 1 || o.Problems[0].Code != ProblemPlanChanged {
+	if o.Outcome != quarantine.OutcomeRefused || len(o.Problems) != 1 || o.Problems[0].Code != kit.ProblemPlanChanged {
 		t.Errorf("result %s", out.String())
 	}
 	if !exists(dir) {
@@ -487,14 +488,14 @@ func TestPurgeJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 	_, _, _, _, dir := quarantined(t, "fix/purge-signal", false)
 	var out bytes.Buffer
 	j := &purgeJournal{out: &out, dir: dir, plan: quarantine.PlanPurge(dir)}
-	j.interrupted("", "interrupted")
+	j.Interrupted("", "interrupted")
 	j.write(quarantine.OutcomePurged, nil, "")
 	validateJSON(t, "quarantine-purge", out.Bytes())
 	var o PurgeOutput
 	if err := json.Unmarshal(out.Bytes(), &o); err != nil {
 		t.Fatalf("one object: %v\n%s", err, out.String())
 	}
-	if o.Outcome != OutcomeInterrupted || o.FolderDeleted {
+	if o.Outcome != kit.OutcomeInterrupted || o.FolderDeleted {
 		t.Errorf("result %s", out.String())
 	}
 	for _, pin := range o.Pins {
@@ -739,7 +740,7 @@ func TestPurgeAfterTheRepositoryIsGone(t *testing.T) {
 }
 
 // safetyWorktreeIn is a wt worktree for work in ctx's repository.
-func safetyWorktreeIn(t *testing.T, ctx *Context, work string) (*Context, string) {
+func safetyWorktreeIn(t *testing.T, ctx *kit.Context, work string) (*kit.Context, string) {
 	t.Helper()
 	var buf bytes.Buffer
 	path, err := New(ctx, work, NewOptions{NoSetup: true}, &buf)

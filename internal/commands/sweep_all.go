@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -23,8 +24,8 @@ type SweepAllOptions struct {
 
 // repoSweep is one repository's part of a sweep across many.
 type repoSweep struct {
-	target RepoTarget
-	ctx    *Context
+	target kit.RepoTarget
+	ctx    *kit.Context
 	plan   SweepPlan
 	log    bytes.Buffer // what fetching and planning printed, shown with its plan
 	err    error
@@ -42,8 +43,8 @@ func (s *repoSweep) quiet() bool {
 // repository; ask once for the lot; then carry out each repository's plan the
 // way a sweep of it alone would, re-reading it first. A repository that
 // cannot be swept is reported and the rest go ahead.
-func SweepAll(u *config.User, sel Selection, opts SweepAllOptions, w io.Writer) error {
-	set, err := SelectRepos(u, sel)
+func SweepAll(u *config.User, sel kit.Selection, opts SweepAllOptions, w io.Writer) error {
+	set, err := kit.SelectRepos(u, sel)
 	if err != nil {
 		return err
 	}
@@ -51,7 +52,7 @@ func SweepAll(u *config.User, sel Selection, opts SweepAllOptions, w io.Writer) 
 		fmt.Fprintln(w, "No repositories wt manages here; wt repos says where it looked.")
 		return nil
 	}
-	defer watchSignals(w, nil)()
+	defer kit.WatchSignals(w, nil)()
 	// The sessions are listed once for every repository's plan: `claude
 	// agents` knows them all, and twenty listings would say the same thing
 	// twenty times. Before anything goes, each repository lists them again.
@@ -62,7 +63,7 @@ func SweepAll(u *config.User, sel Selection, opts SweepAllOptions, w io.Writer) 
 		one.Agents = []wtsync.Agent{}
 	}
 
-	sweeps := eachRepo(set.Repos, repoParallelism, func(t RepoTarget) *repoSweep {
+	sweeps := kit.EachRepo(set.Repos, kit.RepoParallelism, func(t kit.RepoTarget) *repoSweep {
 		s := &repoSweep{target: t}
 		s.ctx, s.plan, s.err = planRepoSweep(t, one, listErr, &s.log)
 		return s
@@ -76,7 +77,7 @@ func SweepAll(u *config.User, sel Selection, opts SweepAllOptions, w io.Writer) 
 			quiet = append(quiet, s.target.Name)
 			continue
 		}
-		fmt.Fprintf(w, "== %s  %s\n", s.target.Name, abbreviateHome(s.target.Path, home))
+		fmt.Fprintf(w, "== %s  %s\n", s.target.Name, kit.AbbreviateHome(s.target.Path, home))
 		if s.err != nil {
 			fmt.Fprintf(w, "! %v\n\n", s.err)
 			failed = append(failed, s.target.Name)
@@ -91,13 +92,13 @@ func SweepAll(u *config.User, sel Selection, opts SweepAllOptions, w io.Writer) 
 		}
 	}
 	if len(quiet) > 0 {
-		fmt.Fprintf(w, "Nothing to sweep in %s: %s\n", repoCount(len(quiet)), strings.Join(quiet, ", "))
+		fmt.Fprintf(w, "Nothing to sweep in %s: %s\n", kit.RepoCount(len(quiet)), strings.Join(quiet, ", "))
 	}
 	if repos == 0 {
 		return failures(failed, len(sweeps))
 	}
 
-	what := sweepCounts(branches, worktrees) + " across " + repoCount(repos)
+	what := sweepCounts(branches, worktrees) + " across " + kit.RepoCount(repos)
 	switch {
 	case opts.DryRun:
 		fmt.Fprintln(w, "Nothing was swept: --dry-run.")
@@ -137,11 +138,11 @@ func SweepAll(u *config.User, sel Selection, opts SweepAllOptions, w io.Writer) 
 // planRepoSweep is one repository's sweep up to the question: the checks a
 // sweep of it alone makes, its fetch, and its plan. What the fetch prints goes
 // to log, to be shown with the plan.
-func planRepoSweep(t RepoTarget, opts SweepOptions, listErr error, log io.Writer) (*Context, SweepPlan, error) {
+func planRepoSweep(t kit.RepoTarget, opts SweepOptions, listErr error, log io.Writer) (*kit.Context, SweepPlan, error) {
 	if t.Problem != "" {
 		return nil, SweepPlan{}, fmt.Errorf("%s: %s", t.Path, t.Problem)
 	}
-	ctx, err := Open(t.Path)
+	ctx, err := kit.Open(t.Path)
 	if err != nil {
 		return nil, SweepPlan{}, err
 	}
@@ -178,5 +179,5 @@ func failures(failed []string, of int) error {
 	if len(failed) == 0 {
 		return nil
 	}
-	return fmt.Errorf("%d of %s could not be swept in full: %s", len(failed), repoCount(of), strings.Join(failed, ", "))
+	return fmt.Errorf("%d of %s could not be swept in full: %s", len(failed), kit.RepoCount(of), strings.Join(failed, ", "))
 }

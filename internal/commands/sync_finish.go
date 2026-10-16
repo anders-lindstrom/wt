@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -23,11 +24,11 @@ import (
 
 // trackedRebase runs rebase with the tracker set to at for as long as the
 // rebase is stopped in the worktree, as described above.
-func trackedRebase(t *rebaseTracker, at *rebaseInFlight, rebase func() (wtsync.Result, error)) (wtsync.Result, error) {
-	t.set(at)
+func trackedRebase(t *kit.RebaseTracker, at *kit.RebaseInFlight, rebase func() (wtsync.Result, error)) (wtsync.Result, error) {
+	t.Set(at)
 	res, err := rebase()
 	if err != nil || res.Left == nil {
-		t.set(nil)
+		t.Set(nil)
 	}
 	return res, err
 }
@@ -55,7 +56,7 @@ type handoverInput struct {
 	Earlier []string
 	// Tracker is the verb's, still set to the rebase being handed over; it
 	// is cleared once the handover is written or has failed.
-	Tracker *rebaseTracker
+	Tracker *kit.RebaseTracker
 }
 
 // handOver leaves the worktree mid-rebase for a person: the §6 brief, the
@@ -66,10 +67,10 @@ type handoverInput struct {
 // sidecar exists, and a kept lock ignores Release, so a caller that releases
 // it — or a defer it did not write — cannot delete the file the next run has
 // to respect.
-func handOver(ctx *Context, w io.Writer, in handoverInput) error {
+func handOver(ctx *kit.Context, w io.Writer, in handoverInput) error {
 	// The rebase is stopped in the worktree until this returns, however it
 	// returns, and the tracker says so for exactly that long.
-	defer in.Tracker.set(nil)
+	defer in.Tracker.Set(nil)
 	if in.Res.Left == nil {
 		return fmt.Errorf("%s: nothing to hand over", in.Work)
 	}
@@ -164,12 +165,12 @@ type completeInput struct {
 // The worktree is work at path; t is the verb's tracker, and build is asked
 // for the rest of the input only once t says rebased, so nothing the finish
 // needs is prepared outside the span an interrupt reports as rebased.
-func completeRun(ctx *Context, w io.Writer, cfg *wtsync.Config, t *rebaseTracker, work, path string, build func() completeInput) (head string, ran []wtsync.DeferredResult, err error) {
+func completeRun(ctx *kit.Context, w io.Writer, cfg *wtsync.Config, t *kit.RebaseTracker, work, path string, build func() completeInput) (head string, ran []wtsync.DeferredResult, err error) {
 	// The rebase is done; from here an interrupt cannot abort it, only
 	// leave the deferred steps and the result ref undone. Cleared last, so
 	// the relay line below is still printed under it.
-	t.set(&rebaseInFlight{work: work, path: path, rebased: true})
-	defer t.set(nil)
+	t.Set(&kit.RebaseInFlight{Work: work, Path: path, Rebased: true})
+	defer t.Set(nil)
 	in := build()
 	// Only ever called once a rebase has finished, so the files moved under
 	// the idle sessions however this returns.
@@ -219,11 +220,11 @@ func deferredSteps(ran []wtsync.DeferredResult) []DeferredStep {
 		s := DeferredStep{Step: d.Step.Run, Result: DeferredDone}
 		switch {
 		case !d.Ran:
-			s.Result, s.Reason = DeferredSkipped, strp(d.Why)
+			s.Result, s.Reason = DeferredSkipped, kit.Strp(d.Why)
 		case d.Err != nil:
-			s.Result, s.Reason = DeferredFailed, strp(oneLine(d.Err.Error()))
+			s.Result, s.Reason = DeferredFailed, kit.Strp(kit.OneLine(d.Err.Error()))
 		case d.Commit != "":
-			s.Result, s.Commit = DeferredCommitted, strp(d.Commit)
+			s.Result, s.Commit = DeferredCommitted, kit.Strp(d.Commit)
 		}
 		steps = append(steps, s)
 	}
@@ -243,7 +244,7 @@ func planFileOf(path string) *string {
 	if err != nil {
 		return nil
 	}
-	return strp(wtsync.PlanPath(gitDir))
+	return kit.Strp(wtsync.PlanPath(gitDir))
 }
 
 // owedBy names a finish's owed steps the way the closing error names them.

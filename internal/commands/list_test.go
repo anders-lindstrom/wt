@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -37,7 +38,7 @@ func TestListShowsWorktreesAndMarksNonCanonical(t *testing.T) {
 		return filepath.Join(parent, "demo-legacy")
 	})
 
-	ctx, err := Open(main)
+	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +63,7 @@ func TestListMarksCanonicalWorktreeCleanly(t *testing.T) {
 		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
 	})
 
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
 	if err := List(ctx, ListOptions{}, &buf, 0); err != nil {
 		t.Fatal(err)
@@ -83,7 +84,7 @@ func TestListMarksSupersetLayoutApartFromForeignOnes(t *testing.T) {
 		return filepath.Join(parent, "demo_wt", "demo", "feat_wt", "thing")
 	})
 
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
 	if err := List(ctx, ListOptions{}, &buf, 0); err != nil {
 		t.Fatal(err)
@@ -105,7 +106,7 @@ func TestListExplainsTheForeignMark(t *testing.T) {
 		return filepath.Join(parent, "demo-legacy")
 	})
 
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
 	if err := List(ctx, ListOptions{}, &buf, 0); err != nil {
 		t.Fatal(err)
@@ -120,7 +121,7 @@ func TestListPrintsNoLegendWhenEverythingIsCanonical(t *testing.T) {
 		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
 	})
 
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
 	if err := List(ctx, ListOptions{}, &buf, 0); err != nil {
 		t.Fatal(err)
@@ -136,7 +137,7 @@ func TestListFitsPathsToTheTerminalWidth(t *testing.T) {
 	main, _ := repoWithWorktree(t, func(parent string) string {
 		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
 	})
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 
 	const width = 60
 	var buf bytes.Buffer
@@ -159,7 +160,7 @@ func TestListPrintsWholePathsWithoutATerminal(t *testing.T) {
 	main, wt := repoWithWorktree(t, func(parent string) string {
 		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
 	})
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 
 	var buf bytes.Buffer
 	if err := List(ctx, ListOptions{}, &buf, 0); err != nil {
@@ -174,7 +175,7 @@ func TestListShowsPathsFromHomeOnATerminal(t *testing.T) {
 	main, _ := repoWithWorktree(t, func(parent string) string {
 		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
 	})
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	t.Setenv("HOME", ctx.Repo.Parent)
 
 	var buf bytes.Buffer
@@ -198,7 +199,7 @@ func TestElideLeft(t *testing.T) {
 		{"~/src/repo_wt/feat_wt/thing", 20, "…/feat_wt/thing"},
 		{"/a/averyveryverylongname", 10, "…ylongname"},
 	} {
-		if got := elideLeft(tc.path, tc.limit); got != tc.want {
+		if got := kit.ElideLeft(tc.path, tc.limit); got != tc.want {
 			t.Errorf("elideLeft(%q, %d) = %q, want %q", tc.path, tc.limit, got, tc.want)
 		}
 	}
@@ -220,7 +221,7 @@ func TestStatusReportsCleanliness(t *testing.T) {
 		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
 	})
 
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
 	if err := Status(ctx, StatusOptions{}, &buf, 0); err != nil {
 		t.Fatalf("Status: %v", err)
@@ -234,7 +235,7 @@ func TestStatusFitsPathsToTheTerminalWidth(t *testing.T) {
 	main, _ := repoWithWorktree(t, func(parent string) string {
 		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
 	})
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 
 	const width = 60
 	var buf bytes.Buffer
@@ -257,7 +258,7 @@ func TestStatusFitsPathsToTheTerminalWidth(t *testing.T) {
 // on the screen. The branch and the path are.
 func TestListLegendNamesSomethingTheRowActuallyShows(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	gitIn(t, main, "worktree", "add", "-q", "-b", "fix/flaky-test",
 		filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 
@@ -308,7 +309,7 @@ func TestStatusFallsBackToTheLocalTrunkWithoutOrigin(t *testing.T) {
 	main, _ := repoWithWorktree(t, func(parent string) string {
 		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
 	})
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 
 	var buf bytes.Buffer
 	if err := Status(ctx, StatusOptions{}, &buf, 0); err != nil {
@@ -454,7 +455,7 @@ func TestStatusWorktreeSaysWhenTrunkDeclaresNothing(t *testing.T) {
 	gitIn(t, main, "commit", "-q", "-m", "b on trunk")
 	gitIn(t, main, "remote", "add", "origin", main)
 	gitIn(t, main, "fetch", "-q", "origin")
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 
 	var buf bytes.Buffer
 	if err := StatusWorktree(ctx, "thing", noStatusSessions(), &buf); err != nil {
@@ -476,7 +477,7 @@ func TestStatusWorktreeWithoutOriginCountsAgainstTheLocalTrunk(t *testing.T) {
 	main, _ := repoWithWorktree(t, func(parent string) string {
 		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
 	})
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 
 	var buf bytes.Buffer
 	if err := StatusWorktree(ctx, "thing", noStatusSessions(), &buf); err != nil {
@@ -531,7 +532,7 @@ func TestStatusSaysWhenThereIsNoTrunkToCompareWith(t *testing.T) {
 		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
 	})
 	gitIn(t, main, "branch", "-m", "main", "elsewhere")
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 
 	var buf bytes.Buffer
 	if err := Status(ctx, StatusOptions{}, &buf, 0); err != nil {

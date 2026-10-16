@@ -12,6 +12,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
@@ -132,7 +133,7 @@ type SweepPlan struct {
 // because merges happen on the remote and the main checkout's trunk is often
 // behind; the local trunk still counts, because commits on it are on trunk
 // too. Nothing is fetched here.
-func trunkBases(ctx *Context) ([]TrunkBase, error) {
+func trunkBases(ctx *kit.Context) ([]TrunkBase, error) {
 	trunk := ctx.Config.MainBranch
 	var bases []TrunkBase
 	for _, b := range []struct{ name, ref string }{
@@ -153,7 +154,7 @@ func trunkBases(ctx *Context) ([]TrunkBase, error) {
 // is the agent sessions to check the worktrees against; it is asked only
 // when a merged branch has a worktree that could go. prs is what GitHub says
 // about each branch, which is empty whenever GitHub is not in play.
-func planSweep(ctx *Context, bases []TrunkBase, list func() ([]wtsync.Agent, error),
+func planSweep(ctx *kit.Context, bases []TrunkBase, list func() ([]wtsync.Agent, error),
 	prs func([]string) map[string]github.PR, reap bool) (SweepPlan, error) {
 	branches, err := ctx.Repo.Branches()
 	if err != nil {
@@ -190,7 +191,7 @@ func planSweep(ctx *Context, bases []TrunkBase, list func() ([]wtsync.Agent, err
 		}
 	}
 	byBranch := prs(asked)
-	trunkNames := trunks(ctx)
+	trunkNames := kit.Trunks(ctx)
 
 	p := SweepPlan{Bases: bases, MainRoot: ctx.Repo.MainRoot, Reap: reap}
 	var candidates []SweepBranch
@@ -201,7 +202,7 @@ func planSweep(ctx *Context, bases []TrunkBase, list func() ([]wtsync.Agent, err
 		use := inUse[b.Name]
 		sb := SweepBranch{Branch: b, MergedInto: merged[b.Name], Worktree: use.Path, HeldBy: use.By}
 		if pr, ok := byBranch[b.Name]; ok {
-			sb.PR, sb.GitHub = prLabel(pr, trunkNames), &pr
+			sb.PR, sb.GitHub = kit.PRLabel(pr, trunkNames), &pr
 			// Only where git cannot tell: trunk containing the branch is the
 			// stronger fact and the one every other command reads.
 			if sb.MergedInto == "" && pr.Landed(b.Tip, trunkNames...) {
@@ -216,7 +217,7 @@ func planSweep(ctx *Context, bases []TrunkBase, list func() ([]wtsync.Agent, err
 		}
 		switch {
 		case sb.done() && sb.Worktree != "":
-			sb.Work = worktreeName(ctx, b.Name, sb.Worktree)
+			sb.Work = kit.WorktreeName(ctx, b.Name, sb.Worktree)
 			if sb.HeldBy != "" || repo.SamePath(sb.Worktree, p.MainRoot) {
 				sb.KeptCodes = []string{KeptMainCheckout}
 				if sb.HeldBy != "" {
@@ -308,7 +309,7 @@ func planSweep(ctx *Context, bases []TrunkBase, list func() ([]wtsync.Agent, err
 
 // detachedOn is the HEAD of a detached worktree and the first base that
 // contains it; base is "" when none does, or HEAD cannot be read.
-func detachedOn(ctx *Context, path string, bases []TrunkBase) (head, base string) {
+func detachedOn(ctx *kit.Context, path string, bases []TrunkBase) (head, base string) {
 	head, err := git.Run(path, "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
 	if err != nil || head == "" {
 		return "", ""
@@ -402,7 +403,7 @@ func (p SweepPlan) Render(w io.Writer, width int) {
 		for _, b := range p.Remove {
 			rows = append(rows, []string{"  " + b.Work, b.Name, b.Worktree, b.removeReason()})
 		}
-		_ = printTable(w, rows)
+		_ = kit.PrintTable(w, rows)
 		if len(p.Delete) > 0 {
 			fmt.Fprintln(w)
 		}
@@ -424,7 +425,7 @@ func (p SweepPlan) Render(w io.Writer, width int) {
 		for _, b := range p.CheckedOut {
 			rows = append(rows, []string{"  " + b.Name, p.checkedOutAdvice(b)})
 		}
-		_ = printTable(w, rows)
+		_ = kit.PrintTable(w, rows)
 	}
 	if len(p.Gone) > 0 {
 		fmt.Fprintln(w, "\nUpstream gone, but not merged, so kept:")
@@ -441,18 +442,9 @@ func (p SweepPlan) Render(w io.Writer, width int) {
 // fit a terminal width columns wide; at width 0 the subject is left whole.
 func printSubjectTable(w io.Writer, rows [][]string, width int) {
 	if width > 0 {
-		fitLastColumn(rows, width, minSubjectWidth, elideRight)
+		kit.FitLastColumn(rows, width, minSubjectWidth, kit.ElideRight)
 	}
-	_ = printTable(w, rows)
-}
-
-// elideRight shortens s to at most limit runes, keeping its start.
-func elideRight(s string, limit int) string {
-	r := []rune(s)
-	if len(r) <= limit {
-		return s
-	}
-	return string(r[:limit-1]) + "…"
+	_ = kit.PrintTable(w, rows)
 }
 
 // checkedOutAdvice says why a merged branch a worktree is using is kept, and
@@ -513,7 +505,7 @@ func needsForce(code string) bool {
 
 // changedFrom says what became, by the time of this fresh plan, of a branch an
 // earlier plan was going to delete; "" when it can still go at the same tip.
-func (p SweepPlan) changedFrom(ctx *Context, was SweepBranch) string {
+func (p SweepPlan) changedFrom(ctx *kit.Context, was SweepBranch) string {
 	for _, b := range p.Delete {
 		if b.Name == was.Name && b.Tip == was.Tip {
 			return ""
@@ -557,7 +549,7 @@ func (p SweepPlan) changedFrom(ctx *Context, was SweepBranch) string {
 // worktree an earlier plan was going to remove, and hands back the fresh
 // removal plan when it can still go: same branch at the same tip, in the
 // same place, and still safe.
-func (p SweepPlan) worktreeChangedFrom(ctx *Context, was SweepWorktree) (Plan, string) {
+func (p SweepPlan) worktreeChangedFrom(ctx *kit.Context, was SweepWorktree) (Plan, string) {
 	for _, b := range p.Remove {
 		if b.Name == was.Name && b.Tip == was.Tip && repo.SamePath(b.Worktree, was.Worktree) {
 			return b.Plan, ""
@@ -690,15 +682,15 @@ type SweepOptions struct {
 //
 // The branches are named in the question, so a pull request of any age is
 // found, and only the branches that can appear in the plan are asked about.
-func (o SweepOptions) pullRequests(ctx *Context) func([]string) map[string]github.PR {
+func (o SweepOptions) pullRequests(ctx *kit.Context) func([]string) map[string]github.PR {
 	if o.PRs != nil {
 		return func([]string) map[string]github.PR { return o.PRs }
 	}
 	return func(branches []string) map[string]github.PR {
-		return branchPRs(ctx, branches, prLookup{
-			warn:    "sweeping without GitHub's answers, so a squash-merged branch is not recognised",
-			refresh: true,
-		}).byBranch
+		return kit.BranchPRs(ctx, branches, kit.PRLookup{
+			Warn:    "sweeping without GitHub's answers, so a squash-merged branch is not recognised",
+			Refresh: true,
+		}).ByBranch
 	}
 }
 
@@ -715,16 +707,16 @@ func (o SweepOptions) relistAgents() ([]wtsync.Agent, error) {
 	if o.Agents == nil && o.Relist == nil {
 		return listSessions()
 	}
-	return listAgain(o.Agents, o.Relist)
+	return kit.ListAgain(o.Agents, o.Relist)
 }
 
 // Sweep deletes the local branches trunk already contains, and removes the
 // worktrees on such branches that nothing is using.
-func Sweep(ctx *Context, opts SweepOptions, w io.Writer) (err error) {
+func Sweep(ctx *kit.Context, opts SweepOptions, w io.Writer) (err error) {
 	if j := opts.Journal; j != nil {
 		j.open(ctx)
-		defer setInterruptJournal(j)()
-		defer watchSignals(w, nil)()
+		defer kit.SetInterruptJournal(j)()
+		defer kit.WatchSignals(w, nil)()
 		defer func() {
 			j.fail(err)
 			j.Finish()
@@ -778,7 +770,7 @@ func Sweep(ctx *Context, opts SweepOptions, w io.Writer) (err error) {
 // sweepGuard refuses before anything is fetched or deleted: sweep acts on the
 // whole repository, so it runs from its main checkout, which has to be a
 // checkout, against a trunk somebody named.
-func sweepGuard(ctx *Context) error {
+func sweepGuard(ctx *kit.Context) error {
 	if !repo.SamePath(ctx.Repo.Root, ctx.Repo.MainRoot) {
 		return fmt.Errorf("wt sweep deletes branches across the whole repository, so it runs "+
 			"only from the main checkout, %s\n  wt cd / gets you there", ctx.Repo.MainRoot)
@@ -810,14 +802,14 @@ func sweepGuard(ctx *Context) error {
 // anything was asked (verified against git 2.55). --no-prune-tags overrides
 // fetch.pruneTags, --no-tags stops tags being followed in, and
 // --no-recurse-submodules keeps the prune out of submodules.
-func sweepFetch(ctx *Context, noFetch bool, w io.Writer) error {
+func sweepFetch(ctx *kit.Context, noFetch bool, w io.Writer) error {
 	switch {
 	case !ctx.Repo.HasRemote("origin"):
 		fmt.Fprintln(w, "no origin remote: comparing with local branches only")
 	case noFetch:
 		fmt.Fprintln(w, "not fetched: comparing with origin as last fetched")
 	default:
-		if _, err := git.RunTimeout(ctx.Repo.MainRoot, networkTimeout, "fetch", "--quiet", "--prune",
+		if _, err := git.RunTimeout(ctx.Repo.MainRoot, kit.NetworkTimeout, "fetch", "--quiet", "--prune",
 			"--no-prune-tags", "--no-tags", "--no-recurse-submodules", "--refmap=",
 			"origin", "+refs/heads/*:refs/remotes/origin/*"); err != nil {
 			return fmt.Errorf("fetch: %w\n  --no-fetch compares with origin as last fetched", err)
@@ -834,7 +826,7 @@ func sweepFetch(ctx *Context, noFetch bool, w io.Writer) error {
 // removal that fails leaves its branch where it was. Each branch delete then
 // asks once more whether a worktree has the branch, and deletes only at the
 // tip the plan showed, so the plan that was shown is the plan that runs.
-func (p SweepPlan) apply(ctx *Context, opts SweepOptions, w io.Writer) error {
+func (p SweepPlan) apply(ctx *kit.Context, opts SweepOptions, w io.Writer) error {
 	bases, err := trunkBases(ctx)
 	if err != nil {
 		return fmt.Errorf("could not re-read trunk before deleting, so nothing was deleted: %w", err)
@@ -938,7 +930,7 @@ func (p SweepPlan) apply(ctx *Context, opts SweepOptions, w io.Writer) error {
 // quarantineReady refuses a sweep into dir before anything changes, even
 // one that only deletes branches: dir must be new, and every worktree the
 // plan removes, with its admin dir, on the volume dir goes on.
-func quarantineReady(ctx *Context, dir string, p SweepPlan) error {
+func quarantineReady(ctx *kit.Context, dir string, p SweepPlan) error {
 	if dir == "" {
 		return nil
 	}
@@ -978,11 +970,11 @@ func quarantineFolder(dir, path string, taken map[string]bool) string {
 // made again and has to be the one the fresh plan made. It returns that
 // latest reading, which is the one to carry out, and why is "" when it can
 // still go.
-func changedDuringSweep(ctx *Context, rp Plan, opts SweepOptions) (Plan, string) {
+func changedDuringSweep(ctx *kit.Context, rp Plan, opts SweepOptions) (Plan, string) {
 	st, err := repo.DirtyStrict(rp.Path)
 	switch {
 	case err != nil:
-		return rp, "cannot read its status (" + oneLine(gitSaid(err)) + ")"
+		return rp, "cannot read its status (" + kit.OneLine(gitSaid(err)) + ")"
 	case st.Dirty:
 		return rp, "it gained uncommitted changes during the sweep"
 	}
@@ -995,7 +987,7 @@ func changedDuringSweep(ctx *Context, rp Plan, opts SweepOptions) (Plan, string)
 	case err != nil:
 		return rp, fmt.Sprintf("cannot list agent sessions (%v)", err)
 	case len(s) > 0:
-		return rp, whoLabel(s) + " in it"
+		return rp, kit.WhoLabel(s) + " in it"
 	}
 	// The pull request is the one the fresh plan read: it was asked seconds
 	// ago, and a merge does not come undone.

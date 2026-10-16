@@ -1,4 +1,4 @@
-package commands
+package kit
 
 import "testing"
 
@@ -21,7 +21,7 @@ func TestRemoteURLCredentials(t *testing.T) {
 		"https::https://token@host/r",
 		"1x::https://tok@host/r",
 	} {
-		if !hasCredentials(url) {
+		if !HasCredentials(url) {
 			t.Errorf("%q has credentials", url)
 		}
 	}
@@ -38,7 +38,7 @@ func TestRemoteURLCredentials(t *testing.T) {
 		"ssh://[::1]/r",
 		"",
 	} {
-		if hasCredentials(url) {
+		if HasCredentials(url) {
 			t.Errorf("%q has no credentials", url)
 		}
 	}
@@ -59,12 +59,12 @@ func TestRemoteURLRedacted(t *testing.T) {
 		"user:pw@[fe80::1]:o/r":              "[fe80::1]:o/r",
 		"1x::https://tok@host/r":             "1x::https://host/r",
 	} {
-		if got := redacted(in); got != want {
+		if got := Redacted(in); got != want {
 			t.Errorf("redacted(%q) = %q, want %q", in, got, want)
 		}
 	}
 	for _, url := range []string{"https://t@h/r", "ssh://u:p@h/r", "u:p@h:r", "user:pw@[::1]:repo"} {
-		if hasCredentials(redacted(url)) {
+		if HasCredentials(Redacted(url)) {
 			t.Errorf("redacted(%q) still has credentials", url)
 		}
 	}

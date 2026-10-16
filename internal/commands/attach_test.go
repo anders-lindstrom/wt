@@ -6,11 +6,13 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 // attachFixture is a repository with the worktree `thing`, the search roots
 // kept to it, and the test standing in its main checkout.
-func attachFixture(t *testing.T) (ctx *Context, main, wt string) {
+func attachFixture(t *testing.T) (ctx *kit.Context, main, wt string) {
 	t.Helper()
 	ctx, main, wt = canonicalWorktree(t)
 	t.Setenv("WT_ROOTS", filepath.Dir(main))
@@ -20,7 +22,7 @@ func attachFixture(t *testing.T) (ctx *Context, main, wt string) {
 // attach runs wt attach as the shell layer calls it on a terminal, with
 // answers typed at it, and returns the plan, what the person was shown, and
 // the error.
-func attach(t *testing.T, ctx *Context, o AttachOptions, answers string) (plan, shown string, err error) {
+func attach(t *testing.T, ctx *kit.Context, o AttachOptions, answers string) (plan, shown string, err error) {
 	t.Helper()
 	var out, errw bytes.Buffer
 	o.Out, o.Err = &out, &errw
@@ -221,7 +223,7 @@ func TestAttachWithNoPatternLooksWhereYouStand(t *testing.T) {
 	gitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/other", other)
 	claudeLists(t, background("in thing", "aaaaaaaa", "working", wt), background("in other", "bbbbbbbb", "working", other))
 
-	here, err := Open(wt)
+	here, err := kit.Open(wt)
 	if err != nil {
 		t.Fatal(err)
 	}

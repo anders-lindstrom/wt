@@ -10,13 +10,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // removePlanJSON is wt remove <path> --dry-run --json, checked against its
 // schema.
-func removePlanJSON(t *testing.T, ctx *Context, path string, opts RemoveOptions) (RemovePlanOutput, error) {
+func removePlanJSON(t *testing.T, ctx *kit.Context, path string, opts RemoveOptions) (RemovePlanOutput, error) {
 	t.Helper()
 	var out, progress bytes.Buffer
 	err := RemovePlanJSON(ctx, RemoveTarget{Path: path}, opts, &out, &progress)
@@ -30,7 +31,7 @@ func removePlanJSON(t *testing.T, ctx *Context, path string, opts RemoveOptions)
 
 // removeJSON is wt remove <path> --yes --json: exactly one object, checked
 // against its schema.
-func removeJSON(t *testing.T, ctx *Context, path string, opts RemoveOptions) (RemoveOutput, error) {
+func removeJSON(t *testing.T, ctx *kit.Context, path string, opts RemoveOptions) (RemoveOutput, error) {
 	t.Helper()
 	var out, progress bytes.Buffer
 	err := RemoveJSON(ctx, RemoveTarget{Path: path}, opts, &out, &progress)
@@ -194,13 +195,13 @@ func TestRemoveJSONRemovesWithTheToken(t *testing.T) {
 	if r.Outcome != RemoveRemoved || deref(r.Token) != *p.Token || r.Error != nil {
 		t.Errorf("%+v", r)
 	}
-	if s := step(t, r, StepWorktree); s.Result != WorktreeRemoved {
+	if s := step(t, r, kit.StepWorktree); s.Result != WorktreeRemoved {
 		t.Errorf("worktree %+v", s)
 	}
-	if s := step(t, r, StepBranch); s.Result != quarantine.BranchDeleted || deref(s.Commit) != tip {
+	if s := step(t, r, kit.StepBranch); s.Result != quarantine.BranchDeleted || deref(s.Commit) != tip {
 		t.Errorf("branch %+v", s)
 	}
-	if s := step(t, r, StepSuperset); s.Result == StepNotRun {
+	if s := step(t, r, kit.StepSuperset); s.Result == kit.StepNotRun {
 		t.Errorf("superset %+v", s)
 	}
 	// The branch is moved into a pin of its own run, which restore puts back.
@@ -208,7 +209,7 @@ func TestRemoveJSONRemovesWithTheToken(t *testing.T) {
 		t.Fatalf("a removal that deletes its branch names the run it pinned it in: %+v", r)
 	}
 	pin := pinOf(*r.RunID, RefBranch, "fix_wt/json-gone")
-	if s := step(t, r, StepBranch); deref(s.Pin) != pin || gitOut(t, ctx.Repo.MainRoot, "rev-parse", pin) != tip {
+	if s := step(t, r, kit.StepBranch); deref(s.Pin) != pin || gitOut(t, ctx.Repo.MainRoot, "rev-parse", pin) != tip {
 		t.Errorf("branch pin %v, want %s at %s", s.Pin, pin, tip)
 	}
 	want := []string{"wt", "refs", "restore", *r.RunID, "--only", "refs/heads/fix_wt/json-gone", "--yes"}
@@ -228,7 +229,7 @@ func TestRemoveJSONQuarantine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v %+v", err, r)
 	}
-	if r.Outcome != RemoveRemoved || step(t, r, StepWorktree).Result != WorktreeQuarantined {
+	if r.Outcome != RemoveRemoved || step(t, r, kit.StepWorktree).Result != WorktreeQuarantined {
 		t.Errorf("%+v", r)
 	}
 	q := r.Quarantine
@@ -258,7 +259,7 @@ func TestRemoveJSONRefusedTouchesNothing(t *testing.T) {
 		t.Errorf("problems %+v", r.Problems)
 	}
 	for _, s := range r.Steps {
-		if s.Result != StepNotRun {
+		if s.Result != kit.StepNotRun {
 			t.Errorf("step %+v", s)
 		}
 	}
@@ -273,63 +274,63 @@ func TestRemoveExpectRefusesEveryChangeTouchingNothing(t *testing.T) {
 	landed := func(string, string) int { return 5 }
 	cases := []struct {
 		name   string
-		setup  func(t *testing.T, ctx *Context, path string, plan, run *RemoveOptions)
-		change func(t *testing.T, ctx *Context, path string, run *RemoveOptions)
+		setup  func(t *testing.T, ctx *kit.Context, path string, plan, run *RemoveOptions)
+		change func(t *testing.T, ctx *kit.Context, path string, run *RemoveOptions)
 	}{
-		{name: "branch tip and HEAD", change: func(t *testing.T, _ *Context, path string, _ *RemoveOptions) {
+		{name: "branch tip and HEAD", change: func(t *testing.T, _ *kit.Context, path string, _ *RemoveOptions) {
 			gitIn(t, path, "commit", "-q", "--allow-empty", "-m", "late")
 		}},
 		{name: "HEAD of a detached checkout",
-			setup: func(t *testing.T, _ *Context, path string, _, _ *RemoveOptions) {
+			setup: func(t *testing.T, _ *kit.Context, path string, _, _ *RemoveOptions) {
 				gitIn(t, path, "checkout", "-q", "--detach")
 			},
-			change: func(t *testing.T, _ *Context, path string, _ *RemoveOptions) {
+			change: func(t *testing.T, _ *kit.Context, path string, _ *RemoveOptions) {
 				gitIn(t, path, "checkout", "-q", "--detach", "HEAD~1")
 			}},
-		{name: "base commit", change: func(t *testing.T, ctx *Context, _ string, _ *RemoveOptions) {
+		{name: "base commit", change: func(t *testing.T, ctx *kit.Context, _ string, _ *RemoveOptions) {
 			gitIn(t, ctx.Repo.MainRoot, "commit", "-q", "--allow-empty", "-m", "trunk moved")
 		}},
-		{name: "dirty", change: func(t *testing.T, _ *Context, path string, _ *RemoveOptions) {
+		{name: "dirty", change: func(t *testing.T, _ *kit.Context, path string, _ *RemoveOptions) {
 			mustWrite(t, filepath.Join(path, "wip.txt"), "x")
 		}},
-		{name: "lock", change: func(t *testing.T, _ *Context, path string, _ *RemoveOptions) {
+		{name: "lock", change: func(t *testing.T, _ *kit.Context, path string, _ *RemoveOptions) {
 			gitIn(t, path, "worktree", "lock", "--reason", "pid 999999 gone", path)
 		}},
 		{name: "sessions",
-			setup: func(_ *testing.T, _ *Context, _ string, plan, run *RemoveOptions) {
-				plan.Force, run.Force = ForceAll, ForceAll
+			setup: func(_ *testing.T, _ *kit.Context, _ string, plan, run *RemoveOptions) {
+				plan.Force, run.Force = kit.ForceAll, kit.ForceAll
 			},
-			change: func(_ *testing.T, _ *Context, path string, run *RemoveOptions) {
+			change: func(_ *testing.T, _ *kit.Context, path string, run *RemoveOptions) {
 				run.Agents = []wtsync.Agent{{ID: "late", Cwd: path, Status: "idle"}}
 			}},
-		{name: "operation", change: func(t *testing.T, _ *Context, path string, _ *RemoveOptions) {
+		{name: "operation", change: func(t *testing.T, _ *kit.Context, path string, _ *RemoveOptions) {
 			head := strings.TrimSpace(gitOut(t, path, "rev-parse", "HEAD"))
 			mustWrite(t, filepath.Join(gitDirFor(t, path), "MERGE_HEAD"), head+"\n")
 		}},
 		{name: "quarantine folder",
-			setup: func(t *testing.T, ctx *Context, _ string, plan, run *RemoveOptions) {
+			setup: func(t *testing.T, ctx *kit.Context, _ string, plan, run *RemoveOptions) {
 				plan.Quarantine = trashFor(t, ctx)
 				run.Quarantine = plan.Quarantine
 			},
-			change: func(_ *testing.T, _ *Context, _ string, run *RemoveOptions) {
+			change: func(_ *testing.T, _ *kit.Context, _ string, run *RemoveOptions) {
 				run.Quarantine += "-elsewhere"
 			}},
 		{name: "kept name taken",
-			setup: func(t *testing.T, _ *Context, path string, _, _ *RemoveOptions) {
+			setup: func(t *testing.T, _ *kit.Context, path string, _, _ *RemoveOptions) {
 				gitIn(t, path, "commit", "-q", "--allow-empty", "-m", "unmerged")
 			},
-			change: func(t *testing.T, ctx *Context, _ string, _ *RemoveOptions) {
+			change: func(t *testing.T, ctx *kit.Context, _ string, _ *RemoveOptions) {
 				gitIn(t, ctx.Repo.MainRoot, "branch", "expect")
 			}},
-		{name: "superset opt-in", change: func(_ *testing.T, ctx *Context, _ string, _ *RemoveOptions) {
+		{name: "superset opt-in", change: func(_ *testing.T, ctx *kit.Context, _ string, _ *RemoveOptions) {
 			optIn(ctx)
 		}},
 		{name: "planned outcome",
-			setup: func(t *testing.T, _ *Context, path string, plan, run *RemoveOptions) {
+			setup: func(t *testing.T, _ *kit.Context, path string, plan, run *RemoveOptions) {
 				gitIn(t, path, "commit", "-q", "--allow-empty", "-m", "squashed on GitHub")
 				plan.Landed, run.Landed = landed, landed
 			},
-			change: func(_ *testing.T, _ *Context, _ string, run *RemoveOptions) {
+			change: func(_ *testing.T, _ *kit.Context, _ string, run *RemoveOptions) {
 				run.Landed = func(string, string) int { return 0 }
 			}},
 	}
@@ -354,7 +355,7 @@ func TestRemoveExpectRefusesEveryChangeTouchingNothing(t *testing.T) {
 			if err == nil || r.Outcome != RemoveRefused {
 				t.Fatalf("want a refusal: %v %+v", err, r)
 			}
-			if !slices.Contains(problemCodes(r.Problems), ProblemPlanChanged) {
+			if !slices.Contains(problemCodes(r.Problems), kit.ProblemPlanChanged) {
 				t.Errorf("problems %+v", r.Problems)
 			}
 			if !exists(path) {
@@ -382,20 +383,20 @@ func TestRemoveJSONInterruptedBetweenTheMovesWritesOneObject(t *testing.T) {
 	quarantine.AfterSave = func(_ *quarantine.Record, at string) error {
 		if at == quarantine.StepMoveCheckout+":"+quarantine.Done {
 			// What watchSignals does, but for the exit.
-			currentInterruptJournal().interrupted("", "interrupted")
+			kit.CurrentInterruptJournal().Interrupted("", "interrupted")
 		}
 		return nil
 	}
 	var out, progress bytes.Buffer
 	_ = RemoveJSON(ctx, RemoveTarget{Path: path}, RemoveOptions{Quarantine: dir}, &out, &progress)
 	r := decodeRemoveOutput(t, out.Bytes())
-	if r.Outcome != OutcomeInterrupted || deref(r.Recovery) != "interrupted" {
+	if r.Outcome != kit.OutcomeInterrupted || deref(r.Recovery) != "interrupted" {
 		t.Errorf("%+v", r)
 	}
-	if s := step(t, r, StepWorktree); s.Result != WorktreePartlyMoved {
+	if s := step(t, r, kit.StepWorktree); s.Result != WorktreePartlyMoved {
 		t.Errorf("worktree %+v", s)
 	}
-	if s := step(t, r, StepBranch); s.Result != StepNotRun {
+	if s := step(t, r, kit.StepBranch); s.Result != kit.StepNotRun {
 		t.Errorf("branch %+v", s)
 	}
 	if q := r.Quarantine; q == nil || !q.CheckoutMoved || q.AdminMoved {
@@ -417,10 +418,10 @@ func TestRemoveJSONBranchFailureAfterTheMovesIsPartial(t *testing.T) {
 	if err == nil || r.Outcome != RemovePartial || r.Error == nil {
 		t.Fatalf("%v %+v", err, r)
 	}
-	if s := step(t, r, StepWorktree); s.Result != WorktreeQuarantined {
+	if s := step(t, r, kit.StepWorktree); s.Result != WorktreeQuarantined {
 		t.Errorf("worktree %+v", s)
 	}
-	if s := step(t, r, StepBranch); s.Result != quarantine.BranchFailed || s.Reason == nil {
+	if s := step(t, r, kit.StepBranch); s.Result != quarantine.BranchFailed || s.Reason == nil {
 		t.Errorf("branch %+v", s)
 	}
 	if q := r.Quarantine; q == nil || !q.CheckoutMoved || !q.AdminMoved {
@@ -431,7 +432,7 @@ func TestRemoveJSONBranchFailureAfterTheMovesIsPartial(t *testing.T) {
 // Outside a repository, both are still one object.
 func TestRemoveJSONFailedBeforeTheRepository(t *testing.T) {
 	var out bytes.Buffer
-	RemoveFailedJSON(&out, true, ErrNotInRepo)
+	RemoveFailedJSON(&out, true, kit.ErrNotInRepo)
 	validateJSON(t, "remove-plan", out.Bytes())
 	out.Reset()
 	RemoveFailedJSON(&out, false, errors.New("no repo"))

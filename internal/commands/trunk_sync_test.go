@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -14,7 +15,7 @@ import (
 // at the same commit, and a second clone that can move origin on. push
 // commits n times in that clone and pushes; the main checkout then fetches.
 type trunkFixture struct {
-	ctx    *Context
+	ctx    *kit.Context
 	main   string
 	origin string
 	other  string
@@ -30,7 +31,7 @@ func newTrunkFixture(t *testing.T) *trunkFixture {
 	gitIn(t, filepath.Dir(other), "clone", "-q", origin, other)
 	gitIn(t, other, "config", "user.email", "t@example.com")
 	gitIn(t, other, "config", "user.name", "T")
-	ctx, err := Open(main)
+	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
 	}

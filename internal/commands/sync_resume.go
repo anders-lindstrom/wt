@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -37,15 +38,15 @@ type ResumeOptions struct {
 // Every refusal comes before the lock is taken over. Taking it and then
 // refusing would release the lock the handover kept, so a refusal would not
 // change nothing after all.
-func SyncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) error {
+func SyncResume(ctx *kit.Context, work string, opts ResumeOptions, w io.Writer) error {
 	return journaled(opts.Journal, func() error { return syncResume(ctx, work, opts, w) })
 }
 
-func syncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) (err error) {
-	tracker := &rebaseTracker{}
-	defer watchSignals(w, tracker)()
+func syncResume(ctx *kit.Context, work string, opts ResumeOptions, w io.Writer) (err error) {
+	tracker := &kit.RebaseTracker{}
+	defer kit.WatchSignals(w, tracker)()
 
-	target, err := locateBranch(ctx, work)
+	target, err := kit.LocateBranch(ctx, work)
 	if err != nil {
 		return err
 	}
@@ -75,15 +76,15 @@ func syncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) (err
 	// waits, the rebased tip when a person finished it by hand.
 	found, _ := ctx.Repo.ResolveRef("refs/heads/" + st.Branch)
 	j.join(name, st.Branch, target.Path, found, nil)
-	j.setSync(st.Branch, func(p *SyncParticipant) { p.SafetyRef, p.PlanFile = strp(st.Safety), planFileOf(target.Path) })
+	j.setSync(st.Branch, func(p *SyncParticipant) { p.SafetyRef, p.PlanFile = kit.Strp(st.Safety), planFileOf(target.Path) })
 	// Whatever returns an error before the rebase is touched refused it;
 	// every other end says what it came to on the way out.
 	defer func() {
 		after, _ := ctx.Repo.ResolveRef("refs/heads/" + st.Branch)
 		j.setSync(st.Branch, func(p *SyncParticipant) {
-			p.After = strp(after)
+			p.After = kit.Strp(after)
 			if p.Result == ResultNotRun && err != nil {
-				p.Result, p.Reason = ResultRefused, strp(err.Error())
+				p.Result, p.Reason = ResultRefused, kit.Strp(err.Error())
 			}
 		})
 	}()
@@ -109,7 +110,7 @@ func syncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) (err
 	}
 	sessions := wtsync.SessionsAt(agents, target.Path)
 	if len(sessions.Busy()) > 0 {
-		return fmt.Errorf("an agent session is busy in %s: %s; nothing is resumed", name, sessions.Label(sessionLabel))
+		return fmt.Errorf("an agent session is busy in %s: %s; nothing is resumed", name, sessions.Label(kit.SessionLabel))
 	}
 	// An idle session is named and asked about before the handover is
 	// verified: a person can go on editing while the question waits, so the
@@ -129,7 +130,7 @@ func syncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) (err
 		}
 		if !ok {
 			j.set(st.Branch, func(p *UpParticipant) {
-				p.Result, p.Reason = ResultRefused, strp("not confirmed: "+resumedNothing.line)
+				p.Result, p.Reason = ResultRefused, kit.Strp("not confirmed: "+resumedNothing.line)
 			})
 			j.fail(errors.New("not confirmed: " + resumedNothing.line))
 			return nil
@@ -195,7 +196,7 @@ func syncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) (err
 	}
 	// Resuming, not rebasing: an interrupt must point back at resume, since
 	// the abort that is right for a run would discard a person's resolution.
-	res, rerr := trackedRebase(tracker, &rebaseInFlight{work: name, path: target.Path, safety: st.Safety, resuming: true}, func() (wtsync.Result, error) {
+	res, rerr := trackedRebase(tracker, &kit.RebaseInFlight{Work: name, Path: target.Path, Safety: st.Safety, Resuming: true}, func() (wtsync.Result, error) {
 		return wtsync.Resume(ctx.Repo.MainRoot, cfg, req, st.OldTip, safety, w)
 	})
 	if rerr != nil {
@@ -219,19 +220,19 @@ func syncResume(ctx *Context, work string, opts ResumeOptions, w io.Writer) (err
 			way := wtsync.WayOut(wtsync.Way{Work: name, Path: target.Path, Rebasing: true})
 			fmt.Fprintf(w, "  ⚠ %s is left mid-rebase with no plan: %s\n", name, way)
 			j.setSync(st.Branch, func(p *SyncParticipant) {
-				p.Result, p.Reason, p.Recovery, p.PlanFile = ResultNeedsRecovery, strp(herr.Error()), strp(way), nil
+				p.Result, p.Reason, p.Recovery, p.PlanFile = ResultNeedsRecovery, kit.Strp(herr.Error()), kit.Strp(way), nil
 			})
 			return fmt.Errorf("not completed: %s (failed)", name)
 		}
 		lock = nil // kept on purpose
 		j.setSync(st.Branch, func(p *SyncParticipant) {
-			p.Result, p.Reason = ResultHandedOver, strp("stopped again at a conflict that is yours")
-			p.Recovery = strp(wtsync.WayOut(wtsync.Way{Work: name, Plan: true, Rebasing: true, OwesAdd: true}))
+			p.Result, p.Reason = ResultHandedOver, kit.Strp("stopped again at a conflict that is yours")
+			p.Recovery = kit.Strp(wtsync.WayOut(wtsync.Way{Work: name, Plan: true, Rebasing: true, OwesAdd: true}))
 			p.UndoCommand = undoCommand(name)
 		})
 		return fmt.Errorf("not completed: %s (needs you)", name)
 	}
-	fmt.Fprintf(w, "  ✓ rebased %d commit%s\n", res.Replayed, plural(res.Replayed))
+	fmt.Fprintf(w, "  ✓ rebased %d commit%s\n", res.Replayed, kit.Plural(res.Replayed))
 	_, ran, cerr := completeRun(ctx, w, cfg, tracker, name, target.Path, func() completeInput {
 		// As a run does: the tip the run found is what the deferred steps
 		// compare with and what the undo line names.
@@ -286,14 +287,14 @@ func recordResumeFailed(j *RunJournal, st wtsync.State, path string, rerr error)
 	gitDir, _ := wtsync.GitDir(path)
 	_, planned, _ := wtsync.ReadState(gitDir)
 	j.setSync(st.Branch, func(p *SyncParticipant) {
-		p.Reason = strp(rerr.Error())
+		p.Reason = kit.Strp(rerr.Error())
 		if busy && planned {
 			p.Result, p.UndoCommand = ResultHandedOver, undoCommand(st.Work)
-			p.Recovery = strp(wtsync.WayOut(wtsync.Way{Work: st.Work, Plan: true, Rebasing: true}))
+			p.Recovery = kit.Strp(wtsync.WayOut(wtsync.Way{Work: st.Work, Plan: true, Rebasing: true}))
 			return
 		}
 		p.Result, p.PlanFile = ResultNeedsRecovery, nil
-		p.Recovery = strp(wtsync.WayOut(wtsync.Way{Work: st.Work, Path: path, Rebasing: busy, Safety: st.Safety}))
+		p.Recovery = kit.Strp(wtsync.WayOut(wtsync.Way{Work: st.Work, Path: path, Rebasing: busy, Safety: st.Safety}))
 	})
 }
 
@@ -393,7 +394,7 @@ func verifyHandover(wtPath string, st wtsync.State, w io.Writer) error {
 	}
 	if len(changed) > 0 {
 		return fmt.Errorf("%d file%s under \"never hand-merge here\" changed: %s; nothing is resumed",
-			len(changed), plural(len(changed)), strings.Join(named, ", "))
+			len(changed), kit.Plural(len(changed)), strings.Join(named, ", "))
 	}
 	return nil
 }

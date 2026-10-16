@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 	"github.com/anders-lindstrom/wt/schema"
@@ -214,11 +215,11 @@ type SweepResult struct {
 
 // sweepItem is one row of the plan as --json reports it.
 func sweepItem(category string, b SweepBranch, reason string, reap bool) SweepItem {
-	it := SweepItem{Category: category, Tip: strp(b.Tip), Path: strp(b.Worktree), Reason: reason,
-		Kept: append([]string{}, b.KeptCodes...), Subject: strp(b.Subject),
+	it := SweepItem{Category: category, Tip: kit.Strp(b.Tip), Path: kit.Strp(b.Worktree), Reason: reason,
+		Kept: append([]string{}, b.KeptCodes...), Subject: kit.Strp(b.Subject),
 		Processes: removeProcesses(b.Processes, reap && category == SweepRemove)}
 	if !b.Detached {
-		it.Branch, it.Work = strp(b.Name), strp(b.Work)
+		it.Branch, it.Work = kit.Strp(b.Name), kit.Strp(b.Work)
 	}
 	switch {
 	case b.MergedInto != "":
@@ -230,7 +231,7 @@ func sweepItem(category string, b SweepBranch, reason string, reap bool) SweepIt
 		it.Merged = &SweepMerged{How: MergedPatch, Into: b.AppliedTo}
 	}
 	if pr := b.GitHub; pr != nil {
-		it.PullRequest = &SweepPR{Number: pr.Number, State: pr.State, Base: strp(pr.BaseRefName), URL: strp(pr.URL)}
+		it.PullRequest = &SweepPR{Number: pr.Number, State: pr.State, Base: kit.Strp(pr.BaseRefName), URL: kit.Strp(pr.URL)}
 	}
 	if category == SweepUpstreamGone {
 		n := b.Ahead
@@ -263,12 +264,12 @@ func planItemsOf(p SweepPlan) []SweepItem {
 // the quarantine folder the worktrees go to, when there is one, and
 // --keep-superset. Any difference in any of them is a different token. Nil
 // when the plan has nothing to remove or delete.
-func sweepToken(ctx *Context, p SweepPlan, opts SweepOptions) *string {
-	return sweepTokenWith(ctx, p, opts, configFingerprint(ctx))
+func sweepToken(ctx *kit.Context, p SweepPlan, opts SweepOptions) *string {
+	return sweepTokenWith(ctx, p, opts, kit.ConfigFingerprint(ctx))
 }
 
 // sweepTokenWith is sweepToken over a configuration fingerprint already read.
-func sweepTokenWith(ctx *Context, p SweepPlan, opts SweepOptions, fingerprint []byte) *string {
+func sweepTokenWith(ctx *kit.Context, p SweepPlan, opts SweepOptions, fingerprint []byte) *string {
 	if p.Empty() {
 		return nil
 	}
@@ -320,7 +321,7 @@ func deref(s *string) string {
 // prepareSweep is a sweep up to its plan: the checks, the fetch, the plan.
 // progress gets what the fetch says. fetched reports that origin was
 // fetched.
-func prepareSweep(ctx *Context, opts SweepOptions, progress io.Writer) (plan SweepPlan, fetched bool, err error) {
+func prepareSweep(ctx *kit.Context, opts SweepOptions, progress io.Writer) (plan SweepPlan, fetched bool, err error) {
 	if err := sweepGuard(ctx); err != nil {
 		return SweepPlan{}, false, err
 	}
@@ -340,17 +341,17 @@ func prepareSweep(ctx *Context, opts SweepOptions, progress io.Writer) (plan Swe
 // its evidence or its reasons, and the token that holds a later sweep to it.
 // It fetches unless opts.NoFetch, and deletes nothing. A plan that cannot be
 // made is still one object, with error set, and the error is returned too.
-func SweepPlanJSON(ctx *Context, opts SweepOptions, out, progress io.Writer) error {
+func SweepPlanJSON(ctx *kit.Context, opts SweepOptions, out, progress io.Writer) error {
 	res := SweepPlanOutput{Schema: 1, SchemaVersion: schema.VersionOf("sweep-plan"), Command: "sweep",
 		Bases: []SweepBase{}, Items: []SweepItem{}}
 	if ctx == nil {
-		return writeSweepPlan(out, res, ErrNotInRepo)
+		return writeSweepPlan(out, res, kit.ErrNotInRepo)
 	}
-	res.Repo, res.Trunk, res.TrunkSource = strp(ctx.Repo.MainRoot), strp(ctx.Config.MainBranch), ctx.trunkSource()
-	res.Quarantine, res.KeepSuperset, res.Reap = strp(opts.Quarantine), opts.KeepSuperset, opts.Reap
+	res.Repo, res.Trunk, res.TrunkSource = kit.Strp(ctx.Repo.MainRoot), kit.Strp(ctx.Config.MainBranch), ctx.TrunkSource()
+	res.Quarantine, res.KeepSuperset, res.Reap = kit.Strp(opts.Quarantine), opts.KeepSuperset, opts.Reap
 	// Read once, for the field and the token alike.
-	fingerprint := configFingerprint(ctx)
-	res.ConfigFingerprint = strp(hex.EncodeToString(fingerprint))
+	fingerprint := kit.ConfigFingerprint(ctx)
+	res.ConfigFingerprint = kit.Strp(hex.EncodeToString(fingerprint))
 	plan, fetched, err := prepareSweep(ctx, opts, progress)
 	res.Fetched = fetched
 	if err != nil {
@@ -378,7 +379,7 @@ func SweepPlanFailed(out io.Writer, err error) {
 
 func writeSweepPlan(w io.Writer, p SweepPlanOutput, err error) error {
 	if err != nil {
-		p.Error = strp(err.Error())
+		p.Error = kit.Strp(err.Error())
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
@@ -396,7 +397,7 @@ type SweepJournal struct {
 	mu       sync.Mutex
 	once     sync.Once
 	out      io.Writer
-	ctx      *Context
+	ctx      *kit.Context
 	res      SweepResult
 	byKey    map[string]*SweepResultItem
 	inFlight string
@@ -431,32 +432,32 @@ func (j *SweepJournal) fetched(ok bool) {
 }
 
 // open records the repository, before anything can fail.
-func (j *SweepJournal) open(ctx *Context) {
+func (j *SweepJournal) open(ctx *kit.Context) {
 	if j == nil {
 		return
 	}
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	j.ctx = ctx
-	j.res.Repo, j.res.Trunk = strp(ctx.Repo.MainRoot), strp(ctx.Config.MainBranch)
+	j.res.Repo, j.res.Trunk = kit.Strp(ctx.Repo.MainRoot), kit.Strp(ctx.Config.MainBranch)
 }
 
 // begin records the plan about to be carried out: every row to remove or
 // delete starts as not run, which is what a run that stops before reaching
 // it leaves it as; every row the plan keeps is kept, with its reason.
-func (j *SweepJournal) begin(ctx *Context, p SweepPlan, token string) {
+func (j *SweepJournal) begin(ctx *kit.Context, p SweepPlan, token string) {
 	if j == nil {
 		return
 	}
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	j.ctx, j.res.Token = ctx, strp(token)
-	j.res.Repo, j.res.Trunk = strp(ctx.Repo.MainRoot), strp(ctx.Config.MainBranch)
+	j.ctx, j.res.Token = ctx, kit.Strp(token)
+	j.res.Repo, j.res.Trunk = kit.Strp(ctx.Repo.MainRoot), kit.Strp(ctx.Config.MainBranch)
 	add := func(key string, it SweepItem) {
 		r := &SweepResultItem{Category: it.Category, Branch: it.Branch, Tip: it.Tip, Work: it.Work, Path: it.Path,
 			Result: SweepNotRun, Reaped: []ReapedProcess{}}
 		if it.Category == SweepInUse || it.Category == SweepUpstreamGone {
-			r.Result, r.Reason = SweepKept, strp(it.Reason)
+			r.Result, r.Reason = SweepKept, kit.Strp(it.Reason)
 		}
 		j.res.Items = append(j.res.Items, r)
 		if key != "" {
@@ -485,7 +486,7 @@ func (j *SweepJournal) quarantineIn(dir string) {
 	}
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	j.res.Quarantine = strp(dir)
+	j.res.Quarantine = kit.Strp(dir)
 }
 
 // quarantined records the folder one row's worktree is about to go to.
@@ -508,7 +509,7 @@ func (j *SweepJournal) superset(key string, res RemoveResult) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	if r := j.byKey[key]; r != nil {
-		r.Superset = &SweepSuperset{Result: res.Superset, Reason: strp(res.SupersetReason)}
+		r.Superset = &SweepSuperset{Result: res.Superset, Reason: kit.Strp(res.SupersetReason)}
 	}
 }
 
@@ -533,7 +534,7 @@ func (j *SweepJournal) ran(runID string) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	j.runID = runID
-	j.res.RunID = strp(runID)
+	j.res.RunID = kit.Strp(runID)
 }
 
 // startApply marks the point after which an error is an item's, not the
@@ -565,7 +566,7 @@ func (j *SweepJournal) keep(key, why string) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	if r := j.byKey[key]; r != nil {
-		r.Result, r.Reason = SweepKept, strp(why)
+		r.Result, r.Reason = SweepKept, kit.Strp(why)
 	}
 }
 
@@ -605,14 +606,14 @@ func (j *SweepJournal) settle(key string, err error) {
 	case err == nil && complete:
 		r.Result = SweepDeleted
 	case !r.WorktreeRemoved && !r.BranchDeleted && refusedToDelete(err):
-		r.Result, r.Reason = SweepKept, strp(whyKept(err))
+		r.Result, r.Reason = SweepKept, kit.Strp(whyKept(err))
 	default:
 		r.Result = SweepFailed
 		why := "not finished"
 		if err != nil {
-			why = oneLine(err.Error())
+			why = kit.OneLine(err.Error())
 		}
-		r.Reason = strp(why)
+		r.Reason = kit.Strp(why)
 	}
 }
 
@@ -626,7 +627,7 @@ func refusedToDelete(err error) bool {
 
 // readState fills in what is true of a row now, from the repository: its
 // branch's pin is looked for in run.
-func readState(ctx *Context, runID string, r *SweepResultItem) {
+func readState(ctx *kit.Context, runID string, r *SweepResultItem) {
 	if ctx == nil {
 		return
 	}
@@ -651,7 +652,7 @@ func readState(ctx *Context, runID string, r *SweepResultItem) {
 		switch {
 		case ok:
 		case pin != "":
-			r.Pin, r.RestoreCommand = strp(pin), restoreFromRun(runID, *r.Branch)
+			r.Pin, r.RestoreCommand = kit.Strp(pin), restoreFromRun(runID, *r.Branch)
 		case r.Quarantine != nil:
 			// The quarantine pins the branch, and puts it back with the
 			// worktree.
@@ -668,7 +669,7 @@ func (j *SweepJournal) fail(err error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	if !j.applying {
-		j.res.Error = strp(err.Error())
+		j.res.Error = kit.Strp(err.Error())
 	}
 }
 
@@ -684,10 +685,10 @@ func (j *SweepJournal) Finish() {
 	j.write(false, "")
 }
 
-// interrupted writes the object for a run a signal ended: the row in flight
+// Interrupted writes the object for a run a signal ended: the row in flight
 // is interrupted, with what is true of it now, the rest stand as recorded.
 // inFlight is the rebase tracker's, which a sweep has none of.
-func (j *SweepJournal) interrupted(_ string, recovery string) {
+func (j *SweepJournal) Interrupted(_ string, recovery string) {
 	j.write(true, recovery)
 }
 
@@ -705,7 +706,7 @@ func (j *SweepJournal) write(signalled bool, recovery string) {
 				readState(j.ctx, j.runID, r)
 				r.Result = SweepInterrupted
 			}
-			j.res.Outcome, j.res.Recovery = OutcomeInterrupted, strp(recovery)
+			j.res.Outcome, j.res.Recovery = kit.OutcomeInterrupted, kit.Strp(recovery)
 		} else {
 			j.res.Outcome = sweepOutcome(j.res.Items, j.res.Error != nil)
 		}
@@ -730,9 +731,9 @@ func sweepOutcome(items []*SweepResultItem, failedEarly bool) string {
 	}
 	switch {
 	case finished && !failedEarly:
-		return OutcomeDone
+		return kit.OutcomeDone
 	case !changed:
-		return OutcomeRefused
+		return kit.OutcomeRefused
 	}
-	return OutcomePartial
+	return kit.OutcomePartial
 }

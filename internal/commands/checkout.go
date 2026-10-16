@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -56,10 +57,10 @@ func (t checkoutTarget) upstream() string {
 // that has the branch; a bare <branch> exactly one remote has, or
 // checkout.defaultRemote's when several do. A branch wt would create from a
 // remote must not exist locally. Branch is arg when nothing matched.
-func resolveCheckout(ctx *Context, arg string) (checkoutTarget, *Problem) {
+func resolveCheckout(ctx *kit.Context, arg string) (checkoutTarget, *Problem) {
 	t := checkoutTarget{Branch: arg}
 	if arg == "" {
-		return t, &Problem{Code: ProblemInvalidName, Message: "no branch given"}
+		return t, &Problem{Code: kit.ProblemInvalidName, Message: "no branch given"}
 	}
 	if oid, ok := ctx.Repo.ResolveRef("refs/heads/" + arg); ok && ctx.Repo.BranchExists(arg) {
 		t.Source, t.Commit = SourceLocal, oid
@@ -77,7 +78,7 @@ func resolveCheckout(ctx *Context, arg string) (checkoutTarget, *Problem) {
 	}
 	found := func(c checkoutTarget) (checkoutTarget, *Problem) {
 		if ctx.Repo.BranchExists(c.Branch) {
-			return c, &Problem{Code: ProblemBranchExists, Message: fmt.Sprintf(
+			return c, &Problem{Code: kit.ProblemBranchExists, Message: fmt.Sprintf(
 				"branch %s already exists here; `wt checkout %s` puts a worktree on it", c.Branch, c.Branch)}
 		}
 		return c, nil
@@ -113,7 +114,7 @@ func resolveCheckout(ctx *Context, arg string) (checkoutTarget, *Problem) {
 		for _, c := range hits {
 			names = append(names, c.upstream())
 		}
-		return t, &Problem{Code: ProblemBranchAmbiguous, Message: fmt.Sprintf(
+		return t, &Problem{Code: kit.ProblemBranchAmbiguous, Message: fmt.Sprintf(
 			"%s is on more than one remote: %s; name one, as `wt checkout %s`, or set checkout.defaultRemote",
 			arg, strings.Join(names, ", "), names[0])}
 	}
@@ -121,11 +122,11 @@ func resolveCheckout(ctx *Context, arg string) (checkoutTarget, *Problem) {
 		return found(hits[0])
 	}
 	if prefixed != "" {
-		return t, &Problem{Code: ProblemRemoteBranchMissing, Message: fmt.Sprintf(
+		return t, &Problem{Code: kit.ProblemRemoteBranchMissing, Message: fmt.Sprintf(
 			"%s has no branch %s as last fetched; `git fetch %s` if it is new",
 			prefixed, strings.TrimPrefix(arg, prefixed+"/"), prefixed)}
 	}
-	return t, &Problem{Code: ProblemBranchMissing, Message: fmt.Sprintf(
+	return t, &Problem{Code: kit.ProblemBranchMissing, Message: fmt.Sprintf(
 		"branch %s does not exist here or on a remote as last fetched; `git fetch` if it is new, `wt new` creates one", arg)}
 }
 
@@ -134,7 +135,7 @@ func resolveCheckout(ctx *Context, arg string) (checkoutTarget, *Problem) {
 // remote as last fetched, in which case the local branch is created at the
 // remote-tracking commit, tracking it. It never invents a branch no one has:
 // that is a mistake worth reporting.
-func Checkout(ctx *Context, arg, work string, opts NewOptions, w io.Writer) (string, error) {
+func Checkout(ctx *kit.Context, arg, work string, opts NewOptions, w io.Writer) (string, error) {
 	t, prob := resolveCheckout(ctx, arg)
 	if prob != nil {
 		return "", errors.New(prob.Message)
@@ -158,7 +159,7 @@ func Checkout(ctx *Context, arg, work string, opts NewOptions, w io.Writer) (str
 // before the worktree is added. A local branch that
 // appeared since the plan is never moved: that fails with
 // repo.ErrBranchExists, nothing changed.
-func checkoutAdd(ctx *Context, path string, t checkoutTarget, j *CreateJournal, w io.Writer) func() error {
+func checkoutAdd(ctx *kit.Context, path string, t checkoutTarget, j *CreateJournal, w io.Writer) func() error {
 	return func() error {
 		if t.Source != SourceRemote {
 			fmt.Fprintf(w, "Checking out %s at %s\n", t.Branch, path)

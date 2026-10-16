@@ -8,12 +8,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/superset"
 )
 
-func newPlanOf(t *testing.T, ctx *Context, spec string, opts NewOptions) NewPlan {
+func newPlanOf(t *testing.T, ctx *kit.Context, spec string, opts NewOptions) NewPlan {
 	t.Helper()
 	var buf bytes.Buffer
 	if err := NewPlanJSON(ctx, spec, opts, &buf); err != nil {
@@ -27,7 +28,7 @@ func newPlanOf(t *testing.T, ctx *Context, spec string, opts NewOptions) NewPlan
 	return p
 }
 
-func checkoutPlanOf(t *testing.T, ctx *Context, branch, work string) CheckoutPlan {
+func checkoutPlanOf(t *testing.T, ctx *kit.Context, branch, work string) CheckoutPlan {
 	t.Helper()
 	var buf bytes.Buffer
 	if err := CheckoutPlanJSON(ctx, branch, work, NewOptions{}, &buf); err != nil {
@@ -41,14 +42,14 @@ func checkoutPlanOf(t *testing.T, ctx *Context, branch, work string) CheckoutPla
 	return p
 }
 
-func newJSON(t *testing.T, ctx *Context, spec string, opts NewOptions, expect string) (CreateResult, string, error) {
+func newJSON(t *testing.T, ctx *kit.Context, spec string, opts NewOptions, expect string) (CreateResult, string, error) {
 	t.Helper()
 	var out, human bytes.Buffer
 	err := NewJSON(ctx, spec, opts, expect, NewCreateJournal(&out, "new"), &human)
 	return decodeCreate(t, "new", out.Bytes()), human.String(), err
 }
 
-func checkoutJSON(t *testing.T, ctx *Context, branch, work string, opts NewOptions, expect string) (CheckoutResult, error) {
+func checkoutJSON(t *testing.T, ctx *kit.Context, branch, work string, opts NewOptions, expect string) (CheckoutResult, error) {
 	t.Helper()
 	var out, human bytes.Buffer
 	err := CheckoutJSON(ctx, branch, work, opts, expect, NewCreateJournal(&out, "checkout"), &human)
@@ -93,7 +94,7 @@ func codes(ps []Problem) string {
 
 // The plan says what wt new would make, with a token, and makes nothing.
 func TestNewPlanNamesWhatItWouldCreateAndWritesNothing(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	before := repoState(t, ctx.Repo.MainRoot)
 	p := newPlanOf(t, ctx, "fix/login-crash", NewOptions{})
 	if after := repoState(t, ctx.Repo.MainRoot); after != before {
@@ -118,7 +119,7 @@ func TestNewPlanNamesWhatItWouldCreateAndWritesNothing(t *testing.T) {
 
 // Every problem the plan knows of is named, and a plan with one has no token.
 func TestNewPlanNamesItsProblems(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	if _, err := New(ctx, "fix/taken", NewOptions{NoSetup: true}, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +150,7 @@ func TestNewPlanNamesItsProblems(t *testing.T) {
 // The checkout plan pins the branch's commit, and names a branch that is
 // missing or already checked out.
 func TestCheckoutPlanPinsTheBranch(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	main := ctx.Repo.MainRoot
 	gitIn(t, main, "branch", "release-2.1")
 	p := checkoutPlanOf(t, ctx, "release-2.1", "")
@@ -205,7 +206,7 @@ func TestNewJSONReportsEverySideEffect(t *testing.T) {
 
 // --expect refuses, creating nothing, when the base moved since the plan.
 func TestNewExpectRefusesAMovedBase(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	p := newPlanOf(t, ctx, "fix/login-crash", NewOptions{})
 	gitIn(t, ctx.Repo.MainRoot, "commit", "-q", "--allow-empty", "-m", "trunk moved")
 	before := repoState(t, ctx.Repo.MainRoot)
@@ -219,14 +220,14 @@ func TestNewExpectRefusesAMovedBase(t *testing.T) {
 	if _, err := os.Stat(*p.Path); err == nil {
 		t.Error("a refused run created the worktree")
 	}
-	if s := stepOf(r, "worktree"); s.Result != StepNotRun {
+	if s := stepOf(r, "worktree"); s.Result != kit.StepNotRun {
 		t.Errorf("worktree step %+v", s)
 	}
 }
 
 // A plan problem refuses the run too, with the problem named.
 func TestNewJSONRefusesAPlanProblem(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	r, _, err := newJSON(t, ctx, "wibble/thing", NewOptions{}, "")
 	if err == nil || r.Outcome != CreateRefused || codes(r.Problems) != "unknownType" || r.Error == nil {
 		t.Errorf("err %v result %+v", err, r)
@@ -236,7 +237,7 @@ func TestNewJSONRefusesAPlanProblem(t *testing.T) {
 // wt checkout --expect refuses a branch that moved since the plan: the
 // exact-name guarantee.
 func TestCheckoutExpectRefusesAMovedBranch(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	main := ctx.Repo.MainRoot
 	gitIn(t, main, "branch", "release-2.1")
 	p := checkoutPlanOf(t, ctx, "release-2.1", "rel21")
@@ -255,11 +256,11 @@ func TestCheckoutExpectRefusesAMovedBranch(t *testing.T) {
 	if err != nil || r.Outcome != CreateCreated {
 		t.Fatalf("err %v result %+v", err, r)
 	}
-	if b := stepOf(r.CreateResult, "branch"); b.Result != StepUntouched || *b.Commit != *p.BranchCommit {
+	if b := stepOf(r.CreateResult, "branch"); b.Result != kit.StepUntouched || *b.Commit != *p.BranchCommit {
 		t.Errorf("branch step %+v", b)
 	}
 	for _, name := range []string{"config", "cache", "provision", "submodules", "build", "superset"} {
-		if s := stepOf(r.CreateResult, name); s.Result != StepSkipped {
+		if s := stepOf(r.CreateResult, name); s.Result != kit.StepSkipped {
 			t.Errorf("--no-setup: %s is %s", name, s.Result)
 		}
 	}
@@ -273,10 +274,10 @@ func TestNewJSONReportsAFailedProvision(t *testing.T) {
 	if err == nil || r.Outcome != CreateCreatedWithProblems {
 		t.Errorf("err %v outcome %s", err, r.Outcome)
 	}
-	if s := stepOf(r, "provision"); s.Result != StepFailed || s.Reason == nil {
+	if s := stepOf(r, "provision"); s.Result != kit.StepFailed || s.Reason == nil {
 		t.Errorf("provision %+v", s)
 	}
-	if s := stepOf(r, "build"); s.Result != StepDone {
+	if s := stepOf(r, "build"); s.Result != kit.StepDone {
 		t.Errorf("build %+v", s)
 	}
 }
@@ -290,11 +291,11 @@ func TestNewJSONReportsAFailedBuildAndSubmodules(t *testing.T) {
 		t.Errorf("err %v outcome %s", err, r.Outcome)
 	}
 	for _, name := range []string{"build", "submodules"} {
-		if s := stepOf(r, name); s.Result != StepFailed || s.Reason == nil {
+		if s := stepOf(r, name); s.Result != kit.StepFailed || s.Reason == nil {
 			t.Errorf("%s %+v", name, s)
 		}
 	}
-	if s := stepOf(r, "provision"); s.Result != StepSkipped {
+	if s := stepOf(r, "provision"); s.Result != kit.StepSkipped {
 		t.Errorf("no provision.sh: %+v", s)
 	}
 }
@@ -302,7 +303,7 @@ func TestNewJSONReportsAFailedBuildAndSubmodules(t *testing.T) {
 // --base <oid>, which is how a git client names the base, cuts the branch
 // from that commit and gives it no upstream.
 func TestNewFromAnOIDSetsNoUpstream(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	main := ctx.Repo.MainRoot
 	gitIn(t, main, "remote", "add", "origin", main)
 	gitIn(t, main, "fetch", "-q", "origin")
@@ -320,7 +321,7 @@ func TestNewFromAnOIDSetsNoUpstream(t *testing.T) {
 // here a post-checkout hook commits — is created with problems, never a
 // quiet success.
 func TestNewJSONNamesACommitThatIsNotTheBase(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	hook := filepath.Join(ctx.Repo.MainRoot, ".git", "hooks", "post-checkout")
 	mustWrite(t, hook, "#!/bin/sh\ngit -c user.email=t@e.com -c user.name=T commit -q --allow-empty -m moved\n")
 	if err := os.Chmod(hook, 0o755); err != nil {
@@ -336,11 +337,11 @@ func TestNewJSONNamesACommitThatIsNotTheBase(t *testing.T) {
 // Superset's outcome is a step of its own: registered with a running app that
 // knows the repository, skipped when it is not running.
 func TestNewJSONReportsSuperset(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	optIn(ctx)
 	fakeSuperset(t, ctx.Repo.MainRoot, true)
 	r, _, err := newJSON(t, ctx, "fix/one", NewOptions{}, "")
-	if s := stepOf(r, "superset"); err != nil || s.Result != StepRegistered {
+	if s := stepOf(r, "superset"); err != nil || s.Result != kit.StepRegistered {
 		t.Errorf("err %v superset %+v", err, s)
 	}
 	if p := newPlanOf(t, ctx, "fix/two", NewOptions{}); !p.Superset {
@@ -349,33 +350,33 @@ func TestNewJSONReportsSuperset(t *testing.T) {
 
 	stub(t, superset.Status{Exe: "/nope/superset"})
 	r, _, _ = newJSON(t, ctx, "fix/two", NewOptions{}, "")
-	if s := stepOf(r, "superset"); s.Result != StepSkipped || s.Reason == nil || r.Outcome != CreateCreated {
+	if s := stepOf(r, "superset"); s.Result != kit.StepSkipped || s.Reason == nil || r.Outcome != CreateCreated {
 		t.Errorf("auto, host stopped: %+v %s", s, r.Outcome)
 	}
 	ctx.Config.SupersetRegister = config.SupersetOn
 	r, _, _ = newJSON(t, ctx, "fix/three", NewOptions{}, "")
-	if s := stepOf(r, "superset"); s.Result != StepFailed || r.Outcome != CreateCreatedWithProblems {
+	if s := stepOf(r, "superset"); s.Result != kit.StepFailed || r.Outcome != CreateCreatedWithProblems {
 		t.Errorf("on, host stopped: %+v %s", s, r.Outcome)
 	}
 }
 
 // A signal writes the one object: the step in flight interrupted, and
 // nothing written a second time.
-var _ interruptible = (*CreateJournal)(nil)
+var _ kit.Interruptible = (*CreateJournal)(nil)
 
 func TestCreateJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 	var out bytes.Buffer
 	j := NewCreateJournal(&out, "new")
-	j.start(StepWorktree)
-	j.finish(StepWorktree, StepCreated, "", "")
-	j.start(StepProvision)
-	j.interrupted("", "interrupted")
+	j.start(kit.StepWorktree)
+	j.finish(kit.StepWorktree, kit.StepCreated, "", "")
+	j.start(kit.StepProvision)
+	j.Interrupted("", "interrupted")
 	// Finish would park for good now, as the run does once a signal owns
 	// it; the write it would make must not happen a second time.
 	j.write(false)
 	r := decodeCreate(t, "new", out.Bytes())
-	if r.Outcome != CreateInterrupted || stepOf(r, "provision").Result != StepInterrupted ||
-		stepOf(r, "build").Result != StepNotRun {
+	if r.Outcome != CreateInterrupted || stepOf(r, "provision").Result != kit.StepInterrupted ||
+		stepOf(r, "build").Result != kit.StepNotRun {
 		t.Errorf("%+v", r)
 	}
 }
@@ -384,7 +385,7 @@ func TestCreateJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 // the worktree exists: that is a worktree created with problems, never a
 // failure that hides it.
 func TestNewJSONReportsAWorktreeAFailingHookLeftBehind(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	hook := filepath.Join(ctx.Repo.MainRoot, ".git", "hooks", "post-checkout")
 	mustWrite(t, hook, "#!/bin/sh\necho 'hook says no' >&2\nexit 1\n")
 	if err := os.Chmod(hook, 0o755); err != nil {
@@ -394,10 +395,10 @@ func TestNewJSONReportsAWorktreeAFailingHookLeftBehind(t *testing.T) {
 	if err == nil || r.Outcome != CreateCreatedWithProblems || r.Commit == nil {
 		t.Errorf("err %v result %+v", err, r)
 	}
-	if s := stepOf(r, "worktree"); s.Result != StepCreated || s.Reason == nil {
+	if s := stepOf(r, "worktree"); s.Result != kit.StepCreated || s.Reason == nil {
 		t.Errorf("worktree step %+v", s)
 	}
-	if s := stepOf(r, "config"); s.Result != StepNotRun {
+	if s := stepOf(r, "config"); s.Result != kit.StepNotRun {
 		t.Errorf("config step %+v", s)
 	}
 }
@@ -405,7 +406,7 @@ func TestNewJSONReportsAWorktreeAFailingHookLeftBehind(t *testing.T) {
 // Only a local branch by that exact name is checked out: a revision
 // expression that happens to resolve is not one.
 func TestCheckoutPlanTakesOnlyABranchName(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	if got := codes(checkoutPlanOf(t, ctx, "main~0", "rev").Problems); got != "branchMissing" {
 		t.Errorf("main~0: %s", got)
 	}
@@ -414,7 +415,7 @@ func TestCheckoutPlanTakesOnlyABranchName(t *testing.T) {
 // A name git would refuse as a branch is an invalid name in the plan, not a
 // token for a run that cannot succeed.
 func TestNewPlanRefusesABranchNameGitWouldRefuse(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	for _, spec := range []string{"fix/bad name", "fix/a..b", "fix/x.lock"} {
 		if p := newPlanOf(t, ctx, spec, NewOptions{}); codes(p.Problems) != "invalidName" || p.Token != nil {
 			t.Errorf("%q: problems %s", spec, codes(p.Problems))
@@ -432,7 +433,7 @@ func TestNewJSONNoCacheSkipsTheCacheStep(t *testing.T) {
 	}{{true, "skipped", "--no-cache"}, {false, "done", ""}} {
 		main := committedRepo(t, minimalConf+"WORKTREE_CACHE_DIRS=(node_modules)\n")
 		mustWrite(t, filepath.Join(main, "node_modules", "left-pad", "index.js"), "module.exports = 1")
-		ctx, err := Open(main)
+		ctx, err := kit.Open(main)
 		if err != nil {
 			t.Fatal(err)
 		}

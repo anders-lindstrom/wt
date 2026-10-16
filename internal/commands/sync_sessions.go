@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -53,7 +54,7 @@ func (o verbOptions) agents(nothing nothingDone) ([]wtsync.Agent, error) {
 
 // relist is the second listing, for the check after a question or at the lock.
 func (o verbOptions) relist(nothing nothingDone) ([]wtsync.Agent, error) {
-	agents, err := listAgain(o.Agents, o.Relist)
+	agents, err := kit.ListAgain(o.Agents, o.Relist)
 	if err != nil {
 		return nil, fmt.Errorf("cannot list agent sessions again (%v); %s", err, nothing.tail)
 	}
@@ -147,7 +148,7 @@ func askIdle(w io.Writer, opts verbOptions, works []string, told []idle, agents 
 // idleNotice is said before anything moves under an idle session, whether or
 // not anybody is asked: a verb never changes files under one silently.
 func idleNotice(work string, s wtsync.Sessions) string {
-	return fmt.Sprintf("⚠ %s: %s is in it; the files it has read will change", work, whoLabel(s))
+	return fmt.Sprintf("⚠ %s: %s is in it; the files it has read will change", work, kit.WhoLabel(s))
 }
 
 // tellIdle prints a §5 line for the idle sessions in a worktree, on a line of
@@ -158,22 +159,9 @@ func tellIdle(w io.Writer, s wtsync.Sessions, line string) {
 	}
 	names := make([]string, len(s))
 	for i := range s {
-		names[i] = sessionLabel(&s[i])
+		names[i] = kit.SessionLabel(&s[i])
 	}
 	fmt.Fprintf(w, "  ⚠ tell %s, idle in it:\n    %s\n", strings.Join(names, ", "), line)
-}
-
-// listAgain lists the sessions a second time, for the check after a question
-// or at the lock: through relist when a caller supplied one, the caller's own
-// list when it supplied that, and claude otherwise.
-func listAgain(given []wtsync.Agent, relist func() ([]wtsync.Agent, error)) ([]wtsync.Agent, error) {
-	switch {
-	case relist != nil:
-		return relist()
-	case given != nil:
-		return given, nil
-	}
-	return wtsync.ListOtherAgents()
 }
 
 // sessionsChanged is why the sessions in a worktree are no longer the ones a
@@ -181,10 +169,10 @@ func listAgain(given []wtsync.Agent, relist func() ([]wtsync.Agent, error)) ([]w
 // Empty when nothing changed that matters.
 func sessionsChanged(told, now wtsync.Sessions) string {
 	if len(now.Busy()) > 0 {
-		return "an agent session is busy in it now: " + now.Label(sessionLabel)
+		return "an agent session is busy in it now: " + now.Label(kit.SessionLabel)
 	}
 	if arrived := now.Arrived(told); len(arrived) > 0 {
-		return "a session arrived since it was checked: " + arrived.Label(sessionLabel)
+		return "a session arrived since it was checked: " + arrived.Label(kit.SessionLabel)
 	}
 	return ""
 }

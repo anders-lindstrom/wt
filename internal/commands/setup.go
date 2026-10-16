@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -32,13 +33,13 @@ type SetupOptions struct {
 // A build-init failure is reported as a warning and does not fail the command,
 // because every agent that provisions a worktree would otherwise start failing
 // on a transient dependency problem.
-func Setup(ctx *Context, target string, opts SetupOptions, w io.Writer) error {
+func Setup(ctx *kit.Context, target string, opts SetupOptions, w io.Writer) error {
 	return setup(ctx, target, opts, w, nil)
 }
 
 // setup is Setup, recording each step in j for --json. What it prints does
 // not depend on j.
-func setup(ctx *Context, target string, opts SetupOptions, w io.Writer, j *CreateJournal) error {
+func setup(ctx *kit.Context, target string, opts SetupOptions, w io.Writer, j *CreateJournal) error {
 	if opts.Source != "" {
 		fmt.Fprintf(w, "Setup run by %s\n", opts.Source)
 	}
@@ -47,32 +48,32 @@ func setup(ctx *Context, target string, opts SetupOptions, w io.Writer, j *Creat
 		src = ctx.Repo.MainRoot
 	}
 
-	j.start(StepConfig)
+	j.start(kit.StepConfig)
 	if _, err := os.Stat(src); err != nil {
 		fmt.Fprintf(w, " - source %s not found; skipping config sync\n", src)
-		j.finish(StepConfig, StepSkipped, "source "+src+" not found", "")
+		j.finish(kit.StepConfig, kit.StepSkipped, "source "+src+" not found", "")
 	} else {
 		failed := append(copyConfigDirs(ctx, src, target, w), copyConfigFiles(ctx, src, target, w)...)
-		j.finish(StepConfig, failedResult(failed), strings.Join(failed, "; "), "")
+		j.finish(kit.StepConfig, failedResult(failed), strings.Join(failed, "; "), "")
 	}
-	j.start(StepCache)
+	j.start(kit.StepCache)
 	result, reason := cloneCacheDirs(ctx, src, target, opts, w)
-	j.finish(StepCache, result, reason, "")
+	j.finish(kit.StepCache, result, reason, "")
 
 	// A failed provision step is reported but does not abort the rest: stopping
 	// here would leave a worktree with no submodules and no dependencies
 	// either, which is strictly less usable than one that merely lacks
 	// secrets. The error still surfaces, so nothing treats this as success.
-	j.start(StepProvision)
+	j.start(kit.StepProvision)
 	provisionErr := runProvision(ctx, target, w, j)
 	result, reason = stepOutcome(ctx.HasProvisionScript(), "no bin/worktree/provision.sh", provisionErr)
-	j.finish(StepProvision, result, reason, "")
-	j.start(StepSubmodules)
+	j.finish(kit.StepProvision, result, reason, "")
+	j.start(kit.StepSubmodules)
 	result, reason = stepOutcome(ctx.Repo.HasSubmodules(target), "no .gitmodules", initSubmodules(ctx, target, w))
-	j.finish(StepSubmodules, result, reason, "")
-	j.start(StepBuild)
+	j.finish(kit.StepSubmodules, result, reason, "")
+	j.start(kit.StepBuild)
 	result, reason = runBuildInit(ctx, target, opts, w, j)
-	j.finish(StepBuild, result, reason, "")
+	j.finish(kit.StepBuild, result, reason, "")
 
 	if provisionErr != nil {
 		fmt.Fprintln(w, "")
@@ -91,7 +92,7 @@ func setup(ctx *Context, target string, opts SetupOptions, w io.Writer, j *Creat
 // whatever it is pointed at, where it stands — but saying nothing left the
 // caller of `wt setup` from a Superset workspace with a path they had not
 // chosen and no explanation of who chose it.
-func reportLayout(ctx *Context, target string, w io.Writer) {
+func reportLayout(ctx *kit.Context, target string, w io.Writer) {
 	fmt.Fprintf(w, "  %s\n", target)
 	sch := ctx.Scheme()
 	typ, work, layout, ok := sch.ClassifyBranch(target, ctx.Repo.BranchAt(target))
@@ -122,7 +123,7 @@ func within(base, candidate string) bool {
 
 // copyConfigDirs copies the declared directories, and returns a line for
 // each it could not.
-func copyConfigDirs(ctx *Context, src, target string, w io.Writer) (failed []string) {
+func copyConfigDirs(ctx *kit.Context, src, target string, w io.Writer) (failed []string) {
 	for _, d := range ctx.Config.DeveloperConfigDirs {
 		from, to := filepath.Join(src, d), filepath.Join(target, d)
 		if !within(target, to) {
@@ -150,7 +151,7 @@ func copyConfigDirs(ctx *Context, src, target string, w io.Writer) (failed []str
 
 // copyConfigFiles copies the declared files, and returns a line for each it
 // could not.
-func copyConfigFiles(ctx *Context, src, target string, w io.Writer) (failed []string) {
+func copyConfigFiles(ctx *kit.Context, src, target string, w io.Writer) (failed []string) {
 	for _, f := range ctx.Config.DeveloperConfigFiles {
 		from, to := filepath.Join(src, f), filepath.Join(target, f)
 		if !within(target, to) {
@@ -185,7 +186,7 @@ func copyConfigFiles(ctx *Context, src, target string, w io.Writer) (failed []st
 // This is what AWS_SETUP_ENABLED became: repo-declared behaviour rather than a
 // Telcred-shaped flag in a generic tool. Its failure IS fatal — a worktree
 // without decrypted secrets is not usable.
-func runProvision(ctx *Context, target string, w io.Writer, j *CreateJournal) error {
+func runProvision(ctx *kit.Context, target string, w io.Writer, j *CreateJournal) error {
 	if !ctx.HasProvisionScript() {
 		return nil
 	}
@@ -205,7 +206,7 @@ func runProvision(ctx *Context, target string, w io.Writer, j *CreateJournal) er
 // initSubmodules initialises the worktree's submodules, if it declares any.
 // A failure is a warning here and an error for the caller to record: the
 // command's exit code does not depend on it.
-func initSubmodules(ctx *Context, target string, w io.Writer) error {
+func initSubmodules(ctx *kit.Context, target string, w io.Writer) error {
 	if !ctx.Repo.HasSubmodules(target) {
 		return nil
 	}
@@ -220,14 +221,14 @@ func initSubmodules(ctx *Context, target string, w io.Writer) error {
 
 // runBuildInit runs the build command, and returns what came of it as a step
 // result. A failure is a warning, as for submodules.
-func runBuildInit(ctx *Context, target string, opts SetupOptions, w io.Writer, j *CreateJournal) (result, reason string) {
+func runBuildInit(ctx *kit.Context, target string, opts SetupOptions, w io.Writer, j *CreateJournal) (result, reason string) {
 	switch {
 	case opts.SkipBuild:
 		fmt.Fprintln(w, "⏭ build initialisation skipped (--no-build)")
-		return StepSkipped, "--no-build"
+		return kit.StepSkipped, "--no-build"
 	case !ctx.Config.BuildInitEnabled:
 		fmt.Fprintln(w, "- build initialisation disabled in configuration")
-		return StepSkipped, "build initialisation disabled in configuration"
+		return kit.StepSkipped, "build initialisation disabled in configuration"
 	}
 	fmt.Fprintf(w, "Running: %s\n", ctx.Config.BuildInitCommand)
 	cmd := exec.Command("sh", "-c", ctx.Config.BuildInitCommand)
@@ -237,10 +238,10 @@ func runBuildInit(ctx *Context, target string, opts SetupOptions, w io.Writer, j
 	if err := runTracked(cmd, j); err != nil {
 		fmt.Fprintf(w, " ! Warning: build initialisation failed: %v\n", err)
 		fmt.Fprintf(w, "   Try running it by hand: %s\n", ctx.Config.BuildInitCommand)
-		return StepFailed, fmt.Sprintf("%s failed: %v", ctx.Config.BuildInitCommand, err)
+		return kit.StepFailed, fmt.Sprintf("%s failed: %v", ctx.Config.BuildInitCommand, err)
 	}
 	fmt.Fprintln(w, "✓ build dependencies downloaded")
-	return StepDone, ""
+	return kit.StepDone, ""
 }
 
 // runTracked is cmd.Run. In a --json run the command runs in a process
@@ -260,18 +261,18 @@ func runTracked(cmd *exec.Cmd, j *CreateJournal) error {
 func stepOutcome(applies bool, whyNot string, err error) (result, reason string) {
 	switch {
 	case !applies:
-		return StepSkipped, whyNot
+		return kit.StepSkipped, whyNot
 	case err != nil:
-		return StepFailed, oneLine(err.Error())
+		return kit.StepFailed, kit.OneLine(err.Error())
 	}
-	return StepDone, ""
+	return kit.StepDone, ""
 }
 
 func failedResult(failed []string) string {
 	if len(failed) > 0 {
-		return StepFailed
+		return kit.StepFailed
 	}
-	return StepDone
+	return kit.StepDone
 }
 
 func copyFile(from, to string) error {

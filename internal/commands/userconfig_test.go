@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/superset"
 )
@@ -23,7 +24,7 @@ func userConfigIn(t *testing.T) string {
 // With superset off, SUPERSET_REGISTER=on still gets nothing: no subprocess,
 // nothing on stderr.
 func TestUserSupersetOffBeatsTheRepository(t *testing.T) {
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(committedRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +46,7 @@ func TestUserSupersetOffBeatsTheRepository(t *testing.T) {
 // Doctor says the switch is off and how to change it, and does not count the
 // person's own choice as a problem.
 func TestDoctorSaysSupersetIsOffAtUserLevel(t *testing.T) {
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(committedRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +82,7 @@ func TestDoctorReportsABrokenUserConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	main := committedRepo(t, minimalConf)
-	ctx := OpenLenient(main, &bytes.Buffer{})
+	ctx := kit.OpenLenient(main, &bytes.Buffer{})
 
 	var out bytes.Buffer
 	problems, err := Doctor(ctx, &out)
@@ -97,7 +98,7 @@ func TestDoctorReportsABrokenUserConfig(t *testing.T) {
 // decided Superset.
 func TestConfigPrintsTheUserSettings(t *testing.T) {
 	userConfigIn(t)
-	ctx, err := Open(fixtureRepo(t, minimalConf))
+	ctx, err := kit.Open(fixtureRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +127,7 @@ func TestConfigNamesTheFileThatDecidedSuperset(t *testing.T) {
 		"repo set it":        {minimalConf + "SUPERSET_REGISTER=on\n", "superset mode: on (repo file)"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx, err := Open(fixtureRepo(t, tc.conf))
+			ctx, err := kit.Open(fixtureRepo(t, tc.conf))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -146,7 +147,7 @@ func TestConfigNamesTheFileThatDecidedSuperset(t *testing.T) {
 // and nothing else.
 func TestConfigShellSaysNothingAboutTheUserSettings(t *testing.T) {
 	userConfigIn(t)
-	ctx, err := Open(fixtureRepo(t, minimalConf))
+	ctx, err := kit.Open(fixtureRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +239,7 @@ func TestOpenWarnsAboutABrokenUserConfigAndCarriesOn(t *testing.T) {
 	if err := os.WriteFile(path, []byte("github = \"yes\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ctx, err := Open(fixtureRepo(t, minimalConf))
+	ctx, err := kit.Open(fixtureRepo(t, minimalConf))
 	if err != nil {
 		t.Fatalf("a broken user config stopped the command: %v", err)
 	}
@@ -261,7 +262,7 @@ func TestOpenWarnsAboutABrokenUserConfigAndCarriesOn(t *testing.T) {
 		t.Errorf("stderr = %q, want exactly one line", errs.String())
 	}
 	// Whatever else the command then asks, the file is complained about once.
-	ctx.Warnf(WarnUserConfig, "again")
+	ctx.Warnf(kit.WarnUserConfig, "again")
 	if n := strings.Count(errs.String(), "\n"); n != 1 {
 		t.Errorf("stderr = %q, want the warning only once", errs.String())
 	}
@@ -285,7 +286,7 @@ func writeUserConfig(t *testing.T, body string) string {
 // Superset on the strength of a default the person never asked for.
 func TestAUserFileThatDoesNotParseTurnsEveryIntegrationOff(t *testing.T) {
 	path := writeUserConfig(t, "github = false\nsuperset = \n")
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(committedRepo(t, minimalConf))
 	if err != nil {
 		t.Fatalf("a user file that does not parse stopped the command: %v", err)
 	}
@@ -360,7 +361,7 @@ func TestUserGetStillRefusesAnUnknownKey(t *testing.T) {
 // beside every setting is not read as somebody's choice.
 func TestConfigSaysTheFileCouldNotBeRead(t *testing.T) {
 	path := writeUserConfig(t, "github = \n")
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(committedRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}

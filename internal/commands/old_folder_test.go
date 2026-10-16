@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 )
 
@@ -72,7 +73,7 @@ const oldRecord = `{
 // and none is taken from the code, so a rename there that would strand the
 // folders people already have fails these tests. It returns the context,
 // where the worktree was, its branch, its tip and the folder.
-func oldFolder(t *testing.T, work string) (ctx *Context, path, branch, tip, dir string) {
+func oldFolder(t *testing.T, work string) (ctx *kit.Context, path, branch, tip, dir string) {
 	t.Helper()
 	ctx, path = safetyWorktree(t, work)
 	root := ctx.Repo.MainRoot

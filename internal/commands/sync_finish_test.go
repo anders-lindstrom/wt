@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -23,20 +24,20 @@ func TestCompleteRunBuildsItsInputUnderTheRebasedTracker(t *testing.T) {
 	if err != nil || res.Left != nil || res.Restored {
 		t.Fatalf("rebase %+v err %v", res, err)
 	}
-	tracker := &rebaseTracker{}
-	var atBuild *rebaseInFlight
+	tracker := &kit.RebaseTracker{}
+	var atBuild *kit.RebaseInFlight
 	var out bytes.Buffer
 	head, owed, err := completeRun(ctx, &out, cfg, tracker, "bump", bump, func() completeInput {
-		atBuild = tracker.get()
+		atBuild = tracker.Get()
 		return completeInput{Branch: branch, Epoch: 7, Res: res, TrunkName: "main", Landed: 1}
 	})
 	if err != nil || len(owed) != 0 {
 		t.Fatalf("owed %v err %v\n%s", owed, err, out.String())
 	}
-	if atBuild == nil || !atBuild.rebased || atBuild.work != "bump" || atBuild.path != bump {
+	if atBuild == nil || !atBuild.Rebased || atBuild.Work != "bump" || atBuild.Path != bump {
 		t.Fatalf("the input was built with the tracker at %+v", atBuild)
 	}
-	if at := tracker.get(); at != nil {
+	if at := tracker.Get(); at != nil {
 		t.Fatalf("the tracker still reads %+v after the finish", at)
 	}
 	if head != gitOut(t, bump, "rev-parse", "HEAD") {

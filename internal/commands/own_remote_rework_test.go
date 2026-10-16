@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -462,7 +463,7 @@ func TestSyncUndoForcedPinsACommitInsideAHandoverThatFollowedAFastForward(t *tes
 // the branch was at its remote's commit.
 func TestOnInterruptAfterAFastForwardPointsAtUndo(t *testing.T) {
 	var out bytes.Buffer
-	onInterrupt(&out, nil, &rebaseInFlight{work: "bump", path: "/w/bump", safety: "refs/wt-sync/feat_wt/bump/99", forwarding: true})
+	kit.OnInterrupt(&out, nil, &kit.RebaseInFlight{Work: "bump", Path: "/w/bump", Safety: "refs/wt-sync/feat_wt/bump/99", Forwarding: true})
 	s := out.String()
 	if !strings.Contains(s, "interrupted while fast-forwarding bump") || !strings.Contains(s, "wt sync undo bump") {
 		t.Fatalf("out %q", s)
@@ -489,7 +490,7 @@ func TestAnInterruptedRunReportsAFastForwardItHadMade(t *testing.T) {
 	j.repo(f.main)
 	j.join("x", "feat_wt/x", x, before, ownRemoteSyncOf(own.State("feat_wt/x")))
 	gitIn(t, x, "merge", "-q", "--ff-only", theirs)
-	j.interrupted("x", "interrupted while fast-forwarding x: wt sync undo x puts it back")
+	j.Interrupted("x", "interrupted while fast-forwarding x: wt sync undo x puts it back")
 	validateJSON(t, "up", out.Bytes())
 	var r UpResult
 	if err := json.Unmarshal(out.Bytes(), &r); err != nil {

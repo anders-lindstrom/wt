@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 // NewOptions controls worktree creation.
@@ -20,11 +22,11 @@ type NewOptions struct {
 
 // New creates a branch and its worktree at the canonical path, then provisions
 // it. It returns the worktree path so a caller can cd there.
-func New(ctx *Context, spec string, opts NewOptions, w io.Writer) (string, error) {
+func New(ctx *kit.Context, spec string, opts NewOptions, w io.Writer) (string, error) {
 	if err := dotOrRoot(spec); err != nil {
 		return "", err
 	}
-	typ, work, branch, err := parseWork(ctx, spec)
+	typ, work, branch, err := kit.ParseWork(ctx, spec)
 	if err != nil {
 		return "", err
 	}
@@ -45,16 +47,16 @@ func New(ctx *Context, spec string, opts NewOptions, w io.Writer) (string, error
 // either is about the wrong thing.
 func dotOrRoot(spec string) error {
 	switch {
-	case isDot(spec):
+	case kit.IsDot(spec):
 		return errors.New(". names the worktree you are in; wt new takes a new <type>/<work>")
-	case isRoot(spec):
+	case kit.IsRoot(spec):
 		return errors.New("/ names the main checkout; wt new takes a new <type>/<work>")
 	}
 	return nil
 }
 
 // newAdd is wt new's add: the branch cut from base, and its worktree.
-func newAdd(ctx *Context, path, branch, base string, w io.Writer) func() error {
+func newAdd(ctx *kit.Context, path, branch, base string, w io.Writer) func() error {
 	return func() error {
 		fmt.Fprintf(w, "Creating %s at %s (from %s)\n", branch, path, base)
 		return ctx.Repo.AddWorktree(path, branch, base)
@@ -74,17 +76,17 @@ func newAdd(ctx *Context, path, branch, base string, w io.Writer) func() error {
 // Superset is told. It cannot change what this returns.
 //
 // j records each step for --json; it is nil otherwise.
-func addAndProvision(ctx *Context, path string, add func() error, opts NewOptions, w io.Writer, j *CreateJournal) (string, error) {
+func addAndProvision(ctx *kit.Context, path string, add func() error, opts NewOptions, w io.Writer, j *CreateJournal) (string, error) {
 	// The one line a repository with no configuration gets: which trunk wt
 	// took, since that decides what the worktree is cut from.
 	if ctx.Config.Detected {
-		ctx.Warnf(WarnDetected, "no config file here; on detected defaults (trunk %s) — `wt init` writes one",
+		ctx.Warnf(kit.WarnDetected, "no config file here; on detected defaults (trunk %s) — `wt init` writes one",
 			ctx.Config.MainBranch)
 	}
-	j.start(StepWorktree)
+	j.start(kit.StepWorktree)
 	if _, err := os.Stat(path); err == nil {
 		err := fmt.Errorf("%s already exists", path)
-		j.finish(StepWorktree, StepFailed, err.Error(), "")
+		j.finish(kit.StepWorktree, kit.StepFailed, err.Error(), "")
 		return "", err
 	}
 	if err := add(); err != nil {
@@ -100,11 +102,11 @@ func addAndProvision(ctx *Context, path string, add func() error, opts NewOption
 	}
 	err := setup(ctx, path, SetupOptions{SkipBuild: opts.SkipBuild, NoCache: opts.NoCache}, w, j)
 	if opts.NoSuperset {
-		j.finish(StepSuperset, StepSkipped, "--no-superset", "")
+		j.finish(kit.StepSuperset, kit.StepSkipped, "--no-superset", "")
 		return path, err
 	}
-	j.start(StepSuperset)
+	j.start(kit.StepSuperset)
 	result, reason := registerSuperset(ctx, path, w)
-	j.finish(StepSuperset, result, reason, "")
+	j.finish(kit.StepSuperset, result, reason, "")
 	return path, err
 }

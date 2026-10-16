@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -17,7 +18,7 @@ import (
 // returns the context, the worktree's path, its branch, its tip and the
 // folder. commit gives the branch a commit of its own, so it is kept under
 // its bare name rather than deleted.
-func quarantined(t *testing.T, work string, commit bool) (*Context, string, string, string, string) {
+func quarantined(t *testing.T, work string, commit bool) (*kit.Context, string, string, string, string) {
 	t.Helper()
 	ctx, path := safetyWorktree(t, work)
 	branch := strings.TrimSpace(gitOut(t, path, "symbolic-ref", "--short", "HEAD"))
@@ -34,7 +35,7 @@ func quarantined(t *testing.T, work string, commit bool) (*Context, string, stri
 	return ctx, path, branch, tip, dir
 }
 
-func restore(t *testing.T, ctx *Context, dir string) quarantine.RestoreResult {
+func restore(t *testing.T, ctx *kit.Context, dir string) quarantine.RestoreResult {
 	t.Helper()
 	var res quarantine.RestoreResult
 	var buf bytes.Buffer
@@ -46,7 +47,7 @@ func restore(t *testing.T, ctx *Context, dir string) quarantine.RestoreResult {
 
 // assertBack checks the worktree is registered at path, unlocked, clean,
 // with the quarantine empty of it; head is what its HEAD must name.
-func assertBack(t *testing.T, ctx *Context, path, dir, head string) {
+func assertBack(t *testing.T, ctx *kit.Context, path, dir, head string) {
 	t.Helper()
 	list, err := ctx.Repo.Worktrees()
 	if err != nil {
@@ -71,7 +72,7 @@ func assertBack(t *testing.T, ctx *Context, path, dir, head string) {
 	}
 }
 
-func branchTip(t *testing.T, ctx *Context, name string) string {
+func branchTip(t *testing.T, ctx *kit.Context, name string) string {
 	t.Helper()
 	tip, _ := ctx.Repo.ResolveRef("refs/heads/" + name)
 	return tip
@@ -126,7 +127,7 @@ func TestRestoreRenamesAKeptBranchBack(t *testing.T) {
 // do to it.
 func TestRestoreLeavesAnUntouchedBranch(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	path := filepath.Join(ctx.Repo.Parent, "theirs")
 	gitIn(t, main, "worktree", "add", "-q", "-b", "theirs", path)
 	gitIn(t, path, "commit", "-q", "--allow-empty", "-m", "theirs")

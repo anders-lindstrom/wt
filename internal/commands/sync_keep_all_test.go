@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
@@ -16,14 +17,14 @@ import (
 // keepFleet is three repositories under one profile: two that declare wt
 // sync, one of them already kept every hour, and one that does not. The
 // home and launchctl are the test's own.
-func keepFleet(t *testing.T) (u *config.User, kept, fresh, undeclared *Context, home, calls string) {
+func keepFleet(t *testing.T) (u *config.User, kept, fresh, undeclared *kit.Context, home, calls string) {
 	t.Helper()
 	kept, _ = runFixture(t, false)
 	fresh, _ = runFixture(t, false)
 	plain := committedRepo(t, minimalConf)
 	gitIn(t, plain, "remote", "add", "origin", plain)
 	gitIn(t, plain, "fetch", "-q", "origin")
-	undeclared, err := Open(plain)
+	undeclared, err := kit.Open(plain)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,11 +58,11 @@ func plistsIn(t *testing.T, home string) []string {
 }
 
 // The row a command across repositories printed for a repository.
-func keepRowFor(t *testing.T, out string, ctx *Context) string {
+func keepRowFor(t *testing.T, out string, ctx *kit.Context) string {
 	t.Helper()
 	home, _ := os.UserHomeDir()
 	for _, l := range strings.Split(out, "\n") {
-		if f := strings.Fields(l); len(f) > 1 && (f[0] == abbreviateHome(ctx.Repo.MainRoot, home) || f[1] == abbreviateHome(ctx.Repo.MainRoot, home)) {
+		if f := strings.Fields(l); len(f) > 1 && (f[0] == kit.AbbreviateHome(ctx.Repo.MainRoot, home) || f[1] == kit.AbbreviateHome(ctx.Repo.MainRoot, home)) {
 			return l
 		}
 	}
@@ -83,14 +84,14 @@ func TestSyncKeepStartAllInstallsWhatIsMissing(t *testing.T) {
 	opts := KeepStartAllOptions{KeepStartOptions: keepStartOpts(0),
 		Ask: func(q string) (bool, error) { asked = append(asked, q); return true, nil }}
 	var out bytes.Buffer
-	if err := SyncKeepStartAll(u, Selection{Profiles: []string{"p"}}, opts, &out); err != nil {
+	if err := SyncKeepStartAll(u, kit.Selection{Profiles: []string{"p"}}, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	s := out.String()
 	if !slices.Equal(asked, []string{"Install a keeper in 1 repository?"}) {
 		t.Errorf("asked %q", asked)
 	}
-	for ctx, want := range map[*Context]string{
+	for ctx, want := range map[*kit.Context]string{
 		kept:       "already kept, every 1h; left as it is",
 		undeclared: "skipped: no .wt-sync.yaml on origin/main",
 	} {
@@ -117,7 +118,7 @@ func TestSyncKeepStartAllInstallsWhatIsMissing(t *testing.T) {
 
 	out.Reset()
 	asked = nil
-	if err := SyncKeepStartAll(u, Selection{Profiles: []string{"p"}}, opts, &out); err != nil {
+	if err := SyncKeepStartAll(u, kit.Selection{Profiles: []string{"p"}}, opts, &out); err != nil {
 		t.Fatalf("second start: %v\n%s", err, out.String())
 	}
 	if len(asked) != 0 || !strings.HasSuffix(out.String(), "Nothing to install.\n") {
@@ -144,7 +145,7 @@ func TestSyncKeepStartAllInstallsNothingUnlessAgreed(t *testing.T) {
 			before, _ := os.ReadFile(calls)
 			c.opts.KeepStartOptions = keepStartOpts(0)
 			var out bytes.Buffer
-			if err := SyncKeepStartAll(u, Selection{Profiles: []string{"p"}}, c.opts, &out); err != nil {
+			if err := SyncKeepStartAll(u, kit.Selection{Profiles: []string{"p"}}, c.opts, &out); err != nil {
 				t.Fatalf("err %v\n%s", err, out.String())
 			}
 			if row := keepRowFor(t, out.String(), fresh); !strings.HasSuffix(row, "to install, every 30m") {
@@ -167,13 +168,13 @@ func TestSyncKeepStartAllInstallsNothingUnlessAgreed(t *testing.T) {
 // with none, and --dry-run stops nothing; status says it one line each.
 func TestSyncKeepStopAndStatusAll(t *testing.T) {
 	u, kept, fresh, undeclared, home, _ := keepFleet(t)
-	sel := Selection{Profiles: []string{"p"}}
+	sel := kit.Selection{Profiles: []string{"p"}}
 	var out bytes.Buffer
 	if err := SyncKeepStatusAll(u, sel, keepDay, &out); err != nil {
 		t.Fatalf("status: %v\n%s", err, out.String())
 	}
 	s := out.String()
-	for ctx, want := range map[*Context]string{
+	for ctx, want := range map[*kit.Context]string{
 		kept:       "installed, every 1h; log ",
 		fresh:      "not installed; wt sync keep start",
 		undeclared: "not kept: no .wt-sync.yaml on origin/main",
@@ -203,7 +204,7 @@ func TestSyncKeepStopAndStatusAll(t *testing.T) {
 	if row := keepRowFor(t, s, kept); !strings.HasSuffix(row, "stopped; removed "+job.PlistPath) {
 		t.Errorf("row %q", row)
 	}
-	for _, ctx := range []*Context{fresh, undeclared} {
+	for _, ctx := range []*kit.Context{fresh, undeclared} {
 		if row := keepRowFor(t, s, ctx); !strings.HasSuffix(row, "no keeper") {
 			t.Errorf("row %q", row)
 		}
@@ -231,11 +232,11 @@ func TestSyncKeepStartAllReportsARepositoryItCannotOpen(t *testing.T) {
 	u.Profiles[0].Repos = append(u.Profiles[0].Repos, gone)
 	opts := KeepStartAllOptions{KeepStartOptions: keepStartOpts(0), Yes: true}
 	var out bytes.Buffer
-	err := SyncKeepStartAll(u, Selection{Profiles: []string{"p"}}, opts, &out)
+	err := SyncKeepStartAll(u, kit.Selection{Profiles: []string{"p"}}, opts, &out)
 	if err == nil || err.Error() != "not completed: gone" {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
-	if row := keepRowFor(t, out.String(), &Context{Repo: &repo.Repo{MainRoot: gone}}); !strings.HasPrefix(row, "! ") || !strings.HasSuffix(row, "  not there any more") {
+	if row := keepRowFor(t, out.String(), &kit.Context{Repo: &repo.Repo{MainRoot: gone}}); !strings.HasPrefix(row, "! ") || !strings.HasSuffix(row, "  not there any more") {
 		t.Errorf("output:\n%s", out.String())
 	}
 	if _, err := os.Stat(func() string { j, _ := keepJobFor(fresh); return j.PlistPath }()); err != nil {
@@ -248,10 +249,10 @@ func TestSyncKeepStartAndStopAllAreRefusedWithoutLaunchd(t *testing.T) {
 	onPlatform(t, "linux")
 	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{t.TempDir()}}}}
 	var out bytes.Buffer
-	if err := SyncKeepStartAll(u, Selection{Profiles: []string{"p"}}, KeepStartAllOptions{Yes: true}, &out); err != ErrNoLaunchd {
+	if err := SyncKeepStartAll(u, kit.Selection{Profiles: []string{"p"}}, KeepStartAllOptions{Yes: true}, &out); err != ErrNoLaunchd {
 		t.Fatalf("start: %v", err)
 	}
-	if err := SyncKeepStopAll(u, Selection{Profiles: []string{"p"}}, false, &out); err != ErrNoLaunchd {
+	if err := SyncKeepStopAll(u, kit.Selection{Profiles: []string{"p"}}, false, &out); err != ErrNoLaunchd {
 		t.Fatalf("stop: %v", err)
 	}
 }

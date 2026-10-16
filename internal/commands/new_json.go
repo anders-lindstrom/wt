@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/naming"
@@ -17,57 +18,7 @@ import (
 	"github.com/anders-lindstrom/wt/schema"
 )
 
-// Why wt new or wt checkout would not create a worktree, or what is wrong
-// with one it created, as --json names it.
-const (
-	ProblemBranchExists     = "branchExists"
-	ProblemPathExists       = "pathExists"
-	ProblemUnknownType      = "unknownType"
-	ProblemInvalidName      = "invalidName"
-	ProblemNoConfiguration  = "noConfiguration"
-	ProblemConfigInvalid    = "configurationInvalid"
-	ProblemBranchMissing    = "branchMissing"
-	ProblemBranchCheckedOut = "branchCheckedOut"
-	ProblemBaseMissing      = "baseMissing"
-	// ProblemBranchAmbiguous is a bare name no local branch has and more
-	// than one remote does, with no checkout.defaultRemote among them.
-	ProblemBranchAmbiguous = "branchAmbiguous"
-	// ProblemRemoteBranchMissing is <remote>/<branch> for a configured
-	// remote that has no such branch as last fetched.
-	ProblemRemoteBranchMissing = "remoteBranchMissing"
-	// ProblemPlanChanged is --expect refusing: the plan is not the one the
-	// token was made from.
-	ProblemPlanChanged = "planChanged"
-	// ProblemHeadMoved is a worktree created on another commit than the
-	// plan pinned: the branch or base moved between the check and the add.
-	ProblemHeadMoved = "headMoved"
-)
-
-// The side effects of creating a worktree, in the order they happen.
-const (
-	StepWorktree   = "worktree"
-	StepBranch     = "branch"
-	StepConfig     = "config"
-	StepCache      = "cache"
-	StepProvision  = "provision"
-	StepSubmodules = "submodules"
-	StepBuild      = "build"
-	StepSuperset   = "superset"
-)
-
-var createSteps = []string{StepWorktree, StepBranch, StepConfig, StepCache, StepProvision, StepSubmodules, StepBuild, StepSuperset}
-
-// What one step came to. Every step ends as exactly one of these.
-const (
-	StepCreated     = "created"
-	StepUntouched   = "untouched"
-	StepDone        = "done"
-	StepRegistered  = "registered"
-	StepSkipped     = "skipped"
-	StepFailed      = "failed"
-	StepNotRun      = "notRun"
-	StepInterrupted = "interrupted"
-)
+var createSteps = []string{kit.StepWorktree, kit.StepBranch, kit.StepConfig, kit.StepCache, kit.StepProvision, kit.StepSubmodules, kit.StepBuild, kit.StepSuperset}
 
 // What a whole wt new or wt checkout came to.
 const (
@@ -174,20 +125,20 @@ func (p *CreatePlan) problem(code, format string, args ...any) {
 
 // basePlan is the part of a plan that does not depend on the name: the
 // configuration, and which provisioning steps these options would run.
-func basePlan(ctx *Context, command string, opts NewOptions) CreatePlan {
+func basePlan(ctx *kit.Context, command string, opts NewOptions) CreatePlan {
 	p := CreatePlan{Schema: 1, SchemaVersion: schema.VersionOf(command + "-plan"), Command: command,
-		Types: append([]string{}, ctx.Config.Types...), DefaultType: strp(ctx.Config.DefaultType),
-		TrunkSource: ctx.trunkSource(), Configured: ctx.configured(), Problems: []Problem{}}
+		Types: append([]string{}, ctx.Config.Types...), DefaultType: kit.Strp(ctx.Config.DefaultType),
+		TrunkSource: ctx.TrunkSource(), Configured: ctx.Configured(), Problems: []Problem{}}
 	switch {
 	case errors.Is(ctx.ConfigError, config.ErrNoConfig):
-		p.problem(ProblemNoConfiguration, "%s", oneLine(ctx.ConfigError.Error()))
+		p.problem(kit.ProblemNoConfiguration, "%s", kit.OneLine(ctx.ConfigError.Error()))
 	case ctx.ConfigError != nil:
-		p.problem(ProblemConfigInvalid, "the wt configuration does not parse: %s", oneLine(ctx.ConfigError.Error()))
+		p.problem(kit.ProblemConfigInvalid, "the wt configuration does not parse: %s", kit.OneLine(ctx.ConfigError.Error()))
 	}
 	if !opts.NoSetup {
 		p.Provision = ctx.HasProvisionScript()
 		if !opts.SkipBuild && ctx.Config.BuildInitEnabled {
-			p.BuildCommand = strp(ctx.Config.BuildInitCommand)
+			p.BuildCommand = kit.Strp(ctx.Config.BuildInitCommand)
 		}
 		p.Superset = !opts.NoSuperset && supersetEnabled(ctx)
 	}
@@ -196,65 +147,65 @@ func basePlan(ctx *Context, command string, opts NewOptions) CreatePlan {
 
 // PlanNew is what wt new would do for spec, from local state alone. It
 // writes nothing.
-func PlanNew(ctx *Context, spec string, opts NewOptions) NewPlan {
+func PlanNew(ctx *kit.Context, spec string, opts NewOptions) NewPlan {
 	p := NewPlan{CreatePlan: basePlan(ctx, "new", opts)}
 	base := opts.Base
 	if base == "" {
 		base = ctx.Config.MainBranch
 	}
-	p.Base = strp(base)
+	p.Base = kit.Strp(base)
 	if err := dotOrRoot(spec); err != nil {
-		p.problem(ProblemInvalidName, "%v", err)
+		p.problem(kit.ProblemInvalidName, "%v", err)
 	} else if typ, work, err := naming.ParseSpec(spec, ctx.Config.DefaultType, ctx.Vocab()); err != nil {
-		p.problem(ProblemInvalidName, "%v", err)
+		p.problem(kit.ProblemInvalidName, "%v", err)
 	} else {
-		p.Type, p.Work = strp(typ), strp(work)
-		if err := checkType(ctx, typ); err != nil {
-			p.problem(ProblemUnknownType, "%v", err)
+		p.Type, p.Work = kit.Strp(typ), kit.Strp(work)
+		if err := kit.CheckType(ctx, typ); err != nil {
+			p.problem(kit.ProblemUnknownType, "%v", err)
 		} else {
 			branch, path := ctx.Scheme().Branch(typ, work), ctx.Scheme().Dir(typ, work)
-			p.Branch, p.Path = strp(branch), strp(path)
+			p.Branch, p.Path = kit.Strp(branch), kit.Strp(path)
 			if _, err := git.Run(ctx.Repo.MainRoot, "check-ref-format", "refs/heads/"+branch); err != nil {
-				p.problem(ProblemInvalidName, "%s is not a name git takes for a branch", branch)
+				p.problem(kit.ProblemInvalidName, "%s is not a name git takes for a branch", branch)
 			} else if ctx.Repo.BranchExists(branch) {
-				p.problem(ProblemBranchExists, "branch %s already exists", branch)
+				p.problem(kit.ProblemBranchExists, "branch %s already exists", branch)
 			}
 			if _, err := os.Stat(path); err == nil {
-				p.problem(ProblemPathExists, "%s already exists", path)
+				p.problem(kit.ProblemPathExists, "%s already exists", path)
 			}
 		}
 	}
 	// No base at all is no trunk and no --base: noConfiguration says so.
 	if oid, ok := ctx.Repo.ResolveRef(base); ok {
-		p.BaseCommit = strp(oid)
+		p.BaseCommit = kit.Strp(oid)
 	} else if base != "" {
-		p.problem(ProblemBaseMissing, "%q is not a commit here", base)
+		p.problem(kit.ProblemBaseMissing, "%q is not a commit here", base)
 	}
 	if len(p.Problems) == 0 {
-		p.Token = strp(createToken(ctx, "new", *p.Branch, *p.Path, *p.BaseCommit))
+		p.Token = kit.Strp(createToken(ctx, "new", *p.Branch, *p.Path, *p.BaseCommit))
 	}
 	return p
 }
 
 // PlanCheckout is what wt checkout would do for arg, from local state
 // alone, the remote-tracking refs as last fetched. It writes nothing.
-func PlanCheckout(ctx *Context, arg, work string, opts NewOptions) CheckoutPlan {
+func PlanCheckout(ctx *kit.Context, arg, work string, opts NewOptions) CheckoutPlan {
 	p := CheckoutPlan{CreatePlan: basePlan(ctx, "checkout", opts)}
 	typ := ctx.Config.DefaultType
 	t, prob := resolveCheckout(ctx, arg)
-	p.Type, p.Branch = strp(typ), strp(t.Branch)
+	p.Type, p.Branch = kit.Strp(typ), kit.Strp(t.Branch)
 	p.CheckoutSource = t.source()
 	switch t.Source {
 	case SourceLocal:
-		p.BranchCommit = strp(t.Commit)
+		p.BranchCommit = kit.Strp(t.Commit)
 		if all, err := ctx.Repo.Worktrees(); err == nil {
 			if wt, ok := all.ByBranch(t.Branch); ok {
-				p.problem(ProblemBranchCheckedOut, "branch %s is checked out at %s; git gives a branch only one worktree",
+				p.problem(kit.ProblemBranchCheckedOut, "branch %s is checked out at %s; git gives a branch only one worktree",
 					t.Branch, wt.Path)
 			}
 		}
 	case SourceRemote:
-		p.RemoteCommit = strp(t.Commit)
+		p.RemoteCommit = kit.Strp(t.Commit)
 	}
 	if prob != nil {
 		p.Problems = append(p.Problems, *prob)
@@ -266,16 +217,16 @@ func PlanCheckout(ctx *Context, arg, work string, opts NewOptions) CheckoutPlan 
 		work = WorkNameFromBranch(t.Branch, ctx.Scheme().Suffix)
 	}
 	if work == "" {
-		p.problem(ProblemInvalidName, "could not derive a work name from branch %q", t.Branch)
+		p.problem(kit.ProblemInvalidName, "could not derive a work name from branch %q", t.Branch)
 	} else {
 		path := ctx.Scheme().Dir(typ, work)
-		p.Work, p.Path = strp(work), strp(path)
+		p.Work, p.Path = kit.Strp(work), kit.Strp(path)
 		if _, err := os.Stat(path); err == nil {
-			p.problem(ProblemPathExists, "%s already exists", path)
+			p.problem(kit.ProblemPathExists, "%s already exists", path)
 		}
 	}
 	if len(p.Problems) == 0 {
-		p.Token = strp(createToken(ctx, "checkout", t.tokenName(), *p.Path, t.Commit))
+		p.Token = kit.Strp(createToken(ctx, "checkout", t.tokenName(), *p.Path, t.Commit))
 	}
 	return p
 }
@@ -284,10 +235,10 @@ func PlanCheckout(ctx *Context, arg, work string, opts NewOptions) CheckoutPlan 
 func (t checkoutTarget) source() CheckoutSource {
 	var s CheckoutSource
 	if t.Source != "" {
-		s.Source = strp(t.Source)
+		s.Source = kit.Strp(t.Source)
 	}
 	if t.Source == SourceRemote {
-		s.Remote, s.RemoteRef = strp(t.Remote), strp(t.RemoteRef)
+		s.Remote, s.RemoteRef = kit.Strp(t.Remote), kit.Strp(t.RemoteRef)
 	}
 	return s
 }
@@ -307,26 +258,26 @@ func (t checkoutTarget) tokenName() string {
 // the base for wt new, the branch's tip or the remote-tracking ref's for wt
 // checkout — and the configuration file. Anything else moving does not
 // change it.
-func createToken(ctx *Context, command, branch, path, commit string) string {
+func createToken(ctx *kit.Context, command, branch, path, commit string) string {
 	h := sha256.New()
 	h.Write([]byte("wt-create-1\x00" + command + "\x00" + branch + "\x00" + path + "\x00" + commit + "\x00"))
-	h.Write(configFingerprint(ctx))
+	h.Write(kit.ConfigFingerprint(ctx))
 	return "1:" + hex.EncodeToString(h.Sum(nil))[:32]
 }
 
 // NewPlanJSON writes wt new --dry-run --json.
-func NewPlanJSON(ctx *Context, spec string, opts NewOptions, w io.Writer) error {
-	return writeJSON(w, PlanNew(ctx, spec, opts))
+func NewPlanJSON(ctx *kit.Context, spec string, opts NewOptions, w io.Writer) error {
+	return kit.WriteJSON(w, PlanNew(ctx, spec, opts))
 }
 
 // CheckoutPlanJSON writes wt checkout --dry-run --json.
-func CheckoutPlanJSON(ctx *Context, branch, work string, opts NewOptions, w io.Writer) error {
-	return writeJSON(w, PlanCheckout(ctx, branch, work, opts))
+func CheckoutPlanJSON(ctx *kit.Context, branch, work string, opts NewOptions, w io.Writer) error {
+	return kit.WriteJSON(w, PlanCheckout(ctx, branch, work, opts))
 }
 
 // NewDryRun is wt new --dry-run for a person: what would be made, or why
 // not.
-func NewDryRun(ctx *Context, spec string, opts NewOptions, w io.Writer) error {
+func NewDryRun(ctx *kit.Context, spec string, opts NewOptions, w io.Writer) error {
 	p := PlanNew(ctx, spec, opts)
 	if err := problemsError(p.Problems); err != nil {
 		return err
@@ -336,7 +287,7 @@ func NewDryRun(ctx *Context, spec string, opts NewOptions, w io.Writer) error {
 }
 
 // CheckoutDryRun is wt checkout --dry-run for a person.
-func CheckoutDryRun(ctx *Context, arg, work string, opts NewOptions, w io.Writer) error {
+func CheckoutDryRun(ctx *kit.Context, arg, work string, opts NewOptions, w io.Writer) error {
 	p := PlanCheckout(ctx, arg, work, opts)
 	if err := problemsError(p.Problems); err != nil {
 		return err
@@ -363,7 +314,7 @@ func problemsError(ps []Problem) error {
 
 // NewJSON is wt new --json: the plan recomputed, --expect held to it, then
 // the same creation as without --json, recorded step by step in j.
-func NewJSON(ctx *Context, spec string, opts NewOptions, expect string, j *CreateJournal, w io.Writer) error {
+func NewJSON(ctx *kit.Context, spec string, opts NewOptions, expect string, j *CreateJournal, w io.Writer) error {
 	p := PlanNew(ctx, spec, opts)
 	j.plan(p.CreatePlan, p.Base, p.BaseCommit)
 	if err := j.admit(p.CreatePlan, expect); err != nil {
@@ -375,7 +326,7 @@ func NewJSON(ctx *Context, spec string, opts NewOptions, expect string, j *Creat
 }
 
 // CheckoutJSON is wt checkout --json, as NewJSON is wt new --json.
-func CheckoutJSON(ctx *Context, arg, work string, opts NewOptions, expect string, j *CreateJournal, w io.Writer) error {
+func CheckoutJSON(ctx *kit.Context, arg, work string, opts NewOptions, expect string, j *CreateJournal, w io.Writer) error {
 	p := PlanCheckout(ctx, arg, work, opts)
 	expected := p.BranchCommit
 	if p.RemoteCommit != nil {
@@ -423,7 +374,7 @@ func NewCreateJournal(out io.Writer, command string) *CreateJournal {
 	j := &CreateJournal{out: out, res: CreateResult{Schema: 1, SchemaVersion: schema.VersionOf(command),
 		Command: command, Problems: []Problem{}}}
 	for _, s := range createSteps {
-		j.res.Steps = append(j.res.Steps, CreateStep{Step: s, Result: StepNotRun})
+		j.res.Steps = append(j.res.Steps, CreateStep{Step: s, Result: kit.StepNotRun})
 	}
 	if command == "checkout" {
 		j.co = &CheckoutResult{}
@@ -452,35 +403,35 @@ func (j *CreateJournal) createsBranch() bool {
 
 // branchMade records the branch wt checkout has just created from a
 // remote, before its worktree is added.
-func (j *CreateJournal) branchMade(ctx *Context) {
+func (j *CreateJournal) branchMade(ctx *kit.Context) {
 	if j == nil {
 		return
 	}
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	j.branchRead(ctx, StepCreated)
+	j.branchRead(ctx, kit.StepCreated)
 }
 
 // branchRead records the branch step from the branch as it is after the
 // run: its tip, and for wt checkout its upstream. Called with mu held.
-func (j *CreateJournal) branchRead(ctx *Context, result string) {
+func (j *CreateJournal) branchRead(ctx *kit.Context, result string) {
 	if j.res.Branch == nil {
 		return
 	}
 	tip, _ := ctx.Repo.ResolveRef("refs/heads/" + *j.res.Branch)
-	s := j.step(StepBranch)
-	s.Result, s.Commit = result, strp(tip)
+	s := j.step(kit.StepBranch)
+	s.Result, s.Commit = result, kit.Strp(tip)
 	if j.co == nil {
 		return
 	}
 	up := ctx.Repo.Upstream(*j.res.Branch)
-	j.co.Upstream = strp(up)
-	if j.co.RemoteRef != nil && result == StepCreated {
+	j.co.Upstream = kit.Strp(up)
+	if j.co.RemoteRef != nil && result == kit.StepCreated {
 		name := strings.TrimPrefix(*j.co.RemoteRef, "refs/remotes/")
 		if up == *j.co.RemoteRef {
-			s.Reason = strp("tracking " + name)
+			s.Reason = kit.Strp("tracking " + name)
 		} else {
-			s.Reason = strp("its upstream could not be set to " + name)
+			s.Reason = kit.Strp("its upstream could not be set to " + name)
 		}
 	}
 }
@@ -501,7 +452,7 @@ func (j *CreateJournal) plan(p CreatePlan, base, expected *string) {
 func (j *CreateJournal) admit(p CreatePlan, expect string) error {
 	problems := p.Problems
 	if expect != "" && (p.Token == nil || *p.Token != expect) {
-		problems = append([]Problem{{Code: ProblemPlanChanged,
+		problems = append([]Problem{{Code: kit.ProblemPlanChanged,
 			Message: "the plan is not the one --expect names: the commit, the name or the configuration changed; plan again"}},
 			p.Problems...)
 	}
@@ -509,7 +460,7 @@ func (j *CreateJournal) admit(p CreatePlan, expect string) error {
 	if err != nil {
 		j.mu.Lock()
 		j.res.Problems = problems
-		j.res.Error = strp(err.Error())
+		j.res.Error = kit.Strp(err.Error())
 		j.mu.Unlock()
 		j.Finish()
 	}
@@ -520,7 +471,7 @@ func (j *CreateJournal) admit(p CreatePlan, expect string) error {
 // repository — and writes the object.
 func (j *CreateJournal) Fail(err error) {
 	j.mu.Lock()
-	j.res.Error = strp(err.Error())
+	j.res.Error = kit.Strp(err.Error())
 	j.mu.Unlock()
 	j.Finish()
 }
@@ -567,7 +518,7 @@ func (j *CreateJournal) finish(name, result, reason, commit string) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	if s := j.step(name); s != nil {
-		s.Result, s.Reason, s.Commit = result, strp(reason), strp(commit)
+		s.Result, s.Reason, s.Commit = result, kit.Strp(reason), kit.Strp(commit)
 	}
 	if j.inFlight == name {
 		j.inFlight = ""
@@ -579,14 +530,14 @@ func (j *CreateJournal) finish(name, result, reason, commit string) {
 // worktree made; the steps after it are then not run, as without --json.
 // Without a worktree, a branch wt new asked for may have been made all the
 // same.
-func (j *CreateJournal) addFailed(ctx *Context, path string, err error) {
+func (j *CreateJournal) addFailed(ctx *kit.Context, path string, err error) {
 	if j == nil {
 		return
 	}
 	if errors.Is(err, repo.ErrBranchExists) {
 		j.mu.Lock()
-		j.res.Problems = append(j.res.Problems, Problem{Code: ProblemPlanChanged, Message: oneLine(err.Error())})
-		j.res.Error = strp(oneLine(err.Error()))
+		j.res.Problems = append(j.res.Problems, Problem{Code: kit.ProblemPlanChanged, Message: kit.OneLine(err.Error())})
+		j.res.Error = kit.Strp(kit.OneLine(err.Error()))
 		j.inFlight = ""
 		j.mu.Unlock()
 		return
@@ -595,21 +546,21 @@ func (j *CreateJournal) addFailed(ctx *Context, path string, err error) {
 		if _, ok := all.ByPath(path); ok {
 			j.created(ctx, path)
 			j.mu.Lock()
-			j.step(StepWorktree).Reason = strp(oneLine(err.Error()))
+			j.step(kit.StepWorktree).Reason = kit.Strp(kit.OneLine(err.Error()))
 			j.mu.Unlock()
 			return
 		}
 	}
-	j.finish(StepWorktree, StepFailed, oneLine(err.Error()), "")
+	j.finish(kit.StepWorktree, kit.StepFailed, kit.OneLine(err.Error()), "")
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	if j.res.Branch == nil {
 		return
 	}
 	if _, ok := ctx.Repo.ResolveRef("refs/heads/" + *j.res.Branch); ok {
-		result := StepUntouched
+		result := kit.StepUntouched
 		if j.createsBranch() {
-			result = StepCreated
+			result = kit.StepCreated
 		}
 		j.branchRead(ctx, result)
 	}
@@ -617,31 +568,31 @@ func (j *CreateJournal) addFailed(ctx *Context, path string, err error) {
 
 // created records the worktree git made, read back from it: the commit it
 // is on, and whether that is the one the plan pinned.
-func (j *CreateJournal) created(ctx *Context, path string) {
+func (j *CreateJournal) created(ctx *kit.Context, path string) {
 	if j == nil {
 		return
 	}
 	head, _ := git.Run(path, "rev-parse", "--verify", "HEAD")
 	head = strings.TrimSpace(head)
-	j.finish(StepWorktree, StepCreated, "", head)
+	j.finish(kit.StepWorktree, kit.StepCreated, "", head)
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	j.res.Commit = strp(head)
-	branch := StepUntouched
+	j.res.Commit = kit.Strp(head)
+	branch := kit.StepUntouched
 	if j.createsBranch() {
-		branch = StepCreated
+		branch = kit.StepCreated
 	}
 	j.branchRead(ctx, branch)
 	if want := j.res.ExpectedCommit; want != nil && head != *want {
-		j.res.Problems = append(j.res.Problems, Problem{Code: ProblemHeadMoved,
+		j.res.Problems = append(j.res.Problems, Problem{Code: kit.ProblemHeadMoved,
 			Message: fmt.Sprintf("the worktree is at %s, not at %s as planned", git.ShortID(head, 7), git.ShortID(*want, 7))})
 	}
 }
 
 // skipSetup records every provisioning step as skipped, for --no-setup.
 func (j *CreateJournal) skipSetup(why string) {
-	for _, s := range []string{StepConfig, StepCache, StepProvision, StepSubmodules, StepBuild, StepSuperset} {
-		j.finish(s, StepSkipped, why, "")
+	for _, s := range []string{kit.StepConfig, kit.StepCache, kit.StepProvision, kit.StepSubmodules, kit.StepBuild, kit.StepSuperset} {
+		j.finish(s, kit.StepSkipped, why, "")
 	}
 }
 
@@ -651,12 +602,12 @@ func (j *CreateJournal) Finish() {
 	j.write(false)
 }
 
-// interrupted writes the object for a run a signal ended, the step in
+// Interrupted writes the object for a run a signal ended, the step in
 // flight as interrupted: what makes it interruptible, for watchSignals. The
 // handler has stopped every git and script already, so what the steps
 // recorded stands. inFlight and recovery are the rebase tracker's and what
 // the handler printed, which a create has no use for.
-func (j *CreateJournal) interrupted(_, _ string) {
+func (j *CreateJournal) Interrupted(_, _ string) {
 	if j == nil {
 		return
 	}
@@ -671,8 +622,8 @@ func (j *CreateJournal) interrupted(_, _ string) {
 // process group, write the object with the step in flight interrupted, and
 // exit 128+signal.
 func (j *CreateJournal) Watch(w io.Writer) func() {
-	unset := setInterruptJournal(j)
-	stop := watchSignals(w, nil)
+	unset := kit.SetInterruptJournal(j)
+	stop := kit.WatchSignals(w, nil)
 	return func() {
 		stop()
 		unset()
@@ -688,20 +639,20 @@ func (j *CreateJournal) write(signalled bool) {
 		defer j.mu.Unlock()
 		if signalled {
 			if s := j.step(j.inFlight); s != nil {
-				s.Result = StepInterrupted
-				s.Reason = strp("a signal ended wt while this ran")
-				if j.inFlight != StepWorktree && j.res.Path != nil {
-					s.Reason = strp("a signal ended wt while this ran; `cd " + *j.res.Path + " && wt setup` finishes provisioning")
+				s.Result = kit.StepInterrupted
+				s.Reason = kit.Strp("a signal ended wt while this ran")
+				if j.inFlight != kit.StepWorktree && j.res.Path != nil {
+					s.Reason = kit.Strp("a signal ended wt while this ran; `cd " + *j.res.Path + " && wt setup` finishes provisioning")
 				}
 			}
 		}
 		j.res.Outcome = j.outcome(signalled)
 		if j.co != nil {
 			j.co.CreateResult = j.res
-			_ = writeJSON(j.out, j.co)
+			_ = kit.WriteJSON(j.out, j.co)
 			return
 		}
-		_ = writeJSON(j.out, j.res)
+		_ = kit.WriteJSON(j.out, j.res)
 	})
 }
 
@@ -710,9 +661,9 @@ func (j *CreateJournal) outcome(signalled bool) string {
 	if signalled {
 		return CreateInterrupted
 	}
-	switch j.step(StepWorktree).Result {
-	case StepCreated:
-	case StepFailed:
+	switch j.step(kit.StepWorktree).Result {
+	case kit.StepCreated:
+	case kit.StepFailed:
 		return CreateFailed
 	default:
 		return CreateRefused
@@ -721,7 +672,7 @@ func (j *CreateJournal) outcome(signalled bool) string {
 		return CreateCreatedWithProblems
 	}
 	for _, s := range j.res.Steps {
-		if s.Result == StepFailed || s.Result == StepInterrupted || s.Result == StepNotRun {
+		if s.Result == kit.StepFailed || s.Result == kit.StepInterrupted || s.Result == kit.StepNotRun {
 			return CreateCreatedWithProblems
 		}
 	}

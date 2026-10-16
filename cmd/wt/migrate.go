@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 func newMigrateCmd() *cobra.Command {
@@ -36,7 +37,7 @@ func newMigrateCmd() *cobra.Command {
 			"  wt migrate login-crash --force        # move it past an agent session",
 		Args:              migrateArgs,
 		ValidArgsFunction: completeMigrate,
-		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
+		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *kit.Context) error {
 			dest := ""
 			if len(args) > 1 {
 				dest = args[1]
@@ -75,7 +76,7 @@ func completeMigrate(_ *cobra.Command, args []string, _ string) ([]string, cobra
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	names, err := commands.WorkNames(ctx)
+	names, err := kit.WorkNames(ctx)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}

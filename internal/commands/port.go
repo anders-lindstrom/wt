@@ -4,6 +4,7 @@ import (
 	"hash/fnv"
 	"strconv"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
@@ -33,15 +34,15 @@ func PortFor(mainRoot, key string) int {
 // checkout, which only "/" or "." names, or the work `wt new` would create.
 // An existing worktree's port follows the branch it is on, as provisioning
 // computes it, and a detached one's its path.
-func Port(ctx *Context, spec string) (int, error) {
-	wt, ok, err := existingWork(ctx, spec)
+func Port(ctx *kit.Context, spec string) (int, error) {
+	wt, ok, err := kit.ExistingWork(ctx, spec)
 	switch {
 	case err != nil:
 		return 0, err
 	case ok:
 		return PortFor(ctx.Repo.MainRoot, portKey(wt.Branch, wt.Path)), nil
 	}
-	_, _, branch, err := parseWork(ctx, spec)
+	_, _, branch, err := kit.ParseWork(ctx, spec)
 	if err != nil {
 		return 0, err
 	}
@@ -61,9 +62,9 @@ func portKey(branch, path string) string {
 // worktree they run in: WT_PORT as `wt port` prints it, WT_BRANCH, and
 // WT_WORK as `wt list` names it. Values inherited from the caller are
 // replaced, since a shell in another worktree exports that one's.
-func worktreeEnv(ctx *Context, target string) []string {
+func worktreeEnv(ctx *kit.Context, target string) []string {
 	branch, path, work := ctx.Repo.BranchAt(target), target, ""
-	if names, err := WorkNames(ctx); err == nil {
+	if names, err := kit.WorkNames(ctx); err == nil {
 		// The worktree containing target, the deepest if they nest, as wt
 		// setup is run from a subdirectory too. Its branch is git's, as wt
 		// port reads it, and survives a rebase that has detached HEAD.

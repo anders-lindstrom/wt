@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -31,7 +32,7 @@ type pushTarget struct {
 
 // pushOf is where t's branch pushes, read now: after the rebase, and after
 // anything a question recorded.
-func pushOf(ctx *Context, t pushTarget) wtsync.Push {
+func pushOf(ctx *kit.Context, t pushTarget) wtsync.Push {
 	return wtsync.ReadOwnOrUnknown(ctx.Repo.MainRoot, ctx.Config.MainBranch).Push(t.Branch)
 }
 
@@ -65,9 +66,9 @@ func pushJSON(t pushTarget, to wtsync.Push) (command []string, noPush *string, f
 		return append([]string{"git", "-C", t.Path}, to.Args()...), nil, nil
 	}
 	if to.Undecided != nil {
-		return nil, strp(to.Undecided.Reason()), to.Undecided.Fix()
+		return nil, kit.Strp(to.Undecided.Reason()), to.Undecided.Fix()
 	}
-	return nil, strp(to.Why), nil
+	return nil, kit.Strp(to.Why), nil
 }
 
 // offerPush ends a run or a resume: it pushes the branches that finished, or
@@ -77,7 +78,7 @@ func pushJSON(t pushTarget, to wtsync.Push) (command []string, noPush *string, f
 // destination is a choice is put to the person first, and the answer
 // recorded. It returns the works it pushed, and the pushes that did not come
 // off, named the way the not-completed error names them.
-func offerPush(ctx *Context, w io.Writer, mode PushMode, ask pushOptions, targets []pushTarget) (pushed, failed []string, err error) {
+func offerPush(ctx *kit.Context, w io.Writer, mode PushMode, ask pushOptions, targets []pushTarget) (pushed, failed []string, err error) {
 	if len(targets) == 0 {
 		return nil, nil, nil
 	}
@@ -152,7 +153,7 @@ func offerPush(ctx *Context, w io.Writer, mode PushMode, ask pushOptions, target
 		if before, err := git.Run(t.Path, "rev-parse", "--verify", "--quiet", to.Tracking); err == nil {
 			from = git.ShortID(before, 7)
 		}
-		if _, err := git.RunTimeout(t.Path, networkTimeout, to.Args()...); err != nil {
+		if _, err := git.RunTimeout(t.Path, kit.NetworkTimeout, to.Args()...); err != nil {
 			fmt.Fprintf(w, "  ✗ push of %s%s failed: %s\n", t.Branch, where, pushReason(err))
 			failed = append(failed, t.Work+" (push failed)")
 			continue

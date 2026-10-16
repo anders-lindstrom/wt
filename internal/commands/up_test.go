@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -47,7 +48,7 @@ func TestUpRefusesTheMainCheckout(t *testing.T) {
 // With no .wt-sync.yaml on trunk nothing is declared, so a conflict-free
 // rebase goes and a conflicting one is refused untouched.
 func TestUpWithoutADeclarationTakesOnlyAConflictFreeRebase(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	main := ctx.Repo.MainRoot
 	var buf bytes.Buffer
 	free, err := New(ctx, "feat/free", NewOptions{NoSetup: true}, &buf)

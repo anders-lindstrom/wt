@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -20,7 +21,7 @@ func decodeSyncRun(t *testing.T, out []byte) SyncRunResult {
 	return r
 }
 
-func syncRunJSON(t *testing.T, ctx *Context, works []string, opts RunOptions) (SyncRunResult, error) {
+func syncRunJSON(t *testing.T, ctx *kit.Context, works []string, opts RunOptions) (SyncRunResult, error) {
 	t.Helper()
 	var out, human bytes.Buffer
 	opts.Journal = NewSyncRunJournal(&out, "sync rebase")
@@ -28,7 +29,7 @@ func syncRunJSON(t *testing.T, ctx *Context, works []string, opts RunOptions) (S
 	return decodeSyncRun(t, out.Bytes()), err
 }
 
-func syncResumeJSON(t *testing.T, ctx *Context, work string, opts ResumeOptions) (SyncRunResult, error) {
+func syncResumeJSON(t *testing.T, ctx *kit.Context, work string, opts ResumeOptions) (SyncRunResult, error) {
 	t.Helper()
 	var out, human bytes.Buffer
 	opts.Journal = NewSyncRunJournal(&out, "sync resume")
@@ -36,7 +37,7 @@ func syncResumeJSON(t *testing.T, ctx *Context, work string, opts ResumeOptions)
 	return decodeSyncRun(t, out.Bytes()), err
 }
 
-func syncUndoJSON(t *testing.T, ctx *Context, work string, opts UndoOptions) (SyncRunResult, error) {
+func syncUndoJSON(t *testing.T, ctx *kit.Context, work string, opts UndoOptions) (SyncRunResult, error) {
 	t.Helper()
 	var out, human bytes.Buffer
 	opts.Journal = NewSyncRunJournal(&out, "sync undo")
@@ -53,7 +54,7 @@ func TestSyncRunJSONReportsTheSafetyRefDeferredStepsAndUndo(t *testing.T) {
 	ctx, bump := runFixture(t, true)
 	old := gitOut(t, bump, "rev-parse", "HEAD")
 	r, err := syncRunJSON(t, ctx, []string{"bump"}, noAgents())
-	if err != nil || r.Outcome != OutcomeDone || r.Command != "sync rebase" || r.Repo == nil || *r.Repo != ctx.Repo.MainRoot ||
+	if err != nil || r.Outcome != kit.OutcomeDone || r.Command != "sync rebase" || r.Repo == nil || *r.Repo != ctx.Repo.MainRoot ||
 		len(r.Worktrees) != 1 {
 		t.Fatalf("%v %+v", err, r)
 	}
@@ -91,7 +92,7 @@ func TestSyncRunJSONExpectHoldsTheRunToTheOverview(t *testing.T) {
 	opts.Expect = token
 	for _, works := range [][]string{nil, {"bump"}} {
 		r, err := syncRunJSON(t, ctx, works, opts)
-		if err == nil || r.Outcome != OutcomeRefused || r.Error == nil || len(r.Worktrees) != 0 {
+		if err == nil || r.Outcome != kit.OutcomeRefused || r.Error == nil || len(r.Worktrees) != 0 {
 			t.Fatalf("%v: a grown stack is refused before any participant: %v %+v", works, err, r)
 		}
 		if gitOut(t, bump, "rev-parse", "HEAD") != old {
@@ -99,7 +100,7 @@ func TestSyncRunJSONExpectHoldsTheRunToTheOverview(t *testing.T) {
 		}
 	}
 	opts.Expect = *overviewJSON(t, ctx).Token
-	if r, err := syncRunJSON(t, ctx, nil, opts); err != nil || r.Outcome != OutcomeDone || len(r.Worktrees) != 2 {
+	if r, err := syncRunJSON(t, ctx, nil, opts); err != nil || r.Outcome != kit.OutcomeDone || len(r.Worktrees) != 2 {
 		t.Fatalf("the overview as read runs: %v %+v", err, r)
 	}
 }
@@ -111,7 +112,7 @@ func TestSyncRunJSONReportsAHandover(t *testing.T) {
 	}
 	ctx, bump := contestedFixture(t)
 	r, err := syncRunJSON(t, ctx, []string{"bump"}, noAgents())
-	if err == nil || r.Outcome != OutcomePartial || len(r.Worktrees) != 1 {
+	if err == nil || r.Outcome != kit.OutcomePartial || len(r.Worktrees) != 1 {
 		t.Fatalf("%v %+v", err, r)
 	}
 	p := r.Worktrees[0]
@@ -129,7 +130,7 @@ func TestSyncRunJSONSaysWhenNobodyConfirmed(t *testing.T) {
 	opts := noAgents()
 	opts.Confirm = func([]string) (bool, error) { return false, nil }
 	r, _ := syncRunJSON(t, ctx, nil, opts)
-	if r.Outcome != OutcomeRefused || r.Error == nil {
+	if r.Outcome != kit.OutcomeRefused || r.Error == nil {
 		t.Fatalf("%+v", r)
 	}
 	if gitOut(t, bump, "rev-parse", "HEAD") != old {
@@ -143,7 +144,7 @@ func TestSyncResumeJSONReportsTheFinishedRebase(t *testing.T) {
 	writeFile(t, bump, "a.txt", "merged by hand\n")
 	gitOut(t, bump, "add", "--", "a.txt")
 	r, err := syncResumeJSON(t, ctx, "bump", noResumeAgents())
-	if err != nil || r.Outcome != OutcomeDone || r.Command != "sync resume" || len(r.Worktrees) != 1 {
+	if err != nil || r.Outcome != kit.OutcomeDone || r.Command != "sync resume" || len(r.Worktrees) != 1 {
 		t.Fatalf("%v %+v", err, r)
 	}
 	p := r.Worktrees[0]
@@ -161,14 +162,14 @@ func TestSyncResumeJSONReportsARefusal(t *testing.T) {
 	}
 	ctx, bump, gitDir, st := handedOver(t)
 	r, err := syncResumeJSON(t, ctx, "bump", noResumeAgents())
-	if err == nil || r.Outcome != OutcomeRefused || len(r.Worktrees) != 1 ||
+	if err == nil || r.Outcome != kit.OutcomeRefused || len(r.Worktrees) != 1 ||
 		r.Worktrees[0].Result != ResultRefused || r.Worktrees[0].Reason == nil {
 		t.Fatalf("%v %+v", err, r)
 	}
 	assertUntouched(t, bump, gitDir, st)
 
 	r, err = syncResumeJSON(t, ctx, "other", noResumeAgents())
-	if err == nil || r.Outcome != OutcomeRefused || r.Error == nil || len(r.Worktrees) != 0 {
+	if err == nil || r.Outcome != kit.OutcomeRefused || r.Error == nil || len(r.Worktrees) != 0 {
 		t.Fatalf("nothing to resume: %v %+v", err, r)
 	}
 }
@@ -183,7 +184,7 @@ func TestSyncUndoJSONReportsWhatItPutBack(t *testing.T) {
 	}
 	rebased := gitOut(t, bump, "rev-parse", "HEAD")
 	r, err := syncUndoJSON(t, ctx, "bump", noAgentsUndo())
-	if err != nil || r.Outcome != OutcomeDone || r.Command != "sync undo" || len(r.Worktrees) != 1 {
+	if err != nil || r.Outcome != kit.OutcomeDone || r.Command != "sync undo" || len(r.Worktrees) != 1 {
 		t.Fatalf("%v %+v", err, r)
 	}
 	p := r.Worktrees[0]
@@ -192,7 +193,7 @@ func TestSyncUndoJSONReportsWhatItPutBack(t *testing.T) {
 	}
 
 	r, err = syncUndoJSON(t, ctx, "bump", noAgentsUndo())
-	if err != nil || r.Outcome != OutcomeDone || len(r.Worktrees) != 1 || r.Worktrees[0].Result != ResultSkipped {
+	if err != nil || r.Outcome != kit.OutcomeDone || len(r.Worktrees) != 1 || r.Worktrees[0].Result != ResultSkipped {
 		t.Fatalf("second undo: %v %+v", err, r)
 	}
 }
@@ -229,7 +230,7 @@ func TestSyncResumeJSONSaysWhenNobodyConfirmed(t *testing.T) {
 	opts.Agents = idleIn(t, bump, "parked")
 	opts.Confirm = func([]string) (bool, error) { return false, nil }
 	r, _ := syncResumeJSON(t, ctx, "bump", opts)
-	if r.Outcome != OutcomeRefused || r.Error == nil {
+	if r.Outcome != kit.OutcomeRefused || r.Error == nil {
 		t.Fatalf("%+v", r)
 	}
 }
@@ -264,9 +265,9 @@ func TestJournalAsksWhatASignalCaughtChanged(t *testing.T) {
 	j.join("one", "feat_wt/one", "/w/one", strings.Repeat("1", 40), nil)
 	j.join("two", "feat_wt/two", "/w/two", strings.Repeat("2", 40), nil)
 	j.onSignal(func(p *SyncParticipant) bool { return p.Branch == "feat_wt/one" })
-	j.interrupted("", "interrupted")
+	j.Interrupted("", "interrupted")
 	r := decodeSyncRun(t, out.Bytes())
-	if r.Outcome != OutcomeInterrupted || r.Worktrees[0].Result != ResultInterrupted || r.Worktrees[0].Recovery == nil ||
+	if r.Outcome != kit.OutcomeInterrupted || r.Worktrees[0].Result != ResultInterrupted || r.Worktrees[0].Recovery == nil ||
 		r.Worktrees[1].Result != ResultNotRun {
 		t.Errorf("%+v %+v", r.Worktrees[0], r.Worktrees[1])
 	}

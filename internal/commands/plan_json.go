@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -103,19 +104,19 @@ type UpPlan struct {
 // no fetch, no simulation, no pull-request cache; every git it runs reads.
 // A worktree wt up would not start on is a plan with upEligible false and
 // the reason, not an error; only a worktree that cannot be found is.
-func UpPlanJSON(ctx *Context, arg string, w io.Writer) error {
+func UpPlanJSON(ctx *kit.Context, arg string, w io.Writer) error {
 	p := UpPlan{Schema: 1, SchemaVersion: schema.VersionOf("status"), Command: "status",
 		Stack: []PlanStack{}, Sessions: []PlanSession{}}
 	trunk := ctx.Config.MainBranch
 	ref := "origin/" + trunk
-	p.Trunk, p.TrunkSource = strp(trunk), ctx.trunkSource()
-	p.Configured = ctx.configured()
+	p.Trunk, p.TrunkSource = kit.Strp(trunk), ctx.TrunkSource()
+	p.Configured = ctx.Configured()
 	var tip string
 	var exists bool
 	if trunk != "" {
-		p.TrunkRef = strp(ref)
+		p.TrunkRef = kit.Strp(ref)
 		tip, exists = ctx.Repo.ResolveRef("refs/remotes/" + ref)
-		p.TrunkRefExists, p.TrunkTip = exists, strp(tip)
+		p.TrunkRefExists, p.TrunkTip = exists, kit.Strp(tip)
 		p.TrunkRefUpdatedAt = refUpdatedAt(ctx.Repo.MainRoot, "refs/remotes/"+ref)
 	}
 	// Listed at most once, and only when asked: by the trunk check, when
@@ -127,18 +128,18 @@ func UpPlanJSON(ctx *Context, arg string, w io.Writer) error {
 
 	inel := func(code, why string) {
 		if p.UpIneligibleCode == nil {
-			p.UpIneligibleCode, p.UpIneligibleReason = strp(code), strp(why)
+			p.UpIneligibleCode, p.UpIneligibleReason = kit.Strp(code), kit.Strp(why)
 		}
 	}
-	wt, err := Locate(ctx, arg)
-	if errors.Is(err, errMainCheckout) {
+	wt, err := kit.Locate(ctx, arg)
+	if errors.Is(err, kit.ErrMainCheckout) {
 		wt, err = mainWorktree(ctx)
 	}
 	if err != nil {
 		inel(IneligibleNotAWorktree, err.Error())
 		return writePlan(w, p)
 	}
-	work := worktreeName(ctx, wt.Branch, wt.Path)
+	work := kit.WorktreeName(ctx, wt.Branch, wt.Path)
 	if wt.IsMain {
 		work = ctx.Repo.Name
 	}
@@ -166,9 +167,9 @@ func UpPlanJSON(ctx *Context, arg string, w io.Writer) error {
 
 	switch {
 	case errors.Is(ctx.ConfigError, config.ErrNoConfig):
-		inel(IneligibleNoConfig, oneLine(ctx.ConfigError.Error()))
+		inel(IneligibleNoConfig, kit.OneLine(ctx.ConfigError.Error()))
 	case ctx.ConfigError != nil:
-		inel(IneligibleConfigInvalid, "the wt configuration does not parse: "+oneLine(ctx.ConfigError.Error()))
+		inel(IneligibleConfigInvalid, "the wt configuration does not parse: "+kit.OneLine(ctx.ConfigError.Error()))
 	}
 	switch {
 	case wt.IsMain:
@@ -233,7 +234,7 @@ func UpPlanJSON(ctx *Context, arg string, w io.Writer) error {
 		for _, b := range stack {
 			o := byBranch[b]
 			p.Stack = append(p.Stack, PlanStack{
-				PlanStackMember:  PlanStackMember{Work: worktreeName(ctx, b, o.Path), Branch: b, Path: o.Path},
+				PlanStackMember:  PlanStackMember{Work: kit.WorktreeName(ctx, b, o.Path), Branch: b, Path: o.Path},
 				OwnRemote:        ownRemoteOf(ownOf(b, o.Path)),
 				DeferredDeclared: declared,
 			})
@@ -285,12 +286,12 @@ func UpPlanJSON(ctx *Context, arg string, w io.Writer) error {
 	// A plan held back by divergence alone has a token too: wt up
 	// --allow-diverged --expect goes ahead over exactly what it covers.
 	if p.UpEligible || *p.UpIneligibleCode == IneligibleOwnDiverged {
-		p.Token = strp(planToken(ctx, trunk, stack, diverged))
+		p.Token = kit.Strp(planToken(ctx, trunk, stack, diverged))
 	}
 
 	agents, err := listAgents()
 	if err != nil {
-		p.SessionsError = strp(err.Error())
+		p.SessionsError = kit.Strp(err.Error())
 	}
 	for _, m := range p.Stack {
 		for _, a := range wtsync.SessionsAt(agents, m.Path) {
@@ -319,15 +320,15 @@ func ownIneligible(m PlanStack, asked, why string) string {
 	if o.State == string(wtsync.OwnDiverged) && why == "elsewhere" {
 		return fmt.Sprintf("%s has diverged from %s: every commit it has (%d) is there in another form, on %d commit%s it never had. "+
 			"It looks rebased elsewhere and pushed. Take the remote's with git reset --hard %s, or rebase this copy as it stands with --allow-diverged.",
-			who, *o.Ref, *o.Ahead, *o.Behind, plural(*o.Behind), *o.Ref)
+			who, *o.Ref, *o.Ahead, *o.Behind, kit.Plural(*o.Behind), *o.Ref)
 	}
 	if o.State == string(wtsync.OwnDiverged) {
 		return fmt.Sprintf("%s has diverged from %s: it has %d commit%s %s lacks, and %s has %d commit%s it never had. "+
 			"Pull %s in, or rebase it as it stands with --allow-diverged.",
-			who, *o.Ref, *o.Ahead, plural(*o.Ahead), *o.Ref, *o.Ref, *o.Behind, plural(*o.Behind), themOrIt(*o.Behind))
+			who, *o.Ref, *o.Ahead, kit.Plural(*o.Ahead), *o.Ref, *o.Ref, *o.Behind, kit.Plural(*o.Behind), themOrIt(*o.Behind))
 	}
 	return fmt.Sprintf("%s is %d commit%s behind %s and cannot be fast-forwarded to it: %s.",
-		who, *o.Behind, plural(*o.Behind), *o.Ref, why)
+		who, *o.Behind, kit.Plural(*o.Behind), *o.Ref, why)
 }
 
 func themOrIt(n int) string {
@@ -363,7 +364,7 @@ func refUpdatedAt(mainRoot, ref string) *string {
 }
 
 // mainWorktree is git's record of the main checkout.
-func mainWorktree(ctx *Context) (repo.Worktree, error) {
+func mainWorktree(ctx *kit.Context) (repo.Worktree, error) {
 	all, err := ctx.Repo.Worktrees()
 	if err != nil {
 		return repo.Worktree{}, err
@@ -373,5 +374,5 @@ func mainWorktree(ctx *Context) (repo.Worktree, error) {
 			return wt, nil
 		}
 	}
-	return repo.Worktree{}, errMainCheckout
+	return repo.Worktree{}, kit.ErrMainCheckout
 }

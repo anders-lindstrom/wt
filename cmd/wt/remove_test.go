@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 // The prompt defaults to no, because the cost of a mistaken yes is a checkout
@@ -102,11 +103,11 @@ func TestRemoveForceFlagForms(t *testing.T) {
 			t.Fatalf("%q: %v", args, err)
 		}
 		values, _ := cmd.Flags().GetStringSlice("force")
-		got, err := commands.ParseForce(values)
-		want := commands.ForceAll
+		got, err := kit.ParseForce(values)
+		want := kit.ForceAll
 		switch args[1] {
 		case "--force=idle-sessions,lock":
-			want = commands.ForceIdleSessions | commands.ForceLock
+			want = kit.ForceIdleSessions | kit.ForceLock
 		case "--force=":
 			want = 0 // no force at all
 		}

@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 func committedRepo(t *testing.T, conf string) string {
@@ -17,7 +19,7 @@ func committedRepo(t *testing.T, conf string) string {
 }
 
 func TestNewCreatesCanonicalWorktreeAndBranch(t *testing.T) {
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(committedRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +41,7 @@ func TestNewCreatesCanonicalWorktreeAndBranch(t *testing.T) {
 }
 
 func TestNewBareWorkNameTakesDefaultType(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	var buf bytes.Buffer
 	path, err := New(ctx, "thing", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -51,7 +53,7 @@ func TestNewBareWorkNameTakesDefaultType(t *testing.T) {
 }
 
 func TestNewRefusesDuplicateWork(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	var buf bytes.Buffer
 	if _, err := New(ctx, "fix/dup", NewOptions{NoSetup: true}, &buf); err != nil {
 		t.Fatal(err)
@@ -62,7 +64,7 @@ func TestNewRefusesDuplicateWork(t *testing.T) {
 }
 
 func TestNewRejectsUnknownType(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	var buf bytes.Buffer
 	if _, err := New(ctx, "wibble/thing", NewOptions{NoSetup: true}, &buf); err == nil {
 		t.Error("want an error for an unknown type")
@@ -74,7 +76,7 @@ func TestNewRejectsUnknownType(t *testing.T) {
 // feat_wt/. or a path that already exists, with an error about the wrong
 // thing.
 func TestNewRefusesDotAndRootAsAWorkName(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	var buf bytes.Buffer
 	for spec, want := range map[string]string{
 		".":  ". names the worktree you are in; wt new takes a new <type>/<work>",
@@ -95,7 +97,7 @@ func TestNewRefusesDotAndRootAsAWorkName(t *testing.T) {
 // and its worktrees do not move for it: the folders are wt's layout.
 func TestNewWithoutABranchSuffixLeavesTheFoldersAlone(t *testing.T) {
 	conf := minimalConf + "WORKTREE_BRANCH_SUFFIX=\"\"\n"
-	ctx, err := Open(committedRepo(t, conf))
+	ctx, err := kit.Open(committedRepo(t, conf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +116,7 @@ func TestNewWithoutABranchSuffixLeavesTheFoldersAlone(t *testing.T) {
 	// The worktree must still be found by the name it was created under, and
 	// by the branch it is on.
 	for _, spec := range []string{"login-crash", "feat/login-crash"} {
-		if got, err := Path(ctx, spec); err != nil || got != want {
+		if got, err := kit.Path(ctx, spec); err != nil || got != want {
 			t.Errorf("Path(%q) = %q, %v; want %q", spec, got, err, want)
 		}
 	}
@@ -130,7 +132,7 @@ func TestTheUserBranchSuffixAppliesWhereTheRepositoryIsSilent(t *testing.T) {
 	if err := os.WriteFile(path, []byte("branch_suffix = \"\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(committedRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +162,7 @@ func TestTheRepositoryOutranksTheUserBranchSuffix(t *testing.T) {
 	if err := os.WriteFile(path, []byte("branch_suffix = \"\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ctx, err := Open(committedRepo(t, minimalConf+"WORKTREE_BRANCH_SUFFIX=_wt\n"))
+	ctx, err := kit.Open(committedRepo(t, minimalConf+"WORKTREE_BRANCH_SUFFIX=_wt\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +183,7 @@ func TestTheRepositoryOutranksTheUserBranchSuffix(t *testing.T) {
 // the worktree sits under the type, and either spelling names the same work.
 func TestNewNamesTheBranchByTheTypesWord(t *testing.T) {
 	conf := minimalConf + "WORKTREE_TYPE_NAMES=(feat=feature)\nWORKTREE_BRANCH_SUFFIX=\"\"\n"
-	ctx, err := Open(committedRepo(t, conf))
+	ctx, err := kit.Open(committedRepo(t, conf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,12 +201,12 @@ func TestNewNamesTheBranchByTheTypesWord(t *testing.T) {
 	}
 	// The same piece of work, named three ways.
 	for _, spec := range []string{"login-crash", "feature/login-crash", "feat/login-crash"} {
-		if got, err := Path(ctx, spec); err != nil || got != want {
+		if got, err := kit.Path(ctx, spec); err != nil || got != want {
 			t.Errorf("Path(%q) = %q, %v; want %q", spec, got, err, want)
 		}
 	}
 	// And a type it was never given a word for keeps its own.
-	if got, err := Branch(ctx, "fix/flake"); err != nil || got != "fix/flake" {
+	if got, err := kit.Branch(ctx, "fix/flake"); err != nil || got != "fix/flake" {
 		t.Errorf("Branch = %q, %v; want fix/flake", got, err)
 	}
 }
@@ -220,7 +222,7 @@ func TestTheUserTypeNamesApplyWhereTheRepositoryIsSilent(t *testing.T) {
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(committedRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +235,7 @@ func TestTheUserTypeNamesApplyWhereTheRepositoryIsSilent(t *testing.T) {
 	if _, ok := names["wibble"]; ok {
 		t.Error("a pair for an unknown type was kept")
 	}
-	if got, err := Branch(ctx, "feature/login"); err != nil || got != "feature_wt/login" {
+	if got, err := kit.Branch(ctx, "feature/login"); err != nil || got != "feature_wt/login" {
 		t.Errorf("Branch = %q, %v; want feature_wt/login", got, err)
 	}
 }
@@ -248,14 +250,14 @@ func TestTheRepositoryOutranksTheUserTypeNames(t *testing.T) {
 	if err := os.WriteFile(path, []byte("type_names = [\"feat=feature\"]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ctx, err := Open(committedRepo(t, minimalConf+"WORKTREE_TYPE_NAMES=(feat=feat)\n"))
+	ctx, err := kit.Open(committedRepo(t, minimalConf+"WORKTREE_TYPE_NAMES=(feat=feat)\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if names, origin := ctx.TypeNames(); names["feat"] != "feat" || origin != "repo file" {
 		t.Errorf("TypeNames = %v (%s), want feat=feat (repo file)", names, origin)
 	}
-	if got, err := Branch(ctx, "feat/login"); err != nil || got != "feat_wt/login" {
+	if got, err := kit.Branch(ctx, "feat/login"); err != nil || got != "feat_wt/login" {
 		t.Errorf("Branch = %q, %v; want feat_wt/login", got, err)
 	}
 }

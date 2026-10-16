@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -16,9 +17,9 @@ import (
 // SyncAll is the overview across repositories: wt sync in each one a
 // selection names, a few at a time, printed one section after another. It
 // changes nothing but the fetch.
-func SyncAll(u *config.User, sel Selection, opts SyncOptions, w io.Writer) error {
-	defer watchSignals(w, nil)()
-	return AcrossRepos(u, sel, w, func(ctx *Context, w io.Writer) error { return Sync(ctx, opts, w) })
+func SyncAll(u *config.User, sel kit.Selection, opts SyncOptions, w io.Writer) error {
+	defer kit.WatchSignals(w, nil)()
+	return kit.AcrossRepos(u, sel, w, func(ctx *kit.Context, w io.Writer) error { return Sync(ctx, opts, w) })
 }
 
 // SyncRebaseAllOptions is a run across repositories: the options every
@@ -33,8 +34,8 @@ type SyncRebaseAllOptions struct {
 // repoRun is one repository's part of a run across many: what planning it
 // found, and what it printed doing so.
 type repoRun struct {
-	target     RepoTarget
-	ctx        *Context
+	target     kit.RepoTarget
+	ctx        *kit.Context
 	ready      []string
 	notReady   []string
 	idle       []string // notices for ready worktrees an idle session is in
@@ -53,8 +54,8 @@ type repoRun struct {
 // naming them would, onto the trunk the plan fetched. A repository whose trunk
 // declares no .wt-sync.yaml has not opted in and is listed, not failed. With
 // IfReady, a worktree left behind trunk fails the run.
-func SyncRebaseAll(u *config.User, sel Selection, opts SyncRebaseAllOptions, w io.Writer) error {
-	set, err := SelectRepos(u, sel)
+func SyncRebaseAll(u *config.User, sel kit.Selection, opts SyncRebaseAllOptions, w io.Writer) error {
+	set, err := kit.SelectRepos(u, sel)
 	if err != nil {
 		return err
 	}
@@ -65,7 +66,7 @@ func SyncRebaseAll(u *config.User, sel Selection, opts SyncRebaseAllOptions, w i
 	if opts.AllowDiverged {
 		return errors.New("--allow-diverged rebases a worktree you name over commits its remote has; name it, in its repository")
 	}
-	defer watchSignals(w, nil)()
+	defer kit.WatchSignals(w, nil)()
 	// One listing of the sessions serves every repository's plan, as one
 	// `claude agents` knows them all; each run lists them again at its lock.
 	agents, err := opts.agents(rebasedNothing)
@@ -74,7 +75,7 @@ func SyncRebaseAll(u *config.User, sel Selection, opts SyncRebaseAllOptions, w i
 	}
 	plan := opts.RunOptions
 	plan.Agents = agents
-	runs := eachRepo(set.Repos, repoParallelism, func(t RepoTarget) *repoRun {
+	runs := kit.EachRepo(set.Repos, kit.RepoParallelism, func(t kit.RepoTarget) *repoRun {
 		return planRepoRun(t, plan)
 	})
 
@@ -90,7 +91,7 @@ func SyncRebaseAll(u *config.User, sel Selection, opts SyncRebaseAllOptions, w i
 			current = append(current, rr.target.Name)
 			continue
 		}
-		fmt.Fprintf(w, "== %s  %s\n", rr.target.Name, abbreviateHome(rr.target.Path, home))
+		fmt.Fprintf(w, "== %s  %s\n", rr.target.Name, kit.AbbreviateHome(rr.target.Path, home))
 		_, _ = w.Write(rr.log.Bytes())
 		if rr.err != nil {
 			fmt.Fprintf(w, "! %v\n", rr.err)
@@ -111,7 +112,7 @@ func SyncRebaseAll(u *config.User, sel Selection, opts SyncRebaseAllOptions, w i
 		}
 	}
 	if len(current) > 0 {
-		fmt.Fprintf(w, "Nothing to rebase in %s: %s\n", repoCount(len(current)), strings.Join(current, ", "))
+		fmt.Fprintf(w, "Nothing to rebase in %s: %s\n", kit.RepoCount(len(current)), strings.Join(current, ", "))
 	}
 	if len(undeclared) > 0 {
 		fmt.Fprintf(w, "No %s on trunk, so not synced: %s\n", wtsync.ConfigFile, strings.Join(undeclared, ", "))
@@ -120,7 +121,7 @@ func SyncRebaseAll(u *config.User, sel Selection, opts SyncRebaseAllOptions, w i
 		return notCompleted(failures)
 	}
 
-	question := fmt.Sprintf("Rebase %s across %s?", worktreeCount(worktrees), repoCount(repos))
+	question := fmt.Sprintf("Rebase %s across %s?", worktreeCount(worktrees), kit.RepoCount(repos))
 	if opts.Ask != nil {
 		ok, err := opts.Ask(question)
 		if err != nil {
@@ -142,7 +143,7 @@ func SyncRebaseAll(u *config.User, sel Selection, opts SyncRebaseAllOptions, w i
 	one.NoFetch, one.Confirm = true, nil
 	one.Agents = agents
 	if one.Relist == nil {
-		one.Relist = func() ([]wtsync.Agent, error) { return listAgain(opts.Agents, opts.Relist) }
+		one.Relist = func() ([]wtsync.Agent, error) { return kit.ListAgain(opts.Agents, opts.Relist) }
 	}
 	for _, rr := range runs {
 		if len(rr.ready) == 0 || rr.err != nil {
@@ -167,19 +168,19 @@ func SyncRebaseAll(u *config.User, sel Selection, opts SyncRebaseAllOptions, w i
 
 // planRepoRun plans one repository's part of a run across many: its fetch,
 // and the worktrees a run with nothing named would take.
-func planRepoRun(t RepoTarget, opts RunOptions) *repoRun {
+func planRepoRun(t kit.RepoTarget, opts RunOptions) *repoRun {
 	rr := &repoRun{target: t}
 	if t.Problem != "" {
 		rr.err = fmt.Errorf("%s: %s", t.Path, t.Problem)
 		return rr
 	}
-	ctx, err := Open(t.Path)
+	ctx, err := kit.Open(t.Path)
 	if err != nil {
 		rr.err = err
 		return rr
 	}
 	rr.ctx = ctx
-	r := &runPlan{ctx: ctx, opts: opts, w: &rr.log, tracker: &rebaseTracker{},
+	r := &runPlan{ctx: ctx, opts: opts, w: &rr.log, tracker: &kit.RebaseTracker{},
 		trunk: ctx.Config.MainBranch, outcomes: map[string]int{}}
 	if err := r.declare(nil); err != nil {
 		var undeclared undeclaredError
@@ -197,7 +198,7 @@ func planRepoRun(t RepoTarget, opts RunOptions) *repoRun {
 	}
 	rr.ready, rr.notReady, rr.trunkSHA, rr.own = ready, r.notReady, r.trunkSHA, r.own
 	for _, work := range ready {
-		wt, err := locateBranch(ctx, work)
+		wt, err := kit.LocateBranch(ctx, work)
 		if err != nil {
 			continue
 		}

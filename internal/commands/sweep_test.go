@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -18,7 +19,7 @@ import (
 
 // sweepRepoWith is a main checkout on main with a bare origin beside it,
 // fetched, origin/HEAD pointing at main, opened after all of that.
-func sweepRepoWith(t *testing.T, conf string) (ctx *Context, main, origin string) {
+func sweepRepoWith(t *testing.T, conf string) (ctx *kit.Context, main, origin string) {
 	t.Helper()
 	main = committedRepo(t, conf)
 	origin = filepath.Join(t.TempDir(), "origin.git")
@@ -26,14 +27,14 @@ func sweepRepoWith(t *testing.T, conf string) (ctx *Context, main, origin string
 	gitIn(t, main, "remote", "add", "origin", origin)
 	gitIn(t, main, "fetch", "-q", "origin")
 	gitIn(t, main, "remote", "set-head", "origin", "main")
-	ctx, err := Open(main)
+	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return ctx, main, origin
 }
 
-func sweepRepo(t *testing.T) (ctx *Context, main, origin string) {
+func sweepRepo(t *testing.T) (ctx *kit.Context, main, origin string) {
 	t.Helper()
 	return sweepRepoWith(t, minimalConf)
 }
@@ -86,12 +87,12 @@ func goneUpstream(t *testing.T, main, branch string) {
 // nobodyIn is the sessions a plan is checked against when the test names none.
 var nobodyIn = SweepOptions{Agents: []wtsync.Agent{}}
 
-func planOf(t *testing.T, ctx *Context) SweepPlan {
+func planOf(t *testing.T, ctx *kit.Context) SweepPlan {
 	t.Helper()
 	return planWith(t, ctx, nobodyIn)
 }
 
-func planWith(t *testing.T, ctx *Context, opts SweepOptions) SweepPlan {
+func planWith(t *testing.T, ctx *kit.Context, opts SweepOptions) SweepPlan {
 	t.Helper()
 	bases, err := trunkBases(ctx)
 	if err != nil {
@@ -136,7 +137,7 @@ func inAnyGroup(p SweepPlan, name string) bool {
 // mergedWorktree is a worktree wt new made on a branch cut from trunk and
 // never committed to, which is merged: what is left behind once a pull
 // request lands and nobody ran wt remove.
-func mergedWorktree(t *testing.T, ctx *Context, work string) string {
+func mergedWorktree(t *testing.T, ctx *kit.Context, work string) string {
 	t.Helper()
 	var buf bytes.Buffer
 	path, err := New(ctx, work, NewOptions{NoSetup: true}, &buf)
@@ -742,7 +743,7 @@ func TestSweepPlanProtectsTheConfiguredTrunkAndOriginHead(t *testing.T) {
 	gitIn(t, main, "remote", "add", "origin", origin)
 	gitIn(t, main, "fetch", "-q", "origin")
 	gitIn(t, main, "remote", "set-head", "origin", "integration")
-	ctx, err := Open(main)
+	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -787,7 +788,7 @@ func TestSweepPlanReportsAGoneBranchThatStillHasWork(t *testing.T) {
 
 func TestSweepPlanWithNoOriginComparesWithLocalTrunk(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, err := Open(main)
+	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -842,7 +843,7 @@ func TestSweepRefusesOutsideTheMainCheckout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	inWorktree, err := Open(path)
+	inWorktree, err := kit.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -863,7 +864,7 @@ func TestSweepRunsFromASubdirectoryOfTheMainCheckout(t *testing.T) {
 	ctx, main, _ := sweepRepo(t)
 	branchWithWork(t, main, "done-work", 0)
 	mustWrite(t, filepath.Join(main, "sub", "notes.txt"), "scratch")
-	inSub, err := Open(filepath.Join(main, "sub"))
+	inSub, err := kit.Open(filepath.Join(main, "sub"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -891,7 +892,7 @@ func TestSweepRefusesABareRepository(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err = Sweep(&Context{Repo: r, Config: c}, SweepOptions{NoFetch: true, Yes: true}, &buf)
+	err = Sweep(&kit.Context{Repo: r, Config: c}, SweepOptions{NoFetch: true, Yes: true}, &buf)
 	if err == nil || !strings.Contains(err.Error(), "bare") {
 		t.Fatalf("want a refusal naming the bare repository, got %v", err)
 	}
@@ -900,7 +901,7 @@ func TestSweepRefusesABareRepository(t *testing.T) {
 // Without MAIN_BRANCH or origin's HEAD, trunk is whatever is checked out.
 func TestSweepRefusesWhenTrunkIsOnlyAGuess(t *testing.T) {
 	main := committedRepo(t, "BUILD_INIT_ENABLED=false\n")
-	ctx, err := Open(main)
+	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1159,7 +1160,7 @@ func TestSweepFetchCannotPruneLocalBranchesOrTags(t *testing.T) {
 
 func TestSweepWithNoOriginComparesWithLocalBranchesOnly(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, err := Open(main)
+	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
 	}

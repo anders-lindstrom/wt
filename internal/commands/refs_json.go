@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/schema"
 )
 
@@ -88,9 +89,9 @@ type RefsResult struct {
 
 func refItem(r RefRow) RefItem {
 	it := RefItem{ID: r.ID, Kind: r.Kind, Name: r.Name, Pattern: r.Pattern, Category: r.Category,
-		Selected: r.Selected, Tip: strp(r.Tip), Object: r.Object, Annotated: r.Annotated,
-		ContainedIn: strp(r.ContainedIn), UniqueCommits: r.Unique, DateSource: strp(r.DateSource),
-		Kept: append([]string{}, r.Kept...), Subject: strp(r.Subject)}
+		Selected: r.Selected, Tip: kit.Strp(r.Tip), Object: r.Object, Annotated: r.Annotated,
+		ContainedIn: kit.Strp(r.ContainedIn), UniqueCommits: r.Unique, DateSource: kit.Strp(r.DateSource),
+		Kept: append([]string{}, r.Kept...), Subject: kit.Strp(r.Subject)}
 	if r.DateSource != "" {
 		d := r.Date
 		it.Date = &d
@@ -108,14 +109,14 @@ func newRefsPlanOutput() RefsPlanOutput {
 // holds a later sweep to this plan. It fetches unless told not to, and moves
 // nothing. A plan that cannot be made is still one object, with error set,
 // and the error is returned too.
-func RefsSweepPlanJSON(ctx *Context, opts RefsOptions, out, progress io.Writer) error {
+func RefsSweepPlanJSON(ctx *kit.Context, opts RefsOptions, out, progress io.Writer) error {
 	o := newRefsPlanOutput()
 	if ctx == nil {
-		return writeRefsPlan(out, o, ErrNotInRepo)
+		return writeRefsPlan(out, o, kit.ErrNotInRepo)
 	}
 	plan, err := planRefs(ctx, opts, progress)
-	o.Repo, o.Trunk, o.TrunkSource = strp(plan.Repo), strp(plan.Trunk), plan.TrunkSource
-	o.Fetched, o.Remote, o.Age, o.Now = plan.Fetched, plan.Remote, strp(plan.Age), plan.Now
+	o.Repo, o.Trunk, o.TrunkSource = kit.Strp(plan.Repo), kit.Strp(plan.Trunk), plan.TrunkSource
+	o.Fetched, o.Remote, o.Age, o.Now = plan.Fetched, plan.Remote, kit.Strp(plan.Age), plan.Now
 	o.Patterns = append(o.Patterns, plan.Patterns...)
 	o.Endpoint, o.Problems = plan.Endpoint, append(o.Problems, plan.Problems...)
 	if err == nil {
@@ -139,9 +140,9 @@ func RefsSweepPlanFailed(out io.Writer, err error) {
 
 func writeRefsPlan(w io.Writer, o RefsPlanOutput, err error) error {
 	if err != nil {
-		o.Error = strp(err.Error())
+		o.Error = kit.Strp(err.Error())
 	}
-	if werr := writeJSON(w, o); werr != nil && err == nil {
+	if werr := kit.WriteJSON(w, o); werr != nil && err == nil {
 		return werr
 	}
 	return err
@@ -184,15 +185,15 @@ func (j *RefsJournal) planned(p RefsPlan, token *string) {
 		j.url = p.Endpoint.raw
 	}
 	j.res.Repo, j.res.Trunk, j.res.Fetched, j.res.Remote, j.res.Token =
-		strp(p.Repo), strp(p.Trunk), p.Fetched, p.Remote, token
+		kit.Strp(p.Repo), kit.Strp(p.Trunk), p.Fetched, p.Remote, token
 	j.res.Items = []*RefResultItem{}
 	j.res.Problems = append([]RefProblem{}, p.Problems...)
 	for _, r := range p.Rows {
 		it := &RefResultItem{ID: r.ID, Kind: r.Kind, Name: r.Name, Category: r.Category, Selected: r.Selected,
-			Tip: strp(r.Tip), Object: r.Object, Result: RefNotRun}
+			Tip: kit.Strp(r.Tip), Object: r.Object, Result: RefNotRun}
 		switch {
 		case r.Category == RefKept:
-			it.Result, it.Reason = RefResultKept, strp(strings.Join(r.Kept, ", "))
+			it.Result, it.Reason = RefResultKept, kit.Strp(strings.Join(r.Kept, ", "))
 		case !r.Selected:
 			it.Result = RefNotSelected
 		}
@@ -208,10 +209,10 @@ func (j *RefsJournal) begin(runID string) {
 	}
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	j.res.RunID, j.applying = strp(runID), true
+	j.res.RunID, j.applying = kit.Strp(runID), true
 	for _, it := range j.res.Items {
 		if it.Selected {
-			it.Pin = strp(pinOf(runID, it.Kind, it.Name))
+			it.Pin = kit.Strp(pinOf(runID, it.Kind, it.Name))
 		}
 	}
 }
@@ -267,16 +268,16 @@ func settleRefItem(it *RefResultItem, runID string, st refState) {
 	it.Pinned, it.Deleted = st.pinned, st.deleted
 	switch {
 	case st.kept != "":
-		it.Result, it.Reason = RefResultKept, strp(st.kept)
+		it.Result, it.Reason = RefResultKept, kit.Strp(st.kept)
 	case st.err == nil && st.pinned && st.deleted:
 		it.Result, it.Reason = RefSwept, nil
 	default:
 		it.Result = RefFailed
 		why := "not finished"
 		if st.err != nil {
-			why = oneLine(st.err.Error())
+			why = kit.OneLine(st.err.Error())
 		}
-		it.Reason = strp(why)
+		it.Reason = kit.Strp(why)
 	}
 	if it.Pinned && it.Deleted {
 		it.RestoreCommand = []string{"wt", "refs", "restore", runID, "--only", it.ID, "--yes"}
@@ -291,7 +292,7 @@ func (j *RefsJournal) fail(err error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	if !j.applying {
-		j.res.Error = strp(err.Error())
+		j.res.Error = kit.Strp(err.Error())
 	}
 }
 
@@ -305,9 +306,9 @@ func (j *RefsJournal) Fail(err error) {
 // Finish writes the object for a run that returned.
 func (j *RefsJournal) Finish() { j.write(false, "") }
 
-// interrupted writes the object for a run a signal ended: the row in flight
+// Interrupted writes the object for a run a signal ended: the row in flight
 // is read back and marked interrupted.
-func (j *RefsJournal) interrupted(_ string, recovery string) { j.write(true, recovery) }
+func (j *RefsJournal) Interrupted(_ string, recovery string) { j.write(true, recovery) }
 
 func (j *RefsJournal) write(signalled bool, recovery string) {
 	if j == nil {
@@ -331,11 +332,11 @@ func (j *RefsJournal) write(signalled bool, recovery string) {
 				settleRefItem(it, deref(j.res.RunID), st)
 				it.Result, it.Reason = RefInterrupted, nil
 			}
-			j.res.Outcome, j.res.Recovery = OutcomeInterrupted, strp(recovery)
+			j.res.Outcome, j.res.Recovery = kit.OutcomeInterrupted, kit.Strp(recovery)
 		} else {
 			j.res.Outcome = refsOutcome(j.res.Items, j.res.Error != nil)
 		}
-		_ = writeJSON(j.out, j.res)
+		_ = kit.WriteJSON(j.out, j.res)
 	})
 }
 
@@ -367,9 +368,9 @@ func refsOutcome(items []*RefResultItem, failedEarly bool) string {
 	}
 	switch {
 	case finished && !failedEarly:
-		return OutcomeDone
+		return kit.OutcomeDone
 	case !changed:
-		return OutcomeRefused
+		return kit.OutcomeRefused
 	}
-	return OutcomePartial
+	return kit.OutcomePartial
 }

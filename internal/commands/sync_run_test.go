@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -20,7 +21,7 @@ import (
 // v.txt to the tracked gen.txt and commits it; worktree bump (feat_wt/bump)
 // one commit ahead on v.txt; worktree other (feat_wt/other) current; trunk
 // moved on v.txt; origin fetched.
-func runFixture(t *testing.T, withDefer bool) (ctx *Context, bump string) {
+func runFixture(t *testing.T, withDefer bool) (ctx *kit.Context, bump string) {
 	t.Helper()
 	main := committedRepo(t, minimalConf)
 	write := func(rel, content string) {
@@ -39,7 +40,7 @@ func runFixture(t *testing.T, withDefer bool) (ctx *Context, bump string) {
 	write("a.txt", "a\n")
 	gitIn(t, main, "add", "-A")
 	gitIn(t, main, "commit", "-q", "-m", "declare")
-	ctx, err := Open(main)
+	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +69,7 @@ func runFixture(t *testing.T, withDefer bool) (ctx *Context, bump string) {
 // comes after it: triage reports recipe? and the run proceeds. That is the
 // one way left for a run to discover a later unclaimed stop for itself, so
 // it is what the restore tests below are built on.
-func declareScript(t *testing.T, ctx *Context) {
+func declareScript(t *testing.T, ctx *kit.Context) {
 	t.Helper()
 	main := ctx.Repo.MainRoot
 	dir := filepath.Join(main, "bin", "conflict")
@@ -92,13 +93,13 @@ func declareScript(t *testing.T, ctx *Context) {
 // the branch's single commit also touches a.txt, which the declaration does
 // not claim, and trunk moves a.txt too. Triage sees the whole stop, so the
 // class is contested and the run walks into it knowingly.
-func contestedFixture(t *testing.T) (ctx *Context, bump string) {
+func contestedFixture(t *testing.T) (ctx *kit.Context, bump string) {
 	t.Helper()
 	return contested(t, false)
 }
 
 // contested is contestedFixture with or without runFixture's deferred step.
-func contested(t *testing.T, withDefer bool) (ctx *Context, bump string) {
+func contested(t *testing.T, withDefer bool) (ctx *kit.Context, bump string) {
 	t.Helper()
 	ctx, bump = runFixture(t, withDefer)
 	main := ctx.Repo.MainRoot
@@ -243,7 +244,7 @@ func TestSyncRunRefusesWhenTrunkDeclaresNothing(t *testing.T) {
 	main := committedRepo(t, minimalConf)
 	gitIn(t, main, "remote", "add", "origin", main)
 	gitIn(t, main, "fetch", "-q", "origin")
-	ctx, err := Open(main)
+	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +260,7 @@ func TestSyncRunRefusesWhenTrunkDeclaresNothing(t *testing.T) {
 }
 
 // stackFixture adds worktree child (feat_wt/child) on top of feat_wt/bump.
-func stackFixture(t *testing.T, ctx *Context) (child string) {
+func stackFixture(t *testing.T, ctx *kit.Context) (child string) {
 	t.Helper()
 	var buf bytes.Buffer
 	child, err := New(ctx, "feat/child", NewOptions{NoSetup: true, Base: "feat_wt/bump"}, &buf)
@@ -396,7 +397,7 @@ func TestSyncRunAsksOnceForMoreThanOneWorktreeAndStopsOnNo(t *testing.T) {
 // contestedSibling adds a worktree feat/alpha whose one commit changes a.txt,
 // which nothing declares, and moves a.txt on trunk too: alpha is contested
 // while bump stays a recipe.
-func contestedSibling(t *testing.T, ctx *Context) (alpha string) {
+func contestedSibling(t *testing.T, ctx *kit.Context) (alpha string) {
 	t.Helper()
 	main := ctx.Repo.MainRoot
 	var buf bytes.Buffer
@@ -838,7 +839,7 @@ func TestSyncRunHandsOverALaterUnclaimedStop(t *testing.T) {
 // conflict on its own commit while its sibling replays cleanly. The names
 // put the conflicted one first in the run order, so a whole-stack poison
 // would visibly reach the sibling.
-func twoChildFixture(t *testing.T, ctx *Context, main string) (conflicted, clean string) {
+func twoChildFixture(t *testing.T, ctx *kit.Context, main string) (conflicted, clean string) {
 	t.Helper()
 	var buf bytes.Buffer
 	child := func(spec, file, content string) string {

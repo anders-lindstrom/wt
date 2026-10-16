@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
@@ -32,7 +33,7 @@ const minimalConf = "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\n"
 
 func TestConfigShellEmitsLegacyNames(t *testing.T) {
 	main := fixtureRepo(t, minimalConf)
-	ctx, err := Open(main)
+	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -63,7 +64,7 @@ func TestConfigShellReportsProvisionScript(t *testing.T) {
 	if err := os.WriteFile(p, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
 	if err := Config(ctx, true, &buf); err != nil {
 		t.Fatal(err)
@@ -75,7 +76,7 @@ func TestConfigShellReportsProvisionScript(t *testing.T) {
 
 func TestConfigShowsCacheDirs(t *testing.T) {
 	main := fixtureRepo(t, minimalConf+"WORKTREE_CACHE_DIRS=(node_modules .gradle)\n")
-	ctx, err := Open(main)
+	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -96,7 +97,7 @@ func TestConfigShowsCacheDirs(t *testing.T) {
 
 func TestConfigShellQuotesSafely(t *testing.T) {
 	main := fixtureRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=true\nBUILD_INIT_COMMAND=\"echo it's fine\"\n")
-	ctx, err := Open(main)
+	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -125,7 +126,7 @@ func TestOpenReadsConfigFromTheCurrentWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx, err := Open(linked)
+	ctx, err := kit.Open(linked)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

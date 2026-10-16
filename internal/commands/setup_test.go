@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 func TestSetupCopiesConfigDirsAndFiles(t *testing.T) {
@@ -16,7 +18,7 @@ func TestSetupCopiesConfigDirsAndFiles(t *testing.T) {
 	mustWrite(t, filepath.Join(main, "nested", "app.env"), "K=V")
 
 	target := t.TempDir()
-	ctx, err := Open(main)
+	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +41,7 @@ func TestSetupNeverOverwritesExistingFiles(t *testing.T) {
 	target := t.TempDir()
 	mustWrite(t, filepath.Join(target, "app.env"), "MINE=keep")
 
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
 	if err := Setup(ctx, target, SetupOptions{SourceDir: main}, &buf); err != nil {
 		t.Fatal(err)
@@ -57,7 +59,7 @@ func TestSetupRunsProvisionScript(t *testing.T) {
 		t.Fatal(err)
 	}
 	target := t.TempDir()
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
 	if err := Setup(ctx, target, SetupOptions{SourceDir: main}, &buf); err != nil {
 		t.Fatalf("Setup: %v", err)
@@ -72,7 +74,7 @@ func TestSetupRunsProvisionScript(t *testing.T) {
 func TestSetupBuildFailureIsAWarningNotAnError(t *testing.T) {
 	main := fixtureRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_COMMAND=\"exit 3\"\n")
 	target := t.TempDir()
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
 	if err := Setup(ctx, target, SetupOptions{SourceDir: main}, &buf); err != nil {
 		t.Fatalf("build failure should not be fatal: %v", err)
@@ -85,7 +87,7 @@ func TestSetupBuildFailureIsAWarningNotAnError(t *testing.T) {
 func TestSetupSkipBuild(t *testing.T) {
 	main := fixtureRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_COMMAND=\"touch built.txt\"\n")
 	target := t.TempDir()
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
 	if err := Setup(ctx, target, SetupOptions{SourceDir: main, SkipBuild: true}, &buf); err != nil {
 		t.Fatal(err)
@@ -97,7 +99,7 @@ func TestSetupSkipBuild(t *testing.T) {
 
 func TestSetupPrintsItsSourceOnlyWhenGiven(t *testing.T) {
 	main := fixtureRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 
 	var named bytes.Buffer
 	if err := Setup(ctx, t.TempDir(), SetupOptions{SourceDir: main, Source: "superset"}, &named); err != nil {
@@ -122,7 +124,7 @@ func TestSetupPrintsItsSourceOnlyWhenGiven(t *testing.T) {
 // a worktree that ended up somewhere nobody chose.
 func TestSetupProvisionsASupersetWorktreeWhereItStands(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	superset := filepath.Join(ctx.Repo.Parent, "demo_wt", "demo", "feat_wt", "thing")
 	gitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/thing", superset)
 
@@ -144,7 +146,7 @@ func TestSetupProvisionsASupersetWorktreeWhereItStands(t *testing.T) {
 
 func TestSetupNamesTheWorktreeItProvisioned(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
 	path, err := New(ctx, "feat/thing", NewOptions{}, &buf)
 	if err != nil {
@@ -191,7 +193,7 @@ func TestSetupRefusesConfigEntriesThatEscapeTheWorktree(t *testing.T) {
 
 	target := filepath.Join(t.TempDir(), "wt")
 	mustMkdir(t, target)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
 	if err := Setup(ctx, target, SetupOptions{SourceDir: main}, &buf); err != nil {
 		t.Fatal(err)
@@ -233,7 +235,7 @@ DEVELOPER_CONFIG_FILES=(
 	// "override.properties" is deliberately absent, as it is in the real repo.
 
 	target := t.TempDir()
-	ctx, err := Open(main)
+	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +267,7 @@ func TestSetupContinuesAfterProvisionFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	target := t.TempDir()
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 
 	var buf bytes.Buffer
 	err := Setup(ctx, target, SetupOptions{SourceDir: main}, &buf)

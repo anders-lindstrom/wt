@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -16,8 +17,8 @@ import (
 // something to push: after a run left it unpushed, that line is the only
 // thing that pushes it before its next rebase. Nothing is pushed and no
 // remote is asked.
-func SyncPushTo(ctx *Context, work, dest string, unset bool, w io.Writer) error {
-	wt, err := locateBranch(ctx, work)
+func SyncPushTo(ctx *kit.Context, work, dest string, unset bool, w io.Writer) error {
+	wt, err := kit.LocateBranch(ctx, work)
 	if err != nil {
 		return err
 	}
@@ -61,7 +62,7 @@ func SyncPushTo(ctx *Context, work, dest string, unset bool, w io.Writer) error 
 // longest remote name it starts with is the remote, so origin/team/x is
 // team/x on origin unless there is a remote origin/team. Trunk is refused:
 // wt pushes nothing there.
-func resolvePushTo(ctx *Context, dest string) (repo.PushTo, error) {
+func resolvePushTo(ctx *kit.Context, dest string) (repo.PushTo, error) {
 	remotes, err := ctx.Repo.Remotes()
 	if err != nil {
 		return repo.PushTo{}, err

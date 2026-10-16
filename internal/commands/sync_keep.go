@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -101,7 +102,7 @@ type KeepOptions struct {
 }
 
 // keepPaths is where the keeper keeps its files: the main checkout's git dir.
-func keepPaths(ctx *Context) (gitDir, logPath, statePath string, err error) {
+func keepPaths(ctx *kit.Context) (gitDir, logPath, statePath string, err error) {
 	gitDir, err = wtsync.GitDir(ctx.Repo.MainRoot)
 	if err != nil {
 		return "", "", "", err
@@ -206,7 +207,7 @@ func keepLockHeld(gitDir string) bool {
 // and push what finished with nothing owed. Every pass is recorded in the
 // log, as it happens, and in the state file. The error is what SyncRebase's
 // would be.
-func SyncKeepRun(ctx *Context, opts KeepOptions, w io.Writer) error {
+func SyncKeepRun(ctx *kit.Context, opts KeepOptions, w io.Writer) error {
 	gitDir, logPath, statePath, err := keepPaths(ctx)
 	if err != nil {
 		return err
@@ -231,7 +232,7 @@ func SyncKeepRun(ctx *Context, opts KeepOptions, w io.Writer) error {
 	// Signals from here on: the fetch is a git of its own, and a Ctrl-C or
 	// a bootout during it has to take it down too. The run installs its own
 	// handler for its length; pass.run swaps this one out around it.
-	pass.unwatch = watchSignals(w, nil)
+	pass.unwatch = kit.WatchSignals(w, nil)
 	defer func() { pass.unwatch() }()
 	if opts.Every > 0 {
 		st.Interval = fmtEvery(opts.Every)
@@ -273,7 +274,7 @@ func SyncKeepRun(ctx *Context, opts KeepOptions, w io.Writer) error {
 // keepPass is one pass as it happens: trunk before and after the fetch, what
 // the run came to, and the log it writes as it goes.
 type keepPass struct {
-	ctx     *Context
+	ctx     *kit.Context
 	opts    KeepOptions
 	w       io.Writer
 	now     time.Time
@@ -376,10 +377,10 @@ func (p *keepPass) pass(recorded string) error {
 	p.after = p.before
 	// Trunk, and the own remote of every worktree's branch: a pass takes
 	// every ready one.
-	own, err := fetchRemotes(ctx, networkTimeout, ownCandidates(ctx, nil))
+	own, err := fetchRemotes(ctx, kit.NetworkTimeout, ownCandidates(ctx, nil))
 	if err != nil {
 		p.header(p.onto)
-		p.result = "failed: fetch: " + fetchReason(err)
+		p.result = "failed: fetch: " + kit.FetchReason(err)
 		return fmt.Errorf("fetch: %w", err)
 	}
 	_, after, err := trunkTip(ctx)
@@ -417,7 +418,7 @@ func (p *keepPass) pass(recorded string) error {
 	var rerr error
 	if after == recorded {
 		p.header(fmt.Sprintf("%s %s unchanged", p.onto, git.ShortID(after, 7)))
-		fmt.Fprintf(p.w, "wt sync keep once  %s %s unchanged; %d push%s to retry\n", p.onto, git.ShortID(after, 7), len(retry), plural(len(retry)))
+		fmt.Fprintf(p.w, "wt sync keep once  %s %s unchanged; %d push%s to retry\n", p.onto, git.ShortID(after, 7), len(retry), kit.Plural(len(retry)))
 		noteTrunk()
 	} else {
 		p.header(fmt.Sprintf("%s %s → %s", p.onto, git.ShortID(p.before, 7), git.ShortID(after, 7)))
@@ -441,7 +442,7 @@ func (p *keepPass) pass(recorded string) error {
 		if rerr == nil {
 			p.unwatch()
 			r, rerr = runSync(ctx, nil, ropts, w)
-			p.unwatch = watchSignals(w, nil)
+			p.unwatch = kit.WatchSignals(w, nil)
 			p.ranRun = true
 		}
 	}
@@ -622,7 +623,7 @@ type keeperState struct {
 // keeper reads the keeper's state for ctx. loadedToo asks launchd whether
 // the job is loaded, plist or no plist, which the table line skips: it is
 // one more process on every wt sync.
-func keeper(ctx *Context, loadedToo bool) (keeperState, error) {
+func keeper(ctx *kit.Context, loadedToo bool) (keeperState, error) {
 	gitDir, logPath, statePath, err := keepPaths(ctx)
 	if err != nil {
 		return keeperState{}, err
@@ -669,7 +670,7 @@ func (st keepState) problemSince(now time.Time) string {
 
 // keptLine is the wt sync table's line for a kept repository, or "" when
 // nothing has ever kept it.
-func keptLine(ctx *Context, now time.Time) string {
+func keptLine(ctx *kit.Context, now time.Time) string {
 	k, err := keeper(ctx, false)
 	if err != nil || !k.kept {
 		return ""
@@ -693,7 +694,7 @@ func keptLine(ctx *Context, now time.Time) string {
 // keeperCheck is the doctor's row: whether a keeper is installed, how its
 // last pass went, and where the log is. A problem no clean pass has cleared
 // is the one warning.
-func keeperCheck(ctx *Context, now time.Time) wtsync.Check {
+func keeperCheck(ctx *kit.Context, now time.Time) wtsync.Check {
 	k, err := keeper(ctx, true)
 	if err != nil {
 		return wtsync.Check{Name: "keeper", OK: false, Detail: err.Error()}
@@ -736,7 +737,7 @@ func (k keeperState) check(now time.Time) wtsync.Check {
 
 // SyncKeepStatus prints whether a keeper is installed, its interval, what
 // the last pass did and when the next one is.
-func SyncKeepStatus(ctx *Context, now time.Time, w io.Writer) error {
+func SyncKeepStatus(ctx *kit.Context, now time.Time, w io.Writer) error {
 	k, err := keeper(ctx, true)
 	if err != nil {
 		return err

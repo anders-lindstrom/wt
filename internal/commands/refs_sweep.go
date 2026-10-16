@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/github"
@@ -196,12 +197,12 @@ type container struct {
 // planRefs reads everything a ref sweep depends on: it fetches unless told
 // not to, lists the refs here, and origin's with --remote, and sorts every
 // backup. progress gets what the fetch says.
-func planRefs(ctx *Context, opts RefsOptions, progress io.Writer) (RefsPlan, error) {
+func planRefs(ctx *kit.Context, opts RefsOptions, progress io.Writer) (RefsPlan, error) {
 	u := ctx.UserConfig()
-	p := RefsPlan{Repo: ctx.Repo.MainRoot, Trunk: ctx.Config.MainBranch, TrunkSource: ctx.trunkSource(),
+	p := RefsPlan{Repo: ctx.Repo.MainRoot, Trunk: ctx.Config.MainBranch, TrunkSource: ctx.TrunkSource(),
 		Remote: opts.Remote, Patterns: append([]string{}, u.RefSweepPatterns...), Age: u.RefSweepAge,
 		Now: opts.now().Unix()}
-	if err := ctx.noTrunk(); err != nil {
+	if err := ctx.NoTrunk(); err != nil {
 		return p, err
 	}
 	age, err := config.ParseAge(p.Age)
@@ -359,7 +360,7 @@ func newRefRow(c refCandidate, patterns []config.RefPattern, objects map[string]
 // readLocalRefs lists this repository's branches and tags, and its copy of
 // origin's branches: the ones a pattern matches are candidates, the rest
 // containers, trunk first, then origin's, then the others.
-func readLocalRefs(ctx *Context, patterns []config.RefPattern) ([]refCandidate, []container, error) {
+func readLocalRefs(ctx *kit.Context, patterns []config.RefPattern) ([]refCandidate, []container, error) {
 	lines, err := git.Lines(ctx.Repo.MainRoot, "for-each-ref",
 		"--format=%(refname)%00%(objectname)%00%(objecttype)%00%(*objectname)%00%(*objecttype)",
 		"refs/heads/", "refs/tags/", "refs/remotes/origin/")
@@ -433,7 +434,7 @@ func sortContainers(c []container) {
 // readOriginRefs lists origin's branches and tags, from ls-remote: the
 // candidates, and the containers a remote backup is measured against —
 // origin's own refs, since other clones cannot see a branch here.
-func readOriginRefs(ctx *Context, url string, patterns []config.RefPattern) ([]refCandidate, []container, error) {
+func readOriginRefs(ctx *kit.Context, url string, patterns []config.RefPattern) ([]refCandidate, []container, error) {
 	rr, err := readRemoteRefs(ctx.Repo.MainRoot, url)
 	if err != nil {
 		return nil, nil, err
@@ -470,7 +471,7 @@ func readOriginRefs(ctx *Context, url string, patterns []config.RefPattern) ([]r
 // ever swept when origin's own refs contain it; a branch with an open pull
 // request is kept, since deleting it closes the pull request, and so is
 // every branch when GitHub cannot be asked.
-func planOrigin(ctx *Context, opts RefsOptions, url string, patterns []config.RefPattern, cands []refCandidate, conts []container,
+func planOrigin(ctx *kit.Context, opts RefsOptions, url string, patterns []config.RefPattern, cands []refCandidate, conts []container,
 	objects map[string]objectInfo, trunk, originHead string) ([]RefRow, error) {
 	root := ctx.Repo.MainRoot
 	var branches []string
@@ -483,8 +484,8 @@ func planOrigin(ctx *Context, opts RefsOptions, url string, patterns []config.Re
 	if len(branches) > 0 {
 		open, prErr = openPullRequests(ctx, opts, branches, url)
 		if prErr != nil {
-			ctx.Warnf(WarnGitHub, "keeping origin's backup branches: cannot ask GitHub about their pull requests (%v)",
-				oneLine(prErr.Error()))
+			ctx.Warnf(kit.WarnGitHub, "keeping origin's backup branches: cannot ask GitHub about their pull requests (%v)",
+				kit.OneLine(prErr.Error()))
 		}
 	}
 	// A container whose commit is not here cannot contain anything wt can
@@ -543,11 +544,11 @@ func planOrigin(ctx *Context, opts RefsOptions, url string, patterns []config.Re
 // where a pull request from origin's branch lives). A branch is open when a
 // pull request there has origin's owner as its head's owner. An origin that
 // is not on GitHub cannot be asked.
-func openPullRequests(ctx *Context, opts RefsOptions, branches []string, url string) (map[string]bool, error) {
+func openPullRequests(ctx *kit.Context, opts RefsOptions, branches []string, url string) (map[string]bool, error) {
 	if opts.OpenPRs != nil {
 		return opts.OpenPRs(branches)
 	}
-	gh, err := openGitHub(ctx)
+	gh, err := kit.OpenGitHub(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -564,7 +565,7 @@ func openPullRequests(ctx *Context, opts RefsOptions, branches []string, url str
 	for _, repo := range repos {
 		prs, err := gh.CLI.PRsOnBranches(ctx.Repo.MainRoot, repo, branches, refsPRDeadline)
 		if err != nil {
-			return nil, gh.fail(err)
+			return nil, gh.Fail(err)
 		}
 		for _, pr := range prs {
 			ownHead := strings.EqualFold(repo.Slug, origin.Slug) && !pr.IsCrossRepository
@@ -664,7 +665,7 @@ func contain(root string, rows []RefRow, tips []string, conts []container, remot
 // there but cannot be read, the commit its tip pin holds. A quarantine is
 // known here only by its pins under refs/wt-quarantine/: one whose folder
 // is gone is dead, and one whose pins are gone cannot be seen at all.
-func quarantineHolds(ctx *Context) (names, tips map[string]bool, err error) {
+func quarantineHolds(ctx *kit.Context) (names, tips map[string]bool, err error) {
 	names, tips = map[string]bool{}, map[string]bool{}
 	root := ctx.Repo.MainRoot
 	lines, err := git.Lines(root, "for-each-ref", "--format=%(refname)%00%(objectname)", quarantine.PinPrefix)
@@ -789,11 +790,11 @@ var errRefsPlanChanged = errors.New("the ref sweep plan changed since it was rea
 // RefsSweep sweeps the backups the plan selects: each is pinned under
 // refs/wt-swept/<run>/ and deleted in one step, so nothing is lost until
 // wt refs purge.
-func RefsSweep(ctx *Context, opts RefsOptions, w io.Writer) (err error) {
+func RefsSweep(ctx *kit.Context, opts RefsOptions, w io.Writer) (err error) {
 	j := opts.Journal
 	if j != nil {
-		defer setInterruptJournal(j)()
-		defer watchSignals(w, nil)()
+		defer kit.SetInterruptJournal(j)()
+		defer kit.WatchSignals(w, nil)()
 		defer func() {
 			j.fail(err)
 			j.Finish()
@@ -821,7 +822,7 @@ func RefsSweep(ctx *Context, opts RefsOptions, w io.Writer) (err error) {
 	token := refsToken(plan)
 	j.planned(plan, token)
 	if opts.Expect != "" && deref(token) != opts.Expect {
-		j.problem(ProblemPlanChanged, errRefsPlanChanged)
+		j.problem(kit.ProblemPlanChanged, errRefsPlanChanged)
 		return errRefsPlanChanged
 	}
 	if err := plan.applyOnly(opts.Only); err != nil {
@@ -855,7 +856,7 @@ func RefsSweep(ctx *Context, opts RefsOptions, w io.Writer) (err error) {
 			return err
 		}
 		if deref(refsToken(fresh)) != deref(token) {
-			j.problem(ProblemPlanChanged, errRefsPlanChanged)
+			j.problem(kit.ProblemPlanChanged, errRefsPlanChanged)
 			return errRefsPlanChanged
 		}
 	default:
@@ -893,7 +894,7 @@ func refCount(n int) string {
 }
 
 // apply moves each selected row, reading it once more right before.
-func (p RefsPlan) apply(ctx *Context, runID string, j *RefsJournal, w io.Writer) error {
+func (p RefsPlan) apply(ctx *kit.Context, runID string, j *RefsJournal, w io.Writer) error {
 	root := ctx.Repo.MainRoot
 	failed := 0
 	for _, r := range p.Selected() {
@@ -913,7 +914,7 @@ func (p RefsPlan) apply(ctx *Context, runID string, j *RefsJournal, w io.Writer)
 		case st.err != nil || !st.pinned || !st.deleted:
 			why := "not finished"
 			if st.err != nil {
-				why = oneLine(st.err.Error())
+				why = kit.OneLine(st.err.Error())
 			}
 			fmt.Fprintf(w, "! %s: %s\n", r.ID, why)
 			failed++
@@ -942,7 +943,7 @@ type refState struct {
 // sweepLocalRef pins and deletes one ref here in a single transaction, at
 // the object the plan read, and drops a branch's config after it, as git
 // branch -D does.
-func sweepLocalRef(ctx *Context, r RefRow, pin string) refState {
+func sweepLocalRef(ctx *kit.Context, r RefRow, pin string) refState {
 	root := ctx.Repo.MainRoot
 	now, ok, err := refValue(root, r.Ref)
 	switch {
@@ -988,7 +989,7 @@ func readLocalState(root string, r RefRow, pin string) refState {
 // A pin that holds anything else is dropped; so is the pin of a ref the
 // push did not delete and origin still has.
 func sweepRemoteRef(root, url string, r RefRow, pin string) refState {
-	if _, err := git.RunTimeout(root, networkTimeout, "fetch", "--quiet", "--no-tags", "--no-write-fetch-head",
+	if _, err := git.RunTimeout(root, kit.NetworkTimeout, "fetch", "--quiet", "--no-tags", "--no-write-fetch-head",
 		"--no-recurse-submodules", url, "+"+r.Ref+":"+pin); err != nil {
 		return refState{err: fmt.Errorf("could not pin it: %s", git.Reason(err))}
 	}
@@ -1005,7 +1006,7 @@ func sweepRemoteRef(root, url string, r RefRow, pin string) refState {
 		}
 		return refState{kept: "it moved on origin after the plan was made"}
 	}
-	_, pushErr := git.RunTimeout(root, networkTimeout, "push", "--quiet", "--no-verify",
+	_, pushErr := git.RunTimeout(root, kit.NetworkTimeout, "push", "--quiet", "--no-verify",
 		"--force-with-lease="+r.Ref+":"+r.Object, url, ":"+r.Ref)
 	if pushErr == nil {
 		// The delete landed. Whatever origin has there now is somebody
@@ -1013,7 +1014,7 @@ func sweepRemoteRef(root, url string, r RefRow, pin string) refState {
 		return refState{pinned: true, deleted: true}
 	}
 	st := refState{pinned: true}
-	now, there, err := remoteValue(root, url, r.Ref, networkTimeout)
+	now, there, err := remoteValue(root, url, r.Ref, kit.NetworkTimeout)
 	switch {
 	case err != nil:
 		// Not knowing whether the delete landed, the pin stays.
@@ -1050,7 +1051,7 @@ func (p RefsPlan) Render(w io.Writer) {
 		case r.ContainedIn != "":
 			why = "contained in " + r.ContainedIn
 		case r.Unique != nil:
-			why = commitsWord(*r.Unique) + " no other ref has"
+			why = kit.CommitsWord(*r.Unique) + " no other ref has"
 		}
 		when := ""
 		if r.Date > 0 {
@@ -1071,15 +1072,15 @@ func (p RefsPlan) Render(w io.Writer) {
 	} else {
 		fmt.Fprintf(w, "Will be swept, %s, each pinned under %s so it can be restored:\n",
 			refCount(len(sel)), SweptPrefix)
-		_ = printTable(w, sel)
+		_ = kit.PrintTable(w, sel)
 	}
 	if len(young) > 0 {
 		fmt.Fprintf(w, "\nNot selected (younger than %s, or left out by --only):\n", p.Age)
-		_ = printTable(w, young)
+		_ = kit.PrintTable(w, young)
 	}
 	if len(kept) > 0 {
 		fmt.Fprintln(w, "\nKept:")
-		_ = printTable(w, kept)
+		_ = kit.PrintTable(w, kept)
 	}
 	fmt.Fprintln(w)
 }

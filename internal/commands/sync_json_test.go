@@ -7,9 +7,11 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
-func overviewJSON(t *testing.T, ctx *Context) SyncOverview {
+func overviewJSON(t *testing.T, ctx *kit.Context) SyncOverview {
 	t.Helper()
 	var buf bytes.Buffer
 	if err := SyncJSON(ctx, SyncOptions{NoFetch: true}, &buf); err != nil {

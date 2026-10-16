@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 func newSyncCmd() *cobra.Command {
@@ -173,15 +174,15 @@ func newSyncCmd() *cobra.Command {
 		}
 		switch verb {
 		case "rebase":
-			return withVerbContext(cmd, args, rebaseCommand, f.json, func(ctx *commands.Context, j *commands.RunJournal) error {
+			return withVerbContext(cmd, args, rebaseCommand, f.json, func(ctx *kit.Context, j *commands.RunJournal) error {
 				return syncRebase(cmd, args, ctx, f, j)
 			})
 		case "resume":
-			return withVerbContext(cmd, args, "sync resume", f.json, func(ctx *commands.Context, j *commands.RunJournal) error {
+			return withVerbContext(cmd, args, "sync resume", f.json, func(ctx *kit.Context, j *commands.RunJournal) error {
 				return syncResume(cmd, args[0], ctx, f.yes, f.push, j)
 			})
 		case "undo":
-			return withVerbContext(cmd, args, "sync undo", f.json, func(ctx *commands.Context, j *commands.RunJournal) error {
+			return withVerbContext(cmd, args, "sync undo", f.json, func(ctx *kit.Context, j *commands.RunJournal) error {
 				return syncUndo(cmd, args[0], ctx, f.force, f.yes, j)
 			})
 		}
@@ -192,7 +193,7 @@ func newSyncCmd() *cobra.Command {
 			return err
 		}
 		if ctx == nil {
-			return commands.ErrNotInRepo
+			return kit.ErrNotInRepo
 		}
 		opts := commands.SyncOptions{NoFetch: noFetch}
 		if len(args) == 1 {
@@ -261,7 +262,7 @@ func newSyncKeepCmd() *cobra.Command {
 			"  wt sync keep once       # one pass now, by hand or from cron\n" +
 			"  wt sync keep status     # the same as wt sync keep",
 		Args: cobra.NoArgs,
-		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
 			return commands.SyncKeepStatus(ctx, time.Now(), cmd.OutOrStdout())
 		}),
 	}
@@ -317,7 +318,7 @@ func newSyncKeepRunCmd() *cobra.Command {
 			"  wt sync keep once --no-push    # rebase only; print the push commands\n" +
 			"  wt sync keep once --no-ff-trunk  # leave local trunk where it is",
 		Args: cobra.NoArgs,
-		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
 			opts := commands.KeepOptions{Every: every, Push: commands.PushAlways, NoFFTrunk: noFFTrunk}
 			if noPush {
 				opts.Push = commands.PushNever
@@ -389,7 +390,7 @@ func newSyncKeepStartCmd() *cobra.Command {
 			if dryRun || yes {
 				return usagef("--dry-run and --yes go with --all, --roots or --profile; start in one repository asks nothing")
 			}
-			return withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+			return withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
 				return commands.SyncKeepStart(ctx, opts, cmd.OutOrStdout())
 			})(cmd, args)
 		},
@@ -426,7 +427,7 @@ func newSyncKeepStatusCmd() *cobra.Command {
 			if sel.selection().Any() {
 				return commands.SyncKeepStatusAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), time.Now(), cmd.OutOrStdout())
 			}
-			return withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+			return withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
 				return commands.SyncKeepStatus(ctx, time.Now(), cmd.OutOrStdout())
 			})(cmd, args)
 		},
@@ -462,7 +463,7 @@ func newSyncKeepStopCmd() *cobra.Command {
 			if dryRun {
 				return usagef("--dry-run goes with --all, --roots or --profile")
 			}
-			return withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+			return withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
 				return commands.SyncKeepStop(ctx, cmd.OutOrStdout())
 			})(cmd, args)
 		},
@@ -541,7 +542,7 @@ func (f syncVerbFlags) check() error {
 
 // syncOverviewJSON is wt sync --json: the overview as one object, or with
 // --all, --roots or --profile an array of one per repository.
-func syncOverviewJSON(cmd *cobra.Command, args []string, sel commands.Selection, f syncVerbFlags) error {
+func syncOverviewJSON(cmd *cobra.Command, args []string, sel kit.Selection, f syncVerbFlags) error {
 	opts := commands.SyncOptions{NoFetch: f.noFetch}
 	switch {
 	case len(args) > 0:
@@ -554,7 +555,7 @@ func syncOverviewJSON(cmd *cobra.Command, args []string, sel commands.Selection,
 		return err
 	}
 	if ctx == nil {
-		return commands.ErrNotInRepo
+		return kit.ErrNotInRepo
 	}
 	return commands.SyncJSON(ctx, opts, cmd.OutOrStdout())
 }
@@ -682,7 +683,7 @@ func newSyncRebaseCmd() *cobra.Command {
 			if sel.selection().Any() {
 				return syncAcross(cmd, args, "rebase", sel.selection(), f)
 			}
-			return withVerbContext(cmd, args, rebaseCommand, asJSON, func(ctx *commands.Context, j *commands.RunJournal) error {
+			return withVerbContext(cmd, args, rebaseCommand, asJSON, func(ctx *kit.Context, j *commands.RunJournal) error {
 				return syncRebase(cmd, args, ctx, f, j)
 			})
 		},
@@ -703,7 +704,7 @@ func newSyncRebaseCmd() *cobra.Command {
 
 // syncRebase is wt sync rebase, whichever way it was spelled. j, when not nil,
 // gets its result for --json.
-func syncRebase(cmd *cobra.Command, works []string, ctx *commands.Context, f syncVerbFlags, j *commands.RunJournal) error {
+func syncRebase(cmd *cobra.Command, works []string, ctx *kit.Context, f syncVerbFlags, j *commands.RunJournal) error {
 	opts, _ := runOptions(cmd, f, len(works) == 0)
 	opts.Journal, opts.Expect = j, f.expect
 	return commands.SyncRebase(ctx, works, opts, cmd.OutOrStdout())
@@ -717,9 +718,9 @@ const rebaseCommand = "sync rebase"
 // and everything it prints, questions included, goes to stderr; command
 // names the verb in that object.
 func withVerbContext(cmd *cobra.Command, args []string, command string, asJSON bool,
-	fn func(ctx *commands.Context, j *commands.RunJournal) error) error {
+	fn func(ctx *kit.Context, j *commands.RunJournal) error) error {
 	if !asJSON {
-		return withContext(func(_ *cobra.Command, _ []string, ctx *commands.Context) error {
+		return withContext(func(_ *cobra.Command, _ []string, ctx *kit.Context) error {
 			return fn(ctx, nil)
 		})(cmd, args)
 	}
@@ -775,7 +776,7 @@ func noTerminal(w io.Writer) func([]string) (bool, error) {
 // syncAcross is wt sync with --all, --roots or --profile: the overview of
 // every repository they name, or with --rebase a run across all of them. The
 // other verbs finish one worktree's run, so they name it instead.
-func syncAcross(cmd *cobra.Command, args []string, verb string, sel commands.Selection, f syncVerbFlags) error {
+func syncAcross(cmd *cobra.Command, args []string, verb string, sel kit.Selection, f syncVerbFlags) error {
 	u := loadUserWarn(cmd.ErrOrStderr())
 	switch {
 	case verb == "resume" || verb == "undo":
@@ -846,7 +847,7 @@ func newSyncResumeCmd() *cobra.Command {
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withVerbContext(cmd, args, "sync resume", asJSON, func(ctx *commands.Context, j *commands.RunJournal) error {
+			return withVerbContext(cmd, args, "sync resume", asJSON, func(ctx *kit.Context, j *commands.RunJournal) error {
 				return syncResume(cmd, args[0], ctx, yes, push(), j)
 			})
 		},
@@ -859,7 +860,7 @@ func newSyncResumeCmd() *cobra.Command {
 }
 
 // syncResume is wt sync resume, whichever way it was spelled.
-func syncResume(cmd *cobra.Command, work string, ctx *commands.Context, yes bool, push commands.PushMode, j *commands.RunJournal) error {
+func syncResume(cmd *cobra.Command, work string, ctx *kit.Context, yes bool, push commands.PushMode, j *commands.RunJournal) error {
 	opts := commands.ResumeOptions{Journal: j}
 	opts.Push = push
 	// --yes answers yes to every question, the push included, unless
@@ -910,7 +911,7 @@ func newSyncUndoCmd() *cobra.Command {
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withVerbContext(cmd, args, "sync undo", asJSON, func(ctx *commands.Context, j *commands.RunJournal) error {
+			return withVerbContext(cmd, args, "sync undo", asJSON, func(ctx *kit.Context, j *commands.RunJournal) error {
 				return syncUndo(cmd, args[0], ctx, force, yes, j)
 			})
 		},
@@ -922,7 +923,7 @@ func newSyncUndoCmd() *cobra.Command {
 }
 
 // syncUndo is wt sync undo, whichever way it was spelled.
-func syncUndo(cmd *cobra.Command, work string, ctx *commands.Context, force, yes bool, j *commands.RunJournal) error {
+func syncUndo(cmd *cobra.Command, work string, ctx *kit.Context, force, yes bool, j *commands.RunJournal) error {
 	opts := commands.UndoOptions{Force: force, Journal: j}
 	if canAsk(cmd) && !yes {
 		opts.Confirm = confirmAsk(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()), "undo")
@@ -968,7 +969,7 @@ func newSyncPushToCmd() *cobra.Command {
 			"  wt sync push-to login-crash --unset               # forget what is recorded",
 		Args:              cobra.MaximumNArgs(2),
 		ValidArgsFunction: completeWork,
-		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
+		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *kit.Context) error {
 			work, dest := ".", ""
 			if len(args) > 0 {
 				work = args[0]
@@ -1009,7 +1010,7 @@ func newSyncDoctorCmd() *cobra.Command {
 			"  wt sync doctor --fix    # turn on rerere, remove expired locks\n" +
 			"  wt sync doctor --prune  # delete safety refs no run needs now",
 		Args: cobra.NoArgs,
-		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
 			return commands.SyncDoctor(ctx, commands.DoctorOptions{Fix: fix, Prune: prune}, cmd.OutOrStdout())
 		}),
 	}

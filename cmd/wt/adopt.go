@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 func newAdoptCmd() *cobra.Command {
@@ -21,7 +22,7 @@ func newAdoptCmd() *cobra.Command {
 			"  wt adopt . --no-build                      # this one, without a build\n" +
 			"  wt adopt . --no-cache                      # without cloning the caches",
 		Args: needArgs(1, "<path>", "wt adopt ../myrepo-login-crash"),
-		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
+		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *kit.Context) error {
 			path, err := commands.Adopt(ctx, args[0], relocate,
 				commands.SetupOptions{SkipBuild: skipBuild, NoCache: noCache}, cmd.ErrOrStderr())
 			return printLine(cmd, path, err)

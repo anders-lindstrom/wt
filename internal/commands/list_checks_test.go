@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/github"
 )
 
@@ -18,9 +19,9 @@ func withChecks(pr github.PR, state string) github.PR {
 
 // fourWorktreesWithChecks is a repository with a worktree on each of four
 // pull requests: checks passing, failing, running, and none at all.
-func fourWorktreesWithChecks(t *testing.T) (*Context, string) {
+func fourWorktreesWithChecks(t *testing.T) (*kit.Context, string) {
 	t.Helper()
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(committedRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,15 +87,15 @@ func TestStatusMarksThePullRequestsChecks(t *testing.T) {
 // The cache keeps the checks with the pull request, so a listing it answers
 // marks them as the one that asked GitHub did.
 func TestPRCacheKeepsTheChecks(t *testing.T) {
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(committedRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now()
 	failing := withChecks(openPR(13, "fix_wt/failing", "Failing"), "FAILURE")
-	writePRCacheChecks(ctx, ghRepo, map[string]*github.PR{"fix_wt/failing": &failing}, now, true)
+	kit.WritePRCacheChecks(ctx, ghRepo, map[string]*github.PR{"fix_wt/failing": &failing}, now, true)
 
-	pr, _, ok := readPRCache(ctx, ghRepo).fresh("fix_wt/failing", now, true)
+	pr, _, ok := kit.ReadPRCache(ctx, ghRepo).Fresh("fix_wt/failing", now, true)
 	if !ok || pr.ChecksLabel() != "failing" {
 		t.Errorf("cached #13 = %+v, %v; want its checks failing", pr, ok)
 	}
@@ -146,7 +147,7 @@ func TestPRCellMarksAfterTheNumberOfAMultiWordLabel(t *testing.T) {
 		"no checks":         {unchecked, "#33 changes requested"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if got := prCell(tc.pr, []string{"main"}); got != tc.want {
+			if got := kit.PRCell(tc.pr, []string{"main"}); got != tc.want {
 				t.Errorf("prCell = %q, want %q", got, tc.want)
 			}
 		})
@@ -157,22 +158,22 @@ func TestPRCellMarksAfterTheNumberOfAMultiWordLabel(t *testing.T) {
 // but not a listing, which asks again rather than show no marks; a branch
 // with no pull request needs no checks and answers both.
 func TestPRCacheWithoutChecksDoesNotAnswerAListing(t *testing.T) {
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(committedRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now()
 	pr := openPR(12, "fix_wt/login-crash", "Login crash")
-	writePRCache(ctx, ghRepo, map[string]*github.PR{"fix_wt/login-crash": &pr, "fix_wt/none": nil}, now)
+	kit.WritePRCache(ctx, ghRepo, map[string]*github.PR{"fix_wt/login-crash": &pr, "fix_wt/none": nil}, now)
 
-	c := readPRCache(ctx, ghRepo)
-	if _, _, ok := c.fresh("fix_wt/login-crash", now, false); !ok {
+	c := kit.ReadPRCache(ctx, ghRepo)
+	if _, _, ok := c.Fresh("fix_wt/login-crash", now, false); !ok {
 		t.Error("a lookup without checks missed an answer read without them")
 	}
-	if _, _, ok := c.fresh("fix_wt/login-crash", now, true); ok {
+	if _, _, ok := c.Fresh("fix_wt/login-crash", now, true); ok {
 		t.Error("a listing took an answer that has no checks")
 	}
-	if _, _, ok := c.fresh("fix_wt/none", now, true); !ok {
+	if _, _, ok := c.Fresh("fix_wt/none", now, true); !ok {
 		t.Error("a listing asked again about a branch with no pull request")
 	}
 }
@@ -181,7 +182,7 @@ func TestPRCacheWithoutChecksDoesNotAnswerAListing(t *testing.T) {
 // GitHub exactly what it asked before they existed.
 func TestOnlyTheListingAsksForTheChecks(t *testing.T) {
 	ctx, log := fourWorktreesWithChecks(t)
-	branchPRs(ctx, []string{"fix_wt/failing"}, prLookup{refresh: true})
+	kit.BranchPRs(ctx, []string{"fix_wt/failing"}, kit.PRLookup{Refresh: true})
 	got := argvOf(t, log)
 	if len(got) == 0 || strings.Contains(got[len(got)-1], "headCommit") {
 		t.Fatalf("a lookup without checks asked for them: %q", got)
@@ -199,7 +200,7 @@ func TestOnlyTheListingAsksForTheChecks(t *testing.T) {
 // A token GitHub will not show the checks to keeps the PR column, without
 // marks, says once why, and does not ask again until the answer is old.
 func TestListShowsThePullRequestsWhenTheChecksAreRefused(t *testing.T) {
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(committedRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +234,7 @@ esac`, withChecks(openPR(13, "fix_wt/failing", "Failing"), "FAILURE"))
 // When the checks are refused and the call without them fails too, the
 // warning is the failure that left the column out, not the refusal.
 func TestListSaysWhyTheColumnIsMissingWhenTheRetryFailsToo(t *testing.T) {
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(committedRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -14,7 +15,7 @@ import (
 // ownBareOrigin makes origin a bare repository of its own that holds trunk and
 // nothing else: the fixture's branches are unpushed, and every push, fetch
 // and lease goes to a real remote.
-func ownBareOrigin(t *testing.T, ctx *Context) string {
+func ownBareOrigin(t *testing.T, ctx *kit.Context) string {
 	t.Helper()
 	main := ctx.Repo.MainRoot
 	bare := filepath.Join(t.TempDir(), "origin.git")
@@ -42,7 +43,7 @@ func onBare(t *testing.T, bare, branch string) string {
 // tracksTheirs puts a branch theirs on the remote, at the commit bump was
 // cut from, and makes the fixture's bump track it: git checkout -b
 // feat_wt/bump origin/theirs, as far as the configuration goes.
-func tracksTheirs(t *testing.T, ctx *Context, bare string) string {
+func tracksTheirs(t *testing.T, ctx *kit.Context, bare string) string {
 	t.Helper()
 	main := ctx.Repo.MainRoot
 	gitOut(t, main, "push", "-q", "origin", "main~1:refs/heads/theirs")
@@ -167,7 +168,7 @@ func TestAPersonSaysWhereABranchTrackingAnotherNamePushes(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
-	run := func(t *testing.T, answer func(PushChoice) string) (ctx *Context, bump, bare, theirs string, asked []PushChoice, confirmed []string, out string) {
+	run := func(t *testing.T, answer func(PushChoice) string) (ctx *kit.Context, bump, bare, theirs string, asked []PushChoice, confirmed []string, out string) {
 		ctx, bump = runFixture(t, false)
 		bare = ownBareOrigin(t, ctx)
 		theirs = tracksTheirs(t, ctx, bare)
@@ -352,7 +353,7 @@ func TestNewLeavesTheBranchWithNoUpstream(t *testing.T) {
 
 // recordedBump is the fixture's bump pushed as origin/old-name and recorded
 // as pushing there: a renamed branch.
-func recordedBump(t *testing.T) (ctx *Context, bump, bare string) {
+func recordedBump(t *testing.T) (ctx *kit.Context, bump, bare string) {
 	t.Helper()
 	ctx, bump = runFixture(t, false)
 	bare = ownBareOrigin(t, ctx)

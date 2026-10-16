@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/find"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
@@ -69,7 +70,7 @@ type attachTarget struct {
 // be a function that sets the session up, and without the shell layer or a
 // terminal the answer is the command a person would run. ctx is nil outside
 // a repository.
-func Attach(ctx *Context, o AttachOptions) error {
+func Attach(ctx *kit.Context, o AttachOptions) error {
 	read := o.Sessions
 	if read == nil {
 		read = ReadClaudeSessions(attachDeadline)
@@ -90,7 +91,7 @@ func Attach(ctx *Context, o AttachOptions) error {
 	// A session's id alone, with no worktree named.
 	if o.Pattern != "" && o.Session == "" {
 		if s := sessionWithID(read.all(), o.Pattern); s != nil {
-			if matches, _ := Find(ctx, o.Pattern); len(matches) > 0 {
+			if matches, _ := kit.Find(ctx, o.Pattern); len(matches) > 0 {
 				m := matches[0]
 				how := attachCommand(*s)
 				if how == "" {
@@ -173,11 +174,11 @@ func whyNotAttachable(s claudeSession) string {
 // with no pattern takes the worktree the caller stands in. In the main
 // checkout no pattern means the whole repository: every session in any of
 // its worktrees.
-func (o AttachOptions) target(ctx *Context, read *ClaudeSessions) (attachTarget, error) {
+func (o AttachOptions) target(ctx *kit.Context, read *ClaudeSessions) (attachTarget, error) {
 	if o.Pattern == "" {
 		return o.standing(ctx, read)
 	}
-	matches, err := Find(ctx, o.Pattern)
+	matches, err := kit.Find(ctx, o.Pattern)
 	if err != nil {
 		return attachTarget{}, err
 	}
@@ -196,7 +197,7 @@ func (o AttachOptions) target(ctx *Context, read *ClaudeSessions) (attachTarget,
 		for i, c := range matches {
 			rows[i] = []string{"  " + strconv.Itoa(i+1), c.Work, c.Repo, c.Path}
 		}
-		_ = printTable(o.Err, rows)
+		_ = kit.PrintTable(o.Err, rows)
 		n, err := o.pick(len(matches), "name one as <repository>/<work>")
 		if err != nil {
 			return attachTarget{}, err
@@ -230,11 +231,11 @@ func worktreePaths(path string) []string {
 }
 
 // standing is the target with no pattern.
-func (o AttachOptions) standing(ctx *Context, read *ClaudeSessions) (attachTarget, error) {
+func (o AttachOptions) standing(ctx *kit.Context, read *ClaudeSessions) (attachTarget, error) {
 	if ctx == nil {
 		return attachTarget{}, errors.New("not inside a git repository — name a worktree: wt attach <pattern>")
 	}
-	names, err := WorkNames(ctx)
+	names, err := kit.WorkNames(ctx)
 	if err != nil {
 		return attachTarget{}, err
 	}
@@ -243,8 +244,8 @@ func (o AttachOptions) standing(ctx *Context, read *ClaudeSessions) (attachTarge
 		paths[i] = n.Path
 	}
 	by := read.byWorktree(paths)
-	if here, _, err := standingWorktree(ctx, names); err == nil && !here.IsMain {
-		return attachTarget{label: worktreeName(ctx, here.Branch, here.Path), arg: ".", path: here.Path,
+	if here, _, err := kit.StandingWorktree(ctx, names); err == nil && !here.IsMain {
+		return attachTarget{label: kit.WorktreeName(ctx, here.Branch, here.Path), arg: ".", path: here.Path,
 			sessions: by[here.Path], repo: ctx.Repo.Name}, nil
 	}
 	t := attachTarget{label: "any worktree of " + ctx.Repo.Name, repo: ctx.Repo.Name}
@@ -253,7 +254,7 @@ func (o AttachOptions) standing(ctx *Context, read *ClaudeSessions) (attachTarge
 		if n.IsMain {
 			work = "(main)"
 		} else if work == "" {
-			work = worktreeName(ctx, n.Branch, n.Path)
+			work = kit.WorktreeName(ctx, n.Branch, n.Path)
 		}
 		for _, s := range by[n.Path] {
 			t.sessions = append(t.sessions, s)
@@ -401,11 +402,11 @@ func (o AttachOptions) list(t attachTarget, can []int) {
 		}
 		started := "-"
 		if s.StartedAt > 0 {
-			started = "started " + ago(now.Sub(time.UnixMilli(s.StartedAt)))
+			started = "started " + kit.Ago(now.Sub(time.UnixMilli(s.StartedAt)))
 		}
 		rows[i] = append(row, cutToWidth(s.name(), maxSessionName), state, where, started)
 	}
-	_ = printTable(o.Err, rows)
+	_ = kit.PrintTable(o.Err, rows)
 }
 
 // pick asks which of n numbered rows and returns its index. With nobody to
@@ -437,7 +438,7 @@ func (o AttachOptions) pick(n int, otherwise string) (int, error) {
 // session, which attaching reaches and resuming would open a second time.
 // The worktree is the unit: from a subfolder the conversation is continued
 // at the worktree's root, and a session anywhere in the worktree refuses it.
-func (o AttachOptions) resume(ctx *Context, read *ClaudeSessions) error {
+func (o AttachOptions) resume(ctx *kit.Context, read *ClaudeSessions) error {
 	if o.Pattern == "" && ctx == nil {
 		return errors.New("not inside a git repository — name a worktree: wt attach <pattern> --resume")
 	}
@@ -531,9 +532,9 @@ func (o AttachOptions) start(verb, id, path string) error {
 	case "attach":
 		line = "claude attach " + id
 	case "continue":
-		line = "cd " + shellQuote(path) + " && claude --continue"
+		line = "cd " + kit.ShellQuote(path) + " && claude --continue"
 	default:
-		line = "cd " + shellQuote(path) + " && claude --resume " + shellQuote(id)
+		line = "cd " + kit.ShellQuote(path) + " && claude --resume " + kit.ShellQuote(id)
 	}
 	if o.Terminal {
 		return fmt.Errorf("`wt attach` needs wt's shell layer, which is not loaded.\n"+

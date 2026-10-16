@@ -8,16 +8,17 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 )
 
 // quarantineDir is a new folder name next to the repository, on its volume.
-func quarantineDir(t *testing.T, ctx *Context) string {
+func quarantineDir(t *testing.T, ctx *kit.Context) string {
 	t.Helper()
 	return filepath.Join(ctx.Repo.Parent, "trash", "q-"+strings.ReplaceAll(t.Name(), "/", "-"))
 }
 
-func trashFor(t *testing.T, ctx *Context) string {
+func trashFor(t *testing.T, ctx *kit.Context) string {
 	t.Helper()
 	dir := quarantineDir(t, ctx)
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
@@ -145,11 +146,11 @@ func TestQuarantineRefusesAnotherVolumeBeforeAnyChange(t *testing.T) {
 		}
 		return orig(p)
 	}
-	refused(t, ctx, path, RemoveOptions{Quarantine: dir, Force: ForceAll}, "another volume")
+	refused(t, ctx, path, RemoveOptions{Quarantine: dir, Force: kit.ForceAll}, "another volume")
 	assertNotQuarantined(t, ctx, path, dir)
 }
 
-func assertNotQuarantined(t *testing.T, ctx *Context, path, dir string) {
+func assertNotQuarantined(t *testing.T, ctx *kit.Context, path, dir string) {
 	t.Helper()
 	if entries, _ := os.ReadDir(dir); len(entries) > 0 {
 		t.Errorf("nothing may be written into %s", dir)

@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 func newSetupCmd() *cobra.Command {
@@ -33,7 +34,7 @@ func newSetupCmd() *cobra.Command {
 			"  wt setup --no-cache         # without cloning the build caches\n" +
 			"  wt setup --source superset  # name what ran it; changes nothing yet",
 		Args: cobra.MaximumNArgs(1),
-		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
+		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *kit.Context) error {
 			opts := commands.SetupOptions{SkipBuild: skipBuild, NoCache: noCache, Source: source}
 			if len(args) == 1 {
 				opts.SourceDir = args[0]

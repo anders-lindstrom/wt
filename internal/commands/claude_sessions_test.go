@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -34,7 +35,7 @@ func inTerminal(name, status, cwd string, pid int) wtsync.Agent {
 	return wtsync.Agent{Name: name, Kind: "interactive", Status: status, Cwd: cwd, PID: pid}
 }
 
-func listed(t *testing.T, ctx *Context, opts ListOptions, width int) string {
+func listed(t *testing.T, ctx *kit.Context, opts ListOptions, width int) string {
 	t.Helper()
 	var buf bytes.Buffer
 	if err := List(ctx, opts, &buf, width); err != nil {
@@ -43,12 +44,12 @@ func listed(t *testing.T, ctx *Context, opts ListOptions, width int) string {
 	return buf.String()
 }
 
-func canonicalWorktree(t *testing.T) (ctx *Context, main, wt string) {
+func canonicalWorktree(t *testing.T) (ctx *kit.Context, main, wt string) {
 	t.Helper()
 	main, wt = repoWithWorktree(t, func(parent string) string {
 		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
 	})
-	ctx, err := Open(main)
+	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,9 +212,9 @@ func TestListCleansAndCutsASessionName(t *testing.T) {
 // ownShape is a repository shaped like this one: a long work name, its
 // branch, a pull request on it, and two sessions in the worktree, one of
 // which needs input.
-func ownShape(t *testing.T) *Context {
+func ownShape(t *testing.T) *kit.Context {
 	t.Helper()
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(committedRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}

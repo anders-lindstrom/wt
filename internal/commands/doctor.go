@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -17,13 +18,13 @@ import (
 // problems found so the caller can set an exit code. It replaces
 // setup_precheck.sh and additionally finds worktrees that are misplaced,
 // unowned, or nested inside the main checkout.
-func Doctor(ctx *Context, w io.Writer) (int, error) {
+func Doctor(ctx *kit.Context, w io.Writer) (int, error) {
 	return doctor(ctx, w, true)
 }
 
 // doctor is Doctor, with or without the roots and profiles: wt doctor --all
 // checks those once for every repository, not once in each.
-func doctor(ctx *Context, w io.Writer, withRepos bool) (int, error) {
+func doctor(ctx *kit.Context, w io.Writer, withRepos bool) (int, error) {
 	problems := 0
 	report := func(format string, args ...any) {
 		problems++
@@ -90,7 +91,7 @@ func doctor(ctx *Context, w io.Writer, withRepos bool) (int, error) {
 	}
 
 	doctorSuperset(ctx, w, report)
-	doctorGitHub(ctx, w)
+	kit.DoctorGitHub(ctx, w)
 
 	fmt.Fprintln(w, "Worktrees:")
 	worktrees, err := ctx.Repo.Worktrees()
@@ -165,7 +166,7 @@ func doctor(ctx *Context, w io.Writer, withRepos bool) (int, error) {
 
 // doctorSuperset reports whether a new worktree here would reach the Superset
 // desktop app, and where it would stop if it would not.
-func doctorSuperset(ctx *Context, w io.Writer, report func(string, ...any)) {
+func doctorSuperset(ctx *kit.Context, w io.Writer, report func(string, ...any)) {
 	fmt.Fprintln(w, "Superset:")
 	// Nothing to probe when the user has not opted in, and no repository
 	// setting overrides that.

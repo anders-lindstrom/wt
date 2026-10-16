@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 func newFindCmd() *cobra.Command {
@@ -36,7 +36,7 @@ func newFindCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			matches, err := commands.Find(ctx, args[0])
+			matches, err := kit.Find(ctx, args[0])
 			if err != nil {
 				return err
 			}

@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 func newPrCmd() *cobra.Command {
@@ -43,7 +44,7 @@ func newPrListCmd() *cobra.Command {
 			"  wt pr ls          # the same, for the impatient\n" +
 			"  wt pr list | cat  # whole paths, however narrow the terminal",
 		Args: cobra.NoArgs,
-		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
 			out := cmd.OutOrStdout()
 			return commands.PRList(ctx, out, terminalWidth(out))
 		}),
@@ -66,7 +67,7 @@ func newPrOpenCmd() *cobra.Command {
 			"  wt pr open login-crash  # by work name",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeWork,
-		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
+		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *kit.Context) error {
 			arg := ""
 			if len(args) == 1 {
 				arg = args[0]
@@ -113,7 +114,7 @@ func newPrCheckoutCmd() *cobra.Command {
 			"  wt pr checkout 12 --no-build --no-cache  # provision, no build or caches\n" +
 			"  wt pr checkout 12 --no-superset # keep it out of the Superset app",
 		Args: cobra.MaximumNArgs(1),
-		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *commands.Context) error {
+		RunE: withContext(func(cmd *cobra.Command, args []string, ctx *kit.Context) error {
 			number := 0
 			if len(args) == 1 {
 				n, err := strconv.Atoi(strings.TrimPrefix(args[0], "#"))

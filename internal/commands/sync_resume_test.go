@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -18,7 +19,7 @@ import (
 // handedOver drives the contested fixture to the point a run hands it over:
 // v.txt resolved by the declared owned-line strategy and staged, a.txt left
 // unmerged for a person, the rebase still in progress, the sidecar written.
-func handedOver(t *testing.T) (ctx *Context, bump, gitDir string, st wtsync.State) {
+func handedOver(t *testing.T) (ctx *kit.Context, bump, gitDir string, st wtsync.State) {
 	t.Helper()
 	ctx, bump = contestedFixture(t)
 	gitDir, st = handOverNow(t, ctx, bump)
@@ -26,7 +27,7 @@ func handedOver(t *testing.T) (ctx *Context, bump, gitDir string, st wtsync.Stat
 }
 
 // handOverNow runs sync rebase on bump and returns what it handed over.
-func handOverNow(t *testing.T, ctx *Context, bump string) (gitDir string, st wtsync.State) {
+func handOverNow(t *testing.T, ctx *kit.Context, bump string) (gitDir string, st wtsync.State) {
 	t.Helper()
 	var out bytes.Buffer
 	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err == nil {
@@ -50,7 +51,7 @@ func handOverNow(t *testing.T, ctx *Context, bump string) (gitDir string, st wts
 // v.txt again, so a rebase continued past the handed-over stop meets v.txt —
 // owned-line's — in conflict at 2/2. withUnclaimed also has that commit add
 // b.txt, which trunk adds too and nobody claims.
-func laterStopFixture(t *testing.T, withUnclaimed bool) (ctx *Context, bump string) {
+func laterStopFixture(t *testing.T, withUnclaimed bool) (ctx *kit.Context, bump string) {
 	t.Helper()
 	ctx, bump = contestedFixture(t)
 	main := ctx.Repo.MainRoot
@@ -739,7 +740,7 @@ func TestSyncResumeSendsAnAbortedHandoverToUndo(t *testing.T) {
 // matches, v1.txt and v[1].txt. Read as a pathspec, v[1].txt also names
 // v1.txt. Only v[1].txt conflicts; a.txt, which nobody claims, makes the run
 // hand the stop over.
-func globFixture(t *testing.T) (ctx *Context, bump string) {
+func globFixture(t *testing.T) (ctx *kit.Context, bump string) {
 	t.Helper()
 	main := committedRepo(t, minimalConf)
 	writeFile(t, main, ".wt-sync.yaml", "conflicts:\n  - paths: ['v*.txt']\n    strategy: owned-line\n    line: '^\\d'\n    rule: max-plus-patch\n")
@@ -748,7 +749,7 @@ func globFixture(t *testing.T) (ctx *Context, bump string) {
 	writeFile(t, main, "a.txt", "a\n")
 	gitOut(t, main, "add", "-A")
 	gitOut(t, main, "commit", "-q", "-m", "declare")
-	ctx, err := Open(main)
+	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -798,7 +799,7 @@ func TestSyncHandoverRecordsTheBlobOfTheFileItNames(t *testing.T) {
 
 // resolvedByHand is handedOver with the person's part done: a.txt merged and
 // staged, ready for resume.
-func resolvedByHand(t *testing.T) (ctx *Context, bump, gitDir string) {
+func resolvedByHand(t *testing.T) (ctx *kit.Context, bump, gitDir string) {
 	t.Helper()
 	ctx, bump, gitDir, _ = handedOver(t)
 	writeFile(t, bump, "a.txt", "merged by hand\n")

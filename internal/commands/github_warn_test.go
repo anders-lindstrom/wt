@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -12,7 +13,7 @@ import (
 // An integration that was never set up here says nothing; one that was
 // supposed to work and did not says so on stderr, with stdout unchanged.
 func TestListWarnsOnlyWhenGitHubWasSupposedToWork(t *testing.T) {
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(committedRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,31 +32,31 @@ func TestListWarnsOnlyWhenGitHubWasSupposedToWork(t *testing.T) {
 	ctx.User.GitHub = true
 
 	for name, tc := range map[string]struct {
-		set  func(t *testing.T, ctx *Context)
+		set  func(t *testing.T, ctx *kit.Context)
 		want string
 	}{
 		"gh failed": {
-			func(t *testing.T, _ *Context) {
+			func(t *testing.T, _ *kit.Context) {
 				fakeGitHubWith(t, `[ "$1 $2" = 'api graphql' ] && { echo "dial tcp: no route to host" >&2; exit 1; }`, pr)
 			},
 			"no pull requests shown",
 		},
 		"gh is not logged in": {
-			func(t *testing.T, _ *Context) {
+			func(t *testing.T, _ *kit.Context) {
 				fakeGitHubWith(t, `[ "$1 $2" = 'api graphql' ] && { echo "To get started with GitHub CLI, please run:  gh auth login" >&2; exit 1; }`, pr)
 			},
 			"",
 		},
 		"off in the user config": {
-			func(t *testing.T, ctx *Context) { fakeGitHub(t, pr); ctx.User.GitHub = false },
+			func(t *testing.T, ctx *kit.Context) { fakeGitHub(t, pr); ctx.User.GitHub = false },
 			"",
 		},
 		"no gh": {
-			func(t *testing.T, _ *Context) { stubGitHub(t, github.CLI{}, ghRepo, true) },
+			func(t *testing.T, _ *kit.Context) { stubGitHub(t, github.CLI{}, ghRepo, true) },
 			"",
 		},
 		"not a GitHub repository": {
-			func(t *testing.T, _ *Context) { stubGitHub(t, github.CLI{Exe: "/nope/gh"}, github.Remote{}, false) },
+			func(t *testing.T, _ *kit.Context) { stubGitHub(t, github.CLI{Exe: "/nope/gh"}, github.Remote{}, false) },
 			"",
 		},
 	} {
@@ -63,7 +64,7 @@ func TestListWarnsOnlyWhenGitHubWasSupposedToWork(t *testing.T) {
 			tc.set(t, ctx)
 			defer func() { ctx.User.GitHub = true }()
 			var warnings, out bytes.Buffer
-			ctx.warn, ctx.warned = &warnings, nil
+			ctx.Warn, ctx.Warned = &warnings, nil
 			if err := List(ctx, ListOptions{Refresh: true}, &out, 0); err != nil {
 				t.Fatalf("wt list failed: %v", err)
 			}
@@ -82,7 +83,7 @@ func TestListWarnsOnlyWhenGitHubWasSupposedToWork(t *testing.T) {
 
 // A command that asks GitHub twice complains once.
 func TestGitHubWarnsOncePerInvocation(t *testing.T) {
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(committedRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +109,7 @@ func TestGitHubWarnsOncePerInvocation(t *testing.T) {
 	// Both of them would have warned on their own; the count above is the
 	// silencing, not one of the two staying quiet.
 	var alone bytes.Buffer
-	ctx.warn, ctx.warned = &alone, nil
+	ctx.Warn, ctx.Warned = &alone, nil
 	if err := StatusWorktree(ctx, "login-crash", StatusOptions{Agents: []wtsync.Agent{}}, &out); err != nil {
 		t.Fatal(err)
 	}

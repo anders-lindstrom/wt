@@ -9,9 +9,9 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"time"
 	"unicode/utf8"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/naming"
@@ -43,8 +43,8 @@ type PROptions struct {
 //
 // It goes through the same tail as `wt new`, so provisioning and any other
 // integration happen by their own rules.
-func PRCheckout(ctx *Context, number int, opts PROptions, w io.Writer) (string, error) {
-	gh, err := openGitHub(ctx)
+func PRCheckout(ctx *kit.Context, number int, opts PROptions, w io.Writer) (string, error) {
+	gh, err := kit.OpenGitHub(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -95,17 +95,17 @@ type PRChoice struct {
 // resolvePR is the pull request to check out: the one named, whatever state
 // it is in, or one chosen from the open ones. A merged pull request can be
 // named but is never offered in the list.
-func resolvePR(ctx *Context, gh gitHub, number int, choose func([]PRChoice) (github.PR, error)) (github.PR, error) {
+func resolvePR(ctx *kit.Context, gh kit.GitHub, number int, choose func([]PRChoice) (github.PR, error)) (github.PR, error) {
 	if number > 0 {
 		pr, err := gh.CLI.View(ctx.Repo.MainRoot, number)
 		if err != nil {
-			return github.PR{}, gh.fail(err)
+			return github.PR{}, gh.Fail(err)
 		}
 		return pr, nil
 	}
 	viewer, prs, err := gh.CLI.OpenPRsAndViewer(ctx.Repo.MainRoot, gh.Remote, fullLimit, 0)
 	if err != nil {
-		return github.PR{}, gh.fail(err)
+		return github.PR{}, gh.Fail(err)
 	}
 	if len(prs) == 0 {
 		return github.PR{}, fmt.Errorf("%s has no open pull requests", gh.Remote.Slug)
@@ -119,7 +119,7 @@ func resolvePR(ctx *Context, gh gitHub, number int, choose func([]PRChoice) (git
 // prChoices turns the open pull requests into the picker's rows: the ones
 // waiting on this person's review first, then the rest in GitHub's order,
 // which is most recently updated first.
-func prChoices(ctx *Context, viewer string, prs []github.PR) []PRChoice {
+func prChoices(ctx *kit.Context, viewer string, prs []github.PR) []PRChoice {
 	worktrees, _ := ctx.Repo.Worktrees()
 	rows := make([]PRChoice, 0, len(prs))
 	for _, pr := range prs {
@@ -153,7 +153,7 @@ func prChoices(ctx *Context, viewer string, prs []github.PR) []PRChoice {
 // the base repository's default branch. A finished pull request's branch may
 // have moved on since, and gh fetches the branch, not the recorded head. A
 // head commit may not be here and not be fetchable.
-func divergedFromPR(ctx *Context, gh gitHub, pr github.PR) error {
+func divergedFromPR(ctx *kit.Context, gh kit.GitHub, pr github.PR) error {
 	branch := pr.HeadRefName
 	if !pr.Open() || pr.IsCrossRepository || !commitID.MatchString(pr.HeadRefOid) {
 		return nil
@@ -166,7 +166,7 @@ func divergedFromPR(ctx *Context, gh gitHub, pr github.PR) error {
 		// GitHub keeps every pull request's head at refs/pull/<n>/head. The
 		// fetch names no destination and writes no FETCH_HEAD: it brings the
 		// commits and changes nothing else.
-		_, _ = git.RunTimeout(ctx.Repo.MainRoot, networkTimeout, "fetch", "--quiet", "--no-tags",
+		_, _ = git.RunTimeout(ctx.Repo.MainRoot, kit.NetworkTimeout, "fetch", "--quiet", "--no-tags",
 			"--no-recurse-submodules", "--no-write-fetch-head", "--refmap=",
 			gh.Remote.Name, fmt.Sprintf("refs/pull/%d/head", pr.Number))
 		if _, here = ctx.Repo.ResolveRef(pr.HeadRefOid); !here {
@@ -200,7 +200,7 @@ var commitID = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)
 // because gh fetches the head branch by name and GitHub deletes that branch on
 // merge. A gh that fails leaves nothing behind, and what gets reported is its
 // own complaint and what became of the worktree made for it.
-func checkoutPRInto(ctx *Context, gh gitHub, pr github.PR, path string, w io.Writer) error {
+func checkoutPRInto(ctx *kit.Context, gh kit.GitHub, pr github.PR, path string, w io.Writer) error {
 	if err := ctx.Repo.AddDetachedWorktree(path, "HEAD"); err != nil {
 		return err
 	}
@@ -227,7 +227,7 @@ func checkoutPRInto(ctx *Context, gh gitHub, pr github.PR, path string, w io.Wri
 				_ = ctx.Repo.DeleteBranchAt(branch, tip)
 			}
 		}
-		return fmt.Errorf("%w\n  %s", gh.fail(err), discardedLine(path, discarded))
+		return fmt.Errorf("%w\n  %s", gh.Fail(err), discardedLine(path, discarded))
 	}
 	return nil
 }
@@ -240,7 +240,7 @@ func discardedLine(path string, discarded error) string {
 	}
 	line := fmt.Sprintf("the half-made worktree at %s could not be removed", path)
 	if discarded != nil {
-		line += ": " + oneLine(discarded.Error())
+		line += ": " + kit.OneLine(discarded.Error())
 	}
 	// Twice, because one --force does not remove a locked worktree.
 	return line + "\n  remove it before a retry: git worktree remove --force --force " + path
@@ -249,7 +249,7 @@ func discardedLine(path string, discarded error) string {
 // checkoutPullRef puts the worktree on the pull request's head commit, which
 // GitHub keeps at refs/pull/<n>/head after the branch itself is gone. The
 // branch it creates tracks nothing: there is nothing left to push to.
-func checkoutPullRef(ctx *Context, gh gitHub, pr github.PR, path string) error {
+func checkoutPullRef(ctx *kit.Context, gh kit.GitHub, pr github.PR, path string) error {
 	branch := pr.LocalBranch(ctx.Config.MainBranch)
 	ref := fmt.Sprintf("refs/pull/%d/head:refs/heads/%s", pr.Number, branch)
 	if _, err := git.Run(path, "fetch", "--no-tags", gh.Remote.Name, ref); err != nil {
@@ -263,7 +263,7 @@ func checkoutPullRef(ctx *Context, gh gitHub, pr github.PR, path string) error {
 // head branch that follows this repository's convention keeps its own, so a
 // branch wt made lands where `wt new` would have put it; any other branch is
 // named for the pull request, under the type its branch suggests.
-func prWorkName(ctx *Context, pr github.PR) (typ, work string) {
+func prWorkName(ctx *kit.Context, pr github.PR) (typ, work string) {
 	if t, w, ok := ctx.Scheme().Parse(pr.HeadRefName); ok && slices.Contains(ctx.Config.Types, t) {
 		return t, w
 	}
@@ -280,7 +280,7 @@ func prWorkName(ctx *Context, pr github.PR) (typ, work string) {
 
 // prType reads a type out of a branch someone else named: a leading segment
 // that is one of this repository's types, in either spelling a branch uses.
-func prType(ctx *Context, branch string) string {
+func prType(ctx *kit.Context, branch string) string {
 	if head, _, found := strings.Cut(branch, "/"); found {
 		if typ, ok := ctx.Vocab().Type(head); ok {
 			return typ
@@ -322,14 +322,14 @@ func shorten(s string) string {
 // PRList prints the repository's open pull requests and, for each, the
 // worktree handling it. This is the pull-request-first view: `wt list` is the
 // same facts read from the other end.
-func PRList(ctx *Context, w io.Writer, width int) error {
-	gh, err := openGitHub(ctx)
+func PRList(ctx *kit.Context, w io.Writer, width int) error {
+	gh, err := kit.OpenGitHub(ctx)
 	if err != nil {
 		return err
 	}
 	prs, err := gh.CLI.OpenWithChecks(ctx.Repo.MainRoot, fullLimit)
 	if err != nil {
-		return gh.fail(err)
+		return gh.Fail(err)
 	}
 	if len(prs) == 0 {
 		fmt.Fprintf(w, "%s has no open pull requests.\n", gh.Remote.Slug)
@@ -346,11 +346,11 @@ func PRList(ctx *Context, w io.Writer, width int) error {
 			fmt.Sprintf("#%d", pr.Number),
 			prState(pr),
 			dash(pr.AuthorLogin()),
-			elideRight(pr.Title, titleWidth),
+			kit.ElideRight(pr.Title, titleWidth),
 			dash(prWorktree(worktrees, pr, ctx.Config.MainBranch)),
 		})
 	}
-	return printPathTable(w, rows, width)
+	return kit.PrintPathTable(w, rows, width)
 }
 
 // prWorktree is the path of the worktree holding a pull request's branch, or
@@ -372,180 +372,6 @@ func prState(pr github.PR) string {
 		state += " · checks " + checks
 	}
 	return state
-}
-
-// prLabel is a pull request in a column: its number and state, and for one
-// merged somewhere other than trunk, where. A stacked pull request merged into
-// its parent has landed nothing on trunk; the row should not read as if it had.
-func prLabel(pr github.PR, trunks []string) string {
-	label := fmt.Sprintf("#%d %s", pr.Number, pr.StateLabel())
-	if pr.Merged() && pr.BaseRefName != "" && !slices.Contains(trunks, pr.BaseRefName) {
-		label += " into " + pr.BaseRefName
-	}
-	return label
-}
-
-// trunks is every name this repository's trunk goes by: the configured main
-// branch, and origin's own HEAD where that differs. A pull request merged into
-// one of these reached trunk. Both reads are local.
-func trunks(ctx *Context) []string {
-	names := []string{ctx.Config.MainBranch}
-	if head, ok := ctx.Repo.OriginHead(); ok && head != ctx.Config.MainBranch {
-		names = append(names, head)
-	}
-	return names
-}
-
-// prLookup is how a command asks GitHub about its branches.
-type prLookup struct {
-	// warn names, in the stderr line a failed call prints, what the caller is
-	// going on to do without an answer. Empty leaves the failure to the
-	// caller, which is what a command reporting its own errors wants.
-	warn string
-	// refresh asks about every branch, however young the cached answer.
-	refresh bool
-	// deadline bounds the call; 0 leaves it to the package.
-	deadline time.Duration
-	// checks asks for what the checks on each pull request say too. Only the
-	// PR column and wt status <work> show them.
-	checks bool
-}
-
-// prAnswers is what a lookup came back with.
-type prAnswers struct {
-	// byBranch is the pull request on each branch that has one.
-	byBranch map[string]github.PR
-	// cached is when the oldest answer taken from the cache was read, and is
-	// zero when every answer came from this run's call.
-	cached time.Time
-	// err is what a gh that was supposed to answer said. The branches the
-	// cache could answer are in byBranch either way.
-	err error
-}
-
-// branchPRs is the pull request on each of branches, keyed by branch and
-// missing the ones that have none.
-//
-// GitHub is asked about exactly these branches, so a pull request of any age
-// is found. Answers are cached per branch: one younger than PRCacheTTL costs
-// nothing, and a branch the cache has never heard of is fetched with the rest
-// rather than waiting the cache out.
-//
-// Failure is partial — whatever the cache held is still returned. An
-// integration that does not apply here (off, no gh, no GitHub remote, no
-// login) says nothing.
-func branchPRs(ctx *Context, branches []string, opts prLookup) prAnswers {
-	gh, err := openGitHub(ctx)
-	if err != nil {
-		return prAnswers{}
-	}
-	now := time.Now()
-	cache := readPRCache(ctx, gh.Remote)
-	out := prAnswers{byBranch: map[string]github.PR{}}
-	var ask []string
-	for _, b := range branches {
-		if b == "" {
-			continue
-		}
-		if !opts.refresh {
-			if pr, fetched, ok := cache.fresh(b, now, opts.checks); ok {
-				if pr.Number > 0 {
-					out.byBranch[b] = pr
-				}
-				if out.cached.IsZero() || fetched.Before(out.cached) {
-					out.cached = fetched
-				}
-				continue
-			}
-		}
-		ask = append(ask, b)
-	}
-	if len(ask) == 0 {
-		return out
-	}
-	heads := github.HeadRefNames(ask, ctx.Config.MainBranch)
-	var prs []github.PR
-	var refused error
-	if opts.checks {
-		prs, refused, err = gh.CLI.PRsOnBranchesWithChecks(ctx.Repo.MainRoot, gh.Remote, heads, opts.deadline)
-	} else {
-		prs, err = gh.CLI.PRsOnBranches(ctx.Repo.MainRoot, gh.Remote, heads, opts.deadline)
-	}
-	if err != nil {
-		out.err = err
-		if opts.warn != "" {
-			warnGitHub(ctx, opts.warn, err)
-		}
-		return out
-	}
-	if refused != nil && opts.warn != "" {
-		warnGitHub(ctx, "no checks shown", refused)
-	}
-	byBranch := github.ByBranch(prs, ctx.Config.MainBranch)
-	answers := make(map[string]*github.PR, len(ask))
-	for _, b := range ask {
-		pr, ok := byBranch[b]
-		if !ok {
-			answers[b] = nil
-			continue
-		}
-		answers[b] = &pr
-		out.byBranch[b] = pr
-	}
-	writePRCacheChecks(ctx, gh.Remote, answers, now, opts.checks)
-	return out
-}
-
-// landedPR is the pull request that took a branch at tip onto trunk, read from
-// the cache and nowhere else.
-//
-// This is `wt remove`'s only view of GitHub: it runs from git hooks, so it
-// starts no process and makes no network call. The cache answers it because a
-// merge is permanent and the commit it carried never moves, so the TTL does
-// not apply. A branch with no entry leaves remove as it was.
-func landedPR(ctx *Context, branch, tip string) int {
-	if branch == "" || tip == "" || !ctx.UserConfig().GitHub {
-		return 0
-	}
-	remote, ok := gitHubRemote(ctx.Repo.MainRoot)
-	if !ok {
-		return 0
-	}
-	pr, ok := readPRCache(ctx, remote).merged(branch)
-	if !ok || !pr.Landed(tip, trunks(ctx)...) {
-		return 0
-	}
-	return pr.Number
-}
-
-// warnGitHub reports a gh call that was supposed to work and did not: one
-// line on stderr, the command's own output and exit code untouched. subject
-// is what this command goes on to do without the answer, so the line says
-// what was lost rather than what was asked.
-//
-// A gh holding no login stays silent: nothing pays for a login check up
-// front, so the failure it gets back is that check, not a fault.
-func warnGitHub(ctx *Context, subject string, err error) {
-	if github.NotLoggedIn(err) {
-		return
-	}
-	ctx.Warnf(WarnGitHub, "%s: %v", subject, err)
-}
-
-// prFact is the pull request line of `wt status <work>`: number, checks,
-// state, title.
-// Empty when there is none, or when GitHub cannot be reached. It reads the
-// cache `wt list` fills, so a listing already paid for it; refresh asks
-// GitHub regardless.
-func prFact(ctx *Context, branch string, refresh bool) string {
-	a := branchPRs(ctx, []string{branch}, prLookup{
-		warn: "no pull requests shown", refresh: refresh, deadline: lookupDeadline, checks: true,
-	})
-	pr, ok := a.byBranch[branch]
-	if !ok {
-		return ""
-	}
-	return fmt.Sprintf("%s · %s", prCell(pr, trunks(ctx)), pr.Title)
 }
 
 // count writes "1 open pull request" or "3 open pull requests".

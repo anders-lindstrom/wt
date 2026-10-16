@@ -3,7 +3,6 @@ package commands
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -130,10 +130,10 @@ type OverviewFile struct {
 // object. Like the overview it fetches trunk unless opts.NoFetch, and
 // writes nothing else. A trunk that is not there is the object's error, and
 // the returned one.
-func SyncJSON(ctx *Context, opts SyncOptions, w io.Writer) error {
-	defer watchSignals(os.Stderr, nil)()
+func SyncJSON(ctx *kit.Context, opts SyncOptions, w io.Writer) error {
+	defer kit.WatchSignals(os.Stderr, nil)()
 	o := overviewOf(ctx, opts)
-	if err := writeJSON(w, o); err != nil {
+	if err := kit.WriteJSON(w, o); err != nil {
 		return err
 	}
 	if o.Error != nil {
@@ -146,28 +146,28 @@ func SyncJSON(ctx *Context, opts SyncOptions, w io.Writer) error {
 // array of one overview object per repository, in the selection's order. A
 // repository that could not be read is an object with its error, and the
 // returned error names every one.
-func SyncAllJSON(u *config.User, sel Selection, opts SyncOptions, w io.Writer) error {
-	set, err := SelectRepos(u, sel)
+func SyncAllJSON(u *config.User, sel kit.Selection, opts SyncOptions, w io.Writer) error {
+	set, err := kit.SelectRepos(u, sel)
 	if err != nil {
 		return err
 	}
-	defer watchSignals(os.Stderr, nil)()
-	out := eachRepo(set.Repos, repoParallelism, func(t RepoTarget) SyncOverview {
+	defer kit.WatchSignals(os.Stderr, nil)()
+	out := kit.EachRepo(set.Repos, kit.RepoParallelism, func(t kit.RepoTarget) SyncOverview {
 		if t.Problem == "" {
-			ctx, err := Open(t.Path)
+			ctx, err := kit.Open(t.Path)
 			if err == nil {
 				return overviewOf(ctx, opts)
 			}
 			t.Problem = err.Error()
 		}
 		o := newOverview(t.Name, t.Path)
-		o.Error = strp(t.Problem)
+		o.Error = kit.Strp(t.Problem)
 		return o
 	})
 	if out == nil {
 		out = []SyncOverview{}
 	}
-	if err := writeJSON(w, out); err != nil {
+	if err := kit.WriteJSON(w, out); err != nil {
 		return err
 	}
 	var failed []string
@@ -177,7 +177,7 @@ func SyncAllJSON(u *config.User, sel Selection, opts SyncOptions, w io.Writer) e
 		}
 	}
 	if len(failed) > 0 {
-		return fmt.Errorf("%d of %s failed: %s", len(failed), repoCount(len(out)), strings.Join(failed, ", "))
+		return fmt.Errorf("%d of %s failed: %s", len(failed), kit.RepoCount(len(out)), strings.Join(failed, ", "))
 	}
 	return nil
 }
@@ -187,21 +187,15 @@ func newOverview(name, mainRoot string) SyncOverview {
 		Repo: mainRoot, Name: name, Worktrees: []OverviewWorktree{}}
 }
 
-func writeJSON(w io.Writer, v any) error {
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(v)
-}
-
 // overviewOf is what wt sync would print for ctx's repository, as data.
-func overviewOf(ctx *Context, opts SyncOptions) SyncOverview {
+func overviewOf(ctx *kit.Context, opts SyncOptions) SyncOverview {
 	o := newOverview(ctx.Repo.Name, ctx.Repo.MainRoot)
-	if err := ctx.noTrunk(); err != nil {
-		o.Error = strp(err.Error())
+	if err := ctx.NoTrunk(); err != nil {
+		o.Error = kit.Strp(err.Error())
 		return o
 	}
 	trunk := ctx.Config.MainBranch
-	o.Trunk, o.TrunkRef, o.TrunkSource = strp(trunk), strp("origin/"+trunk), ctx.trunkSource()
+	o.Trunk, o.TrunkRef, o.TrunkSource = kit.Strp(trunk), kit.Strp("origin/"+trunk), ctx.TrunkSource()
 	// Trunk, and with it the own remote of every worktree's branch. One
 	// that could not be fetched is as last fetched, which its
 	// ownRemote.fetched says, and its row says why.
@@ -215,7 +209,7 @@ func overviewOf(ctx *Context, opts SyncOptions) SyncOverview {
 		}
 		var err error
 		if own, err = fetchRemotes(ctx, syncFetchTimeout, branches); err != nil {
-			o.FetchError = strp(fetchReason(err))
+			o.FetchError = kit.Strp(kit.FetchReason(err))
 		} else {
 			o.Fetched = true
 		}
@@ -224,7 +218,7 @@ func overviewOf(ctx *Context, opts SyncOptions) SyncOverview {
 	// too, as a run reads it: a fetch landing meanwhile cannot mix two.
 	_, sha, err := trunkTip(ctx)
 	if err != nil {
-		o.Error = strp(err.Error())
+		o.Error = kit.Strp(err.Error())
 		return o
 	}
 	cfg, err := wtsync.LoadFromRef(ctx.Repo.MainRoot, sha)
@@ -232,17 +226,17 @@ func overviewOf(ctx *Context, opts SyncOptions) SyncOverview {
 	case errors.Is(err, wtsync.ErrNoConfig):
 		cfg = nil
 	case err != nil:
-		o.Error = strp(err.Error())
+		o.Error = kit.Strp(err.Error())
 		return o
 	}
-	o.Onto, o.Declared = strp(sha), cfg != nil
+	o.Onto, o.Declared = kit.Strp(sha), cfg != nil
 	agents, err := listSessions()
 	if err != nil {
-		o.SessionsError = strp(err.Error())
+		o.SessionsError = kit.Strp(err.Error())
 	}
 	sv, err := surveyRepo(ctx, sha, cfg, agents, own)
 	if err != nil {
-		o.Error = strp(err.Error())
+		o.Error = kit.Strp(err.Error())
 		return o
 	}
 	o.Worktrees = sv.rows
@@ -268,7 +262,7 @@ type survey struct {
 // surveyRepo assesses every worktree but the main checkout against trunkSHA
 // and files each as the overview does. own is every branch against its own
 // remote; nil checks none.
-func surveyRepo(ctx *Context, trunkSHA string, cfg *wtsync.Config, agents []wtsync.Agent, own *wtsync.Own) (survey, error) {
+func surveyRepo(ctx *kit.Context, trunkSHA string, cfg *wtsync.Config, agents []wtsync.Agent, own *wtsync.Own) (survey, error) {
 	all, err := ctx.Repo.Worktrees()
 	if err != nil {
 		return survey{}, err
@@ -314,15 +308,15 @@ func surveyRepo(ctx *Context, trunkSHA string, cfg *wtsync.Config, agents []wtsy
 func (r *runPlan) overviewRow(wt repo.Worktree, a wtsync.Assessment, byBranch map[string]repo.Worktree) OverviewWorktree {
 	ctx := r.ctx
 	row := OverviewWorktree{
-		Work: worktreeName(ctx, wt.Branch, wt.Path), Branch: strp(wt.Branch), Path: wt.Path,
+		Work: kit.WorktreeName(ctx, wt.Branch, wt.Path), Branch: kit.Strp(wt.Branch), Path: wt.Path,
 		Class: a.Class.String(), Verified: !a.Unverified,
-		Behind: a.Behind, Ahead: a.Ahead, Dirty: a.Dirty, HandedOver: a.Paused, PlanFile: strp(a.PlanFile),
+		Behind: a.Behind, Ahead: a.Ahead, Dirty: a.Dirty, HandedOver: a.Paused, PlanFile: kit.Strp(a.PlanFile),
 		Sessions: []PlanSession{}, Stack: []PlanStackMember{}, Stops: []OverviewStop{},
 		Strategies: []string{}, Notes: append([]string{}, a.Notes...),
 		OwnRemote: ownRemoteOf(a.Own),
 	}
 	if a.Err != nil {
-		row.Error = strp(a.Err.Error())
+		row.Error = kit.Strp(a.Err.Error())
 	}
 	switch {
 	case onTrunk(a):
@@ -334,12 +328,12 @@ func (r *runPlan) overviewRow(wt repo.Worktree, a wtsync.Assessment, byBranch ma
 	row.Verdict = [...]string{VerdictProceed, VerdictSkip, VerdictRefuse}[verdict]
 	switch {
 	case verdict != wtsync.Proceed:
-		row.Reason = strp(why)
+		row.Reason = kit.Strp(why)
 	case !r.ready(a):
-		row.Reason = strp(notReadyReason(a))
+		row.Reason = kit.Strp(notReadyReason(a))
 	default:
 		if hold := r.stackHold(wt.Branch); hold != "" {
-			row.Reason = strp(hold)
+			row.Reason = kit.Strp(hold)
 		} else {
 			row.Runnable = true
 		}
@@ -354,7 +348,7 @@ func (r *runPlan) overviewRow(wt repo.Worktree, a wtsync.Assessment, byBranch ma
 	if wt.Branch != "" {
 		for _, m := range wtsync.Members(r.parents, wt.Branch) {
 			o := byBranch[m]
-			row.Stack = append(row.Stack, PlanStackMember{Work: worktreeName(ctx, m, o.Path), Branch: m, Path: o.Path})
+			row.Stack = append(row.Stack, PlanStackMember{Work: kit.WorktreeName(ctx, m, o.Path), Branch: m, Path: o.Path})
 		}
 	}
 	for _, stop := range a.Replay.Stops {
@@ -362,10 +356,10 @@ func (r *runPlan) overviewRow(wt repo.Worktree, a wtsync.Assessment, byBranch ma
 		if yours {
 			files = a.Files
 		}
-		st := OverviewStop{Index: stop.Index, Total: stop.Total, Commit: strp(stop.Commit), Subject: stop.Subject,
+		st := OverviewStop{Index: stop.Index, Total: stop.Total, Commit: kit.Strp(stop.Commit), Subject: stop.Subject,
 			Resolved: stop.Resolved, Yours: yours, Files: []OverviewFile{}}
 		for _, f := range files {
-			st.Files = append(st.Files, OverviewFile{Path: f.Path, Resolved: f.Resolved, Strategy: strp(f.Strategy), Note: strp(f.Note)})
+			st.Files = append(st.Files, OverviewFile{Path: f.Path, Resolved: f.Resolved, Strategy: kit.Strp(f.Strategy), Note: kit.Strp(f.Note)})
 			if f.Resolved && f.Strategy != "" && !slices.Contains(row.Strategies, f.Strategy) {
 				row.Strategies = append(row.Strategies, f.Strategy)
 			}
@@ -385,10 +379,10 @@ func (r *runPlan) overviewRow(wt repo.Worktree, a wtsync.Assessment, byBranch ma
 // remote's commit, and a run allowed over the divergence its caller was
 // shown is refused over one that moved since. Nil when a run would start on
 // nothing.
-func (sv survey) token(ctx *Context, trunk, trunkSHA string) *string {
+func (sv survey) token(ctx *kit.Context, trunk, trunkSHA string) *string {
 	h := sha256.New()
 	h.Write([]byte("wt-sync-1\x00" + trunk + "\x00"))
-	h.Write(configFingerprint(ctx))
+	h.Write(kit.ConfigFingerprint(ctx))
 	decl, _ := git.Run(ctx.Repo.MainRoot, "rev-parse", "--verify", "--quiet", trunkSHA+":"+wtsync.ConfigFile)
 	h.Write([]byte("\x00" + decl))
 	eligible, covered := 0, 0
@@ -418,5 +412,5 @@ func (sv survey) token(ctx *Context, trunk, trunkSHA string) *string {
 	if eligible+covered == 0 {
 		return nil
 	}
-	return strp("1:" + hex.EncodeToString(h.Sum(nil))[:32])
+	return kit.Strp("1:" + hex.EncodeToString(h.Sum(nil))[:32])
 }

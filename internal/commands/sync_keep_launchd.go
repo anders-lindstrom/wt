@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 // keepGOOS is the platform the keeper's start and stop check for launchd;
@@ -46,7 +48,7 @@ var keepEnvNames = []string{"PATH", "HOME", "SSH_AUTH_SOCK", "GIT_SSH_COMMAND", 
 // keepJobFor names the job for ctx's repository: a label from the
 // repository's name and a hash of the main checkout's path, so two checkouts
 // of one repository get two jobs, under ~/Library/LaunchAgents.
-func keepJobFor(ctx *Context) (keepJob, error) {
+func keepJobFor(ctx *kit.Context) (keepJob, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return keepJob{}, err
@@ -234,7 +236,7 @@ func newKeepStarter(opts KeepStartOptions) (*keepStarter, error) {
 }
 
 // job is ctx's job as s would install it.
-func (s *keepStarter) job(ctx *Context) (keepJob, error) {
+func (s *keepStarter) job(ctx *kit.Context) (keepJob, error) {
 	job, err := keepJobFor(ctx)
 	if err != nil {
 		return keepJob{}, err
@@ -249,7 +251,7 @@ func (s *keepStarter) job(ctx *Context) (keepJob, error) {
 
 // install writes the job's plist, loads it, and records in ctx's state file
 // when the first pass is due, which it returns.
-func (s *keepStarter) install(ctx *Context, job keepJob) (time.Time, error) {
+func (s *keepStarter) install(ctx *kit.Context, job keepJob) (time.Time, error) {
 	_, _, statePath, err := keepPaths(ctx)
 	if err != nil {
 		return time.Time{}, err
@@ -284,7 +286,7 @@ func (s *keepStarter) install(ctx *Context, job keepJob) (time.Time, error) {
 
 // SyncKeepStart installs the keeper as a launchd job for this repository
 // and loads it. It refuses when one is already installed.
-func SyncKeepStart(ctx *Context, opts KeepStartOptions, w io.Writer) error {
+func SyncKeepStart(ctx *kit.Context, opts KeepStartOptions, w io.Writer) error {
 	s, err := newKeepStarter(opts)
 	if err != nil {
 		return err
@@ -336,7 +338,7 @@ func keepAuthLine(j keepJob) string {
 // SyncKeepStop unloads the keeper's job and removes its plist. The log and
 // the state file stay, so wt sync still says when the repository was last
 // kept.
-func SyncKeepStop(ctx *Context, w io.Writer) error {
+func SyncKeepStop(ctx *kit.Context, w io.Writer) error {
 	if keepGOOS != "darwin" {
 		return ErrNoLaunchd
 	}

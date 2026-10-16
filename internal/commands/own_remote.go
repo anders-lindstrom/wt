@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -38,8 +39,8 @@ type OwnRemote struct {
 }
 
 func ownRemoteOf(o wtsync.OwnRemote) OwnRemote {
-	out := OwnRemote{Ref: strp(o.Ref), State: string(ownState(o)), Commit: strp(o.Commit),
-		Fetched: o.Fetched, Blocks: strp(o.Blocks), NoPushReason: strp(o.NoPush)}
+	out := OwnRemote{Ref: kit.Strp(o.Ref), State: string(ownState(o)), Commit: kit.Strp(o.Commit),
+		Fetched: o.Fetched, Blocks: kit.Strp(o.Blocks), NoPushReason: kit.Strp(o.NoPush)}
 	if o.Undecided != nil {
 		out.FixCommand = o.Undecided.Fix()
 	}
@@ -71,7 +72,7 @@ type OwnRemoteSync struct {
 }
 
 func ownRemoteSyncOf(o wtsync.OwnRemote) *OwnRemoteSync {
-	out := &OwnRemoteSync{Ref: strp(o.Ref), State: string(ownState(o)), Local: strp(o.Local), Remote: strp(o.Commit)}
+	out := &OwnRemoteSync{Ref: kit.Strp(o.Ref), State: string(ownState(o)), Local: kit.Strp(o.Local), Remote: kit.Strp(o.Commit)}
 	if o.Compared() {
 		out.LocalAhead, out.RemoteAhead = &o.Ahead, &o.Behind
 	}
@@ -92,7 +93,7 @@ func ownStateOf(own *wtsync.Own, branch string) wtsync.OwnRemote {
 // everything as last fetched. A branch whose own ref could not be fetched is
 // recorded in the reading, as that branch's trouble and nobody else's.
 // Remotes that cannot be read at all make every branch unknown, with why.
-func fetchRemotes(ctx *Context, timeout time.Duration, branches []string) (*wtsync.Own, error) {
+func fetchRemotes(ctx *kit.Context, timeout time.Duration, branches []string) (*wtsync.Own, error) {
 	own := wtsync.ReadOwnOrUnknown(ctx.Repo.MainRoot, ctx.Config.MainBranch)
 	return own, fetchOwn(ctx, own, timeout, branches, true)
 }
@@ -104,7 +105,7 @@ func fetchRemotes(ctx *Context, timeout time.Duration, branches []string) (*wtsy
 // fail the whole fetch, and a pattern would bring every branch whose name
 // starts the same; nothing here needs a git newer than a plain fetch does.
 // withTrunk names trunk to origin as well. The error returned is trunk's.
-func fetchOwn(ctx *Context, own *wtsync.Own, timeout time.Duration, branches []string, withTrunk bool) (trunkErr error) {
+func fetchOwn(ctx *kit.Context, own *wtsync.Own, timeout time.Duration, branches []string, withTrunk bool) (trunkErr error) {
 	root, trunk := ctx.Repo.MainRoot, ctx.Config.MainBranch
 	asks := own.Asks(branches)
 	remotes := wtsync.Remotes(asks)
@@ -189,7 +190,7 @@ func fetchOwn(ctx *Context, own *wtsync.Own, timeout time.Duration, branches []s
 // whole clause: git ends its commonest line here on "; try running" and
 // puts the command on the next, which is advice for another day.
 func ownFetchReason(err error) string {
-	return strings.TrimSuffix(fetchReason(err), "; try running")
+	return strings.TrimSuffix(kit.FetchReason(err), "; try running")
 }
 
 // onRemote asks remote which of asks it has, records the ones it lacks as
@@ -241,7 +242,7 @@ func worktreeBranches(worktrees []repo.Worktree) []string {
 // stack and possibly more, from two git calls a name rather than the
 // stack's own pairwise search. A work that cannot be located adds nothing
 // here; choosing the branches says so.
-func ownCandidates(ctx *Context, works []string) []string {
+func ownCandidates(ctx *kit.Context, works []string) []string {
 	worktrees, err := ctx.Repo.Worktrees()
 	if err != nil {
 		return nil
@@ -272,7 +273,7 @@ func ownCandidates(ctx *Context, works []string) []string {
 		return lines
 	}
 	for _, arg := range works {
-		wt, err := locateBranch(ctx, arg)
+		wt, err := kit.LocateBranch(ctx, arg)
 		if err != nil {
 			continue
 		}
@@ -445,7 +446,7 @@ func mergeRefusal(err error) string {
 		}
 		return what + ": " + files[0]
 	}
-	return oneLine(git.Reason(err, "warning:", "hint:"))
+	return kit.OneLine(git.Reason(err, "warning:", "hint:"))
 }
 
 // asLastFetched marks a line about a branch's own remote that was not

@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 func newSweepCmd() *cobra.Command {
@@ -143,7 +144,7 @@ func newSweepCmd() *cobra.Command {
 				}
 				return commands.SweepAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), all, cmd.OutOrStdout())
 			}
-			return withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+			return withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
 				if !yes && canAsk(cmd) {
 					opts.Confirm = confirmSweep(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()))
 				}

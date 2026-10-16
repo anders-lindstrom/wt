@@ -10,6 +10,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -61,7 +62,7 @@ func (c *ClaudeSessions) Note() string {
 	if c.err == nil {
 		return ""
 	}
-	return "   sessions not shown: " + oneLine(c.err.Error())
+	return "   sessions not shown: " + kit.OneLine(c.err.Error())
 }
 
 // all is every session read; none when the read failed.
@@ -219,7 +220,7 @@ func pathTableFits(rows [][]string, width int) bool {
 	for i, r := range rows {
 		fitted[i] = slices.Clone(r)
 	}
-	fitPaths(fitted, width)
+	kit.FitPaths(fitted, width)
 	last := len(fitted[0]) - 1
 	lead := 0
 	for col := range last {
@@ -227,7 +228,7 @@ func pathTableFits(rows [][]string, width int) bool {
 		for _, r := range fitted {
 			widest = max(widest, utf8.RuneCountInString(r[col]))
 		}
-		lead += widest + listPadding
+		lead += widest + kit.ListPadding
 	}
 	for _, r := range fitted {
 		// Columns are padded by character count, so a cell with characters

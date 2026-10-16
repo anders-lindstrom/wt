@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
-var detected = commands.Answers{MainBranch: "main", BranchPrefix: "feat_wt"}
+var detected = kit.Answers{MainBranch: "main", BranchPrefix: "feat_wt"}
 
 func TestAskAnswersKeepsTheOfferedDefaultOnAnEmptyLine(t *testing.T) {
 	var out bytes.Buffer
@@ -30,7 +30,7 @@ func TestAskAnswersReadsAllThreePromptsFromOneStream(t *testing.T) {
 	if err != nil {
 		t.Fatalf("askAnswers: %v", err)
 	}
-	want := commands.Answers{MainBranch: "trunk", BranchPrefix: "chore_wt", BuildCommand: "make build"}
+	want := kit.Answers{MainBranch: "trunk", BranchPrefix: "chore_wt", BuildCommand: "make build"}
 	if got != want {
 		t.Errorf("answers = %+v, want %+v", got, want)
 	}

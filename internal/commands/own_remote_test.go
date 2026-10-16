@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -18,7 +19,7 @@ import (
 func (f *trunkFixture) pushedWork(t *testing.T) (x string, opts RunOptions) {
 	t.Helper()
 	opts = f.withWork(t)
-	wt, err := Locate(f.ctx, "x")
+	wt, err := kit.Locate(f.ctx, "x")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +60,7 @@ func at(opts RunOptions, nanos int64) RunOptions {
 }
 
 // upOut is upJSON with what a person would have read.
-func upOut(t *testing.T, ctx *Context, work string, opts RunOptions) (UpResult, string, error) {
+func upOut(t *testing.T, ctx *kit.Context, work string, opts RunOptions) (UpResult, string, error) {
 	t.Helper()
 	var out, human bytes.Buffer
 	opts.Journal = NewRunJournal(&out)
@@ -207,7 +208,7 @@ func TestUpRefusesABranchThatDivergedFromItsRemote(t *testing.T) {
 	}
 	w := r.Worktrees[0]
 	o := w.OwnRemoteSync
-	if w.Result != ResultRefused || r.Outcome != OutcomeRefused || !strings.Contains(str(w.Reason), "origin/feat_wt/x has 1 commit this branch never had") {
+	if w.Result != ResultRefused || r.Outcome != kit.OutcomeRefused || !strings.Contains(str(w.Reason), "origin/feat_wt/x has 1 commit this branch never had") {
 		t.Fatalf("participant %+v", w)
 	}
 	if o.State != "diverged" || str(o.Remote) != theirs || *o.LocalAhead != 1 || *o.RemoteAhead != 1 ||
@@ -321,10 +322,10 @@ func TestUpBehindAndNotFastForwardableTouchesNothing(t *testing.T) {
 
 // legacyPlanToken is planToken as wt computed it before it looked at any
 // remote: a caller holding a token from then must still be let through.
-func legacyPlanToken(ctx *Context, trunk string, stack []string) string {
+func legacyPlanToken(ctx *kit.Context, trunk string, stack []string) string {
 	h := sha256.New()
 	h.Write([]byte("wt-plan-1\x00" + trunk + "\x00"))
-	h.Write(configFingerprint(ctx))
+	h.Write(kit.ConfigFingerprint(ctx))
 	h.Write([]byte("\x00" + strings.Join(stack, "\x00")))
 	return "1:" + hex.EncodeToString(h.Sum(nil))[:32]
 }
@@ -499,7 +500,7 @@ func TestUpLeavesABranchThatTracksTrunkUnchecked(t *testing.T) {
 	}
 	f := newTrunkFixture(t)
 	opts := f.withWork(t)
-	wt, err := Locate(f.ctx, "x")
+	wt, err := kit.Locate(f.ctx, "x")
 	if err != nil {
 		t.Fatal(err)
 	}

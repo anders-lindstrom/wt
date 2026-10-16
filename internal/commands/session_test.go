@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -96,7 +97,7 @@ const (
 	sidB = "bbbbbbbb-0000-4000-8000-000000000000"
 )
 
-func sendSession(t *testing.T, ctx *Context, r *sessionRig, o SessionSendOptions, msg string) (SessionSend, string, error) {
+func sendSession(t *testing.T, ctx *kit.Context, r *sessionRig, o SessionSendOptions, msg string) (SessionSend, string, error) {
 	t.Helper()
 	var out bytes.Buffer
 	o.Out, o.Err, o.JSON, o.env = &out, &bytes.Buffer{}, true, &r.env
@@ -636,7 +637,7 @@ func TestSessionListAllPlacesSessionsByRepositoryFromOneRead(t *testing.T) {
 	t.Cleanup(func() { listCodexSessions = was })
 
 	var out bytes.Buffer
-	err := SessionListRun(nil, SessionListOptions{Selection: Selection{All: true}, JSON: true, NoInboxCheck: true,
+	err := SessionListRun(nil, SessionListOptions{Selection: kit.Selection{All: true}, JSON: true, NoInboxCheck: true,
 		Out: &out, Err: &bytes.Buffer{}, env: &r.env})
 	if err != nil {
 		t.Fatal(err)
@@ -676,7 +677,7 @@ func fakeClaudeStop(t *testing.T, out string, code int) (calls func() []string) 
 
 var stopAncestorsSet bool
 
-func stopSession(t *testing.T, ctx *Context, r *sessionRig, o SessionStopOptions) (SessionStop, string, error) {
+func stopSession(t *testing.T, ctx *kit.Context, r *sessionRig, o SessionStopOptions) (SessionStop, string, error) {
 	t.Helper()
 	var out bytes.Buffer
 	o.Out, o.Err, o.JSON, o.env = &out, &bytes.Buffer{}, true, &r.env

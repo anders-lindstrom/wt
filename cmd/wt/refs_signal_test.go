@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
@@ -109,7 +110,7 @@ func oneObject(t *testing.T, out []byte, v any) {
 // is armed.
 func sweptRun(t *testing.T, main, run string) {
 	t.Helper()
-	ctx, err := commands.Open(main)
+	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +128,7 @@ func TestRefsSweepSIGTERMWritesTheObject(t *testing.T) {
 	arm(t, mark)
 	var r commands.RefsResult
 	oneObject(t, sigtermRun(t, main, mark, "refs", "sweep", "--yes", "--json", "--no-fetch"), &r)
-	if r.Outcome != commands.OutcomeInterrupted || r.RunID == nil || r.Recovery == nil {
+	if r.Outcome != kit.OutcomeInterrupted || r.RunID == nil || r.Recovery == nil {
 		t.Fatalf("result = %+v", r)
 	}
 	want := map[string]string{"refs/heads/backup/a": commands.RefSwept, "refs/heads/backup/b": commands.RefInterrupted,
@@ -151,7 +152,7 @@ func TestRefsRestoreSIGTERMWritesTheObject(t *testing.T) {
 	arm(t, mark)
 	var r commands.RefsRestoreResult
 	oneObject(t, sigtermRun(t, main, mark, "refs", "restore", run, "--yes", "--json"), &r)
-	if r.Outcome != commands.OutcomeInterrupted || r.Recovery == nil {
+	if r.Outcome != kit.OutcomeInterrupted || r.Recovery == nil {
 		t.Fatalf("result = %+v", r)
 	}
 	want := map[string]string{"refs/heads/backup/a": commands.RefRestored, "refs/heads/backup/b": commands.RefInterrupted,
@@ -175,7 +176,7 @@ func TestRefsPurgeSIGTERMWritesTheObject(t *testing.T) {
 	arm(t, mark)
 	var r commands.RefsPurgeResult
 	oneObject(t, sigtermRun(t, main, mark, "refs", "purge", run, "--yes", "--json"), &r)
-	if r.Outcome != commands.OutcomeInterrupted || r.Recovery == nil || len(r.Runs) != 1 {
+	if r.Outcome != kit.OutcomeInterrupted || r.Recovery == nil || len(r.Runs) != 1 {
 		t.Fatalf("result = %+v", r)
 	}
 	want := map[string]string{"refs/heads/backup/a": commands.PinDeleted, "refs/heads/backup/b": commands.RefInterrupted,

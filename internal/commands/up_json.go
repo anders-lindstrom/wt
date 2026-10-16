@@ -4,11 +4,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 	"github.com/anders-lindstrom/wt/schema"
@@ -62,19 +61,6 @@ const (
 	DeferredFailed = "failed"
 	// DeferredSkipped did not run; Reason says why.
 	DeferredSkipped = "skipped"
-)
-
-// The outcomes a whole run can come to.
-const (
-	// OutcomeDone is every participant rebased or skipped.
-	OutcomeDone = "done"
-	// OutcomeRefused is nothing changed: every participant skipped, refused,
-	// not run or restored, or the run stopped before choosing any (Error).
-	OutcomeRefused = "refused"
-	// OutcomePartial is something changed and not everything finished.
-	OutcomePartial = "partial"
-	// OutcomeInterrupted is a signal ended the run.
-	OutcomeInterrupted = "interrupted"
 )
 
 // UpParticipant is one worktree of a run, as --json reports it.
@@ -191,13 +177,6 @@ func newJournal(out io.Writer, schemaName, command string) *RunJournal {
 		byBr: map[string]*SyncParticipant{}}
 }
 
-func strp(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
-}
-
 // repo records the repository the run is in: its main checkout.
 func (j *RunJournal) repo(name string) {
 	if j == nil {
@@ -205,7 +184,7 @@ func (j *RunJournal) repo(name string) {
 	}
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	j.res.Repo = strp(name)
+	j.res.Repo = kit.Strp(name)
 }
 
 // trunk records the run's trunk, and how it was found, under one lock: an
@@ -216,8 +195,8 @@ func (j *RunJournal) trunk(name string, source *string, ref, onto string, fetche
 	}
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	j.res.Trunk, j.res.TrunkSource, j.res.TrunkRef = strp(name), source, strp(ref)
-	j.res.Onto, j.res.Fetched = strp(onto), fetched
+	j.res.Trunk, j.res.TrunkSource, j.res.TrunkRef = kit.Strp(name), source, kit.Strp(ref)
+	j.res.Onto, j.res.Fetched = kit.Strp(onto), fetched
 }
 
 // trunkSync records what the run did to local trunk after its fetch.
@@ -240,7 +219,7 @@ func (j *RunJournal) join(work, branch, path, before string, own *OwnRemoteSync)
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	p := &SyncParticipant{UpParticipant: UpParticipant{Work: work, Branch: branch, Path: path, Result: ResultNotRun,
-		Before: strp(before), After: strp(before), FailedSteps: []string{}, OwnRemoteSync: own}, Deferred: []DeferredStep{}}
+		Before: kit.Strp(before), After: kit.Strp(before), FailedSteps: []string{}, OwnRemoteSync: own}, Deferred: []DeferredStep{}}
 	j.res.Worktrees = append(j.res.Worktrees, p)
 	j.byBr[branch] = p
 }
@@ -289,7 +268,7 @@ func (j *RunJournal) fail(err error) {
 	}
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	j.res.Error = strp(err.Error())
+	j.res.Error = kit.Strp(err.Error())
 }
 
 // untouched reports that no participant got past not run: the run stopped
@@ -318,9 +297,9 @@ func (j *RunJournal) Finish() {
 	j.write("", false)
 }
 
-// interrupted writes the object for a run a signal ended: the participant
+// Interrupted writes the object for a run a signal ended: the participant
 // in flight is interrupted, the rest stand as recorded.
-func (j *RunJournal) interrupted(inFlight, recovery string) {
+func (j *RunJournal) Interrupted(inFlight, recovery string) {
 	j.write(inFlight, true, recovery)
 }
 
@@ -339,17 +318,17 @@ func (j *RunJournal) write(inFlight string, signalled bool, recovery ...string) 
 				}
 				if caught {
 					p.Result = ResultInterrupted
-					p.Recovery = strp(strings.Join(recovery, ""))
+					p.Recovery = kit.Strp(strings.Join(recovery, ""))
 					j.fastForwardSeen(p)
 				}
 			}
-			j.res.Outcome = OutcomeInterrupted
-			j.res.Recovery = strp(strings.Join(recovery, ""))
+			j.res.Outcome = kit.OutcomeInterrupted
+			j.res.Recovery = kit.Strp(strings.Join(recovery, ""))
 		} else {
 			j.res.Outcome = outcomeOf(j.res.Worktrees, j.res.Error != nil)
 		}
 		if !j.up {
-			_ = writeJSON(j.out, j.res)
+			_ = kit.WriteJSON(j.out, j.res)
 			return
 		}
 		up := UpResult{Schema: j.res.Schema, SchemaVersion: j.res.SchemaVersion, Command: j.res.Command,
@@ -358,7 +337,7 @@ func (j *RunJournal) write(inFlight string, signalled bool, recovery ...string) 
 		for _, p := range j.res.Worktrees {
 			up.Worktrees = append(up.Worktrees, &p.UpParticipant)
 		}
-		_ = writeJSON(j.out, up)
+		_ = kit.WriteJSON(j.out, up)
 	})
 }
 
@@ -373,7 +352,7 @@ func (j *RunJournal) fastForwardSeen(p *SyncParticipant) {
 		return
 	}
 	if tip, err := git.Run(*j.res.Repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+p.Branch); err == nil && tip == *o.Remote {
-		o.FastForwarded, p.After = true, strp(tip)
+		o.FastForwarded, p.After = true, kit.Strp(tip)
 	}
 }
 
@@ -385,7 +364,7 @@ func journaled(j *RunJournal, verb func() error) error {
 	if j == nil {
 		return verb()
 	}
-	defer setInterruptJournal(j)()
+	defer kit.SetInterruptJournal(j)()
 	err := verb()
 	// An error after a participant was touched is in the participants
 	// already.
@@ -402,9 +381,9 @@ func journaled(j *RunJournal, verb func() error) error {
 func outcomeOf(ps []*SyncParticipant, failedEarly bool) string {
 	if len(ps) == 0 {
 		if failedEarly {
-			return OutcomeRefused
+			return kit.OutcomeRefused
 		}
-		return OutcomeDone
+		return kit.OutcomeDone
 	}
 	finished, changed := true, false
 	for _, p := range ps {
@@ -420,41 +399,11 @@ func outcomeOf(ps []*SyncParticipant, failedEarly bool) string {
 	}
 	switch {
 	case finished && !failedEarly:
-		return OutcomeDone
+		return kit.OutcomeDone
 	case !changed:
-		return OutcomeRefused
+		return kit.OutcomeRefused
 	}
-	return OutcomePartial
-}
-
-// interruptJournal is the journal a signal must finish, if a --json run is
-// under way: watchSignals hands it the worktree in flight and the recovery it
-// printed.
-var (
-	interruptMu      sync.Mutex
-	interruptJournal interruptible
-)
-
-// interruptible is a journal a signal can finish: RunJournal, SweepJournal.
-type interruptible interface {
-	interrupted(inFlight, recovery string)
-}
-
-func setInterruptJournal(j interruptible) func() {
-	interruptMu.Lock()
-	interruptJournal = j
-	interruptMu.Unlock()
-	return func() {
-		interruptMu.Lock()
-		interruptJournal = nil
-		interruptMu.Unlock()
-	}
-}
-
-func currentInterruptJournal() interruptible {
-	interruptMu.Lock()
-	defer interruptMu.Unlock()
-	return interruptJournal
+	return kit.OutcomePartial
 }
 
 // planToken names the inputs a plan was computed from: the trunk wt up
@@ -465,10 +414,10 @@ func currentInterruptJournal() interruptible {
 // branch to that commit, so that a caller who allows the divergence it was
 // shown is refused over one that moved since. With nothing diverged the
 // token is what it was before wt looked at the remotes.
-func planToken(ctx *Context, trunk string, stack []string, diverged map[string]string) string {
+func planToken(ctx *kit.Context, trunk string, stack []string, diverged map[string]string) string {
 	h := sha256.New()
 	h.Write([]byte("wt-plan-1\x00" + trunk + "\x00"))
-	h.Write(configFingerprint(ctx))
+	h.Write(kit.ConfigFingerprint(ctx))
 	h.Write([]byte("\x00" + strings.Join(stack, "\x00")))
 	for _, b := range stack {
 		if commit, ok := diverged[b]; ok {
@@ -476,18 +425,4 @@ func planToken(ctx *Context, trunk string, stack []string, diverged map[string]s
 		}
 	}
 	return "1:" + hex.EncodeToString(h.Sum(nil))[:32]
-}
-
-// configFingerprint is the bytes of the configuration file ctx read, the
-// worktree's own or else the main checkout's, the way loadFor finds it.
-func configFingerprint(ctx *Context) []byte {
-	for _, root := range []string{ctx.Repo.Root, ctx.Repo.MainRoot} {
-		for _, name := range []string{"worktree.toml", "worktree.conf"} {
-			if data, err := os.ReadFile(filepath.Join(root, "bin", "worktree", name)); err == nil {
-				sum := sha256.Sum256(data)
-				return sum[:]
-			}
-		}
-	}
-	return nil
 }

@@ -7,19 +7,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/github"
 )
 
 // mergedInCache is a worktree whose branch git reads as unmerged — a squash
 // merge — with the cache holding GitHub's answer that it landed on trunk.
-func mergedInCache(t *testing.T, base string) (ctx *Context, path, branch string, pr github.PR) {
+func mergedInCache(t *testing.T, base string) (ctx *kit.Context, path, branch string, pr github.PR) {
 	t.Helper()
 	ctx, _, _ = sweepRepo(t)
 	path, branch, tip := squashed(t, ctx, "fix/login-crash")
 	pr = mergedInto(34, branch, tip, base)
 	// No gh anywhere: this must work off the file alone.
 	stubGitHub(t, github.CLI{}, ghRepo, true)
-	writePRCache(ctx, ghRepo, map[string]*github.PR{branch: &pr}, time.Now().Add(-30*PRCacheTTL))
+	kit.WritePRCache(ctx, ghRepo, map[string]*github.PR{branch: &pr}, time.Now().Add(-30*kit.PRCacheTTL))
 	return ctx, path, branch, pr
 }
 

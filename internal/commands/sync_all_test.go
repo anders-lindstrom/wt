@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -76,7 +77,7 @@ func TestSyncRunAllRebasesTheReadyOnesAcrossRepositories(t *testing.T) {
 		Ask: func(q string) (bool, error) { asked = append(asked, q); return true, nil }}
 	opts.IfReady = true
 	var out bytes.Buffer
-	err := SyncRebaseAll(u, Selection{Profiles: []string{"p"}}, opts, &out)
+	err := SyncRebaseAll(u, kit.Selection{Profiles: []string{"p"}}, opts, &out)
 	if err == nil || !strings.Contains(err.Error(), "demo/bump (not ready)") {
 		t.Fatalf("err = %v\n%s", err, out.String())
 	}
@@ -117,7 +118,7 @@ func TestSyncRunAllRefusesARepositoryWhoseTrunkMoved(t *testing.T) {
 		return true, nil
 	}}
 	var out bytes.Buffer
-	err := SyncRebaseAll(u, Selection{Profiles: []string{"p"}}, opts, &out)
+	err := SyncRebaseAll(u, kit.Selection{Profiles: []string{"p"}}, opts, &out)
 	if err == nil || !strings.Contains(out.String(), "trunk moved since the plan") {
 		t.Fatalf("err = %v\n%s", err, out.String())
 	}

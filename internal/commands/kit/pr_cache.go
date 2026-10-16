@@ -1,4 +1,4 @@
-package commands
+package kit
 
 import (
 	"encoding/json"
@@ -21,20 +21,20 @@ const prCacheName = "wt-pr-cache.json"
 // request: see merged.
 var PRCacheTTL = 5 * time.Minute
 
-// prCacheRetention drops an entry nothing has asked about for a month, so a
+// PRCacheRetention drops an entry nothing has asked about for a month, so a
 // repository's dead branches cannot grow the file without bound.
-const prCacheRetention = 30 * 24 * time.Hour
+const PRCacheRetention = 30 * 24 * time.Hour
 
 // prCacheVersion is what the entries were written to mean. Bumping it is how
 // a wt that asks GitHub a different question discards these answers rather
 // than reading them as answers to its own.
 const prCacheVersion = 1
 
-// prCache is what GitHub last said about this repository's branches, one entry
+// PRCache is what GitHub last said about this repository's branches, one entry
 // each. It carries the repository it was read from (the one gh resolves as the
 // base, which on a fork is the parent), so a checkout whose remotes change
 // never shows the other repository's pull requests.
-type prCache struct {
+type PRCache struct {
 	Version  int                     `json:"version"`
 	Host     string                  `json:"host"`
 	Slug     string                  `json:"slug"`
@@ -51,11 +51,11 @@ type prCacheEntry struct {
 	Checks  bool       `json:"checks,omitempty"`
 }
 
-// fresh is what the cache says about branch, read less than PRCacheTTL ago,
+// Fresh is what the cache says about branch, read less than PRCacheTTL ago,
 // and when it was read. found false means "ask GitHub"; found true with a zero
 // PR is "there is none". A pull request read without its checks does not
 // answer a lookup that wants them.
-func (c prCache) fresh(branch string, now time.Time, checks bool) (pr github.PR, fetched time.Time, found bool) {
+func (c PRCache) Fresh(branch string, now time.Time, checks bool) (pr github.PR, fetched time.Time, found bool) {
 	e, ok := c.Branches[branch]
 	if !ok {
 		return github.PR{}, time.Time{}, false
@@ -73,7 +73,7 @@ func (c prCache) fresh(branch string, now time.Time, checks bool) (pr github.PR,
 	return *e.PR, e.Fetched, true
 }
 
-// merged is the pull request the cache holds for branch, at any age, when
+// Merged is the pull request the cache holds for branch, at any age, when
 // GitHub had already merged it.
 //
 // The TTL does not apply: it is about how fresh an open pull request's state
@@ -81,7 +81,7 @@ func (c prCache) fresh(branch string, now time.Time, checks bool) (pr github.PR,
 // the commit it carried are fixed, so however old the entry is it still
 // answers whether the branch's work landed — which is what lets `wt remove`
 // act on a squash merge with no process and no network.
-func (c prCache) merged(branch string) (github.PR, bool) {
+func (c PRCache) Merged(branch string) (github.PR, bool) {
 	e, ok := c.Branches[branch]
 	if !ok || e.PR == nil || !e.PR.Merged() {
 		return github.PR{}, false
@@ -89,8 +89,8 @@ func (c prCache) merged(branch string) (github.PR, bool) {
 	return *e.PR, true
 }
 
-// prCachePath is the cache file, or "" when the git dir cannot be resolved.
-func prCachePath(ctx *Context) string {
+// PRCachePath is the cache file, or "" when the git dir cannot be resolved.
+func PRCachePath(ctx *Context) string {
 	dir, err := ctx.Repo.GitDir()
 	if err != nil {
 		return ""
@@ -98,49 +98,49 @@ func prCachePath(ctx *Context) string {
 	return filepath.Join(dir, prCacheName)
 }
 
-// readPRCache is what the file holds for this remote. No file, a corrupt one
+// ReadPRCache is what the file holds for this remote. No file, a corrupt one
 // or a different remote is an empty cache: it never makes a command fail.
-func readPRCache(ctx *Context, r github.Remote) prCache {
-	path := prCachePath(ctx)
+func ReadPRCache(ctx *Context, r github.Remote) PRCache {
+	path := PRCachePath(ctx)
 	if path == "" {
-		return prCache{}
+		return PRCache{}
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return prCache{}
+		return PRCache{}
 	}
-	var c prCache
+	var c PRCache
 	if err := json.Unmarshal(data, &c); err != nil {
-		return prCache{}
+		return PRCache{}
 	}
 	if c.Version != prCacheVersion || c.Host != r.Host || c.Slug != r.Slug {
-		return prCache{}
+		return PRCache{}
 	}
 	return c
 }
 
-// writePRCache records what GitHub just said about the branches in answers, a
+// WritePRCache records what GitHub just said about the branches in answers, a
 // nil value being "no pull request on this one", and keeps what the file held
 // about the others. The write goes through a rename so a reader never sees
 // half of it; an unwritable git dir costs the cache, not the command.
-func writePRCache(ctx *Context, r github.Remote, answers map[string]*github.PR, now time.Time) {
-	writePRCacheChecks(ctx, r, answers, now, false)
+func WritePRCache(ctx *Context, r github.Remote, answers map[string]*github.PR, now time.Time) {
+	WritePRCacheChecks(ctx, r, answers, now, false)
 }
 
-// writePRCacheChecks is writePRCache for answers read with the checks asked
+// WritePRCacheChecks is writePRCache for answers read with the checks asked
 // for, when checks is true.
-func writePRCacheChecks(ctx *Context, r github.Remote, answers map[string]*github.PR, now time.Time, checks bool) {
-	path := prCachePath(ctx)
+func WritePRCacheChecks(ctx *Context, r github.Remote, answers map[string]*github.PR, now time.Time, checks bool) {
+	path := PRCachePath(ctx)
 	if path == "" {
 		return
 	}
-	c := readPRCache(ctx, r)
+	c := ReadPRCache(ctx, r)
 	c.Version, c.Host, c.Slug = prCacheVersion, r.Host, r.Slug
 	if c.Branches == nil {
 		c.Branches = map[string]prCacheEntry{}
 	}
 	for branch, e := range c.Branches {
-		if now.Sub(e.Fetched) > prCacheRetention {
+		if now.Sub(e.Fetched) > PRCacheRetention {
 			delete(c.Branches, branch)
 		}
 	}
@@ -177,7 +177,7 @@ func writeThroughRename(path string, data []byte) error {
 // becomes visible. It writes what the file already holds, so a cache in use
 // is left exactly as it was.
 func prCacheWritable(ctx *Context) error {
-	path := prCachePath(ctx)
+	path := PRCachePath(ctx)
 	if path == "" {
 		return errors.New("this repository's git dir cannot be resolved")
 	}

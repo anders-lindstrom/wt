@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 // Every Superset workspace sits one segment off the canonical path, by that
@@ -13,7 +15,7 @@ import (
 // on a healthy repository and prescribe a migrate that breaks the workspace.
 func TestDoctorAcceptsSupersetsLayout(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	superset := filepath.Join(ctx.Repo.Parent, "demo_wt", "demo", "feat_wt", "thing")
 	gitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/thing", superset)
 
@@ -35,7 +37,7 @@ func TestDoctorAcceptsSupersetsLayout(t *testing.T) {
 // neither is a problem: the thread holds the path.
 func TestDoctorAcceptsT3sLayout(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	data := t.TempDir()
 	t.Setenv("T3CODE_HOME", data)
 	renamed := filepath.Join(data, "worktrees", "demo", "t3-0aedd242")
@@ -60,7 +62,7 @@ func TestDoctorAcceptsT3sLayout(t *testing.T) {
 // nothing else holds the path, so moving it is safe and still recommended.
 func TestDoctorStillReportsAForeignLayout(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	gitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/thing",
 		filepath.Join(ctx.Repo.Parent, "demo-thing"))
 
@@ -81,7 +83,7 @@ func TestDoctorStillReportsAForeignLayout(t *testing.T) {
 // where doctor's closing advice had nothing behind it: there are no migrate
 // commands above to need fixing first, and no way out was named.
 func TestDoctorTellsAConfiglessRepoToRunInit(t *testing.T) {
-	ctx := OpenLenient(noTrunkRepo(t), io.Discard)
+	ctx := kit.OpenLenient(noTrunkRepo(t), io.Discard)
 	if ctx == nil {
 		t.Fatal("OpenLenient returned nil for a real repository")
 	}
@@ -107,7 +109,7 @@ func TestDoctorTellsAConfiglessRepoToRunInit(t *testing.T) {
 // there the mutating commands really are what the fix unblocks.
 func TestDoctorStillSaysToFixAConfigurationThatIsPresentButBroken(t *testing.T) {
 	main := fixtureRepo(t, "MAIN_BRANCH=\"main\"\nNO_SUCH_KEY=1\n")
-	ctx := OpenLenient(main, io.Discard)
+	ctx := kit.OpenLenient(main, io.Discard)
 
 	var buf bytes.Buffer
 	if _, err := Doctor(ctx, &buf); err != nil {

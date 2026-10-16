@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -71,15 +72,15 @@ type trunkSyncOptions struct {
 // checkout with nothing in progress and no session busy in it, git merge
 // --ff-only moves it there. Anything else leaves it and says why. It never
 // fails: what went wrong is the reason.
-func syncLocalTrunk(ctx *Context, remote string, o trunkSyncOptions) *TrunkSync {
+func syncLocalTrunk(ctx *kit.Context, remote string, o trunkSyncOptions) *TrunkSync {
 	trunk := ctx.Config.MainBranch
-	ts := &TrunkSync{trunk: trunk, Remote: strp(remote)}
+	ts := &TrunkSync{trunk: trunk, Remote: kit.Strp(remote)}
 	local, ok := ctx.Repo.ResolveRef("refs/heads/" + trunk)
 	if !ok || remote == "" {
-		ts.Local = strp(local)
+		ts.Local = kit.Strp(local)
 		return ts
 	}
-	ts.Local, ts.before = strp(local), local
+	ts.Local, ts.before = kit.Strp(local), local
 	localAhead, ok1 := ctx.Repo.CommitsAhead(local, remote)
 	remoteAhead, ok2 := ctx.Repo.CommitsAhead(remote, local)
 	if !ok1 || !ok2 {
@@ -100,7 +101,7 @@ func syncLocalTrunk(ctx *Context, remote string, o trunkSyncOptions) *TrunkSync 
 	owners, hold, err := trunkOwners(ctx, trunk)
 	switch {
 	case err != nil:
-		return ts.skip(TrunkSkipFailed, "cannot list the worktrees: "+oneLine(err.Error()))
+		return ts.skip(TrunkSkipFailed, "cannot list the worktrees: "+kit.OneLine(err.Error()))
 	case hold != "":
 		return ts.skip(TrunkSkipOperation, hold)
 	case len(owners) > 1:
@@ -143,16 +144,16 @@ func syncLocalTrunk(ctx *Context, remote string, o trunkSyncOptions) *TrunkSync 
 		if now, _ := ctx.Repo.ResolveRef("refs/heads/" + trunk); now != local {
 			return ts.skip(TrunkSkipNotFastForward, "it moved while wt was updating it")
 		}
-		return ts.skip(TrunkSkipFailed, oneLine(err.Error()))
+		return ts.skip(TrunkSkipFailed, kit.OneLine(err.Error()))
 	}
-	ts.Local, ts.FastForwarded = strp(remote), true
+	ts.Local, ts.FastForwarded = kit.Strp(remote), true
 	return ts
 }
 
 // trunkOwners is every worktree with trunk checked out, and what holds it
 // when a git operation in progress does (a bisect started from it, a rebase
 // of it, a rebase --update-refs that will move it).
-func trunkOwners(ctx *Context, trunk string) (owners []repo.Worktree, hold string, err error) {
+func trunkOwners(ctx *kit.Context, trunk string) (owners []repo.Worktree, hold string, err error) {
 	all, err := ctx.Repo.Worktrees()
 	if err != nil {
 		return nil, "", err
@@ -179,7 +180,7 @@ func checkoutBusy(on repo.Worktree, agents func() ([]wtsync.Agent, error)) (reas
 		return TrunkSkipOperation, "a rebase is in progress at " + on.Path
 	}
 	if op, err := repo.OperationInProgress(on.Path); err != nil {
-		return TrunkSkipFailed, "cannot read " + on.Path + ": " + oneLine(err.Error())
+		return TrunkSkipFailed, "cannot read " + on.Path + ": " + kit.OneLine(err.Error())
 	} else if op != "" {
 		return TrunkSkipOperation, "a " + op + " is in progress at " + on.Path
 	}
@@ -187,7 +188,7 @@ func checkoutBusy(on repo.Worktree, agents func() ([]wtsync.Agent, error)) (reas
 	// not make scratch files invisible here.
 	switch out, err := git.Run(on.Path, "--no-optional-locks", "status", "--porcelain", "--untracked-files=normal"); {
 	case err != nil:
-		return TrunkSkipFailed, "cannot read " + on.Path + ": " + oneLine(err.Error())
+		return TrunkSkipFailed, "cannot read " + on.Path + ": " + kit.OneLine(err.Error())
 	case out != "":
 		return TrunkSkipDirty, on.Path + " has changes or untracked files"
 	}
@@ -227,7 +228,7 @@ func (ts *TrunkSync) Line() string {
 	case TrunkSkipOptedOut:
 		why = fmt.Sprintf("origin/%s is %d ahead; fast-forwarding it is off (--no-ff-trunk, ff_trunk)", ts.trunk, *ts.RemoteAhead)
 	case TrunkSkipAhead:
-		why = fmt.Sprintf("it has %d commit%s origin/%s lacks", *ts.LocalAhead, plural(*ts.LocalAhead), ts.trunk)
+		why = fmt.Sprintf("it has %d commit%s origin/%s lacks", *ts.LocalAhead, kit.Plural(*ts.LocalAhead), ts.trunk)
 	case TrunkSkipDiverged:
 		why = fmt.Sprintf("it and origin/%s have diverged (%d and %d commits of their own)", ts.trunk, *ts.LocalAhead, *ts.RemoteAhead)
 	}

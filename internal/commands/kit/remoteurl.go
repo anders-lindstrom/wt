@@ -1,4 +1,4 @@
-package commands
+package kit
 
 import (
 	"strings"
@@ -13,13 +13,13 @@ import (
 // often passed as the user (https://ghp_…@github.com/…).
 var tokenSchemes = map[string]bool{"http": true, "https": true, "ftp": true, "ftps": true}
 
-// hasCredentials reports any userinfo in an http, https, ftp or ftps URL,
+// HasCredentials reports any userinfo in an http, https, ftp or ftps URL,
 // and a password (user:secret@) in any URL, scp-like user:secret@host:path
 // included. An ssh user name (git@host:path, ssh://git@host/…) is not a
 // secret. A remote-helper address (<transport>::<address>) is judged on its
 // address too.
-func hasCredentials(url string) bool {
-	if address, ok := helperAddress(url); ok && hasCredentials(address) {
+func HasCredentials(url string) bool {
+	if address, ok := helperAddress(url); ok && HasCredentials(address) {
 		return true
 	}
 	info, ok := userinfoOf(url)
@@ -32,13 +32,13 @@ func hasCredentials(url string) bool {
 	return strings.Contains(info, ":")
 }
 
-// redacted is the URL without its userinfo: https://tok@github.com/o/r is
+// Redacted is the URL without its userinfo: https://tok@github.com/o/r is
 // https://github.com/o/r, git@github.com:o/r is github.com:o/r. A URL
 // without userinfo comes back unchanged.
-func redacted(url string) string {
+func Redacted(url string) string {
 	if i := strings.Index(url, "::"); i >= 0 {
 		if _, ok := helperAddress(url); ok {
-			return url[:i+2] + redacted(url[i+2:])
+			return url[:i+2] + Redacted(url[i+2:])
 		}
 	}
 	start, end, ok := userinfoRange(url)

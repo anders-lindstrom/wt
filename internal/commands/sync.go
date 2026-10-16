@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -31,10 +32,6 @@ type SyncOptions struct {
 	NoFetch bool
 }
 
-// noteWidth caps a free-text note under a row of the overview; wt sync <work>
-// prints it whole.
-const noteWidth = 100
-
 // shownFiles is how many files a stop names in the overview before it counts
 // the rest.
 const shownFiles = 3
@@ -44,10 +41,10 @@ const shownFiles = 3
 // it. Unless opts.NoFetch, it fetches trunk first, which moves only
 // origin/<trunk>; nothing else changes, and the verbs that do are separate
 // commands.
-func Sync(ctx *Context, opts SyncOptions, w io.Writer) error {
+func Sync(ctx *kit.Context, opts SyncOptions, w io.Writer) error {
 	// The assessments run several gits at once, and an interrupt has to
 	// reach every one of them, not only the one a goroutine is waiting on.
-	defer watchSignals(w, nil)()
+	defer kit.WatchSignals(w, nil)()
 	worktrees, err := ctx.Repo.Worktrees()
 	if err != nil {
 		return err
@@ -63,7 +60,7 @@ func Sync(ctx *Context, opts SyncOptions, w io.Writer) error {
 	assessments := assessAll(ctx.Repo.MainRoot, onto, cfg, worktrees, agents, own, assessWorkers)
 	entries := make([]syncEntry, 0, len(worktrees))
 	for i, wt := range worktrees {
-		entries = append(entries, syncEntry{work: worktreeName(ctx, wt.Branch, wt.Path), a: assessments[i]})
+		entries = append(entries, syncEntry{work: kit.WorktreeName(ctx, wt.Branch, wt.Path), a: assessments[i]})
 	}
 	printOverview(w, cfg != nil, entries)
 	return nil
@@ -140,9 +137,9 @@ func printOverview(w io.Writer, declared bool, entries []syncEntry) {
 // nothing cut short, one item per line: every stop the replay reached and its
 // files, every key a collision is made of, every dependency file both sides
 // changed.
-func SyncWorktree(ctx *Context, arg string, opts SyncOptions, w io.Writer) error {
-	defer watchSignals(w, nil)()
-	wt, err := Locate(ctx, arg)
+func SyncWorktree(ctx *kit.Context, arg string, opts SyncOptions, w io.Writer) error {
+	defer kit.WatchSignals(w, nil)()
+	wt, err := kit.Locate(ctx, arg)
 	if err != nil {
 		return err
 	}
@@ -151,7 +148,7 @@ func SyncWorktree(ctx *Context, arg string, opts SyncOptions, w io.Writer) error
 		return err
 	}
 	a := wtsync.AssessOwn(ctx.Repo.MainRoot, onto, cfg, wt, agents, ownStateOf(own, wt.Branch))
-	printDetail(w, worktreeName(ctx, wt.Branch, wt.Path), a)
+	printDetail(w, kit.WorktreeName(ctx, wt.Branch, wt.Path), a)
 	return nil
 }
 
@@ -165,7 +162,7 @@ func (e noTrunkError) Error() string {
 // trunkTip is the ref every sync verb works against and the commit it
 // resolves to now. A trunk that is not there at all is the one thing none of
 // them can go on without.
-func trunkTip(ctx *Context) (onto, sha string, err error) {
+func trunkTip(ctx *kit.Context) (onto, sha string, err error) {
 	onto = "origin/" + ctx.Config.MainBranch
 	sha, err = git.Run(ctx.Repo.MainRoot, "rev-parse", "--verify", onto)
 	if err != nil {
@@ -177,7 +174,7 @@ func trunkTip(ctx *Context) (onto, sha string, err error) {
 // syncDeclaration is what every assessment is made against, read from trunk
 // as it is now: the ref, its commit, and the declaration on it, nil when
 // trunk declares nothing.
-func syncDeclaration(ctx *Context) (onto, sha string, cfg *wtsync.Config, err error) {
+func syncDeclaration(ctx *kit.Context) (onto, sha string, cfg *wtsync.Config, err error) {
 	cfg, err = wtsync.LoadFromTrunk(ctx.Repo.MainRoot, ctx.Config.MainBranch)
 	if err != nil && !errors.Is(err, wtsync.ErrNoConfig) {
 		return "", "", nil, err
@@ -191,7 +188,7 @@ func syncDeclaration(ctx *Context) (onto, sha string, cfg *wtsync.Config, err er
 
 // undeclaredNotice is the overview's line for a repository whose trunk
 // declares no strategies: its worktrees are assessed and never rebased.
-func undeclaredNotice(ctx *Context, onto string) string {
+func undeclaredNotice(ctx *kit.Context, onto string) string {
 	return fmt.Sprintf("%s declares no %s on %s: reported only, never rebased.",
 		ctx.Repo.Name, wtsync.ConfigFile, onto)
 }
@@ -203,8 +200,8 @@ func undeclaredNotice(ctx *Context, onto string) string {
 // and the branches' remotes, as last fetched; only a trunk that is not there
 // at all is an error. A branch whose own remote alone could not be fetched
 // says so on its row.
-func syncInputs(ctx *Context, opts SyncOptions, w io.Writer, branches []string) (onto string, cfg *wtsync.Config, agents []wtsync.Agent, own *wtsync.Own, err error) {
-	if err := ctx.noTrunk(); err != nil {
+func syncInputs(ctx *kit.Context, opts SyncOptions, w io.Writer, branches []string) (onto string, cfg *wtsync.Config, agents []wtsync.Agent, own *wtsync.Own, err error) {
+	if err := ctx.NoTrunk(); err != nil {
 		return "", nil, nil, nil, err
 	}
 	// Read before fetching: git empties FETCH_HEAD as a fetch starts, so a
@@ -220,7 +217,7 @@ func syncInputs(ctx *Context, opts SyncOptions, w io.Writer, branches []string) 
 	if err != nil {
 		var noTrunk noTrunkError
 		if fetchErr != nil && !errors.As(err, &noTrunk) {
-			fmt.Fprintf(w, "fetch failed: %s\n", fetchReason(fetchErr))
+			fmt.Fprintf(w, "fetch failed: %s\n", kit.FetchReason(fetchErr))
 		}
 		return "", nil, nil, nil, err
 	}
@@ -237,7 +234,7 @@ func syncInputs(ctx *Context, opts SyncOptions, w io.Writer, branches []string) 
 	case opts.NoFetch:
 		fmt.Fprintf(w, "against %s, %s\n", ref, asLast)
 	case fetchErr != nil:
-		fmt.Fprintf(w, "fetch failed: %s; comparing with %s, %s\n", fetchReason(fetchErr), ref, asLast)
+		fmt.Fprintf(w, "fetch failed: %s; comparing with %s, %s\n", kit.FetchReason(fetchErr), ref, asLast)
 	default:
 		fmt.Fprintf(w, "against %s\n", ref)
 	}
@@ -279,50 +276,7 @@ func fetchAge(mainRoot string, now time.Time) string {
 	if err != nil || info.Size() == 0 {
 		return ""
 	}
-	return ago(now.Sub(info.ModTime()))
-}
-
-// ago is a duration as a person reads an age: the largest whole unit.
-func ago(d time.Duration) string {
-	switch {
-	case d < time.Minute:
-		return "just now"
-	case d < time.Hour:
-		return fmt.Sprintf("%dm ago", int(d/time.Minute))
-	case d < 48*time.Hour:
-		return fmt.Sprintf("%dh ago", int(d/time.Hour))
-	}
-	return fmt.Sprintf("%dd ago", int(d/(24*time.Hour)))
-}
-
-// fetchReason is the line of a failed fetch's error worth printing: ssh and
-// git can put warnings before the reason and hints after it.
-func fetchReason(err error) string {
-	return truncate(git.Reason(err, "warning:", "hint:"), noteWidth)
-}
-
-func workName(ctx *Context, branch string) string {
-	if branch == "" {
-		return "(detached)"
-	}
-	if _, work, ok := ctx.Scheme().Parse(branch); ok {
-		return work
-	}
-	return branch
-}
-
-// worktreeName is what a worktree is called, and is what to use wherever one
-// is at hand: its branch's work name where the branch follows the convention,
-// otherwise the name its path gives it. That is how `wt list`, completion and
-// `wt find` name it; any other name is one you cannot type back.
-func worktreeName(ctx *Context, branch, path string) string {
-	if _, work, ok := ctx.Scheme().Parse(branch); ok {
-		return work
-	}
-	if _, work, ok := ctx.Scheme().ClassifyPath(path); ok {
-		return work
-	}
-	return workName(ctx, branch)
+	return kit.Ago(now.Sub(info.ModTime()))
 }
 
 // syncSection is where the overview files a worktree: what to do about it.
@@ -375,7 +329,7 @@ func leftLabel(work string, a wtsync.Assessment) string {
 	}
 	parts := []string{classLabel(a)}
 	if len(a.Sessions) > 0 {
-		parts = append(parts, whoLabel(a.Sessions))
+		parts = append(parts, kit.WhoLabel(a.Sessions))
 	}
 	if a.Dirty {
 		parts = append(parts, "dirty")
@@ -448,7 +402,7 @@ func classLabel(a wtsync.Assessment) string {
 func heldBy(a wtsync.Assessment) string {
 	var held []string
 	if len(a.Sessions) > 0 {
-		held = append(held, whoLabel(a.Sessions))
+		held = append(held, kit.WhoLabel(a.Sessions))
 	}
 	if a.Dirty && len(a.Sessions.Busy()) == 0 {
 		held = append(held, "dirty")
@@ -459,23 +413,12 @@ func heldBy(a wtsync.Assessment) string {
 	return strings.Join(held, "  ")
 }
 
-// whoLabel is the sessions in a worktree as a row names them: "session
-// parked-1 (idle) +1", or "an unnamed session" when there is nothing to
-// call the lead by.
-func whoLabel(s wtsync.Sessions) string {
-	label := s.Label(sessionLabel)
-	if lead := s.Lead(); lead != nil && (lead.Name != "" || lead.Kind != "") {
-		return "session " + label
-	}
-	return label
-}
-
 // summaryLines is the overview's detail under a row, one fact per line, with
 // every list cut to a count.
 func summaryLines(a wtsync.Assessment) []string {
 	var lines []string
 	if a.Err != nil {
-		lines = append(lines, oneLine("error: "+a.Err.Error()))
+		lines = append(lines, kit.OneLine("error: "+a.Err.Error()))
 	}
 	if a.Paused {
 		lines = append(lines, pausedLine(a))
@@ -493,19 +436,19 @@ func summaryLines(a wtsync.Assessment) []string {
 		lines = append(lines, s)
 	}
 	if n := len(a.Replay.Stops) - 1; a.Replay.Stop != nil && n > 0 {
-		lines = append(lines, fmt.Sprintf("%d earlier stop%s resolved", n, plural(n)))
+		lines = append(lines, fmt.Sprintf("%d earlier stop%s resolved", n, kit.Plural(n)))
 	}
 	for _, f := range a.Files {
 		if note := fileNote(f); note != "" {
-			lines = append(lines, truncate(oneLine(shortPath(f.Path)+": "+note), noteWidth))
+			lines = append(lines, kit.Truncate(kit.OneLine(shortPath(f.Path)+": "+note), kit.NoteWidth))
 		}
 	}
 	if g := a.Graph; g != nil {
 		lines = append(lines, fmt.Sprintf("dependency graph changed on both sides: %d file%s on branch, %d on trunk",
-			len(g.Branch), plural(len(g.Branch)), len(g.Trunk)))
+			len(g.Branch), kit.Plural(len(g.Branch)), len(g.Trunk)))
 	}
 	for _, n := range a.Notes {
-		lines = append(lines, truncate(oneLine(n), noteWidth))
+		lines = append(lines, kit.Truncate(kit.OneLine(n), kit.NoteWidth))
 	}
 	return lines
 }
@@ -527,7 +470,7 @@ func pausedLine(a wtsync.Assessment) string {
 	}
 	line := fmt.Sprintf("at %d/%d", st.Stop, st.Total)
 	if a.Replaying != "" {
-		line += fmt.Sprintf(" %q", truncate(oneLine(a.Replaying), 32))
+		line += fmt.Sprintf(" %q", kit.Truncate(kit.OneLine(a.Replaying), 32))
 	}
 	if marks := fileMarks(handoverFiles(st)); marks != "" {
 		line += "  " + marks
@@ -561,7 +504,7 @@ func handoverFiles(st *wtsync.State) []wtsync.FileOutcome {
 func stopSummary(a wtsync.Assessment) string {
 	if stop := a.Replay.Stop; stop != nil {
 		return strings.TrimSpace(fmt.Sprintf("%d/%d %q  %s",
-			stop.Index, stop.Total, truncate(oneLine(stop.Subject), 32), fileMarks(a.Files)))
+			stop.Index, stop.Total, kit.Truncate(kit.OneLine(stop.Subject), 32), fileMarks(a.Files)))
 	}
 	n := len(a.Replay.Stops)
 	if n == 0 {
@@ -664,7 +607,7 @@ func printDetail(w io.Writer, work string, a wtsync.Assessment) {
 		// the run line says what is.
 		head := fmt.Sprintf("handed over at %d/%d", st.Stop, st.Total)
 		if a.Replaying != "" {
-			head += "  " + oneLine(a.Replaying)
+			head += "  " + kit.OneLine(a.Replaying)
 		}
 		fmt.Fprintf(w, "\n%s\n", head)
 		for _, f := range handoverFiles(st) {
@@ -689,7 +632,7 @@ func printDetail(w io.Writer, work string, a wtsync.Assessment) {
 			if a.Replay.Stop != nil && stop.Index == a.Replay.Stop.Index {
 				files, yours = a.Files, "  ← yours"
 			}
-			fmt.Fprintf(w, "  %d/%d  %s%s\n", stop.Index, stop.Total, oneLine(stop.Subject), yours)
+			fmt.Fprintf(w, "  %d/%d  %s%s\n", stop.Index, stop.Total, kit.OneLine(stop.Subject), yours)
 			for _, f := range files {
 				printFileDetail(w, f)
 			}
@@ -721,7 +664,7 @@ func runVerdict(work string, a wtsync.Assessment) string {
 			verdict = fmt.Sprintf("wt sync rebase %s rebases up to %d/%d and hands that stop to you", work, stop.Index, stop.Total)
 		}
 		if len(a.Sessions) > 0 {
-			verdict += "; asks first: " + whoLabel(a.Sessions) + " is in it"
+			verdict += "; asks first: " + kit.WhoLabel(a.Sessions) + " is in it"
 		}
 		return verdict
 	case wtsync.SkipRun:
@@ -784,21 +727,6 @@ func printLines(w io.Writer, depth int, text string) {
 	for _, line := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
 		fmt.Fprintf(w, "%s%s\n", indent, line)
 	}
-}
-
-func truncate(s string, n int) string {
-	r := []rune(s)
-	if len(r) <= n {
-		return s
-	}
-	return string(r[:n-1]) + "…"
-}
-
-// oneLine flattens a note fragment to fit one line of the overview: an
-// embedded newline, carriage return or tab would break the layout of every
-// line printed after it.
-func oneLine(s string) string {
-	return strings.Join(strings.Fields(s), " ")
 }
 
 func shortPath(p string) string {

@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 // errCloneUnsupported is a clone the filesystem cannot make: another volume,
@@ -89,18 +91,18 @@ func removeParents(made, dir string) {
 
 // cloneCacheDirs clones each WORKTREE_CACHE_DIRS entry from src into target,
 // and returns what the cache step came to.
-func cloneCacheDirs(ctx *Context, src, target string, opts SetupOptions, w io.Writer) (result, reason string) {
+func cloneCacheDirs(ctx *kit.Context, src, target string, opts SetupOptions, w io.Writer) (result, reason string) {
 	dirs := ctx.Config.CacheDirs
 	switch {
 	case len(dirs) == 0:
-		return StepSkipped, "no WORKTREE_CACHE_DIRS"
+		return kit.StepSkipped, "no WORKTREE_CACHE_DIRS"
 	case opts.NoCache:
 		fmt.Fprintln(w, "⏭ build caches skipped (--no-cache)")
-		return StepSkipped, "--no-cache"
+		return kit.StepSkipped, "--no-cache"
 	}
 	if _, err := os.Stat(src); err != nil {
 		fmt.Fprintf(w, " - source %s not found; skipping build caches\n", src)
-		return StepSkipped, "source " + src + " not found"
+		return kit.StepSkipped, "source " + src + " not found"
 	}
 	var failed, unclonable []string
 	cloned := 0
@@ -163,9 +165,9 @@ func cloneCacheDirs(ctx *Context, src, target string, opts SetupOptions, w io.Wr
 	}
 	switch {
 	case len(failed) > 0:
-		return StepFailed, strings.Join(append(failed, unclonable...), "; ")
+		return kit.StepFailed, strings.Join(append(failed, unclonable...), "; ")
 	case cloned == 0 && len(unclonable) > 0:
-		return StepSkipped, strings.Join(unclonable, "; ")
+		return kit.StepSkipped, strings.Join(unclonable, "; ")
 	}
-	return StepDone, strings.Join(unclonable, "; ")
+	return kit.StepDone, strings.Join(unclonable, "; ")
 }

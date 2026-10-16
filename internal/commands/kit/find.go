@@ -1,4 +1,4 @@
-package commands
+package kit
 
 import (
 	"errors"
@@ -51,17 +51,17 @@ func Find(ctx *Context, pattern string) ([]find.Scored, error) {
 	// way every other command resolves it. Neither searches anything, and
 	// outside a repository neither names a place: that is the error, not
 	// "no worktree matches".
-	if isRoot(pattern) || pattern == "" || isDot(pattern) {
+	if IsRoot(pattern) || pattern == "" || IsDot(pattern) {
 		if ctx == nil {
 			return nil, ErrNotInRepo
 		}
 		wt := repo.Worktree{Path: ctx.Repo.MainRoot, Branch: ctx.Repo.BranchAt(ctx.Repo.MainRoot), IsMain: true}
-		if isDot(pattern) {
+		if IsDot(pattern) {
 			names, err := WorkNames(ctx)
 			if err != nil {
 				return nil, err
 			}
-			if wt, _, err = standingWorktree(ctx, names); err != nil {
+			if wt, _, err = StandingWorktree(ctx, names); err != nil {
 				return nil, err
 			}
 		}
@@ -216,7 +216,7 @@ func scanRoots(roots []string) []*repo.Repo {
 	for _, root := range roots {
 		// A root that is a checkout is that one repository, and what is
 		// under it is its own business.
-		if isCheckout(root) {
+		if IsCheckout(root) {
 			add(root)
 			continue
 		}
@@ -225,7 +225,7 @@ func scanRoots(roots []string) []*repo.Repo {
 			continue
 		}
 		for _, e := range entries {
-			if dir := filepath.Join(root, e.Name()); isCheckout(dir) {
+			if dir := filepath.Join(root, e.Name()); IsCheckout(dir) {
 				add(dir)
 			}
 		}

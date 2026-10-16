@@ -9,11 +9,13 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 func TestPortIsStableAndDiffersBetweenBranches(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	first, err := Port(ctx, "fix/login-crash")
 	if err != nil {
 		t.Fatal(err)
@@ -45,7 +47,7 @@ func TestPortForIsPinned(t *testing.T) {
 // inside it; the work `wt new` would create gets the port it would have.
 func TestPortOfAnExistingWorktree(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	before, err := Port(ctx, "fix/login-crash")
 	if err != nil {
 		t.Fatal(err)
@@ -57,7 +59,7 @@ func TestPortOfAnExistingWorktree(t *testing.T) {
 			t.Errorf("%s: %d %v, want %d", spec, got, err, before)
 		}
 	}
-	inside, _ := Open(wt)
+	inside, _ := kit.Open(wt)
 	if got, err := Port(inside, "."); err != nil || got != before {
 		t.Errorf(".: %d %v, want %d", got, err, before)
 	}
@@ -74,7 +76,7 @@ func TestProvisionAndBuildGetWTPort(t *testing.T) {
 	}
 	// A value the caller's shell exported for another worktree is replaced.
 	t.Setenv("WT_PORT", "1")
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
 	path, err := New(ctx, "fix/login-crash", NewOptions{}, &buf)
 	if err != nil {
@@ -115,7 +117,7 @@ func envValue(env []string, key string) string {
 // symbolic-ref has no branch but git worktree list still names it.
 func TestWorktreeEnvDuringARebaseMatchesWtPort(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	mustWrite(t, filepath.Join(main, "x.txt"), "base")
 	gitIn(t, main, "add", "-A")
 	gitIn(t, main, "commit", "-qm", "base")
@@ -145,7 +147,7 @@ func TestWorktreeEnvDuringARebaseMatchesWtPort(t *testing.T) {
 // the containing worktree's.
 func TestWorktreeEnvInASubdirectoryIsTheWorktrees(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	wt := filepath.Join(filepath.Dir(main), "demo_wt", "fix_wt", "login-crash")
 	gitIn(t, main, "worktree", "add", "-q", "-b", "fix_wt/login-crash", wt)
 	sub := filepath.Join(wt, "pkg", "deep")

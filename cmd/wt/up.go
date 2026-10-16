@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 func newUpCmd() *cobra.Command {
@@ -73,7 +74,7 @@ func newUpCmd() *cobra.Command {
 			f := syncVerbFlags{rebase: true, yes: yes, noFetch: noFetch, noFFTrunk: noFFTrunk, ifReady: true, force: force,
 				allowDiverged: allowDiverged, push: push()}
 			if !asJSON {
-				return withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+				return withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
 					opts, _ := runOptions(cmd, f, false)
 					return commands.Up(ctx, work, opts, cmd.OutOrStdout())
 				})(cmd, args)
@@ -87,10 +88,10 @@ func newUpCmd() *cobra.Command {
 				journal.Fail(err)
 				return err
 			}
-			ctx := commands.OpenLenient(cwd, cmd.ErrOrStderr())
+			ctx := kit.OpenLenient(cwd, cmd.ErrOrStderr())
 			switch {
 			case ctx == nil:
-				err = commands.ErrNotInRepo
+				err = kit.ErrNotInRepo
 			case ctx.ConfigError != nil:
 				err = ctx.ConfigError
 			}

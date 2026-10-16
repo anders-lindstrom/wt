@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -89,7 +90,7 @@ func TestStatusReadsTheCacheListFilled(t *testing.T) {
 // git gives a branch one worktree. Answering with the main checkout's path
 // would walk `cd "$(wt pr checkout 12)"` into the repository you started in.
 func TestPRCheckoutRefusesAPullRequestOnTrunk(t *testing.T) {
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(committedRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +113,7 @@ func TestPRCheckoutRefusesAPullRequestOnTrunk(t *testing.T) {
 // remote. The worktree goes; so must the branch, or the next attempt finds a
 // branch it did not make and refuses.
 func TestPRCheckoutRemovesABranchGhLeftBehind(t *testing.T) {
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(committedRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +133,7 @@ func TestPRCheckoutRemovesABranchGhLeftBehind(t *testing.T) {
 // A branch that was already here is not gh's to have made, so a failure must
 // not take it.
 func TestPRCheckoutKeepsABranchItDidNotMake(t *testing.T) {
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(committedRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +153,7 @@ func TestPRCheckoutKeepsABranchItDidNotMake(t *testing.T) {
 // The picker leads with what is waiting on you, and says which rows already
 // have a worktree here.
 func TestPRChoicesLeadWithYourReviewQueue(t *testing.T) {
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(committedRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}

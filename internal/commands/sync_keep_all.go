@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -30,8 +31,8 @@ type KeepStartAllOptions struct {
 // keepRow is one repository's line in start, stop or status across
 // repositories.
 type keepRow struct {
-	target RepoTarget
-	ctx    *Context
+	target kit.RepoTarget
+	ctx    *kit.Context
 	job    keepJob
 	// act says the command has something to do here; failed that the
 	// repository could not be looked at or the action did not come off.
@@ -44,8 +45,8 @@ type keepRow struct {
 
 // keepRows opens every repository a selection names, in its order, and
 // lets fn say what the command makes of each one it could open.
-func keepRows(u *config.User, sel Selection, fn func(*keepRow)) ([]*keepRow, error) {
-	set, err := SelectRepos(u, sel)
+func keepRows(u *config.User, sel kit.Selection, fn func(*keepRow)) ([]*keepRow, error) {
+	set, err := kit.SelectRepos(u, sel)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +58,7 @@ func keepRows(u *config.User, sel Selection, fn func(*keepRow)) ([]*keepRow, err
 			r.failed, r.verdict = true, t.Problem
 			continue
 		}
-		ctx, err := Open(t.Path)
+		ctx, err := kit.Open(t.Path)
 		if err != nil {
 			r.failed, r.verdict = true, err.Error()
 			continue
@@ -74,14 +75,14 @@ func printKeepRows(w io.Writer, rows []*keepRow) {
 	home, _ := os.UserHomeDir()
 	width := 0
 	for _, r := range rows {
-		width = max(width, len(abbreviateHome(r.target.Path, home)))
+		width = max(width, len(kit.AbbreviateHome(r.target.Path, home)))
 	}
 	for _, r := range rows {
 		mark := " "
 		if r.failed || r.warn {
 			mark = "!"
 		}
-		fmt.Fprintf(w, "%s %-*s  %s\n", mark, width, abbreviateHome(r.target.Path, home), r.verdict)
+		fmt.Fprintf(w, "%s %-*s  %s\n", mark, width, kit.AbbreviateHome(r.target.Path, home), r.verdict)
 	}
 }
 
@@ -101,7 +102,7 @@ func keepFailures(rows []*keepRow) error {
 // keeper runs wt sync, which a repository opts into with a .wt-sync.yaml on
 // trunk. The error is a declaration wt cannot read, or a trunk it has not
 // fetched.
-func keepIneligible(ctx *Context) (string, error) {
+func keepIneligible(ctx *kit.Context) (string, error) {
 	_, err := wtsync.LoadFromTrunk(ctx.Repo.MainRoot, ctx.Config.MainBranch)
 	switch {
 	case errors.Is(err, wtsync.ErrNoConfig):
@@ -118,7 +119,7 @@ func keepIneligible(ctx *Context) (string, error) {
 // job is left as it is, whatever its interval, so a second start installs
 // only what the first did not. The plan is printed first and one question
 // covers it.
-func SyncKeepStartAll(u *config.User, sel Selection, opts KeepStartAllOptions, w io.Writer) error {
+func SyncKeepStartAll(u *config.User, sel kit.Selection, opts KeepStartAllOptions, w io.Writer) error {
 	s, err := newKeepStarter(opts.KeepStartOptions)
 	if err != nil {
 		return err
@@ -173,7 +174,7 @@ func SyncKeepStartAll(u *config.User, sel Selection, opts KeepStartAllOptions, w
 		return keepFailures(rows)
 	}
 	fmt.Fprintln(w, keepAuthLine(todo[0].job))
-	what := fmt.Sprintf("a keeper in %s", repoCount(len(todo)))
+	what := fmt.Sprintf("a keeper in %s", kit.RepoCount(len(todo)))
 	switch {
 	case opts.DryRun:
 		fmt.Fprintln(w, "Nothing was installed: --dry-run.")
@@ -211,7 +212,7 @@ func SyncKeepStartAll(u *config.User, sel Selection, opts KeepStartAllOptions, w
 // no question, since start puts it back. A repository with no job is listed
 // and left alone; one that no longer declares wt sync is stopped all the
 // same.
-func SyncKeepStopAll(u *config.User, sel Selection, dryRun bool, w io.Writer) error {
+func SyncKeepStopAll(u *config.User, sel kit.Selection, dryRun bool, w io.Writer) error {
 	if keepGOOS != "darwin" {
 		return ErrNoLaunchd
 	}
@@ -258,7 +259,7 @@ func SyncKeepStopAll(u *config.User, sel Selection, dryRun bool, w io.Writer) er
 	case stopped == 0:
 		fmt.Fprintln(w, "Nothing to stop.")
 	default:
-		fmt.Fprintf(w, "Stopped a keeper in %s; the logs stay.\n", repoCount(stopped))
+		fmt.Fprintf(w, "Stopped a keeper in %s; the logs stay.\n", kit.RepoCount(stopped))
 	}
 	return keepFailures(rows)
 }
@@ -266,7 +267,7 @@ func SyncKeepStopAll(u *config.User, sel Selection, dryRun bool, w io.Writer) er
 // SyncKeepStatusAll is wt sync keep status across repositories, one line
 // each: what wt sync doctor's keeper row says, or why the repository is not
 // one to keep.
-func SyncKeepStatusAll(u *config.User, sel Selection, now time.Time, w io.Writer) error {
+func SyncKeepStatusAll(u *config.User, sel kit.Selection, now time.Time, w io.Writer) error {
 	rows, err := keepRows(u, sel, func(r *keepRow) {
 		k, err := keeper(r.ctx, true)
 		if err != nil {

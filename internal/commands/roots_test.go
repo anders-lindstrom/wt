@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/gittest"
@@ -41,33 +42,12 @@ func realTempDir(t *testing.T) string {
 	return dir
 }
 
-func targetNames(ts []RepoTarget) []string {
+func targetNames(ts []kit.RepoTarget) []string {
 	var out []string
 	for _, t := range ts {
 		out = append(out, t.Name)
 	}
 	return out
-}
-
-// WT_ROOTS wins over the file, which wins over the defaults, and a root from
-// WT_ROOTS is named after its directory.
-func TestRootsComeFromTheEnvironmentThenTheFileThenTheDefaults(t *testing.T) {
-	u := &config.User{Roots: []config.NamedRoot{{Name: "work", Path: "~/src/work"}}}
-	home, _ := os.UserHomeDir()
-
-	t.Setenv("WT_ROOTS", "/a/one:/b/one")
-	roots, origin := RootsFor(u)
-	if origin != "WT_ROOTS" || len(roots) != 2 || roots[0] != (Root{"one", "/a/one"}) || roots[1].Name != "one-2" {
-		t.Errorf("WT_ROOTS: %+v (%s)", roots, origin)
-	}
-	t.Setenv("WT_ROOTS", "")
-	roots, origin = RootsFor(u)
-	if origin != "user config" || len(roots) != 1 || roots[0] != (Root{"work", filepath.Join(home, "src/work")}) {
-		t.Errorf("file: %+v (%s)", roots, origin)
-	}
-	if roots, origin = RootsFor(&config.User{}); origin != "default" || len(roots) == 0 {
-		t.Errorf("defaults: %+v (%s)", roots, origin)
-	}
 }
 
 // A folder root is searched one level down: its managed repositories, not
@@ -88,7 +68,7 @@ func TestDiscoverReposFindsManagedCheckoutsAndSingleRepoRoots(t *testing.T) {
 	// not be found: that root is searched no deeper.
 	managedRepo(t, dotfiles, "vendored")
 
-	set := discoverRepos([]Root{{"work", folder}, {"dotfiles", dotfiles}})
+	set := kit.DiscoverRepos([]kit.Root{{Name: "work", Path: folder}, {Name: "dotfiles", Path: dotfiles}})
 	if got := targetNames(set.Repos); !slices.Equal(got, []string{"api", "dotfiles"}) {
 		t.Errorf("repos = %v", got)
 	}
@@ -117,17 +97,17 @@ func TestSelectReposByRootAndByProfile(t *testing.T) {
 	}
 	t.Setenv("WT_ROOTS", "")
 
-	set, err := SelectRepos(u, Selection{Roots: []string{"b"}})
+	set, err := kit.SelectRepos(u, kit.Selection{Roots: []string{"b"}})
 	if err != nil || !slices.Equal(targetNames(set.Repos), []string{"two"}) {
 		t.Fatalf("--roots b: %v, %v", targetNames(set.Repos), err)
 	}
-	if _, err := SelectRepos(u, Selection{Roots: []string{"c"}}); err == nil || !strings.Contains(err.Error(), "the roots are: a b") {
+	if _, err := kit.SelectRepos(u, kit.Selection{Roots: []string{"c"}}); err == nil || !strings.Contains(err.Error(), "the roots are: a b") {
 		t.Errorf("unknown root: %v", err)
 	}
-	if _, err := SelectRepos(u, Selection{Profiles: []string{"q"}}); err == nil || !strings.Contains(err.Error(), "the profiles are: p") {
+	if _, err := kit.SelectRepos(u, kit.Selection{Profiles: []string{"q"}}); err == nil || !strings.Contains(err.Error(), "the profiles are: p") {
 		t.Errorf("unknown profile: %v", err)
 	}
-	set, err = SelectRepos(u, Selection{Profiles: []string{"p"}})
+	set, err = kit.SelectRepos(u, kit.Selection{Profiles: []string{"p"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +177,7 @@ func TestSweepAllAsksOnceAndSweepsEveryRepository(t *testing.T) {
 	opts := SweepAllOptions{SweepOptions: SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}},
 		Ask: func(q string) (bool, error) { asked = append(asked, q); return true, nil }}
 	var buf bytes.Buffer
-	err := SweepAll(u, Selection{Profiles: []string{"p"}}, opts, &buf)
+	err := SweepAll(u, kit.Selection{Profiles: []string{"p"}}, opts, &buf)
 	if err == nil || !strings.Contains(err.Error(), "1 of 3 repositories could not be swept in full: gone") {
 		t.Fatalf("want the missing entry reported: %v\n%s", err, buf.String())
 	}
@@ -219,7 +199,7 @@ func TestSweepAllChangesNothingWhenTheAnswerIsNo(t *testing.T) {
 	opts := SweepAllOptions{SweepOptions: SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}},
 		Ask: func(string) (bool, error) { return false, nil }}
 	var buf bytes.Buffer
-	if err := SweepAll(u, Selection{Profiles: []string{"p"}}, opts, &buf); err != nil {
+	if err := SweepAll(u, kit.Selection{Profiles: []string{"p"}}, opts, &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !exists(path) || !strings.Contains(buf.String(), "Nothing was swept.") {
@@ -249,7 +229,7 @@ func TestReposShowsSyncAndABrokenConfiguration(t *testing.T) {
 	t.Setenv("WT_ROOTS", "")
 
 	var buf bytes.Buffer
-	if err := Repos(u, Selection{}, ReposOptions{}, &buf); err != nil {
+	if err := kit.Repos(u, kit.Selection{}, kit.ReposOptions{}, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -260,7 +240,7 @@ func TestReposShowsSyncAndABrokenConfiguration(t *testing.T) {
 		}
 	}
 	buf.Reset()
-	err := DoctorAll(u, Selection{All: true}, &buf)
+	err := DoctorAll(u, kit.Selection{All: true}, &buf)
 	if err == nil || !strings.Contains(buf.String(), "broken     1 problem(s)") || !strings.Contains(buf.String(), "plain      ✓") ||
 		!strings.Contains(buf.String(), "~ sync ") {
 		t.Errorf("want doctor per repository and a failure: %v\n%s", err, buf.String())
@@ -272,13 +252,13 @@ func TestReposShowsSyncAndABrokenConfiguration(t *testing.T) {
 // repository named twice in a profile is one repository.
 func TestSelectReposRefusesAnUnreadableFileAndMergesDuplicates(t *testing.T) {
 	t.Setenv("WT_ROOTS", "")
-	if _, err := SelectRepos(&config.User{Path: "/x/config.toml", TablesUnreadable: true}, Selection{All: true}); err == nil ||
+	if _, err := kit.SelectRepos(&config.User{Path: "/x/config.toml", TablesUnreadable: true}, kit.Selection{All: true}); err == nil ||
 		!strings.Contains(err.Error(), "wt does not know your roots") {
 		t.Errorf("want a refusal, got %v", err)
 	}
 	dir := managedRepo(t, realTempDir(t), "api")
 	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{dir, dir + "/", filepath.Join(dir, ".")}}}}
-	set, err := SelectRepos(u, Selection{Profiles: []string{"p"}})
+	set, err := kit.SelectRepos(u, kit.Selection{Profiles: []string{"p"}})
 	if err != nil || len(set.Repos) != 1 {
 		t.Errorf("want one repository, got %v, %v", targetNames(set.Repos), err)
 	}
@@ -307,7 +287,7 @@ func TestDryRunPrintsThePlanAndChangesNothing(t *testing.T) {
 	buf.Reset()
 	opts := SweepAllOptions{SweepOptions: SweepOptions{NoFetch: true, DryRun: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}},
 		Ask: func(string) (bool, error) { t.Fatal("a dry run asks nothing"); return false, nil }}
-	if err := SweepAll(u, Selection{Profiles: []string{"p"}}, opts, &buf); err != nil {
+	if err := SweepAll(u, kit.Selection{Profiles: []string{"p"}}, opts, &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !exists(path) || !strings.Contains(buf.String(), "Nothing was swept: --dry-run.") {
@@ -325,7 +305,7 @@ func TestAcrossReposPrintsEachRepositoryUnderItsName(t *testing.T) {
 		{Name: "two", Repos: []string{b, filepath.Join(root, "gone")}},
 	}}
 	var buf bytes.Buffer
-	err := AcrossRepos(u, Selection{Profiles: []string{"one", "two"}}, &buf, func(ctx *Context, w io.Writer) error {
+	err := kit.AcrossRepos(u, kit.Selection{Profiles: []string{"one", "two"}}, &buf, func(ctx *kit.Context, w io.Writer) error {
 		_, err := fmt.Fprintf(w, "in %s\n", ctx.Repo.Name)
 		return err
 	})

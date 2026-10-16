@@ -19,6 +19,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -187,7 +188,7 @@ type SessionListOptions struct {
 	// Selection, when it names any, lists the sessions of every repository
 	// it covers instead, from one read of claude's sessions. User is the
 	// configuration it is resolved against.
-	Selection Selection
+	Selection kit.Selection
 	User      *config.User
 	// NoInboxCheck leaves out the connection to each inbox.
 	NoInboxCheck bool
@@ -227,7 +228,7 @@ func (c *ClaudeSessions) with(extra []wtsync.Agent) *ClaudeSessions {
 // inbox it can be written to, or why it has none. sessionsError is set when
 // claude's sessions could not be read; err when the worktree could not be
 // found.
-func worktreeSessions(ctx *Context, pattern string, errw io.Writer, read *ClaudeSessions, env sessionEnv) (t attachTarget, infos []SessionInfo, sessionsError error, err error) {
+func worktreeSessions(ctx *kit.Context, pattern string, errw io.Writer, read *ClaudeSessions, env sessionEnv) (t attachTarget, infos []SessionInfo, sessionsError error, err error) {
 	if read == nil {
 		read = ReadClaudeSessions(attachDeadline)
 	}
@@ -268,8 +269,8 @@ func describeTarget(t attachTarget, env sessionEnv) []SessionInfo {
 
 // repoSessions is every session in any worktree of ctx's repository, of the
 // sessions read holds.
-func repoSessions(ctx *Context, read *ClaudeSessions, env sessionEnv) ([]SessionInfo, error) {
-	names, err := WorkNames(ctx)
+func repoSessions(ctx *kit.Context, read *ClaudeSessions, env sessionEnv) ([]SessionInfo, error) {
+	names, err := kit.WorkNames(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +286,7 @@ func repoSessions(ctx *Context, read *ClaudeSessions, env sessionEnv) ([]Session
 		case n.IsMain:
 			work = "(main)"
 		case work == "":
-			work = worktreeName(ctx, n.Branch, n.Path)
+			work = kit.WorktreeName(ctx, n.Branch, n.Path)
 		}
 		for _, s := range by[n.Path] {
 			t.sessions = append(t.sessions, s)
@@ -300,7 +301,7 @@ func repoSessions(ctx *Context, read *ClaudeSessions, env sessionEnv) ([]Session
 // from the one read of claude's sessions there is: each session is placed in
 // its repository by its working directory, and only a repository holding one
 // is opened.
-func acrossRepos(u *config.User, sel Selection, read *ClaudeSessions, env sessionEnv) ([]SessionInfo, error) {
+func acrossRepos(u *config.User, sel kit.Selection, read *ClaudeSessions, env sessionEnv) ([]SessionInfo, error) {
 	all := read.all()
 	roots := make([]string, len(all))
 	var wg sync.WaitGroup
@@ -330,19 +331,19 @@ func acrossRepos(u *config.User, sel Selection, read *ClaudeSessions, env sessio
 	if err != nil {
 		return nil, err
 	}
-	set := RepoSet{Repos: targets}
+	set := kit.RepoSet{Repos: targets}
 	type repoResult struct {
 		infos []SessionInfo
 		err   error
 	}
-	results := eachRepo(set.Repos, repoParallelism, func(t RepoTarget) repoResult {
+	results := kit.EachRepo(set.Repos, kit.RepoParallelism, func(t kit.RepoTarget) repoResult {
 		var mine []claudeSession
 		for i, s := range all {
 			if roots[i] != "" && repo.SamePath(roots[i], t.Path) {
 				mine = append(mine, s)
 			}
 		}
-		ctx, err := Open(t.Path)
+		ctx, err := kit.Open(t.Path)
 		if err != nil {
 			return repoResult{err: fmt.Errorf("%s: %w", t.Path, err)}
 		}
@@ -371,7 +372,7 @@ func closedChan() chan struct{} {
 // SessionListRun is `wt session list`. Codex sessions are listed beside
 // Claude's, with no inbox; when they cannot be found, codexError says so and
 // the Claude sessions stand.
-func SessionListRun(ctx *Context, o SessionListOptions) error {
+func SessionListRun(ctx *kit.Context, o SessionListOptions) error {
 	read := o.Sessions
 	if read == nil {
 		read = ReadClaudeSessions(attachDeadline)
@@ -393,7 +394,7 @@ func SessionListRun(ctx *Context, o SessionListOptions) error {
 	<-read.done
 	codex := <-codexDone
 	if codex.err != nil {
-		out.CodexError = strp(oneLine(codex.err.Error()))
+		out.CodexError = kit.Strp(kit.OneLine(codex.err.Error()))
 	}
 	merged := read.with(codex.agents)
 	if o.Selection.Any() {
@@ -413,12 +414,12 @@ func SessionListRun(ctx *Context, o SessionListOptions) error {
 	}
 	switch {
 	case err != nil:
-		out.Error = strp(oneLine(err.Error()))
+		out.Error = kit.Strp(kit.OneLine(err.Error()))
 	case sessionsErr != nil:
-		out.SessionsError = strp(oneLine(sessionsErr.Error()))
+		out.SessionsError = kit.Strp(kit.OneLine(sessionsErr.Error()))
 	}
 	if o.JSON {
-		if werr := writeJSON(o.Out, out); werr != nil {
+		if werr := kit.WriteJSON(o.Out, out); werr != nil {
 			return werr
 		}
 		if err != nil {
@@ -439,7 +440,7 @@ func SessionListRun(ctx *Context, o SessionListOptions) error {
 		fmt.Fprintln(o.Out, "no agent session found")
 		return nil
 	}
-	return printTable(o.Out, sessionRows(infos))
+	return kit.PrintTable(o.Out, sessionRows(infos))
 }
 
 // sessionRows is the human listing: worktree, session, state, inbox, age.
@@ -467,7 +468,7 @@ func sessionRows(infos []SessionInfo) [][]string {
 		started := "-"
 		if s.StartedAt != nil {
 			if t, err := time.Parse(time.RFC3339, *s.StartedAt); err == nil {
-				started = "started " + ago(now.Sub(t))
+				started = "started " + kit.Ago(now.Sub(t))
 			}
 		}
 		rows[i] = []string{s.Work, cutToWidth(name, maxSessionName), state, inbox, started}
@@ -501,18 +502,18 @@ func describeSession(s claudeSession, repo, work, path string, env sessionEnv) S
 		info.PID = &pid
 	}
 	if s.StartedAt > 0 {
-		info.StartedAt = strp(time.UnixMilli(s.StartedAt).UTC().Format(time.RFC3339))
+		info.StartedAt = kit.Strp(time.UnixMilli(s.StartedAt).UTC().Format(time.RFC3339))
 	}
 	info.Background = s.ID != "" && !codex
 	info.Activity = sessionActivity(s)
 	if codex {
-		info.InboxUnavailable = strp("codex")
+		info.InboxUnavailable = kit.Strp("codex")
 		return info
 	}
 	if sessionIDShape.MatchString(s.SessionID) {
 		if path, mtime, ok := env.transcriptOf(s.SessionID); ok {
 			info.Transcript = &path
-			info.LastActivityAt = strp(mtime.UTC().Format(time.RFC3339))
+			info.LastActivityAt = kit.Strp(mtime.UTC().Format(time.RFC3339))
 		}
 	}
 	var reg registryEntry
@@ -520,11 +521,11 @@ func describeSession(s claudeSession, repo, work, path string, env sessionEnv) S
 	if s.PID > 1 && s.SessionID != "" {
 		reg, regState = readRegistry(s, env)
 		if regState == registryOK && reg.statusUpdated > 0 {
-			info.StateSince = strp(time.UnixMilli(reg.statusUpdated).UTC().Format(time.RFC3339))
+			info.StateSince = kit.Strp(time.UnixMilli(reg.statusUpdated).UTC().Format(time.RFC3339))
 		}
 	}
 	if s.Own {
-		info.InboxUnavailable = strp("own")
+		info.InboxUnavailable = kit.Strp("own")
 		return info
 	}
 	info.Inbox, info.InboxUnavailable = findInbox(s, env, reg, regState)
@@ -672,7 +673,7 @@ type sendFailure struct {
 // SessionSendRun is `wt session send`. It writes one line to one inbox and
 // never tries again: sent says the line was written and the connection
 // closed cleanly, not that the session's Claude has read it.
-func SessionSendRun(ctx *Context, o SessionSendOptions) error {
+func SessionSendRun(ctx *kit.Context, o SessionSendOptions) error {
 	out := SessionSend{Schema: 1, SchemaVersion: schema.VersionOf("session-send"), Command: "session send",
 		DryRun: o.DryRun, Limit: MaxSessionMessage}
 	env := defaultSessionEnv()
@@ -682,9 +683,9 @@ func SessionSendRun(ctx *Context, o SessionSendOptions) error {
 	fail := func(f sendFailure) error {
 		out.Sent = false
 		out.MsgID = nil
-		out.Error, out.ErrorCode = strp(f.msg), strp(f.code)
+		out.Error, out.ErrorCode = kit.Strp(f.msg), kit.Strp(f.code)
 		if o.JSON {
-			if err := writeJSON(o.Out, out); err != nil {
+			if err := kit.WriteJSON(o.Out, out); err != nil {
 				return err
 			}
 		}
@@ -761,7 +762,7 @@ func SessionSendRun(ctx *Context, o SessionSendOptions) error {
 
 func finishSend(o SessionSendOptions, out SessionSend, target *SessionInfo, sent bool) error {
 	if o.JSON {
-		return writeJSON(o.Out, out)
+		return kit.WriteJSON(o.Out, out)
 	}
 	name := "the session"
 	if target.Name != nil {
@@ -777,7 +778,7 @@ func finishSend(o SessionSendOptions, out SessionSend, target *SessionInfo, sent
 
 // chooseSessionTarget is the one session o names, with an inbox, or the
 // reason there is none. It never picks among several.
-func chooseSessionTarget(ctx *Context, o SessionSendOptions, env sessionEnv) (*SessionInfo, *sendFailure) {
+func chooseSessionTarget(ctx *kit.Context, o SessionSendOptions, env sessionEnv) (*SessionInfo, *sendFailure) {
 	t, infos, sessionsErr, err := worktreeSessions(ctx, o.Pattern, o.Err, o.Sessions, env)
 	switch {
 	case sessionsErr != nil:
@@ -1029,22 +1030,22 @@ func sessionActivity(s claudeSession) string {
 // repositories (a git call each) is what a listing of every repository's
 // sessions must not do; the repositories that hold a session are few, and a
 // root holds a repository when it is the checkout or its parent directory.
-func selectedWithSessions(u *config.User, sel Selection, mains []string) ([]RepoTarget, error) {
-	var named *RepoSet
-	var roots []Root
+func selectedWithSessions(u *config.User, sel kit.Selection, mains []string) ([]kit.RepoTarget, error) {
+	var named *kit.RepoSet
+	var roots []kit.Root
 	if len(sel.Profiles) > 0 {
-		set, err := SelectRepos(u, sel)
+		set, err := kit.SelectRepos(u, sel)
 		if err != nil {
 			return nil, err
 		}
 		named = &set
 	} else {
 		var err error
-		if roots, err = chosenRoots(u, sel); err != nil {
+		if roots, err = kit.ChosenRoots(u, sel); err != nil {
 			return nil, err
 		}
 	}
-	var out []RepoTarget
+	var out []kit.RepoTarget
 	seen := map[string]bool{}
 	for _, main := range mains {
 		if main == "" || seen[main] {
@@ -1060,8 +1061,8 @@ func selectedWithSessions(u *config.User, sel Selection, mains []string) ([]Repo
 			continue
 		}
 		for _, r := range roots {
-			if (repo.SamePath(main, r.Path) || repo.SamePath(filepath.Dir(main), r.Path)) && managed(main) {
-				out = append(out, RepoTarget{Name: filepath.Base(main), Path: main, Root: r.Name})
+			if (repo.SamePath(main, r.Path) || repo.SamePath(filepath.Dir(main), r.Path)) && kit.Managed(main) {
+				out = append(out, kit.RepoTarget{Name: filepath.Base(main), Path: main, Root: r.Name})
 				break
 			}
 		}
@@ -1125,7 +1126,7 @@ type stopRefusal struct {
 // session by running `claude stop` on its attach id, and nothing else: a
 // session open in a terminal, a Codex session and wt's own are refused, and
 // a parked one has no process to stop.
-func SessionStopRun(ctx *Context, o SessionStopOptions) error {
+func SessionStopRun(ctx *kit.Context, o SessionStopOptions) error {
 	out := SessionStop{Schema: 1, SchemaVersion: schema.VersionOf("session-stop"), Command: "session stop", DryRun: o.DryRun}
 	env := defaultSessionEnv()
 	if o.env != nil {
@@ -1134,7 +1135,7 @@ func SessionStopRun(ctx *Context, o SessionStopOptions) error {
 	env.noProbe = true
 	finish := func(err error) error {
 		if o.JSON {
-			if werr := writeJSON(o.Out, out); werr != nil {
+			if werr := kit.WriteJSON(o.Out, out); werr != nil {
 				return werr
 			}
 		}
@@ -1145,7 +1146,7 @@ func SessionStopRun(ctx *Context, o SessionStopOptions) error {
 		if r.failed {
 			out.Outcome = "failed"
 		}
-		out.Reason, out.ReasonCode = strp(r.msg), strp(r.code)
+		out.Reason, out.ReasonCode = kit.Strp(r.msg), kit.Strp(r.code)
 		err := errors.New(r.msg)
 		if r.usage {
 			err = UsageError{err}
@@ -1167,7 +1168,7 @@ func SessionStopRun(ctx *Context, o SessionStopOptions) error {
 	}
 	if pick.info.PID == nil {
 		out.Outcome = "already-stopped"
-		out.Reason, out.ReasonCode = strp(name+" has no process: there is nothing to stop"), strp("noProcess")
+		out.Reason, out.ReasonCode = kit.Strp(name+" has no process: there is nothing to stop"), kit.Strp("noProcess")
 		if !o.JSON {
 			fmt.Fprintf(o.Out, "%s has no process: already stopped. `claude attach %s` resumes it\n", name, pick.s.ID)
 		}
@@ -1190,12 +1191,12 @@ func SessionStopRun(ctx *Context, o SessionStopOptions) error {
 	}
 	msg, err := runClaudeStop(pick.s.ID)
 	if msg != "" {
-		out.Message = strp(msg)
+		out.Message = kit.Strp(msg)
 	}
 	if err != nil {
 		reason := err.Error()
 		if msg != "" {
-			reason += ": " + oneLine(msg)
+			reason += ": " + kit.OneLine(msg)
 		}
 		return refuse(stopRefusal{code: "stopFailed", msg: reason, failed: true})
 	}
@@ -1203,7 +1204,7 @@ func SessionStopRun(ctx *Context, o SessionStopOptions) error {
 	if !o.JSON {
 		line := "stopped " + name
 		if msg != "" {
-			line += ": " + oneLine(msg)
+			line += ": " + kit.OneLine(msg)
 		}
 		fmt.Fprintf(o.Out, "%s. Its conversation is kept; `claude attach %s` resumes it\n", line, pick.s.ID)
 	}
@@ -1249,7 +1250,7 @@ type stopPick struct {
 // the reason it is not. It never picks among several: with none named, the
 // background sessions with a process are the candidates, and a parked one
 // is chosen only when it is the only background session.
-func chooseStopTarget(ctx *Context, o SessionStopOptions, env sessionEnv) (*stopPick, *stopRefusal) {
+func chooseStopTarget(ctx *kit.Context, o SessionStopOptions, env sessionEnv) (*stopPick, *stopRefusal) {
 	t, infos, sessionsErr, err := worktreeSessions(ctx, o.Pattern, o.Err, o.Sessions, env)
 	switch {
 	case sessionsErr != nil:

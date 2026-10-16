@@ -12,11 +12,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
-func sweepPlanJSON(t *testing.T, ctx *Context, opts SweepOptions) (SweepPlanOutput, error) {
+func sweepPlanJSON(t *testing.T, ctx *kit.Context, opts SweepOptions) (SweepPlanOutput, error) {
 	t.Helper()
 	var out, progress bytes.Buffer
 	err := SweepPlanJSON(ctx, opts, &out, &progress)
@@ -28,7 +29,7 @@ func sweepPlanJSON(t *testing.T, ctx *Context, opts SweepOptions) (SweepPlanOutp
 	return p, err
 }
 
-func sweepJSON(t *testing.T, ctx *Context, opts SweepOptions) (SweepResult, string, error) {
+func sweepJSON(t *testing.T, ctx *kit.Context, opts SweepOptions) (SweepResult, string, error) {
 	t.Helper()
 	var out, human bytes.Buffer
 	opts.Journal = NewSweepJournal(&out)
@@ -231,7 +232,7 @@ func TestSweepJSONCarriesOutThePlanItWasGiven(t *testing.T) {
 
 	opts.Expect = *p.Token
 	r, human, err := sweepJSON(t, ctx, opts)
-	if err != nil || r.Outcome != OutcomeDone || r.Error != nil || r.Token == nil || *r.Token != *p.Token {
+	if err != nil || r.Outcome != kit.OutcomeDone || r.Error != nil || r.Token == nil || *r.Token != *p.Token {
 		t.Fatalf("%v %+v\n%s", err, r, human)
 	}
 	if r.RunID == nil {
@@ -270,7 +271,7 @@ func TestSweepJSONExpectRefusesAChangedPlan(t *testing.T) {
 	branchWithWork(t, main, "late", 0)
 	opts.Expect = *p.Token
 	r, _, err := sweepJSON(t, ctx, opts)
-	if err == nil || r.Outcome != OutcomeRefused || r.Error == nil || len(r.Items) != 0 {
+	if err == nil || r.Outcome != kit.OutcomeRefused || r.Error == nil || len(r.Items) != 0 {
 		t.Fatalf("%v %+v", err, r)
 	}
 	if !ctx.Repo.BranchExists("done-work") || !ctx.Repo.BranchExists("late") {
@@ -280,7 +281,7 @@ func TestSweepJSONExpectRefusesAChangedPlan(t *testing.T) {
 	// A plan with nothing to do has no token, and --expect still holds it.
 	ctx2, _, _ := sweepRepo(t)
 	opts.Expect = "1:0123456789abcdef0123456789abcdef"
-	if r, _, err = sweepJSON(t, ctx2, opts); err == nil || r.Outcome != OutcomeRefused || r.Error == nil {
+	if r, _, err = sweepJSON(t, ctx2, opts); err == nil || r.Outcome != kit.OutcomeRefused || r.Error == nil {
 		t.Fatalf("an empty plan is not the plan a token named: %v %+v", err, r)
 	}
 }
@@ -299,7 +300,7 @@ func TestSweepJSONKeepsAWorktreeASessionEnteredLate(t *testing.T) {
 	}
 	opts.Expect = *p.Token
 	r, _, err := sweepJSON(t, ctx, opts)
-	if err == nil || r.Outcome != OutcomePartial {
+	if err == nil || r.Outcome != kit.OutcomePartial {
 		t.Fatalf("%v %+v", err, r)
 	}
 	if it := resultItem(t, r, "fix_wt/login-crash"); it.Result != SweepKept || it.Reason == nil ||
@@ -323,7 +324,7 @@ func TestSweepJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 	j := NewSweepJournal(&out)
 	j.begin(ctx, plan, "1:abc")
 	j.start(sweepKey(plan.Delete[0]))
-	j.interrupted("", "interrupted")
+	j.Interrupted("", "interrupted")
 	j.Finish()
 	validateJSON(t, "sweep", out.Bytes())
 	dec := json.NewDecoder(&out)
@@ -334,7 +335,7 @@ func TestSweepJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 	if dec.More() {
 		t.Error("a second object was written")
 	}
-	if r.Outcome != OutcomeInterrupted || r.Recovery == nil || r.Items[0].Result != SweepInterrupted || r.Items[1].Result != SweepNotRun {
+	if r.Outcome != kit.OutcomeInterrupted || r.Recovery == nil || r.Items[0].Result != SweepInterrupted || r.Items[1].Result != SweepNotRun {
 		t.Errorf("%+v", r)
 	}
 }
@@ -354,13 +355,13 @@ func TestSweepOutcomeRules(t *testing.T) {
 		early bool
 		want  string
 	}{
-		{items(SweepDeleted, SweepRemoved), false, OutcomeDone},
-		{items(), false, OutcomeDone},
-		{items(), true, OutcomeRefused},
-		{items(SweepKept, SweepNotRun), false, OutcomeRefused},
-		{items(SweepDeleted, SweepKept), false, OutcomePartial},
-		{items(SweepFailed), false, OutcomeRefused},
-		{[]*SweepResultItem{{Category: SweepRemove, Result: SweepFailed, WorktreeRemoved: true}}, false, OutcomePartial},
+		{items(SweepDeleted, SweepRemoved), false, kit.OutcomeDone},
+		{items(), false, kit.OutcomeDone},
+		{items(), true, kit.OutcomeRefused},
+		{items(SweepKept, SweepNotRun), false, kit.OutcomeRefused},
+		{items(SweepDeleted, SweepKept), false, kit.OutcomePartial},
+		{items(SweepFailed), false, kit.OutcomeRefused},
+		{[]*SweepResultItem{{Category: SweepRemove, Result: SweepFailed, WorktreeRemoved: true}}, false, kit.OutcomePartial},
 	} {
 		if got := sweepOutcome(tc.items, tc.early); got != tc.want {
 			t.Errorf("%+v early=%v: got %s, want %s", tc.items, tc.early, got, tc.want)
@@ -462,7 +463,7 @@ func TestSweepPlanShowsTheConfigFingerprint(t *testing.T) {
 	landOnMain(t, main, "done-work")
 	opts := SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}}
 	p, err := sweepPlanJSON(t, ctx, opts)
-	if err != nil || p.ConfigFingerprint == nil || *p.ConfigFingerprint != hex.EncodeToString(configFingerprint(ctx)) {
+	if err != nil || p.ConfigFingerprint == nil || *p.ConfigFingerprint != hex.EncodeToString(kit.ConfigFingerprint(ctx)) {
 		t.Fatalf("%v %+v", err, p)
 	}
 	conf := filepath.Join(main, "bin", "worktree", "worktree.conf")

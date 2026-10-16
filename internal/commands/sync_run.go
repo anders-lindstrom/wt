@@ -9,16 +9,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
-
-// networkTimeout bounds the calls that reach the network: a run's fetch, and
-// the push it ends with. It is shorter than the default git deadline: one
-// that has not finished by now is not going to, and every worktree in the run
-// is waiting on it.
-const networkTimeout = 5 * time.Minute
 
 // RunOptions tunes SyncRebase for callers and tests.
 type RunOptions struct {
@@ -103,10 +98,10 @@ type participant struct {
 // to. SyncRebase drives it through its phases in order: selectBranches, triage,
 // lockAll, then rebaseOne per worktree.
 type runPlan struct {
-	ctx     *Context
+	ctx     *kit.Context
 	opts    RunOptions
 	w       io.Writer
-	tracker *rebaseTracker
+	tracker *kit.RebaseTracker
 
 	trunk    string // trunk as a person says it, "main"
 	onto     string // what the run rebases onto, "origin/main"
@@ -157,7 +152,7 @@ type runPlan struct {
 // at the end. With nothing named it takes every worktree the overview calls
 // ready, less recipe?, and asks first. Anything refused, restored, failed or
 // owed is reported and makes the returned error non-nil, so a script sees it.
-func SyncRebase(ctx *Context, works []string, opts RunOptions, w io.Writer) error {
+func SyncRebase(ctx *kit.Context, works []string, opts RunOptions, w io.Writer) error {
 	return journaled(opts.Journal, func() error {
 		_, err := runSync(ctx, works, opts, w)
 		return err
@@ -166,15 +161,15 @@ func SyncRebase(ctx *Context, works []string, opts RunOptions, w io.Writer) erro
 
 // runSync is SyncRebase with the plan handed back, for the keeper's record of
 // what a pass did.
-func runSync(ctx *Context, works []string, opts RunOptions, w io.Writer) (*runPlan, error) {
-	r := &runPlan{ctx: ctx, opts: opts, w: w, tracker: &rebaseTracker{}, trunk: ctx.Config.MainBranch, outcomes: map[string]int{}}
+func runSync(ctx *kit.Context, works []string, opts RunOptions, w io.Writer) (*runPlan, error) {
+	r := &runPlan{ctx: ctx, opts: opts, w: w, tracker: &kit.RebaseTracker{}, trunk: ctx.Config.MainBranch, outcomes: map[string]int{}}
 	err := r.run(works)
 	return r, err
 }
 
 func (r *runPlan) run(works []string) error {
 	w, opts := r.w, r.opts
-	defer watchSignals(w, r.tracker)()
+	defer kit.WatchSignals(w, r.tracker)()
 
 	if err := r.declare(works); err != nil {
 		return err
@@ -308,7 +303,7 @@ func (r *runPlan) declare(works []string) error {
 		if r.opts.Expect != "" && !r.opts.planExpect {
 			works = nil
 		}
-		own, err := fetchRemotes(ctx, networkTimeout, ownCandidates(ctx, works))
+		own, err := fetchRemotes(ctx, kit.NetworkTimeout, ownCandidates(ctx, works))
 		if err != nil {
 			return fmt.Errorf("fetch: %w", err)
 		}
@@ -324,7 +319,7 @@ func (r *runPlan) declare(works []string) error {
 	}
 	r.onto, r.trunkSHA = onto, trunkSHA
 	r.opts.Journal.repo(ctx.Repo.MainRoot)
-	r.opts.Journal.trunk(r.trunk, ctx.trunkSource(), onto, trunkSHA, !r.opts.NoFetch)
+	r.opts.Journal.trunk(r.trunk, ctx.TrunkSource(), onto, trunkSHA, !r.opts.NoFetch)
 	label := r.opts.label
 	if label == "" {
 		label = "wt sync rebase"
@@ -384,7 +379,7 @@ func (r *runPlan) fetchMissed() {
 		}
 	}
 	if len(r.own.Asks(missed)) > 0 {
-		_ = fetchOwn(r.ctx, r.own, networkTimeout, missed, false)
+		_ = fetchOwn(r.ctx, r.own, kit.NetworkTimeout, missed, false)
 	}
 }
 
@@ -477,7 +472,7 @@ func (r *runPlan) selectReady() ([]string, error) {
 	var ready, left []string
 	for i, wt := range worktrees {
 		a := assessments[i]
-		work := worktreeName(ctx, wt.Branch, wt.Path)
+		work := kit.WorktreeName(ctx, wt.Branch, wt.Path)
 		switch {
 		case onTrunk(a):
 			// On trunk already; the overview leaves it out too.
@@ -546,7 +541,7 @@ func (r *runPlan) stackHold(branch string) string {
 				continue
 			}
 		}
-		return "stacked with " + workName(r.ctx, m)
+		return "stacked with " + kit.BranchWorkName(r.ctx, m)
 	}
 	return ""
 }
@@ -567,7 +562,7 @@ func (r *runPlan) selectBranches(works []string) error {
 	}
 	var named []string
 	for _, arg := range works {
-		wt, err := locateBranch(ctx, arg)
+		wt, err := kit.LocateBranch(ctx, arg)
 		if err != nil {
 			return err
 		}
@@ -582,7 +577,7 @@ func (r *runPlan) selectBranches(works []string) error {
 	parents, ambiguous := r.parents, r.ambiguous
 	for _, b := range named {
 		if anc, ok := ambiguous[b]; ok {
-			return fmt.Errorf("%s merges %s; that shape is not handled", workName(ctx, b), strings.Join(anc, " and "))
+			return fmt.Errorf("%s merges %s; that shape is not handled", kit.BranchWorkName(ctx, b), strings.Join(anc, " and "))
 		}
 	}
 	seen := map[string]bool{}
@@ -596,17 +591,17 @@ func (r *runPlan) selectBranches(works []string) error {
 			seen[m] = true
 			branches = append(branches, m)
 			if m != b {
-				added = append(added, workName(ctx, m))
+				added = append(added, kit.BranchWorkName(ctx, m))
 			}
 		}
 		if len(added) > 0 {
-			fmt.Fprintf(r.w, "%s is a stack with %s: rebasing all of them\n", workName(ctx, b), strings.Join(added, ", "))
+			fmt.Fprintf(r.w, "%s is a stack with %s: rebasing all of them\n", kit.BranchWorkName(ctx, b), strings.Join(added, ", "))
 		}
 	}
 	r.branches = wtsync.Order(parents, branches)
 	r.parts = map[string]*participant{}
 	for _, b := range r.branches {
-		r.parts[b] = &participant{wt: byBranch[b], work: workName(ctx, b)}
+		r.parts[b] = &participant{wt: byBranch[b], work: kit.BranchWorkName(ctx, b)}
 	}
 	return nil
 }
@@ -637,7 +632,7 @@ func (r *runPlan) triage() (proceed bool, err error) {
 			}
 			p.a.Sessions = nil
 			fmt.Fprintf(r.w, "⚠ %s: --force takes the run past %s; the files it has read will change\n",
-				p.work, whoLabel(p.forced))
+				p.work, kit.WhoLabel(p.forced))
 		}
 		p.a = r.allow(p.a)
 		p.verdict, p.reason = wtsync.Preflight(p.a)
@@ -647,9 +642,9 @@ func (r *runPlan) triage() (proceed bool, err error) {
 			switch {
 			case !refused || !own.Refuses():
 			case own.FetchFailed != "":
-				jp.OwnRemoteSync.SkippedReason = strp(OwnSkipFetchFailed)
+				jp.OwnRemoteSync.SkippedReason = kit.Strp(OwnSkipFetchFailed)
 			default:
-				jp.OwnRemoteSync.SkippedReason = strp(own.Blocks)
+				jp.OwnRemoteSync.SkippedReason = kit.Strp(own.Blocks)
 			}
 		})
 	}
@@ -835,7 +830,7 @@ func (r *runPlan) rebaseOne(b string) {
 		fmt.Fprintf(w, "  ✗ refused: %s\n", p.refused)
 		r.settle("refused", "✗ "+p.work+"  refused: "+p.refused, p.work)
 		j.set(b, func(jp *UpParticipant) {
-			jp.Result, jp.Reason = ResultRefused, strp(p.refused)
+			jp.Result, jp.Reason = ResultRefused, kit.Strp(p.refused)
 			if p.notRun {
 				jp.Result = ResultNotRun
 			}
@@ -845,7 +840,7 @@ func (r *runPlan) rebaseOne(b string) {
 	if p.verdict == wtsync.SkipRun {
 		fmt.Fprintf(w, "  ⏭ skipped: %s\n", p.reason)
 		r.settle("skipped", "", "")
-		j.set(b, func(jp *UpParticipant) { jp.Result, jp.Reason = ResultSkipped, strp(p.reason) })
+		j.set(b, func(jp *UpParticipant) { jp.Result, jp.Reason = ResultSkipped, kit.Strp(p.reason) })
 		return
 	}
 	if p.a.OnlyFastForward() {
@@ -875,7 +870,7 @@ func (r *runPlan) rebaseOne(b string) {
 		fmt.Fprintf(w, "  ⚠ %s\n", ownLine(own))
 	case own.Allowed:
 		fmt.Fprintf(w, "  ⚠ --allow-diverged: %s has %d commit%s this branch never had%s; rebasing it as it stands\n",
-			own.Ref, own.Behind, plural(own.Behind), asLastFetched(own))
+			own.Ref, own.Behind, kit.Plural(own.Behind), asLastFetched(own))
 		// Only now: the flag given to a run that refused the worktree for
 		// something else went over nothing.
 		j.set(b, func(jp *UpParticipant) { jp.OwnRemoteSync.Allowed = true })
@@ -889,7 +884,7 @@ func (r *runPlan) rebaseOne(b string) {
 	// found is the tip the run found the branch at: the one the rebase
 	// starts from, unless the run fast-forwarded it first.
 	found := func(res wtsync.Result) string { return cmp.Or(p.found, res.OldTip) }
-	res, rerr := trackedRebase(r.tracker, &rebaseInFlight{work: p.work, path: p.wt.Path, safety: wtsync.SafetyRef(b, r.epoch)}, func() (wtsync.Result, error) {
+	res, rerr := trackedRebase(r.tracker, &kit.RebaseInFlight{Work: p.work, Path: p.wt.Path, Safety: wtsync.SafetyRef(b, r.epoch)}, func() (wtsync.Result, error) {
 		return wtsync.Rebase(ctx.Repo.MainRoot, r.cfg, req, w)
 	})
 	p.result = &res
@@ -922,8 +917,8 @@ func (r *runPlan) rebaseOne(b string) {
 			way := wtsync.WayOut(wtsync.Way{Work: p.work, Path: p.wt.Path, Rebasing: true})
 			fmt.Fprintf(w, "  ⚠ %s is left mid-rebase with no plan: %s\n", p.work, way)
 			j.setSync(b, func(jp *SyncParticipant) {
-				jp.Result, jp.Reason, jp.Recovery = ResultNeedsRecovery, strp(herr.Error()), strp(way)
-				jp.SafetyRef = strp(res.Safety.Ref)
+				jp.Result, jp.Reason, jp.Recovery = ResultNeedsRecovery, kit.Strp(herr.Error()), kit.Strp(way)
+				jp.SafetyRef = kit.Strp(res.Safety.Ref)
 			})
 			r.settle("failed", "✗ "+p.work+"  left mid-rebase with no plan: "+way, p.work+" (failed)")
 			r.refuseAbove(b, p.work+" failed")
@@ -934,9 +929,9 @@ func (r *runPlan) rebaseOne(b string) {
 		p.lock = nil
 		j.setSync(b, func(jp *SyncParticipant) {
 			jp.Result = ResultHandedOver
-			jp.Reason = strp("stopped at a conflict that is yours")
-			jp.Recovery = strp(wtsync.WayOut(wtsync.Way{Work: p.work, Plan: true, Rebasing: true, OwesAdd: true}))
-			jp.SafetyRef, jp.UndoCommand, jp.PlanFile = strp(res.Safety.Ref), undoCommand(p.work), planFileOf(p.wt.Path)
+			jp.Reason = kit.Strp("stopped at a conflict that is yours")
+			jp.Recovery = kit.Strp(wtsync.WayOut(wtsync.Way{Work: p.work, Plan: true, Rebasing: true, OwesAdd: true}))
+			jp.SafetyRef, jp.UndoCommand, jp.PlanFile = kit.Strp(res.Safety.Ref), undoCommand(p.work), planFileOf(p.wt.Path)
 		})
 		r.settle("needs you", "⚠ "+p.work+"  needs you: "+wtsync.WayOut(wtsync.Way{Work: p.work, Plan: true, Rebasing: true, OwesAdd: true}), p.work+" (needs you)")
 		r.refuseAbove(b, p.work+" is waiting for you")
@@ -955,16 +950,16 @@ func (r *runPlan) rebaseOne(b string) {
 		clearHandover(w, p.wt.Path)
 		r.dropFastForward(b, p)
 		j.setSync(b, func(jp *SyncParticipant) {
-			jp.Result, jp.Reason, jp.SafetyRef = ResultRestored, strp(restored), strp(res.Safety.Ref)
-			jp.After = strp(found(res))
+			jp.Result, jp.Reason, jp.SafetyRef = ResultRestored, kit.Strp(restored), kit.Strp(res.Safety.Ref)
+			jp.After = kit.Strp(found(res))
 		})
 		r.settle("restored", "✗ "+p.work+"  "+restored, p.work+" (restored)")
 		r.refuseAbove(b, p.work+" was restored")
 		return
 	}
-	line := fmt.Sprintf("  ✓ rebased %d commit%s onto %s", res.Replayed, plural(res.Replayed), ontoLabel)
+	line := fmt.Sprintf("  ✓ rebased %d commit%s onto %s", res.Replayed, kit.Plural(res.Replayed), ontoLabel)
 	if res.SignaturesDropped > 0 {
-		line += fmt.Sprintf(", %d signature%s dropped", res.SignaturesDropped, plural(res.SignaturesDropped))
+		line += fmt.Sprintf(", %d signature%s dropped", res.SignaturesDropped, kit.Plural(res.SignaturesDropped))
 	}
 	fmt.Fprintln(w, line)
 	head, ran, derr := completeRun(ctx, w, r.cfg, r.tracker, p.work, p.wt.Path, func() completeInput {
@@ -984,12 +979,12 @@ func (r *runPlan) rebaseOne(b string) {
 	// lose their footing, so the rest of the run carries on.
 	after, _ := ctx.Repo.ResolveRef("refs/heads/" + b)
 	j.setSync(b, func(jp *SyncParticipant) {
-		jp.SafetyRef, jp.UndoCommand, jp.Deferred = strp(res.Safety.Ref), undoCommand(p.work), deferredSteps(ran)
+		jp.SafetyRef, jp.UndoCommand, jp.Deferred = kit.Strp(res.Safety.Ref), undoCommand(p.work), deferredSteps(ran)
 	})
 	if derr != nil {
 		fmt.Fprintf(w, "  ✗ failed: %v\n", derr)
 		j.set(b, func(jp *UpParticipant) {
-			jp.Result, jp.After = ResultRebasedStepFailed, strp(after)
+			jp.Result, jp.After = ResultRebasedStepFailed, kit.Strp(after)
 			jp.FailedSteps = append(jp.FailedSteps, "finish: "+derr.Error())
 		})
 		r.settle("failed", fmt.Sprintf("✗ %s  failed: %v", p.work, derr), p.work+" (failed)")
@@ -1000,7 +995,7 @@ func (r *runPlan) rebaseOne(b string) {
 	if len(owed) > 0 {
 		r.settle("rebased", "✗ "+p.work+"  owed: "+strings.Join(owed, ", ")+"; run it by hand, then push", "")
 		j.set(b, func(jp *UpParticipant) {
-			jp.Result, jp.After = ResultRebasedStepFailed, strp(after)
+			jp.Result, jp.After = ResultRebasedStepFailed, kit.Strp(after)
 			jp.FailedSteps = append(jp.FailedSteps, owed...)
 		})
 	} else {
@@ -1008,7 +1003,7 @@ func (r *runPlan) rebaseOne(b string) {
 		t := pushTarget{Work: p.work, Branch: b, Path: p.wt.Path}
 		r.pushable = append(r.pushable, t)
 		j.set(b, func(jp *UpParticipant) {
-			jp.Result, jp.After = ResultRebased, strp(after)
+			jp.Result, jp.After = ResultRebased, kit.Strp(after)
 			jp.PushCommand, jp.NoPushReason, jp.FixCommand = pushJSON(t, pushOf(ctx, t))
 		})
 	}
@@ -1032,8 +1027,8 @@ func (r *runPlan) fastForward(b string, p *participant, done string) (safety wts
 		fmt.Fprintf(w, "  ✗ refused: %s\n", why)
 		r.settle("refused", "✗ "+p.work+"  refused: "+why, p.work)
 		r.opts.Journal.set(b, func(jp *UpParticipant) {
-			jp.Result, jp.Reason = ResultRefused, strp(why)
-			jp.OwnRemoteSync.SkippedReason = strp(OwnSkipFailed)
+			jp.Result, jp.Reason = ResultRefused, kit.Strp(why)
+			jp.OwnRemoteSync.SkippedReason = kit.Strp(OwnSkipFailed)
 		})
 		r.refuseAbove(b, p.work+" could not be fast-forwarded")
 		return wtsync.Safety{}, false
@@ -1048,7 +1043,7 @@ func (r *runPlan) fastForward(b string, p *participant, done string) (safety wts
 	}
 	// An interrupt from here names the worktree and the ref that puts it
 	// back, as one during the rebase does.
-	r.tracker.set(&rebaseInFlight{work: p.work, path: p.wt.Path, safety: safety.Ref, forwarding: true})
+	r.tracker.Set(&kit.RebaseInFlight{Work: p.work, Path: p.wt.Path, Safety: safety.Ref, Forwarding: true})
 	if err := fastForwardOwn(p.wt.Path, b, own.Commit); err != nil {
 		// git moves the branch before it runs a hook, so a merge that
 		// reports a failure may still have gone through: where the branch
@@ -1057,7 +1052,7 @@ func (r *runPlan) fastForward(b string, p *participant, done string) (safety wts
 		case own.Commit:
 			fmt.Fprintf(w, "  note: the fast-forward went through, and git then reported: %v\n", err)
 		case tip:
-			r.tracker.set(nil)
+			r.tracker.Set(nil)
 			if derr := wtsync.DeleteSafety(ctx.Repo.MainRoot, safety); derr != nil {
 				fmt.Fprintf(w, "  note: could not remove %s: %v\n", safety.Ref, derr)
 			}
@@ -1065,17 +1060,17 @@ func (r *runPlan) fastForward(b string, p *participant, done string) (safety wts
 		default:
 			// Neither where it was nor where it was going: the refs stay,
 			// since the old tip is under one of them.
-			r.tracker.set(nil)
+			r.tracker.Set(nil)
 			return refuse(fmt.Sprintf("%v; the branch is at %s, and its old tip is under %s", err, git.ShortID(now, 7), safety.Ref))
 		}
 	}
 	p.found = tip
 	fmt.Fprintf(w, "  ✓ fast-forwarded to %s  %s → %s (%d commit%s)%s%s\n", own.Ref,
-		git.ShortID(tip, 7), git.ShortID(own.Commit, 7), own.Behind, plural(own.Behind), asLastFetched(own), done)
+		git.ShortID(tip, 7), git.ShortID(own.Commit, 7), own.Behind, kit.Plural(own.Behind), asLastFetched(own), done)
 	// Where the branch stands from here, whatever the rebase comes to: a
 	// rebase that is put back says so itself.
 	r.opts.Journal.set(b, func(jp *UpParticipant) {
-		jp.OwnRemoteSync.FastForwarded, jp.After = true, strp(own.Commit)
+		jp.OwnRemoteSync.FastForwarded, jp.After = true, kit.Strp(own.Commit)
 	})
 	return safety, true
 }
@@ -1097,7 +1092,7 @@ func (r *runPlan) fastForwardOnly(b string, p *participant) {
 		return
 	}
 	// Nothing is in flight any more: the branch is where the run leaves it.
-	r.tracker.set(nil)
+	r.tracker.Set(nil)
 	p.result = &wtsync.Result{Branch: b, OldTip: p.found, NewTip: own.Commit, Safety: safety}
 	p.head = own.Commit
 	// The run is finished for this branch, here.
@@ -1110,7 +1105,7 @@ func (r *runPlan) fastForwardOnly(b string, p *participant) {
 	r.forwarded = append(r.forwarded, p.work)
 	r.opts.Journal.setSync(b, func(jp *SyncParticipant) {
 		jp.Result = ResultFastForwarded
-		jp.SafetyRef, jp.UndoCommand = strp(safety.Ref), undoCommand(p.work)
+		jp.SafetyRef, jp.UndoCommand = kit.Strp(safety.Ref), undoCommand(p.work)
 	})
 }
 
@@ -1137,7 +1132,7 @@ func printDeferred(w io.Writer, d wtsync.DeferredResult) {
 			fmt.Fprintf(w, "    %s\n", l)
 		}
 	case d.Commit != "":
-		fmt.Fprintf(w, "  ✓ %s  %s  committed %d file%s (+%d −%d) as %s\n", d.Step.Run, d.Elapsed.Round(time.Second), d.Files, plural(d.Files), d.Insertions, d.Deletions, d.Commit)
+		fmt.Fprintf(w, "  ✓ %s  %s  committed %d file%s (+%d −%d) as %s\n", d.Step.Run, d.Elapsed.Round(time.Second), d.Files, kit.Plural(d.Files), d.Insertions, d.Deletions, d.Commit)
 	default:
 		fmt.Fprintf(w, "  ✓ %s  %s\n", d.Step.Run, d.Elapsed.Round(time.Second))
 	}
@@ -1153,13 +1148,6 @@ func lastLines(s string, n int) []string {
 		lines = lines[len(lines)-n:]
 	}
 	return lines
-}
-
-func plural(n int) string {
-	if n == 1 {
-		return ""
-	}
-	return "s"
 }
 
 // notReadyReason is why a worktree a run could start on is not ready, in the
@@ -1195,13 +1183,13 @@ func (r *runPlan) recordFailed(b string, p *participant, why, oldTip, safety str
 		r.dropFastForward(b, p)
 	}
 	r.opts.Journal.setSync(b, func(jp *SyncParticipant) {
-		jp.Reason, jp.After, jp.SafetyRef = strp(why), strp(now), strp(safety)
+		jp.Reason, jp.After, jp.SafetyRef = kit.Strp(why), kit.Strp(now), kit.Strp(safety)
 		if restored {
 			jp.Result = ResultRestored
 			return
 		}
 		jp.Result, jp.UndoCommand = ResultNeedsRecovery, nil
-		jp.Recovery = strp(wtsync.WayOut(wtsync.Way{Work: p.work, Path: p.wt.Path, Rebasing: busy,
+		jp.Recovery = kit.Strp(wtsync.WayOut(wtsync.Way{Work: p.work, Path: p.wt.Path, Rebasing: busy,
 			Safety: wtsync.SafetyRef(b, r.epoch)}))
 	})
 }

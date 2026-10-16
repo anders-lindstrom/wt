@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -16,7 +17,7 @@ type DoctorOptions struct{ Fix, Prune bool }
 // fixes anything on its own; --fix and --prune opt into that, one check at
 // a time. A check that blocks a run (trunk, declaration, scripts) and has no
 // fix makes the returned error non-nil; everything else is advisory.
-func SyncDoctor(ctx *Context, opts DoctorOptions, w io.Writer) error {
+func SyncDoctor(ctx *kit.Context, opts DoctorOptions, w io.Writer) error {
 	worktrees, err := ctx.Repo.Worktrees()
 	if err != nil {
 		return err
@@ -35,7 +36,7 @@ func SyncDoctor(ctx *Context, opts DoctorOptions, w io.Writer) error {
 	if len(holders) > 0 {
 		var lines []string
 		for _, wt := range holders {
-			name := worktreeName(ctx, wt.Branch, wt.Path)
+			name := kit.WorktreeName(ctx, wt.Branch, wt.Path)
 			// Where the handover stands, as the overview's row says it:
 			// waiting at its stop, or finished or aborted by hand.
 			gitDir, err := wtsync.GitDir(wt.Path)
@@ -64,12 +65,12 @@ func SyncDoctor(ctx *Context, opts DoctorOptions, w io.Writer) error {
 		if !c.OK {
 			state = "warn"
 		}
-		rows = append(rows, []string{c.Name, state, oneLine(c.Detail)})
+		rows = append(rows, []string{c.Name, state, kit.OneLine(c.Detail)})
 		if !c.OK && c.Fix == nil && c.Blocking {
 			blocking = append(blocking, c.Name)
 		}
 	}
-	if err := printTable(w, rows); err != nil {
+	if err := kit.PrintTable(w, rows); err != nil {
 		return err
 	}
 	for _, c := range checks {

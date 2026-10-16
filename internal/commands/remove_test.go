@@ -9,12 +9,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // 5. A merged branch is deleted.
 func TestRemoveDeletesMergedBranch(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	var buf bytes.Buffer
 	if _, err := New(ctx, "fix/merged", NewOptions{NoSetup: true}, &buf); err != nil {
 		t.Fatal(err)
@@ -29,7 +30,7 @@ func TestRemoveDeletesMergedBranch(t *testing.T) {
 
 // 6. An unmerged branch is renamed to strip the prefix, never deleted.
 func TestRemoveRenamesUnmergedBranch(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	var buf bytes.Buffer
 	path, err := New(ctx, "fix/unmerged", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -51,7 +52,7 @@ func TestRemoveRenamesUnmergedBranch(t *testing.T) {
 // 2. A detached worktree has no branch to clean up; touch none.
 func TestRemoveDetachedTouchesNoBranch(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	dst := filepath.Join(ctx.Repo.Parent, "detached")
 	gitIn(t, main, "worktree", "add", "-q", "--detach", dst)
 
@@ -71,7 +72,7 @@ func TestRemoveDetachedTouchesNoBranch(t *testing.T) {
 // deleted or renamed.
 func TestRemoveLeavesAnUnmergedForeignBranchAlone(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	dst := foreignWorktree(t, ctx, main, "someones-work", 3)
 
 	var buf bytes.Buffer
@@ -88,7 +89,7 @@ func TestRemoveLeavesAnUnmergedForeignBranchAlone(t *testing.T) {
 
 // foreignWorktree makes a worktree on a branch outside the convention, with
 // ahead commits of its own on top of the main branch.
-func foreignWorktree(t *testing.T, ctx *Context, main, branch string, ahead int) string {
+func foreignWorktree(t *testing.T, ctx *kit.Context, main, branch string, ahead int) string {
 	t.Helper()
 	gitIn(t, main, "branch", branch)
 	dst := filepath.Join(ctx.Repo.Parent, branch)
@@ -104,7 +105,7 @@ func foreignWorktree(t *testing.T, ctx *Context, main, branch string, ahead int)
 // not create it just leaves litter nobody will ever clean up.
 func TestRemoveDeletesAMergedBranchWhoeverMadeIt(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	dst := foreignWorktree(t, ctx, main, "someones-work", 0)
 
 	var buf bytes.Buffer
@@ -123,7 +124,7 @@ func TestRemoveDeletesAMergedBranchWhoeverMadeIt(t *testing.T) {
 // branch — not only for the ones wt made.
 func TestRemovePlanStatesTheMergeStateOfAForeignBranch(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	dst := foreignWorktree(t, ctx, main, "someones-work", 1)
 
 	var buf bytes.Buffer
@@ -142,7 +143,7 @@ func TestRemovePlanStatesTheMergeStateOfAForeignBranch(t *testing.T) {
 
 // 1. The branch is read from the worktree, not rebuilt from the work name.
 func TestRemoveReadsBranchFromWorktree(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	var buf bytes.Buffer
 	path, err := New(ctx, "fix/renamed", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -165,7 +166,7 @@ func TestRemoveReadsBranchFromWorktree(t *testing.T) {
 // 4. A worktree declaring submodules cannot go through a plain `git worktree
 // remove`.
 func TestRemoveHandlesSubmodulesWorktree(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	var buf bytes.Buffer
 	path, err := New(ctx, "fix/subs", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -184,7 +185,7 @@ func TestRemoveHandlesSubmodulesWorktree(t *testing.T) {
 }
 
 func TestRemoveUnknownWorkIsAnError(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	var buf bytes.Buffer
 	if err := Remove(ctx, "fix/nope", RemoveOptions{}, &buf); err == nil {
 		t.Error("want an error removing work that does not exist")
@@ -195,7 +196,7 @@ func TestRemoveUnknownWorkIsAnError(t *testing.T) {
 // a valid argument whatever type the worktree is. The old resolution rebuilt a
 // branch from the default type and reported a path that never existed.
 func TestRemoveAcceptsWorkNameOfAnyType(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	var buf bytes.Buffer
 	if _, err := New(ctx, "chore/wt-migration", NewOptions{NoSetup: true}, &buf); err != nil {
 		t.Fatal(err)
@@ -212,7 +213,7 @@ func TestRemoveAcceptsWorkNameOfAnyType(t *testing.T) {
 // Removal is destructive and its branch outcome is the surprising part, so the
 // plan is printed before anything happens — with or without a confirmation.
 func TestRemovePlanNamesUnmergedBranchOutcome(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	var buf bytes.Buffer
 	path, err := New(ctx, "fix/unmerged-plan", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -234,7 +235,7 @@ func TestRemovePlanNamesUnmergedBranchOutcome(t *testing.T) {
 }
 
 func TestRemovePlanNamesMergedBranchOutcome(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	var buf bytes.Buffer
 	if _, err := New(ctx, "fix/merged-plan", NewOptions{NoSetup: true}, &buf); err != nil {
 		t.Fatal(err)
@@ -255,7 +256,7 @@ func TestRemovePlanNamesMergedBranchOutcome(t *testing.T) {
 // git itself refuses to remove a dirty checkout, so the plan's job is to say so
 // before the attempt rather than leaving the user to read it out of a failure.
 func TestRemovePlanReportsUncommittedChanges(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	var buf bytes.Buffer
 	path, err := New(ctx, "fix/dirty", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -274,7 +275,7 @@ func TestRemovePlanReportsUncommittedChanges(t *testing.T) {
 
 // Declining leaves the checkout and the branch exactly as they were.
 func TestRemoveDeclinedChangesNothing(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	var buf bytes.Buffer
 	path, err := New(ctx, "fix/kept", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -296,7 +297,7 @@ func TestRemoveDeclinedChangesNothing(t *testing.T) {
 // The confirmation sees the same facts the plan prints, so a caller can render
 // its own prompt without recomputing them.
 func TestRemoveConfirmReceivesThePlan(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	var buf bytes.Buffer
 	path, err := New(ctx, "fix/inspected", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -321,7 +322,7 @@ func TestRemoveConfirmReceivesThePlan(t *testing.T) {
 // left alone.
 func TestRemovePlanNamesForeignBranch(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	dst := foreignWorktree(t, ctx, main, "someones-work", 2)
 
 	var got Plan
@@ -348,7 +349,7 @@ func TestRemovePlanNamesForeignBranch(t *testing.T) {
 // on the branch. The plan the user confirmed is the plan that runs, or nothing
 // runs.
 func TestRemoveRefusesWhenFactsChangedDuringConfirmation(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	var buf bytes.Buffer
 	path, err := New(ctx, "fix/racing", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -383,7 +384,7 @@ func TestRemoveRefusesWhenFactsChangedDuringConfirmation(t *testing.T) {
 // than second-guessed by a comparison against an unrelated branch.
 func TestRemoveDeletesAMergedBranchWithTheMainCheckoutElsewhere(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	gitIn(t, main, "branch", "sidetrack")
 	gitIn(t, main, "commit", "-q", "--allow-empty", "-m", "on main")
 	dst := foreignWorktree(t, ctx, main, "someones-work", 0)
@@ -407,7 +408,7 @@ func TestRemoveDeletesAMergedBranchWithTheMainCheckoutElsewhere(t *testing.T) {
 // only after wt has compared it against the main branch itself.
 func TestRemoveStillKeepsUnmergedWorkWhenTheMainCheckoutIsElsewhere(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	gitIn(t, main, "branch", "sidetrack")
 	dst := foreignWorktree(t, ctx, main, "someones-work", 2)
 	gitIn(t, main, "switch", "-q", "sidetrack")
@@ -426,7 +427,7 @@ func TestRemoveStillKeepsUnmergedWorkWhenTheMainCheckoutIsElsewhere(t *testing.T
 // right before it goes, and a commit made in that window keeps all of it.
 func TestRemoveDoesNotDeleteABranchThatGainedWorkAfterThePlan(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	dst := foreignWorktree(t, ctx, main, "someones-work", 0)
 
 	plan := planFor(ctx, worktreeRecord(ctx, dst), RemoveOptions{Agents: []wtsync.Agent{}})
@@ -456,7 +457,7 @@ func TestRemoveDoesNotDeleteABranchThatGainedWorkAfterThePlan(t *testing.T) {
 // a run, and a comparison that cannot be made is not a merge.
 func TestRemoveDoesNotDeleteWhenTheMainBranchDisappears(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	dst := foreignWorktree(t, ctx, main, "someones-work", 0)
 	plan := planFor(ctx, worktreeRecord(ctx, dst), RemoveOptions{Agents: []wtsync.Agent{}})
 
@@ -484,7 +485,7 @@ func deadPid(t *testing.T) int {
 	return cmd.Process.Pid
 }
 
-func lockedWorktree(t *testing.T, ctx *Context, main, work, reason string) string {
+func lockedWorktree(t *testing.T, ctx *kit.Context, main, work, reason string) string {
 	t.Helper()
 	var buf bytes.Buffer
 	path, err := New(ctx, work, NewOptions{NoSetup: true}, &buf)
@@ -500,7 +501,7 @@ func lockedWorktree(t *testing.T, ctx *Context, main, work, reason string) strin
 // and nobody should have to learn `git worktree unlock` to get past it.
 func TestRemoveReleasesAStaleLockAndRemoves(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	pid := deadPid(t)
 	reason := fmt.Sprintf("claude session gone (pid %d start Thu Sep 10 04:58:38 2026)", pid)
 	path := lockedWorktree(t, ctx, main, "fix/gone", reason)
@@ -525,7 +526,7 @@ func TestRemoveReleasesAStaleLockAndRemoves(t *testing.T) {
 // no — before any question is asked, because the answer does not depend on it.
 func TestRemoveRefusesALockHeldByARunningProcess(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	reason := fmt.Sprintf("claude session live (pid %d start Thu Sep 10 04:58:38 2026)", os.Getpid())
 	path := lockedWorktree(t, ctx, main, "fix/live", reason)
 
@@ -555,12 +556,12 @@ func TestRemoveRefusesALockHeldByARunningProcess(t *testing.T) {
 
 func TestRemoveForceBreaksALockHeldByARunningProcess(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	reason := fmt.Sprintf("claude session live (pid %d)", os.Getpid())
 	path := lockedWorktree(t, ctx, main, "fix/live", reason)
 
 	var buf bytes.Buffer
-	opts := RemoveOptions{Force: ForceAll, Agents: []wtsync.Agent{}}
+	opts := RemoveOptions{Force: kit.ForceAll, Agents: []wtsync.Agent{}}
 	if err := RemoveAt(ctx, path, opts, &buf); err != nil {
 		t.Fatalf("RemoveAt --force: %v\n%s", err, buf.String())
 	}
@@ -576,7 +577,7 @@ func TestRemoveForceBreaksALockHeldByARunningProcess(t *testing.T) {
 // wt can see are the second opinion.
 func TestRemoveTreatsALockWithAnAgentInTheWorktreeAsHeld(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	path := lockedWorktree(t, ctx, main, "fix/agented", "held by something")
 	resolved, _ := filepath.EvalSymlinks(path)
 
@@ -598,7 +599,7 @@ func TestRemoveTreatsALockWithAnAgentInTheWorktreeAsHeld(t *testing.T) {
 // purpose: assume it is held.
 func TestRemoveRefusesALockNothingExplains(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	path := lockedWorktree(t, ctx, main, "fix/mystery", "reasons")
 
 	var buf bytes.Buffer
@@ -614,7 +615,7 @@ func TestRemoveRefusesALockNothingExplains(t *testing.T) {
 // `remove -f -f`, which is not a wt command and not what they should type.
 func TestRemoveNeverRepeatsGitsAdviceAboutMinusFMinusF(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	reason := fmt.Sprintf("claude session live (pid %d)", os.Getpid())
 	path := lockedWorktree(t, ctx, main, "fix/live", reason)
 
@@ -669,7 +670,7 @@ func TestRemoveKeepsABranchOnlyAnUnreadOriginHas(t *testing.T) {
 			origin := filepath.Join(t.TempDir(), "origin.git")
 			gitIn(t, main, "clone", "-q", "--bare", main, origin)
 			gitIn(t, main, "remote", "add", "origin", origin)
-			ctx, err := Open(main)
+			ctx, err := kit.Open(main)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -700,7 +701,7 @@ func TestRemoveKeepsABranchOnlyAnUnreadOriginHas(t *testing.T) {
 // window is kept even when its new tip is merged too.
 func TestRemoveDoesNotDeleteABranchThatMovedAfterThePlan(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	dst := foreignWorktree(t, ctx, main, "someones-work", 0)
 	plan := planFor(ctx, worktreeRecord(ctx, dst), RemoveOptions{Agents: []wtsync.Agent{}})
 	if plan.Outcome != BranchDeleted {
@@ -729,7 +730,7 @@ func TestRemoveDoesNotDeleteABranchThatMovedAfterThePlan(t *testing.T) {
 // so remove asks the worktrees itself.
 func TestRemoveKeepsAMergedBranchAnotherWorktreeIsUsing(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	dst := foreignWorktree(t, ctx, main, "someones-work", 0)
 	twin := filepath.Join(ctx.Repo.Parent, "twin")
 	gitIn(t, main, "worktree", "add", "-q", "--force", twin, "someones-work")

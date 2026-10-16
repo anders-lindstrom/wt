@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/gittest"
@@ -28,7 +29,7 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	probeSuperset = func() superset.Status { return superset.Status{} }
-	findGitHub = func() (github.CLI, bool) { return github.CLI{}, false }
+	kit.FindGitHub = func() (github.CLI, bool) { return github.CLI{}, false }
 	supersetHostCommand = func(int) (string, error) { return "", errors.New("no ps in tests") }
 	code := m.Run()
 	_ = os.RemoveAll(dir)
@@ -38,7 +39,7 @@ func TestMain(m *testing.M) {
 
 // optIn is `wt config set superset true`. Every test that expects wt to reach
 // Superset needs it: the shipped default is off.
-func optIn(ctx *Context) {
+func optIn(ctx *kit.Context) {
 	ctx.User.Superset = true
 }
 
@@ -84,7 +85,7 @@ func argvOf(t *testing.T, log string) []string {
 // wt has just made. Superset is asked to adopt the branch — never to create a
 // checkout, which it already has.
 func TestNewRegistersTheWorktreeWithSuperset(t *testing.T) {
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(committedRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +148,7 @@ func TestNewSurvivesEverySupersetState(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx, err := Open(committedRepo(t, minimalConf))
+			ctx, err := kit.Open(committedRepo(t, minimalConf))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -198,7 +199,7 @@ func (boom) Error() string { return "boom" }
 // A branch that already has a workspace is Superset's answer, not wt's
 // problem: nothing is duplicated and nothing fails.
 func TestRegisterSupersetIsIdempotent(t *testing.T) {
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(committedRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +234,7 @@ func TestNewSkipsSupersetWhenAsked(t *testing.T) {
 		"--no-setup":    {NoSetup: true},
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx, err := Open(committedRepo(t, minimalConf))
+			ctx, err := kit.Open(committedRepo(t, minimalConf))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -254,7 +255,7 @@ func TestNewSkipsSupersetWhenAsked(t *testing.T) {
 // reaches Superset the same way.
 func TestCheckoutRegistersToo(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, err := Open(main)
+	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -305,7 +306,7 @@ func TestDoctorReportsSupersetState(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx, err := Open(committedRepo(t, minimalConf))
+			ctx, err := kit.Open(committedRepo(t, minimalConf))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -330,7 +331,7 @@ func TestDoctorReportsSupersetState(t *testing.T) {
 
 // The full report, when Superset is running and knows this repository.
 func TestDoctorReportsAUsableSuperset(t *testing.T) {
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(committedRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -412,7 +413,7 @@ func hostCommand(t *testing.T, line string, err error) *[]int {
 // Superset's status calling a serving host stale does not stop a registration:
 // the host is asked, answers, and the worktree is registered with no remark.
 func TestNewRegistersThoughStatusCallsTheHostStale(t *testing.T) {
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(committedRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -443,7 +444,7 @@ func TestNewRegistersThoughStatusCallsTheHostStale(t *testing.T) {
 // own report, in one line, and never tells the person to start an app that is
 // already up. It is no problem even for a repository that asked for Superset.
 func TestDoctorSaysStatusIsWrongAboutARunningHost(t *testing.T) {
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(committedRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -507,7 +508,7 @@ func TestDoctorSaysWhenTheStaleWorkaroundCanGo(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx, err := Open(committedRepo(t, minimalConf))
+			ctx, err := kit.Open(committedRepo(t, minimalConf))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -572,7 +573,7 @@ func TestNewSaysNothingAboutARepositorySupersetDoesNotTrack(t *testing.T) {
 		"on":   {config.SupersetOn, "! Superset has no project for "},
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx, err := Open(committedRepo(t, minimalConf))
+			ctx, err := kit.Open(committedRepo(t, minimalConf))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -608,7 +609,7 @@ func TestDoctorAlwaysNamesAMissingSupersetProject(t *testing.T) {
 		"on":   config.SupersetOn,
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx, err := Open(committedRepo(t, minimalConf))
+			ctx, err := kit.Open(committedRepo(t, minimalConf))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -635,7 +636,7 @@ func TestDoctorAlwaysNamesAMissingSupersetProject(t *testing.T) {
 // checkout git already has for a named branch.
 func TestRegisterSupersetNeedsABranch(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, err := Open(main)
+	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -670,7 +671,7 @@ func TestRegisterSupersetRunsEvenWhenSetupFailed(t *testing.T) {
 	}
 	gitIn(t, main, "add", "-A")
 	gitIn(t, main, "commit", "-qm", "provision")
-	ctx, err := Open(main)
+	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -692,7 +693,7 @@ func TestRegisterSupersetRunsEvenWhenSetupFailed(t *testing.T) {
 // `wt pr checkout` is the third creating command, and goes through the same
 // tail: its worktree is registered too.
 func TestPRCheckoutRegistersWithSuperset(t *testing.T) {
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(committedRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}

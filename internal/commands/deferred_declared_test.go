@@ -3,11 +3,13 @@ package commands
 import (
 	"slices"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 // declareNoPathsStep adds a deferred step with no paths to trunk's
 // declaration, ahead of whatever it declares already.
-func declareNoPathsStep(t *testing.T, ctx *Context) {
+func declareNoPathsStep(t *testing.T, ctx *kit.Context) {
 	t.Helper()
 	main := ctx.Repo.MainRoot
 	writeFile(t, main, ".wt-sync.yaml", "defer:\n  - run: \"true\"\n  - run: cp v.txt gen.txt\n    paths: [v.txt]\n    commit: \"chore: regen\"\n"+

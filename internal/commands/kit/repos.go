@@ -1,4 +1,4 @@
-package commands
+package kit
 
 import (
 	"errors"
@@ -38,7 +38,7 @@ func Repos(u *config.User, sel Selection, opts ReposOptions, w io.Writer) error 
 	home, _ := os.UserHomeDir()
 	if len(sel.Profiles) > 0 {
 		fmt.Fprintf(w, "profile %s\n", strings.Join(sel.Profiles, ", "))
-		_ = printTable(w, repoRows(set.Repos, home))
+		_ = PrintTable(w, repoRows(set.Repos, home))
 		return problemsIn(set.Repos)
 	}
 	roots, origin := RootsFor(u)
@@ -53,12 +53,12 @@ func Repos(u *config.User, sel Selection, opts ReposOptions, w io.Writer) error 
 				in = append(in, t)
 			}
 		}
-		fmt.Fprintf(w, "\n%s  %s  (%s)\n", root.Name, abbreviateHome(root.Path, home), repoCount(len(in)))
+		fmt.Fprintf(w, "\n%s  %s  (%s)\n", root.Name, AbbreviateHome(root.Path, home), RepoCount(len(in)))
 		if _, err := os.Stat(root.Path); err != nil {
 			fmt.Fprintln(w, "  ! the directory is not there")
 			continue
 		}
-		_ = printTable(w, repoRows(in, home))
+		_ = PrintTable(w, repoRows(in, home))
 	}
 	if n := len(set.Unmanaged); n > 0 {
 		fmt.Fprintf(w, "\n%s under these roots %s not managed by wt; wt init in one sets it up.\n",
@@ -71,18 +71,18 @@ func Repos(u *config.User, sel Selection, opts ReposOptions, w io.Writer) error 
 // beside the main checkout, whether wt sync is set up there, and where it is.
 // A repository whose wt configuration does not parse says so instead.
 func repoRows(targets []RepoTarget, home string) [][]string {
-	statuses := eachRepo(targets, repoParallelism, repoStatus)
+	statuses := EachRepo(targets, RepoParallelism, repoStatus)
 	var rows [][]string
 	for i, t := range targets {
 		s := statuses[i]
 		switch {
 		// The problem goes last, where its length widens no column.
 		case t.Problem != "":
-			rows = append(rows, []string{"  ! " + t.Name, "", "", abbreviateHome(t.Path, home) + "  " + t.Problem})
+			rows = append(rows, []string{"  ! " + t.Name, "", "", AbbreviateHome(t.Path, home) + "  " + t.Problem})
 		case s.problem != "":
-			rows = append(rows, []string{"  ! " + t.Name, "", "", abbreviateHome(t.Path, home) + "  " + s.problem})
+			rows = append(rows, []string{"  ! " + t.Name, "", "", AbbreviateHome(t.Path, home) + "  " + s.problem})
 		default:
-			rows = append(rows, []string{"  " + t.Name, s.worktrees, s.sync, abbreviateHome(t.Path, home)})
+			rows = append(rows, []string{"  " + t.Name, s.worktrees, s.sync, AbbreviateHome(t.Path, home)})
 		}
 	}
 	return rows
@@ -105,7 +105,7 @@ func repoStatus(t RepoTarget) status {
 		return status{problem: "not a git repository"}
 	}
 	if ctx.ConfigError != nil {
-		return status{problem: "wt configuration: " + oneLine(ctx.ConfigError.Error()) + "; wt doctor in it"}
+		return status{problem: "wt configuration: " + OneLine(ctx.ConfigError.Error()) + "; wt doctor in it"}
 	}
 	s := status{worktrees: worktreesIn(t.Path), sync: "sync set up"}
 	if _, ok := ctx.Repo.ResolveRef("refs/remotes/origin/" + ctx.Config.MainBranch); !ok {
@@ -117,7 +117,7 @@ func repoStatus(t RepoTarget) status {
 	if _, err := wtsync.LoadFromTrunk(ctx.Repo.MainRoot, ctx.Config.MainBranch); errors.Is(err, wtsync.ErrNoConfig) {
 		s.sync = "no sync"
 	} else if err != nil {
-		s.sync = "sync broken: " + oneLine(err.Error())
+		s.sync = "sync broken: " + OneLine(err.Error())
 	}
 	return s
 }
@@ -157,7 +157,8 @@ func problemsIn(targets []RepoTarget) error {
 	return fmt.Errorf("%d of the profile's repositories cannot be worked on; wt doctor says the same", n)
 }
 
-func repoCount(n int) string {
+// RepoCount is n repositories, in words.
+func RepoCount(n int) string {
 	if n == 1 {
 		return "1 repository"
 	}

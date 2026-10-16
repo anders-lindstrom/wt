@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -25,7 +26,7 @@ type RestoreOptions struct {
 // ctx is the repository wt was run in, nil outside one: it is only where a
 // quarantine with no recovery.json is looked for; one with a record names
 // its own repository.
-func Restore(ctx *Context, dir string, opts RestoreOptions, w io.Writer) error {
+func Restore(ctx *kit.Context, dir string, opts RestoreOptions, w io.Writer) error {
 	dir, err := filepath.Abs(dir)
 	if err != nil {
 		return err
@@ -74,8 +75,8 @@ func Restore(ctx *Context, dir string, opts RestoreOptions, w io.Writer) error {
 // the way wt new registers a new one; its removal deleted the workspace.
 // The repository is the worktree's own, which need not be the one wt ran
 // in; the person's settings are the ones this run read.
-func registerRestored(ctx *Context, path string, w io.Writer) {
-	rctx, err := Open(path)
+func registerRestored(ctx *kit.Context, path string, w io.Writer) {
+	rctx, err := kit.Open(path)
 	if err != nil {
 		return
 	}
@@ -100,7 +101,7 @@ func renderRestorePlan(p quarantine.RestorePlan, w io.Writer) {
 	case p.Orphan != "":
 		rows = append(rows, []string{"  checkout", p.Orphan + " — never moved; its lock comes off"})
 	}
-	_ = printTable(w, rows)
+	_ = kit.PrintTable(w, rows)
 	for _, pr := range p.Problems {
 		fmt.Fprintf(w, "  ! %s\n", pr.Text)
 	}
@@ -217,18 +218,18 @@ func restoreBranchOf(r *quarantine.Record, action, occupiedBy string) *RestoreBr
 		return nil
 	}
 	return &RestoreBranch{Name: r.Branch.Name, Tip: r.Branch.Tip, KeepAs: r.Branch.KeepAs,
-		Removal: r.Branch.Result, Action: strp(action), OccupiedBy: strp(occupiedBy)}
+		Removal: r.Branch.Result, Action: kit.Strp(action), OccupiedBy: kit.Strp(occupiedBy)}
 }
 
 // restorePlanOutput is the plan as --json reports it.
 func restorePlanOutput(p quarantine.RestorePlan) RestorePlanOutput {
 	out := RestorePlanOutput{Schema: 1, SchemaVersion: schema.VersionOf("restore-plan"), Command: "restore",
-		Dir: p.Dir, Locked: p.Locked, Orphan: strp(p.Orphan), Problems: []RestoreProblem{}}
+		Dir: p.Dir, Locked: p.Locked, Orphan: kit.Strp(p.Orphan), Problems: []RestoreProblem{}}
 	for _, pr := range p.Problems {
 		out.Problems = append(out.Problems, RestoreProblem(pr))
 	}
 	if r := p.Record; r != nil {
-		out.Repo, out.Head = strp(r.Repo), r.Head
+		out.Repo, out.Head = kit.Strp(r.Repo), r.Head
 		out.Checkout, out.Admin = restorePlace(r.Checkout, p.Checkout), restorePlace(r.Admin, p.Admin)
 		out.Branch = restoreBranchOf(r, p.Action, p.OccupiedBy)
 	}
@@ -238,7 +239,7 @@ func restorePlanOutput(p quarantine.RestorePlan) RestorePlanOutput {
 // RestoreJSON is wt restore --json: with DryRun the plan, otherwise the
 // restore and its result, as one object on out; the human output goes to
 // progress. An error is in the object and returned too.
-func RestoreJSON(ctx *Context, dir string, opts RestoreOptions, out, progress io.Writer) error {
+func RestoreJSON(ctx *kit.Context, dir string, opts RestoreOptions, out, progress io.Writer) error {
 	abs, err := filepath.Abs(dir)
 	if err == nil {
 		dir = abs
@@ -252,11 +253,11 @@ func RestoreJSON(ctx *Context, dir string, opts RestoreOptions, out, progress io
 		renderRestorePlan(plan, progress)
 		p := restorePlanOutput(plan)
 		if err != nil {
-			p.Error = strp(err.Error())
+			p.Error = kit.Strp(err.Error())
 		} else if why := plan.Refusal(); why != "" {
-			p.Error = strp(why)
+			p.Error = kit.Strp(why)
 		}
-		if werr := writeJSON(out, p); werr != nil {
+		if werr := kit.WriteJSON(out, p); werr != nil {
 			return werr
 		}
 		if p.Error != nil {
@@ -265,8 +266,8 @@ func RestoreJSON(ctx *Context, dir string, opts RestoreOptions, out, progress io
 		return nil
 	}
 	j := &restoreJournal{out: out, dir: dir, rp: rp}
-	defer setInterruptJournal(j)()
-	defer watchSignals(progress, nil)()
+	defer kit.SetInterruptJournal(j)()
+	defer kit.WatchSignals(progress, nil)()
 	var res quarantine.RestoreResult
 	opts.Result = &res
 	if err == nil {
@@ -289,8 +290,8 @@ func (j *restoreJournal) finish(res quarantine.RestoreResult, err error) {
 	j.write(res.Outcome, res, err, "")
 }
 
-func (j *restoreJournal) interrupted(_ string, recovery string) {
-	j.write(OutcomeInterrupted, quarantine.RestoreResult{}, nil, recovery)
+func (j *restoreJournal) Interrupted(_ string, recovery string) {
+	j.write(kit.OutcomeInterrupted, quarantine.RestoreResult{}, nil, recovery)
 }
 
 // write reads the quarantine as it is now, so every location, the branch
@@ -302,12 +303,12 @@ func (j *restoreJournal) write(outcome string, res quarantine.RestoreResult, err
 		}
 		o := RestoreOutput{Schema: 1, SchemaVersion: schema.VersionOf("restore"), Command: "restore",
 			Dir: j.dir, Outcome: outcome, Unlocked: res.Unlocked, Steps: []quarantine.Step{},
-			Recovery: strp(recovery)}
+			Recovery: kit.Strp(recovery)}
 		if err != nil {
-			o.Error = strp(err.Error())
+			o.Error = kit.Strp(err.Error())
 		}
 		if r, lerr := quarantine.Load(j.dir); lerr == nil {
-			o.Repo = strp(r.Repo)
+			o.Repo = kit.Strp(r.Repo)
 			o.Checkout = restorePlace(r.Checkout, quarantine.Locate(r.Checkout))
 			o.Admin = restorePlace(r.Admin, quarantine.Locate(r.Admin))
 			action, occupied := res.Action, res.OccupiedBy
@@ -317,8 +318,8 @@ func (j *restoreJournal) write(outcome string, res quarantine.RestoreResult, err
 			}
 			o.Branch = restoreBranchOf(r, action, occupied)
 		} else if j.rp != nil {
-			o.Repo = strp(j.rp.MainRoot)
+			o.Repo = kit.Strp(j.rp.MainRoot)
 		}
-		_ = writeJSON(j.out, o)
+		_ = kit.WriteJSON(j.out, o)
 	})
 }

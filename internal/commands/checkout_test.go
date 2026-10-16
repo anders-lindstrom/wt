@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"path/filepath"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 func TestWorkNameFromBranch(t *testing.T) {
@@ -21,7 +23,7 @@ func TestWorkNameFromBranch(t *testing.T) {
 }
 
 func TestCheckoutPutsAWorktreeOnAnExistingBranch(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	gitIn(t, ctx.Repo.MainRoot, "branch", "feature/pr-123")
 
 	var buf bytes.Buffer
@@ -39,7 +41,7 @@ func TestCheckoutPutsAWorktreeOnAnExistingBranch(t *testing.T) {
 }
 
 func TestCheckoutHonoursAnExplicitWorkName(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	gitIn(t, ctx.Repo.MainRoot, "branch", "feature/pr-123")
 
 	var buf bytes.Buffer
@@ -54,7 +56,7 @@ func TestCheckoutHonoursAnExplicitWorkName(t *testing.T) {
 
 // Checkout must never create a branch: it exists to work on one that is there.
 func TestCheckoutRefusesAMissingBranch(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	var buf bytes.Buffer
 	if _, err := Checkout(ctx, "no-such-branch", "", NewOptions{NoSetup: true}, &buf); err == nil {
 		t.Fatal("want a refusal for a branch that does not exist")
@@ -65,7 +67,7 @@ func TestCheckoutRefusesAMissingBranch(t *testing.T) {
 }
 
 func TestCheckoutRefusesAnOccupiedPath(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	gitIn(t, ctx.Repo.MainRoot, "branch", "dup")
 	var buf bytes.Buffer
 	if _, err := Checkout(ctx, "dup", "", NewOptions{NoSetup: true}, &buf); err != nil {

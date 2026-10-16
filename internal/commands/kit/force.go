@@ -1,4 +1,4 @@
-package commands
+package kit
 
 import (
 	"fmt"
@@ -47,13 +47,13 @@ func ParseForce(values []string) (ForceSet, error) {
 			f |= g
 		}
 	}
-	return f.implied(), nil
+	return f.Implied(), nil
 }
 
-// implied is f with what its categories imply: going past a busy session
+// Implied is f with what its categories imply: going past a busy session
 // goes past an idle one, so a session that stops working between the plan
 // and the delete does not turn a forced removal into a refusal.
-func (f ForceSet) implied() ForceSet {
+func (f ForceSet) Implied() ForceSet {
 	if f&ForceBusySessions != 0 {
 		f |= ForceIdleSessions
 	}

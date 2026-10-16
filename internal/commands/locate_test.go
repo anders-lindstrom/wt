@@ -6,12 +6,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 // locatable builds a repo with one worktree per spec and returns the context.
-func locatable(t *testing.T, specs ...string) *Context {
+func locatable(t *testing.T, specs ...string) *kit.Context {
 	t.Helper()
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(committedRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +31,7 @@ func locatable(t *testing.T, specs ...string) *Context {
 func TestLocateAcceptsWorkNameOfAnyType(t *testing.T) {
 	ctx := locatable(t, "chore/wt-migration")
 
-	got, err := Locate(ctx, "wt-migration")
+	got, err := kit.Locate(ctx, "wt-migration")
 	if err != nil {
 		t.Fatalf("Locate: %v", err)
 	}
@@ -42,7 +44,7 @@ func TestLocateAcceptsWorkNameOfAnyType(t *testing.T) {
 func TestLocateAcceptsFullBranchName(t *testing.T) {
 	ctx := locatable(t, "chore/wt-migration")
 
-	got, err := Locate(ctx, "chore_wt/wt-migration")
+	got, err := kit.Locate(ctx, "chore_wt/wt-migration")
 	if err != nil {
 		t.Fatalf("Locate: %v", err)
 	}
@@ -55,7 +57,7 @@ func TestLocateAcceptsFullBranchName(t *testing.T) {
 func TestLocateAcceptsTypeSlashWork(t *testing.T) {
 	ctx := locatable(t, "chore/wt-migration")
 
-	got, err := Locate(ctx, "chore/wt-migration")
+	got, err := kit.Locate(ctx, "chore/wt-migration")
 	if err != nil {
 		t.Fatalf("Locate: %v", err)
 	}
@@ -67,12 +69,12 @@ func TestLocateAcceptsTypeSlashWork(t *testing.T) {
 // The PATH column is a valid argument.
 func TestLocateAcceptsWorktreePath(t *testing.T) {
 	ctx := locatable(t, "chore/wt-migration")
-	want, err := Locate(ctx, "wt-migration")
+	want, err := kit.Locate(ctx, "wt-migration")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	got, err := Locate(ctx, want.Path)
+	got, err := kit.Locate(ctx, want.Path)
 	if err != nil {
 		t.Fatalf("Locate by path: %v", err)
 	}
@@ -84,7 +86,7 @@ func TestLocateAcceptsWorktreePath(t *testing.T) {
 // A relative path is what tab completion and shell globbing hand over.
 func TestLocateAcceptsRelativeWorktreePath(t *testing.T) {
 	ctx := locatable(t, "chore/wt-migration")
-	abs, err := Locate(ctx, "wt-migration")
+	abs, err := kit.Locate(ctx, "wt-migration")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +96,7 @@ func TestLocateAcceptsRelativeWorktreePath(t *testing.T) {
 	}
 	t.Chdir(ctx.Repo.MainRoot)
 
-	got, err := Locate(ctx, rel)
+	got, err := kit.Locate(ctx, rel)
 	if err != nil {
 		t.Fatalf("Locate by relative path: %v", err)
 	}
@@ -107,14 +109,14 @@ func TestLocateAcceptsRelativeWorktreePath(t *testing.T) {
 // path, or by "/" from anywhere.
 func TestLocateRefusesMainCheckout(t *testing.T) {
 	ctx := locatable(t, "fix/login-crash")
-	wt, err := Locate(ctx, "login-crash")
+	wt, err := kit.Locate(ctx, "login-crash")
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx.Cwd = wt.Path
 
 	for _, arg := range []string{ctx.Repo.MainRoot, "/"} {
-		if _, err := Locate(ctx, arg); err == nil {
+		if _, err := kit.Locate(ctx, arg); err == nil {
 			t.Fatalf("Locate(%q): want an error locating the main checkout", arg)
 		} else if !strings.Contains(err.Error(), "main checkout") {
 			t.Errorf("Locate(%q): error should name the main checkout, got: %v", arg, err)
@@ -127,7 +129,7 @@ func TestLocateRefusesMainCheckout(t *testing.T) {
 func TestLocateTreatsOtherAbsolutePathsAsPaths(t *testing.T) {
 	ctx := locatable(t, "fix/login-crash")
 
-	_, err := Locate(ctx, "/nowhere/at/all")
+	_, err := kit.Locate(ctx, "/nowhere/at/all")
 	if err == nil || strings.Contains(err.Error(), "main checkout") {
 		t.Errorf("want the no-such-worktree error, got %v", err)
 	}
@@ -138,7 +140,7 @@ func TestLocateTreatsOtherAbsolutePathsAsPaths(t *testing.T) {
 func TestLocateReportsAmbiguousWorkName(t *testing.T) {
 	ctx := locatable(t, "feat/arch", "fix/arch")
 
-	_, err := Locate(ctx, "arch")
+	_, err := kit.Locate(ctx, "arch")
 	if err == nil {
 		t.Fatal("want an error for a work name under two types")
 	}
@@ -153,7 +155,7 @@ func TestLocateReportsAmbiguousWorkName(t *testing.T) {
 func TestLocateResolvesAmbiguousNameByType(t *testing.T) {
 	ctx := locatable(t, "feat/arch", "fix/arch")
 
-	got, err := Locate(ctx, "fix/arch")
+	got, err := kit.Locate(ctx, "fix/arch")
 	if err != nil {
 		t.Fatalf("Locate: %v", err)
 	}
@@ -166,7 +168,7 @@ func TestLocateResolvesAmbiguousNameByType(t *testing.T) {
 func TestLocateDoesNotMatchPartialNames(t *testing.T) {
 	ctx := locatable(t, "chore/wt-migration")
 
-	if _, err := Locate(ctx, "wt-mig"); err == nil {
+	if _, err := kit.Locate(ctx, "wt-mig"); err == nil {
 		t.Error("want an error for a partial name; remove must not guess")
 	}
 }
@@ -174,7 +176,7 @@ func TestLocateDoesNotMatchPartialNames(t *testing.T) {
 func TestLocateUnknownNameIsAnError(t *testing.T) {
 	ctx := locatable(t, "chore/wt-migration")
 
-	_, err := Locate(ctx, "nope")
+	_, err := kit.Locate(ctx, "nope")
 	if err == nil {
 		t.Fatal("want an error for a name that matches nothing")
 	}
@@ -189,7 +191,7 @@ func TestWorkNamesReadsEachBranchAgainstTheConvention(t *testing.T) {
 	ctx := locatable(t, "fix/login-crash")
 	worktreeAt(t, ctx.Repo.MainRoot, "spare", filepath.Join(ctx.Repo.Parent, "demo-spare"))
 
-	names, err := WorkNames(ctx)
+	names, err := kit.WorkNames(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +214,7 @@ func TestWorkNamesReadsEachBranchAgainstTheConvention(t *testing.T) {
 // spelled with or without the separator completion adds.
 func TestLocateDotIsTheWorktreeYouStandIn(t *testing.T) {
 	ctx := locatable(t, "fix/login-crash")
-	wt, err := Locate(ctx, "login-crash")
+	wt, err := kit.Locate(ctx, "login-crash")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +225,7 @@ func TestLocateDotIsTheWorktreeYouStandIn(t *testing.T) {
 	for _, cwd := range []string{wt.Path, sub} {
 		ctx.Cwd = cwd
 		for _, arg := range []string{".", "./"} {
-			got, err := Locate(ctx, arg)
+			got, err := kit.Locate(ctx, arg)
 			if err != nil {
 				t.Fatalf("Locate(%q) from %s: %v", arg, cwd, err)
 			}
@@ -232,10 +234,10 @@ func TestLocateDotIsTheWorktreeYouStandIn(t *testing.T) {
 			}
 		}
 	}
-	if got, err := Path(ctx, "."); err != nil || got != wt.Path {
+	if got, err := kit.Path(ctx, "."); err != nil || got != wt.Path {
 		t.Errorf("Path(.) = %q, %v; want %q", got, err, wt.Path)
 	}
-	if got, err := Branch(ctx, "."); err != nil || got != "fix_wt/login-crash" {
+	if got, err := kit.Branch(ctx, "."); err != nil || got != "fix_wt/login-crash" {
 		t.Errorf("Branch(.) = %q, %v; want fix_wt/login-crash", got, err)
 	}
 }
@@ -247,13 +249,13 @@ func TestLocateDotFromTheMainCheckoutIsRefusedAsTheMainCheckout(t *testing.T) {
 	ctx := locatable(t, "fix/login-crash")
 	ctx.Cwd = filepath.Join(ctx.Repo.MainRoot, "bin")
 
-	if _, err := Locate(ctx, "."); err == nil || !strings.Contains(err.Error(), "main checkout") {
+	if _, err := kit.Locate(ctx, "."); err == nil || !strings.Contains(err.Error(), "main checkout") {
 		t.Errorf("want the main-checkout error, got %v", err)
 	}
-	if got, err := Path(ctx, "."); err != nil || got != ctx.Repo.MainRoot {
+	if got, err := kit.Path(ctx, "."); err != nil || got != ctx.Repo.MainRoot {
 		t.Errorf("Path(.) = %q, %v; want the main root %q", got, err, ctx.Repo.MainRoot)
 	}
-	if got, err := Branch(ctx, "."); err != nil || got != "main" {
+	if got, err := kit.Branch(ctx, "."); err != nil || got != "main" {
 		t.Errorf("Branch(.) = %q, %v; want trunk", got, err)
 	}
 }
@@ -264,7 +266,7 @@ func TestLocateDotFromOutsideEveryWorktreeSaysSo(t *testing.T) {
 	ctx := locatable(t, "fix/login-crash")
 	ctx.Cwd = t.TempDir()
 
-	_, err := Locate(ctx, ".")
+	_, err := kit.Locate(ctx, ".")
 	if err == nil {
 		t.Fatal("want an error from outside every worktree")
 	}
@@ -279,7 +281,7 @@ func TestLocateDotFromOutsideEveryWorktreeSaysSo(t *testing.T) {
 // one is the inner one, and from elsewhere in the outer one the outer.
 func TestLocateDotPicksTheDeepestWorktreeContainingTheDirectory(t *testing.T) {
 	ctx := locatable(t, "fix/outer")
-	outer, err := Locate(ctx, "outer")
+	outer, err := kit.Locate(ctx, "outer")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +300,7 @@ func TestLocateDotPicksTheDeepestWorktreeContainingTheDirectory(t *testing.T) {
 			t.Fatal(err)
 		}
 		ctx.Cwd = cwd
-		got, err := Locate(ctx, ".")
+		got, err := kit.Locate(ctx, ".")
 		if err != nil {
 			t.Fatalf("Locate(.) from %s: %v", cwd, err)
 		}
@@ -315,7 +317,7 @@ func TestLocateDotInsideAWorktreeUnderTheMainCheckoutIsThatWorktree(t *testing.T
 	nested := worktreeAt(t, ctx.Repo.MainRoot, "fix_wt/nested", filepath.Join(ctx.Repo.MainRoot, "wts", "nested"))
 	ctx.Cwd = nested
 
-	got, err := Locate(ctx, ".")
+	got, err := kit.Locate(ctx, ".")
 	if err != nil {
 		t.Fatalf("Locate(.): %v", err)
 	}

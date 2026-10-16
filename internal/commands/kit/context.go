@@ -1,5 +1,8 @@
-// Package commands implements the wt subcommands.
-package commands
+// Package kit is what every wt subcommand shares: the Context a command
+// runs in, how it finds repositories and worktrees, GitHub and its cache,
+// the tables it prints, and the --json vocabulary and signal handling its
+// journals share.
+package kit
 
 import (
 	"errors"
@@ -29,12 +32,12 @@ type Context struct {
 	// Cwd is the directory the context was opened from: where the caller is
 	// standing.
 	Cwd string
-	// warn is where an integration that was supposed to work says it did
+	// Warn is where an integration that was supposed to work says it did
 	// not: stderr, never the command's own output and never its exit code.
 	// Nil discards.
-	warn io.Writer
-	// warned is the topics already spoken about.
-	warned map[string]bool
+	Warn io.Writer
+	// Warned is the topics already spoken about.
+	Warned map[string]bool
 }
 
 // The warning topics. One line per topic per invocation, so a command that
@@ -50,7 +53,7 @@ const (
 // it at all, and every integration is off for this run, or which part of it
 // wt is ignoring.
 func (c *Context) WarnTo(w io.Writer) {
-	c.warn = w
+	c.Warn = w
 	switch {
 	case c.UserError == nil:
 	case c.UserConfig().Unusable:
@@ -63,14 +66,14 @@ func (c *Context) WarnTo(w io.Writer) {
 // Warnf writes one warning line about topic, the first time that topic comes
 // up. A context nobody gave a writer to says nothing.
 func (c *Context) Warnf(topic, format string, args ...any) {
-	if c.warn == nil || c.warned[topic] {
+	if c.Warn == nil || c.Warned[topic] {
 		return
 	}
-	if c.warned == nil {
-		c.warned = map[string]bool{}
+	if c.Warned == nil {
+		c.Warned = map[string]bool{}
 	}
-	c.warned[topic] = true
-	fmt.Fprintf(c.warn, "wt: "+format+"\n", args...)
+	c.Warned[topic] = true
+	fmt.Fprintf(c.Warn, "wt: "+format+"\n", args...)
 }
 
 // Open discovers the repository containing cwd and loads its configuration.
@@ -175,21 +178,21 @@ func (c *Context) UserConfig() *config.User {
 	return c.User
 }
 
-// configured is what --json calls configured: a configuration file that
+// Configured is what --json calls configured: a configuration file that
 // parses. A repository on detected defaults, or on the values that did parse,
 // is not.
-func (c *Context) configured() bool {
+func (c *Context) Configured() bool {
 	return c.ConfigError == nil && !c.Config.Detected
 }
 
-// trunkSource is how the configured trunk was found, as --json prints it.
-func (c *Context) trunkSource() *string {
-	return strp(string(c.Config.TrunkSource))
+// TrunkSource is how the configured trunk was found, as --json prints it.
+func (c *Context) TrunkSource() *string {
+	return Strp(string(c.Config.TrunkSource))
 }
 
-// noTrunk is why c has no trunk to work against — no MAIN_BRANCH, and none
+// NoTrunk is why c has no trunk to work against — no MAIN_BRANCH, and none
 // detected — or nil when it has one. A lenient Context gets this far.
-func (c *Context) noTrunk() error {
+func (c *Context) NoTrunk() error {
 	switch {
 	case c.Config.MainBranch != "":
 		return nil

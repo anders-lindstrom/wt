@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
@@ -13,16 +14,16 @@ import (
 // says what would stop it. Unlike wt sync rebase it also works where trunk
 // declares no .wt-sync.yaml: there nothing is declared, so only a
 // conflict-free rebase goes.
-func Up(ctx *Context, arg string, opts RunOptions, w io.Writer) error {
+func Up(ctx *kit.Context, arg string, opts RunOptions, w io.Writer) error {
 	return journaled(opts.Journal, func() error { return up(ctx, arg, opts, w) })
 }
 
-func up(ctx *Context, arg string, opts RunOptions, w io.Writer) error {
+func up(ctx *kit.Context, arg string, opts RunOptions, w io.Writer) error {
 	if arg == "/" || (arg == "." && repo.SamePath(ctx.Repo.Root, ctx.Repo.MainRoot)) {
 		return fmt.Errorf("wt up brings a worktree onto trunk, and %s is the main checkout: "+
 			"git pull there, or wt sync --rebase for every worktree", ctx.Repo.MainRoot)
 	}
-	wt, err := Locate(ctx, arg)
+	wt, err := kit.Locate(ctx, arg)
 	if err != nil {
 		return err
 	}

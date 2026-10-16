@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 // pushOrigin gives a fixture somewhere to push: a bare repository as
@@ -14,7 +16,7 @@ import (
 // not update while its branches are checked out in worktrees. The bare
 // repository starts out holding what the remote-tracking refs say origin
 // has, so the lease sees an origin that matches the last fetch.
-func pushOrigin(t *testing.T, ctx *Context) string {
+func pushOrigin(t *testing.T, ctx *kit.Context) string {
 	t.Helper()
 	bare := filepath.Join(t.TempDir(), "origin.git")
 	gitOut(t, ctx.Repo.MainRoot, "init", "-q", "--bare", bare)

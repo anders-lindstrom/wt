@@ -7,11 +7,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 func TestAdoptProvisionsAnExternallyCreatedWorktree(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	// A worktree made the way Superset makes them: outside the canonical path.
 	external := filepath.Join(ctx.Repo.Parent, "demo_wt", "demo", "feat_wt", "outside")
 	gitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/outside", external)
@@ -28,7 +30,7 @@ func TestAdoptProvisionsAnExternallyCreatedWorktree(t *testing.T) {
 
 func TestAdoptRelocates(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	external := filepath.Join(ctx.Repo.Parent, "elsewhere")
 	gitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/moved", external)
 
@@ -44,7 +46,7 @@ func TestAdoptRelocates(t *testing.T) {
 }
 
 func TestAdoptRefusesAPathThatIsNotAWorktree(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	var buf bytes.Buffer
 	if _, err := Adopt(ctx, t.TempDir(), false, SetupOptions{}, &buf); err == nil {
 		t.Error("want an error adopting a directory that is not a worktree of this repo")
@@ -53,7 +55,7 @@ func TestAdoptRefusesAPathThatIsNotAWorktree(t *testing.T) {
 
 func TestDoctorReportsNestedWorktree(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	nested := filepath.Join(main, "inside_wt", "feat_wt", "oops")
 	gitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/oops", nested)
 
@@ -71,7 +73,7 @@ func TestDoctorReportsNestedWorktree(t *testing.T) {
 }
 
 func TestDoctorIsQuietOnAHealthyRepo(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	var buf bytes.Buffer
 	problems, err := Doctor(ctx, &buf)
 	if err != nil {
@@ -83,7 +85,7 @@ func TestDoctorIsQuietOnAHealthyRepo(t *testing.T) {
 }
 
 func TestDoctorReportsMissingRequiredBin(t *testing.T) {
-	ctx, _ := Open(committedRepo(t,
+	ctx, _ := kit.Open(committedRepo(t,
 		"MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\nREQUIRED_BINS=\"definitely-not-a-real-binary-xyz\"\n"))
 	var buf bytes.Buffer
 	problems, err := Doctor(ctx, &buf)
@@ -100,12 +102,12 @@ func TestDoctorReportsMissingRequiredBin(t *testing.T) {
 // exactly when it is needed.
 func TestDoctorReportsConfigProblemsInsteadOfRefusing(t *testing.T) {
 	main := committedRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\nAWS_SETUP_ENABLED=true\n")
-	if _, err := Open(main); err == nil {
+	if _, err := kit.Open(main); err == nil {
 		t.Fatal("fixture is supposed to have an invalid config")
 	}
 
 	var warn strings.Builder
-	ctx := OpenLenient(main, &warn)
+	ctx := kit.OpenLenient(main, &warn)
 	var buf bytes.Buffer
 	problems, err := Doctor(ctx, &buf)
 	if err != nil {
@@ -133,7 +135,7 @@ func TestDoctorReportsConfigProblemsInsteadOfRefusing(t *testing.T) {
 func TestDoctorKeepsValidKeysWhenConfigIsInvalid(t *testing.T) {
 	main := committedRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\n"+
 		"REQUIRED_BINS=\"definitely-not-a-real-binary-xyz\"\nAWS_SETUP_ENABLED=true\n")
-	ctx := OpenLenient(main, io.Discard)
+	ctx := kit.OpenLenient(main, io.Discard)
 	var buf bytes.Buffer
 	if _, err := Doctor(ctx, &buf); err != nil {
 		t.Fatal(err)
@@ -148,7 +150,7 @@ func TestDoctorKeepsValidKeysWhenConfigIsInvalid(t *testing.T) {
 // say which order to do the work in.
 func TestDoctorOrdersTheWorkWhenConfigIsBroken(t *testing.T) {
 	main := committedRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\nAWS_SETUP_ENABLED=true\n")
-	ctx := OpenLenient(main, io.Discard)
+	ctx := kit.OpenLenient(main, io.Discard)
 	legacy := filepath.Join(ctx.Repo.Parent, "demo-legacy")
 	gitIn(t, main, "worktree", "add", "-q", "-b", "fix_wt/legacy", legacy)
 
@@ -167,7 +169,7 @@ func TestDoctorOrdersTheWorkWhenConfigIsBroken(t *testing.T) {
 // literally makes adopt refuse a worktree it is standing next to.
 func TestAdoptAcceptsAPathThroughASymlink(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	external := filepath.Join(ctx.Repo.Parent, "demo-spare")
 	gitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/spare", external)
 	link := filepath.Join(t.TempDir(), "link")

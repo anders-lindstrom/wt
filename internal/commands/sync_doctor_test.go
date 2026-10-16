@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -17,7 +18,7 @@ import (
 // rerere.enabled explicitly set, local, to rerereOn: rerereCheck reads the
 // effective config value, so an ambient global rerere.enabled=true must not
 // be able to leak into a fixture that means to be testing "off".
-func doctorFixture(t *testing.T, rerereOn bool) *Context {
+func doctorFixture(t *testing.T, rerereOn bool) *kit.Context {
 	t.Helper()
 	main := committedRepo(t, minimalConf)
 	yaml := "conflicts:\n  - paths: [v.txt]\n    strategy: owned-line\n    line: '^\\d'\n    rule: max-plus-patch\n"
@@ -33,7 +34,7 @@ func doctorFixture(t *testing.T, rerereOn bool) *Context {
 	gitIn(t, main, "config", "rerere.enabled", strconv.FormatBool(rerereOn))
 	gitIn(t, main, "remote", "add", "origin", main)
 	gitIn(t, main, "fetch", "-q", "origin")
-	ctx, err := Open(main)
+	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
 	}

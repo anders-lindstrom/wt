@@ -1,4 +1,4 @@
-package commands
+package kit
 
 import (
 	"bytes"
@@ -135,7 +135,7 @@ func SelectRepos(u *config.User, sel Selection) (RepoSet, error) {
 		}
 		var set RepoSet
 		for _, path := range paths {
-			t := profileTarget(path, roots)
+			t := ProfileTarget(path, roots)
 			// The same repository twice, by two spellings, would be fetched
 			// and swept twice at once.
 			if slices.ContainsFunc(set.Repos, func(o RepoTarget) bool { return repo.SamePath(o.Path, t.Path) }) {
@@ -145,15 +145,15 @@ func SelectRepos(u *config.User, sel Selection) (RepoSet, error) {
 		}
 		return set, nil
 	}
-	chosen, err := chosenRoots(u, sel)
+	chosen, err := ChosenRoots(u, sel)
 	if err != nil {
 		return RepoSet{}, err
 	}
-	return discoverRepos(chosen), nil
+	return DiscoverRepos(chosen), nil
 }
 
-// chosenRoots is the roots a selection by roots, or by All, covers.
-func chosenRoots(u *config.User, sel Selection) ([]Root, error) {
+// ChosenRoots is the roots a selection by roots, or by All, covers.
+func ChosenRoots(u *config.User, sel Selection) ([]Root, error) {
 	if u != nil && (u.Unusable || u.TablesUnreadable) && os.Getenv("WT_ROOTS") == "" {
 		return nil, fmt.Errorf("%s cannot be read, so wt does not know your roots; wt doctor says why", u.Path)
 	}
@@ -172,11 +172,11 @@ func chosenRoots(u *config.User, sel Selection) ([]Root, error) {
 	return chosen, nil
 }
 
-// discoverRepos is every main checkout one level under each root, once, and
+// DiscoverRepos is every main checkout one level under each root, once, and
 // the root itself where it is one. A linked worktree at that depth is its
 // repository's, which is listed where its own main checkout is; a <repo>_wt
 // folder is not a checkout at all.
-func discoverRepos(roots []Root) RepoSet {
+func DiscoverRepos(roots []Root) RepoSet {
 	var set RepoSet
 	seen := map[string]bool{}
 	add := func(dir, root string) {
@@ -185,14 +185,14 @@ func discoverRepos(roots []Root) RepoSet {
 			return
 		}
 		seen[r.MainRoot] = true
-		if !managed(r.MainRoot) {
+		if !Managed(r.MainRoot) {
 			set.Unmanaged = append(set.Unmanaged, r.MainRoot)
 			return
 		}
 		set.Repos = append(set.Repos, RepoTarget{Name: filepath.Base(r.MainRoot), Path: r.MainRoot, Root: root})
 	}
 	for _, root := range roots {
-		if isCheckout(root.Path) {
+		if IsCheckout(root.Path) {
 			add(root.Path, root.Name)
 			continue
 		}
@@ -201,7 +201,7 @@ func discoverRepos(roots []Root) RepoSet {
 			continue
 		}
 		for _, e := range entries {
-			if dir := filepath.Join(root.Path, e.Name()); isCheckout(dir) {
+			if dir := filepath.Join(root.Path, e.Name()); IsCheckout(dir) {
 				add(dir, root.Name)
 			}
 		}
@@ -209,16 +209,16 @@ func discoverRepos(roots []Root) RepoSet {
 	return set
 }
 
-// isCheckout reports that dir is the top of a checkout: it has a .git, a
+// IsCheckout reports that dir is the top of a checkout: it has a .git, a
 // directory in a main checkout and a file in a linked worktree.
-func isCheckout(dir string) bool {
+func IsCheckout(dir string) bool {
 	_, err := os.Stat(filepath.Join(dir, ".git"))
 	return err == nil
 }
 
-// managed reports that wt manages the repository whose main checkout is at
+// Managed reports that wt manages the repository whose main checkout is at
 // path: it has a configuration wt reads, in either format.
-func managed(path string) bool {
+func Managed(path string) bool {
 	for _, name := range []string{"worktree.toml", "worktree.conf"} {
 		if _, err := os.Stat(filepath.Join(path, "bin", "worktree", name)); err == nil {
 			return true
@@ -227,10 +227,10 @@ func managed(path string) bool {
 	return false
 }
 
-// profileTarget checks one profile entry and says what is wrong with it, if
+// ProfileTarget checks one profile entry and says what is wrong with it, if
 // anything: gone, not a repository, a linked worktree rather than the main
 // checkout, or not managed by wt.
-func profileTarget(path string, roots []Root) RepoTarget {
+func ProfileTarget(path string, roots []Root) RepoTarget {
 	abs, err := filepath.Abs(expandHome(path))
 	if err != nil {
 		abs = expandHome(path)
@@ -246,7 +246,7 @@ func profileTarget(path string, roots []Root) RepoTarget {
 		t.Problem = "not a git repository"
 	case !repo.SamePath(r.MainRoot, abs):
 		t.Problem = "a worktree of " + r.MainRoot + ", not its main checkout; name that instead"
-	case !managed(abs):
+	case !Managed(abs):
 		t.Problem = "not managed by wt (no bin/worktree/worktree.conf or worktree.toml)"
 	}
 	return t
@@ -286,10 +286,10 @@ func known(what string, names []string) string {
 	return "; the " + what + " are: " + strings.Join(names, " ")
 }
 
-// eachRepo runs fn for every target, at most limit at a time, and returns the
+// EachRepo runs fn for every target, at most limit at a time, and returns the
 // results in the targets' order, so output printed from them afterwards reads
 // the same however the work interleaved.
-func eachRepo[T any](targets []RepoTarget, limit int, fn func(RepoTarget) T) []T {
+func EachRepo[T any](targets []RepoTarget, limit int, fn func(RepoTarget) T) []T {
 	out := make([]T, len(targets))
 	sem := make(chan struct{}, max(limit, 1))
 	var wg sync.WaitGroup
@@ -306,10 +306,10 @@ func eachRepo[T any](targets []RepoTarget, limit int, fn func(RepoTarget) T) []T
 	return out
 }
 
-// repoParallelism is how many repositories a multi-repo command works on at
+// RepoParallelism is how many repositories a multi-repo command works on at
 // once: enough that twenty fetches do not run end to end, few enough that
 // GitHub and the disk are not hammered.
-const repoParallelism = 4
+const RepoParallelism = 4
 
 // AcrossRepos runs fn in every repository a selection names, a few at a time,
 // and prints what each printed under its name, in the selection's order. A
@@ -324,7 +324,7 @@ func AcrossRepos(u *config.User, sel Selection, w io.Writer, fn func(*Context, i
 		out bytes.Buffer
 		err error
 	}
-	results := eachRepo(set.Repos, repoParallelism, func(t RepoTarget) *result {
+	results := EachRepo(set.Repos, RepoParallelism, func(t RepoTarget) *result {
 		r := &result{}
 		if t.Problem != "" {
 			r.err = fmt.Errorf("%s: %s", t.Path, t.Problem)
@@ -345,7 +345,7 @@ func AcrossRepos(u *config.User, sel Selection, w io.Writer, fn func(*Context, i
 		if i > 0 {
 			fmt.Fprintln(w)
 		}
-		fmt.Fprintf(w, "== %s  %s\n", t.Name, abbreviateHome(t.Path, home))
+		fmt.Fprintf(w, "== %s  %s\n", t.Name, AbbreviateHome(t.Path, home))
 		_, _ = w.Write(r.out.Bytes())
 		if r.err != nil {
 			fmt.Fprintf(w, "! %v\n", r.err)
@@ -353,7 +353,7 @@ func AcrossRepos(u *config.User, sel Selection, w io.Writer, fn func(*Context, i
 		}
 	}
 	if len(failed) > 0 {
-		return fmt.Errorf("%d of %s failed: %s", len(failed), repoCount(len(results)), strings.Join(failed, ", "))
+		return fmt.Errorf("%d of %s failed: %s", len(failed), RepoCount(len(results)), strings.Join(failed, ", "))
 	}
 	return nil
 }

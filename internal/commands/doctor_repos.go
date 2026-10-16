@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -18,7 +19,7 @@ import (
 // one of the roots.
 func doctorRepos(u *config.User, w io.Writer, report func(string, ...any)) {
 	home, _ := os.UserHomeDir()
-	roots, origin := RootsFor(u)
+	roots, origin := kit.RootsFor(u)
 	fmt.Fprintf(w, "Repositories (roots from %s):\n", origin)
 	for i, r := range roots {
 		info, err := os.Stat(r.Path)
@@ -26,13 +27,13 @@ func doctorRepos(u *config.User, w io.Writer, report func(string, ...any)) {
 		case err != nil && origin == "default":
 			// Nobody chose a default: a machine without that folder is an
 			// ordinary machine, not a mistake to fix.
-			fmt.Fprintf(w, "  - root %s: %s is not there (a default)\n", r.Name, abbreviateHome(r.Path, home))
+			fmt.Fprintf(w, "  - root %s: %s is not there (a default)\n", r.Name, kit.AbbreviateHome(r.Path, home))
 			continue
 		case err != nil:
-			report("root %s: %s is not there", r.Name, abbreviateHome(r.Path, home))
+			report("root %s: %s is not there", r.Name, kit.AbbreviateHome(r.Path, home))
 			continue
 		case !info.IsDir():
-			report("root %s: %s is not a directory", r.Name, abbreviateHome(r.Path, home))
+			report("root %s: %s is not a directory", r.Name, kit.AbbreviateHome(r.Path, home))
 			continue
 		}
 		// One root inside another lists its repositories twice over, and a
@@ -40,19 +41,19 @@ func doctorRepos(u *config.User, w io.Writer, report func(string, ...any)) {
 		nested := false
 		for j, other := range roots {
 			if i != j && repo.Inside(other.Path, r.Path, true) && !repo.SamePath(other.Path, r.Path) {
-				report("root %s: %s is inside root %s", r.Name, abbreviateHome(r.Path, home), other.Name)
+				report("root %s: %s is inside root %s", r.Name, kit.AbbreviateHome(r.Path, home), other.Name)
 				nested = true
 			}
 		}
 		switch {
 		case nested:
-		case isCheckout(r.Path) && !managed(r.Path):
-			report("root %s: %s is one repository, and wt does not manage it (wt init there)", r.Name, abbreviateHome(r.Path, home))
-		case isCheckout(r.Path):
-			fmt.Fprintf(w, "  ✓ root %s: %s (one repository)\n", r.Name, abbreviateHome(r.Path, home))
+		case kit.IsCheckout(r.Path) && !kit.Managed(r.Path):
+			report("root %s: %s is one repository, and wt does not manage it (wt init there)", r.Name, kit.AbbreviateHome(r.Path, home))
+		case kit.IsCheckout(r.Path):
+			fmt.Fprintf(w, "  ✓ root %s: %s (one repository)\n", r.Name, kit.AbbreviateHome(r.Path, home))
 		default:
-			n := len(discoverRepos([]Root{r}).Repos)
-			fmt.Fprintf(w, "  ✓ root %s: %s (%s)\n", r.Name, abbreviateHome(r.Path, home), repoCount(n))
+			n := len(kit.DiscoverRepos([]kit.Root{r}).Repos)
+			fmt.Fprintf(w, "  ✓ root %s: %s (%s)\n", r.Name, kit.AbbreviateHome(r.Path, home), kit.RepoCount(n))
 		}
 	}
 	for _, p := range u.Profiles {
@@ -61,14 +62,14 @@ func doctorRepos(u *config.User, w io.Writer, report func(string, ...any)) {
 			continue
 		}
 		for _, path := range p.Repos {
-			t := profileTarget(path, roots)
+			t := kit.ProfileTarget(path, roots)
 			switch {
 			case t.Problem != "":
 				report("profile %s: %s is %s", p.Name, path, t.Problem)
 			case t.Root == "":
 				report("profile %s: %s is outside every root", p.Name, path)
 			default:
-				fmt.Fprintf(w, "  ✓ profile %s: %s (in %s)\n", p.Name, abbreviateHome(t.Path, home), t.Root)
+				fmt.Fprintf(w, "  ✓ profile %s: %s (in %s)\n", p.Name, kit.AbbreviateHome(t.Path, home), t.Root)
 			}
 		}
 	}
@@ -99,8 +100,8 @@ func DoctorRepositories(u *config.User, userErr error, w io.Writer) int {
 // doctor, each repository a line with what they found under it; then the
 // roots and profiles, once. It fails when either found a problem; a sync
 // warning is advice, as it is in wt sync doctor.
-func DoctorAll(u *config.User, sel Selection, w io.Writer) error {
-	set, err := SelectRepos(u, sel)
+func DoctorAll(u *config.User, sel kit.Selection, w io.Writer) error {
+	set, err := kit.SelectRepos(u, sel)
 	if err != nil {
 		return err
 	}
@@ -108,11 +109,11 @@ func DoctorAll(u *config.User, sel Selection, w io.Writer) error {
 		problems, warnings int
 		lines              []string
 	}
-	results := eachRepo(set.Repos, repoParallelism, func(t RepoTarget) checked {
+	results := kit.EachRepo(set.Repos, kit.RepoParallelism, func(t kit.RepoTarget) checked {
 		if t.Problem != "" {
 			return checked{problems: 1, lines: []string{"  ! " + t.Problem}}
 		}
-		ctx := OpenLenient(t.Path, io.Discard)
+		ctx := kit.OpenLenient(t.Path, io.Discard)
 		if ctx == nil {
 			return checked{problems: 1, lines: []string{"  ! not a git repository"}}
 		}
@@ -138,7 +139,7 @@ func DoctorAll(u *config.User, sel Selection, w io.Writer) error {
 		buf.Reset()
 		if err := SyncDoctor(ctx, DoctorOptions{}, &buf); err != nil {
 			c.problems++
-			c.lines = append(c.lines, "  ! sync: "+oneLine(err.Error()))
+			c.lines = append(c.lines, "  ! sync: "+kit.OneLine(err.Error()))
 		}
 		for _, l := range strings.Split(buf.String(), "\n") {
 			if f := strings.Fields(l); len(f) >= 2 && f[1] == "warn" {
@@ -166,7 +167,7 @@ func DoctorAll(u *config.User, sel Selection, w io.Writer) error {
 		if len(verdict) == 0 {
 			verdict = []string{"✓"}
 		}
-		fmt.Fprintf(w, "%-*s  %-26s  %s\n", width, t.Name, strings.Join(verdict, ", "), abbreviateHome(t.Path, home))
+		fmt.Fprintf(w, "%-*s  %-26s  %s\n", width, t.Name, strings.Join(verdict, ", "), kit.AbbreviateHome(t.Path, home))
 		for _, l := range c.lines {
 			fmt.Fprintln(w, l)
 		}

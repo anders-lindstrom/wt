@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 // hookInput is the JSON Claude Code sends on stdin. Unknown fields are ignored
@@ -18,7 +20,7 @@ type hookInput struct {
 // HookCreate handles Claude Code's WorktreeCreate event. The contract is that
 // the absolute worktree path is the only thing on stdout; everything else goes
 // to stderr, or the harness cannot read the result.
-func HookCreate(ctx *Context, in io.Reader, out, logw io.Writer) error {
+func HookCreate(ctx *kit.Context, in io.Reader, out, logw io.Writer) error {
 	var input hookInput
 	if err := json.NewDecoder(in).Decode(&input); err != nil {
 		return fmt.Errorf("reading hook input: %w", err)
@@ -39,7 +41,7 @@ func HookCreate(ctx *Context, in io.Reader, out, logw io.Writer) error {
 //
 // Unlike HookCreate there is no result for the harness to read, so this writes
 // nothing to stdout and takes no writer for it.
-func HookRemove(ctx *Context, in io.Reader, logw io.Writer) error {
+func HookRemove(ctx *kit.Context, in io.Reader, logw io.Writer) error {
 	var input hookInput
 	if err := json.NewDecoder(in).Decode(&input); err != nil {
 		return fmt.Errorf("reading hook input: %w", err)
@@ -49,7 +51,7 @@ func HookRemove(ctx *Context, in io.Reader, logw io.Writer) error {
 		if input.Name == "" {
 			return errors.New("'path' or 'name' is required in the hook input")
 		}
-		wt, err := Locate(ctx, input.Name)
+		wt, err := kit.Locate(ctx, input.Name)
 		if err != nil {
 			return err
 		}

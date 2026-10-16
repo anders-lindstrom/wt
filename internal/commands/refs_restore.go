@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/schema"
 )
@@ -74,7 +75,7 @@ func errNoRun(runID string) error {
 
 // planRefsRestore reads the run's pins and, for each, what is at its name
 // now: here, and on origin for the remote ones, asked once.
-func planRefsRestore(ctx *Context, runID string) (RefsRestorePlan, error) {
+func planRefsRestore(ctx *kit.Context, runID string) (RefsRestorePlan, error) {
 	p := RefsRestorePlan{Repo: ctx.Repo.MainRoot, RunID: runID}
 	if !runIDPattern.MatchString(runID) {
 		return p, fmt.Errorf("%q is not a run id; they look like 20260930T091500Z-3f2a", runID)
@@ -204,11 +205,11 @@ var errRestorePlanChanged = errors.New("the restore plan changed since it was re
 
 // RefsRestore puts back what a ref sweep moved: each ref is made again at
 // its pinned object, only where its name is free, and the pin goes with it.
-func RefsRestore(ctx *Context, runID string, opts RefsRestoreOptions, w io.Writer) (err error) {
+func RefsRestore(ctx *kit.Context, runID string, opts RefsRestoreOptions, w io.Writer) (err error) {
 	j := opts.Journal
 	if j != nil {
-		defer setInterruptJournal(j)()
-		defer watchSignals(w, nil)()
+		defer kit.SetInterruptJournal(j)()
+		defer kit.WatchSignals(w, nil)()
 		defer func() {
 			j.fail(err)
 			j.Finish()
@@ -283,7 +284,7 @@ func RefsRestore(ctx *Context, runID string, opts RefsRestoreOptions, w io.Write
 		case st.err != nil || !st.restored || !st.pinDeleted:
 			why := "not finished"
 			if st.err != nil {
-				why = oneLine(st.err.Error())
+				why = kit.OneLine(st.err.Error())
 			}
 			fmt.Fprintf(w, "! %s: %s\n", r.ID(), why)
 			failed++
@@ -336,7 +337,7 @@ func restoreRef(root, url string, r restoreRow) restoreState {
 	switch {
 	case r.Action == RestoreNone && remoteKind(r.Kind):
 		// Only while origin is read back holding it does the pin go.
-		switch v, there, verr := remoteValue(root, url, r.Ref(), networkTimeout); {
+		switch v, there, verr := remoteValue(root, url, r.Ref(), kit.NetworkTimeout); {
 		case verr != nil:
 			return restoreState{err: fmt.Errorf("origin could not be read, so the pin stays: %w", verr)}
 		case !there || v != r.Object:
@@ -355,9 +356,9 @@ func restoreRef(root, url string, r restoreRow) restoreState {
 		// The pin goes only once origin is read back holding the object: a
 		// push that was rejected, timed out or cannot be confirmed keeps it,
 		// and a later restore finds the ref there and only drops the pin.
-		_, pushErr := git.RunTimeout(root, networkTimeout, "push", "--quiet", "--no-verify",
+		_, pushErr := git.RunTimeout(root, kit.NetworkTimeout, "push", "--quiet", "--no-verify",
 			"--force-with-lease="+r.Ref()+":", url, r.Pin+":"+r.Ref())
-		v, there, verr := remoteValue(root, url, r.Ref(), networkTimeout)
+		v, there, verr := remoteValue(root, url, r.Ref(), kit.NetworkTimeout)
 		switch {
 		case pushErr != nil:
 			return restoreState{restored: verr == nil && there && v == r.Object,
@@ -376,7 +377,7 @@ func restoreRef(root, url string, r restoreRow) restoreState {
 			}
 		}
 	}
-	st := readRestoreState(root, url, r, networkTimeout)
+	st := readRestoreState(root, url, r, kit.NetworkTimeout)
 	st.err = opErr
 	return st
 }
@@ -420,7 +421,7 @@ func (p RefsRestorePlan) Render(w io.Writer) {
 		rows = append(rows, []string{"  " + r.ID(), git.ShortID(r.Object, 12), what})
 	}
 	fmt.Fprintf(w, "Run %s:\n", p.RunID)
-	_ = printTable(w, rows)
+	_ = kit.PrintTable(w, rows)
 	fmt.Fprintln(w)
 }
 
@@ -480,16 +481,16 @@ func restorePlanItem(r restoreRow) RefRestorePlanItem {
 
 // RefsRestorePlanJSON writes wt refs restore <runId> --dry-run --json. It
 // changes nothing; a plan that cannot be made is one object too.
-func RefsRestorePlanJSON(ctx *Context, runID string, only []string, out, progress io.Writer) error {
+func RefsRestorePlanJSON(ctx *kit.Context, runID string, only []string, out, progress io.Writer) error {
 	o := RefsRestorePlanOutput{Schema: 1, SchemaVersion: schema.VersionOf("refs-restore-plan"),
 		Command: refsRestoreCommand, RunID: runID, Items: []RefRestorePlanItem{}}
 	var err error
 	if ctx == nil {
-		err = ErrNotInRepo
+		err = kit.ErrNotInRepo
 	} else {
 		var plan RefsRestorePlan
 		plan, err = planRefsRestore(ctx, runID)
-		o.Repo = strp(plan.Repo)
+		o.Repo = kit.Strp(plan.Repo)
 		if err == nil {
 			o.Token = restoreToken(plan)
 			if err = plan.applyOnly(only); err != nil {
@@ -502,9 +503,9 @@ func RefsRestorePlanJSON(ctx *Context, runID string, only []string, out, progres
 		}
 	}
 	if err != nil {
-		o.Error = strp(err.Error())
+		o.Error = kit.Strp(err.Error())
 	}
-	if werr := writeJSON(out, o); werr != nil && err == nil {
+	if werr := kit.WriteJSON(out, o); werr != nil && err == nil {
 		return werr
 	}
 	return err
@@ -538,13 +539,13 @@ func (j *RefsRestoreJournal) planned(p RefsRestorePlan, token *string) {
 	}
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	j.root, j.res.Repo, j.res.Token = p.Repo, strp(p.Repo), token
+	j.root, j.res.Repo, j.res.Token = p.Repo, kit.Strp(p.Repo), token
 	j.res.Items = []*RefRestoreItem{}
 	for _, r := range p.Rows {
 		it := &RefRestoreItem{RefRestorePlanItem: restorePlanItem(r), Result: RefNotRun}
 		switch {
 		case !r.restorable():
-			it.Result, it.Reason = RefResultKept, strp(r.Action)
+			it.Result, it.Reason = RefResultKept, kit.Strp(r.Action)
 		case !r.Selected:
 			it.Result = RefNotSelected
 		}
@@ -587,16 +588,16 @@ func settleRestoreItem(it *RefRestoreItem, st restoreState) {
 	it.Restored, it.PinDeleted = st.restored, st.pinDeleted
 	switch {
 	case st.kept != "":
-		it.Result, it.Reason = RefResultKept, strp(st.kept)
+		it.Result, it.Reason = RefResultKept, kit.Strp(st.kept)
 	case st.err == nil && st.restored && st.pinDeleted:
 		it.Result, it.Reason = RefRestored, nil
 	default:
 		it.Result = RefFailed
 		why := "not finished"
 		if st.err != nil {
-			why = oneLine(st.err.Error())
+			why = kit.OneLine(st.err.Error())
 		}
-		it.Reason = strp(why)
+		it.Reason = kit.Strp(why)
 	}
 }
 
@@ -607,7 +608,7 @@ func (j *RefsRestoreJournal) fail(err error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	if !j.applying {
-		j.res.Error = strp(err.Error())
+		j.res.Error = kit.Strp(err.Error())
 	}
 }
 
@@ -621,7 +622,8 @@ func (j *RefsRestoreJournal) Fail(err error) {
 // Finish writes the object for a run that returned.
 func (j *RefsRestoreJournal) Finish() { j.write(false, "") }
 
-func (j *RefsRestoreJournal) interrupted(_ string, recovery string) { j.write(true, recovery) }
+// Interrupted writes the object for a run a signal ended.
+func (j *RefsRestoreJournal) Interrupted(_ string, recovery string) { j.write(true, recovery) }
 
 func (j *RefsRestoreJournal) write(signalled bool, recovery string) {
 	if j == nil {
@@ -635,7 +637,7 @@ func (j *RefsRestoreJournal) write(signalled bool, recovery string) {
 				settleRestoreItem(it, readRestoreState(j.root, j.url, j.rows[j.inFlight], 10*time.Second))
 				it.Result, it.Reason = RefInterrupted, nil
 			}
-			j.res.Outcome, j.res.Recovery = OutcomeInterrupted, strp(recovery)
+			j.res.Outcome, j.res.Recovery = kit.OutcomeInterrupted, kit.Strp(recovery)
 		} else {
 			finished, changed := true, false
 			for _, it := range j.res.Items {
@@ -648,13 +650,13 @@ func (j *RefsRestoreJournal) write(signalled bool, recovery string) {
 			}
 			switch {
 			case finished && j.res.Error == nil:
-				j.res.Outcome = OutcomeDone
+				j.res.Outcome = kit.OutcomeDone
 			case !changed:
-				j.res.Outcome = OutcomeRefused
+				j.res.Outcome = kit.OutcomeRefused
 			default:
-				j.res.Outcome = OutcomePartial
+				j.res.Outcome = kit.OutcomePartial
 			}
 		}
-		_ = writeJSON(j.out, j.res)
+		_ = kit.WriteJSON(j.out, j.res)
 	})
 }

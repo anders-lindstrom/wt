@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -68,7 +69,7 @@ func TestSyncRunFastForwardsABranchWithNothingToRebase(t *testing.T) {
 
 	opts.IfReady = true
 	r, err := syncRunJSON(t, f.ctx, []string{"x"}, opts)
-	if err != nil || r.Outcome != OutcomeDone || len(r.Worktrees) != 1 {
+	if err != nil || r.Outcome != kit.OutcomeDone || len(r.Worktrees) != 1 {
 		t.Fatalf("%v %+v", err, r)
 	}
 	w := r.Worktrees[0]
@@ -140,7 +141,7 @@ func TestUpFastForwardsABranchWithNothingToRebase(t *testing.T) {
 	f, x, opts, local, remote := nothingToRebase(t)
 	opts.NoFetch = true
 	r, human, err := upOut(t, f.ctx, "x", opts)
-	if err != nil || r.Outcome != OutcomeDone {
+	if err != nil || r.Outcome != kit.OutcomeDone {
 		t.Fatalf("%v %+v\n%s", err, r, human)
 	}
 	w := r.Worktrees[0]
@@ -175,7 +176,7 @@ func TestUpFastForwardsAStackParentWithNothingToRebaseAndRebasesItsChild(t *test
 	remote := f.onTrunkElsewhere(t, "feat_wt/x")
 
 	r, human, err := upOut(t, f.ctx, "y", opts)
-	if err != nil || len(r.Worktrees) != 2 || r.Outcome != OutcomeDone {
+	if err != nil || len(r.Worktrees) != 2 || r.Outcome != kit.OutcomeDone {
 		t.Fatalf("%v %+v\n%s", err, r.Worktrees, human)
 	}
 	if px := r.Worktrees[0]; px.Branch != "feat_wt/x" || px.Result != ResultFastForwarded || str(px.Before) != local || str(px.After) != remote {

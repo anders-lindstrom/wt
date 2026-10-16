@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
@@ -34,7 +35,7 @@ type RemoveOptions struct {
 	// lock whose holder is still running. Nothing forces past uncommitted
 	// work, an operation in progress, or commits only the checkout's HEAD
 	// holds.
-	Force ForceSet
+	Force kit.ForceSet
 	// Agents are the agent sessions to check the worktree against. Nil
 	// lists them; an empty slice means there are none. AgentsErr
 	// is a listing the caller could not get, which refuses the way a
@@ -105,7 +106,7 @@ type RemoveResult struct {
 	Superset       string
 	SupersetReason string
 	// Forced is the --force categories the removal went past.
-	Forced ForceSet
+	Forced kit.ForceSet
 	// Reaped is the processes --reap ended, or tried to, and what each took.
 	Reaped []wtsync.Reaped
 	// Error is why the run refused or stopped, "" when it did neither.
@@ -141,11 +142,11 @@ const (
 
 // landed asks the question RemoveOptions.Landed answers, falling back to the
 // cache: a file read, no process and no network, so this runs from a git hook.
-func (o RemoveOptions) landed(ctx *Context, branch, tip string) int {
+func (o RemoveOptions) landed(ctx *kit.Context, branch, tip string) int {
 	if o.Landed != nil {
 		return o.Landed(branch, tip)
 	}
-	return landedPR(ctx, branch, tip)
+	return kit.LandedPR(ctx, branch, tip)
 }
 
 // BranchOutcome is what removal will do to the branch checked out in a
@@ -252,7 +253,7 @@ type Plan struct {
 	// LockPid is the process the reason named, 0 when it named none.
 	LockPid int
 	// Force is what the caller lets the removal go past.
-	Force ForceSet
+	Force kit.ForceSet
 	// MainBranch is carried on the plan so rendering needs nothing but the
 	// plan itself.
 	MainBranch string
@@ -302,8 +303,8 @@ const (
 
 // Remove deletes the worktree named by arg, then decides what happens to its
 // branch.
-func Remove(ctx *Context, arg string, opts RemoveOptions, w io.Writer) error {
-	wt, err := Locate(ctx, arg)
+func Remove(ctx *kit.Context, arg string, opts RemoveOptions, w io.Writer) error {
+	wt, err := kit.Locate(ctx, arg)
 	if err != nil {
 		return err
 	}
@@ -319,7 +320,7 @@ func Remove(ctx *Context, arg string, opts RemoveOptions, w io.Writer) error {
 // delete. A detached HEAD and a branch outside the worktree convention both
 // lose only the checkout; the branch, if any, is named in the plan and left
 // alone.
-func RemoveAt(ctx *Context, path string, opts RemoveOptions, w io.Writer) error {
+func RemoveAt(ctx *kit.Context, path string, opts RemoveOptions, w io.Writer) error {
 	return removeWorktree(ctx, worktreeRecord(ctx, path), opts, w)
 }
 
@@ -328,7 +329,7 @@ func RemoveAt(ctx *Context, path string, opts RemoveOptions, w io.Writer) error 
 // message about this removal names. A path git knows nothing about, or a list
 // that cannot be read, leaves a record holding only the path: no lock, which
 // is what the removal would have concluded anyway.
-func worktreeRecord(ctx *Context, path string) repo.Worktree {
+func worktreeRecord(ctx *kit.Context, path string) repo.Worktree {
 	worktrees, err := ctx.Repo.Worktrees()
 	if err != nil {
 		return repo.Worktree{Path: path}
@@ -341,7 +342,7 @@ func worktreeRecord(ctx *Context, path string) repo.Worktree {
 	return wt
 }
 
-func removeWorktree(ctx *Context, wt repo.Worktree, opts RemoveOptions, w io.Writer) error {
+func removeWorktree(ctx *kit.Context, wt repo.Worktree, opts RemoveOptions, w io.Writer) error {
 	res, err := removeWorktreeResult(ctx, wt, opts, w)
 	if err != nil && res.Error == "" {
 		res.Error = err.Error()
@@ -352,7 +353,7 @@ func removeWorktree(ctx *Context, wt repo.Worktree, opts RemoveOptions, w io.Wri
 	return err
 }
 
-func removeWorktreeResult(ctx *Context, wt repo.Worktree, opts RemoveOptions, w io.Writer) (RemoveResult, error) {
+func removeWorktreeResult(ctx *kit.Context, wt repo.Worktree, opts RemoveOptions, w io.Writer) (RemoveResult, error) {
 	res := RemoveResult{Outcome: RemoveRefused, Worktree: WorktreeKept, Quarantine: opts.Quarantine}
 	if _, err := os.Stat(wt.Path); err != nil {
 		return res, fmt.Errorf("no worktree at %s", wt.Path)
@@ -435,9 +436,9 @@ func removeWorktreeResult(ctx *Context, wt repo.Worktree, opts RemoveOptions, w 
 // The branch still comes from BranchAt rather than from wt.Branch: mid-rebase
 // those two differ, and the branch the sequencer will return HEAD to is not
 // the branch this checkout has.
-func planFor(ctx *Context, wt repo.Worktree, opts RemoveOptions) Plan {
+func planFor(ctx *kit.Context, wt repo.Worktree, opts RemoveOptions) Plan {
 	p := Plan{Path: wt.Path, Branch: ctx.Repo.BranchAt(wt.Path),
-		MainBranch: ctx.Config.MainBranch, Force: opts.Force.implied(), KeepSuperset: opts.KeepSuperset,
+		MainBranch: ctx.Config.MainBranch, Force: opts.Force.Implied(), KeepSuperset: opts.KeepSuperset,
 		Reap: opts.Reap, keepBusy: opts.keepBusy, relist: opts.relistAgents}
 	agents, agentsErr := opts.Agents, opts.AgentsErr
 	if agents == nil && agentsErr == nil {
@@ -492,7 +493,7 @@ func planFor(ctx *Context, wt repo.Worktree, opts RemoveOptions) Plan {
 func (p *Plan) readProcesses(scan func() (*wtsync.ProcessScan, error), agents []wtsync.Agent, agentsErr error) {
 	procs, err := processesIn(p.Path, scan, agents, agentsErr)
 	if err != nil {
-		p.ProcessesError = oneLine(err.Error())
+		p.ProcessesError = kit.OneLine(err.Error())
 		return
 	}
 	p.Processes = procs
@@ -553,7 +554,7 @@ func (o RemoveOptions) relistAgents() ([]wtsync.Agent, error) {
 func (p *Plan) readCheckout() {
 	st, err := repo.DirtyStrict(p.Path)
 	if err != nil {
-		p.StatusError = oneLine(gitSaid(err))
+		p.StatusError = kit.OneLine(gitSaid(err))
 	} else {
 		p.Dirty, p.Hidden, p.Moved = st.Dirty, st.Hidden, st.Moved
 	}
@@ -564,7 +565,7 @@ func (p *Plan) readCheckout() {
 	p.Operation = op
 	head, err := repo.HeadOf(p.Path)
 	if err != nil && p.StatusError == "" {
-		p.StatusError = oneLine(err.Error())
+		p.StatusError = kit.OneLine(err.Error())
 	}
 	p.Head = head
 }
@@ -575,10 +576,10 @@ func (p *Plan) readCheckout() {
 // whose repositories go with the checkout. A branch kept or renamed
 // survives, so a HEAD on it loses nothing. It also finds the worktrees
 // nested inside this one, which would go with it.
-func (p *Plan) readReach(ctx *Context) {
+func (p *Plan) readReach(ctx *kit.Context) {
 	worktrees, err := ctx.Repo.Worktrees()
 	if err != nil {
-		p.ReachError = oneLine(gitSaid(err))
+		p.ReachError = kit.OneLine(gitSaid(err))
 		return
 	}
 	for _, wt := range worktrees {
@@ -588,7 +589,7 @@ func (p *Plan) readReach(ctx *Context) {
 	}
 	subs, err := repo.SubmoduleLosses(p.Path)
 	if err != nil {
-		p.ReachError = oneLine(gitSaid(err))
+		p.ReachError = kit.OneLine(gitSaid(err))
 		return
 	}
 	for _, l := range subs {
@@ -600,14 +601,14 @@ func (p *Plan) readReach(ctx *Context) {
 	}
 	keep, err := ctx.Repo.Survivors(drop, p.Path)
 	if err != nil {
-		p.ReachError = oneLine(gitSaid(err))
+		p.ReachError = kit.OneLine(gitSaid(err))
 		return
 	}
 	count := func(kind, tip string) {
 		n, err := ctx.Repo.CountLost(tip, keep)
 		switch {
 		case err != nil:
-			p.ReachError = oneLine(gitSaid(err))
+			p.ReachError = kit.OneLine(gitSaid(err))
 		case n > 0:
 			p.Unreachable = append(p.Unreachable, Lost{Kind: kind, OID: tip, Count: n})
 		}
@@ -626,18 +627,18 @@ type problem struct {
 	text string
 	// force is the --force category that goes past it, 0 for none: only
 	// somebody's claim on the directory, never work lost with it.
-	force ForceSet
+	force kit.ForceSet
 }
 
 // problems is every reason this removal would not go ahead, --force or not,
 // in the order they are named.
 func (p Plan) problems() []problem {
 	var out []problem
-	add := func(code, text string, force ForceSet) {
+	add := func(code, text string, force kit.ForceSet) {
 		out = append(out, problem{code: code, text: text, force: force})
 	}
 	if p.SessionsError != "" {
-		add(KeptSessionsUnknown, "cannot list agent sessions ("+p.SessionsError+")", ForceSessionsUnknown)
+		add(KeptSessionsUnknown, "cannot list agent sessions ("+p.SessionsError+")", kit.ForceSessionsUnknown)
 	}
 	// Idle and busy sessions are forced apart, so each is a problem of
 	// its own.
@@ -650,13 +651,13 @@ func (p Plan) problems() []problem {
 		}
 	}
 	if len(idle) > 0 {
-		add(KeptSession, whoLabel(idle)+" in it", ForceIdleSessions)
+		add(KeptSession, kit.WhoLabel(idle)+" in it", kit.ForceIdleSessions)
 	}
 	if len(busy) > 0 {
-		add(KeptSession, whoLabel(busy)+" in it", ForceBusySessions)
+		add(KeptSession, kit.WhoLabel(busy)+" in it", kit.ForceBusySessions)
 	}
 	if p.Locked && p.LockHeld {
-		add(KeptLockHeld, heldLock(p), ForceLock)
+		add(KeptLockHeld, heldLock(p), kit.ForceLock)
 	}
 	if p.StatusError != "" {
 		add(KeptStatusUnknown, "cannot read its status ("+p.StatusError+")", 0)
@@ -672,7 +673,7 @@ func (p Plan) problems() []problem {
 		add(KeptNestedWorktree, "the worktree "+someOf(p.Nested, 3)+" is inside it", 0)
 	}
 	if len(p.Hidden) > 0 {
-		add(KeptHiddenChanges, "git status is told not to look at "+someOf(p.Hidden, 3), ForceHiddenFiles)
+		add(KeptHiddenChanges, "git status is told not to look at "+someOf(p.Hidden, 3), kit.ForceHiddenFiles)
 	}
 	if p.Operation != "" {
 		add(KeptOperation, "a "+p.Operation+" is in progress", 0)
@@ -727,7 +728,7 @@ const ProblemQuarantineUnusable = "quarantineUnusable"
 
 // quarantineProblem is why the checkout at path and its admin dir cannot be
 // moved into dir, "" when they can.
-func quarantineProblem(ctx *Context, dir, path, admin string) string {
+func quarantineProblem(ctx *kit.Context, dir, path, admin string) string {
 	if admin == "" {
 		return "its git dir under .git/worktrees cannot be read"
 	}
@@ -743,7 +744,7 @@ func quarantineProblem(ctx *Context, dir, path, admin string) string {
 // quarantineOutside refuses a quarantine folder inside any checkout of the
 // repository or inside its git dir: another removal would take it with a
 // checkout, and git's own files are git's.
-func quarantineOutside(ctx *Context, dir string) error {
+func quarantineOutside(ctx *kit.Context, dir string) error {
 	worktrees, err := ctx.Repo.Worktrees()
 	if err != nil {
 		return fmt.Errorf("cannot list the worktrees to check where %s is: %w", dir, err)
@@ -786,8 +787,8 @@ func (p Plan) blocking() []problem {
 }
 
 // forced is the --force categories this removal goes past.
-func (p Plan) forced() ForceSet {
-	var f ForceSet
+func (p Plan) forced() kit.ForceSet {
+	var f kit.ForceSet
 	for _, pr := range p.problems() {
 		if p.Force.Has(pr.force) {
 			f |= pr.force
@@ -808,8 +809,8 @@ func (p Plan) refusal() string {
 // forceWould is the --force categories that are all that stands between
 // this plan and the removal, 0 when a problem no force goes past is there
 // too, or none is.
-func (p Plan) forceWould() ForceSet {
-	var f ForceSet
+func (p Plan) forceWould() kit.ForceSet {
+	var f kit.ForceSet
 	for _, pr := range p.blocking() {
 		if pr.force == 0 {
 			return 0
@@ -895,7 +896,7 @@ func (p *Plan) readLock(wt repo.Worktree) {
 	// No pid to ask about: the sessions wt can see are the second opinion, and
 	// finding one names the holder properly.
 	if a := p.Sessions.Lead(); a != nil {
-		p.LockHolder = sessionLabel(a)
+		p.LockHolder = kit.SessionLabel(a)
 	}
 }
 
@@ -916,7 +917,7 @@ func pidAlive(pid int) bool {
 
 // blockedByLock reports the one state a removal will not talk itself out of.
 func (p Plan) blockedByLock() bool {
-	return p.Locked && p.LockHeld && !p.Force.Has(ForceLock)
+	return p.Locked && p.LockHeld && !p.Force.Has(kit.ForceLock)
 }
 
 // standing is where a branch stands against trunk, as mergeStanding read it.
@@ -936,7 +937,7 @@ type standing struct {
 // than from "is it merged", because "not merged" on its own does not say
 // whether one commit or thirty are at stake; it is taken against the first
 // base, origin/<trunk> when there is one.
-func mergeStanding(ctx *Context, branch string) standing {
+func mergeStanding(ctx *kit.Context, branch string) standing {
 	s := standing{Base: ctx.Config.MainBranch}
 	if branch == "" {
 		return s
@@ -974,7 +975,7 @@ func mergeStanding(ctx *Context, branch string) standing {
 
 // appliedTo is the first base holding every commit of tip under another id,
 // "" when none does.
-func appliedTo(ctx *Context, tip string, bases []TrunkBase) string {
+func appliedTo(ctx *kit.Context, tip string, bases []TrunkBase) string {
 	for _, b := range bases {
 		if ctx.Repo.Applied(tip, b.Tip) {
 			return b.Name
@@ -989,7 +990,7 @@ func appliedTo(ctx *Context, tip string, bases []TrunkBase) string {
 // would send them after a checkout that is no longer there, so this waits
 // briefly for the deletion to finish and then says what is left. vanished is
 // false when the worktree is still there to be removed.
-func removedMeanwhile(ctx *Context, plan Plan, w io.Writer) (vanished bool, err error) {
+func removedMeanwhile(ctx *kit.Context, plan Plan, w io.Writer) (vanished bool, err error) {
 	if !worktreeGone(ctx, plan.Path) {
 		if plan.Dirty || !repo.Vanishing(plan.Path) {
 			return false, nil
@@ -1025,7 +1026,7 @@ var vanishWait = 3 * time.Second
 
 // worktreeGone is a checkout with no directory left, or one git no longer
 // lists.
-func worktreeGone(ctx *Context, path string) bool {
+func worktreeGone(ctx *kit.Context, path string) bool {
 	if _, err := os.Stat(path); err != nil {
 		return true
 	}
@@ -1067,7 +1068,7 @@ func gitSaid(err error) string {
 // --yes, a script and a hook go straight from the plan to the delete, and the
 // delete does not ask whether the branch is merged: it only refuses a branch
 // that moved.
-func stillMerged(ctx *Context, p Plan) error {
+func stillMerged(ctx *kit.Context, p Plan) error {
 	// git cannot answer this for a squash- or rebase-merged branch, which
 	// looks unmerged for ever. In its place: MergedPR is only set for a pull
 	// request merged into trunk whose head commit is this tip, DeleteBranchAt
@@ -1088,7 +1089,7 @@ func stillMerged(ctx *Context, p Plan) error {
 		"nothing was deleted", p.Branch, p.Base, found)
 }
 
-func branchIsOurs(ctx *Context, branch string) bool {
+func branchIsOurs(ctx *kit.Context, branch string) bool {
 	_, _, ok := ctx.Scheme().Parse(branch)
 	return ok
 }
@@ -1121,12 +1122,12 @@ func (p Plan) Render(w io.Writer) {
 	case p.SessionsError != "":
 		rows = append(rows, []string{"  sessions", "cannot list agent sessions (" + p.SessionsError + ")"})
 	case len(p.Sessions) > 0:
-		rows = append(rows, []string{"  sessions", whoLabel(p.Sessions) + " working in it"})
+		rows = append(rows, []string{"  sessions", kit.WhoLabel(p.Sessions) + " working in it"})
 	}
 	if p.Locked {
 		rows = append(rows, []string{"  lock", p.lockLine()})
 	}
-	_ = printTable(w, rows)
+	_ = kit.PrintTable(w, rows)
 	fmt.Fprintln(w)
 
 	// A held lock ends the plan: what would happen to the branch is beside
@@ -1264,7 +1265,7 @@ func aheadOf(n int, base string) string {
 // apply carries out the plan. Every decision was already made in planFor, so
 // nothing here re-reads state that the removal itself has changed — except
 // the checkout, read once more right before it goes.
-func (p Plan) apply(ctx *Context, w io.Writer) error {
+func (p Plan) apply(ctx *kit.Context, w io.Writer) error {
 	_, err := p.run(ctx, w)
 	return err
 }
@@ -1278,7 +1279,7 @@ var afterFinalCheck func()
 // that fails leaves its branch where it was. Once the checkout is gone from
 // its path, its Superset workspace goes too; it is looked up before, while
 // the path still resolves. KeepSuperset asks Superset nothing.
-func (p Plan) run(ctx *Context, w io.Writer) (RemoveResult, error) {
+func (p Plan) run(ctx *kit.Context, w io.Writer) (RemoveResult, error) {
 	workspaces := keptSupersetWorkspaces(ctx)
 	if !p.KeepSuperset {
 		workspaces = findSupersetWorkspaces(ctx, p.Path)
@@ -1291,7 +1292,7 @@ func (p Plan) run(ctx *Context, w io.Writer) (RemoveResult, error) {
 }
 
 // remove is run without Superset.
-func (p Plan) remove(ctx *Context, w io.Writer) (RemoveResult, error) {
+func (p Plan) remove(ctx *kit.Context, w io.Writer) (RemoveResult, error) {
 	res := RemoveResult{Outcome: RemoveRefused, Worktree: WorktreeKept, Quarantine: p.Quarantine,
 		BranchName: p.Branch, BranchTip: p.Tip, KeepAs: p.KeepAs}
 	// Before the last look at the checkout: a process may write a file as
@@ -1381,7 +1382,7 @@ func (p Plan) remove(ctx *Context, w io.Writer) (RemoveResult, error) {
 
 // releaseLock takes git's lock off the checkout, a stale one or one --force
 // breaks, and says so.
-func (p Plan) releaseLock(ctx *Context, w io.Writer) error {
+func (p Plan) releaseLock(ctx *kit.Context, w io.Writer) error {
 	if !p.Locked {
 		return nil
 	}
@@ -1400,7 +1401,7 @@ func (p Plan) releaseLock(ctx *Context, w io.Writer) error {
 // gone. result is one of quarantine's Branch* values: BranchKept is a step
 // turned down on purpose, BranchFailed one git failed; err says why for
 // both. msg is the clause the success line ends with.
-func (p Plan) branchStep(ctx *Context) (result, msg string, err error) {
+func (p Plan) branchStep(ctx *kit.Context) (result, msg string, err error) {
 	switch p.Outcome {
 	case BranchDeleted:
 		if err := stillMerged(ctx, p); err != nil {
@@ -1460,7 +1461,7 @@ func (p Plan) branchStep(ctx *Context) (result, msg string, err error) {
 // prune takes the registration while the checkout is away, then the
 // checkout, then the admin dir, whose move is the unregistration. Nothing is
 // deleted. It returns the journal for the branch step.
-func (p Plan) quarantine(ctx *Context, w io.Writer, res *RemoveResult) (*quarantine.Record, error) {
+func (p Plan) quarantine(ctx *kit.Context, w io.Writer, res *RemoveResult) (*quarantine.Record, error) {
 	dir := p.Quarantine
 	admin, err := repo.AdminDir(p.Path)
 	if err != nil {
@@ -1487,7 +1488,7 @@ func (p Plan) quarantine(ctx *Context, w io.Writer, res *RemoveResult) (*quarant
 			Device: checkoutID.Device, Inode: checkoutID.Inode},
 		Admin: quarantine.Place{Path: admin, Quarantined: filepath.Join(dir, "admin"),
 			Device: adminID.Device, Inode: adminID.Inode},
-		Head: strp(p.Head)}
+		Head: kit.Strp(p.Head)}
 	if p.Branch != "" && p.Tip != "" {
 		plan := quarantine.BranchPlanNone
 		switch p.Outcome {
@@ -1496,7 +1497,7 @@ func (p Plan) quarantine(ctx *Context, w io.Writer, res *RemoveResult) (*quarant
 		case BranchKept:
 			plan = quarantine.BranchPlanKeep
 		}
-		rec.Branch = &quarantine.Branch{Name: p.Branch, Tip: p.Tip, Plan: plan, KeepAs: strp(p.KeepAs)}
+		rec.Branch = &quarantine.Branch{Name: p.Branch, Tip: p.Tip, Plan: plan, KeepAs: kit.Strp(p.KeepAs)}
 	}
 	r, err := quarantine.Begin(dir, rec)
 	if err != nil {
@@ -1625,7 +1626,7 @@ func (p Plan) clearProcesses(w io.Writer) ([]wtsync.Reaped, error) {
 	procs, err := processesIn(p.Path, nil, agents, err)
 	switch {
 	case err != nil:
-		return nil, fmt.Errorf("cannot tell which processes run in it (%s); nothing was stopped", oneLine(err.Error()))
+		return nil, fmt.Errorf("cannot tell which processes run in it (%s); nothing was stopped", kit.OneLine(err.Error()))
 	case len(procs) == 0:
 		return nil, nil
 	case !p.Reap:

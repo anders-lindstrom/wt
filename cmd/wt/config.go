@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
 )
 
@@ -30,7 +31,7 @@ func newConfigCmd() *cobra.Command {
 		Example: "  wt config          # the resolved configuration, typed\n" +
 			"  wt config --shell  # the same as shell assignments, for eval",
 		Args: cobra.NoArgs,
-		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *commands.Context) error {
+		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
 			return commands.Config(ctx, shell, cmd.OutOrStdout())
 		}),
 	}

@@ -1,4 +1,4 @@
-package commands
+package kit
 
 import (
 	"fmt"
@@ -9,25 +9,25 @@ import (
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
-// parseWork reads a work spec into the type, the work name and the branch the
+// ParseWork reads a work spec into the type, the work name and the branch the
 // two make, with the type checked against the repository's WORKTREE_TYPES.
 // Everything that takes a spec reads it here, so nothing has to parse the same
 // argument twice to learn a second half of the answer.
-func parseWork(ctx *Context, spec string) (typ, work, branch string, err error) {
+func ParseWork(ctx *Context, spec string) (typ, work, branch string, err error) {
 	typ, work, err = naming.ParseSpec(spec, ctx.Config.DefaultType, ctx.Vocab())
 	if err != nil {
 		return "", "", "", err
 	}
-	if err := checkType(ctx, typ); err != nil {
+	if err := CheckType(ctx, typ); err != nil {
 		return "", "", "", err
 	}
 	return typ, work, ctx.Scheme().Branch(typ, work), nil
 }
 
-// checkType refuses a type this repository does not declare. The types are
+// CheckType refuses a type this repository does not declare. The types are
 // offered back as the branches spell them, since that is what the person has
 // in front of them.
-func checkType(ctx *Context, typ string) error {
+func CheckType(ctx *Context, typ string) error {
 	if slices.Contains(ctx.Config.Types, typ) {
 		return nil
 	}
@@ -43,7 +43,7 @@ func checkType(ctx *Context, typ string) error {
 // which only its path can name, has no branch to print and is refused as
 // locateBranch refuses it.
 func Branch(ctx *Context, spec string) (string, error) {
-	wt, ok, err := existingWork(ctx, spec)
+	wt, ok, err := ExistingWork(ctx, spec)
 	switch {
 	case err != nil:
 		return "", err
@@ -57,7 +57,7 @@ func Branch(ctx *Context, spec string) (string, error) {
 	case ok:
 		return wt.Branch, nil
 	}
-	_, _, branch, err := parseWork(ctx, spec)
+	_, _, branch, err := ParseWork(ctx, spec)
 	return branch, err
 }
 
@@ -68,17 +68,17 @@ func Branch(ctx *Context, spec string) (string, error) {
 // — Superset's and T3 Code's included — resolve without migration. Otherwise
 // the canonical path is returned, so `new` and `switch` agree on one answer.
 func Path(ctx *Context, spec string) (string, error) {
-	if wt, ok, err := existingWork(ctx, spec); err != nil || ok {
+	if wt, ok, err := ExistingWork(ctx, spec); err != nil || ok {
 		return wt.Path, err
 	}
-	typ, work, _, err := parseWork(ctx, spec)
+	typ, work, _, err := ParseWork(ctx, spec)
 	if err != nil {
 		return "", err
 	}
 	return ctx.Scheme().Dir(typ, work), nil
 }
 
-// existingWork is the exact lookup Path and Branch try before reading a type
+// ExistingWork is the exact lookup Path and Branch try before reading a type
 // out of the spec: the work name, the branch, the path or <type>/<work> of a
 // worktree that exists. It runs first so that a bare name is never resolved to
 // the default type while a worktree of another type carries it, and so that a
@@ -90,10 +90,10 @@ func Path(ctx *Context, spec string) (string, error) {
 // when "/" names it or "." is said from inside it: those asked where the
 // caller is, and the answer is a place, not a piece of work. Named by its
 // path it is left to the parse, as before.
-func existingWork(ctx *Context, spec string) (repo.Worktree, bool, error) {
+func ExistingWork(ctx *Context, spec string) (repo.Worktree, bool, error) {
 	spec = strings.TrimSpace(spec)
 	wt, ok, err := existing(ctx, spec)
-	if err != nil || !ok || (wt.IsMain && !isDot(spec) && !isRoot(spec)) {
+	if err != nil || !ok || (wt.IsMain && !IsDot(spec) && !IsRoot(spec)) {
 		return repo.Worktree{}, false, err
 	}
 	return wt, true, nil

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -16,7 +17,7 @@ import (
 // squashed is a worktree whose branch carries a commit trunk does not have,
 // which is what a squash or rebase merge leaves behind as far as git is
 // concerned. It returns the worktree, its branch and its tip.
-func squashed(t *testing.T, ctx *Context, work string) (path, branch, tip string) {
+func squashed(t *testing.T, ctx *kit.Context, work string) (path, branch, tip string) {
 	t.Helper()
 	path = mergedWorktree(t, ctx, work)
 	gitIn(t, path, "commit", "-q", "--allow-empty", "-m", "the work that was squashed")
@@ -36,7 +37,7 @@ func mergedInto(number int, branch, tip, base string) github.PR {
 }
 
 // sweptWith is a sweep plan made against a fixed set of pull requests.
-func sweptWith(t *testing.T, ctx *Context, prs map[string]github.PR) SweepPlan {
+func sweptWith(t *testing.T, ctx *kit.Context, prs map[string]github.PR) SweepPlan {
 	t.Helper()
 	return planWith(t, ctx, SweepOptions{Agents: []wtsync.Agent{}, PRs: prs})
 }
@@ -199,7 +200,7 @@ func TestSweepLeavesAPullRequestMergedIntoItsParent(t *testing.T) {
 		t.Fatalf("a branch merged into its parent was swept:\n%s", rendered(p))
 	}
 	// It is still named, and named honestly, wherever the branch does show.
-	if got := prLabel(stacked, []string{"main"}); got != "#34 merged into feat_wt/the-parent" {
+	if got := kit.PRLabel(stacked, []string{"main"}); got != "#34 merged into feat_wt/the-parent" {
 		t.Errorf("prLabel = %q", got)
 	}
 }
@@ -277,7 +278,7 @@ func TestSweepAsksGitHubPastAYoungCache(t *testing.T) {
 	tip := gitOut(t, main, "rev-parse", "fix_wt/login-crash")
 	goneUpstream(t, main, "fix_wt/login-crash")
 	// The cache says there is no pull request, written just now.
-	writePRCache(ctx, ghRepo, map[string]*github.PR{"fix_wt/login-crash": nil}, time.Now())
+	kit.WritePRCache(ctx, ghRepo, map[string]*github.PR{"fix_wt/login-crash": nil}, time.Now())
 	fakeGitHub(t, mergedPR(34, "fix_wt/login-crash", tip))
 
 	p := planWith(t, ctx, SweepOptions{Agents: []wtsync.Agent{}})
@@ -404,7 +405,7 @@ func TestSweepNamesAWorktreeTheWayListDoes(t *testing.T) {
 	if got := p.Remove[0].Work; got != "pr-2135-sanitize" {
 		t.Errorf("sweep calls it %q; `wt list` calls it pr-2135-sanitize", got)
 	}
-	names, err := WorkNames(ctx)
+	names, err := kit.WorkNames(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

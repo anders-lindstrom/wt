@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -26,7 +27,7 @@ func worktreeAt(t *testing.T, main, branch, path string) string {
 // another name.
 func TestMigrateRetypesRenamesAndMovesInOneGo(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	from := worktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent,
 		"demo_wt", "feat_wt", "5f2c8e10-7d3a-4b6e-9c01-2a4f6b8d0e13", "local-cache"))
 	mustWrite(t, filepath.Join(from, "precious.txt"), "real work")
@@ -52,7 +53,7 @@ func TestMigrateRetypesRenamesAndMovesInOneGo(t *testing.T) {
 // convention without the user having to say anything twice.
 func TestMigrateFitsATypelessBranchToTheConvention(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	worktreeAt(t, main, "api_tidy", filepath.Join(ctx.Repo.Parent,
 		"demo_wt", "demo", "feat_wt", "new_parser"))
 
@@ -74,7 +75,7 @@ func TestMigrateFitsATypelessBranchToTheConvention(t *testing.T) {
 // slash is just missing the suffix.
 func TestMigrateReadsTheTypeOutOfANonConventionBranch(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	worktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 
 	var buf bytes.Buffer
@@ -94,7 +95,7 @@ func TestMigrateAcceptsEveryWayAWorktreeIsPrinted(t *testing.T) {
 	for _, how := range []string{"work", "branch", "path"} {
 		t.Run(how, func(t *testing.T) {
 			main := committedRepo(t, minimalConf)
-			ctx, _ := Open(main)
+			ctx, _ := kit.Open(main)
 			path := worktreeAt(t, main, "feat_wt/cache_stats",
 				filepath.Join(ctx.Repo.Parent, "demo-cache_stats"))
 			arg := map[string]string{
@@ -118,7 +119,7 @@ func TestMigrateAcceptsEveryWayAWorktreeIsPrinted(t *testing.T) {
 // is not retyping.
 func TestMigrateKeepsTheTypeWhenOnlyTheNameChanges(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	worktreeAt(t, main, "perf_wt/prefetch", filepath.Join(ctx.Repo.Parent, "demo-prefetch"))
 
 	var buf bytes.Buffer
@@ -138,7 +139,7 @@ func TestMigrateKeepsTheTypeWhenOnlyTheNameChanges(t *testing.T) {
 // The branch form of a destination is the same answer typed differently.
 func TestMigrateAcceptsADestinationWrittenAsABranch(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	worktreeAt(t, main, "feat_wt/login", filepath.Join(ctx.Repo.Parent, "demo-login"))
 
 	var buf bytes.Buffer
@@ -156,7 +157,7 @@ func TestMigrateAcceptsADestinationWrittenAsABranch(t *testing.T) {
 // to a worktree carrying work.
 func TestMigratePrintsWhatItWillDoBeforeDoingIt(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	from := worktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 
 	var buf bytes.Buffer
@@ -175,7 +176,7 @@ func TestMigratePrintsWhatItWillDoBeforeDoingIt(t *testing.T) {
 // Uncommitted work is not a reason to refuse: git's own move carries it.
 func TestMigrateMovesADirtyWorktreeAndSaysSo(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	from := worktreeAt(t, main, "feat_wt/dirty", filepath.Join(ctx.Repo.Parent, "demo-dirty"))
 	mustWrite(t, filepath.Join(from, "tracked.txt"), "committed")
 	gitIn(t, from, "add", "tracked.txt")
@@ -198,7 +199,7 @@ func TestMigrateMovesADirtyWorktreeAndSaysSo(t *testing.T) {
 // The message a user gets for an argument that names nothing has to say what
 // was looked for and where to look.
 func TestMigrateSaysWhatItLookedForWhenNothingMatches(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	var buf bytes.Buffer
 	_, err := Migrate(ctx, "nosuchthing", "", noSessions(), &buf)
 	if err == nil {
@@ -213,7 +214,7 @@ func TestMigrateSaysWhatItLookedForWhenNothingMatches(t *testing.T) {
 // of a directory that did not exist, which is where `is on ""` came from.
 func TestMigrateNeverBlamesAnEmptyBranch(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	worktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 
 	for _, arg := range []string{"local-cache", "fix/flaky-test",
@@ -234,7 +235,7 @@ func TestMigrateNeverBlamesAnEmptyBranch(t *testing.T) {
 // from. Say that, and say what to do about it.
 func TestMigrateExplainsADetachedWorktree(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	loose := filepath.Join(ctx.Repo.Parent, "demo-loose")
 	gitIn(t, main, "worktree", "add", "-q", "--detach", loose)
 
@@ -250,7 +251,7 @@ func TestMigrateExplainsADetachedWorktree(t *testing.T) {
 
 func TestMigrateRefusesWhenTheTargetBranchIsTaken(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	from := worktreeAt(t, main, "feat_wt/login", filepath.Join(ctx.Repo.Parent, "demo-login"))
 	worktreeAt(t, main, "fix_wt/login", filepath.Join(ctx.Repo.Parent, "demo-other"))
 
@@ -269,7 +270,7 @@ func TestMigrateRefusesWhenTheTargetBranchIsTaken(t *testing.T) {
 
 func TestMigrateRefusesWhenAnotherWorktreeIsAtTheTarget(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	worktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 	occupied := worktreeAt(t, main, "fix_wt/taken",
 		filepath.Join(ctx.Repo.Parent, "demo_wt", "fix_wt", "taken"))
@@ -288,7 +289,7 @@ func TestMigrateRefusesWhenAnotherWorktreeIsAtTheTarget(t *testing.T) {
 // session it is rather than doing it.
 func TestMigrateRefusesWhenAnAgentSessionLivesThere(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	from := worktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 	resolved, _ := filepath.EvalSymlinks(from)
 	opts := MigrateOptions{Agents: []wtsync.Agent{{Name: "gecko-1", Cwd: resolved}}}
@@ -308,7 +309,7 @@ func TestMigrateRefusesWhenAnAgentSessionLivesThere(t *testing.T) {
 
 func TestMigrateForceMovesPastAnAgentSession(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	from := worktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 	resolved, _ := filepath.EvalSymlinks(from)
 	opts := MigrateOptions{Force: true, Agents: []wtsync.Agent{{Name: "gecko-1", Cwd: resolved}}}
@@ -330,7 +331,7 @@ func TestMigrateForceMovesPastAnAgentSession(t *testing.T) {
 // worse than none, because nothing names the worktree any more.
 func TestMigratePutsTheBranchNameBackWhenTheMoveFails(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	from := worktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 	// A file where the type directory has to be: mkdir cannot make the
 	// destination, so the move fails after the rename.
@@ -346,7 +347,7 @@ func TestMigratePutsTheBranchNameBackWhenTheMoveFails(t *testing.T) {
 }
 
 func TestMigrateIsANoOpWhenAlreadyWhereItBelongs(t *testing.T) {
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	var buf bytes.Buffer
 	path, err := New(ctx, "fix/already", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -365,7 +366,7 @@ func TestMigrateIsANoOpWhenAlreadyWhereItBelongs(t *testing.T) {
 // new name still needs the rename.
 func TestMigrateRenamesTheBranchWhenOnlyTheNameIsWrong(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	at := filepath.Join(ctx.Repo.Parent, "demo_wt", "feat_wt", "api_tidy")
 	worktreeAt(t, main, "api_tidy", at)
 
@@ -387,7 +388,7 @@ func TestMigrateRenamesTheBranchWhenOnlyTheNameIsWrong(t *testing.T) {
 // and therefore during a dry run, which is where it is read.
 func TestMigrateWarnsBeforeMovingASupersetWorktree(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	worktreeAt(t, main, "fix_wt/legacy",
 		filepath.Join(ctx.Repo.Parent, "demo_wt", "demo", "fix_wt", "legacy"))
 
@@ -410,7 +411,7 @@ func TestMigrateWarnsBeforeMovingASupersetWorktree(t *testing.T) {
 // safety valve for worktrees carrying real work: you look before you leap.
 func TestMigrateDryRunChangesNothing(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	legacy := worktreeAt(t, main, "fix/legacy", filepath.Join(ctx.Repo.Parent, "demo-legacy"))
 	mustWrite(t, filepath.Join(legacy, "precious.txt"), "real work")
 
@@ -442,7 +443,7 @@ func TestMigrateDryRunChangesNothing(t *testing.T) {
 // A move must be verified against git afterwards, not assumed from the argument.
 func TestMigrateReportsWhereTheWorktreeActuallyWent(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	worktreeAt(t, main, "fix_wt/legacy", filepath.Join(ctx.Repo.Parent, "demo-legacy"))
 
 	var buf bytes.Buffer
@@ -470,7 +471,7 @@ func TestMigrateReportsWhereTheWorktreeActuallyWent(t *testing.T) {
 
 func TestMigrateRefusesWhenDestinationOccupied(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	legacy := worktreeAt(t, main, "fix_wt/legacy", filepath.Join(ctx.Repo.Parent, "demo-legacy"))
 	mustWrite(t, filepath.Join(legacy, "precious.txt"), "real work")
 	occupied := filepath.Join(ctx.Repo.Parent, "demo_wt", "fix_wt", "legacy")
@@ -491,7 +492,7 @@ func TestMigrateRefusesWhenDestinationOccupied(t *testing.T) {
 // An unknown type is a typo, not a new type: name what this repository has.
 func TestMigrateRefusesAnUnknownType(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	worktreeAt(t, main, "feat_wt/login", filepath.Join(ctx.Repo.Parent, "demo-login"))
 
 	var buf bytes.Buffer
@@ -508,7 +509,7 @@ func TestMigrateRefusesAnUnknownType(t *testing.T) {
 // than something it fails on.
 func TestMigrateDryRunReportsTheSessionItWouldRefuseFor(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	from := worktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 	resolved, _ := filepath.EvalSymlinks(from)
 	opts := MigrateOptions{DryRun: true, Agents: []wtsync.Agent{{Name: "gecko-1", Cwd: resolved}}}
@@ -525,11 +526,11 @@ func TestMigrateDryRunReportsTheSessionItWouldRefuseFor(t *testing.T) {
 // The shell that ran the command is left in a directory that no longer exists.
 func TestMigrateSaysWhenYouAreStandingInIt(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	from := worktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 	t.Chdir(from)
 	// Opened from where you stand, as wt does.
-	ctx, _ = Open(from)
+	ctx, _ = kit.Open(from)
 
 	var buf bytes.Buffer
 	if _, err := Migrate(ctx, from, "", noSessions(), &buf); err != nil {
@@ -545,7 +546,7 @@ func TestMigrateSaysWhenYouAreStandingInIt(t *testing.T) {
 // like in the first place.
 func TestMigrateClearsTheEmptyDirectoriesItLeavesBehind(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	nest := filepath.Join(ctx.Repo.Parent, "demo_wt", "feat_wt", "5f2c8e10-7d3a")
 	worktreeAt(t, main, "fix/flaky-test", filepath.Join(nest, "local-cache"))
 
@@ -564,7 +565,7 @@ func TestMigrateClearsTheEmptyDirectoriesItLeavesBehind(t *testing.T) {
 // Only empty ones, and never anything above the repository's own tree.
 func TestMigrateLeavesADirectoryThatStillHoldsSomething(t *testing.T) {
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	nest := filepath.Join(ctx.Repo.Parent, "demo_wt", "demo", "feat_wt")
 	worktreeAt(t, main, "api_tidy", filepath.Join(nest, "new_parser"))
 	keep := filepath.Join(nest, "notes.txt")

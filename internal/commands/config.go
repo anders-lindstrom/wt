@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
 )
 
@@ -14,7 +15,7 @@ import (
 // skills document those as the output of load_worktree_config. REPO_NAME and
 // AWS_SETUP_ENABLED are retired as inputs but still produced here: the first is
 // derived, the second reports whether bin/worktree/provision.sh exists.
-func Config(ctx *Context, shell bool, w io.Writer) error {
+func Config(ctx *kit.Context, shell bool, w io.Writer) error {
 	c := ctx.Config
 	if !shell {
 		fmt.Fprintf(w, "repo:          %s\n", ctx.Repo.Name)
@@ -47,19 +48,19 @@ func Config(ctx *Context, shell bool, w io.Writer) error {
 		return nil
 	}
 
-	fmt.Fprintf(w, "REPO_NAME=%s\n", shellQuote(ctx.Repo.Name))
-	fmt.Fprintf(w, "MAIN_BRANCH=%s\n", shellQuote(c.MainBranch))
-	fmt.Fprintf(w, "WORKTREE_BRANCH_PREFIX=%s\n", shellQuote(c.BranchPrefix))
-	fmt.Fprintf(w, "WORKTREE_TYPE_SUFFIX=%s\n", shellQuote(c.TypeSuffix))
+	fmt.Fprintf(w, "REPO_NAME=%s\n", kit.ShellQuote(ctx.Repo.Name))
+	fmt.Fprintf(w, "MAIN_BRANCH=%s\n", kit.ShellQuote(c.MainBranch))
+	fmt.Fprintf(w, "WORKTREE_BRANCH_PREFIX=%s\n", kit.ShellQuote(c.BranchPrefix))
+	fmt.Fprintf(w, "WORKTREE_TYPE_SUFFIX=%s\n", kit.ShellQuote(c.TypeSuffix))
 	branchSuffix, _ := ctx.BranchSuffix()
-	fmt.Fprintf(w, "WORKTREE_BRANCH_SUFFIX=%s\n", shellQuote(branchSuffix))
+	fmt.Fprintf(w, "WORKTREE_BRANCH_SUFFIX=%s\n", kit.ShellQuote(branchSuffix))
 	fmt.Fprintf(w, "WORKTREE_TYPE_NAMES=(%s)\n", shellQuoteAll(typeNamePairs(ctx)))
-	fmt.Fprintf(w, "WORKTREE_DEFAULT_TYPE=%s\n", shellQuote(c.DefaultType))
-	fmt.Fprintf(w, "WORKTREE_TYPES=%s\n", shellQuote(strings.Join(c.Types, " ")))
-	fmt.Fprintf(w, "REQUIRED_BINS=%s\n", shellQuote(strings.Join(c.RequiredBins, " ")))
+	fmt.Fprintf(w, "WORKTREE_DEFAULT_TYPE=%s\n", kit.ShellQuote(c.DefaultType))
+	fmt.Fprintf(w, "WORKTREE_TYPES=%s\n", kit.ShellQuote(strings.Join(c.Types, " ")))
+	fmt.Fprintf(w, "REQUIRED_BINS=%s\n", kit.ShellQuote(strings.Join(c.RequiredBins, " ")))
 	fmt.Fprintf(w, "BUILD_INIT_ENABLED=%v\n", c.BuildInitEnabled)
-	fmt.Fprintf(w, "BUILD_INIT_COMMAND=%s\n", shellQuote(c.BuildInitCommand))
-	fmt.Fprintf(w, "TEST_COMMAND=%s\n", shellQuote(c.TestCommand))
+	fmt.Fprintf(w, "BUILD_INIT_COMMAND=%s\n", kit.ShellQuote(c.BuildInitCommand))
+	fmt.Fprintf(w, "TEST_COMMAND=%s\n", kit.ShellQuote(c.TestCommand))
 	fmt.Fprintf(w, "RUN_TESTS_BEFORE_REMOVE=%v\n", c.RunTestsBeforeRemove)
 	fmt.Fprintf(w, "AWS_SETUP_ENABLED=%v\n", ctx.HasProvisionScript())
 	fmt.Fprintf(w, "DEVELOPER_CONFIG_DIRS=(%s)\n", shellQuoteAll(c.DeveloperConfigDirs))
@@ -82,20 +83,15 @@ func trunkSourceNote(source config.TrunkSource) string {
 
 // typeNamePairs is this repository's resolved naming as the configuration
 // files write it.
-func typeNamePairs(ctx *Context) []string {
+func typeNamePairs(ctx *kit.Context) []string {
 	names, _ := ctx.TypeNames()
 	return typeNamePairsOf(names, ctx.Config.Types)
-}
-
-// shellQuote single-quotes a value so that eval cannot reinterpret it.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 func shellQuoteAll(items []string) string {
 	quoted := make([]string, 0, len(items))
 	for _, s := range items {
-		quoted = append(quoted, shellQuote(s))
+		quoted = append(quoted, kit.ShellQuote(s))
 	}
 	return strings.Join(quoted, " ")
 }
@@ -103,7 +99,7 @@ func shellQuoteAll(items []string) string {
 // userBlock prints the user settings with where each value came from, then
 // the Superset mode the two files resolve to. --shell gets none of it: the
 // Herdr skills eval that output.
-func userBlock(ctx *Context, w io.Writer) {
+func userBlock(ctx *kit.Context, w io.Writer) {
 	u := ctx.UserConfig()
 	where := u.Path
 	switch {
@@ -120,7 +116,7 @@ func userBlock(ctx *Context, w io.Writer) {
 		}
 		fmt.Fprintf(w, "  %-14s %v (%s)\n", name+":", config.UserLiteral(name, v), u.Origin(name))
 	}
-	roots, origin := RootsFor(u)
+	roots, origin := kit.RootsFor(u)
 	fmt.Fprintf(w, "roots:         (%s)\n", origin)
 	for _, root := range roots {
 		fmt.Fprintf(w, "  %-14s %s\n", root.Name+":", root.Path)
@@ -138,7 +134,7 @@ func userBlock(ctx *Context, w io.Writer) {
 // supersetOrigin resolves the Superset setting across both files and names
 // the one that decided it. With the user setting off, SUPERSET_REGISTER is
 // never reached.
-func supersetOrigin(ctx *Context) (config.SupersetMode, string) {
+func supersetOrigin(ctx *kit.Context) (config.SupersetMode, string) {
 	if !ctx.UserConfig().Superset {
 		return config.SupersetOff, "user config"
 	}

@@ -1,11 +1,12 @@
 package commands
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 // committedRepoIn builds a repo with one commit inside a chosen parent, so a
@@ -28,26 +29,14 @@ func committedRepoIn(t *testing.T, parent, name, conf string) string {
 	return main
 }
 
-func TestRootsDefaultsAndSplitsOnColon(t *testing.T) {
-	t.Setenv("WT_ROOTS", "/a:/b with space:/c")
-	got := Roots()
-	if len(got) != 3 || got[1] != "/b with space" {
-		t.Errorf("got %q", got)
-	}
-	t.Setenv("WT_ROOTS", "")
-	if len(Roots()) == 0 {
-		t.Error("want a default when WT_ROOTS is unset")
-	}
-}
-
 // A strong local hit ends the search.
 func TestFindStrongLocalHitWins(t *testing.T) {
 	t.Setenv("WT_ROOTS", t.TempDir())
-	ctx, _ := Open(committedRepo(t, minimalConf))
+	ctx, _ := kit.Open(committedRepo(t, minimalConf))
 	if _, err := New(ctx, "feat/opensearch_ism", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
 	}
-	got, err := Find(ctx, "opensearch_ism")
+	got, err := kit.Find(ctx, "opensearch_ism")
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
@@ -66,17 +55,17 @@ func TestFindWeakLocalHitStillScansRoots(t *testing.T) {
 	t.Setenv("WT_ROOTS", root)
 
 	local := committedRepoIn(t, root, "local", minimalConf)
-	lctx, _ := Open(local)
+	lctx, _ := kit.Open(local)
 	if _, err := New(lctx, "feat/opensearch", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
 	}
 	other := committedRepoIn(t, root, "other", minimalConf)
-	octx, _ := Open(other)
+	octx, _ := kit.Open(other)
 	if _, err := New(octx, "feat/arch", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
 	}
 
-	got, err := Find(lctx, "arch")
+	got, err := kit.Find(lctx, "arch")
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
@@ -96,7 +85,7 @@ func TestFindRepoAndWorkBeatsTheStartOfATypedName(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("WT_ROOTS", root)
-	ctx, _ := Open(committedRepoIn(t, root, "feat", minimalConf))
+	ctx, _ := kit.Open(committedRepoIn(t, root, "feat", minimalConf))
 	for _, spec := range []string{"fix/arch", "feat/archive"} {
 		if _, err := New(ctx, spec, NewOptions{NoSetup: true}, os.Stderr); err != nil {
 			t.Fatal(err)
@@ -115,7 +104,7 @@ func TestFindRepoAndWorkBeatsTheStartOfATypedName(t *testing.T) {
 		"feat/archi":   "archive",  // the start of it, and no work is named archi
 		"feat/arc":     "borrowed", // in refeat/arcade
 	} {
-		got, err := Find(ctx, pattern)
+		got, err := kit.Find(ctx, pattern)
 		if err != nil {
 			t.Fatalf("Find(%q): %v", pattern, err)
 		}
@@ -134,15 +123,15 @@ func TestFindTheStartOfATypedNameYieldsToAnyOtherMatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("WT_ROOTS", root)
-	lctx, _ := Open(committedRepoIn(t, root, "demo", minimalConf))
+	lctx, _ := kit.Open(committedRepoIn(t, root, "demo", minimalConf))
 	if _, err := New(lctx, "feat/archive", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
 	}
-	octx, _ := Open(committedRepoIn(t, root, "feat", minimalConf))
+	octx, _ := kit.Open(committedRepoIn(t, root, "feat", minimalConf))
 	if _, err := New(octx, "fix/a-r-c", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
 	}
-	got, err := Find(lctx, "feat/arc")
+	got, err := kit.Find(lctx, "feat/arc")
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
@@ -159,28 +148,17 @@ func TestFindReportsEveryTiedCandidate(t *testing.T) {
 	t.Setenv("WT_ROOTS", root)
 	for _, name := range []string{"one", "two"} {
 		r := committedRepoIn(t, root, name, minimalConf)
-		c, _ := Open(r)
+		c, _ := kit.Open(r)
 		if _, err := New(c, "feat/arch", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 			t.Fatal(err)
 		}
 	}
-	got, err := Find(nil, "arch")
+	got, err := kit.Find(nil, "arch")
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
 	if len(got) != 2 {
 		t.Errorf("want both repos' arch, got %d: %+v", len(got), got)
-	}
-}
-
-func TestFindNoMatch(t *testing.T) {
-	t.Setenv("WT_ROOTS", t.TempDir())
-	got, err := Find(nil, "definitely-nothing")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 0 {
-		t.Errorf("want no matches, got %+v", got)
 	}
 }
 
@@ -190,12 +168,12 @@ func TestFindNoMatch(t *testing.T) {
 // with no hint why.
 func TestOpenLenientSurvivesInvalidConfig(t *testing.T) {
 	main := committedRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\nAWS_SETUP_ENABLED=true\n")
-	if _, err := Open(main); err == nil {
+	if _, err := kit.Open(main); err == nil {
 		t.Fatal("this fixture is supposed to have an invalid config")
 	}
 
 	var warn strings.Builder
-	ctx := OpenLenient(main, &warn)
+	ctx := kit.OpenLenient(main, &warn)
 	if ctx == nil {
 		t.Fatal("OpenLenient must still produce a context")
 	}
@@ -220,13 +198,13 @@ func TestFindKeepsRepoFirstWithInvalidLocalConfig(t *testing.T) {
 	t.Setenv("WT_ROOTS", root)
 
 	other := committedRepoIn(t, root, "other", minimalConf)
-	octx, _ := Open(other)
+	octx, _ := kit.Open(other)
 	if _, err := New(octx, "feat/login", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
 	}
 
 	local := committedRepoIn(t, root, "local", minimalConf)
-	lctx, _ := Open(local)
+	lctx, _ := kit.Open(local)
 	if _, err := New(lctx, "feat/login-crash", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +215,7 @@ func TestFindKeepsRepoFirstWithInvalidLocalConfig(t *testing.T) {
 	}
 
 	var warn strings.Builder
-	got, err := Find(OpenLenient(local, &warn), "login")
+	got, err := kit.Find(kit.OpenLenient(local, &warn), "login")
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
@@ -253,18 +231,18 @@ func TestFindKeepsRepoFirstWithInvalidLocalConfig(t *testing.T) {
 func TestFindRootResolvesToTheMainCheckout(t *testing.T) {
 	t.Setenv("WT_ROOTS", t.TempDir())
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	if _, err := New(ctx, "feat/somewhere", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
 	}
 
 	// From inside a linked worktree, "/" must still mean the main checkout.
-	inner, err := Open(filepath.Join(ctx.Repo.Parent, "demo_wt", "feat_wt", "somewhere"))
+	inner, err := kit.Open(filepath.Join(ctx.Repo.Parent, "demo_wt", "feat_wt", "somewhere"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, pattern := range []string{"/", ""} {
-		got, err := Find(inner, pattern)
+		got, err := kit.Find(inner, pattern)
 		if err != nil {
 			t.Fatalf("Find(%q): %v", pattern, err)
 		}
@@ -280,7 +258,7 @@ func TestFindRootResolvesToTheMainCheckout(t *testing.T) {
 func TestFindDotResolvesToTheWorktreeYouStandIn(t *testing.T) {
 	t.Setenv("WT_ROOTS", t.TempDir())
 	main := committedRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	if _, err := New(ctx, "feat/somewhere", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
 	}
@@ -296,12 +274,12 @@ func TestFindDotResolvesToTheWorktreeYouStandIn(t *testing.T) {
 		main:                             main,
 		filepath.Join(main, "bin"):       main,
 	} {
-		ctx, err := Open(cwd)
+		ctx, err := kit.Open(cwd)
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, pattern := range []string{".", "./"} {
-			got, err := Find(ctx, pattern)
+			got, err := kit.Find(ctx, pattern)
 			if err != nil {
 				t.Fatalf("Find(%q) from %s: %v", pattern, cwd, err)
 			}
@@ -310,8 +288,8 @@ func TestFindDotResolvesToTheWorktreeYouStandIn(t *testing.T) {
 			}
 		}
 	}
-	inner, _ := Open(wt)
-	if got, _ := Find(inner, "."); len(got) != 1 || got[0].Work != "somewhere" {
+	inner, _ := kit.Open(wt)
+	if got, _ := kit.Find(inner, "."); len(got) != 1 || got[0].Work != "somewhere" {
 		t.Errorf("want the worktree's own work name, got %+v", got)
 	}
 }
@@ -323,29 +301,13 @@ func TestFindDotFromOutsideEveryWorktreeSaysSo(t *testing.T) {
 	ctx := locatable(t, "fix/login-crash")
 	ctx.Cwd = t.TempDir()
 
-	_, err := Find(ctx, ".")
+	_, err := kit.Find(ctx, ".")
 	if err == nil {
 		t.Fatal("want an error from outside every worktree")
 	}
 	for _, want := range []string{ctx.Cwd, "none of demo's", "wt list"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error should say %q, got: %v", want, err)
-		}
-	}
-}
-
-// A bare wt cd, wt cd . or wt cd / from outside every repository asks for a
-// place in the repository you are in, and there is none: the error says
-// that, not that no worktree matches "/".
-func TestFindDotAndRootOutsideARepoSayThereIsNoRepo(t *testing.T) {
-	t.Setenv("WT_ROOTS", t.TempDir())
-	for _, pattern := range []string{".", "/", ""} {
-		got, err := Find(nil, pattern)
-		if !errors.Is(err, ErrNotInRepo) || err.Error() != "not inside a git repository" {
-			t.Errorf("Find(%q): err %v, want ErrNotInRepo", pattern, err)
-		}
-		if len(got) != 0 {
-			t.Errorf("Find(%q): want no match outside a repository, got %+v", pattern, got)
 		}
 	}
 }

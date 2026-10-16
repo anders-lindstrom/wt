@@ -6,14 +6,16 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 // remoteFixture is a repository with remotes configured and remote-tracking
 // refs written as a fetch would have left them, without any fetch: each
 // entry of refs is "<remote>/<branch>", pointed at a commit of its own.
-func remoteFixture(t *testing.T, remotes []string, refs ...string) *Context {
+func remoteFixture(t *testing.T, remotes []string, refs ...string) *kit.Context {
 	t.Helper()
-	ctx, err := Open(committedRepo(t, minimalConf))
+	ctx, err := kit.Open(committedRepo(t, minimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,12 +31,12 @@ func remoteFixture(t *testing.T, remotes []string, refs ...string) *Context {
 	return ctx
 }
 
-func oidOf(t *testing.T, ctx *Context, ref string) string {
+func oidOf(t *testing.T, ctx *kit.Context, ref string) string {
 	t.Helper()
 	return strings.TrimSpace(gitOut(t, ctx.Repo.MainRoot, "rev-parse", ref))
 }
 
-func upstreamOf(t *testing.T, ctx *Context, branch string) string {
+func upstreamOf(t *testing.T, ctx *kit.Context, branch string) string {
 	t.Helper()
 	return strings.TrimSpace(gitOut(t, ctx.Repo.MainRoot, "for-each-ref", "--format=%(upstream)", "refs/heads/"+branch))
 }
@@ -93,7 +95,7 @@ func TestCheckoutBareNameOnSeveralRemotes(t *testing.T) {
 		t.Error("a refused checkout wrote to the repository")
 	}
 	p := checkoutPlanOf(t, ctx, "topic", "")
-	if codes(p.Problems) != ProblemBranchAmbiguous || p.Token != nil {
+	if codes(p.Problems) != kit.ProblemBranchAmbiguous || p.Token != nil {
 		t.Errorf("plan problems %s", codes(p.Problems))
 	}
 
@@ -148,10 +150,10 @@ func TestCheckoutPlanRemoteProblems(t *testing.T) {
 	gitIn(t, ctx.Repo.MainRoot, "branch", "taken")
 	gitIn(t, ctx.Repo.MainRoot, "update-ref", "refs/remotes/origin/taken", "HEAD")
 	for arg, want := range map[string]string{
-		"origin/nope":  ProblemRemoteBranchMissing,
-		"origin/HEAD":  ProblemRemoteBranchMissing,
-		"nope":         ProblemBranchMissing,
-		"origin/taken": ProblemBranchExists,
+		"origin/nope":  kit.ProblemRemoteBranchMissing,
+		"origin/HEAD":  kit.ProblemRemoteBranchMissing,
+		"nope":         kit.ProblemBranchMissing,
+		"origin/taken": kit.ProblemBranchExists,
 	} {
 		p := checkoutPlanOf(t, ctx, arg, "")
 		if got := codes(p.Problems); got != want || p.Token != nil {
@@ -209,7 +211,7 @@ func TestCheckoutJSONFromARemote(t *testing.T) {
 		t.Errorf("result = %+v", r)
 	}
 	b := stepOf(r.CreateResult, "branch")
-	if b.Result != StepCreated || *b.Commit != *p.RemoteCommit || b.Reason == nil || *b.Reason != "tracking origin/topic" {
+	if b.Result != kit.StepCreated || *b.Commit != *p.RemoteCommit || b.Reason == nil || *b.Reason != "tracking origin/topic" {
 		t.Errorf("branch step %+v", b)
 	}
 
@@ -217,7 +219,7 @@ func TestCheckoutJSONFromARemote(t *testing.T) {
 	// nothing about it.
 	gitIn(t, ctx.Repo.MainRoot, "branch", "plain")
 	r, err = checkoutJSON(t, ctx, "plain", "", NewOptions{NoSetup: true}, "")
-	if err != nil || *r.Source != "local" || r.Upstream != nil || r.Remote != nil || stepOf(r.CreateResult, "branch").Result != StepUntouched {
+	if err != nil || *r.Source != "local" || r.Upstream != nil || r.Remote != nil || stepOf(r.CreateResult, "branch").Result != kit.StepUntouched {
 		t.Errorf("err %v result %+v", err, r)
 	}
 }
@@ -231,7 +233,7 @@ func TestCheckoutExpectRefusesAMovedRemote(t *testing.T) {
 	gitIn(t, main, "update-ref", "refs/remotes/origin/topic", "main")
 	before := repoState(t, main)
 	r, err := checkoutJSON(t, ctx, "origin/topic", "", NewOptions{NoSetup: true}, *p.Token)
-	if err == nil || r.Outcome != CreateRefused || codes(r.Problems) != ProblemPlanChanged {
+	if err == nil || r.Outcome != CreateRefused || codes(r.Problems) != kit.ProblemPlanChanged {
 		t.Errorf("moved remote: err %v result %+v", err, r)
 	}
 	if after := repoState(t, main); after != before {
@@ -241,7 +243,7 @@ func TestCheckoutExpectRefusesAMovedRemote(t *testing.T) {
 	p = checkoutPlanOf(t, ctx, "topic", "")
 	gitIn(t, main, "branch", "topic", "main")
 	r, err = checkoutJSON(t, ctx, "topic", "", NewOptions{NoSetup: true}, *p.Token)
-	if err == nil || r.Outcome != CreateRefused || codes(r.Problems) != ProblemPlanChanged {
+	if err == nil || r.Outcome != CreateRefused || codes(r.Problems) != kit.ProblemPlanChanged {
 		t.Errorf("branch appeared: err %v result %+v", err, r)
 	}
 	if _, err := os.Stat(*p.Path); err == nil {
@@ -270,7 +272,7 @@ func TestCheckoutNeverOverwritesABranchThatAppeared(t *testing.T) {
 		t.Error("the branch that appeared was changed")
 	}
 	j.addFailed(ctx, path, err)
-	if j.res.Problems == nil || codes(j.res.Problems) != ProblemPlanChanged || j.outcome(false) != CreateRefused {
+	if j.res.Problems == nil || codes(j.res.Problems) != kit.ProblemPlanChanged || j.outcome(false) != CreateRefused {
 		t.Errorf("problems %v outcome %s", j.res.Problems, j.outcome(false))
 	}
 	if _, err := os.Stat(path); err == nil {
@@ -307,7 +309,7 @@ func TestCheckoutExpectRefusesAnExplicitRemoteOnceTheBranchAppears(t *testing.T)
 	p := checkoutPlanOf(t, ctx, "origin/topic", "")
 	gitIn(t, ctx.Repo.MainRoot, "branch", "topic", "main")
 	r, err := checkoutJSON(t, ctx, "origin/topic", "", NewOptions{NoSetup: true}, *p.Token)
-	if err == nil || r.Outcome != CreateRefused || codes(r.Problems) != ProblemPlanChanged+","+ProblemBranchExists {
+	if err == nil || r.Outcome != CreateRefused || codes(r.Problems) != kit.ProblemPlanChanged+","+kit.ProblemBranchExists {
 		t.Errorf("err %v problems %s outcome %s", err, codes(r.Problems), r.Outcome)
 	}
 }
@@ -329,8 +331,8 @@ func TestCheckoutRecordsTheBranchBeforeAddingTheWorktree(t *testing.T) {
 	if err := checkoutAdd(ctx, path, target, j, &bytes.Buffer{})(); err != nil {
 		t.Fatal(err)
 	}
-	b := j.step(StepBranch)
-	if b.Result != StepCreated || b.Commit == nil || *b.Commit != target.Commit {
+	b := j.step(kit.StepBranch)
+	if b.Result != kit.StepCreated || b.Commit == nil || *b.Commit != target.Commit {
 		t.Errorf("branch step %+v before the worktree was read back", *b)
 	}
 	if j.co.Upstream == nil || *j.co.Upstream != "refs/remotes/origin/topic" {

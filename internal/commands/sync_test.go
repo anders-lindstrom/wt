@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -197,7 +198,7 @@ func TestSyncDetailNamesThePlanAndTheYoursFilesMidHandover(t *testing.T) {
 	}
 }
 
-func syncRepo(t *testing.T) *Context {
+func syncRepo(t *testing.T) *kit.Context {
 	t.Helper()
 	main := committedRepo(t, minimalConf)
 	write := func(rel, content string) {
@@ -214,7 +215,7 @@ func syncRepo(t *testing.T) *Context {
 	write("a.txt", "base\n")
 	gitIn(t, main, "add", "-A")
 	gitIn(t, main, "commit", "-q", "-m", "declare")
-	ctx, err := Open(main)
+	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +318,7 @@ func TestSyncAssessedInParallelPrintsTheSequentialResult(t *testing.T) {
 	var entries []syncEntry
 	for _, wt := range worktrees {
 		if !wt.IsMain {
-			entries = append(entries, syncEntry{work: workName(ctx, wt.Branch), a: wtsync.Assess(main, onto, cfg, wt, agents)})
+			entries = append(entries, syncEntry{work: kit.BranchWorkName(ctx, wt.Branch), a: wtsync.Assess(main, onto, cfg, wt, agents)})
 		}
 	}
 	if len(entries) < 5 {
@@ -510,7 +511,7 @@ func TestAgoIsTheLargestWholeUnit(t *testing.T) {
 		47 * time.Hour:            "47h ago",
 		50 * time.Hour:            "2d ago",
 	} {
-		if got := ago(d); got != want {
+		if got := kit.Ago(d); got != want {
 			t.Errorf("ago(%s) = %q, want %q", d, got, want)
 		}
 	}
@@ -520,10 +521,10 @@ func TestFetchReasonSkipsWarningsAndHints(t *testing.T) {
 	err := errors.New("Warning: Identity file /tmp/key not accessible: No such file or directory.\n" +
 		"ssh: Could not resolve hostname github.com: nodename nor servname provided\n" +
 		"fatal: Could not read from remote repository.")
-	if got, want := fetchReason(err), "ssh: Could not resolve hostname github.com: nodename nor servname provided"; got != want {
+	if got, want := kit.FetchReason(err), "ssh: Could not resolve hostname github.com: nodename nor servname provided"; got != want {
 		t.Errorf("fetchReason = %q, want %q", got, want)
 	}
-	if got := fetchReason(errors.New("fatal: unable to access 'https://x/': Could not resolve host: x")); got != "unable to access 'https://x/': Could not resolve host: x" {
+	if got := kit.FetchReason(errors.New("fatal: unable to access 'https://x/': Could not resolve host: x")); got != "unable to access 'https://x/': Could not resolve host: x" {
 		t.Errorf("fetchReason = %q", got)
 	}
 }
@@ -631,7 +632,7 @@ func TestSyncSaysWhenTrunkDeclaresNothing(t *testing.T) {
 	main := committedRepo(t, minimalConf)
 	gitIn(t, main, "remote", "add", "origin", main)
 	gitIn(t, main, "fetch", "-q", "origin")
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
 	if err := Sync(ctx, SyncOptions{NoFetch: true}, &buf); err != nil {
 		t.Fatalf("Sync: %v", err)

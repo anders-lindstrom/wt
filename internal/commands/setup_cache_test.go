@@ -7,16 +7,18 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 // cacheFixture is a repository declaring two cache dirs, both present in the
 // source checkout, and an empty worktree to provision.
-func cacheFixture(t *testing.T) (ctx *Context, main, target string) {
+func cacheFixture(t *testing.T) (ctx *kit.Context, main, target string) {
 	t.Helper()
 	main = fixtureRepo(t, minimalConf+"WORKTREE_CACHE_DIRS=(node_modules web/.gradle)\n")
 	mustWrite(t, filepath.Join(main, "node_modules", "left-pad", "index.js"), "module.exports = 1")
 	mustWrite(t, filepath.Join(main, "web", ".gradle", "cache.bin"), "gradle")
-	ctx, err := Open(main)
+	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +46,7 @@ func TestSetupClonesCacheDirsCopyOnWrite(t *testing.T) {
 		}
 		t.Skipf("this filesystem cannot clone: %s", buf.String())
 	}
-	if result != StepDone || reason != "" {
+	if result != kit.StepDone || reason != "" {
 		t.Fatalf("result %s %q\n%s", result, reason, buf.String())
 	}
 	if got := mustRead(t, filepath.Join(target, "node_modules", "left-pad", "index.js")); got != "module.exports = 1" {
@@ -72,7 +74,7 @@ func TestSetupSkipsCachesTheFilesystemCannotClone(t *testing.T) {
 	withCloner(t, func(_, _ string) error { return errCloneUnsupported{"the source is on another volume"} })
 	var buf bytes.Buffer
 	result, reason := cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf)
-	if result != StepSkipped || !strings.Contains(reason, "node_modules: the source is on another volume") {
+	if result != kit.StepSkipped || !strings.Contains(reason, "node_modules: the source is on another volume") {
 		t.Errorf("result %s %q", result, reason)
 	}
 	if !strings.Contains(buf.String(), " - node_modules not cloned: the source is on another volume; skipped rather than copied\n") {
@@ -94,7 +96,7 @@ func TestSetupCacheStepNamesWhatItCouldNotClone(t *testing.T) {
 	})
 	var buf bytes.Buffer
 	result, reason := cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf)
-	if result != StepDone || reason != "web/.gradle: this filesystem cannot clone" {
+	if result != kit.StepDone || reason != "web/.gradle: this filesystem cannot clone" {
 		t.Errorf("result %s %q", result, reason)
 	}
 }
@@ -105,7 +107,7 @@ func TestSetupCacheCloneErrorFails(t *testing.T) {
 	withCloner(t, func(_, _ string) error { return errors.New("permission denied") })
 	var buf bytes.Buffer
 	result, reason := cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf)
-	if result != StepFailed || !strings.Contains(reason, "node_modules: permission denied") {
+	if result != kit.StepFailed || !strings.Contains(reason, "node_modules: permission denied") {
 		t.Errorf("result %s %q", result, reason)
 	}
 	if !strings.Contains(buf.String(), " ! failed to clone node_modules: permission denied") {
@@ -123,7 +125,7 @@ func TestSetupKeepsAnExistingCacheDir(t *testing.T) {
 		return os.Mkdir(to, 0o755)
 	})
 	var buf bytes.Buffer
-	if result, reason := cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf); result != StepDone {
+	if result, reason := cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf); result != kit.StepDone {
 		t.Errorf("result %s %q", result, reason)
 	}
 	if cloned["node_modules"] || !cloned[".gradle"] {
@@ -158,10 +160,10 @@ func TestSetupNoCacheClonesNothing(t *testing.T) {
 // A repository that declares no caches hears nothing about them.
 func TestSetupWithoutCacheDirsSaysNothing(t *testing.T) {
 	main := fixtureRepo(t, minimalConf)
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
 	result, reason := cloneCacheDirs(ctx, main, t.TempDir(), SetupOptions{NoCache: true}, &buf)
-	if result != StepSkipped || reason != "no WORKTREE_CACHE_DIRS" || buf.Len() != 0 {
+	if result != kit.StepSkipped || reason != "no WORKTREE_CACHE_DIRS" || buf.Len() != 0 {
 		t.Errorf("result %s %q, printed %q", result, reason, buf.String())
 	}
 }
@@ -169,14 +171,14 @@ func TestSetupWithoutCacheDirsSaysNothing(t *testing.T) {
 func TestSetupRefusesCacheDirsThatEscapeTheWorktree(t *testing.T) {
 	main := fixtureRepo(t, minimalConf+"WORKTREE_CACHE_DIRS=(../outside)\n")
 	mustMkdir(t, filepath.Join(filepath.Dir(main), "outside"))
-	ctx, _ := Open(main)
+	ctx, _ := kit.Open(main)
 	withCloner(t, func(_, _ string) error {
 		t.Error("cloned an entry outside the worktree")
 		return nil
 	})
 	var buf bytes.Buffer
 	result, _ := cloneCacheDirs(ctx, main, t.TempDir(), SetupOptions{}, &buf)
-	if result != StepFailed || !strings.Contains(buf.String(), "escapes the worktree") {
+	if result != kit.StepFailed || !strings.Contains(buf.String(), "escapes the worktree") {
 		t.Errorf("result %s\n%s", result, buf.String())
 	}
 }
@@ -214,7 +216,7 @@ func TestSetupRefusesCacheDirsBehindAnEscapingSymlink(t *testing.T) {
 	})
 	var buf bytes.Buffer
 	result, reason := cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf)
-	if result != StepFailed || !strings.Contains(reason, "web/.gradle escapes the worktree") {
+	if result != kit.StepFailed || !strings.Contains(reason, "web/.gradle escapes the worktree") {
 		t.Errorf("result %s %q\n%s", result, reason, buf.String())
 	}
 	if cloned[".gradle"] || !cloned["node_modules"] {
@@ -234,7 +236,7 @@ func TestSetupClonesBehindASymlinkWithinTheWorktree(t *testing.T) {
 	}
 	withCloner(t, func(_, to string) error { return os.Mkdir(to, 0o755) })
 	var buf bytes.Buffer
-	if result, reason := cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf); result != StepDone {
+	if result, reason := cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf); result != kit.StepDone {
 		t.Errorf("result %s %q\n%s", result, reason, buf.String())
 	}
 	if _, err := os.Stat(filepath.Join(target, "real", ".gradle")); err != nil {
@@ -247,7 +249,7 @@ func TestSetupCacheWithNoSourceCheckoutIsSkipped(t *testing.T) {
 	gone := filepath.Join(main, "no-such-checkout")
 	var buf bytes.Buffer
 	result, reason := cloneCacheDirs(ctx, gone, target, SetupOptions{}, &buf)
-	if result != StepSkipped || reason != "source "+gone+" not found" {
+	if result != kit.StepSkipped || reason != "source "+gone+" not found" {
 		t.Errorf("result %s %q", result, reason)
 	}
 }
@@ -274,7 +276,7 @@ func TestSetupCacheSourceEntryThatIsNotADirectory(t *testing.T) {
 	})
 	var buf bytes.Buffer
 	result, reason := cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf)
-	if result != StepDone || reason != "" {
+	if result != kit.StepDone || reason != "" {
 		t.Errorf("result %s %q", result, reason)
 	}
 	for _, want := range []string{
@@ -301,7 +303,7 @@ func TestSetupCacheSourceLookupErrorFails(t *testing.T) {
 	withCloner(t, func(_, to string) error { return os.Mkdir(to, 0o755) })
 	var buf bytes.Buffer
 	result, reason := cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf)
-	if result != StepFailed || !strings.Contains(reason, "web/.gradle") {
+	if result != kit.StepFailed || !strings.Contains(reason, "web/.gradle") {
 		t.Errorf("result %s %q\n%s", result, reason, buf.String())
 	}
 	if strings.Contains(buf.String(), "not in source") {
@@ -322,7 +324,7 @@ func TestSetupCacheFailureAndUnclonableTogether(t *testing.T) {
 	var buf bytes.Buffer
 	result, reason := cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf)
 	want := "node_modules: disk on fire; web/.gradle: this filesystem cannot clone"
-	if result != StepFailed || reason != want {
+	if result != kit.StepFailed || reason != want {
 		t.Errorf("result %s %q; want %q", result, reason, want)
 	}
 }
@@ -338,7 +340,7 @@ func TestSetupCacheNothingToCloneIsDone(t *testing.T) {
 	mustMkdir(t, filepath.Join(target, "node_modules"))
 	mustMkdir(t, filepath.Join(target, "web", ".gradle"))
 	var buf bytes.Buffer
-	if result, reason := cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf); result != StepDone || reason != "" {
+	if result, reason := cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf); result != kit.StepDone || reason != "" {
 		t.Errorf("all present: %s %q", result, reason)
 	}
 	if err := os.RemoveAll(filepath.Join(main, "node_modules")); err != nil {
@@ -347,7 +349,7 @@ func TestSetupCacheNothingToCloneIsDone(t *testing.T) {
 	if err := os.RemoveAll(filepath.Join(main, "web")); err != nil {
 		t.Fatal(err)
 	}
-	if result, reason := cloneCacheDirs(ctx, main, t.TempDir(), SetupOptions{}, &buf); result != StepDone || reason != "" {
+	if result, reason := cloneCacheDirs(ctx, main, t.TempDir(), SetupOptions{}, &buf); result != kit.StepDone || reason != "" {
 		t.Errorf("all missing: %s %q", result, reason)
 	}
 }

@@ -1,4 +1,4 @@
-package commands
+package kit
 
 import (
 	"errors"
@@ -35,7 +35,7 @@ func Locate(ctx *Context, arg string) (repo.Worktree, error) {
 		return repo.Worktree{}, err
 	}
 	if wt.IsMain || (!ok && arg == ctx.Repo.Name) {
-		return repo.Worktree{}, errMainCheckout
+		return repo.Worktree{}, ErrMainCheckout
 	}
 	if !ok {
 		return repo.Worktree{}, fmt.Errorf(
@@ -44,9 +44,9 @@ func Locate(ctx *Context, arg string) (repo.Worktree, error) {
 	return wt, nil
 }
 
-// errMainCheckout is the answer for the main checkout named as a worktree, by
+// ErrMainCheckout is the answer for the main checkout named as a worktree, by
 // its path, by "/" or by "." from inside it.
-var errMainCheckout = errors.New("the main checkout is not a worktree; name a worktree (see wt list)")
+var ErrMainCheckout = errors.New("the main checkout is not a worktree; name a worktree (see wt list)")
 
 // existing is the exact matching behind Locate: arg names a worktree by path,
 // by branch, by <type>/<work> or by the bare work name, is "." for the one
@@ -64,12 +64,12 @@ func existing(ctx *Context, arg string) (wt repo.Worktree, ok bool, err error) {
 	// "." is where the caller stands, whatever that directory is called: it
 	// is decided before the path rule, which would take "./" for the
 	// directory itself and miss from anywhere below the worktree's root.
-	if isDot(arg) {
-		return standingWorktree(ctx, names)
+	if IsDot(arg) {
+		return StandingWorktree(ctx, names)
 	}
 	// "/" is the main checkout, wherever the caller stands. Decided before the
 	// path rule too, which would look for a worktree at the filesystem root.
-	if isRoot(arg) {
+	if IsRoot(arg) {
 		for _, n := range names {
 			if n.IsMain {
 				return n.Worktree, true, nil
@@ -104,30 +104,30 @@ func existing(ctx *Context, arg string) (wt repo.Worktree, ok bool, err error) {
 	}
 }
 
-// isDot reports whether arg is ".", spelled with or without the trailing
+// IsDot reports whether arg is ".", spelled with or without the trailing
 // separator a shell's completion adds. Nothing at all is not ".", whatever
 // Clean makes of it.
-func isDot(arg string) bool {
+func IsDot(arg string) bool {
 	return arg != "" && (arg == "." || filepath.Clean(arg) == ".")
 }
 
-// isRoot reports whether arg is "/", the main checkout by name. Only that
+// IsRoot reports whether arg is "/", the main checkout by name. Only that
 // exact spelling: any other path is a path.
-func isRoot(arg string) bool {
+func IsRoot(arg string) bool {
 	return arg == "/"
 }
 
-// standingWorktree is the worktree the caller's directory is inside, the main
+// StandingWorktree is the worktree the caller's directory is inside, the main
 // checkout included: the deepest registered path containing it, so a worktree
 // nested under another's directory is found rather than its parent. Being
 // inside the repository at all does not put a directory inside a worktree
 // (a bare repository's parent, say), and that is an error naming the
 // directory, since "." meant something and it was not found.
-func standingWorktree(ctx *Context, names []WorkName) (repo.Worktree, bool, error) {
+func StandingWorktree(ctx *Context, names []WorkName) (repo.Worktree, bool, error) {
 	var found *repo.Worktree
 	for i := range names {
 		n := &names[i].Worktree
-		if standingIn(ctx.Cwd, n.Path) && (found == nil || len(n.Path) > len(found.Path)) {
+		if StandingIn(ctx.Cwd, n.Path) && (found == nil || len(n.Path) > len(found.Path)) {
 			found = n
 		}
 	}
@@ -139,9 +139,9 @@ func standingWorktree(ctx *Context, names []WorkName) (repo.Worktree, bool, erro
 	return *found, true, nil
 }
 
-// locateBranch is Locate for the verbs that act on a branch: one with none
+// LocateBranch is Locate for the verbs that act on a branch: one with none
 // is named and refused rather than worked on.
-func locateBranch(ctx *Context, arg string) (repo.Worktree, error) {
+func LocateBranch(ctx *Context, arg string) (repo.Worktree, error) {
 	wt, err := Locate(ctx, arg)
 	if err != nil {
 		return repo.Worktree{}, err
@@ -220,6 +220,6 @@ func ambiguous(arg string, matches []repo.Worktree) error {
 	for _, m := range matches {
 		rows = append(rows, []string{"  " + m.Branch, m.Path})
 	}
-	_ = printTable(&b, rows)
+	_ = PrintTable(&b, rows)
 	return errors.New(strings.TrimRight(b.String(), "\n"))
 }

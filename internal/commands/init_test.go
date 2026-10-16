@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
@@ -49,7 +50,7 @@ func TestInitMakesAConfiglessRepoOpenable(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 
-	ctx, err := Open(r.Root)
+	ctx, err := kit.Open(r.Root)
 	if err != nil {
 		t.Fatalf("Open after Init: %v", err)
 	}
@@ -63,8 +64,8 @@ func TestInitMakesAConfiglessRepoOpenable(t *testing.T) {
 
 func TestInitWritesTheAnsweredValues(t *testing.T) {
 	r := bareRepo(t)
-	ask := func(Answers) (Answers, error) {
-		return Answers{MainBranch: "trunk", BranchPrefix: "chore_wt", BuildCommand: "make build"}, nil
+	ask := func(kit.Answers) (kit.Answers, error) {
+		return kit.Answers{MainBranch: "trunk", BranchPrefix: "chore_wt", BuildCommand: "make build"}, nil
 	}
 
 	var buf bytes.Buffer
@@ -72,7 +73,7 @@ func TestInitWritesTheAnsweredValues(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 
-	ctx, err := Open(r.Root)
+	ctx, err := kit.Open(r.Root)
 	if err != nil {
 		t.Fatalf("Open after Init: %v", err)
 	}
@@ -95,8 +96,8 @@ func TestInitWritesTheAnsweredValues(t *testing.T) {
 
 func TestInitOffersDetectedValuesAsTheDefaultsToAnswer(t *testing.T) {
 	r := bareRepo(t)
-	var offered Answers
-	ask := func(defaults Answers) (Answers, error) {
+	var offered kit.Answers
+	ask := func(defaults kit.Answers) (kit.Answers, error) {
 		offered = defaults
 		return defaults, nil
 	}
@@ -172,7 +173,7 @@ func TestInitCommentedDefaultsParseAndChangeNothingWhenUncommented(t *testing.T)
 // which they are in every way that matters here.
 func resolvedConfig(t *testing.T, r *repo.Repo) string {
 	t.Helper()
-	ctx, err := Open(r.Root)
+	ctx, err := kit.Open(r.Root)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -195,12 +196,12 @@ func mustReadFile(t *testing.T, path string) []byte {
 func TestInitReAsksWhenAnAnswerWouldNotValidate(t *testing.T) {
 	r := bareRepo(t)
 	// "wip_wt" yields default type "wip", which is not in WORKTREE_TYPES.
-	answers := []Answers{
+	answers := []kit.Answers{
 		{MainBranch: "main", BranchPrefix: "wip_wt"},
 		{MainBranch: "main", BranchPrefix: "chore_wt"},
 	}
 	asked := 0
-	ask := func(Answers) (Answers, error) {
+	ask := func(kit.Answers) (kit.Answers, error) {
 		a := answers[asked]
 		asked++
 		return a, nil
@@ -217,7 +218,7 @@ func TestInitReAsksWhenAnAnswerWouldNotValidate(t *testing.T) {
 	if !strings.Contains(buf.String(), "wip") || !strings.Contains(buf.String(), "WORKTREE_TYPES") {
 		t.Errorf("the rejection does not say what was wrong:\n%s", buf.String())
 	}
-	ctx, err := Open(r.Root)
+	ctx, err := kit.Open(r.Root)
 	if err != nil {
 		t.Fatalf("Open after Init: %v", err)
 	}
@@ -231,9 +232,9 @@ func TestInitReAsksWhenAnAnswerWouldNotValidate(t *testing.T) {
 func TestInitGivesUpWhenReAskingChangesNothing(t *testing.T) {
 	r := bareRepo(t)
 	asked := 0
-	ask := func(Answers) (Answers, error) {
+	ask := func(kit.Answers) (kit.Answers, error) {
 		asked++
-		return Answers{MainBranch: "main", BranchPrefix: "wip_wt"}, nil
+		return kit.Answers{MainBranch: "main", BranchPrefix: "wip_wt"}, nil
 	}
 
 	var buf bytes.Buffer
@@ -255,8 +256,8 @@ func TestInitGivesUpWhenReAskingChangesNothing(t *testing.T) {
 // Ctrl-D at the prompt aborts. The half-answered state must not reach disk.
 func TestInitWritesNothingWhenTheAnswersAreAbandoned(t *testing.T) {
 	r := bareRepo(t)
-	ask := func(Answers) (Answers, error) {
-		return Answers{}, io.EOF
+	ask := func(kit.Answers) (kit.Answers, error) {
+		return kit.Answers{}, io.EOF
 	}
 
 	var buf bytes.Buffer
@@ -308,7 +309,7 @@ func TestInitForceReplacesAnExistingConfig(t *testing.T) {
 	if err := Init(r, InitOptions{Force: true}, &buf); err != nil {
 		t.Fatalf("Init --force: %v", err)
 	}
-	ctx, err := Open(r.Root)
+	ctx, err := kit.Open(r.Root)
 	if err != nil {
 		t.Fatalf("Open after Init: %v", err)
 	}

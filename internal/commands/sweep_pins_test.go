@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -16,7 +17,7 @@ import (
 )
 
 // sweptRuns is what wt refs swept --json lists.
-func sweptRuns(t *testing.T, ctx *Context) []RefSweptRun {
+func sweptRuns(t *testing.T, ctx *kit.Context) []RefSweptRun {
 	t.Helper()
 	var out bytes.Buffer
 	if err := RefsSwept(ctx, true, &out); err != nil {
@@ -52,7 +53,7 @@ func TestSweepPinsWhatItDeletesAndRefsRestoresIt(t *testing.T) {
 	wtTip := gitOut(t, main, "rev-parse", "fix_wt/login")
 
 	r, human, err := sweepJSON(t, ctx, SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}})
-	if err != nil || r.Outcome != OutcomeDone || r.RunID == nil {
+	if err != nil || r.Outcome != kit.OutcomeDone || r.RunID == nil {
 		t.Fatalf("%v %+v\n%s", err, r, human)
 	}
 	run := *r.RunID
@@ -78,7 +79,7 @@ func TestSweepPinsWhatItDeletesAndRefsRestoresIt(t *testing.T) {
 	}
 
 	res, err := restoreJSON(t, ctx, run, RefsRestoreOptions{})
-	if err != nil || res.Outcome != OutcomeDone {
+	if err != nil || res.Outcome != kit.OutcomeDone {
 		t.Fatalf("%v %+v", err, res)
 	}
 	if gitOut(t, main, "rev-parse", "refs/heads/done-work") != doneTip ||
@@ -132,7 +133,7 @@ func TestSweepQuarantineDoesNotPinABranchTwice(t *testing.T) {
 	dir := trashFor(t, ctx)
 	r, human, err := sweepJSON(t, ctx, SweepOptions{NoFetch: true, Agents: []wtsync.Agent{},
 		PRs: map[string]github.PR{}, Quarantine: dir})
-	if err != nil || r.Outcome != OutcomeDone || r.RunID == nil {
+	if err != nil || r.Outcome != kit.OutcomeDone || r.RunID == nil {
 		t.Fatalf("%v %+v\n%s", err, r, human)
 	}
 	it := resultItem(t, r, "fix_wt/login")
@@ -161,11 +162,11 @@ func TestSweepInterruptedAfterAMoveNamesThePin(t *testing.T) {
 	afterBranchMoved = func(name string) {
 		if name == "one" {
 			// What watchSignals does, but for the exit.
-			currentInterruptJournal().interrupted("", "interrupted")
+			kit.CurrentInterruptJournal().Interrupted("", "interrupted")
 		}
 	}
 	r, human, _ := sweepJSON(t, ctx, SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}})
-	if r.Outcome != OutcomeInterrupted || r.RunID == nil {
+	if r.Outcome != kit.OutcomeInterrupted || r.RunID == nil {
 		t.Fatalf("%+v\n%s", r, human)
 	}
 	it := resultItem(t, r, "one")
@@ -192,10 +193,10 @@ func TestRemovePinsAMergedBranchAndRefsRestoresIt(t *testing.T) {
 		t.Fatalf("%v %+v", err, r)
 	}
 	run := *r.RunID
-	if s := step(t, r, StepBranch); deref(s.Pin) != pinOf(run, RefBranch, "fix_wt/pinned") {
+	if s := step(t, r, kit.StepBranch); deref(s.Pin) != pinOf(run, RefBranch, "fix_wt/pinned") {
 		t.Errorf("branch %+v", s)
 	}
-	if s := step(t, r, StepWorktree); s.Pin != nil {
+	if s := step(t, r, kit.StepWorktree); s.Pin != nil {
 		t.Errorf("only the branch step has a pin: %+v", s)
 	}
 	runs := sweptRuns(t, ctx)
@@ -203,7 +204,7 @@ func TestRemovePinsAMergedBranchAndRefsRestoresIt(t *testing.T) {
 		t.Fatalf("swept = %+v", runs)
 	}
 	res, err := restoreJSON(t, ctx, run, RefsRestoreOptions{Only: []string{"refs/heads/fix_wt/pinned"}})
-	if err != nil || res.Outcome != OutcomeDone {
+	if err != nil || res.Outcome != kit.OutcomeDone {
 		t.Fatalf("%v %+v", err, res)
 	}
 	if gitOut(t, ctx.Repo.MainRoot, "rev-parse", "refs/heads/fix_wt/pinned") != tip {
@@ -220,7 +221,7 @@ func TestRemoveRenamesAnUnmergedBranchWithoutAPin(t *testing.T) {
 	if err != nil || r.Outcome != RemoveRemoved || r.RunID != nil || r.KeepAs == nil {
 		t.Fatalf("%v %+v", err, r)
 	}
-	if s := step(t, r, StepBranch); s.Result != "renamed" || s.Pin != nil {
+	if s := step(t, r, kit.StepBranch); s.Result != "renamed" || s.Pin != nil {
 		t.Errorf("branch %+v", s)
 	}
 	if left := gitOut(t, ctx.Repo.MainRoot, "for-each-ref", SweptPrefix); left != "" {

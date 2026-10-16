@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 func newCheckoutCmd() *cobra.Command {
@@ -43,16 +44,16 @@ func newCheckoutCmd() *cobra.Command {
 				work = args[1]
 			}
 			return runCreate(cmd, args, "checkout", create{json: asJSON, dryRun: dryRun, expect: expect},
-				func(ctx *commands.Context) (string, error) {
+				func(ctx *kit.Context) (string, error) {
 					return commands.Checkout(ctx, args[0], work, opts, cmd.ErrOrStderr())
 				},
-				func(ctx *commands.Context, w io.Writer) error {
+				func(ctx *kit.Context, w io.Writer) error {
 					return commands.CheckoutDryRun(ctx, args[0], work, opts, w)
 				},
-				func(ctx *commands.Context, w io.Writer) error {
+				func(ctx *kit.Context, w io.Writer) error {
 					return commands.CheckoutPlanJSON(ctx, args[0], work, opts, w)
 				},
-				func(ctx *commands.Context, j *commands.CreateJournal, w io.Writer) error {
+				func(ctx *kit.Context, j *commands.CreateJournal, w io.Writer) error {
 					return commands.CheckoutJSON(ctx, args[0], work, opts, expect, j, w)
 				})
 		},

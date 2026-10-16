@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
 func newRemoveCmd() *cobra.Command {
@@ -57,7 +58,7 @@ func newRemoveCmd() *cobra.Command {
 			}
 			// pflag reads --force idle-sessions as a bare --force and a
 			// worktree: a list after a space would force everything.
-			if cmd.Flags().Changed("force") && len(args) == 1 && commands.IsForceList(args[0]) {
+			if cmd.Flags().Changed("force") && len(args) == 1 && kit.IsForceList(args[0]) {
 				return usagef("%q is --force's list, which goes after an =: --force=%s "+
 					"(--force=<list>); a worktree of that name is named by its path or <type>/<work>",
 					args[0], args[0])
@@ -68,7 +69,7 @@ func newRemoveCmd() *cobra.Command {
 			if expect != "" && (!asJSON || !yes) {
 				return usagef("--expect holds a removal to the plan a tool read: pass it with --yes --json")
 			}
-			forced, err := commands.ParseForce(force)
+			forced, err := kit.ParseForce(force)
 			if err != nil {
 				return usageError{err}
 			}
