@@ -14,6 +14,7 @@ import (
 )
 
 func TestAdoptProvisionsAnExternallyCreatedWorktree(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	// A worktree made the way Superset makes them: outside the canonical path.
@@ -31,6 +32,7 @@ func TestAdoptProvisionsAnExternallyCreatedWorktree(t *testing.T) {
 }
 
 func TestAdoptRelocates(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	external := filepath.Join(ctx.Repo.Parent, "elsewhere")
@@ -48,6 +50,7 @@ func TestAdoptRelocates(t *testing.T) {
 }
 
 func TestAdoptRefusesAPathThatIsNotAWorktree(t *testing.T) {
+	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
 	if _, err := Adopt(ctx, t.TempDir(), false, provision.SetupOptions{}, &buf); err == nil {
@@ -56,6 +59,7 @@ func TestAdoptRefusesAPathThatIsNotAWorktree(t *testing.T) {
 }
 
 func TestDoctorReportsNestedWorktree(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	nested := filepath.Join(main, "inside_wt", "feat_wt", "oops")
@@ -75,6 +79,7 @@ func TestDoctorReportsNestedWorktree(t *testing.T) {
 }
 
 func TestDoctorIsQuietOnAHealthyRepo(t *testing.T) {
+	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer
 	problems, err := Doctor(ctx, &buf)
@@ -87,6 +92,7 @@ func TestDoctorIsQuietOnAHealthyRepo(t *testing.T) {
 }
 
 func TestDoctorReportsMissingRequiredBin(t *testing.T) {
+	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t,
 		"MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\nREQUIRED_BINS=\"definitely-not-a-real-binary-xyz\"\n"))
 	var buf bytes.Buffer
@@ -103,6 +109,7 @@ func TestDoctorReportsMissingRequiredBin(t *testing.T) {
 // to run because the configuration is the thing that is wrong makes it useless
 // exactly when it is needed.
 func TestDoctorReportsConfigProblemsInsteadOfRefusing(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\nAWS_SETUP_ENABLED=true\n")
 	if _, err := kit.Open(main); err == nil {
 		t.Fatal("fixture is supposed to have an invalid config")
@@ -135,6 +142,7 @@ func TestDoctorReportsConfigProblemsInsteadOfRefusing(t *testing.T) {
 // key should not blind doctor to REQUIRED_BINS, or it reports "none declared"
 // about a repository that declares two.
 func TestDoctorKeepsValidKeysWhenConfigIsInvalid(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\n"+
 		"REQUIRED_BINS=\"definitely-not-a-real-binary-xyz\"\nAWS_SETUP_ENABLED=true\n")
 	ctx := kit.OpenLenient(main, io.Discard)
@@ -151,6 +159,7 @@ func TestDoctorKeepsValidKeysWhenConfigIsInvalid(t *testing.T) {
 // stay strict about configuration, so when the config is broken doctor has to
 // say which order to do the work in.
 func TestDoctorOrdersTheWorkWhenConfigIsBroken(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\nAWS_SETUP_ENABLED=true\n")
 	ctx := kit.OpenLenient(main, io.Discard)
 	legacy := filepath.Join(ctx.Repo.Parent, "demo-legacy")
@@ -170,6 +179,7 @@ func TestDoctorOrdersTheWorkWhenConfigIsBroken(t *testing.T) {
 // on macOS a checkout under /var is /private/var to git. Comparing the two
 // literally makes adopt refuse a worktree it is standing next to.
 func TestAdoptAcceptsAPathThroughASymlink(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	external := filepath.Join(ctx.Repo.Parent, "demo-spare")
