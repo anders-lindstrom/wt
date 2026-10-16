@@ -1962,3 +1962,39 @@ Nothing is retried. `--dry-run` goes as far as the frame and sends nothing.
 
 A message that contains the header's own tags has their opening brackets
 written as `&lt;`, so it cannot close the header and write outside it.
+
+## `wt session stop <work> [<session>] --json` — the outcome
+
+One background Claude session stopped with `claude stop <id>`, the attach id
+`wt attach` uses. Its conversation is kept; `claude attach <id>` resumes it.
+Only a background Claude session is stopped: one open in a terminal, a Codex
+session and the session wt runs under are refused, and nothing is stopped.
+`--dry-run` resolves and checks, and runs nothing.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `schema`, `schemaVersion` | | |
+| `command` | `"session stop"` | |
+| `session` | object \| null | the session, as in `session list`; null when none was chosen |
+| `dryRun` | boolean | |
+| `outcome` | enum | `stopped`, `already-stopped` (no process: nothing to stop, exit 0), `would-stop` (`--dry-run`), `refused`, `failed` |
+| `reason` | string \| null | why, for `refused` and `failed`; a note for `already-stopped` |
+| `reasonCode` | enum \| null | see below |
+| `message` | string \| null | what `claude stop` printed, stdout then stderr; null when it printed nothing or did not run |
+
+`reasonCode`:
+
+| Value | Outcome | Exit | When |
+|---|---|---|---|
+| `noSession` | `failed` | 1 | no worktree matches, or no session in it, or none by that name |
+| `ambiguous` | `refused` | 2 | several match, or several background sessions are running and none was named; nothing is chosen. `reason` lists them |
+| `changed` | `refused` | 1 | `--expect-session` named a session that is not the one there |
+| `interactive` | `refused` | 1 | the session is open in a terminal: a background conversation resumed there is listed as the terminal's. A background session someone has opened with `claude attach` is still a background session, and is stopped |
+| `notExact` | `refused` | 1 | `<work>` only matched a worktree and is not its name, and no `--expect-session` was given |
+| `ownUnknown` | `refused` | 1 | the process table could not be read, so wt cannot tell whether the session is the one it runs under |
+| `codex` | `refused` | 1 | a Codex session |
+| `own` | `refused` | 1 | the session wt runs under |
+| `noId` | `refused` | 1 | the session has no attach id `claude stop` could take |
+| `notBackground` | `refused` | 1 | none of the worktree's sessions is a background Claude session; `reason` lists them |
+| `noProcess` | `already-stopped` | 0 | a parked session |
+| `stopFailed` | `failed` | 1 | `claude stop` exited non-zero, was not found, or did not answer in 30 s; `message` has what it said |

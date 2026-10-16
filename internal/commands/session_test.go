@@ -653,3 +653,256 @@ func TestSessionListAllPlacesSessionsByRepositoryFromOneRead(t *testing.T) {
 		t.Errorf("claude was asked %d times, want one read", *asked)
 	}
 }
+
+// fakeClaudeStop puts a claude on the PATH that records its arguments, one
+// call a line, and prints out; it exits with code.
+func fakeClaudeStop(t *testing.T, out string, code int) (calls func() []string) {
+	t.Helper()
+	dir := t.TempDir()
+	log := filepath.Join(dir, "calls")
+	script := "#!/bin/sh\necho \"$@\" >> " + log + "\necho '" + out + "'\nexit " + strconv.Itoa(code) + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "claude"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return func() []string {
+		data, _ := os.ReadFile(log)
+		if len(bytes.TrimSpace(data)) == 0 {
+			return nil
+		}
+		return strings.Split(strings.TrimSpace(string(data)), "\n")
+	}
+}
+
+var stopAncestorsSet bool
+
+func stopSession(t *testing.T, ctx *Context, r *sessionRig, o SessionStopOptions) (SessionStop, string, error) {
+	t.Helper()
+	var out bytes.Buffer
+	o.Out, o.Err, o.JSON, o.env = &out, &bytes.Buffer{}, true, &r.env
+	if o.Pattern == "" {
+		o.Pattern = "thing"
+	}
+	if !stopAncestorsSet {
+		was := listAncestors
+		listAncestors = func() (map[int]bool, error) { return map[int]bool{}, nil }
+		defer func() { listAncestors = was }()
+	}
+	err := SessionStopRun(ctx, o)
+	validateJSON(t, "session-stop", out.Bytes())
+	var res SessionStop
+	if jerr := json.Unmarshal(out.Bytes(), &res); jerr != nil {
+		t.Fatalf("stdout is not one JSON object: %v\n%s", jerr, out.String())
+	}
+	var line bytes.Buffer
+	_ = json.Compact(&line, out.Bytes())
+	t.Logf("JSON %s", line.String())
+	return res, out.String(), err
+}
+
+func running(name, id, cwd string, pid int) wtsync.Agent {
+	a := background(name, id, "working", cwd)
+	a.Status, a.PID = "busy", pid
+	return a
+}
+
+func codeOf(r SessionStop) string {
+	if r.ReasonCode == nil {
+		return ""
+	}
+	return *r.ReasonCode
+}
+
+func TestSessionStopStopsTheBackgroundSessionByItsAttachID(t *testing.T) {
+	ctx, _, wt := attachFixture(t)
+	r := newSessionRig(t)
+	calls := fakeClaudeStop(t, "Stopped aaaaaaaa", 0)
+	claudeLists(t, running("works", "aaaaaaaa", wt, 4001), background("parked", "dddddddd", "blocked", wt))
+	res, _, err := stopSession(t, ctx, r, SessionStopOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Outcome != "stopped" || res.Message == nil || *res.Message != "Stopped aaaaaaaa" || res.Session == nil || *res.Session.ID != "aaaaaaaa" {
+		t.Errorf("result = %+v", res)
+	}
+	if got := calls(); len(got) != 1 || got[0] != "stop aaaaaaaa" {
+		t.Errorf("claude was run as %v, want one call: stop aaaaaaaa", got)
+	}
+}
+
+func TestSessionStopAParkedSessionIsAlreadyStopped(t *testing.T) {
+	ctx, _, wt := attachFixture(t)
+	r := newSessionRig(t)
+	calls := fakeClaudeStop(t, "", 0)
+	claudeLists(t, background("parked", "dddddddd", "blocked", wt))
+	res, _, err := stopSession(t, ctx, r, SessionStopOptions{})
+	if err != nil || res.Outcome != "already-stopped" || codeOf(res) != "noProcess" {
+		t.Errorf("want already-stopped with no error, got %v / %+v", err, res)
+	}
+	if len(calls()) != 0 {
+		t.Errorf("claude ran: %v", calls())
+	}
+}
+
+func TestSessionStopRefusesATerminalAndACodexSession(t *testing.T) {
+	ctx, _, wt := attachFixture(t)
+	r := newSessionRig(t)
+	calls := fakeClaudeStop(t, "", 0)
+	claudeLists(t, liveSession("mine", sidA, wt, 4001))
+	res, _, err := stopSession(t, ctx, r, SessionStopOptions{Session: "mine"})
+	if err == nil || res.Outcome != "refused" || codeOf(res) != "interactive" || res.Session == nil {
+		t.Errorf("interactive: want refused, got %v / %+v", err, res)
+	}
+	// Alone and unnamed it is still the reason, not a guess elsewhere.
+	res, _, err = stopSession(t, ctx, r, SessionStopOptions{})
+	if err == nil || res.Outcome != "refused" || codeOf(res) != "interactive" {
+		t.Errorf("interactive, unnamed: want refused, got %v / %+v", err, res)
+	}
+
+	// A background conversation open in a terminal is the terminal's row, with
+	// the attach id: stopping it would close the terminal's session.
+	folded := liveSession("both", sidB, wt, 4002)
+	folded.ID = "bbbbbbbb"
+	claudeLists(t, folded)
+	res, _, err = stopSession(t, ctx, r, SessionStopOptions{Session: "bbbbbbbb"})
+	if err == nil || codeOf(res) != "interactive" {
+		t.Errorf("attached background: want refused, got %v / %+v", err, res)
+	}
+
+	codex := wtsync.Agent{ID: "codex-77", Name: "codex", Cwd: wt, Status: "busy", Tool: wtsync.ToolCodex, PID: 77, Kind: "background"}
+	res, _, err = stopSession(t, ctx, r, SessionStopOptions{Session: "codex-77", Sessions: readOf(codex)})
+	if err == nil || res.Outcome != "refused" || codeOf(res) != "codex" {
+		t.Errorf("codex: want refused, got %v / %+v", err, res)
+	}
+	own := running("me", "eeeeeeee", wt, 4003)
+	own.Own = true
+	claudeLists(t, own)
+	res, _, err = stopSession(t, ctx, r, SessionStopOptions{Session: "me"})
+	if err == nil || codeOf(res) != "own" {
+		t.Errorf("own: want refused, got %v / %+v", err, res)
+	}
+	if len(calls()) != 0 {
+		t.Errorf("claude ran: %v", calls())
+	}
+}
+
+func readOf(agents ...wtsync.Agent) *ClaudeSessions {
+	c := &ClaudeSessions{done: closedChan(), found: true}
+	for _, a := range agents {
+		c.sessions = append(c.sessions, claudeSession{a})
+	}
+	return c
+}
+
+func TestSessionStopHoldsToTheSessionExpected(t *testing.T) {
+	ctx, _, wt := attachFixture(t)
+	r := newSessionRig(t)
+	calls := fakeClaudeStop(t, "Stopped", 0)
+	claudeLists(t, running("works", "aaaaaaaa", wt, 4001))
+	res, _, err := stopSession(t, ctx, r, SessionStopOptions{Session: "works", ExpectSession: sidB})
+	if err == nil || res.Outcome != "refused" || codeOf(res) != "changed" {
+		t.Errorf("want changed, got %v / %+v", err, res)
+	}
+	res, _, err = stopSession(t, ctx, r, SessionStopOptions{ExpectSession: sidB})
+	if err == nil || codeOf(res) != "changed" {
+		t.Errorf("want changed, got %v / %+v", err, res)
+	}
+	if len(calls()) != 0 {
+		t.Errorf("claude ran: %v", calls())
+	}
+	// The full id alone names it, whatever the case.
+	res, _, err = stopSession(t, ctx, r, SessionStopOptions{ExpectSession: strings.ToUpper("aaaaaaaa-0000-4000-8000-000000000000")})
+	if err != nil || res.Outcome != "stopped" {
+		t.Errorf("want stopped, got %v / %+v", err, res)
+	}
+}
+
+func TestSessionStopRefusesToGuessAmongSeveral(t *testing.T) {
+	ctx, _, wt := attachFixture(t)
+	r := newSessionRig(t)
+	calls := fakeClaudeStop(t, "", 0)
+	claudeLists(t, running("first", "aaaaaaaa", wt, 4001), running("second", "bbbbbbbb", wt, 4002))
+	res, _, err := stopSession(t, ctx, r, SessionStopOptions{})
+	var usage UsageError
+	if !errors.As(err, &usage) || codeOf(res) != "ambiguous" || res.Outcome != "refused" {
+		t.Errorf("want ambiguous as a usage error, got %v / %+v", err, res)
+	}
+	if !strings.Contains(err.Error(), "first") || !strings.Contains(err.Error(), "second") {
+		t.Errorf("the error should list them: %v", err)
+	}
+	// A partial name matching both is no better.
+	_, _, err = stopSession(t, ctx, r, SessionStopOptions{Session: "s"})
+	if !errors.As(err, &usage) {
+		t.Errorf("want a usage error for a name that matches two, got %v", err)
+	}
+	if len(calls()) != 0 {
+		t.Errorf("claude ran: %v", calls())
+	}
+}
+
+func TestSessionStopReportsWhatClaudeSaidWhenItFails(t *testing.T) {
+	ctx, _, wt := attachFixture(t)
+	r := newSessionRig(t)
+	calls := fakeClaudeStop(t, "no such session", 1)
+	claudeLists(t, running("works", "aaaaaaaa", wt, 4001))
+	res, _, err := stopSession(t, ctx, r, SessionStopOptions{})
+	if err == nil || res.Outcome != "failed" || codeOf(res) != "stopFailed" || res.Message == nil || *res.Message != "no such session" {
+		t.Errorf("want failed with claude's message, got %v / %+v", err, res)
+	}
+	if !strings.Contains(err.Error(), "no such session") || len(calls()) != 1 {
+		t.Errorf("error %v, calls %v", err, calls())
+	}
+}
+
+func TestSessionStopDryRunStopsNothing(t *testing.T) {
+	ctx, _, wt := attachFixture(t)
+	r := newSessionRig(t)
+	calls := fakeClaudeStop(t, "Stopped", 0)
+	claudeLists(t, running("works", "aaaaaaaa", wt, 4001))
+	res, _, err := stopSession(t, ctx, r, SessionStopOptions{DryRun: true})
+	if err != nil || res.Outcome != "would-stop" || !res.DryRun || res.Session == nil {
+		t.Errorf("want would-stop, got %v / %+v", err, res)
+	}
+	if len(calls()) != 0 {
+		t.Errorf("claude ran: %v", calls())
+	}
+}
+
+func TestSessionStopRefusesWhenItCannotTellWhoseSessionItIs(t *testing.T) {
+	ctx, _, wt := attachFixture(t)
+	r := newSessionRig(t)
+	calls := fakeClaudeStop(t, "Stopped", 0)
+	claudeLists(t, running("works", "aaaaaaaa", wt, 4001))
+	stopAncestorsSet = true
+	was := listAncestors
+	t.Cleanup(func() { stopAncestorsSet = false; listAncestors = was })
+
+	listAncestors = func() (map[int]bool, error) { return nil, errors.New("ps failed") }
+	res, _, err := stopSession(t, ctx, r, SessionStopOptions{})
+	if err == nil || res.Outcome != "refused" || codeOf(res) != "ownUnknown" {
+		t.Errorf("want ownUnknown, got %v / %+v", err, res)
+	}
+	// Its pid is an ancestor of wt: the session wt runs under, however claude listed it.
+	listAncestors = func() (map[int]bool, error) { return map[int]bool{4001: true}, nil }
+	res, _, err = stopSession(t, ctx, r, SessionStopOptions{})
+	if err == nil || res.Outcome != "refused" || codeOf(res) != "own" {
+		t.Errorf("want own, got %v / %+v", err, res)
+	}
+	if len(calls()) != 0 {
+		t.Errorf("claude ran: %v", calls())
+	}
+}
+
+func TestSessionStopRefusesAFuzzyWorktreeName(t *testing.T) {
+	ctx, _, wt := attachFixture(t)
+	r := newSessionRig(t)
+	calls := fakeClaudeStop(t, "Stopped", 0)
+	claudeLists(t, running("works", "aaaaaaaa", wt, 4001))
+	res, _, err := stopSession(t, ctx, r, SessionStopOptions{Pattern: "thin"})
+	if err == nil || res.Outcome != "refused" || codeOf(res) != "notExact" {
+		t.Errorf("want notExact, got %v / %+v", err, res)
+	}
+	if len(calls()) != 0 {
+		t.Errorf("claude ran: %v", calls())
+	}
+}
