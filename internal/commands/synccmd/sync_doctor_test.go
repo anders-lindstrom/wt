@@ -55,6 +55,7 @@ func DoctorRows(t *testing.T, out string) []string {
 }
 
 func TestSyncDoctorPrintsTwelveOKRowsForAHealthyFixture(t *testing.T) {
+	// Not parallel: sets HOME for the process.
 	ctx := doctorFixture(t, true)
 	// No keeper is installed in the fixture's home, whatever this machine has.
 	t.Setenv("HOME", t.TempDir())
@@ -75,6 +76,7 @@ func TestSyncDoctorPrintsTwelveOKRowsForAHealthyFixture(t *testing.T) {
 }
 
 func TestSyncDoctorFixesRerereOffWithFixFlag(t *testing.T) {
+	t.Parallel()
 	ctx := doctorFixture(t, false)
 	var out bytes.Buffer
 	if err := SyncDoctor(ctx, DoctorOptions{Fix: true}, &out); err != nil {
@@ -89,6 +91,7 @@ func TestSyncDoctorFixesRerereOffWithFixFlag(t *testing.T) {
 }
 
 func TestSyncDoctorReportsAWorktreeWaitingOnAPerson(t *testing.T) {
+	t.Parallel()
 	ctx := doctorFixture(t, true)
 	var buf bytes.Buffer
 	bump, err := provision.New(ctx, "feat/bump", provision.NewOptions{NoSetup: true}, &buf)

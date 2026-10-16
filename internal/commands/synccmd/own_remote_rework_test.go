@@ -12,6 +12,7 @@ import (
 // abort: the way back is wt sync undo, which also takes away the word that
 // the branch was at its remote's commit.
 func TestOnInterruptAfterAFastForwardPointsAtUndo(t *testing.T) {
+	// Not parallel: OnInterrupt kills every git and removes every temporary directory in the test binary.
 	var out bytes.Buffer
 	kit.OnInterrupt(&out, nil, &kit.RebaseInFlight{Work: "bump", Path: "/w/bump", Safety: "refs/wt-sync/feat_wt/bump/99", Forwarding: true})
 	s := out.String()

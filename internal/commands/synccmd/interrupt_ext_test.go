@@ -23,6 +23,7 @@ import (
 // goroutine that ran the killed step parks instead, so the rebase stands as
 // the handler says, with no result pinned and nothing owed.
 func TestInterruptDuringADeferredStepPinsNoResult(t *testing.T) {
+	// Not parallel: signals every git process group in the test binary.
 	if testing.Short() {
 		t.Skip("interrupts a real run with a signal")
 	}
@@ -65,6 +66,7 @@ func TestInterruptDuringADeferredStepPinsNoResult(t *testing.T) {
 // the worktree, with no sidecar yet to explain it. It has to name the
 // worktree and what puts it back, as an interrupt during the rebase does.
 func TestSyncRunInterruptedWhileHandingOverSaysHowToPutItBack(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("interrupts a real run with a signal")
 	}

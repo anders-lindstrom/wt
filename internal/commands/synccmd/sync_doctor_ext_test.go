@@ -15,6 +15,7 @@ import (
 // The doctor's plan row says where each handover stands, as the overview's
 // row does: waiting at its stop, or aborted by hand.
 func TestSyncDoctorSaysWhereAHandoverStands(t *testing.T) {
+	t.Parallel()
 	ctx, bump, _, _ := synccmdtest.HandedOver(t)
 	testkit.GitOut(t, ctx.Repo.MainRoot, "config", "core.hooksPath", filepath.Join(ctx.Repo.MainRoot, ".git", "hooks"))
 	planRow := func() string {
