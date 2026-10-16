@@ -13,6 +13,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/config"
 )
 
@@ -208,7 +209,7 @@ func newShellCmd(use, short, long, example string) *cobra.Command {
 }
 
 // sourceShellLayer is the line that loads wt's shell layer.
-const sourceShellLayer = commands.SourceShellLayer
+const sourceShellLayer = session.SourceShellLayer
 
 func newCdCmd() *cobra.Command {
 	c := newShellCmd("cd [<pattern>]", "Change directory to a worktree (shell)",
@@ -320,7 +321,7 @@ func errorStatus(err error) int {
 		return 3
 	}
 	var usage usageError
-	var sessionUsage commands.UsageError
+	var sessionUsage session.UsageError
 	var commandUsage *config.InputError
 	if errors.As(err, &usage) || errors.As(err, &sessionUsage) || errors.As(err, &commandUsage) || strings.HasPrefix(err.Error(), "unknown command ") {
 		return 2

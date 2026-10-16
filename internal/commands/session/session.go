@@ -1,4 +1,6 @@
-package commands
+// Package session implements wt session and wt attach: the claude and codex
+// sessions in a worktree, listing them, sending to and stopping them.
+package session
 
 import (
 	"bytes"
@@ -124,9 +126,9 @@ func containsString(list []string, s string) bool {
 	return false
 }
 
-// SessionInfo is one session as `wt session list --json` and `wt session
+// Info is one session as `wt session list --json` and `wt session
 // send --json` print it.
-type SessionInfo struct {
+type Info struct {
 	Repo             string  `json:"repo"`
 	Work             string  `json:"work"`
 	Path             string  `json:"path"`
@@ -154,34 +156,34 @@ type SessionInfo struct {
 	sessionID string
 }
 
-// SessionList is `wt session list --json`.
-type SessionList struct {
-	Schema        int           `json:"schema"`
-	SchemaVersion string        `json:"schemaVersion"`
-	Command       string        `json:"command"`
-	Sessions      []SessionInfo `json:"sessions"`
-	SessionsError *string       `json:"sessionsError"`
-	CodexError    *string       `json:"codexError"`
-	Error         *string       `json:"error"`
+// List is `wt session list --json`.
+type List struct {
+	Schema        int     `json:"schema"`
+	SchemaVersion string  `json:"schemaVersion"`
+	Command       string  `json:"command"`
+	Sessions      []Info  `json:"sessions"`
+	SessionsError *string `json:"sessionsError"`
+	CodexError    *string `json:"codexError"`
+	Error         *string `json:"error"`
 }
 
-// SessionSend is `wt session send --json`.
-type SessionSend struct {
-	Schema        int          `json:"schema"`
-	SchemaVersion string       `json:"schemaVersion"`
-	Command       string       `json:"command"`
-	Target        *SessionInfo `json:"target"`
-	DryRun        bool         `json:"dryRun"`
-	Sent          bool         `json:"sent"`
-	MsgID         *string      `json:"msgId"`
-	Bytes         int          `json:"bytes"`
-	Limit         int          `json:"limit"`
-	Error         *string      `json:"error"`
-	ErrorCode     *string      `json:"errorCode"`
+// Send is `wt session send --json`.
+type Send struct {
+	Schema        int     `json:"schema"`
+	SchemaVersion string  `json:"schemaVersion"`
+	Command       string  `json:"command"`
+	Target        *Info   `json:"target"`
+	DryRun        bool    `json:"dryRun"`
+	Sent          bool    `json:"sent"`
+	MsgID         *string `json:"msgId"`
+	Bytes         int     `json:"bytes"`
+	Limit         int     `json:"limit"`
+	Error         *string `json:"error"`
+	ErrorCode     *string `json:"errorCode"`
 }
 
-// SessionListOptions is one `wt session list`.
-type SessionListOptions struct {
+// ListOptions is one `wt session list`.
+type ListOptions struct {
 	// Pattern names the worktree as `wt attach` takes it; empty is the one
 	// the caller stands in, or every worktree from the main checkout.
 	Pattern string
@@ -200,7 +202,7 @@ type SessionListOptions struct {
 	env      *sessionEnv
 }
 
-func (o SessionListOptions) environment() sessionEnv {
+func (o ListOptions) environment() sessionEnv {
 	e := defaultSessionEnv()
 	if o.env != nil {
 		e = *o.env
@@ -219,7 +221,7 @@ func (c *ClaudeSessions) with(extra []wtsync.Agent) *ClaudeSessions {
 	close(m.done)
 	m.sessions = append(m.sessions, c.sessions...)
 	for _, a := range extra {
-		m.sessions = append(m.sessions, claudeSession{a})
+		m.sessions = append(m.sessions, ClaudeSession{a})
 	}
 	return m
 }
@@ -228,7 +230,7 @@ func (c *ClaudeSessions) with(extra []wtsync.Agent) *ClaudeSessions {
 // inbox it can be written to, or why it has none. sessionsError is set when
 // claude's sessions could not be read; err when the worktree could not be
 // found.
-func worktreeSessions(ctx *kit.Context, pattern string, errw io.Writer, read *ClaudeSessions, env sessionEnv) (t attachTarget, infos []SessionInfo, sessionsError error, err error) {
+func worktreeSessions(ctx *kit.Context, pattern string, errw io.Writer, read *ClaudeSessions, env sessionEnv) (t attachTarget, infos []Info, sessionsError error, err error) {
 	if read == nil {
 		read = ReadClaudeSessions(attachDeadline)
 	}
@@ -249,8 +251,8 @@ func worktreeSessions(ctx *kit.Context, pattern string, errw io.Writer, read *Cl
 
 // describeTarget is the sessions of t as the JSON shows them; the first of
 // each worktree is the one wt list shows.
-func describeTarget(t attachTarget, env sessionEnv) []SessionInfo {
-	var infos []SessionInfo
+func describeTarget(t attachTarget, env sessionEnv) []Info {
+	var infos []Info
 	seen := map[string]bool{}
 	for i, s := range t.sessions {
 		work, path := t.label, t.path
@@ -269,7 +271,7 @@ func describeTarget(t attachTarget, env sessionEnv) []SessionInfo {
 
 // repoSessions is every session in any worktree of ctx's repository, of the
 // sessions read holds.
-func repoSessions(ctx *kit.Context, read *ClaudeSessions, env sessionEnv) ([]SessionInfo, error) {
+func repoSessions(ctx *kit.Context, read *ClaudeSessions, env sessionEnv) ([]Info, error) {
 	names, err := kit.WorkNames(ctx)
 	if err != nil {
 		return nil, err
@@ -278,7 +280,7 @@ func repoSessions(ctx *kit.Context, read *ClaudeSessions, env sessionEnv) ([]Ses
 	for i, n := range names {
 		paths[i] = n.Path
 	}
-	by := read.byWorktree(paths)
+	by := read.ByWorktree(paths)
 	t := attachTarget{repo: ctx.Repo.Name}
 	for _, n := range names {
 		work := n.Work
@@ -301,7 +303,7 @@ func repoSessions(ctx *kit.Context, read *ClaudeSessions, env sessionEnv) ([]Ses
 // from the one read of claude's sessions there is: each session is placed in
 // its repository by its working directory, and only a repository holding one
 // is opened.
-func acrossRepos(u *config.User, sel kit.Selection, read *ClaudeSessions, env sessionEnv) ([]SessionInfo, error) {
+func acrossRepos(u *config.User, sel kit.Selection, read *ClaudeSessions, env sessionEnv) ([]Info, error) {
 	all := read.all()
 	roots := make([]string, len(all))
 	var wg sync.WaitGroup
@@ -333,11 +335,11 @@ func acrossRepos(u *config.User, sel kit.Selection, read *ClaudeSessions, env se
 	}
 	set := kit.RepoSet{Repos: targets}
 	type repoResult struct {
-		infos []SessionInfo
+		infos []Info
 		err   error
 	}
 	results := kit.EachRepo(set.Repos, kit.RepoParallelism, func(t kit.RepoTarget) repoResult {
-		var mine []claudeSession
+		var mine []ClaudeSession
 		for i, s := range all {
 			if roots[i] != "" && repo.SamePath(roots[i], t.Path) {
 				mine = append(mine, s)
@@ -353,7 +355,7 @@ func acrossRepos(u *config.User, sel kit.Selection, read *ClaudeSessions, env se
 		}
 		return repoResult{got, err}
 	})
-	var infos []SessionInfo
+	var infos []Info
 	for _, r := range results {
 		infos = append(infos, r.infos...)
 		if r.err != nil {
@@ -369,10 +371,10 @@ func closedChan() chan struct{} {
 	return c
 }
 
-// SessionListRun is `wt session list`. Codex sessions are listed beside
+// ListRun is `wt session list`. Codex sessions are listed beside
 // Claude's, with no inbox; when they cannot be found, codexError says so and
 // the Claude sessions stand.
-func SessionListRun(ctx *kit.Context, o SessionListOptions) error {
+func ListRun(ctx *kit.Context, o ListOptions) error {
 	read := o.Sessions
 	if read == nil {
 		read = ReadClaudeSessions(attachDeadline)
@@ -386,10 +388,10 @@ func SessionListRun(ctx *kit.Context, o SessionListOptions) error {
 		a, err := listCodexSessions()
 		codexDone <- codexRead{a, err}
 	}()
-	out := SessionList{Schema: 1, SchemaVersion: schema.VersionOf("session-list"), Command: "session list",
-		Sessions: []SessionInfo{}}
+	out := List{Schema: 1, SchemaVersion: schema.VersionOf("session-list"), Command: "session list",
+		Sessions: []Info{}}
 	env := o.environment()
-	var infos []SessionInfo
+	var infos []Info
 	var sessionsErr, err error
 	<-read.done
 	codex := <-codexDone
@@ -444,7 +446,7 @@ func SessionListRun(ctx *kit.Context, o SessionListOptions) error {
 }
 
 // sessionRows is the human listing: worktree, session, state, inbox, age.
-func sessionRows(infos []SessionInfo) [][]string {
+func sessionRows(infos []Info) [][]string {
 	now := time.Now()
 	rows := make([][]string, len(infos))
 	for i, s := range infos {
@@ -471,7 +473,7 @@ func sessionRows(infos []SessionInfo) [][]string {
 				started = "started " + kit.Ago(now.Sub(t))
 			}
 		}
-		rows[i] = []string{s.Work, cutToWidth(name, maxSessionName), state, inbox, started}
+		rows[i] = []string{s.Work, cutToWidth(name, MaxSessionName), state, inbox, started}
 	}
 	return rows
 }
@@ -479,8 +481,8 @@ func sessionRows(infos []SessionInfo) [][]string {
 var sessionIDShape = regexp.MustCompile(`^[0-9A-Za-z-]{8,64}$`)
 
 // describeSession is s as the JSON shows it, with its inbox looked up.
-func describeSession(s claudeSession, repo, work, path string, env sessionEnv) SessionInfo {
-	info := SessionInfo{Repo: repo, Work: work, Path: path, Kind: "claude", Terminal: s.Kind == "interactive",
+func describeSession(s ClaudeSession, repo, work, path string, env sessionEnv) Info {
+	info := Info{Repo: repo, Work: work, Path: path, Kind: "claude", Terminal: s.Kind == "interactive",
 		State: "busy", sessionID: s.SessionID}
 	codex := s.Tool == wtsync.ToolCodex
 	if codex {
@@ -549,7 +551,7 @@ const (
 // readRegistry reads ~/.claude/sessions/<pid>.json. A pid is reused and the
 // file outlives its session: it is the session's only when it names the same
 // pid and conversation.
-func readRegistry(s claudeSession, env sessionEnv) (registryEntry, int) {
+func readRegistry(s ClaudeSession, env sessionEnv) (registryEntry, int) {
 	data, err := os.ReadFile(filepath.Join(env.configDir, "sessions", strconv.Itoa(s.PID)+".json"))
 	switch {
 	case errors.Is(err, os.ErrNotExist):
@@ -578,7 +580,7 @@ func readRegistry(s claudeSession, env sessionEnv) (registryEntry, int) {
 // written to it: it must be a socket owned by the user, in a directory only
 // the user can write to, that a session whose id matches names, and that
 // accepts a connection (unless env.noProbe).
-func findInbox(s claudeSession, env sessionEnv, reg registryEntry, regState int) (inbox, why *string) {
+func findInbox(s ClaudeSession, env sessionEnv, reg registryEntry, regState int) (inbox, why *string) {
 	no := func(reason string) (*string, *string) { return nil, &reason }
 	if s.PID <= 1 {
 		return no("notRunning")
@@ -642,8 +644,8 @@ func (e sessionEnv) ownedByUser(fi os.FileInfo) bool {
 	return ok && int(st.Uid) == e.uid
 }
 
-// SessionSendOptions is one `wt session send`.
-type SessionSendOptions struct {
+// SendOptions is one `wt session send`.
+type SendOptions struct {
 	// Pattern names the worktree as `wt attach` takes it.
 	Pattern string
 	// Session picks one of its sessions: an id, the start of the session
@@ -670,11 +672,11 @@ type sendFailure struct {
 	usage bool
 }
 
-// SessionSendRun is `wt session send`. It writes one line to one inbox and
+// SendRun is `wt session send`. It writes one line to one inbox and
 // never tries again: sent says the line was written and the connection
 // closed cleanly, not that the session's Claude has read it.
-func SessionSendRun(ctx *kit.Context, o SessionSendOptions) error {
-	out := SessionSend{Schema: 1, SchemaVersion: schema.VersionOf("session-send"), Command: "session send",
+func SendRun(ctx *kit.Context, o SendOptions) error {
+	out := Send{Schema: 1, SchemaVersion: schema.VersionOf("session-send"), Command: "session send",
 		DryRun: o.DryRun, Limit: MaxSessionMessage}
 	env := defaultSessionEnv()
 	if o.env != nil {
@@ -760,7 +762,7 @@ func SessionSendRun(ctx *kit.Context, o SessionSendOptions) error {
 	return finishSend(o, out, target, true)
 }
 
-func finishSend(o SessionSendOptions, out SessionSend, target *SessionInfo, sent bool) error {
+func finishSend(o SendOptions, out Send, target *Info, sent bool) error {
 	if o.JSON {
 		return kit.WriteJSON(o.Out, out)
 	}
@@ -778,7 +780,7 @@ func finishSend(o SessionSendOptions, out SessionSend, target *SessionInfo, sent
 
 // chooseSessionTarget is the one session o names, with an inbox, or the
 // reason there is none. It never picks among several.
-func chooseSessionTarget(ctx *kit.Context, o SessionSendOptions, env sessionEnv) (*SessionInfo, *sendFailure) {
+func chooseSessionTarget(ctx *kit.Context, o SendOptions, env sessionEnv) (*Info, *sendFailure) {
 	t, infos, sessionsErr, err := worktreeSessions(ctx, o.Pattern, o.Err, o.Sessions, env)
 	switch {
 	case sessionsErr != nil:
@@ -1006,7 +1008,7 @@ func newUUID() string {
 // word claudeState keeps) and parked (a background session with no process,
 // whatever it was waiting for: a wait that began when its process ended
 // says nothing about now).
-func sessionActivity(s claudeSession) string {
+func sessionActivity(s ClaudeSession) string {
 	switch {
 	case s.Tool != "":
 		if s.Idle() {
@@ -1086,21 +1088,21 @@ func namesWorktreeExactly(pattern string, t attachTarget) bool {
 // stopDeadline is how long `claude stop` has to answer.
 const stopDeadline = 30 * time.Second
 
-// SessionStop is `wt session stop --json`.
-type SessionStop struct {
-	Schema        int          `json:"schema"`
-	SchemaVersion string       `json:"schemaVersion"`
-	Command       string       `json:"command"`
-	Session       *SessionInfo `json:"session"`
-	DryRun        bool         `json:"dryRun"`
-	Outcome       string       `json:"outcome"`
-	Reason        *string      `json:"reason"`
-	ReasonCode    *string      `json:"reasonCode"`
-	Message       *string      `json:"message"`
+// Stop is `wt session stop --json`.
+type Stop struct {
+	Schema        int     `json:"schema"`
+	SchemaVersion string  `json:"schemaVersion"`
+	Command       string  `json:"command"`
+	Session       *Info   `json:"session"`
+	DryRun        bool    `json:"dryRun"`
+	Outcome       string  `json:"outcome"`
+	Reason        *string `json:"reason"`
+	ReasonCode    *string `json:"reasonCode"`
+	Message       *string `json:"message"`
 }
 
-// SessionStopOptions is one `wt session stop`.
-type SessionStopOptions struct {
+// StopOptions is one `wt session stop`.
+type StopOptions struct {
 	// Pattern names the worktree as `wt attach` takes it.
 	Pattern string
 	// Session picks one of its sessions: an id, the start of the session
@@ -1122,12 +1124,12 @@ type stopRefusal struct {
 	usage  bool
 }
 
-// SessionStopRun is `wt session stop`. It stops one background Claude
+// StopRun is `wt session stop`. It stops one background Claude
 // session by running `claude stop` on its attach id, and nothing else: a
 // session open in a terminal, a Codex session and wt's own are refused, and
 // a parked one has no process to stop.
-func SessionStopRun(ctx *kit.Context, o SessionStopOptions) error {
-	out := SessionStop{Schema: 1, SchemaVersion: schema.VersionOf("session-stop"), Command: "session stop", DryRun: o.DryRun}
+func StopRun(ctx *kit.Context, o StopOptions) error {
+	out := Stop{Schema: 1, SchemaVersion: schema.VersionOf("session-stop"), Command: "session stop", DryRun: o.DryRun}
 	env := defaultSessionEnv()
 	if o.env != nil {
 		env = *o.env
@@ -1242,15 +1244,15 @@ func runClaudeStop(id string) (string, error) {
 
 // stopPick is the session chosen, as the JSON shows it and as claude lists it.
 type stopPick struct {
-	info SessionInfo
-	s    claudeSession
+	info Info
+	s    ClaudeSession
 }
 
 // chooseStopTarget is the one session o names, if it is one wt may stop, or
 // the reason it is not. It never picks among several: with none named, the
 // background sessions with a process are the candidates, and a parked one
 // is chosen only when it is the only background session.
-func chooseStopTarget(ctx *kit.Context, o SessionStopOptions, env sessionEnv) (*stopPick, *stopRefusal) {
+func chooseStopTarget(ctx *kit.Context, o StopOptions, env sessionEnv) (*stopPick, *stopRefusal) {
 	t, infos, sessionsErr, err := worktreeSessions(ctx, o.Pattern, o.Err, o.Sessions, env)
 	switch {
 	case sessionsErr != nil:

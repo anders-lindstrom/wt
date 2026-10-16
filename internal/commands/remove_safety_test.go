@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -224,7 +225,7 @@ func TestRemoveNamesASubmoduleAtAnotherCommit(t *testing.T) {
 func TestHookRemovesTheWorktreeItsOwnSessionIsIn(t *testing.T) {
 	ctx, path := safetyWorktree(t, "fix/hooked")
 	resolved, _ := filepath.EvalSymlinks(path)
-	fakeClaude(t, []wtsync.Agent{ownSession(resolved)})
+	testkit.FakeClaude(t, &session.ListSessions, []wtsync.Agent{ownSession(resolved)})
 
 	var log bytes.Buffer
 	in := strings.NewReader(`{"path":"` + path + `"}`)
@@ -240,7 +241,7 @@ func TestHookRefusesWhenAnotherSessionIsIn(t *testing.T) {
 	ctx, path := safetyWorktree(t, "fix/shared")
 	resolved, _ := filepath.EvalSymlinks(path)
 	other := wtsync.Agent{ID: "other", Name: "neighbour-2", Cwd: resolved, Status: "idle", PID: 999999}
-	fakeClaude(t, []wtsync.Agent{ownSession(resolved), other})
+	testkit.FakeClaude(t, &session.ListSessions, []wtsync.Agent{ownSession(resolved), other})
 
 	var log bytes.Buffer
 	in := strings.NewReader(`{"path":"` + path + `"}`)

@@ -6,18 +6,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // listedSessions has every command that names no sessions of its own see agents.
-func listedSessions(t *testing.T, agents ...wtsync.Agent) {
-	t.Helper()
-	was := listSessions
-	listSessions = func() ([]wtsync.Agent, error) { return agents, nil }
-	t.Cleanup(func() { listSessions = was })
-}
-
 // A busy Codex session refuses what a busy Claude one refuses, under the
 // same --force.
 func TestUpRefusesUnderABusyCodexSession(t *testing.T) {
@@ -74,7 +68,7 @@ func TestRemovePlanJSONSaysWhoseEachSessionIs(t *testing.T) {
 
 func TestStatusAndSyncJSONListACodexSession(t *testing.T) {
 	ctx, bump := runFixture(t, false)
-	listedSessions(t, testkit.CodexSession(bump, "busy"), wtsync.Agent{Name: "parked-1", Cwd: testkit.CodexSession(bump, "").Cwd, Kind: "interactive", Status: "idle"})
+	testkit.ListedSessions(t, &session.ListSessions, testkit.CodexSession(bump, "busy"), wtsync.Agent{Name: "parked-1", Cwd: testkit.CodexSession(bump, "").Cwd, Kind: "interactive", Status: "idle"})
 
 	p := planOfWork(t, ctx, "bump")
 	if len(p.Sessions) != 2 {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
+	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
@@ -700,13 +701,13 @@ func (o SweepOptions) listAgents() ([]wtsync.Agent, error) {
 	if o.Agents != nil {
 		return o.Agents, nil
 	}
-	return listSessions()
+	return session.ListSessions()
 }
 
 // relistAgents is the second listing, for the check before anything goes.
 func (o SweepOptions) relistAgents() ([]wtsync.Agent, error) {
 	if o.Agents == nil && o.Relist == nil {
-		return listSessions()
+		return session.ListSessions()
 	}
 	return kit.ListAgain(o.Agents, o.Relist)
 }
@@ -983,7 +984,7 @@ func changedDuringSweep(ctx *kit.Context, rp Plan, opts SweepOptions) (Plan, str
 	if agents == nil {
 		agents = []wtsync.Agent{}
 	}
-	s, err := sessionsIn(agents, err, rp.Path)
+	s, err := session.SessionsIn(agents, err, rp.Path)
 	switch {
 	case err != nil:
 		return rp, fmt.Sprintf("cannot list agent sessions (%v)", err)

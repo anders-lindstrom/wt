@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -28,7 +29,7 @@ type ListOptions struct {
 	NoSessions bool
 	// Sessions is a read several listings share, whose caller prints its
 	// Note once. Nil reads them here, and the note goes under this table.
-	Sessions *ClaudeSessions
+	Sessions *session.ClaudeSessions
 	// Wide prints the table as it is printed when piped, whatever the
 	// terminal's width: the SESSION column in it, and nothing cut to fit.
 	Wide bool
@@ -51,7 +52,7 @@ func List(ctx *kit.Context, opts ListOptions, w io.Writer, width int) error {
 	// overlap.
 	read := opts.Sessions
 	if read == nil && !opts.NoSessions {
-		read = ReadClaudeSessions(SessionsDeadline)
+		read = session.ReadClaudeSessions(session.SessionsDeadline)
 	}
 	var prs map[string]string
 	var cached time.Time
@@ -62,9 +63,9 @@ func List(ctx *kit.Context, opts ListOptions, w io.Writer, width int) error {
 	for i, n := range names {
 		paths[i] = n.Path
 	}
-	var sessions map[string][]claudeSession
+	var sessions map[string][]session.ClaudeSession
 	if !opts.NoSessions {
-		sessions = read.byWorktree(paths)
+		sessions = read.ByWorktree(paths)
 	}
 	header := []string{"", "WORK", "BRANCH", "PATH"}
 	if len(prs) > 0 {
@@ -100,7 +101,7 @@ func List(ctx *kit.Context, opts ListOptions, w io.Writer, width int) error {
 	}
 	leftOut := false
 	if len(sessions) > 0 {
-		if with := withSessions(rows, paths, sessions); width <= 0 || pathTableFits(with, width) {
+		if with := session.WithSessions(rows, paths, sessions); width <= 0 || session.PathTableFits(with, width) {
 			rows = with
 		} else {
 			leftOut = true

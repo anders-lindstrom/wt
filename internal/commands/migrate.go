@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -73,7 +74,7 @@ func Migrate(ctx *kit.Context, arg, dest string, opts MigrateOptions, w io.Write
 	if err != nil {
 		return "", err
 	}
-	if s, err := sessionsIn(opts.Agents, opts.AgentsErr, plan.From); err != nil {
+	if s, err := session.SessionsIn(opts.Agents, opts.AgentsErr, plan.From); err != nil {
 		plan.SessionsError = err.Error()
 	} else {
 		plan.Sessions = s

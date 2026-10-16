@@ -1,4 +1,4 @@
-package commands
+package session
 
 import (
 	"cmp"
@@ -20,23 +20,23 @@ import (
 // gives it would hold up a listing nobody asked to wait for.
 var SessionsDeadline = 2 * time.Second
 
-// listClaudeSessions is a var so the package's tests stay off the machine's
+// ListClaudeSessions is a var so the package's tests stay off the machine's
 // own claude.
-var listClaudeSessions = wtsync.ListClaudeSessions
+var ListClaudeSessions = wtsync.ListClaudeSessions
 
-// maxSessionName is the widest a session's name is printed, in terminal
+// MaxSessionName is the widest a session's name is printed, in terminal
 // columns. A name is free text, so it is always cut there, piped or not.
-const maxSessionName = 32
+const MaxSessionName = 32
 
-// claudeSession is a Claude session as a person is shown it.
-type claudeSession struct{ wtsync.Agent }
+// ClaudeSession is a Claude session as a person is shown it.
+type ClaudeSession struct{ wtsync.Agent }
 
 // ClaudeSessions is one read of claude's sessions, started when it is made
 // and waited for when it is first used, so the read runs beside whatever
 // else a listing does and one read serves every repository of a listing.
 type ClaudeSessions struct {
 	done     chan struct{}
-	sessions []claudeSession
+	sessions []ClaudeSession
 	found    bool
 	err      error
 }
@@ -47,9 +47,9 @@ func ReadClaudeSessions(deadline time.Duration) *ClaudeSessions {
 	go func() {
 		defer close(c.done)
 		var agents []wtsync.Agent
-		agents, c.found, c.err = listClaudeSessions(deadline)
+		agents, c.found, c.err = ListClaudeSessions(deadline)
 		for _, a := range agents {
-			c.sessions = append(c.sessions, claudeSession{a})
+			c.sessions = append(c.sessions, ClaudeSession{a})
 		}
 	}()
 	return c
@@ -66,17 +66,17 @@ func (c *ClaudeSessions) Note() string {
 }
 
 // all is every session read; none when the read failed.
-func (c *ClaudeSessions) all() []claudeSession {
+func (c *ClaudeSessions) all() []ClaudeSession {
 	<-c.done
 	return c.sessions
 }
 
-// byWorktree gives each session to the worktree its working directory is in,
+// ByWorktree gives each session to the worktree its working directory is in,
 // keyed by the worktree's path as given. A worktree nested in another's
 // directory keeps its own sessions: the deepest path wins. A worktree's path
 // can carry a symlink a session's reported cwd has already resolved, so each
 // is resolved first.
-func (c *ClaudeSessions) byWorktree(paths []string) map[string][]claudeSession {
+func (c *ClaudeSessions) ByWorktree(paths []string) map[string][]ClaudeSession {
 	sessions := c.all()
 	if len(sessions) == 0 {
 		return nil
@@ -88,7 +88,7 @@ func (c *ClaudeSessions) byWorktree(paths []string) map[string][]claudeSession {
 			resolved[i] = r
 		}
 	}
-	out := map[string][]claudeSession{}
+	out := map[string][]ClaudeSession{}
 	for _, s := range sessions {
 		at := -1
 		for i, p := range resolved {
@@ -108,14 +108,14 @@ func (c *ClaudeSessions) byWorktree(paths []string) map[string][]claudeSession {
 
 // needsPerson reports a session that cannot go on until somebody answers
 // it: claude's state blocked, or status waiting on an open prompt.
-func (s claudeSession) needsPerson() bool {
+func (s ClaudeSession) needsPerson() bool {
 	return s.State == "blocked" || s.Status == "waiting"
 }
 
 // orderSessions puts the session that needs its person first, then the
 // newest, and the one wt runs under last: its reader is already in it.
-func orderSessions(sessions []claudeSession) {
-	rank := func(s claudeSession) int {
+func orderSessions(sessions []ClaudeSession) {
+	rank := func(s ClaudeSession) int {
 		switch {
 		case s.Own:
 			return 2
@@ -124,7 +124,7 @@ func orderSessions(sessions []claudeSession) {
 		}
 		return 1
 	}
-	slices.SortStableFunc(sessions, func(x, y claudeSession) int {
+	slices.SortStableFunc(sessions, func(x, y ClaudeSession) int {
 		return cmp.Or(cmp.Compare(rank(x), rank(y)), cmp.Compare(y.StartedAt, x.StartedAt))
 	})
 }
@@ -137,7 +137,7 @@ func orderSessions(sessions []claudeSession) {
 // this build has not seen included, is printed as claude spells it. A
 // session open in a terminal has only a status, and says where it is,
 // because that is why it cannot be attached.
-func (s claudeSession) state() string {
+func (s ClaudeSession) state() string {
 	switch {
 	case s.Own:
 		return "this session"
@@ -158,7 +158,7 @@ func (s claudeSession) state() string {
 
 // name is what the session goes by: the name somebody gave it, cleaned, or
 // the id claude attach takes when it has none.
-func (s claudeSession) name() string {
+func (s ClaudeSession) name() string {
 	switch name := printable(s.Name); {
 	case name != "":
 		return name
@@ -187,20 +187,20 @@ func printable(s string) string {
 
 // sessionCell is the SESSION column for one worktree: the first session's
 // name and state, and a count of the rest.
-func sessionCell(sessions []claudeSession) string {
+func sessionCell(sessions []ClaudeSession) string {
 	if len(sessions) == 0 {
 		return "-"
 	}
-	cell := cutToWidth(sessions[0].name(), maxSessionName) + " · " + sessions[0].state()
+	cell := cutToWidth(sessions[0].name(), MaxSessionName) + " · " + sessions[0].state()
 	if n := len(sessions) - 1; n > 0 {
 		cell += " +" + strconv.Itoa(n)
 	}
 	return cell
 }
 
-// withSessions is rows with the SESSION column put in before the path. paths
+// WithSessions is rows with the SESSION column put in before the path. paths
 // is the worktree of each row after the header.
-func withSessions(rows [][]string, paths []string, sessions map[string][]claudeSession) [][]string {
+func WithSessions(rows [][]string, paths []string, sessions map[string][]ClaudeSession) [][]string {
 	out := make([][]string, len(rows))
 	for i, r := range rows {
 		cell := "SESSION"
@@ -212,10 +212,10 @@ func withSessions(rows [][]string, paths []string, sessions map[string][]claudeS
 	return out
 }
 
-// pathTableFits reports whether printPathTable would print every row of rows
+// PathTableFits reports whether printPathTable would print every row of rows
 // within width terminal columns, paths shortened as it shortens them. rows
 // is not changed.
-func pathTableFits(rows [][]string, width int) bool {
+func PathTableFits(rows [][]string, width int) bool {
 	fitted := make([][]string, len(rows))
 	for i, r := range rows {
 		fitted[i] = slices.Clone(r)
@@ -235,18 +235,18 @@ func pathTableFits(rows [][]string, width int) bool {
 		// two columns wide pushes the rest of its row out by the difference.
 		wider := 0
 		for _, cell := range r[:last] {
-			wider += displayWidth(cell) - utf8.RuneCountInString(cell)
+			wider += DisplayWidth(cell) - utf8.RuneCountInString(cell)
 		}
-		if lead+wider+displayWidth(r[last]) > width {
+		if lead+wider+DisplayWidth(r[last]) > width {
 			return false
 		}
 	}
 	return true
 }
 
-// displayWidth is how many terminal columns s takes: two for the East Asian
+// DisplayWidth is how many terminal columns s takes: two for the East Asian
 // wide and fullwidth characters and for emoji, none for a combining mark.
-func displayWidth(s string) int {
+func DisplayWidth(s string) int {
 	n := 0
 	for _, r := range s {
 		n += runeWidth(r)
@@ -274,7 +274,7 @@ func runeWidth(r rune) int {
 // cutToWidth is s in at most limit terminal columns, ending in … when it
 // was cut.
 func cutToWidth(s string, limit int) string {
-	if displayWidth(s) <= limit {
+	if DisplayWidth(s) <= limit {
 		return s
 	}
 	n := 0

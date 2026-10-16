@@ -15,6 +15,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
+	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
@@ -443,11 +444,11 @@ func planFor(ctx *kit.Context, wt repo.Worktree, opts RemoveOptions) Plan {
 		Reap: opts.Reap, keepBusy: opts.keepBusy, relist: opts.relistAgents}
 	agents, agentsErr := opts.Agents, opts.AgentsErr
 	if agents == nil && agentsErr == nil {
-		if agents, agentsErr = listSessions(); agents == nil {
+		if agents, agentsErr = session.ListSessions(); agents == nil {
 			agents = []wtsync.Agent{}
 		}
 	}
-	p.setSessions(sessionsIn(agents, agentsErr, p.Path))
+	p.setSessions(session.SessionsIn(agents, agentsErr, p.Path))
 	p.readProcesses(opts.Scan, agents, agentsErr)
 	p.readLock(wt)
 	p.readCheckout()
@@ -546,7 +547,7 @@ func (o RemoveOptions) relistAgents() ([]wtsync.Agent, error) {
 	case o.Agents != nil:
 		return o.Agents, nil
 	}
-	return listSessions()
+	return session.ListSessions()
 }
 
 // readCheckout reads what the files and the git dir say: anything
@@ -1613,7 +1614,7 @@ func (p Plan) quarantine(ctx *kit.Context, w io.Writer, res *RemoveResult) (*qua
 // to: relist, else claude's own listing.
 func (p Plan) listSessionsAgain() ([]wtsync.Agent, error) {
 	if p.relist == nil {
-		return listSessions()
+		return session.ListSessions()
 	}
 	return p.relist()
 }
@@ -1662,7 +1663,7 @@ func (p Plan) recheck() (now Plan, why string) {
 	if agents == nil {
 		agents = []wtsync.Agent{}
 	}
-	now.setSessions(sessionsIn(agents, err, p.Path))
+	now.setSessions(session.SessionsIn(agents, err, p.Path))
 	now.readCheckout()
 	if now.Head != p.Head && now.StatusError == "" {
 		return now, "its HEAD moved after the plan was made"

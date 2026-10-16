@@ -1,12 +1,10 @@
 package commands
 
 import (
-	"encoding/json"
 	"os"
-	"path/filepath"
-	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -14,31 +12,8 @@ import (
 // and must not ask the machine's own claude about them: a caller that names
 // no sessions gets none, until a test puts a claude of its own in place.
 func init() {
-	listSessions = func() ([]wtsync.Agent, error) { return nil, nil }
-	listClaudeSessions = func(time.Duration) ([]wtsync.Agent, bool, error) { return nil, false, nil }
-}
-
-// fakeClaude puts a claude on the PATH whose `agents --json` lists agents,
-// and has wt ask it the way it asks the real one, own session excluded.
-func fakeClaude(t *testing.T, agents []wtsync.Agent) {
-	t.Helper()
-	data, err := json.Marshal(agents)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := t.TempDir()
-	listing := filepath.Join(dir, "agents.json")
-	if err := os.WriteFile(listing, data, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	script := "#!/bin/sh\ncat '" + listing + "'\n"
-	if err := os.WriteFile(filepath.Join(dir, "claude"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	was := listSessions
-	listSessions = wtsync.ListOtherAgents
-	t.Cleanup(func() { listSessions = was })
+	session.ListSessions = func() ([]wtsync.Agent, error) { return nil, nil }
+	session.ListClaudeSessions = func(time.Duration) ([]wtsync.Agent, bool, error) { return nil, false, nil }
 }
 
 // ownSession is a session wt runs under: its pid is an ancestor of this

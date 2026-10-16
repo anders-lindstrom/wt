@@ -1,4 +1,4 @@
-package commands
+package session
 
 import (
 	"bufio"
@@ -53,7 +53,7 @@ type attachTarget struct {
 	// label is what messages call it, and arg what names it after `wt attach`.
 	label, arg string
 	path       string
-	sessions   []claudeSession
+	sessions   []ClaudeSession
 	// work is the worktree each session is in, by index, when there are
 	// several worktrees.
 	work []string
@@ -119,7 +119,7 @@ func Attach(ctx *kit.Context, o AttachOptions) error {
 
 // sessionWithID is the session whose attach id or full session id is id, or
 // nil.
-func sessionWithID(sessions []claudeSession, id string) *claudeSession {
+func sessionWithID(sessions []ClaudeSession, id string) *ClaudeSession {
 	for i, s := range sessions {
 		if s.hasID(id) {
 			return &sessions[i]
@@ -131,25 +131,25 @@ func sessionWithID(sessions []claudeSession, id string) *claudeSession {
 // hasID reports whether id is the session's attach id or its full session
 // id, whole. The letters of an id are hex digits, so case does not tell two
 // apart.
-func (s claudeSession) hasID(id string) bool {
+func (s ClaudeSession) hasID(id string) bool {
 	return id != "" && (strings.EqualFold(id, s.ID) || strings.EqualFold(id, s.SessionID))
 }
 
 // idStartsWith reports whether the session's full id starts with text.
-func (s claudeSession) idStartsWith(text string) bool {
+func (s ClaudeSession) idStartsWith(text string) bool {
 	return text != "" && strings.HasPrefix(strings.ToLower(s.SessionID), strings.ToLower(text))
 }
 
 // canOpen reports a session wt attach can open: a background one that is
 // not the caller's own, with an id fit for a command line.
-func (s claudeSession) canOpen() bool {
+func (s ClaudeSession) canOpen() bool {
 	return s.Attachable() && !s.Own && attachID(s.ID)
 }
 
 // attachCommand is the line that opens s, and "" for a session that cannot
 // be opened. It is the one place a claude attach line is written, so none
 // carries an id that did not pass attachID.
-func attachCommand(s claudeSession) string {
+func attachCommand(s ClaudeSession) string {
 	if !s.canOpen() {
 		return ""
 	}
@@ -158,7 +158,7 @@ func attachCommand(s claudeSession) string {
 
 // whyNotAttachable finishes "<name> …" for a session wt attach does not
 // open.
-func whyNotAttachable(s claudeSession) string {
+func whyNotAttachable(s ClaudeSession) string {
 	switch {
 	case s.Own:
 		return "is the session wt is running in"
@@ -205,7 +205,7 @@ func (o AttachOptions) target(ctx *kit.Context, read *ClaudeSessions) (attachTar
 		m = matches[n]
 	}
 	t := attachTarget{label: m.Work, arg: o.Pattern, path: m.Path, repo: m.Repo}
-	t.sessions = read.byWorktree(worktreePaths(m.Path))[m.Path]
+	t.sessions = read.ByWorktree(worktreePaths(m.Path))[m.Path]
 	return t, nil
 }
 
@@ -243,7 +243,7 @@ func (o AttachOptions) standing(ctx *kit.Context, read *ClaudeSessions) (attachT
 	for i, n := range names {
 		paths[i] = n.Path
 	}
-	by := read.byWorktree(paths)
+	by := read.ByWorktree(paths)
 	if here, _, err := kit.StandingWorktree(ctx, names); err == nil && !here.IsMain {
 		return attachTarget{label: kit.WorktreeName(ctx, here.Branch, here.Path), arg: ".", path: here.Path,
 			sessions: by[here.Path], repo: ctx.Repo.Name}, nil
@@ -267,12 +267,12 @@ func (o AttachOptions) standing(ctx *kit.Context, read *ClaudeSessions) (attachT
 
 // choose is the session to attach to in t. One that can be attached is
 // taken without a question; several are listed and asked about.
-func (o AttachOptions) choose(t attachTarget) (claudeSession, error) {
+func (o AttachOptions) choose(t attachTarget) (ClaudeSession, error) {
 	if len(t.sessions) == 0 {
 		if t.path == "" {
-			return claudeSession{}, fmt.Errorf("no Claude session in %s", t.label)
+			return ClaudeSession{}, fmt.Errorf("no Claude session in %s", t.label)
 		}
-		return claudeSession{}, fmt.Errorf("no Claude session in %s.\n"+
+		return ClaudeSession{}, fmt.Errorf("no Claude session in %s.\n"+
 			"  wt attach %s --resume  continues its most recent conversation", t.label, t.arg)
 	}
 	if o.Session != "" {
@@ -287,7 +287,7 @@ func (o AttachOptions) choose(t attachTarget) (claudeSession, error) {
 	switch len(can) {
 	case 0:
 		o.list(t, nil)
-		return claudeSession{}, errors.New("nothing here can be attached: claude attach opens a background " +
+		return ClaudeSession{}, errors.New("nothing here can be attached: claude attach opens a background " +
 			"session, and a session in a terminal is used in that terminal")
 	case 1:
 		s := t.sessions[can[0]]
@@ -300,7 +300,7 @@ func (o AttachOptions) choose(t attachTarget) (claudeSession, error) {
 	o.list(t, can)
 	n, err := o.pick(len(can), strconv.Itoa(len(can))+" can be attached; name one: wt attach "+t.argOr("<pattern>")+" <session>")
 	if err != nil {
-		return claudeSession{}, err
+		return ClaudeSession{}, err
 	}
 	return t.sessions[can[n]], nil
 }
@@ -316,12 +316,12 @@ func (t attachTarget) argOr(placeholder string) string {
 // named is the one session of t that o.Session names. An id given whole
 // wins over the start of a session id and over part of a name; more than
 // one match is listed and nothing is opened.
-func (o AttachOptions) named(t attachTarget) (claudeSession, error) {
+func (o AttachOptions) named(t attachTarget) (ClaudeSession, error) {
 	hits := matchSessions(t.sessions, o.Session)
 	switch len(hits) {
 	case 0:
 		o.list(t, nil)
-		return claudeSession{}, fmt.Errorf("no session in %s has %q as its id or in its name", t.label, o.Session)
+		return ClaudeSession{}, fmt.Errorf("no session in %s has %q as its id or in its name", t.label, o.Session)
 	case 1:
 		s := t.sessions[hits[0]]
 		if !s.canOpen() {
@@ -337,13 +337,13 @@ func (o AttachOptions) named(t attachTarget) (claudeSession, error) {
 		}
 	}
 	o.list(only, nil)
-	return claudeSession{}, fmt.Errorf("%d sessions match %q; give one's id", len(hits), o.Session)
+	return ClaudeSession{}, fmt.Errorf("%d sessions match %q; give one's id", len(hits), o.Session)
 }
 
 // matchSessions is the indexes of the sessions text names: those whose id,
 // given whole, is it, else those whose full session id starts with it or
 // whose name contains it.
-func matchSessions(sessions []claudeSession, text string) []int {
+func matchSessions(sessions []ClaudeSession, text string) []int {
 	var exact, partial []int
 	want := strings.ToLower(text)
 	for i, s := range sessions {
@@ -360,7 +360,7 @@ func matchSessions(sessions []claudeSession, text string) []int {
 	return partial
 }
 
-func pidNote(s claudeSession) string {
+func pidNote(s ClaudeSession) string {
 	if s.PID <= 1 {
 		return ""
 	}
@@ -404,7 +404,7 @@ func (o AttachOptions) list(t attachTarget, can []int) {
 		if s.StartedAt > 0 {
 			started = "started " + kit.Ago(now.Sub(time.UnixMilli(s.StartedAt)))
 		}
-		rows[i] = append(row, cutToWidth(s.name(), maxSessionName), state, where, started)
+		rows[i] = append(row, cutToWidth(s.name(), MaxSessionName), state, where, started)
 	}
 	_ = kit.PrintTable(o.Err, rows)
 }
@@ -456,9 +456,9 @@ func (o AttachOptions) resume(ctx *kit.Context, read *ClaudeSessions) error {
 			o.list(t, nil)
 			hint := "it is used in its terminal"
 			switch {
-			case slices.ContainsFunc(t.sessions, claudeSession.canOpen):
+			case slices.ContainsFunc(t.sessions, ClaudeSession.canOpen):
 				hint = "wt attach " + t.arg + "  opens the background one"
-			case !slices.ContainsFunc(t.sessions, func(s claudeSession) bool { return !s.Own }):
+			case !slices.ContainsFunc(t.sessions, func(s ClaudeSession) bool { return !s.Own }):
 				hint = "it is the session wt is running in"
 			}
 			return fmt.Errorf("%s has a session claude lists, and --resume would open its conversation a "+
@@ -506,7 +506,7 @@ func attachID(id string) bool {
 }
 
 // open attaches to s.
-func (o AttachOptions) open(s claudeSession) error {
+func (o AttachOptions) open(s ClaudeSession) error {
 	if !s.canOpen() {
 		return fmt.Errorf("%s %s", s.name(), whyNotAttachable(s))
 	}

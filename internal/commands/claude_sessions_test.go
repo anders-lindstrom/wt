@@ -10,23 +10,10 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
-
-// claudeLists has claude list sessions for the length of the test, and
-// returns how many times it was asked.
-func claudeLists(t *testing.T, sessions ...wtsync.Agent) *int {
-	t.Helper()
-	asked := new(int)
-	was := listClaudeSessions
-	listClaudeSessions = func(time.Duration) ([]wtsync.Agent, bool, error) {
-		*asked++
-		return sessions, true, nil
-	}
-	t.Cleanup(func() { listClaudeSessions = was })
-	return asked
-}
 
 func listed(t *testing.T, ctx *kit.Context, opts ListOptions, width int) string {
 	t.Helper()
@@ -41,7 +28,7 @@ func listed(t *testing.T, ctx *kit.Context, opts ListOptions, width int) string 
 // is in. blocked is the state Claude Code's agent view calls "Needs input".
 func TestListShowsTheSessionInAWorktree(t *testing.T) {
 	ctx, _, wt := testkit.CanonicalWorktree(t)
-	claudeLists(t, testkit.Background("fix the crash", "3f9a1c20", "blocked", wt))
+	testkit.ClaudeLists(t, &session.ListClaudeSessions, testkit.Background("fix the crash", "3f9a1c20", "blocked", wt))
 
 	out := listed(t, ctx, ListOptions{}, 0)
 	if !strings.Contains(out, "SESSION") {
@@ -60,7 +47,7 @@ func TestListPrintsNoSessionColumnWithoutASession(t *testing.T) {
 	ctx, _, _ := testkit.CanonicalWorktree(t)
 	without := listed(t, ctx, ListOptions{NoSessions: true}, 0)
 
-	claudeLists(t, testkit.Background("elsewhere", "3f9a1c20", "working", t.TempDir()))
+	testkit.ClaudeLists(t, &session.ListClaudeSessions, testkit.Background("elsewhere", "3f9a1c20", "working", t.TempDir()))
 	if got := listed(t, ctx, ListOptions{}, 0); got != without {
 		t.Errorf("a session in no worktree of this repository changed the listing:\n%s", got)
 	}
@@ -68,7 +55,7 @@ func TestListPrintsNoSessionColumnWithoutASession(t *testing.T) {
 
 func TestListNoSessionsDoesNotAskClaude(t *testing.T) {
 	ctx, _, wt := testkit.CanonicalWorktree(t)
-	asked := claudeLists(t, testkit.Background("fix the crash", "3f9a1c20", "working", wt))
+	asked := testkit.ClaudeLists(t, &session.ListClaudeSessions, testkit.Background("fix the crash", "3f9a1c20", "working", wt))
 
 	if out := listed(t, ctx, ListOptions{NoSessions: true}, 0); strings.Contains(out, "SESSION") {
 		t.Errorf("--no-sessions printed the column:\n%s", out)
@@ -82,11 +69,11 @@ func TestListNoSessionsDoesNotAskClaude(t *testing.T) {
 // never the listing.
 func TestListSaysWhenSessionsCouldNotBeRead(t *testing.T) {
 	ctx, _, _ := testkit.CanonicalWorktree(t)
-	was := listClaudeSessions
-	listClaudeSessions = func(time.Duration) ([]wtsync.Agent, bool, error) {
+	was := session.ListClaudeSessions
+	session.ListClaudeSessions = func(time.Duration) ([]wtsync.Agent, bool, error) {
 		return nil, true, errors.New("claude agents --json did not answer within 2s")
 	}
-	t.Cleanup(func() { listClaudeSessions = was })
+	t.Cleanup(func() { session.ListClaudeSessions = was })
 
 	out := listed(t, ctx, ListOptions{}, 0)
 	if strings.Contains(out, "SESSION") || !strings.Contains(out, "feat_wt/thing") {
@@ -107,7 +94,7 @@ func TestListGivesASessionToTheWorktreeItIsIn(t *testing.T) {
 	if err := os.MkdirAll(deep, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	claudeLists(t,
+	testkit.ClaudeLists(t, &session.ListClaudeSessions,
 		testkit.Background("in-a-subfolder", "aaaaaaaa", "working", deep),
 		testkit.Background("in-the-nested-one", "bbbbbbbb", "working", nested))
 
@@ -131,14 +118,14 @@ func TestListNamesOneSessionAndCountsTheRest(t *testing.T) {
 	older.StartedAt = 1000
 	newer := testkit.Background("newer", "bbbbbbbb", "done", wt)
 	newer.StartedAt = 2000
-	claudeLists(t, older, newer)
+	testkit.ClaudeLists(t, &session.ListClaudeSessions, older, newer)
 	if line := lineContaining(t, listed(t, ctx, ListOptions{}, 0), "feat_wt/thing"); !strings.Contains(line, "newer · done +1") {
 		t.Errorf("want the newest named and one more counted: %q", line)
 	}
 
 	waiting := testkit.Background("asks-you", "cccccccc", "blocked", wt)
 	waiting.StartedAt = 500
-	claudeLists(t, older, newer, waiting)
+	testkit.ClaudeLists(t, &session.ListClaudeSessions, older, newer, waiting)
 	if line := lineContaining(t, listed(t, ctx, ListOptions{}, 0), "feat_wt/thing"); !strings.Contains(line, "asks-you · needs input +2") {
 		t.Errorf("want the one that needs input named first: %q", line)
 	}
@@ -150,7 +137,7 @@ func TestListMarksSessionsInATerminalAndItsOwn(t *testing.T) {
 	ctx, main, wt := testkit.CanonicalWorktree(t)
 	me := testkit.InTerminal("me", "busy", wt, 4243)
 	me.Own = true
-	claudeLists(t, testkit.InTerminal("typing", "idle", main, 4242), me)
+	testkit.ClaudeLists(t, &session.ListClaudeSessions, testkit.InTerminal("typing", "idle", main, 4242), me)
 
 	out := listed(t, ctx, ListOptions{}, 0)
 	if line := lineContaining(t, out, "(main)"); !strings.Contains(line, "typing · idle in a terminal") {
@@ -160,7 +147,7 @@ func TestListMarksSessionsInATerminalAndItsOwn(t *testing.T) {
 		t.Errorf("want wt's own session marked: %q", line)
 	}
 
-	claudeLists(t, me, testkit.Background("other", "aaaaaaaa", "working", wt))
+	testkit.ClaudeLists(t, &session.ListClaudeSessions, me, testkit.Background("other", "aaaaaaaa", "working", wt))
 	if line := lineContaining(t, listed(t, ctx, ListOptions{}, 0), "feat_wt/thing"); !strings.Contains(line, "other · working +1") {
 		t.Errorf("want another session named before wt's own: %q", line)
 	}
@@ -170,7 +157,7 @@ func TestListMarksSessionsInATerminalAndItsOwn(t *testing.T) {
 // break the row or run on for ever.
 func TestListCleansAndCutsASessionName(t *testing.T) {
 	ctx, _, wt := testkit.CanonicalWorktree(t)
-	claudeLists(t, testkit.Background("bad\x1b[2J\tname\nsecond\u202eline "+strings.Repeat("x", 80), "aaaaaaaa", "working", wt))
+	testkit.ClaudeLists(t, &session.ListClaudeSessions, testkit.Background("bad\x1b[2J\tname\nsecond\u202eline "+strings.Repeat("x", 80), "aaaaaaaa", "working", wt))
 
 	out := listed(t, ctx, ListOptions{}, 0)
 	for _, r := range out {
@@ -182,8 +169,8 @@ func TestListCleansAndCutsASessionName(t *testing.T) {
 	if !strings.Contains(line, "  bad[2J name secondline xxx") || !strings.Contains(line, "x… · working  ") {
 		t.Errorf("want the name on one line, cut with an ellipsis: %q", line)
 	}
-	if cell := strings.Split(line, " · ")[0]; len([]rune(strings.TrimSpace(strings.SplitN(cell, "feat_wt/thing", 2)[1]))) != maxSessionName {
-		t.Errorf("want the name cut to %d characters: %q", maxSessionName, line)
+	if cell := strings.Split(line, " · ")[0]; len([]rune(strings.TrimSpace(strings.SplitN(cell, "feat_wt/thing", 2)[1]))) != session.MaxSessionName {
+		t.Errorf("want the name cut to %d characters: %q", session.MaxSessionName, line)
 	}
 	if got := strings.Count(out, "\n"); got != 3 {
 		t.Errorf("want a header and two rows, got %d lines:\n%s", got, out)
@@ -205,7 +192,7 @@ func ownShape(t *testing.T) *kit.Context {
 	if err != nil {
 		t.Fatal(err)
 	}
-	claudeLists(t,
+	testkit.ClaudeLists(t, &session.ListClaudeSessions,
 		testkit.Background("20260930-090330/list-sessions", "aaaaaaaa", "blocked", wt),
 		testkit.Background("a second look", "bbbbbbbb", "working", wt))
 	return ctx
@@ -214,7 +201,7 @@ func ownShape(t *testing.T) *kit.Context {
 func widestLine(out string) int {
 	widest := 0
 	for _, line := range strings.Split(out, "\n") {
-		widest = max(widest, displayWidth(line))
+		widest = max(widest, session.DisplayWidth(line))
 	}
 	return widest
 }
@@ -280,42 +267,12 @@ func TestListWideShowsTheColumnWhateverTheWidth(t *testing.T) {
 	}
 }
 
-// A row fits by what the terminal draws: a character two columns wide
-// counts as two, and a name is cut by columns too.
-func TestRowsFitByDisplayWidth(t *testing.T) {
-	rows := func(session string) [][]string {
-		return [][]string{
-			{"", "WORK", "SESSION", "PATH"},
-			{"", "w", session, "/a/path/that/is/long/enough/to/count"},
-		}
-	}
-	ascii, wide := rows("ab · done"), rows("修正 · done")
-	width := 1
-	for !pathTableFits(ascii, width) {
-		width++
-	}
-	if !pathTableFits(wide, width+2) || pathTableFits(wide, width+1) {
-		t.Errorf("two wide characters need two more columns than %d", width)
-	}
-	for s, want := range map[string]int{"abc": 3, "修正": 4, "e\u0301": 1, "🙂": 2, "": 0} {
-		if got := displayWidth(s); got != want {
-			t.Errorf("displayWidth(%q) = %d, want %d", s, got, want)
-		}
-	}
-	if got := cutToWidth("修正修正修正", 7); got != "修正修…" || displayWidth(got) != 7 {
-		t.Errorf("cutToWidth gave %q (%d columns)", got, displayWidth(got))
-	}
-	if got := cutToWidth("修正修正", 8); got != "修正修正" {
-		t.Errorf("a name that fits is left whole, got %q", got)
-	}
-}
-
 // --all, --roots and --profile list many repositories from one read.
 func TestListsShareOneReadOfTheSessions(t *testing.T) {
 	ctx, _, wt := testkit.CanonicalWorktree(t)
-	asked := claudeLists(t, testkit.Background("fix the crash", "3f9a1c20", "working", wt))
+	asked := testkit.ClaudeLists(t, &session.ListClaudeSessions, testkit.Background("fix the crash", "3f9a1c20", "working", wt))
 
-	read := ReadClaudeSessions(SessionsDeadline)
+	read := session.ReadClaudeSessions(session.SessionsDeadline)
 	for range 3 {
 		if out := listed(t, ctx, ListOptions{Sessions: read}, 0); !strings.Contains(out, "fix the crash · working") {
 			t.Fatalf("want the session from the shared read:\n%s", out)
@@ -326,18 +283,5 @@ func TestListsShareOneReadOfTheSessions(t *testing.T) {
 	}
 	if note := read.Note(); note != "" {
 		t.Errorf("a read that worked has nothing to say: %q", note)
-	}
-}
-
-// A state this build has never seen is printed as claude spells it.
-func TestSessionStateIsClaudesOwnWordWhenUnknown(t *testing.T) {
-	for state, want := range map[string]string{
-		"working": "working", "blocked": "needs input", "done": "done",
-		"failed": "failed", "stopped": "stopped", "hibernating": "hibernating",
-	} {
-		s := claudeSession{Agent: wtsync.Agent{Kind: "background", State: state}}
-		if got := s.state(); got != want {
-			t.Errorf("state %q reads %q, want %q", state, got, want)
-		}
 	}
 }

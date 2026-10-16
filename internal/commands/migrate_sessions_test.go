@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -40,7 +41,7 @@ func TestMigrateDoesNotCountTheSessionRunningIt(t *testing.T) {
 	ctx, _ := kit.Open(main)
 	from := testkit.WorktreeAt(t, main, "fix/self", filepath.Join(ctx.Repo.Parent, "elsewhere"))
 	resolved, _ := filepath.EvalSymlinks(from)
-	fakeClaude(t, []wtsync.Agent{ownSession(resolved)})
+	testkit.FakeClaude(t, &session.ListSessions, []wtsync.Agent{ownSession(resolved)})
 
 	var buf bytes.Buffer
 	if _, err := Migrate(ctx, from, "", MigrateOptions{}, &buf); err != nil {
