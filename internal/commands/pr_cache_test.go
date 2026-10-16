@@ -26,7 +26,7 @@ func listing(t *testing.T, ctx *kit.Context, opts ListOptions) string {
 // The second listing starts no process: the first one's answer is kept in
 // this repository.
 func TestListCachesThePullRequests(t *testing.T) {
-	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
+	t.Parallel()
 	ctx, log := provisiontest.OneWorktreeWithAPR(t)
 
 	first := listing(t, ctx, ListOptions{})
@@ -45,7 +45,7 @@ func TestListCachesThePullRequests(t *testing.T) {
 
 // --refresh is the way to a fresh answer without waiting the cache out.
 func TestListRefreshAsksGitHubAgain(t *testing.T) {
-	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
+	t.Parallel()
 	ctx, log := provisiontest.OneWorktreeWithAPR(t)
 	listing(t, ctx, ListOptions{})
 	calls := len(testkit.ArgvOf(t, log))
@@ -59,7 +59,7 @@ func TestListRefreshAsksGitHubAgain(t *testing.T) {
 // A cache wt can neither read nor write costs the cache, never the listing:
 // here the file's name is taken by a directory, so both fail.
 func TestListSurvivesACacheItCannotUse(t *testing.T) {
-	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
+	t.Parallel()
 	ctx, log := provisiontest.OneWorktreeWithAPR(t)
 	want := listing(t, ctx, ListOptions{})
 
@@ -85,7 +85,7 @@ func TestListSurvivesACacheItCannotUse(t *testing.T) {
 
 // Half a file is not an answer.
 func TestListSurvivesACorruptCache(t *testing.T) {
-	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
+	t.Parallel()
 	ctx, log := provisiontest.OneWorktreeWithAPR(t)
 	want := listing(t, ctx, ListOptions{})
 	testkit.MustWrite(t, kit.PRCachePath(ctx), `{"prs": [{"number`)

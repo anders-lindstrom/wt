@@ -198,7 +198,7 @@ func widestLine(out string) int {
 // columns this repository's own names do not, and the listing is the one
 // without the column plus a line saying so: no row ever wraps for it.
 func TestListLeavesTheSessionColumnOutWhereARowWouldNotFit(t *testing.T) {
-	// Not parallel: swaps session.ListClaudeSessions, kit.FindGitHub, GitHubRemote and LookupDeadline.
+	// Not parallel: swaps session.ListClaudeSessions.
 	ctx := provisiontest.OwnShape(t)
 	const width = 80
 	without := listed(t, ctx, ListOptions{NoSessions: true}, width)
@@ -218,7 +218,7 @@ func TestListLeavesTheSessionColumnOutWhereARowWouldNotFit(t *testing.T) {
 
 // Where every row fits, the column is there, whole.
 func TestListShowsTheSessionColumnWhereEveryRowFits(t *testing.T) {
-	// Not parallel: swaps session.ListClaudeSessions, kit.FindGitHub, GitHubRemote and LookupDeadline.
+	// Not parallel: swaps session.ListClaudeSessions.
 	ctx := provisiontest.OwnShape(t)
 	piped := listed(t, ctx, ListOptions{}, 0)
 	// Wide enough for the table with its paths cut to their shortest, and
@@ -247,7 +247,7 @@ func TestListShowsTheSessionColumnWhereEveryRowFits(t *testing.T) {
 
 // --wide is the listing as it is when piped, whatever the width.
 func TestListWideShowsTheColumnWhateverTheWidth(t *testing.T) {
-	// Not parallel: swaps session.ListClaudeSessions, kit.FindGitHub, GitHubRemote and LookupDeadline.
+	// Not parallel: swaps session.ListClaudeSessions.
 	ctx := provisiontest.OwnShape(t)
 	piped := listed(t, ctx, ListOptions{}, 0)
 	if got := listed(t, ctx, ListOptions{Wide: true}, 40); got != piped {

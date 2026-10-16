@@ -15,7 +15,7 @@ import (
 // An integration that was never set up here says nothing; one that was
 // supposed to work and did not says so on stderr, with stdout unchanged.
 func TestListWarnsOnlyWhenGitHubWasSupposedToWork(t *testing.T) {
-	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -39,35 +39,35 @@ func TestListWarnsOnlyWhenGitHubWasSupposedToWork(t *testing.T) {
 		want string
 	}{
 		"gh failed": {
-			func(t *testing.T, _ *kit.Context) {
-				testkit.FakeGitHubWith(t, `[ "$1 $2" = 'api graphql' ] && { echo "dial tcp: no route to host" >&2; exit 1; }`, pr)
+			func(t *testing.T, ctx *kit.Context) {
+				testkit.FakeGitHubWith(t, ctx, `[ "$1 $2" = 'api graphql' ] && { echo "dial tcp: no route to host" >&2; exit 1; }`, pr)
 			},
 			"no pull requests shown",
 		},
 		"gh is not logged in": {
-			func(t *testing.T, _ *kit.Context) {
-				testkit.FakeGitHubWith(t, `[ "$1 $2" = 'api graphql' ] && { echo "To get started with GitHub CLI, please run:  gh auth login" >&2; exit 1; }`, pr)
+			func(t *testing.T, ctx *kit.Context) {
+				testkit.FakeGitHubWith(t, ctx, `[ "$1 $2" = 'api graphql' ] && { echo "To get started with GitHub CLI, please run:  gh auth login" >&2; exit 1; }`, pr)
 			},
 			"",
 		},
 		"off in the user config": {
-			func(t *testing.T, ctx *kit.Context) { testkit.FakeGitHub(t, pr); ctx.User.GitHub = false },
+			func(t *testing.T, ctx *kit.Context) { testkit.FakeGitHub(t, ctx, pr); ctx.User.GitHub = false },
 			"",
 		},
 		"no gh": {
-			func(t *testing.T, _ *kit.Context) { testkit.StubGitHub(t, github.CLI{}, testkit.GhRepo, true) },
+			func(_ *testing.T, ctx *kit.Context) { testkit.StubGitHub(ctx, github.CLI{}, testkit.GhRepo, true) },
 			"",
 		},
 		"not a GitHub repository": {
-			func(t *testing.T, _ *kit.Context) {
-				testkit.StubGitHub(t, github.CLI{Exe: "/nope/gh"}, github.Remote{}, false)
+			func(_ *testing.T, ctx *kit.Context) {
+				testkit.StubGitHub(ctx, github.CLI{Exe: "/nope/gh"}, github.Remote{}, false)
 			},
 			"",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			tc.set(t, ctx)
-			defer func() { ctx.User.GitHub = true }()
+			defer func() { ctx.User.GitHub, ctx.GitHubFake = true, nil }()
 			var warnings, out bytes.Buffer
 			ctx.Warn, ctx.Warned = &warnings, nil
 			if err := List(ctx, ListOptions{Refresh: true}, &out, 0); err != nil {
@@ -88,7 +88,7 @@ func TestListWarnsOnlyWhenGitHubWasSupposedToWork(t *testing.T) {
 
 // A command that asks GitHub twice complains once.
 func TestGitHubWarnsOncePerInvocation(t *testing.T) {
-	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline.
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -97,7 +97,7 @@ func TestGitHubWarnsOncePerInvocation(t *testing.T) {
 	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
 	}
-	testkit.FakeGitHubWith(t, `[ "$1 $2" = 'api graphql' ] && { echo offline >&2; exit 1; }`,
+	testkit.FakeGitHubWith(t, ctx, `[ "$1 $2" = 'api graphql' ] && { echo offline >&2; exit 1; }`,
 		testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
 
 	var warnings, out bytes.Buffer

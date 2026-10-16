@@ -38,6 +38,9 @@ type Context struct {
 	Warn io.Writer
 	// Warned is the topics already spoken about.
 	Warned map[string]bool
+	// GitHubFake, when set, is the GitHub this context sees; nil but in
+	// tests.
+	GitHubFake *GitHubFake
 }
 
 // The warning topics. One line per topic per invocation, so a command that

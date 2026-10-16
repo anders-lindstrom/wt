@@ -245,13 +245,13 @@ func TestDoctorAlwaysNamesAMissingSupersetProject(t *testing.T) {
 // `wt pr checkout` is the third creating command, and goes through the same
 // tail: its worktree is registered too.
 func TestPRCheckoutRegistersWithSuperset(t *testing.T) {
-	// Not parallel: swaps kit.FindGitHub, GitHubRemote and LookupDeadline, provision.ProbeSuperset.
+	// Not parallel: swaps provision.ProbeSuperset.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
 	testkit.OptIn(ctx)
-	testkit.FakeGitHub(t, testkit.OpenPR(12, "residential_fixes", "Residents keep their doors"))
+	testkit.FakeGitHub(t, ctx, testkit.OpenPR(12, "residential_fixes", "Residents keep their doors"))
 	log := provisiontest.FakeSuperset(t, ctx.Repo.MainRoot, true)
 
 	var errs bytes.Buffer

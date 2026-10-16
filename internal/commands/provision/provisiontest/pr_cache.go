@@ -17,7 +17,7 @@ func OneWorktreeWithAPR(t *testing.T) (*kit.Context, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	log := testkit.FakeGitHub(t, testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
+	log := testkit.FakeGitHub(t, ctx, testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
 	var errs bytes.Buffer
 	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
