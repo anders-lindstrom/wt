@@ -1,4 +1,4 @@
-package commands
+package synckeep
 
 import (
 	"encoding/xml"
@@ -180,9 +180,9 @@ func (s *keepStarter) install(ctx *kit.Context, job synccmd.KeepJob) (time.Time,
 	return st.NextRun, nil
 }
 
-// SyncKeepStart installs the keeper as a launchd job for this repository
+// Start installs the keeper as a launchd job for this repository
 // and loads it. It refuses when one is already installed.
-func SyncKeepStart(ctx *kit.Context, opts KeepStartOptions, w io.Writer) error {
+func Start(ctx *kit.Context, opts KeepStartOptions, w io.Writer) error {
 	s, err := newKeepStarter(opts)
 	if err != nil {
 		return err
@@ -231,10 +231,10 @@ func keepAuthLine(j synccmd.KeepJob) string {
 	return "pushes with no ssh agent: only a key ~/.ssh/config names with no passphrase will work"
 }
 
-// SyncKeepStop unloads the keeper's job and removes its plist. The log and
+// Stop unloads the keeper's job and removes its plist. The log and
 // the state file stay, so wt sync still says when the repository was last
 // kept.
-func SyncKeepStop(ctx *kit.Context, w io.Writer) error {
+func Stop(ctx *kit.Context, w io.Writer) error {
 	if synccmd.KeepGOOS != "darwin" {
 		return ErrNoLaunchd
 	}

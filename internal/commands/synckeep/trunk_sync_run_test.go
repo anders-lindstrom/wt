@@ -1,4 +1,4 @@
-package commands
+package synckeep
 
 import (
 	"bytes"
@@ -25,7 +25,7 @@ func TestSyncKeepRunFastForwardsLocalTrunk(t *testing.T) {
 	testkit.GitIn(t, f.Other, "push", "-q", "origin", "main")
 	remote := testkit.GitOut(t, f.Other, "rev-parse", "HEAD")
 	var out bytes.Buffer
-	if err := SyncKeepRun(f.Ctx, keepOpts(synccmd.PushNever), &out); err != nil {
+	if err := Run(f.Ctx, keepOpts(synccmd.PushNever), &out); err != nil {
 		t.Fatalf("keep: %v\n%s", err, out.String())
 	}
 	if got := f.Local(t); got != remote {
@@ -47,7 +47,7 @@ func TestSyncKeepRunNoFFTrunkLeavesLocalTrunk(t *testing.T) {
 	opts := keepOpts(synccmd.PushNever)
 	opts.NoFFTrunk = true
 	var out bytes.Buffer
-	_ = SyncKeepRun(f.Ctx, opts, &out)
+	_ = Run(f.Ctx, opts, &out)
 	if got := f.Local(t); got != before {
 		t.Fatalf("local main moved to %s", got)
 	}

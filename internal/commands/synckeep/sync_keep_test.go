@@ -1,4 +1,4 @@
-package commands
+package synckeep
 
 import (
 	"bytes"
@@ -47,7 +47,7 @@ func keepOpts(push synccmd.PushMode) KeepOptions {
 func TestSyncKeepRunRebasesAReadyWorktreeAndRecordsThePass(t *testing.T) {
 	ctx, bump := provisiontest.RunFixture(t, false)
 	var out bytes.Buffer
-	if err := SyncKeepRun(ctx, keepOpts(synccmd.PushAlways), &out); err != nil {
+	if err := Run(ctx, keepOpts(synccmd.PushAlways), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	s := out.String()
@@ -90,7 +90,7 @@ func TestSyncKeepRunLeavesAWorktreeWithAnIdleSessionAlone(t *testing.T) {
 	opts.Agents = testkit.IdleIn(t, bump, "parked")
 	opts.Confirm = func([]string) (bool, error) { t.Fatal("a keeper asked a question"); return false, nil }
 	var out bytes.Buffer
-	if err := SyncKeepRun(ctx, opts, &out); err != nil {
+	if err := Run(ctx, opts, &out); err != nil {
 		t.Fatalf("nothing to do is not an error: %v\n%s", err, out.String())
 	}
 	s := out.String()
@@ -110,11 +110,11 @@ func TestSyncKeepRunDoesNothingWhileTrunkIsUnchanged(t *testing.T) {
 	ctx, _ := provisiontest.RunFixture(t, false)
 	opts := keepOpts(synccmd.PushAlways) // one clock across the passes
 	var out bytes.Buffer
-	if err := SyncKeepRun(ctx, opts, &out); err != nil {
+	if err := Run(ctx, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	out.Reset()
-	if err := SyncKeepRun(ctx, opts, &out); err != nil {
+	if err := Run(ctx, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	sha := testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", "origin/main")
@@ -134,7 +134,7 @@ func TestSyncKeepRunDoesNothingWhileTrunkIsUnchanged(t *testing.T) {
 	testkit.GitOut(t, ctx.Repo.MainRoot, "add", "-A")
 	testkit.GitOut(t, ctx.Repo.MainRoot, "commit", "-q", "-m", "trunk again")
 	out.Reset()
-	if err := SyncKeepRun(ctx, opts, &out); err != nil {
+	if err := Run(ctx, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	if !strings.Contains(out.String(), "(fetched)\nwt sync rebase  onto origin/main") {
@@ -162,7 +162,7 @@ func TestSyncKeepRunRefusesToOverlapALivePass(t *testing.T) {
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	opts := keepOpts(synccmd.PushAlways)
 	var out bytes.Buffer
-	err = SyncKeepRun(ctx, opts, &out)
+	err = Run(ctx, opts, &out)
 	if err == nil || err.Error() != "a keeper pass is already running (pid "+strconv.Itoa(os.Getpid())+" since 14:00); nothing rebased" {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
@@ -173,7 +173,7 @@ func TestSyncKeepRunRefusesToOverlapALivePass(t *testing.T) {
 	// not a keeper: it holds nothing, and the pass goes ahead.
 	_ = lock.Close()
 	out.Reset()
-	if err := SyncKeepRun(ctx, opts, &out); err != nil {
+	if err := Run(ctx, opts, &out); err != nil {
 		t.Fatalf("a stale pid held the keeper: %v\n%s", err, out.String())
 	}
 }
@@ -188,7 +188,7 @@ func TestSyncKeepRunStartedTwiceAtOnceRunsOnce(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			errs[i] = SyncKeepRun(ctx, keepOpts(synccmd.PushAlways), &outs[i])
+			errs[i] = Run(ctx, keepOpts(synccmd.PushAlways), &outs[i])
 		}()
 	}
 	wg.Wait()
@@ -226,7 +226,7 @@ func TestSyncKeepRunRebasesNothingWhenSessionsCannotBeListed(t *testing.T) {
 	opts := keepOpts(synccmd.PushAlways)
 	opts.Agents = nil
 	var out bytes.Buffer
-	err = SyncKeepRun(ctx, opts, &out)
+	err = Run(ctx, opts, &out)
 	want := "cannot list agent sessions (claude is not on the PATH); an unattended pass needs them, nothing rebased"
 	if err == nil || err.Error() != want {
 		t.Fatalf("err %v\n%s", err, out.String())
@@ -254,7 +254,7 @@ func TestSyncKeepRunFailsWhenTheLogCannotBeWritten(t *testing.T) {
 	}
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	var out bytes.Buffer
-	err := SyncKeepRun(ctx, keepOpts(synccmd.PushAlways), &out)
+	err := Run(ctx, keepOpts(synccmd.PushAlways), &out)
 	if err == nil || !strings.HasPrefix(err.Error(), "cannot write the log "+logPath+": ") || !strings.HasSuffix(err.Error(), "; nothing rebased") {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
@@ -310,7 +310,7 @@ func TestSyncKeepRunInterruptedLeavesTheOutputSoFarInTheLog(t *testing.T) {
 		}
 		_ = syscall.Kill(os.Getpid(), syscall.SIGINT)
 	}()
-	err = SyncKeepRun(ctx, keepOpts(synccmd.PushAlways), os.Stdout)
+	err = Run(ctx, keepOpts(synccmd.PushAlways), os.Stdout)
 	t.Fatalf("the pass returned (%v) instead of being interrupted", err)
 }
 
@@ -319,7 +319,7 @@ func TestSyncKeepRunInterruptedLeavesTheOutputSoFarInTheLog(t *testing.T) {
 func TestSyncKeepRunNoPushPrintsThePushCommands(t *testing.T) {
 	ctx, bump := provisiontest.RunFixture(t, false)
 	var out bytes.Buffer
-	if err := SyncKeepRun(ctx, keepOpts(synccmd.PushNever), &out); err != nil {
+	if err := Run(ctx, keepOpts(synccmd.PushNever), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	if !strings.Contains(out.String(), "push: git -C "+bump+" push --force-with-lease --force-if-includes") {
@@ -341,7 +341,7 @@ func TestSyncKeepRunNoPushRepeatsThePushCommandUntilItIsPushedByHand(t *testing.
 	testkit.BareOrigin(t, ctx)
 	opts := keepOpts(synccmd.PushNever)
 	var out bytes.Buffer
-	if err := SyncKeepRun(ctx, opts, &out); err != nil {
+	if err := Run(ctx, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	st := synccmdtest.ReadKeep(t, ctx)
@@ -350,7 +350,7 @@ func TestSyncKeepRunNoPushRepeatsThePushCommandUntilItIsPushedByHand(t *testing.
 	}
 	sha := testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", "origin/main")
 	out.Reset()
-	if err := SyncKeepRun(ctx, opts, &out); err != nil {
+	if err := Run(ctx, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	s := out.String()
@@ -363,7 +363,7 @@ func TestSyncKeepRunNoPushRepeatsThePushCommandUntilItIsPushedByHand(t *testing.
 		t.Fatalf("trunk unchanged, yet the run ran:\n%s", s)
 	}
 	out.Reset()
-	if err := SyncKeepStatus(ctx, keepDay, &out); err != nil {
+	if err := Status(ctx, keepDay, &out); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "\nunpushed bump\n") {
@@ -371,7 +371,7 @@ func TestSyncKeepRunNoPushRepeatsThePushCommandUntilItIsPushedByHand(t *testing.
 	}
 	testkit.GitOut(t, bump, "push", "-q", "--force-with-lease", "origin", "feat_wt/bump")
 	out.Reset()
-	if err := SyncKeepRun(ctx, opts, &out); err != nil {
+	if err := Run(ctx, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	if want := "wt sync keep once  origin/main " + sha[:7] + " unchanged; nothing to do\n"; out.String() != want {
@@ -404,7 +404,7 @@ func TestSyncTableAndDoctorSayWhenTheRepositoryWasKept(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := SyncKeepRun(ctx, keepOpts(synccmd.PushAlways), &out); err != nil {
+	if err := Run(ctx, keepOpts(synccmd.PushAlways), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	out.Reset()
@@ -459,7 +459,7 @@ func TestSyncTableAndDoctorSayWhenTheRepositoryWasKept(t *testing.T) {
 		t.Fatalf("table off macOS:\n%s", out.String())
 	}
 	out.Reset()
-	if err := SyncKeepStatus(ctx, time.Now(), &out); err != nil {
+	if err := Status(ctx, time.Now(), &out); err != nil {
 		t.Fatal(err)
 	}
 	if want := "keeper   no launchd on this platform; run wt sync keep once from cron\nlast     Mar 4 14:20  trunk unchanged\nproblem  since Mar 4 14:20: failed: not completed: bump (push failed)\nlog      " + logPath + "\n"; out.String() != want {
@@ -527,7 +527,7 @@ func TestSyncKeepStartAndStopDriveLaunchd(t *testing.T) {
 		Now:    func() time.Time { return keepDay },
 	}
 	var out bytes.Buffer
-	if err := SyncKeepStart(ctx, opts, &out); err != nil {
+	if err := Start(ctx, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	plists, _ := filepath.Glob(filepath.Join(home, "Library", "LaunchAgents", "se.wt.sync-keep.*.plist"))
@@ -565,13 +565,13 @@ func TestSyncKeepStartAndStopDriveLaunchd(t *testing.T) {
 	}
 
 	out.Reset()
-	err := SyncKeepStart(ctx, opts, &out)
+	err := Start(ctx, opts, &out)
 	if err == nil || err.Error() != "a keeper is already installed here: "+plist+"; wt sync keep status" {
 		t.Fatalf("second start: %v", err)
 	}
 
 	out.Reset()
-	if err := SyncKeepStatus(ctx, opts.Now(), &out); err != nil {
+	if err := Status(ctx, opts.Now(), &out); err != nil {
 		t.Fatal(err)
 	}
 	if want := "keeper   installed, every 1h, loaded · " + plist + "\nlast     never\nnext     15:20\nlog      "; !strings.HasPrefix(out.String(), want) {
@@ -586,7 +586,7 @@ func TestSyncKeepStartAndStopDriveLaunchd(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := SyncKeepStop(ctx, &out); err != nil {
+	if err := Stop(ctx, &out); err != nil {
 		t.Fatalf("stop: %v\n%s", err, out.String())
 	}
 	label := strings.TrimSuffix(filepath.Base(plist), ".plist")
@@ -601,13 +601,13 @@ func TestSyncKeepStartAndStopDriveLaunchd(t *testing.T) {
 		t.Fatalf("launchctl calls:\n%s", called)
 	}
 	out.Reset()
-	if err := SyncKeepStatus(ctx, opts.Now(), &out); err != nil {
+	if err := Status(ctx, opts.Now(), &out); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(out.String(), "keeper   stopped · wt sync keep start\n") {
 		t.Fatalf("status after stop:\n%s", out.String())
 	}
-	if err := SyncKeepStop(ctx, &out); err == nil || err.Error() != "no keeper is installed here; wt sync keep start" {
+	if err := Stop(ctx, &out); err == nil || err.Error() != "no keeper is installed here; wt sync keep start" {
 		t.Fatalf("second stop: %v", err)
 	}
 }
@@ -626,7 +626,7 @@ func TestSyncKeepStartWarnsAboutAnAgentLaunchersKey(t *testing.T) {
 			fakeLaunchctl(t)
 			synccmdtest.OnPlatform(t, "darwin")
 			var out bytes.Buffer
-			if err := SyncKeepStart(ctx, KeepStartOptions{Getenv: func(k string) string { return env[k] }}, &out); err != nil {
+			if err := Start(ctx, KeepStartOptions{Getenv: func(k string) string { return env[k] }}, &out); err != nil {
 				t.Fatalf("err %v\n%s", err, out.String())
 			}
 			if !strings.Contains(out.String(), "an agent launcher's key: it is shredded when that agent exits") {
@@ -658,7 +658,7 @@ func TestSyncKeepStopBootsOutAJobWhosePlistIsGone(t *testing.T) {
 	calls := fakeLaunchctl(t)
 	synccmdtest.OnPlatform(t, "darwin")
 	var out bytes.Buffer
-	if err := SyncKeepStart(ctx, KeepStartOptions{Getenv: func(string) string { return "" }}, &out); err != nil {
+	if err := Start(ctx, KeepStartOptions{Getenv: func(string) string { return "" }}, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	job, err := synccmd.KeepJobFor(ctx)
@@ -669,14 +669,14 @@ func TestSyncKeepStopBootsOutAJobWhosePlistIsGone(t *testing.T) {
 		t.Fatal(err)
 	}
 	out.Reset()
-	if err := SyncKeepStatus(ctx, keepDay, &out); err != nil {
+	if err := Status(ctx, keepDay, &out); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(out.String(), "keeper   loaded but its plist is gone · wt sync keep stop, then start\n") {
 		t.Fatalf("status:\n%s", out.String())
 	}
 	out.Reset()
-	if err := SyncKeepStop(ctx, &out); err != nil {
+	if err := Stop(ctx, &out); err != nil {
 		t.Fatalf("stop: %v", err)
 	}
 	if want := "stopped " + job.Label + "; its plist was already gone\n"; out.String() != want {
@@ -702,7 +702,7 @@ func TestSyncKeepRunRetriesARefusedPushUntilItGoesThrough(t *testing.T) {
 	testkit.GitOut(t, ctx.Repo.MainRoot, "remote", "set-url", "--push", "origin", filepath.Join(t.TempDir(), "nowhere"))
 	opts := keepOpts(synccmd.PushAlways)
 	var out bytes.Buffer
-	err := SyncKeepRun(ctx, opts, &out)
+	err := Run(ctx, opts, &out)
 	if err == nil || err.Error() != "not completed: bump (push failed)" {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
@@ -724,7 +724,7 @@ func TestSyncKeepRunRetriesARefusedPushUntilItGoesThrough(t *testing.T) {
 		t.Fatalf("unpushed %+v", st.Unpushed)
 	}
 	out.Reset()
-	if err := SyncKeepStatus(ctx, keepDay, &out); err != nil {
+	if err := Status(ctx, keepDay, &out); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "\nproblem  since 14:20: failed: not completed: bump (push failed)\nunpushed bump\n") {
@@ -747,7 +747,7 @@ func TestSyncKeepRunRetriesARefusedPushUntilItGoesThrough(t *testing.T) {
 
 	// Still refused: the retry is the pass's failure, and the problem stays.
 	out.Reset()
-	if err := SyncKeepRun(ctx, opts, &out); err == nil || err.Error() != "not completed: bump (push failed)" {
+	if err := Run(ctx, opts, &out); err == nil || err.Error() != "not completed: bump (push failed)" {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	if !strings.Contains(out.String(), "✗ push of feat_wt/bump failed") {
@@ -762,7 +762,7 @@ func TestSyncKeepRunRetriesARefusedPushUntilItGoesThrough(t *testing.T) {
 	// trunk.
 	testkit.GitOut(t, ctx.Repo.MainRoot, "remote", "set-url", "--push", "origin", pushURL)
 	out.Reset()
-	if err := SyncKeepRun(ctx, opts, &out); err != nil {
+	if err := Run(ctx, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	s := out.String()
@@ -782,7 +782,7 @@ func TestSyncKeepRunRetriesARefusedPushUntilItGoesThrough(t *testing.T) {
 		t.Fatalf("state %+v", st)
 	}
 	out.Reset()
-	if err := SyncKeepStatus(ctx, keepDay, &out); err != nil {
+	if err := Status(ctx, keepDay, &out); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(out.String(), "problem") || strings.Contains(out.String(), "unpushed") {
@@ -798,7 +798,7 @@ func TestSyncKeepRunDropsAnUnpushedBranchThatMoved(t *testing.T) {
 	testkit.GitOut(t, ctx.Repo.MainRoot, "remote", "set-url", "--push", "origin", filepath.Join(t.TempDir(), "nowhere"))
 	opts := keepOpts(synccmd.PushAlways)
 	var out bytes.Buffer
-	if err := SyncKeepRun(ctx, opts, &out); err == nil {
+	if err := Run(ctx, opts, &out); err == nil {
 		t.Fatalf("the push went through to nowhere:\n%s", out.String())
 	}
 	testkit.WriteFile(t, bump, "mine.txt", "mine\n")
@@ -806,7 +806,7 @@ func TestSyncKeepRunDropsAnUnpushedBranchThatMoved(t *testing.T) {
 	testkit.GitOut(t, bump, "commit", "-q", "-m", "moved by hand")
 	testkit.GitOut(t, ctx.Repo.MainRoot, "remote", "set-url", "--push", "origin", pushURL)
 	out.Reset()
-	if err := SyncKeepRun(ctx, opts, &out); err != nil {
+	if err := Run(ctx, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	if strings.Contains(out.String(), "pushed feat_wt/bump") {
@@ -831,7 +831,7 @@ func TestSyncKeepStatusSaysWhenAPassWasInterrupted(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	if err := SyncKeepStatus(ctx, keepDay, &out); err != nil {
+	if err := Status(ctx, keepDay, &out); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "\npass     interrupted at 14:00 (pid "+strconv.Itoa(dead)+"); the next one goes ahead\n") {
@@ -848,7 +848,7 @@ func TestSyncKeepStatusSaysWhenAPassWasInterrupted(t *testing.T) {
 	}
 	defer lock.Close()
 	out.Reset()
-	if err := SyncKeepStatus(ctx, keepDay, &out); err != nil {
+	if err := Status(ctx, keepDay, &out); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "\npass     running, pid "+strconv.Itoa(dead)+" since 14:00\n") {
@@ -864,11 +864,11 @@ func TestSyncKeepStatusSaysWhenTheNextPassIsOverdue(t *testing.T) {
 	fakeLaunchctl(t)
 	synccmdtest.OnPlatform(t, "darwin")
 	var out bytes.Buffer
-	if err := SyncKeepStart(ctx, KeepStartOptions{Getenv: func(string) string { return "" }, Now: func() time.Time { return keepDay }}, &out); err != nil {
+	if err := Start(ctx, KeepStartOptions{Getenv: func(string) string { return "" }, Now: func() time.Time { return keepDay }}, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	out.Reset()
-	if err := SyncKeepStatus(ctx, keepDay.Add(2*time.Hour), &out); err != nil {
+	if err := Status(ctx, keepDay.Add(2*time.Hour), &out); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "\nnext     14:50 (overdue)\n") {
@@ -896,13 +896,13 @@ func TestSyncKeepStartAndStopAreRefusedWithoutLaunchd(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	synccmdtest.OnPlatform(t, "linux")
 	var out bytes.Buffer
-	if err := SyncKeepStart(ctx, KeepStartOptions{}, &out); err != ErrNoLaunchd {
+	if err := Start(ctx, KeepStartOptions{}, &out); err != ErrNoLaunchd {
 		t.Fatalf("start: %v", err)
 	}
-	if err := SyncKeepStop(ctx, &out); err != ErrNoLaunchd {
+	if err := Stop(ctx, &out); err != ErrNoLaunchd {
 		t.Fatalf("stop: %v", err)
 	}
-	if err := SyncKeepStatus(ctx, time.Now(), &out); err != nil || !strings.HasPrefix(out.String(), "keeper   no launchd on this platform; run wt sync keep once from cron\n") {
+	if err := Status(ctx, time.Now(), &out); err != nil || !strings.HasPrefix(out.String(), "keeper   no launchd on this platform; run wt sync keep once from cron\n") {
 		t.Fatalf("status: %v\n%s", err, out.String())
 	}
 }
@@ -921,7 +921,7 @@ func TestLookingAtTheKeeperLeavesNoLockFile(t *testing.T) {
 	if err := synccmd.Sync(ctx, synccmd.SyncOptions{NoFetch: true}, &out); err != nil {
 		t.Fatal(err)
 	}
-	if err := SyncKeepStatus(ctx, keepDay, &out); err != nil {
+	if err := Status(ctx, keepDay, &out); err != nil {
 		t.Fatal(err)
 	}
 	if err := synccmd.SyncDoctor(ctx, synccmd.DoctorOptions{}, &out); err != nil {

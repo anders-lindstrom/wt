@@ -8,10 +8,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/syncfix"
+	"github.com/anders-lindstrom/wt/internal/commands/synckeep"
 )
 
 func newSyncCmd() *cobra.Command {
@@ -265,7 +265,7 @@ func newSyncKeepCmd() *cobra.Command {
 			"  wt sync keep status     # the same as wt sync keep",
 		Args: cobra.NoArgs,
 		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
-			return commands.SyncKeepStatus(ctx, time.Now(), cmd.OutOrStdout())
+			return synckeep.Status(ctx, time.Now(), cmd.OutOrStdout())
 		}),
 	}
 	keep.AddCommand(newSyncKeepRunCmd(), newSyncKeepStartCmd(), newSyncKeepStatusCmd(), newSyncKeepStopCmd())
@@ -321,11 +321,11 @@ func newSyncKeepRunCmd() *cobra.Command {
 			"  wt sync keep once --no-ff-trunk  # leave local trunk where it is",
 		Args: cobra.NoArgs,
 		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
-			opts := commands.KeepOptions{Every: every, Push: synccmd.PushAlways, NoFFTrunk: noFFTrunk}
+			opts := synckeep.KeepOptions{Every: every, Push: synccmd.PushAlways, NoFFTrunk: noFFTrunk}
 			if noPush {
 				opts.Push = synccmd.PushNever
 			}
-			return commands.SyncKeepRun(ctx, opts, cmd.OutOrStdout())
+			return synckeep.Run(ctx, opts, cmd.OutOrStdout())
 		}),
 	}
 	run.Flags().DurationVar(&every, "every", 0, "the job's interval, for the next-run line (default 30m)")
@@ -380,20 +380,20 @@ func newSyncKeepStartCmd() *cobra.Command {
 			"  wt sync keep start --roots work --yes  # a root's, without asking",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opts := commands.KeepStartOptions{Every: every, NoPush: noPush}
+			opts := synckeep.KeepStartOptions{Every: every, NoPush: noPush}
 			if sel.selection().Any() {
-				all := commands.KeepStartAllOptions{KeepStartOptions: opts, DryRun: dryRun, Yes: yes}
+				all := synckeep.KeepStartAllOptions{KeepStartOptions: opts, DryRun: dryRun, Yes: yes}
 				if !yes && !dryRun && canAsk(cmd) {
 					p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
 					all.Ask = func(q string) (bool, error) { return p.yesNo(q, false), nil }
 				}
-				return commands.SyncKeepStartAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), all, cmd.OutOrStdout())
+				return synckeep.StartAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), all, cmd.OutOrStdout())
 			}
 			if dryRun || yes {
 				return usagef("--dry-run and --yes go with --all, --roots or --profile; start in one repository asks nothing")
 			}
 			return withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
-				return commands.SyncKeepStart(ctx, opts, cmd.OutOrStdout())
+				return synckeep.Start(ctx, opts, cmd.OutOrStdout())
 			})(cmd, args)
 		},
 	}
@@ -427,10 +427,10 @@ func newSyncKeepStatusCmd() *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if sel.selection().Any() {
-				return commands.SyncKeepStatusAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), time.Now(), cmd.OutOrStdout())
+				return synckeep.StatusAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), time.Now(), cmd.OutOrStdout())
 			}
 			return withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
-				return commands.SyncKeepStatus(ctx, time.Now(), cmd.OutOrStdout())
+				return synckeep.Status(ctx, time.Now(), cmd.OutOrStdout())
 			})(cmd, args)
 		},
 	}
@@ -460,13 +460,13 @@ func newSyncKeepStopCmd() *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if sel.selection().Any() {
-				return commands.SyncKeepStopAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), dryRun, cmd.OutOrStdout())
+				return synckeep.StopAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), dryRun, cmd.OutOrStdout())
 			}
 			if dryRun {
 				return usagef("--dry-run goes with --all, --roots or --profile")
 			}
 			return withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
-				return commands.SyncKeepStop(ctx, cmd.OutOrStdout())
+				return synckeep.Stop(ctx, cmd.OutOrStdout())
 			})(cmd, args)
 		},
 	}

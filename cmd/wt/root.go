@@ -11,9 +11,9 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/session"
+	"github.com/anders-lindstrom/wt/internal/commands/synckeep"
 	"github.com/anders-lindstrom/wt/internal/config"
 )
 
@@ -317,7 +317,7 @@ func Execute() int {
 }
 
 func errorStatus(err error) int {
-	if errors.Is(err, commands.ErrNoLaunchd) {
+	if errors.Is(err, synckeep.ErrNoLaunchd) {
 		return 3
 	}
 	var usage usageError

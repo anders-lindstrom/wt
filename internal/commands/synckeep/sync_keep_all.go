@@ -1,4 +1,4 @@
-package commands
+package synckeep
 
 import (
 	"errors"
@@ -114,13 +114,13 @@ func keepIneligible(ctx *kit.Context) (string, error) {
 	return "", nil
 }
 
-// SyncKeepStartAll is wt sync keep start across repositories: a job for
+// StartAll is wt sync keep start across repositories: a job for
 // every repository a selection names that declares wt sync and has none yet,
 // each exactly as start in that repository installs it. A repository with a
 // job is left as it is, whatever its interval, so a second start installs
 // only what the first did not. The plan is printed first and one question
 // covers it.
-func SyncKeepStartAll(u *config.User, sel kit.Selection, opts KeepStartAllOptions, w io.Writer) error {
+func StartAll(u *config.User, sel kit.Selection, opts KeepStartAllOptions, w io.Writer) error {
 	s, err := newKeepStarter(opts.KeepStartOptions)
 	if err != nil {
 		return err
@@ -208,12 +208,12 @@ func SyncKeepStartAll(u *config.User, sel kit.Selection, opts KeepStartAllOption
 	return keepFailures(rows)
 }
 
-// SyncKeepStopAll is wt sync keep stop across repositories: every job a
+// StopAll is wt sync keep stop across repositories: every job a
 // selection's repositories have is booted out and its plist removed, with
 // no question, since start puts it back. A repository with no job is listed
 // and left alone; one that no longer declares wt sync is stopped all the
 // same.
-func SyncKeepStopAll(u *config.User, sel kit.Selection, dryRun bool, w io.Writer) error {
+func StopAll(u *config.User, sel kit.Selection, dryRun bool, w io.Writer) error {
 	if synccmd.KeepGOOS != "darwin" {
 		return ErrNoLaunchd
 	}
@@ -265,10 +265,10 @@ func SyncKeepStopAll(u *config.User, sel kit.Selection, dryRun bool, w io.Writer
 	return keepFailures(rows)
 }
 
-// SyncKeepStatusAll is wt sync keep status across repositories, one line
+// StatusAll is wt sync keep status across repositories, one line
 // each: what wt sync doctor's keeper row says, or why the repository is not
 // one to keep.
-func SyncKeepStatusAll(u *config.User, sel kit.Selection, now time.Time, w io.Writer) error {
+func StatusAll(u *config.User, sel kit.Selection, now time.Time, w io.Writer) error {
 	rows, err := keepRows(u, sel, func(r *keepRow) {
 		k, err := synccmd.Keeper(r.ctx, true)
 		if err != nil {

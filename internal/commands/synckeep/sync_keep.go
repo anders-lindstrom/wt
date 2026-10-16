@@ -1,4 +1,6 @@
-package commands
+// Package synckeep implements wt sync keep: a launchd job that keeps trunk
+// and the worktrees current, its runs, and their state.
+package synckeep
 
 import (
 	"bytes"
@@ -65,13 +67,13 @@ func acquireKeepLock(gitDir string) (f *os.File, held bool, err error) {
 	return synccmd.TryKeepLock(gitDir, os.O_CREATE)
 }
 
-// SyncKeepRun is one unattended pass of the keeper: fetch trunk, and when
+// Run is one unattended pass of the keeper: fetch trunk, and when
 // its tip has moved since the last pass, rebase every ready worktree the way
 // wt sync --rebase --yes does, leaving alone any worktree with a session in it,
 // and push what finished with nothing owed. Every pass is recorded in the
 // log, as it happens, and in the state file. The error is what SyncRebase's
 // would be.
-func SyncKeepRun(ctx *kit.Context, opts KeepOptions, w io.Writer) error {
+func Run(ctx *kit.Context, opts KeepOptions, w io.Writer) error {
 	gitDir, logPath, statePath, err := synccmd.KeepPaths(ctx)
 	if err != nil {
 		return err
@@ -458,9 +460,9 @@ func contains(items []string, s string) bool {
 	return false
 }
 
-// SyncKeepStatus prints whether a keeper is installed, its interval, what
+// Status prints whether a keeper is installed, its interval, what
 // the last pass did and when the next one is.
-func SyncKeepStatus(ctx *kit.Context, now time.Time, w io.Writer) error {
+func Status(ctx *kit.Context, now time.Time, w io.Writer) error {
 	k, err := synccmd.Keeper(ctx, true)
 	if err != nil {
 		return err
