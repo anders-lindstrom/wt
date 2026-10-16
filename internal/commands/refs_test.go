@@ -593,6 +593,9 @@ func TestRefsSweepRemote(t *testing.T) {
 // branches. The time is logged (go test -v -run TestRefsPlanTime); the
 // bound is only there to catch a pass per backup per container.
 func TestRefsPlanTime(t *testing.T) {
+	if testing.Short() {
+		t.Skip("performance: builds 300 commits and 150 refs")
+	}
 	ctx, main, _ := sweepRepo(t)
 	var refs strings.Builder
 	tree := gitOut(t, main, "rev-parse", "main^{tree}")

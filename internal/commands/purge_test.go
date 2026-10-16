@@ -178,6 +178,9 @@ func TestPurgeAfterRestoreDeletesOnlyTheLeftovers(t *testing.T) {
 // A purge stopped after any step is finished by the next, and in between
 // no restore takes the worktree back: its pins may be gone.
 func TestPurgeFinishesAPurgeStoppedAtEveryStep(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: stops the run at every step, over real repositories")
+	}
 	var points []string
 	{
 		_, _, _, _, dir := quarantined(t, "fix/count-purge", true)

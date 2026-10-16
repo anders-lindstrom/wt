@@ -47,6 +47,9 @@ func syncUndoJSON(t *testing.T, ctx *Context, work string, opts UndoOptions) (Sy
 // A finished rebase says where the old tip is pinned, what each deferred
 // step did, and how to take it all back.
 func TestSyncRunJSONReportsTheSafetyRefDeferredStepsAndUndo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump := runFixture(t, true)
 	old := gitOut(t, bump, "rev-parse", "HEAD")
 	r, err := syncRunJSON(t, ctx, []string{"bump"}, noAgents())
@@ -77,6 +80,9 @@ func TestSyncRunJSONReportsTheSafetyRefDeferredStepsAndUndo(t *testing.T) {
 // stack that grew since is refused with nothing touched; the overview as
 // read runs.
 func TestSyncRunJSONExpectHoldsTheRunToTheOverview(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump := runFixture(t, false)
 	token := *overviewJSON(t, ctx).Token
 	stackFixture(t, ctx)
@@ -100,6 +106,9 @@ func TestSyncRunJSONExpectHoldsTheRunToTheOverview(t *testing.T) {
 
 // A contested stop handed over: its plan, its safety ref and both ways on.
 func TestSyncRunJSONReportsAHandover(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump := contestedFixture(t)
 	r, err := syncRunJSON(t, ctx, []string{"bump"}, noAgents())
 	if err == nil || r.Outcome != OutcomePartial || len(r.Worktrees) != 1 {
@@ -147,6 +156,9 @@ func TestSyncResumeJSONReportsTheFinishedRebase(t *testing.T) {
 
 // A resume refused leaves the handover as it was, and says so.
 func TestSyncResumeJSONReportsARefusal(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump, gitDir, st := handedOver(t)
 	r, err := syncResumeJSON(t, ctx, "bump", noResumeAgents())
 	if err == nil || r.Outcome != OutcomeRefused || len(r.Worktrees) != 1 ||
@@ -188,6 +200,9 @@ func TestSyncUndoJSONReportsWhatItPutBack(t *testing.T) {
 // A rebase the person finished by hand is where resume starts: before is the
 // branch as resume found it, not the tip the run started from.
 func TestSyncResumeJSONStartsFromTheBranchAsFound(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump, _, st := handedOver(t)
 	writeFile(t, bump, "a.txt", "merged by hand\n")
 	gitOut(t, bump, "add", "--", "a.txt")
@@ -204,6 +219,9 @@ func TestSyncResumeJSONStartsFromTheBranchAsFound(t *testing.T) {
 
 // A question answered no: nothing resumed, and the object says why.
 func TestSyncResumeJSONSaysWhenNobodyConfirmed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump, _, _ := handedOver(t)
 	writeFile(t, bump, "a.txt", "merged by hand\n")
 	gitOut(t, bump, "add", "--", "a.txt")
@@ -219,6 +237,9 @@ func TestSyncResumeJSONSaysWhenNobodyConfirmed(t *testing.T) {
 // A forced undo keeps what it discarded as a run of its own: undo takes that
 // back too, and the object says how.
 func TestSyncUndoJSONForcedNamesTheWayBackToWhatItKept(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump, _, _ := handedOver(t)
 	writeFile(t, bump, "a.txt", "merged by hand\n")
 	gitOut(t, bump, "add", "--", "a.txt")

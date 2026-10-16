@@ -40,6 +40,9 @@ func (f *trunkFixture) declare(t *testing.T) {
 }
 
 func TestUpFastForwardsLocalTrunkAfterItsFetch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	f := newTrunkFixture(t)
 	opts := f.withWork(t)
 	before := f.local(t)
@@ -63,6 +66,9 @@ func TestUpFastForwardsLocalTrunkAfterItsFetch(t *testing.T) {
 }
 
 func TestUpSaysWhatHappenedToLocalTrunk(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	f := newTrunkFixture(t)
 	opts := f.withWork(t)
 	f.advanceOrigin(t, 1)
@@ -76,6 +82,9 @@ func TestUpSaysWhatHappenedToLocalTrunk(t *testing.T) {
 }
 
 func TestUpNoFetchLeavesLocalTrunkAndReportsNull(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	f := newTrunkFixture(t)
 	opts := f.withWork(t)
 	before := f.local(t)
@@ -95,6 +104,9 @@ func TestUpNoFetchLeavesLocalTrunkAndReportsNull(t *testing.T) {
 }
 
 func TestUpOptedOutLeavesLocalTrunk(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	for _, how := range []string{"flag", "config"} {
 		t.Run(how, func(t *testing.T) {
 			f := newTrunkFixture(t)
@@ -122,6 +134,9 @@ func TestUpOptedOutLeavesLocalTrunk(t *testing.T) {
 
 // A fast-forward that fails never fails the rebase: it is reported.
 func TestSyncRunReportsASkippedTrunkAndStillRebases(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	f := newTrunkFixture(t)
 	opts := f.withWork(t)
 	gitIn(t, f.main, "commit", "-q", "--allow-empty", "-m", "unpushed")
@@ -147,6 +162,9 @@ func TestSyncRunReportsASkippedTrunkAndStillRebases(t *testing.T) {
 // The keeper fast-forwards local trunk after its fetch, even on a pass with
 // nothing to rebase.
 func TestSyncKeepRunFastForwardsLocalTrunk(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	f := newTrunkFixture(t)
 	f.declare(t)
 	f.advanceOrigin(t, 1)
@@ -185,6 +203,9 @@ func TestSyncKeepRunNoFFTrunkLeavesLocalTrunk(t *testing.T) {
 
 // wt status says what a run would do to local trunk and moves nothing.
 func TestStatusJSONSaysWhatARunWouldDoToLocalTrunk(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	f := newTrunkFixture(t)
 	f.withWork(t)
 	before := f.local(t)
@@ -207,6 +228,9 @@ func TestStatusJSONSaysWhatARunWouldDoToLocalTrunk(t *testing.T) {
 
 // An --expect that no longer holds touches nothing: local trunk included.
 func TestExpectRefusedLeavesLocalTrunk(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	for _, verb := range []string{"up", "sync rebase"} {
 		t.Run(verb, func(t *testing.T) {
 			f := newTrunkFixture(t)
@@ -234,6 +258,9 @@ func TestExpectRefusedLeavesLocalTrunk(t *testing.T) {
 // A repository whose trunk declares nothing has nothing for wt sync rebase to
 // rebase, but it fetched: local trunk still follows.
 func TestSyncRunUndeclaredStillFastForwardsLocalTrunk(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	f := newTrunkFixture(t)
 	opts := f.withWork(t)
 	remote := f.advanceOrigin(t, 1)

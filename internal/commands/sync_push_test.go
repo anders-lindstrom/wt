@@ -56,6 +56,9 @@ func failGit(t *testing.T, match string) {
 // took the run's whole report with it: the worktrees that did not finish were
 // never printed, and the push that did go through was never named either.
 func TestOfferPushKeepsTheReportWhenANewTipCannotBeRead(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	ctx, bump := runFixture(t, false)
 	bare := pushOrigin(t, ctx)
 	// Something for the push to carry: the fixture's origin already holds the
@@ -85,6 +88,9 @@ func TestOfferPushKeepsTheReportWhenANewTipCannotBeRead(t *testing.T) {
 }
 
 func TestSyncRunPushesAFinishedWorktreeWithPush(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	ctx, bump := runFixture(t, false)
 	bare := pushOrigin(t, ctx)
 	old := gitOut(t, bump, "rev-parse", "--short=7", "HEAD")
@@ -108,6 +114,9 @@ func TestSyncRunPushesAFinishedWorktreeWithPush(t *testing.T) {
 // Somebody else moved the branch on origin and nothing here fetched it: the
 // lease refuses, the run says why and does not complete, origin keeps theirs.
 func TestSyncRunDoesNotPushOverCommitsItHasNotSeen(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	ctx, bump := runFixture(t, false)
 	bare := pushOrigin(t, ctx)
 	gitOut(t, bump, "push", "-q", "-u", "origin", "feat_wt/bump")
@@ -129,6 +138,9 @@ func TestSyncRunDoesNotPushOverCommitsItHasNotSeen(t *testing.T) {
 }
 
 func TestSyncRunAsksToPushOnlyWhatFinishedAndPrintsTheCommandOnNo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	ctx, bump := runFixture(t, false)
 	bare := pushOrigin(t, ctx)
 	var asked []string
@@ -154,6 +166,9 @@ func TestSyncRunAsksToPushOnlyWhatFinishedAndPrintsTheCommandOnNo(t *testing.T) 
 }
 
 func TestSyncRunPushesWhenTheAnswerIsYes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	ctx, bump := runFixture(t, false)
 	bare := pushOrigin(t, ctx)
 	opts := noAgents()
@@ -168,6 +183,9 @@ func TestSyncRunPushesWhenTheAnswerIsYes(t *testing.T) {
 }
 
 func TestSyncRunNoPushNeitherAsksNorPushes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	ctx, bump := runFixture(t, false)
 	bare := pushOrigin(t, ctx)
 	opts := noAgents()
@@ -186,6 +204,9 @@ func TestSyncRunNoPushNeitherAsksNorPushes(t *testing.T) {
 }
 
 func TestSyncRunPushesNothingThatDidNotFinish(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	ctx, bump := contestedFixture(t)
 	bare := pushOrigin(t, ctx)
 	before := gitOut(t, bare, "rev-parse", "feat_wt/bump")
@@ -204,6 +225,9 @@ func TestSyncRunPushesNothingThatDidNotFinish(t *testing.T) {
 }
 
 func TestSyncResumePushesWithPush(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	ctx, bump, _, _ := handedOver(t)
 	bare := pushOrigin(t, ctx)
 	writeFile(t, bump, "a.txt", "merged by hand\n")

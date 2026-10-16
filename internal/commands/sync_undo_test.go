@@ -18,6 +18,9 @@ func noAgentsUndo() UndoOptions {
 }
 
 func TestSyncUndoPutsBackWhatSyncRunMoved(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump := runFixture(t, true)
 	old := gitOut(t, bump, "rev-parse", "HEAD")
 	var out bytes.Buffer
@@ -52,6 +55,9 @@ func TestSyncUndoPutsBackWhatSyncRunMoved(t *testing.T) {
 }
 
 func TestSyncUndoRefusesAWorktreeCommittedToSinceTheRun(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump := runFixture(t, true)
 	var out bytes.Buffer
 	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err != nil {
@@ -88,6 +94,9 @@ func TestSyncUndoRefusesAWorktreeCommittedToSinceTheRun(t *testing.T) {
 // resume, rather than calling the rebased branch one that "moved since"
 // the run. --force rewinds and pins it, as for any moved branch.
 func TestSyncUndoNamesAFinishedByHandRebaseInsteadOfCallingItMoved(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump, gitDir, st := handedOver(t)
 	writeFile(t, bump, "a.txt", "merged by hand\n")
 	gitOut(t, bump, "add", "--", "a.txt")
@@ -130,6 +139,9 @@ func TestSyncUndoNamesAFinishedByHandRebaseInsteadOfCallingItMoved(t *testing.T)
 // on the worktree exactly as the run left it: the rebase in progress, the
 // strategies' answers staged, and the run's lock still in the git dir.
 func TestSyncUndoAbortsWhatSyncRunHandedOver(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump := contestedFixture(t)
 	old := gitOut(t, bump, "rev-parse", "HEAD")
 	gitDir, _ := handOverNow(t, ctx, bump)
@@ -163,6 +175,9 @@ func TestSyncUndoAbortsWhatSyncRunHandedOver(t *testing.T) {
 // rather than abort it, because the abort would discard that commit and
 // nothing would pin it.
 func TestSyncUndoRefusesARebaseItDidNotLeave(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump, gitDir, st := handedOver(t)
 	restartedByHand(t, bump, st)
 	main := ctx.Repo.MainRoot
@@ -198,6 +213,9 @@ func TestSyncUndoRefusesARebaseItDidNotLeave(t *testing.T) {
 // a commit on detached HEAD that only the rebase knows about. undo must
 // name it and both ways of keeping it, and touch nothing.
 func TestSyncUndoNamesTheCommitAPersonMadeInsideTheHandover(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump, gitDir, _ := handedOver(t)
 	writeFile(t, bump, "a.txt", "merged by hand\n")
 	gitOut(t, bump, "add", "--", "a.txt")
@@ -227,6 +245,9 @@ func TestSyncUndoNamesTheCommitAPersonMadeInsideTheHandover(t *testing.T) {
 // over, so undo can tell a commit made inside the rebase from the run's
 // own picks exactly, not by counting.
 func TestSyncHandoverRecordsHead(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump := contestedFixture(t)
 	_, st := handOverNow(t, ctx, bump)
 	if head := gitOut(t, bump, "rev-parse", "HEAD"); st.Head == "" || st.Head != head {
@@ -251,6 +272,9 @@ func TestRestoredLineNeverClaimsARewindThatDidNotHappen(t *testing.T) {
 // than abort: it rewinds past the moved commits, and the output has to say
 // from where.
 func TestSyncUndoForcedPastAMovedHandoverSaysWhatItRewound(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump := contestedFixture(t)
 	old := gitOut(t, bump, "rev-parse", "HEAD")
 	handOverNow(t, ctx, bump)
@@ -285,6 +309,9 @@ func TestSyncUndoForcedPastAMovedHandoverSaysWhatItRewound(t *testing.T) {
 // where it was, so the row's "back at" names nothing of what was kept. The
 // row has to say where the commit went and what brings it back.
 func TestSyncUndoForcedPastACommitInsideSaysWhereItKeptIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump, _, _ := handedOver(t)
 	old := gitOut(t, ctx.Repo.MainRoot, "rev-parse", "feat_wt/bump")
 	writeFile(t, bump, "a.txt", "merged by hand\n")
@@ -308,6 +335,9 @@ func TestSyncUndoForcedPastACommitInsideSaysWhereItKeptIt(t *testing.T) {
 }
 
 func TestSyncUndoUnderAnIdleSessionAsksThenTellsIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump := runFixture(t, false)
 	old := gitOut(t, bump, "rev-parse", "HEAD")
 	var out bytes.Buffer
@@ -346,6 +376,9 @@ func TestSyncUndoUnderAnIdleSessionAsksThenTellsIt(t *testing.T) {
 // A no to undo on a handed-over worktree must leave the handover's own lock:
 // the question comes before any lock is taken over.
 func TestSyncUndoNoLeavesAHandoverAndItsLock(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump, gitDir, st := handedOver(t)
 	opts := noAgentsUndo()
 	opts.Agents = idleIn(t, bump, "bump-1")
@@ -363,6 +396,9 @@ func TestSyncUndoNoLeavesAHandoverAndItsLock(t *testing.T) {
 }
 
 func TestSyncUndoRefusesASessionThatWokeWhileAsked(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump := runFixture(t, false)
 	var out bytes.Buffer
 	if err := SyncRebase(ctx, []string{"bump"}, noAgents(), &out); err != nil {

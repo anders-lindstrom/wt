@@ -18,6 +18,9 @@ import (
 // An interrupt takes down a claude agents still running: it is in the
 // registry git.KillRunning kills, which is what wt's signal handler calls.
 func TestKillRunningTakesDownARunningClaudeAgents(t *testing.T) {
+	if testing.Short() {
+		t.Skip("kills a running claude agents process")
+	}
 	stub := t.TempDir()
 	started := filepath.Join(stub, "started")
 	claude := filepath.Join(stub, "claude")
@@ -55,6 +58,9 @@ func TestKillRunningTakesDownARunningClaudeAgents(t *testing.T) {
 // is a child of sh that holds the output pipe, so the deadline has to take
 // down the whole process group, not just sh.
 func TestListAgentsGivesUpOnAClaudeThatDoesNotAnswer(t *testing.T) {
+	if testing.Short() {
+		t.Skip("waits out a real deadline")
+	}
 	stub := t.TempDir()
 	pidFile := filepath.Join(stub, "sleep.pid")
 	script := "#!/bin/sh\n[ \"$1\" = warm ] && exit 0\nsleep 30 &\necho $! > " + pidFile + "\nwait\necho '[]'\n"

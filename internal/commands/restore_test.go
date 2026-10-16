@@ -413,6 +413,9 @@ func TestRestoreRefusesAFolderWithNoRecordAndNoLock(t *testing.T) {
 // A removal that stops after any journal write — or after a step it ran but
 // did not get to record — is put back by wt restore.
 func TestRestorePutsBackARemovalStoppedAtEveryStep(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: stops the run at every step, over real repositories")
+	}
 	points := journalPoints(t, func() { quarantined(t, "fix/count", true) })
 	if len(points) < 13 {
 		t.Fatalf("points %v", points)
@@ -462,6 +465,9 @@ func TestRestorePutsBackARemovalStoppedAtEveryStep(t *testing.T) {
 
 // A restore that stops after any journal write is finished by the next.
 func TestRestoreFinishesARestoreStoppedAtEveryStep(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: stops the run at every step, over real repositories")
+	}
 	var points []string
 	{
 		ctx, _, _, _, dir := quarantined(t, "fix/count-restore", false)

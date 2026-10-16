@@ -112,6 +112,9 @@ func assertUntouched(t *testing.T, bump, gitDir string, st wtsync.State) {
 }
 
 func TestSyncResumeFinishesAHandedOverRebase(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump, gitDir, st := handedOver(t)
 	// The person does what the plan file asks: resolve what is left to them and
 	// stage it. Nothing else in the worktree is touched.
@@ -156,6 +159,9 @@ func TestSyncResumeFinishesAHandedOverRebase(t *testing.T) {
 }
 
 func TestSyncResumeRefusesAHandMergedOwnedFile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump, gitDir, st := handedOver(t)
 	// What is left to the person is resolved, but so is what is not: v.txt belongs to
 	// the owned-line strategy and the plan file says never to touch it.
@@ -183,6 +189,9 @@ func TestSyncResumeRefusesAHandMergedOwnedFile(t *testing.T) {
 }
 
 func TestSyncResumeRefusesWhileSomethingIsUnmerged(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump, gitDir, st := handedOver(t)
 	var out bytes.Buffer
 	err := SyncResume(ctx, "bump", noResumeAgents(), &out)
@@ -200,6 +209,9 @@ func TestSyncResumeRefusesWhileSomethingIsUnmerged(t *testing.T) {
 // read the refusal as a stuck rebase — which in a run means a reset. Here
 // that reset would land on a person's own edit, so it is caught first.
 func TestSyncResumeRefusesUnstagedTrackedChanges(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump, gitDir, st := handedOver(t)
 	writeFile(t, bump, "a.txt", "merged by hand\n")
 	gitOut(t, bump, "add", "--", "a.txt")
@@ -236,6 +248,9 @@ func TestSyncResumeWithoutAHandover(t *testing.T) {
 // commits the run never planned, and the msgnum it stops at need not match
 // the handover's, so nothing downstream would notice.
 func TestSyncResumeRefusesARebaseItDidNotLeave(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump := laterStopFixture(t, false)
 	gitDir, st := handOverNow(t, ctx, bump)
 	gitOut(t, bump, "rebase", "--abort")
@@ -262,6 +277,9 @@ func TestSyncResumeRefusesARebaseItDidNotLeave(t *testing.T) {
 // unmerged again because somebody undid the resolution. Resolving it is not
 // the person's job, so resume must not tell them to.
 func TestSyncResumeNeverAsksAPersonToMergeAStrategysFile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump, gitDir, st := handedOver(t)
 	writeFile(t, bump, "a.txt", "merged by hand\n")
 	gitOut(t, bump, "add", "--", "a.txt")
@@ -290,6 +308,9 @@ func TestSyncResumeNeverAsksAPersonToMergeAStrategysFile(t *testing.T) {
 // stop where a strategy's file conflicts again. That stop is the strategies'
 // to take, exactly as it would have been in the run.
 func TestSyncResumeTakesALaterStopThroughTheStrategies(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump := laterStopFixture(t, false)
 	gitDir, st := handOverNow(t, ctx, bump)
 	if st.Stop != 1 || st.Total != 2 {
@@ -334,6 +355,9 @@ func TestSyncResumeTakesALaterStopThroughTheStrategies(t *testing.T) {
 // their file and the rest is handed over afresh, not refused. Resumed by the
 // branch name, the new sidecar still carries the name the run recorded.
 func TestSyncResumeHandsALaterUnclaimedStopOverAgain(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump := laterStopFixture(t, true)
 	gitDir, st := handOverNow(t, ctx, bump)
 	writeFile(t, bump, "a.txt", "merged by hand\n")
@@ -376,6 +400,9 @@ func TestSyncResumeHandsALaterUnclaimedStopOverAgain(t *testing.T) {
 // overwriting a file a strategy owns — and git rebase --continue to the end.
 // What can no longer be checked is said out loud.
 func TestSyncResumeSaysWhatAFinishedByHandRebaseDidNotRecheck(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump, gitDir, st := handedOver(t)
 	writeFile(t, bump, "a.txt", "merged by hand\n")
 	writeFile(t, bump, "v.txt", "9.9.9\n")
@@ -409,6 +436,9 @@ func TestSyncResumeSaysWhatAFinishedByHandRebaseDidNotRecheck(t *testing.T) {
 // exercises the old-sidecar path. Resume recognises the finished rebase,
 // runs the deferred step, pins the result and ends the handover.
 func TestSyncResumeFinishesARebaseFinishedByHandAndRunsTheDeferredSteps(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump := contested(t, true)
 	// A second branch commit, as the real case's stop 1/2: the hand
 	// continue passes through a later pick before the rebase finishes.
@@ -503,6 +533,9 @@ func restartedByHand(t *testing.T, bump string, st wtsync.State) {
 // commit under the run's epoch, and a later plain undo would discard that
 // commit without refusing.
 func TestSyncResumeRefusesARebaseRestartedFromAnotherTip(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump, gitDir, st := handedOver(t)
 	restartedByHand(t, bump, st)
 
@@ -520,6 +553,9 @@ func TestSyncResumeRefusesARebaseRestartedFromAnotherTip(t *testing.T) {
 // The same restarted rebase, finished by hand. No sequencer is left to read,
 // so the branch's reflog must show where the rebase started.
 func TestSyncResumeRefusesARebaseFinishedByHandFromAnotherTip(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump, gitDir, st := handedOver(t)
 	restartedByHand(t, bump, st)
 	gitTry(t, bump, "rebase", "--continue")
@@ -555,6 +591,9 @@ func TestSyncResumeRefusesARebaseFinishedByHandFromAnotherTip(t *testing.T) {
 // that from a person's commit, so it refuses, and the refusal must not claim
 // the commit is one the run never made.
 func TestSyncResumeRefusesACommitAfterTheRebaseWithoutBlamingAPerson(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump, gitDir, _ := handedOver(t)
 	writeFile(t, bump, "a.txt", "merged by hand\n")
 	gitOut(t, bump, "add", "--", "a.txt")
@@ -584,6 +623,9 @@ func TestSyncResumeRefusesACommitAfterTheRebaseWithoutBlamingAPerson(t *testing.
 // what run says in the same place: where the worktree is, and what puts it
 // back.
 func TestSyncResumeSaysWhereAFailedHandoverLeftTheWorktree(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump := laterStopFixture(t, true)
 	gitDir, st := handOverNow(t, ctx, bump)
 	writeFile(t, bump, "a.txt", "merged by hand\n")
@@ -625,6 +667,9 @@ func TestSyncResumeSaysWhereAFailedHandoverLeftTheWorktree(t *testing.T) {
 // The whole seam: a run hands over, resume finishes it under the run's epoch,
 // and a plain undo of that run puts the branch back where the run found it.
 func TestSyncUndoPutsBackWhatAResumeFinished(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump, gitDir, st := handedOver(t)
 	writeFile(t, bump, "a.txt", "merged by hand\n")
 	gitOut(t, bump, "add", "--", "a.txt")
@@ -656,6 +701,9 @@ func TestSyncUndoPutsBackWhatAResumeFinished(t *testing.T) {
 // refuses while its plan is there. Resume must name the command that clears
 // it, that command must work, and a run must then start again.
 func TestSyncResumeSendsAnAbortedHandoverToUndo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump, gitDir, _ := handedOver(t)
 	gitOut(t, bump, "rebase", "--abort")
 
@@ -723,6 +771,9 @@ func globFixture(t *testing.T) (ctx *Context, bump string) {
 // Resolved is the handover's Staged, so it must hold v[1].txt's own blob, not
 // v1.txt's, or resume would call the strategy's answer hand-merged.
 func TestSyncHandoverRecordsTheBlobOfTheFileItNames(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump := globFixture(t)
 	_, st := handOverNow(t, ctx, bump)
 	own := gitOut(t, bump, "rev-parse", ":0:v[1].txt")
@@ -756,6 +807,9 @@ func resolvedByHand(t *testing.T) (ctx *Context, bump, gitDir string) {
 }
 
 func TestSyncResumeRefusesABusySession(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump, gitDir := resolvedByHand(t)
 	opts := noResumeAgents()
 	opts.Agents = idleIn(t, bump, "bump-1")
@@ -771,6 +825,9 @@ func TestSyncResumeRefusesABusySession(t *testing.T) {
 }
 
 func TestSyncResumeAsksBeforeFinishingUnderAnIdleSession(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump, gitDir := resolvedByHand(t)
 	st, _, _ := wtsync.ReadState(gitDir)
 	opts := noResumeAgents()
@@ -801,6 +858,9 @@ func TestSyncResumeAsksBeforeFinishingUnderAnIdleSession(t *testing.T) {
 // A person can still be editing while the question waits: resume verifies
 // the handover after the answer, not before.
 func TestSyncResumeVerifiesTheHandoverAfterTheAnswer(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump, _ := resolvedByHand(t)
 	opts := noResumeAgents()
 	opts.Agents = idleIn(t, bump, "bump-1")
@@ -816,6 +876,9 @@ func TestSyncResumeVerifiesTheHandoverAfterTheAnswer(t *testing.T) {
 }
 
 func TestSyncResumeRefusesASessionThatWokeWhileAsked(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump, gitDir := resolvedByHand(t)
 	opts := noResumeAgents()
 	opts.Agents = idleIn(t, bump, "bump-1")
@@ -834,6 +897,9 @@ func TestSyncResumeRefusesASessionThatWokeWhileAsked(t *testing.T) {
 }
 
 func TestSyncResumeUnderAnIdleSessionEndsWithALineToRelay(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump, _ := resolvedByHand(t)
 	opts := noResumeAgents()
 	opts.Agents = idleIn(t, bump, "bump-1")
@@ -849,6 +915,9 @@ func TestSyncResumeUnderAnIdleSessionEndsWithALineToRelay(t *testing.T) {
 // The files of a stop the run resolved before it handed over are still the
 // session's to check once resume finishes: the sidecar carries them.
 func TestSyncResumeRelaysTheStopsBeforeTheHandoverToo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: a sync run over real repositories and worktrees")
+	}
 	ctx, bump := runFixture(t, false)
 	main := ctx.Repo.MainRoot
 	writeFile(t, bump, "a.txt", "branch\n")

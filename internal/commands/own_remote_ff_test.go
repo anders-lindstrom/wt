@@ -43,6 +43,9 @@ func (f *trunkFixture) onTrunkElsewhere(t *testing.T, branch string) string {
 // fast-forwarded and that is all: the look files it under ready, the run
 // reports fastForwarded with nothing to push, and undo puts it back.
 func TestSyncRunFastForwardsABranchWithNothingToRebase(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f, x, opts, local, remote := nothingToRebase(t)
 
 	row := overviewRow(t, overviewJSON(t, f.ctx), "x")
@@ -101,6 +104,9 @@ func TestSyncRunFastForwardsABranchWithNothingToRebase(t *testing.T) {
 // A run with nothing named takes it with the other ready ones, says what it
 // did in one line and how to take it back, and offers nothing to push.
 func TestSyncRunWithNothingNamedTakesAFastForwardOnlyWorktree(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f, x, opts, local, remote := nothingToRebase(t)
 	n := gitOut(t, f.main, "rev-list", "--count", local+".."+remote)
 	var out bytes.Buffer
@@ -128,6 +134,9 @@ func TestSyncRunWithNothingNamedTakesAFastForwardOnlyWorktree(t *testing.T) {
 // wt up does the same, and with --no-fetch it goes by the remote as last
 // fetched and says so.
 func TestUpFastForwardsABranchWithNothingToRebase(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f, x, opts, local, remote := nothingToRebase(t)
 	opts.NoFetch = true
 	r, human, err := upOut(t, f.ctx, "x", opts)
@@ -150,6 +159,9 @@ func TestUpFastForwardsABranchWithNothingToRebase(t *testing.T) {
 // In a stack: a parent that only needs the fast-forward gets it, and its
 // child is rebased onto where that leaves the parent.
 func TestUpFastForwardsAStackParentWithNothingToRebaseAndRebasesItsChild(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	f := newTrunkFixture(t)
 	x, opts := f.pushedWork(t)
 	var buf bytes.Buffer
@@ -197,6 +209,9 @@ func TestUpFastForwardsAStackParentWithNothingToRebaseAndRebasesItsChild(t *test
 // Where the fast-forward is not safe it is the behind block as before:
 // refused untouched, with the code that says why.
 func TestSyncRunRefusesAFastForwardOnlyBranchItCannotMove(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	t.Run("dirty", func(t *testing.T) {
 		f, x, opts, local, _ := nothingToRebase(t)
 		writeIn(t, x, "x.txt", "edited\n")

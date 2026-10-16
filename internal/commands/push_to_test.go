@@ -60,6 +60,9 @@ func pushAlways() RunOptions {
 // the layout by wt migrate, then rebased and pushed. Its pull request is on
 // origin/own_apikey, and that is where the push has to land.
 func TestAMigratedBranchIsStillPushedToItsOldRemoteBranch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	ctx, _ := runFixture(t, false)
 	bare := ownBareOrigin(t, ctx)
 	main := ctx.Repo.MainRoot
@@ -111,6 +114,9 @@ func TestAMigratedBranchIsStillPushedToItsOldRemoteBranch(t *testing.T) {
 // mine tracking origin/theirs with nobody to ask: wt does not guess. The
 // branch is rebased and not pushed, and theirs is not touched.
 func TestABranchTrackingAnotherNameIsNotPushedWithNobodyToAsk(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	const hint = "✗ feat_wt/bump not pushed: it tracks origin/theirs, a branch of another name, and nothing says whether it " +
 		"pushes there or to origin/feat_wt/bump: say which with wt sync push-to feat_wt/bump origin/theirs (or origin/feat_wt/bump)"
 	for name, mode := range map[string]PushMode{"--push": PushAlways, "--no-push": PushNever, "nobody to ask": PushAsk} {
@@ -158,6 +164,9 @@ func TestABranchTrackingAnotherNameIsNotPushedWithNobodyToAsk(t *testing.T) {
 
 // With a person there, wt asks which of the two it is, once, and records it.
 func TestAPersonSaysWhereABranchTrackingAnotherNamePushes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	run := func(t *testing.T, answer func(PushChoice) string) (ctx *Context, bump, bare, theirs string, asked []PushChoice, confirmed []string, out string) {
 		ctx, bump = runFixture(t, false)
 		bare = ownBareOrigin(t, ctx)
@@ -243,6 +252,9 @@ func TestAPersonSaysWhereABranchTrackingAnotherNamePushes(t *testing.T) {
 // make it where wt's forced push goes: a branch cut from a release branch
 // tracks it, and is not it.
 func TestPushDefaultUpstreamDoesNotMakeTheUpstreamADestination(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	ctx, bump := runFixture(t, false)
 	bare := ownBareOrigin(t, ctx)
 	release := tracksTheirs(t, ctx, bare)
@@ -264,6 +276,9 @@ func TestPushDefaultUpstreamDoesNotMakeTheUpstreamADestination(t *testing.T) {
 // trunk: what the remote holds afterwards is the branch under its own name,
 // and trunk where it was. git would send a refspec with no colon to trunk.
 func TestARunUnderPushDefaultUpstreamPushesTheBranchsOwnNameAndNotTrunk(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	ctx, bump := runFixture(t, false)
 	bare := ownBareOrigin(t, ctx)
 	main := ctx.Repo.MainRoot
@@ -297,6 +312,9 @@ func TestARunUnderPushDefaultUpstreamPushesTheBranchsOwnNameAndNotTrunk(t *testi
 // wt new cuts a branch from its base and does not make the base its
 // upstream: a new branch is not the branch it was cut from.
 func TestNewLeavesTheBranchWithNoUpstream(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	ctx, _ := runFixture(t, false)
 	bare := ownBareOrigin(t, ctx)
 	main := ctx.Repo.MainRoot
@@ -361,6 +379,9 @@ func moveOnRemote(t *testing.T, bare, branch string) string {
 // Somebody pushed to the recorded branch and nothing here fetched it: git
 // refuses on the commit wt pinned, and the run says the push failed.
 func TestAPushUnderAnotherNameThatTheLeaseRefusesIsAFailedPush(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	ctx, _, bare := recordedBump(t)
 	theirs := moveOnRemote(t, bare, "old-name")
 	r, err := syncRunJSON(t, ctx, []string{"bump"}, pushAlways())
@@ -379,6 +400,9 @@ func TestAPushUnderAnotherNameThatTheLeaseRefusesIsAFailedPush(t *testing.T) {
 // fetch brings a teammate's commit, the check finds it, and the branch takes
 // it in before it is rebased and pushed. Theirs is still there afterwards.
 func TestARunFetchesChecksAndPushesTheRecordedBranch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	ctx, bump, bare := recordedBump(t)
 	theirs := moveOnRemote(t, bare, "old-name")
 	opts := pushAlways()
@@ -422,6 +446,9 @@ func TestARunFetchesChecksAndPushesTheRecordedBranch(t *testing.T) {
 // as it stands: wt's own check is what refuses now, with no push command to
 // run by hand either.
 func TestAPushUnderAnotherNameOverACommitTheBranchNeverHadIsNotMade(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	ctx, bump, bare := recordedBump(t)
 	theirs := moveOnRemote(t, bare, "old-name")
 	gitOut(t, ctx.Repo.MainRoot, "fetch", "-q", "origin")
@@ -543,6 +570,9 @@ func TestSyncPushToRecordsSaysAndForgets(t *testing.T) {
 // Both remote branches exist after pushes of a renamed branch went to its
 // new name: wt status says so, and says which one it pushes to.
 func TestStatusNamesTheDestinationAndTheStrayBranchOfItsOwnName(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	ctx, bump, _ := recordedBump(t)
 	gitOut(t, ctx.Repo.MainRoot, "config", "--unset", "branch.feat_wt/bump.wtPushTo")
 	gitOut(t, bump, "push", "-q", "origin", "feat_wt/bump")
@@ -588,6 +618,9 @@ func TestStatusNamesTheDestinationAndTheStrayBranchOfItsOwnName(t *testing.T) {
 // wt remove keeps an unmerged branch under another name, and wt restore gives
 // it its name back: its pushes stay where they went through both.
 func TestRemoveAndRestoreKeepWhereAKeptBranchPushes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: real repositories with an origin to push to")
+	}
 	ctx, path := safetyWorktree(t, "fix/kept-push")
 	main := ctx.Repo.MainRoot
 	gitIn(t, path, "commit", "-q", "--allow-empty", "-m", "work")
