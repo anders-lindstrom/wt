@@ -7,8 +7,10 @@
 # The examples are read back out of the built binary, so this cannot drift
 # from what help actually says. It ends by naming any printed example it did
 # not run, and exits non-zero if one failed or was not run: CI runs it, so a
-# new example that is not listed here fails the build. The one hook line
-# carrying a literal placeholder path is run with a real path substituted.
+# new example that is not listed here fails the build. The two lines naming
+# a path that cannot be used here, the hook's placeholder and the session
+# reply socket under /tmp/cc-socks, are run with a real path substituted.
+# The session inboxes are sockets python3 listens on.
 #
 # Not part of `make check`: it builds a few dozen git repositories and takes
 # about a minute.
@@ -187,6 +189,69 @@ CLAUDE
     echo "$d"
 }
 
+# make_fleet, plus a worktree named crash: crash and login-crash each hold
+# one running background session with an inbox, what wt session list, send
+# and stop find. An inbox is a socket a listener reads and discards, in $2,
+# a directory of its own under /tmp (a socket path has a length limit
+# TMPDIR can exceed), beside b.sock, a socket a reply could go to. The
+# registry under the case's own CLAUDE_CONFIG_DIR names each; a listener's
+# pid is its session's. The listeners are killed when the case ends, or exit
+# after a minute unused. claude stop stops nothing.
+make_inbox() {
+    local d; d=$(make_fleet "$1")
+    (cd "$d" && "$WT" new fix/crash --no-setup >/dev/null 2>&1)
+    mkdir -m 700 "$2"
+    mkdir -p "$1/claude/sessions" "$1/bin"
+    local crash lc
+    crash=$(inbox_session "$1" "$2" 7c2e5b11)
+    lc=$(inbox_session "$1" "$2" 3f9a1c20)
+    cat > "$1/bin/claude" <<CLAUDE
+#!/bin/sh
+case "\$1 \$2" in
+  'agents --json')
+    printf '[{"id":"7c2e5b11","sessionId":"7c2e5b11-1111-4222-8333-444455556666","name":"review the fix","kind":"background","state":"working","pid":$crash,"cwd":"%s"},' "$(cd "$1/work/myrepo_wt/fix_wt/crash" && pwd -P)"
+    printf '{"id":"3f9a1c20","sessionId":"3f9a1c20-1111-4222-8333-444455556666","name":"fix the crash","kind":"background","state":"working","pid":$lc,"cwd":"%s"}]\n' "$(cd "$1/work/myrepo_wt/fix_wt/login-crash" && pwd -P)"
+    ;;
+  stop*) echo "stopped \$2" ;;
+esac
+exit 0
+CLAUDE
+    chmod +x "$1/bin/claude"
+    echo "$d"
+}
+# inbox_session <case dir> <socket dir> <id>: starts the listener for
+# session <id>, registers it, and prints its pid.
+inbox_session() {
+    python3 -c '
+import os, socket, sys
+d, name = sys.argv[1], sys.argv[2]
+if not os.path.exists(os.path.join(d, "b.sock")):
+    socket.socket(socket.AF_UNIX).bind(os.path.join(d, "b.sock"))
+s = socket.socket(socket.AF_UNIX)
+s.bind(os.path.join(d, name))
+s.listen(8)
+s.settimeout(60)
+while True:
+    try:
+        c, _ = s.accept()
+    except socket.timeout:
+        sys.exit(0)
+    c.settimeout(5)
+    try:
+        while c.recv(65536):
+            pass
+    except OSError:
+        pass
+    c.close()
+' "$2" "$3.sock" </dev/null >/dev/null 2>&1 &
+    local pid=$!
+    echo "$pid" >> "$1/inbox.pid"
+    for _ in 1 2 3 4 5 6 7 8 9 10; do [ -S "$2/$3.sock" ] && break; sleep 0.2; done
+    printf '{"pid":%s,"sessionId":"%s-1111-4222-8333-444455556666","messagingSocketPath":"%s"}\n' \
+        "$pid" "$3" "$2/$3.sock" > "$1/claude/sessions/$pid.json"
+    echo "$pid"
+}
+
 # make_plain, plus a GitHub remote and a fake `gh` first on the PATH that
 # answers for one open pull request, #12 on residential_fixes, and performs
 # `pr checkout` by creating that branch where it is run — which is the whole
@@ -262,7 +327,7 @@ check() {
     # The user settings are this case's own: `wt config set` writes a real
     # file, and the developer's must never be the one an example edits.
     export XDG_CONFIG_HOME="$dir/xdg"
-    local repo
+    local repo socks
     case $mode in
         plain) repo=$(make_plain "$dir");;
         noconf) repo=$(make_noconf "$dir");;
@@ -277,6 +342,8 @@ check() {
         keep|launchd) repo=$(make_keep "$dir"); prereq="export HOME=$dir/home PATH=$dir/bin:\$PATH; $prereq";;
         keepfleet|launchdfleet) repo=$(make_keepfleet "$dir"); prereq="export HOME=$dir/home PATH=$dir/bin:\$PATH; $prereq";;
         sessions) repo=$(make_sessions "$dir"); prereq="export PATH=$dir/bin:\$PATH WT_ROOTS=$dir; $prereq";;
+        inbox) socks=/tmp/wt-ex.$$.$n; repo=$(make_inbox "$dir" "$socks")
+            prereq="export PATH=$dir/bin:\$PATH CLAUDE_CONFIG_DIR=$dir/claude SOCKS=$socks ID=7c2e5b11-1111-4222-8333-444455556666; echo hello > q.txt; echo hello > q; echo hello > question.txt; $prereq";;
         gh) repo=$(make_gh "$dir"); prereq="export PATH=$dir/bin:\$PATH; $prereq";;
         ghwork) repo=$(make_ghwork "$dir"); prereq="export PATH=$dir/bin:\$PATH; $prereq";;
         branch) repo=$(make_plain "$dir"); git -C "$repo" branch fix_wt/login-crash;;
@@ -286,6 +353,7 @@ check() {
     [ -n "$where" ] && cwd="$dir/$where"
     local out status
     out=$(cd "$cwd" && { [ -n "$prereq" ] && eval "$prereq" >/dev/null 2>&1; eval "$example"; } 2>&1 </dev/null); status=$?
+    if [ -f "$dir/inbox.pid" ]; then xargs kill < "$dir/inbox.pid" 2>/dev/null; rm -rf "${socks:?}"; fi
     case $expect in
         fail) [ $status -ne 0 ] && status=0 || status=1;;
         says:*)
@@ -344,6 +412,28 @@ check sessions "" "$SHELL_LAYER" 'wt attach login-crash review' 'says:claude att
 check sessions "" "$SHELL_LAYER" 'wt attach 3f9a1c20' 'says:claude attach 3f9a1c20'
 check sessions myrepo_wt/fix_wt/login-crash "$SHELL_LAYER" 'wt attach' 'says:review the fix  working      background 7c2e5b11'
 check sessions "" "$SHELL_LAYER" 'wt attach login-crash --resume' 'says:--resume would open its conversation a second time'
+
+# Each session has an inbox a listener reads, and claude stop stops
+# nothing. The reply-to line names a socket in /tmp/cc-socks, which is where
+# a real claude keeps them: it is run with the case's own socket directory
+# substituted, and the printed line recorded as run.
+check inbox "" "" 'wt session list login-crash'
+check inbox "" "" 'wt session list --json'
+check inbox "" "" 'wt session send login-crash < question.txt'
+check inbox "" "" 'wt session list'
+check inbox "" "" 'wt session list --all --json --no-inbox-check'
+check inbox "" "" 'wt session list --roots work'
+check inbox "" "" 'wt session list --profile api'
+check inbox "" "" 'wt session send crash < q.txt'
+check inbox "" "" 'wt session send crash review --message-file q.txt'
+check inbox "" "" 'wt session send crash --from-name bot --reply-to uds:$SOCKS/b.sock < q'
+RAN+=('wt session send crash --from-name bot --reply-to uds:/tmp/cc-socks/b.sock < q')
+check inbox "" "" 'wt session send crash --expect-session $ID < q'
+check inbox "" "" 'wt session send crash --dry-run --json < q'
+check inbox "" "" 'wt session stop crash'
+check inbox "" "" 'wt session stop crash review'
+check inbox "" "" 'wt session stop crash --expect-session $ID'
+check inbox "" "" 'wt session stop crash --dry-run --json'
 
 check worktrees "" "" 'wt ls'
 check worktrees "" "" 'wt list | cat'
