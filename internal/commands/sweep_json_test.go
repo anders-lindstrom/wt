@@ -179,7 +179,7 @@ func TestSweepPlanJSONCodesWhyAWorktreeIsKept(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan, err := planSweep(ctx, bases, func() ([]wtsync.Agent, error) { return nil, errors.New("claude is away") }, noPullRequests)
+	plan, err := planSweep(ctx, bases, func() ([]wtsync.Agent, error) { return nil, errors.New("claude is away") }, noPullRequests, false)
 	if err != nil {
 		t.Fatal(err)
 	}

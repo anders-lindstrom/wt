@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anders-lindstrom/wt/internal/wtsync"
 	"github.com/anders-lindstrom/wt/schema"
 )
 
@@ -125,6 +126,10 @@ type SweepItem struct {
 	Reason      string       `json:"reason"`
 	Ahead       *int         `json:"ahead"`
 	Subject     *string      `json:"subject"`
+	// Processes are the processes working in its worktree: stopped when a
+	// remove row goes under --reap, the reason an inUse row is kept
+	// without it.
+	Processes []RemoveProcess `json:"processes"`
 }
 
 // SweepPlanOutput is the one object wt sweep --dry-run --json prints.
@@ -142,6 +147,7 @@ type SweepPlanOutput struct {
 	Items         []SweepItem `json:"items"`
 	Quarantine    *string     `json:"quarantine"`
 	KeepSuperset  bool        `json:"keepSuperset"`
+	Reap          bool        `json:"reap"`
 	// ConfigFingerprint is the wt configuration the token covers: the
 	// SHA-256 of the file, nil when there is none.
 	ConfigFingerprint *string `json:"configFingerprint"`
@@ -167,6 +173,9 @@ type SweepResultItem struct {
 	// Superset is what came of the removed worktree's Superset workspace;
 	// nil when no worktree was removed.
 	Superset *SweepSuperset `json:"superset"`
+	// Reaped is the processes --reap stopped, or tried to, before the
+	// worktree went.
+	Reaped []ReapedProcess `json:"reaped"`
 }
 
 // SweepSuperset is one removed worktree's Superset step.
@@ -204,9 +213,10 @@ type SweepResult struct {
 }
 
 // sweepItem is one row of the plan as --json reports it.
-func sweepItem(category string, b SweepBranch, reason string) SweepItem {
+func sweepItem(category string, b SweepBranch, reason string, reap bool) SweepItem {
 	it := SweepItem{Category: category, Tip: strp(b.Tip), Path: strp(b.Worktree), Reason: reason,
-		Kept: append([]string{}, b.KeptCodes...), Subject: strp(b.Subject)}
+		Kept: append([]string{}, b.KeptCodes...), Subject: strp(b.Subject),
+		Processes: removeProcesses(b.Processes, reap && category == SweepRemove)}
 	if !b.Detached {
 		it.Branch, it.Work = strp(b.Name), strp(b.Work)
 	}
@@ -233,16 +243,16 @@ func sweepItem(category string, b SweepBranch, reason string) SweepItem {
 func planItemsOf(p SweepPlan) []SweepItem {
 	items := []SweepItem{}
 	for _, w := range p.Remove {
-		items = append(items, sweepItem(SweepRemove, w.SweepBranch, w.why()))
+		items = append(items, sweepItem(SweepRemove, w.SweepBranch, w.removeReason(), p.Reap))
 	}
 	for _, b := range p.Delete {
-		items = append(items, sweepItem(SweepDelete, b, b.why()))
+		items = append(items, sweepItem(SweepDelete, b, b.why(), p.Reap))
 	}
 	for _, b := range p.CheckedOut {
-		items = append(items, sweepItem(SweepInUse, b, p.checkedOutAdvice(b)))
+		items = append(items, sweepItem(SweepInUse, b, p.checkedOutAdvice(b), p.Reap))
 	}
 	for _, b := range p.Gone {
-		items = append(items, sweepItem(SweepUpstreamGone, b, withPR(aheadOf(b.Ahead, p.Bases[0].Name), b.PR)))
+		items = append(items, sweepItem(SweepUpstreamGone, b, withPR(aheadOf(b.Ahead, p.Bases[0].Name), b.PR), p.Reap))
 	}
 	return items
 }
@@ -271,6 +281,9 @@ func sweepTokenWith(ctx *Context, p SweepPlan, opts SweepOptions, fingerprint []
 	if opts.KeepSuperset {
 		h.Write([]byte("\nkeepSuperset"))
 	}
+	if opts.Reap {
+		h.Write([]byte("\nreap"))
+	}
 	for _, it := range planItemsOf(p) {
 		fields := []string{it.Category, deref(it.Branch), deref(it.Tip), deref(it.Path),
 			strings.Join(it.Kept, ","), it.Reason}
@@ -283,6 +296,13 @@ func sweepTokenWith(ctx *Context, p SweepPlan, opts SweepOptions, fingerprint []
 		}
 		if pr := it.PullRequest; pr != nil {
 			fields = append(fields, "pr", fmt.Sprint(pr.Number), pr.State, deref(pr.Base))
+		}
+		// Only what --reap stops is hashed. The processes of a row that is
+		// kept are listed, not acted on, and its reason names up to three.
+		for _, pr := range it.Processes {
+			if pr.Reap {
+				fields = append(fields, "process", fmt.Sprint(pr.PID), pr.Command)
+			}
 		}
 		h.Write([]byte("\n" + strings.Join(fields, "\x00")))
 	}
@@ -312,7 +332,7 @@ func prepareSweep(ctx *Context, opts SweepOptions, progress io.Writer) (plan Swe
 	if err != nil {
 		return SweepPlan{}, fetched, err
 	}
-	plan, err = planSweep(ctx, bases, opts.listAgents, opts.pullRequests(ctx))
+	plan, err = planSweep(ctx, bases, opts.listAgents, opts.pullRequests(ctx), opts.Reap)
 	return plan, fetched, err
 }
 
@@ -327,7 +347,7 @@ func SweepPlanJSON(ctx *Context, opts SweepOptions, out, progress io.Writer) err
 		return writeSweepPlan(out, res, ErrNotInRepo)
 	}
 	res.Repo, res.Trunk, res.TrunkSource = strp(ctx.Repo.MainRoot), strp(ctx.Config.MainBranch), ctx.trunkSource()
-	res.Quarantine, res.KeepSuperset = strp(opts.Quarantine), opts.KeepSuperset
+	res.Quarantine, res.KeepSuperset, res.Reap = strp(opts.Quarantine), opts.KeepSuperset, opts.Reap
 	// Read once, for the field and the token alike.
 	fingerprint := configFingerprint(ctx)
 	res.ConfigFingerprint = strp(hex.EncodeToString(fingerprint))
@@ -434,7 +454,7 @@ func (j *SweepJournal) begin(ctx *Context, p SweepPlan, token string) {
 	j.res.Repo, j.res.Trunk = strp(ctx.Repo.MainRoot), strp(ctx.Config.MainBranch)
 	add := func(key string, it SweepItem) {
 		r := &SweepResultItem{Category: it.Category, Branch: it.Branch, Tip: it.Tip, Work: it.Work, Path: it.Path,
-			Result: SweepNotRun}
+			Result: SweepNotRun, Reaped: []ReapedProcess{}}
 		if it.Category == SweepInUse || it.Category == SweepUpstreamGone {
 			r.Result, r.Reason = SweepKept, strp(it.Reason)
 		}
@@ -489,6 +509,18 @@ func (j *SweepJournal) superset(key string, res RemoveResult) {
 	defer j.mu.Unlock()
 	if r := j.byKey[key]; r != nil {
 		r.Superset = &SweepSuperset{Result: res.Superset, Reason: strp(res.SupersetReason)}
+	}
+}
+
+// reaped records the processes stopped before a row's worktree went.
+func (j *SweepJournal) reaped(key string, reaped []wtsync.Reaped) {
+	if j == nil || len(reaped) == 0 {
+		return
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if r := j.byKey[key]; r != nil {
+		r.Reaped = reapedProcesses(reaped)
 	}
 }
 

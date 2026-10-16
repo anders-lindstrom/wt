@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"unicode"
 	"unicode/utf8"
 
@@ -63,6 +64,9 @@ type SweepBranch struct {
 	// KeptCodes are the reasons it is kept, as --json names them: the Kept*
 	// constants. Empty for a branch or worktree that goes.
 	KeptCodes []string
+	// Processes are the processes working in its worktree, which --reap
+	// stops when the worktree goes and which keep it without --reap.
+	Processes []wtsync.Process
 }
 
 // done reports that the work on this branch has landed: trunk contains it,
@@ -78,6 +82,15 @@ func (b SweepBranch) why() string {
 		return withPR("every commit is on "+b.AppliedTo+" under a new id (rebased or cherry-picked)", b.PR)
 	}
 	return withPR("merged into "+b.MergedInto, b.PR)
+}
+
+// removeReason is a row that goes as the plan states it: why it counts as
+// done, and the processes --reap stops first.
+func (b SweepBranch) removeReason() string {
+	if len(b.Processes) == 0 {
+		return b.why()
+	}
+	return b.why() + "; stops " + processesLabel(b.Processes)
 }
 
 // withPR adds what GitHub says about a branch to a reason, when anything here
@@ -109,6 +122,9 @@ type SweepPlan struct {
 	CheckedOut []SweepBranch
 	// Gone lost its upstream ref but trunk lacks its commits: shown, kept.
 	Gone []SweepBranch
+	// Reap stops the processes in each worktree that goes; without it a
+	// worktree something still runs in is kept.
+	Reap bool
 }
 
 // trunkBases resolves origin/<trunk> as last fetched, then <trunk>, to
@@ -138,7 +154,7 @@ func trunkBases(ctx *Context) ([]TrunkBase, error) {
 // when a merged branch has a worktree that could go. prs is what GitHub says
 // about each branch, which is empty whenever GitHub is not in play.
 func planSweep(ctx *Context, bases []TrunkBase, list func() ([]wtsync.Agent, error),
-	prs func([]string) map[string]github.PR) (SweepPlan, error) {
+	prs func([]string) map[string]github.PR, reap bool) (SweepPlan, error) {
 	branches, err := ctx.Repo.Branches()
 	if err != nil {
 		return SweepPlan{}, fmt.Errorf("could not list branches: %w", err)
@@ -176,7 +192,7 @@ func planSweep(ctx *Context, bases []TrunkBase, list func() ([]wtsync.Agent, err
 	byBranch := prs(asked)
 	trunkNames := trunks(ctx)
 
-	p := SweepPlan{Bases: bases, MainRoot: ctx.Repo.MainRoot}
+	p := SweepPlan{Bases: bases, MainRoot: ctx.Repo.MainRoot, Reap: reap}
 	var candidates []SweepBranch
 	for _, b := range branches {
 		if protectedBranch(b.Name, ctx.Config.MainBranch, originHead) {
@@ -246,6 +262,14 @@ func planSweep(ctx *Context, bases []TrunkBase, list func() ([]wtsync.Agent, err
 		// listing has been done, or has failed, once already.
 		agents = []wtsync.Agent{}
 	}
+	// The process table is read once for every worktree, and only when
+	// one is looked at.
+	scan := sync.OnceValues(func() (*wtsync.ProcessScan, error) {
+		if listErr != nil {
+			return nil, fmt.Errorf("cannot tell which are agent sessions: %w", listErr)
+		}
+		return scanProcesses(agents)
+	})
 	for _, sb := range candidates {
 		if _, err := os.Stat(sb.Worktree); err != nil {
 			// git still lists it, so wt remove finds no worktree there and
@@ -261,8 +285,9 @@ func planSweep(ctx *Context, bases []TrunkBase, list func() ([]wtsync.Agent, err
 		// this the plan would rename it aside. Sweep has just read GitHub, so
 		// it answers from that rather than from the cache remove falls back on.
 		rp := planFor(ctx, wt, RemoveOptions{Agents: agents, AgentsErr: listErr,
-			Landed: landedFrom(byBranch, trunkNames)})
+			Landed: landedFrom(byBranch, trunkNames), Reap: reap, keepBusy: true, Scan: scan})
 		sb.Kept, sb.KeptCodes = unsafeToRemove(sb, rp)
+		sb.Processes = rp.Processes
 		sb.Dirty, sb.LockHeld = rp.Dirty, rp.Locked && rp.LockHeld
 		if sb.Detached {
 			reason := "no branch, and its HEAD " + git.ShortID(sb.Tip, 12) + " is on " + sb.MergedInto
@@ -375,7 +400,7 @@ func (p SweepPlan) Render(w io.Writer, width int) {
 		fmt.Fprintf(w, heading, worktreeCount(len(p.Remove)))
 		var rows [][]string
 		for _, b := range p.Remove {
-			rows = append(rows, []string{"  " + b.Work, b.Name, b.Worktree, b.why()})
+			rows = append(rows, []string{"  " + b.Work, b.Name, b.Worktree, b.removeReason()})
 		}
 		_ = printTable(w, rows)
 		if len(p.Delete) > 0 {
@@ -466,6 +491,13 @@ func (p SweepPlan) keptBecause(b SweepBranch) string {
 		return b.Kept + "; push or branch those commits, then sweep again"
 	case slices.ContainsFunc(b.KeptCodes, needsForce):
 		return b.Kept + "; wt remove " + target + " --force"
+	case b.Detached, slices.Contains(b.KeptCodes, KeptBranchNotDeletable):
+		// A sweep keeps these whatever runs in them, so stopping the
+		// processes would not help: wt remove is the way.
+	case slices.Contains(b.KeptCodes, KeptProcesses):
+		return b.Kept + "; stop them, or wt sweep --reap"
+	case slices.Contains(b.KeptCodes, KeptProcessesUnknown):
+		return b.Kept + "; sweep again once wt can list them"
 	}
 	return b.Kept + "; wt remove " + target
 }
@@ -647,6 +679,9 @@ type SweepOptions struct {
 	Quarantine string
 	// KeepSuperset leaves each removed worktree's Superset workspace alone.
 	KeepSuperset bool
+	// Reap stops the processes still working in each worktree it removes;
+	// without it such a worktree is kept.
+	Reap bool
 }
 
 // pullRequests is what GitHub says about the branches a sweep considers,
@@ -804,7 +839,7 @@ func (p SweepPlan) apply(ctx *Context, opts SweepOptions, w io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("could not re-read trunk before deleting, so nothing was deleted: %w", err)
 	}
-	fresh, err := planSweep(ctx, bases, opts.relistAgents, opts.pullRequests(ctx))
+	fresh, err := planSweep(ctx, bases, opts.relistAgents, opts.pullRequests(ctx), opts.Reap)
 	if err != nil {
 		return fmt.Errorf("could not re-read the branches before deleting, so nothing was deleted: %w", err)
 	}
@@ -844,6 +879,7 @@ func (p SweepPlan) apply(ctx *Context, opts SweepOptions, w io.Writer) error {
 		j.start(key)
 		res, err := rp.run(ctx, w)
 		j.superset(key, res)
+		j.reaped(key, res.Reaped)
 		j.settle(key, err)
 		if err != nil {
 			// Said as what happened: only a worktree nothing touched was kept.
@@ -969,9 +1005,19 @@ func changedDuringSweep(ctx *Context, rp Plan, opts SweepOptions) (Plan, string)
 		}
 		return 0
 	}
-	now := planFor(ctx, worktreeRecord(ctx, rp.Path), RemoveOptions{Agents: agents, Landed: landed, Force: rp.Force})
+	now := planFor(ctx, worktreeRecord(ctx, rp.Path), RemoveOptions{Agents: agents, Landed: landed, Force: rp.Force,
+		Reap: rp.Reap, keepBusy: rp.keepBusy})
 	if !now.same(rp) {
 		return rp, "it changed during the sweep"
+	}
+	// same() sets the processes aside, since --reap stops whatever runs
+	// there when the worktree goes; without it, what turned up since the
+	// plan is a reason to keep the worktree, as it was in the plan.
+	switch {
+	case rp.keepBusy && now.ProcessesError != "":
+		return rp, "cannot tell which processes run in it (" + now.ProcessesError + ")"
+	case rp.keepBusy && !rp.Reap && len(now.Processes) > 0:
+		return rp, processesLabel(now.Processes) + " running in it"
 	}
 	return now, ""
 }

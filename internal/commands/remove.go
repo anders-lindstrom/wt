@@ -695,7 +695,9 @@ func (p Plan) problems() []problem {
 	}
 	// No --force goes past these: an agent's process is never ended, and
 	// when it cannot be told which are agents, nothing is.
-	if p.ProcessesError != "" && (p.Reap || p.keepBusy) {
+	// A sweep that cannot list the sessions keeps the worktree for that
+	// already; under --reap it is named, since no --force goes past it.
+	if p.ProcessesError != "" && (p.Reap || (p.keepBusy && p.SessionsError == "")) {
 		add(KeptProcessesUnknown, "cannot tell which processes run in it ("+p.ProcessesError+")", 0)
 	}
 	if len(p.Processes) > 0 && p.keepBusy && !p.Reap {

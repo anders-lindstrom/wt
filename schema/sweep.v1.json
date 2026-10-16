@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sweep.v1.json",
-  "x-version": "1.4.1",
+  "x-version": "1.5.0",
   "title": "wt sweep --yes --json",
   "description": "What a wt sweep did, item by item. Printed by `wt sweep --yes --json [--expect <token>]` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends the run. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
@@ -31,7 +31,7 @@
     "sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
     "item": {
       "type": "object",
-      "required": ["category", "branch", "tip", "work", "path", "result", "reason", "worktreeRemoved", "branchDeleted", "pin", "restoreCommand", "quarantine", "superset"],
+      "required": ["category", "branch", "tip", "work", "path", "result", "reason", "worktreeRemoved", "branchDeleted", "pin", "restoreCommand", "quarantine", "superset", "reaped"],
       "properties": {
         "category": { "enum": ["remove", "delete", "inUse", "upstreamGone"], "description": "Its part of the plan, as in the sweep-plan schema." },
         "branch": { "type": ["string", "null"] },
@@ -84,6 +84,19 @@
             }
           ],
           "description": "Since 1.2.0. For a worktree the run removed, what came of its Superset workspace; null when no worktree was removed. It changes neither result nor outcome."
+        },
+        "reaped": {
+          "type": "array",
+          "description": "Since 1.5.0. With --reap: each process stopped, or tried, right before the worktree went, as in the remove schema; one that survived leaves the worktree in place, result failed. Empty otherwise.",
+          "items": {
+            "type": "object",
+            "required": ["pid", "command", "result"],
+            "properties": {
+              "pid": { "type": "integer", "minimum": 2 },
+              "command": { "type": "string" },
+              "result": { "enum": ["terminated", "killed", "gone", "survived"] }
+            }
+          }
         }
       }
     }

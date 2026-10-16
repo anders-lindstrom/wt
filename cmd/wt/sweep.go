@@ -9,7 +9,7 @@ import (
 )
 
 func newSweepCmd() *cobra.Command {
-	var noFetch, yes, dryRun, asJSON, keepSuperset bool
+	var noFetch, yes, dryRun, asJSON, keepSuperset, reap bool
 	var expect, moveTo string
 	var sel selectionFlags
 	cmd := &cobra.Command{
@@ -41,7 +41,8 @@ func newSweepCmd() *cobra.Command {
 			"  removed       merged, and its worktree is safe to remove: nothing\n" +
 			"                uncommitted (submodules too), no operation in progress,\n" +
 			"                no lock whose holder is still running, and no agent\n" +
-			"                session in it, idle or busy. The worktree goes\n" +
+			"                session in it, idle or busy, and no process still\n" +
+			"                running in it unless --reap. The worktree goes\n" +
 			"                the way wt remove takes it, ignored files (.env,\n" +
 			"                node_modules/) and all, and the branch with it\n" +
 			"  deleted       merged, and in use in no worktree\n" +
@@ -97,10 +98,16 @@ func newSweepCmd() *cobra.Command {
 			"Each worktree it removes loses its Superset workspace, as with wt\n" +
 			"remove, and with the same risk; --keep-superset leaves them alone and\n" +
 			"asks Superset nothing.\n\n" +
+			"A worktree a dev server, a watcher or any other process still runs in\n" +
+			"is in use, and kept. --reap stops those processes instead, right\n" +
+			"before each worktree goes, as wt remove --reap does: SIGTERM, then\n" +
+			"SIGKILL after 5s. Agent sessions, anything with a terminal (a dev\n" +
+			"server started in a terminal tab too) and other users' processes are\n" +
+			"never stopped, and never count.\n\n" +
 			selectionHelp,
 		Example: "  wt sweep --move-to ../trash/sw  # ask, then move worktrees aside\n" +
 			"  wt sweep --all --dry-run    # every repository's plan; change nothing\n" +
-			"  wt sweep --roots work --yes # one root's repositories, without asking\n" +
+			"  wt sweep --roots work --yes --reap  # one root's; stop leftover servers\n" +
 			"  wt sweep --profile api --no-fetch  # a profile's, as last fetched\n" +
 			"  wt sweep --yes --json --keep-superset --expect 1:0123abcd  # a tool's",
 		Args:              cobra.NoArgs,
@@ -124,10 +131,10 @@ func newSweepCmd() *cobra.Command {
 					return usagef("--json sweeps one repository: run it in each repository's main checkout")
 				}
 				return sweepJSON(cmd, commands.SweepOptions{NoFetch: noFetch, Yes: yes, DryRun: dryRun, Expect: expect,
-					Quarantine: moveTo, KeepSuperset: keepSuperset})
+					Quarantine: moveTo, KeepSuperset: keepSuperset, Reap: reap})
 			}
 			opts := commands.SweepOptions{NoFetch: noFetch, Yes: yes, DryRun: dryRun,
-				Width: terminalWidth(cmd.OutOrStdout()), Quarantine: moveTo, KeepSuperset: keepSuperset}
+				Width: terminalWidth(cmd.OutOrStdout()), Quarantine: moveTo, KeepSuperset: keepSuperset, Reap: reap}
 			if sel.selection().Any() {
 				all := commands.SweepAllOptions{SweepOptions: opts}
 				if !yes && canAsk(cmd) {
@@ -154,6 +161,8 @@ func newSweepCmd() *cobra.Command {
 		"move each worktree into `dir`, a new folder, instead of deleting it")
 	cmd.Flags().BoolVar(&keepSuperset, "keep-superset", false,
 		"leave their Superset workspaces; do not ask Superset to delete them")
+	cmd.Flags().BoolVar(&reap, "reap", false,
+		"stop the processes still running in each worktree it removes")
 	cmd.MarkFlagsMutuallyExclusive("yes", "dry-run")
 	return cmd
 }

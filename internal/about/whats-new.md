@@ -22,12 +22,14 @@ would want read out to them; the full story is in git history and in
   clone they are skipped, never copied. `--no-cache` skips them; `--json`
   names the step `cache` (`new` 1.1.0, `checkout` 1.2.0).
 
-## 2026-10-16 15:08 — wt remove --reap stops what still runs in a worktree
+## 2026-10-16 15:08 — --reap stops what still runs in a worktree
 
-- `wt remove` names the dev servers, watchers and language servers still
-  running in a worktree, and leaves them; `--reap` stops them first
-  (SIGTERM, SIGKILL after 5s). Agent sessions, anything with a terminal
-  and other users' processes are never stopped. `remove` 1.5.0.
+- `wt remove` names the dev servers and watchers still running in a
+  worktree; `--reap` stops them first (SIGTERM, SIGKILL after 5s), but not
+  agents, other users' or terminal processes. `remove`, `remove-plan` 1.5.0.
+- `wt sweep` keeps a merged worktree something still runs in; `wt sweep
+  --reap` stops those processes and removes it. `sweep-plan` 1.6.0,
+  `sweep` 1.5.0.
 
 ## 2026-10-16 15:04 — wt list and wt status mark a pull request's checks
 
