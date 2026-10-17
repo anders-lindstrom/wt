@@ -351,15 +351,15 @@ func newSyncKeepStartCmd() *cobra.Command {
 			"\n" +
 			"A launchd job inherits nothing from your shell, so start captures what\n" +
 			"the pass needs into the plist: PATH (git, and claude to see who is in a\n" +
-			"worktree), HOME (~/.ssh/config, ~/.gitconfig), and how git push\n" +
-			"authenticates: SSH_AUTH_SOCK, or GIT_SSH_COMMAND with the key file it\n" +
-			"names. Run start from your own shell and the job pushes through your ssh\n" +
-			"agent, as your git does; with 1Password's agent that works while you are\n" +
-			"logged in, and it may ask you to approve the key. Run it from an agent\n" +
-			"session and the job gets that launcher's key, which is shredded when the\n" +
-			"agent exits: start says so. GIT_SSH_COMMAND is captured verbatim, so\n" +
-			"keep it free of inline credentials; the 1Password token is never\n" +
-			"written, and the plist is readable by you alone. A push that fails is\n" +
+			"worktree), HOME (~/.ssh/config, ~/.gitconfig), TMPDIR, and how git push\n" +
+			"authenticates: SSH_AUTH_SOCK, or GIT_SSH_COMMAND. Run start from your\n" +
+			"own shell and the job pushes through your ssh agent, as your git does;\n" +
+			"with 1Password's agent that works while you are logged in, and it may\n" +
+			"ask you to approve the key. Run it from an agent session and the job\n" +
+			"gets that launcher's agent-ssh, which works only while fnox has the\n" +
+			"agent key cached: start says so. GIT_SSH_COMMAND is captured verbatim,\n" +
+			"so keep it free of inline credentials; no secret is written, and the\n" +
+			"plist is readable by you alone. A push that fails is\n" +
 			"named in the log with the command that does it by hand.\n" +
 			"The plist also turns commit signing off for the job: every commit a\n" +
 			"pass makes is unsigned, so a signer that asks never has to.\n" +

@@ -612,41 +612,34 @@ func TestSyncKeepStartAndStopDriveLaunchd(t *testing.T) {
 	}
 }
 
-// start names the agent launcher's key for what it is, in both forms the
-// launcher uses: a push through it stops working when that agent exits.
+// start names an agent launcher's agent-ssh for what it is: a push through
+// it needs fnox's cache, which a launchd job cannot refill.
 func TestSyncKeepStartWarnsAboutAnAgentLaunchersKey(t *testing.T) {
-	for name, env := range map[string]map[string]string{
-		"wrapper":  {"PATH": "/usr/bin:/bin", "GIT_SSH_COMMAND": "/Users/me/dotfiles/.config/op/op-agent-ssh", "OP_AGENT_KEYFILE": "/tmp/op_agent_ssh.abc", "OP_AGENT_SA_TOKEN": "secret"},
-		"plain -i": {"PATH": "/usr/bin:/bin", "GIT_SSH_COMMAND": "ssh -F /dev/null -i /tmp/op_agent_ssh.abc -o IdentitiesOnly=yes -o IdentityAgent=none", "OP_AGENT_SA_TOKEN": "secret"},
-		"keyfile":  {"PATH": "/usr/bin:/bin", "GIT_SSH_COMMAND": "ssh -i /tmp/k", "OP_AGENT_KEYFILE": "/tmp/k"},
-	} {
-		t.Run(name, func(t *testing.T) {
-			ctx, _ := provisiontest.RunFixture(t, false)
-			t.Setenv("HOME", t.TempDir())
-			fakeLaunchctl(t)
-			synccmdtest.OnPlatform(t, "darwin")
-			var out bytes.Buffer
-			if err := Start(ctx, KeepStartOptions{Getenv: func(k string) string { return env[k] }}, &out); err != nil {
-				t.Fatalf("err %v\n%s", err, out.String())
-			}
-			if !strings.Contains(out.String(), "an agent launcher's key: it is shredded when that agent exits") {
-				t.Fatalf("start:\n%s", out.String())
-			}
-			job, err := synccmd.KeepJobFor(ctx)
-			if err != nil {
-				t.Fatal(err)
-			}
-			body, err := os.ReadFile(job.PlistPath)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if strings.Contains(string(body), "secret") {
-				t.Fatalf("the token reached the plist:\n%s", body)
-			}
-			if _, has := env["OP_AGENT_KEYFILE"]; has != strings.Contains(string(body), "<key>OP_AGENT_KEYFILE</key>") {
-				t.Fatalf("plist:\n%s", body)
-			}
-		})
+	env := map[string]string{"PATH": "/usr/bin:/bin", "TMPDIR": "/var/folders/xy/T/", "GIT_SSH_COMMAND": "/Users/me/dotfiles/.config/agents/bin/agent-ssh", "FNOX_SECRET": "secret"}
+	ctx, _ := provisiontest.RunFixture(t, false)
+	t.Setenv("HOME", t.TempDir())
+	fakeLaunchctl(t)
+	synccmdtest.OnPlatform(t, "darwin")
+	var out bytes.Buffer
+	if err := Start(ctx, KeepStartOptions{Getenv: func(k string) string { return env[k] }}, &out); err != nil {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "an agent launcher's agent-ssh: it works while fnox has the agent key cached") {
+		t.Fatalf("start:\n%s", out.String())
+	}
+	job, err := synccmd.KeepJobFor(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(job.PlistPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "secret") {
+		t.Fatalf("an uncaptured variable reached the plist:\n%s", body)
+	}
+	if !strings.Contains(string(body), "<string>/var/folders/xy/T/</string>") {
+		t.Fatalf("TMPDIR, where fnox's socket is, is not in the plist:\n%s", body)
 	}
 }
 

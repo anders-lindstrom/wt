@@ -19,9 +19,10 @@ import (
 // git and claude (a keeper that cannot list sessions changes nothing); HOME
 // finds ~/.ssh/config and ~/.gitconfig; the rest is how git push
 // authenticates: the ssh agent socket, or the GIT_SSH_COMMAND an agent
-// launcher set, with the key file that command reads. The 1Password service
-// token is never captured: a plist is a plain file in the home directory.
-var keepEnvNames = []string{"PATH", "HOME", "SSH_AUTH_SOCK", "GIT_SSH_COMMAND", "OP_AGENT_KEYFILE"}
+// launcher set. That is agent-ssh, which asks fnox's daemon for the key over a
+// socket under TMPDIR, and launchd sets no TMPDIR of its own. No secret is
+// captured: a plist is a plain file in the home directory.
+var keepEnvNames = []string{"PATH", "HOME", "TMPDIR", "SSH_AUTH_SOCK", "GIT_SSH_COMMAND"}
 
 // keepPlist is the job as a launchd property list.
 func keepPlist(j synccmd.KeepJob) string {
@@ -216,13 +217,12 @@ func keepAuthLine(j synccmd.KeepJob) string {
 	if j.NoPush {
 		return "rebases only (--no-push); the push commands go to the log"
 	}
-	// An agent launcher's key, in either form the launcher uses: the
-	// op-agent-ssh wrapper, or a plain ssh -i on the op_agent_ssh.* file.
+	// An agent launcher's agent-ssh, which reads the agent key from fnox's
+	// cache on every push.
 	cmd := j.Env["GIT_SSH_COMMAND"]
-	agentKey := j.Env["OP_AGENT_KEYFILE"] != "" || strings.Contains(cmd, "op-agent-ssh") || strings.Contains(cmd, "op_agent_ssh")
 	switch {
-	case agentKey:
-		return "pushes through this shell's GIT_SSH_COMMAND, an agent launcher's key: it is shredded when that agent exits, and every push after that fails; run wt sync keep start from your own shell to push through your ssh agent"
+	case strings.HasSuffix(cmd, "/agent-ssh"):
+		return "pushes through this shell's GIT_SSH_COMMAND, an agent launcher's agent-ssh: it works while fnox has the agent key cached, and after a reboot or a day unused a push asks for Touch ID, which this job cannot wait for; run wt sync keep start from your own shell to push through your ssh agent"
 	case cmd != "":
 		return "pushes through this shell's GIT_SSH_COMMAND"
 	case j.Env["SSH_AUTH_SOCK"] != "":
