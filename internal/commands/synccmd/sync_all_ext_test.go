@@ -18,6 +18,7 @@ import (
 // --if-ready runs a named worktree only when nothing would be handed to you:
 // a contested one is refused, untouched, and the run fails saying why.
 func TestSyncRunIfReadyRefusesANamedWorktreeThatWouldHandOver(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.ContestedFixture(t)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	opts := synccmdtest.NoAgents()
@@ -40,6 +41,7 @@ func TestSyncRunIfReadyRefusesANamedWorktreeThatWouldHandOver(t *testing.T) {
 
 // Stops the declared strategies resolve are ready: --if-ready runs them.
 func TestSyncRunIfReadyRunsAWorktreeTheStrategiesResolve(t *testing.T) {
+	t.Parallel()
 	ctx, _ := provisiontest.RunFixture(t, false)
 	opts := synccmdtest.NoAgents()
 	opts.IfReady = true
@@ -55,6 +57,7 @@ func TestSyncRunIfReadyRunsAWorktreeTheStrategiesResolve(t *testing.T) {
 // With nothing named, the ready ones go and the ones left behind trunk fail
 // the run; a stale one is a lifecycle question, not a failure.
 func TestSyncRunIfReadyWithNothingNamedFailsOnWhatItLeft(t *testing.T) {
+	t.Parallel()
 	ctx, _ := provisiontest.RunFixture(t, false)
 	provisiontest.ContestedSibling(t, ctx)
 	opts := synccmdtest.NoAgents()
@@ -72,6 +75,7 @@ func TestSyncRunIfReadyWithNothingNamedFailsOnWhatItLeft(t *testing.T) {
 // Across repositories: one question, the ready worktrees rebased repository
 // by repository, the rest reported and failing the run with --if-ready.
 func TestSyncRunAllRebasesTheReadyOnesAcrossRepositories(t *testing.T) {
+	t.Parallel()
 	ready, readyBump := provisiontest.RunFixture(t, false)
 	contested, contestedBump := provisiontest.ContestedFixture(t)
 	oldContested := testkit.GitOut(t, contestedBump, "rev-parse", "HEAD")
@@ -98,6 +102,7 @@ func TestSyncRunAllRebasesTheReadyOnesAcrossRepositories(t *testing.T) {
 
 // Declining the question does not hide what was not ready.
 func TestSyncRunIfReadyFailsWhenDeclinedWithSomethingNotReady(t *testing.T) {
+	t.Parallel()
 	ctx, _ := provisiontest.RunFixture(t, false)
 	provisiontest.ContestedSibling(t, ctx)
 	opts := synccmdtest.NoAgents()
@@ -112,6 +117,7 @@ func TestSyncRunIfReadyFailsWhenDeclinedWithSomethingNotReady(t *testing.T) {
 // A trunk that moved while the question was open is not the one the plan
 // showed: that repository is refused, untouched.
 func TestSyncRunAllRefusesARepositoryWhoseTrunkMoved(t *testing.T) {
+	t.Parallel()
 	ready, bump := provisiontest.RunFixture(t, false)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	main := ready.Repo.MainRoot

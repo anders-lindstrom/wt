@@ -10,6 +10,7 @@ import (
 // still open has to go in one call: the one already cleaned up is not
 // counted, and the one still open is removed.
 func TestRemoveTempDirsTakesEveryDirectoryStillOpen(t *testing.T) {
+	// Not parallel: sets TMPDIR and removes every temporary directory the test binary has open.
 	t.Setenv("TMPDIR", t.TempDir())
 	done, cleanup, err := tempDir("wtsync-test-")
 	if err != nil {

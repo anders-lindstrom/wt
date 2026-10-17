@@ -17,6 +17,7 @@ import (
 // wt refs swept lists the runs; purge deletes a run's pins, counts what
 // becomes unreachable, and --older-than picks runs by the time in their id.
 func TestRefsSweptAndPurge(t *testing.T) {
+	t.Parallel()
 	ctx, main := testkit.BackupsRepo(t)
 	r := refstest.SweepAll(t, ctx, refs.Options{})
 	run := *r.RunID
@@ -78,6 +79,7 @@ func TestRefsSweptAndPurge(t *testing.T) {
 // origin now resolves elsewhere keeps it, and so does a run with no meta.
 // Local refs are not affected.
 func TestRefsRestoreRemoteNeedsTheSameOrigin(t *testing.T) {
+	t.Parallel()
 	ctx, main, origin, run := refstest.RemoteBackups(t)
 	var out bytes.Buffer
 	if err := RefsSwept(ctx, true, &out); err != nil {
@@ -117,6 +119,7 @@ func TestRefsRestoreRemoteNeedsTheSameOrigin(t *testing.T) {
 // A run that wrote its meta and moved nothing is still listed, and a purge
 // deletes the meta last.
 func TestRefsPurgeDeletesTheMetaLast(t *testing.T) {
+	t.Parallel()
 	ctx, main := testkit.BackupsRepo(t)
 	id := "20260101T000000Z-dead"
 	if err := refpins.WriteMeta(main, refpins.RunMeta{RunID: id, Repo: main, SweptAt: 1767225600}); err != nil {

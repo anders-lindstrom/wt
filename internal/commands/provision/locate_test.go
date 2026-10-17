@@ -30,6 +30,7 @@ func locatable(t *testing.T, specs ...string) *kit.Context {
 // The WORK column of `wt list` is a valid argument whatever the type is. The
 // old default-type fallback resolved a bare name to feat_wt/ and missed.
 func TestLocateAcceptsWorkNameOfAnyType(t *testing.T) {
+	t.Parallel()
 	ctx := locatable(t, "chore/wt-migration")
 
 	got, err := kit.Locate(ctx, "wt-migration")
@@ -43,6 +44,7 @@ func TestLocateAcceptsWorkNameOfAnyType(t *testing.T) {
 
 // The BRANCH column is a valid argument, suffix and all.
 func TestLocateAcceptsFullBranchName(t *testing.T) {
+	t.Parallel()
 	ctx := locatable(t, "chore/wt-migration")
 
 	got, err := kit.Locate(ctx, "chore_wt/wt-migration")
@@ -56,6 +58,7 @@ func TestLocateAcceptsFullBranchName(t *testing.T) {
 
 // The form that already worked keeps working.
 func TestLocateAcceptsTypeSlashWork(t *testing.T) {
+	t.Parallel()
 	ctx := locatable(t, "chore/wt-migration")
 
 	got, err := kit.Locate(ctx, "chore/wt-migration")
@@ -69,6 +72,7 @@ func TestLocateAcceptsTypeSlashWork(t *testing.T) {
 
 // The PATH column is a valid argument.
 func TestLocateAcceptsWorktreePath(t *testing.T) {
+	t.Parallel()
 	ctx := locatable(t, "chore/wt-migration")
 	want, err := kit.Locate(ctx, "wt-migration")
 	if err != nil {
@@ -86,6 +90,7 @@ func TestLocateAcceptsWorktreePath(t *testing.T) {
 
 // A relative path is what tab completion and shell globbing hand over.
 func TestLocateAcceptsRelativeWorktreePath(t *testing.T) {
+	// Not parallel: changes the working directory of the test binary.
 	ctx := locatable(t, "chore/wt-migration")
 	abs, err := kit.Locate(ctx, "wt-migration")
 	if err != nil {
@@ -109,6 +114,7 @@ func TestLocateAcceptsRelativeWorktreePath(t *testing.T) {
 // The main checkout is never a removal target, however it is named: by its
 // path, or by "/" from anywhere.
 func TestLocateRefusesMainCheckout(t *testing.T) {
+	t.Parallel()
 	ctx := locatable(t, "fix/login-crash")
 	wt, err := kit.Locate(ctx, "login-crash")
 	if err != nil {
@@ -128,6 +134,7 @@ func TestLocateRefusesMainCheckout(t *testing.T) {
 // Only the exact "/" is the main checkout; a path that merely starts there is
 // a path, and one naming no worktree is refused as any such path is.
 func TestLocateTreatsOtherAbsolutePathsAsPaths(t *testing.T) {
+	t.Parallel()
 	ctx := locatable(t, "fix/login-crash")
 
 	_, err := kit.Locate(ctx, "/nowhere/at/all")
@@ -139,6 +146,7 @@ func TestLocateTreatsOtherAbsolutePathsAsPaths(t *testing.T) {
 // One work name under two types is the only ambiguity exact matching allows,
 // and it must never be resolved by guessing.
 func TestLocateReportsAmbiguousWorkName(t *testing.T) {
+	t.Parallel()
 	ctx := locatable(t, "feat/arch", "fix/arch")
 
 	_, err := kit.Locate(ctx, "arch")
@@ -154,6 +162,7 @@ func TestLocateReportsAmbiguousWorkName(t *testing.T) {
 
 // An exact type disambiguates what the bare work name cannot.
 func TestLocateResolvesAmbiguousNameByType(t *testing.T) {
+	t.Parallel()
 	ctx := locatable(t, "feat/arch", "fix/arch")
 
 	got, err := kit.Locate(ctx, "fix/arch")
@@ -167,6 +176,7 @@ func TestLocateResolvesAmbiguousNameByType(t *testing.T) {
 
 // No fuzzy matching: `wt cd` may guess, `wt remove` may not.
 func TestLocateDoesNotMatchPartialNames(t *testing.T) {
+	t.Parallel()
 	ctx := locatable(t, "chore/wt-migration")
 
 	if _, err := kit.Locate(ctx, "wt-mig"); err == nil {
@@ -175,6 +185,7 @@ func TestLocateDoesNotMatchPartialNames(t *testing.T) {
 }
 
 func TestLocateUnknownNameIsAnError(t *testing.T) {
+	t.Parallel()
 	ctx := locatable(t, "chore/wt-migration")
 
 	_, err := kit.Locate(ctx, "nope")
@@ -189,6 +200,7 @@ func TestLocateUnknownNameIsAnError(t *testing.T) {
 // WorkNames lists the main checkout and every worktree, each read against the
 // convention: a branch outside it has no type and no work name.
 func TestWorkNamesReadsEachBranchAgainstTheConvention(t *testing.T) {
+	t.Parallel()
 	ctx := locatable(t, "fix/login-crash")
 	testkit.WorktreeAt(t, ctx.Repo.MainRoot, "spare", filepath.Join(ctx.Repo.Parent, "demo-spare"))
 
@@ -214,6 +226,7 @@ func TestWorkNamesReadsEachBranchAgainstTheConvention(t *testing.T) {
 // "." is the worktree the caller stands in, from its root or anywhere below,
 // spelled with or without the separator completion adds.
 func TestLocateDotIsTheWorktreeYouStandIn(t *testing.T) {
+	t.Parallel()
 	ctx := locatable(t, "fix/login-crash")
 	wt, err := kit.Locate(ctx, "login-crash")
 	if err != nil {
@@ -247,6 +260,7 @@ func TestLocateDotIsTheWorktreeYouStandIn(t *testing.T) {
 // is by every command that acts on a worktree, and answered by the ones that
 // only say where it is, as "/" is.
 func TestLocateDotFromTheMainCheckoutIsRefusedAsTheMainCheckout(t *testing.T) {
+	t.Parallel()
 	ctx := locatable(t, "fix/login-crash")
 	ctx.Cwd = filepath.Join(ctx.Repo.MainRoot, "bin")
 
@@ -264,6 +278,7 @@ func TestLocateDotFromTheMainCheckoutIsRefusedAsTheMainCheckout(t *testing.T) {
 // A directory inside no worktree of the repository is an error naming it,
 // not a silent miss: "." meant something.
 func TestLocateDotFromOutsideEveryWorktreeSaysSo(t *testing.T) {
+	t.Parallel()
 	ctx := locatable(t, "fix/login-crash")
 	ctx.Cwd = t.TempDir()
 
@@ -281,6 +296,7 @@ func TestLocateDotFromOutsideEveryWorktreeSaysSo(t *testing.T) {
 // One worktree's path can lie under another's: "." from inside the inner
 // one is the inner one, and from elsewhere in the outer one the outer.
 func TestLocateDotPicksTheDeepestWorktreeContainingTheDirectory(t *testing.T) {
+	t.Parallel()
 	ctx := locatable(t, "fix/outer")
 	outer, err := kit.Locate(ctx, "outer")
 	if err != nil {
@@ -314,6 +330,7 @@ func TestLocateDotPicksTheDeepestWorktreeContainingTheDirectory(t *testing.T) {
 // A worktree that lives inside the main checkout's directory is still the
 // one you stand in, not the main checkout around it.
 func TestLocateDotInsideAWorktreeUnderTheMainCheckoutIsThatWorktree(t *testing.T) {
+	t.Parallel()
 	ctx := locatable(t)
 	nested := testkit.WorktreeAt(t, ctx.Repo.MainRoot, "fix_wt/nested", filepath.Join(ctx.Repo.MainRoot, "wts", "nested"))
 	ctx.Cwd = nested

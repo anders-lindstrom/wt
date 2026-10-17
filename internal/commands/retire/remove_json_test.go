@@ -41,6 +41,7 @@ func ProblemCodes(ps []RemoveProblem) []string {
 // The plan names the worktree, its commit, where the branch stands and what
 // will become of it, and a token; it changes nothing.
 func TestRemovePlanJSONDescribesTheRemoval(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/planned")
 	tip := strings.TrimSpace(testkit.GitOut(t, path, "rev-parse", "HEAD"))
 
@@ -70,6 +71,7 @@ func TestRemovePlanJSONDescribesTheRemoval(t *testing.T) {
 // A plan the removal would refuse has every reason as a code sweep's --json
 // knows, an error, and no token.
 func TestRemovePlanJSONRefusalHasCodesAndNoToken(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/dirty-plan")
 	testkit.MustWrite(t, filepath.Join(path, "wip.txt"), "x")
 	testkit.GitIn(t, path, "worktree", "lock", "--reason", "held", path)
@@ -103,6 +105,7 @@ func TestRemovePlanJSONRefusalHasCodesAndNoToken(t *testing.T) {
 // A detached worktree has no branch, and a quarantine folder that cannot be
 // used is a problem with its own code.
 func TestRemovePlanJSONDetachedAndQuarantineProblem(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/detached-plan")
 	testkit.GitIn(t, path, "checkout", "-q", "--detach")
 	dir := testkit.TrashFor(t, ctx)
@@ -124,6 +127,7 @@ func TestRemovePlanJSONDetachedAndQuarantineProblem(t *testing.T) {
 // A branch the removal deletes whose commits nothing else holds is listed,
 // with the command that brings them back.
 func TestRemovePlanJSONListsTheCommitsADeletedBranchTakes(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/squashed")
 	testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "work")
 	tip := strings.TrimSpace(testkit.GitOut(t, path, "rev-parse", "HEAD"))
@@ -150,6 +154,7 @@ func TestRemovePlanJSONListsTheCommitsADeletedBranchTakes(t *testing.T) {
 // A sequencer left without its HEAD marker is an operation too, under a name
 // the schema knows.
 func TestRemovePlanJSONNamesALeftoverSequencer(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/sequencer")
 	testkit.MustMkdir(t, filepath.Join(testkit.GitDirFor(t, path), "sequencer"))
 	p, err := RemovePlanOf(t, ctx, path, RemoveOptions{})

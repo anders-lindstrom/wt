@@ -29,6 +29,7 @@ func sweepFixture(t *testing.T) (*Repo, string) {
 }
 
 func TestBranchesReportsTipUpstreamAndGone(t *testing.T) {
+	t.Parallel()
 	r, dir := sweepFixture(t)
 	sweepGit(t, dir, "branch", "old-idea")
 	sweepGit(t, dir, "config", "branch.old-idea.remote", "origin")
@@ -61,6 +62,7 @@ func TestBranchesReportsTipUpstreamAndGone(t *testing.T) {
 }
 
 func TestBranchesWithoutUpstreamIsNotGone(t *testing.T) {
+	t.Parallel()
 	r, dir := sweepFixture(t)
 	sweepGit(t, dir, "branch", "wip")
 	got, err := r.Branches()
@@ -75,6 +77,7 @@ func TestBranchesWithoutUpstreamIsNotGone(t *testing.T) {
 }
 
 func TestMergedIntoListsBranchesReachableFromACommit(t *testing.T) {
+	t.Parallel()
 	r, dir := sweepFixture(t)
 	sweepGit(t, dir, "branch", "done-work")
 	tree := sweepGit(t, dir, "rev-parse", "main^{tree}")
@@ -94,6 +97,7 @@ func TestMergedIntoListsBranchesReachableFromACommit(t *testing.T) {
 }
 
 func TestResolveRefAndHasRemote(t *testing.T) {
+	t.Parallel()
 	r, dir := sweepFixture(t)
 	tip, ok := r.ResolveRef("refs/remotes/origin/main")
 	if !ok || tip != sweepGit(t, dir, "rev-parse", "main") {
@@ -109,6 +113,7 @@ func TestResolveRefAndHasRemote(t *testing.T) {
 
 // A symref whose target was pruned still says which branch is trunk.
 func TestOriginHeadReadsADanglingHead(t *testing.T) {
+	t.Parallel()
 	r, dir := sweepFixture(t)
 	sweepGit(t, dir, "remote", "set-head", "origin", "main")
 	if got, ok := r.OriginHead(); !ok || got != "main" {
@@ -126,6 +131,7 @@ func TestOriginHeadReadsADanglingHead(t *testing.T) {
 
 // A local ref named origin/<x> makes --short print remotes/origin/<x>.
 func TestOriginHeadIsNotConfusedByASameNamedLocalRef(t *testing.T) {
+	t.Parallel()
 	r, dir := sweepFixture(t)
 	sweepGit(t, dir, "remote", "set-head", "origin", "main")
 	sweepGit(t, dir, "branch", "origin/main", "main")
@@ -135,6 +141,7 @@ func TestOriginHeadIsNotConfusedByASameNamedLocalRef(t *testing.T) {
 }
 
 func TestDeleteBranchAtRefusesAMovedBranchAndCleansConfig(t *testing.T) {
+	t.Parallel()
 	r, dir := sweepFixture(t)
 	sweepGit(t, dir, "branch", "done-work")
 	sweepGit(t, dir, "config", "branch.done-work.remote", "origin")
@@ -161,6 +168,7 @@ func TestDeleteBranchAtRefusesAMovedBranchAndCleansConfig(t *testing.T) {
 }
 
 func TestAppliedFindsEveryCommitUnderAnotherID(t *testing.T) {
+	t.Parallel()
 	r, dir := sweepFixture(t)
 	commit := func(name string) {
 		sweepGit(t, dir, "commit", "-q", "--allow-empty", "-m", name)
@@ -204,6 +212,7 @@ func TestAppliedFindsEveryCommitUnderAnotherID(t *testing.T) {
 // the same change: git cherry's patch id ignores whitespace, so Applied checks
 // the patch byte for byte.
 func TestAppliedKeepsABranchDifferingOnlyInWhitespace(t *testing.T) {
+	t.Parallel()
 	r, dir := sweepFixture(t)
 	write := func(name, content, msg string) {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {

@@ -32,6 +32,7 @@ func committedRepoIn(t *testing.T, parent, name, conf string) string {
 
 // A strong local hit ends the search.
 func TestFindStrongLocalHitWins(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	t.Setenv("WT_ROOTS", t.TempDir())
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if _, err := New(ctx, "feat/opensearch_ism", NewOptions{NoSetup: true}, os.Stderr); err != nil {
@@ -49,6 +50,7 @@ func TestFindStrongLocalHitWins(t *testing.T) {
 // The bug that started all this: standing in a repo where "arch" only appears
 // as a substring of "opensearch", an exact match in another repo must win.
 func TestFindWeakLocalHitStillScansRoots(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -81,6 +83,7 @@ func TestFindWeakLocalHitStillScansRoots(t *testing.T) {
 // <repository>/<work> names a worktree outright. Another worktree whose
 // <type>/<work> merely starts with the same letters must not take its place.
 func TestFindRepoAndWorkBeatsTheStartOfATypedName(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -119,6 +122,7 @@ func TestFindRepoAndWorkBeatsTheStartOfATypedName(t *testing.T) {
 // found a worktree in another repository before still finds it, however
 // loosely it matched there.
 func TestFindTheStartOfATypedNameYieldsToAnyOtherMatch(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -142,6 +146,7 @@ func TestFindTheStartOfATypedNameYieldsToAnyOtherMatch(t *testing.T) {
 }
 
 func TestFindReportsEveryTiedCandidate(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -166,6 +171,7 @@ func TestFindReportsEveryTiedCandidate(t *testing.T) {
 // With a broken local config, a strong local hit must still beat a match in
 // another repository.
 func TestFindKeepsRepoFirstWithInvalidLocalConfig(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -204,6 +210,7 @@ func TestFindKeepsRepoFirstWithInvalidLocalConfig(t *testing.T) {
 // repo is the most common jump there is, and it should not need the repo's
 // name.
 func TestFindRootResolvesToTheMainCheckout(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	t.Setenv("WT_ROOTS", t.TempDir())
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
@@ -231,6 +238,7 @@ func TestFindRootResolvesToTheMainCheckout(t *testing.T) {
 // from its root or anywhere below, and from the main checkout the main
 // checkout, which find may answer for.
 func TestFindDotResolvesToTheWorktreeYouStandIn(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	t.Setenv("WT_ROOTS", t.TempDir())
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
@@ -272,6 +280,7 @@ func TestFindDotResolvesToTheWorktreeYouStandIn(t *testing.T) {
 // A directory in no worktree of the repository is the error Locate gives for
 // ".", not a silent miss.
 func TestFindDotFromOutsideEveryWorktreeSaysSo(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	t.Setenv("WT_ROOTS", t.TempDir())
 	ctx := locatable(t, "fix/login-crash")
 	ctx.Cwd = t.TempDir()

@@ -194,12 +194,10 @@ type Record struct {
 	// recordedAs is the folder the file itself names, which Load reads
 	// before Dir becomes where it was read from.
 	recordedAs string
+	// hooks are what Begin or PlanRestore were given; nil but in tests, and
+	// nil on a record from Load.
+	hooks *Hooks
 }
-
-// AfterSave runs, when set, after every write of a record with the point
-// just written ("moveCheckout:running"), and an error from it ends the run
-// there, as a crash would. Tests set it; nothing else does.
-var AfterSave func(r *Record, point string) error
 
 // LockReason is the git worktree lock a quarantine into dir holds while it
 // runs. gittree reads it too.
@@ -216,14 +214,16 @@ func DirOf(reason string) (string, bool) {
 
 // Begin makes dir — the folder itself, never its parents, and never one
 // that is there already — and writes r into it as the first journal, every
-// removal step pending. Nothing else has changed when it returns.
-func Begin(dir string, r Record) (*Record, error) {
+// removal step pending. Nothing else has changed when it returns. h is nil
+// but in tests.
+func Begin(dir string, r Record, h *Hooks) (*Record, error) {
 	if err := MakeDir(dir); err != nil {
 		return nil, err
 	}
 	r.Schema, r.SchemaVersion = 1, schema.VersionOf("recovery")
 	r.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 	r.Dir = dir
+	r.hooks = h
 	r.Steps = pendingSteps(removalSteps)
 	key := pinKey(r.WorktreeID, dir)
 	r.Pins = Pins{Dir: pinRef(key, "dir")}
@@ -375,10 +375,7 @@ func (r *Record) save(point string) error {
 	if err := writeDurable(filepath.Join(r.Dir, FileName), data); err != nil {
 		return err
 	}
-	if AfterSave != nil {
-		return AfterSave(r, point)
-	}
-	return nil
+	return r.hooks.afterSave(r, point)
 }
 
 // marshal is the record as it is written: dir is the folder the removal

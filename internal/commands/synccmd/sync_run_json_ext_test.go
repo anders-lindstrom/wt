@@ -17,6 +17,7 @@ import (
 // A finished rebase says where the old tip is pinned, what each deferred
 // step did, and how to take it all back.
 func TestSyncRunJSONReportsTheSafetyRefDeferredStepsAndUndo(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -50,6 +51,7 @@ func TestSyncRunJSONReportsTheSafetyRefDeferredStepsAndUndo(t *testing.T) {
 // stack that grew since is refused with nothing touched; the overview as
 // read runs.
 func TestSyncRunJSONExpectHoldsTheRunToTheOverview(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -76,6 +78,7 @@ func TestSyncRunJSONExpectHoldsTheRunToTheOverview(t *testing.T) {
 
 // A contested stop handed over: its plan, its safety ref and both ways on.
 func TestSyncRunJSONReportsAHandover(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -94,6 +97,7 @@ func TestSyncRunJSONReportsAHandover(t *testing.T) {
 
 // Nobody said yes: nothing rebased, and the object says why.
 func TestSyncRunJSONSaysWhenNobodyConfirmed(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.RunFixture(t, false)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	opts := synccmdtest.NoAgents()
@@ -111,6 +115,7 @@ func TestSyncRunJSONSaysWhenNobodyConfirmed(t *testing.T) {
 // next — asks the verb which participants the signal caught changed: those
 // are interrupted, the rest stand as recorded.
 func TestJournalAsksWhatASignalCaughtChanged(t *testing.T) {
+	t.Parallel()
 	var out bytes.Buffer
 	j := synccmd.NewSyncRunJournal(&out, "sync undo")
 	j.Join("one", "feat_wt/one", "/w/one", strings.Repeat("1", 40), nil)

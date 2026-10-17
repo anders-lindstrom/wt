@@ -15,6 +15,7 @@ import (
 // Several remotes having the name is refused, naming them, with nothing
 // made — unless checkout.defaultRemote picks one, as it does for git.
 func TestCheckoutBareNameOnSeveralRemotes(t *testing.T) {
+	t.Parallel()
 	ctx := provision.RemoteFixture(t, []string{"origin", "upstream"}, "origin/topic", "upstream/topic")
 	before := testkit.RepoState(t, ctx.Repo.MainRoot)
 	_, err := provision.Checkout(ctx, "topic", "", provision.NewOptions{NoSetup: true}, &bytes.Buffer{})
@@ -41,6 +42,7 @@ func TestCheckoutBareNameOnSeveralRemotes(t *testing.T) {
 // A local branch of that name is checked out as it always was, whatever a
 // remote has: the branch is not moved and its upstream not touched.
 func TestCheckoutPrefersTheLocalBranch(t *testing.T) {
+	t.Parallel()
 	ctx := provision.RemoteFixture(t, []string{"origin"}, "origin/topic")
 	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "topic")
 	local := provision.OidOf(t, ctx, "refs/heads/topic")
@@ -58,6 +60,7 @@ func TestCheckoutPrefersTheLocalBranch(t *testing.T) {
 
 // What cannot be checked out is a problem in the plan, with no token.
 func TestCheckoutPlanRemoteProblems(t *testing.T) {
+	t.Parallel()
 	ctx := provision.RemoteFixture(t, []string{"origin"}, "origin/topic")
 	testkit.GitIn(t, ctx.Repo.MainRoot, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/topic")
 	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "taken")
@@ -82,6 +85,7 @@ func TestCheckoutPlanRemoteProblems(t *testing.T) {
 // The plan for a remote branch says it will create and track it, pins the
 // remote-tracking commit, and writes nothing.
 func TestCheckoutPlanForARemoteBranch(t *testing.T) {
+	t.Parallel()
 	ctx := provision.RemoteFixture(t, []string{"origin"}, "origin/feature/x")
 	before := testkit.RepoState(t, ctx.Repo.MainRoot)
 	p := provisiontest.CheckoutPlanOf(t, ctx, "origin/feature/x", "")
@@ -110,6 +114,7 @@ func TestCheckoutPlanForARemoteBranch(t *testing.T) {
 // --json: the branch step is created, the upstream is read back, and the
 // worktree is on the remote-tracking commit the plan pinned.
 func TestCheckoutJSONFromARemote(t *testing.T) {
+	t.Parallel()
 	ctx := provision.RemoteFixture(t, []string{"origin"}, "origin/topic")
 	p := provisiontest.CheckoutPlanOf(t, ctx, "origin/topic", "")
 	r, err := checkoutJSON(t, ctx, "origin/topic", "", provision.NewOptions{NoSetup: true}, *p.Token)
@@ -140,6 +145,7 @@ func TestCheckoutJSONFromARemote(t *testing.T) {
 // --expect refuses, touching nothing, when the remote-tracking ref moved
 // since the plan, or a local branch of that name appeared.
 func TestCheckoutExpectRefusesAMovedRemote(t *testing.T) {
+	t.Parallel()
 	ctx := provision.RemoteFixture(t, []string{"origin"}, "origin/topic")
 	main := ctx.Repo.MainRoot
 	p := provisiontest.CheckoutPlanOf(t, ctx, "origin/topic", "")
@@ -167,6 +173,7 @@ func TestCheckoutExpectRefusesAMovedRemote(t *testing.T) {
 // A local branch that appears after the plan was checked, just before it
 // is created, is never overwritten: the run is refused as planChanged.
 func TestCheckoutNeverOverwritesABranchThatAppeared(t *testing.T) {
+	t.Parallel()
 	ctx := provision.RemoteFixture(t, []string{"origin"}, "origin/topic")
 	main := ctx.Repo.MainRoot
 	target, prob := provision.ResolveCheckout(ctx, "origin/topic")
@@ -196,6 +203,7 @@ func TestCheckoutNeverOverwritesABranchThatAppeared(t *testing.T) {
 // A plan made for <remote>/<branch> is refused as planChanged once a local
 // branch of that name appears, whatever else the new plan finds wrong.
 func TestCheckoutExpectRefusesAnExplicitRemoteOnceTheBranchAppears(t *testing.T) {
+	t.Parallel()
 	ctx := provision.RemoteFixture(t, []string{"origin"}, "origin/topic")
 	p := provisiontest.CheckoutPlanOf(t, ctx, "origin/topic", "")
 	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "topic", "main")

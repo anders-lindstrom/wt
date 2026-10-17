@@ -7,6 +7,7 @@ import (
 )
 
 func TestRecheckOfACleanWorktreeAnswersNothing(t *testing.T) {
+	t.Parallel()
 	_, wt, _ := runRepo(t, nil, []map[string]string{{"b.txt": "b2\n"}})
 	gitDir, err := GitDir(wt)
 	if err != nil {
@@ -19,6 +20,7 @@ func TestRecheckOfACleanWorktreeAnswersNothing(t *testing.T) {
 }
 
 func TestRecheckSeesTrackedChangesButNotUntrackedFiles(t *testing.T) {
+	t.Parallel()
 	_, wt, _ := runRepo(t, nil, []map[string]string{{"b.txt": "b2\n"}})
 	gitDir, err := GitDir(wt)
 	if err != nil {
@@ -41,6 +43,7 @@ func TestRecheckSeesTrackedChangesButNotUntrackedFiles(t *testing.T) {
 // A handed-over rebase is Rebasing with a Plan; the staged resolutions it
 // carries are not reported as dirt.
 func TestRecheckTellsAHandoverFromSomebodysOwnRebase(t *testing.T) {
+	t.Parallel()
 	_, wt, gitDir, _ := handedOverRepo(t, 5, false)
 	s := Recheck(wt, gitDir, nil)
 	if s.Err != nil || !s.Rebasing || !s.Plan || s.Dirty {
@@ -56,6 +59,7 @@ func TestRecheckTellsAHandoverFromSomebodysOwnRebase(t *testing.T) {
 }
 
 func TestRecheckListsTheSessionsInTheWorktree(t *testing.T) {
+	t.Parallel()
 	_, wt, _ := runRepo(t, nil, []map[string]string{{"b.txt": "b2\n"}})
 	gitDir, err := GitDir(wt)
 	if err != nil {
@@ -81,6 +85,7 @@ func TestRecheckListsTheSessionsInTheWorktree(t *testing.T) {
 // A worktree whose state cannot be read is not a clean one: the error is
 // reported, and no answer is claimed for what was not read.
 func TestRecheckReportsAWorktreeItCannotRead(t *testing.T) {
+	t.Parallel()
 	_, wt, _ := runRepo(t, nil, []map[string]string{{"b.txt": "b2\n"}})
 	gitDir, err := GitDir(wt)
 	if err != nil {

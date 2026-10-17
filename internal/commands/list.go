@@ -186,7 +186,7 @@ func listPRs(ctx *kit.Context, names []kit.WorkName, refresh bool) (map[string]s
 		}
 	}
 	a := kit.BranchPRs(ctx, branches, kit.PRLookup{
-		Warn: "no pull requests shown", Refresh: refresh, Deadline: kit.LookupDeadline, Checks: true,
+		Warn: "no pull requests shown", Refresh: refresh, Deadline: ctx.GitHubDeadline(), Checks: true,
 	})
 	if len(a.ByBranch) == 0 {
 		return nil, time.Time{}

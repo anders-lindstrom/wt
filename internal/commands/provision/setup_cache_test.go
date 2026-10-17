@@ -38,6 +38,7 @@ func WithCloner(t *testing.T, f func(from, to string) error) {
 // clonefile shares the blocks. A filesystem that cannot clone skips the test
 // rather than failing it; the skip path has its own test below.
 func TestSetupClonesCacheDirsCopyOnWrite(t *testing.T) {
+	t.Parallel()
 	ctx, main, target := cacheFixture(t)
 	var buf bytes.Buffer
 	result, reason := cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf)
@@ -71,6 +72,7 @@ func TestSetupClonesCacheDirsCopyOnWrite(t *testing.T) {
 // Where the filesystem cannot clone, the cache is skipped with a line saying
 // why, and nothing is copied in its place.
 func TestSetupSkipsCachesTheFilesystemCannotClone(t *testing.T) {
+	// Not parallel: swaps cloneDir.
 	ctx, main, target := cacheFixture(t)
 	WithCloner(t, func(_, _ string) error { return errCloneUnsupported{"the source is on another volume"} })
 	var buf bytes.Buffer
@@ -88,6 +90,7 @@ func TestSetupSkipsCachesTheFilesystemCannotClone(t *testing.T) {
 
 // One cache cloned and one not is done, with the one not cloned named.
 func TestSetupCacheStepNamesWhatItCouldNotClone(t *testing.T) {
+	// Not parallel: swaps cloneDir.
 	ctx, main, target := cacheFixture(t)
 	WithCloner(t, func(from, to string) error {
 		if strings.HasSuffix(from, ".gradle") {
@@ -104,6 +107,7 @@ func TestSetupCacheStepNamesWhatItCouldNotClone(t *testing.T) {
 
 // A clone that fails for any other reason is a failed step, not a skip.
 func TestSetupCacheCloneErrorFails(t *testing.T) {
+	// Not parallel: swaps cloneDir.
 	ctx, main, target := cacheFixture(t)
 	WithCloner(t, func(_, _ string) error { return errors.New("permission denied") })
 	var buf bytes.Buffer
@@ -118,6 +122,7 @@ func TestSetupCacheCloneErrorFails(t *testing.T) {
 
 // A cache already in the worktree is the worktree's own, and is kept.
 func TestSetupKeepsAnExistingCacheDir(t *testing.T) {
+	// Not parallel: swaps cloneDir.
 	ctx, main, target := cacheFixture(t)
 	testkit.MustWrite(t, filepath.Join(target, "node_modules", "mine.txt"), "keep")
 	cloned := map[string]bool{}
@@ -144,6 +149,7 @@ func TestSetupKeepsAnExistingCacheDir(t *testing.T) {
 }
 
 func TestSetupNoCacheClonesNothing(t *testing.T) {
+	// Not parallel: swaps cloneDir.
 	ctx, main, target := cacheFixture(t)
 	WithCloner(t, func(_, _ string) error {
 		t.Error("cloned under --no-cache")
@@ -160,6 +166,7 @@ func TestSetupNoCacheClonesNothing(t *testing.T) {
 
 // A repository that declares no caches hears nothing about them.
 func TestSetupWithoutCacheDirsSaysNothing(t *testing.T) {
+	t.Parallel()
 	main := testkit.FixtureRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
@@ -170,6 +177,7 @@ func TestSetupWithoutCacheDirsSaysNothing(t *testing.T) {
 }
 
 func TestSetupRefusesCacheDirsThatEscapeTheWorktree(t *testing.T) {
+	// Not parallel: swaps cloneDir.
 	main := testkit.FixtureRepo(t, testkit.MinimalConf+"WORKTREE_CACHE_DIRS=(../outside)\n")
 	testkit.MustMkdir(t, filepath.Join(filepath.Dir(main), "outside"))
 	ctx, _ := kit.Open(main)
@@ -186,6 +194,7 @@ func TestSetupRefusesCacheDirsThatEscapeTheWorktree(t *testing.T) {
 
 // The caches are there before provision.sh runs, so it finds them warm.
 func TestSetupClonesCachesBeforeProvision(t *testing.T) {
+	// Not parallel: swaps cloneDir.
 	ctx, main, target := cacheFixture(t)
 	WithCloner(t, func(_, to string) error { return os.Mkdir(to, 0o755) })
 	p := filepath.Join(main, "bin", "worktree", "provision.sh")
@@ -205,6 +214,7 @@ func TestSetupClonesCachesBeforeProvision(t *testing.T) {
 // An entry under a symlinked directory that leaves the worktree is refused
 // before anything is made or cloned there.
 func TestSetupRefusesCacheDirsBehindAnEscapingSymlink(t *testing.T) {
+	// Not parallel: swaps cloneDir.
 	ctx, main, target := cacheFixture(t)
 	outside := t.TempDir()
 	if err := os.Symlink(outside, filepath.Join(target, "web")); err != nil {
@@ -230,6 +240,7 @@ func TestSetupRefusesCacheDirsBehindAnEscapingSymlink(t *testing.T) {
 
 // A symlinked parent that stays inside the worktree is fine.
 func TestSetupClonesBehindASymlinkWithinTheWorktree(t *testing.T) {
+	// Not parallel: swaps cloneDir.
 	ctx, main, target := cacheFixture(t)
 	testkit.MustMkdir(t, filepath.Join(target, "real"))
 	if err := os.Symlink("real", filepath.Join(target, "web")); err != nil {
@@ -246,6 +257,7 @@ func TestSetupClonesBehindASymlinkWithinTheWorktree(t *testing.T) {
 }
 
 func TestSetupCacheWithNoSourceCheckoutIsSkipped(t *testing.T) {
+	t.Parallel()
 	ctx, main, target := cacheFixture(t)
 	gone := filepath.Join(main, "no-such-checkout")
 	var buf bytes.Buffer
@@ -258,6 +270,7 @@ func TestSetupCacheWithNoSourceCheckoutIsSkipped(t *testing.T) {
 // A source entry that is a symlink, to a directory or not, is never followed
 // or cloned, and says it is a symlink. A file is not a directory.
 func TestSetupCacheSourceEntryThatIsNotADirectory(t *testing.T) {
+	// Not parallel: swaps cloneDir.
 	ctx, main, target := cacheFixture(t)
 	shared := t.TempDir()
 	testkit.MustWrite(t, filepath.Join(shared, "cache.bin"), "shared")
@@ -292,6 +305,7 @@ func TestSetupCacheSourceEntryThatIsNotADirectory(t *testing.T) {
 
 // A lookup that fails for a reason other than absence fails the step.
 func TestSetupCacheSourceLookupErrorFails(t *testing.T) {
+	// Not parallel: swaps cloneDir.
 	ctx, main, target := cacheFixture(t)
 	web := filepath.Join(main, "web")
 	if err := os.Chmod(web, 0); err != nil {
@@ -315,6 +329,7 @@ func TestSetupCacheSourceLookupErrorFails(t *testing.T) {
 // A failure and a cache the filesystem cannot clone in one run: failed, with
 // both named.
 func TestSetupCacheFailureAndUnclonableTogether(t *testing.T) {
+	// Not parallel: swaps cloneDir.
 	ctx, main, target := cacheFixture(t)
 	WithCloner(t, func(from, _ string) error {
 		if strings.HasSuffix(from, ".gradle") {
@@ -333,6 +348,7 @@ func TestSetupCacheFailureAndUnclonableTogether(t *testing.T) {
 // Every entry already in the worktree, or none in the source, is done with
 // nothing to say.
 func TestSetupCacheNothingToCloneIsDone(t *testing.T) {
+	// Not parallel: swaps cloneDir.
 	ctx, main, target := cacheFixture(t)
 	WithCloner(t, func(_, _ string) error {
 		t.Error("cloned with nothing to clone")
@@ -357,6 +373,7 @@ func TestSetupCacheNothingToCloneIsDone(t *testing.T) {
 
 // Parent directories made for a cache that is not cloned do not stay behind.
 func TestSetupCacheLeavesNoParentsWhenNotCloned(t *testing.T) {
+	// Not parallel: swaps cloneDir.
 	for name, err := range map[string]error{
 		"unsupported": errCloneUnsupported{"this filesystem cannot clone"},
 		"failed":      errors.New("disk on fire"),

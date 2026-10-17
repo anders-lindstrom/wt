@@ -11,6 +11,7 @@ import (
 )
 
 func TestRemovePlanJSONSaysWhoseEachSessionIs(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/codex-plan")
 	resolved, _ := filepath.EvalSymlinks(path)
 	p, err := RemovePlanOf(t, ctx, path, RemoveOptions{Agents: []wtsync.Agent{

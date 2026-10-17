@@ -44,6 +44,7 @@ func declareScript(t *testing.T, ctx *kit.Context) {
 }
 
 func TestSyncRunRebasesARecipeWorktreeAndRunsTheDeferredStep(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -70,6 +71,7 @@ func TestSyncRunRebasesARecipeWorktreeAndRunsTheDeferredStep(t *testing.T) {
 }
 
 func TestSyncRunRefusesADirtyWorktreeAndTouchesNothing(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -92,6 +94,7 @@ func TestSyncRunRefusesADirtyWorktreeAndTouchesNothing(t *testing.T) {
 }
 
 func TestSyncRunRefusesAWorktreeWithAnAgent(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.RunFixture(t, false)
 	resolved, _ := filepath.EvalSymlinks(bump)
 	opts := synccmdtest.NoAgents()
@@ -104,6 +107,7 @@ func TestSyncRunRefusesAWorktreeWithAnAgent(t *testing.T) {
 }
 
 func TestSyncRunRefusesWhenAgentsCannotBeListed(t *testing.T) {
+	// Not parallel: puts a fake claude on the process-wide PATH.
 	// Agents nil means "ask claude agents"; make that fail by putting a
 	// claude on the PATH that exits non-zero. The real PATH stays in front
 	// of nothing and behind the stub, so git is still reachable — emptying
@@ -128,6 +132,7 @@ func TestSyncRunRefusesWhenAgentsCannotBeListed(t *testing.T) {
 }
 
 func TestSyncRunSkipsACurrentWorktreeWithoutASafetyRef(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -145,6 +150,7 @@ func TestSyncRunSkipsACurrentWorktreeWithoutASafetyRef(t *testing.T) {
 }
 
 func TestSyncRunRefusesWhenTrunkDeclaresNothing(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	testkit.GitIn(t, main, "remote", "add", "origin", main)
 	testkit.GitIn(t, main, "fetch", "-q", "origin")
@@ -164,6 +170,7 @@ func TestSyncRunRefusesWhenTrunkDeclaresNothing(t *testing.T) {
 }
 
 func TestSyncRunRebasesAStackParentFirstAndChildOntoTheParentsFinalTip(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -196,6 +203,7 @@ func TestSyncRunRebasesAStackParentFirstAndChildOntoTheParentsFinalTip(t *testin
 }
 
 func TestSyncRunARefusedStackMemberDefersTheWholeStack(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -222,6 +230,7 @@ func TestSyncRunARefusedStackMemberDefersTheWholeStack(t *testing.T) {
 // branch cut after it, yet nothing is built on it: naming bump syncs bump
 // alone, and an agent in the empty worktree does not hold it back.
 func TestSyncRunIgnoresAnEmptyWorktreeBehindTrunk(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -251,6 +260,7 @@ func TestSyncRunIgnoresAnEmptyWorktreeBehindTrunk(t *testing.T) {
 }
 
 func TestSyncRunAsksOnceForMoreThanOneWorktreeAndStopsOnNo(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -286,6 +296,7 @@ func TestSyncRunAsksOnceForMoreThanOneWorktreeAndStopsOnNo(t *testing.T) {
 // what it leaves alone in the overview's words, and asks even for one
 // worktree, since nobody named it.
 func TestSyncRunWithNothingNamedTakesEveryReadyWorktreeAndAsksFirst(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -334,6 +345,7 @@ func TestSyncRunWithNothingNamedTakesEveryReadyWorktreeAndAsksFirst(t *testing.T
 // carried past it and a run may stop later. With nothing named the run
 // leaves it alone rather than risk a handover nobody asked for.
 func TestSyncRunWithNothingNamedLeavesRecipeQuestionAlone(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -359,6 +371,7 @@ func TestSyncRunWithNothingNamedLeavesRecipeQuestionAlone(t *testing.T) {
 // would refuse every one of them at triage, after the run said it was left
 // alone, so the stack is left alone up front and the reason names the member.
 func TestSyncRunWithNothingNamedLeavesAStackWithAHeldMember(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -389,6 +402,7 @@ func TestSyncRunWithNothingNamedLeavesAStackWithAHeldMember(t *testing.T) {
 // A ready worktree with a session idle in it is taken, and the session is
 // named in the question, as when it is named by hand.
 func TestSyncRunWithNothingNamedNamesAnIdleSessionAndAsks(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.RunFixture(t, false)
 	opts := synccmdtest.NoAgents()
 	opts.Agents = testkit.IdleIn(t, bump, "parked")
@@ -407,6 +421,7 @@ func TestSyncRunWithNothingNamedNamesAnIdleSessionAndAsks(t *testing.T) {
 // What holds a worktree back is named beside its class, as the overview
 // names it.
 func TestSyncRunWithNothingNamedNamesWhatHoldsAWorktree(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.RunFixture(t, false)
 	if err := os.WriteFile(filepath.Join(bump, "a.txt"), []byte("edited\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -426,6 +441,7 @@ func TestSyncRunWithNothingNamedNamesWhatHoldsAWorktree(t *testing.T) {
 // what the strategies resolved, leaves the rebase in place and writes the
 // handover.
 func TestSyncRunHandsAContestedStopOver(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -486,6 +502,7 @@ func TestSyncRunHandsAContestedStopOver(t *testing.T) {
 // old line as naming the file and resume and nothing else, with a wt:
 // prefix inside the indented line that the closing line also carries.
 func TestSyncRunNeedsYouLineSaysResolveAddResumeOrUndo(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -513,6 +530,7 @@ func TestSyncRunNeedsYouLineSaysResolveAddResumeOrUndo(t *testing.T) {
 // A second run refuses a worktree waiting on a person, and leaves both the
 // rebase and the handover exactly as the first run left them.
 func TestSyncRunRefusesAWorktreeWaitingOnAPerson(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -556,6 +574,7 @@ func TestSyncRunRefusesAWorktreeWaitingOnAPerson(t *testing.T) {
 // A stack parent may not be left waiting: its children would be stranded on
 // a base that is about to be rewritten, so its stop is put back instead.
 func TestSyncRunPutsAStackParentBackInsteadOfHandingItOver(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -590,6 +609,7 @@ func TestSyncRunPutsAStackParentBackInsteadOfHandingItOver(t *testing.T) {
 }
 
 func TestSyncRunHandsOverALaterUnclaimedStop(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -643,6 +663,7 @@ func TestSyncRunHandsOverALaterUnclaimedStop(t *testing.T) {
 }
 
 func TestSyncRunAHandedOverChildDoesNotStopItsSibling(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -685,6 +706,7 @@ func TestSyncRunAHandedOverChildDoesNotStopItsSibling(t *testing.T) {
 }
 
 func TestSyncRunStillRefusesASessionThatIsNotIdle(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -708,6 +730,7 @@ func TestSyncRunStillRefusesASessionThatIsNotIdle(t *testing.T) {
 }
 
 func TestSyncRunNamesAnIdleSessionInTheQuestionAndStopsOnNo(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.RunFixture(t, false)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	opts := synccmdtest.NoAgents()
@@ -730,6 +753,7 @@ func TestSyncRunNamesAnIdleSessionInTheQuestionAndStopsOnNo(t *testing.T) {
 }
 
 func TestSyncRunUnderAnIdleSessionWithNoTerminalSaysSoAndEndsWithALineToRelay(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -754,6 +778,7 @@ func TestSyncRunUnderAnIdleSessionWithNoTerminalSaysSoAndEndsWithALineToRelay(t 
 // Between triage and the lock a session can wake up, or a new one open. The
 // lock-time re-check lists them again and refuses either.
 func TestSyncRunRefusesASessionThatChangedSinceTriage(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -791,6 +816,7 @@ func TestSyncRunRefusesASessionThatChangedSinceTriage(t *testing.T) {
 // over a fleet does not hold every worktree against another wt for its whole
 // length. A deferred step that waits to be let go is where the test looks.
 func TestSyncRunReleasesEachLockAsSoonAsItIsDoneWithTheWorktree(t *testing.T) {
+	// Not parallel: waits 10s for the run to reach a step, which parallel load outlasted.
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -909,6 +935,7 @@ func TestSyncRunReleasesEachLockAsSoonAsItIsDoneWithTheWorktree(t *testing.T) {
 // through wtsync, whose error form appends the exit status, and the run's
 // line never carried it.
 func TestSyncRunSaysWhyARecheckCouldNotBeMadeInGitsOwnWords(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.RunFixture(t, false)
 	gitDir, err := wtsync.GitDir(bump)
 	if err != nil {

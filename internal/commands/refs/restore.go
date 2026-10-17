@@ -22,6 +22,8 @@ type RestoreOptions struct {
 	DryRun bool
 	// Result, when set, receives what the restore did.
 	Result *quarantine.RestoreResult
+	// QuarantineHooks are the quarantine.Hooks a test runs the restore with; nil but in tests.
+	QuarantineHooks *quarantine.Hooks
 }
 
 // Restore puts back the worktree wt remove --move-to moved into dir.
@@ -37,7 +39,7 @@ func Restore(ctx *kit.Context, dir string, opts RestoreOptions, w io.Writer) err
 	if ctx != nil {
 		rp = ctx.Repo
 	}
-	plan := quarantine.PlanRestore(dir, rp)
+	plan := quarantine.PlanRestore(dir, rp, opts.QuarantineHooks)
 	renderRestorePlan(plan, w)
 	res := quarantine.RestoreResult{Outcome: quarantine.OutcomeRefused, Action: plan.Action,
 		OccupiedBy: plan.OccupiedBy, Checkout: plan.Checkout, Admin: plan.Admin}
@@ -57,7 +59,7 @@ func Restore(ctx *kit.Context, dir string, opts RestoreOptions, w io.Writer) err
 		fmt.Fprintln(w, "Nothing was restored: --dry-run.")
 		return report(nil)
 	}
-	res, err = quarantine.DoRestore(dir, rp)
+	res, err = quarantine.DoRestore(dir, rp, opts.QuarantineHooks)
 	if err != nil {
 		if res.Outcome == quarantine.OutcomePartial {
 			fmt.Fprintf(w, "! partly restored; wt restore %s finishes it\n", dir)
@@ -76,7 +78,8 @@ func Restore(ctx *kit.Context, dir string, opts RestoreOptions, w io.Writer) err
 // registerRestored registers the worktree a restore put back with Superset,
 // the way wt new registers a new one; its removal deleted the workspace.
 // The repository is the worktree's own, which need not be the one wt ran
-// in; the person's settings are the ones this run read.
+// in; the person's settings, and the Superset it sees, are the ones this
+// run read.
 func registerRestored(ctx *kit.Context, path string, w io.Writer) {
 	rctx, err := kit.Open(path)
 	if err != nil {
@@ -84,6 +87,7 @@ func registerRestored(ctx *kit.Context, path string, w io.Writer) {
 	}
 	if ctx != nil {
 		rctx.User, rctx.UserError = ctx.User, ctx.UserError
+		rctx.SupersetFake = ctx.SupersetFake
 	}
 	provision.RegisterSuperset(rctx, path, w)
 }
@@ -251,7 +255,7 @@ func RestoreJSON(ctx *kit.Context, dir string, opts RestoreOptions, out, progres
 		rp = ctx.Repo
 	}
 	if opts.DryRun {
-		plan := quarantine.PlanRestore(dir, rp)
+		plan := quarantine.PlanRestore(dir, rp, opts.QuarantineHooks)
 		renderRestorePlan(plan, progress)
 		p := restorePlanOutput(plan)
 		if err != nil {

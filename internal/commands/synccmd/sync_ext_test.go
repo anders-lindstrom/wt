@@ -17,6 +17,7 @@ import (
 // A handed-over worktree's staged resolutions are what a person is
 // finishing, not dirt: its row says it is waiting, and nothing else.
 func TestSyncShowsAHandedOverWorktreeWithoutCallingItDirty(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.ContestedFixture(t)
 	synccmdtest.HandOverNow(t, ctx, bump)
 	var buf bytes.Buffer
@@ -43,6 +44,7 @@ func TestSyncShowsAHandedOverWorktreeWithoutCallingItDirty(t *testing.T) {
 // was left mid-rebase, and everything the same row had shown before the run
 // was gone.
 func TestSyncKeepsTheStopAndFileOnAHandedOverRow(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.ContestedFixture(t)
 	_, st := synccmdtest.HandOverNow(t, ctx, bump)
 	var buf bytes.Buffer
@@ -61,6 +63,7 @@ func TestSyncKeepsTheStopAndFileOnAHandedOverRow(t *testing.T) {
 // resume runs what is left, and the detail view's run line says the same.
 // One aborted by hand is called that, and sent to undo.
 func TestSyncShowsAFinishedByHandHandoverAsSuch(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.ContestedFixture(t)
 	synccmdtest.HandOverNow(t, ctx, bump)
 	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
@@ -114,6 +117,7 @@ func TestSyncShowsAFinishedByHandHandoverAsSuch(t *testing.T) {
 // will refuse, so the row and doctor must not send a person to resume:
 // the branch moved, and the forced undo is the way out.
 func TestSyncShowsAHandoverFinishedWithACommitInsideAsMoved(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.ContestedFixture(t)
 	synccmdtest.HandOverNow(t, ctx, bump)
 	testkit.GitOut(t, ctx.Repo.MainRoot, "config", "core.hooksPath", filepath.Join(ctx.Repo.MainRoot, ".git", "hooks"))
@@ -146,6 +150,7 @@ func TestSyncShowsAHandoverFinishedWithACommitInsideAsMoved(t *testing.T) {
 // mid-handover it must at least name the plan file and the files that are
 // the person's, not only the run's refusal.
 func TestSyncDetailNamesThePlanAndTheYoursFilesMidHandover(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.ContestedFixture(t)
 	gitDir, _ := synccmdtest.HandOverNow(t, ctx, bump)
 	var buf bytes.Buffer

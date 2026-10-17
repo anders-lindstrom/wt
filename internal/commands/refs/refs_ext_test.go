@@ -22,6 +22,7 @@ import (
 // A sweep pins each selected ref and deletes it in one step, drops a
 // branch's config, and says how to put each back.
 func TestRefsSweepPinsAndDeletes(t *testing.T) {
+	t.Parallel()
 	ctx, main := testkit.BackupsRepo(t)
 	plan, err := refs.RefsPlanJSON(t, ctx, refs.Options{NoFetch: true})
 	if err != nil {
@@ -65,6 +66,7 @@ func TestRefsSweepPinsAndDeletes(t *testing.T) {
 
 // --expect refuses a sweep whose plan changed, moving nothing.
 func TestRefsSweepExpectRefusesAChangedPlan(t *testing.T) {
+	t.Parallel()
 	ctx, main := testkit.BackupsRepo(t)
 	plan, _ := refs.RefsPlanJSON(t, ctx, refs.Options{NoFetch: true})
 	testkit.GitIn(t, main, "branch", "backup/new", "main")
@@ -81,6 +83,7 @@ func TestRefsSweepExpectRefusesAChangedPlan(t *testing.T) {
 // --only replaces the selection, under the same token; it takes a young
 // backup, and refuses the lot when it names one that is kept or unknown.
 func TestRefsSweepOnly(t *testing.T) {
+	t.Parallel()
 	ctx, _ := testkit.BackupsRepo(t)
 	full, _ := refs.RefsPlanJSON(t, ctx, refs.Options{NoFetch: true})
 	only := []string{"refs/heads/backup/rebased"}
@@ -113,6 +116,7 @@ func TestRefsSweepOnly(t *testing.T) {
 // A restore puts each ref back at its object where the name is free, keeps
 // the one whose name was taken, and leaves no pin of what went back.
 func TestRefsRestorePutsBack(t *testing.T) {
+	t.Parallel()
 	ctx, main := testkit.BackupsRepo(t)
 	r := refstest.SweepAll(t, ctx, refs.Options{})
 	run := *r.RunID
@@ -154,6 +158,7 @@ func TestRefsRestorePutsBack(t *testing.T) {
 
 // --only takes one id per flag, and a ref name may carry a comma.
 func TestRefsOnlyTakesAnIDWithAComma(t *testing.T) {
+	t.Parallel()
 	ctx, main := testkit.BackupsRepo(t)
 	testkit.GitIn(t, main, "branch", "backup/a,b", "main")
 	id := "refs/heads/backup/a,b"
@@ -172,6 +177,7 @@ func TestRefsOnlyTakesAnIDWithAComma(t *testing.T) {
 // contain them, never with an open pull request or when GitHub cannot say;
 // a swept one is pinned here, gone from origin, and restore pushes it back.
 func TestRefsSweepRemote(t *testing.T) {
+	t.Parallel()
 	ctx, main, origin := testkit.SweepRepo(t)
 	first := testkit.GitOut(t, main, "rev-parse", "main")
 	testkit.GitIn(t, main, "commit", "-q", "--allow-empty", "-m", "second")
@@ -250,6 +256,7 @@ func TestRefsSweepRemote(t *testing.T) {
 
 // --run-id names the run; one that has refs already refuses, moving nothing.
 func TestRefsSweepRunID(t *testing.T) {
+	t.Parallel()
 	ctx, main := testkit.BackupsRepo(t)
 	id := "20260930T091500Z-00c0ffee"
 	r := refstest.SweepAll(t, ctx, refs.Options{RunID: id, Only: []string{"refs/heads/backup/contained"}})
@@ -277,6 +284,7 @@ func TestRefsSweepRunID(t *testing.T) {
 // A push origin rejects keeps the pin; once origin holds the ref, a restore
 // only drops the pin.
 func TestRefsRestoreRemoteKeepsThePinUntilOriginHasIt(t *testing.T) {
+	t.Parallel()
 	ctx, main, origin, run := refstest.RemoteBackups(t)
 	hook := filepath.Join(origin, "hooks", "pre-receive")
 	testkit.MustWrite(t, hook, "#!/bin/sh\necho no >&2\nexit 1\n")
@@ -313,6 +321,7 @@ func TestRefsRestoreRemoteKeepsThePinUntilOriginHasIt(t *testing.T) {
 // A restore whose ref is already back drops the pin only while the ref is
 // still there; a run id that is not one is still an object its schema takes.
 func TestRefsRestoreNoneKeepsThePinOfARefThatWent(t *testing.T) {
+	t.Parallel()
 	ctx, main := testkit.BackupsRepo(t)
 	r := refstest.SweepAll(t, ctx, refs.Options{Only: []string{"refs/heads/backup/old"}})
 	run := *r.RunID

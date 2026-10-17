@@ -26,6 +26,7 @@ func includeLine(t *testing.T, out []byte) string {
 }
 
 func TestListUnionUnionsTrunkOrderFirst(t *testing.T) {
+	t.Parallel()
 	out, err := includes().Resolve(conflict(inc("'a', 'b', 'c'"), inc("'a', 'pins', 'b', 'c'"), inc("'a', 'b', 'bankid', 'c'")))
 	if err != nil {
 		t.Fatal(err)
@@ -39,6 +40,7 @@ func TestListUnionUnionsTrunkOrderFirst(t *testing.T) {
 }
 
 func TestListUnionKeepsTheRestOfTheFileFromGit(t *testing.T) {
+	t.Parallel()
 	out, err := includes().Resolve(conflict(inc("'a'"), strings.Replace(inc("'a', 'pins'"), "1.0.0", "2.0.0", 1), inc("'a', 'nbix'")))
 	if err != nil {
 		t.Fatal(err)
@@ -49,6 +51,7 @@ func TestListUnionKeepsTheRestOfTheFileFromGit(t *testing.T) {
 }
 
 func TestListUnionRefusesARemovalOnEitherSide(t *testing.T) {
+	t.Parallel()
 	_, err := includes().Resolve(conflict(inc("'a', 'b', 'c'"), inc("'a', 'pins', 'b', 'c'"), inc("'a', 'c'")))
 	if !IsRefusal(err) || !strings.Contains(err.Error(), "removes 'b'") {
 		t.Errorf("branch removal: err = %v", err)
@@ -60,6 +63,7 @@ func TestListUnionRefusesARemovalOnEitherSide(t *testing.T) {
 }
 
 func TestListUnionUnionsIntoAnEmptyBaseList(t *testing.T) {
+	t.Parallel()
 	out, err := includes().Resolve(conflict(inc(""), inc("'a'"), inc("'b'")))
 	if err != nil {
 		t.Fatal(err)
@@ -70,6 +74,7 @@ func TestListUnionUnionsIntoAnEmptyBaseList(t *testing.T) {
 }
 
 func TestListUnionRefusesWhenTheLineRegexMatchesMidLine(t *testing.T) {
+	t.Parallel()
 	// An unanchored regex can match partway through a line that merely
 	// mentions the keyword; the prefix must come from a match at the very
 	// start of the line, or this is refused rather than silently taking the
@@ -86,6 +91,7 @@ func TestListUnionRefusesWhenTheLineRegexMatchesMidLine(t *testing.T) {
 }
 
 func TestListUnionRefusesAConflictOffTheListLine(t *testing.T) {
+	t.Parallel()
 	_, err := includes().Resolve(conflict("rootProject.name = 'a'\ninclude 'x'\n", "rootProject.name = 'b'\ninclude 'x'\n", "rootProject.name = 'c'\ninclude 'x'\n"))
 	if !IsRefusal(err) {
 		t.Errorf("err = %v", err)
@@ -93,6 +99,7 @@ func TestListUnionRefusesAConflictOffTheListLine(t *testing.T) {
 }
 
 func TestListUnionUnionsASecondListLineFoldedIntoTheBlock(t *testing.T) {
+	t.Parallel()
 	out, err := includes().Resolve(conflict(inc("'a', 'b'"), inc("'a', 'pins', 'b'"), inc("'a', 'b', 'nbix'")+"include 'nbix-devtools'\n"))
 	if err != nil {
 		t.Fatal(err)
@@ -114,6 +121,7 @@ func TestListUnionUnionsASecondListLineFoldedIntoTheBlock(t *testing.T) {
 }
 
 func TestListUnionRefusesAnItemItCannotParse(t *testing.T) {
+	t.Parallel()
 	_, err := includes().Resolve(conflict(inc("'a', 'b'"), inc("'a', 'pins', 'b'"), inc("'a', 'b', 'nbix'include 'x'")))
 	if !IsRefusal(err) || !strings.Contains(err.Error(), "cannot parse") {
 		t.Errorf("err = %v", err)
@@ -121,6 +129,7 @@ func TestListUnionRefusesAnItemItCannotParse(t *testing.T) {
 }
 
 func TestFromRuleBuildsListUnion(t *testing.T) {
+	t.Parallel()
 	s, err := FromRule(Rule{Strategy: "list-union", Line: "^include ", Delimiter: ","}, "", "")
 	if err != nil || s.Name() != "list-union" {
 		t.Errorf("FromRule = %v, %v", s, err)

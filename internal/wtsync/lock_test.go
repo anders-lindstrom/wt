@@ -9,6 +9,7 @@ import (
 )
 
 func TestAcquireWritesTheLockAndReleaseRemovesIt(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	now := time.Unix(1_700_000_000, 0)
 	l, err := Acquire(dir, now)
@@ -31,6 +32,7 @@ func TestAcquireWritesTheLockAndReleaseRemovesIt(t *testing.T) {
 }
 
 func TestAcquireRefusesALiveLockAndReplacesAnExpiredOne(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	now := time.Unix(1_700_000_000, 0)
 	first, err := Acquire(dir, now)
@@ -65,6 +67,7 @@ func TestAcquireRefusesALiveLockAndReplacesAnExpiredOne(t *testing.T) {
 }
 
 func TestAcquireDoesNotTakeOverAnUnreadableLock(t *testing.T) {
+	t.Parallel()
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores file modes")
 	}
@@ -94,6 +97,7 @@ func TestAcquireDoesNotTakeOverAnUnreadableLock(t *testing.T) {
 }
 
 func TestGitDirOfAWorktreeIsItsOwnDirectoryUnderTheMainGitDir(t *testing.T) {
+	t.Parallel()
 	dir := linearRepo(t, nil, []map[string]string{{"a.txt": "a2\n"}})
 	wt := featureWorktree(t, dir)
 	got, err := GitDir(wt.Path)
@@ -109,6 +113,7 @@ func TestGitDirOfAWorktreeIsItsOwnDirectoryUnderTheMainGitDir(t *testing.T) {
 // A real run passes time.Now(), whose nanoseconds the lock file cannot
 // record. Release must still recognise its own lock.
 func TestReleaseRemovesALockAcquiredWithSubSecondPrecision(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	l, err := Acquire(dir, time.Unix(1_700_000_000, 123_456_789))
 	if err != nil {
@@ -123,6 +128,7 @@ func TestReleaseRemovesALockAcquiredWithSubSecondPrecision(t *testing.T) {
 }
 
 func TestHeldLocksTracksWhatThisProcessHoldsUntilReleased(t *testing.T) {
+	// Not parallel: counts the locks the whole test binary holds.
 	dir := t.TempDir()
 	before := len(HeldLocks())
 	l, err := Acquire(dir, time.Now())
@@ -141,6 +147,7 @@ func TestHeldLocksTracksWhatThisProcessHoldsUntilReleased(t *testing.T) {
 }
 
 func TestTakeOverReclaimsTheRunsOwnLock(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	now := time.Now()
 	l, err := Acquire(dir, now)
@@ -159,6 +166,7 @@ func TestTakeOverReclaimsTheRunsOwnLock(t *testing.T) {
 }
 
 func TestTakeOverRespectsSomebodyElsesLock(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	now := time.Now()
 	l, err := Acquire(dir, now)
@@ -186,6 +194,7 @@ func TestTakeOverRespectsSomebodyElsesLock(t *testing.T) {
 // releases a kept lock — or a defer it did not write — must not delete the
 // file the next run has to respect.
 func TestAKeptLockSurvivesRelease(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	now := time.Now()
 	l, err := Acquire(dir, now)

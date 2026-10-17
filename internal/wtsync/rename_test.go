@@ -33,6 +33,7 @@ func (f ownFixture) rename(t *testing.T, from, to string) string {
 }
 
 func TestRenameKeepingPushRecordsWhereTheOldNamePushed(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	if kept := f.rename(t, "feat", "feat_wt/new"); kept != "origin/feat" || recordedFor(t, f, "feat_wt/new") != "origin/feat" {
 		t.Fatalf("kept %q, recorded %q", kept, recordedFor(t, f, "feat_wt/new"))
@@ -58,6 +59,7 @@ func TestRenameKeepingPushRecordsWhereTheOldNamePushed(t *testing.T) {
 // A fork: the branch tracks the shared repository's branch of its name and
 // pushes to the person's own. What is recorded is where it pushed.
 func TestRenameKeepingPushRecordsThePushRemoteNotTheUpstream(t *testing.T) {
+	t.Parallel()
 	for name, config := range map[string]string{"remote.pushDefault": "remote.pushDefault", "branch.<name>.pushRemote": "branch.shared-fix.pushRemote"} {
 		t.Run(name, func(t *testing.T) {
 			f := newOwnFixture(t)
@@ -96,6 +98,7 @@ func TestRenameKeepingPushRecordsThePushRemoteNotTheUpstream(t *testing.T) {
 // Only where the old name pushed, and only when the remote has that branch
 // or the upstream names it.
 func TestRenameKeepingPushRecordsNothingItCannotShow(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	f.theirs(t, "theirs")
 	gittest.Git(t, f.dir, "branch", "plain", "main")

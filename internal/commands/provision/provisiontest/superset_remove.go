@@ -10,8 +10,8 @@ import (
 )
 
 // SupersetAt writes a `superset` whose one live worktree workspace, w1, is
-// at path, beside the main checkout's own "local" one, and points
-// provision.ProbeSuperset at it. deleteBody is what `ws delete` does; before it runs
+// at path, beside the main checkout's own "local" one, and points ctx at
+// it. deleteBody is what `ws delete` does; before it runs
 // the fake notes in the log whether path still exists and whether git still
 // lists it, so a test can prove the delete came after both were gone.
 func SupersetAt(t *testing.T, ctx *kit.Context, path, deleteBody string) string {
@@ -35,6 +35,6 @@ func SupersetAt(t *testing.T, ctx *kit.Context, path, deleteBody string) string 
 	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	Stub(t, superset.Status{Exe: exe, Running: true})
+	Stub(ctx, superset.Status{Exe: exe, Running: true})
 	return log
 }

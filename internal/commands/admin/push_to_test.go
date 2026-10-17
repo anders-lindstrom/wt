@@ -16,6 +16,7 @@ import (
 // the layout by wt migrate, then rebased and pushed. Its pull request is on
 // origin/own_apikey, and that is where the push has to land.
 func TestAMigratedBranchIsStillPushedToItsOldRemoteBranch(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}

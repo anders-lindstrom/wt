@@ -32,6 +32,7 @@ func recorded(t *testing.T, r *Repo, branch string) string {
 // A recorded name ends up on the right of a refspec: only a plain branch
 // name may get there.
 func TestPushToNameTakesOnlyAPlainBranchName(t *testing.T) {
+	t.Parallel()
 	r := pushedRepo(t)
 	for _, name := range []string{"x", "feat/x", "feat_wt/own_apikey", "v1.2", "a@b"} {
 		if !r.PushToName(name) {
@@ -46,6 +47,7 @@ func TestPushToNameTakesOnlyAPlainBranchName(t *testing.T) {
 }
 
 func TestPushToIsReadWrittenAndForgotten(t *testing.T) {
+	t.Parallel()
 	r := pushedRepo(t)
 	if recorded(t, r, "old") != "" {
 		t.Fatal("recorded before anything was")

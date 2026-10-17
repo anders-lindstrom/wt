@@ -19,6 +19,7 @@ import (
 // mine tracking origin/theirs with nobody to ask: wt does not guess. The
 // branch is rebased and not pushed, and theirs is not touched.
 func TestABranchTrackingAnotherNameIsNotPushedWithNobodyToAsk(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -69,6 +70,7 @@ func TestABranchTrackingAnotherNameIsNotPushedWithNobodyToAsk(t *testing.T) {
 
 // With a person there, wt asks which of the two it is, once, and records it.
 func TestAPersonSaysWhereABranchTrackingAnotherNamePushes(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -157,6 +159,7 @@ func TestAPersonSaysWhereABranchTrackingAnotherNamePushes(t *testing.T) {
 // make it where wt's forced push goes: a branch cut from a release branch
 // tracks it, and is not it.
 func TestPushDefaultUpstreamDoesNotMakeTheUpstreamADestination(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -181,6 +184,7 @@ func TestPushDefaultUpstreamDoesNotMakeTheUpstreamADestination(t *testing.T) {
 // trunk: what the remote holds afterwards is the branch under its own name,
 // and trunk where it was. git would send a refspec with no colon to trunk.
 func TestARunUnderPushDefaultUpstreamPushesTheBranchsOwnNameAndNotTrunk(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -217,6 +221,7 @@ func TestARunUnderPushDefaultUpstreamPushesTheBranchsOwnNameAndNotTrunk(t *testi
 // wt new cuts a branch from its base and does not make the base its
 // upstream: a new branch is not the branch it was cut from.
 func TestNewLeavesTheBranchWithNoUpstream(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -258,6 +263,7 @@ func TestNewLeavesTheBranchWithNoUpstream(t *testing.T) {
 // Somebody pushed to the recorded branch and nothing here fetched it: git
 // refuses on the commit wt pinned, and the run says the push failed.
 func TestAPushUnderAnotherNameThatTheLeaseRefusesIsAFailedPush(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -279,6 +285,7 @@ func TestAPushUnderAnotherNameThatTheLeaseRefusesIsAFailedPush(t *testing.T) {
 // fetch brings a teammate's commit, the check finds it, and the branch takes
 // it in before it is rebased and pushed. Theirs is still there afterwards.
 func TestARunFetchesChecksAndPushesTheRecordedBranch(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}

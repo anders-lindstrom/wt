@@ -141,7 +141,7 @@ func LandedPR(ctx *Context, branch, tip string) int {
 	if branch == "" || tip == "" || !ctx.UserConfig().GitHub {
 		return 0
 	}
-	remote, ok := GitHubRemote(ctx.Repo.MainRoot)
+	remote, ok := ctx.gitHubRemote()
 	if !ok {
 		return 0
 	}
@@ -173,7 +173,7 @@ func warnGitHub(ctx *Context, subject string, err error) {
 // GitHub regardless.
 func PRFact(ctx *Context, branch string, refresh bool) string {
 	a := BranchPRs(ctx, []string{branch}, PRLookup{
-		Warn: "no pull requests shown", Refresh: refresh, Deadline: LookupDeadline, Checks: true,
+		Warn: "no pull requests shown", Refresh: refresh, Deadline: ctx.GitHubDeadline(), Checks: true,
 	})
 	pr, ok := a.ByBranch[branch]
 	if !ok {

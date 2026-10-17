@@ -13,6 +13,7 @@ import (
 // just discards the config error — makes wt find return a surprising answer
 // with no hint why.
 func TestOpenLenientSurvivesInvalidConfig(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\nAWS_SETUP_ENABLED=true\n")
 	if _, err := kit.Open(main); err == nil {
 		t.Fatal("this fixture is supposed to have an invalid config")

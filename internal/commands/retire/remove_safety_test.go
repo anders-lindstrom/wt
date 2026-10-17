@@ -32,6 +32,7 @@ func refused(t *testing.T, ctx *kit.Context, path string, opts RemoveOptions, wh
 }
 
 func TestRemoveRefusesADirtyWorktreeBeforeAsking(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/dirty")
 	testkit.MustWrite(t, filepath.Join(path, "scratch.txt"), "mine")
 	asked := false
@@ -44,18 +45,21 @@ func TestRemoveRefusesADirtyWorktreeBeforeAsking(t *testing.T) {
 
 // --force breaks a lock and walks past a session; it never throws work away.
 func TestRemoveForceDoesNotDeleteUncommittedWork(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/dirty-forced")
 	testkit.MustWrite(t, filepath.Join(path, "scratch.txt"), "mine")
 	refused(t, ctx, path, RemoveOptions{Force: kit.ForceAll}, "uncommitted changes")
 }
 
 func TestRemoveRefusesWhenTheStatusCannotBeRead(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/unreadable")
 	testkit.MustWrite(t, filepath.Join(testkit.GitDirFor(t, path), "index"), "garbage")
 	refused(t, ctx, path, RemoveOptions{Force: kit.ForceAll}, "cannot read its status")
 }
 
 func TestRemoveRefusesDuringEachOperation(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ file, name string }{
 		{"rebase-merge/head-name", "rebase"},
 		{"MERGE_HEAD", "merge"},
@@ -74,6 +78,7 @@ func TestRemoveRefusesDuringEachOperation(t *testing.T) {
 }
 
 func TestRemoveRefusesADetachedHeadWithCommitsNothingElseHas(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	dst := filepath.Join(ctx.Repo.Parent, "detached")
@@ -85,6 +90,7 @@ func TestRemoveRefusesADetachedHeadWithCommitsNothingElseHas(t *testing.T) {
 // A branch GitHub squash-merged is deleted, and its commits then hang on
 // nothing: the plan lists the tip, so it can be put back.
 func TestRemoveListsTheTipADeletedBranchLeavesUnreachable(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/squashed")
 	testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "work")
 	tip := strings.TrimSpace(testkit.GitOut(t, path, "rev-parse", "HEAD"))
@@ -101,6 +107,7 @@ func TestRemoveListsTheTipADeletedBranchLeavesUnreachable(t *testing.T) {
 
 // The same tip held by another branch is not lost, so nothing is listed.
 func TestRemoveListsNothingWhenAnotherRefHoldsTheTip(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/squashed-kept")
 	testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "work")
 	testkit.GitIn(t, path, "branch", "backup")
@@ -116,6 +123,7 @@ func TestRemoveListsNothingWhenAnotherRefHoldsTheTip(t *testing.T) {
 }
 
 func TestRemoveRefusesASessionInTheWorktree(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/visited")
 	resolved, _ := filepath.EvalSymlinks(path)
 	opts := RemoveOptions{Agents: []wtsync.Agent{{Name: "parked-1", Cwd: resolved, Status: "idle"}}}
@@ -123,6 +131,7 @@ func TestRemoveRefusesASessionInTheWorktree(t *testing.T) {
 }
 
 func TestRemoveForceGoesPastASession(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/visited-forced")
 	resolved, _ := filepath.EvalSymlinks(path)
 	opts := RemoveOptions{Force: kit.ForceAll, Agents: []wtsync.Agent{{Name: "parked-1", Cwd: resolved}}}
@@ -133,6 +142,7 @@ func TestRemoveForceGoesPastASession(t *testing.T) {
 }
 
 func TestRemoveRefusesWhenTheSessionsCannotBeListed(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/unknown")
 	opts := RemoveOptions{AgentsErr: errors.New("claude agents --json failed: boom")}
 	refused(t, ctx, path, opts, "cannot list agent sessions")
@@ -145,6 +155,7 @@ func TestRemoveRefusesWhenTheSessionsCannotBeListed(t *testing.T) {
 }
 
 func TestRemoveRefusesFilesStatusIsToldNotToLookAt(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/hidden")
 	testkit.MustWrite(t, filepath.Join(path, "a.txt"), "a")
 	testkit.GitIn(t, path, "add", "a.txt")
@@ -161,6 +172,7 @@ func TestRemoveRefusesFilesStatusIsToldNotToLookAt(t *testing.T) {
 // An edit status is told not to look at is still an edit, and --force does
 // not delete it.
 func TestRemoveForceDoesNotDeleteAnEditedHiddenFile(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/hidden-edited")
 	testkit.MustWrite(t, filepath.Join(path, "a.txt"), "a")
 	testkit.GitIn(t, path, "add", "a.txt")
@@ -174,6 +186,7 @@ func TestRemoveForceDoesNotDeleteAnEditedHiddenFile(t *testing.T) {
 // checkout, usually ignored: deleting the outer one would take the inner
 // one's work with it.
 func TestRemoveRefusesAWorktreeWithAnotherInsideIt(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/outer")
 	testkit.MustWrite(t, filepath.Join(path, ".gitignore"), ".claude/\n")
 	testkit.GitIn(t, path, "add", ".gitignore")
@@ -187,6 +200,7 @@ func TestRemoveRefusesAWorktreeWithAnotherInsideIt(t *testing.T) {
 // A commit inside a submodule lives only in this worktree's modules/, so it
 // is lost work --force does not go past.
 func TestRemoveRefusesASubmoduleCommitOnlyThisWorktreeHas(t *testing.T) {
+	t.Parallel()
 	ctx, _, path := provisiontest.SubmoduleWorktree(t, "fix/sub-commit")
 	sm := filepath.Join(path, "sm")
 	testkit.GitIn(t, sm, "checkout", "-q", "--detach")
@@ -197,6 +211,7 @@ func TestRemoveRefusesASubmoduleCommitOnlyThisWorktreeHas(t *testing.T) {
 }
 
 func TestRemoveNamesASubmoduleAtAnotherCommit(t *testing.T) {
+	t.Parallel()
 	ctx, _, path := provisiontest.SubmoduleWorktree(t, "fix/sub-moved")
 	sm := filepath.Join(path, "sm")
 	testkit.GitIn(t, sm, "checkout", "-q", "--detach")
@@ -208,6 +223,7 @@ func TestRemoveNamesASubmoduleAtAnotherCommit(t *testing.T) {
 // A worktree with an initialised submodule goes whole — through git, with
 // nothing pruned — once a strict read found nothing in it.
 func TestRemoveTakesASubmoduleWorktreeAndPrunesNothingElse(t *testing.T) {
+	t.Parallel()
 	ctx, main, path := provisiontest.SubmoduleWorktree(t, "fix/subs")
 	gone := filepath.Join(ctx.Repo.Parent, "gone")
 	testkit.GitIn(t, main, "worktree", "add", "-q", "--detach", gone)
@@ -231,6 +247,7 @@ func TestRemoveTakesASubmoduleWorktreeAndPrunesNothingElse(t *testing.T) {
 // The submodule's own config hides the file from the parent's status, so
 // only reading inside the submodule finds it.
 func TestRemoveRefusesASubmoduleWorktreeWithWorkInTheSubmodule(t *testing.T) {
+	t.Parallel()
 	ctx, _, path := provisiontest.SubmoduleWorktree(t, "fix/subs-dirty")
 	testkit.GitIn(t, filepath.Join(path, "sm"), "config", "status.showUntrackedFiles", "no")
 	testkit.MustWrite(t, filepath.Join(path, "sm", "scratch"), "x")
@@ -243,6 +260,7 @@ func TestRemoveRefusesASubmoduleWorktreeWithWorkInTheSubmodule(t *testing.T) {
 // A branch kept under its bare name, when that name is taken, is not a
 // removal that went to plan.
 func TestRemoveSaysSoWhenTheBranchCannotBeKept(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/kept")
 	testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "work")
 	testkit.GitIn(t, path, "branch", "kept")
@@ -260,6 +278,7 @@ func TestRemoveSaysSoWhenTheBranchCannotBeKept(t *testing.T) {
 // What was read when the plan was made is read again right before the
 // delete: a file written in between keeps the worktree.
 func TestApplyReadsTheWorktreeAgainBeforeDeleting(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/late")
 	plan := planFor(ctx, worktreeRecord(ctx, path), RemoveOptions{})
 	if why := plan.refusal(); why != "" {
@@ -279,6 +298,7 @@ func TestApplyReadsTheWorktreeAgainBeforeDeleting(t *testing.T) {
 // The submodule path forces git past its own check, so there the second
 // read is all that stands between a late file and its deletion.
 func TestApplyReadsASubmoduleWorktreeAgainBeforeDeleting(t *testing.T) {
+	t.Parallel()
 	ctx, _, path := provisiontest.SubmoduleWorktree(t, "fix/late-subs")
 	plan := planFor(ctx, worktreeRecord(ctx, path), RemoveOptions{})
 	if why := plan.refusal(); why != "" {
@@ -296,6 +316,7 @@ func TestApplyReadsASubmoduleWorktreeAgainBeforeDeleting(t *testing.T) {
 }
 
 func TestApplyRefusesAHeadThatMovedAfterThePlan(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	dst := filepath.Join(ctx.Repo.Parent, "detached-late")

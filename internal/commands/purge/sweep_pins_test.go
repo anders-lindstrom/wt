@@ -48,6 +48,7 @@ func sweptIDs(run RefSweptRun) []string {
 // one run: wt refs swept lists it, and wt refs restore puts each branch back
 // at its tip.
 func TestSweepPinsWhatItDeletesAndRefsRestoresIt(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 1)
 	testkit.LandOnMain(t, main, "done-work")
@@ -98,6 +99,7 @@ func TestSweepPinsWhatItDeletesAndRefsRestoresIt(t *testing.T) {
 // wt remove moves a merged branch into a run of its own, which wt refs
 // restore puts back.
 func TestRemovePinsAMergedBranchAndRefsRestoresIt(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/pinned")
 	tip := strings.TrimSpace(testkit.GitOut(t, path, "rev-parse", "HEAD"))
 	r, err := retiretest.RemoveJSON(t, ctx, path, retire.RemoveOptions{})

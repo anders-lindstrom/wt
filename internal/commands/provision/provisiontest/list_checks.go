@@ -25,7 +25,7 @@ func FourWorktreesWithChecks(t *testing.T) (*kit.Context, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	log := testkit.FakeGitHub(t,
+	log := testkit.FakeGitHub(t, ctx,
 		WithChecks(testkit.OpenPR(12, "fix_wt/passing", "Passing"), "SUCCESS"),
 		WithChecks(testkit.OpenPR(13, "fix_wt/failing", "Failing"), "FAILURE"),
 		WithChecks(testkit.OpenPR(14, "fix_wt/running", "Running"), "PENDING"),

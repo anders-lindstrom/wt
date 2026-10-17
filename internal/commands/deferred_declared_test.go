@@ -25,6 +25,7 @@ func declareNoPathsStep(t *testing.T, ctx *kit.Context) {
 // The overview lists the deferred steps trunk declares on every worktree, in
 // the declared order, each with its gate: also on one a run would skip.
 func TestSyncJSONListsTheDeclaredDeferredStepsOnEveryWorktree(t *testing.T) {
+	t.Parallel()
 	ctx, _ := provisiontest.RunFixture(t, true)
 	declareNoPathsStep(t, ctx)
 	o := synccmdtest.OverviewJSON(t, ctx)
@@ -46,6 +47,7 @@ func TestSyncJSONListsTheDeclaredDeferredStepsOnEveryWorktree(t *testing.T) {
 // A trunk that declares no deferred step, and one with no declaration at
 // all, list none: an empty array, which the schema holds it to.
 func TestSyncJSONListsNoDeclaredStepsWhenTrunkDeclaresNone(t *testing.T) {
+	t.Parallel()
 	ctx, _ := provisiontest.RunFixture(t, false)
 	for _, w := range synccmdtest.OverviewJSON(t, ctx).Worktrees {
 		if w.DeferredDeclared == nil || len(w.DeferredDeclared) != 0 {
@@ -69,6 +71,7 @@ func TestSyncJSONListsNoDeclaredStepsWhenTrunkDeclaresNone(t *testing.T) {
 // The plan wt up runs against lists them on each stack member, from trunk
 // as last fetched, and none when trunk declares none.
 func TestPlanListsTheDeclaredDeferredStepsOnEachStackMember(t *testing.T) {
+	t.Parallel()
 	ctx, _ := provisiontest.RunFixture(t, true)
 	p := synccmdtest.PlanOfWork(t, ctx, "bump")
 	if len(p.Stack) != 1 {
@@ -99,6 +102,7 @@ func TestPlanListsTheDeclaredDeferredStepsOnEachStackMember(t *testing.T) {
 // What the overview lists for a worktree is what the run then reports of
 // it, step for step by the same string.
 func TestTheDeclaredStepsPairWithTheRunsDeferred(t *testing.T) {
+	t.Parallel()
 	ctx, _ := provisiontest.RunFixture(t, true)
 	declared := synccmdtest.OverviewRow(t, synccmdtest.OverviewJSON(t, ctx), "bump").DeferredDeclared
 	r, err := synccmdtest.SyncRunJSON(t, ctx, []string{"bump"}, synccmd.RunOptions{NoFetch: true})
