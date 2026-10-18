@@ -34,6 +34,8 @@ it, and on a mise install `wt shell --compat` prints it.
 
 A release is a `v*` tag pushed to GitHub: the release workflow builds darwin
 and linux binaries with GoReleaser and attaches them to the release.
+`scripts/release.sh patch|minor|major` tags the next version on a merged
+HEAD and pushes it; landing a branch runs it.
 
 ## Setting up a repository
 
