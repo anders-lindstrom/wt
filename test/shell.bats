@@ -155,7 +155,7 @@ setup() {
 @test "the binary alone explains that cd needs the shell function" {
     run command wt cd foo
     [ "$status" -ne 0 ]
-    [[ "$output" == *"wt.sh"* ]]
+    [[ "$output" == *"wt shell"* ]]
 }
 
 # A claude that lists one background session in the login-crash worktree. The
@@ -304,7 +304,7 @@ TYPED
 @test "the binary alone explains that attach needs the shell function" {
     run command wt attach --help
     [ "$status" -eq 0 ]
-    [[ "$output" == *"wt.sh"* ]]
+    [[ "$output" == *"wt shell"* ]]
 }
 
 # A path is one argument to cd whatever is in it, and arrives whole even when
@@ -331,4 +331,10 @@ TYPED
     [[ "$output" != *"started:"* ]]
     run _wt_attach_run "$(printf 'continue\n\n%s\n' "$BATS_TEST_TMPDIR")"
     [[ "$output" != *"started:"* ]]
+}
+
+@test "eval \"\$(wt shell)\" loads the same layer as sourcing wt.sh" {
+    run bash -c 'unset -f wt wt_cd; eval "$(wt shell)" && type wt_cd >/dev/null && type -t wt'
+    [ "$status" -eq 0 ]
+    [ "${lines[-1]}" = function ]
 }

@@ -8,3 +8,6 @@ bin/*
 
 # scratch for subagent-driven plan execution
 .superpowers/
+
+# goreleaser output
+dist/

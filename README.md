@@ -9,16 +9,31 @@ repos, with two incompatible fixes, and neither reached the other five.
 
 ## Install
 
+A release, with [mise](https://mise.jdx.dev):
+
+```sh
+mise use -g github:anders-lindstrom/wt   # the newest release, kept on the PATH
+```
+
+Or built from a checkout:
+
 ```sh
 git clone git@github.com:anders-lindstrom/wt.git && cd wt
 ./install.sh                 # builds to ~/.local/bin, installs to ~/.local/share/wt
 ```
 
-Then in your shell rc:
+Then in your shell rc, either way:
 
 ```sh
-source ~/.local/share/wt/wt.sh
+eval "$(wt shell)"
 ```
+
+Repositories whose `bin/worktree_functions.sh` shim sources
+`~/.local/share/wt/worktree_functions.sh` need that file; install.sh writes
+it, and on a mise install `wt shell --compat` prints it.
+
+A release is a `v*` tag pushed to GitHub: the release workflow builds darwin
+and linux binaries with GoReleaser and attaches them to the release.
 
 ## Setting up a repository
 

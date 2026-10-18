@@ -6,6 +6,14 @@ from the last 3 days if that is more, so keep each entry to a few lines a human
 would want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-10-18 13:36 — wt shell, and releases you can install with mise
+
+- `eval "$(wt shell)"` in your shell rc loads the shell layer from the binary
+  itself, so it always matches the wt you run. `wt shell --compat` prints
+  worktree_functions.sh. The old `source ~/.local/share/wt/wt.sh` still works.
+- A `v*` tag now publishes darwin and linux binaries, stamped like a local
+  build, so `mise use -g github:anders-lindstrom/wt` installs wt.
+
 ## 2026-10-16 15:17 — wt port: a dev-server port per worktree
 
 - `wt port [<work>]` prints a port of the worktree's own, 10000–19999, hashed
