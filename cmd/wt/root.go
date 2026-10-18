@@ -97,7 +97,7 @@ func newRootCmd(args ...string) *cobra.Command {
 	add(groupTrunk, newUpCmd(), newSyncCmd())
 	add(groupTidy, newMigrateCmd(), newAdoptCmd(), newSetupCmd(), newRemoveCmd(), newSweepCmd(),
 		newRestoreCmd(), newPurgeCmd(), newRefsCmd())
-	add(groupRepo, newInitCmd(), newConfigCmd(), newDoctorCmd(), newSchemaCmd(), newAboutCmd(), newVersionCmd())
+	add(groupRepo, newInitCmd(), newConfigCmd(), newDoctorCmd(), newSchemaCmd(), newShellLayerCmd(), newAboutCmd(), newVersionCmd())
 	root.AddCommand(newBranchStripCmd(), newHookCmd())
 	// Flag descriptions wrap at 79 columns, lined up under their first line,
 	// so a long one does not wrap in an 80-column terminal.

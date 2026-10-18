@@ -154,7 +154,7 @@ echo "Installed:"
 for file in "${FILES[@]}"; do echo "  $PREFIX/$file"; done
 echo
 echo "Add to your shell rc:"
-echo "  source $SHARE_DIR/wt.sh"
+echo "  eval \"\$(wt shell)\""
 echo
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;

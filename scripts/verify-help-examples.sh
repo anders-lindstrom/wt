@@ -590,6 +590,8 @@ check plain "" "" 'wt schema up'
 check plain "" "" 'wt schema sync-run'
 check plain "" "" 'wt schema status > wt-status.schema.json'
 check plain "" "" 'wt version'
+check plain "" "" 'wt shell'
+check plain "" "" 'wt shell --compat'
 check plain "" "" 'wt --version'
 
 check sync myrepo_wt/fix_wt/login-crash "" 'wt up'

@@ -130,7 +130,7 @@ func TestShellCommandsSayWhereTheyLive(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s --help: %v", name, err)
 		}
-		if !strings.Contains(out, "wt.sh") {
+		if !strings.Contains(out, "wt shell") {
 			t.Errorf("%s --help does not say how to enable it:\n%s", name, out)
 		}
 	}
@@ -143,7 +143,7 @@ func TestShellCommandsExplainThemselvesWhenRunFromTheBinary(t *testing.T) {
 		if err == nil {
 			t.Fatalf("%s: want an error from the binary", name)
 		}
-		if !strings.Contains(err.Error(), "wt.sh") {
+		if !strings.Contains(err.Error(), "wt shell") {
 			t.Errorf("%s: error does not point at the shell layer: %v", name, err)
 		}
 	}

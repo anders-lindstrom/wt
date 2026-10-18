@@ -16,7 +16,7 @@ import (
 )
 
 // SourceShellLayer is the line that loads wt's shell layer.
-const SourceShellLayer = "source ~/.local/share/wt/wt.sh"
+const SourceShellLayer = `eval "$(wt shell)"`
 
 // attachDeadline is how long wt attach waits for claude agents --json. A
 // listing gives up sooner; attach cannot go on without the answer.
