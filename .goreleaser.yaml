@@ -7,16 +7,15 @@ builds:
     env: [CGO_ENABLED=0]
     goos: [darwin, linux]
     goarch: [amd64, arm64]
+    # The same stamp as make build and install.sh (scripts/ldflags.sh), set by
+    # the release workflow, so `wt about` on a release names its commit date.
     ldflags:
-      - -s -w -X main.version={{.Version}}
+      - -s -w {{ .Env.WT_LDFLAGS }}
 
 archives:
+  # The shell layers are inside the binary: `wt shell`, `wt shell --compat`.
   - formats: [tar.gz]
-    # The shell and compat layers ship with the binary: without them the Herdr
-    # skills and wt_cd do not work.
     files:
-      - shell/wt.sh
-      - compat/worktree_functions.sh
       - README.md
 
 checksum:
