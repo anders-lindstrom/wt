@@ -37,6 +37,20 @@ and linux binaries with GoReleaser and attaches them to the release.
 `scripts/release.sh patch|minor|major` tags the next version on a merged
 HEAD and pushes it; landing a branch runs it.
 
+While GitHub Actions minutes are exhausted, run `scripts/release.sh patch`
+first, then `scripts/release-local.sh <tag>` for the tag it pushed. The local
+runner uses `act`, Docker, and `gh auth token` to run the same release workflow.
+Run from a clean checkout at that tag; the tag must be on freshly fetched
+`origin/main`. It builds in a temporary clone with full history and tags.
+`--plan` runs `act -n` on the publishing path; `--dry-run` builds all four
+snapshot archives without publishing and prints their directory under `dist/`.
+Dry-run refuses older tags without the snapshot gate.
+Run previews and publishing sequentially: act shares job containers and caches.
+The workflow only honors snapshot mode under act; GitHub tag pushes still
+publish normally. The current GoReleaser config needs only `GITHUB_TOKEN`
+(no Homebrew tap token). A real run verifies GitHub release creation and asset
+uploads, which neither local preview mode exercises.
+
 ## Setting up a repository
 
 ```sh
