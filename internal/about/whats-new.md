@@ -6,6 +6,12 @@ from the last 3 days if that is more, so keep each entry to a few lines a human
 would want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-10-19 12:32 — Release locally when Actions minutes run out
+
+Run scripts/release-local.sh on a pushed tag to build and publish through
+the existing workflow with act. Preview with --plan, or build without
+publishing with --dry-run.
+
 ## 2026-10-18 13:36 — wt shell, and releases you can install with mise
 
 - `eval "$(wt shell)"` in your shell rc loads the shell layer from the binary
