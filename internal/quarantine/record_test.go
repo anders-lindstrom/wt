@@ -19,7 +19,7 @@ func sampleRecord(dir string) Record {
 // returns: the record is what a crash after it is resolved from.
 func TestBeginMakesTheFolderAndWritesTheRecordFirst(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "q")
-	r, err := Begin(dir, sampleRecord(dir))
+	r, err := Begin(dir, sampleRecord(dir), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestBeginMakesTheFolderAndWritesTheRecordFirst(t *testing.T) {
 
 func TestBeginRefusesAFolderThatExists(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := Begin(dir, sampleRecord(dir)); err == nil {
+	if _, err := Begin(dir, sampleRecord(dir), nil); err == nil {
 		t.Fatal("want a refusal: the folder exists")
 	}
 	if _, err := os.Stat(filepath.Join(dir, FileName)); !os.IsNotExist(err) {
@@ -66,7 +66,7 @@ func TestBeginRefusesAFolderThatExists(t *testing.T) {
 // something to create.
 func TestBeginDoesNotCreateParents(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "missing", "q")
-	if _, err := Begin(dir, sampleRecord(dir)); err == nil {
+	if _, err := Begin(dir, sampleRecord(dir), nil); err == nil {
 		t.Fatal("want a refusal: the parent does not exist")
 	}
 }
@@ -75,14 +75,13 @@ func TestBeginDoesNotCreateParents(t *testing.T) {
 // test crashes the run with sees it there.
 func TestSetWritesEachStepAndCallsTheHook(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "q")
-	r, err := Begin(dir, sampleRecord(dir))
+	r, err := Begin(dir, sampleRecord(dir), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var seen []string
 	crash := errors.New("crash")
-	t.Cleanup(func() { AfterSave = nil })
-	AfterSave = func(r *Record, point string) error {
+	r.hooks = &Hooks{AfterSave: func(r *Record, point string) error {
 		seen = append(seen, point)
 		onDisk, err := Load(r.Dir)
 		if err != nil {
@@ -92,7 +91,7 @@ func TestSetWritesEachStepAndCallsTheHook(t *testing.T) {
 			t.Errorf("%s: the file says %s", point, onDisk.Step(StepLock).State)
 		}
 		return crash
-	}
+	}}
 	if err := r.Set(StepLock, Running, nil); !errors.Is(err, crash) {
 		t.Fatalf("the hook's error must come back: %v", err)
 	}
@@ -135,7 +134,7 @@ func TestLoadRejectsARecordMissingSteps(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := filepath.Join(t.TempDir(), "q")
-			r, err := Begin(dir, sampleRecord(dir))
+			r, err := Begin(dir, sampleRecord(dir), nil)
 			if err != nil {
 				t.Fatal(err)
 			}

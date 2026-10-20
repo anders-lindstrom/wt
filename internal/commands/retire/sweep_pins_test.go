@@ -16,6 +16,7 @@ import (
 // A run begun for a branch that then is not moved leaves nothing behind:
 // its meta is dropped, and finish names no run.
 func TestBranchPinsDropARunThatPinnedNothing(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/busy")
 	tip := strings.TrimSpace(testkit.GitOut(t, path, "rev-parse", "HEAD"))
 	var begun string
@@ -38,6 +39,7 @@ func TestBranchPinsDropARunThatPinnedNothing(t *testing.T) {
 // A run id another run takes between the check and the meta write refuses
 // the move, and the other run's meta is left as it was.
 func TestBranchPinsLeaveARunTheyDidNotBegin(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 1)
 	tip := testkit.GitOut(t, main, "rev-parse", "done-work")

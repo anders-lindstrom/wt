@@ -13,6 +13,7 @@ import (
 
 // Behind, fast-forwarded and rebased by a run, then undone.
 func TestAFastForwardThatWasUndoneLeavesNoFormerTip(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -33,6 +34,7 @@ func TestAFastForwardThatWasUndoneLeavesNoFormerTip(t *testing.T) {
 
 // The same for the fast-forward that is all a run did.
 func TestAFastForwardAloneThatWasUndoneLeavesNoFormerTip(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -51,6 +53,7 @@ func TestAFastForwardAloneThatWasUndoneLeavesNoFormerTip(t *testing.T) {
 // top is plainly ahead, and once the run is undone the branch is behind
 // again, nothing else.
 func TestAFastForwardAloneIsFinishedAndItsUndoIsBehindAgain(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -82,6 +85,7 @@ func TestAFastForwardAloneIsFinishedAndItsUndoIsBehindAgain(t *testing.T) {
 // the remote's commit a former tip, and a second run goes on; the same
 // handover undone leaves none.
 func TestAHandoverAfterAFastForwardKeepsOrDropsTheFormerTip(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -131,6 +135,7 @@ func TestAHandoverAfterAFastForwardKeepsOrDropsTheFormerTip(t *testing.T) {
 // the branch ref sits at the remote's commit there, not at the tip the run
 // found, and the pin must not depend on which.
 func TestSyncUndoForcedPinsACommitInsideAHandoverThatFollowedAFastForward(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}

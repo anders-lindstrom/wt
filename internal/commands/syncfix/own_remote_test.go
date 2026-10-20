@@ -15,6 +15,7 @@ import (
 // A branch behind its own remote is fast-forwarded and then rebased, with
 // the remote's commit in it; undo puts it back where it stood before both.
 func TestUpFastForwardsABranchBehindItsRemoteThenRebases(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -65,6 +66,7 @@ func TestUpFastForwardsABranchBehindItsRemoteThenRebases(t *testing.T) {
 // moves. wt sync rebase takes the same branch, fast-forwards it, hands the
 // conflict over, and undo puts the branch back where it stood before both.
 func TestABranchBehindItsRemoteIsJudgedAtTheRemotesCommit(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -123,6 +125,7 @@ func TestABranchBehindItsRemoteIsJudgedAtTheRemotesCommit(t *testing.T) {
 // the tip the run found: fastForwarded stays as a record, after is local,
 // and nothing is left for undo to trip over.
 func TestSyncRunRestoresAStackParentToBeforeItsFastForward(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}

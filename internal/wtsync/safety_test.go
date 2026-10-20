@@ -6,6 +6,7 @@ import (
 )
 
 func TestWriteSafetyPinsTheTipUnderTheBranchAndEpoch(t *testing.T) {
+	t.Parallel()
 	dir := linearRepo(t, nil, []map[string]string{{"a.txt": "a2\n"}})
 	tip := gitIn(t, dir, "rev-parse", "feature")
 	s, err := WriteSafety(dir, "feature", tip, 1700000000)
@@ -21,6 +22,7 @@ func TestWriteSafetyPinsTheTipUnderTheBranchAndEpoch(t *testing.T) {
 }
 
 func TestListSafetyIsNewestFirstAndLatestPicksPerBranch(t *testing.T) {
+	t.Parallel()
 	dir := linearRepo(t, nil, []map[string]string{{"a.txt": "a2\n"}})
 	tip := gitIn(t, dir, "rev-parse", "feature")
 	for _, e := range []int64{100, 300, 200} {
@@ -52,6 +54,7 @@ func TestListSafetyIsNewestFirstAndLatestPicksPerBranch(t *testing.T) {
 }
 
 func TestPrunableKeepsEveryNewestRunGroupAndAnythingYoung(t *testing.T) {
+	t.Parallel()
 	now := time.Unix(10_000_000, 0)
 	ago := func(days int) int64 { return now.Add(-time.Duration(days) * 24 * time.Hour).UnixNano() }
 	all := []Safety{
@@ -72,6 +75,7 @@ func TestPrunableKeepsEveryNewestRunGroupAndAnythingYoung(t *testing.T) {
 }
 
 func TestDeleteSafetyRemovesTheRef(t *testing.T) {
+	t.Parallel()
 	dir := linearRepo(t, nil, []map[string]string{{"a.txt": "a2\n"}})
 	tip := gitIn(t, dir, "rev-parse", "feature")
 	s, err := WriteSafety(dir, "feature", tip, 5)
@@ -88,6 +92,7 @@ func TestDeleteSafetyRemovesTheRef(t *testing.T) {
 }
 
 func TestResultTipReadsWhatARunLeftAndIsAbsentUntilWritten(t *testing.T) {
+	t.Parallel()
 	dir := linearRepo(t, nil, []map[string]string{{"a.txt": "a2\n"}})
 	tip := gitIn(t, dir, "rev-parse", "feature")
 	if _, ok, err := ResultTip(dir, "feature", 5); err != nil || ok {
@@ -103,6 +108,7 @@ func TestResultTipReadsWhatARunLeftAndIsAbsentUntilWritten(t *testing.T) {
 }
 
 func TestDeleteSafetyAlsoDropsTheRunsResultRef(t *testing.T) {
+	t.Parallel()
 	dir := linearRepo(t, nil, []map[string]string{{"a.txt": "a2\n"}})
 	tip := gitIn(t, dir, "rev-parse", "feature")
 	s, err := WriteSafety(dir, "feature", tip, 5)

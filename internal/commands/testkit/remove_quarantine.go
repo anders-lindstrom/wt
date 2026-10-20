@@ -40,14 +40,13 @@ func LoadRecord(t *testing.T, dir string) *quarantine.Record {
 // ErrCrash ends a run at a journal write, as a crash there would.
 var ErrCrash = errors.New("crash")
 
-// CrashAt makes the run stop right after the journal write named point.
-func CrashAt(t *testing.T, point string) {
-	t.Helper()
-	t.Cleanup(func() { quarantine.AfterSave = nil })
-	quarantine.AfterSave = func(_ *quarantine.Record, at string) error {
+// CrashAt is hooks that stop a run right after the journal write named
+// point.
+func CrashAt(point string) *quarantine.Hooks {
+	return &quarantine.Hooks{AfterSave: func(_ *quarantine.Record, at string) error {
 		if at == point {
 			return ErrCrash
 		}
 		return nil
-	}
+	}}
 }

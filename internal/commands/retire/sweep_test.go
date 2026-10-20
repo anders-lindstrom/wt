@@ -88,6 +88,7 @@ func inAnyGroup(p SweepPlan, name string) bool {
 }
 
 func TestSweepPlanDeletesAMergedBranch(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 1)
 	testkit.LandOnMain(t, main, "done-work")
@@ -105,6 +106,7 @@ func TestSweepPlanDeletesAMergedBranch(t *testing.T) {
 }
 
 func TestSweepPlanLeavesUnmergedWorkOut(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "wip", 2)
 
@@ -115,6 +117,7 @@ func TestSweepPlanLeavesUnmergedWorkOut(t *testing.T) {
 
 // Merges happen on the remote; the main checkout's trunk is often behind it.
 func TestSweepPlanCountsAMergeOnlyOriginHas(t *testing.T) {
+	t.Parallel()
 	ctx, main, origin := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "landed", 1)
 	mergeOnOrigin(t, main, origin, "landed")
@@ -128,6 +131,7 @@ func TestSweepPlanCountsAMergeOnlyOriginHas(t *testing.T) {
 
 // Some repositories commit straight to trunk, and origin can be behind.
 func TestSweepPlanCountsAMergeOnlyLocalTrunkHas(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "local-only", 1)
 	testkit.GitIn(t, main, "merge", "-q", "--no-ff", "-m", "merge local-only", "local-only")
@@ -139,6 +143,7 @@ func TestSweepPlanCountsAMergeOnlyLocalTrunkHas(t *testing.T) {
 }
 
 func TestSweepPlanRemovesACleanMergedWorktree(t *testing.T) {
+	t.Parallel()
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
@@ -167,6 +172,7 @@ func TestSweepPlanRemovesACleanMergedWorktree(t *testing.T) {
 }
 
 func TestSweepRemovesAMergedWorktreeAndDeletesItsBranch(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	testkit.BranchWithWork(t, main, "done-work", 0)
@@ -190,6 +196,7 @@ func TestSweepRemovesAMergedWorktreeAndDeletesItsBranch(t *testing.T) {
 }
 
 func TestSweepPlanKeepsADirtyMergedWorktree(t *testing.T) {
+	t.Parallel()
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	testkit.MustWrite(t, filepath.Join(path, "scratch.txt"), "not yet\n")
@@ -207,6 +214,7 @@ func TestSweepPlanKeepsADirtyMergedWorktree(t *testing.T) {
 }
 
 func TestSweepPlanKeepsAMergedWorktreeWhoseLockIsHeld(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	testkit.GitIn(t, main, "worktree", "lock", "--reason", fmt.Sprintf("(pid %d start now)", os.Getpid()), path)
@@ -224,6 +232,7 @@ func TestSweepPlanKeepsAMergedWorktreeWhoseLockIsHeld(t *testing.T) {
 // A stale lock is litter wt remove releases on its way; it does not keep the
 // worktree.
 func TestSweepRemovesAMergedWorktreeWithAStaleLock(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	testkit.GitIn(t, main, "worktree", "lock", "--reason", "(pid 2147483000 start long ago)", path)
@@ -241,6 +250,7 @@ func TestSweepRemovesAMergedWorktreeWithAStaleLock(t *testing.T) {
 }
 
 func TestSweepPlanKeepsAMergedWorktreeWithAnIdleSession(t *testing.T) {
+	t.Parallel()
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
@@ -254,6 +264,7 @@ func TestSweepPlanKeepsAMergedWorktreeWithAnIdleSession(t *testing.T) {
 }
 
 func TestSweepKeepsAWorktreeWhenTheSessionsCannotBeListed(t *testing.T) {
+	t.Parallel()
 	ctx, _, _ := testkit.SweepRepo(t)
 	provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
@@ -275,6 +286,7 @@ func TestSweepKeepsAWorktreeWhenTheSessionsCannotBeListed(t *testing.T) {
 }
 
 func TestSweepLeavesAnUnmergedWorktreeAlone(t *testing.T) {
+	t.Parallel()
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "feat/api-tidy")
 	testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "real work")
@@ -298,6 +310,7 @@ func TestSweepLeavesAnUnmergedWorktreeAlone(t *testing.T) {
 // The prompt can stay open while somebody starts editing in a worktree the
 // plan was going to remove. It is kept; the rest of the plan still runs.
 func TestSweepKeepsAWorktreeThatBecameDirtyWhileThePromptWasOpen(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	other := provisiontest.MergedWorktree(t, ctx, "chore/tidy")
@@ -327,6 +340,7 @@ func TestSweepKeepsAWorktreeThatBecameDirtyWhileThePromptWasOpen(t *testing.T) {
 }
 
 func TestSweepKeepsAWorktreeASessionEnteredWhileThePromptWasOpen(t *testing.T) {
+	t.Parallel()
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
@@ -348,6 +362,7 @@ func TestSweepKeepsAWorktreeASessionEnteredWhileThePromptWasOpen(t *testing.T) {
 // A directory deleted by hand leaves git's record of the worktree behind,
 // and with it the branch counts as in use. wt remove finds nothing there.
 func TestSweepPlanKeepsAWorktreeWhoseDirectoryIsGone(t *testing.T) {
+	t.Parallel()
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	if err := os.RemoveAll(path); err != nil {
@@ -366,6 +381,7 @@ func TestSweepPlanKeepsAWorktreeWhoseDirectoryIsGone(t *testing.T) {
 // The re-check before anything goes, case by case: what can change while
 // the prompt is open, and what the kept line says about it.
 func TestSweepKeepsAWorktreeDeletedByHandWhileThePromptWasOpen(t *testing.T) {
+	t.Parallel()
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
@@ -385,6 +401,7 @@ func TestSweepKeepsAWorktreeDeletedByHandWhileThePromptWasOpen(t *testing.T) {
 }
 
 func TestSweepKeepsAWorktreeLockedWhileThePromptWasOpen(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
@@ -405,6 +422,7 @@ func TestSweepKeepsAWorktreeLockedWhileThePromptWasOpen(t *testing.T) {
 }
 
 func TestSweepKeepsAWorktreeWhoseBranchMovedWhileThePromptWasOpen(t *testing.T) {
+	t.Parallel()
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
@@ -425,6 +443,7 @@ func TestSweepKeepsAWorktreeWhoseBranchMovedWhileThePromptWasOpen(t *testing.T) 
 }
 
 func TestSweepKeepsAWorktreeThatSwitchedBranchWhileThePromptWasOpen(t *testing.T) {
+	t.Parallel()
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
@@ -445,6 +464,7 @@ func TestSweepKeepsAWorktreeThatSwitchedBranchWhileThePromptWasOpen(t *testing.T
 }
 
 func TestSweepKeepsAWorktreeWhenTheSessionsCannotBeListedAgain(t *testing.T) {
+	t.Parallel()
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
@@ -466,6 +486,7 @@ func TestSweepKeepsAWorktreeWhenTheSessionsCannotBeListedAgain(t *testing.T) {
 // A removal git refuses keeps that worktree and its branch; the sweep goes on
 // to the plain branches all the same.
 func TestSweepGoesOnToTheBranchesWhenARemovalFails(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	testkit.BranchWithWork(t, main, "done-work", 0)
@@ -498,6 +519,7 @@ func TestSweepGoesOnToTheBranchesWhenARemovalFails(t *testing.T) {
 }
 
 func TestSweepAsksOnceForBranchesAndWorktreesTogether(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	testkit.BranchWithWork(t, main, "done-work", 0)
@@ -526,6 +548,7 @@ func TestSweepAsksOnceForBranchesAndWorktreesTogether(t *testing.T) {
 }
 
 func TestSweepWithoutATerminalRemovesNoWorktree(t *testing.T) {
+	t.Parallel()
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
@@ -544,6 +567,7 @@ func TestSweepWithoutATerminalRemovesNoWorktree(t *testing.T) {
 // A rebase detaches HEAD, so for-each-ref's worktreepath is empty for the
 // branch being rebased. The worktree list's head-name is what still names it.
 func TestSweepPlanSeesABranchInTheMiddleOfARebase(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	dst := foreignWorktree(t, ctx, main, "rebasing", 0)
 	testkit.MustWrite(t, filepath.Join(dst, "f.txt"), "branch\n")
@@ -580,6 +604,7 @@ func TestSweepPlanSeesABranchInTheMiddleOfARebase(t *testing.T) {
 // A bisect detaches HEAD; git still counts the branch it started from as in
 // use, and only BISECT_START names it.
 func TestSweepPlanSeesABranchABisectStartedFrom(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.AddWork(t, main, "main", 4)
 	dst := foreignWorktree(t, ctx, main, "bisecting", 0)
@@ -606,6 +631,7 @@ func TestSweepPlanSeesABranchABisectStartedFrom(t *testing.T) {
 // A stopped rebase --update-refs holds every branch it will move, not only
 // the one being rebased; git lists them in rebase-merge/update-refs.
 func TestSweepPlanSeesABranchARebaseWillUpdate(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	dst := foreignWorktree(t, ctx, main, "upper", 0)
 	testkit.MustWrite(t, filepath.Join(dst, "f.txt"), "lower\n")
@@ -643,6 +669,7 @@ func TestSweepPlanSeesABranchARebaseWillUpdate(t *testing.T) {
 }
 
 func TestSweepPlanNamesTheMainCheckoutWhenItIsOnAMergedBranch(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 0)
 	testkit.GitIn(t, main, "switch", "-q", "done-work")
@@ -657,6 +684,7 @@ func TestSweepPlanNamesTheMainCheckoutWhenItIsOnAMergedBranch(t *testing.T) {
 }
 
 func TestSweepPlanNeverOffersProtectedBranches(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	for _, name := range []string{"master", "develop", "development", "staging", "production", "release-2.1"} {
 		testkit.GitIn(t, main, "branch", name)
@@ -670,6 +698,7 @@ func TestSweepPlanNeverOffersProtectedBranches(t *testing.T) {
 
 // The configured trunk and origin's HEAD can disagree; both are trunks.
 func TestSweepPlanProtectsTheConfiguredTrunkAndOriginHead(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, "MAIN_BRANCH=\"trunk\"\nBUILD_INIT_ENABLED=false\n")
 	testkit.GitIn(t, main, "branch", "trunk")
 	testkit.GitIn(t, main, "branch", "integration")
@@ -693,6 +722,7 @@ func TestSweepPlanProtectsTheConfiguredTrunkAndOriginHead(t *testing.T) {
 
 // A HEAD whose target was pruned still names trunk.
 func TestSweepPlanProtectsTheBranchADanglingOriginHeadNames(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.GitIn(t, main, "branch", "integration")
 	testkit.GitIn(t, main, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/integration")
@@ -703,6 +733,7 @@ func TestSweepPlanProtectsTheBranchADanglingOriginHeadNames(t *testing.T) {
 }
 
 func TestSweepPlanReportsAGoneBranchThatStillHasWork(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "old-idea", 3)
 	GoneUpstream(t, main, "old-idea")
@@ -722,6 +753,7 @@ func TestSweepPlanReportsAGoneBranchThatStillHasWork(t *testing.T) {
 }
 
 func TestSweepPlanWithNoOriginComparesWithLocalTrunk(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, err := kit.Open(main)
 	if err != nil {
@@ -741,6 +773,7 @@ func TestSweepPlanWithNoOriginComparesWithLocalTrunk(t *testing.T) {
 // Commit subjects run long. On a terminal they are cut so each row fits;
 // piped, they are printed whole.
 func TestSweepPlanFitsSubjectsToTheTerminal(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	subject := "a commit subject long enough to push its row past the edge of a narrow terminal"
 	tree := testkit.GitOut(t, main, "rev-parse", "main^{tree}")
@@ -764,6 +797,7 @@ func TestSweepPlanFitsSubjectsToTheTerminal(t *testing.T) {
 }
 
 func TestSweepPlanWithNothingMergedSaysSo(t *testing.T) {
+	t.Parallel()
 	ctx, _, _ := testkit.SweepRepo(t)
 	if out := Rendered(PlanOf(t, ctx)); !strings.Contains(out, "No merged branches or worktrees to sweep.") {
 		t.Errorf("an empty plan must say so:\n%s", out)
@@ -771,6 +805,7 @@ func TestSweepPlanWithNothingMergedSaysSo(t *testing.T) {
 }
 
 func TestSweepRefusesOutsideTheMainCheckout(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 0)
 	var buf bytes.Buffer
@@ -796,6 +831,7 @@ func TestSweepRefusesOutsideTheMainCheckout(t *testing.T) {
 }
 
 func TestSweepRunsFromASubdirectoryOfTheMainCheckout(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 0)
 	testkit.MustWrite(t, filepath.Join(main, "sub", "notes.txt"), "scratch")
@@ -814,6 +850,7 @@ func TestSweepRunsFromASubdirectoryOfTheMainCheckout(t *testing.T) {
 }
 
 func TestSweepRefusesABareRepository(t *testing.T) {
+	t.Parallel()
 	src := testkit.CommittedRepo(t, testkit.MinimalConf)
 	bare := filepath.Join(t.TempDir(), "demo.git")
 	testkit.GitIn(t, src, "clone", "-q", "--bare", src, bare)
@@ -835,6 +872,7 @@ func TestSweepRefusesABareRepository(t *testing.T) {
 
 // Without MAIN_BRANCH or origin's HEAD, trunk is whatever is checked out.
 func TestSweepRefusesWhenTrunkIsOnlyAGuess(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, "BUILD_INIT_ENABLED=false\n")
 	ctx, err := kit.Open(main)
 	if err != nil {
@@ -853,6 +891,7 @@ func TestSweepRefusesWhenTrunkIsOnlyAGuess(t *testing.T) {
 }
 
 func TestSweepTakesOriginHeadAsTrunkWhenTheConfigurationNamesNone(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepoWith(t, "BUILD_INIT_ENABLED=false\n")
 	testkit.BranchWithWork(t, main, "done-work", 0)
 
@@ -866,6 +905,7 @@ func TestSweepTakesOriginHeadAsTrunkWhenTheConfigurationNamesNone(t *testing.T) 
 }
 
 func TestSweepYesDeletesAndSaysHowToBringItBack(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 1)
 	testkit.LandOnMain(t, main, "done-work")
@@ -884,6 +924,7 @@ func TestSweepYesDeletesAndSaysHowToBringItBack(t *testing.T) {
 
 // A bulk delete does not happen because stdin was closed.
 func TestSweepWithoutATerminalDeletesNothing(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 0)
 
@@ -900,6 +941,7 @@ func TestSweepWithoutATerminalDeletesNothing(t *testing.T) {
 }
 
 func TestSweepDeclinedDeletesNothingAndTheQuestionSeesThePlan(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 0)
 
@@ -921,6 +963,7 @@ func TestSweepDeclinedDeletesNothingAndTheQuestionSeesThePlan(t *testing.T) {
 }
 
 func TestSweepWithNothingToDeleteAsksNothing(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "wip", 1)
 
@@ -938,6 +981,7 @@ func TestSweepWithNothingToDeleteAsksNothing(t *testing.T) {
 // The prompt can stay open while another session commits to a branch the plan
 // called merged. That branch is kept; the others still go.
 func TestSweepKeepsABranchThatMovedWhileThePromptWasOpen(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 0)
 	testkit.BranchWithWork(t, main, "also-done", 0)
@@ -963,6 +1007,7 @@ func TestSweepKeepsABranchThatMovedWhileThePromptWasOpen(t *testing.T) {
 }
 
 func TestSweepKeepsABranchCheckedOutWhileThePromptWasOpen(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 0)
 
@@ -987,6 +1032,7 @@ func TestSweepKeepsABranchCheckedOutWhileThePromptWasOpen(t *testing.T) {
 // checks the next branch out the moment the previous delete commits, which is
 // the only window that check covers.
 func TestSweepKeepsABranchCheckedOutBetweenTwoDeletes(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "also-done", 0)
 	testkit.BranchWithWork(t, main, "done-work", 0)
@@ -1024,6 +1070,7 @@ func TestSweepKeepsABranchCheckedOutBetweenTwoDeletes(t *testing.T) {
 // The re-check reads trunk again: a trunk reset while the prompt was open
 // takes the merge with it.
 func TestSweepKeepsABranchWhoseMergeWasUndoneWhileThePromptWasOpen(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "local-only", 1)
 	testkit.GitIn(t, main, "merge", "-q", "--no-ff", "-m", "merge local-only", "local-only")
@@ -1045,6 +1092,7 @@ func TestSweepKeepsABranchWhoseMergeWasUndoneWhileThePromptWasOpen(t *testing.T)
 }
 
 func TestSweepFetchesAndPrunesFirst(t *testing.T) {
+	t.Parallel()
 	ctx, main, origin := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "landed", 1)
 	mergeOnOrigin(t, main, origin, "landed")
@@ -1071,6 +1119,7 @@ func TestSweepFetchesAndPrunesFirst(t *testing.T) {
 // A remote.origin.fetch mapping into refs/heads would let a plain fetch
 // --prune delete local branches before anything was asked.
 func TestSweepFetchCannotPruneLocalBranchesOrTags(t *testing.T) {
+	t.Parallel()
 	ctx, main, origin := testkit.SweepRepo(t)
 	testkit.GitIn(t, main, "config", "--add", "remote.origin.fetch", "+refs/heads/release/*:refs/heads/release/*")
 	testkit.GitIn(t, main, "config", "fetch.pruneTags", "true")
@@ -1094,6 +1143,7 @@ func TestSweepFetchCannotPruneLocalBranchesOrTags(t *testing.T) {
 }
 
 func TestSweepWithNoOriginComparesWithLocalBranchesOnly(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, err := kit.Open(main)
 	if err != nil {
@@ -1114,6 +1164,7 @@ func TestSweepWithNoOriginComparesWithLocalBranchesOnly(t *testing.T) {
 }
 
 func TestSweepStopsWhenTheFetchFails(t *testing.T) {
+	t.Parallel()
 	ctx, main, origin := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 0)
 	if err := os.RemoveAll(origin); err != nil {
@@ -1131,6 +1182,7 @@ func TestSweepStopsWhenTheFetchFails(t *testing.T) {
 }
 
 func TestSweepNoFetchComparesWithOriginAsLastFetched(t *testing.T) {
+	t.Parallel()
 	ctx, main, origin := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "landed", 1)
 	mergeOnOrigin(t, main, origin, "landed")
@@ -1152,6 +1204,7 @@ func TestSweepNoFetchComparesWithOriginAsLastFetched(t *testing.T) {
 // listed as kept with the path wt remove takes, rather than passed over. One
 // detached at a commit trunk lacks is nobody's litter and is not mentioned.
 func TestSweepPlanNamesADetachedWorktreeAtAMergedTip(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done", 0)
 	testkit.BranchWithWork(t, main, "wip", 1)
@@ -1202,6 +1255,7 @@ func NoPullRequests([]string) map[string]github.PR { return nil }
 // kept. With a .gitmodules, removal deletes the directory itself, so git's
 // own refusal of a dirty checkout is not there to fall back on.
 func TestSweepKeepsAWorktreeThatBecameDirtyDuringTheSweep(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.MustWrite(t, filepath.Join(main, ".gitmodules"), "")
 	testkit.GitIn(t, main, "add", ".gitmodules")

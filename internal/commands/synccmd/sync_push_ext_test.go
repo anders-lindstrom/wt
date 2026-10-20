@@ -12,6 +12,7 @@ import (
 )
 
 func TestSyncRunPushesAFinishedWorktreeWithPush(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -38,6 +39,7 @@ func TestSyncRunPushesAFinishedWorktreeWithPush(t *testing.T) {
 // Somebody else moved the branch on origin and nothing here fetched it: the
 // lease refuses, the run says why and does not complete, origin keeps theirs.
 func TestSyncRunDoesNotPushOverCommitsItHasNotSeen(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -62,6 +64,7 @@ func TestSyncRunDoesNotPushOverCommitsItHasNotSeen(t *testing.T) {
 }
 
 func TestSyncRunAsksToPushOnlyWhatFinishedAndPrintsTheCommandOnNo(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -90,6 +93,7 @@ func TestSyncRunAsksToPushOnlyWhatFinishedAndPrintsTheCommandOnNo(t *testing.T) 
 }
 
 func TestSyncRunPushesWhenTheAnswerIsYes(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -107,6 +111,7 @@ func TestSyncRunPushesWhenTheAnswerIsYes(t *testing.T) {
 }
 
 func TestSyncRunNoPushNeitherAsksNorPushes(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -128,6 +133,7 @@ func TestSyncRunNoPushNeitherAsksNorPushes(t *testing.T) {
 }
 
 func TestSyncRunPushesNothingThatDidNotFinish(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}

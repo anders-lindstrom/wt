@@ -39,6 +39,7 @@ func failGit(t *testing.T, match string) {
 // took the run's whole report with it: the worktrees that did not finish were
 // never printed, and the push that did go through was never named either.
 func TestOfferPushKeepsTheReportWhenANewTipCannotBeRead(t *testing.T) {
+	// Not parallel: puts a fake git on the process-wide PATH.
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}

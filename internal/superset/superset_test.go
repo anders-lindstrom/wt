@@ -37,6 +37,7 @@ func argv(t *testing.T, log string) []string {
 // A CLI on the PATH wins; without one the desktop app's shim is used, and it
 // is not on the PATH by design.
 func TestFind(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	onPath, _ := fake(t, "")
 	home := t.TempDir()
 	shim := filepath.Join(home, ".superset", "bin", "superset")
@@ -108,6 +109,7 @@ func staleFake(t *testing.T, projects string) (CLI, string) {
 // host stale while it serves. The stale rows, and the second process they
 // count, are WORKAROUND(superset-stale-status).
 func TestProbeStates(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	const statusOnly = "status --json"
 	const thenProjects = "status --json|projects list --local --json"
 	for name, tc := range map[string]struct {
@@ -178,6 +180,7 @@ func TestProbeStates(t *testing.T) {
 // A superset that never answers must not hold a probe open, whichever of its
 // two questions is the one left hanging.
 func TestProbeDeadline(t *testing.T) {
+	// Not parallel: swaps readDeadline; sets environment variables for the whole test binary.
 	if testing.Short() {
 		t.Skip("waits out a real deadline")
 	}
@@ -191,8 +194,9 @@ func TestProbeDeadline(t *testing.T) {
 		"status hangs": {hung, 200 * time.Millisecond, true},
 		// WORKAROUND(superset-stale-status), this row and what it asks of
 		// Stale. Not an error: Superset said stale and nothing contradicted it.
-		// The deadline has to leave a loaded machine time to answer status.
-		"stale, the host hangs": {staleAndHung, 3 * time.Second, false},
+		// The deadline has to leave a loaded machine time to answer status:
+		// 3s did not, with the rest of the suite running beside it.
+		"stale, the host hangs": {staleAndHung, 5 * time.Second, false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			old := readDeadline
@@ -226,6 +230,7 @@ func TestProbeDeadline(t *testing.T) {
 // no evidence, and a status that names no running pid costs no process.
 // WORKAROUND(superset-stale-status)
 func TestStaleStatusFixed(t *testing.T) {
+	t.Parallel()
 	const desktop = "/Applications/Superset.app/Contents/MacOS/Superset /Applications/Superset.app/Contents/Resources/app.asar/dist/main/host-service.js"
 	for name, tc := range map[string]struct {
 		status    Status
@@ -264,6 +269,7 @@ func TestStaleStatusFixed(t *testing.T) {
 // ps gives a live process's command line and an error for a pid that is gone.
 // WORKAROUND(superset-stale-status)
 func TestProcessCommand(t *testing.T) {
+	t.Parallel()
 	line, err := ProcessCommand(os.Getpid())
 	if err != nil || !strings.Contains(line, filepath.Base(os.Args[0])) {
 		t.Errorf("own command line = %q, %v, want this test binary", line, err)
@@ -279,6 +285,7 @@ func TestProcessCommand(t *testing.T) {
 
 // Probe on a machine with no Superset says so rather than failing.
 func TestProbeNotInstalled(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	t.Setenv("PATH", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
 	s := Probe()
@@ -288,6 +295,7 @@ func TestProbeNotInstalled(t *testing.T) {
 }
 
 func TestProjects(t *testing.T) {
+	t.Parallel()
 	c, log := fake(t, `echo '[{"id":"p1","name":"one","path":"/repos/one"},{"id":"p2","name":"two","path":"/repos/two"}]'`)
 	ps, err := c.Projects()
 	if err != nil {
@@ -306,6 +314,7 @@ func TestProjects(t *testing.T) {
 // A project recorded through a symlink and a repository discovered through the
 // real path are the same repository.
 func TestProjectAt(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	link := filepath.Join(t.TempDir(), "link")
 	if err := os.Symlink(root, link); err != nil {
@@ -331,6 +340,7 @@ func TestProjectAt(t *testing.T) {
 // --skip-branch-prefix keeps the branch wt's, and nothing here creates a
 // checkout.
 func TestRegisterArgvAndOutcome(t *testing.T) {
+	t.Parallel()
 	c, log := fake(t, `echo '{"workspace":{"id":"w1","name":"fix_wt/x","branch":"fix_wt/x"},"alreadyExists":false}'`)
 	reg, err := c.Register("p1", "fix_wt/x")
 	if err != nil {
@@ -349,6 +359,7 @@ func TestRegisterArgvAndOutcome(t *testing.T) {
 // error: `wt checkout` of a branch that has been through this before must not
 // produce a duplicate or a failure.
 func TestRegisterAlreadyExists(t *testing.T) {
+	t.Parallel()
 	c, _ := fake(t, `echo '{"workspace":{"id":"w1"},"alreadyExists":true}'`)
 	reg, err := c.Register("p1", "fix_wt/x")
 	if err != nil {
@@ -361,6 +372,7 @@ func TestRegisterAlreadyExists(t *testing.T) {
 
 // The CLI's own complaint is what a person needs to see, not "exit status 1".
 func TestRunQuotesSupersetsComplaint(t *testing.T) {
+	t.Parallel()
 	c, _ := fake(t, `printf 'Error: No active organization\nHint: Run: superset auth login\n' >&2; exit 1`)
 	_, err := c.Projects()
 	if err == nil {
@@ -373,6 +385,7 @@ func TestRunQuotesSupersetsComplaint(t *testing.T) {
 
 // A superset that never answers must not hold `wt new` open.
 func TestRunDeadline(t *testing.T) {
+	// Not parallel: swaps readDeadline.
 	c, _ := fake(t, `sleep 30`)
 	old := readDeadline
 	readDeadline = 200 * time.Millisecond
@@ -389,6 +402,7 @@ func TestRunDeadline(t *testing.T) {
 }
 
 func TestVersion(t *testing.T) {
+	t.Parallel()
 	c, _ := fake(t, `echo 1.29.0`)
 	if got := c.Version(); got != "1.29.0" {
 		t.Errorf("Version() = %q", got)
@@ -402,6 +416,7 @@ func TestVersion(t *testing.T) {
 // The live workspaces are read with the same --local --json as the projects,
 // and only the fields a removal needs are kept.
 func TestWorkspaces(t *testing.T) {
+	t.Parallel()
 	c, log := fake(t, `echo '[{"id":"w1","branch":"fix_wt/x","type":"worktree","worktreePath":"/wt/x","archivedAt":null,"worktreeExists":true}]'`)
 	ws, err := c.Workspaces()
 	if err != nil {
@@ -419,6 +434,7 @@ func TestWorkspaces(t *testing.T) {
 // the main checkout's "local" workspace, which Superset deletes differently,
 // and never an archived row.
 func TestWorkspacesAt(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	link := filepath.Join(t.TempDir(), "link")
 	if err := os.Symlink(root, link); err != nil {
@@ -441,6 +457,7 @@ func TestWorkspacesAt(t *testing.T) {
 
 // Delete names the host and the one id, and passes on Superset's warnings.
 func TestDelete(t *testing.T) {
+	t.Parallel()
 	c, log := fake(t, `echo '{"deleted":["w1"],"warnings":["teardown failed"]}'`)
 	warnings, err := c.Delete("w1")
 	if err != nil {

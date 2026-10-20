@@ -18,6 +18,7 @@ import (
 // the run would have stopped, and land a bump on trunk's number in silence:
 // the interrupt takes them out.
 func TestOnInterruptTakesTheRunsMarksOutOfTheList(t *testing.T) {
+	// Not parallel: signals every process group the test binary runs; removes every temporary directory the test binary has open.
 	dir := testkit.CommittedRepo(t, testkit.MinimalConf)
 	write := func(rel, content string) {
 		t.Helper()
@@ -79,10 +80,12 @@ func TestOnInterruptTakesTheRunsMarksOutOfTheList(t *testing.T) {
 }
 
 func TestWatchSignalsSIGINTStatus(t *testing.T) {
+	t.Parallel()
 	watchSignalStatus(t, syscall.SIGINT)
 }
 
 func TestWatchSignalsSIGTERMStatus(t *testing.T) {
+	t.Parallel()
 	watchSignalStatus(t, syscall.SIGTERM)
 }
 

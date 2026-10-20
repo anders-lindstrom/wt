@@ -6,6 +6,7 @@ import (
 )
 
 func TestParseURL(t *testing.T) {
+	t.Parallel()
 	for url, want := range map[string]struct{ host, slug string }{
 		"git@github.com:Telcred/ai-tooling.git":        {"github.com", "Telcred/ai-tooling"},
 		"git@github.com:Telcred/ai-tooling":            {"github.com", "Telcred/ai-tooling"},
@@ -35,6 +36,7 @@ func TestParseURL(t *testing.T) {
 // Only a host wt reads as GitHub's counts; everything else means "this
 // repository is not on GitHub", which is an ordinary state.
 func TestIsGitHub(t *testing.T) {
+	t.Parallel()
 	for host, want := range map[string]bool{
 		"github.com":          true,
 		"github.acme.example": true,
@@ -54,6 +56,7 @@ func TestIsGitHub(t *testing.T) {
 // the same one: it acts on gh's answers, down to fetching a merged pull
 // request's head commit from this remote.
 func TestRemoteOfResolvesTheBaseRepositoryTheWayGhDoes(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	runGit(t, dir, "init", "-q", ".")
 	runGit(t, dir, "remote", "add", "upstream", "git@github.com:sharkdp/fd.git")
@@ -72,6 +75,7 @@ func TestRemoteOfResolvesTheBaseRepositoryTheWayGhDoes(t *testing.T) {
 // `gh repo set-default` writes the answer into git config, and it overrides
 // the ordering: the person said which repository this checkout is about.
 func TestRemoteOfHonoursGhRepoSetDefault(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	runGit(t, dir, "init", "-q", ".")
 	runGit(t, dir, "remote", "add", "upstream", "git@github.com:sharkdp/fd.git")
@@ -90,6 +94,7 @@ func TestRemoteOfHonoursGhRepoSetDefault(t *testing.T) {
 }
 
 func TestRemoteOfFallsBackAndGivesUp(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	runGit(t, dir, "init", "-q", ".")
 	runGit(t, dir, "remote", "add", "fork", "https://github.com/anders/fd")

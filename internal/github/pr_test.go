@@ -13,6 +13,7 @@ func fork(owner, head string) PR {
 // The branch gh puts a pull request on. A fork's branch named after trunk is
 // the one gh renames, because the bare name is trunk itself.
 func TestLocalBranch(t *testing.T) {
+	t.Parallel()
 	same := PR{HeadRefName: "fix_wt/tidy"}
 	if got := same.LocalBranch("main"); got != "fix_wt/tidy" {
 		t.Errorf("LocalBranch() = %q", got)
@@ -28,6 +29,7 @@ func TestLocalBranch(t *testing.T) {
 // Matching a worktree to a pull request must never claim the main checkout:
 // a fork's "master" is not this repository's master.
 func TestBranchesNeverClaimTrunk(t *testing.T) {
+	t.Parallel()
 	for name, tc := range map[string]struct {
 		pr    PR
 		trunk string
@@ -47,6 +49,7 @@ func TestBranchesNeverClaimTrunk(t *testing.T) {
 }
 
 func TestStateLabel(t *testing.T) {
+	t.Parallel()
 	for name, tc := range map[string]struct {
 		pr   PR
 		want string
@@ -72,6 +75,7 @@ func TestStateLabel(t *testing.T) {
 // StatusContexts, which carry a state. A skipped or neutral check is not a
 // failure.
 func TestChecksLabel(t *testing.T) {
+	t.Parallel()
 	check := func(status, conclusion, state string) Check {
 		return Check{Status: status, Conclusion: conclusion, State: state}
 	}
@@ -100,6 +104,7 @@ func TestChecksLabel(t *testing.T) {
 // GraphQL sums the checks up in one state, which is what the by-branch lookup
 // reads; a commit with no checks has no rollup at all.
 func TestChecksLabelFromTheRollupState(t *testing.T) {
+	t.Parallel()
 	for state, want := range map[string]struct{ label, mark string }{
 		"SUCCESS":  {"passing", "✓"},
 		"FAILURE":  {"failing", "✗"},
@@ -123,6 +128,7 @@ func TestChecksLabelFromTheRollupState(t *testing.T) {
 // The two views agree on a cancelled run: GitHub sums it up as FAILURE, so the
 // checks one by one call it failing too.
 func TestChecksLabelCancelledAgreesWithTheRollupState(t *testing.T) {
+	t.Parallel()
 	one := PR{StatusCheckRollup: []Check{{Status: "COMPLETED", Conclusion: "CANCELLED"}}}
 	if got, want := one.ChecksLabel(), rolledUp("FAILURE").ChecksLabel(); got != want {
 		t.Errorf("a cancelled check reads %q, its rollup state reads %q", got, want)
@@ -138,6 +144,7 @@ func rolledUp(state string) PR {
 // A branch reused for a second pull request keeps the open one, whichever
 // order they came back in.
 func TestByBranchKeepsTheOpenOne(t *testing.T) {
+	t.Parallel()
 	closed := PR{Number: 1, State: "CLOSED", HeadRefName: "fix_wt/tidy"}
 	open := PR{Number: 2, State: "OPEN", HeadRefName: "fix_wt/tidy"}
 	for name, prs := range map[string][]PR{
@@ -153,6 +160,7 @@ func TestByBranchKeepsTheOpenOne(t *testing.T) {
 }
 
 func TestByBranchIndexesBothForkSpellings(t *testing.T) {
+	t.Parallel()
 	index := ByBranch([]PR{fork("them", "their-fix")}, "main")
 	for _, branch := range []string{"their-fix", "them/their-fix"} {
 		if _, ok := index[branch]; !ok {
@@ -165,6 +173,7 @@ func TestByBranchIndexesBothForkSpellings(t *testing.T) {
 // swept: GitHub merged it into trunk, and the branch is still at exactly the
 // commit it merged.
 func TestLanded(t *testing.T) {
+	t.Parallel()
 	const tip = "a1b2c3"
 	landed := func(base string) PR { return PR{State: "MERGED", HeadRefOid: tip, BaseRefName: base} }
 	for name, tc := range map[string]struct {
@@ -201,6 +210,7 @@ func TestLanded(t *testing.T) {
 // A stranger's fork using this repository's branch name must not take the row
 // from the pull request the local branch actually belongs to.
 func TestByBranchPrefersThisRepositorysOwnPullRequest(t *testing.T) {
+	t.Parallel()
 	own := PR{Number: 10, HeadRefName: "feat_wt/foo", State: "OPEN"}
 	theirs := fork("stranger", "feat_wt/foo")
 	theirs.Number = 20

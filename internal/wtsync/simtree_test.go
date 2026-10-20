@@ -6,6 +6,7 @@ import (
 )
 
 func TestResolvedTreeReplacesABlob(t *testing.T) {
+	t.Parallel()
 	dir := repoWith(t, map[string]string{"a.txt": "a\n", "sub/b.txt": "b\n"}, nil, nil)
 	tree := gitIn(t, dir, "rev-parse", "HEAD^{tree}")
 
@@ -25,6 +26,7 @@ func TestResolvedTreeReplacesABlob(t *testing.T) {
 }
 
 func TestResolvedTreeKeepsTheExecutableBit(t *testing.T) {
+	t.Parallel()
 	dir := repoWith(t, map[string]string{"s.sh": "old\n"}, nil, nil)
 	gitIn(t, dir, "update-index", "--chmod=+x", "s.sh")
 	gitIn(t, dir, "commit", "-q", "-m", "exec")
@@ -40,6 +42,7 @@ func TestResolvedTreeKeepsTheExecutableBit(t *testing.T) {
 }
 
 func TestResolvedTreeRefusesAPathThatIsNotThere(t *testing.T) {
+	t.Parallel()
 	dir := repoWith(t, map[string]string{"a.txt": "a\n"}, nil, nil)
 	tree := gitIn(t, dir, "rev-parse", "HEAD^{tree}")
 
@@ -50,6 +53,7 @@ func TestResolvedTreeRefusesAPathThatIsNotThere(t *testing.T) {
 }
 
 func TestResolvedTreeIsANoOpForNoPaths(t *testing.T) {
+	t.Parallel()
 	dir := repoWith(t, map[string]string{"a.txt": "a\n"}, nil, nil)
 	tree := gitIn(t, dir, "rev-parse", "HEAD^{tree}")
 

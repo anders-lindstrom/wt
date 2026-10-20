@@ -21,6 +21,7 @@ import (
 // The state right after wt up --no-push is ahead and behind at once, and a
 // second wt up on it has to run.
 func TestUpRunsAgainOnABranchRebasedAndNotPushed(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -48,6 +49,7 @@ func TestUpRunsAgainOnABranchRebasedAndNotPushed(t *testing.T) {
 // the patch that was pushed, so only the tips the branch once had say it was
 // rebased.
 func TestSyncRunRunsAgainAfterAStrategyResolvedRebase(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -79,6 +81,7 @@ func TestSyncRunRunsAgainAfterAStrategyResolvedRebase(t *testing.T) {
 // Diverged for real refuses with nothing touched; --allow-diverged rebases
 // the branch as it stands.
 func TestUpRefusesABranchThatDivergedFromItsRemote(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -131,6 +134,7 @@ func TestUpRefusesABranchThatDivergedFromItsRemote(t *testing.T) {
 // The opposite of rebased-and-not-pushed: a branch that was rebased, whose
 // remote then gained a commit the branch never had.
 func TestUpRefusesARebasedBranchWhoseRemoteGainedACommit(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -158,6 +162,7 @@ func TestUpRefusesARebasedBranchWhoseRemoteGainedACommit(t *testing.T) {
 // Behind, in a checkout a fast-forward is not safe in: nothing is touched,
 // and the plan names it before anybody runs anything.
 func TestUpBehindAndNotFastForwardableTouchesNothing(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -221,6 +226,7 @@ func legacyPlanToken(ctx *kit.Context, trunk string, stack []string) string {
 // covers the remote commit the caller was shown: wt up --allow-diverged
 // --expect goes ahead over that divergence and no other.
 func TestPlanHoldsADivergedPlanToItsToken(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -274,6 +280,7 @@ func TestPlanHoldsADivergedPlanToItsToken(t *testing.T) {
 // does not bounce the caller: wt fast-forwards, and the token has no remote
 // commit in it.
 func TestUpExpectIsNotBouncedByARemoteThatMovedAhead(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -293,6 +300,7 @@ func TestUpExpectIsNotBouncedByARemoteThatMovedAhead(t *testing.T) {
 // fast-forwarded comes before one that diverged: --allow-diverged does not
 // clear it, so there is no token.
 func TestPlanIsHeldBackByAnyStackMembersOwnRemote(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -346,6 +354,7 @@ func TestPlanIsHeldBackByAnyStackMembersOwnRemote(t *testing.T) {
 // and rebased, and the child lands on the parent's final tip with its own
 // commits and nothing else.
 func TestUpFastForwardsAStackParent(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -381,6 +390,7 @@ func TestUpFastForwardsAStackParent(t *testing.T) {
 // nothing to check, on every run, however far its upstream is ahead. It is
 // never fast-forwarded onto trunk and never refused.
 func TestUpLeavesABranchThatTracksTrunkUnchecked(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -416,6 +426,7 @@ func TestUpLeavesABranchThatTracksTrunkUnchecked(t *testing.T) {
 // somewhere a tracking ref cannot show: the run goes on, and says so for the
 // one it could not check.
 func TestUpGoesOnWhenTheRemoteIsGoneOrCannotBeRead(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -455,6 +466,7 @@ func TestUpGoesOnWhenTheRemoteIsGoneOrCannotBeRead(t *testing.T) {
 // code of its own and trunk not blamed; --no-fetch compares with what was
 // last fetched and says so.
 func TestUpRefusesWhenTheBranchsRemoteCannotBeFetched(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -492,6 +504,7 @@ func TestUpRefusesWhenTheBranchsRemoteCannotBeFetched(t *testing.T) {
 
 // The run's own fetch brings the branch's remote: nobody fetched it before.
 func TestUpFetchesTheBranchsOwnRemoteWithTrunk(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -518,6 +531,7 @@ func TestUpFetchesTheBranchsOwnRemoteWithTrunk(t *testing.T) {
 // and refuses the diverged one in words; its token lets a run under
 // --allow-diverged go ahead over exactly the divergence it showed.
 func TestSyncOverviewReportsOwnRemoteAndItsTokenCoversADivergence(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -583,6 +597,7 @@ func TestSyncOverviewReportsOwnRemoteAndItsTokenCoversADivergence(t *testing.T) 
 // A run with nothing named leaves a diverged worktree alone and names what
 // holds it; --if-ready makes that a failure.
 func TestSyncRunWithNothingNamedLeavesADivergedWorktree(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -625,6 +640,7 @@ func TestSyncRunWithNothingNamedLeavesADivergedWorktree(t *testing.T) {
 // remote has includes trunk's commits, so it is diverged and refused like
 // any other. The sentence says what it looks like.
 func TestUpRefusesABranchRebasedElsewhereAndSaysSo(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -662,6 +678,7 @@ func TestUpRefusesABranchRebasedElsewhereAndSaysSo(t *testing.T) {
 // A git that refuses the fast-forward itself touches nothing: the
 // participant is refused with the reason failed, and no ref is left.
 func TestUpRefusesWhenTheFastForwardItselfFails(t *testing.T) {
+	t.Parallel()
 	f := synccmdtest.NewTrunkFixture(t)
 	x, opts := f.PushedWork(t)
 	before := testkit.GitOut(t, x, "rev-parse", "HEAD")

@@ -68,6 +68,7 @@ dependency_graph:
 `
 
 func TestParseReadsEverySection(t *testing.T) {
+	t.Parallel()
 	cfg, err := Parse([]byte(serverYAML))
 	if err != nil {
 		t.Fatal(err)
@@ -84,6 +85,7 @@ func TestParseReadsEverySection(t *testing.T) {
 }
 
 func TestParseRejectsUnknownStrategyAndMissingParameters(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"unknown strategy":        "conflicts:\n  - paths: [a]\n    strategy: magic\n",
 		"owned-line needs line":   "conflicts:\n  - paths: [a]\n    strategy: owned-line\n    rule: keep-branch\n",
@@ -107,6 +109,7 @@ func TestParseRejectsUnknownStrategyAndMissingParameters(t *testing.T) {
 }
 
 func TestParseDefaultsOpenAPIRuleAndListDelimiter(t *testing.T) {
+	t.Parallel()
 	cfg, err := Parse([]byte("conflicts:\n  - paths: [a.json]\n    strategy: openapi\n  - paths: [s]\n    strategy: list-union\n    line: '^include '\n"))
 	if err != nil {
 		t.Fatal(err)
@@ -120,6 +123,7 @@ func TestParseDefaultsOpenAPIRuleAndListDelimiter(t *testing.T) {
 }
 
 func TestMatchGlob(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		pattern, path string
 		want          bool
@@ -144,6 +148,7 @@ func TestMatchGlob(t *testing.T) {
 }
 
 func TestRuleForTakesTheFirstMatch(t *testing.T) {
+	t.Parallel()
 	cfg, err := Parse([]byte(serverYAML))
 	if err != nil {
 		t.Fatal(err)
@@ -158,6 +163,7 @@ func TestRuleForTakesTheFirstMatch(t *testing.T) {
 }
 
 func TestLoadFromTrunkReadsOriginNotTheWorkingTree(t *testing.T) {
+	t.Parallel()
 	local, origin := repoWithOrigin(t)
 	commitOnOrigin(t, local, origin, ".wt-sync.yaml", "conflicts:\n  - paths: [lock]\n    strategy: take-trunk\n")
 	// A different, malicious-looking config in the working tree must be ignored.
@@ -174,6 +180,7 @@ func TestLoadFromTrunkReadsOriginNotTheWorkingTree(t *testing.T) {
 }
 
 func TestLoadFromTrunkReportsNoConfig(t *testing.T) {
+	t.Parallel()
 	local, _ := repoWithOrigin(t)
 	if _, err := LoadFromTrunk(local, "main"); !errors.Is(err, ErrNoConfig) {
 		t.Errorf("err = %v, want ErrNoConfig", err)
@@ -181,6 +188,7 @@ func TestLoadFromTrunkReportsNoConfig(t *testing.T) {
 }
 
 func TestLoadFromTrunkReportsWhenTheRefItselfIsMissing(t *testing.T) {
+	t.Parallel()
 	// A repository with no origin remote at all: origin/main is not merely
 	// missing the file, the ref itself does not exist, and that must read
 	// as a distinct, actionable error rather than ErrNoConfig.
@@ -201,6 +209,7 @@ func TestLoadFromTrunkReportsWhenTheRefItselfIsMissing(t *testing.T) {
 }
 
 func TestLoadFromRefReadsAPinnedSHA(t *testing.T) {
+	t.Parallel()
 	local, origin := repoWithOrigin(t)
 	commitOnOrigin(t, local, origin, ".wt-sync.yaml", "conflicts:\n  - paths: [lock]\n    strategy: take-trunk\n")
 	sha := gitIn(t, local, "rev-parse", "--verify", "origin/main")

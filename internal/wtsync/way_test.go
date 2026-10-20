@@ -10,6 +10,7 @@ import (
 // refuse or discard. This is where the wording is pinned; the callers only
 // prefix it with what they know.
 func TestWayOutCoversEverySituation(t *testing.T) {
+	t.Parallel()
 	const (
 		resume = "wt sync resume"
 		undo   = "wt sync undo"
@@ -88,6 +89,7 @@ func TestWayOutCoversEverySituation(t *testing.T) {
 // undo rather than saying nothing, since a person reading it has to do
 // something.
 func TestWayOutOfNothingStillNamesUndo(t *testing.T) {
+	t.Parallel()
 	if got := WayOut(Way{Work: "bump"}); !strings.Contains(got, "wt sync undo bump") {
 		t.Errorf("got %q", got)
 	}

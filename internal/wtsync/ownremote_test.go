@@ -65,6 +65,7 @@ func (f ownFixture) state(t *testing.T, branch string) OwnRemote {
 }
 
 func TestOwnRemoteIsTheRefAPushReplaces(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	if o := f.state(t, "feat"); o.State != OwnInSync || o.Ref != "origin/feat" || o.Commit == "" {
 		t.Fatalf("pushed and untouched: %+v", o)
@@ -88,6 +89,7 @@ func TestOwnRemoteIsTheRefAPushReplaces(t *testing.T) {
 // origin has nothing to check, whatever its upstream is ahead by: the
 // upstream is not where it pushes.
 func TestOwnRemoteIsNotTheUpstream(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	gittest.Git(t, f.dir, "branch", "--track", "stats", "origin/main")
 	f.pushFromOther(t, "main", "m.txt", "m\n")
@@ -111,6 +113,7 @@ func TestOwnRemoteIsNotTheUpstream(t *testing.T) {
 }
 
 func TestOwnRemoteBehindAndDiverged(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	theirs := f.pushFromOther(t, "feat", "t.txt", "t\n")
 	gittest.Git(t, f.dir, "fetch", "-q", "origin")
@@ -132,6 +135,7 @@ func TestOwnRemoteBehindAndDiverged(t *testing.T) {
 // so only the tips the branch once had can say so: its reflog, and with no
 // reflog the safety ref a run pinned.
 func TestOwnRemoteRebasedIsAFormerTip(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	pushed := gittest.Git(t, f.dir, "rev-parse", "feat")
 	// Trunk and the branch both add f.txt, so the rebase stops and is
@@ -166,6 +170,7 @@ func TestOwnRemoteRebasedIsAFormerTip(t *testing.T) {
 
 // A plain rebase replays the same patches, which is enough on its own.
 func TestOwnRemoteRebasedIsPatchForPatch(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	f.pushFromOther(t, "main", "m.txt", "m\n")
 	gittest.Git(t, f.dir, "fetch", "-q", "origin")
@@ -180,6 +185,7 @@ func TestOwnRemoteRebasedIsPatchForPatch(t *testing.T) {
 // commit it never had. The old tip the branch once had is not the remote's
 // tip any more, and the new commit matches nothing.
 func TestOwnRemoteRebasedOverACommitItNeverHadIsDiverged(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	f.pushFromOther(t, "main", "m.txt", "m\n")
 	gittest.Git(t, f.dir, "fetch", "-q", "origin")
@@ -199,6 +205,7 @@ func TestOwnRemoteRebasedOverACommitItNeverHadIsDiverged(t *testing.T) {
 // branch's side would match any on the remote's: the patch rule does not
 // take them for a rebase.
 func TestOwnRemoteEmptyCommitsAreNotARebase(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	gittest.Git(t, f.other, "fetch", "-q", "origin")
 	gittest.Git(t, f.other, "checkout", "-q", "-B", "feat", "origin/feat")
@@ -215,6 +222,7 @@ func TestOwnRemoteEmptyCommitsAreNotARebase(t *testing.T) {
 // remote is not its upstream's, and pushes it there under its own name:
 // that is the ref compared, not origin's.
 func TestOwnRemoteFallsBackToThePushRemote(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	fork := filepath.Join(t.TempDir(), "fork.git")
 	gittest.Git(t, f.dir, "clone", "-q", "--bare", f.origin, fork)
@@ -247,6 +255,7 @@ func TestOwnRemoteFallsBackToThePushRemote(t *testing.T) {
 // A remote whose name continues another's does not claim that one's refs:
 // origin/team is not where origin's team/x is pushed.
 func TestOwnRemoteIsNotARemoteWhoseNameOverlaps(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	gittest.Git(t, f.dir, "checkout", "-q", "-b", "team/x")
 	gittest.Git(t, f.dir, "push", "-q", "-u", "origin", "team/x")
@@ -266,6 +275,7 @@ func TestOwnRemoteIsNotARemoteWhoseNameOverlaps(t *testing.T) {
 }
 
 func TestOwnRemoteGone(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	gittest.Git(t, f.origin, "update-ref", "-d", "refs/heads/feat")
 	// As last fetched the tracking ref is still there and says in sync.
@@ -302,6 +312,7 @@ func TestOwnRemoteGone(t *testing.T) {
 // A ref this command fetched says so, and one it could not fetch says why
 // and keeps a run off: the rest of it is then as last fetched.
 func TestOwnRemoteRecordsWhatAFetchDid(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	theirs := f.pushFromOther(t, "feat", "t.txt", "t\n")
 	own, err := ReadOwn(f.dir, "main")
@@ -334,6 +345,7 @@ func TestOwnRemoteRecordsWhatAFetchDid(t *testing.T) {
 // Where a push lands cannot be read from a tracking ref when the remote
 // pushes somewhere it does not fetch from.
 func TestOwnRemoteUnknown(t *testing.T) {
+	t.Parallel()
 	for name, set := range map[string]func(t *testing.T, f ownFixture){
 		"another push URL": func(t *testing.T, f ownFixture) {
 			gittest.Git(t, f.dir, "remote", "set-url", "--push", "origin", filepath.Join(t.TempDir(), "elsewhere.git"))
@@ -370,6 +382,7 @@ func TestOwnRemoteUnknown(t *testing.T) {
 }
 
 func TestSameRepository(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		a, b string
 		want bool
@@ -392,6 +405,7 @@ func TestSameRepository(t *testing.T) {
 // A push remote of the branch's own is where it is compared, and fetched by
 // one call to that remote.
 func TestOwnRemoteFollowsThePushRemote(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	fork := filepath.Join(t.TempDir(), "fork.git")
 	gittest.Git(t, f.dir, "clone", "-q", "--bare", f.origin, fork)
@@ -417,6 +431,7 @@ func TestOwnRemoteFollowsThePushRemote(t *testing.T) {
 // push.default=upstream makes it the push destination of a branch tracking
 // it, and a run must not fast-forward a work branch onto it.
 func TestOwnRemoteIsNeverTrunkOnAnotherRemote(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	fork := filepath.Join(t.TempDir(), "upstream.git")
 	gittest.Git(t, f.dir, "clone", "-q", "--bare", f.origin, fork)
@@ -443,6 +458,7 @@ func TestOwnRemoteIsNeverTrunkOnAnotherRemote(t *testing.T) {
 // A remote whose fetch refspec does not map every branch is asked for
 // nothing: a ref written by name would be one its configuration never maps.
 func TestOwnRemoteAsksOnlyAStandardRefspec(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	gittest.Git(t, f.dir, "config", "remote.origin.fetch", "+refs/heads/main:refs/remotes/origin/main")
 	own, err := ReadOwn(f.dir, "main")
@@ -455,6 +471,7 @@ func TestOwnRemoteAsksOnlyAStandardRefspec(t *testing.T) {
 }
 
 func TestOwnBlocks(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	behind := OwnRemote{State: OwnBehind, Ref: "origin/feat", Behind: 1}
 	if code, _ := OwnBlocks(behind, f.dir, false, nil); code != "" {
@@ -486,6 +503,7 @@ func TestOwnBlocks(t *testing.T) {
 // back to the tip the run found, which is what its safety ref pins: not to
 // the tip the rebase started from.
 func TestRebaseRestoresToTheSafetyRefPinnedBeforeAFastForward(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	found := gittest.Git(t, f.dir, "rev-parse", "feat")
 	// The remote's commit and trunk both write c.txt: the rebase stops on
@@ -522,6 +540,7 @@ func TestRebaseRestoresToTheSafetyRefPinnedBeforeAFastForward(t *testing.T) {
 // cannot be fast-forwarded it is refused whatever its class. A diverged
 // branch a run would not rebase anyway is skipped as before.
 func TestPreflightForABranchBehindItsRemote(t *testing.T) {
+	t.Parallel()
 	behind := OwnRemote{State: OwnBehind, Ref: "origin/x", Behind: 2}
 	blocked := behind
 	blocked.Blocks, blocked.Why = OwnBlockOperation, "a bisect is in progress"
@@ -552,6 +571,7 @@ func TestPreflightForABranchBehindItsRemote(t *testing.T) {
 // A partial clone has git print its filter after the URL in git remote -v:
 // that must not make every branch of it unreadable.
 func TestOwnRemoteReadsAPartialClone(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	gittest.Git(t, f.dir, "config", "remote.origin.promisor", "true")
 	gittest.Git(t, f.dir, "config", "remote.origin.partialclonefilter", "blob:none")
@@ -566,6 +586,7 @@ func TestOwnRemoteReadsAPartialClone(t *testing.T) {
 // A merge on the remote side has no patch to match: a branch that was
 // rebased, whose remote then gained a merge commit, is diverged.
 func TestOwnRemoteAMergeOnTheRemoteIsDiverged(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	f.pushFromOther(t, "main", "m.txt", "m\n")
 	gittest.Git(t, f.other, "checkout", "-q", "-B", "feat", "origin/feat")
@@ -583,6 +604,7 @@ func TestOwnRemoteAMergeOnTheRemoteIsDiverged(t *testing.T) {
 // that renames sends it somewhere else: git resolves both, and the ref it
 // names is the one compared.
 func TestOwnRemoteFollowsMatchingAndNotARenamingPushRefspec(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	gittest.Git(t, f.dir, "config", "push.default", "matching")
 	if o := f.state(t, "feat"); o.State != OwnInSync || o.Ref != "origin/feat" {
@@ -612,6 +634,7 @@ func TestOwnRemoteFollowsMatchingAndNotARenamingPushRefspec(t *testing.T) {
 // a local branch: no destination on a remote, so the branch's own name on
 // origin is what is compared.
 func TestOwnRemoteOfABranchThatTracksALocalBranch(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	gittest.Git(t, f.dir, "checkout", "-q", "-b", "child")
 	f.commit(t, f.dir, "c.txt", "c\n", "child 1")
@@ -631,6 +654,7 @@ func TestOwnRemoteOfABranchThatTracksALocalBranch(t *testing.T) {
 // a new branch that took its name: the remote still holding the old one's
 // commit is not something the new one ever had.
 func TestOwnRemoteOfARecreatedBranchIgnoresTheOldOnesRefs(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	pushed := gittest.Git(t, f.dir, "rev-parse", "feat")
 	if _, err := WriteSafety(f.dir, "feat", pushed, 7); err != nil {
@@ -649,6 +673,7 @@ func TestOwnRemoteOfARecreatedBranchIgnoresTheOldOnesRefs(t *testing.T) {
 // else: an older entry at the same commit is the person's own, and what is
 // left still reads as a chain.
 func TestDisownDropsOnlyTheRunsOwnReflogEntries(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	local := gittest.Git(t, f.dir, "rev-parse", "feat")
 	theirs := f.pushFromOther(t, "feat", "t.txt", "t\n")
@@ -707,6 +732,7 @@ func TestDisownDropsOnlyTheRunsOwnReflogEntries(t *testing.T) {
 
 // A fast-forward a run pinned and never made is not a place the branch was.
 func TestOwnRemoteAFastForwardThatNeverHappenedIsNoFormerTip(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	local := gittest.Git(t, f.dir, "rev-parse", "feat")
 	theirs := f.pushFromOther(t, "feat", "t.txt", "t\n")
@@ -724,6 +750,7 @@ func TestOwnRemoteAFastForwardThatNeverHappenedIsNoFormerTip(t *testing.T) {
 // fast-forwarded and finished its rebase left the remote's commit a former
 // tip for good.
 func TestOwnRemoteAFinishedFastForwardIsAFormerTipWithoutAReflog(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	local := gittest.Git(t, f.dir, "rev-parse", "feat")
 	theirs := f.pushFromOther(t, "feat", "f.txt", "theirs\n")
@@ -745,6 +772,7 @@ func TestOwnRemoteAFinishedFastForwardIsAFormerTipWithoutAReflog(t *testing.T) {
 // Remotes that cannot be read are not "nothing to check": every branch is
 // unknown, with why.
 func TestReadOwnOrUnknownSaysWhy(t *testing.T) {
+	t.Parallel()
 	own := ReadOwnOrUnknown(t.TempDir(), "main")
 	if o := own.State("feat"); o.State != OwnUnknown || !strings.HasPrefix(o.Why, "the remotes cannot be read: ") {
 		t.Fatalf("%+v", o)
@@ -762,6 +790,7 @@ func TestReadOwnOrUnknownSaysWhy(t *testing.T) {
 // through a run that did not finish. Reset back by hand, with a commit on
 // top, it has diverged, whatever its reflog still says.
 func TestOwnRemoteAFastForwardOfAnUnfinishedRunIsNoFormerTip(t *testing.T) {
+	t.Parallel()
 	f := newOwnFixture(t)
 	local := gittest.Git(t, f.dir, "rev-parse", "feat")
 	theirs := f.pushFromOther(t, "feat", "t.txt", "t\n")

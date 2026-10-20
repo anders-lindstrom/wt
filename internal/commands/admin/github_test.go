@@ -18,6 +18,7 @@ import (
 // difference between `wt pr` and `wt list`: here an inactive integration is
 // an error a person can act on.
 func TestGitHubGateNamesTheGateThatFailed(t *testing.T) {
+	t.Parallel()
 	for name, tc := range map[string]struct {
 		set  func(t *testing.T, ctx *kit.Context)
 		want string
@@ -27,20 +28,20 @@ func TestGitHubGateNamesTheGateThatFailed(t *testing.T) {
 			"GitHub is off in your wt config; turn it on with `wt config set github true`",
 		},
 		"no gh": {
-			func(t *testing.T, _ *kit.Context) { testkit.StubGitHub(t, github.CLI{}, testkit.GhRepo, true) },
+			func(_ *testing.T, ctx *kit.Context) { testkit.StubGitHub(ctx, github.CLI{}, testkit.GhRepo, true) },
 			"gh is not on your PATH",
 		},
 		"not a GitHub repository": {
-			func(t *testing.T, _ *kit.Context) {
-				testkit.StubGitHub(t, github.CLI{Exe: "/nope/gh"}, github.Remote{}, false)
+			func(_ *testing.T, ctx *kit.Context) {
+				testkit.StubGitHub(ctx, github.CLI{Exe: "/nope/gh"}, github.Remote{}, false)
 			},
 			"has no GitHub remote",
 		},
 		// No gate asks `gh auth status` any more: the real call is what
 		// finds out, and gh's own complaint is turned into this line.
 		"not logged in": {
-			func(t *testing.T, _ *kit.Context) {
-				testkit.FakeGitHubWith(t, `echo 'To get started with GitHub CLI, please run:  gh auth login' >&2; exit 1`)
+			func(t *testing.T, ctx *kit.Context) {
+				testkit.FakeGitHubWith(t, ctx, `echo 'To get started with GitHub CLI, please run:  gh auth login' >&2; exit 1`)
 			},
 			"gh is not logged in to github.com; run `gh auth login --hostname github.com`",
 		},
@@ -66,11 +67,12 @@ func TestGitHubGateNamesTheGateThatFailed(t *testing.T) {
 // The happy path: somebody else's branch, so the worktree is named for the
 // pull request, and gh is the one that puts it on the branch.
 func TestPRCheckoutMakesAWorktreeOnThePullRequestsBranch(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	log := testkit.FakeGitHub(t, testkit.OpenPR(12, "residential_fixes", "Residents no longer rewrite a door"))
+	log := testkit.FakeGitHub(t, ctx, testkit.OpenPR(12, "residential_fixes", "Residents no longer rewrite a door"))
 
 	var errs bytes.Buffer
 	path, err := PRCheckout(ctx, 12, PROptions{}, &errs)
@@ -96,11 +98,12 @@ func TestPRCheckoutMakesAWorktreeOnThePullRequestsBranch(t *testing.T) {
 // A head branch that already follows this repository's convention keeps its
 // own name, so a branch wt made lands where `wt new` would have put it.
 func TestPRCheckoutKeepsAWtBranchsOwnName(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	testkit.FakeGitHub(t, testkit.OpenPR(7, "fix_wt/login-crash", "Login crash"))
+	testkit.FakeGitHub(t, ctx, testkit.OpenPR(7, "fix_wt/login-crash", "Login crash"))
 
 	var errs bytes.Buffer
 	path, err := PRCheckout(ctx, 7, PROptions{}, &errs)
@@ -115,11 +118,12 @@ func TestPRCheckoutKeepsAWtBranchsOwnName(t *testing.T) {
 // The branch is already in a worktree: that path is the answer, nothing is
 // made, and the exit is a success so `cd "$(wt pr checkout 7)"` still works.
 func TestPRCheckoutOnABranchAlreadyCheckedOutSaysWhere(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	testkit.FakeGitHub(t, testkit.OpenPR(7, "fix_wt/login-crash", "Login crash"))
+	testkit.FakeGitHub(t, ctx, testkit.OpenPR(7, "fix_wt/login-crash", "Login crash"))
 	var errs bytes.Buffer
 	first, err := PRCheckout(ctx, 7, PROptions{}, &errs)
 	if err != nil {
@@ -146,6 +150,7 @@ func TestPRCheckoutOnABranchAlreadyCheckedOutSaysWhere(t *testing.T) {
 // worktree added with --no-checkout reads to git as one whose every tracked
 // file was deleted, and an unforced remove refuses it.
 func TestPRCheckoutLeavesNothingBehindWhenGhFails(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	if err := os.WriteFile(filepath.Join(main, "README.md"), []byte("hello\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -156,7 +161,7 @@ func TestPRCheckoutLeavesNothingBehindWhenGhFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	testkit.FakeGitHubWith(t, `[ "$1 $2" = 'pr checkout' ] && { echo 'fetch failed' >&2; exit 1; }`,
+	testkit.FakeGitHubWith(t, ctx, `[ "$1 $2" = 'pr checkout' ] && { echo 'fetch failed' >&2; exit 1; }`,
 		testkit.OpenPR(12, "residential_fixes", "Fixes"))
 
 	var errs bytes.Buffer
@@ -185,11 +190,12 @@ func TestPRCheckoutLeavesNothingBehindWhenGhFails(t *testing.T) {
 // Without a number the open pull requests are listed and handed to the
 // picker, and what it picks is what gets checked out.
 func TestPRCheckoutWithoutANumberAsks(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	log := testkit.FakeGitHub(t,
+	log := testkit.FakeGitHub(t, ctx,
 		testkit.OpenPR(12, "residential_fixes", "Fixes"),
 		testkit.OpenPR(7, "fix_wt/login-crash", "Login crash"))
 
@@ -217,11 +223,12 @@ func TestPRCheckoutWithoutANumberAsks(t *testing.T) {
 
 // With nobody to ask, `wt pr checkout` says so rather than choosing.
 func TestPRCheckoutWithoutANumberOrAPickerRefuses(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	testkit.FakeGitHub(t, testkit.OpenPR(12, "x", "X"))
+	testkit.FakeGitHub(t, ctx, testkit.OpenPR(12, "x", "X"))
 	var errs bytes.Buffer
 	if _, err := PRCheckout(ctx, 0, PROptions{}, &errs); err == nil {
 		t.Fatal("PRCheckout chose for itself")
@@ -231,6 +238,7 @@ func TestPRCheckoutWithoutANumberOrAPickerRefuses(t *testing.T) {
 // doctor's GitHub section: what it found, and never a problem — a machine
 // without gh is an ordinary machine.
 func TestDoctorReportsGitHubState(t *testing.T) {
+	t.Parallel()
 	for name, tc := range map[string]struct {
 		set  func(t *testing.T, ctx *kit.Context)
 		want string
@@ -240,18 +248,18 @@ func TestDoctorReportsGitHubState(t *testing.T) {
 			"  - off in your wt config; turn it on with `wt config set github true`",
 		},
 		"no gh": {
-			func(t *testing.T, _ *kit.Context) { testkit.StubGitHub(t, github.CLI{}, testkit.GhRepo, true) },
+			func(_ *testing.T, ctx *kit.Context) { testkit.StubGitHub(ctx, github.CLI{}, testkit.GhRepo, true) },
 			"  - no gh on the PATH",
 		},
 		"not a GitHub repository": {
-			func(t *testing.T, _ *kit.Context) {
-				testkit.StubGitHub(t, github.CLI{Exe: "/nope/gh"}, github.Remote{}, false)
+			func(_ *testing.T, ctx *kit.Context) {
+				testkit.StubGitHub(ctx, github.CLI{Exe: "/nope/gh"}, github.Remote{}, false)
 			},
 			"  - no GitHub remote for",
 		},
 		"not logged in": {
-			func(t *testing.T, _ *kit.Context) {
-				testkit.FakeGitHubWith(t, `[ "$1 $2" = 'auth status' ] && `+
+			func(t *testing.T, ctx *kit.Context) {
+				testkit.FakeGitHubWith(t, ctx, `[ "$1 $2" = 'auth status' ] && `+
 					`{ echo 'To get started with GitHub CLI, please run:  gh auth login' >&2; exit 1; }`)
 			},
 			"which gh is not logged in to; run `gh auth login --hostname github.com`",
@@ -259,13 +267,13 @@ func TestDoctorReportsGitHubState(t *testing.T) {
 		// A check that failed for its own reasons is not a missing login, and
 		// saying it is sends you off to log in again for nothing.
 		"the login could not be checked": {
-			func(t *testing.T, _ *kit.Context) {
-				testkit.FakeGitHubWith(t, `[ "$1 $2" = 'auth status' ] && { echo 'dial tcp: no route to host' >&2; exit 1; }`)
+			func(t *testing.T, ctx *kit.Context) {
+				testkit.FakeGitHubWith(t, ctx, `[ "$1 $2" = 'auth status' ] && { echo 'dial tcp: no route to host' >&2; exit 1; }`)
 			},
 			"could not check gh's login for github.com: gh auth status failed: dial tcp: no route to host",
 		},
 		"usable": {
-			func(t *testing.T, _ *kit.Context) { testkit.FakeGitHub(t) },
+			func(t *testing.T, ctx *kit.Context) { testkit.FakeGitHub(t, ctx) },
 			"✓ t/demo on github.com — gh is logged in",
 		},
 	} {
@@ -292,11 +300,12 @@ func TestDoctorReportsGitHubState(t *testing.T) {
 
 // wt pr list is the same facts read from the pull request's end.
 func TestPRListNamesTheWorktreeOnEachPullRequest(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	log := testkit.FakeGitHub(t,
+	log := testkit.FakeGitHub(t, ctx,
 		testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"),
 		testkit.OpenPR(13, "nobody-is-on-this", "Something else"))
 	var errs bytes.Buffer
@@ -326,11 +335,12 @@ func TestPRListNamesTheWorktreeOnEachPullRequest(t *testing.T) {
 }
 
 func TestPRListSaysWhenThereAreNone(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	testkit.FakeGitHub(t)
+	testkit.FakeGitHub(t, ctx)
 	var out bytes.Buffer
 	if err := PRList(ctx, &out, 0); err != nil {
 		t.Fatal(err)
@@ -344,6 +354,7 @@ func TestPRListSaysWhenThereAreNone(t *testing.T) {
 // this repository's, and pr-<number>-<branch> otherwise, under the type the
 // branch suggests, cut to something a person can type.
 func TestPRWorkName(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -391,6 +402,7 @@ func TestPRWorkName(t *testing.T) {
 // checkout` fetches that branch by name — so a merged pull request is picked
 // up from refs/pull/<n>/head instead. An open one gets no such second chance.
 func TestPRCheckoutOfAMergedPullRequestUsesThePullRef(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	if err := os.WriteFile(filepath.Join(main, "README.md"), []byte("hello\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -406,7 +418,7 @@ func TestPRCheckoutOfAMergedPullRequestUsesThePullRef(t *testing.T) {
 		t.Fatal(err)
 	}
 	merged := github.PR{Number: 34, Title: "Gone", HeadRefName: "fix_wt/ses-endpoint", State: "MERGED"}
-	testkit.FakeGitHubWith(t, `[ "$1 $2" = 'pr checkout' ] && { echo "couldn't find remote ref" >&2; exit 1; }`, merged)
+	testkit.FakeGitHubWith(t, ctx, `[ "$1 $2" = 'pr checkout' ] && { echo "couldn't find remote ref" >&2; exit 1; }`, merged)
 
 	var errs bytes.Buffer
 	path, err := PRCheckout(ctx, 34, PROptions{}, &errs)
@@ -427,11 +439,12 @@ func TestPRCheckoutOfAMergedPullRequestUsesThePullRef(t *testing.T) {
 // wt pr open hands gh the number and --web; nothing else about it is wt's
 // business.
 func TestPROpenAsksGhToOpenThePullRequest(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	log := testkit.FakeGitHub(t, testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
+	log := testkit.FakeGitHub(t, ctx, testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
 	var errs bytes.Buffer
 	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
@@ -458,11 +471,12 @@ func TestPROpenAsksGhToOpenThePullRequest(t *testing.T) {
 // A worktree with no pull request is one line and a non-zero exit, and no
 // browser window.
 func TestPROpenSaysSoWhenThereIsNone(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	log := testkit.FakeGitHub(t, testkit.OpenPR(12, "somebody-elses-branch", "Not yours"))
+	log := testkit.FakeGitHub(t, ctx, testkit.OpenPR(12, "somebody-elses-branch", "Not yours"))
 	var errs bytes.Buffer
 	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
@@ -484,12 +498,13 @@ func TestPROpenSaysSoWhenThereIsNone(t *testing.T) {
 
 // Standing in a worktree, `wt pr open` needs no argument.
 func TestPROpenDefaultsToTheWorktreeYouAreIn(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, err := kit.Open(main)
 	if err != nil {
 		t.Fatal(err)
 	}
-	testkit.FakeGitHub(t, testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
+	testkit.FakeGitHub(t, ctx, testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
 	var errs bytes.Buffer
 	path, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs)
 	if err != nil {
@@ -499,6 +514,7 @@ func TestPROpenDefaultsToTheWorktreeYouAreIn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	inside.GitHubFake = ctx.GitHubFake
 
 	errs.Reset()
 	if err := PROpen(inside, "", &errs); err != nil {
@@ -513,6 +529,7 @@ func TestPROpenDefaultsToTheWorktreeYouAreIn(t *testing.T) {
 // GitHub will not hand over either way leaves nothing behind, and the error
 // reported is gh's own.
 func TestPRCheckoutOfAMergedPullRequestWithNoPullRefFails(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	testkit.GitIn(t, main, "remote", "add", "origin", main)
 	ctx, err := kit.Open(main)
@@ -520,7 +537,7 @@ func TestPRCheckoutOfAMergedPullRequestWithNoPullRefFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	merged := github.PR{Number: 34, Title: "Gone", HeadRefName: "fix_wt/ses-endpoint", State: "MERGED"}
-	testkit.FakeGitHubWith(t, `[ "$1 $2" = 'pr checkout' ] && { echo "couldn't find remote ref" >&2; exit 1; }`, merged)
+	testkit.FakeGitHubWith(t, ctx, `[ "$1 $2" = 'pr checkout' ] && { echo "couldn't find remote ref" >&2; exit 1; }`, merged)
 
 	var errs bytes.Buffer
 	_, err = PRCheckout(ctx, 34, PROptions{}, &errs)
@@ -549,11 +566,12 @@ func TestPRCheckoutOfAMergedPullRequestWithNoPullRefFails(t *testing.T) {
 // A cache nothing can write is a listing that asks GitHub every single time,
 // and nothing else says so. doctor does — as a remark, not a problem.
 func TestDoctorReportsAPRCacheItCannotWrite(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	testkit.FakeGitHub(t)
+	testkit.FakeGitHub(t, ctx)
 	dir, err := ctx.Repo.GitDir()
 	if err != nil {
 		t.Fatal(err)
@@ -582,11 +600,12 @@ func TestDoctorReportsAPRCacheItCannotWrite(t *testing.T) {
 
 // With a cache it can write, doctor says where it is.
 func TestDoctorNamesTheCacheItCanWrite(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	testkit.FakeGitHub(t)
+	testkit.FakeGitHub(t, ctx)
 	var out bytes.Buffer
 	if _, err := Doctor(ctx, &out); err != nil {
 		t.Fatal(err)
@@ -632,6 +651,7 @@ func localCommits(t *testing.T, main, branch, base string, n int) string {
 // branch is here already and has gone its own way. wt says so before anything
 // is made, with the counts and the two ways out, and touches nothing.
 func TestPRCheckoutRefusesALocalBranchThatDiverged(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	head := prHead(t, main, 12, "HEAD")
 	tip := localCommits(t, main, "residential_fixes", "HEAD", 2)
@@ -641,7 +661,7 @@ func TestPRCheckoutRefusesALocalBranchThatDiverged(t *testing.T) {
 	}
 	pr := testkit.OpenPR(12, "residential_fixes", "Fixes")
 	pr.HeadRefOid = head
-	log := testkit.FakeGitHub(t, pr)
+	log := testkit.FakeGitHub(t, ctx, pr)
 
 	var errs bytes.Buffer
 	_, err = PRCheckout(ctx, 12, PROptions{}, &errs)
@@ -682,6 +702,7 @@ func TestPRCheckoutRefusesALocalBranchThatDiverged(t *testing.T) {
 // A local branch gh can deal with is gh's to deal with: one the pull request
 // is a fast-forward of, and one that is only ahead of it.
 func TestPRCheckoutLeavesAFastForwardToGh(t *testing.T) {
+	t.Parallel()
 	for name, local := range map[string]func(t *testing.T, main, head string){
 		"behind": func(t *testing.T, main, _ string) { localCommits(t, main, "residential_fixes", "HEAD", 0) },
 		"ahead": func(t *testing.T, main, head string) {
@@ -699,7 +720,7 @@ func TestPRCheckoutLeavesAFastForwardToGh(t *testing.T) {
 			}
 			pr := testkit.OpenPR(12, "residential_fixes", "Fixes")
 			pr.HeadRefOid = head
-			log := testkit.FakeGitHubWith(t,
+			log := testkit.FakeGitHubWith(t, ctx,
 				`[ "$1 $2" = 'pr checkout' ] && { git checkout -q residential_fixes; exit; }`, pr)
 
 			var errs bytes.Buffer
@@ -721,6 +742,7 @@ func TestPRCheckoutLeavesAFastForwardToGh(t *testing.T) {
 // under the fork owner's name, and a finished pull request's branch may have
 // moved on from the head GitHub recorded.
 func TestPRCheckoutDoesNotSecondGuessWhatItCannotKnow(t *testing.T) {
+	t.Parallel()
 	for name, change := range map[string]func(*github.PR){
 		"a fork": func(pr *github.PR) {
 			pr.IsCrossRepository = true
@@ -739,7 +761,7 @@ func TestPRCheckoutDoesNotSecondGuessWhatItCannotKnow(t *testing.T) {
 			pr := testkit.OpenPR(12, "residential_fixes", "Fixes")
 			pr.HeadRefOid = head
 			change(&pr)
-			log := testkit.FakeGitHubWith(t,
+			log := testkit.FakeGitHubWith(t, ctx,
 				`[ "$1 $2" = 'pr checkout' ] && { git checkout -q residential_fixes; exit; }`, pr)
 
 			var errs bytes.Buffer
@@ -757,11 +779,12 @@ func TestPRCheckoutDoesNotSecondGuessWhatItCannotKnow(t *testing.T) {
 // so rather than claiming a clean start. A locked worktree is one git refuses
 // to remove on one --force.
 func TestPRCheckoutSaysWhenTheHalfMadeWorktreeIsStillThere(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	testkit.FakeGitHubWith(t, `[ "$1 $2" = 'pr checkout' ] && { git worktree lock . ; echo 'fatal: no' >&2; exit 1; }`,
+	testkit.FakeGitHubWith(t, ctx, `[ "$1 $2" = 'pr checkout' ] && { git worktree lock . ; echo 'fatal: no' >&2; exit 1; }`,
 		testkit.OpenPR(12, "residential_fixes", "Fixes"))
 
 	var errs bytes.Buffer

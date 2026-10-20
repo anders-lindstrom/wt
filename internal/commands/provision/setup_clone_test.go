@@ -13,6 +13,7 @@ import (
 // A clone that fails for an ordinary reason, here a missing parent, is an
 // error to report, not a filesystem that cannot clone.
 func TestCloneTreeOrdinaryErrorIsNotUnsupported(t *testing.T) {
+	t.Parallel()
 	from := filepath.Join(t.TempDir(), "node_modules")
 	testkit.MustWrite(t, filepath.Join(from, "a.txt"), "a")
 	err := cloneTreeCOW(from, filepath.Join(t.TempDir(), "no", "such", "parent", "node_modules"))

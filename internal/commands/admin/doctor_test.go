@@ -15,6 +15,7 @@ import (
 // tool's design. Reporting each of them as a problem made doctor exit non-zero
 // on a healthy repository and prescribe a migrate that breaks the workspace.
 func TestDoctorAcceptsSupersetsLayout(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	superset := filepath.Join(ctx.Repo.Parent, "demo_wt", "demo", "feat_wt", "thing")
@@ -37,6 +38,7 @@ func TestDoctorAcceptsSupersetsLayout(t *testing.T) {
 // after the temporary branch it renames later. Neither shape is wt's, and
 // neither is a problem: the thread holds the path.
 func TestDoctorAcceptsT3sLayout(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	data := t.TempDir()
@@ -62,6 +64,7 @@ func TestDoctorAcceptsT3sLayout(t *testing.T) {
 // A pre-migration checkout is the case the migrate advice was written for:
 // nothing else holds the path, so moving it is safe and still recommended.
 func TestDoctorStillReportsAForeignLayout(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/thing",
@@ -84,6 +87,7 @@ func TestDoctorStillReportsAForeignLayout(t *testing.T) {
 // where doctor's closing advice had nothing behind it: there are no migrate
 // commands above to need fixing first, and no way out was named.
 func TestDoctorTellsAConfiglessRepoToRunInit(t *testing.T) {
+	t.Parallel()
 	ctx := kit.OpenLenient(testkit.NoTrunkRepo(t), io.Discard)
 	if ctx == nil {
 		t.Fatal("OpenLenient returned nil for a real repository")
@@ -109,6 +113,7 @@ func TestDoctorTellsAConfiglessRepoToRunInit(t *testing.T) {
 // A configuration that exists but does not parse keeps the original advice:
 // there the mutating commands really are what the fix unblocks.
 func TestDoctorStillSaysToFixAConfigurationThatIsPresentButBroken(t *testing.T) {
+	t.Parallel()
 	main := testkit.FixtureRepo(t, "MAIN_BRANCH=\"main\"\nNO_SUCH_KEY=1\n")
 	ctx := kit.OpenLenient(main, io.Discard)
 

@@ -16,11 +16,12 @@ import (
 // The PR column of `wt list`: a worktree whose branch is a pull request's
 // head gets its number and state, and everything else gets a dash.
 func TestListShowsThePullRequestColumn(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	testkit.FakeGitHub(t, testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
+	testkit.FakeGitHub(t, ctx, testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
 	var errs bytes.Buffer
 	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
@@ -54,6 +55,7 @@ func TestListShowsThePullRequestColumn(t *testing.T) {
 // so: the subtests share one repository, so one that read a cached answer
 // would pass without gh having been reached at all.
 func TestListIsUnchangedWhenGitHubIsNotInPlay(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -76,29 +78,29 @@ func TestListIsUnchangedWhenGitHubIsNotInPlay(t *testing.T) {
 		wantCall bool
 	}{
 		"off in the user config": {func(t *testing.T, ctx *kit.Context) string {
-			log := testkit.FakeGitHub(t, testkit.OpenPR(12, "fix_wt/login-crash", "x"))
+			log := testkit.FakeGitHub(t, ctx, testkit.OpenPR(12, "fix_wt/login-crash", "x"))
 			ctx.User.GitHub = false
 			return log
 		}, false},
-		"no gh": {func(t *testing.T, _ *kit.Context) string {
-			testkit.StubGitHub(t, github.CLI{}, testkit.GhRepo, true)
+		"no gh": {func(_ *testing.T, ctx *kit.Context) string {
+			testkit.StubGitHub(ctx, github.CLI{}, testkit.GhRepo, true)
 			return ""
 		}, false},
-		"not GitHub": {func(t *testing.T, _ *kit.Context) string {
-			testkit.StubGitHub(t, github.CLI{Exe: "/nope/gh"}, github.Remote{}, false)
+		"not GitHub": {func(_ *testing.T, ctx *kit.Context) string {
+			testkit.StubGitHub(ctx, github.CLI{Exe: "/nope/gh"}, github.Remote{}, false)
 			return ""
 		}, false},
-		"gh fails": {func(t *testing.T, _ *kit.Context) string {
-			return testkit.FakeGitHubWith(t, `[ "$1 $2" = 'api graphql' ] && { echo offline >&2; exit 1; }`,
+		"gh fails": {func(t *testing.T, ctx *kit.Context) string {
+			return testkit.FakeGitHubWith(t, ctx, `[ "$1 $2" = 'api graphql' ] && { echo offline >&2; exit 1; }`,
 				testkit.OpenPR(12, "fix_wt/login-crash", "x"))
 		}, true},
-		"no pull request for any worktree": {func(t *testing.T, _ *kit.Context) string {
-			return testkit.FakeGitHub(t, testkit.OpenPR(12, "somebody-elses-branch", "x"))
+		"no pull request for any worktree": {func(t *testing.T, ctx *kit.Context) string {
+			return testkit.FakeGitHub(t, ctx, testkit.OpenPR(12, "somebody-elses-branch", "x"))
 		}, true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			log := tc.set(t, ctx)
-			defer func() { ctx.User.GitHub = true }()
+			defer func() { ctx.User.GitHub, ctx.GitHubFake = true, nil }()
 			var out bytes.Buffer
 			if err := List(ctx, ListOptions{Refresh: true}, &out, 0); err != nil {
 				t.Fatal(err)
@@ -117,11 +119,12 @@ func TestListIsUnchangedWhenGitHubIsNotInPlay(t *testing.T) {
 // is a minute old. Under a minute, and with no cache behind the column at all,
 // the listing is what it was.
 func TestListSaysHowOldACachedColumnIs(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	testkit.FakeGitHub(t, testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
+	testkit.FakeGitHub(t, ctx, testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
 	var errs bytes.Buffer
 	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
@@ -172,11 +175,12 @@ func backdatePRCache(t *testing.T, ctx *kit.Context, r github.Remote, by time.Du
 // wt status of one worktree carries its pull request, when it has one and
 // GitHub answers. One bounded call, restricted to that branch.
 func TestStatusWorktreeCarriesThePullRequest(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	log := testkit.FakeGitHub(t, testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
+	log := testkit.FakeGitHub(t, ctx, testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
 	var errs bytes.Buffer
 	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
@@ -197,6 +201,7 @@ func TestStatusWorktreeCarriesThePullRequest(t *testing.T) {
 // A worktree with no pull request, and a GitHub that cannot be reached, both
 // leave wt status with no pr line at all.
 func TestStatusWorktreeIsSilentWithoutOne(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -206,14 +211,15 @@ func TestStatusWorktreeIsSilentWithoutOne(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, set := range map[string]func(t *testing.T){
-		"no pull request": func(t *testing.T) { testkit.FakeGitHub(t) },
-		"no gh":           func(t *testing.T) { testkit.StubGitHub(t, github.CLI{}, testkit.GhRepo, true) },
+		"no pull request": func(t *testing.T) { testkit.FakeGitHub(t, ctx) },
+		"no gh":           func(*testing.T) { testkit.StubGitHub(ctx, github.CLI{}, testkit.GhRepo, true) },
 		"gh fails": func(t *testing.T) {
-			testkit.FakeGitHubWith(t, `[ "$1 $2" = 'api graphql' ] && { echo offline >&2; exit 1; }`)
+			testkit.FakeGitHubWith(t, ctx, `[ "$1 $2" = 'api graphql' ] && { echo offline >&2; exit 1; }`)
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			set(t)
+			defer func() { ctx.GitHubFake = nil }()
 			var out bytes.Buffer
 			if err := StatusWorktree(ctx, "login-crash", StatusOptions{Agents: []wtsync.Agent{}}, &out); err != nil {
 				t.Fatal(err)
@@ -228,11 +234,12 @@ func TestStatusWorktreeIsSilentWithoutOne(t *testing.T) {
 // --no-pr is the way out of the call the column costs: around a second,
 // against 0.02s for the rest of the listing.
 func TestListNoPRAsksGitHubNothing(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	log := testkit.FakeGitHub(t, testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
+	log := testkit.FakeGitHub(t, ctx, testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
 	var errs bytes.Buffer
 	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
@@ -253,11 +260,12 @@ func TestListNoPRAsksGitHubNothing(t *testing.T) {
 // wt status has wt list's PR column, from the same cache, dated the same way
 // once the answer is a minute old; --no-pr leaves it out and asks nothing.
 func TestStatusShowsThePullRequestColumn(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	log := testkit.FakeGitHub(t, testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
+	log := testkit.FakeGitHub(t, ctx, testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
 	var errs bytes.Buffer
 	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)
@@ -309,11 +317,12 @@ func TestStatusShowsThePullRequestColumn(t *testing.T) {
 // wt status <work> takes --refresh and --no-pr as wt list does: the one asks
 // GitHub past the cache, the other asks nothing and prints no pr line.
 func TestStatusWorktreeRefreshAndNoPR(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	log := testkit.FakeGitHub(t, testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
+	log := testkit.FakeGitHub(t, ctx, testkit.OpenPR(12, "fix_wt/login-crash", "Login crash"))
 	var errs bytes.Buffer
 	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs); err != nil {
 		t.Fatal(err)

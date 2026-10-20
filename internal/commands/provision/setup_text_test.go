@@ -58,6 +58,7 @@ var submoduleErr = regexp.MustCompile(`(?s)(failed to initialise submodules: ).*
 // hook and wt new: reporting the steps for --json must not change a byte of
 // it, whichever steps fail.
 func TestSetupTextIsUnchangedByStepReporting(t *testing.T) {
+	t.Parallel()
 	for name, tc := range map[string]struct {
 		provisionExit int
 		build         string

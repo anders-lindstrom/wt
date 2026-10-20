@@ -15,6 +15,7 @@ import (
 // Every worktree but the main checkout, filed under the overview's own
 // groups, with what a run would do with it and why; and no ref moved.
 func TestSyncJSONGroupsEveryWorktreeAndMovesNoRef(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.RunFixture(t, false)
 	provisiontest.ContestedSibling(t, ctx)
 	refs := func() string {
@@ -68,6 +69,7 @@ func TestSyncJSONGroupsEveryWorktreeAndMovesNoRef(t *testing.T) {
 // A worktree already on trunk is listed as current: the human overview
 // leaves it out, a tool still sees it.
 func TestSyncJSONListsACurrentWorktree(t *testing.T) {
+	t.Parallel()
 	ctx, _ := provisiontest.RunFixture(t, false)
 	o := synccmdtest.OverviewJSON(t, ctx)
 	if other := synccmdtest.OverviewRow(t, o, "other"); other.Group != synccmd.GroupCurrent || other.Class != "current" {
@@ -77,6 +79,7 @@ func TestSyncJSONListsACurrentWorktree(t *testing.T) {
 
 // The stack a worktree belongs to is listed parents first, on every member.
 func TestSyncJSONNamesTheStack(t *testing.T) {
+	t.Parallel()
 	ctx, _ := provisiontest.RunFixture(t, false)
 	provisiontest.StackFixture(t, ctx)
 	o := synccmdtest.OverviewJSON(t, ctx)
@@ -93,6 +96,7 @@ func TestSyncJSONNamesTheStack(t *testing.T) {
 
 // Nothing a run would start on: no token.
 func TestSyncJSONHasNoTokenWhenNothingIsEligible(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.RunFixture(t, false)
 	if err := os.WriteFile(filepath.Join(bump, "v.txt"), []byte("dirt\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -108,6 +112,7 @@ func TestSyncJSONHasNoTokenWhenNothingIsEligible(t *testing.T) {
 
 // The token changes with what a run would take, and not otherwise.
 func TestSyncJSONTokenFollowsWhatARunWouldTake(t *testing.T) {
+	t.Parallel()
 	ctx, _ := provisiontest.RunFixture(t, false)
 	first := synccmdtest.OverviewJSON(t, ctx).Token
 	if again := synccmdtest.OverviewJSON(t, ctx).Token; *again != *first {

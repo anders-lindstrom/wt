@@ -6,6 +6,7 @@ import (
 )
 
 func TestAdminDirIsTheLinkedWorktreesGitDir(t *testing.T) {
+	t.Parallel()
 	parent, main := fixture(t)
 	r, _ := Discover(main)
 	dst := filepath.Join(parent, "linked")
@@ -23,6 +24,7 @@ func TestAdminDirIsTheLinkedWorktreesGitDir(t *testing.T) {
 }
 
 func TestLockWorktreeLeavesTheReason(t *testing.T) {
+	t.Parallel()
 	parent, main := fixture(t)
 	r, _ := Discover(main)
 	dst := filepath.Join(parent, "locked")
@@ -40,6 +42,7 @@ func TestLockWorktreeLeavesTheReason(t *testing.T) {
 // value in order, and a name with regular expression characters in it
 // matches only itself.
 func TestBranchConfigIsExactlyThatSection(t *testing.T) {
+	t.Parallel()
 	_, main := fixture(t)
 	r, _ := Discover(main)
 	run(t, main, "config", "branch.a.b.merge", "refs/heads/x")

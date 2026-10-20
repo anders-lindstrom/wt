@@ -11,6 +11,7 @@ import (
 )
 
 func TestSyncResumePushesWithPush(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}

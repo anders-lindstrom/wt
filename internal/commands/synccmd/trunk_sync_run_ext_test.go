@@ -11,6 +11,7 @@ import (
 )
 
 func TestUpFastForwardsLocalTrunkAfterItsFetch(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -37,6 +38,7 @@ func TestUpFastForwardsLocalTrunkAfterItsFetch(t *testing.T) {
 }
 
 func TestUpSaysWhatHappenedToLocalTrunk(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -53,6 +55,7 @@ func TestUpSaysWhatHappenedToLocalTrunk(t *testing.T) {
 }
 
 func TestUpNoFetchLeavesLocalTrunkAndReportsNull(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -75,6 +78,7 @@ func TestUpNoFetchLeavesLocalTrunkAndReportsNull(t *testing.T) {
 }
 
 func TestUpOptedOutLeavesLocalTrunk(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -105,6 +109,7 @@ func TestUpOptedOutLeavesLocalTrunk(t *testing.T) {
 
 // A fast-forward that fails never fails the rebase: it is reported.
 func TestSyncRunReportsASkippedTrunkAndStillRebases(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -132,6 +137,7 @@ func TestSyncRunReportsASkippedTrunkAndStillRebases(t *testing.T) {
 
 // wt status says what a run would do to local trunk and moves nothing.
 func TestStatusJSONSaysWhatARunWouldDoToLocalTrunk(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -157,6 +163,7 @@ func TestStatusJSONSaysWhatARunWouldDoToLocalTrunk(t *testing.T) {
 
 // An --expect that no longer holds touches nothing: local trunk included.
 func TestExpectRefusedLeavesLocalTrunk(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -187,6 +194,7 @@ func TestExpectRefusedLeavesLocalTrunk(t *testing.T) {
 // A repository whose trunk declares nothing has nothing for wt sync rebase to
 // rebase, but it fetched: local trunk still follows.
 func TestSyncRunUndeclaredStillFastForwardsLocalTrunk(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}

@@ -29,6 +29,7 @@ func targetNames(ts []kit.RepoTarget) []string {
 // not a checkout wt does not manage, which is counted instead. A root that is
 // a repository is that one repository and nothing under it.
 func TestDiscoverReposFindsManagedCheckoutsAndSingleRepoRoots(t *testing.T) {
+	t.Parallel()
 	folder := testkit.RealTempDir(t)
 	api := testkit.ManagedRepo(t, folder, "api")
 	gittest.NewRepo(t, folder, "loose")
@@ -58,6 +59,7 @@ func TestDiscoverReposFindsManagedCheckoutsAndSingleRepoRoots(t *testing.T) {
 // that says which there are; a profile entry that is not a managed main
 // checkout comes back with what is wrong, not as an error.
 func TestSelectReposByRootAndByProfile(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	a, b := testkit.RealTempDir(t), testkit.RealTempDir(t)
 	testkit.ManagedRepo(t, a, "one")
 	two := testkit.ManagedRepo(t, b, "two")
@@ -102,6 +104,7 @@ func TestSelectReposByRootAndByProfile(t *testing.T) {
 // repositories refuses rather than fall back to the defaults. The same
 // repository named twice in a profile is one repository.
 func TestSelectReposRefusesAnUnreadableFileAndMergesDuplicates(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	t.Setenv("WT_ROOTS", "")
 	if _, err := kit.SelectRepos(&config.User{Path: "/x/config.toml", TablesUnreadable: true}, kit.Selection{All: true}); err == nil ||
 		!strings.Contains(err.Error(), "wt does not know your roots") {
@@ -118,6 +121,7 @@ func TestSelectReposRefusesAnUnreadableFileAndMergesDuplicates(t *testing.T) {
 // AcrossRepos prints each repository's output under its name, in order, and
 // names the ones it could not run in; --profile takes several names.
 func TestAcrossReposPrintsEachRepositoryUnderItsName(t *testing.T) {
+	t.Parallel()
 	root := testkit.RealTempDir(t)
 	a, b := testkit.ManagedRepo(t, root, "alpha"), testkit.ManagedRepo(t, root, "beta")
 	u := &config.User{Profiles: []config.Profile{

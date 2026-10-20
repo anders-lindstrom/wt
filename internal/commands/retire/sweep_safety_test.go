@@ -22,6 +22,7 @@ func keptCodes(p SweepPlan, name string) []string {
 }
 
 func TestSweepPlanKeepsAMergedWorktreeMidOperation(t *testing.T) {
+	t.Parallel()
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	testkit.MustWrite(t, filepath.Join(testkit.GitDirFor(t, path), "MERGE_HEAD"), "x\n")
@@ -39,6 +40,7 @@ func TestSweepPlanKeepsAMergedWorktreeMidOperation(t *testing.T) {
 }
 
 func TestSweepPlanKeepsAMergedWorktreeWithHiddenChanges(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.MustWrite(t, filepath.Join(main, "a.txt"), "a")
 	testkit.GitIn(t, main, "add", "a.txt")
@@ -54,6 +56,7 @@ func TestSweepPlanKeepsAMergedWorktreeWithHiddenChanges(t *testing.T) {
 }
 
 func TestSweepPlanKeepsAMergedWorktreeWithWorkInASubmodule(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	inner := filepath.Join(t.TempDir(), "inner")
 	testkit.GitIn(t, filepath.Dir(inner), "init", "-q", "-b", "main", "inner")
@@ -76,6 +79,7 @@ func TestSweepPlanKeepsAMergedWorktreeWithWorkInASubmodule(t *testing.T) {
 // each holds the other's commits while the plan is made, and removing the
 // first is the sweep's own doing, not a change that should keep the second.
 func TestSweepRemovesTwoWorktreesSharingAnAppliedTip(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	a := provisiontest.MergedWorktree(t, ctx, "fix/first")
 	testkit.MustWrite(t, filepath.Join(a, "change.txt"), "the change\n")

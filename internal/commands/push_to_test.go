@@ -16,6 +16,7 @@ import (
 // as it stands: wt's own check is what refuses now, with no push command to
 // run by hand either.
 func TestAPushUnderAnotherNameOverACommitTheBranchNeverHadIsNotMade(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -64,6 +65,7 @@ func TestAPushUnderAnotherNameOverACommitTheBranchNeverHadIsNotMade(t *testing.T
 // Both remote branches exist after pushes of a renamed branch went to its
 // new name: wt status says so, and says which one it pushes to.
 func TestStatusNamesTheDestinationAndTheStrayBranchOfItsOwnName(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}

@@ -18,6 +18,7 @@ import (
 )
 
 func TestListShowsWorktreesAndMarksNonCanonical(t *testing.T) {
+	t.Parallel()
 	main, _ := testkit.RepoWithWorktree(t, func(parent string) string {
 		return filepath.Join(parent, "demo-legacy")
 	})
@@ -43,6 +44,7 @@ func TestListShowsWorktreesAndMarksNonCanonical(t *testing.T) {
 }
 
 func TestListMarksCanonicalWorktreeCleanly(t *testing.T) {
+	t.Parallel()
 	main, _ := testkit.RepoWithWorktree(t, func(parent string) string {
 		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
 	})
@@ -64,6 +66,7 @@ func TestListMarksCanonicalWorktreeCleanly(t *testing.T) {
 // the workspace. It gets its own mark rather than the "!" that invites a
 // migrate.
 func TestListMarksSupersetLayoutApartFromForeignOnes(t *testing.T) {
+	t.Parallel()
 	main, _ := testkit.RepoWithWorktree(t, func(parent string) string {
 		return filepath.Join(parent, "demo_wt", "demo", "feat_wt", "thing")
 	})
@@ -86,6 +89,7 @@ func TestListMarksSupersetLayoutApartFromForeignOnes(t *testing.T) {
 }
 
 func TestListExplainsTheForeignMark(t *testing.T) {
+	t.Parallel()
 	main, _ := testkit.RepoWithWorktree(t, func(parent string) string {
 		return filepath.Join(parent, "demo-legacy")
 	})
@@ -101,6 +105,7 @@ func TestListExplainsTheForeignMark(t *testing.T) {
 }
 
 func TestListPrintsNoLegendWhenEverythingIsCanonical(t *testing.T) {
+	t.Parallel()
 	main, _ := testkit.RepoWithWorktree(t, func(parent string) string {
 		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
 	})
@@ -118,6 +123,7 @@ func TestListPrintsNoLegendWhenEverythingIsCanonical(t *testing.T) {
 // On a terminal every row fits its width: paths give way from the left, where
 // all worktrees of a repository share the same leading directories.
 func TestListFitsPathsToTheTerminalWidth(t *testing.T) {
+	t.Parallel()
 	main, _ := testkit.RepoWithWorktree(t, func(parent string) string {
 		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
 	})
@@ -141,6 +147,7 @@ func TestListFitsPathsToTheTerminalWidth(t *testing.T) {
 
 // Piped, a path is an argument to other commands, so it is printed whole.
 func TestListPrintsWholePathsWithoutATerminal(t *testing.T) {
+	t.Parallel()
 	main, wt := testkit.RepoWithWorktree(t, func(parent string) string {
 		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
 	})
@@ -156,6 +163,7 @@ func TestListPrintsWholePathsWithoutATerminal(t *testing.T) {
 }
 
 func TestListShowsPathsFromHomeOnATerminal(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	main, _ := testkit.RepoWithWorktree(t, func(parent string) string {
 		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
 	})
@@ -172,6 +180,7 @@ func TestListShowsPathsFromHomeOnATerminal(t *testing.T) {
 }
 
 func TestElideLeft(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		path  string
 		limit int
@@ -201,6 +210,7 @@ func lineContaining(t *testing.T, out, needle string) string {
 }
 
 func TestStatusReportsCleanliness(t *testing.T) {
+	t.Parallel()
 	main, _ := testkit.RepoWithWorktree(t, func(parent string) string {
 		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
 	})
@@ -216,6 +226,7 @@ func TestStatusReportsCleanliness(t *testing.T) {
 }
 
 func TestStatusFitsPathsToTheTerminalWidth(t *testing.T) {
+	t.Parallel()
 	main, _ := testkit.RepoWithWorktree(t, func(parent string) string {
 		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
 	})
@@ -241,6 +252,7 @@ func TestStatusFitsPathsToTheTerminalWidth(t *testing.T) {
 // a legend telling the reader to type a work name names something that is not
 // on the screen. The branch and the path are.
 func TestListLegendNamesSomethingTheRowActuallyShows(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "fix/flaky-test",
@@ -263,6 +275,7 @@ func TestListLegendNamesSomethingTheRowActuallyShows(t *testing.T) {
 // branch with nothing either way is on trunk; the main checkout has no row
 // to count.
 func TestStatusCountsEachBranchAgainstTrunkAsLastFetched(t *testing.T) {
+	t.Parallel()
 	ctx := provisiontest.SyncRepo(t)
 
 	var buf bytes.Buffer
@@ -290,6 +303,7 @@ func TestStatusCountsEachBranchAgainstTrunkAsLastFetched(t *testing.T) {
 // Without origin/<trunk> the local trunk is the base, and the first line
 // says so without a fetch age nothing fetched.
 func TestStatusFallsBackToTheLocalTrunkWithoutOrigin(t *testing.T) {
+	t.Parallel()
 	main, _ := testkit.RepoWithWorktree(t, func(parent string) string {
 		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
 	})
@@ -309,6 +323,7 @@ func TestStatusFallsBackToTheLocalTrunkWithoutOrigin(t *testing.T) {
 
 // A detached worktree has no branch to count.
 func TestStatusPrintsADashForADetachedWorktree(t *testing.T) {
+	t.Parallel()
 	ctx := provisiontest.SyncRepo(t)
 	detached := filepath.Join(ctx.Repo.Parent, "demo-detached")
 	testkit.GitIn(t, ctx.Repo.MainRoot, "worktree", "add", "-q", "--detach", detached)
@@ -331,6 +346,7 @@ func noStatusSessions() StatusOptions {
 // verdict the overview would give it, in its words, with the advice its
 // heading gives, and labelled as the simulation it is.
 func TestStatusWorktreePrintsTheFactsAndTheVerdictForARecipeWorktree(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.RunFixture(t, false)
 
 	var buf bytes.Buffer
@@ -358,6 +374,7 @@ func TestStatusWorktreePrintsTheFactsAndTheVerdictForARecipeWorktree(t *testing.
 }
 
 func TestStatusWorktreeSaysCleanAndCurrentInTheOverviewsWords(t *testing.T) {
+	t.Parallel()
 	ctx := provisiontest.SyncRepo(t)
 
 	// other was cut from trunk after trunk last moved: nothing either way.
@@ -396,6 +413,7 @@ func TestStatusWorktreeSaysCleanAndCurrentInTheOverviewsWords(t *testing.T) {
 // A contested worktree is filed under needs you, and the advice is the
 // heading's: the detail is wt sync's.
 func TestStatusWorktreePointsAContestedOneAtTheDetail(t *testing.T) {
+	t.Parallel()
 	ctx, _ := provisiontest.ContestedFixture(t)
 
 	var buf bytes.Buffer
@@ -412,6 +430,7 @@ func TestStatusWorktreePointsAContestedOneAtTheDetail(t *testing.T) {
 
 // A session in the worktree is a fact of its own, in the overview's words.
 func TestStatusWorktreeNamesTheSessionsInIt(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.RunFixture(t, false)
 
 	var buf bytes.Buffer
@@ -426,6 +445,7 @@ func TestStatusWorktreeNamesTheSessionsInIt(t *testing.T) {
 // A repository whose trunk declares nothing is assessed all the same, and
 // the verdict says what the overview's heading says: ready once it does.
 func TestStatusWorktreeSaysWhenTrunkDeclaresNothing(t *testing.T) {
+	t.Parallel()
 	main, wt := testkit.RepoWithWorktree(t, func(parent string) string {
 		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
 	})
@@ -458,6 +478,7 @@ func TestStatusWorktreeSaysWhenTrunkDeclaresNothing(t *testing.T) {
 // Without origin/<trunk> the counts fall back to the local trunk, but the
 // verdict cannot: it is what wt sync would say, and wt sync says this.
 func TestStatusWorktreeWithoutOriginCountsAgainstTheLocalTrunk(t *testing.T) {
+	t.Parallel()
 	main, _ := testkit.RepoWithWorktree(t, func(parent string) string {
 		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
 	})
@@ -478,6 +499,7 @@ func TestStatusWorktreeWithoutOriginCountsAgainstTheLocalTrunk(t *testing.T) {
 }
 
 func TestStatusWorktreeRefusesTheMainCheckout(t *testing.T) {
+	t.Parallel()
 	ctx := provisiontest.SyncRepo(t)
 
 	err := StatusWorktree(ctx, ctx.Repo.MainRoot, noStatusSessions(), io.Discard)
@@ -493,6 +515,7 @@ func TestStatusWorktreeRefusesTheMainCheckout(t *testing.T) {
 // A branch whose count git cannot give prints ?, and the row is not an
 // error: here the branch ref is gone from under the checkout.
 func TestStatusPrintsAQuestionMarkWhenACountCannotBeRead(t *testing.T) {
+	t.Parallel()
 	ctx := provisiontest.SyncRepo(t)
 	testkit.GitIn(t, ctx.Repo.MainRoot, "update-ref", "-d", "refs/heads/feat_wt/other")
 
@@ -512,6 +535,7 @@ func TestStatusPrintsAQuestionMarkWhenACountCannotBeRead(t *testing.T) {
 // With neither origin/<trunk> nor <trunk> there is nothing to count
 // against: the first line says so and every cell is ?.
 func TestStatusSaysWhenThereIsNoTrunkToCompareWith(t *testing.T) {
+	t.Parallel()
 	main, _ := testkit.RepoWithWorktree(t, func(parent string) string {
 		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
 	})
@@ -535,6 +559,7 @@ func TestStatusSaysWhenThereIsNoTrunkToCompareWith(t *testing.T) {
 // words, and the stop it waits at under it; its staged resolutions are not
 // called dirty.
 func TestStatusWorktreeShowsAHandedOverWorktree(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.ContestedFixture(t)
 	_, st := synccmdtest.HandOverNow(t, ctx, bump)
 
@@ -560,6 +585,7 @@ func TestStatusWorktreeShowsAHandedOverWorktree(t *testing.T) {
 // Tracked changes put a worktree under needs you, and the sync line says
 // dirty beside the class the way the overview's row does.
 func TestStatusWorktreeMarksADirtyWorktreeOnTheSyncLine(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.RunFixture(t, false)
 	testkit.WriteFile(t, bump, "v.txt", "1.0.2\n")
 
@@ -581,6 +607,7 @@ func TestStatusWorktreeMarksADirtyWorktreeOnTheSyncLine(t *testing.T) {
 // so rather than trailing off after "as last fetched"; the trunk line of one
 // worktree says the same inside its parenthesis, as wt sync --no-fetch does.
 func TestStatusSaysWhenTheFetchAgeIsNotRecorded(t *testing.T) {
+	t.Parallel()
 	ctx := provisiontest.SyncRepo(t)
 	if err := os.Remove(testkit.FetchHead(t, ctx.Repo.MainRoot)); err != nil {
 		t.Fatal(err)
