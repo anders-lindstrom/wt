@@ -20,12 +20,18 @@ var identity = []string{
 	"GIT_COMMITTER_NAME=T", "GIT_COMMITTER_EMAIL=t@example.com",
 }
 
+// globalConfig is the whole global git config under Isolate. Auto maintenance
+// is off: every commit, fetch, push and rebase would otherwise start a
+// detached `git maintenance run --auto` that a repository this small never
+// needs.
+const globalConfig = "[maintenance]\n\tauto = false\n"
+
 // Isolate keeps a package's tests off the machine running them, for the
-// tests' own git and the code's under test alike. Git gets an empty global
-// config and no system one, so no hooksPath, signing, credential helper or url
-// rewrite of the user's applies, and none of the GIT_ variables the
-// environment carries (an agent launcher's GIT_CONFIG_* and GIT_SSH_COMMAND,
-// a hook's GIT_DIR). HOME is an empty directory, with no XDG_CONFIG_HOME,
+// tests' own git and the code's under test alike. Git gets a global config
+// holding only globalConfig and no system one, so no hooksPath, signing,
+// credential helper or url rewrite of the user's applies, and none of the
+// GIT_ variables the environment carries (an agent launcher's GIT_CONFIG_*
+// and GIT_SSH_COMMAND, a hook's GIT_DIR). HOME is an empty directory, with no XDG_CONFIG_HOME,
 // CODEX_HOME or WT_ROOTS pointing elsewhere, and the PATH finds no claude:
 // where none is installed, as in CI, is the state a test starts from, and one
 // that wants a claude puts its own first. Call it from TestMain before m.Run
@@ -36,7 +42,7 @@ func Isolate() func() {
 		panic(err)
 	}
 	global := filepath.Join(dir, "gitconfig")
-	if err := os.WriteFile(global, nil, 0o644); err != nil {
+	if err := os.WriteFile(global, []byte(globalConfig), 0o644); err != nil {
 		panic(err)
 	}
 	home := filepath.Join(dir, "home")
