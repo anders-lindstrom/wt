@@ -5,6 +5,13 @@ Newest first, each heading stamped with the local date and time of the change
 would want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-10-22 10:14 — three old flag spellings go, and install.sh is simpler
+
+`wt remove --me`, `--skip-build` and `wt repos --doctor` are gone; use
+`wt remove .`, `--no-build` and `wt doctor --all`. `install.sh` no longer keeps
+a record of what it installed: it overwrites and removes only files that are
+recognisably wt's own, and still refuses to touch anything else.
+
 ## 2026-10-22 10:10 — help follows your terminal's width
 
 Help and `wt about` wrap to the width of the terminal, up to 180 columns, and

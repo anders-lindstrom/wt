@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/session"
@@ -100,19 +99,13 @@ func newRootCmd(args ...string) *cobra.Command {
 	installHelp(root)
 	root.SetArgs(args)
 	root.SetVersionTemplate("{{.Version}}\n")
-	root.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
-		if helpAsked(args) {
-			return c.Help()
-		}
+	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return usageError{err}
 	})
 	var wrapArgs func(*cobra.Command)
 	wrapArgs = func(c *cobra.Command) {
 		if validate := c.Args; validate != nil {
 			c.Args = func(cmd *cobra.Command, positional []string) error {
-				if helpAsked(args) {
-					return pflag.ErrHelp
-				}
 				if err := validate(cmd, positional); err != nil {
 					return usageError{err}
 				}
@@ -128,18 +121,6 @@ func newRootCmd(args ...string) *cobra.Command {
 }
 
 type usageError struct{ error }
-
-func helpAsked(args []string) bool {
-	for _, arg := range args {
-		if arg == "--" {
-			break
-		}
-		if arg == "--help" || arg == "-h" {
-			return true
-		}
-	}
-	return false
-}
 
 // The command groups `wt --help` prints under.
 const (

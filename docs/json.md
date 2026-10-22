@@ -14,12 +14,13 @@ Each output has a schema with a semantic version, and says which it follows:
   breaks a reader: a field renamed or removed, a type or a meaning changed. It
   comes as a new schema file (`up.v2.json`); v1 is never edited that way.
 - `schemaVersion` — the full version, `MAJOR.MINOR.PATCH`. A **minor** adds a
-  field or an enumeration value; a **patch** changes only wording.
+  field or an enumeration value; a **patch** is wording only, and a wording
+  change does not have to bump it.
 
 So within one major, fields are only added and enumerations only grow: a reader
 ignores fields it does not know and treats an unknown value as "not one I know",
-never as an error. wt's tests fail when a schema file changes without a new
-version, and when an output's `schemaVersion` is not its schema's.
+never as an error. wt's tests fail when an output's `schemaVersion` is not its
+schema's.
 
 | Version | Change |
 |---|---|

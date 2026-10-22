@@ -8,7 +8,7 @@ import (
 
 func newReposCmd() *cobra.Command {
 	var sel selectionFlags
-	var paths, doctor bool
+	var paths bool
 	cmd := &cobra.Command{
 		Use:   "repos",
 		Short: "List the repositories wt manages under your roots",
@@ -28,9 +28,6 @@ func newReposCmd() *cobra.Command {
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if doctor {
-				return usagef("wt repos --doctor is wt doctor --all now (--roots and --profile work there too)")
-			}
 			u := loadUserWarn(cmd.ErrOrStderr())
 			return kit.Repos(u, sel.selection(), kit.ReposOptions{Paths: paths}, cmd.OutOrStdout())
 		},
@@ -39,9 +36,6 @@ func newReposCmd() *cobra.Command {
 	// works the same on every command that has the other two.
 	sel.add(cmd, true)
 	cmd.Flags().BoolVar(&paths, "paths", false, "print the main checkouts' paths alone, one per line")
-	// Where the old flag went, for the line already in someone's history.
-	cmd.Flags().BoolVar(&doctor, "doctor", false, "moved to wt doctor --all")
-	_ = cmd.Flags().MarkHidden("doctor")
 
 	return cmd
 }

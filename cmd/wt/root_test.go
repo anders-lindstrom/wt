@@ -187,18 +187,16 @@ func TestVersionFlagMatchesCommand(t *testing.T) {
 	}
 }
 
-func TestHelpWinsOverFlagErrors(t *testing.T) {
-	for _, args := range [][]string{
-		{"new", "--bogus", "--help"}, {"new", "--bogus", "-h"},
-		{"new", "--expect", "--help"},
-	} {
+// --help works on every command, even one whose arguments are missing, and
+// after -- it is an argument like any other.
+func TestHelpWorksWhereArgumentsAreMissing(t *testing.T) {
+	for _, args := range [][]string{{"new", "--help"}, {"new", "-h"}, {"remove", "--help"}, {"config", "get", "--help"}} {
 		out, err := runCmd(t, args...)
 		if err != nil || !strings.Contains(out, "Usage:") {
 			t.Errorf("%v: error %v, output %q", args, err, out)
 		}
 	}
-	_, err := runCmd(t, "new", "--bogus", "--", "--help")
-	if err == nil {
+	if _, err := runCmd(t, "new", "--bogus", "--", "--help"); err == nil {
 		t.Fatal("help after -- hid an invalid flag")
 	}
 }

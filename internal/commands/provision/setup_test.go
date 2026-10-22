@@ -94,7 +94,7 @@ func TestSetupSkipBuild(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(target, "built.txt")); err == nil {
-		t.Error("build ran despite --skip-build")
+		t.Error("build ran despite --no-build")
 	}
 }
 

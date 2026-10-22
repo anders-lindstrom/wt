@@ -22,13 +22,13 @@ setup() {
     [ -z "$output" ]
 }
 
-@test "version flag matches version command and help wins over bad flags" {
+@test "version flag matches version command and --help works after --" {
     version=$(wt version)
     run --separate-stderr wt --version
     [ "$status" -eq 0 ]
     [ "$output" = "$version" ]
     [ -z "$stderr" ]
-    run --separate-stderr wt new --bogus --help
+    run --separate-stderr wt new --help
     [ "$status" -eq 0 ]
     [[ "$output" == *'Usage:'* ]]
     [ -z "$stderr" ]

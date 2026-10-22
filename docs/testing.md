@@ -37,7 +37,7 @@ in it: their tests build real git repositories.
 | internal/wtsync | `go test ./internal/wtsync -run '<Area>'` first, then the whole package once (about 280 s) |
 | internal/commands, one command family | `go test ./internal/commands/<pkg> -run '<Family>'`, see the examples below; the whole `./internal/commands/...` once before you finish (about 240 s) |
 | a package-level hook variable or `Context` | `./internal/commands/...` once: the hooks live in kit (`FindGitHub`), provision (`ProbeSuperset`, `SupersetHostCommand`), session (`ListSessions`, `ListClaudeSessions`) and retire (`ScanProcesses`), and many packages' tests swap them |
-| the `--json` shape or `schema/*.json` | the schema test and the JSON tests, see the examples below, and update docs/json.md and schema/versions.lock in the same commit |
+| the `--json` shape or `schema/*.json` | the schema test and the JSON tests, see the examples below, and update docs/json.md in the same commit |
 | cmd/wt flags, help text, completion | `go test ./cmd/wt` (about 16 s) |
 | shell/, install.sh, stdout, stderr or exit codes | `make build && scripts/bats.sh test/<file>.bats`, the one file |
 | before handing the work back | `make check` once, in the background; after a fix, run the touched family only |

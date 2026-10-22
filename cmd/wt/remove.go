@@ -10,7 +10,6 @@ import (
 )
 
 func newRemoveCmd() *cobra.Command {
-	var me bool
 	var meAt string
 	var yes, dryRun, asJSON, keepSuperset, reap bool
 	var force []string
@@ -48,12 +47,12 @@ func newRemoveCmd() *cobra.Command {
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if !me && meAt == "" && len(args) != 1 {
+			if meAt == "" && len(args) != 1 {
 				return usagef("needs the worktree to remove, or . for the one " +
 					"you are in — for example: wt remove login-crash")
 			}
-			if (me || meAt != "") && len(args) > 0 {
-				return usagef("--me and --me-at name the worktree, so wt remove takes no worktree "+
+			if meAt != "" && len(args) > 0 {
+				return usagef("--me-at names the worktree, so wt remove takes no worktree "+
 					"beside them, and %q would be ignored", args[0])
 			}
 			// pflag reads --force idle-sessions as a bare --force and a
@@ -91,8 +90,6 @@ func newRemoveCmd() *cobra.Command {
 				target := retire.RemoveTarget{Path: meAt}
 				switch {
 				case meAt != "":
-				case me:
-					target.Path = ctx.Cwd
 				default:
 					target.Arg = args[0]
 				}
@@ -109,16 +106,9 @@ func newRemoveCmd() *cobra.Command {
 			if meAt != "" {
 				return retire.RemoveAt(ctx, meAt, opts, cmd.OutOrStdout())
 			}
-			if me {
-				return retire.RemoveAt(ctx, ctx.Cwd, opts, cmd.OutOrStdout())
-			}
 			return retire.Remove(ctx, args[0], opts, cmd.OutOrStdout())
 		},
 	}
-	// . says the same and is what every other command takes; --me stays for
-	// the lines already written with it.
-	cmd.Flags().BoolVar(&me, "me", false, "remove the worktree you are standing in")
-	_ = cmd.Flags().MarkHidden("me")
 	cmd.Flags().StringSliceVarP(&force, "force", "f", nil,
 		"go past `what`, or bare all: idle-sessions, busy-sessions, "+
 			"sessions-unknown, hidden-files, lock")
