@@ -36,8 +36,14 @@ func newDoctorCmd() *cobra.Command {
 			"  wt doctor --profile api # the ones a profile names",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			out := cmd.OutOrStdout()
+			if colourOn(out) {
+				marks := &statusWriter{w: out}
+				defer marks.Flush()
+				out = marks
+			}
 			if sel.selection().Any() {
-				return admin.DoctorAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), cmd.OutOrStdout())
+				return admin.DoctorAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), out)
 			}
 			// Lenient on purpose: a repository whose configuration is the
 			// problem is exactly the one that needs diagnosing.
@@ -50,12 +56,12 @@ func newDoctorCmd() *cobra.Command {
 				// Outside every repository, the roots and profiles are all
 				// there is to check.
 				u, userErr := config.LoadUser()
-				if n := admin.DoctorRepositories(u, userErr, cmd.OutOrStdout()); n > 0 {
+				if n := admin.DoctorRepositories(u, userErr, out); n > 0 {
 					return fmt.Errorf("%d problem(s) found", n)
 				}
 				return nil
 			}
-			problems, err := admin.Doctor(ctx, cmd.OutOrStdout())
+			problems, err := admin.Doctor(ctx, out)
 			if err != nil {
 				return err
 			}

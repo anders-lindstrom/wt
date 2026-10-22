@@ -18,3 +18,10 @@ func TestWrapHangsUnderTheIndent(t *testing.T) {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }
+
+func TestWrapBreakingInsideAGapLeavesNoTrailingSpaces(t *testing.T) {
+	got := Wrap(0, "wt sync --rebase          every worktree", 20, "      ")
+	if want := "wt sync --rebase\n      every worktree"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}

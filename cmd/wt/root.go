@@ -96,6 +96,8 @@ func newRootCmd(args ...string) *cobra.Command {
 		newRestoreCmd(), newPurgeCmd(), newRefsCmd())
 	add(groupRepo, newInitCmd(), newConfigCmd(), newDoctorCmd(), newSchemaCmd(), newShellLayerCmd(), newAboutCmd(), newVersionCmd())
 	root.AddCommand(newBranchStripCmd(), newHookCmd())
+	root.PersistentFlags().Var(&colorMode, "color", "colour help and status words: auto, always or never")
+	root.PersistentFlags().Lookup("color").DefValue = "auto"
 	installHelp(root)
 	root.SetArgs(args)
 	root.SetVersionTemplate("{{.Version}}\n")
@@ -270,7 +272,7 @@ func printLine(cmd *cobra.Command, s string, err error) error {
 func Execute() int {
 	root := newRootCmd()
 	if err := root.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "wt: %v\n", err)
+		fmt.Fprint(os.Stderr, errorLine(os.Stderr, err))
 		return errorStatus(err)
 	}
 	return 0

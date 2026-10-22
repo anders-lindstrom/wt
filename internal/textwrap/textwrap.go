@@ -16,6 +16,12 @@ func Wrap(start int, s string, width int, indent string) string {
 	}
 	var lines []string
 	line, col := "", start
+	gapBroken := false
+	brk := func(word string) {
+		lines = append(lines, strings.TrimRight(line, " "))
+		line = indent + word
+		col = utf8.RuneCountInString(line)
+	}
 	// Split on single spaces, so a run of them (the gap between a table's
 	// columns) survives as it was written; a line never starts with one.
 	for _, word := range strings.Split(s, " ") {
@@ -25,13 +31,18 @@ func Wrap(start int, s string, width int, indent string) string {
 			continue
 		case line == "":
 			line, col = word, col+n
+		case word == "" && gapBroken:
+			// The rest of a gap the line broke inside: nothing to keep.
+		case word == "" && col+1 > width:
+			gapBroken = true
+		case gapBroken:
+			gapBroken = false
+			brk(word)
 		case col+1+n <= width:
 			line, col = line+" "+word, col+1+n
 		default:
-			lines = append(lines, line)
-			line = indent + word
-			col = utf8.RuneCountInString(line)
+			brk(word)
 		}
 	}
-	return strings.Join(append(lines, line), "\n")
+	return strings.Join(append(lines, strings.TrimRight(line, " ")), "\n")
 }

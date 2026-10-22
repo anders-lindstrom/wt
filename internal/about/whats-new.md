@@ -5,6 +5,14 @@ Newest first, each heading stamped with the local date and time of the change
 would want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
 
+## 2026-10-22 10:17 — coloured help and status words
+
+In a terminal, `wt --help` shows bold headings, cyan command names, green flag
+names and dim notes, `wt doctor` marks its lines green and yellow, and an error
+starts with a red `wt:`. Nothing is coloured in a pipe, under an agent or a CI
+runner, with `NO_COLOR` set or `TERM=dumb`; `--color=always` forces it for one
+call and `--color=never` turns it off.
+
 ## 2026-10-22 10:14 — three old flag spellings go, and install.sh is simpler
 
 `wt remove --me`, `--skip-build` and `wt repos --doctor` are gone; use

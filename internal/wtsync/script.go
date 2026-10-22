@@ -86,7 +86,7 @@ func (s Script) invoke(dir string, env []string, verb, path string) (scriptRun, 
 	defer cleanup()
 	cmd := exec.Command(exe, verb, path)
 	cmd.Dir = dir
-	cmd.Env = git.Environ(env...)
+	cmd.Env = git.Environ(append([]string{"NO_COLOR=1"}, env...)...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	timedOut, code, runErr := git.RunBounded(s.timeout(), cmd)

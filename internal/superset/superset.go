@@ -304,6 +304,7 @@ func (c CLI) Delete(id string) (warnings []string, err error) {
 // calls use, so the deadline and an interrupt take down whatever it forked.
 func (c CLI) run(deadline time.Duration, args ...string) ([]byte, error) {
 	cmd := exec.Command(c.Exe, args...)
+	cmd.Env = git.Environ("NO_COLOR=1")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	timedOut, _, err := git.RunBounded(deadline, cmd)
