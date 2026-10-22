@@ -1,10 +1,15 @@
 # What's new
 
 Newest first, each heading stamped with the local date and time of the change
-(several land per day). `wt about` prints the newest 5 entries, or every entry
-from the last 3 days if that is more, so keep each entry to a few lines a human
+(several land per day). `wt about` prints the newest 5 entries, so keep each entry to a few lines a human
 would want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
+
+## 2026-10-22 10:10 — help follows your terminal's width
+
+Help and `wt about` wrap to the width of the terminal, up to 180 columns, and
+keep the flag list and the command list in aligned columns. Piped, they are not
+wrapped: each paragraph and each description is one line.
 
 ## 2026-10-19 12:32 — Release locally when Actions minutes run out
 

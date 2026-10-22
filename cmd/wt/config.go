@@ -45,12 +45,11 @@ func userKeyList() string {
 	var b strings.Builder
 	b.WriteString("Settings:\n")
 	for _, name := range config.UserKeyNames() {
-		b.WriteString(wrapLine("  "+name+" — "+config.UserKeyDoc(name), "    ") + "\n")
+		b.WriteString("  " + name + " — " + config.UserKeyDoc(name) + "\n")
 	}
-	b.WriteString("  root.<name> — a directory of repositories, or one repository, for\n" +
-		"    --roots <name>; WT_ROOTS, when set, stands in for every root\n")
-	b.WriteString("  profile.<name> — repositories for --profile <name>, as paths\n" +
-		"    separated by spaces or commas\n")
+	b.WriteString("  root.<name> — a directory of repositories, or one repository, for --roots <name>; " +
+		"WT_ROOTS, when set, stands in for every root\n")
+	b.WriteString("  profile.<name> — repositories for --profile <name>, as paths separated by spaces or commas\n")
 	return strings.TrimRight(b.String(), "\n")
 }
 

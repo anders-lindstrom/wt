@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -51,8 +50,7 @@ func newRootCmd(args ...string) *cobra.Command {
 			"repositories under your roots: every one, the ones under the roots\n" +
 			"named, or the ones a profile names (wt repos lists them).\n" +
 			"Run `wt <command> --help` for that command's own examples.\n\n" +
-			"Exit: 0 done, 1 failed, 2 usage error, 3 no launchd,\n" +
-			"      130 SIGINT, 143 SIGTERM.",
+			"Exit: 0 done, 1 failed, 2 usage error, 3 no launchd, 130 SIGINT, 143 SIGTERM.",
 		Example: "  wt new fix/login-crash    # branch, worktree and provisioning in one\n" +
 			"  wt cd login-crash         # work in it (needs wt's shell layer)\n" +
 			"  wt up                     # onto trunk, if that goes through cleanly\n" +
@@ -99,10 +97,7 @@ func newRootCmd(args ...string) *cobra.Command {
 		newRestoreCmd(), newPurgeCmd(), newRefsCmd())
 	add(groupRepo, newInitCmd(), newConfigCmd(), newDoctorCmd(), newSchemaCmd(), newShellLayerCmd(), newAboutCmd(), newVersionCmd())
 	root.AddCommand(newBranchStripCmd(), newHookCmd())
-	// Flag descriptions wrap at 79 columns, lined up under their first line,
-	// so a long one does not wrap in an 80-column terminal.
-	root.SetUsageTemplate(strings.ReplaceAll(root.UsageTemplate(),
-		".FlagUsages |", ".FlagUsagesWrapped 79 |"))
+	installHelp(root)
 	root.SetArgs(args)
 	root.SetVersionTemplate("{{.Version}}\n")
 	root.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
@@ -144,22 +139,6 @@ func helpAsked(args []string) bool {
 		}
 	}
 	return false
-}
-
-// wrapLine breaks a help line at the last space that keeps it in 79 columns,
-// continuing under it after indent, for lists that are built rather than
-// written.
-func wrapLine(line, indent string) string {
-	var out []string
-	for utf8.RuneCountInString(line) > 79 {
-		cut := strings.LastIndex(string([]rune(line)[:80]), " ")
-		if cut <= len(indent) {
-			break
-		}
-		out = append(out, line[:cut])
-		line = indent + line[cut+1:]
-	}
-	return strings.Join(append(out, line), "\n")
 }
 
 // The command groups `wt --help` prints under.

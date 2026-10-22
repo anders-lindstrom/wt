@@ -21,12 +21,11 @@ func newAboutCmd() *cobra.Command {
 		Use:   "about",
 		Short: "Print the version and what changed recently",
 		Long: "Print which build of wt this is, when it was built, and what changed\n" +
-			"recently: the newest 5 what's-new entries, or every entry from the last\n" +
-			"3 days if that is more.",
+			"recently: the newest 5 what's-new entries.",
 		Example: "  wt about  # the build, and what landed recently",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			fmt.Fprintln(cmd.OutOrStdout(), about.Text(version, buildDate, commitDate))
+			fmt.Fprintln(cmd.OutOrStdout(), about.Text(version, buildDate, commitDate, helpWidth(cmd.OutOrStdout())))
 			return nil
 		},
 	}

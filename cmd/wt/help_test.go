@@ -1,12 +1,10 @@
 package main
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -66,17 +64,12 @@ func TestEveryCommandShowsExamples(t *testing.T) {
 }
 
 // An example is a line you can paste into a shell, indented the way cobra
-// indents everything else, and short enough not to wrap in an 80-column
-// terminal.
+// indents everything else.
 func TestEveryExampleIsAPastableLine(t *testing.T) {
 	for _, c := range reachable(newRootCmd()) {
 		for _, line := range exampleLines(c) {
 			if !strings.HasPrefix(line, "  wt ") {
 				t.Errorf("%q: example is not a `wt` invocation: %q", c.CommandPath(), line)
-			}
-			if len(line) > 79 {
-				t.Errorf("%q: example wraps at 80 columns (%d): %q",
-					c.CommandPath(), len(line), line)
 			}
 		}
 	}
@@ -207,25 +200,6 @@ func TestEveryCommandIsInAGroup(t *testing.T) {
 		if !groups[c.GroupID] {
 			t.Errorf("%q is in group %q, which the root does not declare",
 				c.CommandPath(), c.GroupID)
-		}
-	}
-}
-
-// Help is read in an 80-column terminal as often as not, and a line that wraps
-// there breaks a table or strands a word. Every line --help prints — the
-// description, the flag list, the examples — fits in 79.
-func TestEveryHelpLineFitsIn79Columns(t *testing.T) {
-	for _, c := range reachable(newRootCmd()) {
-		var buf bytes.Buffer
-		c.SetOut(&buf)
-		c.SetErr(&buf)
-		if err := c.Help(); err != nil {
-			t.Fatalf("%q: %v", c.CommandPath(), err)
-		}
-		for _, line := range strings.Split(buf.String(), "\n") {
-			if n := utf8.RuneCountInString(line); n > 79 {
-				t.Errorf("%q: help line is %d columns: %q", c.CommandPath(), n, line)
-			}
 		}
 	}
 }
