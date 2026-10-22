@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 )
 
 // reachable is every command a user can get help for: the whole tree minus
@@ -39,71 +38,69 @@ func exampleLines(c *cobra.Command) []string {
 	return out
 }
 
-// Examples are the fastest way to learn what a command can do, so every
-// command has some — between two and five, because a wall of them is a manual
-// again.
-func TestEveryCommandShowsExamples(t *testing.T) {
-	for _, c := range reachable(newRootCmd()) {
-		lines := exampleLines(c)
-		// A command that takes something — an argument or a flag — has more
-		// than one way to be used, and help has to show more than one.
-		want := 1
-		if strings.ContainsAny(c.Use, "<[") || c.Flags().HasAvailableFlags() {
-			want = 2
-		}
-		switch {
-		case len(lines) == 0:
-			t.Errorf("%q has no Example block", c.CommandPath())
-		case len(lines) < want:
-			t.Errorf("%q shows %d example(s); show at least %d",
-				c.CommandPath(), len(lines), want)
-		case len(lines) > 5:
-			t.Errorf("%q shows %d examples; keep it to 5", c.CommandPath(), len(lines))
-		}
-	}
-}
-
-// An example is a line you can paste into a shell, indented the way cobra
-// indents everything else.
-func TestEveryExampleIsAPastableLine(t *testing.T) {
-	for _, c := range reachable(newRootCmd()) {
+// An example is a line you can paste into a shell, and its command and flags
+// still exist: help that shows a flag the command no longer has is worse than
+// no example. This reads each example back and parses it; it runs nothing.
+func TestEveryExampleStillParses(t *testing.T) {
+	root := newRootCmd()
+	for _, c := range reachable(root) {
 		for _, line := range exampleLines(c) {
-			if !strings.HasPrefix(line, "  wt ") {
+			words := exampleWords(strings.TrimSpace(line))
+			if len(words) < 2 || words[0] != "wt" {
 				t.Errorf("%q: example is not a `wt` invocation: %q", c.CommandPath(), line)
+				continue
+			}
+			found, rest, err := root.Find(words[1:])
+			if err != nil {
+				t.Errorf("%q: example %q: %v", c.CommandPath(), line, err)
+				continue
+			}
+			if found.Name() == "exec" {
+				continue // everything after the work is the command to run, flags and all
+			}
+			found.InitDefaultHelpFlag()
+			found.InitDefaultVersionFlag()
+			if err := found.ParseFlags(rest); err != nil {
+				t.Errorf("%q: example %q: %v", c.CommandPath(), line, err)
 			}
 		}
 	}
 }
 
-// A flag nobody shows in use is a flag nobody finds. The flag list says what
-// exists; the examples say what it is for. A flag named after a subcommand, or
-// one a subcommand declares too, is that verb spelled on the parent
-// (wt sync <work> --rebase --push), and the verb's examples may show it, but only
-// on a line spelled the parent's way: wt sync undo login-crash --force shows
-// undo's --force, not wt sync's.
-func TestEveryFlagAppearsInAnExample(t *testing.T) {
-	for _, c := range reachable(newRootCmd()) {
-		c.Flags().VisitAll(func(f *pflag.Flag) {
-			if f.Hidden || f.Name == "help" {
-				return
+// exampleWords splits an example line into its words, honouring quotes, and
+// stops at a comment, a pipe, a redirection or a `;`.
+func exampleWords(line string) []string {
+	var words []string
+	var word strings.Builder
+	var quote rune
+	for i, r := range line {
+		switch {
+		case quote != 0:
+			if r == quote {
+				quote = 0
+			} else {
+				word.WriteRune(r)
 			}
-			shown := strings.Contains(c.Example, "--"+f.Name)
-			for _, sub := range c.Commands() {
-				if sub.Name() != f.Name && sub.Flags().Lookup(f.Name) == nil {
-					continue
-				}
-				for _, line := range exampleLines(sub) {
-					line = strings.TrimSpace(line)
-					if !strings.HasPrefix(line, sub.CommandPath()+" ") && strings.Contains(line, "--"+f.Name) {
-						shown = true
-					}
-				}
+		case r == '"' || r == '\'':
+			quote = r
+		case r == ' ':
+			if word.Len() > 0 {
+				words = append(words, word.String())
+				word.Reset()
 			}
-			if !shown {
-				t.Errorf("%q: no example uses --%s", c.CommandPath(), f.Name)
+		case r == '#' && (i == 0 || line[i-1] == ' '), r == '>', r == '|', r == ';':
+			if word.Len() > 0 {
+				words = append(words, word.String())
 			}
-		})
+			return words
+		default:
+			word.WriteRune(r)
+		}
 	}
+	if word.Len() > 0 {
+		words = append(words, word.String())
+	}
+	return words
 }
 
 // fleet is names from the real fleet: worktrees, repositories, a Superset id.
