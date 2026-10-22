@@ -1,10 +1,30 @@
 # What's new
 
 Newest first, each heading stamped with the local date and time of the change
-(several land per day). `wt about` prints the newest 5 entries, or every entry
-from the last 3 days if that is more, so keep each entry to a few lines a human
+(several land per day). `wt about` prints the newest 5 entries, so keep each entry to a few lines a human
 would want read out to them; the full story is in git history and in
 `docs/superpowers/plans/`.
+
+## 2026-10-22 10:17 — coloured help and status words
+
+In a terminal, `wt --help` shows bold headings, cyan command names, green flag
+names and dim notes, `wt doctor` marks its lines green and yellow, and an error
+starts with a red `wt:`. Nothing is coloured in a pipe, under an agent or a CI
+runner, with `NO_COLOR` set or `TERM=dumb`; `--color=always` forces it for one
+call and `--color=never` turns it off.
+
+## 2026-10-22 10:14 — three old flag spellings go, and install.sh is simpler
+
+`wt remove --me`, `--skip-build` and `wt repos --doctor` are gone; use
+`wt remove .`, `--no-build` and `wt doctor --all`. `install.sh` no longer keeps
+a record of what it installed: it overwrites and removes only files that are
+recognisably wt's own, and still refuses to touch anything else.
+
+## 2026-10-22 10:10 — help follows your terminal's width
+
+Help and `wt about` wrap to the width of the terminal, up to 180 columns, and
+keep the flag list and the command list in aligned columns. Piped, they are not
+wrapped: each paragraph and each description is one line.
 
 ## 2026-10-19 12:32 — Release locally when Actions minutes run out
 

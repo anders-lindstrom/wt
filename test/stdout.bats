@@ -74,7 +74,7 @@ GH
     chmod +x "$FAKEBIN/superset"
     wt config set superset true > /dev/null
     cd "$REPO"
-    run --separate-stderr wt new fix/login-crash --skip-build
+    run --separate-stderr wt new fix/login-crash --no-build
     [ "$status" -eq 0 ]
     [ "${#lines[@]}" -eq 1 ]
     [ -d "$output" ]

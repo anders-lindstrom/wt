@@ -49,14 +49,11 @@ func newSetupCmd() *cobra.Command {
 
 // addProvisionFlags declares --no-build and --no-cache for every command that
 // provisions a worktree, and --no-setup and --no-superset for the three that create one:
-// `wt new`, `wt checkout` and `wt pr checkout`. --skip-build is the old
-// spelling of --no-build, kept working and out of help.
+// `wt new`, `wt checkout` and `wt pr checkout`.
 func addProvisionFlags(cmd *cobra.Command, skipBuild, noCache, noSetup, noSuperset *bool) {
 	cmd.Flags().BoolVar(skipBuild, "no-build", false, "provision, but skip build initialisation")
 	cmd.Flags().BoolVar(noCache, "no-cache", false,
 		"provision, but do not clone WORKTREE_CACHE_DIRS from the source checkout")
-	cmd.Flags().BoolVar(skipBuild, "skip-build", false, "the old spelling of --no-build")
-	_ = cmd.Flags().MarkHidden("skip-build")
 	if noSetup != nil {
 		cmd.Flags().BoolVar(noSetup, "no-setup", false, "create the worktree without provisioning it")
 	}

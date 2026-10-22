@@ -69,7 +69,9 @@ func (launchctlDriver) run(args ...string) (string, error) {
 	if err != nil {
 		return "", errors.New("launchctl is not on the PATH")
 	}
-	out, err := exec.Command(exe, args...).CombinedOutput()
+	cmd := exec.Command(exe, args...)
+	cmd.Env = append(os.Environ(), "NO_COLOR=1")
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		text := strings.TrimSpace(string(out))
 		if text == "" {

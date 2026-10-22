@@ -157,6 +157,7 @@ func claudeListing(deadline time.Duration) (data []byte, found bool, err error) 
 		return nil, false, nil
 	}
 	cmd := exec.Command(exe, "agents", "--json")
+	cmd.Env = git.Environ("NO_COLOR=1")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	timedOut, _, err := git.RunBounded(deadline, cmd)

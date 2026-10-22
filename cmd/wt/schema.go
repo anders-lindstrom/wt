@@ -25,7 +25,7 @@ func newSchemaCmd() *cobra.Command {
 			"Each schema's $id is where it is published in the wt repository.\n\n" +
 			"With no command it lists the schemas there are. docs/json.md explains\n" +
 			"the fields and the rules.\n\n" +
-			wrapLine("Schemas: "+strings.Join(names, ", "), "         "),
+			"Schemas: " + strings.Join(names, ", "),
 		Example: "  wt schema             # the schemas there are, and their ids\n" +
 			"  wt schema up          # the schema of wt up --json\n" +
 			"  wt schema sync-run    # of wt sync rebase, resume and undo --json\n" +

@@ -7,26 +7,24 @@ import (
 	_ "embed"
 	"fmt"
 	"strings"
-	"time"
+
+	"github.com/anders-lindstrom/wt/internal/textwrap"
 )
 
 //go:embed whats-new.md
 var whatsNew string
 
-const (
-	// newestCount entries are always shown, however old.
-	newestCount = 5
-	// recentWindow is how far back an entry still counts as recent; every
-	// recent entry is shown, even beyond newestCount.
-	recentWindow = 72 * time.Hour
-	// stampLayout is the local time that opens every heading.
-	stampLayout = "2006-01-02 15:04"
-)
+// newestCount is how many what's-new entries `wt about` shows.
+const newestCount = 5
+
+// stampLayout is the local time that opens every heading.
+const stampLayout = "2006-01-02 15:04"
 
 // Text is what `wt about` prints, without a trailing newline: the version, how
-// this binary was built, and the recent what's-new entries.
-func Text(version, buildDate, commitDate string) string {
-	return render(version, buildDate, commitDate, whatsNew, time.Now())
+// this binary was built, and the newest what's-new entries, wrapped to width
+// columns (0 for no wrapping, as help does when it is not on a terminal).
+func Text(version, buildDate, commitDate string, width int) string {
+	return render(version, buildDate, commitDate, whatsNew, width)
 }
 
 // NewestHeading names the newest what's-new entry.
@@ -39,14 +37,21 @@ func NewestHeading() string {
 	return heading
 }
 
-func render(version, buildDate, commitDate, md string, now time.Time) string {
+func render(version, buildDate, commitDate, md string, width int) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "wt %s\n", version)
 	if line := buildLine(version, buildDate, commitDate); line != "" {
 		fmt.Fprintf(&b, "%s\n", line)
 	}
-	if entries := recent(sections(md), now); len(entries) > 0 {
-		fmt.Fprintf(&b, "\n%s", strings.Join(entries, "\n\n"))
+	entries := sections(md)
+	entries = entries[:min(len(entries), newestCount)]
+	for i, entry := range entries {
+		if i == 0 {
+			b.WriteString("\n")
+		} else {
+			b.WriteString("\n\n")
+		}
+		b.WriteString(wrapEntry(entry, width))
 	}
 	return b.String()
 }
@@ -77,31 +82,41 @@ func stamp(s string) string {
 	return strings.Replace(s, "T", " ", 1)
 }
 
-// recent keeps the newest newestCount entries plus every entry stamped within
-// recentWindow of now, in file order. An entry without a parseable stamp still
-// counts toward the newest, but is never recent.
-func recent(entries []string, now time.Time) []string {
-	cutoff := now.Add(-recentWindow)
-	var out []string
-	for i, entry := range entries {
-		if i < newestCount {
-			out = append(out, entry)
-			continue
-		}
-		if at, ok := headingTime(entry, now.Location()); ok && !at.Before(cutoff) {
-			out = append(out, entry)
+// wrapEntry wraps one entry to width columns. A line that starts with "- "
+// opens a bullet and the indented lines under it continue it; any other run of
+// lines is a paragraph. The heading is one line and is left alone.
+func wrapEntry(entry string, width int) string {
+	var out, item []string
+	prefix := ""
+	flush := func() {
+		if len(item) > 0 {
+			indent := strings.Repeat(" ", len(prefix))
+			out = append(out, prefix+textwrap.Wrap(len(prefix), strings.Join(item, " "), width, indent))
+			item, prefix = nil, ""
 		}
 	}
-	return out
-}
-
-// headingTime reads the local stamp that opens an entry's heading.
-func headingTime(entry string, loc *time.Location) (time.Time, bool) {
-	if len(entry) < len(stampLayout) {
-		return time.Time{}, false
+	for n, line := range strings.Split(entry, "\n") {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case n == 0:
+			out = append(out, line)
+		case trimmed == "":
+			flush()
+			out = append(out, "")
+		case strings.HasPrefix(line, "- "):
+			flush()
+			prefix, item = "- ", []string{strings.TrimPrefix(line, "- ")}
+		case line[0] == ' ' && len(item) > 0:
+			item = append(item, trimmed)
+		default:
+			if prefix != "" {
+				flush()
+			}
+			item = append(item, trimmed)
+		}
 	}
-	at, err := time.ParseInLocation(stampLayout, entry[:len(stampLayout)], loc)
-	return at, err == nil
+	flush()
+	return strings.Join(out, "\n")
 }
 
 // sections splits the what's-new file into its `## ` entries, newest first,

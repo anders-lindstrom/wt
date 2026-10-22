@@ -83,9 +83,8 @@ func TestRemoveForceFlagForms(t *testing.T) {
 		// bare --force and a worktree named idle-sessions.
 		{[]string{"--force", "idle-sessions"}, "--force=idle-sessions"},
 		{[]string{"-f", "busy-sessions,lock"}, "--force=<list>"},
-		// --me and --me-at name the worktree, so nothing else may.
+		// --me-at names the worktree, so nothing else may.
 		{[]string{"--me-at", "/tmp/x", "--yes", "--force", "idle-sessions"}, "takes no worktree"},
-		{[]string{"--me", "login-crash"}, "takes no worktree"},
 	} {
 		cmd := newRemoveCmd()
 		cmd.SetArgs(tc.args)

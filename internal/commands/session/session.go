@@ -1223,6 +1223,7 @@ func runClaudeStop(id string) (string, error) {
 		return "", errors.New("claude is not on the PATH")
 	}
 	cmd := exec.Command(exe, "stop", id)
+	cmd.Env = git.Environ("NO_COLOR=1")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	timedOut, _, err := git.RunBounded(stopDeadline, cmd)
