@@ -99,15 +99,24 @@ func TestMergedIntoListsBranchesReachableFromACommit(t *testing.T) {
 func TestResolveRefAndHasRemote(t *testing.T) {
 	t.Parallel()
 	r, dir := sweepFixture(t)
-	tip, ok := r.ResolveRef("refs/remotes/origin/main")
-	if !ok || tip != sweepGit(t, dir, "rev-parse", "main") {
-		t.Errorf("origin/main = %q, %v", tip, ok)
+	tip, ok, err := r.ResolveRef("refs/remotes/origin/main")
+	if err != nil || !ok || tip != sweepGit(t, dir, "rev-parse", "main") {
+		t.Errorf("origin/main = %q, %v, %v", tip, ok, err)
 	}
-	if _, ok := r.ResolveRef("refs/remotes/origin/nope"); ok {
-		t.Error("a missing ref must not resolve")
+	if _, ok, err := r.ResolveRef("refs/remotes/origin/nope"); ok || err != nil {
+		t.Errorf("a missing ref = %v, %v; want false and no error", ok, err)
 	}
 	if !r.HasRemote("origin") || r.HasRemote("upstream") {
 		t.Error("HasRemote: want origin and not upstream")
+	}
+}
+
+// A git that fails is an error, never "names no commit".
+func TestResolveRefFailingGitIsAnError(t *testing.T) {
+	t.Parallel()
+	r := &Repo{MainRoot: t.TempDir()}
+	if _, ok, err := r.ResolveRef("refs/heads/main"); ok || err == nil {
+		t.Errorf("outside a repository = %v, %v; want an error", ok, err)
 	}
 }
 
@@ -116,16 +125,25 @@ func TestOriginHeadReadsADanglingHead(t *testing.T) {
 	t.Parallel()
 	r, dir := sweepFixture(t)
 	sweepGit(t, dir, "remote", "set-head", "origin", "main")
-	if got, ok := r.OriginHead(); !ok || got != "main" {
-		t.Errorf("OriginHead = %q, %v; want main", got, ok)
+	if got, ok, err := r.OriginHead(); err != nil || !ok || got != "main" {
+		t.Errorf("OriginHead = %q, %v, %v; want main", got, ok, err)
 	}
 	sweepGit(t, dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/integration")
-	if got, ok := r.OriginHead(); !ok || got != "integration" {
-		t.Errorf("dangling OriginHead = %q, %v; want integration", got, ok)
+	if got, ok, err := r.OriginHead(); err != nil || !ok || got != "integration" {
+		t.Errorf("dangling OriginHead = %q, %v, %v; want integration", got, ok, err)
 	}
 	sweepGit(t, dir, "remote", "set-head", "origin", "--delete")
-	if _, ok := r.OriginHead(); ok {
-		t.Error("no origin/HEAD must report false")
+	if _, ok, err := r.OriginHead(); ok || err != nil {
+		t.Errorf("no origin/HEAD = %v, %v; want false and no error", ok, err)
+	}
+}
+
+// A git that fails is an error, never "origin has no HEAD".
+func TestOriginHeadFailingGitIsAnError(t *testing.T) {
+	t.Parallel()
+	r := &Repo{MainRoot: t.TempDir()}
+	if _, ok, err := r.OriginHead(); ok || err == nil {
+		t.Errorf("outside a repository = %v, %v; want an error", ok, err)
 	}
 }
 
@@ -135,8 +153,8 @@ func TestOriginHeadIsNotConfusedByASameNamedLocalRef(t *testing.T) {
 	r, dir := sweepFixture(t)
 	sweepGit(t, dir, "remote", "set-head", "origin", "main")
 	sweepGit(t, dir, "branch", "origin/main", "main")
-	if got, ok := r.OriginHead(); !ok || got != "main" {
-		t.Errorf("OriginHead = %q, %v; want main", got, ok)
+	if got, ok, err := r.OriginHead(); err != nil || !ok || got != "main" {
+		t.Errorf("OriginHead = %q, %v, %v; want main", got, ok, err)
 	}
 }
 

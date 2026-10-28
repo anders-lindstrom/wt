@@ -221,7 +221,8 @@ func (r *RunPlan) run(works []string) error {
 	}
 	for _, b := range r.branches {
 		p := r.parts[b]
-		before, _ := r.ctx.Repo.ResolveRef("refs/heads/" + b)
+		// The journal's record: a tip git cannot read is recorded as none.
+		before, _, _ := r.ctx.Repo.ResolveRef("refs/heads/" + b)
 		opts.Journal.Join(p.work, b, p.wt.Path, before, OwnRemoteSyncOf(OwnStateOf(r.own, b)))
 	}
 	if proceed, err := r.triage(); err != nil || !proceed {
@@ -977,7 +978,8 @@ func (r *RunPlan) rebaseOne(b string) {
 	r.failures = append(r.failures, OwedBy(p.work, owed)...)
 	// The rebase itself stands; only this branch and what sits on it
 	// lose their footing, so the rest of the run carries on.
-	after, _ := ctx.Repo.ResolveRef("refs/heads/" + b)
+	// The journal's record: a tip git cannot read is recorded as none.
+	after, _, _ := ctx.Repo.ResolveRef("refs/heads/" + b)
 	j.SetSync(b, func(jp *SyncParticipant) {
 		jp.SafetyRef, jp.UndoCommand, jp.Deferred = kit.Strp(res.Safety.Ref), UndoCommand(p.work), DeferredSteps(ran)
 	})
@@ -1033,7 +1035,10 @@ func (r *RunPlan) fastForward(b string, p *participant, done string) (safety wts
 		r.refuseAbove(b, p.work+" could not be fast-forwarded")
 		return wtsync.Safety{}, false
 	}
-	tip, there := ctx.Repo.ResolveRef("refs/heads/" + b)
+	tip, there, err := ctx.Repo.ResolveRef("refs/heads/" + b)
+	if err != nil {
+		return refuse("git could not read where the branch is: " + git.Reason(err))
+	}
 	if !there || tip != own.Local {
 		return refuse("the branch moved since it was checked")
 	}
@@ -1048,10 +1053,17 @@ func (r *RunPlan) fastForward(b string, p *participant, done string) (safety wts
 		// git moves the branch before it runs a hook, so a merge that
 		// reports a failure may still have gone through: where the branch
 		// is now decides, not the exit status.
-		switch now, _ := ctx.Repo.ResolveRef("refs/heads/" + b); now {
-		case own.Commit:
+		now, _, nerr := ctx.Repo.ResolveRef("refs/heads/" + b)
+		switch {
+		case nerr != nil:
+			// Where it is cannot be told: the refs stay, since the old tip
+			// is under one of them.
+			r.tracker.Set(nil)
+			return refuse(fmt.Sprintf("%v; git could not read where the branch is now (%s), and its old tip is under %s",
+				err, git.Reason(nerr), safety.Ref))
+		case now == own.Commit:
 			fmt.Fprintf(w, "  note: the fast-forward went through, and git then reported: %v\n", err)
-		case tip:
+		case now == tip:
 			r.tracker.Set(nil)
 			if derr := wtsync.DeleteSafety(ctx.Repo.MainRoot, safety); derr != nil {
 				fmt.Fprintf(w, "  note: could not remove %s: %v\n", safety.Ref, derr)
@@ -1173,11 +1185,11 @@ func notReadyReason(a wtsync.Assessment) string {
 // restored; anything else needs putting back by hand, and says how. safety
 // is the ref the rebase pinned the old tip under, "" when it failed first.
 func (r *RunPlan) recordFailed(b string, p *participant, why, oldTip, safety string) {
-	now, _ := r.ctx.Repo.ResolveRef("refs/heads/" + b)
+	now, _, nerr := r.ctx.Repo.ResolveRef("refs/heads/" + b)
 	busy, berr := wtsync.RebaseInProgress(p.wt.Path)
 	dirty, derr := repo.Dirty(p.wt.Path, true)
 	head, herr := git.Run(p.wt.Path, "rev-parse", "--verify", "--quiet", "HEAD")
-	restored := berr == nil && !busy && derr == nil && !dirty && herr == nil &&
+	restored := nerr == nil && berr == nil && !busy && derr == nil && !dirty && herr == nil &&
 		oldTip != "" && now == oldTip && head == oldTip
 	if restored {
 		r.dropFastForward(b, p)

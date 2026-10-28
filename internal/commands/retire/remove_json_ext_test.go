@@ -190,7 +190,10 @@ func TestRemoveExpectRefusesEveryChangeTouchingNothing(t *testing.T) {
 				t.Fatalf("the plan must be removable: %v %+v", err, p)
 			}
 			c.change(t, ctx, path, &run)
-			tip, _ := ctx.Repo.ResolveRef("refs/heads/fix_wt/expect")
+			tip, _, err := ctx.Repo.ResolveRef("refs/heads/fix_wt/expect")
+			if err != nil {
+				t.Fatal(err)
+			}
 			run.Expect = *p.Token
 
 			r, err := retiretest.RemoveJSON(t, ctx, path, run)
@@ -203,7 +206,7 @@ func TestRemoveExpectRefusesEveryChangeTouchingNothing(t *testing.T) {
 			if !testkit.Exists(path) {
 				t.Error("the worktree must be there")
 			}
-			if now, ok := ctx.Repo.ResolveRef("refs/heads/fix_wt/expect"); !ok || now != tip {
+			if now, ok, err := ctx.Repo.ResolveRef("refs/heads/fix_wt/expect"); err != nil || !ok || now != tip {
 				t.Error("the branch must be untouched")
 			}
 			if run.Quarantine != "" && testkit.Exists(run.Quarantine) {

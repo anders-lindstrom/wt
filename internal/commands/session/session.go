@@ -1238,7 +1238,7 @@ func runClaudeStop(id string) (string, error) {
 	case timedOut:
 		return msg, fmt.Errorf("claude stop did not answer within %s", stopDeadline)
 	case err != nil:
-		return msg, fmt.Errorf("claude stop failed: %v", err)
+		return msg, fmt.Errorf("claude stop failed: %w", err)
 	}
 	return msg, nil
 }

@@ -52,7 +52,7 @@ func TestPRCheckoutRemovesABranchGhLeftBehind(t *testing.T) {
 	if _, err := PRCheckout(ctx, 12, PROptions{}, &errs); err == nil {
 		t.Fatal("PRCheckout succeeded with a gh that failed")
 	}
-	if _, ok := ctx.Repo.ResolveRef("refs/heads/residential_fixes"); ok {
+	if _, ok, err := ctx.Repo.ResolveRef("refs/heads/residential_fixes"); err != nil || ok {
 		t.Error("the branch gh half-made was left behind")
 	}
 }
@@ -73,7 +73,7 @@ func TestPRCheckoutKeepsABranchItDidNotMake(t *testing.T) {
 	if _, err := PRCheckout(ctx, 12, PROptions{}, &errs); err == nil {
 		t.Fatal("PRCheckout succeeded with a gh that failed")
 	}
-	if _, ok := ctx.Repo.ResolveRef("refs/heads/residential_fixes"); !ok {
+	if _, ok, err := ctx.Repo.ResolveRef("refs/heads/residential_fixes"); err != nil || !ok {
 		t.Error("a branch that was here before was deleted")
 	}
 }

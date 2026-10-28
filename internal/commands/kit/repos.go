@@ -108,7 +108,10 @@ func repoStatus(t RepoTarget) status {
 		return status{problem: "wt configuration: " + OneLine(ctx.ConfigError.Error()) + "; wt doctor in it"}
 	}
 	s := status{worktrees: worktreesIn(t.Path), sync: "sync set up"}
-	if _, ok := ctx.Repo.ResolveRef("refs/remotes/origin/" + ctx.Config.MainBranch); !ok {
+	if _, ok, err := ctx.Repo.ResolveRef("refs/remotes/origin/" + ctx.Config.MainBranch); err != nil {
+		s.sync = "sync unknown: " + OneLine(err.Error())
+		return s
+	} else if !ok {
 		// wt sync reads the declaration from origin's trunk; with none
 		// fetched there is nothing to read it from.
 		s.sync = "sync unknown: origin/" + ctx.Config.MainBranch + " never fetched"

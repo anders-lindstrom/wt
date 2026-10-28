@@ -228,8 +228,9 @@ func removeToken(ctx *kit.Context, p Plan) *string {
 	field("keepAs", p.KeepAs)
 	if p.KeepAs != "" {
 		// A name taken meanwhile turns the rename into a failure.
-		taken, _ := ctx.Repo.ResolveRef("refs/heads/" + p.KeepAs)
+		taken, _, err := ctx.Repo.ResolveRef("refs/heads/" + p.KeepAs)
 		field("keepAsTaken", taken)
+		field("keepAsTakenError", err != nil)
 	}
 	field("reason", p.Reason)
 	field("merge", mergeNames[p.Merge])
@@ -597,14 +598,16 @@ func removeOutput(ctx *kit.Context, plan *Plan, token, runID string, started boo
 	}
 	gone := worktree == WorktreeRemoved || worktree == WorktreeQuarantined
 
-	branchGone := false
+	// A branch git cannot read is not called gone, but its pin is still
+	// looked for: if it is gone, the pin is where its tip is held.
+	branchGone, branchUnread := false, false
 	if plan.Branch != "" && plan.Tip != "" {
-		_, ok := ctx.Repo.ResolveRef("refs/heads/" + plan.Branch)
-		branchGone = !ok
+		_, ok, err := ctx.Repo.ResolveRef("refs/heads/" + plan.Branch)
+		branchGone, branchUnread = !ok && err == nil, err != nil
 	}
 	o.RunID = kit.Strp(runID)
 	pin := ""
-	if branchGone {
+	if branchGone || branchUnread {
 		pin = refpins.PinHolding(ctx.Repo.MainRoot, runID, plan.Branch, plan.Tip)
 	}
 	switch {
@@ -674,7 +677,8 @@ func interruptedBranch(ctx *kit.Context, p Plan, worktreeGone, branchGone bool) 
 	case p.Outcome == BranchDeleted && branchGone:
 		return quarantine.BranchDeleted
 	case p.Outcome == BranchKept && branchGone:
-		if _, ok := ctx.Repo.ResolveRef("refs/heads/" + p.KeepAs); ok {
+		// A name git cannot read leaves the step interrupted, which claims nothing.
+		if _, ok, _ := ctx.Repo.ResolveRef("refs/heads/" + p.KeepAs); ok {
 			return quarantine.BranchRenamed
 		}
 	}

@@ -26,7 +26,7 @@ func TestRemoveDeletesASquashMergedBranchFromTheCacheAlone(t *testing.T) {
 	if !strings.Contains(out.String(), "branch "+branch+" was merged as #34 and has been deleted") {
 		t.Errorf("wt remove said\n%s", out.String())
 	}
-	if _, ok := ctx.Repo.ResolveRef("refs/heads/" + branch); ok {
+	if _, ok, err := ctx.Repo.ResolveRef("refs/heads/" + branch); err != nil || ok {
 		t.Error("the branch is still here")
 	}
 	if _, err := os.Stat(path); err == nil {
@@ -68,7 +68,7 @@ func TestRemoveKeepsABranchMergedIntoItsParent(t *testing.T) {
 	if !strings.Contains(out.String(), "branch kept as login-crash") {
 		t.Errorf("wt remove said\n%s", out.String())
 	}
-	if _, ok := ctx.Repo.ResolveRef("refs/heads/login-crash"); !ok {
+	if _, ok, err := ctx.Repo.ResolveRef("refs/heads/login-crash"); err != nil || !ok {
 		t.Errorf("%s went although nothing reached trunk", branch)
 	}
 }
@@ -88,7 +88,7 @@ func TestRemoveWithNoCacheEntryIsUnchanged(t *testing.T) {
 	if !strings.Contains(out.String(), "branch kept as login-crash") {
 		t.Errorf("wt remove said\n%s", out.String())
 	}
-	if _, ok := ctx.Repo.ResolveRef("refs/heads/" + branch); ok {
+	if _, ok, err := ctx.Repo.ResolveRef("refs/heads/" + branch); err != nil || ok {
 		t.Error("the branch was deleted with nothing saying it had landed")
 	}
 }

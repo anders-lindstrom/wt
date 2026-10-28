@@ -2,6 +2,7 @@ package synckeep
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -253,10 +254,10 @@ func TestSyncKeepStartAndStopAllAreRefusedWithoutLaunchd(t *testing.T) {
 	synccmdtest.OnPlatform(t, "linux")
 	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{t.TempDir()}}}}
 	var out bytes.Buffer
-	if err := StartAll(u, kit.Selection{Profiles: []string{"p"}}, KeepStartAllOptions{Yes: true}, &out); err != ErrNoLaunchd {
+	if err := StartAll(u, kit.Selection{Profiles: []string{"p"}}, KeepStartAllOptions{Yes: true}, &out); !errors.Is(err, ErrNoLaunchd) {
 		t.Fatalf("start: %v", err)
 	}
-	if err := StopAll(u, kit.Selection{Profiles: []string{"p"}}, false, &out); err != ErrNoLaunchd {
+	if err := StopAll(u, kit.Selection{Profiles: []string{"p"}}, false, &out); !errors.Is(err, ErrNoLaunchd) {
 		t.Fatalf("stop: %v", err)
 	}
 }

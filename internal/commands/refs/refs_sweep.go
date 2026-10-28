@@ -271,7 +271,10 @@ func planRefs(ctx *kit.Context, opts Options, progress io.Writer) (Plan, error) 
 	if err != nil {
 		return p, err
 	}
-	originHead, _ := ctx.Repo.OriginHead()
+	originHead, _, err := ctx.Repo.OriginHead()
+	if err != nil {
+		return p, fmt.Errorf("could not read origin's HEAD, so cannot tell which branches are trunk: %w", err)
+	}
 	dates := &refpins.RefDates{MainRoot: root}
 	cutoff := p.Now - int64(age/time.Second)
 

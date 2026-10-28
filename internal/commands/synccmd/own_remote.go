@@ -265,7 +265,9 @@ func OwnCandidates(ctx *kit.Context, works []string) []string {
 		}
 	}
 	trunkRef := "refs/remotes/origin/" + ctx.Config.MainBranch
-	_, hasTrunk := ctx.Repo.ResolveRef(trunkRef)
+	// Only which branches to ask about: a trunk git cannot read is taken as
+	// none, which asks about more of them, not fewer.
+	_, hasTrunk, _ := ctx.Repo.ResolveRef(trunkRef)
 	heads := func(args ...string) []string {
 		lines, _ := git.Lines(ctx.Repo.MainRoot, append([]string{"for-each-ref", "--format=%(refname)"}, args...)...)
 		for i, l := range lines {

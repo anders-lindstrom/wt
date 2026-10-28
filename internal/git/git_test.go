@@ -1,6 +1,7 @@
 package git
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -40,7 +41,7 @@ func TestShortIDKeepsAnIDShorterThanAsked(t *testing.T) {
 
 func TestRunOutsideRepoReturnsErrNotRepo(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := Run(dir, "rev-parse", "--show-toplevel"); err != ErrNotRepo {
+	if _, err := Run(dir, "rev-parse", "--show-toplevel"); !errors.Is(err, ErrNotRepo) {
 		t.Errorf("got %v, want ErrNotRepo", err)
 	}
 }

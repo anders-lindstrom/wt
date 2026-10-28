@@ -154,7 +154,7 @@ func ListAgents() ([]Agent, error) {
 func claudeListing(deadline time.Duration) (data []byte, found bool, err error) {
 	exe, err := exec.LookPath("claude")
 	if err != nil {
-		return nil, false, nil
+		return nil, false, nil //nolint:nilerr // no claude to run is nobody to ask, which found says
 	}
 	cmd := exec.Command(exe, "agents", "--json")
 	cmd.Env = git.Environ("NO_COLOR=1")
@@ -184,7 +184,7 @@ func claudeListing(deadline time.Duration) (data []byte, found bool, err error) 
 // it takes a fifth of the time, and read after it would add to it.
 func ListClaudeSessions(deadline time.Duration) (sessions []Agent, found bool, err error) {
 	if _, err := exec.LookPath("claude"); err != nil {
-		return nil, false, nil
+		return nil, false, nil //nolint:nilerr // no claude to run is nobody to ask, which found says
 	}
 	caller := make(chan map[int]bool, 1)
 	go func() {

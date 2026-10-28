@@ -19,13 +19,17 @@ import (
 //
 // trunk is trunk's name; "" from a caller that has none to give, which
 // reads every branch as some branch other than trunk.
+//
+// Remotes that cannot be read before the rename stop it: renamed blind, a
+// pushed branch would push under its new name. Read after it, they only
+// cost saying where it pushes, since its record moved with its config.
 func RenameKeepingPush(r *repo.Repo, trunk, from, to string) (kept *repo.PushTo, err error) {
-	var was *repo.PushTo
-	recorded := false
-	if own, err := ReadOwn(r.MainRoot, trunk); err == nil {
-		_, recorded = own.pushTo[from]
-		was = own.pushedAs(from)
+	own, err := ReadOwn(r.MainRoot, trunk)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read where %s pushes, so it was not renamed: %w", from, err)
 	}
+	_, recorded := own.pushTo[from]
+	was := own.pushedAs(from)
 	if err := r.RenameBranch(from, to); err != nil {
 		return nil, err
 	}
@@ -33,7 +37,7 @@ func RenameKeepingPush(r *repo.Repo, trunk, from, to string) (kept *repo.PushTo,
 	case recorded:
 		own, err := ReadOwn(r.MainRoot, trunk)
 		if err != nil {
-			return nil, nil
+			return nil, nil //nolint:nilerr // renamed, its record moved with it; only saying where it pushes is lost
 		}
 		rec, ok := repo.ParsePushTo(own.pushTo[to])
 		if !ok {
@@ -52,7 +56,7 @@ func RenameKeepingPush(r *repo.Repo, trunk, from, to string) (kept *repo.PushTo,
 	case was != nil:
 		if err := r.SetPushTo(to, *was); err != nil {
 			if back := r.RenameBranch(to, from); back != nil {
-				return nil, fmt.Errorf("%w; and the branch is left as %s: %v", err, to, back)
+				return nil, fmt.Errorf("%w; and the branch is left as %s: %w", err, to, back)
 			}
 			return nil, err
 		}

@@ -263,7 +263,7 @@ func (d doc) section(name string) (*omap, error) {
 	}
 	o, err := parseOmap(d.get(name))
 	if err != nil {
-		return nil, fmt.Errorf("%s: %v", name, err)
+		return nil, fmt.Errorf("%s: %w", name, err)
 	}
 	return o, nil
 }
@@ -281,7 +281,7 @@ func (d doc) schemas() (*omap, error) {
 	}
 	o, err := parseOmap(c.get("schemas"))
 	if err != nil {
-		return nil, fmt.Errorf("components.schemas: %v", err)
+		return nil, fmt.Errorf("components.schemas: %w", err)
 	}
 	return o, nil
 }
@@ -293,7 +293,7 @@ func (d doc) tagsByName() (*omap, error) {
 	}
 	var tags []json.RawMessage
 	if err := json.Unmarshal(d.get("tags"), &tags); err != nil {
-		return nil, fmt.Errorf("tags: %v", err)
+		return nil, fmt.Errorf("tags: %w", err)
 	}
 	o := newOmap()
 	for _, t := range tags {

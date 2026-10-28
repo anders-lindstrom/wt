@@ -64,7 +64,7 @@ func TestDetectTrunkIgnoresTheCheckedOutFeatureBranch(t *testing.T) {
 	main := gittest.NewRepo(t, resolved(t, t.TempDir()), "demo")
 	withOriginNoHead(t, main)
 	run(t, main, "checkout", "-q", "-b", "feat/stage-6")
-	if _, ok := mustDiscover(t, main).OriginHead(); ok {
+	if _, ok, err := mustDiscover(t, main).OriginHead(); ok || err != nil {
 		t.Fatal("fixture has origin/HEAD set")
 	}
 	wantTrunk(t, main, "main", config.TrunkConventional)

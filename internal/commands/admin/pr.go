@@ -159,18 +159,27 @@ func divergedFromPR(ctx *kit.Context, gh kit.GitHub, pr github.PR) error {
 	if !pr.Open() || pr.IsCrossRepository || !commitID.MatchString(pr.HeadRefOid) {
 		return nil
 	}
-	tip, ok := ctx.Repo.ResolveRef("refs/heads/" + branch)
+	tip, ok, err := ctx.Repo.ResolveRef("refs/heads/" + branch)
+	if err != nil {
+		return err
+	}
 	if !ok || tip == pr.HeadRefOid {
 		return nil
 	}
-	if _, here := ctx.Repo.ResolveRef(pr.HeadRefOid); !here {
+	_, here, err := ctx.Repo.ResolveRef(pr.HeadRefOid)
+	if err != nil {
+		return err
+	}
+	if !here {
 		// GitHub keeps every pull request's head at refs/pull/<n>/head. The
 		// fetch names no destination and writes no FETCH_HEAD: it brings the
 		// commits and changes nothing else.
 		_, _ = git.RunTimeout(ctx.Repo.MainRoot, kit.NetworkTimeout, "fetch", "--quiet", "--no-tags",
 			"--no-recurse-submodules", "--no-write-fetch-head", "--refmap=",
 			gh.Remote.Name, fmt.Sprintf("refs/pull/%d/head", pr.Number))
-		if _, here = ctx.Repo.ResolveRef(pr.HeadRefOid); !here {
+		if _, here, err = ctx.Repo.ResolveRef(pr.HeadRefOid); err != nil {
+			return err
+		} else if !here {
 			return nil
 		}
 	}
@@ -210,7 +219,9 @@ func checkoutPRInto(ctx *kit.Context, gh kit.GitHub, pr github.PR, path string, 
 	// branches were here first is read now, while that is still true.
 	had := map[string]bool{}
 	for _, branch := range pr.Branches(ctx.Config.MainBranch) {
-		_, had[branch] = ctx.Repo.ResolveRef("refs/heads/" + branch)
+		// One git cannot read counts as here first, so it is never deleted.
+		_, here, err := ctx.Repo.ResolveRef("refs/heads/" + branch)
+		had[branch] = here || err != nil
 	}
 	err := gh.CLI.CheckoutInto(path, pr.Number)
 	if err != nil && !pr.Open() {
@@ -224,7 +235,7 @@ func checkoutPRInto(ctx *kit.Context, gh kit.GitHub, pr github.PR, path string, 
 		discarded := ctx.Repo.DiscardWorktree(path)
 		_ = ctx.Repo.Prune()
 		for branch, existed := range had {
-			if tip, now := ctx.Repo.ResolveRef("refs/heads/" + branch); now && !existed {
+			if tip, now, _ := ctx.Repo.ResolveRef("refs/heads/" + branch); now && !existed {
 				_ = ctx.Repo.DeleteBranchAt(branch, tip)
 			}
 		}

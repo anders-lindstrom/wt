@@ -134,7 +134,8 @@ type SweepPlan struct {
 // commits: what wt sweep and wt remove call merged. origin comes first
 // because merges happen on the remote and the main checkout's trunk is often
 // behind; the local trunk still counts, because commits on it are on trunk
-// too. Nothing is fetched here.
+// too. Nothing is fetched here. Neither being there is a *NoTrunkBaseError;
+// a git that cannot say whether one is there is its own error.
 func TrunkBases(ctx *kit.Context) ([]TrunkBase, error) {
 	trunk := ctx.Config.MainBranch
 	var bases []TrunkBase
@@ -142,14 +143,25 @@ func TrunkBases(ctx *kit.Context) ([]TrunkBase, error) {
 		{"origin/" + trunk, "refs/remotes/origin/" + trunk},
 		{trunk, "refs/heads/" + trunk},
 	} {
-		if tip, ok := ctx.Repo.ResolveRef(b.ref); ok {
+		tip, ok, err := ctx.Repo.ResolveRef(b.ref)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
 			bases = append(bases, TrunkBase{Name: b.name, Tip: tip})
 		}
 	}
 	if len(bases) == 0 {
-		return nil, fmt.Errorf("neither origin/%s nor %s exists here, so nothing can be called merged", trunk, trunk)
+		return nil, &NoTrunkBaseError{Trunk: trunk}
 	}
 	return bases, nil
+}
+
+// NoTrunkBaseError is a repository with neither origin/<trunk> nor <trunk>.
+type NoTrunkBaseError struct{ Trunk string }
+
+func (e *NoTrunkBaseError) Error() string {
+	return fmt.Sprintf("neither origin/%s nor %s exists here, so nothing can be called merged", e.Trunk, e.Trunk)
 }
 
 // PlanSweep reads every fact a sweep depends on and sorts the branches. list
@@ -178,7 +190,10 @@ func PlanSweep(ctx *kit.Context, bases []TrunkBase, list func() ([]wtsync.Agent,
 		return SweepPlan{}, fmt.Errorf("%w: %w", repo.ErrWorktreesUnknown, err)
 	}
 	inUse := worktrees.Users()
-	originHead, _ := ctx.Repo.OriginHead()
+	originHead, _, err := ctx.Repo.OriginHead()
+	if err != nil {
+		return SweepPlan{}, fmt.Errorf("could not read origin's HEAD, so cannot tell which branches are trunk: %w", err)
+	}
 
 	// Only the branches that can reach a row of the plan: merged into trunk,
 	// upstream gone, or holding a worktree — which is where a squash merge
@@ -527,9 +542,13 @@ func (p SweepPlan) changedFrom(ctx *kit.Context, was SweepBranch) string {
 			return fmt.Sprintf("it was checked out in %s after the plan was made", b.Worktree)
 		}
 	}
-	now, exists := ctx.Repo.ResolveRef("refs/heads/" + was.Name)
-	head, _ := ctx.Repo.OriginHead()
+	now, exists, err := ctx.Repo.ResolveRef("refs/heads/" + was.Name)
+	head, _, herr := ctx.Repo.OriginHead()
 	switch {
+	case err != nil:
+		return "git could not say where it is now: " + gitSaid(err)
+	case herr != nil:
+		return "git could not say whether origin's HEAD names it: " + gitSaid(herr)
 	case !exists:
 		return "it was deleted after the plan was made"
 	case now != was.Tip:
@@ -790,7 +809,14 @@ func sweepGuard(ctx *kit.Context) error {
 	// Without either, MainBranch is only what the main checkout has checked
 	// out, and a feature branch taken for trunk makes everything cut from it
 	// look merged.
-	if head, _ := ctx.Repo.OriginHead(); !ctx.Config.MainBranchSet && head != ctx.Config.MainBranch {
+	if ctx.Config.MainBranchSet {
+		return nil
+	}
+	head, _, err := ctx.Repo.OriginHead()
+	if err != nil {
+		return fmt.Errorf("wt sweep cannot tell which branch is trunk: origin's HEAD cannot be read: %w", err)
+	}
+	if head != ctx.Config.MainBranch {
 		return fmt.Errorf("wt sweep cannot tell which branch is trunk: MAIN_BRANCH is not set in "+
 			"bin/worktree/worktree.conf and origin's HEAD does not name %s\n"+
 			"  set MAIN_BRANCH, or run git remote set-head origin --auto", ctx.Config.MainBranch)

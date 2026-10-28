@@ -62,7 +62,14 @@ func ResolveCheckout(ctx *kit.Context, arg string) (CheckoutTarget, *Problem) {
 	if arg == "" {
 		return t, &Problem{Code: kit.ProblemInvalidName, Message: "no branch given"}
 	}
-	if oid, ok := ctx.Repo.ResolveRef("refs/heads/" + arg); ok && ctx.Repo.BranchExists(arg) {
+	oid, ok, err := ctx.Repo.ResolveRef("refs/heads/" + arg)
+	if err != nil {
+		// No code says "git failed"; refusing beats reading it as no local
+		// branch and creating one from a remote.
+		return t, &Problem{Code: kit.ProblemBranchMissing, Message: fmt.Sprintf(
+			"git could not say whether branch %s is here: %s", arg, git.Reason(err))}
+	}
+	if ok && ctx.Repo.BranchExists(arg) {
 		t.Source, t.Commit = SourceLocal, oid
 		return t, nil
 	}

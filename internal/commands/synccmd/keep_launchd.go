@@ -100,7 +100,7 @@ func (d launchctlDriver) Load(plist string) error {
 	if _, lerr := d.run("load", plist); lerr == nil {
 		return nil
 	}
-	return fmt.Errorf("launchctl bootstrap: %v", err)
+	return fmt.Errorf("launchctl bootstrap: %w", err)
 }
 
 // Unload takes the job out of the user's domain; a job that is not there
@@ -116,5 +116,5 @@ func (d launchctlDriver) Unload(label, plist string) error {
 	if strings.Contains(err.Error(), "No such process") || strings.Contains(err.Error(), "not find") {
 		return nil
 	}
-	return fmt.Errorf("launchctl bootout: %v", err)
+	return fmt.Errorf("launchctl bootout: %w", err)
 }
