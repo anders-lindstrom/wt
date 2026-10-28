@@ -297,7 +297,7 @@ func (p *keepPass) pass(recorded string) error {
 		if ropts.Agents == nil {
 			agents, aerr := wtsync.ListOtherAgentsRequired()
 			if aerr != nil {
-				rerr = fmt.Errorf("cannot list agent sessions (%v); an unattended pass needs them, nothing rebased", aerr)
+				rerr = fmt.Errorf("cannot list agent sessions (%w); an unattended pass needs them, nothing rebased", aerr)
 				fmt.Fprintln(w, rerr.Error())
 			}
 			ropts.Agents = agents

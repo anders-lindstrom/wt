@@ -92,7 +92,7 @@ func TestAnswerTellsAnAnswerFromAFailure(t *testing.T) {
 		t.Fatalf("success: %d, %v", code, err)
 	}
 	_, err = Exec(Opts{Dir: dir}, "cat-file", "-p", "notacommit")
-	if _, got := Answer(err, 1); got != err {
+	if _, got := Answer(err, 1); got != err { //nolint:errorlint // Answer hands back err itself, not a wrap of it
 		t.Fatalf("exit 128 is not an answer: %v", got)
 	}
 	if _, got := Answer(&Error{Code: -1, TimedOut: true}, -1); got == nil {

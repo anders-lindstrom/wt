@@ -11,6 +11,13 @@ linters:
     - revive
     - bodyclose
     - gosec
+    # A git or a file that cannot be read must not read as "not there": wt
+    # exists not to lose work. nilerr catches an error turned into nil;
+    # where that is meant, the line says why in its //nolint.
+    - nilerr
+    # errors.Is and errors.As see through a wrapped error, == does not, and
+    # only %w keeps the cause for them to find.
+    - errorlint
 
   settings:
     errcheck:

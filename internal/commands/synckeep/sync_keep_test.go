@@ -2,6 +2,7 @@ package synckeep
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -888,10 +889,10 @@ func TestSyncKeepStartAndStopAreRefusedWithoutLaunchd(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	synccmdtest.OnPlatform(t, "linux")
 	var out bytes.Buffer
-	if err := Start(ctx, KeepStartOptions{}, &out); err != ErrNoLaunchd {
+	if err := Start(ctx, KeepStartOptions{}, &out); !errors.Is(err, ErrNoLaunchd) {
 		t.Fatalf("start: %v", err)
 	}
-	if err := Stop(ctx, &out); err != ErrNoLaunchd {
+	if err := Stop(ctx, &out); !errors.Is(err, ErrNoLaunchd) {
 		t.Fatalf("stop: %v", err)
 	}
 	if err := Status(ctx, time.Now(), &out); err != nil || !strings.HasPrefix(out.String(), "keeper   no launchd on this platform; run wt sync keep once from cron\n") {

@@ -131,7 +131,7 @@ func (s Script) Resolve(c Conflict) ([]byte, error) {
 	case r.code == 2:
 		return nil, refusedBy(c.Path, r.stderr)
 	default:
-		return nil, fmt.Errorf("%s --check %s: %v: %s", s.Run, c.Path, r.err, r.stderr)
+		return nil, fmt.Errorf("%s --check %s: %w: %s", s.Run, c.Path, r.err, r.stderr)
 	}
 }
 
@@ -159,7 +159,7 @@ func (s Script) ResolveInWorktree(wtPath, path string) error {
 	case r.code == 2:
 		return refusedBy(path, r.stderr)
 	default:
-		return fmt.Errorf("%s --resolve %s: %v: %s", s.Run, path, r.err, r.stderr)
+		return fmt.Errorf("%s --resolve %s: %w: %s", s.Run, path, r.err, r.stderr)
 	}
 }
 
@@ -201,7 +201,7 @@ func materialise(root, trunk, run string) (exe string, cleanup func(), err error
 	}
 	if runErr != nil {
 		cleanup()
-		return "", nil, fmt.Errorf("extracting %s from %s: %v: %s", scriptDir, trunk, runErr, strings.TrimSpace(tarErr.String()))
+		return "", nil, fmt.Errorf("extracting %s from %s: %w: %s", scriptDir, trunk, runErr, strings.TrimSpace(tarErr.String()))
 	}
 	exe = filepath.Join(tree, run)
 	if info, err := os.Stat(exe); err != nil || info.IsDir() || info.Mode()&0o111 == 0 {

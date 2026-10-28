@@ -48,7 +48,7 @@ func (o VerbOptions) SessionsNow(nothing nothingDone) ([]wtsync.Agent, error) {
 	}
 	agents, err := wtsync.ListOtherAgents()
 	if err != nil {
-		return nil, fmt.Errorf("cannot list agent sessions (%v); %s", err, nothing.tail)
+		return nil, fmt.Errorf("cannot list agent sessions (%w); %s", err, nothing.tail)
 	}
 	return agents, nil
 }
@@ -57,7 +57,7 @@ func (o VerbOptions) SessionsNow(nothing nothingDone) ([]wtsync.Agent, error) {
 func (o VerbOptions) relist(nothing nothingDone) ([]wtsync.Agent, error) {
 	agents, err := kit.ListAgain(o.Agents, o.Relist)
 	if err != nil {
-		return nil, fmt.Errorf("cannot list agent sessions again (%v); %s", err, nothing.tail)
+		return nil, fmt.Errorf("cannot list agent sessions again (%w); %s", err, nothing.tail)
 	}
 	return agents, nil
 }
