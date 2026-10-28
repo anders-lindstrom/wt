@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // CommitFile commits a file of its own in the checkout at dir, so the commit
@@ -52,7 +52,7 @@ func TestRemoveDeletesABranchWhoseCommitsWereRebasedOntoTrunk(t *testing.T) {
 	RebasedOntoOrigin(t, main, "feat_wt/rates")
 	buf.Reset()
 
-	if err := RemoveAt(ctx, path, RemoveOptions{Agents: []wtsync.Agent{}}, &buf); err != nil {
+	if err := RemoveAt(ctx, path, RemoveOptions{Agents: []agents.Agent{}}, &buf); err != nil {
 		t.Fatalf("RemoveAt: %v\n%s", err, buf.String())
 	}
 	if ctx.Repo.BranchExists("feat_wt/rates") || ctx.Repo.BranchExists("rates") {
@@ -84,7 +84,7 @@ func TestRemoveKeepsABranchWithACommitTrunkLacks(t *testing.T) {
 	CommitFile(t, path, "not-landed")
 	buf.Reset()
 
-	if err := RemoveAt(ctx, path, RemoveOptions{Agents: []wtsync.Agent{}}, &buf); err != nil {
+	if err := RemoveAt(ctx, path, RemoveOptions{Agents: []agents.Agent{}}, &buf); err != nil {
 		t.Fatalf("RemoveAt: %v\n%s", err, buf.String())
 	}
 	if !ctx.Repo.BranchExists("rates") {
@@ -192,7 +192,7 @@ func TestRemoveSaysSomethingElseRemovedTheWorktree(t *testing.T) {
 				CommitFile(t, path, "kept-work")
 			}
 			buf.Reset()
-			opts := RemoveOptions{Agents: []wtsync.Agent{}, Confirm: func(Plan) (bool, error) {
+			opts := RemoveOptions{Agents: []agents.Agent{}, Confirm: func(Plan) (bool, error) {
 				testkit.GitIn(t, main, "worktree", "remove", "--force", path)
 				if alsoBranch {
 					testkit.GitIn(t, main, "branch", "-D", "feat_wt/elsewhere")
@@ -240,7 +240,7 @@ func TestRemoveSaysWhenSomethingElseIsStillRemovingTheWorktree(t *testing.T) {
 	CommitFile(t, path, "going")
 	buf.Reset()
 
-	opts := RemoveOptions{Agents: []wtsync.Agent{}, Confirm: func(Plan) (bool, error) {
+	opts := RemoveOptions{Agents: []agents.Agent{}, Confirm: func(Plan) (bool, error) {
 		return true, os.Remove(filepath.Join(path, "going"))
 	}}
 	err = RemoveAt(ctx, path, opts, &buf)

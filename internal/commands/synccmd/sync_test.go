@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
@@ -109,7 +110,7 @@ func TestSyncAssessedInParallelPrintsTheSequentialResult(t *testing.T) {
 	testkit.GitIn(t, main, "fetch", "-q", "origin")
 
 	buf.Reset()
-	onto, cfg, agents, _, err := syncInputs(ctx, SyncOptions{NoFetch: true}, &buf, nil)
+	onto, cfg, listed, _, err := syncInputs(ctx, SyncOptions{NoFetch: true}, &buf, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +121,7 @@ func TestSyncAssessedInParallelPrintsTheSequentialResult(t *testing.T) {
 	var entries []syncEntry
 	for _, wt := range worktrees {
 		if !wt.IsMain {
-			entries = append(entries, syncEntry{work: kit.BranchWorkName(ctx, wt.Branch), a: wtsync.Assess(main, onto, cfg, wt, agents)})
+			entries = append(entries, syncEntry{work: kit.BranchWorkName(ctx, wt.Branch), a: wtsync.Assess(main, onto, cfg, wt, listed)})
 		}
 	}
 	if len(entries) < 5 {
@@ -444,8 +445,8 @@ func TestSyncSaysWhenTrunkDeclaresNothing(t *testing.T) {
 
 func TestSyncGroupsAWorktreeByWhatToDoAboutIt(t *testing.T) {
 	t.Parallel()
-	busy := wtsync.Sessions{{Name: "busy"}}
-	parked := wtsync.Sessions{{Name: "parked-1", Kind: "interactive", Status: "idle"}}
+	busy := agents.Sessions{{Name: "busy"}}
+	parked := agents.Sessions{{Name: "parked-1", Kind: "interactive", Status: "idle"}}
 	for _, tc := range []struct {
 		name string
 		a    wtsync.Assessment
@@ -563,21 +564,21 @@ func TestSummaryLinesFlattenAMultilineNote(t *testing.T) {
 
 func TestHeldByNamesTheSessionsInTheWorktree(t *testing.T) {
 	t.Parallel()
-	parked := wtsync.Sessions{{Name: "parked-1", Kind: "interactive", Status: "idle"}}
+	parked := agents.Sessions{{Name: "parked-1", Kind: "interactive", Status: "idle"}}
 	for _, tc := range []struct {
 		name string
 		a    wtsync.Assessment
 		want string
 	}{
-		{"named", wtsync.Assessment{Sessions: wtsync.Sessions{{Name: "busy"}}}, "session busy"},
-		{"kind only", wtsync.Assessment{Sessions: wtsync.Sessions{{Kind: "codex"}}}, "session codex"},
-		{"nothing to call it", wtsync.Assessment{Sessions: wtsync.Sessions{{}}}, "an unnamed session"},
+		{"named", wtsync.Assessment{Sessions: agents.Sessions{{Name: "busy"}}}, "session busy"},
+		{"kind only", wtsync.Assessment{Sessions: agents.Sessions{{Kind: "codex"}}}, "session codex"},
+		{"nothing to call it", wtsync.Assessment{Sessions: agents.Sessions{{}}}, "an unnamed session"},
 		{"dirty, nobody in it", wtsync.Assessment{Dirty: true}, "dirty"},
 		{"idle", wtsync.Assessment{Sessions: parked}, "session parked-1 (idle)"},
-		{"two idle", wtsync.Assessment{Sessions: append(wtsync.Sessions{{Name: "old-1", Kind: "interactive", Status: "idle"}}, parked...)}, "session old-1 (idle) +1"},
-		{"a busy one leads", wtsync.Assessment{Sessions: append(wtsync.Sessions{{Name: "new-2", Status: "busy"}}, parked...)}, "session new-2 +1"},
+		{"two idle", wtsync.Assessment{Sessions: append(agents.Sessions{{Name: "old-1", Kind: "interactive", Status: "idle"}}, parked...)}, "session old-1 (idle) +1"},
+		{"a busy one leads", wtsync.Assessment{Sessions: append(agents.Sessions{{Name: "new-2", Status: "busy"}}, parked...)}, "session new-2 +1"},
 		{"idle and dirty", wtsync.Assessment{Dirty: true, Sessions: parked}, "session parked-1 (idle)  dirty"},
-		{"busy and dirty", wtsync.Assessment{Dirty: true, Sessions: wtsync.Sessions{{Name: "busy"}}}, "session busy"},
+		{"busy and dirty", wtsync.Assessment{Dirty: true, Sessions: agents.Sessions{{Name: "busy"}}}, "session busy"},
 	} {
 		if got := heldBy(tc.a); got != tc.want {
 			t.Errorf("%s: got %q, want %q", tc.name, got, tc.want)
@@ -587,7 +588,7 @@ func TestHeldByNamesTheSessionsInTheWorktree(t *testing.T) {
 
 func TestRunVerdictSaysItAsksFirstUnderAnIdleSession(t *testing.T) {
 	t.Parallel()
-	a := wtsync.Assessment{Class: wtsync.Clean, Sessions: wtsync.Sessions{{Name: "parked-1", Kind: "interactive", Status: "idle"}}}
+	a := wtsync.Assessment{Class: wtsync.Clean, Sessions: agents.Sessions{{Name: "parked-1", Kind: "interactive", Status: "idle"}}}
 	if got := runVerdict("bump", a); got != "wt sync rebase bump; asks first: session parked-1 (idle) is in it" {
 		t.Errorf("got %q", got)
 	}
@@ -595,19 +596,19 @@ func TestRunVerdictSaysItAsksFirstUnderAnIdleSession(t *testing.T) {
 
 func TestSessionsChangedNamesWhatIsNewOrBusy(t *testing.T) {
 	t.Parallel()
-	parked := wtsync.Agent{ID: "a1", Name: "parked-1", Cwd: "/w", Kind: "interactive", Status: "idle"}
+	parked := agents.Agent{ID: "a1", Name: "parked-1", Cwd: "/w", Kind: "interactive", Status: "idle"}
 	busy := parked
 	busy.Status = "busy"
-	other := wtsync.Agent{ID: "a2", Name: "new-2", Cwd: "/w", Kind: "interactive", Status: "idle"}
-	told := wtsync.Sessions{parked}
+	other := agents.Agent{ID: "a2", Name: "new-2", Cwd: "/w", Kind: "interactive", Status: "idle"}
+	told := agents.Sessions{parked}
 	for _, tc := range []struct {
-		now  wtsync.Sessions
+		now  agents.Sessions
 		want string
 	}{
-		{wtsync.Sessions{parked}, ""},
+		{agents.Sessions{parked}, ""},
 		{nil, ""},
-		{wtsync.Sessions{busy}, "an agent session is busy in it now: parked-1"},
-		{wtsync.Sessions{parked, other}, "a session arrived since it was checked: new-2 (idle)"},
+		{agents.Sessions{busy}, "an agent session is busy in it now: parked-1"},
+		{agents.Sessions{parked, other}, "a session arrived since it was checked: new-2 (idle)"},
 	} {
 		if got := sessionsChanged(told, tc.now); got != tc.want {
 			t.Errorf("now %+v: got %q, want %q", tc.now, got, tc.want)

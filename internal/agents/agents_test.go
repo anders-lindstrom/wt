@@ -1,4 +1,4 @@
-package wtsync
+package agents
 
 import (
 	"errors"
@@ -247,14 +247,15 @@ func TestSessionsAtListsEverySessionInTheWorktreeShallowestFirst(t *testing.T) {
 	if busy := s.Busy(); len(busy) != 1 || busy[0].Name != "deep" {
 		t.Errorf("busy = %+v", busy)
 	}
-	if got := s.Label(agentLabel); got != "deep +1" {
+	byName := func(a *Agent) string { return a.Name }
+	if got := s.Label(byName); got != "deep +1" {
 		t.Errorf("a busy session leads the label: got %q", got)
 	}
 	parked := Sessions{{Name: "old-1", Kind: "interactive", Status: "idle"}, {Name: "new-2", Kind: "interactive", Status: "idle"}}
-	if got := parked.Label(agentLabel); got != "old-1 (idle) +1" {
+	if got := parked.Label(byName); got != "old-1 (idle) +1" {
 		t.Errorf("idle label = %q", got)
 	}
-	if got := (Sessions{}).Label(agentLabel); got != "" || (Sessions{}).Lead() != nil {
+	if got := (Sessions{}).Label(byName); got != "" || (Sessions{}).Lead() != nil {
 		t.Errorf("empty label = %q", got)
 	}
 	if SessionsAt(agents, "/repo_wt/feat_wt/three") != nil {
@@ -452,6 +453,20 @@ func TestParseClaudeSessionsSaysAnUnreadableListingInWords(t *testing.T) {
 	for _, junk := range []string{`{"not":"a list"}`, `[{"id":7}]`, `nonsense`} {
 		if _, err := ParseClaudeSessions([]byte(junk)); !errors.Is(err, ErrUnreadableListing) {
 			t.Errorf("%s: err = %v", junk, err)
+		}
+	}
+}
+
+// waitForFile polls until path exists: the stub under test has started, so
+// a kill now proves something about it.
+func waitForFile(t *testing.T, path string) {
+	t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s never appeared: the process under test did not start", path)
 		}
 	}
 }

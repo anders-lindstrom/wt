@@ -7,16 +7,16 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // noSessions is the option set every test here starts from: no agent session
 // lives in a temporary repository, and asking `claude agents` about it would
 // make the test depend on the machine running it.
-func noSessions() MigrateOptions { return MigrateOptions{Agents: []wtsync.Agent{}} }
+func noSessions() MigrateOptions { return MigrateOptions{Agents: []agents.Agent{}} }
 
 // The case that started this: a worktree Superset made at a uuid path, on a
 // branch outside the convention, that has to end up under another type and
@@ -302,7 +302,7 @@ func TestMigrateRefusesWhenAnAgentSessionLivesThere(t *testing.T) {
 	ctx, _ := kit.Open(main)
 	from := testkit.WorktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 	resolved, _ := filepath.EvalSymlinks(from)
-	opts := MigrateOptions{Agents: []wtsync.Agent{{Name: "gecko-1", Cwd: resolved}}}
+	opts := MigrateOptions{Agents: []agents.Agent{{Name: "gecko-1", Cwd: resolved}}}
 
 	var buf bytes.Buffer
 	_, err := Migrate(ctx, from, "", opts, &buf)
@@ -323,7 +323,7 @@ func TestMigrateForceMovesPastAnAgentSession(t *testing.T) {
 	ctx, _ := kit.Open(main)
 	from := testkit.WorktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 	resolved, _ := filepath.EvalSymlinks(from)
-	opts := MigrateOptions{Force: true, Agents: []wtsync.Agent{{Name: "gecko-1", Cwd: resolved}}}
+	opts := MigrateOptions{Force: true, Agents: []agents.Agent{{Name: "gecko-1", Cwd: resolved}}}
 
 	var buf bytes.Buffer
 	got, err := Migrate(ctx, from, "", opts, &buf)
@@ -532,7 +532,7 @@ func TestMigrateDryRunReportsTheSessionItWouldRefuseFor(t *testing.T) {
 	ctx, _ := kit.Open(main)
 	from := testkit.WorktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 	resolved, _ := filepath.EvalSymlinks(from)
-	opts := MigrateOptions{DryRun: true, Agents: []wtsync.Agent{{Name: "gecko-1", Cwd: resolved}}}
+	opts := MigrateOptions{DryRun: true, Agents: []agents.Agent{{Name: "gecko-1", Cwd: resolved}}}
 
 	var buf bytes.Buffer
 	if _, err := Migrate(ctx, from, "", opts, &buf); err != nil {

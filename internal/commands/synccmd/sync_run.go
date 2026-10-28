@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -83,7 +84,7 @@ type participant struct {
 	head    string // HEAD after the rebase and the deferred steps; what a child rebases onto
 	// forced is the sessions Force took the run past: named before anything
 	// moves, and told at the finish like an idle one.
-	forced wtsync.Sessions
+	forced agents.Sessions
 	// notRun is a refusal that came from another member of the stack, not
 	// from this worktree: --json reports it as not run.
 	notRun bool
@@ -118,7 +119,7 @@ type RunPlan struct {
 
 	// Listed once for the run: selectReady and triage read the same list, and
 	// the lock lists again with the lock in hand.
-	agents       []wtsync.Agent
+	agents       []agents.Agent
 	agentsListed bool
 	// survey is the overview --expect recomputed, whose assessments
 	// selectReady and triage use rather than simulate the same rebases again.
@@ -407,11 +408,11 @@ func (e undeclaredError) Error() string { return e.msg }
 // trunk just fetched, and refuses the run when its token is not the one
 // expected: what the run would start on is not what the overview showed.
 func (r *RunPlan) expectOverview() error {
-	agents, err := r.listAgents()
+	listed, err := r.listAgents()
 	if err != nil {
 		return err
 	}
-	sv, err := SurveyRepo(r.ctx, r.trunkSHA, r.cfg, agents, r.own)
+	sv, err := SurveyRepo(r.ctx, r.trunkSHA, r.cfg, listed, r.own)
 	if err != nil {
 		return err
 	}
@@ -425,13 +426,13 @@ func (r *RunPlan) expectOverview() error {
 }
 
 // listAgents lists the other agent sessions once for the run.
-func (r *RunPlan) listAgents() ([]wtsync.Agent, error) {
+func (r *RunPlan) listAgents() ([]agents.Agent, error) {
 	if !r.agentsListed {
-		agents, err := r.opts.SessionsNow(rebasedNothing)
+		listed, err := r.opts.SessionsNow(rebasedNothing)
 		if err != nil {
 			return nil, err
 		}
-		r.agents, r.agentsListed = agents, true
+		r.agents, r.agentsListed = listed, true
 	}
 	return r.agents, nil
 }
@@ -453,11 +454,11 @@ func (r *RunPlan) selectReady() ([]string, error) {
 	if sv := r.survey; sv != nil {
 		worktrees, assessments = sv.worktrees, sv.assessments
 	} else {
-		agents, err := r.listAgents()
+		listed, err := r.listAgents()
 		if err != nil {
 			return nil, err
 		}
-		assessments = assessAll(ctx.Repo.MainRoot, r.trunkSHA, r.cfg, worktrees, agents, r.own, assessWorkers)
+		assessments = assessAll(ctx.Repo.MainRoot, r.trunkSHA, r.cfg, worktrees, listed, r.own, assessWorkers)
 		r.parents, r.ambiguous, err = wtsync.Parents(ctx.Repo.MainRoot, r.trunkSHA, all)
 		if err != nil {
 			return nil, err
@@ -612,7 +613,7 @@ func (r *RunPlan) selectBranches(works []string) error {
 // files under, and asks the one question a run asks. proceed is false for
 // the answer no, which is not an error: the line saying so has been printed.
 func (r *RunPlan) triage() (proceed bool, err error) {
-	agents, err := r.listAgents()
+	listed, err := r.listAgents()
 	if err != nil {
 		return false, err
 	}
@@ -621,7 +622,7 @@ func (r *RunPlan) triage() (proceed bool, err error) {
 		if a, ok := r.assessed[b]; ok {
 			p.a = a
 		} else {
-			p.a = wtsync.AssessOwn(r.ctx.Repo.MainRoot, r.trunkSHA, r.cfg, p.wt, agents, OwnStateOf(r.own, b))
+			p.a = wtsync.AssessOwn(r.ctx.Repo.MainRoot, r.trunkSHA, r.cfg, p.wt, listed, OwnStateOf(r.own, b))
 		}
 		if r.opts.Force && len(p.a.Sessions) > 0 {
 			p.forced = p.a.Sessions
@@ -684,7 +685,7 @@ func (r *RunPlan) triage() (proceed bool, err error) {
 		// Nothing to re-check here: a run lists the sessions again at the
 		// lock, whether or not anything was asked, and compares them there
 		// with the lock in hand.
-		ok, _, err := AskIdle(r.w, r.opts.VerbOptions, going, nil, agents, rebasedNothing)
+		ok, _, err := AskIdle(r.w, r.opts.VerbOptions, going, nil, listed, rebasedNothing)
 		if err != nil || !ok {
 			return false, err
 		}

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/naming"
@@ -25,7 +26,7 @@ type MigrateOptions struct {
 	// Agents are the sessions to check against. Nil lists them;
 	// an empty slice means there are none. AgentsErr is a listing the caller
 	// could not get.
-	Agents    []wtsync.Agent
+	Agents    []agents.Agent
 	AgentsErr error
 }
 
@@ -52,7 +53,7 @@ type MigratePlan struct {
 	T3 bool
 	// Sessions are the agent sessions working inside the worktree, and
 	// SessionsError why they could not be listed.
-	Sessions      wtsync.Sessions
+	Sessions      agents.Sessions
 	SessionsError string
 	// InCwd records that the caller is standing in the worktree being moved.
 	InCwd bool
@@ -108,7 +109,7 @@ func Migrate(ctx *kit.Context, arg, dest string, opts MigrateOptions, w io.Write
 // questions about agent sessions, because the path came from the person
 // typing the command a moment ago.
 func relocateWorktree(ctx *kit.Context, path string, w io.Writer) (string, error) {
-	return Migrate(ctx, path, "", MigrateOptions{Force: true, Agents: []wtsync.Agent{}}, w)
+	return Migrate(ctx, path, "", MigrateOptions{Force: true, Agents: []agents.Agent{}}, w)
 }
 
 // planMigrate reads every fact the migration depends on and refuses here,

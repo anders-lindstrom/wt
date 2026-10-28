@@ -3,10 +3,10 @@ package synccmd
 import (
 	"fmt"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // Why local trunk was left where it was, as --json names it in
@@ -60,7 +60,7 @@ type TrunkSyncOptions struct {
 	// status.
 	Apply bool
 	// Agents lists the sessions to look for in the checkout trunk is on.
-	Agents func() ([]wtsync.Agent, error)
+	Agents func() ([]agents.Agent, error)
 	// BeforeUpdate runs between the checks and the update, for the tests
 	// of what a trunk moving in between does.
 	BeforeUpdate func()
@@ -178,8 +178,8 @@ func trunkOwners(ctx *kit.Context, trunk string) (owners []repo.Worktree, hold s
 // checkoutBusy is why the checkout trunk is on cannot take a fast-forward:
 // an operation in progress, changes of any kind, or a session busy in it.
 // The session wt runs under is not among agents: callers list them with
-// wtsync.ListOtherAgents.
-func checkoutBusy(on repo.Worktree, agents func() ([]wtsync.Agent, error)) (reason, detail string) {
+// agents.ListOtherAgents.
+func checkoutBusy(on repo.Worktree, listed func() ([]agents.Agent, error)) (reason, detail string) {
 	if on.Rebasing {
 		return TrunkSkipOperation, "a rebase is in progress at " + on.Path
 	}
@@ -196,13 +196,13 @@ func checkoutBusy(on repo.Worktree, agents func() ([]wtsync.Agent, error)) (reas
 	case out != "":
 		return TrunkSkipDirty, on.Path + " has changes or untracked files"
 	}
-	list, err := agents()
+	list, err := listed()
 	if err != nil {
 		return TrunkSkipSession, "the sessions cannot be listed, so nobody can say none is busy in " + on.Path
 	}
 	// An idle session loses nothing: the checkout is clean and the merge
 	// overwrites nothing. A busy one may be about to write there.
-	if busy := wtsync.SessionsAt(list, on.Path).Busy(); len(busy) > 0 {
+	if busy := agents.SessionsAt(list, on.Path).Busy(); len(busy) > 0 {
 		return TrunkSkipSession, "an agent session is busy in " + on.Path
 	}
 	return "", ""

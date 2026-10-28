@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // WithWork adds worktree x (feat_wt/x) at trunk as it is now, one commit
@@ -24,7 +24,7 @@ func (f *TrunkFixture) WithWork(t *testing.T) synccmd.RunOptions {
 	testkit.GitIn(t, x, "add", "x.txt")
 	testkit.GitIn(t, x, "commit", "-q", "-m", "x")
 	return synccmd.RunOptions{PushOptions: synccmd.PushOptions{Push: synccmd.PushNever}, VerbOptions: synccmd.VerbOptions{
-		Agents: []wtsync.Agent{},
+		Agents: []agents.Agent{},
 		Now:    func() time.Time { return time.Unix(0, 99) },
 	}}
 }

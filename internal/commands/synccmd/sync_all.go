@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/config"
@@ -70,12 +71,12 @@ func SyncRebaseAll(u *config.User, sel kit.Selection, opts SyncRebaseAllOptions,
 	defer kit.WatchSignals(w, nil)()
 	// One listing of the sessions serves every repository's plan, as one
 	// `claude agents` knows them all; each run lists them again at its lock.
-	agents, err := opts.SessionsNow(rebasedNothing)
+	listed, err := opts.SessionsNow(rebasedNothing)
 	if err != nil {
 		return err
 	}
 	plan := opts.RunOptions
-	plan.Agents = agents
+	plan.Agents = listed
 	runs := kit.EachRepo(set.Repos, kit.RepoParallelism, func(t kit.RepoTarget) *repoRun {
 		return planRepoRun(t, plan)
 	})
@@ -142,9 +143,9 @@ func SyncRebaseAll(u *config.User, sel kit.Selection, opts SyncRebaseAllOptions,
 	// is refused the way a run in one repository refuses it.
 	one := opts.RunOptions
 	one.NoFetch, one.Confirm = true, nil
-	one.Agents = agents
+	one.Agents = listed
 	if one.Relist == nil {
-		one.Relist = func() ([]wtsync.Agent, error) { return kit.ListAgain(opts.Agents, opts.Relist) }
+		one.Relist = func() ([]agents.Agent, error) { return kit.ListAgain(opts.Agents, opts.Relist) }
 	}
 	for _, rr := range runs {
 		if len(rr.ready) == 0 || rr.err != nil {

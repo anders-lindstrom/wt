@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -27,10 +28,10 @@ var (
 type VerbOptions struct {
 	// Agents are the sessions to check against. Nil lists them;
 	// an empty slice means there are none.
-	Agents []wtsync.Agent
+	Agents []agents.Agent
 	// Relist lists the sessions again, at the lock or after a question. Nil
 	// lists them the way Agents did.
-	Relist func() ([]wtsync.Agent, error)
+	Relist func() ([]agents.Agent, error)
 	// Now is the clock. Nil is time.Now.
 	Now func() time.Time
 	// Confirm is asked once before anything moves under an idle session, and
@@ -42,24 +43,24 @@ type VerbOptions struct {
 
 // SessionsNow is the sessions to check against, asked for when the caller named
 // none. A verb that cannot find out who is in a worktree changes nothing.
-func (o VerbOptions) SessionsNow(nothing nothingDone) ([]wtsync.Agent, error) {
+func (o VerbOptions) SessionsNow(nothing nothingDone) ([]agents.Agent, error) {
 	if o.Agents != nil {
 		return o.Agents, nil
 	}
-	agents, err := wtsync.ListOtherAgents()
+	listed, err := agents.ListOtherAgents()
 	if err != nil {
 		return nil, fmt.Errorf("cannot list agent sessions (%w); %s", err, nothing.tail)
 	}
-	return agents, nil
+	return listed, nil
 }
 
 // relist is the second listing, for the check after a question or at the lock.
-func (o VerbOptions) relist(nothing nothingDone) ([]wtsync.Agent, error) {
-	agents, err := kit.ListAgain(o.Agents, o.Relist)
+func (o VerbOptions) relist(nothing nothingDone) ([]agents.Agent, error) {
+	listed, err := kit.ListAgain(o.Agents, o.Relist)
 	if err != nil {
 		return nil, fmt.Errorf("cannot list agent sessions again (%w); %s", err, nothing.tail)
 	}
-	return agents, nil
+	return listed, nil
 }
 
 // Clock is the clock a verb stamps its epoch and its locks with.
@@ -97,11 +98,11 @@ var PushToName = strings.TrimPrefix(wtsync.PushToCommand, "wt sync ")
 type Idle struct {
 	Label    string
 	Path     string
-	Sessions wtsync.Sessions
+	Sessions agents.Sessions
 }
 
 // SessionsOf is what a verb was told about the checkout label names.
-func SessionsOf(told []Idle, label string) wtsync.Sessions {
+func SessionsOf(told []Idle, label string) agents.Sessions {
 	for _, t := range told {
 		if t.Label == label {
 			return t.Sessions
@@ -121,25 +122,25 @@ func SessionsOf(told []Idle, label string) wtsync.Sessions {
 // been printed and the verb returns having touched nothing. fresh is the
 // sessions to go on with — the second listing where there was one, agents
 // otherwise. told is empty for a run, whose re-check is the lock's instead.
-func AskIdle(w io.Writer, opts VerbOptions, works []string, told []Idle, agents []wtsync.Agent, nothing nothingDone) (ok bool, fresh []wtsync.Agent, err error) {
+func AskIdle(w io.Writer, opts VerbOptions, works []string, told []Idle, listed []agents.Agent, nothing nothingDone) (ok bool, fresh []agents.Agent, err error) {
 	if opts.Confirm == nil {
-		return true, agents, nil
+		return true, listed, nil
 	}
 	if ok, err = opts.Confirm(works); err != nil {
-		return false, agents, err
+		return false, listed, err
 	}
 	if !ok {
 		fmt.Fprintln(w, nothing.Line)
-		return false, agents, nil
+		return false, listed, nil
 	}
 	if len(told) == 0 {
-		return true, agents, nil
+		return true, listed, nil
 	}
 	if fresh, err = opts.relist(nothing); err != nil {
-		return false, agents, err
+		return false, listed, err
 	}
 	for _, t := range told {
-		if why := sessionsChanged(t.Sessions, wtsync.SessionsAt(fresh, t.Path)); why != "" {
+		if why := sessionsChanged(t.Sessions, agents.SessionsAt(fresh, t.Path)); why != "" {
 			return false, fresh, fmt.Errorf("%s: %s; %s", t.Label, why, nothing.tail)
 		}
 	}
@@ -148,13 +149,13 @@ func AskIdle(w io.Writer, opts VerbOptions, works []string, told []Idle, agents 
 
 // IdleNotice is said before anything moves under an idle session, whether or
 // not anybody is asked: a verb never changes files under one silently.
-func IdleNotice(work string, s wtsync.Sessions) string {
+func IdleNotice(work string, s agents.Sessions) string {
 	return fmt.Sprintf("⚠ %s: %s is in it; the files it has read will change", work, kit.WhoLabel(s))
 }
 
 // TellIdle prints a §5 line for the idle sessions in a worktree, on a line of
 // its own so it can be relayed to them verbatim. Nothing when there are none.
-func TellIdle(w io.Writer, s wtsync.Sessions, line string) {
+func TellIdle(w io.Writer, s agents.Sessions, line string) {
 	if len(s) == 0 {
 		return
 	}
@@ -168,7 +169,7 @@ func TellIdle(w io.Writer, s wtsync.Sessions, line string) {
 // sessionsChanged is why the sessions in a worktree are no longer the ones a
 // verb checked: one is busy now, or one arrived that nobody was told about.
 // Empty when nothing changed that matters.
-func sessionsChanged(told, now wtsync.Sessions) string {
+func sessionsChanged(told, now agents.Sessions) string {
 	if len(now.Busy()) > 0 {
 		return "an agent session is busy in it now: " + now.Label(kit.SessionLabel)
 	}

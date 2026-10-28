@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // sessionRig is a config directory with claude's registry, and a directory
@@ -90,8 +90,8 @@ func (r *sessionRig) register(pid int, sessionID, socket string) {
 	}
 }
 
-func liveSession(name, sessionID, cwd string, pid int) wtsync.Agent {
-	return wtsync.Agent{Name: name, Kind: "interactive", Status: "idle", Cwd: cwd, PID: pid, SessionID: sessionID}
+func liveSession(name, sessionID, cwd string, pid int) agents.Agent {
+	return agents.Agent{Name: name, Kind: "interactive", Status: "idle", Cwd: cwd, PID: pid, SessionID: sessionID}
 }
 
 const (
@@ -140,8 +140,8 @@ func TestSessionListFindsInboxesAndSaysWhyNot(t *testing.T) {
 	testkit.ClaudeLists(t, &ListClaudeSessions, liveSession("works", sidA, wt, 4001), waiting, parked, own)
 
 	was := listCodexSessions
-	listCodexSessions = func() ([]wtsync.Agent, error) {
-		return []wtsync.Agent{{ID: "codex-77", Name: "codex", Cwd: wt, Status: "busy", Tool: wtsync.ToolCodex, PID: 77}}, nil
+	listCodexSessions = func() ([]agents.Agent, error) {
+		return []agents.Agent{{ID: "codex-77", Name: "codex", Cwd: wt, Status: "busy", Tool: agents.ToolCodex, PID: 77}}, nil
 	}
 	t.Cleanup(func() { listCodexSessions = was })
 	var out bytes.Buffer
@@ -552,11 +552,11 @@ func TestSessionSendIgnoresTheCallersOwnSessionWhenChoosing(t *testing.T) {
 
 func TestSessionActivityWords(t *testing.T) {
 	cases := map[string]ClaudeSession{
-		"done":       {wtsync.Agent{Kind: "background", State: "done"}},
-		"parked":     {wtsync.Agent{Kind: "background", State: "blocked"}},
-		"needsInput": {wtsync.Agent{Kind: "interactive", Status: "waiting", PID: 5}},
-		"idle":       {wtsync.Agent{Kind: "interactive", Status: "idle", PID: 5}},
-		"working":    {wtsync.Agent{Kind: "interactive", Status: "busy", PID: 5}},
+		"done":       {agents.Agent{Kind: "background", State: "done"}},
+		"parked":     {agents.Agent{Kind: "background", State: "blocked"}},
+		"needsInput": {agents.Agent{Kind: "interactive", Status: "waiting", PID: 5}},
+		"idle":       {agents.Agent{Kind: "interactive", Status: "idle", PID: 5}},
+		"working":    {agents.Agent{Kind: "interactive", Status: "busy", PID: 5}},
 	}
 	for want, s := range cases {
 		if got := sessionActivity(s); got != want {
@@ -635,7 +635,7 @@ func TestSessionListAllPlacesSessionsByRepositoryFromOneRead(t *testing.T) {
 	elsewhere := t.TempDir()
 	asked := testkit.ClaudeLists(t, &ListClaudeSessions, liveSession("here", sidA, wt, 4001), liveSession("stray", sidB, elsewhere, 4002))
 	was := listCodexSessions
-	listCodexSessions = func() ([]wtsync.Agent, error) { return nil, nil }
+	listCodexSessions = func() ([]agents.Agent, error) { return nil, nil }
 	t.Cleanup(func() { listCodexSessions = was })
 
 	var out bytes.Buffer
@@ -701,7 +701,7 @@ func stopSession(t *testing.T, ctx *kit.Context, r *sessionRig, o StopOptions) (
 	return res, out.String(), err
 }
 
-func running(name, id, cwd string, pid int) wtsync.Agent {
+func running(name, id, cwd string, pid int) agents.Agent {
 	a := testkit.Background(name, id, "working", cwd)
 	a.Status, a.PID = "busy", pid
 	return a
@@ -770,7 +770,7 @@ func TestSessionStopRefusesATerminalAndACodexSession(t *testing.T) {
 		t.Errorf("attached background: want refused, got %v / %+v", err, res)
 	}
 
-	codex := wtsync.Agent{ID: "codex-77", Name: "codex", Cwd: wt, Status: "busy", Tool: wtsync.ToolCodex, PID: 77, Kind: "background"}
+	codex := agents.Agent{ID: "codex-77", Name: "codex", Cwd: wt, Status: "busy", Tool: agents.ToolCodex, PID: 77, Kind: "background"}
 	res, _, err = stopSession(t, ctx, r, StopOptions{Session: "codex-77", Sessions: readOf(codex)})
 	if err == nil || res.Outcome != "refused" || codeOf(res) != "codex" {
 		t.Errorf("codex: want refused, got %v / %+v", err, res)
@@ -787,9 +787,9 @@ func TestSessionStopRefusesATerminalAndACodexSession(t *testing.T) {
 	}
 }
 
-func readOf(agents ...wtsync.Agent) *ClaudeSessions {
+func readOf(listed ...agents.Agent) *ClaudeSessions {
 	c := &ClaudeSessions{done: closedChan(), found: true}
-	for _, a := range agents {
+	for _, a := range listed {
 		c.sessions = append(c.sessions, ClaudeSession{a})
 	}
 	return c

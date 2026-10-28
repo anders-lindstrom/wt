@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 func keptCodes(p SweepPlan, name string) []string {
@@ -92,7 +92,7 @@ func TestSweepRemovesTwoWorktreesSharingAnAppliedTip(t *testing.T) {
 	testkit.GitIn(t, main, "push", "-q", "origin", "main")
 
 	var buf bytes.Buffer
-	if err := Sweep(ctx, SweepOptions{Yes: true, NoFetch: true, Agents: []wtsync.Agent{}}, &buf); err != nil {
+	if err := Sweep(ctx, SweepOptions{Yes: true, NoFetch: true, Agents: []agents.Agent{}}, &buf); err != nil {
 		t.Fatalf("Sweep: %v\n%s", err, buf.String())
 	}
 	if testkit.Exists(a) || testkit.Exists(b) {

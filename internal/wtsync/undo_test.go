@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
@@ -103,7 +104,7 @@ func TestUndoRefusesACheckoutWithAnAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 	resolved, _ := filepath.EvalSymlinks(wt)
-	_, err := Undo(dir, []repo.Worktree{{Path: wt, Branch: "feature"}}, []Agent{{Name: "f-1", Cwd: resolved}}, "feature", time.Now(), false)
+	_, err := Undo(dir, []repo.Worktree{{Path: wt, Branch: "feature"}}, []agents.Agent{{Name: "f-1", Cwd: resolved}}, "feature", time.Now(), false)
 	if err == nil || !strings.Contains(err.Error(), "f-1") {
 		t.Fatalf("err %v", err)
 	}
@@ -1218,7 +1219,7 @@ func TestUndoPassesAnIdleSessionAndRefusesABusyOne(t *testing.T) {
 	completed(t, dir, wt, "feature", 5)
 	resolved, _ := filepath.EvalSymlinks(wt)
 	wts := []repo.Worktree{{Path: wt, Branch: "feature"}}
-	busy := []Agent{{Name: "f-1", Cwd: resolved, Kind: "interactive", Status: "idle"}, {Name: "f-2", Cwd: resolved, Kind: "interactive", Status: "busy"}}
+	busy := []agents.Agent{{Name: "f-1", Cwd: resolved, Kind: "interactive", Status: "idle"}, {Name: "f-2", Cwd: resolved, Kind: "interactive", Status: "busy"}}
 	if _, err := Undo(dir, wts, busy, "feature", time.Now(), false); err == nil || !strings.Contains(err.Error(), "busy in it: f-2 +1") {
 		t.Fatalf("err %v", err)
 	}
@@ -1280,7 +1281,7 @@ func TestUndoRefusesABusySessionWithoutReadingGit(t *testing.T) {
 	ran := gitLoggedIn(t, wt)
 	resolved, _ := filepath.EvalSymlinks(wt)
 	wts := []repo.Worktree{{Path: wt, Branch: "feature"}}
-	busy := []Agent{{Name: "f-2", Cwd: resolved, Kind: "interactive", Status: "busy"}}
+	busy := []agents.Agent{{Name: "f-2", Cwd: resolved, Kind: "interactive", Status: "busy"}}
 	_, err := Undo(dir, wts, busy, "feature", time.Now(), false)
 	if err == nil || !strings.Contains(err.Error(), "busy in it: f-2") {
 		t.Fatalf("err %v", err)
@@ -1288,7 +1289,7 @@ func TestUndoRefusesABusySessionWithoutReadingGit(t *testing.T) {
 	if got := ran(); !reflect.DeepEqual(got, []string{"rev-parse --absolute-git-dir"}) {
 		t.Fatalf("git ran in a worktree refused for a busy session:\n%s", strings.Join(got, "\n"))
 	}
-	idle := []Agent{{Name: "f-1", Cwd: resolved, Kind: "interactive", Status: "idle"}}
+	idle := []agents.Agent{{Name: "f-1", Cwd: resolved, Kind: "interactive", Status: "idle"}}
 	if _, err := Undo(dir, wts, idle, "feature", time.Now(), false); err != nil {
 		t.Fatal(err)
 	}

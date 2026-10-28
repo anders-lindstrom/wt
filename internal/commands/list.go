@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/admin"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
@@ -334,7 +335,7 @@ type StatusOptions struct {
 	NoPR, Refresh bool
 	// Agents are the sessions StatusWorktree looks for in the worktree. Nil
 	// lists them; an empty slice means there are none.
-	Agents []wtsync.Agent
+	Agents []agents.Agent
 }
 
 // StatusWorktree prints one worktree in full, one fact per line, then what
@@ -362,20 +363,20 @@ func StatusWorktree(ctx *kit.Context, arg string, opts StatusOptions, w io.Write
 			rows = append(rows, []string{"  pr", pr})
 		}
 	}
-	agents := opts.Agents
-	if agents == nil {
+	listed := opts.Agents
+	if listed == nil {
 		var aerr error
-		if agents, aerr = wtsync.ListOtherAgents(); aerr != nil {
+		if listed, aerr = agents.ListOtherAgents(); aerr != nil {
 			fmt.Fprintf(w, "note: %v\n", aerr)
 		}
 	}
-	if s := wtsync.SessionsAt(agents, wt.Path); len(s) > 0 {
+	if s := agents.SessionsAt(listed, wt.Path); len(s) > 0 {
 		rows = append(rows, []string{"  sessions", kit.WhoLabel(s)})
 	}
 	// The branch against its own remote, as last fetched like the rest.
 	own := synccmd.OwnStateOf(wtsync.ReadOwnOrUnknown(ctx.Repo.MainRoot, ctx.Config.MainBranch), wt.Branch)
 	work := kit.WorktreeName(ctx, wt.Branch, wt.Path)
-	verdict, under, a := syncVerdict(ctx, work, wt, agents, own)
+	verdict, under, a := syncVerdict(ctx, work, wt, listed, own)
 	if line := synccmd.OwnLineOf(a); line != "" {
 		rows = append(rows, []string{"  remote", line})
 		// Said once: the row has it.
@@ -442,13 +443,13 @@ func trunkFact(ctx *kit.Context, base retire.TrunkBase, ok bool, wt repo.Worktre
 // overview's summary lines, ending with the reminder that it was simulated
 // against trunk as last fetched. A trunk the overview cannot assess against
 // gives its reason instead.
-func syncVerdict(ctx *kit.Context, work string, wt repo.Worktree, agents []wtsync.Agent, own wtsync.OwnRemote) (line string, under []string, a wtsync.Assessment) {
+func syncVerdict(ctx *kit.Context, work string, wt repo.Worktree, listed []agents.Agent, own wtsync.OwnRemote) (line string, under []string, a wtsync.Assessment) {
 	a.Own = own
 	onto, _, cfg, err := synccmd.SyncDeclaration(ctx)
 	if err != nil {
 		return err.Error(), nil, a
 	}
-	a = wtsync.AssessOwn(ctx.Repo.MainRoot, onto, cfg, wt, agents, own)
+	a = wtsync.AssessOwn(ctx.Repo.MainRoot, onto, cfg, wt, listed, own)
 	parts := []string{synccmd.ClassLabel(a)}
 	if a.Dirty && len(a.Sessions.Busy()) == 0 {
 		parts = append(parts, "dirty")

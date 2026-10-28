@@ -21,11 +21,11 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 	"github.com/anders-lindstrom/wt/schema"
 )
 
@@ -212,10 +212,10 @@ func (o ListOptions) environment() sessionEnv {
 }
 
 // listCodexSessions is a var so tests stay off the machine's process table.
-var listCodexSessions = wtsync.ListCodexSessions
+var listCodexSessions = agents.ListCodexSessions
 
 // with is the read plus extra sessions of another program, as one.
-func (c *ClaudeSessions) with(extra []wtsync.Agent) *ClaudeSessions {
+func (c *ClaudeSessions) with(extra []agents.Agent) *ClaudeSessions {
 	<-c.done
 	m := &ClaudeSessions{done: make(chan struct{}), found: c.found, err: c.err}
 	close(m.done)
@@ -380,7 +380,7 @@ func ListRun(ctx *kit.Context, o ListOptions) error {
 		read = ReadClaudeSessions(attachDeadline)
 	}
 	type codexRead struct {
-		agents []wtsync.Agent
+		agents []agents.Agent
 		err    error
 	}
 	codexDone := make(chan codexRead, 1)
@@ -484,7 +484,7 @@ var sessionIDShape = regexp.MustCompile(`^[0-9A-Za-z-]{8,64}$`)
 func describeSession(s ClaudeSession, repo, work, path string, env sessionEnv) Info {
 	info := Info{Repo: repo, Work: work, Path: path, Kind: "claude", Terminal: s.Kind == "interactive",
 		State: "busy", sessionID: s.SessionID}
-	codex := s.Tool == wtsync.ToolCodex
+	codex := s.Tool == agents.ToolCodex
 	if codex {
 		info.Kind = "codex"
 	}
@@ -1214,7 +1214,7 @@ func StopRun(ctx *kit.Context, o StopOptions) error {
 }
 
 // listAncestors is a var so tests stay off the machine's process table.
-var listAncestors = wtsync.Ancestors
+var listAncestors = agents.Ancestors
 
 // runClaudeStop runs `claude stop <id>` and returns what it printed.
 func runClaudeStop(id string) (string, error) {

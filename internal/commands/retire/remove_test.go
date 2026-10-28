@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // 5. A merged branch is deleted.
@@ -453,7 +453,7 @@ func TestRemoveDoesNotDeleteABranchThatGainedWorkAfterThePlan(t *testing.T) {
 	ctx, _ := kit.Open(main)
 	dst := foreignWorktree(t, ctx, main, "someones-work", 0)
 
-	plan := planFor(ctx, worktreeRecord(ctx, dst), RemoveOptions{Agents: []wtsync.Agent{}})
+	plan := planFor(ctx, worktreeRecord(ctx, dst), RemoveOptions{Agents: []agents.Agent{}})
 	if plan.Outcome != BranchDeleted {
 		t.Fatalf("precondition: want a merged branch, got outcome %v", plan.Outcome)
 	}
@@ -483,7 +483,7 @@ func TestRemoveDoesNotDeleteWhenTheMainBranchDisappears(t *testing.T) {
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	dst := foreignWorktree(t, ctx, main, "someones-work", 0)
-	plan := planFor(ctx, worktreeRecord(ctx, dst), RemoveOptions{Agents: []wtsync.Agent{}})
+	plan := planFor(ctx, worktreeRecord(ctx, dst), RemoveOptions{Agents: []agents.Agent{}})
 
 	testkit.GitIn(t, main, "branch", "-m", "main", "renamed-trunk")
 
@@ -521,7 +521,7 @@ func TestRemoveReleasesAStaleLockAndRemoves(t *testing.T) {
 	path := provisiontest.LockedWorktree(t, ctx, main, "fix/gone", reason)
 
 	var buf bytes.Buffer
-	if err := RemoveAt(ctx, path, RemoveOptions{Agents: []wtsync.Agent{}}, &buf); err != nil {
+	if err := RemoveAt(ctx, path, RemoveOptions{Agents: []agents.Agent{}}, &buf); err != nil {
 		t.Fatalf("RemoveAt: %v\n%s", err, buf.String())
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -547,7 +547,7 @@ func TestRemoveRefusesALockHeldByARunningProcess(t *testing.T) {
 
 	asked := false
 	opts := RemoveOptions{
-		Agents:  []wtsync.Agent{},
+		Agents:  []agents.Agent{},
 		Confirm: func(Plan) (bool, error) { asked = true; return true, nil },
 	}
 	var buf bytes.Buffer
@@ -577,7 +577,7 @@ func TestRemoveForceBreaksALockHeldByARunningProcess(t *testing.T) {
 	path := provisiontest.LockedWorktree(t, ctx, main, "fix/live", reason)
 
 	var buf bytes.Buffer
-	opts := RemoveOptions{Force: kit.ForceAll, Agents: []wtsync.Agent{}}
+	opts := RemoveOptions{Force: kit.ForceAll, Agents: []agents.Agent{}}
 	if err := RemoveAt(ctx, path, opts, &buf); err != nil {
 		t.Fatalf("RemoveAt --force: %v\n%s", err, buf.String())
 	}
@@ -599,7 +599,7 @@ func TestRemoveTreatsALockWithAnAgentInTheWorktreeAsHeld(t *testing.T) {
 	resolved, _ := filepath.EvalSymlinks(path)
 
 	var buf bytes.Buffer
-	opts := RemoveOptions{Agents: []wtsync.Agent{{Name: "agented-7", Cwd: resolved}}}
+	opts := RemoveOptions{Agents: []agents.Agent{{Name: "agented-7", Cwd: resolved}}}
 	err := RemoveAt(ctx, path, opts, &buf)
 	if err == nil {
 		t.Fatal("want a refusal: a session is living in it")
@@ -621,7 +621,7 @@ func TestRemoveRefusesALockNothingExplains(t *testing.T) {
 	path := provisiontest.LockedWorktree(t, ctx, main, "fix/mystery", "reasons")
 
 	var buf bytes.Buffer
-	if err := RemoveAt(ctx, path, RemoveOptions{Agents: []wtsync.Agent{}}, &buf); err == nil {
+	if err := RemoveAt(ctx, path, RemoveOptions{Agents: []agents.Agent{}}, &buf); err == nil {
 		t.Fatal("want a refusal")
 	}
 	if _, err := os.Stat(path); err != nil {
@@ -639,7 +639,7 @@ func TestRemoveNeverRepeatsGitsAdviceAboutMinusFMinusF(t *testing.T) {
 	path := provisiontest.LockedWorktree(t, ctx, main, "fix/live", reason)
 
 	var buf bytes.Buffer
-	err := RemoveAt(ctx, path, RemoveOptions{Agents: []wtsync.Agent{}}, &buf)
+	err := RemoveAt(ctx, path, RemoveOptions{Agents: []agents.Agent{}}, &buf)
 	said := buf.String()
 	if err != nil {
 		said += err.Error()
@@ -664,7 +664,7 @@ func TestRemoveDeletesABranchMergedOnlyOnOrigin(t *testing.T) {
 	testkit.GitIn(t, main, "fetch", "-q", "origin")
 	buf.Reset()
 
-	if err := RemoveAt(ctx, path, RemoveOptions{Agents: []wtsync.Agent{}}, &buf); err != nil {
+	if err := RemoveAt(ctx, path, RemoveOptions{Agents: []agents.Agent{}}, &buf); err != nil {
 		t.Fatalf("RemoveAt: %v\n%s", err, buf.String())
 	}
 	if ctx.Repo.BranchExists("fix_wt/landed") || ctx.Repo.BranchExists("landed") {
@@ -705,7 +705,7 @@ func TestRemoveKeepsABranchOnlyAnUnreadOriginHas(t *testing.T) {
 			hide(t, main)
 			buf.Reset()
 
-			if err := RemoveAt(ctx, path, RemoveOptions{Agents: []wtsync.Agent{}}, &buf); err != nil {
+			if err := RemoveAt(ctx, path, RemoveOptions{Agents: []agents.Agent{}}, &buf); err != nil {
 				t.Fatalf("RemoveAt: %v\n%s", err, buf.String())
 			}
 			if !ctx.Repo.BranchExists("unseen") {
@@ -725,7 +725,7 @@ func TestRemoveDoesNotDeleteABranchThatMovedAfterThePlan(t *testing.T) {
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	dst := foreignWorktree(t, ctx, main, "someones-work", 0)
-	plan := planFor(ctx, worktreeRecord(ctx, dst), RemoveOptions{Agents: []wtsync.Agent{}})
+	plan := planFor(ctx, worktreeRecord(ctx, dst), RemoveOptions{Agents: []agents.Agent{}})
 	if plan.Outcome != BranchDeleted {
 		t.Fatalf("precondition: want a merged branch, got outcome %v", plan.Outcome)
 	}
@@ -759,7 +759,7 @@ func TestRemoveKeepsAMergedBranchAnotherWorktreeIsUsing(t *testing.T) {
 	testkit.GitIn(t, main, "worktree", "add", "-q", "--force", twin, "someones-work")
 
 	var buf bytes.Buffer
-	err := RemoveAt(ctx, dst, RemoveOptions{Agents: []wtsync.Agent{}}, &buf)
+	err := RemoveAt(ctx, dst, RemoveOptions{Agents: []agents.Agent{}}, &buf)
 	if err == nil {
 		t.Fatal("want a refusal to delete a branch another worktree is on")
 	}

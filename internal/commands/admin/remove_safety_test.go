@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // The hook runs inside the session that is ending, and wt_rm_me in the
@@ -19,7 +19,7 @@ func TestHookRemovesTheWorktreeItsOwnSessionIsIn(t *testing.T) {
 	// Not parallel: swaps session.ListSessions; sets environment variables for the whole test binary.
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/hooked")
 	resolved, _ := filepath.EvalSymlinks(path)
-	testkit.FakeClaude(t, &session.ListSessions, []wtsync.Agent{ownSession(resolved)})
+	testkit.FakeClaude(t, &session.ListSessions, []agents.Agent{ownSession(resolved)})
 
 	var log bytes.Buffer
 	in := strings.NewReader(`{"path":"` + path + `"}`)
@@ -35,8 +35,8 @@ func TestHookRefusesWhenAnotherSessionIsIn(t *testing.T) {
 	// Not parallel: swaps session.ListSessions; sets environment variables for the whole test binary.
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/shared")
 	resolved, _ := filepath.EvalSymlinks(path)
-	other := wtsync.Agent{ID: "other", Name: "neighbour-2", Cwd: resolved, Status: "idle", PID: 999999}
-	testkit.FakeClaude(t, &session.ListSessions, []wtsync.Agent{ownSession(resolved), other})
+	other := agents.Agent{ID: "other", Name: "neighbour-2", Cwd: resolved, Status: "idle", PID: 999999}
+	testkit.FakeClaude(t, &session.ListSessions, []agents.Agent{ownSession(resolved), other})
 
 	var log bytes.Buffer
 	in := strings.NewReader(`{"path":"` + path + `"}`)

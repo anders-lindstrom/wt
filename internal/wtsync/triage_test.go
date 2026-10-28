@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
@@ -308,7 +309,7 @@ func TestAssessReportsDirtyTrackedChangesAndTheAgent(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(wt.Path, "untracked.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	a := Assess(dir, "main", triageCfg(t), wt, []Agent{{Name: "busy", Cwd: wt.Path}})
+	a := Assess(dir, "main", triageCfg(t), wt, []agents.Agent{{Name: "busy", Cwd: wt.Path}})
 	if a.Dirty {
 		t.Error("an untracked file is not dirty")
 	}

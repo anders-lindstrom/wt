@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // A worktree that turns busy between the plan and its turn in the apply is
@@ -23,7 +23,7 @@ func TestSweepKeepsAWorktreeThatTurnedBusyAfterThePlan(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
-	reap := SweepOptions{Agents: []wtsync.Agent{}, Reap: true}
+	reap := SweepOptions{Agents: []agents.Agent{}, Reap: true}
 	p, reaping := PlanOf(t, ctx), planWith(t, ctx, reap)
 	if len(p.Remove) != 1 || len(reaping.Remove) != 1 {
 		t.Fatalf("remove %v and %v, want the worktree in both", WorktreeNames(p.Remove), WorktreeNames(reaping.Remove))
@@ -50,7 +50,7 @@ func TestSweepKeepsAWorktreeWhenTheProcessesAreUnknown(t *testing.T) {
 	t.Cleanup(func() { ScanProcesses, session.ListSessions = was, wasList })
 
 	// Without --reap, with the sessions listed fine.
-	ScanProcesses = func([]wtsync.Agent) (*wtsync.ProcessScan, error) { return nil, errors.New("ps: boom") }
+	ScanProcesses = func([]agents.Agent) (*agents.ProcessScan, error) { return nil, errors.New("ps: boom") }
 	p := PlanOf(t, ctx)
 	if len(p.Remove) != 0 || len(p.CheckedOut) != 1 || !slices.Contains(p.CheckedOut[0].KeptCodes, KeptProcessesUnknown) {
 		t.Fatalf("remove %v kept %+v, want it kept with the processes unknown", WorktreeNames(p.Remove), p.CheckedOut)
@@ -59,12 +59,12 @@ func TestSweepKeepsAWorktreeWhenTheProcessesAreUnknown(t *testing.T) {
 		t.Errorf("want the advice in:\n%s", out)
 	}
 	var buf bytes.Buffer
-	if err := Sweep(ctx, SweepOptions{Yes: true, Agents: []wtsync.Agent{}}, &buf); err != nil || !testkit.Exists(path) {
+	if err := Sweep(ctx, SweepOptions{Yes: true, Agents: []agents.Agent{}}, &buf); err != nil || !testkit.Exists(path) {
 		t.Errorf("Sweep: %v, worktree there %v; want it left alone", err, testkit.Exists(path))
 	}
 
 	// With --reap, and the sessions not listed: no --force goes past it.
-	session.ListSessions = func() ([]wtsync.Agent, error) { return nil, errors.New("claude agents --json failed") }
+	session.ListSessions = func() ([]agents.Agent, error) { return nil, errors.New("claude agents --json failed") }
 	p = planWith(t, ctx, SweepOptions{Reap: true})
 	if len(p.Remove) != 0 || len(p.CheckedOut) != 1 || !slices.Contains(p.CheckedOut[0].KeptCodes, KeptProcessesUnknown) {
 		t.Fatalf("remove %v kept %+v, want it kept with the processes unknown", WorktreeNames(p.Remove), p.CheckedOut)

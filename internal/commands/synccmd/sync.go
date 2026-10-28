@@ -18,6 +18,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -54,14 +55,14 @@ func Sync(ctx *kit.Context, opts SyncOptions, w io.Writer) error {
 		return err
 	}
 	worktrees = slices.DeleteFunc(worktrees, func(wt repo.Worktree) bool { return wt.IsMain })
-	onto, cfg, agents, own, err := syncInputs(ctx, opts, w, worktreeBranches(worktrees))
+	onto, cfg, listed, own, err := syncInputs(ctx, opts, w, worktreeBranches(worktrees))
 	if err != nil {
 		return err
 	}
 	if line := keptLine(ctx, time.Now()); line != "" {
 		fmt.Fprintln(w, line)
 	}
-	assessments := assessAll(ctx.Repo.MainRoot, onto, cfg, worktrees, agents, own, assessWorkers)
+	assessments := assessAll(ctx.Repo.MainRoot, onto, cfg, worktrees, listed, own, assessWorkers)
 	entries := make([]syncEntry, 0, len(worktrees))
 	for i, wt := range worktrees {
 		entries = append(entries, syncEntry{work: kit.WorktreeName(ctx, wt.Branch, wt.Path), a: assessments[i]})
@@ -83,7 +84,7 @@ var assessWorkers = min(runtime.NumCPU(), 4)
 // and what it writes to the object store are loose objects git creates
 // atomically, never a ref. own is every branch against its own remote, read
 // before the workers start: it is one reading, not safe to share.
-func assessAll(mainRoot, onto string, cfg *wtsync.Config, wts []repo.Worktree, agents []wtsync.Agent, own *wtsync.Own, workers int) []wtsync.Assessment {
+func assessAll(mainRoot, onto string, cfg *wtsync.Config, wts []repo.Worktree, listed []agents.Agent, own *wtsync.Own, workers int) []wtsync.Assessment {
 	out := make([]wtsync.Assessment, len(wts))
 	owns := make([]wtsync.OwnRemote, len(wts))
 	for i, wt := range wts {
@@ -97,7 +98,7 @@ func assessAll(mainRoot, onto string, cfg *wtsync.Config, wts []repo.Worktree, a
 		go func() {
 			defer wg.Done()
 			defer func() { <-slots }()
-			out[i] = wtsync.AssessOwn(mainRoot, onto, cfg, wt, agents, owns[i])
+			out[i] = wtsync.AssessOwn(mainRoot, onto, cfg, wt, listed, owns[i])
 		}()
 	}
 	wg.Wait()
@@ -147,11 +148,11 @@ func SyncWorktree(ctx *kit.Context, arg string, opts SyncOptions, w io.Writer) e
 	if err != nil {
 		return err
 	}
-	onto, cfg, agents, own, err := syncInputs(ctx, opts, w, []string{wt.Branch})
+	onto, cfg, listed, own, err := syncInputs(ctx, opts, w, []string{wt.Branch})
 	if err != nil {
 		return err
 	}
-	a := wtsync.AssessOwn(ctx.Repo.MainRoot, onto, cfg, wt, agents, OwnStateOf(own, wt.Branch))
+	a := wtsync.AssessOwn(ctx.Repo.MainRoot, onto, cfg, wt, listed, OwnStateOf(own, wt.Branch))
 	printDetail(w, kit.WorktreeName(ctx, wt.Branch, wt.Path), a)
 	return nil
 }
@@ -204,7 +205,7 @@ func UndeclaredNotice(ctx *kit.Context, onto string) string {
 // and the branches' remotes, as last fetched; only a trunk that is not there
 // at all is an error. A branch whose own remote alone could not be fetched
 // says so on its row.
-func syncInputs(ctx *kit.Context, opts SyncOptions, w io.Writer, branches []string) (onto string, cfg *wtsync.Config, agents []wtsync.Agent, own *wtsync.Own, err error) {
+func syncInputs(ctx *kit.Context, opts SyncOptions, w io.Writer, branches []string) (onto string, cfg *wtsync.Config, listed []agents.Agent, own *wtsync.Own, err error) {
 	if err := ctx.NoTrunk(); err != nil {
 		return "", nil, nil, nil, err
 	}
@@ -229,7 +230,7 @@ func syncInputs(ctx *kit.Context, opts SyncOptions, w io.Writer, branches []stri
 		fmt.Fprintln(w, UndeclaredNotice(ctx, onto))
 		fmt.Fprintln(w)
 	}
-	agents, aerr := wtsync.ListOtherAgents()
+	listed, aerr := agents.ListOtherAgents()
 	if aerr != nil {
 		fmt.Fprintf(w, "note: %v\n", aerr)
 	}
@@ -242,7 +243,7 @@ func syncInputs(ctx *kit.Context, opts SyncOptions, w io.Writer, branches []stri
 	default:
 		fmt.Fprintf(w, "against %s\n", ref)
 	}
-	return onto, cfg, agents, own, nil
+	return onto, cfg, listed, own, nil
 }
 
 // LastFetched is "as last fetched" and how long ago, or that when is not

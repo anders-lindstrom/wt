@@ -1,5 +1,7 @@
 package wtsync
 
+import "github.com/anders-lindstrom/wt/internal/agents"
+
 // Standing is where a worktree stands under a verb's lock: what a run reads
 // again once it holds the lock, so that what triage saw still holds, and
 // what undo reads once it has taken a handover's lock over, so that nothing
@@ -14,18 +16,18 @@ package wtsync
 // be read counts as absent: the rebase is refused either way, and the
 // caller only says which way out.
 type Standing struct {
-	Sessions Sessions // the live sessions in the worktree, from the listing given
-	Rebasing bool     // a rebase in progress, under either backend
-	Plan     bool     // with Rebasing: a handover marks it as a run's
-	Dirty    bool     // without Rebasing: tracked changes; untracked files never block a rebase
+	Sessions agents.Sessions // the live sessions in the worktree, from the listing given
+	Rebasing bool            // a rebase in progress, under either backend
+	Plan     bool            // with Rebasing: a handover marks it as a run's
+	Dirty    bool            // without Rebasing: tracked changes; untracked files never block a rebase
 	Err      error
 }
 
 // Recheck reads where the worktree at wtPath stands, with gitDir its own git
-// dir and agents the sessions to look for in it. The caller holds the lock.
-func Recheck(wtPath, gitDir string, agents []Agent) Standing {
+// dir and listed the sessions to look for in it. The caller holds the lock.
+func Recheck(wtPath, gitDir string, listed []agents.Agent) Standing {
 	s := RecheckGit(wtPath, gitDir)
-	s.Sessions = SessionsAt(agents, wtPath)
+	s.Sessions = agents.SessionsAt(listed, wtPath)
 	return s
 }
 

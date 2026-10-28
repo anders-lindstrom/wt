@@ -5,11 +5,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/github"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // An integration that was never set up here says nothing; one that was
@@ -105,7 +105,7 @@ func TestGitHubWarnsOncePerInvocation(t *testing.T) {
 	if err := List(ctx, ListOptions{Refresh: true}, &out, 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := StatusWorktree(ctx, "login-crash", StatusOptions{Agents: []wtsync.Agent{}}, &out); err != nil {
+	if err := StatusWorktree(ctx, "login-crash", StatusOptions{Agents: []agents.Agent{}}, &out); err != nil {
 		t.Fatal(err)
 	}
 	if n := strings.Count(warnings.String(), "no pull requests shown"); n != 1 {
@@ -116,7 +116,7 @@ func TestGitHubWarnsOncePerInvocation(t *testing.T) {
 	// silencing, not one of the two staying quiet.
 	var alone bytes.Buffer
 	ctx.Warn, ctx.Warned = &alone, nil
-	if err := StatusWorktree(ctx, "login-crash", StatusOptions{Agents: []wtsync.Agent{}}, &out); err != nil {
+	if err := StatusWorktree(ctx, "login-crash", StatusOptions{Agents: []agents.Agent{}}, &out); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(alone.String(), "no pull requests shown") {

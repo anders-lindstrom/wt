@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/git"
@@ -110,11 +111,11 @@ func syncResume(ctx *kit.Context, work string, opts ResumeOptions, w io.Writer) 
 	if tip != pinned {
 		return fmt.Errorf("%s pins %s but the handover says %s; nothing is resumed", st.Safety, git.ShortID(tip, 7), git.ShortID(pinned, 7))
 	}
-	agents, err := opts.SessionsNow(synccmd.ResumedNothing)
+	listed, err := opts.SessionsNow(synccmd.ResumedNothing)
 	if err != nil {
 		return err
 	}
-	sessions := wtsync.SessionsAt(agents, target.Path)
+	sessions := agents.SessionsAt(listed, target.Path)
 	if len(sessions.Busy()) > 0 {
 		return fmt.Errorf("an agent session is busy in %s: %s; nothing is resumed", name, sessions.Label(kit.SessionLabel))
 	}
@@ -130,7 +131,7 @@ func syncResume(ctx *kit.Context, work string, opts ResumeOptions, w io.Writer) 
 		landed = behind
 		fmt.Fprintln(w, synccmd.IdleNotice(name, sessions))
 		told := []synccmd.Idle{{Label: name, Path: target.Path, Sessions: sessions}}
-		ok, _, err := synccmd.AskIdle(w, opts.VerbOptions, []string{name}, told, agents, synccmd.ResumedNothing)
+		ok, _, err := synccmd.AskIdle(w, opts.VerbOptions, []string{name}, told, listed, synccmd.ResumedNothing)
 		if err != nil {
 			return err
 		}

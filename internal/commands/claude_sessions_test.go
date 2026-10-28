@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 func listed(t *testing.T, ctx *kit.Context, opts ListOptions, width int) string {
@@ -75,7 +75,7 @@ func TestListSaysWhenSessionsCouldNotBeRead(t *testing.T) {
 	// Not parallel: swaps session.ListClaudeSessions.
 	ctx, _, _ := testkit.CanonicalWorktree(t)
 	was := session.ListClaudeSessions
-	session.ListClaudeSessions = func(time.Duration) ([]wtsync.Agent, bool, error) {
+	session.ListClaudeSessions = func(time.Duration) ([]agents.Agent, bool, error) {
 		return nil, true, errors.New("claude agents --json did not answer within 2s")
 	}
 	t.Cleanup(func() { session.ListClaudeSessions = was })

@@ -12,17 +12,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // RealProcesses has wt read the machine's process table for this test.
 func RealProcesses(t *testing.T) {
 	t.Helper()
 	was := ScanProcesses
-	ScanProcesses = wtsync.ScanProcesses
+	ScanProcesses = agents.ScanProcesses
 	t.Cleanup(func() { ScanProcesses = was })
 }
 
@@ -45,7 +45,7 @@ func Leftover(t *testing.T, dir string) int {
 	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
 	// Seen by the process table before the test goes on.
 	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
-		if s, err := wtsync.ScanProcesses(nil); err == nil && len(s.In(dir)) > 0 {
+		if s, err := agents.ScanProcesses(nil); err == nil && len(s.In(dir)) > 0 {
 			break
 		}
 	}
@@ -209,8 +209,8 @@ func TestRemoveReapStopsNothingWhenTheRelistingFails(t *testing.T) {
 	}
 	pid := Leftover(t, path)
 
-	opts := RemoveOptions{Reap: true, Force: kit.ForceAll, Agents: []wtsync.Agent{},
-		Relist: func() ([]wtsync.Agent, error) { return nil, errors.New("claude agents --json failed") }}
+	opts := RemoveOptions{Reap: true, Force: kit.ForceAll, Agents: []agents.Agent{},
+		Relist: func() ([]agents.Agent, error) { return nil, errors.New("claude agents --json failed") }}
 	err = Remove(ctx, "fix/served", opts, &buf)
 	if err == nil || !strings.Contains(err.Error(), "cannot tell which processes run in it") {
 		t.Fatalf("err %v, want the processes unknown:\n%s", err, buf.String())

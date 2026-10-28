@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
@@ -19,7 +20,6 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/github"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 func planItem(t *testing.T, p retire.SweepPlanOutput, branch string) retire.SweepItem {
@@ -50,7 +50,7 @@ func TestSweepPlanJSONNamesEveryPartWithItsEvidence(t *testing.T) {
 	pr.URL = "https://github.com/o/r/pull/34"
 
 	before := testkit.RepoState(t, main)
-	p, err := retiretest.SweepPlanJSON(t, ctx, retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{squash: pr}})
+	p, err := retiretest.SweepPlanJSON(t, ctx, retire.SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{squash: pr}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestSweepPlanJSONSaysMergedByPatch(t *testing.T) {
 	retire.CommitFile(t, path, "one")
 	retire.RebasedOntoOrigin(t, main, "feat_wt/rates")
 
-	p, err := retiretest.SweepPlanJSON(t, ctx, retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}})
+	p, err := retiretest.SweepPlanJSON(t, ctx, retire.SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestSweepPlanJSONCodesWhyAWorktreeIsKept(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan, err := retire.PlanSweep(ctx, bases, func() ([]wtsync.Agent, error) { return nil, errors.New("claude is away") }, retire.NoPullRequests, false)
+	plan, err := retire.PlanSweep(ctx, bases, func() ([]agents.Agent, error) { return nil, errors.New("claude is away") }, retire.NoPullRequests, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestSweepPlanJSONWithNothingToDoHasNoToken(t *testing.T) {
 	dirty := provisiontest.MergedWorktree(t, ctx, "fix/dirty")
 	testkit.MustWrite(t, filepath.Join(dirty, "scratch.txt"), "not yet\n")
 
-	p, err := retiretest.SweepPlanJSON(t, ctx, retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}})
+	p, err := retiretest.SweepPlanJSON(t, ctx, retire.SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{}})
 	if err != nil || p.Token != nil || len(p.Items) != 1 {
 		t.Fatalf("%v %+v", err, p)
 	}
@@ -181,7 +181,7 @@ func TestSweepPlanJSONReportsWhyNoPlanWasMade(t *testing.T) {
 	if err := os.RemoveAll(origin); err != nil {
 		t.Fatal(err)
 	}
-	p, err := retiretest.SweepPlanJSON(t, ctx, retire.SweepOptions{Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}})
+	p, err := retiretest.SweepPlanJSON(t, ctx, retire.SweepOptions{Agents: []agents.Agent{}, PRs: map[string]github.PR{}})
 	if err == nil || p.Error == nil || p.Token != nil || len(p.Items) != 0 {
 		t.Fatalf("%v %+v", err, p)
 	}
@@ -197,7 +197,7 @@ func TestSweepJSONCarriesOutThePlanItWasGiven(t *testing.T) {
 	clean := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	dirty := provisiontest.MergedWorktree(t, ctx, "fix/dirty")
 	testkit.MustWrite(t, filepath.Join(dirty, "scratch.txt"), "not yet\n")
-	opts := retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}}
+	opts := retire.SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{}}
 	p, err := retiretest.SweepPlanJSON(t, ctx, opts)
 	if err != nil {
 		t.Fatal(err)
@@ -237,7 +237,7 @@ func TestSweepJSONExpectRefusesAChangedPlan(t *testing.T) {
 	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 0)
-	opts := retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}}
+	opts := retire.SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{}}
 	p, err := retiretest.SweepPlanJSON(t, ctx, opts)
 	if err != nil {
 		t.Fatal(err)
@@ -268,8 +268,8 @@ func TestSweepJSONKeepsAWorktreeASessionEnteredLate(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 0)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
-	opts := retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{},
-		Relist: func() ([]wtsync.Agent, error) { return testkit.IdleIn(t, path, "arrived"), nil }}
+	opts := retire.SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{},
+		Relist: func() ([]agents.Agent, error) { return testkit.IdleIn(t, path, "arrived"), nil }}
 	p, err := retiretest.SweepPlanJSON(t, ctx, opts)
 	if err != nil {
 		t.Fatal(err)
@@ -326,7 +326,7 @@ func TestSweepJSONRefusalSaysItFetched(t *testing.T) {
 	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 0)
-	r, _, err := retiretest.SweepJSON(t, ctx, retire.SweepOptions{Agents: []wtsync.Agent{}, PRs: map[string]github.PR{},
+	r, _, err := retiretest.SweepJSON(t, ctx, retire.SweepOptions{Agents: []agents.Agent{}, PRs: map[string]github.PR{},
 		Expect: "1:0123456789abcdef0123456789abcdef"})
 	if err == nil || r.Error == nil || !r.Fetched {
 		t.Fatalf("%v %+v", err, r)
@@ -340,11 +340,11 @@ func TestSweepReadsTheSessionsAgainRightBeforeAWorktreeGoes(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	calls := 0
-	opts := retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{},
-		Relist: func() ([]wtsync.Agent, error) {
+	opts := retire.SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{},
+		Relist: func() ([]agents.Agent, error) {
 			calls++
 			if calls == 1 {
-				return []wtsync.Agent{}, nil
+				return []agents.Agent{}, nil
 			}
 			return testkit.IdleIn(t, path, "arrived"), nil
 		}}
@@ -368,8 +368,8 @@ func TestSweepPlanJSONListsTheSessionCodeOnce(t *testing.T) {
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	busy := testkit.IdleIn(t, path, "busy-1")
 	busy[0].Status = "busy"
-	agents := append(testkit.IdleIn(t, path, "idle-1"), busy...)
-	p, err := retiretest.SweepPlanJSON(t, ctx, retire.SweepOptions{NoFetch: true, Agents: agents, PRs: map[string]github.PR{}})
+	listed := append(testkit.IdleIn(t, path, "idle-1"), busy...)
+	p, err := retiretest.SweepPlanJSON(t, ctx, retire.SweepOptions{NoFetch: true, Agents: listed, PRs: map[string]github.PR{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -385,7 +385,7 @@ func TestSweepPlanShowsTheConfigFingerprint(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 1)
 	testkit.LandOnMain(t, main, "done-work")
-	opts := retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}}
+	opts := retire.SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{}}
 	p, err := retiretest.SweepPlanJSON(t, ctx, opts)
 	if err != nil || p.ConfigFingerprint == nil || *p.ConfigFingerprint != hex.EncodeToString(kit.ConfigFingerprint(ctx)) {
 		t.Fatalf("%v %+v", err, p)

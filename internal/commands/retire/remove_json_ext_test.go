@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
@@ -15,7 +16,6 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // With the plan's token, the removal goes ahead and reports each effect.
@@ -143,7 +143,7 @@ func TestRemoveExpectRefusesEveryChangeTouchingNothing(t *testing.T) {
 				plan.Force, run.Force = kit.ForceAll, kit.ForceAll
 			},
 			change: func(_ *testing.T, _ *kit.Context, path string, run *retire.RemoveOptions) {
-				run.Agents = []wtsync.Agent{{ID: "late", Cwd: path, Status: "idle"}}
+				run.Agents = []agents.Agent{{ID: "late", Cwd: path, Status: "idle"}}
 			}},
 		{name: "operation", change: func(t *testing.T, _ *kit.Context, path string, _ *retire.RemoveOptions) {
 			head := strings.TrimSpace(testkit.GitOut(t, path, "rev-parse", "HEAD"))
@@ -312,11 +312,11 @@ func TestRemoveJSONQuarantineStoppedAfterTheLockIsPartial(t *testing.T) {
 func TestRemoveJSONSaysHowTrunkWasFound(t *testing.T) {
 	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/trunk-source")
-	p, err := retire.RemovePlanOf(t, ctx, path, retire.RemoveOptions{Agents: []wtsync.Agent{}})
+	p, err := retire.RemovePlanOf(t, ctx, path, retire.RemoveOptions{Agents: []agents.Agent{}})
 	if err != nil || p.TrunkSource == nil || *p.TrunkSource != string(ctx.Config.TrunkSource) || *p.TrunkSource == "" {
 		t.Fatalf("plan trunkSource = %v (%v)", p.TrunkSource, err)
 	}
-	r, err := retiretest.RemoveJSON(t, ctx, path, retire.RemoveOptions{Agents: []wtsync.Agent{}, Expect: retire.Deref(p.Token)})
+	r, err := retiretest.RemoveJSON(t, ctx, path, retire.RemoveOptions{Agents: []agents.Agent{}, Expect: retire.Deref(p.Token)})
 	if err != nil || r.TrunkSource == nil || *r.TrunkSource != *p.TrunkSource {
 		t.Fatalf("result trunkSource = %v (%v)", r.TrunkSource, err)
 	}

@@ -6,15 +6,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 func ffOn() synccmd.TrunkSyncOptions {
-	return synccmd.TrunkSyncOptions{Apply: true, Agents: func() ([]wtsync.Agent, error) { return []wtsync.Agent{}, nil }}
+	return synccmd.TrunkSyncOptions{Apply: true, Agents: func() ([]agents.Agent, error) { return []agents.Agent{}, nil }}
 }
 
 func reasonOf(ts *synccmd.TrunkSync) string {
@@ -109,17 +109,17 @@ func TestTrunkSyncSkips(t *testing.T) {
 			testkit.GitIn(t, f.Main, "bisect", "bad")
 		}, synccmd.TrunkSkipOperation},
 		{"busy session", func(_ *testing.T, f *synccmdtest.TrunkFixture, o *synccmd.TrunkSyncOptions) {
-			o.Agents = func() ([]wtsync.Agent, error) {
-				return []wtsync.Agent{{Name: "s", Cwd: f.Main, Status: "busy"}}, nil
+			o.Agents = func() ([]agents.Agent, error) {
+				return []agents.Agent{{Name: "s", Cwd: f.Main, Status: "busy"}}, nil
 			}
 		}, synccmd.TrunkSkipSession},
 		{"background session", func(_ *testing.T, f *synccmdtest.TrunkFixture, o *synccmd.TrunkSyncOptions) {
-			o.Agents = func() ([]wtsync.Agent, error) {
-				return []wtsync.Agent{{Name: "s", Cwd: f.Main, Status: "idle", Kind: "background"}}, nil
+			o.Agents = func() ([]agents.Agent, error) {
+				return []agents.Agent{{Name: "s", Cwd: f.Main, Status: "idle", Kind: "background"}}, nil
 			}
 		}, synccmd.TrunkSkipSession},
 		{"sessions unknown", func(_ *testing.T, _ *synccmdtest.TrunkFixture, o *synccmd.TrunkSyncOptions) {
-			o.Agents = func() ([]wtsync.Agent, error) { return nil, os.ErrPermission }
+			o.Agents = func() ([]agents.Agent, error) { return nil, os.ErrPermission }
 		}, synccmd.TrunkSkipSession},
 	}
 	for _, c := range cases {
@@ -352,8 +352,8 @@ func TestTrunkSyncFastForwardsUnderAnIdleSession(t *testing.T) {
 	f := synccmdtest.NewTrunkFixture(t)
 	remote := f.AdvanceOrigin(t, 1)
 	o := ffOn()
-	o.Agents = func() ([]wtsync.Agent, error) {
-		return []wtsync.Agent{{Name: "s", Cwd: f.Main, Status: "idle"}}, nil
+	o.Agents = func() ([]agents.Agent, error) {
+		return []agents.Agent{{Name: "s", Cwd: f.Main, Status: "idle"}}, nil
 	}
 
 	ts := synccmd.SyncLocalTrunk(f.Ctx, remote, o)

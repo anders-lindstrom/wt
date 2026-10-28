@@ -12,10 +12,10 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/repo"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 	"github.com/anders-lindstrom/wt/schema"
 )
 
@@ -516,7 +516,7 @@ func (j *SweepJournal) superset(key string, res RemoveResult) {
 }
 
 // reaped records the processes stopped before a row's worktree went.
-func (j *SweepJournal) reaped(key string, reaped []wtsync.Reaped) {
+func (j *SweepJournal) reaped(key string, reaped []agents.Reaped) {
 	if j == nil || len(reaped) == 0 {
 		return
 	}

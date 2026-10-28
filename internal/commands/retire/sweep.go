@@ -12,6 +12,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/commands/session"
@@ -19,7 +20,6 @@ import (
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 	"github.com/anders-lindstrom/wt/internal/repo"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // TrunkBase is a ref a branch can be merged into, and the commit it was at
@@ -69,7 +69,7 @@ type SweepBranch struct {
 	KeptCodes []string
 	// Processes are the processes working in its worktree, which --reap
 	// stops when the worktree goes and which keep it without --reap.
-	Processes []wtsync.Process
+	Processes []agents.Process
 }
 
 // done reports that the work on this branch has landed: trunk contains it,
@@ -168,7 +168,7 @@ func (e *NoTrunkBaseError) Error() string {
 // is the agent sessions to check the worktrees against; it is asked only
 // when a merged branch has a worktree that could go. prs is what GitHub says
 // about each branch, which is empty whenever GitHub is not in play.
-func PlanSweep(ctx *kit.Context, bases []TrunkBase, list func() ([]wtsync.Agent, error),
+func PlanSweep(ctx *kit.Context, bases []TrunkBase, list func() ([]agents.Agent, error),
 	prs func([]string) map[string]github.PR, reap bool) (SweepPlan, error) {
 	branches, err := ctx.Repo.Branches()
 	if err != nil {
@@ -274,19 +274,19 @@ func PlanSweep(ctx *kit.Context, bases []TrunkBase, list func() ([]wtsync.Agent,
 	if len(candidates) == 0 {
 		return p, nil
 	}
-	agents, listErr := list()
-	if agents == nil {
+	listed, listErr := list()
+	if listed == nil {
 		// Never nil from here on: planFor takes nil for "ask claude", and the
 		// listing has been done, or has failed, once already.
-		agents = []wtsync.Agent{}
+		listed = []agents.Agent{}
 	}
 	// The process table is read once for every worktree, and only when
 	// one is looked at.
-	scan := sync.OnceValues(func() (*wtsync.ProcessScan, error) {
+	scan := sync.OnceValues(func() (*agents.ProcessScan, error) {
 		if listErr != nil {
 			return nil, fmt.Errorf("cannot tell which are agent sessions: %w", listErr)
 		}
-		return ScanProcesses(agents)
+		return ScanProcesses(listed)
 	})
 	for _, sb := range candidates {
 		if _, err := os.Stat(sb.Worktree); err != nil {
@@ -302,7 +302,7 @@ func PlanSweep(ctx *kit.Context, bases []TrunkBase, list func() ([]wtsync.Agent,
 		// git reads a squash- or rebase-merged branch as unmerged, so without
 		// this the plan would rename it aside. Sweep has just read GitHub, so
 		// it answers from that rather than from the cache remove falls back on.
-		rp := planFor(ctx, wt, RemoveOptions{Agents: agents, AgentsErr: listErr,
+		rp := planFor(ctx, wt, RemoveOptions{Agents: listed, AgentsErr: listErr,
 			Landed: landedFrom(byBranch, trunkNames), Reap: reap, keepBusy: true, Scan: scan})
 		sb.Kept, sb.KeptCodes = unsafeToRemove(sb, rp)
 		sb.Processes = rp.Processes
@@ -677,8 +677,8 @@ type SweepOptions struct {
 	// Agents are the sessions to check the worktrees against. Nil asks
 	// `claude agents`; an empty slice means there are none. Relist lists them
 	// again before anything is removed; nil lists them the way Agents did.
-	Agents []wtsync.Agent
-	Relist func() ([]wtsync.Agent, error)
+	Agents []agents.Agent
+	Relist func() ([]agents.Agent, error)
 	// PRs is the pull requests by branch, for a test that has no gh. Nil asks
 	// GitHub; an empty map means it had nothing to say.
 	PRs map[string]github.PR
@@ -719,7 +719,7 @@ func (o SweepOptions) pullRequests(ctx *kit.Context) func([]string) map[string]g
 }
 
 // listAgents is the first listing of the sessions, for the plan.
-func (o SweepOptions) listAgents() ([]wtsync.Agent, error) {
+func (o SweepOptions) listAgents() ([]agents.Agent, error) {
 	if o.Agents != nil {
 		return o.Agents, nil
 	}
@@ -727,7 +727,7 @@ func (o SweepOptions) listAgents() ([]wtsync.Agent, error) {
 }
 
 // relistAgents is the second listing, for the check before anything goes.
-func (o SweepOptions) relistAgents() ([]wtsync.Agent, error) {
+func (o SweepOptions) relistAgents() ([]agents.Agent, error) {
 	if o.Agents == nil && o.Relist == nil {
 		return session.ListSessions()
 	}
@@ -1009,11 +1009,11 @@ func changedDuringSweep(ctx *kit.Context, rp Plan, opts SweepOptions) (Plan, str
 	case st.Dirty:
 		return rp, "it gained uncommitted changes during the sweep"
 	}
-	agents, err := opts.relistAgents()
-	if agents == nil {
-		agents = []wtsync.Agent{}
+	listed, err := opts.relistAgents()
+	if listed == nil {
+		listed = []agents.Agent{}
 	}
-	s, err := session.SessionsIn(agents, err, rp.Path)
+	s, err := session.SessionsIn(listed, err, rp.Path)
 	switch {
 	case err != nil:
 		return rp, fmt.Sprintf("cannot list agent sessions (%v)", err)
@@ -1028,7 +1028,7 @@ func changedDuringSweep(ctx *kit.Context, rp Plan, opts SweepOptions) (Plan, str
 		}
 		return 0
 	}
-	now := planFor(ctx, worktreeRecord(ctx, rp.Path), RemoveOptions{Agents: agents, Landed: landed, Force: rp.Force,
+	now := planFor(ctx, worktreeRecord(ctx, rp.Path), RemoveOptions{Agents: listed, Landed: landed, Force: rp.Force,
 		Reap: rp.Reap, keepBusy: rp.keepBusy})
 	if !now.same(rp) {
 		return rp, "it changed during the sweep"

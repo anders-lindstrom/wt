@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
@@ -96,8 +97,8 @@ func TestSyncRunRefusesAFastForwardOnlyBranchItCannotMove(t *testing.T) {
 	})
 	t.Run("a busy session", func(t *testing.T) {
 		f, x, opts, local, remote := synccmdtest.NothingToRebase(t)
-		busy := []wtsync.Agent{{Name: "busy-1", Cwd: x, Status: "busy"}}
-		opts.Agents, opts.Relist = busy, func() ([]wtsync.Agent, error) { return busy, nil }
+		busy := []agents.Agent{{Name: "busy-1", Cwd: x, Status: "busy"}}
+		opts.Agents, opts.Relist = busy, func() ([]agents.Agent, error) { return busy, nil }
 		r, err := synccmdtest.SyncRunJSON(t, f.Ctx, []string{"x"}, opts)
 		if err == nil || r.Worktrees[0].Result != synccmd.ResultRefused || testkit.Str(r.Worktrees[0].OwnRemoteSync.SkippedReason) != wtsync.OwnBlockSession {
 			t.Fatalf("%v %+v %+v", err, r.Worktrees[0], r.Worktrees[0].OwnRemoteSync)
@@ -115,7 +116,7 @@ func TestSyncRunRefusesAFastForwardOnlyBranchItCannotMove(t *testing.T) {
 	t.Run("an idle session is told", func(t *testing.T) {
 		f, x, opts, _, remote := synccmdtest.NothingToRebase(t)
 		opts.Agents = testkit.IdleIn(t, x, "parked-1")
-		opts.Relist = func() ([]wtsync.Agent, error) { return opts.Agents, nil }
+		opts.Relist = func() ([]agents.Agent, error) { return opts.Agents, nil }
 		var out bytes.Buffer
 		if err := synccmd.SyncRebase(f.Ctx, []string{"x"}, opts, &out); err != nil {
 			t.Fatalf("%v\n%s", err, out.String())

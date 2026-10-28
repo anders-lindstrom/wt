@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/config"
@@ -231,11 +232,11 @@ func OverviewOf(ctx *kit.Context, opts SyncOptions) SyncOverview {
 		return o
 	}
 	o.Onto, o.Declared = kit.Strp(sha), cfg != nil
-	agents, err := session.ListSessions()
+	listed, err := session.ListSessions()
 	if err != nil {
 		o.SessionsError = kit.Strp(err.Error())
 	}
-	sv, err := SurveyRepo(ctx, sha, cfg, agents, own)
+	sv, err := SurveyRepo(ctx, sha, cfg, listed, own)
 	if err != nil {
 		o.Error = kit.Strp(err.Error())
 		return o
@@ -263,13 +264,13 @@ type Survey struct {
 // SurveyRepo assesses every worktree but the main checkout against trunkSHA
 // and files each as the overview does. own is every branch against its own
 // remote; nil checks none.
-func SurveyRepo(ctx *kit.Context, trunkSHA string, cfg *wtsync.Config, agents []wtsync.Agent, own *wtsync.Own) (Survey, error) {
+func SurveyRepo(ctx *kit.Context, trunkSHA string, cfg *wtsync.Config, listed []agents.Agent, own *wtsync.Own) (Survey, error) {
 	all, err := ctx.Repo.Worktrees()
 	if err != nil {
 		return Survey{}, err
 	}
 	worktrees := slices.DeleteFunc(slices.Clone(all), func(wt repo.Worktree) bool { return wt.IsMain })
-	assessments := assessAll(ctx.Repo.MainRoot, trunkSHA, cfg, worktrees, agents, own, assessWorkers)
+	assessments := assessAll(ctx.Repo.MainRoot, trunkSHA, cfg, worktrees, listed, own, assessWorkers)
 	r := &RunPlan{ctx: ctx, assessed: map[string]wtsync.Assessment{}}
 	r.parents, r.ambiguous, err = wtsync.Parents(ctx.Repo.MainRoot, trunkSHA, all)
 	if err != nil {

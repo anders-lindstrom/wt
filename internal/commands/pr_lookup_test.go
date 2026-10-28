@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // The question is the worktrees' branches and nothing else, which is what
@@ -79,7 +79,7 @@ func TestStatusReadsTheCacheListFilled(t *testing.T) {
 	calls := len(testkit.ArgvOf(t, log))
 
 	var out bytes.Buffer
-	if err := StatusWorktree(ctx, "login-crash", StatusOptions{Agents: []wtsync.Agent{}}, &out); err != nil {
+	if err := StatusWorktree(ctx, "login-crash", StatusOptions{Agents: []agents.Agent{}}, &out); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "pr      #12 open · Login crash") {

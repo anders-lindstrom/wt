@@ -15,10 +15,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/git"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // KeepOptions tunes Run for callers and tests.
@@ -221,11 +221,11 @@ func (p *keepPass) closeLog(err error) error {
 
 // agents lists the sessions for the fast-forward of local trunk the way the
 // run does: an unattended pass has to know, so no claude to ask is an error.
-func (p *keepPass) agents() ([]wtsync.Agent, error) {
+func (p *keepPass) agents() ([]agents.Agent, error) {
 	if p.opts.Agents != nil {
 		return p.opts.Agents, nil
 	}
-	return wtsync.ListOtherAgentsRequired()
+	return agents.ListOtherAgentsRequired()
 }
 
 // header writes the record's first line: the time, and trunk as the fetch
@@ -295,14 +295,14 @@ func (p *keepPass) pass(recorded string) error {
 		// An unattended pass has to know who is in a worktree: no claude to
 		// ask is not nobody there, it is not knowing, and nothing moves.
 		if ropts.Agents == nil {
-			agents, aerr := wtsync.ListOtherAgentsRequired()
+			listed, aerr := agents.ListOtherAgentsRequired()
 			if aerr != nil {
 				rerr = fmt.Errorf("cannot list agent sessions (%w); an unattended pass needs them, nothing rebased", aerr)
 				fmt.Fprintln(w, rerr.Error())
 			}
-			ropts.Agents = agents
+			ropts.Agents = listed
 			if ropts.Relist == nil {
-				ropts.Relist = wtsync.ListOtherAgentsRequired
+				ropts.Relist = agents.ListOtherAgentsRequired
 			}
 		}
 		if rerr == nil {

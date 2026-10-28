@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/config"
@@ -123,7 +124,7 @@ func UpPlanJSON(ctx *kit.Context, arg string, w io.Writer) error {
 	}
 	// Listed at most once, and only when asked: by the trunk check, when
 	// local trunk is checked out, and for the stack's sessions.
-	listAgents := sync.OnceValues(func() ([]wtsync.Agent, error) { return session.ListSessions() })
+	listAgents := sync.OnceValues(func() ([]agents.Agent, error) { return session.ListSessions() })
 	// What wt up would do to local trunk after its fetch, judged against
 	// origin/<trunk> as last fetched: the fetch may bring more.
 	p.TrunkSync = SyncLocalTrunk(ctx, tip, TrunkSyncOptions{OptedOut: !ctx.UserConfig().FFTrunk, Agents: listAgents})
@@ -198,8 +199,8 @@ func UpPlanJSON(ctx *kit.Context, arg string, w io.Writer) error {
 		case wtsync.OwnBehind:
 			// Unreadable is not clean: a fast-forward needs to know.
 			dirty, err := repo.Dirty(path, true)
-			agents, _ := listAgents()
-			o.Blocks, o.Why = wtsync.OwnBlocks(o, path, dirty || err != nil, wtsync.SessionsAt(agents, path))
+			listed, _ := listAgents()
+			o.Blocks, o.Why = wtsync.OwnBlocks(o, path, dirty || err != nil, agents.SessionsAt(listed, path))
 		case wtsync.OwnDiverged:
 			// Only a branch wt up would rebase is kept off by it: one on
 			// trunk already, or with nothing of its own, is skipped, and
@@ -292,12 +293,12 @@ func UpPlanJSON(ctx *kit.Context, arg string, w io.Writer) error {
 		p.Token = kit.Strp(planToken(ctx, trunk, stack, diverged))
 	}
 
-	agents, err := listAgents()
+	listed, err := listAgents()
 	if err != nil {
 		p.SessionsError = kit.Strp(err.Error())
 	}
 	for _, m := range p.Stack {
-		for _, a := range wtsync.SessionsAt(agents, m.Path) {
+		for _, a := range agents.SessionsAt(listed, m.Path) {
 			state := "busy"
 			if a.Idle() {
 				state = "idle"

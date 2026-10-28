@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // refused runs a removal that must not happen and checks nothing went.
@@ -126,7 +126,7 @@ func TestRemoveRefusesASessionInTheWorktree(t *testing.T) {
 	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/visited")
 	resolved, _ := filepath.EvalSymlinks(path)
-	opts := RemoveOptions{Agents: []wtsync.Agent{{Name: "parked-1", Cwd: resolved, Status: "idle"}}}
+	opts := RemoveOptions{Agents: []agents.Agent{{Name: "parked-1", Cwd: resolved, Status: "idle"}}}
 	refused(t, ctx, path, opts, "parked-1")
 }
 
@@ -134,7 +134,7 @@ func TestRemoveForceGoesPastASession(t *testing.T) {
 	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/visited-forced")
 	resolved, _ := filepath.EvalSymlinks(path)
-	opts := RemoveOptions{Force: kit.ForceAll, Agents: []wtsync.Agent{{Name: "parked-1", Cwd: resolved}}}
+	opts := RemoveOptions{Force: kit.ForceAll, Agents: []agents.Agent{{Name: "parked-1", Cwd: resolved}}}
 	var buf bytes.Buffer
 	if err := RemoveAt(ctx, path, opts, &buf); err != nil {
 		t.Fatalf("RemoveAt --force: %v\n%s", err, buf.String())

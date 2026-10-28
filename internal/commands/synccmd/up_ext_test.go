@@ -7,13 +7,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // wt up takes what the declared strategies resolve, and says it is wt up.
@@ -103,8 +103,8 @@ func TestUpForceGoesPastABusySessionAndNothingElse(t *testing.T) {
 	ctx, bump := provisiontest.RunFixture(t, false)
 	resolved, _ := filepath.EvalSymlinks(bump)
 	opts := synccmdtest.NoAgents()
-	opts.Agents = []wtsync.Agent{{Name: "bump-1", Cwd: resolved}}
-	opts.Relist = func() ([]wtsync.Agent, error) { return opts.Agents, nil }
+	opts.Agents = []agents.Agent{{Name: "bump-1", Cwd: resolved}}
+	opts.Relist = func() ([]agents.Agent, error) { return opts.Agents, nil }
 	var out bytes.Buffer
 	if err := synccmd.Up(ctx, "bump", opts, &out); err == nil || !strings.Contains(out.String(), "busy in it") {
 		t.Fatalf("without --force a busy session refuses: %v\n%s", err, out.String())

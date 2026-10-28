@@ -5,11 +5,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // The same commit, fetched, and the run told to rebase the diverged branch
@@ -35,7 +35,7 @@ func TestAPushUnderAnotherNameOverACommitTheBranchNeverHadIsNotMade(t *testing.T
 		t.Fatalf("ownRemote %+v", o)
 	}
 	var status bytes.Buffer
-	if err := StatusWorktree(ctx, "bump", StatusOptions{NoPR: true, Agents: []wtsync.Agent{}}, &status); err != nil {
+	if err := StatusWorktree(ctx, "bump", StatusOptions{NoPR: true, Agents: []agents.Agent{}}, &status); err != nil {
 		t.Fatal(err)
 	}
 	if want := "to origin/old-name, a branch of another name (recorded); a run would not push it as it stands: " + why; !strings.Contains(status.String(), want) {
@@ -75,7 +75,7 @@ func TestStatusNamesTheDestinationAndTheStrayBranchOfItsOwnName(t *testing.T) {
 	status := func() string {
 		t.Helper()
 		var out bytes.Buffer
-		if err := StatusWorktree(ctx, "bump", StatusOptions{NoPR: true, Agents: []wtsync.Agent{}}, &out); err != nil {
+		if err := StatusWorktree(ctx, "bump", StatusOptions{NoPR: true, Agents: []agents.Agent{}}, &out); err != nil {
 			t.Fatal(err)
 		}
 		return out.String()

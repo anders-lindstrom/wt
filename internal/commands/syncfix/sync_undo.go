@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/git"
@@ -40,7 +41,7 @@ func syncUndo(ctx *kit.Context, work string, opts UndoOptions, w io.Writer) erro
 	if err != nil {
 		return err
 	}
-	agents, err := opts.SessionsNow(synccmd.UndidNothing)
+	listed, err := opts.SessionsNow(synccmd.UndidNothing)
 	if err != nil {
 		return err
 	}
@@ -65,7 +66,7 @@ func syncUndo(ctx *kit.Context, work string, opts UndoOptions, w io.Writer) erro
 		if !ok {
 			continue
 		}
-		sessions := wtsync.SessionsAt(agents, path)
+		sessions := agents.SessionsAt(listed, path)
 		if len(sessions.Busy()) > 0 {
 			return fmt.Errorf("%s: an agent session is busy in it: %s; nothing undone", b, sessions.Label(kit.SessionLabel))
 		}
@@ -79,7 +80,7 @@ func syncUndo(ctx *kit.Context, work string, opts UndoOptions, w io.Writer) erro
 		}
 	}
 	if anyIdle {
-		ok, fresh, err := synccmd.AskIdle(w, opts.VerbOptions, []string{name}, told, agents, synccmd.UndidNothing)
+		ok, fresh, err := synccmd.AskIdle(w, opts.VerbOptions, []string{name}, told, listed, synccmd.UndidNothing)
 		if err != nil {
 			return err
 		}
@@ -87,7 +88,7 @@ func syncUndo(ctx *kit.Context, work string, opts UndoOptions, w io.Writer) erro
 			opts.Journal.FailWith(errors.New("not confirmed: " + synccmd.UndidNothing.Line))
 			return nil
 		}
-		agents = fresh
+		listed = fresh
 	}
 	// Every branch joins before anything is put back, so a signal between
 	// one and the next can tell which it caught moved: its tip, or the
@@ -115,7 +116,7 @@ func syncUndo(ctx *kit.Context, work string, opts UndoOptions, w io.Writer) erro
 	// Undo can fail partway through the second (apply) phase, after some
 	// branches are already back at their safety tip: those still get
 	// reported, so a partial restore is visible rather than silent.
-	restored, err := wtsync.Undo(ctx.Repo.MainRoot, worktrees, agents, target.Branch, opts.Clock(), opts.Force)
+	restored, err := wtsync.Undo(ctx.Repo.MainRoot, worktrees, listed, target.Branch, opts.Clock(), opts.Force)
 	if err != nil && len(restored) > 0 {
 		// Stopped partway: what it put back is reported below, and why it
 		// stopped goes with it.

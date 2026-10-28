@@ -7,9 +7,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // SweepAllOptions is a sweep across repositories: the one-repository options
@@ -56,11 +56,11 @@ func SweepAll(u *config.User, sel kit.Selection, opts SweepAllOptions, w io.Writ
 	// The sessions are listed once for every repository's plan: `claude
 	// agents` knows them all, and twenty listings would say the same thing
 	// twenty times. Before anything goes, each repository lists them again.
-	agents, listErr := opts.listAgents()
+	listed, listErr := opts.listAgents()
 	one := opts.SweepOptions
-	one.Agents, one.Relist = agents, nil
-	if agents == nil {
-		one.Agents = []wtsync.Agent{}
+	one.Agents, one.Relist = listed, nil
+	if listed == nil {
+		one.Agents = []agents.Agent{}
 	}
 
 	sweeps := kit.EachRepo(set.Repos, kit.RepoParallelism, func(t kit.RepoTarget) *repoSweep {
@@ -156,7 +156,7 @@ func planRepoSweep(t kit.RepoTarget, opts SweepOptions, listErr error, log io.Wr
 	if err != nil {
 		return nil, SweepPlan{}, err
 	}
-	list := func() ([]wtsync.Agent, error) { return opts.Agents, listErr }
+	list := func() ([]agents.Agent, error) { return opts.Agents, listErr }
 	plan, err := PlanSweep(ctx, bases, list, opts.pullRequests(ctx), opts.Reap)
 	return ctx, plan, err
 }

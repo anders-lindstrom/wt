@@ -5,12 +5,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // testkit.ListedSessions has every command that names no sessions of its own see agents.
@@ -20,8 +20,8 @@ func TestUpRefusesUnderABusyCodexSession(t *testing.T) {
 	t.Parallel()
 	ctx, bump := provisiontest.RunFixture(t, false)
 	opts := synccmdtest.NoAgents()
-	opts.Agents = []wtsync.Agent{testkit.CodexSession(bump, "busy")}
-	opts.Relist = func() ([]wtsync.Agent, error) { return opts.Agents, nil }
+	opts.Agents = []agents.Agent{testkit.CodexSession(bump, "busy")}
+	opts.Relist = func() ([]agents.Agent, error) { return opts.Agents, nil }
 	var out bytes.Buffer
 	if err := synccmd.Up(ctx, "bump", opts, &out); err == nil || !strings.Contains(out.String(), "busy in it") ||
 		!strings.Contains(out.String(), "codex exec") {
@@ -37,7 +37,7 @@ func TestUpRefusesUnderABusyCodexSession(t *testing.T) {
 func TestStatusAndSyncJSONListACodexSession(t *testing.T) {
 	// Not parallel: swaps the package-level session.ListSessions.
 	ctx, bump := provisiontest.RunFixture(t, false)
-	testkit.ListedSessions(t, &session.ListSessions, testkit.CodexSession(bump, "busy"), wtsync.Agent{Name: "parked-1", Cwd: testkit.CodexSession(bump, "").Cwd, Kind: "interactive", Status: "idle"})
+	testkit.ListedSessions(t, &session.ListSessions, testkit.CodexSession(bump, "busy"), agents.Agent{Name: "parked-1", Cwd: testkit.CodexSession(bump, "").Cwd, Kind: "interactive", Status: "idle"})
 
 	p := synccmdtest.PlanOfWork(t, ctx, "bump")
 	if len(p.Sessions) != 2 {
@@ -62,8 +62,8 @@ func TestUpGoesAheadUnderAnIdleCodexSession(t *testing.T) {
 	idle := testkit.CodexSession(bump, "idle")
 	idle.Name = "codex"
 	opts := synccmdtest.NoAgents()
-	opts.Agents = []wtsync.Agent{idle}
-	opts.Relist = func() ([]wtsync.Agent, error) { return opts.Agents, nil }
+	opts.Agents = []agents.Agent{idle}
+	opts.Relist = func() ([]agents.Agent, error) { return opts.Agents, nil }
 	var out bytes.Buffer
 	if err := synccmd.Up(ctx, "bump", opts, &out); err != nil || !strings.Contains(out.String(), "codex (idle)") {
 		t.Fatalf("an idle Codex session is named and the run goes ahead: %v\n%s", err, out.String())

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
@@ -182,7 +183,7 @@ func TestSyncTokenCoversADivergedRowBehindABusySession(t *testing.T) {
 	f.Theirs(t, "feat_wt/x", "t.txt", "t\n")
 	before := testkit.Mine(t, x, "m.txt", "m\n")
 	f.AdvanceOrigin(t, 1)
-	busy := []wtsync.Agent{{Name: "busy-1", Cwd: x, Status: "busy"}}
+	busy := []agents.Agent{{Name: "busy-1", Cwd: x, Status: "busy"}}
 	token := func() string {
 		t.Helper()
 		_, sha, err := synccmd.TrunkTip(f.Ctx)
@@ -212,7 +213,7 @@ func TestSyncTokenCoversADivergedRowBehindABusySession(t *testing.T) {
 	if token() == shown {
 		t.Fatal("the remote moved and the token did not")
 	}
-	opts.Agents, opts.Relist = busy, func() ([]wtsync.Agent, error) { return busy, nil }
+	opts.Agents, opts.Relist = busy, func() ([]agents.Agent, error) { return busy, nil }
 	opts.Force, opts.AllowDiverged, opts.Expect = true, true, shown
 	r, err := synccmdtest.SyncRunJSON(t, f.Ctx, []string{"x"}, opts)
 	if err == nil || len(r.Worktrees) != 0 || !strings.Contains(testkit.Str(r.Error), "the overview changed since it was read") {

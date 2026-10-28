@@ -1,4 +1,7 @@
-package wtsync
+// Package agents tells who is in a worktree: the Claude and Codex sessions
+// working there, and the other processes whose working directory is inside
+// it, and stops those processes when a worktree is removed.
+package agents
 
 import (
 	"bytes"

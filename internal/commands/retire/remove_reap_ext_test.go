@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // --yes --json reports each process it stopped; one that will not stop
@@ -30,10 +30,10 @@ func TestRemoveJSONReportsReapedAndRefusesOnOneThatWillNotStop(t *testing.T) {
 
 	was := retire.ReapProcesses
 	t.Cleanup(func() { retire.ReapProcesses = was })
-	retire.ReapProcesses = func(procs []wtsync.Process, _ time.Duration) []wtsync.Reaped {
-		var out []wtsync.Reaped
+	retire.ReapProcesses = func(procs []agents.Process, _ time.Duration) []agents.Reaped {
+		var out []agents.Reaped
 		for _, p := range procs {
-			out = append(out, wtsync.Reaped{Process: p, Result: wtsync.ReapSurvived})
+			out = append(out, agents.Reaped{Process: p, Result: agents.ReapSurvived})
 		}
 		return out
 	}
@@ -41,7 +41,7 @@ func TestRemoveJSONReportsReapedAndRefusesOnOneThatWillNotStop(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "would not stop") {
 		t.Fatalf("err %v, want the process that would not stop", err)
 	}
-	if r.Outcome != retire.RemoveRefused || len(r.Reaped) != 1 || r.Reaped[0].PID != pid || r.Reaped[0].Result != wtsync.ReapSurvived {
+	if r.Outcome != retire.RemoveRefused || len(r.Reaped) != 1 || r.Reaped[0].PID != pid || r.Reaped[0].Result != agents.ReapSurvived {
 		t.Errorf("outcome %s reaped %+v", r.Outcome, r.Reaped)
 	}
 	if _, err := os.Stat(path); err != nil {
@@ -53,7 +53,7 @@ func TestRemoveJSONReportsReapedAndRefusesOnOneThatWillNotStop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Outcome != retire.RemoveRemoved || len(r.Reaped) != 1 || r.Reaped[0].Result != wtsync.ReapTerminated {
+	if r.Outcome != retire.RemoveRemoved || len(r.Reaped) != 1 || r.Reaped[0].Result != agents.ReapTerminated {
 		t.Errorf("outcome %s reaped %+v, want removed and terminated", r.Outcome, r.Reaped)
 	}
 }

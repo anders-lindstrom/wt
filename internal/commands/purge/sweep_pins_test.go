@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
@@ -17,7 +18,6 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/github"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // sweptRuns is what wt refs swept --json lists.
@@ -57,7 +57,7 @@ func TestSweepPinsWhatItDeletesAndRefsRestoresIt(t *testing.T) {
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login")
 	wtTip := testkit.GitOut(t, main, "rev-parse", "fix_wt/login")
 
-	r, human, err := retiretest.SweepJSON(t, ctx, retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}})
+	r, human, err := retiretest.SweepJSON(t, ctx, retire.SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{}})
 	if err != nil || r.Outcome != kit.OutcomeDone || r.RunID == nil {
 		t.Fatalf("%v %+v\n%s", err, r, human)
 	}

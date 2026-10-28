@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
@@ -94,7 +95,7 @@ func TestSyncRunRefusesAWorktreeWithAnAgent(t *testing.T) {
 	ctx, bump := provisiontest.RunFixture(t, false)
 	resolved, _ := filepath.EvalSymlinks(bump)
 	opts := synccmdtest.NoAgents()
-	opts.Agents = []wtsync.Agent{{Name: "bump-1", Cwd: resolved}}
+	opts.Agents = []agents.Agent{{Name: "bump-1", Cwd: resolved}}
 	var out bytes.Buffer
 	err := synccmd.SyncRebase(ctx, []string{"bump"}, opts, &out)
 	if err == nil || !strings.Contains(out.String(), "bump-1") {
@@ -237,7 +238,7 @@ func TestSyncRunIgnoresAnEmptyWorktreeBehindTrunk(t *testing.T) {
 	resolved, _ := filepath.EvalSymlinks(stale)
 	old := testkit.GitOut(t, stale, "rev-parse", "HEAD")
 	opts := synccmdtest.NoAgents()
-	opts.Agents = []wtsync.Agent{{Name: "stale-1", Cwd: resolved}}
+	opts.Agents = []agents.Agent{{Name: "stale-1", Cwd: resolved}}
 	var out bytes.Buffer
 	if err := synccmd.SyncRebase(ctx, []string{"bump"}, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
@@ -707,12 +708,12 @@ func TestSyncRunStillRefusesASessionThatIsNotIdle(t *testing.T) {
 	ctx, bump := provisiontest.RunFixture(t, false)
 	resolved, _ := filepath.EvalSymlinks(bump)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
-	for _, a := range []wtsync.Agent{
+	for _, a := range []agents.Agent{
 		{Name: "bump-1", Cwd: resolved, Kind: "interactive", Status: "busy"},
 		{Name: "bump-1", Cwd: resolved, Kind: "background", State: "blocked", Status: "idle"},
 	} {
 		opts := synccmdtest.NoAgents()
-		opts.Agents = []wtsync.Agent{a}
+		opts.Agents = []agents.Agent{a}
 		var out bytes.Buffer
 		if err := synccmd.SyncRebase(ctx, []string{"bump"}, opts, &out); err == nil || !strings.Contains(out.String(), "busy in it: bump-1") {
 			t.Fatalf("%+v: err %v\n%s", a, err, out.String())
@@ -782,18 +783,18 @@ func TestSyncRunRefusesASessionThatChangedSinceTriage(t *testing.T) {
 	woke[0].Status = "busy"
 	for _, tc := range []struct {
 		name   string
-		before []wtsync.Agent
-		then   []wtsync.Agent
+		before []agents.Agent
+		then   []agents.Agent
 		want   string
 	}{
 		{"became busy", testkit.IdleIn(t, bump, "bump-1"), woke, "busy in it now: bump-1"},
 		{"arrived", testkit.IdleIn(t, bump, "bump-1"), append(testkit.IdleIn(t, bump, "bump-1"), testkit.IdleIn(t, bump, "bump-2")...), "arrived since it was checked: bump-2 (idle)"},
-		{"arrived in an empty worktree", []wtsync.Agent{}, testkit.IdleIn(t, bump, "bump-3"), "arrived since it was checked: bump-3 (idle)"},
+		{"arrived in an empty worktree", []agents.Agent{}, testkit.IdleIn(t, bump, "bump-3"), "arrived since it was checked: bump-3 (idle)"},
 	} {
 		opts := synccmdtest.NoAgents()
 		opts.Agents = tc.before
 		then := tc.then
-		opts.Relist = func() ([]wtsync.Agent, error) { return then, nil }
+		opts.Relist = func() ([]agents.Agent, error) { return then, nil }
 		var out bytes.Buffer
 		if err := synccmd.SyncRebase(ctx, []string{"bump"}, opts, &out); err == nil || !strings.Contains(out.String(), tc.want) {
 			t.Fatalf("%s: err %v\n%s", tc.name, err, out.String())
@@ -939,11 +940,11 @@ func TestSyncRunSaysWhyARecheckCouldNotBeMadeInGitsOwnWords(t *testing.T) {
 	opts := synccmdtest.NoAgents()
 	// The second listing is the last thing before the lock: the index goes
 	// unreadable there, after triage read it and before the recheck does.
-	opts.Relist = func() ([]wtsync.Agent, error) {
+	opts.Relist = func() ([]agents.Agent, error) {
 		if err := os.WriteFile(filepath.Join(gitDir, "index"), []byte("junk"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		return []wtsync.Agent{}, nil
+		return []agents.Agent{}, nil
 	}
 	var out bytes.Buffer
 	err = synccmd.SyncRebase(ctx, []string{"bump"}, opts, &out)

@@ -36,6 +36,7 @@ in it: their tests build real git repositories.
 | one test or one function | `go test ./internal/<pkg> -run 'TestName$' -count=1` |
 | internal/config, find, naming, about, quarantine, superset, github, git, repo or gittest | `go test ./internal/<pkg>/...`; each is under 50 s, most under 5 s |
 | internal/wtsync | `go test ./internal/wtsync -run '<Area>'` first, then the whole package once (about 110 s) |
+| internal/agents | `go test ./internal/agents` (a few seconds); some of its tests read the real process table |
 | internal/commands, one command family | `go test ./internal/commands/<pkg> -run '<Family>'`, see the examples below; the whole `./internal/commands/...` once before you finish (about 120 s) |
 | a package-level hook variable or `Context` | `./internal/commands/...` once: the hooks live in kit (`FindGitHub`), provision (`ProbeSuperset`, `SupersetHostCommand`), session (`ListSessions`, `ListClaudeSessions`) and retire (`ScanProcesses`); every TestMain sets them, and serial tests swap them, see "Parallel tests" |
 | the `--json` shape or `schema/*.json` | the schema test and the JSON tests, see the examples below, and update docs/json.md in the same commit |

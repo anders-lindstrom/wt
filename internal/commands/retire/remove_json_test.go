@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // RemovePlanOf is wt remove <path> --dry-run --json, checked against its
@@ -76,7 +76,7 @@ func TestRemovePlanJSONRefusalHasCodesAndNoToken(t *testing.T) {
 	testkit.MustWrite(t, filepath.Join(path, "wip.txt"), "x")
 	testkit.GitIn(t, path, "worktree", "lock", "--reason", "held", path)
 
-	p, err := RemovePlanOf(t, ctx, path, RemoveOptions{Agents: []wtsync.Agent{{ID: "s1", Name: "one", Cwd: path, Status: "idle"}}})
+	p, err := RemovePlanOf(t, ctx, path, RemoveOptions{Agents: []agents.Agent{{ID: "s1", Name: "one", Cwd: path, Status: "idle"}}})
 	if err == nil {
 		t.Fatal("a refused plan exits non-zero")
 	}

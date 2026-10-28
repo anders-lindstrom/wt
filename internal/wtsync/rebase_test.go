@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
@@ -258,10 +259,10 @@ func TestPreflightOrdersItsReasons(t *testing.T) {
 	}{
 		{Assessment{Class: Clean, Dirty: true}, RefuseRun, "tracked changes"},
 		{Assessment{Class: Current, Dirty: true}, RefuseRun, "tracked changes"},
-		{Assessment{Class: Recipe, Sessions: Sessions{{Name: "x-1"}}}, RefuseRun, "x-1"},
-		{Assessment{Class: Recipe, Sessions: Sessions{{Name: "x-1", Kind: "interactive", Status: "idle"}}}, Proceed, ""},
-		{Assessment{Class: Recipe, Sessions: Sessions{{Name: "x-1", Kind: "interactive", Status: "idle"}, {Name: "x-2", Status: "busy"}}}, RefuseRun, "busy in it: x-2 +1"},
-		{Assessment{Class: Recipe, Dirty: true, Sessions: Sessions{{Name: "x-1", Kind: "interactive", Status: "idle"}}}, RefuseRun, "tracked changes"},
+		{Assessment{Class: Recipe, Sessions: agents.Sessions{{Name: "x-1"}}}, RefuseRun, "x-1"},
+		{Assessment{Class: Recipe, Sessions: agents.Sessions{{Name: "x-1", Kind: "interactive", Status: "idle"}}}, Proceed, ""},
+		{Assessment{Class: Recipe, Sessions: agents.Sessions{{Name: "x-1", Kind: "interactive", Status: "idle"}, {Name: "x-2", Status: "busy"}}}, RefuseRun, "busy in it: x-2 +1"},
+		{Assessment{Class: Recipe, Dirty: true, Sessions: agents.Sessions{{Name: "x-1", Kind: "interactive", Status: "idle"}}}, RefuseRun, "tracked changes"},
 		{Assessment{Class: Recipe, NoConfig: true}, RefuseRun, "no declaration"},
 		{Assessment{Class: Current}, SkipRun, "already on trunk"},
 		{Assessment{Class: Stale}, SkipRun, "nothing ahead"},
