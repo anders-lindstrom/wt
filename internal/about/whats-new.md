@@ -4,6 +4,13 @@ Newest first, each heading stamped with the local date and time of the change
 (several land per day). `wt about` prints the newest 5 entries, so keep each entry to a few lines a human
 would want read out to them; the full story is in git history.
 
+## 2026-10-28 22:20 — a git that fails stops wt instead of reading as "not there"
+
+When git fails or times out while wt reads a branch, origin's HEAD or a
+reflog, wt now stops and says what git said, where before it could carry on
+as if the branch were gone: `wt remove` leaves the branch alone, `wt sweep`
+and `wt sync` refuse, and `wt restore` reports a repository problem.
+
 ## 2026-10-22 10:17 — coloured help and status words
 
 In a terminal, `wt --help` shows bold headings, cyan command names, green flag
