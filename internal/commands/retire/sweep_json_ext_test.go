@@ -214,7 +214,7 @@ func TestSweepJSONCarriesOutThePlanItWasGiven(t *testing.T) {
 	}
 	it := retiretest.ResultItem(t, r, "done-work")
 	pin := refpins.PinOf(*r.RunID, refpins.RefBranch, "done-work")
-	if it.Result != retire.SweepDeleted || !it.BranchDeleted || it.WorktreeRemoved || retire.Deref(it.Pin) != pin ||
+	if it.Result != retire.SweepDeleted || !it.BranchDeleted || it.WorktreeRemoved || kit.Deref(it.Pin) != pin ||
 		testkit.GitOut(t, main, "rev-parse", pin) != doneTip ||
 		!slices.Equal(it.RestoreCommand, []string{"wt", "refs", "restore", *r.RunID, "--only", "refs/heads/done-work", "--yes"}) {
 		t.Errorf("done-work = %+v", it)
@@ -395,7 +395,7 @@ func TestSweepPlanShowsTheConfigFingerprint(t *testing.T) {
 		t.Fatal(err)
 	}
 	q, err := retiretest.SweepPlanJSON(t, ctx, opts)
-	if err != nil || retire.Deref(q.ConfigFingerprint) == retire.Deref(p.ConfigFingerprint) || retire.Deref(q.Token) == retire.Deref(p.Token) {
+	if err != nil || kit.Deref(q.ConfigFingerprint) == kit.Deref(p.ConfigFingerprint) || kit.Deref(q.Token) == kit.Deref(p.Token) {
 		t.Errorf("an edited file is another fingerprint and token: %+v %+v", p, q)
 	}
 }

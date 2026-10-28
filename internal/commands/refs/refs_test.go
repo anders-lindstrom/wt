@@ -67,26 +67,26 @@ func TestRefsPlanSortsTheBackups(t *testing.T) {
 		t.Errorf("the plan wrote to the repository:\nbefore %s\nafter %s", before, after)
 	}
 	if p.Command != "refs sweep" || p.Token == nil || !strings.HasPrefix(*p.Token, "rs1-") || p.RunID != nil ||
-		retire.Deref(p.Trunk) != "main" || retire.Deref(p.Age) != "14d" || len(p.Patterns) != 9 {
+		kit.Deref(p.Trunk) != "main" || kit.Deref(p.Age) != "14d" || len(p.Patterns) != 9 {
 		t.Fatalf("plan = %+v", p)
 	}
 	it := RefPlanItem(t, p, "refs/heads/backup/contained")
-	if it.Category != RefBackupContained || !it.Selected || retire.Deref(it.ContainedIn) != "refs/heads/main" ||
-		it.UniqueCommits != nil || it.Pattern != "backup/*" || retire.Deref(it.DateSource) != DateReflog || it.Annotated != nil {
+	if it.Category != RefBackupContained || !it.Selected || kit.Deref(it.ContainedIn) != "refs/heads/main" ||
+		it.UniqueCommits != nil || it.Pattern != "backup/*" || kit.Deref(it.DateSource) != DateReflog || it.Annotated != nil {
 		t.Errorf("contained = %+v", it)
 	}
 	it = RefPlanItem(t, p, "refs/heads/backup/old")
 	if it.Category != RefBackupOld || !it.Selected || it.ContainedIn != nil || it.UniqueCommits == nil ||
-		*it.UniqueCommits != 1 || retire.Deref(it.Subject) != "old work" {
+		*it.UniqueCommits != 1 || kit.Deref(it.Subject) != "old work" {
 		t.Errorf("old = %+v", it)
 	}
 	it = RefPlanItem(t, p, "refs/heads/backup/rebased")
-	if it.Category != RefBackupYoung || it.Selected || retire.Deref(it.DateSource) != DateReflog {
+	if it.Category != RefBackupYoung || it.Selected || kit.Deref(it.DateSource) != DateReflog {
 		t.Errorf("a backup made today of an old branch must be young: %+v", it)
 	}
 	it = RefPlanItem(t, p, "refs/tags/safe-tag")
-	if it.Category != RefBackupContained || it.Annotated == nil || !*it.Annotated || retire.Deref(it.DateSource) != DateTagger ||
-		it.Object == retire.Deref(it.Tip) || retire.Deref(it.ContainedIn) != "refs/heads/main" {
+	if it.Category != RefBackupContained || it.Annotated == nil || !*it.Annotated || kit.Deref(it.DateSource) != DateTagger ||
+		it.Object == kit.Deref(it.Tip) || kit.Deref(it.ContainedIn) != "refs/heads/main" {
 		t.Errorf("tag = %+v", it)
 	}
 	if it := RefPlanItem(t, p, "refs/heads/backup/checked"); it.Category != RefKept || it.Selected ||
@@ -191,7 +191,7 @@ func TestRefsJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 		t.Error("a second object was written")
 	}
 	if r.Outcome != kit.OutcomeInterrupted || RefResultOf(t, r, "refs/heads/backup/old").Result != RefInterrupted ||
-		retire.Deref(r.Recovery) != "interrupted" {
+		kit.Deref(r.Recovery) != "interrupted" {
 		t.Errorf("%+v", r)
 	}
 }
@@ -286,7 +286,7 @@ func TestRefsRemoteEndpoint(t *testing.T) {
 		testkit.GitIn(t, main, "remote", "set-url", "origin", url)
 		p, err := RefsPlanJSON(t, ctx, Options{Remote: true, NoFetch: true, OpenPRs: testkit.NoPRs})
 		if err == nil || len(p.Problems) != 1 || p.Problems[0].Code != ProblemRemoteCredentials ||
-			strings.Contains(retire.Deref(p.Error), "example.com") {
+			strings.Contains(kit.Deref(p.Error), "example.com") {
 			t.Errorf("%s: %v %+v", url, err, p.Problems)
 		}
 	}

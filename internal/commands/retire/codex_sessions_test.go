@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/agents"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
@@ -38,7 +39,7 @@ func TestRemovePlanJSONSaysWhoseEachSessionIs(t *testing.T) {
 	var force []string
 	for _, pr := range p.Problems {
 		if pr.Code == KeptSession {
-			force = append(force, Deref(pr.ForceWith))
+			force = append(force, kit.Deref(pr.ForceWith))
 		}
 	}
 	if strings.Join(force, " ") != "idle-sessions busy-sessions" {

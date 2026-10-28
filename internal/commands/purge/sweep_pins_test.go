@@ -65,7 +65,7 @@ func TestSweepPinsWhatItDeletesAndRefsRestoresIt(t *testing.T) {
 	for branch, tip := range map[string]string{"done-work": doneTip, "fix_wt/login": wtTip} {
 		it := retiretest.ResultItem(t, r, branch)
 		pin := refpins.PinOf(run, refpins.RefBranch, branch)
-		if retire.Deref(it.Pin) != pin || testkit.GitOut(t, main, "rev-parse", pin) != tip ||
+		if kit.Deref(it.Pin) != pin || testkit.GitOut(t, main, "rev-parse", pin) != tip ||
 			!slices.Equal(it.RestoreCommand, refpins.RestoreFromRun(run, branch)) {
 			t.Errorf("%s = %+v", branch, it)
 		}
@@ -107,7 +107,7 @@ func TestRemovePinsAMergedBranchAndRefsRestoresIt(t *testing.T) {
 		t.Fatalf("%v %+v", err, r)
 	}
 	run := *r.RunID
-	if s := retiretest.Step(t, r, kit.StepBranch); retire.Deref(s.Pin) != refpins.PinOf(run, refpins.RefBranch, "fix_wt/pinned") {
+	if s := retiretest.Step(t, r, kit.StepBranch); kit.Deref(s.Pin) != refpins.PinOf(run, refpins.RefBranch, "fix_wt/pinned") {
 		t.Errorf("branch %+v", s)
 	}
 	if s := retiretest.Step(t, r, kit.StepWorktree); s.Pin != nil {

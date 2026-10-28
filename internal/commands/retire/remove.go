@@ -375,8 +375,8 @@ func removeWorktreeResult(ctx *kit.Context, wt repo.Worktree, opts RemoveOptions
 	plan.Render(w)
 	if opts.Expect != "" || opts.Journal != nil {
 		token := removeToken(ctx, plan)
-		opts.Journal.planned(ctx, plan, Deref(token))
-		if opts.Expect != "" && Deref(token) != opts.Expect {
+		opts.Journal.planned(ctx, plan, kit.Deref(token))
+		if opts.Expect != "" && kit.Deref(token) != opts.Expect {
 			return res, errRemovePlanChanged
 		}
 	}

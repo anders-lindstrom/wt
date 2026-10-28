@@ -287,7 +287,7 @@ func sweepTokenWith(ctx *kit.Context, p SweepPlan, opts SweepOptions, fingerprin
 		h.Write([]byte("\nreap"))
 	}
 	for _, it := range PlanItemsOf(p) {
-		fields := []string{it.Category, Deref(it.Branch), Deref(it.Tip), Deref(it.Path),
+		fields := []string{it.Category, kit.Deref(it.Branch), kit.Deref(it.Tip), kit.Deref(it.Path),
 			strings.Join(it.Kept, ","), it.Reason}
 		if m := it.Merged; m != nil {
 			pr := ""
@@ -297,7 +297,7 @@ func sweepTokenWith(ctx *kit.Context, p SweepPlan, opts SweepOptions, fingerprin
 			fields = append(fields, "merged", m.How, m.Into, pr)
 		}
 		if pr := it.PullRequest; pr != nil {
-			fields = append(fields, "pr", fmt.Sprint(pr.Number), pr.State, Deref(pr.Base))
+			fields = append(fields, "pr", fmt.Sprint(pr.Number), pr.State, kit.Deref(pr.Base))
 		}
 		// Only what --reap stops is hashed. The processes of a row that is
 		// kept are listed, not acted on, and its reason names up to three.
@@ -310,14 +310,6 @@ func sweepTokenWith(ctx *kit.Context, p SweepPlan, opts SweepOptions, fingerprin
 	}
 	token := "1:" + hex.EncodeToString(h.Sum(nil))[:32]
 	return &token
-}
-
-// Deref is an optional --json string, empty for none.
-func Deref(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
 }
 
 // prepareSweep is a sweep up to its plan: the checks, the fetch, the plan.

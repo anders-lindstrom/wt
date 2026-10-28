@@ -9,7 +9,6 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
-	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -134,11 +133,11 @@ func actionWords(r *quarantine.Record, action, occupiedBy string) string {
 	case quarantine.ActionNone:
 		return "there at " + short + "; nothing to do"
 	case quarantine.ActionRenameBack:
-		return fmt.Sprintf("renamed back from %s", retire.Deref(b.KeepAs))
+		return fmt.Sprintf("renamed back from %s", kit.Deref(b.KeepAs))
 	case quarantine.ActionRecreate:
 		return "made again at " + short + ", with its config"
 	case quarantine.ActionAttach:
-		return fmt.Sprintf("its name is another commit's now; HEAD names %s, still at %s", retire.Deref(b.KeepAs), short)
+		return fmt.Sprintf("its name is another commit's now; HEAD names %s, still at %s", kit.Deref(b.KeepAs), short)
 	}
 	head := ""
 	if r.Head != nil {
@@ -320,7 +319,7 @@ func (j *restoreJournal) write(outcome string, res quarantine.RestoreResult, err
 			o.Admin = restorePlace(r.Admin, quarantine.Locate(r.Admin))
 			action, occupied := res.Action, res.OccupiedBy
 			if r.Restore != nil {
-				action, occupied = retire.Deref(r.Restore.Action), retire.Deref(r.Restore.OccupiedBy)
+				action, occupied = kit.Deref(r.Restore.Action), kit.Deref(r.Restore.OccupiedBy)
 				o.Steps = append(o.Steps, r.Restore.Steps...)
 			}
 			o.Branch = restoreBranchOf(r, action, occupied)

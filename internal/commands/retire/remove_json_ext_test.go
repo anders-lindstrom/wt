@@ -31,13 +31,13 @@ func TestRemoveJSONRemovesWithTheToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v %+v", err, r)
 	}
-	if r.Outcome != retire.RemoveRemoved || retire.Deref(r.Token) != *p.Token || r.Error != nil {
+	if r.Outcome != retire.RemoveRemoved || kit.Deref(r.Token) != *p.Token || r.Error != nil {
 		t.Errorf("%+v", r)
 	}
 	if s := retiretest.Step(t, r, kit.StepWorktree); s.Result != retire.WorktreeRemoved {
 		t.Errorf("worktree %+v", s)
 	}
-	if s := retiretest.Step(t, r, kit.StepBranch); s.Result != quarantine.BranchDeleted || retire.Deref(s.Commit) != tip {
+	if s := retiretest.Step(t, r, kit.StepBranch); s.Result != quarantine.BranchDeleted || kit.Deref(s.Commit) != tip {
 		t.Errorf("branch %+v", s)
 	}
 	if s := retiretest.Step(t, r, kit.StepSuperset); s.Result == kit.StepNotRun {
@@ -48,7 +48,7 @@ func TestRemoveJSONRemovesWithTheToken(t *testing.T) {
 		t.Fatalf("a removal that deletes its branch names the run it pinned it in: %+v", r)
 	}
 	pin := refpins.PinOf(*r.RunID, refpins.RefBranch, "fix_wt/json-gone")
-	if s := retiretest.Step(t, r, kit.StepBranch); retire.Deref(s.Pin) != pin || testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", pin) != tip {
+	if s := retiretest.Step(t, r, kit.StepBranch); kit.Deref(s.Pin) != pin || testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", pin) != tip {
 		t.Errorf("branch pin %v, want %s at %s", s.Pin, pin, tip)
 	}
 	want := []string{"wt", "refs", "restore", *r.RunID, "--only", "refs/heads/fix_wt/json-gone", "--yes"}
@@ -235,7 +235,7 @@ func TestRemoveJSONInterruptedBetweenTheMovesWritesOneObject(t *testing.T) {
 	var out, progress bytes.Buffer
 	_ = retire.RemoveJSON(ctx, retire.RemoveTarget{Path: path}, retire.RemoveOptions{Quarantine: dir, QuarantineHooks: h}, &out, &progress)
 	r := retiretest.DecodeRemoveOutput(t, out.Bytes())
-	if r.Outcome != kit.OutcomeInterrupted || retire.Deref(r.Recovery) != "interrupted" {
+	if r.Outcome != kit.OutcomeInterrupted || kit.Deref(r.Recovery) != "interrupted" {
 		t.Errorf("%+v", r)
 	}
 	if s := retiretest.Step(t, r, kit.StepWorktree); s.Result != retire.WorktreePartlyMoved {
@@ -316,7 +316,7 @@ func TestRemoveJSONSaysHowTrunkWasFound(t *testing.T) {
 	if err != nil || p.TrunkSource == nil || *p.TrunkSource != string(ctx.Config.TrunkSource) || *p.TrunkSource == "" {
 		t.Fatalf("plan trunkSource = %v (%v)", p.TrunkSource, err)
 	}
-	r, err := retiretest.RemoveJSON(t, ctx, path, retire.RemoveOptions{Agents: []agents.Agent{}, Expect: retire.Deref(p.Token)})
+	r, err := retiretest.RemoveJSON(t, ctx, path, retire.RemoveOptions{Agents: []agents.Agent{}, Expect: kit.Deref(p.Token)})
 	if err != nil || r.TrunkSource == nil || *r.TrunkSource != *p.TrunkSource {
 		t.Fatalf("result trunkSource = %v (%v)", r.TrunkSource, err)
 	}

@@ -42,7 +42,7 @@ func TestRemoveJSONNamesTheForceCategories(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts.Expect = retire.Deref(plan.Token)
+	opts.Expect = kit.Deref(plan.Token)
 	r, err := retiretest.RemoveJSON(t, ctx, path, opts)
 	if err != nil || r.Outcome != retire.RemoveRemoved {
 		t.Fatalf("%v %+v", err, r)

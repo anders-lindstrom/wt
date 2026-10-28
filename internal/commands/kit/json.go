@@ -94,6 +94,14 @@ func Strp(s string) *string {
 	return &s
 }
 
+// Deref is an optional --json string, empty for none.
+func Deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
 // ConfigFingerprint is the bytes of the configuration file ctx read, the
 // worktree's own or else the main checkout's, the way loadFor finds it.
 func ConfigFingerprint(ctx *Context) []byte {

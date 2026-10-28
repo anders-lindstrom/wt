@@ -67,7 +67,7 @@ func TestSweepQuarantineDoesNotPinABranchTwice(t *testing.T) {
 	if it.Pin != nil || it.Quarantine == nil || !slices.Equal(it.RestoreCommand, []string{"wt", "restore", it.Quarantine.Dir}) {
 		t.Errorf("fix_wt/login = %+v", it)
 	}
-	if it := retiretest.ResultItem(t, r, "done-work"); retire.Deref(it.Pin) != refpins.PinOf(*r.RunID, refpins.RefBranch, "done-work") {
+	if it := retiretest.ResultItem(t, r, "done-work"); kit.Deref(it.Pin) != refpins.PinOf(*r.RunID, refpins.RefBranch, "done-work") {
 		t.Errorf("done-work = %+v", it)
 	}
 	if pins := testkit.GitOut(t, main, "for-each-ref", "--format=%(refname)", refpins.SweptPrefix); pins !=
@@ -99,7 +99,7 @@ func TestSweepInterruptedAfterAMoveNamesThePin(t *testing.T) {
 	}
 	it := retiretest.ResultItem(t, r, "one")
 	pin := refpins.PinOf(*r.RunID, refpins.RefBranch, "one")
-	if it.Result != retire.SweepInterrupted || !it.BranchDeleted || retire.Deref(it.Pin) != pin ||
+	if it.Result != retire.SweepInterrupted || !it.BranchDeleted || kit.Deref(it.Pin) != pin ||
 		!slices.Equal(it.RestoreCommand, refpins.RestoreFromRun(*r.RunID, "one")) {
 		t.Errorf("one = %+v", it)
 	}

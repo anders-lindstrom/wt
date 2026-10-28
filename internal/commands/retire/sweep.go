@@ -751,11 +751,11 @@ func Sweep(ctx *kit.Context, opts SweepOptions, w io.Writer) (err error) {
 		return err
 	}
 	token := sweepToken(ctx, plan, opts)
-	if opts.Expect != "" && Deref(token) != opts.Expect {
+	if opts.Expect != "" && kit.Deref(token) != opts.Expect {
 		return errors.New("the sweep plan changed since it was read (a branch or worktree moved, " +
 			"was merged, or gained or lost a reason to be kept); nothing was swept: read the plan again")
 	}
-	opts.Journal.begin(ctx, plan, Deref(token))
+	opts.Journal.begin(ctx, plan, kit.Deref(token))
 	opts.Journal.quarantineIn(opts.Quarantine)
 	plan.Render(w, opts.Width)
 	if plan.Empty() {

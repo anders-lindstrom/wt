@@ -200,7 +200,7 @@ func TestJSONOutputsSayHowTrunkWasFound(t *testing.T) {
 		got["checkout-plan"] = provisiontest.CheckoutPlanOf(t, ctx, "release-2.1", "").TrunkSource
 		for name, src := range got {
 			if src == nil || *src != string(want) {
-				t.Errorf("%s: trunkSource = %q, want %s", name, retire.Deref(src), want)
+				t.Errorf("%s: trunkSource = %q, want %s", name, kit.Deref(src), want)
 			}
 		}
 	}
@@ -242,9 +242,9 @@ func TestStatusPlanHasNoTrunkRefWhenNothingNamesTrunk(t *testing.T) {
 			t.Fatal(err)
 		}
 		if p.Trunk != nil || p.TrunkRef != nil || p.TrunkSource != nil || p.TrunkRefExists ||
-			retire.Deref(p.UpIneligibleCode) != synccmd.IneligibleNoConfig {
-			t.Errorf("%s: trunk %q ref %q source %q exists %v code %q", name, retire.Deref(p.Trunk),
-				retire.Deref(p.TrunkRef), retire.Deref(p.TrunkSource), p.TrunkRefExists, retire.Deref(p.UpIneligibleCode))
+			kit.Deref(p.UpIneligibleCode) != synccmd.IneligibleNoConfig {
+			t.Errorf("%s: trunk %q ref %q source %q exists %v code %q", name, kit.Deref(p.Trunk),
+				kit.Deref(p.TrunkRef), kit.Deref(p.TrunkSource), p.TrunkRefExists, kit.Deref(p.UpIneligibleCode))
 		}
 	}
 }

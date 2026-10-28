@@ -78,10 +78,10 @@ func TestRemoveJSONKeepSupersetIsInThePlanAndTheToken(t *testing.T) {
 	if plain.KeepSuperset || !kept.KeepSuperset {
 		t.Errorf("keepSuperset = %v / %v", plain.KeepSuperset, kept.KeepSuperset)
 	}
-	if retire.Deref(plain.Token) == retire.Deref(kept.Token) {
+	if kit.Deref(plain.Token) == kit.Deref(kept.Token) {
 		t.Error("the token must change with --keep-superset")
 	}
-	r, err := retiretest.RemoveJSON(t, ctx, path, retire.RemoveOptions{Agents: retire.NoClaude, KeepSuperset: true, Expect: retire.Deref(kept.Token)})
+	r, err := retiretest.RemoveJSON(t, ctx, path, retire.RemoveOptions{Agents: retire.NoClaude, KeepSuperset: true, Expect: kit.Deref(kept.Token)})
 	if err != nil {
 		t.Fatalf("%v %+v", err, r)
 	}
@@ -112,10 +112,10 @@ func TestSweepKeepSupersetAsksSupersetNothing(t *testing.T) {
 	if plain.KeepSuperset || !kept.KeepSuperset {
 		t.Errorf("keepSuperset = %v / %v", plain.KeepSuperset, kept.KeepSuperset)
 	}
-	if retire.Deref(plain.Token) == retire.Deref(kept.Token) {
+	if kit.Deref(plain.Token) == kit.Deref(kept.Token) {
 		t.Error("the token must change with --keep-superset")
 	}
-	opts.Yes, opts.Expect = true, retire.Deref(kept.Token)
+	opts.Yes, opts.Expect = true, kit.Deref(kept.Token)
 	r, human, err := retiretest.SweepJSON(t, ctx, opts)
 	if err != nil || r.Outcome != kit.OutcomeDone {
 		t.Fatalf("%v %+v\n%s", err, r, human)

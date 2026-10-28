@@ -829,7 +829,7 @@ func Sweep(ctx *kit.Context, opts Options, w io.Writer) (err error) {
 	}
 	token := refsToken(plan)
 	j.planned(plan, token)
-	if opts.Expect != "" && retire.Deref(token) != opts.Expect {
+	if opts.Expect != "" && kit.Deref(token) != opts.Expect {
 		j.problem(kit.ProblemPlanChanged, ErrRefsPlanChanged)
 		return ErrRefsPlanChanged
 	}
@@ -863,7 +863,7 @@ func Sweep(ctx *kit.Context, opts Options, w io.Writer) (err error) {
 		if err := fresh.applyOnly(opts.Only); err != nil {
 			return err
 		}
-		if retire.Deref(refsToken(fresh)) != retire.Deref(token) {
+		if kit.Deref(refsToken(fresh)) != kit.Deref(token) {
 			j.problem(kit.ProblemPlanChanged, ErrRefsPlanChanged)
 			return ErrRefsPlanChanged
 		}
