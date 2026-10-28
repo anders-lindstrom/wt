@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -164,6 +165,23 @@ func WriteFile(t testing.TB, path, content string) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// WriteExecutable writes content to path as an executable, creating the
+// directories above it. It holds off forks while the file is open for
+// writing: a child forked then keeps the fd until its exec, and Linux will not
+// exec a file open for writing (ETXTBSY, golang/go#22315).
+func WriteExecutable(t testing.TB, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	syscall.ForkLock.RLock()
+	err := os.WriteFile(path, []byte(content), 0o755)
+	syscall.ForkLock.RUnlock()
+	if err != nil {
 		t.Fatal(err)
 	}
 }
