@@ -269,12 +269,18 @@ func Disown(mainRoot, branch string, epoch int64) error {
 // were written by the run of epoch or after it: an older entry at the same
 // commit is the person's own and stays. Each entry after a removed one has
 // its old value rewritten, so the log still reads as a chain. A branch with
-// no reflog has nothing to remove.
+// no reflog, git's exit 1 from reflog exists, has nothing to remove; any
+// other failure to read it is an error.
 func dropReflog(mainRoot, branch, commit string, epoch int64) error {
 	ref := "refs/heads/" + branch
+	if _, code, err := gitEnvAllow(mainRoot, nil, nil, 1, "reflog", "exists", ref); err != nil {
+		return fmt.Errorf("reflog of %s: %w", branch, err)
+	} else if code == 1 {
+		return nil
+	}
 	out, err := gitEnv(mainRoot, nil, nil, "reflog", "show", "--format=%H %gd", "--date=unix", ref, "--")
 	if err != nil {
-		return nil
+		return fmt.Errorf("reflog of %s: %w", branch, err)
 	}
 	lines := strings.Split(out, "\n")
 	// From the oldest up: removing an entry renumbers only the ones older

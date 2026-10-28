@@ -125,3 +125,25 @@ func TestDeleteSafetyAlsoDropsTheRunsResultRef(t *testing.T) {
 		t.Fatalf("result ref survived: ok %v err %v", ok, err)
 	}
 }
+
+// A branch with no reflog has nothing to remove: a deleted one, or one
+// written with reflogs off.
+func TestDropReflogOfABranchWithNoReflogIsNothingToDo(t *testing.T) {
+	t.Parallel()
+	dir := linearRepo(t, nil, []map[string]string{{"a.txt": "a2\n"}})
+	tip := gitIn(t, dir, "rev-parse", "feature")
+	gitIn(t, dir, "-c", "core.logAllRefUpdates=false", "branch", "nolog", tip)
+	for _, branch := range []string{"nolog", "deleted"} {
+		if err := dropReflog(dir, branch, tip, 0); err != nil {
+			t.Errorf("%s: %v", branch, err)
+		}
+	}
+}
+
+// Any other failure to read the reflog is an error, never "no reflog".
+func TestDropReflogSurfacesAGitThatFails(t *testing.T) {
+	t.Parallel()
+	if err := dropReflog(t.TempDir(), "feature", "0123456789abcdef0123456789abcdef01234567", 0); err == nil {
+		t.Fatal("a reflog git could not read must be an error")
+	}
+}
