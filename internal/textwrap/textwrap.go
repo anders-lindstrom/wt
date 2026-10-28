@@ -3,11 +3,34 @@ package textwrap
 
 import (
 	"strings"
-	"unicode/utf8"
+	"unicode"
+
+	"golang.org/x/text/width"
 )
 
-// Wrap breaks s at spaces so no line is wider than width, continuing under
-// indent. The first line starts at column start, and is returned without
+// Width is the number of terminal columns s takes. A wide or fullwidth East
+// Asian character, most emoji among them, counts two; a combining mark or a
+// zero-width character such as a joiner counts none; anything else counts
+// one. An emoji sequence held together by joiners counts each of its parts,
+// so it can come out wider than a terminal draws it.
+func Width(s string) int {
+	n := 0
+	for _, r := range s {
+		if unicode.In(r, unicode.Mn, unicode.Me, unicode.Cf) {
+			continue
+		}
+		switch width.LookupRune(r).Kind() {
+		case width.EastAsianWide, width.EastAsianFullwidth:
+			n += 2
+		default:
+			n++
+		}
+	}
+	return n
+}
+
+// Wrap breaks s at spaces so no line is wider than width columns, continuing
+// under indent. The first line starts at column start, and is returned without
 // whatever stands to its left. Width 0 or less leaves s on one line. A word
 // wider than the width stays whole.
 func Wrap(start int, s string, width int, indent string) string {
@@ -20,12 +43,12 @@ func Wrap(start int, s string, width int, indent string) string {
 	brk := func(word string) {
 		lines = append(lines, strings.TrimRight(line, " "))
 		line = indent + word
-		col = utf8.RuneCountInString(line)
+		col = Width(line)
 	}
 	// Split on single spaces, so a run of them (the gap between a table's
 	// columns) survives as it was written; a line never starts with one.
 	for _, word := range strings.Split(s, " ") {
-		n := utf8.RuneCountInString(word)
+		n := Width(word)
 		switch {
 		case word == "" && line == "":
 			continue

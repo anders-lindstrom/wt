@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -139,7 +140,10 @@ func reflow(text string, width int) string {
 			}
 			r := row{lead: lead, rest: rest}
 			if g := gap.FindAllStringIndex(rest, -1); len(g) > 0 {
-				r.cell = len(lead) + g[len(g)-1][1] - 1
+				// The match ends past the first character of the last cell.
+				end := g[len(g)-1][1]
+				_, first := utf8.DecodeLastRuneInString(rest[:end])
+				r.cell = len(lead) + textwrap.Width(rest[:end-first])
 				tableCol = r.cell
 			} else if len(lead) == tableCol && tableCol > 0 {
 				// The cell of a row whose first column stood alone above it.

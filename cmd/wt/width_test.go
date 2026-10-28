@@ -56,3 +56,26 @@ func TestReflowHangsATableRowUnderItsOwnCell(t *testing.T) {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}
 }
+
+// The column a cell starts at counts what stands before it in columns, not
+// in bytes: å, ä and ö are two bytes each but one column.
+func TestReflowHangsUnderACellAfterNonASCII(t *testing.T) {
+	const table = "  åäö   wt up        the same for the worktree you are in only if it goes through"
+	want := "  åäö   wt up        the same for the worktree\n" +
+		"                     you are in only if it\n" +
+		"                     goes through"
+	if got := reflow(table, 46); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// A last cell that starts with a wide character still starts where its first
+// character does.
+func TestReflowHangsUnderACellThatStartsWithAWideCharacter(t *testing.T) {
+	const table = "  key  日本 the same for the worktree you are in only if it goes through"
+	want := "  key  日本 the same for the worktree you are\n" +
+		"       in only if it goes through"
+	if got := reflow(table, 46); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
