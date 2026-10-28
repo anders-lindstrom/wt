@@ -117,7 +117,7 @@ func repoStatus(t RepoTarget) status {
 		s.sync = "sync unknown: origin/" + ctx.Config.MainBranch + " never fetched"
 		return s
 	}
-	if _, err := wtsync.LoadFromTrunk(ctx.Repo.MainRoot, ctx.Config.MainBranch); errors.Is(err, wtsync.ErrNoConfig) {
+	if _, err := wtsync.LoadFromTrunk(ctx.Repo.MainRoot, ctx.Config.MainBranch); errors.Is(err, wtsync.ErrUndeclared) {
 		s.sync = "no sync"
 	} else if err != nil {
 		s.sync = "sync broken: " + OneLine(err.Error())

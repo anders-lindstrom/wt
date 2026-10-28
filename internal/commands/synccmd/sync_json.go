@@ -224,7 +224,7 @@ func OverviewOf(ctx *kit.Context, opts SyncOptions) SyncOverview {
 	}
 	cfg, err := wtsync.LoadFromRef(ctx.Repo.MainRoot, sha)
 	switch {
-	case errors.Is(err, wtsync.ErrNoConfig):
+	case errors.Is(err, wtsync.ErrUndeclared):
 		cfg = nil
 	case err != nil:
 		o.Error = kit.Strp(err.Error())

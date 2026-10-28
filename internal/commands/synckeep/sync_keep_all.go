@@ -106,7 +106,7 @@ func keepFailures(rows []*keepRow) error {
 func keepIneligible(ctx *kit.Context) (string, error) {
 	_, err := wtsync.LoadFromTrunk(ctx.Repo.MainRoot, ctx.Config.MainBranch)
 	switch {
-	case errors.Is(err, wtsync.ErrNoConfig):
+	case errors.Is(err, wtsync.ErrUndeclared):
 		return fmt.Sprintf("no %s on origin/%s", wtsync.ConfigFile, ctx.Config.MainBranch), nil
 	case err != nil:
 		return "", err

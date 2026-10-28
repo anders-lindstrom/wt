@@ -158,7 +158,7 @@ func declarationCheck(mainRoot, trunk, onto string) (Check, *Config) {
 	if err == nil {
 		return Check{Name: "declaration", OK: true, Blocking: true, Detail: ConfigFile + " on " + onto + " parses"}, cfg
 	}
-	if errors.Is(err, ErrNoConfig) {
+	if errors.Is(err, ErrUndeclared) {
 		return Check{Name: "declaration", OK: false, Blocking: true, Detail: "no " + ConfigFile + " on " + onto + ": reported only, never rebased"}, nil
 	}
 	return Check{Name: "declaration", OK: false, Blocking: true, Detail: err.Error()}, nil

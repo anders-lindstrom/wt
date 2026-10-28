@@ -328,12 +328,12 @@ func (r *RunPlan) declare(works []string) error {
 	}
 	fmt.Fprintf(r.w, "%s  onto %s %s %s\n", label, onto, git.ShortID(trunkSHA, 7), fetched)
 	cfg, err := wtsync.LoadFromRef(ctx.Repo.MainRoot, trunkSHA)
-	if errors.Is(err, wtsync.ErrNoConfig) && r.opts.undeclaredOK {
+	if errors.Is(err, wtsync.ErrUndeclared) && r.opts.undeclaredOK {
 		fmt.Fprintf(r.w, "no %s on %s: nothing is declared, so only a conflict-free rebase goes\n", wtsync.ConfigFile, onto)
 		r.cfg = &wtsync.Config{}
 		return nil
 	}
-	if errors.Is(err, wtsync.ErrNoConfig) {
+	if errors.Is(err, wtsync.ErrUndeclared) {
 		// Nothing to rebase, but trunk was fetched: local trunk follows,
 		// unless an --expect is waiting to refuse the run anyway.
 		if r.opts.Expect == "" {

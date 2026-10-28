@@ -181,7 +181,7 @@ func TrunkTip(ctx *kit.Context) (onto, sha string, err error) {
 // trunk declares nothing.
 func SyncDeclaration(ctx *kit.Context) (onto, sha string, cfg *wtsync.Config, err error) {
 	cfg, err = wtsync.LoadFromTrunk(ctx.Repo.MainRoot, ctx.Config.MainBranch)
-	if err != nil && !errors.Is(err, wtsync.ErrNoConfig) {
+	if err != nil && !errors.Is(err, wtsync.ErrUndeclared) {
 		return "", "", nil, err
 	}
 	onto, sha, err = TrunkTip(ctx)
