@@ -71,7 +71,7 @@ func SyncRebaseAll(u *config.User, sel kit.Selection, opts SyncRebaseAllOptions,
 	defer kit.WatchSignals(w, nil)()
 	// One listing of the sessions serves every repository's plan, as one
 	// `claude agents` knows them all; each run lists them again at its lock.
-	listed, err := opts.SessionsNow(rebasedNothing)
+	listed, err := opts.SessionsNow(nil, rebasedNothing)
 	if err != nil {
 		return err
 	}
@@ -145,7 +145,7 @@ func SyncRebaseAll(u *config.User, sel kit.Selection, opts SyncRebaseAllOptions,
 	one.NoFetch, one.Confirm = true, nil
 	one.Agents = listed
 	if one.Relist == nil {
-		one.Relist = func() ([]agents.Agent, error) { return kit.ListAgain(opts.Agents, opts.Relist) }
+		one.Relist = func() ([]agents.Agent, error) { return kit.ListAgain(nil, opts.Agents, opts.Relist) }
 	}
 	for _, rr := range runs {
 		if len(rr.ready) == 0 || rr.err != nil {

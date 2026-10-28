@@ -2,6 +2,7 @@ package synccmd_test
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -104,15 +105,12 @@ func TestSyncRunRefusesAWorktreeWithAnAgent(t *testing.T) {
 }
 
 func TestSyncRunRefusesWhenAgentsCannotBeListed(t *testing.T) {
-	// Not parallel: puts a fake claude on the process-wide PATH.
-	// Agents nil means "ask claude agents"; make that fail by putting a
-	// claude on the PATH that exits non-zero. The real PATH stays in front
-	// of nothing and behind the stub, so git is still reachable — emptying
-	// the PATH outright would break every git call instead.
+	t.Parallel()
+	// Agents nil means "list them"; make the listing fail.
 	ctx, bump := provisiontest.RunFixture(t, false)
-	stub := t.TempDir()
-	gittest.WriteExecutable(t, filepath.Join(stub, "claude"), "#!/bin/sh\necho boom >&2\nexit 1\n")
-	t.Setenv("PATH", stub+string(os.PathListSeparator)+os.Getenv("PATH"))
+	testkit.AgentsOf(ctx).List = func() ([]agents.Agent, error) {
+		return nil, errors.New("claude agents --json failed: boom")
+	}
 	opts := synccmdtest.NoAgents()
 	opts.Agents = nil
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")

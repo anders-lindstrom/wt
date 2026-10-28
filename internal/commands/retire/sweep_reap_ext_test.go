@@ -18,9 +18,9 @@ import (
 // row says what runs there and how to have sweep stop it, and the sweep
 // leaves both the worktree and the process.
 func TestSweepKeepsABusyWorktreeWithoutReap(t *testing.T) {
-	// Not parallel: swaps retire.ScanProcesses and signals real processes.
-	retire.RealProcesses(t)
+	// Not parallel: signals real processes.
 	ctx, _, _ := testkit.SweepRepo(t)
+	retire.RealProcesses(ctx)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	pid := retire.Leftover(t, path)
 
@@ -54,9 +54,9 @@ func TestSweepKeepsABusyWorktreeWithoutReap(t *testing.T) {
 // --reap lists the process on the row that goes, stops it right before the
 // worktree goes, and reports it on the row of the result.
 func TestSweepReapStopsWhatRunsInAMergedWorktree(t *testing.T) {
-	// Not parallel: swaps retire.ScanProcesses and signals real processes.
-	retire.RealProcesses(t)
+	// Not parallel: signals real processes.
 	ctx, _, _ := testkit.SweepRepo(t)
+	retire.RealProcesses(ctx)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	pid := retire.Leftover(t, path)
 

@@ -177,8 +177,8 @@ func trunkOwners(ctx *kit.Context, trunk string) (owners []repo.Worktree, hold s
 
 // checkoutBusy is why the checkout trunk is on cannot take a fast-forward:
 // an operation in progress, changes of any kind, or a session busy in it.
-// The session wt runs under is not among agents: callers list them with
-// agents.ListOtherAgents.
+// The session wt runs under is not among listed's: callers list them with
+// ctx.ListAgents.
 func checkoutBusy(on repo.Worktree, listed func() ([]agents.Agent, error)) (reason, detail string) {
 	if on.Rebasing {
 		return TrunkSkipOperation, "a rebase is in progress at " + on.Path

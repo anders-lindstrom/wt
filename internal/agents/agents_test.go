@@ -19,7 +19,7 @@ import (
 // An interrupt takes down a claude agents still running: it is in the
 // registry git.KillRunning kills, which is what wt's signal handler calls.
 func TestKillRunningTakesDownARunningClaudeAgents(t *testing.T) {
-	// Not parallel: shortens the package-level agentsDeadline and sets PATH.
+	// Not parallel: swaps the package-level Deadline and sets PATH.
 	if testing.Short() {
 		t.Skip("kills a running claude agents process")
 	}
@@ -32,9 +32,9 @@ func TestKillRunningTakesDownARunningClaudeAgents(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", stub+string(os.PathListSeparator)+os.Getenv("PATH"))
-	old := agentsDeadline
-	agentsDeadline = time.Minute
-	t.Cleanup(func() { agentsDeadline = old })
+	old := Deadline
+	Deadline = time.Minute
+	t.Cleanup(func() { Deadline = old })
 	done := make(chan error, 1)
 	go func() {
 		_, err := ListAgents()
@@ -58,7 +58,7 @@ func TestKillRunningTakesDownARunningClaudeAgents(t *testing.T) {
 // is a child of sh that holds the output pipe, so the deadline has to take
 // down the whole process group, not just sh.
 func TestListAgentsGivesUpOnAClaudeThatDoesNotAnswer(t *testing.T) {
-	// Not parallel: shortens the package-level agentsDeadline and sets PATH.
+	// Not parallel: swaps the package-level Deadline and sets PATH.
 	if testing.Short() {
 		t.Skip("waits out a real deadline")
 	}
@@ -73,9 +73,9 @@ func TestListAgentsGivesUpOnAClaudeThatDoesNotAnswer(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", stub+string(os.PathListSeparator)+os.Getenv("PATH"))
-	old := agentsDeadline
-	agentsDeadline = 500 * time.Millisecond
-	t.Cleanup(func() { agentsDeadline = old })
+	old := Deadline
+	Deadline = 500 * time.Millisecond
+	t.Cleanup(func() { Deadline = old })
 	start := time.Now()
 	_, err := ListAgents()
 	if err == nil || !strings.Contains(err.Error(), "did not answer within") {

@@ -19,7 +19,6 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
-	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
@@ -290,6 +289,8 @@ type Plan struct {
 	// relist lists the sessions again for the check right before the
 	// checkout goes.
 	relist func() ([]agents.Agent, error)
+	// who is where the sessions and the processes are read again.
+	who *kit.Context
 	// pins is the run a deleted branch is moved into; nil deletes it
 	// outright, as a quarantine does, which pins it itself.
 	pins *refpins.BranchPins
@@ -450,15 +451,16 @@ func removeWorktreeResult(ctx *kit.Context, wt repo.Worktree, opts RemoveOptions
 func planFor(ctx *kit.Context, wt repo.Worktree, opts RemoveOptions) Plan {
 	p := Plan{Path: wt.Path, Branch: ctx.Repo.BranchAt(wt.Path),
 		MainBranch: ctx.Config.MainBranch, Force: opts.Force.Implied(), KeepSuperset: opts.KeepSuperset,
-		Reap: opts.Reap, keepBusy: opts.keepBusy, relist: opts.relistAgents}
+		Reap: opts.Reap, keepBusy: opts.keepBusy, who: ctx,
+		relist: func() ([]agents.Agent, error) { return opts.relistAgents(ctx) }}
 	listed, agentsErr := opts.Agents, opts.AgentsErr
 	if listed == nil && agentsErr == nil {
-		if listed, agentsErr = session.ListSessions(); listed == nil {
+		if listed, agentsErr = ctx.ListAgents(); listed == nil {
 			listed = []agents.Agent{}
 		}
 	}
-	p.setSessions(session.SessionsIn(listed, agentsErr, p.Path))
-	p.readProcesses(opts.Scan, listed, agentsErr)
+	p.setSessions(ctx.SessionsIn(listed, agentsErr, p.Path))
+	p.readProcesses(ctx, opts.Scan, listed, agentsErr)
 	p.readLock(wt)
 	p.readCheckout()
 	p.AdminDir, _ = repo.AdminDir(wt.Path)
@@ -504,8 +506,8 @@ func planFor(ctx *kit.Context, wt repo.Worktree, opts RemoveOptions) Plan {
 // when the caller has read the table already, else from a scan sparing the
 // agents listed. A listing that failed leaves the agents unknown, and
 // then nothing is known to be safe to end.
-func (p *Plan) readProcesses(scan func() (*agents.ProcessScan, error), listed []agents.Agent, agentsErr error) {
-	procs, err := processesIn(p.Path, scan, listed, agentsErr)
+func (p *Plan) readProcesses(ctx *kit.Context, scan func() (*agents.ProcessScan, error), listed []agents.Agent, agentsErr error) {
+	procs, err := processesIn(ctx, p.Path, scan, listed, agentsErr)
 	if err != nil {
 		p.ProcessesError = kit.OneLine(err.Error())
 		return
@@ -514,13 +516,13 @@ func (p *Plan) readProcesses(scan func() (*agents.ProcessScan, error), listed []
 }
 
 // processesIn is the processes working in the worktree at path.
-func processesIn(path string, scan func() (*agents.ProcessScan, error), listed []agents.Agent,
+func processesIn(ctx *kit.Context, path string, scan func() (*agents.ProcessScan, error), listed []agents.Agent,
 	agentsErr error) ([]agents.Process, error) {
 	if scan == nil {
 		if agentsErr != nil {
 			return nil, fmt.Errorf("cannot tell which are agent sessions: %w", agentsErr)
 		}
-		scan = func() (*agents.ProcessScan, error) { return ScanProcesses(listed) }
+		scan = func() (*agents.ProcessScan, error) { return ctx.ScanProcesses(listed) }
 	}
 	s, err := scan()
 	if err != nil {
@@ -529,16 +531,8 @@ func processesIn(path string, scan func() (*agents.ProcessScan, error), listed [
 	return s.In(path), nil
 }
 
-// ScanProcesses reads the process table. A var so tests stay off the
-// machine's own processes until one starts a process of its own.
-var ScanProcesses = agents.ScanProcesses
-
-// ReapProcesses ends processes, and reapGrace is how long SIGTERM has
-// before SIGKILL. Vars so a test can have a process that will not die.
-var (
-	ReapProcesses = agents.Reap
-	reapGrace     = 5 * time.Second
-)
+// reapGrace is how long SIGTERM has before SIGKILL.
+var reapGrace = 5 * time.Second
 
 func (p *Plan) setSessions(s agents.Sessions, err error) {
 	if err != nil {
@@ -550,7 +544,7 @@ func (p *Plan) setSessions(s agents.Sessions, err error) {
 
 // relistAgents is the listing for the check right before the checkout
 // goes: Relist, else the listing the plan was given, else claude's.
-func (o RemoveOptions) relistAgents() ([]agents.Agent, error) {
+func (o RemoveOptions) relistAgents(ctx *kit.Context) ([]agents.Agent, error) {
 	switch {
 	case o.Relist != nil:
 		return o.Relist()
@@ -559,7 +553,7 @@ func (o RemoveOptions) relistAgents() ([]agents.Agent, error) {
 	case o.Agents != nil:
 		return o.Agents, nil
 	}
-	return session.ListSessions()
+	return ctx.ListAgents()
 }
 
 // readCheckout reads what the files and the git dir say: anything
@@ -841,7 +835,7 @@ func (p Plan) forceWould() kit.ForceSet {
 // losses that refuse are compared.
 func (p Plan) same(q Plan) bool {
 	p.Sessions, q.Sessions = identities(p.Sessions), identities(q.Sessions)
-	p.relist, q.relist, p.pins, q.pins = nil, nil, nil, nil
+	p.relist, q.relist, p.pins, q.pins, p.who, q.who = nil, nil, nil, nil, nil, nil
 	p.quarantineHooks, q.quarantineHooks = nil, nil
 	// Processes come and go; the ones there right before the checkout goes
 	// are the ones reaped, or the ones a sweep refuses for.
@@ -1637,7 +1631,7 @@ func (p Plan) quarantine(ctx *kit.Context, w io.Writer, res *RemoveResult) (*qua
 // to: relist, else claude's own listing.
 func (p Plan) listSessionsAgain() ([]agents.Agent, error) {
 	if p.relist == nil {
-		return session.ListSessions()
+		return p.who.ListAgents()
 	}
 	return p.relist()
 }
@@ -1648,7 +1642,7 @@ func (p Plan) listSessionsAgain() ([]agents.Agent, error) {
 // Every process ended is reported; one that would not stop refuses it.
 func (p Plan) clearProcesses(w io.Writer) ([]agents.Reaped, error) {
 	listed, err := p.listSessionsAgain()
-	procs, err := processesIn(p.Path, nil, listed, err)
+	procs, err := processesIn(p.who, p.Path, nil, listed, err)
 	switch {
 	case err != nil:
 		return nil, fmt.Errorf("cannot tell which processes run in it (%s); nothing was stopped", kit.OneLine(err.Error()))
@@ -1657,7 +1651,7 @@ func (p Plan) clearProcesses(w io.Writer) ([]agents.Reaped, error) {
 	case !p.Reap:
 		return nil, fmt.Errorf("%s running in it; --reap stops them", processesLabel(procs))
 	}
-	reaped := ReapProcesses(procs, reapGrace)
+	reaped := p.who.Reap(procs, reapGrace)
 	var stuck []agents.Process
 	for _, r := range reaped {
 		mark := "-"
@@ -1681,12 +1675,12 @@ func (p Plan) clearProcesses(w io.Writer) ([]agents.Reaped, error) {
 // can take seconds, and the checkout is read last, as close to the delete as
 // it gets. It returns that reading, and why is "" when it can still go.
 func (p Plan) recheck() (now Plan, why string) {
-	now = Plan{Path: p.Path, Force: p.Force}
+	now = Plan{Path: p.Path, Force: p.Force, who: p.who}
 	listed, err := p.listSessionsAgain()
 	if listed == nil {
 		listed = []agents.Agent{}
 	}
-	now.setSessions(session.SessionsIn(listed, err, p.Path))
+	now.setSessions(p.who.SessionsIn(listed, err, p.Path))
 	now.readCheckout()
 	if now.Head != p.Head && now.StatusError == "" {
 		return now, "its HEAD moved after the plan was made"

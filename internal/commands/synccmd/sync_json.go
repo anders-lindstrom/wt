@@ -13,7 +13,6 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -232,7 +231,7 @@ func OverviewOf(ctx *kit.Context, opts SyncOptions) SyncOverview {
 		return o
 	}
 	o.Onto, o.Declared = kit.Strp(sha), cfg != nil
-	listed, err := session.ListSessions()
+	listed, err := ctx.ListAgents()
 	if err != nil {
 		o.SessionsError = kit.Strp(err.Error())
 	}

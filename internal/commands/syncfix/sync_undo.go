@@ -41,7 +41,7 @@ func syncUndo(ctx *kit.Context, work string, opts UndoOptions, w io.Writer) erro
 	if err != nil {
 		return err
 	}
-	listed, err := opts.SessionsNow(synccmd.UndidNothing)
+	listed, err := opts.SessionsNow(ctx, synccmd.UndidNothing)
 	if err != nil {
 		return err
 	}
@@ -80,7 +80,7 @@ func syncUndo(ctx *kit.Context, work string, opts UndoOptions, w io.Writer) erro
 		}
 	}
 	if anyIdle {
-		ok, fresh, err := synccmd.AskIdle(w, opts.VerbOptions, []string{name}, told, listed, synccmd.UndidNothing)
+		ok, fresh, err := synccmd.AskIdle(ctx, w, opts.VerbOptions, []string{name}, told, listed, synccmd.UndidNothing)
 		if err != nil {
 			return err
 		}

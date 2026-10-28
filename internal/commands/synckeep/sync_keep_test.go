@@ -224,6 +224,8 @@ func TestSyncKeepRunRebasesNothingWhenSessionsCannotBeListed(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin)
+	// The real listing, which looks for claude before it reads anything.
+	testkit.AgentsOf(ctx).Required = agents.ListOtherAgentsRequired
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	opts := keepOpts(synccmd.PushAlways)
 	opts.Agents = nil

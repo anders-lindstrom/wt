@@ -18,13 +18,8 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
-// RealProcesses has wt read the machine's process table for this test.
-func RealProcesses(t *testing.T) {
-	t.Helper()
-	was := ScanProcesses
-	ScanProcesses = agents.ScanProcesses
-	t.Cleanup(func() { ScanProcesses = was })
-}
+// RealProcesses has ctx read the machine's process table.
+func RealProcesses(ctx *kit.Context) { testkit.AgentsOf(ctx).Scan = agents.ScanProcesses }
 
 // Leftover starts a process in dir the way a dev server outlives the
 // session that started it: in a session of its own, with no terminal, its
@@ -66,9 +61,9 @@ func Alive(pid int) bool {
 
 // --reap stops a process working in the worktree, then removes it.
 func TestRemoveReapStopsAProcessLeftInTheWorktree(t *testing.T) {
-	// Not parallel: swaps retire.ScanProcesses and signals real processes.
-	RealProcesses(t)
+	// Not parallel: signals real processes.
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	RealProcesses(ctx)
 	var buf bytes.Buffer
 	path, err := provision.New(ctx, "fix/served", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -98,9 +93,9 @@ func TestRemoveReapStopsAProcessLeftInTheWorktree(t *testing.T) {
 
 // --dry-run names the processes --reap would stop, and stops none.
 func TestRemoveDryRunListsTheProcessesAndStopsNone(t *testing.T) {
-	// Not parallel: swaps retire.ScanProcesses and signals real processes.
-	RealProcesses(t)
+	// Not parallel: signals real processes.
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	RealProcesses(ctx)
 	var buf bytes.Buffer
 	path, err := provision.New(ctx, "fix/served", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -138,9 +133,9 @@ func TestRemoveDryRunListsTheProcessesAndStopsNone(t *testing.T) {
 // Without --reap the removal goes ahead, warns about what still runs in
 // the worktree, and stops nothing.
 func TestRemoveWithoutReapWarnsAndLeavesThemRunning(t *testing.T) {
-	// Not parallel: swaps retire.ScanProcesses and signals real processes.
-	RealProcesses(t)
+	// Not parallel: signals real processes.
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	RealProcesses(ctx)
 	var buf bytes.Buffer
 	path, err := provision.New(ctx, "fix/served", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -168,9 +163,9 @@ func TestRemoveWithoutReapWarnsAndLeavesThemRunning(t *testing.T) {
 // When the agent sessions cannot be listed, nothing is known to be safe to
 // stop: --reap stops nothing and removes nothing, --force or not.
 func TestRemoveReapRefusesWhenTheAgentsAreUnknownEvenForced(t *testing.T) {
-	// Not parallel: swaps retire.ScanProcesses and signals real processes.
-	RealProcesses(t)
+	// Not parallel: signals real processes.
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	RealProcesses(ctx)
 	var buf bytes.Buffer
 	path, err := provision.New(ctx, "fix/served", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -199,9 +194,9 @@ func TestRemoveReapRefusesWhenTheAgentsAreUnknownEvenForced(t *testing.T) {
 // checkout goes, nothing is known to be safe to stop: --reap stops nothing
 // and removes nothing, --force or not.
 func TestRemoveReapStopsNothingWhenTheRelistingFails(t *testing.T) {
-	// Not parallel: swaps retire.ScanProcesses and signals real processes.
-	RealProcesses(t)
+	// Not parallel: signals real processes.
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	RealProcesses(ctx)
 	var buf bytes.Buffer
 	path, err := provision.New(ctx, "fix/served", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {

@@ -111,7 +111,7 @@ func syncResume(ctx *kit.Context, work string, opts ResumeOptions, w io.Writer) 
 	if tip != pinned {
 		return fmt.Errorf("%s pins %s but the handover says %s; nothing is resumed", st.Safety, git.ShortID(tip, 7), git.ShortID(pinned, 7))
 	}
-	listed, err := opts.SessionsNow(synccmd.ResumedNothing)
+	listed, err := opts.SessionsNow(ctx, synccmd.ResumedNothing)
 	if err != nil {
 		return err
 	}
@@ -131,7 +131,7 @@ func syncResume(ctx *kit.Context, work string, opts ResumeOptions, w io.Writer) 
 		landed = behind
 		fmt.Fprintln(w, synccmd.IdleNotice(name, sessions))
 		told := []synccmd.Idle{{Label: name, Path: target.Path, Sessions: sessions}}
-		ok, _, err := synccmd.AskIdle(w, opts.VerbOptions, []string{name}, told, listed, synccmd.ResumedNothing)
+		ok, _, err := synccmd.AskIdle(ctx, w, opts.VerbOptions, []string{name}, told, listed, synccmd.ResumedNothing)
 		if err != nil {
 			return err
 		}

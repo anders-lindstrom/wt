@@ -57,7 +57,7 @@ func List(ctx *kit.Context, opts ListOptions, w io.Writer, width int) error {
 	// overlap.
 	read := opts.Sessions
 	if read == nil && !opts.NoSessions {
-		read = session.ReadClaudeSessions(session.SessionsDeadline)
+		read = session.ReadClaudeSessions(ctx, session.SessionsDeadline)
 	}
 	var prs map[string]string
 	var cached time.Time
@@ -366,7 +366,7 @@ func StatusWorktree(ctx *kit.Context, arg string, opts StatusOptions, w io.Write
 	listed := opts.Agents
 	if listed == nil {
 		var aerr error
-		if listed, aerr = agents.ListOtherAgents(); aerr != nil {
+		if listed, aerr = ctx.ListAgents(); aerr != nil {
 			fmt.Fprintf(w, "note: %v\n", aerr)
 		}
 	}

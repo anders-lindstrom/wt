@@ -52,7 +52,7 @@ func planWith(t *testing.T, ctx *kit.Context, opts SweepOptions) SweepPlan {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := PlanSweep(ctx, bases, opts.listAgents, opts.pullRequests(ctx), opts.Reap)
+	p, err := PlanSweep(ctx, bases, func() ([]agents.Agent, error) { return opts.listAgents(ctx) }, opts.pullRequests(ctx), opts.Reap)
 	if err != nil {
 		t.Fatal(err)
 	}

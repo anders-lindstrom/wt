@@ -20,10 +20,6 @@ import (
 // gives it would hold up a listing nobody asked to wait for.
 var SessionsDeadline = 2 * time.Second
 
-// ListClaudeSessions is a var so tests stay off the machine's own
-// claude.
-var ListClaudeSessions = agents.ListClaudeSessions
-
 // MaxSessionName is the widest a session's name is printed, in terminal
 // columns. A name is free text, so it is always cut there, piped or not.
 const MaxSessionName = 32
@@ -41,13 +37,13 @@ type ClaudeSessions struct {
 	err      error
 }
 
-// ReadClaudeSessions starts the read.
-func ReadClaudeSessions(deadline time.Duration) *ClaudeSessions {
+// ReadClaudeSessions starts the read, through ctx's listing; ctx may be nil.
+func ReadClaudeSessions(ctx *kit.Context, deadline time.Duration) *ClaudeSessions {
 	c := &ClaudeSessions{done: make(chan struct{})}
 	go func() {
 		defer close(c.done)
 		var listed []agents.Agent
-		listed, c.found, c.err = ListClaudeSessions(deadline)
+		listed, c.found, c.err = ctx.ListClaudeSessions(deadline)
 		for _, a := range listed {
 			c.sessions = append(c.sessions, ClaudeSession{a})
 		}

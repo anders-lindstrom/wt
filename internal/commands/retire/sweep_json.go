@@ -335,7 +335,7 @@ func prepareSweep(ctx *kit.Context, opts SweepOptions, progress io.Writer) (plan
 	if err != nil {
 		return SweepPlan{}, fetched, err
 	}
-	plan, err = PlanSweep(ctx, bases, opts.listAgents, opts.pullRequests(ctx), opts.Reap)
+	plan, err = PlanSweep(ctx, bases, func() ([]agents.Agent, error) { return opts.listAgents(ctx) }, opts.pullRequests(ctx), opts.Reap)
 	return plan, fetched, err
 }
 

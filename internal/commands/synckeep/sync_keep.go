@@ -225,7 +225,7 @@ func (p *keepPass) agents() ([]agents.Agent, error) {
 	if p.opts.Agents != nil {
 		return p.opts.Agents, nil
 	}
-	return agents.ListOtherAgentsRequired()
+	return p.ctx.ListAgentsRequired()
 }
 
 // header writes the record's first line: the time, and trunk as the fetch
@@ -295,14 +295,14 @@ func (p *keepPass) pass(recorded string) error {
 		// An unattended pass has to know who is in a worktree: no claude to
 		// ask is not nobody there, it is not knowing, and nothing moves.
 		if ropts.Agents == nil {
-			listed, aerr := agents.ListOtherAgentsRequired()
+			listed, aerr := ctx.ListAgentsRequired()
 			if aerr != nil {
 				rerr = fmt.Errorf("cannot list agent sessions (%w); an unattended pass needs them, nothing rebased", aerr)
 				fmt.Fprintln(w, rerr.Error())
 			}
 			ropts.Agents = listed
 			if ropts.Relist == nil {
-				ropts.Relist = agents.ListOtherAgentsRequired
+				ropts.Relist = ctx.ListAgentsRequired
 			}
 		}
 		if rerr == nil {

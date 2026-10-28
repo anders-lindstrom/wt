@@ -9,7 +9,6 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
@@ -38,12 +37,12 @@ func TestMigrateRefusesWhenTheSessionsCannotBeListed(t *testing.T) {
 
 // The session running wt migrate is not somebody else in the worktree.
 func TestMigrateDoesNotCountTheSessionRunningIt(t *testing.T) {
-	// Not parallel: swaps session.ListSessions; sets environment variables for the whole test binary.
+	// Not parallel: puts a fake claude on the PATH of the whole test binary.
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	from := testkit.WorktreeAt(t, main, "fix/self", filepath.Join(ctx.Repo.Parent, "elsewhere"))
 	resolved, _ := filepath.EvalSymlinks(from)
-	testkit.FakeClaude(t, &session.ListSessions, []agents.Agent{ownSession(resolved)})
+	testkit.FakeClaude(t, ctx, []agents.Agent{ownSession(resolved)})
 
 	var buf bytes.Buffer
 	if _, err := Migrate(ctx, from, "", MigrateOptions{}, &buf); err != nil {

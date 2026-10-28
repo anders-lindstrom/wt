@@ -80,8 +80,8 @@ var listProcesses = func() ([]Process, error) {
 	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	var out bytes.Buffer
 	cmd.Stdout = &out
-	if timedOut, _, err := git.RunBounded(agentsDeadline, cmd); timedOut {
-		return nil, fmt.Errorf("ps did not answer within %s", agentsDeadline)
+	if timedOut, _, err := git.RunBounded(Deadline, cmd); timedOut {
+		return nil, fmt.Errorf("ps did not answer within %s", Deadline)
 	} else if err != nil {
 		return nil, fmt.Errorf("ps: %w", err)
 	}
@@ -180,8 +180,8 @@ var processCwds = func(pids []int) (cwds map[int]string, denied map[int]bool, er
 	cmd.Stdout = &out
 	// lsof exits 1 when one of the pids is gone and still prints the rest,
 	// so its output is what is judged.
-	if timedOut, _, err := git.RunBounded(agentsDeadline, cmd); timedOut {
-		return nil, nil, fmt.Errorf("lsof did not answer within %s", agentsDeadline)
+	if timedOut, _, err := git.RunBounded(Deadline, cmd); timedOut {
+		return nil, nil, fmt.Errorf("lsof did not answer within %s", Deadline)
 	} else if err != nil && !errors.As(err, new(*exec.ExitError)) {
 		return nil, nil, fmt.Errorf("lsof: %w", err)
 	}
@@ -203,7 +203,7 @@ var processCwds = func(pids []int) (cwds map[int]string, denied map[int]bool, er
 		alive := exec.Command(systemTool("ps"), "-p", strconv.Itoa(pid), "-o", "pid=")
 		var seen bytes.Buffer
 		alive.Stdout = &seen
-		timedOut, code, err := git.RunBounded(agentsDeadline, alive)
+		timedOut, code, err := git.RunBounded(Deadline, alive)
 		switch {
 		case !timedOut && code == 1 && strings.TrimSpace(seen.String()) == "":
 		case !timedOut && err == nil:

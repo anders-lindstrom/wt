@@ -56,7 +56,7 @@ func SweepAll(u *config.User, sel kit.Selection, opts SweepAllOptions, w io.Writ
 	// The sessions are listed once for every repository's plan: `claude
 	// agents` knows them all, and twenty listings would say the same thing
 	// twenty times. Before anything goes, each repository lists them again.
-	listed, listErr := opts.listAgents()
+	listed, listErr := opts.listAgents(nil)
 	one := opts.SweepOptions
 	one.Agents, one.Relist = listed, nil
 	if listed == nil {

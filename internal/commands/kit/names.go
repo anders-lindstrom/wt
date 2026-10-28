@@ -66,16 +66,3 @@ func WhoLabel(s agents.Sessions) string {
 	}
 	return label
 }
-
-// ListAgain lists the sessions a second time, for the check after a question
-// or at the lock: through relist when a caller supplied one, the caller's own
-// list when it supplied that, and claude otherwise.
-func ListAgain(given []agents.Agent, relist func() ([]agents.Agent, error)) ([]agents.Agent, error) {
-	switch {
-	case relist != nil:
-		return relist()
-	case given != nil:
-		return given, nil
-	}
-	return agents.ListOtherAgents()
-}

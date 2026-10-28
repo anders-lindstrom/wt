@@ -7,13 +7,11 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
-	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
-// testkit.ListedSessions has every command that names no sessions of its own see agents.
 // A busy Codex session refuses what a busy Claude one refuses, under the
 // same --force.
 func TestUpRefusesUnderABusyCodexSession(t *testing.T) {
@@ -35,9 +33,9 @@ func TestUpRefusesUnderABusyCodexSession(t *testing.T) {
 }
 
 func TestStatusAndSyncJSONListACodexSession(t *testing.T) {
-	// Not parallel: swaps the package-level session.ListSessions.
+	t.Parallel()
 	ctx, bump := provisiontest.RunFixture(t, false)
-	testkit.ListedSessions(t, &session.ListSessions, testkit.CodexSession(bump, "busy"), agents.Agent{Name: "parked-1", Cwd: testkit.CodexSession(bump, "").Cwd, Kind: "interactive", Status: "idle"})
+	testkit.ListedSessions(ctx, testkit.CodexSession(bump, "busy"), agents.Agent{Name: "parked-1", Cwd: testkit.CodexSession(bump, "").Cwd, Kind: "interactive", Status: "idle"})
 
 	p := synccmdtest.PlanOfWork(t, ctx, "bump")
 	if len(p.Sessions) != 2 {

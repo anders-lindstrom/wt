@@ -211,9 +211,6 @@ func (o ListOptions) environment() sessionEnv {
 	return e
 }
 
-// listCodexSessions is a var so tests stay off the machine's process table.
-var listCodexSessions = agents.ListCodexSessions
-
 // with is the read plus extra sessions of another program, as one.
 func (c *ClaudeSessions) with(extra []agents.Agent) *ClaudeSessions {
 	<-c.done
@@ -232,7 +229,7 @@ func (c *ClaudeSessions) with(extra []agents.Agent) *ClaudeSessions {
 // found.
 func worktreeSessions(ctx *kit.Context, pattern string, errw io.Writer, read *ClaudeSessions, env sessionEnv) (t attachTarget, infos []Info, sessionsError error, err error) {
 	if read == nil {
-		read = ReadClaudeSessions(attachDeadline)
+		read = ReadClaudeSessions(ctx, attachDeadline)
 	}
 	<-read.done
 	switch {
@@ -377,7 +374,7 @@ func closedChan() chan struct{} {
 func ListRun(ctx *kit.Context, o ListOptions) error {
 	read := o.Sessions
 	if read == nil {
-		read = ReadClaudeSessions(attachDeadline)
+		read = ReadClaudeSessions(ctx, attachDeadline)
 	}
 	type codexRead struct {
 		agents []agents.Agent
@@ -385,7 +382,7 @@ func ListRun(ctx *kit.Context, o ListOptions) error {
 	}
 	codexDone := make(chan codexRead, 1)
 	go func() {
-		a, err := listCodexSessions()
+		a, err := ctx.ListCodexSessions()
 		codexDone <- codexRead{a, err}
 	}()
 	out := List{Schema: 1, SchemaVersion: schema.VersionOf("session-list"), Command: "session list",
@@ -1178,7 +1175,7 @@ func StopRun(ctx *kit.Context, o StopOptions) error {
 	}
 	// Whose session wt runs under comes from the process table; when that
 	// cannot be read, an own session would pass as another's.
-	if ancestors, aerr := listAncestors(); aerr != nil {
+	if ancestors, aerr := ctx.Ancestors(); aerr != nil {
 		return refuse(stopRefusal{code: "ownUnknown", msg: "wt cannot tell whether " + name +
 			" is the session it runs under (the process table could not be read): " + aerr.Error() + ". Nothing was stopped"})
 	} else if ancestors[*pick.info.PID] {
@@ -1212,9 +1209,6 @@ func StopRun(ctx *kit.Context, o StopOptions) error {
 	}
 	return finish(nil)
 }
-
-// listAncestors is a var so tests stay off the machine's process table.
-var listAncestors = agents.Ancestors
 
 // runClaudeStop runs `claude stop <id>` and returns what it printed.
 func runClaudeStop(id string) (string, error) {

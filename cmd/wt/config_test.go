@@ -5,7 +5,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
@@ -16,7 +19,7 @@ import (
 // off, so a test running `wt list` cannot reach the gh or the Superset of
 // whoever is running it. A test that wants one back writes its own file
 // through userConfigIn. The rest of the machine is kept out by
-// gittest.Isolate.
+// gittest.Isolate and kit.MachineAgents.
 func TestMain(m *testing.M) {
 	restore := gittest.Isolate()
 	dir, err := os.MkdirTemp("", "wt-cli-test")
@@ -34,6 +37,13 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	session.SessionsDeadline = testkit.FakeClaudeDeadline
+	// No session listed and no process read, but the claude listing a person
+	// reads, which the tests answer with a fake claude on the PATH.
+	machine := testkit.NoAgents
+	machine.Claude = func(deadline time.Duration) ([]agents.Agent, bool, error) {
+		return agents.ListClaudeSessionsWith(deadline, testkit.NoAncestors)
+	}
+	kit.MachineAgents = machine
 	code := m.Run()
 	_ = os.RemoveAll(dir)
 	restore()

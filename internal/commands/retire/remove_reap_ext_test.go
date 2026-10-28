@@ -18,9 +18,9 @@ import (
 // --yes --json reports each process it stopped; one that will not stop
 // refuses the removal, with nothing removed.
 func TestRemoveJSONReportsReapedAndRefusesOnOneThatWillNotStop(t *testing.T) {
-	// Not parallel: swaps retire.ReapProcesses and retire.ScanProcesses and signals real processes.
-	retire.RealProcesses(t)
+	// Not parallel: signals real processes.
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	retire.RealProcesses(ctx)
 	var buf bytes.Buffer
 	path, err := provision.New(ctx, "fix/served", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -28,9 +28,7 @@ func TestRemoveJSONReportsReapedAndRefusesOnOneThatWillNotStop(t *testing.T) {
 	}
 	pid := retire.Leftover(t, path)
 
-	was := retire.ReapProcesses
-	t.Cleanup(func() { retire.ReapProcesses = was })
-	retire.ReapProcesses = func(procs []agents.Process, _ time.Duration) []agents.Reaped {
+	testkit.AgentsOf(ctx).Reap = func(procs []agents.Process, _ time.Duration) []agents.Reaped {
 		var out []agents.Reaped
 		for _, p := range procs {
 			out = append(out, agents.Reaped{Process: p, Result: agents.ReapSurvived})
@@ -48,7 +46,7 @@ func TestRemoveJSONReportsReapedAndRefusesOnOneThatWillNotStop(t *testing.T) {
 		t.Error("the worktree was removed")
 	}
 
-	retire.ReapProcesses = was
+	testkit.AgentsOf(ctx).Reap = nil
 	r, err = retiretest.RemoveJSON(t, ctx, path, retire.RemoveOptions{Reap: true})
 	if err != nil {
 		t.Fatal(err)

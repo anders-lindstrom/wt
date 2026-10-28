@@ -73,7 +73,7 @@ type attachTarget struct {
 func Attach(ctx *kit.Context, o AttachOptions) error {
 	read := o.Sessions
 	if read == nil {
-		read = ReadClaudeSessions(attachDeadline)
+		read = ReadClaudeSessions(ctx, attachDeadline)
 	}
 	<-read.done
 	switch {

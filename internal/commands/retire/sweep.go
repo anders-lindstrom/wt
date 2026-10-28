@@ -15,7 +15,6 @@ import (
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
-	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
@@ -286,7 +285,7 @@ func PlanSweep(ctx *kit.Context, bases []TrunkBase, list func() ([]agents.Agent,
 		if listErr != nil {
 			return nil, fmt.Errorf("cannot tell which are agent sessions: %w", listErr)
 		}
-		return ScanProcesses(listed)
+		return ctx.ScanProcesses(listed)
 	})
 	for _, sb := range candidates {
 		if _, err := os.Stat(sb.Worktree); err != nil {
@@ -719,19 +718,19 @@ func (o SweepOptions) pullRequests(ctx *kit.Context) func([]string) map[string]g
 }
 
 // listAgents is the first listing of the sessions, for the plan.
-func (o SweepOptions) listAgents() ([]agents.Agent, error) {
+func (o SweepOptions) listAgents(ctx *kit.Context) ([]agents.Agent, error) {
 	if o.Agents != nil {
 		return o.Agents, nil
 	}
-	return session.ListSessions()
+	return ctx.ListAgents()
 }
 
 // relistAgents is the second listing, for the check before anything goes.
-func (o SweepOptions) relistAgents() ([]agents.Agent, error) {
+func (o SweepOptions) relistAgents(ctx *kit.Context) ([]agents.Agent, error) {
 	if o.Agents == nil && o.Relist == nil {
-		return session.ListSessions()
+		return ctx.ListAgents()
 	}
-	return kit.ListAgain(o.Agents, o.Relist)
+	return kit.ListAgain(ctx, o.Agents, o.Relist)
 }
 
 // Sweep deletes the local branches trunk already contains, and removes the
@@ -862,7 +861,7 @@ func (p SweepPlan) apply(ctx *kit.Context, opts SweepOptions, w io.Writer) error
 	if err != nil {
 		return fmt.Errorf("could not re-read trunk before deleting, so nothing was deleted: %w", err)
 	}
-	fresh, err := PlanSweep(ctx, bases, opts.relistAgents, opts.pullRequests(ctx), opts.Reap)
+	fresh, err := PlanSweep(ctx, bases, func() ([]agents.Agent, error) { return opts.relistAgents(ctx) }, opts.pullRequests(ctx), opts.Reap)
 	if err != nil {
 		return fmt.Errorf("could not re-read the branches before deleting, so nothing was deleted: %w", err)
 	}
@@ -898,7 +897,8 @@ func (p SweepPlan) apply(ctx *kit.Context, opts SweepOptions, w io.Writer) error
 		} else {
 			rp.pins = pins
 		}
-		rp.KeepSuperset, rp.relist = opts.KeepSuperset, opts.relistAgents
+		rp.KeepSuperset = opts.KeepSuperset
+		rp.relist = func() ([]agents.Agent, error) { return opts.relistAgents(ctx) }
 		j.start(key)
 		res, err := rp.run(ctx, w)
 		j.superset(key, res)
@@ -1009,11 +1009,11 @@ func changedDuringSweep(ctx *kit.Context, rp Plan, opts SweepOptions) (Plan, str
 	case st.Dirty:
 		return rp, "it gained uncommitted changes during the sweep"
 	}
-	listed, err := opts.relistAgents()
+	listed, err := opts.relistAgents(ctx)
 	if listed == nil {
 		listed = []agents.Agent{}
 	}
-	s, err := session.SessionsIn(listed, err, rp.Path)
+	s, err := ctx.SessionsIn(listed, err, rp.Path)
 	switch {
 	case err != nil:
 		return rp, fmt.Sprintf("cannot list agent sessions (%v)", err)

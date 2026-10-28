@@ -70,7 +70,7 @@ func newListCmd() *cobra.Command {
 				// One read of claude's sessions serves every repository,
 				// and what it could not read is said once, at the end.
 				if !opts.NoSessions {
-					opts.Sessions = session.ReadClaudeSessions(session.SessionsDeadline)
+					opts.Sessions = session.ReadClaudeSessions(nil, session.SessionsDeadline)
 				}
 				err := kit.AcrossRepos(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), out,
 					func(ctx *kit.Context, w io.Writer) error { return commands.List(ctx, opts, w, terminalWidth(out)) })

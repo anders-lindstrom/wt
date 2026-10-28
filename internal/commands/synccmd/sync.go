@@ -230,7 +230,7 @@ func syncInputs(ctx *kit.Context, opts SyncOptions, w io.Writer, branches []stri
 		fmt.Fprintln(w, UndeclaredNotice(ctx, onto))
 		fmt.Fprintln(w)
 	}
-	listed, aerr := agents.ListOtherAgents()
+	listed, aerr := ctx.ListAgents()
 	if aerr != nil {
 		fmt.Fprintf(w, "note: %v\n", aerr)
 	}

@@ -43,11 +43,11 @@ type VerbOptions struct {
 
 // SessionsNow is the sessions to check against, asked for when the caller named
 // none. A verb that cannot find out who is in a worktree changes nothing.
-func (o VerbOptions) SessionsNow(nothing nothingDone) ([]agents.Agent, error) {
+func (o VerbOptions) SessionsNow(ctx *kit.Context, nothing nothingDone) ([]agents.Agent, error) {
 	if o.Agents != nil {
 		return o.Agents, nil
 	}
-	listed, err := agents.ListOtherAgents()
+	listed, err := ctx.ListAgents()
 	if err != nil {
 		return nil, fmt.Errorf("cannot list agent sessions (%w); %s", err, nothing.tail)
 	}
@@ -55,8 +55,8 @@ func (o VerbOptions) SessionsNow(nothing nothingDone) ([]agents.Agent, error) {
 }
 
 // relist is the second listing, for the check after a question or at the lock.
-func (o VerbOptions) relist(nothing nothingDone) ([]agents.Agent, error) {
-	listed, err := kit.ListAgain(o.Agents, o.Relist)
+func (o VerbOptions) relist(ctx *kit.Context, nothing nothingDone) ([]agents.Agent, error) {
+	listed, err := kit.ListAgain(ctx, o.Agents, o.Relist)
 	if err != nil {
 		return nil, fmt.Errorf("cannot list agent sessions again (%w); %s", err, nothing.tail)
 	}
@@ -122,7 +122,7 @@ func SessionsOf(told []Idle, label string) agents.Sessions {
 // been printed and the verb returns having touched nothing. fresh is the
 // sessions to go on with — the second listing where there was one, agents
 // otherwise. told is empty for a run, whose re-check is the lock's instead.
-func AskIdle(w io.Writer, opts VerbOptions, works []string, told []Idle, listed []agents.Agent, nothing nothingDone) (ok bool, fresh []agents.Agent, err error) {
+func AskIdle(ctx *kit.Context, w io.Writer, opts VerbOptions, works []string, told []Idle, listed []agents.Agent, nothing nothingDone) (ok bool, fresh []agents.Agent, err error) {
 	if opts.Confirm == nil {
 		return true, listed, nil
 	}
@@ -136,7 +136,7 @@ func AskIdle(w io.Writer, opts VerbOptions, works []string, told []Idle, listed 
 	if len(told) == 0 {
 		return true, listed, nil
 	}
-	if fresh, err = opts.relist(nothing); err != nil {
+	if fresh, err = opts.relist(ctx, nothing); err != nil {
 		return false, listed, err
 	}
 	for _, t := range told {

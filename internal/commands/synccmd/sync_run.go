@@ -428,7 +428,7 @@ func (r *RunPlan) expectOverview() error {
 // listAgents lists the other agent sessions once for the run.
 func (r *RunPlan) listAgents() ([]agents.Agent, error) {
 	if !r.agentsListed {
-		listed, err := r.opts.SessionsNow(rebasedNothing)
+		listed, err := r.opts.SessionsNow(r.ctx, rebasedNothing)
 		if err != nil {
 			return nil, err
 		}
@@ -685,7 +685,7 @@ func (r *RunPlan) triage() (proceed bool, err error) {
 		// Nothing to re-check here: a run lists the sessions again at the
 		// lock, whether or not anything was asked, and compares them there
 		// with the lock in hand.
-		ok, _, err := AskIdle(r.w, r.opts.VerbOptions, going, nil, listed, rebasedNothing)
+		ok, _, err := AskIdle(r.ctx, r.w, r.opts.VerbOptions, going, nil, listed, rebasedNothing)
 		if err != nil || !ok {
 			return false, err
 		}
@@ -699,7 +699,7 @@ func (r *RunPlan) triage() (proceed bool, err error) {
 func (r *RunPlan) lockAll() error {
 	// Listed again now: a question can sit unanswered for as long as it
 	// likes, and a triage over a large fleet takes a while.
-	fresh, err := r.opts.relist(rebasedNothing)
+	fresh, err := r.opts.relist(r.ctx, rebasedNothing)
 	if err != nil {
 		return err
 	}

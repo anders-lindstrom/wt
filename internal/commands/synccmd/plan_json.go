@@ -11,7 +11,6 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -124,7 +123,7 @@ func UpPlanJSON(ctx *kit.Context, arg string, w io.Writer) error {
 	}
 	// Listed at most once, and only when asked: by the trunk check, when
 	// local trunk is checked out, and for the stack's sessions.
-	listAgents := sync.OnceValues(func() ([]agents.Agent, error) { return session.ListSessions() })
+	listAgents := sync.OnceValues(func() ([]agents.Agent, error) { return ctx.ListAgents() })
 	// What wt up would do to local trunk after its fetch, judged against
 	// origin/<trunk> as last fetched: the fetch may bring more.
 	p.TrunkSync = SyncLocalTrunk(ctx, tip, TrunkSyncOptions{OptedOut: !ctx.UserConfig().FFTrunk, Agents: listAgents})

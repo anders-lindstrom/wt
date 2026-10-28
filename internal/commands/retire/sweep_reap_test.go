@@ -10,7 +10,6 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
-	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
@@ -18,9 +17,9 @@ import (
 // kept for what runs in it, in sweep's words; under --reap the process the
 // plan never listed is the one that gets stopped.
 func TestSweepKeepsAWorktreeThatTurnedBusyAfterThePlan(t *testing.T) {
-	// Not parallel: swaps retire.ScanProcesses and signals real processes.
-	RealProcesses(t)
+	// Not parallel: signals real processes.
 	ctx, _, _ := testkit.SweepRepo(t)
+	RealProcesses(ctx)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
 	reap := SweepOptions{Agents: []agents.Agent{}, Reap: true}
@@ -43,14 +42,12 @@ func TestSweepKeepsAWorktreeThatTurnedBusyAfterThePlan(t *testing.T) {
 // A process table that cannot be read keeps the worktree, with --reap or
 // without, and says what to do.
 func TestSweepKeepsAWorktreeWhenTheProcessesAreUnknown(t *testing.T) {
-	// Not parallel: swaps retire.ScanProcesses and session.ListSessions.
+	t.Parallel()
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
-	was, wasList := ScanProcesses, session.ListSessions
-	t.Cleanup(func() { ScanProcesses, session.ListSessions = was, wasList })
 
 	// Without --reap, with the sessions listed fine.
-	ScanProcesses = func([]agents.Agent) (*agents.ProcessScan, error) { return nil, errors.New("ps: boom") }
+	testkit.AgentsOf(ctx).Scan = func([]agents.Agent) (*agents.ProcessScan, error) { return nil, errors.New("ps: boom") }
 	p := PlanOf(t, ctx)
 	if len(p.Remove) != 0 || len(p.CheckedOut) != 1 || !slices.Contains(p.CheckedOut[0].KeptCodes, KeptProcessesUnknown) {
 		t.Fatalf("remove %v kept %+v, want it kept with the processes unknown", WorktreeNames(p.Remove), p.CheckedOut)
@@ -64,7 +61,7 @@ func TestSweepKeepsAWorktreeWhenTheProcessesAreUnknown(t *testing.T) {
 	}
 
 	// With --reap, and the sessions not listed: no --force goes past it.
-	session.ListSessions = func() ([]agents.Agent, error) { return nil, errors.New("claude agents --json failed") }
+	testkit.AgentsOf(ctx).List = func() ([]agents.Agent, error) { return nil, errors.New("claude agents --json failed") }
 	p = planWith(t, ctx, SweepOptions{Reap: true})
 	if len(p.Remove) != 0 || len(p.CheckedOut) != 1 || !slices.Contains(p.CheckedOut[0].KeptCodes, KeptProcessesUnknown) {
 		t.Fatalf("remove %v kept %+v, want it kept with the processes unknown", WorktreeNames(p.Remove), p.CheckedOut)
