@@ -116,7 +116,8 @@ func UpPlanJSON(ctx *kit.Context, arg string, w io.Writer) error {
 	var exists bool
 	if trunk != "" {
 		p.TrunkRef = kit.Strp(ref)
-		tip, exists = ctx.Repo.ResolveRef("refs/remotes/" + ref)
+		// Status only, nothing acts on it: a ref git cannot read reads as absent.
+		tip, exists, _ = ctx.Repo.ResolveRef("refs/remotes/" + ref)
 		p.TrunkRefExists, p.TrunkTip = exists, kit.Strp(tip)
 		p.TrunkRefUpdatedAt = refUpdatedAt(ctx.Repo.MainRoot, "refs/remotes/"+ref)
 	}
@@ -154,7 +155,8 @@ func UpPlanJSON(ctx *kit.Context, arg string, w io.Writer) error {
 	}
 	base := tip
 	if !exists {
-		base, _ = ctx.Repo.ResolveRef("refs/heads/" + trunk)
+		// Status only: a trunk git cannot read leaves ahead and behind unset.
+		base, _, _ = ctx.Repo.ResolveRef("refs/heads/" + trunk)
 	}
 	if wt.Branch != "" && base != "" {
 		if a, ok := ctx.Repo.CommitsAhead("refs/heads/"+wt.Branch, base); ok {

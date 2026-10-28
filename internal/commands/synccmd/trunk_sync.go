@@ -75,7 +75,10 @@ type TrunkSyncOptions struct {
 func SyncLocalTrunk(ctx *kit.Context, remote string, o TrunkSyncOptions) *TrunkSync {
 	trunk := ctx.Config.MainBranch
 	ts := &TrunkSync{trunk: trunk, Remote: kit.Strp(remote)}
-	local, ok := ctx.Repo.ResolveRef("refs/heads/" + trunk)
+	local, ok, err := ctx.Repo.ResolveRef("refs/heads/" + trunk)
+	if err != nil {
+		return ts.skip(TrunkSkipFailed, "cannot read it: "+kit.OneLine(err.Error()))
+	}
 	if !ok || remote == "" {
 		ts.Local = kit.Strp(local)
 		return ts
@@ -141,7 +144,8 @@ func SyncLocalTrunk(ctx *kit.Context, remote string, o TrunkSyncOptions) *TrunkS
 		_, err = git.Run(on.Path, "merge", "--ff-only", "--no-overwrite-ignore", "--quiet", remote)
 	}
 	if err != nil {
-		if now, _ := ctx.Repo.ResolveRef("refs/heads/" + trunk); now != local {
+		// One git cannot read falls through to the update's own error.
+		if now, _, nerr := ctx.Repo.ResolveRef("refs/heads/" + trunk); nerr == nil && now != local {
 			return ts.skip(TrunkSkipNotFastForward, "it moved while wt was updating it")
 		}
 		return ts.skip(TrunkSkipFailed, kit.OneLine(err.Error()))

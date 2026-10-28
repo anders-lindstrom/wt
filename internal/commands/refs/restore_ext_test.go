@@ -22,7 +22,10 @@ import (
 
 func branchTip(t *testing.T, ctx *kit.Context, name string) string {
 	t.Helper()
-	tip, _ := ctx.Repo.ResolveRef("refs/heads/" + name)
+	tip, _, err := ctx.Repo.ResolveRef("refs/heads/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
 	return tip
 }
 

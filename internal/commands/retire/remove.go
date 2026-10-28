@@ -466,7 +466,7 @@ func planFor(ctx *kit.Context, wt repo.Worktree, opts RemoveOptions) Plan {
 		p.QuarantineError = quarantineProblem(ctx, p.Quarantine, p.Path, p.AdminDir, p.quarantineHooks)
 	}
 
-	s := mergeStanding(ctx, p.Branch)
+	s, standingErr := mergeStanding(ctx, p.Branch)
 	p.Merge, p.Ahead, p.Base, p.Tip = s.Merge, s.Ahead, s.Base, s.Tip
 	if p.Merge == Unmerged || p.Merge == MergeUnknown {
 		p.MergedPR = opts.landed(ctx, p.Branch, p.Tip)
@@ -475,6 +475,9 @@ func planFor(ctx *kit.Context, wt repo.Worktree, opts RemoveOptions) Plan {
 	switch {
 	case p.Branch == "":
 		p.Reason = "detached HEAD"
+	case standingErr != nil:
+		// Not knowing where the branch stands is neither gone nor merged.
+		p.Reason = "git could not say where it stands: " + kit.OneLine(standingErr.Error())
 	case p.Tip == "":
 		// mergeStanding has just asked git for the branch's tip, and no tip is
 		// a branch that is not there.
@@ -947,27 +950,31 @@ type standing struct {
 // is fetched, because remove runs from hooks. The count comes from git rather
 // than from "is it merged", because "not merged" on its own does not say
 // whether one commit or thirty are at stake; it is taken against the first
-// base, origin/<trunk> when there is one.
-func mergeStanding(ctx *kit.Context, branch string) standing {
+// base, origin/<trunk> when there is one. A tip git could not read is an
+// error, never a branch that is gone.
+func mergeStanding(ctx *kit.Context, branch string) (standing, error) {
 	s := standing{Base: ctx.Config.MainBranch}
 	if branch == "" {
-		return s
+		return s, nil
 	}
-	tip, ok := ctx.Repo.ResolveRef("refs/heads/" + branch)
-	if !ok {
-		return s
+	tip, ok, err := ctx.Repo.ResolveRef("refs/heads/" + branch)
+	if err != nil || !ok {
+		return s, err
 	}
 	s.Tip = tip
 	bases, err := TrunkBases(ctx)
-	if err != nil {
-		return s
+	var none *NoTrunkBaseError
+	if errors.As(err, &none) {
+		return s, nil
+	} else if err != nil {
+		return s, err
 	}
 	s.Merge, s.Base = Unmerged, bases[0].Name
 	for i, b := range bases {
 		n, ok := ctx.Repo.CommitsAhead(tip, b.Tip)
 		if ok && n == 0 {
 			s.Merge, s.Ahead, s.Base = Merged, 0, b.Name
-			return s
+			return s, nil
 		}
 		if i == 0 {
 			s.Ahead = n
@@ -981,7 +988,7 @@ func mergeStanding(ctx *kit.Context, branch string) standing {
 			break
 		}
 	}
-	return s
+	return s, nil
 }
 
 // appliedTo is the first base holding every commit of tip under another id,
@@ -1019,8 +1026,10 @@ func removedMeanwhile(ctx *kit.Context, plan Plan, w io.Writer) (vanished bool, 
 	if plan.Branch == "" {
 		return true, nil
 	}
-	now, ok := ctx.Repo.ResolveRef("refs/heads/" + plan.Branch)
+	now, ok, err := ctx.Repo.ResolveRef("refs/heads/" + plan.Branch)
 	switch {
+	case err != nil:
+		fmt.Fprintf(w, "  whether branch %s is still here, git could not say: %s\n", plan.Branch, gitSaid(err))
 	case !ok:
 		fmt.Fprintf(w, "  branch %s is gone too\n", plan.Branch)
 	case now == plan.Tip && plan.Outcome == BranchKept:
@@ -1088,7 +1097,10 @@ func stillMerged(ctx *kit.Context, p Plan) error {
 	if p.MergedPR > 0 {
 		return nil
 	}
-	now := mergeStanding(ctx, p.Branch)
+	now, err := mergeStanding(ctx, p.Branch)
+	if err != nil {
+		return fmt.Errorf("branch %s could not be re-read before deleting it, so nothing was deleted: %w", p.Branch, err)
+	}
 	if now.Merge == Merged || now.Merge == Applied {
 		return nil
 	}
@@ -1436,7 +1448,8 @@ func (p Plan) branchStep(ctx *kit.Context) (result, msg string, err error) {
 			case errors.Is(err, repo.ErrWorktreesUnknown):
 				return quarantine.BranchKept, "", fmt.Errorf("branch %s is merged into %s but was kept: %w", p.Branch, p.Base, err)
 			}
-			if now, ok := ctx.Repo.ResolveRef("refs/heads/" + p.Branch); ok && now != p.Tip {
+			// A tip that cannot be read falls through to the delete's own error.
+			if now, ok, _ := ctx.Repo.ResolveRef("refs/heads/" + p.Branch); ok && now != p.Tip {
 				return quarantine.BranchKept, "", fmt.Errorf("branch %s was kept: it moved after the plan was made", p.Branch)
 			}
 			return quarantine.BranchFailed, "", fmt.Errorf("branch %s is merged into %s, but deleting it failed: %s",

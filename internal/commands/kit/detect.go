@@ -31,7 +31,9 @@ func DetectAnswers(trunk string) Answers {
 // and is refused as an undetectedError: `wt init` is where a person names it.
 func detectedConfig(r *repo.Repo, trunk string) (*config.Config, error) {
 	if !r.BranchExists(trunk) {
-		if _, ok := r.ResolveRef("refs/remotes/origin/" + trunk); !ok {
+		if _, ok, err := r.ResolveRef("refs/remotes/origin/" + trunk); err != nil {
+			return nil, err
+		} else if !ok {
 			return nil, undetectedError{fmt.Errorf("cannot tell which branch is trunk: "+
 				"origin/HEAD names %s, which is not fetched — run `wt init` (or set MAIN_BRANCH)", trunk)}
 		}

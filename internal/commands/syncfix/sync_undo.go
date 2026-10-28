@@ -96,19 +96,20 @@ func syncUndo(ctx *kit.Context, work string, opts UndoOptions, w io.Writer) erro
 		j.Repo(ctx.Repo.MainRoot)
 		rebasing := map[string]bool{}
 		for _, b := range branches {
-			tip, _ := ctx.Repo.ResolveRef("refs/heads/" + b)
+			// Unreadable is recorded as none, which OnSignal reads as moved.
+			tip, _, _ := ctx.Repo.ResolveRef("refs/heads/" + b)
 			j.Join(kit.WorktreeName(ctx, b, paths[b]), b, paths[b], tip, nil)
 			if path, ok := paths[b]; ok {
 				rebasing[b], _ = wtsync.RebaseInProgress(path)
 			}
 		}
 		j.OnSignal(func(p *synccmd.SyncParticipant) bool {
-			tip, _ := ctx.Repo.ResolveRef("refs/heads/" + p.Branch)
+			tip, _, err := ctx.Repo.ResolveRef("refs/heads/" + p.Branch)
 			busy := false
 			if p.Path != "" {
 				busy, _ = wtsync.RebaseInProgress(p.Path)
 			}
-			return kit.Strp(tip) == nil || p.Before == nil || tip != *p.Before || busy != rebasing[p.Branch]
+			return err != nil || kit.Strp(tip) == nil || p.Before == nil || tip != *p.Before || busy != rebasing[p.Branch]
 		})
 	}
 	// Undo can fail partway through the second (apply) phase, after some

@@ -558,7 +558,7 @@ func TestPRCheckoutOfAMergedPullRequestWithNoPullRefFails(t *testing.T) {
 	if len(worktrees) != 1 {
 		t.Errorf("worktrees = %+v, want the main checkout alone", worktrees)
 	}
-	if _, ok := ctx.Repo.ResolveRef("refs/heads/fix_wt/ses-endpoint"); ok {
+	if _, ok, err := ctx.Repo.ResolveRef("refs/heads/fix_wt/ses-endpoint"); err != nil || ok {
 		t.Error("the branch gh was asked for was left behind")
 	}
 }
@@ -686,7 +686,7 @@ func TestPRCheckoutRefusesALocalBranchThatDiverged(t *testing.T) {
 	if _, err := os.Stat(ctx.Scheme().Dir("feat", "pr-12-residential_fixes")); err == nil {
 		t.Error("a worktree was made")
 	}
-	if got, _ := ctx.Repo.ResolveRef("refs/heads/residential_fixes"); got != tip {
+	if got, _, err := ctx.Repo.ResolveRef("refs/heads/residential_fixes"); err != nil || got != tip {
 		t.Errorf("the local branch moved: %s, want %s", got, tip)
 	}
 	// Looking brought the pull request's commits and nothing else.

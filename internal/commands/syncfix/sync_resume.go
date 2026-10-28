@@ -77,7 +77,8 @@ func syncResume(ctx *kit.Context, work string, opts ResumeOptions, w io.Writer) 
 	j.Trunk(strings.TrimPrefix(st.TrunkRef, "origin/"), nil, st.TrunkRef, st.Trunk, false)
 	// The branch as resume finds it: the run's old tip while the rebase
 	// waits, the rebased tip when a person finished it by hand.
-	found, _ := ctx.Repo.ResolveRef("refs/heads/" + st.Branch)
+	// The journal's record: a tip git cannot read is recorded as none.
+	found, _, _ := ctx.Repo.ResolveRef("refs/heads/" + st.Branch)
 	j.Join(name, st.Branch, target.Path, found, nil)
 	j.SetSync(st.Branch, func(p *synccmd.SyncParticipant) {
 		p.SafetyRef, p.PlanFile = kit.Strp(st.Safety), synccmd.PlanFileOf(target.Path)
@@ -85,7 +86,7 @@ func syncResume(ctx *kit.Context, work string, opts ResumeOptions, w io.Writer) 
 	// Whatever returns an error before the rebase is touched refused it;
 	// every other end says what it came to on the way out.
 	defer func() {
-		after, _ := ctx.Repo.ResolveRef("refs/heads/" + st.Branch)
+		after, _, _ := ctx.Repo.ResolveRef("refs/heads/" + st.Branch) // recorded as none when unreadable
 		j.SetSync(st.Branch, func(p *synccmd.SyncParticipant) {
 			p.After = kit.Strp(after)
 			if p.Result == synccmd.ResultNotRun && err != nil {

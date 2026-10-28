@@ -42,7 +42,8 @@ func SyncPushTo(ctx *kit.Context, work, dest string, unset bool, w io.Writer) er
 		fmt.Fprintf(w, "%s has nowhere to push: %s\n", wt.Branch, notPushed(to))
 	} else {
 		fmt.Fprintf(w, "%s pushes to %s (%s)\n", wt.Branch, to.Ref(), to.Rule)
-		if _, there := ctx.Repo.ResolveRef(to.Tracking); !there {
+		// A line for a person: a ref git cannot read gets no line, not "not there".
+		if _, there, err := ctx.Repo.ResolveRef(to.Tracking); err == nil && !there {
 			fmt.Fprintf(w, "  %s is not there as last fetched: the first push makes it\n", to.Ref())
 		}
 		// wt pushes at the end of a rebase and at no other time, so a

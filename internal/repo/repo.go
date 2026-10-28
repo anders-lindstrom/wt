@@ -491,12 +491,16 @@ func (r *Repo) MergedInto(commit string) ([]string, error) {
 }
 
 // ResolveRef returns the commit a ref names, and false when it names none.
-func (r *Repo) ResolveRef(ref string) (string, bool) {
+// Only git's own "no such commit", exit 1, reads as false: a git that failed
+// or did not answer is an error, since not knowing is not the same as absent.
+func (r *Repo) ResolveRef(ref string) (sha string, ok bool, err error) {
 	out, err := git.Run(r.MainRoot, "rev-parse", "--verify", "--quiet", ref+"^{commit}")
-	if err != nil || out == "" {
-		return "", false
+	if code, err := git.Answer(err, 1); err != nil {
+		return "", false, err
+	} else if code == 1 || out == "" {
+		return "", false, nil
 	}
-	return out, true
+	return out, true, nil
 }
 
 // HasRemote reports whether a remote of that name is configured.

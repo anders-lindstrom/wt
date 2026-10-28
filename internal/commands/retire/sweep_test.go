@@ -1132,10 +1132,10 @@ func TestSweepFetchCannotPruneLocalBranchesOrTags(t *testing.T) {
 	if !ctx.Repo.BranchExists("release/keep") {
 		t.Error("the fetch pruned a local branch")
 	}
-	if _, ok := ctx.Repo.ResolveRef("refs/tags/local-tag"); !ok {
+	if _, ok, err := ctx.Repo.ResolveRef("refs/tags/local-tag"); err != nil || !ok {
 		t.Error("the fetch pruned a local tag")
 	}
-	if _, ok := ctx.Repo.ResolveRef("refs/tags/remote-tag"); ok {
+	if _, ok, err := ctx.Repo.ResolveRef("refs/tags/remote-tag"); err != nil || ok {
 		t.Error("the fetch wrote a tag")
 	}
 }

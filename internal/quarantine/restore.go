@@ -245,10 +245,14 @@ func (p *RestorePlan) decideBranch(rp *repo.Repo) (action, occupiedBy string) {
 	if use != "" {
 		return ActionDetach, use
 	}
-	orig, origOK := rp.ResolveRef("refs/heads/" + b.Name)
+	orig, origOK, err := rp.ResolveRef("refs/heads/" + b.Name)
 	kept, keptOK := "", false
-	if keep != "" {
-		kept, keptOK = rp.ResolveRef("refs/heads/" + keep)
+	if err == nil && keep != "" {
+		kept, keptOK, err = rp.ResolveRef("refs/heads/" + keep)
+	}
+	if err != nil {
+		p.problem(ProblemRepository, "its branches cannot be read: "+git.Reason(err))
+		return "", ""
 	}
 	switch {
 	case origOK && orig == b.Tip:
@@ -495,7 +499,11 @@ func restoreBranch(rp *repo.Repo, r *Record, action, adminAt string, resumed boo
 			return fmt.Errorf("could not rename %s back to %s: %s", deref(b.KeepAs), b.Name, git.Reason(err))
 		}
 	case ActionRecreate:
-		if _, ok := rp.ResolveRef("refs/heads/" + b.Name); !ok {
+		_, ok, err := rp.ResolveRef("refs/heads/" + b.Name)
+		if err != nil {
+			return fmt.Errorf("could not read branch %s: %s", b.Name, git.Reason(err))
+		}
+		if !ok {
 			if _, err := git.Run(rp.MainRoot, "update-ref", "--no-deref", "refs/heads/"+b.Name, b.Tip, ""); err != nil {
 				return fmt.Errorf("could not make branch %s again at %s: %s", b.Name, git.ShortID(b.Tip, 12), git.Reason(err))
 			}
@@ -611,7 +619,11 @@ func recheckBranch(rp *repo.Repo, r *Record) error {
 	if err != nil {
 		return err
 	}
-	if tip, ok := rp.ResolveRef("refs/heads/" + name); ok && tip == r.Branch.Tip && use == "" {
+	tip, ok, err := rp.ResolveRef("refs/heads/" + name)
+	if err != nil {
+		return err
+	}
+	if ok && tip == r.Branch.Tip && use == "" {
 		return nil
 	}
 	detach := ActionDetach

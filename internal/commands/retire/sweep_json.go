@@ -644,8 +644,10 @@ func readState(ctx *kit.Context, runID string, r *SweepResultItem) {
 		r.Quarantine = &moved
 	}
 	if r.Branch != nil && r.Tip != nil {
-		_, ok := ctx.Repo.ResolveRef("refs/heads/" + *r.Branch)
-		r.BranchDeleted = !ok
+		// A branch git cannot read is not called deleted, but its pin is
+		// still looked for: if it is gone, the pin is where its tip is held.
+		_, ok, err := ctx.Repo.ResolveRef("refs/heads/" + *r.Branch)
+		r.BranchDeleted = !ok && err == nil
 		r.Pin, r.RestoreCommand = nil, nil
 		pin := ""
 		if !ok {

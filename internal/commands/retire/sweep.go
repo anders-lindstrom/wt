@@ -134,7 +134,8 @@ type SweepPlan struct {
 // commits: what wt sweep and wt remove call merged. origin comes first
 // because merges happen on the remote and the main checkout's trunk is often
 // behind; the local trunk still counts, because commits on it are on trunk
-// too. Nothing is fetched here.
+// too. Nothing is fetched here. Neither being there is a *NoTrunkBaseError;
+// a git that cannot say whether one is there is its own error.
 func TrunkBases(ctx *kit.Context) ([]TrunkBase, error) {
 	trunk := ctx.Config.MainBranch
 	var bases []TrunkBase
@@ -142,14 +143,25 @@ func TrunkBases(ctx *kit.Context) ([]TrunkBase, error) {
 		{"origin/" + trunk, "refs/remotes/origin/" + trunk},
 		{trunk, "refs/heads/" + trunk},
 	} {
-		if tip, ok := ctx.Repo.ResolveRef(b.ref); ok {
+		tip, ok, err := ctx.Repo.ResolveRef(b.ref)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
 			bases = append(bases, TrunkBase{Name: b.name, Tip: tip})
 		}
 	}
 	if len(bases) == 0 {
-		return nil, fmt.Errorf("neither origin/%s nor %s exists here, so nothing can be called merged", trunk, trunk)
+		return nil, &NoTrunkBaseError{Trunk: trunk}
 	}
 	return bases, nil
+}
+
+// NoTrunkBaseError is a repository with neither origin/<trunk> nor <trunk>.
+type NoTrunkBaseError struct{ Trunk string }
+
+func (e *NoTrunkBaseError) Error() string {
+	return fmt.Sprintf("neither origin/%s nor %s exists here, so nothing can be called merged", e.Trunk, e.Trunk)
 }
 
 // PlanSweep reads every fact a sweep depends on and sorts the branches. list
@@ -527,9 +539,11 @@ func (p SweepPlan) changedFrom(ctx *kit.Context, was SweepBranch) string {
 			return fmt.Sprintf("it was checked out in %s after the plan was made", b.Worktree)
 		}
 	}
-	now, exists := ctx.Repo.ResolveRef("refs/heads/" + was.Name)
+	now, exists, err := ctx.Repo.ResolveRef("refs/heads/" + was.Name)
 	head, _ := ctx.Repo.OriginHead()
 	switch {
+	case err != nil:
+		return "git could not say where it is now: " + gitSaid(err)
 	case !exists:
 		return "it was deleted after the plan was made"
 	case now != was.Tip:

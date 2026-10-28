@@ -176,7 +176,10 @@ func PlanNew(ctx *kit.Context, spec string, opts NewOptions) NewPlan {
 		}
 	}
 	// No base at all is no trunk and no --base: noConfiguration says so.
-	if oid, ok := ctx.Repo.ResolveRef(base); ok {
+	if oid, ok, err := ctx.Repo.ResolveRef(base); err != nil {
+		// No code says "git failed"; baseMissing refuses, and the message says why.
+		p.problem(kit.ProblemBaseMissing, "git could not read %q: %s", base, git.Reason(err))
+	} else if ok {
 		p.BaseCommit = kit.Strp(oid)
 	} else if base != "" {
 		p.problem(kit.ProblemBaseMissing, "%q is not a commit here", base)
@@ -418,7 +421,8 @@ func (j *CreateJournal) branchRead(ctx *kit.Context, result string) {
 	if j.Res.Branch == nil {
 		return
 	}
-	tip, _ := ctx.Repo.ResolveRef("refs/heads/" + *j.Res.Branch)
+	// A report of what was made: a tip git cannot read is recorded as none.
+	tip, _, _ := ctx.Repo.ResolveRef("refs/heads/" + *j.Res.Branch)
 	s := j.step(kit.StepBranch)
 	s.Result, s.Commit = result, kit.Strp(tip)
 	if j.co == nil {
@@ -557,7 +561,8 @@ func (j *CreateJournal) AddFailed(ctx *kit.Context, path string, err error) {
 	if j.Res.Branch == nil {
 		return
 	}
-	if _, ok := ctx.Repo.ResolveRef("refs/heads/" + *j.Res.Branch); ok {
+	// A report of what was made: a branch git cannot read is left unrecorded.
+	if _, ok, _ := ctx.Repo.ResolveRef("refs/heads/" + *j.Res.Branch); ok {
 		result := kit.StepUntouched
 		if j.createsBranch() {
 			result = kit.StepCreated

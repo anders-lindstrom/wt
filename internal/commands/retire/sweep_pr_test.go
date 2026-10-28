@@ -262,7 +262,7 @@ func TestSweepKeepsASquashMergedBranchWhenTheSecondReadFails(t *testing.T) {
 	if !strings.Contains(out.String(), "#34 could not be read as merged at this tip a second time") {
 		t.Errorf("sweep said\n%s", out.String())
 	}
-	if _, ok := ctx.Repo.ResolveRef("refs/heads/fix_wt/login-crash"); !ok {
+	if _, ok, err := ctx.Repo.ResolveRef("refs/heads/fix_wt/login-crash"); err != nil || !ok {
 		t.Error("the branch was deleted although the second read failed")
 	}
 }
@@ -299,7 +299,7 @@ func TestSweepDeletesASquashMergedBranchWithNoWorktree(t *testing.T) {
 	if err := Sweep(ctx, SweepOptions{NoFetch: true, Yes: true, Agents: []wtsync.Agent{}}, &out); err != nil {
 		t.Fatalf("Sweep: %v\n%s", err, out.String())
 	}
-	if _, ok := ctx.Repo.ResolveRef("refs/heads/fix_wt/login-crash"); ok {
+	if _, ok, err := ctx.Repo.ResolveRef("refs/heads/fix_wt/login-crash"); err != nil || ok {
 		t.Errorf("the branch is still here:\n%s", out.String())
 	}
 	if !strings.Contains(out.String(), "✓ deleted fix_wt/login-crash") {
@@ -354,7 +354,7 @@ func TestSweepDoesNotDeleteOnAPullRequestThatDidNotLandHere(t *testing.T) {
 			if len(testkit.ArgvOf(t, log)) == 0 {
 				t.Fatal("GitHub was never asked about the branch")
 			}
-			if _, ok := ctx.Repo.ResolveRef("refs/heads/fix_wt/login-crash"); !ok {
+			if _, ok, err := ctx.Repo.ResolveRef("refs/heads/fix_wt/login-crash"); err != nil || !ok {
 				t.Errorf("the branch was deleted:\n%s", out.String())
 			}
 		})
