@@ -10,6 +10,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 // failGit puts a git on the PATH that fails the one command whose arguments
@@ -24,9 +25,7 @@ func failGit(t *testing.T, match string) {
 	stub := t.TempDir()
 	body := "#!/bin/sh\ncase \"$*\" in\n*'" + match + "'*) echo 'fatal: boom' >&2; exit 128 ;;\nesac\nexec " + gitPath + " \"$@\"\n"
 	path := filepath.Join(stub, "git")
-	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, path, body)
 	// The first exec of a new file can be slow (macOS vets it); warm it so
 	// no deadline under test is spent on that.
 	if err := exec.Command(path, "--version").Run(); err != nil {

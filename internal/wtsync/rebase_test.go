@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 // runRepo builds a repository whose trunk declares v.txt owned-line
@@ -232,12 +234,7 @@ func TestRebaseGivesUpWhenContinueDoesNotAdvance(t *testing.T) {
 		[]map[string]string{{"v.txt": "1.0.5\n"}},
 		[]map[string]string{{"v.txt": "1.0.1\n"}})
 	hooks := filepath.Join(dir, ".git", "hooks") // what runRepo set core.hooksPath to
-	if err := os.MkdirAll(hooks, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(hooks, "prepare-commit-msg"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, filepath.Join(hooks, "prepare-commit-msg"), "#!/bin/sh\nexit 1\n")
 	old := gitIn(t, wt, "rev-parse", "HEAD")
 	res, err := Rebase(dir, cfg, trunkReq(wt, 11), nil)
 	if err == nil || !strings.Contains(err.Error(), "did not advance") {
@@ -298,12 +295,7 @@ func abortProofRepo(t *testing.T) (dir string, wt string, cfg *Config) {
 	script := "#!/bin/sh\n" +
 		"rm -f \"$(git rev-parse --absolute-git-dir)/rebase-merge/orig-head\"\n" +
 		"echo sabotage >&2\nexit 3\n"
-	if err := os.MkdirAll(filepath.Join(dir, "bin"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "bin", "break"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, filepath.Join(dir, "bin", "break"), script)
 	yaml := "conflicts:\n  - paths: [f.txt]\n    strategy: script\n    run: bin/break\n"
 	if err := os.WriteFile(filepath.Join(dir, ".wt-sync.yaml"), []byte(yaml), 0o644); err != nil {
 		t.Fatal(err)

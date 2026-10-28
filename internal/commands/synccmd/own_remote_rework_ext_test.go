@@ -13,6 +13,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -107,9 +108,7 @@ func TestUpRunsOnAGitWithoutFetchPorcelain(t *testing.T) {
 	bin := t.TempDir()
 	// Only fetch: git status --porcelain is as old as git.
 	script := "#!/bin/sh\nfetch=\nfor a in \"$@\"; do case \"$a\" in fetch) fetch=1;; --porcelain) [ -n \"$fetch\" ] && { echo \"error: unknown option \\`porcelain'\" >&2; exit 129; };; esac; done\nexec " + realGit + " \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, filepath.Join(bin, "git"), script)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	r, human, err := synccmdtest.UpOut(t, f.Ctx, "x", opts)
 	if err != nil || !r.Worktrees[0].OwnRemoteSync.FastForwarded || testkit.Str(r.Worktrees[0].OwnRemoteSync.Remote) != theirs {
@@ -272,9 +271,7 @@ func TestABranchDeletedBetweenTheListingAndTheFetchIsGone(t *testing.T) {
 	// The first ls-remote answers, and then the branch goes.
 	script := "#!/bin/sh\ncase \" $* \" in *\" ls-remote \"*) " + realGit + " \"$@\"; s=$?; [ -e " + marker + " ] || { " + realGit + " -C " + f.Origin +
 		" update-ref -d refs/heads/feat_wt/x; : > " + marker + "; }; exit $s;; esac\nexec " + realGit + " \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, filepath.Join(bin, "git"), script)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	r, human, err := synccmdtest.UpOut(t, f.Ctx, "x", opts)
 	if err != nil || r.Error != nil || r.Worktrees[0].Result != synccmd.ResultRebased || r.Worktrees[0].OwnRemoteSync.State != "gone" {

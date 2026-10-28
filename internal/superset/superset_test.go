@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 // fake writes a shell script as `superset` in its own directory and returns
@@ -19,9 +21,7 @@ func fake(t *testing.T, body string) (CLI, string) {
 	log := filepath.Join(dir, "argv")
 	exe := filepath.Join(dir, "superset")
 	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> " + log + "\n" + body + "\n"
-	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, exe, script)
 	return CLI{Exe: exe}, log
 }
 
@@ -41,12 +41,7 @@ func TestFind(t *testing.T) {
 	onPath, _ := fake(t, "")
 	home := t.TempDir()
 	shim := filepath.Join(home, ".superset", "bin", "superset")
-	if err := os.MkdirAll(filepath.Dir(shim), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(shim, []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, shim, "#!/bin/sh\n")
 
 	empty := t.TempDir()
 	noHome := t.TempDir()

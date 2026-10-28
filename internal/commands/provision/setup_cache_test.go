@@ -10,6 +10,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 // cacheFixture is a repository declaring two cache dirs, both present in the
@@ -198,10 +199,7 @@ func TestSetupClonesCachesBeforeProvision(t *testing.T) {
 	ctx, main, target := cacheFixture(t)
 	WithCloner(t, func(_, to string) error { return os.Mkdir(to, 0o755) })
 	p := filepath.Join(main, "bin", "worktree", "provision.sh")
-	testkit.MustWrite(t, p, "#!/bin/sh\ntest -d node_modules && touch warm.txt\n")
-	if err := os.Chmod(p, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, p, "#!/bin/sh\ntest -d node_modules && touch warm.txt\n")
 	var buf bytes.Buffer
 	if err := Setup(ctx, target, SetupOptions{SourceDir: main}, &buf); err != nil {
 		t.Fatalf("Setup: %v\n%s", err, buf.String())

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -17,6 +16,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 func RefsPlanJSON(t *testing.T, ctx *kit.Context, opts Options) (PlanOutput, error) {
@@ -318,10 +318,7 @@ func TestRefsSweepRemoteGuards(t *testing.T) {
 	}
 	testkit.GitIn(t, main, "push", "-q", "--force", "origin", "main:refs/heads/backup/moved")
 	hook := filepath.Join(origin, "hooks", "pre-receive")
-	testkit.MustWrite(t, hook, "#!/bin/sh\nexit 1\n")
-	if err := os.Chmod(hook, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, hook, "#!/bin/sh\nexit 1\n")
 	var out bytes.Buffer
 	j := NewRefsJournal(&out)
 	j.planned(plan, refsToken(plan))

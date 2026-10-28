@@ -7,6 +7,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/superset"
 )
 
@@ -24,9 +25,7 @@ func FakeSuperset(t *testing.T, ctx *kit.Context, repoRoot string, running bool)
 		"  'projects list') echo '[{\"id\":\"p1\",\"name\":\"demo\",\"path\":\"" + repoRoot + "\"}]' ;;\n" +
 		"  'ws create') echo '{\"workspace\":{\"id\":\"w1\"},\"alreadyExists\":false}' ;;\n" +
 		"esac\n"
-	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, exe, script)
 	Stub(ctx, superset.Status{Exe: exe, Running: running})
 	return log
 }
@@ -59,9 +58,7 @@ func SupersetSaying(t *testing.T, repoRoot, status string) string {
 		"  'projects list') echo '[{\"id\":\"p1\",\"name\":\"demo\",\"path\":\"" + repoRoot + "\"}]' ;;\n" +
 		"  'ws create') echo '{\"workspace\":{\"id\":\"w1\"},\"alreadyExists\":false}' ;;\n" +
 		"esac\n"
-	if err := os.WriteFile(filepath.Join(dir, "superset"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, filepath.Join(dir, "superset"), script)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	old := provision.ProbeSuperset
 	provision.ProbeSuperset = superset.Probe
@@ -96,9 +93,7 @@ func SupersetWithoutProject(t *testing.T, ctx *kit.Context) string {
 		"  'projects list') echo '[{\"id\":\"p9\",\"name\":\"somewhere-else\",\"path\":\"/somewhere/else\"}]' ;;\n" +
 		"  '--version ') echo 1.29.0 ;;\n" +
 		"esac\n"
-	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, exe, script)
 	Stub(ctx, superset.Status{Exe: exe, Running: true})
 	return log
 }

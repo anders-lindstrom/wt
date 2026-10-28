@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 // An interrupt takes down a claude agents still running: it is in the
@@ -26,9 +27,7 @@ func TestKillRunningTakesDownARunningClaudeAgents(t *testing.T) {
 	started := filepath.Join(stub, "started")
 	claude := filepath.Join(stub, "claude")
 	script := "#!/bin/sh\n[ \"$1\" = warm ] && exit 0\ntouch " + started + "\nexec sleep 30\n"
-	if err := os.WriteFile(claude, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, claude, script)
 	if err := exec.Command(claude, "warm").Run(); err != nil {
 		t.Fatal(err)
 	}
@@ -67,9 +66,7 @@ func TestListAgentsGivesUpOnAClaudeThatDoesNotAnswer(t *testing.T) {
 	pidFile := filepath.Join(stub, "sleep.pid")
 	script := "#!/bin/sh\n[ \"$1\" = warm ] && exit 0\nsleep 30 &\necho $! > " + pidFile + "\nwait\necho '[]'\n"
 	claude := filepath.Join(stub, "claude")
-	if err := os.WriteFile(claude, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, claude, script)
 	// The first exec of a new file can be slow (macOS vets it), and a stub
 	// killed before it started proves nothing about the process group.
 	if err := exec.Command(claude, "warm").Run(); err != nil {
@@ -364,9 +361,7 @@ func TestListClaudeSessionsWaitsOnlyAsLongAsItIsTold(t *testing.T) {
 	// Not parallel: sets PATH for the whole test binary.
 	stub := t.TempDir()
 	claude := filepath.Join(stub, "claude")
-	if err := os.WriteFile(claude, []byte("#!/bin/sh\n[ \"$1\" = warm ] && exit 0\nsleep 30\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, claude, "#!/bin/sh\n[ \"$1\" = warm ] && exit 0\nsleep 30\n")
 	if err := exec.Command(claude, "warm").Run(); err != nil {
 		t.Fatal(err)
 	}
@@ -398,9 +393,7 @@ func TestListClaudeSessionsMarksTheCallersOwnSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := "#!/bin/sh\ncat '" + filepath.Join(stub, "agents.json") + "'\n"
-	if err := os.WriteFile(filepath.Join(stub, "claude"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, filepath.Join(stub, "claude"), script)
 	t.Setenv("PATH", stub+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	got, found, err := ListClaudeSessions(time.Minute)
@@ -434,9 +427,7 @@ func TestAnOddDisplayFieldDoesNotFailTheListingVerbsActOn(t *testing.T) {
 			t.Fatal(err)
 		}
 		script := "#!/bin/sh\ncat '" + filepath.Join(stub, "agents.json") + "'\n"
-		if err := os.WriteFile(filepath.Join(stub, "claude"), []byte(script), 0o755); err != nil {
-			t.Fatal(err)
-		}
+		gittest.WriteExecutable(t, filepath.Join(stub, "claude"), script)
 		t.Setenv("PATH", stub+string(os.PathListSeparator)+os.Getenv("PATH"))
 		acting, err := ListAgents()
 		if err != nil || len(SessionsAt(acting, "/repo_wt/feat_wt/one")) != 1 {

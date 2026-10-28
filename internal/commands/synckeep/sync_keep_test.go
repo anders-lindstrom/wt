@@ -18,6 +18,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -504,9 +505,7 @@ func fakeLaunchctl(t *testing.T) string {
 		"  bootout) rm -f " + loaded + "${2##*/} ;;\n" +
 		"  print) [ -e " + loaded + "${2##*/} ] || exit 1 ;;\n" +
 		"esac\nexit 0\n"
-	if err := os.WriteFile(filepath.Join(dir, "launchctl"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, filepath.Join(dir, "launchctl"), script)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return log
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/github"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -1039,14 +1040,11 @@ func TestSweepKeepsABranchCheckedOutBetweenTwoDeletes(t *testing.T) {
 	late := filepath.Join(ctx.Repo.Parent, "late")
 	hooks := filepath.Join(t.TempDir(), "hooks")
 	hook := filepath.Join(hooks, "reference-transaction")
-	testkit.MustWrite(t, hook, "#!/bin/sh\n"+
+	gittest.WriteExecutable(t, hook, "#!/bin/sh\n"+
 		"[ \"$1\" = committed ] || exit 0\n"+
 		"grep -q ' refs/heads/also-done$' || exit 0\n"+
 		"unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE\n"+
 		"git -C '"+main+"' worktree add -q '"+late+"' done-work\n")
-	if err := os.Chmod(hook, 0o755); err != nil {
-		t.Fatal(err)
-	}
 
 	opts := SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, Confirm: func(SweepPlan) (bool, error) {
 		testkit.GitIn(t, main, "config", "core.hooksPath", hooks)
@@ -1267,11 +1265,8 @@ func TestSweepKeepsAWorktreeThatBecameDirtyDuringTheSweep(t *testing.T) {
 
 	// When the first worktree's branch is deleted, the second gains a change.
 	hooks := t.TempDir()
-	testkit.MustWrite(t, filepath.Join(hooks, "reference-transaction"), "#!/bin/sh\n"+
+	gittest.WriteExecutable(t, filepath.Join(hooks, "reference-transaction"), "#!/bin/sh\n"+
 		"[ \"$1\" = committed ] && grep -q 'refs/heads/fix_wt/aaa' && echo work > '"+filepath.Join(second, "work.txt")+"'\nexit 0\n")
-	if err := os.Chmod(filepath.Join(hooks, "reference-transaction"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	testkit.GitIn(t, main, "config", "core.hooksPath", hooks)
 
 	var buf bytes.Buffer

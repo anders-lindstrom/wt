@@ -9,6 +9,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 func TestSetupCopiesConfigDirsAndFiles(t *testing.T) {
@@ -58,10 +59,7 @@ func TestSetupRunsProvisionScript(t *testing.T) {
 	t.Parallel()
 	main := testkit.FixtureRepo(t, testkit.MinimalConf)
 	p := filepath.Join(main, "bin", "worktree", "provision.sh")
-	testkit.MustWrite(t, p, "#!/bin/sh\necho provisioned > provisioned.txt\n")
-	if err := os.Chmod(p, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, p, "#!/bin/sh\necho provisioned > provisioned.txt\n")
 	target := t.TempDir()
 	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
@@ -250,10 +248,7 @@ func TestSetupContinuesAfterProvisionFailure(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_COMMAND=\"touch built.txt\"\n")
 	p := filepath.Join(main, "bin", "worktree", "provision.sh")
-	testkit.MustWrite(t, p, "#!/bin/sh\necho 'no AWS credentials' >&2\nexit 1\n")
-	if err := os.Chmod(p, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, p, "#!/bin/sh\necho 'no AWS credentials' >&2\nexit 1\n")
 	target := t.TempDir()
 	ctx, _ := kit.Open(main)
 

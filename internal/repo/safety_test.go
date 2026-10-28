@@ -333,9 +333,7 @@ func TestDirtyStrictDoesNotTrustAFilesystemMonitor(t *testing.T) {
 	run(t, main, "commit", "-qm", "a")
 	hook := filepath.Join(t.TempDir(), "fsmonitor")
 	// Protocol 2: answer with a token and no paths, "nothing changed".
-	if err := os.WriteFile(hook, []byte("#!/bin/sh\nprintf 'tok\\0'\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, hook, "#!/bin/sh\nprintf 'tok\\0'\n")
 	run(t, main, "config", "core.fsmonitor", hook)
 	run(t, main, "status", "--porcelain")
 	gittest.WriteFile(t, filepath.Join(main, "a.txt"), "edited, and the monitor never says so")

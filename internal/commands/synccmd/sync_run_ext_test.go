@@ -14,6 +14,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -27,13 +28,8 @@ func declareScript(t *testing.T, ctx *kit.Context) {
 	t.Helper()
 	main := ctx.Repo.MainRoot
 	dir := filepath.Join(main, "bin", "conflict")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
 	body := "#!/bin/sh\ncase \"$1\" in\n--check) exit 0 ;;\n--resolve) git show \":3:$2\" > \"$2\" && git add -- \"$2\" ;;\n*) exit 1 ;;\nesac\n"
-	if err := os.WriteFile(filepath.Join(dir, "vbump"), []byte(body), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, filepath.Join(dir, "vbump"), body)
 	yaml := "conflicts:\n  - paths: [v.txt]\n    strategy: script\n    run: bin/conflict/vbump\n"
 	if err := os.WriteFile(filepath.Join(main, ".wt-sync.yaml"), []byte(yaml), 0o644); err != nil {
 		t.Fatal(err)
@@ -114,9 +110,7 @@ func TestSyncRunRefusesWhenAgentsCannotBeListed(t *testing.T) {
 	// the PATH outright would break every git call instead.
 	ctx, bump := provisiontest.RunFixture(t, false)
 	stub := t.TempDir()
-	if err := os.WriteFile(filepath.Join(stub, "claude"), []byte("#!/bin/sh\necho boom >&2\nexit 1\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, filepath.Join(stub, "claude"), "#!/bin/sh\necho boom >&2\nexit 1\n")
 	t.Setenv("PATH", stub+string(os.PathListSeparator)+os.Getenv("PATH"))
 	opts := synccmdtest.NoAgents()
 	opts.Agents = nil

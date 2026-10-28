@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 func TestClassifyCodexTellsSessionsFromEverythingElse(t *testing.T) {
@@ -567,9 +569,7 @@ func TestListOtherAgentsAddsCodexAndFailsWithoutAProcessTable(t *testing.T) {
 	w.proc(100, 1, minute, wt, "codex exec x")
 	stub := t.TempDir()
 	script := "#!/bin/sh\necho '[{\"id\":\"c1\",\"name\":\"claude-1\",\"cwd\":\"" + wt + "\",\"kind\":\"interactive\",\"status\":\"idle\",\"pid\":999999}]'\n"
-	if err := os.WriteFile(filepath.Join(stub, "claude"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, filepath.Join(stub, "claude"), script)
 	t.Setenv("PATH", stub)
 	old := listProcesses
 	t.Cleanup(func() { listProcesses = old })

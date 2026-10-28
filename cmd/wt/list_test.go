@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 // wt status takes one worktree at most: the whole table, or one in full.
@@ -27,9 +29,7 @@ func claudeOnPath(t *testing.T, listing string) (calls string) {
 		t.Fatal(err)
 	}
 	script := "#!/bin/sh\necho asked >> '" + calls + "'\ncat '" + answer + "'\n"
-	if err := os.WriteFile(filepath.Join(dir, "claude"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, filepath.Join(dir, "claude"), script)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return calls
 }

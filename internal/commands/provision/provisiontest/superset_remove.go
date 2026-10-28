@@ -1,11 +1,11 @@
 package provisiontest
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/superset"
 )
 
@@ -32,9 +32,7 @@ func SupersetAt(t *testing.T, ctx *kit.Context, path, deleteBody string) string 
 		"  'projects list') echo '[{\"id\":\"p1\",\"name\":\"demo\",\"path\":\"" + ctx.Repo.MainRoot + "\"}]' ;;\n" +
 		"  'ws create') echo '{\"workspace\":{\"id\":\"w2\"},\"alreadyExists\":false}' ;;\n" +
 		"esac\n"
-	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, exe, script)
 	Stub(ctx, superset.Status{Exe: exe, Running: true})
 	return log
 }

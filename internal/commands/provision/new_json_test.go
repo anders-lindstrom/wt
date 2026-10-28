@@ -3,7 +3,6 @@ package provision
 import (
 	"bytes"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,6 +10,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 func RunNewJSON(t *testing.T, ctx *kit.Context, spec string, opts NewOptions, expect string) (CreateResult, string, error) {
@@ -122,10 +122,7 @@ func TestNewJSONReportsAWorktreeAFailingHookLeftBehind(t *testing.T) {
 	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	hook := filepath.Join(ctx.Repo.MainRoot, ".git", "hooks", "post-checkout")
-	testkit.MustWrite(t, hook, "#!/bin/sh\necho 'hook says no' >&2\nexit 1\n")
-	if err := os.Chmod(hook, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, hook, "#!/bin/sh\necho 'hook says no' >&2\nexit 1\n")
 	r, _, err := RunNewJSON(t, ctx, "fix/x", NewOptions{}, "")
 	if err == nil || r.Outcome != CreateCreatedWithProblems || r.Commit == nil {
 		t.Errorf("err %v result %+v", err, r)

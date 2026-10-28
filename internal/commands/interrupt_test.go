@@ -11,6 +11,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 // A rebase an interrupt leaves mid-way is a person's to continue by hand,
@@ -44,9 +45,7 @@ func TestOnInterruptTakesTheRunsMarksOutOfTheList(t *testing.T) {
 	// the bump, stopped at the conflict before it.
 	editor := filepath.Join(t.TempDir(), "mark.sh")
 	script := "#!/bin/sh\nwhile IFS= read -r line || [ -n \"$line\" ]; do\n  case \"$line\" in\n    \"pick \"*) id=${line#pick }; id=${id%% *}; case \"" + bump + "\" in \"$id\"*) printf 'break\\n'; printf '%s\\n' \"edit ${line#pick }\" ;; *) printf '%s\\n' \"$line\" ;; esac ;;\n    *) printf '%s\\n' \"$line\" ;;\n  esac\ndone < \"$1\" > \"$1.wt\" && mv \"$1.wt\" \"$1\"\n"
-	if err := os.WriteFile(editor, []byte(script), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, editor, script)
 	cmd := exec.Command("git", "-c", "rebase.backend=merge", "rebase", "--interactive", "--empty=drop", "main")
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GIT_EDITOR=true", "GIT_SEQUENCE_EDITOR="+editor)

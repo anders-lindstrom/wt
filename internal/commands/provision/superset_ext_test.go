@@ -12,6 +12,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/superset"
 )
 
@@ -142,9 +143,7 @@ func TestRegisterSupersetIsIdempotent(t *testing.T) {
 		"  'projects list') echo '[{\"id\":\"p1\",\"name\":\"demo\",\"path\":\"" + ctx.Repo.MainRoot + "\"}]' ;;\n" +
 		"  'ws create') echo '{\"workspace\":{\"id\":\"w1\"},\"alreadyExists\":true}' ;;\n" +
 		"esac\n"
-	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, exe, script)
 	provisiontest.Stub(ctx, superset.Status{Exe: exe, Running: true})
 
 	var errs bytes.Buffer
@@ -310,13 +309,7 @@ func TestRegisterSupersetRunsEvenWhenSetupFailed(t *testing.T) {
 	// A provision.sh that fails is the one thing Setup reports and carries on
 	// from; the worktree is made either way.
 	dir := filepath.Join(main, "bin", "worktree")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "provision.sh"),
-		[]byte("#!/bin/sh\necho 'provisioning broke' >&2\nexit 1\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, filepath.Join(dir, "provision.sh"), "#!/bin/sh\necho 'provisioning broke' >&2\nexit 1\n")
 	testkit.GitIn(t, main, "add", "-A")
 	testkit.GitIn(t, main, "commit", "-qm", "provision")
 	ctx, err := kit.Open(main)

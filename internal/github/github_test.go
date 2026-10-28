@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 // fake writes a shell script as `gh` in its own directory and returns the CLI
@@ -19,9 +21,7 @@ func fake(t *testing.T, body string) (CLI, string) {
 	log := filepath.Join(dir, "argv")
 	exe := filepath.Join(dir, "gh")
 	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> " + log + "\n" + body + "\n"
-	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, exe, script)
 	return CLI{Exe: exe}, log
 }
 

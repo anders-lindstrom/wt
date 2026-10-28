@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 // scanWorld is a process table and the directories of its processes, put
@@ -240,9 +242,7 @@ func TestRunningKeepsAProcessWhenPsFails(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
 	bin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(bin, "ps"), []byte("#!/bin/sh\nexit 2\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, filepath.Join(bin, "ps"), "#!/bin/sh\nexit 2\n")
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	if alive := running([]int{cmd.Process.Pid}); !alive[cmd.Process.Pid] {
 		t.Fatal("a process signal 0 finds was reported gone because ps failed")

@@ -11,9 +11,7 @@ import (
 func TestHideClaudeKeepsTheRestOfItsDirectory(t *testing.T) {
 	bin := t.TempDir()
 	for _, name := range []string{"claude", "tool"} {
-		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\n"), 0o755); err != nil {
-			t.Fatal(err)
-		}
+		WriteExecutable(t, filepath.Join(bin, name), "#!/bin/sh\n")
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	hideClaude(t.TempDir())

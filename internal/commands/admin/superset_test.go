@@ -3,7 +3,6 @@ package admin
 import (
 	"bytes"
 	"errors"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,6 +11,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/superset"
 )
 
@@ -87,9 +87,7 @@ func TestDoctorReportsAUsableSuperset(t *testing.T) {
 		"  '--version ') echo 1.29.0 ;;\n" +
 		"  'projects list') echo '[{\"id\":\"p1\",\"name\":\"demo\",\"path\":\"" + ctx.Repo.MainRoot + "\"}]' ;;\n" +
 		"esac\n"
-	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, exe, script)
 	provisiontest.Stub(ctx, superset.Status{Exe: exe, Running: true})
 
 	var out bytes.Buffer

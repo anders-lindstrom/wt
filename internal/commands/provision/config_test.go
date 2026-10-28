@@ -9,6 +9,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 func TestConfigShellEmitsLegacyNames(t *testing.T) {
@@ -43,9 +44,7 @@ func TestConfigShellReportsProvisionScript(t *testing.T) {
 	t.Parallel()
 	main := testkit.FixtureRepo(t, testkit.MinimalConf)
 	p := filepath.Join(main, "bin", "worktree", "provision.sh")
-	if err := os.WriteFile(p, []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, p, "#!/bin/sh\n")
 	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
 	if err := Config(ctx, true, &buf); err != nil {

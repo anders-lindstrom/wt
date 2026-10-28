@@ -391,13 +391,8 @@ func TestSimulateChainsTheResolvedContent(t *testing.T) {
 // edits, which write mode 0644.
 func scriptClaimingV(t *testing.T, dir string) *Config {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Join(dir, "bin"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	body := "#!/bin/sh\ncase \"$1\" in\n--check) exit 0 ;;\n*) exit 1 ;;\nesac\n"
-	if err := os.WriteFile(filepath.Join(dir, "bin", "claim"), []byte(body), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, filepath.Join(dir, "bin", "claim"), body)
 	gitIn(t, dir, "add", "-A")
 	gitIn(t, dir, "commit", "-q", "-m", "trunk declares a script")
 	cfg, err := Parse([]byte("conflicts:\n  - paths: [v.txt]\n    strategy: script\n    run: bin/claim\n"))

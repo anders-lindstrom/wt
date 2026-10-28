@@ -2,7 +2,6 @@ package provision
 
 import (
 	"bytes"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 func TestPortIsStableAndDiffersBetweenBranches(t *testing.T) {
@@ -75,10 +75,7 @@ func TestProvisionAndBuildGetWTPort(t *testing.T) {
 	// Not parallel: sets environment variables for the whole test binary.
 	main := testkit.CommittedRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_COMMAND=\"env | grep ^WT_ > build-env.txt\"\n")
 	p := filepath.Join(main, "bin", "worktree", "provision.sh")
-	testkit.MustWrite(t, p, "#!/bin/sh\nenv | grep ^WT_ > provision-env.txt\n")
-	if err := os.Chmod(p, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, p, "#!/bin/sh\nenv | grep ^WT_ > provision-env.txt\n")
 	// A value the caller's shell exported for another worktree is replaced.
 	t.Setenv("WT_PORT", "1")
 	ctx, _ := kit.Open(main)

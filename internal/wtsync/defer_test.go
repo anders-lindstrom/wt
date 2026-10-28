@@ -163,9 +163,7 @@ func TestRunDeferredACommitAHookRefusesIsOwedAndLeavesTheOutputBehind(t *testing
 	// A pre-commit hook that refuses everything, pinned so no ambient
 	// core.hooksPath decides this test either way.
 	hooks := t.TempDir()
-	if err := os.WriteFile(filepath.Join(hooks, "pre-commit"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, filepath.Join(hooks, "pre-commit"), "#!/bin/sh\nexit 1\n")
 	gitIn(t, wt, "config", "core.hooksPath", hooks)
 
 	steps := []Deferred{

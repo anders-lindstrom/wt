@@ -3,7 +3,6 @@ package testkit
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/github"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 // GhRepo is the remote every test in this file pretends the fixture has.
@@ -76,9 +76,7 @@ func FakeGitHubAs(t *testing.T, ctx *kit.Context, viewer, prelude string, prs ..
 		"  'auth status') exit 0 ;;\n" +
 		"  '--version ') echo 'gh version 2.100.0 (2026-09-03)' ;;\n" +
 		"esac\n"
-	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, exe, script)
 	StubGitHub(ctx, github.CLI{Exe: exe}, GhRepo, true)
 	return log
 }

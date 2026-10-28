@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -25,9 +26,7 @@ func FakeClaude(t *testing.T, list *func() ([]wtsync.Agent, error), agents []wts
 		t.Fatal(err)
 	}
 	script := "#!/bin/sh\ncat '" + listing + "'\n"
-	if err := os.WriteFile(filepath.Join(dir, "claude"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, filepath.Join(dir, "claude"), script)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	was := *list
 	*list = wtsync.ListOtherAgents

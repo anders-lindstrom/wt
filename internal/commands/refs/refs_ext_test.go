@@ -17,6 +17,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/refs/refstest"
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 // A sweep pins each selected ref and deletes it in one step, drops a
@@ -287,10 +288,7 @@ func TestRefsRestoreRemoteKeepsThePinUntilOriginHasIt(t *testing.T) {
 	t.Parallel()
 	ctx, main, origin, run := refstest.RemoteBackups(t)
 	hook := filepath.Join(origin, "hooks", "pre-receive")
-	testkit.MustWrite(t, hook, "#!/bin/sh\necho no >&2\nexit 1\n")
-	if err := os.Chmod(hook, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, hook, "#!/bin/sh\necho no >&2\nexit 1\n")
 	pin := refpins.PinOf(run, refpins.RefRemoteBranch, "backup/landed")
 	id := "origin:refs/heads/backup/landed"
 	res, err := refstest.RestoreJSON(t, ctx, run, refs.RestoreRefsOptions{Only: []string{id}})

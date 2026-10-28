@@ -90,9 +90,7 @@ func TestDoctorFlagsAnActivePreRebaseHook(t *testing.T) {
 	t.Parallel()
 	dir, wt, _ := runRepo(t, nil, nil)
 	hooksPath := gitIn(t, dir, "config", "--get", "core.hooksPath")
-	if err := os.WriteFile(filepath.Join(hooksPath, "pre-rebase"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, filepath.Join(hooksPath, "pre-rebase"), "#!/bin/sh\nexit 0\n")
 	checks, err := Doctor(dir, "main", []repo.Worktree{{Path: wt, Branch: "feature"}}, DoctorOptions{Now: time.Now(), Keep: 30 * 24 * time.Hour, Docker: func() error { return nil }})
 	if err != nil {
 		t.Fatal(err)
@@ -110,12 +108,7 @@ func TestDoctorResolvesARelativeHooksPathAgainstTheMainRoot(t *testing.T) {
 	t.Parallel()
 	dir, wt, _ := runRepo(t, nil, nil)
 	gitIn(t, dir, "config", "core.hooksPath", "myhooks")
-	if err := os.MkdirAll(filepath.Join(dir, "myhooks"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "myhooks", "post-rewrite"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, filepath.Join(dir, "myhooks", "post-rewrite"), "#!/bin/sh\nexit 0\n")
 	checks, err := Doctor(dir, "main", []repo.Worktree{{Path: wt, Branch: "feature"}}, DoctorOptions{Now: time.Now(), Keep: 30 * 24 * time.Hour, Docker: func() error { return nil }})
 	if err != nil {
 		t.Fatal(err)

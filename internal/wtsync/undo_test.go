@@ -1243,9 +1243,7 @@ func gitLoggedIn(t *testing.T, dir string) func() []string {
 	stub := t.TempDir()
 	log := filepath.Join(stub, "git.log")
 	body := "#!/bin/sh\nprintf '%s\\t%s\\n' \"$(pwd -P)\" \"$*\" >> '" + log + "'\nexec '" + found + "' \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(stub, "git"), []byte(body), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, filepath.Join(stub, "git"), body)
 	t.Setenv("PATH", stub+string(os.PathListSeparator)+os.Getenv("PATH"))
 	resolved, err := filepath.EvalSymlinks(dir)
 	if err != nil {

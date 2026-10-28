@@ -39,10 +39,7 @@ func sigtermRepo(t *testing.T) (main, mark string) {
 		"touch '" + mark + "'\n" +
 		"sleep 30\n"
 	path := filepath.Join(main, ".git", "hooks", "reference-transaction")
-	gittest.WriteFile(t, path, hook)
-	if err := os.Chmod(path, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, path, hook)
 	return main, mark
 }
 

@@ -31,12 +31,7 @@ case $1 in
 esac
 `
 	full := filepath.Join(origin, "bin", "conflict", "special")
-	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(full, []byte(body), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, full, body)
 	gitIn(t, origin, "add", "bin/conflict/special")
 	gitIn(t, origin, "commit", "-q", "-m", "add the special resolver")
 	gitIn(t, local, "fetch", "-q", "origin")
@@ -59,9 +54,7 @@ func hangOnPath(t *testing.T, name string, passThrough ...string) {
 	body += "exec sleep 30\n"
 	stub := t.TempDir()
 	path := filepath.Join(stub, name)
-	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, path, body)
 	// The first exec of a new file can be slow (macOS vets it); a deadline
 	// that fires before the stub starts would prove nothing about the stub.
 	if err := exec.Command(path, "warm").Run(); err != nil {
@@ -142,12 +135,7 @@ func TestScriptRunsTrunksCopyNotTheCheckouts(t *testing.T) {
 	run := fakeScript(t, local, origin)
 	// a different, always-accepting script in the working tree must be ignored
 	full := filepath.Join(local, run)
-	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(full, []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, full, "#!/usr/bin/env bash\nexit 0\n")
 	s := Script{Root: local, Trunk: "origin/main", Run: run}
 	c := Conflict{Path: "special/a.txt", Base: []byte("base\n"), Trunk: []byte("nope\n"), Branch: []byte("branch\n")}
 	if _, err := s.Resolve(c); !IsRefusal(err) {
@@ -195,12 +183,7 @@ func stoppedRebaseWithScript(t *testing.T, script string) (dir, wt string) {
 		[]map[string]string{{"v.txt": "1.0.5\n"}},
 		[]map[string]string{{"v.txt": "1.0.1\n"}})
 	full := filepath.Join(dir, "bin", "resolve")
-	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(full, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, full, script)
 	conf := "conflicts:\n  - paths: [v.txt]\n    strategy: script\n    run: bin/resolve\n"
 	if err := os.WriteFile(filepath.Join(dir, ".wt-sync.yaml"), []byte(conf), 0o644); err != nil {
 		t.Fatal(err)

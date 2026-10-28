@@ -13,6 +13,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/superset"
 )
 
@@ -216,10 +217,7 @@ func TestNewJSONNamesACommitThatIsNotTheBase(t *testing.T) {
 	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	hook := filepath.Join(ctx.Repo.MainRoot, ".git", "hooks", "post-checkout")
-	testkit.MustWrite(t, hook, "#!/bin/sh\ngit -c user.email=t@e.com -c user.name=T commit -q --allow-empty -m moved\n")
-	if err := os.Chmod(hook, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, hook, "#!/bin/sh\ngit -c user.email=t@e.com -c user.name=T commit -q --allow-empty -m moved\n")
 	p := provisiontest.NewPlanOf(t, ctx, "fix/x", provision.NewOptions{})
 	r, _, _ := provision.RunNewJSON(t, ctx, "fix/x", provision.NewOptions{NoSetup: true}, *p.Token)
 	if r.Outcome != provision.CreateCreatedWithProblems || provisiontest.Codes(r.Problems) != "headMoved" || *r.Commit == *p.BaseCommit {
