@@ -156,7 +156,11 @@ one, so the schema you read is the one for the wt you run. Validate against that
 one. Its enumerations are exact for that wt, and a newer wt may add values and
 fields within the same schema number — so an older copy of a schema can reject
 newer output, and a reader that does not validate treats an unknown value as
-unknown. wt's own tests validate every `--json` output against these schemas.
+unknown. wt's own tests validate every `--json` output against these schemas,
+and more strictly than a reader should: an object whose schema lists its
+properties may carry no key it does not list, so a field cannot reach the
+output without reaching its schema. The schemas themselves stay open
+(no `additionalProperties: false`), so a reader can validate older output.
 
 ## `wt status [<work>] --json` — the plan
 

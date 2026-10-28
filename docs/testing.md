@@ -85,6 +85,17 @@ tests of a family whose names say something else. Name the package: a
 prints `ok` with `[no tests to run]`, which looks like a pass. The run of
 `./internal/commands/...` before you finish covers the rest.
 
+## JSON output
+
+A test of a `--json` output passes it to `testkit.ValidateJSON`, usually
+through the family's helper (`retiretest.RemoveJSON`,
+`synccmdtest.DecodeSyncRun`, `provisiontest.NewPlanOf`). It validates the
+output against the schema in `schema/` with every listed object closed:
+a key the schema does not declare fails the test, at any depth. A field
+added to the output therefore needs its schema property, the docs/json.md
+row and an x-version minor in the same commit. The shipped schemas stay
+open; only the test closes them.
+
 ## Bats
 
 `test/helpers.bash` keeps the bats tests off the machine running them, as
