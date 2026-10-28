@@ -37,7 +37,7 @@ One layout fixes that for both kinds of reader:
 | One `<repo>_wt/` folder per repo | A repo's worktrees sort next to it and stay out of the parent folder, which in one like `~/src/work/` can already hold dozens of entries. |
 | The path below `<repo>_wt/` is the branch name | Nothing to translate: the path gives the branch and the branch gives the path. |
 | A type: `feat`, `fix`, `research`, `spike`, … | Folder listings and `git branch` read as a list of work grouped by kind. The type is the identity every tool reasons in; `WORKTREE_TYPE_NAMES` (or a person's `type_names`) only changes the word its branches carry, and the folders keep the type. |
-| The `_wt` suffix on the type | Marks a branch as made for a worktree. `wt remove` uses it: a merged branch is deleted, and an unmerged one `wt` made is renamed out of the prefix so its commits survive. |
+| The `_wt` suffix on the type | Marks a branch as made for a worktree. `wt remove` uses it: a merged branch is deleted (pinned under `refs/wt-swept/<run>/`, so `wt refs restore` can put it back), and an unmerged one `wt` made is renamed out of the prefix so its commits survive. |
 
 A repo that wants plain `fix/login-crash` branches sets
 `WORKTREE_BRANCH_SUFFIX=""`, and a person who wants it wherever the repo has
@@ -99,7 +99,9 @@ carry are shims that call `wt`.
 9. **Clean up merged branches and their worktrees with `wt sweep`.** From the main
    checkout, `wt sweep` fetches origin, lists the local branches trunk already
    contains, and deletes them after one question (`--yes` for scripts; without a
-   terminal it changes nothing). A merged branch whose worktree nothing is using —
+   terminal it changes nothing). Each deleted branch is pinned under
+   `refs/wt-swept/<run>/`, and `wt refs restore <run>` puts it back until
+   `wt refs purge`. A merged branch whose worktree nothing is using —
    nothing uncommitted, no held lock, no agent session in it — goes with its
    worktree, the way `wt remove` takes it; the plan shows every directory that will
    go before asking. Any other worktree is kept, and its row says why: dirty, a
@@ -153,7 +155,10 @@ there and would not answer is a line. `SUPERSET_REGISTER=on` is a repository
 asking for registration, so under it every way the registration can stop is a
 line, marked `!`, and `wt doctor` counts it as a problem. `wt doctor` names the
 state whatever the mode. Registering the same branch twice is Superset's own
-no-op, so nothing duplicates.
+no-op, so nothing duplicates. A *new* workspace makes Superset run the
+project's setup step, `wt setup --source superset`: a second, idempotent
+provisioning pass on top of the one `wt new` did. That is why `--no-setup`
+skips the registration too.
 
 **Removal mirrors registration.** `wt remove` and `wt sweep`, plain or
 `--move-to`, delete the worktree's workspace with `superset ws delete`.
@@ -250,6 +255,11 @@ wt is about to get anyway. `wt pr` says which of the four failed and
 `wt doctor`, whose job is to report the state, checks all four explicitly.
 `wt pr open` opens a worktree's pull request through `gh pr view --web`.
 
+`wt pr checkout` with no number lists the open pull requests, the ones waiting
+on your review first, and asks which. Without a terminal to pick in, the list
+goes to stderr and wt asks for a number rather than choosing, so a script or an
+agent never lands in a worktree it did not name.
+
 The repository asked about is the one **gh** resolves as its base, not always
 `origin`: `remote.<name>.gh-resolved` where `gh repo set-default` wrote one, and
 otherwise gh's own ordering, `upstream` before `github` before `origin`. wt acts
@@ -292,7 +302,17 @@ in it is, once that is a minute or more.
 A squash or rebase merge rewrites the commits, so git sees the branch as
 unmerged for ever. The pull request is what answers that, so sweep reads it:
 every row that has one names it, and a worktree whose pull request landed is
-swept. Landed is three things, all required — GitHub says **merged**, the pull
+swept.
+
+```
+Will be removed with its branch, 1 worktree:
+  login-crash  fix_wt/login-crash  ~/src/repo_wt/fix_wt/login-crash  #34 merged on GitHub (squashed or rebased, so git cannot see it)
+
+Merged, but in use in a worktree, so kept:
+  fix_wt/api-tidy  dirty; commit or discard the changes, then sweep again · #35 open
+```
+
+Landed is three things, all required — GitHub says **merged**, the pull
 request's **base is trunk**, and the local branch is at **exactly** the commit
 the pull request carried. A stacked pull request merged into its parent branch
 is merged with nothing having reached trunk, and deleting that branch would
@@ -332,16 +352,37 @@ that step's outcome where it happens, one line per worktree: `-` for a remark,
 `!` where `SUPERSET_REGISTER=on` asked for it, `✓` for a workspace that was
 made.
 
+```
+$ wt list
+wt: no pull requests shown: gh api graphql did not answer within 2s
+   WORK         BRANCH                PATH
+   login-crash  fix_wt/login-crash    ~/src/repo_wt/fix_wt/login-crash
+```
+
 wt's own settings fail **closed**. A `~/.config/wt/config.toml` wt cannot parse
 turns every integration off for that run and says so in one line: a file the
 person wrote and wt cannot read is no licence to fall back to a default that
 switches one on. A file that parses with one bad key keeps its good keys and the
 line names the part being ignored. Either way the command runs and `wt doctor`
-reports it as a problem. `wt config set` refuses to edit a file it cannot parse;
-`wt config get` answers with the value wt is acting on and puts the file's
-problem on stderr.
+reports it as a problem.
+
+```
+$ wt list
+wt: every integration is off for this run: /Users/you/.config/wt/config.toml: toml: line 2 (last key "superset"): expected value but found '\n' instead
+
+$ wt list
+wt: ignoring unknown key "githb" in /Users/you/.config/wt/config.toml (wt's settings are: superset github branch_suffix type_names ff_trunk ref_sweep_patterns ref_sweep_age, and the [roots] and [profiles] tables)
+```
+
+`wt config set` refuses to edit a file it cannot parse; `wt config get` answers
+with the value wt is acting on and puts the file's problem on stderr. Both
+refuse an unknown key outright: that is input validation, not a file wt could
+not read.
 
 ## More
 
 - `wt <command> --help`: every command, with worked examples.
-- [README](../README.md): install, setting up a repository, the full command list.
+- [README](../README.md): install, a tour, setting up a repository.
+- [Configuration](configuration.md): `worktree.conf`, branch names, your own settings.
+- [Removing a worktree](remove.md): what becomes of the branch, and every refusal.
+- [JSON output](json.md): `--json`, for tools that drive wt.
