@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 	"github.com/anders-lindstrom/wt/schema"
@@ -113,7 +114,7 @@ type SyncRunResult struct {
 	TrunkRef      *string            `json:"trunkRef"`
 	Onto          *string            `json:"onto"`
 	Fetched       bool               `json:"fetched"`
-	TrunkSync     *TrunkSync         `json:"trunkSync"`
+	TrunkSync     *syncrun.TrunkSync `json:"trunkSync"`
 	Outcome       string             `json:"outcome"`
 	Error         *string            `json:"error"`
 	Worktrees     []*SyncParticipant `json:"worktrees"`
@@ -124,19 +125,19 @@ type SyncRunResult struct {
 
 // UpResult is the one object wt up --json prints.
 type UpResult struct {
-	Schema        int              `json:"schema"`
-	SchemaVersion string           `json:"schemaVersion"`
-	Command       string           `json:"command"`
-	Trunk         *string          `json:"trunk"`
-	TrunkSource   *string          `json:"trunkSource"`
-	TrunkRef      *string          `json:"trunkRef"`
-	Onto          *string          `json:"onto"`
-	Fetched       bool             `json:"fetched"`
-	TrunkSync     *TrunkSync       `json:"trunkSync"`
-	Outcome       string           `json:"outcome"`
-	Error         *string          `json:"error"`
-	Worktrees     []*UpParticipant `json:"worktrees"`
-	Recovery      *string          `json:"recovery"`
+	Schema        int                `json:"schema"`
+	SchemaVersion string             `json:"schemaVersion"`
+	Command       string             `json:"command"`
+	Trunk         *string            `json:"trunk"`
+	TrunkSource   *string            `json:"trunkSource"`
+	TrunkRef      *string            `json:"trunkRef"`
+	Onto          *string            `json:"onto"`
+	Fetched       bool               `json:"fetched"`
+	TrunkSync     *syncrun.TrunkSync `json:"trunkSync"`
+	Outcome       string             `json:"outcome"`
+	Error         *string            `json:"error"`
+	Worktrees     []*UpParticipant   `json:"worktrees"`
+	Recovery      *string            `json:"recovery"`
 }
 
 // RunJournal collects what a run did, participant by participant, as it
@@ -200,7 +201,7 @@ func (j *RunJournal) Trunk(name string, source *string, ref, onto string, fetche
 }
 
 // trunkSync records what the run did to local trunk after its fetch.
-func (j *RunJournal) trunkSync(ts *TrunkSync) {
+func (j *RunJournal) trunkSync(ts *syncrun.TrunkSync) {
 	if j == nil {
 		return
 	}

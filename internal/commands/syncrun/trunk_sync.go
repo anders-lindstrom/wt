@@ -1,4 +1,4 @@
-package synccmd
+package syncrun
 
 import (
 	"fmt"

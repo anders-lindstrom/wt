@@ -18,6 +18,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/git"
 )
 
@@ -258,7 +259,7 @@ func (p *keepPass) pass(recorded string) error {
 	p.after = after
 	// Local trunk follows every fetch, whether or not trunk moved since the
 	// last pass: one that was held back then may go now.
-	trunkLine := synccmd.SyncLocalTrunk(ctx, after, synccmd.TrunkSyncOptions{Apply: true,
+	trunkLine := syncrun.SyncLocalTrunk(ctx, after, syncrun.TrunkSyncOptions{Apply: true,
 		OptedOut: p.opts.NoFFTrunk || !ctx.UserConfig().FFTrunk,
 		Agents:   p.agents}).Line()
 	noteTrunk := func() {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -355,7 +356,7 @@ func (r *RunPlan) syncTrunk() {
 	if r.opts.NoFetch {
 		return
 	}
-	ts := SyncLocalTrunk(r.ctx, r.trunkSHA, TrunkSyncOptions{Apply: true,
+	ts := syncrun.SyncLocalTrunk(r.ctx, r.trunkSHA, syncrun.TrunkSyncOptions{Apply: true,
 		OptedOut: r.opts.NoFFTrunk || !r.ctx.UserConfig().FFTrunk,
 		Agents:   r.listAgents})
 	r.opts.Journal.trunkSync(ts)
