@@ -6,10 +6,12 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
@@ -19,6 +21,31 @@ jobs:
           test "$GITHUB_REF_TYPE" = tag
           test "$(git rev-parse HEAD)" = "$(git rev-parse "$GITHUB_REF^{commit}")"
           test "$(git rev-parse --is-shallow-repository)" = false
+      # A tag publishes only a commit CI passed on. release.sh tags a merged
+      # HEAD, but nothing else stops a tag on a commit still under test, or one
+      # whose tests failed. CI runs on every push to main. Under act (Actions
+      # minutes out, scripts/release-local.sh) CI may not have run at all: the
+      # person releasing checks it.
+      - name: Require CI to have passed on the tagged commit
+        if: ${{ !env.ACT }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          sha=$(git rev-parse HEAD)
+          for i in $(seq 120); do
+            r=$(gh run list --workflow ci.yml --commit "$sha" --event push --limit 1 \
+              --json status,conclusion --jq '.[] | "\(.status) \(.conclusion)"')
+            case $r in
+            "completed success") echo "CI passed on $sha"; exit 0 ;;
+            completed*) echo "CI on $sha ended ${r#completed }; not releasing" >&2; exit 1 ;;
+            "") [ "$i" -le 10 ] || { echo "no CI run on $sha: CI runs on pushes to main; not releasing" >&2; exit 1; } ;;
+            esac
+            sleep 30
+          done
+          echo "CI on $sha did not finish within an hour; not releasing" >&2
+          exit 1
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"

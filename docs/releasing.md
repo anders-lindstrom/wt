@@ -10,7 +10,9 @@ scripts/release.sh patch|minor|major
 ```
 
 tags the next version on a merged HEAD and pushes the tag. Landing a branch
-runs it. A rerun is safe: a HEAD that already carries a `v*` tag gets that tag
+runs it. The workflow publishes only once CI has passed on the tagged commit:
+it waits up to an hour for the CI run of that push to main, and fails when CI
+failed or never ran on it. A rerun is safe: a HEAD that already carries a `v*` tag gets that tag
 pushed if it is not yet, and no second one.
 
 ## Without GitHub Actions
@@ -33,7 +35,9 @@ scripts/release-local.sh v1.2.3            # publish the pushed tag
 - Run previews and publishing one at a time: act shares job containers and
   caches.
 - The workflow honours snapshot mode only under act; a tag pushed to GitHub
-  always publishes.
+  always publishes once CI has passed on it.
+- Under act the workflow does not wait for CI, which may not have run at all:
+  check that `make check` passed on the tag before you publish.
 - The GoReleaser config needs only `GITHUB_TOKEN`.
 - Only a real run checks that the GitHub release is created and the assets
   upload; neither preview mode does.
