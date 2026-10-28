@@ -4,6 +4,13 @@ Newest first, each heading stamped with the local date and time of the change
 (several land per day). `wt about` prints the newest 5 entries, so keep each entry to a few lines a human
 would want read out to them; the full story is in git history.
 
+## 2026-10-28 23:31 — help and `wt about` wrap wide characters by the columns they take
+
+Help and `wt about` now measure text in terminal columns. A Chinese,
+Japanese or Korean character or an emoji takes two, so a wrapped line no
+longer runs past the terminal's edge. A table row whose cell follows å, ä or
+ö no longer hangs its wrapped lines too far to the right.
+
 ## 2026-10-28 22:20 — a git that fails stops wt instead of reading as "not there"
 
 When git fails or times out while wt reads a branch, origin's HEAD or a
