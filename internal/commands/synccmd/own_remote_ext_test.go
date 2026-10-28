@@ -15,6 +15,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -253,7 +254,7 @@ func TestPlanHoldsADivergedPlanToItsToken(t *testing.T) {
 	if testkit.Str(p.UpIneligibleReason) != want {
 		t.Fatalf("reason %q, want %q", testkit.Str(p.UpIneligibleReason), want)
 	}
-	for _, o := range []synccmd.OwnRemote{p.Worktree.OwnRemote, p.Stack[0].OwnRemote} {
+	for _, o := range []syncrun.OwnRemote{p.Worktree.OwnRemote, p.Stack[0].OwnRemote} {
 		if o.State != "diverged" || testkit.Str(o.Ref) != "origin/feat_wt/x" || testkit.Str(o.Commit) != theirs || *o.Ahead != 1 || *o.Behind != 1 ||
 			o.Fetched || testkit.Str(o.Blocks) != wtsync.OwnBlockDiverged {
 			t.Fatalf("ownRemote %+v", o)
@@ -484,7 +485,7 @@ func TestUpRefusesWhenTheBranchsRemoteCannotBeFetched(t *testing.T) {
 		t.Fatalf("%v %+v\n%s", err, r, human)
 	}
 	w := r.Worktrees[0]
-	if w.Result != synccmd.ResultRefused || testkit.Str(w.OwnRemoteSync.SkippedReason) != synccmd.OwnSkipFetchFailed || w.OwnRemoteSync.FastForwarded ||
+	if w.Result != synccmd.ResultRefused || testkit.Str(w.OwnRemoteSync.SkippedReason) != syncrun.OwnSkipFetchFailed || w.OwnRemoteSync.FastForwarded ||
 		!strings.Contains(testkit.Str(w.Reason), "its own remote could not be fetched (") {
 		t.Fatalf("%+v %+v\n%s", w, w.OwnRemoteSync, human)
 	}
@@ -692,7 +693,7 @@ func TestUpRefusesWhenTheFastForwardItselfFails(t *testing.T) {
 		t.Fatalf("overwrote an untracked file:\n%s", human)
 	}
 	w := r.Worktrees[0]
-	if w.Result != synccmd.ResultRefused || testkit.Str(w.OwnRemoteSync.SkippedReason) != synccmd.OwnSkipFailed || w.OwnRemoteSync.FastForwarded ||
+	if w.Result != synccmd.ResultRefused || testkit.Str(w.OwnRemoteSync.SkippedReason) != syncrun.OwnSkipFailed || w.OwnRemoteSync.FastForwarded ||
 		testkit.Str(w.Reason) != "cannot fast-forward to origin/feat_wt/x: untracked files in the way: t.txt" {
 		t.Fatalf("%+v %+v\n%s", w, w.OwnRemoteSync, human)
 	}

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -53,7 +54,7 @@ func SyncPushTo(ctx *kit.Context, work, dest string, unset bool, w io.Writer) er
 			fmt.Fprintf(w, "  wt pushes it after its next rebase. To push it now:\n  %s\n", PushLine(PushTarget{Branch: wt.Branch, Path: wt.Path}, to))
 		}
 	}
-	if line := OwnStray(state); line != "" {
+	if line := syncrun.OwnStray(state); line != "" {
 		fmt.Fprintf(w, "  %s\n", line)
 	}
 	return nil

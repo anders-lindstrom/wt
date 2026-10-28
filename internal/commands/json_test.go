@@ -13,6 +13,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
@@ -196,8 +197,8 @@ func TestJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 	var out bytes.Buffer
 	j := synccmd.NewRunJournal(&out)
 	j.Trunk("main", kit.Strp("conventional"), "origin/main", strings.Repeat("a", 40), true)
-	j.Join("one", "feat_wt/one", "/w/one", strings.Repeat("1", 40), &synccmd.OwnRemoteSync{State: "none"})
-	j.Join("two", "feat_wt/two", "/w/two", strings.Repeat("2", 40), &synccmd.OwnRemoteSync{State: "none"})
+	j.Join("one", "feat_wt/one", "/w/one", strings.Repeat("1", 40), &syncrun.OwnRemoteSync{State: "none"})
+	j.Join("two", "feat_wt/two", "/w/two", strings.Repeat("2", 40), &syncrun.OwnRemoteSync{State: "none"})
 	j.Set("feat_wt/one", func(p *synccmd.UpParticipant) { p.Result = synccmd.ResultRebased })
 	j.Interrupted("two", "interrupted while rebasing two: git rebase --abort")
 	j.Finish()

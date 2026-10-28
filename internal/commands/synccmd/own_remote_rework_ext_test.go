@@ -13,6 +13,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -299,7 +300,7 @@ func TestAnInterruptedRunReportsAFastForwardItHadMade(t *testing.T) {
 	var out bytes.Buffer
 	j := synccmd.NewRunJournal(&out)
 	j.Repo(f.Main)
-	j.Join("x", "feat_wt/x", x, before, synccmd.OwnRemoteSyncOf(own.State("feat_wt/x")))
+	j.Join("x", "feat_wt/x", x, before, syncrun.OwnRemoteSyncOf(own.State("feat_wt/x")))
 	testkit.GitIn(t, x, "merge", "-q", "--ff-only", theirs)
 	j.Interrupted("x", "interrupted while fast-forwarding x: wt sync undo x puts it back")
 	testkit.ValidateJSON(t, "up", out.Bytes())
@@ -336,7 +337,7 @@ func TestUpRefusesOnlyTheBranchWhoseRefWillNotFetch(t *testing.T) {
 	}
 	w := r.Worktrees[0]
 	reason := testkit.Str(w.Reason)
-	if w.Result != synccmd.ResultRefused || testkit.Str(w.OwnRemoteSync.SkippedReason) != synccmd.OwnSkipFetchFailed || !strings.Contains(reason, "its own remote could not be fetched (") {
+	if w.Result != synccmd.ResultRefused || testkit.Str(w.OwnRemoteSync.SkippedReason) != syncrun.OwnSkipFetchFailed || !strings.Contains(reason, "its own remote could not be fetched (") {
 		t.Fatalf("%+v %+v\n%s", w, w.OwnRemoteSync, human)
 	}
 	if strings.Contains(reason, "try running") || strings.Contains(reason, "…") {

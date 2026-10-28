@@ -50,7 +50,7 @@ type PlanWorktree struct {
 	Behind *int   `json:"behind"`
 	Ahead  *int   `json:"ahead"`
 	// OwnRemote is the branch against its own remote, as last fetched.
-	OwnRemote OwnRemote `json:"ownRemote"`
+	OwnRemote syncrun.OwnRemote `json:"ownRemote"`
 }
 
 // PlanSession is an agent session in one of the plan's worktrees; Kind is
@@ -74,8 +74,8 @@ type PlanStackMember struct {
 // declares, the same on every member.
 type PlanStack struct {
 	PlanStackMember
-	OwnRemote        OwnRemote      `json:"ownRemote"`
-	DeferredDeclared []DeclaredStep `json:"deferredDeclared"`
+	OwnRemote        syncrun.OwnRemote `json:"ownRemote"`
+	DeferredDeclared []DeclaredStep    `json:"deferredDeclared"`
 }
 
 // UpPlan is the one object wt status <work> --json prints: what wt up would
@@ -147,7 +147,7 @@ func UpPlanJSON(ctx *kit.Context, arg string, w io.Writer) error {
 		work = ctx.Repo.Name
 	}
 	pw := &PlanWorktree{Work: work, Branch: wt.Branch, Path: wt.Path, IsMain: wt.IsMain, State: "clean",
-		OwnRemote: ownRemoteOf(wtsync.OwnRemote{})}
+		OwnRemote: syncrun.OwnRemoteOf(wtsync.OwnRemote{})}
 	switch dirty, err := repo.Dirty(wt.Path, false); {
 	case err != nil:
 		pw.State = "unreadable"
@@ -194,7 +194,7 @@ func UpPlanJSON(ctx *kit.Context, arg string, w io.Writer) error {
 	// ownOf is one branch against its own remote, with what of it would keep
 	// wt up off the checkout at path.
 	ownOf := func(branch, path string) wtsync.OwnRemote {
-		o := OwnStateOf(own, branch)
+		o := syncrun.OwnStateOf(own, branch)
 		switch o.State {
 		case wtsync.OwnBehind:
 			// Unreadable is not clean: a fast-forward needs to know.
@@ -239,7 +239,7 @@ func UpPlanJSON(ctx *kit.Context, arg string, w io.Writer) error {
 			o := byBranch[b]
 			p.Stack = append(p.Stack, PlanStack{
 				PlanStackMember:  PlanStackMember{Work: kit.WorktreeName(ctx, b, o.Path), Branch: b, Path: o.Path},
-				OwnRemote:        ownRemoteOf(ownOf(b, o.Path)),
+				OwnRemote:        syncrun.OwnRemoteOf(ownOf(b, o.Path)),
 				DeferredDeclared: declared,
 			})
 		}

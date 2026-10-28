@@ -16,6 +16,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -374,19 +375,19 @@ func StatusWorktree(ctx *kit.Context, arg string, opts StatusOptions, w io.Write
 		rows = append(rows, []string{"  sessions", kit.WhoLabel(s)})
 	}
 	// The branch against its own remote, as last fetched like the rest.
-	own := synccmd.OwnStateOf(wtsync.ReadOwnOrUnknown(ctx.Repo.MainRoot, ctx.Config.MainBranch), wt.Branch)
+	own := syncrun.OwnStateOf(wtsync.ReadOwnOrUnknown(ctx.Repo.MainRoot, ctx.Config.MainBranch), wt.Branch)
 	work := kit.WorktreeName(ctx, wt.Branch, wt.Path)
 	verdict, under, a := syncVerdict(ctx, work, wt, listed, own)
-	if line := synccmd.OwnLineOf(a); line != "" {
+	if line := syncrun.OwnLineOf(a); line != "" {
 		rows = append(rows, []string{"  remote", line})
 		// Said once: the row has it.
 		under = slices.DeleteFunc(under, func(l string) bool { return l == "  "+line })
 	}
-	if line := synccmd.OwnElsewhere(a.Own); line != "" {
+	if line := syncrun.OwnElsewhere(a.Own); line != "" {
 		rows = append(rows, []string{"  push", strings.TrimPrefix(line, "pushes ")})
 		under = slices.DeleteFunc(under, func(l string) bool { return l == "  "+line })
 	}
-	if line := synccmd.OwnStray(a.Own); line != "" {
+	if line := syncrun.OwnStray(a.Own); line != "" {
 		rows = append(rows, []string{"  also", line})
 	}
 	rows = append(rows, []string{"  sync", verdict})
@@ -475,7 +476,7 @@ func syncVerdict(ctx *kit.Context, work string, wt repo.Worktree, listed []agent
 // of this group: run it, look at its detail, or nothing for one the overview
 // skips or leaves out.
 func syncAdvice(work string, declared bool, a wtsync.Assessment) string {
-	if synccmd.OnTrunk(a) {
+	if syncrun.OnTrunk(a) {
 		return ""
 	}
 	switch synccmd.SectionOf(a) {

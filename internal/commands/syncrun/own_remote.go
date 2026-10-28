@@ -1,4 +1,4 @@
-package synccmd
+package syncrun
 
 import (
 	"fmt"
@@ -38,7 +38,8 @@ type OwnRemote struct {
 	FixCommand   []string `json:"fixCommand"`
 }
 
-func ownRemoteOf(o wtsync.OwnRemote) OwnRemote {
+// OwnRemoteOf is o as wt status --json and wt sync --json report it.
+func OwnRemoteOf(o wtsync.OwnRemote) OwnRemote {
 	out := OwnRemote{Ref: kit.Strp(o.Ref), State: string(ownState(o)), Commit: kit.Strp(o.Commit),
 		Fetched: o.Fetched, Blocks: kit.Strp(o.Blocks), NoPushReason: kit.Strp(o.NoPush)}
 	if o.Undecided != nil {
@@ -96,17 +97,17 @@ func OwnStateOf(own *wtsync.Own, branch string) wtsync.OwnRemote {
 // Remotes that cannot be read at all make every branch unknown, with why.
 func FetchRemotes(ctx *kit.Context, timeout time.Duration, branches []string) (*wtsync.Own, error) {
 	own := wtsync.ReadOwnOrUnknown(ctx.Repo.MainRoot, ctx.Config.MainBranch)
-	return own, fetchOwn(ctx, own, timeout, branches, true)
+	return own, FetchOwn(ctx, own, timeout, branches, true)
 }
 
-// fetchOwn is the fetch itself. A remote with branches to check is first
+// FetchOwn is the fetch itself. A remote with branches to check is first
 // asked which of them it has (git ls-remote), and then fetched from with
 // exact refspecs for those: two round trips, where a fetch of trunk alone
 // is the one command it always was. Naming a ref the remote lacks would
 // fail the whole fetch, and a pattern would bring every branch whose name
 // starts the same; nothing here needs a git newer than a plain fetch does.
 // withTrunk names trunk to origin as well. The error returned is trunk's.
-func fetchOwn(ctx *kit.Context, own *wtsync.Own, timeout time.Duration, branches []string, withTrunk bool) (trunkErr error) {
+func FetchOwn(ctx *kit.Context, own *wtsync.Own, timeout time.Duration, branches []string, withTrunk bool) (trunkErr error) {
 	root, trunk := ctx.Repo.MainRoot, ctx.Config.MainBranch
 	asks := own.Asks(branches)
 	remotes := wtsync.Remotes(asks)
@@ -225,8 +226,8 @@ func onRemote(root string, timeout time.Duration, own *wtsync.Own, remote string
 	return has, nil
 }
 
-// worktreeBranches is the branch of every worktree but the main checkout.
-func worktreeBranches(worktrees []repo.Worktree) []string {
+// WorktreeBranches is the branch of every worktree but the main checkout.
+func WorktreeBranches(worktrees []repo.Worktree) []string {
 	var branches []string
 	for _, wt := range worktrees {
 		if !wt.IsMain && wt.Branch != "" {
@@ -248,7 +249,7 @@ func OwnCandidates(ctx *kit.Context, works []string) []string {
 	if err != nil {
 		return nil
 	}
-	all := worktreeBranches(worktrees)
+	all := WorktreeBranches(worktrees)
 	if len(works) == 0 {
 		return all
 	}
@@ -301,9 +302,9 @@ func OwnCandidates(ctx *kit.Context, works []string) []string {
 	return out
 }
 
-// ownLine is a branch against its own remote as one line for a person, ""
+// OwnLine is a branch against its own remote as one line for a person, ""
 // when there is nothing to compare with.
-func ownLine(o wtsync.OwnRemote) string {
+func OwnLine(o wtsync.OwnRemote) string {
 	var line string
 	switch ownState(o) {
 	case wtsync.OwnNone:
@@ -366,9 +367,9 @@ func OwnStray(o wtsync.OwnRemote) string {
 	return o.Stray + " exists as well"
 }
 
-// ownNote is what the overview puts under a row about the branch's own
+// OwnNote is what the overview puts under a row about the branch's own
 // remote: only what changes what a run does, or what it could not check.
-func ownNote(a wtsync.Assessment) string {
+func OwnNote(a wtsync.Assessment) string {
 	switch o := a.Own; {
 	case o.Refuses():
 		return o.Refusal()
@@ -378,14 +379,14 @@ func ownNote(a wtsync.Assessment) string {
 	return ""
 }
 
-// OwnLineOf is ownLine for an assessed worktree, which knows whether the
+// OwnLineOf is OwnLine for an assessed worktree, which knows whether the
 // fast-forward is all a run would do with it.
 func OwnLineOf(a wtsync.Assessment) string {
 	if !a.OnlyFastForward() {
-		return ownLine(a.Own)
+		return OwnLine(a.Own)
 	}
 	return fmt.Sprintf("%d behind %s, where there is nothing to rebase: a run fast-forwards it and is done%s",
-		a.Own.Behind, a.Own.Ref, asLastFetched(a.Own))
+		a.Own.Behind, a.Own.Ref, AsLastFetched(a.Own))
 }
 
 // OnTrunk reports a worktree with nothing for a run to do and nothing wrong:
@@ -395,9 +396,9 @@ func OnTrunk(a wtsync.Assessment) bool {
 	return a.Class == wtsync.Current && a.Err == nil && !a.OnlyFastForward()
 }
 
-// ownHeld is what keeps a run off a branch for its own remote, in the few
+// OwnHeld is what keeps a run off a branch for its own remote, in the few
 // words a row or a list of what was left takes.
-func ownHeld(o wtsync.OwnRemote) string {
+func OwnHeld(o wtsync.OwnRemote) string {
 	if o.FetchFailed != "" {
 		return "its remote not fetched"
 	}
@@ -407,11 +408,11 @@ func ownHeld(o wtsync.OwnRemote) string {
 	return "behind " + o.Ref
 }
 
-// fastForwardOwn moves a branch that is behind its own remote up to the
+// FastForwardOwn moves a branch that is behind its own remote up to the
 // remote's commit, in its checkout, with the run's lock held: git merge
 // --ff-only, which touches nothing when it cannot. HEAD is checked first,
 // since merge moves whatever HEAD is on.
-func fastForwardOwn(path, branch, commit string) error {
+func FastForwardOwn(path, branch, commit string) error {
 	if head, _ := git.Run(path, "symbolic-ref", "--quiet", "HEAD"); head != "refs/heads/"+branch {
 		return fmt.Errorf("%s is no longer on %s", path, branch)
 	}
@@ -452,9 +453,9 @@ func mergeRefusal(err error) string {
 	return kit.OneLine(git.Reason(err, "warning:", "hint:"))
 }
 
-// asLastFetched marks a line about a branch's own remote that was not
+// AsLastFetched marks a line about a branch's own remote that was not
 // fetched by this command.
-func asLastFetched(o wtsync.OwnRemote) string {
+func AsLastFetched(o wtsync.OwnRemote) string {
 	if o.Fetched {
 		return ""
 	}

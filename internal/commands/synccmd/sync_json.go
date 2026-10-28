@@ -13,6 +13,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -79,10 +80,10 @@ type OverviewWorktree struct {
 	Stops      []OverviewStop    `json:"stops"`
 	Strategies []string          `json:"strategies"`
 	// DeferredDeclared is the repository's, the same on every worktree.
-	DeferredDeclared []DeclaredStep `json:"deferredDeclared"`
-	Notes            []string       `json:"notes"`
-	Error            *string        `json:"error"`
-	OwnRemote        OwnRemote      `json:"ownRemote"`
+	DeferredDeclared []DeclaredStep    `json:"deferredDeclared"`
+	Notes            []string          `json:"notes"`
+	Error            *string           `json:"error"`
+	OwnRemote        syncrun.OwnRemote `json:"ownRemote"`
 }
 
 // DeclaredStep is one deferred step .wt-sync.yaml on trunk declares, as a
@@ -206,10 +207,10 @@ func OverviewOf(ctx *kit.Context, opts SyncOptions) SyncOverview {
 	} else {
 		var branches []string
 		if all, err := ctx.Repo.Worktrees(); err == nil {
-			branches = worktreeBranches(all)
+			branches = syncrun.WorktreeBranches(all)
 		}
 		var err error
-		if own, err = FetchRemotes(ctx, syncFetchTimeout, branches); err != nil {
+		if own, err = syncrun.FetchRemotes(ctx, syncFetchTimeout, branches); err != nil {
 			o.FetchError = kit.Strp(kit.FetchReason(err))
 		} else {
 			o.Fetched = true
@@ -314,13 +315,13 @@ func (r *RunPlan) overviewRow(wt repo.Worktree, a wtsync.Assessment, byBranch ma
 		Behind: a.Behind, Ahead: a.Ahead, Dirty: a.Dirty, HandedOver: a.Paused, PlanFile: kit.Strp(a.PlanFile),
 		Sessions: []PlanSession{}, Stack: []PlanStackMember{}, Stops: []OverviewStop{},
 		Strategies: []string{}, Notes: append([]string{}, a.Notes...),
-		OwnRemote: ownRemoteOf(a.Own),
+		OwnRemote: syncrun.OwnRemoteOf(a.Own),
 	}
 	if a.Err != nil {
 		row.Error = kit.Strp(a.Err.Error())
 	}
 	switch {
-	case OnTrunk(a):
+	case syncrun.OnTrunk(a):
 		row.Group = GroupCurrent
 	default:
 		row.Group = [...]string{GroupReady, GroupNeedsYou, GroupSkipped}[SectionOf(a)]

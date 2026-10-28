@@ -244,7 +244,7 @@ func (p *keepPass) pass(recorded string) error {
 	p.after = p.before
 	// Trunk, and the own remote of every worktree's branch: a pass takes
 	// every ready one.
-	own, err := synccmd.FetchRemotes(ctx, kit.NetworkTimeout, synccmd.OwnCandidates(ctx, nil))
+	own, err := syncrun.FetchRemotes(ctx, kit.NetworkTimeout, syncrun.OwnCandidates(ctx, nil))
 	if err != nil {
 		p.header(p.onto)
 		p.result = "failed: fetch: " + kit.FetchReason(err)

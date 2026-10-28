@@ -225,7 +225,7 @@ func (r *RunPlan) run(works []string) error {
 		p := r.parts[b]
 		// The journal's record: a tip git cannot read is recorded as none.
 		before, _, _ := r.ctx.Repo.ResolveRef("refs/heads/" + b)
-		opts.Journal.Join(p.work, b, p.wt.Path, before, OwnRemoteSyncOf(OwnStateOf(r.own, b)))
+		opts.Journal.Join(p.work, b, p.wt.Path, before, syncrun.OwnRemoteSyncOf(syncrun.OwnStateOf(r.own, b)))
 	}
 	if proceed, err := r.triage(); err != nil || !proceed {
 		if err == nil {
@@ -306,7 +306,7 @@ func (r *RunPlan) declare(works []string) error {
 		if r.opts.Expect != "" && !r.opts.planExpect {
 			works = nil
 		}
-		own, err := FetchRemotes(ctx, kit.NetworkTimeout, OwnCandidates(ctx, works))
+		own, err := syncrun.FetchRemotes(ctx, kit.NetworkTimeout, syncrun.OwnCandidates(ctx, works))
 		if err != nil {
 			return fmt.Errorf("fetch: %w", err)
 		}
@@ -382,7 +382,7 @@ func (r *RunPlan) fetchMissed() {
 		}
 	}
 	if len(r.own.Asks(missed)) > 0 {
-		_ = fetchOwn(r.ctx, r.own, kit.NetworkTimeout, missed, false)
+		_ = syncrun.FetchOwn(r.ctx, r.own, kit.NetworkTimeout, missed, false)
 	}
 }
 
@@ -477,7 +477,7 @@ func (r *RunPlan) selectReady() ([]string, error) {
 		a := assessments[i]
 		work := kit.WorktreeName(ctx, wt.Branch, wt.Path)
 		switch {
-		case OnTrunk(a):
+		case syncrun.OnTrunk(a):
 			// On trunk already; the overview leaves it out too.
 		case !r.ready(a):
 			left = append(left, leftLabel(work, a))
@@ -623,7 +623,7 @@ func (r *RunPlan) triage() (proceed bool, err error) {
 		if a, ok := r.assessed[b]; ok {
 			p.a = a
 		} else {
-			p.a = wtsync.AssessOwn(r.ctx.Repo.MainRoot, r.trunkSHA, r.cfg, p.wt, listed, OwnStateOf(r.own, b))
+			p.a = wtsync.AssessOwn(r.ctx.Repo.MainRoot, r.trunkSHA, r.cfg, p.wt, listed, syncrun.OwnStateOf(r.own, b))
 		}
 		if r.opts.Force && len(p.a.Sessions) > 0 {
 			p.forced = p.a.Sessions
@@ -631,7 +631,7 @@ func (r *RunPlan) triage() (proceed bool, err error) {
 				// The session was all that kept the branch from its remote's
 				// commit, so that commit is what the run rebases: assessed
 				// again there, with nobody in the way.
-				p.a = wtsync.AssessOwn(r.ctx.Repo.MainRoot, r.trunkSHA, r.cfg, p.wt, nil, OwnStateOf(r.own, b))
+				p.a = wtsync.AssessOwn(r.ctx.Repo.MainRoot, r.trunkSHA, r.cfg, p.wt, nil, syncrun.OwnStateOf(r.own, b))
 			}
 			p.a.Sessions = nil
 			fmt.Fprintf(r.w, "⚠ %s: --force takes the run past %s; the files it has read will change\n",
@@ -641,11 +641,11 @@ func (r *RunPlan) triage() (proceed bool, err error) {
 		p.verdict, p.reason = wtsync.Preflight(p.a)
 		own, refused := p.a.Own, p.verdict == wtsync.RefuseRun
 		r.opts.Journal.Set(b, func(jp *UpParticipant) {
-			jp.OwnRemoteSync = OwnRemoteSyncOf(own)
+			jp.OwnRemoteSync = syncrun.OwnRemoteSyncOf(own)
 			switch {
 			case !refused || !own.Refuses():
 			case own.FetchFailed != "":
-				jp.OwnRemoteSync.SkippedReason = kit.Strp(OwnSkipFetchFailed)
+				jp.OwnRemoteSync.SkippedReason = kit.Strp(syncrun.OwnSkipFetchFailed)
 			default:
 				jp.OwnRemoteSync.SkippedReason = kit.Strp(own.Blocks)
 			}
@@ -865,15 +865,15 @@ func (r *RunPlan) rebaseOne(b string) {
 		}
 		fmt.Fprintf(w, "  ⚠ contested at %d/%d: %s\n", p.a.Replay.Stop.Index, p.a.Replay.Stop.Total, what)
 	}
-	if line := OwnElsewhere(p.a.Own); line != "" {
+	if line := syncrun.OwnElsewhere(p.a.Own); line != "" {
 		fmt.Fprintf(w, "  %s\n", line)
 	}
 	switch own := p.a.Own; {
 	case own.State == wtsync.OwnUnknown:
-		fmt.Fprintf(w, "  ⚠ %s\n", ownLine(own))
+		fmt.Fprintf(w, "  ⚠ %s\n", syncrun.OwnLine(own))
 	case own.Allowed:
 		fmt.Fprintf(w, "  ⚠ --allow-diverged: %s has %s this branch never had%s; rebasing it as it stands\n",
-			own.Ref, kit.Count(own.Behind, "commit"), asLastFetched(own))
+			own.Ref, kit.Count(own.Behind, "commit"), syncrun.AsLastFetched(own))
 		// Only now: the flag given to a run that refused the worktree for
 		// something else went over nothing.
 		j.Set(b, func(jp *UpParticipant) { jp.OwnRemoteSync.Allowed = true })
@@ -1032,7 +1032,7 @@ func (r *RunPlan) fastForward(b string, p *participant, done string) (safety wts
 		r.settle("refused", "✗ "+p.work+"  refused: "+why, p.work)
 		r.opts.Journal.Set(b, func(jp *UpParticipant) {
 			jp.Result, jp.Reason = ResultRefused, kit.Strp(why)
-			jp.OwnRemoteSync.SkippedReason = kit.Strp(OwnSkipFailed)
+			jp.OwnRemoteSync.SkippedReason = kit.Strp(syncrun.OwnSkipFailed)
 		})
 		r.refuseAbove(b, p.work+" could not be fast-forwarded")
 		return wtsync.Safety{}, false
@@ -1051,7 +1051,7 @@ func (r *RunPlan) fastForward(b string, p *participant, done string) (safety wts
 	// An interrupt from here names the worktree and the ref that puts it
 	// back, as one during the rebase does.
 	r.tracker.Set(&kit.RebaseInFlight{Work: p.work, Path: p.wt.Path, Safety: safety.Ref, Forwarding: true})
-	if err := fastForwardOwn(p.wt.Path, b, own.Commit); err != nil {
+	if err := syncrun.FastForwardOwn(p.wt.Path, b, own.Commit); err != nil {
 		// git moves the branch before it runs a hook, so a merge that
 		// reports a failure may still have gone through: where the branch
 		// is now decides, not the exit status.
@@ -1080,7 +1080,7 @@ func (r *RunPlan) fastForward(b string, p *participant, done string) (safety wts
 	}
 	p.found = tip
 	fmt.Fprintf(w, "  ✓ fast-forwarded to %s  %s → %s (%s)%s%s\n", own.Ref,
-		git.ShortID(tip, 7), git.ShortID(own.Commit, 7), kit.Count(own.Behind, "commit"), asLastFetched(own), done)
+		git.ShortID(tip, 7), git.ShortID(own.Commit, 7), kit.Count(own.Behind, "commit"), syncrun.AsLastFetched(own), done)
 	// Where the branch stands from here, whatever the rebase comes to: a
 	// rebase that is put back says so itself.
 	r.opts.Journal.Set(b, func(jp *UpParticipant) {

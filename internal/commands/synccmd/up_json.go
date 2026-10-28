@@ -82,7 +82,7 @@ type UpParticipant struct {
 	NoPushReason *string  `json:"noPushReason"`
 	FixCommand   []string `json:"fixCommand"`
 	// OwnRemoteSync is nil from wt sync resume and undo, which do not check.
-	OwnRemoteSync *OwnRemoteSync `json:"ownRemoteSync"`
+	OwnRemoteSync *syncrun.OwnRemoteSync `json:"ownRemoteSync"`
 }
 
 // DeferredStep is one deferred step of a finished rebase.
@@ -213,7 +213,7 @@ func (j *RunJournal) trunkSync(ts *syncrun.TrunkSync) {
 // Join records the participants, parents first, before any is touched: each
 // starts as not run, which is what a run that stops before reaching it
 // leaves it as.
-func (j *RunJournal) Join(work, branch, path, before string, own *OwnRemoteSync) {
+func (j *RunJournal) Join(work, branch, path, before string, own *syncrun.OwnRemoteSync) {
 	if j == nil {
 		return
 	}
