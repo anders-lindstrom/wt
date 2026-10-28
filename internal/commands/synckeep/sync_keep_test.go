@@ -387,6 +387,35 @@ func TestSyncKeepRunNoPushRepeatsThePushCommandUntilItIsPushedByHand(t *testing.
 	}
 }
 
+// The pass that only retries says how many pushes it retries, the plural
+// spelt as a person spells it.
+func TestSyncKeepRunCountsThePushesItRetries(t *testing.T) {
+	ctx, bump := provisiontest.RunFixture(t, false)
+	testkit.BareOrigin(t, ctx)
+	opts := keepOpts(syncrun.PushNever)
+	var out bytes.Buffer
+	if err := Run(ctx, opts, &out); err != nil {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	// A second branch the last pass left unpushed: origin lacks its tip.
+	tip := testkit.GitOut(t, bump, "rev-parse", "HEAD")
+	testkit.GitOut(t, ctx.Repo.MainRoot, "branch", "feat_wt/second", tip)
+	_, statePath := keepFiles(t, ctx)
+	st := readKeep(t, ctx)
+	st.Unpushed = append(st.Unpushed, keepstate.UnpushedTarget{Work: "second", Branch: "feat_wt/second", Path: ctx.Repo.MainRoot, Tip: tip})
+	if err := writeKeepState(statePath, st); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := Run(ctx, opts, &out); err != nil {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	sha := testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", "origin/main")
+	if want := "wt sync keep once  origin/main " + sha[:7] + " unchanged; 2 pushes to retry\n"; !strings.Contains(out.String(), want) {
+		t.Fatalf("output lacks %q:\n%s", want, out.String())
+	}
+}
+
 // The overview says when the repository was last kept, and the doctor has
 // a keeper row; neither says anything about a repository never kept.
 func TestSyncTableAndDoctorSayWhenTheRepositoryWasKept(t *testing.T) {

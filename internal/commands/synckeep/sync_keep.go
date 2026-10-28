@@ -287,7 +287,7 @@ func (p *keepPass) pass(recorded string) error {
 	var rerr error
 	if after == recorded {
 		p.header(fmt.Sprintf("%s %s unchanged", p.onto, git.ShortID(after, 7)))
-		fmt.Fprintf(p.w, "wt sync keep once  %s %s unchanged; %s to retry\n", p.onto, git.ShortID(after, 7), kit.Count(len(retry), "push"))
+		fmt.Fprintf(p.w, "wt sync keep once  %s %s unchanged; %s to retry\n", p.onto, git.ShortID(after, 7), kit.Count(len(retry), "push", "pushes"))
 		noteTrunk()
 	} else {
 		p.header(fmt.Sprintf("%s %s → %s", p.onto, git.ShortID(p.before, 7), git.ShortID(after, 7)))
