@@ -2,8 +2,7 @@
 
 Newest first, each heading stamped with the local date and time of the change
 (several land per day). `wt about` prints the newest 5 entries, so keep each entry to a few lines a human
-would want read out to them; the full story is in git history and in
-`docs/superpowers/plans/`.
+would want read out to them; the full story is in git history.
 
 ## 2026-10-22 10:17 — coloured help and status words
 
