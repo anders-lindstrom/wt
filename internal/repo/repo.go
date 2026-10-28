@@ -281,7 +281,9 @@ var ErrNoTrunk = errors.New("cannot tell which branch is trunk: no origin/HEAD "
 // origin; else ErrNoTrunk. It runs on every command, so it reads local refs
 // only and never asks origin.
 func (r *Repo) DetectTrunk() (string, config.TrunkSource, error) {
-	if branch, ok := r.OriginHead(); ok {
+	if branch, ok, err := r.OriginHead(); err != nil {
+		return "", "", err
+	} else if ok {
 		return branch, config.TrunkFromOriginHead, nil
 	}
 	if branch, ok := r.conventionalTrunk(); ok {
@@ -512,14 +514,17 @@ func (r *Repo) HasRemote(name string) bool {
 // OriginHead names the branch origin's HEAD points at. It reads the symref
 // without resolving it, so a HEAD whose target has been pruned still says
 // which branch is trunk, and reads the full ref name, which a local branch or
-// tag called origin/<x> cannot make ambiguous the way --short's can.
-func (r *Repo) OriginHead() (string, bool) {
+// tag called origin/<x> cannot make ambiguous the way --short's can. ok is
+// false for git's exit 1, no such symref; any other failure is an error.
+func (r *Repo) OriginHead() (branch string, ok bool, err error) {
 	out, err := git.Run(r.MainRoot, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD")
-	if err != nil {
-		return "", false
+	if code, err := git.Answer(err, 1); err != nil {
+		return "", false, err
+	} else if code == 1 {
+		return "", false, nil
 	}
-	branch, ok := strings.CutPrefix(out, "refs/remotes/origin/")
-	return branch, ok && branch != ""
+	branch, ok = strings.CutPrefix(out, "refs/remotes/origin/")
+	return branch, ok && branch != "", nil
 }
 
 // AfterRefDeleted runs, when set, between DeleteBranchAt's ref delete and

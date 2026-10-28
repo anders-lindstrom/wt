@@ -190,7 +190,10 @@ func PlanSweep(ctx *kit.Context, bases []TrunkBase, list func() ([]wtsync.Agent,
 		return SweepPlan{}, fmt.Errorf("%w: %w", repo.ErrWorktreesUnknown, err)
 	}
 	inUse := worktrees.Users()
-	originHead, _ := ctx.Repo.OriginHead()
+	originHead, _, err := ctx.Repo.OriginHead()
+	if err != nil {
+		return SweepPlan{}, fmt.Errorf("could not read origin's HEAD, so cannot tell which branches are trunk: %w", err)
+	}
 
 	// Only the branches that can reach a row of the plan: merged into trunk,
 	// upstream gone, or holding a worktree — which is where a squash merge
@@ -540,10 +543,12 @@ func (p SweepPlan) changedFrom(ctx *kit.Context, was SweepBranch) string {
 		}
 	}
 	now, exists, err := ctx.Repo.ResolveRef("refs/heads/" + was.Name)
-	head, _ := ctx.Repo.OriginHead()
+	head, _, herr := ctx.Repo.OriginHead()
 	switch {
 	case err != nil:
 		return "git could not say where it is now: " + gitSaid(err)
+	case herr != nil:
+		return "git could not say whether origin's HEAD names it: " + gitSaid(herr)
 	case !exists:
 		return "it was deleted after the plan was made"
 	case now != was.Tip:
@@ -804,7 +809,14 @@ func sweepGuard(ctx *kit.Context) error {
 	// Without either, MainBranch is only what the main checkout has checked
 	// out, and a feature branch taken for trunk makes everything cut from it
 	// look merged.
-	if head, _ := ctx.Repo.OriginHead(); !ctx.Config.MainBranchSet && head != ctx.Config.MainBranch {
+	if ctx.Config.MainBranchSet {
+		return nil
+	}
+	head, _, err := ctx.Repo.OriginHead()
+	if err != nil {
+		return fmt.Errorf("wt sweep cannot tell which branch is trunk: origin's HEAD cannot be read: %w", err)
+	}
+	if head != ctx.Config.MainBranch {
 		return fmt.Errorf("wt sweep cannot tell which branch is trunk: MAIN_BRANCH is not set in "+
 			"bin/worktree/worktree.conf and origin's HEAD does not name %s\n"+
 			"  set MAIN_BRANCH, or run git remote set-head origin --auto", ctx.Config.MainBranch)

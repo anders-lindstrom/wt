@@ -24,7 +24,9 @@ func PRLabel(pr github.PR, trunks []string) string {
 // one of these reached trunk. Both reads are local.
 func Trunks(ctx *Context) []string {
 	names := []string{ctx.Config.MainBranch}
-	if head, ok := ctx.Repo.OriginHead(); ok && head != ctx.Config.MainBranch {
+	// A HEAD git cannot read adds no name: fewer trunks only means fewer
+	// pull requests read as merged.
+	if head, ok, _ := ctx.Repo.OriginHead(); ok && head != ctx.Config.MainBranch {
 		names = append(names, head)
 	}
 	return names
