@@ -1,8 +1,6 @@
 package purge
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -154,20 +152,20 @@ func (p *RefsPurgePlan) countLost(ctx *kit.Context) error {
 
 // purgeRefsToken names a purge plan: the repository and every pin of every
 // run, with its object. Nil when there is nothing to purge.
-func purgeRefsToken(p RefsPurgePlan) *string {
+func purgeRefsToken(p RefsPurgePlan) *string { return purgeRefsTokenOf(p).Strp() }
+
+func purgeRefsTokenOf(p RefsPurgePlan) *kit.Token {
 	if len(p.Runs) == 0 {
 		return nil
 	}
-	h := sha256.New()
-	h.Write([]byte("wt-refs-purge-1\x00" + p.Repo))
+	t := kit.NewToken("rp1-", "wt-refs-purge").Str("Repo", p.Repo)
 	for _, r := range p.Runs {
-		h.Write([]byte("\nrun\x00" + r.RunID + "\x00" + r.MetaOID))
+		t.Str("Runs.RunID", r.RunID).Str("Runs.MetaOID", r.MetaOID)
 		for _, s := range r.Refs {
-			h.Write([]byte("\n" + s.Pin + "\x00" + s.Object))
+			t.Str("Runs.Refs.Pin", s.Pin).Str("Runs.Refs.Object", s.Object)
 		}
 	}
-	token := "rp1-" + hex.EncodeToString(h.Sum(nil))[:32]
-	return &token
+	return t
 }
 
 var errRefsPurgePlanChanged = errors.New("the purge plan changed since it was read (a pin moved, went or " +

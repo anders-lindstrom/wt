@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
@@ -208,16 +209,26 @@ func sizeWords(n int64) string {
 	return fmt.Sprintf(" (%.1f GB)", float64(n)/(1024*1024*1024))
 }
 
-// purgeToken names a plan by its fingerprint: the folder by path and
-// identity, its state, its record byte for byte, every path in it, each pin
-// and where it is, and what would be lost. Nil when the purge would refuse.
-func purgeToken(p quarantine.PurgePlan) *string {
-	fp := p.Fingerprint()
-	if fp == "" {
+// purgeToken names a plan: the folder by path and identity, its state, its
+// record byte for byte, every path in it, each pin and where it is, and what
+// would be lost. Nil when the purge would refuse.
+func purgeToken(p quarantine.PurgePlan) *string { return purgeTokenOf(p).Strp() }
+
+func purgeTokenOf(p quarantine.PurgePlan) *kit.Token {
+	if p.Refusal() != "" {
 		return nil
 	}
-	token := "1:" + fp[:32]
-	return &token
+	t := kit.NewToken("1:", "wt-quarantine-purge").Str("Dir", p.Dir).
+		Str("Identity.Device", strconv.FormatUint(p.Identity.Device, 10)).
+		Str("Identity.Inode", strconv.FormatUint(p.Identity.Inode, 10)).
+		Str("State", p.State).Str("Data", string(p.Data)).List("Entries", p.Entries...).Str("Tree", p.Tree)
+	for _, pin := range p.Pins {
+		t.Str("Pins.Ref", pin.Ref).Str("Pins.OID", pin.OID)
+	}
+	for _, l := range p.Lost {
+		t.Str("Lost.Kind", l.Kind).Str("Lost.OID", l.OID).Int("Lost.Count", int64(l.Count))
+	}
+	return t.Str("ReachError", p.ReachError).Bool("RepoGone", p.RepoGone)
 }
 
 // PinPlan is one pin, for --json.
