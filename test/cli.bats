@@ -2,6 +2,8 @@
 
 bats_require_minimum_version 1.5.0
 
+load helpers
+
 setup() {
     export PATH="$(cd "$BATS_TEST_DIRNAME/../bin" && pwd):$PATH"
     export XDG_CONFIG_HOME="$BATS_TEST_TMPDIR/config"

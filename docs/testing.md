@@ -85,6 +85,18 @@ tests of a family whose names say something else. Name the package: a
 prints `ok` with `[no tests to run]`, which looks like a pass. The run of
 `./internal/commands/...` before you finish covers the rest.
 
+## Bats
+
+`test/helpers.bash` keeps the bats tests off the machine running them, as
+`gittest.Isolate` does for the Go tests: HOME, XDG_CONFIG_HOME and git's
+global config are the run's own (with an identity to commit as), git reads
+no system config and no GIT_ variable from the environment, WT_ROOTS and
+CODEX_HOME are unset, and no claude is on the PATH. Go's caches stay where
+they were. Every `test/*.bats` loads it; a test that wants a claude puts its
+own fake first on the PATH, and one that wants its own git config sets
+GIT_CONFIG_GLOBAL in its setup. CI runs bats through `scripts/bats.sh`, under
+the same deadline as `make bats`.
+
 ## Parallel tests
 
 A test that calls `t.Parallel()` runs beside the other parallel tests of

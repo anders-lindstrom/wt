@@ -3,6 +3,8 @@
 # is what publishes a release. Every case runs on a throwaway repository with a
 # bare origin, so nothing reaches GitHub.
 
+load helpers
+
 RELEASE="$BATS_TEST_DIRNAME/../scripts/release.sh"
 
 setup() {

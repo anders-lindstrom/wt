@@ -1,5 +1,7 @@
 #!/usr/bin/env bats
 
+load helpers
+
 RELEASE_LOCAL="$BATS_TEST_DIRNAME/../scripts/release-local.sh"
 
 setup() {
