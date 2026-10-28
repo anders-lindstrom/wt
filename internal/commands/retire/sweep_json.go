@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
@@ -385,25 +384,44 @@ func writeSweepPlan(w io.Writer, p SweepPlanOutput, err error) error {
 
 // SweepJournal collects what a sweep did, item by item, as it does it, so
 // that one object is written at the end — by the sweep when it returns, or by
-// the signal handler when it does not. Every method is safe from both, and
-// the object is written once. A nil journal records nothing.
+// the signal handler when it does not. A nil journal records nothing.
 type SweepJournal struct {
-	mu       sync.Mutex
-	once     sync.Once
-	out      io.Writer
-	ctx      *kit.Context
-	res      SweepResult
-	byKey    map[string]*SweepResultItem
-	inFlight string
-	applying bool
-	runID    string
+	*kit.Journal[SweepResult]
+	ctx   *kit.Context
+	byKey map[string]*SweepResultItem
+	runID string
 }
 
 // NewSweepJournal is a journal that writes its object to out.
 func NewSweepJournal(out io.Writer) *SweepJournal {
-	return &SweepJournal{out: out, byKey: map[string]*SweepResultItem{},
-		res: SweepResult{Schema: 1, SchemaVersion: schema.VersionOf("sweep"), Command: "sweep",
-			Items: []*SweepResultItem{}}}
+	j := &SweepJournal{byKey: map[string]*SweepResultItem{}}
+	j.Journal = kit.NewJournal(out, SweepResult{Schema: 1, SchemaVersion: schema.VersionOf("sweep"), Command: "sweep",
+		Items: []*SweepResultItem{}},
+		kit.JournalRules[SweepResult]{Error: func(r *SweepResult, err error) { r.Error = kit.Strp(err.Error()) },
+			Caught: j.caught, Close: closeSweep})
+	return j
+}
+
+// Fail records an error that stopped the run before it began, and writes
+// the object.
+func (j *SweepJournal) Fail(err error) {
+	if j != nil {
+		j.Journal.Fail(err)
+	}
+}
+
+// Finish writes the object for a run that returned.
+func (j *SweepJournal) Finish() {
+	if j != nil {
+		j.Journal.Finish()
+	}
+}
+
+// Interrupted writes the object for a run a signal ended.
+func (j *SweepJournal) Interrupted(inFlight, recovery string) {
+	if j != nil {
+		j.Journal.Interrupted(inFlight, recovery)
+	}
 }
 
 // sweepKey names one row across the plan and its fresh re-read: a worktree
@@ -420,9 +438,9 @@ func (j *SweepJournal) fetched(ok bool) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.res.Fetched = ok
+	j.Lock()
+	defer j.Unlock()
+	j.Res.Fetched = ok
 }
 
 // open records the repository, before anything can fail.
@@ -430,10 +448,10 @@ func (j *SweepJournal) open(ctx *kit.Context) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
+	j.Lock()
+	defer j.Unlock()
 	j.ctx = ctx
-	j.res.Repo, j.res.Trunk = kit.Strp(ctx.Repo.MainRoot), kit.Strp(ctx.Config.MainBranch)
+	j.Res.Repo, j.Res.Trunk = kit.Strp(ctx.Repo.MainRoot), kit.Strp(ctx.Config.MainBranch)
 }
 
 // begin records the plan about to be carried out: every row to remove or
@@ -443,17 +461,17 @@ func (j *SweepJournal) begin(ctx *kit.Context, p SweepPlan, token string) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.ctx, j.res.Token = ctx, kit.Strp(token)
-	j.res.Repo, j.res.Trunk = kit.Strp(ctx.Repo.MainRoot), kit.Strp(ctx.Config.MainBranch)
+	j.Lock()
+	defer j.Unlock()
+	j.ctx, j.Res.Token = ctx, kit.Strp(token)
+	j.Res.Repo, j.Res.Trunk = kit.Strp(ctx.Repo.MainRoot), kit.Strp(ctx.Config.MainBranch)
 	add := func(key string, it SweepItem) {
 		r := &SweepResultItem{Category: it.Category, Branch: it.Branch, Tip: it.Tip, Work: it.Work, Path: it.Path,
 			Result: SweepNotRun, Reaped: []ReapedProcess{}}
 		if it.Category == SweepInUse || it.Category == SweepUpstreamGone {
 			r.Result, r.Reason = SweepKept, kit.Strp(it.Reason)
 		}
-		j.res.Items = append(j.res.Items, r)
+		j.Res.Items = append(j.Res.Items, r)
 		if key != "" {
 			j.byKey[key] = r
 		}
@@ -478,9 +496,9 @@ func (j *SweepJournal) quarantineIn(dir string) {
 	if j == nil || dir == "" {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.res.Quarantine = kit.Strp(dir)
+	j.Lock()
+	defer j.Unlock()
+	j.Res.Quarantine = kit.Strp(dir)
 }
 
 // quarantined records the folder one row's worktree is about to go to.
@@ -488,8 +506,8 @@ func (j *SweepJournal) quarantined(key, dir string) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
+	j.Lock()
+	defer j.Unlock()
 	if r := j.byKey[key]; r != nil {
 		r.Quarantine = &SweepQuarantine{Dir: dir}
 	}
@@ -500,8 +518,8 @@ func (j *SweepJournal) superset(key string, res RemoveResult) {
 	if j == nil || res.Superset == "" {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
+	j.Lock()
+	defer j.Unlock()
 	if r := j.byKey[key]; r != nil {
 		r.Superset = &SweepSuperset{Result: res.Superset, Reason: kit.Strp(res.SupersetReason)}
 	}
@@ -512,8 +530,8 @@ func (j *SweepJournal) reaped(key string, reaped []agents.Reaped) {
 	if j == nil || len(reaped) == 0 {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
+	j.Lock()
+	defer j.Unlock()
 	if r := j.byKey[key]; r != nil {
 		r.Reaped = reapedProcesses(reaped)
 	}
@@ -525,10 +543,10 @@ func (j *SweepJournal) ran(runID string) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
+	j.Lock()
+	defer j.Unlock()
 	j.runID = runID
-	j.res.RunID = kit.Strp(runID)
+	j.Res.RunID = kit.Strp(runID)
 }
 
 // startApply marks the point after which an error is an item's, not the
@@ -537,9 +555,7 @@ func (j *SweepJournal) startApply() {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.applying = true
+	j.Begin(nil)
 }
 
 // start marks the row about to be touched: the one a signal would catch.
@@ -547,9 +563,7 @@ func (j *SweepJournal) start(key string) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.inFlight = key
+	j.Start(key)
 }
 
 // keep records a row left alone because it changed since the plan.
@@ -557,8 +571,8 @@ func (j *SweepJournal) keep(key, why string) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
+	j.Lock()
+	defer j.Unlock()
 	if r := j.byKey[key]; r != nil {
 		r.Result, r.Reason = SweepKept, kit.Strp(why)
 	}
@@ -575,21 +589,24 @@ func (j *SweepJournal) settle(key string, err error) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
+	j.Lock()
 	r, ctx, runID := j.byKey[key], j.ctx, j.runID
 	var probe SweepResultItem
 	if r != nil {
 		probe = *r
 	}
-	j.mu.Unlock()
+	j.Unlock()
 	if r == nil {
 		return
 	}
 	readState(ctx, runID, &probe)
 
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.inFlight = ""
+	j.Settle(key, func(*SweepResult) { settleSweepItem(r, probe, err) })
+}
+
+// settleSweepItem records what a row came to from probe, the state read
+// back.
+func settleSweepItem(r *SweepResultItem, probe SweepResultItem, err error) {
 	r.WorktreeRemoved, r.BranchDeleted, r.RestoreCommand = probe.WorktreeRemoved, probe.BranchDeleted, probe.RestoreCommand
 	r.Pin = probe.Pin
 	r.Quarantine = probe.Quarantine
@@ -657,59 +674,23 @@ func readState(ctx *kit.Context, runID string, r *SweepResultItem) {
 	}
 }
 
-// fail records an error that ended the run before anything was touched.
-func (j *SweepJournal) fail(err error) {
-	if j == nil || err == nil {
-		return
-	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	if !j.applying {
-		j.res.Error = kit.Strp(err.Error())
+// caught reads back the row a signal caught in flight and marks it
+// interrupted, with what is true of it now. The handler's own git is not
+// parked, and nothing else holds the lock while running one.
+func (j *SweepJournal) caught(_ *SweepResult, inFlight, _ string) {
+	if r := j.byKey[inFlight]; r != nil {
+		readState(j.ctx, j.runID, r)
+		r.Result = SweepInterrupted
 	}
 }
 
-// Fail records an error that stopped the run before it began, and writes
-// the object: what the caller does when it cannot even open the repository.
-func (j *SweepJournal) Fail(err error) {
-	j.fail(err)
-	j.Finish()
-}
-
-// Finish writes the object for a run that returned.
-func (j *SweepJournal) Finish() {
-	j.write(false, "")
-}
-
-// Interrupted writes the object for a run a signal ended: the row in flight
-// is interrupted, with what is true of it now, the rest stand as recorded.
-// inFlight is the rebase tracker's, which a sweep has none of.
-func (j *SweepJournal) Interrupted(_ string, recovery string) {
-	j.write(true, recovery)
-}
-
-func (j *SweepJournal) write(signalled bool, recovery string) {
-	if j == nil {
-		return
+func closeSweep(r *SweepResult, signalled bool, recovery string) any {
+	if signalled {
+		r.Outcome, r.Recovery = kit.OutcomeInterrupted, kit.Strp(recovery)
+	} else {
+		r.Outcome = sweepOutcome(r.Items, r.Error != nil)
 	}
-	j.once.Do(func() {
-		j.mu.Lock()
-		defer j.mu.Unlock()
-		if signalled {
-			// The handler's own git is not parked, and nothing else holds
-			// the lock while running one.
-			if r := j.byKey[j.inFlight]; r != nil {
-				readState(j.ctx, j.runID, r)
-				r.Result = SweepInterrupted
-			}
-			j.res.Outcome, j.res.Recovery = kit.OutcomeInterrupted, kit.Strp(recovery)
-		} else {
-			j.res.Outcome = sweepOutcome(j.res.Items, j.res.Error != nil)
-		}
-		enc := json.NewEncoder(j.out)
-		enc.SetIndent("", "  ")
-		_ = enc.Encode(j.res)
-	})
+	return r
 }
 
 // sweepOutcome is the rule: done when every row to remove or delete went

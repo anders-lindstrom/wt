@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
@@ -400,15 +399,15 @@ func emptyRemovePlan() RemovePlanOutput {
 // none at all, is still one object, with error set, and the error is
 // returned too.
 func RemovePlanJSON(ctx *kit.Context, t RemoveTarget, opts RemoveOptions, out, progress io.Writer) error {
-	j := &RemoveJournal{}
+	j := newRemoveJournal(nil, ctx)
 	opts.DryRun, opts.Confirm, opts.Journal, opts.Expect, opts.Result = true, nil, j, "", nil
 	wt, err := t.locate(ctx)
 	if err == nil {
 		err = removeWorktree(ctx, wt, opts, progress)
 	}
 	o := emptyRemovePlan()
-	if j.plan != nil {
-		o = removePlanOutput(ctx, *j.plan, j.token)
+	if j.Res.plan != nil {
+		o = removePlanOutput(ctx, *j.Res.plan, j.Res.token)
 	} else {
 		o.Repo, o.Trunk, o.TrunkSource = kit.Strp(ctx.Repo.MainRoot), kit.Strp(ctx.Config.MainBranch), ctx.TrunkSource()
 	}
@@ -430,14 +429,14 @@ func RemoveFailedJSON(out io.Writer, dryRun bool, err error) {
 		_ = kit.WriteJSON(out, o)
 		return
 	}
-	(&RemoveJournal{out: out}).finish(RemoveResult{}, err)
+	newRemoveJournal(out, nil).finish(RemoveResult{}, err)
 }
 
 // RemoveJSON is wt remove --yes --json: the removal, and one object on out
 // saying what it did, effect by effect — when it returns, or when a signal
 // ends it. The plan as wt prints it and the progress go to progress.
 func RemoveJSON(ctx *kit.Context, t RemoveTarget, opts RemoveOptions, out, progress io.Writer) error {
-	j := &RemoveJournal{out: out, ctx: ctx}
+	j := newRemoveJournal(out, ctx)
 	defer kit.SetInterruptJournal(j)()
 	defer kit.WatchSignals(progress, nil)()
 	var res RemoveResult
@@ -455,14 +454,45 @@ func RemoveJSON(ctx *kit.Context, t RemoveTarget, opts RemoveOptions, out, progr
 // the signal handler when it does not. The object is written once. A nil
 // journal records nothing.
 type RemoveJournal struct {
-	mu      sync.Mutex
-	once    sync.Once
-	out     io.Writer
+	*kit.Journal[removeRecord]
+}
+
+// removeRecord is what a removal's journal holds: the plan and its token,
+// how far the removal got, and what it returned.
+type removeRecord struct {
 	ctx     *kit.Context
 	plan    *Plan
 	token   string
 	started bool
 	runID   string
+	res     *RemoveResult
+	err     error
+}
+
+// newRemoveJournal is a journal that writes its object to out; nil out
+// writes nothing, for the plan. The object is read back from the disk
+// outside the lock: a signal parks the git a returning run is reading
+// with, and the handler must still be able to write.
+func newRemoveJournal(out io.Writer, ctx *kit.Context) *RemoveJournal {
+	return &RemoveJournal{kit.NewJournal(out, removeRecord{ctx: ctx}, kit.JournalRules[removeRecord]{
+		Snapshot: func(r removeRecord, signalled bool, recovery string) any {
+			var plan *Plan
+			if r.plan != nil {
+				p := *r.plan
+				plan = &p
+			}
+			res, err, runID := r.res, r.err, r.runID
+			switch {
+			case signalled:
+				// What is true of the worktree and the branch now.
+				res, err = nil, nil
+			case res != nil:
+				// What the removal returned is what is left: a run that
+				// pinned nothing was dropped.
+				runID = res.RunID
+			}
+			return removeOutput(r.ctx, plan, r.token, runID, r.started, res, err, recovery)
+		}})}
 }
 
 // planned records the plan the removal made, and its token.
@@ -470,9 +500,7 @@ func (j *RemoveJournal) planned(ctx *kit.Context, p Plan, token string) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.ctx, j.plan, j.token = ctx, &p, token
+	j.Edit(func(r *removeRecord) { r.ctx, r.plan, r.token = ctx, &p, token })
 }
 
 // applying marks the point after which the removal changes things.
@@ -480,9 +508,7 @@ func (j *RemoveJournal) applying() {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.started = true
+	j.Edit(func(r *removeRecord) { r.started = true })
 }
 
 // ran records the run the branch is about to be moved into.
@@ -490,43 +516,24 @@ func (j *RemoveJournal) ran(runID string) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.runID = runID
+	j.Edit(func(r *removeRecord) { r.runID = runID })
 }
 
 // finish writes the object for a removal that returned.
 func (j *RemoveJournal) finish(res RemoveResult, err error) {
-	j.write(&res, err, "")
+	if j == nil {
+		return
+	}
+	j.Edit(func(r *removeRecord) { r.res, r.err = &res, err })
+	j.Finish()
 }
 
 // Interrupted writes the object for a removal a signal ended, from what is
 // true of the worktree and the branch now.
-func (j *RemoveJournal) Interrupted(_ string, recovery string) {
-	j.write(nil, nil, recovery)
-}
-
-func (j *RemoveJournal) write(res *RemoveResult, err error, recovery string) {
-	if j == nil || j.out == nil {
-		return
+func (j *RemoveJournal) Interrupted(inFlight, recovery string) {
+	if j != nil {
+		j.Journal.Interrupted(inFlight, recovery)
 	}
-	j.mu.Lock()
-	ctx, started, token, runID := j.ctx, j.started, j.token, j.runID
-	var plan *Plan
-	if j.plan != nil {
-		p := *j.plan
-		plan = &p
-	}
-	j.mu.Unlock()
-	// The object is read outside once: a signal parks the git a returning
-	// run is reading with, and the handler must still be able to write.
-	if res != nil {
-		// What the removal returned is what is left: a run that pinned
-		// nothing was dropped.
-		runID = res.RunID
-	}
-	o := removeOutput(ctx, plan, token, runID, started, res, err, recovery)
-	j.once.Do(func() { _ = kit.WriteJSON(j.out, o) })
 }
 
 // removeOutput is the result object. res is what the removal returned, nil
