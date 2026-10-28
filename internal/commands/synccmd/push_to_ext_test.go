@@ -52,7 +52,7 @@ func TestABranchTrackingAnotherNameIsNotPushedWithNobodyToAsk(t *testing.T) {
 				t.Fatalf("something was recorded: %v %v", ok, err)
 			}
 			p := r.Worktrees[0]
-			if p.Result != synccmd.ResultRebased || p.PushCommand != nil || p.Pushed || p.NoPushReason == nil ||
+			if p.Result != syncrun.ResultRebased || p.PushCommand != nil || p.Pushed || p.NoPushReason == nil ||
 				*p.NoPushReason != "it tracks origin/theirs, a branch of another name, and nothing says whether it pushes there or to origin/feat_wt/bump" ||
 				strings.Join(p.FixCommand, " ") != "wt sync push-to feat_wt/bump origin/theirs" {
 				t.Fatalf("participant %+v", p.UpParticipant)
@@ -83,7 +83,7 @@ func TestAPersonSaysWhereABranchTrackingAnotherNamePushes(t *testing.T) {
 		opts.ChoosePush = func(c syncrun.PushChoice) (string, error) { asked = append(asked, c); return answer(c), nil }
 		opts.ConfirmPush = func(works []string) (bool, error) { confirmed = works; return true, nil }
 		var buf, js bytes.Buffer
-		opts.Journal = synccmd.NewSyncRunJournal(&js, "sync rebase")
+		opts.Journal = syncrun.NewSyncRunJournal(&js, "sync rebase")
 		if err := synccmd.SyncRebase(ctx, []string{"bump"}, opts, &buf); err != nil {
 			t.Fatalf("err %v\n%s", err, buf.String())
 		}

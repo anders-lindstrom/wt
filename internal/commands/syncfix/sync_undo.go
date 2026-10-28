@@ -20,14 +20,14 @@ type UndoOptions struct {
 	// safety ref at the tip it discards first.
 	Force bool
 	// Journal records what undo put back, for --json; nil records nothing.
-	Journal *synccmd.RunJournal
+	Journal *syncrun.RunJournal
 	syncrun.VerbOptions
 }
 
 // SyncUndo puts back every ref the newest run touching work's branch moved:
 // the run's whole set of safety refs, restored together.
 func SyncUndo(ctx *kit.Context, work string, opts UndoOptions, w io.Writer) error {
-	return synccmd.Journaled(opts.Journal, func() error { return syncUndo(ctx, work, opts, w) })
+	return syncrun.Journaled(opts.Journal, func() error { return syncUndo(ctx, work, opts, w) })
 }
 
 func syncUndo(ctx *kit.Context, work string, opts UndoOptions, w io.Writer) error {
@@ -105,7 +105,7 @@ func syncUndo(ctx *kit.Context, work string, opts UndoOptions, w io.Writer) erro
 				rebasing[b], _ = wtsync.RebaseInProgress(path)
 			}
 		}
-		j.OnSignal(func(p *synccmd.SyncParticipant) bool {
+		j.OnSignal(func(p *syncrun.SyncParticipant) bool {
 			tip, _, err := ctx.Repo.ResolveRef("refs/heads/" + p.Branch)
 			busy := false
 			if p.Path != "" {
@@ -141,24 +141,24 @@ func syncUndo(ctx *kit.Context, work string, opts UndoOptions, w io.Writer) erro
 
 // recordUndone records what undo did to one branch: put back, found there
 // already, or aborted and left where it was when the undo stopped.
-func recordUndone(j *synccmd.RunJournal, work string, r wtsync.Restored) {
+func recordUndone(j *syncrun.RunJournal, work string, r wtsync.Restored) {
 	if j == nil {
 		return
 	}
 	if !j.Has(r.Branch) {
 		j.Join(work, r.Branch, r.Path, r.From, nil)
 	}
-	j.SetSync(r.Branch, func(p *synccmd.SyncParticipant) {
+	j.SetSync(r.Branch, func(p *syncrun.SyncParticipant) {
 		p.Before, p.SafetyRef, p.After = kit.Strp(r.From), kit.Strp(r.Ref), kit.Strp(r.To)
 		switch {
 		case r.NotRewound:
-			p.Result, p.After = synccmd.ResultNeedsRecovery, kit.Strp(r.From)
+			p.Result, p.After = syncrun.ResultNeedsRecovery, kit.Strp(r.From)
 			p.Reason = kit.Strp("aborted the rebase, but not rewound to " + r.To)
 			p.Recovery = kit.Strp("the old tip is under " + r.Ref + "; wt sync undo --force " + work + " rewinds it there")
 		case r.From == r.To && !r.Aborted:
-			p.Result, p.Reason = synccmd.ResultSkipped, kit.Strp("already at its old tip")
+			p.Result, p.Reason = syncrun.ResultSkipped, kit.Strp("already at its old tip")
 		default:
-			p.Result = synccmd.ResultUndone
+			p.Result = syncrun.ResultUndone
 		}
 		if r.Kept != "" {
 			// A forced undo pinned what it discarded as a run of its own,

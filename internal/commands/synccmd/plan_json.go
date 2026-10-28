@@ -290,7 +290,7 @@ func UpPlanJSON(ctx *kit.Context, arg string, w io.Writer) error {
 	// A plan held back by divergence alone has a token too: wt up
 	// --allow-diverged --expect goes ahead over exactly what it covers.
 	if p.UpEligible || *p.UpIneligibleCode == IneligibleOwnDiverged {
-		p.Token = kit.Strp(planToken(ctx, trunk, stack, diverged))
+		p.Token = kit.Strp(syncrun.PlanToken(ctx, trunk, stack, diverged))
 	}
 
 	listed, err := listAgents()

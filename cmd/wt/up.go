@@ -82,7 +82,7 @@ func newUpCmd() *cobra.Command {
 			}
 			// stdout carries the one result object and nothing else: the
 			// progress, and any question, go to stderr.
-			journal := synccmd.NewRunJournal(cmd.OutOrStdout())
+			journal := syncrun.NewRunJournal(cmd.OutOrStdout())
 			cmd.SetOut(cmd.ErrOrStderr())
 			cwd, err := os.Getwd()
 			if err != nil {

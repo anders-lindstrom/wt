@@ -9,6 +9,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
@@ -44,7 +45,7 @@ func TestAPushUnderAnotherNameOverACommitTheBranchNeverHadIsNotMade(t *testing.T
 	opts := synccmdtest.PushAlways()
 	opts.AllowDiverged = true
 	var out, human bytes.Buffer
-	opts.Journal = synccmd.NewSyncRunJournal(&out, "sync rebase")
+	opts.Journal = syncrun.NewSyncRunJournal(&out, "sync rebase")
 	err := synccmd.SyncRebase(ctx, []string{"bump"}, opts, &human)
 	if err == nil || !strings.Contains(err.Error(), "bump (not pushed: nowhere to push)") {
 		t.Fatalf("err %v\n%s", err, human.String())
@@ -56,7 +57,7 @@ func TestAPushUnderAnotherNameOverACommitTheBranchNeverHadIsNotMade(t *testing.T
 		t.Fatal("origin lost their commit")
 	}
 	p := synccmdtest.DecodeSyncRun(t, out.Bytes()).Worktrees[0]
-	if p.Result != synccmd.ResultRebased || p.PushCommand != nil || p.FixCommand != nil || p.NoPushReason == nil ||
+	if p.Result != syncrun.ResultRebased || p.PushCommand != nil || p.FixCommand != nil || p.NoPushReason == nil ||
 		*p.NoPushReason != "origin/old-name has commits this branch never had" {
 		t.Fatalf("participant %+v", p.UpParticipant)
 	}

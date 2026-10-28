@@ -1,4 +1,4 @@
-package synccmd
+package syncrun
 
 import (
 	"crypto/sha256"
@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 	"github.com/anders-lindstrom/wt/schema"
@@ -82,7 +81,7 @@ type UpParticipant struct {
 	NoPushReason *string  `json:"noPushReason"`
 	FixCommand   []string `json:"fixCommand"`
 	// OwnRemoteSync is nil from wt sync resume and undo, which do not check.
-	OwnRemoteSync *syncrun.OwnRemoteSync `json:"ownRemoteSync"`
+	OwnRemoteSync *OwnRemoteSync `json:"ownRemoteSync"`
 }
 
 // DeferredStep is one deferred step of a finished rebase.
@@ -103,9 +102,9 @@ type SyncParticipant struct {
 	PlanFile    *string        `json:"planFile"`
 }
 
-// SyncRunResult is the one object wt sync rebase, resume and undo print with
+// RunResult is the one object wt sync rebase, resume and undo print with
 // --json.
-type SyncRunResult struct {
+type RunResult struct {
 	Schema        int                `json:"schema"`
 	SchemaVersion string             `json:"schemaVersion"`
 	Command       string             `json:"command"`
@@ -114,7 +113,7 @@ type SyncRunResult struct {
 	TrunkRef      *string            `json:"trunkRef"`
 	Onto          *string            `json:"onto"`
 	Fetched       bool               `json:"fetched"`
-	TrunkSync     *syncrun.TrunkSync `json:"trunkSync"`
+	TrunkSync     *TrunkSync         `json:"trunkSync"`
 	Outcome       string             `json:"outcome"`
 	Error         *string            `json:"error"`
 	Worktrees     []*SyncParticipant `json:"worktrees"`
@@ -125,19 +124,19 @@ type SyncRunResult struct {
 
 // UpResult is the one object wt up --json prints.
 type UpResult struct {
-	Schema        int                `json:"schema"`
-	SchemaVersion string             `json:"schemaVersion"`
-	Command       string             `json:"command"`
-	Trunk         *string            `json:"trunk"`
-	TrunkSource   *string            `json:"trunkSource"`
-	TrunkRef      *string            `json:"trunkRef"`
-	Onto          *string            `json:"onto"`
-	Fetched       bool               `json:"fetched"`
-	TrunkSync     *syncrun.TrunkSync `json:"trunkSync"`
-	Outcome       string             `json:"outcome"`
-	Error         *string            `json:"error"`
-	Worktrees     []*UpParticipant   `json:"worktrees"`
-	Recovery      *string            `json:"recovery"`
+	Schema        int              `json:"schema"`
+	SchemaVersion string           `json:"schemaVersion"`
+	Command       string           `json:"command"`
+	Trunk         *string          `json:"trunk"`
+	TrunkSource   *string          `json:"trunkSource"`
+	TrunkRef      *string          `json:"trunkRef"`
+	Onto          *string          `json:"onto"`
+	Fetched       bool             `json:"fetched"`
+	TrunkSync     *TrunkSync       `json:"trunkSync"`
+	Outcome       string           `json:"outcome"`
+	Error         *string          `json:"error"`
+	Worktrees     []*UpParticipant `json:"worktrees"`
+	Recovery      *string          `json:"recovery"`
 }
 
 // RunJournal collects what a run did, participant by participant, as it
@@ -151,7 +150,7 @@ type RunJournal struct {
 	// up writes wt up's object; otherwise the journal writes wt sync's,
 	// which reports more of each participant.
 	up   bool
-	res  SyncRunResult
+	res  RunResult
 	byBr map[string]*SyncParticipant
 	// changed tells a signal which participants still recorded as not run
 	// it caught changed, for a verb that moves several with nothing in
@@ -173,7 +172,7 @@ func NewSyncRunJournal(out io.Writer, command string) *RunJournal {
 }
 
 func newJournal(out io.Writer, schemaName, command string) *RunJournal {
-	return &RunJournal{out: out, res: SyncRunResult{Schema: 1, SchemaVersion: schema.VersionOf(schemaName), Command: command,
+	return &RunJournal{out: out, res: RunResult{Schema: 1, SchemaVersion: schema.VersionOf(schemaName), Command: command,
 		Worktrees: []*SyncParticipant{}},
 		byBr: map[string]*SyncParticipant{}}
 }
@@ -200,8 +199,8 @@ func (j *RunJournal) Trunk(name string, source *string, ref, onto string, fetche
 	j.res.Onto, j.res.Fetched = kit.Strp(onto), fetched
 }
 
-// trunkSync records what the run did to local trunk after its fetch.
-func (j *RunJournal) trunkSync(ts *syncrun.TrunkSync) {
+// TrunkSync records what the run did to local trunk after its fetch.
+func (j *RunJournal) TrunkSync(ts *TrunkSync) {
 	if j == nil {
 		return
 	}
@@ -213,7 +212,7 @@ func (j *RunJournal) trunkSync(ts *syncrun.TrunkSync) {
 // Join records the participants, parents first, before any is touched: each
 // starts as not run, which is what a run that stops before reaching it
 // leaves it as.
-func (j *RunJournal) Join(work, branch, path, before string, own *syncrun.OwnRemoteSync) {
+func (j *RunJournal) Join(work, branch, path, before string, own *OwnRemoteSync) {
 	if j == nil {
 		return
 	}
@@ -407,7 +406,7 @@ func OutcomeOf(ps []*SyncParticipant, failedEarly bool) string {
 	return kit.OutcomePartial
 }
 
-// planToken names the inputs a plan was computed from: the trunk wt up
+// PlanToken names the inputs a plan was computed from: the trunk wt up
 // resolves, the configuration file it reads, and the stack's branches in
 // order. A newer trunk commit is not in it; a different trunk name,
 // configuration or stack is. Nor is the commit of a branch's own remote,
@@ -415,7 +414,7 @@ func OutcomeOf(ps []*SyncParticipant, failedEarly bool) string {
 // branch to that commit, so that a caller who allows the divergence it was
 // shown is refused over one that moved since. With nothing diverged the
 // token is what it was before wt looked at the remotes.
-func planToken(ctx *kit.Context, trunk string, stack []string, diverged map[string]string) string {
+func PlanToken(ctx *kit.Context, trunk string, stack []string, diverged map[string]string) string {
 	h := sha256.New()
 	h.Write([]byte("wt-plan-1\x00" + trunk + "\x00"))
 	h.Write(kit.ConfigFingerprint(ctx))

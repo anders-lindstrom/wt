@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
-	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
@@ -32,7 +31,7 @@ func TestUpFastForwardsABranchBehindItsRemoteThenRebases(t *testing.T) {
 	}
 	w := r.Worktrees[0]
 	o := w.OwnRemoteSync
-	if w.Result != synccmd.ResultRebased || testkit.Str(w.Before) != before || o == nil {
+	if w.Result != syncrun.ResultRebased || testkit.Str(w.Before) != before || o == nil {
 		t.Fatalf("participant %+v", w)
 	}
 	if o.State != "behind" || testkit.Str(o.Ref) != "origin/feat_wt/x" || testkit.Str(o.Local) != before || testkit.Str(o.Remote) != theirs ||
@@ -80,7 +79,7 @@ func TestABranchBehindItsRemoteIsJudgedAtTheRemotesCommit(t *testing.T) {
 	f.Theirs(t, "main", "c.txt", "trunk\n")
 
 	r, human, err := synccmdtest.UpOut(t, f.Ctx, "x", opts)
-	if err == nil || r.Worktrees[0].Result != synccmd.ResultRefused || !strings.Contains(testkit.Str(r.Worktrees[0].Reason), "would not sync cleanly") {
+	if err == nil || r.Worktrees[0].Result != syncrun.ResultRefused || !strings.Contains(testkit.Str(r.Worktrees[0].Reason), "would not sync cleanly") {
 		t.Fatalf("wt up: %v %+v\n%s", err, r.Worktrees, human)
 	}
 	if o := r.Worktrees[0].OwnRemoteSync; o.State != "behind" || o.FastForwarded || o.SkippedReason != nil {
@@ -92,7 +91,7 @@ func TestABranchBehindItsRemoteIsJudgedAtTheRemotesCommit(t *testing.T) {
 
 	run, err := synccmdtest.SyncRunJSON(t, f.Ctx, []string{"x"}, synccmdtest.At(opts, 100))
 	w := run.Worktrees[0]
-	if err == nil || w.Result != synccmd.ResultHandedOver || !w.OwnRemoteSync.FastForwarded || testkit.Str(w.OwnRemoteSync.Local) != before {
+	if err == nil || w.Result != syncrun.ResultHandedOver || !w.OwnRemoteSync.FastForwarded || testkit.Str(w.OwnRemoteSync.Local) != before {
 		t.Fatalf("wt sync rebase: %v %+v %+v", err, w, w.OwnRemoteSync)
 	}
 	// The fast-forward stands under the rebase in progress.
@@ -104,14 +103,14 @@ func TestABranchBehindItsRemoteIsJudgedAtTheRemotesCommit(t *testing.T) {
 	testkit.WriteIn(t, x, "c.txt", "both\n")
 	testkit.GitIn(t, x, "add", "c.txt")
 	resumed, err := syncResumeJSON(t, f.Ctx, "x", ResumeOptions{PushOptions: syncrun.PushOptions{Push: syncrun.PushNever}, VerbOptions: opts.VerbOptions})
-	if err != nil || resumed.Worktrees[0].Result != synccmd.ResultRebased || resumed.Worktrees[0].OwnRemoteSync != nil {
+	if err != nil || resumed.Worktrees[0].Result != syncrun.ResultRebased || resumed.Worktrees[0].OwnRemoteSync != nil {
 		t.Fatalf("resume: %v %+v", err, resumed.Worktrees[0])
 	}
 	if testkit.GitOut(t, x, "show", "HEAD:c.txt") != "both" || !testkit.GitAncestor(t, f.Main, "origin/main", "feat_wt/x") {
 		t.Fatal("the resumed rebase did not finish on trunk with the resolution")
 	}
 	undo, err := syncUndoJSON(t, f.Ctx, "x", UndoOptions{VerbOptions: opts.VerbOptions})
-	if err != nil || undo.Worktrees[0].Result != synccmd.ResultUndone || testkit.Str(undo.Worktrees[0].After) != before || undo.Worktrees[0].OwnRemoteSync != nil {
+	if err != nil || undo.Worktrees[0].Result != syncrun.ResultUndone || testkit.Str(undo.Worktrees[0].After) != before || undo.Worktrees[0].OwnRemoteSync != nil {
 		t.Fatalf("undo: %v %+v", err, undo.Worktrees[0])
 	}
 	if got := testkit.GitOut(t, x, "rev-parse", "HEAD"); got != before {
@@ -149,13 +148,13 @@ func TestSyncRunRestoresAStackParentToBeforeItsFastForward(t *testing.T) {
 		t.Fatalf("%v %+v", err, run.Worktrees)
 	}
 	px := run.Worktrees[0]
-	if px.Result != synccmd.ResultRestored || !px.OwnRemoteSync.FastForwarded || testkit.Str(px.After) != before || testkit.Str(px.OwnRemoteSync.Local) != before {
+	if px.Result != syncrun.ResultRestored || !px.OwnRemoteSync.FastForwarded || testkit.Str(px.After) != before || testkit.Str(px.OwnRemoteSync.Local) != before {
 		t.Fatalf("parent %+v %+v", px, px.OwnRemoteSync)
 	}
 	if got := testkit.GitOut(t, x, "rev-parse", "HEAD"); got != before {
 		t.Fatalf("restored to %s, want %s", got, before)
 	}
-	if run.Worktrees[1].Result != synccmd.ResultNotRun {
+	if run.Worktrees[1].Result != syncrun.ResultNotRun {
 		t.Fatalf("child %+v", run.Worktrees[1])
 	}
 	if refs := testkit.GitOut(t, f.Main, "for-each-ref", "--format=%(refname)", "refs/wt-sync-result/"); refs != "" {

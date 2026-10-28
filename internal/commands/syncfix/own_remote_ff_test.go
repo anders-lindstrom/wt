@@ -9,6 +9,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
@@ -47,7 +48,7 @@ func TestSyncRunFastForwardsABranchWithNothingToRebase(t *testing.T) {
 	}
 	w := r.Worktrees[0]
 	o := w.OwnRemoteSync
-	if w.Result != synccmd.ResultFastForwarded || testkit.Str(w.Before) != local || testkit.Str(w.After) != remote || w.Reason != nil ||
+	if w.Result != syncrun.ResultFastForwarded || testkit.Str(w.Before) != local || testkit.Str(w.After) != remote || w.Reason != nil ||
 		len(w.PushCommand) != 0 || w.Pushed || len(w.Deferred) != 0 ||
 		testkit.Str(w.SafetyRef) != "refs/wt-sync/feat_wt/x/99" || strings.Join(w.UndoCommand, " ") != "wt sync undo x" {
 		t.Fatalf("participant %+v", w)
@@ -67,7 +68,7 @@ func TestSyncRunFastForwardsABranchWithNothingToRebase(t *testing.T) {
 	}
 
 	undo, err := syncUndoJSON(t, f.Ctx, "x", UndoOptions{VerbOptions: opts.VerbOptions})
-	if err != nil || undo.Worktrees[0].Result != synccmd.ResultUndone || testkit.Str(undo.Worktrees[0].After) != local {
+	if err != nil || undo.Worktrees[0].Result != syncrun.ResultUndone || testkit.Str(undo.Worktrees[0].After) != local {
 		t.Fatalf("undo: %v %+v", err, undo.Worktrees)
 	}
 	if got := testkit.GitOut(t, x, "rev-parse", "HEAD"); got != local {
@@ -98,10 +99,10 @@ func TestUpFastForwardsAStackParentWithNothingToRebaseAndRebasesItsChild(t *test
 	if err != nil || len(r.Worktrees) != 2 || r.Outcome != kit.OutcomeDone {
 		t.Fatalf("%v %+v\n%s", err, r.Worktrees, human)
 	}
-	if px := r.Worktrees[0]; px.Branch != "feat_wt/x" || px.Result != synccmd.ResultFastForwarded || testkit.Str(px.Before) != local || testkit.Str(px.After) != remote {
+	if px := r.Worktrees[0]; px.Branch != "feat_wt/x" || px.Result != syncrun.ResultFastForwarded || testkit.Str(px.Before) != local || testkit.Str(px.After) != remote {
 		t.Fatalf("parent %+v", px)
 	}
-	if py := r.Worktrees[1]; py.Result != synccmd.ResultRebased || py.OwnRemoteSync.FastForwarded {
+	if py := r.Worktrees[1]; py.Result != syncrun.ResultRebased || py.OwnRemoteSync.FastForwarded {
 		t.Fatalf("child %+v %+v", py, py.OwnRemoteSync)
 	}
 	if testkit.GitOut(t, x, "rev-parse", "HEAD") != remote || testkit.GitOut(t, y, "rev-parse", "HEAD~1") != remote {

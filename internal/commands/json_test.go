@@ -132,7 +132,7 @@ func TestUpJSONReportsARebasedStack(t *testing.T) {
 		t.Fatalf("%v %+v", err, r)
 	}
 	for _, p := range r.Worktrees {
-		if p.Result != synccmd.ResultRebased || p.Before == nil || p.After == nil || *p.Before == *p.After {
+		if p.Result != syncrun.ResultRebased || p.Before == nil || p.After == nil || *p.Before == *p.After {
 			t.Errorf("participant %+v", p)
 		}
 		if len(p.PushCommand) < 4 || p.PushCommand[0] != "git" || p.PushCommand[1] != "-C" || p.PushCommand[2] != p.Path {
@@ -153,7 +153,7 @@ func TestUpJSONReportsARefusedParentAndTheChildNotRun(t *testing.T) {
 	if err == nil || r.Outcome != kit.OutcomeRefused || r.Error != nil || len(r.Worktrees) != 2 {
 		t.Fatalf("%v %+v", err, r)
 	}
-	if r.Worktrees[0].Result != synccmd.ResultRefused || r.Worktrees[1].Result != synccmd.ResultNotRun || r.Worktrees[1].Reason == nil {
+	if r.Worktrees[0].Result != syncrun.ResultRefused || r.Worktrees[1].Result != syncrun.ResultNotRun || r.Worktrees[1].Reason == nil {
 		t.Errorf("results %+v %+v", r.Worktrees[0], r.Worktrees[1])
 	}
 }
@@ -175,7 +175,7 @@ func TestUpJSONReportsAFailedDeferredStep(t *testing.T) {
 	if r.Outcome != kit.OutcomePartial || len(r.Worktrees) != 1 {
 		t.Fatalf("%+v", r)
 	}
-	if p := r.Worktrees[0]; p.Result != synccmd.ResultRebasedStepFailed || len(p.FailedSteps) == 0 || *p.Before == *p.After {
+	if p := r.Worktrees[0]; p.Result != syncrun.ResultRebasedStepFailed || len(p.FailedSteps) == 0 || *p.Before == *p.After {
 		t.Errorf("participant %+v", p)
 	}
 }
@@ -195,23 +195,23 @@ func TestUpJSONReportsAnErrorBeforeAnyParticipant(t *testing.T) {
 func TestJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 	t.Parallel()
 	var out bytes.Buffer
-	j := synccmd.NewRunJournal(&out)
+	j := syncrun.NewRunJournal(&out)
 	j.Trunk("main", kit.Strp("conventional"), "origin/main", strings.Repeat("a", 40), true)
 	j.Join("one", "feat_wt/one", "/w/one", strings.Repeat("1", 40), &syncrun.OwnRemoteSync{State: "none"})
 	j.Join("two", "feat_wt/two", "/w/two", strings.Repeat("2", 40), &syncrun.OwnRemoteSync{State: "none"})
-	j.Set("feat_wt/one", func(p *synccmd.UpParticipant) { p.Result = synccmd.ResultRebased })
+	j.Set("feat_wt/one", func(p *syncrun.UpParticipant) { p.Result = syncrun.ResultRebased })
 	j.Interrupted("two", "interrupted while rebasing two: git rebase --abort")
 	j.Finish()
 	testkit.ValidateJSON(t, "up", out.Bytes())
 	dec := json.NewDecoder(&out)
-	var r synccmd.UpResult
+	var r syncrun.UpResult
 	if err := dec.Decode(&r); err != nil {
 		t.Fatal(err)
 	}
 	if dec.More() {
 		t.Error("a second object was written")
 	}
-	if r.Outcome != kit.OutcomeInterrupted || r.Worktrees[1].Result != synccmd.ResultInterrupted || r.Recovery == nil {
+	if r.Outcome != kit.OutcomeInterrupted || r.Worktrees[1].Result != syncrun.ResultInterrupted || r.Recovery == nil {
 		t.Errorf("%+v", r)
 	}
 	if r.TrunkSource == nil || *r.TrunkSource != "conventional" {
@@ -222,31 +222,31 @@ func TestJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 // The outcome rules, as docs/json.md states them.
 func TestOutcomeRules(t *testing.T) {
 	t.Parallel()
-	ps := func(results ...string) []*synccmd.SyncParticipant {
-		var out []*synccmd.SyncParticipant
+	ps := func(results ...string) []*syncrun.SyncParticipant {
+		var out []*syncrun.SyncParticipant
 		for _, r := range results {
-			out = append(out, &synccmd.SyncParticipant{UpParticipant: synccmd.UpParticipant{Result: r}})
+			out = append(out, &syncrun.SyncParticipant{UpParticipant: syncrun.UpParticipant{Result: r}})
 		}
 		return out
 	}
 	for _, tc := range []struct {
-		ps    []*synccmd.SyncParticipant
+		ps    []*syncrun.SyncParticipant
 		early bool
 		want  string
 	}{
-		{ps(synccmd.ResultRebased, synccmd.ResultSkipped), false, kit.OutcomeDone},
-		{ps(synccmd.ResultSkipped), false, kit.OutcomeDone},
-		{ps(synccmd.ResultRefused, synccmd.ResultNotRun), false, kit.OutcomeRefused},
-		{ps(synccmd.ResultRestored), false, kit.OutcomeRefused},
+		{ps(syncrun.ResultRebased, syncrun.ResultSkipped), false, kit.OutcomeDone},
+		{ps(syncrun.ResultSkipped), false, kit.OutcomeDone},
+		{ps(syncrun.ResultRefused, syncrun.ResultNotRun), false, kit.OutcomeRefused},
+		{ps(syncrun.ResultRestored), false, kit.OutcomeRefused},
 		{nil, true, kit.OutcomeRefused},
-		{ps(synccmd.ResultRebased, synccmd.ResultRefused), false, kit.OutcomePartial},
-		{ps(synccmd.ResultRebasedStepFailed), false, kit.OutcomePartial},
-		{ps(synccmd.ResultNeedsRecovery), false, kit.OutcomePartial},
-		{ps(synccmd.ResultHandedOver, synccmd.ResultNotRun), false, kit.OutcomePartial},
-		{ps(synccmd.ResultUndone, synccmd.ResultSkipped), false, kit.OutcomeDone},
-		{ps(synccmd.ResultUndone), true, kit.OutcomePartial},
+		{ps(syncrun.ResultRebased, syncrun.ResultRefused), false, kit.OutcomePartial},
+		{ps(syncrun.ResultRebasedStepFailed), false, kit.OutcomePartial},
+		{ps(syncrun.ResultNeedsRecovery), false, kit.OutcomePartial},
+		{ps(syncrun.ResultHandedOver, syncrun.ResultNotRun), false, kit.OutcomePartial},
+		{ps(syncrun.ResultUndone, syncrun.ResultSkipped), false, kit.OutcomeDone},
+		{ps(syncrun.ResultUndone), true, kit.OutcomePartial},
 	} {
-		if got := synccmd.OutcomeOf(tc.ps, tc.early); got != tc.want {
+		if got := syncrun.OutcomeOf(tc.ps, tc.early); got != tc.want {
 			t.Errorf("%v early=%v: got %s, want %s", tc.ps, tc.early, got, tc.want)
 		}
 	}

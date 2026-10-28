@@ -177,15 +177,15 @@ func newSyncCmd() *cobra.Command {
 		}
 		switch verb {
 		case "rebase":
-			return withVerbContext(cmd, args, rebaseCommand, f.json, func(ctx *kit.Context, j *synccmd.RunJournal) error {
+			return withVerbContext(cmd, args, rebaseCommand, f.json, func(ctx *kit.Context, j *syncrun.RunJournal) error {
 				return syncRebase(cmd, args, ctx, f, j)
 			})
 		case "resume":
-			return withVerbContext(cmd, args, "sync resume", f.json, func(ctx *kit.Context, j *synccmd.RunJournal) error {
+			return withVerbContext(cmd, args, "sync resume", f.json, func(ctx *kit.Context, j *syncrun.RunJournal) error {
 				return syncResume(cmd, args[0], ctx, f.yes, f.push, j)
 			})
 		case "undo":
-			return withVerbContext(cmd, args, "sync undo", f.json, func(ctx *kit.Context, j *synccmd.RunJournal) error {
+			return withVerbContext(cmd, args, "sync undo", f.json, func(ctx *kit.Context, j *syncrun.RunJournal) error {
 				return syncUndo(cmd, args[0], ctx, f.force, f.yes, j)
 			})
 		}
@@ -686,7 +686,7 @@ func newSyncRebaseCmd() *cobra.Command {
 			if sel.selection().Any() {
 				return syncAcross(cmd, args, "rebase", sel.selection(), f)
 			}
-			return withVerbContext(cmd, args, rebaseCommand, asJSON, func(ctx *kit.Context, j *synccmd.RunJournal) error {
+			return withVerbContext(cmd, args, rebaseCommand, asJSON, func(ctx *kit.Context, j *syncrun.RunJournal) error {
 				return syncRebase(cmd, args, ctx, f, j)
 			})
 		},
@@ -707,7 +707,7 @@ func newSyncRebaseCmd() *cobra.Command {
 
 // syncRebase is wt sync rebase, whichever way it was spelled. j, when not nil,
 // gets its result for --json.
-func syncRebase(cmd *cobra.Command, works []string, ctx *kit.Context, f syncVerbFlags, j *synccmd.RunJournal) error {
+func syncRebase(cmd *cobra.Command, works []string, ctx *kit.Context, f syncVerbFlags, j *syncrun.RunJournal) error {
 	opts, _ := runOptions(cmd, f, len(works) == 0)
 	opts.Journal, opts.Expect = j, f.expect
 	return synccmd.SyncRebase(ctx, works, opts, cmd.OutOrStdout())
@@ -721,13 +721,13 @@ const rebaseCommand = "sync rebase"
 // and everything it prints, questions included, goes to stderr; command
 // names the verb in that object.
 func withVerbContext(cmd *cobra.Command, args []string, command string, asJSON bool,
-	fn func(ctx *kit.Context, j *synccmd.RunJournal) error) error {
+	fn func(ctx *kit.Context, j *syncrun.RunJournal) error) error {
 	if !asJSON {
 		return withContext(func(_ *cobra.Command, _ []string, ctx *kit.Context) error {
 			return fn(ctx, nil)
 		})(cmd, args)
 	}
-	journal := synccmd.NewSyncRunJournal(cmd.OutOrStdout(), command)
+	journal := syncrun.NewSyncRunJournal(cmd.OutOrStdout(), command)
 	cmd.SetOut(cmd.ErrOrStderr())
 	ctx, err := openContext()
 	if err != nil {
@@ -850,7 +850,7 @@ func newSyncResumeCmd() *cobra.Command {
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withVerbContext(cmd, args, "sync resume", asJSON, func(ctx *kit.Context, j *synccmd.RunJournal) error {
+			return withVerbContext(cmd, args, "sync resume", asJSON, func(ctx *kit.Context, j *syncrun.RunJournal) error {
 				return syncResume(cmd, args[0], ctx, yes, push(), j)
 			})
 		},
@@ -863,7 +863,7 @@ func newSyncResumeCmd() *cobra.Command {
 }
 
 // syncResume is wt sync resume, whichever way it was spelled.
-func syncResume(cmd *cobra.Command, work string, ctx *kit.Context, yes bool, push syncrun.PushMode, j *synccmd.RunJournal) error {
+func syncResume(cmd *cobra.Command, work string, ctx *kit.Context, yes bool, push syncrun.PushMode, j *syncrun.RunJournal) error {
 	opts := syncfix.ResumeOptions{Journal: j}
 	opts.Push = push
 	// --yes answers yes to every question, the push included, unless
@@ -914,7 +914,7 @@ func newSyncUndoCmd() *cobra.Command {
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withVerbContext(cmd, args, "sync undo", asJSON, func(ctx *kit.Context, j *synccmd.RunJournal) error {
+			return withVerbContext(cmd, args, "sync undo", asJSON, func(ctx *kit.Context, j *syncrun.RunJournal) error {
 				return syncUndo(cmd, args[0], ctx, force, yes, j)
 			})
 		},
@@ -926,7 +926,7 @@ func newSyncUndoCmd() *cobra.Command {
 }
 
 // syncUndo is wt sync undo, whichever way it was spelled.
-func syncUndo(cmd *cobra.Command, work string, ctx *kit.Context, force, yes bool, j *synccmd.RunJournal) error {
+func syncUndo(cmd *cobra.Command, work string, ctx *kit.Context, force, yes bool, j *syncrun.RunJournal) error {
 	opts := syncfix.UndoOptions{Force: force, Journal: j}
 	if canAsk(cmd) && !yes {
 		opts.Confirm = confirmAsk(newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()), "undo")

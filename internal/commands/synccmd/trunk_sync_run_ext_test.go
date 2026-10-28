@@ -33,7 +33,7 @@ func TestUpFastForwardsLocalTrunkAfterItsFetch(t *testing.T) {
 	if ts == nil || !ts.FastForwarded || ts.SkippedReason != nil || *ts.Local != remote || *ts.RemoteAhead != 2 {
 		t.Fatalf("trunkSync = %+v", ts)
 	}
-	if len(r.Worktrees) != 1 || r.Worktrees[0].Result != synccmd.ResultRebased {
+	if len(r.Worktrees) != 1 || r.Worktrees[0].Result != syncrun.ResultRebased {
 		t.Fatalf("worktrees = %+v, want x rebased", r.Worktrees)
 	}
 }
@@ -128,7 +128,7 @@ func TestSyncRunReportsASkippedTrunkAndStillRebases(t *testing.T) {
 	if r.TrunkSync == nil || r.TrunkSync.SkippedReason == nil || *r.TrunkSync.SkippedReason != syncrun.TrunkSkipDiverged {
 		t.Fatalf("trunkSync = %+v, want diverged", r.TrunkSync)
 	}
-	if len(r.Worktrees) != 1 || r.Worktrees[0].Result != synccmd.ResultRebased {
+	if len(r.Worktrees) != 1 || r.Worktrees[0].Result != syncrun.ResultRebased {
 		t.Fatalf("worktrees = %+v, want x rebased", *r.Worktrees[0])
 	}
 	if now := testkit.GitOut(t, f.Main, "rev-parse", "feat_wt/x"); now == x {

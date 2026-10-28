@@ -40,7 +40,7 @@ func TestAFastForwardAloneThatWasUndoneLeavesNoFormerTip(t *testing.T) {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
 	f, x, opts, local, remote := synccmdtest.NothingToRebase(t)
-	if r, err := synccmdtest.SyncRunJSON(t, f.Ctx, []string{"x"}, opts); err != nil || r.Worktrees[0].Result != synccmd.ResultFastForwarded {
+	if r, err := synccmdtest.SyncRunJSON(t, f.Ctx, []string{"x"}, opts); err != nil || r.Worktrees[0].Result != syncrun.ResultFastForwarded {
 		t.Fatalf("%v %+v", err, r.Worktrees)
 	}
 	var out bytes.Buffer
@@ -59,7 +59,7 @@ func TestAFastForwardAloneIsFinishedAndItsUndoIsBehindAgain(t *testing.T) {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
 	f, x, opts, local, remote := synccmdtest.NothingToRebase(t)
-	if r, err := synccmdtest.SyncRunJSON(t, f.Ctx, []string{"x"}, opts); err != nil || r.Worktrees[0].Result != synccmd.ResultFastForwarded {
+	if r, err := synccmdtest.SyncRunJSON(t, f.Ctx, []string{"x"}, opts); err != nil || r.Worktrees[0].Result != syncrun.ResultFastForwarded {
 		t.Fatalf("%v %+v", err, r.Worktrees)
 	}
 	if refs := testkit.GitOut(t, f.Main, "for-each-ref", "--format=%(refname) %(objectname)", "refs/wt-sync-result/", "refs/wt-sync-ff/"); strings.Count(refs, remote) != 2 {
@@ -99,7 +99,7 @@ func TestAHandoverAfterAFastForwardKeepsOrDropsTheFormerTip(t *testing.T) {
 		theirs = f.Theirs(t, "feat_wt/x", "c.txt", "theirs\n")
 		f.Theirs(t, "main", "c.txt", "trunk\n")
 		run, err := synccmdtest.SyncRunJSON(t, f.Ctx, []string{"x"}, opts)
-		if err == nil || run.Worktrees[0].Result != synccmd.ResultHandedOver || !run.Worktrees[0].OwnRemoteSync.FastForwarded {
+		if err == nil || run.Worktrees[0].Result != syncrun.ResultHandedOver || !run.Worktrees[0].OwnRemoteSync.FastForwarded {
 			t.Fatalf("%v %+v", err, run.Worktrees[0])
 		}
 		return f, x, opts, theirs
@@ -108,14 +108,14 @@ func TestAHandoverAfterAFastForwardKeepsOrDropsTheFormerTip(t *testing.T) {
 		f, x, opts, _ := handedOver(t)
 		testkit.WriteIn(t, x, "c.txt", "both\n")
 		testkit.GitIn(t, x, "add", "c.txt")
-		if r, err := syncResumeJSON(t, f.Ctx, "x", ResumeOptions{PushOptions: syncrun.PushOptions{Push: syncrun.PushNever}, VerbOptions: opts.VerbOptions}); err != nil || r.Worktrees[0].Result != synccmd.ResultRebased {
+		if r, err := syncResumeJSON(t, f.Ctx, "x", ResumeOptions{PushOptions: syncrun.PushOptions{Push: syncrun.PushNever}, VerbOptions: opts.VerbOptions}); err != nil || r.Worktrees[0].Result != syncrun.ResultRebased {
 			t.Fatalf("resume: %v %+v", err, r.Worktrees)
 		}
 		if o := synccmdtest.PlanOfWork(t, f.Ctx, "x").Worktree.OwnRemote; o.State != "rebased" {
 			t.Fatalf("after the resume: %+v", o)
 		}
 		f.AdvanceOrigin(t, 1)
-		if r, human, err := synccmdtest.UpOut(t, f.Ctx, "x", synccmdtest.At(opts, 500)); err != nil || r.Worktrees[0].Result != synccmd.ResultRebased || r.Worktrees[0].OwnRemoteSync.State != "rebased" {
+		if r, human, err := synccmdtest.UpOut(t, f.Ctx, "x", synccmdtest.At(opts, 500)); err != nil || r.Worktrees[0].Result != syncrun.ResultRebased || r.Worktrees[0].OwnRemoteSync.State != "rebased" {
 			t.Fatalf("a second run: %v %+v\n%s", err, r.Worktrees, human)
 		}
 	})
@@ -147,7 +147,7 @@ func TestSyncUndoForcedPinsACommitInsideAHandoverThatFollowedAFastForward(t *tes
 	before := testkit.GitOut(t, x, "rev-parse", "HEAD")
 	f.Theirs(t, "feat_wt/x", "c.txt", "theirs\n")
 	f.Theirs(t, "main", "c.txt", "trunk\n")
-	if run, err := synccmdtest.SyncRunJSON(t, f.Ctx, []string{"x"}, opts); err == nil || run.Worktrees[0].Result != synccmd.ResultHandedOver || !run.Worktrees[0].OwnRemoteSync.FastForwarded {
+	if run, err := synccmdtest.SyncRunJSON(t, f.Ctx, []string{"x"}, opts); err == nil || run.Worktrees[0].Result != syncrun.ResultHandedOver || !run.Worktrees[0].OwnRemoteSync.FastForwarded {
 		t.Fatalf("%v %+v", err, run.Worktrees[0])
 	}
 	testkit.WriteIn(t, x, "c.txt", "merged by hand\n")

@@ -156,7 +156,7 @@ var (
 	interruptJournal Interruptible
 )
 
-// Interruptible is a journal a signal can finish, such as synccmd.RunJournal or retire.SweepJournal.
+// Interruptible is a journal a signal can finish, such as syncrun.RunJournal or retire.SweepJournal.
 type Interruptible interface {
 	Interrupted(inFlight, recovery string)
 }

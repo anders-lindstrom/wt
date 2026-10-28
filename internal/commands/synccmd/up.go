@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
@@ -15,7 +16,7 @@ import (
 // declares no .wt-sync.yaml: there nothing is declared, so only a
 // conflict-free rebase goes.
 func Up(ctx *kit.Context, arg string, opts RunOptions, w io.Writer) error {
-	return Journaled(opts.Journal, func() error { return up(ctx, arg, opts, w) })
+	return syncrun.Journaled(opts.Journal, func() error { return up(ctx, arg, opts, w) })
 }
 
 func up(ctx *kit.Context, arg string, opts RunOptions, w io.Writer) error {

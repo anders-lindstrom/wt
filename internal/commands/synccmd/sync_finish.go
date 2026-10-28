@@ -216,17 +216,17 @@ func OwedSteps(ran []wtsync.DeferredResult) []string {
 }
 
 // DeferredSteps is what each deferred step came to, for --json.
-func DeferredSteps(ran []wtsync.DeferredResult) []DeferredStep {
-	steps := []DeferredStep{}
+func DeferredSteps(ran []wtsync.DeferredResult) []syncrun.DeferredStep {
+	steps := []syncrun.DeferredStep{}
 	for _, d := range ran {
-		s := DeferredStep{Step: d.Step.Run, Result: DeferredDone}
+		s := syncrun.DeferredStep{Step: d.Step.Run, Result: syncrun.DeferredDone}
 		switch {
 		case !d.Ran:
-			s.Result, s.Reason = DeferredSkipped, kit.Strp(d.Why)
+			s.Result, s.Reason = syncrun.DeferredSkipped, kit.Strp(d.Why)
 		case d.Err != nil:
-			s.Result, s.Reason = DeferredFailed, kit.Strp(kit.OneLine(d.Err.Error()))
+			s.Result, s.Reason = syncrun.DeferredFailed, kit.Strp(kit.OneLine(d.Err.Error()))
 		case d.Commit != "":
-			s.Result, s.Commit = DeferredCommitted, kit.Strp(d.Commit)
+			s.Result, s.Commit = syncrun.DeferredCommitted, kit.Strp(d.Commit)
 		}
 		steps = append(steps, s)
 	}

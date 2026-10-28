@@ -39,7 +39,7 @@ func TestAFastForwardThatWasRestoredLeavesNoFormerTip(t *testing.T) {
 	theirs := f.Theirs(t, "feat_wt/x", "c.txt", "theirs\n")
 	f.Theirs(t, "main", "c.txt", "trunk\n")
 	run, err := synccmdtest.SyncRunJSON(t, f.Ctx, []string{"x"}, opts)
-	if err == nil || run.Worktrees[0].Result != synccmd.ResultRestored || !run.Worktrees[0].OwnRemoteSync.FastForwarded {
+	if err == nil || run.Worktrees[0].Result != syncrun.ResultRestored || !run.Worktrees[0].OwnRemoteSync.FastForwarded {
 		t.Fatalf("%v %+v", err, run.Worktrees[0])
 	}
 	// The child goes, so that x is a worktree a run can take by itself.
@@ -68,7 +68,7 @@ func TestUpFetchesExactlyTheBranchItChecks(t *testing.T) {
 		testkit.GitIn(t, f.Other, "commit", "-q", "--allow-empty", "-m", "origin moves")
 		testkit.GitIn(t, f.Other, "push", "-q", "origin", "main")
 		r, human, err := synccmdtest.UpOut(t, f.Ctx, "x", opts)
-		if err != nil || r.Worktrees[0].Result != synccmd.ResultRebased || r.Worktrees[0].OwnRemoteSync.State != "gone" {
+		if err != nil || r.Worktrees[0].Result != syncrun.ResultRebased || r.Worktrees[0].OwnRemoteSync.State != "gone" {
 			t.Fatalf("%v %+v\n%s", err, r, human)
 		}
 	})
@@ -164,7 +164,7 @@ func TestAllowedIsOnlyARunThatWentOn(t *testing.T) {
 	testkit.WriteIn(t, x, "x.txt", "edited\n")
 	opts.AllowDiverged = true
 	r, human, err := synccmdtest.UpOut(t, f.Ctx, "x", opts)
-	if err == nil || r.Worktrees[0].Result != synccmd.ResultRefused || r.Worktrees[0].OwnRemoteSync.Allowed {
+	if err == nil || r.Worktrees[0].Result != syncrun.ResultRefused || r.Worktrees[0].OwnRemoteSync.Allowed {
 		t.Fatalf("%v %+v %+v\n%s", err, r.Worktrees[0], r.Worktrees[0].OwnRemoteSync, human)
 	}
 }
@@ -246,7 +246,7 @@ func TestADivergedBranchARunWouldNotRebaseIsNotBlocked(t *testing.T) {
 		t.Fatal("a divergence that blocks nothing is in the token")
 	}
 	r, human, err := synccmdtest.UpOut(t, f.Ctx, "x", opts)
-	if err != nil || r.Worktrees[0].Result != synccmd.ResultSkipped || r.Worktrees[0].OwnRemoteSync.State != "diverged" || r.Worktrees[0].OwnRemoteSync.SkippedReason != nil {
+	if err != nil || r.Worktrees[0].Result != syncrun.ResultSkipped || r.Worktrees[0].OwnRemoteSync.State != "diverged" || r.Worktrees[0].OwnRemoteSync.SkippedReason != nil {
 		t.Fatalf("%v %+v %+v\n%s", err, r.Worktrees[0], r.Worktrees[0].OwnRemoteSync, human)
 	}
 	if got := testkit.GitOut(t, x, "rev-parse", "HEAD"); got != before {
@@ -276,7 +276,7 @@ func TestABranchDeletedBetweenTheListingAndTheFetchIsGone(t *testing.T) {
 	gittest.WriteExecutable(t, filepath.Join(bin, "git"), script)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	r, human, err := synccmdtest.UpOut(t, f.Ctx, "x", opts)
-	if err != nil || r.Error != nil || r.Worktrees[0].Result != synccmd.ResultRebased || r.Worktrees[0].OwnRemoteSync.State != "gone" {
+	if err != nil || r.Error != nil || r.Worktrees[0].Result != syncrun.ResultRebased || r.Worktrees[0].OwnRemoteSync.State != "gone" {
 		t.Fatalf("%v %+v\n%s", err, r, human)
 	}
 	if _, err := os.Stat(marker); err != nil {
@@ -298,18 +298,18 @@ func TestAnInterruptedRunReportsAFastForwardItHadMade(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	j := synccmd.NewRunJournal(&out)
+	j := syncrun.NewRunJournal(&out)
 	j.Repo(f.Main)
 	j.Join("x", "feat_wt/x", x, before, syncrun.OwnRemoteSyncOf(own.State("feat_wt/x")))
 	testkit.GitIn(t, x, "merge", "-q", "--ff-only", theirs)
 	j.Interrupted("x", "interrupted while fast-forwarding x: wt sync undo x puts it back")
 	testkit.ValidateJSON(t, "up", out.Bytes())
-	var r synccmd.UpResult
+	var r syncrun.UpResult
 	if err := json.Unmarshal(out.Bytes(), &r); err != nil {
 		t.Fatal(err)
 	}
 	w := r.Worktrees[0]
-	if w.Result != synccmd.ResultInterrupted || testkit.Str(w.Before) != before || testkit.Str(w.After) != theirs || !w.OwnRemoteSync.FastForwarded {
+	if w.Result != syncrun.ResultInterrupted || testkit.Str(w.Before) != before || testkit.Str(w.After) != theirs || !w.OwnRemoteSync.FastForwarded {
 		t.Fatalf("%+v %+v", w, w.OwnRemoteSync)
 	}
 }
@@ -337,7 +337,7 @@ func TestUpRefusesOnlyTheBranchWhoseRefWillNotFetch(t *testing.T) {
 	}
 	w := r.Worktrees[0]
 	reason := testkit.Str(w.Reason)
-	if w.Result != synccmd.ResultRefused || testkit.Str(w.OwnRemoteSync.SkippedReason) != syncrun.OwnSkipFetchFailed || !strings.Contains(reason, "its own remote could not be fetched (") {
+	if w.Result != syncrun.ResultRefused || testkit.Str(w.OwnRemoteSync.SkippedReason) != syncrun.OwnSkipFetchFailed || !strings.Contains(reason, "its own remote could not be fetched (") {
 		t.Fatalf("%+v %+v\n%s", w, w.OwnRemoteSync, human)
 	}
 	if strings.Contains(reason, "try running") || strings.Contains(reason, "…") {
