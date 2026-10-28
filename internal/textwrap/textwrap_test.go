@@ -59,3 +59,33 @@ func TestWidth(t *testing.T) {
 		}
 	}
 }
+
+func TestWrapEdges(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name, s      string
+		start, w     int
+		indent, want string
+	}{
+		{"empty input", "", 0, 10, "  ", ""},
+		{"only spaces", "   ", 0, 10, "  ", ""},
+		{"a line exactly as wide fits", "abc def", 0, 7, "", "abc def"},
+		{"one column short breaks", "abc def", 0, 6, "", "abc\ndef"},
+		{"the start counts against the first line", "abc def", 3, 9, "", "abc\ndef"},
+		{"the indent counts against the next line", "a bb cc", 0, 4, "  ", "a bb\n  cc"},
+		{"a word wider than the width stays whole", "aaaaaaaaaa b", 0, 5, "  ", "aaaaaaaaaa\n  b"},
+		{"a long word after a short one goes to its own line", "a bbbbbbbbbb c", 0, 5, "", "a\nbbbbbbbbbb\nc"},
+		{"leading and trailing spaces go", "  one two  ", 0, 20, "", "one two"},
+		// Width is counted in columns, not bytes: each word is 3 columns and 6
+		// bytes, so counting bytes would break after every word.
+		{"åäö is counted a column a letter", "åäö åäö åäö", 0, 7, "", "åäö åäö\nåäö"},
+		{"a multi-byte indent is counted a column a letter", "a b c", 0, 4, "→ ", "a b\n→ c"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			if got := Wrap(c.start, c.s, c.w, c.indent); got != c.want {
+				t.Errorf("Wrap(%d, %q, %d, %q) = %q, want %q", c.start, c.s, c.w, c.indent, got, c.want)
+			}
+		})
+	}
+}

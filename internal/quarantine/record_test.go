@@ -148,3 +148,44 @@ func TestLoadRejectsARecordMissingSteps(t *testing.T) {
 		})
 	}
 }
+
+// A record that leaves out what a restore or purge acts on is refused when it
+// is read: wt never guesses where a directory goes or which branch it was.
+func TestLoadRejectsARecordItCannotActOn(t *testing.T) {
+	t.Parallel()
+	for name, edit := range map[string]func(r *Record){
+		"no repository":               func(r *Record) { r.Repo = "" },
+		"no checkout path":            func(r *Record) { r.Checkout.Path = "" },
+		"no quarantined admin dir":    func(r *Record) { r.Admin.Quarantined = "" },
+		"no .git file":                func(r *Record) { r.GitFile = "" },
+		"no dir pin":                  func(r *Record) { r.Pins.Dir = "" },
+		"a branch with no tip":        func(r *Record) { r.Branch = &Branch{Name: "fix/a", Plan: BranchPlanDelete} },
+		"a branch with no name":       func(r *Record) { r.Branch = &Branch{Tip: "abc", Plan: BranchPlanDelete} },
+		"a branch kept under no name": func(r *Record) { r.Branch = &Branch{Name: "fix/a", Tip: "abc", Plan: BranchPlanKeep} },
+		"restore steps out of order":  func(r *Record) { r.Restore = &Restore{Steps: pendingSteps(removalSteps)} },
+		"a restore step in no state": func(r *Record) {
+			r.Restore = &Restore{Steps: pendingSteps(restoreSteps)}
+			r.Restore.Steps[2].State = ""
+		},
+		"removal steps in restore order": func(r *Record) { r.Steps = pendingSteps(restoreSteps) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			dir := filepath.Join(t.TempDir(), "q")
+			r, err := Begin(dir, sampleRecord(dir), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			edit(r)
+			if err := r.Save("test"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Load(dir); err == nil {
+				t.Error("want the record refused")
+			}
+			if IsQuarantine(dir) {
+				t.Error("a record wt cannot act on does not make the folder a quarantine")
+			}
+		})
+	}
+}
