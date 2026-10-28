@@ -1,8 +1,9 @@
 # wt's JSON output
 
 `wt status`, `wt up`, `wt sweep`, `wt sync` and its verbs, `wt new`,
-`wt checkout`, `wt remove`, `wt restore`, `wt purge` and `wt refs` print JSON on stdout when given `--json`, for
-tools that drive wt (a git client, an editor, a script). Their human output is
+`wt checkout`, `wt remove`, `wt restore`, `wt purge`, `wt refs` and
+`wt session list`, `send` and `stop` print JSON on stdout when given `--json`,
+for tools that drive wt (a git client, an editor, a script). Their human output is
 unchanged without it. The `recovery.json` in the folder a removed worktree was
 moved to is JSON with a schema too.
 
@@ -22,58 +23,8 @@ ignores fields it does not know and treats an unknown value as "not one I know",
 never as an error. wt's tests fail when an output's `schemaVersion` is not its
 schema's.
 
-| Version | Change |
-|---|---|
-| 1.0.0 | `wt status --json` and `wt up --json`, as wt 53bc0d8 printed them |
-| 1.1.0 | `schemaVersion` in both outputs; the schemas published under `schema/` and by `wt schema` |
-| 1.2.0 | `trunkSync` in both: what a run did, or would do, to local trunk after its fetch |
-
-Each schema is versioned on its own; `sweep-plan` and `sweep` started at 1.0.0.
-`sweep-plan` 1.1.0 added the `kept` values `operation`, `hiddenChanges`,
-`headUnreachable`, `reachUnknown`, `submoduleUnreachable` and `nestedWorktree`.
-
-| Schema | Version | Change |
-|---|---|---|
-| `sync` | 1.0.0 | `wt sync --json`, the overview |
-| `sync-run` | 1.0.0 | `wt sync run`, `resume` and `undo --json`, the result |
-| `new-plan`, `checkout-plan` | 1.0.0 | `wt new` and `wt checkout --dry-run --json`, the plan |
-| `new`, `checkout` | 1.0.0 | `wt new` and `wt checkout --json`, the result |
-| `sync-run` | 1.1.0 | `trunkSync`: what the run did to local trunk after its fetch |
-| `sweep` | 1.1.0 | `quarantine`, top-level and on each item: the folders `--quarantine` moved worktrees into |
-| `sweep-plan` | 1.2.0 | `quarantine`: the folder `--quarantine` names, which the token covers |
-| `recovery` | 1.0.0 | `<dir>/recovery.json`, the journal of `--quarantine` and `wt restore` |
-| `restore-plan`, `restore` | 1.0.0 | `wt restore <dir> --dry-run --json`, the plan, and `--json`, the result |
-| `sweep` | 1.2.0 | `superset` on each item: what came of a removed worktree's Superset workspace |
-| `remove-plan`, `remove` | 1.0.0 | `wt remove <work> --dry-run --json`, the plan, and `--yes --json`, the result |
-| `checkout-plan`, `checkout` | 1.1.0 | `source`, `remote`, `remoteRef` (and `remoteCommit` in the plan, `upstream` in the result): a branch created from a remote-tracking ref; problems `branchAmbiguous`, `remoteBranchMissing` |
-| `new-plan` 1.1.0, `checkout-plan` 1.2.0, `status` 1.3.0 | | a repository with no configuration file runs on detected defaults: `configured` false with no problem; `noConfiguration` only when no trunk can be detected either |
-| `recovery` | 1.1.0 | `restore.createdBranch`: this restore made the branch again, so a run after a failed one finishes its config |
-| `quarantine-purge-plan`, `quarantine-purge` | 1.0.0 | `wt quarantine purge <dir> --json`, the plan, and `--yes --json`, the result |
-| `recovery` | 1.2.0 | `purge`: the journal of `wt quarantine purge`, in `recovery.purging.json`, which replaces `recovery.json` before anything is deleted |
-| `restore-plan` | 1.1.0 | the problem `purging`: a purge began, so the restore refuses |
-| `status` 1.4.0, `up` 1.3.0, `sync` 1.1.0, `sweep-plan` 1.3.0, `new-plan` 1.2.0, `checkout-plan` 1.3.0 | | [`trunkSource`](#trunksource--how-trunk-was-found): how trunk was found. Also marks the fixed detection order: a conventional name before the checked-out branch |
-| `remove-plan`, `sweep-plan` | 1.1.0, 1.4.0 | `keepSuperset`: `--keep-superset` was given, which the token covers |
-| `remove`, `sweep` | 1.1.0, 1.3.0 | the `superset` result `optedOut`: `--keep-superset`, Superset was not asked |
-| `remove-plan` | 1.2.0 | `forceWith`, top-level and on each problem: the `--force` categories given, and the one that goes past each problem |
-| `remove` | 1.2.0 | `forced`: the `--force` categories the removal went past; `forceWith` on each problem |
-| `remove-plan`, `remove` | 1.3.0 | [`trunkSource`](#trunksource--how-trunk-was-found): how trunk was found |
-| `status` 1.4.1, `up` 1.3.1, `sync` 1.1.1, `sweep-plan` 1.4.1, `new-plan` 1.2.1, `checkout-plan` 1.3.1 | | detection is origin/HEAD, then the first of `development`, `main`, `master`, else it fails: `currentBranchGuess` is no longer produced, and a repository nothing names trunk for is `noConfiguration` — also one whose file has no `MAIN_BRANCH` |
-| `refs-sweep-plan`, `refs-sweep`, `refs-restore-plan`, `refs-restore`, `refs-purge-plan`, `refs-purge`, `refs-swept` | 1.0.0 | `wt refs sweep`, `restore` and `purge --json`, each plan and result, and `wt refs swept --json` |
-| `sweep-plan` | 1.5.0 | `configFingerprint`: the configuration file the token covers, so two plans can be compared |
-| `sweep` | 1.4.0 | `runId`, and `pin` on each item: the branches a sweep deletes are moved into a run under `refs/wt-swept/`. `restoreCommand` is now `wt refs restore <runId> --only refs/heads/<branch> --yes`, or `wt restore <dir>` for a quarantined worktree's branch; the `git branch` form is no longer produced |
-| `remove` | 1.4.0 | `runId`, and `pin` on each step: a deleted branch is moved into a run of its own under `refs/wt-swept/`; `restoreCommand` for it is `wt refs restore` |
-| `status` 1.5.0, `sync` 1.2.0 | | [Codex sessions](#sessions--claude-and-codex): `sessions[].kind` is `claude` or `codex` |
-| `remove-plan` | 1.4.0 | [Codex sessions](#sessions--claude-and-codex): `kind` on each of `sessions` |
-| `remove` | 1.4.1 | wording: a session problem is any agent session, and `sessionsUnknown` any listing that failed |
-| `status` 1.6.0, `sync` 1.3.0, `up` 1.4.0, `sync-run` 1.2.0 | | [a branch against its own remote](#ownremote--a-branch-against-its-own-remote): `ownRemote` on the worktree and each stack member of `status` and on each worktree of `sync`; `ownRemoteSync` on each participant of `up` and `sync-run`; `upIneligibleCode` `ownRemoteDiverged` and `ownRemoteBehind`; a token for a plan held back by divergence alone |
-| `sync-run` 1.3.0, `sync` 1.3.1 | | `wt sync run` is spelled `wt sync rebase`, and `--run` on `wt sync` is `--rebase`: `command` gains `sync rebase`, which the new spelling prints. From `sync-run` 1.3.0 on, `wt sync rebase <work>...` and `wt sync --rebase` exist. `sync` changes in wording only |
-| `sync` 1.4.0, `status` 1.7.0 | | [`deferredDeclared`](#deferreddeclared--the-deferred-steps-trunk-declares): the deferred steps a run may perform, on each worktree of `sync` and each stack member of `status` |
-| `status` 1.8.0, `sync` 1.5.0, `up` 1.5.0, `sync-run` 1.4.0 | | [where a branch pushes](#where-a-branch-pushes). New: `noPushReason` and `fixCommand` on `ownRemote` and on each participant of a run. Three things existing fields now mean, none of which a reader of the earlier minors could see: (1) a `rebased` participant can have `pushCommand` null, when wt has no push to make or offer for it, and `noPushReason` then says why; (2) `ownRemote.state` `unknown` also covers a branch a run would rebase and not push, which `noPushReason` tells apart from the unknowns a run pushes over unchecked; (3) `ownRemote.ref` is where wt's own push goes by the rule in [`ownRemote`](#ownremote--a-branch-against-its-own-remote): what is recorded for the branch first, never `<branch>@{push}` when that has another name than the branch. Every `pushCommand` now spells its refspec in full, `refs/heads/<branch>:refs/heads/<remote branch>` |
-| `remove` 1.4.2, `remove-plan` 1.4.1, `sweep` 1.4.1, `sweep-plan` 1.5.1, `recovery` 1.2.1, `quarantine-purge-plan` 1.0.1, `quarantine-purge` 1.0.1 | | `--quarantine <dir>` on `wt remove` and `wt sweep` is spelled `--move-to <dir>`, and `wt quarantine purge <dir>` is `wt purge <dir>`. From `remove` 1.4.2 on, `--move-to` and `wt purge` exist. Wording only: every field, value and schema name is as it was |
-| `sync-run` | 1.4.1 | wording: `wt sync run` and `wt sync --run` are no longer taken, so no wt prints `command` `sync run` any more; the value stays in the schema for results saved before |
-| `new` 1.1.0, `checkout` 1.2.0 | | the `cache` step, after `config`: cloning `WORKTREE_CACHE_DIRS` copy-on-write. `steps` holds eight steps where it held seven |
-| `remove-plan`, `remove` | 1.5.0 | [`--reap`](#processes--what-still-runs-in-a-worktree): `processes` and `processesError` in the plan, `reaped` in the result, the problem `processesUnknown` |
-| `sweep-plan` 1.6.0, `sweep` 1.5.0 | | [`--reap`](#processes--what-still-runs-in-a-worktree): `reap` on the plan and `processes` on each item, the `kept` codes `processes` and `processesUnknown`, `reaped` on each item of the result |
+Each schema is versioned on its own. The [changelog](#changelog) at the end
+lists every version of every schema.
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
 
@@ -196,6 +147,9 @@ generating types from it:
 | `wt refs purge --dry-run --json` | [`schema/refs-purge-plan.v1.json`](../schema/refs-purge-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/refs-purge-plan.v1.json` |
 | `wt refs purge --yes --json` | [`schema/refs-purge.v1.json`](../schema/refs-purge.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/refs-purge.v1.json` |
 | `wt refs swept --json` | [`schema/refs-swept.v1.json`](../schema/refs-swept.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/refs-swept.v1.json` |
+| `wt session list --json` | [`schema/session-list.v1.json`](../schema/session-list.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/session-list.v1.json` |
+| `wt session send --json` | [`schema/session-send.v1.json`](../schema/session-send.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/session-send.v1.json` |
+| `wt session stop --json` | [`schema/session-stop.v1.json`](../schema/session-stop.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/session-stop.v1.json` |
 
 They are built into the binary: `wt schema` lists them and `wt schema up` prints
 one, so the schema you read is the one for the wt you run. Validate against that
@@ -2039,3 +1993,59 @@ session and the session wt runs under are refused, and nothing is stopped.
 | `notBackground` | `refused` | 1 | none of the worktree's sessions is a background Claude session; `reason` lists them |
 | `noProcess` | `already-stopped` | 0 | a parked session |
 | `stopFailed` | `failed` | 1 | `claude stop` exited non-zero, was not found, or did not answer in 30 s; `message` has what it said |
+
+## Changelog
+
+Oldest first. Each row names every schema it changed, at the version that
+change made it.
+
+| Schema and version | Change |
+|---|---|
+| `status` 1.0.0, `up` 1.0.0 | `wt status --json` and `wt up --json`, as wt 53bc0d8 printed them |
+| `status` 1.1.0, `up` 1.1.0 | `schemaVersion` in both outputs; the schemas published under `schema/` and by `wt schema` |
+| `status` 1.2.0, `up` 1.2.0 | `trunkSync` in both: what a run did, or would do, to local trunk after its fetch |
+| `sweep-plan` 1.0.0, `sweep` 1.0.0 | `wt sweep --dry-run --json`, the plan, and `wt sweep --yes --json`, the result |
+| `sweep-plan` 1.1.0 | the `kept` values `operation`, `hiddenChanges`, `headUnreachable`, `reachUnknown`, `submoduleUnreachable` and `nestedWorktree` |
+| `sync` 1.0.0 | `wt sync --json`, the overview |
+| `sync-run` 1.0.0 | `wt sync run`, `resume` and `undo --json`, the result |
+| `new-plan` 1.0.0, `checkout-plan` 1.0.0 | `wt new` and `wt checkout --dry-run --json`, the plan |
+| `new` 1.0.0, `checkout` 1.0.0 | `wt new` and `wt checkout --json`, the result |
+| `sync-run` 1.1.0 | `trunkSync`: what the run did to local trunk after its fetch |
+| `sweep` 1.1.0 | `quarantine`, top-level and on each item: the folders `--quarantine` moved worktrees into |
+| `sweep-plan` 1.2.0 | `quarantine`: the folder `--quarantine` names, which the token covers |
+| `recovery` 1.0.0 | `<dir>/recovery.json`, the journal of `--quarantine` and `wt restore` |
+| `restore-plan` 1.0.0, `restore` 1.0.0 | `wt restore <dir> --dry-run --json`, the plan, and `--json`, the result |
+| `sweep` 1.2.0 | `superset` on each item: what came of a removed worktree's Superset workspace |
+| `remove-plan` 1.0.0, `remove` 1.0.0 | `wt remove <work> --dry-run --json`, the plan, and `--yes --json`, the result |
+| `checkout-plan` 1.1.0, `checkout` 1.1.0 | `source`, `remote`, `remoteRef` (and `remoteCommit` in the plan, `upstream` in the result): a branch created from a remote-tracking ref; problems `branchAmbiguous`, `remoteBranchMissing` |
+| `new-plan` 1.1.0, `checkout-plan` 1.2.0, `status` 1.3.0 | a repository with no configuration file runs on detected defaults: `configured` false with no problem; `noConfiguration` only when no trunk can be detected either |
+| `recovery` 1.1.0 | `restore.createdBranch`: this restore made the branch again, so a run after a failed one finishes its config |
+| `quarantine-purge-plan` 1.0.0, `quarantine-purge` 1.0.0 | `wt quarantine purge <dir> --json`, the plan, and `--yes --json`, the result |
+| `recovery` 1.2.0 | `purge`: the journal of `wt quarantine purge`, in `recovery.purging.json`, which replaces `recovery.json` before anything is deleted |
+| `restore-plan` 1.1.0 | the problem `purging`: a purge began, so the restore refuses |
+| `status` 1.4.0, `up` 1.3.0, `sync` 1.1.0, `sweep-plan` 1.3.0, `new-plan` 1.2.0, `checkout-plan` 1.3.0 | [`trunkSource`](#trunksource--how-trunk-was-found): how trunk was found. Also marks the fixed detection order: a conventional name before the checked-out branch |
+| `remove-plan` 1.1.0, `sweep-plan` 1.4.0 | `keepSuperset`: `--keep-superset` was given, which the token covers |
+| `remove` 1.1.0, `sweep` 1.3.0 | the `superset` result `optedOut`: `--keep-superset`, Superset was not asked |
+| `remove-plan` 1.2.0 | `forceWith`, top-level and on each problem: the `--force` categories given, and the one that goes past each problem |
+| `remove` 1.2.0 | `forced`: the `--force` categories the removal went past; `forceWith` on each problem |
+| `remove-plan` 1.3.0, `remove` 1.3.0 | [`trunkSource`](#trunksource--how-trunk-was-found): how trunk was found |
+| `status` 1.4.1, `up` 1.3.1, `sync` 1.1.1, `sweep-plan` 1.4.1, `new-plan` 1.2.1, `checkout-plan` 1.3.1 | detection is origin/HEAD, then the first of `development`, `main`, `master`, else it fails: `currentBranchGuess` is no longer produced, and a repository nothing names trunk for is `noConfiguration` — also one whose file has no `MAIN_BRANCH` |
+| `refs-sweep-plan` 1.0.0, `refs-sweep` 1.0.0, `refs-restore-plan` 1.0.0, `refs-restore` 1.0.0, `refs-purge-plan` 1.0.0, `refs-purge` 1.0.0, `refs-swept` 1.0.0 | `wt refs sweep`, `restore` and `purge --json`, each plan and result, and `wt refs swept --json` |
+| `sweep-plan` 1.5.0 | `configFingerprint`: the configuration file the token covers, so two plans can be compared |
+| `sweep` 1.4.0 | `runId`, and `pin` on each item: the branches a sweep deletes are moved into a run under `refs/wt-swept/`. `restoreCommand` is now `wt refs restore <runId> --only refs/heads/<branch> --yes`, or `wt restore <dir>` for a quarantined worktree's branch; the `git branch` form is no longer produced |
+| `remove` 1.4.0 | `runId`, and `pin` on each step: a deleted branch is moved into a run of its own under `refs/wt-swept/`; `restoreCommand` for it is `wt refs restore` |
+| `status` 1.5.0, `sync` 1.2.0 | [Codex sessions](#sessions--claude-and-codex): `sessions[].kind` is `claude` or `codex` |
+| `remove-plan` 1.4.0 | [Codex sessions](#sessions--claude-and-codex): `kind` on each of `sessions` |
+| `remove` 1.4.1 | wording: a session problem is any agent session, and `sessionsUnknown` any listing that failed |
+| `status` 1.6.0, `sync` 1.3.0, `up` 1.4.0, `sync-run` 1.2.0 | [a branch against its own remote](#ownremote--a-branch-against-its-own-remote): `ownRemote` on the worktree and each stack member of `status` and on each worktree of `sync`; `ownRemoteSync` on each participant of `up` and `sync-run`; `upIneligibleCode` `ownRemoteDiverged` and `ownRemoteBehind`; a token for a plan held back by divergence alone |
+| `sync-run` 1.3.0, `sync` 1.3.1 | `wt sync run` is spelled `wt sync rebase`, and `--run` on `wt sync` is `--rebase`: `command` gains `sync rebase`, which the new spelling prints. From `sync-run` 1.3.0 on, `wt sync rebase <work>...` and `wt sync --rebase` exist. `sync` changes in wording only |
+| `sync` 1.4.0, `status` 1.7.0 | [`deferredDeclared`](#deferreddeclared--the-deferred-steps-trunk-declares): the deferred steps a run may perform, on each worktree of `sync` and each stack member of `status` |
+| `status` 1.8.0, `sync` 1.5.0, `up` 1.5.0, `sync-run` 1.4.0 | [where a branch pushes](#where-a-branch-pushes). New: `noPushReason` and `fixCommand` on `ownRemote` and on each participant of a run. Three things existing fields now mean, none of which a reader of the earlier minors could see: (1) a `rebased` participant can have `pushCommand` null, when wt has no push to make or offer for it, and `noPushReason` then says why; (2) `ownRemote.state` `unknown` also covers a branch a run would rebase and not push, which `noPushReason` tells apart from the unknowns a run pushes over unchecked; (3) `ownRemote.ref` is where wt's own push goes by the rule in [`ownRemote`](#ownremote--a-branch-against-its-own-remote): what is recorded for the branch first, never `<branch>@{push}` when that has another name than the branch. Every `pushCommand` now spells its refspec in full, `refs/heads/<branch>:refs/heads/<remote branch>` |
+| `remove` 1.4.2, `remove-plan` 1.4.1, `sweep` 1.4.1, `sweep-plan` 1.5.1, `recovery` 1.2.1, `quarantine-purge-plan` 1.0.1, `quarantine-purge` 1.0.1 | `--quarantine <dir>` on `wt remove` and `wt sweep` is spelled `--move-to <dir>`, and `wt quarantine purge <dir>` is `wt purge <dir>`. From `remove` 1.4.2 on, `--move-to` and `wt purge` exist. Wording only: every field, value and schema name is as it was |
+| `sync-run` 1.4.1 | wording: `wt sync run` and `wt sync --run` are no longer taken, so no wt prints `command` `sync run` any more; the value stays in the schema for results saved before |
+| `new` 1.1.0, `checkout` 1.2.0 | the `cache` step, after `config`: cloning `WORKTREE_CACHE_DIRS` copy-on-write. `steps` holds eight steps where it held seven |
+| `status` 1.9.0 | `upIneligibleCode` `alreadyOnTrunk`: the branch has no commit its trunk lacks, so there is nothing to rebase |
+| `session-list` 1.0.0, `session-send` 1.0.0 | `wt session list --json`, a worktree's sessions, and `wt session send --json`, the outcome of a message |
+| `session-stop` 1.0.0 | `wt session stop --json`, the outcome of a stop |
+| `remove-plan` 1.5.0, `remove` 1.5.0 | [`--reap`](#processes--what-still-runs-in-a-worktree): `processes` and `processesError` in the plan, `reaped` in the result, the problem `processesUnknown` |
+| `sweep-plan` 1.6.0, `sweep` 1.5.0 | [`--reap`](#processes--what-still-runs-in-a-worktree): `reap` on the plan and `processes` on each item, the `kept` codes `processes` and `processesUnknown`, `reaped` on each item of the result |
