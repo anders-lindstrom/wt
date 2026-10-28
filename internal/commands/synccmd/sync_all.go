@@ -10,7 +10,6 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -114,7 +113,7 @@ func SyncRebaseAll(u *config.User, sel kit.Selection, opts SyncRebaseAllOptions,
 		}
 	}
 	if len(current) > 0 {
-		fmt.Fprintf(w, "Nothing to rebase in %s: %s\n", kit.RepoCount(len(current)), strings.Join(current, ", "))
+		fmt.Fprintf(w, "Nothing to rebase in %s: %s\n", kit.Count(len(current), "repository", "repositories"), strings.Join(current, ", "))
 	}
 	if len(undeclared) > 0 {
 		fmt.Fprintf(w, "No %s on trunk, so not synced: %s\n", wtsync.ConfigFile, strings.Join(undeclared, ", "))
@@ -123,7 +122,7 @@ func SyncRebaseAll(u *config.User, sel kit.Selection, opts SyncRebaseAllOptions,
 		return NotCompleted(failures)
 	}
 
-	question := fmt.Sprintf("Rebase %s across %s?", retire.WorktreeCount(worktrees), kit.RepoCount(repos))
+	question := fmt.Sprintf("Rebase %s across %s?", kit.Count(worktrees, "worktree"), kit.Count(repos, "repository", "repositories"))
 	if opts.Ask != nil {
 		ok, err := opts.Ask(question)
 		if err != nil {

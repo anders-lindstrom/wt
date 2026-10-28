@@ -54,7 +54,7 @@ func doctorRepos(u *config.User, w io.Writer, report func(string, ...any)) {
 			fmt.Fprintf(w, "  ✓ root %s: %s (one repository)\n", r.Name, kit.AbbreviateHome(r.Path, home))
 		default:
 			n := len(kit.DiscoverRepos([]kit.Root{r}).Repos)
-			fmt.Fprintf(w, "  ✓ root %s: %s (%s)\n", r.Name, kit.AbbreviateHome(r.Path, home), kit.RepoCount(n))
+			fmt.Fprintf(w, "  ✓ root %s: %s (%s)\n", r.Name, kit.AbbreviateHome(r.Path, home), kit.Count(n, "repository", "repositories"))
 		}
 	}
 	for _, p := range u.Profiles {

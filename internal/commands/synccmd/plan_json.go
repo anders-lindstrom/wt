@@ -321,17 +321,17 @@ func ownIneligible(m PlanStack, asked, why string) string {
 		who = fmt.Sprintf("%s (%s), a worktree in this stack,", m.Branch, m.Work)
 	}
 	if o.State == string(wtsync.OwnDiverged) && why == "elsewhere" {
-		return fmt.Sprintf("%s has diverged from %s: every commit it has (%d) is there in another form, on %d commit%s it never had. "+
+		return fmt.Sprintf("%s has diverged from %s: every commit it has (%d) is there in another form, on %s it never had. "+
 			"It looks rebased elsewhere and pushed. Take the remote's with git reset --hard %s, or rebase this copy as it stands with --allow-diverged.",
-			who, *o.Ref, *o.Ahead, *o.Behind, kit.Plural(*o.Behind), *o.Ref)
+			who, *o.Ref, *o.Ahead, kit.Count(*o.Behind, "commit"), *o.Ref)
 	}
 	if o.State == string(wtsync.OwnDiverged) {
-		return fmt.Sprintf("%s has diverged from %s: it has %d commit%s %s lacks, and %s has %d commit%s it never had. "+
+		return fmt.Sprintf("%s has diverged from %s: it has %s %s lacks, and %s has %s it never had. "+
 			"Pull %s in, or rebase it as it stands with --allow-diverged.",
-			who, *o.Ref, *o.Ahead, kit.Plural(*o.Ahead), *o.Ref, *o.Ref, *o.Behind, kit.Plural(*o.Behind), themOrIt(*o.Behind))
+			who, *o.Ref, kit.Count(*o.Ahead, "commit"), *o.Ref, *o.Ref, kit.Count(*o.Behind, "commit"), themOrIt(*o.Behind))
 	}
-	return fmt.Sprintf("%s is %d commit%s behind %s and cannot be fast-forwarded to it: %s.",
-		who, *o.Behind, kit.Plural(*o.Behind), *o.Ref, why)
+	return fmt.Sprintf("%s is %s behind %s and cannot be fast-forwarded to it: %s.",
+		who, kit.Count(*o.Behind, "commit"), *o.Ref, why)
 }
 
 func themOrIt(n int) string {

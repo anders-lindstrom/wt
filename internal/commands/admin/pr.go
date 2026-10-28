@@ -195,7 +195,7 @@ func divergedFromPR(ctx *kit.Context, gh kit.GitHub, pr github.PR) error {
 		"    rename it:  git branch -m %s %s-old\n"+
 		"    delete it:  git branch -D %s\n"+
 		"  and run `wt pr checkout %d` again",
-		pr.Number, branch, ahead, behind, count(ahead, "commit"), branch, branch, branch, pr.Number)
+		pr.Number, branch, ahead, behind, kit.Count(ahead, "commit"), branch, branch, branch, pr.Number)
 }
 
 // commitID is a whole commit id, as GitHub reports a pull request's head.
@@ -351,7 +351,7 @@ func PRList(ctx *kit.Context, w io.Writer, width int) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(w, "%s, %s\n\n", gh.Remote.Slug, count(len(prs), "open pull request"))
+	fmt.Fprintf(w, "%s, %s\n\n", gh.Remote.Slug, kit.Count(len(prs), "open pull request"))
 	rows := [][]string{{"PR", "STATE", "AUTHOR", "TITLE", "WORKTREE"}}
 	for _, pr := range prs {
 		rows = append(rows, []string{
@@ -384,14 +384,6 @@ func prState(pr github.PR) string {
 		state += " · checks " + checks
 	}
 	return state
-}
-
-// count writes "1 open pull request" or "3 open pull requests".
-func count(n int, thing string) string {
-	if n == 1 {
-		return "1 " + thing
-	}
-	return fmt.Sprintf("%d %ss", n, thing)
 }
 
 // Dash is s, or - for an empty cell.

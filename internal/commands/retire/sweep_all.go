@@ -92,13 +92,13 @@ func SweepAll(u *config.User, sel kit.Selection, opts SweepAllOptions, w io.Writ
 		}
 	}
 	if len(quiet) > 0 {
-		fmt.Fprintf(w, "Nothing to sweep in %s: %s\n", kit.RepoCount(len(quiet)), strings.Join(quiet, ", "))
+		fmt.Fprintf(w, "Nothing to sweep in %s: %s\n", kit.Count(len(quiet), "repository", "repositories"), strings.Join(quiet, ", "))
 	}
 	if repos == 0 {
 		return failures(failed, len(sweeps))
 	}
 
-	what := sweepCounts(branches, worktrees) + " across " + kit.RepoCount(repos)
+	what := sweepCounts(branches, worktrees) + " across " + kit.Count(repos, "repository", "repositories")
 	switch {
 	case opts.DryRun:
 		fmt.Fprintln(w, "Nothing was swept: --dry-run.")
@@ -165,10 +165,10 @@ func planRepoSweep(t kit.RepoTarget, opts SweepOptions, listErr error, log io.Wr
 func sweepCounts(branches, worktrees int) string {
 	var parts []string
 	if branches > 0 {
-		parts = append(parts, branchCount(branches))
+		parts = append(parts, kit.Count(branches, "branch", "branches"))
 	}
 	if worktrees > 0 {
-		parts = append(parts, WorktreeCount(worktrees))
+		parts = append(parts, kit.Count(worktrees, "worktree"))
 	}
 	return strings.Join(parts, " and ")
 }
@@ -179,5 +179,5 @@ func failures(failed []string, of int) error {
 	if len(failed) == 0 {
 		return nil
 	}
-	return fmt.Errorf("%d of %s could not be swept in full: %s", len(failed), kit.RepoCount(of), strings.Join(failed, ", "))
+	return fmt.Errorf("%d of %s could not be swept in full: %s", len(failed), kit.Count(of, "repository", "repositories"), strings.Join(failed, ", "))
 }

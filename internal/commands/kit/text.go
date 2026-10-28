@@ -2,6 +2,7 @@ package kit
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -60,10 +61,14 @@ func Truncate(s string, n int) string {
 // is waiting on it.
 const NetworkTimeout = 5 * time.Minute
 
-// Plural is the s a count of n puts on a noun.
-func Plural(n int) string {
-	if n == 1 {
-		return ""
+// Count is n of noun, in words: "1 commit", "3 commits". many is the plural
+// where it is not noun and an s: Count(n, "branch", "branches").
+func Count(n int, noun string, many ...string) string {
+	switch {
+	case n == 1:
+		return "1 " + noun
+	case len(many) > 0:
+		return strconv.Itoa(n) + " " + many[0]
 	}
-	return "s"
+	return strconv.Itoa(n) + " " + noun + "s"
 }

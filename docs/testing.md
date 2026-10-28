@@ -93,8 +93,8 @@ internal/repo, internal/github and internal/superset are parallel: each
 builds its own repositories under `t.TempDir()`. HOME and XDG_CONFIG_HOME
 are set once per test binary and shared, so a parallel test does not write
 under them; `testkit.UserConfigIn` makes a test serial.
-internal/commands/synckeep, internal/commands/session and
-internal/commands/kit have no parallel tests.
+internal/commands/synckeep and internal/commands/session have no parallel
+tests.
 
 A test stays serial when it touches what the whole test binary shares,
 and its first line says which, as `// Not parallel: <why>`:

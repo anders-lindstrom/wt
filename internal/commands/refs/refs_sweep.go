@@ -869,7 +869,7 @@ func Sweep(ctx *kit.Context, opts Options, w io.Writer) (err error) {
 		}
 	default:
 		fmt.Fprintf(w, "Nothing was swept: there is no terminal to ask. Pass --yes to sweep %s.\n",
-			RefCount(len(selected)))
+			kit.Count(len(selected), "ref"))
 		return nil
 	}
 	// Origin is read again right before anything goes to it: a URL changed
@@ -892,14 +892,6 @@ func Sweep(ctx *kit.Context, opts Options, w io.Writer) (err error) {
 		return fmt.Errorf("nothing was swept: %w", err)
 	}
 	return plan.apply(ctx, runID, j, w)
-}
-
-// RefCount is n refs, in words.
-func RefCount(n int) string {
-	if n == 1 {
-		return "1 ref"
-	}
-	return fmt.Sprintf("%d refs", n)
 }
 
 // apply moves each selected row, reading it once more right before.
@@ -935,7 +927,7 @@ func (p Plan) apply(ctx *kit.Context, runID string, j *Journal, w io.Writer) err
 	refpins.DropEmptyRun(root, runID, w)
 	if failed > 0 {
 		return fmt.Errorf("%d of %s kept or not finished; wt refs restore %s puts back what went",
-			failed, RefCount(len(p.Selected())), runID)
+			failed, kit.Count(len(p.Selected()), "ref"), runID)
 	}
 	fmt.Fprintf(w, "wt refs restore %s puts them back; wt refs purge %s deletes them for good\n", runID, runID)
 	return nil
@@ -1080,7 +1072,7 @@ func (p Plan) Render(w io.Writer) {
 		fmt.Fprintln(w, "No backups to sweep.")
 	} else {
 		fmt.Fprintf(w, "Will be swept, %s, each pinned under %s so it can be restored:\n",
-			RefCount(len(sel)), refpins.SweptPrefix)
+			kit.Count(len(sel), "ref"), refpins.SweptPrefix)
 		_ = kit.PrintTable(w, sel)
 	}
 	if len(young) > 0 {

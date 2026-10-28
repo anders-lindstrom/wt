@@ -178,7 +178,7 @@ func SyncAllJSON(u *config.User, sel kit.Selection, opts SyncOptions, w io.Write
 		}
 	}
 	if len(failed) > 0 {
-		return fmt.Errorf("%d of %s failed: %s", len(failed), kit.RepoCount(len(out)), strings.Join(failed, ", "))
+		return fmt.Errorf("%d of %s failed: %s", len(failed), kit.Count(len(out), "repository", "repositories"), strings.Join(failed, ", "))
 	}
 	return nil
 }

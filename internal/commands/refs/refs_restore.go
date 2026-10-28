@@ -258,7 +258,7 @@ func RestoreRefs(ctx *kit.Context, runID string, opts RestoreRefsOptions, w io.W
 			return errRestorePlanChanged
 		}
 	default:
-		fmt.Fprintf(w, "Nothing was restored: there is no terminal to ask. Pass --yes to restore %s.\n", RefCount(n))
+		fmt.Fprintf(w, "Nothing was restored: there is no terminal to ask. Pass --yes to restore %s.\n", kit.Count(n, "ref"))
 		return nil
 	}
 	// Origin is read again right before anything goes to it.
@@ -295,7 +295,7 @@ func RestoreRefs(ctx *kit.Context, runID string, opts RestoreRefsOptions, w io.W
 	}
 	refpins.DropEmptyRun(root, runID, w)
 	if failed > 0 {
-		return fmt.Errorf("%d of %s kept or not finished", failed, RefCount(n))
+		return fmt.Errorf("%d of %s kept or not finished", failed, kit.Count(n, "ref"))
 	}
 	return nil
 }

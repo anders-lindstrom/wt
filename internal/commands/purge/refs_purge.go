@@ -672,7 +672,7 @@ func RefsSwept(ctx *kit.Context, asJSON bool, out io.Writer) error {
 		return nil
 	}
 	for _, r := range runs {
-		fmt.Fprintf(out, "%s  swept %s, %s\n", r.RunID, r.At.Local().Format("2006-01-02 15:04"), refs.RefCount(len(r.Refs)))
+		fmt.Fprintf(out, "%s  swept %s, %s\n", r.RunID, r.At.Local().Format("2006-01-02 15:04"), kit.Count(len(r.Refs), "ref"))
 		var rows [][]string
 		for _, s := range r.Refs {
 			rows = append(rows, []string{"  " + s.ID(), git.ShortID(s.Object, 12)})

@@ -690,10 +690,10 @@ func (p Plan) problems() []problem {
 		switch l.Kind {
 		case LostHead:
 			add(KeptHeadUnreachable, fmt.Sprintf("%s on its HEAD %s would be on no branch",
-				commitCount(l.Count), git.ShortID(l.OID, 12)), 0)
+				kit.Count(l.Count, "commit"), git.ShortID(l.OID, 12)), 0)
 		case LostSubmodule:
 			add(KeptSubmoduleUnreachable, fmt.Sprintf("submodule %s has %s nothing outside this worktree holds (%s)",
-				l.Path, commitCount(l.Count), git.ShortID(l.OID, 12)), 0)
+				l.Path, kit.Count(l.Count, "commit"), git.ShortID(l.OID, 12)), 0)
 		}
 	}
 	if p.ReachError != "" {
@@ -868,13 +868,6 @@ func someOf(list []string, n int) string {
 		return strings.Join(list, ", ")
 	}
 	return fmt.Sprintf("%s and %d more", strings.Join(list[:n], ", "), len(list)-n)
-}
-
-func commitCount(n int) string {
-	if n == 1 {
-		return "1 commit"
-	}
-	return fmt.Sprintf("%d commits", n)
 }
 
 // pidInReason finds the pid a lock reason names, if it names one. Claude Code
@@ -1196,7 +1189,7 @@ func (p Plan) Render(w io.Writer) {
 	}
 	if l, ok := p.lost(LostBranch); ok {
 		fmt.Fprintf(w, "  its %s will then be on no branch: %s brings them back\n",
-			commitCount(l.Count), p.restoreHint(l))
+			kit.Count(l.Count, "commit"), p.restoreHint(l))
 	}
 	fmt.Fprintln(w)
 }

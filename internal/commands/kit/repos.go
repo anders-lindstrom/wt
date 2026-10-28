@@ -53,7 +53,7 @@ func Repos(u *config.User, sel Selection, opts ReposOptions, w io.Writer) error 
 				in = append(in, t)
 			}
 		}
-		fmt.Fprintf(w, "\n%s  %s  (%s)\n", root.Name, AbbreviateHome(root.Path, home), RepoCount(len(in)))
+		fmt.Fprintf(w, "\n%s  %s  (%s)\n", root.Name, AbbreviateHome(root.Path, home), Count(len(in), "repository", "repositories"))
 		if _, err := os.Stat(root.Path); err != nil {
 			fmt.Fprintln(w, "  ! the directory is not there")
 			continue
@@ -62,7 +62,7 @@ func Repos(u *config.User, sel Selection, opts ReposOptions, w io.Writer) error 
 	}
 	if n := len(set.Unmanaged); n > 0 {
 		fmt.Fprintf(w, "\n%s under these roots %s not managed by wt; wt init in one sets it up.\n",
-			checkoutCount(n), isAre(n))
+			Count(n, "checkout"), isAre(n))
 	}
 	return nil
 }
@@ -158,21 +158,6 @@ func problemsIn(targets []RepoTarget) error {
 		return nil
 	}
 	return fmt.Errorf("%d of the profile's repositories cannot be worked on; wt doctor says the same", n)
-}
-
-// RepoCount is n repositories, in words.
-func RepoCount(n int) string {
-	if n == 1 {
-		return "1 repository"
-	}
-	return strconv.Itoa(n) + " repositories"
-}
-
-func checkoutCount(n int) string {
-	if n == 1 {
-		return "1 checkout"
-	}
-	return strconv.Itoa(n) + " checkouts"
 }
 
 func isAre(n int) string {

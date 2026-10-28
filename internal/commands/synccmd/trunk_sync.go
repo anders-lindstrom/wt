@@ -232,7 +232,7 @@ func (ts *TrunkSync) Line() string {
 	case TrunkSkipOptedOut:
 		why = fmt.Sprintf("origin/%s is %d ahead; fast-forwarding it is off (--no-ff-trunk, ff_trunk)", ts.trunk, *ts.RemoteAhead)
 	case TrunkSkipAhead:
-		why = fmt.Sprintf("it has %d commit%s origin/%s lacks", *ts.LocalAhead, kit.Plural(*ts.LocalAhead), ts.trunk)
+		why = fmt.Sprintf("it has %s origin/%s lacks", kit.Count(*ts.LocalAhead, "commit"), ts.trunk)
 	case TrunkSkipDiverged:
 		why = fmt.Sprintf("it and origin/%s have diverged (%d and %d commits of their own)", ts.trunk, *ts.LocalAhead, *ts.RemoteAhead)
 	}

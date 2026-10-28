@@ -414,7 +414,7 @@ func (p SweepPlan) Render(w io.Writer, width int) {
 		if len(p.Remove) == 1 {
 			heading = "Will be removed with its branch, %s:\n"
 		}
-		fmt.Fprintf(w, heading, WorktreeCount(len(p.Remove)))
+		fmt.Fprintf(w, heading, kit.Count(len(p.Remove), "worktree"))
 		var rows [][]string
 		for _, b := range p.Remove {
 			rows = append(rows, []string{"  " + b.Work, b.Name, b.Worktree, b.removeReason()})
@@ -426,7 +426,7 @@ func (p SweepPlan) Render(w io.Writer, width int) {
 	}
 	switch {
 	case len(p.Delete) > 0:
-		fmt.Fprintf(w, "Will be deleted, %s:\n", branchCount(len(p.Delete)))
+		fmt.Fprintf(w, "Will be deleted, %s:\n", kit.Count(len(p.Delete), "branch", "branches"))
 		var rows [][]string
 		for _, b := range p.Delete {
 			rows = append(rows, []string{"  " + b.Name, b.why(), b.Date, b.Subject})
@@ -601,29 +601,14 @@ func (p SweepPlan) worktreeChangedFrom(ctx *kit.Context, was SweepWorktree) (Pla
 	return Plan{}, p.changedFrom(ctx, was.SweepBranch)
 }
 
-func branchCount(n int) string {
-	if n == 1 {
-		return "1 branch"
-	}
-	return fmt.Sprintf("%d branches", n)
-}
-
-// WorktreeCount is n worktrees, in words.
-func WorktreeCount(n int) string {
-	if n == 1 {
-		return "1 worktree"
-	}
-	return fmt.Sprintf("%d worktrees", n)
-}
-
 // counts is what the plan acts on, by kind: "2 branches and 1 worktree".
 func (p SweepPlan) counts() string {
 	var parts []string
 	if len(p.Delete) > 0 {
-		parts = append(parts, branchCount(len(p.Delete)))
+		parts = append(parts, kit.Count(len(p.Delete), "branch", "branches"))
 	}
 	if len(p.Remove) > 0 {
-		parts = append(parts, WorktreeCount(len(p.Remove)))
+		parts = append(parts, kit.Count(len(p.Remove), "worktree"))
 	}
 	return strings.Join(parts, " and ")
 }
@@ -636,12 +621,12 @@ func (p SweepPlan) Action() string {
 	if n := len(p.Delete); n == 1 {
 		parts = append(parts, "delete this branch")
 	} else if n > 1 {
-		parts = append(parts, "delete these "+branchCount(n))
+		parts = append(parts, "delete these "+kit.Count(n, "branch", "branches"))
 	}
 	if n := len(p.Remove); n == 1 {
 		parts = append(parts, "remove this worktree")
 	} else if n > 1 {
-		parts = append(parts, "remove these "+WorktreeCount(n))
+		parts = append(parts, "remove these "+kit.Count(n, "worktree"))
 	}
 	return strings.Join(parts, " and ")
 }

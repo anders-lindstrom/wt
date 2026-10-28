@@ -239,7 +239,7 @@ func syncResume(ctx *kit.Context, work string, opts ResumeOptions, w io.Writer) 
 		})
 		return fmt.Errorf("not completed: %s (needs you)", name)
 	}
-	fmt.Fprintf(w, "  ✓ rebased %d commit%s\n", res.Replayed, kit.Plural(res.Replayed))
+	fmt.Fprintf(w, "  ✓ rebased %s\n", kit.Count(res.Replayed, "commit"))
 	_, ran, cerr := synccmd.CompleteRun(ctx, w, cfg, tracker, name, target.Path, func() synccmd.CompleteInput {
 		// As a run does: the tip the run found is what the deferred steps
 		// compare with and what the undo line names.
@@ -402,8 +402,8 @@ func verifyHandover(wtPath string, st wtsync.State, w io.Writer) error {
 		named = append(named, p+" ("+st.Strategy[p]+")")
 	}
 	if len(changed) > 0 {
-		return fmt.Errorf("%d file%s under \"never hand-merge here\" changed: %s; nothing is resumed",
-			len(changed), kit.Plural(len(changed)), strings.Join(named, ", "))
+		return fmt.Errorf("%s under \"never hand-merge here\" changed: %s; nothing is resumed",
+			kit.Count(len(changed), "file"), strings.Join(named, ", "))
 	}
 	return nil
 }

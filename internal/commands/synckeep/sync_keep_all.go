@@ -175,7 +175,7 @@ func StartAll(u *config.User, sel kit.Selection, opts KeepStartAllOptions, w io.
 		return keepFailures(rows)
 	}
 	fmt.Fprintln(w, keepAuthLine(todo[0].job))
-	what := fmt.Sprintf("a keeper in %s", kit.RepoCount(len(todo)))
+	what := fmt.Sprintf("a keeper in %s", kit.Count(len(todo), "repository", "repositories"))
 	switch {
 	case opts.DryRun:
 		fmt.Fprintln(w, "Nothing was installed: --dry-run.")
@@ -260,7 +260,7 @@ func StopAll(u *config.User, sel kit.Selection, dryRun bool, w io.Writer) error 
 	case stopped == 0:
 		fmt.Fprintln(w, "Nothing to stop.")
 	default:
-		fmt.Fprintf(w, "Stopped a keeper in %s; the logs stay.\n", kit.RepoCount(stopped))
+		fmt.Fprintf(w, "Stopped a keeper in %s; the logs stay.\n", kit.Count(stopped, "repository", "repositories"))
 	}
 	return keepFailures(rows)
 }

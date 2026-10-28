@@ -871,8 +871,8 @@ func (r *RunPlan) rebaseOne(b string) {
 	case own.State == wtsync.OwnUnknown:
 		fmt.Fprintf(w, "  ⚠ %s\n", ownLine(own))
 	case own.Allowed:
-		fmt.Fprintf(w, "  ⚠ --allow-diverged: %s has %d commit%s this branch never had%s; rebasing it as it stands\n",
-			own.Ref, own.Behind, kit.Plural(own.Behind), asLastFetched(own))
+		fmt.Fprintf(w, "  ⚠ --allow-diverged: %s has %s this branch never had%s; rebasing it as it stands\n",
+			own.Ref, kit.Count(own.Behind, "commit"), asLastFetched(own))
 		// Only now: the flag given to a run that refused the worktree for
 		// something else went over nothing.
 		j.Set(b, func(jp *UpParticipant) { jp.OwnRemoteSync.Allowed = true })
@@ -959,9 +959,9 @@ func (r *RunPlan) rebaseOne(b string) {
 		r.refuseAbove(b, p.work+" was restored")
 		return
 	}
-	line := fmt.Sprintf("  ✓ rebased %d commit%s onto %s", res.Replayed, kit.Plural(res.Replayed), ontoLabel)
+	line := fmt.Sprintf("  ✓ rebased %s onto %s", kit.Count(res.Replayed, "commit"), ontoLabel)
 	if res.SignaturesDropped > 0 {
-		line += fmt.Sprintf(", %d signature%s dropped", res.SignaturesDropped, kit.Plural(res.SignaturesDropped))
+		line += fmt.Sprintf(", %s dropped", kit.Count(res.SignaturesDropped, "signature"))
 	}
 	fmt.Fprintln(w, line)
 	head, ran, derr := CompleteRun(ctx, w, r.cfg, r.tracker, p.work, p.wt.Path, func() CompleteInput {
@@ -1078,8 +1078,8 @@ func (r *RunPlan) fastForward(b string, p *participant, done string) (safety wts
 		}
 	}
 	p.found = tip
-	fmt.Fprintf(w, "  ✓ fast-forwarded to %s  %s → %s (%d commit%s)%s%s\n", own.Ref,
-		git.ShortID(tip, 7), git.ShortID(own.Commit, 7), own.Behind, kit.Plural(own.Behind), asLastFetched(own), done)
+	fmt.Fprintf(w, "  ✓ fast-forwarded to %s  %s → %s (%s)%s%s\n", own.Ref,
+		git.ShortID(tip, 7), git.ShortID(own.Commit, 7), kit.Count(own.Behind, "commit"), asLastFetched(own), done)
 	// Where the branch stands from here, whatever the rebase comes to: a
 	// rebase that is put back says so itself.
 	r.opts.Journal.Set(b, func(jp *UpParticipant) {
@@ -1145,7 +1145,7 @@ func printDeferred(w io.Writer, d wtsync.DeferredResult) {
 			fmt.Fprintf(w, "    %s\n", l)
 		}
 	case d.Commit != "":
-		fmt.Fprintf(w, "  ✓ %s  %s  committed %d file%s (+%d −%d) as %s\n", d.Step.Run, d.Elapsed.Round(time.Second), d.Files, kit.Plural(d.Files), d.Insertions, d.Deletions, d.Commit)
+		fmt.Fprintf(w, "  ✓ %s  %s  committed %s (+%d −%d) as %s\n", d.Step.Run, d.Elapsed.Round(time.Second), kit.Count(d.Files, "file"), d.Insertions, d.Deletions, d.Commit)
 	default:
 		fmt.Fprintf(w, "  ✓ %s  %s\n", d.Step.Run, d.Elapsed.Round(time.Second))
 	}

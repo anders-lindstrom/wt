@@ -443,7 +443,7 @@ func SummaryLines(a wtsync.Assessment) []string {
 		lines = append(lines, s)
 	}
 	if n := len(a.Replay.Stops) - 1; a.Replay.Stop != nil && n > 0 {
-		lines = append(lines, fmt.Sprintf("%d earlier stop%s resolved", n, kit.Plural(n)))
+		lines = append(lines, kit.Count(n, "earlier stop")+" resolved")
 	}
 	for _, f := range a.Files {
 		if note := fileNote(f); note != "" {
@@ -451,8 +451,8 @@ func SummaryLines(a wtsync.Assessment) []string {
 		}
 	}
 	if g := a.Graph; g != nil {
-		lines = append(lines, fmt.Sprintf("dependency graph changed on both sides: %d file%s on branch, %d on trunk",
-			len(g.Branch), kit.Plural(len(g.Branch)), len(g.Trunk)))
+		lines = append(lines, fmt.Sprintf("dependency graph changed on both sides: %s on branch, %d on trunk",
+			kit.Count(len(g.Branch), "file"), len(g.Trunk)))
 	}
 	for _, n := range a.Notes {
 		lines = append(lines, kit.Truncate(kit.OneLine(n), kit.NoteWidth))
