@@ -57,9 +57,10 @@ The command packages, and what each holds:
 | `internal/commands/retire` | wt remove, wt sweep |
 | `internal/commands/refs` | wt refs sweep and restore, wt restore |
 | `internal/commands/purge` | wt purge, wt refs purge |
-| `internal/commands/synccmd` | wt sync, wt up, own remotes, push, keeper state |
+| `internal/commands/syncrun` | what a sync run is made of: local trunk's fast-forward, own remotes, push, the idle-session check, finishing a rebase, the run's journal |
+| `internal/commands/synccmd` | wt sync, wt up, wt sync rebase, push-to, doctor |
 | `internal/commands/syncfix` | wt sync resume, wt sync undo |
-| `internal/commands/synckeep` | wt sync keep |
+| `internal/commands/synckeep` | wt sync keep; `keepstate` beneath it holds the keeper's state, lock and launchd job |
 | `internal/commands/admin` | wt doctor, migrate, adopt, pr, hook |
 
 The `<pkg>test` packages (provisiontest, retiretest, refstest, purgetest,
@@ -106,8 +107,8 @@ and its first line says which, as `// Not parallel: <why>`:
   `kit.MachineAgents`, `retire`'s `vanishWait` and `afterFinalCheck`,
   `repo.AfterRefDeleted` and `BeforeConfigAdd`, `refpins.AfterBranchMoved`,
   `provision.ProbeSuperset` and `SupersetHostCommand`, provision's
-  `cloneDir` and `cloneOneFile`, `synccmd`'s `assessWorkers` and
-  `KeepGOOS`, superset's `readDeadline`, agents' process listers and
+  `cloneDir` and `cloneOneFile`, `synccmd`'s `assessWorkers`,
+  `keepstate.KeepGOOS`, superset's `readDeadline`, agents' process listers and
   `Deadline`;
 - signals: `git.Interrupt` and `git.KillRunning` signal the process groups
   `RunBounded` is waiting on, `kit.OnInterrupt` also removes every temporary
