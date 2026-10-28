@@ -380,7 +380,8 @@ func (r *RunPlan) overviewRow(wt repo.Worktree, a wtsync.Assessment, byBranch ma
 // run starts on under --allow-diverged, so it is in the token with the
 // remote's commit, and a run allowed over the divergence its caller was
 // shown is refused over one that moved since. Nil when a run would start on
-// nothing.
+// nothing. With nothing diverged it is the token an older wt gives, which
+// docs/json.md promises: so it is built by hand, not with kit.Token.
 func (sv Survey) Token(ctx *kit.Context, trunk, trunkSHA string) *string {
 	h := sha256.New()
 	h.Write([]byte("wt-sync-1\x00" + trunk + "\x00"))

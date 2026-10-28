@@ -1,16 +1,11 @@
 package retire
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
-	"sync"
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
@@ -203,72 +198,56 @@ type RemoveOutput struct {
 // sessions by who they are and whether each is idle or busy, the lock, what
 // would be lost, the quarantine folder and the --force categories. Nil when
 // the removal would refuse.
-func removeToken(ctx *kit.Context, p Plan) *string {
+func removeToken(ctx *kit.Context, p Plan) *string { return removeTokenOf(ctx, p).Strp() }
+
+func removeTokenOf(ctx *kit.Context, p Plan) *kit.Token {
 	if p.refusal() != "" {
 		return nil
 	}
-	h := sha256.New()
-	field := func(name string, v any) { fmt.Fprintf(h, "%s=%v\x00", name, v) }
-	field("wt-remove", 1)
-	field("repo", ctx.Repo.MainRoot)
-	field("trunk", ctx.Config.MainBranch)
-	field("trunkSource", ctx.Config.TrunkSource)
-	h.Write(kit.ConfigFingerprint(ctx))
+	return hashRemove(kit.NewToken("1:", "wt-remove"), ctx, p)
+}
+
+// hashRemove hashes everything a removal turns on.
+func hashRemove(t *kit.Token, ctx *kit.Context, p Plan) *kit.Token {
+	t.Str("repo", ctx.Repo.MainRoot).Str("trunk", ctx.Config.MainBranch).
+		Str("trunkSource", string(ctx.Config.TrunkSource)).Config(kit.ConfigFingerprint(ctx))
 	bases, err := TrunkBases(ctx)
-	field("basesError", err != nil)
+	t.Bool("basesError", err != nil)
 	for _, b := range bases {
-		field("base", b.Name+" "+b.Tip)
+		t.Str("bases.Name", b.Name).Str("bases.Tip", b.Tip)
 	}
-	field("path", p.Path)
-	field("adminDir", p.AdminDir)
-	field("head", p.Head)
-	field("branch", p.Branch)
-	field("tip", p.Tip)
-	field("outcome", outcomeNames[p.Outcome])
-	field("keepAs", p.KeepAs)
+	t.Str("Path", p.Path).Str("AdminDir", p.AdminDir).Str("Head", p.Head).Str("Branch", p.Branch).Str("Tip", p.Tip).
+		Str("Outcome", outcomeNames[p.Outcome]).Str("KeepAs", p.KeepAs)
 	if p.KeepAs != "" {
 		// A name taken meanwhile turns the rename into a failure.
 		taken, _, err := ctx.Repo.ResolveRef("refs/heads/" + p.KeepAs)
-		field("keepAsTaken", taken)
-		field("keepAsTakenError", err != nil)
+		t.Str("keepAsTaken", taken).Bool("keepAsTakenError", err != nil)
 	}
-	field("reason", p.Reason)
-	field("merge", mergeNames[p.Merge])
-	field("ahead", p.Ahead)
-	field("base", p.Base)
-	field("mergedPR", p.MergedPR)
-	field("dirty", p.Dirty)
-	field("statusError", p.StatusError)
-	field("hidden", strings.Join(p.Hidden, "\x01"))
-	field("moved", strings.Join(p.Moved, "\x01"))
-	field("nested", strings.Join(p.Nested, "\x01"))
-	field("operation", p.Operation)
+	t.Str("Reason", p.Reason).Str("Merge", mergeNames[p.Merge]).Int("Ahead", int64(p.Ahead)).Str("Base", p.Base).
+		Int("MergedPR", int64(p.MergedPR)).Bool("Dirty", p.Dirty).Str("StatusError", p.StatusError).
+		List("Hidden", p.Hidden...).List("Moved", p.Moved...).List("Nested", p.Nested...).Str("Operation", p.Operation)
 	var ids []string
 	for _, a := range p.Sessions {
 		ids = append(ids, a.ID+" "+sessionState(a))
 	}
 	slices.Sort(ids)
-	field("sessions", strings.Join(ids, "\x01"))
-	field("sessionsError", p.SessionsError)
-	field("lock", fmt.Sprint(p.Locked, p.LockHeld, p.LockPid, p.LockReason))
+	t.List("Sessions", ids...).Str("SessionsError", p.SessionsError).
+		Bool("Locked", p.Locked).Bool("LockHeld", p.LockHeld).Int("LockPid", int64(p.LockPid)).Str("LockReason", p.LockReason)
 	for _, l := range p.Unreachable {
-		field("lost", fmt.Sprint(l.Kind, l.OID, l.Count, l.Path))
+		t.Str("Unreachable.Kind", l.Kind).Str("Unreachable.OID", l.OID).Int("Unreachable.Count", int64(l.Count)).
+			Str("Unreachable.Path", l.Path)
 	}
-	field("reachError", p.ReachError)
-	field("quarantine", p.Quarantine)
-	field("force", strings.Join(p.Force.Names(), ","))
-	field("superset", provision.SupersetEnabled(ctx))
-	field("keepSuperset", p.KeepSuperset)
+	t.Str("ReachError", p.ReachError).Str("Quarantine", p.Quarantine).List("Force", p.Force.Names()...).
+		Bool("superset", provision.SupersetEnabled(ctx)).Bool("KeepSuperset", p.KeepSuperset)
 	// The processes it ends, when it ends any: a tool that read the plan
 	// agreed to those. Without --reap they are left alone and do not count.
-	field("reap", p.Reap)
+	t.Bool("Reap", p.Reap)
 	if p.Reap {
 		for _, pr := range p.Processes {
-			field("process", fmt.Sprint(pr.PID, " ", pr.Command()))
+			t.Int("Processes.PID", int64(pr.PID)).Str("Processes.Command", pr.Command())
 		}
 	}
-	token := "1:" + hex.EncodeToString(h.Sum(nil))[:32]
-	return &token
+	return t
 }
 
 // problemsOf is every problem with the plan, --force or not.
@@ -400,15 +379,15 @@ func emptyRemovePlan() RemovePlanOutput {
 // none at all, is still one object, with error set, and the error is
 // returned too.
 func RemovePlanJSON(ctx *kit.Context, t RemoveTarget, opts RemoveOptions, out, progress io.Writer) error {
-	j := &RemoveJournal{}
+	j := newRemoveJournal(nil, ctx)
 	opts.DryRun, opts.Confirm, opts.Journal, opts.Expect, opts.Result = true, nil, j, "", nil
 	wt, err := t.locate(ctx)
 	if err == nil {
 		err = removeWorktree(ctx, wt, opts, progress)
 	}
 	o := emptyRemovePlan()
-	if j.plan != nil {
-		o = removePlanOutput(ctx, *j.plan, j.token)
+	if j.Res.plan != nil {
+		o = removePlanOutput(ctx, *j.Res.plan, j.Res.token)
 	} else {
 		o.Repo, o.Trunk, o.TrunkSource = kit.Strp(ctx.Repo.MainRoot), kit.Strp(ctx.Config.MainBranch), ctx.TrunkSource()
 	}
@@ -430,14 +409,14 @@ func RemoveFailedJSON(out io.Writer, dryRun bool, err error) {
 		_ = kit.WriteJSON(out, o)
 		return
 	}
-	(&RemoveJournal{out: out}).finish(RemoveResult{}, err)
+	newRemoveJournal(out, nil).finish(RemoveResult{}, err)
 }
 
 // RemoveJSON is wt remove --yes --json: the removal, and one object on out
 // saying what it did, effect by effect — when it returns, or when a signal
 // ends it. The plan as wt prints it and the progress go to progress.
 func RemoveJSON(ctx *kit.Context, t RemoveTarget, opts RemoveOptions, out, progress io.Writer) error {
-	j := &RemoveJournal{out: out, ctx: ctx}
+	j := newRemoveJournal(out, ctx)
 	defer kit.SetInterruptJournal(j)()
 	defer kit.WatchSignals(progress, nil)()
 	var res RemoveResult
@@ -455,14 +434,45 @@ func RemoveJSON(ctx *kit.Context, t RemoveTarget, opts RemoveOptions, out, progr
 // the signal handler when it does not. The object is written once. A nil
 // journal records nothing.
 type RemoveJournal struct {
-	mu      sync.Mutex
-	once    sync.Once
-	out     io.Writer
+	*kit.Journal[removeRecord]
+}
+
+// removeRecord is what a removal's journal holds: the plan and its token,
+// how far the removal got, and what it returned.
+type removeRecord struct {
 	ctx     *kit.Context
 	plan    *Plan
 	token   string
 	started bool
 	runID   string
+	res     *RemoveResult
+	err     error
+}
+
+// newRemoveJournal is a journal that writes its object to out; nil out
+// writes nothing, for the plan. The object is read back from the disk
+// outside the lock: a signal parks the git a returning run is reading
+// with, and the handler must still be able to write.
+func newRemoveJournal(out io.Writer, ctx *kit.Context) *RemoveJournal {
+	return &RemoveJournal{kit.NewJournal(out, removeRecord{ctx: ctx}, kit.JournalRules[removeRecord]{
+		Snapshot: func(r removeRecord, signalled bool, recovery string) any {
+			var plan *Plan
+			if r.plan != nil {
+				p := *r.plan
+				plan = &p
+			}
+			res, err, runID := r.res, r.err, r.runID
+			switch {
+			case signalled:
+				// What is true of the worktree and the branch now.
+				res, err = nil, nil
+			case res != nil:
+				// What the removal returned is what is left: a run that
+				// pinned nothing was dropped.
+				runID = res.RunID
+			}
+			return removeOutput(r.ctx, plan, r.token, runID, r.started, res, err, recovery)
+		}})}
 }
 
 // planned records the plan the removal made, and its token.
@@ -470,9 +480,7 @@ func (j *RemoveJournal) planned(ctx *kit.Context, p Plan, token string) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.ctx, j.plan, j.token = ctx, &p, token
+	j.Edit(func(r *removeRecord) { r.ctx, r.plan, r.token = ctx, &p, token })
 }
 
 // applying marks the point after which the removal changes things.
@@ -480,9 +488,7 @@ func (j *RemoveJournal) applying() {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.started = true
+	j.Edit(func(r *removeRecord) { r.started = true })
 }
 
 // ran records the run the branch is about to be moved into.
@@ -490,43 +496,24 @@ func (j *RemoveJournal) ran(runID string) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.runID = runID
+	j.Edit(func(r *removeRecord) { r.runID = runID })
 }
 
 // finish writes the object for a removal that returned.
 func (j *RemoveJournal) finish(res RemoveResult, err error) {
-	j.write(&res, err, "")
+	if j == nil {
+		return
+	}
+	j.Edit(func(r *removeRecord) { r.res, r.err = &res, err })
+	j.Finish()
 }
 
 // Interrupted writes the object for a removal a signal ended, from what is
 // true of the worktree and the branch now.
-func (j *RemoveJournal) Interrupted(_ string, recovery string) {
-	j.write(nil, nil, recovery)
-}
-
-func (j *RemoveJournal) write(res *RemoveResult, err error, recovery string) {
-	if j == nil || j.out == nil {
-		return
+func (j *RemoveJournal) Interrupted(inFlight, recovery string) {
+	if j != nil {
+		j.Journal.Interrupted(inFlight, recovery)
 	}
-	j.mu.Lock()
-	ctx, started, token, runID := j.ctx, j.started, j.token, j.runID
-	var plan *Plan
-	if j.plan != nil {
-		p := *j.plan
-		plan = &p
-	}
-	j.mu.Unlock()
-	// The object is read outside once: a signal parks the git a returning
-	// run is reading with, and the handler must still be able to write.
-	if res != nil {
-		// What the removal returned is what is left: a run that pinned
-		// nothing was dropped.
-		runID = res.RunID
-	}
-	o := removeOutput(ctx, plan, token, runID, started, res, err, recovery)
-	j.once.Do(func() { _ = kit.WriteJSON(j.out, o) })
 }
 
 // removeOutput is the result object. res is what the removal returned, nil

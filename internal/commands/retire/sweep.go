@@ -725,10 +725,7 @@ func Sweep(ctx *kit.Context, opts SweepOptions, w io.Writer) (err error) {
 		j.open(ctx)
 		defer kit.SetInterruptJournal(j)()
 		defer kit.WatchSignals(w, nil)()
-		defer func() {
-			j.fail(err)
-			j.Finish()
-		}()
+		defer func() { j.Fail(err) }()
 	}
 	plan, fetched, err := prepareSweep(ctx, opts, w)
 	opts.Journal.fetched(fetched)

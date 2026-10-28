@@ -107,7 +107,7 @@ func TestCreateJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 	j.Interrupted("", "interrupted")
 	// Finish would park for good now, as the run does once a signal owns
 	// it; the write it would make must not happen a second time.
-	j.write(false)
+	j.Journal.Finish()
 	r := decodeCreate(t, "new", out.Bytes())
 	if r.Outcome != CreateInterrupted || StepOf(r, "provision").Result != kit.StepInterrupted ||
 		StepOf(r, "build").Result != kit.StepNotRun {

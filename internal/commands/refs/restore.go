@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"sync"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
@@ -270,7 +269,13 @@ func RestoreJSON(ctx *kit.Context, dir string, opts RestoreOptions, out, progres
 		}
 		return nil
 	}
-	j := &restoreJournal{out: out, dir: dir, rp: rp}
+	j := kit.NewJournal(out, restoreRecord{}, kit.JournalRules[restoreRecord]{
+		Close: func(r *restoreRecord, signalled bool, recovery string) any {
+			if signalled {
+				return restoreOutput(dir, rp, kit.OutcomeInterrupted, quarantine.RestoreResult{}, nil, recovery)
+			}
+			return restoreOutput(dir, rp, r.res.Outcome, r.res, r.err, "")
+		}})
 	defer kit.SetInterruptJournal(j)()
 	defer kit.WatchSignals(progress, nil)()
 	var res quarantine.RestoreResult
@@ -278,54 +283,42 @@ func RestoreJSON(ctx *kit.Context, dir string, opts RestoreOptions, out, progres
 	if err == nil {
 		err = Restore(ctx, dir, opts, progress)
 	}
-	j.finish(res, err)
+	j.Edit(func(r *restoreRecord) { r.res, r.err = res, err })
+	j.Finish()
 	return err
 }
 
-// restoreJournal writes wt restore --json's one object once: when the
-// restore returns, or when a signal ends it.
-type restoreJournal struct {
-	once sync.Once
-	out  io.Writer
-	dir  string
-	rp   *repo.Repo
+// restoreRecord is what wt restore --json's journal holds: what the restore
+// returned.
+type restoreRecord struct {
+	res quarantine.RestoreResult
+	err error
 }
 
-func (j *restoreJournal) finish(res quarantine.RestoreResult, err error) {
-	j.write(res.Outcome, res, err, "")
-}
-
-// Interrupted finishes the journal for a signal (kit.Interruptible).
-func (j *restoreJournal) Interrupted(_ string, recovery string) {
-	j.write(kit.OutcomeInterrupted, quarantine.RestoreResult{}, nil, recovery)
-}
-
-// write reads the quarantine as it is now, so every location, the branch
-// and the steps say what is true, whatever the run got to.
-func (j *restoreJournal) write(outcome string, res quarantine.RestoreResult, err error, recovery string) {
-	j.once.Do(func() {
-		if outcome == "" {
-			outcome = quarantine.OutcomeRefused
+// restoreOutput reads the quarantine as it is now, so every location, the
+// branch and the steps say what is true, whatever the run got to.
+func restoreOutput(dir string, rp *repo.Repo, outcome string, res quarantine.RestoreResult, err error, recovery string) RestoreOutput {
+	if outcome == "" {
+		outcome = quarantine.OutcomeRefused
+	}
+	o := RestoreOutput{Schema: 1, SchemaVersion: schema.VersionOf("restore"), Command: "restore",
+		Dir: dir, Outcome: outcome, Unlocked: res.Unlocked, Steps: []quarantine.Step{},
+		Recovery: kit.Strp(recovery)}
+	if err != nil {
+		o.Error = kit.Strp(err.Error())
+	}
+	if r, lerr := quarantine.Load(dir); lerr == nil {
+		o.Repo = kit.Strp(r.Repo)
+		o.Checkout = restorePlace(r.Checkout, quarantine.Locate(r.Checkout))
+		o.Admin = restorePlace(r.Admin, quarantine.Locate(r.Admin))
+		action, occupied := res.Action, res.OccupiedBy
+		if r.Restore != nil {
+			action, occupied = kit.Deref(r.Restore.Action), kit.Deref(r.Restore.OccupiedBy)
+			o.Steps = append(o.Steps, r.Restore.Steps...)
 		}
-		o := RestoreOutput{Schema: 1, SchemaVersion: schema.VersionOf("restore"), Command: "restore",
-			Dir: j.dir, Outcome: outcome, Unlocked: res.Unlocked, Steps: []quarantine.Step{},
-			Recovery: kit.Strp(recovery)}
-		if err != nil {
-			o.Error = kit.Strp(err.Error())
-		}
-		if r, lerr := quarantine.Load(j.dir); lerr == nil {
-			o.Repo = kit.Strp(r.Repo)
-			o.Checkout = restorePlace(r.Checkout, quarantine.Locate(r.Checkout))
-			o.Admin = restorePlace(r.Admin, quarantine.Locate(r.Admin))
-			action, occupied := res.Action, res.OccupiedBy
-			if r.Restore != nil {
-				action, occupied = kit.Deref(r.Restore.Action), kit.Deref(r.Restore.OccupiedBy)
-				o.Steps = append(o.Steps, r.Restore.Steps...)
-			}
-			o.Branch = restoreBranchOf(r, action, occupied)
-		} else if j.rp != nil {
-			o.Repo = kit.Strp(j.rp.MainRoot)
-		}
-		_ = kit.WriteJSON(j.out, o)
-	})
+		o.Branch = restoreBranchOf(r, action, occupied)
+	} else if rp != nil {
+		o.Repo = kit.Strp(rp.MainRoot)
+	}
+	return o
 }

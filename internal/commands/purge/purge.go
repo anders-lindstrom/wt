@@ -8,8 +8,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
@@ -209,16 +209,26 @@ func sizeWords(n int64) string {
 	return fmt.Sprintf(" (%.1f GB)", float64(n)/(1024*1024*1024))
 }
 
-// purgeToken names a plan by its fingerprint: the folder by path and
-// identity, its state, its record byte for byte, every path in it, each pin
-// and where it is, and what would be lost. Nil when the purge would refuse.
-func purgeToken(p quarantine.PurgePlan) *string {
-	fp := p.Fingerprint()
-	if fp == "" {
+// purgeToken names a plan: the folder by path and identity, its state, its
+// record byte for byte, every path in it, each pin and where it is, and what
+// would be lost. Nil when the purge would refuse.
+func purgeToken(p quarantine.PurgePlan) *string { return purgeTokenOf(p).Strp() }
+
+func purgeTokenOf(p quarantine.PurgePlan) *kit.Token {
+	if p.Refusal() != "" {
 		return nil
 	}
-	token := "1:" + fp[:32]
-	return &token
+	t := kit.NewToken("1:", "wt-quarantine-purge").Str("Dir", p.Dir).
+		Str("Identity.Device", strconv.FormatUint(p.Identity.Device, 10)).
+		Str("Identity.Inode", strconv.FormatUint(p.Identity.Inode, 10)).
+		Str("State", p.State).Str("Data", string(p.Data)).List("Entries", p.Entries...).Str("Tree", p.Tree)
+	for _, pin := range p.Pins {
+		t.Str("Pins.Ref", pin.Ref).Str("Pins.OID", pin.OID)
+	}
+	for _, l := range p.Lost {
+		t.Str("Lost.Kind", l.Kind).Str("Lost.OID", l.OID).Int("Lost.Count", int64(l.Count))
+	}
+	return t.Str("ReachError", p.ReachError).Bool("RepoGone", p.RepoGone)
 }
 
 // PinPlan is one pin, for --json.
@@ -365,7 +375,7 @@ func QuarantinePurgeJSON(dir string, opts Options, out, progress io.Writer) erro
 	if err == nil {
 		dir = abs
 	}
-	j := &purgeJournal{out: out, dir: dir}
+	j := newPurgeJournal(out, dir)
 	defer kit.SetInterruptJournal(j)()
 	defer kit.WatchSignals(progress, nil)()
 	var res quarantine.PurgeResult
@@ -373,42 +383,44 @@ func QuarantinePurgeJSON(dir string, opts Options, out, progress io.Writer) erro
 	if err == nil {
 		err = QuarantinePurge(dir, opts, progress)
 	}
-	j.write(res.Outcome, err, "")
+	j.finish(res.Outcome, err)
 	return err
 }
 
 // purgeJournal writes wt purge --json's one object once: when
 // the purge returns, or when a signal ends it.
 type purgeJournal struct {
-	mu   sync.Mutex
-	once sync.Once
-	out  io.Writer
-	dir  string
-	plan quarantine.PurgePlan
+	*kit.Journal[purgeRecord]
+}
+
+// purgeRecord is the plan the purge read, and what it returned.
+type purgeRecord struct {
+	plan    quarantine.PurgePlan
+	outcome string
+	err     error
+}
+
+// newPurgeJournal reads the pins and the folder as they are when it writes,
+// so what it says became of each is true whatever the run got to.
+func newPurgeJournal(out io.Writer, dir string) *purgeJournal {
+	return &purgeJournal{kit.NewJournal(out, purgeRecord{}, kit.JournalRules[purgeRecord]{
+		Snapshot: func(r purgeRecord, signalled bool, recovery string) any {
+			if signalled {
+				return purgeOutput(dir, r.plan, kit.OutcomeInterrupted, nil, recovery)
+			}
+			return purgeOutput(dir, r.plan, r.outcome, r.err, "")
+		}})}
 }
 
 // planned records the plan the purge read.
 func (j *purgeJournal) planned(p quarantine.PurgePlan) {
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.plan = p
+	j.Edit(func(r *purgeRecord) { r.plan = p })
 }
 
-// Interrupted finishes the journal for a signal (kit.Interruptible).
-func (j *purgeJournal) Interrupted(_ string, recovery string) {
-	j.write(kit.OutcomeInterrupted, nil, recovery)
-}
-
-// write reads the pins and the folder as they are now, so what it says
-// became of each is true whatever the run got to. The object is read
-// outside once: a signal parks the git a returning run is reading with, and
-// the handler must still be able to write.
-func (j *purgeJournal) write(outcome string, err error, recovery string) {
-	j.mu.Lock()
-	p := j.plan
-	j.mu.Unlock()
-	o := purgeOutput(j.dir, p, outcome, err, recovery)
-	j.once.Do(func() { _ = kit.WriteJSON(j.out, o) })
+// finish writes the object for a purge that returned.
+func (j *purgeJournal) finish(outcome string, err error) {
+	j.Edit(func(r *purgeRecord) { r.outcome, r.err = outcome, err })
+	j.Finish()
 }
 
 func purgeOutput(dir string, p quarantine.PurgePlan, outcome string, err error, recovery string) Output {

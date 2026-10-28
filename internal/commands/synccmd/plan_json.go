@@ -107,41 +107,86 @@ type UpPlan struct {
 // A worktree wt up would not start on is a plan with upEligible false and
 // the reason, not an error; only a worktree that cannot be found is.
 func UpPlanJSON(ctx *kit.Context, arg string, w io.Writer) error {
-	p := UpPlan{Schema: 1, SchemaVersion: schema.VersionOf("status"), Command: "status",
-		Stack: []PlanStack{}, Sessions: []PlanSession{}}
-	trunk := ctx.Config.MainBranch
-	ref := "origin/" + trunk
-	p.Trunk, p.TrunkSource = kit.Strp(trunk), ctx.TrunkSource()
-	p.Configured = ctx.Configured()
-	var tip string
-	var exists bool
-	if trunk != "" {
-		p.TrunkRef = kit.Strp(ref)
-		// Status only, nothing acts on it: a ref git cannot read reads as absent.
-		tip, exists, _ = ctx.Repo.ResolveRef("refs/remotes/" + ref)
-		p.TrunkRefExists, p.TrunkTip = exists, kit.Strp(tip)
-		p.TrunkRefUpdatedAt = refUpdatedAt(ctx.Repo.MainRoot, "refs/remotes/"+ref)
-	}
+	pl := &upPlanner{ctx: ctx, trunk: ctx.Config.MainBranch, p: UpPlan{Schema: 1, SchemaVersion: schema.VersionOf("status"),
+		Command: "status", Stack: []PlanStack{}, Sessions: []PlanSession{}}}
 	// Listed at most once, and only when asked: by the trunk check, when
 	// local trunk is checked out, and for the stack's sessions.
-	listAgents := sync.OnceValues(func() ([]agents.Agent, error) { return ctx.ListAgents() })
-	// What wt up would do to local trunk after its fetch, judged against
-	// origin/<trunk> as last fetched: the fetch may bring more.
-	p.TrunkSync = syncrun.SyncLocalTrunk(ctx, tip, syncrun.TrunkSyncOptions{OptedOut: !ctx.UserConfig().FFTrunk, Agents: listAgents})
-
-	inel := func(code, why string) {
-		if p.UpIneligibleCode == nil {
-			p.UpIneligibleCode, p.UpIneligibleReason = kit.Strp(code), kit.Strp(why)
-		}
-	}
+	pl.listAgents = sync.OnceValues(func() ([]agents.Agent, error) { return ctx.ListAgents() })
+	pl.readTrunk()
 	wt, err := kit.Locate(ctx, arg)
 	if errors.Is(err, kit.ErrMainCheckout) {
 		wt, err = mainWorktree(ctx)
 	}
 	if err != nil {
-		inel(IneligibleNotAWorktree, err.Error())
-		return writePlan(w, p)
+		pl.ineligible(IneligibleNotAWorktree, err.Error())
+		return writePlan(w, pl.p)
 	}
+	pl.wt = wt
+	pl.readWorktree()
+	pl.judgeWorktree()
+	// Every branch against its own remote as last fetched: nothing here
+	// fetches. Remotes that cannot be read make every branch unknown.
+	pl.own = wtsync.ReadOwnOrUnknown(ctx.Repo.MainRoot, pl.trunk)
+	stack := pl.readStack()
+	diverged := pl.judgeOwnRemotes()
+	pl.judgeInTrunk()
+	pl.p.UpEligible = pl.p.UpIneligibleCode == nil
+	// A plan held back by divergence alone has a token too: wt up
+	// --allow-diverged --expect goes ahead over exactly what it covers.
+	if pl.p.UpEligible || *pl.p.UpIneligibleCode == IneligibleOwnDiverged {
+		pl.p.Token = kit.Strp(syncrun.PlanToken(ctx, pl.trunk, stack, diverged))
+	}
+	pl.readSessions()
+	return writePlan(w, pl.p)
+}
+
+// upPlanner is wt status <work> --json as it is worked out: the plan so
+// far, and what its steps share.
+type upPlanner struct {
+	ctx   *kit.Context
+	p     UpPlan
+	trunk string
+	// tip is origin/<trunk> as last fetched, when exists; base is what the
+	// worktree is counted against: tip, else local trunk.
+	tip, base  string
+	exists     bool
+	listAgents func() ([]agents.Agent, error)
+	wt         repo.Worktree
+	pw         *PlanWorktree
+	own        *wtsync.Own
+}
+
+// ineligible records why wt up would not start on the worktree: the first
+// reason found is the one the plan gives.
+func (pl *upPlanner) ineligible(code, why string) {
+	if pl.p.UpIneligibleCode == nil {
+		pl.p.UpIneligibleCode, pl.p.UpIneligibleReason = kit.Strp(code), kit.Strp(why)
+	}
+}
+
+// readTrunk reads trunk and origin/<trunk> as last fetched, and what wt up
+// would do to local trunk after its fetch.
+func (pl *upPlanner) readTrunk() {
+	ctx, p := pl.ctx, &pl.p
+	ref := "origin/" + pl.trunk
+	p.Trunk, p.TrunkSource = kit.Strp(pl.trunk), ctx.TrunkSource()
+	p.Configured = ctx.Configured()
+	if pl.trunk != "" {
+		p.TrunkRef = kit.Strp(ref)
+		// Status only, nothing acts on it: a ref git cannot read reads as absent.
+		pl.tip, pl.exists, _ = ctx.Repo.ResolveRef("refs/remotes/" + ref)
+		p.TrunkRefExists, p.TrunkTip = pl.exists, kit.Strp(pl.tip)
+		p.TrunkRefUpdatedAt = refUpdatedAt(ctx.Repo.MainRoot, "refs/remotes/"+ref)
+	}
+	// What wt up would do to local trunk after its fetch, judged against
+	// origin/<trunk> as last fetched: the fetch may bring more.
+	p.TrunkSync = syncrun.SyncLocalTrunk(ctx, pl.tip, syncrun.TrunkSyncOptions{OptedOut: !ctx.UserConfig().FFTrunk, Agents: pl.listAgents})
+}
+
+// readWorktree reads the worktree asked about: whether it is clean, and how
+// far it is ahead of and behind trunk.
+func (pl *upPlanner) readWorktree() {
+	ctx, wt := pl.ctx, pl.wt
 	work := kit.WorktreeName(ctx, wt.Branch, wt.Path)
 	if wt.IsMain {
 		work = ctx.Repo.Name
@@ -154,106 +199,122 @@ func UpPlanJSON(ctx *kit.Context, arg string, w io.Writer) error {
 	case dirty:
 		pw.State = "dirty"
 	}
-	base := tip
-	if !exists {
+	pl.base = pl.tip
+	if !pl.exists {
 		// Status only: a trunk git cannot read leaves ahead and behind unset.
-		base, _, _ = ctx.Repo.ResolveRef("refs/heads/" + trunk)
+		pl.base, _, _ = ctx.Repo.ResolveRef("refs/heads/" + pl.trunk)
 	}
-	if wt.Branch != "" && base != "" {
-		if a, ok := ctx.Repo.CommitsAhead("refs/heads/"+wt.Branch, base); ok {
+	if wt.Branch != "" && pl.base != "" {
+		if a, ok := ctx.Repo.CommitsAhead("refs/heads/"+wt.Branch, pl.base); ok {
 			pw.Ahead = &a
 		}
-		if b, ok := ctx.Repo.CommitsAhead(base, "refs/heads/"+wt.Branch); ok {
+		if b, ok := ctx.Repo.CommitsAhead(pl.base, "refs/heads/"+wt.Branch); ok {
 			pw.Behind = &b
 		}
 	}
-	p.Worktree = pw
+	pl.pw, pl.p.Worktree = pw, pw
+}
 
+// judgeWorktree is what of the configuration and of the worktree itself
+// keeps wt up off it.
+func (pl *upPlanner) judgeWorktree() {
+	ctx, wt := pl.ctx, pl.wt
 	switch {
 	case errors.Is(ctx.ConfigError, config.ErrNoConfig):
-		inel(IneligibleNoConfig, kit.OneLine(ctx.ConfigError.Error()))
+		pl.ineligible(IneligibleNoConfig, kit.OneLine(ctx.ConfigError.Error()))
 	case ctx.ConfigError != nil:
-		inel(IneligibleConfigInvalid, "the wt configuration does not parse: "+kit.OneLine(ctx.ConfigError.Error()))
+		pl.ineligible(IneligibleConfigInvalid, "the wt configuration does not parse: "+kit.OneLine(ctx.ConfigError.Error()))
 	}
 	switch {
 	case wt.IsMain:
-		inel(IneligibleMainCheckout, "the main checkout is trunk's own; wt up moves a worktree")
+		pl.ineligible(IneligibleMainCheckout, "the main checkout is trunk's own; wt up moves a worktree")
 	case wt.Branch == "":
-		inel(IneligibleDetached, "detached HEAD: no branch to rebase")
-	case wt.Branch == trunk:
-		inel(IneligibleOnTrunk, "this worktree is on trunk itself")
+		pl.ineligible(IneligibleDetached, "detached HEAD: no branch to rebase")
+	case wt.Branch == pl.trunk:
+		pl.ineligible(IneligibleOnTrunk, "this worktree is on trunk itself")
 	}
 	if gitDir, err := wtsync.GitDir(wt.Path); err == nil {
 		if _, ok, _ := wtsync.ReadState(gitDir); ok {
-			inel(IneligibleHandedOver, "an earlier wt sync rebase is waiting on you here: wt sync resume or wt sync undo")
+			pl.ineligible(IneligibleHandedOver, "an earlier wt sync rebase is waiting on you here: wt sync resume or wt sync undo")
 		}
 	}
-	// Every branch against its own remote as last fetched: nothing here
-	// fetches. Remotes that cannot be read make every branch unknown.
-	own := wtsync.ReadOwnOrUnknown(ctx.Repo.MainRoot, trunk)
-	// ownOf is one branch against its own remote, with what of it would keep
-	// wt up off the checkout at path.
-	ownOf := func(branch, path string) wtsync.OwnRemote {
-		o := syncrun.OwnStateOf(own, branch)
-		switch o.State {
-		case wtsync.OwnBehind:
-			// Unreadable is not clean: a fast-forward needs to know.
-			dirty, err := repo.Dirty(path, true)
-			listed, _ := listAgents()
-			o.Blocks, o.Why = wtsync.OwnBlocks(o, path, dirty || err != nil, agents.SessionsAt(listed, path))
-		case wtsync.OwnDiverged:
-			// Only a branch wt up would rebase is kept off by it: one on
-			// trunk already, or with nothing of its own, is skipped, and
-			// nothing is pushed over its remote.
-			behind, ok1 := ctx.Repo.CommitsAhead(base, "refs/heads/"+branch)
-			ahead, ok2 := ctx.Repo.CommitsAhead(branch, base)
-			if base == "" || !ok1 || !ok2 || (behind > 0 && ahead > 0) {
-				o.Blocks = wtsync.OwnBlockDiverged
-			}
+}
+
+// ownOf is one branch against its own remote, with what of it would keep
+// wt up off the checkout at path.
+func (pl *upPlanner) ownOf(branch, path string) wtsync.OwnRemote {
+	ctx, base := pl.ctx, pl.base
+	o := syncrun.OwnStateOf(pl.own, branch)
+	switch o.State {
+	case wtsync.OwnBehind:
+		// Unreadable is not clean: a fast-forward needs to know.
+		dirty, err := repo.Dirty(path, true)
+		listed, _ := pl.listAgents()
+		o.Blocks, o.Why = wtsync.OwnBlocks(o, path, dirty || err != nil, agents.SessionsAt(listed, path))
+	case wtsync.OwnDiverged:
+		// Only a branch wt up would rebase is kept off by it: one on
+		// trunk already, or with nothing of its own, is skipped, and
+		// nothing is pushed over its remote.
+		behind, ok1 := ctx.Repo.CommitsAhead(base, "refs/heads/"+branch)
+		ahead, ok2 := ctx.Repo.CommitsAhead(branch, base)
+		if base == "" || !ok1 || !ok2 || (behind > 0 && ahead > 0) {
+			o.Blocks = wtsync.OwnBlockDiverged
 		}
-		return o
 	}
+	return o
+}
+
+// readStack is the candidate stack, from local refs as of now: what wt up
+// would move, each member with its own remote and the deferred steps trunk
+// declares. It returns the stack's branches in order.
+func (pl *upPlanner) readStack() []string {
+	ctx, wt := pl.ctx, pl.wt
 	// The deferred steps trunk declares, as last fetched: wt up fetches
 	// first and reads them from the trunk it then rebases onto. None when
 	// trunk declares none, has no declaration, or it cannot be read.
 	var declaration *wtsync.Config
-	if exists {
-		declaration, _ = wtsync.LoadFromRef(ctx.Repo.MainRoot, tip)
+	if pl.exists {
+		declaration, _ = wtsync.LoadFromRef(ctx.Repo.MainRoot, pl.tip)
 	}
 	declared := declaredSteps(declaration)
-	// The candidate stack, from local refs as of now: what wt up would move.
 	stack := []string{}
-	if wt.Branch != "" && !wt.IsMain {
-		stack = []string{wt.Branch}
-		all, err := ctx.Repo.Worktrees()
-		if err == nil && base != "" {
-			if parents, _, err := wtsync.Parents(ctx.Repo.MainRoot, base, all); err == nil {
-				stack = wtsync.Order(parents, wtsync.Members(parents, wt.Branch))
-			}
-		}
-		byBranch := map[string]repo.Worktree{}
-		for _, o := range all {
-			byBranch[o.Branch] = o
-		}
-		for _, b := range stack {
-			o := byBranch[b]
-			p.Stack = append(p.Stack, PlanStack{
-				PlanStackMember:  PlanStackMember{Work: kit.WorktreeName(ctx, b, o.Path), Branch: b, Path: o.Path},
-				OwnRemote:        syncrun.OwnRemoteOf(ownOf(b, o.Path)),
-				DeferredDeclared: declared,
-			})
+	if wt.Branch == "" || wt.IsMain {
+		return stack
+	}
+	stack = []string{wt.Branch}
+	all, err := ctx.Repo.Worktrees()
+	if err == nil && pl.base != "" {
+		if parents, _, err := wtsync.Parents(ctx.Repo.MainRoot, pl.base, all); err == nil {
+			stack = wtsync.Order(parents, wtsync.Members(parents, wt.Branch))
 		}
 	}
-	// One refusal refuses the whole stack, so any member's own remote makes
-	// the plan ineligible. A member that cannot be fast-forwarded comes
-	// first: --allow-diverged does nothing for it, so a stack with both is
-	// not one the flag clears.
+	byBranch := map[string]repo.Worktree{}
+	for _, o := range all {
+		byBranch[o.Branch] = o
+	}
+	for _, b := range stack {
+		o := byBranch[b]
+		pl.p.Stack = append(pl.p.Stack, PlanStack{
+			PlanStackMember:  PlanStackMember{Work: kit.WorktreeName(ctx, b, o.Path), Branch: b, Path: o.Path},
+			OwnRemote:        syncrun.OwnRemoteOf(pl.ownOf(b, o.Path)),
+			DeferredDeclared: declared,
+		})
+	}
+	return stack
+}
+
+// judgeOwnRemotes refuses the plan over any member's own remote: one
+// refusal refuses the whole stack. A member that cannot be fast-forwarded
+// comes first: --allow-diverged does nothing for it, so a stack with both
+// is not one the flag clears. It returns each diverged member's remote
+// commit, for the token.
+func (pl *upPlanner) judgeOwnRemotes() map[string]string {
 	diverged := map[string]string{}
 	var behind, apart *PlanStack
-	for i := range p.Stack {
-		m := &p.Stack[i]
-		if m.Branch == wt.Branch {
-			pw.OwnRemote = m.OwnRemote
+	for i := range pl.p.Stack {
+		m := &pl.p.Stack[i]
+		if m.Branch == pl.wt.Branch {
+			pl.pw.OwnRemote = m.OwnRemote
 		}
 		switch {
 		case m.OwnRemote.Blocks == nil:
@@ -268,45 +329,46 @@ func UpPlanJSON(ctx *kit.Context, arg string, w io.Writer) error {
 	}
 	switch {
 	case behind != nil:
-		inel(IneligibleOwnBehind, ownIneligible(*behind, wt.Branch, ownOf(behind.Branch, behind.Path).Why))
+		pl.ineligible(IneligibleOwnBehind, ownIneligible(*behind, pl.wt.Branch, pl.ownOf(behind.Branch, behind.Path).Why))
 	case apart != nil:
 		why := ""
-		if ownOf(apart.Branch, apart.Path).Elsewhere {
+		if pl.ownOf(apart.Branch, apart.Path).Elsewhere {
 			why = "elsewhere"
 		}
-		inel(IneligibleOwnDiverged, ownIneligible(*apart, wt.Branch, why))
+		pl.ineligible(IneligibleOwnDiverged, ownIneligible(*apart, pl.wt.Branch, why))
 	}
-	// Nothing of the branch is left to bring up: every commit it has is on
-	// trunk already. A stack is not judged by its first member alone, and a
-	// branch behind or diverged from its own remote keeps those codes above.
+	return diverged
+}
+
+// judgeInTrunk is a branch with nothing left to bring up: every commit it
+// has is on trunk already. A stack is not judged by its first member alone,
+// and a branch behind or diverged from its own remote keeps those codes.
+func (pl *upPlanner) judgeInTrunk() {
+	p, pw, wt := &pl.p, pl.pw, pl.wt
 	if len(p.Stack) == 1 && pw.Ahead != nil && *pw.Ahead == 0 && wt.Branch != "" && !wt.IsMain {
-		onto := trunk
-		if p.TrunkRef != nil && exists {
+		onto := pl.trunk
+		if p.TrunkRef != nil && pl.exists {
 			onto = *p.TrunkRef
 		}
-		inel(IneligibleInTrunk, fmt.Sprintf("every commit of %s is already on %s: there is nothing to rebase", wt.Branch, onto))
+		pl.ineligible(IneligibleInTrunk, fmt.Sprintf("every commit of %s is already on %s: there is nothing to rebase", wt.Branch, onto))
 	}
-	p.UpEligible = p.UpIneligibleCode == nil
-	// A plan held back by divergence alone has a token too: wt up
-	// --allow-diverged --expect goes ahead over exactly what it covers.
-	if p.UpEligible || *p.UpIneligibleCode == IneligibleOwnDiverged {
-		p.Token = kit.Strp(syncrun.PlanToken(ctx, trunk, stack, diverged))
-	}
+}
 
-	listed, err := listAgents()
+// readSessions lists the agent sessions in the stack's worktrees.
+func (pl *upPlanner) readSessions() {
+	listed, err := pl.listAgents()
 	if err != nil {
-		p.SessionsError = kit.Strp(err.Error())
+		pl.p.SessionsError = kit.Strp(err.Error())
 	}
-	for _, m := range p.Stack {
+	for _, m := range pl.p.Stack {
 		for _, a := range agents.SessionsAt(listed, m.Path) {
 			state := "busy"
 			if a.Idle() {
 				state = "idle"
 			}
-			p.Sessions = append(p.Sessions, PlanSession{Work: m.Work, Name: a.Name, Kind: a.Program(), State: state})
+			pl.p.Sessions = append(pl.p.Sessions, PlanSession{Work: m.Work, Name: a.Name, Kind: a.Program(), State: state})
 		}
 	}
-	return writePlan(w, p)
 }
 
 // ownIneligible is upIneligibleReason for a member of the stack whose own

@@ -1,14 +1,11 @@
 package provision
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
-	"sync"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
@@ -185,7 +182,7 @@ func PlanNew(ctx *kit.Context, spec string, opts NewOptions) NewPlan {
 		p.problem(kit.ProblemBaseMissing, "%q is not a commit here", base)
 	}
 	if len(p.Problems) == 0 {
-		p.Token = kit.Strp(createToken(ctx, "new", *p.Branch, *p.Path, *p.BaseCommit))
+		p.Token = newTokenOf(ctx, p).Strp()
 	}
 	return p
 }
@@ -229,7 +226,7 @@ func PlanCheckout(ctx *kit.Context, arg, work string, opts NewOptions) CheckoutP
 		}
 	}
 	if len(p.Problems) == 0 {
-		p.Token = kit.Strp(createToken(ctx, "checkout", t.tokenName(), *p.Path, t.Commit))
+		p.Token = checkoutTokenOf(ctx, p).Strp()
 	}
 	return p
 }
@@ -246,26 +243,29 @@ func (t CheckoutTarget) source() CheckoutSource {
 	return s
 }
 
-// tokenName is the branch as the token names it: a branch to be created
-// from a remote also names the remote-tracking ref, so a local branch of
-// the same name appearing changes the token.
-func (t CheckoutTarget) tokenName() string {
-	if t.Source == SourceRemote {
-		return t.Branch + "\x00remote\x00" + t.RemoteRef
-	}
-	return t.Branch
+// The create tokens name the inputs a plan was computed from: the command,
+// the branch and path it would create, the commit the worktree would land
+// on, and the configuration file. Anything else moving does not change
+// them.
+
+// newTokenOf is wt new's: the commit is the base's.
+func newTokenOf(ctx *kit.Context, p NewPlan) *kit.Token {
+	return kit.NewToken("1:", "wt-create").Str("Command", p.Command).Str("Branch", *p.Branch).Str("Path", *p.Path).
+		Str("BaseCommit", *p.BaseCommit).Config(kit.ConfigFingerprint(ctx))
 }
 
-// createToken names the inputs a plan was computed from: the command, the
-// branch and path it would create, the commit the worktree would land on —
-// the base for wt new, the branch's tip or the remote-tracking ref's for wt
-// checkout — and the configuration file. Anything else moving does not
-// change it.
-func createToken(ctx *kit.Context, command, branch, path, commit string) string {
-	h := sha256.New()
-	h.Write([]byte("wt-create-1\x00" + command + "\x00" + branch + "\x00" + path + "\x00" + commit + "\x00"))
-	h.Write(kit.ConfigFingerprint(ctx))
-	return "1:" + hex.EncodeToString(h.Sum(nil))[:32]
+// checkoutTokenOf is wt checkout's: the commit is the branch's tip or the
+// remote-tracking ref's. A branch to be created from a remote also names
+// that ref, so a local branch of the same name appearing changes the token.
+func checkoutTokenOf(ctx *kit.Context, p CheckoutPlan) *kit.Token {
+	t := kit.NewToken("1:", "wt-create").Str("Command", p.Command).Str("Branch", *p.Branch).Str("Path", *p.Path).
+		Str("Source", kit.Deref(p.Source))
+	if kit.Deref(p.Source) == SourceRemote {
+		t.Str("RemoteRef", kit.Deref(p.RemoteRef)).Str("RemoteCommit", kit.Deref(p.RemoteCommit))
+	} else {
+		t.Str("BranchCommit", kit.Deref(p.BranchCommit))
+	}
+	return t.Config(kit.ConfigFingerprint(ctx))
 }
 
 // NewPlanJSON writes wt new --dry-run --json.
@@ -356,17 +356,11 @@ func CheckoutJSON(ctx *kit.Context, arg, work string, opts NewOptions, expect st
 // so that one object is written at the end — by the command when it returns,
 // or by the signal handler when it does not. Every method is safe from both,
 // safe on a nil journal (the run without --json), and the object is written
-// once.
+// once. Once the signal handler has written it, the run parks at its next
+// step rather than go on, or return and exit with another status before the
+// handler's signal status.
 type CreateJournal struct {
-	mu       sync.Mutex
-	once     sync.Once
-	out      io.Writer
-	Res      CreateResult
-	inFlight string
-	// signalled is set by the signal handler as it writes the object: from
-	// then on the run parks at its next step rather than go on, or return
-	// and exit with another status before the handler's signal status.
-	signalled bool
+	*kit.Journal[CreateResult]
 	// co is what wt checkout adds to the result; nil for wt new.
 	co *CheckoutResult
 }
@@ -374,14 +368,26 @@ type CreateJournal struct {
 // NewCreateJournal is a journal for command ("new" or "checkout") that
 // writes its object to out. Every step starts as not run.
 func NewCreateJournal(out io.Writer, command string) *CreateJournal {
-	j := &CreateJournal{out: out, Res: CreateResult{Schema: 1, SchemaVersion: schema.VersionOf(command),
-		Command: command, Problems: []Problem{}}}
+	res := CreateResult{Schema: 1, SchemaVersion: schema.VersionOf(command), Command: command, Problems: []Problem{}}
 	for _, s := range createSteps {
-		j.Res.Steps = append(j.Res.Steps, CreateStep{Step: s, Result: kit.StepNotRun})
+		res.Steps = append(res.Steps, CreateStep{Step: s, Result: kit.StepNotRun})
 	}
+	j := &CreateJournal{}
 	if command == "checkout" {
 		j.co = &CheckoutResult{}
 	}
+	j.Journal = kit.NewJournal(out, res, kit.JournalRules[CreateResult]{
+		Error: func(r *CreateResult, err error) { r.Error = kit.Strp(err.Error()) },
+		Caught: func(r *CreateResult, inFlight, _ string) {
+			if s := r.step(inFlight); s != nil {
+				s.Result = kit.StepInterrupted
+				s.Reason = kit.Strp("a signal ended wt while this ran")
+				if inFlight != kit.StepWorktree && r.Path != nil {
+					s.Reason = kit.Strp("a signal ended wt while this ran; `cd " + *r.Path + " && wt setup` finishes provisioning")
+				}
+			}
+		},
+		Close: j.close})
 	return j
 }
 
@@ -390,8 +396,8 @@ func (j *CreateJournal) checkoutSource(s CheckoutSource) {
 	if j == nil || j.co == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
+	j.Lock()
+	defer j.Unlock()
 	j.co.CheckoutSource = s
 }
 
@@ -410,8 +416,8 @@ func (j *CreateJournal) branchMade(ctx *kit.Context) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
+	j.Lock()
+	defer j.Unlock()
 	j.branchRead(ctx, kit.StepCreated)
 }
 
@@ -444,8 +450,8 @@ func (j *CreateJournal) plan(p CreatePlan, base, expected *string) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
+	j.Lock()
+	defer j.Unlock()
 	j.Res.Type, j.Res.Work, j.Res.Branch, j.Res.Path = p.Type, p.Work, p.Branch, p.Path
 	j.Res.Base, j.Res.ExpectedCommit = base, expected
 }
@@ -462,10 +468,10 @@ func (j *CreateJournal) admit(p CreatePlan, expect string) error {
 	}
 	err := problemsError(problems)
 	if err != nil {
-		j.mu.Lock()
+		j.Lock()
 		j.Res.Problems = problems
 		j.Res.Error = kit.Strp(err.Error())
-		j.mu.Unlock()
+		j.Unlock()
 		j.Finish()
 	}
 	return err
@@ -474,16 +480,16 @@ func (j *CreateJournal) admit(p CreatePlan, expect string) error {
 // Fail records an error that stopped the run before it could plan — not in a
 // repository — and writes the object.
 func (j *CreateJournal) Fail(err error) {
-	j.mu.Lock()
-	j.Res.Error = kit.Strp(err.Error())
-	j.mu.Unlock()
+	j.RunError(err)
 	j.Finish()
 }
 
-func (j *CreateJournal) step(name string) *CreateStep {
-	for i := range j.Res.Steps {
-		if j.Res.Steps[i].Step == name {
-			return &j.Res.Steps[i]
+func (j *CreateJournal) step(name string) *CreateStep { return j.Res.step(name) }
+
+func (r *CreateResult) step(name string) *CreateStep {
+	for i := range r.Steps {
+		if r.Steps[i].Step == name {
+			return &r.Steps[i]
 		}
 	}
 	return nil
@@ -494,24 +500,8 @@ func (j *CreateJournal) start(name string) {
 	if j == nil {
 		return
 	}
-	j.park()
-	j.mu.Lock()
-	j.inFlight = name
-	j.mu.Unlock()
-}
-
-// park blocks for good once a signal has taken the run over: the handler
-// writes the object and exits.
-func (j *CreateJournal) park() {
-	if j == nil {
-		return
-	}
-	j.mu.Lock()
-	signalled := j.signalled
-	j.mu.Unlock()
-	if signalled {
-		select {}
-	}
+	j.Park()
+	j.Start(name)
 }
 
 // finish records what a step came to.
@@ -519,14 +509,11 @@ func (j *CreateJournal) finish(name, result, reason, commit string) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	if s := j.step(name); s != nil {
-		s.Result, s.Reason, s.Commit = result, kit.Strp(reason), kit.Strp(commit)
-	}
-	if j.inFlight == name {
-		j.inFlight = ""
-	}
+	j.Settle(name, func(r *CreateResult) {
+		if s := r.step(name); s != nil {
+			s.Result, s.Reason, s.Commit = result, kit.Strp(reason), kit.Strp(commit)
+		}
+	})
 }
 
 // AddFailed records a git worktree add that failed, from what is there
@@ -539,25 +526,24 @@ func (j *CreateJournal) AddFailed(ctx *kit.Context, path string, err error) {
 		return
 	}
 	if errors.Is(err, repo.ErrBranchExists) {
-		j.mu.Lock()
-		j.Res.Problems = append(j.Res.Problems, Problem{Code: kit.ProblemPlanChanged, Message: kit.OneLine(err.Error())})
-		j.Res.Error = kit.Strp(kit.OneLine(err.Error()))
-		j.inFlight = ""
-		j.mu.Unlock()
+		j.Settle(kit.StepWorktree, func(r *CreateResult) {
+			r.Problems = append(r.Problems, Problem{Code: kit.ProblemPlanChanged, Message: kit.OneLine(err.Error())})
+			r.Error = kit.Strp(kit.OneLine(err.Error()))
+		})
 		return
 	}
 	if all, lerr := ctx.Repo.Worktrees(); lerr == nil {
 		if _, ok := all.ByPath(path); ok {
 			j.created(ctx, path)
-			j.mu.Lock()
+			j.Lock()
 			j.step(kit.StepWorktree).Reason = kit.Strp(kit.OneLine(err.Error()))
-			j.mu.Unlock()
+			j.Unlock()
 			return
 		}
 	}
 	j.finish(kit.StepWorktree, kit.StepFailed, kit.OneLine(err.Error()), "")
-	j.mu.Lock()
-	defer j.mu.Unlock()
+	j.Lock()
+	defer j.Unlock()
 	if j.Res.Branch == nil {
 		return
 	}
@@ -580,8 +566,8 @@ func (j *CreateJournal) created(ctx *kit.Context, path string) {
 	head, _ := git.Run(path, "rev-parse", "--verify", "HEAD")
 	head = strings.TrimSpace(head)
 	j.finish(kit.StepWorktree, kit.StepCreated, "", head)
-	j.mu.Lock()
-	defer j.mu.Unlock()
+	j.Lock()
+	defer j.Unlock()
 	j.Res.Commit = kit.Strp(head)
 	branch := kit.StepUntouched
 	if j.createsBranch() {
@@ -603,80 +589,47 @@ func (j *CreateJournal) skipSetup(why string) {
 
 // Finish writes the object for a run that returned.
 func (j *CreateJournal) Finish() {
-	j.park()
-	j.write(false)
-}
-
-// Interrupted writes the object for a run a signal ended, the step in
-// flight as interrupted: what makes it interruptible, for kit.WatchSignals. The
-// handler has stopped every git and script already, so what the steps
-// recorded stands. inFlight and recovery are the rebase tracker's and what
-// the handler printed, which a create has no use for.
-func (j *CreateJournal) Interrupted(_, _ string) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	j.signalled = true
-	j.mu.Unlock()
-	j.write(true)
+	j.Park()
+	j.Journal.Finish()
 }
 
-// Watch makes a handled SIGINT or SIGTERM, until the returned function is
-// called, stop every git and provisioning script still running with its
-// process group, write the object with the step in flight interrupted, and
-// exit 128+signal.
-func (j *CreateJournal) Watch(w io.Writer) func() {
-	unset := kit.SetInterruptJournal(j)
-	stop := kit.WatchSignals(w, nil)
-	return func() {
-		stop()
-		unset()
+// Interrupted writes the object for a run a signal ended.
+func (j *CreateJournal) Interrupted(inFlight, recovery string) {
+	if j != nil {
+		j.Journal.Interrupted(inFlight, recovery)
 	}
 }
 
-func (j *CreateJournal) write(signalled bool) {
-	if j == nil {
-		return
+func (j *CreateJournal) close(r *CreateResult, signalled bool, _ string) any {
+	r.Outcome = r.outcome(signalled)
+	if j.co != nil {
+		j.co.CreateResult = *r
+		return j.co
 	}
-	j.once.Do(func() {
-		j.mu.Lock()
-		defer j.mu.Unlock()
-		if signalled {
-			if s := j.step(j.inFlight); s != nil {
-				s.Result = kit.StepInterrupted
-				s.Reason = kit.Strp("a signal ended wt while this ran")
-				if j.inFlight != kit.StepWorktree && j.Res.Path != nil {
-					s.Reason = kit.Strp("a signal ended wt while this ran; `cd " + *j.Res.Path + " && wt setup` finishes provisioning")
-				}
-			}
-		}
-		j.Res.Outcome = j.Outcome(signalled)
-		if j.co != nil {
-			j.co.CreateResult = j.Res
-			_ = kit.WriteJSON(j.out, j.co)
-			return
-		}
-		_ = kit.WriteJSON(j.out, j.Res)
-	})
+	return r
 }
 
 // Outcome is the rule docs/json.md states, read from the steps.
-func (j *CreateJournal) Outcome(signalled bool) string {
+func (j *CreateJournal) Outcome(signalled bool) string { return j.Res.outcome(signalled) }
+
+func (r *CreateResult) outcome(signalled bool) string {
 	if signalled {
 		return CreateInterrupted
 	}
-	switch j.step(kit.StepWorktree).Result {
+	switch r.step(kit.StepWorktree).Result {
 	case kit.StepCreated:
 	case kit.StepFailed:
 		return CreateFailed
 	default:
 		return CreateRefused
 	}
-	if len(j.Res.Problems) > 0 {
+	if len(r.Problems) > 0 {
 		return CreateCreatedWithProblems
 	}
-	for _, s := range j.Res.Steps {
+	for _, s := range r.Steps {
 		if s.Result == kit.StepFailed || s.Result == kit.StepInterrupted || s.Result == kit.StepNotRun {
 			return CreateCreatedWithProblems
 		}

@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"io"
 	"strings"
-	"sync"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
@@ -144,13 +143,10 @@ type UpResult struct {
 // returns, or by the signal handler when it does not. Every method is safe
 // from both, and the object is written once.
 type RunJournal struct {
-	mu   sync.Mutex
-	once sync.Once
-	out  io.Writer
+	*kit.Journal[RunResult]
 	// up writes wt up's object; otherwise the journal writes wt sync's,
 	// which reports more of each participant.
 	up   bool
-	res  RunResult
 	byBr map[string]*SyncParticipant
 	// changed tells a signal which participants still recorded as not run
 	// it caught changed, for a verb that moves several with nothing in
@@ -172,9 +168,34 @@ func NewSyncRunJournal(out io.Writer, command string) *RunJournal {
 }
 
 func newJournal(out io.Writer, schemaName, command string) *RunJournal {
-	return &RunJournal{out: out, res: RunResult{Schema: 1, SchemaVersion: schema.VersionOf(schemaName), Command: command,
+	j := &RunJournal{byBr: map[string]*SyncParticipant{}}
+	j.Journal = kit.NewJournal(out, RunResult{Schema: 1, SchemaVersion: schema.VersionOf(schemaName), Command: command,
 		Worktrees: []*SyncParticipant{}},
-		byBr: map[string]*SyncParticipant{}}
+		kit.JournalRules[RunResult]{Error: func(r *RunResult, err error) { r.Error = kit.Strp(err.Error()) },
+			Caught: j.caught, Close: j.close})
+	return j
+}
+
+// Fail records an error that stopped the run before it began, and writes
+// the object.
+func (j *RunJournal) Fail(err error) {
+	if j != nil {
+		j.Journal.Fail(err)
+	}
+}
+
+// Finish writes the object for a run that returned.
+func (j *RunJournal) Finish() {
+	if j != nil {
+		j.Journal.Finish()
+	}
+}
+
+// Interrupted writes the object for a run a signal ended.
+func (j *RunJournal) Interrupted(inFlight, recovery string) {
+	if j != nil {
+		j.Journal.Interrupted(inFlight, recovery)
+	}
 }
 
 // Repo records the repository the run is in: its main checkout.
@@ -182,9 +203,9 @@ func (j *RunJournal) Repo(name string) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.res.Repo = kit.Strp(name)
+	j.Lock()
+	defer j.Unlock()
+	j.Res.Repo = kit.Strp(name)
 }
 
 // Trunk records the run's trunk, and how it was found, under one lock: an
@@ -193,10 +214,10 @@ func (j *RunJournal) Trunk(name string, source *string, ref, onto string, fetche
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.res.Trunk, j.res.TrunkSource, j.res.TrunkRef = kit.Strp(name), source, kit.Strp(ref)
-	j.res.Onto, j.res.Fetched = kit.Strp(onto), fetched
+	j.Lock()
+	defer j.Unlock()
+	j.Res.Trunk, j.Res.TrunkSource, j.Res.TrunkRef = kit.Strp(name), source, kit.Strp(ref)
+	j.Res.Onto, j.Res.Fetched = kit.Strp(onto), fetched
 }
 
 // TrunkSync records what the run did to local trunk after its fetch.
@@ -204,9 +225,9 @@ func (j *RunJournal) TrunkSync(ts *TrunkSync) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.res.TrunkSync = ts
+	j.Lock()
+	defer j.Unlock()
+	j.Res.TrunkSync = ts
 }
 
 // Join records the participants, parents first, before any is touched: each
@@ -216,11 +237,11 @@ func (j *RunJournal) Join(work, branch, path, before string, own *OwnRemoteSync)
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
+	j.Lock()
+	defer j.Unlock()
 	p := &SyncParticipant{UpParticipant: UpParticipant{Work: work, Branch: branch, Path: path, Result: ResultNotRun,
 		Before: kit.Strp(before), After: kit.Strp(before), FailedSteps: []string{}, OwnRemoteSync: own}, Deferred: []DeferredStep{}}
-	j.res.Worktrees = append(j.res.Worktrees, p)
+	j.Res.Worktrees = append(j.Res.Worktrees, p)
 	j.byBr[branch] = p
 }
 
@@ -230,15 +251,15 @@ func (j *RunJournal) OnSignal(changed func(p *SyncParticipant) bool) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
+	j.Lock()
+	defer j.Unlock()
 	j.changed = changed
 }
 
 // Has reports whether branch has joined the run.
 func (j *RunJournal) Has(branch string) bool {
-	j.mu.Lock()
-	defer j.mu.Unlock()
+	j.Lock()
+	defer j.Unlock()
 	return j.byBr[branch] != nil
 }
 
@@ -253,8 +274,8 @@ func (j *RunJournal) SetSync(branch string, edit func(p *SyncParticipant)) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
+	j.Lock()
+	defer j.Unlock()
 	if p := j.byBr[branch]; p != nil {
 		edit(p)
 	}
@@ -263,20 +284,18 @@ func (j *RunJournal) SetSync(branch string, edit func(p *SyncParticipant)) {
 // FailWith records an error that ended the run before any participant was
 // touched: the configuration, the fetch, an --expect that no longer holds.
 func (j *RunJournal) FailWith(err error) {
-	if j == nil || err == nil {
+	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.res.Error = kit.Strp(err.Error())
+	j.RunError(err)
 }
 
 // untouched reports that no participant got past not run: the run stopped
 // before it touched any, or chose none.
 func (j *RunJournal) untouched() bool {
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	for _, p := range j.res.Worktrees {
+	j.Lock()
+	defer j.Unlock()
+	for _, p := range j.Res.Worktrees {
 		if p.Result != ResultNotRun {
 			return false
 		}
@@ -284,61 +303,42 @@ func (j *RunJournal) untouched() bool {
 	return true
 }
 
-// Fail records an error that stopped the run before any participant, and
-// writes the object: what the caller does when it cannot even start one.
-func (j *RunJournal) Fail(err error) {
-	j.FailWith(err)
-	j.Finish()
-}
-
-// Finish writes the object for a run that returned: the outcome follows
-// from the participants, by the rules in docs/json.md.
-func (j *RunJournal) Finish() {
-	j.write("", false)
-}
-
-// Interrupted writes the object for a run a signal ended: the participant
-// in flight is interrupted, the rest stand as recorded.
-func (j *RunJournal) Interrupted(inFlight, recovery string) {
-	j.write(inFlight, true, recovery)
-}
-
-func (j *RunJournal) write(inFlight string, signalled bool, recovery ...string) {
-	if j == nil {
-		return
+// caught marks interrupted the participant in flight, the branch or the
+// work the handler names, and any still recorded as not run that changed
+// says the signal caught changed; the rest stand as recorded.
+func (j *RunJournal) caught(r *RunResult, inFlight, recovery string) {
+	for _, p := range r.Worktrees {
+		caught := p.Branch == inFlight || p.Work == inFlight
+		if !caught && p.Result == ResultNotRun && j.changed != nil {
+			caught = j.changed(p)
+		}
+		if caught {
+			p.Result = ResultInterrupted
+			p.Recovery = kit.Strp(recovery)
+			j.fastForwardSeen(p)
+		}
 	}
-	j.once.Do(func() {
-		j.mu.Lock()
-		defer j.mu.Unlock()
-		if signalled {
-			for _, p := range j.res.Worktrees {
-				caught := p.Branch == inFlight || p.Work == inFlight
-				if !caught && p.Result == ResultNotRun && j.changed != nil {
-					caught = j.changed(p)
-				}
-				if caught {
-					p.Result = ResultInterrupted
-					p.Recovery = kit.Strp(strings.Join(recovery, ""))
-					j.fastForwardSeen(p)
-				}
-			}
-			j.res.Outcome = kit.OutcomeInterrupted
-			j.res.Recovery = kit.Strp(strings.Join(recovery, ""))
-		} else {
-			j.res.Outcome = OutcomeOf(j.res.Worktrees, j.res.Error != nil)
-		}
-		if !j.up {
-			_ = kit.WriteJSON(j.out, j.res)
-			return
-		}
-		up := UpResult{Schema: j.res.Schema, SchemaVersion: j.res.SchemaVersion, Command: j.res.Command,
-			Trunk: j.res.Trunk, TrunkSource: j.res.TrunkSource, TrunkRef: j.res.TrunkRef, Onto: j.res.Onto, Fetched: j.res.Fetched,
-			TrunkSync: j.res.TrunkSync, Outcome: j.res.Outcome, Error: j.res.Error, Worktrees: []*UpParticipant{}, Recovery: j.res.Recovery}
-		for _, p := range j.res.Worktrees {
-			up.Worktrees = append(up.Worktrees, &p.UpParticipant)
-		}
-		_ = kit.WriteJSON(j.out, up)
-	})
+}
+
+// close is the object: the outcome follows from the participants, by the
+// rules in docs/json.md, or is interrupted.
+func (j *RunJournal) close(r *RunResult, signalled bool, recovery string) any {
+	if signalled {
+		r.Outcome = kit.OutcomeInterrupted
+		r.Recovery = kit.Strp(recovery)
+	} else {
+		r.Outcome = OutcomeOf(r.Worktrees, r.Error != nil)
+	}
+	if !j.up {
+		return r
+	}
+	up := UpResult{Schema: r.Schema, SchemaVersion: r.SchemaVersion, Command: r.Command,
+		Trunk: r.Trunk, TrunkSource: r.TrunkSource, TrunkRef: r.TrunkRef, Onto: r.Onto, Fetched: r.Fetched,
+		TrunkSync: r.TrunkSync, Outcome: r.Outcome, Error: r.Error, Worktrees: []*UpParticipant{}, Recovery: r.Recovery}
+	for _, p := range r.Worktrees {
+		up.Worktrees = append(up.Worktrees, &p.UpParticipant)
+	}
+	return up
 }
 
 // fastForwardSeen reads where a participant a signal caught is, when the
@@ -348,10 +348,10 @@ func (j *RunJournal) write(inFlight string, signalled bool, recovery ...string) 
 // held.
 func (j *RunJournal) fastForwardSeen(p *SyncParticipant) {
 	o := p.OwnRemoteSync
-	if o == nil || o.FastForwarded || o.Remote == nil || o.State != string(wtsync.OwnBehind) || j.res.Repo == nil {
+	if o == nil || o.FastForwarded || o.Remote == nil || o.State != string(wtsync.OwnBehind) || j.Res.Repo == nil {
 		return
 	}
-	if tip, err := git.Run(*j.res.Repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+p.Branch); err == nil && tip == *o.Remote {
+	if tip, err := git.Run(*j.Res.Repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+p.Branch); err == nil && tip == *o.Remote {
 		o.FastForwarded, p.After = true, kit.Strp(tip)
 	}
 }
@@ -413,7 +413,8 @@ func OutcomeOf(ps []*SyncParticipant, failedEarly bool) string {
 // except for a branch that has diverged from it: diverged maps each such
 // branch to that commit, so that a caller who allows the divergence it was
 // shown is refused over one that moved since. With nothing diverged the
-// token is what it was before wt looked at the remotes.
+// token is what it was before wt looked at the remotes, which docs/json.md
+// promises: so it is built by hand, not with kit.Token.
 func PlanToken(ctx *kit.Context, trunk string, stack []string, diverged map[string]string) string {
 	h := sha256.New()
 	h.Write([]byte("wt-plan-1\x00" + trunk + "\x00"))

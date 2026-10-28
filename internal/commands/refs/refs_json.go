@@ -3,7 +3,6 @@ package refs
 import (
 	"io"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
@@ -151,26 +150,45 @@ func writeRefsPlan(w io.Writer, o PlanOutput, err error) error {
 
 // Journal collects what a ref sweep did, row by row, so that one object
 // is written at the end: by the sweep when it returns, or by the signal
-// handler when it does not. Every method is safe from both, and the object
-// is written once. A nil journal records nothing.
+// handler when it does not. A nil journal records nothing.
 type Journal struct {
-	mu       sync.Mutex
-	once     sync.Once
-	out      io.Writer
-	root     string
-	url      string
-	res      Result
-	rows     map[string]RefRow
-	byID     map[string]*RefResultItem
-	inFlight string
-	applying bool
+	*kit.Journal[Result]
+	root string
+	url  string
+	rows map[string]RefRow
+	byID map[string]*RefResultItem
 }
 
 // NewRefsJournal is a journal that writes its object to out.
 func NewRefsJournal(out io.Writer) *Journal {
-	return &Journal{out: out, rows: map[string]RefRow{}, byID: map[string]*RefResultItem{},
-		res: Result{Schema: 1, SchemaVersion: schema.VersionOf("refs-sweep"), Command: refsSweepCommand,
-			Problems: []RefProblem{}, Items: []*RefResultItem{}}}
+	j := &Journal{rows: map[string]RefRow{}, byID: map[string]*RefResultItem{}}
+	j.Journal = kit.NewJournal(out, Result{Schema: 1, SchemaVersion: schema.VersionOf("refs-sweep"),
+		Command: refsSweepCommand, Problems: []RefProblem{}, Items: []*RefResultItem{}},
+		kit.JournalRules[Result]{Error: func(r *Result, err error) { r.Error = kit.Strp(err.Error()) },
+			Caught: j.caught, Close: closeRefs})
+	return j
+}
+
+// Fail records an error that stopped the run before it began, and writes
+// the object.
+func (j *Journal) Fail(err error) {
+	if j != nil {
+		j.Journal.Fail(err)
+	}
+}
+
+// Finish writes the object for a run that returned.
+func (j *Journal) Finish() {
+	if j != nil {
+		j.Journal.Finish()
+	}
+}
+
+// Interrupted writes the object for a run a signal ended.
+func (j *Journal) Interrupted(inFlight, recovery string) {
+	if j != nil {
+		j.Journal.Interrupted(inFlight, recovery)
+	}
 }
 
 // planned records the plan: every selected row not run yet, every row the
@@ -179,16 +197,16 @@ func (j *Journal) planned(p Plan, token *string) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
+	j.Lock()
+	defer j.Unlock()
 	j.root = p.Repo
 	if p.Endpoint != nil {
 		j.url = p.Endpoint.Raw
 	}
-	j.res.Repo, j.res.Trunk, j.res.Fetched, j.res.Remote, j.res.Token =
+	j.Res.Repo, j.Res.Trunk, j.Res.Fetched, j.Res.Remote, j.Res.Token =
 		kit.Strp(p.Repo), kit.Strp(p.Trunk), p.Fetched, p.Remote, token
-	j.res.Items = []*RefResultItem{}
-	j.res.Problems = append([]RefProblem{}, p.Problems...)
+	j.Res.Items = []*RefResultItem{}
+	j.Res.Problems = append([]RefProblem{}, p.Problems...)
 	for _, r := range p.Rows {
 		it := &RefResultItem{ID: r.ID, Kind: r.Kind, Name: r.Name, Category: r.Category, Selected: r.Selected,
 			Tip: kit.Strp(r.Tip), Object: r.Object, Result: RefNotRun}
@@ -198,7 +216,7 @@ func (j *Journal) planned(p Plan, token *string) {
 		case !r.Selected:
 			it.Result = RefNotSelected
 		}
-		j.res.Items = append(j.res.Items, it)
+		j.Res.Items = append(j.Res.Items, it)
 		j.byID[r.ID], j.rows[r.ID] = it, r
 	}
 }
@@ -208,14 +226,14 @@ func (j *Journal) begin(runID string) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.res.RunID, j.applying = kit.Strp(runID), true
-	for _, it := range j.res.Items {
-		if it.Selected {
-			it.Pin = kit.Strp(refpins.PinOf(runID, it.Kind, it.Name))
+	j.Begin(func(r *Result) {
+		r.RunID = kit.Strp(runID)
+		for _, it := range r.Items {
+			if it.Selected {
+				it.Pin = kit.Strp(refpins.PinOf(runID, it.Kind, it.Name))
+			}
 		}
-	}
+	})
 }
 
 // abandon takes back a run whose meta could not be written: nothing of it
@@ -224,12 +242,12 @@ func (j *Journal) abandon() {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.res.RunID, j.applying = nil, false
-	for _, it := range j.res.Items {
-		it.Pin = nil
-	}
+	j.Abandon(func(r *Result) {
+		r.RunID = nil
+		for _, it := range r.Items {
+			it.Pin = nil
+		}
+	})
 }
 
 // problem records why the run refused.
@@ -237,9 +255,7 @@ func (j *Journal) problem(code string, err error) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.res.Problems = append(j.res.Problems, RefProblem{Code: code, Text: err.Error()})
+	j.Edit(func(r *Result) { r.Problems = append(r.Problems, RefProblem{Code: code, Text: err.Error()}) })
 }
 
 // start marks the row about to be moved: the one a signal would catch.
@@ -247,9 +263,7 @@ func (j *Journal) start(id string) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.inFlight = id
+	j.Start(id)
 }
 
 // settle records what one row came to.
@@ -257,12 +271,11 @@ func (j *Journal) settle(id string, st refState) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.inFlight = ""
-	if it := j.byID[id]; it != nil {
-		settleRefItem(it, kit.Deref(j.res.RunID), st)
-	}
+	j.Settle(id, func(r *Result) {
+		if it := j.byID[id]; it != nil {
+			settleRefItem(it, kit.Deref(r.RunID), st)
+		}
+	})
 }
 
 func settleRefItem(it *RefResultItem, runID string, st refState) {
@@ -285,60 +298,32 @@ func settleRefItem(it *RefResultItem, runID string, st refState) {
 	}
 }
 
-// fail records an error that ended the run before anything was moved.
-func (j *Journal) fail(err error) {
-	if j == nil || err == nil {
+// caught reads back the row a signal caught in flight and marks it
+// interrupted.
+func (j *Journal) caught(r *Result, inFlight, _ string) {
+	it := j.byID[inFlight]
+	if it == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	if !j.applying {
-		j.res.Error = kit.Strp(err.Error())
+	row := j.rows[inFlight]
+	pin := kit.Deref(it.Pin)
+	var st refState
+	if refpins.RemoteKind(row.Kind) {
+		st = readRemoteState(j.root, j.url, row, pin)
+	} else {
+		st = readLocalState(j.root, row, pin)
 	}
+	settleRefItem(it, kit.Deref(r.RunID), st)
+	it.Result, it.Reason = RefInterrupted, nil
 }
 
-// Fail records an error that stopped the run before it began, and writes
-// the object.
-func (j *Journal) Fail(err error) {
-	j.fail(err)
-	j.Finish()
-}
-
-// Finish writes the object for a run that returned.
-func (j *Journal) Finish() { j.write(false, "") }
-
-// Interrupted writes the object for a run a signal ended: the row in flight
-// is read back and marked interrupted.
-func (j *Journal) Interrupted(_ string, recovery string) { j.write(true, recovery) }
-
-func (j *Journal) write(signalled bool, recovery string) {
-	if j == nil {
-		return
+func closeRefs(r *Result, signalled bool, recovery string) any {
+	if signalled {
+		r.Outcome, r.Recovery = kit.OutcomeInterrupted, kit.Strp(recovery)
+	} else {
+		r.Outcome = refsOutcome(r.Items, r.Error != nil)
 	}
-	j.once.Do(func() {
-		j.mu.Lock()
-		defer j.mu.Unlock()
-		if signalled {
-			// The handler's own git is not parked, and nothing else holds the
-			// lock while running one.
-			if it := j.byID[j.inFlight]; it != nil {
-				r := j.rows[j.inFlight]
-				pin := kit.Deref(it.Pin)
-				var st refState
-				if refpins.RemoteKind(r.Kind) {
-					st = readRemoteState(j.root, j.url, r, pin)
-				} else {
-					st = readLocalState(j.root, r, pin)
-				}
-				settleRefItem(it, kit.Deref(j.res.RunID), st)
-				it.Result, it.Reason = RefInterrupted, nil
-			}
-			j.res.Outcome, j.res.Recovery = kit.OutcomeInterrupted, kit.Strp(recovery)
-		} else {
-			j.res.Outcome = refsOutcome(j.res.Items, j.res.Error != nil)
-		}
-		_ = kit.WriteJSON(j.out, j.res)
-	})
+	return r
 }
 
 // readRemoteState reads back a remote row for an interrupted run: its pin

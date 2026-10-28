@@ -291,9 +291,10 @@ func TestPurgeJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 	t.Parallel()
 	_, _, _, _, dir := retiretest.Quarantined(t, "fix/purge-signal", false)
 	var out bytes.Buffer
-	j := &purgeJournal{out: &out, dir: dir, plan: quarantine.PlanPurge(dir)}
+	j := newPurgeJournal(&out, dir)
+	j.planned(quarantine.PlanPurge(dir))
 	j.Interrupted("", "interrupted")
-	j.write(quarantine.OutcomePurged, nil, "")
+	j.finish(quarantine.OutcomePurged, nil)
 	testkit.ValidateJSON(t, "quarantine-purge", out.Bytes())
 	var o Output
 	if err := json.Unmarshal(out.Bytes(), &o); err != nil {

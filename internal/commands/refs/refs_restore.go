@@ -1,15 +1,12 @@
 package refs
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"slices"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
@@ -188,17 +185,18 @@ func (p *RestoreRefsPlan) applyOnly(only []string) error {
 // restoreToken names a restore plan: the repository, the run, and every pin
 // with its object and what would be done with it. Nil when nothing can go
 // back.
-func restoreToken(p RestoreRefsPlan) *string {
+func restoreToken(p RestoreRefsPlan) *string { return restoreTokenOf(p).Strp() }
+
+func restoreTokenOf(p RestoreRefsPlan) *kit.Token {
 	if !slices.ContainsFunc(p.Rows, restoreRow.restorable) {
 		return nil
 	}
-	h := sha256.New()
-	h.Write([]byte("wt-refs-restore-1\x00" + p.Repo + "\x00" + p.RunID))
+	t := kit.NewToken("rr1-", "wt-refs-restore").Str("Repo", p.Repo).Str("RunID", p.RunID)
 	for _, r := range p.Rows {
-		h.Write([]byte("\n" + strings.Join([]string{r.ID(), r.Pin, r.Object, r.Action}, "\x00")))
+		t.Str("Rows.Kind", r.Kind).Str("Rows.Name", r.Name).Str("Rows.Pin", r.Pin).Str("Rows.Object", r.Object).
+			Str("Rows.Action", r.Action)
 	}
-	token := "rr1-" + hex.EncodeToString(h.Sum(nil))[:32]
-	return &token
+	return t
 }
 
 var errRestorePlanChanged = errors.New("the restore plan changed since it was read (a pin went, or a name " +
@@ -211,10 +209,7 @@ func RestoreRefs(ctx *kit.Context, runID string, opts RestoreRefsOptions, w io.W
 	if j != nil {
 		defer kit.SetInterruptJournal(j)()
 		defer kit.WatchSignals(w, nil)()
-		defer func() {
-			j.fail(err)
-			j.Finish()
-		}()
+		defer func() { j.Fail(err) }()
 	}
 	plan, err := PlanRefsRestore(ctx, runID)
 	j.planned(plan, nil)
@@ -499,33 +494,53 @@ func RestoreRefsPlanJSON(ctx *kit.Context, runID string, only []string, out, pro
 // RestoreRefsJournal writes wt refs restore --yes --json's one object once:
 // when the restore returns, or when a signal ends it.
 type RestoreRefsJournal struct {
-	mu       sync.Mutex
-	once     sync.Once
-	out      io.Writer
-	root     string
-	url      string
-	res      RestoreRefsResult
-	rows     map[string]restoreRow
-	byID     map[string]*RefRestoreItem
-	inFlight string
-	applying bool
+	*kit.Journal[RestoreRefsResult]
+	root string
+	url  string
+	rows map[string]restoreRow
+	byID map[string]*RefRestoreItem
 }
 
 // NewRefsRestoreJournal is a journal that writes its object to out.
 func NewRefsRestoreJournal(out io.Writer, runID string) *RestoreRefsJournal {
-	return &RestoreRefsJournal{out: out, rows: map[string]restoreRow{}, byID: map[string]*RefRestoreItem{},
-		res: RestoreRefsResult{Schema: 1, SchemaVersion: schema.VersionOf("refs-restore"), Command: refsRestoreCommand,
-			RunID: runID, Items: []*RefRestoreItem{}}}
+	j := &RestoreRefsJournal{rows: map[string]restoreRow{}, byID: map[string]*RefRestoreItem{}}
+	j.Journal = kit.NewJournal(out, RestoreRefsResult{Schema: 1, SchemaVersion: schema.VersionOf("refs-restore"),
+		Command: refsRestoreCommand, RunID: runID, Items: []*RefRestoreItem{}},
+		kit.JournalRules[RestoreRefsResult]{Error: func(r *RestoreRefsResult, err error) { r.Error = kit.Strp(err.Error()) },
+			Caught: j.caught, Close: closeRestoreRefs})
+	return j
+}
+
+// Fail records an error that stopped the run before it began, and writes
+// the object.
+func (j *RestoreRefsJournal) Fail(err error) {
+	if j != nil {
+		j.Journal.Fail(err)
+	}
+}
+
+// Finish writes the object for a run that returned.
+func (j *RestoreRefsJournal) Finish() {
+	if j != nil {
+		j.Journal.Finish()
+	}
+}
+
+// Interrupted writes the object for a run a signal ended.
+func (j *RestoreRefsJournal) Interrupted(inFlight, recovery string) {
+	if j != nil {
+		j.Journal.Interrupted(inFlight, recovery)
+	}
 }
 
 func (j *RestoreRefsJournal) planned(p RestoreRefsPlan, token *string) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.root, j.res.Repo, j.res.Token = p.Repo, kit.Strp(p.Repo), token
-	j.res.Items = []*RefRestoreItem{}
+	j.Lock()
+	defer j.Unlock()
+	j.root, j.Res.Repo, j.Res.Token = p.Repo, kit.Strp(p.Repo), token
+	j.Res.Items = []*RefRestoreItem{}
 	for _, r := range p.Rows {
 		it := &RefRestoreItem{RefRestorePlanItem: restorePlanItem(r), Result: RefNotRun}
 		switch {
@@ -534,7 +549,7 @@ func (j *RestoreRefsJournal) planned(p RestoreRefsPlan, token *string) {
 		case !r.Selected:
 			it.Result = RefNotSelected
 		}
-		j.res.Items = append(j.res.Items, it)
+		j.Res.Items = append(j.Res.Items, it)
 		j.byID[r.ID()], j.rows[r.ID()] = it, r
 	}
 }
@@ -543,30 +558,25 @@ func (j *RestoreRefsJournal) begin(url string) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.applying, j.url = true, url
+	j.Begin(func(*RestoreRefsResult) { j.url = url })
 }
 
 func (j *RestoreRefsJournal) start(id string) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.inFlight = id
+	j.Start(id)
 }
 
 func (j *RestoreRefsJournal) settle(id string, st RestoreState) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.inFlight = ""
-	if it := j.byID[id]; it != nil {
-		settleRestoreItem(it, st)
-	}
+	j.Settle(id, func(*RestoreRefsResult) {
+		if it := j.byID[id]; it != nil {
+			settleRestoreItem(it, st)
+		}
+	})
 }
 
 func settleRestoreItem(it *RefRestoreItem, st RestoreState) {
@@ -586,62 +596,36 @@ func settleRestoreItem(it *RefRestoreItem, st RestoreState) {
 	}
 }
 
-func (j *RestoreRefsJournal) fail(err error) {
-	if j == nil || err == nil {
-		return
-	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	if !j.applying {
-		j.res.Error = kit.Strp(err.Error())
+// caught reads back the row a signal caught in flight and marks it
+// interrupted.
+func (j *RestoreRefsJournal) caught(_ *RestoreRefsResult, inFlight, _ string) {
+	if it := j.byID[inFlight]; it != nil {
+		settleRestoreItem(it, readRestoreState(j.root, j.url, j.rows[inFlight], 10*time.Second))
+		it.Result, it.Reason = RefInterrupted, nil
 	}
 }
 
-// Fail records an error that stopped the run before it began, and writes
-// the object.
-func (j *RestoreRefsJournal) Fail(err error) {
-	j.fail(err)
-	j.Finish()
-}
-
-// Finish writes the object for a run that returned.
-func (j *RestoreRefsJournal) Finish() { j.write(false, "") }
-
-// Interrupted writes the object for a run a signal ended.
-func (j *RestoreRefsJournal) Interrupted(_ string, recovery string) { j.write(true, recovery) }
-
-func (j *RestoreRefsJournal) write(signalled bool, recovery string) {
-	if j == nil {
-		return
+func closeRestoreRefs(r *RestoreRefsResult, signalled bool, recovery string) any {
+	if signalled {
+		r.Outcome, r.Recovery = kit.OutcomeInterrupted, kit.Strp(recovery)
+		return r
 	}
-	j.once.Do(func() {
-		j.mu.Lock()
-		defer j.mu.Unlock()
-		if signalled {
-			if it := j.byID[j.inFlight]; it != nil {
-				settleRestoreItem(it, readRestoreState(j.root, j.url, j.rows[j.inFlight], 10*time.Second))
-				it.Result, it.Reason = RefInterrupted, nil
-			}
-			j.res.Outcome, j.res.Recovery = kit.OutcomeInterrupted, kit.Strp(recovery)
-		} else {
-			finished, changed := true, false
-			for _, it := range j.res.Items {
-				if it.PinDeleted || it.Result == RefRestored {
-					changed = true
-				}
-				if it.Selected && it.Result != RefRestored {
-					finished = false
-				}
-			}
-			switch {
-			case finished && j.res.Error == nil:
-				j.res.Outcome = kit.OutcomeDone
-			case !changed:
-				j.res.Outcome = kit.OutcomeRefused
-			default:
-				j.res.Outcome = kit.OutcomePartial
-			}
+	finished, changed := true, false
+	for _, it := range r.Items {
+		if it.PinDeleted || it.Result == RefRestored {
+			changed = true
 		}
-		_ = kit.WriteJSON(j.out, j.res)
-	})
+		if it.Selected && it.Result != RefRestored {
+			finished = false
+		}
+	}
+	switch {
+	case finished && r.Error == nil:
+		r.Outcome = kit.OutcomeDone
+	case !changed:
+		r.Outcome = kit.OutcomeRefused
+	default:
+		r.Outcome = kit.OutcomePartial
+	}
+	return r
 }

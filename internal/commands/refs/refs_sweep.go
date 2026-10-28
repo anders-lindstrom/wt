@@ -4,8 +4,6 @@
 package refs
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -768,26 +766,27 @@ func (p *Plan) applyOnly(only []string) error {
 // the age, and every row with what it stands on. The selection is not in
 // it, so --only picks from the plan a token names. Nil when no row could be
 // swept.
-func refsToken(p Plan) *string {
+func refsToken(p Plan) *string { return refsTokenOf(p).Strp() }
+
+func refsTokenOf(p Plan) *kit.Token {
 	if !p.selectable() {
 		return nil
 	}
-	h := sha256.New()
-	h.Write([]byte("wt-refs-sweep-1\x00" + p.Repo + "\x00" + p.Trunk + "\x00" + strconv.FormatBool(p.Remote) +
-		"\x00" + strings.Join(p.Patterns, " ") + "\x00" + p.Age))
+	t := kit.NewToken("rs1-", "wt-refs-sweep").Str("Repo", p.Repo).Str("Trunk", p.Trunk).Bool("Remote", p.Remote).
+		List("Patterns", p.Patterns...).Str("Age", p.Age)
 	if p.Endpoint != nil {
-		h.Write([]byte("\nendpoint\x00" + p.Endpoint.Digest))
+		t.Str("Endpoint", p.Endpoint.Digest)
 	}
 	for _, r := range p.Rows {
 		unique := ""
 		if r.Unique != nil {
 			unique = strconv.Itoa(*r.Unique)
 		}
-		h.Write([]byte("\n" + strings.Join([]string{r.ID, r.Pattern, r.Category, r.Tip, r.Object, r.ContainedIn,
-			unique, strconv.FormatInt(r.Date, 10), r.DateSource, strings.Join(r.Kept, ",")}, "\x00")))
+		t.Str("Rows.ID", r.ID).Str("Rows.Pattern", r.Pattern).Str("Rows.Category", r.Category).Str("Rows.Tip", r.Tip).
+			Str("Rows.Object", r.Object).Str("Rows.ContainedIn", r.ContainedIn).Str("Rows.Unique", unique).
+			Int("Rows.Date", r.Date).Str("Rows.DateSource", r.DateSource).List("Rows.Kept", r.Kept...)
 	}
-	token := "rs1-" + hex.EncodeToString(h.Sum(nil))[:32]
-	return &token
+	return t
 }
 
 // ErrRefsPlanChanged is --expect refusing a sweep whose plan is not the one
@@ -803,10 +802,7 @@ func Sweep(ctx *kit.Context, opts Options, w io.Writer) (err error) {
 	if j != nil {
 		defer kit.SetInterruptJournal(j)()
 		defer kit.WatchSignals(w, nil)()
-		defer func() {
-			j.fail(err)
-			j.Finish()
-		}()
+		defer func() { j.Fail(err) }()
 	}
 	if opts.RunID != "" {
 		if !refpins.RunIDPattern.MatchString(opts.RunID) {
