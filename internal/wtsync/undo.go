@@ -50,51 +50,119 @@ func Undo(mainRoot string, worktrees []repo.Worktree, listed []agents.Agent, bra
 	if err != nil {
 		return nil, err
 	}
-	byBranch := map[string]repo.Worktree{}
-	for _, wt := range worktrees {
-		if wt.Branch != "" && !wt.Detached {
-			byBranch[wt.Branch] = wt
-		}
+	u := newUndo(mainRoot, run, worktrees, now)
+	defer u.release()
+	if err := u.lockCheckouts(listed, now, force); err != nil {
+		return nil, err
 	}
+	if err := u.checkBranches(all, force); err != nil {
+		return nil, err
+	}
+	if err := WriteRun(mainRoot, u.forceEpoch, u.pins); err != nil {
+		return nil, err
+	}
+	// Only now, with every branch of the run checked and the forced-undo
+	// pins written, does anything change: aborting is a mutation, and doing
+	// it earlier would let a refusal raised by a later branch leave an
+	// already-discarded resolution behind.
+	if err := u.abortHandovers(); err != nil {
+		return u.stopped(run, err)
+	}
+	if err := u.clearStaleHandovers(); err != nil {
+		return u.stopped(run, err)
+	}
+	out, err := u.resetBranches()
+	if err != nil {
+		return out, err
+	}
+	return out, u.disown()
+}
+
+// undo is one Undo under way: the run it puts back, and what each phase
+// learns about its branches for the phases after it.
+type undo struct {
+	mainRoot string
+	run      []Safety
+	byBranch map[string]repo.Worktree
 	// Each worktree's git dir, read once and reused: an undo asks for the
 	// same one at three points — to take the lock over, to remove an aborted
 	// handover, and to clear a stale one — and git answers the same each time.
-	gitDirs := map[string]string{}
-	gitDirOf := func(wt repo.Worktree) (string, error) {
-		if dir, ok := gitDirs[wt.Path]; ok {
-			return dir, nil
-		}
-		dir, err := GitDir(wt.Path)
-		if err != nil {
-			return "", err
-		}
-		gitDirs[wt.Path] = dir
-		return dir, nil
-	}
-	var locks []*Lock
-	defer func() {
-		for _, l := range locks {
-			_ = l.Release()
-		}
-	}()
+	gitDirs map[string]string
+	locks   []*Lock
 	// The branches whose handed-over rebase is to be aborted, collected
-	// here and aborted only once every branch has passed every check.
-	aborting := map[string]bool{}
+	// by lockCheckouts and aborted only once every branch has passed every
+	// check.
+	aborting map[string]bool
 	// Of those, the ones whose rebase carries commits a person made inside
 	// it, and the HEAD the abort will discard: a forced undo pins it.
-	insideHead := map[string]string{}
-	// Each checkout's sidecar, for the branch checks below: a handover whose
+	insideHead map[string]string
+	// Each checkout's sidecar, for the branch checks: a handover whose
 	// rebase is gone may have been finished by hand, which is named as such
 	// rather than as a branch that moved.
-	states := map[string]State{}
-	for _, s := range run {
-		wt, ok := byBranch[s.Branch]
+	states map[string]State
+	// Where each branch is now, read once under the locks by checkBranches
+	// and reused by the resets: nothing may move between the check and the
+	// reset.
+	tips map[string]string
+	// What a forced undo will pin. Collected by checkBranches and written
+	// only once every branch has passed: a refusal raised by a later branch
+	// of the same run must not leave a stray safety ref behind, which would
+	// make every later plain undo report "already at" and strand the run.
+	pins       []Pin
+	forceEpoch int64
+	aborted    map[string]bool
+	// The branches whose pinned tip this undo has actually discarded: reset
+	// past it, or aborted a rebase that carried it. A failure past the pins
+	// must leave a forced-undo pin for exactly these and no other. A pin left
+	// for a branch that never moved would be the newest run touching it, with
+	// its safety at the branch's own tip, so every later plain undo would say
+	// "already at" and the run it was meant to supersede would be out of
+	// reach.
+	moved map[string]bool
+}
+
+func newUndo(mainRoot string, run []Safety, worktrees []repo.Worktree, now time.Time) *undo {
+	u := &undo{mainRoot: mainRoot, run: run, byBranch: map[string]repo.Worktree{}, gitDirs: map[string]string{},
+		aborting: map[string]bool{}, insideHead: map[string]string{}, states: map[string]State{},
+		tips: map[string]string{}, forceEpoch: now.UnixNano(), aborted: map[string]bool{}, moved: map[string]bool{}}
+	for _, wt := range worktrees {
+		if wt.Branch != "" && !wt.Detached {
+			u.byBranch[wt.Branch] = wt
+		}
+	}
+	return u
+}
+
+func (u *undo) gitDirOf(wt repo.Worktree) (string, error) {
+	if dir, ok := u.gitDirs[wt.Path]; ok {
+		return dir, nil
+	}
+	dir, err := GitDir(wt.Path)
+	if err != nil {
+		return "", err
+	}
+	u.gitDirs[wt.Path] = dir
+	return dir, nil
+}
+
+func (u *undo) release() {
+	for _, l := range u.locks {
+		_ = l.Release()
+	}
+}
+
+// lockCheckouts takes the lock of every checkout the run touched and checks
+// each under it: no busy session, no tracked changes, and no rebase but one
+// the run handed over, which it marks for aborting.
+func (u *undo) lockCheckouts(listed []agents.Agent, now time.Time, force bool) error {
+	for _, s := range u.run {
+		wt, ok := u.byBranch[s.Branch]
 		if !ok {
 			continue
 		}
-		gitDir, err := gitDirOf(wt)
+		gitDir, err := u.gitDirOf(wt)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		// A handover left its lock behind; undo is one of the two commands
 		// entitled to take that exact lock over. A sidecar that cannot be
@@ -102,109 +170,118 @@ func Undo(mainRoot string, worktrees []repo.Worktree, listed []agents.Agent, bra
 		// the handover it marks cannot be trusted enough to abort.
 		st, stateOK, err := ReadState(gitDir)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w; nothing undone", s.Branch, err)
+			return fmt.Errorf("%s: %w; nothing undone", s.Branch, err)
 		}
 		var prev LeftLock
 		if stateOK {
 			prev = st.Lock
-			states[s.Branch] = st
+			u.states[s.Branch] = st
 		}
 		lock, err := TakeOver(gitDir, now, prev)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w; nothing undone", s.Branch, err)
+			return fmt.Errorf("%s: %w; nothing undone", s.Branch, err)
 		}
-		locks = append(locks, lock)
+		u.locks = append(u.locks, lock)
 		// The busy session first, from the listing alone: a worktree refused
 		// for it is not read at all, so an interrupt during the reads below
 		// cannot land on one that was already refused.
 		if sessions := agents.SessionsAt(listed, wt.Path); len(sessions.Busy()) > 0 {
-			return nil, fmt.Errorf("%s: an agent session is busy in it: %s; nothing undone", s.Branch, sessions.Label(agentLabel))
+			return fmt.Errorf("%s: an agent session is busy in it: %s; nothing undone", s.Branch, sessions.Label(agentLabel))
 		}
-		// Read under the lock, so what the abort and the reset below trust
+		// Read under the lock, so what the abort and the reset later trust
 		// is what is there. The sidecar read above is the handover marker
 		// this loop goes by; the lock is what keeps it true.
 		stand := RecheckGit(wt.Path, gitDir)
 		if stand.Err != nil {
-			return nil, stand.Err
+			return stand.Err
 		}
 		if stand.Rebasing {
-			// The sidecar read above is the handover marker; a rebase
-			// without one is somebody's own.
-			if !stateOK {
-				return nil, fmt.Errorf("%s is mid-rebase; nothing undone", s.Branch)
+			if err := u.checkHandover(s, wt, st, stateOK, force); err != nil {
+				return err
 			}
-			// A sidecar beside a rebase does not make the rebase the run's:
-			// a person may have aborted the run's and started their own,
-			// from a commit of theirs, leaving the sidecar behind. Aborting
-			// that would discard the commit, and no pin covers it (the
-			// branch ref never moved), so force does not lift this refusal.
-			foreign := Way{Work: cmp.Or(st.Work, s.Branch), Path: wt.Path, Plan: true, Rebasing: true, Foreign: true}
-			if err := VerifyLeft(wt.Path, st); err != nil {
-				return nil, fmt.Errorf("%s: %w; %s; nothing undone", s.Branch, err, WayOut(foreign))
-			}
-			// The run's own rebase may still carry a person's commits: the
-			// stop's resolution committed by hand, or a pick their own
-			// rebase --continue made before stopping again. The abort would
-			// discard them and nothing but a reflog would name them, so a
-			// plain undo refuses and a forced one pins the HEAD it discards.
-			// A handover from before the head was recorded cannot prove
-			// there are none, and is treated as carrying some.
-			in, err := CommittedInside(wt.Path, st)
-			if err != nil {
-				foreign.Inside = 1 // commits it cannot name, which an abort loses
-				return nil, fmt.Errorf("%s: %w; %s; nothing undone", s.Branch, err, WayOut(foreign))
-			}
-			if len(in.Commits) > 0 || in.Unproven {
-				if !force {
-					work := cmp.Or(st.Work, s.Branch)
-					if in.Unproven {
-						return nil, unprovenRefusal(work, len(in.Commits))
-					}
-					return nil, insideRefusal(work, in.Commits)
-				}
-				insideHead[s.Branch] = in.Head
-			}
-			// A rebase this tool left: aborting it is what undo is for, and
-			// its staged conflicts are not dirt. The abort happens later,
-			// once every branch has passed every check.
-			aborting[s.Branch] = true
 			continue
 		}
 		if stand.Dirty {
-			return nil, fmt.Errorf("%s has tracked changes; nothing undone", s.Branch)
+			return fmt.Errorf("%s has tracked changes; nothing undone", s.Branch)
 		}
 	}
-	// Where each branch is now, read once under the locks and reused by the
-	// apply loop below: nothing may move between the check and the reset.
-	tips := map[string]string{}
-	// What a forced undo will pin. Collected here and written only once
-	// every branch has passed: a refusal raised by a later branch of the
-	// same run must not leave a stray safety ref behind, which would make
-	// every later plain undo report "already at" and strand the run.
-	var pins []Pin
-	forceEpoch := now.UnixNano()
-	for _, s := range run {
+	return nil
+}
+
+// checkHandover checks a checkout found mid-rebase: only a rebase the run
+// handed over may be aborted, and only a forced undo aborts one that
+// carries a person's commits, pinning them. It marks the branch for
+// aborting.
+func (u *undo) checkHandover(s Safety, wt repo.Worktree, st State, stateOK, force bool) error {
+	// The sidecar lockCheckouts read is the handover marker; a rebase
+	// without one is somebody's own.
+	if !stateOK {
+		return fmt.Errorf("%s is mid-rebase; nothing undone", s.Branch)
+	}
+	// A sidecar beside a rebase does not make the rebase the run's:
+	// a person may have aborted the run's and started their own,
+	// from a commit of theirs, leaving the sidecar behind. Aborting
+	// that would discard the commit, and no pin covers it (the
+	// branch ref never moved), so force does not lift this refusal.
+	foreign := Way{Work: cmp.Or(st.Work, s.Branch), Path: wt.Path, Plan: true, Rebasing: true, Foreign: true}
+	if err := VerifyLeft(wt.Path, st); err != nil {
+		return fmt.Errorf("%s: %w; %s; nothing undone", s.Branch, err, WayOut(foreign))
+	}
+	// The run's own rebase may still carry a person's commits: the
+	// stop's resolution committed by hand, or a pick their own
+	// rebase --continue made before stopping again. The abort would
+	// discard them and nothing but a reflog would name them, so a
+	// plain undo refuses and a forced one pins the HEAD it discards.
+	// A handover from before the head was recorded cannot prove
+	// there are none, and is treated as carrying some.
+	in, err := CommittedInside(wt.Path, st)
+	if err != nil {
+		foreign.Inside = 1 // commits it cannot name, which an abort loses
+		return fmt.Errorf("%s: %w; %s; nothing undone", s.Branch, err, WayOut(foreign))
+	}
+	if len(in.Commits) > 0 || in.Unproven {
+		if !force {
+			work := cmp.Or(st.Work, s.Branch)
+			if in.Unproven {
+				return unprovenRefusal(work, len(in.Commits))
+			}
+			return insideRefusal(work, in.Commits)
+		}
+		u.insideHead[s.Branch] = in.Head
+	}
+	// A rebase this tool left: aborting it is what undo is for, and
+	// its staged conflicts are not dirt. The abort happens later,
+	// once every branch has passed every check.
+	u.aborting[s.Branch] = true
+	return nil
+}
+
+// checkBranches reads where each branch of the run is now and checks it
+// against where the run left it, collecting the pins a forced undo writes.
+// all is every safety ref there is, for the later runs that refuse.
+func (u *undo) checkBranches(all []Safety, force bool) error {
+	for _, s := range u.run {
 		for _, other := range all {
 			if other.Branch == s.Branch && other.Epoch > s.Epoch {
-				return nil, fmt.Errorf("%s has a later run (%d); undo that first", s.Branch, other.Epoch)
+				return fmt.Errorf("%s has a later run (%d); undo that first", s.Branch, other.Epoch)
 			}
 		}
-		tip, err := gitEnv(mainRoot, nil, nil, "rev-parse", "--verify", "refs/heads/"+s.Branch)
+		tip, err := gitEnv(u.mainRoot, nil, nil, "rev-parse", "--verify", "refs/heads/"+s.Branch)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		tips[s.Branch] = tip
+		u.tips[s.Branch] = tip
 		// The run's own result is where the branch should still be. Without
 		// one the run never finished for this branch: it is then where the
 		// run fast-forwarded it to, when it did, and otherwise any movement
 		// at all is somebody else's.
-		want, ok, err := ResultTip(mainRoot, s.Branch, s.Epoch)
+		want, ok, err := ResultTip(u.mainRoot, s.Branch, s.Epoch)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if !ok {
-			if want, ok, err = ForwardTip(mainRoot, s.Branch, s.Epoch); err != nil {
-				return nil, err
+			if want, ok, err = ForwardTip(u.mainRoot, s.Branch, s.Epoch); err != nil {
+				return err
 			}
 		}
 		if !ok {
@@ -220,154 +297,177 @@ func Undo(mainRoot string, worktrees []repo.Worktree, listed []agents.Agent, bra
 			// old tip under a rebase the run started from there, and at the
 			// remote's commit under one it fast-forwarded first: the pin is
 			// the same for both.
-			if h := insideHead[s.Branch]; h != "" {
-				pins = append(pins, Pin{Branch: s.Branch, Safety: h, Result: s.Tip})
+			if h := u.insideHead[s.Branch]; h != "" {
+				u.pins = append(u.pins, Pin{Branch: s.Branch, Safety: h, Result: s.Tip})
 			}
 			continue
 		}
 		if !force {
-			// A handed-over rebase somebody finished with git alone leaves
-			// the branch rebased and the handover behind: the run's own
-			// rebase, which resume runs the rest of, not a branch that
-			// moved. Read-only, and only where a handover has no rebase.
-			st, stateOK := states[s.Branch]
-			if stateOK && !aborting[s.Branch] {
-				wt := byBranch[s.Branch]
-				if VerifyFinished(wt.Path, s.Branch, cmp.Or(st.Work, s.Branch), st.Onto, st.OldTip, st.Total) == nil {
-					return nil, fmt.Errorf("%s: %s; nothing undone", s.Branch, WayOut(Way{Work: cmp.Or(st.Work, s.Branch), Path: wt.Path, Plan: true, Finished: true}))
-				}
-			}
-			// Also what a rebase finished by hand with a commit made inside
-			// it comes to: the count refuses it as the run's, so the way out
-			// is the forced undo, and the refusal has to say so.
-			moved := WayOut(Way{Work: cmp.Or(st.Work, s.Branch), Plan: stateOK, Moved: true})
-			return nil, fmt.Errorf("%s has moved since that run (%s commits ahead of it); undo would discard them: %s", s.Branch, aheadCount(mainRoot, want, tip), moved)
+			return u.movedRefusal(s, want, tip)
 		}
 		// A branch moved by hand whose rebase also carries a person's
 		// commits is two things to keep, and a forced undo pins one.
-		if insideHead[s.Branch] != "" {
-			yours := WayOut(Way{Work: cmp.Or(states[s.Branch].Work, s.Branch), Path: byBranch[s.Branch].Path, Plan: true, Rebasing: true, Foreign: true, Moved: true, Inside: 1})
-			return nil, fmt.Errorf("%s has moved since that run and carries commits made inside its handed-over rebase; one safety ref cannot keep both, so %s; nothing undone", s.Branch, yours)
+		if u.insideHead[s.Branch] != "" {
+			yours := WayOut(Way{Work: cmp.Or(u.states[s.Branch].Work, s.Branch), Path: u.byBranch[s.Branch].Path, Plan: true, Rebasing: true, Foreign: true, Moved: true, Inside: 1})
+			return fmt.Errorf("%s has moved since that run and carries commits made inside its handed-over rebase; one safety ref cannot keep both, so %s; nothing undone", s.Branch, yours)
 		}
 		// The forced undo is itself a run: it moves the branch from tip to
 		// s.Tip, so those are its safety and its result. Pinning the result
 		// too is what lets a plain undo of the forced undo see the branch
 		// where it was left and put the discarded commits back.
-		pins = append(pins, Pin{Branch: s.Branch, Safety: tip, Result: s.Tip})
+		u.pins = append(u.pins, Pin{Branch: s.Branch, Safety: tip, Result: s.Tip})
 	}
-	if err := WriteRun(mainRoot, forceEpoch, pins); err != nil {
-		return nil, err
-	}
-	// Only now, with every branch of the run checked and the forced-undo
-	// pins written, does anything change: aborting is a mutation, and doing
-	// it earlier would let a refusal raised by a later branch leave an
-	// already-discarded resolution behind.
-	//
-	// The aborts are a pass of their own, before any branch is reset. A
-	// leaf handed over onto a parent the run rebased must never be left
-	// mid-rebase onto a parent that has already been put back, so if an
-	// abort fails the undo stops there, with nothing reset, and reports
-	// the aborts that did happen.
-	aborted := map[string]bool{}
-	// The branches whose pinned tip this undo has actually discarded: reset
-	// past it, or aborted a rebase that carried it. A failure past this
-	// point must leave a forced-undo pin for exactly these and no other. A
-	// pin left for a branch that never moved would be the newest run
-	// touching it, with its safety at the branch's own tip, so every later
-	// plain undo would say "already at" and the run it was meant to
-	// supersede would be out of reach.
-	moved := map[string]bool{}
-	dropUnmovedPins := func(err error) error {
-		for _, p := range pins {
-			if moved[p.Branch] {
-				continue
-			}
-			s := Safety{Branch: p.Branch, Epoch: forceEpoch, Ref: SafetyRef(p.Branch, forceEpoch), Tip: p.Safety}
-			if derr := DeleteSafety(mainRoot, s); derr != nil {
-				err = errors.Join(err, fmt.Errorf("%s: the forced undo's safety ref %s could not be removed: %w", p.Branch, s.Ref, derr))
-			}
+	return nil
+}
+
+// movedRefusal is a plain undo's answer to a branch that is neither where
+// the run found it nor where the run left it.
+func (u *undo) movedRefusal(s Safety, want, tip string) error {
+	// A handed-over rebase somebody finished with git alone leaves
+	// the branch rebased and the handover behind: the run's own
+	// rebase, which resume runs the rest of, not a branch that
+	// moved. Read-only, and only where a handover has no rebase.
+	st, stateOK := u.states[s.Branch]
+	if stateOK && !u.aborting[s.Branch] {
+		wt := u.byBranch[s.Branch]
+		if VerifyFinished(wt.Path, s.Branch, cmp.Or(st.Work, s.Branch), st.Onto, st.OldTip, st.Total) == nil {
+			return fmt.Errorf("%s: %s; nothing undone", s.Branch, WayOut(Way{Work: cmp.Or(st.Work, s.Branch), Path: wt.Path, Plan: true, Finished: true}))
 		}
-		return err
 	}
-	for _, s := range run {
-		if !aborting[s.Branch] {
+	// Also what a rebase finished by hand with a commit made inside
+	// it comes to: the count refuses it as the run's, so the way out
+	// is the forced undo, and the refusal has to say so.
+	moved := WayOut(Way{Work: cmp.Or(st.Work, s.Branch), Plan: stateOK, Moved: true})
+	return fmt.Errorf("%s has moved since that run (%s commits ahead of it); undo would discard them: %s", s.Branch, aheadCount(u.mainRoot, want, tip), moved)
+}
+
+// abortHandovers aborts every handed-over rebase lockCheckouts marked, and
+// removes its handover.
+//
+// The aborts are a pass of their own, before any branch is reset. A leaf
+// handed over onto a parent the run rebased must never be left mid-rebase
+// onto a parent that has already been put back, so if an abort fails the
+// undo stops there, with nothing reset, and reports the aborts that did
+// happen.
+func (u *undo) abortHandovers() error {
+	for _, s := range u.run {
+		if !u.aborting[s.Branch] {
 			continue
 		}
-		wt := byBranch[s.Branch]
+		wt := u.byBranch[s.Branch]
 		if err := abortRebase(wt); err != nil {
-			return abortedRows(mainRoot, run, byBranch, tips, aborted), dropUnmovedPins(err)
+			return err
 		}
-		aborted[s.Branch] = true
+		u.aborted[s.Branch] = true
 		// The abort resets the branch to the tip the rebase started from.
 		// That discards what the pin keeps in two cases: the commits made
 		// inside the rebase, and a branch ref moved by hand meanwhile, which
 		// the abort puts back before any reset would have.
-		if insideHead[s.Branch] != "" || tips[s.Branch] != s.Tip {
-			moved[s.Branch] = true
+		if u.insideHead[s.Branch] != "" || u.tips[s.Branch] != s.Tip {
+			u.moved[s.Branch] = true
 		}
-		gitDir, err := gitDirOf(wt)
+		gitDir, err := u.gitDirOf(wt)
 		if err != nil {
-			return abortedRows(mainRoot, run, byBranch, tips, aborted), dropUnmovedPins(err)
+			return err
 		}
 		if err := RemovePlan(gitDir); err != nil {
-			return abortedRows(mainRoot, run, byBranch, tips, aborted), dropUnmovedPins(fmt.Errorf("%s: the rebase is aborted but its handover was not removed: %w", s.Branch, err))
+			return fmt.Errorf("%s: the rebase is aborted but its handover was not removed: %w", s.Branch, err)
 		}
 	}
-	// A branch that was handed over may still have a stale handover even
-	// when no rebase is in progress: somebody finished or aborted it by
-	// hand. Undoing the run is the end of that handover either way.
-	for _, s := range run {
-		wt, ok := byBranch[s.Branch]
-		if !ok || aborted[s.Branch] {
+	return nil
+}
+
+// clearStaleHandovers removes the handover of every other branch of the
+// run. A branch that was handed over may still have a stale handover even
+// when no rebase is in progress: somebody finished or aborted it by hand.
+// Undoing the run is the end of that handover either way.
+func (u *undo) clearStaleHandovers() error {
+	for _, s := range u.run {
+		wt, ok := u.byBranch[s.Branch]
+		if !ok || u.aborted[s.Branch] {
 			continue
 		}
-		gitDir, err := gitDirOf(wt)
+		gitDir, err := u.gitDirOf(wt)
 		if err != nil {
-			return abortedRows(mainRoot, run, byBranch, tips, aborted), dropUnmovedPins(err)
+			return err
 		}
 		if err := RemovePlan(gitDir); err != nil {
-			return abortedRows(mainRoot, run, byBranch, tips, aborted), dropUnmovedPins(err)
+			return err
 		}
 	}
-	// A failure here returns the rows already put back, and every abort
-	// among the branches not reached yet, so a partial restore is visible.
+	return nil
+}
+
+// resetBranches puts every branch of the run back at its safety tip. A
+// failure here returns the rows already put back, and every abort among the
+// branches not reached yet, so a partial restore is visible.
+func (u *undo) resetBranches() ([]Restored, error) {
 	pinned := map[string]Pin{}
-	for _, p := range pins {
+	for _, p := range u.pins {
 		pinned[p.Branch] = p
 	}
 	var out []Restored
-	for i, s := range run {
-		from := tips[s.Branch]
-		r := Restored{Branch: s.Branch, From: from, To: s.Tip, Ref: s.Ref, Aborted: aborted[s.Branch]}
+	for i, s := range u.run {
+		from := u.tips[s.Branch]
+		r := Restored{Branch: s.Branch, From: from, To: s.Tip, Ref: s.Ref, Aborted: u.aborted[s.Branch]}
 		if p, ok := pinned[s.Branch]; ok {
-			r.Kept, r.KeptTip = SafetyRef(s.Branch, forceEpoch), p.Safety
+			r.Kept, r.KeptTip = SafetyRef(s.Branch, u.forceEpoch), p.Safety
 		}
-		if wt, ok := byBranch[s.Branch]; ok {
+		if wt, ok := u.byBranch[s.Branch]; ok {
 			r.Path = wt.Path
 			if from != s.Tip {
 				if _, err := gitEnv(wt.Path, rebaseEnv, nil, "reset", "--hard", s.Tip); err != nil {
-					return append(out, abortedRows(mainRoot, run[i:], byBranch, tips, aborted)...), dropUnmovedPins(err)
+					rows, err := u.stopped(u.run[i:], err)
+					return append(out, rows...), err
 				}
-				moved[s.Branch] = true
+				u.moved[s.Branch] = true
 			}
 		} else if from != s.Tip {
-			if _, err := gitEnv(mainRoot, nil, nil, "update-ref", "refs/heads/"+s.Branch, s.Tip, from); err != nil {
-				return append(out, abortedRows(mainRoot, run[i:], byBranch, tips, aborted)...), dropUnmovedPins(err)
+			if _, err := gitEnv(u.mainRoot, nil, nil, "update-ref", "refs/heads/"+s.Branch, s.Tip, from); err != nil {
+				rows, err := u.stopped(u.run[i:], err)
+				return append(out, rows...), err
 			}
-			moved[s.Branch] = true
+			u.moved[s.Branch] = true
 		}
 		out = append(out, r)
 	}
-	// Every branch is back: what the run fast-forwarded to was the remote's
-	// and is no longer anything the branch had. Past the resets a failure
-	// here undoes nothing, so it is reported with the rows, not instead.
+	return out, nil
+}
+
+// disown takes back what the run fast-forwarded each branch to, once every
+// branch is back: it was the remote's and is no longer anything the branch
+// had. Past the resets a failure here undoes nothing, so it is reported with
+// the rows, not instead.
+func (u *undo) disown() error {
 	var derr error
-	for _, s := range run {
-		if err := Disown(mainRoot, s.Branch, s.Epoch); err != nil {
+	for _, s := range u.run {
+		if err := Disown(u.mainRoot, s.Branch, s.Epoch); err != nil {
 			derr = errors.Join(derr, fmt.Errorf("%s is back, but the commit the run fast-forwarded it to still reads as one it had: %w", s.Branch, err))
 		}
 	}
-	return out, derr
+	return derr
+}
+
+// stopped is what an undo that failed after its pins were written returns:
+// the rows of the branches among run it aborted, and err, joined with any
+// forced-undo pin it could not drop for a branch it did not move.
+func (u *undo) stopped(run []Safety, err error) ([]Restored, error) {
+	return abortedRows(u.mainRoot, run, u.byBranch, u.tips, u.aborted), u.dropUnmovedPins(err)
+}
+
+// dropUnmovedPins deletes the forced-undo pin of every branch this undo has
+// not moved, so the run it was meant to supersede stays in reach.
+func (u *undo) dropUnmovedPins(err error) error {
+	for _, p := range u.pins {
+		if u.moved[p.Branch] {
+			continue
+		}
+		s := Safety{Branch: p.Branch, Epoch: u.forceEpoch, Ref: SafetyRef(p.Branch, u.forceEpoch), Tip: p.Safety}
+		if derr := DeleteSafety(u.mainRoot, s); derr != nil {
+			err = errors.Join(err, fmt.Errorf("%s: the forced undo's safety ref %s could not be removed: %w", p.Branch, s.Ref, derr))
+		}
+	}
+	return err
 }
 
 // insideRefusal is the plain undo's answer to commits made inside a
