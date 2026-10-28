@@ -821,13 +821,43 @@ func (r *RunPlan) settle(outcome, line, failure string) {
 // its result. Whatever it comes to is settled, and what sits on top of a
 // branch that did not finish is refused.
 func (r *RunPlan) rebaseOne(b string) {
-	ctx, w, p := r.ctx, r.w, r.parts[b]
+	p := r.parts[b]
 	// The lock goes as soon as this worktree is done, whichever way, so the
 	// next worktree's rebase does not hold it. The one exception is the
 	// handover, which drops the handle to leave its lock behind.
 	defer r.release(p)
-	fmt.Fprintf(w, "\n%s  %s  %d behind · %d ahead\n", p.work, b, p.a.Behind, p.a.Ahead)
-	j := r.opts.Journal
+	fmt.Fprintf(r.w, "\n%s  %s  %d behind · %d ahead\n", p.work, b, p.a.Behind, p.a.Ahead)
+	if r.passOver(b, p) {
+		return
+	}
+	if p.a.OnlyFastForward() {
+		r.fastForwardOnly(b, p)
+		return
+	}
+	req, ontoLabel, ok := r.request(b, p)
+	if !ok {
+		return
+	}
+	res, rerr := syncrun.TrackedRebase(r.tracker, &kit.RebaseInFlight{Work: p.work, Path: p.wt.Path, Safety: wtsync.SafetyRef(b, r.epoch)}, func() (wtsync.Result, error) {
+		return wtsync.Rebase(r.ctx.Repo.MainRoot, r.cfg, req, r.w)
+	})
+	p.result = &res
+	switch {
+	case rerr != nil:
+		r.rebaseFailed(b, p, res, rerr)
+	case res.Left != nil:
+		r.handOver(b, p, req, res)
+	case res.Restored:
+		r.settleRestored(b, p, res)
+	default:
+		r.finishRebase(b, p, res, ontoLabel)
+	}
+}
+
+// passOver settles a worktree the run does not rebase, refused or skipped,
+// and reports whether it did.
+func (r *RunPlan) passOver(b string, p *participant) bool {
+	w, j := r.w, r.opts.Journal
 	if p.refused != "" {
 		fmt.Fprintf(w, "  ✗ refused: %s\n", p.refused)
 		r.settle("refused", "✗ "+p.work+"  refused: "+p.refused, p.work)
@@ -837,21 +867,27 @@ func (r *RunPlan) rebaseOne(b string) {
 				jp.Result = syncrun.ResultNotRun
 			}
 		})
-		return
+		return true
 	}
 	if p.verdict == wtsync.SkipRun {
 		fmt.Fprintf(w, "  ⏭ skipped: %s\n", p.reason)
 		r.settle("skipped", "", "")
 		j.Set(b, func(jp *syncrun.UpParticipant) { jp.Result, jp.Reason = syncrun.ResultSkipped, kit.Strp(p.reason) })
-		return
+		return true
 	}
-	if p.a.OnlyFastForward() {
-		r.fastForwardOnly(b, p)
-		return
-	}
-	req := wtsync.Request{Path: p.wt.Path, Branch: b, Trunk: r.trunkSHA, Onto: r.trunkSHA, Epoch: r.epoch, Work: p.work}
+	return false
+}
+
+// request is b's rebase as the run asks for it, and what its line calls
+// what it rebases onto: trunk, or the tip its stack parent ended at. It
+// says what is known about the rebase before it starts, and fast-forwards
+// a branch behind its own remote first; ok is false when that fast-forward
+// did not go, which settled the worktree.
+func (r *RunPlan) request(b string, p *participant) (req wtsync.Request, ontoLabel string, ok bool) {
+	w, j := r.w, r.opts.Journal
+	req = wtsync.Request{Path: p.wt.Path, Branch: b, Trunk: r.trunkSHA, Onto: r.trunkSHA, Epoch: r.epoch, Work: p.work}
 	req.Stacked = len(wtsync.Descendants(r.parents, b)) > 0
-	ontoLabel := r.onto
+	ontoLabel = r.onto
 	if parent, ok := r.parents[b]; ok {
 		if pp := r.parts[parent]; pp != nil && pp.result != nil && !pp.result.Restored && pp.head != "" {
 			req.Onto, req.Upstream, ontoLabel = pp.head, pp.result.OldTip, pp.work
@@ -879,86 +915,96 @@ func (r *RunPlan) rebaseOne(b string) {
 	case own.FastForwards():
 		safety, ok := r.fastForward(b, p, "")
 		if !ok {
-			return
+			return req, ontoLabel, false
 		}
 		req.Safety = safety
 	}
-	// found is the tip the run found the branch at: the one the rebase
-	// starts from, unless the run fast-forwarded it first.
-	found := func(res wtsync.Result) string { return cmp.Or(p.found, res.OldTip) }
-	res, rerr := syncrun.TrackedRebase(r.tracker, &kit.RebaseInFlight{Work: p.work, Path: p.wt.Path, Safety: wtsync.SafetyRef(b, r.epoch)}, func() (wtsync.Result, error) {
-		return wtsync.Rebase(ctx.Repo.MainRoot, r.cfg, req, w)
+	return req, ontoLabel, true
+}
+
+// foundTip is the tip the run found the branch at: the one the rebase
+// starts from, unless the run fast-forwarded it first.
+func (p *participant) foundTip(res wtsync.Result) string { return cmp.Or(p.found, res.OldTip) }
+
+// rebaseFailed settles a rebase that failed outright.
+func (r *RunPlan) rebaseFailed(b string, p *participant, res wtsync.Result, rerr error) {
+	fmt.Fprintf(r.w, "  ✗ failed: %v\n", rerr)
+	syncrun.ClearHandover(r.w, p.wt.Path)
+	r.recordFailed(b, p, rerr.Error(), p.foundTip(res), res.Safety.Ref)
+	r.settle("failed", fmt.Sprintf("✗ %s  failed: %v", p.work, rerr), p.work+" (failed)")
+	r.refuseAbove(b, p.work+" failed")
+}
+
+// handOver hands a rebase that stopped at a stop a person owns over to
+// them, leaving its lock behind, and settles it.
+func (r *RunPlan) handOver(b string, p *participant, req wtsync.Request, res wtsync.Result) {
+	w, j := r.w, r.opts.Journal
+	herr := syncrun.HandOver(r.ctx, w, syncrun.HandoverInput{
+		Work: p.work, Branch: b, Path: p.wt.Path, TrunkRef: r.onto, TrunkSHA: r.trunkSHA,
+		Onto: req.Onto, Upstream: req.Upstream, Epoch: r.epoch, Cfg: r.cfg, Res: res, Lock: p.lock,
+		Found: p.found, Tracker: r.tracker,
 	})
-	p.result = &res
-	if rerr != nil {
-		fmt.Fprintf(w, "  ✗ failed: %v\n", rerr)
+	if herr != nil {
+		fmt.Fprintf(w, "  ✗ failed: %v\n", herr)
+		// The rebase is still in the worktree and there is now no
+		// plan file to explain it, so say the two things a person
+		// cannot see for themselves. Any half-written brief goes:
+		// the sidecar is the marker and it was never written, so
+		// nothing acts on what is left, and a stale markdown would
+		// describe a stop that is not this one.
 		syncrun.ClearHandover(w, p.wt.Path)
-		r.recordFailed(b, p, rerr.Error(), found(res), res.Safety.Ref)
-		r.settle("failed", fmt.Sprintf("✗ %s  failed: %v", p.work, rerr), p.work+" (failed)")
+		// Not wt sync undo: it refuses a mid-rebase worktree, and
+		// there is no handover here for it to abort. The branch ref
+		// never moved, so the abort is the whole of putting it back.
+		way := wtsync.WayOut(wtsync.Way{Work: p.work, Path: p.wt.Path, Rebasing: true})
+		fmt.Fprintf(w, "  ⚠ %s is left mid-rebase with no plan: %s\n", p.work, way)
+		j.SetSync(b, func(jp *syncrun.SyncParticipant) {
+			jp.Result, jp.Reason, jp.Recovery = syncrun.ResultNeedsRecovery, kit.Strp(herr.Error()), kit.Strp(way)
+			jp.SafetyRef = kit.Strp(res.Safety.Ref)
+		})
+		r.settle("failed", "✗ "+p.work+"  left mid-rebase with no plan: "+way, p.work+" (failed)")
 		r.refuseAbove(b, p.work+" failed")
 		return
 	}
-	if res.Left != nil {
-		herr := syncrun.HandOver(ctx, w, syncrun.HandoverInput{
-			Work: p.work, Branch: b, Path: p.wt.Path, TrunkRef: r.onto, TrunkSHA: r.trunkSHA,
-			Onto: req.Onto, Upstream: req.Upstream, Epoch: r.epoch, Cfg: r.cfg, Res: res, Lock: p.lock,
-			Found: p.found, Tracker: r.tracker,
-		})
-		if herr != nil {
-			fmt.Fprintf(w, "  ✗ failed: %v\n", herr)
-			// The rebase is still in the worktree and there is now no
-			// plan file to explain it, so say the two things a person
-			// cannot see for themselves. Any half-written brief goes:
-			// the sidecar is the marker and it was never written, so
-			// nothing acts on what is left, and a stale markdown would
-			// describe a stop that is not this one.
-			syncrun.ClearHandover(w, p.wt.Path)
-			// Not wt sync undo: it refuses a mid-rebase worktree, and
-			// there is no handover here for it to abort. The branch ref
-			// never moved, so the abort is the whole of putting it back.
-			way := wtsync.WayOut(wtsync.Way{Work: p.work, Path: p.wt.Path, Rebasing: true})
-			fmt.Fprintf(w, "  ⚠ %s is left mid-rebase with no plan: %s\n", p.work, way)
-			j.SetSync(b, func(jp *syncrun.SyncParticipant) {
-				jp.Result, jp.Reason, jp.Recovery = syncrun.ResultNeedsRecovery, kit.Strp(herr.Error()), kit.Strp(way)
-				jp.SafetyRef = kit.Strp(res.Safety.Ref)
-			})
-			r.settle("failed", "✗ "+p.work+"  left mid-rebase with no plan: "+way, p.work+" (failed)")
-			r.refuseAbove(b, p.work+" failed")
-			return
+	// The lock is left behind on purpose; dropping the handle here
+	// keeps the deferred releases from removing the file.
+	p.lock = nil
+	j.SetSync(b, func(jp *syncrun.SyncParticipant) {
+		jp.Result = syncrun.ResultHandedOver
+		jp.Reason = kit.Strp("stopped at a conflict that is yours")
+		jp.Recovery = kit.Strp(wtsync.WayOut(wtsync.Way{Work: p.work, Plan: true, Rebasing: true, OwesAdd: true}))
+		jp.SafetyRef, jp.UndoCommand, jp.PlanFile = kit.Strp(res.Safety.Ref), syncrun.UndoCommand(p.work), syncrun.PlanFileOf(p.wt.Path)
+	})
+	r.settle("needs you", "⚠ "+p.work+"  needs you: "+wtsync.WayOut(wtsync.Way{Work: p.work, Plan: true, Rebasing: true, OwesAdd: true}), p.work+" (needs you)")
+	r.refuseAbove(b, p.work+" is waiting for you")
+}
+
+// settleRestored settles a rebase the loop put back at a stop nobody resolved.
+func (r *RunPlan) settleRestored(b string, p *participant, res wtsync.Result) {
+	last := res.Stops[len(res.Stops)-1]
+	var files []string
+	for _, f := range last.Files {
+		if !f.Resolved {
+			files = append(files, f.Path)
 		}
-		// The lock is left behind on purpose; dropping the handle here
-		// keeps the deferred releases from removing the file.
-		p.lock = nil
-		j.SetSync(b, func(jp *syncrun.SyncParticipant) {
-			jp.Result = syncrun.ResultHandedOver
-			jp.Reason = kit.Strp("stopped at a conflict that is yours")
-			jp.Recovery = kit.Strp(wtsync.WayOut(wtsync.Way{Work: p.work, Plan: true, Rebasing: true, OwesAdd: true}))
-			jp.SafetyRef, jp.UndoCommand, jp.PlanFile = kit.Strp(res.Safety.Ref), syncrun.UndoCommand(p.work), syncrun.PlanFileOf(p.wt.Path)
-		})
-		r.settle("needs you", "⚠ "+p.work+"  needs you: "+wtsync.WayOut(wtsync.Way{Work: p.work, Plan: true, Rebasing: true, OwesAdd: true}), p.work+" (needs you)")
-		r.refuseAbove(b, p.work+" is waiting for you")
-		return
 	}
-	if res.Restored {
-		last := res.Stops[len(res.Stops)-1]
-		var files []string
-		for _, f := range last.Files {
-			if !f.Resolved {
-				files = append(files, f.Path)
-			}
-		}
-		restored := fmt.Sprintf("restored: %s at %d/%d not resolved; rebase by hand", strings.Join(files, ", "), last.Index, last.Total)
-		fmt.Fprintf(w, "  ✗ %s\n", restored)
-		syncrun.ClearHandover(w, p.wt.Path)
-		r.dropFastForward(b, p)
-		j.SetSync(b, func(jp *syncrun.SyncParticipant) {
-			jp.Result, jp.Reason, jp.SafetyRef = syncrun.ResultRestored, kit.Strp(restored), kit.Strp(res.Safety.Ref)
-			jp.After = kit.Strp(found(res))
-		})
-		r.settle("restored", "✗ "+p.work+"  "+restored, p.work+" (restored)")
-		r.refuseAbove(b, p.work+" was restored")
-		return
-	}
+	restored := fmt.Sprintf("restored: %s at %d/%d not resolved; rebase by hand", strings.Join(files, ", "), last.Index, last.Total)
+	fmt.Fprintf(r.w, "  ✗ %s\n", restored)
+	syncrun.ClearHandover(r.w, p.wt.Path)
+	r.dropFastForward(b, p)
+	r.opts.Journal.SetSync(b, func(jp *syncrun.SyncParticipant) {
+		jp.Result, jp.Reason, jp.SafetyRef = syncrun.ResultRestored, kit.Strp(restored), kit.Strp(res.Safety.Ref)
+		jp.After = kit.Strp(p.foundTip(res))
+	})
+	r.settle("restored", "✗ "+p.work+"  "+restored, p.work+" (restored)")
+	r.refuseAbove(b, p.work+" was restored")
+}
+
+// finishRebase runs what follows a finished rebase: the deferred steps and
+// the result ref. It settles the worktree, as pushable when nothing is
+// owed.
+func (r *RunPlan) finishRebase(b string, p *participant, res wtsync.Result, ontoLabel string) {
+	ctx, w, j := r.ctx, r.w, r.opts.Journal
 	line := fmt.Sprintf("  ✓ rebased %s onto %s", kit.Count(res.Replayed, "commit"), ontoLabel)
 	if res.SignaturesDropped > 0 {
 		line += fmt.Sprintf(", %s dropped", kit.Count(res.SignaturesDropped, "signature"))
@@ -968,7 +1014,7 @@ func (r *RunPlan) rebaseOne(b string) {
 		// What the deferred steps compare and the undo line names is the tip
 		// the run found, the commits a fast-forward brought included.
 		done := res
-		done.OldTip = found(res)
+		done.OldTip = p.foundTip(res)
 		return syncrun.CompleteInput{
 			Branch: b, Epoch: r.epoch, Res: done,
 			Tell: append(slices.Clone(p.a.Sessions), p.forced...), TrunkName: r.trunk, Landed: p.a.Behind, Check: syncrun.PathsOnce(wtsync.StopPaths(res.Stops)),
@@ -1001,15 +1047,15 @@ func (r *RunPlan) rebaseOne(b string) {
 			jp.Result, jp.After = syncrun.ResultRebasedStepFailed, kit.Strp(after)
 			jp.FailedSteps = append(jp.FailedSteps, owed...)
 		})
-	} else {
-		r.settle("rebased", "", "")
-		t := syncrun.PushTarget{Work: p.work, Branch: b, Path: p.wt.Path}
-		r.Pushable = append(r.Pushable, t)
-		j.Set(b, func(jp *syncrun.UpParticipant) {
-			jp.Result, jp.After = syncrun.ResultRebased, kit.Strp(after)
-			jp.PushCommand, jp.NoPushReason, jp.FixCommand = syncrun.PushJSON(t, syncrun.PushOf(ctx, t))
-		})
+		return
 	}
+	r.settle("rebased", "", "")
+	t := syncrun.PushTarget{Work: p.work, Branch: b, Path: p.wt.Path}
+	r.Pushable = append(r.Pushable, t)
+	j.Set(b, func(jp *syncrun.UpParticipant) {
+		jp.Result, jp.After = syncrun.ResultRebased, kit.Strp(after)
+		jp.PushCommand, jp.NoPushReason, jp.FixCommand = syncrun.PushJSON(t, syncrun.PushOf(ctx, t))
+	})
 }
 
 // fastForward moves b, which is behind its own remote, up to the remote's
