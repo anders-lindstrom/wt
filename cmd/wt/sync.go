@@ -12,6 +12,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/syncfix"
 	"github.com/anders-lindstrom/wt/internal/commands/synckeep"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 )
 
 func newSyncCmd() *cobra.Command {
@@ -147,7 +148,7 @@ func newSyncCmd() *cobra.Command {
 	var rebase, resume, undo, yes, force, ifReady, allowDiverged, asJSON bool
 	var expect string
 	var sel selectionFlags
-	var push func() synccmd.PushMode
+	var push func() syncrun.PushMode
 	flags := func() syncVerbFlags {
 		return syncVerbFlags{rebase: rebase, resume: resume, undo: undo,
 			yes: yes, force: force, noFetch: noFetch, noFFTrunk: noFFTrunk, ifReady: ifReady, push: push(),
@@ -321,9 +322,9 @@ func newSyncKeepRunCmd() *cobra.Command {
 			"  wt sync keep once --no-ff-trunk  # leave local trunk where it is",
 		Args: cobra.NoArgs,
 		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
-			opts := synckeep.KeepOptions{Every: every, Push: synccmd.PushAlways, NoFFTrunk: noFFTrunk}
+			opts := synckeep.KeepOptions{Every: every, Push: syncrun.PushAlways, NoFFTrunk: noFFTrunk}
 			if noPush {
-				opts.Push = synccmd.PushNever
+				opts.Push = syncrun.PushNever
 			}
 			return synckeep.Run(ctx, opts, cmd.OutOrStdout())
 		}),
@@ -483,7 +484,7 @@ type syncVerbFlags struct {
 	ifReady, noFFTrunk   bool
 	// allowDiverged rebases a branch that has diverged from its own remote.
 	allowDiverged bool
-	push          synccmd.PushMode
+	push          syncrun.PushMode
 	// json prints one object on stdout: the overview, or the verb's result.
 	json bool
 	// expect is the overview's token a run must still match.
@@ -520,9 +521,9 @@ func (f syncVerbFlags) check() error {
 	}
 	rebases := verb == "rebase" || verb == "resume"
 	switch {
-	case f.push == synccmd.PushAlways && !rebases:
+	case f.push == syncrun.PushAlways && !rebases:
 		return usagef("--push needs --rebase or --resume")
-	case f.push == synccmd.PushNever && !rebases:
+	case f.push == syncrun.PushNever && !rebases:
 		return usagef("--no-push needs --rebase or --resume")
 	case f.ifReady && verb != "rebase":
 		return usagef("--if-ready needs --rebase")
@@ -579,7 +580,7 @@ func newSyncRebaseCmd() *cobra.Command {
 	var noFetch, noFFTrunk, yes, ifReady, force, allowDiverged, asJSON bool
 	var expect string
 	var sel selectionFlags
-	var push func() synccmd.PushMode
+	var push func() syncrun.PushMode
 	rebase := &cobra.Command{
 		Use:   "rebase [<work>...]",
 		Short: "Rebase named worktrees onto trunk with the declared strategies",
@@ -809,7 +810,7 @@ func syncAcross(cmd *cobra.Command, args []string, verb string, sel kit.Selectio
 
 func newSyncResumeCmd() *cobra.Command {
 	var yes, asJSON bool
-	var push func() synccmd.PushMode
+	var push func() syncrun.PushMode
 	resume := &cobra.Command{
 		Use:   "resume <work>",
 		Short: "Continue the rebase a run left at a conflict that was yours",
@@ -862,7 +863,7 @@ func newSyncResumeCmd() *cobra.Command {
 }
 
 // syncResume is wt sync resume, whichever way it was spelled.
-func syncResume(cmd *cobra.Command, work string, ctx *kit.Context, yes bool, push synccmd.PushMode, j *synccmd.RunJournal) error {
+func syncResume(cmd *cobra.Command, work string, ctx *kit.Context, yes bool, push syncrun.PushMode, j *synccmd.RunJournal) error {
 	opts := syncfix.ResumeOptions{Journal: j}
 	opts.Push = push
 	// --yes answers yes to every question, the push included, unless
@@ -936,7 +937,7 @@ func syncUndo(cmd *cobra.Command, work string, ctx *kit.Context, force, yes bool
 func newSyncPushToCmd() *cobra.Command {
 	var unset bool
 	pushTo := &cobra.Command{
-		Use:   synccmd.PushToName + " [<work>] [<remote>/<branch>]",
+		Use:   syncrun.PushToName + " [<work>] [<remote>/<branch>]",
 		Short: "Say or record where a worktree's branch pushes",
 		Long: "Print where a push of the worktree's branch goes and what decides it;\n" +
 			"with <remote>/<branch>, record that as where it goes. Nothing is pushed\n" +
@@ -1041,8 +1042,8 @@ func confirmPush(p *prompter) func([]string) (bool, error) {
 // choosePush asks where a branch that tracks a remote branch of another name
 // pushes. Enter, or anything but one of the two numbers, is neither: the
 // branch is left unpushed and nothing is recorded.
-func choosePush(p *prompter) func(synccmd.PushChoice) (string, error) {
-	return func(c synccmd.PushChoice) (string, error) {
+func choosePush(p *prompter) func(syncrun.PushChoice) (string, error) {
+	return func(c syncrun.PushChoice) (string, error) {
 		_, _ = fmt.Fprintf(p.out, "%s tracks %s, a branch of another name. Where does it push?\n"+
 			"A push after a rebase is forced: it replaces what that branch has.\n"+
 			"  1  %s, the branch it tracks\n  2  %s, its own name\n1, 2, or Enter to leave it unpushed: ",
@@ -1059,31 +1060,31 @@ func choosePush(p *prompter) func(synccmd.PushChoice) (string, error) {
 
 // addPushFlags declares --push and --no-push on cmd, refused together, and
 // returns the choice they make once cmd has parsed its flags.
-func addPushFlags(cmd *cobra.Command, pushUsage, noPushUsage string) func() synccmd.PushMode {
+func addPushFlags(cmd *cobra.Command, pushUsage, noPushUsage string) func() syncrun.PushMode {
 	var push, noPush bool
 	cmd.Flags().BoolVar(&push, "push", false, pushUsage)
 	cmd.Flags().BoolVar(&noPush, "no-push", false, noPushUsage)
 	cmd.MarkFlagsMutuallyExclusive("push", "no-push")
-	return func() synccmd.PushMode { return pushMode(push, noPush) }
+	return func() syncrun.PushMode { return pushMode(push, noPush) }
 }
 
 // yesPush is the push --yes makes: yes, like every other question it
 // answers, unless --no-push was given.
-func yesPush(mode synccmd.PushMode) synccmd.PushMode {
-	if mode == synccmd.PushNever {
-		return synccmd.PushNever
+func yesPush(mode syncrun.PushMode) syncrun.PushMode {
+	if mode == syncrun.PushNever {
+		return syncrun.PushNever
 	}
-	return synccmd.PushAlways
+	return syncrun.PushAlways
 }
 
 // pushMode is --push and --no-push as one choice; cobra has already refused
 // the two together.
-func pushMode(push, noPush bool) synccmd.PushMode {
+func pushMode(push, noPush bool) syncrun.PushMode {
 	switch {
 	case push:
-		return synccmd.PushAlways
+		return syncrun.PushAlways
 	case noPush:
-		return synccmd.PushNever
+		return syncrun.PushNever
 	}
-	return synccmd.PushAsk
+	return syncrun.PushAsk
 }

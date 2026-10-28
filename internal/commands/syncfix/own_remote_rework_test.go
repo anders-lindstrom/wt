@@ -7,6 +7,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 )
@@ -107,7 +108,7 @@ func TestAHandoverAfterAFastForwardKeepsOrDropsTheFormerTip(t *testing.T) {
 		f, x, opts, _ := handedOver(t)
 		testkit.WriteIn(t, x, "c.txt", "both\n")
 		testkit.GitIn(t, x, "add", "c.txt")
-		if r, err := syncResumeJSON(t, f.Ctx, "x", ResumeOptions{PushOptions: synccmd.PushOptions{Push: synccmd.PushNever}, VerbOptions: opts.VerbOptions}); err != nil || r.Worktrees[0].Result != synccmd.ResultRebased {
+		if r, err := syncResumeJSON(t, f.Ctx, "x", ResumeOptions{PushOptions: syncrun.PushOptions{Push: syncrun.PushNever}, VerbOptions: opts.VerbOptions}); err != nil || r.Worktrees[0].Result != synccmd.ResultRebased {
 			t.Fatalf("resume: %v %+v", err, r.Worktrees)
 		}
 		if o := synccmdtest.PlanOfWork(t, f.Ctx, "x").Worktree.OwnRemote; o.State != "rebased" {

@@ -8,6 +8,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
@@ -20,7 +21,7 @@ func TestSyncRunPushesAFinishedWorktreeWithPush(t *testing.T) {
 	bare := testkit.PushOrigin(t, ctx)
 	old := testkit.GitOut(t, bump, "rev-parse", "--short=7", "HEAD")
 	opts := synccmdtest.NoAgents()
-	opts.Push = synccmd.PushAlways
+	opts.Push = syncrun.PushAlways
 	var out bytes.Buffer
 	if err := synccmd.SyncRebase(ctx, []string{"bump"}, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
@@ -49,7 +50,7 @@ func TestSyncRunDoesNotPushOverCommitsItHasNotSeen(t *testing.T) {
 	theirs := testkit.GitOut(t, bump, "rev-parse", "HEAD~1")
 	testkit.GitOut(t, bare, "update-ref", "refs/heads/feat_wt/bump", theirs)
 	opts := synccmdtest.NoAgents()
-	opts.Push = synccmd.PushAlways
+	opts.Push = syncrun.PushAlways
 	var out bytes.Buffer
 	err := synccmd.SyncRebase(ctx, []string{"bump"}, opts, &out)
 	if err == nil || !strings.Contains(err.Error(), "bump (push failed)") {
@@ -118,7 +119,7 @@ func TestSyncRunNoPushNeitherAsksNorPushes(t *testing.T) {
 	ctx, bump := provisiontest.RunFixture(t, false)
 	bare := testkit.PushOrigin(t, ctx)
 	opts := synccmdtest.NoAgents()
-	opts.Push = synccmd.PushNever
+	opts.Push = syncrun.PushNever
 	opts.ConfirmPush = func([]string) (bool, error) { t.Error("asked despite --no-push"); return true, nil }
 	var out bytes.Buffer
 	if err := synccmd.SyncRebase(ctx, []string{"bump"}, opts, &out); err != nil {
@@ -141,7 +142,7 @@ func TestSyncRunPushesNothingThatDidNotFinish(t *testing.T) {
 	bare := testkit.PushOrigin(t, ctx)
 	before := testkit.GitOut(t, bare, "rev-parse", "feat_wt/bump")
 	opts := synccmdtest.NoAgents()
-	opts.Push = synccmd.PushAlways
+	opts.Push = syncrun.PushAlways
 	var out bytes.Buffer
 	if err := synccmd.SyncRebase(ctx, []string{"bump"}, opts, &out); err == nil {
 		t.Fatalf("the run should have handed over:\n%s", out.String())

@@ -6,6 +6,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -111,7 +112,7 @@ func HandOver(ctx *kit.Context, w io.Writer, in HandoverInput) error {
 		Stop: in.Res.Left.Index, Total: in.Res.Left.Total,
 		Resolved: in.Res.Left.Staged, Strategy: map[string]string{}, Lifted: map[string]string{},
 		Deleted: in.Res.Left.Deleted, Left: in.Res.Left.Left,
-		Stopped: PathsOnce(in.Earlier, wtsync.StopPaths(in.Res.Stops)),
+		Stopped: syncrun.PathsOnce(in.Earlier, wtsync.StopPaths(in.Res.Stops)),
 	}
 	if in.Found != "" && in.Found != in.Res.OldTip {
 		st.Found = in.Found
@@ -175,7 +176,7 @@ func CompleteRun(ctx *kit.Context, w io.Writer, cfg *wtsync.Config, t *kit.Rebas
 	in := build()
 	// Only ever called once a rebase has finished, so the files moved under
 	// the idle sessions however this returns.
-	defer TellIdle(w, in.Tell, wtsync.RebasedLine(work, in.TrunkName, in.Landed, in.Check))
+	defer syncrun.TellIdle(w, in.Tell, wtsync.RebasedLine(work, in.TrunkName, in.Landed, in.Check))
 	// w, not nil: RunDeferred announces each step as it starts, so a long
 	// one is not silence until printDeferred reports the result.
 	ran, err = wtsync.RunDeferred(path, cfg.Defer, in.Res.OldTip, in.Res.NewTip, w)

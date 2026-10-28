@@ -14,6 +14,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -23,7 +24,7 @@ import (
 // clock a few seconds on, so the lock a resume takes is told apart from the
 // one the run kept without the run's expiring.
 func noResumeAgents() ResumeOptions {
-	return ResumeOptions{VerbOptions: synccmd.VerbOptions{
+	return ResumeOptions{VerbOptions: syncrun.VerbOptions{
 		Agents: []agents.Agent{},
 		Now:    func() time.Time { return time.Unix(5, 0) },
 	}}

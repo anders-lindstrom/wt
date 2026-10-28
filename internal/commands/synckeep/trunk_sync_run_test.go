@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
@@ -25,7 +25,7 @@ func TestSyncKeepRunFastForwardsLocalTrunk(t *testing.T) {
 	testkit.GitIn(t, f.Other, "push", "-q", "origin", "main")
 	remote := testkit.GitOut(t, f.Other, "rev-parse", "HEAD")
 	var out bytes.Buffer
-	if err := Run(f.Ctx, keepOpts(synccmd.PushNever), &out); err != nil {
+	if err := Run(f.Ctx, keepOpts(syncrun.PushNever), &out); err != nil {
 		t.Fatalf("keep: %v\n%s", err, out.String())
 	}
 	if got := f.Local(t); got != remote {
@@ -44,7 +44,7 @@ func TestSyncKeepRunNoFFTrunkLeavesLocalTrunk(t *testing.T) {
 	f := synccmdtest.NewTrunkFixture(t)
 	before := f.Local(t)
 	f.AdvanceOrigin(t, 1)
-	opts := keepOpts(synccmd.PushNever)
+	opts := keepOpts(syncrun.PushNever)
 	opts.NoFFTrunk = true
 	var out bytes.Buffer
 	_ = Run(f.Ctx, opts, &out)

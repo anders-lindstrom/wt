@@ -19,6 +19,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 )
@@ -30,11 +31,11 @@ var keepDay = time.Date(2025, 3, 4, 14, 20, 0, 0, time.Local)
 // keepOpts is a keeper pass with no sessions anywhere and a clock that moves
 // a second per reading (a run's safety ref is named by its epoch, so two
 // passes at one instant would collide).
-func keepOpts(push synccmd.PushMode) KeepOptions {
+func keepOpts(push syncrun.PushMode) KeepOptions {
 	tick := 0
 	return KeepOptions{
 		Push: push,
-		VerbOptions: synccmd.VerbOptions{
+		VerbOptions: syncrun.VerbOptions{
 			Agents: []agents.Agent{},
 			Now: func() time.Time {
 				tick++
@@ -49,7 +50,7 @@ func keepOpts(push synccmd.PushMode) KeepOptions {
 func TestSyncKeepRunRebasesAReadyWorktreeAndRecordsThePass(t *testing.T) {
 	ctx, bump := provisiontest.RunFixture(t, false)
 	var out bytes.Buffer
-	if err := Run(ctx, keepOpts(synccmd.PushAlways), &out); err != nil {
+	if err := Run(ctx, keepOpts(syncrun.PushAlways), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	s := out.String()
@@ -88,7 +89,7 @@ func TestSyncKeepRunRebasesAReadyWorktreeAndRecordsThePass(t *testing.T) {
 func TestSyncKeepRunLeavesAWorktreeWithAnIdleSessionAlone(t *testing.T) {
 	ctx, bump := provisiontest.RunFixture(t, false)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
-	opts := keepOpts(synccmd.PushAlways)
+	opts := keepOpts(syncrun.PushAlways)
 	opts.Agents = testkit.IdleIn(t, bump, "parked")
 	opts.Confirm = func([]string) (bool, error) { t.Fatal("a keeper asked a question"); return false, nil }
 	var out bytes.Buffer
@@ -110,7 +111,7 @@ func TestSyncKeepRunLeavesAWorktreeWithAnIdleSessionAlone(t *testing.T) {
 // entry, no run.
 func TestSyncKeepRunDoesNothingWhileTrunkIsUnchanged(t *testing.T) {
 	ctx, _ := provisiontest.RunFixture(t, false)
-	opts := keepOpts(synccmd.PushAlways) // one clock across the passes
+	opts := keepOpts(syncrun.PushAlways) // one clock across the passes
 	var out bytes.Buffer
 	if err := Run(ctx, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
@@ -162,7 +163,7 @@ func TestSyncKeepRunRefusesToOverlapALivePass(t *testing.T) {
 		t.Fatalf("lock: %v, held %v", err, held)
 	}
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
-	opts := keepOpts(synccmd.PushAlways)
+	opts := keepOpts(syncrun.PushAlways)
 	var out bytes.Buffer
 	err = Run(ctx, opts, &out)
 	if err == nil || err.Error() != "a keeper pass is already running (pid "+strconv.Itoa(os.Getpid())+" since 14:00); nothing rebased" {
@@ -190,7 +191,7 @@ func TestSyncKeepRunStartedTwiceAtOnceRunsOnce(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			errs[i] = Run(ctx, keepOpts(synccmd.PushAlways), &outs[i])
+			errs[i] = Run(ctx, keepOpts(syncrun.PushAlways), &outs[i])
 		}()
 	}
 	wg.Wait()
@@ -227,7 +228,7 @@ func TestSyncKeepRunRebasesNothingWhenSessionsCannotBeListed(t *testing.T) {
 	// The real listing, which looks for claude before it reads anything.
 	testkit.AgentsOf(ctx).Required = agents.ListOtherAgentsRequired
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
-	opts := keepOpts(synccmd.PushAlways)
+	opts := keepOpts(syncrun.PushAlways)
 	opts.Agents = nil
 	var out bytes.Buffer
 	err = Run(ctx, opts, &out)
@@ -258,7 +259,7 @@ func TestSyncKeepRunFailsWhenTheLogCannotBeWritten(t *testing.T) {
 	}
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	var out bytes.Buffer
-	err := Run(ctx, keepOpts(synccmd.PushAlways), &out)
+	err := Run(ctx, keepOpts(syncrun.PushAlways), &out)
 	if err == nil || !strings.HasPrefix(err.Error(), "cannot write the log "+logPath+": ") || !strings.HasSuffix(err.Error(), "; nothing rebased") {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
@@ -314,7 +315,7 @@ func TestSyncKeepRunInterruptedLeavesTheOutputSoFarInTheLog(t *testing.T) {
 		}
 		_ = syscall.Kill(os.Getpid(), syscall.SIGINT)
 	}()
-	err = Run(ctx, keepOpts(synccmd.PushAlways), os.Stdout)
+	err = Run(ctx, keepOpts(syncrun.PushAlways), os.Stdout)
 	t.Fatalf("the pass returned (%v) instead of being interrupted", err)
 }
 
@@ -323,7 +324,7 @@ func TestSyncKeepRunInterruptedLeavesTheOutputSoFarInTheLog(t *testing.T) {
 func TestSyncKeepRunNoPushPrintsThePushCommands(t *testing.T) {
 	ctx, bump := provisiontest.RunFixture(t, false)
 	var out bytes.Buffer
-	if err := Run(ctx, keepOpts(synccmd.PushNever), &out); err != nil {
+	if err := Run(ctx, keepOpts(syncrun.PushNever), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	if !strings.Contains(out.String(), "push: git -C "+bump+" push --force-with-lease --force-if-includes") {
@@ -343,7 +344,7 @@ func TestSyncKeepRunNoPushPrintsThePushCommands(t *testing.T) {
 func TestSyncKeepRunNoPushRepeatsThePushCommandUntilItIsPushedByHand(t *testing.T) {
 	ctx, bump := provisiontest.RunFixture(t, false)
 	testkit.BareOrigin(t, ctx)
-	opts := keepOpts(synccmd.PushNever)
+	opts := keepOpts(syncrun.PushNever)
 	var out bytes.Buffer
 	if err := Run(ctx, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
@@ -408,7 +409,7 @@ func TestSyncTableAndDoctorSayWhenTheRepositoryWasKept(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := Run(ctx, keepOpts(synccmd.PushAlways), &out); err != nil {
+	if err := Run(ctx, keepOpts(syncrun.PushAlways), &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	out.Reset()
@@ -695,7 +696,7 @@ func TestSyncKeepRunRetriesARefusedPushUntilItGoesThrough(t *testing.T) {
 	synccmdtest.OnPlatform(t, "darwin")
 	pushURL := testkit.GitOut(t, ctx.Repo.MainRoot, "remote", "get-url", "--push", "origin")
 	testkit.GitOut(t, ctx.Repo.MainRoot, "remote", "set-url", "--push", "origin", filepath.Join(t.TempDir(), "nowhere"))
-	opts := keepOpts(synccmd.PushAlways)
+	opts := keepOpts(syncrun.PushAlways)
 	var out bytes.Buffer
 	err := Run(ctx, opts, &out)
 	if err == nil || err.Error() != "not completed: bump (push failed)" {
@@ -791,7 +792,7 @@ func TestSyncKeepRunDropsAnUnpushedBranchThatMoved(t *testing.T) {
 	ctx, bump := provisiontest.RunFixture(t, false)
 	pushURL := testkit.GitOut(t, ctx.Repo.MainRoot, "remote", "get-url", "--push", "origin")
 	testkit.GitOut(t, ctx.Repo.MainRoot, "remote", "set-url", "--push", "origin", filepath.Join(t.TempDir(), "nowhere"))
-	opts := keepOpts(synccmd.PushAlways)
+	opts := keepOpts(syncrun.PushAlways)
 	var out bytes.Buffer
 	if err := Run(ctx, opts, &out); err == nil {
 		t.Fatalf("the push went through to nowhere:\n%s", out.String())

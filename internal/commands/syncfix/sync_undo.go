@@ -8,6 +8,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -20,7 +21,7 @@ type UndoOptions struct {
 	Force bool
 	// Journal records what undo put back, for --json; nil records nothing.
 	Journal *synccmd.RunJournal
-	synccmd.VerbOptions
+	syncrun.VerbOptions
 }
 
 // SyncUndo puts back every ref the newest run touching work's branch moved:
@@ -41,7 +42,7 @@ func syncUndo(ctx *kit.Context, work string, opts UndoOptions, w io.Writer) erro
 	if err != nil {
 		return err
 	}
-	listed, err := opts.SessionsNow(ctx, synccmd.UndidNothing)
+	listed, err := opts.SessionsNow(ctx, syncrun.UndidNothing)
 	if err != nil {
 		return err
 	}
@@ -59,7 +60,7 @@ func syncUndo(ctx *kit.Context, work string, opts UndoOptions, w io.Writer) erro
 	// Every session is named and asked about here, before wtsync.Undo takes
 	// a single lock: taking over a handover's lock and then hearing no would
 	// release it.
-	var told []synccmd.Idle
+	var told []syncrun.Idle
 	anyIdle := false
 	for _, b := range branches {
 		path, ok := paths[b]
@@ -73,19 +74,19 @@ func syncUndo(ctx *kit.Context, work string, opts UndoOptions, w io.Writer) erro
 		// Every checkout is listed for the re-check, not only the ones a
 		// session is in now: one arriving in an empty checkout while the
 		// question waits is exactly what the second listing is for.
-		told = append(told, synccmd.Idle{Label: b, Path: path, Sessions: sessions})
+		told = append(told, syncrun.Idle{Label: b, Path: path, Sessions: sessions})
 		if len(sessions) > 0 {
 			anyIdle = true
-			fmt.Fprintln(w, synccmd.IdleNotice(kit.BranchWorkName(ctx, b), sessions))
+			fmt.Fprintln(w, syncrun.IdleNotice(kit.BranchWorkName(ctx, b), sessions))
 		}
 	}
 	if anyIdle {
-		ok, fresh, err := synccmd.AskIdle(ctx, w, opts.VerbOptions, []string{name}, told, listed, synccmd.UndidNothing)
+		ok, fresh, err := syncrun.AskIdle(ctx, w, opts.VerbOptions, []string{name}, told, listed, syncrun.UndidNothing)
 		if err != nil {
 			return err
 		}
 		if !ok {
-			opts.Journal.FailWith(errors.New("not confirmed: " + synccmd.UndidNothing.Line))
+			opts.Journal.FailWith(errors.New("not confirmed: " + syncrun.UndidNothing.Line))
 			return nil
 		}
 		listed = fresh
@@ -130,9 +131,9 @@ func syncUndo(ctx *kit.Context, work string, opts UndoOptions, w io.Writer) erro
 		case r.From == r.To && !r.Aborted:
 			// Nothing moved under anybody.
 		case r.NotRewound:
-			synccmd.TellIdle(w, synccmd.SessionsOf(told, r.Branch), wtsync.UndoneLine(rowWork, git.ShortID(r.From, 7), false))
+			syncrun.TellIdle(w, syncrun.SessionsOf(told, r.Branch), wtsync.UndoneLine(rowWork, git.ShortID(r.From, 7), false))
 		default:
-			synccmd.TellIdle(w, synccmd.SessionsOf(told, r.Branch), wtsync.UndoneLine(rowWork, git.ShortID(r.To, 7), true))
+			syncrun.TellIdle(w, syncrun.SessionsOf(told, r.Branch), wtsync.UndoneLine(rowWork, git.ShortID(r.To, 7), true))
 		}
 	}
 	return err

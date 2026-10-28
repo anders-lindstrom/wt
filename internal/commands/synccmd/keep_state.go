@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -68,8 +69,8 @@ type UnpushedTarget struct {
 }
 
 // Target is the push target the work names.
-func (u UnpushedTarget) Target() PushTarget {
-	return PushTarget{Work: u.Work, Branch: u.Branch, Path: u.Path}
+func (u UnpushedTarget) Target() syncrun.PushTarget {
+	return syncrun.PushTarget{Work: u.Work, Branch: u.Branch, Path: u.Path}
 }
 
 // FmtEvery is an interval as a person writes it: 30m, 1h, 1h30m.

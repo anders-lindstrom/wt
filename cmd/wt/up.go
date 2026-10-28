@@ -7,12 +7,13 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 )
 
 func newUpCmd() *cobra.Command {
 	var noFetch, noFFTrunk, yes, force, allowDiverged, asJSON bool
 	var expect string
-	var push func() synccmd.PushMode
+	var push func() syncrun.PushMode
 	cmd := &cobra.Command{
 		Use:   "up [<work>]",
 		Short: "Sync this worktree by rebasing, if it goes through without you",

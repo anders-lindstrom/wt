@@ -12,6 +12,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 )
@@ -25,7 +26,7 @@ func TestABranchTrackingAnotherNameIsNotPushedWithNobodyToAsk(t *testing.T) {
 	}
 	const hint = "✗ feat_wt/bump not pushed: it tracks origin/theirs, a branch of another name, and nothing says whether it " +
 		"pushes there or to origin/feat_wt/bump: say which with wt sync push-to feat_wt/bump origin/theirs (or origin/feat_wt/bump)"
-	for name, mode := range map[string]synccmd.PushMode{"--push": synccmd.PushAlways, "--no-push": synccmd.PushNever, "nobody to ask": synccmd.PushAsk} {
+	for name, mode := range map[string]syncrun.PushMode{"--push": syncrun.PushAlways, "--no-push": syncrun.PushNever, "nobody to ask": syncrun.PushAsk} {
 		t.Run(name, func(t *testing.T) {
 			ctx, bump := provisiontest.RunFixture(t, false)
 			bare := testkit.OwnBareOrigin(t, ctx)
@@ -34,7 +35,7 @@ func TestABranchTrackingAnotherNameIsNotPushedWithNobodyToAsk(t *testing.T) {
 			opts := synccmdtest.NoAgents()
 			opts.Push = mode
 			r, err := synccmdtest.SyncRunJSON(t, ctx, []string{"bump"}, opts)
-			if mode == synccmd.PushAlways {
+			if mode == syncrun.PushAlways {
 				if err == nil || !strings.Contains(err.Error(), "not completed: bump (not pushed: nowhere to push)") {
 					t.Fatalf("a push was asked for and did not happen, yet err is %v", err)
 				}
@@ -63,7 +64,7 @@ func TestABranchTrackingAnotherNameIsNotPushedWithNobodyToAsk(t *testing.T) {
 	synccmd.TracksTheirs(t, ctx, testkit.OwnBareOrigin(t, ctx))
 	var out bytes.Buffer
 	_ = synccmd.SyncRebase(ctx, []string{"bump"}, synccmdtest.PushAlways(), &out)
-	if !strings.Contains(out.String(), hint+"\n"+synccmd.PushedByHand+"\n") {
+	if !strings.Contains(out.String(), hint+"\n"+syncrun.PushedByHand+"\n") {
 		t.Fatalf("output lacks %q and what pushes it now:\n%s", hint, out.String())
 	}
 }
@@ -74,12 +75,12 @@ func TestAPersonSaysWhereABranchTrackingAnotherNamePushes(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
-	run := func(t *testing.T, answer func(synccmd.PushChoice) string) (ctx *kit.Context, bump, bare, theirs string, asked []synccmd.PushChoice, confirmed []string, out string) {
+	run := func(t *testing.T, answer func(syncrun.PushChoice) string) (ctx *kit.Context, bump, bare, theirs string, asked []syncrun.PushChoice, confirmed []string, out string) {
 		ctx, bump = provisiontest.RunFixture(t, false)
 		bare = testkit.OwnBareOrigin(t, ctx)
 		theirs = synccmd.TracksTheirs(t, ctx, bare)
 		opts := synccmdtest.NoAgents()
-		opts.ChoosePush = func(c synccmd.PushChoice) (string, error) { asked = append(asked, c); return answer(c), nil }
+		opts.ChoosePush = func(c syncrun.PushChoice) (string, error) { asked = append(asked, c); return answer(c), nil }
 		opts.ConfirmPush = func(works []string) (bool, error) { confirmed = works; return true, nil }
 		var buf, js bytes.Buffer
 		opts.Journal = synccmd.NewSyncRunJournal(&js, "sync rebase")
@@ -92,10 +93,10 @@ func TestAPersonSaysWhereABranchTrackingAnotherNamePushes(t *testing.T) {
 		}
 		return ctx, bump, bare, theirs, asked, confirmed, buf.String()
 	}
-	want := synccmd.PushChoice{Branch: "feat_wt/bump", Upstream: "origin/theirs", Own: "origin/feat_wt/bump"}
+	want := syncrun.PushChoice{Branch: "feat_wt/bump", Upstream: "origin/theirs", Own: "origin/feat_wt/bump"}
 
 	t.Run("its own name", func(t *testing.T) {
-		ctx, bump, bare, theirs, asked, confirmed, out := run(t, func(c synccmd.PushChoice) string { return c.Own })
+		ctx, bump, bare, theirs, asked, confirmed, out := run(t, func(c syncrun.PushChoice) string { return c.Own })
 		if len(asked) != 1 || asked[0] != want {
 			t.Fatalf("asked %+v", asked)
 		}
@@ -113,7 +114,7 @@ func TestAPersonSaysWhereABranchTrackingAnotherNamePushes(t *testing.T) {
 		}
 	})
 	t.Run("the branch it tracks", func(t *testing.T) {
-		ctx, bump, bare, _, asked, confirmed, out := run(t, func(c synccmd.PushChoice) string { return c.Upstream })
+		ctx, bump, bare, _, asked, confirmed, out := run(t, func(c syncrun.PushChoice) string { return c.Upstream })
 		if len(asked) != 1 || len(confirmed) != 1 || confirmed[0] != "bump to origin/theirs" {
 			t.Fatalf("asked %+v, the push question named %v", asked, confirmed)
 		}
@@ -128,7 +129,7 @@ func TestAPersonSaysWhereABranchTrackingAnotherNamePushes(t *testing.T) {
 		testkit.GitOut(t, ctx.Repo.MainRoot, "push", "-q", "origin", "main")
 		opts := synccmdtest.NoAgents()
 		opts.Now = func() time.Time { return time.Unix(0, 199) }
-		opts.ChoosePush = func(synccmd.PushChoice) (string, error) { t.Fatal("asked a second time"); return "", nil }
+		opts.ChoosePush = func(syncrun.PushChoice) (string, error) { t.Fatal("asked a second time"); return "", nil }
 		opts.ConfirmPush = func([]string) (bool, error) { return true, nil }
 		var buf bytes.Buffer
 		if err := synccmd.SyncRebase(ctx, []string{"bump"}, opts, &buf); err != nil {
@@ -139,7 +140,7 @@ func TestAPersonSaysWhereABranchTrackingAnotherNamePushes(t *testing.T) {
 		}
 	})
 	t.Run("neither", func(t *testing.T) {
-		ctx, _, bare, theirs, asked, confirmed, out := run(t, func(synccmd.PushChoice) string { return "" })
+		ctx, _, bare, theirs, asked, confirmed, out := run(t, func(syncrun.PushChoice) string { return "" })
 		if len(asked) != 1 || confirmed != nil {
 			t.Fatalf("asked %+v, and then asked to push %v", asked, confirmed)
 		}

@@ -40,7 +40,7 @@ func SyncPushTo(ctx *kit.Context, work, dest string, unset bool, w io.Writer) er
 	own := wtsync.ReadOwnOrUnknown(ctx.Repo.MainRoot, ctx.Config.MainBranch)
 	to, state := own.Push(wt.Branch), own.State(wt.Branch)
 	if to.Remote == "" {
-		fmt.Fprintf(w, "%s has nowhere to push: %s\n", wt.Branch, notPushed(to))
+		fmt.Fprintf(w, "%s has nowhere to push: %s\n", wt.Branch, syncrun.NotPushed(to))
 	} else {
 		fmt.Fprintf(w, "%s pushes to %s (%s)\n", wt.Branch, to.Ref(), to.Rule)
 		// A line for a person: a ref git cannot read gets no line, not "not there".
@@ -51,7 +51,7 @@ func SyncPushTo(ctx *kit.Context, work, dest string, unset bool, w io.Writer) er
 		// branch with something to push now is pushed by this line or not
 		// at all until trunk moves again.
 		if state.State != wtsync.OwnInSync {
-			fmt.Fprintf(w, "  wt pushes it after its next rebase. To push it now:\n  %s\n", PushLine(PushTarget{Branch: wt.Branch, Path: wt.Path}, to))
+			fmt.Fprintf(w, "  wt pushes it after its next rebase. To push it now:\n  %s\n", syncrun.PushLine(syncrun.PushTarget{Branch: wt.Branch, Path: wt.Path}, to))
 		}
 	}
 	if line := syncrun.OwnStray(state); line != "" {

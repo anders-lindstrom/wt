@@ -62,8 +62,8 @@ type RunOptions struct {
 	// keeper, and a run across repositories, which fetch before the run
 	// they then start with NoFetch.
 	Own *wtsync.Own
-	VerbOptions
-	PushOptions
+	syncrun.VerbOptions
+	syncrun.PushOptions
 }
 
 // participant is one worktree of a run: the branch it is on, what triage
@@ -138,7 +138,7 @@ type RunPlan struct {
 	outcomes   map[string]int
 	unfinished []string
 	failures   []string
-	Pushable   []PushTarget
+	Pushable   []syncrun.PushTarget
 	// What the keeper records of a run with nothing named: the worktrees it
 	// left alone with what holds them, the ones it rebased, the ones it
 	// pushed, and the ones it only fast-forwarded to their own remote.
@@ -229,7 +229,7 @@ func (r *RunPlan) run(works []string) error {
 	}
 	if proceed, err := r.triage(); err != nil || !proceed {
 		if err == nil {
-			opts.Journal.FailWith(errors.New("not confirmed: " + rebasedNothing.Line))
+			opts.Journal.FailWith(errors.New("not confirmed: " + syncrun.RebasedNothing.Line))
 		}
 		if err == nil && len(r.failures) > 0 {
 			return fmt.Errorf("not completed: %s", strings.Join(r.failures, ", "))
@@ -259,7 +259,7 @@ func (r *RunPlan) run(works []string) error {
 			fmt.Fprintln(w, line)
 		}
 	}
-	pushed, pushFailed, err := OfferPush(r.ctx, w, opts.Push, opts.PushOptions, r.Pushable)
+	pushed, pushFailed, err := syncrun.OfferPush(r.ctx, w, opts.Push, opts.PushOptions, r.Pushable)
 	if err != nil {
 		return err
 	}
@@ -268,7 +268,7 @@ func (r *RunPlan) run(works []string) error {
 		opts.Journal.Set(t.Branch, func(jp *UpParticipant) {
 			// An answer to the push question may have given it a destination.
 			if jp.NoPushReason != nil {
-				jp.PushCommand, jp.NoPushReason, jp.FixCommand = PushJSON(t, PushOf(r.ctx, t))
+				jp.PushCommand, jp.NoPushReason, jp.FixCommand = syncrun.PushJSON(t, syncrun.PushOf(r.ctx, t))
 			}
 			jp.Pushed = slices.Contains(pushed, t.Work)
 		})
@@ -429,7 +429,7 @@ func (r *RunPlan) expectOverview() error {
 // listAgents lists the other agent sessions once for the run.
 func (r *RunPlan) listAgents() ([]agents.Agent, error) {
 	if !r.agentsListed {
-		listed, err := r.opts.SessionsNow(r.ctx, rebasedNothing)
+		listed, err := r.opts.SessionsNow(r.ctx, syncrun.RebasedNothing)
 		if err != nil {
 			return nil, err
 		}
@@ -674,7 +674,7 @@ func (r *RunPlan) triage() (proceed bool, err error) {
 		going = append(going, p.work)
 		// Preflight lets sessions through only when every one is idle.
 		if len(p.a.Sessions) > 0 {
-			fmt.Fprintln(r.w, IdleNotice(p.work, p.a.Sessions))
+			fmt.Fprintln(r.w, syncrun.IdleNotice(p.work, p.a.Sessions))
 			underIdle = true
 		}
 	}
@@ -686,7 +686,7 @@ func (r *RunPlan) triage() (proceed bool, err error) {
 		// Nothing to re-check here: a run lists the sessions again at the
 		// lock, whether or not anything was asked, and compares them there
 		// with the lock in hand.
-		ok, _, err := AskIdle(r.ctx, r.w, r.opts.VerbOptions, going, nil, listed, rebasedNothing)
+		ok, _, err := syncrun.AskIdle(r.ctx, r.w, r.opts.VerbOptions, going, nil, listed, syncrun.RebasedNothing)
 		if err != nil || !ok {
 			return false, err
 		}
@@ -700,7 +700,7 @@ func (r *RunPlan) triage() (proceed bool, err error) {
 func (r *RunPlan) lockAll() error {
 	// Listed again now: a question can sit unanswered for as long as it
 	// likes, and a triage over a large fleet takes a while.
-	fresh, err := r.opts.relist(r.ctx, rebasedNothing)
+	fresh, err := r.opts.SessionsAgain(r.ctx, syncrun.RebasedNothing)
 	if err != nil {
 		return err
 	}
@@ -747,7 +747,7 @@ func (r *RunPlan) lockAll() error {
 			r.refuseStack(b, p.work+": changed since triage: tracked changes")
 			continue
 		}
-		if why := sessionsChanged(p.a.Sessions, stand.Sessions); why != "" && !r.opts.Force {
+		if why := syncrun.SessionsChanged(p.a.Sessions, stand.Sessions); why != "" && !r.opts.Force {
 			r.refuseStack(b, p.work+": changed since triage: "+why)
 			continue
 		}
@@ -972,7 +972,7 @@ func (r *RunPlan) rebaseOne(b string) {
 		done.OldTip = found(res)
 		return CompleteInput{
 			Branch: b, Epoch: r.epoch, Res: done,
-			Tell: append(slices.Clone(p.a.Sessions), p.forced...), TrunkName: r.trunk, Landed: p.a.Behind, Check: PathsOnce(wtsync.StopPaths(res.Stops)),
+			Tell: append(slices.Clone(p.a.Sessions), p.forced...), TrunkName: r.trunk, Landed: p.a.Behind, Check: syncrun.PathsOnce(wtsync.StopPaths(res.Stops)),
 		}
 	})
 	p.head = head
@@ -1004,11 +1004,11 @@ func (r *RunPlan) rebaseOne(b string) {
 		})
 	} else {
 		r.settle("rebased", "", "")
-		t := PushTarget{Work: p.work, Branch: b, Path: p.wt.Path}
+		t := syncrun.PushTarget{Work: p.work, Branch: b, Path: p.wt.Path}
 		r.Pushable = append(r.Pushable, t)
 		j.Set(b, func(jp *UpParticipant) {
 			jp.Result, jp.After = ResultRebased, kit.Strp(after)
-			jp.PushCommand, jp.NoPushReason, jp.FixCommand = PushJSON(t, PushOf(ctx, t))
+			jp.PushCommand, jp.NoPushReason, jp.FixCommand = syncrun.PushJSON(t, syncrun.PushOf(ctx, t))
 		})
 	}
 }
@@ -1114,7 +1114,7 @@ func (r *RunPlan) fastForwardOnly(b string, p *participant) {
 		fmt.Fprintf(w, "  note: %v\n", err)
 	}
 	fmt.Fprintf(w, "  ↩ %s\n", wtsync.WayOut(wtsync.Way{Work: p.work, Result: true, Safety: git.ShortID(p.found, 7)}))
-	TellIdle(w, append(slices.Clone(p.a.Sessions), p.forced...), wtsync.FastForwardedLine(p.work, own.Ref, own.Behind))
+	syncrun.TellIdle(w, append(slices.Clone(p.a.Sessions), p.forced...), wtsync.FastForwardedLine(p.work, own.Ref, own.Behind))
 	r.settle("fast-forwarded", "", "")
 	r.Forwarded = append(r.Forwarded, p.work)
 	r.opts.Journal.SetSync(b, func(jp *SyncParticipant) {

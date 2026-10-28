@@ -14,6 +14,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -24,8 +25,8 @@ type ResumeOptions struct {
 	// Journal records what the resume does, for --json; nil records
 	// nothing.
 	Journal *synccmd.RunJournal
-	synccmd.VerbOptions
-	synccmd.PushOptions
+	syncrun.VerbOptions
+	syncrun.PushOptions
 }
 
 // SyncResume continues the rebase a run left at a stop a person owned. It
@@ -111,7 +112,7 @@ func syncResume(ctx *kit.Context, work string, opts ResumeOptions, w io.Writer) 
 	if tip != pinned {
 		return fmt.Errorf("%s pins %s but the handover says %s; nothing is resumed", st.Safety, git.ShortID(tip, 7), git.ShortID(pinned, 7))
 	}
-	listed, err := opts.SessionsNow(ctx, synccmd.ResumedNothing)
+	listed, err := opts.SessionsNow(ctx, syncrun.ResumedNothing)
 	if err != nil {
 		return err
 	}
@@ -129,17 +130,17 @@ func syncResume(ctx *kit.Context, work string, opts ResumeOptions, w io.Writer) 
 			return fmt.Errorf("%s: counting what landed: %w; nothing is resumed", name, err)
 		}
 		landed = behind
-		fmt.Fprintln(w, synccmd.IdleNotice(name, sessions))
-		told := []synccmd.Idle{{Label: name, Path: target.Path, Sessions: sessions}}
-		ok, _, err := synccmd.AskIdle(ctx, w, opts.VerbOptions, []string{name}, told, listed, synccmd.ResumedNothing)
+		fmt.Fprintln(w, syncrun.IdleNotice(name, sessions))
+		told := []syncrun.Idle{{Label: name, Path: target.Path, Sessions: sessions}}
+		ok, _, err := syncrun.AskIdle(ctx, w, opts.VerbOptions, []string{name}, told, listed, syncrun.ResumedNothing)
 		if err != nil {
 			return err
 		}
 		if !ok {
 			j.Set(st.Branch, func(p *synccmd.UpParticipant) {
-				p.Result, p.Reason = synccmd.ResultRefused, kit.Strp("not confirmed: "+synccmd.ResumedNothing.Line)
+				p.Result, p.Reason = synccmd.ResultRefused, kit.Strp("not confirmed: "+syncrun.ResumedNothing.Line)
 			})
-			j.FailWith(errors.New("not confirmed: " + synccmd.ResumedNothing.Line))
+			j.FailWith(errors.New("not confirmed: " + syncrun.ResumedNothing.Line))
 			return nil
 		}
 	}
@@ -248,7 +249,7 @@ func syncResume(ctx *kit.Context, work string, opts ResumeOptions, w io.Writer) 
 		return synccmd.CompleteInput{
 			Branch: st.Branch, Epoch: st.Epoch, Res: done,
 			Tell: sessions, TrunkName: strings.TrimPrefix(st.TrunkRef, "origin/"), Landed: landed,
-			Check: synccmd.PathsOnce(st.Stopped, st.Left, st.ResolvedPaths(), st.Deleted, wtsync.StopPaths(res.Stops)),
+			Check: syncrun.PathsOnce(st.Stopped, st.Left, st.ResolvedPaths(), st.Deleted, wtsync.StopPaths(res.Stops)),
 		}
 	})
 	owed := synccmd.OwedSteps(ran)
@@ -267,18 +268,18 @@ func syncResume(ctx *kit.Context, work string, opts ResumeOptions, w io.Writer) 
 	if len(owed) > 0 {
 		return fmt.Errorf("not completed: %s", strings.Join(synccmd.OwedBy(name, owed), ", "))
 	}
-	t := synccmd.PushTarget{Work: name, Branch: st.Branch, Path: target.Path}
+	t := syncrun.PushTarget{Work: name, Branch: st.Branch, Path: target.Path}
 	j.Set(st.Branch, func(p *synccmd.UpParticipant) {
-		p.PushCommand, p.NoPushReason, p.FixCommand = synccmd.PushJSON(t, synccmd.PushOf(ctx, t))
+		p.PushCommand, p.NoPushReason, p.FixCommand = syncrun.PushJSON(t, syncrun.PushOf(ctx, t))
 	})
-	pushed, failed, err := synccmd.OfferPush(ctx, w, opts.Push, opts.PushOptions, []synccmd.PushTarget{t})
+	pushed, failed, err := syncrun.OfferPush(ctx, w, opts.Push, opts.PushOptions, []syncrun.PushTarget{t})
 	if err != nil {
 		return err
 	}
 	j.Set(st.Branch, func(p *synccmd.UpParticipant) {
 		// An answer to the push question may have given it a destination.
 		if p.NoPushReason != nil {
-			p.PushCommand, p.NoPushReason, p.FixCommand = synccmd.PushJSON(t, synccmd.PushOf(ctx, t))
+			p.PushCommand, p.NoPushReason, p.FixCommand = syncrun.PushJSON(t, syncrun.PushOf(ctx, t))
 		}
 		p.Pushed = len(pushed) > 0
 	})

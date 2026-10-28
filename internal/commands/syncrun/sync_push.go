@@ -1,4 +1,4 @@
-package synccmd
+package syncrun
 
 import (
 	"fmt"
@@ -36,9 +36,9 @@ func PushOf(ctx *kit.Context, t PushTarget) wtsync.Push {
 	return wtsync.ReadOwnOrUnknown(ctx.Repo.MainRoot, ctx.Config.MainBranch).Push(t.Branch)
 }
 
-// notPushed is why a branch has nowhere to push, with the command that
+// NotPushed is why a branch has nowhere to push, with the command that
 // settles it when one does.
-func notPushed(to wtsync.Push) string {
+func NotPushed(to wtsync.Push) string {
 	if to.Undecided != nil {
 		return to.Undecided.Hint()
 	}
@@ -54,7 +54,7 @@ const PushedByHand = "    that command also prints the push to run: the branch i
 // or why there is none.
 func PushLine(t PushTarget, to wtsync.Push) string {
 	if to.Remote == "" {
-		return fmt.Sprintf("  ✗ %s not pushed: %s", t.Branch, notPushed(to))
+		return fmt.Sprintf("  ✗ %s not pushed: %s", t.Branch, NotPushed(to))
 	}
 	return fmt.Sprintf("push: git -C %s %s", t.Path, strings.Join(to.Args(), " "))
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -70,7 +71,7 @@ func SyncRebaseAll(u *config.User, sel kit.Selection, opts SyncRebaseAllOptions,
 	defer kit.WatchSignals(w, nil)()
 	// One listing of the sessions serves every repository's plan, as one
 	// `claude agents` knows them all; each run lists them again at its lock.
-	listed, err := opts.SessionsNow(nil, rebasedNothing)
+	listed, err := opts.SessionsNow(nil, syncrun.RebasedNothing)
 	if err != nil {
 		return err
 	}
@@ -129,7 +130,7 @@ func SyncRebaseAll(u *config.User, sel kit.Selection, opts SyncRebaseAllOptions,
 			return err
 		}
 		if !ok {
-			fmt.Fprintln(w, rebasedNothing.Line)
+			fmt.Fprintln(w, syncrun.RebasedNothing.Line)
 			return NotCompleted(failures)
 		}
 	}
@@ -204,7 +205,7 @@ func planRepoRun(t kit.RepoTarget, opts RunOptions) *repoRun {
 			continue
 		}
 		if a := r.assessed[wt.Branch]; len(a.Sessions) > 0 {
-			rr.idle = append(rr.idle, IdleNotice(work, a.Sessions))
+			rr.idle = append(rr.idle, syncrun.IdleNotice(work, a.Sessions))
 		}
 	}
 	return rr

@@ -27,12 +27,12 @@ type KeepOptions struct {
 	// Every is the job's interval, for the next-run line. Zero keeps what
 	// the state file records, or synccmd.KeepDefaultInterval.
 	Every time.Duration
-	// Push is synccmd.PushAlways or synccmd.PushNever: a keeper has nobody to ask.
-	Push synccmd.PushMode
+	// Push is syncrun.PushAlways or syncrun.PushNever: a keeper has nobody to ask.
+	Push syncrun.PushMode
 	// NoFFTrunk leaves local trunk where it is after the fetch, as the user
 	// setting ff_trunk false does.
 	NoFFTrunk bool
-	synccmd.VerbOptions
+	syncrun.VerbOptions
 }
 
 // writeKeepState writes the state file whole, through a rename, so a reader
@@ -291,7 +291,7 @@ func (p *keepPass) pass(recorded string) error {
 		p.header(fmt.Sprintf("%s %s → %s", p.onto, git.ShortID(p.before, 7), git.ShortID(after, 7)))
 		fmt.Fprintf(p.w, "wt sync keep once  %s %s → %s (fetched)\n", p.onto, git.ShortID(p.before, 7), git.ShortID(after, 7))
 		noteTrunk()
-		ropts := synccmd.RunOptions{NoFetch: true, Unattended: true, Own: own, VerbOptions: p.opts.VerbOptions, PushOptions: synccmd.PushOptions{Push: p.opts.Push}}
+		ropts := synccmd.RunOptions{NoFetch: true, Unattended: true, Own: own, VerbOptions: p.opts.VerbOptions, PushOptions: syncrun.PushOptions{Push: p.opts.Push}}
 		ropts.Confirm = nil
 		// An unattended pass has to know who is in a worktree: no claude to
 		// ask is not nobody there, it is not knowing, and nothing moves.
@@ -316,13 +316,13 @@ func (p *keepPass) pass(recorded string) error {
 	// A branch this run rebased again is pushed as this run's, not as an
 	// earlier pass's; the rest of what was left unpushed is offered again.
 	retry = slices.DeleteFunc(retry, func(u synccmd.UnpushedTarget) bool {
-		return slices.ContainsFunc(r.Pushable, func(t synccmd.PushTarget) bool { return t.Work == u.Work })
+		return slices.ContainsFunc(r.Pushable, func(t syncrun.PushTarget) bool { return t.Work == u.Work })
 	})
-	targets := make([]synccmd.PushTarget, len(retry))
+	targets := make([]syncrun.PushTarget, len(retry))
 	for i, u := range retry {
 		targets[i] = u.Target()
 	}
-	retried, failed, perr := synccmd.OfferPush(ctx, w, p.opts.Push, synccmd.PushOptions{}, targets)
+	retried, failed, perr := syncrun.OfferPush(ctx, w, p.opts.Push, syncrun.PushOptions{}, targets)
 	if perr != nil {
 		rerr = perr
 	}
@@ -340,12 +340,12 @@ func (p *keepPass) pass(recorded string) error {
 		}
 	}
 	// A push that did not come off is named with the command that does it
-	// by hand, in the log too; --no-push has synccmd.OfferPush print it already.
-	if p.opts.Push == synccmd.PushAlways {
+	// by hand, in the log too; --no-push has syncrun.OfferPush print it already.
+	if p.opts.Push == syncrun.PushAlways {
 		for _, u := range p.unpushed {
 			// One with nowhere to push has been named with why already.
-			if to := synccmd.PushOf(ctx, u.Target()); to.Remote != "" {
-				fmt.Fprintln(w, synccmd.PushLine(u.Target(), to))
+			if to := syncrun.PushOf(ctx, u.Target()); to.Remote != "" {
+				fmt.Fprintln(w, syncrun.PushLine(u.Target(), to))
 			}
 		}
 	}

@@ -8,6 +8,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -102,7 +103,7 @@ func TestABranchBehindItsRemoteIsJudgedAtTheRemotesCommit(t *testing.T) {
 	// refuses it nor forgets where undo goes.
 	testkit.WriteIn(t, x, "c.txt", "both\n")
 	testkit.GitIn(t, x, "add", "c.txt")
-	resumed, err := syncResumeJSON(t, f.Ctx, "x", ResumeOptions{PushOptions: synccmd.PushOptions{Push: synccmd.PushNever}, VerbOptions: opts.VerbOptions})
+	resumed, err := syncResumeJSON(t, f.Ctx, "x", ResumeOptions{PushOptions: syncrun.PushOptions{Push: syncrun.PushNever}, VerbOptions: opts.VerbOptions})
 	if err != nil || resumed.Worktrees[0].Result != synccmd.ResultRebased || resumed.Worktrees[0].OwnRemoteSync != nil {
 		t.Fatalf("resume: %v %+v", err, resumed.Worktrees[0])
 	}

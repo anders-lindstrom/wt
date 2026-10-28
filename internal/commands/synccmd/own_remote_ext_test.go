@@ -61,7 +61,7 @@ func TestSyncRunRunsAgainAfterAStrategyResolvedRebase(t *testing.T) {
 	testkit.GitIn(t, main, "push", "-q", "origin", "main")
 	testkit.GitIn(t, bump, "push", "-q", "-u", "origin", "feat_wt/bump")
 	opts := synccmdtest.NoAgents()
-	opts.NoFetch, opts.Push = false, synccmd.PushNever
+	opts.NoFetch, opts.Push = false, syncrun.PushNever
 	if r, err := synccmdtest.SyncRunJSON(t, ctx, []string{"bump"}, opts); err != nil || r.Worktrees[0].Result != synccmd.ResultRebased {
 		t.Fatalf("first run: %v %+v", err, r)
 	}
