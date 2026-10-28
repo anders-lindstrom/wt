@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sync"
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
@@ -184,10 +183,7 @@ func RefsPurge(ctx *kit.Context, opts RefsPurgeOptions, w io.Writer) (err error)
 	if j != nil {
 		defer kit.SetInterruptJournal(j)()
 		defer kit.WatchSignals(w, nil)()
-		defer func() {
-			j.fail(err)
-			j.Finish()
-		}()
+		defer func() { j.Fail(err) }()
 	}
 	plan, err := planRefsPurge(ctx, opts)
 	j.planned(plan, nil)
@@ -413,31 +409,51 @@ func RefsPurgePlanJSON(ctx *kit.Context, opts RefsPurgeOptions, out, progress io
 
 // RefsPurgeJournal writes wt refs purge --yes --json's one object once.
 type RefsPurgeJournal struct {
-	mu       sync.Mutex
-	once     sync.Once
-	out      io.Writer
-	root     string
-	res      RefsPurgeResult
-	byPin    map[string]*RefPurgePinResult
-	inFlight string
-	applying bool
+	*kit.Journal[RefsPurgeResult]
+	root  string
+	byPin map[string]*RefPurgePinResult
 }
 
 // NewRefsPurgeJournal is a journal that writes its object to out.
 func NewRefsPurgeJournal(out io.Writer) *RefsPurgeJournal {
-	return &RefsPurgeJournal{out: out, byPin: map[string]*RefPurgePinResult{},
-		res: RefsPurgeResult{Schema: 1, SchemaVersion: schema.VersionOf("refs-purge"), Command: refsPurgeCommand,
-			Runs: []RefPurgeRun{}}}
+	j := &RefsPurgeJournal{byPin: map[string]*RefPurgePinResult{}}
+	j.Journal = kit.NewJournal(out, RefsPurgeResult{Schema: 1, SchemaVersion: schema.VersionOf("refs-purge"),
+		Command: refsPurgeCommand, Runs: []RefPurgeRun{}},
+		kit.JournalRules[RefsPurgeResult]{Error: func(r *RefsPurgeResult, err error) { r.Error = kit.Strp(err.Error()) },
+			Caught: j.caught, Close: closeRefsPurge})
+	return j
+}
+
+// Fail records an error that stopped the run before it began, and writes
+// the object.
+func (j *RefsPurgeJournal) Fail(err error) {
+	if j != nil {
+		j.Journal.Fail(err)
+	}
+}
+
+// Finish writes the object for a run that returned.
+func (j *RefsPurgeJournal) Finish() {
+	if j != nil {
+		j.Journal.Finish()
+	}
+}
+
+// Interrupted writes the object for a run a signal ended.
+func (j *RefsPurgeJournal) Interrupted(inFlight, recovery string) {
+	if j != nil {
+		j.Journal.Interrupted(inFlight, recovery)
+	}
 }
 
 func (j *RefsPurgeJournal) planned(p RefsPurgePlan, token *string) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.root, j.res.Repo, j.res.Token = p.Repo, kit.Strp(p.Repo), token
-	j.res.Runs = []RefPurgeRun{}
+	j.Lock()
+	defer j.Unlock()
+	j.root, j.Res.Repo, j.Res.Token = p.Repo, kit.Strp(p.Repo), token
+	j.Res.Runs = []RefPurgeRun{}
 	for _, r := range p.Runs {
 		run := RefPurgeRun{RunID: r.RunID, SweptAt: r.At.Unix(), Refs: []*RefPurgePinResult{}}
 		if r.MetaOID != "" {
@@ -448,7 +464,7 @@ func (j *RefsPurgeJournal) planned(p RefsPurgePlan, token *string) {
 			run.Refs = append(run.Refs, it)
 			j.byPin[s.Pin] = it
 		}
-		j.res.Runs = append(j.res.Runs, run)
+		j.Res.Runs = append(j.Res.Runs, run)
 	}
 }
 
@@ -456,9 +472,17 @@ func (j *RefsPurgeJournal) begin() {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.applying = true
+	j.Begin(nil)
+}
+
+// rootDir is the repository the plan read, "" for none.
+func (j *RefsPurgeJournal) rootDir() string {
+	if j == nil {
+		return ""
+	}
+	j.Lock()
+	defer j.Unlock()
+	return j.root
 }
 
 // metaDone reads back whether a run's meta is gone.
@@ -466,26 +490,21 @@ func (j *RefsPurgeJournal) metaDone(runID string) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	root := j.root
-	j.mu.Unlock()
-	_, there, err := refpins.RefValue(root, refpins.MetaRef(runID))
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	for i := range j.res.Runs {
-		if j.res.Runs[i].RunID == runID {
-			j.res.Runs[i].MetaDeleted = err == nil && !there
+	_, there, err := refpins.RefValue(j.rootDir(), refpins.MetaRef(runID))
+	j.Edit(func(res *RefsPurgeResult) {
+		for i := range res.Runs {
+			if res.Runs[i].RunID == runID {
+				res.Runs[i].MetaDeleted = err == nil && !there
+			}
 		}
-	}
+	})
 }
 
 func (j *RefsPurgeJournal) start(pin string) {
 	if j == nil {
 		return
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.inFlight = pin
+	j.Start(pin)
 }
 
 // settle records what became of a pin: absent when it was gone before the
@@ -494,23 +513,16 @@ func (j *RefsPurgeJournal) start(pin string) {
 func (j *RefsPurgeJournal) settle(pin, result string, err error) string {
 	var reason *string
 	if result == "" {
-		root := ""
-		if j != nil {
-			j.mu.Lock()
-			root = j.root
-			j.mu.Unlock()
-		}
-		result, reason = readPurgePin(root, pin, err)
+		result, reason = readPurgePin(j.rootDir(), pin, err)
 	}
 	if j == nil {
 		return result
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.inFlight = ""
-	if it := j.byPin[pin]; it != nil {
-		it.Result, it.Reason = result, reason
-	}
+	j.Settle(pin, func(*RefsPurgeResult) {
+		if it := j.byPin[pin]; it != nil {
+			it.Result, it.Reason = result, reason
+		}
+	})
 	return result
 }
 
@@ -529,72 +541,46 @@ func readPurgePin(root, pin string, err error) (string, *string) {
 	return PinKept, kit.Strp("still there")
 }
 
-func (j *RefsPurgeJournal) fail(err error) {
-	if j == nil || err == nil {
-		return
-	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	if !j.applying {
-		j.res.Error = kit.Strp(err.Error())
+// caught reads back the pin a signal caught in flight: deleted when it is
+// gone, else interrupted.
+func (j *RefsPurgeJournal) caught(_ *RefsPurgeResult, inFlight, _ string) {
+	if it := j.byPin[inFlight]; it != nil {
+		it.Result, it.Reason = readPurgePin(j.root, it.Pin, nil)
+		if it.Result != PinDeleted {
+			it.Result, it.Reason = refs.RefInterrupted, nil
+		}
 	}
 }
 
-// Fail records an error that stopped the run before it began, and writes
-// the object.
-func (j *RefsPurgeJournal) Fail(err error) {
-	j.fail(err)
-	j.Finish()
-}
-
-// Finish writes the object for a run that returned.
-func (j *RefsPurgeJournal) Finish() { j.write(false, "") }
-
-// Interrupted writes the object for a run a signal ended.
-func (j *RefsPurgeJournal) Interrupted(_ string, recovery string) { j.write(true, recovery) }
-
-func (j *RefsPurgeJournal) write(signalled bool, recovery string) {
-	if j == nil {
-		return
+func closeRefsPurge(r *RefsPurgeResult, signalled bool, recovery string) any {
+	if signalled {
+		r.Outcome, r.Recovery = kit.OutcomeInterrupted, kit.Strp(recovery)
+		return r
 	}
-	j.once.Do(func() {
-		j.mu.Lock()
-		defer j.mu.Unlock()
-		if signalled {
-			if it := j.byPin[j.inFlight]; it != nil {
-				it.Result, it.Reason = readPurgePin(j.root, it.Pin, nil)
-				if it.Result != PinDeleted {
-					it.Result, it.Reason = refs.RefInterrupted, nil
-				}
-			}
-			j.res.Outcome, j.res.Recovery = kit.OutcomeInterrupted, kit.Strp(recovery)
-		} else {
-			done, changed := true, false
-			for _, r := range j.res.Runs {
-				if r.Meta != nil && !r.MetaDeleted {
-					done = false
-				}
-				for _, it := range r.Refs {
-					switch it.Result {
-					case PinDeleted:
-						changed = true
-					case PinAbsent:
-					default:
-						done = false
-					}
-				}
-			}
-			switch {
-			case done && j.res.Error == nil:
-				j.res.Outcome = OutcomePurged
-			case !changed:
-				j.res.Outcome = kit.OutcomeRefused
+	done, changed := true, false
+	for _, run := range r.Runs {
+		if run.Meta != nil && !run.MetaDeleted {
+			done = false
+		}
+		for _, it := range run.Refs {
+			switch it.Result {
+			case PinDeleted:
+				changed = true
+			case PinAbsent:
 			default:
-				j.res.Outcome = kit.OutcomePartial
+				done = false
 			}
 		}
-		_ = kit.WriteJSON(j.out, j.res)
-	})
+	}
+	switch {
+	case done && r.Error == nil:
+		r.Outcome = OutcomePurged
+	case !changed:
+		r.Outcome = kit.OutcomeRefused
+	default:
+		r.Outcome = kit.OutcomePartial
+	}
+	return r
 }
 
 // OutcomePurged is a refs purge that deleted every pin it planned to.
