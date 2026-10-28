@@ -15,6 +15,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -29,7 +30,7 @@ func TestUpRunsAgainOnABranchRebasedAndNotPushed(t *testing.T) {
 	f := synccmdtest.NewTrunkFixture(t)
 	x, opts := f.PushedWork(t)
 	f.AdvanceOrigin(t, 1)
-	if r, human, err := synccmdtest.UpOut(t, f.Ctx, "x", opts); err != nil || r.Worktrees[0].Result != synccmd.ResultRebased {
+	if r, human, err := synccmdtest.UpOut(t, f.Ctx, "x", opts); err != nil || r.Worktrees[0].Result != syncrun.ResultRebased {
 		t.Fatalf("first up: %v\n%s", err, human)
 	}
 	if testkit.GitOut(t, x, "rev-parse", "HEAD") == testkit.GitOut(t, f.Main, "rev-parse", "origin/feat_wt/x") {
@@ -41,7 +42,7 @@ func TestUpRunsAgainOnABranchRebasedAndNotPushed(t *testing.T) {
 		t.Fatalf("second up: %v\n%s", err, human)
 	}
 	o := r.Worktrees[0].OwnRemoteSync
-	if r.Worktrees[0].Result != synccmd.ResultRebased || o.State != "rebased" || o.FastForwarded || o.SkippedReason != nil {
+	if r.Worktrees[0].Result != syncrun.ResultRebased || o.State != "rebased" || o.FastForwarded || o.SkippedReason != nil {
 		t.Fatalf("%+v %+v", r.Worktrees[0], o)
 	}
 }
@@ -60,8 +61,8 @@ func TestSyncRunRunsAgainAfterAStrategyResolvedRebase(t *testing.T) {
 	testkit.GitIn(t, main, "push", "-q", "origin", "main")
 	testkit.GitIn(t, bump, "push", "-q", "-u", "origin", "feat_wt/bump")
 	opts := synccmdtest.NoAgents()
-	opts.NoFetch, opts.Push = false, synccmd.PushNever
-	if r, err := synccmdtest.SyncRunJSON(t, ctx, []string{"bump"}, opts); err != nil || r.Worktrees[0].Result != synccmd.ResultRebased {
+	opts.NoFetch, opts.Push = false, syncrun.PushNever
+	if r, err := synccmdtest.SyncRunJSON(t, ctx, []string{"bump"}, opts); err != nil || r.Worktrees[0].Result != syncrun.ResultRebased {
 		t.Fatalf("first run: %v %+v", err, r)
 	}
 	if unmatched := testkit.GitOut(t, main, "rev-list", "--right-only", "--cherry-pick", "feat_wt/bump...origin/feat_wt/bump"); unmatched == "" {
@@ -74,7 +75,7 @@ func TestSyncRunRunsAgainAfterAStrategyResolvedRebase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second run: %v %+v", err, r)
 	}
-	if o := r.Worktrees[0].OwnRemoteSync; r.Worktrees[0].Result != synccmd.ResultRebased || o == nil || o.State != "rebased" {
+	if o := r.Worktrees[0].OwnRemoteSync; r.Worktrees[0].Result != syncrun.ResultRebased || o == nil || o.State != "rebased" {
 		t.Fatalf("%+v %+v", r.Worktrees[0], o)
 	}
 }
@@ -98,7 +99,7 @@ func TestUpRefusesABranchThatDivergedFromItsRemote(t *testing.T) {
 	}
 	w := r.Worktrees[0]
 	o := w.OwnRemoteSync
-	if w.Result != synccmd.ResultRefused || r.Outcome != kit.OutcomeRefused || !strings.Contains(testkit.Str(w.Reason), "origin/feat_wt/x has 1 commit this branch never had") {
+	if w.Result != syncrun.ResultRefused || r.Outcome != kit.OutcomeRefused || !strings.Contains(testkit.Str(w.Reason), "origin/feat_wt/x has 1 commit this branch never had") {
 		t.Fatalf("participant %+v", w)
 	}
 	if o.State != "diverged" || testkit.Str(o.Remote) != theirs || *o.LocalAhead != 1 || *o.RemoteAhead != 1 ||
@@ -121,7 +122,7 @@ func TestUpRefusesABranchThatDivergedFromItsRemote(t *testing.T) {
 		t.Fatalf("--allow-diverged: %v\n%s", err, human)
 	}
 	w, o = r.Worktrees[0], r.Worktrees[0].OwnRemoteSync
-	if w.Result != synccmd.ResultRebased || o.State != "diverged" || !o.Allowed || o.SkippedReason != nil || o.FastForwarded {
+	if w.Result != syncrun.ResultRebased || o.State != "diverged" || !o.Allowed || o.SkippedReason != nil || o.FastForwarded {
 		t.Fatalf("%+v %+v", w, o)
 	}
 	if !strings.Contains(human, "⚠ --allow-diverged: origin/feat_wt/x has 1 commit this branch never had; rebasing it as it stands") {
@@ -189,7 +190,7 @@ func TestUpBehindAndNotFastForwardableTouchesNothing(t *testing.T) {
 	if err == nil {
 		t.Fatalf("a dirty worktree was rebased:\n%s", human)
 	}
-	if o := r.Worktrees[0].OwnRemoteSync; r.Worktrees[0].Result != synccmd.ResultRefused || o.State != "behind" ||
+	if o := r.Worktrees[0].OwnRemoteSync; r.Worktrees[0].Result != syncrun.ResultRefused || o.State != "behind" ||
 		testkit.Str(o.SkippedReason) != wtsync.OwnBlockDirty || o.FastForwarded {
 		t.Fatalf("%+v %+v", r.Worktrees[0], o)
 	}
@@ -207,12 +208,12 @@ func TestUpBehindAndNotFastForwardableTouchesNothing(t *testing.T) {
 	}
 	opts.Force = true
 	r, human, err = synccmdtest.UpOut(t, f.Ctx, "x", opts)
-	if err != nil || !r.Worktrees[0].OwnRemoteSync.FastForwarded || r.Worktrees[0].Result != synccmd.ResultRebased {
+	if err != nil || !r.Worktrees[0].OwnRemoteSync.FastForwarded || r.Worktrees[0].Result != syncrun.ResultRebased {
 		t.Fatalf("--force: %v %+v\n%s", err, r.Worktrees[0], human)
 	}
 }
 
-// legacyPlanToken is planToken as wt computed it before it looked at any
+// legacyPlanToken is syncrun.PlanToken as wt computed it before it looked at any
 // remote: a caller holding a token from then must still be let through.
 func legacyPlanToken(ctx *kit.Context, trunk string, stack []string) string {
 	h := sha256.New()
@@ -253,7 +254,7 @@ func TestPlanHoldsADivergedPlanToItsToken(t *testing.T) {
 	if testkit.Str(p.UpIneligibleReason) != want {
 		t.Fatalf("reason %q, want %q", testkit.Str(p.UpIneligibleReason), want)
 	}
-	for _, o := range []synccmd.OwnRemote{p.Worktree.OwnRemote, p.Stack[0].OwnRemote} {
+	for _, o := range []syncrun.OwnRemote{p.Worktree.OwnRemote, p.Stack[0].OwnRemote} {
 		if o.State != "diverged" || testkit.Str(o.Ref) != "origin/feat_wt/x" || testkit.Str(o.Commit) != theirs || *o.Ahead != 1 || *o.Behind != 1 ||
 			o.Fetched || testkit.Str(o.Blocks) != wtsync.OwnBlockDiverged {
 			t.Fatalf("ownRemote %+v", o)
@@ -272,7 +273,7 @@ func TestPlanHoldsADivergedPlanToItsToken(t *testing.T) {
 	}
 	// Read again, and the run goes over what was shown.
 	opts.Expect = *synccmdtest.PlanOfWork(t, f.Ctx, "x").Token
-	if r, human, err = synccmdtest.UpOut(t, f.Ctx, "x", opts); err != nil || r.Worktrees[0].Result != synccmd.ResultRebased || !r.Worktrees[0].OwnRemoteSync.Allowed {
+	if r, human, err = synccmdtest.UpOut(t, f.Ctx, "x", opts); err != nil || r.Worktrees[0].Result != syncrun.ResultRebased || !r.Worktrees[0].OwnRemoteSync.Allowed {
 		t.Fatalf("the plan as read: %v %+v\n%s", err, r, human)
 	}
 }
@@ -331,7 +332,7 @@ func TestPlanIsHeldBackByAnyStackMembersOwnRemote(t *testing.T) {
 	// The run refuses both, the diverged member for itself and the other
 	// because of it.
 	r, human, err := synccmdtest.UpOut(t, f.Ctx, "x", opts)
-	if err == nil || len(r.Worktrees) != 2 || r.Worktrees[0].Result != synccmd.ResultNotRun || r.Worktrees[1].Result != synccmd.ResultRefused {
+	if err == nil || len(r.Worktrees) != 2 || r.Worktrees[0].Result != syncrun.ResultNotRun || r.Worktrees[1].Result != syncrun.ResultRefused {
 		t.Fatalf("%v %+v\n%s", err, r.Worktrees, human)
 	}
 	if r.Worktrees[0].OwnRemoteSync.SkippedReason != nil || testkit.Str(r.Worktrees[1].OwnRemoteSync.SkippedReason) != wtsync.OwnBlockDiverged {
@@ -373,10 +374,10 @@ func TestUpFastForwardsAStackParent(t *testing.T) {
 	if err != nil || len(r.Worktrees) != 2 {
 		t.Fatalf("%v %+v\n%s", err, r.Worktrees, human)
 	}
-	if px := r.Worktrees[0]; px.Branch != "feat_wt/x" || px.Result != synccmd.ResultRebased || !px.OwnRemoteSync.FastForwarded {
+	if px := r.Worktrees[0]; px.Branch != "feat_wt/x" || px.Result != syncrun.ResultRebased || !px.OwnRemoteSync.FastForwarded {
 		t.Fatalf("parent %+v %+v", px, px.OwnRemoteSync)
 	}
-	if py := r.Worktrees[1]; py.Result != synccmd.ResultRebased || py.OwnRemoteSync.State != "none" || py.OwnRemoteSync.FastForwarded {
+	if py := r.Worktrees[1]; py.Result != syncrun.ResultRebased || py.OwnRemoteSync.State != "none" || py.OwnRemoteSync.FastForwarded {
 		t.Fatalf("child %+v %+v", py, py.OwnRemoteSync)
 	}
 	if testkit.GitOut(t, y, "rev-parse", "HEAD~1") != testkit.GitOut(t, x, "rev-parse", "HEAD") {
@@ -411,7 +412,7 @@ func TestUpLeavesABranchThatTracksTrunkUnchecked(t *testing.T) {
 		if err != nil {
 			t.Fatalf("run %d: %v\n%s", i+1, err, human)
 		}
-		if o := r.Worktrees[0].OwnRemoteSync; r.Worktrees[0].Result != synccmd.ResultRebased || o.State != "none" || o.FastForwarded || o.Ref != nil {
+		if o := r.Worktrees[0].OwnRemoteSync; r.Worktrees[0].Result != syncrun.ResultRebased || o.State != "none" || o.FastForwarded || o.Ref != nil {
 			t.Fatalf("run %d: %+v %+v", i+1, r.Worktrees[0], o)
 		}
 		if strings.Contains(human, "fast-forwarded to origin/main") && !strings.Contains(human, "local main") {
@@ -440,7 +441,7 @@ func TestUpGoesOnWhenTheRemoteIsGoneOrCannotBeRead(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%v\n%s", err, human)
 		}
-		if o := r.Worktrees[0].OwnRemoteSync; r.Worktrees[0].Result != synccmd.ResultRebased || o.State != "gone" || testkit.Str(o.Ref) != "origin/feat_wt/x" || o.Remote != nil || o.RemoteAhead != nil {
+		if o := r.Worktrees[0].OwnRemoteSync; r.Worktrees[0].Result != syncrun.ResultRebased || o.State != "gone" || testkit.Str(o.Ref) != "origin/feat_wt/x" || o.Remote != nil || o.RemoteAhead != nil {
 			t.Fatalf("%+v", o)
 		}
 	})
@@ -454,7 +455,7 @@ func TestUpGoesOnWhenTheRemoteIsGoneOrCannotBeRead(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%v\n%s", err, human)
 		}
-		if o := r.Worktrees[0].OwnRemoteSync; r.Worktrees[0].Result != synccmd.ResultRebased || o.State != "unknown" || o.Ref != nil || o.Remote != nil || o.FastForwarded {
+		if o := r.Worktrees[0].OwnRemoteSync; r.Worktrees[0].Result != syncrun.ResultRebased || o.State != "unknown" || o.Ref != nil || o.Remote != nil || o.FastForwarded {
 			t.Fatalf("%+v", o)
 		}
 		if !strings.Contains(human, "⚠ not checked against its remote: origin pushes to another URL than it fetches from\n") {
@@ -484,7 +485,7 @@ func TestUpRefusesWhenTheBranchsRemoteCannotBeFetched(t *testing.T) {
 		t.Fatalf("%v %+v\n%s", err, r, human)
 	}
 	w := r.Worktrees[0]
-	if w.Result != synccmd.ResultRefused || testkit.Str(w.OwnRemoteSync.SkippedReason) != synccmd.OwnSkipFetchFailed || w.OwnRemoteSync.FastForwarded ||
+	if w.Result != syncrun.ResultRefused || testkit.Str(w.OwnRemoteSync.SkippedReason) != syncrun.OwnSkipFetchFailed || w.OwnRemoteSync.FastForwarded ||
 		!strings.Contains(testkit.Str(w.Reason), "its own remote could not be fetched (") {
 		t.Fatalf("%+v %+v\n%s", w, w.OwnRemoteSync, human)
 	}
@@ -576,7 +577,7 @@ func TestSyncOverviewReportsOwnRemoteAndItsTokenCoversADivergence(t *testing.T) 
 
 	// The command gittree's sheet runs.
 	opts.IfReady, opts.Expect = true, *o.Token
-	if r, err := synccmdtest.SyncRunJSON(t, f.Ctx, []string{"x"}, opts); err == nil || r.Worktrees[0].Result != synccmd.ResultRefused {
+	if r, err := synccmdtest.SyncRunJSON(t, f.Ctx, []string{"x"}, opts); err == nil || r.Worktrees[0].Result != syncrun.ResultRefused {
 		t.Fatalf("without --allow-diverged: %v %+v", err, r.Worktrees)
 	}
 	opts.AllowDiverged = true
@@ -590,7 +591,7 @@ func TestSyncOverviewReportsOwnRemoteAndItsTokenCoversADivergence(t *testing.T) 
 	}
 	opts.Expect = *overview(false).Token
 	r, err = synccmdtest.SyncRunJSON(t, f.Ctx, []string{"x"}, opts)
-	if err != nil || r.Worktrees[0].Result != synccmd.ResultRebased || !r.Worktrees[0].OwnRemoteSync.Allowed {
+	if err != nil || r.Worktrees[0].Result != syncrun.ResultRebased || !r.Worktrees[0].OwnRemoteSync.Allowed {
 		t.Fatalf("the overview as read: %v %+v", err, r)
 	}
 }
@@ -662,7 +663,7 @@ func TestUpRefusesABranchRebasedElsewhereAndSaysSo(t *testing.T) {
 	w := r.Worktrees[0]
 	want := "x: origin/feat_wt/x has every commit of this branch in another form, on 2 commits this branch never had: " +
 		"it looks rebased elsewhere and pushed. git reset --hard origin/feat_wt/x takes the remote's, or --allow-diverged rebases this copy as it stands"
-	if w.Result != synccmd.ResultRefused || testkit.Str(w.Reason) != want || w.OwnRemoteSync.State != "diverged" || testkit.Str(w.OwnRemoteSync.SkippedReason) != wtsync.OwnBlockDiverged {
+	if w.Result != syncrun.ResultRefused || testkit.Str(w.Reason) != want || w.OwnRemoteSync.State != "diverged" || testkit.Str(w.OwnRemoteSync.SkippedReason) != wtsync.OwnBlockDiverged {
 		t.Fatalf("%+v %+v\n%s", w, w.OwnRemoteSync, human)
 	}
 	if got := testkit.GitOut(t, x, "rev-parse", "HEAD"); got != before || testkit.SafetyRefs(t, f.Main) != "" {
@@ -692,7 +693,7 @@ func TestUpRefusesWhenTheFastForwardItselfFails(t *testing.T) {
 		t.Fatalf("overwrote an untracked file:\n%s", human)
 	}
 	w := r.Worktrees[0]
-	if w.Result != synccmd.ResultRefused || testkit.Str(w.OwnRemoteSync.SkippedReason) != synccmd.OwnSkipFailed || w.OwnRemoteSync.FastForwarded ||
+	if w.Result != syncrun.ResultRefused || testkit.Str(w.OwnRemoteSync.SkippedReason) != syncrun.OwnSkipFailed || w.OwnRemoteSync.FastForwarded ||
 		testkit.Str(w.Reason) != "cannot fast-forward to origin/feat_wt/x: untracked files in the way: t.txt" {
 		t.Fatalf("%+v %+v\n%s", w, w.OwnRemoteSync, human)
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -61,7 +62,7 @@ func TestSyncRunSaysWhereAFailedHandoverLeftTheWorktree(t *testing.T) {
 	}
 	// The command the line names has to be the one that works. undo does not:
 	// it refuses a mid-rebase worktree outright.
-	if uerr := SyncUndo(ctx, "bump", UndoOptions{VerbOptions: synccmd.VerbOptions{Agents: []agents.Agent{}}}, io.Discard); uerr == nil {
+	if uerr := SyncUndo(ctx, "bump", UndoOptions{VerbOptions: syncrun.VerbOptions{Agents: []agents.Agent{}}}, io.Discard); uerr == nil {
 		t.Fatal("undo accepted a mid-rebase worktree; the old wording would have been true")
 	}
 	testkit.GitOut(t, bump, "rebase", "--abort")

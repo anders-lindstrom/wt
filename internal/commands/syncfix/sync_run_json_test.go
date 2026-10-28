@@ -9,21 +9,22 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
-func syncResumeJSON(t *testing.T, ctx *kit.Context, work string, opts ResumeOptions) (synccmd.SyncRunResult, error) {
+func syncResumeJSON(t *testing.T, ctx *kit.Context, work string, opts ResumeOptions) (syncrun.RunResult, error) {
 	t.Helper()
 	var out, human bytes.Buffer
-	opts.Journal = synccmd.NewSyncRunJournal(&out, "sync resume")
+	opts.Journal = syncrun.NewSyncRunJournal(&out, "sync resume")
 	err := SyncResume(ctx, work, opts, &human)
 	return synccmdtest.DecodeSyncRun(t, out.Bytes()), err
 }
 
-func syncUndoJSON(t *testing.T, ctx *kit.Context, work string, opts UndoOptions) (synccmd.SyncRunResult, error) {
+func syncUndoJSON(t *testing.T, ctx *kit.Context, work string, opts UndoOptions) (syncrun.RunResult, error) {
 	t.Helper()
 	var out, human bytes.Buffer
-	opts.Journal = synccmd.NewSyncRunJournal(&out, "sync undo")
+	opts.Journal = syncrun.NewSyncRunJournal(&out, "sync undo")
 	err := SyncUndo(ctx, work, opts, &human)
 	return synccmdtest.DecodeSyncRun(t, out.Bytes()), err
 }
@@ -39,7 +40,7 @@ func TestSyncResumeJSONReportsTheFinishedRebase(t *testing.T) {
 		t.Fatalf("%v %+v", err, r)
 	}
 	p := r.Worktrees[0]
-	if p.Result != synccmd.ResultRebased || p.Work != "bump" || p.SafetyRef == nil || *p.SafetyRef != st.Safety ||
+	if p.Result != syncrun.ResultRebased || p.Work != "bump" || p.SafetyRef == nil || *p.SafetyRef != st.Safety ||
 		p.Before == nil || *p.Before != st.OldTip || p.After == nil || *p.After == st.OldTip ||
 		!slices.Equal(p.UndoCommand, []string{"wt", "sync", "undo", "bump"}) {
 		t.Errorf("participant %+v", p)
@@ -55,7 +56,7 @@ func TestSyncResumeJSONReportsARefusal(t *testing.T) {
 	ctx, bump, gitDir, st := synccmdtest.HandedOver(t)
 	r, err := syncResumeJSON(t, ctx, "bump", noResumeAgents())
 	if err == nil || r.Outcome != kit.OutcomeRefused || len(r.Worktrees) != 1 ||
-		r.Worktrees[0].Result != synccmd.ResultRefused || r.Worktrees[0].Reason == nil {
+		r.Worktrees[0].Result != syncrun.ResultRefused || r.Worktrees[0].Reason == nil {
 		t.Fatalf("%v %+v", err, r)
 	}
 	assertUntouched(t, bump, gitDir, st)
@@ -81,12 +82,12 @@ func TestSyncUndoJSONReportsWhatItPutBack(t *testing.T) {
 		t.Fatalf("%v %+v", err, r)
 	}
 	p := r.Worktrees[0]
-	if p.Result != synccmd.ResultUndone || *p.Before != rebased || *p.After != old || p.SafetyRef == nil || p.UndoCommand != nil {
+	if p.Result != syncrun.ResultUndone || *p.Before != rebased || *p.After != old || p.SafetyRef == nil || p.UndoCommand != nil {
 		t.Errorf("participant %+v", p)
 	}
 
 	r, err = syncUndoJSON(t, ctx, "bump", noAgentsUndo())
-	if err != nil || r.Outcome != kit.OutcomeDone || len(r.Worktrees) != 1 || r.Worktrees[0].Result != synccmd.ResultSkipped {
+	if err != nil || r.Outcome != kit.OutcomeDone || len(r.Worktrees) != 1 || r.Worktrees[0].Result != syncrun.ResultSkipped {
 		t.Fatalf("second undo: %v %+v", err, r)
 	}
 }
@@ -147,7 +148,7 @@ func TestSyncUndoJSONForcedNamesTheWayBackToWhatItKept(t *testing.T) {
 	if err != nil || len(r.Worktrees) != 1 {
 		t.Fatalf("%v %+v", err, r)
 	}
-	if p := r.Worktrees[0]; p.Result != synccmd.ResultUndone || !slices.Equal(p.UndoCommand, []string{"wt", "sync", "undo", "bump"}) || p.Reason == nil {
+	if p := r.Worktrees[0]; p.Result != syncrun.ResultUndone || !slices.Equal(p.UndoCommand, []string{"wt", "sync", "undo", "bump"}) || p.Reason == nil {
 		t.Errorf("participant %+v", p)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -58,7 +59,7 @@ func TestUpFastForwardsABranchWithNothingToRebase(t *testing.T) {
 		t.Fatalf("%v %+v\n%s", err, r, human)
 	}
 	w := r.Worktrees[0]
-	if w.Result != synccmd.ResultFastForwarded || testkit.Str(w.After) != remote || !w.OwnRemoteSync.FastForwarded || len(w.PushCommand) != 0 {
+	if w.Result != syncrun.ResultFastForwarded || testkit.Str(w.After) != remote || !w.OwnRemoteSync.FastForwarded || len(w.PushCommand) != 0 {
 		t.Fatalf("%+v %+v", w, w.OwnRemoteSync)
 	}
 	if !strings.Contains(human, "✓ fast-forwarded to origin/feat_wt/x  "+local[:7]+" → "+remote[:7]) ||
@@ -88,7 +89,7 @@ func TestSyncRunRefusesAFastForwardOnlyBranchItCannotMove(t *testing.T) {
 			t.Fatalf("overview row: %+v", row)
 		}
 		r, err := synccmdtest.SyncRunJSON(t, f.Ctx, []string{"x"}, opts)
-		if err == nil || r.Worktrees[0].Result != synccmd.ResultRefused || testkit.Str(r.Worktrees[0].OwnRemoteSync.SkippedReason) != wtsync.OwnBlockDirty {
+		if err == nil || r.Worktrees[0].Result != syncrun.ResultRefused || testkit.Str(r.Worktrees[0].OwnRemoteSync.SkippedReason) != wtsync.OwnBlockDirty {
 			t.Fatalf("%v %+v %+v", err, r.Worktrees[0], r.Worktrees[0].OwnRemoteSync)
 		}
 		if got := testkit.GitOut(t, x, "rev-parse", "HEAD"); got != local || testkit.SafetyRefs(t, f.Main) != "" {
@@ -100,7 +101,7 @@ func TestSyncRunRefusesAFastForwardOnlyBranchItCannotMove(t *testing.T) {
 		busy := []agents.Agent{{Name: "busy-1", Cwd: x, Status: "busy"}}
 		opts.Agents, opts.Relist = busy, func() ([]agents.Agent, error) { return busy, nil }
 		r, err := synccmdtest.SyncRunJSON(t, f.Ctx, []string{"x"}, opts)
-		if err == nil || r.Worktrees[0].Result != synccmd.ResultRefused || testkit.Str(r.Worktrees[0].OwnRemoteSync.SkippedReason) != wtsync.OwnBlockSession {
+		if err == nil || r.Worktrees[0].Result != syncrun.ResultRefused || testkit.Str(r.Worktrees[0].OwnRemoteSync.SkippedReason) != wtsync.OwnBlockSession {
 			t.Fatalf("%v %+v %+v", err, r.Worktrees[0], r.Worktrees[0].OwnRemoteSync)
 		}
 		if got := testkit.GitOut(t, x, "rev-parse", "HEAD"); got != local || testkit.SafetyRefs(t, f.Main) != "" {
@@ -109,7 +110,7 @@ func TestSyncRunRefusesAFastForwardOnlyBranchItCannotMove(t *testing.T) {
 		// --force takes the run past the session, and the fast-forward with it.
 		opts.Force = true
 		r, err = synccmdtest.SyncRunJSON(t, f.Ctx, []string{"x"}, opts)
-		if err != nil || r.Worktrees[0].Result != synccmd.ResultFastForwarded || testkit.Str(r.Worktrees[0].After) != remote {
+		if err != nil || r.Worktrees[0].Result != syncrun.ResultFastForwarded || testkit.Str(r.Worktrees[0].After) != remote {
 			t.Fatalf("--force: %v %+v", err, r.Worktrees[0])
 		}
 	})

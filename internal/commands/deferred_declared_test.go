@@ -8,6 +8,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
@@ -112,7 +113,7 @@ func TestTheDeclaredStepsPairWithTheRunsDeferred(t *testing.T) {
 	if len(r.Worktrees) != 1 || len(r.Worktrees[0].Deferred) != len(declared) || len(declared) != 1 {
 		t.Fatalf("declared %+v, ran %+v", declared, r.Worktrees)
 	}
-	if ran := r.Worktrees[0].Deferred[0]; ran.Step != declared[0].Step || ran.Result != synccmd.DeferredCommitted {
+	if ran := r.Worktrees[0].Deferred[0]; ran.Step != declared[0].Step || ran.Result != syncrun.DeferredCommitted {
 		t.Errorf("declared %+v, ran %+v", declared[0], ran)
 	}
 }

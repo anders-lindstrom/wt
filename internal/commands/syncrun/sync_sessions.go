@@ -1,4 +1,4 @@
-package synccmd
+package syncrun
 
 import (
 	"fmt"
@@ -18,7 +18,7 @@ type nothingDone struct{ Line, tail string }
 
 // What each verb says when it did nothing.
 var (
-	rebasedNothing = nothingDone{"nothing rebased", "nothing is rebased"}
+	RebasedNothing = nothingDone{"nothing rebased", "nothing is rebased"}
 	ResumedNothing = nothingDone{"nothing resumed", "nothing is resumed"}
 	UndidNothing   = nothingDone{"nothing undone", "nothing undone"}
 )
@@ -54,8 +54,8 @@ func (o VerbOptions) SessionsNow(ctx *kit.Context, nothing nothingDone) ([]agent
 	return listed, nil
 }
 
-// relist is the second listing, for the check after a question or at the lock.
-func (o VerbOptions) relist(ctx *kit.Context, nothing nothingDone) ([]agents.Agent, error) {
+// SessionsAgain is the second listing, for the check after a question or at the lock.
+func (o VerbOptions) SessionsAgain(ctx *kit.Context, nothing nothingDone) ([]agents.Agent, error) {
 	listed, err := kit.ListAgain(ctx, o.Agents, o.Relist)
 	if err != nil {
 		return nil, fmt.Errorf("cannot list agent sessions again (%w); %s", err, nothing.tail)
@@ -136,11 +136,11 @@ func AskIdle(ctx *kit.Context, w io.Writer, opts VerbOptions, works []string, to
 	if len(told) == 0 {
 		return true, listed, nil
 	}
-	if fresh, err = opts.relist(ctx, nothing); err != nil {
+	if fresh, err = opts.SessionsAgain(ctx, nothing); err != nil {
 		return false, listed, err
 	}
 	for _, t := range told {
-		if why := sessionsChanged(t.Sessions, agents.SessionsAt(fresh, t.Path)); why != "" {
+		if why := SessionsChanged(t.Sessions, agents.SessionsAt(fresh, t.Path)); why != "" {
 			return false, fresh, fmt.Errorf("%s: %s; %s", t.Label, why, nothing.tail)
 		}
 	}
@@ -166,10 +166,10 @@ func TellIdle(w io.Writer, s agents.Sessions, line string) {
 	fmt.Fprintf(w, "  ⚠ tell %s, idle in it:\n    %s\n", strings.Join(names, ", "), line)
 }
 
-// sessionsChanged is why the sessions in a worktree are no longer the ones a
+// SessionsChanged is why the sessions in a worktree are no longer the ones a
 // verb checked: one is busy now, or one arrived that nobody was told about.
 // Empty when nothing changed that matters.
-func sessionsChanged(told, now agents.Sessions) string {
+func SessionsChanged(told, now agents.Sessions) string {
 	if len(now.Busy()) > 0 {
 		return "an agent session is busy in it now: " + now.Label(kit.SessionLabel)
 	}

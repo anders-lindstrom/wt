@@ -11,6 +11,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -49,7 +50,7 @@ type PlanWorktree struct {
 	Behind *int   `json:"behind"`
 	Ahead  *int   `json:"ahead"`
 	// OwnRemote is the branch against its own remote, as last fetched.
-	OwnRemote OwnRemote `json:"ownRemote"`
+	OwnRemote syncrun.OwnRemote `json:"ownRemote"`
 }
 
 // PlanSession is an agent session in one of the plan's worktrees; Kind is
@@ -73,32 +74,32 @@ type PlanStackMember struct {
 // declares, the same on every member.
 type PlanStack struct {
 	PlanStackMember
-	OwnRemote        OwnRemote      `json:"ownRemote"`
-	DeferredDeclared []DeclaredStep `json:"deferredDeclared"`
+	OwnRemote        syncrun.OwnRemote `json:"ownRemote"`
+	DeferredDeclared []DeclaredStep    `json:"deferredDeclared"`
 }
 
 // UpPlan is the one object wt status <work> --json prints: what wt up would
 // start on, computed from local state alone.
 type UpPlan struct {
-	Schema             int           `json:"schema"`
-	SchemaVersion      string        `json:"schemaVersion"`
-	Command            string        `json:"command"`
-	Token              *string       `json:"token"`
-	Trunk              *string       `json:"trunk"`
-	TrunkSource        *string       `json:"trunkSource"`
-	TrunkRef           *string       `json:"trunkRef"`
-	TrunkRefExists     bool          `json:"trunkRefExists"`
-	TrunkTip           *string       `json:"trunkTip"`
-	TrunkRefUpdatedAt  *string       `json:"trunkRefUpdatedAt"`
-	TrunkSync          *TrunkSync    `json:"trunkSync"`
-	Configured         bool          `json:"configured"`
-	Worktree           *PlanWorktree `json:"worktree"`
-	UpEligible         bool          `json:"upEligible"`
-	UpIneligibleCode   *string       `json:"upIneligibleCode"`
-	UpIneligibleReason *string       `json:"upIneligibleReason"`
-	Stack              []PlanStack   `json:"stack"`
-	Sessions           []PlanSession `json:"sessions"`
-	SessionsError      *string       `json:"sessionsError"`
+	Schema             int                `json:"schema"`
+	SchemaVersion      string             `json:"schemaVersion"`
+	Command            string             `json:"command"`
+	Token              *string            `json:"token"`
+	Trunk              *string            `json:"trunk"`
+	TrunkSource        *string            `json:"trunkSource"`
+	TrunkRef           *string            `json:"trunkRef"`
+	TrunkRefExists     bool               `json:"trunkRefExists"`
+	TrunkTip           *string            `json:"trunkTip"`
+	TrunkRefUpdatedAt  *string            `json:"trunkRefUpdatedAt"`
+	TrunkSync          *syncrun.TrunkSync `json:"trunkSync"`
+	Configured         bool               `json:"configured"`
+	Worktree           *PlanWorktree      `json:"worktree"`
+	UpEligible         bool               `json:"upEligible"`
+	UpIneligibleCode   *string            `json:"upIneligibleCode"`
+	UpIneligibleReason *string            `json:"upIneligibleReason"`
+	Stack              []PlanStack        `json:"stack"`
+	Sessions           []PlanSession      `json:"sessions"`
+	SessionsError      *string            `json:"sessionsError"`
 }
 
 // UpPlanJSON writes wt status <work> --json. It writes nothing to any repository:
@@ -126,7 +127,7 @@ func UpPlanJSON(ctx *kit.Context, arg string, w io.Writer) error {
 	listAgents := sync.OnceValues(func() ([]agents.Agent, error) { return ctx.ListAgents() })
 	// What wt up would do to local trunk after its fetch, judged against
 	// origin/<trunk> as last fetched: the fetch may bring more.
-	p.TrunkSync = SyncLocalTrunk(ctx, tip, TrunkSyncOptions{OptedOut: !ctx.UserConfig().FFTrunk, Agents: listAgents})
+	p.TrunkSync = syncrun.SyncLocalTrunk(ctx, tip, syncrun.TrunkSyncOptions{OptedOut: !ctx.UserConfig().FFTrunk, Agents: listAgents})
 
 	inel := func(code, why string) {
 		if p.UpIneligibleCode == nil {
@@ -146,7 +147,7 @@ func UpPlanJSON(ctx *kit.Context, arg string, w io.Writer) error {
 		work = ctx.Repo.Name
 	}
 	pw := &PlanWorktree{Work: work, Branch: wt.Branch, Path: wt.Path, IsMain: wt.IsMain, State: "clean",
-		OwnRemote: ownRemoteOf(wtsync.OwnRemote{})}
+		OwnRemote: syncrun.OwnRemoteOf(wtsync.OwnRemote{})}
 	switch dirty, err := repo.Dirty(wt.Path, false); {
 	case err != nil:
 		pw.State = "unreadable"
@@ -193,7 +194,7 @@ func UpPlanJSON(ctx *kit.Context, arg string, w io.Writer) error {
 	// ownOf is one branch against its own remote, with what of it would keep
 	// wt up off the checkout at path.
 	ownOf := func(branch, path string) wtsync.OwnRemote {
-		o := OwnStateOf(own, branch)
+		o := syncrun.OwnStateOf(own, branch)
 		switch o.State {
 		case wtsync.OwnBehind:
 			// Unreadable is not clean: a fast-forward needs to know.
@@ -238,7 +239,7 @@ func UpPlanJSON(ctx *kit.Context, arg string, w io.Writer) error {
 			o := byBranch[b]
 			p.Stack = append(p.Stack, PlanStack{
 				PlanStackMember:  PlanStackMember{Work: kit.WorktreeName(ctx, b, o.Path), Branch: b, Path: o.Path},
-				OwnRemote:        ownRemoteOf(ownOf(b, o.Path)),
+				OwnRemote:        syncrun.OwnRemoteOf(ownOf(b, o.Path)),
 				DeferredDeclared: declared,
 			})
 		}
@@ -289,7 +290,7 @@ func UpPlanJSON(ctx *kit.Context, arg string, w io.Writer) error {
 	// A plan held back by divergence alone has a token too: wt up
 	// --allow-diverged --expect goes ahead over exactly what it covers.
 	if p.UpEligible || *p.UpIneligibleCode == IneligibleOwnDiverged {
-		p.Token = kit.Strp(planToken(ctx, trunk, stack, diverged))
+		p.Token = kit.Strp(syncrun.PlanToken(ctx, trunk, stack, diverged))
 	}
 
 	listed, err := listAgents()

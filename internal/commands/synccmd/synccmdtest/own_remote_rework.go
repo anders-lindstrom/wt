@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -22,7 +23,7 @@ func MustBeDiverged(t *testing.T, f *TrunkFixture, x string, opts synccmd.RunOpt
 		t.Fatalf("the remote's commit reads as a former tip: %+v, code %s", o, testkit.Str(p.UpIneligibleCode))
 	}
 	r, human, err := UpOut(t, f.Ctx, "x", At(opts, 500))
-	if err == nil || r.Worktrees[0].Result != synccmd.ResultRefused || testkit.Str(r.Worktrees[0].OwnRemoteSync.SkippedReason) != wtsync.OwnBlockDiverged {
+	if err == nil || r.Worktrees[0].Result != syncrun.ResultRefused || testkit.Str(r.Worktrees[0].OwnRemoteSync.SkippedReason) != wtsync.OwnBlockDiverged {
 		t.Fatalf("a run went on over the remote's commit: %v %+v\n%s", err, r.Worktrees, human)
 	}
 	if out, err := gittest.Try(t, x, "push", "--force-with-lease", "--force-if-includes", "origin", "feat_wt/x"); err == nil {

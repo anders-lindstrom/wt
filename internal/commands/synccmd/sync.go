@@ -1,7 +1,7 @@
 // Package synccmd implements wt sync and wt up: the overview of what a
-// rebase onto trunk would do, the run that does it, its JSON journal, and
-// the fast-forwards, pushes and own remotes around it. It also holds the
-// keeper's state, lock and launchd job, and wt sync doctor.
+// rebase onto trunk would do, the run that does it, wt sync push-to and
+// wt sync doctor. What a run is made of that resume and the keeper share is
+// in syncrun.
 package synccmd
 
 import (
@@ -20,6 +20,8 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/synckeep/keepstate"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -55,11 +57,11 @@ func Sync(ctx *kit.Context, opts SyncOptions, w io.Writer) error {
 		return err
 	}
 	worktrees = slices.DeleteFunc(worktrees, func(wt repo.Worktree) bool { return wt.IsMain })
-	onto, cfg, listed, own, err := syncInputs(ctx, opts, w, worktreeBranches(worktrees))
+	onto, cfg, listed, own, err := syncInputs(ctx, opts, w, syncrun.WorktreeBranches(worktrees))
 	if err != nil {
 		return err
 	}
-	if line := keptLine(ctx, time.Now()); line != "" {
+	if line := keepstate.KeptLine(ctx, time.Now()); line != "" {
 		fmt.Fprintln(w, line)
 	}
 	assessments := assessAll(ctx.Repo.MainRoot, onto, cfg, worktrees, listed, own, assessWorkers)
@@ -88,7 +90,7 @@ func assessAll(mainRoot, onto string, cfg *wtsync.Config, wts []repo.Worktree, l
 	out := make([]wtsync.Assessment, len(wts))
 	owns := make([]wtsync.OwnRemote, len(wts))
 	for i, wt := range wts {
-		owns[i] = OwnStateOf(own, wt.Branch)
+		owns[i] = syncrun.OwnStateOf(own, wt.Branch)
 	}
 	slots := make(chan struct{}, max(workers, 1))
 	var wg sync.WaitGroup
@@ -112,7 +114,7 @@ func printOverview(w io.Writer, declared bool, entries []syncEntry) {
 	var groups [syncSections][]syncEntry
 	var all []syncEntry
 	for _, e := range entries {
-		if OnTrunk(e.a) {
+		if syncrun.OnTrunk(e.a) {
 			continue
 		}
 		s := SectionOf(e.a)
@@ -152,7 +154,7 @@ func SyncWorktree(ctx *kit.Context, arg string, opts SyncOptions, w io.Writer) e
 	if err != nil {
 		return err
 	}
-	a := wtsync.AssessOwn(ctx.Repo.MainRoot, onto, cfg, wt, listed, OwnStateOf(own, wt.Branch))
+	a := wtsync.AssessOwn(ctx.Repo.MainRoot, onto, cfg, wt, listed, syncrun.OwnStateOf(own, wt.Branch))
 	printDetail(w, kit.WorktreeName(ctx, wt.Branch, wt.Path), a)
 	return nil
 }
@@ -216,7 +218,7 @@ func syncInputs(ctx *kit.Context, opts SyncOptions, w io.Writer, branches []stri
 	if opts.NoFetch {
 		own = wtsync.ReadOwnOrUnknown(ctx.Repo.MainRoot, ctx.Config.MainBranch)
 	} else {
-		own, fetchErr = FetchRemotes(ctx, syncFetchTimeout, branches)
+		own, fetchErr = syncrun.FetchRemotes(ctx, syncFetchTimeout, branches)
 	}
 	onto, sha, cfg, err := SyncDeclaration(ctx)
 	if err != nil {
@@ -344,7 +346,7 @@ func leftLabel(work string, a wtsync.Assessment) string {
 		parts = append(parts, "handed over")
 	}
 	if a.Own.Refuses() {
-		parts = append(parts, ownHeld(a.Own))
+		parts = append(parts, syncrun.OwnHeld(a.Own))
 	}
 	return work + " " + strings.Join(parts, ", ")
 }
@@ -415,7 +417,7 @@ func heldBy(a wtsync.Assessment) string {
 		held = append(held, "dirty")
 	}
 	if a.Own.Refuses() {
-		held = append(held, ownHeld(a.Own))
+		held = append(held, syncrun.OwnHeld(a.Own))
 	}
 	return strings.Join(held, "  ")
 }
@@ -430,10 +432,10 @@ func SummaryLines(a wtsync.Assessment) []string {
 	if a.Paused {
 		lines = append(lines, pausedLine(a))
 	}
-	if note := ownNote(a); note != "" {
+	if note := syncrun.OwnNote(a); note != "" {
 		lines = append(lines, note)
 	}
-	if note := OwnElsewhere(a.Own); note != "" {
+	if note := syncrun.OwnElsewhere(a.Own); note != "" {
 		lines = append(lines, note)
 	}
 	for _, c := range a.Divergent {
@@ -589,13 +591,13 @@ func printDetail(w io.Writer, work string, a wtsync.Assessment) {
 	}
 	fmt.Fprintf(w, "  branch  %s\n", branch)
 	fmt.Fprintf(w, "  path    %s\n", a.Path)
-	if line := OwnLineOf(a); line != "" {
+	if line := syncrun.OwnLineOf(a); line != "" {
 		fmt.Fprintf(w, "  remote  %s\n", line)
 	}
-	if line := OwnElsewhere(a.Own); line != "" {
+	if line := syncrun.OwnElsewhere(a.Own); line != "" {
 		fmt.Fprintf(w, "  push    %s\n", strings.TrimPrefix(line, "pushes "))
 	}
-	if line := OwnStray(a.Own); line != "" {
+	if line := syncrun.OwnStray(a.Own); line != "" {
 		fmt.Fprintf(w, "  also    %s\n", line)
 	}
 	fmt.Fprintf(w, "  run     %s\n", runVerdict(work, a))

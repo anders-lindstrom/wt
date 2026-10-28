@@ -9,6 +9,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
+	"github.com/anders-lindstrom/wt/internal/commands/synckeep/keepstate"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -34,7 +35,7 @@ type KeepStartAllOptions struct {
 type keepRow struct {
 	target kit.RepoTarget
 	ctx    *kit.Context
-	job    synccmd.KeepJob
+	job    keepstate.KeepJob
 	// act says the command has something to do here; failed that the
 	// repository could not be looked at or the action did not come off.
 	act, failed bool
@@ -135,12 +136,12 @@ func StartAll(u *config.User, sel kit.Selection, opts KeepStartAllOptions, w io.
 		installed, present := keepJobPresent(job)
 		switch {
 		case installed:
-			k, err := synccmd.Keeper(r.ctx, false)
+			k, err := keepstate.Keeper(r.ctx, false)
 			if err != nil {
 				r.failed, r.verdict = true, err.Error()
 				return
 			}
-			r.verdict = "already kept, every " + synccmd.FmtEvery(k.St.IntervalOrDefault()) + "; left as it is"
+			r.verdict = "already kept, every " + keepstate.FmtEvery(k.St.IntervalOrDefault()) + "; left as it is"
 			return
 		case present:
 			r.failed, r.verdict = true, "loaded but its plist is gone; wt sync keep stop, then start"
@@ -153,7 +154,7 @@ func StartAll(u *config.User, sel kit.Selection, opts KeepStartAllOptions, w io.
 		case why != "":
 			r.verdict = "skipped: " + why
 		default:
-			r.act, r.verdict = true, "to install, every "+synccmd.FmtEvery(s.every)
+			r.act, r.verdict = true, "to install, every "+keepstate.FmtEvery(s.every)
 		}
 	})
 	if err != nil {
@@ -200,7 +201,7 @@ func StartAll(u *config.User, sel kit.Selection, opts KeepStartAllOptions, w io.
 			r.failed, r.verdict = true, err.Error()
 			continue
 		}
-		r.verdict = "installed, every " + synccmd.FmtEvery(s.every) + ", first at " + synccmd.KeepClock(next, s.now())
+		r.verdict = "installed, every " + keepstate.FmtEvery(s.every) + ", first at " + keepstate.KeepClock(next, s.now())
 	}
 	fmt.Fprintln(w)
 	printKeepRows(w, todo)
@@ -214,11 +215,11 @@ func StartAll(u *config.User, sel kit.Selection, opts KeepStartAllOptions, w io.
 // and left alone; one that no longer declares wt sync is stopped all the
 // same.
 func StopAll(u *config.User, sel kit.Selection, dryRun bool, w io.Writer) error {
-	if synccmd.KeepGOOS != "darwin" {
+	if keepstate.KeepGOOS != "darwin" {
 		return ErrNoLaunchd
 	}
 	rows, err := keepRows(u, sel, func(r *keepRow) {
-		job, err := synccmd.KeepJobFor(r.ctx)
+		job, err := keepstate.KeepJobFor(r.ctx)
 		if err != nil {
 			r.failed, r.verdict = true, err.Error()
 			return
@@ -270,7 +271,7 @@ func StopAll(u *config.User, sel kit.Selection, dryRun bool, w io.Writer) error 
 // one to keep.
 func StatusAll(u *config.User, sel kit.Selection, now time.Time, w io.Writer) error {
 	rows, err := keepRows(u, sel, func(r *keepRow) {
-		k, err := synccmd.Keeper(r.ctx, true)
+		k, err := keepstate.Keeper(r.ctx, true)
 		if err != nil {
 			r.failed, r.verdict = true, err.Error()
 			return

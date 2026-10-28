@@ -594,28 +594,6 @@ func TestRunVerdictSaysItAsksFirstUnderAnIdleSession(t *testing.T) {
 	}
 }
 
-func TestSessionsChangedNamesWhatIsNewOrBusy(t *testing.T) {
-	t.Parallel()
-	parked := agents.Agent{ID: "a1", Name: "parked-1", Cwd: "/w", Kind: "interactive", Status: "idle"}
-	busy := parked
-	busy.Status = "busy"
-	other := agents.Agent{ID: "a2", Name: "new-2", Cwd: "/w", Kind: "interactive", Status: "idle"}
-	told := agents.Sessions{parked}
-	for _, tc := range []struct {
-		now  agents.Sessions
-		want string
-	}{
-		{agents.Sessions{parked}, ""},
-		{nil, ""},
-		{agents.Sessions{busy}, "an agent session is busy in it now: parked-1"},
-		{agents.Sessions{parked, other}, "a session arrived since it was checked: new-2 (idle)"},
-	} {
-		if got := sessionsChanged(told, tc.now); got != tc.want {
-			t.Errorf("now %+v: got %q, want %q", tc.now, got, tc.want)
-		}
-	}
-}
-
 // A file nobody conflicted on that the version rule still rewrote is shown
 // beside the resolved files, in the overview's note and the detail's stop
 // list alike, saying what it did and what trunk had.

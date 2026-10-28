@@ -4,6 +4,11 @@ Newest first, each heading stamped with the local date and time of the change
 (several land per day). `wt about` prints the newest 5 entries, so keep each entry to a few lines a human
 would want read out to them; the full story is in git history.
 
+## 2026-10-29 00:02 — "2 pushes to retry", not "pushs"
+
+A `wt sync keep` pass that finds trunk unchanged and has more than one push
+to retry now says "2 pushes to retry".
+
 ## 2026-10-28 23:31 — help and `wt about` wrap wide characters by the columns they take
 
 Help and `wt about` now measure text in terminal columns. A Chinese,

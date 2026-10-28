@@ -8,6 +8,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
@@ -23,7 +24,7 @@ func (f *TrunkFixture) WithWork(t *testing.T) synccmd.RunOptions {
 	testkit.WriteIn(t, x, "x.txt", "x\n")
 	testkit.GitIn(t, x, "add", "x.txt")
 	testkit.GitIn(t, x, "commit", "-q", "-m", "x")
-	return synccmd.RunOptions{PushOptions: synccmd.PushOptions{Push: synccmd.PushNever}, VerbOptions: synccmd.VerbOptions{
+	return synccmd.RunOptions{PushOptions: syncrun.PushOptions{Push: syncrun.PushNever}, VerbOptions: syncrun.VerbOptions{
 		Agents: []agents.Agent{},
 		Now:    func() time.Time { return time.Unix(0, 99) },
 	}}

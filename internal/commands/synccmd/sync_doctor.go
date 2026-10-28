@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/synckeep/keepstate"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -57,7 +58,7 @@ func SyncDoctor(ctx *kit.Context, opts DoctorOptions, w io.Writer) error {
 		}
 		plan.Detail = strings.Join(lines, "; ")
 	}
-	checks = append(checks, plan, keeperCheck(ctx, time.Now()))
+	checks = append(checks, plan, keepstate.KeeperCheck(ctx, time.Now()))
 	rows := [][]string{{"CHECK", "STATE", "DETAIL"}}
 	var blocking []string
 	for _, c := range checks {

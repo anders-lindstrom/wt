@@ -7,17 +7,17 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/agents"
-	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
-func ffOn() synccmd.TrunkSyncOptions {
-	return synccmd.TrunkSyncOptions{Apply: true, Agents: func() ([]agents.Agent, error) { return []agents.Agent{}, nil }}
+func ffOn() syncrun.TrunkSyncOptions {
+	return syncrun.TrunkSyncOptions{Apply: true, Agents: func() ([]agents.Agent, error) { return []agents.Agent{}, nil }}
 }
 
-func reasonOf(ts *synccmd.TrunkSync) string {
+func reasonOf(ts *syncrun.TrunkSync) string {
 	if ts.SkippedReason == nil {
 		return "<nil>"
 	}
@@ -30,7 +30,7 @@ func TestTrunkSyncFastForwardsTheCleanMainCheckout(t *testing.T) {
 	before := f.Local(t)
 	remote := f.AdvanceOrigin(t, 2)
 
-	ts := synccmd.SyncLocalTrunk(f.Ctx, remote, ffOn())
+	ts := syncrun.SyncLocalTrunk(f.Ctx, remote, ffOn())
 
 	if !ts.FastForwarded || ts.SkippedReason != nil {
 		t.Fatalf("want fast-forwarded, got %+v (%s)", ts, reasonOf(ts))
@@ -56,7 +56,7 @@ func TestTrunkSyncUpdatesTrunkCheckedOutNowhere(t *testing.T) {
 	testkit.GitIn(t, f.Main, "switch", "-q", "-c", "elsewhere")
 	remote := f.AdvanceOrigin(t, 1)
 
-	ts := synccmd.SyncLocalTrunk(f.Ctx, remote, ffOn())
+	ts := syncrun.SyncLocalTrunk(f.Ctx, remote, ffOn())
 
 	if !ts.FastForwarded {
 		t.Fatalf("want fast-forwarded, got %+v (%s)", ts, reasonOf(ts))
@@ -72,7 +72,7 @@ func TestTrunkSyncUpdatesTrunkCheckedOutNowhere(t *testing.T) {
 func TestTrunkSyncNothingToDoWhenEqual(t *testing.T) {
 	t.Parallel()
 	f := synccmdtest.NewTrunkFixture(t)
-	ts := synccmd.SyncLocalTrunk(f.Ctx, f.Local(t), ffOn())
+	ts := syncrun.SyncLocalTrunk(f.Ctx, f.Local(t), ffOn())
 	if ts.FastForwarded || ts.SkippedReason != nil || *ts.LocalAhead != 0 || *ts.RemoteAhead != 0 {
 		t.Fatalf("want nothing to do, got %+v (%s)", ts, reasonOf(ts))
 	}
@@ -85,42 +85,42 @@ func TestTrunkSyncSkips(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name  string
-		setup func(t *testing.T, f *synccmdtest.TrunkFixture, o *synccmd.TrunkSyncOptions)
+		setup func(t *testing.T, f *synccmdtest.TrunkFixture, o *syncrun.TrunkSyncOptions)
 		want  string
 	}{
-		{"optedOut", func(_ *testing.T, _ *synccmdtest.TrunkFixture, o *synccmd.TrunkSyncOptions) {
+		{"optedOut", func(_ *testing.T, _ *synccmdtest.TrunkFixture, o *syncrun.TrunkSyncOptions) {
 			o.OptedOut = true
-		}, synccmd.TrunkSkipOptedOut},
-		{"dirty tracked", func(t *testing.T, f *synccmdtest.TrunkFixture, _ *synccmd.TrunkSyncOptions) {
+		}, syncrun.TrunkSkipOptedOut},
+		{"dirty tracked", func(t *testing.T, f *synccmdtest.TrunkFixture, _ *syncrun.TrunkSyncOptions) {
 			testkit.WriteIn(t, f.Main, "bin/worktree/worktree.conf", testkit.MinimalConf+"# edited\n")
-		}, synccmd.TrunkSkipDirty},
-		{"dirty untracked", func(t *testing.T, f *synccmdtest.TrunkFixture, _ *synccmd.TrunkSyncOptions) {
+		}, syncrun.TrunkSkipDirty},
+		{"dirty untracked", func(t *testing.T, f *synccmdtest.TrunkFixture, _ *syncrun.TrunkSyncOptions) {
 			testkit.WriteIn(t, f.Main, "scratch.txt", "mine\n")
-		}, synccmd.TrunkSkipDirty},
-		{"merge in progress", func(t *testing.T, f *synccmdtest.TrunkFixture, _ *synccmd.TrunkSyncOptions) {
+		}, syncrun.TrunkSkipDirty},
+		{"merge in progress", func(t *testing.T, f *synccmdtest.TrunkFixture, _ *syncrun.TrunkSyncOptions) {
 			gitDir := testkit.GitOut(t, f.Main, "rev-parse", "--absolute-git-dir")
 			testkit.WriteIn(t, gitDir, "MERGE_HEAD", f.Local(t)+"\n")
-		}, synccmd.TrunkSkipOperation},
-		{"rebase stopped on trunk", func(t *testing.T, f *synccmdtest.TrunkFixture, _ *synccmd.TrunkSyncOptions) {
+		}, syncrun.TrunkSkipOperation},
+		{"rebase stopped on trunk", func(t *testing.T, f *synccmdtest.TrunkFixture, _ *syncrun.TrunkSyncOptions) {
 			testkit.GitIn(t, f.Main, "-c", "sequence.editor=perl -pi -e s/^pick/edit/", "rebase", "-q", "-i", "HEAD~1")
-		}, synccmd.TrunkSkipOperation},
-		{"bisect from trunk", func(t *testing.T, f *synccmdtest.TrunkFixture, _ *synccmd.TrunkSyncOptions) {
+		}, syncrun.TrunkSkipOperation},
+		{"bisect from trunk", func(t *testing.T, f *synccmdtest.TrunkFixture, _ *syncrun.TrunkSyncOptions) {
 			testkit.GitIn(t, f.Main, "bisect", "start")
 			testkit.GitIn(t, f.Main, "bisect", "bad")
-		}, synccmd.TrunkSkipOperation},
-		{"busy session", func(_ *testing.T, f *synccmdtest.TrunkFixture, o *synccmd.TrunkSyncOptions) {
+		}, syncrun.TrunkSkipOperation},
+		{"busy session", func(_ *testing.T, f *synccmdtest.TrunkFixture, o *syncrun.TrunkSyncOptions) {
 			o.Agents = func() ([]agents.Agent, error) {
 				return []agents.Agent{{Name: "s", Cwd: f.Main, Status: "busy"}}, nil
 			}
-		}, synccmd.TrunkSkipSession},
-		{"background session", func(_ *testing.T, f *synccmdtest.TrunkFixture, o *synccmd.TrunkSyncOptions) {
+		}, syncrun.TrunkSkipSession},
+		{"background session", func(_ *testing.T, f *synccmdtest.TrunkFixture, o *syncrun.TrunkSyncOptions) {
 			o.Agents = func() ([]agents.Agent, error) {
 				return []agents.Agent{{Name: "s", Cwd: f.Main, Status: "idle", Kind: "background"}}, nil
 			}
-		}, synccmd.TrunkSkipSession},
-		{"sessions unknown", func(_ *testing.T, _ *synccmdtest.TrunkFixture, o *synccmd.TrunkSyncOptions) {
+		}, syncrun.TrunkSkipSession},
+		{"sessions unknown", func(_ *testing.T, _ *synccmdtest.TrunkFixture, o *syncrun.TrunkSyncOptions) {
 			o.Agents = func() ([]agents.Agent, error) { return nil, os.ErrPermission }
-		}, synccmd.TrunkSkipSession},
+		}, syncrun.TrunkSkipSession},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -130,7 +130,7 @@ func TestTrunkSyncSkips(t *testing.T) {
 			o := ffOn()
 			c.setup(t, f, &o)
 
-			ts := synccmd.SyncLocalTrunk(f.Ctx, remote, o)
+			ts := syncrun.SyncLocalTrunk(f.Ctx, remote, o)
 
 			if ts.FastForwarded || reasonOf(ts) != c.want {
 				t.Fatalf("want skipped %s, got %+v (%s)", c.want, ts, reasonOf(ts))
@@ -151,14 +151,14 @@ func TestTrunkSyncNeverMovesALocalTrunkWithCommitsOfItsOwn(t *testing.T) {
 	testkit.GitIn(t, f.Main, "commit", "-q", "--allow-empty", "-m", "unpushed")
 	before := f.Local(t)
 
-	ts := synccmd.SyncLocalTrunk(f.Ctx, testkit.GitOut(t, f.Main, "rev-parse", "origin/main"), ffOn())
-	if reasonOf(ts) != synccmd.TrunkSkipAhead || *ts.LocalAhead != 1 || *ts.RemoteAhead != 0 {
+	ts := syncrun.SyncLocalTrunk(f.Ctx, testkit.GitOut(t, f.Main, "rev-parse", "origin/main"), ffOn())
+	if reasonOf(ts) != syncrun.TrunkSkipAhead || *ts.LocalAhead != 1 || *ts.RemoteAhead != 0 {
 		t.Fatalf("want ahead 1/0, got %+v (%s)", ts, reasonOf(ts))
 	}
 
 	remote := f.AdvanceOrigin(t, 2)
-	ts = synccmd.SyncLocalTrunk(f.Ctx, remote, ffOn())
-	if reasonOf(ts) != synccmd.TrunkSkipDiverged || *ts.LocalAhead != 1 || *ts.RemoteAhead != 2 {
+	ts = syncrun.SyncLocalTrunk(f.Ctx, remote, ffOn())
+	if reasonOf(ts) != syncrun.TrunkSkipDiverged || *ts.LocalAhead != 1 || *ts.RemoteAhead != 2 {
 		t.Fatalf("want diverged 1/2, got %+v (%s)", ts, reasonOf(ts))
 	}
 	if got := f.Local(t); got != before {
@@ -183,9 +183,9 @@ func TestTrunkSyncLosesTheRaceToAMovedTrunk(t *testing.T) {
 		moved = f.Local(t)
 	}
 
-	ts := synccmd.SyncLocalTrunk(f.Ctx, remote, o)
+	ts := syncrun.SyncLocalTrunk(f.Ctx, remote, o)
 
-	if ts.FastForwarded || reasonOf(ts) != synccmd.TrunkSkipNotFastForward {
+	if ts.FastForwarded || reasonOf(ts) != syncrun.TrunkSkipNotFastForward {
 		t.Fatalf("want notFastForward, got %+v (%s)", ts, reasonOf(ts))
 	}
 	if got := f.Local(t); got != moved {
@@ -202,9 +202,9 @@ func TestTrunkSyncMergeRefusedIsNotFastForward(t *testing.T) {
 	o := ffOn()
 	o.BeforeUpdate = func() { testkit.GitIn(t, f.Main, "commit", "-q", "--allow-empty", "-m", "raced") }
 
-	ts := synccmd.SyncLocalTrunk(f.Ctx, remote, o)
+	ts := syncrun.SyncLocalTrunk(f.Ctx, remote, o)
 
-	if ts.FastForwarded || reasonOf(ts) != synccmd.TrunkSkipNotFastForward {
+	if ts.FastForwarded || reasonOf(ts) != syncrun.TrunkSkipNotFastForward {
 		t.Fatalf("want notFastForward, got %+v (%s)", ts, reasonOf(ts))
 	}
 }
@@ -224,9 +224,9 @@ func TestTrunkSyncNeverOverwritesAnIgnoredFile(t *testing.T) {
 	testkit.GitIn(t, f.Main, "fetch", "-q", "origin")
 	before := f.Local(t)
 
-	ts := synccmd.SyncLocalTrunk(f.Ctx, testkit.GitOut(t, f.Main, "rev-parse", "origin/main"), ffOn())
+	ts := syncrun.SyncLocalTrunk(f.Ctx, testkit.GitOut(t, f.Main, "rev-parse", "origin/main"), ffOn())
 
-	if ts.FastForwarded || reasonOf(ts) != synccmd.TrunkSkipFailed {
+	if ts.FastForwarded || reasonOf(ts) != syncrun.TrunkSkipFailed {
 		t.Fatalf("want failed, got %+v (%s)", ts, reasonOf(ts))
 	}
 	if b, _ := os.ReadFile(filepath.Join(f.Main, "keep.txt")); string(b) != "mine\n" {
@@ -246,7 +246,7 @@ func TestTrunkSyncWithoutApplySaysWhatARunWouldDo(t *testing.T) {
 	o := ffOn()
 	o.Apply = false
 
-	ts := synccmd.SyncLocalTrunk(f.Ctx, remote, o)
+	ts := syncrun.SyncLocalTrunk(f.Ctx, remote, o)
 
 	if ts.FastForwarded || ts.SkippedReason != nil || *ts.RemoteAhead != 1 {
 		t.Fatalf("want would-fast-forward, got %+v (%s)", ts, reasonOf(ts))
@@ -261,7 +261,7 @@ func TestTrunkSyncWithNoLocalTrunkHasNothingToDo(t *testing.T) {
 	f := synccmdtest.NewTrunkFixture(t)
 	testkit.GitIn(t, f.Main, "switch", "-q", "-c", "elsewhere")
 	testkit.GitIn(t, f.Main, "branch", "-q", "-D", "main")
-	ts := synccmd.SyncLocalTrunk(f.Ctx, testkit.GitOut(t, f.Main, "rev-parse", "origin/main"), ffOn())
+	ts := syncrun.SyncLocalTrunk(f.Ctx, testkit.GitOut(t, f.Main, "rev-parse", "origin/main"), ffOn())
 	if ts.Local != nil || ts.LocalAhead != nil || ts.FastForwarded || ts.SkippedReason != nil {
 		t.Fatalf("want nothing to do, got %+v (%s)", ts, reasonOf(ts))
 	}
@@ -280,9 +280,9 @@ func TestTrunkSyncNeverMergesIntoAnotherBranch(t *testing.T) {
 	o := ffOn()
 	o.BeforeUpdate = func() { testkit.GitIn(t, f.Main, "switch", "-q", "-c", "switched") }
 
-	ts := synccmd.SyncLocalTrunk(f.Ctx, remote, o)
+	ts := syncrun.SyncLocalTrunk(f.Ctx, remote, o)
 
-	if ts.FastForwarded || reasonOf(ts) != synccmd.TrunkSkipNotFastForward {
+	if ts.FastForwarded || reasonOf(ts) != syncrun.TrunkSkipNotFastForward {
 		t.Fatalf("want notFastForward, got %+v (%s)", ts, reasonOf(ts))
 	}
 	if got := testkit.GitOut(t, f.Main, "rev-parse", "switched"); got != other {
@@ -301,9 +301,9 @@ func TestTrunkSyncLeavesTrunkCheckedOutSinceTheListing(t *testing.T) {
 	o := ffOn()
 	o.BeforeUpdate = func() { testkit.GitIn(t, f.Main, "switch", "-q", "main") }
 
-	ts := synccmd.SyncLocalTrunk(f.Ctx, remote, o)
+	ts := syncrun.SyncLocalTrunk(f.Ctx, remote, o)
 
-	if ts.FastForwarded || reasonOf(ts) != synccmd.TrunkSkipNotFastForward {
+	if ts.FastForwarded || reasonOf(ts) != syncrun.TrunkSkipNotFastForward {
 		t.Fatalf("want notFastForward, got %+v (%s)", ts, reasonOf(ts))
 	}
 	if got := f.Local(t); got != before {
@@ -321,9 +321,9 @@ func TestTrunkSyncRefusesTrunkCheckedOutTwice(t *testing.T) {
 	testkit.GitIn(t, f.Main, "worktree", "add", "-q", "-f", second, "main")
 	remote := f.AdvanceOrigin(t, 1)
 
-	ts := synccmd.SyncLocalTrunk(f.Ctx, remote, ffOn())
+	ts := syncrun.SyncLocalTrunk(f.Ctx, remote, ffOn())
 
-	if ts.FastForwarded || reasonOf(ts) != synccmd.TrunkSkipFailed || !strings.Contains(ts.Line(), "more than one") {
+	if ts.FastForwarded || reasonOf(ts) != syncrun.TrunkSkipFailed || !strings.Contains(ts.Line(), "more than one") {
 		t.Fatalf("want failed, checked out twice; got %+v (%s) %q", ts, reasonOf(ts), ts.Line())
 	}
 	if got := f.Local(t); got != before {
@@ -340,7 +340,7 @@ func TestTrunkSyncSeesUntrackedFilesStatusHides(t *testing.T) {
 	testkit.WriteIn(t, f.Main, "scratch.txt", "mine\n")
 	remote := f.AdvanceOrigin(t, 1)
 
-	if ts := synccmd.SyncLocalTrunk(f.Ctx, remote, ffOn()); reasonOf(ts) != synccmd.TrunkSkipDirty {
+	if ts := syncrun.SyncLocalTrunk(f.Ctx, remote, ffOn()); reasonOf(ts) != syncrun.TrunkSkipDirty {
 		t.Fatalf("want dirty, got %+v (%s)", ts, reasonOf(ts))
 	}
 }
@@ -356,7 +356,7 @@ func TestTrunkSyncFastForwardsUnderAnIdleSession(t *testing.T) {
 		return []agents.Agent{{Name: "s", Cwd: f.Main, Status: "idle"}}, nil
 	}
 
-	ts := synccmd.SyncLocalTrunk(f.Ctx, remote, o)
+	ts := syncrun.SyncLocalTrunk(f.Ctx, remote, o)
 
 	if !ts.FastForwarded || f.Local(t) != remote {
 		t.Fatalf("want fast-forwarded under an idle session, got %+v (%s)", ts, reasonOf(ts))

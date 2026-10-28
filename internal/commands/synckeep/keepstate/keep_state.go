@@ -1,4 +1,4 @@
-package synccmd
+package keepstate
 
 import (
 	"encoding/json"
@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -68,8 +69,8 @@ type UnpushedTarget struct {
 }
 
 // Target is the push target the work names.
-func (u UnpushedTarget) Target() PushTarget {
-	return PushTarget{Work: u.Work, Branch: u.Branch, Path: u.Path}
+func (u UnpushedTarget) Target() syncrun.PushTarget {
+	return syncrun.PushTarget{Work: u.Work, Branch: u.Branch, Path: u.Path}
 }
 
 // FmtEvery is an interval as a person writes it: 30m, 1h, 1h30m.
@@ -227,9 +228,9 @@ func (st KeepState) problemSince(now time.Time) string {
 	return ", problem since " + KeepClock(st.ProblemAt, now)
 }
 
-// keptLine is the wt sync table's line for a kept repository, or "" when
+// KeptLine is the wt sync table's line for a kept repository, or "" when
 // nothing has ever kept it.
-func keptLine(ctx *kit.Context, now time.Time) string {
+func KeptLine(ctx *kit.Context, now time.Time) string {
 	k, err := Keeper(ctx, false)
 	if err != nil || !k.Kept {
 		return ""
@@ -250,10 +251,10 @@ func keptLine(ctx *kit.Context, now time.Time) string {
 	return "kept at " + KeepClock(st.LastRun, now) + tail
 }
 
-// keeperCheck is the doctor's row: whether a keeper is installed, how its
+// KeeperCheck is the doctor's row: whether a keeper is installed, how its
 // last pass went, and where the log is. A problem no clean pass has cleared
 // is the one warning.
-func keeperCheck(ctx *kit.Context, now time.Time) wtsync.Check {
+func KeeperCheck(ctx *kit.Context, now time.Time) wtsync.Check {
 	k, err := Keeper(ctx, true)
 	if err != nil {
 		return wtsync.Check{Name: "keeper", OK: false, Detail: err.Error()}

@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 )
 
 func TestConfirmPushDefaultsToNo(t *testing.T) {
@@ -97,14 +97,14 @@ func TestSyncVerbFlagsRefuseAFlagWithoutItsVerb(t *testing.T) {
 	}{
 		{syncVerbFlags{}, ""},
 		{syncVerbFlags{noFetch: true}, ""},
-		{syncVerbFlags{rebase: true, yes: true, noFetch: true, push: synccmd.PushAlways}, ""},
-		{syncVerbFlags{resume: true, yes: true, push: synccmd.PushNever}, ""},
+		{syncVerbFlags{rebase: true, yes: true, noFetch: true, push: syncrun.PushAlways}, ""},
+		{syncVerbFlags{resume: true, yes: true, push: syncrun.PushNever}, ""},
 		{syncVerbFlags{undo: true, yes: true, force: true}, ""},
 		{syncVerbFlags{rebase: true, undo: true, force: true}, "--rebase and --undo cannot both be given"},
-		{syncVerbFlags{push: synccmd.PushAlways}, "--push needs --rebase or --resume"},
-		{syncVerbFlags{undo: true, push: synccmd.PushAlways}, "--push needs --rebase or --resume"},
-		{syncVerbFlags{push: synccmd.PushNever}, "--no-push needs --rebase or --resume"},
-		{syncVerbFlags{undo: true, push: synccmd.PushNever}, "--no-push needs --rebase or --resume"},
+		{syncVerbFlags{push: syncrun.PushAlways}, "--push needs --rebase or --resume"},
+		{syncVerbFlags{undo: true, push: syncrun.PushAlways}, "--push needs --rebase or --resume"},
+		{syncVerbFlags{push: syncrun.PushNever}, "--no-push needs --rebase or --resume"},
+		{syncVerbFlags{undo: true, push: syncrun.PushNever}, "--no-push needs --rebase or --resume"},
 		{syncVerbFlags{force: true}, "--force needs --rebase or --undo"},
 		{syncVerbFlags{noFFTrunk: true}, "--no-ff-trunk needs --rebase"},
 		{syncVerbFlags{resume: true, noFFTrunk: true}, "--no-ff-trunk needs --rebase"},
@@ -274,10 +274,10 @@ func TestRunOptionsAskNobodyAndRefuseBulkWithoutATerminal(t *testing.T) {
 	if yes.Confirm != nil || yes.ConfirmPush != nil || p != nil {
 		t.Error("--yes asks nothing")
 	}
-	if yes.Push != synccmd.PushAlways {
+	if yes.Push != syncrun.PushAlways {
 		t.Error("--yes is yes to the push too")
 	}
-	if held, _ := runOptions(cmd, syncVerbFlags{rebase: true, yes: true, push: synccmd.PushNever}, false); held.Push != synccmd.PushNever {
+	if held, _ := runOptions(cmd, syncVerbFlags{rebase: true, yes: true, push: syncrun.PushNever}, false); held.Push != syncrun.PushNever {
 		t.Error("--no-push keeps the push out, --yes or not")
 	}
 }
@@ -285,7 +285,7 @@ func TestRunOptionsAskNobodyAndRefuseBulkWithoutATerminal(t *testing.T) {
 // Where a branch that tracks another name pushes is a choice between the two
 // branches, never a default: Enter, a letter, or ^D leave it unpushed.
 func TestChoosePushNamesBothBranchesAndTakesOnlyANumber(t *testing.T) {
-	c := synccmd.PushChoice{Branch: "feat_wt/own_apikey", Upstream: "origin/own_apikey", Own: "origin/feat_wt/own_apikey"}
+	c := syncrun.PushChoice{Branch: "feat_wt/own_apikey", Upstream: "origin/own_apikey", Own: "origin/feat_wt/own_apikey"}
 	for in, want := range map[string]string{
 		"1\n": c.Upstream, "2\n": c.Own, "\n": "", "y\n": "", "3\n": "", "origin/own_apikey\n": "", "": "",
 	} {

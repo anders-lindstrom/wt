@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 )
@@ -54,7 +55,7 @@ func TestOfferPushKeepsTheReportWhenANewTipCannotBeRead(t *testing.T) {
 	failGit(t, "rev-parse --verify feat_wt/bump")
 
 	var out bytes.Buffer
-	_, failed, err := OfferPush(ctx, &out, PushAlways, PushOptions{}, []PushTarget{{Work: "bump", Branch: "feat_wt/bump", Path: bump}})
+	_, failed, err := syncrun.OfferPush(ctx, &out, syncrun.PushAlways, syncrun.PushOptions{}, []syncrun.PushTarget{{Work: "bump", Branch: "feat_wt/bump", Path: bump}})
 	if err != nil {
 		t.Fatalf("a tip that could not be read ended the run: %v\n%s", err, out.String())
 	}

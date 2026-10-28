@@ -7,6 +7,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
@@ -32,7 +33,7 @@ func TestUpFastForwardsLocalTrunkAfterItsFetch(t *testing.T) {
 	if ts == nil || !ts.FastForwarded || ts.SkippedReason != nil || *ts.Local != remote || *ts.RemoteAhead != 2 {
 		t.Fatalf("trunkSync = %+v", ts)
 	}
-	if len(r.Worktrees) != 1 || r.Worktrees[0].Result != synccmd.ResultRebased {
+	if len(r.Worktrees) != 1 || r.Worktrees[0].Result != syncrun.ResultRebased {
 		t.Fatalf("worktrees = %+v, want x rebased", r.Worktrees)
 	}
 }
@@ -97,7 +98,7 @@ func TestUpOptedOutLeavesLocalTrunk(t *testing.T) {
 			if err != nil {
 				t.Fatalf("up: %v", err)
 			}
-			if r.TrunkSync == nil || r.TrunkSync.SkippedReason == nil || *r.TrunkSync.SkippedReason != synccmd.TrunkSkipOptedOut {
+			if r.TrunkSync == nil || r.TrunkSync.SkippedReason == nil || *r.TrunkSync.SkippedReason != syncrun.TrunkSkipOptedOut {
 				t.Fatalf("trunkSync = %+v, want optedOut", r.TrunkSync)
 			}
 			if got := f.Local(t); got != before {
@@ -124,10 +125,10 @@ func TestSyncRunReportsASkippedTrunkAndStillRebases(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sync rebase: %v", err)
 	}
-	if r.TrunkSync == nil || r.TrunkSync.SkippedReason == nil || *r.TrunkSync.SkippedReason != synccmd.TrunkSkipDiverged {
+	if r.TrunkSync == nil || r.TrunkSync.SkippedReason == nil || *r.TrunkSync.SkippedReason != syncrun.TrunkSkipDiverged {
 		t.Fatalf("trunkSync = %+v, want diverged", r.TrunkSync)
 	}
-	if len(r.Worktrees) != 1 || r.Worktrees[0].Result != synccmd.ResultRebased {
+	if len(r.Worktrees) != 1 || r.Worktrees[0].Result != syncrun.ResultRebased {
 		t.Fatalf("worktrees = %+v, want x rebased", *r.Worktrees[0])
 	}
 	if now := testkit.GitOut(t, f.Main, "rev-parse", "feat_wt/x"); now == x {
@@ -156,7 +157,7 @@ func TestStatusJSONSaysWhatARunWouldDoToLocalTrunk(t *testing.T) {
 		t.Fatalf("local main moved to %s", got)
 	}
 	testkit.WriteIn(t, f.Main, "scratch.txt", "mine\n")
-	if p = synccmdtest.PlanOfWork(t, f.Ctx, "x"); p.TrunkSync.SkippedReason == nil || *p.TrunkSync.SkippedReason != synccmd.TrunkSkipDirty {
+	if p = synccmdtest.PlanOfWork(t, f.Ctx, "x"); p.TrunkSync.SkippedReason == nil || *p.TrunkSync.SkippedReason != syncrun.TrunkSkipDirty {
 		t.Fatalf("trunkSync = %+v, want dirty", p.TrunkSync)
 	}
 }

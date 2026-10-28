@@ -12,8 +12,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
-	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
-	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
+	"github.com/anders-lindstrom/wt/internal/commands/synckeep/keepstate"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -36,7 +35,7 @@ func keepFleet(t *testing.T) (u *config.User, kept, fresh, undeclared *kit.Conte
 	home = t.TempDir()
 	t.Setenv("HOME", home)
 	calls = fakeLaunchctl(t)
-	synccmdtest.OnPlatform(t, "darwin")
+	onPlatform(t, "darwin")
 	var out bytes.Buffer
 	if err := Start(kept, keepStartOpts(time.Hour), &out); err != nil {
 		t.Fatalf("start: %v\n%s", err, out.String())
@@ -80,7 +79,7 @@ func keepRowFor(t *testing.T, out string, ctx *kit.Context) string {
 // sync, asks once, and a second start has nothing to do.
 func TestSyncKeepStartAllInstallsWhatIsMissing(t *testing.T) {
 	u, kept, fresh, undeclared, home, _ := keepFleet(t)
-	keptJob, err := synccmd.KeepJobFor(kept)
+	keptJob, err := keepstate.KeepJobFor(kept)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,11 +112,11 @@ func TestSyncKeepStartAllInstallsWhatIsMissing(t *testing.T) {
 	if body, _ := os.ReadFile(keptJob.PlistPath); !bytes.Equal(body, keptBody) {
 		t.Fatal("the existing job's plist was rewritten")
 	}
-	freshJob, _ := synccmd.KeepJobFor(fresh)
+	freshJob, _ := keepstate.KeepJobFor(fresh)
 	if body, err := os.ReadFile(freshJob.PlistPath); err != nil || !strings.Contains(string(body), "<integer>1800</integer>") {
 		t.Fatalf("fresh plist: %v\n%s", err, body)
 	}
-	if st := synccmdtest.ReadKeep(t, fresh); st.Job != freshJob.Label || st.Interval != "30m" {
+	if st := readKeep(t, fresh); st.Job != freshJob.Label || st.Interval != "30m" {
 		t.Fatalf("fresh state %+v", st)
 	}
 
@@ -205,7 +204,7 @@ func TestSyncKeepStopAndStatusAll(t *testing.T) {
 		t.Fatalf("stop: %v\n%s", err, out.String())
 	}
 	s = out.String()
-	job, _ := synccmd.KeepJobFor(kept)
+	job, _ := keepstate.KeepJobFor(kept)
 	if row := keepRowFor(t, s, kept); !strings.HasSuffix(row, "stopped; removed "+job.PlistPath) {
 		t.Errorf("row %q", row)
 	}
@@ -217,7 +216,7 @@ func TestSyncKeepStopAndStatusAll(t *testing.T) {
 	if !strings.HasSuffix(s, "Stopped a keeper in 1 repository; the logs stay.\n") {
 		t.Errorf("stop:\n%s", s)
 	}
-	if len(plistsIn(t, home)) != 0 || synccmd.Launchctl.Loaded(job.Label) {
+	if len(plistsIn(t, home)) != 0 || keepstate.Launchctl.Loaded(job.Label) {
 		t.Fatal("the job is still there")
 	}
 	out.Reset()
@@ -244,14 +243,14 @@ func TestSyncKeepStartAllReportsARepositoryItCannotOpen(t *testing.T) {
 	if row := keepRowFor(t, out.String(), &kit.Context{Repo: &repo.Repo{MainRoot: gone}}); !strings.HasPrefix(row, "! ") || !strings.HasSuffix(row, "  not there any more") {
 		t.Errorf("output:\n%s", out.String())
 	}
-	if _, err := os.Stat(func() string { j, _ := synccmd.KeepJobFor(fresh); return j.PlistPath }()); err != nil {
+	if _, err := os.Stat(func() string { j, _ := keepstate.KeepJobFor(fresh); return j.PlistPath }()); err != nil {
 		t.Fatal("the rest were not installed")
 	}
 }
 
 // Off macOS, start and stop across repositories say so before anything.
 func TestSyncKeepStartAndStopAllAreRefusedWithoutLaunchd(t *testing.T) {
-	synccmdtest.OnPlatform(t, "linux")
+	onPlatform(t, "linux")
 	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{t.TempDir()}}}}
 	var out bytes.Buffer
 	if err := StartAll(u, kit.Selection{Profiles: []string{"p"}}, KeepStartAllOptions{Yes: true}, &out); !errors.Is(err, ErrNoLaunchd) {

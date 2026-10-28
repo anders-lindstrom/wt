@@ -1,5 +1,6 @@
 // Package synckeep implements wt sync keep: a launchd job that keeps trunk
-// and the worktrees current, its runs, and their state.
+// and the worktrees current, and its runs. The state file, lock and job they
+// share with wt sync and its doctor are in keepstate.
 package synckeep
 
 import (
@@ -18,25 +19,27 @@ import (
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
+	"github.com/anders-lindstrom/wt/internal/commands/synckeep/keepstate"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/git"
 )
 
 // KeepOptions tunes Run for callers and tests.
 type KeepOptions struct {
 	// Every is the job's interval, for the next-run line. Zero keeps what
-	// the state file records, or synccmd.KeepDefaultInterval.
+	// the state file records, or keepstate.KeepDefaultInterval.
 	Every time.Duration
-	// Push is synccmd.PushAlways or synccmd.PushNever: a keeper has nobody to ask.
-	Push synccmd.PushMode
+	// Push is syncrun.PushAlways or syncrun.PushNever: a keeper has nobody to ask.
+	Push syncrun.PushMode
 	// NoFFTrunk leaves local trunk where it is after the fetch, as the user
 	// setting ff_trunk false does.
 	NoFFTrunk bool
-	synccmd.VerbOptions
+	syncrun.VerbOptions
 }
 
 // writeKeepState writes the state file whole, through a rename, so a reader
 // never sees half of it.
-func writeKeepState(path string, st synccmd.KeepState) error {
+func writeKeepState(path string, st keepstate.KeepState) error {
 	data, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
 		return err
@@ -64,7 +67,7 @@ func unsignCommits() {
 // on a first pass. held is true when another pass has it; the file is
 // returned open, and closing it releases the lock.
 func acquireKeepLock(gitDir string) (f *os.File, held bool, err error) {
-	return synccmd.TryKeepLock(gitDir, os.O_CREATE)
+	return keepstate.TryKeepLock(gitDir, os.O_CREATE)
 }
 
 // Run is one unattended pass of the keeper: fetch trunk, and when
@@ -74,12 +77,12 @@ func acquireKeepLock(gitDir string) (f *os.File, held bool, err error) {
 // log, as it happens, and in the state file. The error is what synccmd.SyncRebase's
 // would be.
 func Run(ctx *kit.Context, opts KeepOptions, w io.Writer) error {
-	gitDir, logPath, statePath, err := synccmd.KeepPaths(ctx)
+	gitDir, logPath, statePath, err := keepstate.KeepPaths(ctx)
 	if err != nil {
 		return err
 	}
 	now := opts.Clock()
-	st, _, err := synccmd.ReadKeepState(statePath)
+	st, _, err := keepstate.ReadKeepState(statePath)
 	if err != nil {
 		return err
 	}
@@ -89,9 +92,9 @@ func Run(ctx *kit.Context, opts KeepOptions, w io.Writer) error {
 	}
 	if held {
 		if st.PID == 0 {
-			return fmt.Errorf("a keeper pass is already running (it holds %s); nothing rebased", filepath.Join(gitDir, synccmd.KeepLockName))
+			return fmt.Errorf("a keeper pass is already running (it holds %s); nothing rebased", filepath.Join(gitDir, keepstate.KeepLockName))
 		}
-		return fmt.Errorf("a keeper pass is already running (pid %d since %s); nothing rebased", st.PID, synccmd.KeepClock(st.Started, now))
+		return fmt.Errorf("a keeper pass is already running (pid %d since %s); nothing rebased", st.PID, keepstate.KeepClock(st.Started, now))
 	}
 	defer lock.Close()
 	pass := keepPass{ctx: ctx, opts: opts, w: w, now: now, logPath: logPath, prev: st.Unpushed}
@@ -101,9 +104,9 @@ func Run(ctx *kit.Context, opts KeepOptions, w io.Writer) error {
 	pass.unwatch = kit.WatchSignals(w, nil)
 	defer func() { pass.unwatch() }()
 	if opts.Every > 0 {
-		st.Interval = synccmd.FmtEvery(opts.Every)
+		st.Interval = keepstate.FmtEvery(opts.Every)
 	} else if st.Interval == "" {
-		st.Interval = synccmd.FmtEvery(synccmd.KeepDefaultInterval)
+		st.Interval = keepstate.FmtEvery(keepstate.KeepDefaultInterval)
 	}
 	// The pid is a diagnostic for the status; the lock is what keeps passes
 	// apart.
@@ -154,7 +157,7 @@ type keepPass struct {
 	// prev is what earlier passes left unpushed; unpushed is what this one
 	// leaves. ranRun says the run itself happened, acted that the run or a
 	// retried push did: a pass that found nothing to do has done nothing.
-	prev, unpushed []synccmd.UnpushedTarget
+	prev, unpushed []keepstate.UnpushedTarget
 	ranRun, acted  bool
 }
 
@@ -179,10 +182,10 @@ func (p *keepPass) run(recorded string) error {
 	return err
 }
 
-// openLog rotates the log once it is past synccmd.KeepLogLimit (the file becomes
+// openLog rotates the log once it is past keepstate.KeepLogLimit (the file becomes
 // .1, replacing the previous .1) and opens it for this pass.
 func (p *keepPass) openLog() error {
-	if info, err := os.Stat(p.logPath); err == nil && info.Size() > synccmd.KeepLogLimit {
+	if info, err := os.Stat(p.logPath); err == nil && info.Size() > keepstate.KeepLogLimit {
 		if err := os.Rename(p.logPath, p.logPath+".1"); err != nil {
 			return err
 		}
@@ -243,7 +246,7 @@ func (p *keepPass) pass(recorded string) error {
 	p.after = p.before
 	// Trunk, and the own remote of every worktree's branch: a pass takes
 	// every ready one.
-	own, err := synccmd.FetchRemotes(ctx, kit.NetworkTimeout, synccmd.OwnCandidates(ctx, nil))
+	own, err := syncrun.FetchRemotes(ctx, kit.NetworkTimeout, syncrun.OwnCandidates(ctx, nil))
 	if err != nil {
 		p.header(p.onto)
 		p.result = "failed: fetch: " + kit.FetchReason(err)
@@ -258,7 +261,7 @@ func (p *keepPass) pass(recorded string) error {
 	p.after = after
 	// Local trunk follows every fetch, whether or not trunk moved since the
 	// last pass: one that was held back then may go now.
-	trunkLine := synccmd.SyncLocalTrunk(ctx, after, synccmd.TrunkSyncOptions{Apply: true,
+	trunkLine := syncrun.SyncLocalTrunk(ctx, after, syncrun.TrunkSyncOptions{Apply: true,
 		OptedOut: p.opts.NoFFTrunk || !ctx.UserConfig().FFTrunk,
 		Agents:   p.agents}).Line()
 	noteTrunk := func() {
@@ -284,13 +287,13 @@ func (p *keepPass) pass(recorded string) error {
 	var rerr error
 	if after == recorded {
 		p.header(fmt.Sprintf("%s %s unchanged", p.onto, git.ShortID(after, 7)))
-		fmt.Fprintf(p.w, "wt sync keep once  %s %s unchanged; %s to retry\n", p.onto, git.ShortID(after, 7), kit.Count(len(retry), "push"))
+		fmt.Fprintf(p.w, "wt sync keep once  %s %s unchanged; %s to retry\n", p.onto, git.ShortID(after, 7), kit.Count(len(retry), "push", "pushes"))
 		noteTrunk()
 	} else {
 		p.header(fmt.Sprintf("%s %s → %s", p.onto, git.ShortID(p.before, 7), git.ShortID(after, 7)))
 		fmt.Fprintf(p.w, "wt sync keep once  %s %s → %s (fetched)\n", p.onto, git.ShortID(p.before, 7), git.ShortID(after, 7))
 		noteTrunk()
-		ropts := synccmd.RunOptions{NoFetch: true, Unattended: true, Own: own, VerbOptions: p.opts.VerbOptions, PushOptions: synccmd.PushOptions{Push: p.opts.Push}}
+		ropts := synccmd.RunOptions{NoFetch: true, Unattended: true, Own: own, VerbOptions: p.opts.VerbOptions, PushOptions: syncrun.PushOptions{Push: p.opts.Push}}
 		ropts.Confirm = nil
 		// An unattended pass has to know who is in a worktree: no claude to
 		// ask is not nobody there, it is not knowing, and nothing moves.
@@ -314,14 +317,14 @@ func (p *keepPass) pass(recorded string) error {
 	}
 	// A branch this run rebased again is pushed as this run's, not as an
 	// earlier pass's; the rest of what was left unpushed is offered again.
-	retry = slices.DeleteFunc(retry, func(u synccmd.UnpushedTarget) bool {
-		return slices.ContainsFunc(r.Pushable, func(t synccmd.PushTarget) bool { return t.Work == u.Work })
+	retry = slices.DeleteFunc(retry, func(u keepstate.UnpushedTarget) bool {
+		return slices.ContainsFunc(r.Pushable, func(t syncrun.PushTarget) bool { return t.Work == u.Work })
 	})
-	targets := make([]synccmd.PushTarget, len(retry))
+	targets := make([]syncrun.PushTarget, len(retry))
 	for i, u := range retry {
 		targets[i] = u.Target()
 	}
-	retried, failed, perr := synccmd.OfferPush(ctx, w, p.opts.Push, synccmd.PushOptions{}, targets)
+	retried, failed, perr := syncrun.OfferPush(ctx, w, p.opts.Push, syncrun.PushOptions{}, targets)
 	if perr != nil {
 		rerr = perr
 	}
@@ -330,7 +333,7 @@ func (p *keepPass) pass(recorded string) error {
 	for _, t := range r.Pushable {
 		if !contains(r.Pushed, t.Work) {
 			tip, _ := git.Run(t.Path, "rev-parse", "HEAD")
-			p.unpushed = append(p.unpushed, synccmd.UnpushedTarget{Work: t.Work, Branch: t.Branch, Path: t.Path, Tip: tip})
+			p.unpushed = append(p.unpushed, keepstate.UnpushedTarget{Work: t.Work, Branch: t.Branch, Path: t.Path, Tip: tip})
 		}
 	}
 	for _, u := range retry {
@@ -339,12 +342,12 @@ func (p *keepPass) pass(recorded string) error {
 		}
 	}
 	// A push that did not come off is named with the command that does it
-	// by hand, in the log too; --no-push has synccmd.OfferPush print it already.
-	if p.opts.Push == synccmd.PushAlways {
+	// by hand, in the log too; --no-push has syncrun.OfferPush print it already.
+	if p.opts.Push == syncrun.PushAlways {
 		for _, u := range p.unpushed {
 			// One with nowhere to push has been named with why already.
-			if to := synccmd.PushOf(ctx, u.Target()); to.Remote != "" {
-				fmt.Fprintln(w, synccmd.PushLine(u.Target(), to))
+			if to := syncrun.PushOf(ctx, u.Target()); to.Remote != "" {
+				fmt.Fprintln(w, syncrun.PushLine(u.Target(), to))
 			}
 		}
 	}
@@ -413,8 +416,8 @@ func (iw *indentWriter) Write(p []byte) (int, error) {
 // the branch is at the tip the pass left it at, and origin does not have
 // that tip. A branch that moved, or a worktree that is gone, is somebody's
 // now; one origin already holds was pushed by hand.
-func stillUnpushed(mainRoot string, prev []synccmd.UnpushedTarget) []synccmd.UnpushedTarget {
-	var still []synccmd.UnpushedTarget
+func stillUnpushed(mainRoot string, prev []keepstate.UnpushedTarget) []keepstate.UnpushedTarget {
+	var still []keepstate.UnpushedTarget
 	for _, u := range prev {
 		head, err := git.Run(u.Path, "rev-parse", "--verify", "refs/heads/"+u.Branch)
 		if err != nil || head != u.Tip {
@@ -463,7 +466,7 @@ func contains(items []string, s string) bool {
 // Status prints whether a keeper is installed, its interval, what
 // the last pass did and when the next one is.
 func Status(ctx *kit.Context, now time.Time, w io.Writer) error {
-	k, err := synccmd.Keeper(ctx, true)
+	k, err := keepstate.Keeper(ctx, true)
 	if err != nil {
 		return err
 	}
@@ -471,7 +474,7 @@ func Status(ctx *kit.Context, now time.Time, w io.Writer) error {
 	case !k.Launchd:
 		fmt.Fprintln(w, "keeper   no launchd on this platform; run wt sync keep once from cron")
 	case k.Installed && k.Loaded:
-		fmt.Fprintf(w, "keeper   installed, every %s, loaded · %s\n", synccmd.FmtEvery(k.St.IntervalOrDefault()), k.PlistPath)
+		fmt.Fprintf(w, "keeper   installed, every %s, loaded · %s\n", keepstate.FmtEvery(k.St.IntervalOrDefault()), k.PlistPath)
 	case k.Installed:
 		fmt.Fprintf(w, "keeper   installed but not loaded · %s · wt sync keep stop, then start\n", k.PlistPath)
 	case k.Loaded:
@@ -486,19 +489,19 @@ func Status(ctx *kit.Context, now time.Time, w io.Writer) error {
 	// the running one, or the interrupted one, was.
 	switch {
 	case k.Running && st.PID != 0:
-		fmt.Fprintf(w, "pass     running, pid %d since %s\n", st.PID, synccmd.KeepClock(st.Started, now))
+		fmt.Fprintf(w, "pass     running, pid %d since %s\n", st.PID, keepstate.KeepClock(st.Started, now))
 	case k.Running:
 		fmt.Fprintln(w, "pass     running")
 	case st.PID != 0:
-		fmt.Fprintf(w, "pass     interrupted at %s (pid %d); the next one goes ahead\n", synccmd.KeepClock(st.Started, now), st.PID)
+		fmt.Fprintf(w, "pass     interrupted at %s (pid %d); the next one goes ahead\n", keepstate.KeepClock(st.Started, now), st.PID)
 	}
 	if st.LastRun.IsZero() {
 		fmt.Fprintln(w, "last     never")
 	} else {
-		fmt.Fprintf(w, "last     %s  %s\n", synccmd.KeepClock(st.LastRun, now), st.Result)
+		fmt.Fprintf(w, "last     %s  %s\n", keepstate.KeepClock(st.LastRun, now), st.Result)
 	}
 	if st.Problem != "" {
-		fmt.Fprintf(w, "problem  since %s: %s\n", synccmd.KeepClock(st.ProblemAt, now), st.Problem)
+		fmt.Fprintf(w, "problem  since %s: %s\n", keepstate.KeepClock(st.ProblemAt, now), st.Problem)
 	}
 	if works := st.UnpushedWorks(); works != "" {
 		fmt.Fprintf(w, "unpushed %s\n", works)
@@ -508,7 +511,7 @@ func Status(ctx *kit.Context, now time.Time, w io.Writer) error {
 		if now.After(st.NextRun.Add(st.IntervalOrDefault())) {
 			overdue = " (overdue)"
 		}
-		fmt.Fprintf(w, "next     %s%s\n", synccmd.KeepClock(st.NextRun, now), overdue)
+		fmt.Fprintf(w, "next     %s%s\n", keepstate.KeepClock(st.NextRun, now), overdue)
 	}
 	if k.Kept {
 		fmt.Fprintf(w, "log      %s\n", k.LogPath)

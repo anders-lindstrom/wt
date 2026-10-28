@@ -8,8 +8,8 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
-	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -29,7 +29,7 @@ func TestSyncRunJSONReportsTheSafetyRefDeferredStepsAndUndo(t *testing.T) {
 		t.Fatalf("%v %+v", err, r)
 	}
 	p := r.Worktrees[0]
-	if p.Result != synccmd.ResultRebased || p.Before == nil || *p.Before != old || p.After == nil || *p.After != testkit.GitOut(t, bump, "rev-parse", "HEAD") {
+	if p.Result != syncrun.ResultRebased || p.Before == nil || *p.Before != old || p.After == nil || *p.After != testkit.GitOut(t, bump, "rev-parse", "HEAD") {
 		t.Errorf("participant %+v", p)
 	}
 	if p.SafetyRef == nil || *p.SafetyRef != wtsync.SafetyRef("feat_wt/bump", 99) {
@@ -38,7 +38,7 @@ func TestSyncRunJSONReportsTheSafetyRefDeferredStepsAndUndo(t *testing.T) {
 	if !slices.Equal(p.UndoCommand, []string{"wt", "sync", "undo", "bump"}) {
 		t.Errorf("undo %q", p.UndoCommand)
 	}
-	if len(p.Deferred) != 1 || p.Deferred[0].Step != "cp v.txt gen.txt" || p.Deferred[0].Result != synccmd.DeferredCommitted ||
+	if len(p.Deferred) != 1 || p.Deferred[0].Step != "cp v.txt gen.txt" || p.Deferred[0].Result != syncrun.DeferredCommitted ||
 		p.Deferred[0].Commit == nil {
 		t.Errorf("deferred %+v", p.Deferred)
 	}
@@ -89,7 +89,7 @@ func TestSyncRunJSONReportsAHandover(t *testing.T) {
 	}
 	p := r.Worktrees[0]
 	gitDir, _ := wtsync.GitDir(bump)
-	if p.Result != synccmd.ResultHandedOver || p.PlanFile == nil || *p.PlanFile != wtsync.PlanPath(gitDir) ||
+	if p.Result != syncrun.ResultHandedOver || p.PlanFile == nil || *p.PlanFile != wtsync.PlanPath(gitDir) ||
 		p.SafetyRef == nil || p.Recovery == nil || !slices.Equal(p.UndoCommand, []string{"wt", "sync", "undo", "bump"}) {
 		t.Errorf("participant %+v", p)
 	}
@@ -117,14 +117,14 @@ func TestSyncRunJSONSaysWhenNobodyConfirmed(t *testing.T) {
 func TestJournalAsksWhatASignalCaughtChanged(t *testing.T) {
 	t.Parallel()
 	var out bytes.Buffer
-	j := synccmd.NewSyncRunJournal(&out, "sync undo")
+	j := syncrun.NewSyncRunJournal(&out, "sync undo")
 	j.Join("one", "feat_wt/one", "/w/one", strings.Repeat("1", 40), nil)
 	j.Join("two", "feat_wt/two", "/w/two", strings.Repeat("2", 40), nil)
-	j.OnSignal(func(p *synccmd.SyncParticipant) bool { return p.Branch == "feat_wt/one" })
+	j.OnSignal(func(p *syncrun.SyncParticipant) bool { return p.Branch == "feat_wt/one" })
 	j.Interrupted("", "interrupted")
 	r := synccmdtest.DecodeSyncRun(t, out.Bytes())
-	if r.Outcome != kit.OutcomeInterrupted || r.Worktrees[0].Result != synccmd.ResultInterrupted || r.Worktrees[0].Recovery == nil ||
-		r.Worktrees[1].Result != synccmd.ResultNotRun {
+	if r.Outcome != kit.OutcomeInterrupted || r.Worktrees[0].Result != syncrun.ResultInterrupted || r.Worktrees[0].Recovery == nil ||
+		r.Worktrees[1].Result != syncrun.ResultNotRun {
 		t.Errorf("%+v %+v", r.Worktrees[0], r.Worktrees[1])
 	}
 }

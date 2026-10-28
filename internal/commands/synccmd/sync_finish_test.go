@@ -6,6 +6,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -30,9 +31,9 @@ func TestCompleteRunBuildsItsInputUnderTheRebasedTracker(t *testing.T) {
 	tracker := &kit.RebaseTracker{}
 	var atBuild *kit.RebaseInFlight
 	var out bytes.Buffer
-	head, owed, err := CompleteRun(ctx, &out, cfg, tracker, "bump", bump, func() CompleteInput {
+	head, owed, err := syncrun.CompleteRun(ctx, &out, cfg, tracker, "bump", bump, func() syncrun.CompleteInput {
 		atBuild = tracker.Get()
-		return CompleteInput{Branch: branch, Epoch: 7, Res: res, TrunkName: "main", Landed: 1}
+		return syncrun.CompleteInput{Branch: branch, Epoch: 7, Res: res, TrunkName: "main", Landed: 1}
 	})
 	if err != nil || len(owed) != 0 {
 		t.Fatalf("owed %v err %v\n%s", owed, err, out.String())
