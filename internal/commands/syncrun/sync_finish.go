@@ -1,12 +1,13 @@
-package synccmd
+package syncrun
 
 import (
 	"fmt"
 	"io"
+	"strings"
+	"time"
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -112,7 +113,7 @@ func HandOver(ctx *kit.Context, w io.Writer, in HandoverInput) error {
 		Stop: in.Res.Left.Index, Total: in.Res.Left.Total,
 		Resolved: in.Res.Left.Staged, Strategy: map[string]string{}, Lifted: map[string]string{},
 		Deleted: in.Res.Left.Deleted, Left: in.Res.Left.Left,
-		Stopped: syncrun.PathsOnce(in.Earlier, wtsync.StopPaths(in.Res.Stops)),
+		Stopped: PathsOnce(in.Earlier, wtsync.StopPaths(in.Res.Stops)),
 	}
 	if in.Found != "" && in.Found != in.Res.OldTip {
 		st.Found = in.Found
@@ -176,7 +177,7 @@ func CompleteRun(ctx *kit.Context, w io.Writer, cfg *wtsync.Config, t *kit.Rebas
 	in := build()
 	// Only ever called once a rebase has finished, so the files moved under
 	// the idle sessions however this returns.
-	defer syncrun.TellIdle(w, in.Tell, wtsync.RebasedLine(work, in.TrunkName, in.Landed, in.Check))
+	defer TellIdle(w, in.Tell, wtsync.RebasedLine(work, in.TrunkName, in.Landed, in.Check))
 	// w, not nil: RunDeferred announces each step as it starts, so a long
 	// one is not silence until printDeferred reports the result.
 	ran, err = wtsync.RunDeferred(path, cfg.Defer, in.Res.OldTip, in.Res.NewTip, w)
@@ -216,17 +217,17 @@ func OwedSteps(ran []wtsync.DeferredResult) []string {
 }
 
 // DeferredSteps is what each deferred step came to, for --json.
-func DeferredSteps(ran []wtsync.DeferredResult) []syncrun.DeferredStep {
-	steps := []syncrun.DeferredStep{}
+func DeferredSteps(ran []wtsync.DeferredResult) []DeferredStep {
+	steps := []DeferredStep{}
 	for _, d := range ran {
-		s := syncrun.DeferredStep{Step: d.Step.Run, Result: syncrun.DeferredDone}
+		s := DeferredStep{Step: d.Step.Run, Result: DeferredDone}
 		switch {
 		case !d.Ran:
-			s.Result, s.Reason = syncrun.DeferredSkipped, kit.Strp(d.Why)
+			s.Result, s.Reason = DeferredSkipped, kit.Strp(d.Why)
 		case d.Err != nil:
-			s.Result, s.Reason = syncrun.DeferredFailed, kit.Strp(kit.OneLine(d.Err.Error()))
+			s.Result, s.Reason = DeferredFailed, kit.Strp(kit.OneLine(d.Err.Error()))
 		case d.Commit != "":
-			s.Result, s.Commit = syncrun.DeferredCommitted, kit.Strp(d.Commit)
+			s.Result, s.Commit = DeferredCommitted, kit.Strp(d.Commit)
 		}
 		steps = append(steps, s)
 	}
@@ -269,4 +270,32 @@ func ClearHandover(w io.Writer, path string) {
 	if err != nil {
 		fmt.Fprintf(w, "  note: could not remove the plan file: %v\n", err)
 	}
+}
+
+func printDeferred(w io.Writer, d wtsync.DeferredResult) {
+	switch {
+	case !d.Ran:
+		fmt.Fprintf(w, "  ⏭ %s  %s\n", d.Step.Run, d.Why)
+	case d.Err != nil:
+		fmt.Fprintf(w, "  ✗ %s  %s  owed: %v\n", d.Step.Run, d.Elapsed.Round(time.Second), d.Err)
+		for _, l := range lastLines(d.Output, 20) {
+			fmt.Fprintf(w, "    %s\n", l)
+		}
+	case d.Commit != "":
+		fmt.Fprintf(w, "  ✓ %s  %s  committed %s (+%d −%d) as %s\n", d.Step.Run, d.Elapsed.Round(time.Second), kit.Count(d.Files, "file"), d.Insertions, d.Deletions, d.Commit)
+	default:
+		fmt.Fprintf(w, "  ✓ %s  %s\n", d.Step.Run, d.Elapsed.Round(time.Second))
+	}
+}
+
+func lastLines(s string, n int) []string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	lines := strings.Split(s, "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return lines
 }

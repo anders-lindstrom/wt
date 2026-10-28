@@ -7,7 +7,6 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -164,7 +163,7 @@ func recordUndone(j *syncrun.RunJournal, work string, r wtsync.Restored) {
 			// A forced undo pinned what it discarded as a run of its own,
 			// which undo takes back in turn.
 			p.Reason = kit.Strp(fmt.Sprintf("%s kept under %s", r.KeptTip, r.Kept))
-			p.UndoCommand = synccmd.UndoCommand(work)
+			p.UndoCommand = syncrun.UndoCommand(work)
 		}
 	})
 }

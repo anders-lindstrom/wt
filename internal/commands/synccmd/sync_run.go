@@ -7,7 +7,6 @@ import (
 	"io"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
@@ -887,20 +886,20 @@ func (r *RunPlan) rebaseOne(b string) {
 	// found is the tip the run found the branch at: the one the rebase
 	// starts from, unless the run fast-forwarded it first.
 	found := func(res wtsync.Result) string { return cmp.Or(p.found, res.OldTip) }
-	res, rerr := TrackedRebase(r.tracker, &kit.RebaseInFlight{Work: p.work, Path: p.wt.Path, Safety: wtsync.SafetyRef(b, r.epoch)}, func() (wtsync.Result, error) {
+	res, rerr := syncrun.TrackedRebase(r.tracker, &kit.RebaseInFlight{Work: p.work, Path: p.wt.Path, Safety: wtsync.SafetyRef(b, r.epoch)}, func() (wtsync.Result, error) {
 		return wtsync.Rebase(ctx.Repo.MainRoot, r.cfg, req, w)
 	})
 	p.result = &res
 	if rerr != nil {
 		fmt.Fprintf(w, "  ✗ failed: %v\n", rerr)
-		ClearHandover(w, p.wt.Path)
+		syncrun.ClearHandover(w, p.wt.Path)
 		r.recordFailed(b, p, rerr.Error(), found(res), res.Safety.Ref)
 		r.settle("failed", fmt.Sprintf("✗ %s  failed: %v", p.work, rerr), p.work+" (failed)")
 		r.refuseAbove(b, p.work+" failed")
 		return
 	}
 	if res.Left != nil {
-		herr := HandOver(ctx, w, HandoverInput{
+		herr := syncrun.HandOver(ctx, w, syncrun.HandoverInput{
 			Work: p.work, Branch: b, Path: p.wt.Path, TrunkRef: r.onto, TrunkSHA: r.trunkSHA,
 			Onto: req.Onto, Upstream: req.Upstream, Epoch: r.epoch, Cfg: r.cfg, Res: res, Lock: p.lock,
 			Found: p.found, Tracker: r.tracker,
@@ -913,7 +912,7 @@ func (r *RunPlan) rebaseOne(b string) {
 			// the sidecar is the marker and it was never written, so
 			// nothing acts on what is left, and a stale markdown would
 			// describe a stop that is not this one.
-			ClearHandover(w, p.wt.Path)
+			syncrun.ClearHandover(w, p.wt.Path)
 			// Not wt sync undo: it refuses a mid-rebase worktree, and
 			// there is no handover here for it to abort. The branch ref
 			// never moved, so the abort is the whole of putting it back.
@@ -934,7 +933,7 @@ func (r *RunPlan) rebaseOne(b string) {
 			jp.Result = syncrun.ResultHandedOver
 			jp.Reason = kit.Strp("stopped at a conflict that is yours")
 			jp.Recovery = kit.Strp(wtsync.WayOut(wtsync.Way{Work: p.work, Plan: true, Rebasing: true, OwesAdd: true}))
-			jp.SafetyRef, jp.UndoCommand, jp.PlanFile = kit.Strp(res.Safety.Ref), UndoCommand(p.work), PlanFileOf(p.wt.Path)
+			jp.SafetyRef, jp.UndoCommand, jp.PlanFile = kit.Strp(res.Safety.Ref), syncrun.UndoCommand(p.work), syncrun.PlanFileOf(p.wt.Path)
 		})
 		r.settle("needs you", "⚠ "+p.work+"  needs you: "+wtsync.WayOut(wtsync.Way{Work: p.work, Plan: true, Rebasing: true, OwesAdd: true}), p.work+" (needs you)")
 		r.refuseAbove(b, p.work+" is waiting for you")
@@ -950,7 +949,7 @@ func (r *RunPlan) rebaseOne(b string) {
 		}
 		restored := fmt.Sprintf("restored: %s at %d/%d not resolved; rebase by hand", strings.Join(files, ", "), last.Index, last.Total)
 		fmt.Fprintf(w, "  ✗ %s\n", restored)
-		ClearHandover(w, p.wt.Path)
+		syncrun.ClearHandover(w, p.wt.Path)
 		r.dropFastForward(b, p)
 		j.SetSync(b, func(jp *syncrun.SyncParticipant) {
 			jp.Result, jp.Reason, jp.SafetyRef = syncrun.ResultRestored, kit.Strp(restored), kit.Strp(res.Safety.Ref)
@@ -965,25 +964,25 @@ func (r *RunPlan) rebaseOne(b string) {
 		line += fmt.Sprintf(", %s dropped", kit.Count(res.SignaturesDropped, "signature"))
 	}
 	fmt.Fprintln(w, line)
-	head, ran, derr := CompleteRun(ctx, w, r.cfg, r.tracker, p.work, p.wt.Path, func() CompleteInput {
+	head, ran, derr := syncrun.CompleteRun(ctx, w, r.cfg, r.tracker, p.work, p.wt.Path, func() syncrun.CompleteInput {
 		// What the deferred steps compare and the undo line names is the tip
 		// the run found, the commits a fast-forward brought included.
 		done := res
 		done.OldTip = found(res)
-		return CompleteInput{
+		return syncrun.CompleteInput{
 			Branch: b, Epoch: r.epoch, Res: done,
 			Tell: append(slices.Clone(p.a.Sessions), p.forced...), TrunkName: r.trunk, Landed: p.a.Behind, Check: syncrun.PathsOnce(wtsync.StopPaths(res.Stops)),
 		}
 	})
 	p.head = head
-	owed := OwedSteps(ran)
-	r.failures = append(r.failures, OwedBy(p.work, owed)...)
+	owed := syncrun.OwedSteps(ran)
+	r.failures = append(r.failures, syncrun.OwedBy(p.work, owed)...)
 	// The rebase itself stands; only this branch and what sits on it
 	// lose their footing, so the rest of the run carries on.
 	// The journal's record: a tip git cannot read is recorded as none.
 	after, _, _ := ctx.Repo.ResolveRef("refs/heads/" + b)
 	j.SetSync(b, func(jp *syncrun.SyncParticipant) {
-		jp.SafetyRef, jp.UndoCommand, jp.Deferred = kit.Strp(res.Safety.Ref), UndoCommand(p.work), DeferredSteps(ran)
+		jp.SafetyRef, jp.UndoCommand, jp.Deferred = kit.Strp(res.Safety.Ref), syncrun.UndoCommand(p.work), syncrun.DeferredSteps(ran)
 	})
 	if derr != nil {
 		fmt.Fprintf(w, "  ✗ failed: %v\n", derr)
@@ -1119,7 +1118,7 @@ func (r *RunPlan) fastForwardOnly(b string, p *participant) {
 	r.Forwarded = append(r.Forwarded, p.work)
 	r.opts.Journal.SetSync(b, func(jp *syncrun.SyncParticipant) {
 		jp.Result = syncrun.ResultFastForwarded
-		jp.SafetyRef, jp.UndoCommand = kit.Strp(safety.Ref), UndoCommand(p.work)
+		jp.SafetyRef, jp.UndoCommand = kit.Strp(safety.Ref), syncrun.UndoCommand(p.work)
 	})
 }
 
@@ -1134,34 +1133,6 @@ func (r *RunPlan) dropFastForward(b string, p *participant) {
 	if err := wtsync.Disown(r.ctx.Repo.MainRoot, b, r.epoch); err != nil {
 		fmt.Fprintf(r.w, "  note: %v\n", err)
 	}
-}
-
-func printDeferred(w io.Writer, d wtsync.DeferredResult) {
-	switch {
-	case !d.Ran:
-		fmt.Fprintf(w, "  ⏭ %s  %s\n", d.Step.Run, d.Why)
-	case d.Err != nil:
-		fmt.Fprintf(w, "  ✗ %s  %s  owed: %v\n", d.Step.Run, d.Elapsed.Round(time.Second), d.Err)
-		for _, l := range lastLines(d.Output, 20) {
-			fmt.Fprintf(w, "    %s\n", l)
-		}
-	case d.Commit != "":
-		fmt.Fprintf(w, "  ✓ %s  %s  committed %s (+%d −%d) as %s\n", d.Step.Run, d.Elapsed.Round(time.Second), kit.Count(d.Files, "file"), d.Insertions, d.Deletions, d.Commit)
-	default:
-		fmt.Fprintf(w, "  ✓ %s  %s\n", d.Step.Run, d.Elapsed.Round(time.Second))
-	}
-}
-
-func lastLines(s string, n int) []string {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return nil
-	}
-	lines := strings.Split(s, "\n")
-	if len(lines) > n {
-		lines = lines[len(lines)-n:]
-	}
-	return lines
 }
 
 // notReadyReason is why a worktree a run could start on is not ready, in the
