@@ -1,7 +1,6 @@
 package retire
 
 import (
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -270,45 +269,44 @@ func sweepToken(ctx *kit.Context, p SweepPlan, opts SweepOptions) *string {
 
 // sweepTokenWith is sweepToken over a configuration fingerprint already read.
 func sweepTokenWith(ctx *kit.Context, p SweepPlan, opts SweepOptions, fingerprint []byte) *string {
+	return sweepTokenOf(ctx, p, opts, fingerprint).Strp()
+}
+
+func sweepTokenOf(ctx *kit.Context, p SweepPlan, opts SweepOptions, fingerprint []byte) *kit.Token {
 	if p.Empty() {
 		return nil
 	}
-	h := sha256.New()
-	h.Write([]byte("wt-sweep-1\x00" + ctx.Repo.MainRoot + "\x00" + ctx.Config.MainBranch + "\x00"))
-	h.Write(fingerprint)
-	if opts.Quarantine != "" {
-		h.Write([]byte("\nquarantine\x00" + opts.Quarantine))
-	}
-	if opts.KeepSuperset {
-		h.Write([]byte("\nkeepSuperset"))
-	}
-	if opts.Reap {
-		h.Write([]byte("\nreap"))
-	}
-	for _, it := range PlanItemsOf(p) {
-		fields := []string{it.Category, kit.Deref(it.Branch), kit.Deref(it.Tip), kit.Deref(it.Path),
-			strings.Join(it.Kept, ","), it.Reason}
+	t := kit.NewToken("1:", "wt-sweep").Str("repo", ctx.Repo.MainRoot).Str("trunk", ctx.Config.MainBranch).
+		Config(fingerprint).Str("Quarantine", opts.Quarantine).Bool("KeepSuperset", opts.KeepSuperset).
+		Bool("Reap", opts.Reap)
+	hashItems(t, PlanItemsOf(p))
+	return t
+}
+
+// hashItems hashes every row of a sweep plan with what it stands on.
+func hashItems(t *kit.Token, items []SweepItem) {
+	for _, it := range items {
+		t.Str("Items.Category", it.Category).Str("Items.Branch", kit.Deref(it.Branch)).Str("Items.Tip", kit.Deref(it.Tip)).
+			Str("Items.Path", kit.Deref(it.Path)).List("Items.Kept", it.Kept...).Str("Items.Reason", it.Reason)
 		if m := it.Merged; m != nil {
 			pr := ""
 			if m.PullRequest != nil {
 				pr = fmt.Sprint(*m.PullRequest)
 			}
-			fields = append(fields, "merged", m.How, m.Into, pr)
+			t.Str("Items.Merged.How", m.How).Str("Items.Merged.Into", m.Into).Str("Items.Merged.PullRequest", pr)
 		}
 		if pr := it.PullRequest; pr != nil {
-			fields = append(fields, "pr", fmt.Sprint(pr.Number), pr.State, kit.Deref(pr.Base))
+			t.Int("Items.PullRequest.Number", int64(pr.Number)).Str("Items.PullRequest.State", pr.State).
+				Str("Items.PullRequest.Base", kit.Deref(pr.Base))
 		}
 		// Only what --reap stops is hashed. The processes of a row that is
 		// kept are listed, not acted on, and its reason names up to three.
 		for _, pr := range it.Processes {
 			if pr.Reap {
-				fields = append(fields, "process", fmt.Sprint(pr.PID), pr.Command)
+				t.Int("Items.Processes.PID", int64(pr.PID)).Str("Items.Processes.Command", pr.Command)
 			}
 		}
-		h.Write([]byte("\n" + strings.Join(fields, "\x00")))
 	}
-	token := "1:" + hex.EncodeToString(h.Sum(nil))[:32]
-	return &token
 }
 
 // prepareSweep is a sweep up to its plan: the checks, the fetch, the plan.

@@ -1,15 +1,11 @@
 package retire
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
@@ -202,72 +198,56 @@ type RemoveOutput struct {
 // sessions by who they are and whether each is idle or busy, the lock, what
 // would be lost, the quarantine folder and the --force categories. Nil when
 // the removal would refuse.
-func removeToken(ctx *kit.Context, p Plan) *string {
+func removeToken(ctx *kit.Context, p Plan) *string { return removeTokenOf(ctx, p).Strp() }
+
+func removeTokenOf(ctx *kit.Context, p Plan) *kit.Token {
 	if p.refusal() != "" {
 		return nil
 	}
-	h := sha256.New()
-	field := func(name string, v any) { fmt.Fprintf(h, "%s=%v\x00", name, v) }
-	field("wt-remove", 1)
-	field("repo", ctx.Repo.MainRoot)
-	field("trunk", ctx.Config.MainBranch)
-	field("trunkSource", ctx.Config.TrunkSource)
-	h.Write(kit.ConfigFingerprint(ctx))
+	return hashRemove(kit.NewToken("1:", "wt-remove"), ctx, p)
+}
+
+// hashRemove hashes everything a removal turns on.
+func hashRemove(t *kit.Token, ctx *kit.Context, p Plan) *kit.Token {
+	t.Str("repo", ctx.Repo.MainRoot).Str("trunk", ctx.Config.MainBranch).
+		Str("trunkSource", string(ctx.Config.TrunkSource)).Config(kit.ConfigFingerprint(ctx))
 	bases, err := TrunkBases(ctx)
-	field("basesError", err != nil)
+	t.Bool("basesError", err != nil)
 	for _, b := range bases {
-		field("base", b.Name+" "+b.Tip)
+		t.Str("bases.Name", b.Name).Str("bases.Tip", b.Tip)
 	}
-	field("path", p.Path)
-	field("adminDir", p.AdminDir)
-	field("head", p.Head)
-	field("branch", p.Branch)
-	field("tip", p.Tip)
-	field("outcome", outcomeNames[p.Outcome])
-	field("keepAs", p.KeepAs)
+	t.Str("Path", p.Path).Str("AdminDir", p.AdminDir).Str("Head", p.Head).Str("Branch", p.Branch).Str("Tip", p.Tip).
+		Str("Outcome", outcomeNames[p.Outcome]).Str("KeepAs", p.KeepAs)
 	if p.KeepAs != "" {
 		// A name taken meanwhile turns the rename into a failure.
 		taken, _, err := ctx.Repo.ResolveRef("refs/heads/" + p.KeepAs)
-		field("keepAsTaken", taken)
-		field("keepAsTakenError", err != nil)
+		t.Str("keepAsTaken", taken).Bool("keepAsTakenError", err != nil)
 	}
-	field("reason", p.Reason)
-	field("merge", mergeNames[p.Merge])
-	field("ahead", p.Ahead)
-	field("base", p.Base)
-	field("mergedPR", p.MergedPR)
-	field("dirty", p.Dirty)
-	field("statusError", p.StatusError)
-	field("hidden", strings.Join(p.Hidden, "\x01"))
-	field("moved", strings.Join(p.Moved, "\x01"))
-	field("nested", strings.Join(p.Nested, "\x01"))
-	field("operation", p.Operation)
+	t.Str("Reason", p.Reason).Str("Merge", mergeNames[p.Merge]).Int("Ahead", int64(p.Ahead)).Str("Base", p.Base).
+		Int("MergedPR", int64(p.MergedPR)).Bool("Dirty", p.Dirty).Str("StatusError", p.StatusError).
+		List("Hidden", p.Hidden...).List("Moved", p.Moved...).List("Nested", p.Nested...).Str("Operation", p.Operation)
 	var ids []string
 	for _, a := range p.Sessions {
 		ids = append(ids, a.ID+" "+sessionState(a))
 	}
 	slices.Sort(ids)
-	field("sessions", strings.Join(ids, "\x01"))
-	field("sessionsError", p.SessionsError)
-	field("lock", fmt.Sprint(p.Locked, p.LockHeld, p.LockPid, p.LockReason))
+	t.List("Sessions", ids...).Str("SessionsError", p.SessionsError).
+		Bool("Locked", p.Locked).Bool("LockHeld", p.LockHeld).Int("LockPid", int64(p.LockPid)).Str("LockReason", p.LockReason)
 	for _, l := range p.Unreachable {
-		field("lost", fmt.Sprint(l.Kind, l.OID, l.Count, l.Path))
+		t.Str("Unreachable.Kind", l.Kind).Str("Unreachable.OID", l.OID).Int("Unreachable.Count", int64(l.Count)).
+			Str("Unreachable.Path", l.Path)
 	}
-	field("reachError", p.ReachError)
-	field("quarantine", p.Quarantine)
-	field("force", strings.Join(p.Force.Names(), ","))
-	field("superset", provision.SupersetEnabled(ctx))
-	field("keepSuperset", p.KeepSuperset)
+	t.Str("ReachError", p.ReachError).Str("Quarantine", p.Quarantine).List("Force", p.Force.Names()...).
+		Bool("superset", provision.SupersetEnabled(ctx)).Bool("KeepSuperset", p.KeepSuperset)
 	// The processes it ends, when it ends any: a tool that read the plan
 	// agreed to those. Without --reap they are left alone and do not count.
-	field("reap", p.Reap)
+	t.Bool("Reap", p.Reap)
 	if p.Reap {
 		for _, pr := range p.Processes {
-			field("process", fmt.Sprint(pr.PID, " ", pr.Command()))
+			t.Int("Processes.PID", int64(pr.PID)).Str("Processes.Command", pr.Command())
 		}
 	}
-	token := "1:" + hex.EncodeToString(h.Sum(nil))[:32]
-	return &token
+	return t
 }
 
 // problemsOf is every problem with the plan, --force or not.
