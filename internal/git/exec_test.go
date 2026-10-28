@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 func TestExecReturnsStdoutUntrimmedAndReadsStdin(t *testing.T) {
@@ -247,15 +249,17 @@ func TestInterruptParksTheCallerOfAKilledCommand(t *testing.T) {
 		close(returned)
 	}()
 	waitRegistered(t, 1)
+	before := gittest.Parked()
 	if n := Interrupt(); n != 1 {
 		t.Fatalf("Interrupt signalled %d groups, want 1", n)
 	}
 	if left := stillRunning([]int{cmd.Process.Pid}); len(left) != 0 {
 		t.Fatalf("the group is still registered after the grace: %v", left)
 	}
+	gittest.WaitParked(t, before, 1)
 	select {
 	case <-returned:
 		t.Fatal("RunBounded returned after an interrupt")
-	case <-time.After(300 * time.Millisecond):
+	default:
 	}
 }

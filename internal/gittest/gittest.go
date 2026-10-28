@@ -7,9 +7,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 )
 
 // identity is who every test commit is made by, so a repository does not
@@ -183,5 +185,51 @@ func WriteExecutable(t testing.TB, path, content string) {
 	syscall.ForkLock.RUnlock()
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Parked is the ids of the goroutines parked for good in git.RunBounded:
+// each the caller of a command git.Interrupt killed. Such a goroutine never
+// runs again, so its caller acts on nothing more.
+func Parked() map[string]bool {
+	buf := make([]byte, 1<<20)
+	for {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			buf = buf[:n]
+			break
+		}
+		buf = make([]byte, 2*len(buf))
+	}
+	parked := map[string]bool{}
+	for _, g := range strings.Split(string(buf), "\n\n") {
+		// "goroutine 42 [select (no cases), 2 minutes]:" is the header.
+		header, stack, _ := strings.Cut(g, "\n")
+		id, state, ok := strings.Cut(strings.TrimPrefix(header, "goroutine "), " [")
+		if ok && strings.HasPrefix(state, "select (no cases)") && strings.Contains(stack, "/internal/git.RunBounded(") {
+			parked[id] = true
+		}
+	}
+	return parked
+}
+
+// WaitParked waits until n goroutines that were not in before, as Parked
+// had them, are parked in git.RunBounded: once they are, the callers of the
+// commands git.Interrupt killed will never return to act on it.
+func WaitParked(t testing.TB, before map[string]bool, n int) {
+	t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		parked := 0
+		for id := range Parked() {
+			if !before[id] {
+				parked++
+			}
+		}
+		if parked >= n {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d goroutines parked in git.RunBounded, want %d: a caller went on after the interrupt", parked, n)
+		}
 	}
 }

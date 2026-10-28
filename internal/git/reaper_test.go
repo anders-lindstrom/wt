@@ -86,14 +86,18 @@ func TestWritesTellsReadsFromWrites(t *testing.T) {
 // went: a group wt took off the list is not killed, and it returns within
 // a second although the pipe never closes.
 func TestReapReadsWhatWtWroteBeforeActingOnAChangedParent(t *testing.T) {
+	// Not parallel: sets the package-level parentGone hook.
 	done := startGroup(t)
 	r, w := io.Pipe()
 	defer func() { _ = w.Close() }()
+	seen := make(chan struct{})
+	parentGone = func() { close(seen) }
+	t.Cleanup(func() { parentGone = nil })
 	go func() {
 		// The removal arrives after the reaper has seen its parent gone,
 		// as a backlog it has not read yet would.
 		fmt.Fprintf(w, "+%d\n", done)
-		time.Sleep(400 * time.Millisecond)
+		<-seen
 		fmt.Fprintf(w, "-%d\n", done)
 	}()
 	returned := make(chan struct{})
