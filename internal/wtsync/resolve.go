@@ -53,7 +53,7 @@ func resolveConflict(mainRoot, onto string, cfg *Config, c Conflict, wtPath stri
 			r.Outcome.Note = ref.Reason
 			r.Outcome.Keys = ref.Keys
 			r.Outcome.Groups = ref.Groups
-			return r, nil
+			return r, nil //nolint:nilerr // a refusal is an outcome, recorded above, not a failure
 		}
 		r.Outcome.Note = err.Error()
 		return r, fmt.Errorf("%s: %w", c.Path, err)

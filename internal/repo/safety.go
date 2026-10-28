@@ -189,7 +189,12 @@ func HeadOf(path string) (string, error) {
 		return head, nil
 	}
 	if ref, rerr := git.Run(path, "symbolic-ref", "--quiet", "HEAD"); rerr == nil && ref != "" {
-		if _, serr := git.Run(path, "show-ref", "--verify", "--quiet", ref); serr != nil {
+		// show-ref's exit 1 is the branch not existing yet; any other
+		// failure is not knowing.
+		_, serr := git.Run(path, "show-ref", "--verify", "--quiet", ref)
+		if code, serr := git.Answer(serr, 1); serr != nil {
+			err = serr
+		} else if code == 1 {
 			return "", nil
 		}
 	}

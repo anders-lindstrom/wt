@@ -158,7 +158,7 @@ func newSyncCmd() *cobra.Command {
 	sync.Args = func(cmd *cobra.Command, args []string) error {
 		verb, err := flags().verb()
 		if err != nil {
-			return nil
+			return nil //nolint:nilerr // a flag mistake, which RunE reports
 		}
 		return syncArgs(verb)(cmd, args)
 	}

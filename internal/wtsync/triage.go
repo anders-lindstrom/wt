@@ -391,7 +391,7 @@ func onlyOwnedLines(mainRoot string, cfg *Config, base, rev, path string) (bool,
 	// regex declares no owned line at all, which is the cautious answer.
 	re, rerr := rule.lineRE(StrategyOwnedLine)
 	if rerr != nil {
-		return false, nil
+		return false, nil //nolint:nilerr // no owned line is the cautious answer, as above
 	}
 	diff, err := gitEnv(mainRoot, nil, nil, "diff", "-U0", base, rev, "--", path)
 	if err != nil {

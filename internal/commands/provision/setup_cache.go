@@ -64,15 +64,20 @@ func makeParents(target, to string) (made string, err error) {
 
 // sweepStaleClones removes the temporary trees a killed run left beside to,
 // whether or not to is there now. It leaves a directory that does not exist,
-// or that resolves outside target, alone.
+// or that resolves outside target, alone; one it cannot read is an error.
 func sweepStaleClones(target, to string) error {
 	dir := filepath.Dir(to)
 	resolved, err := filepath.EvalSymlinks(dir)
-	if err != nil {
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil
+	} else if err != nil {
+		return err
 	}
 	root, err := filepath.EvalSymlinks(target)
-	if err != nil || !within(root, resolved) {
+	if err != nil {
+		return err
+	}
+	if !within(root, resolved) {
 		return nil
 	}
 	return removeStaleClones(dir, filepath.Base(to))
