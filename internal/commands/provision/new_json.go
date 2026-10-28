@@ -1,8 +1,6 @@
 package provision
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -184,7 +182,7 @@ func PlanNew(ctx *kit.Context, spec string, opts NewOptions) NewPlan {
 		p.problem(kit.ProblemBaseMissing, "%q is not a commit here", base)
 	}
 	if len(p.Problems) == 0 {
-		p.Token = kit.Strp(createToken(ctx, "new", *p.Branch, *p.Path, *p.BaseCommit))
+		p.Token = newTokenOf(ctx, p).Strp()
 	}
 	return p
 }
@@ -228,7 +226,7 @@ func PlanCheckout(ctx *kit.Context, arg, work string, opts NewOptions) CheckoutP
 		}
 	}
 	if len(p.Problems) == 0 {
-		p.Token = kit.Strp(createToken(ctx, "checkout", t.tokenName(), *p.Path, t.Commit))
+		p.Token = checkoutTokenOf(ctx, p).Strp()
 	}
 	return p
 }
@@ -245,26 +243,29 @@ func (t CheckoutTarget) source() CheckoutSource {
 	return s
 }
 
-// tokenName is the branch as the token names it: a branch to be created
-// from a remote also names the remote-tracking ref, so a local branch of
-// the same name appearing changes the token.
-func (t CheckoutTarget) tokenName() string {
-	if t.Source == SourceRemote {
-		return t.Branch + "\x00remote\x00" + t.RemoteRef
-	}
-	return t.Branch
+// The create tokens name the inputs a plan was computed from: the command,
+// the branch and path it would create, the commit the worktree would land
+// on, and the configuration file. Anything else moving does not change
+// them.
+
+// newTokenOf is wt new's: the commit is the base's.
+func newTokenOf(ctx *kit.Context, p NewPlan) *kit.Token {
+	return kit.NewToken("1:", "wt-create").Str("Command", p.Command).Str("Branch", *p.Branch).Str("Path", *p.Path).
+		Str("BaseCommit", *p.BaseCommit).Config(kit.ConfigFingerprint(ctx))
 }
 
-// createToken names the inputs a plan was computed from: the command, the
-// branch and path it would create, the commit the worktree would land on —
-// the base for wt new, the branch's tip or the remote-tracking ref's for wt
-// checkout — and the configuration file. Anything else moving does not
-// change it.
-func createToken(ctx *kit.Context, command, branch, path, commit string) string {
-	h := sha256.New()
-	h.Write([]byte("wt-create-1\x00" + command + "\x00" + branch + "\x00" + path + "\x00" + commit + "\x00"))
-	h.Write(kit.ConfigFingerprint(ctx))
-	return "1:" + hex.EncodeToString(h.Sum(nil))[:32]
+// checkoutTokenOf is wt checkout's: the commit is the branch's tip or the
+// remote-tracking ref's. A branch to be created from a remote also names
+// that ref, so a local branch of the same name appearing changes the token.
+func checkoutTokenOf(ctx *kit.Context, p CheckoutPlan) *kit.Token {
+	t := kit.NewToken("1:", "wt-create").Str("Command", p.Command).Str("Branch", *p.Branch).Str("Path", *p.Path).
+		Str("Source", kit.Deref(p.Source))
+	if kit.Deref(p.Source) == SourceRemote {
+		t.Str("RemoteRef", kit.Deref(p.RemoteRef)).Str("RemoteCommit", kit.Deref(p.RemoteCommit))
+	} else {
+		t.Str("BranchCommit", kit.Deref(p.BranchCommit))
+	}
+	return t.Config(kit.ConfigFingerprint(ctx))
 }
 
 // NewPlanJSON writes wt new --dry-run --json.
