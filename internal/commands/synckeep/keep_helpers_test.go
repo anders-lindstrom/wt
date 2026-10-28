@@ -1,4 +1,4 @@
-package synccmdtest
+package synckeep
 
 import (
 	"testing"
@@ -7,17 +7,17 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/synckeep/keepstate"
 )
 
-// OnPlatform pins the platform the keeper's start, stop and status see for
+// onPlatform pins the platform the keeper's start, stop and status see for
 // the length of a test, whatever machine runs it.
-func OnPlatform(t *testing.T, goos string) {
+func onPlatform(t *testing.T, goos string) {
 	t.Helper()
 	was := keepstate.KeepGOOS
 	keepstate.KeepGOOS = goos
 	t.Cleanup(func() { keepstate.KeepGOOS = was })
 }
 
-// KeepFiles is the keeper's log and state file for the repository.
-func KeepFiles(t *testing.T, ctx *kit.Context) (log, state string) {
+// keepFiles is the keeper's log and state file for the repository.
+func keepFiles(t *testing.T, ctx *kit.Context) (log, state string) {
 	t.Helper()
 	_, log, state, err := keepstate.KeepPaths(ctx)
 	if err != nil {
@@ -26,10 +26,10 @@ func KeepFiles(t *testing.T, ctx *kit.Context) (log, state string) {
 	return log, state
 }
 
-// ReadKeep is the keeper's state, failing the test when there is none.
-func ReadKeep(t *testing.T, ctx *kit.Context) keepstate.KeepState {
+// readKeep is the keeper's state, failing the test when there is none.
+func readKeep(t *testing.T, ctx *kit.Context) keepstate.KeepState {
 	t.Helper()
-	_, statePath := KeepFiles(t, ctx)
+	_, statePath := keepFiles(t, ctx)
 	st, ok, err := keepstate.ReadKeepState(statePath)
 	if err != nil || !ok {
 		t.Fatalf("state file: ok %v err %v", ok, err)

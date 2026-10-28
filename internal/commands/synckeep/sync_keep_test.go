@@ -18,7 +18,6 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
-	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/synckeep/keepstate"
 	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
@@ -66,7 +65,7 @@ func TestSyncKeepRunRebasesAReadyWorktreeAndRecordsThePass(t *testing.T) {
 	if testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", "refs/remotes/origin/feat_wt/bump") != testkit.GitOut(t, bump, "rev-parse", "HEAD") {
 		t.Fatal("bump was not pushed")
 	}
-	logPath, _ := synccmdtest.KeepFiles(t, ctx)
+	logPath, _ := keepFiles(t, ctx)
 	logged, err := os.ReadFile(logPath)
 	if err != nil {
 		t.Fatal(err)
@@ -76,7 +75,7 @@ func TestSyncKeepRunRebasesAReadyWorktreeAndRecordsThePass(t *testing.T) {
 			t.Errorf("log lacks %q:\n%s", want, logged)
 		}
 	}
-	st := synccmdtest.ReadKeep(t, ctx)
+	st := readKeep(t, ctx)
 	if st.TrunkSHA != testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", "origin/main") || st.Result != "rebased 1, pushed 1, left 0" || st.PID != 0 {
 		t.Fatalf("state %+v", st)
 	}
@@ -125,12 +124,12 @@ func TestSyncKeepRunDoesNothingWhileTrunkIsUnchanged(t *testing.T) {
 	if want := "wt sync keep once  origin/main " + sha[:7] + " unchanged; nothing to do\n"; out.String() != want {
 		t.Fatalf("second pass printed %q, want %q", out.String(), want)
 	}
-	logPath, _ := synccmdtest.KeepFiles(t, ctx)
+	logPath, _ := keepFiles(t, ctx)
 	logged, _ := os.ReadFile(logPath)
 	if !strings.HasSuffix(string(logged), "  origin/main "+sha[:7]+" unchanged; nothing to do\n") {
 		t.Fatalf("log:\n%s", logged)
 	}
-	if st := synccmdtest.ReadKeep(t, ctx); st.Result != "trunk unchanged" {
+	if st := readKeep(t, ctx); st.Result != "trunk unchanged" {
 		t.Fatalf("state %+v", st)
 	}
 	// Trunk moves: the next pass runs again.
@@ -240,11 +239,11 @@ func TestSyncKeepRunRebasesNothingWhenSessionsCannotBeListed(t *testing.T) {
 	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != old {
 		t.Fatal("bump moved with nobody able to say who was in it")
 	}
-	st := synccmdtest.ReadKeep(t, ctx)
+	st := readKeep(t, ctx)
 	if st.TrunkSHA != "" || st.Problem != "failed: "+want {
 		t.Fatalf("state %+v", st)
 	}
-	logPath, _ := synccmdtest.KeepFiles(t, ctx)
+	logPath, _ := keepFiles(t, ctx)
 	if logged, _ := os.ReadFile(logPath); !strings.Contains(string(logged), "    "+want+"\n") {
 		t.Fatalf("log:\n%s", logged)
 	}
@@ -254,7 +253,7 @@ func TestSyncKeepRunRebasesNothingWhenSessionsCannotBeListed(t *testing.T) {
 // log is the record a background job promises.
 func TestSyncKeepRunFailsWhenTheLogCannotBeWritten(t *testing.T) {
 	ctx, bump := provisiontest.RunFixture(t, false)
-	logPath, _ := synccmdtest.KeepFiles(t, ctx)
+	logPath, _ := keepFiles(t, ctx)
 	if err := os.MkdirAll(logPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +266,7 @@ func TestSyncKeepRunFailsWhenTheLogCannotBeWritten(t *testing.T) {
 	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != old {
 		t.Fatal("bump moved with no log to say so")
 	}
-	if st := synccmdtest.ReadKeep(t, ctx); st.TrunkSHA != "" || !strings.HasPrefix(st.Problem, "failed: cannot write the log: ") {
+	if st := readKeep(t, ctx); st.TrunkSHA != "" || !strings.HasPrefix(st.Problem, "failed: cannot write the log: ") {
 		t.Fatalf("state %+v", st)
 	}
 }
@@ -305,7 +304,7 @@ func TestSyncKeepRunInterruptedLeavesTheOutputSoFarInTheLog(t *testing.T) {
 	testkit.WriteFile(t, main, ".wt-sync.yaml", string(yaml)+"defer:\n  - run: touch "+started+"; sleep 30\n    paths: [v.txt]\n")
 	testkit.GitIn(t, main, "commit", "-q", "-am", "declare a slow step")
 	testkit.GitIn(t, main, "fetch", "-q", "origin")
-	logPath, _ := synccmdtest.KeepFiles(t, ctx)
+	logPath, _ := keepFiles(t, ctx)
 	fmt.Println("LOG=" + logPath)
 	go func() {
 		for {
@@ -350,7 +349,7 @@ func TestSyncKeepRunNoPushRepeatsThePushCommandUntilItIsPushedByHand(t *testing.
 	if err := Run(ctx, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
-	st := synccmdtest.ReadKeep(t, ctx)
+	st := readKeep(t, ctx)
 	if len(st.Unpushed) != 1 || st.Unpushed[0].Work != "bump" || st.Unpushed[0].Tip != testkit.GitOut(t, bump, "rev-parse", "HEAD") || st.Problem != "" {
 		t.Fatalf("state %+v", st)
 	}
@@ -383,7 +382,7 @@ func TestSyncKeepRunNoPushRepeatsThePushCommandUntilItIsPushedByHand(t *testing.
 	if want := "wt sync keep once  origin/main " + sha[:7] + " unchanged; nothing to do\n"; out.String() != want {
 		t.Fatalf("pushed by hand, yet: %q", out.String())
 	}
-	if st := synccmdtest.ReadKeep(t, ctx); len(st.Unpushed) != 0 {
+	if st := readKeep(t, ctx); len(st.Unpushed) != 0 {
 		t.Fatalf("state %+v", st)
 	}
 }
@@ -393,7 +392,7 @@ func TestSyncKeepRunNoPushRepeatsThePushCommandUntilItIsPushedByHand(t *testing.
 func TestSyncTableAndDoctorSayWhenTheRepositoryWasKept(t *testing.T) {
 	ctx, _ := provisiontest.RunFixture(t, false)
 	t.Setenv("HOME", t.TempDir())
-	synccmdtest.OnPlatform(t, "darwin")
+	onPlatform(t, "darwin")
 	var out bytes.Buffer
 	if err := synccmd.Sync(ctx, synccmd.SyncOptions{NoFetch: true}, &out); err != nil {
 		t.Fatal(err)
@@ -425,15 +424,15 @@ func TestSyncTableAndDoctorSayWhenTheRepositoryWasKept(t *testing.T) {
 	if err := synccmd.SyncDoctor(ctx, synccmd.DoctorOptions{}, &out); err != nil {
 		t.Fatal(err)
 	}
-	logPath, _ := synccmdtest.KeepFiles(t, ctx)
+	logPath, _ := keepFiles(t, ctx)
 	if !strings.Contains(out.String(), "keeper       ok     not installed; wt sync keep start; last pass Mar 4 14:20 rebased 1, pushed 1, left 0; log "+logPath+"\n") {
 		t.Fatalf("doctor:\n%s", out.String())
 	}
 
 	// A problem no clean pass has cleared is the doctor's business, whatever
 	// the last pass itself came to.
-	_, statePath := synccmdtest.KeepFiles(t, ctx)
-	st := synccmdtest.ReadKeep(t, ctx)
+	_, statePath := keepFiles(t, ctx)
+	st := readKeep(t, ctx)
 	st.Result = "trunk unchanged"
 	st.Problem, st.ProblemAt = "failed: not completed: bump (push failed)", keepDay
 	if err := writeKeepState(statePath, st); err != nil {
@@ -449,7 +448,7 @@ func TestSyncTableAndDoctorSayWhenTheRepositoryWasKept(t *testing.T) {
 
 	// Without launchd only the installed part changes: a pass run from cron
 	// still shows in the row, the table and the status.
-	synccmdtest.OnPlatform(t, "linux")
+	onPlatform(t, "linux")
 	out.Reset()
 	if err := synccmd.SyncDoctor(ctx, synccmd.DoctorOptions{}, &out); err != nil {
 		t.Fatal(err)
@@ -523,7 +522,7 @@ func TestSyncKeepStartAndStopDriveLaunchd(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	calls := fakeLaunchctl(t)
-	synccmdtest.OnPlatform(t, "darwin")
+	onPlatform(t, "darwin")
 	env := map[string]string{"PATH": "/usr/bin:/bin", "HOME": home, "SSH_AUTH_SOCK": "/tmp/agent.sock"}
 	opts := KeepStartOptions{
 		Every:  time.Hour,
@@ -623,7 +622,7 @@ func TestSyncKeepStartWarnsAboutAnAgentLaunchersKey(t *testing.T) {
 	ctx, _ := provisiontest.RunFixture(t, false)
 	t.Setenv("HOME", t.TempDir())
 	fakeLaunchctl(t)
-	synccmdtest.OnPlatform(t, "darwin")
+	onPlatform(t, "darwin")
 	var out bytes.Buffer
 	if err := Start(ctx, KeepStartOptions{Getenv: func(k string) string { return env[k] }}, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
@@ -653,7 +652,7 @@ func TestSyncKeepStopBootsOutAJobWhosePlistIsGone(t *testing.T) {
 	ctx, _ := provisiontest.RunFixture(t, false)
 	t.Setenv("HOME", t.TempDir())
 	calls := fakeLaunchctl(t)
-	synccmdtest.OnPlatform(t, "darwin")
+	onPlatform(t, "darwin")
 	var out bytes.Buffer
 	if err := Start(ctx, KeepStartOptions{Getenv: func(string) string { return "" }}, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
@@ -694,7 +693,7 @@ func TestSyncKeepRunRetriesARefusedPushUntilItGoesThrough(t *testing.T) {
 	ctx, bump := provisiontest.RunFixture(t, false)
 	testkit.BareOrigin(t, ctx)
 	t.Setenv("HOME", t.TempDir())
-	synccmdtest.OnPlatform(t, "darwin")
+	onPlatform(t, "darwin")
 	pushURL := testkit.GitOut(t, ctx.Repo.MainRoot, "remote", "get-url", "--push", "origin")
 	testkit.GitOut(t, ctx.Repo.MainRoot, "remote", "set-url", "--push", "origin", filepath.Join(t.TempDir(), "nowhere"))
 	opts := keepOpts(syncrun.PushAlways)
@@ -708,12 +707,12 @@ func TestSyncKeepRunRetriesARefusedPushUntilItGoesThrough(t *testing.T) {
 		t.Fatalf("the failed push is not spelled out:\n%s", out.String())
 	}
 	// In the log too: under launchd stdout goes nowhere.
-	logPath, _ := synccmdtest.KeepFiles(t, ctx)
+	logPath, _ := keepFiles(t, ctx)
 	if logged, _ := os.ReadFile(logPath); !strings.Contains(string(logged), "    "+command) || !strings.Contains(string(logged), "      ✗ push of feat_wt/bump failed") {
 		t.Fatalf("log:\n%s", logged)
 	}
 	tip := testkit.GitOut(t, bump, "rev-parse", "HEAD")
-	st := synccmdtest.ReadKeep(t, ctx)
+	st := readKeep(t, ctx)
 	if st.TrunkSHA != "" || st.Problem != "failed: not completed: bump (push failed)" || !st.ProblemAt.Equal(keepDay) {
 		t.Fatalf("state %+v", st)
 	}
@@ -750,7 +749,7 @@ func TestSyncKeepRunRetriesARefusedPushUntilItGoesThrough(t *testing.T) {
 	if !strings.Contains(out.String(), "✗ push of feat_wt/bump failed") {
 		t.Fatalf("the push was not retried:\n%s", out.String())
 	}
-	if st := synccmdtest.ReadKeep(t, ctx); st.TrunkSHA != "" || st.Problem == "" || len(st.Unpushed) != 1 {
+	if st := readKeep(t, ctx); st.TrunkSHA != "" || st.Problem == "" || len(st.Unpushed) != 1 {
 		t.Fatalf("state %+v", st)
 	}
 
@@ -774,7 +773,7 @@ func TestSyncKeepRunRetriesARefusedPushUntilItGoesThrough(t *testing.T) {
 	if testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", "refs/remotes/origin/feat_wt/bump") != tip {
 		t.Fatal("bump did not reach origin")
 	}
-	st = synccmdtest.ReadKeep(t, ctx)
+	st = readKeep(t, ctx)
 	if st.TrunkSHA != testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", "origin/main") || st.Problem != "" || !st.ProblemAt.IsZero() || len(st.Unpushed) != 0 {
 		t.Fatalf("state %+v", st)
 	}
@@ -809,7 +808,7 @@ func TestSyncKeepRunDropsAnUnpushedBranchThatMoved(t *testing.T) {
 	if strings.Contains(out.String(), "pushed feat_wt/bump") {
 		t.Fatalf("a branch that moved was pushed:\n%s", out.String())
 	}
-	if st := synccmdtest.ReadKeep(t, ctx); len(st.Unpushed) != 0 || st.Problem != "" {
+	if st := readKeep(t, ctx); len(st.Unpushed) != 0 || st.Problem != "" {
 		t.Fatalf("state %+v", st)
 	}
 }
@@ -819,8 +818,8 @@ func TestSyncKeepRunDropsAnUnpushedBranchThatMoved(t *testing.T) {
 func TestSyncKeepStatusSaysWhenAPassWasInterrupted(t *testing.T) {
 	ctx, _ := provisiontest.RunFixture(t, false)
 	t.Setenv("HOME", t.TempDir())
-	synccmdtest.OnPlatform(t, "darwin")
-	_, statePath := synccmdtest.KeepFiles(t, ctx)
+	onPlatform(t, "darwin")
+	_, statePath := keepFiles(t, ctx)
 	// The largest pid the kernel hands out is below this on every platform
 	// wt runs on, so nothing is running under it.
 	dead := 1<<31 - 1
@@ -859,7 +858,7 @@ func TestSyncKeepStatusSaysWhenTheNextPassIsOverdue(t *testing.T) {
 	ctx, _ := provisiontest.RunFixture(t, false)
 	t.Setenv("HOME", t.TempDir())
 	fakeLaunchctl(t)
-	synccmdtest.OnPlatform(t, "darwin")
+	onPlatform(t, "darwin")
 	var out bytes.Buffer
 	if err := Start(ctx, KeepStartOptions{Getenv: func(string) string { return "" }, Now: func() time.Time { return keepDay }}, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
@@ -891,7 +890,7 @@ func TestUnsignCommitsAppendsToTheConfigStack(t *testing.T) {
 func TestSyncKeepStartAndStopAreRefusedWithoutLaunchd(t *testing.T) {
 	ctx, _ := provisiontest.RunFixture(t, false)
 	t.Setenv("HOME", t.TempDir())
-	synccmdtest.OnPlatform(t, "linux")
+	onPlatform(t, "linux")
 	var out bytes.Buffer
 	if err := Start(ctx, KeepStartOptions{}, &out); !errors.Is(err, ErrNoLaunchd) {
 		t.Fatalf("start: %v", err)
@@ -909,7 +908,7 @@ func TestSyncKeepStartAndStopAreRefusedWithoutLaunchd(t *testing.T) {
 func TestLookingAtTheKeeperLeavesNoLockFile(t *testing.T) {
 	ctx, _ := provisiontest.RunFixture(t, false)
 	t.Setenv("HOME", t.TempDir())
-	synccmdtest.OnPlatform(t, "darwin")
+	onPlatform(t, "darwin")
 	gitDir, _, _, err := keepstate.KeepPaths(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -929,13 +928,5 @@ func TestLookingAtTheKeeperLeavesNoLockFile(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "pass     running") {
 		t.Fatalf("nothing runs, yet:\n%s", out.String())
-	}
-}
-
-func TestFmtEvery(t *testing.T) {
-	for d, want := range map[time.Duration]string{30 * time.Minute: "30m", time.Hour: "1h", 90 * time.Minute: "1h30m", 45 * time.Second: "45s", 2 * time.Hour: "2h", 70 * time.Second: "1m10s", 80 * time.Second: "1m20s", 90 * time.Second: "1m30s", time.Hour + 5*time.Second: "1h0m5s"} {
-		if got := keepstate.FmtEvery(d); got != want {
-			t.Errorf("fmtEvery(%s) = %q, want %q", d, got, want)
-		}
 	}
 }

@@ -34,7 +34,7 @@ func TestSyncKeepRunFastForwardsLocalTrunk(t *testing.T) {
 	if !strings.Contains(out.String(), "fast-forwarded to origin/main") {
 		t.Fatalf("the pass does not say so:\n%s", out.String())
 	}
-	log, _ := synccmdtest.KeepFiles(t, f.Ctx)
+	log, _ := keepFiles(t, f.Ctx)
 	if b, _ := os.ReadFile(log); !strings.Contains(string(b), "fast-forwarded to origin/main") {
 		t.Fatalf("the log does not say so:\n%s", b)
 	}

@@ -12,7 +12,6 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
-	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/synckeep/keepstate"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
@@ -36,7 +35,7 @@ func keepFleet(t *testing.T) (u *config.User, kept, fresh, undeclared *kit.Conte
 	home = t.TempDir()
 	t.Setenv("HOME", home)
 	calls = fakeLaunchctl(t)
-	synccmdtest.OnPlatform(t, "darwin")
+	onPlatform(t, "darwin")
 	var out bytes.Buffer
 	if err := Start(kept, keepStartOpts(time.Hour), &out); err != nil {
 		t.Fatalf("start: %v\n%s", err, out.String())
@@ -117,7 +116,7 @@ func TestSyncKeepStartAllInstallsWhatIsMissing(t *testing.T) {
 	if body, err := os.ReadFile(freshJob.PlistPath); err != nil || !strings.Contains(string(body), "<integer>1800</integer>") {
 		t.Fatalf("fresh plist: %v\n%s", err, body)
 	}
-	if st := synccmdtest.ReadKeep(t, fresh); st.Job != freshJob.Label || st.Interval != "30m" {
+	if st := readKeep(t, fresh); st.Job != freshJob.Label || st.Interval != "30m" {
 		t.Fatalf("fresh state %+v", st)
 	}
 
@@ -251,7 +250,7 @@ func TestSyncKeepStartAllReportsARepositoryItCannotOpen(t *testing.T) {
 
 // Off macOS, start and stop across repositories say so before anything.
 func TestSyncKeepStartAndStopAllAreRefusedWithoutLaunchd(t *testing.T) {
-	synccmdtest.OnPlatform(t, "linux")
+	onPlatform(t, "linux")
 	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{t.TempDir()}}}}
 	var out bytes.Buffer
 	if err := StartAll(u, kit.Selection{Profiles: []string{"p"}}, KeepStartAllOptions{Yes: true}, &out); !errors.Is(err, ErrNoLaunchd) {
