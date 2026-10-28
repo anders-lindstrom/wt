@@ -413,7 +413,8 @@ func OutcomeOf(ps []*SyncParticipant, failedEarly bool) string {
 // except for a branch that has diverged from it: diverged maps each such
 // branch to that commit, so that a caller who allows the divergence it was
 // shown is refused over one that moved since. With nothing diverged the
-// token is what it was before wt looked at the remotes.
+// token is what it was before wt looked at the remotes, which docs/json.md
+// promises: so it is built by hand, not with kit.Token.
 func PlanToken(ctx *kit.Context, trunk string, stack []string, diverged map[string]string) string {
 	h := sha256.New()
 	h.Write([]byte("wt-plan-1\x00" + trunk + "\x00"))
