@@ -803,10 +803,7 @@ func Sweep(ctx *kit.Context, opts Options, w io.Writer) (err error) {
 	if j != nil {
 		defer kit.SetInterruptJournal(j)()
 		defer kit.WatchSignals(w, nil)()
-		defer func() {
-			j.fail(err)
-			j.Finish()
-		}()
+		defer func() { j.Fail(err) }()
 	}
 	if opts.RunID != "" {
 		if !refpins.RunIDPattern.MatchString(opts.RunID) {
