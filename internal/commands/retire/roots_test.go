@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/github"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // One question covers every repository, each is swept as it would be alone,
@@ -28,7 +28,7 @@ func TestSweepAllAsksOnceAndSweepsEveryRepository(t *testing.T) {
 	}}}}
 
 	var asked []string
-	opts := SweepAllOptions{SweepOptions: SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}},
+	opts := SweepAllOptions{SweepOptions: SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{}},
 		Ask: func(q string) (bool, error) { asked = append(asked, q); return true, nil }}
 	var buf bytes.Buffer
 	err := SweepAll(u, kit.Selection{Profiles: []string{"p"}}, opts, &buf)
@@ -51,7 +51,7 @@ func TestSweepAllChangesNothingWhenTheAnswerIsNo(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/one")
 	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{ctx.Repo.MainRoot}}}}
-	opts := SweepAllOptions{SweepOptions: SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}},
+	opts := SweepAllOptions{SweepOptions: SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{}},
 		Ask: func(string) (bool, error) { return false, nil }}
 	var buf bytes.Buffer
 	if err := SweepAll(u, kit.Selection{Profiles: []string{"p"}}, opts, &buf); err != nil {
@@ -69,14 +69,14 @@ func TestDryRunPrintsThePlanAndChangesNothing(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/one")
 	var buf bytes.Buffer
-	if err := RemoveAt(ctx, path, RemoveOptions{DryRun: true, Agents: []wtsync.Agent{}}, &buf); err != nil {
+	if err := RemoveAt(ctx, path, RemoveOptions{DryRun: true, Agents: []agents.Agent{}}, &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !testkit.Exists(path) || !strings.Contains(buf.String(), "Nothing was removed: --dry-run.") {
 		t.Errorf("remove --dry-run:\n%s", buf.String())
 	}
 	buf.Reset()
-	if err := Sweep(ctx, SweepOptions{NoFetch: true, DryRun: true, Yes: false, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}}, &buf); err != nil {
+	if err := Sweep(ctx, SweepOptions{NoFetch: true, DryRun: true, Yes: false, Agents: []agents.Agent{}, PRs: map[string]github.PR{}}, &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !testkit.Exists(path) || !strings.Contains(buf.String(), "Nothing was swept: --dry-run.") {
@@ -84,7 +84,7 @@ func TestDryRunPrintsThePlanAndChangesNothing(t *testing.T) {
 	}
 	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{ctx.Repo.MainRoot}}}}
 	buf.Reset()
-	opts := SweepAllOptions{SweepOptions: SweepOptions{NoFetch: true, DryRun: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}},
+	opts := SweepAllOptions{SweepOptions: SweepOptions{NoFetch: true, DryRun: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{}},
 		Ask: func(string) (bool, error) { t.Fatal("a dry run asks nothing"); return false, nil }}
 	if err := SweepAll(u, kit.Selection{Profiles: []string{"p"}}, opts, &buf); err != nil {
 		t.Fatal(err)

@@ -52,7 +52,7 @@ func TestQuarantineMovesTheWorktreeInsteadOfDeletingIt(t *testing.T) {
 			t.Errorf("step %s is %s", s.Name, s.State)
 		}
 	}
-	if r.Branch == nil || r.Branch.Tip != tip || Deref(r.Branch.Result) != quarantine.BranchDeleted ||
+	if r.Branch == nil || r.Branch.Tip != tip || kit.Deref(r.Branch.Result) != quarantine.BranchDeleted ||
 		len(r.Branch.Config) != 1 || r.Branch.Config[0].Value != "mine" {
 		t.Errorf("branch record %+v", r.Branch)
 	}
@@ -174,7 +174,7 @@ func TestRemoveReportsABranchFailureAfterTheFolderIsGoneAsPartial(t *testing.T) 
 			if !strings.Contains(buf.String(), "partly done") {
 				t.Errorf("it must say it is partly done:\n%s", buf.String())
 			}
-			if q && Deref(testkit.LoadRecord(t, opts.Quarantine).Branch.Result) != quarantine.BranchFailed {
+			if q && kit.Deref(testkit.LoadRecord(t, opts.Quarantine).Branch.Result) != quarantine.BranchFailed {
 				t.Error("recovery.json must say the branch step failed")
 			}
 		})

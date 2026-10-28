@@ -14,7 +14,6 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
-	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/schema"
 )
@@ -224,7 +223,7 @@ func RestoreRefs(ctx *kit.Context, runID string, opts RestoreRefsOptions, w io.W
 	}
 	token := restoreToken(plan)
 	j.planned(plan, token)
-	if opts.Expect != "" && retire.Deref(token) != opts.Expect {
+	if opts.Expect != "" && kit.Deref(token) != opts.Expect {
 		return errRestorePlanChanged
 	}
 	if err := plan.applyOnly(opts.Only); err != nil {
@@ -255,11 +254,11 @@ func RestoreRefs(ctx *kit.Context, runID string, opts RestoreRefsOptions, w io.W
 		if err != nil {
 			return err
 		}
-		if retire.Deref(restoreToken(fresh)) != retire.Deref(token) {
+		if kit.Deref(restoreToken(fresh)) != kit.Deref(token) {
 			return errRestorePlanChanged
 		}
 	default:
-		fmt.Fprintf(w, "Nothing was restored: there is no terminal to ask. Pass --yes to restore %s.\n", RefCount(n))
+		fmt.Fprintf(w, "Nothing was restored: there is no terminal to ask. Pass --yes to restore %s.\n", kit.Count(n, "ref"))
 		return nil
 	}
 	// Origin is read again right before anything goes to it.
@@ -296,7 +295,7 @@ func RestoreRefs(ctx *kit.Context, runID string, opts RestoreRefsOptions, w io.W
 	}
 	refpins.DropEmptyRun(root, runID, w)
 	if failed > 0 {
-		return fmt.Errorf("%d of %s kept or not finished", failed, RefCount(n))
+		return fmt.Errorf("%d of %s kept or not finished", failed, kit.Count(n, "ref"))
 	}
 	return nil
 }

@@ -1,4 +1,4 @@
-package wtsync
+package agents
 
 import (
 	"bytes"
@@ -237,7 +237,7 @@ func running(pids []int) map[int]bool {
 	cmd.Stdout = &stdout
 	// ps exits 1, printing nothing, when none of the pids is there any
 	// more. Any other failure says nothing about them.
-	timedOut, code, err := git.RunBounded(agentsDeadline, cmd)
+	timedOut, code, err := git.RunBounded(Deadline, cmd)
 	if timedOut || (err != nil && (code != 1 || strings.TrimSpace(stdout.String()) != "")) {
 		return alive
 	}

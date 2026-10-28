@@ -353,7 +353,7 @@ func AcrossRepos(u *config.User, sel Selection, w io.Writer, fn func(*Context, i
 		}
 	}
 	if len(failed) > 0 {
-		return fmt.Errorf("%d of %s failed: %s", len(failed), RepoCount(len(results)), strings.Join(failed, ", "))
+		return fmt.Errorf("%d of %s failed: %s", len(failed), Count(len(results), "repository", "repositories"), strings.Join(failed, ", "))
 	}
 	return nil
 }

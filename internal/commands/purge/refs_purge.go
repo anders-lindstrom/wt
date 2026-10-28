@@ -15,7 +15,6 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/commands/refs"
-	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/schema"
@@ -197,7 +196,7 @@ func RefsPurge(ctx *kit.Context, opts RefsPurgeOptions, w io.Writer) (err error)
 	}
 	token := purgeRefsToken(plan)
 	j.planned(plan, token)
-	if opts.Expect != "" && retire.Deref(token) != opts.Expect {
+	if opts.Expect != "" && kit.Deref(token) != opts.Expect {
 		return errRefsPurgePlanChanged
 	}
 	plan.Render(w)
@@ -220,7 +219,7 @@ func RefsPurge(ctx *kit.Context, opts RefsPurgeOptions, w io.Writer) (err error)
 		if err != nil {
 			return err
 		}
-		if retire.Deref(purgeRefsToken(fresh)) != retire.Deref(token) {
+		if kit.Deref(purgeRefsToken(fresh)) != kit.Deref(token) {
 			return errRefsPurgePlanChanged
 		}
 	}
@@ -673,7 +672,7 @@ func RefsSwept(ctx *kit.Context, asJSON bool, out io.Writer) error {
 		return nil
 	}
 	for _, r := range runs {
-		fmt.Fprintf(out, "%s  swept %s, %s\n", r.RunID, r.At.Local().Format("2006-01-02 15:04"), refs.RefCount(len(r.Refs)))
+		fmt.Fprintf(out, "%s  swept %s, %s\n", r.RunID, r.At.Local().Format("2006-01-02 15:04"), kit.Count(len(r.Refs), "ref"))
 		var rows [][]string
 		for _, s := range r.Refs {
 			rows = append(rows, []string{"  " + s.ID(), git.ShortID(s.Object, 12)})

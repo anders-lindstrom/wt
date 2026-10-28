@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
@@ -339,7 +340,7 @@ func TestStatusPrintsADashForADetachedWorktree(t *testing.T) {
 }
 
 func noStatusSessions() StatusOptions {
-	return StatusOptions{Agents: []wtsync.Agent{}}
+	return StatusOptions{Agents: []agents.Agent{}}
 }
 
 // wt status <work> is the worktree alone, one fact per line, then the

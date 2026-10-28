@@ -6,6 +6,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
@@ -13,7 +14,6 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/github"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // A sweep that deletes nothing mints no run: not one with nothing to do,
@@ -21,7 +21,7 @@ import (
 func TestSweepThatDeletesNothingMintsNoRun(t *testing.T) {
 	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
-	r, human, err := retiretest.SweepJSON(t, ctx, retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}})
+	r, human, err := retiretest.SweepJSON(t, ctx, retire.SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{}})
 	if err != nil || r.RunID != nil {
 		t.Fatalf("%v %+v\n%s", err, r, human)
 	}
@@ -29,7 +29,7 @@ func TestSweepThatDeletesNothingMintsNoRun(t *testing.T) {
 	testkit.BranchWithWork(t, main, "done-work", 1)
 	testkit.LandOnMain(t, main, "done-work")
 	var out, buf bytes.Buffer
-	opts := retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{},
+	opts := retire.SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{},
 		Journal: retire.NewSweepJournal(&out), Confirm: func(retire.SweepPlan) (bool, error) {
 			testkit.AddWork(t, main, "done-work", 1)
 			return true, nil
@@ -58,7 +58,7 @@ func TestSweepQuarantineDoesNotPinABranchTwice(t *testing.T) {
 	testkit.LandOnMain(t, main, "done-work")
 	provisiontest.MergedWorktree(t, ctx, "fix/login")
 	dir := testkit.TrashFor(t, ctx)
-	r, human, err := retiretest.SweepJSON(t, ctx, retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{},
+	r, human, err := retiretest.SweepJSON(t, ctx, retire.SweepOptions{NoFetch: true, Agents: []agents.Agent{},
 		PRs: map[string]github.PR{}, Quarantine: dir})
 	if err != nil || r.Outcome != kit.OutcomeDone || r.RunID == nil {
 		t.Fatalf("%v %+v\n%s", err, r, human)
@@ -67,7 +67,7 @@ func TestSweepQuarantineDoesNotPinABranchTwice(t *testing.T) {
 	if it.Pin != nil || it.Quarantine == nil || !slices.Equal(it.RestoreCommand, []string{"wt", "restore", it.Quarantine.Dir}) {
 		t.Errorf("fix_wt/login = %+v", it)
 	}
-	if it := retiretest.ResultItem(t, r, "done-work"); retire.Deref(it.Pin) != refpins.PinOf(*r.RunID, refpins.RefBranch, "done-work") {
+	if it := retiretest.ResultItem(t, r, "done-work"); kit.Deref(it.Pin) != refpins.PinOf(*r.RunID, refpins.RefBranch, "done-work") {
 		t.Errorf("done-work = %+v", it)
 	}
 	if pins := testkit.GitOut(t, main, "for-each-ref", "--format=%(refname)", refpins.SweptPrefix); pins !=
@@ -93,13 +93,13 @@ func TestSweepInterruptedAfterAMoveNamesThePin(t *testing.T) {
 			kit.CurrentInterruptJournal().Interrupted("", "interrupted")
 		}
 	}
-	r, human, _ := retiretest.SweepJSON(t, ctx, retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}})
+	r, human, _ := retiretest.SweepJSON(t, ctx, retire.SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{}})
 	if r.Outcome != kit.OutcomeInterrupted || r.RunID == nil {
 		t.Fatalf("%+v\n%s", r, human)
 	}
 	it := retiretest.ResultItem(t, r, "one")
 	pin := refpins.PinOf(*r.RunID, refpins.RefBranch, "one")
-	if it.Result != retire.SweepInterrupted || !it.BranchDeleted || retire.Deref(it.Pin) != pin ||
+	if it.Result != retire.SweepInterrupted || !it.BranchDeleted || kit.Deref(it.Pin) != pin ||
 		!slices.Equal(it.RestoreCommand, refpins.RestoreFromRun(*r.RunID, "one")) {
 		t.Errorf("one = %+v", it)
 	}

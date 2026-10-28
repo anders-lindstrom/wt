@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -147,7 +148,7 @@ type CompleteInput struct {
 	// Tell are the idle sessions in the worktree. With any, the finish ends
 	// with the line to relay to them: Landed trunk commits on TrunkName, and
 	// the Check files the rebase stopped on.
-	Tell wtsync.Sessions
+	Tell agents.Sessions
 	// TrunkName is trunk as a person says it, "main" rather than a commit.
 	// Every other Trunk a sync verb passes around is a SHA.
 	TrunkName string

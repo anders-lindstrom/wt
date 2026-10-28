@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
@@ -129,7 +130,7 @@ func themOrIt(n int) string {
 // a code and in words: diverged, or behind in a checkout a fast-forward is
 // not safe in. dirty is tracked changes, the dirt that refuses a rebase too;
 // an untracked file blocks neither.
-func OwnBlocks(o OwnRemote, path string, dirty bool, sessions Sessions) (code, why string) {
+func OwnBlocks(o OwnRemote, path string, dirty bool, sessions agents.Sessions) (code, why string) {
 	switch o.State {
 	case OwnDiverged:
 		return OwnBlockDiverged, ""

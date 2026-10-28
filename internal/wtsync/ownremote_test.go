@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
@@ -480,7 +481,7 @@ func TestOwnBlocks(t *testing.T) {
 	if code, _ := OwnBlocks(behind, f.dir, true, nil); code != OwnBlockDirty {
 		t.Fatalf("dirty: %q", code)
 	}
-	busy := Sessions{{Name: "s", Cwd: f.dir, Status: "busy"}}
+	busy := agents.Sessions{{Name: "s", Cwd: f.dir, Status: "busy"}}
 	if code, _ := OwnBlocks(behind, f.dir, false, busy); code != OwnBlockSession {
 		t.Fatalf("busy session: %q", code)
 	}

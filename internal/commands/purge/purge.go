@@ -13,7 +13,6 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
-	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 	"github.com/anders-lindstrom/wt/schema"
@@ -74,7 +73,7 @@ func QuarantinePurge(dir string, opts Options, w io.Writer) error {
 		return report(fmt.Errorf("nothing was purged: %s", why))
 	}
 	token := purgeToken(plan)
-	if opts.Expect != "" && opts.Expect != retire.Deref(token) {
+	if opts.Expect != "" && opts.Expect != kit.Deref(token) {
 		return report(errPurgePlanChanged)
 	}
 	switch {
@@ -94,7 +93,7 @@ func QuarantinePurge(dir string, opts Options, w io.Writer) error {
 		if opts.Planned != nil {
 			opts.Planned(plan)
 		}
-		if retire.Deref(purgeToken(plan)) != retire.Deref(token) {
+		if kit.Deref(purgeToken(plan)) != kit.Deref(token) {
 			return report(errPurgePlanChanged)
 		}
 	}

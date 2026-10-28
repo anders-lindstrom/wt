@@ -14,13 +14,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // keepDay is the day the test clock runs on: not today, so a time printed
@@ -35,7 +35,7 @@ func keepOpts(push synccmd.PushMode) KeepOptions {
 	return KeepOptions{
 		Push: push,
 		VerbOptions: synccmd.VerbOptions{
-			Agents: []wtsync.Agent{},
+			Agents: []agents.Agent{},
 			Now: func() time.Time {
 				tick++
 				return keepDay.Add(time.Duration(tick-1) * time.Second)
@@ -224,6 +224,8 @@ func TestSyncKeepRunRebasesNothingWhenSessionsCannotBeListed(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin)
+	// The real listing, which looks for claude before it reads anything.
+	testkit.AgentsOf(ctx).Required = agents.ListOtherAgentsRequired
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	opts := keepOpts(synccmd.PushAlways)
 	opts.Agents = nil

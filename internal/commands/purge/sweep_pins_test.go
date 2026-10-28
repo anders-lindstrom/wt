@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
@@ -17,7 +18,6 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/github"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // sweptRuns is what wt refs swept --json lists.
@@ -57,7 +57,7 @@ func TestSweepPinsWhatItDeletesAndRefsRestoresIt(t *testing.T) {
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login")
 	wtTip := testkit.GitOut(t, main, "rev-parse", "fix_wt/login")
 
-	r, human, err := retiretest.SweepJSON(t, ctx, retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}})
+	r, human, err := retiretest.SweepJSON(t, ctx, retire.SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{}})
 	if err != nil || r.Outcome != kit.OutcomeDone || r.RunID == nil {
 		t.Fatalf("%v %+v\n%s", err, r, human)
 	}
@@ -65,7 +65,7 @@ func TestSweepPinsWhatItDeletesAndRefsRestoresIt(t *testing.T) {
 	for branch, tip := range map[string]string{"done-work": doneTip, "fix_wt/login": wtTip} {
 		it := retiretest.ResultItem(t, r, branch)
 		pin := refpins.PinOf(run, refpins.RefBranch, branch)
-		if retire.Deref(it.Pin) != pin || testkit.GitOut(t, main, "rev-parse", pin) != tip ||
+		if kit.Deref(it.Pin) != pin || testkit.GitOut(t, main, "rev-parse", pin) != tip ||
 			!slices.Equal(it.RestoreCommand, refpins.RestoreFromRun(run, branch)) {
 			t.Errorf("%s = %+v", branch, it)
 		}
@@ -107,7 +107,7 @@ func TestRemovePinsAMergedBranchAndRefsRestoresIt(t *testing.T) {
 		t.Fatalf("%v %+v", err, r)
 	}
 	run := *r.RunID
-	if s := retiretest.Step(t, r, kit.StepBranch); retire.Deref(s.Pin) != refpins.PinOf(run, refpins.RefBranch, "fix_wt/pinned") {
+	if s := retiretest.Step(t, r, kit.StepBranch); kit.Deref(s.Pin) != refpins.PinOf(run, refpins.RefBranch, "fix_wt/pinned") {
 		t.Errorf("branch %+v", s)
 	}
 	if s := retiretest.Step(t, r, kit.StepWorktree); s.Pin != nil {

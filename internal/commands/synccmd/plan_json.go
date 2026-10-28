@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -123,7 +123,7 @@ func UpPlanJSON(ctx *kit.Context, arg string, w io.Writer) error {
 	}
 	// Listed at most once, and only when asked: by the trunk check, when
 	// local trunk is checked out, and for the stack's sessions.
-	listAgents := sync.OnceValues(func() ([]wtsync.Agent, error) { return session.ListSessions() })
+	listAgents := sync.OnceValues(func() ([]agents.Agent, error) { return ctx.ListAgents() })
 	// What wt up would do to local trunk after its fetch, judged against
 	// origin/<trunk> as last fetched: the fetch may bring more.
 	p.TrunkSync = SyncLocalTrunk(ctx, tip, TrunkSyncOptions{OptedOut: !ctx.UserConfig().FFTrunk, Agents: listAgents})
@@ -198,8 +198,8 @@ func UpPlanJSON(ctx *kit.Context, arg string, w io.Writer) error {
 		case wtsync.OwnBehind:
 			// Unreadable is not clean: a fast-forward needs to know.
 			dirty, err := repo.Dirty(path, true)
-			agents, _ := listAgents()
-			o.Blocks, o.Why = wtsync.OwnBlocks(o, path, dirty || err != nil, wtsync.SessionsAt(agents, path))
+			listed, _ := listAgents()
+			o.Blocks, o.Why = wtsync.OwnBlocks(o, path, dirty || err != nil, agents.SessionsAt(listed, path))
 		case wtsync.OwnDiverged:
 			// Only a branch wt up would rebase is kept off by it: one on
 			// trunk already, or with nothing of its own, is skipped, and
@@ -292,12 +292,12 @@ func UpPlanJSON(ctx *kit.Context, arg string, w io.Writer) error {
 		p.Token = kit.Strp(planToken(ctx, trunk, stack, diverged))
 	}
 
-	agents, err := listAgents()
+	listed, err := listAgents()
 	if err != nil {
 		p.SessionsError = kit.Strp(err.Error())
 	}
 	for _, m := range p.Stack {
-		for _, a := range wtsync.SessionsAt(agents, m.Path) {
+		for _, a := range agents.SessionsAt(listed, m.Path) {
 			state := "busy"
 			if a.Idle() {
 				state = "idle"
@@ -321,17 +321,17 @@ func ownIneligible(m PlanStack, asked, why string) string {
 		who = fmt.Sprintf("%s (%s), a worktree in this stack,", m.Branch, m.Work)
 	}
 	if o.State == string(wtsync.OwnDiverged) && why == "elsewhere" {
-		return fmt.Sprintf("%s has diverged from %s: every commit it has (%d) is there in another form, on %d commit%s it never had. "+
+		return fmt.Sprintf("%s has diverged from %s: every commit it has (%d) is there in another form, on %s it never had. "+
 			"It looks rebased elsewhere and pushed. Take the remote's with git reset --hard %s, or rebase this copy as it stands with --allow-diverged.",
-			who, *o.Ref, *o.Ahead, *o.Behind, kit.Plural(*o.Behind), *o.Ref)
+			who, *o.Ref, *o.Ahead, kit.Count(*o.Behind, "commit"), *o.Ref)
 	}
 	if o.State == string(wtsync.OwnDiverged) {
-		return fmt.Sprintf("%s has diverged from %s: it has %d commit%s %s lacks, and %s has %d commit%s it never had. "+
+		return fmt.Sprintf("%s has diverged from %s: it has %s %s lacks, and %s has %s it never had. "+
 			"Pull %s in, or rebase it as it stands with --allow-diverged.",
-			who, *o.Ref, *o.Ahead, kit.Plural(*o.Ahead), *o.Ref, *o.Ref, *o.Behind, kit.Plural(*o.Behind), themOrIt(*o.Behind))
+			who, *o.Ref, kit.Count(*o.Ahead, "commit"), *o.Ref, *o.Ref, kit.Count(*o.Behind, "commit"), themOrIt(*o.Behind))
 	}
-	return fmt.Sprintf("%s is %d commit%s behind %s and cannot be fast-forwarded to it: %s.",
-		who, *o.Behind, kit.Plural(*o.Behind), *o.Ref, why)
+	return fmt.Sprintf("%s is %s behind %s and cannot be fast-forwarded to it: %s.",
+		who, kit.Count(*o.Behind, "commit"), *o.Ref, why)
 }
 
 func themOrIt(n int) string {

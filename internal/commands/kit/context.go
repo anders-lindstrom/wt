@@ -45,6 +45,9 @@ type Context struct {
 	// SupersetFake, when set, is the Superset this context sees in place of
 	// provision.ProbeSuperset; nil but in tests.
 	SupersetFake *superset.Status
+	// Agents, when set, is who this context sees in its worktrees in place of
+	// MachineAgents, func by func; nil but in tests.
+	Agents *Agents
 }
 
 // The warning topics. One line per topic per invocation, so a command that

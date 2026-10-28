@@ -19,9 +19,9 @@ import (
 // ConfigFile is the declaration at the top of a repository.
 const ConfigFile = ".wt-sync.yaml"
 
-// ErrNoConfig means trunk carries no declaration: the repository is reported
+// ErrUndeclared means trunk carries no declaration: the repository is reported
 // by wt sync and never rebased.
-var ErrNoConfig = errors.New("no " + ConfigFile + " on trunk")
+var ErrUndeclared = errors.New("no " + ConfigFile + " on trunk")
 
 // Rule declares that files matching Paths have one conflict shape.
 type Rule struct {
@@ -79,7 +79,7 @@ func LoadFromRef(mainRoot, ref string) (*Config, error) {
 		if errors.As(err, &gerr) && !gerr.TimedOut {
 			switch said := gerr.Stderr; {
 			case strings.Contains(said, "does not exist") || strings.Contains(said, "exists on disk, but not in"):
-				return nil, ErrNoConfig
+				return nil, ErrUndeclared
 			case strings.Contains(said, "invalid object name") || strings.Contains(said, "unknown revision"):
 				return nil, fmt.Errorf("%s is not known here; run git fetch origin", ref)
 			}

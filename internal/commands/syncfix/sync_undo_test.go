@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
@@ -16,7 +17,7 @@ import (
 
 func noAgentsUndo() UndoOptions {
 	return UndoOptions{VerbOptions: synccmd.VerbOptions{
-		Agents: []wtsync.Agent{},
+		Agents: []agents.Agent{},
 		Now:    func() time.Time { return time.Unix(0, 100) },
 	}}
 }
@@ -427,7 +428,7 @@ func TestSyncUndoRefusesASessionThatWokeWhileAsked(t *testing.T) {
 	opts.Confirm = func([]string) (bool, error) { return true, nil }
 	woke := testkit.IdleIn(t, bump, "bump-1")
 	woke[0].Status = "busy"
-	opts.Relist = func() ([]wtsync.Agent, error) { return woke, nil }
+	opts.Relist = func() ([]agents.Agent, error) { return woke, nil }
 	var undoOut bytes.Buffer
 	if err := SyncUndo(ctx, "bump", opts, &undoOut); err == nil || !strings.Contains(err.Error(), "busy in it now: bump-1") {
 		t.Fatalf("err %v\n%s", err, undoOut.String())

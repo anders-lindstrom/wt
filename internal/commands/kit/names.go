@@ -1,14 +1,14 @@
 package kit
 
 import (
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // SessionLabel is what a session is called in a line: its name, else its
 // kind.
-func SessionLabel(a *wtsync.Agent) string {
+func SessionLabel(a *agents.Agent) string {
 	switch {
 	case a.Name != "":
 		return a.Name
@@ -59,23 +59,10 @@ func WorktreeName(ctx *Context, branch, path string) string {
 // WhoLabel is the sessions in a worktree as a row names them: "session
 // parked-1 (idle) +1", or "an unnamed session" when there is nothing to
 // call the lead by.
-func WhoLabel(s wtsync.Sessions) string {
+func WhoLabel(s agents.Sessions) string {
 	label := s.Label(SessionLabel)
 	if lead := s.Lead(); lead != nil && (lead.Name != "" || lead.Kind != "") {
 		return "session " + label
 	}
 	return label
-}
-
-// ListAgain lists the sessions a second time, for the check after a question
-// or at the lock: through relist when a caller supplied one, the caller's own
-// list when it supplied that, and claude otherwise.
-func ListAgain(given []wtsync.Agent, relist func() ([]wtsync.Agent, error)) ([]wtsync.Agent, error) {
-	switch {
-	case relist != nil:
-		return relist()
-	case given != nil:
-		return given, nil
-	}
-	return wtsync.ListOtherAgents()
 }

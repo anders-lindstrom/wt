@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
@@ -15,7 +16,6 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // The folder that exists, or a worktree on another volume, refuses the
@@ -43,7 +43,7 @@ func TestSweepQuarantineRefusesBeforeAnyChange(t *testing.T) {
 					return quarantine.DeviceOf(p)
 				}}
 			}
-			opts := retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}, Quarantine: dir,
+			opts := retire.SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{}, Quarantine: dir,
 				QuarantineHooks: h}
 			r, human, err := retiretest.SweepJSON(t, ctx, opts)
 			if err == nil || r.Outcome != kit.OutcomeRefused || r.Error == nil {
@@ -67,7 +67,7 @@ func TestSweepQuarantineRefusesABranchOnlySweep(t *testing.T) {
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	opts := retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}, Quarantine: dir}
+	opts := retire.SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{}, Quarantine: dir}
 	r, human, err := retiretest.SweepJSON(t, ctx, opts)
 	if err == nil || r.Outcome != kit.OutcomeRefused || !ctx.Repo.BranchExists("done-work") {
 		t.Fatalf("want a refusal: %v %+v\n%s", err, r, human)
@@ -82,7 +82,7 @@ func TestSweepPlanJSONCarriesTheQuarantine(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
 	provisiontest.MergedWorktree(t, ctx, "fix/planned")
 	dir := testkit.TrashFor(t, ctx)
-	opts := retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}, Quarantine: dir}
+	opts := retire.SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{}, Quarantine: dir}
 	p, err := retiretest.SweepPlanJSON(t, ctx, opts)
 	if err != nil || p.Token == nil || p.Quarantine == nil || *p.Quarantine != dir {
 		t.Fatalf("%v %+v", err, p)
@@ -119,7 +119,7 @@ func TestSweepSaysAPartialMoveIsPartial(t *testing.T) {
 		}
 		return nil
 	}}
-	opts := retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}, Quarantine: dir,
+	opts := retire.SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{}, Quarantine: dir,
 		QuarantineHooks: h}
 	r, human, _ := retiretest.SweepJSON(t, ctx, opts)
 	if strings.Contains(human, "- kept half") || !strings.Contains(human, "partly done") {
@@ -134,7 +134,7 @@ func TestSweepQuarantineRefusesAFolderInsideTheRepository(t *testing.T) {
 	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/stays")
-	opts := retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{},
+	opts := retire.SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{},
 		Quarantine: filepath.Join(main, "trash-q")}
 	if r, _, err := retiretest.SweepJSON(t, ctx, opts); err == nil || r.Outcome != kit.OutcomeRefused || !testkit.Exists(path) {
 		t.Errorf("want a refusal: %v %+v", err, r)
@@ -170,7 +170,7 @@ func TestSweepDropsThePinsOfADeletedQuarantine(t *testing.T) {
 	}
 	testkit.BranchWithWork(t, main, "done-work", 1)
 	testkit.LandOnMain(t, main, "done-work")
-	opts := retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}}
+	opts := retire.SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{}}
 	_, human, err := retiretest.SweepJSON(t, ctx, opts)
 	if err != nil {
 		t.Fatalf("%v\n%s", err, human)

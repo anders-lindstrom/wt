@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/agents"
 )
 
 func TestRecheckOfACleanWorktreeAnswersNothing(t *testing.T) {
@@ -69,11 +71,11 @@ func TestRecheckListsTheSessionsInTheWorktree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	agents := []Agent{
+	listed := []agents.Agent{
 		{Name: "in", Cwd: resolved, Status: "idle"},
 		{Name: "elsewhere", Cwd: t.TempDir(), Status: "busy"},
 	}
-	s := Recheck(wt, gitDir, agents)
+	s := Recheck(wt, gitDir, listed)
 	if s.Err != nil || len(s.Sessions) != 1 || s.Sessions[0].Name != "in" {
 		t.Fatalf("sessions %+v", s.Sessions)
 	}

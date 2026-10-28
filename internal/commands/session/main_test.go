@@ -6,12 +6,10 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
-// TestMain runs the tests off the machine, with no session listed by the
-// machine's own claude until a test asks for another state.
+// TestMain runs the tests off the machine with testkit.Main's fakes, and
+// gives a fake claude on the PATH the time a loaded machine needs to start it.
 func TestMain(m *testing.M) {
 	testkit.Main(m, func() {
-		ListSessions = testkit.NoSessions
-		ListClaudeSessions = testkit.NoClaudeSessions
 		SessionsDeadline = testkit.FakeClaudeDeadline
 	})
 }

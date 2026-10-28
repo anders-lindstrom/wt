@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/github"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // The PR column of `wt list`: a worktree whose branch is a pull request's
@@ -187,7 +187,7 @@ func TestStatusWorktreeCarriesThePullRequest(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := StatusWorktree(ctx, "login-crash", StatusOptions{Agents: []wtsync.Agent{}}, &out); err != nil {
+	if err := StatusWorktree(ctx, "login-crash", StatusOptions{Agents: []agents.Agent{}}, &out); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "pr      #12 open · Login crash") {
@@ -221,7 +221,7 @@ func TestStatusWorktreeIsSilentWithoutOne(t *testing.T) {
 			set(t)
 			defer func() { ctx.GitHubFake = nil }()
 			var out bytes.Buffer
-			if err := StatusWorktree(ctx, "login-crash", StatusOptions{Agents: []wtsync.Agent{}}, &out); err != nil {
+			if err := StatusWorktree(ctx, "login-crash", StatusOptions{Agents: []agents.Agent{}}, &out); err != nil {
 				t.Fatal(err)
 			}
 			if strings.Contains(out.String(), "  pr ") {
@@ -329,7 +329,7 @@ func TestStatusWorktreeRefreshAndNoPR(t *testing.T) {
 	}
 	status := func(opts StatusOptions) string {
 		t.Helper()
-		opts.Agents = []wtsync.Agent{}
+		opts.Agents = []agents.Agent{}
 		var out bytes.Buffer
 		if err := StatusWorktree(ctx, "login-crash", opts, &out); err != nil {
 			t.Fatal(err)

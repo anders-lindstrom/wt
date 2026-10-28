@@ -3,7 +3,7 @@ package session
 import (
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/wtsync"
+	"github.com/anders-lindstrom/wt/internal/agents"
 )
 
 // A row fits by what the terminal draws: a character two columns wide
@@ -42,7 +42,7 @@ func TestSessionStateIsClaudesOwnWordWhenUnknown(t *testing.T) {
 		"working": "working", "blocked": "needs input", "done": "done",
 		"failed": "failed", "stopped": "stopped", "hibernating": "hibernating",
 	} {
-		s := ClaudeSession{Agent: wtsync.Agent{Kind: "background", State: state}}
+		s := ClaudeSession{Agent: agents.Agent{Kind: "background", State: state}}
 		if got := s.state(); got != want {
 			t.Errorf("state %q reads %q, want %q", state, got, want)
 		}

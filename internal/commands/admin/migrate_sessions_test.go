@@ -7,10 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // Not being able to tell who is in a worktree is not nobody in it: migrate
@@ -38,12 +37,12 @@ func TestMigrateRefusesWhenTheSessionsCannotBeListed(t *testing.T) {
 
 // The session running wt migrate is not somebody else in the worktree.
 func TestMigrateDoesNotCountTheSessionRunningIt(t *testing.T) {
-	// Not parallel: swaps session.ListSessions; sets environment variables for the whole test binary.
+	// Not parallel: puts a fake claude on the PATH of the whole test binary.
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	from := testkit.WorktreeAt(t, main, "fix/self", filepath.Join(ctx.Repo.Parent, "elsewhere"))
 	resolved, _ := filepath.EvalSymlinks(from)
-	testkit.FakeClaude(t, &session.ListSessions, []wtsync.Agent{ownSession(resolved)})
+	testkit.FakeClaude(t, ctx, []agents.Agent{ownSession(resolved)})
 
 	var buf bytes.Buffer
 	if _, err := Migrate(ctx, from, "", MigrateOptions{}, &buf); err != nil {
@@ -58,7 +57,7 @@ func TestMigrateCountsEverySessionInIt(t *testing.T) {
 	ctx, _ := kit.Open(main)
 	from := testkit.WorktreeAt(t, main, "fix/crowded", filepath.Join(ctx.Repo.Parent, "elsewhere"))
 	resolved, _ := filepath.EvalSymlinks(from)
-	opts := MigrateOptions{Agents: []wtsync.Agent{
+	opts := MigrateOptions{Agents: []agents.Agent{
 		{Name: "gecko-1", Cwd: resolved, Status: "idle"},
 		{Name: "gecko-2", Cwd: filepath.Join(resolved, "sub"), Status: "busy"},
 	}}

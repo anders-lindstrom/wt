@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
@@ -104,8 +105,8 @@ type Assessment struct {
 	Class     Class
 	Behind    int
 	Ahead     int
-	Dirty     bool     // tracked changes; untracked files never block a rebase
-	Sessions  Sessions // every live session in the worktree, shallowest first
+	Dirty     bool            // tracked changes; untracked files never block a rebase
+	Sessions  agents.Sessions // every live session in the worktree, shallowest first
 	Replay    Replay
 	Files     []FileOutcome
 	Divergent []Collision // why the class is divergent
@@ -161,16 +162,16 @@ func (a Assessment) OnlyFastForward() bool {
 // Assess classifies one worktree against onto, the ref it would be rebased
 // onto. A nil cfg means the repository declared nothing: it is still
 // classified, nothing is claimed, and NoConfig says so.
-func Assess(mainRoot, onto string, cfg *Config, wt repo.Worktree, agents []Agent) Assessment {
-	return AssessOwn(mainRoot, onto, cfg, wt, agents, OwnRemote{})
+func Assess(mainRoot, onto string, cfg *Config, wt repo.Worktree, listed []agents.Agent) Assessment {
+	return AssessOwn(mainRoot, onto, cfg, wt, listed, OwnRemote{})
 }
 
 // AssessOwn is Assess for a branch whose standing against its own remote is
 // known. A branch that is behind it, in a checkout a fast-forward is safe
 // in, is assessed at the remote's commit: a run moves it there before it
 // rebases, so that is what the class has to be true of.
-func AssessOwn(mainRoot, onto string, cfg *Config, wt repo.Worktree, agents []Agent, own OwnRemote) Assessment {
-	a := Assessment{Path: wt.Path, Branch: wt.Branch, NoConfig: cfg == nil, Sessions: SessionsAt(agents, wt.Path), Own: own}
+func AssessOwn(mainRoot, onto string, cfg *Config, wt repo.Worktree, listed []agents.Agent, own OwnRemote) Assessment {
+	a := Assessment{Path: wt.Path, Branch: wt.Branch, NoConfig: cfg == nil, Sessions: agents.SessionsAt(listed, wt.Path), Own: own}
 	if wt.Detached || wt.Branch == "" {
 		a.Class = Detached
 		return a

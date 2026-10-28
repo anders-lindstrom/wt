@@ -1,4 +1,7 @@
-package wtsync
+// Package agents tells who is in a worktree: the Claude and Codex sessions
+// working there, and the other processes whose working directory is inside
+// it, and stops those processes when a worktree is removed.
+package agents
 
 import (
 	"bytes"
@@ -17,10 +20,12 @@ import (
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
-// agentsDeadline bounds claude agents --json, the one CLI other than git on
-// every acting path. A claude that has not answered by then is stuck, and a
-// run that cannot tell who is in a worktree refuses rather than waits.
-var agentsDeadline = 10 * time.Second
+// Deadline bounds claude agents --json, the one CLI other than git on every
+// acting path, and the ps and lsof wt reads processes with. A claude
+// that has not answered by then is stuck, and a run that cannot tell who is
+// in a worktree refuses rather than waits. A test binary raises it once, in
+// its TestMain.
+var Deadline = 10 * time.Second
 
 // Agent is an agent session: a Claude one from `claude agents --json`, or a
 // Codex one from the process table and Codex's session logs (codex.go). It
@@ -140,7 +145,7 @@ func ParseAgents(data []byte) ([]Agent, error) {
 // ListAgents asks claude for its sessions. No claude on the PATH means no
 // sessions, not an error: "nobody to ask" is a normal state.
 func ListAgents() ([]Agent, error) {
-	data, found, err := claudeListing(agentsDeadline)
+	data, found, err := claudeListing(Deadline)
 	if !found || err != nil {
 		return nil, err
 	}
@@ -183,12 +188,18 @@ func claudeListing(deadline time.Duration) (data []byte, found bool, err error) 
 // which says whose session wt runs under, is read beside claude's answer:
 // it takes a fifth of the time, and read after it would add to it.
 func ListClaudeSessions(deadline time.Duration) (sessions []Agent, found bool, err error) {
+	return ListClaudeSessionsWith(deadline, Ancestors)
+}
+
+// ListClaudeSessionsWith is ListClaudeSessions with ancestors saying which
+// processes wt runs under, in place of the process table.
+func ListClaudeSessionsWith(deadline time.Duration, ancestors func() (map[int]bool, error)) (sessions []Agent, found bool, err error) {
 	if _, err := exec.LookPath("claude"); err != nil {
 		return nil, false, nil //nolint:nilerr // no claude to run is nobody to ask, which found says
 	}
 	caller := make(chan map[int]bool, 1)
 	go func() {
-		pids, _ := Ancestors()
+		pids, _ := ancestors()
 		caller <- pids
 	}()
 	data, found, err := claudeListing(deadline)

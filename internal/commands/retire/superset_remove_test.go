@@ -6,17 +6,17 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/superset"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // NoClaude keeps a removal off `claude agents`.
-var NoClaude = []wtsync.Agent{}
+var NoClaude = []agents.Agent{}
 
 // wt remove, deleting or quarantining, deletes the worktree's Superset
 // workspace — and only once the directory is gone from its path and git no

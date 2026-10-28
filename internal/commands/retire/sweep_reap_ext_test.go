@@ -7,20 +7,20 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // Without --reap a merged worktree something still runs in is in use: the
 // row says what runs there and how to have sweep stop it, and the sweep
 // leaves both the worktree and the process.
 func TestSweepKeepsABusyWorktreeWithoutReap(t *testing.T) {
-	// Not parallel: swaps retire.ScanProcesses and signals real processes.
-	retire.RealProcesses(t)
+	// Not parallel: signals real processes.
 	ctx, _, _ := testkit.SweepRepo(t)
+	retire.RealProcesses(ctx)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	pid := retire.Leftover(t, path)
 
@@ -34,14 +34,14 @@ func TestSweepKeepsABusyWorktreeWithoutReap(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := retire.Sweep(ctx, retire.SweepOptions{Yes: true, Agents: []wtsync.Agent{}}, &buf); err != nil {
+	if err := retire.Sweep(ctx, retire.SweepOptions{Yes: true, Agents: []agents.Agent{}}, &buf); err != nil {
 		t.Fatalf("Sweep: %v\n%s", err, buf.String())
 	}
 	if !testkit.Exists(path) || !retire.Alive(pid) {
 		t.Errorf("worktree there %v, process alive %v; want both", testkit.Exists(path), retire.Alive(pid))
 	}
 
-	plan, err := retiretest.SweepPlanJSON(t, ctx, retire.SweepOptions{Agents: []wtsync.Agent{}})
+	plan, err := retiretest.SweepPlanJSON(t, ctx, retire.SweepOptions{Agents: []agents.Agent{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,13 +54,13 @@ func TestSweepKeepsABusyWorktreeWithoutReap(t *testing.T) {
 // --reap lists the process on the row that goes, stops it right before the
 // worktree goes, and reports it on the row of the result.
 func TestSweepReapStopsWhatRunsInAMergedWorktree(t *testing.T) {
-	// Not parallel: swaps retire.ScanProcesses and signals real processes.
-	retire.RealProcesses(t)
+	// Not parallel: signals real processes.
 	ctx, _, _ := testkit.SweepRepo(t)
+	retire.RealProcesses(ctx)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	pid := retire.Leftover(t, path)
 
-	opts := retire.SweepOptions{Agents: []wtsync.Agent{}, Reap: true}
+	opts := retire.SweepOptions{Agents: []agents.Agent{}, Reap: true}
 	plan, err := retiretest.SweepPlanJSON(t, ctx, opts)
 	if err != nil {
 		t.Fatal(err)
@@ -73,7 +73,7 @@ func TestSweepReapStopsWhatRunsInAMergedWorktree(t *testing.T) {
 	if !retire.Alive(pid) {
 		t.Fatal("the plan stopped the process")
 	}
-	without, _ := retiretest.SweepPlanJSON(t, ctx, retire.SweepOptions{Agents: []wtsync.Agent{}})
+	without, _ := retiretest.SweepPlanJSON(t, ctx, retire.SweepOptions{Agents: []agents.Agent{}})
 	if without.Token != nil || plan.Token == nil {
 		t.Errorf("tokens %v and %v: without --reap there is nothing to sweep", without.Token, plan.Token)
 	}
@@ -85,7 +85,7 @@ func TestSweepReapStopsWhatRunsInAMergedWorktree(t *testing.T) {
 	}
 	row := retiretest.ResultItem(t, r, "fix_wt/login-crash")
 	if row.Result != retire.SweepRemoved || len(row.Reaped) != 1 || row.Reaped[0].PID != pid ||
-		row.Reaped[0].Result != wtsync.ReapTerminated {
+		row.Reaped[0].Result != agents.ReapTerminated {
 		t.Errorf("row %+v, want removed with its process terminated", row)
 	}
 	if testkit.Exists(path) || retire.Alive(pid) {

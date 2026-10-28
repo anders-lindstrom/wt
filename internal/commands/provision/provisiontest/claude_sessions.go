@@ -6,7 +6,6 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
-	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
@@ -25,7 +24,7 @@ func OwnShape(t *testing.T) *kit.Context {
 	if err != nil {
 		t.Fatal(err)
 	}
-	testkit.ClaudeLists(t, &session.ListClaudeSessions,
+	testkit.ClaudeLists(ctx,
 		testkit.Background("20260930-090330/list-sessions", "aaaaaaaa", "blocked", wt),
 		testkit.Background("a second look", "bbbbbbbb", "working", wt))
 	return ctx

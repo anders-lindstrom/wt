@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/repo"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // MergedPR is what GitHub says about a branch it merged into trunk at tip.
@@ -24,7 +24,7 @@ func MergedPR(number int, branch, tip string) github.PR {
 // sweptWith is a sweep plan made against a fixed set of pull requests.
 func sweptWith(t *testing.T, ctx *kit.Context, prs map[string]github.PR) SweepPlan {
 	t.Helper()
-	return planWith(t, ctx, SweepOptions{Agents: []wtsync.Agent{}, PRs: prs})
+	return planWith(t, ctx, SweepOptions{Agents: []agents.Agent{}, PRs: prs})
 }
 
 // The case git cannot answer: the branch is not on trunk and never will be,
@@ -60,7 +60,7 @@ func TestSweepRemovesASquashMergedWorktree(t *testing.T) {
 	prs := map[string]github.PR{branch: MergedPR(34, branch, tip)}
 
 	var buf bytes.Buffer
-	if err := Sweep(ctx, SweepOptions{Yes: true, Agents: []wtsync.Agent{}, PRs: prs}, &buf); err != nil {
+	if err := Sweep(ctx, SweepOptions{Yes: true, Agents: []agents.Agent{}, PRs: prs}, &buf); err != nil {
 		t.Fatalf("Sweep: %v\n%s", err, buf.String())
 	}
 	if testkit.Exists(path) {
@@ -224,7 +224,7 @@ func TestSweepSaysWhyAConfirmedPullRequestWasNotDeleted(t *testing.T) {
 
 	// A fresh plan that knows nothing about the pull request: the branch is
 	// where it was, and nothing else claims it.
-	fresh := planWith(t, ctx, SweepOptions{Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}})
+	fresh := planWith(t, ctx, SweepOptions{Agents: []agents.Agent{}, PRs: map[string]github.PR{}})
 	got := fresh.changedFrom(ctx, was)
 	if got != "#34 could not be read as merged at this tip a second time" {
 		t.Errorf("changedFrom = %q", got)
@@ -255,7 +255,7 @@ func TestSweepKeepsASquashMergedBranchWhenTheSecondReadFails(t *testing.T) {
 	ghAnsweringOnce(t, ctx, MergedPR(34, "fix_wt/login-crash", tip))
 
 	var out bytes.Buffer
-	err := Sweep(ctx, SweepOptions{NoFetch: true, Yes: true, Agents: []wtsync.Agent{}}, &out)
+	err := Sweep(ctx, SweepOptions{NoFetch: true, Yes: true, Agents: []agents.Agent{}}, &out)
 	if err == nil {
 		t.Fatalf("the sweep reported success:\n%s", out.String())
 	}
@@ -279,7 +279,7 @@ func TestSweepAsksGitHubPastAYoungCache(t *testing.T) {
 	kit.WritePRCache(ctx, testkit.GhRepo, map[string]*github.PR{"fix_wt/login-crash": nil}, time.Now())
 	testkit.FakeGitHub(t, ctx, MergedPR(34, "fix_wt/login-crash", tip))
 
-	p := planWith(t, ctx, SweepOptions{Agents: []wtsync.Agent{}})
+	p := planWith(t, ctx, SweepOptions{Agents: []agents.Agent{}})
 	if !slices.Contains(branchNames(p.Delete), "fix_wt/login-crash") {
 		t.Errorf("sweep believed the cache instead of asking GitHub: %s", Rendered(p))
 	}
@@ -296,7 +296,7 @@ func TestSweepDeletesASquashMergedBranchWithNoWorktree(t *testing.T) {
 	testkit.FakeGitHub(t, ctx, MergedPR(34, "fix_wt/login-crash", tip))
 
 	var out bytes.Buffer
-	if err := Sweep(ctx, SweepOptions{NoFetch: true, Yes: true, Agents: []wtsync.Agent{}}, &out); err != nil {
+	if err := Sweep(ctx, SweepOptions{NoFetch: true, Yes: true, Agents: []agents.Agent{}}, &out); err != nil {
 		t.Fatalf("Sweep: %v\n%s", err, out.String())
 	}
 	if _, ok, err := ctx.Repo.ResolveRef("refs/heads/fix_wt/login-crash"); err != nil || ok {
@@ -348,7 +348,7 @@ func TestSweepDoesNotDeleteOnAPullRequestThatDidNotLandHere(t *testing.T) {
 			log := testkit.FakeGitHub(t, ctx, prs("fix_wt/login-crash", tip)...)
 
 			var out bytes.Buffer
-			if err := Sweep(ctx, SweepOptions{NoFetch: true, Yes: true, Agents: []wtsync.Agent{}}, &out); err != nil {
+			if err := Sweep(ctx, SweepOptions{NoFetch: true, Yes: true, Agents: []agents.Agent{}}, &out); err != nil {
 				t.Fatalf("Sweep: %v\n%s", err, out.String())
 			}
 			if len(testkit.ArgvOf(t, log)) == 0 {
@@ -374,7 +374,7 @@ func TestSweepSaysWhatItLosesWithoutGitHub(t *testing.T) {
 	var errs bytes.Buffer
 	ctx.WarnTo(&errs)
 	var out bytes.Buffer
-	if err := Sweep(ctx, SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}}, &out); err != nil {
+	if err := Sweep(ctx, SweepOptions{NoFetch: true, Agents: []agents.Agent{}}, &out); err != nil {
 		t.Fatalf("Sweep: %v", err)
 	}
 	want := "wt: sweeping without GitHub's answers, so a squash-merged branch is not recognised"

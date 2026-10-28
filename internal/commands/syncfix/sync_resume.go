@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/git"
@@ -110,11 +111,11 @@ func syncResume(ctx *kit.Context, work string, opts ResumeOptions, w io.Writer) 
 	if tip != pinned {
 		return fmt.Errorf("%s pins %s but the handover says %s; nothing is resumed", st.Safety, git.ShortID(tip, 7), git.ShortID(pinned, 7))
 	}
-	agents, err := opts.SessionsNow(synccmd.ResumedNothing)
+	listed, err := opts.SessionsNow(ctx, synccmd.ResumedNothing)
 	if err != nil {
 		return err
 	}
-	sessions := wtsync.SessionsAt(agents, target.Path)
+	sessions := agents.SessionsAt(listed, target.Path)
 	if len(sessions.Busy()) > 0 {
 		return fmt.Errorf("an agent session is busy in %s: %s; nothing is resumed", name, sessions.Label(kit.SessionLabel))
 	}
@@ -130,7 +131,7 @@ func syncResume(ctx *kit.Context, work string, opts ResumeOptions, w io.Writer) 
 		landed = behind
 		fmt.Fprintln(w, synccmd.IdleNotice(name, sessions))
 		told := []synccmd.Idle{{Label: name, Path: target.Path, Sessions: sessions}}
-		ok, _, err := synccmd.AskIdle(w, opts.VerbOptions, []string{name}, told, agents, synccmd.ResumedNothing)
+		ok, _, err := synccmd.AskIdle(ctx, w, opts.VerbOptions, []string{name}, told, listed, synccmd.ResumedNothing)
 		if err != nil {
 			return err
 		}
@@ -238,7 +239,7 @@ func syncResume(ctx *kit.Context, work string, opts ResumeOptions, w io.Writer) 
 		})
 		return fmt.Errorf("not completed: %s (needs you)", name)
 	}
-	fmt.Fprintf(w, "  ✓ rebased %d commit%s\n", res.Replayed, kit.Plural(res.Replayed))
+	fmt.Fprintf(w, "  ✓ rebased %s\n", kit.Count(res.Replayed, "commit"))
 	_, ran, cerr := synccmd.CompleteRun(ctx, w, cfg, tracker, name, target.Path, func() synccmd.CompleteInput {
 		// As a run does: the tip the run found is what the deferred steps
 		// compare with and what the undo line names.
@@ -401,8 +402,8 @@ func verifyHandover(wtPath string, st wtsync.State, w io.Writer) error {
 		named = append(named, p+" ("+st.Strategy[p]+")")
 	}
 	if len(changed) > 0 {
-		return fmt.Errorf("%d file%s under \"never hand-merge here\" changed: %s; nothing is resumed",
-			len(changed), kit.Plural(len(changed)), strings.Join(named, ", "))
+		return fmt.Errorf("%s under \"never hand-merge here\" changed: %s; nothing is resumed",
+			kit.Count(len(changed), "file"), strings.Join(named, ", "))
 	}
 	return nil
 }

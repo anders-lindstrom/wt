@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/gittest"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // GitAncestor reports whether a is an ancestor of b; exit 1 is a plain no.
@@ -27,11 +27,11 @@ func GitAncestor(t *testing.T, dir, a, b string) bool {
 
 // IdleIn is one interactive session parked in path, as claude lists it: the
 // cwd resolved.
-func IdleIn(t *testing.T, path, name string) []wtsync.Agent {
+func IdleIn(t *testing.T, path, name string) []agents.Agent {
 	t.Helper()
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return []wtsync.Agent{{ID: name, Name: name, Cwd: resolved, Kind: "interactive", Status: "idle"}}
+	return []agents.Agent{{ID: name, Name: name, Cwd: resolved, Kind: "interactive", Status: "idle"}}
 }

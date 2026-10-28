@@ -1,4 +1,4 @@
-package wtsync
+package agents
 
 import (
 	"fmt"

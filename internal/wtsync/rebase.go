@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/git"
 )
 
@@ -119,7 +120,7 @@ func Preflight(a Assessment) (Verdict, string) {
 	return RefuseRun, "class unknown"
 }
 
-func agentLabel(a *Agent) string {
+func agentLabel(a *agents.Agent) string {
 	switch {
 	case a.Name != "":
 		return a.Name

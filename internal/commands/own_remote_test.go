@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // The overview a person reads: one line under the row for what a run would
@@ -50,7 +50,7 @@ func TestSyncSaysHowAWorktreeStandsAgainstItsRemote(t *testing.T) {
 		t.Fatalf("detail:\n%s", out.String())
 	}
 	out.Reset()
-	if err := StatusWorktree(f.Ctx, "x", StatusOptions{NoPR: true, Agents: []wtsync.Agent{}}, &out); err != nil {
+	if err := StatusWorktree(f.Ctx, "x", StatusOptions{NoPR: true, Agents: []agents.Agent{}}, &out); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "  remote") || !strings.Contains(out.String(), "diverged from origin/feat_wt/x") {

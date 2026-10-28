@@ -7,9 +7,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // SweepAllOptions is a sweep across repositories: the one-repository options
@@ -56,11 +56,11 @@ func SweepAll(u *config.User, sel kit.Selection, opts SweepAllOptions, w io.Writ
 	// The sessions are listed once for every repository's plan: `claude
 	// agents` knows them all, and twenty listings would say the same thing
 	// twenty times. Before anything goes, each repository lists them again.
-	agents, listErr := opts.listAgents()
+	listed, listErr := opts.listAgents(nil)
 	one := opts.SweepOptions
-	one.Agents, one.Relist = agents, nil
-	if agents == nil {
-		one.Agents = []wtsync.Agent{}
+	one.Agents, one.Relist = listed, nil
+	if listed == nil {
+		one.Agents = []agents.Agent{}
 	}
 
 	sweeps := kit.EachRepo(set.Repos, kit.RepoParallelism, func(t kit.RepoTarget) *repoSweep {
@@ -92,13 +92,13 @@ func SweepAll(u *config.User, sel kit.Selection, opts SweepAllOptions, w io.Writ
 		}
 	}
 	if len(quiet) > 0 {
-		fmt.Fprintf(w, "Nothing to sweep in %s: %s\n", kit.RepoCount(len(quiet)), strings.Join(quiet, ", "))
+		fmt.Fprintf(w, "Nothing to sweep in %s: %s\n", kit.Count(len(quiet), "repository", "repositories"), strings.Join(quiet, ", "))
 	}
 	if repos == 0 {
 		return failures(failed, len(sweeps))
 	}
 
-	what := sweepCounts(branches, worktrees) + " across " + kit.RepoCount(repos)
+	what := sweepCounts(branches, worktrees) + " across " + kit.Count(repos, "repository", "repositories")
 	switch {
 	case opts.DryRun:
 		fmt.Fprintln(w, "Nothing was swept: --dry-run.")
@@ -156,7 +156,7 @@ func planRepoSweep(t kit.RepoTarget, opts SweepOptions, listErr error, log io.Wr
 	if err != nil {
 		return nil, SweepPlan{}, err
 	}
-	list := func() ([]wtsync.Agent, error) { return opts.Agents, listErr }
+	list := func() ([]agents.Agent, error) { return opts.Agents, listErr }
 	plan, err := PlanSweep(ctx, bases, list, opts.pullRequests(ctx), opts.Reap)
 	return ctx, plan, err
 }
@@ -165,10 +165,10 @@ func planRepoSweep(t kit.RepoTarget, opts SweepOptions, listErr error, log io.Wr
 func sweepCounts(branches, worktrees int) string {
 	var parts []string
 	if branches > 0 {
-		parts = append(parts, branchCount(branches))
+		parts = append(parts, kit.Count(branches, "branch", "branches"))
 	}
 	if worktrees > 0 {
-		parts = append(parts, WorktreeCount(worktrees))
+		parts = append(parts, kit.Count(worktrees, "worktree"))
 	}
 	return strings.Join(parts, " and ")
 }
@@ -179,5 +179,5 @@ func failures(failed []string, of int) error {
 	if len(failed) == 0 {
 		return nil
 	}
-	return fmt.Errorf("%d of %s could not be swept in full: %s", len(failed), kit.RepoCount(of), strings.Join(failed, ", "))
+	return fmt.Errorf("%d of %s could not be swept in full: %s", len(failed), kit.Count(of, "repository", "repositories"), strings.Join(failed, ", "))
 }

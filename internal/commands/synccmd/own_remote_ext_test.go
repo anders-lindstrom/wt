@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
@@ -198,8 +199,8 @@ func TestUpBehindAndNotFastForwardableTouchesNothing(t *testing.T) {
 	// A busy session blocks it too, and --force, which takes the run past
 	// the session, takes the fast-forward past it as well.
 	testkit.GitIn(t, x, "checkout", "-q", "--", "x.txt")
-	busy := []wtsync.Agent{{Name: "busy-1", Cwd: x, Status: "busy"}}
-	opts.Agents, opts.Relist = busy, func() ([]wtsync.Agent, error) { return busy, nil }
+	busy := []agents.Agent{{Name: "busy-1", Cwd: x, Status: "busy"}}
+	opts.Agents, opts.Relist = busy, func() ([]agents.Agent, error) { return busy, nil }
 	r, human, err = synccmdtest.UpOut(t, f.Ctx, "x", opts)
 	if err == nil || testkit.Str(r.Worktrees[0].OwnRemoteSync.SkippedReason) != wtsync.OwnBlockSession {
 		t.Fatalf("a busy session: %v %+v\n%s", err, r.Worktrees[0].OwnRemoteSync, human)

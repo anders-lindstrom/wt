@@ -4,11 +4,11 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // --json names, for each problem, the category that goes past it, and the
@@ -16,8 +16,8 @@ import (
 func TestRemoveJSONNamesTheForceCategories(t *testing.T) {
 	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/force-json")
-	agents := []wtsync.Agent{retire.AgentIn(t, path, "idle-1", true), retire.AgentIn(t, path, "busy-1", false)}
-	p, err := retire.RemovePlanOf(t, ctx, path, retire.RemoveOptions{Force: kit.ForceIdleSessions, Agents: agents})
+	listed := []agents.Agent{retire.AgentIn(t, path, "idle-1", true), retire.AgentIn(t, path, "busy-1", false)}
+	p, err := retire.RemovePlanOf(t, ctx, path, retire.RemoveOptions{Force: kit.ForceIdleSessions, Agents: listed})
 	if err == nil {
 		t.Fatal("want a refusal: the busy session is not forced")
 	}
@@ -37,12 +37,12 @@ func TestRemoveJSONNamesTheForceCategories(t *testing.T) {
 		t.Errorf("forceWith = %q", with)
 	}
 
-	opts := retire.RemoveOptions{Force: kit.ForceIdleSessions | kit.ForceBusySessions | kit.ForceLock, Agents: agents}
+	opts := retire.RemoveOptions{Force: kit.ForceIdleSessions | kit.ForceBusySessions | kit.ForceLock, Agents: listed}
 	plan, err := retire.RemovePlanOf(t, ctx, path, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts.Expect = retire.Deref(plan.Token)
+	opts.Expect = kit.Deref(plan.Token)
 	r, err := retiretest.RemoveJSON(t, ctx, path, opts)
 	if err != nil || r.Outcome != retire.RemoveRemoved {
 		t.Fatalf("%v %+v", err, r)

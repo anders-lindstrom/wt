@@ -12,12 +12,12 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 	"github.com/anders-lindstrom/wt/internal/repo"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 	"github.com/anders-lindstrom/wt/schema"
 )
 
@@ -106,7 +106,7 @@ type RemoveProcess struct {
 }
 
 // ReapedProcess is a process --reap ended, or tried to, and what that came
-// to: one of the wtsync.Reap* results.
+// to: one of the agents.Reap* results.
 type ReapedProcess struct {
 	PID     int    `json:"pid"`
 	Command string `json:"command"`
@@ -294,7 +294,7 @@ func removeProblems(problems []problem) []RemoveProblem {
 }
 
 // sessionState is a session's state as --json names it.
-func sessionState(a wtsync.Agent) string {
+func sessionState(a agents.Agent) string {
 	if a.Idle() {
 		return "idle"
 	}
@@ -370,7 +370,7 @@ func removePlanOutput(ctx *kit.Context, p Plan, token string) RemovePlanOutput {
 }
 
 // removeProcesses is processes as --json lists them.
-func removeProcesses(procs []wtsync.Process, reap bool) []RemoveProcess {
+func removeProcesses(procs []agents.Process, reap bool) []RemoveProcess {
 	out := []RemoveProcess{}
 	for _, p := range procs {
 		out = append(out, RemoveProcess{PID: p.PID, Command: p.Command(), Reap: reap})
@@ -379,7 +379,7 @@ func removeProcesses(procs []wtsync.Process, reap bool) []RemoveProcess {
 }
 
 // reapedProcesses is what --reap did, as --json reports it.
-func reapedProcesses(reaped []wtsync.Reaped) []ReapedProcess {
+func reapedProcesses(reaped []agents.Reaped) []ReapedProcess {
 	out := []ReapedProcess{}
 	for _, r := range reaped {
 		out = append(out, ReapedProcess{PID: r.PID, Command: r.Command(), Result: r.Result})

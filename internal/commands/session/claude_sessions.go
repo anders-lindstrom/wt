@@ -10,9 +10,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/repo"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // SessionsDeadline is how long a listing waits for claude agents --json. It
@@ -20,16 +20,12 @@ import (
 // gives it would hold up a listing nobody asked to wait for.
 var SessionsDeadline = 2 * time.Second
 
-// ListClaudeSessions is a var so tests stay off the machine's own
-// claude.
-var ListClaudeSessions = wtsync.ListClaudeSessions
-
 // MaxSessionName is the widest a session's name is printed, in terminal
 // columns. A name is free text, so it is always cut there, piped or not.
 const MaxSessionName = 32
 
 // ClaudeSession is a Claude session as a person is shown it.
-type ClaudeSession struct{ wtsync.Agent }
+type ClaudeSession struct{ agents.Agent }
 
 // ClaudeSessions is one read of claude's sessions, started when it is made
 // and waited for when it is first used, so the read runs beside whatever
@@ -41,14 +37,14 @@ type ClaudeSessions struct {
 	err      error
 }
 
-// ReadClaudeSessions starts the read.
-func ReadClaudeSessions(deadline time.Duration) *ClaudeSessions {
+// ReadClaudeSessions starts the read, through ctx's listing; ctx may be nil.
+func ReadClaudeSessions(ctx *kit.Context, deadline time.Duration) *ClaudeSessions {
 	c := &ClaudeSessions{done: make(chan struct{})}
 	go func() {
 		defer close(c.done)
-		var agents []wtsync.Agent
-		agents, c.found, c.err = ListClaudeSessions(deadline)
-		for _, a := range agents {
+		var listed []agents.Agent
+		listed, c.found, c.err = ctx.ListClaudeSessions(deadline)
+		for _, a := range listed {
 			c.sessions = append(c.sessions, ClaudeSession{a})
 		}
 	}()

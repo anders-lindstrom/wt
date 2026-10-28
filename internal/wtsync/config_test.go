@@ -182,8 +182,8 @@ func TestLoadFromTrunkReadsOriginNotTheWorkingTree(t *testing.T) {
 func TestLoadFromTrunkReportsNoConfig(t *testing.T) {
 	t.Parallel()
 	local, _ := repoWithOrigin(t)
-	if _, err := LoadFromTrunk(local, "main"); !errors.Is(err, ErrNoConfig) {
-		t.Errorf("err = %v, want ErrNoConfig", err)
+	if _, err := LoadFromTrunk(local, "main"); !errors.Is(err, ErrUndeclared) {
+		t.Errorf("err = %v, want ErrUndeclared", err)
 	}
 }
 
@@ -191,7 +191,7 @@ func TestLoadFromTrunkReportsWhenTheRefItselfIsMissing(t *testing.T) {
 	t.Parallel()
 	// A repository with no origin remote at all: origin/main is not merely
 	// missing the file, the ref itself does not exist, and that must read
-	// as a distinct, actionable error rather than ErrNoConfig.
+	// as a distinct, actionable error rather than ErrUndeclared.
 	dir, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -200,7 +200,7 @@ func TestLoadFromTrunkReportsWhenTheRefItselfIsMissing(t *testing.T) {
 	gitIn(t, dir, "config", "commit.gpgsign", "false")
 	gitIn(t, dir, "commit", "-q", "--allow-empty", "-m", "init")
 	_, err = LoadFromTrunk(dir, "main")
-	if err == nil || errors.Is(err, ErrNoConfig) {
+	if err == nil || errors.Is(err, ErrUndeclared) {
 		t.Fatalf("err = %v, want a distinct error naming the missing ref", err)
 	}
 	if !strings.Contains(err.Error(), "origin/main") || !strings.Contains(err.Error(), "git fetch origin") {

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
@@ -23,7 +24,7 @@ import (
 // one the run kept without the run's expiring.
 func noResumeAgents() ResumeOptions {
 	return ResumeOptions{VerbOptions: synccmd.VerbOptions{
-		Agents: []wtsync.Agent{},
+		Agents: []agents.Agent{},
 		Now:    func() time.Time { return time.Unix(5, 0) },
 	}}
 }
@@ -802,7 +803,7 @@ func TestSyncResumeRefusesASessionThatWokeWhileAsked(t *testing.T) {
 	opts.Confirm = func([]string) (bool, error) { return true, nil }
 	woke := testkit.IdleIn(t, bump, "bump-1")
 	woke[0].Status = "busy"
-	opts.Relist = func() ([]wtsync.Agent, error) { return woke, nil }
+	opts.Relist = func() ([]agents.Agent, error) { return woke, nil }
 	var out bytes.Buffer
 	err := SyncResume(ctx, "bump", opts, &out)
 	if err == nil || !strings.Contains(err.Error(), "busy in it now: bump-1") {

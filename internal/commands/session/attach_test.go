@@ -44,7 +44,7 @@ func attachPlan(id string) string { return "attach\n" + id + "\n\nend\n" }
 
 func TestAttachOpensTheOneBackgroundSession(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
-	testkit.ClaudeLists(t, &ListClaudeSessions, testkit.Background("fix the crash", "3f9a1c20", "blocked", wt))
+	testkit.ClaudeLists(ctx, testkit.Background("fix the crash", "3f9a1c20", "blocked", wt))
 
 	plan, shown, err := attach(t, ctx, forShell("thing"), "")
 	if err != nil {
@@ -61,7 +61,7 @@ func TestAttachOpensTheOneBackgroundSession(t *testing.T) {
 // Without the shell layer the binary starts nothing: it names what to run.
 func TestAttachWithoutTheShellLayerPrintsTheCommand(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
-	testkit.ClaudeLists(t, &ListClaudeSessions, testkit.Background("fix the crash", "3f9a1c20", "working", wt))
+	testkit.ClaudeLists(ctx, testkit.Background("fix the crash", "3f9a1c20", "working", wt))
 
 	plan, _, err := attach(t, ctx, AttachOptions{Pattern: "thing", Terminal: true}, "")
 	if plan != "" {
@@ -82,7 +82,7 @@ func TestAttachAsksWhichOfSeveral(t *testing.T) {
 	first := testkit.Background("asks-you", "aaaaaaaa", "blocked", wt)
 	second := testkit.Background("second look", "bbbbbbbb", "working", wt)
 	second.StartedAt = time.Now().Add(-3 * time.Hour).UnixMilli()
-	testkit.ClaudeLists(t, &ListClaudeSessions, second, first, testkit.InTerminal("typing", "idle", wt, 4242))
+	testkit.ClaudeLists(ctx, second, first, testkit.InTerminal("typing", "idle", wt, 4242))
 
 	plan, shown, err := attach(t, ctx, forShell("thing"), "2\n")
 	if err != nil {
@@ -106,7 +106,7 @@ func TestAttachAsksWhichOfSeveral(t *testing.T) {
 
 func TestAttachListsAndStopsWithNobodyToAsk(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
-	testkit.ClaudeLists(t, &ListClaudeSessions, testkit.Background("one", "aaaaaaaa", "working", wt), testkit.Background("two", "bbbbbbbb", "working", wt))
+	testkit.ClaudeLists(ctx, testkit.Background("one", "aaaaaaaa", "working", wt), testkit.Background("two", "bbbbbbbb", "working", wt))
 
 	plan, shown, err := attach(t, ctx, forShell("thing"), "")
 	if err == nil || !strings.Contains(err.Error(), "wt attach thing <session>") {
@@ -125,7 +125,7 @@ func TestAttachListsAndStopsWithNobodyToAsk(t *testing.T) {
 
 func TestAttachNamesSessionsItCannotOpen(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
-	testkit.ClaudeLists(t, &ListClaudeSessions, testkit.InTerminal("typing", "busy", wt, 4242))
+	testkit.ClaudeLists(ctx, testkit.InTerminal("typing", "busy", wt, 4242))
 
 	plan, shown, err := attach(t, ctx, forShell("thing"), "")
 	if err == nil || plan != "" {
@@ -138,7 +138,7 @@ func TestAttachNamesSessionsItCannotOpen(t *testing.T) {
 
 func TestAttachWithNoSessionNamesResume(t *testing.T) {
 	ctx, _, _ := attachFixture(t)
-	testkit.ClaudeLists(t, &ListClaudeSessions)
+	testkit.ClaudeLists(ctx)
 
 	_, _, err := attach(t, ctx, forShell("thing"), "")
 	if err == nil || !strings.Contains(err.Error(), "no Claude session in thing") ||
@@ -153,7 +153,7 @@ func TestAttachPicksTheSessionNamed(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
 	review := testkit.Background("review of bbbbbbbb", "aaaaaaaa", "working", wt)
 	build := testkit.Background("build", "bbbbbbbb", "working", wt)
-	testkit.ClaudeLists(t, &ListClaudeSessions, review, build, testkit.InTerminal("typing", "idle", wt, 4242))
+	testkit.ClaudeLists(ctx, review, build, testkit.InTerminal("typing", "idle", wt, 4242))
 
 	for session, want := range map[string]string{
 		"aaaaaaaa":          "aaaaaaaa",
@@ -192,7 +192,7 @@ func TestAttachPicksTheSessionNamed(t *testing.T) {
 func TestAttachTakesASessionIdAlone(t *testing.T) {
 	ctx, main, _ := attachFixture(t)
 	elsewhere := testkit.Background("far away", "3f9a1c20", "working", t.TempDir())
-	testkit.ClaudeLists(t, &ListClaudeSessions, elsewhere)
+	testkit.ClaudeLists(ctx, elsewhere)
 
 	for _, id := range []string{"3f9a1c20", elsewhere.SessionID} {
 		plan, shown, err := attach(t, ctx, forShell(id), "")
@@ -222,7 +222,7 @@ func TestAttachWithNoPatternLooksWhereYouStand(t *testing.T) {
 	ctx, main, wt := attachFixture(t)
 	other := filepath.Join(filepath.Dir(main), "demo_wt", "feat_wt", "other")
 	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/other", other)
-	testkit.ClaudeLists(t, &ListClaudeSessions, testkit.Background("in thing", "aaaaaaaa", "working", wt), testkit.Background("in other", "bbbbbbbb", "working", other))
+	testkit.MachineClaudeLists(t, testkit.Background("in thing", "aaaaaaaa", "working", wt), testkit.Background("in other", "bbbbbbbb", "working", other))
 
 	here, err := kit.Open(wt)
 	if err != nil {
@@ -254,7 +254,7 @@ func TestAttachAsksWhichWorktreeOnATie(t *testing.T) {
 	ctx, main, wt := attachFixture(t)
 	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/thing-two", filepath.Join(filepath.Dir(main), "demo_wt", "feat_wt", "thing-two"))
 	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/thing-one", filepath.Join(filepath.Dir(main), "demo_wt", "feat_wt", "thing-one"))
-	testkit.ClaudeLists(t, &ListClaudeSessions, testkit.Background("fix the crash", "3f9a1c20", "working", wt))
+	testkit.ClaudeLists(ctx, testkit.Background("fix the crash", "3f9a1c20", "working", wt))
 
 	_, shown, err := attach(t, ctx, forShell("thing-"), "")
 	if err == nil || !strings.Contains(shown, `"thing-" matches 2 worktrees:`) || !strings.Contains(err.Error(), "<repository>/<work>") {
@@ -269,7 +269,7 @@ func TestAttachAsksWhichWorktreeOnATie(t *testing.T) {
 // still lists as a session.
 func TestAttachResume(t *testing.T) {
 	ctx, main, wt := attachFixture(t)
-	testkit.ClaudeLists(t, &ListClaudeSessions)
+	testkit.ClaudeLists(ctx)
 
 	o := forShell("thing")
 	o.Resume = true
@@ -304,7 +304,7 @@ func TestAttachResume(t *testing.T) {
 func TestAttachResumeRefusesAListedConversation(t *testing.T) {
 	ctx, main, wt := attachFixture(t)
 	live := testkit.Background("fix the crash", "3f9a1c20", "done", wt)
-	testkit.ClaudeLists(t, &ListClaudeSessions, live, testkit.InTerminal("typing", "idle", main, 4242))
+	testkit.ClaudeLists(ctx, live, testkit.InTerminal("typing", "idle", main, 4242))
 
 	o := forShell("thing")
 	o.Resume = true
@@ -338,7 +338,7 @@ func TestAttachResumeRefusesAListedConversation(t *testing.T) {
 func TestAttachRefusesAnIdThatIsNotOne(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
 	for _, id := range []string{"--dangerously-skip-permissions", "a b", "$(reboot)", "a;b", "x\ny"} {
-		testkit.ClaudeLists(t, &ListClaudeSessions, testkit.Background("odd", id, "working", wt))
+		testkit.ClaudeLists(ctx, testkit.Background("odd", id, "working", wt))
 		plan, _, err := attach(t, ctx, forShell("thing"), "")
 		if err == nil || plan != "" {
 			t.Errorf("id %q reached the shell: %q, %v", id, plan, err)
@@ -358,7 +358,7 @@ func TestAttachDoesNotOpenItsOwnSession(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
 	own := testkit.Background("me", "aaaaaaaa", "working", wt)
 	own.Own = true
-	testkit.ClaudeLists(t, &ListClaudeSessions, own)
+	testkit.ClaudeLists(ctx, own)
 
 	plan, shown, err := attach(t, ctx, forShell("thing"), "")
 	if err == nil || plan != "" || !strings.Contains(shown, "me  -  this session") {
@@ -372,7 +372,7 @@ func TestAttachByTheIdOfASessionResumedInATerminal(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
 	resumed := testkit.InTerminal("resumed", "idle", wt, 4242)
 	resumed.ID, resumed.SessionID = "bbbb2222", "bbbb2222-1111-4222-8333-444455556666"
-	testkit.ClaudeLists(t, &ListClaudeSessions, resumed)
+	testkit.ClaudeLists(ctx, resumed)
 
 	for _, o := range []AttachOptions{forShell("bbbb2222"), forShell(resumed.SessionID), {Pattern: "thing", Session: "bbbb2222", ForShell: true}} {
 		plan, _, err := attach(t, ctx, o, "")
@@ -387,7 +387,7 @@ func TestAttachNeverPrintsACommandWithAnOddId(t *testing.T) {
 	ctx, main, wt := attachFixture(t)
 	odd := testkit.Background("odd", "x; touch /p", "working", wt)
 	odd.SessionID = "0dd00000-1111-4222-8333-444455556666"
-	testkit.ClaudeLists(t, &ListClaudeSessions, odd)
+	testkit.ClaudeLists(ctx, odd)
 
 	o := forShell("/")
 	o.Resume, o.Session = true, odd.SessionID
@@ -403,14 +403,14 @@ func TestAttachNeverPrintsACommandWithAnOddId(t *testing.T) {
 	// the session's line is not a command.
 	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/0dd00000", filepath.Join(filepath.Dir(main), "demo_wt", "feat_wt", "0dd00000"))
 	odd.SessionID = "0dd00000"
-	testkit.ClaudeLists(t, &ListClaudeSessions, odd)
+	testkit.ClaudeLists(ctx, odd)
 	_, _, err = attach(t, ctx, forShell("0dd00000"), "")
 	if err == nil || strings.Contains(err.Error(), "claude attach") || !strings.Contains(err.Error(), "wt attach demo/0dd00000") {
 		t.Errorf("want both named and no command with that id, got %v", err)
 	}
 
 	// In the list it is a background session that cannot be attached by id.
-	testkit.ClaudeLists(t, &ListClaudeSessions, odd, testkit.Background("ok", "aaaaaaaa", "working", wt), testkit.Background("no id", "", "working", wt))
+	testkit.ClaudeLists(ctx, odd, testkit.Background("ok", "aaaaaaaa", "working", wt), testkit.Background("no id", "", "working", wt))
 	o = forShell("thing")
 	o.Session = "o"
 	_, shown, _ = attach(t, ctx, o, "")
@@ -424,7 +424,7 @@ func TestAttachNeverPrintsACommandWithAnOddId(t *testing.T) {
 func TestAttachResumeMatchesIdsWhateverTheirCase(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
 	live := testkit.Background("fix the crash", "3f9a1c20", "working", wt)
-	testkit.ClaudeLists(t, &ListClaudeSessions, live)
+	testkit.ClaudeLists(ctx, live)
 
 	o := forShell("/")
 	o.Resume = true
@@ -446,7 +446,7 @@ func TestAttachResumeMatchesIdsWhateverTheirCase(t *testing.T) {
 // says which worktree it is in.
 func TestAttachFromTheMainCheckoutSaysWhereTheSessionIs(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
-	testkit.ClaudeLists(t, &ListClaudeSessions, testkit.Background("fix the crash", "3f9a1c20", "working", wt))
+	testkit.ClaudeLists(ctx, testkit.Background("fix the crash", "3f9a1c20", "working", wt))
 
 	plan, shown, err := attach(t, ctx, forShell(""), "")
 	if err != nil || plan != attachPlan("3f9a1c20") {
@@ -462,7 +462,7 @@ func TestAttachResumeHintFitsTheSession(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
 	own := testkit.Background("me", "aaaaaaaa", "working", wt)
 	own.Own = true
-	testkit.ClaudeLists(t, &ListClaudeSessions, own)
+	testkit.ClaudeLists(ctx, own)
 
 	o := forShell("thing")
 	o.Resume = true

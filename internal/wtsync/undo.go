@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
@@ -44,7 +45,7 @@ type Restored struct {
 //
 // An idle session is not a refusal here: naming it, and asking about it
 // before a single lock is taken, is the caller's.
-func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch string, now time.Time, force bool) ([]Restored, error) {
+func Undo(mainRoot string, worktrees []repo.Worktree, listed []agents.Agent, branch string, now time.Time, force bool) ([]Restored, error) {
 	run, all, err := newestRun(mainRoot, branch)
 	if err != nil {
 		return nil, err
@@ -116,7 +117,7 @@ func Undo(mainRoot string, worktrees []repo.Worktree, agents []Agent, branch str
 		// The busy session first, from the listing alone: a worktree refused
 		// for it is not read at all, so an interrupt during the reads below
 		// cannot land on one that was already refused.
-		if sessions := SessionsAt(agents, wt.Path); len(sessions.Busy()) > 0 {
+		if sessions := agents.SessionsAt(listed, wt.Path); len(sessions.Busy()) > 0 {
 			return nil, fmt.Errorf("%s: an agent session is busy in it: %s; nothing undone", s.Branch, sessions.Label(agentLabel))
 		}
 		// Read under the lock, so what the abort and the reset below trust
