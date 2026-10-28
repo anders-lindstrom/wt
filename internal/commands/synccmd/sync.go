@@ -1,7 +1,7 @@
 // Package synccmd implements wt sync and wt up: the overview of what a
-// rebase onto trunk would do, the run that does it, its JSON journal, and
-// the fast-forwards, pushes and own remotes around it. It also holds the
-// keeper's state, lock and launchd job, and wt sync doctor.
+// rebase onto trunk would do, the run that does it, wt sync push-to and
+// wt sync doctor. What a run is made of that resume and the keeper share is
+// in syncrun.
 package synccmd
 
 import (
@@ -20,6 +20,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/synckeep/keepstate"
 	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -60,7 +61,7 @@ func Sync(ctx *kit.Context, opts SyncOptions, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if line := keptLine(ctx, time.Now()); line != "" {
+	if line := keepstate.KeptLine(ctx, time.Now()); line != "" {
 		fmt.Fprintln(w, line)
 	}
 	assessments := assessAll(ctx.Repo.MainRoot, onto, cfg, worktrees, listed, own, assessWorkers)

@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
+	"github.com/anders-lindstrom/wt/internal/commands/synckeep/keepstate"
 )
 
 // keepEnvNames is what start captures from the shell it runs in. PATH finds
@@ -25,8 +25,8 @@ import (
 var keepEnvNames = []string{"PATH", "HOME", "TMPDIR", "SSH_AUTH_SOCK", "GIT_SSH_COMMAND"}
 
 // keepPlist is the job as a launchd property list.
-func keepPlist(j synccmd.KeepJob) string {
-	args := []string{j.Exe, "sync", "keep", "once", "--every", synccmd.FmtEvery(j.Every)}
+func keepPlist(j keepstate.KeepJob) string {
+	args := []string{j.Exe, "sync", "keep", "once", "--every", keepstate.FmtEvery(j.Every)}
 	if j.NoPush {
 		args = append(args, "--no-push")
 	}
@@ -100,7 +100,7 @@ type keepStarter struct {
 // newKeepStarter checks the platform and the interval and captures the
 // shell's environment, once for however many repositories follow.
 func newKeepStarter(opts KeepStartOptions) (*keepStarter, error) {
-	if synccmd.KeepGOOS != "darwin" {
+	if keepstate.KeepGOOS != "darwin" {
 		return nil, ErrNoLaunchd
 	}
 	getenv := opts.Getenv
@@ -112,7 +112,7 @@ func newKeepStarter(opts KeepStartOptions) (*keepStarter, error) {
 		s.now = opts.Now
 	}
 	if s.every <= 0 {
-		s.every = synccmd.KeepDefaultInterval
+		s.every = keepstate.KeepDefaultInterval
 	}
 	if s.every < time.Minute {
 		return nil, fmt.Errorf("--every %s is under a minute; a pass fetches trunk every time", s.every)
@@ -133,14 +133,14 @@ func newKeepStarter(opts KeepStartOptions) (*keepStarter, error) {
 }
 
 // job is ctx's job as s would install it.
-func (s *keepStarter) job(ctx *kit.Context) (synccmd.KeepJob, error) {
-	job, err := synccmd.KeepJobFor(ctx)
+func (s *keepStarter) job(ctx *kit.Context) (keepstate.KeepJob, error) {
+	job, err := keepstate.KeepJobFor(ctx)
 	if err != nil {
-		return synccmd.KeepJob{}, err
+		return keepstate.KeepJob{}, err
 	}
-	gitDir, _, _, err := synccmd.KeepPaths(ctx)
+	gitDir, _, _, err := keepstate.KeepPaths(ctx)
 	if err != nil {
-		return synccmd.KeepJob{}, err
+		return keepstate.KeepJob{}, err
 	}
 	job.Exe, job.GitDir, job.Every, job.NoPush, job.Env = s.exe, gitDir, s.every, s.noPush, s.env
 	return job, nil
@@ -148,8 +148,8 @@ func (s *keepStarter) job(ctx *kit.Context) (synccmd.KeepJob, error) {
 
 // install writes the job's plist, loads it, and records in ctx's state file
 // when the first pass is due, which it returns.
-func (s *keepStarter) install(ctx *kit.Context, job synccmd.KeepJob) (time.Time, error) {
-	_, _, statePath, err := synccmd.KeepPaths(ctx)
+func (s *keepStarter) install(ctx *kit.Context, job keepstate.KeepJob) (time.Time, error) {
+	_, _, statePath, err := keepstate.KeepPaths(ctx)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -162,17 +162,17 @@ func (s *keepStarter) install(ctx *kit.Context, job synccmd.KeepJob) (time.Time,
 	if err := os.WriteFile(job.PlistPath, []byte(keepPlist(job)), 0o600); err != nil {
 		return time.Time{}, err
 	}
-	if err := synccmd.Launchctl.Load(job.PlistPath); err != nil {
+	if err := keepstate.Launchctl.Load(job.PlistPath); err != nil {
 		_ = os.Remove(job.PlistPath)
 		return time.Time{}, err
 	}
 	// The state file says when the first pass is due, for the table line;
 	// what an earlier keeper recorded is kept.
-	st, _, err := synccmd.ReadKeepState(statePath)
+	st, _, err := keepstate.ReadKeepState(statePath)
 	if err != nil {
 		return time.Time{}, err
 	}
-	st.Interval = synccmd.FmtEvery(s.every)
+	st.Interval = keepstate.FmtEvery(s.every)
 	st.NextRun = s.now().Add(s.every)
 	st.Job = job.Label
 	if err := writeKeepState(statePath, st); err != nil {
@@ -199,12 +199,12 @@ func Start(ctx *kit.Context, opts KeepStartOptions, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	_, logPath, _, err := synccmd.KeepPaths(ctx)
+	_, logPath, _, err := keepstate.KeepPaths(ctx)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(w, "installed %s\n", job.PlistPath)
-	fmt.Fprintf(w, "runs wt sync keep once every %s in %s; first at %s\n", synccmd.FmtEvery(s.every), ctx.Repo.MainRoot, synccmd.KeepClock(next, s.now()))
+	fmt.Fprintf(w, "runs wt sync keep once every %s in %s; first at %s\n", keepstate.FmtEvery(s.every), ctx.Repo.MainRoot, keepstate.KeepClock(next, s.now()))
 	fmt.Fprintln(w, keepAuthLine(job))
 	fmt.Fprintf(w, "log %s · wt sync keep status\n", logPath)
 	return nil
@@ -213,7 +213,7 @@ func Start(ctx *kit.Context, opts KeepStartOptions, w io.Writer) error {
 // keepAuthLine says how the job's push authenticates, from what start
 // captured: the ssh command an agent launcher set, the shell's agent
 // socket, or neither.
-func keepAuthLine(j synccmd.KeepJob) string {
+func keepAuthLine(j keepstate.KeepJob) string {
 	if j.NoPush {
 		return "rebases only (--no-push); the push commands go to the log"
 	}
@@ -235,10 +235,10 @@ func keepAuthLine(j synccmd.KeepJob) string {
 // the state file stay, so wt sync still says when the repository was last
 // kept.
 func Stop(ctx *kit.Context, w io.Writer) error {
-	if synccmd.KeepGOOS != "darwin" {
+	if keepstate.KeepGOOS != "darwin" {
 		return ErrNoLaunchd
 	}
-	job, err := synccmd.KeepJobFor(ctx)
+	job, err := keepstate.KeepJobFor(ctx)
 	if err != nil {
 		return err
 	}
@@ -260,16 +260,16 @@ func Stop(ctx *kit.Context, w io.Writer) error {
 // keepJobPresent says whether the job's plist is there, and whether there is
 // anything to stop at all: a plist, or a job launchd still has loaded
 // because its plist was removed by hand (it stays until logout).
-func keepJobPresent(job synccmd.KeepJob) (installed, present bool) {
+func keepJobPresent(job keepstate.KeepJob) (installed, present bool) {
 	_, statErr := os.Stat(job.PlistPath)
 	installed = statErr == nil
-	return installed, installed || synccmd.Launchctl.Loaded(job.Label)
+	return installed, installed || keepstate.Launchctl.Loaded(job.Label)
 }
 
 // stopKeepJob boots the job out by its label, plist or no plist, and
 // removes the plist when there is one.
-func stopKeepJob(job synccmd.KeepJob, installed bool) error {
-	if err := synccmd.Launchctl.Unload(job.Label, job.PlistPath); err != nil {
+func stopKeepJob(job keepstate.KeepJob, installed bool) error {
+	if err := keepstate.Launchctl.Unload(job.Label, job.PlistPath); err != nil {
 		return err
 	}
 	if !installed {

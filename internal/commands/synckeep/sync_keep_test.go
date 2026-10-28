@@ -19,6 +19,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
+	"github.com/anders-lindstrom/wt/internal/commands/synckeep/keepstate"
 	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
@@ -151,11 +152,11 @@ func TestSyncKeepRunDoesNothingWhileTrunkIsUnchanged(t *testing.T) {
 // interrupted pass, alive again as some other process, does not block.
 func TestSyncKeepRunRefusesToOverlapALivePass(t *testing.T) {
 	ctx, bump := provisiontest.RunFixture(t, false)
-	gitDir, _, statePath, err := synccmd.KeepPaths(ctx)
+	gitDir, _, statePath, err := keepstate.KeepPaths(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := writeKeepState(statePath, synccmd.KeepState{PID: os.Getpid(), Started: keepDay.Add(-20 * time.Minute)}); err != nil {
+	if err := writeKeepState(statePath, keepstate.KeepState{PID: os.Getpid(), Started: keepDay.Add(-20 * time.Minute)}); err != nil {
 		t.Fatal(err)
 	}
 	lock, held, err := acquireKeepLock(gitDir)
@@ -474,7 +475,7 @@ func TestSyncTableAndDoctorSayWhenTheRepositoryWasKept(t *testing.T) {
 
 // The plist is a pure function of the job, checked against a golden file.
 func TestKeepPlistMatchesTheGoldenFile(t *testing.T) {
-	got := keepPlist(synccmd.KeepJob{
+	got := keepPlist(keepstate.KeepJob{
 		Label:    "se.wt.sync-keep.myrepo-0123abcd",
 		Exe:      "/usr/local/bin/wt",
 		MainRoot: "/Users/me/code/myrepo",
@@ -630,7 +631,7 @@ func TestSyncKeepStartWarnsAboutAnAgentLaunchersKey(t *testing.T) {
 	if !strings.Contains(out.String(), "an agent launcher's agent-ssh: it works while fnox has the agent key cached") {
 		t.Fatalf("start:\n%s", out.String())
 	}
-	job, err := synccmd.KeepJobFor(ctx)
+	job, err := keepstate.KeepJobFor(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -657,7 +658,7 @@ func TestSyncKeepStopBootsOutAJobWhosePlistIsGone(t *testing.T) {
 	if err := Start(ctx, KeepStartOptions{Getenv: func(string) string { return "" }}, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
-	job, err := synccmd.KeepJobFor(ctx)
+	job, err := keepstate.KeepJobFor(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -716,7 +717,7 @@ func TestSyncKeepRunRetriesARefusedPushUntilItGoesThrough(t *testing.T) {
 	if st.TrunkSHA != "" || st.Problem != "failed: not completed: bump (push failed)" || !st.ProblemAt.Equal(keepDay) {
 		t.Fatalf("state %+v", st)
 	}
-	if len(st.Unpushed) != 1 || st.Unpushed[0] != (synccmd.UnpushedTarget{Work: "bump", Branch: "feat_wt/bump", Path: bump, Tip: tip}) {
+	if len(st.Unpushed) != 1 || st.Unpushed[0] != (keepstate.UnpushedTarget{Work: "bump", Branch: "feat_wt/bump", Path: bump, Tip: tip}) {
 		t.Fatalf("unpushed %+v", st.Unpushed)
 	}
 	out.Reset()
@@ -823,7 +824,7 @@ func TestSyncKeepStatusSaysWhenAPassWasInterrupted(t *testing.T) {
 	// The largest pid the kernel hands out is below this on every platform
 	// wt runs on, so nothing is running under it.
 	dead := 1<<31 - 1
-	if err := writeKeepState(statePath, synccmd.KeepState{PID: dead, Started: keepDay.Add(-20 * time.Minute)}); err != nil {
+	if err := writeKeepState(statePath, keepstate.KeepState{PID: dead, Started: keepDay.Add(-20 * time.Minute)}); err != nil {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
@@ -834,7 +835,7 @@ func TestSyncKeepStatusSaysWhenAPassWasInterrupted(t *testing.T) {
 		t.Fatalf("status:\n%s", out.String())
 	}
 	// With the lock held a pass is running, whatever pid the json names.
-	gitDir, _, _, err := synccmd.KeepPaths(ctx)
+	gitDir, _, _, err := keepstate.KeepPaths(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -909,7 +910,7 @@ func TestLookingAtTheKeeperLeavesNoLockFile(t *testing.T) {
 	ctx, _ := provisiontest.RunFixture(t, false)
 	t.Setenv("HOME", t.TempDir())
 	synccmdtest.OnPlatform(t, "darwin")
-	gitDir, _, _, err := synccmd.KeepPaths(ctx)
+	gitDir, _, _, err := keepstate.KeepPaths(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -923,7 +924,7 @@ func TestLookingAtTheKeeperLeavesNoLockFile(t *testing.T) {
 	if err := synccmd.SyncDoctor(ctx, synccmd.DoctorOptions{}, &out); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(gitDir, synccmd.KeepLockName)); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(gitDir, keepstate.KeepLockName)); !os.IsNotExist(err) {
 		t.Fatalf("a look left the lock file behind: %v", err)
 	}
 	if strings.Contains(out.String(), "pass     running") {
@@ -933,7 +934,7 @@ func TestLookingAtTheKeeperLeavesNoLockFile(t *testing.T) {
 
 func TestFmtEvery(t *testing.T) {
 	for d, want := range map[time.Duration]string{30 * time.Minute: "30m", time.Hour: "1h", 90 * time.Minute: "1h30m", 45 * time.Second: "45s", 2 * time.Hour: "2h", 70 * time.Second: "1m10s", 80 * time.Second: "1m20s", 90 * time.Second: "1m30s", time.Hour + 5*time.Second: "1h0m5s"} {
-		if got := synccmd.FmtEvery(d); got != want {
+		if got := keepstate.FmtEvery(d); got != want {
 			t.Errorf("fmtEvery(%s) = %q, want %q", d, got, want)
 		}
 	}

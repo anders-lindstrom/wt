@@ -1,4 +1,4 @@
-package synccmd
+package keepstate
 
 import (
 	"crypto/sha256"

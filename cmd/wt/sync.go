@@ -12,6 +12,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/syncfix"
 	"github.com/anders-lindstrom/wt/internal/commands/synckeep"
+	"github.com/anders-lindstrom/wt/internal/commands/synckeep/keepstate"
 	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 )
 
@@ -398,7 +399,7 @@ func newSyncKeepStartCmd() *cobra.Command {
 			})(cmd, args)
 		},
 	}
-	start.Flags().DurationVar(&every, "every", synccmd.KeepDefaultInterval, "how often the job runs")
+	start.Flags().DurationVar(&every, "every", keepstate.KeepDefaultInterval, "how often the job runs")
 	start.Flags().BoolVar(&noPush, "no-push", false, "the job rebases only and logs the push commands")
 	start.Flags().BoolVar(&dryRun, "dry-run", false, "with --all, --roots or --profile: print the plan, install nothing")
 	start.Flags().BoolVarP(&yes, "yes", "y", false, "with --all, --roots or --profile: do not ask first")
