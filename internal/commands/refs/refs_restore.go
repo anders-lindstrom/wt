@@ -1,8 +1,6 @@
 package refs
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -187,17 +185,18 @@ func (p *RestoreRefsPlan) applyOnly(only []string) error {
 // restoreToken names a restore plan: the repository, the run, and every pin
 // with its object and what would be done with it. Nil when nothing can go
 // back.
-func restoreToken(p RestoreRefsPlan) *string {
+func restoreToken(p RestoreRefsPlan) *string { return restoreTokenOf(p).Strp() }
+
+func restoreTokenOf(p RestoreRefsPlan) *kit.Token {
 	if !slices.ContainsFunc(p.Rows, restoreRow.restorable) {
 		return nil
 	}
-	h := sha256.New()
-	h.Write([]byte("wt-refs-restore-1\x00" + p.Repo + "\x00" + p.RunID))
+	t := kit.NewToken("rr1-", "wt-refs-restore").Str("Repo", p.Repo).Str("RunID", p.RunID)
 	for _, r := range p.Rows {
-		h.Write([]byte("\n" + strings.Join([]string{r.ID(), r.Pin, r.Object, r.Action}, "\x00")))
+		t.Str("Rows.Kind", r.Kind).Str("Rows.Name", r.Name).Str("Rows.Pin", r.Pin).Str("Rows.Object", r.Object).
+			Str("Rows.Action", r.Action)
 	}
-	token := "rr1-" + hex.EncodeToString(h.Sum(nil))[:32]
-	return &token
+	return t
 }
 
 var errRestorePlanChanged = errors.New("the restore plan changed since it was read (a pin went, or a name " +
