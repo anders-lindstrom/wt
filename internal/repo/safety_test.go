@@ -42,6 +42,7 @@ func strict(t *testing.T, path string) StrictStatus {
 }
 
 func TestDirtyStrictCleanCheckout(t *testing.T) {
+	t.Parallel()
 	_, main := fixture(t)
 	if s := strict(t, main); s.Dirty || len(s.Hidden) > 0 {
 		t.Errorf("a fresh checkout reads %+v, want clean", s)
@@ -49,6 +50,7 @@ func TestDirtyStrictCleanCheckout(t *testing.T) {
 }
 
 func TestDirtyStrictSeesUntrackedFilesWhateverTheConfigSays(t *testing.T) {
+	t.Parallel()
 	_, main := fixture(t)
 	run(t, main, "config", "status.showUntrackedFiles", "no")
 	gittest.WriteFile(t, filepath.Join(main, "notes.txt"), "mine")
@@ -59,6 +61,7 @@ func TestDirtyStrictSeesUntrackedFilesWhateverTheConfigSays(t *testing.T) {
 
 // A status that cannot be read is not a clean status.
 func TestDirtyStrictFailsOnAnUnreadableStatus(t *testing.T) {
+	t.Parallel()
 	_, main := fixture(t)
 	if err := os.WriteFile(filepath.Join(main, ".git", "index"), []byte("garbage"), 0o644); err != nil {
 		t.Fatal(err)
@@ -69,6 +72,7 @@ func TestDirtyStrictFailsOnAnUnreadableStatus(t *testing.T) {
 }
 
 func TestDirtyStrictSeesAFileInANestedSubmodule(t *testing.T) {
+	t.Parallel()
 	parent, main := fixture(t)
 	wt := withSubmodule(t, parent, main)
 	if strict(t, wt).Dirty {
@@ -81,6 +85,7 @@ func TestDirtyStrictSeesAFileInANestedSubmodule(t *testing.T) {
 }
 
 func TestDirtyStrictSeesAModifiedSubmoduleItsConfigIgnores(t *testing.T) {
+	t.Parallel()
 	parent, main := fixture(t)
 	wt := withSubmodule(t, parent, main)
 	run(t, wt, "config", "submodule.sm.ignore", "all")
@@ -94,6 +99,7 @@ func TestDirtyStrictSeesAModifiedSubmoduleItsConfigIgnores(t *testing.T) {
 // A submodule whose own config hides its nested submodule is still read
 // through: each initialised submodule is read with the same flags.
 func TestDirtyStrictReadsIntoEachSubmodule(t *testing.T) {
+	t.Parallel()
 	parent, main := fixture(t)
 	wt := withSubmodule(t, parent, main)
 	run(t, filepath.Join(wt, "sm"), "config", "submodule.n2.ignore", "all")
@@ -105,6 +111,7 @@ func TestDirtyStrictReadsIntoEachSubmodule(t *testing.T) {
 }
 
 func TestDirtyStrictNamesFilesStatusIsToldNotToLookAt(t *testing.T) {
+	t.Parallel()
 	_, main := fixture(t)
 	gittest.WriteFile(t, filepath.Join(main, "a.txt"), "a")
 	gittest.WriteFile(t, filepath.Join(main, "b.txt"), "b")
@@ -125,6 +132,7 @@ func TestDirtyStrictNamesFilesStatusIsToldNotToLookAt(t *testing.T) {
 
 // A hidden file whose content is still what the index has loses nothing.
 func TestDirtyStrictNamesUneditedHiddenFilesWithoutCallingThemDirty(t *testing.T) {
+	t.Parallel()
 	_, main := fixture(t)
 	gittest.WriteFile(t, filepath.Join(main, "a.txt"), "a")
 	run(t, main, "add", "a.txt")
@@ -139,6 +147,7 @@ func TestDirtyStrictNamesUneditedHiddenFilesWithoutCallingThemDirty(t *testing.T
 // A submodule checked out at another commit than the one recorded is named
 // for what it is, not as uncommitted changes.
 func TestDirtyStrictNamesASubmoduleAtAnotherCommit(t *testing.T) {
+	t.Parallel()
 	parent, main := fixture(t)
 	wt := withSubmodule(t, parent, main)
 	run(t, filepath.Join(wt, "sm"), "checkout", "-q", "--detach")
@@ -152,6 +161,7 @@ func TestDirtyStrictNamesASubmoduleAtAnotherCommit(t *testing.T) {
 // A sparse checkout marks every file outside its cone skip-worktree and
 // leaves it off disk: nothing there to lose.
 func TestDirtyStrictIgnoresSkipWorktreeFilesThatAreNotThere(t *testing.T) {
+	t.Parallel()
 	_, main := fixture(t)
 	gittest.WriteFile(t, filepath.Join(main, "b.txt"), "b")
 	run(t, main, "add", "b.txt")
@@ -166,6 +176,7 @@ func TestDirtyStrictIgnoresSkipWorktreeFilesThatAreNotThere(t *testing.T) {
 }
 
 func TestOperationInProgress(t *testing.T) {
+	t.Parallel()
 	_, main := fixture(t)
 	for _, tc := range []struct{ file, want string }{
 		{"rebase-merge/head-name", "rebase"},
@@ -196,6 +207,7 @@ func TestOperationInProgress(t *testing.T) {
 
 // Each operation for real, as git leaves it, not just the file wt looks for.
 func TestOperationInProgressAsGitLeavesIt(t *testing.T) {
+	t.Parallel()
 	_, main := fixture(t)
 	conflict := func(t *testing.T, wt string) string {
 		gittest.WriteFile(t, filepath.Join(wt, "f"), "base\n")
@@ -233,6 +245,7 @@ func TestOperationInProgressAsGitLeavesIt(t *testing.T) {
 
 // A worktree whose git dir cannot be found is not one with nothing going on.
 func TestOperationInProgressFailsWithoutAGitDir(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if _, err := OperationInProgress(dir); err == nil {
 		t.Error("want an error for a directory with no .git")
@@ -240,6 +253,7 @@ func TestOperationInProgressFailsWithoutAGitDir(t *testing.T) {
 }
 
 func TestSurvivorsLeaveOutTheDroppedRefAndTheLeavingWorktree(t *testing.T) {
+	t.Parallel()
 	_, main := fixture(t)
 	r, _ := Discover(main)
 	a := linked(t, main, "feat_wt/a")
@@ -271,6 +285,7 @@ func TestSurvivorsLeaveOutTheDroppedRefAndTheLeavingWorktree(t *testing.T) {
 }
 
 func TestCountLostFailsOnAnUnknownCommit(t *testing.T) {
+	t.Parallel()
 	_, main := fixture(t)
 	r, _ := Discover(main)
 	if _, err := r.CountLost("0123456789012345678901234567890123456789", nil); err == nil {
@@ -281,6 +296,7 @@ func TestCountLostFailsOnAnUnknownCommit(t *testing.T) {
 // A submodule worktree goes by its path alone: git worktree remove --force,
 // never a repository-wide prune that would take other registrations with it.
 func TestRemoveWorktreeWithSubmodulesPrunesNothingElse(t *testing.T) {
+	t.Parallel()
 	parent, main := fixture(t)
 	wt := withSubmodule(t, parent, main)
 	r, _ := Discover(main)
@@ -310,15 +326,14 @@ func TestRemoveWorktreeWithSubmodulesPrunesNothingElse(t *testing.T) {
 // A filesystem monitor that says nothing changed is not believed: an edit
 // it failed to report is still an edit.
 func TestDirtyStrictDoesNotTrustAFilesystemMonitor(t *testing.T) {
+	t.Parallel()
 	_, main := fixture(t)
 	gittest.WriteFile(t, filepath.Join(main, "a.txt"), "a")
 	run(t, main, "add", "a.txt")
 	run(t, main, "commit", "-qm", "a")
 	hook := filepath.Join(t.TempDir(), "fsmonitor")
 	// Protocol 2: answer with a token and no paths, "nothing changed".
-	if err := os.WriteFile(hook, []byte("#!/bin/sh\nprintf 'tok\\0'\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, hook, "#!/bin/sh\nprintf 'tok\\0'\n")
 	run(t, main, "config", "core.fsmonitor", hook)
 	run(t, main, "status", "--porcelain")
 	gittest.WriteFile(t, filepath.Join(main, "a.txt"), "edited, and the monitor never says so")
@@ -333,6 +348,7 @@ func TestDirtyStrictDoesNotTrustAFilesystemMonitor(t *testing.T) {
 // git worktree add --relative-paths writes a gitdir relative to the checkout,
 // not to wherever wt happens to run.
 func TestOperationInProgressReadsARelativeGitDir(t *testing.T) {
+	t.Parallel()
 	_, main := fixture(t)
 	wt := filepath.Join(filepath.Dir(main), "wt-relative")
 	run(t, main, "worktree", "add", "-q", "--relative-paths", "-b", "feat_wt/relative", wt)
@@ -344,6 +360,7 @@ func TestOperationInProgressReadsARelativeGitDir(t *testing.T) {
 // An unborn worktree has no HEAD to hold anything, and must not stop the
 // count for every other one.
 func TestSurvivorsSkipAnUnbornWorktree(t *testing.T) {
+	t.Parallel()
 	_, main := fixture(t)
 	r, _ := Discover(main)
 	run(t, main, "worktree", "add", "-q", "--orphan", "-b", "feat_wt/unborn", filepath.Join(filepath.Dir(main), "wt-unborn"))
@@ -360,6 +377,7 @@ func TestSurvivorsSkipAnUnbornWorktree(t *testing.T) {
 // A path with a newline in it is still the path of the worktree leaving, so
 // its HEAD is not counted as surviving.
 func TestSurvivorsLeaveOutAWorktreeWhosePathHasANewline(t *testing.T) {
+	t.Parallel()
 	_, main := fixture(t)
 	r, _ := Discover(main)
 	odd := filepath.Join(filepath.Dir(main), "odd\nname")
@@ -376,6 +394,7 @@ func TestSurvivorsLeaveOutAWorktreeWhosePathHasANewline(t *testing.T) {
 }
 
 func TestHeadOf(t *testing.T) {
+	t.Parallel()
 	_, main := fixture(t)
 	if h, err := HeadOf(main); err != nil || h == "" {
 		t.Errorf("a checkout with a commit: %q, %v", h, err)
@@ -396,6 +415,7 @@ func TestHeadOf(t *testing.T) {
 // A commit made inside a submodule of a linked worktree lives only in that
 // worktree's modules/ directory, which the removal deletes.
 func TestSubmoduleLossesFindsACommitOnlyTheWorktreeHas(t *testing.T) {
+	t.Parallel()
 	parent, main := fixture(t)
 	wt := withSubmodule(t, parent, main)
 	if lost, err := SubmoduleLosses(wt); err != nil || len(lost) > 0 {
@@ -419,6 +439,7 @@ func TestSubmoduleLossesFindsACommitOnlyTheWorktreeHas(t *testing.T) {
 // The same commit fetched into the main checkout's copy of the submodule
 // survives the removal.
 func TestSubmoduleLossesCountsTheMainCheckoutsCopy(t *testing.T) {
+	t.Parallel()
 	parent, main := fixture(t)
 	wt := withSubmodule(t, parent, main)
 	sm := filepath.Join(wt, "sm")
@@ -433,6 +454,7 @@ func TestSubmoduleLossesCountsTheMainCheckoutsCopy(t *testing.T) {
 
 // Work on a nested submodule's own branch is lost the same way.
 func TestSubmoduleLossesLooksIntoNestedSubmodules(t *testing.T) {
+	t.Parallel()
 	parent, main := fixture(t)
 	wt := withSubmodule(t, parent, main)
 	n2 := filepath.Join(wt, "sm", "n2")

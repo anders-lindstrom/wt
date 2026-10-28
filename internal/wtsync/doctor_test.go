@@ -35,6 +35,7 @@ func checkNames(checks []Check) []string {
 }
 
 func TestDoctorOnAHealthyRepoIsAllOK(t *testing.T) {
+	t.Parallel()
 	dir, wt, _ := runRepo(t, nil, []map[string]string{{"b.txt": "b2\n"}})
 	gitIn(t, dir, "config", "rerere.enabled", "true")
 	// runRepo pins core.hooksPath to the repository's own hooks dir, so an
@@ -59,6 +60,7 @@ func TestDoctorOnAHealthyRepoIsAllOK(t *testing.T) {
 }
 
 func TestDoctorFlagsRerereOffWithAFix(t *testing.T) {
+	t.Parallel()
 	dir, wt, _ := runRepo(t, nil, nil)
 	// Set explicitly, local: rerereCheck reads the effective config value
 	// (what a rebase actually honours), so an ambient global
@@ -85,11 +87,10 @@ func TestDoctorFlagsRerereOffWithAFix(t *testing.T) {
 }
 
 func TestDoctorFlagsAnActivePreRebaseHook(t *testing.T) {
+	t.Parallel()
 	dir, wt, _ := runRepo(t, nil, nil)
 	hooksPath := gitIn(t, dir, "config", "--get", "core.hooksPath")
-	if err := os.WriteFile(filepath.Join(hooksPath, "pre-rebase"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, filepath.Join(hooksPath, "pre-rebase"), "#!/bin/sh\nexit 0\n")
 	checks, err := Doctor(dir, "main", []repo.Worktree{{Path: wt, Branch: "feature"}}, DoctorOptions{Now: time.Now(), Keep: 30 * 24 * time.Hour, Docker: func() error { return nil }})
 	if err != nil {
 		t.Fatal(err)
@@ -104,14 +105,10 @@ func TestDoctorFlagsAnActivePreRebaseHook(t *testing.T) {
 }
 
 func TestDoctorResolvesARelativeHooksPathAgainstTheMainRoot(t *testing.T) {
+	t.Parallel()
 	dir, wt, _ := runRepo(t, nil, nil)
 	gitIn(t, dir, "config", "core.hooksPath", "myhooks")
-	if err := os.MkdirAll(filepath.Join(dir, "myhooks"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "myhooks", "post-rewrite"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, filepath.Join(dir, "myhooks", "post-rewrite"), "#!/bin/sh\nexit 0\n")
 	checks, err := Doctor(dir, "main", []repo.Worktree{{Path: wt, Branch: "feature"}}, DoctorOptions{Now: time.Now(), Keep: 30 * 24 * time.Hour, Docker: func() error { return nil }})
 	if err != nil {
 		t.Fatal(err)
@@ -126,6 +123,7 @@ func TestDoctorResolvesARelativeHooksPathAgainstTheMainRoot(t *testing.T) {
 }
 
 func TestDoctorFlagsAMissingScriptOnTrunk(t *testing.T) {
+	t.Parallel()
 	dir := repoWith(t, map[string]string{"a.txt": "a\n"}, nil, nil)
 	yaml := "conflicts:\n  - paths: [a.txt]\n    strategy: script\n    run: bin/none\n"
 	if err := os.WriteFile(filepath.Join(dir, ".wt-sync.yaml"), []byte(yaml), 0o644); err != nil {
@@ -149,6 +147,7 @@ func TestDoctorFlagsAMissingScriptOnTrunk(t *testing.T) {
 }
 
 func TestDoctorListsPrunableSafetyRefsWithAFix(t *testing.T) {
+	t.Parallel()
 	dir, wt, _ := runRepo(t, nil, nil)
 	tip := gitIn(t, dir, "rev-parse", "HEAD")
 	now := time.Now()
@@ -192,6 +191,7 @@ func TestDoctorListsPrunableSafetyRefsWithAFix(t *testing.T) {
 }
 
 func TestDoctorFlagsAnExpiredLock(t *testing.T) {
+	t.Parallel()
 	dir, wt, _ := runRepo(t, nil, nil)
 	gitDir, err := GitDir(wt)
 	if err != nil {
@@ -223,6 +223,7 @@ func TestDoctorFlagsAnExpiredLock(t *testing.T) {
 }
 
 func TestDoctorChecksDockerOnlyWhenStepsAreDeferred(t *testing.T) {
+	t.Parallel()
 	dir, wt, _ := runRepo(t, nil, nil)
 	checks, err := Doctor(dir, "main", []repo.Worktree{{Path: wt, Branch: "feature"}}, DoctorOptions{Now: time.Now(), Keep: 30 * 24 * time.Hour, Docker: func() error { return errors.New("no docker") }})
 	if err != nil {
@@ -252,6 +253,7 @@ func TestDoctorChecksDockerOnlyWhenStepsAreDeferred(t *testing.T) {
 }
 
 func TestDoctorFlagsSubmodulesAndLFSOnTrunk(t *testing.T) {
+	t.Parallel()
 	dir, wt, _ := runRepo(t, nil, nil)
 	if err := os.WriteFile(filepath.Join(dir, ".gitmodules"), []byte("[submodule \"x\"]\n\tpath = x\n\turl = https://example.com/x\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -287,6 +289,7 @@ func TestDoctorFlagsSubmodulesAndLFSOnTrunk(t *testing.T) {
 // not silently folded into "no LFS paths found". The trunk check is also
 // !OK here; that is expected, not a competing assertion.
 func TestDoctorFlagsLFSAsAnErrorWhenTrunkDoesNotResolve(t *testing.T) {
+	t.Parallel()
 	dir := repoWith(t, map[string]string{"a.txt": "a\n"}, nil, nil)
 	// No origin remote at all, so origin/main cannot resolve.
 	checks, err := Doctor(dir, "main", nil, DoctorOptions{Now: time.Now(), Keep: 30 * 24 * time.Hour})
@@ -305,6 +308,7 @@ func TestDoctorFlagsLFSAsAnErrorWhenTrunkDoesNotResolve(t *testing.T) {
 // A git that does not answer is reported as a failed check that says so,
 // never read as a trunk that does not resolve or as a path that is absent.
 func TestDoctorTreeChecksReportAGitThatDoesNotAnswer(t *testing.T) {
+	// Not parallel: shortens the package-level gitDeadline and sets PATH.
 	dir := repoWith(t, map[string]string{"a.txt": "a\n"}, nil, nil)
 	for _, tc := range []struct {
 		name        string
@@ -328,6 +332,7 @@ func TestDoctorTreeChecksReportAGitThatDoesNotAnswer(t *testing.T) {
 }
 
 func TestDoctorFlagsAWorktreeLeftMidRebase(t *testing.T) {
+	t.Parallel()
 	dir, wt, _ := runRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"a.txt": "a3\n"}})
 	if _, err := gittest.Try(t, wt, "rebase", "--no-update-refs", "--no-gpg-sign", "main"); err == nil {
 		t.Fatal("rebase did not stop; the test is vacuous")
@@ -349,6 +354,7 @@ func TestDoctorFlagsAWorktreeLeftMidRebase(t *testing.T) {
 }
 
 func TestDoctorLeavesAHandedOverRebaseToThePlanRow(t *testing.T) {
+	t.Parallel()
 	// git rebase --abort on a handover would leave its sidecar behind and the
 	// branch reported as waiting forever; the plan row names resume instead.
 	dir, wt, _, _ := handedOverRepo(t, 5, false)

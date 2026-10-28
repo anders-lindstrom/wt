@@ -15,6 +15,7 @@ import (
 // The plain print says where each value came from, including which file
 // decided Superset.
 func TestConfigPrintsTheUserSettings(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	testkit.UserConfigIn(t)
 	ctx, err := kit.Open(testkit.FixtureRepo(t, testkit.MinimalConf))
 	if err != nil {
@@ -39,6 +40,7 @@ func TestConfigPrintsTheUserSettings(t *testing.T) {
 // Once opted in, the repository's key decides the mode and the print names
 // the file.
 func TestConfigNamesTheFileThatDecidedSuperset(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	testkit.UserConfigIn(t)
 	for name, tc := range map[string]struct{ conf, want string }{
 		"repo left it alone": {testkit.MinimalConf, "superset mode: auto (repo default)"},
@@ -64,6 +66,7 @@ func TestConfigNamesTheFileThatDecidedSuperset(t *testing.T) {
 // --shell is a contract the Herdr skills eval: the repository's assignments
 // and nothing else.
 func TestConfigShellSaysNothingAboutTheUserSettings(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	testkit.UserConfigIn(t)
 	ctx, err := kit.Open(testkit.FixtureRepo(t, testkit.MinimalConf))
 	if err != nil {
@@ -86,6 +89,7 @@ func TestConfigShellSaysNothingAboutTheUserSettings(t *testing.T) {
 
 // set, get and unset round-trip, none of them needing a repository.
 func TestUserSetGetUnsetFromOutsideARepository(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary; changes the working directory of the test binary.
 	path := testkit.UserConfigIn(t)
 	t.Chdir(t.TempDir())
 
@@ -123,6 +127,7 @@ func TestUserSetGetUnsetFromOutsideARepository(t *testing.T) {
 }
 
 func TestUserSetRejectsWhatItCannotWrite(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	path := testkit.UserConfigIn(t)
 	for name, tc := range map[string]struct{ key, value, want string }{
 		"unknown key":     {"superst", "true", `unknown key "superst"`},
@@ -150,6 +155,7 @@ func TestUserSetRejectsWhatItCannotWrite(t *testing.T) {
 // what is wrong with the file on stderr: a script asking what a setting is
 // must not fail because of an unrelated key.
 func TestUserGetAnswersDespiteABrokenFile(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	for name, tc := range map[string]struct{ body, want string }{
 		"one bad key":         {"superset = true\ngithbu = false\n", "true"},
 		"does not parse":      {"superset = true\ngithub = \n", "false"},
@@ -173,6 +179,7 @@ func TestUserGetAnswersDespiteABrokenFile(t *testing.T) {
 
 // An unknown key is still an error: there is no value to answer with.
 func TestUserGetStillRefusesAnUnknownKey(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	testkit.WriteUserConfig(t, "superset = true\n")
 	var out, errs bytes.Buffer
 	if err := UserGet("superst", &out, &errs); err == nil {
@@ -183,6 +190,7 @@ func TestUserGetStillRefusesAnUnknownKey(t *testing.T) {
 // `wt config` says on stdout that it could not read the file, so the false
 // beside every setting is not read as somebody's choice.
 func TestConfigSaysTheFileCouldNotBeRead(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	path := testkit.WriteUserConfig(t, "github = \n")
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {

@@ -3,7 +3,6 @@ package testkit
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/github"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 // GhRepo is the remote every test in this file pretends the fixture has.
@@ -19,24 +19,23 @@ var GhRepo = github.Remote{Name: "origin", Host: "github.com", Slug: "t/demo"}
 // FakeGitHub writes a `gh` that answers the two questions wt asks — the branch
 // lookup over `api graphql`, and the wide open listing — and performs
 // `pr checkout <n>` by creating that pull request's branch where it is run,
-// which is the only part of the real one wt depends on. It points kit.FindGitHub
-// and kit.GitHubRemote at the fake for one test and returns the file every
-// invocation's argv is appended to.
-func FakeGitHub(t *testing.T, prs ...github.PR) string {
+// which is the only part of the real one wt depends on. It points ctx at the
+// fake and returns the file every invocation's argv is appended to.
+func FakeGitHub(t *testing.T, ctx *kit.Context, prs ...github.PR) string {
 	t.Helper()
-	return FakeGitHubWith(t, "", prs...)
+	return FakeGitHubWith(t, ctx, "", prs...)
 }
 
 // FakeGitHubWith is FakeGitHub with extra shell run before the answers, for
 // the tests that need gh to fail.
-func FakeGitHubWith(t *testing.T, prelude string, prs ...github.PR) string {
+func FakeGitHubWith(t *testing.T, ctx *kit.Context, prelude string, prs ...github.PR) string {
 	t.Helper()
-	return FakeGitHubAs(t, "anders", prelude, prs...)
+	return FakeGitHubAs(t, ctx, "anders", prelude, prs...)
 }
 
 // FakeGitHubAs is FakeGitHubWith with the login gh reports itself as, which
 // is what decides whose review the picker leads with.
-func FakeGitHubAs(t *testing.T, viewer, prelude string, prs ...github.PR) string {
+func FakeGitHubAs(t *testing.T, ctx *kit.Context, viewer, prelude string, prs ...github.PR) string {
 	t.Helper()
 	listed, err := json.Marshal(prs)
 	if err != nil {
@@ -77,10 +76,8 @@ func FakeGitHubAs(t *testing.T, viewer, prelude string, prs ...github.PR) string
 		"  'auth status') exit 0 ;;\n" +
 		"  '--version ') echo 'gh version 2.100.0 (2026-09-03)' ;;\n" +
 		"esac\n"
-	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	StubGitHub(t, github.CLI{Exe: exe}, GhRepo, true)
+	gittest.WriteExecutable(t, exe, script)
+	StubGitHub(ctx, github.CLI{Exe: exe}, GhRepo, true)
 	return log
 }
 
@@ -177,19 +174,13 @@ func viewCase(t *testing.T, prs []github.PR) string {
 	return b.String()
 }
 
-// StubGitHub replaces the located CLI and the repository's remote for one
-// test. found false is a machine with no gh; hasRemote false a repository
-// that is not on GitHub.
-func StubGitHub(t *testing.T, cli github.CLI, remote github.Remote, hasRemote bool) {
-	t.Helper()
-	oldFind, oldRemote, oldDeadline := kit.FindGitHub, kit.GitHubRemote, kit.LookupDeadline
-	found := cli.Exe != ""
-	kit.FindGitHub = func() (github.CLI, bool) { return cli, found }
-	kit.GitHubRemote = func(string) (github.Remote, bool) { return remote, hasRemote }
+// StubGitHub puts a GitHub in front of ctx in place of the machine's: cli,
+// none when its Exe is empty, and the repository's remote, none when
+// hasRemote is false.
+func StubGitHub(ctx *kit.Context, cli github.CLI, remote github.Remote, hasRemote bool) {
 	// The fake is a shell script, and on a loaded machine starting one can
 	// take longer than the 2s wt list gives gh.
-	kit.LookupDeadline = time.Minute
-	t.Cleanup(func() { kit.FindGitHub, kit.GitHubRemote, kit.LookupDeadline = oldFind, oldRemote, oldDeadline })
+	ctx.GitHubFake = &kit.GitHubFake{CLI: cli, Found: cli.Exe != "", Remote: remote, HasRemote: hasRemote, Deadline: time.Minute}
 }
 
 // OpenPR is an open pull request on head.

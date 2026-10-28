@@ -14,12 +14,13 @@ import (
 // With superset off, SUPERSET_REGISTER=on still gets nothing: no subprocess,
 // nothing on stderr.
 func TestUserSupersetOffBeatsTheRepository(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx.Config.SupersetRegister = config.SupersetOn
-	log := provisiontest.FakeSuperset(t, ctx.Repo.MainRoot, true)
+	log := provisiontest.FakeSuperset(t, ctx, ctx.Repo.MainRoot, true)
 
 	var errs bytes.Buffer
 	if _, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs); err != nil {

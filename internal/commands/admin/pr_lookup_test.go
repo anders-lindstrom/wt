@@ -15,11 +15,12 @@ import (
 // git gives a branch one worktree. Answering with the main checkout's path
 // would walk `cd "$(wt pr checkout 12)"` into the repository you started in.
 func TestPRCheckoutRefusesAPullRequestOnTrunk(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	testkit.FakeGitHub(t, testkit.OpenPR(12, "main", "Straight onto trunk"))
+	testkit.FakeGitHub(t, ctx, testkit.OpenPR(12, "main", "Straight onto trunk"))
 
 	var errs bytes.Buffer
 	path, err := PRCheckout(ctx, 12, PROptions{}, &errs)
@@ -38,11 +39,12 @@ func TestPRCheckoutRefusesAPullRequestOnTrunk(t *testing.T) {
 // remote. The worktree goes; so must the branch, or the next attempt finds a
 // branch it did not make and refuses.
 func TestPRCheckoutRemovesABranchGhLeftBehind(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	testkit.FakeGitHubWith(t, `[ "$1 $2" = 'pr checkout' ] && { git checkout -q -b residential_fixes; `+
+	testkit.FakeGitHubWith(t, ctx, `[ "$1 $2" = 'pr checkout' ] && { git checkout -q -b residential_fixes; `+
 		`echo 'could not set up the remote' >&2; exit 1; }`,
 		testkit.OpenPR(12, "residential_fixes", "Fixes"))
 
@@ -58,12 +60,13 @@ func TestPRCheckoutRemovesABranchGhLeftBehind(t *testing.T) {
 // A branch that was already here is not gh's to have made, so a failure must
 // not take it.
 func TestPRCheckoutKeepsABranchItDidNotMake(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
 	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "residential_fixes")
-	testkit.FakeGitHubWith(t, `[ "$1 $2" = 'pr checkout' ] && { echo 'fetch failed' >&2; exit 1; }`,
+	testkit.FakeGitHubWith(t, ctx, `[ "$1 $2" = 'pr checkout' ] && { echo 'fetch failed' >&2; exit 1; }`,
 		testkit.OpenPR(12, "residential_fixes", "Fixes"))
 
 	var errs bytes.Buffer
@@ -78,6 +81,7 @@ func TestPRCheckoutKeepsABranchItDidNotMake(t *testing.T) {
 // The picker leads with what is waiting on you, and says which rows already
 // have a worktree here.
 func TestPRChoicesLeadWithYourReviewQueue(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -87,7 +91,7 @@ func TestPRChoicesLeadWithYourReviewQueue(t *testing.T) {
 	wanted.ReviewRequests.Nodes = append(wanted.ReviewRequests.Nodes, struct {
 		RequestedReviewer github.Account `json:"requestedReviewer"`
 	}{RequestedReviewer: github.Account{Login: "anders"}})
-	testkit.FakeGitHubAs(t, "anders", "", mine, wanted)
+	testkit.FakeGitHubAs(t, ctx, "anders", "", mine, wanted)
 
 	var errs bytes.Buffer
 	path, err := provision.New(ctx, "fix/login-crash", provision.NewOptions{}, &errs)

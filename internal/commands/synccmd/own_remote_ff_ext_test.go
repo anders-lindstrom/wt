@@ -15,6 +15,7 @@ import (
 // A run with nothing named takes it with the other ready ones, says what it
 // did in one line and how to take it back, and offers nothing to push.
 func TestSyncRunWithNothingNamedTakesAFastForwardOnlyWorktree(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -45,6 +46,7 @@ func TestSyncRunWithNothingNamedTakesAFastForwardOnlyWorktree(t *testing.T) {
 // wt up does the same, and with --no-fetch it goes by the remote as last
 // fetched and says so.
 func TestUpFastForwardsABranchWithNothingToRebase(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -70,6 +72,7 @@ func TestUpFastForwardsABranchWithNothingToRebase(t *testing.T) {
 // Where the fast-forward is not safe it is the behind block as before:
 // refused untouched, with the code that says why.
 func TestSyncRunRefusesAFastForwardOnlyBranchItCannotMove(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}

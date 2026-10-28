@@ -9,9 +9,11 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 func TestSetupCopiesConfigDirsAndFiles(t *testing.T) {
+	t.Parallel()
 	main := testkit.FixtureRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\n"+
 		"DEVELOPER_CONFIG_DIRS=(.vscode)\nDEVELOPER_CONFIG_FILES=(\"nested/app.env\")\n")
 	testkit.MustMkdir(t, filepath.Join(main, ".vscode"))
@@ -36,6 +38,7 @@ func TestSetupCopiesConfigDirsAndFiles(t *testing.T) {
 }
 
 func TestSetupNeverOverwritesExistingFiles(t *testing.T) {
+	t.Parallel()
 	main := testkit.FixtureRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\n"+
 		"DEVELOPER_CONFIG_FILES=(\"app.env\")\n")
 	testkit.MustWrite(t, filepath.Join(main, "app.env"), "FROM=source")
@@ -53,12 +56,10 @@ func TestSetupNeverOverwritesExistingFiles(t *testing.T) {
 }
 
 func TestSetupRunsProvisionScript(t *testing.T) {
+	t.Parallel()
 	main := testkit.FixtureRepo(t, testkit.MinimalConf)
 	p := filepath.Join(main, "bin", "worktree", "provision.sh")
-	testkit.MustWrite(t, p, "#!/bin/sh\necho provisioned > provisioned.txt\n")
-	if err := os.Chmod(p, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, p, "#!/bin/sh\necho provisioned > provisioned.txt\n")
 	target := t.TempDir()
 	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
@@ -73,6 +74,7 @@ func TestSetupRunsProvisionScript(t *testing.T) {
 // A failing build is a warning in the bash implementation. Setup must not
 // return an error for it, or every agent that provisions would start failing.
 func TestSetupBuildFailureIsAWarningNotAnError(t *testing.T) {
+	t.Parallel()
 	main := testkit.FixtureRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_COMMAND=\"exit 3\"\n")
 	target := t.TempDir()
 	ctx, _ := kit.Open(main)
@@ -86,6 +88,7 @@ func TestSetupBuildFailureIsAWarningNotAnError(t *testing.T) {
 }
 
 func TestSetupSkipBuild(t *testing.T) {
+	t.Parallel()
 	main := testkit.FixtureRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_COMMAND=\"touch built.txt\"\n")
 	target := t.TempDir()
 	ctx, _ := kit.Open(main)
@@ -99,6 +102,7 @@ func TestSetupSkipBuild(t *testing.T) {
 }
 
 func TestSetupPrintsItsSourceOnlyWhenGiven(t *testing.T) {
+	t.Parallel()
 	main := testkit.FixtureRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 
@@ -124,6 +128,7 @@ func TestSetupPrintsItsSourceOnlyWhenGiven(t *testing.T) {
 // where it stands — and has to say so, because a silent success there reads as
 // a worktree that ended up somewhere nobody chose.
 func TestSetupProvisionsASupersetWorktreeWhereItStands(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	superset := filepath.Join(ctx.Repo.Parent, "demo_wt", "demo", "feat_wt", "thing")
@@ -146,6 +151,7 @@ func TestSetupProvisionsASupersetWorktreeWhereItStands(t *testing.T) {
 }
 
 func TestSetupNamesTheWorktreeItProvisioned(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
@@ -164,6 +170,7 @@ func TestSetupNamesTheWorktreeItProvisioned(t *testing.T) {
 // A config entry that escapes the worktree must be refused, not silently
 // written outside it.
 func TestSetupRefusesConfigEntriesThatEscapeTheWorktree(t *testing.T) {
+	t.Parallel()
 	main := testkit.FixtureRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\n"+
 		"DEVELOPER_CONFIG_FILES=(\"../escaped.env\")\n")
 	testkit.MustWrite(t, filepath.Join(filepath.Dir(main), "escaped.env"), "SECRET=1")
@@ -187,6 +194,7 @@ func TestSetupRefusesConfigEntriesThatEscapeTheWorktree(t *testing.T) {
 // that do not exist in the source. Everything present must arrive; everything
 // absent must be skipped without failing the setup.
 func TestSetupCopiesServerShapedConfig(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, `MAIN_BRANCH="main"
 BUILD_INIT_ENABLED=false
 DEVELOPER_CONFIG_DIRS=(.cursor .claude .run .vscode .idea)
@@ -237,12 +245,10 @@ DEVELOPER_CONFIG_FILES=(
 // Stopping early leaves a worktree with no dependencies either, which is
 // strictly less usable than one that merely lacks secrets.
 func TestSetupContinuesAfterProvisionFailure(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_COMMAND=\"touch built.txt\"\n")
 	p := filepath.Join(main, "bin", "worktree", "provision.sh")
-	testkit.MustWrite(t, p, "#!/bin/sh\necho 'no AWS credentials' >&2\nexit 1\n")
-	if err := os.Chmod(p, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, p, "#!/bin/sh\necho 'no AWS credentials' >&2\nexit 1\n")
 	target := t.TempDir()
 	ctx, _ := kit.Open(main)
 

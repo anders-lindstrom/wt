@@ -23,6 +23,7 @@ func deferRepo(t *testing.T) (wt, oldTip, newTip string) {
 }
 
 func TestChangedPathsIsTheDiffBetweenTheTips(t *testing.T) {
+	t.Parallel()
 	wt, old, cur := deferRepo(t)
 	got, err := ChangedPaths(wt, old, cur)
 	if err != nil {
@@ -34,6 +35,7 @@ func TestChangedPathsIsTheDiffBetweenTheTips(t *testing.T) {
 }
 
 func TestRunDeferredRunsAMatchingStepAndCommitsTrackedOutput(t *testing.T) {
+	t.Parallel()
 	wt, old, _ := deferRepo(t)
 	steps := []Deferred{{Run: "cp gen/in.txt gen/out.txt && echo regenerated", Paths: []string{"gen/**"}, Commit: "chore: regenerate"}}
 	// gen/out.txt must be tracked for `add -u` to pick it up.
@@ -60,6 +62,7 @@ func TestRunDeferredRunsAMatchingStepAndCommitsTrackedOutput(t *testing.T) {
 }
 
 func TestRunDeferredSkipsAStepWhoseListedPathsDidNotChange(t *testing.T) {
+	t.Parallel()
 	wt, old, cur := deferRepo(t)
 	rs, err := RunDeferred(wt, []Deferred{{Run: "exit 1", Paths: []string{"other/**"}}}, old, cur, nil)
 	if err != nil || rs[0].Ran || rs[0].Why == "" {
@@ -68,6 +71,7 @@ func TestRunDeferredSkipsAStepWhoseListedPathsDidNotChange(t *testing.T) {
 }
 
 func TestRunDeferredAStepWithoutPathsAlwaysRunsAndNeedsNoCommit(t *testing.T) {
+	t.Parallel()
 	wt, old, cur := deferRepo(t)
 	rs, err := RunDeferred(wt, []Deferred{{Run: "echo hi > /dev/null"}}, old, cur, nil)
 	if err != nil || !rs[0].Ran || rs[0].Err != nil || rs[0].Commit != "" {
@@ -76,6 +80,7 @@ func TestRunDeferredAStepWithoutPathsAlwaysRunsAndNeedsNoCommit(t *testing.T) {
 }
 
 func TestRunDeferredAFailingStepIsOwedStopsLaterStepsAndTheRebaseStays(t *testing.T) {
+	t.Parallel()
 	wt, old, cur := deferRepo(t)
 	rs, err := RunDeferred(wt, []Deferred{{Run: "echo boom >&2; exit 3"}, {Run: "true"}}, old, cur, nil)
 	if err != nil {
@@ -93,6 +98,7 @@ func TestRunDeferredAFailingStepIsOwedStopsLaterStepsAndTheRebaseStays(t *testin
 }
 
 func TestRunDeferredTimesOut(t *testing.T) {
+	t.Parallel()
 	wt, old, cur := deferRepo(t)
 	rs, err := runDeferredWithTimeout(wt, []Deferred{{Run: "sleep 5"}}, old, cur, nil, 300*time.Millisecond)
 	if err != nil || rs[0].Err == nil || !strings.Contains(rs[0].Err.Error(), "timed out") {
@@ -112,6 +118,7 @@ func TestRunDeferredTimesOut(t *testing.T) {
 // setsid isn't on macOS, so a perl one-liner stands in for it: it calls
 // setpgrp(0,0) to leave the shell's process group before exec'ing sleep.
 func TestRunDeferredTimesOutEvenWhenAnOrphanedChildMakesTheStepLookClean(t *testing.T) {
+	// Not parallel: bounds wall time to the timeout plus git.WaitDelay.
 	if testing.Short() {
 		t.Skip("waits out a real deadline")
 	}
@@ -135,6 +142,7 @@ func TestRunDeferredTimesOutEvenWhenAnOrphanedChildMakesTheStepLookClean(t *test
 }
 
 func TestRunDeferredAStepThatDirtiesTrackedFilesWithoutACommitIsReported(t *testing.T) {
+	t.Parallel()
 	wt, old, cur := deferRepo(t)
 	rs, err := RunDeferred(wt, []Deferred{{Run: "echo x >> b.txt"}}, old, cur, nil)
 	if err != nil || rs[0].Err == nil || !strings.Contains(rs[0].Err.Error(), "no commit") {
@@ -143,6 +151,7 @@ func TestRunDeferredAStepThatDirtiesTrackedFilesWithoutACommitIsReported(t *test
 }
 
 func TestRunDeferredACommitAHookRefusesIsOwedAndLeavesTheOutputBehind(t *testing.T) {
+	t.Parallel()
 	wt, old, _ := deferRepo(t)
 	// gen/out.txt must be tracked for `add -u` to pick it up.
 	if err := os.WriteFile(filepath.Join(wt, "gen", "out.txt"), []byte("stale\n"), 0o644); err != nil {
@@ -154,9 +163,7 @@ func TestRunDeferredACommitAHookRefusesIsOwedAndLeavesTheOutputBehind(t *testing
 	// A pre-commit hook that refuses everything, pinned so no ambient
 	// core.hooksPath decides this test either way.
 	hooks := t.TempDir()
-	if err := os.WriteFile(filepath.Join(hooks, "pre-commit"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, filepath.Join(hooks, "pre-commit"), "#!/bin/sh\nexit 1\n")
 	gitIn(t, wt, "config", "core.hooksPath", hooks)
 
 	steps := []Deferred{

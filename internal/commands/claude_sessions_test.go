@@ -28,6 +28,7 @@ func listed(t *testing.T, ctx *kit.Context, opts ListOptions, width int) string 
 // The column says which worktree has a session, by name, and what state it
 // is in. blocked is the state Claude Code's agent view calls "Needs input".
 func TestListShowsTheSessionInAWorktree(t *testing.T) {
+	// Not parallel: swaps session.ListClaudeSessions.
 	ctx, _, wt := testkit.CanonicalWorktree(t)
 	testkit.ClaudeLists(t, &session.ListClaudeSessions, testkit.Background("fix the crash", "3f9a1c20", "blocked", wt))
 
@@ -45,6 +46,7 @@ func TestListShowsTheSessionInAWorktree(t *testing.T) {
 
 // With no session anywhere the listing is what it was without the column.
 func TestListPrintsNoSessionColumnWithoutASession(t *testing.T) {
+	// Not parallel: swaps session.ListClaudeSessions.
 	ctx, _, _ := testkit.CanonicalWorktree(t)
 	without := listed(t, ctx, ListOptions{NoSessions: true}, 0)
 
@@ -55,6 +57,7 @@ func TestListPrintsNoSessionColumnWithoutASession(t *testing.T) {
 }
 
 func TestListNoSessionsDoesNotAskClaude(t *testing.T) {
+	// Not parallel: swaps session.ListClaudeSessions.
 	ctx, _, wt := testkit.CanonicalWorktree(t)
 	asked := testkit.ClaudeLists(t, &session.ListClaudeSessions, testkit.Background("fix the crash", "3f9a1c20", "working", wt))
 
@@ -69,6 +72,7 @@ func TestListNoSessionsDoesNotAskClaude(t *testing.T) {
 // A claude that errors or does not answer costs the column and one line,
 // never the listing.
 func TestListSaysWhenSessionsCouldNotBeRead(t *testing.T) {
+	// Not parallel: swaps session.ListClaudeSessions.
 	ctx, _, _ := testkit.CanonicalWorktree(t)
 	was := session.ListClaudeSessions
 	session.ListClaudeSessions = func(time.Duration) ([]wtsync.Agent, bool, error) {
@@ -88,6 +92,7 @@ func TestListSaysWhenSessionsCouldNotBeRead(t *testing.T) {
 // A session in a subfolder belongs to its worktree, and the main checkout
 // does not take the sessions of the worktrees beside it or nested in it.
 func TestListGivesASessionToTheWorktreeItIsIn(t *testing.T) {
+	// Not parallel: swaps session.ListClaudeSessions.
 	ctx, main, wt := testkit.CanonicalWorktree(t)
 	nested := filepath.Join(main, ".worktrees", "inner")
 	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/inner", nested)
@@ -114,6 +119,7 @@ func TestListGivesASessionToTheWorktreeItIsIn(t *testing.T) {
 // One row per worktree: the session that needs its person is the one named,
 // else the newest, and the rest are counted.
 func TestListNamesOneSessionAndCountsTheRest(t *testing.T) {
+	// Not parallel: swaps session.ListClaudeSessions.
 	ctx, _, wt := testkit.CanonicalWorktree(t)
 	older := testkit.Background("older", "aaaaaaaa", "working", wt)
 	older.StartedAt = 1000
@@ -135,6 +141,7 @@ func TestListNamesOneSessionAndCountsTheRest(t *testing.T) {
 // A session in a terminal says so, because it cannot be attached; the one
 // wt runs under is marked, and gives way to any other.
 func TestListMarksSessionsInATerminalAndItsOwn(t *testing.T) {
+	// Not parallel: swaps session.ListClaudeSessions.
 	ctx, main, wt := testkit.CanonicalWorktree(t)
 	me := testkit.InTerminal("me", "busy", wt, 4243)
 	me.Own = true
@@ -157,6 +164,7 @@ func TestListMarksSessionsInATerminalAndItsOwn(t *testing.T) {
 // A name is free text somebody typed: nothing in it may move the cursor,
 // break the row or run on for ever.
 func TestListCleansAndCutsASessionName(t *testing.T) {
+	// Not parallel: swaps session.ListClaudeSessions.
 	ctx, _, wt := testkit.CanonicalWorktree(t)
 	testkit.ClaudeLists(t, &session.ListClaudeSessions, testkit.Background("bad\x1b[2J\tname\nsecond\u202eline "+strings.Repeat("x", 80), "aaaaaaaa", "working", wt))
 
@@ -190,6 +198,7 @@ func widestLine(out string) int {
 // columns this repository's own names do not, and the listing is the one
 // without the column plus a line saying so: no row ever wraps for it.
 func TestListLeavesTheSessionColumnOutWhereARowWouldNotFit(t *testing.T) {
+	// Not parallel: swaps session.ListClaudeSessions.
 	ctx := provisiontest.OwnShape(t)
 	const width = 80
 	without := listed(t, ctx, ListOptions{NoSessions: true}, width)
@@ -209,6 +218,7 @@ func TestListLeavesTheSessionColumnOutWhereARowWouldNotFit(t *testing.T) {
 
 // Where every row fits, the column is there, whole.
 func TestListShowsTheSessionColumnWhereEveryRowFits(t *testing.T) {
+	// Not parallel: swaps session.ListClaudeSessions.
 	ctx := provisiontest.OwnShape(t)
 	piped := listed(t, ctx, ListOptions{}, 0)
 	// Wide enough for the table with its paths cut to their shortest, and
@@ -237,6 +247,7 @@ func TestListShowsTheSessionColumnWhereEveryRowFits(t *testing.T) {
 
 // --wide is the listing as it is when piped, whatever the width.
 func TestListWideShowsTheColumnWhateverTheWidth(t *testing.T) {
+	// Not parallel: swaps session.ListClaudeSessions.
 	ctx := provisiontest.OwnShape(t)
 	piped := listed(t, ctx, ListOptions{}, 0)
 	if got := listed(t, ctx, ListOptions{Wide: true}, 40); got != piped {
@@ -249,6 +260,7 @@ func TestListWideShowsTheColumnWhateverTheWidth(t *testing.T) {
 
 // --all, --roots and --profile list many repositories from one read.
 func TestListsShareOneReadOfTheSessions(t *testing.T) {
+	// Not parallel: swaps session.ListClaudeSessions.
 	ctx, _, wt := testkit.CanonicalWorktree(t)
 	asked := testkit.ClaudeLists(t, &session.ListClaudeSessions, testkit.Background("fix the crash", "3f9a1c20", "working", wt))
 

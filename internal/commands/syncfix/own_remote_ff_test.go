@@ -16,6 +16,7 @@ import (
 // fast-forwarded and that is all: the look files it under ready, the run
 // reports fastForwarded with nothing to push, and undo puts it back.
 func TestSyncRunFastForwardsABranchWithNothingToRebase(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}
@@ -77,6 +78,7 @@ func TestSyncRunFastForwardsABranchWithNothingToRebase(t *testing.T) {
 // In a stack: a parent that only needs the fast-forward gets it, and its
 // child is rebased onto where that leaves the parent.
 func TestUpFastForwardsAStackParentWithNothingToRebaseAndRebasesItsChild(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}

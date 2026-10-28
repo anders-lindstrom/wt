@@ -31,9 +31,9 @@ func Identify(path string) (Identity, error) {
 }
 
 // DeviceOf is the device path leads to, following symlinks: a folder
-// that is a symlink onto another volume is on that volume. A var so a test
-// can put a path on another volume.
-var DeviceOf = func(path string) (uint64, error) {
+// that is a symlink onto another volume is on that volume. Hooks.DeviceOf
+// stands in for it.
+func DeviceOf(path string) (uint64, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return 0, err
@@ -48,8 +48,8 @@ var DeviceOf = func(path string) (uint64, error) {
 // Check is everything that refuses a quarantine into dir before anything
 // changes: dir must be new, its parent there, and every path to be moved on
 // the parent's volume, because a rename across volumes is a copy and a
-// delete.
-func Check(dir string, paths ...string) error {
+// delete. h is nil but in tests.
+func Check(dir string, h *Hooks, paths ...string) error {
 	if _, err := os.Lstat(dir); err == nil {
 		return fmt.Errorf("%s is there already: a worktree is moved only into a new folder", dir)
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -66,12 +66,12 @@ func Check(dir string, paths ...string) error {
 	if !info.IsDir() {
 		return fmt.Errorf("%s is not a folder", parent)
 	}
-	want, err := DeviceOf(parent)
+	want, err := h.deviceOf(parent)
 	if err != nil {
 		return err
 	}
 	for _, p := range paths {
-		dev, err := DeviceOf(p)
+		dev, err := h.deviceOf(p)
 		if err != nil {
 			return err
 		}
@@ -84,8 +84,9 @@ func Check(dir string, paths ...string) error {
 
 // Move renames from to to, and refuses when anything is at to: a plain
 // rename(2) would replace an empty directory there. An error after the
-// rename — the fsync that makes it durable — does not undo it.
-func Move(from, to string) error {
+// rename — the fsync that makes it durable — does not undo it. h is nil but
+// in tests.
+func Move(from, to string, h *Hooks) error {
 	if _, err := os.Lstat(to); err == nil {
 		return fmt.Errorf("%s is there already", to)
 	}
@@ -94,18 +95,11 @@ func Move(from, to string) error {
 	}
 	// From here the directory has moved, whatever is returned: a caller
 	// reads where it is with Locate rather than from the error.
-	if AfterRename != nil {
-		if err := AfterRename(to); err != nil {
-			return fmt.Errorf("moved %s to %s, but: %w", from, to, err)
-		}
+	if err := h.afterRename(to); err != nil {
+		return fmt.Errorf("moved %s to %s, but: %w", from, to, err)
 	}
 	if err := syncDir(filepath.Dir(to)); err != nil {
 		return fmt.Errorf("moved %s to %s, but: %w", from, to, err)
 	}
 	return nil
 }
-
-// AfterRename runs, when set, between a move's rename and its fsync, and an
-// error from it stands for the fsync failing. Tests set it; nothing else
-// does.
-var AfterRename func(to string) error

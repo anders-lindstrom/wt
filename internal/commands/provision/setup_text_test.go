@@ -2,7 +2,6 @@ package provision
 
 import (
 	"bytes"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 // ProvisionFixture is a repository whose provisioning can be made to fail
@@ -27,10 +27,7 @@ func ProvisionFixture(t *testing.T, provisionExit int, build string, badSubmodul
 	main := testkit.CommittedRepo(t, conf)
 	if provisionExit >= 0 {
 		p := filepath.Join(main, "bin", "worktree", "provision.sh")
-		testkit.MustWrite(t, p, "#!/bin/sh\necho 'provisioning'\nexit "+strconv.Itoa(provisionExit)+"\n")
-		if err := os.Chmod(p, 0o755); err != nil {
-			t.Fatal(err)
-		}
+		gittest.WriteExecutable(t, p, "#!/bin/sh\necho 'provisioning'\nexit "+strconv.Itoa(provisionExit)+"\n")
 	}
 	if badSubmodule {
 		testkit.MustWrite(t, filepath.Join(main, ".gitmodules"),
@@ -58,6 +55,7 @@ var submoduleErr = regexp.MustCompile(`(?s)(failed to initialise submodules: ).*
 // hook and wt new: reporting the steps for --json must not change a byte of
 // it, whichever steps fail.
 func TestSetupTextIsUnchangedByStepReporting(t *testing.T) {
+	t.Parallel()
 	for name, tc := range map[string]struct {
 		provisionExit int
 		build         string

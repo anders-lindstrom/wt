@@ -16,6 +16,7 @@ import (
 // the worktree, Superset is not asked to delete — its delete would
 // force-remove the checkout past every check wt made.
 func TestDeregisterNeverRunsWhileTheWorktreeIsThere(t *testing.T) {
+	t.Parallel()
 	for _, how := range []string{"directory", "registration"} {
 		t.Run(how, func(t *testing.T) {
 			ctx, path := provisiontest.SafetyWorktree(t, "fix/mirrored")

@@ -36,6 +36,7 @@ func planItem(t *testing.T, p retire.SweepPlanOutput, branch string) retire.Swee
 // Every part of the plan, each item with the evidence that it is merged or
 // the reason it is kept; and making it writes nothing.
 func TestSweepPlanJSONNamesEveryPartWithItsEvidence(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 1)
 	testkit.LandOnMain(t, main, "done-work")
@@ -92,6 +93,7 @@ func TestSweepPlanJSONNamesEveryPartWithItsEvidence(t *testing.T) {
 
 // Commits found on trunk under other ids are merged by patch.
 func TestSweepPlanJSONSaysMergedByPatch(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	var buf bytes.Buffer
 	path, err := provision.New(ctx, "feat/rates", provision.NewOptions{NoSetup: true}, &buf)
@@ -112,6 +114,7 @@ func TestSweepPlanJSONSaysMergedByPatch(t *testing.T) {
 
 // Every reason sweep keeps a merged worktree has its code.
 func TestSweepPlanJSONCodesWhyAWorktreeIsKept(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	session := provisiontest.MergedWorktree(t, ctx, "fix/session")
 	locked := provisiontest.MergedWorktree(t, ctx, "fix/locked")
@@ -159,6 +162,7 @@ func TestSweepPlanJSONCodesWhyAWorktreeIsKept(t *testing.T) {
 
 // Nothing to remove or delete: no token, and kept items are still listed.
 func TestSweepPlanJSONWithNothingToDoHasNoToken(t *testing.T) {
+	t.Parallel()
 	ctx, _, _ := testkit.SweepRepo(t)
 	dirty := provisiontest.MergedWorktree(t, ctx, "fix/dirty")
 	testkit.MustWrite(t, filepath.Join(dirty, "scratch.txt"), "not yet\n")
@@ -171,6 +175,7 @@ func TestSweepPlanJSONWithNothingToDoHasNoToken(t *testing.T) {
 
 // A plan that cannot be made is still one object, with the error.
 func TestSweepPlanJSONReportsWhyNoPlanWasMade(t *testing.T) {
+	t.Parallel()
 	ctx, main, origin := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 0)
 	if err := os.RemoveAll(origin); err != nil {
@@ -185,6 +190,7 @@ func TestSweepPlanJSONReportsWhyNoPlanWasMade(t *testing.T) {
 // The token is the plan: the same plan runs, item by item, and says what
 // became of each.
 func TestSweepJSONCarriesOutThePlanItWasGiven(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 1)
 	testkit.LandOnMain(t, main, "done-work")
@@ -228,6 +234,7 @@ func TestSweepJSONCarriesOutThePlanItWasGiven(t *testing.T) {
 
 // Any difference from the plan refuses the run before anything is touched.
 func TestSweepJSONExpectRefusesAChangedPlan(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 0)
 	opts := retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}}
@@ -257,6 +264,7 @@ func TestSweepJSONExpectRefusesAChangedPlan(t *testing.T) {
 // A worktree a session entered after the check is kept at the last moment,
 // and says why; the rest of the plan goes ahead.
 func TestSweepJSONKeepsAWorktreeASessionEnteredLate(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 0)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
@@ -284,6 +292,7 @@ func TestSweepJSONKeepsAWorktreeASessionEnteredLate(t *testing.T) {
 // parts: a pull request GitHub no longer answers for, or another session in
 // a kept worktree, is another plan.
 func TestSweepTokenCoversPullRequestsAndReasons(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 0)
 	kept := provisiontest.MergedWorktree(t, ctx, "fix/kept")
@@ -314,6 +323,7 @@ func TestSweepTokenCoversPullRequestsAndReasons(t *testing.T) {
 
 // A sweep --expect refuses says it fetched when it did.
 func TestSweepJSONRefusalSaysItFetched(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 0)
 	r, _, err := retiretest.SweepJSON(t, ctx, retire.SweepOptions{Agents: []wtsync.Agent{}, PRs: map[string]github.PR{},
@@ -326,6 +336,7 @@ func TestSweepJSONRefusalSaysItFetched(t *testing.T) {
 // The sessions are listed once more right before each worktree goes, after
 // the fresh plan: a session that arrives in between keeps it.
 func TestSweepReadsTheSessionsAgainRightBeforeAWorktreeGoes(t *testing.T) {
+	t.Parallel()
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	calls := 0
@@ -352,6 +363,7 @@ func TestSweepReadsTheSessionsAgainRightBeforeAWorktreeGoes(t *testing.T) {
 // Idle and busy sessions are two problems to wt remove, and one reason to
 // keep the worktree here: the code is listed once.
 func TestSweepPlanJSONListsTheSessionCodeOnce(t *testing.T) {
+	t.Parallel()
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	busy := testkit.IdleIn(t, path, "busy-1")
@@ -369,6 +381,7 @@ func TestSweepPlanJSONListsTheSessionCodeOnce(t *testing.T) {
 // The plan shows the configuration fingerprint its token covers: the same
 // file, the same value; another file, another value and another token.
 func TestSweepPlanShowsTheConfigFingerprint(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 1)
 	testkit.LandOnMain(t, main, "done-work")

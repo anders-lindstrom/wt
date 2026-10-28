@@ -13,11 +13,13 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 // An interrupt takes down a claude agents still running: it is in the
 // registry git.KillRunning kills, which is what wt's signal handler calls.
 func TestKillRunningTakesDownARunningClaudeAgents(t *testing.T) {
+	// Not parallel: shortens the package-level agentsDeadline and sets PATH.
 	if testing.Short() {
 		t.Skip("kills a running claude agents process")
 	}
@@ -25,9 +27,7 @@ func TestKillRunningTakesDownARunningClaudeAgents(t *testing.T) {
 	started := filepath.Join(stub, "started")
 	claude := filepath.Join(stub, "claude")
 	script := "#!/bin/sh\n[ \"$1\" = warm ] && exit 0\ntouch " + started + "\nexec sleep 30\n"
-	if err := os.WriteFile(claude, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, claude, script)
 	if err := exec.Command(claude, "warm").Run(); err != nil {
 		t.Fatal(err)
 	}
@@ -58,6 +58,7 @@ func TestKillRunningTakesDownARunningClaudeAgents(t *testing.T) {
 // is a child of sh that holds the output pipe, so the deadline has to take
 // down the whole process group, not just sh.
 func TestListAgentsGivesUpOnAClaudeThatDoesNotAnswer(t *testing.T) {
+	// Not parallel: shortens the package-level agentsDeadline and sets PATH.
 	if testing.Short() {
 		t.Skip("waits out a real deadline")
 	}
@@ -65,9 +66,7 @@ func TestListAgentsGivesUpOnAClaudeThatDoesNotAnswer(t *testing.T) {
 	pidFile := filepath.Join(stub, "sleep.pid")
 	script := "#!/bin/sh\n[ \"$1\" = warm ] && exit 0\nsleep 30 &\necho $! > " + pidFile + "\nwait\necho '[]'\n"
 	claude := filepath.Join(stub, "claude")
-	if err := os.WriteFile(claude, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, claude, script)
 	// The first exec of a new file can be slow (macOS vets it), and a stub
 	// killed before it started proves nothing about the process group.
 	if err := exec.Command(claude, "warm").Run(); err != nil {
@@ -109,6 +108,7 @@ const agentsJSON = `[
 ]`
 
 func TestParseAgentsDropsFinishedSessions(t *testing.T) {
+	t.Parallel()
 	agents, err := ParseAgents([]byte(agentsJSON))
 	if err != nil {
 		t.Fatal(err)
@@ -129,6 +129,7 @@ func TestParseAgentsDropsFinishedSessions(t *testing.T) {
 // so from inside it wt sees nobody else, and from outside it is as busy or
 // idle as the terminal says.
 func TestParseAgentsCountsAConversationOpenInATerminalOnce(t *testing.T) {
+	t.Parallel()
 	const listing = `[
  {"id":"3be7e2a1","cwd":"/repo_wt/fix_wt/one","kind":"background","sessionId":"3be7e2a1-854d","name":"one","state":"blocked"},
  {"pid":95554,"cwd":"/repo_wt/fix_wt/one","kind":"interactive","sessionId":"3be7e2a1-854d","name":"one","status":"idle"},
@@ -160,6 +161,7 @@ func TestParseAgentsCountsAConversationOpenInATerminalOnce(t *testing.T) {
 // A session id that is not text folds nothing and fails nothing: the listing
 // the verbs act on does not depend on it.
 func TestParseAgentsSurvivesASessionIDItCannotRead(t *testing.T) {
+	t.Parallel()
 	const listing = `[
  {"id":"a1","cwd":"/r","kind":"background","sessionId":7,"name":"one","state":"blocked"},
  {"pid":12,"cwd":"/r","kind":"interactive","sessionId":7,"name":"one","status":"idle"}
@@ -171,6 +173,7 @@ func TestParseAgentsSurvivesASessionIDItCannotRead(t *testing.T) {
 }
 
 func TestAgentAtMatchesTheWorktreeOrADirectoryInsideIt(t *testing.T) {
+	t.Parallel()
 	agents, _ := ParseAgents([]byte(agentsJSON))
 	if a := AgentAt(agents, "/repo_wt/feat_wt/one"); a == nil || a.Name != "fix it" {
 		t.Errorf("one = %+v", a)
@@ -187,12 +190,14 @@ func TestAgentAtMatchesTheWorktreeOrADirectoryInsideIt(t *testing.T) {
 }
 
 func TestParseAgentsRejectsGarbage(t *testing.T) {
+	t.Parallel()
 	if _, err := ParseAgents([]byte("not json")); err == nil {
 		t.Error("expected an error")
 	}
 }
 
 func TestAgentAtPrefersFewerSegmentsNotShorterStrings(t *testing.T) {
+	t.Parallel()
 	agents := []Agent{
 		{Name: "shallow", Cwd: "/wt/aaaaaaaaaaaa", State: "blocked", Kind: "interactive"},
 		{Name: "deep", Cwd: "/wt/a/b", State: "blocked", Kind: "interactive"},
@@ -204,6 +209,7 @@ func TestAgentAtPrefersFewerSegmentsNotShorterStrings(t *testing.T) {
 }
 
 func TestIdleIsAnInteractiveSessionWithAnIdleStatus(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		a    Agent
@@ -229,6 +235,7 @@ func TestIdleIsAnInteractiveSessionWithAnIdleStatus(t *testing.T) {
 }
 
 func TestSessionsAtListsEverySessionInTheWorktreeShallowestFirst(t *testing.T) {
+	t.Parallel()
 	agents, err := ParseAgents([]byte(agentsJSON))
 	if err != nil {
 		t.Fatal(err)
@@ -256,6 +263,7 @@ func TestSessionsAtListsEverySessionInTheWorktreeShallowestFirst(t *testing.T) {
 }
 
 func TestSessionsAtResolvesASymlinkedWorktreePath(t *testing.T) {
+	t.Parallel()
 	resolved, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -270,6 +278,7 @@ func TestSessionsAtResolvesASymlinkedWorktreePath(t *testing.T) {
 }
 
 func TestArrivedIsWhatNobodyWasToldAbout(t *testing.T) {
+	t.Parallel()
 	told := Sessions{{ID: "a1", Name: "parked-1", Cwd: "/w"}, {Name: "no-id", Cwd: "/w"}}
 	now := Sessions{{ID: "a1", Name: "renamed", Cwd: "/w"}, {Name: "no-id", Cwd: "/w"}, {ID: "a9", Name: "new-9", Cwd: "/w"}}
 	if got := now.Arrived(told); len(got) != 1 || got[0].Name != "new-9" {
@@ -278,6 +287,7 @@ func TestArrivedIsWhatNobodyWasToldAbout(t *testing.T) {
 }
 
 func TestWithoutCallerDropsTheSessionWtRunsUnder(t *testing.T) {
+	t.Parallel()
 	agents := []Agent{{Name: "me", PID: 100}, {Name: "other", PID: 200}, {Name: "no-pid"}}
 	got := WithoutCaller(agents, map[int]bool{100: true})
 	if len(got) != 2 || got[0].Name != "other" || got[1].Name != "no-pid" {
@@ -286,6 +296,7 @@ func TestWithoutCallerDropsTheSessionWtRunsUnder(t *testing.T) {
 }
 
 func TestAncestorsIncludeTheParentButNotThisProcess(t *testing.T) {
+	t.Parallel()
 	a, err := Ancestors()
 	if err != nil {
 		t.Fatal(err)
@@ -300,6 +311,7 @@ func TestAncestorsIncludeTheParentButNotThisProcess(t *testing.T) {
 // is listed twice under one session id, and the terminal's row is the one
 // that says where it is.
 func TestParseClaudeSessionsKeepsFinishedAndFoldsAResumedOne(t *testing.T) {
+	t.Parallel()
 	got, err := ParseClaudeSessions([]byte(`[
 		{"id":"3f9a1c20","sessionId":"3f9a1c20-aaaa","name":"finished","kind":"background","state":"done","cwd":"/w/a","startedAt":1791540505653},
 		{"id":"7c2e5b11","sessionId":"7c2e5b11-bbbb","name":"resumed","kind":"background","state":"blocked","cwd":"/w/b"},
@@ -327,6 +339,7 @@ func TestParseClaudeSessionsKeepsFinishedAndFoldsAResumedOne(t *testing.T) {
 }
 
 func TestOnlyABackgroundClaudeSessionIsAttachable(t *testing.T) {
+	t.Parallel()
 	if a := (Agent{ID: "3f9a1c20", Kind: "background"}); !a.Attachable() {
 		t.Errorf("%+v can be attached", a)
 	}
@@ -345,11 +358,10 @@ func TestOnlyABackgroundClaudeSessionIsAttachable(t *testing.T) {
 // A listing gives claude its own, shorter wait, and tells no claude at all
 // from a claude that did not answer.
 func TestListClaudeSessionsWaitsOnlyAsLongAsItIsTold(t *testing.T) {
+	// Not parallel: sets PATH for the whole test binary.
 	stub := t.TempDir()
 	claude := filepath.Join(stub, "claude")
-	if err := os.WriteFile(claude, []byte("#!/bin/sh\n[ \"$1\" = warm ] && exit 0\nsleep 30\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, claude, "#!/bin/sh\n[ \"$1\" = warm ] && exit 0\nsleep 30\n")
 	if err := exec.Command(claude, "warm").Run(); err != nil {
 		t.Fatal(err)
 	}
@@ -372,6 +384,7 @@ func TestListClaudeSessionsWaitsOnlyAsLongAsItIsTold(t *testing.T) {
 
 // The session wt runs under stays in the listing a person reads, marked.
 func TestListClaudeSessionsMarksTheCallersOwnSession(t *testing.T) {
+	// Not parallel: sets PATH for the whole test binary.
 	stub := t.TempDir()
 	listing := fmt.Sprintf(`[{"pid":%d,"name":"mine","kind":"interactive","status":"busy","cwd":"/w/a"},`+
 		`{"pid":1,"name":"init","kind":"interactive","status":"idle","cwd":"/w/b"},`+
@@ -380,9 +393,7 @@ func TestListClaudeSessionsMarksTheCallersOwnSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := "#!/bin/sh\ncat '" + filepath.Join(stub, "agents.json") + "'\n"
-	if err := os.WriteFile(filepath.Join(stub, "claude"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, filepath.Join(stub, "claude"), script)
 	t.Setenv("PATH", stub+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	got, found, err := ListClaudeSessions(time.Minute)
@@ -398,6 +409,7 @@ func TestListClaudeSessionsMarksTheCallersOwnSession(t *testing.T) {
 // act on. A startedAt or sessionId of a type nobody expects is not read
 // there at all, and the session is found as it always was.
 func TestAnOddDisplayFieldDoesNotFailTheListingVerbsActOn(t *testing.T) {
+	// Not parallel: sets PATH for the whole test binary.
 	for _, odd := range []string{
 		`"startedAt":"2026-10-09T10:00:00Z"`,
 		`"startedAt":1790187208791.5`,
@@ -415,9 +427,7 @@ func TestAnOddDisplayFieldDoesNotFailTheListingVerbsActOn(t *testing.T) {
 			t.Fatal(err)
 		}
 		script := "#!/bin/sh\ncat '" + filepath.Join(stub, "agents.json") + "'\n"
-		if err := os.WriteFile(filepath.Join(stub, "claude"), []byte(script), 0o755); err != nil {
-			t.Fatal(err)
-		}
+		gittest.WriteExecutable(t, filepath.Join(stub, "claude"), script)
 		t.Setenv("PATH", stub+string(os.PathListSeparator)+os.Getenv("PATH"))
 		acting, err := ListAgents()
 		if err != nil || len(SessionsAt(acting, "/repo_wt/feat_wt/one")) != 1 {
@@ -438,6 +448,7 @@ func TestAnOddDisplayFieldDoesNotFailTheListingVerbsActOn(t *testing.T) {
 
 // A listing wt cannot read is said in words, not as a decoder's error.
 func TestParseClaudeSessionsSaysAnUnreadableListingInWords(t *testing.T) {
+	t.Parallel()
 	for _, junk := range []string{`{"not":"a list"}`, `[{"id":7}]`, `nonsense`} {
 		if _, err := ParseClaudeSessions([]byte(junk)); !errors.Is(err, ErrUnreadableListing) {
 			t.Errorf("%s: err = %v", junk, err)

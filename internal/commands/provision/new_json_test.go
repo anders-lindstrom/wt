@@ -3,7 +3,6 @@ package provision
 import (
 	"bytes"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,6 +10,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 func RunNewJSON(t *testing.T, ctx *kit.Context, spec string, opts NewOptions, expect string) (CreateResult, string, error) {
@@ -46,6 +46,7 @@ func StepOf(r CreateResult, name string) CreateStep {
 // A failed provision.sh is created with problems, and still exits non-zero
 // as it always has.
 func TestNewJSONReportsAFailedProvision(t *testing.T) {
+	t.Parallel()
 	ctx := ProvisionFixture(t, 1, "true", false)
 	r, _, err := RunNewJSON(t, ctx, "fix/x", NewOptions{}, "")
 	if err == nil || r.Outcome != CreateCreatedWithProblems {
@@ -62,6 +63,7 @@ func TestNewJSONReportsAFailedProvision(t *testing.T) {
 // A failed build and a failed submodule initialisation are failed steps,
 // though the exit code stays 0 as it always has.
 func TestNewJSONReportsAFailedBuildAndSubmodules(t *testing.T) {
+	t.Parallel()
 	ctx := ProvisionFixture(t, -1, "exit 3", true)
 	r, _, err := RunNewJSON(t, ctx, "fix/x", NewOptions{}, "")
 	if err != nil || r.Outcome != CreateCreatedWithProblems {
@@ -80,6 +82,7 @@ func TestNewJSONReportsAFailedBuildAndSubmodules(t *testing.T) {
 // --base <oid>, which is how a git client names the base, cuts the branch
 // from that commit and gives it no upstream.
 func TestNewFromAnOIDSetsNoUpstream(t *testing.T) {
+	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	main := ctx.Repo.MainRoot
 	testkit.GitIn(t, main, "remote", "add", "origin", main)
@@ -95,6 +98,7 @@ func TestNewFromAnOIDSetsNoUpstream(t *testing.T) {
 }
 
 func TestCreateJournalWritesOneObjectWhenInterrupted(t *testing.T) {
+	t.Parallel()
 	var out bytes.Buffer
 	j := NewCreateJournal(&out, "new")
 	j.start(kit.StepWorktree)
@@ -115,12 +119,10 @@ func TestCreateJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 // the worktree exists: that is a worktree created with problems, never a
 // failure that hides it.
 func TestNewJSONReportsAWorktreeAFailingHookLeftBehind(t *testing.T) {
+	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	hook := filepath.Join(ctx.Repo.MainRoot, ".git", "hooks", "post-checkout")
-	testkit.MustWrite(t, hook, "#!/bin/sh\necho 'hook says no' >&2\nexit 1\n")
-	if err := os.Chmod(hook, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, hook, "#!/bin/sh\necho 'hook says no' >&2\nexit 1\n")
 	r, _, err := RunNewJSON(t, ctx, "fix/x", NewOptions{}, "")
 	if err == nil || r.Outcome != CreateCreatedWithProblems || r.Commit == nil {
 		t.Errorf("err %v result %+v", err, r)

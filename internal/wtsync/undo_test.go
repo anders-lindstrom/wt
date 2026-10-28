@@ -24,6 +24,7 @@ func completed(t *testing.T, mainRoot, wtPath, branch string, epoch int64) {
 }
 
 func TestUndoResetsEveryBranchOfTheNewestEpoch(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := runRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"b.txt": "b2\n"}})
 	old := gitIn(t, wt, "rev-parse", "HEAD")
 	if _, err := Rebase(dir, cfg, trunkReq(wt, 5), nil); err != nil {
@@ -49,6 +50,7 @@ func TestUndoResetsEveryBranchOfTheNewestEpoch(t *testing.T) {
 }
 
 func TestUndoRestoresTwoBranchesThatShareAnEpoch(t *testing.T) {
+	t.Parallel()
 	// Two safety refs written by one run (same epoch) on two branches; both
 	// branches then moved; undoing either restores both.
 	dir, wt, _ := runRepo(t, nil, []map[string]string{{"b.txt": "b2\n"}})
@@ -76,6 +78,7 @@ func TestUndoRestoresTwoBranchesThatShareAnEpoch(t *testing.T) {
 }
 
 func TestUndoRefusesADirtyCheckoutBeforeTouchingAnything(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := runRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"b.txt": "b2\n"}})
 	if _, err := Rebase(dir, cfg, trunkReq(wt, 5), nil); err != nil {
 		t.Fatal(err)
@@ -94,6 +97,7 @@ func TestUndoRefusesADirtyCheckoutBeforeTouchingAnything(t *testing.T) {
 }
 
 func TestUndoRefusesACheckoutWithAnAgent(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := runRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"b.txt": "b2\n"}})
 	if _, err := Rebase(dir, cfg, trunkReq(wt, 5), nil); err != nil {
 		t.Fatal(err)
@@ -106,6 +110,7 @@ func TestUndoRefusesACheckoutWithAnAgent(t *testing.T) {
 }
 
 func TestUndoRestoresTheMainCheckoutLikeAnyOther(t *testing.T) {
+	t.Parallel()
 	// The main checkout sits on a branch a run pinned; undo resets it there
 	// (with the dirt check), never through update-ref.
 	dir, _, _ := runRepo(t, nil, []map[string]string{{"b.txt": "b2\n"}})
@@ -124,6 +129,7 @@ func TestUndoRestoresTheMainCheckoutLikeAnyOther(t *testing.T) {
 }
 
 func TestUndoWithoutARunIsAnError(t *testing.T) {
+	t.Parallel()
 	dir, wt, _ := runRepo(t, nil, nil)
 	_, err := Undo(dir, []repo.Worktree{{Path: wt, Branch: "feature"}}, nil, "feature", time.Now(), false)
 	if err == nil || !strings.Contains(err.Error(), "no run to undo") {
@@ -132,6 +138,7 @@ func TestUndoWithoutARunIsAnError(t *testing.T) {
 }
 
 func TestUndoRestoresABranchWithNoCheckoutThroughUpdateRef(t *testing.T) {
+	t.Parallel()
 	dir, _, _ := runRepo(t, nil, nil)
 	gitIn(t, dir, "branch", "loose", "main")
 	old := gitIn(t, dir, "rev-parse", "loose")
@@ -149,6 +156,7 @@ func TestUndoRestoresABranchWithNoCheckoutThroughUpdateRef(t *testing.T) {
 }
 
 func TestUndoASecondTimeIsANoOp(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := runRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"b.txt": "b2\n"}})
 	old := gitIn(t, wt, "rev-parse", "HEAD")
 	if _, err := Rebase(dir, cfg, trunkReq(wt, 5), nil); err != nil {
@@ -166,6 +174,7 @@ func TestUndoASecondTimeIsANoOp(t *testing.T) {
 }
 
 func TestUndoRefusesABranchThatMovedAfterTheRun(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := runRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"b.txt": "b2\n"}})
 	if _, err := Rebase(dir, cfg, trunkReq(wt, 5), nil); err != nil {
 		t.Fatal(err)
@@ -187,6 +196,7 @@ func TestUndoRefusesABranchThatMovedAfterTheRun(t *testing.T) {
 // undo calls the branch moved; that refusal has to name the forced undo,
 // which is the only way out from there.
 func TestUndoNamesTheForcedUndoForAFinishedRebaseWithACommitInside(t *testing.T) {
+	t.Parallel()
 	dir, wt, _, _ := handedOverRepo(t, 5, false)
 	finishedByHand(t, wt, 1)
 	_, err := Undo(dir, []repo.Worktree{{Path: wt, Branch: "feature"}}, nil, "feature", time.Now(), false)
@@ -199,6 +209,7 @@ func TestUndoNamesTheForcedUndoForAFinishedRebaseWithACommitInside(t *testing.T)
 }
 
 func TestUndoForcedPastAMovedBranchPinsWhatItDiscards(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := runRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"b.txt": "b2\n"}})
 	old := gitIn(t, wt, "rev-parse", "HEAD")
 	if _, err := Rebase(dir, cfg, trunkReq(wt, 5), nil); err != nil {
@@ -224,6 +235,7 @@ func TestUndoForcedPastAMovedBranchPinsWhatItDiscards(t *testing.T) {
 }
 
 func TestUndoRefusesABranchWithALaterRun(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := runRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"b.txt": "b2\n"}})
 	if _, err := Rebase(dir, cfg, trunkReq(wt, 5), nil); err != nil {
 		t.Fatal(err)
@@ -248,6 +260,7 @@ func TestUndoRefusesABranchWithALaterRun(t *testing.T) {
 }
 
 func TestUndoForcedLeavesNoSafetyRefWhenALaterBranchRefuses(t *testing.T) {
+	t.Parallel()
 	// One run pinned two branches; the second has a later run of its own, so
 	// the whole undo is refused. The first branch had moved and would have
 	// been force-pinned: that pin must not survive the refusal, or every
@@ -290,6 +303,7 @@ func TestUndoForcedLeavesNoSafetyRefWhenALaterBranchRefuses(t *testing.T) {
 }
 
 func TestAForcedUndoIsItselfUndoneByAPlainUndo(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := runRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"b.txt": "b2\n"}})
 	old := gitIn(t, wt, "rev-parse", "HEAD")
 	if _, err := Rebase(dir, cfg, trunkReq(wt, 5), nil); err != nil {
@@ -377,6 +391,7 @@ func handedOverRepoWith(t *testing.T, epoch int64, keepLock bool, trunkEdits, br
 }
 
 func TestUndoAbortsAHandedOverRebase(t *testing.T) {
+	t.Parallel()
 	dir, wt, gitDir, old := handedOverRepo(t, 5, false)
 	got, err := Undo(dir, []repo.Worktree{{Path: wt, Branch: "feature", Rebasing: true}}, nil, "feature", time.Now(), false)
 	if err != nil {
@@ -403,6 +418,7 @@ func TestUndoAbortsAHandedOverRebase(t *testing.T) {
 }
 
 func TestUndoStillRefusesAForeignRebase(t *testing.T) {
+	t.Parallel()
 	// A rebase somebody started by hand carries no handover: undo has no
 	// business discarding it.
 	dir, wt, _ := runRepo(t, []map[string]string{{"a.txt": "trunk\n"}}, []map[string]string{{"a.txt": "branch\n"}})
@@ -422,6 +438,7 @@ func TestUndoStillRefusesAForeignRebase(t *testing.T) {
 }
 
 func TestVerifyLeftAcceptsTheRunsOwnRebase(t *testing.T) {
+	t.Parallel()
 	_, wt, gitDir, _ := handedOverRepo(t, 5, false)
 	st, ok, err := ReadState(gitDir)
 	if err != nil || !ok {
@@ -433,6 +450,7 @@ func TestVerifyLeftAcceptsTheRunsOwnRebase(t *testing.T) {
 }
 
 func TestVerifyLeftRefusesARebaseFromAnotherTipOntoAnotherCommit(t *testing.T) {
+	t.Parallel()
 	// The sequencer is the run's; the handover is made to disagree with it
 	// on one thing at a time, and the refusal has to name that thing.
 	dir, wt, gitDir, old := handedOverRepo(t, 5, false)
@@ -461,6 +479,7 @@ func TestVerifyLeftRefusesARebaseFromAnotherTipOntoAnotherCommit(t *testing.T) {
 }
 
 func TestUndoRefusesARebaseThatIsNotTheRuns(t *testing.T) {
+	t.Parallel()
 	// feature's handover was aborted by hand, given a commit and rebased
 	// again by hand onto the run's onto, leaving the run's sidecar behind.
 	// The rebase in progress started from that commit, not the run's tip:
@@ -510,6 +529,7 @@ func resolveAndCommit(t *testing.T, wt string) (sha string) {
 }
 
 func TestCommittedInsideSeesACommitAtTheStop(t *testing.T) {
+	t.Parallel()
 	_, wt, gitDir, _ := handedOverRepo(t, 5, false)
 	st, ok, err := ReadState(gitDir)
 	if err != nil || !ok {
@@ -570,6 +590,7 @@ func olderSidecar(t *testing.T, gitDir string) {
 }
 
 func TestUndoRefusesAnOldHandoverWithACommitBehindADroppedPick(t *testing.T) {
+	t.Parallel()
 	// The branch's first commit makes a change trunk already made (with a
 	// different patch id, so the rebase still tries it): the merge backend
 	// drops it as empty and the stop is at 2/2 with HEAD still at onto. A
@@ -618,6 +639,7 @@ func TestUndoRefusesAnOldHandoverWithACommitBehindADroppedPick(t *testing.T) {
 }
 
 func TestUndoRefusesAnOldHandoverEvenWithNothingOnTopOfOnto(t *testing.T) {
+	t.Parallel()
 	// No commit on top of onto proves nothing for an old sidecar either: a
 	// pick dropped as empty and a commit made by hand cancel out. Refused
 	// plain; forced pins the detached HEAD, here onto itself.
@@ -641,6 +663,7 @@ func TestUndoRefusesAnOldHandoverEvenWithNothingOnTopOfOnto(t *testing.T) {
 }
 
 func TestUndoRefusesACommitMadeInsideTheHandover(t *testing.T) {
+	t.Parallel()
 	dir, wt, gitDir, _ := handedOverRepo(t, 5, false)
 	sha := resolveAndCommit(t, wt)
 	_, err := Undo(dir, []repo.Worktree{{Path: wt, Branch: "feature", Rebasing: true}}, nil, "feature", time.Now(), false)
@@ -659,6 +682,7 @@ func TestUndoRefusesACommitMadeInsideTheHandover(t *testing.T) {
 }
 
 func TestUndoRefusesAContinueThatStoppedAgain(t *testing.T) {
+	t.Parallel()
 	// Two branch commits; the person resolves stop 1 the way the plan file
 	// asks and runs git rebase --continue themselves, which commits pick 1
 	// and stops at 2/2 with the old sidecar still describing 1/2. Pick 1's
@@ -693,6 +717,7 @@ func TestUndoRefusesAContinueThatStoppedAgain(t *testing.T) {
 }
 
 func TestUndoForcedPastACommitInsideKeepsItUnderASafetyRef(t *testing.T) {
+	t.Parallel()
 	dir, wt, gitDir, old := handedOverRepo(t, 5, false)
 	sha := resolveAndCommit(t, wt)
 	wts := []repo.Worktree{{Path: wt, Branch: "feature", Rebasing: true}}
@@ -736,6 +761,7 @@ func TestUndoForcedPastACommitInsideKeepsItUnderASafetyRef(t *testing.T) {
 }
 
 func TestUndoRefusesAMovedBranchWithCommitsInsideEvenWhenForced(t *testing.T) {
+	t.Parallel()
 	// The branch ref was moved by hand while its handed-over rebase, which
 	// carries a person's commit, is still in progress: two things to keep,
 	// and a forced undo pins one. Refused, and nothing pinned.
@@ -764,6 +790,7 @@ func TestUndoRefusesAMovedBranchWithCommitsInsideEvenWhenForced(t *testing.T) {
 }
 
 func TestUndoChecksEverythingBeforeAborting(t *testing.T) {
+	t.Parallel()
 	// One run pinned two branches: feature was handed over, second has moved
 	// on since. The moved-since refusal must come before feature's rebase is
 	// aborted, or "nothing undone" throws away a staged resolution.
@@ -795,6 +822,7 @@ func TestUndoChecksEverythingBeforeAborting(t *testing.T) {
 }
 
 func TestUndoTakesOverTheLockAHandoverLeft(t *testing.T) {
+	t.Parallel()
 	dir, wt, gitDir, old := handedOverRepo(t, 5, true)
 	if _, ok, err := ReadLock(gitDir); err != nil || !ok {
 		t.Fatalf("ReadLock = %v, %v; the fixture kept no lock", ok, err)
@@ -812,6 +840,7 @@ func TestUndoTakesOverTheLockAHandoverLeft(t *testing.T) {
 }
 
 func TestUndoRefusesAHandoverItCannotRead(t *testing.T) {
+	t.Parallel()
 	// Without the sidecar the kept lock cannot be recognised as the
 	// handover's: the refusal has to name the sidecar, not the lock, and
 	// displace nothing.
@@ -904,6 +933,7 @@ func unremovableHandover(t *testing.T, dir, tip string, epoch int64) (path, brie
 }
 
 func TestUndoForcedThatStopsPartwayLeavesNoPinForABranchItNeverMoved(t *testing.T) {
+	t.Parallel()
 	// One run: feature moved since (needs force) and later handed over,
 	// whose handover cannot be removed after its abort. The undo stops
 	// there, before feature is reset. The forced epoch's pin for feature
@@ -957,6 +987,7 @@ func TestUndoForcedThatStopsPartwayLeavesNoPinForABranchItNeverMoved(t *testing.
 }
 
 func TestUndoForcedThatStopsAfterAResetKeepsThatBranchesPin(t *testing.T) {
+	t.Parallel()
 	// Two branches moved since one run, both with checkouts; the second's
 	// reset cannot go (a stale index.lock). The first was reset, so its pin
 	// is true and stays: a plain undo of it lands on the discarded tip. The
@@ -1021,6 +1052,7 @@ func TestUndoForcedThatStopsAfterAResetKeepsThatBranchesPin(t *testing.T) {
 }
 
 func TestUndoForcedPastAMovedHandoverKeepsItsPinWhenALaterStepFails(t *testing.T) {
+	t.Parallel()
 	// feature's branch ref was moved by hand while its handed-over rebase
 	// is in progress; nothing was committed inside. The forced undo pins
 	// the hand-moved tip, and git rebase --abort then puts the branch back
@@ -1062,6 +1094,7 @@ func TestUndoForcedPastAMovedHandoverKeepsItsPinWhenALaterStepFails(t *testing.T
 }
 
 func TestUndoForcedPastACommitInsideKeepsItsPinWhenALaterStepFails(t *testing.T) {
+	t.Parallel()
 	// feature's handed-over rebase carries a person's commit, so the forced
 	// undo pins it and its abort discards it. later's handover then cannot
 	// be removed. feature's ref never moved, but its abort did: the pin is
@@ -1100,6 +1133,7 @@ func unabortableHandover(t *testing.T, dir, tip string, epoch int64) (path strin
 }
 
 func TestUndoReportsWhatItAbortedBeforeALaterAbortFailed(t *testing.T) {
+	t.Parallel()
 	// One run moved base (a parent, say) and handed over feature and later;
 	// later's abort cannot work. feature is already put back by its abort
 	// and must be reported. base sorts first and needs a reset, but no
@@ -1137,6 +1171,7 @@ func TestUndoReportsWhatItAbortedBeforeALaterAbortFailed(t *testing.T) {
 }
 
 func TestAbortedRowsSaysNotRewoundWhenTheAbortLandedElsewhere(t *testing.T) {
+	t.Parallel()
 	// The rows for an undo that stopped after its aborts: a branch whose
 	// abort put it at the safety tip is simply aborted; one whose abort
 	// landed elsewhere (its rebase had been restarted from another commit)
@@ -1174,6 +1209,7 @@ func TestAbortedRowsSaysNotRewoundWhenTheAbortLandedElsewhere(t *testing.T) {
 }
 
 func TestUndoPassesAnIdleSessionAndRefusesABusyOne(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := runRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"b.txt": "b2\n"}})
 	old := gitIn(t, wt, "rev-parse", "HEAD")
 	if _, err := Rebase(dir, cfg, trunkReq(wt, 5), nil); err != nil {
@@ -1207,9 +1243,7 @@ func gitLoggedIn(t *testing.T, dir string) func() []string {
 	stub := t.TempDir()
 	log := filepath.Join(stub, "git.log")
 	body := "#!/bin/sh\nprintf '%s\\t%s\\n' \"$(pwd -P)\" \"$*\" >> '" + log + "'\nexec '" + found + "' \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(stub, "git"), []byte(body), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, filepath.Join(stub, "git"), body)
 	t.Setenv("PATH", stub+string(os.PathListSeparator)+os.Getenv("PATH"))
 	resolved, err := filepath.EvalSymlinks(dir)
 	if err != nil {
@@ -1236,6 +1270,7 @@ func gitLoggedIn(t *testing.T, dir string) func() []string {
 // the lock. Under an idle session the same undo goes on to read the
 // worktree, which is what shows the log sees the reads.
 func TestUndoRefusesABusySessionWithoutReadingGit(t *testing.T) {
+	// Not parallel: sets PATH for the whole test binary.
 	dir, wt, cfg := runRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"b.txt": "b2\n"}})
 	old := gitIn(t, wt, "rev-parse", "HEAD")
 	if _, err := Rebase(dir, cfg, trunkReq(wt, 5), nil); err != nil {
@@ -1263,6 +1298,7 @@ func TestUndoRefusesABusySessionWithoutReadingGit(t *testing.T) {
 }
 
 func TestUndoBranchesNamesEveryBranchOfTheNewestRun(t *testing.T) {
+	t.Parallel()
 	dir, wt, cfg := runRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"b.txt": "b2\n"}})
 	if _, err := Rebase(dir, cfg, trunkReq(wt, 5), nil); err != nil {
 		t.Fatal(err)
@@ -1281,6 +1317,7 @@ func TestUndoBranchesNamesEveryBranchOfTheNewestRun(t *testing.T) {
 // model; it is the run's own rebase, finished by hand, and resume is what
 // runs the rest. --force still rewinds it, and pins it.
 func TestUndoNamesAFinishedByHandRebaseInsteadOfCallingItMoved(t *testing.T) {
+	t.Parallel()
 	dir, wt, gitDir, old := handedOverRepo(t, 5, false)
 	finishedByHand(t, wt, 0)
 	finished := gitIn(t, wt, "rev-parse", "HEAD")

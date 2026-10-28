@@ -18,6 +18,7 @@ import (
 // kept for what runs in it, in sweep's words; under --reap the process the
 // plan never listed is the one that gets stopped.
 func TestSweepKeepsAWorktreeThatTurnedBusyAfterThePlan(t *testing.T) {
+	// Not parallel: swaps retire.ScanProcesses and signals real processes.
 	RealProcesses(t)
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
@@ -42,6 +43,7 @@ func TestSweepKeepsAWorktreeThatTurnedBusyAfterThePlan(t *testing.T) {
 // A process table that cannot be read keeps the worktree, with --reap or
 // without, and says what to do.
 func TestSweepKeepsAWorktreeWhenTheProcessesAreUnknown(t *testing.T) {
+	// Not parallel: swaps retire.ScanProcesses and session.ListSessions.
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	was, wasList := ScanProcesses, session.ListSessions
@@ -72,6 +74,7 @@ func TestSweepKeepsAWorktreeWhenTheProcessesAreUnknown(t *testing.T) {
 // --reap would not take a detached worktree or one whose branch cannot be
 // deleted, so a process in one is not the advice's business.
 func TestSweepAdvisesWtRemoveWhereReapWouldStillKeepIt(t *testing.T) {
+	t.Parallel()
 	for _, b := range []SweepBranch{
 		{Worktree: "/w/a", Work: "a", Detached: true, Kept: "k", KeptCodes: []string{KeptDetached, KeptProcesses}},
 		{Worktree: "/w/a", Work: "a", Kept: "k", KeptCodes: []string{KeptBranchNotDeletable, KeptProcessesUnknown}},

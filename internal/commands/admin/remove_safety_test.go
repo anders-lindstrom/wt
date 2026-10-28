@@ -16,6 +16,7 @@ import (
 // The hook runs inside the session that is ending, and wt_rm_me in the
 // shell of whoever is leaving: neither is somebody else in the worktree.
 func TestHookRemovesTheWorktreeItsOwnSessionIsIn(t *testing.T) {
+	// Not parallel: swaps session.ListSessions; sets environment variables for the whole test binary.
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/hooked")
 	resolved, _ := filepath.EvalSymlinks(path)
 	testkit.FakeClaude(t, &session.ListSessions, []wtsync.Agent{ownSession(resolved)})
@@ -31,6 +32,7 @@ func TestHookRemovesTheWorktreeItsOwnSessionIsIn(t *testing.T) {
 }
 
 func TestHookRefusesWhenAnotherSessionIsIn(t *testing.T) {
+	// Not parallel: swaps session.ListSessions; sets environment variables for the whole test binary.
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/shared")
 	resolved, _ := filepath.EvalSymlinks(path)
 	other := wtsync.Agent{ID: "other", Name: "neighbour-2", Cwd: resolved, Status: "idle", PID: 999999}

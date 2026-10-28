@@ -31,12 +31,7 @@ case $1 in
 esac
 `
 	full := filepath.Join(origin, "bin", "conflict", "special")
-	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(full, []byte(body), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, full, body)
 	gitIn(t, origin, "add", "bin/conflict/special")
 	gitIn(t, origin, "commit", "-q", "-m", "add the special resolver")
 	gitIn(t, local, "fetch", "-q", "origin")
@@ -59,9 +54,7 @@ func hangOnPath(t *testing.T, name string, passThrough ...string) {
 	body += "exec sleep 30\n"
 	stub := t.TempDir()
 	path := filepath.Join(stub, name)
-	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, path, body)
 	// The first exec of a new file can be slow (macOS vets it); a deadline
 	// that fires before the stub starts would prove nothing about the stub.
 	if err := exec.Command(path, "warm").Run(); err != nil {
@@ -88,6 +81,7 @@ func cutOff(t *testing.T, err error, start time.Time) {
 // Both halves of materialising a script run under the deadline: a git
 // archive or a tar that never answers is reported, not waited on.
 func TestMaterialiseReportsAnArchiveOrTarThatDoesNotAnswer(t *testing.T) {
+	// Not parallel: shortens the package-level gitDeadline and sets PATH.
 	if testing.Short() {
 		t.Skip("waits out a real deadline")
 	}
@@ -110,6 +104,7 @@ func TestMaterialiseReportsAnArchiveOrTarThatDoesNotAnswer(t *testing.T) {
 }
 
 func TestScriptChecksThroughATemporaryIndexWithoutTouchingTheRealOne(t *testing.T) {
+	t.Parallel()
 	local, origin := repoWithOrigin(t)
 	run := fakeScript(t, local, origin)
 	before := gitIn(t, local, "--no-optional-locks", "status", "--porcelain")
@@ -135,16 +130,12 @@ func TestScriptChecksThroughATemporaryIndexWithoutTouchingTheRealOne(t *testing.
 }
 
 func TestScriptRunsTrunksCopyNotTheCheckouts(t *testing.T) {
+	t.Parallel()
 	local, origin := repoWithOrigin(t)
 	run := fakeScript(t, local, origin)
 	// a different, always-accepting script in the working tree must be ignored
 	full := filepath.Join(local, run)
-	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(full, []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, full, "#!/usr/bin/env bash\nexit 0\n")
 	s := Script{Root: local, Trunk: "origin/main", Run: run}
 	c := Conflict{Path: "special/a.txt", Base: []byte("base\n"), Trunk: []byte("nope\n"), Branch: []byte("branch\n")}
 	if _, err := s.Resolve(c); !IsRefusal(err) {
@@ -153,6 +144,7 @@ func TestScriptRunsTrunksCopyNotTheCheckouts(t *testing.T) {
 }
 
 func TestScriptNotMineIsARefusalThatSaysSo(t *testing.T) {
+	t.Parallel()
 	local, origin := repoWithOrigin(t)
 	run := fakeScript(t, local, origin)
 	s := Script{Root: local, Trunk: "origin/main", Run: run}
@@ -163,6 +155,7 @@ func TestScriptNotMineIsARefusalThatSaysSo(t *testing.T) {
 }
 
 func TestScriptMissingExecutableIsAnErrorNotARefusal(t *testing.T) {
+	t.Parallel()
 	local, _ := repoWithOrigin(t)
 	s := Script{Root: local, Trunk: "origin/main", Run: "bin/conflict/missing"}
 	_, err := s.Resolve(Conflict{Path: "x", Base: []byte("b"), Trunk: []byte("t"), Branch: []byte("r")})
@@ -172,6 +165,7 @@ func TestScriptMissingExecutableIsAnErrorNotARefusal(t *testing.T) {
 }
 
 func TestFromRuleBuildsScript(t *testing.T) {
+	t.Parallel()
 	s, err := FromRule(Rule{Strategy: "script", Run: "bin/conflict/x"}, "/repo", "origin/main")
 	if err != nil || s.Name() != "script" {
 		t.Errorf("FromRule = %v, %v", s, err)
@@ -181,7 +175,7 @@ func TestFromRuleBuildsScript(t *testing.T) {
 // stoppedRebaseWithScript builds a repository whose trunk declares run as a
 // script strategy for v.txt (trunk 1.0.5, branch 1.0.1, so a rebase always
 // stops on it), fetches it into an "origin" remote pointing at the same
-// repository the way commands.syncRepo does, and stops a rebase of the
+// repository the way provisiontest.SyncRepo does, and stops a rebase of the
 // feature worktree onto main.
 func stoppedRebaseWithScript(t *testing.T, script string) (dir, wt string) {
 	t.Helper()
@@ -189,12 +183,7 @@ func stoppedRebaseWithScript(t *testing.T, script string) (dir, wt string) {
 		[]map[string]string{{"v.txt": "1.0.5\n"}},
 		[]map[string]string{{"v.txt": "1.0.1\n"}})
 	full := filepath.Join(dir, "bin", "resolve")
-	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(full, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, full, script)
 	conf := "conflicts:\n  - paths: [v.txt]\n    strategy: script\n    run: bin/resolve\n"
 	if err := os.WriteFile(filepath.Join(dir, ".wt-sync.yaml"), []byte(conf), 0o644); err != nil {
 		t.Fatal(err)
@@ -211,6 +200,7 @@ func stoppedRebaseWithScript(t *testing.T, script string) (dir, wt string) {
 }
 
 func TestResolveInWorktreeRunsTheScriptAgainstTheRealIndex(t *testing.T) {
+	t.Parallel()
 	// A script that resolves by taking the branch side (stage 3) and staging it.
 	script := "#!/bin/sh\ncase \"$1\" in\n--resolve) git show \":3:$2\" > \"$2\" && git add -- \"$2\" ;;\n*) exit 1 ;;\nesac\n"
 	dir, wt := stoppedRebaseWithScript(t, script) // fixture: trunk declares v.txt -> script bin/resolve; rebase stopped on v.txt
@@ -227,6 +217,7 @@ func TestResolveInWorktreeRunsTheScriptAgainstTheRealIndex(t *testing.T) {
 }
 
 func TestResolveInWorktreeExitTwoIsARefusalWithTheReason(t *testing.T) {
+	t.Parallel()
 	script := "#!/bin/sh\necho 'not my shape' >&2; exit 2\n"
 	dir, wt := stoppedRebaseWithScript(t, script)
 	s := Script{Root: dir, Trunk: "origin/main", Run: "bin/resolve"}
@@ -237,6 +228,7 @@ func TestResolveInWorktreeExitTwoIsARefusalWithTheReason(t *testing.T) {
 }
 
 func TestResolveInWorktreeAScriptThatExitsZeroWithoutStagingIsAnError(t *testing.T) {
+	t.Parallel()
 	script := "#!/bin/sh\nexit 0\n"
 	dir, wt := stoppedRebaseWithScript(t, script)
 	s := Script{Root: dir, Trunk: "origin/main", Run: "bin/resolve"}
@@ -249,12 +241,14 @@ func TestResolveInWorktreeAScriptThatExitsZeroWithoutStagingIsAnError(t *testing
 // hangTimeout is the Timeout the two hang tests give their script. The clock
 // starts once the script is materialised, so it only has to cover sh starting
 // and, for the looping script, its first stderr line, but it must do so under
-// -race with the rest of the suite running: 300 ms did not. The kill is still
+// -race with the rest of the suite running: 300 ms did not, and 2 s did not
+// once the other packages ran their tests in parallel. The kill is still
 // proven, because a script that is not killed returns only after
 // Timeout+git.WaitDelay, past the bound both tests check.
-const hangTimeout = 2 * time.Second
+const hangTimeout = 5 * time.Second
 
 func TestScriptTimesOutInsteadOfHanging(t *testing.T) {
+	// Not parallel: bounds wall time to the timeout plus git.WaitDelay.
 	if testing.Short() {
 		t.Skip("waits out a real deadline")
 	}
@@ -288,6 +282,7 @@ func TestScriptTimesOutInsteadOfHanging(t *testing.T) {
 // Wait returns exec.ErrWaitDelay for an otherwise-successful run: that must
 // still be treated as exit 0, not a failure.
 func TestResolveInWorktreeAcceptsAScriptThatBackgroundsAJob(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("waits for a backgrounded job to let go")
 	}
@@ -305,10 +300,11 @@ func TestResolveInWorktreeAcceptsAScriptThatBackgroundsAJob(t *testing.T) {
 }
 
 func TestScriptCheckTimesOutInsteadOfHanging(t *testing.T) {
+	// Not parallel: bounds wall time to the timeout plus git.WaitDelay.
 	if testing.Short() {
 		t.Skip("waits out a real deadline")
 	}
-	script := "#!/bin/sh\nsleep 5\n"
+	script := "#!/bin/sh\nexec sleep 30\n"
 	dir, _ := stoppedRebaseWithScript(t, script)
 	s := Script{Root: dir, Trunk: "origin/main", Run: "bin/resolve", Timeout: hangTimeout}
 	c := Conflict{Path: "v.txt", Base: []byte("1.0.0\n"), Trunk: []byte("1.0.5\n"), Branch: []byte("1.0.1\n")}
@@ -324,6 +320,7 @@ func TestScriptCheckTimesOutInsteadOfHanging(t *testing.T) {
 }
 
 func TestResolveConflictInAWorktreeUsesTheScriptInPlace(t *testing.T) {
+	t.Parallel()
 	script := "#!/bin/sh\ncase \"$1\" in\n--resolve) git show \":3:$2\" > \"$2\" && git add -- \"$2\" ;;\n*) exit 1 ;;\nesac\n"
 	dir, wt := stoppedRebaseWithScript(t, script)
 	cfg, _ := Parse([]byte("conflicts:\n  - paths: [v.txt]\n    strategy: script\n    run: bin/resolve\n"))
@@ -351,6 +348,7 @@ func waitForFile(t *testing.T, path string) {
 // An interrupt takes down a running script: the script is in the registry
 // git.KillRunning kills, which is what wt's signal handler calls.
 func TestKillRunningTakesDownARunningScript(t *testing.T) {
+	// Not parallel: KillRunning signals every process group the test binary runs.
 	started := filepath.Join(t.TempDir(), "started")
 	dir, wt := stoppedRebaseWithScript(t, "#!/bin/sh\ntouch "+started+"\nexec sleep 30\n")
 	s := Script{Root: dir, Trunk: "origin/main", Run: "bin/resolve", Timeout: time.Minute}
@@ -371,6 +369,7 @@ func TestKillRunningTakesDownARunningScript(t *testing.T) {
 }
 
 func TestGitEnvAllowReturnsTheAllowedExitStatus(t *testing.T) {
+	t.Parallel()
 	// main and feature have diverged, so neither is the other's ancestor.
 	dir := repoWith(t,
 		map[string]string{"a.txt": "a\n"},
@@ -400,6 +399,7 @@ func TestGitEnvAllowReturnsTheAllowedExitStatus(t *testing.T) {
 // A failing git reads as what it said with how it exited, or only how it
 // exited when it said nothing, and still carries its exit status.
 func TestGitEnvFailureSaysWhatGitSaidAndHowItExited(t *testing.T) {
+	t.Parallel()
 	dir := repoWith(t, map[string]string{"a.txt": "a\n"}, nil, nil)
 	_, err := gitEnv(dir, nil, nil, "rev-parse", "--verify", "nope")
 	if err == nil || err.Error() != "fatal: Needed a single revision (exit status 128)" {

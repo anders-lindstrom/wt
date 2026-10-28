@@ -41,6 +41,7 @@ func nothingBeside(t *testing.T, dir string) {
 }
 
 func TestCloneTreeWalkMakesDirsLinksAndFiles(t *testing.T) {
+	// Not parallel: swaps cloneOneFile.
 	withFileCloner(t, byteCopy)
 	from := filepath.Join(t.TempDir(), "node_modules")
 	testkit.MustWrite(t, filepath.Join(from, "pkg", "index.js"), "x")
@@ -78,6 +79,7 @@ func TestCloneTreeWalkMakesDirsLinksAndFiles(t *testing.T) {
 // A failure deep in the tree, or a filesystem that cannot clone, leaves
 // nothing: not the tree and not the temporary one it was built in.
 func TestCloneTreeFailureLeavesNothing(t *testing.T) {
+	// Not parallel: swaps cloneOneFile.
 	for name, fail := range map[string]error{
 		"failed":      errors.New("disk on fire"),
 		"unsupported": errCloneUnsupported{"this filesystem cannot clone"},
@@ -121,6 +123,7 @@ func deadPID(t *testing.T) string {
 // A tree a killed run left behind is removed; one named for a running
 // process, or this one, is another setup's and stays.
 func TestRemoveStaleClonesKeepsTheLiveOnes(t *testing.T) {
+	// Not parallel: fewer processes starting lowers the chance of reusing deadPID's pid.
 	parent := t.TempDir()
 	stale := ".node_modules.wt-clone-" + deadPID(t) + "-1234"
 	old := ".node_modules.wt-clone-nopid"
@@ -142,6 +145,7 @@ func TestRemoveStaleClonesKeepsTheLiveOnes(t *testing.T) {
 // The clone makes its tree under a name carrying its own pid, so a second
 // setup sweeping the same directory leaves it alone.
 func TestCloneTreeNamesItsTemporaryTreeForItsPID(t *testing.T) {
+	// Not parallel: swaps cloneOneFile.
 	var seen string
 	withFileCloner(t, func(from, to string, perm fs.FileMode) error {
 		seen = filepath.Base(filepath.Dir(to))
@@ -160,6 +164,7 @@ func TestCloneTreeNamesItsTemporaryTreeForItsPID(t *testing.T) {
 // Leftovers are swept for a cache that is already in the worktree too, since
 // nothing else would reach them once npm install made it.
 func TestSetupSweepsStaleClonesBesideAnExistingCache(t *testing.T) {
+	// Not parallel: swaps cloneDir.
 	ctx, main, target := cacheFixture(t)
 	testkit.MustMkdir(t, filepath.Join(target, "node_modules"))
 	stale := filepath.Join(target, ".node_modules.wt-clone-"+deadPID(t)+"-1")

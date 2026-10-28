@@ -17,7 +17,7 @@ func MergedInCache(t *testing.T, base string) (ctx *kit.Context, path, branch st
 	path, branch, tip := Squashed(t, ctx, "fix/login-crash")
 	pr = MergedInto(34, branch, tip, base)
 	// No gh anywhere: this must work off the file alone.
-	testkit.StubGitHub(t, github.CLI{}, testkit.GhRepo, true)
+	testkit.StubGitHub(ctx, github.CLI{}, testkit.GhRepo, true)
 	kit.WritePRCache(ctx, testkit.GhRepo, map[string]*github.PR{branch: &pr}, time.Now().Add(-30*kit.PRCacheTTL))
 	return ctx, path, branch, pr
 }

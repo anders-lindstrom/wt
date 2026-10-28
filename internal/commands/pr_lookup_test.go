@@ -15,6 +15,7 @@ import (
 // makes an old pull request findable: a listing by recency would have to
 // reach back past every pull request opened since.
 func TestListAsksAboutTheWorktreeBranchesByName(t *testing.T) {
+	t.Parallel()
 	ctx, log := provisiontest.OneWorktreeWithAPR(t)
 	var errs bytes.Buffer
 	if _, err := provision.New(ctx, "feat/api-tidy", provision.NewOptions{}, &errs); err != nil {
@@ -45,6 +46,7 @@ func TestListAsksAboutTheWorktreeBranchesByName(t *testing.T) {
 // A branch made since the cache was written must not wait the TTL out. Only
 // the branches the cache cannot answer are asked about.
 func TestListFetchesOnlyTheBranchesTheCacheCannotAnswer(t *testing.T) {
+	t.Parallel()
 	ctx, log := provisiontest.OneWorktreeWithAPR(t)
 	listing(t, ctx, ListOptions{})
 	calls := len(testkit.ArgvOf(t, log))
@@ -71,6 +73,7 @@ func TestListFetchesOnlyTheBranchesTheCacheCannotAnswer(t *testing.T) {
 // `wt status` reads the same cache `wt list` fills, so standing in a worktree
 // and asking about it costs nothing a listing has already paid for.
 func TestStatusReadsTheCacheListFilled(t *testing.T) {
+	t.Parallel()
 	ctx, log := provisiontest.OneWorktreeWithAPR(t)
 	listing(t, ctx, ListOptions{})
 	calls := len(testkit.ArgvOf(t, log))

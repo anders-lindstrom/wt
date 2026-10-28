@@ -38,6 +38,7 @@ func wantNoTrunk(t *testing.T, dir string) {
 
 // origin/HEAD, when set, names trunk over every branch the repository has.
 func TestDetectTrunkPrefersOriginHead(t *testing.T) {
+	t.Parallel()
 	main := gittest.NewRepo(t, resolved(t, t.TempDir()), "demo")
 	run(t, main, "branch", "development")
 	withOriginNoHead(t, main)
@@ -48,6 +49,7 @@ func TestDetectTrunkPrefersOriginHead(t *testing.T) {
 
 // origin/HEAD outranks the conventional names, even a name no list holds.
 func TestDetectTrunkTakesOriginHeadOverMain(t *testing.T) {
+	t.Parallel()
 	dir := gittest.NewRepo(t, resolved(t, t.TempDir()), "demo")
 	run(t, dir, "branch", "residential_development")
 	withOriginNoHead(t, dir)
@@ -58,6 +60,7 @@ func TestDetectTrunkTakesOriginHeadOverMain(t *testing.T) {
 // A clone that never recorded origin/HEAD, its main checkout on a feature
 // branch: trunk is main, not the feature.
 func TestDetectTrunkIgnoresTheCheckedOutFeatureBranch(t *testing.T) {
+	t.Parallel()
 	main := gittest.NewRepo(t, resolved(t, t.TempDir()), "demo")
 	withOriginNoHead(t, main)
 	run(t, main, "checkout", "-q", "-b", "feat/stage-6")
@@ -69,6 +72,7 @@ func TestDetectTrunkIgnoresTheCheckedOutFeatureBranch(t *testing.T) {
 
 // development, main and master all there: development, first in the list.
 func TestDetectTrunkPrefersDevelopmentThenMainThenMaster(t *testing.T) {
+	t.Parallel()
 	dir := gittest.NewRepo(t, resolved(t, t.TempDir()), "demo")
 	run(t, dir, "branch", "development")
 	run(t, dir, "branch", "master")
@@ -88,6 +92,7 @@ func TestDetectTrunkPrefersDevelopmentThenMainThenMaster(t *testing.T) {
 // The list's order decides, not where a name exists: development only here
 // beats main here and on origin, and development only on origin does too.
 func TestDetectTrunkOrderOutranksWhereANameExists(t *testing.T) {
+	t.Parallel()
 	dir := gittest.NewRepo(t, resolved(t, t.TempDir()), "demo")
 	withOriginNoHead(t, dir)
 	run(t, dir, "checkout", "-q", "-b", "feat/x")
@@ -101,6 +106,7 @@ func TestDetectTrunkOrderOutranksWhereANameExists(t *testing.T) {
 
 // trunk and develop are no trunk names wt knows.
 func TestDetectTrunkIgnoresTrunkAndDevelop(t *testing.T) {
+	t.Parallel()
 	dir := gittest.NewRepo(t, resolved(t, t.TempDir()), "demo")
 	run(t, dir, "branch", "-m", "main", "trunk")
 	run(t, dir, "branch", "develop")
@@ -110,6 +116,7 @@ func TestDetectTrunkIgnoresTrunkAndDevelop(t *testing.T) {
 // Nothing names trunk: detection fails rather than take the checked-out
 // branch, which may be a feature branch.
 func TestDetectTrunkFailsRatherThanGuess(t *testing.T) {
+	t.Parallel()
 	dir := gittest.NewRepo(t, resolved(t, t.TempDir()), "demo")
 	run(t, dir, "branch", "-m", "main", "production")
 	wantNoTrunk(t, dir)
@@ -120,6 +127,7 @@ func TestDetectTrunkFailsRatherThanGuess(t *testing.T) {
 
 // An unborn branch has no ref, so no conventional name exists yet.
 func TestDetectTrunkOfAnUnbornRepoFails(t *testing.T) {
+	t.Parallel()
 	parent := resolved(t, t.TempDir())
 	run(t, parent, "init", "-q", "-b", "main", "fresh")
 	wantNoTrunk(t, filepath.Join(parent, "fresh"))

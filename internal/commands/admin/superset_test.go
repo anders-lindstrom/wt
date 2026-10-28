@@ -3,7 +3,6 @@ package admin
 import (
 	"bytes"
 	"errors"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,12 +11,14 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/superset"
 )
 
 // Doctor's Superset section: what state it found, and whether that state is a
 // problem — which only SUPERSET_REGISTER=on makes it.
 func TestDoctorReportsSupersetState(t *testing.T) {
+	t.Parallel()
 	for name, tc := range map[string]struct {
 		mode        config.SupersetMode
 		status      superset.Status
@@ -54,7 +55,7 @@ func TestDoctorReportsSupersetState(t *testing.T) {
 			}
 			testkit.OptIn(ctx)
 			ctx.Config.SupersetRegister = tc.mode
-			provisiontest.Stub(t, tc.status)
+			provisiontest.Stub(ctx, tc.status)
 
 			var out bytes.Buffer
 			problems, err := Doctor(ctx, &out)
@@ -73,6 +74,7 @@ func TestDoctorReportsSupersetState(t *testing.T) {
 
 // The full report, when Superset is running and knows this repository.
 func TestDoctorReportsAUsableSuperset(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -85,10 +87,8 @@ func TestDoctorReportsAUsableSuperset(t *testing.T) {
 		"  '--version ') echo 1.29.0 ;;\n" +
 		"  'projects list') echo '[{\"id\":\"p1\",\"name\":\"demo\",\"path\":\"" + ctx.Repo.MainRoot + "\"}]' ;;\n" +
 		"esac\n"
-	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	provisiontest.Stub(t, superset.Status{Exe: exe, Running: true})
+	gittest.WriteExecutable(t, exe, script)
+	provisiontest.Stub(ctx, superset.Status{Exe: exe, Running: true})
 
 	var out bytes.Buffer
 	problems, err := Doctor(ctx, &out)
@@ -109,6 +109,7 @@ func TestDoctorReportsAUsableSuperset(t *testing.T) {
 // own report, in one line, and never tells the person to start an app that is
 // already up. It is no problem even for a repository that asked for Superset.
 func TestDoctorSaysStatusIsWrongAboutARunningHost(t *testing.T) {
+	// Not parallel: swaps provision.ProbeSuperset; sets environment variables for the whole test binary.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -144,6 +145,7 @@ func TestDoctorSaysStatusIsWrongAboutARunningHost(t *testing.T) {
 // stale, one that is stopped and a pid that cannot be read say nothing.
 // WORKAROUND(superset-stale-status)
 func TestDoctorSaysWhenTheStaleWorkaroundCanGo(t *testing.T) {
+	// Not parallel: swaps provision.ProbeSuperset, provision.SupersetHostCommand; sets environment variables for the whole test binary.
 	const (
 		running = `{"running":true,"healthy":true,"pid":4242,"port":51234,"endpoint":"http://127.0.0.1:51234","uptimeSec":60}`
 		desktop = "/Applications/Superset.app/Contents/MacOS/Superset /Applications/Superset.app/Contents/Resources/app.asar/dist/main/host-service.js"
@@ -209,6 +211,7 @@ func TestDoctorSaysWhenTheStaleWorkaroundCanGo(t *testing.T) {
 // `wt doctor` names the state whatever the mode: it is where you go to read
 // why nothing is being registered.
 func TestDoctorAlwaysNamesAMissingSupersetProject(t *testing.T) {
+	t.Parallel()
 	for name, mode := range map[string]config.SupersetMode{
 		"auto": config.SupersetAuto,
 		"on":   config.SupersetOn,
@@ -220,7 +223,7 @@ func TestDoctorAlwaysNamesAMissingSupersetProject(t *testing.T) {
 			}
 			testkit.OptIn(ctx)
 			ctx.Config.SupersetRegister = mode
-			provisiontest.SupersetWithoutProject(t)
+			provisiontest.SupersetWithoutProject(t, ctx)
 
 			var out bytes.Buffer
 			problems, err := Doctor(ctx, &out)
@@ -240,13 +243,14 @@ func TestDoctorAlwaysNamesAMissingSupersetProject(t *testing.T) {
 // `wt pr checkout` is the third creating command, and goes through the same
 // tail: its worktree is registered too.
 func TestPRCheckoutRegistersWithSuperset(t *testing.T) {
+	t.Parallel()
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
 	}
 	testkit.OptIn(ctx)
-	testkit.FakeGitHub(t, testkit.OpenPR(12, "residential_fixes", "Residents keep their doors"))
-	log := provisiontest.FakeSuperset(t, ctx.Repo.MainRoot, true)
+	testkit.FakeGitHub(t, ctx, testkit.OpenPR(12, "residential_fixes", "Residents keep their doors"))
+	log := provisiontest.FakeSuperset(t, ctx, ctx.Repo.MainRoot, true)
 
 	var errs bytes.Buffer
 	if _, err := PRCheckout(ctx, 12, PROptions{}, &errs); err != nil {

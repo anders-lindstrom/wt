@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 // fake writes a shell script as `gh` in its own directory and returns the CLI
@@ -19,9 +21,7 @@ func fake(t *testing.T, body string) (CLI, string) {
 	log := filepath.Join(dir, "argv")
 	exe := filepath.Join(dir, "gh")
 	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> " + log + "\n" + body + "\n"
-	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, exe, script)
 	return CLI{Exe: exe}, log
 }
 
@@ -35,6 +35,7 @@ func argv(t *testing.T, log string) []string {
 }
 
 func TestFind(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	onPath, _ := fake(t, "")
 	t.Setenv("PATH", filepath.Dir(onPath.Exe))
 	c, ok := Find()
@@ -51,6 +52,7 @@ func TestFind(t *testing.T) {
 // The version line carries the release date and a URL under it; the number
 // alone is what a report wants.
 func TestVersion(t *testing.T) {
+	t.Parallel()
 	c, _ := fake(t, `printf 'gh version 2.100.0 (2026-09-03)\nhttps://github.com/cli/cli\n'`)
 	if got := c.Version(); got != "2.100.0" {
 		t.Errorf("Version() = %q", got)
@@ -62,6 +64,7 @@ func TestVersion(t *testing.T) {
 }
 
 func TestAuthenticated(t *testing.T) {
+	t.Parallel()
 	c, log := fake(t, `exit 0`)
 	if err := c.Authenticated("github.com"); err != nil {
 		t.Fatal(err)
@@ -80,6 +83,7 @@ func TestAuthenticated(t *testing.T) {
 // `wt pr list` is the one view that pays for the check rollup, and it is the
 // only caller that does.
 func TestOpenWithChecksArgv(t *testing.T) {
+	t.Parallel()
 	c, log := fake(t, `echo '[]'`)
 	if _, err := c.OpenWithChecks(t.TempDir(), 100); err != nil {
 		t.Fatal(err)
@@ -102,6 +106,7 @@ func TestOpenWithChecksArgv(t *testing.T) {
 // Asking for the checks must not leave them in the shared field list, which
 // `pr view` reads too: appending to it in place would poison it.
 func TestOpenWithChecksDoesNotKeepTheChecksField(t *testing.T) {
+	t.Parallel()
 	c, log := fake(t, `case "$2" in list) echo '[]' ;; view) echo '{}' ;; esac`)
 	if _, err := c.OpenWithChecks(t.TempDir(), 10); err != nil {
 		t.Fatal(err)
@@ -115,6 +120,7 @@ func TestOpenWithChecksDoesNotKeepTheChecksField(t *testing.T) {
 }
 
 func TestOpenWithChecksParsesPullRequests(t *testing.T) {
+	t.Parallel()
 	c, _ := fake(t, `echo '[{"number":12,"title":"Tidy","headRefName":"fix_wt/tidy","isDraft":false,`+
 		`"state":"OPEN","reviewDecision":"APPROVED","isCrossRepository":false,`+
 		`"author":{"login":"anders"},"headRepositoryOwner":{"login":"Telcred"},"url":"u"}]'`)
@@ -135,6 +141,7 @@ func TestOpenWithChecksParsesPullRequests(t *testing.T) {
 }
 
 func TestViewArgv(t *testing.T) {
+	t.Parallel()
 	c, log := fake(t, `echo '{"number":7,"headRefName":"b","state":"MERGED"}'`)
 	pr, err := c.View(t.TempDir(), 7)
 	if err != nil {
@@ -151,6 +158,7 @@ func TestViewArgv(t *testing.T) {
 // gh runs with the worktree as its working directory, because that is what
 // makes it set the branch up there and nowhere else.
 func TestCheckoutIntoRunsInTheWorktree(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	c, log := fake(t, `pwd >> `+filepath.Join(dir, "cwd"))
 	if err := c.CheckoutInto(dir, 12); err != nil {
@@ -171,6 +179,7 @@ func TestCheckoutIntoRunsInTheWorktree(t *testing.T) {
 
 // gh's own complaint is what a person needs to see, not "exit status 1".
 func TestRunQuotesGitHubsComplaint(t *testing.T) {
+	t.Parallel()
 	c, _ := fake(t, `echo "could not determine base repository" >&2; exit 1`)
 	_, err := c.OpenWithChecks(t.TempDir(), 5)
 	if err == nil || !strings.Contains(err.Error(), "could not determine base repository") {
@@ -181,6 +190,7 @@ func TestRunQuotesGitHubsComplaint(t *testing.T) {
 // A gh that never answers must not hold wt open. This is what makes the
 // column in `wt list` safe: the deadline is the whole of the guarantee.
 func TestRunDeadline(t *testing.T) {
+	// Not parallel: bounds wall time against a real deadline.
 	c, _ := fake(t, `sleep 30`)
 	start := time.Now()
 	_, err := c.PRsOnBranches(t.TempDir(), Remote{Slug: "t/demo"}, []string{"b"}, 200*time.Millisecond)
@@ -195,6 +205,7 @@ func TestRunDeadline(t *testing.T) {
 // Broken JSON is an error, not an empty list that would read as "no pull
 // requests".
 func TestOpenWithChecksRejectsRubbish(t *testing.T) {
+	t.Parallel()
 	c, _ := fake(t, `echo 'not json'`)
 	if _, err := c.OpenWithChecks(t.TempDir(), 5); err == nil {
 		t.Error("rubbish parsed as an empty list")
@@ -204,6 +215,7 @@ func TestOpenWithChecksRejectsRubbish(t *testing.T) {
 // The line between "no GitHub is set up here", which is silence, and "GitHub
 // was supposed to answer and did not", which is a warning.
 func TestNotLoggedIn(t *testing.T) {
+	t.Parallel()
 	for name, tc := range map[string]struct {
 		err  error
 		want bool
@@ -255,6 +267,7 @@ failed to run git: exit status 128
 // The line that says what went wrong is the one reported, wherever gh and
 // git put it.
 func TestRunReportsTheLineThatSaysWhatWentWrong(t *testing.T) {
+	t.Parallel()
 	for name, tc := range map[string]struct{ stderr, want string }{
 		"git's error under its notices": {divergedStderr,
 			"gh pr checkout 12 failed: fatal: Not possible to fast-forward, aborting."},
@@ -285,6 +298,7 @@ func TestRunReportsTheLineThatSaysWhatWentWrong(t *testing.T) {
 // gh asks for a login on its first line. A reason taken from further down
 // must not turn "not logged in" into a fault, wrapped or not.
 func TestNotLoggedInReadsTheFirstLineOfAFailedCall(t *testing.T) {
+	t.Parallel()
 	c, _ := fake(t, `printf '%s\n' 'To get started with GitHub CLI, please run:  gh auth login' `+
 		`'error: something further down' >&2; exit 1`)
 	_, err := c.OpenWithChecks(t.TempDir(), 5)

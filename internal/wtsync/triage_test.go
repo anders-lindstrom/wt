@@ -41,6 +41,7 @@ func featureWorktree(t *testing.T, dir string) repo.Worktree {
 // A stop with no conflicted file of its own still names something: the
 // messages when merge-tree left any, and a note saying it did not otherwise.
 func TestMessagesOutcomeNamesAStopWithNoFilesOfItsOwn(t *testing.T) {
+	t.Parallel()
 	got := messagesOutcome("")
 	if got.Path != messagesPath || got.Note != "merge-tree reported a conflict with no details" {
 		t.Errorf("no messages: %+v", got)
@@ -55,6 +56,7 @@ func TestMessagesOutcomeNamesAStopWithNoFilesOfItsOwn(t *testing.T) {
 }
 
 func TestAssessClassifiesCurrentStaleAndDetached(t *testing.T) {
+	t.Parallel()
 	dir := linearRepo(t, nil, []map[string]string{{"b.txt": "b2\n"}})
 	wt := featureWorktree(t, dir)
 	if a := Assess(dir, "main", triageCfg(t), wt, nil); a.Class != Current || a.Ahead != 1 {
@@ -71,6 +73,7 @@ func TestAssessClassifiesCurrentStaleAndDetached(t *testing.T) {
 }
 
 func TestAssessClassifiesCleanRecipeAndContested(t *testing.T) {
+	t.Parallel()
 	// clean: disjoint edits
 	dir := linearRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"b.txt": "b2\n"}})
 	if a := Assess(dir, "main", triageCfg(t), featureWorktree(t, dir), nil); a.Class != Clean || a.Replay.Commits != 1 {
@@ -91,6 +94,7 @@ func TestAssessClassifiesCleanRecipeAndContested(t *testing.T) {
 }
 
 func TestAssessDivergentWhenTheOpenAPIStrategyRefusesAtTheEndpoint(t *testing.T) {
+	t.Parallel()
 	cfg, err := Parse([]byte("conflicts:\n  - paths: [spec.json]\n    strategy: openapi\n"))
 	if err != nil {
 		t.Fatal(err)
@@ -149,6 +153,7 @@ func TestAssessDivergentWhenTheOpenAPIStrategyRefusesAtTheEndpoint(t *testing.T)
 // refusal, not a key-by-key collision, so it must carry no Keys (openapi.go)
 // and must not promote the class to Divergent (triage.go's divergence).
 func TestAssessASectionGuardRefusalIsContestedNotDivergent(t *testing.T) {
+	t.Parallel()
 	cfg, err := Parse([]byte("conflicts:\n  - paths: [spec.json]\n    strategy: openapi\n"))
 	if err != nil {
 		t.Fatal(err)
@@ -189,6 +194,7 @@ func TestAssessASectionGuardRefusalIsContestedNotDivergent(t *testing.T) {
 }
 
 func TestAssessAnOwnedLineRefusalIsContestedNotDivergent(t *testing.T) {
+	t.Parallel()
 	cfg, err := Parse([]byte("conflicts:\n  - paths: [v.txt]\n    strategy: owned-line\n    line: '^\\d'\n    rule: max-plus-patch\n"))
 	if err != nil {
 		t.Fatal(err)
@@ -207,6 +213,7 @@ func TestAssessAnOwnedLineRefusalIsContestedNotDivergent(t *testing.T) {
 // file header. Skipping them let a real change to a dependency-graph file
 // pass as "only the owned line moved", which hides an overlap with trunk.
 func TestOnlyOwnedLinesReadsAChangedLineThatLooksLikeAFileHeader(t *testing.T) {
+	t.Parallel()
 	cfg, err := Parse([]byte("conflicts:\n  - paths: [deps.txt]\n    strategy: owned-line\n    line: '^version '\n    rule: max-plus-patch\ndependency_graph:\n  - deps.txt\n"))
 	if err != nil {
 		t.Fatal(err)
@@ -240,6 +247,7 @@ func TestOnlyOwnedLinesReadsAChangedLineThatLooksLikeAFileHeader(t *testing.T) {
 }
 
 func TestAssessNotesWhenBothSidesChangeTheDependencyGraph(t *testing.T) {
+	t.Parallel()
 	// both sides touch build.gradle (a dependency_graph path): on a
 	// long-lived branch this is common and does not by itself distinguish a
 	// workstream from an ordinary rebase, so it is a note, never a reason.
@@ -264,6 +272,7 @@ func TestAssessNotesWhenBothSidesChangeTheDependencyGraph(t *testing.T) {
 }
 
 func TestAssessRefusesAnIncompleteConflictBeforeAnyStrategy(t *testing.T) {
+	t.Parallel()
 	dir := linearRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"b.txt": "b2\n"}})
 	gitIn(t, dir, "rm", "-q", "v.txt")
 	gitIn(t, dir, "commit", "-q", "-m", "trunk drops v")
@@ -280,6 +289,7 @@ func TestAssessRefusesAnIncompleteConflictBeforeAnyStrategy(t *testing.T) {
 }
 
 func TestAssessReportsAMissingScriptAsAnError(t *testing.T) {
+	t.Parallel()
 	cfg, err := Parse([]byte("conflicts:\n  - paths: [v.txt]\n    strategy: script\n    run: bin/conflict/missing\n"))
 	if err != nil {
 		t.Fatal(err)
@@ -292,6 +302,7 @@ func TestAssessReportsAMissingScriptAsAnError(t *testing.T) {
 }
 
 func TestAssessReportsDirtyTrackedChangesAndTheAgent(t *testing.T) {
+	t.Parallel()
 	dir := linearRepo(t, []map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"b.txt": "b2\n"}})
 	wt := featureWorktree(t, dir)
 	if err := os.WriteFile(filepath.Join(wt.Path, "untracked.txt"), []byte("x"), 0o644); err != nil {
@@ -313,6 +324,7 @@ func TestAssessReportsDirtyTrackedChangesAndTheAgent(t *testing.T) {
 }
 
 func TestAssessWithoutConfigClaimsNothing(t *testing.T) {
+	t.Parallel()
 	dir := linearRepo(t, []map[string]string{{"v.txt": "1.0.5\n"}}, []map[string]string{{"v.txt": "1.0.1\n"}})
 	a := Assess(dir, "main", nil, featureWorktree(t, dir), nil)
 	if !a.NoConfig || a.Class != Contested || len(a.Files) != 1 || a.Files[0].Note != "unclaimed" {
@@ -321,6 +333,7 @@ func TestAssessWithoutConfigClaimsNothing(t *testing.T) {
 }
 
 func TestAssessRecipeMeansEveryStop(t *testing.T) {
+	t.Parallel()
 	dir := linearRepo(t,
 		[]map[string]string{{"v.txt": "2.0.0\n"}},
 		[]map[string]string{{"v.txt": "1.1.0\n"}, {"v.txt": "1.2.0\n"}},
@@ -338,6 +351,7 @@ func TestAssessRecipeMeansEveryStop(t *testing.T) {
 }
 
 func TestAssessContestedAtALaterStop(t *testing.T) {
+	t.Parallel()
 	dir := linearRepo(t,
 		[]map[string]string{{"v.txt": "2.0.0\n", "a.txt": "trunk\n"}},
 		[]map[string]string{{"v.txt": "1.1.0\n"}, {"a.txt": "branch\n"}},
@@ -357,6 +371,7 @@ func TestAssessContestedAtALaterStop(t *testing.T) {
 // A truncated replay earns its class only up to where it stopped: the class
 // stands, and Unverified plus a note say how far the evidence goes.
 func TestAssessUnverifiedWhenAScriptTruncatesTheReplay(t *testing.T) {
+	t.Parallel()
 	dir := linearRepo(t,
 		[]map[string]string{{"v.txt": "2.0.0\n", "a.txt": "trunk\n"}},
 		[]map[string]string{{"v.txt": "1.1.0\n"}, {"a.txt": "branch\n"}},
@@ -374,6 +389,7 @@ func TestAssessUnverifiedWhenAScriptTruncatesTheReplay(t *testing.T) {
 }
 
 func TestAssessReportsUnknownWhenTheWorktreePathDoesNotExist(t *testing.T) {
+	t.Parallel()
 	// Every early error return must leave Class at its zero value, Unknown,
 	// rather than reading as some specific (wrong) class - Detached used to
 	// be the zero value, which would have misreported this as detached.
@@ -386,6 +402,7 @@ func TestAssessReportsUnknownWhenTheWorktreePathDoesNotExist(t *testing.T) {
 }
 
 func TestAssessReportsAHandedOverWorktreeAsPaused(t *testing.T) {
+	t.Parallel()
 	dir, wt, _, _ := handedOverRepo(t, 5, false)
 	cfg, err := LoadFromTrunk(dir, "main")
 	if err != nil {

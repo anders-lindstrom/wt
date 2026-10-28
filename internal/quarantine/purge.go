@@ -110,6 +110,8 @@ type PurgePlan struct {
 	Lost       []PurgeLost
 	ReachError string
 	Problems   []Problem
+	// hooks are what DoPurge was given; nil but in tests.
+	hooks *Hooks
 }
 
 // PurgeResult is what a purge came to.
@@ -610,11 +612,6 @@ func LockDir(dir string) (func(), error) {
 	}, nil
 }
 
-// AfterPurge runs, when set, after each deletion a purge makes, with what
-// it deleted ("pin:head", "entry:checkout", "record"), and an error from it
-// ends the purge there, as a crash would. Tests set it; nothing else does.
-var AfterPurge func(point string) error
-
 // DoPurge deletes the quarantine plan was made for, holding the folder's
 // lock, and only while the plan read again under it is the same. It
 // replaces recovery.json with its own journal, so no restore takes a
@@ -624,8 +621,9 @@ var AfterPurge func(point string) error
 // stopped anywhere leaves its journal, or an empty folder, and running it
 // again finishes it. Every deletion is made inside the folder opened once
 // and checked, never through its path again, and nothing is followed out
-// of it: a symlink in it is deleted, never what it names.
-func DoPurge(plan PurgePlan) (PurgeResult, error) {
+// of it: a symlink in it is deleted, never what it names. h is nil but in
+// tests.
+func DoPurge(plan PurgePlan, h *Hooks) (PurgeResult, error) {
 	res := PurgeResult{Outcome: OutcomeRefused}
 	if why := plan.Refusal(); why != "" {
 		return res, errors.New(why)
@@ -636,6 +634,7 @@ func DoPurge(plan PurgePlan) (PurgeResult, error) {
 	}
 	defer unlock()
 	p := PlanPurge(plan.Dir)
+	p.hooks = h
 	if why := p.Refusal(); why != "" {
 		return res, errors.New(why)
 	}
@@ -660,7 +659,7 @@ func DoPurge(plan PurgePlan) (PurgeResult, error) {
 	if err := syncIn(root); err != nil {
 		return res, err
 	}
-	if err := afterPurge("record"); err != nil {
+	if err := h.afterPurge("record"); err != nil {
 		return res, err
 	}
 	// rmdir, and only of the folder that was opened: something put at its
@@ -705,10 +704,8 @@ func (p PurgePlan) purgeInside(root *os.Root, res *PurgeResult) error {
 		if err := syncIn(root); err != nil {
 			return err
 		}
-		if AfterSave != nil {
-			if err := AfterSave(r, "purge.begin"); err != nil {
-				return err
-			}
+		if err := p.hooks.afterSave(r, "purge.begin"); err != nil {
+			return err
 		}
 	}
 	res.Outcome = OutcomePartial
@@ -722,7 +719,7 @@ func (p PurgePlan) purgeInside(root *os.Root, res *PurgeResult) error {
 		if _, err := git.Run(rp.MainRoot, "update-ref", "--no-deref", "-d", pin.Ref, pin.OID); err != nil {
 			return fmt.Errorf("could not delete %s: %s", pin.Ref, git.Reason(err))
 		}
-		if err := afterPurge("pin:" + pin.Name); err != nil {
+		if err := p.hooks.afterPurge("pin:" + pin.Name); err != nil {
 			return err
 		}
 	}
@@ -777,7 +774,7 @@ func (p PurgePlan) deleteEntries(root *os.Root) error {
 		if err := removeTreeIn(root, name); err != nil {
 			return err
 		}
-		if err := afterPurge("entry:" + name); err != nil {
+		if err := p.hooks.afterPurge("entry:" + name); err != nil {
 			return err
 		}
 	}
@@ -862,11 +859,4 @@ func identityOf(info os.FileInfo) Identity {
 		return Identity{}
 	}
 	return Identity{Device: uint64(st.Dev), Inode: st.Ino} //nolint:gosec,unconvert,nolintlint // as in Identify
-}
-
-func afterPurge(point string) error {
-	if AfterPurge != nil {
-		return AfterPurge(point)
-	}
-	return nil
 }

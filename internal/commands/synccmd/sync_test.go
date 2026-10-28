@@ -39,6 +39,7 @@ func SyncBlock(t *testing.T, out, work string) string {
 }
 
 func TestSyncPrintsTheTriageAndChangesNothing(t *testing.T) {
+	t.Parallel()
 	ctx := provisiontest.SyncRepo(t)
 	before := testkit.GitOut(t, ctx.Repo.MainRoot, "for-each-ref", "refs/heads")
 	var buf bytes.Buffer
@@ -72,6 +73,7 @@ func TestSyncPrintsTheTriageAndChangesNothing(t *testing.T) {
 // a failed assessment on its own row. The fixture has one worktree of every
 // kind the table files differently, plus one whose directory is gone.
 func TestSyncAssessedInParallelPrintsTheSequentialResult(t *testing.T) {
+	// Not parallel: swaps the package-level assessWorkers.
 	ctx := provisiontest.SyncRepo(t)
 	main := ctx.Repo.MainRoot
 	var buf bytes.Buffer
@@ -166,6 +168,7 @@ func ageFile(t *testing.T, path string, d time.Duration) {
 // what the overview compares with, and the header names it with no warning.
 // The fetch moves origin/main and no branch.
 func TestSyncFetchesTrunkFirst(t *testing.T) {
+	t.Parallel()
 	ctx := provisiontest.SyncRepo(t)
 	main := ctx.Repo.MainRoot
 	if err := os.WriteFile(filepath.Join(main, "a.txt"), []byte("trunk\n"), 0o644); err != nil {
@@ -199,6 +202,7 @@ func TestSyncFetchesTrunkFirst(t *testing.T) {
 // --no-fetch reaches nothing: the header names trunk as last fetched, with
 // the age of FETCH_HEAD, or no age when there is none.
 func TestSyncNoFetchComparesWithTrunkAsLastFetched(t *testing.T) {
+	t.Parallel()
 	ctx := provisiontest.SyncRepo(t)
 	main := ctx.Repo.MainRoot
 	stale := testkit.GitOut(t, main, "rev-parse", "origin/main")
@@ -234,6 +238,7 @@ func TestSyncNoFetchComparesWithTrunkAsLastFetched(t *testing.T) {
 // A fetch that fails does not cost the read-only view: one line says why and
 // what the overview compares with instead, then the table as usual.
 func TestSyncReportsAFailedFetchAndStillPrintsTheTable(t *testing.T) {
+	t.Parallel()
 	ctx := provisiontest.SyncRepo(t)
 	main := ctx.Repo.MainRoot
 	sha := testkit.GitOut(t, main, "rev-parse", "origin/main")
@@ -277,6 +282,7 @@ func TestSyncReportsAFailedFetchAndStillPrintsTheTable(t *testing.T) {
 // With no origin/main even after trying, there is nothing to compare with:
 // that is still an error, with the reason the fetch gave printed first.
 func TestSyncWithNoTrunkAfterAFailedFetchIsAnError(t *testing.T) {
+	t.Parallel()
 	ctx := provisiontest.SyncRepo(t)
 	main := ctx.Repo.MainRoot
 	testkit.GitIn(t, main, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone"))
@@ -293,6 +299,7 @@ func TestSyncWithNoTrunkAfterAFailedFetchIsAnError(t *testing.T) {
 }
 
 func TestAgoIsTheLargestWholeUnit(t *testing.T) {
+	t.Parallel()
 	for d, want := range map[time.Duration]string{
 		30 * time.Second:          "just now",
 		59 * time.Minute:          "59m ago",
@@ -307,6 +314,7 @@ func TestAgoIsTheLargestWholeUnit(t *testing.T) {
 }
 
 func TestFetchReasonSkipsWarningsAndHints(t *testing.T) {
+	t.Parallel()
 	err := errors.New("Warning: Identity file /tmp/key not accessible: No such file or directory.\n" +
 		"ssh: Could not resolve hostname github.com: nodename nor servname provided\n" +
 		"fatal: Could not read from remote repository.")
@@ -323,6 +331,7 @@ func TestFetchReasonSkipsWarningsAndHints(t *testing.T) {
 // strategy resolves, and stop 2 is a file nothing claims: 2/2 is what a
 // person needs, and the resolved stop is a count, not the headline.
 func TestSyncNamesTheDecidingStopNotTheFirstOne(t *testing.T) {
+	t.Parallel()
 	ctx := provisiontest.SyncRepo(t)
 	main := ctx.Repo.MainRoot
 	wts, err := ctx.Repo.Worktrees()
@@ -391,6 +400,7 @@ func TestSyncNamesTheDecidingStopNotTheFirstOne(t *testing.T) {
 }
 
 func TestSyncPrintsAnUnknownRowWithItsError(t *testing.T) {
+	t.Parallel()
 	ctx := provisiontest.SyncRepo(t)
 	// break one worktree: its directory is gone, so status fails before a class is decided
 	wts, err := ctx.Repo.Worktrees()
@@ -418,6 +428,7 @@ func TestSyncPrintsAnUnknownRowWithItsError(t *testing.T) {
 }
 
 func TestSyncSaysWhenTrunkDeclaresNothing(t *testing.T) {
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	testkit.GitIn(t, main, "remote", "add", "origin", main)
 	testkit.GitIn(t, main, "fetch", "-q", "origin")
@@ -432,6 +443,7 @@ func TestSyncSaysWhenTrunkDeclaresNothing(t *testing.T) {
 }
 
 func TestSyncGroupsAWorktreeByWhatToDoAboutIt(t *testing.T) {
+	t.Parallel()
 	busy := wtsync.Sessions{{Name: "busy"}}
 	parked := wtsync.Sessions{{Name: "parked-1", Kind: "interactive", Status: "idle"}}
 	for _, tc := range []struct {
@@ -461,6 +473,7 @@ func TestSyncGroupsAWorktreeByWhatToDoAboutIt(t *testing.T) {
 
 // The overview counts what wt sync <work> lists.
 func TestSyncSummaryCutsListsToCounts(t *testing.T) {
+	t.Parallel()
 	a := wtsync.Assessment{
 		Class: wtsync.Divergent,
 		Divergent: []wtsync.Collision{{Path: "etc/openapi_v3.json", Groups: []wtsync.KeyGroup{
@@ -484,6 +497,7 @@ func TestSyncSummaryCutsListsToCounts(t *testing.T) {
 }
 
 func TestSyncSummaryNamesAFewFilesYoursFirst(t *testing.T) {
+	t.Parallel()
 	a := wtsync.Assessment{
 		Class:  wtsync.Contested,
 		Replay: wtsync.Replay{Stop: &wtsync.Stop{Index: 2, Total: 5, Subject: "s"}},
@@ -499,6 +513,7 @@ func TestSyncSummaryNamesAFewFilesYoursFirst(t *testing.T) {
 // wt sync <work> is the untruncated view, and still meant to be read: every
 // key and file on a line of its own, under what it belongs to.
 func TestSyncDetailListsEveryKeyAndFileOnItsOwnLine(t *testing.T) {
+	t.Parallel()
 	a := wtsync.Assessment{
 		Branch: "feat_wt/api", Path: "/src/demo_wt/feat_wt/api", Class: wtsync.Divergent, Behind: 3, Ahead: 2,
 		Divergent: []wtsync.Collision{{Path: "etc/openapi_v3.json", Groups: []wtsync.KeyGroup{
@@ -525,6 +540,7 @@ func TestSyncDetailListsEveryKeyAndFileOnItsOwnLine(t *testing.T) {
 // `recipe?` is not `recipe`: the replay could not be carried to the end, so
 // the class is what it earned up to the stop it stopped at.
 func TestClassLabelMarksAnUnverifiedReplayWithAQuestionMark(t *testing.T) {
+	t.Parallel()
 	a := wtsync.Assessment{Class: wtsync.Recipe}
 	if got := ClassLabel(a); got != "recipe" {
 		t.Errorf("verified: got %q, want recipe", got)
@@ -536,6 +552,7 @@ func TestClassLabelMarksAnUnverifiedReplayWithAQuestionMark(t *testing.T) {
 }
 
 func TestSummaryLinesFlattenAMultilineNote(t *testing.T) {
+	t.Parallel()
 	a := wtsync.Assessment{Files: []wtsync.FileOutcome{{Path: "x", Note: "line one\nline two"}}}
 	for _, line := range SummaryLines(a) {
 		if strings.Contains(line, "\n") {
@@ -545,6 +562,7 @@ func TestSummaryLinesFlattenAMultilineNote(t *testing.T) {
 }
 
 func TestHeldByNamesTheSessionsInTheWorktree(t *testing.T) {
+	t.Parallel()
 	parked := wtsync.Sessions{{Name: "parked-1", Kind: "interactive", Status: "idle"}}
 	for _, tc := range []struct {
 		name string
@@ -568,6 +586,7 @@ func TestHeldByNamesTheSessionsInTheWorktree(t *testing.T) {
 }
 
 func TestRunVerdictSaysItAsksFirstUnderAnIdleSession(t *testing.T) {
+	t.Parallel()
 	a := wtsync.Assessment{Class: wtsync.Clean, Sessions: wtsync.Sessions{{Name: "parked-1", Kind: "interactive", Status: "idle"}}}
 	if got := runVerdict("bump", a); got != "wt sync rebase bump; asks first: session parked-1 (idle) is in it" {
 		t.Errorf("got %q", got)
@@ -575,6 +594,7 @@ func TestRunVerdictSaysItAsksFirstUnderAnIdleSession(t *testing.T) {
 }
 
 func TestSessionsChangedNamesWhatIsNewOrBusy(t *testing.T) {
+	t.Parallel()
 	parked := wtsync.Agent{ID: "a1", Name: "parked-1", Cwd: "/w", Kind: "interactive", Status: "idle"}
 	busy := parked
 	busy.Status = "busy"
@@ -599,6 +619,7 @@ func TestSessionsChangedNamesWhatIsNewOrBusy(t *testing.T) {
 // beside the resolved files, in the overview's note and the detail's stop
 // list alike, saying what it did and what trunk had.
 func TestSyncShowsALiftedVersionBesideTheResolvedFiles(t *testing.T) {
+	t.Parallel()
 	lifted := wtsync.FileOutcome{Path: "accessmanagement/src/main/resources/application.yaml", Strategy: "owned-line", Resolved: true, Lifted: true, Note: "lifted the version to 1.2.4: trunk took 1.2.3"}
 	a := wtsync.Assessment{
 		Branch: "feat_wt/api", Path: "/src/demo_wt/feat_wt/api", Class: wtsync.Recipe, Behind: 3, Ahead: 2,

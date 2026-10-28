@@ -18,6 +18,7 @@ import (
 // --yes --json reports each process it stopped; one that will not stop
 // refuses the removal, with nothing removed.
 func TestRemoveJSONReportsReapedAndRefusesOnOneThatWillNotStop(t *testing.T) {
+	// Not parallel: swaps retire.ReapProcesses and retire.ScanProcesses and signals real processes.
 	retire.RealProcesses(t)
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var buf bytes.Buffer

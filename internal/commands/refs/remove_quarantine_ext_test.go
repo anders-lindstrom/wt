@@ -13,16 +13,14 @@ import (
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 )
 
-// journalPoints is every journal write a run makes, in order.
-func journalPoints(t *testing.T, run func()) []string {
-	t.Helper()
+// journalPoints is every journal write run makes, in order, given hooks
+// that record them.
+func journalPoints(run func(h *quarantine.Hooks)) []string {
 	var points []string
-	quarantine.AfterSave = func(_ *quarantine.Record, at string) error {
+	run(&quarantine.Hooks{AfterSave: func(_ *quarantine.Record, at string) error {
 		points = append(points, at)
 		return nil
-	}
-	defer func() { quarantine.AfterSave = nil }()
-	run()
+	}})
 	return points
 }
 
@@ -30,21 +28,20 @@ func journalPoints(t *testing.T, run func()) []string {
 // the checkout: the lock stays, so no prune can take the registration, and
 // the run says it is partial.
 func TestQuarantineKeepsTheLockWhenAMovedCheckoutFailsToSync(t *testing.T) {
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/unsynced")
 	dir := testkit.TrashFor(t, ctx)
-	t.Cleanup(func() { quarantine.AfterRename = nil })
-	quarantine.AfterRename = func(to string) error {
+	h := &quarantine.Hooks{AfterRename: func(to string) error {
 		if to == filepath.Join(dir, "checkout") {
 			return errors.New("fsync: input/output error")
 		}
 		return nil
-	}
+	}}
 	var res retire.RemoveResult
 	var buf bytes.Buffer
-	if err := retire.RemoveAt(ctx, path, retire.RemoveOptions{Quarantine: dir, Result: &res}, &buf); err == nil {
+	if err := retire.RemoveAt(ctx, path, retire.RemoveOptions{Quarantine: dir, QuarantineHooks: h, Result: &res}, &buf); err == nil {
 		t.Fatalf("want an error\n%s", buf.String())
 	}
-	quarantine.AfterRename = nil
 	if res.Outcome != retire.RemovePartial || !res.CheckoutMoved {
 		t.Errorf("result %+v", res)
 	}

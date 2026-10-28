@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 // scanWorld is a process table and the directories of its processes, put
@@ -40,6 +42,7 @@ func row(pid, ppid, uid int, tty, command string) Process {
 // terminal, another user's, an agent's, or wt's own child, and not one
 // working somewhere else.
 func TestScanProcessesSparesTerminalsAgentsOthersAndWt(t *testing.T) {
+	// Not parallel: swaps the package-level process listers.
 	wt := resolved(t.TempDir())
 	sub := filepath.Join(wt, "web")
 	elsewhere := resolved(t.TempDir())
@@ -77,6 +80,7 @@ func TestScanProcessesSparesTerminalsAgentsOthersAndWt(t *testing.T) {
 // A process whose terminal was never filled in is not known to have none,
 // so it is spared.
 func TestScanProcessesSparesAProcessWithoutATTYField(t *testing.T) {
+	// Not parallel: swaps the package-level process listers.
 	wt := resolved(t.TempDir())
 	scanWorld(t, []Process{{PID: 200, PPID: 1, UID: os.Getuid(), Argv: []string{"node", "vite"}}}, map[int]string{200: wt})
 	s, err := ScanProcesses(nil)
@@ -89,6 +93,7 @@ func TestScanProcessesSparesAProcessWithoutATTYField(t *testing.T) {
 }
 
 func TestScanProcessesFailsWithoutAProcessTable(t *testing.T) {
+	// Not parallel: swaps the package-level process listers.
 	old := listProcesses
 	t.Cleanup(func() { listProcesses = old })
 	listProcesses = func() ([]Process, error) { return nil, errors.New("ps: boom") }
@@ -99,6 +104,7 @@ func TestScanProcessesFailsWithoutAProcessTable(t *testing.T) {
 
 // Directories nobody could read are a scan that failed, not an idle machine.
 func TestScanProcessesFailsWhenNoDirectoryCanBeRead(t *testing.T) {
+	// Not parallel: swaps the package-level process listers.
 	uid := os.Getuid()
 	scanWorld(t, []Process{row(200, 1, uid, "??", "node vite")}, nil)
 	processCwds = func(_ []int) (map[int]string, map[int]bool, error) {
@@ -112,6 +118,7 @@ func TestScanProcessesFailsWhenNoDirectoryCanBeRead(t *testing.T) {
 // A process of ours whose directory may not be read, as Linux keeps a
 // non-dumpable one's, is passed over: not placed, and not an error.
 func TestScanProcessesPassesOverAProcessItMayNotRead(t *testing.T) {
+	// Not parallel: swaps the package-level process listers.
 	uid := os.Getuid()
 	wt := resolved(t.TempDir())
 	scanWorld(t, []Process{row(200, 1, uid, "?", "ssh-agent"), row(201, 1, uid, "?", "node vite")},
@@ -152,6 +159,7 @@ func daemon(t *testing.T, dir, command string) int {
 // The real ps and lsof find a process left running in a worktree, and Reap
 // ends it with SIGTERM.
 func TestScanAndReapALeftoverProcess(t *testing.T) {
+	// Not parallel: timed against a real deadline and the machine's process table.
 	wt := resolved(t.TempDir())
 	pid := daemon(t, wt, "exec sleep 60")
 	var found []Process
@@ -188,6 +196,7 @@ func TestScanAndReapALeftoverProcess(t *testing.T) {
 // A process that ignores SIGTERM gets SIGKILL once grace is up; one that
 // has exited already is gone.
 func TestReapKillsWhatOutlivesSigterm(t *testing.T) {
+	// Not parallel: timed against a real deadline and the machine's process table.
 	wt := t.TempDir()
 	ready := filepath.Join(wt, "ready")
 	stubborn := daemon(t, wt, `exec /bin/sh -c 'trap "" TERM; : > ready; while :; do sleep 0.1; done'`)
@@ -211,6 +220,7 @@ func TestReapKillsWhatOutlivesSigterm(t *testing.T) {
 // still finds it, and it counts as exited all the same (terminated, since
 // SIGTERM reached it).
 func TestReapCountsAZombieAsGone(t *testing.T) {
+	t.Parallel()
 	cmd := exec.Command("sleep", "60")
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -225,15 +235,14 @@ func TestReapCountsAZombieAsGone(t *testing.T) {
 // A ps that fails, printing nothing, says nothing about the processes it was
 // asked of: a live one is still running, not gone.
 func TestRunningKeepsAProcessWhenPsFails(t *testing.T) {
+	// Not parallel: sets PATH for the whole test binary.
 	cmd := exec.Command("sleep", "60")
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
 	bin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(bin, "ps"), []byte("#!/bin/sh\nexit 2\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, filepath.Join(bin, "ps"), "#!/bin/sh\nexit 2\n")
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	if alive := running([]int{cmd.Process.Pid}); !alive[cmd.Process.Pid] {
 		t.Fatal("a process signal 0 finds was reported gone because ps failed")
@@ -241,6 +250,7 @@ func TestRunningKeepsAProcessWhenPsFails(t *testing.T) {
 }
 
 func TestProcessShortCutsTheCommand(t *testing.T) {
+	t.Parallel()
 	p := Process{Argv: []string{"/usr/local/bin/node", "/Users/someone/app/node_modules/.bin/vite", "--port", "5173"}}
 	if got := p.Short(20); got != "node /Users/someone…" {
 		t.Errorf("short %q", got)

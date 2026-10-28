@@ -25,6 +25,7 @@ func reasonOf(ts *synccmd.TrunkSync) string {
 }
 
 func TestTrunkSyncFastForwardsTheCleanMainCheckout(t *testing.T) {
+	t.Parallel()
 	f := synccmdtest.NewTrunkFixture(t)
 	before := f.Local(t)
 	remote := f.AdvanceOrigin(t, 2)
@@ -50,6 +51,7 @@ func TestTrunkSyncFastForwardsTheCleanMainCheckout(t *testing.T) {
 }
 
 func TestTrunkSyncUpdatesTrunkCheckedOutNowhere(t *testing.T) {
+	t.Parallel()
 	f := synccmdtest.NewTrunkFixture(t)
 	testkit.GitIn(t, f.Main, "switch", "-q", "-c", "elsewhere")
 	remote := f.AdvanceOrigin(t, 1)
@@ -68,6 +70,7 @@ func TestTrunkSyncUpdatesTrunkCheckedOutNowhere(t *testing.T) {
 }
 
 func TestTrunkSyncNothingToDoWhenEqual(t *testing.T) {
+	t.Parallel()
 	f := synccmdtest.NewTrunkFixture(t)
 	ts := synccmd.SyncLocalTrunk(f.Ctx, f.Local(t), ffOn())
 	if ts.FastForwarded || ts.SkippedReason != nil || *ts.LocalAhead != 0 || *ts.RemoteAhead != 0 {
@@ -79,6 +82,7 @@ func TestTrunkSyncNothingToDoWhenEqual(t *testing.T) {
 }
 
 func TestTrunkSyncSkips(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		setup func(t *testing.T, f *synccmdtest.TrunkFixture, o *synccmd.TrunkSyncOptions)
@@ -142,6 +146,7 @@ func TestTrunkSyncSkips(t *testing.T) {
 }
 
 func TestTrunkSyncNeverMovesALocalTrunkWithCommitsOfItsOwn(t *testing.T) {
+	t.Parallel()
 	f := synccmdtest.NewTrunkFixture(t)
 	testkit.GitIn(t, f.Main, "commit", "-q", "--allow-empty", "-m", "unpushed")
 	before := f.Local(t)
@@ -167,6 +172,7 @@ func TestTrunkSyncNeverMovesALocalTrunkWithCommitsOfItsOwn(t *testing.T) {
 // The compare-and-swap: trunk checked out nowhere gains a commit of its own
 // between the read and the update. The update must not land.
 func TestTrunkSyncLosesTheRaceToAMovedTrunk(t *testing.T) {
+	t.Parallel()
 	f := synccmdtest.NewTrunkFixture(t)
 	testkit.GitIn(t, f.Main, "switch", "-q", "-c", "elsewhere")
 	remote := f.AdvanceOrigin(t, 1)
@@ -190,6 +196,7 @@ func TestTrunkSyncLosesTheRaceToAMovedTrunk(t *testing.T) {
 // The main checkout's trunk gains a commit between the checks and the merge:
 // merge --ff-only refuses, and it is reported, not an error.
 func TestTrunkSyncMergeRefusedIsNotFastForward(t *testing.T) {
+	t.Parallel()
 	f := synccmdtest.NewTrunkFixture(t)
 	remote := f.AdvanceOrigin(t, 1)
 	o := ffOn()
@@ -205,6 +212,7 @@ func TestTrunkSyncMergeRefusedIsNotFastForward(t *testing.T) {
 // An ignored file in the main checkout that origin now tracks: the merge
 // would overwrite it, so it fails and says so.
 func TestTrunkSyncNeverOverwritesAnIgnoredFile(t *testing.T) {
+	t.Parallel()
 	f := synccmdtest.NewTrunkFixture(t)
 	testkit.WriteIn(t, f.Main, ".git/info/exclude", "keep.txt\n")
 	testkit.WriteIn(t, f.Main, "keep.txt", "mine\n")
@@ -231,6 +239,7 @@ func TestTrunkSyncNeverOverwritesAnIgnoredFile(t *testing.T) {
 
 // wt status only reads: it says what a run would do and moves nothing.
 func TestTrunkSyncWithoutApplySaysWhatARunWouldDo(t *testing.T) {
+	t.Parallel()
 	f := synccmdtest.NewTrunkFixture(t)
 	before := f.Local(t)
 	remote := f.AdvanceOrigin(t, 1)
@@ -248,6 +257,7 @@ func TestTrunkSyncWithoutApplySaysWhatARunWouldDo(t *testing.T) {
 }
 
 func TestTrunkSyncWithNoLocalTrunkHasNothingToDo(t *testing.T) {
+	t.Parallel()
 	f := synccmdtest.NewTrunkFixture(t)
 	testkit.GitIn(t, f.Main, "switch", "-q", "-c", "elsewhere")
 	testkit.GitIn(t, f.Main, "branch", "-q", "-D", "main")
@@ -263,6 +273,7 @@ func TestTrunkSyncWithNoLocalTrunkHasNothingToDo(t *testing.T) {
 // The main checkout switches away from trunk between the checks and the
 // merge: the merge must not fast-forward whatever branch it is on now.
 func TestTrunkSyncNeverMergesIntoAnotherBranch(t *testing.T) {
+	t.Parallel()
 	f := synccmdtest.NewTrunkFixture(t)
 	remote := f.AdvanceOrigin(t, 1)
 	other := f.Local(t)
@@ -282,6 +293,7 @@ func TestTrunkSyncNeverMergesIntoAnotherBranch(t *testing.T) {
 // Trunk gets checked out between the listing and the compare-and-swap: the
 // ref must not move under a checkout whose files would not follow.
 func TestTrunkSyncLeavesTrunkCheckedOutSinceTheListing(t *testing.T) {
+	t.Parallel()
 	f := synccmdtest.NewTrunkFixture(t)
 	testkit.GitIn(t, f.Main, "switch", "-q", "-c", "elsewhere")
 	before := f.Local(t)
@@ -302,6 +314,7 @@ func TestTrunkSyncLeavesTrunkCheckedOutSinceTheListing(t *testing.T) {
 // Trunk checked out in two worktrees at once: a merge in one would leave the
 // other's files behind, so neither is touched.
 func TestTrunkSyncRefusesTrunkCheckedOutTwice(t *testing.T) {
+	t.Parallel()
 	f := synccmdtest.NewTrunkFixture(t)
 	before := f.Local(t)
 	second := filepath.Join(t.TempDir(), "second")
@@ -321,6 +334,7 @@ func TestTrunkSyncRefusesTrunkCheckedOutTwice(t *testing.T) {
 // An untracked file counts as dirt even where git status is told to hide
 // them.
 func TestTrunkSyncSeesUntrackedFilesStatusHides(t *testing.T) {
+	t.Parallel()
 	f := synccmdtest.NewTrunkFixture(t)
 	testkit.GitIn(t, f.Main, "config", "status.showUntrackedFiles", "no")
 	testkit.WriteIn(t, f.Main, "scratch.txt", "mine\n")
@@ -334,6 +348,7 @@ func TestTrunkSyncSeesUntrackedFilesStatusHides(t *testing.T) {
 // An idle session in the checkout does not hold trunk back: the checkout is
 // clean and the merge overwrites nothing, so it loses nothing.
 func TestTrunkSyncFastForwardsUnderAnIdleSession(t *testing.T) {
+	t.Parallel()
 	f := synccmdtest.NewTrunkFixture(t)
 	remote := f.AdvanceOrigin(t, 1)
 	o := ffOn()

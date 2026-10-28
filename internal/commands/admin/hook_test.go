@@ -10,6 +10,7 @@ import (
 )
 
 func TestHookCreatePrintsPathOnStdoutOnly(t *testing.T) {
+	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var out, logw bytes.Buffer
 	in := strings.NewReader(`{"name":"hooked","cwd":"/x","hook_event_name":"WorktreeCreate"}`)
@@ -26,6 +27,7 @@ func TestHookCreatePrintsPathOnStdoutOnly(t *testing.T) {
 }
 
 func TestHookCreateRejectsMissingName(t *testing.T) {
+	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var out, logw bytes.Buffer
 	if err := HookCreate(ctx, strings.NewReader(`{"cwd":"/x"}`), &out, &logw); err == nil {
@@ -34,6 +36,7 @@ func TestHookCreateRejectsMissingName(t *testing.T) {
 }
 
 func TestHookRemoveIsMergeChecked(t *testing.T) {
+	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var out, logw bytes.Buffer
 	if err := HookCreate(ctx, strings.NewReader(`{"name":"gone"}`), &out, &logw); err != nil {
@@ -51,6 +54,7 @@ func TestHookRemoveIsMergeChecked(t *testing.T) {
 
 // Unknown fields must not break the hook when the harness adds one.
 func TestHookToleratesUnknownFields(t *testing.T) {
+	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	var out, logw bytes.Buffer
 	in := strings.NewReader(`{"name":"tol","brand_new_field":42,"nested":{"a":1}}`)

@@ -58,6 +58,8 @@ type RemoveOptions struct {
 	// Quarantine is a new folder, absolute, to move the worktree into
 	// instead of deleting it; "" deletes it.
 	Quarantine string
+	// QuarantineHooks are the quarantine.Hooks a test runs the move with; nil but in tests.
+	QuarantineHooks *quarantine.Hooks
 	// Result, when set, receives what the removal did, effect by effect.
 	Result *RemoveResult
 	// Expect is the token wt remove --dry-run --json gave: the removal
@@ -282,6 +284,8 @@ type Plan struct {
 	keepBusy       bool
 	// quarantineBy names the command in recovery.json.
 	quarantineBy string
+	// quarantineHooks are the options' QuarantineHooks.
+	quarantineHooks *quarantine.Hooks
 	// relist lists the sessions again for the check right before the
 	// checkout goes.
 	relist func() ([]wtsync.Agent, error)
@@ -458,8 +462,8 @@ func planFor(ctx *kit.Context, wt repo.Worktree, opts RemoveOptions) Plan {
 	p.readCheckout()
 	p.AdminDir, _ = repo.AdminDir(wt.Path)
 	if opts.Quarantine != "" {
-		p.Quarantine, p.quarantineBy = opts.Quarantine, "remove"
-		p.QuarantineError = quarantineProblem(ctx, p.Quarantine, p.Path, p.AdminDir)
+		p.Quarantine, p.quarantineBy, p.quarantineHooks = opts.Quarantine, "remove", opts.QuarantineHooks
+		p.QuarantineError = quarantineProblem(ctx, p.Quarantine, p.Path, p.AdminDir, p.quarantineHooks)
 	}
 
 	s := mergeStanding(ctx, p.Branch)
@@ -734,14 +738,14 @@ const ProblemQuarantineUnusable = "quarantineUnusable"
 
 // quarantineProblem is why the checkout at path and its admin dir cannot be
 // moved into dir, "" when they can.
-func quarantineProblem(ctx *kit.Context, dir, path, admin string) string {
+func quarantineProblem(ctx *kit.Context, dir, path, admin string, h *quarantine.Hooks) string {
 	if admin == "" {
 		return "its git dir under .git/worktrees cannot be read"
 	}
 	if err := quarantineOutside(ctx, dir); err != nil {
 		return err.Error()
 	}
-	if err := quarantine.Check(dir, path, admin); err != nil {
+	if err := quarantine.Check(dir, h, path, admin); err != nil {
 		return err.Error()
 	}
 	return ""
@@ -834,6 +838,7 @@ func (p Plan) forceWould() kit.ForceSet {
 func (p Plan) same(q Plan) bool {
 	p.Sessions, q.Sessions = identities(p.Sessions), identities(q.Sessions)
 	p.relist, q.relist, p.pins, q.pins = nil, nil, nil, nil
+	p.quarantineHooks, q.quarantineHooks = nil, nil
 	// Processes come and go; the ones there right before the checkout goes
 	// are the ones reaped, or the ones a sweep refuses for.
 	p.Processes, q.Processes, p.ProcessesError, q.ProcessesError = nil, nil, "", ""
@@ -1473,7 +1478,7 @@ func (p Plan) quarantine(ctx *kit.Context, w io.Writer, res *RemoveResult) (*qua
 	if err != nil {
 		return nil, fmt.Errorf("%s was not removed: its git dir cannot be read: %w", p.Path, err)
 	}
-	if err := quarantine.Check(dir, p.Path, admin); err != nil {
+	if err := quarantine.Check(dir, p.quarantineHooks, p.Path, admin); err != nil {
 		return nil, fmt.Errorf("%s was not removed: %w", p.Path, err)
 	}
 	checkoutID, err := quarantine.Identify(p.Path)
@@ -1505,7 +1510,7 @@ func (p Plan) quarantine(ctx *kit.Context, w io.Writer, res *RemoveResult) (*qua
 		}
 		rec.Branch = &quarantine.Branch{Name: p.Branch, Tip: p.Tip, Plan: plan, KeepAs: kit.Strp(p.KeepAs)}
 	}
-	r, err := quarantine.Begin(dir, rec)
+	r, err := quarantine.Begin(dir, rec, p.quarantineHooks)
 	if err != nil {
 		return nil, fmt.Errorf("%s was not removed: %w", p.Path, err)
 	}
@@ -1547,7 +1552,7 @@ func (p Plan) quarantine(ctx *kit.Context, w io.Writer, res *RemoveResult) (*qua
 	if err := r.Set(quarantine.StepMoveCheckout, quarantine.Running, nil); err != nil {
 		return nil, err
 	}
-	if err := quarantine.Move(p.Path, r.Checkout.Quarantined); err != nil {
+	if err := quarantine.Move(p.Path, r.Checkout.Quarantined, p.quarantineHooks); err != nil {
 		_ = r.Set(quarantine.StepMoveCheckout, quarantine.Failed, err)
 		if quarantine.Locate(r.Checkout) == quarantine.AtOriginal {
 			// Nothing moved: the lock and the pins are all there is to take
@@ -1573,7 +1578,7 @@ func (p Plan) quarantine(ctx *kit.Context, w io.Writer, res *RemoveResult) (*qua
 		res.Outcome = RemovePartial
 		return nil, err
 	}
-	if err := quarantine.Move(admin, r.Admin.Quarantined); err != nil {
+	if err := quarantine.Move(admin, r.Admin.Quarantined, p.quarantineHooks); err != nil {
 		_ = r.Set(quarantine.StepMoveAdmin, quarantine.Failed, err)
 		res.Outcome = RemovePartial
 		if quarantine.Locate(r.Admin) != quarantine.AtOriginal {

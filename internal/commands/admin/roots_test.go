@@ -17,6 +17,7 @@ import (
 // inside another, a single-repo root wt does not manage, and profile entries
 // that are gone or sit outside every root.
 func TestDoctorChecksRootsAndProfiles(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	a := testkit.RealTempDir(t)
 	inside := filepath.Join(a, "inner")
 	if err := os.Mkdir(inside, 0o755); err != nil {
@@ -55,6 +56,7 @@ func TestDoctorChecksRootsAndProfiles(t *testing.T) {
 // wt configuration that does not parse; wt doctor --all runs doctor in each,
 // and wt sync doctor where trunk declares wt sync.
 func TestReposShowsSyncAndABrokenConfiguration(t *testing.T) {
+	// Not parallel: sets environment variables for the whole test binary.
 	root := testkit.RealTempDir(t)
 	synced := testkit.ManagedRepo(t, root, "synced")
 	if err := os.WriteFile(filepath.Join(synced, ".wt-sync.yaml"), []byte("conflicts: []\n"), 0o644); err != nil {

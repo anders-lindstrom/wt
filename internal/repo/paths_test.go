@@ -7,6 +7,7 @@ import (
 )
 
 func TestInside(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	sub := filepath.Join(dir, "a", "b")
 	if err := os.MkdirAll(sub, 0o755); err != nil {
@@ -35,6 +36,7 @@ func TestInside(t *testing.T) {
 // resolved, which is the case resolve is there for; without it the comparison
 // stays a string one.
 func TestInsideResolvesSymlinksOnlyWhenAsked(t *testing.T) {
+	t.Parallel()
 	target := t.TempDir()
 	sub := filepath.Join(target, "inner")
 	if err := os.Mkdir(sub, 0o755); err != nil {

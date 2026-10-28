@@ -9,9 +9,11 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 func TestConfigShellEmitsLegacyNames(t *testing.T) {
+	t.Parallel()
 	main := testkit.FixtureRepo(t, testkit.MinimalConf)
 	ctx, err := kit.Open(main)
 	if err != nil {
@@ -39,11 +41,10 @@ func TestConfigShellEmitsLegacyNames(t *testing.T) {
 // provision.sh is what AWS_SETUP_ENABLED became; the compat output has to
 // reflect it so Herdr keeps seeing the flag it documents.
 func TestConfigShellReportsProvisionScript(t *testing.T) {
+	t.Parallel()
 	main := testkit.FixtureRepo(t, testkit.MinimalConf)
 	p := filepath.Join(main, "bin", "worktree", "provision.sh")
-	if err := os.WriteFile(p, []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, p, "#!/bin/sh\n")
 	ctx, _ := kit.Open(main)
 	var buf bytes.Buffer
 	if err := Config(ctx, true, &buf); err != nil {
@@ -55,6 +56,7 @@ func TestConfigShellReportsProvisionScript(t *testing.T) {
 }
 
 func TestConfigShowsCacheDirs(t *testing.T) {
+	t.Parallel()
 	main := testkit.FixtureRepo(t, testkit.MinimalConf+"WORKTREE_CACHE_DIRS=(node_modules .gradle)\n")
 	ctx, err := kit.Open(main)
 	if err != nil {
@@ -76,6 +78,7 @@ func TestConfigShowsCacheDirs(t *testing.T) {
 }
 
 func TestConfigShellQuotesSafely(t *testing.T) {
+	t.Parallel()
 	main := testkit.FixtureRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=true\nBUILD_INIT_COMMAND=\"echo it's fine\"\n")
 	ctx, err := kit.Open(main)
 	if err != nil {
@@ -93,6 +96,7 @@ func TestConfigShellQuotesSafely(t *testing.T) {
 // A worktree whose branch changes worktree.conf must be read from that
 // worktree, matching what the bash implementation did.
 func TestOpenReadsConfigFromTheCurrentWorktree(t *testing.T) {
+	t.Parallel()
 	main := testkit.FixtureRepo(t, testkit.MinimalConf)
 	testkit.GitIn(t, main, "config", "user.email", "t@example.com")
 	testkit.GitIn(t, main, "config", "user.name", "T")

@@ -21,6 +21,7 @@ import (
 // The folder that exists, or a worktree on another volume, refuses the
 // sweep before anything is deleted.
 func TestSweepQuarantineRefusesBeforeAnyChange(t *testing.T) {
+	t.Parallel()
 	for _, why := range []string{"exists", "volume"} {
 		t.Run(why, func(t *testing.T) {
 			ctx, main, _ := testkit.SweepRepo(t)
@@ -28,22 +29,22 @@ func TestSweepQuarantineRefusesBeforeAnyChange(t *testing.T) {
 			testkit.LandOnMain(t, main, "done-work")
 			path := provisiontest.MergedWorktree(t, ctx, "fix/stay")
 			dir := testkit.TrashFor(t, ctx)
+			var h *quarantine.Hooks
 			switch why {
 			case "exists":
 				if err := os.Mkdir(dir, 0o755); err != nil {
 					t.Fatal(err)
 				}
 			case "volume":
-				orig := quarantine.DeviceOf
-				t.Cleanup(func() { quarantine.DeviceOf = orig })
-				quarantine.DeviceOf = func(p string) (uint64, error) {
+				h = &quarantine.Hooks{DeviceOf: func(p string) (uint64, error) {
 					if p == filepath.Dir(dir) {
 						return 4242, nil
 					}
-					return orig(p)
-				}
+					return quarantine.DeviceOf(p)
+				}}
 			}
-			opts := retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}, Quarantine: dir}
+			opts := retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}, Quarantine: dir,
+				QuarantineHooks: h}
 			r, human, err := retiretest.SweepJSON(t, ctx, opts)
 			if err == nil || r.Outcome != kit.OutcomeRefused || r.Error == nil {
 				t.Fatalf("want a refusal: %v %+v\n%s", err, r, human)
@@ -58,6 +59,7 @@ func TestSweepQuarantineRefusesBeforeAnyChange(t *testing.T) {
 // A quarantine folder that cannot be used refuses the sweep even when only
 // branches would go.
 func TestSweepQuarantineRefusesABranchOnlySweep(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 1)
 	testkit.LandOnMain(t, main, "done-work")
@@ -76,6 +78,7 @@ func TestSweepQuarantineRefusesABranchOnlySweep(t *testing.T) {
 // cannot be used, and its token holds the run to the same folder: a token
 // read for a quarantine does not let a run delete instead.
 func TestSweepPlanJSONCarriesTheQuarantine(t *testing.T) {
+	t.Parallel()
 	ctx, _, _ := testkit.SweepRepo(t)
 	provisiontest.MergedWorktree(t, ctx, "fix/planned")
 	dir := testkit.TrashFor(t, ctx)
@@ -106,17 +109,18 @@ func TestSweepPlanJSONCarriesTheQuarantine(t *testing.T) {
 // A worktree that moved and whose run then failed is reported as what it
 // is, not as kept.
 func TestSweepSaysAPartialMoveIsPartial(t *testing.T) {
+	t.Parallel()
 	ctx, _, _ := testkit.SweepRepo(t)
 	provisiontest.MergedWorktree(t, ctx, "fix/half")
 	dir := testkit.TrashFor(t, ctx)
-	t.Cleanup(func() { quarantine.AfterRename = nil })
-	quarantine.AfterRename = func(to string) error {
+	h := &quarantine.Hooks{AfterRename: func(to string) error {
 		if filepath.Base(to) == "admin" {
 			return errors.New("fsync: input/output error")
 		}
 		return nil
-	}
-	opts := retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}, Quarantine: dir}
+	}}
+	opts := retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{}, Quarantine: dir,
+		QuarantineHooks: h}
 	r, human, _ := retiretest.SweepJSON(t, ctx, opts)
 	if strings.Contains(human, "- kept half") || !strings.Contains(human, "partly done") {
 		t.Errorf("the output must say it is partly done, not kept:\n%s", human)
@@ -127,6 +131,7 @@ func TestSweepSaysAPartialMoveIsPartial(t *testing.T) {
 }
 
 func TestSweepQuarantineRefusesAFolderInsideTheRepository(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/stays")
 	opts := retire.SweepOptions{NoFetch: true, Agents: []wtsync.Agent{}, PRs: map[string]github.PR{},
@@ -140,6 +145,7 @@ func TestSweepQuarantineRefusesAFolderInsideTheRepository(t *testing.T) {
 // commits pinned: a sweep drops its pins. One whose folder's parent is gone
 // too may be on a volume that is not mounted, and keeps them.
 func TestSweepDropsThePinsOfADeletedQuarantine(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := testkit.SweepRepo(t)
 	gone := provisiontest.MergedWorktree(t, ctx, "fix/emptied")
 	away := provisiontest.MergedWorktree(t, ctx, "fix/unmounted")

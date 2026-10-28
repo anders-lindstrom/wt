@@ -57,6 +57,7 @@ func repoWith(t *testing.T, base map[string]string, trunkEdits []map[string]stri
 }
 
 func TestSimulateRebaseReplaysDisjointCommitsCleanly(t *testing.T) {
+	t.Parallel()
 	dir := linearRepo(t,
 		[]map[string]string{{"a.txt": "a2\n"}},
 		[]map[string]string{{"b.txt": "b2\n"}, {"b.txt": "b3\n"}})
@@ -70,6 +71,7 @@ func TestSimulateRebaseReplaysDisjointCommitsCleanly(t *testing.T) {
 }
 
 func TestSimulateRebaseStopsAtTheFirstConflictingCommitWithItsStages(t *testing.T) {
+	t.Parallel()
 	dir := linearRepo(t,
 		[]map[string]string{{"v.txt": "1.0.5\n"}},
 		[]map[string]string{{"b.txt": "b2\n"}, {"v.txt": "1.0.1\n"}, {"v.txt": "1.0.2\n"}})
@@ -93,6 +95,7 @@ func TestSimulateRebaseStopsAtTheFirstConflictingCommitWithItsStages(t *testing.
 }
 
 func TestSimulateRebaseSkipsCommitsAlreadyOnTrunkLikeRebaseDoes(t *testing.T) {
+	t.Parallel()
 	// the branch cherry-picked a trunk commit: rebase drops it, so must the simulation
 	dir := linearRepo(t,
 		[]map[string]string{{"a.txt": "a2\n"}},
@@ -117,6 +120,7 @@ func TestSimulateRebaseSkipsCommitsAlreadyOnTrunkLikeRebaseDoes(t *testing.T) {
 }
 
 func TestSimulateRebaseLeavesEveryRefAlone(t *testing.T) {
+	t.Parallel()
 	// Disjoint edits so every commit replays cleanly and the full chain
 	// runs: both commit-tree calls execute, creating real objects, which is
 	// exactly the case that must not touch any ref, the index or HEAD.
@@ -148,6 +152,7 @@ func TestSimulateRebaseLeavesEveryRefAlone(t *testing.T) {
 }
 
 func TestEndpointAndBehindAhead(t *testing.T) {
+	t.Parallel()
 	dir := linearRepo(t,
 		[]map[string]string{{"v.txt": "1.0.5\n"}, {"a.txt": "a2\n"}},
 		[]map[string]string{{"v.txt": "1.0.1\n"}})
@@ -169,6 +174,7 @@ func TestEndpointAndBehindAhead(t *testing.T) {
 }
 
 func TestSimulateRebaseMarksAModifyDeleteConflictIncomplete(t *testing.T) {
+	t.Parallel()
 	dir := linearRepo(t,
 		[]map[string]string{{"a.txt": "a2\n"}},
 		[]map[string]string{{"b.txt": "b2\n"}})
@@ -201,6 +207,7 @@ func TestSimulateRebaseMarksAModifyDeleteConflictIncomplete(t *testing.T) {
 // present (an add/add), which is a materially different situation from a
 // modify/delete and must say so.
 func TestSimulateRebaseMarksAnAddAddConflictAsBothSidesAddedIt(t *testing.T) {
+	t.Parallel()
 	dir := linearRepo(t,
 		[]map[string]string{{"new.txt": "trunk\n"}},
 		[]map[string]string{{"b.txt": "b2\n"}, {"new.txt": "branch\n"}})
@@ -218,6 +225,7 @@ func TestSimulateRebaseMarksAnAddAddConflictAsBothSidesAddedIt(t *testing.T) {
 // blob. A symlink both sides repoint keeps all three stages, all present,
 // all mode 120000 - the completeness check alone would call it complete.
 func TestSimulateRebaseMarksANonRegularModeConflictIncomplete(t *testing.T) {
+	t.Parallel()
 	dir, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -272,6 +280,7 @@ func ownedLineConfig(t *testing.T) *Config {
 // Two commits both conflict on the claimed file. Before this change the
 // replay stopped at the first; now it resolves both and reports recipe.
 func TestSimulateResolvesEveryStop(t *testing.T) {
+	t.Parallel()
 	dir := linearRepo(t,
 		[]map[string]string{{"v.txt": "2.0.0\n"}},
 		[]map[string]string{{"v.txt": "1.1.0\n"}, {"v.txt": "1.2.0\n"}},
@@ -302,6 +311,7 @@ func TestSimulateResolvesEveryStop(t *testing.T) {
 // The first stop resolves; the second is a file nothing claims. The replay
 // must reach the second and name it, which is the whole point of Part 1.
 func TestSimulateStopsAtTheFirstUnclaimedStopWhereverItIs(t *testing.T) {
+	t.Parallel()
 	dir := linearRepo(t,
 		[]map[string]string{{"v.txt": "2.0.0\n", "a.txt": "trunk\n"}},
 		[]map[string]string{{"v.txt": "1.1.0\n"}, {"a.txt": "branch\n"}},
@@ -330,6 +340,7 @@ func TestSimulateStopsAtTheFirstUnclaimedStopWhereverItIs(t *testing.T) {
 // With no declaration nothing is claimed, so the first stop still stops the
 // replay: the behaviour every existing caller had.
 func TestSimulateWithoutAConfigStopsAtTheFirst(t *testing.T) {
+	t.Parallel()
 	dir := linearRepo(t,
 		[]map[string]string{{"v.txt": "2.0.0\n"}},
 		[]map[string]string{{"v.txt": "1.1.0\n"}, {"v.txt": "1.2.0\n"}},
@@ -352,6 +363,7 @@ func TestSimulateWithoutAConfigStopsAtTheFirst(t *testing.T) {
 // resolution would come out 2.0.1 instead of 2.0.2, so asserting on the
 // blob is both simpler and stricter than asserting on the version.)
 func TestSimulateChainsTheResolvedContent(t *testing.T) {
+	t.Parallel()
 	dir := linearRepo(t,
 		[]map[string]string{{"v.txt": "2.0.0\n", "a.txt": "trunk\n"}},
 		[]map[string]string{{"v.txt": "1.1.0\n"}, {"v.txt": "1.1.1\n", "a.txt": "branch\n"}},
@@ -379,13 +391,8 @@ func TestSimulateChainsTheResolvedContent(t *testing.T) {
 // edits, which write mode 0644.
 func scriptClaimingV(t *testing.T, dir string) *Config {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Join(dir, "bin"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	body := "#!/bin/sh\ncase \"$1\" in\n--check) exit 0 ;;\n*) exit 1 ;;\nesac\n"
-	if err := os.WriteFile(filepath.Join(dir, "bin", "claim"), []byte(body), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	gittest.WriteExecutable(t, filepath.Join(dir, "bin", "claim"), body)
 	gitIn(t, dir, "add", "-A")
 	gitIn(t, dir, "commit", "-q", "-m", "trunk declares a script")
 	cfg, err := Parse([]byte("conflicts:\n  - paths: [v.txt]\n    strategy: script\n    run: bin/claim\n"))
@@ -403,6 +410,7 @@ func scriptClaimingV(t *testing.T, dir string) *Config {
 // through a temporary index and a copy of the script from trunk, and the two
 // branches stop at different commits.
 func TestSimulateRebaseConcurrentlyMatchesTheReplayAlone(t *testing.T) {
+	t.Parallel()
 	dir := linearRepo(t,
 		[]map[string]string{{"v.txt": "2.0.0\n", "a.txt": "trunk\n"}},
 		[]map[string]string{{"v.txt": "1.1.0\n"}, {"v.txt": "1.1.1\n", "a.txt": "branch\n"}},
@@ -454,6 +462,7 @@ func TestSimulateRebaseConcurrentlyMatchesTheReplayAlone(t *testing.T) {
 // there is nothing to chain the next commit onto: the replay stops there and
 // says so rather than pretending it reached the end.
 func TestSimulateTruncatesAtAScriptStop(t *testing.T) {
+	t.Parallel()
 	dir := linearRepo(t,
 		[]map[string]string{{"v.txt": "2.0.0\n", "a.txt": "trunk\n"}},
 		[]map[string]string{{"v.txt": "1.1.0\n"}, {"a.txt": "branch\n"}},

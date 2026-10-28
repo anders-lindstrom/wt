@@ -25,6 +25,7 @@ func TracksTheirs(t *testing.T, ctx *kit.Context, bare string) string {
 }
 
 func TestSyncPushToRecordsSaysAndForgets(t *testing.T) {
+	t.Parallel()
 	ctx, bump := provisiontest.RunFixture(t, false)
 	bare := testkit.OwnBareOrigin(t, ctx)
 	main := ctx.Repo.MainRoot
@@ -103,6 +104,7 @@ func TestSyncPushToRecordsSaysAndForgets(t *testing.T) {
 // wt remove keeps an unmerged branch under another name, and wt restore gives
 // it its name back: its pushes stay where they went through both.
 func TestRemoveAndRestoreKeepWhereAKeptBranchPushes(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: real repositories with an origin to push to")
 	}

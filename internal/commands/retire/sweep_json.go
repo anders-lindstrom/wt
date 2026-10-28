@@ -360,7 +360,7 @@ func SweepPlanJSON(ctx *kit.Context, opts SweepOptions, out, progress io.Writer)
 		return writeSweepPlan(out, res, err)
 	}
 	if !plan.Empty() {
-		if err := quarantineReady(ctx, opts.Quarantine, plan); err != nil {
+		if err := quarantineReady(ctx, opts.Quarantine, plan, opts.QuarantineHooks); err != nil {
 			res.Items = PlanItemsOf(plan)
 			return writeSweepPlan(out, res, err)
 		}

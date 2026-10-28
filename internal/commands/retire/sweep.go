@@ -672,6 +672,8 @@ type SweepOptions struct {
 	// Quarantine is a new folder, absolute, that the worktrees are moved
 	// into, one folder each, instead of deleted; "" deletes them.
 	Quarantine string
+	// QuarantineHooks are the quarantine.Hooks a test runs the moves with; nil but in tests.
+	QuarantineHooks *quarantine.Hooks
 	// KeepSuperset leaves each removed worktree's Superset workspace alone.
 	KeepSuperset bool
 	// Reap stops the processes still working in each worktree it removes;
@@ -741,7 +743,7 @@ func Sweep(ctx *kit.Context, opts SweepOptions, w io.Writer) (err error) {
 	if plan.Empty() {
 		return nil
 	}
-	if err := quarantineReady(ctx, opts.Quarantine, plan); err != nil {
+	if err := quarantineReady(ctx, opts.Quarantine, plan, opts.QuarantineHooks); err != nil {
 		return err
 	}
 	if opts.Quarantine != "" && len(plan.Remove) > 0 {
@@ -865,7 +867,7 @@ func (p SweepPlan) apply(ctx *kit.Context, opts SweepOptions, w io.Writer) error
 		}
 		if opts.Quarantine != "" {
 			rp.Quarantine = quarantineFolder(opts.Quarantine, rp.Path, folders)
-			rp.quarantineBy = "sweep"
+			rp.quarantineBy, rp.quarantineHooks = "sweep", opts.QuarantineHooks
 			j.quarantined(key, rp.Quarantine)
 		} else {
 			rp.pins = pins
@@ -933,7 +935,7 @@ func (p SweepPlan) apply(ctx *kit.Context, opts SweepOptions, w io.Writer) error
 // quarantineReady refuses a sweep into dir before anything changes, even
 // one that only deletes branches: dir must be new, and every worktree the
 // plan removes, with its admin dir, on the volume dir goes on.
-func quarantineReady(ctx *kit.Context, dir string, p SweepPlan) error {
+func quarantineReady(ctx *kit.Context, dir string, p SweepPlan, h *quarantine.Hooks) error {
 	if dir == "" {
 		return nil
 	}
@@ -948,7 +950,7 @@ func quarantineReady(ctx *kit.Context, dir string, p SweepPlan) error {
 		}
 		paths = append(paths, wt.Worktree, admin)
 	}
-	if err := quarantine.Check(dir, paths...); err != nil {
+	if err := quarantine.Check(dir, h, paths...); err != nil {
 		return fmt.Errorf("nothing was swept: %w", err)
 	}
 	return nil

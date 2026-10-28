@@ -1,17 +1,17 @@
 package provisiontest
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/superset"
 )
 
 // SupersetAt writes a `superset` whose one live worktree workspace, w1, is
-// at path, beside the main checkout's own "local" one, and points
-// provision.ProbeSuperset at it. deleteBody is what `ws delete` does; before it runs
+// at path, beside the main checkout's own "local" one, and points ctx at
+// it. deleteBody is what `ws delete` does; before it runs
 // the fake notes in the log whether path still exists and whether git still
 // lists it, so a test can prove the delete came after both were gone.
 func SupersetAt(t *testing.T, ctx *kit.Context, path, deleteBody string) string {
@@ -32,9 +32,7 @@ func SupersetAt(t *testing.T, ctx *kit.Context, path, deleteBody string) string 
 		"  'projects list') echo '[{\"id\":\"p1\",\"name\":\"demo\",\"path\":\"" + ctx.Repo.MainRoot + "\"}]' ;;\n" +
 		"  'ws create') echo '{\"workspace\":{\"id\":\"w2\"},\"alreadyExists\":false}' ;;\n" +
 		"esac\n"
-	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	Stub(t, superset.Status{Exe: exe, Running: true})
+	gittest.WriteExecutable(t, exe, script)
+	Stub(ctx, superset.Status{Exe: exe, Running: true})
 	return log
 }

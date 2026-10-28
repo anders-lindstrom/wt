@@ -22,6 +22,7 @@ func ownedVersion(t *testing.T) OwnedLine {
 }
 
 func TestOwnedLineLiftsAVersionOnlyConflictAboveTrunk(t *testing.T) {
+	t.Parallel()
 	out, err := ownedVersion(t).Resolve(conflict(yamlDoc("2.38.0", ""), yamlDoc("2.38.5", ""), yamlDoc("2.38.3", "")))
 	if err != nil {
 		t.Fatal(err)
@@ -35,6 +36,7 @@ func TestOwnedLineLiftsAVersionOnlyConflictAboveTrunk(t *testing.T) {
 }
 
 func TestOwnedLineKeepsABranchVersionAlreadyAboveTrunk(t *testing.T) {
+	t.Parallel()
 	out, err := ownedVersion(t).Resolve(conflict(yamlDoc("2.38.0", ""), yamlDoc("2.38.5", ""), yamlDoc("2.39.0", "")))
 	if err != nil || !strings.Contains(string(out), "version: 2.39.0\n") {
 		t.Errorf("out = %q, err = %v", out, err)
@@ -42,6 +44,7 @@ func TestOwnedLineKeepsABranchVersionAlreadyAboveTrunk(t *testing.T) {
 }
 
 func TestOwnedLineResolvesTwoOwnedLinesInSeparateBlocks(t *testing.T) {
+	t.Parallel()
 	two := func(m, r string) string {
 		return "openapi:\n  main:\n    version: " + m + "\n  remote:\n    version: " + r + "\n"
 	}
@@ -55,6 +58,7 @@ func TestOwnedLineResolvesTwoOwnedLinesInSeparateBlocks(t *testing.T) {
 }
 
 func TestOwnedLineKeepsTheRestAsGitMergedIt(t *testing.T) {
+	t.Parallel()
 	out, err := ownedVersion(t).Resolve(conflict(yamlDoc("2.38.0", ""), yamlDoc("2.38.5", "  extra: trunk\n"), yamlDoc("2.38.3", "")))
 	if err != nil {
 		t.Fatal(err)
@@ -65,6 +69,7 @@ func TestOwnedLineKeepsTheRestAsGitMergedIt(t *testing.T) {
 }
 
 func TestOwnedLineResolvesABlockGitFoldedAroundTheLine(t *testing.T) {
+	t.Parallel()
 	withc := func(c, v string) string { return "openapi:\n  main:\n    # " + c + "\n    version: " + v + "\n" }
 	// trunk rewrote the comment above the version; the branch bumped the version
 	out, err := ownedVersion(t).Resolve(conflict(withc("old", "2.38.0"), withc("new", "2.38.5"), withc("old", "2.38.3")))
@@ -86,6 +91,7 @@ func TestOwnedLineResolvesABlockGitFoldedAroundTheLine(t *testing.T) {
 }
 
 func TestCollapseOwnedDistinguishesNoOwnedLineFromBothSidesChangingOtherLines(t *testing.T) {
+	t.Parallel()
 	line := regexp.MustCompile(`^version:`)
 	rule, _ := RuleNamed("max-plus-patch")
 	// the branch's side of the block holds no owned line at all
@@ -110,6 +116,7 @@ func TestCollapseOwnedDistinguishesNoOwnedLineFromBothSidesChangingOtherLines(t 
 }
 
 func TestOwnedLineRefusesWhenBothSidesChangedOtherLines(t *testing.T) {
+	t.Parallel()
 	withc := func(c, v string) string { return "openapi:\n  main:\n    # " + c + "\n    version: " + v + "\n" }
 	_, err := ownedVersion(t).Resolve(conflict(withc("old", "2.38.0"), withc("trunk", "2.38.5"), withc("branch", "2.38.3")))
 	if !IsRefusal(err) || !strings.Contains(err.Error(), "more than") {
@@ -118,6 +125,7 @@ func TestOwnedLineRefusesWhenBothSidesChangedOtherLines(t *testing.T) {
 }
 
 func TestOwnedLineRefusesAConflictElsewhere(t *testing.T) {
+	t.Parallel()
 	_, err := ownedVersion(t).Resolve(conflict(yamlDoc("2.38.0", ""), yamlDoc("2.38.5", "  extra: trunk\n"), yamlDoc("2.38.3", "  extra: branch\n")))
 	if !IsRefusal(err) {
 		t.Errorf("err = %v", err)
@@ -125,6 +133,7 @@ func TestOwnedLineRefusesAConflictElsewhere(t *testing.T) {
 }
 
 func TestOwnedLineRefusesAVersionThatIsNotSemver(t *testing.T) {
+	t.Parallel()
 	_, err := ownedVersion(t).Resolve(conflict(yamlDoc("2.38.0", ""), yamlDoc("2.38.5", ""), yamlDoc("2.38.3-SNAPSHOT", "")))
 	if !IsRefusal(err) {
 		t.Errorf("err = %v", err)
@@ -132,6 +141,7 @@ func TestOwnedLineRefusesAVersionThatIsNotSemver(t *testing.T) {
 }
 
 func TestOwnedLineKeepsTheBranchPinAndItsFormatting(t *testing.T) {
+	t.Parallel()
 	pkg := func(v, react string) string {
 		return "{\n  \"name\": \"app\",\n  \"dependencies\": {\n    \"@acme/spec\": \"" + v + "\",\n    \"react\": \"" + react + "\"\n  }\n}\n"
 	}
@@ -153,6 +163,7 @@ func TestOwnedLineKeepsTheBranchPinAndItsFormatting(t *testing.T) {
 }
 
 func TestFromRuleBuildsOwnedLine(t *testing.T) {
+	t.Parallel()
 	s, err := FromRule(Rule{Strategy: "owned-line", Line: `^\s*version:`, Rule: "keep-trunk"}, "", "")
 	if err != nil || s.Name() != "owned-line" {
 		t.Errorf("FromRule = %v, %v", s, err)

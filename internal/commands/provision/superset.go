@@ -13,9 +13,21 @@ import (
 	"github.com/anders-lindstrom/wt/internal/superset"
 )
 
-// ProbeSuperset is how these commands find Superset. A variable so a test can
-// put a state in front of it without a Superset on the machine running it.
+// ProbeSuperset is how these commands find Superset. A variable so a test
+// binary can put one state in front of all its tests, in its TestMain,
+// without a Superset on the machine running it; one test's own goes on its
+// Context instead. A serial test that wants the real Probe swaps it per test,
+// as provisiontest.SupersetSaying and StaleSuperset do.
 var ProbeSuperset = superset.Probe
+
+// SupersetStatus is Superset as ctx sees it: its SupersetFake when a test set
+// one, ProbeSuperset otherwise.
+func SupersetStatus(ctx *kit.Context) superset.Status {
+	if ctx.SupersetFake != nil {
+		return *ctx.SupersetFake
+	}
+	return ProbeSuperset()
+}
 
 // SupersetHostCommand reads a host pid's command line, for `wt doctor` alone.
 // A variable so a test can answer for a process that is not there.
@@ -49,7 +61,7 @@ func RegisterSuperset(ctx *kit.Context, path string, w io.Writer) (result, reaso
 		}
 		return kit.StepSkipped, why
 	}
-	status := ProbeSuperset()
+	status := SupersetStatus(ctx)
 	if !status.Installed() {
 		if mode == config.SupersetOn {
 			fmt.Fprintf(w, "! %s=on but no superset on the PATH or at ~/.superset/bin; not registered\n",
@@ -160,7 +172,7 @@ func FindSupersetWorkspaces(ctx *kit.Context, path string) SupersetWorkspaces {
 	if !SupersetEnabled(ctx) {
 		return SupersetWorkspaces{result: kit.StepSkipped, reason: "the Superset integration is off"}
 	}
-	status := ProbeSuperset()
+	status := SupersetStatus(ctx)
 	switch {
 	case !status.Installed():
 		return SupersetWorkspaces{result: kit.StepSkipped, reason: "no superset on the PATH or at ~/.superset/bin"}
