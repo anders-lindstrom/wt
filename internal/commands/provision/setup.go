@@ -252,7 +252,7 @@ func runTracked(cmd *exec.Cmd, j *CreateJournal) error {
 		return cmd.Run()
 	}
 	_, _, err := git.RunBounded(0, cmd)
-	j.park()
+	j.Park()
 	return err
 }
 
