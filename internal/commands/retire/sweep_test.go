@@ -48,7 +48,7 @@ func PlanOf(t *testing.T, ctx *kit.Context) SweepPlan {
 
 func planWith(t *testing.T, ctx *kit.Context, opts SweepOptions) SweepPlan {
 	t.Helper()
-	bases, err := TrunkBases(ctx)
+	bases, err := ctx.Repo.TrunkBases(ctx.Config.MainBranch)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +269,7 @@ func TestSweepKeepsAWorktreeWhenTheSessionsCannotBeListed(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
 	provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
-	bases, err := TrunkBases(ctx)
+	bases, err := ctx.Repo.TrunkBases(ctx.Config.MainBranch)
 	if err != nil {
 		t.Fatal(err)
 	}

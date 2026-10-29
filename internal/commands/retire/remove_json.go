@@ -211,7 +211,7 @@ func removeTokenOf(ctx *kit.Context, p Plan) *kit.Token {
 func hashRemove(t *kit.Token, ctx *kit.Context, p Plan) *kit.Token {
 	t.Str("repo", ctx.Repo.MainRoot).Str("trunk", ctx.Config.MainBranch).
 		Str("trunkSource", string(ctx.Config.TrunkSource)).Config(kit.ConfigFingerprint(ctx))
-	bases, err := TrunkBases(ctx)
+	bases, err := ctx.Repo.TrunkBases(ctx.Config.MainBranch)
 	t.Bool("basesError", err != nil)
 	for _, b := range bases {
 		t.Str("bases.Name", b.Name).Str("bases.Tip", b.Tip)
@@ -301,7 +301,7 @@ func removePlanOutput(ctx *kit.Context, p Plan, token string) RemovePlanOutput {
 		}
 		o.Branch = b
 	}
-	if bases, err := TrunkBases(ctx); err == nil {
+	if bases, err := ctx.Repo.TrunkBases(ctx.Config.MainBranch); err == nil {
 		for _, b := range bases {
 			o.Bases = append(o.Bases, SweepBase(b))
 		}

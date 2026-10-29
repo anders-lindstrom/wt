@@ -152,7 +152,7 @@ func planRepoSweep(t kit.RepoTarget, opts SweepOptions, listErr error, log io.Wr
 	if err := SweepFetch(ctx, opts.NoFetch, log); err != nil {
 		return nil, SweepPlan{}, err
 	}
-	bases, err := TrunkBases(ctx)
+	bases, err := ctx.Repo.TrunkBases(ctx.Config.MainBranch)
 	if err != nil {
 		return nil, SweepPlan{}, err
 	}

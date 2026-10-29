@@ -147,7 +147,7 @@ func TestSweepPlanJSONCodesWhyAWorktreeIsKept(t *testing.T) {
 		t.Errorf("want the detached worktree kept as detached: %+v", p.Items)
 	}
 
-	bases, err := retire.TrunkBases(ctx)
+	bases, err := ctx.Repo.TrunkBases(ctx.Config.MainBranch)
 	if err != nil {
 		t.Fatal(err)
 	}

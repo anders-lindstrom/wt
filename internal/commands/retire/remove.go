@@ -490,7 +490,7 @@ func planFor(ctx *kit.Context, wt repo.Worktree, opts RemoveOptions) Plan {
 		// leaving it behind because wt did not make it only leaves litter.
 		p.Outcome = BranchDeleted
 	case p.Merge == MergeUnknown && !branchIsOurs(ctx, p.Branch):
-		p.Reason = "not created by wt, and " + NoTrunkHere(ctx.Config.MainBranch) +
+		p.Reason = "not created by wt, and " + repo.NoTrunkHere(ctx.Config.MainBranch) +
 			" to compare it with"
 	case !branchIsOurs(ctx, p.Branch):
 		p.Reason = "not created by wt and not merged"
@@ -950,8 +950,8 @@ func mergeStanding(ctx *kit.Context, branch string) (standing, error) {
 		return s, err
 	}
 	s.Tip = tip
-	bases, err := TrunkBases(ctx)
-	var none *NoTrunkBaseError
+	bases, err := ctx.Repo.TrunkBases(ctx.Config.MainBranch)
+	var none *repo.NoTrunkBaseError
 	if errors.As(err, &none) {
 		return s, nil
 	} else if err != nil {
@@ -981,7 +981,7 @@ func mergeStanding(ctx *kit.Context, branch string) (standing, error) {
 
 // appliedTo is the first base holding every commit of tip under another id,
 // "" when none does.
-func appliedTo(ctx *kit.Context, tip string, bases []TrunkBase) string {
+func appliedTo(ctx *kit.Context, tip string, bases []repo.TrunkBase) string {
 	for _, b := range bases {
 		if ctx.Repo.Applied(tip, b.Tip) {
 			return b.Name
@@ -1044,11 +1044,6 @@ func worktreeGone(ctx *kit.Context, path string) bool {
 	}
 	_, ok := worktrees.ByPath(path)
 	return !ok
-}
-
-// NoTrunkHere says there is nothing to compare a branch with.
-func NoTrunkHere(trunk string) string {
-	return "neither origin/" + trunk + " nor " + trunk + " is here"
 }
 
 // removalFailed turns git's answer into wt's. git's own advice for a locked
@@ -1257,7 +1252,7 @@ func (p Plan) standing() string {
 	case p.Merge == Unmerged:
 		return "not merged: " + aheadOf(p.Ahead, p.Base)
 	}
-	return NoTrunkHere(p.MainBranch) + " to compare with"
+	return repo.NoTrunkHere(p.MainBranch) + " to compare with"
 }
 
 // aheadOf counts the work at stake: n commits base does not have. A branch

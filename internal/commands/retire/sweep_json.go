@@ -319,7 +319,7 @@ func prepareSweep(ctx *kit.Context, opts SweepOptions, progress io.Writer) (plan
 		return SweepPlan{}, false, err
 	}
 	fetched = !opts.NoFetch && ctx.Repo.HasRemote("origin")
-	bases, err := TrunkBases(ctx)
+	bases, err := ctx.Repo.TrunkBases(ctx.Config.MainBranch)
 	if err != nil {
 		return SweepPlan{}, fetched, err
 	}

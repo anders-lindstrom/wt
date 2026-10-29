@@ -13,7 +13,6 @@ import (
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/admin"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
@@ -279,13 +278,13 @@ func checkoutState(path string) string {
 	return "clean"
 }
 
-// statusBase is the trunk status compares with: the first of retire.TrunkBases,
+// statusBase is the trunk status compares with: the first of Repo.TrunkBases,
 // origin/<trunk> as last fetched when it is there. ok is false when neither
 // it nor the local trunk exists.
-func statusBase(ctx *kit.Context) (retire.TrunkBase, bool) {
-	bases, err := retire.TrunkBases(ctx)
+func statusBase(ctx *kit.Context) (repo.TrunkBase, bool) {
+	bases, err := ctx.Repo.TrunkBases(ctx.Config.MainBranch)
 	if err != nil {
-		return retire.TrunkBase{}, false
+		return repo.TrunkBase{}, false
 	}
 	return bases[0], true
 }
@@ -293,10 +292,10 @@ func statusBase(ctx *kit.Context) (retire.TrunkBase, bool) {
 // statusHeader is the first line of wt status: the ref compared with, and
 // for origin/<trunk> how long ago it was fetched, as wt sync --no-fetch says
 // it.
-func statusHeader(ctx *kit.Context, base retire.TrunkBase, ok bool) string {
+func statusHeader(ctx *kit.Context, base repo.TrunkBase, ok bool) string {
 	switch {
 	case !ok:
-		return retire.NoTrunkHere(ctx.Config.MainBranch) + " to compare with"
+		return repo.NoTrunkHere(ctx.Config.MainBranch) + " to compare with"
 	case strings.HasPrefix(base.Name, "origin/"):
 		return "against " + base.Name + ", " + synccmd.LastFetched(ctx.Repo.MainRoot, time.Now())
 	}
@@ -306,7 +305,7 @@ func statusHeader(ctx *kit.Context, base retire.TrunkBase, ok bool) string {
 // trunkStanding counts what branch and base have that the other does not,
 // with one rev-list, the count every sync verb reads. ok is false when the
 // count cannot be read, or there is no base to count against.
-func trunkStanding(ctx *kit.Context, base retire.TrunkBase, ok bool, branch string) (behind, ahead int, counted bool) {
+func trunkStanding(ctx *kit.Context, base repo.TrunkBase, ok bool, branch string) (behind, ahead int, counted bool) {
 	if !ok {
 		return 0, 0, false
 	}
@@ -415,12 +414,12 @@ func keyWidth(rows [][]string) int {
 
 // trunkFact is the trunk line of one worktree: the counts, the ref they are
 // against, and for origin/<trunk> how old the fetch is.
-func trunkFact(ctx *kit.Context, base retire.TrunkBase, ok bool, wt repo.Worktree) string {
+func trunkFact(ctx *kit.Context, base repo.TrunkBase, ok bool, wt repo.Worktree) string {
 	if wt.Branch == "" {
 		return "-"
 	}
 	if !ok {
-		return retire.NoTrunkHere(ctx.Config.MainBranch) + " to compare with"
+		return repo.NoTrunkHere(ctx.Config.MainBranch) + " to compare with"
 	}
 	behind, ahead, counted := trunkStanding(ctx, base, ok, wt.Branch)
 	if !counted {
