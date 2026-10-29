@@ -75,7 +75,7 @@ func TestReposShowsSyncAndABrokenConfiguration(t *testing.T) {
 	t.Setenv("WT_ROOTS", "")
 
 	var buf bytes.Buffer
-	if err := kit.Repos(u, kit.Selection{}, kit.ReposOptions{}, &buf); err != nil {
+	if err := Repos(u, kit.Selection{}, ReposOptions{}, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
