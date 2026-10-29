@@ -3,7 +3,6 @@ package main
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands/purge"
 	"github.com/anders-lindstrom/wt/internal/commands/refs"
 )
 
@@ -153,7 +152,7 @@ func newRefsSweptCmd() *cobra.Command {
 			if err != nil && !asJSON {
 				return err
 			}
-			return purge.RefsSwept(ctx, asJSON, cmd.OutOrStdout())
+			return refs.Swept(ctx, asJSON, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print the runs as JSON")
@@ -259,22 +258,22 @@ func newRefsPurgeCmd() *cobra.Command {
 			if expect != "" && (!asJSON || !yes) {
 				return usagef("--expect holds a purge to the plan a tool read: pass it with --yes --json")
 			}
-			opts := purge.RefsPurgeOptions{RunIDs: args, OlderThan: olderThan, DryRun: dryRun, Yes: yes, Expect: expect}
+			opts := refs.PurgeOptions{RunIDs: args, OlderThan: olderThan, DryRun: dryRun, Yes: yes, Expect: expect}
 			out, progress := cmd.OutOrStdout(), cmd.ErrOrStderr()
 			ctx, err := openContext(progress)
 			if asJSON && !yes {
 				if err != nil {
 					ctx = nil
 				}
-				return purge.RefsPurgePlanJSON(ctx, opts, out, progress)
+				return refs.PurgePlanJSON(ctx, opts, out, progress)
 			}
 			if asJSON {
-				opts.Journal = purge.NewRefsPurgeJournal(out)
+				opts.Journal = refs.NewRefsPurgeJournal(out)
 				if err != nil {
 					opts.Journal.Fail(err)
 					return err
 				}
-				return purge.RefsPurge(ctx, opts, progress)
+				return refs.Purge(ctx, opts, progress)
 			}
 			if err != nil {
 				return err
@@ -282,12 +281,12 @@ func newRefsPurgeCmd() *cobra.Command {
 			if !yes && !dryRun {
 				if canAsk(cmd) {
 					p := newPrompter(cmd.InOrStdin(), out)
-					opts.Confirm = func(purge.RefsPurgePlan) bool { return p.yesNo("Delete them for good?", false) }
+					opts.Confirm = func(refs.PurgePlan) bool { return p.yesNo("Delete them for good?", false) }
 				} else {
 					opts.NoTerminal = true
 				}
 			}
-			return purge.RefsPurge(ctx, opts, out)
+			return refs.Purge(ctx, opts, out)
 		},
 	}
 	cmd.Flags().StringVar(&olderThan, "older-than", "", "purge every run older than this age")

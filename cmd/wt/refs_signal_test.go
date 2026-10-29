@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/purge"
 	"github.com/anders-lindstrom/wt/internal/commands/refs"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/jsonout"
@@ -173,12 +172,12 @@ func TestRefsPurgeSIGTERMWritesTheObject(t *testing.T) {
 	run := "20260930T091500Z-9e7a"
 	sweptRun(t, main, run)
 	arm(t, mark)
-	var r purge.RefsPurgeResult
+	var r refs.PurgeResult
 	oneObject(t, sigtermRun(t, main, mark, "refs", "purge", run, "--yes", "--json"), &r)
 	if r.Outcome != jsonout.OutcomeInterrupted || r.Recovery == nil || len(r.Runs) != 1 {
 		t.Fatalf("result = %+v", r)
 	}
-	want := map[string]string{"refs/heads/backup/a": purge.PinDeleted, "refs/heads/backup/b": refs.RefInterrupted,
+	want := map[string]string{"refs/heads/backup/a": refs.RefPurgeDeleted, "refs/heads/backup/b": refs.RefInterrupted,
 		"refs/heads/backup/c": refs.RefNotRun}
 	for _, it := range r.Runs[0].Refs {
 		if it.Result != want[it.ID] {

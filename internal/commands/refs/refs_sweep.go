@@ -1,6 +1,6 @@
 // Package refs implements wt refs, which sweeps old branches and tags into
-// pins and puts them back, and wt restore, which puts back a quarantined
-// worktree.
+// pins, lists the runs, puts them back and purges them, and wt restore,
+// which puts back a quarantined worktree.
 package refs
 
 import (

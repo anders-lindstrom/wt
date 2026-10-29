@@ -1,4 +1,4 @@
-package purge
+package refs_test
 
 import (
 	"bytes"
@@ -22,14 +22,14 @@ import (
 )
 
 // sweptRuns is what wt refs swept --json lists.
-func sweptRuns(t *testing.T, ctx *kit.Context) []RefSweptRun {
+func sweptRuns(t *testing.T, ctx *kit.Context) []refs.RefSweptRun {
 	t.Helper()
 	var out bytes.Buffer
-	if err := RefsSwept(ctx, true, &out); err != nil {
+	if err := refs.Swept(ctx, true, &out); err != nil {
 		t.Fatal(err)
 	}
 	testkit.ValidateJSON(t, "refs-swept", out.Bytes())
-	var sw RefsSweptOutput
+	var sw refs.SweptOutput
 	if err := json.Unmarshal(out.Bytes(), &sw); err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func sweptRuns(t *testing.T, ctx *kit.Context) []RefSweptRun {
 }
 
 // sweptIDs is the ids of one run's pins.
-func sweptIDs(run RefSweptRun) []string {
+func sweptIDs(run refs.RefSweptRun) []string {
 	var ids []string
 	for _, r := range run.Refs {
 		ids = append(ids, r.ID)

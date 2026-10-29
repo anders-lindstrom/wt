@@ -1,5 +1,5 @@
 // Package purge implements wt purge, which deletes a quarantined worktree
-// for good, and wt refs purge, which deletes a run of swept pins.
+// for good.
 package purge
 
 import (
