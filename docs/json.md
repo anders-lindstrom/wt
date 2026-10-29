@@ -28,6 +28,10 @@ lists every version of every schema.
 
 A string field that has no value is `null`, not `""`. Paths are absolute.
 
+A plan's `token` is opaque: compare it, never parse it. Its value can change
+between wt versions, so `--expect` can refuse a token another version gave as a
+changed plan; read the plan again.
+
 `quarantine` and `quarantined`, in fields, values and two schema names, are a
 worktree that `wt remove --move-to <dir>` or `wt sweep --move-to <dir>` moved
 into a folder instead of deleting it; wt's help and messages call it a removed
@@ -1305,7 +1309,7 @@ just those; an id the run does not have, or one whose name is taken, refuses.
 | `command` | `"refs restore"` | |
 | `repo` | string \| null | |
 | `runId` | string | as given, also when it is not a run id (then `error` says so) |
-| `token` | string \| null | `rr1-…`: covers the repository, the run, and each pin with its object and action. Null when nothing can go back, or on error |
+| `token` | string \| null | `rr1-…`: covers the repository, the run, each pin with its object and action, and, when a remote ref can go back and origin resolves to one URL now, that URL's digest. Null when nothing can go back, or on error |
 | `error` | string \| null | a run id that is not one, a run with nothing under `refs/wt-swept/<runId>/`, `--only` refused |
 | `items` | array | `{id, kind, name, pin, object, action, selected}` |
 
@@ -1355,7 +1359,7 @@ run stopped before it moved anything) is purged like any other.
 | `command` | `"refs purge"` | |
 | `repo` | string \| null | |
 | `olderThan` | string \| null | `--older-than` as given; null when runs were named |
-| `token` | string \| null | `rp1-…`: covers the runs, their pins and each pin's object. Null when there is nothing to purge, or on error |
+| `token` | string \| null | `rp1-…`: covers the runs, their pins, each pin's object and what deleting it would lose (`unreachable`). Null when there is nothing to purge, or on error |
 | `error` | string \| null | |
 | `runs` | array | `{runId, sweptAt, meta, endpoint, refs, unreachable}`: `sweptAt` unix seconds, the meta's, else from the id; `meta` the run's meta ref or null; `endpoint` as the meta records it, or null; `refs` `{pin, id, object}`; `unreachable` `{id, count}` for each pin whose commits no ref outside this purge and no worktree's HEAD reaches — what `git gc` may take once it goes. A commit two purged pins share counts for both; reflogs are not counted |
 

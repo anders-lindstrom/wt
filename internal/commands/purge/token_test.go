@@ -14,7 +14,8 @@ import (
 func TestRefsPurgeTokenCoversEveryPlanField(t *testing.T) {
 	t.Parallel()
 	p := RefsPurgePlan{Repo: "/r", Runs: []purgeRun{{SweptRun: refpins.SweptRun{RunID: "run", MetaOID: "m",
-		Refs: []refpins.SweptRef{{Pin: "refs/wt-swept/run/heads/a", Object: "o"}}}}}}
+		Refs: []refpins.SweptRef{{Pin: "refs/wt-swept/run/heads/a", Object: "o"}}},
+		Lost: []RefLost{{ID: "refs/heads/a", Count: 1}}}}}
 	tok := purgeRefsTokenOf(p)
 	gaps := kit.TokenGaps(tok, RefsPurgePlan{}, "", map[string]string{
 		"OlderThan": "it picks the runs, and the runs it picked are in it",
@@ -22,8 +23,8 @@ func TestRefsPurgeTokenCoversEveryPlanField(t *testing.T) {
 	gaps = append(gaps, kit.TokenGaps(tok, purgeRun{}, "Runs.", map[string]string{
 		"Runs.At":   "it picks the run under --older-than, and the run is in it",
 		"Runs.Meta": "MetaOID is the meta's blob",
-		"Runs.Lost": "what deleting the pins loses is reported, not acted on; the pins are in it",
 	})...)
+	gaps = append(gaps, kit.TokenGaps(tok, RefLost{}, "Runs.Lost.", nil)...)
 	gaps = append(gaps, kit.TokenGaps(tok, refpins.SweptRef{}, "Runs.Refs.", map[string]string{
 		"Runs.Refs.RunID": "the pin names it",
 		"Runs.Refs.Kind":  "the pin names it",
@@ -51,5 +52,21 @@ func TestPurgeTokenCoversEveryPlanField(t *testing.T) {
 	gaps = append(gaps, kit.TokenGaps(tok, quarantine.PurgeLost{}, "Lost.", nil)...)
 	if len(gaps) > 0 {
 		t.Errorf("decide each, in purgeTokenOf or here:\n%s", strings.Join(gaps, "\n"))
+	}
+}
+
+// What a purge would lose is in its token: --expect refuses a purge whose
+// loss changed after the plan was read, though its pins did not.
+func TestRefsPurgeTokenCoversWhatIsLost(t *testing.T) {
+	t.Parallel()
+	plan := func(lost ...RefLost) RefsPurgePlan {
+		return RefsPurgePlan{Repo: "/r", Runs: []purgeRun{{SweptRun: refpins.SweptRun{RunID: "run", MetaOID: "m",
+			Refs: []refpins.SweptRef{{Pin: "refs/wt-swept/run/heads/a", Object: "o"}}}, Lost: lost}}}
+	}
+	none := kit.Deref(purgeRefsToken(plan()))
+	one := kit.Deref(purgeRefsToken(plan(RefLost{ID: "refs/heads/a", Count: 1})))
+	two := kit.Deref(purgeRefsToken(plan(RefLost{ID: "refs/heads/a", Count: 2})))
+	if none == one || one == two {
+		t.Errorf("a different loss, the same token: none %s, one commit %s, two commits %s", none, one, two)
 	}
 }

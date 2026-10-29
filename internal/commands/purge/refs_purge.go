@@ -150,8 +150,9 @@ func (p *RefsPurgePlan) countLost(ctx *kit.Context) error {
 	return nil
 }
 
-// purgeRefsToken names a purge plan: the repository and every pin of every
-// run, with its object. Nil when there is nothing to purge.
+// purgeRefsToken names a purge plan: the repository, every pin of every
+// run with its object, and what deleting each pin would lose. Nil when there
+// is nothing to purge.
 func purgeRefsToken(p RefsPurgePlan) *string { return purgeRefsTokenOf(p).Strp() }
 
 func purgeRefsTokenOf(p RefsPurgePlan) *kit.Token {
@@ -163,6 +164,9 @@ func purgeRefsTokenOf(p RefsPurgePlan) *kit.Token {
 		t.Str("Runs.RunID", r.RunID).Str("Runs.MetaOID", r.MetaOID)
 		for _, s := range r.Refs {
 			t.Str("Runs.Refs.Pin", s.Pin).Str("Runs.Refs.Object", s.Object)
+		}
+		for _, l := range r.Lost {
+			t.Str("Runs.Lost.ID", l.ID).Int("Runs.Lost.Count", int64(l.Count))
 		}
 	}
 	return t

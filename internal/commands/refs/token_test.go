@@ -49,3 +49,26 @@ func TestRestoreTokenCoversEveryPlanField(t *testing.T) {
 		t.Errorf("decide each, in restoreTokenOf or here:\n%s", strings.Join(gaps, "\n"))
 	}
 }
+
+// Origin as resolved now is in a restore's token when a remote ref can go
+// back to it, as it is in a sweep's: a URL that changed after the plan was
+// read changes it. A plan whose remote refs cannot go back keeps its token,
+// so a restore of local refs alone is not refused over origin's URL.
+func TestRestoreTokenCoversTheEndpoint(t *testing.T) {
+	t.Parallel()
+	tokens := func(remote string) (none, a, b string) {
+		plan := func(e *refpins.Endpoint) RestoreRefsPlan {
+			return RestoreRefsPlan{Repo: "/r", RunID: "run", endpoint: e, Rows: []restoreRow{
+				{SweptRef: refpins.SweptRef{Kind: refpins.RefBranch, Name: "a"}, Action: RestoreCreate},
+				{SweptRef: refpins.SweptRef{Kind: refpins.RefRemoteBranch, Name: "b"}, Action: remote}}}
+		}
+		return kit.Deref(restoreToken(plan(nil))), kit.Deref(restoreToken(plan(&refpins.Endpoint{Digest: "sha256:a"}))),
+			kit.Deref(restoreToken(plan(&refpins.Endpoint{Digest: "sha256:b"})))
+	}
+	if none, a, b := tokens(RestoreCreate); none == a || a == b {
+		t.Errorf("a remote ref can go back, and a different origin has the same token: none %s, a %s, b %s", none, a, b)
+	}
+	if none, a, b := tokens(RestoreEndpointChanged); none != a || a != b {
+		t.Errorf("no remote ref can go back, and a different origin has another token: none %s, a %s, b %s", none, a, b)
+	}
+}
