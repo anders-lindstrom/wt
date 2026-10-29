@@ -175,7 +175,7 @@ func TestSyncKeepRunRefusesToOverlapALivePass(t *testing.T) {
 	}
 	// The lock released, the pid in the json is this very test, alive and
 	// not a keeper: it holds nothing, and the pass goes ahead.
-	_ = lock.Close()
+	_ = keepstate.ReleaseKeepLock(lock)
 	out.Reset()
 	if err := Run(ctx, opts, &out); err != nil {
 		t.Fatalf("a stale pid held the keeper: %v\n%s", err, out.String())
@@ -874,7 +874,7 @@ func TestSyncKeepStatusSaysWhenAPassWasInterrupted(t *testing.T) {
 	if err != nil || held {
 		t.Fatalf("lock: %v, held %v", err, held)
 	}
-	defer lock.Close()
+	defer func() { _ = keepstate.ReleaseKeepLock(lock) }()
 	out.Reset()
 	if err := Status(ctx, keepDay, &out); err != nil {
 		t.Fatal(err)

@@ -52,7 +52,7 @@ func writeKeepState(path string, st keepstate.KeepState) error {
 
 // acquireKeepLock takes the pass lock without waiting, creating the file
 // on a first pass. held is true when another pass has it; the file is
-// returned open, and closing it releases the lock.
+// returned open, and keepstate.ReleaseKeepLock releases the lock.
 func acquireKeepLock(gitDir string) (f *os.File, held bool, err error) {
 	return keepstate.TryKeepLock(gitDir, os.O_CREATE)
 }
@@ -83,7 +83,7 @@ func Run(ctx *kit.Context, opts KeepOptions, w io.Writer) error {
 		}
 		return fmt.Errorf("a keeper pass is already running (pid %d since %s); nothing rebased", st.PID, keepstate.KeepClock(st.Started, now))
 	}
-	defer lock.Close()
+	defer func() { _ = keepstate.ReleaseKeepLock(lock) }()
 	pass := keepPass{ctx: ctx, opts: opts, w: w, now: now, logPath: logPath, prev: st.Unpushed}
 	// Signals from here on: the fetch is a git of its own, and a Ctrl-C or
 	// a bootout during it has to take it down too. The run watches again
