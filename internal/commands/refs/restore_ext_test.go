@@ -18,7 +18,6 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
-	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
 func branchTip(t *testing.T, ctx *kit.Context, name string) string {
@@ -466,21 +465,21 @@ func TestRestoreFinishesAConfigSectionPutBackInPart(t *testing.T) {
 // A rename that went through and a run that stopped before its fsync, and a
 // delete that stopped between the ref and its config, are put back too.
 func TestRestorePutsBackARemovalStoppedInsideAStep(t *testing.T) {
-	// Not parallel: swaps repo.AfterRefDeleted.
+	t.Parallel()
 	for _, point := range []string{"checkout", "admin", "ref deleted"} {
 		t.Run(point, func(t *testing.T) {
+			t.Parallel()
 			ctx, path := provisiontest.SafetyWorktree(t, "fix/inside")
 			branch := "fix_wt/inside"
 			testkit.GitIn(t, ctx.Repo.MainRoot, "config", "branch."+branch+".description", "mine")
 			tip := strings.TrimSpace(testkit.GitOut(t, path, "rev-parse", "HEAD"))
 			dir := testkit.TrashFor(t, ctx)
-			var h *quarantine.Hooks
+			opts := retire.RemoveOptions{Quarantine: dir}
 			switch point {
 			case "ref deleted":
-				t.Cleanup(func() { repo.AfterRefDeleted = nil })
-				repo.AfterRefDeleted = func(string) error { return testkit.ErrCrash }
+				opts.AfterRefDeleted = func(string) error { return testkit.ErrCrash }
 			default:
-				h = &quarantine.Hooks{AfterRename: func(to string) error {
+				opts.QuarantineHooks = &quarantine.Hooks{AfterRename: func(to string) error {
 					if to == filepath.Join(dir, point) {
 						return testkit.ErrCrash
 					}
@@ -488,10 +487,9 @@ func TestRestorePutsBackARemovalStoppedInsideAStep(t *testing.T) {
 				}}
 			}
 			var buf bytes.Buffer
-			if err := retire.RemoveAt(ctx, path, retire.RemoveOptions{Quarantine: dir, QuarantineHooks: h}, &buf); err == nil {
+			if err := retire.RemoveAt(ctx, path, opts, &buf); err == nil {
 				t.Fatalf("the run must stop\n%s", buf.String())
 			}
-			repo.AfterRefDeleted = nil
 			refstest.Restore(t, ctx, dir)
 			testkit.AssertBack(t, ctx, path, dir, "ref: refs/heads/"+branch)
 			if branchTip(t, ctx, branch) != tip {
@@ -504,17 +502,28 @@ func TestRestorePutsBackARemovalStoppedInsideAStep(t *testing.T) {
 	}
 }
 
+// failMergeConfig fails a restore's write of a branch's merge entry.
+func failMergeConfig() *quarantine.Hooks {
+	return &quarantine.Hooks{BeforeConfigAdd: func(key, _ string) error {
+		if strings.HasSuffix(key, ".merge") {
+			return testkit.ErrCrash
+		}
+		return nil
+	}}
+}
+
 // A restore that made a deleted branch again and then failed to put its
 // config back owns that branch when it is run again: the entries still
 // missing go back, none twice, and a value set since is left as it is.
 func TestRestoreRetryFinishesTheConfigOfABranchItMade(t *testing.T) {
-	// Not parallel: swaps repo.BeforeConfigAdd.
+	t.Parallel()
 	for _, newer := range []bool{false, true} {
 		name := "failed"
 		if newer {
 			name = "set-since"
 		}
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			ctx, path := provisiontest.SafetyWorktree(t, "fix/retry-"+name)
 			branch := "fix_wt/retry-" + name
 			section := "branch." + branch + "."
@@ -527,18 +536,10 @@ func TestRestoreRetryFinishesTheConfigOfABranchItMade(t *testing.T) {
 			if err := retire.RemoveAt(ctx, path, retire.RemoveOptions{Quarantine: dir}, &buf); err != nil {
 				t.Fatalf("RemoveAt: %v\n%s", err, buf.String())
 			}
-			t.Cleanup(func() { repo.BeforeConfigAdd = nil })
-			repo.BeforeConfigAdd = func(key, _ string) error {
-				if strings.HasSuffix(key, ".merge") {
-					return testkit.ErrCrash
-				}
-				return nil
-			}
 			var res quarantine.RestoreResult
-			if err := refs.Restore(ctx, dir, refs.RestoreOptions{Result: &res}, &buf); err == nil {
+			if err := refs.Restore(ctx, dir, refs.RestoreOptions{Result: &res, QuarantineHooks: failMergeConfig()}, &buf); err == nil {
 				t.Fatalf("the config write must fail\n%s", buf.String())
 			}
-			repo.BeforeConfigAdd = nil
 			if branchTip(t, ctx, branch) != tip {
 				t.Fatal("the first run should have made the branch again")
 			}
@@ -565,7 +566,7 @@ func TestRestoreRetryFinishesTheConfigOfABranchItMade(t *testing.T) {
 // then failed a config write, then runs a third time: the branch stays its
 // own throughout, and the config comes back whole.
 func TestRestoreKeepsABranchItMadeAcrossTwoFailures(t *testing.T) {
-	// Not parallel: swaps repo.BeforeConfigAdd.
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/thrice")
 	branch := "fix_wt/thrice"
 	section := "branch." + branch + "."
@@ -589,17 +590,9 @@ func TestRestoreKeepsABranchItMadeAcrossTwoFailures(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The second: one entry back, then a failure.
-	t.Cleanup(func() { repo.BeforeConfigAdd = nil })
-	repo.BeforeConfigAdd = func(key, _ string) error {
-		if strings.HasSuffix(key, ".merge") {
-			return testkit.ErrCrash
-		}
-		return nil
-	}
-	if err := refs.Restore(ctx, dir, refs.RestoreOptions{}, &buf); err == nil {
+	if err := refs.Restore(ctx, dir, refs.RestoreOptions{QuarantineHooks: failMergeConfig()}, &buf); err == nil {
 		t.Fatal("the config write must fail")
 	}
-	repo.BeforeConfigAdd = nil
 	refstest.Restore(t, ctx, dir)
 	testkit.AssertBack(t, ctx, path, dir, "ref: refs/heads/"+branch)
 	got := strings.TrimSpace(testkit.GitOut(t, ctx.Repo.MainRoot, "config", "--get-regexp", `^branch\.fix_wt/thrice\.`))

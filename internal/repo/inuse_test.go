@@ -15,7 +15,7 @@ func TestDeleteBranchAtRefusesABranchAWorktreeHasCheckedOut(t *testing.T) {
 	wt := filepath.Join(t.TempDir(), "in-use")
 	sweepGit(t, dir, "worktree", "add", "-q", "-b", "busy", wt)
 
-	err := r.DeleteBranchAt("busy", sweepGit(t, dir, "rev-parse", "busy"))
+	err := r.DeleteBranchAt("busy", sweepGit(t, dir, "rev-parse", "busy"), nil)
 	var inUse *BranchInUseError
 	if !errors.As(err, &inUse) {
 		t.Fatalf("DeleteBranchAt = %v, want a BranchInUseError", err)
@@ -42,7 +42,7 @@ func TestDeleteBranchAtRefusesABranchABisectHolds(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := r.DeleteBranchAt("started-here", sweepGit(t, dir, "rev-parse", "started-here"))
+	err := r.DeleteBranchAt("started-here", sweepGit(t, dir, "rev-parse", "started-here"), nil)
 	var inUse *BranchInUseError
 	if !errors.As(err, &inUse) {
 		t.Fatalf("DeleteBranchAt = %v, want a BranchInUseError", err)
@@ -60,7 +60,7 @@ func TestDeleteBranchAtDeletesABranchNobodyIsUsing(t *testing.T) {
 	t.Parallel()
 	r, dir := sweepFixture(t)
 	sweepGit(t, dir, "branch", "spare")
-	if err := r.DeleteBranchAt("spare", sweepGit(t, dir, "rev-parse", "spare")); err != nil {
+	if err := r.DeleteBranchAt("spare", sweepGit(t, dir, "rev-parse", "spare"), nil); err != nil {
 		t.Fatalf("DeleteBranchAt: %v", err)
 	}
 	if r.BranchExists("spare") {

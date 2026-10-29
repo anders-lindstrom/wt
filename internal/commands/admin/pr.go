@@ -236,7 +236,7 @@ func checkoutPRInto(ctx *kit.Context, gh kit.GitHub, pr github.PR, path string, 
 		_ = ctx.Repo.Prune()
 		for branch, existed := range had {
 			if tip, now, _ := ctx.Repo.ResolveRef("refs/heads/" + branch); now && !existed {
-				_ = ctx.Repo.DeleteBranchAt(branch, tip)
+				_ = ctx.Repo.DeleteBranchAt(branch, tip, nil)
 			}
 		}
 		return fmt.Errorf("%w\n  %s", gh.Fail(err), discardedLine(path, discarded))

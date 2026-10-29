@@ -379,7 +379,7 @@ func DoRestore(dir string, rp *repo.Repo, h *Hooks) (RestoreResult, error) {
 		if err := r.SetRestore(StepBranch, Running, nil); err != nil {
 			return res, err
 		}
-		if err := restoreBranch(rr, r, action, p.Admin, resumed); err != nil {
+		if err := restoreBranch(rr, r, action, p.Admin, resumed, h); err != nil {
 			_ = r.SetRestore(StepBranch, Failed, err)
 			return res, err
 		}
@@ -491,7 +491,7 @@ func moveBack(r *Record, step string, pl Place) error {
 // empty section or one this restore owns, and HEAD is written whole.
 // resumed is a recreate an earlier run of this restore began: the branch
 // is its own even if the record does not say it made it yet.
-func restoreBranch(rp *repo.Repo, r *Record, action, adminAt string, resumed bool) error {
+func restoreBranch(rp *repo.Repo, r *Record, action, adminAt string, resumed bool, h *Hooks) error {
 	b := r.Branch
 	switch action {
 	case ActionRenameBack:
@@ -527,7 +527,7 @@ func restoreBranch(rp *repo.Repo, r *Record, action, adminAt string, resumed boo
 		}
 		return writeHead(r, adminAt, *r.Head)
 	}
-	return restoreConfig(rp, r, r.Restore.CreatedBranch || resumed)
+	return restoreConfig(rp, r, r.Restore.CreatedBranch || resumed, h)
 }
 
 // restoreConfig puts a deleted branch's config section back, entry by
@@ -540,7 +540,7 @@ func restoreBranch(rp *repo.Repo, r *Record, action, adminAt string, resumed boo
 // rest and none twice. A key holding a value the record does not have was
 // set since, and is left as it is. It fails unless every other recorded
 // entry is there when it is done.
-func restoreConfig(rp *repo.Repo, r *Record, recreated bool) error {
+func restoreConfig(rp *repo.Repo, r *Record, recreated bool, h *Hooks) error {
 	b := r.Branch
 	if b == nil || b.Plan != BranchPlanDelete || r.Step(StepBranch).State == Pending || len(b.Config) == 0 {
 		return nil
@@ -558,7 +558,11 @@ func restoreConfig(rp *repo.Repo, r *Record, recreated bool) error {
 			have[e]--
 			continue
 		}
-		if err := rp.AddConfig(e.Key, e.Value); err != nil {
+		err := h.beforeConfigAdd(e.Key, e.Value)
+		if err == nil {
+			err = rp.AddConfig(e.Key, e.Value)
+		}
+		if err != nil {
 			return fmt.Errorf("could not restore %s of branch %s: %s", e.Key, b.Name, git.Reason(err))
 		}
 	}

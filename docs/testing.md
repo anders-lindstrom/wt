@@ -140,8 +140,7 @@ and its first line says which, as `// Not parallel: <why>`:
   `git`, `claude` or `superset` on the PATH, HOME, XDG_CONFIG_HOME,
   CODEX_HOME, TMPDIR;
 - a package-level variable that other tests read, for example
-  `kit.MachineAgents`, `retire`'s `vanishWait` and `afterFinalCheck`,
-  `repo.AfterRefDeleted` and `BeforeConfigAdd`, `refpins.AfterBranchMoved`,
+  `kit.MachineAgents`, `retire`'s `vanishWait`, `refpins.AfterBranchMoved`,
   `supersetws.Probe` and `HostCommand`, provision's
   `cloneDir` and `cloneOneFile`, `synccmd`'s `assessWorkers`,
   superset's `readDeadline`, agents' process listers and `Deadline`;
@@ -169,8 +168,11 @@ A test's own fakes go with the call, not into a package variable:
   `retire.RealProcesses(ctx)` set `ctx.Agents`, the sessions and processes
   the context sees; `testkit.AgentsOf(ctx)` is that struct, for any other
   field, as a failing listing;
-- `testkit.CrashAt(point)`, or any `quarantine.Hooks`, goes in the
-  `QuarantineHooks` field of the remove, sweep, restore or purge options.
+- `testkit.CrashAt(point)`, or any `quarantine.Hooks` (a failing config
+  write of a restore among them), goes in the `QuarantineHooks` field of
+  the remove, sweep, restore or purge options, and what a removal does
+  after its last look at the checkout, or between a branch's ref and its
+  config, in `RemoveOptions.AfterFinalCheck` and `AfterRefDeleted`.
 - the platform, the home directory and the launchctl the keeper sees go
   in `ctx.Machine` (`kit.Machine`), and the `--all` commands of wt sync
   keep take the machine they open each repository on: a zero field is

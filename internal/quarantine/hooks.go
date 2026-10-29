@@ -21,6 +21,10 @@ type Hooks struct {
 	// DeviceOf is the device path leads to, following symlinks: a test puts
 	// a path on another volume with it.
 	DeviceOf func(path string) (uint64, error)
+	// BeforeConfigAdd runs before a restore writes each entry of the
+	// branch's config back, and an error from it stands for the write
+	// failing.
+	BeforeConfigAdd func(key, value string) error
 }
 
 func (h *Hooks) afterSave(r *Record, point string) error {
@@ -42,6 +46,13 @@ func (h *Hooks) afterPurge(point string) error {
 		return nil
 	}
 	return h.AfterPurge(point)
+}
+
+func (h *Hooks) beforeConfigAdd(key, value string) error {
+	if h == nil || h.BeforeConfigAdd == nil {
+		return nil
+	}
+	return h.BeforeConfigAdd(key, value)
 }
 
 func (h *Hooks) deviceOf(path string) (uint64, error) {

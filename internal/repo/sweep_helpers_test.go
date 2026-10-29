@@ -168,13 +168,13 @@ func TestDeleteBranchAtRefusesAMovedBranchAndCleansConfig(t *testing.T) {
 	moved := sweepGit(t, dir, "commit-tree", "-p", "done-work", "-m", "landed late", tree)
 	sweepGit(t, dir, "update-ref", "refs/heads/done-work", moved)
 
-	if err := r.DeleteBranchAt("done-work", seen); err == nil {
+	if err := r.DeleteBranchAt("done-work", seen, nil); err == nil {
 		t.Fatal("a branch that moved since it was seen must not be deleted")
 	}
 	if !r.BranchExists("done-work") {
 		t.Fatal("the refused delete removed the branch")
 	}
-	if err := r.DeleteBranchAt("done-work", moved); err != nil {
+	if err := r.DeleteBranchAt("done-work", moved, nil); err != nil {
 		t.Fatalf("DeleteBranchAt at the current tip: %v", err)
 	}
 	if r.BranchExists("done-work") {

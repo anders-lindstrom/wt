@@ -68,14 +68,13 @@ func TestQuarantineMovesTheWorktreeInsteadOfDeletingIt(t *testing.T) {
 // What an editor or a build writes after the last check is not deleted: it
 // moves with the checkout.
 func TestQuarantineKeepsAFileWrittenAfterTheLastCheck(t *testing.T) {
-	// Not parallel: swaps afterFinalCheck.
+	t.Parallel()
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/late-write")
 	dir := testkit.TrashFor(t, ctx)
-	t.Cleanup(func() { afterFinalCheck = nil })
-	afterFinalCheck = func() { testkit.MustWrite(t, filepath.Join(path, "late.txt"), "written after the check") }
+	late := func() { testkit.MustWrite(t, filepath.Join(path, "late.txt"), "written after the check") }
 
 	var buf bytes.Buffer
-	if err := RemoveAt(ctx, path, RemoveOptions{Quarantine: dir}, &buf); err != nil {
+	if err := RemoveAt(ctx, path, RemoveOptions{Quarantine: dir, AfterFinalCheck: late}, &buf); err != nil {
 		t.Fatalf("RemoveAt: %v\n%s", err, buf.String())
 	}
 	if b, err := os.ReadFile(filepath.Join(dir, "checkout", "late.txt")); err != nil || string(b) != "written after the check" {
