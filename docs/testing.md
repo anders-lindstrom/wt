@@ -27,9 +27,9 @@ tests. The other times are older and were taken under a heavier load.
 Several full runs at once can pass the 30 minute timeout.
 
 `make test-unit` covers internal/config, find, naming, about, quarantine,
-gittest, superset, textwrap, schema, and internal/commands/refpins and
-testkit. internal/git and internal/github are not
-in it: their tests build real git repositories.
+gittest, superset, textwrap, jsonout, schema, and internal/commands/refpins
+and testkit. internal/git, internal/github and internal/reposel are not in
+it: their tests build real git repositories.
 
 ## What to run when
 
