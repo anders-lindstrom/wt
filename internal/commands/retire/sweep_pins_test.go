@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
-	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/refpins"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
@@ -48,7 +48,7 @@ func TestBranchPinsLeaveARunTheyDidNotBegin(t *testing.T) {
 		told = append(told, id)
 		if id != "" {
 			// Another run writes its meta at this id first.
-			if err := refpins.BeginRun(main, id, time.Now(), nil); err != nil {
+			if err := refpins.BeginRun(main, id, time.Now(), nil, ""); err != nil {
 				t.Fatal(err)
 			}
 		}

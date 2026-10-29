@@ -17,12 +17,12 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/commands/supersetws"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
+	"github.com/anders-lindstrom/wt/internal/refpins"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -442,7 +442,7 @@ func removeWorktreeResult(ctx *kit.Context, wt repo.Worktree, opts RemoveOptions
 	}
 	opts.Journal.applying()
 	if plan.Quarantine == "" {
-		plan.pins = &refpins.BranchPins{Command: "wt remove", Begun: opts.Journal.ran}
+		plan.pins = &refpins.BranchPins{Command: "wt remove", WtVersion: kit.Version, Begun: opts.Journal.ran}
 	}
 	res, err := plan.run(ctx, w)
 	res.RunID = plan.pins.Finish(ctx.Repo, w)

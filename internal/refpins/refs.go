@@ -1,5 +1,7 @@
-// Package refpins keeps what wt refs sweep and wt remove put aside under
-// refs/wt-swept/: one folder per run, a pin per ref and the run's metadata.
+// Package refpins keeps what wt refs sweep, wt sweep and wt remove put aside
+// under refs/wt-swept/: one folder per run, a pin per ref and the run's
+// metadata. It is a store below the commands: they pass in the wt version a
+// run records and how long a network call may take.
 package refpins
 
 import (
@@ -21,7 +23,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
@@ -237,11 +238,11 @@ func ResolveEndpoint(mainRoot string) (*Endpoint, error) {
 		return nil, fmt.Errorf("%w (%d fetch and %d push URLs)", ErrRemoteAmbiguous, len(fetch), len(push))
 	}
 	u := fetch[0]
-	if kit.HasCredentials(u) {
+	if HasCredentials(u) {
 		return nil, ErrRemoteCredentials
 	}
 	sum := sha256.Sum256([]byte(u))
-	return &Endpoint{URL: kit.Redacted(u), Digest: "sha256:" + hex.EncodeToString(sum[:]), Raw: u}, nil
+	return &Endpoint{URL: Redacted(u), Digest: "sha256:" + hex.EncodeToString(sum[:]), Raw: u}, nil
 }
 
 // RunMeta is what a run writes before it moves anything, as a blob at
@@ -326,9 +327,10 @@ type RemoteRefs struct {
 	Peeled map[string]string
 }
 
-// ReadRemoteRefs asks origin, at url, for its branches and tags.
-func ReadRemoteRefs(mainRoot, url string) (RemoteRefs, error) {
-	out, err := git.RunTimeout(mainRoot, kit.NetworkTimeout, "ls-remote", url)
+// ReadRemoteRefs asks origin, at url, for its branches and tags, giving up
+// after timeout; zero is git.GitTimeout.
+func ReadRemoteRefs(mainRoot, url string, timeout time.Duration) (RemoteRefs, error) {
+	out, err := git.RunTimeout(mainRoot, timeout, "ls-remote", url)
 	if err != nil {
 		return RemoteRefs{}, fmt.Errorf("could not list origin's refs: %s", git.Reason(err))
 	}
@@ -583,14 +585,14 @@ func (d *RefDates) Created(ref string) (int64, bool) {
 
 // BeginRun writes a run's meta, the first thing a run does, so a run stopped
 // anywhere after is found by its id. Its create is a compare-and-swap: a run
-// id taken meanwhile refuses here.
-func BeginRun(mainRoot, runID string, at time.Time, endpoint *Endpoint) error {
+// id taken meanwhile refuses here. wtVersion is the wt that writes it.
+func BeginRun(mainRoot, runID string, at time.Time, endpoint *Endpoint, wtVersion string) error {
 	gitDir, err := git.Run(mainRoot, "rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil {
 		return fmt.Errorf("could not write the run's meta: %s", git.Reason(err))
 	}
 	return WriteMeta(mainRoot, RunMeta{RunID: runID, Repo: gitDir, SweptAt: at.Unix(), Endpoint: endpoint,
-		WtVersion: kit.Version})
+		WtVersion: wtVersion})
 }
 
 // AfterBranchMoved runs, when set, between MoveBranch's transaction and its
@@ -626,6 +628,8 @@ func MoveBranch(r *repo.Repo, name, tip, pin, message string) error {
 type BranchPins struct {
 	// Command is the reflog message the moves are made with.
 	Command string
+	// WtVersion is the wt that writes the run's meta.
+	WtVersion string
 	// Begun, when set, is told the run id before its meta is written, so a
 	// journal names the run even when a signal comes next.
 	Begun func(runID string)
@@ -662,7 +666,7 @@ func (b *BranchPins) begin(mainRoot string) error {
 		if b.Begun != nil {
 			b.Begun(id)
 		}
-		if err := BeginRun(mainRoot, id, time.Now(), nil); err != nil {
+		if err := BeginRun(mainRoot, id, time.Now(), nil, b.WtVersion); err != nil {
 			if b.Begun != nil {
 				b.Begun("")
 			}

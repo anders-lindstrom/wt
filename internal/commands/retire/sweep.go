@@ -14,11 +14,11 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
+	"github.com/anders-lindstrom/wt/internal/refpins"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
@@ -813,7 +813,7 @@ func (p SweepPlan) apply(ctx *kit.Context, opts SweepOptions, w io.Writer) error
 	// Every branch the sweep deletes, with a worktree or without, is moved
 	// into one run under refs/wt-swept/, except a quarantined worktree's,
 	// which the quarantine pins.
-	pins := &refpins.BranchPins{Command: "wt sweep", Begun: j.ran}
+	pins := &refpins.BranchPins{Command: "wt sweep", WtVersion: kit.Version, Begun: j.ran}
 	kept := 0
 	folders := map[string]bool{}
 	for i, wt := range p.Remove {
