@@ -11,7 +11,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/anders-lindstrom/wt/internal/agents"
-	"github.com/anders-lindstrom/wt/internal/commands/admin"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
@@ -97,7 +96,7 @@ func List(ctx *kit.Context, opts ListOptions, w io.Writer, width int) error {
 		}
 		row := []string{mark, work, branch}
 		if len(prs) > 0 {
-			row = append(row, admin.Dash(prs[n.Branch]))
+			row = append(row, kit.Dash(prs[n.Branch]))
 		}
 		rows = append(rows, append(row, n.Path))
 	}
@@ -106,7 +105,7 @@ func List(ctx *kit.Context, opts ListOptions, w io.Writer, width int) error {
 	}
 	leftOut := false
 	if len(sessions) > 0 {
-		if with := session.WithSessions(rows, paths, sessions); width <= 0 || session.PathTableFits(with, width) {
+		if with := session.WithSessions(rows, paths, sessions); width <= 0 || kit.PathTableFits(with, width) {
 			rows = with
 		} else {
 			leftOut = true
@@ -252,7 +251,7 @@ func Status(ctx *kit.Context, opts StatusOptions, w io.Writer, width int) error 
 		}
 		row := []string{branch, checkoutState(wt.Path), trunk}
 		if len(prs) > 0 {
-			row = append(row, admin.Dash(prs[wt.Branch]))
+			row = append(row, kit.Dash(prs[wt.Branch]))
 		}
 		rows = append(rows, append(row, wt.Path))
 	}

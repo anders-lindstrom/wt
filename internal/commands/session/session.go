@@ -470,7 +470,7 @@ func sessionRows(infos []Info) [][]string {
 				started = "started " + kit.Ago(now.Sub(t))
 			}
 		}
-		rows[i] = []string{s.Work, cutToWidth(name, MaxSessionName), state, inbox, started}
+		rows[i] = []string{s.Work, kit.CutToWidth(name, MaxSessionName), state, inbox, started}
 	}
 	return rows
 }

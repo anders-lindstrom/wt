@@ -357,9 +357,9 @@ func PRList(ctx *kit.Context, w io.Writer, width int) error {
 		rows = append(rows, []string{
 			fmt.Sprintf("#%d", pr.Number),
 			prState(pr),
-			Dash(pr.AuthorLogin()),
+			kit.Dash(pr.AuthorLogin()),
 			kit.ElideRight(pr.Title, titleWidth),
-			Dash(prWorktree(worktrees, pr, ctx.Config.MainBranch)),
+			kit.Dash(prWorktree(worktrees, pr, ctx.Config.MainBranch)),
 		})
 	}
 	return kit.PrintPathTable(w, rows, width)
@@ -384,12 +384,4 @@ func prState(pr github.PR) string {
 		state += " · checks " + checks
 	}
 	return state
-}
-
-// Dash is s, or - for an empty cell.
-func Dash(s string) string {
-	if s == "" {
-		return "-"
-	}
-	return s
 }

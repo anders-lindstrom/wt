@@ -404,7 +404,7 @@ func (o AttachOptions) list(t attachTarget, can []int) {
 		if s.StartedAt > 0 {
 			started = "started " + kit.Ago(now.Sub(time.UnixMilli(s.StartedAt)))
 		}
-		rows[i] = append(row, cutToWidth(s.name(), MaxSessionName), state, where, started)
+		rows[i] = append(row, kit.CutToWidth(s.name(), MaxSessionName), state, where, started)
 	}
 	_ = kit.PrintTable(o.Err, rows)
 }

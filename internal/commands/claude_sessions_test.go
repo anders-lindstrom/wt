@@ -186,7 +186,7 @@ func TestListCleansAndCutsASessionName(t *testing.T) {
 func widestLine(out string) int {
 	widest := 0
 	for _, line := range strings.Split(out, "\n") {
-		widest = max(widest, session.DisplayWidth(line))
+		widest = max(widest, kit.DisplayWidth(line))
 	}
 	return widest
 }
