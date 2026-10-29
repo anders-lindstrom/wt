@@ -29,7 +29,7 @@ func branchTip(t *testing.T, ctx *kit.Context, name string) string {
 	return tip
 }
 
-// §8 step 3: deleted and the name free — made again at the recorded tip,
+// A branch deleted and its name free is made again at the recorded tip,
 // its config with it.
 func TestRestoreRecreatesADeletedBranchWithItsConfig(t *testing.T) {
 	t.Parallel()
@@ -97,7 +97,7 @@ func TestRestoreLeavesAnUntouchedBranch(t *testing.T) {
 	testkit.AssertBack(t, ctx, path, dir, "ref: refs/heads/theirs")
 }
 
-// §8 step 2: a branch another worktree has — as HEAD, as the branch a
+// A branch another worktree has — as HEAD, as the branch a
 // rebase returns to, or as the branch a bisect started from — is not
 // touched, and the worktree comes back detached at its commit.
 func TestRestoreDetachesWhenAnotherWorktreeHasTheBranch(t *testing.T) {

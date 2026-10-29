@@ -31,7 +31,7 @@ var Deadline = 10 * time.Second
 // Codex one from the process table and Codex's session logs (codex.go). It
 // is enough to answer "is a session living in this worktree, and is it doing
 // anything"; it says nothing about a dev server or a running test, so the
-// dirty check stays the real guard (spec §1).
+// dirty check stays the real guard.
 //
 // For a Codex session Status is "idle" or "busy" and State and Kind are
 // empty. ID is "codex-<pid>" and PID the topmost process for a codex running

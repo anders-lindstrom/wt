@@ -10,7 +10,7 @@ import (
 
 // A direct commit carries its own scope; a merge commit's subject has none
 // ("Merge pull request #N from …"), so its scopes come from the range it
-// merged (spec §5).
+// merged.
 func TestLandingListCountsDirectAndMergedScopes(t *testing.T) {
 	t.Parallel()
 	dir := repoWith(t, map[string]string{"a.txt": "a\n"}, nil, nil)

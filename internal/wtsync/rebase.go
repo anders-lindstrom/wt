@@ -145,7 +145,7 @@ type Request struct {
 	// Stacked says this branch has descendants in the same run. A stop a
 	// person owns is then restored rather than handed over: a parent left
 	// mid-rebase strands every child on a base that is about to be
-	// rewritten, which is the half-applied stack §4 forbids.
+	// rewritten, and a stack is never left half-applied.
 	Stacked bool
 	// Total is how many commits the run set out to replay, for a resume
 	// that finds the rebase finished by hand: more on the branch than that
@@ -1154,8 +1154,8 @@ func logStop(log io.Writer, s StopResult) {
 	fmt.Fprintln(log, strings.Join(parts, "  "))
 }
 
-// signedCount counts the commits in base..tip that carry a signature, which a
-// rewrite drops (spec §4).
+// signedCount counts the commits in base..tip that carry a signature. A
+// rewrite drops every signature, so the result says how many were lost.
 func signedCount(wtPath, base, tip string) (int, error) {
 	out, err := gitEnv(wtPath, nil, nil, "log", "--format=%G?", base+".."+tip)
 	if err != nil {

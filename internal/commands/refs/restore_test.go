@@ -14,7 +14,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 )
 
-// §8 step 1: the original path taken by anything but this worktree refuses.
+// The original path taken by anything but this worktree refuses.
 func TestRestoreRefusesWhenTheOriginalPathIsTaken(t *testing.T) {
 	t.Parallel()
 	ctx, path, _, _, dir := retiretest.Quarantined(t, "fix/path-taken", false)

@@ -663,12 +663,6 @@ type SendOptions struct {
 	env      *sessionEnv
 }
 
-type sendFailure struct {
-	code  string
-	msg   string
-	usage bool
-}
-
 // SendRun is `wt session send`. It writes one line to one inbox and
 // never tries again: sent says the line was written and the connection
 // closed cleanly, not that the session's Claude has read it.
@@ -679,10 +673,10 @@ func SendRun(ctx *kit.Context, o SendOptions) error {
 	if o.env != nil {
 		env = *o.env
 	}
-	fail := func(f sendFailure) error {
+	fail := func(f refusal) error {
 		out.Sent = false
 		out.MsgID = nil
-		out.Error, out.ErrorCode = kit.Strp(f.msg), kit.Strp(f.code)
+		out.Error, out.ErrorCode = kit.Strp(f.msg), kit.Strp(string(f.code))
 		if o.JSON {
 			if err := kit.WriteJSON(o.Out, out); err != nil {
 				return err
@@ -698,10 +692,10 @@ func SendRun(ctx *kit.Context, o SendOptions) error {
 		o.FromName = "wt"
 	}
 	if err := checkFromName(o.FromName); err != nil {
-		return fail(sendFailure{"badArgument", err.Error(), true})
+		return fail(refusal{code: codeBadArgument, msg: err.Error(), usage: true})
 	}
 	if o.ReplyTo != "" && (!strings.HasPrefix(o.ReplyTo, "uds:") || checkFromName(o.ReplyTo) != nil) {
-		return fail(sendFailure{"badArgument", fmt.Sprintf("--reply-to %q is not a uds:<socket path> address", o.ReplyTo), true})
+		return fail(refusal{code: codeBadArgument, msg: fmt.Sprintf("--reply-to %q is not a uds:<socket path> address", o.ReplyTo), usage: true})
 	}
 
 	// The message is read before anything is resolved, so that a caller
@@ -722,38 +716,38 @@ func SendRun(ctx *kit.Context, o SendOptions) error {
 	if o.ReplyTo != "" {
 		reply = strings.TrimPrefix(o.ReplyTo, "uds:")
 		if !env.trustedSocket(reply) || filepath.Dir(reply) != filepath.Dir(*target.Inbox) {
-			return fail(sendFailure{"badArgument", fmt.Sprintf("--reply-to %q is not a socket of yours in the directory of the session's inbox (%s)",
-				o.ReplyTo, filepath.Dir(*target.Inbox)), true})
+			return fail(refusal{code: codeBadArgument, msg: fmt.Sprintf("--reply-to %q is not a socket of yours in the directory of the session's inbox (%s)",
+				o.ReplyTo, filepath.Dir(*target.Inbox)), usage: true})
 		}
 	}
 
 	switch {
 	case err != nil:
-		return fail(sendFailure{"empty", "the message could not be read: " + err.Error(), false})
+		return fail(refusal{code: codeEmpty, msg: "the message could not be read: " + err.Error()})
 	case strings.TrimSpace(text) == "":
-		return fail(sendFailure{"empty", "the message is empty: nothing was sent", false})
+		return fail(refusal{code: codeEmpty, msg: "the message is empty: nothing was sent"})
 	case size > MaxSessionMessage:
-		return fail(sendFailure{"tooLarge", fmt.Sprintf("the message is %d bytes; a session takes up to %d. Nothing was sent",
-			size, MaxSessionMessage), false})
+		return fail(refusal{code: codeTooLarge, msg: fmt.Sprintf("the message is %d bytes; a session takes up to %d. Nothing was sent",
+			size, MaxSessionMessage)})
 	}
 
 	msgID := newUUID()
 	line, err := buildFrame(msgID, target.sessionID, text, o.FromName, reply)
 	if err != nil {
-		return fail(sendFailure{"writeFailed", err.Error(), false})
+		return fail(refusal{code: codeWriteFailed, msg: err.Error()})
 	}
 	if len(line) > maxInboxLine-1 {
-		return fail(sendFailure{"tooLarge", fmt.Sprintf("the message is %d bytes, but wrapped and escaped for the inbox it is %d, "+
-			"over the %d a line may be. Nothing was sent", size, len(line), maxInboxLine-1), false})
+		return fail(refusal{code: codeTooLarge, msg: fmt.Sprintf("the message is %d bytes, but wrapped and escaped for the inbox it is %d, "+
+			"over the %d a line may be. Nothing was sent", size, len(line), maxInboxLine-1)})
 	}
 	if o.DryRun {
 		return finishSend(o, out, target, false)
 	}
 	if !env.trustedSocket(*target.Inbox) {
-		return fail(sendFailure{"noInbox", "the inbox is no longer a socket of yours. Nothing was sent", false})
+		return fail(refusal{code: codeNoInbox, msg: "the inbox is no longer a socket of yours. Nothing was sent"})
 	}
 	if err := writeToInbox(*target.Inbox, line); err != nil {
-		return fail(sendFailure{"writeFailed", fmt.Sprintf("writing to %s failed: %v", *target.Inbox, err), false})
+		return fail(refusal{code: codeWriteFailed, msg: fmt.Sprintf("writing to %s failed: %v", *target.Inbox, err)})
 	}
 	out.Sent, out.MsgID = true, &msgID
 	return finishSend(o, out, target, true)
@@ -777,86 +771,43 @@ func finishSend(o SendOptions, out Send, target *Info, sent bool) error {
 
 // chooseSessionTarget is the one session o names, with an inbox, or the
 // reason there is none. It never picks among several.
-func chooseSessionTarget(ctx *kit.Context, o SendOptions, env sessionEnv) (*Info, *sendFailure) {
+func chooseSessionTarget(ctx *kit.Context, o SendOptions, env sessionEnv) (*Info, *refusal) {
 	t, infos, sessionsErr, err := worktreeSessions(ctx, o.Pattern, o.Err, o.Sessions, env)
 	switch {
 	case sessionsErr != nil:
-		return nil, &sendFailure{"noSession", sessionsErr.Error(), false}
+		return nil, &refusal{code: codeNoSession, msg: sessionsErr.Error()}
 	case err != nil:
-		return nil, &sendFailure{"noSession", err.Error(), false}
+		return nil, &refusal{code: codeNoSession, msg: err.Error()}
 	}
-	list := func(idx []int) string {
-		var b strings.Builder
-		for _, i := range idx {
-			s := infos[i]
-			name := "unnamed"
-			if s.Name != nil {
-				name = *s.Name
+	pick, f := pickSession(t, infos, pickRules{
+		pattern: o.Pattern, session: o.Session, expectSession: o.ExpectSession,
+		notExact: codeNoSession, verb: "sent",
+		word: func(s Info) string { return s.State },
+		// a live session with an inbox: a parked one is not woken, and wt
+		// does not send to its own.
+		fallback: func(list func([]int) string) (int, *refusal) {
+			var live []int
+			for i, s := range infos {
+				if s.PID != nil && (s.InboxUnavailable == nil || *s.InboxUnavailable != "own") {
+					live = append(live, i)
+				}
 			}
-			id := ""
-			if s.ID != nil {
-				id = *s.ID
-			} else if s.SessionID != nil {
-				id = (*s.SessionID)[:min(8, len(*s.SessionID))]
+			switch len(live) {
+			case 0:
+				return -1, &refusal{code: codeNotRunning, msg: fmt.Sprintf("no session in %s is running; wt does not wake a parked session. "+
+					"Open it in a terminal instead (wt attach):%s", t.label, list(allOf(len(infos))))}
+			case 1:
+				return live[0], nil
 			}
-			fmt.Fprintf(&b, "\n  %s  %s  %s", name, id, s.State)
-		}
-		return b.String()
-	}
-	if o.ExpectSession == "" && !namesWorktreeExactly(o.Pattern, t) {
-		return nil, &sendFailure{"noSession", fmt.Sprintf("%q is not the name of a worktree but matched %s (%s): "+
-			"name it exactly, or give --expect-session. Nothing was sent", o.Pattern, t.label, t.path), false}
-	}
-	all := make([]int, len(infos))
-	for i := range infos {
-		all[i] = i
-	}
-	var pick int
-	switch {
-	case len(infos) == 0:
-		return nil, &sendFailure{"noSession", fmt.Sprintf("no Claude session in %s", t.label), false}
-	case o.Session != "":
-		hits := matchSessions(t.sessions, o.Session)
-		switch len(hits) {
-		case 0:
-			return nil, &sendFailure{"noSession", fmt.Sprintf("no session in %s has %q as its id or in its name", t.label, o.Session), false}
-		case 1:
-			pick = hits[0]
-		default:
-			return nil, &sendFailure{"ambiguous", fmt.Sprintf("%d sessions in %s match %q; give one's id:%s",
-				len(hits), t.label, o.Session, list(hits)), true}
-		}
-	case o.ExpectSession != "":
-		pick = -1
-		for i, s := range infos {
-			if strings.EqualFold(s.sessionID, o.ExpectSession) && (pick < 0 || s.PID != nil) {
-				pick = i
-			}
-		}
-		if pick < 0 {
-			return nil, &sendFailure{"changed", fmt.Sprintf("session %s is not in %s any more. Nothing was sent", o.ExpectSession, t.label), false}
-		}
-	default:
-		var live []int
-		for i, s := range infos {
-			if s.PID != nil && (s.InboxUnavailable == nil || *s.InboxUnavailable != "own") {
-				live = append(live, i)
-			}
-		}
-		switch len(live) {
-		case 0:
-			return nil, &sendFailure{"notRunning", fmt.Sprintf("no session in %s is running; wt does not wake a parked session. "+
-				"Open it in a terminal instead (wt attach):%s", t.label, list(all)), false}
-		case 1:
-			pick = live[0]
-		default:
-			return nil, &sendFailure{"ambiguous", fmt.Sprintf("%d sessions are running in %s; name one:%s", len(live), t.label, list(live)), true}
-		}
+			return -1, &refusal{code: codeAmbiguous, usage: true, msg: fmt.Sprintf("%d sessions are running in %s; name one:%s", len(live), t.label, list(live))}
+		},
+	})
+	if pick < 0 {
+		return nil, f
 	}
 	target := infos[pick]
-	if o.ExpectSession != "" && !strings.EqualFold(target.sessionID, o.ExpectSession) {
-		return &target, &sendFailure{"changed", fmt.Sprintf("the session is %s, not the %s that was expected. Nothing was sent",
-			target.sessionID, o.ExpectSession), false}
+	if f != nil {
+		return &target, f
 	}
 	if target.Inbox == nil {
 		why := "none"
@@ -869,11 +820,11 @@ func chooseSessionTarget(ctx *kit.Context, o SendOptions, env sessionEnv) (*Info
 		}
 		switch why {
 		case "notRunning":
-			return &target, &sendFailure{"notRunning", name + " is not running; wt does not wake a parked session. Nothing was sent", false}
+			return &target, &refusal{code: codeNotRunning, msg: name + " is not running; wt does not wake a parked session. Nothing was sent"}
 		case "own":
-			return &target, &sendFailure{"noInbox", name + " is the session wt is running in; wt does not send to it", false}
+			return &target, &refusal{code: codeNoInbox, msg: name + " is the session wt is running in; wt does not send to it"}
 		}
-		return &target, &sendFailure{"noInbox", fmt.Sprintf("%s has no inbox wt can write to (%s). Nothing was sent", name, why), false}
+		return &target, &refusal{code: codeNoInbox, msg: fmt.Sprintf("%s has no inbox wt can write to (%s). Nothing was sent", name, why)}
 	}
 	return &target, nil
 }
@@ -1114,13 +1065,6 @@ type StopOptions struct {
 	env           *sessionEnv
 }
 
-type stopRefusal struct {
-	code   string
-	msg    string
-	failed bool
-	usage  bool
-}
-
 // StopRun is `wt session stop`. It stops one background Claude
 // session by running `claude stop` on its attach id, and nothing else: a
 // session open in a terminal, a Codex session and wt's own are refused, and
@@ -1140,12 +1084,12 @@ func StopRun(ctx *kit.Context, o StopOptions) error {
 		}
 		return err
 	}
-	refuse := func(r stopRefusal) error {
+	refuse := func(r refusal) error {
 		out.Outcome = "refused"
 		if r.failed {
 			out.Outcome = "failed"
 		}
-		out.Reason, out.ReasonCode = kit.Strp(r.msg), kit.Strp(r.code)
+		out.Reason, out.ReasonCode = kit.Strp(r.msg), kit.Strp(string(r.code))
 		err := errors.New(r.msg)
 		if r.usage {
 			err = UsageError{err}
@@ -1167,7 +1111,7 @@ func StopRun(ctx *kit.Context, o StopOptions) error {
 	}
 	if pick.info.PID == nil {
 		out.Outcome = "already-stopped"
-		out.Reason, out.ReasonCode = kit.Strp(name+" has no process: there is nothing to stop"), kit.Strp("noProcess")
+		out.Reason, out.ReasonCode = kit.Strp(name+" has no process: there is nothing to stop"), kit.Strp(string(codeNoProcess))
 		if !o.JSON {
 			fmt.Fprintf(o.Out, "%s has no process: already stopped. `claude attach %s` resumes it\n", name, pick.s.ID)
 		}
@@ -1176,10 +1120,10 @@ func StopRun(ctx *kit.Context, o StopOptions) error {
 	// Whose session wt runs under comes from the process table; when that
 	// cannot be read, an own session would pass as another's.
 	if ancestors, aerr := ctx.Ancestors(); aerr != nil {
-		return refuse(stopRefusal{code: "ownUnknown", msg: "wt cannot tell whether " + name +
+		return refuse(refusal{code: codeOwnUnknown, msg: "wt cannot tell whether " + name +
 			" is the session it runs under (the process table could not be read): " + aerr.Error() + ". Nothing was stopped"})
 	} else if ancestors[*pick.info.PID] {
-		return refuse(stopRefusal{code: "own", msg: name + " is the session wt is running in; wt does not stop it"})
+		return refuse(refusal{code: codeOwn, msg: name + " is the session wt is running in; wt does not stop it"})
 	}
 	if o.DryRun {
 		out.Outcome = "would-stop"
@@ -1197,7 +1141,7 @@ func StopRun(ctx *kit.Context, o StopOptions) error {
 		if msg != "" {
 			reason += ": " + kit.OneLine(msg)
 		}
-		return refuse(stopRefusal{code: "stopFailed", msg: reason, failed: true})
+		return refuse(refusal{code: codeStopFailed, msg: reason, failed: true})
 	}
 	out.Outcome = "stopped"
 	if !o.JSON {
@@ -1247,38 +1191,13 @@ type stopPick struct {
 // the reason it is not. It never picks among several: with none named, the
 // background sessions with a process are the candidates, and a parked one
 // is chosen only when it is the only background session.
-func chooseStopTarget(ctx *kit.Context, o StopOptions, env sessionEnv) (*stopPick, *stopRefusal) {
+func chooseStopTarget(ctx *kit.Context, o StopOptions, env sessionEnv) (*stopPick, *refusal) {
 	t, infos, sessionsErr, err := worktreeSessions(ctx, o.Pattern, o.Err, o.Sessions, env)
 	switch {
 	case sessionsErr != nil:
-		return nil, &stopRefusal{code: "noSession", msg: sessionsErr.Error(), failed: true}
+		return nil, &refusal{code: codeNoSession, msg: sessionsErr.Error(), failed: true}
 	case err != nil:
-		return nil, &stopRefusal{code: "noSession", msg: err.Error(), failed: true}
-	}
-	list := func(idx []int) string {
-		var b strings.Builder
-		for _, i := range idx {
-			s := infos[i]
-			name := "unnamed"
-			if s.Name != nil {
-				name = *s.Name
-			}
-			id := ""
-			if s.ID != nil {
-				id = *s.ID
-			} else if s.SessionID != nil {
-				id = (*s.SessionID)[:min(8, len(*s.SessionID))]
-			}
-			fmt.Fprintf(&b, "\n  %s  %s  %s", name, id, s.Activity)
-		}
-		return b.String()
-	}
-	if o.ExpectSession == "" && !namesWorktreeExactly(o.Pattern, t) {
-		return nil, &stopRefusal{code: "notExact", msg: fmt.Sprintf("%q is not the name of a worktree but matched %s (%s): "+
-			"name it exactly, or give --expect-session. Nothing was stopped", o.Pattern, t.label, t.path)}
-	}
-	if len(infos) == 0 {
-		return nil, &stopRefusal{code: "noSession", failed: true, msg: fmt.Sprintf("no Claude session in %s", t.label)}
+		return nil, &refusal{code: codeNoSession, msg: err.Error(), failed: true}
 	}
 	// stoppable is a background Claude session of its own, that is not open
 	// in a terminal.
@@ -1286,67 +1205,46 @@ func chooseStopTarget(ctx *kit.Context, o StopOptions, env sessionEnv) (*stopPic
 		s := t.sessions[i]
 		return s.Tool == "" && s.Kind == "background" && attachID(s.ID) && !s.Own
 	}
-	var pick int
-	switch {
-	case o.Session != "":
-		hits := matchSessions(t.sessions, o.Session)
-		switch len(hits) {
-		case 0:
-			return nil, &stopRefusal{code: "noSession", failed: true, msg: fmt.Sprintf("no session in %s has %q as its id or in its name", t.label, o.Session)}
-		case 1:
-			pick = hits[0]
-		default:
-			return nil, &stopRefusal{code: "ambiguous", usage: true, msg: fmt.Sprintf("%d sessions in %s match %q; give one's id:%s",
-				len(hits), t.label, o.Session, list(hits))}
-		}
-	case o.ExpectSession != "":
-		pick = -1
-		for i, s := range infos {
-			if strings.EqualFold(s.sessionID, o.ExpectSession) && (pick < 0 || s.PID != nil) {
-				pick = i
-			}
-		}
-		if pick < 0 {
-			return nil, &stopRefusal{code: "changed", msg: fmt.Sprintf("session %s is not in %s any more. Nothing was stopped", o.ExpectSession, t.label)}
-		}
-	default:
-		var running, parked []int
-		for i := range infos {
-			if !stoppable(i) {
-				continue
-			}
-			if infos[i].PID != nil {
-				running = append(running, i)
-			} else {
-				parked = append(parked, i)
-			}
-		}
-		switch {
-		case len(running) == 1:
-			pick = running[0]
-		case len(running) > 1:
-			return nil, &stopRefusal{code: "ambiguous", usage: true, msg: fmt.Sprintf("%d background sessions are running in %s; name one:%s",
-				len(running), t.label, list(running))}
-		case len(parked) == 1:
-			pick = parked[0]
-		case len(parked) > 1:
-			return nil, &stopRefusal{code: "ambiguous", usage: true, msg: fmt.Sprintf("%d background sessions are parked in %s; name one:%s",
-				len(parked), t.label, list(parked))}
-		case len(infos) == 1:
-			pick = 0
-		default:
-			all := make([]int, len(infos))
+	pick, f := pickSession(t, infos, pickRules{
+		pattern: o.Pattern, session: o.Session, expectSession: o.ExpectSession,
+		notExact: codeNotExact, verb: "stopped",
+		word: func(s Info) string { return s.Activity },
+		fallback: func(list func([]int) string) (int, *refusal) {
+			var running, parked []int
 			for i := range infos {
-				all[i] = i
+				if !stoppable(i) {
+					continue
+				}
+				if infos[i].PID != nil {
+					running = append(running, i)
+				} else {
+					parked = append(parked, i)
+				}
 			}
-			return nil, &stopRefusal{code: "notBackground", msg: fmt.Sprintf("no session in %s is a background Claude session; "+
-				"wt stops only those. Nothing was stopped:%s", t.label, list(all))}
-		}
+			switch {
+			case len(running) == 1:
+				return running[0], nil
+			case len(running) > 1:
+				return -1, &refusal{code: codeAmbiguous, usage: true, msg: fmt.Sprintf("%d background sessions are running in %s; name one:%s",
+					len(running), t.label, list(running))}
+			case len(parked) == 1:
+				return parked[0], nil
+			case len(parked) > 1:
+				return -1, &refusal{code: codeAmbiguous, usage: true, msg: fmt.Sprintf("%d background sessions are parked in %s; name one:%s",
+					len(parked), t.label, list(parked))}
+			case len(infos) == 1:
+				return 0, nil
+			}
+			return -1, &refusal{code: codeNotBackground, msg: fmt.Sprintf("no session in %s is a background Claude session; "+
+				"wt stops only those. Nothing was stopped:%s", t.label, list(allOf(len(infos))))}
+		},
+	})
+	if pick < 0 {
+		return nil, f
 	}
 	target := &stopPick{info: infos[pick], s: t.sessions[pick]}
-	if o.ExpectSession != "" && !strings.EqualFold(target.info.sessionID, o.ExpectSession) {
-		return target, &stopRefusal{code: "changed", msg: fmt.Sprintf("the session is %s, not the %s that was expected. Nothing was stopped",
-			target.info.sessionID, o.ExpectSession)}
+	if f != nil {
+		return target, f
 	}
 	name := "the session"
 	if target.info.Name != nil {
@@ -1354,13 +1252,13 @@ func chooseStopTarget(ctx *kit.Context, o StopOptions, env sessionEnv) (*stopPic
 	}
 	switch {
 	case target.s.Tool != "":
-		return target, &stopRefusal{code: "codex", msg: name + " is a Codex session; wt stops only background Claude sessions. Nothing was stopped"}
+		return target, &refusal{code: codeCodex, msg: name + " is a Codex session; wt stops only background Claude sessions. Nothing was stopped"}
 	case target.s.Own:
-		return target, &stopRefusal{code: "own", msg: name + " is the session wt is running in; wt does not stop it"}
+		return target, &refusal{code: codeOwn, msg: name + " is the session wt is running in; wt does not stop it"}
 	case target.s.Kind != "background":
-		return target, &stopRefusal{code: "interactive", msg: name + " is open in a terminal; wt stops only background sessions. Nothing was stopped"}
+		return target, &refusal{code: codeInteractive, msg: name + " is open in a terminal; wt stops only background sessions. Nothing was stopped"}
 	case !attachID(target.s.ID):
-		return target, &stopRefusal{code: "noId", msg: name + " has no id `claude stop` could take. Nothing was stopped"}
+		return target, &refusal{code: codeNoID, msg: name + " has no id `claude stop` could take. Nothing was stopped"}
 	}
 	return target, nil
 }

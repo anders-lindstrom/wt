@@ -15,7 +15,7 @@ import (
 )
 
 // PlanName is the brief a run leaves in a worktree's own git dir when it
-// stops at a conflict a person owns (spec §6).
+// stops at a conflict a person owns.
 const PlanName = "wt-sync-plan.md"
 
 // StateName is the machine-readable half of the same handover, and the
@@ -224,10 +224,10 @@ func PlanHolders(worktrees []repo.Worktree) ([]repo.Worktree, error) {
 	return out, nil
 }
 
-// NeedsYouLine is the after-the-fact line of spec §5: what is left, and what
-// to do about it. Generated here and printed verbatim; never composed by
-// hand. It carries no wt: prefix: the run's closing line does, and a person
-// reads this one under the worktree's own heading.
+// NeedsYouLine is the after-the-fact line for a stop a person owns: what is
+// left, and what to do about it. Generated here and printed verbatim; never
+// composed by hand. It carries no wt: prefix: the run's closing line does,
+// and a person reads this one under the worktree's own heading.
 func NeedsYouLine(work string, left []string) string {
 	files := "-"
 	if len(left) > 0 {
@@ -240,7 +240,7 @@ func NeedsYouLine(work string, left []string) string {
 		work, len(left), files, WayOut(Way{Work: work, Plan: true, Rebasing: true, OwesAdd: true}))
 }
 
-// RebasedLine is spec §5's after-the-fact line for a rebase that finished:
+// RebasedLine is the after-the-fact line for a rebase that finished:
 // how many trunk commits it took in and, for a session whose picture of the
 // worktree is now out of date, the files the rebase stopped on.
 func RebasedLine(work, trunk string, landed int, check []string) string {
@@ -290,11 +290,12 @@ type PlanInput struct {
 	Config   *Config
 }
 
-// RenderPlan writes the brief of spec §6: what landed, what the strategies
-// already did and must not be re-opened, what is left for a person with the
-// trunk-side reason for each file, where hand-merging is forbidden outright,
-// and what runs once the rebase completes. Every section removes a specific
-// expense; none of it costs a model anything to produce.
+// RenderPlan writes the brief left at a stop (PlanName): what landed, what
+// the strategies already did and must not be re-opened, what is left for a
+// person with the trunk-side reason for each file, where hand-merging is
+// forbidden outright, and what runs once the rebase completes. Every
+// section removes a specific expense; none of it costs a model anything to
+// produce.
 func RenderPlan(in PlanInput) (string, error) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# rebase %s onto %s\n", in.Work, in.TrunkRef)
@@ -478,7 +479,7 @@ func RenderPlan(in PlanInput) (string, error) {
 	return b.String(), nil
 }
 
-// shapeOf describes one unresolved conflict the way §6 does: both sides only
+// shapeOf describes one unresolved conflict for the brief: both sides only
 // added lines (a five-second read), or they overlap. A blob git will not
 // diff as text is reported as overlapping, which is the cautious answer.
 func shapeOf(mainRoot string, c Conflict) string {
@@ -528,7 +529,7 @@ func blobDiff(mainRoot string, from, to sideBlob) (added, removed int, err error
 }
 
 // trunkSubject is why trunk changed this file: the newest subject in
-// base..trunk touching it (spec §6). Empty when trunk did not touch it.
+// base..trunk touching it. Empty when trunk did not touch it.
 func trunkSubject(mainRoot, base, trunk, path string) (string, error) {
 	out, err := gitEnv(mainRoot, nil, nil, "--literal-pathspecs", "log", "-1", "--format=%s", base+".."+trunk, "--", path)
 	if err != nil {

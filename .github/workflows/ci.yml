@@ -54,3 +54,16 @@ jobs:
       - run: go build -o bin/wt ./cmd/wt
       # Under the deadline make bats has, so a hung test fails the job.
       - run: scripts/bats.sh test/
+
+  mod:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # Pinned, so the mod's test kit changes only when this line does. The
+      # suite needs no login and no network: it runs the mod against fakes.
+      - run: npm install -g @anthropic-ai/claude-code@2.1.312
+      - run: claude plugin test mods/wt

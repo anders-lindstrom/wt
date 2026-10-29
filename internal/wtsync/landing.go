@@ -54,7 +54,7 @@ var conventional = regexp.MustCompile(`^[a-z]+(?:\(([^)]+)\))?!?:`)
 // scope in its own subject; a merge commit's subject is "Merge pull request
 // #N from …", which has none, so its scopes come from the ranges it merged —
 // <sha>^1..<sha>^N for every parent after the first, so an octopus merge is
-// not read as if it had two sides (spec §5). Everything is local and no PR
+// not read as if it had two sides. Everything is local and no PR
 // body is fetched; the one cost is a git log per merge commit, which is why
 // this runs when a handover is written and never at triage.
 func LandingList(mainRoot, base, trunk string) (Landing, error) {

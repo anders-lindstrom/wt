@@ -11,7 +11,7 @@ import (
 // SafetyPrefix is where a run pins the tip it is about to rewrite. A plain
 // ref outside refs/heads: the branch namespace is contended in a repository
 // with many worktrees, a branch cannot be checked out twice, and a ref here
-// is invisible to --update-refs (spec §4).
+// is invisible to --update-refs.
 const SafetyPrefix = "refs/wt-sync/"
 
 // ResultPrefix is where a run pins the tip a branch ended at, once its
@@ -101,7 +101,7 @@ func LatestSafety(mainRoot, branch string) (Safety, bool, error) {
 // Prunable applies the retention rule: keep anything younger than keep, and
 // keep every run group (all refs sharing an epoch) that is the newest run of
 // any branch, so what undo would restore stays whole; everything else pins
-// abandoned history and blocks garbage collection (spec §4).
+// abandoned history and blocks garbage collection.
 func Prunable(all []Safety, now time.Time, keep time.Duration) []Safety {
 	newest := map[string]int64{}
 	for _, s := range all {

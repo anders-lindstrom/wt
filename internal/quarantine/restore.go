@@ -219,7 +219,7 @@ func lockReason(admin Place, at string) (string, bool) {
 	return strings.TrimSpace(string(b)), true
 }
 
-// decideBranch is §8 step 3 of gittree's spec: what happens to the branch,
+// decideBranch is what a restore does with the branch,
 // from the refs and the other worktrees as they are now. A restore that
 // already detached or attached HEAD keeps to that.
 func (p *RestorePlan) decideBranch(rp *repo.Repo) (action, occupiedBy string) {

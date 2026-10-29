@@ -14,9 +14,11 @@ once, in the background, and keep working; never run it in a loop.
 | `make test-unit` | the packages whose tests build no git repository, with `-short` | about 8 s |
 | `make test-fast` | `go test -short -timeout 20m ./...` | minutes |
 | `make test` | `go test -timeout 30m ./...` | about 120 s |
+| `make test-race` | `make test` under the race detector, as CI runs it | slower than `make test` |
 | `make bats` | builds `bin/wt`, then every `test/*.bats` | about 140 s |
+| `make test-mod` | the wt mod's suite, `claude plugin test mods/wt` | about 2 s |
 | `make lint` | `golangci-lint run` | |
-| `make check` | lint, test and bats | about 7 minutes |
+| `make check` | lint, test, bats and test-mod | about 7 minutes |
 
 The `make test` time was taken on a 16-core Mac where other sessions kept
 the load average at 10-20; the suite itself drives it past 50, so it is
@@ -38,10 +40,13 @@ in it: their tests build real git repositories.
 | internal/config, find, naming, about, quarantine, superset, github, git, repo or gittest | `go test ./internal/<pkg>/...`; each is under 50 s, most under 5 s |
 | internal/wtsync | `go test ./internal/wtsync -run '<Area>'` first, then the whole package once (about 110 s) |
 | internal/agents | `go test ./internal/agents` (a few seconds); some of its tests read the real process table |
+| internal/commands/syncrun | `go test ./internal/commands/syncfix ./internal/commands/synccmd -run 'Push\|OwnRemote\|FastForward\|Finish'`: syncrun's behaviour is tested from those two packages, so `go test ./internal/commands/syncrun` alone covers almost nothing |
+| goroutines, locks, signals or anything shared between them | `make test-race` once, in the background: CI runs the suite with `-race` and `make check` does not |
 | internal/commands, one command family | `go test ./internal/commands/<pkg> -run '<Family>'`, see the examples below; the whole `./internal/commands/...` once before you finish (about 120 s) |
 | a package-level hook variable or `Context` | `./internal/commands/...` once: the hooks live in kit (`FindGitHub`, `MachineAgents`), provision (`ProbeSuperset`, `SupersetHostCommand`) and session (`SessionsDeadline`); `testkit.Main` sets kit's, every TestMain the rest, and serial tests swap them, see "Parallel tests" |
 | the `--json` shape or `schema/*.json` | the schema test and the JSON tests, see the examples below, and update docs/json.md in the same commit |
 | cmd/wt flags, help text, completion | `go test ./cmd/wt` (about 16 s) |
+| mods/wt | `make test-mod`; a change to its fixtures also `go test ./internal/commands/testkit -run Mod` |
 | shell/, install.sh, stdout, stderr or exit codes | `make build && scripts/bats.sh test/<file>.bats`, the one file |
 | before handing the work back | `make check` once, in the background; after a fix, run the touched family only |
 
@@ -96,6 +101,13 @@ a key the schema does not declare fails the test, at any depth. A field
 added to the output therefore needs its schema property, the docs/json.md
 row and an x-version minor in the same commit. The shipped schemas stay
 open; only the test closes them.
+
+The wt mod's tests (mods/wt/tests) answer it with wt output kept in
+`mods/wt/tests/fixtures/<schema>.ts`, each `export default` and the JSON,
+because a mod can import only code. `TestTheModsFixturesMatchTheirSchemas`
+in internal/commands/testkit validates every one against its current
+schema, so a JSON change that breaks the mod's input fails `go test`; bring
+the fixture up to the new schema in the same commit.
 
 ## Bats
 

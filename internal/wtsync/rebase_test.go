@@ -379,7 +379,7 @@ func TestRebaseLeavesAContestedStopInPlace(t *testing.T) {
 
 // A branch with children in the same run may not be left mid-rebase: the
 // children would be stranded on a base that no longer exists, which is the
-// half-applied stack the spec forbids.
+// half-applied stack a run must never leave.
 func TestRebaseRestoresAContestedStopOnAStackParent(t *testing.T) {
 	t.Parallel()
 	dir, wt, cfg := runRepo(t,
