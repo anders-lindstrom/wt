@@ -390,7 +390,7 @@ func newSyncKeepStartCmd() *cobra.Command {
 					p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
 					all.Ask = func(q string) bool { return p.yesNo(q, false) }
 				}
-				return synckeep.StartAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), all, cmd.OutOrStdout())
+				return synckeep.StartAll(kit.Machine{}, loadUserWarn(cmd.ErrOrStderr()), sel.selection(), all, cmd.OutOrStdout())
 			}
 			if dryRun || yes {
 				return usagef("--dry-run and --yes go with --all, --roots or --profile; start in one repository asks nothing")
@@ -430,7 +430,7 @@ func newSyncKeepStatusCmd() *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if sel.selection().Any() {
-				return synckeep.StatusAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), time.Now(), cmd.OutOrStdout())
+				return synckeep.StatusAll(kit.Machine{}, loadUserWarn(cmd.ErrOrStderr()), sel.selection(), time.Now(), cmd.OutOrStdout())
 			}
 			return withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
 				return synckeep.Status(ctx, time.Now(), cmd.OutOrStdout())
@@ -463,7 +463,7 @@ func newSyncKeepStopCmd() *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if sel.selection().Any() {
-				return synckeep.StopAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), dryRun, cmd.OutOrStdout())
+				return synckeep.StopAll(kit.Machine{}, loadUserWarn(cmd.ErrOrStderr()), sel.selection(), dryRun, cmd.OutOrStdout())
 			}
 			if dryRun {
 				return usagef("--dry-run goes with --all, --roots or --profile")

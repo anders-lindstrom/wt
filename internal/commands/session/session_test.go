@@ -127,6 +127,7 @@ func nothingArrived(t *testing.T, got <-chan string) {
 }
 
 func TestSessionListFindsInboxesAndSaysWhyNot(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	r.inbox(4001, sidA)
@@ -195,6 +196,7 @@ func TestSessionListFindsInboxesAndSaysWhyNot(t *testing.T) {
 }
 
 func TestSessionListRefusesASocketThatIsNotTheUsersToTrust(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	r.inbox(4001, sidA)
@@ -220,6 +222,7 @@ func TestSessionListRefusesASocketThatIsNotTheUsersToTrust(t *testing.T) {
 }
 
 func TestSessionSendWritesOneFrameToTheSessionAsked(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	gotA := r.inbox(4001, sidA)
@@ -265,6 +268,7 @@ func TestSessionSendWritesOneFrameToTheSessionAsked(t *testing.T) {
 }
 
 func TestSessionSendWithoutAReplyAddressHasNoFromAndNamesWt(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	got := r.inbox(4001, sidA)
@@ -280,6 +284,7 @@ func TestSessionSendWithoutAReplyAddressHasNoFromAndNamesWt(t *testing.T) {
 }
 
 func TestSessionSendRefusesToGuessAmongSeveral(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	gotA, gotB := r.inbox(4001, sidA), r.inbox(4002, sidB)
@@ -297,6 +302,7 @@ func TestSessionSendRefusesToGuessAmongSeveral(t *testing.T) {
 }
 
 func TestSessionSendHoldsToTheSessionExpected(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	got := r.inbox(4001, sidA)
@@ -325,6 +331,7 @@ func TestSessionSendHoldsToTheSessionExpected(t *testing.T) {
 }
 
 func TestSessionSendNeverWritesToAParkedOrOwnSession(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	got := r.inbox(4001, sidA)
@@ -349,6 +356,7 @@ func TestSessionSendNeverWritesToAParkedOrOwnSession(t *testing.T) {
 }
 
 func TestSessionSendCapsTheMessageAndItsFrame(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	got := r.inbox(4001, sidA)
@@ -377,6 +385,7 @@ func TestSessionSendCapsTheMessageAndItsFrame(t *testing.T) {
 }
 
 func TestSessionSendRefusesEmptyAndSendsNothingOnDryRun(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	got := r.inbox(4001, sidA)
@@ -394,6 +403,7 @@ func TestSessionSendRefusesEmptyAndSendsNothingOnDryRun(t *testing.T) {
 }
 
 func TestSessionSendChecksTheReplyAddressAndName(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	got := r.inbox(4001, sidA)
@@ -419,6 +429,7 @@ func TestSessionSendChecksTheReplyAddressAndName(t *testing.T) {
 }
 
 func TestSessionSendKeepsTheMessageFromClosingItsWrapper(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	got := r.inbox(4001, sidA)
@@ -439,6 +450,7 @@ func TestSessionSendKeepsTheMessageFromClosingItsWrapper(t *testing.T) {
 }
 
 func TestSessionSendReportsAnInboxThatResetsTheConnection(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	path := filepath.Join(r.socks, "4001.sock")
@@ -479,6 +491,7 @@ func TestSessionSendReportsAnInboxThatResetsTheConnection(t *testing.T) {
 }
 
 func TestSessionSendDoesNotTrustWhatTheRegistryPointsAt(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	got := r.inbox(4001, sidA)
@@ -505,6 +518,7 @@ func TestSessionSendDoesNotTrustWhatTheRegistryPointsAt(t *testing.T) {
 }
 
 func TestSessionSendFallsBackToTheDefaultSocketAndStillNamesTheSession(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	got := r.inbox(4001, sidA)
@@ -521,6 +535,7 @@ func TestSessionSendFallsBackToTheDefaultSocketAndStillNamesTheSession(t *testin
 }
 
 func TestSessionSendNeedsTheWorktreeNamedExactlyOrTheSessionExpected(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	got := r.inbox(4001, sidA)
@@ -537,6 +552,7 @@ func TestSessionSendNeedsTheWorktreeNamedExactlyOrTheSessionExpected(t *testing.
 }
 
 func TestSessionSendIgnoresTheCallersOwnSessionWhenChoosing(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	got := r.inbox(4001, sidA)
@@ -551,6 +567,7 @@ func TestSessionSendIgnoresTheCallersOwnSessionWhenChoosing(t *testing.T) {
 }
 
 func TestSessionActivityWords(t *testing.T) {
+	t.Parallel()
 	cases := map[string]ClaudeSession{
 		"done":       {agents.Agent{Kind: "background", State: "done"}},
 		"parked":     {agents.Agent{Kind: "background", State: "blocked"}},
@@ -566,6 +583,7 @@ func TestSessionActivityWords(t *testing.T) {
 }
 
 func TestSessionListDatesActivityByTheTranscriptsMtime(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	dir := filepath.Join(r.env.configDir, "projects", "-some-cwd")
@@ -592,6 +610,7 @@ func TestSessionListDatesActivityByTheTranscriptsMtime(t *testing.T) {
 }
 
 func TestSessionListNoInboxCheckTakesTheInboxFromTheRegistry(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	// A socket file nobody listens on: a session that died with its file.
@@ -628,7 +647,9 @@ func TestSessionListNoInboxCheckTakesTheInboxFromTheRegistry(t *testing.T) {
 }
 
 func TestSessionListAllPlacesSessionsByRepositoryFromOneRead(t *testing.T) {
+	// Not parallel: --all finds the repository through WT_ROOTS, set for the whole test binary, and swaps kit.MachineAgents.
 	_, main, wt := attachFixture(t)
+	t.Setenv("WT_ROOTS", filepath.Dir(main))
 	r := newSessionRig(t)
 	r.inbox(4001, sidA)
 	elsewhere := t.TempDir()
@@ -653,15 +674,15 @@ func TestSessionListAllPlacesSessionsByRepositoryFromOneRead(t *testing.T) {
 	}
 }
 
-// fakeClaudeStop puts a claude on the PATH that records its arguments, one
+// fakeClaudeStop gives the rig a claude that records its arguments, one
 // call a line, and prints out; it exits with code.
-func fakeClaudeStop(t *testing.T, out string, code int) (calls func() []string) {
+func fakeClaudeStop(t *testing.T, r *sessionRig, out string, code int) (calls func() []string) {
 	t.Helper()
 	dir := t.TempDir()
 	log := filepath.Join(dir, "calls")
 	script := "#!/bin/sh\necho \"$@\" >> " + log + "\necho '" + out + "'\nexit " + strconv.Itoa(code) + "\n"
-	gittest.WriteExecutable(t, filepath.Join(dir, "claude"), script)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	r.env.claude = filepath.Join(dir, "claude")
+	gittest.WriteExecutable(t, r.env.claude, script)
 	return func() []string {
 		data, _ := os.ReadFile(log)
 		if len(bytes.TrimSpace(data)) == 0 {
@@ -704,9 +725,10 @@ func codeOf(r Stop) string {
 }
 
 func TestSessionStopStopsTheBackgroundSessionByItsAttachID(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
-	calls := fakeClaudeStop(t, "Stopped aaaaaaaa", 0)
+	calls := fakeClaudeStop(t, r, "Stopped aaaaaaaa", 0)
 	testkit.ClaudeLists(ctx, running("works", "aaaaaaaa", wt, 4001), testkit.Background("parked", "dddddddd", "blocked", wt))
 	res, _, err := stopSession(t, ctx, r, StopOptions{})
 	if err != nil {
@@ -721,9 +743,10 @@ func TestSessionStopStopsTheBackgroundSessionByItsAttachID(t *testing.T) {
 }
 
 func TestSessionStopAParkedSessionIsAlreadyStopped(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
-	calls := fakeClaudeStop(t, "", 0)
+	calls := fakeClaudeStop(t, r, "", 0)
 	testkit.ClaudeLists(ctx, testkit.Background("parked", "dddddddd", "blocked", wt))
 	res, _, err := stopSession(t, ctx, r, StopOptions{})
 	if err != nil || res.Outcome != "already-stopped" || codeOf(res) != "noProcess" {
@@ -735,9 +758,10 @@ func TestSessionStopAParkedSessionIsAlreadyStopped(t *testing.T) {
 }
 
 func TestSessionStopRefusesATerminalAndACodexSession(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
-	calls := fakeClaudeStop(t, "", 0)
+	calls := fakeClaudeStop(t, r, "", 0)
 	testkit.ClaudeLists(ctx, liveSession("mine", sidA, wt, 4001))
 	res, _, err := stopSession(t, ctx, r, StopOptions{Session: "mine"})
 	if err == nil || res.Outcome != "refused" || codeOf(res) != "interactive" || res.Session == nil {
@@ -785,9 +809,10 @@ func readOf(listed ...agents.Agent) *ClaudeSessions {
 }
 
 func TestSessionStopHoldsToTheSessionExpected(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
-	calls := fakeClaudeStop(t, "Stopped", 0)
+	calls := fakeClaudeStop(t, r, "Stopped", 0)
 	testkit.ClaudeLists(ctx, running("works", "aaaaaaaa", wt, 4001))
 	res, _, err := stopSession(t, ctx, r, StopOptions{Session: "works", ExpectSession: sidB})
 	if err == nil || res.Outcome != "refused" || codeOf(res) != "changed" {
@@ -808,9 +833,10 @@ func TestSessionStopHoldsToTheSessionExpected(t *testing.T) {
 }
 
 func TestSessionStopRefusesToGuessAmongSeveral(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
-	calls := fakeClaudeStop(t, "", 0)
+	calls := fakeClaudeStop(t, r, "", 0)
 	testkit.ClaudeLists(ctx, running("first", "aaaaaaaa", wt, 4001), running("second", "bbbbbbbb", wt, 4002))
 	res, _, err := stopSession(t, ctx, r, StopOptions{})
 	var usage UsageError
@@ -831,9 +857,10 @@ func TestSessionStopRefusesToGuessAmongSeveral(t *testing.T) {
 }
 
 func TestSessionStopReportsWhatClaudeSaidWhenItFails(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
-	calls := fakeClaudeStop(t, "no such session", 1)
+	calls := fakeClaudeStop(t, r, "no such session", 1)
 	testkit.ClaudeLists(ctx, running("works", "aaaaaaaa", wt, 4001))
 	res, _, err := stopSession(t, ctx, r, StopOptions{})
 	if err == nil || res.Outcome != "failed" || codeOf(res) != "stopFailed" || res.Message == nil || *res.Message != "no such session" {
@@ -845,9 +872,10 @@ func TestSessionStopReportsWhatClaudeSaidWhenItFails(t *testing.T) {
 }
 
 func TestSessionStopDryRunStopsNothing(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
-	calls := fakeClaudeStop(t, "Stopped", 0)
+	calls := fakeClaudeStop(t, r, "Stopped", 0)
 	testkit.ClaudeLists(ctx, running("works", "aaaaaaaa", wt, 4001))
 	res, _, err := stopSession(t, ctx, r, StopOptions{DryRun: true})
 	if err != nil || res.Outcome != "would-stop" || !res.DryRun || res.Session == nil {
@@ -859,9 +887,10 @@ func TestSessionStopDryRunStopsNothing(t *testing.T) {
 }
 
 func TestSessionStopRefusesWhenItCannotTellWhoseSessionItIs(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
-	calls := fakeClaudeStop(t, "Stopped", 0)
+	calls := fakeClaudeStop(t, r, "Stopped", 0)
 	testkit.ClaudeLists(ctx, running("works", "aaaaaaaa", wt, 4001))
 	testkit.AgentsOf(ctx).Ancestors = func() (map[int]bool, error) { return nil, errors.New("ps failed") }
 	res, _, err := stopSession(t, ctx, r, StopOptions{})
@@ -880,9 +909,10 @@ func TestSessionStopRefusesWhenItCannotTellWhoseSessionItIs(t *testing.T) {
 }
 
 func TestSessionStopRefusesAFuzzyWorktreeName(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
-	calls := fakeClaudeStop(t, "Stopped", 0)
+	calls := fakeClaudeStop(t, r, "Stopped", 0)
 	testkit.ClaudeLists(ctx, running("works", "aaaaaaaa", wt, 4001))
 	res, _, err := stopSession(t, ctx, r, StopOptions{Pattern: "thin"})
 	if err == nil || res.Outcome != "refused" || codeOf(res) != "notExact" {

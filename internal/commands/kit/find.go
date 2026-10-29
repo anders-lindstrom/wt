@@ -25,6 +25,14 @@ func Roots() []string {
 	return out
 }
 
+// scanned is the roots Find scans from c: its own, or Roots. c may be nil.
+func (c *Context) scanned() []string {
+	if c != nil && c.Roots != nil {
+		return c.Roots
+	}
+	return Roots()
+}
+
 // ErrNotInRepo is the answer for a command that needs the repository the
 // caller is standing in, from outside every repository.
 var ErrNotInRepo = errors.New("not inside a git repository")
@@ -83,7 +91,7 @@ func Find(ctx *Context, pattern string) ([]find.Scored, error) {
 	for _, s := range scored {
 		seen[s.Path] = true
 	}
-	for _, r := range scanRoots(Roots()) {
+	for _, r := range scanRoots(ctx.scanned()) {
 		if ctx != nil && r.MainRoot == ctx.Repo.MainRoot {
 			continue
 		}

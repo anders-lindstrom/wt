@@ -8,8 +8,10 @@ import (
 	"os"
 	"os/exec"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -179,11 +181,38 @@ func RunBounded(timeout time.Duration, cmd *exec.Cmd) (timedOut bool, code int, 
 	return timedOut, code, err
 }
 
-// Environ is the process environment with extra set over it. An existing
-// entry for a key extra sets is dropped rather than shadowed: some getenv
+// unsigned is NeverSign's: set once, never cleared.
+var unsigned atomic.Bool
+
+// NeverSign turns commit signing off for every git, and every script, that
+// Environ's environment reaches from here on, on top of whatever
+// GIT_CONFIG_* stack a launcher left in the process environment. The process
+// environment itself is not touched. Only wt sync keep calls it: a pass
+// makes commits, replayed and deferred, with nobody at the keyboard, and a
+// signer that asks (1Password's does) would hang a background job or fail it
+// while the vault is locked.
+func NeverSign() { unsigned.Store(true) }
+
+// unsignedConfig is commit.gpgsign=false appended to the GIT_CONFIG_* stack
+// getenv holds.
+func unsignedConfig(getenv func(string) string) []string {
+	n, _ := strconv.Atoi(getenv("GIT_CONFIG_COUNT"))
+	return []string{
+		fmt.Sprintf("GIT_CONFIG_KEY_%d=commit.gpgsign", n),
+		fmt.Sprintf("GIT_CONFIG_VALUE_%d=false", n),
+		"GIT_CONFIG_COUNT=" + strconv.Itoa(n+1),
+	}
+}
+
+// Environ is the process environment with extra set over it, and after
+// NeverSign commit.gpgsign=false on its config stack. An existing entry for
+// a key extra sets is dropped rather than shadowed: some getenv
 // implementations return the first match, so an inherited GIT_INDEX_FILE
 // ahead of ours must not survive.
 func Environ(extra ...string) []string {
+	if unsigned.Load() {
+		extra = append(unsignedConfig(os.Getenv), extra...)
+	}
 	keys := make(map[string]bool, len(extra))
 	for _, kv := range extra {
 		if k, _, ok := strings.Cut(kv, "="); ok {

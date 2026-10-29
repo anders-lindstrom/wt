@@ -131,8 +131,6 @@ internal/repo, internal/github and internal/superset are parallel: each
 builds its own repositories under `t.TempDir()`. HOME and XDG_CONFIG_HOME
 are set once per test binary and shared, so a parallel test does not write
 under them; `testkit.UserConfigIn` makes a test serial.
-internal/commands/synckeep and internal/commands/session have no parallel
-tests.
 
 A test stays serial when it touches what the whole test binary shares,
 and its first line says which, as `// Not parallel: <why>`:
@@ -141,12 +139,10 @@ and its first line says which, as `// Not parallel: <why>`:
   `git`, `claude` or `superset` on the PATH, HOME, XDG_CONFIG_HOME,
   CODEX_HOME, TMPDIR;
 - a package-level variable that other tests read, for example
-  `kit.MachineAgents`, `retire`'s `vanishWait` and `afterFinalCheck`,
-  `repo.AfterRefDeleted` and `BeforeConfigAdd`, `refpins.AfterBranchMoved`,
+  `kit.MachineAgents`, `retire`'s `vanishWait`, `refpins.AfterBranchMoved`,
   `supersetws.Probe` and `HostCommand`, provision's
   `cloneDir` and `cloneOneFile`, `synccmd`'s `assessWorkers`,
-  `keepstate.KeepGOOS`, superset's `readDeadline`, agents' process listers and
-  `Deadline`;
+  superset's `readDeadline`, agents' process listers and `Deadline`;
 - signals: `git.Interrupt` and `git.KillRunning` signal the process groups
   `RunBounded` is waiting on, `syncrun.OnInterrupt` removes every temporary
   directory wtsync has open, and a few tests send a signal to the test
@@ -171,8 +167,24 @@ A test's own fakes go with the call, not into a package variable:
   `retire.RealProcesses(ctx)` set `ctx.Agents`, the sessions and processes
   the context sees; `testkit.AgentsOf(ctx)` is that struct, for any other
   field, as a failing listing;
-- `testkit.CrashAt(point)`, or any `quarantine.Hooks`, goes in the
-  `QuarantineHooks` field of the remove, sweep, restore or purge options.
+- `testkit.CrashAt(point)`, or any `quarantine.Hooks` (a failing config
+  write of a restore among them), goes in the `QuarantineHooks` field of
+  the remove, sweep, restore or purge options, and what a removal does
+  after its last look at the checkout, or between a branch's ref and its
+  config, in `RemoveOptions.AfterFinalCheck` and `AfterRefDeleted`.
+- the platform, the home directory and the launchctl the keeper sees go
+  in `ctx.Machine` (`kit.Machine`), and the `--all` commands of wt sync
+  keep take the machine they open each repository on: a zero field is
+  the machine's own, so no test sets HOME or PATH for them.
+- the roots `kit.Find` scans go in `ctx.Roots`, so `wt attach` finds a
+  test's own fixture without WT_ROOTS; a command across repositories
+  (`--all`) still reads WT_ROOTS, and its test is serial;
+- the claude `wt session stop` runs goes in the session env's `claude`
+  (`fakeClaudeStop`), not on the PATH;
+- a keeper pass turns commit signing off with `git.NeverSign`, on the
+  gits it starts rather than in the process environment; it is only ever
+  turned on, and no test depends on a signed commit, so keeper passes run
+  side by side.
 
 The package variables behind them (`kit.FindGitHub`,
 `kit.MachineAgents`, `supersetws.Probe`) are set once, in each
@@ -202,15 +214,15 @@ started: the tests that stay serial run one after another.
 | package | s | serial s | note |
 |---|---:|---:|---|
 | internal/commands/retire | 121 | 75 | the remove and sweep --reap tests: real processes, signals, a 5 s grace |
-| internal/commands/synckeep | 119 | 119 | all serial: the keeper sets GIT_CONFIG_* for its process, the tests set HOME |
 | internal/commands/synccmd | 112 | 52 | |
 | internal/wtsync | 107 | 58 | |
 | internal/commands/refs | 93 | 34 | |
 | internal/commands/admin | 53 | 41 | |
 | internal/commands | 51 | 27 | wt list and status, and tests across packages |
-| internal/commands/session | 47 | 45 | all serial: WT_ROOTS set for the binary, a fake claude on the PATH |
 | internal/commands/provision | 41 | 23 | |
 | internal/commands/syncfix | 40 | 0 | |
+| internal/commands/synckeep | 41 | 6 | measured later, at a load of about 130: was 158, all serial |
+| internal/commands/session | 20 | 4 | measured later, at a load of about 130: was 74, all serial |
 | internal/superset | 34 | 21 | about 4 s of it is real deadlines |
 | internal/commands/purge | 34 | 0 | |
 | cmd/wt | 27 | 27 | in-process cobra; builds no binary |

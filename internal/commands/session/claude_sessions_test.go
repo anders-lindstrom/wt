@@ -8,6 +8,7 @@ import (
 
 // A state this build has never seen is printed as claude spells it.
 func TestSessionStateIsClaudesOwnWordWhenUnknown(t *testing.T) {
+	t.Parallel()
 	for state, want := range map[string]string{
 		"working": "working", "blocked": "needs input", "done": "done",
 		"failed": "failed", "stopped": "stopped", "hibernating": "hibernating",

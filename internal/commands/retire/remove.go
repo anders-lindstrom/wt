@@ -61,6 +61,13 @@ type RemoveOptions struct {
 	Quarantine string
 	// QuarantineHooks are the quarantine.Hooks a test runs the move with; nil but in tests.
 	QuarantineHooks *quarantine.Hooks
+	// AfterFinalCheck runs between the last read of the checkout and the
+	// first change: a test writes there what a real editor would. AfterRefDeleted
+	// runs between the branch's ref delete and its config removal, and an
+	// error from it ends the removal there, as a crash would. Nil but in
+	// tests.
+	AfterFinalCheck func()
+	AfterRefDeleted func(name string) error
 	// Result, when set, receives what the removal did, effect by effect.
 	Result *RemoveResult
 	// Expect is the token wt remove --dry-run --json gave: the removal
@@ -285,8 +292,11 @@ type Plan struct {
 	keepBusy       bool
 	// quarantineBy names the command in recovery.json.
 	quarantineBy string
-	// quarantineHooks are the options' QuarantineHooks.
+	// quarantineHooks are the options' QuarantineHooks, and afterFinalCheck
+	// and afterRefDeleted its AfterFinalCheck and AfterRefDeleted.
 	quarantineHooks *quarantine.Hooks
+	afterFinalCheck func()
+	afterRefDeleted func(name string) error
 	// relist lists the sessions again for the check right before the
 	// checkout goes.
 	relist func() ([]agents.Agent, error)
@@ -461,6 +471,7 @@ func planFor(ctx *kit.Context, wt repo.Worktree, opts RemoveOptions) Plan {
 	p.readLock(wt)
 	p.readCheckout()
 	p.AdminDir, _ = repo.AdminDir(wt.Path)
+	p.afterFinalCheck, p.afterRefDeleted = opts.AfterFinalCheck, opts.AfterRefDeleted
 	if opts.Quarantine != "" {
 		p.Quarantine, p.quarantineBy, p.quarantineHooks = opts.Quarantine, "remove", opts.QuarantineHooks
 		p.QuarantineError = quarantineProblem(ctx, p.Quarantine, p.Path, p.AdminDir, p.quarantineHooks)
@@ -1273,10 +1284,6 @@ func (p Plan) apply(ctx *kit.Context, w io.Writer) error {
 	return err
 }
 
-// afterFinalCheck runs between the last read of the checkout and the first
-// change. Tests set it to write a file a real editor would write there.
-var afterFinalCheck func()
-
 // run is apply, reporting what it did effect by effect. The checkout goes
 // first, deleted or quarantined, and then the branch step, so a removal
 // that fails leaves its branch where it was. Once the checkout is gone from
@@ -1316,8 +1323,8 @@ func (p Plan) remove(ctx *kit.Context, w io.Writer) (RemoveResult, error) {
 		return res, fmt.Errorf("%s was not removed: %w%s", p.Path, why, hint)
 	}
 	res.Forced = p.forced() | now.forced()
-	if afterFinalCheck != nil {
-		afterFinalCheck()
+	if p.afterFinalCheck != nil {
+		p.afterFinalCheck()
 	}
 	var rec *quarantine.Record
 	if p.Quarantine != "" {
@@ -1429,7 +1436,7 @@ func (p Plan) branchStep(ctx *kit.Context) (result, msg string, err error) {
 		// worktree is using, which update-ref would not. Without a
 		// quarantine, which pins the branch itself, it is moved into a pin
 		// under refs/wt-swept/ rather than deleted outright.
-		del := func() error { return ctx.Repo.DeleteBranchAt(p.Branch, p.Tip) }
+		del := func() error { return ctx.Repo.DeleteBranchAt(p.Branch, p.Tip, p.afterRefDeleted) }
 		if p.pins != nil {
 			del = func() error { _, err := p.pins.Move(ctx, p.Branch, p.Tip); return err }
 		}

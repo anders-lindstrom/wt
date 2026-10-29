@@ -140,6 +140,18 @@ func TryKeepLock(gitDir string, flags int) (f *os.File, held bool, err error) {
 	return f, false, nil
 }
 
+// ReleaseKeepLock unlocks the lock TryKeepLock took and closes the file.
+// The unlock comes first: a process forked meanwhile holds a copy of the
+// descriptor until it execs, and the lock goes only with the last copy unless
+// it is unlocked.
+func ReleaseKeepLock(f *os.File) error {
+	uerr := syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return uerr
+}
+
 // keepLockHeld reports whether a pass holds the lock now. It creates
 // nothing: a repository no pass has kept has no lock file, and a look at
 // the table or the status must not leave one behind.
@@ -149,7 +161,7 @@ func keepLockHeld(gitDir string) bool {
 		return false
 	}
 	if f != nil {
-		_ = f.Close()
+		_ = ReleaseKeepLock(f)
 	}
 	return held
 }
@@ -188,7 +200,7 @@ func Keeper(ctx *kit.Context, loadedToo bool) (KeeperState, error) {
 	if err != nil {
 		return KeeperState{}, err
 	}
-	k := KeeperState{LogPath: logPath, Launchd: KeepGOOS == "darwin", Running: keepLockHeld(gitDir)}
+	k := KeeperState{LogPath: logPath, Launchd: HasLaunchd(ctx.Machine), Running: keepLockHeld(gitDir)}
 	k.St, k.Kept, err = ReadKeepState(statePath)
 	if err != nil {
 		return KeeperState{}, err
@@ -205,7 +217,7 @@ func Keeper(ctx *kit.Context, loadedToo bool) (KeeperState, error) {
 		k.Installed = true
 	}
 	if loadedToo {
-		k.Loaded = Launchctl.Loaded(job.Label)
+		k.Loaded = job.Launchctl.Loaded(job.Label)
 	}
 	return k, nil
 }

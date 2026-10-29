@@ -785,19 +785,18 @@ func TestRemoveKeepsAMergedBranchAnotherWorktreeIsUsing(t *testing.T) {
 // checkout going and the branch step, is kept by the delete at the planned
 // tip, and the error says it moved in a way a sweep can tell from a failure.
 func TestRemoveKeepsABranchThatMovedAfterTheFinalCheck(t *testing.T) {
-	// Not parallel: sets afterFinalCheck for the package.
+	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	ctx, _ := kit.Open(main, io.Discard)
 	dst := foreignWorktree(t, ctx, main, "someones-work", 0)
-	plan := planFor(ctx, worktreeRecord(ctx, dst), RemoveOptions{Agents: []agents.Agent{}})
+	moved := func() {
+		testkit.GitIn(t, main, "update-ref", "refs/heads/someones-work", "main")
+	}
+	plan := planFor(ctx, worktreeRecord(ctx, dst), RemoveOptions{Agents: []agents.Agent{}, AfterFinalCheck: moved})
 	if plan.Outcome != BranchDeleted {
 		t.Fatalf("precondition: want a merged branch, got outcome %v", plan.Outcome)
 	}
 	testkit.AddWork(t, main, "main", 1)
-	afterFinalCheck = func() {
-		testkit.GitIn(t, main, "update-ref", "refs/heads/someones-work", "main")
-	}
-	t.Cleanup(func() { afterFinalCheck = nil })
 
 	var buf bytes.Buffer
 	err := plan.apply(ctx, &buf)

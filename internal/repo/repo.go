@@ -527,11 +527,6 @@ func (r *Repo) OriginHead() (branch string, ok bool, err error) {
 	return branch, ok && branch != "", nil
 }
 
-// AfterRefDeleted runs, when set, between DeleteBranchAt's ref delete and
-// its config removal, and an error from it ends the delete there, as a
-// crash would. Tests set it; nothing else does.
-var AfterRefDeleted func(name string) error
-
 // DeleteBranchAt deletes a branch only while it still points at tip: git's
 // own compare-and-delete, so a commit that lands after the caller last looked
 // is never deleted with it.
@@ -541,8 +536,9 @@ var AfterRefDeleted func(name string) error
 // under a checkout, a bisect or a stopped rebase. A worktree list that cannot
 // be read is ErrWorktreesUnknown — not knowing is not the same answer as
 // nobody using it. The branch's config section is removed after the ref, as
-// `git branch -D` would.
-func (r *Repo) DeleteBranchAt(name, tip string) error {
+// `git branch -D` would. afterRef, when set, runs between the two, and an
+// error from it ends the delete there, as a crash would; nil but in tests.
+func (r *Repo) DeleteBranchAt(name, tip string, afterRef func(name string) error) error {
 	users, err := r.BranchUsers()
 	if err != nil {
 		return err
@@ -553,8 +549,8 @@ func (r *Repo) DeleteBranchAt(name, tip string) error {
 	if _, err := git.Run(r.MainRoot, "update-ref", "-d", "refs/heads/"+name, tip); err != nil {
 		return err
 	}
-	if AfterRefDeleted != nil {
-		if err := AfterRefDeleted(name); err != nil {
+	if afterRef != nil {
+		if err := afterRef(name); err != nil {
 			return err
 		}
 	}

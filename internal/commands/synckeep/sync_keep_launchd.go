@@ -99,8 +99,8 @@ type keepStarter struct {
 
 // newKeepStarter checks the platform and the interval and captures the
 // shell's environment, once for however many repositories follow.
-func newKeepStarter(opts KeepStartOptions) (*keepStarter, error) {
-	if keepstate.KeepGOOS != "darwin" {
+func newKeepStarter(m kit.Machine, opts KeepStartOptions) (*keepStarter, error) {
+	if !keepstate.HasLaunchd(m) {
 		return nil, ErrNoLaunchd
 	}
 	getenv := opts.Getenv
@@ -162,7 +162,7 @@ func (s *keepStarter) install(ctx *kit.Context, job keepstate.KeepJob) (time.Tim
 	if err := os.WriteFile(job.PlistPath, []byte(keepPlist(job)), 0o600); err != nil {
 		return time.Time{}, err
 	}
-	if err := keepstate.Launchctl.Load(job.PlistPath); err != nil {
+	if err := job.Launchctl.Load(job.PlistPath); err != nil {
 		_ = os.Remove(job.PlistPath)
 		return time.Time{}, err
 	}
@@ -184,7 +184,7 @@ func (s *keepStarter) install(ctx *kit.Context, job keepstate.KeepJob) (time.Tim
 // Start installs the keeper as a launchd job for this repository
 // and loads it. It refuses when one is already installed.
 func Start(ctx *kit.Context, opts KeepStartOptions, w io.Writer) error {
-	s, err := newKeepStarter(opts)
+	s, err := newKeepStarter(ctx.Machine, opts)
 	if err != nil {
 		return err
 	}
@@ -235,7 +235,7 @@ func keepAuthLine(j keepstate.KeepJob) string {
 // the state file stay, so wt sync still says when the repository was last
 // kept.
 func Stop(ctx *kit.Context, w io.Writer) error {
-	if keepstate.KeepGOOS != "darwin" {
+	if !keepstate.HasLaunchd(ctx.Machine) {
 		return ErrNoLaunchd
 	}
 	job, err := keepstate.KeepJobFor(ctx)
@@ -263,13 +263,13 @@ func Stop(ctx *kit.Context, w io.Writer) error {
 func keepJobPresent(job keepstate.KeepJob) (installed, present bool) {
 	_, statErr := os.Stat(job.PlistPath)
 	installed = statErr == nil
-	return installed, installed || keepstate.Launchctl.Loaded(job.Label)
+	return installed, installed || job.Launchctl.Loaded(job.Label)
 }
 
 // stopKeepJob boots the job out by its label, plist or no plist, and
 // removes the plist when there is one.
 func stopKeepJob(job keepstate.KeepJob, installed bool) error {
-	if err := keepstate.Launchctl.Unload(job.Label, job.PlistPath); err != nil {
+	if err := job.Launchctl.Unload(job.Label, job.PlistPath); err != nil {
 		return err
 	}
 	if !installed {
