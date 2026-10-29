@@ -14,6 +14,7 @@ import (
 // The keeper fast-forwards local trunk after its fetch, even on a pass with
 // nothing to rebase.
 func TestSyncKeepRunFastForwardsLocalTrunk(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration: a sync run over real repositories and worktrees")
 	}
@@ -41,6 +42,7 @@ func TestSyncKeepRunFastForwardsLocalTrunk(t *testing.T) {
 }
 
 func TestSyncKeepRunNoFFTrunkLeavesLocalTrunk(t *testing.T) {
+	t.Parallel()
 	f := synccmdtest.NewTrunkFixture(t)
 	before := f.Local(t)
 	f.AdvanceOrigin(t, 1)

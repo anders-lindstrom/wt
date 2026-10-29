@@ -131,8 +131,7 @@ internal/repo, internal/github and internal/superset are parallel: each
 builds its own repositories under `t.TempDir()`. HOME and XDG_CONFIG_HOME
 are set once per test binary and shared, so a parallel test does not write
 under them; `testkit.UserConfigIn` makes a test serial.
-internal/commands/synckeep and internal/commands/session have no parallel
-tests.
+internal/commands/session has no parallel tests.
 
 A test stays serial when it touches what the whole test binary shares,
 and its first line says which, as `// Not parallel: <why>`:
@@ -145,8 +144,7 @@ and its first line says which, as `// Not parallel: <why>`:
   `repo.AfterRefDeleted` and `BeforeConfigAdd`, `refpins.AfterBranchMoved`,
   `supersetws.Probe` and `HostCommand`, provision's
   `cloneDir` and `cloneOneFile`, `synccmd`'s `assessWorkers`,
-  `keepstate.KeepGOOS`, superset's `readDeadline`, agents' process listers and
-  `Deadline`;
+  superset's `readDeadline`, agents' process listers and `Deadline`;
 - signals: `git.Interrupt` and `git.KillRunning` signal the process groups
   `RunBounded` is waiting on, `syncrun.OnInterrupt` removes every temporary
   directory wtsync has open, and a few tests send a signal to the test
@@ -173,6 +171,14 @@ A test's own fakes go with the call, not into a package variable:
   field, as a failing listing;
 - `testkit.CrashAt(point)`, or any `quarantine.Hooks`, goes in the
   `QuarantineHooks` field of the remove, sweep, restore or purge options.
+- the platform, the home directory and the launchctl the keeper sees go
+  in `ctx.Machine` (`kit.Machine`), and the `--all` commands of wt sync
+  keep take the machine they open each repository on: a zero field is
+  the machine's own, so no test sets HOME or PATH for them.
+- a keeper pass turns commit signing off with `git.NeverSign`, on the
+  gits it starts rather than in the process environment; it is only ever
+  turned on, and no test depends on a signed commit, so keeper passes run
+  side by side.
 
 The package variables behind them (`kit.FindGitHub`,
 `kit.MachineAgents`, `supersetws.Probe`) are set once, in each

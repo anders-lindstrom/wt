@@ -81,6 +81,7 @@ func keepRowFor(t *testing.T, out string, ctx *kit.Context) string {
 // existing one as it is, skips a repository that has not opted into wt
 // sync, asks once, and a second start has nothing to do.
 func TestSyncKeepStartAllInstallsWhatIsMissing(t *testing.T) {
+	t.Parallel()
 	u, kept, fresh, undeclared, m, _ := keepFleet(t)
 	keptJob, err := keepstate.KeepJobFor(kept)
 	if err != nil {
@@ -139,6 +140,7 @@ func TestSyncKeepStartAllInstallsWhatIsMissing(t *testing.T) {
 // --dry-run, a no, and no terminal without --yes all print the plan and
 // install nothing; launchd is not touched.
 func TestSyncKeepStartAllInstallsNothingUnlessAgreed(t *testing.T) {
+	t.Parallel()
 	for name, c := range map[string]struct {
 		opts KeepStartAllOptions
 		last string
@@ -148,7 +150,8 @@ func TestSyncKeepStartAllInstallsNothingUnlessAgreed(t *testing.T) {
 		"no terminal": {KeepStartAllOptions{}, "Nothing was installed: there is no terminal to ask. Pass --yes to install a keeper in 1 repository.\n"},
 	} {
 		t.Run(name, func(t *testing.T) {
-					u, _, fresh, _, m, calls := keepFleet(t)
+			t.Parallel()
+			u, _, fresh, _, m, calls := keepFleet(t)
 			before, _ := os.ReadFile(calls)
 			c.opts.KeepStartOptions = keepStartOpts(0)
 			var out bytes.Buffer
@@ -174,6 +177,7 @@ func TestSyncKeepStartAllInstallsNothingUnlessAgreed(t *testing.T) {
 // stop across repositories stops every job there is, lists a repository
 // with none, and --dry-run stops nothing; status says it one line each.
 func TestSyncKeepStopAndStatusAll(t *testing.T) {
+	t.Parallel()
 	u, kept, fresh, undeclared, m, _ := keepFleet(t)
 	sel := reposel.Selection{Profiles: []string{"p"}}
 	var out bytes.Buffer
@@ -234,6 +238,7 @@ func TestSyncKeepStopAndStatusAll(t *testing.T) {
 // A repository that is not one any more fails the command, after the rest
 // are done.
 func TestSyncKeepStartAllReportsARepositoryItCannotOpen(t *testing.T) {
+	t.Parallel()
 	u, _, fresh, _, m, _ := keepFleet(t)
 	gone := filepath.Join(t.TempDir(), "gone")
 	u.Profiles[0].Repos = append(u.Profiles[0].Repos, gone)
@@ -253,6 +258,7 @@ func TestSyncKeepStartAllReportsARepositoryItCannotOpen(t *testing.T) {
 
 // Off macOS, start and stop across repositories say so before anything.
 func TestSyncKeepStartAndStopAllAreRefusedWithoutLaunchd(t *testing.T) {
+	t.Parallel()
 	m := kit.Machine{GOOS: "linux"}
 	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{t.TempDir()}}}}
 	var out bytes.Buffer
