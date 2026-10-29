@@ -31,7 +31,7 @@ func SyncUndo(ctx *kit.Context, work string, opts UndoOptions, w io.Writer) erro
 
 func syncUndo(ctx *kit.Context, work string, opts UndoOptions, w io.Writer) error {
 	// Undo never rebases, so an interrupt has only the locks to release.
-	defer kit.WatchSignals(w, nil)()
+	defer syncrun.WatchSignals(w, nil)()
 
 	target, err := kit.LocateBranch(ctx, work)
 	if err != nil {

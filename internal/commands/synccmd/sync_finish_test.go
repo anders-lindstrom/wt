@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
@@ -28,8 +27,8 @@ func TestCompleteRunBuildsItsInputUnderTheRebasedTracker(t *testing.T) {
 	if err != nil || res.Left != nil || res.Restored {
 		t.Fatalf("rebase %+v err %v", res, err)
 	}
-	tracker := &kit.RebaseTracker{}
-	var atBuild *kit.RebaseInFlight
+	tracker := &syncrun.RebaseTracker{}
+	var atBuild *syncrun.RebaseInFlight
 	var out bytes.Buffer
 	head, owed, err := syncrun.CompleteRun(ctx, &out, cfg, tracker, "bump", bump, func() syncrun.CompleteInput {
 		atBuild = tracker.Get()

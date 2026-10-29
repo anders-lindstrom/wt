@@ -27,7 +27,7 @@ import (
 
 // TrackedRebase runs rebase with the tracker set to at for as long as the
 // rebase is stopped in the worktree, as described above.
-func TrackedRebase(t *kit.RebaseTracker, at *kit.RebaseInFlight, rebase func() (wtsync.Result, error)) (wtsync.Result, error) {
+func TrackedRebase(t *RebaseTracker, at *RebaseInFlight, rebase func() (wtsync.Result, error)) (wtsync.Result, error) {
 	t.Set(at)
 	res, err := rebase()
 	if err != nil || res.Left == nil {
@@ -59,7 +59,7 @@ type HandoverInput struct {
 	Earlier []string
 	// Tracker is the verb's, still set to the rebase being handed over; it
 	// is cleared once the handover is written or has failed.
-	Tracker *kit.RebaseTracker
+	Tracker *RebaseTracker
 }
 
 // HandOver leaves the worktree mid-rebase for a person: the brief, the
@@ -168,11 +168,11 @@ type CompleteInput struct {
 // The worktree is work at path; t is the verb's tracker, and build is asked
 // for the rest of the input only once t says rebased, so nothing the finish
 // needs is prepared outside the span an interrupt reports as rebased.
-func CompleteRun(ctx *kit.Context, w io.Writer, cfg *wtsync.Config, t *kit.RebaseTracker, work, path string, build func() CompleteInput) (head string, ran []wtsync.DeferredResult, err error) {
+func CompleteRun(ctx *kit.Context, w io.Writer, cfg *wtsync.Config, t *RebaseTracker, work, path string, build func() CompleteInput) (head string, ran []wtsync.DeferredResult, err error) {
 	// The rebase is done; from here an interrupt cannot abort it, only
 	// leave the deferred steps and the result ref undone. Cleared last, so
 	// the relay line below is still printed under it.
-	t.Set(&kit.RebaseInFlight{Work: work, Path: path, Rebased: true})
+	t.Set(&RebaseInFlight{Work: work, Path: path, Rebased: true})
 	defer t.Set(nil)
 	in := build()
 	// Only ever called once a rebase has finished, so the files moved under

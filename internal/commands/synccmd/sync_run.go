@@ -103,7 +103,7 @@ type RunPlan struct {
 	ctx     *kit.Context
 	opts    RunOptions
 	w       io.Writer
-	tracker *kit.RebaseTracker
+	tracker *syncrun.RebaseTracker
 
 	trunk    string // trunk as a person says it, "main"
 	onto     string // what the run rebases onto, "origin/main"
@@ -164,14 +164,14 @@ func SyncRebase(ctx *kit.Context, works []string, opts RunOptions, w io.Writer) 
 // RunSync is SyncRebase with the plan handed back, for the keeper's record of
 // what a pass did.
 func RunSync(ctx *kit.Context, works []string, opts RunOptions, w io.Writer) (*RunPlan, error) {
-	r := &RunPlan{ctx: ctx, opts: opts, w: w, tracker: &kit.RebaseTracker{}, trunk: ctx.Config.MainBranch, outcomes: map[string]int{}}
+	r := &RunPlan{ctx: ctx, opts: opts, w: w, tracker: &syncrun.RebaseTracker{}, trunk: ctx.Config.MainBranch, outcomes: map[string]int{}}
 	err := r.run(works)
 	return r, err
 }
 
 func (r *RunPlan) run(works []string) error {
 	w, opts := r.w, r.opts
-	defer kit.WatchSignals(w, r.tracker)()
+	defer syncrun.WatchSignals(w, r.tracker)()
 
 	if err := r.declare(works); err != nil {
 		return err
@@ -844,7 +844,7 @@ func (r *RunPlan) rebaseOne(b string) {
 	if !ok {
 		return
 	}
-	res, rerr := syncrun.TrackedRebase(r.tracker, &kit.RebaseInFlight{Work: p.work, Path: p.wt.Path, Safety: wtsync.SafetyRef(b, r.epoch)}, func() (wtsync.Result, error) {
+	res, rerr := syncrun.TrackedRebase(r.tracker, &syncrun.RebaseInFlight{Work: p.work, Path: p.wt.Path, Safety: wtsync.SafetyRef(b, r.epoch)}, func() (wtsync.Result, error) {
 		return wtsync.Rebase(r.ctx.Repo.MainRoot, r.cfg, req, r.w)
 	})
 	p.result = &res
@@ -1101,7 +1101,7 @@ func (r *RunPlan) fastForward(b string, p *participant, done string) (safety wts
 	}
 	// An interrupt from here names the worktree and the ref that puts it
 	// back, as one during the rebase does.
-	r.tracker.Set(&kit.RebaseInFlight{Work: p.work, Path: p.wt.Path, Safety: safety.Ref, Forwarding: true})
+	r.tracker.Set(&syncrun.RebaseInFlight{Work: p.work, Path: p.wt.Path, Safety: safety.Ref, Forwarding: true})
 	if err := syncrun.FastForwardOwn(p.wt.Path, b, own.Commit); err != nil {
 		// git moves the branch before it runs a hook, so a merge that
 		// reports a failure may still have gone through: where the branch

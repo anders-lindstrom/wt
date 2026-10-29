@@ -133,7 +133,7 @@ type OverviewFile struct {
 // writes nothing else. A trunk that is not there is the object's error, and
 // the returned one.
 func SyncJSON(ctx *kit.Context, opts SyncOptions, w io.Writer) error {
-	defer kit.WatchSignals(os.Stderr, nil)()
+	defer syncrun.WatchSignals(os.Stderr, nil)()
 	o := OverviewOf(ctx, opts)
 	if err := kit.WriteJSON(w, o); err != nil {
 		return err
@@ -153,7 +153,7 @@ func SyncAllJSON(u *config.User, sel kit.Selection, opts SyncOptions, w io.Write
 	if err != nil {
 		return err
 	}
-	defer kit.WatchSignals(os.Stderr, nil)()
+	defer syncrun.WatchSignals(os.Stderr, nil)()
 	out := kit.EachRepo(set.Repos, kit.RepoParallelism, func(t kit.RepoTarget) SyncOverview {
 		if t.Problem == "" {
 			ctx, err := kit.Open(t.Path)

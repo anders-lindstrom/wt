@@ -51,7 +51,7 @@ const shownFiles = 3
 func Sync(ctx *kit.Context, opts SyncOptions, w io.Writer) error {
 	// The assessments run several gits at once, and an interrupt has to
 	// reach every one of them, not only the one a goroutine is waiting on.
-	defer kit.WatchSignals(w, nil)()
+	defer syncrun.WatchSignals(w, nil)()
 	worktrees, err := ctx.Repo.Worktrees()
 	if err != nil {
 		return err
@@ -145,7 +145,7 @@ func printOverview(w io.Writer, declared bool, entries []syncEntry) {
 // files, every key a collision is made of, every dependency file both sides
 // changed.
 func SyncWorktree(ctx *kit.Context, arg string, opts SyncOptions, w io.Writer) error {
-	defer kit.WatchSignals(w, nil)()
+	defer syncrun.WatchSignals(w, nil)()
 	wt, err := kit.Locate(ctx, arg)
 	if err != nil {
 		return err

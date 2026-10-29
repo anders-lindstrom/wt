@@ -48,8 +48,8 @@ func SyncResume(ctx *kit.Context, work string, opts ResumeOptions, w io.Writer) 
 }
 
 func syncResume(ctx *kit.Context, work string, opts ResumeOptions, w io.Writer) (err error) {
-	r := &resume{ctx: ctx, opts: opts, w: w, j: opts.Journal, tracker: &kit.RebaseTracker{}}
-	defer kit.WatchSignals(w, r.tracker)()
+	r := &resume{ctx: ctx, opts: opts, w: w, j: opts.Journal, tracker: &syncrun.RebaseTracker{}}
+	defer syncrun.WatchSignals(w, r.tracker)()
 
 	if err := r.readHandover(work); err != nil {
 		return err
@@ -97,7 +97,7 @@ type resume struct {
 	opts    ResumeOptions
 	w       io.Writer
 	j       *syncrun.RunJournal
-	tracker *kit.RebaseTracker
+	tracker *syncrun.RebaseTracker
 
 	target repo.Worktree
 	gitDir string
@@ -301,7 +301,7 @@ func (r *resume) rebase() (wtsync.Result, error) {
 	}
 	// Resuming, not rebasing: an interrupt must point back at resume, since
 	// the abort that is right for a run would discard a person's resolution.
-	res, rerr := syncrun.TrackedRebase(r.tracker, &kit.RebaseInFlight{Work: name, Path: r.target.Path, Safety: st.Safety, Resuming: true}, func() (wtsync.Result, error) {
+	res, rerr := syncrun.TrackedRebase(r.tracker, &syncrun.RebaseInFlight{Work: name, Path: r.target.Path, Safety: st.Safety, Resuming: true}, func() (wtsync.Result, error) {
 		return wtsync.Resume(r.ctx.Repo.MainRoot, r.cfg, req, st.OldTip, safety, r.w)
 	})
 	if rerr != nil {

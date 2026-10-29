@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 )
@@ -21,7 +22,7 @@ import (
 // the run would have stopped, and land a bump on trunk's number in silence:
 // the interrupt takes them out.
 func TestOnInterruptTakesTheRunsMarksOutOfTheList(t *testing.T) {
-	// Not parallel: signals every process group the test binary runs; removes every temporary directory the test binary has open.
+	// Not parallel: removes every temporary directory the test binary has open.
 	dir := testkit.CommittedRepo(t, testkit.MinimalConf)
 	write := func(rel, content string) {
 		t.Helper()
@@ -67,7 +68,7 @@ func TestOnInterruptTakesTheRunsMarksOutOfTheList(t *testing.T) {
 		t.Fatalf("the fixture's list carries no marks:\n%s", before)
 	}
 	var out bytes.Buffer
-	kit.OnInterrupt(&out, nil, &kit.RebaseInFlight{Work: "bump", Path: dir, Safety: "refs/wt-sync/feature/1"})
+	syncrun.OnInterrupt(&out, nil, &syncrun.RebaseInFlight{Work: "bump", Path: dir, Safety: "refs/wt-sync/feature/1"})
 	after, err := os.ReadFile(todoPath)
 	if err != nil {
 		t.Fatal(err)
@@ -143,10 +144,10 @@ func TestWatchSignalsNestedOnlyTheInnermostActs(t *testing.T) {
 		}
 		return
 	}
-	defer kit.WatchSignals(tagWriter{tag: "OUTER", w: os.Stderr}, nil)()
-	var tr kit.RebaseTracker
-	tr.Set(&kit.RebaseInFlight{Work: "bump", Path: t.TempDir(), Safety: "refs/wt-sync/feature/1"})
-	defer kit.WatchSignals(slowWriter{w: os.Stderr}, &tr)()
+	defer syncrun.WatchSignals(tagWriter{tag: "OUTER", w: os.Stderr}, nil)()
+	var tr syncrun.RebaseTracker
+	tr.Set(&syncrun.RebaseInFlight{Work: "bump", Path: t.TempDir(), Safety: "refs/wt-sync/feature/1"})
+	defer syncrun.WatchSignals(slowWriter{w: os.Stderr}, &tr)()
 	if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {
 		t.Fatal(err)
 	}

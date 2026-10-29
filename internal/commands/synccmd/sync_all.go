@@ -20,7 +20,7 @@ import (
 // selection names, a few at a time, printed one section after another. It
 // changes nothing but the fetch.
 func SyncAll(u *config.User, sel kit.Selection, opts SyncOptions, w io.Writer) error {
-	defer kit.WatchSignals(w, nil)()
+	defer syncrun.WatchSignals(w, nil)()
 	return kit.AcrossRepos(u, sel, w, func(ctx *kit.Context, w io.Writer) error { return Sync(ctx, opts, w) })
 }
 
@@ -68,7 +68,7 @@ func SyncRebaseAll(u *config.User, sel kit.Selection, opts SyncRebaseAllOptions,
 	if opts.AllowDiverged {
 		return errors.New("--allow-diverged rebases a worktree you name over commits its remote has; name it, in its repository")
 	}
-	defer kit.WatchSignals(w, nil)()
+	defer syncrun.WatchSignals(w, nil)()
 	// One listing of the sessions serves every repository's plan, as one
 	// `claude agents` knows them all; each run lists them again at its lock.
 	listed, err := opts.SessionsNow(nil, syncrun.RebasedNothing)
@@ -182,7 +182,7 @@ func planRepoRun(t kit.RepoTarget, opts RunOptions) *repoRun {
 		return rr
 	}
 	rr.ctx = ctx
-	r := &RunPlan{ctx: ctx, opts: opts, w: &rr.log, tracker: &kit.RebaseTracker{},
+	r := &RunPlan{ctx: ctx, opts: opts, w: &rr.log, tracker: &syncrun.RebaseTracker{},
 		trunk: ctx.Config.MainBranch, outcomes: map[string]int{}}
 	if err := r.declare(nil); err != nil {
 		var undeclared undeclaredError

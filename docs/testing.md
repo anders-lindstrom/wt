@@ -147,7 +147,7 @@ and its first line says which, as `// Not parallel: <why>`:
   `keepstate.KeepGOOS`, superset's `readDeadline`, agents' process listers and
   `Deadline`;
 - signals: `git.Interrupt` and `git.KillRunning` signal the process groups
-  `RunBounded` is waiting on, `kit.OnInterrupt` also removes every temporary
+  `RunBounded` is waiting on, `syncrun.OnInterrupt` removes every temporary
   directory wtsync has open, and a few tests send a signal to the test
   process itself; a test that only re-runs itself through
   `testkit.InterruptedChild` shares nothing with that child and is parallel;

@@ -101,7 +101,7 @@ func Run(ctx *kit.Context, opts KeepOptions, w io.Writer) error {
 	// Signals from here on: the fetch is a git of its own, and a Ctrl-C or
 	// a bootout during it has to take it down too. The run watches again
 	// inside this, and its watch is the one a signal finds while it lasts.
-	defer kit.WatchSignals(w, nil)()
+	defer syncrun.WatchSignals(w, nil)()
 	if opts.Every > 0 {
 		st.Interval = keepstate.FmtEvery(opts.Every)
 	} else if st.Interval == "" {
@@ -281,7 +281,7 @@ func (p *keepPass) pass(recorded string) error {
 	// printed, indented under the header, so an interrupt leaves what
 	// happened up to it and the way back on disk.
 	w := io.MultiWriter(p.w, &indentWriter{w: p.log, prefix: "    ", atStart: true})
-	defer kit.WatchSignals(w, nil)()
+	defer syncrun.WatchSignals(w, nil)()
 	r := &synccmd.RunPlan{}
 	var rerr error
 	if after == recorded {
