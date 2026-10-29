@@ -420,8 +420,7 @@ func TestSyncKeepRunCountsThePushesItRetries(t *testing.T) {
 // a keeper row; neither says anything about a repository never kept.
 func TestSyncTableAndDoctorSayWhenTheRepositoryWasKept(t *testing.T) {
 	ctx, _ := provisiontest.RunFixture(t, false)
-	t.Setenv("HOME", t.TempDir())
-	onPlatform(t, "darwin")
+	onMachine(t, ctx, "darwin")
 	var out bytes.Buffer
 	if err := synccmd.Sync(ctx, synccmd.SyncOptions{NoFetch: true}, &out); err != nil {
 		t.Fatal(err)
@@ -477,7 +476,7 @@ func TestSyncTableAndDoctorSayWhenTheRepositoryWasKept(t *testing.T) {
 
 	// Without launchd only the installed part changes: a pass run from cron
 	// still shows in the row, the table and the status.
-	onPlatform(t, "linux")
+	ctx.Machine.GOOS = "linux"
 	out.Reset()
 	if err := synccmd.SyncDoctor(ctx, synccmd.DoctorOptions{}, &out); err != nil {
 		t.Fatal(err)
@@ -525,10 +524,10 @@ func TestKeepPlistMatchesTheGoldenFile(t *testing.T) {
 	}
 }
 
-// fakeLaunchctl puts a launchctl on the PATH that records its arguments,
+// fakeLaunchctl writes a launchctl that records its arguments and
 // remembers which jobs were bootstrapped so print answers as launchd would,
-// and returns the file it records the calls in.
-func fakeLaunchctl(t *testing.T) string {
+// and returns it and the file it records the calls in.
+func fakeLaunchctl(t *testing.T) (exe, calls string) {
 	t.Helper()
 	dir := t.TempDir()
 	log := filepath.Join(dir, "calls")
@@ -538,9 +537,17 @@ func fakeLaunchctl(t *testing.T) string {
 		"  bootout) rm -f " + loaded + "${2##*/} ;;\n" +
 		"  print) [ -e " + loaded + "${2##*/} ] || exit 1 ;;\n" +
 		"esac\nexit 0\n"
-	gittest.WriteExecutable(t, filepath.Join(dir, "launchctl"), script)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	return log
+	exe = filepath.Join(dir, "launchctl")
+	gittest.WriteExecutable(t, exe, script)
+	return exe, log
+}
+
+// launchctlFor gives ctx's machine a fakeLaunchctl and returns the file it
+// records its calls in.
+func launchctlFor(t *testing.T, ctx *kit.Context) (calls string) {
+	t.Helper()
+	ctx.Machine.Launchctl, calls = fakeLaunchctl(t)
+	return calls
 }
 
 // start writes the plist under the home's LaunchAgents with what the shell
@@ -548,10 +555,9 @@ func fakeLaunchctl(t *testing.T) string {
 // removes it, and the table then says stopped.
 func TestSyncKeepStartAndStopDriveLaunchd(t *testing.T) {
 	ctx, _ := provisiontest.RunFixture(t, false)
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	calls := fakeLaunchctl(t)
-	onPlatform(t, "darwin")
+	onMachine(t, ctx, "darwin")
+	home := ctx.Machine.Home
+	calls := launchctlFor(t, ctx)
 	env := map[string]string{"PATH": "/usr/bin:/bin", "HOME": home, "SSH_AUTH_SOCK": "/tmp/agent.sock"}
 	opts := KeepStartOptions{
 		Every:  time.Hour,
@@ -649,9 +655,8 @@ func TestSyncKeepStartAndStopDriveLaunchd(t *testing.T) {
 func TestSyncKeepStartWarnsAboutAnAgentLaunchersKey(t *testing.T) {
 	env := map[string]string{"PATH": "/usr/bin:/bin", "TMPDIR": "/var/folders/xy/T/", "GIT_SSH_COMMAND": "/Users/me/dotfiles/.config/agents/bin/agent-ssh", "FNOX_SECRET": "secret"}
 	ctx, _ := provisiontest.RunFixture(t, false)
-	t.Setenv("HOME", t.TempDir())
-	fakeLaunchctl(t)
-	onPlatform(t, "darwin")
+	onMachine(t, ctx, "darwin")
+	launchctlFor(t, ctx)
 	var out bytes.Buffer
 	if err := Start(ctx, KeepStartOptions{Getenv: func(k string) string { return env[k] }}, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
@@ -679,9 +684,8 @@ func TestSyncKeepStartWarnsAboutAnAgentLaunchersKey(t *testing.T) {
 // so, and stop boots it out by its label.
 func TestSyncKeepStopBootsOutAJobWhosePlistIsGone(t *testing.T) {
 	ctx, _ := provisiontest.RunFixture(t, false)
-	t.Setenv("HOME", t.TempDir())
-	calls := fakeLaunchctl(t)
-	onPlatform(t, "darwin")
+	onMachine(t, ctx, "darwin")
+	calls := launchctlFor(t, ctx)
 	var out bytes.Buffer
 	if err := Start(ctx, KeepStartOptions{Getenv: func(string) string { return "" }}, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
@@ -721,8 +725,7 @@ func TestSyncKeepStopBootsOutAJobWhosePlistIsGone(t *testing.T) {
 func TestSyncKeepRunRetriesARefusedPushUntilItGoesThrough(t *testing.T) {
 	ctx, bump := provisiontest.RunFixture(t, false)
 	testkit.BareOrigin(t, ctx)
-	t.Setenv("HOME", t.TempDir())
-	onPlatform(t, "darwin")
+	onMachine(t, ctx, "darwin")
 	pushURL := testkit.GitOut(t, ctx.Repo.MainRoot, "remote", "get-url", "--push", "origin")
 	testkit.GitOut(t, ctx.Repo.MainRoot, "remote", "set-url", "--push", "origin", filepath.Join(t.TempDir(), "nowhere"))
 	opts := keepOpts(syncrun.PushAlways)
@@ -846,8 +849,7 @@ func TestSyncKeepRunDropsAnUnpushedBranchThatMoved(t *testing.T) {
 // says it was interrupted rather than running, and the next pass goes ahead.
 func TestSyncKeepStatusSaysWhenAPassWasInterrupted(t *testing.T) {
 	ctx, _ := provisiontest.RunFixture(t, false)
-	t.Setenv("HOME", t.TempDir())
-	onPlatform(t, "darwin")
+	onMachine(t, ctx, "darwin")
 	_, statePath := keepFiles(t, ctx)
 	// The largest pid the kernel hands out is below this on every platform
 	// wt runs on, so nothing is running under it.
@@ -885,9 +887,8 @@ func TestSyncKeepStatusSaysWhenAPassWasInterrupted(t *testing.T) {
 // said to be: launchd is not running it.
 func TestSyncKeepStatusSaysWhenTheNextPassIsOverdue(t *testing.T) {
 	ctx, _ := provisiontest.RunFixture(t, false)
-	t.Setenv("HOME", t.TempDir())
-	fakeLaunchctl(t)
-	onPlatform(t, "darwin")
+	onMachine(t, ctx, "darwin")
+	launchctlFor(t, ctx)
 	var out bytes.Buffer
 	if err := Start(ctx, KeepStartOptions{Getenv: func(string) string { return "" }, Now: func() time.Time { return keepDay }}, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
@@ -918,8 +919,7 @@ func TestUnsignCommitsAppendsToTheConfigStack(t *testing.T) {
 // Off macOS, start and stop say so and exit 2; run and status still work.
 func TestSyncKeepStartAndStopAreRefusedWithoutLaunchd(t *testing.T) {
 	ctx, _ := provisiontest.RunFixture(t, false)
-	t.Setenv("HOME", t.TempDir())
-	onPlatform(t, "linux")
+	onMachine(t, ctx, "linux")
 	var out bytes.Buffer
 	if err := Start(ctx, KeepStartOptions{}, &out); !errors.Is(err, ErrNoLaunchd) {
 		t.Fatalf("start: %v", err)
@@ -936,8 +936,7 @@ func TestSyncKeepStartAndStopAreRefusedWithoutLaunchd(t *testing.T) {
 // is running without leaving a lock file in a repository never kept.
 func TestLookingAtTheKeeperLeavesNoLockFile(t *testing.T) {
 	ctx, _ := provisiontest.RunFixture(t, false)
-	t.Setenv("HOME", t.TempDir())
-	onPlatform(t, "darwin")
+	onMachine(t, ctx, "darwin")
 	gitDir, _, _, err := keepstate.KeepPaths(ctx)
 	if err != nil {
 		t.Fatal(err)

@@ -188,7 +188,7 @@ func Keeper(ctx *kit.Context, loadedToo bool) (KeeperState, error) {
 	if err != nil {
 		return KeeperState{}, err
 	}
-	k := KeeperState{LogPath: logPath, Launchd: KeepGOOS == "darwin", Running: keepLockHeld(gitDir)}
+	k := KeeperState{LogPath: logPath, Launchd: HasLaunchd(ctx.Machine), Running: keepLockHeld(gitDir)}
 	k.St, k.Kept, err = ReadKeepState(statePath)
 	if err != nil {
 		return KeeperState{}, err
@@ -205,7 +205,7 @@ func Keeper(ctx *kit.Context, loadedToo bool) (KeeperState, error) {
 		k.Installed = true
 	}
 	if loadedToo {
-		k.Loaded = Launchctl.Loaded(job.Label)
+		k.Loaded = job.Launchctl.Loaded(job.Label)
 	}
 	return k, nil
 }

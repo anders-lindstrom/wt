@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -16,9 +15,9 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 )
 
-// KeepGOOS is the platform the keeper's start and stop check for launchd;
-// tests set it.
-var KeepGOOS = runtime.GOOS
+// HasLaunchd says whether m runs launchd, which the keeper's
+// start and stop need.
+func HasLaunchd(m kit.Machine) bool { return m.Platform() == "darwin" }
 
 // KeepJob is one repository's launchd job: everything the plist is made of.
 type KeepJob struct {
@@ -32,13 +31,15 @@ type KeepJob struct {
 	// Env is what the job runs with. launchd gives a job neither the shell's
 	// PATH nor its ssh settings, so start captures them.
 	Env map[string]string
+	// Launchctl loads and unloads the job.
+	Launchctl Launchctl
 }
 
 // KeepJobFor names the job for ctx's repository: a label from the
 // repository's name and a hash of the main checkout's path, so two checkouts
 // of one repository get two jobs, under ~/Library/LaunchAgents.
 func KeepJobFor(ctx *kit.Context) (KeepJob, error) {
-	home, err := os.UserHomeDir()
+	home, err := ctx.Machine.HomeDir()
 	if err != nil {
 		return KeepJob{}, err
 	}
@@ -54,20 +55,23 @@ func KeepJobFor(ctx *kit.Context) (KeepJob, error) {
 		Label:     label,
 		PlistPath: filepath.Join(home, "Library", "LaunchAgents", label+".plist"),
 		MainRoot:  ctx.Repo.MainRoot,
+		Launchctl: Launchctl{Exe: ctx.Machine.Launchctl},
 	}, nil
 }
 
-// launchctlDriver runs launchctl, found on the PATH each time so a test can
-// stand in for it.
-type launchctlDriver struct{}
+// Launchctl runs launchctl: Exe, or the one on the PATH, looked up each
+// time, when Exe is "".
+type Launchctl struct {
+	Exe string
+}
 
-// Launchctl is the launchctl wt drives; tests stand in for it.
-var Launchctl launchctlDriver
-
-func (launchctlDriver) run(args ...string) (string, error) {
-	exe, err := exec.LookPath("launchctl")
-	if err != nil {
-		return "", errors.New("launchctl is not on the PATH")
+func (d Launchctl) run(args ...string) (string, error) {
+	exe := d.Exe
+	if exe == "" {
+		var err error
+		if exe, err = exec.LookPath("launchctl"); err != nil {
+			return "", errors.New("launchctl is not on the PATH")
+		}
 	}
 	cmd := exec.Command(exe, args...)
 	cmd.Env = append(os.Environ(), "NO_COLOR=1")
@@ -82,17 +86,17 @@ func (launchctlDriver) run(args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-func (d launchctlDriver) domain() string { return "gui/" + strconv.Itoa(os.Getuid()) }
+func (d Launchctl) domain() string { return "gui/" + strconv.Itoa(os.Getuid()) }
 
 // Loaded asks launchd whether the job is in the user's domain.
-func (d launchctlDriver) Loaded(label string) bool {
+func (d Launchctl) Loaded(label string) bool {
 	_, err := d.run("print", d.domain()+"/"+label)
 	return err == nil
 }
 
 // Load bootstraps the plist into the user's domain, falling back to the
 // older load verb where bootstrap is refused.
-func (d launchctlDriver) Load(plist string) error {
+func (d Launchctl) Load(plist string) error {
 	_, err := d.run("bootstrap", d.domain(), plist)
 	if err == nil {
 		return nil
@@ -105,7 +109,7 @@ func (d launchctlDriver) Load(plist string) error {
 
 // Unload takes the job out of the user's domain; a job that is not there
 // is not an error, the plist is going anyway.
-func (d launchctlDriver) Unload(label, plist string) error {
+func (d Launchctl) Unload(label, plist string) error {
 	_, err := d.run("bootout", d.domain()+"/"+label)
 	if err == nil {
 		return nil

@@ -50,6 +50,9 @@ type Context struct {
 	// Agents, when set, is who this context sees in its worktrees in place of
 	// MachineAgents, func by func; nil but in tests.
 	Agents *Agents
+	// Machine is the platform, home and launchctl this context sees; zero
+	// is the machine's own.
+	Machine Machine
 }
 
 // The warning topics. One line per topic per invocation, so a command that

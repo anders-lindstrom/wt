@@ -21,9 +21,9 @@ import (
 )
 
 // keepFleet is three repositories under one profile: two that declare wt
-// sync, one of them already kept every hour, and one that does not. The
-// home and launchctl are the test's own.
-func keepFleet(t *testing.T) (u *config.User, kept, fresh, undeclared *kit.Context, home, calls string) {
+// sync, one of them already kept every hour, and one that does not, on a
+// machine whose home and launchctl are the test's own.
+func keepFleet(t *testing.T) (u *config.User, kept, fresh, undeclared *kit.Context, m kit.Machine, calls string) {
 	t.Helper()
 	kept, _ = provisiontest.RunFixture(t, false)
 	fresh, _ = provisiontest.RunFixture(t, false)
@@ -34,16 +34,17 @@ func keepFleet(t *testing.T) (u *config.User, kept, fresh, undeclared *kit.Conte
 	if err != nil {
 		t.Fatal(err)
 	}
-	home = t.TempDir()
-	t.Setenv("HOME", home)
-	calls = fakeLaunchctl(t)
-	onPlatform(t, "darwin")
+	m = kit.Machine{GOOS: "darwin", Home: t.TempDir()}
+	m.Launchctl, calls = fakeLaunchctl(t)
+	for _, ctx := range []*kit.Context{kept, fresh, undeclared} {
+		ctx.Machine = m
+	}
 	var out bytes.Buffer
 	if err := Start(kept, keepStartOpts(time.Hour), &out); err != nil {
 		t.Fatalf("start: %v\n%s", err, out.String())
 	}
 	u = &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{kept.Repo.MainRoot, fresh.Repo.MainRoot, plain}}}}
-	return u, kept, fresh, undeclared, home, calls
+	return u, kept, fresh, undeclared, m, calls
 }
 
 func keepStartOpts(every time.Duration) KeepStartOptions {
@@ -66,7 +67,7 @@ func plistsIn(t *testing.T, home string) []string {
 // The row a command across repositories printed for a repository.
 func keepRowFor(t *testing.T, out string, ctx *kit.Context) string {
 	t.Helper()
-	home, _ := os.UserHomeDir()
+	home, _ := ctx.Machine.HomeDir()
 	for _, l := range strings.Split(out, "\n") {
 		if f := strings.Fields(l); len(f) > 1 && (f[0] == kit.AbbreviateHome(ctx.Repo.MainRoot, home) || f[1] == kit.AbbreviateHome(ctx.Repo.MainRoot, home)) {
 			return l
@@ -80,7 +81,7 @@ func keepRowFor(t *testing.T, out string, ctx *kit.Context) string {
 // existing one as it is, skips a repository that has not opted into wt
 // sync, asks once, and a second start has nothing to do.
 func TestSyncKeepStartAllInstallsWhatIsMissing(t *testing.T) {
-	u, kept, fresh, undeclared, home, _ := keepFleet(t)
+	u, kept, fresh, undeclared, m, _ := keepFleet(t)
 	keptJob, err := keepstate.KeepJobFor(kept)
 	if err != nil {
 		t.Fatal(err)
@@ -90,7 +91,7 @@ func TestSyncKeepStartAllInstallsWhatIsMissing(t *testing.T) {
 	opts := KeepStartAllOptions{KeepStartOptions: keepStartOpts(0),
 		Ask: func(q string) bool { asked = append(asked, q); return true }}
 	var out bytes.Buffer
-	if err := StartAll(u, reposel.Selection{Profiles: []string{"p"}}, opts, &out); err != nil {
+	if err := StartAll(m, u, reposel.Selection{Profiles: []string{"p"}}, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	s := out.String()
@@ -108,7 +109,7 @@ func TestSyncKeepStartAllInstallsWhatIsMissing(t *testing.T) {
 	if !strings.Contains(s, "  installed, every 30m, first at 14:50\n") || !strings.Contains(s, "pushes with no ssh agent") {
 		t.Errorf("output:\n%s", s)
 	}
-	if plists := plistsIn(t, home); len(plists) != 2 {
+	if plists := plistsIn(t, m.Home); len(plists) != 2 {
 		t.Fatalf("plists %v", plists)
 	}
 	if body, _ := os.ReadFile(keptJob.PlistPath); !bytes.Equal(body, keptBody) {
@@ -124,13 +125,13 @@ func TestSyncKeepStartAllInstallsWhatIsMissing(t *testing.T) {
 
 	out.Reset()
 	asked = nil
-	if err := StartAll(u, reposel.Selection{Profiles: []string{"p"}}, opts, &out); err != nil {
+	if err := StartAll(m, u, reposel.Selection{Profiles: []string{"p"}}, opts, &out); err != nil {
 		t.Fatalf("second start: %v\n%s", err, out.String())
 	}
 	if len(asked) != 0 || !strings.HasSuffix(out.String(), "Nothing to install.\n") {
 		t.Fatalf("second start asked %q:\n%s", asked, out.String())
 	}
-	if plists := plistsIn(t, home); len(plists) != 2 {
+	if plists := plistsIn(t, m.Home); len(plists) != 2 {
 		t.Fatalf("plists after the second start %v", plists)
 	}
 }
@@ -147,11 +148,11 @@ func TestSyncKeepStartAllInstallsNothingUnlessAgreed(t *testing.T) {
 		"no terminal": {KeepStartAllOptions{}, "Nothing was installed: there is no terminal to ask. Pass --yes to install a keeper in 1 repository.\n"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			u, _, fresh, _, home, calls := keepFleet(t)
+					u, _, fresh, _, m, calls := keepFleet(t)
 			before, _ := os.ReadFile(calls)
 			c.opts.KeepStartOptions = keepStartOpts(0)
 			var out bytes.Buffer
-			if err := StartAll(u, reposel.Selection{Profiles: []string{"p"}}, c.opts, &out); err != nil {
+			if err := StartAll(m, u, reposel.Selection{Profiles: []string{"p"}}, c.opts, &out); err != nil {
 				t.Fatalf("err %v\n%s", err, out.String())
 			}
 			if row := keepRowFor(t, out.String(), fresh); !strings.HasSuffix(row, "to install, every 30m") {
@@ -160,7 +161,7 @@ func TestSyncKeepStartAllInstallsNothingUnlessAgreed(t *testing.T) {
 			if !strings.HasSuffix(out.String(), c.last) {
 				t.Errorf("output:\n%s", out.String())
 			}
-			if plists := plistsIn(t, home); len(plists) != 1 {
+			if plists := plistsIn(t, m.Home); len(plists) != 1 {
 				t.Fatalf("plists %v", plists)
 			}
 			if after, _ := os.ReadFile(calls); strings.Contains(strings.TrimPrefix(string(after), string(before)), "bootstrap") {
@@ -173,10 +174,10 @@ func TestSyncKeepStartAllInstallsNothingUnlessAgreed(t *testing.T) {
 // stop across repositories stops every job there is, lists a repository
 // with none, and --dry-run stops nothing; status says it one line each.
 func TestSyncKeepStopAndStatusAll(t *testing.T) {
-	u, kept, fresh, undeclared, home, _ := keepFleet(t)
+	u, kept, fresh, undeclared, m, _ := keepFleet(t)
 	sel := reposel.Selection{Profiles: []string{"p"}}
 	var out bytes.Buffer
-	if err := StatusAll(u, sel, keepDay, &out); err != nil {
+	if err := StatusAll(m, u, sel, keepDay, &out); err != nil {
 		t.Fatalf("status: %v\n%s", err, out.String())
 	}
 	s := out.String()
@@ -191,18 +192,18 @@ func TestSyncKeepStopAndStatusAll(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := StopAll(u, sel, true, &out); err != nil {
+	if err := StopAll(m, u, sel, true, &out); err != nil {
 		t.Fatalf("dry stop: %v\n%s", err, out.String())
 	}
 	if row := keepRowFor(t, out.String(), kept); !strings.HasSuffix(row, "to stop") || !strings.HasSuffix(out.String(), "Nothing was stopped: --dry-run.\n") {
 		t.Fatalf("dry stop:\n%s", out.String())
 	}
-	if len(plistsIn(t, home)) != 1 {
+	if len(plistsIn(t, m.Home)) != 1 {
 		t.Fatal("a dry stop removed the plist")
 	}
 
 	out.Reset()
-	if err := StopAll(u, sel, false, &out); err != nil {
+	if err := StopAll(m, u, sel, false, &out); err != nil {
 		t.Fatalf("stop: %v\n%s", err, out.String())
 	}
 	s = out.String()
@@ -218,11 +219,11 @@ func TestSyncKeepStopAndStatusAll(t *testing.T) {
 	if !strings.HasSuffix(s, "Stopped a keeper in 1 repository; the logs stay.\n") {
 		t.Errorf("stop:\n%s", s)
 	}
-	if len(plistsIn(t, home)) != 0 || keepstate.Launchctl.Loaded(job.Label) {
+	if len(plistsIn(t, m.Home)) != 0 || job.Launchctl.Loaded(job.Label) {
 		t.Fatal("the job is still there")
 	}
 	out.Reset()
-	if err := StatusAll(u, sel, keepDay, &out); err != nil {
+	if err := StatusAll(m, u, sel, keepDay, &out); err != nil {
 		t.Fatal(err)
 	}
 	if row := keepRowFor(t, out.String(), kept); !strings.Contains(row, "stopped") {
@@ -233,16 +234,16 @@ func TestSyncKeepStopAndStatusAll(t *testing.T) {
 // A repository that is not one any more fails the command, after the rest
 // are done.
 func TestSyncKeepStartAllReportsARepositoryItCannotOpen(t *testing.T) {
-	u, _, fresh, _, _, _ := keepFleet(t)
+	u, _, fresh, _, m, _ := keepFleet(t)
 	gone := filepath.Join(t.TempDir(), "gone")
 	u.Profiles[0].Repos = append(u.Profiles[0].Repos, gone)
 	opts := KeepStartAllOptions{KeepStartOptions: keepStartOpts(0), Yes: true}
 	var out bytes.Buffer
-	err := StartAll(u, reposel.Selection{Profiles: []string{"p"}}, opts, &out)
+	err := StartAll(m, u, reposel.Selection{Profiles: []string{"p"}}, opts, &out)
 	if err == nil || err.Error() != "not completed: gone" {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
-	if row := keepRowFor(t, out.String(), &kit.Context{Repo: &repo.Repo{MainRoot: gone}}); !strings.HasPrefix(row, "! ") || !strings.HasSuffix(row, "  not there any more") {
+	if row := keepRowFor(t, out.String(), &kit.Context{Repo: &repo.Repo{MainRoot: gone}, Machine: m}); !strings.HasPrefix(row, "! ") || !strings.HasSuffix(row, "  not there any more") {
 		t.Errorf("output:\n%s", out.String())
 	}
 	if _, err := os.Stat(func() string { j, _ := keepstate.KeepJobFor(fresh); return j.PlistPath }()); err != nil {
@@ -252,13 +253,13 @@ func TestSyncKeepStartAllReportsARepositoryItCannotOpen(t *testing.T) {
 
 // Off macOS, start and stop across repositories say so before anything.
 func TestSyncKeepStartAndStopAllAreRefusedWithoutLaunchd(t *testing.T) {
-	onPlatform(t, "linux")
+	m := kit.Machine{GOOS: "linux"}
 	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{t.TempDir()}}}}
 	var out bytes.Buffer
-	if err := StartAll(u, reposel.Selection{Profiles: []string{"p"}}, KeepStartAllOptions{Yes: true}, &out); !errors.Is(err, ErrNoLaunchd) {
+	if err := StartAll(m, u, reposel.Selection{Profiles: []string{"p"}}, KeepStartAllOptions{Yes: true}, &out); !errors.Is(err, ErrNoLaunchd) {
 		t.Fatalf("start: %v", err)
 	}
-	if err := StopAll(u, reposel.Selection{Profiles: []string{"p"}}, false, &out); !errors.Is(err, ErrNoLaunchd) {
+	if err := StopAll(m, u, reposel.Selection{Profiles: []string{"p"}}, false, &out); !errors.Is(err, ErrNoLaunchd) {
 		t.Fatalf("stop: %v", err)
 	}
 }

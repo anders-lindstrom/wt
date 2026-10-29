@@ -7,13 +7,12 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/synckeep/keepstate"
 )
 
-// onPlatform pins the platform the keeper's start, stop and status see for
-// the length of a test, whatever machine runs it.
-func onPlatform(t *testing.T, goos string) {
+// onMachine gives ctx a machine of the test's own: the platform the
+// keeper's start, stop and status see, whatever machine runs the test, and
+// an empty home, so that no plist of the person running it is found.
+func onMachine(t *testing.T, ctx *kit.Context, goos string) {
 	t.Helper()
-	was := keepstate.KeepGOOS
-	keepstate.KeepGOOS = goos
-	t.Cleanup(func() { keepstate.KeepGOOS = was })
+	ctx.Machine.GOOS, ctx.Machine.Home = goos, t.TempDir()
 }
 
 // keepFiles is the keeper's log and state file for the repository.
