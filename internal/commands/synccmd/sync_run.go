@@ -417,7 +417,11 @@ func (r *RunPlan) expectOverview() error {
 		return err
 	}
 	r.survey = &sv
-	if now := sv.Token(r.ctx, r.trunk, r.trunkSHA); now == nil || *now != r.opts.Expect {
+	now, err := sv.Token(r.ctx, r.trunk, r.trunkSHA)
+	if err != nil {
+		return err
+	}
+	if now == nil || *now != r.opts.Expect {
 		return fmt.Errorf("the overview changed since it was read (what a run on trunk %s would start on is "+
 			"not what wt sync --json saw); nothing is rebased: read the overview again", r.trunk)
 	}

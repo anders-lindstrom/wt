@@ -242,7 +242,9 @@ func OverviewOf(ctx *kit.Context, opts SyncOptions) SyncOverview {
 		return o
 	}
 	o.Worktrees = sv.Rows
-	o.Token = sv.Token(ctx, trunk, sha)
+	if o.Token, err = sv.Token(ctx, trunk, sha); err != nil {
+		o.Error = kit.Strp(err.Error())
+	}
 	return o
 }
 
@@ -381,12 +383,18 @@ func (r *RunPlan) overviewRow(wt repo.Worktree, a wtsync.Assessment, byBranch ma
 // remote's commit, and a run allowed over the divergence its caller was
 // shown is refused over one that moved since. Nil when a run would start on
 // nothing. With nothing diverged it is the token an older wt gives, which
-// docs/json.md promises: so it is built by hand, not with kit.Token.
-func (sv Survey) Token(ctx *kit.Context, trunk, trunkSHA string) *string {
+// docs/json.md promises: so it is built by hand, not with kit.Token. A
+// declaration git could not look for is an error, not a token: hashed as
+// none, it would match a later read that found one.
+func (sv Survey) Token(ctx *kit.Context, trunk, trunkSHA string) (*string, error) {
 	h := sha256.New()
 	h.Write([]byte("wt-sync-1\x00" + trunk + "\x00"))
 	h.Write(kit.ConfigFingerprint(ctx))
-	decl, _ := git.Run(ctx.Repo.MainRoot, "rev-parse", "--verify", "--quiet", trunkSHA+":"+wtsync.ConfigFile)
+	// rev-parse --verify --quiet exits 1, saying nothing, for no declaration.
+	decl, err := git.Run(ctx.Repo.MainRoot, "rev-parse", "--verify", "--quiet", trunkSHA+":"+wtsync.ConfigFile)
+	if _, err := git.Answer(err, 1); err != nil {
+		return nil, fmt.Errorf("cannot look for %s on trunk: %w", wtsync.ConfigFile, err)
+	}
 	h.Write([]byte("\x00" + decl))
 	eligible, covered := 0, 0
 	for _, row := range sv.Rows {
@@ -413,7 +421,7 @@ func (sv Survey) Token(ctx *kit.Context, trunk, trunkSHA string) *string {
 			"\x01" + strconv.FormatBool(row.Runnable) + "\x01" + strings.Join(stack, "\x02")))
 	}
 	if eligible+covered == 0 {
-		return nil
+		return nil, nil
 	}
-	return kit.Strp("1:" + hex.EncodeToString(h.Sum(nil))[:32])
+	return kit.Strp("1:" + hex.EncodeToString(h.Sum(nil))[:32]), nil
 }
