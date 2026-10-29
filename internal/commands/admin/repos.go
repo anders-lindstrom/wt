@@ -12,6 +12,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anders-lindstrom/wt/internal/reposel"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -23,8 +24,8 @@ type ReposOptions struct {
 // Repos lists the repositories wt manages under the roots, or the ones a
 // selection names, grouped by root. It reads the disk only: no fetch, no
 // GitHub.
-func Repos(u *config.User, sel kit.Selection, opts ReposOptions, w io.Writer) error {
-	set, err := kit.SelectRepos(u, sel)
+func Repos(u *config.User, sel reposel.Selection, opts ReposOptions, w io.Writer) error {
+	set, err := reposel.Select(u, sel)
 	if err != nil {
 		return err
 	}
@@ -42,13 +43,13 @@ func Repos(u *config.User, sel kit.Selection, opts ReposOptions, w io.Writer) er
 		_ = kit.PrintTable(w, repoRows(set.Repos, home))
 		return problemsIn(set.Repos)
 	}
-	roots, origin := kit.RootsFor(u)
+	roots, origin := reposel.RootsFor(u)
 	fmt.Fprintf(w, "roots from %s\n", origin)
 	for _, root := range roots {
 		if len(sel.Roots) > 0 && !slices.Contains(sel.Roots, root.Name) {
 			continue
 		}
-		var in []kit.RepoTarget
+		var in []reposel.Target
 		for _, t := range set.Repos {
 			if t.Root == root.Name {
 				in = append(in, t)
@@ -71,8 +72,8 @@ func Repos(u *config.User, sel kit.Selection, opts ReposOptions, w io.Writer) er
 // repoRows is one row per repository: its name, how many worktrees it has
 // beside the main checkout, whether wt sync is set up there, and where it is.
 // A repository whose wt configuration does not parse says so instead.
-func repoRows(targets []kit.RepoTarget, home string) [][]string {
-	statuses := kit.EachRepo(targets, kit.RepoParallelism, repoStatus)
+func repoRows(targets []reposel.Target, home string) [][]string {
+	statuses := reposel.Each(targets, reposel.Parallelism, repoStatus)
 	var rows [][]string
 	for i, t := range targets {
 		s := statuses[i]
@@ -97,7 +98,7 @@ type status struct {
 
 // repoStatus reads a repository's status from the disk: its configuration,
 // its worktrees, and the .wt-sync.yaml on trunk as last fetched.
-func repoStatus(t kit.RepoTarget) status {
+func repoStatus(t reposel.Target) status {
 	if t.Problem != "" {
 		return status{}
 	}
@@ -148,7 +149,7 @@ func worktreesIn(path string) string {
 
 // problemsIn fails a listing that found a profile entry wt cannot work on,
 // once every row is printed.
-func problemsIn(targets []kit.RepoTarget) error {
+func problemsIn(targets []reposel.Target) error {
 	n := 0
 	for _, t := range targets {
 		if t.Problem != "" {

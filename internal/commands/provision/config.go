@@ -8,6 +8,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
+	"github.com/anders-lindstrom/wt/internal/reposel"
 )
 
 // Config prints the resolved configuration. With shell set, it emits
@@ -116,7 +117,7 @@ func userBlock(ctx *kit.Context, w io.Writer) {
 		}
 		fmt.Fprintf(w, "  %-14s %v (%s)\n", name+":", config.UserLiteral(name, v), u.Origin(name))
 	}
-	roots, origin := kit.RootsFor(u)
+	roots, origin := reposel.RootsFor(u)
 	fmt.Fprintf(w, "roots:         (%s)\n", origin)
 	for _, root := range roots {
 		fmt.Fprintf(w, "  %-14s %s\n", root.Name+":", root.Path)

@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anders-lindstrom/wt/internal/reposel"
 )
 
 // Doctor checks what every --all run reads: a root that is not there, a root
@@ -75,7 +75,7 @@ func TestReposShowsSyncAndABrokenConfiguration(t *testing.T) {
 	t.Setenv("WT_ROOTS", "")
 
 	var buf bytes.Buffer
-	if err := Repos(u, kit.Selection{}, ReposOptions{}, &buf); err != nil {
+	if err := Repos(u, reposel.Selection{}, ReposOptions{}, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -86,7 +86,7 @@ func TestReposShowsSyncAndABrokenConfiguration(t *testing.T) {
 		}
 	}
 	buf.Reset()
-	err := DoctorAll(u, kit.Selection{All: true}, &buf)
+	err := DoctorAll(u, reposel.Selection{All: true}, &buf)
 	if err == nil || !strings.Contains(buf.String(), "broken     1 problem(s)") || !strings.Contains(buf.String(), "plain      ✓") ||
 		!strings.Contains(buf.String(), "~ sync ") {
 		t.Errorf("want doctor per repository and a failure: %v\n%s", err, buf.String())

@@ -26,6 +26,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anders-lindstrom/wt/internal/reposel"
 	"github.com/anders-lindstrom/wt/schema"
 )
 
@@ -190,7 +191,7 @@ type ListOptions struct {
 	// Selection, when it names any, lists the sessions of every repository
 	// it covers instead, from one read of claude's sessions. User is the
 	// configuration it is resolved against.
-	Selection kit.Selection
+	Selection reposel.Selection
 	User      *config.User
 	// NoInboxCheck leaves out the connection to each inbox.
 	NoInboxCheck bool
@@ -300,7 +301,7 @@ func repoSessions(ctx *kit.Context, read *ClaudeSessions, env sessionEnv) ([]Inf
 // from the one read of claude's sessions there is: each session is placed in
 // its repository by its working directory, and only a repository holding one
 // is opened.
-func acrossRepos(u *config.User, sel kit.Selection, read *ClaudeSessions, env sessionEnv) ([]Info, error) {
+func acrossRepos(u *config.User, sel reposel.Selection, read *ClaudeSessions, env sessionEnv) ([]Info, error) {
 	all := read.all()
 	roots := make([]string, len(all))
 	var wg sync.WaitGroup
@@ -330,12 +331,12 @@ func acrossRepos(u *config.User, sel kit.Selection, read *ClaudeSessions, env se
 	if err != nil {
 		return nil, err
 	}
-	set := kit.RepoSet{Repos: targets}
+	set := reposel.Set{Repos: targets}
 	type repoResult struct {
 		infos []Info
 		err   error
 	}
-	results := kit.EachRepo(set.Repos, kit.RepoParallelism, func(t kit.RepoTarget) repoResult {
+	results := reposel.Each(set.Repos, reposel.Parallelism, func(t reposel.Target) repoResult {
 		var mine []ClaudeSession
 		for i, s := range all {
 			if roots[i] != "" && repo.SamePath(roots[i], t.Path) {
@@ -980,22 +981,22 @@ func sessionActivity(s ClaudeSession) string {
 // repositories (a git call each) is what a listing of every repository's
 // sessions must not do; the repositories that hold a session are few, and a
 // root holds a repository when it is the checkout or its parent directory.
-func selectedWithSessions(u *config.User, sel kit.Selection, mains []string) ([]kit.RepoTarget, error) {
-	var named *kit.RepoSet
-	var roots []kit.Root
+func selectedWithSessions(u *config.User, sel reposel.Selection, mains []string) ([]reposel.Target, error) {
+	var named *reposel.Set
+	var roots []reposel.Root
 	if len(sel.Profiles) > 0 {
-		set, err := kit.SelectRepos(u, sel)
+		set, err := reposel.Select(u, sel)
 		if err != nil {
 			return nil, err
 		}
 		named = &set
 	} else {
 		var err error
-		if roots, err = kit.ChosenRoots(u, sel); err != nil {
+		if roots, err = reposel.ChosenRoots(u, sel); err != nil {
 			return nil, err
 		}
 	}
-	var out []kit.RepoTarget
+	var out []reposel.Target
 	seen := map[string]bool{}
 	for _, main := range mains {
 		if main == "" || seen[main] {
@@ -1011,8 +1012,8 @@ func selectedWithSessions(u *config.User, sel kit.Selection, mains []string) ([]
 			continue
 		}
 		for _, r := range roots {
-			if (repo.SamePath(main, r.Path) || repo.SamePath(filepath.Dir(main), r.Path)) && kit.Managed(main) {
-				out = append(out, kit.RepoTarget{Name: filepath.Base(main), Path: main, Root: r.Name})
+			if (repo.SamePath(main, r.Path) || repo.SamePath(filepath.Dir(main), r.Path)) && reposel.Managed(main) {
+				out = append(out, reposel.Target{Name: filepath.Base(main), Path: main, Root: r.Name})
 				break
 			}
 		}

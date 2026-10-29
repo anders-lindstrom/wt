@@ -10,6 +10,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
+	"github.com/anders-lindstrom/wt/internal/reposel"
 )
 
 // SweepAllOptions is a sweep across repositories: the one-repository options
@@ -24,7 +25,7 @@ type SweepAllOptions struct {
 
 // repoSweep is one repository's part of a sweep across many.
 type repoSweep struct {
-	target kit.RepoTarget
+	target reposel.Target
 	ctx    *kit.Context
 	plan   SweepPlan
 	log    bytes.Buffer // what fetching and planning printed, shown with its plan
@@ -43,11 +44,11 @@ func (s *repoSweep) quiet() bool {
 // repository; ask once for the lot; then carry out each repository's plan the
 // way a sweep of it alone would, re-reading it first. A repository that
 // cannot be swept is reported and the rest go ahead.
-func SweepAll(u *config.User, sel kit.Selection, opts SweepAllOptions, w io.Writer) error {
+func SweepAll(u *config.User, sel reposel.Selection, opts SweepAllOptions, w io.Writer) error {
 	var failed []string
 	return kit.Bulk[*repoSweep]{
 		Watch: func(w io.Writer) func() { return kit.WatchSignals(w, nil) },
-		Plan: func(repos []kit.RepoTarget) ([]*repoSweep, error) {
+		Plan: func(repos []reposel.Target) ([]*repoSweep, error) {
 			// The sessions are listed once for every repository's plan:
 			// `claude agents` knows them all, and twenty listings would say
 			// the same thing twenty times. Before anything goes, each
@@ -58,7 +59,7 @@ func SweepAll(u *config.User, sel kit.Selection, opts SweepAllOptions, w io.Writ
 			if listed == nil {
 				one.Agents = []agents.Agent{}
 			}
-			return kit.EachRepo(repos, kit.RepoParallelism, func(t kit.RepoTarget) *repoSweep {
+			return reposel.Each(repos, reposel.Parallelism, func(t reposel.Target) *repoSweep {
 				s := &repoSweep{target: t}
 				s.ctx, s.plan, s.err = planRepoSweep(t, one, listErr, &s.log)
 				return s
@@ -121,7 +122,7 @@ func SweepAll(u *config.User, sel kit.Selection, opts SweepAllOptions, w io.Writ
 // planRepoSweep is one repository's sweep up to the question: the checks a
 // sweep of it alone makes, its fetch, and its plan. What the fetch prints goes
 // to log, to be shown with the plan.
-func planRepoSweep(t kit.RepoTarget, opts SweepOptions, listErr error, log io.Writer) (*kit.Context, SweepPlan, error) {
+func planRepoSweep(t reposel.Target, opts SweepOptions, listErr error, log io.Writer) (*kit.Context, SweepPlan, error) {
 	if t.Problem != "" {
 		return nil, SweepPlan{}, fmt.Errorf("%s: %s", t.Path, t.Problem)
 	}

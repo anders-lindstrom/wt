@@ -17,6 +17,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anders-lindstrom/wt/internal/reposel"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 	"github.com/anders-lindstrom/wt/schema"
 )
@@ -148,13 +149,13 @@ func SyncJSON(ctx *kit.Context, opts SyncOptions, w io.Writer) error {
 // array of one overview object per repository, in the selection's order. A
 // repository that could not be read is an object with its error, and the
 // returned error names every one.
-func SyncAllJSON(u *config.User, sel kit.Selection, opts SyncOptions, w io.Writer) error {
-	set, err := kit.SelectRepos(u, sel)
+func SyncAllJSON(u *config.User, sel reposel.Selection, opts SyncOptions, w io.Writer) error {
+	set, err := reposel.Select(u, sel)
 	if err != nil {
 		return err
 	}
 	defer syncrun.WatchSignals(os.Stderr, nil)()
-	out := kit.EachRepo(set.Repos, kit.RepoParallelism, func(t kit.RepoTarget) SyncOverview {
+	out := reposel.Each(set.Repos, reposel.Parallelism, func(t reposel.Target) SyncOverview {
 		if t.Problem == "" {
 			ctx, err := kit.Open(t.Path, io.Discard)
 			if err == nil {

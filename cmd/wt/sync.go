@@ -14,6 +14,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/synckeep"
 	"github.com/anders-lindstrom/wt/internal/commands/synckeep/keepstate"
 	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
+	"github.com/anders-lindstrom/wt/internal/reposel"
 )
 
 func newSyncCmd() *cobra.Command {
@@ -546,7 +547,7 @@ func (f syncVerbFlags) check() error {
 
 // syncOverviewJSON is wt sync --json: the overview as one object, or with
 // --all, --roots or --profile an array of one per repository.
-func syncOverviewJSON(cmd *cobra.Command, args []string, sel kit.Selection, f syncVerbFlags) error {
+func syncOverviewJSON(cmd *cobra.Command, args []string, sel reposel.Selection, f syncVerbFlags) error {
 	opts := synccmd.SyncOptions{NoFetch: f.noFetch}
 	switch {
 	case len(args) > 0:
@@ -779,7 +780,7 @@ func noTerminal(w io.Writer) kit.Confirm[[]string] {
 // syncAcross is wt sync with --all, --roots or --profile: the overview of
 // every repository they name, or with --rebase a run across all of them. The
 // other verbs finish one worktree's run, so they name it instead.
-func syncAcross(cmd *cobra.Command, args []string, verb string, sel kit.Selection, f syncVerbFlags) error {
+func syncAcross(cmd *cobra.Command, args []string, verb string, sel reposel.Selection, f syncVerbFlags) error {
 	u := loadUserWarn(cmd.ErrOrStderr())
 	switch {
 	case verb == "resume" || verb == "undo":

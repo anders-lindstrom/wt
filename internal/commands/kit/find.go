@@ -10,17 +10,14 @@ import (
 	"github.com/anders-lindstrom/wt/internal/find"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anders-lindstrom/wt/internal/reposel"
 )
-
-// defaultRoots is where repositories live on this machine when WT_ROOTS says
-// nothing. Colon-separated, so a path containing spaces survives.
-const defaultRoots = "programmering/telcred:programmering/private:Git"
 
 // Roots returns the directories to scan for other repositories: the ones
 // RootsFor resolves, from WT_ROOTS, the user file's [roots], or the defaults.
 func Roots() []string {
 	u, _ := config.LoadUser()
-	roots, _ := RootsFor(u)
+	roots, _ := reposel.RootsFor(u)
 	out := make([]string, 0, len(roots))
 	for _, r := range roots {
 		out = append(out, r.Path)
@@ -216,7 +213,7 @@ func scanRoots(roots []string) []*repo.Repo {
 	for _, root := range roots {
 		// A root that is a checkout is that one repository, and what is
 		// under it is its own business.
-		if IsCheckout(root) {
+		if reposel.IsCheckout(root) {
 			add(root)
 			continue
 		}
@@ -225,7 +222,7 @@ func scanRoots(roots []string) []*repo.Repo {
 			continue
 		}
 		for _, e := range entries {
-			if dir := filepath.Join(root, e.Name()); IsCheckout(dir) {
+			if dir := filepath.Join(root, e.Name()); reposel.IsCheckout(dir) {
 				add(dir)
 			}
 		}

@@ -11,6 +11,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synckeep/keepstate"
 	"github.com/anders-lindstrom/wt/internal/config"
+	"github.com/anders-lindstrom/wt/internal/reposel"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -33,7 +34,7 @@ type KeepStartAllOptions struct {
 // keepRow is one repository's line in start, stop or status across
 // repositories.
 type keepRow struct {
-	target kit.RepoTarget
+	target reposel.Target
 	ctx    *kit.Context
 	job    keepstate.KeepJob
 	// act says the command has something to do here; failed that the
@@ -47,8 +48,8 @@ type keepRow struct {
 
 // keepRows opens every repository a selection names, in its order, and
 // lets fn say what the command makes of each one it could open.
-func keepRows(u *config.User, sel kit.Selection, fn func(*keepRow)) ([]*keepRow, error) {
-	set, err := kit.SelectRepos(u, sel)
+func keepRows(u *config.User, sel reposel.Selection, fn func(*keepRow)) ([]*keepRow, error) {
+	set, err := reposel.Select(u, sel)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +57,7 @@ func keepRows(u *config.User, sel kit.Selection, fn func(*keepRow)) ([]*keepRow,
 }
 
 // keepRowsOf is keepRows for repositories already selected, one at a time.
-func keepRowsOf(repos []kit.RepoTarget, fn func(*keepRow)) []*keepRow {
+func keepRowsOf(repos []reposel.Target, fn func(*keepRow)) []*keepRow {
 	rows := make([]*keepRow, 0, len(repos))
 	for _, t := range repos {
 		r := &keepRow{target: t}
@@ -126,14 +127,14 @@ func keepIneligible(ctx *kit.Context) (string, error) {
 // job is left as it is, whatever its interval, so a second start installs
 // only what the first did not. The plan is printed first and one question
 // covers it.
-func StartAll(u *config.User, sel kit.Selection, opts KeepStartAllOptions, w io.Writer) error {
+func StartAll(u *config.User, sel reposel.Selection, opts KeepStartAllOptions, w io.Writer) error {
 	s, err := newKeepStarter(opts.KeepStartOptions)
 	if err != nil {
 		return err
 	}
 	var todo []*keepRow
 	return kit.Bulk[*keepRow]{
-		Plan: func(repos []kit.RepoTarget) ([]*keepRow, error) {
+		Plan: func(repos []reposel.Target) ([]*keepRow, error) {
 			return keepRowsOf(repos, func(r *keepRow) {
 				job, err := s.job(r.ctx)
 				if err != nil {
@@ -205,7 +206,7 @@ func StartAll(u *config.User, sel kit.Selection, opts KeepStartAllOptions, w io.
 // no question, since start puts it back. A repository with no job is listed
 // and left alone; one that no longer declares wt sync is stopped all the
 // same.
-func StopAll(u *config.User, sel kit.Selection, dryRun bool, w io.Writer) error {
+func StopAll(u *config.User, sel reposel.Selection, dryRun bool, w io.Writer) error {
 	if keepstate.KeepGOOS != "darwin" {
 		return ErrNoLaunchd
 	}
@@ -260,7 +261,7 @@ func StopAll(u *config.User, sel kit.Selection, dryRun bool, w io.Writer) error 
 // StatusAll is wt sync keep status across repositories, one line
 // each: what wt sync doctor's keeper row says, or why the repository is not
 // one to keep.
-func StatusAll(u *config.User, sel kit.Selection, now time.Time, w io.Writer) error {
+func StatusAll(u *config.User, sel reposel.Selection, now time.Time, w io.Writer) error {
 	rows, err := keepRows(u, sel, func(r *keepRow) {
 		k, err := keepstate.Keeper(r.ctx, true)
 		if err != nil {

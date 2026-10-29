@@ -13,13 +13,14 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/reposel"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // SyncAll is the overview across repositories: wt sync in each one a
 // selection names, a few at a time, printed one section after another. It
 // changes nothing but the fetch.
-func SyncAll(u *config.User, sel kit.Selection, opts SyncOptions, w io.Writer) error {
+func SyncAll(u *config.User, sel reposel.Selection, opts SyncOptions, w io.Writer) error {
 	defer syncrun.WatchSignals(w, nil)()
 	return kit.AcrossRepos(u, sel, w, func(ctx *kit.Context, w io.Writer) error { return Sync(ctx, opts, w) })
 }
@@ -36,7 +37,7 @@ type SyncRebaseAllOptions struct {
 // repoRun is one repository's part of a run across many: what planning it
 // found, and what it printed doing so.
 type repoRun struct {
-	target     kit.RepoTarget
+	target     reposel.Target
 	ctx        *kit.Context
 	ready      []string
 	notReady   []string
@@ -56,12 +57,12 @@ type repoRun struct {
 // naming them would, onto the trunk the plan fetched. A repository whose trunk
 // declares no .wt-sync.yaml has not opted in and is listed, not failed. With
 // IfReady, a worktree left behind trunk fails the run.
-func SyncRebaseAll(u *config.User, sel kit.Selection, opts SyncRebaseAllOptions, w io.Writer) error {
+func SyncRebaseAll(u *config.User, sel reposel.Selection, opts SyncRebaseAllOptions, w io.Writer) error {
 	var failures []string
 	var listed []agents.Agent
 	return kit.Bulk[*repoRun]{
 		Watch: func(w io.Writer) func() { return syncrun.WatchSignals(w, nil) },
-		Plan: func(repos []kit.RepoTarget) ([]*repoRun, error) {
+		Plan: func(repos []reposel.Target) ([]*repoRun, error) {
 			if opts.AllowDiverged {
 				return nil, errors.New("--allow-diverged rebases a worktree you name over commits its remote has; name it, in its repository")
 			}
@@ -75,7 +76,7 @@ func SyncRebaseAll(u *config.User, sel kit.Selection, opts SyncRebaseAllOptions,
 			}
 			plan := opts.RunOptions
 			plan.Agents = listed
-			return kit.EachRepo(repos, kit.RepoParallelism, func(t kit.RepoTarget) *repoRun {
+			return reposel.Each(repos, reposel.Parallelism, func(t reposel.Target) *repoRun {
 				return planRepoRun(t, plan)
 			}), nil
 		},
@@ -171,7 +172,7 @@ func SyncRebaseAll(u *config.User, sel kit.Selection, opts SyncRebaseAllOptions,
 
 // planRepoRun plans one repository's part of a run across many: its fetch,
 // and the worktrees a run with nothing named would take.
-func planRepoRun(t kit.RepoTarget, opts RunOptions) *repoRun {
+func planRepoRun(t reposel.Target, opts RunOptions) *repoRun {
 	rr := &repoRun{target: t}
 	if t.Problem != "" {
 		rr.err = fmt.Errorf("%s: %s", t.Path, t.Problem)

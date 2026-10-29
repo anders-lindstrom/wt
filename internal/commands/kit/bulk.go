@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/anders-lindstrom/wt/internal/config"
+	"github.com/anders-lindstrom/wt/internal/reposel"
 )
 
 // Ask puts a yes-or-no question to the person running wt and says what they
@@ -30,7 +31,7 @@ type Bulk[P any] struct {
 	Watch func(w io.Writer) func()
 	// Plan plans the repositories, in the selection's order. An error ends
 	// the run before anything is printed.
-	Plan func(repos []RepoTarget) ([]P, error)
+	Plan func(repos []reposel.Target) ([]P, error)
 	// Report prints the plans and says what carrying them out comes to, "3
 	// branches across 2 repositories", or "" when there is nothing to do.
 	Report func(w io.Writer, plans []P) (what string)
@@ -44,8 +45,8 @@ type Bulk[P any] struct {
 }
 
 // Run runs b across the repositories sel names.
-func (b Bulk[P]) Run(u *config.User, sel Selection, w io.Writer) error {
-	set, err := SelectRepos(u, sel)
+func (b Bulk[P]) Run(u *config.User, sel reposel.Selection, w io.Writer) error {
+	set, err := reposel.Select(u, sel)
 	if err != nil {
 		return err
 	}
