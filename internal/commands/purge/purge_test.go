@@ -17,6 +17,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 )
 
@@ -177,7 +178,7 @@ func TestPurgeExpectHoldsItToThePlan(t *testing.T) {
 	}
 	var o Output
 	_ = json.Unmarshal(out.Bytes(), &o)
-	if o.Outcome != quarantine.OutcomeRefused || len(o.Problems) != 1 || o.Problems[0].Code != kit.ProblemPlanChanged {
+	if o.Outcome != quarantine.OutcomeRefused || len(o.Problems) != 1 || o.Problems[0].Code != jsonout.ProblemPlanChanged {
 		t.Errorf("result %s", out.String())
 	}
 	if !testkit.Exists(dir) {
@@ -198,7 +199,7 @@ func TestPurgeAsksAndRefusesWithNobodyToAsk(t *testing.T) {
 	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/ask", false)
 	var buf bytes.Buffer
 	asked := 0
-	no := func() bool { asked++; return false }
+	no := func(string) bool { asked++; return false }
 	if err := QuarantinePurge(dir, Options{Confirm: no}, &buf); err != nil || asked != 1 {
 		t.Fatalf("%v, asked %d\n%s", err, asked, buf.String())
 	}
@@ -211,7 +212,7 @@ func TestPurgeAsksAndRefusesWithNobodyToAsk(t *testing.T) {
 	if err := QuarantinePurge(dir, Options{DryRun: true}, &buf); err != nil || !testkit.Exists(dir) {
 		t.Fatalf("--dry-run: %v", err)
 	}
-	yes := func() bool { return true }
+	yes := func(string) bool { return true }
 	if err := QuarantinePurge(dir, Options{Confirm: yes}, &buf); err != nil {
 		t.Fatalf("%v\n%s", err, buf.String())
 	}
@@ -224,7 +225,7 @@ func TestPurgeReadsThePlanAgainAfterTheQuestion(t *testing.T) {
 	t.Parallel()
 	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/ask-changed", false)
 	r := testkit.LoadRecord(t, dir)
-	yes := func() bool {
+	yes := func(string) bool {
 		testkit.GitIn(t, ctx.Repo.MainRoot, "update-ref", "-d", *r.Pins.Head)
 		return true
 	}
@@ -300,7 +301,7 @@ func TestPurgeJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &o); err != nil {
 		t.Fatalf("one object: %v\n%s", err, out.String())
 	}
-	if o.Outcome != kit.OutcomeInterrupted || o.FolderDeleted {
+	if o.Outcome != jsonout.OutcomeInterrupted || o.FolderDeleted {
 		t.Errorf("result %s", out.String())
 	}
 	for _, pin := range o.Pins {

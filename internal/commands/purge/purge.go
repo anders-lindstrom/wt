@@ -14,6 +14,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 	"github.com/anders-lindstrom/wt/schema"
 )
@@ -35,7 +36,7 @@ type Options struct {
 	Expect string
 	// Confirm, when set, is asked once the plan is printed; false purges
 	// nothing.
-	Confirm func() bool
+	Confirm kit.Ask
 	// NoTerminal is a purge with nobody to ask and no --yes: it refuses.
 	NoTerminal bool
 	// Result, when set, receives what the purge did.
@@ -73,7 +74,7 @@ func QuarantinePurge(dir string, opts Options, w io.Writer) error {
 		return report(fmt.Errorf("nothing was purged: %s", why))
 	}
 	token := purgeToken(plan)
-	if opts.Expect != "" && opts.Expect != kit.Deref(token) {
+	if opts.Expect != "" && opts.Expect != jsonout.Deref(token) {
 		return report(errPurgePlanChanged)
 	}
 	switch {
@@ -83,7 +84,7 @@ func QuarantinePurge(dir string, opts Options, w io.Writer) error {
 	case opts.NoTerminal:
 		return report(errPurgeNoTerminal)
 	case opts.Confirm != nil:
-		if !opts.Confirm() {
+		if !opts.Confirm("Delete it for good?") {
 			fmt.Fprintln(w, "Nothing was purged.")
 			return report(nil)
 		}
@@ -93,7 +94,7 @@ func QuarantinePurge(dir string, opts Options, w io.Writer) error {
 		if opts.Planned != nil {
 			opts.Planned(plan)
 		}
-		if kit.Deref(purgeToken(plan)) != kit.Deref(token) {
+		if jsonout.Deref(purgeToken(plan)) != jsonout.Deref(token) {
 			return report(errPurgePlanChanged)
 		}
 	}
@@ -214,11 +215,11 @@ func sizeWords(n int64) string {
 // would be lost. Nil when the purge would refuse.
 func purgeToken(p quarantine.PurgePlan) *string { return purgeTokenOf(p).Strp() }
 
-func purgeTokenOf(p quarantine.PurgePlan) *kit.Token {
+func purgeTokenOf(p quarantine.PurgePlan) *jsonout.Token {
 	if p.Refusal() != "" {
 		return nil
 	}
-	t := kit.NewToken("1:", "wt-quarantine-purge").Str("Dir", p.Dir).
+	t := jsonout.NewToken("1:", "wt-quarantine-purge").Str("Dir", p.Dir).
 		Str("Identity.Device", strconv.FormatUint(p.Identity.Device, 10)).
 		Str("Identity.Inode", strconv.FormatUint(p.Identity.Inode, 10)).
 		Str("State", p.State).Str("Data", string(p.Data)).List("Entries", p.Entries...).Str("Tree", p.Tree)
@@ -311,27 +312,27 @@ const purgeCommand = "quarantine purge"
 
 func purgePlanOutput(p quarantine.PurgePlan) PlanOutput {
 	o := PlanOutput{Schema: 1, SchemaVersion: schema.VersionOf("quarantine-purge-plan"), Command: purgeCommand,
-		Dir: p.Dir, State: kit.Strp(p.State), Token: purgeToken(p), Entries: []string{}, Pins: []PinPlan{},
-		Unreachable: []Lost{}, ReachError: kit.Strp(p.ReachError), RepoGone: p.RepoGone, Problems: purgeProblems(p)}
+		Dir: p.Dir, State: jsonout.Strp(p.State), Token: purgeToken(p), Entries: []string{}, Pins: []PinPlan{},
+		Unreachable: []Lost{}, ReachError: jsonout.Strp(p.ReachError), RepoGone: p.RepoGone, Problems: purgeProblems(p)}
 	o.Entries = append(o.Entries, p.Entries...)
 	if p.Bytes >= 0 {
 		n := p.Bytes
 		o.Bytes = &n
 	}
 	if r := p.Record; r != nil {
-		o.Repo, o.Worktree, o.CreatedAt = kit.Strp(r.Repo), kit.Strp(r.Checkout.Path), kit.Strp(r.CreatedAt)
+		o.Repo, o.Worktree, o.CreatedAt = jsonout.Strp(r.Repo), jsonout.Strp(r.Checkout.Path), jsonout.Strp(r.CreatedAt)
 		if r.Branch != nil {
-			o.Branch = kit.Strp(r.Branch.Name)
+			o.Branch = jsonout.Strp(r.Branch.Name)
 		}
 	}
 	for _, pin := range p.Pins {
-		o.Pins = append(o.Pins, PinPlan{Name: pin.Name, Ref: pin.Ref, OID: kit.Strp(pin.OID)})
+		o.Pins = append(o.Pins, PinPlan{Name: pin.Name, Ref: pin.Ref, OID: jsonout.Strp(pin.OID)})
 	}
 	for _, l := range p.Lost {
 		o.Unreachable = append(o.Unreachable, Lost(l))
 	}
 	if why := purgeRefusal(p); why != "" {
-		o.Error = kit.Strp(why)
+		o.Error = jsonout.Strp(why)
 	}
 	return o
 }
@@ -357,7 +358,7 @@ func QuarantinePurgePlanJSON(dir string, out, progress io.Writer) error {
 	plan := quarantine.PlanPurge(abs)
 	RenderPurgePlan(plan, progress)
 	o := purgePlanOutput(plan)
-	if werr := kit.WriteJSON(out, o); werr != nil {
+	if werr := jsonout.WriteJSON(out, o); werr != nil {
 		return werr
 	}
 	if o.Error != nil {
@@ -390,7 +391,7 @@ func QuarantinePurgeJSON(dir string, opts Options, out, progress io.Writer) erro
 // purgeJournal writes wt purge --json's one object once: when
 // the purge returns, or when a signal ends it.
 type purgeJournal struct {
-	*kit.Journal[purgeRecord]
+	*jsonout.Journal[purgeRecord]
 }
 
 // purgeRecord is the plan the purge read, and what it returned.
@@ -403,10 +404,10 @@ type purgeRecord struct {
 // newPurgeJournal reads the pins and the folder as they are when it writes,
 // so what it says became of each is true whatever the run got to.
 func newPurgeJournal(out io.Writer, dir string) *purgeJournal {
-	return &purgeJournal{kit.NewJournal(out, purgeRecord{}, kit.JournalRules[purgeRecord]{
+	return &purgeJournal{jsonout.NewJournal(out, purgeRecord{}, jsonout.JournalRules[purgeRecord]{
 		Snapshot: func(r purgeRecord, signalled bool, recovery string) any {
 			if signalled {
-				return purgeOutput(dir, r.plan, kit.OutcomeInterrupted, nil, recovery)
+				return purgeOutput(dir, r.plan, jsonout.OutcomeInterrupted, nil, recovery)
 			}
 			return purgeOutput(dir, r.plan, r.outcome, r.err, "")
 		}})}
@@ -428,21 +429,21 @@ func purgeOutput(dir string, p quarantine.PurgePlan, outcome string, err error, 
 		outcome = quarantine.OutcomeRefused
 	}
 	o := Output{Schema: 1, SchemaVersion: schema.VersionOf("quarantine-purge"), Command: purgeCommand,
-		Dir: dir, State: kit.Strp(p.State), Token: purgeToken(p), Outcome: outcome, Problems: purgeProblems(p),
-		Pins: []PinResult{}, Recovery: kit.Strp(recovery)}
+		Dir: dir, State: jsonout.Strp(p.State), Token: purgeToken(p), Outcome: outcome, Problems: purgeProblems(p),
+		Pins: []PinResult{}, Recovery: jsonout.Strp(recovery)}
 	if err != nil {
-		o.Error = kit.Strp(err.Error())
+		o.Error = jsonout.Strp(err.Error())
 		if errors.Is(err, errPurgePlanChanged) || errors.Is(err, quarantine.ErrPurgeChanged) {
-			o.Problems = append(o.Problems, Problem{Code: kit.ProblemPlanChanged, Text: err.Error()})
+			o.Problems = append(o.Problems, Problem{Code: jsonout.ProblemPlanChanged, Text: err.Error()})
 		}
 	}
 	if p.Record != nil {
-		o.Repo = kit.Strp(p.Record.Repo)
+		o.Repo = jsonout.Strp(p.Record.Repo)
 	}
 	_, serr := os.Lstat(dir)
 	o.FolderDeleted = p.Dir != "" && errors.Is(serr, os.ErrNotExist)
 	for _, pin := range p.Pins {
-		r := PinResult{Name: pin.Name, Ref: pin.Ref, OID: kit.Strp(pin.OID), Result: PinAbsent}
+		r := PinResult{Name: pin.Name, Ref: pin.Ref, OID: jsonout.Strp(pin.OID), Result: PinAbsent}
 		if pin.OID != "" && !p.RepoGone {
 			r.Result = PinKept
 			// A pin that cannot be read is not known to be gone.

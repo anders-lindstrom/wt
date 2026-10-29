@@ -3,6 +3,7 @@ package synckeep
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -16,6 +17,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anders-lindstrom/wt/internal/reposel"
 )
 
 // keepFleet is three repositories under one profile: two that declare wt
@@ -28,7 +30,7 @@ func keepFleet(t *testing.T) (u *config.User, kept, fresh, undeclared *kit.Conte
 	plain := testkit.CommittedRepo(t, testkit.MinimalConf)
 	testkit.GitIn(t, plain, "remote", "add", "origin", plain)
 	testkit.GitIn(t, plain, "fetch", "-q", "origin")
-	undeclared, err := kit.Open(plain)
+	undeclared, err := kit.Open(plain, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,9 +88,9 @@ func TestSyncKeepStartAllInstallsWhatIsMissing(t *testing.T) {
 	keptBody, _ := os.ReadFile(keptJob.PlistPath)
 	var asked []string
 	opts := KeepStartAllOptions{KeepStartOptions: keepStartOpts(0),
-		Ask: func(q string) (bool, error) { asked = append(asked, q); return true, nil }}
+		Ask: func(q string) bool { asked = append(asked, q); return true }}
 	var out bytes.Buffer
-	if err := StartAll(u, kit.Selection{Profiles: []string{"p"}}, opts, &out); err != nil {
+	if err := StartAll(u, reposel.Selection{Profiles: []string{"p"}}, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
 	s := out.String()
@@ -122,7 +124,7 @@ func TestSyncKeepStartAllInstallsWhatIsMissing(t *testing.T) {
 
 	out.Reset()
 	asked = nil
-	if err := StartAll(u, kit.Selection{Profiles: []string{"p"}}, opts, &out); err != nil {
+	if err := StartAll(u, reposel.Selection{Profiles: []string{"p"}}, opts, &out); err != nil {
 		t.Fatalf("second start: %v\n%s", err, out.String())
 	}
 	if len(asked) != 0 || !strings.HasSuffix(out.String(), "Nothing to install.\n") {
@@ -141,7 +143,7 @@ func TestSyncKeepStartAllInstallsNothingUnlessAgreed(t *testing.T) {
 		last string
 	}{
 		"dry-run":     {KeepStartAllOptions{DryRun: true}, "Nothing was installed: --dry-run.\n"},
-		"declined":    {KeepStartAllOptions{Ask: func(string) (bool, error) { return false, nil }}, "Nothing was installed.\n"},
+		"declined":    {KeepStartAllOptions{Ask: func(string) bool { return false }}, "Nothing was installed.\n"},
 		"no terminal": {KeepStartAllOptions{}, "Nothing was installed: there is no terminal to ask. Pass --yes to install a keeper in 1 repository.\n"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -149,7 +151,7 @@ func TestSyncKeepStartAllInstallsNothingUnlessAgreed(t *testing.T) {
 			before, _ := os.ReadFile(calls)
 			c.opts.KeepStartOptions = keepStartOpts(0)
 			var out bytes.Buffer
-			if err := StartAll(u, kit.Selection{Profiles: []string{"p"}}, c.opts, &out); err != nil {
+			if err := StartAll(u, reposel.Selection{Profiles: []string{"p"}}, c.opts, &out); err != nil {
 				t.Fatalf("err %v\n%s", err, out.String())
 			}
 			if row := keepRowFor(t, out.String(), fresh); !strings.HasSuffix(row, "to install, every 30m") {
@@ -172,7 +174,7 @@ func TestSyncKeepStartAllInstallsNothingUnlessAgreed(t *testing.T) {
 // with none, and --dry-run stops nothing; status says it one line each.
 func TestSyncKeepStopAndStatusAll(t *testing.T) {
 	u, kept, fresh, undeclared, home, _ := keepFleet(t)
-	sel := kit.Selection{Profiles: []string{"p"}}
+	sel := reposel.Selection{Profiles: []string{"p"}}
 	var out bytes.Buffer
 	if err := StatusAll(u, sel, keepDay, &out); err != nil {
 		t.Fatalf("status: %v\n%s", err, out.String())
@@ -236,7 +238,7 @@ func TestSyncKeepStartAllReportsARepositoryItCannotOpen(t *testing.T) {
 	u.Profiles[0].Repos = append(u.Profiles[0].Repos, gone)
 	opts := KeepStartAllOptions{KeepStartOptions: keepStartOpts(0), Yes: true}
 	var out bytes.Buffer
-	err := StartAll(u, kit.Selection{Profiles: []string{"p"}}, opts, &out)
+	err := StartAll(u, reposel.Selection{Profiles: []string{"p"}}, opts, &out)
 	if err == nil || err.Error() != "not completed: gone" {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
@@ -253,10 +255,10 @@ func TestSyncKeepStartAndStopAllAreRefusedWithoutLaunchd(t *testing.T) {
 	onPlatform(t, "linux")
 	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{t.TempDir()}}}}
 	var out bytes.Buffer
-	if err := StartAll(u, kit.Selection{Profiles: []string{"p"}}, KeepStartAllOptions{Yes: true}, &out); !errors.Is(err, ErrNoLaunchd) {
+	if err := StartAll(u, reposel.Selection{Profiles: []string{"p"}}, KeepStartAllOptions{Yes: true}, &out); !errors.Is(err, ErrNoLaunchd) {
 		t.Fatalf("start: %v", err)
 	}
-	if err := StopAll(u, kit.Selection{Profiles: []string{"p"}}, false, &out); !errors.Is(err, ErrNoLaunchd) {
+	if err := StopAll(u, reposel.Selection{Profiles: []string{"p"}}, false, &out); !errors.Is(err, ErrNoLaunchd) {
 		t.Fatalf("stop: %v", err)
 	}
 }

@@ -20,6 +20,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/github"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 )
 
 func planItem(t *testing.T, p retire.SweepPlanOutput, branch string) retire.SweepItem {
@@ -147,7 +148,7 @@ func TestSweepPlanJSONCodesWhyAWorktreeIsKept(t *testing.T) {
 		t.Errorf("want the detached worktree kept as detached: %+v", p.Items)
 	}
 
-	bases, err := retire.TrunkBases(ctx)
+	bases, err := ctx.Repo.TrunkBases(ctx.Config.MainBranch)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +207,7 @@ func TestSweepJSONCarriesOutThePlanItWasGiven(t *testing.T) {
 
 	opts.Expect = *p.Token
 	r, human, err := retiretest.SweepJSON(t, ctx, opts)
-	if err != nil || r.Outcome != kit.OutcomeDone || r.Error != nil || r.Token == nil || *r.Token != *p.Token {
+	if err != nil || r.Outcome != jsonout.OutcomeDone || r.Error != nil || r.Token == nil || *r.Token != *p.Token {
 		t.Fatalf("%v %+v\n%s", err, r, human)
 	}
 	if r.RunID == nil {
@@ -214,7 +215,7 @@ func TestSweepJSONCarriesOutThePlanItWasGiven(t *testing.T) {
 	}
 	it := retiretest.ResultItem(t, r, "done-work")
 	pin := refpins.PinOf(*r.RunID, refpins.RefBranch, "done-work")
-	if it.Result != retire.SweepDeleted || !it.BranchDeleted || it.WorktreeRemoved || kit.Deref(it.Pin) != pin ||
+	if it.Result != retire.SweepDeleted || !it.BranchDeleted || it.WorktreeRemoved || jsonout.Deref(it.Pin) != pin ||
 		testkit.GitOut(t, main, "rev-parse", pin) != doneTip ||
 		!slices.Equal(it.RestoreCommand, []string{"wt", "refs", "restore", *r.RunID, "--only", "refs/heads/done-work", "--yes"}) {
 		t.Errorf("done-work = %+v", it)
@@ -246,7 +247,7 @@ func TestSweepJSONExpectRefusesAChangedPlan(t *testing.T) {
 	testkit.BranchWithWork(t, main, "late", 0)
 	opts.Expect = *p.Token
 	r, _, err := retiretest.SweepJSON(t, ctx, opts)
-	if err == nil || r.Outcome != kit.OutcomeRefused || r.Error == nil || len(r.Items) != 0 {
+	if err == nil || r.Outcome != jsonout.OutcomeRefused || r.Error == nil || len(r.Items) != 0 {
 		t.Fatalf("%v %+v", err, r)
 	}
 	if !ctx.Repo.BranchExists("done-work") || !ctx.Repo.BranchExists("late") {
@@ -256,7 +257,7 @@ func TestSweepJSONExpectRefusesAChangedPlan(t *testing.T) {
 	// A plan with nothing to do has no token, and --expect still holds it.
 	ctx2, _, _ := testkit.SweepRepo(t)
 	opts.Expect = "1:0123456789abcdef0123456789abcdef"
-	if r, _, err = retiretest.SweepJSON(t, ctx2, opts); err == nil || r.Outcome != kit.OutcomeRefused || r.Error == nil {
+	if r, _, err = retiretest.SweepJSON(t, ctx2, opts); err == nil || r.Outcome != jsonout.OutcomeRefused || r.Error == nil {
 		t.Fatalf("an empty plan is not the plan a token named: %v %+v", err, r)
 	}
 }
@@ -276,7 +277,7 @@ func TestSweepJSONKeepsAWorktreeASessionEnteredLate(t *testing.T) {
 	}
 	opts.Expect = *p.Token
 	r, _, err := retiretest.SweepJSON(t, ctx, opts)
-	if err == nil || r.Outcome != kit.OutcomePartial {
+	if err == nil || r.Outcome != jsonout.OutcomePartial {
 		t.Fatalf("%v %+v", err, r)
 	}
 	if it := retiretest.ResultItem(t, r, "fix_wt/login-crash"); it.Result != retire.SweepKept || it.Reason == nil ||
@@ -395,7 +396,7 @@ func TestSweepPlanShowsTheConfigFingerprint(t *testing.T) {
 		t.Fatal(err)
 	}
 	q, err := retiretest.SweepPlanJSON(t, ctx, opts)
-	if err != nil || kit.Deref(q.ConfigFingerprint) == kit.Deref(p.ConfigFingerprint) || kit.Deref(q.Token) == kit.Deref(p.Token) {
+	if err != nil || jsonout.Deref(q.ConfigFingerprint) == jsonout.Deref(p.ConfigFingerprint) || jsonout.Deref(q.Token) == jsonout.Deref(p.Token) {
 		t.Errorf("an edited file is another fingerprint and token: %+v %+v", p, q)
 	}
 }

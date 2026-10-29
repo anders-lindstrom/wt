@@ -5,16 +5,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 )
 
 // An interrupt between the fast-forward and the rebase has no rebase to
 // abort: the way back is wt sync undo, which also takes away the word that
 // the branch was at its remote's commit.
 func TestOnInterruptAfterAFastForwardPointsAtUndo(t *testing.T) {
-	// Not parallel: OnInterrupt kills every git and removes every temporary directory in the test binary.
+	// Not parallel: OnInterrupt removes every temporary directory in the test binary.
 	var out bytes.Buffer
-	kit.OnInterrupt(&out, nil, &kit.RebaseInFlight{Work: "bump", Path: "/w/bump", Safety: "refs/wt-sync/feat_wt/bump/99", Forwarding: true})
+	syncrun.OnInterrupt(&out, nil, &syncrun.RebaseInFlight{Work: "bump", Path: "/w/bump", Safety: "refs/wt-sync/feat_wt/bump/99", Forwarding: true})
 	s := out.String()
 	if !strings.Contains(s, "interrupted while fast-forwarding bump") || !strings.Contains(s, "wt sync undo bump") {
 		t.Fatalf("out %q", s)

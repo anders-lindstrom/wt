@@ -2,6 +2,7 @@ package provisiontest
 
 import (
 	"bytes"
+	"io"
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
@@ -43,7 +44,7 @@ func GlobFixture(t *testing.T) (ctx *kit.Context, bump string) {
 	testkit.WriteFile(t, main, "a.txt", "a\n")
 	testkit.GitOut(t, main, "add", "-A")
 	testkit.GitOut(t, main, "commit", "-q", "-m", "declare")
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

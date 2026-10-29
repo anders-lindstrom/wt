@@ -140,7 +140,7 @@ func newSweepCmd() *cobra.Command {
 				all := retire.SweepAllOptions{SweepOptions: opts}
 				if !yes && canAsk(cmd) {
 					p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
-					all.Ask = func(q string) (bool, error) { return p.yesNo(q, false), nil }
+					all.Ask = func(q string) bool { return p.yesNo(q, false) }
 				}
 				return retire.SweepAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), all, cmd.OutOrStdout())
 			}
@@ -174,13 +174,12 @@ func newSweepCmd() *cobra.Command {
 // repository is still that one object.
 func sweepJSON(cmd *cobra.Command, opts retire.SweepOptions) error {
 	out, progress := cmd.OutOrStdout(), cmd.ErrOrStderr()
-	ctx, err := openContext()
+	ctx, err := openContext(progress)
 	if !opts.Yes {
 		if err != nil {
 			retire.SweepPlanFailed(out, err)
 			return err
 		}
-		ctx.WarnTo(progress)
 		return retire.SweepPlanJSON(ctx, opts, out, progress)
 	}
 	journal := retire.NewSweepJournal(out)
@@ -188,14 +187,13 @@ func sweepJSON(cmd *cobra.Command, opts retire.SweepOptions) error {
 		journal.Fail(err)
 		return err
 	}
-	ctx.WarnTo(progress)
 	opts.Journal = journal
 	return retire.Sweep(ctx, opts, progress)
 }
 
 // confirmSweep asks once for the whole plan, defaulting to no.
-func confirmSweep(p *prompter) func(retire.SweepPlan) (bool, error) {
-	return func(plan retire.SweepPlan) (bool, error) {
-		return p.yesNo(plan.Question(), false), nil
+func confirmSweep(p *prompter) kit.Confirm[retire.SweepPlan] {
+	return func(plan retire.SweepPlan) bool {
+		return p.yesNo(plan.Question(), false)
 	}
 }

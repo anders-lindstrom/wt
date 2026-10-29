@@ -5,12 +5,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 )
 
 // A branch behind its own remote with nothing to rebase once it is there is
@@ -43,7 +43,7 @@ func TestSyncRunFastForwardsABranchWithNothingToRebase(t *testing.T) {
 
 	opts.IfReady = true
 	r, err := synccmdtest.SyncRunJSON(t, f.Ctx, []string{"x"}, opts)
-	if err != nil || r.Outcome != kit.OutcomeDone || len(r.Worktrees) != 1 {
+	if err != nil || r.Outcome != jsonout.OutcomeDone || len(r.Worktrees) != 1 {
 		t.Fatalf("%v %+v", err, r)
 	}
 	w := r.Worktrees[0]
@@ -96,7 +96,7 @@ func TestUpFastForwardsAStackParentWithNothingToRebaseAndRebasesItsChild(t *test
 	remote := f.OnTrunkElsewhere(t, "feat_wt/x")
 
 	r, human, err := synccmdtest.UpOut(t, f.Ctx, "y", opts)
-	if err != nil || len(r.Worktrees) != 2 || r.Outcome != kit.OutcomeDone {
+	if err != nil || len(r.Worktrees) != 2 || r.Outcome != jsonout.OutcomeDone {
 		t.Fatalf("%v %+v\n%s", err, r.Worktrees, human)
 	}
 	if px := r.Worktrees[0]; px.Branch != "feat_wt/x" || px.Result != syncrun.ResultFastForwarded || testkit.Str(px.Before) != local || testkit.Str(px.After) != remote {

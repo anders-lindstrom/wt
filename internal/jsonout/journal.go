@@ -1,4 +1,4 @@
-package kit
+package jsonout
 
 import (
 	"io"
@@ -139,7 +139,7 @@ func (j *Journal[R]) Fail(err error) {
 // Finish writes the object for a run that returned.
 func (j *Journal[R]) Finish() { j.write(false, "", "") }
 
-// Interrupted writes the object for a run a signal ended (Interruptible):
+// Interrupted writes the object for a run a signal ended (kit.Interruptible):
 // the step in flight is caught, the rest stand as recorded. inFlight is the
 // rebase tracker's, recovery what the handler printed.
 func (j *Journal[R]) Interrupted(inFlight, recovery string) {
@@ -164,18 +164,6 @@ func (j *Journal[R]) Park() {
 	j.mu.Unlock()
 	if signalled {
 		select {}
-	}
-}
-
-// Watch makes a handled SIGINT or SIGTERM, until the returned function is
-// called, stop every git and script still running with its process group,
-// write the object with the step in flight caught, and exit 128+signal.
-func (j *Journal[R]) Watch(w io.Writer) func() {
-	unset := SetInterruptJournal(j)
-	stop := WatchSignals(w, nil)
-	return func() {
-		stop()
-		unset()
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/refs"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 )
 
 // RefsSweepJSON runs wt refs sweep --json and decodes its checked output.
@@ -77,7 +78,7 @@ func RemoteBackups(t *testing.T) (ctx *kit.Context, main, origin, run string) {
 	testkit.GitIn(t, main, "push", "-q", "origin", "main", "main:refs/heads/backup/landed")
 	testkit.GitIn(t, main, "branch", "backup/local", first)
 	r, human, err := RefsSweepJSON(t, ctx, refs.Options{Remote: true, OpenPRs: testkit.NoPRs})
-	if err != nil || r.Outcome != kit.OutcomeDone || r.RunID == nil {
+	if err != nil || r.Outcome != jsonout.OutcomeDone || r.RunID == nil {
 		t.Fatalf("%v %+v\n%s", err, r, human)
 	}
 	return ctx, main, origin, *r.RunID

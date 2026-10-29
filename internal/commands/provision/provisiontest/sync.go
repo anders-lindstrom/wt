@@ -2,6 +2,7 @@ package provisiontest
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -32,7 +33,7 @@ func SyncRepo(t *testing.T) *kit.Context {
 	write("a.txt", "base\n")
 	testkit.GitIn(t, main, "add", "-A")
 	testkit.GitIn(t, main, "commit", "-q", "-m", "declare")
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/refs"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/schema"
 )
 
@@ -42,7 +43,7 @@ type RefsPurgeOptions struct {
 	OlderThan string
 	DryRun    bool
 	Yes       bool
-	Confirm   func(RefsPurgePlan) bool
+	Confirm   kit.Confirm[RefsPurgePlan]
 	// NoTerminal is a purge with nobody to ask and no --yes: it refuses.
 	NoTerminal bool
 	Expect     string
@@ -155,11 +156,11 @@ func (p *RefsPurgePlan) countLost(ctx *kit.Context) error {
 // is nothing to purge.
 func purgeRefsToken(p RefsPurgePlan) *string { return purgeRefsTokenOf(p).Strp() }
 
-func purgeRefsTokenOf(p RefsPurgePlan) *kit.Token {
+func purgeRefsTokenOf(p RefsPurgePlan) *jsonout.Token {
 	if len(p.Runs) == 0 {
 		return nil
 	}
-	t := kit.NewToken("rp1-", "wt-refs-purge").Str("Repo", p.Repo)
+	t := jsonout.NewToken("rp1-", "wt-refs-purge").Str("Repo", p.Repo)
 	for _, r := range p.Runs {
 		t.Str("Runs.RunID", r.RunID).Str("Runs.MetaOID", r.MetaOID)
 		for _, s := range r.Refs {
@@ -194,7 +195,7 @@ func RefsPurge(ctx *kit.Context, opts RefsPurgeOptions, w io.Writer) (err error)
 	}
 	token := purgeRefsToken(plan)
 	j.planned(plan, token)
-	if opts.Expect != "" && kit.Deref(token) != opts.Expect {
+	if opts.Expect != "" && jsonout.Deref(token) != opts.Expect {
 		return errRefsPurgePlanChanged
 	}
 	plan.Render(w)
@@ -217,7 +218,7 @@ func RefsPurge(ctx *kit.Context, opts RefsPurgeOptions, w io.Writer) (err error)
 		if err != nil {
 			return err
 		}
-		if kit.Deref(purgeRefsToken(fresh)) != kit.Deref(token) {
+		if jsonout.Deref(purgeRefsToken(fresh)) != jsonout.Deref(token) {
 			return errRefsPurgePlanChanged
 		}
 	}
@@ -376,14 +377,14 @@ func purgePin(s refpins.SweptRef) RefPurgePin {
 // nothing; a plan that cannot be made is one object too.
 func RefsPurgePlanJSON(ctx *kit.Context, opts RefsPurgeOptions, out, progress io.Writer) error {
 	o := RefsPurgePlanOutput{Schema: 1, SchemaVersion: schema.VersionOf("refs-purge-plan"), Command: refsPurgeCommand,
-		OlderThan: kit.Strp(opts.OlderThan), Runs: []RefPurgeRunPlan{}}
+		OlderThan: jsonout.Strp(opts.OlderThan), Runs: []RefPurgeRunPlan{}}
 	var err error
 	if ctx == nil {
 		err = kit.ErrNotInRepo
 	} else {
 		var plan RefsPurgePlan
 		plan, err = planRefsPurge(ctx, opts)
-		o.Repo = kit.Strp(plan.Repo)
+		o.Repo = jsonout.Strp(plan.Repo)
 		if err == nil {
 			o.Token = purgeRefsToken(plan)
 			plan.Render(progress)
@@ -391,7 +392,7 @@ func RefsPurgePlanJSON(ctx *kit.Context, opts RefsPurgeOptions, out, progress io
 				run := RefPurgeRunPlan{RunID: r.RunID, SweptAt: r.At.Unix(), Refs: []RefPurgePin{},
 					Unreachable: append([]RefLost{}, r.Lost...), Endpoint: runEndpoint(r.SweptRun)}
 				if r.MetaOID != "" {
-					run.Meta = kit.Strp(refpins.MetaRef(r.RunID))
+					run.Meta = jsonout.Strp(refpins.MetaRef(r.RunID))
 				}
 				for _, s := range r.Refs {
 					run.Refs = append(run.Refs, purgePin(s))
@@ -401,9 +402,9 @@ func RefsPurgePlanJSON(ctx *kit.Context, opts RefsPurgeOptions, out, progress io
 		}
 	}
 	if err != nil {
-		o.Error = kit.Strp(err.Error())
+		o.Error = jsonout.Strp(err.Error())
 	}
-	if werr := kit.WriteJSON(out, o); werr != nil && err == nil {
+	if werr := jsonout.WriteJSON(out, o); werr != nil && err == nil {
 		return werr
 	}
 	return err
@@ -411,7 +412,7 @@ func RefsPurgePlanJSON(ctx *kit.Context, opts RefsPurgeOptions, out, progress io
 
 // RefsPurgeJournal writes wt refs purge --yes --json's one object once.
 type RefsPurgeJournal struct {
-	*kit.Journal[RefsPurgeResult]
+	*jsonout.Journal[RefsPurgeResult]
 	root  string
 	byPin map[string]*RefPurgePinResult
 }
@@ -419,9 +420,9 @@ type RefsPurgeJournal struct {
 // NewRefsPurgeJournal is a journal that writes its object to out.
 func NewRefsPurgeJournal(out io.Writer) *RefsPurgeJournal {
 	j := &RefsPurgeJournal{byPin: map[string]*RefPurgePinResult{}}
-	j.Journal = kit.NewJournal(out, RefsPurgeResult{Schema: 1, SchemaVersion: schema.VersionOf("refs-purge"),
+	j.Journal = jsonout.NewJournal(out, RefsPurgeResult{Schema: 1, SchemaVersion: schema.VersionOf("refs-purge"),
 		Command: refsPurgeCommand, Runs: []RefPurgeRun{}},
-		kit.JournalRules[RefsPurgeResult]{Error: func(r *RefsPurgeResult, err error) { r.Error = kit.Strp(err.Error()) },
+		jsonout.JournalRules[RefsPurgeResult]{Error: func(r *RefsPurgeResult, err error) { r.Error = jsonout.Strp(err.Error()) },
 			Caught: j.caught, Close: closeRefsPurge})
 	return j
 }
@@ -454,12 +455,12 @@ func (j *RefsPurgeJournal) planned(p RefsPurgePlan, token *string) {
 	}
 	j.Lock()
 	defer j.Unlock()
-	j.root, j.Res.Repo, j.Res.Token = p.Repo, kit.Strp(p.Repo), token
+	j.root, j.Res.Repo, j.Res.Token = p.Repo, jsonout.Strp(p.Repo), token
 	j.Res.Runs = []RefPurgeRun{}
 	for _, r := range p.Runs {
 		run := RefPurgeRun{RunID: r.RunID, SweptAt: r.At.Unix(), Refs: []*RefPurgePinResult{}}
 		if r.MetaOID != "" {
-			run.Meta = kit.Strp(refpins.MetaRef(r.RunID))
+			run.Meta = jsonout.Strp(refpins.MetaRef(r.RunID))
 		}
 		for _, s := range r.Refs {
 			it := &RefPurgePinResult{RefPurgePin: purgePin(s), Result: refs.RefNotRun}
@@ -534,13 +535,13 @@ func readPurgePin(root, pin string, err error) (string, *string) {
 	_, ok, rerr := refpins.RefValue(root, pin)
 	switch {
 	case rerr != nil:
-		return PinKept, kit.Strp(kit.OneLine(rerr.Error()))
+		return PinKept, jsonout.Strp(kit.OneLine(rerr.Error()))
 	case !ok:
 		return PinDeleted, nil
 	case err != nil:
-		return PinKept, kit.Strp(git.Reason(err))
+		return PinKept, jsonout.Strp(git.Reason(err))
 	}
-	return PinKept, kit.Strp("still there")
+	return PinKept, jsonout.Strp("still there")
 }
 
 // caught reads back the pin a signal caught in flight: deleted when it is
@@ -556,7 +557,7 @@ func (j *RefsPurgeJournal) caught(_ *RefsPurgeResult, inFlight, _ string) {
 
 func closeRefsPurge(r *RefsPurgeResult, signalled bool, recovery string) any {
 	if signalled {
-		r.Outcome, r.Recovery = kit.OutcomeInterrupted, kit.Strp(recovery)
+		r.Outcome, r.Recovery = jsonout.OutcomeInterrupted, jsonout.Strp(recovery)
 		return r
 	}
 	done, changed := true, false
@@ -578,9 +579,9 @@ func closeRefsPurge(r *RefsPurgeResult, signalled bool, recovery string) any {
 	case done && r.Error == nil:
 		r.Outcome = OutcomePurged
 	case !changed:
-		r.Outcome = kit.OutcomeRefused
+		r.Outcome = jsonout.OutcomeRefused
 	default:
-		r.Outcome = kit.OutcomePartial
+		r.Outcome = jsonout.OutcomePartial
 	}
 	return r
 }
@@ -633,7 +634,7 @@ func RefsSwept(ctx *kit.Context, asJSON bool, out io.Writer) error {
 	if ctx == nil {
 		err = kit.ErrNotInRepo
 	} else {
-		o.Repo = kit.Strp(ctx.Repo.MainRoot)
+		o.Repo = jsonout.Strp(ctx.Repo.MainRoot)
 		runs, err = refpins.ReadSwept(ctx.Repo.MainRoot)
 	}
 	for _, r := range runs {
@@ -645,9 +646,9 @@ func RefsSwept(ctx *kit.Context, asJSON bool, out io.Writer) error {
 	}
 	if asJSON {
 		if err != nil {
-			o.Error = kit.Strp(err.Error())
+			o.Error = jsonout.Strp(err.Error())
 		}
-		if werr := kit.WriteJSON(out, o); werr != nil && err == nil {
+		if werr := jsonout.WriteJSON(out, o); werr != nil && err == nil {
 			return werr
 		}
 		return err

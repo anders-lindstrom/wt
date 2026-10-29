@@ -74,14 +74,13 @@ func newRemoveCmd() *cobra.Command {
 			if err != nil {
 				return usageError{err}
 			}
-			ctx, err := openContext()
+			ctx, err := openContext(cmd.ErrOrStderr())
 			if err != nil {
 				if asJSON {
 					retire.RemoveFailedJSON(cmd.OutOrStdout(), !yes, err)
 				}
 				return err
 			}
-			ctx.WarnTo(cmd.ErrOrStderr())
 			opts := retire.RemoveOptions{Force: forced, DryRun: dryRun, Expect: expect, KeepSuperset: keepSuperset,
 				Reap: reap}
 			if moveTo != "" {
@@ -133,6 +132,6 @@ func newRemoveCmd() *cobra.Command {
 
 // confirmRemoval asks the question, defaulting to no. The plan has already been
 // printed by the time this runs, so the prompt itself stays one line.
-func confirmRemoval(p *prompter) func(retire.Plan) (bool, error) {
-	return func(retire.Plan) (bool, error) { return p.yesNo("Remove it?", false), nil }
+func confirmRemoval(p *prompter) kit.Confirm[retire.Plan] {
+	return func(retire.Plan) bool { return p.yesNo("Remove it?", false) }
 }

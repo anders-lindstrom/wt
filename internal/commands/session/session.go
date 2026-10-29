@@ -25,7 +25,9 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anders-lindstrom/wt/internal/reposel"
 	"github.com/anders-lindstrom/wt/schema"
 )
 
@@ -190,7 +192,7 @@ type ListOptions struct {
 	// Selection, when it names any, lists the sessions of every repository
 	// it covers instead, from one read of claude's sessions. User is the
 	// configuration it is resolved against.
-	Selection kit.Selection
+	Selection reposel.Selection
 	User      *config.User
 	// NoInboxCheck leaves out the connection to each inbox.
 	NoInboxCheck bool
@@ -300,7 +302,7 @@ func repoSessions(ctx *kit.Context, read *ClaudeSessions, env sessionEnv) ([]Inf
 // from the one read of claude's sessions there is: each session is placed in
 // its repository by its working directory, and only a repository holding one
 // is opened.
-func acrossRepos(u *config.User, sel kit.Selection, read *ClaudeSessions, env sessionEnv) ([]Info, error) {
+func acrossRepos(u *config.User, sel reposel.Selection, read *ClaudeSessions, env sessionEnv) ([]Info, error) {
 	all := read.all()
 	roots := make([]string, len(all))
 	var wg sync.WaitGroup
@@ -330,19 +332,19 @@ func acrossRepos(u *config.User, sel kit.Selection, read *ClaudeSessions, env se
 	if err != nil {
 		return nil, err
 	}
-	set := kit.RepoSet{Repos: targets}
+	set := reposel.Set{Repos: targets}
 	type repoResult struct {
 		infos []Info
 		err   error
 	}
-	results := kit.EachRepo(set.Repos, kit.RepoParallelism, func(t kit.RepoTarget) repoResult {
+	results := reposel.Each(set.Repos, reposel.Parallelism, func(t reposel.Target) repoResult {
 		var mine []ClaudeSession
 		for i, s := range all {
 			if roots[i] != "" && repo.SamePath(roots[i], t.Path) {
 				mine = append(mine, s)
 			}
 		}
-		ctx, err := kit.Open(t.Path)
+		ctx, err := kit.Open(t.Path, io.Discard)
 		if err != nil {
 			return repoResult{err: fmt.Errorf("%s: %w", t.Path, err)}
 		}
@@ -393,7 +395,7 @@ func ListRun(ctx *kit.Context, o ListOptions) error {
 	<-read.done
 	codex := <-codexDone
 	if codex.err != nil {
-		out.CodexError = kit.Strp(kit.OneLine(codex.err.Error()))
+		out.CodexError = jsonout.Strp(kit.OneLine(codex.err.Error()))
 	}
 	merged := read.with(codex.agents)
 	if o.Selection.Any() {
@@ -413,12 +415,12 @@ func ListRun(ctx *kit.Context, o ListOptions) error {
 	}
 	switch {
 	case err != nil:
-		out.Error = kit.Strp(kit.OneLine(err.Error()))
+		out.Error = jsonout.Strp(kit.OneLine(err.Error()))
 	case sessionsErr != nil:
-		out.SessionsError = kit.Strp(kit.OneLine(sessionsErr.Error()))
+		out.SessionsError = jsonout.Strp(kit.OneLine(sessionsErr.Error()))
 	}
 	if o.JSON {
-		if werr := kit.WriteJSON(o.Out, out); werr != nil {
+		if werr := jsonout.WriteJSON(o.Out, out); werr != nil {
 			return werr
 		}
 		if err != nil {
@@ -470,7 +472,7 @@ func sessionRows(infos []Info) [][]string {
 				started = "started " + kit.Ago(now.Sub(t))
 			}
 		}
-		rows[i] = []string{s.Work, cutToWidth(name, MaxSessionName), state, inbox, started}
+		rows[i] = []string{s.Work, kit.CutToWidth(name, MaxSessionName), state, inbox, started}
 	}
 	return rows
 }
@@ -501,18 +503,18 @@ func describeSession(s ClaudeSession, repo, work, path string, env sessionEnv) I
 		info.PID = &pid
 	}
 	if s.StartedAt > 0 {
-		info.StartedAt = kit.Strp(time.UnixMilli(s.StartedAt).UTC().Format(time.RFC3339))
+		info.StartedAt = jsonout.Strp(time.UnixMilli(s.StartedAt).UTC().Format(time.RFC3339))
 	}
 	info.Background = s.ID != "" && !codex
 	info.Activity = sessionActivity(s)
 	if codex {
-		info.InboxUnavailable = kit.Strp("codex")
+		info.InboxUnavailable = jsonout.Strp("codex")
 		return info
 	}
 	if sessionIDShape.MatchString(s.SessionID) {
 		if path, mtime, ok := env.transcriptOf(s.SessionID); ok {
 			info.Transcript = &path
-			info.LastActivityAt = kit.Strp(mtime.UTC().Format(time.RFC3339))
+			info.LastActivityAt = jsonout.Strp(mtime.UTC().Format(time.RFC3339))
 		}
 	}
 	var reg registryEntry
@@ -520,11 +522,11 @@ func describeSession(s ClaudeSession, repo, work, path string, env sessionEnv) I
 	if s.PID > 1 && s.SessionID != "" {
 		reg, regState = readRegistry(s, env)
 		if regState == registryOK && reg.statusUpdated > 0 {
-			info.StateSince = kit.Strp(time.UnixMilli(reg.statusUpdated).UTC().Format(time.RFC3339))
+			info.StateSince = jsonout.Strp(time.UnixMilli(reg.statusUpdated).UTC().Format(time.RFC3339))
 		}
 	}
 	if s.Own {
-		info.InboxUnavailable = kit.Strp("own")
+		info.InboxUnavailable = jsonout.Strp("own")
 		return info
 	}
 	info.Inbox, info.InboxUnavailable = findInbox(s, env, reg, regState)
@@ -676,9 +678,9 @@ func SendRun(ctx *kit.Context, o SendOptions) error {
 	fail := func(f refusal) error {
 		out.Sent = false
 		out.MsgID = nil
-		out.Error, out.ErrorCode = kit.Strp(f.msg), kit.Strp(string(f.code))
+		out.Error, out.ErrorCode = jsonout.Strp(f.msg), jsonout.Strp(string(f.code))
 		if o.JSON {
-			if err := kit.WriteJSON(o.Out, out); err != nil {
+			if err := jsonout.WriteJSON(o.Out, out); err != nil {
 				return err
 			}
 		}
@@ -755,7 +757,7 @@ func SendRun(ctx *kit.Context, o SendOptions) error {
 
 func finishSend(o SendOptions, out Send, target *Info, sent bool) error {
 	if o.JSON {
-		return kit.WriteJSON(o.Out, out)
+		return jsonout.WriteJSON(o.Out, out)
 	}
 	name := "the session"
 	if target.Name != nil {
@@ -980,22 +982,22 @@ func sessionActivity(s ClaudeSession) string {
 // repositories (a git call each) is what a listing of every repository's
 // sessions must not do; the repositories that hold a session are few, and a
 // root holds a repository when it is the checkout or its parent directory.
-func selectedWithSessions(u *config.User, sel kit.Selection, mains []string) ([]kit.RepoTarget, error) {
-	var named *kit.RepoSet
-	var roots []kit.Root
+func selectedWithSessions(u *config.User, sel reposel.Selection, mains []string) ([]reposel.Target, error) {
+	var named *reposel.Set
+	var roots []reposel.Root
 	if len(sel.Profiles) > 0 {
-		set, err := kit.SelectRepos(u, sel)
+		set, err := reposel.Select(u, sel)
 		if err != nil {
 			return nil, err
 		}
 		named = &set
 	} else {
 		var err error
-		if roots, err = kit.ChosenRoots(u, sel); err != nil {
+		if roots, err = reposel.ChosenRoots(u, sel); err != nil {
 			return nil, err
 		}
 	}
-	var out []kit.RepoTarget
+	var out []reposel.Target
 	seen := map[string]bool{}
 	for _, main := range mains {
 		if main == "" || seen[main] {
@@ -1011,8 +1013,8 @@ func selectedWithSessions(u *config.User, sel kit.Selection, mains []string) ([]
 			continue
 		}
 		for _, r := range roots {
-			if (repo.SamePath(main, r.Path) || repo.SamePath(filepath.Dir(main), r.Path)) && kit.Managed(main) {
-				out = append(out, kit.RepoTarget{Name: filepath.Base(main), Path: main, Root: r.Name})
+			if (repo.SamePath(main, r.Path) || repo.SamePath(filepath.Dir(main), r.Path)) && reposel.Managed(main) {
+				out = append(out, reposel.Target{Name: filepath.Base(main), Path: main, Root: r.Name})
 				break
 			}
 		}
@@ -1078,7 +1080,7 @@ func StopRun(ctx *kit.Context, o StopOptions) error {
 	env.noProbe = true
 	finish := func(err error) error {
 		if o.JSON {
-			if werr := kit.WriteJSON(o.Out, out); werr != nil {
+			if werr := jsonout.WriteJSON(o.Out, out); werr != nil {
 				return werr
 			}
 		}
@@ -1089,7 +1091,7 @@ func StopRun(ctx *kit.Context, o StopOptions) error {
 		if r.failed {
 			out.Outcome = "failed"
 		}
-		out.Reason, out.ReasonCode = kit.Strp(r.msg), kit.Strp(string(r.code))
+		out.Reason, out.ReasonCode = jsonout.Strp(r.msg), jsonout.Strp(string(r.code))
 		err := errors.New(r.msg)
 		if r.usage {
 			err = UsageError{err}
@@ -1111,7 +1113,7 @@ func StopRun(ctx *kit.Context, o StopOptions) error {
 	}
 	if pick.info.PID == nil {
 		out.Outcome = "already-stopped"
-		out.Reason, out.ReasonCode = kit.Strp(name+" has no process: there is nothing to stop"), kit.Strp(string(codeNoProcess))
+		out.Reason, out.ReasonCode = jsonout.Strp(name+" has no process: there is nothing to stop"), jsonout.Strp(string(codeNoProcess))
 		if !o.JSON {
 			fmt.Fprintf(o.Out, "%s has no process: already stopped. `claude attach %s` resumes it\n", name, pick.s.ID)
 		}
@@ -1134,7 +1136,7 @@ func StopRun(ctx *kit.Context, o StopOptions) error {
 	}
 	msg, err := runClaudeStop(pick.s.ID)
 	if msg != "" {
-		out.Message = kit.Strp(msg)
+		out.Message = jsonout.Strp(msg)
 	}
 	if err != nil {
 		reason := err.Error()

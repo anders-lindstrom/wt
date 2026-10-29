@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/admin"
 )
 
 func newReposCmd() *cobra.Command {
@@ -29,7 +29,7 @@ func newReposCmd() *cobra.Command {
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			u := loadUserWarn(cmd.ErrOrStderr())
-			return kit.Repos(u, sel.selection(), kit.ReposOptions{Paths: paths}, cmd.OutOrStdout())
+			return admin.Repos(u, sel.selection(), admin.ReposOptions{Paths: paths}, cmd.OutOrStdout())
 		},
 	}
 	// --all is what a bare wt repos lists already; it is taken so the flag

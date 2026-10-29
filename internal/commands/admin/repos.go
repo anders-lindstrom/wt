@@ -1,4 +1,4 @@
-package kit
+package admin
 
 import (
 	"errors"
@@ -9,8 +9,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anders-lindstrom/wt/internal/reposel"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -22,8 +24,8 @@ type ReposOptions struct {
 // Repos lists the repositories wt manages under the roots, or the ones a
 // selection names, grouped by root. It reads the disk only: no fetch, no
 // GitHub.
-func Repos(u *config.User, sel Selection, opts ReposOptions, w io.Writer) error {
-	set, err := SelectRepos(u, sel)
+func Repos(u *config.User, sel reposel.Selection, opts ReposOptions, w io.Writer) error {
+	set, err := reposel.Select(u, sel)
 	if err != nil {
 		return err
 	}
@@ -38,31 +40,31 @@ func Repos(u *config.User, sel Selection, opts ReposOptions, w io.Writer) error 
 	home, _ := os.UserHomeDir()
 	if len(sel.Profiles) > 0 {
 		fmt.Fprintf(w, "profile %s\n", strings.Join(sel.Profiles, ", "))
-		_ = PrintTable(w, repoRows(set.Repos, home))
+		_ = kit.PrintTable(w, repoRows(set.Repos, home))
 		return problemsIn(set.Repos)
 	}
-	roots, origin := RootsFor(u)
+	roots, origin := reposel.RootsFor(u)
 	fmt.Fprintf(w, "roots from %s\n", origin)
 	for _, root := range roots {
 		if len(sel.Roots) > 0 && !slices.Contains(sel.Roots, root.Name) {
 			continue
 		}
-		var in []RepoTarget
+		var in []reposel.Target
 		for _, t := range set.Repos {
 			if t.Root == root.Name {
 				in = append(in, t)
 			}
 		}
-		fmt.Fprintf(w, "\n%s  %s  (%s)\n", root.Name, AbbreviateHome(root.Path, home), Count(len(in), "repository", "repositories"))
+		fmt.Fprintf(w, "\n%s  %s  (%s)\n", root.Name, kit.AbbreviateHome(root.Path, home), kit.Count(len(in), "repository", "repositories"))
 		if _, err := os.Stat(root.Path); err != nil {
 			fmt.Fprintln(w, "  ! the directory is not there")
 			continue
 		}
-		_ = PrintTable(w, repoRows(in, home))
+		_ = kit.PrintTable(w, repoRows(in, home))
 	}
 	if n := len(set.Unmanaged); n > 0 {
 		fmt.Fprintf(w, "\n%s under these roots %s not managed by wt; wt init in one sets it up.\n",
-			Count(n, "checkout"), isAre(n))
+			kit.Count(n, "checkout"), isAre(n))
 	}
 	return nil
 }
@@ -70,19 +72,19 @@ func Repos(u *config.User, sel Selection, opts ReposOptions, w io.Writer) error 
 // repoRows is one row per repository: its name, how many worktrees it has
 // beside the main checkout, whether wt sync is set up there, and where it is.
 // A repository whose wt configuration does not parse says so instead.
-func repoRows(targets []RepoTarget, home string) [][]string {
-	statuses := EachRepo(targets, RepoParallelism, repoStatus)
+func repoRows(targets []reposel.Target, home string) [][]string {
+	statuses := reposel.Each(targets, reposel.Parallelism, repoStatus)
 	var rows [][]string
 	for i, t := range targets {
 		s := statuses[i]
 		switch {
 		// The problem goes last, where its length widens no column.
 		case t.Problem != "":
-			rows = append(rows, []string{"  ! " + t.Name, "", "", AbbreviateHome(t.Path, home) + "  " + t.Problem})
+			rows = append(rows, []string{"  ! " + t.Name, "", "", kit.AbbreviateHome(t.Path, home) + "  " + t.Problem})
 		case s.problem != "":
-			rows = append(rows, []string{"  ! " + t.Name, "", "", AbbreviateHome(t.Path, home) + "  " + s.problem})
+			rows = append(rows, []string{"  ! " + t.Name, "", "", kit.AbbreviateHome(t.Path, home) + "  " + s.problem})
 		default:
-			rows = append(rows, []string{"  " + t.Name, s.worktrees, s.sync, AbbreviateHome(t.Path, home)})
+			rows = append(rows, []string{"  " + t.Name, s.worktrees, s.sync, kit.AbbreviateHome(t.Path, home)})
 		}
 	}
 	return rows
@@ -96,20 +98,20 @@ type status struct {
 
 // repoStatus reads a repository's status from the disk: its configuration,
 // its worktrees, and the .wt-sync.yaml on trunk as last fetched.
-func repoStatus(t RepoTarget) status {
+func repoStatus(t reposel.Target) status {
 	if t.Problem != "" {
 		return status{}
 	}
-	ctx := OpenLenient(t.Path, io.Discard)
+	ctx := kit.OpenLenient(t.Path, io.Discard)
 	if ctx == nil {
 		return status{problem: "not a git repository"}
 	}
 	if ctx.ConfigError != nil {
-		return status{problem: "wt configuration: " + OneLine(ctx.ConfigError.Error()) + "; wt doctor in it"}
+		return status{problem: "wt configuration: " + kit.OneLine(ctx.ConfigError.Error()) + "; wt doctor in it"}
 	}
 	s := status{worktrees: worktreesIn(t.Path), sync: "sync set up"}
 	if _, ok, err := ctx.Repo.ResolveRef("refs/remotes/origin/" + ctx.Config.MainBranch); err != nil {
-		s.sync = "sync unknown: " + OneLine(err.Error())
+		s.sync = "sync unknown: " + kit.OneLine(err.Error())
 		return s
 	} else if !ok {
 		// wt sync reads the declaration from origin's trunk; with none
@@ -120,7 +122,7 @@ func repoStatus(t RepoTarget) status {
 	if _, err := wtsync.LoadFromTrunk(ctx.Repo.MainRoot, ctx.Config.MainBranch); errors.Is(err, wtsync.ErrUndeclared) {
 		s.sync = "no sync"
 	} else if err != nil {
-		s.sync = "sync broken: " + OneLine(err.Error())
+		s.sync = "sync broken: " + kit.OneLine(err.Error())
 	}
 	return s
 }
@@ -147,7 +149,7 @@ func worktreesIn(path string) string {
 
 // problemsIn fails a listing that found a profile entry wt cannot work on,
 // once every row is printed.
-func problemsIn(targets []RepoTarget) error {
+func problemsIn(targets []reposel.Target) error {
 	n := 0
 	for _, t := range targets {
 		if t.Problem != "" {

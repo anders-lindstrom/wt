@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -24,7 +24,7 @@ func TestSyncRunJSONReportsTheSafetyRefDeferredStepsAndUndo(t *testing.T) {
 	ctx, bump := provisiontest.RunFixture(t, true)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	r, err := synccmdtest.SyncRunJSON(t, ctx, []string{"bump"}, synccmdtest.NoAgents())
-	if err != nil || r.Outcome != kit.OutcomeDone || r.Command != "sync rebase" || r.Repo == nil || *r.Repo != ctx.Repo.MainRoot ||
+	if err != nil || r.Outcome != jsonout.OutcomeDone || r.Command != "sync rebase" || r.Repo == nil || *r.Repo != ctx.Repo.MainRoot ||
 		len(r.Worktrees) != 1 {
 		t.Fatalf("%v %+v", err, r)
 	}
@@ -63,7 +63,7 @@ func TestSyncRunJSONExpectHoldsTheRunToTheOverview(t *testing.T) {
 	opts.Expect = token
 	for _, works := range [][]string{nil, {"bump"}} {
 		r, err := synccmdtest.SyncRunJSON(t, ctx, works, opts)
-		if err == nil || r.Outcome != kit.OutcomeRefused || r.Error == nil || len(r.Worktrees) != 0 {
+		if err == nil || r.Outcome != jsonout.OutcomeRefused || r.Error == nil || len(r.Worktrees) != 0 {
 			t.Fatalf("%v: a grown stack is refused before any participant: %v %+v", works, err, r)
 		}
 		if testkit.GitOut(t, bump, "rev-parse", "HEAD") != old {
@@ -71,7 +71,7 @@ func TestSyncRunJSONExpectHoldsTheRunToTheOverview(t *testing.T) {
 		}
 	}
 	opts.Expect = *synccmdtest.OverviewJSON(t, ctx).Token
-	if r, err := synccmdtest.SyncRunJSON(t, ctx, nil, opts); err != nil || r.Outcome != kit.OutcomeDone || len(r.Worktrees) != 2 {
+	if r, err := synccmdtest.SyncRunJSON(t, ctx, nil, opts); err != nil || r.Outcome != jsonout.OutcomeDone || len(r.Worktrees) != 2 {
 		t.Fatalf("the overview as read runs: %v %+v", err, r)
 	}
 }
@@ -84,7 +84,7 @@ func TestSyncRunJSONReportsAHandover(t *testing.T) {
 	}
 	ctx, bump := provisiontest.ContestedFixture(t)
 	r, err := synccmdtest.SyncRunJSON(t, ctx, []string{"bump"}, synccmdtest.NoAgents())
-	if err == nil || r.Outcome != kit.OutcomePartial || len(r.Worktrees) != 1 {
+	if err == nil || r.Outcome != jsonout.OutcomePartial || len(r.Worktrees) != 1 {
 		t.Fatalf("%v %+v", err, r)
 	}
 	p := r.Worktrees[0]
@@ -101,9 +101,9 @@ func TestSyncRunJSONSaysWhenNobodyConfirmed(t *testing.T) {
 	ctx, bump := provisiontest.RunFixture(t, false)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	opts := synccmdtest.NoAgents()
-	opts.Confirm = func([]string) (bool, error) { return false, nil }
+	opts.Confirm = func([]string) bool { return false }
 	r, _ := synccmdtest.SyncRunJSON(t, ctx, nil, opts)
-	if r.Outcome != kit.OutcomeRefused || r.Error == nil {
+	if r.Outcome != jsonout.OutcomeRefused || r.Error == nil {
 		t.Fatalf("%+v", r)
 	}
 	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != old {
@@ -123,7 +123,7 @@ func TestJournalAsksWhatASignalCaughtChanged(t *testing.T) {
 	j.OnSignal(func(p *syncrun.SyncParticipant) bool { return p.Branch == "feat_wt/one" })
 	j.Interrupted("", "interrupted")
 	r := synccmdtest.DecodeSyncRun(t, out.Bytes())
-	if r.Outcome != kit.OutcomeInterrupted || r.Worktrees[0].Result != syncrun.ResultInterrupted || r.Worktrees[0].Recovery == nil ||
+	if r.Outcome != jsonout.OutcomeInterrupted || r.Worktrees[0].Result != syncrun.ResultInterrupted || r.Worktrees[0].Recovery == nil ||
 		r.Worktrees[1].Result != syncrun.ResultNotRun {
 		t.Errorf("%+v %+v", r.Worktrees[0], r.Worktrees[1])
 	}

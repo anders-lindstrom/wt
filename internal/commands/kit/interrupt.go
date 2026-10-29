@@ -11,112 +11,20 @@ import (
 	"syscall"
 
 	"github.com/anders-lindstrom/wt/internal/git"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
 // InterruptStatus is what a shell expects from a command a signal ended.
 const InterruptStatus = 130
 
-// RebaseInFlight is the worktree a run is in the middle of rebasing: what an
-// interrupt has to tell the user about, since killing git there leaves the
-// rebase stopped rather than finished.
-type RebaseInFlight struct {
-	Work, Path, Safety string
-	// Rebased is set once the rebase itself has finished and the deferred
-	// steps are running: the worktree is not stopped mid-rebase any more,
-	// it is rebased, and putting it back is undo's job rather than git's.
-	Rebased bool
-	// Resuming is set while wt sync resume drives a handed-over rebase. The
-	// worktree holds a person's own resolution, which an abort would
-	// discard, and the handover survives the interrupt, so resuming again is
-	// the way back.
-	Resuming bool
-	// Forwarding is set while the run fast-forwards the branch to its own
-	// remote, before any rebase has started: there is nothing to abort.
-	Forwarding bool
-}
-
-// RebaseTracker carries that across goroutines: the command sets it, the
-// signal handler reads it. A nil tracker is one that never rebases, which is
-// what sync undo passes.
-type RebaseTracker struct {
-	mu sync.Mutex
-	at *RebaseInFlight
-}
-
-// Set records the rebase now in flight, or nil once there is none.
-func (t *RebaseTracker) Set(at *RebaseInFlight) {
-	if t == nil {
-		return
-	}
-	t.mu.Lock()
-	t.at = at
-	t.mu.Unlock()
-}
-
-// Get is the rebase in flight, nil when there is none.
-func (t *RebaseTracker) Get() *RebaseInFlight {
-	if t == nil {
-		return nil
-	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.at
-}
-
-// OnInterrupt cleans up what a signal caught mid-flight: it kills every
-// process group still running (a git, a script, a deferred step, claude
-// agents), removes the temporary directories the assessments and strategies
-// still have open, releases the locks so the next run is not blocked for
-// LockExpiry, and says how to put back a worktree left mid-rebase.
-// Everything is best effort; the process exits straight after.
-func OnInterrupt(w io.Writer, locks []*wtsync.Lock, at *RebaseInFlight) {
-	// The groups die first: nothing may still be writing to a worktree
-	// whose lock we are about to drop, or to a temporary index we are about
-	// to remove. The goroutines that ran them park rather than act on the
-	// failure while this handler is still cleaning up. The process exits
-	// from here without running any deferred cleanup, so the directories go
-	// now or never.
-	git.Interrupt()
-	wtsync.RemoveTempDirs()
-	for _, l := range locks {
-		if l != nil {
-			_ = l.Release()
-		}
-	}
-	switch {
-	case at == nil:
-		fmt.Fprintln(w, "\ninterrupted")
-	case at.Rebased:
-		// The run never got to pin where it left the branch, so a plain
-		// undo would refuse it as moved since the run.
-		fmt.Fprintf(w, "\ninterrupted after rebasing %s: %s\n", at.Work, wtsync.WayOut(wtsync.Way{Work: at.Work, Moved: true}))
-	case at.Forwarding:
-		// No rebase to abort, and a reset to the safety ref by hand would
-		// leave the reflog saying the branch once had its remote's commit:
-		// undo puts the branch back and takes that word away with it.
-		fmt.Fprintf(w, "\ninterrupted while fast-forwarding %s to its own remote: %s\n", at.Work, wtsync.WayOut(wtsync.Way{Work: at.Work, Result: true}))
-	case at.Resuming:
-		fmt.Fprintf(w, "\ninterrupted while resuming %s: the rebase and its plan are left as they are; %s%s\n", at.Work, wtsync.WayOut(wtsync.Way{Work: at.Work, Plan: true, Rebasing: true}), marksLeftNote(at.Path))
-	default:
-		fmt.Fprintf(w, "\ninterrupted while rebasing %s: %s%s\n", at.Work, wtsync.WayOut(wtsync.Way{Work: at.Work, Path: at.Path, Rebasing: true, Safety: at.Safety}), marksLeftNote(at.Path))
-	}
-}
-
-// marksLeftNote takes the run's own stops out of the list of a rebase an
-// interrupt is leaving to a person, so that continuing it by hand does not
-// stop where the run would have, and lands on trunk's version in silence
-// where the run would have lifted it. A list that cannot be edited at this
-// moment is said so, in the same breath as the way out.
-func marksLeftNote(path string) string {
-	if err := wtsync.StripMarks(path); err != nil {
-		return "; " + wtsync.MarksLeft(err)
-	}
-	return ""
-}
+// An Interrupt is what a signal does inside one watch once every process
+// group has been killed: it puts away what the run still has open and says
+// on w how to get back what it left half done. It returns the work it caught
+// in flight, "" for none. A nil Interrupt has nothing to put away and says
+// "interrupted"; syncrun.WatchSignals is the one a run that rebases passes.
+type Interrupt func(w io.Writer) (inFlight string)
 
 // WatchSignals handles Ctrl-C and SIGTERM for the length of one command,
-// exiting 128+signal after OnInterrupt has cleaned up. The returned function stops
+// exiting 128+signal after on has cleaned up. The returned function stops
 // the handler and must be deferred: a signal after the command has finished
 // is the shell's business, not wt's.
 //
@@ -124,8 +32,8 @@ func marksLeftNote(path string) string {
 // repository's rebase watches again inside it. One handler serves the
 // process and acts on the innermost watch only, which is the one that knows
 // the rebase in flight.
-func WatchSignals(w io.Writer, t *RebaseTracker) func() {
-	f := &watchFrame{w: w, t: t}
+func WatchSignals(w io.Writer, on Interrupt) func() {
+	f := &watchFrame{w: w, on: on}
 	watchMu.Lock()
 	watchStack = append(watchStack, f)
 	if len(watchStack) == 1 {
@@ -157,8 +65,8 @@ func WatchSignals(w io.Writer, t *RebaseTracker) func() {
 
 // watchFrame is one WatchSignals call still in force.
 type watchFrame struct {
-	w io.Writer
-	t *RebaseTracker
+	w  io.Writer
+	on Interrupt
 }
 
 var (
@@ -191,16 +99,11 @@ func handleSignals(ch <-chan os.Signal, done <-chan struct{}, finished chan<- st
 		}
 		f := watchStack[len(watchStack)-1]
 		watchMu.Unlock()
-		at := f.t.Get()
 		var said bytes.Buffer
-		OnInterrupt(io.MultiWriter(f.w, &said), wtsync.HeldLocks(), at)
+		inFlight := interrupt(io.MultiWriter(f.w, &said), f.on)
 		// A --json run owes its one object even now: the participants
 		// so far, the one in flight, and the way back that was printed.
 		if j := CurrentInterruptJournal(); j != nil {
-			inFlight := ""
-			if at != nil {
-				inFlight = at.Work
-			}
 			j.Interrupted(inFlight, strings.TrimSpace(said.String()))
 		}
 		os.Exit(128 + int(sig.(syscall.Signal)))
@@ -214,6 +117,23 @@ func handleSignals(ch <-chan os.Signal, done <-chan struct{}, finished chan<- st
 		default:
 		}
 	}
+}
+
+// interrupt cleans up what a signal caught mid-flight: it kills every process
+// group still running (a git, a script, a deferred step, claude agents), then
+// leaves the rest to on. Everything is best effort; the process exits
+// straight after.
+func interrupt(w io.Writer, on Interrupt) (inFlight string) {
+	// The groups die first: nothing may still be writing to a worktree
+	// whose lock on is about to drop, or to a temporary index it is about
+	// to remove. The goroutines that ran them park rather than act on the
+	// failure while this handler is still cleaning up.
+	git.Interrupt()
+	if on == nil {
+		fmt.Fprintln(w, "\ninterrupted")
+		return ""
+	}
+	return on(w)
 }
 
 // exitLate ends the process for a signal that came in as the last watch
@@ -273,4 +193,17 @@ func CurrentInterruptJournal() Interruptible {
 		return nil
 	}
 	return interruptJournals[len(interruptJournals)-1].j
+}
+
+// WatchJournal makes a handled SIGINT or SIGTERM, until the returned function
+// is called, stop every git and script still running with its process group,
+// have j write its object with the step in flight caught, and exit
+// 128+signal.
+func WatchJournal(j Interruptible, w io.Writer) func() {
+	unset := SetInterruptJournal(j)
+	stop := WatchSignals(w, nil)
+	return func() {
+		stop()
+		unset()
+	}
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 	"github.com/anders-lindstrom/wt/schema"
@@ -134,7 +135,7 @@ func UpPlanJSON(ctx *kit.Context, arg string, w io.Writer) error {
 	// A plan held back by divergence alone has a token too: wt up
 	// --allow-diverged --expect goes ahead over exactly what it covers.
 	if pl.p.UpEligible || *pl.p.UpIneligibleCode == IneligibleOwnDiverged {
-		pl.p.Token = kit.Strp(upPlanToken(ctx, pl.p))
+		pl.p.Token = jsonout.Strp(upPlanToken(ctx, pl.p))
 	}
 	pl.readSessions()
 	return writePlan(w, pl.p)
@@ -179,7 +180,7 @@ type upPlanner struct {
 // reason found is the one the plan gives.
 func (pl *upPlanner) ineligible(code, why string) {
 	if pl.p.UpIneligibleCode == nil {
-		pl.p.UpIneligibleCode, pl.p.UpIneligibleReason = kit.Strp(code), kit.Strp(why)
+		pl.p.UpIneligibleCode, pl.p.UpIneligibleReason = jsonout.Strp(code), jsonout.Strp(why)
 	}
 }
 
@@ -188,13 +189,13 @@ func (pl *upPlanner) ineligible(code, why string) {
 func (pl *upPlanner) readTrunk() {
 	ctx, p := pl.ctx, &pl.p
 	ref := "origin/" + pl.trunk
-	p.Trunk, p.TrunkSource = kit.Strp(pl.trunk), ctx.TrunkSource()
+	p.Trunk, p.TrunkSource = jsonout.Strp(pl.trunk), ctx.TrunkSource()
 	p.Configured = ctx.Configured()
 	if pl.trunk != "" {
-		p.TrunkRef = kit.Strp(ref)
+		p.TrunkRef = jsonout.Strp(ref)
 		// Status only, nothing acts on it: a ref git cannot read reads as absent.
 		pl.tip, pl.exists, _ = ctx.Repo.ResolveRef("refs/remotes/" + ref)
-		p.TrunkRefExists, p.TrunkTip = pl.exists, kit.Strp(pl.tip)
+		p.TrunkRefExists, p.TrunkTip = pl.exists, jsonout.Strp(pl.tip)
 		p.TrunkRefUpdatedAt = refUpdatedAt(ctx.Repo.MainRoot, "refs/remotes/"+ref)
 	}
 	// What wt up would do to local trunk after its fetch, judged against
@@ -371,7 +372,7 @@ func (pl *upPlanner) judgeInTrunk() {
 func (pl *upPlanner) readSessions() {
 	listed, err := pl.listAgents()
 	if err != nil {
-		pl.p.SessionsError = kit.Strp(err.Error())
+		pl.p.SessionsError = jsonout.Strp(err.Error())
 	}
 	for _, m := range pl.p.Stack {
 		for _, a := range agents.SessionsAt(listed, m.Path) {

@@ -6,6 +6,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
@@ -74,16 +75,16 @@ type TrunkSyncOptions struct {
 // fails: what went wrong is the reason.
 func SyncLocalTrunk(ctx *kit.Context, remote string, o TrunkSyncOptions) *TrunkSync {
 	trunk := ctx.Config.MainBranch
-	ts := &TrunkSync{trunk: trunk, Remote: kit.Strp(remote)}
+	ts := &TrunkSync{trunk: trunk, Remote: jsonout.Strp(remote)}
 	local, ok, err := ctx.Repo.ResolveRef("refs/heads/" + trunk)
 	if err != nil {
 		return ts.skip(TrunkSkipFailed, "cannot read it: "+kit.OneLine(err.Error()))
 	}
 	if !ok || remote == "" {
-		ts.Local = kit.Strp(local)
+		ts.Local = jsonout.Strp(local)
 		return ts
 	}
-	ts.Local, ts.Before = kit.Strp(local), local
+	ts.Local, ts.Before = jsonout.Strp(local), local
 	localAhead, ok1 := ctx.Repo.CommitsAhead(local, remote)
 	remoteAhead, ok2 := ctx.Repo.CommitsAhead(remote, local)
 	if !ok1 || !ok2 {
@@ -150,7 +151,7 @@ func SyncLocalTrunk(ctx *kit.Context, remote string, o TrunkSyncOptions) *TrunkS
 		}
 		return ts.skip(TrunkSkipFailed, kit.OneLine(err.Error()))
 	}
-	ts.Local, ts.FastForwarded = kit.Strp(remote), true
+	ts.Local, ts.FastForwarded = jsonout.Strp(remote), true
 	return ts
 }
 

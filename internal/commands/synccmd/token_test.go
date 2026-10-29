@@ -1,6 +1,7 @@
 package synccmd
 
 import (
+	"io"
 	"reflect"
 	"slices"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -16,7 +18,7 @@ import (
 func tokenRepo(t *testing.T) (*kit.Context, string) {
 	t.Helper()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +31,7 @@ func TestSurveyTokenRefusesADeclarationGitCouldNotRead(t *testing.T) {
 	t.Parallel()
 	ctx, sha := tokenRepo(t)
 	ctx.Repo.MainRoot = t.TempDir() // not a repository: every git there fails
-	sv := Survey{Rows: []OverviewWorktree{{Branch: kit.Strp("b"), Verdict: VerdictProceed}}}
+	sv := Survey{Rows: []OverviewWorktree{{Branch: jsonout.Strp("b"), Verdict: VerdictProceed}}}
 	tok, err := sv.Token(ctx, "main", sha)
 	if tok != nil {
 		t.Fatalf("a token over a declaration git could not read: %s", *tok)
@@ -39,15 +41,15 @@ func TestSurveyTokenRefusesADeclarationGitCouldNotRead(t *testing.T) {
 	}
 }
 
-// tokenReads is a kit.Token that has hashed, by name, every exported field
+// tokenReads is a jsonout.Token that has hashed, by name, every exported field
 // of the plan base builds whose change changes token: the fields the hand
 // built tokens read, found by changing each in turn rather than listed, for
-// kit.TokenGaps to check. A row field is named through the plan's first row,
+// jsonout.TokenGaps to check. A row field is named through the plan's first row,
 // which base must give every slice of rows it should look into.
-func tokenReads[P any](t *testing.T, base func() P, token func(P) string) *kit.Token {
+func tokenReads[P any](t *testing.T, base func() P, token func(P) string) *jsonout.Token {
 	t.Helper()
 	want := token(base())
-	reads := kit.NewToken("", "reads")
+	reads := jsonout.NewToken("", "reads")
 	var walk func(typ reflect.Type, path []int, prefix string)
 	walk = func(typ reflect.Type, path []int, prefix string) {
 		for i := 0; i < typ.NumField(); i++ {
@@ -131,15 +133,15 @@ func changeField(t *testing.T, v reflect.Value) {
 // overview token or left out on purpose, with why: a field added to a row
 // fails here until someone decides. The token is built by hand, to keep the
 // value docs/json.md promises, so what it reads is found by changing each
-// field rather than by kit.Token's record.
+// field rather than by jsonout.Token's record.
 func TestSurveyTokenCoversEveryRowField(t *testing.T) {
 	t.Parallel()
 	ctx, sha := tokenRepo(t)
 	base := func() Survey {
 		return Survey{Rows: []OverviewWorktree{{
-			Work: "w", Branch: kit.Strp("b"), Path: "/w", Group: GroupReady, Class: "clean", Verdict: VerdictProceed,
+			Work: "w", Branch: jsonout.Strp("b"), Path: "/w", Group: GroupReady, Class: "clean", Verdict: VerdictProceed,
 			Stack:     []PlanStackMember{{Work: "w", Branch: "b", Path: "/w"}},
-			OwnRemote: syncrun.OwnRemote{Blocks: kit.Strp(wtsync.OwnBlockDiverged), Commit: kit.Strp("c0ffee")},
+			OwnRemote: syncrun.OwnRemote{Blocks: jsonout.Strp(wtsync.OwnBlockDiverged), Commit: jsonout.Strp("c0ffee")},
 		}}}
 	}
 	token := func(sv Survey) string {
@@ -153,8 +155,8 @@ func TestSurveyTokenCoversEveryRowField(t *testing.T) {
 		return *tok
 	}
 	reads := tokenReads(t, base, token)
-	gaps := kit.TokenGaps(reads, Survey{}, "", nil)
-	gaps = append(gaps, kit.TokenGaps(reads, OverviewWorktree{}, "Rows.", map[string]string{
+	gaps := jsonout.TokenGaps(reads, Survey{}, "", nil)
+	gaps = append(gaps, jsonout.TokenGaps(reads, OverviewWorktree{}, "Rows.", map[string]string{
 		"Rows.Work":             "the branch names the worktree",
 		"Rows.Path":             "the branch names the worktree",
 		"Rows.Group":            "how the overview files the row; the verdict and class are in it",
@@ -171,11 +173,11 @@ func TestSurveyTokenCoversEveryRowField(t *testing.T) {
 		"Rows.Notes":            "words",
 		"Rows.Error":            "the verdict it gives is in it",
 	})...)
-	gaps = append(gaps, kit.TokenGaps(reads, PlanStackMember{}, "Rows.Stack.", map[string]string{
+	gaps = append(gaps, jsonout.TokenGaps(reads, PlanStackMember{}, "Rows.Stack.", map[string]string{
 		"Rows.Stack.Work": "the branch names the member",
 		"Rows.Stack.Path": "the branch names the member",
 	})...)
-	gaps = append(gaps, kit.TokenGaps(reads, syncrun.OwnRemote{}, "Rows.OwnRemote.", ownRemoteLeftOut("Rows.OwnRemote."))...)
+	gaps = append(gaps, jsonout.TokenGaps(reads, syncrun.OwnRemote{}, "Rows.OwnRemote.", ownRemoteLeftOut("Rows.OwnRemote."))...)
 	if len(gaps) > 0 {
 		t.Errorf("decide each, in Survey.Token or here:\n%s", strings.Join(gaps, "\n"))
 	}
@@ -203,9 +205,9 @@ func TestUpPlanTokenCoversEveryPlanField(t *testing.T) {
 	t.Parallel()
 	ctx, _ := tokenRepo(t)
 	base := func() UpPlan {
-		return UpPlan{Trunk: kit.Strp("main"), Stack: []PlanStack{{
+		return UpPlan{Trunk: jsonout.Strp("main"), Stack: []PlanStack{{
 			PlanStackMember: PlanStackMember{Work: "w", Branch: "b", Path: "/w"},
-			OwnRemote:       syncrun.OwnRemote{Blocks: kit.Strp(wtsync.OwnBlockDiverged), Commit: kit.Strp("c0ffee")},
+			OwnRemote:       syncrun.OwnRemote{Blocks: jsonout.Strp(wtsync.OwnBlockDiverged), Commit: jsonout.Strp("c0ffee")},
 		}}}
 	}
 	// What the run's own --expect check hashes, from the same inputs.
@@ -213,7 +215,7 @@ func TestUpPlanTokenCoversEveryPlanField(t *testing.T) {
 		t.Fatalf("the plan's token %s is not the run's %s", got, want)
 	}
 	reads := tokenReads(t, base, func(p UpPlan) string { return upPlanToken(ctx, p) })
-	gaps := kit.TokenGaps(reads, UpPlan{}, "", map[string]string{
+	gaps := jsonout.TokenGaps(reads, UpPlan{}, "", map[string]string{
 		"Schema":             "the format, not the plan",
 		"SchemaVersion":      "the format, not the plan",
 		"Command":            "the same for every plan of its kind",
@@ -232,12 +234,12 @@ func TestUpPlanTokenCoversEveryPlanField(t *testing.T) {
 		"Sessions":           "wt up weighs the sessions again when it starts",
 		"SessionsError":      "wt up weighs the sessions again when it starts",
 	})
-	gaps = append(gaps, kit.TokenGaps(reads, PlanStack{}, "Stack.", map[string]string{
+	gaps = append(gaps, jsonout.TokenGaps(reads, PlanStack{}, "Stack.", map[string]string{
 		"Stack.Work":             "the branch names the member",
 		"Stack.Path":             "the branch names the member",
 		"Stack.DeferredDeclared": "trunk's declaration, read again when wt up starts",
 	})...)
-	gaps = append(gaps, kit.TokenGaps(reads, syncrun.OwnRemote{}, "Stack.OwnRemote.", ownRemoteLeftOut("Stack.OwnRemote."))...)
+	gaps = append(gaps, jsonout.TokenGaps(reads, syncrun.OwnRemote{}, "Stack.OwnRemote.", ownRemoteLeftOut("Stack.OwnRemote."))...)
 	if len(gaps) > 0 {
 		t.Errorf("decide each, in upPlanToken or here:\n%s", strings.Join(gaps, "\n"))
 	}

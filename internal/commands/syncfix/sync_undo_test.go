@@ -366,7 +366,7 @@ func TestSyncUndoUnderAnIdleSessionAsksThenTellsIt(t *testing.T) {
 	opts := noAgentsUndo()
 	opts.Agents = testkit.IdleIn(t, bump, "bump-1")
 	var asked []string
-	opts.Confirm = func(works []string) (bool, error) { asked = works; return false, nil }
+	opts.Confirm = func(works []string) bool { asked = works; return false }
 	var no bytes.Buffer
 	if err := SyncUndo(ctx, "bump", opts, &no); err != nil {
 		t.Fatalf("err %v\n%s", err, no.String())
@@ -379,7 +379,7 @@ func TestSyncUndoUnderAnIdleSessionAsksThenTellsIt(t *testing.T) {
 		t.Fatal("HEAD moved after no")
 	}
 
-	opts.Confirm = func([]string) (bool, error) { return true, nil }
+	opts.Confirm = func([]string) bool { return true }
 	var yes bytes.Buffer
 	if err := SyncUndo(ctx, "bump", opts, &yes); err != nil {
 		t.Fatalf("err %v\n%s", err, yes.String())
@@ -400,7 +400,7 @@ func TestSyncUndoNoLeavesAHandoverAndItsLock(t *testing.T) {
 	ctx, bump, gitDir, st := synccmdtest.HandedOver(t)
 	opts := noAgentsUndo()
 	opts.Agents = testkit.IdleIn(t, bump, "bump-1")
-	opts.Confirm = func([]string) (bool, error) { return false, nil }
+	opts.Confirm = func([]string) bool { return false }
 	var out bytes.Buffer
 	if err := SyncUndo(ctx, "bump", opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
@@ -426,7 +426,7 @@ func TestSyncUndoRefusesASessionThatWokeWhileAsked(t *testing.T) {
 	rebased := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	opts := noAgentsUndo()
 	opts.Agents = testkit.IdleIn(t, bump, "bump-1")
-	opts.Confirm = func([]string) (bool, error) { return true, nil }
+	opts.Confirm = func([]string) bool { return true }
 	woke := testkit.IdleIn(t, bump, "bump-1")
 	woke[0].Status = "busy"
 	opts.Relist = func() ([]agents.Agent, error) { return woke, nil }

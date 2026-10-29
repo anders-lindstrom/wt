@@ -2,6 +2,7 @@ package provision
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,7 +22,7 @@ func TestSetupCopiesConfigDirsAndFiles(t *testing.T) {
 	testkit.MustWrite(t, filepath.Join(main, "nested", "app.env"), "K=V")
 
 	target := t.TempDir()
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +46,7 @@ func TestSetupNeverOverwritesExistingFiles(t *testing.T) {
 	target := t.TempDir()
 	testkit.MustWrite(t, filepath.Join(target, "app.env"), "MINE=keep")
 
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	var buf bytes.Buffer
 	if err := Setup(ctx, target, SetupOptions{SourceDir: main}, &buf); err != nil {
 		t.Fatal(err)
@@ -61,7 +62,7 @@ func TestSetupRunsProvisionScript(t *testing.T) {
 	p := filepath.Join(main, "bin", "worktree", "provision.sh")
 	gittest.WriteExecutable(t, p, "#!/bin/sh\necho provisioned > provisioned.txt\n")
 	target := t.TempDir()
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	var buf bytes.Buffer
 	if err := Setup(ctx, target, SetupOptions{SourceDir: main}, &buf); err != nil {
 		t.Fatalf("Setup: %v", err)
@@ -77,7 +78,7 @@ func TestSetupBuildFailureIsAWarningNotAnError(t *testing.T) {
 	t.Parallel()
 	main := testkit.FixtureRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_COMMAND=\"exit 3\"\n")
 	target := t.TempDir()
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	var buf bytes.Buffer
 	if err := Setup(ctx, target, SetupOptions{SourceDir: main}, &buf); err != nil {
 		t.Fatalf("build failure should not be fatal: %v", err)
@@ -91,7 +92,7 @@ func TestSetupSkipBuild(t *testing.T) {
 	t.Parallel()
 	main := testkit.FixtureRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_COMMAND=\"touch built.txt\"\n")
 	target := t.TempDir()
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	var buf bytes.Buffer
 	if err := Setup(ctx, target, SetupOptions{SourceDir: main, SkipBuild: true}, &buf); err != nil {
 		t.Fatal(err)
@@ -104,7 +105,7 @@ func TestSetupSkipBuild(t *testing.T) {
 func TestSetupPrintsItsSourceOnlyWhenGiven(t *testing.T) {
 	t.Parallel()
 	main := testkit.FixtureRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 
 	var named bytes.Buffer
 	if err := Setup(ctx, t.TempDir(), SetupOptions{SourceDir: main, Source: "superset"}, &named); err != nil {
@@ -130,7 +131,7 @@ func TestSetupPrintsItsSourceOnlyWhenGiven(t *testing.T) {
 func TestSetupProvisionsASupersetWorktreeWhereItStands(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	superset := filepath.Join(ctx.Repo.Parent, "demo_wt", "demo", "feat_wt", "thing")
 	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/thing", superset)
 
@@ -153,7 +154,7 @@ func TestSetupProvisionsASupersetWorktreeWhereItStands(t *testing.T) {
 func TestSetupNamesTheWorktreeItProvisioned(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	var buf bytes.Buffer
 	path, err := New(ctx, "feat/thing", NewOptions{}, &buf)
 	if err != nil {
@@ -177,7 +178,7 @@ func TestSetupRefusesConfigEntriesThatEscapeTheWorktree(t *testing.T) {
 
 	target := filepath.Join(t.TempDir(), "wt")
 	testkit.MustMkdir(t, target)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	var buf bytes.Buffer
 	if err := Setup(ctx, target, SetupOptions{SourceDir: main}, &buf); err != nil {
 		t.Fatal(err)
@@ -220,7 +221,7 @@ DEVELOPER_CONFIG_FILES=(
 	// "override.properties" is deliberately absent, as it is in the real repo.
 
 	target := t.TempDir()
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,7 +251,7 @@ func TestSetupContinuesAfterProvisionFailure(t *testing.T) {
 	p := filepath.Join(main, "bin", "worktree", "provision.sh")
 	gittest.WriteExecutable(t, p, "#!/bin/sh\necho 'no AWS credentials' >&2\nexit 1\n")
 	target := t.TempDir()
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 
 	var buf bytes.Buffer
 	err := Setup(ctx, target, SetupOptions{SourceDir: main}, &buf)

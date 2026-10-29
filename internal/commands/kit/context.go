@@ -12,9 +12,9 @@ import (
 	"path/filepath"
 
 	"github.com/anders-lindstrom/wt/internal/config"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
-	"github.com/anders-lindstrom/wt/internal/superset"
 )
 
 // Context is the repository and configuration a subcommand operates on.
@@ -42,9 +42,11 @@ type Context struct {
 	// GitHubFake, when set, is the GitHub this context sees; nil but in
 	// tests.
 	GitHubFake *GitHubFake
-	// SupersetFake, when set, is the Superset this context sees in place of
-	// provision.ProbeSuperset; nil but in tests.
-	SupersetFake *superset.Status
+	// SupersetFake, when set, is the *superset.Status this context sees in
+	// place of supersetws.Probe; nil but in tests. supersetws sets and reads
+	// it, and kit carries it without looking, so that kit does not depend on
+	// Superset.
+	SupersetFake any
 	// Agents, when set, is who this context sees in its worktrees in place of
 	// MachineAgents, func by func; nil but in tests.
 	Agents *Agents
@@ -58,11 +60,15 @@ const (
 	WarnDetected   = "detected config"
 )
 
-// WarnTo gives the context somewhere to put its warnings, and says at once
-// what it already knows went wrong with the user file: that wt could not read
-// it at all, and every integration is off for this run, or which part of it
-// wt is ignoring.
+// WarnTo gives the context somewhere to put its warnings, as Open does, and
+// says at once what it already knows went wrong with the user file: that wt
+// could not read it at all, and every integration is off for this run, or
+// which part of it wt is ignoring. io.Discard is no writer at all, so that a
+// warning it swallowed is still said to a writer given later.
 func (c *Context) WarnTo(w io.Writer) {
+	if w == io.Discard {
+		w = nil
+	}
 	c.Warn = w
 	switch {
 	case c.UserError == nil:
@@ -87,7 +93,9 @@ func (c *Context) Warnf(topic, format string, args ...any) {
 }
 
 // Open discovers the repository containing cwd and loads its configuration.
-func Open(cwd string) (*Context, error) {
+// warn is where its warnings go (WarnTo): stderr for a command, io.Discard
+// where nothing may be said, as in shell completion.
+func Open(cwd string, warn io.Writer) (*Context, error) {
 	r, err := repo.Discover(cwd)
 	if err != nil {
 		return nil, err
@@ -103,7 +111,9 @@ func Open(cwd string) (*Context, error) {
 	// keys. WarnTo says which it was, once, on stderr, and `wt doctor` counts
 	// it as a problem.
 	u, userErr := config.LoadUser()
-	return &Context{Repo: r, Config: c, User: u, UserError: userErr, Cwd: cwd}, nil
+	ctx := &Context{Repo: r, Config: c, User: u, UserError: userErr, Cwd: cwd}
+	ctx.WarnTo(warn)
+	return ctx, nil
 }
 
 // Scheme is how this repository spells its worktrees: the directory they sit
@@ -117,8 +127,8 @@ func (c *Context) Scheme() naming.Scheme {
 // scheme pairs a repository with the configuration read for it and the person
 // running wt, which is all a Scheme is.
 func scheme(r *repo.Repo, c *config.Config, u *config.User) naming.Scheme {
-	suffix, _ := branchSuffix(c, u)
-	names, _ := typeNames(c, u)
+	suffix, _ := c.BranchSuffixFor(u)
+	names, _ := c.TypeNamesFor(u)
 	return naming.Scheme{
 		Parent:    r.Parent,
 		Repo:      r.Name,
@@ -138,44 +148,13 @@ func (c *Context) Vocab() naming.Vocab {
 
 // TypeNames is what the branches call each type, and where that was decided.
 func (c *Context) TypeNames() (names map[string]string, origin string) {
-	return typeNames(c.Config, c.UserConfig())
-}
-
-// typeNames follows the same rule as branchSuffix: a repository that named
-// its types has named them for everybody who clones it, and one that did not
-// leaves each person their own. The person's pairs are read against this
-// repository's types, so the ones that are for somewhere else drop out
-// quietly rather than failing a command.
-func typeNames(c *config.Config, u *config.User) (map[string]string, string) {
-	if c.TypeNamesSet {
-		return c.TypeNames, "repo file"
-	}
-	if u.IsSet(config.UserKeyTypeNames) {
-		names, _ := config.TypeNamesFrom(u.TypeNames, c.Types)
-		return names, "user file"
-	}
-	return nil, "repo default"
+	return c.Config.TypeNamesFor(c.UserConfig())
 }
 
 // BranchSuffix is what this repository's branches carry before the slash, and
 // where that was decided.
 func (c *Context) BranchSuffix() (suffix, origin string) {
-	return branchSuffix(c.Config, c.UserConfig())
-}
-
-// branchSuffix is the one rule for it: the repository outranks the person only
-// where it said something, because a committed file that never mentions the
-// suffix is not a decision, and whoever clones it may name their own branches.
-// Absent both, the branch follows the folders.
-func branchSuffix(c *config.Config, u *config.User) (suffix, origin string) {
-	switch {
-	case c.BranchSuffixSet:
-		return c.BranchSuffix, "repo file"
-	case u.IsSet(config.UserKeyBranchSuffix):
-		return u.BranchSuffix, "user file"
-	default:
-		return c.BranchSuffix, "repo default"
-	}
+	return c.Config.BranchSuffixFor(c.UserConfig())
 }
 
 // UserConfig is the person's own settings, defaulted for a Context assembled
@@ -197,7 +176,7 @@ func (c *Context) Configured() bool {
 
 // TrunkSource is how the configured trunk was found, as --json prints it.
 func (c *Context) TrunkSource() *string {
-	return Strp(string(c.Config.TrunkSource))
+	return jsonout.Strp(string(c.Config.TrunkSource))
 }
 
 // NoTrunk is why c has no trunk to work against — no MAIN_BRANCH, and none

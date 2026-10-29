@@ -11,6 +11,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anders-lindstrom/wt/internal/reposel"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -20,7 +21,7 @@ import (
 // one of the roots.
 func doctorRepos(u *config.User, w io.Writer, report func(string, ...any)) {
 	home, _ := os.UserHomeDir()
-	roots, origin := kit.RootsFor(u)
+	roots, origin := reposel.RootsFor(u)
 	fmt.Fprintf(w, "Repositories (roots from %s):\n", origin)
 	for i, r := range roots {
 		info, err := os.Stat(r.Path)
@@ -48,12 +49,12 @@ func doctorRepos(u *config.User, w io.Writer, report func(string, ...any)) {
 		}
 		switch {
 		case nested:
-		case kit.IsCheckout(r.Path) && !kit.Managed(r.Path):
+		case reposel.IsCheckout(r.Path) && !reposel.Managed(r.Path):
 			report("root %s: %s is one repository, and wt does not manage it (wt init there)", r.Name, kit.AbbreviateHome(r.Path, home))
-		case kit.IsCheckout(r.Path):
+		case reposel.IsCheckout(r.Path):
 			fmt.Fprintf(w, "  ✓ root %s: %s (one repository)\n", r.Name, kit.AbbreviateHome(r.Path, home))
 		default:
-			n := len(kit.DiscoverRepos([]kit.Root{r}).Repos)
+			n := len(reposel.Discover([]reposel.Root{r}).Repos)
 			fmt.Fprintf(w, "  ✓ root %s: %s (%s)\n", r.Name, kit.AbbreviateHome(r.Path, home), kit.Count(n, "repository", "repositories"))
 		}
 	}
@@ -63,7 +64,7 @@ func doctorRepos(u *config.User, w io.Writer, report func(string, ...any)) {
 			continue
 		}
 		for _, path := range p.Repos {
-			t := kit.ProfileTarget(path, roots)
+			t := reposel.ProfileTarget(path, roots)
 			switch {
 			case t.Problem != "":
 				report("profile %s: %s is %s", p.Name, path, t.Problem)
@@ -101,8 +102,8 @@ func DoctorRepositories(u *config.User, userErr error, w io.Writer) int {
 // doctor, each repository a line with what they found under it; then the
 // roots and profiles, once. It fails when either found a problem; a sync
 // warning is advice, as it is in wt sync doctor.
-func DoctorAll(u *config.User, sel kit.Selection, w io.Writer) error {
-	set, err := kit.SelectRepos(u, sel)
+func DoctorAll(u *config.User, sel reposel.Selection, w io.Writer) error {
+	set, err := reposel.Select(u, sel)
 	if err != nil {
 		return err
 	}
@@ -110,7 +111,7 @@ func DoctorAll(u *config.User, sel kit.Selection, w io.Writer) error {
 		problems, warnings int
 		lines              []string
 	}
-	results := kit.EachRepo(set.Repos, kit.RepoParallelism, func(t kit.RepoTarget) checked {
+	results := reposel.Each(set.Repos, reposel.Parallelism, func(t reposel.Target) checked {
 		if t.Problem != "" {
 			return checked{problems: 1, lines: []string{"  ! " + t.Problem}}
 		}

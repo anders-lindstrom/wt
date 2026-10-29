@@ -2,6 +2,7 @@ package admin
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,7 +25,7 @@ func noSessions() MigrateOptions { return MigrateOptions{Agents: []agents.Agent{
 func TestMigrateRetypesRenamesAndMovesInOneGo(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	from := testkit.WorktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent,
 		"demo_wt", "feat_wt", "5f2c8e10-7d3a-4b6e-9c01-2a4f6b8d0e13", "local-cache"))
 	testkit.MustWrite(t, filepath.Join(from, "precious.txt"), "real work")
@@ -51,7 +52,7 @@ func TestMigrateRetypesRenamesAndMovesInOneGo(t *testing.T) {
 func TestMigrateFitsATypelessBranchToTheConvention(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	testkit.WorktreeAt(t, main, "api_tidy", filepath.Join(ctx.Repo.Parent,
 		"demo_wt", "demo", "feat_wt", "new_parser"))
 
@@ -74,7 +75,7 @@ func TestMigrateFitsATypelessBranchToTheConvention(t *testing.T) {
 func TestMigrateReadsTheTypeOutOfANonConventionBranch(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	testkit.WorktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 
 	var buf bytes.Buffer
@@ -95,7 +96,7 @@ func TestMigrateAcceptsEveryWayAWorktreeIsPrinted(t *testing.T) {
 	for _, how := range []string{"work", "branch", "path"} {
 		t.Run(how, func(t *testing.T) {
 			main := testkit.CommittedRepo(t, testkit.MinimalConf)
-			ctx, _ := kit.Open(main)
+			ctx, _ := kit.Open(main, io.Discard)
 			path := testkit.WorktreeAt(t, main, "feat_wt/cache_stats",
 				filepath.Join(ctx.Repo.Parent, "demo-cache_stats"))
 			arg := map[string]string{
@@ -120,7 +121,7 @@ func TestMigrateAcceptsEveryWayAWorktreeIsPrinted(t *testing.T) {
 func TestMigrateKeepsTheTypeWhenOnlyTheNameChanges(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	testkit.WorktreeAt(t, main, "perf_wt/prefetch", filepath.Join(ctx.Repo.Parent, "demo-prefetch"))
 
 	var buf bytes.Buffer
@@ -141,7 +142,7 @@ func TestMigrateKeepsTheTypeWhenOnlyTheNameChanges(t *testing.T) {
 func TestMigrateAcceptsADestinationWrittenAsABranch(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	testkit.WorktreeAt(t, main, "feat_wt/login", filepath.Join(ctx.Repo.Parent, "demo-login"))
 
 	var buf bytes.Buffer
@@ -160,7 +161,7 @@ func TestMigrateAcceptsADestinationWrittenAsABranch(t *testing.T) {
 func TestMigratePrintsWhatItWillDoBeforeDoingIt(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	from := testkit.WorktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 
 	var buf bytes.Buffer
@@ -180,7 +181,7 @@ func TestMigratePrintsWhatItWillDoBeforeDoingIt(t *testing.T) {
 func TestMigrateMovesADirtyWorktreeAndSaysSo(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	from := testkit.WorktreeAt(t, main, "feat_wt/dirty", filepath.Join(ctx.Repo.Parent, "demo-dirty"))
 	testkit.MustWrite(t, filepath.Join(from, "tracked.txt"), "committed")
 	testkit.GitIn(t, from, "add", "tracked.txt")
@@ -204,7 +205,7 @@ func TestMigrateMovesADirtyWorktreeAndSaysSo(t *testing.T) {
 // was looked for and where to look.
 func TestMigrateSaysWhatItLookedForWhenNothingMatches(t *testing.T) {
 	t.Parallel()
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	var buf bytes.Buffer
 	_, err := Migrate(ctx, "nosuchthing", "", noSessions(), &buf)
 	if err == nil {
@@ -220,7 +221,7 @@ func TestMigrateSaysWhatItLookedForWhenNothingMatches(t *testing.T) {
 func TestMigrateNeverBlamesAnEmptyBranch(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	testkit.WorktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 
 	for _, arg := range []string{"local-cache", "fix/flaky-test",
@@ -242,7 +243,7 @@ func TestMigrateNeverBlamesAnEmptyBranch(t *testing.T) {
 func TestMigrateExplainsADetachedWorktree(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	loose := filepath.Join(ctx.Repo.Parent, "demo-loose")
 	testkit.GitIn(t, main, "worktree", "add", "-q", "--detach", loose)
 
@@ -259,7 +260,7 @@ func TestMigrateExplainsADetachedWorktree(t *testing.T) {
 func TestMigrateRefusesWhenTheTargetBranchIsTaken(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	from := testkit.WorktreeAt(t, main, "feat_wt/login", filepath.Join(ctx.Repo.Parent, "demo-login"))
 	testkit.WorktreeAt(t, main, "fix_wt/login", filepath.Join(ctx.Repo.Parent, "demo-other"))
 
@@ -279,7 +280,7 @@ func TestMigrateRefusesWhenTheTargetBranchIsTaken(t *testing.T) {
 func TestMigrateRefusesWhenAnotherWorktreeIsAtTheTarget(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	testkit.WorktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 	occupied := testkit.WorktreeAt(t, main, "fix_wt/taken",
 		filepath.Join(ctx.Repo.Parent, "demo_wt", "fix_wt", "taken"))
@@ -299,7 +300,7 @@ func TestMigrateRefusesWhenAnotherWorktreeIsAtTheTarget(t *testing.T) {
 func TestMigrateRefusesWhenAnAgentSessionLivesThere(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	from := testkit.WorktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 	resolved, _ := filepath.EvalSymlinks(from)
 	opts := MigrateOptions{Agents: []agents.Agent{{Name: "gecko-1", Cwd: resolved}}}
@@ -320,7 +321,7 @@ func TestMigrateRefusesWhenAnAgentSessionLivesThere(t *testing.T) {
 func TestMigrateForceMovesPastAnAgentSession(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	from := testkit.WorktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 	resolved, _ := filepath.EvalSymlinks(from)
 	opts := MigrateOptions{Force: true, Agents: []agents.Agent{{Name: "gecko-1", Cwd: resolved}}}
@@ -343,7 +344,7 @@ func TestMigrateForceMovesPastAnAgentSession(t *testing.T) {
 func TestMigratePutsTheBranchNameBackWhenTheMoveFails(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	from := testkit.WorktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 	// A file where the type directory has to be: mkdir cannot make the
 	// destination, so the move fails after the rename.
@@ -360,7 +361,7 @@ func TestMigratePutsTheBranchNameBackWhenTheMoveFails(t *testing.T) {
 
 func TestMigrateIsANoOpWhenAlreadyWhereItBelongs(t *testing.T) {
 	t.Parallel()
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	var buf bytes.Buffer
 	path, err := provision.New(ctx, "fix/already", provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -380,7 +381,7 @@ func TestMigrateIsANoOpWhenAlreadyWhereItBelongs(t *testing.T) {
 func TestMigrateRenamesTheBranchWhenOnlyTheNameIsWrong(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	at := filepath.Join(ctx.Repo.Parent, "demo_wt", "feat_wt", "api_tidy")
 	testkit.WorktreeAt(t, main, "api_tidy", at)
 
@@ -403,7 +404,7 @@ func TestMigrateRenamesTheBranchWhenOnlyTheNameIsWrong(t *testing.T) {
 func TestMigrateWarnsBeforeMovingASupersetWorktree(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	testkit.WorktreeAt(t, main, "fix_wt/legacy",
 		filepath.Join(ctx.Repo.Parent, "demo_wt", "demo", "fix_wt", "legacy"))
 
@@ -427,7 +428,7 @@ func TestMigrateWarnsBeforeMovingASupersetWorktree(t *testing.T) {
 func TestMigrateDryRunChangesNothing(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	legacy := testkit.WorktreeAt(t, main, "fix/legacy", filepath.Join(ctx.Repo.Parent, "demo-legacy"))
 	testkit.MustWrite(t, filepath.Join(legacy, "precious.txt"), "real work")
 
@@ -460,7 +461,7 @@ func TestMigrateDryRunChangesNothing(t *testing.T) {
 func TestMigrateReportsWhereTheWorktreeActuallyWent(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	testkit.WorktreeAt(t, main, "fix_wt/legacy", filepath.Join(ctx.Repo.Parent, "demo-legacy"))
 
 	var buf bytes.Buffer
@@ -489,7 +490,7 @@ func TestMigrateReportsWhereTheWorktreeActuallyWent(t *testing.T) {
 func TestMigrateRefusesWhenDestinationOccupied(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	legacy := testkit.WorktreeAt(t, main, "fix_wt/legacy", filepath.Join(ctx.Repo.Parent, "demo-legacy"))
 	testkit.MustWrite(t, filepath.Join(legacy, "precious.txt"), "real work")
 	occupied := filepath.Join(ctx.Repo.Parent, "demo_wt", "fix_wt", "legacy")
@@ -511,7 +512,7 @@ func TestMigrateRefusesWhenDestinationOccupied(t *testing.T) {
 func TestMigrateRefusesAnUnknownType(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	testkit.WorktreeAt(t, main, "feat_wt/login", filepath.Join(ctx.Repo.Parent, "demo-login"))
 
 	var buf bytes.Buffer
@@ -529,7 +530,7 @@ func TestMigrateRefusesAnUnknownType(t *testing.T) {
 func TestMigrateDryRunReportsTheSessionItWouldRefuseFor(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	from := testkit.WorktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 	resolved, _ := filepath.EvalSymlinks(from)
 	opts := MigrateOptions{DryRun: true, Agents: []agents.Agent{{Name: "gecko-1", Cwd: resolved}}}
@@ -547,11 +548,11 @@ func TestMigrateDryRunReportsTheSessionItWouldRefuseFor(t *testing.T) {
 func TestMigrateSaysWhenYouAreStandingInIt(t *testing.T) {
 	// Not parallel: changes the working directory of the test binary.
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	from := testkit.WorktreeAt(t, main, "fix/flaky-test", filepath.Join(ctx.Repo.Parent, "demo-idiot"))
 	t.Chdir(from)
 	// Opened from where you stand, as wt does.
-	ctx, _ = kit.Open(from)
+	ctx, _ = kit.Open(from, io.Discard)
 
 	var buf bytes.Buffer
 	if _, err := Migrate(ctx, from, "", noSessions(), &buf); err != nil {
@@ -568,7 +569,7 @@ func TestMigrateSaysWhenYouAreStandingInIt(t *testing.T) {
 func TestMigrateClearsTheEmptyDirectoriesItLeavesBehind(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	nest := filepath.Join(ctx.Repo.Parent, "demo_wt", "feat_wt", "5f2c8e10-7d3a")
 	testkit.WorktreeAt(t, main, "fix/flaky-test", filepath.Join(nest, "local-cache"))
 
@@ -588,7 +589,7 @@ func TestMigrateClearsTheEmptyDirectoriesItLeavesBehind(t *testing.T) {
 func TestMigrateLeavesADirectoryThatStillHoldsSomething(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	nest := filepath.Join(ctx.Repo.Parent, "demo_wt", "demo", "feat_wt")
 	testkit.WorktreeAt(t, main, "api_tidy", filepath.Join(nest, "new_parser"))
 	keep := filepath.Join(nest, "notes.txt")

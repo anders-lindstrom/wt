@@ -12,6 +12,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/schema"
 )
 
@@ -61,7 +62,7 @@ type RestoreRefsOptions struct {
 	Only    []string
 	DryRun  bool
 	Yes     bool
-	Confirm func(RestoreRefsPlan) bool
+	Confirm kit.Confirm[RestoreRefsPlan]
 	Expect  string
 	Journal *RestoreRefsJournal
 }
@@ -189,11 +190,11 @@ func (p *RestoreRefsPlan) applyOnly(only []string) error {
 // object and what would be done with it. Nil when nothing can go back.
 func restoreToken(p RestoreRefsPlan) *string { return restoreTokenOf(p).Strp() }
 
-func restoreTokenOf(p RestoreRefsPlan) *kit.Token {
+func restoreTokenOf(p RestoreRefsPlan) *jsonout.Token {
 	if !slices.ContainsFunc(p.Rows, restoreRow.restorable) {
 		return nil
 	}
-	t := kit.NewToken("rr1-", "wt-refs-restore").Str("Repo", p.Repo).Str("RunID", p.RunID)
+	t := jsonout.NewToken("rr1-", "wt-refs-restore").Str("Repo", p.Repo).Str("RunID", p.RunID)
 	if p.endpoint != nil && slices.ContainsFunc(p.Rows, restoreRow.remoteRestorable) {
 		t.Str("endpoint", p.endpoint.Digest)
 	}
@@ -223,7 +224,7 @@ func RestoreRefs(ctx *kit.Context, runID string, opts RestoreRefsOptions, w io.W
 	}
 	token := restoreToken(plan)
 	j.planned(plan, token)
-	if opts.Expect != "" && kit.Deref(token) != opts.Expect {
+	if opts.Expect != "" && jsonout.Deref(token) != opts.Expect {
 		return errRestorePlanChanged
 	}
 	if err := plan.applyOnly(opts.Only); err != nil {
@@ -254,7 +255,7 @@ func RestoreRefs(ctx *kit.Context, runID string, opts RestoreRefsOptions, w io.W
 		if err != nil {
 			return err
 		}
-		if kit.Deref(restoreToken(fresh)) != kit.Deref(token) {
+		if jsonout.Deref(restoreToken(fresh)) != jsonout.Deref(token) {
 			return errRestorePlanChanged
 		}
 	default:
@@ -475,7 +476,7 @@ func RestoreRefsPlanJSON(ctx *kit.Context, runID string, only []string, out, pro
 	} else {
 		var plan RestoreRefsPlan
 		plan, err = PlanRefsRestore(ctx, runID)
-		o.Repo = kit.Strp(plan.Repo)
+		o.Repo = jsonout.Strp(plan.Repo)
 		if err == nil {
 			o.Token = restoreToken(plan)
 			if err = plan.applyOnly(only); err != nil {
@@ -488,9 +489,9 @@ func RestoreRefsPlanJSON(ctx *kit.Context, runID string, only []string, out, pro
 		}
 	}
 	if err != nil {
-		o.Error = kit.Strp(err.Error())
+		o.Error = jsonout.Strp(err.Error())
 	}
-	if werr := kit.WriteJSON(out, o); werr != nil && err == nil {
+	if werr := jsonout.WriteJSON(out, o); werr != nil && err == nil {
 		return werr
 	}
 	return err
@@ -499,7 +500,7 @@ func RestoreRefsPlanJSON(ctx *kit.Context, runID string, only []string, out, pro
 // RestoreRefsJournal writes wt refs restore --yes --json's one object once:
 // when the restore returns, or when a signal ends it.
 type RestoreRefsJournal struct {
-	*kit.Journal[RestoreRefsResult]
+	*jsonout.Journal[RestoreRefsResult]
 	root string
 	url  string
 	rows map[string]restoreRow
@@ -509,9 +510,9 @@ type RestoreRefsJournal struct {
 // NewRefsRestoreJournal is a journal that writes its object to out.
 func NewRefsRestoreJournal(out io.Writer, runID string) *RestoreRefsJournal {
 	j := &RestoreRefsJournal{rows: map[string]restoreRow{}, byID: map[string]*RefRestoreItem{}}
-	j.Journal = kit.NewJournal(out, RestoreRefsResult{Schema: 1, SchemaVersion: schema.VersionOf("refs-restore"),
+	j.Journal = jsonout.NewJournal(out, RestoreRefsResult{Schema: 1, SchemaVersion: schema.VersionOf("refs-restore"),
 		Command: refsRestoreCommand, RunID: runID, Items: []*RefRestoreItem{}},
-		kit.JournalRules[RestoreRefsResult]{Error: func(r *RestoreRefsResult, err error) { r.Error = kit.Strp(err.Error()) },
+		jsonout.JournalRules[RestoreRefsResult]{Error: func(r *RestoreRefsResult, err error) { r.Error = jsonout.Strp(err.Error()) },
 			Caught: j.caught, Close: closeRestoreRefs})
 	return j
 }
@@ -544,13 +545,13 @@ func (j *RestoreRefsJournal) planned(p RestoreRefsPlan, token *string) {
 	}
 	j.Lock()
 	defer j.Unlock()
-	j.root, j.Res.Repo, j.Res.Token = p.Repo, kit.Strp(p.Repo), token
+	j.root, j.Res.Repo, j.Res.Token = p.Repo, jsonout.Strp(p.Repo), token
 	j.Res.Items = []*RefRestoreItem{}
 	for _, r := range p.Rows {
 		it := &RefRestoreItem{RefRestorePlanItem: restorePlanItem(r), Result: RefNotRun}
 		switch {
 		case !r.restorable():
-			it.Result, it.Reason = RefResultKept, kit.Strp(r.Action)
+			it.Result, it.Reason = RefResultKept, jsonout.Strp(r.Action)
 		case !r.Selected:
 			it.Result = RefNotSelected
 		}
@@ -588,7 +589,7 @@ func settleRestoreItem(it *RefRestoreItem, st RestoreState) {
 	it.Restored, it.PinDeleted = st.restored, st.PinDeleted
 	switch {
 	case st.Kept != "":
-		it.Result, it.Reason = RefResultKept, kit.Strp(st.Kept)
+		it.Result, it.Reason = RefResultKept, jsonout.Strp(st.Kept)
 	case st.err == nil && st.restored && st.PinDeleted:
 		it.Result, it.Reason = RefRestored, nil
 	default:
@@ -597,7 +598,7 @@ func settleRestoreItem(it *RefRestoreItem, st RestoreState) {
 		if st.err != nil {
 			why = kit.OneLine(st.err.Error())
 		}
-		it.Reason = kit.Strp(why)
+		it.Reason = jsonout.Strp(why)
 	}
 }
 
@@ -612,7 +613,7 @@ func (j *RestoreRefsJournal) caught(_ *RestoreRefsResult, inFlight, _ string) {
 
 func closeRestoreRefs(r *RestoreRefsResult, signalled bool, recovery string) any {
 	if signalled {
-		r.Outcome, r.Recovery = kit.OutcomeInterrupted, kit.Strp(recovery)
+		r.Outcome, r.Recovery = jsonout.OutcomeInterrupted, jsonout.Strp(recovery)
 		return r
 	}
 	finished, changed := true, false
@@ -626,11 +627,11 @@ func closeRestoreRefs(r *RestoreRefsResult, signalled bool, recovery string) any
 	}
 	switch {
 	case finished && r.Error == nil:
-		r.Outcome = kit.OutcomeDone
+		r.Outcome = jsonout.OutcomeDone
 	case !changed:
-		r.Outcome = kit.OutcomeRefused
+		r.Outcome = jsonout.OutcomeRefused
 	default:
-		r.Outcome = kit.OutcomePartial
+		r.Outcome = jsonout.OutcomePartial
 	}
 	return r
 }

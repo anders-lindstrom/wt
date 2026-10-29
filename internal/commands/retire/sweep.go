@@ -17,16 +17,10 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/github"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
-
-// TrunkBase is a ref a branch can be merged into, and the commit it was at
-// when it was read.
-type TrunkBase struct {
-	Name string // "origin/main" or "main"
-	Tip  string
-}
 
 // SweepBranch is a local branch and what the plan made of it.
 type SweepBranch struct {
@@ -113,7 +107,7 @@ type SweepWorktree struct {
 
 // SweepPlan is what a sweep is about to do, assembled before anything changes.
 type SweepPlan struct {
-	Bases    []TrunkBase
+	Bases    []repo.TrunkBase
 	MainRoot string
 	// Delete is merged and checked out nowhere: it goes.
 	Delete []SweepBranch
@@ -129,45 +123,11 @@ type SweepPlan struct {
 	Reap bool
 }
 
-// TrunkBases resolves origin/<trunk> as last fetched, then <trunk>, to
-// commits: what wt sweep and wt remove call merged. origin comes first
-// because merges happen on the remote and the main checkout's trunk is often
-// behind; the local trunk still counts, because commits on it are on trunk
-// too. Nothing is fetched here. Neither being there is a *NoTrunkBaseError;
-// a git that cannot say whether one is there is its own error.
-func TrunkBases(ctx *kit.Context) ([]TrunkBase, error) {
-	trunk := ctx.Config.MainBranch
-	var bases []TrunkBase
-	for _, b := range []struct{ name, ref string }{
-		{"origin/" + trunk, "refs/remotes/origin/" + trunk},
-		{trunk, "refs/heads/" + trunk},
-	} {
-		tip, ok, err := ctx.Repo.ResolveRef(b.ref)
-		if err != nil {
-			return nil, err
-		}
-		if ok {
-			bases = append(bases, TrunkBase{Name: b.name, Tip: tip})
-		}
-	}
-	if len(bases) == 0 {
-		return nil, &NoTrunkBaseError{Trunk: trunk}
-	}
-	return bases, nil
-}
-
-// NoTrunkBaseError is a repository with neither origin/<trunk> nor <trunk>.
-type NoTrunkBaseError struct{ Trunk string }
-
-func (e *NoTrunkBaseError) Error() string {
-	return fmt.Sprintf("neither origin/%s nor %s exists here, so nothing can be called merged", e.Trunk, e.Trunk)
-}
-
 // PlanSweep reads every fact a sweep depends on and sorts the branches. list
 // is the agent sessions to check the worktrees against; it is asked only
 // when a merged branch has a worktree that could go. prs is what GitHub says
 // about each branch, which is empty whenever GitHub is not in play.
-func PlanSweep(ctx *kit.Context, bases []TrunkBase, list func() ([]agents.Agent, error),
+func PlanSweep(ctx *kit.Context, bases []repo.TrunkBase, list func() ([]agents.Agent, error),
 	prs func([]string) map[string]github.PR, reap bool) (SweepPlan, error) {
 	branches, err := ctx.Repo.Branches()
 	if err != nil {
@@ -325,7 +285,7 @@ func PlanSweep(ctx *kit.Context, bases []TrunkBase, list func() ([]agents.Agent,
 
 // detachedOn is the HEAD of a detached worktree and the first base that
 // contains it; base is "" when none does, or HEAD cannot be read.
-func detachedOn(ctx *kit.Context, path string, bases []TrunkBase) (head, base string) {
+func detachedOn(ctx *kit.Context, path string, bases []repo.TrunkBase) (head, base string) {
 	head, err := git.Run(path, "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
 	if err != nil || head == "" {
 		return "", ""
@@ -655,7 +615,7 @@ type SweepOptions struct {
 	// the plan is printed and nothing is deleted: a bulk delete does not
 	// happen because nobody was there to say no.
 	Yes     bool
-	Confirm func(SweepPlan) (bool, error)
+	Confirm kit.Confirm[SweepPlan]
 	// Width is the terminal's column count, 0 when output is not a terminal.
 	Width int
 	// Agents are the sessions to check the worktrees against. Nil asks
@@ -733,11 +693,11 @@ func Sweep(ctx *kit.Context, opts SweepOptions, w io.Writer) (err error) {
 		return err
 	}
 	token := sweepToken(ctx, plan, opts)
-	if opts.Expect != "" && kit.Deref(token) != opts.Expect {
+	if opts.Expect != "" && jsonout.Deref(token) != opts.Expect {
 		return errors.New("the sweep plan changed since it was read (a branch or worktree moved, " +
 			"was merged, or gained or lost a reason to be kept); nothing was swept: read the plan again")
 	}
-	opts.Journal.begin(ctx, plan, kit.Deref(token))
+	opts.Journal.begin(ctx, plan, jsonout.Deref(token))
 	opts.Journal.quarantineIn(opts.Quarantine)
 	plan.Render(w, opts.Width)
 	if plan.Empty() {
@@ -756,11 +716,7 @@ func Sweep(ctx *kit.Context, opts SweepOptions, w io.Writer) (err error) {
 		return nil
 	case opts.Yes:
 	case opts.Confirm != nil:
-		ok, err := opts.Confirm(plan)
-		if err != nil {
-			return err
-		}
-		if !ok {
+		if !opts.Confirm(plan) {
 			fmt.Fprintln(w, "Nothing was swept.")
 			return nil
 		}
@@ -839,7 +795,7 @@ func SweepFetch(ctx *kit.Context, noFetch bool, w io.Writer) error {
 // asks once more whether a worktree has the branch, and deletes only at the
 // tip the plan showed, so the plan that was shown is the plan that runs.
 func (p SweepPlan) apply(ctx *kit.Context, opts SweepOptions, w io.Writer) error {
-	bases, err := TrunkBases(ctx)
+	bases, err := ctx.Repo.TrunkBases(ctx.Config.MainBranch)
 	if err != nil {
 		return fmt.Errorf("could not re-read trunk before deleting, so nothing was deleted: %w", err)
 	}

@@ -2,6 +2,7 @@ package testkit
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,7 +20,7 @@ func SweepRepoWith(t *testing.T, conf string) (ctx *kit.Context, main, origin st
 	GitIn(t, main, "remote", "add", "origin", origin)
 	GitIn(t, main, "fetch", "-q", "origin")
 	GitIn(t, main, "remote", "set-head", "origin", "main")
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

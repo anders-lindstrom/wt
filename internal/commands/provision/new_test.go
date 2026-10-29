@@ -2,6 +2,7 @@ package provision
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,7 +13,7 @@ import (
 
 func TestNewCreatesCanonicalWorktreeAndBranch(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +36,7 @@ func TestNewCreatesCanonicalWorktreeAndBranch(t *testing.T) {
 
 func TestNewBareWorkNameTakesDefaultType(t *testing.T) {
 	t.Parallel()
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	var buf bytes.Buffer
 	path, err := New(ctx, "thing", NewOptions{NoSetup: true}, &buf)
 	if err != nil {
@@ -48,7 +49,7 @@ func TestNewBareWorkNameTakesDefaultType(t *testing.T) {
 
 func TestNewRefusesDuplicateWork(t *testing.T) {
 	t.Parallel()
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	var buf bytes.Buffer
 	if _, err := New(ctx, "fix/dup", NewOptions{NoSetup: true}, &buf); err != nil {
 		t.Fatal(err)
@@ -60,7 +61,7 @@ func TestNewRefusesDuplicateWork(t *testing.T) {
 
 func TestNewRejectsUnknownType(t *testing.T) {
 	t.Parallel()
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	var buf bytes.Buffer
 	if _, err := New(ctx, "wibble/thing", NewOptions{NoSetup: true}, &buf); err == nil {
 		t.Error("want an error for an unknown type")
@@ -73,7 +74,7 @@ func TestNewRejectsUnknownType(t *testing.T) {
 // thing.
 func TestNewRefusesDotAndRootAsAWorkName(t *testing.T) {
 	t.Parallel()
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	var buf bytes.Buffer
 	for spec, want := range map[string]string{
 		".":  ". names the worktree you are in; wt new takes a new <type>/<work>",
@@ -95,7 +96,7 @@ func TestNewRefusesDotAndRootAsAWorkName(t *testing.T) {
 func TestNewWithoutABranchSuffixLeavesTheFoldersAlone(t *testing.T) {
 	t.Parallel()
 	conf := testkit.MinimalConf + "WORKTREE_BRANCH_SUFFIX=\"\"\n"
-	ctx, err := kit.Open(testkit.CommittedRepo(t, conf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, conf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +132,7 @@ func TestTheUserBranchSuffixAppliesWhereTheRepositoryIsSilent(t *testing.T) {
 	if err := os.WriteFile(path, []byte("branch_suffix = \"\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +163,7 @@ func TestTheRepositoryOutranksTheUserBranchSuffix(t *testing.T) {
 	if err := os.WriteFile(path, []byte("branch_suffix = \"\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf+"WORKTREE_BRANCH_SUFFIX=_wt\n"))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf+"WORKTREE_BRANCH_SUFFIX=_wt\n"), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +185,7 @@ func TestTheRepositoryOutranksTheUserBranchSuffix(t *testing.T) {
 func TestNewNamesTheBranchByTheTypesWord(t *testing.T) {
 	t.Parallel()
 	conf := testkit.MinimalConf + "WORKTREE_TYPE_NAMES=(feat=feature)\nWORKTREE_BRANCH_SUFFIX=\"\"\n"
-	ctx, err := kit.Open(testkit.CommittedRepo(t, conf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, conf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +225,7 @@ func TestTheUserTypeNamesApplyWhereTheRepositoryIsSilent(t *testing.T) {
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,7 +254,7 @@ func TestTheRepositoryOutranksTheUserTypeNames(t *testing.T) {
 	if err := os.WriteFile(path, []byte("type_names = [\"feat=feature\"]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf+"WORKTREE_TYPE_NAMES=(feat=feat)\n"))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf+"WORKTREE_TYPE_NAMES=(feat=feat)\n"), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

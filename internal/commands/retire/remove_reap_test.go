@@ -3,6 +3,7 @@ package retire
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -62,7 +63,7 @@ func Alive(pid int) bool {
 // --reap stops a process working in the worktree, then removes it.
 func TestRemoveReapStopsAProcessLeftInTheWorktree(t *testing.T) {
 	// Not parallel: signals real processes.
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	RealProcesses(ctx)
 	var buf bytes.Buffer
 	path, err := provision.New(ctx, "fix/served", provision.NewOptions{NoSetup: true}, &buf)
@@ -94,7 +95,7 @@ func TestRemoveReapStopsAProcessLeftInTheWorktree(t *testing.T) {
 // --dry-run names the processes --reap would stop, and stops none.
 func TestRemoveDryRunListsTheProcessesAndStopsNone(t *testing.T) {
 	// Not parallel: signals real processes.
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	RealProcesses(ctx)
 	var buf bytes.Buffer
 	path, err := provision.New(ctx, "fix/served", provision.NewOptions{NoSetup: true}, &buf)
@@ -134,7 +135,7 @@ func TestRemoveDryRunListsTheProcessesAndStopsNone(t *testing.T) {
 // the worktree, and stops nothing.
 func TestRemoveWithoutReapWarnsAndLeavesThemRunning(t *testing.T) {
 	// Not parallel: signals real processes.
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	RealProcesses(ctx)
 	var buf bytes.Buffer
 	path, err := provision.New(ctx, "fix/served", provision.NewOptions{NoSetup: true}, &buf)
@@ -164,7 +165,7 @@ func TestRemoveWithoutReapWarnsAndLeavesThemRunning(t *testing.T) {
 // stop: --reap stops nothing and removes nothing, --force or not.
 func TestRemoveReapRefusesWhenTheAgentsAreUnknownEvenForced(t *testing.T) {
 	// Not parallel: signals real processes.
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	RealProcesses(ctx)
 	var buf bytes.Buffer
 	path, err := provision.New(ctx, "fix/served", provision.NewOptions{NoSetup: true}, &buf)
@@ -195,7 +196,7 @@ func TestRemoveReapRefusesWhenTheAgentsAreUnknownEvenForced(t *testing.T) {
 // and removes nothing, --force or not.
 func TestRemoveReapStopsNothingWhenTheRelistingFails(t *testing.T) {
 	// Not parallel: signals real processes.
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	RealProcesses(ctx)
 	var buf bytes.Buffer
 	path, err := provision.New(ctx, "fix/served", provision.NewOptions{NoSetup: true}, &buf)

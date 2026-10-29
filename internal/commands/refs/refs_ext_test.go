@@ -11,12 +11,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/commands/refs"
 	"github.com/anders-lindstrom/wt/internal/commands/refs/refstest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 )
 
 // A sweep pins each selected ref and deletes it in one step, drops a
@@ -32,7 +32,7 @@ func TestRefsSweepPinsAndDeletes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v\n%s", err, human)
 	}
-	if r.Outcome != kit.OutcomeDone || r.RunID == nil || !refpins.RunIDPattern.MatchString(*r.RunID) || r.Error != nil {
+	if r.Outcome != jsonout.OutcomeDone || r.RunID == nil || !refpins.RunIDPattern.MatchString(*r.RunID) || r.Error != nil {
 		t.Fatalf("result = %+v\n%s", r, human)
 	}
 	run := *r.RunID
@@ -47,13 +47,13 @@ func TestRefsSweepPinsAndDeletes(t *testing.T) {
 			t.Errorf("%s: pin at %s, want %s", id, got, it.Object)
 		}
 	}
-	if pin := kit.Deref(refs.RefResultOf(t, r, "refs/tags/safe-tag").Pin); pin != refpins.SweptPrefix+run+"/tags/safe-tag" {
+	if pin := jsonout.Deref(refs.RefResultOf(t, r, "refs/tags/safe-tag").Pin); pin != refpins.SweptPrefix+run+"/tags/safe-tag" {
 		t.Errorf("tag pin = %s", pin)
 	}
 	if it := refs.RefResultOf(t, r, "refs/heads/backup/rebased"); it.Result != refs.RefNotSelected || it.Pinned {
 		t.Errorf("young = %+v", it)
 	}
-	if it := refs.RefResultOf(t, r, "refs/heads/backup/checked"); it.Result != refs.RefResultKept || kit.Deref(it.Reason) != refs.KeptWorktree {
+	if it := refs.RefResultOf(t, r, "refs/heads/backup/checked"); it.Result != refs.RefResultKept || jsonout.Deref(it.Reason) != refs.KeptWorktree {
 		t.Errorf("kept = %+v", it)
 	}
 	if ctx.Repo.BranchExists("backup/old") || !ctx.Repo.BranchExists("backup/rebased") {
@@ -72,7 +72,7 @@ func TestRefsSweepExpectRefusesAChangedPlan(t *testing.T) {
 	testkit.GitIn(t, main, "branch", "backup/new", "main")
 	before := testkit.RepoState(t, main)
 	r, _, err := refstest.RefsSweepJSON(t, ctx, refs.Options{NoFetch: true, Expect: *plan.Token})
-	if !errors.Is(err, refs.ErrRefsPlanChanged) || r.Outcome != kit.OutcomeRefused || r.Error == nil || r.RunID != nil {
+	if !errors.Is(err, refs.ErrRefsPlanChanged) || r.Outcome != jsonout.OutcomeRefused || r.Error == nil || r.RunID != nil {
 		t.Fatalf("err = %v, result = %+v", err, r)
 	}
 	if testkit.RepoState(t, main) != before {
@@ -88,7 +88,7 @@ func TestRefsSweepOnly(t *testing.T) {
 	full, _ := refs.RefsPlanJSON(t, ctx, refs.Options{NoFetch: true})
 	only := []string{"refs/heads/backup/rebased"}
 	p, err := refs.RefsPlanJSON(t, ctx, refs.Options{NoFetch: true, Only: only})
-	if err != nil || kit.Deref(p.Token) != kit.Deref(full.Token) {
+	if err != nil || jsonout.Deref(p.Token) != jsonout.Deref(full.Token) {
 		t.Fatalf("--only changed the token or failed: %v", err)
 	}
 	for _, it := range p.Items {
@@ -98,16 +98,16 @@ func TestRefsSweepOnly(t *testing.T) {
 	}
 	for _, bad := range []string{"refs/heads/backup/checked", "refs/heads/nope"} {
 		p, err := refs.RefsPlanJSON(t, ctx, refs.Options{NoFetch: true, Only: []string{only[0], bad}})
-		if err == nil || p.Token != nil || !strings.Contains(kit.Deref(p.Error), bad) {
+		if err == nil || p.Token != nil || !strings.Contains(jsonout.Deref(p.Error), bad) {
 			t.Errorf("--only %s: err %v, plan %+v", bad, err, p.Error)
 		}
 		r, _, err := refstest.RefsSweepJSON(t, ctx, refs.Options{NoFetch: true, Only: []string{only[0], bad}})
-		if err == nil || r.Outcome != kit.OutcomeRefused || !ctx.Repo.BranchExists("backup/rebased") {
+		if err == nil || r.Outcome != jsonout.OutcomeRefused || !ctx.Repo.BranchExists("backup/rebased") {
 			t.Errorf("--only %s swept: %v %+v", bad, err, r)
 		}
 	}
 	r, _, err := refstest.RefsSweepJSON(t, ctx, refs.Options{NoFetch: true, Only: only, Expect: *full.Token})
-	if err != nil || r.Outcome != kit.OutcomeDone || refs.RefResultOf(t, r, only[0]).Result != refs.RefSwept ||
+	if err != nil || r.Outcome != jsonout.OutcomeDone || refs.RefResultOf(t, r, only[0]).Result != refs.RefSwept ||
 		refs.RefResultOf(t, r, "refs/heads/backup/old").Result != refs.RefNotSelected {
 		t.Fatalf("%v %+v", err, r)
 	}
@@ -135,7 +135,7 @@ func TestRefsRestorePutsBack(t *testing.T) {
 		t.Fatalf("actions = %v", actions)
 	}
 	res, err := refstest.RestoreJSON(t, ctx, run, refs.RestoreRefsOptions{Expect: *p.Token})
-	if err != nil || res.Outcome != kit.OutcomeDone {
+	if err != nil || res.Outcome != jsonout.OutcomeDone {
 		t.Fatalf("%v %+v", err, res)
 	}
 	if got := testkit.GitOut(t, main, "rev-parse", "refs/heads/backup/old"); got != old.Object {
@@ -168,7 +168,7 @@ func TestRefsOnlyTakesAnIDWithAComma(t *testing.T) {
 		t.Fatalf("%+v", it)
 	}
 	res, err := refstest.RestoreJSON(t, ctx, *r.RunID, refs.RestoreRefsOptions{Only: []string{id}})
-	if err != nil || res.Outcome != kit.OutcomeDone || !ctx.Repo.BranchExists("backup/a,b") {
+	if err != nil || res.Outcome != jsonout.OutcomeDone || !ctx.Repo.BranchExists("backup/a,b") {
 		t.Fatalf("%v %+v", err, res)
 	}
 }
@@ -203,7 +203,7 @@ func TestRefsSweepRemote(t *testing.T) {
 		t.Errorf("plan = %+v", p)
 	}
 	if it := refs.RefPlanItem(t, p, "origin:refs/heads/backup/landed"); it.Kind != refpins.RefRemoteBranch ||
-		it.Category != refs.RefBackupContained || !it.Selected || kit.Deref(it.ContainedIn) != "origin:refs/heads/main" {
+		it.Category != refs.RefBackupContained || !it.Selected || jsonout.Deref(it.ContainedIn) != "origin:refs/heads/main" {
 		t.Errorf("landed = %+v", it)
 	}
 	if it := refs.RefPlanItem(t, p, "origin:refs/heads/backup/pr"); it.Category != refs.RefKept ||
@@ -225,7 +225,7 @@ func TestRefsSweepRemote(t *testing.T) {
 	}
 
 	r, human, err := refstest.RefsSweepJSON(t, ctx, refs.Options{Remote: true, OpenPRs: prs, Expect: *p.Token})
-	if err != nil || r.Outcome != kit.OutcomeDone {
+	if err != nil || r.Outcome != jsonout.OutcomeDone {
 		t.Fatalf("%v %+v\n%s", err, r, human)
 	}
 	run := *r.RunID
@@ -242,7 +242,7 @@ func TestRefsSweepRemote(t *testing.T) {
 		t.Errorf("pin %s is not at %s", pin, first)
 	}
 	res, err := refstest.RestoreJSON(t, ctx, run, refs.RestoreRefsOptions{})
-	if err != nil || res.Outcome != kit.OutcomeDone {
+	if err != nil || res.Outcome != jsonout.OutcomeDone {
 		t.Fatalf("%v %+v", err, res)
 	}
 	if testkit.GitOut(t, origin, "rev-parse", "refs/heads/backup/landed") != first ||
@@ -260,7 +260,7 @@ func TestRefsSweepRunID(t *testing.T) {
 	ctx, main := testkit.BackupsRepo(t)
 	id := "20260930T091500Z-00c0ffee"
 	r := refstest.SweepAll(t, ctx, refs.Options{RunID: id, Only: []string{"refs/heads/backup/contained"}})
-	if kit.Deref(r.RunID) != id {
+	if jsonout.Deref(r.RunID) != id {
 		t.Fatalf("run = %v", r.RunID)
 	}
 	var m refpins.RunMeta
@@ -270,7 +270,7 @@ func TestRefsSweepRunID(t *testing.T) {
 	}
 	before := testkit.RepoState(t, main)
 	r, _, err := refstest.RefsSweepJSON(t, ctx, refs.Options{NoFetch: true, RunID: id})
-	if err == nil || r.Outcome != kit.OutcomeRefused || len(r.Problems) != 1 || r.Problems[0].Code != refs.ProblemRunIDTaken {
+	if err == nil || r.Outcome != jsonout.OutcomeRefused || len(r.Problems) != 1 || r.Problems[0].Code != refs.ProblemRunIDTaken {
 		t.Errorf("a reused run id: %v %+v", err, r)
 	}
 	if testkit.RepoState(t, main) != before {
@@ -307,7 +307,7 @@ func TestRefsRestoreRemoteKeepsThePinUntilOriginHasIt(t *testing.T) {
 		t.Fatalf("origin has it back: %+v", p.Items)
 	}
 	res, err = refstest.RestoreJSON(t, ctx, run, refs.RestoreRefsOptions{Only: []string{id}})
-	if err != nil || res.Outcome != kit.OutcomeDone {
+	if err != nil || res.Outcome != jsonout.OutcomeDone {
 		t.Fatalf("%v %+v", err, res)
 	}
 	if _, ok, _ := refpins.RefValue(main, pin); ok {
@@ -340,7 +340,7 @@ func TestRefsRestoreNoneKeepsThePinOfARefThatWent(t *testing.T) {
 		t.Error("a run id that is not one must be an error")
 	}
 	res, err := refstest.RestoreJSON(t, ctx, "not-a-run", refs.RestoreRefsOptions{})
-	if err == nil || res.Outcome != kit.OutcomeRefused || res.RunID != "not-a-run" {
+	if err == nil || res.Outcome != jsonout.OutcomeRefused || res.RunID != "not-a-run" {
 		t.Errorf("%v %+v", err, res)
 	}
 }

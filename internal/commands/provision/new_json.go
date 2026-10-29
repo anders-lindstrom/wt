@@ -8,14 +8,16 @@ import (
 	"strings"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/supersetws"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/schema"
 )
 
-var createSteps = []string{kit.StepWorktree, kit.StepBranch, kit.StepConfig, kit.StepCache, kit.StepProvision, kit.StepSubmodules, kit.StepBuild, kit.StepSuperset}
+var createSteps = []string{jsonout.StepWorktree, jsonout.StepBranch, jsonout.StepConfig, jsonout.StepCache, jsonout.StepProvision, jsonout.StepSubmodules, jsonout.StepBuild, jsonout.StepSuperset}
 
 // What a whole wt new or wt checkout came to.
 const (
@@ -124,20 +126,20 @@ func (p *CreatePlan) problem(code, format string, args ...any) {
 // configuration, and which provisioning steps these options would run.
 func basePlan(ctx *kit.Context, command string, opts NewOptions) CreatePlan {
 	p := CreatePlan{Schema: 1, SchemaVersion: schema.VersionOf(command + "-plan"), Command: command,
-		Types: append([]string{}, ctx.Config.Types...), DefaultType: kit.Strp(ctx.Config.DefaultType),
+		Types: append([]string{}, ctx.Config.Types...), DefaultType: jsonout.Strp(ctx.Config.DefaultType),
 		TrunkSource: ctx.TrunkSource(), Configured: ctx.Configured(), Problems: []Problem{}}
 	switch {
 	case errors.Is(ctx.ConfigError, config.ErrNoConfig):
-		p.problem(kit.ProblemNoConfiguration, "%s", kit.OneLine(ctx.ConfigError.Error()))
+		p.problem(jsonout.ProblemNoConfiguration, "%s", kit.OneLine(ctx.ConfigError.Error()))
 	case ctx.ConfigError != nil:
-		p.problem(kit.ProblemConfigInvalid, "the wt configuration does not parse: %s", kit.OneLine(ctx.ConfigError.Error()))
+		p.problem(jsonout.ProblemConfigInvalid, "the wt configuration does not parse: %s", kit.OneLine(ctx.ConfigError.Error()))
 	}
 	if !opts.NoSetup {
 		p.Provision = ctx.HasProvisionScript()
 		if !opts.SkipBuild && ctx.Config.BuildInitEnabled {
-			p.BuildCommand = kit.Strp(ctx.Config.BuildInitCommand)
+			p.BuildCommand = jsonout.Strp(ctx.Config.BuildInitCommand)
 		}
-		p.Superset = !opts.NoSuperset && SupersetEnabled(ctx)
+		p.Superset = !opts.NoSuperset && supersetws.Enabled(ctx)
 	}
 	return p
 }
@@ -150,36 +152,36 @@ func PlanNew(ctx *kit.Context, spec string, opts NewOptions) NewPlan {
 	if base == "" {
 		base = ctx.Config.MainBranch
 	}
-	p.Base = kit.Strp(base)
+	p.Base = jsonout.Strp(base)
 	if err := dotOrRoot(spec); err != nil {
-		p.problem(kit.ProblemInvalidName, "%v", err)
+		p.problem(jsonout.ProblemInvalidName, "%v", err)
 	} else if typ, work, err := naming.ParseSpec(spec, ctx.Config.DefaultType, ctx.Vocab()); err != nil {
-		p.problem(kit.ProblemInvalidName, "%v", err)
+		p.problem(jsonout.ProblemInvalidName, "%v", err)
 	} else {
-		p.Type, p.Work = kit.Strp(typ), kit.Strp(work)
+		p.Type, p.Work = jsonout.Strp(typ), jsonout.Strp(work)
 		if err := kit.CheckType(ctx, typ); err != nil {
-			p.problem(kit.ProblemUnknownType, "%v", err)
+			p.problem(jsonout.ProblemUnknownType, "%v", err)
 		} else {
 			branch, path := ctx.Scheme().Branch(typ, work), ctx.Scheme().Dir(typ, work)
-			p.Branch, p.Path = kit.Strp(branch), kit.Strp(path)
+			p.Branch, p.Path = jsonout.Strp(branch), jsonout.Strp(path)
 			if _, err := git.Run(ctx.Repo.MainRoot, "check-ref-format", "refs/heads/"+branch); err != nil {
-				p.problem(kit.ProblemInvalidName, "%s is not a name git takes for a branch", branch)
+				p.problem(jsonout.ProblemInvalidName, "%s is not a name git takes for a branch", branch)
 			} else if ctx.Repo.BranchExists(branch) {
-				p.problem(kit.ProblemBranchExists, "branch %s already exists", branch)
+				p.problem(jsonout.ProblemBranchExists, "branch %s already exists", branch)
 			}
 			if _, err := os.Stat(path); err == nil {
-				p.problem(kit.ProblemPathExists, "%s already exists", path)
+				p.problem(jsonout.ProblemPathExists, "%s already exists", path)
 			}
 		}
 	}
 	// No base at all is no trunk and no --base: noConfiguration says so.
 	if oid, ok, err := ctx.Repo.ResolveRef(base); err != nil {
 		// No code says "git failed"; baseMissing refuses, and the message says why.
-		p.problem(kit.ProblemBaseMissing, "git could not read %q: %s", base, git.Reason(err))
+		p.problem(jsonout.ProblemBaseMissing, "git could not read %q: %s", base, git.Reason(err))
 	} else if ok {
-		p.BaseCommit = kit.Strp(oid)
+		p.BaseCommit = jsonout.Strp(oid)
 	} else if base != "" {
-		p.problem(kit.ProblemBaseMissing, "%q is not a commit here", base)
+		p.problem(jsonout.ProblemBaseMissing, "%q is not a commit here", base)
 	}
 	if len(p.Problems) == 0 {
 		p.Token = newTokenOf(ctx, p).Strp()
@@ -193,19 +195,19 @@ func PlanCheckout(ctx *kit.Context, arg, work string, opts NewOptions) CheckoutP
 	p := CheckoutPlan{CreatePlan: basePlan(ctx, "checkout", opts)}
 	typ := ctx.Config.DefaultType
 	t, prob := ResolveCheckout(ctx, arg)
-	p.Type, p.Branch = kit.Strp(typ), kit.Strp(t.Branch)
+	p.Type, p.Branch = jsonout.Strp(typ), jsonout.Strp(t.Branch)
 	p.CheckoutSource = t.source()
 	switch t.Source {
 	case SourceLocal:
-		p.BranchCommit = kit.Strp(t.Commit)
+		p.BranchCommit = jsonout.Strp(t.Commit)
 		if all, err := ctx.Repo.Worktrees(); err == nil {
 			if wt, ok := all.ByBranch(t.Branch); ok {
-				p.problem(kit.ProblemBranchCheckedOut, "branch %s is checked out at %s; git gives a branch only one worktree",
+				p.problem(jsonout.ProblemBranchCheckedOut, "branch %s is checked out at %s; git gives a branch only one worktree",
 					t.Branch, wt.Path)
 			}
 		}
 	case SourceRemote:
-		p.RemoteCommit = kit.Strp(t.Commit)
+		p.RemoteCommit = jsonout.Strp(t.Commit)
 	}
 	if prob != nil {
 		p.Problems = append(p.Problems, *prob)
@@ -217,12 +219,12 @@ func PlanCheckout(ctx *kit.Context, arg, work string, opts NewOptions) CheckoutP
 		work = WorkNameFromBranch(t.Branch, ctx.Scheme().Suffix)
 	}
 	if work == "" {
-		p.problem(kit.ProblemInvalidName, "could not derive a work name from branch %q", t.Branch)
+		p.problem(jsonout.ProblemInvalidName, "could not derive a work name from branch %q", t.Branch)
 	} else {
 		path := ctx.Scheme().Dir(typ, work)
-		p.Work, p.Path = kit.Strp(work), kit.Strp(path)
+		p.Work, p.Path = jsonout.Strp(work), jsonout.Strp(path)
 		if _, err := os.Stat(path); err == nil {
-			p.problem(kit.ProblemPathExists, "%s already exists", path)
+			p.problem(jsonout.ProblemPathExists, "%s already exists", path)
 		}
 	}
 	if len(p.Problems) == 0 {
@@ -235,10 +237,10 @@ func PlanCheckout(ctx *kit.Context, arg, work string, opts NewOptions) CheckoutP
 func (t CheckoutTarget) source() CheckoutSource {
 	var s CheckoutSource
 	if t.Source != "" {
-		s.Source = kit.Strp(t.Source)
+		s.Source = jsonout.Strp(t.Source)
 	}
 	if t.Source == SourceRemote {
-		s.Remote, s.RemoteRef = kit.Strp(t.Remote), kit.Strp(t.RemoteRef)
+		s.Remote, s.RemoteRef = jsonout.Strp(t.Remote), jsonout.Strp(t.RemoteRef)
 	}
 	return s
 }
@@ -249,33 +251,33 @@ func (t CheckoutTarget) source() CheckoutSource {
 // them.
 
 // newTokenOf is wt new's: the commit is the base's.
-func newTokenOf(ctx *kit.Context, p NewPlan) *kit.Token {
-	return kit.NewToken("1:", "wt-create").Str("Command", p.Command).Str("Branch", *p.Branch).Str("Path", *p.Path).
+func newTokenOf(ctx *kit.Context, p NewPlan) *jsonout.Token {
+	return jsonout.NewToken("1:", "wt-create").Str("Command", p.Command).Str("Branch", *p.Branch).Str("Path", *p.Path).
 		Str("BaseCommit", *p.BaseCommit).Config(kit.ConfigFingerprint(ctx))
 }
 
 // checkoutTokenOf is wt checkout's: the commit is the branch's tip or the
 // remote-tracking ref's. A branch to be created from a remote also names
 // that ref, so a local branch of the same name appearing changes the token.
-func checkoutTokenOf(ctx *kit.Context, p CheckoutPlan) *kit.Token {
-	t := kit.NewToken("1:", "wt-create").Str("Command", p.Command).Str("Branch", *p.Branch).Str("Path", *p.Path).
-		Str("Source", kit.Deref(p.Source))
-	if kit.Deref(p.Source) == SourceRemote {
-		t.Str("RemoteRef", kit.Deref(p.RemoteRef)).Str("RemoteCommit", kit.Deref(p.RemoteCommit))
+func checkoutTokenOf(ctx *kit.Context, p CheckoutPlan) *jsonout.Token {
+	t := jsonout.NewToken("1:", "wt-create").Str("Command", p.Command).Str("Branch", *p.Branch).Str("Path", *p.Path).
+		Str("Source", jsonout.Deref(p.Source))
+	if jsonout.Deref(p.Source) == SourceRemote {
+		t.Str("RemoteRef", jsonout.Deref(p.RemoteRef)).Str("RemoteCommit", jsonout.Deref(p.RemoteCommit))
 	} else {
-		t.Str("BranchCommit", kit.Deref(p.BranchCommit))
+		t.Str("BranchCommit", jsonout.Deref(p.BranchCommit))
 	}
 	return t.Config(kit.ConfigFingerprint(ctx))
 }
 
 // NewPlanJSON writes wt new --dry-run --json.
 func NewPlanJSON(ctx *kit.Context, spec string, opts NewOptions, w io.Writer) error {
-	return kit.WriteJSON(w, PlanNew(ctx, spec, opts))
+	return jsonout.WriteJSON(w, PlanNew(ctx, spec, opts))
 }
 
 // CheckoutPlanJSON writes wt checkout --dry-run --json.
 func CheckoutPlanJSON(ctx *kit.Context, branch, work string, opts NewOptions, w io.Writer) error {
-	return kit.WriteJSON(w, PlanCheckout(ctx, branch, work, opts))
+	return jsonout.WriteJSON(w, PlanCheckout(ctx, branch, work, opts))
 }
 
 // NewDryRun is wt new --dry-run for a person: what would be made, or why
@@ -360,7 +362,7 @@ func CheckoutJSON(ctx *kit.Context, arg, work string, opts NewOptions, expect st
 // step rather than go on, or return and exit with another status before the
 // handler's signal status.
 type CreateJournal struct {
-	*kit.Journal[CreateResult]
+	*jsonout.Journal[CreateResult]
 	// co is what wt checkout adds to the result; nil for wt new.
 	co *CheckoutResult
 }
@@ -370,20 +372,20 @@ type CreateJournal struct {
 func NewCreateJournal(out io.Writer, command string) *CreateJournal {
 	res := CreateResult{Schema: 1, SchemaVersion: schema.VersionOf(command), Command: command, Problems: []Problem{}}
 	for _, s := range createSteps {
-		res.Steps = append(res.Steps, CreateStep{Step: s, Result: kit.StepNotRun})
+		res.Steps = append(res.Steps, CreateStep{Step: s, Result: jsonout.StepNotRun})
 	}
 	j := &CreateJournal{}
 	if command == "checkout" {
 		j.co = &CheckoutResult{}
 	}
-	j.Journal = kit.NewJournal(out, res, kit.JournalRules[CreateResult]{
-		Error: func(r *CreateResult, err error) { r.Error = kit.Strp(err.Error()) },
+	j.Journal = jsonout.NewJournal(out, res, jsonout.JournalRules[CreateResult]{
+		Error: func(r *CreateResult, err error) { r.Error = jsonout.Strp(err.Error()) },
 		Caught: func(r *CreateResult, inFlight, _ string) {
 			if s := r.step(inFlight); s != nil {
-				s.Result = kit.StepInterrupted
-				s.Reason = kit.Strp("a signal ended wt while this ran")
-				if inFlight != kit.StepWorktree && r.Path != nil {
-					s.Reason = kit.Strp("a signal ended wt while this ran; `cd " + *r.Path + " && wt setup` finishes provisioning")
+				s.Result = jsonout.StepInterrupted
+				s.Reason = jsonout.Strp("a signal ended wt while this ran")
+				if inFlight != jsonout.StepWorktree && r.Path != nil {
+					s.Reason = jsonout.Strp("a signal ended wt while this ran; `cd " + *r.Path + " && wt setup` finishes provisioning")
 				}
 			}
 		},
@@ -418,7 +420,7 @@ func (j *CreateJournal) branchMade(ctx *kit.Context) {
 	}
 	j.Lock()
 	defer j.Unlock()
-	j.branchRead(ctx, kit.StepCreated)
+	j.branchRead(ctx, jsonout.StepCreated)
 }
 
 // branchRead records the branch step from the branch as it is after the
@@ -429,19 +431,19 @@ func (j *CreateJournal) branchRead(ctx *kit.Context, result string) {
 	}
 	// A report of what was made: a tip git cannot read is recorded as none.
 	tip, _, _ := ctx.Repo.ResolveRef("refs/heads/" + *j.Res.Branch)
-	s := j.step(kit.StepBranch)
-	s.Result, s.Commit = result, kit.Strp(tip)
+	s := j.step(jsonout.StepBranch)
+	s.Result, s.Commit = result, jsonout.Strp(tip)
 	if j.co == nil {
 		return
 	}
 	up := ctx.Repo.Upstream(*j.Res.Branch)
-	j.co.Upstream = kit.Strp(up)
-	if j.co.RemoteRef != nil && result == kit.StepCreated {
+	j.co.Upstream = jsonout.Strp(up)
+	if j.co.RemoteRef != nil && result == jsonout.StepCreated {
 		name := strings.TrimPrefix(*j.co.RemoteRef, "refs/remotes/")
 		if up == *j.co.RemoteRef {
-			s.Reason = kit.Strp("tracking " + name)
+			s.Reason = jsonout.Strp("tracking " + name)
 		} else {
-			s.Reason = kit.Strp("its upstream could not be set to " + name)
+			s.Reason = jsonout.Strp("its upstream could not be set to " + name)
 		}
 	}
 }
@@ -462,7 +464,7 @@ func (j *CreateJournal) plan(p CreatePlan, base, expected *string) {
 func (j *CreateJournal) admit(p CreatePlan, expect string) error {
 	problems := p.Problems
 	if expect != "" && (p.Token == nil || *p.Token != expect) {
-		problems = append([]Problem{{Code: kit.ProblemPlanChanged,
+		problems = append([]Problem{{Code: jsonout.ProblemPlanChanged,
 			Message: "the plan is not the one --expect names: the commit, the name or the configuration changed; plan again"}},
 			p.Problems...)
 	}
@@ -470,7 +472,7 @@ func (j *CreateJournal) admit(p CreatePlan, expect string) error {
 	if err != nil {
 		j.Lock()
 		j.Res.Problems = problems
-		j.Res.Error = kit.Strp(err.Error())
+		j.Res.Error = jsonout.Strp(err.Error())
 		j.Unlock()
 		j.Finish()
 	}
@@ -511,7 +513,7 @@ func (j *CreateJournal) finish(name, result, reason, commit string) {
 	}
 	j.Settle(name, func(r *CreateResult) {
 		if s := r.step(name); s != nil {
-			s.Result, s.Reason, s.Commit = result, kit.Strp(reason), kit.Strp(commit)
+			s.Result, s.Reason, s.Commit = result, jsonout.Strp(reason), jsonout.Strp(commit)
 		}
 	})
 }
@@ -526,9 +528,9 @@ func (j *CreateJournal) AddFailed(ctx *kit.Context, path string, err error) {
 		return
 	}
 	if errors.Is(err, repo.ErrBranchExists) {
-		j.Settle(kit.StepWorktree, func(r *CreateResult) {
-			r.Problems = append(r.Problems, Problem{Code: kit.ProblemPlanChanged, Message: kit.OneLine(err.Error())})
-			r.Error = kit.Strp(kit.OneLine(err.Error()))
+		j.Settle(jsonout.StepWorktree, func(r *CreateResult) {
+			r.Problems = append(r.Problems, Problem{Code: jsonout.ProblemPlanChanged, Message: kit.OneLine(err.Error())})
+			r.Error = jsonout.Strp(kit.OneLine(err.Error()))
 		})
 		return
 	}
@@ -536,12 +538,12 @@ func (j *CreateJournal) AddFailed(ctx *kit.Context, path string, err error) {
 		if _, ok := all.ByPath(path); ok {
 			j.created(ctx, path)
 			j.Lock()
-			j.step(kit.StepWorktree).Reason = kit.Strp(kit.OneLine(err.Error()))
+			j.step(jsonout.StepWorktree).Reason = jsonout.Strp(kit.OneLine(err.Error()))
 			j.Unlock()
 			return
 		}
 	}
-	j.finish(kit.StepWorktree, kit.StepFailed, kit.OneLine(err.Error()), "")
+	j.finish(jsonout.StepWorktree, jsonout.StepFailed, kit.OneLine(err.Error()), "")
 	j.Lock()
 	defer j.Unlock()
 	if j.Res.Branch == nil {
@@ -549,9 +551,9 @@ func (j *CreateJournal) AddFailed(ctx *kit.Context, path string, err error) {
 	}
 	// A report of what was made: a branch git cannot read is left unrecorded.
 	if _, ok, _ := ctx.Repo.ResolveRef("refs/heads/" + *j.Res.Branch); ok {
-		result := kit.StepUntouched
+		result := jsonout.StepUntouched
 		if j.createsBranch() {
-			result = kit.StepCreated
+			result = jsonout.StepCreated
 		}
 		j.branchRead(ctx, result)
 	}
@@ -565,25 +567,25 @@ func (j *CreateJournal) created(ctx *kit.Context, path string) {
 	}
 	head, _ := git.Run(path, "rev-parse", "--verify", "HEAD")
 	head = strings.TrimSpace(head)
-	j.finish(kit.StepWorktree, kit.StepCreated, "", head)
+	j.finish(jsonout.StepWorktree, jsonout.StepCreated, "", head)
 	j.Lock()
 	defer j.Unlock()
-	j.Res.Commit = kit.Strp(head)
-	branch := kit.StepUntouched
+	j.Res.Commit = jsonout.Strp(head)
+	branch := jsonout.StepUntouched
 	if j.createsBranch() {
-		branch = kit.StepCreated
+		branch = jsonout.StepCreated
 	}
 	j.branchRead(ctx, branch)
 	if want := j.Res.ExpectedCommit; want != nil && head != *want {
-		j.Res.Problems = append(j.Res.Problems, Problem{Code: kit.ProblemHeadMoved,
+		j.Res.Problems = append(j.Res.Problems, Problem{Code: jsonout.ProblemHeadMoved,
 			Message: fmt.Sprintf("the worktree is at %s, not at %s as planned", git.ShortID(head, 7), git.ShortID(*want, 7))})
 	}
 }
 
 // skipSetup records every provisioning step as skipped, for --no-setup.
 func (j *CreateJournal) skipSetup(why string) {
-	for _, s := range []string{kit.StepConfig, kit.StepCache, kit.StepProvision, kit.StepSubmodules, kit.StepBuild, kit.StepSuperset} {
-		j.finish(s, kit.StepSkipped, why, "")
+	for _, s := range []string{jsonout.StepConfig, jsonout.StepCache, jsonout.StepProvision, jsonout.StepSubmodules, jsonout.StepBuild, jsonout.StepSuperset} {
+		j.finish(s, jsonout.StepSkipped, why, "")
 	}
 }
 
@@ -619,9 +621,9 @@ func (r *CreateResult) outcome(signalled bool) string {
 	if signalled {
 		return CreateInterrupted
 	}
-	switch r.step(kit.StepWorktree).Result {
-	case kit.StepCreated:
-	case kit.StepFailed:
+	switch r.step(jsonout.StepWorktree).Result {
+	case jsonout.StepCreated:
+	case jsonout.StepFailed:
 		return CreateFailed
 	default:
 		return CreateRefused
@@ -630,7 +632,7 @@ func (r *CreateResult) outcome(signalled bool) string {
 		return CreateCreatedWithProblems
 	}
 	for _, s := range r.Steps {
-		if s.Result == kit.StepFailed || s.Result == kit.StepInterrupted || s.Result == kit.StepNotRun {
+		if s.Result == jsonout.StepFailed || s.Result == jsonout.StepInterrupted || s.Result == jsonout.StepNotRun {
 			return CreateCreatedWithProblems
 		}
 	}

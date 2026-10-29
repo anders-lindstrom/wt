@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -64,7 +65,7 @@ func TestStatusMarksThePullRequestsChecks(t *testing.T) {
 // marks them as the one that asked GitHub did.
 func TestPRCacheKeepsTheChecks(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +139,7 @@ func TestPRCellMarksAfterTheNumberOfAMultiWordLabel(t *testing.T) {
 // with no pull request needs no checks and answers both.
 func TestPRCacheWithoutChecksDoesNotAnswerAListing(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +183,7 @@ func TestOnlyTheListingAsksForTheChecks(t *testing.T) {
 // marks, says once why, and does not ask again until the answer is old.
 func TestListShowsThePullRequestsWhenTheChecksAreRefused(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +218,7 @@ esac`, provisiontest.WithChecks(testkit.OpenPR(13, "fix_wt/failing", "Failing"),
 // warning is the failure that left the column out, not the refusal.
 func TestListSaysWhyTheColumnIsMissingWhenTheRetryFailsToo(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

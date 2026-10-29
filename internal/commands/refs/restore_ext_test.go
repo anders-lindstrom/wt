@@ -3,6 +3,7 @@ package refs_test
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -81,7 +82,7 @@ func TestRestoreRenamesAKeptBranchBack(t *testing.T) {
 func TestRestoreLeavesAnUntouchedBranch(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	path := filepath.Join(ctx.Repo.Parent, "theirs")
 	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "theirs", path)
 	testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "theirs")

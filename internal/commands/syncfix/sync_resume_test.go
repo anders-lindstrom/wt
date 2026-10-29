@@ -750,7 +750,7 @@ func TestSyncResumeAsksBeforeFinishingUnderAnIdleSession(t *testing.T) {
 	opts := noResumeAgents()
 	opts.Agents = testkit.IdleIn(t, bump, "bump-1")
 	var asked []string
-	opts.Confirm = func(works []string) (bool, error) { asked = works; return false, nil }
+	opts.Confirm = func(works []string) bool { asked = works; return false }
 	var out bytes.Buffer
 	if err := SyncResume(ctx, "bump", opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
@@ -782,9 +782,9 @@ func TestSyncResumeVerifiesTheHandoverAfterTheAnswer(t *testing.T) {
 	ctx, bump, _ := synccmdtest.ResolvedByHand(t)
 	opts := noResumeAgents()
 	opts.Agents = testkit.IdleIn(t, bump, "bump-1")
-	opts.Confirm = func([]string) (bool, error) {
+	opts.Confirm = func([]string) bool {
 		testkit.WriteFile(t, bump, "a.txt", "changed while you were asked\n")
-		return true, nil
+		return true
 	}
 	var out bytes.Buffer
 	err := SyncResume(ctx, "bump", opts, &out)
@@ -801,7 +801,7 @@ func TestSyncResumeRefusesASessionThatWokeWhileAsked(t *testing.T) {
 	ctx, bump, gitDir := synccmdtest.ResolvedByHand(t)
 	opts := noResumeAgents()
 	opts.Agents = testkit.IdleIn(t, bump, "bump-1")
-	opts.Confirm = func([]string) (bool, error) { return true, nil }
+	opts.Confirm = func([]string) bool { return true }
 	woke := testkit.IdleIn(t, bump, "bump-1")
 	woke[0].Status = "busy"
 	opts.Relist = func() ([]agents.Agent, error) { return woke, nil }

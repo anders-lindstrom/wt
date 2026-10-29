@@ -17,6 +17,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anders-lindstrom/wt/internal/reposel"
 )
 
 // sessionRig is a config directory with claude's registry, and a directory
@@ -634,7 +635,7 @@ func TestSessionListAllPlacesSessionsByRepositoryFromOneRead(t *testing.T) {
 	asked := testkit.MachineClaudeLists(t, liveSession("here", sidA, wt, 4001), liveSession("stray", sidB, elsewhere, 4002))
 
 	var out bytes.Buffer
-	err := ListRun(nil, ListOptions{Selection: kit.Selection{All: true}, JSON: true, NoInboxCheck: true,
+	err := ListRun(nil, ListOptions{Selection: reposel.Selection{All: true}, JSON: true, NoInboxCheck: true,
 		Out: &out, Err: &bytes.Buffer{}, env: &r.env})
 	if err != nil {
 		t.Fatal(err)

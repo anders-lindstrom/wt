@@ -2,6 +2,7 @@ package admin
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
 
@@ -16,7 +17,7 @@ import (
 // would walk `cd "$(wt pr checkout 12)"` into the repository you started in.
 func TestPRCheckoutRefusesAPullRequestOnTrunk(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +41,7 @@ func TestPRCheckoutRefusesAPullRequestOnTrunk(t *testing.T) {
 // branch it did not make and refuses.
 func TestPRCheckoutRemovesABranchGhLeftBehind(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +62,7 @@ func TestPRCheckoutRemovesABranchGhLeftBehind(t *testing.T) {
 // not take it.
 func TestPRCheckoutKeepsABranchItDidNotMake(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +83,7 @@ func TestPRCheckoutKeepsABranchItDidNotMake(t *testing.T) {
 // have a worktree here.
 func TestPRChoicesLeadWithYourReviewQueue(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

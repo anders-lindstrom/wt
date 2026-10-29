@@ -18,6 +18,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/github"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 )
 
 // sweptRuns is what wt refs swept --json lists.
@@ -58,14 +59,14 @@ func TestSweepPinsWhatItDeletesAndRefsRestoresIt(t *testing.T) {
 	wtTip := testkit.GitOut(t, main, "rev-parse", "fix_wt/login")
 
 	r, human, err := retiretest.SweepJSON(t, ctx, retire.SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{}})
-	if err != nil || r.Outcome != kit.OutcomeDone || r.RunID == nil {
+	if err != nil || r.Outcome != jsonout.OutcomeDone || r.RunID == nil {
 		t.Fatalf("%v %+v\n%s", err, r, human)
 	}
 	run := *r.RunID
 	for branch, tip := range map[string]string{"done-work": doneTip, "fix_wt/login": wtTip} {
 		it := retiretest.ResultItem(t, r, branch)
 		pin := refpins.PinOf(run, refpins.RefBranch, branch)
-		if kit.Deref(it.Pin) != pin || testkit.GitOut(t, main, "rev-parse", pin) != tip ||
+		if jsonout.Deref(it.Pin) != pin || testkit.GitOut(t, main, "rev-parse", pin) != tip ||
 			!slices.Equal(it.RestoreCommand, refpins.RestoreFromRun(run, branch)) {
 			t.Errorf("%s = %+v", branch, it)
 		}
@@ -84,7 +85,7 @@ func TestSweepPinsWhatItDeletesAndRefsRestoresIt(t *testing.T) {
 	}
 
 	res, err := refstest.RestoreJSON(t, ctx, run, refs.RestoreRefsOptions{})
-	if err != nil || res.Outcome != kit.OutcomeDone {
+	if err != nil || res.Outcome != jsonout.OutcomeDone {
 		t.Fatalf("%v %+v", err, res)
 	}
 	if testkit.GitOut(t, main, "rev-parse", "refs/heads/done-work") != doneTip ||
@@ -107,10 +108,10 @@ func TestRemovePinsAMergedBranchAndRefsRestoresIt(t *testing.T) {
 		t.Fatalf("%v %+v", err, r)
 	}
 	run := *r.RunID
-	if s := retiretest.Step(t, r, kit.StepBranch); kit.Deref(s.Pin) != refpins.PinOf(run, refpins.RefBranch, "fix_wt/pinned") {
+	if s := retiretest.Step(t, r, jsonout.StepBranch); jsonout.Deref(s.Pin) != refpins.PinOf(run, refpins.RefBranch, "fix_wt/pinned") {
 		t.Errorf("branch %+v", s)
 	}
-	if s := retiretest.Step(t, r, kit.StepWorktree); s.Pin != nil {
+	if s := retiretest.Step(t, r, jsonout.StepWorktree); s.Pin != nil {
 		t.Errorf("only the branch step has a pin: %+v", s)
 	}
 	runs := sweptRuns(t, ctx)
@@ -118,7 +119,7 @@ func TestRemovePinsAMergedBranchAndRefsRestoresIt(t *testing.T) {
 		t.Fatalf("swept = %+v", runs)
 	}
 	res, err := refstest.RestoreJSON(t, ctx, run, refs.RestoreRefsOptions{Only: []string{"refs/heads/fix_wt/pinned"}})
-	if err != nil || res.Outcome != kit.OutcomeDone {
+	if err != nil || res.Outcome != jsonout.OutcomeDone {
 		t.Fatalf("%v %+v", err, res)
 	}
 	if testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", "refs/heads/fix_wt/pinned") != tip {

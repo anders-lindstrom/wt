@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
+	"github.com/anders-lindstrom/wt/internal/reposel"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -82,10 +82,10 @@ func TestSyncRunAllRebasesTheReadyOnesAcrossRepositories(t *testing.T) {
 	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{ready.Repo.MainRoot, contested.Repo.MainRoot}}}}
 	var asked []string
 	opts := synccmd.SyncRebaseAllOptions{RunOptions: synccmdtest.NoAgents(),
-		Ask: func(q string) (bool, error) { asked = append(asked, q); return true, nil }}
+		Ask: func(q string) bool { asked = append(asked, q); return true }}
 	opts.IfReady = true
 	var out bytes.Buffer
-	err := synccmd.SyncRebaseAll(u, kit.Selection{Profiles: []string{"p"}}, opts, &out)
+	err := synccmd.SyncRebaseAll(u, reposel.Selection{Profiles: []string{"p"}}, opts, &out)
 	if err == nil || !strings.Contains(err.Error(), "demo/bump (not ready)") {
 		t.Fatalf("err = %v\n%s", err, out.String())
 	}
@@ -107,7 +107,7 @@ func TestSyncRunIfReadyFailsWhenDeclinedWithSomethingNotReady(t *testing.T) {
 	provisiontest.ContestedSibling(t, ctx)
 	opts := synccmdtest.NoAgents()
 	opts.IfReady = true
-	opts.Confirm = func([]string) (bool, error) { return false, nil }
+	opts.Confirm = func([]string) bool { return false }
 	var out bytes.Buffer
 	if err := synccmd.SyncRebase(ctx, nil, opts, &out); err == nil || !strings.Contains(err.Error(), "alpha (not ready)") {
 		t.Fatalf("err = %v\n%s", err, out.String())
@@ -122,13 +122,13 @@ func TestSyncRunAllRefusesARepositoryWhoseTrunkMoved(t *testing.T) {
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	main := ready.Repo.MainRoot
 	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{main}}}}
-	opts := synccmd.SyncRebaseAllOptions{RunOptions: synccmdtest.NoAgents(), Ask: func(string) (bool, error) {
+	opts := synccmd.SyncRebaseAllOptions{RunOptions: synccmdtest.NoAgents(), Ask: func(string) bool {
 		testkit.GitOut(t, main, "commit", "-q", "--allow-empty", "-m", "trunk moved on")
 		testkit.GitOut(t, main, "fetch", "-q", "origin")
-		return true, nil
+		return true
 	}}
 	var out bytes.Buffer
-	err := synccmd.SyncRebaseAll(u, kit.Selection{Profiles: []string{"p"}}, opts, &out)
+	err := synccmd.SyncRebaseAll(u, reposel.Selection{Profiles: []string{"p"}}, opts, &out)
 	if err == nil || !strings.Contains(out.String(), "trunk moved since the plan") {
 		t.Fatalf("err = %v\n%s", err, out.String())
 	}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 	"github.com/anders-lindstrom/wt/schema"
 )
@@ -143,7 +144,7 @@ type UpResult struct {
 // returns, or by the signal handler when it does not. Every method is safe
 // from both, and the object is written once.
 type RunJournal struct {
-	*kit.Journal[RunResult]
+	*jsonout.Journal[RunResult]
 	// up writes wt up's object; otherwise the journal writes wt sync's,
 	// which reports more of each participant.
 	up   bool
@@ -169,9 +170,9 @@ func NewSyncRunJournal(out io.Writer, command string) *RunJournal {
 
 func newJournal(out io.Writer, schemaName, command string) *RunJournal {
 	j := &RunJournal{byBr: map[string]*SyncParticipant{}}
-	j.Journal = kit.NewJournal(out, RunResult{Schema: 1, SchemaVersion: schema.VersionOf(schemaName), Command: command,
+	j.Journal = jsonout.NewJournal(out, RunResult{Schema: 1, SchemaVersion: schema.VersionOf(schemaName), Command: command,
 		Worktrees: []*SyncParticipant{}},
-		kit.JournalRules[RunResult]{Error: func(r *RunResult, err error) { r.Error = kit.Strp(err.Error()) },
+		jsonout.JournalRules[RunResult]{Error: func(r *RunResult, err error) { r.Error = jsonout.Strp(err.Error()) },
 			Caught: j.caught, Close: j.close})
 	return j
 }
@@ -205,7 +206,7 @@ func (j *RunJournal) Repo(name string) {
 	}
 	j.Lock()
 	defer j.Unlock()
-	j.Res.Repo = kit.Strp(name)
+	j.Res.Repo = jsonout.Strp(name)
 }
 
 // Trunk records the run's trunk, and how it was found, under one lock: an
@@ -216,8 +217,8 @@ func (j *RunJournal) Trunk(name string, source *string, ref, onto string, fetche
 	}
 	j.Lock()
 	defer j.Unlock()
-	j.Res.Trunk, j.Res.TrunkSource, j.Res.TrunkRef = kit.Strp(name), source, kit.Strp(ref)
-	j.Res.Onto, j.Res.Fetched = kit.Strp(onto), fetched
+	j.Res.Trunk, j.Res.TrunkSource, j.Res.TrunkRef = jsonout.Strp(name), source, jsonout.Strp(ref)
+	j.Res.Onto, j.Res.Fetched = jsonout.Strp(onto), fetched
 }
 
 // TrunkSync records what the run did to local trunk after its fetch.
@@ -240,7 +241,7 @@ func (j *RunJournal) Join(work, branch, path, before string, own *OwnRemoteSync)
 	j.Lock()
 	defer j.Unlock()
 	p := &SyncParticipant{UpParticipant: UpParticipant{Work: work, Branch: branch, Path: path, Result: ResultNotRun,
-		Before: kit.Strp(before), After: kit.Strp(before), FailedSteps: []string{}, OwnRemoteSync: own}, Deferred: []DeferredStep{}}
+		Before: jsonout.Strp(before), After: jsonout.Strp(before), FailedSteps: []string{}, OwnRemoteSync: own}, Deferred: []DeferredStep{}}
 	j.Res.Worktrees = append(j.Res.Worktrees, p)
 	j.byBr[branch] = p
 }
@@ -314,7 +315,7 @@ func (j *RunJournal) caught(r *RunResult, inFlight, recovery string) {
 		}
 		if caught {
 			p.Result = ResultInterrupted
-			p.Recovery = kit.Strp(recovery)
+			p.Recovery = jsonout.Strp(recovery)
 			j.fastForwardSeen(p)
 		}
 	}
@@ -324,8 +325,8 @@ func (j *RunJournal) caught(r *RunResult, inFlight, recovery string) {
 // rules in docs/json.md, or is interrupted.
 func (j *RunJournal) close(r *RunResult, signalled bool, recovery string) any {
 	if signalled {
-		r.Outcome = kit.OutcomeInterrupted
-		r.Recovery = kit.Strp(recovery)
+		r.Outcome = jsonout.OutcomeInterrupted
+		r.Recovery = jsonout.Strp(recovery)
 	} else {
 		r.Outcome = OutcomeOf(r.Worktrees, r.Error != nil)
 	}
@@ -352,7 +353,7 @@ func (j *RunJournal) fastForwardSeen(p *SyncParticipant) {
 		return
 	}
 	if tip, err := git.Run(*j.Res.Repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+p.Branch); err == nil && tip == *o.Remote {
-		o.FastForwarded, p.After = true, kit.Strp(tip)
+		o.FastForwarded, p.After = true, jsonout.Strp(tip)
 	}
 }
 
@@ -381,9 +382,9 @@ func Journaled(j *RunJournal, verb func() error) error {
 func OutcomeOf(ps []*SyncParticipant, failedEarly bool) string {
 	if len(ps) == 0 {
 		if failedEarly {
-			return kit.OutcomeRefused
+			return jsonout.OutcomeRefused
 		}
-		return kit.OutcomeDone
+		return jsonout.OutcomeDone
 	}
 	finished, changed := true, false
 	for _, p := range ps {
@@ -399,11 +400,11 @@ func OutcomeOf(ps []*SyncParticipant, failedEarly bool) string {
 	}
 	switch {
 	case finished && !failedEarly:
-		return kit.OutcomeDone
+		return jsonout.OutcomeDone
 	case !changed:
-		return kit.OutcomeRefused
+		return jsonout.OutcomeRefused
 	}
-	return kit.OutcomePartial
+	return jsonout.OutcomePartial
 }
 
 // PlanToken names the inputs a plan was computed from: the trunk wt up
@@ -414,7 +415,7 @@ func OutcomeOf(ps []*SyncParticipant, failedEarly bool) string {
 // branch to that commit, so that a caller who allows the divergence it was
 // shown is refused over one that moved since. With nothing diverged the
 // token is what it was before wt looked at the remotes, which docs/json.md
-// promises: so it is built by hand, not with kit.Token.
+// promises: so it is built by hand, not with jsonout.Token.
 func PlanToken(ctx *kit.Context, trunk string, stack []string, diverged map[string]string) string {
 	h := sha256.New()
 	h.Write([]byte("wt-plan-1\x00" + trunk + "\x00"))

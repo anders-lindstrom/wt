@@ -7,8 +7,9 @@ import (
 	"path/filepath"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/provision"
+	"github.com/anders-lindstrom/wt/internal/commands/supersetws"
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/schema"
@@ -79,7 +80,7 @@ func Restore(ctx *kit.Context, dir string, opts RestoreOptions, w io.Writer) err
 // in; the person's settings, and the Superset it sees, are the ones this
 // run read.
 func registerRestored(ctx *kit.Context, path string, w io.Writer) {
-	rctx, err := kit.Open(path)
+	rctx, err := kit.Open(path, io.Discard)
 	if err != nil {
 		return
 	}
@@ -87,7 +88,7 @@ func registerRestored(ctx *kit.Context, path string, w io.Writer) {
 		rctx.User, rctx.UserError = ctx.User, ctx.UserError
 		rctx.SupersetFake = ctx.SupersetFake
 	}
-	provision.RegisterSuperset(rctx, path, w)
+	supersetws.Register(rctx, path, w)
 }
 
 // renderRestorePlan writes what a restore finds and would do.
@@ -132,11 +133,11 @@ func actionWords(r *quarantine.Record, action, occupiedBy string) string {
 	case quarantine.ActionNone:
 		return "there at " + short + "; nothing to do"
 	case quarantine.ActionRenameBack:
-		return fmt.Sprintf("renamed back from %s", kit.Deref(b.KeepAs))
+		return fmt.Sprintf("renamed back from %s", jsonout.Deref(b.KeepAs))
 	case quarantine.ActionRecreate:
 		return "made again at " + short + ", with its config"
 	case quarantine.ActionAttach:
-		return fmt.Sprintf("its name is another commit's now; HEAD names %s, still at %s", kit.Deref(b.KeepAs), short)
+		return fmt.Sprintf("its name is another commit's now; HEAD names %s, still at %s", jsonout.Deref(b.KeepAs), short)
 	}
 	head := ""
 	if r.Head != nil {
@@ -222,18 +223,18 @@ func restoreBranchOf(r *quarantine.Record, action, occupiedBy string) *RestoreBr
 		return nil
 	}
 	return &RestoreBranch{Name: r.Branch.Name, Tip: r.Branch.Tip, KeepAs: r.Branch.KeepAs,
-		Removal: r.Branch.Result, Action: kit.Strp(action), OccupiedBy: kit.Strp(occupiedBy)}
+		Removal: r.Branch.Result, Action: jsonout.Strp(action), OccupiedBy: jsonout.Strp(occupiedBy)}
 }
 
 // restorePlanOutput is the plan as --json reports it.
 func restorePlanOutput(p quarantine.RestorePlan) RestorePlanOutput {
 	out := RestorePlanOutput{Schema: 1, SchemaVersion: schema.VersionOf("restore-plan"), Command: "restore",
-		Dir: p.Dir, Locked: p.Locked, Orphan: kit.Strp(p.Orphan), Problems: []RestoreProblem{}}
+		Dir: p.Dir, Locked: p.Locked, Orphan: jsonout.Strp(p.Orphan), Problems: []RestoreProblem{}}
 	for _, pr := range p.Problems {
 		out.Problems = append(out.Problems, RestoreProblem(pr))
 	}
 	if r := p.Record; r != nil {
-		out.Repo, out.Head = kit.Strp(r.Repo), r.Head
+		out.Repo, out.Head = jsonout.Strp(r.Repo), r.Head
 		out.Checkout, out.Admin = restorePlace(r.Checkout, p.Checkout), restorePlace(r.Admin, p.Admin)
 		out.Branch = restoreBranchOf(r, p.Action, p.OccupiedBy)
 	}
@@ -257,11 +258,11 @@ func RestoreJSON(ctx *kit.Context, dir string, opts RestoreOptions, out, progres
 		renderRestorePlan(plan, progress)
 		p := restorePlanOutput(plan)
 		if err != nil {
-			p.Error = kit.Strp(err.Error())
+			p.Error = jsonout.Strp(err.Error())
 		} else if why := plan.Refusal(); why != "" {
-			p.Error = kit.Strp(why)
+			p.Error = jsonout.Strp(why)
 		}
-		if werr := kit.WriteJSON(out, p); werr != nil {
+		if werr := jsonout.WriteJSON(out, p); werr != nil {
 			return werr
 		}
 		if p.Error != nil {
@@ -269,10 +270,10 @@ func RestoreJSON(ctx *kit.Context, dir string, opts RestoreOptions, out, progres
 		}
 		return nil
 	}
-	j := kit.NewJournal(out, restoreRecord{}, kit.JournalRules[restoreRecord]{
+	j := jsonout.NewJournal(out, restoreRecord{}, jsonout.JournalRules[restoreRecord]{
 		Close: func(r *restoreRecord, signalled bool, recovery string) any {
 			if signalled {
-				return restoreOutput(dir, rp, kit.OutcomeInterrupted, quarantine.RestoreResult{}, nil, recovery)
+				return restoreOutput(dir, rp, jsonout.OutcomeInterrupted, quarantine.RestoreResult{}, nil, recovery)
 			}
 			return restoreOutput(dir, rp, r.res.Outcome, r.res, r.err, "")
 		}})
@@ -303,22 +304,22 @@ func restoreOutput(dir string, rp *repo.Repo, outcome string, res quarantine.Res
 	}
 	o := RestoreOutput{Schema: 1, SchemaVersion: schema.VersionOf("restore"), Command: "restore",
 		Dir: dir, Outcome: outcome, Unlocked: res.Unlocked, Steps: []quarantine.Step{},
-		Recovery: kit.Strp(recovery)}
+		Recovery: jsonout.Strp(recovery)}
 	if err != nil {
-		o.Error = kit.Strp(err.Error())
+		o.Error = jsonout.Strp(err.Error())
 	}
 	if r, lerr := quarantine.Load(dir); lerr == nil {
-		o.Repo = kit.Strp(r.Repo)
+		o.Repo = jsonout.Strp(r.Repo)
 		o.Checkout = restorePlace(r.Checkout, quarantine.Locate(r.Checkout))
 		o.Admin = restorePlace(r.Admin, quarantine.Locate(r.Admin))
 		action, occupied := res.Action, res.OccupiedBy
 		if r.Restore != nil {
-			action, occupied = kit.Deref(r.Restore.Action), kit.Deref(r.Restore.OccupiedBy)
+			action, occupied = jsonout.Deref(r.Restore.Action), jsonout.Deref(r.Restore.OccupiedBy)
 			o.Steps = append(o.Steps, r.Restore.Steps...)
 		}
 		o.Branch = restoreBranchOf(r, action, occupied)
 	} else if rp != nil {
-		o.Repo = kit.Strp(rp.MainRoot)
+		o.Repo = jsonout.Strp(rp.MainRoot)
 	}
 	return o
 }

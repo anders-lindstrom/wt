@@ -2,6 +2,7 @@ package provision_test
 
 import (
 	"bytes"
+	"io"
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
@@ -15,7 +16,7 @@ import (
 // nothing on stderr.
 func TestUserSupersetOffBeatsTheRepository(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

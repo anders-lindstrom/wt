@@ -221,12 +221,12 @@ func needArgs(n int, what, example string) cobra.PositionalArgs {
 
 // openContext resolves the repository and configuration for the current
 // directory. Every subcommand that touches a repo starts here.
-func openContext() (*kit.Context, error) {
+func openContext(warn io.Writer) (*kit.Context, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, err
 	}
-	return kit.Open(cwd)
+	return kit.Open(cwd, warn)
 }
 
 // withContext is a RunE that opens the context first and hands it to fn.
@@ -234,11 +234,10 @@ func openContext() (*kit.Context, error) {
 // supposed to work and did not, or settings it could not read.
 func withContext(fn func(cmd *cobra.Command, args []string, ctx *kit.Context) error) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
-		ctx, err := openContext()
+		ctx, err := openContext(cmd.ErrOrStderr())
 		if err != nil {
 			return err
 		}
-		ctx.WarnTo(cmd.ErrOrStderr())
 		return fn(cmd, args, ctx)
 	}
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/schema"
 )
 
@@ -89,9 +90,9 @@ type Result struct {
 
 func refItem(r RefRow) RefItem {
 	it := RefItem{ID: r.ID, Kind: r.Kind, Name: r.Name, Pattern: r.Pattern, Category: r.Category,
-		Selected: r.Selected, Tip: kit.Strp(r.Tip), Object: r.Object, Annotated: r.Annotated,
-		ContainedIn: kit.Strp(r.ContainedIn), UniqueCommits: r.Unique, DateSource: kit.Strp(r.DateSource),
-		Kept: append([]string{}, r.Kept...), Subject: kit.Strp(r.Subject)}
+		Selected: r.Selected, Tip: jsonout.Strp(r.Tip), Object: r.Object, Annotated: r.Annotated,
+		ContainedIn: jsonout.Strp(r.ContainedIn), UniqueCommits: r.Unique, DateSource: jsonout.Strp(r.DateSource),
+		Kept: append([]string{}, r.Kept...), Subject: jsonout.Strp(r.Subject)}
 	if r.DateSource != "" {
 		d := r.Date
 		it.Date = &d
@@ -115,8 +116,8 @@ func SweepPlanJSON(ctx *kit.Context, opts Options, out, progress io.Writer) erro
 		return writeRefsPlan(out, o, kit.ErrNotInRepo)
 	}
 	plan, err := planRefs(ctx, opts, progress)
-	o.Repo, o.Trunk, o.TrunkSource = kit.Strp(plan.Repo), kit.Strp(plan.Trunk), plan.TrunkSource
-	o.Fetched, o.Remote, o.Age, o.Now = plan.Fetched, plan.Remote, kit.Strp(plan.Age), plan.Now
+	o.Repo, o.Trunk, o.TrunkSource = jsonout.Strp(plan.Repo), jsonout.Strp(plan.Trunk), plan.TrunkSource
+	o.Fetched, o.Remote, o.Age, o.Now = plan.Fetched, plan.Remote, jsonout.Strp(plan.Age), plan.Now
 	o.Patterns = append(o.Patterns, plan.Patterns...)
 	o.Endpoint, o.Problems = plan.Endpoint, append(o.Problems, plan.Problems...)
 	if err == nil {
@@ -140,9 +141,9 @@ func SweepPlanFailed(out io.Writer, err error) {
 
 func writeRefsPlan(w io.Writer, o PlanOutput, err error) error {
 	if err != nil {
-		o.Error = kit.Strp(err.Error())
+		o.Error = jsonout.Strp(err.Error())
 	}
-	if werr := kit.WriteJSON(w, o); werr != nil && err == nil {
+	if werr := jsonout.WriteJSON(w, o); werr != nil && err == nil {
 		return werr
 	}
 	return err
@@ -152,7 +153,7 @@ func writeRefsPlan(w io.Writer, o PlanOutput, err error) error {
 // is written at the end: by the sweep when it returns, or by the signal
 // handler when it does not. A nil journal records nothing.
 type Journal struct {
-	*kit.Journal[Result]
+	*jsonout.Journal[Result]
 	root string
 	url  string
 	rows map[string]RefRow
@@ -162,9 +163,9 @@ type Journal struct {
 // NewRefsJournal is a journal that writes its object to out.
 func NewRefsJournal(out io.Writer) *Journal {
 	j := &Journal{rows: map[string]RefRow{}, byID: map[string]*RefResultItem{}}
-	j.Journal = kit.NewJournal(out, Result{Schema: 1, SchemaVersion: schema.VersionOf("refs-sweep"),
+	j.Journal = jsonout.NewJournal(out, Result{Schema: 1, SchemaVersion: schema.VersionOf("refs-sweep"),
 		Command: refsSweepCommand, Problems: []RefProblem{}, Items: []*RefResultItem{}},
-		kit.JournalRules[Result]{Error: func(r *Result, err error) { r.Error = kit.Strp(err.Error()) },
+		jsonout.JournalRules[Result]{Error: func(r *Result, err error) { r.Error = jsonout.Strp(err.Error()) },
 			Caught: j.caught, Close: closeRefs})
 	return j
 }
@@ -204,15 +205,15 @@ func (j *Journal) planned(p Plan, token *string) {
 		j.url = p.Endpoint.Raw
 	}
 	j.Res.Repo, j.Res.Trunk, j.Res.Fetched, j.Res.Remote, j.Res.Token =
-		kit.Strp(p.Repo), kit.Strp(p.Trunk), p.Fetched, p.Remote, token
+		jsonout.Strp(p.Repo), jsonout.Strp(p.Trunk), p.Fetched, p.Remote, token
 	j.Res.Items = []*RefResultItem{}
 	j.Res.Problems = append([]RefProblem{}, p.Problems...)
 	for _, r := range p.Rows {
 		it := &RefResultItem{ID: r.ID, Kind: r.Kind, Name: r.Name, Category: r.Category, Selected: r.Selected,
-			Tip: kit.Strp(r.Tip), Object: r.Object, Result: RefNotRun}
+			Tip: jsonout.Strp(r.Tip), Object: r.Object, Result: RefNotRun}
 		switch {
 		case r.Category == RefKept:
-			it.Result, it.Reason = RefResultKept, kit.Strp(strings.Join(r.Kept, ", "))
+			it.Result, it.Reason = RefResultKept, jsonout.Strp(strings.Join(r.Kept, ", "))
 		case !r.Selected:
 			it.Result = RefNotSelected
 		}
@@ -227,10 +228,10 @@ func (j *Journal) begin(runID string) {
 		return
 	}
 	j.Begin(func(r *Result) {
-		r.RunID = kit.Strp(runID)
+		r.RunID = jsonout.Strp(runID)
 		for _, it := range r.Items {
 			if it.Selected {
-				it.Pin = kit.Strp(refpins.PinOf(runID, it.Kind, it.Name))
+				it.Pin = jsonout.Strp(refpins.PinOf(runID, it.Kind, it.Name))
 			}
 		}
 	})
@@ -273,7 +274,7 @@ func (j *Journal) settle(id string, st refState) {
 	}
 	j.Settle(id, func(r *Result) {
 		if it := j.byID[id]; it != nil {
-			settleRefItem(it, kit.Deref(r.RunID), st)
+			settleRefItem(it, jsonout.Deref(r.RunID), st)
 		}
 	})
 }
@@ -282,7 +283,7 @@ func settleRefItem(it *RefResultItem, runID string, st refState) {
 	it.Pinned, it.Deleted = st.pinned, st.deleted
 	switch {
 	case st.kept != "":
-		it.Result, it.Reason = RefResultKept, kit.Strp(st.kept)
+		it.Result, it.Reason = RefResultKept, jsonout.Strp(st.kept)
 	case st.err == nil && st.pinned && st.deleted:
 		it.Result, it.Reason = RefSwept, nil
 	default:
@@ -291,7 +292,7 @@ func settleRefItem(it *RefResultItem, runID string, st refState) {
 		if st.err != nil {
 			why = kit.OneLine(st.err.Error())
 		}
-		it.Reason = kit.Strp(why)
+		it.Reason = jsonout.Strp(why)
 	}
 	if it.Pinned && it.Deleted {
 		it.RestoreCommand = []string{"wt", "refs", "restore", runID, "--only", it.ID, "--yes"}
@@ -306,20 +307,20 @@ func (j *Journal) caught(r *Result, inFlight, _ string) {
 		return
 	}
 	row := j.rows[inFlight]
-	pin := kit.Deref(it.Pin)
+	pin := jsonout.Deref(it.Pin)
 	var st refState
 	if refpins.RemoteKind(row.Kind) {
 		st = readRemoteState(j.root, j.url, row, pin)
 	} else {
 		st = readLocalState(j.root, row, pin)
 	}
-	settleRefItem(it, kit.Deref(r.RunID), st)
+	settleRefItem(it, jsonout.Deref(r.RunID), st)
 	it.Result, it.Reason = RefInterrupted, nil
 }
 
 func closeRefs(r *Result, signalled bool, recovery string) any {
 	if signalled {
-		r.Outcome, r.Recovery = kit.OutcomeInterrupted, kit.Strp(recovery)
+		r.Outcome, r.Recovery = jsonout.OutcomeInterrupted, jsonout.Strp(recovery)
 	} else {
 		r.Outcome = refsOutcome(r.Items, r.Error != nil)
 	}
@@ -354,9 +355,9 @@ func refsOutcome(items []*RefResultItem, failedEarly bool) string {
 	}
 	switch {
 	case finished && !failedEarly:
-		return kit.OutcomeDone
+		return jsonout.OutcomeDone
 	case !changed:
-		return kit.OutcomeRefused
+		return jsonout.OutcomeRefused
 	}
-	return kit.OutcomePartial
+	return jsonout.OutcomePartial
 }

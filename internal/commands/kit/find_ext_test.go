@@ -1,6 +1,7 @@
-package commands
+package kit_test
 
 import (
+	"io"
 	"strings"
 	"testing"
 
@@ -15,7 +16,7 @@ import (
 func TestOpenLenientSurvivesInvalidConfig(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\nAWS_SETUP_ENABLED=true\n")
-	if _, err := kit.Open(main); err == nil {
+	if _, err := kit.Open(main, io.Discard); err == nil {
 		t.Fatal("this fixture is supposed to have an invalid config")
 	}
 

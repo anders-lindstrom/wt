@@ -2,6 +2,7 @@ package synccmd
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -36,7 +37,7 @@ func doctorFixture(t *testing.T, rerereOn bool) *kit.Context {
 	testkit.GitIn(t, main, "config", "rerere.enabled", strconv.FormatBool(rerereOn))
 	testkit.GitIn(t, main, "remote", "add", "origin", main)
 	testkit.GitIn(t, main, "fetch", "-q", "origin")
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

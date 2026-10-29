@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,13 +20,14 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
 // A configuration file that names MAIN_BRANCH is the trunk's source.
 func TestTrunkSourceIsTheConfigWhenItNamesTrunk(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +43,7 @@ func TestDetectedTrunkIsNotTheCheckedOutFeatureBranch(t *testing.T) {
 	main := testkit.UnconfiguredRepo(t)
 	withOriginNoHead(t, main)
 	testkit.GitIn(t, main, "checkout", "-q", "-b", "feat/stage-6")
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +57,7 @@ func TestConfigWithoutMainBranchDetectsTrunk(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, "BUILD_INIT_ENABLED=false\n")
 	testkit.GitIn(t, main, "checkout", "-q", "-b", "feat/x")
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +70,7 @@ func TestConfigWithoutMainBranchDetectsTrunk(t *testing.T) {
 // is ErrNoConfig too, which --json reports as noConfiguration.
 func TestOpenFailsWhenNothingNamesTrunk(t *testing.T) {
 	t.Parallel()
-	_, err := kit.Open(testkit.NoTrunkRepo(t))
+	_, err := kit.Open(testkit.NoTrunkRepo(t), io.Discard)
 	if !errors.Is(err, repo.ErrNoTrunk) || !errors.Is(err, config.ErrNoConfig) {
 		t.Fatalf("Open = %v, want ErrNoTrunk and ErrNoConfig", err)
 	}
@@ -81,7 +83,7 @@ func TestOpenFailsWhenNothingNamesTrunk(t *testing.T) {
 func TestConfigWithoutMainBranchFailsWhenNothingNamesTrunk(t *testing.T) {
 	t.Parallel()
 	main := committedNoTrunkRepo(t)
-	if _, err := kit.Open(main); !errors.Is(err, repo.ErrNoTrunk) {
+	if _, err := kit.Open(main, io.Discard); !errors.Is(err, repo.ErrNoTrunk) {
 		t.Fatalf("Open = %v, want ErrNoTrunk", err)
 	}
 	ctx := kit.OpenLenient(main, &bytes.Buffer{})
@@ -200,7 +202,7 @@ func TestJSONOutputsSayHowTrunkWasFound(t *testing.T) {
 		got["checkout-plan"] = provisiontest.CheckoutPlanOf(t, ctx, "release-2.1", "").TrunkSource
 		for name, src := range got {
 			if src == nil || *src != string(want) {
-				t.Errorf("%s: trunkSource = %q, want %s", name, kit.Deref(src), want)
+				t.Errorf("%s: trunkSource = %q, want %s", name, jsonout.Deref(src), want)
 			}
 		}
 	}
@@ -242,9 +244,9 @@ func TestStatusPlanHasNoTrunkRefWhenNothingNamesTrunk(t *testing.T) {
 			t.Fatal(err)
 		}
 		if p.Trunk != nil || p.TrunkRef != nil || p.TrunkSource != nil || p.TrunkRefExists ||
-			kit.Deref(p.UpIneligibleCode) != synccmd.IneligibleNoConfig {
-			t.Errorf("%s: trunk %q ref %q source %q exists %v code %q", name, kit.Deref(p.Trunk),
-				kit.Deref(p.TrunkRef), kit.Deref(p.TrunkSource), p.TrunkRefExists, kit.Deref(p.UpIneligibleCode))
+			jsonout.Deref(p.UpIneligibleCode) != synccmd.IneligibleNoConfig {
+			t.Errorf("%s: trunk %q ref %q source %q exists %v code %q", name, jsonout.Deref(p.Trunk),
+				jsonout.Deref(p.TrunkRef), jsonout.Deref(p.TrunkSource), p.TrunkRefExists, jsonout.Deref(p.UpIneligibleCode))
 		}
 	}
 }

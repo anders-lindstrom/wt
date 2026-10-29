@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 )
 
 // errCloneUnsupported is a clone the filesystem cannot make: another volume,
@@ -100,14 +101,14 @@ func cloneCacheDirs(ctx *kit.Context, src, target string, opts SetupOptions, w i
 	dirs := ctx.Config.CacheDirs
 	switch {
 	case len(dirs) == 0:
-		return kit.StepSkipped, "no WORKTREE_CACHE_DIRS"
+		return jsonout.StepSkipped, "no WORKTREE_CACHE_DIRS"
 	case opts.NoCache:
 		fmt.Fprintln(w, "⏭ build caches skipped (--no-cache)")
-		return kit.StepSkipped, "--no-cache"
+		return jsonout.StepSkipped, "--no-cache"
 	}
 	if _, err := os.Stat(src); err != nil {
 		fmt.Fprintf(w, " - source %s not found; skipping build caches\n", src)
-		return kit.StepSkipped, "source " + src + " not found"
+		return jsonout.StepSkipped, "source " + src + " not found"
 	}
 	var failed, unclonable []string
 	cloned := 0
@@ -170,9 +171,9 @@ func cloneCacheDirs(ctx *kit.Context, src, target string, opts SetupOptions, w i
 	}
 	switch {
 	case len(failed) > 0:
-		return kit.StepFailed, strings.Join(append(failed, unclonable...), "; ")
+		return jsonout.StepFailed, strings.Join(append(failed, unclonable...), "; ")
 	case cloned == 0 && len(unclonable) > 0:
-		return kit.StepSkipped, strings.Join(unclonable, "; ")
+		return jsonout.StepSkipped, strings.Join(unclonable, "; ")
 	}
-	return kit.StepDone, strings.Join(unclonable, "; ")
+	return jsonout.StepDone, strings.Join(unclonable, "; ")
 }

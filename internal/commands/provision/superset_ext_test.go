@@ -2,6 +2,7 @@ package provision_test
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anders-lindstrom/wt/internal/commands/supersetws"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/gittest"
@@ -21,7 +23,7 @@ import (
 // checkout, which it already has.
 func TestNewRegistersTheWorktreeWithSuperset(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +87,7 @@ func TestNewSurvivesEverySupersetState(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+			ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -131,7 +133,7 @@ func supersetLine(out string) string {
 // problem: nothing is duplicated and nothing fails.
 func TestRegisterSupersetIsIdempotent(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +167,7 @@ func TestNewSkipsSupersetWhenAsked(t *testing.T) {
 		"--no-setup":    {NoSetup: true},
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+			ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -187,7 +189,7 @@ func TestNewSkipsSupersetWhenAsked(t *testing.T) {
 func TestCheckoutRegistersToo(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,8 +210,8 @@ func TestCheckoutRegistersToo(t *testing.T) {
 // Superset's status calling a serving host stale does not stop a registration:
 // the host is asked, answers, and the worktree is registered with no remark.
 func TestNewRegistersThoughStatusCallsTheHostStale(t *testing.T) {
-	// Not parallel: swaps ProbeSuperset, SupersetHostCommand; sets environment variables for the whole test binary.
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	// Not parallel: swaps supersetws.Probe, supersetws.HostCommand; sets environment variables for the whole test binary.
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +251,7 @@ func TestNewSaysNothingAboutARepositorySupersetDoesNotTrack(t *testing.T) {
 		"on":   {config.SupersetOn, "! Superset has no project for "},
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+			ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -282,7 +284,7 @@ func TestNewSaysNothingAboutARepositorySupersetDoesNotTrack(t *testing.T) {
 func TestRegisterSupersetNeedsABranch(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +294,7 @@ func TestRegisterSupersetNeedsABranch(t *testing.T) {
 	testkit.GitIn(t, main, "worktree", "add", "--detach", path, "HEAD")
 
 	var errs bytes.Buffer
-	provision.RegisterSuperset(ctx, path, &errs)
+	supersetws.Register(ctx, path, &errs)
 	if !strings.Contains(errs.String(), path+" is not on a branch; not registered with Superset") {
 		t.Errorf("stderr = %q", errs.String())
 	}
@@ -312,7 +314,7 @@ func TestRegisterSupersetRunsEvenWhenSetupFailed(t *testing.T) {
 	gittest.WriteExecutable(t, filepath.Join(dir, "provision.sh"), "#!/bin/sh\necho 'provisioning broke' >&2\nexit 1\n")
 	testkit.GitIn(t, main, "add", "-A")
 	testkit.GitIn(t, main, "commit", "-qm", "provision")
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

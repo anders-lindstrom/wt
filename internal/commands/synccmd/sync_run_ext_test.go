@@ -3,6 +3,7 @@ package synccmd_test
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -147,7 +148,7 @@ func TestSyncRunRefusesWhenTrunkDeclaresNothing(t *testing.T) {
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	testkit.GitIn(t, main, "remote", "add", "origin", main)
 	testkit.GitIn(t, main, "fetch", "-q", "origin")
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,7 +263,7 @@ func TestSyncRunAsksOnceForMoreThanOneWorktreeAndStopsOnNo(t *testing.T) {
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	var asked []string
 	opts := synccmdtest.NoAgents()
-	opts.Confirm = func(works []string) (bool, error) { asked = works; return false, nil }
+	opts.Confirm = func(works []string) bool { asked = works; return false }
 	var out bytes.Buffer
 	if err := synccmd.SyncRebase(ctx, []string{"bump"}, opts, &out); err != nil {
 		t.Fatalf("a declined confirmation is not an error: %v", err)
@@ -299,7 +300,7 @@ func TestSyncRunWithNothingNamedTakesEveryReadyWorktreeAndAsksFirst(t *testing.T
 	oldAlpha := testkit.GitOut(t, alpha, "rev-parse", "HEAD")
 	var asked []string
 	opts := synccmdtest.NoAgents()
-	opts.Confirm = func(works []string) (bool, error) { asked = works; return false, nil }
+	opts.Confirm = func(works []string) bool { asked = works; return false }
 	var out bytes.Buffer
 	if err := synccmd.SyncRebase(ctx, nil, opts, &out); err != nil {
 		t.Fatalf("a declined confirmation is not an error: %v", err)
@@ -400,7 +401,7 @@ func TestSyncRunWithNothingNamedNamesAnIdleSessionAndAsks(t *testing.T) {
 	opts := synccmdtest.NoAgents()
 	opts.Agents = testkit.IdleIn(t, bump, "parked")
 	var asked []string
-	opts.Confirm = func(works []string) (bool, error) { asked = works; return false, nil }
+	opts.Confirm = func(works []string) bool { asked = works; return false }
 	var out bytes.Buffer
 	if err := synccmd.SyncRebase(ctx, nil, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
@@ -729,7 +730,7 @@ func TestSyncRunNamesAnIdleSessionInTheQuestionAndStopsOnNo(t *testing.T) {
 	opts := synccmdtest.NoAgents()
 	opts.Agents = testkit.IdleIn(t, bump, "bump-1")
 	var asked []string
-	opts.Confirm = func(works []string) (bool, error) { asked = works; return false, nil }
+	opts.Confirm = func(works []string) bool { asked = works; return false }
 	var out bytes.Buffer
 	if err := synccmd.SyncRebase(ctx, []string{"bump"}, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())

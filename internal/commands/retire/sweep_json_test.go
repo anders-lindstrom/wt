@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 )
 
 // A signal writes the one object: the item in flight interrupted, those not
@@ -33,7 +33,7 @@ func TestSweepJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 	if dec.More() {
 		t.Error("a second object was written")
 	}
-	if r.Outcome != kit.OutcomeInterrupted || r.Recovery == nil || r.Items[0].Result != SweepInterrupted || r.Items[1].Result != SweepNotRun {
+	if r.Outcome != jsonout.OutcomeInterrupted || r.Recovery == nil || r.Items[0].Result != SweepInterrupted || r.Items[1].Result != SweepNotRun {
 		t.Errorf("%+v", r)
 	}
 }
@@ -54,13 +54,13 @@ func TestSweepOutcomeRules(t *testing.T) {
 		early bool
 		want  string
 	}{
-		{items(SweepDeleted, SweepRemoved), false, kit.OutcomeDone},
-		{items(), false, kit.OutcomeDone},
-		{items(), true, kit.OutcomeRefused},
-		{items(SweepKept, SweepNotRun), false, kit.OutcomeRefused},
-		{items(SweepDeleted, SweepKept), false, kit.OutcomePartial},
-		{items(SweepFailed), false, kit.OutcomeRefused},
-		{[]*SweepResultItem{{Category: SweepRemove, Result: SweepFailed, WorktreeRemoved: true}}, false, kit.OutcomePartial},
+		{items(SweepDeleted, SweepRemoved), false, jsonout.OutcomeDone},
+		{items(), false, jsonout.OutcomeDone},
+		{items(), true, jsonout.OutcomeRefused},
+		{items(SweepKept, SweepNotRun), false, jsonout.OutcomeRefused},
+		{items(SweepDeleted, SweepKept), false, jsonout.OutcomePartial},
+		{items(SweepFailed), false, jsonout.OutcomeRefused},
+		{[]*SweepResultItem{{Category: SweepRemove, Result: SweepFailed, WorktreeRemoved: true}}, false, jsonout.OutcomePartial},
 	} {
 		if got := sweepOutcome(tc.items, tc.early); got != tc.want {
 			t.Errorf("%+v early=%v: got %s, want %s", tc.items, tc.early, got, tc.want)

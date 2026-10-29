@@ -9,12 +9,12 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/agents"
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/github"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 )
 
@@ -46,7 +46,7 @@ func TestSweepQuarantineRefusesBeforeAnyChange(t *testing.T) {
 			opts := retire.SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{}, Quarantine: dir,
 				QuarantineHooks: h}
 			r, human, err := retiretest.SweepJSON(t, ctx, opts)
-			if err == nil || r.Outcome != kit.OutcomeRefused || r.Error == nil {
+			if err == nil || r.Outcome != jsonout.OutcomeRefused || r.Error == nil {
 				t.Fatalf("want a refusal: %v %+v\n%s", err, r, human)
 			}
 			if !testkit.Exists(path) || !ctx.Repo.BranchExists("done-work") {
@@ -69,7 +69,7 @@ func TestSweepQuarantineRefusesABranchOnlySweep(t *testing.T) {
 	}
 	opts := retire.SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{}, Quarantine: dir}
 	r, human, err := retiretest.SweepJSON(t, ctx, opts)
-	if err == nil || r.Outcome != kit.OutcomeRefused || !ctx.Repo.BranchExists("done-work") {
+	if err == nil || r.Outcome != jsonout.OutcomeRefused || !ctx.Repo.BranchExists("done-work") {
 		t.Fatalf("want a refusal: %v %+v\n%s", err, r, human)
 	}
 }
@@ -94,7 +94,7 @@ func TestSweepPlanJSONCarriesTheQuarantine(t *testing.T) {
 		t.Error("the token must differ with and without a quarantine")
 	}
 	plain.Expect = *p.Token
-	if r, _, err := retiretest.SweepJSON(t, ctx, plain); err == nil || r.Outcome != kit.OutcomeRefused {
+	if r, _, err := retiretest.SweepJSON(t, ctx, plain); err == nil || r.Outcome != jsonout.OutcomeRefused {
 		t.Errorf("a run without the quarantine must refuse the token: %v %+v", err, r)
 	}
 
@@ -125,7 +125,7 @@ func TestSweepSaysAPartialMoveIsPartial(t *testing.T) {
 	if strings.Contains(human, "- kept half") || !strings.Contains(human, "partly done") {
 		t.Errorf("the output must say it is partly done, not kept:\n%s", human)
 	}
-	if r.Outcome != kit.OutcomePartial {
+	if r.Outcome != jsonout.OutcomePartial {
 		t.Errorf("outcome %s", r.Outcome)
 	}
 }
@@ -136,7 +136,7 @@ func TestSweepQuarantineRefusesAFolderInsideTheRepository(t *testing.T) {
 	path := provisiontest.MergedWorktree(t, ctx, "fix/stays")
 	opts := retire.SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{},
 		Quarantine: filepath.Join(main, "trash-q")}
-	if r, _, err := retiretest.SweepJSON(t, ctx, opts); err == nil || r.Outcome != kit.OutcomeRefused || !testkit.Exists(path) {
+	if r, _, err := retiretest.SweepJSON(t, ctx, opts); err == nil || r.Outcome != jsonout.OutcomeRefused || !testkit.Exists(path) {
 		t.Errorf("want a refusal: %v %+v", err, r)
 	}
 }

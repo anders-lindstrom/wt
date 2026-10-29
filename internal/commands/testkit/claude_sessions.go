@@ -1,6 +1,7 @@
 package testkit
 
 import (
+	"io"
 	"path/filepath"
 	"testing"
 
@@ -25,7 +26,7 @@ func CanonicalWorktree(t *testing.T) (ctx *kit.Context, main, wt string) {
 	main, wt = RepoWithWorktree(t, func(parent string) string {
 		return filepath.Join(parent, "demo_wt", "feat_wt", "thing")
 	})
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,8 +1,6 @@
 package main
 
 import (
-	"os"
-
 	"github.com/spf13/cobra"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
@@ -84,12 +82,11 @@ func newUpCmd() *cobra.Command {
 			// progress, and any question, go to stderr.
 			journal := syncrun.NewRunJournal(cmd.OutOrStdout())
 			cmd.SetOut(cmd.ErrOrStderr())
-			cwd, err := os.Getwd()
+			ctx, err := openLenient(cmd.ErrOrStderr())
 			if err != nil {
 				journal.Fail(err)
 				return err
 			}
-			ctx := kit.OpenLenient(cwd, cmd.ErrOrStderr())
 			switch {
 			case ctx == nil:
 				err = kit.ErrNotInRepo

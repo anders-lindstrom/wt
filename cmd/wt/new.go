@@ -110,7 +110,7 @@ func runCreate(cmd *cobra.Command, args []string, command string, how create,
 	var j *provision.CreateJournal
 	if !how.dryRun {
 		j = provision.NewCreateJournal(stdout, command)
-		defer j.Watch(stderr)()
+		defer kit.WatchJournal(j, stderr)()
 	}
 	cwd, err := os.Getwd()
 	if err == nil && cmd.Flags().Changed("expect") && how.expect == "" {

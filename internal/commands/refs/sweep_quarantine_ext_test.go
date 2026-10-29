@@ -6,13 +6,13 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/agents"
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/refs/refstest"
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/github"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 )
 
 // Each worktree a sweep removes goes into its own folder in the quarantine,
@@ -25,7 +25,7 @@ func TestSweepQuarantinesEachWorktreeInItsOwnFolder(t *testing.T) {
 	dir := testkit.TrashFor(t, ctx)
 	opts := retire.SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{}, Quarantine: dir}
 	r, human, err := retiretest.SweepJSON(t, ctx, opts)
-	if err != nil || r.Outcome != kit.OutcomeDone {
+	if err != nil || r.Outcome != jsonout.OutcomeDone {
 		t.Fatalf("%v %+v\n%s", err, r, human)
 	}
 	if r.Quarantine == nil || *r.Quarantine != dir {

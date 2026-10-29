@@ -91,7 +91,7 @@ func TestSyncKeepRunLeavesAWorktreeWithAnIdleSessionAlone(t *testing.T) {
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	opts := keepOpts(syncrun.PushAlways)
 	opts.Agents = testkit.IdleIn(t, bump, "parked")
-	opts.Confirm = func([]string) (bool, error) { t.Fatal("a keeper asked a question"); return false, nil }
+	opts.Confirm = func([]string) bool { t.Fatal("a keeper asked a question"); return false }
 	var out bytes.Buffer
 	if err := Run(ctx, opts, &out); err != nil {
 		t.Fatalf("nothing to do is not an error: %v\n%s", err, out.String())

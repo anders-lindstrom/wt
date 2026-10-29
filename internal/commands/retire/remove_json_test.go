@@ -13,6 +13,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 )
 
@@ -52,12 +53,12 @@ func TestRemovePlanJSONDescribesTheRemoval(t *testing.T) {
 	if p.Token == nil || p.Error != nil || len(p.Problems) != 0 {
 		t.Fatalf("a removable worktree has a token and no problems: %+v", p)
 	}
-	if kit.Deref(p.Path) != path || kit.Deref(p.Head) != tip || p.Detached || kit.Deref(p.AdminDir) != testkit.GitDirFor(t, path) {
+	if jsonout.Deref(p.Path) != path || jsonout.Deref(p.Head) != tip || p.Detached || jsonout.Deref(p.AdminDir) != testkit.GitDirFor(t, path) {
 		t.Errorf("worktree facts %+v", p)
 	}
 	b := p.Branch
-	if b == nil || b.Name != "fix_wt/planned" || kit.Deref(b.Tip) != tip || b.Merge != "merged" ||
-		b.Outcome != quarantine.BranchPlanDelete || kit.Deref(b.Base) != "main" {
+	if b == nil || b.Name != "fix_wt/planned" || jsonout.Deref(b.Tip) != tip || b.Merge != "merged" ||
+		b.Outcome != quarantine.BranchPlanDelete || jsonout.Deref(b.Base) != "main" {
 		t.Errorf("branch %+v", b)
 	}
 	if len(p.Bases) != 1 || p.Bases[0].Name != "main" {
@@ -97,7 +98,7 @@ func TestRemovePlanJSONRefusalHasCodesAndNoToken(t *testing.T) {
 	if len(p.Sessions) != 1 || p.Sessions[0].ID != "s1" || p.Sessions[0].State != "idle" {
 		t.Errorf("sessions %+v", p.Sessions)
 	}
-	if p.Lock == nil || !p.Lock.Held || kit.Deref(p.Lock.Reason) != "held" {
+	if p.Lock == nil || !p.Lock.Held || jsonout.Deref(p.Lock.Reason) != "held" {
 		t.Errorf("lock %+v", p.Lock)
 	}
 }
@@ -116,7 +117,7 @@ func TestRemovePlanJSONDetachedAndQuarantineProblem(t *testing.T) {
 	if err == nil {
 		t.Fatal("want a refusal")
 	}
-	if !p.Detached || p.Branch != nil || kit.Deref(p.Quarantine) != dir {
+	if !p.Detached || p.Branch != nil || jsonout.Deref(p.Quarantine) != dir {
 		t.Errorf("%+v", p)
 	}
 	if !slices.Contains(ProblemCodes(p.Problems), ProblemQuarantineUnusable) {
@@ -158,7 +159,7 @@ func TestRemovePlanJSONNamesALeftoverSequencer(t *testing.T) {
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/sequencer")
 	testkit.MustMkdir(t, filepath.Join(testkit.GitDirFor(t, path), "sequencer"))
 	p, err := RemovePlanOf(t, ctx, path, RemoveOptions{})
-	if err == nil || kit.Deref(p.Operation) != "sequencer" || !slices.Contains(ProblemCodes(p.Problems), KeptOperation) {
+	if err == nil || jsonout.Deref(p.Operation) != "sequencer" || !slices.Contains(ProblemCodes(p.Problems), KeptOperation) {
 		t.Errorf("%v %+v", err, p)
 	}
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -66,9 +67,9 @@ func PushJSON(t PushTarget, to wtsync.Push) (command []string, noPush *string, f
 		return append([]string{"git", "-C", t.Path}, to.Args()...), nil, nil
 	}
 	if to.Undecided != nil {
-		return nil, kit.Strp(to.Undecided.Reason()), to.Undecided.Fix()
+		return nil, jsonout.Strp(to.Undecided.Reason()), to.Undecided.Fix()
 	}
-	return nil, kit.Strp(to.Why), nil
+	return nil, jsonout.Strp(to.Why), nil
 }
 
 // OfferPush ends a run or a resume: it pushes the branches that finished, or
@@ -128,11 +129,7 @@ func OfferPush(ctx *kit.Context, w io.Writer, mode PushMode, ask PushOptions, ta
 				works[i] += " to " + g.to.Ref()
 			}
 		}
-		ok, err := ask.ConfirmPush(works)
-		if err != nil {
-			return nil, nil, err
-		}
-		push = ok
+		push = ask.ConfirmPush(works)
 	}
 	if !push {
 		for _, g := range going {

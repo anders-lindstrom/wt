@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
+	"github.com/anders-lindstrom/wt/internal/reposel"
 )
 
 // selectionFlags are the flags that turn a command on one repository into one
@@ -30,7 +30,7 @@ func (s *selectionFlags) add(cmd *cobra.Command, withAll bool) {
 	cmd.MarkFlagsMutuallyExclusive("roots", "profile")
 	_ = cmd.RegisterFlagCompletionFunc("roots", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 		u, _ := config.LoadUser()
-		roots, _ := kit.RootsFor(u)
+		roots, _ := reposel.RootsFor(u)
 		var names []string
 		for _, r := range roots {
 			names = append(names, r.Name)
@@ -47,8 +47,8 @@ func (s *selectionFlags) add(cmd *cobra.Command, withAll bool) {
 	})
 }
 
-func (s selectionFlags) selection() kit.Selection {
-	return kit.Selection{All: s.all, Roots: s.roots, Profiles: s.profiles}
+func (s selectionFlags) selection() reposel.Selection {
+	return reposel.Selection{All: s.all, Roots: s.roots, Profiles: s.profiles}
 }
 
 // selectionHelp is the paragraph every command taking the flags adds to its

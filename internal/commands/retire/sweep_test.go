@@ -3,6 +3,7 @@ package retire
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -48,7 +49,7 @@ func PlanOf(t *testing.T, ctx *kit.Context) SweepPlan {
 
 func planWith(t *testing.T, ctx *kit.Context, opts SweepOptions) SweepPlan {
 	t.Helper()
-	bases, err := TrunkBases(ctx)
+	bases, err := ctx.Repo.TrunkBases(ctx.Config.MainBranch)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +270,7 @@ func TestSweepKeepsAWorktreeWhenTheSessionsCannotBeListed(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
 	provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
-	bases, err := TrunkBases(ctx)
+	bases, err := ctx.Repo.TrunkBases(ctx.Config.MainBranch)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,9 +318,9 @@ func TestSweepKeepsAWorktreeThatBecameDirtyWhileThePromptWasOpen(t *testing.T) {
 	other := provisiontest.MergedWorktree(t, ctx, "chore/tidy")
 	testkit.BranchWithWork(t, main, "done-work", 0)
 
-	opts := SweepOptions{Agents: []agents.Agent{}, Confirm: func(SweepPlan) (bool, error) {
+	opts := SweepOptions{Agents: []agents.Agent{}, Confirm: func(SweepPlan) bool {
 		testkit.MustWrite(t, filepath.Join(path, "scratch.txt"), "started\n")
-		return true, nil
+		return true
 	}}
 	var buf bytes.Buffer
 	err := Sweep(ctx, opts, &buf)
@@ -347,7 +348,7 @@ func TestSweepKeepsAWorktreeASessionEnteredWhileThePromptWasOpen(t *testing.T) {
 
 	opts := SweepOptions{Agents: []agents.Agent{},
 		Relist:  func() ([]agents.Agent, error) { return testkit.IdleIn(t, path, "late-1"), nil },
-		Confirm: func(SweepPlan) (bool, error) { return true, nil }}
+		Confirm: func(SweepPlan) bool { return true }}
 	var buf bytes.Buffer
 	if err := Sweep(ctx, opts, &buf); err == nil {
 		t.Fatal("a kept worktree must make the sweep fail")
@@ -386,8 +387,11 @@ func TestSweepKeepsAWorktreeDeletedByHandWhileThePromptWasOpen(t *testing.T) {
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
-	opts := SweepOptions{Agents: []agents.Agent{}, Confirm: func(SweepPlan) (bool, error) {
-		return true, os.RemoveAll(path)
+	opts := SweepOptions{Agents: []agents.Agent{}, Confirm: func(SweepPlan) bool {
+		if err := os.RemoveAll(path); err != nil {
+			t.Error(err)
+		}
+		return true
 	}}
 	var buf bytes.Buffer
 	if err := Sweep(ctx, opts, &buf); err == nil {
@@ -406,9 +410,9 @@ func TestSweepKeepsAWorktreeLockedWhileThePromptWasOpen(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
-	opts := SweepOptions{Agents: []agents.Agent{}, Confirm: func(SweepPlan) (bool, error) {
+	opts := SweepOptions{Agents: []agents.Agent{}, Confirm: func(SweepPlan) bool {
 		testkit.GitIn(t, main, "worktree", "lock", "--reason", fmt.Sprintf("(pid %d start now)", os.Getpid()), path)
-		return true, nil
+		return true
 	}}
 	var buf bytes.Buffer
 	if err := Sweep(ctx, opts, &buf); err == nil {
@@ -427,9 +431,9 @@ func TestSweepKeepsAWorktreeWhoseBranchMovedWhileThePromptWasOpen(t *testing.T) 
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
-	opts := SweepOptions{Agents: []agents.Agent{}, Confirm: func(SweepPlan) (bool, error) {
+	opts := SweepOptions{Agents: []agents.Agent{}, Confirm: func(SweepPlan) bool {
 		testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "landed in the window")
-		return true, nil
+		return true
 	}}
 	var buf bytes.Buffer
 	if err := Sweep(ctx, opts, &buf); err == nil {
@@ -448,9 +452,9 @@ func TestSweepKeepsAWorktreeThatSwitchedBranchWhileThePromptWasOpen(t *testing.T
 	ctx, _, _ := testkit.SweepRepo(t)
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 
-	opts := SweepOptions{Agents: []agents.Agent{}, Confirm: func(SweepPlan) (bool, error) {
+	opts := SweepOptions{Agents: []agents.Agent{}, Confirm: func(SweepPlan) bool {
 		testkit.GitIn(t, path, "switch", "-q", "-c", "elsewhere")
-		return true, nil
+		return true
 	}}
 	var buf bytes.Buffer
 	if err := Sweep(ctx, opts, &buf); err == nil {
@@ -471,7 +475,7 @@ func TestSweepKeepsAWorktreeWhenTheSessionsCannotBeListedAgain(t *testing.T) {
 
 	opts := SweepOptions{Agents: []agents.Agent{},
 		Relist:  func() ([]agents.Agent, error) { return nil, fmt.Errorf("claude is away") },
-		Confirm: func(SweepPlan) (bool, error) { return true, nil }}
+		Confirm: func(SweepPlan) bool { return true }}
 	var buf bytes.Buffer
 	if err := Sweep(ctx, opts, &buf); err == nil {
 		t.Fatal("a kept worktree must make the sweep fail")
@@ -492,13 +496,13 @@ func TestSweepGoesOnToTheBranchesWhenARemovalFails(t *testing.T) {
 	path := provisiontest.MergedWorktree(t, ctx, "fix/login-crash")
 	testkit.BranchWithWork(t, main, "done-work", 0)
 
-	opts := SweepOptions{Agents: []agents.Agent{}, Confirm: func(SweepPlan) (bool, error) {
+	opts := SweepOptions{Agents: []agents.Agent{}, Confirm: func(SweepPlan) bool {
 		// git cannot unlink files in a directory it may not write to.
 		if err := os.Chmod(path, 0o555); err != nil {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = os.Chmod(path, 0o755) })
-		return true, nil
+		return true
 	}}
 	var buf bytes.Buffer
 	err := Sweep(ctx, opts, &buf)
@@ -528,10 +532,10 @@ func TestSweepAsksOnceForBranchesAndWorktreesTogether(t *testing.T) {
 
 	asked := 0
 	var seen SweepPlan
-	opts := SweepOptions{Agents: []agents.Agent{}, Confirm: func(p SweepPlan) (bool, error) {
+	opts := SweepOptions{Agents: []agents.Agent{}, Confirm: func(p SweepPlan) bool {
 		asked++
 		seen = p
-		return false, nil
+		return false
 	}}
 	var buf bytes.Buffer
 	if err := Sweep(ctx, opts, &buf); err != nil {
@@ -708,7 +712,7 @@ func TestSweepPlanProtectsTheConfiguredTrunkAndOriginHead(t *testing.T) {
 	testkit.GitIn(t, main, "remote", "add", "origin", origin)
 	testkit.GitIn(t, main, "fetch", "-q", "origin")
 	testkit.GitIn(t, main, "remote", "set-head", "origin", "integration")
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -756,7 +760,7 @@ func TestSweepPlanReportsAGoneBranchThatStillHasWork(t *testing.T) {
 func TestSweepPlanWithNoOriginComparesWithLocalTrunk(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -814,7 +818,7 @@ func TestSweepRefusesOutsideTheMainCheckout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	inWorktree, err := kit.Open(path)
+	inWorktree, err := kit.Open(path, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -836,7 +840,7 @@ func TestSweepRunsFromASubdirectoryOfTheMainCheckout(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 0)
 	testkit.MustWrite(t, filepath.Join(main, "sub", "notes.txt"), "scratch")
-	inSub, err := kit.Open(filepath.Join(main, "sub"))
+	inSub, err := kit.Open(filepath.Join(main, "sub"), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -875,7 +879,7 @@ func TestSweepRefusesABareRepository(t *testing.T) {
 func TestSweepRefusesWhenTrunkIsOnlyAGuess(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, "BUILD_INIT_ENABLED=false\n")
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -947,7 +951,7 @@ func TestSweepDeclinedDeletesNothingAndTheQuestionSeesThePlan(t *testing.T) {
 	testkit.BranchWithWork(t, main, "done-work", 0)
 
 	var seen SweepPlan
-	opts := SweepOptions{Confirm: func(p SweepPlan) (bool, error) { seen = p; return false, nil }}
+	opts := SweepOptions{Confirm: func(p SweepPlan) bool { seen = p; return false }}
 	var buf bytes.Buffer
 	if err := Sweep(ctx, opts, &buf); err != nil {
 		t.Fatalf("Sweep: %v", err)
@@ -969,7 +973,7 @@ func TestSweepWithNothingToDeleteAsksNothing(t *testing.T) {
 	testkit.BranchWithWork(t, main, "wip", 1)
 
 	asked := false
-	opts := SweepOptions{Confirm: func(SweepPlan) (bool, error) { asked = true; return true, nil }}
+	opts := SweepOptions{Confirm: func(SweepPlan) bool { asked = true; return true }}
 	var buf bytes.Buffer
 	if err := Sweep(ctx, opts, &buf); err != nil {
 		t.Fatalf("Sweep: %v", err)
@@ -987,9 +991,9 @@ func TestSweepKeepsABranchThatMovedWhileThePromptWasOpen(t *testing.T) {
 	testkit.BranchWithWork(t, main, "done-work", 0)
 	testkit.BranchWithWork(t, main, "also-done", 0)
 
-	opts := SweepOptions{Confirm: func(SweepPlan) (bool, error) {
+	opts := SweepOptions{Confirm: func(SweepPlan) bool {
 		testkit.AddWork(t, main, "done-work", 1)
-		return true, nil
+		return true
 	}}
 	var buf bytes.Buffer
 	err := Sweep(ctx, opts, &buf)
@@ -1012,9 +1016,9 @@ func TestSweepKeepsABranchCheckedOutWhileThePromptWasOpen(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 0)
 
-	opts := SweepOptions{Agents: []agents.Agent{}, Confirm: func(SweepPlan) (bool, error) {
+	opts := SweepOptions{Agents: []agents.Agent{}, Confirm: func(SweepPlan) bool {
 		testkit.GitIn(t, main, "worktree", "add", "-q", filepath.Join(ctx.Repo.Parent, "late"), "done-work")
-		return true, nil
+		return true
 	}}
 	var buf bytes.Buffer
 	if err := Sweep(ctx, opts, &buf); err == nil {
@@ -1046,9 +1050,9 @@ func TestSweepKeepsABranchCheckedOutBetweenTwoDeletes(t *testing.T) {
 		"unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE\n"+
 		"git -C '"+main+"' worktree add -q '"+late+"' done-work\n")
 
-	opts := SweepOptions{NoFetch: true, Agents: []agents.Agent{}, Confirm: func(SweepPlan) (bool, error) {
+	opts := SweepOptions{NoFetch: true, Agents: []agents.Agent{}, Confirm: func(SweepPlan) bool {
 		testkit.GitIn(t, main, "config", "core.hooksPath", hooks)
-		return true, nil
+		return true
 	}}
 	var buf bytes.Buffer
 	if err := Sweep(ctx, opts, &buf); err == nil {
@@ -1073,9 +1077,9 @@ func TestSweepKeepsABranchWhoseMergeWasUndoneWhileThePromptWasOpen(t *testing.T)
 	testkit.BranchWithWork(t, main, "local-only", 1)
 	testkit.GitIn(t, main, "merge", "-q", "--no-ff", "-m", "merge local-only", "local-only")
 
-	opts := SweepOptions{NoFetch: true, Confirm: func(SweepPlan) (bool, error) {
+	opts := SweepOptions{NoFetch: true, Confirm: func(SweepPlan) bool {
 		testkit.GitIn(t, main, "reset", "-q", "--hard", "main^1")
-		return true, nil
+		return true
 	}}
 	var buf bytes.Buffer
 	if err := Sweep(ctx, opts, &buf); err == nil {
@@ -1143,7 +1147,7 @@ func TestSweepFetchCannotPruneLocalBranchesOrTags(t *testing.T) {
 func TestSweepWithNoOriginComparesWithLocalBranchesOnly(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

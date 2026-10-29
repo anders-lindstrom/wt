@@ -1,4 +1,7 @@
-package provision
+// Package supersetws is wt's side of the Superset desktop app: it registers a
+// worktree wt has made as a Superset workspace, and deletes that workspace
+// once wt has removed the worktree.
+package supersetws
 
 import (
 	"errors"
@@ -10,31 +13,31 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/superset"
 )
 
-// ProbeSuperset is how these commands find Superset. A variable so a test
-// binary can put one state in front of all its tests, in its TestMain,
-// without a Superset on the machine running it; one test's own goes on its
-// Context instead. A serial test that wants the real Probe swaps it per test,
+// Probe is how wt finds Superset. A variable so a test binary can put one
+// state in front of all its tests, in its TestMain, without a Superset on the
+// machine running it; one test's own goes on its Context instead. A serial test that wants the real Probe swaps it per test,
 // as provisiontest.SupersetSaying and StaleSuperset do.
-var ProbeSuperset = superset.Probe
+var Probe = superset.Probe
 
-// SupersetStatus is Superset as ctx sees it: its SupersetFake when a test set
-// one, ProbeSuperset otherwise.
-func SupersetStatus(ctx *kit.Context) superset.Status {
+// Status is Superset as ctx sees it: its SupersetFake when a test set one,
+// Probe otherwise.
+func Status(ctx *kit.Context) superset.Status {
 	if ctx.SupersetFake != nil {
-		return *ctx.SupersetFake
+		return *ctx.SupersetFake.(*superset.Status)
 	}
-	return ProbeSuperset()
+	return Probe()
 }
 
-// SupersetHostCommand reads a host pid's command line, for `wt doctor` alone.
+// HostCommand reads a host pid's command line, for `wt doctor` alone.
 // A variable so a test can answer for a process that is not there.
 // WORKAROUND(superset-stale-status)
-var SupersetHostCommand = superset.ProcessCommand
+var HostCommand = superset.ProcessCommand
 
-// RegisterSuperset adopts a worktree wt has just created as a workspace in the
+// Register adopts a worktree wt has just created as a workspace in the
 // Superset desktop app.
 //
 // Nothing here can fail the command it hangs off: every outcome is one line on
@@ -45,23 +48,23 @@ var SupersetHostCommand = superset.ProcessCommand
 // It returns what came of it as a --json step result: registered; skipped
 // when registration is off or, under auto, Superset is not there to take it;
 // failed when Superset errs, or under SUPERSET_REGISTER=on did not take it.
-func RegisterSuperset(ctx *kit.Context, path string, w io.Writer) (result, reason string) {
+func Register(ctx *kit.Context, path string, w io.Writer) (result, reason string) {
 	if !ctx.UserConfig().Superset {
-		return kit.StepSkipped, "Superset is not switched on for you (wt config set superset true)"
+		return jsonout.StepSkipped, "Superset is not switched on for you (wt config set superset true)"
 	}
 	mode := ctx.Config.SupersetRegister
 	if mode != config.SupersetAuto && mode != config.SupersetOn {
-		return kit.StepSkipped, config.KeySupersetRegister + "=" + string(mode)
+		return jsonout.StepSkipped, config.KeySupersetRegister + "=" + string(mode)
 	}
 	// missed is Superset not being there to take the worktree: a skip under
 	// auto, a failure under on.
 	missed := func(why string) (string, string) {
 		if mode == config.SupersetOn {
-			return kit.StepFailed, why
+			return jsonout.StepFailed, why
 		}
-		return kit.StepSkipped, why
+		return jsonout.StepSkipped, why
 	}
-	status := SupersetStatus(ctx)
+	status := Status(ctx)
 	if !status.Installed() {
 		if mode == config.SupersetOn {
 			fmt.Fprintf(w, "! %s=on but no superset on the PATH or at ~/.superset/bin; not registered\n",
@@ -79,7 +82,7 @@ func RegisterSuperset(ctx *kit.Context, path string, w io.Writer) (result, reaso
 	}
 	switch {
 	case status.Err != nil:
-		return kit.StepFailed, say("%v; not registered", status.Err)
+		return jsonout.StepFailed, say("%v; not registered", status.Err)
 	case !status.Running:
 		// Starting it is the person's call, not wt's: `wt new` must not bring
 		// a desktop app up behind them.
@@ -93,7 +96,7 @@ func RegisterSuperset(ctx *kit.Context, path string, w io.Writer) (result, reaso
 	cli := status.CLI()
 	projects, err := cli.Projects()
 	if err != nil {
-		return kit.StepFailed, say("%v; not registered", err)
+		return jsonout.StepFailed, say("%v; not registered", err)
 	}
 	// A repository Superset has never heard of is an ordinary state, and an
 	// integration that does not apply here says nothing — so under auto this
@@ -111,25 +114,25 @@ func RegisterSuperset(ctx *kit.Context, path string, w io.Writer) (result, reaso
 	}
 	reg, err := cli.Register(project.ID, branch)
 	if err != nil {
-		return kit.StepFailed, say("%v; not registered", err)
+		return jsonout.StepFailed, say("%v; not registered", err)
 	}
 	if reg.AlreadyExists {
 		fmt.Fprintf(w, "- Superset already had a workspace for %s\n", branch)
-		return kit.StepRegistered, "Superset already had a workspace for " + branch
+		return jsonout.StepRegistered, "Superset already had a workspace for " + branch
 	}
 	fmt.Fprintf(w, "✓ registered with Superset as a workspace of project %s\n", project.Name)
-	return kit.StepRegistered, ""
+	return jsonout.StepRegistered, ""
 }
 
-// SupersetEnabled is whether wt new would try to register a worktree here:
+// Enabled is whether wt new would try to register a worktree here:
 // the person opted in and the repository does not say off. Whether Superset
 // is installed, running and tracks the repository is not asked.
-func SupersetEnabled(ctx *kit.Context) bool {
+func Enabled(ctx *kit.Context) bool {
 	mode := ctx.Config.SupersetRegister
 	return ctx.UserConfig().Superset && (mode == config.SupersetAuto || mode == config.SupersetOn)
 }
 
-// What removal's superset step came to, beside kit.StepSkipped and kit.StepFailed.
+// What removal's superset step came to, beside jsonout.StepSkipped and jsonout.StepFailed.
 const (
 	// StepDeregistered is the worktree's Superset workspace deleted.
 	StepDeregistered = "deregistered"
@@ -139,10 +142,10 @@ const (
 	StepOptedOut = "optedOut"
 )
 
-// SupersetWorkspaces is what a removal found in Superset for the worktree it
+// Workspaces is what a removal found in Superset for the worktree it
 // is about to remove. It is read before the removal, while the path still
 // resolves through its symlinks, and acted on after.
-type SupersetWorkspaces struct {
+type Workspaces struct {
 	cli   superset.CLI
 	found []superset.ListedWorkspace
 	// result is what the step comes to without a delete: a Superset that
@@ -152,48 +155,48 @@ type SupersetWorkspaces struct {
 	result, reason, say string
 }
 
-// KeptSupersetWorkspaces is the step under --keep-superset: the workspace,
+// Kept is the step under --keep-superset: the workspace,
 // if any, is left, and Superset is not asked. It says so only when the
 // integration would otherwise have asked.
-func KeptSupersetWorkspaces(ctx *kit.Context) SupersetWorkspaces {
+func Kept(ctx *kit.Context) Workspaces {
 	why := "--keep-superset: its Superset workspace, if any, was left"
-	s := SupersetWorkspaces{result: StepOptedOut, reason: why}
-	if SupersetEnabled(ctx) {
+	s := Workspaces{result: StepOptedOut, reason: why}
+	if Enabled(ctx) {
 		s.say = "- " + why
 	}
 	return s
 }
 
-// FindSupersetWorkspaces finds the live Superset workspaces whose checkout
+// Find finds the live Superset workspaces whose checkout
 // is path, when the person opted in and the repository does not say off —
 // the same switch wt new registers by. It prints nothing: a removal that is
 // then refused has nothing to say about Superset.
-func FindSupersetWorkspaces(ctx *kit.Context, path string) SupersetWorkspaces {
-	if !SupersetEnabled(ctx) {
-		return SupersetWorkspaces{result: kit.StepSkipped, reason: "the Superset integration is off"}
+func Find(ctx *kit.Context, path string) Workspaces {
+	if !Enabled(ctx) {
+		return Workspaces{result: jsonout.StepSkipped, reason: "the Superset integration is off"}
 	}
-	status := SupersetStatus(ctx)
+	status := Status(ctx)
 	switch {
 	case !status.Installed():
-		return SupersetWorkspaces{result: kit.StepSkipped, reason: "no superset on the PATH or at ~/.superset/bin"}
+		return Workspaces{result: jsonout.StepSkipped, reason: "no superset on the PATH or at ~/.superset/bin"}
 	case status.Err != nil:
 		why := fmt.Sprintf("%v; its Superset workspace, if any, was left", status.Err)
-		return SupersetWorkspaces{result: kit.StepFailed, reason: why, say: "! " + why}
+		return Workspaces{result: jsonout.StepFailed, reason: why, say: "! " + why}
 	case !status.Running:
 		why := "Superset's host service is not running; its workspace, if any, was left"
-		return SupersetWorkspaces{result: kit.StepSkipped, reason: why, say: "- " + why}
+		return Workspaces{result: jsonout.StepSkipped, reason: why, say: "- " + why}
 	}
 	cli := status.CLI()
 	ws, err := cli.Workspaces()
 	if err != nil {
 		why := fmt.Sprintf("%v; its Superset workspace, if any, was left", err)
-		return SupersetWorkspaces{result: kit.StepFailed, reason: why, say: "! " + why}
+		return Workspaces{result: jsonout.StepFailed, reason: why, say: "! " + why}
 	}
 	found := superset.WorkspacesAt(ws, path)
 	if len(found) == 0 {
-		return SupersetWorkspaces{result: StepNotRegistered}
+		return Workspaces{result: StepNotRegistered}
 	}
-	return SupersetWorkspaces{cli: cli, found: found}
+	return Workspaces{cli: cli, found: found}
 }
 
 // Deregister deletes the workspaces found at path, once the worktree is gone.
@@ -207,7 +210,7 @@ func FindSupersetWorkspaces(ctx *kit.Context, path string) SupersetWorkspaces {
 //
 // Like registration it never fails the removal: every outcome is at most one
 // line on w.
-func (s SupersetWorkspaces) Deregister(ctx *kit.Context, path string, w io.Writer) (result, reason string) {
+func (s Workspaces) Deregister(ctx *kit.Context, path string, w io.Writer) (result, reason string) {
 	if s.result != "" {
 		if s.say != "" {
 			fmt.Fprintln(w, s.say)
@@ -219,7 +222,7 @@ func (s SupersetWorkspaces) Deregister(ctx *kit.Context, path string, w io.Write
 		if still := worktreeStillAt(ctx, path, ws.WorktreePath); still != "" {
 			why := still + "; its Superset workspace was left"
 			fmt.Fprintf(w, "! %s\n", why)
-			return kit.StepSkipped, why
+			return jsonout.StepSkipped, why
 		}
 		warned, err := s.cli.Delete(ws.ID)
 		if err != nil {
@@ -231,7 +234,7 @@ func (s SupersetWorkspaces) Deregister(ctx *kit.Context, path string, w io.Write
 	if len(failed) > 0 {
 		why := strings.Join(failed, "; ") + "; its Superset workspace was left"
 		fmt.Fprintf(w, "! %s\n", why)
-		return kit.StepFailed, why
+		return jsonout.StepFailed, why
 	}
 	if len(warnings) > 0 {
 		fmt.Fprintf(w, "✓ deleted its Superset workspace; Superset warned: %s\n", kit.OneLine(strings.Join(warnings, "; ")))

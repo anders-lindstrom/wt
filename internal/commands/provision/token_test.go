@@ -1,11 +1,13 @@
 package provision
 
 import (
+	"io"
 	"strings"
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 )
 
 // createSkips are the fields of CreatePlan, which both plans embed, that
@@ -41,9 +43,9 @@ func withSkips(extra map[string]string) map[string]string {
 // a field added to the plan fails here until someone decides.
 func TestNewTokenCoversEveryPlanField(t *testing.T) {
 	t.Parallel()
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
-	p := NewPlan{CreatePlan: CreatePlan{Command: "new", Branch: kit.Strp("b"), Path: kit.Strp("/w")}, BaseCommit: kit.Strp("c")}
-	gaps := kit.TokenGaps(newTokenOf(ctx, p), NewPlan{}, "", withSkips(map[string]string{
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
+	p := NewPlan{CreatePlan: CreatePlan{Command: "new", Branch: jsonout.Strp("b"), Path: jsonout.Strp("/w")}, BaseCommit: jsonout.Strp("c")}
+	gaps := jsonout.TokenGaps(newTokenOf(ctx, p), NewPlan{}, "", withSkips(map[string]string{
 		"Base": "BaseCommit, what it resolves to, is in it",
 	}))
 	if len(gaps) > 0 {
@@ -53,18 +55,18 @@ func TestNewTokenCoversEveryPlanField(t *testing.T) {
 
 func TestCheckoutTokenCoversEveryPlanField(t *testing.T) {
 	t.Parallel()
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
-	p := CheckoutPlan{CreatePlan: CreatePlan{Command: "checkout", Branch: kit.Strp("b"), Path: kit.Strp("/w")}}
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
+	p := CheckoutPlan{CreatePlan: CreatePlan{Command: "checkout", Branch: jsonout.Strp("b"), Path: jsonout.Strp("/w")}}
 	tok := checkoutTokenOf(ctx, p)
-	p.Source = kit.Strp(SourceRemote)
+	p.Source = jsonout.Strp(SourceRemote)
 	remote := checkoutTokenOf(ctx, p)
 	if tok.String() == remote.String() {
 		t.Error("a branch from a remote has the token of a local one")
 	}
 	skips := withSkips(map[string]string{"Remote": "RemoteRef names it"})
-	gaps := kit.TokenGaps(tok, CheckoutPlan{}, "", skips)
+	gaps := jsonout.TokenGaps(tok, CheckoutPlan{}, "", skips)
 	// Each source hashes its own commit: a gap in one is hashed in the other.
-	gaps = inBoth(gaps, kit.TokenGaps(remote, CheckoutPlan{}, "", skips))
+	gaps = inBoth(gaps, jsonout.TokenGaps(remote, CheckoutPlan{}, "", skips))
 	if len(gaps) > 0 {
 		t.Errorf("decide each, in checkoutTokenOf or here:\n%s", strings.Join(gaps, "\n"))
 	}

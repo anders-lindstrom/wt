@@ -10,6 +10,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
+	"github.com/anders-lindstrom/wt/internal/reposel"
 )
 
 // SweepAllOptions is a sweep across repositories: the one-repository options
@@ -19,12 +20,12 @@ type SweepAllOptions struct {
 	// Ask puts the question for the whole run, and nil means there is nobody
 	// to ask: the plans are printed and nothing is swept, as with one
 	// repository.
-	Ask func(question string) (bool, error)
+	Ask kit.Ask
 }
 
 // repoSweep is one repository's part of a sweep across many.
 type repoSweep struct {
-	target kit.RepoTarget
+	target reposel.Target
 	ctx    *kit.Context
 	plan   SweepPlan
 	log    bytes.Buffer // what fetching and planning printed, shown with its plan
@@ -43,106 +44,89 @@ func (s *repoSweep) quiet() bool {
 // repository; ask once for the lot; then carry out each repository's plan the
 // way a sweep of it alone would, re-reading it first. A repository that
 // cannot be swept is reported and the rest go ahead.
-func SweepAll(u *config.User, sel kit.Selection, opts SweepAllOptions, w io.Writer) error {
-	set, err := kit.SelectRepos(u, sel)
-	if err != nil {
-		return err
-	}
-	if len(set.Repos) == 0 {
-		fmt.Fprintln(w, "No repositories wt manages here; wt repos says where it looked.")
-		return nil
-	}
-	defer kit.WatchSignals(w, nil)()
-	// The sessions are listed once for every repository's plan: `claude
-	// agents` knows them all, and twenty listings would say the same thing
-	// twenty times. Before anything goes, each repository lists them again.
-	listed, listErr := opts.listAgents(nil)
-	one := opts.SweepOptions
-	one.Agents, one.Relist = listed, nil
-	if listed == nil {
-		one.Agents = []agents.Agent{}
-	}
-
-	sweeps := kit.EachRepo(set.Repos, kit.RepoParallelism, func(t kit.RepoTarget) *repoSweep {
-		s := &repoSweep{target: t}
-		s.ctx, s.plan, s.err = planRepoSweep(t, one, listErr, &s.log)
-		return s
-	})
-
-	home, _ := os.UserHomeDir()
-	var quiet, failed []string
-	branches, worktrees, repos := 0, 0, 0
-	for _, s := range sweeps {
-		if s.quiet() {
-			quiet = append(quiet, s.target.Name)
-			continue
-		}
-		fmt.Fprintf(w, "== %s  %s\n", s.target.Name, kit.AbbreviateHome(s.target.Path, home))
-		if s.err != nil {
-			fmt.Fprintf(w, "! %v\n\n", s.err)
-			failed = append(failed, s.target.Name)
-			continue
-		}
-		_, _ = w.Write(s.log.Bytes())
-		s.plan.Render(w, opts.Width)
-		if !s.plan.Empty() {
-			branches += len(s.plan.Delete)
-			worktrees += len(s.plan.Remove)
-			repos++
-		}
-	}
-	if len(quiet) > 0 {
-		fmt.Fprintf(w, "Nothing to sweep in %s: %s\n", kit.Count(len(quiet), "repository", "repositories"), strings.Join(quiet, ", "))
-	}
-	if repos == 0 {
-		return failures(failed, len(sweeps))
-	}
-
-	what := sweepCounts(branches, worktrees) + " across " + kit.Count(repos, "repository", "repositories")
-	switch {
-	case opts.DryRun:
-		fmt.Fprintln(w, "Nothing was swept: --dry-run.")
-		return failures(failed, len(sweeps))
-	case opts.Yes:
-	case opts.Ask != nil:
-		ok, err := opts.Ask("Sweep " + what + "?")
-		if err != nil {
-			return err
-		}
-		if !ok {
-			fmt.Fprintln(w, "Nothing was swept.")
-			return failures(failed, len(sweeps))
-		}
-	default:
-		fmt.Fprintf(w, "Nothing was swept: there is no terminal to ask. Pass --yes to sweep %s.\n", what)
-		return failures(failed, len(sweeps))
-	}
-
-	// Each repository's apply lists the sessions again itself, immediately
-	// before it removes anything, as a sweep of it alone does: a session that
-	// arrived while the question was open, or while the repositories before
-	// it were swept, keeps its worktree.
-	for _, s := range sweeps {
-		if s.err != nil || s.plan.Empty() {
-			continue
-		}
-		fmt.Fprintf(w, "== %s\n", s.target.Name)
-		if err := s.plan.apply(s.ctx, opts.SweepOptions, w); err != nil {
-			fmt.Fprintf(w, "! %v\n", err)
-			failed = append(failed, s.target.Name)
-		}
-	}
-	return failures(failed, len(sweeps))
+func SweepAll(u *config.User, sel reposel.Selection, opts SweepAllOptions, w io.Writer) error {
+	var failed []string
+	return kit.Bulk[*repoSweep]{
+		Watch: func(w io.Writer) func() { return kit.WatchSignals(w, nil) },
+		Plan: func(repos []reposel.Target) ([]*repoSweep, error) {
+			// The sessions are listed once for every repository's plan:
+			// `claude agents` knows them all, and twenty listings would say
+			// the same thing twenty times. Before anything goes, each
+			// repository lists them again.
+			listed, listErr := opts.listAgents(nil)
+			one := opts.SweepOptions
+			one.Agents, one.Relist = listed, nil
+			if listed == nil {
+				one.Agents = []agents.Agent{}
+			}
+			return reposel.Each(repos, reposel.Parallelism, func(t reposel.Target) *repoSweep {
+				s := &repoSweep{target: t}
+				s.ctx, s.plan, s.err = planRepoSweep(t, one, listErr, &s.log)
+				return s
+			}), nil
+		},
+		Report: func(w io.Writer, sweeps []*repoSweep) string {
+			home, _ := os.UserHomeDir()
+			var quiet []string
+			branches, worktrees, repos := 0, 0, 0
+			for _, s := range sweeps {
+				if s.quiet() {
+					quiet = append(quiet, s.target.Name)
+					continue
+				}
+				fmt.Fprintf(w, "== %s  %s\n", s.target.Name, kit.AbbreviateHome(s.target.Path, home))
+				if s.err != nil {
+					fmt.Fprintf(w, "! %v\n\n", s.err)
+					failed = append(failed, s.target.Name)
+					continue
+				}
+				_, _ = w.Write(s.log.Bytes())
+				s.plan.Render(w, opts.Width)
+				if !s.plan.Empty() {
+					branches += len(s.plan.Delete)
+					worktrees += len(s.plan.Remove)
+					repos++
+				}
+			}
+			if len(quiet) > 0 {
+				fmt.Fprintf(w, "Nothing to sweep in %s: %s\n", kit.Count(len(quiet), "repository", "repositories"), strings.Join(quiet, ", "))
+			}
+			if repos == 0 {
+				return ""
+			}
+			return sweepCounts(branches, worktrees) + " across " + kit.Count(repos, "repository", "repositories")
+		},
+		Decide: func(w io.Writer, what string) bool {
+			return kit.Decision{DryRun: opts.DryRun, Yes: opts.Yes, Ask: opts.Ask}.Decide(w, "sweep", "swept", what)
+		},
+		// Each repository's apply lists the sessions again itself,
+		// immediately before it removes anything, as a sweep of it alone
+		// does: a session that arrived while the question was open, or while
+		// the repositories before it were swept, keeps its worktree.
+		Apply: func(w io.Writer, sweeps []*repoSweep) {
+			for _, s := range sweeps {
+				if s.err != nil || s.plan.Empty() {
+					continue
+				}
+				fmt.Fprintf(w, "== %s\n", s.target.Name)
+				if err := s.plan.apply(s.ctx, opts.SweepOptions, w); err != nil {
+					fmt.Fprintf(w, "! %v\n", err)
+					failed = append(failed, s.target.Name)
+				}
+			}
+		},
+		End: func(sweeps []*repoSweep) error { return failures(failed, len(sweeps)) },
+	}.Run(u, sel, w)
 }
 
 // planRepoSweep is one repository's sweep up to the question: the checks a
 // sweep of it alone makes, its fetch, and its plan. What the fetch prints goes
 // to log, to be shown with the plan.
-func planRepoSweep(t kit.RepoTarget, opts SweepOptions, listErr error, log io.Writer) (*kit.Context, SweepPlan, error) {
+func planRepoSweep(t reposel.Target, opts SweepOptions, listErr error, log io.Writer) (*kit.Context, SweepPlan, error) {
 	if t.Problem != "" {
 		return nil, SweepPlan{}, fmt.Errorf("%s: %s", t.Path, t.Problem)
 	}
-	ctx, err := kit.Open(t.Path)
+	ctx, err := kit.Open(t.Path, io.Discard)
 	if err != nil {
 		return nil, SweepPlan{}, err
 	}
@@ -152,7 +136,7 @@ func planRepoSweep(t kit.RepoTarget, opts SweepOptions, listErr error, log io.Wr
 	if err := SweepFetch(ctx, opts.NoFetch, log); err != nil {
 		return nil, SweepPlan{}, err
 	}
-	bases, err := TrunkBases(ctx)
+	bases, err := ctx.Repo.TrunkBases(ctx.Config.MainBranch)
 	if err != nil {
 		return nil, SweepPlan{}, err
 	}

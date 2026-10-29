@@ -3,8 +3,8 @@ package commands
 import (
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/session"
+	"github.com/anders-lindstrom/wt/internal/commands/supersetws"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
@@ -13,8 +13,8 @@ import (
 // state.
 func TestMain(m *testing.M) {
 	testkit.Main(m, func() {
-		provision.ProbeSuperset = testkit.NoSuperset
-		provision.SupersetHostCommand = testkit.NoHostCommand
+		supersetws.Probe = testkit.NoSuperset
+		supersetws.HostCommand = testkit.NoHostCommand
 		session.SessionsDeadline = testkit.FakeClaudeDeadline
 	})
 }

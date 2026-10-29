@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 )
 
 // Several remotes having the name is refused, naming them, with nothing
@@ -26,7 +26,7 @@ func TestCheckoutBareNameOnSeveralRemotes(t *testing.T) {
 		t.Error("a refused checkout wrote to the repository")
 	}
 	p := provisiontest.CheckoutPlanOf(t, ctx, "topic", "")
-	if provisiontest.Codes(p.Problems) != kit.ProblemBranchAmbiguous || p.Token != nil {
+	if provisiontest.Codes(p.Problems) != jsonout.ProblemBranchAmbiguous || p.Token != nil {
 		t.Errorf("plan problems %s", provisiontest.Codes(p.Problems))
 	}
 
@@ -66,10 +66,10 @@ func TestCheckoutPlanRemoteProblems(t *testing.T) {
 	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "taken")
 	testkit.GitIn(t, ctx.Repo.MainRoot, "update-ref", "refs/remotes/origin/taken", "HEAD")
 	for arg, want := range map[string]string{
-		"origin/nope":  kit.ProblemRemoteBranchMissing,
-		"origin/HEAD":  kit.ProblemRemoteBranchMissing,
-		"nope":         kit.ProblemBranchMissing,
-		"origin/taken": kit.ProblemBranchExists,
+		"origin/nope":  jsonout.ProblemRemoteBranchMissing,
+		"origin/HEAD":  jsonout.ProblemRemoteBranchMissing,
+		"nope":         jsonout.ProblemBranchMissing,
+		"origin/taken": jsonout.ProblemBranchExists,
 	} {
 		p := provisiontest.CheckoutPlanOf(t, ctx, arg, "")
 		if got := provisiontest.Codes(p.Problems); got != want || p.Token != nil {
@@ -129,7 +129,7 @@ func TestCheckoutJSONFromARemote(t *testing.T) {
 		t.Errorf("result = %+v", r)
 	}
 	b := provision.StepOf(r.CreateResult, "branch")
-	if b.Result != kit.StepCreated || *b.Commit != *p.RemoteCommit || b.Reason == nil || *b.Reason != "tracking origin/topic" {
+	if b.Result != jsonout.StepCreated || *b.Commit != *p.RemoteCommit || b.Reason == nil || *b.Reason != "tracking origin/topic" {
 		t.Errorf("branch step %+v", b)
 	}
 
@@ -137,7 +137,7 @@ func TestCheckoutJSONFromARemote(t *testing.T) {
 	// nothing about it.
 	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "plain")
 	r, err = checkoutJSON(t, ctx, "plain", "", provision.NewOptions{NoSetup: true}, "")
-	if err != nil || *r.Source != "local" || r.Upstream != nil || r.Remote != nil || provision.StepOf(r.CreateResult, "branch").Result != kit.StepUntouched {
+	if err != nil || *r.Source != "local" || r.Upstream != nil || r.Remote != nil || provision.StepOf(r.CreateResult, "branch").Result != jsonout.StepUntouched {
 		t.Errorf("err %v result %+v", err, r)
 	}
 }
@@ -152,7 +152,7 @@ func TestCheckoutExpectRefusesAMovedRemote(t *testing.T) {
 	testkit.GitIn(t, main, "update-ref", "refs/remotes/origin/topic", "main")
 	before := testkit.RepoState(t, main)
 	r, err := checkoutJSON(t, ctx, "origin/topic", "", provision.NewOptions{NoSetup: true}, *p.Token)
-	if err == nil || r.Outcome != provision.CreateRefused || provisiontest.Codes(r.Problems) != kit.ProblemPlanChanged {
+	if err == nil || r.Outcome != provision.CreateRefused || provisiontest.Codes(r.Problems) != jsonout.ProblemPlanChanged {
 		t.Errorf("moved remote: err %v result %+v", err, r)
 	}
 	if after := testkit.RepoState(t, main); after != before {
@@ -162,7 +162,7 @@ func TestCheckoutExpectRefusesAMovedRemote(t *testing.T) {
 	p = provisiontest.CheckoutPlanOf(t, ctx, "topic", "")
 	testkit.GitIn(t, main, "branch", "topic", "main")
 	r, err = checkoutJSON(t, ctx, "topic", "", provision.NewOptions{NoSetup: true}, *p.Token)
-	if err == nil || r.Outcome != provision.CreateRefused || provisiontest.Codes(r.Problems) != kit.ProblemPlanChanged {
+	if err == nil || r.Outcome != provision.CreateRefused || provisiontest.Codes(r.Problems) != jsonout.ProblemPlanChanged {
 		t.Errorf("branch appeared: err %v result %+v", err, r)
 	}
 	if _, err := os.Stat(*p.Path); err == nil {
@@ -192,7 +192,7 @@ func TestCheckoutNeverOverwritesABranchThatAppeared(t *testing.T) {
 		t.Error("the branch that appeared was changed")
 	}
 	j.AddFailed(ctx, path, err)
-	if j.Res.Problems == nil || provisiontest.Codes(j.Res.Problems) != kit.ProblemPlanChanged || j.Outcome(false) != provision.CreateRefused {
+	if j.Res.Problems == nil || provisiontest.Codes(j.Res.Problems) != jsonout.ProblemPlanChanged || j.Outcome(false) != provision.CreateRefused {
 		t.Errorf("problems %v outcome %s", j.Res.Problems, j.Outcome(false))
 	}
 	if _, err := os.Stat(path); err == nil {
@@ -208,7 +208,7 @@ func TestCheckoutExpectRefusesAnExplicitRemoteOnceTheBranchAppears(t *testing.T)
 	p := provisiontest.CheckoutPlanOf(t, ctx, "origin/topic", "")
 	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "topic", "main")
 	r, err := checkoutJSON(t, ctx, "origin/topic", "", provision.NewOptions{NoSetup: true}, *p.Token)
-	if err == nil || r.Outcome != provision.CreateRefused || provisiontest.Codes(r.Problems) != kit.ProblemPlanChanged+","+kit.ProblemBranchExists {
+	if err == nil || r.Outcome != provision.CreateRefused || provisiontest.Codes(r.Problems) != jsonout.ProblemPlanChanged+","+jsonout.ProblemBranchExists {
 		t.Errorf("err %v problems %s outcome %s", err, provisiontest.Codes(r.Problems), r.Outcome)
 	}
 }

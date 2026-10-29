@@ -4,6 +4,12 @@ Newest first, each heading stamped with the local date and time of the change
 (several land per day). `wt about` prints the newest 5 entries, so keep each entry to a few lines a human
 would want read out to them; the full story is in git history.
 
+## 2026-10-29 08:22 — `wt up --json` says when your user file or GitHub is not working
+
+`wt up --json` ran in silence when the user config could not be read or
+GitHub did not answer. It now prints the same `wt:` warning on stderr as
+every other command; stdout still carries the one object alone.
+
 ## 2026-10-29 07:55 — `wt session send` says `notExact` for a name that is not exact
 
 A worktree pattern that only matched, without `--expect-session`, was

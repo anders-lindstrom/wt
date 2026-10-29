@@ -9,8 +9,9 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
+	"github.com/anders-lindstrom/wt/internal/commands/supersetws"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/schema"
@@ -200,18 +201,18 @@ type RemoveOutput struct {
 // the removal would refuse.
 func removeToken(ctx *kit.Context, p Plan) *string { return removeTokenOf(ctx, p).Strp() }
 
-func removeTokenOf(ctx *kit.Context, p Plan) *kit.Token {
+func removeTokenOf(ctx *kit.Context, p Plan) *jsonout.Token {
 	if p.refusal() != "" {
 		return nil
 	}
-	return hashRemove(kit.NewToken("1:", "wt-remove"), ctx, p)
+	return hashRemove(jsonout.NewToken("1:", "wt-remove"), ctx, p)
 }
 
 // hashRemove hashes everything a removal turns on.
-func hashRemove(t *kit.Token, ctx *kit.Context, p Plan) *kit.Token {
+func hashRemove(t *jsonout.Token, ctx *kit.Context, p Plan) *jsonout.Token {
 	t.Str("repo", ctx.Repo.MainRoot).Str("trunk", ctx.Config.MainBranch).
 		Str("trunkSource", string(ctx.Config.TrunkSource)).Config(kit.ConfigFingerprint(ctx))
-	bases, err := TrunkBases(ctx)
+	bases, err := ctx.Repo.TrunkBases(ctx.Config.MainBranch)
 	t.Bool("basesError", err != nil)
 	for _, b := range bases {
 		t.Str("bases.Name", b.Name).Str("bases.Tip", b.Tip)
@@ -238,7 +239,7 @@ func hashRemove(t *kit.Token, ctx *kit.Context, p Plan) *kit.Token {
 			Str("Unreachable.Path", l.Path)
 	}
 	t.Str("ReachError", p.ReachError).Str("Quarantine", p.Quarantine).List("Force", p.Force.Names()...).
-		Bool("superset", provision.SupersetEnabled(ctx)).Bool("KeepSuperset", p.KeepSuperset)
+		Bool("superset", supersetws.Enabled(ctx)).Bool("KeepSuperset", p.KeepSuperset)
 	// The processes it ends, when it ends any: a tool that read the plan
 	// agreed to those. Without --reap they are left alone and do not count.
 	t.Bool("Reap", p.Reap)
@@ -265,7 +266,7 @@ func removeProblems(problems []problem) []RemoveProblem {
 	for _, pr := range problems {
 		rp := RemoveProblem{Code: pr.code, Message: pr.text, Force: pr.force != 0}
 		if pr.force != 0 {
-			rp.ForceWith = kit.Strp(pr.force.Names()[0])
+			rp.ForceWith = jsonout.Strp(pr.force.Names()[0])
 		}
 		out = append(out, rp)
 	}
@@ -287,44 +288,44 @@ func restoreBranch(ctx *kit.Context, branch, tip string) []string {
 
 func removePlanOutput(ctx *kit.Context, p Plan, token string) RemovePlanOutput {
 	o := emptyRemovePlan()
-	o.Repo, o.Trunk, o.TrunkSource, o.Token = kit.Strp(ctx.Repo.MainRoot), kit.Strp(ctx.Config.MainBranch), ctx.TrunkSource(), kit.Strp(token)
-	o.Path, o.AdminDir, o.Head, o.Detached = kit.Strp(p.Path), kit.Strp(p.AdminDir), kit.Strp(p.Head), p.Branch == ""
+	o.Repo, o.Trunk, o.TrunkSource, o.Token = jsonout.Strp(ctx.Repo.MainRoot), jsonout.Strp(ctx.Config.MainBranch), ctx.TrunkSource(), jsonout.Strp(token)
+	o.Path, o.AdminDir, o.Head, o.Detached = jsonout.Strp(p.Path), jsonout.Strp(p.AdminDir), jsonout.Strp(p.Head), p.Branch == ""
 	if p.Branch != "" {
-		b := &RemoveBranchPlan{Name: p.Branch, Tip: kit.Strp(p.Tip), Merge: mergeNames[p.Merge], Base: kit.Strp(p.Base),
-			Ahead: p.Ahead, Outcome: outcomeNames[p.Outcome], KeepAs: kit.Strp(p.KeepAs)}
+		b := &RemoveBranchPlan{Name: p.Branch, Tip: jsonout.Strp(p.Tip), Merge: mergeNames[p.Merge], Base: jsonout.Strp(p.Base),
+			Ahead: p.Ahead, Outcome: outcomeNames[p.Outcome], KeepAs: jsonout.Strp(p.KeepAs)}
 		if p.MergedPR > 0 {
 			n := p.MergedPR
 			b.PullRequest = &n
 		}
 		if p.Outcome == BranchUntouched {
-			b.Reason = kit.Strp(p.Reason)
+			b.Reason = jsonout.Strp(p.Reason)
 		}
 		o.Branch = b
 	}
-	if bases, err := TrunkBases(ctx); err == nil {
+	if bases, err := ctx.Repo.TrunkBases(ctx.Config.MainBranch); err == nil {
 		for _, b := range bases {
 			o.Bases = append(o.Bases, SweepBase(b))
 		}
 	}
-	o.Dirty, o.StatusError = p.Dirty, kit.Strp(p.StatusError)
+	o.Dirty, o.StatusError = p.Dirty, jsonout.Strp(p.StatusError)
 	o.HiddenFiles = append(o.HiddenFiles, p.Hidden...)
 	o.MovedSubmodules = append(o.MovedSubmodules, p.Moved...)
 	o.NestedWorktrees = append(o.NestedWorktrees, p.Nested...)
 	if _, err := os.Lstat(filepath.Join(p.Path, ".gitmodules")); err == nil {
 		o.HasSubmodules = true
 	}
-	o.Operation = kit.Strp(operationName(p.Operation))
+	o.Operation = jsonout.Strp(operationName(p.Operation))
 	for _, a := range p.Sessions {
-		s := RemoveSession{ID: a.ID, Name: kit.Strp(a.Name), Kind: a.Program(), State: sessionState(a)}
+		s := RemoveSession{ID: a.ID, Name: jsonout.Strp(a.Name), Kind: a.Program(), State: sessionState(a)}
 		if a.PID > 0 {
 			pid := a.PID
 			s.PID = &pid
 		}
 		o.Sessions = append(o.Sessions, s)
 	}
-	o.SessionsError = kit.Strp(p.SessionsError)
+	o.SessionsError = jsonout.Strp(p.SessionsError)
 	if p.Locked {
-		l := &RemoveLock{Reason: kit.Strp(p.LockReason), Holder: p.LockHolder, Held: p.LockHeld}
+		l := &RemoveLock{Reason: jsonout.Strp(p.LockReason), Holder: p.LockHolder, Held: p.LockHeld}
 		if p.LockPid > 0 {
 			pid := p.LockPid
 			l.PID = &pid
@@ -332,18 +333,18 @@ func removePlanOutput(ctx *kit.Context, p Plan, token string) RemovePlanOutput {
 		o.Lock = l
 	}
 	for _, l := range p.Unreachable {
-		lost := RemoveLost{Kind: l.Kind, OID: l.OID, Count: l.Count, Path: kit.Strp(l.Path)}
+		lost := RemoveLost{Kind: l.Kind, OID: l.OID, Count: l.Count, Path: jsonout.Strp(l.Path)}
 		if l.Kind == LostBranch {
 			lost.RestoreCommand = restoreBranch(ctx, p.Branch, l.OID)
 		}
 		o.Unreachable = append(o.Unreachable, lost)
 	}
-	o.ReachError, o.Quarantine = kit.Strp(p.ReachError), kit.Strp(p.Quarantine)
+	o.ReachError, o.Quarantine = jsonout.Strp(p.ReachError), jsonout.Strp(p.Quarantine)
 	// force keeps its v1 meaning — every problem with force true is gone
 	// past — which only bare --force promises.
 	o.Force, o.ForceWith = p.Force == kit.ForceAll, p.Force.Names()
 	o.KeepSuperset = p.KeepSuperset
-	o.Processes, o.ProcessesError = removeProcesses(p.Processes, p.Reap), kit.Strp(p.ProcessesError)
+	o.Processes, o.ProcessesError = removeProcesses(p.Processes, p.Reap), jsonout.Strp(p.ProcessesError)
 	o.Problems = problemsOf(p)
 	return o
 }
@@ -389,12 +390,12 @@ func RemovePlanJSON(ctx *kit.Context, t RemoveTarget, opts RemoveOptions, out, p
 	if j.Res.plan != nil {
 		o = removePlanOutput(ctx, *j.Res.plan, j.Res.token)
 	} else {
-		o.Repo, o.Trunk, o.TrunkSource = kit.Strp(ctx.Repo.MainRoot), kit.Strp(ctx.Config.MainBranch), ctx.TrunkSource()
+		o.Repo, o.Trunk, o.TrunkSource = jsonout.Strp(ctx.Repo.MainRoot), jsonout.Strp(ctx.Config.MainBranch), ctx.TrunkSource()
 	}
 	if err != nil {
-		o.Error, o.Token = kit.Strp(err.Error()), nil
+		o.Error, o.Token = jsonout.Strp(err.Error()), nil
 	}
-	if werr := kit.WriteJSON(out, o); werr != nil && err == nil {
+	if werr := jsonout.WriteJSON(out, o); werr != nil && err == nil {
 		return werr
 	}
 	return err
@@ -405,8 +406,8 @@ func RemovePlanJSON(ctx *kit.Context, t RemoveTarget, opts RemoveOptions, out, p
 func RemoveFailedJSON(out io.Writer, dryRun bool, err error) {
 	if dryRun {
 		o := emptyRemovePlan()
-		o.Error = kit.Strp(err.Error())
-		_ = kit.WriteJSON(out, o)
+		o.Error = jsonout.Strp(err.Error())
+		_ = jsonout.WriteJSON(out, o)
 		return
 	}
 	newRemoveJournal(out, nil).finish(RemoveResult{}, err)
@@ -434,7 +435,7 @@ func RemoveJSON(ctx *kit.Context, t RemoveTarget, opts RemoveOptions, out, progr
 // the signal handler when it does not. The object is written once. A nil
 // journal records nothing.
 type RemoveJournal struct {
-	*kit.Journal[removeRecord]
+	*jsonout.Journal[removeRecord]
 }
 
 // removeRecord is what a removal's journal holds: the plan and its token,
@@ -454,7 +455,7 @@ type removeRecord struct {
 // outside the lock: a signal parks the git a returning run is reading
 // with, and the handler must still be able to write.
 func newRemoveJournal(out io.Writer, ctx *kit.Context) *RemoveJournal {
-	return &RemoveJournal{kit.NewJournal(out, removeRecord{ctx: ctx}, kit.JournalRules[removeRecord]{
+	return &RemoveJournal{jsonout.NewJournal(out, removeRecord{ctx: ctx}, jsonout.JournalRules[removeRecord]{
 		Snapshot: func(r removeRecord, signalled bool, recovery string) any {
 			var plan *Plan
 			if r.plan != nil {
@@ -522,41 +523,41 @@ func (j *RemoveJournal) Interrupted(inFlight, recovery string) {
 func removeOutput(ctx *kit.Context, plan *Plan, token, runID string, started bool, res *RemoveResult, err error,
 	recovery string) RemoveOutput {
 	o := RemoveOutput{Schema: 1, SchemaVersion: schema.VersionOf("remove"), Command: "remove",
-		Token: kit.Strp(token), Problems: []RemoveProblem{}, Forced: []string{}, Recovery: kit.Strp(recovery),
+		Token: jsonout.Strp(token), Problems: []RemoveProblem{}, Forced: []string{}, Recovery: jsonout.Strp(recovery),
 		Reaped: []ReapedProcess{}}
 	if res != nil {
 		o.Reaped = reapedProcesses(res.Reaped)
 	}
 	if err != nil {
-		o.Error = kit.Strp(err.Error())
+		o.Error = jsonout.Strp(err.Error())
 	}
 	if ctx != nil {
-		o.Repo, o.Trunk, o.TrunkSource = kit.Strp(ctx.Repo.MainRoot), kit.Strp(ctx.Config.MainBranch), ctx.TrunkSource()
+		o.Repo, o.Trunk, o.TrunkSource = jsonout.Strp(ctx.Repo.MainRoot), jsonout.Strp(ctx.Config.MainBranch), ctx.TrunkSource()
 	}
 	notRun := func(name, commit string) RemoveStep {
-		return RemoveStep{Step: name, Result: kit.StepNotRun, Commit: kit.Strp(commit)}
+		return RemoveStep{Step: name, Result: jsonout.StepNotRun, Commit: jsonout.Strp(commit)}
 	}
 	if plan == nil || !started {
 		o.Outcome = RemoveRefused
 		if res == nil {
-			o.Outcome = kit.OutcomeInterrupted
+			o.Outcome = jsonout.OutcomeInterrupted
 		}
 		tip := ""
 		if plan != nil {
-			o.Path, o.Branch, o.Tip, o.KeepAs = kit.Strp(plan.Path), kit.Strp(plan.Branch), kit.Strp(plan.Tip), kit.Strp(plan.KeepAs)
+			o.Path, o.Branch, o.Tip, o.KeepAs = jsonout.Strp(plan.Path), jsonout.Strp(plan.Branch), jsonout.Strp(plan.Tip), jsonout.Strp(plan.KeepAs)
 			tip = plan.Tip
 			if res != nil {
 				o.Problems = blockingOf(*plan)
 			}
 		}
 		if errors.Is(err, errRemovePlanChanged) {
-			o.Problems = append(o.Problems, RemoveProblem{Code: kit.ProblemPlanChanged, Message: err.Error()})
+			o.Problems = append(o.Problems, RemoveProblem{Code: jsonout.ProblemPlanChanged, Message: err.Error()})
 		}
-		o.Steps = []RemoveStep{notRun(kit.StepWorktree, ""), notRun(kit.StepBranch, tip), notRun(kit.StepSuperset, "")}
+		o.Steps = []RemoveStep{notRun(jsonout.StepWorktree, ""), notRun(jsonout.StepBranch, tip), notRun(jsonout.StepSuperset, "")}
 		return o
 	}
 
-	o.Path, o.Branch, o.Tip, o.KeepAs = kit.Strp(plan.Path), kit.Strp(plan.Branch), kit.Strp(plan.Tip), kit.Strp(plan.KeepAs)
+	o.Path, o.Branch, o.Tip, o.KeepAs = jsonout.Strp(plan.Path), jsonout.Strp(plan.Branch), jsonout.Strp(plan.Tip), jsonout.Strp(plan.KeepAs)
 	worktree := WorktreeKept
 	if dir := plan.Quarantine; dir != "" {
 		q := &RemoveQuarantine{Dir: dir, RecoveryFile: filepath.Join(dir, quarantine.FileName), Steps: []quarantine.Step{}}
@@ -592,7 +593,7 @@ func removeOutput(ctx *kit.Context, plan *Plan, token, runID string, started boo
 		_, ok, err := ctx.Repo.ResolveRef("refs/heads/" + plan.Branch)
 		branchGone, branchUnread = !ok && err == nil, err != nil
 	}
-	o.RunID = kit.Strp(runID)
+	o.RunID = jsonout.Strp(runID)
 	pin := ""
 	if branchGone || branchUnread {
 		pin = refpins.PinHolding(ctx.Repo.MainRoot, runID, plan.Branch, plan.Tip)
@@ -605,37 +606,37 @@ func removeOutput(ctx *kit.Context, plan *Plan, token, runID string, started boo
 		o.RestoreCommand = restoreBranch(ctx, plan.Branch, plan.Tip)
 	}
 
-	wstep := RemoveStep{Step: kit.StepWorktree, Result: worktree}
-	bstep := RemoveStep{Step: kit.StepBranch, Commit: kit.Strp(plan.Tip), Pin: kit.Strp(pin)}
-	sstep := RemoveStep{Step: kit.StepSuperset, Result: kit.StepNotRun}
+	wstep := RemoveStep{Step: jsonout.StepWorktree, Result: worktree}
+	bstep := RemoveStep{Step: jsonout.StepBranch, Commit: jsonout.Strp(plan.Tip), Pin: jsonout.Strp(pin)}
+	sstep := RemoveStep{Step: jsonout.StepSuperset, Result: jsonout.StepNotRun}
 	if res != nil {
 		o.Outcome = res.Outcome
 		if o.Outcome == "" {
 			o.Outcome = RemoveRefused
 		}
 		if !gone && err != nil {
-			wstep.Reason = kit.Strp(kit.OneLine(err.Error()))
+			wstep.Reason = jsonout.Strp(kit.OneLine(err.Error()))
 		}
 		bstep.Result = res.Branch
 		if bstep.Result == "" {
-			bstep.Result = kit.StepNotRun
+			bstep.Result = jsonout.StepNotRun
 		} else if (res.Branch == quarantine.BranchKept || res.Branch == quarantine.BranchFailed) && err != nil {
-			bstep.Reason = kit.Strp(kit.OneLine(err.Error()))
+			bstep.Reason = jsonout.Strp(kit.OneLine(err.Error()))
 		}
 		if res.Superset != "" {
-			sstep.Result, sstep.Reason = res.Superset, kit.Strp(res.SupersetReason)
+			sstep.Result, sstep.Reason = res.Superset, jsonout.Strp(res.SupersetReason)
 		}
 		o.Forced = res.Forced.Names()
 	} else {
-		o.Outcome = kit.OutcomeInterrupted
+		o.Outcome = jsonout.OutcomeInterrupted
 		if worktree == WorktreeKept {
-			wstep.Result = kit.StepInterrupted
+			wstep.Result = jsonout.StepInterrupted
 		}
 		bstep.Result = interruptedBranch(ctx, *plan, gone, branchGone)
 		// Superset follows the branch step whatever it came to, so once
 		// the worktree is gone it may have begun.
 		if gone {
-			sstep.Result = kit.StepInterrupted
+			sstep.Result = jsonout.StepInterrupted
 		}
 	}
 	o.Steps = []RemoveStep{wstep, bstep, sstep}
@@ -658,7 +659,7 @@ func operationName(op string) string {
 func interruptedBranch(ctx *kit.Context, p Plan, worktreeGone, branchGone bool) string {
 	switch {
 	case !worktreeGone:
-		return kit.StepNotRun
+		return jsonout.StepNotRun
 	case p.Outcome == BranchUntouched:
 		return quarantine.BranchUntouched
 	case p.Outcome == BranchDeleted && branchGone:
@@ -669,5 +670,5 @@ func interruptedBranch(ctx *kit.Context, p Plan, worktreeGone, branchGone bool) 
 			return quarantine.BranchRenamed
 		}
 	}
-	return kit.StepInterrupted
+	return jsonout.StepInterrupted
 }

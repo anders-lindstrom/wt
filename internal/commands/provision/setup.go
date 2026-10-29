@@ -10,6 +10,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
@@ -48,32 +49,32 @@ func setup(ctx *kit.Context, target string, opts SetupOptions, w io.Writer, j *C
 		src = ctx.Repo.MainRoot
 	}
 
-	j.start(kit.StepConfig)
+	j.start(jsonout.StepConfig)
 	if _, err := os.Stat(src); err != nil {
 		fmt.Fprintf(w, " - source %s not found; skipping config sync\n", src)
-		j.finish(kit.StepConfig, kit.StepSkipped, "source "+src+" not found", "")
+		j.finish(jsonout.StepConfig, jsonout.StepSkipped, "source "+src+" not found", "")
 	} else {
 		failed := append(copyConfigDirs(ctx, src, target, w), copyConfigFiles(ctx, src, target, w)...)
-		j.finish(kit.StepConfig, failedResult(failed), strings.Join(failed, "; "), "")
+		j.finish(jsonout.StepConfig, failedResult(failed), strings.Join(failed, "; "), "")
 	}
-	j.start(kit.StepCache)
+	j.start(jsonout.StepCache)
 	result, reason := cloneCacheDirs(ctx, src, target, opts, w)
-	j.finish(kit.StepCache, result, reason, "")
+	j.finish(jsonout.StepCache, result, reason, "")
 
 	// A failed provision step is reported but does not abort the rest: stopping
 	// here would leave a worktree with no submodules and no dependencies
 	// either, which is strictly less usable than one that merely lacks
 	// secrets. The error still surfaces, so nothing treats this as success.
-	j.start(kit.StepProvision)
+	j.start(jsonout.StepProvision)
 	provisionErr := runProvision(ctx, target, w, j)
 	result, reason = stepOutcome(ctx.HasProvisionScript(), "no bin/worktree/provision.sh", provisionErr)
-	j.finish(kit.StepProvision, result, reason, "")
-	j.start(kit.StepSubmodules)
+	j.finish(jsonout.StepProvision, result, reason, "")
+	j.start(jsonout.StepSubmodules)
 	result, reason = stepOutcome(ctx.Repo.HasSubmodules(target), "no .gitmodules", initSubmodules(ctx, target, w))
-	j.finish(kit.StepSubmodules, result, reason, "")
-	j.start(kit.StepBuild)
+	j.finish(jsonout.StepSubmodules, result, reason, "")
+	j.start(jsonout.StepBuild)
 	result, reason = runBuildInit(ctx, target, opts, w, j)
-	j.finish(kit.StepBuild, result, reason, "")
+	j.finish(jsonout.StepBuild, result, reason, "")
 
 	if provisionErr != nil {
 		fmt.Fprintln(w, "")
@@ -225,10 +226,10 @@ func runBuildInit(ctx *kit.Context, target string, opts SetupOptions, w io.Write
 	switch {
 	case opts.SkipBuild:
 		fmt.Fprintln(w, "⏭ build initialisation skipped (--no-build)")
-		return kit.StepSkipped, "--no-build"
+		return jsonout.StepSkipped, "--no-build"
 	case !ctx.Config.BuildInitEnabled:
 		fmt.Fprintln(w, "- build initialisation disabled in configuration")
-		return kit.StepSkipped, "build initialisation disabled in configuration"
+		return jsonout.StepSkipped, "build initialisation disabled in configuration"
 	}
 	fmt.Fprintf(w, "Running: %s\n", ctx.Config.BuildInitCommand)
 	cmd := exec.Command("sh", "-c", ctx.Config.BuildInitCommand)
@@ -238,10 +239,10 @@ func runBuildInit(ctx *kit.Context, target string, opts SetupOptions, w io.Write
 	if err := runTracked(cmd, j); err != nil {
 		fmt.Fprintf(w, " ! Warning: build initialisation failed: %v\n", err)
 		fmt.Fprintf(w, "   Try running it by hand: %s\n", ctx.Config.BuildInitCommand)
-		return kit.StepFailed, fmt.Sprintf("%s failed: %v", ctx.Config.BuildInitCommand, err)
+		return jsonout.StepFailed, fmt.Sprintf("%s failed: %v", ctx.Config.BuildInitCommand, err)
 	}
 	fmt.Fprintln(w, "✓ build dependencies downloaded")
-	return kit.StepDone, ""
+	return jsonout.StepDone, ""
 }
 
 // runTracked is cmd.Run. In a --json run the command runs in a process
@@ -261,18 +262,18 @@ func runTracked(cmd *exec.Cmd, j *CreateJournal) error {
 func stepOutcome(applies bool, whyNot string, err error) (result, reason string) {
 	switch {
 	case !applies:
-		return kit.StepSkipped, whyNot
+		return jsonout.StepSkipped, whyNot
 	case err != nil:
-		return kit.StepFailed, kit.OneLine(err.Error())
+		return jsonout.StepFailed, kit.OneLine(err.Error())
 	}
-	return kit.StepDone, ""
+	return jsonout.StepDone, ""
 }
 
 func failedResult(failed []string) string {
 	if len(failed) > 0 {
-		return kit.StepFailed
+		return jsonout.StepFailed
 	}
-	return kit.StepDone
+	return jsonout.StepDone
 }
 
 func copyFile(from, to string) error {

@@ -2,6 +2,7 @@ package provisiontest
 
 import (
 	"bytes"
+	"io"
 	"path/filepath"
 	"testing"
 
@@ -13,7 +14,7 @@ import (
 // SafetyWorktree is a worktree wt made, merged, and nobody's but the test's.
 func SafetyWorktree(t *testing.T, work string) (*kit.Context, string) {
 	t.Helper()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +36,7 @@ func SubmoduleWorktree(t *testing.T, work string) (*kit.Context, string, string)
 	testkit.GitIn(t, inner, "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "i")
 	testkit.GitIn(t, main, "-c", "protocol.file.allow=always", "submodule", "add", "-q", inner, "sm")
 	testkit.GitIn(t, main, "commit", "-qm", "sm")
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	var buf bytes.Buffer
 	path, err := provision.New(ctx, work, provision.NewOptions{NoSetup: true}, &buf)
 	if err != nil {

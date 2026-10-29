@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/spf13/cobra"
 
@@ -17,7 +18,7 @@ func completeWork(_ *cobra.Command, args []string, _ string) ([]string, cobra.Sh
 	if len(args) > 0 {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	ctx, err := openContext()
+	ctx, err := openContext(io.Discard) // completion says nothing but its candidates
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}

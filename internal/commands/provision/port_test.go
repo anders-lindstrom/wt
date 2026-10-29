@@ -2,6 +2,7 @@ package provision
 
 import (
 	"bytes"
+	"io"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -17,7 +18,7 @@ import (
 func TestPortIsStableAndDiffersBetweenBranches(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	first, err := Port(ctx, "fix/login-crash")
 	if err != nil {
 		t.Fatal(err)
@@ -51,7 +52,7 @@ func TestPortForIsPinned(t *testing.T) {
 func TestPortOfAnExistingWorktree(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	before, err := Port(ctx, "fix/login-crash")
 	if err != nil {
 		t.Fatal(err)
@@ -63,7 +64,7 @@ func TestPortOfAnExistingWorktree(t *testing.T) {
 			t.Errorf("%s: %d %v, want %d", spec, got, err, before)
 		}
 	}
-	inside, _ := kit.Open(wt)
+	inside, _ := kit.Open(wt, io.Discard)
 	if got, err := Port(inside, "."); err != nil || got != before {
 		t.Errorf(".: %d %v, want %d", got, err, before)
 	}
@@ -78,7 +79,7 @@ func TestProvisionAndBuildGetWTPort(t *testing.T) {
 	gittest.WriteExecutable(t, p, "#!/bin/sh\nenv | grep ^WT_ > provision-env.txt\n")
 	// A value the caller's shell exported for another worktree is replaced.
 	t.Setenv("WT_PORT", "1")
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	var buf bytes.Buffer
 	path, err := New(ctx, "fix/login-crash", NewOptions{}, &buf)
 	if err != nil {
@@ -120,7 +121,7 @@ func envValue(env []string, key string) string {
 func TestWorktreeEnvDuringARebaseMatchesWtPort(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	testkit.MustWrite(t, filepath.Join(main, "x.txt"), "base")
 	testkit.GitIn(t, main, "add", "-A")
 	testkit.GitIn(t, main, "commit", "-qm", "base")
@@ -151,7 +152,7 @@ func TestWorktreeEnvDuringARebaseMatchesWtPort(t *testing.T) {
 func TestWorktreeEnvInASubdirectoryIsTheWorktrees(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	wt := filepath.Join(filepath.Dir(main), "demo_wt", "fix_wt", "login-crash")
 	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "fix_wt/login-crash", wt)
 	sub := filepath.Join(wt, "pkg", "deep")

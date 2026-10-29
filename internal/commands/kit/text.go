@@ -72,3 +72,10 @@ func Count(n int, noun string, many ...string) string {
 	}
 	return strconv.Itoa(n) + " " + noun + "s"
 }
+
+// OneLine flattens a note fragment to fit one line of the overview: an
+// embedded newline, carriage return or tab would break the layout of every
+// line printed after it.
+func OneLine(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}

@@ -2,6 +2,7 @@ package provision
 
 import (
 	"bytes"
+	"io"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -41,7 +42,7 @@ func ProvisionFixture(t *testing.T, provisionExit int, build string, badSubmodul
 		testkit.GitIn(t, main, "add", ".gitmodules")
 	}
 	testkit.GitIn(t, main, "commit", "-qm", "provisioning")
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

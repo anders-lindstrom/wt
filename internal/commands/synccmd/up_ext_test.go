@@ -2,6 +2,7 @@ package synccmd_test
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,7 +58,7 @@ func TestUpRefusesTheMainCheckout(t *testing.T) {
 // rebase goes and a conflicting one is refused untouched.
 func TestUpWithoutADeclarationTakesOnlyAConflictFreeRebase(t *testing.T) {
 	t.Parallel()
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	main := ctx.Repo.MainRoot
 	var buf bytes.Buffer
 	free, err := provision.New(ctx, "feat/free", provision.NewOptions{NoSetup: true}, &buf)

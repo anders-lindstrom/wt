@@ -6,11 +6,11 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/agents"
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -55,7 +55,7 @@ func TestUpFastForwardsABranchWithNothingToRebase(t *testing.T) {
 	f, x, opts, local, remote := synccmdtest.NothingToRebase(t)
 	opts.NoFetch = true
 	r, human, err := synccmdtest.UpOut(t, f.Ctx, "x", opts)
-	if err != nil || r.Outcome != kit.OutcomeDone {
+	if err != nil || r.Outcome != jsonout.OutcomeDone {
 		t.Fatalf("%v %+v\n%s", err, r, human)
 	}
 	w := r.Worktrees[0]

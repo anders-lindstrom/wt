@@ -11,6 +11,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 )
 
 func syncResumeJSON(t *testing.T, ctx *kit.Context, work string, opts ResumeOptions) (syncrun.RunResult, error) {
@@ -36,7 +37,7 @@ func TestSyncResumeJSONReportsTheFinishedRebase(t *testing.T) {
 	testkit.WriteFile(t, bump, "a.txt", "merged by hand\n")
 	testkit.GitOut(t, bump, "add", "--", "a.txt")
 	r, err := syncResumeJSON(t, ctx, "bump", noResumeAgents())
-	if err != nil || r.Outcome != kit.OutcomeDone || r.Command != "sync resume" || len(r.Worktrees) != 1 {
+	if err != nil || r.Outcome != jsonout.OutcomeDone || r.Command != "sync resume" || len(r.Worktrees) != 1 {
 		t.Fatalf("%v %+v", err, r)
 	}
 	p := r.Worktrees[0]
@@ -55,14 +56,14 @@ func TestSyncResumeJSONReportsARefusal(t *testing.T) {
 	}
 	ctx, bump, gitDir, st := synccmdtest.HandedOver(t)
 	r, err := syncResumeJSON(t, ctx, "bump", noResumeAgents())
-	if err == nil || r.Outcome != kit.OutcomeRefused || len(r.Worktrees) != 1 ||
+	if err == nil || r.Outcome != jsonout.OutcomeRefused || len(r.Worktrees) != 1 ||
 		r.Worktrees[0].Result != syncrun.ResultRefused || r.Worktrees[0].Reason == nil {
 		t.Fatalf("%v %+v", err, r)
 	}
 	assertUntouched(t, bump, gitDir, st)
 
 	r, err = syncResumeJSON(t, ctx, "other", noResumeAgents())
-	if err == nil || r.Outcome != kit.OutcomeRefused || r.Error == nil || len(r.Worktrees) != 0 {
+	if err == nil || r.Outcome != jsonout.OutcomeRefused || r.Error == nil || len(r.Worktrees) != 0 {
 		t.Fatalf("nothing to resume: %v %+v", err, r)
 	}
 }
@@ -78,7 +79,7 @@ func TestSyncUndoJSONReportsWhatItPutBack(t *testing.T) {
 	}
 	rebased := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	r, err := syncUndoJSON(t, ctx, "bump", noAgentsUndo())
-	if err != nil || r.Outcome != kit.OutcomeDone || r.Command != "sync undo" || len(r.Worktrees) != 1 {
+	if err != nil || r.Outcome != jsonout.OutcomeDone || r.Command != "sync undo" || len(r.Worktrees) != 1 {
 		t.Fatalf("%v %+v", err, r)
 	}
 	p := r.Worktrees[0]
@@ -87,7 +88,7 @@ func TestSyncUndoJSONReportsWhatItPutBack(t *testing.T) {
 	}
 
 	r, err = syncUndoJSON(t, ctx, "bump", noAgentsUndo())
-	if err != nil || r.Outcome != kit.OutcomeDone || len(r.Worktrees) != 1 || r.Worktrees[0].Result != syncrun.ResultSkipped {
+	if err != nil || r.Outcome != jsonout.OutcomeDone || len(r.Worktrees) != 1 || r.Worktrees[0].Result != syncrun.ResultSkipped {
 		t.Fatalf("second undo: %v %+v", err, r)
 	}
 }
@@ -124,9 +125,9 @@ func TestSyncResumeJSONSaysWhenNobodyConfirmed(t *testing.T) {
 	testkit.GitOut(t, bump, "add", "--", "a.txt")
 	opts := noResumeAgents()
 	opts.Agents = testkit.IdleIn(t, bump, "parked")
-	opts.Confirm = func([]string) (bool, error) { return false, nil }
+	opts.Confirm = func([]string) bool { return false }
 	r, _ := syncResumeJSON(t, ctx, "bump", opts)
-	if r.Outcome != kit.OutcomeRefused || r.Error == nil {
+	if r.Outcome != jsonout.OutcomeRefused || r.Error == nil {
 		t.Fatalf("%+v", r)
 	}
 }

@@ -17,9 +17,10 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
+	"github.com/anders-lindstrom/wt/internal/commands/supersetws"
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -33,7 +34,7 @@ import (
 // layer's business. A nil Confirm removes without asking — which is what a
 // hook, a script and `--yes` all want.
 type RemoveOptions struct {
-	Confirm func(Plan) (bool, error)
+	Confirm kit.Confirm[Plan]
 	// Force is what the removal goes past, category by category: an idle
 	// or a busy agent session in the worktree, a session listing that
 	// failed, files git status is told not to look at, and a git worktree
@@ -107,8 +108,8 @@ type RemoveResult struct {
 	// when there is none.
 	RunID string
 	// Superset is what came of deleting the worktree's Superset workspace
-	// — provision.StepDeregistered, provision.StepNotRegistered,
-	// kit.StepSkipped or kit.StepFailed —
+	// — supersetws.StepDeregistered, supersetws.StepNotRegistered,
+	// jsonout.StepSkipped or jsonout.StepFailed —
 	// and "" when no worktree was removed. SupersetReason says why for a
 	// skip or a failure.
 	Superset       string
@@ -375,8 +376,8 @@ func removeWorktreeResult(ctx *kit.Context, wt repo.Worktree, opts RemoveOptions
 	plan.Render(w)
 	if opts.Expect != "" || opts.Journal != nil {
 		token := removeToken(ctx, plan)
-		opts.Journal.planned(ctx, plan, kit.Deref(token))
-		if opts.Expect != "" && kit.Deref(token) != opts.Expect {
+		opts.Journal.planned(ctx, plan, jsonout.Deref(token))
+		if opts.Expect != "" && jsonout.Deref(token) != opts.Expect {
 			return res, errRemovePlanChanged
 		}
 	}
@@ -408,11 +409,7 @@ func removeWorktreeResult(ctx *kit.Context, wt repo.Worktree, opts RemoveOptions
 	}
 
 	if opts.Confirm != nil {
-		ok, err := opts.Confirm(plan)
-		if err != nil {
-			return res, err
-		}
-		if !ok {
+		if !opts.Confirm(plan) {
 			fmt.Fprintln(w, "Nothing was removed.")
 			return res, nil
 		}
@@ -490,7 +487,7 @@ func planFor(ctx *kit.Context, wt repo.Worktree, opts RemoveOptions) Plan {
 		// leaving it behind because wt did not make it only leaves litter.
 		p.Outcome = BranchDeleted
 	case p.Merge == MergeUnknown && !branchIsOurs(ctx, p.Branch):
-		p.Reason = "not created by wt, and " + NoTrunkHere(ctx.Config.MainBranch) +
+		p.Reason = "not created by wt, and " + repo.NoTrunkHere(ctx.Config.MainBranch) +
 			" to compare it with"
 	case !branchIsOurs(ctx, p.Branch):
 		p.Reason = "not created by wt and not merged"
@@ -950,8 +947,8 @@ func mergeStanding(ctx *kit.Context, branch string) (standing, error) {
 		return s, err
 	}
 	s.Tip = tip
-	bases, err := TrunkBases(ctx)
-	var none *NoTrunkBaseError
+	bases, err := ctx.Repo.TrunkBases(ctx.Config.MainBranch)
+	var none *repo.NoTrunkBaseError
 	if errors.As(err, &none) {
 		return s, nil
 	} else if err != nil {
@@ -981,7 +978,7 @@ func mergeStanding(ctx *kit.Context, branch string) (standing, error) {
 
 // appliedTo is the first base holding every commit of tip under another id,
 // "" when none does.
-func appliedTo(ctx *kit.Context, tip string, bases []TrunkBase) string {
+func appliedTo(ctx *kit.Context, tip string, bases []repo.TrunkBase) string {
 	for _, b := range bases {
 		if ctx.Repo.Applied(tip, b.Tip) {
 			return b.Name
@@ -1044,11 +1041,6 @@ func worktreeGone(ctx *kit.Context, path string) bool {
 	}
 	_, ok := worktrees.ByPath(path)
 	return !ok
-}
-
-// NoTrunkHere says there is nothing to compare a branch with.
-func NoTrunkHere(trunk string) string {
-	return "neither origin/" + trunk + " nor " + trunk + " is here"
 }
 
 // removalFailed turns git's answer into wt's. git's own advice for a locked
@@ -1257,7 +1249,7 @@ func (p Plan) standing() string {
 	case p.Merge == Unmerged:
 		return "not merged: " + aheadOf(p.Ahead, p.Base)
 	}
-	return NoTrunkHere(p.MainBranch) + " to compare with"
+	return repo.NoTrunkHere(p.MainBranch) + " to compare with"
 }
 
 // aheadOf counts the work at stake: n commits base does not have. A branch
@@ -1291,9 +1283,9 @@ var afterFinalCheck func()
 // its path, its Superset workspace goes too; it is looked up before, while
 // the path still resolves. KeepSuperset asks Superset nothing.
 func (p Plan) run(ctx *kit.Context, w io.Writer) (RemoveResult, error) {
-	workspaces := provision.KeptSupersetWorkspaces(ctx)
+	workspaces := supersetws.Kept(ctx)
 	if !p.KeepSuperset {
-		workspaces = provision.FindSupersetWorkspaces(ctx, p.Path)
+		workspaces = supersetws.Find(ctx, p.Path)
 	}
 	res, err := p.remove(ctx, w)
 	if res.Worktree == WorktreeRemoved || res.Worktree == WorktreeQuarantined {
@@ -1514,7 +1506,7 @@ func (p Plan) quarantine(ctx *kit.Context, w io.Writer, res *RemoveResult) (*qua
 			Device: checkoutID.Device, Inode: checkoutID.Inode},
 		Admin: quarantine.Place{Path: admin, Quarantined: filepath.Join(dir, "admin"),
 			Device: adminID.Device, Inode: adminID.Inode},
-		Head: kit.Strp(p.Head)}
+		Head: jsonout.Strp(p.Head)}
 	if p.Branch != "" && p.Tip != "" {
 		plan := quarantine.BranchPlanNone
 		switch p.Outcome {
@@ -1523,7 +1515,7 @@ func (p Plan) quarantine(ctx *kit.Context, w io.Writer, res *RemoveResult) (*qua
 		case BranchKept:
 			plan = quarantine.BranchPlanKeep
 		}
-		rec.Branch = &quarantine.Branch{Name: p.Branch, Tip: p.Tip, Plan: plan, KeepAs: kit.Strp(p.KeepAs)}
+		rec.Branch = &quarantine.Branch{Name: p.Branch, Tip: p.Tip, Plan: plan, KeepAs: jsonout.Strp(p.KeepAs)}
 	}
 	r, err := quarantine.Begin(dir, rec, p.quarantineHooks)
 	if err != nil {

@@ -1,9 +1,10 @@
-package kit
+// Package reposel is which repositories a command across repositories works
+// on: the roots they sit under, the profiles that name them, and a selection
+// of either, and how to work through them a few at a time.
+package reposel
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -13,6 +14,10 @@ import (
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
+
+// defaultRoots is where repositories live on this machine when WT_ROOTS says
+// nothing. Colon-separated, so a path containing spaces survives.
+const defaultRoots = "programmering/telcred:programmering/private:Git"
 
 // Root is a directory repositories sit in, one level down, and the name
 // --roots selects it by — or a repository on its own, such as ~/dotfiles: a
@@ -81,8 +86,8 @@ func expandHome(p string) string {
 	return filepath.Join(home, strings.TrimPrefix(p, "~"))
 }
 
-// RepoTarget is one repository a multi-repo command works on.
-type RepoTarget struct {
+// Target is one repository a multi-repo command works on.
+type Target struct {
 	Name string // the main checkout's directory name
 	Path string // the main checkout
 	Root string // the root it sits in, "" for a profile entry outside every root
@@ -103,42 +108,42 @@ type Selection struct {
 // single-repository command into a multi-repository one.
 func (s Selection) Any() bool { return s.All || len(s.Roots) > 0 || len(s.Profiles) > 0 }
 
-// RepoSet is what a selection found: the repositories wt manages, and the
+// Set is what a selection found: the repositories wt manages, and the
 // checkouts under the same roots it does not.
-type RepoSet struct {
-	Repos     []RepoTarget
+type Set struct {
+	Repos     []Target
 	Unmanaged []string
 }
 
-// SelectRepos resolves a selection against the user's roots and profiles. A
+// Select resolves a selection against the user's roots and profiles. A
 // root or profile name the file does not have is an error naming the ones it
 // does; a profile entry that is no longer a repository wt manages comes back
 // with its Problem, so the command reports it and gets on with the rest.
-func SelectRepos(u *config.User, sel Selection) (RepoSet, error) {
+func Select(u *config.User, sel Selection) (Set, error) {
 	// A file wt cannot read may name roots it cannot see; falling back to the
 	// defaults would act on repositories nobody chose.
 	if u != nil && (u.Unusable || u.TablesUnreadable) && os.Getenv("WT_ROOTS") == "" {
-		return RepoSet{}, fmt.Errorf("%s cannot be read, so wt does not know your roots; wt doctor says why", u.Path)
+		return Set{}, fmt.Errorf("%s cannot be read, so wt does not know your roots; wt doctor says why", u.Path)
 	}
 	roots, _ := RootsFor(u)
 	if len(sel.Roots) > 0 && len(sel.Profiles) > 0 {
-		return RepoSet{}, fmt.Errorf("--roots and --profile each name the repositories; give one of them")
+		return Set{}, fmt.Errorf("--roots and --profile each name the repositories; give one of them")
 	}
 	if len(sel.Profiles) > 0 {
 		var paths []string
 		for _, name := range sel.Profiles {
 			p, ok := u.Profile(name)
 			if !ok {
-				return RepoSet{}, fmt.Errorf("no profile named %q%s", name, known("profiles", profileNames(u)))
+				return Set{}, fmt.Errorf("no profile named %q%s", name, known("profiles", profileNames(u)))
 			}
 			paths = append(paths, p.Repos...)
 		}
-		var set RepoSet
+		var set Set
 		for _, path := range paths {
 			t := ProfileTarget(path, roots)
 			// The same repository twice, by two spellings, would be fetched
 			// and swept twice at once.
-			if slices.ContainsFunc(set.Repos, func(o RepoTarget) bool { return repo.SamePath(o.Path, t.Path) }) {
+			if slices.ContainsFunc(set.Repos, func(o Target) bool { return repo.SamePath(o.Path, t.Path) }) {
 				continue
 			}
 			set.Repos = append(set.Repos, t)
@@ -147,9 +152,9 @@ func SelectRepos(u *config.User, sel Selection) (RepoSet, error) {
 	}
 	chosen, err := ChosenRoots(u, sel)
 	if err != nil {
-		return RepoSet{}, err
+		return Set{}, err
 	}
-	return DiscoverRepos(chosen), nil
+	return Discover(chosen), nil
 }
 
 // ChosenRoots is the roots a selection by roots, or by All, covers.
@@ -172,12 +177,12 @@ func ChosenRoots(u *config.User, sel Selection) ([]Root, error) {
 	return chosen, nil
 }
 
-// DiscoverRepos is every main checkout one level under each root, once, and
+// Discover is every main checkout one level under each root, once, and
 // the root itself where it is one. A linked worktree at that depth is its
 // repository's, which is listed where its own main checkout is; a <repo>_wt
 // folder is not a checkout at all.
-func DiscoverRepos(roots []Root) RepoSet {
-	var set RepoSet
+func Discover(roots []Root) Set {
+	var set Set
 	seen := map[string]bool{}
 	add := func(dir, root string) {
 		r, err := repo.Discover(dir)
@@ -189,7 +194,7 @@ func DiscoverRepos(roots []Root) RepoSet {
 			set.Unmanaged = append(set.Unmanaged, r.MainRoot)
 			return
 		}
-		set.Repos = append(set.Repos, RepoTarget{Name: filepath.Base(r.MainRoot), Path: r.MainRoot, Root: root})
+		set.Repos = append(set.Repos, Target{Name: filepath.Base(r.MainRoot), Path: r.MainRoot, Root: root})
 	}
 	for _, root := range roots {
 		if IsCheckout(root.Path) {
@@ -230,12 +235,12 @@ func Managed(path string) bool {
 // ProfileTarget checks one profile entry and says what is wrong with it, if
 // anything: gone, not a repository, a linked worktree rather than the main
 // checkout, or not managed by wt.
-func ProfileTarget(path string, roots []Root) RepoTarget {
+func ProfileTarget(path string, roots []Root) Target {
 	abs, err := filepath.Abs(expandHome(path))
 	if err != nil {
 		abs = expandHome(path)
 	}
-	t := RepoTarget{Name: filepath.Base(abs), Path: abs, Root: rootOf(abs, roots)}
+	t := Target{Name: filepath.Base(abs), Path: abs, Root: rootOf(abs, roots)}
 	if _, err := os.Stat(abs); err != nil {
 		t.Problem = "not there any more"
 		return t
@@ -286,10 +291,10 @@ func known(what string, names []string) string {
 	return "; the " + what + " are: " + strings.Join(names, " ")
 }
 
-// EachRepo runs fn for every target, at most limit at a time, and returns the
+// Each runs fn for every target, at most limit at a time, and returns the
 // results in the targets' order, so output printed from them afterwards reads
 // the same however the work interleaved.
-func EachRepo[T any](targets []RepoTarget, limit int, fn func(RepoTarget) T) []T {
+func Each[T any](targets []Target, limit int, fn func(Target) T) []T {
 	out := make([]T, len(targets))
 	sem := make(chan struct{}, max(limit, 1))
 	var wg sync.WaitGroup
@@ -306,54 +311,7 @@ func EachRepo[T any](targets []RepoTarget, limit int, fn func(RepoTarget) T) []T
 	return out
 }
 
-// RepoParallelism is how many repositories a multi-repo command works on at
+// Parallelism is how many repositories a multi-repo command works on at
 // once: enough that twenty fetches do not run end to end, few enough that
 // GitHub and the disk are not hammered.
-const RepoParallelism = 4
-
-// AcrossRepos runs fn in every repository a selection names, a few at a time,
-// and prints what each printed under its name, in the selection's order. A
-// repository fn cannot run in is reported under its name, the rest go on, and
-// the returned error names every one that failed.
-func AcrossRepos(u *config.User, sel Selection, w io.Writer, fn func(*Context, io.Writer) error) error {
-	set, err := SelectRepos(u, sel)
-	if err != nil {
-		return err
-	}
-	type result struct {
-		out bytes.Buffer
-		err error
-	}
-	results := EachRepo(set.Repos, RepoParallelism, func(t RepoTarget) *result {
-		r := &result{}
-		if t.Problem != "" {
-			r.err = fmt.Errorf("%s: %s", t.Path, t.Problem)
-			return r
-		}
-		ctx, err := Open(t.Path)
-		if err != nil {
-			r.err = err
-			return r
-		}
-		r.err = fn(ctx, &r.out)
-		return r
-	})
-	home, _ := os.UserHomeDir()
-	var failed []string
-	for i, r := range results {
-		t := set.Repos[i]
-		if i > 0 {
-			fmt.Fprintln(w)
-		}
-		fmt.Fprintf(w, "== %s  %s\n", t.Name, AbbreviateHome(t.Path, home))
-		_, _ = w.Write(r.out.Bytes())
-		if r.err != nil {
-			fmt.Fprintf(w, "! %v\n", r.err)
-			failed = append(failed, t.Name)
-		}
-	}
-	if len(failed) > 0 {
-		return fmt.Errorf("%d of %s failed: %s", len(failed), Count(len(results), "repository", "repositories"), strings.Join(failed, ", "))
-	}
-	return nil
-}
+const Parallelism = 4

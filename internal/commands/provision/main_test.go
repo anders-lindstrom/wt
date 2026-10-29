@@ -3,6 +3,7 @@ package provision
 import (
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/commands/supersetws"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
@@ -11,7 +12,7 @@ import (
 // state.
 func TestMain(m *testing.M) {
 	testkit.Main(m, func() {
-		ProbeSuperset = testkit.NoSuperset
-		SupersetHostCommand = testkit.NoHostCommand
+		supersetws.Probe = testkit.NoSuperset
+		supersetws.HostCommand = testkit.NoHostCommand
 	})
 }

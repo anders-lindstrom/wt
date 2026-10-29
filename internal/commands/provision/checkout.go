@@ -9,6 +9,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
@@ -60,13 +61,13 @@ func (t CheckoutTarget) upstream() string {
 func ResolveCheckout(ctx *kit.Context, arg string) (CheckoutTarget, *Problem) {
 	t := CheckoutTarget{Branch: arg}
 	if arg == "" {
-		return t, &Problem{Code: kit.ProblemInvalidName, Message: "no branch given"}
+		return t, &Problem{Code: jsonout.ProblemInvalidName, Message: "no branch given"}
 	}
 	oid, ok, err := ctx.Repo.ResolveRef("refs/heads/" + arg)
 	if err != nil {
 		// No code says "git failed"; refusing beats reading it as no local
 		// branch and creating one from a remote.
-		return t, &Problem{Code: kit.ProblemBranchMissing, Message: fmt.Sprintf(
+		return t, &Problem{Code: jsonout.ProblemBranchMissing, Message: fmt.Sprintf(
 			"git could not say whether branch %s is here: %s", arg, git.Reason(err))}
 	}
 	if ok && ctx.Repo.BranchExists(arg) {
@@ -85,7 +86,7 @@ func ResolveCheckout(ctx *kit.Context, arg string) (CheckoutTarget, *Problem) {
 	}
 	found := func(c CheckoutTarget) (CheckoutTarget, *Problem) {
 		if ctx.Repo.BranchExists(c.Branch) {
-			return c, &Problem{Code: kit.ProblemBranchExists, Message: fmt.Sprintf(
+			return c, &Problem{Code: jsonout.ProblemBranchExists, Message: fmt.Sprintf(
 				"branch %s already exists here; `wt checkout %s` puts a worktree on it", c.Branch, c.Branch)}
 		}
 		return c, nil
@@ -121,7 +122,7 @@ func ResolveCheckout(ctx *kit.Context, arg string) (CheckoutTarget, *Problem) {
 		for _, c := range hits {
 			names = append(names, c.upstream())
 		}
-		return t, &Problem{Code: kit.ProblemBranchAmbiguous, Message: fmt.Sprintf(
+		return t, &Problem{Code: jsonout.ProblemBranchAmbiguous, Message: fmt.Sprintf(
 			"%s is on more than one remote: %s; name one, as `wt checkout %s`, or set checkout.defaultRemote",
 			arg, strings.Join(names, ", "), names[0])}
 	}
@@ -129,11 +130,11 @@ func ResolveCheckout(ctx *kit.Context, arg string) (CheckoutTarget, *Problem) {
 		return found(hits[0])
 	}
 	if prefixed != "" {
-		return t, &Problem{Code: kit.ProblemRemoteBranchMissing, Message: fmt.Sprintf(
+		return t, &Problem{Code: jsonout.ProblemRemoteBranchMissing, Message: fmt.Sprintf(
 			"%s has no branch %s as last fetched; `git fetch %s` if it is new",
 			prefixed, strings.TrimPrefix(arg, prefixed+"/"), prefixed)}
 	}
-	return t, &Problem{Code: kit.ProblemBranchMissing, Message: fmt.Sprintf(
+	return t, &Problem{Code: jsonout.ProblemBranchMissing, Message: fmt.Sprintf(
 		"branch %s does not exist here or on a remote as last fetched; `git fetch` if it is new, `wt new` creates one", arg)}
 }
 

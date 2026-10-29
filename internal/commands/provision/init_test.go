@@ -52,7 +52,7 @@ func TestInitMakesAConfiglessRepoOpenable(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 
-	ctx, err := kit.Open(r.Root)
+	ctx, err := kit.Open(r.Root, io.Discard)
 	if err != nil {
 		t.Fatalf("Open after Init: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestInitWritesTheAnsweredValues(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 
-	ctx, err := kit.Open(r.Root)
+	ctx, err := kit.Open(r.Root, io.Discard)
 	if err != nil {
 		t.Fatalf("Open after Init: %v", err)
 	}
@@ -179,7 +179,7 @@ func TestInitCommentedDefaultsParseAndChangeNothingWhenUncommented(t *testing.T)
 // which they are in every way that matters here.
 func resolvedConfig(t *testing.T, r *repo.Repo) string {
 	t.Helper()
-	ctx, err := kit.Open(r.Root)
+	ctx, err := kit.Open(r.Root, io.Discard)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestInitReAsksWhenAnAnswerWouldNotValidate(t *testing.T) {
 	if !strings.Contains(buf.String(), "wip") || !strings.Contains(buf.String(), "WORKTREE_TYPES") {
 		t.Errorf("the rejection does not say what was wrong:\n%s", buf.String())
 	}
-	ctx, err := kit.Open(r.Root)
+	ctx, err := kit.Open(r.Root, io.Discard)
 	if err != nil {
 		t.Fatalf("Open after Init: %v", err)
 	}
@@ -320,7 +320,7 @@ func TestInitForceReplacesAnExistingConfig(t *testing.T) {
 	if err := Init(r, InitOptions{Force: true}, &buf); err != nil {
 		t.Fatalf("Init --force: %v", err)
 	}
-	ctx, err := kit.Open(r.Root)
+	ctx, err := kit.Open(r.Root, io.Discard)
 	if err != nil {
 		t.Fatalf("Open after Init: %v", err)
 	}

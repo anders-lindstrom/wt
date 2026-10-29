@@ -81,7 +81,7 @@ func TestAPersonSaysWhereABranchTrackingAnotherNamePushes(t *testing.T) {
 		theirs = synccmd.TracksTheirs(t, ctx, bare)
 		opts := synccmdtest.NoAgents()
 		opts.ChoosePush = func(c syncrun.PushChoice) (string, error) { asked = append(asked, c); return answer(c), nil }
-		opts.ConfirmPush = func(works []string) (bool, error) { confirmed = works; return true, nil }
+		opts.ConfirmPush = func(works []string) bool { confirmed = works; return true }
 		var buf, js bytes.Buffer
 		opts.Journal = syncrun.NewSyncRunJournal(&js, "sync rebase")
 		if err := synccmd.SyncRebase(ctx, []string{"bump"}, opts, &buf); err != nil {
@@ -130,7 +130,7 @@ func TestAPersonSaysWhereABranchTrackingAnotherNamePushes(t *testing.T) {
 		opts := synccmdtest.NoAgents()
 		opts.Now = func() time.Time { return time.Unix(0, 199) }
 		opts.ChoosePush = func(syncrun.PushChoice) (string, error) { t.Fatal("asked a second time"); return "", nil }
-		opts.ConfirmPush = func([]string) (bool, error) { return true, nil }
+		opts.ConfirmPush = func([]string) bool { return true }
 		var buf bytes.Buffer
 		if err := synccmd.SyncRebase(ctx, []string{"bump"}, opts, &buf); err != nil {
 			t.Fatalf("err %v\n%s", err, buf.String())

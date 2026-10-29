@@ -7,6 +7,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -40,8 +41,8 @@ type OwnRemote struct {
 
 // OwnRemoteOf is o as wt status --json and wt sync --json report it.
 func OwnRemoteOf(o wtsync.OwnRemote) OwnRemote {
-	out := OwnRemote{Ref: kit.Strp(o.Ref), State: string(ownState(o)), Commit: kit.Strp(o.Commit),
-		Fetched: o.Fetched, Blocks: kit.Strp(o.Blocks), NoPushReason: kit.Strp(o.NoPush)}
+	out := OwnRemote{Ref: jsonout.Strp(o.Ref), State: string(ownState(o)), Commit: jsonout.Strp(o.Commit),
+		Fetched: o.Fetched, Blocks: jsonout.Strp(o.Blocks), NoPushReason: jsonout.Strp(o.NoPush)}
 	if o.Undecided != nil {
 		out.FixCommand = o.Undecided.Fix()
 	}
@@ -74,7 +75,7 @@ type OwnRemoteSync struct {
 
 // OwnRemoteSyncOf is the --json form of a branch's own remote.
 func OwnRemoteSyncOf(o wtsync.OwnRemote) *OwnRemoteSync {
-	out := &OwnRemoteSync{Ref: kit.Strp(o.Ref), State: string(ownState(o)), Local: kit.Strp(o.Local), Remote: kit.Strp(o.Commit)}
+	out := &OwnRemoteSync{Ref: jsonout.Strp(o.Ref), State: string(ownState(o)), Local: jsonout.Strp(o.Local), Remote: jsonout.Strp(o.Commit)}
 	if o.Compared() {
 		out.LocalAhead, out.RemoteAhead = &o.Ahead, &o.Behind
 	}
