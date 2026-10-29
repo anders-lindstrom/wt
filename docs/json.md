@@ -1958,6 +1958,7 @@ Nothing is retried. `--dry-run` goes as far as the frame and sends nothing.
 | `notRunning` | 1 | the session has no process. wt does not send to a parked session or resume it |
 | `noInbox` | 1 | no inbox wt may write to; `target.inboxUnavailable` says why |
 | `changed` | 1 | `--expect-session` named a session that is not the one there |
+| `notExact` | 1 | `<work>` only matched a worktree and is not its name, and no `--expect-session` was given |
 | `tooLarge` | 1 | the message is over `limit`, or its frame is over the inbox's 1 MiB line |
 | `empty` | 1 | nothing but whitespace, or unreadable |
 | `writeFailed` | 1 | the connection or the write failed, or the inbox reset the connection during it |
@@ -2057,3 +2058,4 @@ change made it.
 | `session-stop` 1.0.0 | `wt session stop --json`, the outcome of a stop |
 | `remove-plan` 1.5.0, `remove` 1.5.0 | [`--reap`](#processes--what-still-runs-in-a-worktree): `processes` and `processesError` in the plan, `reaped` in the result, the problem `processesUnknown` |
 | `sweep-plan` 1.6.0, `sweep` 1.5.0 | [`--reap`](#processes--what-still-runs-in-a-worktree): `reap` on the plan and `processes` on each item, the `kept` codes `processes` and `processesUnknown`, `reaped` on each item of the result |
+| `session-send` 1.1.0 | `errorCode` `notExact`: `<work>` only matched a worktree and is not its name, and no `--expect-session` was given; 1.0.0 said `noSession` |

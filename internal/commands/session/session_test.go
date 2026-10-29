@@ -526,7 +526,7 @@ func TestSessionSendNeedsTheWorktreeNamedExactlyOrTheSessionExpected(t *testing.
 	testkit.ClaudeLists(ctx, liveSession("only", sidA, wt, 4001))
 	// "thin" is a subsequence of the worktree's path, which wt find takes.
 	res, _, err := sendSession(t, ctx, r, SendOptions{Pattern: "thin"}, "hello")
-	if err == nil || res.Sent || *res.ErrorCode != "noSession" {
+	if err == nil || res.Sent || *res.ErrorCode != "notExact" {
 		t.Errorf("fuzzy match: want refusal, got %v / %+v", err, res)
 	}
 	nothingArrived(t, got)

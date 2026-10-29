@@ -4,6 +4,12 @@ Newest first, each heading stamped with the local date and time of the change
 (several land per day). `wt about` prints the newest 5 entries, so keep each entry to a few lines a human
 would want read out to them; the full story is in git history.
 
+## 2026-10-29 07:55 — `wt session send` says `notExact` for a name that is not exact
+
+A worktree pattern that only matched, without `--expect-session`, was
+refused with `errorCode` `noSession`, as if nothing matched. It is now
+`notExact`, as `wt session stop` says (schema `session-send` 1.1.0).
+
 ## 2026-10-29 06:50 — `wt remove` says when your user file or GitHub is not working
 
 A plain `wt remove` ran in silence when the user config could not be read or

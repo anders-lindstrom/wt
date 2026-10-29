@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/session-send.v1.json",
-  "x-version": "1.0.0",
+  "x-version": "1.1.0",
   "title": "wt session send --json",
   "description": "The outcome of one message to one session's inbox. Printed by `wt session send <work> [<session>] --json` as the only thing on stdout, also on failure and with --dry-run. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
@@ -85,11 +85,12 @@
             "tooLarge",
             "empty",
             "writeFailed",
-            "badArgument"
+            "badArgument",
+            "notExact"
           ]
         }
       ],
-      "description": "noSession: no worktree or no session matches. ambiguous: several match, nothing chosen (exit 2). notRunning: the session has no process. noInbox: it has no inbox wt may write to (target.inboxUnavailable says why). changed: the session is not the one --expect-session named. tooLarge: the message, or its frame, is over the limit. empty: no text. writeFailed: the connection or the write failed. badArgument: --from-name or --reply-to is not acceptable (exit 2)."
+      "description": "noSession: no worktree or no session matches. ambiguous: several match, nothing chosen (exit 2). notRunning: the session has no process. noInbox: it has no inbox wt may write to (target.inboxUnavailable says why). changed: the session is not the one --expect-session named. tooLarge: the message, or its frame, is over the limit. empty: no text. writeFailed: the connection or the write failed. badArgument: --from-name or --reply-to is not acceptable (exit 2). notExact: <work> only matched a worktree and is not its name, and no --expect-session was given."
     }
   },
   "$defs": {
