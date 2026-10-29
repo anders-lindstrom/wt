@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -113,5 +115,31 @@ func TestRemoveForceFlagForms(t *testing.T) {
 		if err != nil || got != want || cmd.Flags().Arg(0) != "x" {
 			t.Errorf("%q: force %v (%v), arg %q", args, got, err, cmd.Flags().Arg(0))
 		}
+	}
+}
+
+// A plain wt remove says what is wrong with the user file on stderr, as every
+// other command does, rather than running with every integration off in
+// silence.
+func TestRemoveWarnsAboutAnUnreadableUserFile(t *testing.T) {
+	path := userConfigIn(t)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("this is = = not toml\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	repoWithWorktrees(t)
+	args := []string{"remove", "fix_wt/login-crash", "--dry-run"}
+	var stdout, stderr bytes.Buffer
+	root := newRootCmd(args...)
+	root.SetOut(&stdout)
+	root.SetErr(&stderr)
+	root.SetArgs(args)
+	if err := root.Execute(); err != nil {
+		t.Fatalf("%v\n%s", err, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "wt: every integration is off for this run") {
+		t.Fatalf("no warning about the user file on stderr:\n%s\nstdout:\n%s", stderr.String(), stdout.String())
 	}
 }

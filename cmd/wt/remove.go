@@ -81,6 +81,7 @@ func newRemoveCmd() *cobra.Command {
 				}
 				return err
 			}
+			ctx.WarnTo(cmd.ErrOrStderr())
 			opts := retire.RemoveOptions{Force: forced, DryRun: dryRun, Expect: expect, KeepSuperset: keepSuperset,
 				Reap: reap}
 			if moveTo != "" {
@@ -96,7 +97,6 @@ func newRemoveCmd() *cobra.Command {
 					target.Arg = args[0]
 				}
 				out, progress := cmd.OutOrStdout(), cmd.ErrOrStderr()
-				ctx.WarnTo(progress)
 				if !yes {
 					return retire.RemovePlanJSON(ctx, target, opts, out, progress)
 				}
