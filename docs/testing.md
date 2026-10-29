@@ -214,15 +214,15 @@ started: the tests that stay serial run one after another.
 | package | s | serial s | note |
 |---|---:|---:|---|
 | internal/commands/retire | 121 | 75 | the remove and sweep --reap tests: real processes, signals, a 5 s grace |
-| internal/commands/synckeep | 119 | 119 | all serial: the keeper sets GIT_CONFIG_* for its process, the tests set HOME |
 | internal/commands/synccmd | 112 | 52 | |
 | internal/wtsync | 107 | 58 | |
 | internal/commands/refs | 93 | 34 | |
 | internal/commands/admin | 53 | 41 | |
 | internal/commands | 51 | 27 | wt list and status, and tests across packages |
-| internal/commands/session | 47 | 45 | all serial: WT_ROOTS set for the binary, a fake claude on the PATH |
 | internal/commands/provision | 41 | 23 | |
 | internal/commands/syncfix | 40 | 0 | |
+| internal/commands/synckeep | 41 | 6 | measured later, at a load of about 130: was 158, all serial |
+| internal/commands/session | 20 | 4 | measured later, at a load of about 130: was 74, all serial |
 | internal/superset | 34 | 21 | about 4 s of it is real deadlines |
 | internal/commands/purge | 34 | 0 | |
 | cmd/wt | 27 | 27 | in-process cobra; builds no binary |
