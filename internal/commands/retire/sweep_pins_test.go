@@ -22,13 +22,13 @@ func TestBranchPinsDropARunThatPinnedNothing(t *testing.T) {
 	var begun string
 	pins := &refpins.BranchPins{Command: "wt test", Begun: func(id string) { begun = id }}
 	var inUse *repo.BranchInUseError
-	if _, err := pins.Move(ctx, "fix_wt/busy", tip); !errors.As(err, &inUse) {
+	if _, err := pins.Move(ctx.Repo, "fix_wt/busy", tip); !errors.As(err, &inUse) {
 		t.Fatalf("a branch a worktree uses is refused: %v", err)
 	}
 	if begun == "" || !ctx.Repo.BranchExists("fix_wt/busy") {
 		t.Fatalf("the run is begun before the move, and the branch stays: %q", begun)
 	}
-	if run := pins.Finish(ctx, &bytes.Buffer{}); run != "" {
+	if run := pins.Finish(ctx.Repo, &bytes.Buffer{}); run != "" {
 		t.Errorf("finish named %s", run)
 	}
 	if left := testkit.GitOut(t, ctx.Repo.MainRoot, "for-each-ref", refpins.SweptPrefix); left != "" {
@@ -53,13 +53,13 @@ func TestBranchPinsLeaveARunTheyDidNotBegin(t *testing.T) {
 			}
 		}
 	}}
-	if _, err := pins.Move(ctx, "done-work", tip); err == nil {
+	if _, err := pins.Move(ctx.Repo, "done-work", tip); err == nil {
 		t.Fatal("the move must refuse a run id another run holds")
 	}
 	if len(told) != 2 || told[1] != "" || !ctx.Repo.BranchExists("done-work") {
 		t.Fatalf("told %q", told)
 	}
-	if run := pins.Finish(ctx, &bytes.Buffer{}); run != "" {
+	if run := pins.Finish(ctx.Repo, &bytes.Buffer{}); run != "" {
 		t.Errorf("finish named %s", run)
 	}
 	if meta := testkit.GitOut(t, main, "for-each-ref", "--format=%(refname)", refpins.SweptPrefix); meta != refpins.MetaRef(told[0]) {

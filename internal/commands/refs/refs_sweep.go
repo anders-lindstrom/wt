@@ -955,7 +955,7 @@ func sweepLocalRef(ctx *kit.Context, r RefRow, pin string) refState {
 		return refState{kept: "it moved after the plan was made"}
 	}
 	if r.Kind == refpins.RefBranch {
-		err = refpins.MoveBranch(ctx, r.Name, r.Object, pin, "wt refs sweep")
+		err = refpins.MoveBranch(ctx.Repo, r.Name, r.Object, pin, "wt refs sweep")
 		var inUse *repo.BranchInUseError
 		switch {
 		case errors.As(err, &inUse):

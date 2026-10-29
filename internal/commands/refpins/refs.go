@@ -600,22 +600,22 @@ var AfterBranchMoved func(name string)
 // MoveBranch pins branch name at pin and deletes it, in one transaction and
 // only at tip, then drops its config, as git branch -D does. A branch a
 // worktree uses is refused with a repo.BranchInUseError.
-func MoveBranch(ctx *kit.Context, name, tip, pin, message string) error {
-	users, err := ctx.Repo.BranchUsers()
+func MoveBranch(r *repo.Repo, name, tip, pin, message string) error {
+	users, err := r.BranchUsers()
 	if err != nil {
 		return err
 	}
 	if use, ok := users[name]; ok {
 		return &repo.BranchInUseError{Path: use.Path, By: use.By}
 	}
-	if err := UpdateRefs(ctx.Repo.MainRoot, message, "create "+pin+" "+tip, "delete refs/heads/"+name+" "+tip); err != nil {
+	if err := UpdateRefs(r.MainRoot, message, "create "+pin+" "+tip, "delete refs/heads/"+name+" "+tip); err != nil {
 		return err
 	}
 	if AfterBranchMoved != nil {
 		AfterBranchMoved(name)
 	}
 	// A branch with no config has no section to remove; that is not a failure.
-	_, _ = git.Run(ctx.Repo.MainRoot, "config", "--remove-section", "branch."+name)
+	_, _ = git.Run(r.MainRoot, "config", "--remove-section", "branch."+name)
 	return nil
 }
 
@@ -634,27 +634,27 @@ type BranchPins struct {
 }
 
 // Move pins branch name and deletes it, at tip, and returns its pin.
-func (b *BranchPins) Move(ctx *kit.Context, name, tip string) (string, error) {
+func (b *BranchPins) Move(r *repo.Repo, name, tip string) (string, error) {
 	if b.err != nil {
 		return "", b.err
 	}
 	if b.RunID == "" {
-		if err := b.begin(ctx); err != nil {
+		if err := b.begin(r.MainRoot); err != nil {
 			b.err = err
 			return "", err
 		}
 	}
 	pin := PinOf(b.RunID, RefBranch, name)
-	return pin, MoveBranch(ctx, name, tip, pin, b.Command)
+	return pin, MoveBranch(r, name, tip, pin, b.Command)
 }
 
 // begin mints the run and writes its meta. An id another run holds is
 // passed over, and the run is the command's only once its meta is written,
 // so finish never drops a meta it did not write.
-func (b *BranchPins) begin(ctx *kit.Context) error {
+func (b *BranchPins) begin(mainRoot string) error {
 	for range 3 {
 		id := NewRunID(time.Now())
-		if taken, err := RunTaken(ctx.Repo.MainRoot, id); err != nil {
+		if taken, err := RunTaken(mainRoot, id); err != nil {
 			return err
 		} else if taken {
 			continue
@@ -662,7 +662,7 @@ func (b *BranchPins) begin(ctx *kit.Context) error {
 		if b.Begun != nil {
 			b.Begun(id)
 		}
-		if err := BeginRun(ctx.Repo.MainRoot, id, time.Now(), nil); err != nil {
+		if err := BeginRun(mainRoot, id, time.Now(), nil); err != nil {
 			if b.Begun != nil {
 				b.Begun("")
 			}
@@ -676,12 +676,12 @@ func (b *BranchPins) begin(ctx *kit.Context) error {
 
 // Finish drops the run's meta when the run holds no pin, and returns the run
 // left behind: "" when none was begun or none is left.
-func (b *BranchPins) Finish(ctx *kit.Context, w io.Writer) string {
+func (b *BranchPins) Finish(r *repo.Repo, w io.Writer) string {
 	if b == nil || b.RunID == "" {
 		return ""
 	}
-	DropEmptyRun(ctx.Repo.MainRoot, b.RunID, w)
-	if taken, err := RunTaken(ctx.Repo.MainRoot, b.RunID); err == nil && !taken {
+	DropEmptyRun(r.MainRoot, b.RunID, w)
+	if taken, err := RunTaken(r.MainRoot, b.RunID); err == nil && !taken {
 		return ""
 	}
 	return b.RunID

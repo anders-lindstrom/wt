@@ -445,7 +445,7 @@ func removeWorktreeResult(ctx *kit.Context, wt repo.Worktree, opts RemoveOptions
 		plan.pins = &refpins.BranchPins{Command: "wt remove", Begun: opts.Journal.ran}
 	}
 	res, err := plan.run(ctx, w)
-	res.RunID = plan.pins.Finish(ctx, w)
+	res.RunID = plan.pins.Finish(ctx.Repo, w)
 	return res, err
 }
 
@@ -1438,7 +1438,7 @@ func (p Plan) branchStep(ctx *kit.Context) (result, msg string, err error) {
 		// under refs/wt-swept/ rather than deleted outright.
 		del := func() error { return ctx.Repo.DeleteBranchAt(p.Branch, p.Tip, p.afterRefDeleted) }
 		if p.pins != nil {
-			del = func() error { _, err := p.pins.Move(ctx, p.Branch, p.Tip); return err }
+			del = func() error { _, err := p.pins.Move(ctx.Repo, p.Branch, p.Tip); return err }
 		}
 		if err := del(); err != nil {
 			var inUse *repo.BranchInUseError
