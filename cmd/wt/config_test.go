@@ -11,43 +11,31 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/session"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
-// TestMain points XDG_CONFIG_HOME at a directory of this run's own: `wt
-// config set` writes a real file. The settings there turn both integrations
-// off, so a test running `wt list` cannot reach the gh or the Superset of
-// whoever is running it. A test that wants one back writes its own file
-// through userConfigIn. The rest of the machine is kept out by
-// gittest.Isolate and kit.MachineAgents.
+// TestMain runs the tests off the machine with testkit.Main. `wt config set`
+// writes a real file under its XDG_CONFIG_HOME; the settings put there turn
+// both integrations off, so a test running `wt list` cannot reach the gh or
+// the Superset of whoever is running it. A test that wants one back writes
+// its own file through userConfigIn.
 func TestMain(m *testing.M) {
-	restore := gittest.Isolate()
-	dir, err := os.MkdirTemp("", "wt-cli-test")
-	if err != nil {
-		panic(err)
-	}
-	if err := os.Setenv("XDG_CONFIG_HOME", dir); err != nil {
-		panic(err)
-	}
-	if err := os.MkdirAll(filepath.Join(dir, "wt"), 0o755); err != nil {
-		panic(err)
-	}
-	settings := filepath.Join(dir, "wt", "config.toml")
-	if err := os.WriteFile(settings, []byte("github = false\nsuperset = false\n"), 0o644); err != nil {
-		panic(err)
-	}
-	session.SessionsDeadline = testkit.FakeClaudeDeadline
-	// No session listed and no process read, but the claude listing a person
-	// reads, which the tests answer with a fake claude on the PATH.
-	machine := testkit.NoAgents
-	machine.Claude = func(deadline time.Duration) ([]agents.Agent, bool, error) {
-		return agents.ListClaudeSessionsWith(deadline, testkit.NoAncestors)
-	}
-	kit.MachineAgents = machine
-	code := m.Run()
-	_ = os.RemoveAll(dir)
-	restore()
-	os.Exit(code)
+	testkit.Main(m, func() {
+		settings := filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "wt", "config.toml")
+		if err := os.MkdirAll(filepath.Dir(settings), 0o755); err != nil { //nolint:gosec // G703: under the XDG_CONFIG_HOME testkit.Main just made
+			panic(err)
+		}
+		if err := os.WriteFile(settings, []byte("github = false\nsuperset = false\n"), 0o644); err != nil { //nolint:gosec // G703: as above
+			panic(err)
+		}
+		session.SessionsDeadline = testkit.FakeClaudeDeadline
+		// No session listed and no process read, but the claude listing a
+		// person reads, which the tests answer with a fake claude on the PATH.
+		machine := testkit.NoAgents
+		machine.Claude = func(deadline time.Duration) ([]agents.Agent, bool, error) {
+			return agents.ListClaudeSessionsWith(deadline, testkit.NoAncestors)
+		}
+		kit.MachineAgents = machine
+	})
 }
 
 // userConfigIn gives one test its own XDG_CONFIG_HOME and returns the path
