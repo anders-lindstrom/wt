@@ -35,7 +35,7 @@ type Options struct {
 	Expect string
 	// Confirm, when set, is asked once the plan is printed; false purges
 	// nothing.
-	Confirm func() bool
+	Confirm kit.Ask
 	// NoTerminal is a purge with nobody to ask and no --yes: it refuses.
 	NoTerminal bool
 	// Result, when set, receives what the purge did.
@@ -83,7 +83,7 @@ func QuarantinePurge(dir string, opts Options, w io.Writer) error {
 	case opts.NoTerminal:
 		return report(errPurgeNoTerminal)
 	case opts.Confirm != nil:
-		if !opts.Confirm() {
+		if !opts.Confirm("Delete it for good?") {
 			fmt.Fprintln(w, "Nothing was purged.")
 			return report(nil)
 		}

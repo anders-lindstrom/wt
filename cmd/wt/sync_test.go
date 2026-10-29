@@ -24,18 +24,16 @@ func TestConfirmPushDefaultsToNo(t *testing.T) {
 		{"", false}, // ^D declines
 	} {
 		var out bytes.Buffer
-		got, err := confirmPush(newPrompter(strings.NewReader(tc.in), &out))([]string{"bump"})
-		if err != nil || got != tc.want {
-			t.Errorf("answer %q: got %v, %v; want %v", tc.in, got, err, tc.want)
+		got := confirmPush(newPrompter(strings.NewReader(tc.in), &out))([]string{"bump"})
+		if got != tc.want {
+			t.Errorf("answer %q: got %v; want %v", tc.in, got, tc.want)
 		}
 		if !strings.Contains(out.String(), "push bump with --force-with-lease? [y/N]") {
 			t.Errorf("question %q", out.String())
 		}
 	}
 	var out bytes.Buffer
-	if _, err := confirmPush(newPrompter(strings.NewReader("\n"), &out))([]string{"a", "b"}); err != nil {
-		t.Fatal(err)
-	}
+	confirmPush(newPrompter(strings.NewReader("\n"), &out))([]string{"a", "b"})
 	if !strings.Contains(out.String(), "push a, b with --force-with-lease? [y/N]") {
 		t.Errorf("question %q", out.String())
 	}
@@ -53,9 +51,9 @@ func TestConfirmAskNamesTheWorktreesAndDefaultsToNo(t *testing.T) {
 		{"", false}, // ^D declines
 	} {
 		var out bytes.Buffer
-		got, err := confirmAsk(newPrompter(strings.NewReader(tc.in), &out), "rebase")([]string{"a", "b"})
-		if err != nil || got != tc.want {
-			t.Errorf("answer %q: got %v, %v; want %v", tc.in, got, err, tc.want)
+		got := confirmAsk(newPrompter(strings.NewReader(tc.in), &out), "rebase")([]string{"a", "b"})
+		if got != tc.want {
+			t.Errorf("answer %q: got %v; want %v", tc.in, got, tc.want)
 		}
 		if !strings.Contains(out.String(), "rebase a, b? [y/N]") {
 			t.Errorf("question %q", out.String())
@@ -241,10 +239,10 @@ func TestSyncVerbsTakeYForYes(t *testing.T) {
 func TestRunQuestionsShareOneReader(t *testing.T) {
 	var out bytes.Buffer
 	p := newPrompter(strings.NewReader("n\ny\n"), &out)
-	if ok, _ := confirmAsk(p, "rebase")([]string{"bump"}); ok {
+	if ok := confirmAsk(p, "rebase")([]string{"bump"}); ok {
 		t.Error("the rebase question did not read its n")
 	}
-	if ok, _ := confirmPush(p)([]string{"bump"}); !ok {
+	if ok := confirmPush(p)([]string{"bump"}); !ok {
 		t.Error("the push question lost the y typed ahead for it")
 	}
 	if want := "rebase bump? [y/N] push bump with --force-with-lease? [y/N] "; out.String() != want {
@@ -264,7 +262,7 @@ func TestRunOptionsAskNobodyAndRefuseBulkWithoutATerminal(t *testing.T) {
 	if bulk.Confirm == nil {
 		t.Fatal("a bulk run with no terminal must not go ahead unasked")
 	}
-	if ok, _ := bulk.Confirm([]string{"bump"}); ok || !strings.Contains(out.String(), "Pass --yes to rebase bump.") {
+	if ok := bulk.Confirm([]string{"bump"}); ok || !strings.Contains(out.String(), "Pass --yes to rebase bump.") {
 		t.Errorf("want a no that says how to say yes: %v %q", ok, out.String())
 	}
 	if named, _ := runOptions(cmd, syncVerbFlags{rebase: true}, false); named.Confirm != nil {

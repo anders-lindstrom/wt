@@ -73,7 +73,7 @@ func TestSyncRunAsksToPushOnlyWhatFinishedAndPrintsTheCommandOnNo(t *testing.T) 
 	bare := testkit.PushOrigin(t, ctx)
 	var asked []string
 	opts := synccmdtest.NoAgents()
-	opts.ConfirmPush = func(works []string) (bool, error) { asked = works; return false, nil }
+	opts.ConfirmPush = func(works []string) bool { asked = works; return false }
 	var out bytes.Buffer
 	if err := synccmd.SyncRebase(ctx, []string{"bump", "other"}, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
@@ -101,7 +101,7 @@ func TestSyncRunPushesWhenTheAnswerIsYes(t *testing.T) {
 	ctx, bump := provisiontest.RunFixture(t, false)
 	bare := testkit.PushOrigin(t, ctx)
 	opts := synccmdtest.NoAgents()
-	opts.ConfirmPush = func([]string) (bool, error) { return true, nil }
+	opts.ConfirmPush = func([]string) bool { return true }
 	var out bytes.Buffer
 	if err := synccmd.SyncRebase(ctx, []string{"bump"}, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
@@ -120,7 +120,7 @@ func TestSyncRunNoPushNeitherAsksNorPushes(t *testing.T) {
 	bare := testkit.PushOrigin(t, ctx)
 	opts := synccmdtest.NoAgents()
 	opts.Push = syncrun.PushNever
-	opts.ConfirmPush = func([]string) (bool, error) { t.Error("asked despite --no-push"); return true, nil }
+	opts.ConfirmPush = func([]string) bool { t.Error("asked despite --no-push"); return true }
 	var out bytes.Buffer
 	if err := synccmd.SyncRebase(ctx, []string{"bump"}, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())

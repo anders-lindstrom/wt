@@ -30,7 +30,7 @@ type SyncRebaseAllOptions struct {
 	RunOptions
 	// Ask puts the question for the whole run. Nil means nobody is asked,
 	// which is what a run with no terminal does in one repository too.
-	Ask func(question string) (bool, error)
+	Ask kit.Ask
 }
 
 // repoRun is one repository's part of a run across many: what planning it
@@ -57,115 +57,116 @@ type repoRun struct {
 // declares no .wt-sync.yaml has not opted in and is listed, not failed. With
 // IfReady, a worktree left behind trunk fails the run.
 func SyncRebaseAll(u *config.User, sel kit.Selection, opts SyncRebaseAllOptions, w io.Writer) error {
-	set, err := kit.SelectRepos(u, sel)
-	if err != nil {
-		return err
-	}
-	if len(set.Repos) == 0 {
-		fmt.Fprintln(w, "No repositories wt manages here; wt repos says where it looked.")
-		return nil
-	}
-	if opts.AllowDiverged {
-		return errors.New("--allow-diverged rebases a worktree you name over commits its remote has; name it, in its repository")
-	}
-	defer syncrun.WatchSignals(w, nil)()
-	// One listing of the sessions serves every repository's plan, as one
-	// `claude agents` knows them all; each run lists them again at its lock.
-	listed, err := opts.SessionsNow(nil, syncrun.RebasedNothing)
-	if err != nil {
-		return err
-	}
-	plan := opts.RunOptions
-	plan.Agents = listed
-	runs := kit.EachRepo(set.Repos, kit.RepoParallelism, func(t kit.RepoTarget) *repoRun {
-		return planRepoRun(t, plan)
-	})
-
-	home, _ := os.UserHomeDir()
-	var undeclared, current, failures []string
-	worktrees, repos := 0, 0
-	for _, rr := range runs {
-		switch {
-		case rr.undeclared:
-			undeclared = append(undeclared, rr.target.Name)
-			continue
-		case rr.err == nil && len(rr.ready) == 0 && len(rr.notReady) == 0:
-			current = append(current, rr.target.Name)
-			continue
-		}
-		fmt.Fprintf(w, "== %s  %s\n", rr.target.Name, kit.AbbreviateHome(rr.target.Path, home))
-		_, _ = w.Write(rr.log.Bytes())
-		if rr.err != nil {
-			fmt.Fprintf(w, "! %v\n", rr.err)
-			failures = append(failures, rr.target.Name)
-		}
-		for _, n := range rr.idle {
-			fmt.Fprintln(w, n)
-		}
-		fmt.Fprintln(w)
-		if opts.IfReady {
-			for _, work := range rr.notReady {
-				failures = append(failures, rr.target.Name+"/"+work+" (not ready)")
+	var failures []string
+	var listed []agents.Agent
+	return kit.Bulk[*repoRun]{
+		Watch: func(w io.Writer) func() { return syncrun.WatchSignals(w, nil) },
+		Plan: func(repos []kit.RepoTarget) ([]*repoRun, error) {
+			if opts.AllowDiverged {
+				return nil, errors.New("--allow-diverged rebases a worktree you name over commits its remote has; name it, in its repository")
 			}
-		}
-		if len(rr.ready) > 0 {
-			worktrees += len(rr.ready)
-			repos++
-		}
-	}
-	if len(current) > 0 {
-		fmt.Fprintf(w, "Nothing to rebase in %s: %s\n", kit.Count(len(current), "repository", "repositories"), strings.Join(current, ", "))
-	}
-	if len(undeclared) > 0 {
-		fmt.Fprintf(w, "No %s on trunk, so not synced: %s\n", wtsync.ConfigFile, strings.Join(undeclared, ", "))
-	}
-	if repos == 0 {
-		return NotCompleted(failures)
-	}
-
-	question := fmt.Sprintf("Rebase %s across %s?", kit.Count(worktrees, "worktree"), kit.Count(repos, "repository", "repositories"))
-	if opts.Ask != nil {
-		ok, err := opts.Ask(question)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			fmt.Fprintln(w, syncrun.RebasedNothing.Line)
-			return NotCompleted(failures)
-		}
-	}
-
-	// Each repository's run is the one a person naming its ready worktrees
-	// would start: nothing asked again, since the question above covered it,
-	// and onto the trunk the plan fetched, not a newer one it has not shown.
-	// Its triage reads the sessions as they were when the question was
-	// asked, and its lock lists them fresh, so a session that arrived since
-	// is refused the way a run in one repository refuses it.
-	one := opts.RunOptions
-	one.NoFetch, one.Confirm = true, nil
-	one.Agents = listed
-	if one.Relist == nil {
-		one.Relist = func() ([]agents.Agent, error) { return kit.ListAgain(nil, opts.Agents, opts.Relist) }
-	}
-	for _, rr := range runs {
-		if len(rr.ready) == 0 || rr.err != nil {
-			continue
-		}
-		fmt.Fprintf(w, "== %s\n", rr.target.Name)
-		if _, sha, err := TrunkTip(rr.ctx); err != nil || sha != rr.trunkSHA {
-			fmt.Fprintf(w, "! trunk moved since the plan (%s now); nothing rebased here, run it again\n", git.ShortID(sha, 7))
-			failures = append(failures, rr.target.Name)
-			continue
-		}
-		// The remotes as the plan's fetch read them, not as last fetched.
-		one.Own = rr.own
-		if err := SyncRebase(rr.ctx, rr.ready, one, w); err != nil {
-			fmt.Fprintf(w, "! %v\n", err)
-			failures = append(failures, rr.target.Name)
-		}
-		fmt.Fprintln(w)
-	}
-	return NotCompleted(failures)
+			// One listing of the sessions serves every repository's plan,
+			// as one `claude agents` knows them all; each run lists them
+			// again at its lock.
+			var err error
+			listed, err = opts.SessionsNow(nil, syncrun.RebasedNothing)
+			if err != nil {
+				return nil, err
+			}
+			plan := opts.RunOptions
+			plan.Agents = listed
+			return kit.EachRepo(repos, kit.RepoParallelism, func(t kit.RepoTarget) *repoRun {
+				return planRepoRun(t, plan)
+			}), nil
+		},
+		Report: func(w io.Writer, runs []*repoRun) string {
+			home, _ := os.UserHomeDir()
+			var undeclared, current []string
+			worktrees, repos := 0, 0
+			for _, rr := range runs {
+				switch {
+				case rr.undeclared:
+					undeclared = append(undeclared, rr.target.Name)
+					continue
+				case rr.err == nil && len(rr.ready) == 0 && len(rr.notReady) == 0:
+					current = append(current, rr.target.Name)
+					continue
+				}
+				fmt.Fprintf(w, "== %s  %s\n", rr.target.Name, kit.AbbreviateHome(rr.target.Path, home))
+				_, _ = w.Write(rr.log.Bytes())
+				if rr.err != nil {
+					fmt.Fprintf(w, "! %v\n", rr.err)
+					failures = append(failures, rr.target.Name)
+				}
+				for _, n := range rr.idle {
+					fmt.Fprintln(w, n)
+				}
+				fmt.Fprintln(w)
+				if opts.IfReady {
+					for _, work := range rr.notReady {
+						failures = append(failures, rr.target.Name+"/"+work+" (not ready)")
+					}
+				}
+				if len(rr.ready) > 0 {
+					worktrees += len(rr.ready)
+					repos++
+				}
+			}
+			if len(current) > 0 {
+				fmt.Fprintf(w, "Nothing to rebase in %s: %s\n", kit.Count(len(current), "repository", "repositories"), strings.Join(current, ", "))
+			}
+			if len(undeclared) > 0 {
+				fmt.Fprintf(w, "No %s on trunk, so not synced: %s\n", wtsync.ConfigFile, strings.Join(undeclared, ", "))
+			}
+			if repos == 0 {
+				return ""
+			}
+			return kit.Count(worktrees, "worktree") + " across " + kit.Count(repos, "repository", "repositories")
+		},
+		// Nil Ask is a run nobody is asked about, as in one repository.
+		Decide: func(w io.Writer, what string) bool {
+			if opts.Ask != nil && !opts.Ask("Rebase "+what+"?") {
+				fmt.Fprintln(w, syncrun.RebasedNothing.Line)
+				return false
+			}
+			return true
+		},
+		// Each repository's run is the one a person naming its ready
+		// worktrees would start: nothing asked again, since the question
+		// above covered it, and onto the trunk the plan fetched, not a newer
+		// one it has not shown. Its triage reads the sessions as they were
+		// when the question was asked, and its lock lists them fresh, so a
+		// session that arrived since is refused the way a run in one
+		// repository refuses it.
+		Apply: func(w io.Writer, runs []*repoRun) {
+			one := opts.RunOptions
+			one.NoFetch, one.Confirm = true, nil
+			one.Agents = listed
+			if one.Relist == nil {
+				one.Relist = func() ([]agents.Agent, error) { return kit.ListAgain(nil, opts.Agents, opts.Relist) }
+			}
+			for _, rr := range runs {
+				if len(rr.ready) == 0 || rr.err != nil {
+					continue
+				}
+				fmt.Fprintf(w, "== %s\n", rr.target.Name)
+				if _, sha, err := TrunkTip(rr.ctx); err != nil || sha != rr.trunkSHA {
+					fmt.Fprintf(w, "! trunk moved since the plan (%s now); nothing rebased here, run it again\n", git.ShortID(sha, 7))
+					failures = append(failures, rr.target.Name)
+					continue
+				}
+				// The remotes as the plan's fetch read them, not as last
+				// fetched.
+				one.Own = rr.own
+				if err := SyncRebase(rr.ctx, rr.ready, one, w); err != nil {
+					fmt.Fprintf(w, "! %v\n", err)
+					failures = append(failures, rr.target.Name)
+				}
+				fmt.Fprintln(w)
+			}
+		},
+		End: func([]*repoRun) error { return NotCompleted(failures) },
+	}.Run(u, sel, w)
 }
 
 // planRepoRun plans one repository's part of a run across many: its fetch,

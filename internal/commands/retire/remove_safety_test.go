@@ -36,7 +36,7 @@ func TestRemoveRefusesADirtyWorktreeBeforeAsking(t *testing.T) {
 	ctx, path := provisiontest.SafetyWorktree(t, "fix/dirty")
 	testkit.MustWrite(t, filepath.Join(path, "scratch.txt"), "mine")
 	asked := false
-	opts := RemoveOptions{Confirm: func(Plan) (bool, error) { asked = true; return true, nil }}
+	opts := RemoveOptions{Confirm: func(Plan) bool { asked = true; return true }}
 	refused(t, ctx, path, opts, "uncommitted changes")
 	if asked {
 		t.Error("a removal that will refuse must not ask first")

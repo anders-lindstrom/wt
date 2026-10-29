@@ -38,7 +38,7 @@ type VerbOptions struct {
 	// by a run before it rebases more than one worktree. A nil Confirm never
 	// asks: a script or a hook with no terminal is not a person who can
 	// answer.
-	Confirm func(works []string) (bool, error)
+	Confirm kit.Confirm[[]string]
 }
 
 // SessionsNow is the sessions to check against, asked for when the caller named
@@ -78,7 +78,7 @@ type PushOptions struct {
 	// once; a nil ConfirmPush prints the push command instead, for Confirm's
 	// reason.
 	Push        PushMode
-	ConfirmPush func(works []string) (bool, error)
+	ConfirmPush kit.Confirm[[]string]
 	// ChoosePush is asked, where ConfirmPush would be, which of two remote
 	// branches a branch pushes to. It answers with one of the two, or "" when
 	// the person names neither: the branch is then not pushed.
@@ -126,10 +126,7 @@ func AskIdle(ctx *kit.Context, w io.Writer, opts VerbOptions, works []string, to
 	if opts.Confirm == nil {
 		return true, listed, nil
 	}
-	if ok, err = opts.Confirm(works); err != nil {
-		return false, listed, err
-	}
-	if !ok {
+	if !opts.Confirm(works) {
 		fmt.Fprintln(w, nothing.Line)
 		return false, listed, nil
 	}

@@ -139,7 +139,7 @@ func TestRemovePlanStatesTheMergeStateOfAForeignBranch(t *testing.T) {
 	dst := foreignWorktree(t, ctx, main, "someones-work", 1)
 
 	var buf bytes.Buffer
-	opts := RemoveOptions{Confirm: func(Plan) (bool, error) { return false, nil }}
+	opts := RemoveOptions{Confirm: func(Plan) bool { return false }}
 	if err := RemoveAt(ctx, dst, opts, &buf); err != nil {
 		t.Fatalf("RemoveAt: %v", err)
 	}
@@ -301,7 +301,7 @@ func TestRemoveDeclinedChangesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	opts := RemoveOptions{Confirm: func(Plan) (bool, error) { return false, nil }}
+	opts := RemoveOptions{Confirm: func(Plan) bool { return false }}
 	if err := Remove(ctx, "fix/kept", opts, &buf); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
@@ -325,7 +325,7 @@ func TestRemoveConfirmReceivesThePlan(t *testing.T) {
 	}
 
 	var got Plan
-	opts := RemoveOptions{Confirm: func(p Plan) (bool, error) { got = p; return false, nil }}
+	opts := RemoveOptions{Confirm: func(p Plan) bool { got = p; return false }}
 	if err := Remove(ctx, "fix/inspected", opts, &buf); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
@@ -348,7 +348,7 @@ func TestRemovePlanNamesForeignBranch(t *testing.T) {
 
 	var got Plan
 	var buf bytes.Buffer
-	opts := RemoveOptions{Confirm: func(p Plan) (bool, error) { got = p; return false, nil }}
+	opts := RemoveOptions{Confirm: func(p Plan) bool { got = p; return false }}
 	if err := RemoveAt(ctx, dst, opts, &buf); err != nil {
 		t.Fatalf("RemoveAt: %v", err)
 	}
@@ -378,12 +378,12 @@ func TestRemoveRefusesWhenFactsChangedDuringConfirmation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	opts := RemoveOptions{Confirm: func(p Plan) (bool, error) {
+	opts := RemoveOptions{Confirm: func(p Plan) bool {
 		if p.Outcome != BranchDeleted {
 			t.Fatalf("precondition: expected a merged branch, got outcome %v", p.Outcome)
 		}
 		testkit.GitIn(t, path, "commit", "-q", "--allow-empty", "-m", "landed while the prompt was open")
-		return true, nil
+		return true
 	}}
 	if err := Remove(ctx, "fix/racing", opts, &buf); err == nil {
 		t.Fatal("expected an error when the plan changed under the prompt")
@@ -550,7 +550,7 @@ func TestRemoveRefusesALockHeldByARunningProcess(t *testing.T) {
 	asked := false
 	opts := RemoveOptions{
 		Agents:  []agents.Agent{},
-		Confirm: func(Plan) (bool, error) { asked = true; return true, nil },
+		Confirm: func(Plan) bool { asked = true; return true },
 	}
 	var buf bytes.Buffer
 	err := RemoveAt(ctx, path, opts, &buf)

@@ -614,7 +614,7 @@ type SweepOptions struct {
 	// the plan is printed and nothing is deleted: a bulk delete does not
 	// happen because nobody was there to say no.
 	Yes     bool
-	Confirm func(SweepPlan) (bool, error)
+	Confirm kit.Confirm[SweepPlan]
 	// Width is the terminal's column count, 0 when output is not a terminal.
 	Width int
 	// Agents are the sessions to check the worktrees against. Nil asks
@@ -715,11 +715,7 @@ func Sweep(ctx *kit.Context, opts SweepOptions, w io.Writer) (err error) {
 		return nil
 	case opts.Yes:
 	case opts.Confirm != nil:
-		ok, err := opts.Confirm(plan)
-		if err != nil {
-			return err
-		}
-		if !ok {
+		if !opts.Confirm(plan) {
 			fmt.Fprintln(w, "Nothing was swept.")
 			return nil
 		}

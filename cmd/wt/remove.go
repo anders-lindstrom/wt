@@ -133,6 +133,6 @@ func newRemoveCmd() *cobra.Command {
 
 // confirmRemoval asks the question, defaulting to no. The plan has already been
 // printed by the time this runs, so the prompt itself stays one line.
-func confirmRemoval(p *prompter) func(retire.Plan) (bool, error) {
-	return func(retire.Plan) (bool, error) { return p.yesNo("Remove it?", false), nil }
+func confirmRemoval(p *prompter) kit.Confirm[retire.Plan] {
+	return func(retire.Plan) bool { return p.yesNo("Remove it?", false) }
 }

@@ -33,7 +33,7 @@ import (
 // layer's business. A nil Confirm removes without asking — which is what a
 // hook, a script and `--yes` all want.
 type RemoveOptions struct {
-	Confirm func(Plan) (bool, error)
+	Confirm kit.Confirm[Plan]
 	// Force is what the removal goes past, category by category: an idle
 	// or a busy agent session in the worktree, a session listing that
 	// failed, files git status is told not to look at, and a git worktree
@@ -408,11 +408,7 @@ func removeWorktreeResult(ctx *kit.Context, wt repo.Worktree, opts RemoveOptions
 	}
 
 	if opts.Confirm != nil {
-		ok, err := opts.Confirm(plan)
-		if err != nil {
-			return res, err
-		}
-		if !ok {
+		if !opts.Confirm(plan) {
 			fmt.Fprintln(w, "Nothing was removed.")
 			return res, nil
 		}

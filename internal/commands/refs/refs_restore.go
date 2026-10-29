@@ -61,7 +61,7 @@ type RestoreRefsOptions struct {
 	Only    []string
 	DryRun  bool
 	Yes     bool
-	Confirm func(RestoreRefsPlan) bool
+	Confirm kit.Confirm[RestoreRefsPlan]
 	Expect  string
 	Journal *RestoreRefsJournal
 }

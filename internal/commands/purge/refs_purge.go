@@ -42,7 +42,7 @@ type RefsPurgeOptions struct {
 	OlderThan string
 	DryRun    bool
 	Yes       bool
-	Confirm   func(RefsPurgePlan) bool
+	Confirm   kit.Confirm[RefsPurgePlan]
 	// NoTerminal is a purge with nobody to ask and no --yes: it refuses.
 	NoTerminal bool
 	Expect     string

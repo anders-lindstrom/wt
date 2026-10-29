@@ -86,7 +86,7 @@ func TestSyncKeepStartAllInstallsWhatIsMissing(t *testing.T) {
 	keptBody, _ := os.ReadFile(keptJob.PlistPath)
 	var asked []string
 	opts := KeepStartAllOptions{KeepStartOptions: keepStartOpts(0),
-		Ask: func(q string) (bool, error) { asked = append(asked, q); return true, nil }}
+		Ask: func(q string) bool { asked = append(asked, q); return true }}
 	var out bytes.Buffer
 	if err := StartAll(u, kit.Selection{Profiles: []string{"p"}}, opts, &out); err != nil {
 		t.Fatalf("err %v\n%s", err, out.String())
@@ -141,7 +141,7 @@ func TestSyncKeepStartAllInstallsNothingUnlessAgreed(t *testing.T) {
 		last string
 	}{
 		"dry-run":     {KeepStartAllOptions{DryRun: true}, "Nothing was installed: --dry-run.\n"},
-		"declined":    {KeepStartAllOptions{Ask: func(string) (bool, error) { return false, nil }}, "Nothing was installed.\n"},
+		"declined":    {KeepStartAllOptions{Ask: func(string) bool { return false }}, "Nothing was installed.\n"},
 		"no terminal": {KeepStartAllOptions{}, "Nothing was installed: there is no terminal to ask. Pass --yes to install a keeper in 1 repository.\n"},
 	} {
 		t.Run(name, func(t *testing.T) {

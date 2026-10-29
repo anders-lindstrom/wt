@@ -29,7 +29,7 @@ func TestSweepAllAsksOnceAndSweepsEveryRepository(t *testing.T) {
 
 	var asked []string
 	opts := SweepAllOptions{SweepOptions: SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{}},
-		Ask: func(q string) (bool, error) { asked = append(asked, q); return true, nil }}
+		Ask: func(q string) bool { asked = append(asked, q); return true }}
 	var buf bytes.Buffer
 	err := SweepAll(u, kit.Selection{Profiles: []string{"p"}}, opts, &buf)
 	if err == nil || !strings.Contains(err.Error(), "1 of 3 repositories could not be swept in full: gone") {
@@ -52,7 +52,7 @@ func TestSweepAllChangesNothingWhenTheAnswerIsNo(t *testing.T) {
 	path := provisiontest.MergedWorktree(t, ctx, "fix/one")
 	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{ctx.Repo.MainRoot}}}}
 	opts := SweepAllOptions{SweepOptions: SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{}},
-		Ask: func(string) (bool, error) { return false, nil }}
+		Ask: func(string) bool { return false }}
 	var buf bytes.Buffer
 	if err := SweepAll(u, kit.Selection{Profiles: []string{"p"}}, opts, &buf); err != nil {
 		t.Fatal(err)
@@ -85,7 +85,7 @@ func TestDryRunPrintsThePlanAndChangesNothing(t *testing.T) {
 	u := &config.User{Profiles: []config.Profile{{Name: "p", Repos: []string{ctx.Repo.MainRoot}}}}
 	buf.Reset()
 	opts := SweepAllOptions{SweepOptions: SweepOptions{NoFetch: true, DryRun: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{}},
-		Ask: func(string) (bool, error) { t.Fatal("a dry run asks nothing"); return false, nil }}
+		Ask: func(string) bool { t.Fatal("a dry run asks nothing"); return false }}
 	if err := SweepAll(u, kit.Selection{Profiles: []string{"p"}}, opts, &buf); err != nil {
 		t.Fatal(err)
 	}

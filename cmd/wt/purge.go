@@ -76,7 +76,7 @@ func newPurgeCmd() *cobra.Command {
 			if !yes && !dryRun {
 				if canAsk(cmd) {
 					p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
-					opts.Confirm = func() bool { return p.yesNo("Delete it for good?", false) }
+					opts.Confirm = func(q string) bool { return p.yesNo(q, false) }
 				} else {
 					opts.NoTerminal = true
 				}

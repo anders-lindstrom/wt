@@ -198,7 +198,7 @@ func TestPurgeAsksAndRefusesWithNobodyToAsk(t *testing.T) {
 	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/ask", false)
 	var buf bytes.Buffer
 	asked := 0
-	no := func() bool { asked++; return false }
+	no := func(string) bool { asked++; return false }
 	if err := QuarantinePurge(dir, Options{Confirm: no}, &buf); err != nil || asked != 1 {
 		t.Fatalf("%v, asked %d\n%s", err, asked, buf.String())
 	}
@@ -211,7 +211,7 @@ func TestPurgeAsksAndRefusesWithNobodyToAsk(t *testing.T) {
 	if err := QuarantinePurge(dir, Options{DryRun: true}, &buf); err != nil || !testkit.Exists(dir) {
 		t.Fatalf("--dry-run: %v", err)
 	}
-	yes := func() bool { return true }
+	yes := func(string) bool { return true }
 	if err := QuarantinePurge(dir, Options{Confirm: yes}, &buf); err != nil {
 		t.Fatalf("%v\n%s", err, buf.String())
 	}
@@ -224,7 +224,7 @@ func TestPurgeReadsThePlanAgainAfterTheQuestion(t *testing.T) {
 	t.Parallel()
 	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/ask-changed", false)
 	r := testkit.LoadRecord(t, dir)
-	yes := func() bool {
+	yes := func(string) bool {
 		testkit.GitIn(t, ctx.Repo.MainRoot, "update-ref", "-d", *r.Pins.Head)
 		return true
 	}

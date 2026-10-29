@@ -163,7 +163,7 @@ type Options struct {
 	DryRun bool
 	Yes    bool
 	// Confirm, when set and without Yes, is asked once the plan is printed.
-	Confirm func(Plan) bool
+	Confirm kit.Confirm[Plan]
 	// Expect refuses the sweep unless the plan made now has this token.
 	Expect string
 	// OpenPRs says which of origin's branches have an open pull request,

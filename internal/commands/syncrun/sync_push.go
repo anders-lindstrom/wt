@@ -128,11 +128,7 @@ func OfferPush(ctx *kit.Context, w io.Writer, mode PushMode, ask PushOptions, ta
 				works[i] += " to " + g.to.Ref()
 			}
 		}
-		ok, err := ask.ConfirmPush(works)
-		if err != nil {
-			return nil, nil, err
-		}
-		push = ok
+		push = ask.ConfirmPush(works)
 	}
 	if !push {
 		for _, g := range going {

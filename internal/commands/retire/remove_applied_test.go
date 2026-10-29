@@ -192,12 +192,12 @@ func TestRemoveSaysSomethingElseRemovedTheWorktree(t *testing.T) {
 				CommitFile(t, path, "kept-work")
 			}
 			buf.Reset()
-			opts := RemoveOptions{Agents: []agents.Agent{}, Confirm: func(Plan) (bool, error) {
+			opts := RemoveOptions{Agents: []agents.Agent{}, Confirm: func(Plan) bool {
 				testkit.GitIn(t, main, "worktree", "remove", "--force", path)
 				if alsoBranch {
 					testkit.GitIn(t, main, "branch", "-D", "feat_wt/elsewhere")
 				}
-				return true, nil
+				return true
 			}}
 			if err := RemoveAt(ctx, path, opts, &buf); err != nil {
 				t.Fatalf("the worktree is gone, which is what was asked: %v\n%s", err, buf.String())
@@ -240,8 +240,11 @@ func TestRemoveSaysWhenSomethingElseIsStillRemovingTheWorktree(t *testing.T) {
 	CommitFile(t, path, "going")
 	buf.Reset()
 
-	opts := RemoveOptions{Agents: []agents.Agent{}, Confirm: func(Plan) (bool, error) {
-		return true, os.Remove(filepath.Join(path, "going"))
+	opts := RemoveOptions{Agents: []agents.Agent{}, Confirm: func(Plan) bool {
+		if err := os.Remove(filepath.Join(path, "going")); err != nil {
+			t.Error(err)
+		}
+		return true
 	}}
 	err = RemoveAt(ctx, path, opts, &buf)
 	if err == nil || !strings.Contains(err.Error(), "is being removed by something else") {

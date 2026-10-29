@@ -30,9 +30,9 @@ func TestSweepThatDeletesNothingMintsNoRun(t *testing.T) {
 	testkit.LandOnMain(t, main, "done-work")
 	var out, buf bytes.Buffer
 	opts := retire.SweepOptions{NoFetch: true, Agents: []agents.Agent{}, PRs: map[string]github.PR{},
-		Journal: retire.NewSweepJournal(&out), Confirm: func(retire.SweepPlan) (bool, error) {
+		Journal: retire.NewSweepJournal(&out), Confirm: func(retire.SweepPlan) bool {
 			testkit.AddWork(t, main, "done-work", 1)
-			return true, nil
+			return true
 		}}
 	if err := retire.Sweep(ctx, opts, &buf); err == nil {
 		t.Fatalf("a branch that moved is kept, which is an error:\n%s", buf.String())

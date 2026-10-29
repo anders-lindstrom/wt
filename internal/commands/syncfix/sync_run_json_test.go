@@ -124,7 +124,7 @@ func TestSyncResumeJSONSaysWhenNobodyConfirmed(t *testing.T) {
 	testkit.GitOut(t, bump, "add", "--", "a.txt")
 	opts := noResumeAgents()
 	opts.Agents = testkit.IdleIn(t, bump, "parked")
-	opts.Confirm = func([]string) (bool, error) { return false, nil }
+	opts.Confirm = func([]string) bool { return false }
 	r, _ := syncResumeJSON(t, ctx, "bump", opts)
 	if r.Outcome != kit.OutcomeRefused || r.Error == nil {
 		t.Fatalf("%+v", r)

@@ -387,7 +387,7 @@ func newSyncKeepStartCmd() *cobra.Command {
 				all := synckeep.KeepStartAllOptions{KeepStartOptions: opts, DryRun: dryRun, Yes: yes}
 				if !yes && !dryRun && canAsk(cmd) {
 					p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
-					all.Ask = func(q string) (bool, error) { return p.yesNo(q, false), nil }
+					all.Ask = func(q string) bool { return p.yesNo(q, false) }
 				}
 				return synckeep.StartAll(loadUserWarn(cmd.ErrOrStderr()), sel.selection(), all, cmd.OutOrStdout())
 			}
@@ -770,10 +770,10 @@ func runOptions(cmd *cobra.Command, f syncVerbFlags, bulk bool) (synccmd.RunOpti
 
 // noTerminal is the answer to a bulk run's question when nobody is there to
 // give it: no, with how to say yes.
-func noTerminal(w io.Writer) func([]string) (bool, error) {
-	return func(works []string) (bool, error) {
+func noTerminal(w io.Writer) kit.Confirm[[]string] {
+	return func(works []string) bool {
 		fmt.Fprintf(w, "There is no terminal to ask. Pass --yes to rebase %s.\n", strings.Join(works, ", "))
-		return false, nil
+		return false
 	}
 }
 
@@ -798,12 +798,12 @@ func syncAcross(cmd *cobra.Command, args []string, verb string, sel kit.Selectio
 	all := synccmd.SyncRebaseAllOptions{RunOptions: opts}
 	switch {
 	case p != nil:
-		all.Ask = func(q string) (bool, error) { return p.yesNo(q, false), nil }
+		all.Ask = func(q string) bool { return p.yesNo(q, false) }
 	case !f.yes:
-		all.Ask = func(q string) (bool, error) {
+		all.Ask = func(q string) bool {
 			fmt.Fprintf(cmd.OutOrStdout(), "There is no terminal to ask. Pass --yes to %s.\n",
 				strings.ToLower(strings.TrimSuffix(q, "?")))
-			return false, nil
+			return false
 		}
 	}
 	return synccmd.SyncRebaseAll(u, sel, all, cmd.OutOrStdout())
@@ -1025,18 +1025,18 @@ func newSyncDoctorCmd() *cobra.Command {
 
 // confirmAsk asks the one question an acting command gets before it changes
 // anything, defaulting to no. What it is about has been printed by then.
-func confirmAsk(p *prompter, verb string) func([]string) (bool, error) {
-	return func(works []string) (bool, error) {
-		return p.yesNo(verb+" "+strings.Join(works, ", ")+"?", false), nil
+func confirmAsk(p *prompter, verb string) kit.Confirm[[]string] {
+	return func(works []string) bool {
+		return p.yesNo(verb+" "+strings.Join(works, ", ")+"?", false)
 	}
 }
 
 // confirmPush asks the question a run or a resume ends with. It defaults to
 // no, like every question wt asks: a push is the one step that reaches the
 // remote, so Enter must not be what takes it there.
-func confirmPush(p *prompter) func([]string) (bool, error) {
-	return func(works []string) (bool, error) {
-		return p.yesNo("push "+strings.Join(works, ", ")+" with --force-with-lease?", false), nil
+func confirmPush(p *prompter) kit.Confirm[[]string] {
+	return func(works []string) bool {
+		return p.yesNo("push "+strings.Join(works, ", ")+" with --force-with-lease?", false)
 	}
 }
 

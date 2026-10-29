@@ -28,10 +28,7 @@ func TestConfirmRemovalAnswers(t *testing.T) {
 		{"", false}, // ^D
 	} {
 		var out bytes.Buffer
-		got, err := confirmRemoval(newPrompter(strings.NewReader(tc.typed), &out))(retire.Plan{})
-		if err != nil {
-			t.Fatalf("%q: %v", tc.typed, err)
-		}
+		got := confirmRemoval(newPrompter(strings.NewReader(tc.typed), &out))(retire.Plan{})
 		if got != tc.want {
 			t.Errorf("answering %q = %v, want %v", tc.typed, got, tc.want)
 		}

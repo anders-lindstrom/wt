@@ -101,7 +101,7 @@ func TestSyncRunJSONSaysWhenNobodyConfirmed(t *testing.T) {
 	ctx, bump := provisiontest.RunFixture(t, false)
 	old := testkit.GitOut(t, bump, "rev-parse", "HEAD")
 	opts := synccmdtest.NoAgents()
-	opts.Confirm = func([]string) (bool, error) { return false, nil }
+	opts.Confirm = func([]string) bool { return false }
 	r, _ := synccmdtest.SyncRunJSON(t, ctx, nil, opts)
 	if r.Outcome != kit.OutcomeRefused || r.Error == nil {
 		t.Fatalf("%+v", r)
