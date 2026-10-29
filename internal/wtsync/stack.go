@@ -12,8 +12,8 @@ import (
 // it. A branch trunk already contains is left out: every branch cut from
 // trunk after it contains it too, without being built on it. A branch whose
 // ancestors do not form a chain is ambiguous and gets no parent.
-// --update-refs cannot do this for branches checked out in worktrees
-// (spec §4), which is every branch here, so the relation is explicit.
+// --update-refs cannot do this for branches checked out in worktrees,
+// which is every branch here, so the relation is explicit.
 func Parents(mainRoot, trunk string, worktrees []repo.Worktree) (map[string]string, map[string][]string, error) {
 	var branches []string
 	tips := map[string]string{}

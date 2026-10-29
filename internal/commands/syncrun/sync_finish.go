@@ -62,14 +62,14 @@ type HandoverInput struct {
 	Tracker *kit.RebaseTracker
 }
 
-// HandOver leaves the worktree mid-rebase for a person: the §6 brief, the
-// sidecar resume and undo verify against, the lock left behind, and the §5
-// line. The brief is written first and the sidecar second, both atomically:
-// the sidecar is the marker, so a crash between them leaves a brief nothing
-// acts on rather than a marker with no brief. Keep is called only once the
-// sidecar exists, and a kept lock ignores Release, so a caller that releases
-// it — or a defer it did not write — cannot delete the file the next run has
-// to respect.
+// HandOver leaves the worktree mid-rebase for a person: the brief, the
+// sidecar resume and undo verify against, the lock left behind, and the
+// needs-you line. The brief is written first and the sidecar second, both
+// atomically: the sidecar is the marker, so a crash between them leaves a
+// brief nothing acts on rather than a marker with no brief. Keep is called
+// only once the sidecar exists, and a kept lock ignores Release, so a caller
+// that releases it — or a defer it did not write — cannot delete the file
+// the next run has to respect.
 func HandOver(ctx *kit.Context, w io.Writer, in HandoverInput) error {
 	// The rebase is stopped in the worktree until this returns, however it
 	// returns, and the tracker says so for exactly that long.
@@ -161,9 +161,9 @@ type CompleteInput struct {
 // CompleteRun is what run and resume both do once a rebase has finished: the
 // deferred steps, the result ref that says where the run left the branch,
 // the handover removed, and the undo line. ran is what each deferred step
-// came to; the ones that failed are owed — the rebase stands regardless
-// (spec §3), and whose they are is the caller's to say. The push is the caller's too, once every
-// worktree is done.
+// came to; the ones that failed are owed — the rebase stands regardless,
+// and whose they are is the caller's to say. The push is the caller's too,
+// once every worktree is done.
 //
 // The worktree is work at path; t is the verb's tracker, and build is asked
 // for the rest of the input only once t says rebased, so nothing the finish

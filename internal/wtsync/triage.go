@@ -12,9 +12,9 @@ import (
 // Class is what wt sync would do with a worktree.
 type Class int
 
-// The classes, from spec §1. Unknown is the zero value, so an assessment
-// that returns early on an error before any class is decided reads
-// "unknown" rather than misreporting the worktree as Detached.
+// The classes a triage puts a worktree in. Unknown is the zero value, so an
+// assessment that returns early on an error before any class is decided
+// reads "unknown" rather than misreporting the worktree as Detached.
 const (
 	Unknown   Class = iota // Err is set and no class was decided
 	Detached               // no branch: skipped, reported
@@ -312,7 +312,7 @@ func AssessOwn(mainRoot, onto string, cfg *Config, wt repo.Worktree, listed []ag
 }
 
 // divergence returns the collisions that make a branch a workstream rather
-// than a rebase (spec §1) — the openapi strategy refusing at the endpoint,
+// than a rebase — the openapi strategy refusing at the endpoint,
 // generated output that no longer merges — and separately the dependency
 // graph both sides changed, which is worth a person's attention and does not
 // itself change the class. That overlap is common on a long-lived branch and

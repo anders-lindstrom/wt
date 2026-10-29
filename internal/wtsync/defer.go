@@ -27,7 +27,7 @@ type DeferredResult struct {
 }
 
 // ChangedPaths lists the paths that differ between two tips: what the rebase
-// changed, conflicts or not (spec §3).
+// changed, conflicts or not.
 func ChangedPaths(wtPath, oldTip, newTip string) ([]string, error) {
 	out, err := gitEnv(wtPath, nil, nil, "diff", "--name-only", "-z", oldTip, newTip)
 	if err != nil {

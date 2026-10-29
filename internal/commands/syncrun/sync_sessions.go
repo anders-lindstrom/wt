@@ -153,8 +153,9 @@ func IdleNotice(work string, s agents.Sessions) string {
 	return fmt.Sprintf("⚠ %s: %s is in it; the files it has read will change", work, kit.WhoLabel(s))
 }
 
-// TellIdle prints a §5 line for the idle sessions in a worktree, on a line of
-// its own so it can be relayed to them verbatim. Nothing when there are none.
+// TellIdle prints an after-the-fact line (wtsync's RebasedLine and its
+// kind) for the idle sessions in a worktree, on a line of its own so it can
+// be relayed to them verbatim. Nothing when there are none.
 func TellIdle(w io.Writer, s agents.Sessions, line string) {
 	if len(s) == 0 {
 		return

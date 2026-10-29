@@ -232,7 +232,7 @@ func TestRenderPlanDoesNotForbidWhatItAsksFor(t *testing.T) {
 }
 
 // Both sides only added lines: the plan says so, because that is a
-// five-second read rather than a merge (spec §6).
+// five-second read rather than a merge.
 func TestRenderPlanMarksAnAdditiveConflict(t *testing.T) {
 	t.Parallel()
 	dir := repoWith(t, map[string]string{"a.txt": "a\n"}, nil, nil)
