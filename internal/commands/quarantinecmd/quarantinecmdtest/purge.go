@@ -19,8 +19,8 @@ func PurgeWith(t *testing.T, dir string, h *quarantine.Hooks) quarantine.PurgeRe
 	t.Helper()
 	var res quarantine.PurgeResult
 	var buf bytes.Buffer
-	if err := quarantinecmd.QuarantinePurge(dir, quarantinecmd.Options{Result: &res, QuarantineHooks: h}, &buf); err != nil {
-		t.Fatalf("QuarantinePurge: %v\n%s", err, buf.String())
+	if err := quarantinecmd.Purge(dir, quarantinecmd.PurgeOptions{Result: &res, QuarantineHooks: h}, &buf); err != nil {
+		t.Fatalf("Purge: %v\n%s", err, buf.String())
 	}
 	return res
 }

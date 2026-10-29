@@ -153,7 +153,7 @@ func TestPurgeFinishesAPurgeStoppedAtEveryStep(t *testing.T) {
 			}
 			var res quarantine.PurgeResult
 			var buf bytes.Buffer
-			if err := quarantinecmd.QuarantinePurge(dir, quarantinecmd.Options{Result: &res, QuarantineHooks: h}, &buf); err == nil {
+			if err := quarantinecmd.Purge(dir, quarantinecmd.PurgeOptions{Result: &res, QuarantineHooks: h}, &buf); err == nil {
 				t.Fatalf("the purge must stop at %s", point)
 			}
 			if res.Outcome != quarantine.OutcomePartial {
@@ -213,7 +213,7 @@ func TestPurgeBegunThroughAnAliasIsFinishedThroughTheName(t *testing.T) {
 		t.Fatal(err)
 	}
 	alias := filepath.Join(link, filepath.Base(dir))
-	if err := quarantinecmd.QuarantinePurge(alias, quarantinecmd.Options{QuarantineHooks: testkit.CrashAt("purge.begin")}, &bytes.Buffer{}); !errors.Is(err, testkit.ErrCrash) {
+	if err := quarantinecmd.Purge(alias, quarantinecmd.PurgeOptions{QuarantineHooks: testkit.CrashAt("purge.begin")}, &bytes.Buffer{}); !errors.Is(err, testkit.ErrCrash) {
 		t.Fatalf("the purge through the alias: err %v, want the injected crash", err)
 	}
 	quarantinecmdtest.Purge(t, dir)
