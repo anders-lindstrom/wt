@@ -1,4 +1,4 @@
-package commands
+package kit_test
 
 import (
 	"io"

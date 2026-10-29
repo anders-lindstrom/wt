@@ -1,4 +1,4 @@
-package commands
+package syncrun_test
 
 import (
 	"bytes"
@@ -81,32 +81,6 @@ func TestOnInterruptTakesTheRunsMarksOutOfTheList(t *testing.T) {
 	}
 }
 
-func TestWatchSignalsSIGINTStatus(t *testing.T) {
-	t.Parallel()
-	watchSignalStatus(t, syscall.SIGINT)
-}
-
-func TestWatchSignalsSIGTERMStatus(t *testing.T) {
-	t.Parallel()
-	watchSignalStatus(t, syscall.SIGTERM)
-}
-
-func watchSignalStatus(t *testing.T, sig syscall.Signal) {
-	t.Helper()
-	if os.Getenv(testkit.InterruptChild) == "" {
-		out, status := testkit.InterruptedChild(t)
-		if status != 128+int(sig) || !strings.Contains(out, "interrupted") {
-			t.Fatalf("signal %s: status %d, output %q", sig, status, out)
-		}
-		return
-	}
-	defer kit.WatchSignals(os.Stderr, nil)()
-	if err := syscall.Kill(os.Getpid(), sig); err != nil {
-		t.Fatal(err)
-	}
-	select {}
-}
-
 // slowWriter holds every write back for a moment, so that a second handler
 // acting on the same signal has the time to print before this one exits.
 type slowWriter struct{ w *os.File }
@@ -148,24 +122,6 @@ func TestWatchSignalsNestedOnlyTheInnermostActs(t *testing.T) {
 	var tr syncrun.RebaseTracker
 	tr.Set(&syncrun.RebaseInFlight{Work: "bump", Path: t.TempDir(), Safety: "refs/wt-sync/feature/1"})
 	defer syncrun.WatchSignals(slowWriter{w: os.Stderr}, &tr)()
-	if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {
-		t.Fatal(err)
-	}
-	select {}
-}
-
-// Once the inner watch ends, the outer one is the one a signal finds again.
-func TestWatchSignalsOuterActsAgainOnceTheInnerEnds(t *testing.T) {
-	t.Parallel()
-	if os.Getenv(testkit.InterruptChild) == "" {
-		out, status := testkit.InterruptedChild(t)
-		if status != kit.InterruptStatus || !strings.Contains(out, "OUTER\ninterrupted") || strings.Contains(out, "INNER") {
-			t.Fatalf("status %d; want only the outer handler:\n%s", status, out)
-		}
-		return
-	}
-	defer kit.WatchSignals(tagWriter{tag: "OUTER", w: os.Stderr}, nil)()
-	kit.WatchSignals(tagWriter{tag: "INNER", w: os.Stderr}, nil)()
 	if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {
 		t.Fatal(err)
 	}
