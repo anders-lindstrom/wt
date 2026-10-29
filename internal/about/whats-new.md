@@ -4,6 +4,14 @@ Newest first, each heading stamped with the local date and time of the change
 (several land per day). `wt about` prints the newest 5 entries, so keep each entry to a few lines a human
 would want read out to them; the full story is in git history.
 
+## 2026-10-29 06:19 — `wt refs purge` and `wt refs restore` tokens cover more
+
+A `wt refs purge` token now covers what the purge would lose, and a
+`wt refs restore` token covers origin's URL when a remote ref can go back
+to it. An older wt's token for a purge that loses commits, or for a restore
+that puts a remote ref back, is refused as a changed plan: read the plan
+again.
+
 ## 2026-10-29 00:02 — "2 pushes to retry", not "pushs"
 
 A `wt sync keep` pass that finds trunk unchanged and has more than one push
