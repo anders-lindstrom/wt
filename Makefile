@@ -17,7 +17,8 @@ test-fast:
 
 # The packages whose tests build no git repository.
 UNIT := ./internal/config ./internal/find ./internal/naming ./internal/about \
-	./internal/quarantine ./internal/gittest ./internal/superset ./schema
+	./internal/quarantine ./internal/gittest ./internal/superset ./schema \
+	./internal/textwrap ./internal/commands/refpins ./internal/commands/testkit
 
 test-unit:
 	go test -short -timeout 5m $(UNIT)

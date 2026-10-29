@@ -25,7 +25,8 @@ tests. The other times are older and were taken under a heavier load.
 Several full runs at once can pass the 30 minute timeout.
 
 `make test-unit` covers internal/config, find, naming, about, quarantine,
-gittest, superset and schema. internal/git and internal/github are not
+gittest, superset, textwrap, schema, and internal/commands/refpins and
+testkit. internal/git and internal/github are not
 in it: their tests build real git repositories.
 
 ## What to run when
@@ -84,6 +85,29 @@ tests of a family whose names say something else. Name the package: a
 -run pattern against the wrong one selects no tests, and go test then
 prints `ok` with `[no tests to run]`, which looks like a pass. The run of
 `./internal/commands/...` before you finish covers the rest.
+
+## JSON output
+
+A test of a `--json` output passes it to `testkit.ValidateJSON`, usually
+through the family's helper (`retiretest.RemoveJSON`,
+`synccmdtest.DecodeSyncRun`, `provisiontest.NewPlanOf`). It validates the
+output against the schema in `schema/` with every listed object closed:
+a key the schema does not declare fails the test, at any depth. A field
+added to the output therefore needs its schema property, the docs/json.md
+row and an x-version minor in the same commit. The shipped schemas stay
+open; only the test closes them.
+
+## Bats
+
+`test/helpers.bash` keeps the bats tests off the machine running them, as
+`gittest.Isolate` does for the Go tests: HOME, XDG_CONFIG_HOME and git's
+global config are the run's own (with an identity to commit as), git reads
+no system config and no GIT_ variable from the environment, WT_ROOTS and
+CODEX_HOME are unset, and no claude is on the PATH. Go's caches stay where
+they were. Every `test/*.bats` loads it; a test that wants a claude puts its
+own fake first on the PATH, and one that wants its own git config sets
+GIT_CONFIG_GLOBAL in its setup. CI runs bats through `scripts/bats.sh`, under
+the same deadline as `make bats`.
 
 ## Parallel tests
 

@@ -40,6 +40,11 @@ const (
 	drainGrace = 500 * time.Millisecond
 )
 
+// parentGone, when set, is called as reap finds its parent gone, before it
+// gives the pipe drainGrace: how a test knows what it writes next arrives
+// after that.
+var parentGone func()
+
 var reaper = struct {
 	sync.Mutex
 	// exe is wt's binary, set by UseReaper; empty means no reaper.
@@ -122,6 +127,9 @@ wait:
 			break wait
 		case <-tick.C:
 			if parent != 0 && os.Getppid() != parent {
+				if parentGone != nil {
+					parentGone()
+				}
 				// wt is gone, so all it wrote is in the pipe: give the
 				// reader a moment to take it, in case something else holds
 				// the pipe open and it never ends.

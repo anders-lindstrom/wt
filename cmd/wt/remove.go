@@ -21,8 +21,10 @@ func newRemoveCmd() *cobra.Command {
 		Long: "Remove an exactly named worktree: a work name, branch, path, or . for\n" +
 			"the current checkout. An ambiguous work name needs its type.\n" +
 			"\n" +
-			"The plan shows what will happen to the checkout and branch. Merged\n" +
-			"branches are deleted; unmerged wt branches are renamed and kept.\n" +
+			"The plan shows what will happen to the checkout and branch. A merged\n" +
+			"branch is moved into a pin under refs/wt-swept/<run>/, which\n" +
+			"wt refs restore <run> puts back (with --move-to, wt restore does);\n" +
+			"an unmerged wt branch is renamed and kept.\n" +
 			"A terminal asks for confirmation; --yes skips it. Hooks are not asked.\n" +
 			"--dry-run shows the plan. --json plans unless --yes is also given;\n" +
 			"--expect <token> with --yes --json applies only that plan.\n" +

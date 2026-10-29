@@ -457,9 +457,10 @@ func TestSessionSendReportsAnInboxThatResetsTheConnection(t *testing.T) {
 			}
 			accepts++
 			// The listing's own connect is the first; the send's is closed
-			// with the line unread, a reset for the writer.
+			// once its writing has begun, with the line unread, a reset for
+			// the writer.
 			if accepts > 1 {
-				time.Sleep(50 * time.Millisecond)
+				_, _ = c.Read(make([]byte, 1))
 			}
 			_ = c.Close()
 		}

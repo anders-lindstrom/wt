@@ -12,6 +12,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -27,27 +28,29 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
+      # Pinned, so lint changes only when this line does; match it to
+      # `golangci-lint version` on the machine you lint on.
       - uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: v2.15.0
 
   shell:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
-      - name: Configure git
-        run: |
-          git config --global user.email ci@example.com
-          git config --global user.name CI
+      # No git identity here: test/helpers.bash gives the tests their own.
       - name: Install bats
         run: sudo apt-get update && sudo apt-get install -y bats
       - run: go build -o bin/wt ./cmd/wt
-      - run: bats test/
+      # Under the deadline make bats has, so a hung test fails the job.
+      - run: scripts/bats.sh test/

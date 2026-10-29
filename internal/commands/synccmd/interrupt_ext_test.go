@@ -13,6 +13,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -48,12 +49,14 @@ func TestInterruptDuringADeferredStepPinsNoResult(t *testing.T) {
 			t.Fatalf("the step never started:\n%s", out.String())
 		}
 	}
-	if n := git.Interrupt(); n < 1 {
+	before := gittest.Parked()
+	n := git.Interrupt()
+	if n < 1 {
 		t.Fatalf("Interrupt signalled %d groups, want the step", n)
 	}
-	// Long enough for the run to have finished the step's failure path,
-	// had it not parked.
-	time.Sleep(500 * time.Millisecond)
+	// Once the step's caller is parked, the run can no longer go on to its
+	// failure path.
+	gittest.WaitParked(t, before, n)
 	if refs := testkit.GitOut(t, main, "for-each-ref", wtsync.ResultPrefix); refs != "" {
 		t.Errorf("the run pinned a result after the interrupt: %s", refs)
 	}

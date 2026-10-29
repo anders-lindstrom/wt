@@ -16,6 +16,12 @@ Japanese or Korean character or an emoji takes two, so a wrapped line no
 longer runs past the terminal's edge. A table row whose cell follows å, ä or
 ö no longer hangs its wrapped lines too far to the right.
 
+## 2026-10-28 23:05 — `wt remove --help` says merged branches can come back
+
+The help no longer says a merged branch is deleted: it is moved into a pin
+under `refs/wt-swept/<run>/`, and `wt refs restore <run>` puts it back until
+`wt refs purge`.
+
 ## 2026-10-28 22:20 — a git that fails stops wt instead of reading as "not there"
 
 When git fails or times out while wt reads a branch, origin's HEAD or a

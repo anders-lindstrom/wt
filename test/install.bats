@@ -2,6 +2,8 @@
 
 bats_require_minimum_version 1.5.0
 
+load helpers
+
 setup() {
     export WT_INSTALL_REAL_GO="$(command -v go)"
     export WT_INSTALL_REAL_MV="$(command -v mv)"
