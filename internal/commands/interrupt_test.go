@@ -2,12 +2,14 @@ package commands
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
@@ -99,6 +101,71 @@ func watchSignalStatus(t *testing.T, sig syscall.Signal) {
 	}
 	defer kit.WatchSignals(os.Stderr, nil)()
 	if err := syscall.Kill(os.Getpid(), sig); err != nil {
+		t.Fatal(err)
+	}
+	select {}
+}
+
+// slowWriter holds every write back for a moment, so that a second handler
+// acting on the same signal has the time to print before this one exits.
+type slowWriter struct{ w *os.File }
+
+func (s slowWriter) Write(p []byte) (int, error) {
+	time.Sleep(300 * time.Millisecond)
+	return s.w.Write(p)
+}
+
+// tagWriter prefixes everything written through it, so the parent can tell
+// which handler printed.
+type tagWriter struct {
+	tag string
+	w   *os.File
+}
+
+func (t tagWriter) Write(p []byte) (int, error) {
+	_, err := fmt.Fprintf(t.w, "%s%s", t.tag, p)
+	return len(p), err
+}
+
+// wt sync --rebase --all watches for the whole run and each repository's
+// rebase watches again inside it. Only the innermost acts on a signal: the
+// outer one has no tracker, and exiting first it would cut off the way back
+// for the worktree mid-rebase.
+func TestWatchSignalsNestedOnlyTheInnermostActs(t *testing.T) {
+	t.Parallel()
+	if os.Getenv(testkit.InterruptChild) == "" {
+		out, status := testkit.InterruptedChild(t)
+		if status != kit.InterruptStatus || !strings.Contains(out, "interrupted while rebasing bump") {
+			t.Fatalf("status %d; the inner handler did not say how to put bump back:\n%s", status, out)
+		}
+		if strings.Contains(out, "OUTER") {
+			t.Fatalf("the outer handler acted on the signal too:\n%s", out)
+		}
+		return
+	}
+	defer kit.WatchSignals(tagWriter{tag: "OUTER", w: os.Stderr}, nil)()
+	var tr kit.RebaseTracker
+	tr.Set(&kit.RebaseInFlight{Work: "bump", Path: t.TempDir(), Safety: "refs/wt-sync/feature/1"})
+	defer kit.WatchSignals(slowWriter{w: os.Stderr}, &tr)()
+	if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {
+		t.Fatal(err)
+	}
+	select {}
+}
+
+// Once the inner watch ends, the outer one is the one a signal finds again.
+func TestWatchSignalsOuterActsAgainOnceTheInnerEnds(t *testing.T) {
+	t.Parallel()
+	if os.Getenv(testkit.InterruptChild) == "" {
+		out, status := testkit.InterruptedChild(t)
+		if status != kit.InterruptStatus || !strings.Contains(out, "OUTER\ninterrupted") || strings.Contains(out, "INNER") {
+			t.Fatalf("status %d; want only the outer handler:\n%s", status, out)
+		}
+		return
+	}
+	defer kit.WatchSignals(tagWriter{tag: "OUTER", w: os.Stderr}, nil)()
+	kit.WatchSignals(tagWriter{tag: "INNER", w: os.Stderr}, nil)()
+	if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {
 		t.Fatal(err)
 	}
 	select {}

@@ -99,10 +99,9 @@ func Run(ctx *kit.Context, opts KeepOptions, w io.Writer) error {
 	defer lock.Close()
 	pass := keepPass{ctx: ctx, opts: opts, w: w, now: now, logPath: logPath, prev: st.Unpushed}
 	// Signals from here on: the fetch is a git of its own, and a Ctrl-C or
-	// a bootout during it has to take it down too. The run installs its own
-	// handler for its length; pass.run swaps this one out around it.
-	pass.unwatch = kit.WatchSignals(w, nil)
-	defer func() { pass.unwatch() }()
+	// a bootout during it has to take it down too. The run watches again
+	// inside this, and its watch is the one a signal finds while it lasts.
+	defer kit.WatchSignals(w, nil)()
 	if opts.Every > 0 {
 		st.Interval = keepstate.FmtEvery(opts.Every)
 	} else if st.Interval == "" {
@@ -148,7 +147,6 @@ type keepPass struct {
 	w       io.Writer
 	now     time.Time
 	logPath string
-	unwatch func()
 
 	onto, before, after string
 	result              string
@@ -283,6 +281,7 @@ func (p *keepPass) pass(recorded string) error {
 	// printed, indented under the header, so an interrupt leaves what
 	// happened up to it and the way back on disk.
 	w := io.MultiWriter(p.w, &indentWriter{w: p.log, prefix: "    ", atStart: true})
+	defer kit.WatchSignals(w, nil)()
 	r := &synccmd.RunPlan{}
 	var rerr error
 	if after == recorded {
@@ -309,9 +308,7 @@ func (p *keepPass) pass(recorded string) error {
 			}
 		}
 		if rerr == nil {
-			p.unwatch()
 			r, rerr = synccmd.RunSync(ctx, nil, ropts, w)
-			p.unwatch = kit.WatchSignals(w, nil)
 			p.ranRun = true
 		}
 	}
