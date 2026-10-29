@@ -147,6 +147,8 @@ func PlanRefsRestore(ctx *kit.Context, runID string) (RestoreRefsPlan, error) {
 
 func (r restoreRow) restorable() bool { return r.Action == RestoreCreate || r.Action == RestoreNone }
 
+func (r restoreRow) remoteRestorable() bool { return refpins.RemoteKind(r.Kind) && r.restorable() }
+
 // applyOnly replaces the default selection. An id the run does not have,
 // or one whose name is taken, refuses the lot.
 func (p *RestoreRefsPlan) applyOnly(only []string) error {
@@ -182,9 +184,9 @@ func (p *RestoreRefsPlan) applyOnly(only []string) error {
 	return nil
 }
 
-// restoreToken names a restore plan: the repository, the run, and every pin
-// with its object and what would be done with it. Nil when nothing can go
-// back.
+// restoreToken names a restore plan: the repository, the run, origin as
+// resolved now when a remote ref can go back to it, and every pin with its
+// object and what would be done with it. Nil when nothing can go back.
 func restoreToken(p RestoreRefsPlan) *string { return restoreTokenOf(p).Strp() }
 
 func restoreTokenOf(p RestoreRefsPlan) *kit.Token {
@@ -192,6 +194,9 @@ func restoreTokenOf(p RestoreRefsPlan) *kit.Token {
 		return nil
 	}
 	t := kit.NewToken("rr1-", "wt-refs-restore").Str("Repo", p.Repo).Str("RunID", p.RunID)
+	if p.endpoint != nil && slices.ContainsFunc(p.Rows, restoreRow.remoteRestorable) {
+		t.Str("endpoint", p.endpoint.Digest)
+	}
 	for _, r := range p.Rows {
 		t.Str("Rows.Kind", r.Kind).Str("Rows.Name", r.Name).Str("Rows.Pin", r.Pin).Str("Rows.Object", r.Object).
 			Str("Rows.Action", r.Action)
