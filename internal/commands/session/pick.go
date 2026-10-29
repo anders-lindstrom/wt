@@ -35,7 +35,7 @@ const (
 // holds them to the schema's enum.
 var (
 	sendCodes = []refusalCode{codeNoSession, codeAmbiguous, codeNotRunning, codeNoInbox, codeChanged,
-		codeTooLarge, codeEmpty, codeWriteFailed, codeBadArgument}
+		codeTooLarge, codeEmpty, codeWriteFailed, codeBadArgument, codeNotExact}
 	stopCodes = []refusalCode{codeNoSession, codeAmbiguous, codeChanged, codeInteractive, codeCodex, codeOwn,
 		codeNoID, codeNotBackground, codeNoProcess, codeStopFailed, codeOwnUnknown, codeNotExact}
 )

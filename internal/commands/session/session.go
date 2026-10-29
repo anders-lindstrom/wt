@@ -781,7 +781,7 @@ func chooseSessionTarget(ctx *kit.Context, o SendOptions, env sessionEnv) (*Info
 	}
 	pick, f := pickSession(t, infos, pickRules{
 		pattern: o.Pattern, session: o.Session, expectSession: o.ExpectSession,
-		notExact: codeNoSession, verb: "sent",
+		notExact: codeNotExact, verb: "sent",
 		word: func(s Info) string { return s.State },
 		// a live session with an inbox: a parked one is not woken, and wt
 		// does not send to its own.
