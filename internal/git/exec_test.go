@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -261,5 +262,19 @@ func TestInterruptParksTheCallerOfAKilledCommand(t *testing.T) {
 	case <-returned:
 		t.Fatal("RunBounded returned after an interrupt")
 	default:
+	}
+}
+
+// NeverSign's config goes on top of whatever stack a launcher left.
+func TestUnsignedConfigAppendsToTheConfigStack(t *testing.T) {
+	t.Parallel()
+	launched := map[string]string{"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "user.name", "GIT_CONFIG_VALUE_0": "T"}
+	got := unsignedConfig(func(k string) string { return launched[k] })
+	want := []string{"GIT_CONFIG_KEY_1=commit.gpgsign", "GIT_CONFIG_VALUE_1=false", "GIT_CONFIG_COUNT=2"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("stack %q, want %q", got, want)
+	}
+	if got := unsignedConfig(func(string) string { return "" }); !slices.Equal(got, []string{"GIT_CONFIG_KEY_0=commit.gpgsign", "GIT_CONFIG_VALUE_0=false", "GIT_CONFIG_COUNT=1"}) {
+		t.Fatalf("empty stack %q", got)
 	}
 }

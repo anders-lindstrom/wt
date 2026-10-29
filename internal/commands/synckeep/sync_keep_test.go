@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -902,18 +903,41 @@ func TestSyncKeepStatusSaysWhenTheNextPassIsOverdue(t *testing.T) {
 	}
 }
 
-// A pass turns commit signing off for every git it runs, on top of whatever
-// stack a launcher left, so a signer that asks is never asked.
-func TestUnsignCommitsAppendsToTheConfigStack(t *testing.T) {
-	t.Setenv("GIT_CONFIG_COUNT", "1")
-	t.Setenv("GIT_CONFIG_KEY_0", "user.name")
-	t.Setenv("GIT_CONFIG_VALUE_0", "T")
-	unsignCommits()
-	if os.Getenv("GIT_CONFIG_COUNT") != "2" || os.Getenv("GIT_CONFIG_KEY_1") != "commit.gpgsign" || os.Getenv("GIT_CONFIG_VALUE_1") != "false" || os.Getenv("GIT_CONFIG_KEY_0") != "user.name" {
-		t.Fatalf("stack: COUNT=%s KEY_0=%s KEY_1=%s VALUE_1=%s", os.Getenv("GIT_CONFIG_COUNT"), os.Getenv("GIT_CONFIG_KEY_0"), os.Getenv("GIT_CONFIG_KEY_1"), os.Getenv("GIT_CONFIG_VALUE_1"))
+// A pass turns commit signing off for every git it starts, read by a
+// deferred step while the pass runs, without touching the process
+// environment. The flag is the process's, so the pass runs in a child test
+// binary where no other test has run one.
+func TestSyncKeepRunTurnsCommitSigningOff(t *testing.T) {
+	if os.Getenv(testkit.InterruptChild) == "" {
+		out, status := testkit.InterruptedChild(t)
+		if status != 0 || !strings.Contains(out, "\nSIGNING=false\n") {
+			t.Fatalf("status %d; want the deferred step to see commit.gpgsign=false:\n%s", status, out)
+		}
+		return
 	}
-	t.Setenv("GIT_CONFIG_KEY_1", "")
-	t.Setenv("GIT_CONFIG_VALUE_1", "")
+	ctx, _ := provisiontest.RunFixture(t, false)
+	main := ctx.Repo.MainRoot
+	seen := filepath.Join(t.TempDir(), "signing")
+	yaml, err := os.ReadFile(filepath.Join(main, ".wt-sync.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	testkit.WriteFile(t, main, ".wt-sync.yaml", string(yaml)+"defer:\n  - run: git config --get commit.gpgsign > "+seen+"\n    paths: [v.txt]\n")
+	testkit.GitIn(t, main, "commit", "-q", "-am", "declare a step that reads the signing setting")
+	testkit.GitIn(t, main, "fetch", "-q", "origin")
+	before := os.Environ()
+	var out bytes.Buffer
+	if err := Run(ctx, keepOpts(syncrun.PushNever), &out); err != nil {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	got, err := os.ReadFile(seen)
+	if err != nil {
+		t.Fatalf("the deferred step did not run: %v\n%s", err, out.String())
+	}
+	fmt.Printf("\nSIGNING=%s\n", strings.TrimSpace(string(got)))
+	if !slices.Equal(os.Environ(), before) {
+		t.Fatal("the pass changed the process environment")
+	}
 }
 
 // Off macOS, start and stop say so and exit 2; run and status still work.

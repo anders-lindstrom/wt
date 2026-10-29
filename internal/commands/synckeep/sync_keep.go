@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -49,18 +48,6 @@ func writeKeepState(path string, st keepstate.KeepState) error {
 		return err
 	}
 	return os.Rename(tmp, path)
-}
-
-// unsignCommits appends commit.gpgsign=false to the GIT_CONFIG_* stack every
-// git this process runs reads, on top of whatever a launcher put there. A
-// pass makes commits, replayed and deferred, with nobody at the keyboard: a
-// signer that asks (1Password's does) would hang a background job or fail
-// it while the vault is locked.
-func unsignCommits() {
-	n, _ := strconv.Atoi(os.Getenv("GIT_CONFIG_COUNT"))
-	_ = os.Setenv(fmt.Sprintf("GIT_CONFIG_KEY_%d", n), "commit.gpgsign")
-	_ = os.Setenv(fmt.Sprintf("GIT_CONFIG_VALUE_%d", n), "false")
-	_ = os.Setenv("GIT_CONFIG_COUNT", strconv.Itoa(n+1))
 }
 
 // acquireKeepLock takes the pass lock without waiting, creating the file
@@ -113,7 +100,7 @@ func Run(ctx *kit.Context, opts KeepOptions, w io.Writer) error {
 	if err := writeKeepState(statePath, st); err != nil {
 		return err
 	}
-	unsignCommits()
+	git.NeverSign()
 	err = pass.run(st.TrunkSHA)
 	st.Unpushed = pass.unpushed
 	// Trunk is recorded only by a run that came off: a pass that failed on
