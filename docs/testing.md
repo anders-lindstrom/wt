@@ -27,9 +27,9 @@ tests. The other times are older and were taken under a heavier load.
 Several full runs at once can pass the 30 minute timeout.
 
 `make test-unit` covers internal/config, find, naming, about, quarantine,
-gittest, superset, textwrap, jsonout, schema, and internal/commands/refpins
-and testkit. internal/git, internal/github and internal/reposel are not in
-it: their tests build real git repositories.
+gittest, superset, textwrap, jsonout, refpins, schema, and
+internal/commands/testkit. internal/git, internal/github and
+internal/reposel are not in it: their tests build real git repositories.
 
 ## What to run when
 
@@ -37,7 +37,7 @@ it: their tests build real git repositories.
 |---|---|
 | a comment, docs, whats-new, wording only | nothing, or `go vet ./...` |
 | one test or one function | `go test ./internal/<pkg> -run 'TestName$' -count=1` |
-| internal/config, find, naming, about, quarantine, superset, github, git, repo, reposel, jsonout or gittest | `go test ./internal/<pkg>/...`; each is under 50 s, most under 5 s |
+| internal/config, find, naming, about, quarantine, refpins, superset, github, git, repo, reposel, jsonout or gittest | `go test ./internal/<pkg>/...`; each is under 50 s, most under 5 s |
 | internal/wtsync | `go test ./internal/wtsync -run '<Area>'` first, then the whole package once (about 110 s) |
 | internal/agents | `go test ./internal/agents` (a few seconds); some of its tests read the real process table |
 | internal/commands/syncrun | `go test ./internal/commands/syncfix ./internal/commands/synccmd -run 'Push\|OwnRemote\|FastForward\|Finish'`: syncrun's behaviour is tested from those two packages, so `go test ./internal/commands/syncrun` alone covers almost nothing |
@@ -57,28 +57,27 @@ The command packages, and what each holds:
 | `internal/commands` | wt list and wt status, and the tests that cross packages |
 | `internal/commands/kit` | `Context`, Open/Locate, runs across repositories (`Bulk`, `AcrossRepos`) and the one question they ask, GitHub glue and its cache, tables, the signal watch |
 | `internal/commands/testkit` | fixtures and fakes the tests share; `testkit.Main` is the TestMain of every command package but kit |
-| `internal/commands/refpins` | the `refs/wt-swept/` pin store |
 | `internal/commands/session` | wt session, wt attach |
 | `internal/commands/provision` | wt new, checkout, setup, init, config, port |
 | `internal/commands/supersetws` | registering a worktree as a Superset workspace, and deleting that workspace once wt removes the worktree |
-| `internal/commands/retire` | wt remove, wt sweep |
-| `internal/commands/refs` | wt refs sweep and restore, wt restore |
-| `internal/commands/purge` | wt purge, wt refs purge |
+| `internal/commands/retire` | wt remove, wt sweep: they make quarantines and pin the branches they delete |
+| `internal/commands/quarantinecmd` | wt restore, wt purge: they end a quarantine; the store is `internal/quarantine` |
+| `internal/commands/refs` | wt refs sweep, swept, restore and purge; the pin store under `refs/wt-swept/` is `internal/refpins` |
 | `internal/commands/syncrun` | what a sync run is made of: local trunk's fast-forward, own remotes, push, the idle-session check, finishing a rebase, the run's journal, what a signal says about a rebase in flight |
 | `internal/commands/synccmd` | wt sync, wt up, wt sync rebase, push-to, doctor |
 | `internal/commands/syncfix` | wt sync resume, wt sync undo |
 | `internal/commands/synckeep` | wt sync keep; `keepstate` beneath it holds the keeper's state, lock and launchd job |
 | `internal/commands/admin` | wt doctor, migrate, adopt, pr, hook, repos |
 
-The `<pkg>test` packages (provisiontest, retiretest, refstest, purgetest,
-synccmdtest) hold the fixtures of one family for the tests of other
-packages.
+The `<pkg>test` packages (provisiontest, retiretest, refstest,
+quarantinecmdtest, synccmdtest) hold the fixtures of one family for the
+tests of other packages.
 
 Examples of the -run patterns:
 
 ```
-go test ./internal/commands/refs -run 'Restore|Refs'
-go test ./internal/commands/purge -run 'Purge'
+go test ./internal/commands/refs -run 'Refs|Pins|Token|Unique|NilJournals'
+go test ./internal/commands/quarantinecmd -run 'Restore|Purge|Quarantine'
 go test ./internal/commands/synccmd -run 'Sync|Up|Push|FastForward|Handover|Plan'
 go test ./internal/commands/syncfix -run 'Resume|Undo'
 go test ./internal/commands/synckeep -run 'Keep'
@@ -216,7 +215,8 @@ started: the tests that stay serial run one after another.
 | internal/commands/retire | 121 | 75 | the remove and sweep --reap tests: real processes, signals, a 5 s grace |
 | internal/commands/synccmd | 112 | 52 | |
 | internal/wtsync | 107 | 58 | |
-| internal/commands/refs | 93 | 34 | |
+| internal/commands/quarantinecmd | 172 | 0 | wt restore and wt purge; measured later, at a load of about 950: purge alone was 220 in that run |
+| internal/commands/refs | 123 | 109 | measured later, at a load of about 950: was 272 there, wt restore with it |
 | internal/commands/admin | 53 | 41 | |
 | internal/commands | 51 | 27 | wt list and status, and tests across packages |
 | internal/commands/provision | 41 | 23 | |
@@ -224,7 +224,6 @@ started: the tests that stay serial run one after another.
 | internal/commands/synckeep | 41 | 6 | measured later, at a load of about 130: was 158, all serial |
 | internal/commands/session | 20 | 4 | measured later, at a load of about 130: was 74, all serial |
 | internal/superset | 34 | 21 | about 4 s of it is real deadlines |
-| internal/commands/purge | 34 | 0 | |
 | cmd/wt | 27 | 27 | in-process cobra; builds no binary |
 | internal/github | 15 | | fake `gh` shell scripts |
 | internal/repo | 13 | | |
