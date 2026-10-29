@@ -3,7 +3,7 @@ BIN := bin/wt
 # not say dev.
 LDFLAGS := $(shell scripts/ldflags.sh)
 
-.PHONY: build test test-fast test-unit test-mod lint bats check clean
+.PHONY: build test test-fast test-unit test-race test-mod lint bats check clean
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/wt
@@ -22,6 +22,10 @@ UNIT := ./internal/config ./internal/find ./internal/naming ./internal/about \
 
 test-unit:
 	go test -short -timeout 5m $(UNIT)
+
+# The suite under the race detector, as CI runs it.
+test-race:
+	go test -race -timeout 30m ./...
 
 # The wt mod's own suite (mods/wt/tests), run by claude. Its fixtures are held
 # to the schemas by go test, in internal/commands/testkit.
