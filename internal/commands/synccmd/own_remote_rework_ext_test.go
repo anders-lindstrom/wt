@@ -202,7 +202,10 @@ func TestSyncTokenCoversADivergedRowBehindABusySession(t *testing.T) {
 		if row := sv.Rows[0]; row.Group != synccmd.GroupSkipped || testkit.Str(row.OwnRemote.Blocks) != wtsync.OwnBlockDiverged {
 			t.Fatalf("row %+v", row)
 		}
-		tok := sv.Token(f.Ctx, "main", sha)
+		tok, err := sv.Token(f.Ctx, "main", sha)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if tok == nil {
 			t.Fatal("no token for a row a run with --force --allow-diverged starts on")
 		}

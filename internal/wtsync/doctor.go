@@ -484,8 +484,12 @@ func locksCheck(worktrees []repo.Worktree, gitDirs map[string]string, now time.T
 	var fix func() error
 	if len(expired) > 0 {
 		fix = func() error {
+			// Only the lock the check read: a run may have broken it since
+			// and taken a fresh one, which is not this fix's to remove.
 			for _, h := range expired {
-				if err := os.Remove(filepath.Join(h.gitDir, LockName)); err != nil && !errors.Is(err, os.ErrNotExist) {
+				if _, err := breakLock(h.gitDir, func(cur *Lock) bool {
+					return cur.PID == h.lock.PID && cur.Started.Equal(h.lock.Started)
+				}); err != nil {
 					return err
 				}
 			}

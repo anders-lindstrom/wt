@@ -127,17 +127,36 @@ func UpPlanJSON(ctx *kit.Context, arg string, w io.Writer) error {
 	// Every branch against its own remote as last fetched: nothing here
 	// fetches. Remotes that cannot be read make every branch unknown.
 	pl.own = wtsync.ReadOwnOrUnknown(ctx.Repo.MainRoot, pl.trunk)
-	stack := pl.readStack()
-	diverged := pl.judgeOwnRemotes()
+	pl.readStack()
+	pl.judgeOwnRemotes()
 	pl.judgeInTrunk()
 	pl.p.UpEligible = pl.p.UpIneligibleCode == nil
 	// A plan held back by divergence alone has a token too: wt up
 	// --allow-diverged --expect goes ahead over exactly what it covers.
 	if pl.p.UpEligible || *pl.p.UpIneligibleCode == IneligibleOwnDiverged {
-		pl.p.Token = kit.Strp(syncrun.PlanToken(ctx, pl.trunk, stack, diverged))
+		pl.p.Token = kit.Strp(upPlanToken(ctx, pl.p))
 	}
 	pl.readSessions()
 	return writePlan(w, pl.p)
+}
+
+// upPlanToken is syncrun.PlanToken read off the plan as printed: its trunk,
+// its stack's branches in order, and the own remote's commit of each member
+// that has diverged from it.
+func upPlanToken(ctx *kit.Context, p UpPlan) string {
+	stack := make([]string, 0, len(p.Stack))
+	diverged := map[string]string{}
+	for _, m := range p.Stack {
+		stack = append(stack, m.Branch)
+		if o := m.OwnRemote; o.Blocks != nil && *o.Blocks == wtsync.OwnBlockDiverged && o.Commit != nil {
+			diverged[m.Branch] = *o.Commit
+		}
+	}
+	trunk := ""
+	if p.Trunk != nil {
+		trunk = *p.Trunk
+	}
+	return syncrun.PlanToken(ctx, trunk, stack, diverged)
 }
 
 // upPlanner is wt status <work> --json as it is worked out: the plan so
@@ -266,8 +285,8 @@ func (pl *upPlanner) ownOf(branch, path string) wtsync.OwnRemote {
 
 // readStack is the candidate stack, from local refs as of now: what wt up
 // would move, each member with its own remote and the deferred steps trunk
-// declares. It returns the stack's branches in order.
-func (pl *upPlanner) readStack() []string {
+// declares.
+func (pl *upPlanner) readStack() {
 	ctx, wt := pl.ctx, pl.wt
 	// The deferred steps trunk declares, as last fetched: wt up fetches
 	// first and reads them from the trunk it then rebases onto. None when
@@ -277,11 +296,10 @@ func (pl *upPlanner) readStack() []string {
 		declaration, _ = wtsync.LoadFromRef(ctx.Repo.MainRoot, pl.tip)
 	}
 	declared := declaredSteps(declaration)
-	stack := []string{}
 	if wt.Branch == "" || wt.IsMain {
-		return stack
+		return
 	}
-	stack = []string{wt.Branch}
+	stack := []string{wt.Branch}
 	all, err := ctx.Repo.Worktrees()
 	if err == nil && pl.base != "" {
 		if parents, _, err := wtsync.Parents(ctx.Repo.MainRoot, pl.base, all); err == nil {
@@ -300,16 +318,13 @@ func (pl *upPlanner) readStack() []string {
 			DeferredDeclared: declared,
 		})
 	}
-	return stack
 }
 
 // judgeOwnRemotes refuses the plan over any member's own remote: one
 // refusal refuses the whole stack. A member that cannot be fast-forwarded
 // comes first: --allow-diverged does nothing for it, so a stack with both
-// is not one the flag clears. It returns each diverged member's remote
-// commit, for the token.
-func (pl *upPlanner) judgeOwnRemotes() map[string]string {
-	diverged := map[string]string{}
+// is not one the flag clears.
+func (pl *upPlanner) judgeOwnRemotes() {
 	var behind, apart *PlanStack
 	for i := range pl.p.Stack {
 		m := &pl.p.Stack[i]
@@ -319,7 +334,6 @@ func (pl *upPlanner) judgeOwnRemotes() map[string]string {
 		switch {
 		case m.OwnRemote.Blocks == nil:
 		case *m.OwnRemote.Blocks == wtsync.OwnBlockDiverged:
-			diverged[m.Branch] = *m.OwnRemote.Commit
 			if apart == nil {
 				apart = m
 			}
@@ -337,7 +351,6 @@ func (pl *upPlanner) judgeOwnRemotes() map[string]string {
 		}
 		pl.ineligible(IneligibleOwnDiverged, ownIneligible(*apart, pl.wt.Branch, why))
 	}
-	return diverged
 }
 
 // judgeInTrunk is a branch with nothing left to bring up: every commit it

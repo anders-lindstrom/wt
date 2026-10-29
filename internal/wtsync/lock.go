@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -65,11 +66,14 @@ func GitDir(wtPath string) (string, error) {
 	return gitEnv(wtPath, nil, nil, "rev-parse", "--absolute-git-dir")
 }
 
+// afterExpiredRead runs once Acquire has found the lock expired and before it
+// moves it aside. Tests set it to stand another contender in that gap.
+var afterExpiredRead func()
+
 // Acquire takes the lock atomically: the content is written to a private
 // temp file and hard-linked into place, so a contender never sees a
 // half-written lock. An existing lock younger than LockExpiry is respected;
-// an older one is renamed aside (atomic, so only one contender wins) and
-// removed.
+// an older one is broken (see breakLock) and the link tried again.
 func Acquire(gitDir string, now time.Time) (*Lock, error) {
 	path := filepath.Join(gitDir, LockName)
 	owner := "?"
@@ -102,20 +106,22 @@ func Acquire(gitDir string, now time.Time) (*Lock, error) {
 		if rerr != nil {
 			return nil, rerr
 		}
-		if ok && now.Sub(existing.Started) < LockExpiry {
+		if !ok {
+			// Gone between the link and the read: link again.
+			continue
+		}
+		if now.Sub(existing.Started) < LockExpiry {
 			return nil, &LockHeld{*existing}
 		}
-		// Expired, or gone between the link and the read: take it over.
-		// Rename is atomic, so of two contenders exactly one succeeds here;
-		// the other retries and finds the winner's fresh lock.
-		stale := fmt.Sprintf("%s.stale.%d", path, l.PID)
-		if err := os.Rename(path, stale); err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				continue
-			}
+		if afterExpiredRead != nil {
+			afterExpiredRead()
+		}
+		// Expired. Another contender may have broken it since the read and
+		// linked a fresh one, which breakLock judges again and leaves; the
+		// next link then finds it.
+		if _, err := breakLock(gitDir, func(cur *Lock) bool { return now.Sub(cur.Started) >= LockExpiry }); err != nil {
 			return nil, err
 		}
-		_ = os.Remove(stale)
 	}
 	return nil, fmt.Errorf("could not acquire %s", path)
 }
@@ -141,13 +147,6 @@ func (l *Lock) Keep() {
 // a lock whose pid and start time are exactly what the run recorded in its
 // sidecar, so a live run, or any lock that is not this handover's, is
 // respected the way Acquire respects it.
-//
-// The window Acquire's expiry path already has is not closed here: between
-// reading the lock and renaming it aside, another process continuing the
-// same handover could acquire, and would then be displaced. Two concurrent
-// resumes of one worktree is a user error, and both would be driving the
-// same rebase; nothing else can reach this path, because nothing else knows
-// the recorded pid.
 func TakeOver(gitDir string, now time.Time, prev LeftLock) (*Lock, error) {
 	l, err := Acquire(gitDir, now)
 	if err == nil {
@@ -157,12 +156,59 @@ func TakeOver(gitDir string, now time.Time, prev LeftLock) (*Lock, error) {
 	if !errors.As(err, &busy) || prev.PID == 0 || busy.PID != prev.PID || busy.Started.Unix() != prev.Started {
 		return nil, err
 	}
-	stale := fmt.Sprintf("%s.stale.%d", busy.Path, os.Getpid())
-	if rerr := os.Rename(busy.Path, stale); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
-		return nil, rerr
+	if _, err := breakLock(gitDir, func(cur *Lock) bool {
+		return cur.PID == prev.PID && cur.Started.Unix() == prev.Started
+	}); err != nil {
+		return nil, err
+	}
+	return Acquire(gitDir, now)
+}
+
+// breakLock moves the lock aside when may says it can go. It reads the lock
+// again and moves it while holding an exclusive flock on the git dir, which
+// every move or removal of a lock somebody else may hold takes: the lock
+// judged is then the lock moved, never a fresh one a contender linked in
+// between. Linking a new lock needs no flock, since a link cannot replace a
+// lock that is there. The kernel drops the flock with its process, so a
+// contender that dies here leaves nothing behind.
+func breakLock(gitDir string, may func(*Lock) bool) (broke bool, err error) {
+	unlock, err := lockGitDir(gitDir)
+	if errors.Is(err, os.ErrNotExist) {
+		// The worktree went, and its git dir and lock with it.
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
+	cur, ok, err := ReadLock(gitDir)
+	if err != nil || !ok || !may(cur) {
+		return false, err
+	}
+	stale := fmt.Sprintf("%s.stale.%d", cur.Path, os.Getpid())
+	if err := os.Rename(cur.Path, stale); err != nil {
+		return false, err
 	}
 	_ = os.Remove(stale)
-	return Acquire(gitDir, now)
+	return true, nil
+}
+
+// lockGitDir waits for the flock breakLock and Release hold on the git dir,
+// and returns the func that lets it go. Each holds it only for a read and a
+// rename or removal.
+func lockGitDir(gitDir string) (func(), error) {
+	f, err := os.Open(gitDir)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil { //nolint:gosec // an fd fits an int
+		_ = f.Close()
+		return nil, err
+	}
+	return func() {
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:gosec // as above
+		_ = f.Close()
+	}, nil
 }
 
 // Release removes the lock, but only while it is still this acquisition's: a
@@ -180,6 +226,15 @@ func (l *Lock) Release() error {
 	if kept {
 		return nil
 	}
+	unlock, err := lockGitDir(filepath.Dir(l.Path))
+	if errors.Is(err, os.ErrNotExist) {
+		// The worktree went, and its git dir and lock with it.
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	cur, ok, err := ReadLock(filepath.Dir(l.Path))
 	if err != nil {
 		return err

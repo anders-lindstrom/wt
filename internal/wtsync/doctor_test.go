@@ -366,3 +366,37 @@ func TestDoctorLeavesAHandedOverRebaseToThePlanRow(t *testing.T) {
 		t.Fatalf("rebases = %+v; a handed-over rebase is not stuck", c)
 	}
 }
+
+// The fix runs after a person said yes, while a run may have broken the
+// expired lock and taken a fresh one: the fix removes only the lock it was
+// shown.
+func TestDoctorFixLeavesAFreshLockTakenSinceTheCheck(t *testing.T) {
+	t.Parallel()
+	dir, wt, _ := runRepo(t, nil, nil)
+	gitDir, err := GitDir(wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if _, err := Acquire(gitDir, now.Add(-31*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	checks, err := Doctor(dir, "main", []repo.Worktree{{Path: wt, Branch: "feature"}}, DoctorOptions{Now: now, Keep: 30 * 24 * time.Hour, Docker: func() error { return nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := findCheck(t, checks, "locks")
+	if c.Fix == nil {
+		t.Fatal("expected a fix")
+	}
+	fresh, err := Acquire(gitDir, now)
+	if err != nil {
+		t.Fatalf("a run could not take over the expired lock: %v", err)
+	}
+	if err := c.Fix(); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok, err := ReadLock(gitDir); err != nil || !ok || !got.Started.Equal(fresh.Started) {
+		t.Fatalf("the fix removed the run's fresh lock: %+v ok=%v err=%v", got, ok, err)
+	}
+}

@@ -75,9 +75,10 @@ type participant struct {
 	reason  string
 	// refused is why the run does not rebase this worktree, printed under
 	// its row: its own refusal at triage or at the lock, a stack member
-	// refused before anything moved, which poisons the whole stack (never
-	// half-apply, spec §4), or a parent that failed or was restored, which
-	// takes what sits on top of it with it. Empty means it goes ahead.
+	// refused before anything moved, which poisons the whole stack (a stack
+	// is rebased whole or not at all), or a parent that failed or was
+	// restored, which takes what sits on top of it with it. Empty means it
+	// goes ahead.
 	refused string
 	lock    *wtsync.Lock
 	result  *wtsync.Result
@@ -417,7 +418,11 @@ func (r *RunPlan) expectOverview() error {
 		return err
 	}
 	r.survey = &sv
-	if now := sv.Token(r.ctx, r.trunk, r.trunkSHA); now == nil || *now != r.opts.Expect {
+	now, err := sv.Token(r.ctx, r.trunk, r.trunkSHA)
+	if err != nil {
+		return err
+	}
+	if now == nil || *now != r.opts.Expect {
 		return fmt.Errorf("the overview changed since it was read (what a run on trunk %s would start on is "+
 			"not what wt sync --json saw); nothing is rebased: read the overview again", r.trunk)
 	}
@@ -772,7 +777,8 @@ func (r *RunPlan) release(p *participant) {
 
 // refuseStack refuses b and every other member of its stack that is not
 // already refused: a member refused before anything has moved poisons the
-// whole stack, never half-apply (spec §4).
+// whole stack. A stack is rebased whole or not at all: rebasing part of it
+// leaves the rest on commits the part it rebased has replaced.
 func (r *RunPlan) refuseStack(b, why string) {
 	for _, m := range wtsync.Members(r.parents, b) {
 		if p := r.parts[m]; p != nil && p.refused == "" {

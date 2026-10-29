@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
@@ -630,8 +629,7 @@ func settleSweepItem(r *SweepResultItem, probe SweepResultItem, err error) {
 // is in use, the worktrees could not be read, or it moved off its tip.
 func refusedToDelete(err error) bool {
 	var inUse *repo.BranchInUseError
-	return errors.As(err, &inUse) || errors.Is(err, repo.ErrWorktreesUnknown) ||
-		(err != nil && strings.Contains(err.Error(), "moved after the plan was made"))
+	return errors.As(err, &inUse) || errors.Is(err, repo.ErrWorktreesUnknown) || errors.Is(err, ErrMovedSincePlan)
 }
 
 // readState fills in what is true of a row now, from the repository: its

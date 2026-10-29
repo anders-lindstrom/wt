@@ -4,6 +4,18 @@ Newest first, each heading stamped with the local date and time of the change
 (several land per day). `wt about` prints the newest 5 entries, so keep each entry to a few lines a human
 would want read out to them; the full story is in git history.
 
+## 2026-10-29 06:50 — `wt remove` says when your user file or GitHub is not working
+
+A plain `wt remove` ran in silence when the user config could not be read or
+GitHub did not answer. It now prints the same `wt:` warning on stderr as
+every other command.
+
+## 2026-10-29 06:37 — Ctrl-C during `wt sync --rebase --all` says how to put the worktree back
+
+Interrupting a bulk rebase could exit with a bare "interrupted" before the
+way back for the worktree caught mid-rebase was printed. Now the rebase in
+flight is the one that answers the signal, every time.
+
 ## 2026-10-29 06:19 — `wt refs purge` and `wt refs restore` tokens cover more
 
 A `wt refs purge` token now covers what the purge would lose, and a
