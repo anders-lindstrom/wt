@@ -2,6 +2,7 @@ package retire
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,6 +15,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
 // 5. A merged branch is deleted.
@@ -746,6 +748,9 @@ func TestRemoveDoesNotDeleteABranchThatMovedAfterThePlan(t *testing.T) {
 	if !strings.Contains(err.Error(), "moved after the plan") {
 		t.Errorf("say why it was kept: %v", err)
 	}
+	if !refusedToDelete(err) {
+		t.Errorf("a sweep would not count the kept branch as refused on purpose: %v", err)
+	}
 }
 
 // branch -D refused a branch another worktree was using; update-ref does not,
@@ -768,5 +773,40 @@ func TestRemoveKeepsAMergedBranchAnotherWorktreeIsUsing(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "twin") {
 		t.Errorf("name the worktree using it: %v", err)
+	}
+	var inUse *repo.BranchInUseError
+	if !errors.As(err, &inUse) || !refusedToDelete(err) {
+		t.Errorf("the error hides the worktree using the branch from errors.As: %v", err)
+	}
+}
+
+// A branch that moves after the last look at the checkout, between the
+// checkout going and the branch step, is kept by the delete at the planned
+// tip, and the error says it moved in a way a sweep can tell from a failure.
+func TestRemoveKeepsABranchThatMovedAfterTheFinalCheck(t *testing.T) {
+	// Not parallel: sets afterFinalCheck for the package.
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
+	ctx, _ := kit.Open(main)
+	dst := foreignWorktree(t, ctx, main, "someones-work", 0)
+	plan := planFor(ctx, worktreeRecord(ctx, dst), RemoveOptions{Agents: []agents.Agent{}})
+	if plan.Outcome != BranchDeleted {
+		t.Fatalf("precondition: want a merged branch, got outcome %v", plan.Outcome)
+	}
+	testkit.AddWork(t, main, "main", 1)
+	afterFinalCheck = func() {
+		testkit.GitIn(t, main, "update-ref", "refs/heads/someones-work", "main")
+	}
+	t.Cleanup(func() { afterFinalCheck = nil })
+
+	var buf bytes.Buffer
+	err := plan.apply(ctx, &buf)
+	if !ctx.Repo.BranchExists("someones-work") {
+		t.Fatal("a branch that moved after the plan was deleted")
+	}
+	if err == nil || !strings.Contains(err.Error(), "branch someones-work was kept: it moved after the plan was made") {
+		t.Fatalf("want the branch kept as moved, got %v\n%s", err, buf.String())
+	}
+	if !errors.Is(err, ErrMovedSincePlan) || !refusedToDelete(err) {
+		t.Errorf("a sweep would not count the kept branch as refused on purpose: %v", err)
 	}
 }

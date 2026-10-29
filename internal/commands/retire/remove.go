@@ -1316,12 +1316,12 @@ func (p Plan) remove(ctx *kit.Context, w io.Writer) (RemoveResult, error) {
 		}
 	}
 	now, why := p.recheck()
-	if why != "" {
+	if why != nil {
 		hint := ""
 		if f := now.forceWould(); f != 0 {
 			hint = "\n  pass " + (p.Force | f).Flag() + " to remove it anyway"
 		}
-		return res, fmt.Errorf("%s was not removed: %s%s", p.Path, why, hint)
+		return res, fmt.Errorf("%s was not removed: %w%s", p.Path, why, hint)
 	}
 	res.Forced = p.forced() | now.forced()
 	if afterFinalCheck != nil {
@@ -1408,6 +1408,20 @@ func (p Plan) releaseLock(ctx *kit.Context, w io.Writer) error {
 	return nil
 }
 
+// ErrMovedSincePlan is a branch or checkout kept because it is no longer at
+// the commit the plan showed. A sweep counts it as kept, not failed.
+var ErrMovedSincePlan = errors.New("moved after the plan was made")
+
+// keptError is a branch the branch step kept on purpose: msg is the line wt
+// prints, and cause, for errors.As, the reason git or wt gave.
+type keptError struct {
+	cause error
+	msg   string
+}
+
+func (e *keptError) Error() string { return e.msg }
+func (e *keptError) Unwrap() error { return e.cause }
+
 // branchStep carries out the plan's branch outcome once the checkout is
 // gone. result is one of quarantine's Branch* values: BranchKept is a step
 // turned down on purpose, BranchFailed one git failed; err says why for
@@ -1431,14 +1445,14 @@ func (p Plan) branchStep(ctx *kit.Context) (result, msg string, err error) {
 			var inUse *repo.BranchInUseError
 			switch {
 			case errors.As(err, &inUse):
-				return quarantine.BranchKept, "", fmt.Errorf("branch %s is merged into %s but was kept: %s is using it",
-					p.Branch, p.Base, inUse.Path)
+				return quarantine.BranchKept, "", &keptError{cause: inUse, msg: fmt.Sprintf(
+					"branch %s is merged into %s but was kept: %s is using it", p.Branch, p.Base, inUse.Path)}
 			case errors.Is(err, repo.ErrWorktreesUnknown):
 				return quarantine.BranchKept, "", fmt.Errorf("branch %s is merged into %s but was kept: %w", p.Branch, p.Base, err)
 			}
 			// A tip that cannot be read falls through to the delete's own error.
 			if now, ok, _ := ctx.Repo.ResolveRef("refs/heads/" + p.Branch); ok && now != p.Tip {
-				return quarantine.BranchKept, "", fmt.Errorf("branch %s was kept: it moved after the plan was made", p.Branch)
+				return quarantine.BranchKept, "", fmt.Errorf("branch %s was kept: it %w", p.Branch, ErrMovedSincePlan)
 			}
 			return quarantine.BranchFailed, "", fmt.Errorf("branch %s is merged into %s, but deleting it failed: %s",
 				p.Branch, p.Base, gitSaid(err))
@@ -1666,8 +1680,8 @@ func (p Plan) clearProcesses(w io.Writer) ([]agents.Reaped, error) {
 // that turned busy or arrived one it never weighed. A session refuses unless
 // --force names its state now. The sessions are listed first, because that
 // can take seconds, and the checkout is read last, as close to the delete as
-// it gets. It returns that reading, and why is "" when it can still go.
-func (p Plan) recheck() (now Plan, why string) {
+// it gets. It returns that reading, and why is nil when it can still go.
+func (p Plan) recheck() (now Plan, why error) {
 	now = Plan{Path: p.Path, Force: p.Force, who: p.who}
 	listed, err := p.listSessionsAgain()
 	if listed == nil {
@@ -1676,10 +1690,10 @@ func (p Plan) recheck() (now Plan, why string) {
 	now.setSessions(p.who.SessionsIn(listed, err, p.Path))
 	now.readCheckout()
 	if now.Head != p.Head && now.StatusError == "" {
-		return now, "its HEAD moved after the plan was made"
+		return now, fmt.Errorf("its HEAD %w", ErrMovedSincePlan)
 	}
 	if why := now.refusal(); why != "" {
-		return now, "it changed since the plan was made: " + why
+		return now, errors.New("it changed since the plan was made: " + why)
 	}
-	return now, ""
+	return now, nil
 }
