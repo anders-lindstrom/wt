@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/supersetws"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/naming"
@@ -137,7 +138,7 @@ func basePlan(ctx *kit.Context, command string, opts NewOptions) CreatePlan {
 		if !opts.SkipBuild && ctx.Config.BuildInitEnabled {
 			p.BuildCommand = kit.Strp(ctx.Config.BuildInitCommand)
 		}
-		p.Superset = !opts.NoSuperset && SupersetEnabled(ctx)
+		p.Superset = !opts.NoSuperset && supersetws.Enabled(ctx)
 	}
 	return p
 }

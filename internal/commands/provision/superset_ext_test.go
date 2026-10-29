@@ -10,6 +10,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anders-lindstrom/wt/internal/commands/supersetws"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/gittest"
@@ -208,7 +209,7 @@ func TestCheckoutRegistersToo(t *testing.T) {
 // Superset's status calling a serving host stale does not stop a registration:
 // the host is asked, answers, and the worktree is registered with no remark.
 func TestNewRegistersThoughStatusCallsTheHostStale(t *testing.T) {
-	// Not parallel: swaps ProbeSuperset, SupersetHostCommand; sets environment variables for the whole test binary.
+	// Not parallel: swaps supersetws.Probe, supersetws.HostCommand; sets environment variables for the whole test binary.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -292,7 +293,7 @@ func TestRegisterSupersetNeedsABranch(t *testing.T) {
 	testkit.GitIn(t, main, "worktree", "add", "--detach", path, "HEAD")
 
 	var errs bytes.Buffer
-	provision.RegisterSuperset(ctx, path, &errs)
+	supersetws.Register(ctx, path, &errs)
 	if !strings.Contains(errs.String(), path+" is not on a branch; not registered with Superset") {
 		t.Errorf("stderr = %q", errs.String())
 	}

@@ -10,6 +10,7 @@ import (
 	"os"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/supersetws"
 )
 
 // NewOptions controls worktree creation.
@@ -109,7 +110,7 @@ func AddAndProvision(ctx *kit.Context, path string, add func() error, opts NewOp
 		return path, err
 	}
 	j.start(kit.StepSuperset)
-	result, reason := RegisterSuperset(ctx, path, w)
+	result, reason := supersetws.Register(ctx, path, w)
 	j.finish(kit.StepSuperset, result, reason, "")
 	return path, err
 }

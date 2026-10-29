@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/provision"
+	"github.com/anders-lindstrom/wt/internal/commands/supersetws"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -87,7 +87,7 @@ func registerRestored(ctx *kit.Context, path string, w io.Writer) {
 		rctx.User, rctx.UserError = ctx.User, ctx.UserError
 		rctx.SupersetFake = ctx.SupersetFake
 	}
-	provision.RegisterSuperset(rctx, path, w)
+	supersetws.Register(rctx, path, w)
 }
 
 // renderRestorePlan writes what a restore finds and would do.

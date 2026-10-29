@@ -109,7 +109,7 @@ func TestDoctorReportsAUsableSuperset(t *testing.T) {
 // own report, in one line, and never tells the person to start an app that is
 // already up. It is no problem even for a repository that asked for Superset.
 func TestDoctorSaysStatusIsWrongAboutARunningHost(t *testing.T) {
-	// Not parallel: swaps provision.ProbeSuperset; sets environment variables for the whole test binary.
+	// Not parallel: swaps supersetws.Probe; sets environment variables for the whole test binary.
 	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
 	if err != nil {
 		t.Fatal(err)
@@ -145,7 +145,7 @@ func TestDoctorSaysStatusIsWrongAboutARunningHost(t *testing.T) {
 // stale, one that is stopped and a pid that cannot be read say nothing.
 // WORKAROUND(superset-stale-status)
 func TestDoctorSaysWhenTheStaleWorkaroundCanGo(t *testing.T) {
-	// Not parallel: swaps provision.ProbeSuperset, provision.SupersetHostCommand; sets environment variables for the whole test binary.
+	// Not parallel: swaps supersetws.Probe, supersetws.HostCommand; sets environment variables for the whole test binary.
 	const (
 		running = `{"running":true,"healthy":true,"pid":4242,"port":51234,"endpoint":"http://127.0.0.1:51234","uptimeSec":60}`
 		desktop = "/Applications/Superset.app/Contents/MacOS/Superset /Applications/Superset.app/Contents/Resources/app.asar/dist/main/host-service.js"

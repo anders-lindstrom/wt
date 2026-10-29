@@ -8,8 +8,8 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anders-lindstrom/wt/internal/commands/supersetws"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/superset"
@@ -46,7 +46,7 @@ func TestRemoveDeregistersTheSupersetWorkspace(t *testing.T) {
 			if got := testkit.ArgvOf(t, log); strings.Join(got, "|") != strings.Join(want, "|") {
 				t.Errorf("argv =\n  %q\nwant\n  %q", got, want)
 			}
-			if res.Superset != provision.StepDeregistered || res.SupersetReason != "" {
+			if res.Superset != supersetws.StepDeregistered || res.SupersetReason != "" {
 				t.Errorf("result superset = %q (%q)", res.Superset, res.SupersetReason)
 			}
 			if !strings.Contains(out.String(), "✓ deleted its Superset workspace") {
@@ -71,9 +71,9 @@ func TestRemoveSurvivesEverySupersetState(t *testing.T) {
 		"status broken":  {&superset.Status{Exe: "/nope/superset", Err: testkit.ErrBoom}, testkit.Deleted, kit.StepFailed, "! boom; its Superset workspace, if any, was left"},
 		"list fails":     {&superset.Status{Exe: "/nope/superset", Running: true}, testkit.Deleted, kit.StepFailed, "! superset ws list --local --json failed"},
 		"delete fails":   {nil, `echo 'Error: nope' >&2; exit 1`, kit.StepFailed, "! superset ws delete --local w1 --json failed: nope; its Superset workspace was left"},
-		"delete warns":   {nil, `echo '{"deleted":["w1"],"warnings":["teardown failed"]}'`, provision.StepDeregistered, "✓ deleted its Superset workspace; Superset warned: teardown failed"},
-		"not registered": {nil, testkit.Deleted, provision.StepNotRegistered, ""},
-		"warns on lines": {nil, `printf '%s\n' '{"deleted":["w1"],"warnings":["teardown failed\nat line 3"]}'`, provision.StepDeregistered, "✓ deleted its Superset workspace; Superset warned: teardown failed at line 3"},
+		"delete warns":   {nil, `echo '{"deleted":["w1"],"warnings":["teardown failed"]}'`, supersetws.StepDeregistered, "✓ deleted its Superset workspace; Superset warned: teardown failed"},
+		"not registered": {nil, testkit.Deleted, supersetws.StepNotRegistered, ""},
+		"warns on lines": {nil, `printf '%s\n' '{"deleted":["w1"],"warnings":["teardown failed\nat line 3"]}'`, supersetws.StepDeregistered, "✓ deleted its Superset workspace; Superset warned: teardown failed at line 3"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			ctx, path := provisiontest.SafetyWorktree(t, "fix/mirrored")
@@ -200,7 +200,7 @@ func TestRemoveKeepSupersetAsksSupersetNothing(t *testing.T) {
 			if got := testkit.ArgvOf(t, log); got != nil {
 				t.Errorf("superset was run: %q", got)
 			}
-			if res.Superset != provision.StepOptedOut {
+			if res.Superset != supersetws.StepOptedOut {
 				t.Errorf("result superset = %q (%q)", res.Superset, res.SupersetReason)
 			}
 			if lines := testkit.SupersetLines(out.String()); len(lines) != 1 || !strings.Contains(lines[0], "--keep-superset") {

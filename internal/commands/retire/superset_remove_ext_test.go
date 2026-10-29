@@ -4,10 +4,10 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
+	"github.com/anders-lindstrom/wt/internal/commands/supersetws"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/github"
 )
@@ -35,7 +35,7 @@ func TestSweepDeregistersEachRemovedWorktree(t *testing.T) {
 				t.Fatalf("%v %+v\n%s", err, r, human)
 			}
 			it := retiretest.ResultItem(t, r, "fix_wt/one")
-			if it.Superset == nil || it.Superset.Result != provision.StepDeregistered || it.Superset.Reason != nil {
+			if it.Superset == nil || it.Superset.Result != supersetws.StepDeregistered || it.Superset.Reason != nil {
 				t.Errorf("item superset = %+v", it.Superset)
 			}
 			if got := testkit.ArgvOf(t, log); len(got) != 2 || got[1] != "ws delete --local w1 --json" {
@@ -85,7 +85,7 @@ func TestRemoveJSONKeepSupersetIsInThePlanAndTheToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v %+v", err, r)
 	}
-	if s := retiretest.Step(t, r, kit.StepSuperset); s.Result != provision.StepOptedOut || s.Reason == nil {
+	if s := retiretest.Step(t, r, kit.StepSuperset); s.Result != supersetws.StepOptedOut || s.Reason == nil {
 		t.Errorf("superset step = %+v", s)
 	}
 	if got := testkit.ArgvOf(t, log); got != nil {
@@ -121,7 +121,7 @@ func TestSweepKeepSupersetAsksSupersetNothing(t *testing.T) {
 		t.Fatalf("%v %+v\n%s", err, r, human)
 	}
 	it := retiretest.ResultItem(t, r, "fix_wt/one")
-	if it.Superset == nil || it.Superset.Result != provision.StepOptedOut {
+	if it.Superset == nil || it.Superset.Result != supersetws.StepOptedOut {
 		t.Errorf("item superset = %+v", it.Superset)
 	}
 	if got := testkit.ArgvOf(t, log); got != nil {

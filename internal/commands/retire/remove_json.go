@@ -9,8 +9,8 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
+	"github.com/anders-lindstrom/wt/internal/commands/supersetws"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/schema"
@@ -238,7 +238,7 @@ func hashRemove(t *kit.Token, ctx *kit.Context, p Plan) *kit.Token {
 			Str("Unreachable.Path", l.Path)
 	}
 	t.Str("ReachError", p.ReachError).Str("Quarantine", p.Quarantine).List("Force", p.Force.Names()...).
-		Bool("superset", provision.SupersetEnabled(ctx)).Bool("KeepSuperset", p.KeepSuperset)
+		Bool("superset", supersetws.Enabled(ctx)).Bool("KeepSuperset", p.KeepSuperset)
 	// The processes it ends, when it ends any: a tool that read the plan
 	// agreed to those. Without --reap they are left alone and do not count.
 	t.Bool("Reap", p.Reap)

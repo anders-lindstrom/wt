@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/provision"
+	"github.com/anders-lindstrom/wt/internal/commands/supersetws"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/superset"
 )
@@ -60,9 +60,9 @@ func SupersetSaying(t *testing.T, repoRoot, status string) string {
 		"esac\n"
 	gittest.WriteExecutable(t, filepath.Join(dir, "superset"), script)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	old := provision.ProbeSuperset
-	provision.ProbeSuperset = superset.Probe
-	t.Cleanup(func() { provision.ProbeSuperset = old })
+	old := supersetws.Probe
+	supersetws.Probe = superset.Probe
+	t.Cleanup(func() { supersetws.Probe = old })
 	return log
 }
 
@@ -71,12 +71,12 @@ func SupersetSaying(t *testing.T, repoRoot, status string) string {
 func HostCommand(t *testing.T, line string, err error) *[]int {
 	t.Helper()
 	var asked []int
-	old := provision.SupersetHostCommand
-	provision.SupersetHostCommand = func(pid int) (string, error) {
+	old := supersetws.HostCommand
+	supersetws.HostCommand = func(pid int) (string, error) {
 		asked = append(asked, pid)
 		return line, err
 	}
-	t.Cleanup(func() { provision.SupersetHostCommand = old })
+	t.Cleanup(func() { supersetws.HostCommand = old })
 	return &asked
 }
 

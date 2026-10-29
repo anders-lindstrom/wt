@@ -17,8 +17,8 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
+	"github.com/anders-lindstrom/wt/internal/commands/supersetws"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
@@ -107,7 +107,7 @@ type RemoveResult struct {
 	// when there is none.
 	RunID string
 	// Superset is what came of deleting the worktree's Superset workspace
-	// — provision.StepDeregistered, provision.StepNotRegistered,
+	// — supersetws.StepDeregistered, supersetws.StepNotRegistered,
 	// kit.StepSkipped or kit.StepFailed —
 	// and "" when no worktree was removed. SupersetReason says why for a
 	// skip or a failure.
@@ -1291,9 +1291,9 @@ var afterFinalCheck func()
 // its path, its Superset workspace goes too; it is looked up before, while
 // the path still resolves. KeepSuperset asks Superset nothing.
 func (p Plan) run(ctx *kit.Context, w io.Writer) (RemoveResult, error) {
-	workspaces := provision.KeptSupersetWorkspaces(ctx)
+	workspaces := supersetws.Kept(ctx)
 	if !p.KeepSuperset {
-		workspaces = provision.FindSupersetWorkspaces(ctx, p.Path)
+		workspaces = supersetws.Find(ctx, p.Path)
 	}
 	res, err := p.remove(ctx, w)
 	if res.Worktree == WorktreeRemoved || res.Worktree == WorktreeQuarantined {

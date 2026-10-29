@@ -179,7 +179,7 @@ type SweepResultItem struct {
 
 // SweepSuperset is one removed worktree's Superset step.
 type SweepSuperset struct {
-	// Result is provision.StepDeregistered, provision.StepNotRegistered,
+	// Result is supersetws.StepDeregistered, supersetws.StepNotRegistered,
 	// kit.StepSkipped or kit.StepFailed.
 	Result string  `json:"result"`
 	Reason *string `json:"reason"`

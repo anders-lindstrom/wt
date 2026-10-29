@@ -1,4 +1,4 @@
-package provision_test
+package supersetws_test
 
 import (
 	"bytes"
@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anders-lindstrom/wt/internal/commands/supersetws"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 )
 
@@ -22,7 +22,7 @@ func TestDeregisterNeverRunsWhileTheWorktreeIsThere(t *testing.T) {
 			ctx, path := provisiontest.SafetyWorktree(t, "fix/mirrored")
 			testkit.OptIn(ctx)
 			log := provisiontest.SupersetAt(t, ctx, path, testkit.Deleted)
-			found := provision.FindSupersetWorkspaces(ctx, path)
+			found := supersetws.Find(ctx, path)
 			if how == "registration" {
 				// Gone from disk, still in git's list: a partial quarantine.
 				if err := os.RemoveAll(path); err != nil {
