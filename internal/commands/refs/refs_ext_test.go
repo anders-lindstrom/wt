@@ -11,12 +11,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/commands/refs"
 	"github.com/anders-lindstrom/wt/internal/commands/refs/refstest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
 	"github.com/anders-lindstrom/wt/internal/jsonout"
+	"github.com/anders-lindstrom/wt/internal/refpins"
 )
 
 // A sweep pins each selected ref and deletes it in one step, drops a
@@ -36,6 +36,7 @@ func TestRefsSweepPinsAndDeletes(t *testing.T) {
 		t.Fatalf("result = %+v\n%s", r, human)
 	}
 	run := *r.RunID
+	recordedVersion(t, ctx, run)
 	for _, id := range []string{"refs/heads/backup/contained", "refs/heads/backup/old", "refs/tags/safe-tag"} {
 		it := refs.RefResultOf(t, r, id)
 		if it.Result != refs.RefSwept || !it.Pinned || !it.Deleted || it.Pin == nil || len(it.RestoreCommand) != 7 ||

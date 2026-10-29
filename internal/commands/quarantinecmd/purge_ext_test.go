@@ -1,4 +1,4 @@
-package purge_test
+package quarantinecmd_test
 
 import (
 	"bytes"
@@ -9,10 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/purge"
-	"github.com/anders-lindstrom/wt/internal/commands/purge/purgetest"
-	"github.com/anders-lindstrom/wt/internal/commands/refs"
-	"github.com/anders-lindstrom/wt/internal/commands/refs/refstest"
+	"github.com/anders-lindstrom/wt/internal/commands/quarantinecmd"
+	"github.com/anders-lindstrom/wt/internal/commands/quarantinecmd/quarantinecmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
@@ -39,7 +37,7 @@ func TestPurgeDeletesTheFolderAndThePins(t *testing.T) {
 	if !slices.Equal(plan.Entries, []string{"admin", "checkout", quarantine.FileName}) || plan.Bytes <= 0 {
 		t.Errorf("entries %v, %d bytes", plan.Entries, plan.Bytes)
 	}
-	res := purgetest.Purge(t, dir)
+	res := quarantinecmdtest.Purge(t, dir)
 	if res.Outcome != quarantine.OutcomePurged {
 		t.Errorf("result %+v", res)
 	}
@@ -71,7 +69,7 @@ func TestPurgeNeverFollowsASymlinkOut(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	purgetest.Purge(t, dir)
+	quarantinecmdtest.Purge(t, dir)
 	testkit.AssertPurged(t, ctx, dir)
 	if got := testkit.MustRead(t, filepath.Join(outside, "precious.txt")); got != "precious" {
 		t.Errorf("what a symlink named was touched: %q", got)
@@ -89,7 +87,7 @@ func TestPurgeDeletesAReadOnlyFolder(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	purgetest.Purge(t, dir)
+	quarantinecmdtest.Purge(t, dir)
 	testkit.AssertPurged(t, ctx, dir)
 }
 
@@ -98,7 +96,7 @@ func TestPurgeDeletesAReadOnlyFolder(t *testing.T) {
 func TestPurgeAfterRestoreDeletesOnlyTheLeftovers(t *testing.T) {
 	t.Parallel()
 	ctx, path, branch, _, dir := retiretest.Quarantined(t, "fix/back-then-purged", false)
-	refstest.Restore(t, ctx, dir)
+	quarantinecmdtest.Restore(t, ctx, dir)
 	plan := quarantine.PlanPurge(dir)
 	if plan.State != quarantine.StateRestored || plan.Refusal() != "" {
 		t.Fatalf("plan %+v", plan)
@@ -107,11 +105,11 @@ func TestPurgeAfterRestoreDeletesOnlyTheLeftovers(t *testing.T) {
 		t.Errorf("plan %+v", plan)
 	}
 	var buf bytes.Buffer
-	purge.RenderPurgePlan(plan, &buf)
+	quarantinecmd.RenderPurgePlan(plan, &buf)
 	if !strings.Contains(buf.String(), "restored already") {
 		t.Errorf("the plan must say it was restored:\n%s", buf.String())
 	}
-	purgetest.Purge(t, dir)
+	quarantinecmdtest.Purge(t, dir)
 	testkit.AssertPurged(t, ctx, dir)
 	testkit.AssertBack(t, ctx, path, dir, "ref: refs/heads/"+branch)
 }
@@ -126,7 +124,7 @@ func TestPurgeFinishesAPurgeStoppedAtEveryStep(t *testing.T) {
 	var points []string
 	{
 		_, _, _, _, dir := retiretest.Quarantined(t, "fix/count-purge", true)
-		purgetest.PurgeWith(t, dir, &quarantine.Hooks{
+		quarantinecmdtest.PurgeWith(t, dir, &quarantine.Hooks{
 			AfterSave: func(_ *quarantine.Record, at string) error {
 				points = append(points, at)
 				return nil
@@ -155,14 +153,14 @@ func TestPurgeFinishesAPurgeStoppedAtEveryStep(t *testing.T) {
 			}
 			var res quarantine.PurgeResult
 			var buf bytes.Buffer
-			if err := purge.QuarantinePurge(dir, purge.Options{Result: &res, QuarantineHooks: h}, &buf); err == nil {
+			if err := quarantinecmd.Purge(dir, quarantinecmd.PurgeOptions{Result: &res, QuarantineHooks: h}, &buf); err == nil {
 				t.Fatalf("the purge must stop at %s", point)
 			}
 			if res.Outcome != quarantine.OutcomePartial {
 				t.Errorf("outcome %s", res.Outcome)
 			}
 			if point != "record" {
-				if err := refs.Restore(ctx, dir, refs.RestoreOptions{}, &buf); err == nil {
+				if err := quarantinecmd.Restore(ctx, dir, quarantinecmd.RestoreOptions{}, &buf); err == nil {
 					t.Fatal("a restore must refuse a quarantine being purged")
 				}
 			}
@@ -180,7 +178,7 @@ func TestPurgeFinishesAPurgeStoppedAtEveryStep(t *testing.T) {
 			if plan := quarantine.PlanPurge(dir); plan.State != quarantine.StatePurging {
 				t.Errorf("state %s: %s", plan.State, plan.Refusal())
 			}
-			purgetest.Purge(t, dir)
+			quarantinecmdtest.Purge(t, dir)
 			testkit.AssertPurged(t, ctx, dir)
 		})
 	}
@@ -198,7 +196,7 @@ func TestPurgeNeverWritesThroughAJournalSymlink(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	purgetest.Purge(t, dir)
+	quarantinecmdtest.Purge(t, dir)
 	testkit.AssertPurged(t, ctx, dir)
 	if got := testkit.MustRead(t, outside); got != "precious" {
 		t.Errorf("a file outside was written: %q", got)
@@ -215,10 +213,10 @@ func TestPurgeBegunThroughAnAliasIsFinishedThroughTheName(t *testing.T) {
 		t.Fatal(err)
 	}
 	alias := filepath.Join(link, filepath.Base(dir))
-	if err := purge.QuarantinePurge(alias, purge.Options{QuarantineHooks: testkit.CrashAt("purge.begin")}, &bytes.Buffer{}); !errors.Is(err, testkit.ErrCrash) {
+	if err := quarantinecmd.Purge(alias, quarantinecmd.PurgeOptions{QuarantineHooks: testkit.CrashAt("purge.begin")}, &bytes.Buffer{}); !errors.Is(err, testkit.ErrCrash) {
 		t.Fatalf("the purge through the alias: err %v, want the injected crash", err)
 	}
-	purgetest.Purge(t, dir)
+	quarantinecmdtest.Purge(t, dir)
 	testkit.AssertPurged(t, ctx, dir)
 }
 
@@ -229,12 +227,12 @@ func TestPurgeNeverDeletesAQuarantineInsideIt(t *testing.T) {
 	t.Parallel()
 	t.Run("beside the record of a restored one", func(t *testing.T) {
 		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/outer-restored", false)
-		refstest.Restore(t, ctx, dir)
+		quarantinecmdtest.Restore(t, ctx, dir)
 		_, _, _, _, inner := retiretest.Quarantined(t, "fix/inner-a", false)
 		if err := os.Rename(inner, filepath.Join(dir, "inner")); err != nil {
 			t.Fatal(err)
 		}
-		purge.PurgeRefused(t, ctx, dir, quarantine.ProblemForeignEntry)
+		quarantinecmd.PurgeRefused(t, ctx, dir, quarantine.ProblemForeignEntry)
 	})
 	t.Run("inside the quarantined checkout", func(t *testing.T) {
 		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/outer-q", false)
@@ -245,12 +243,12 @@ func TestPurgeNeverDeletesAQuarantineInsideIt(t *testing.T) {
 		if err := os.Rename(inner, filepath.Join(dir, "checkout", "sub", "inner")); err != nil {
 			t.Fatal(err)
 		}
-		purge.PurgeRefused(t, ctx, dir, quarantine.ProblemNestedQuarantine)
+		quarantinecmd.PurgeRefused(t, ctx, dir, quarantine.ProblemNestedQuarantine)
 	})
 	t.Run("a project file named recovery.json is not one", func(t *testing.T) {
 		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/outer-file", false)
 		testkit.MustWrite(t, filepath.Join(dir, "checkout", quarantine.FileName), `{"name":"not wt's"}`)
-		purgetest.Purge(t, dir)
+		quarantinecmdtest.Purge(t, dir)
 		testkit.AssertPurged(t, ctx, dir)
 	})
 }

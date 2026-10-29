@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/jsonout"
+	"github.com/anders-lindstrom/wt/internal/refpins"
 	"github.com/anders-lindstrom/wt/schema"
 )
 
@@ -114,7 +114,7 @@ func PlanRefsRestore(ctx *kit.Context, runID string) (RestoreRefsPlan, error) {
 		}
 		if refpins.RemoteKind(s.Kind) {
 			if origin == nil {
-				rr, err := refpins.ReadRemoteRefs(p.Repo, today.Raw)
+				rr, err := refpins.ReadRemoteRefs(p.Repo, today.Raw, kit.NetworkTimeout)
 				if err != nil {
 					return p, err
 				}

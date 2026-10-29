@@ -1,6 +1,8 @@
-// Package refs implements wt refs, which sweeps old branches and tags into
-// pins and puts them back, and wt restore, which puts back a quarantined
-// worktree.
+// Package refs implements wt refs, the commands of the ref-pin store under
+// refs/wt-swept/: sweep, which pins old branches and tags and deletes them,
+// swept, which lists the runs, restore, which puts them back, and purge,
+// which deletes a run for good. wt remove and wt sweep, in retire, pin the
+// branches they delete there too; the store itself is internal/refpins.
 package refs
 
 import (
@@ -15,13 +17,13 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
+	"github.com/anders-lindstrom/wt/internal/refpins"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
 
@@ -442,7 +444,7 @@ func sortContainers(c []container) {
 // candidates, and the containers a remote backup is measured against —
 // origin's own refs, since other clones cannot see a branch here.
 func readOriginRefs(ctx *kit.Context, url string, patterns []config.RefPattern) ([]refCandidate, []container, error) {
-	rr, err := refpins.ReadRemoteRefs(ctx.Repo.MainRoot, url)
+	rr, err := refpins.ReadRemoteRefs(ctx.Repo.MainRoot, url, kit.NetworkTimeout)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -884,7 +886,7 @@ func Sweep(ctx *kit.Context, opts Options, w io.Writer) (err error) {
 	// The meta goes first, so the run is bound, with --remote, to the origin
 	// it deleted from.
 	j.begin(runID)
-	if err := refpins.BeginRun(ctx.Repo.MainRoot, runID, opts.now(), plan.Endpoint); err != nil {
+	if err := refpins.BeginRun(ctx.Repo.MainRoot, runID, opts.now(), plan.Endpoint, kit.Version); err != nil {
 		j.abandon()
 		return fmt.Errorf("nothing was swept: %w", err)
 	}
@@ -953,7 +955,7 @@ func sweepLocalRef(ctx *kit.Context, r RefRow, pin string) refState {
 		return refState{kept: "it moved after the plan was made"}
 	}
 	if r.Kind == refpins.RefBranch {
-		err = refpins.MoveBranch(ctx, r.Name, r.Object, pin, "wt refs sweep")
+		err = refpins.MoveBranch(ctx.Repo, r.Name, r.Object, pin, "wt refs sweep")
 		var inUse *repo.BranchInUseError
 		switch {
 		case errors.As(err, &inUse):

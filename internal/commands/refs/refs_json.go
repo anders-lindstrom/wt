@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/jsonout"
+	"github.com/anders-lindstrom/wt/internal/refpins"
 	"github.com/anders-lindstrom/wt/schema"
 )
 

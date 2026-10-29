@@ -5,8 +5,7 @@ import (
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
-	"github.com/anders-lindstrom/wt/internal/commands/purge/purgetest"
-	"github.com/anders-lindstrom/wt/internal/commands/refs/refstest"
+	"github.com/anders-lindstrom/wt/internal/commands/quarantinecmd/quarantinecmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 )
@@ -17,7 +16,7 @@ import (
 func TestRestorePutsBackAFolderMadeTheOldWay(t *testing.T) {
 	t.Parallel()
 	ctx, path, branch, tip, dir := provisiontest.OldFolder(t, "fix/old-way")
-	res := refstest.Restore(t, ctx, dir)
+	res := quarantinecmdtest.Restore(t, ctx, dir)
 	if res.Outcome != quarantine.OutcomeRestored {
 		t.Fatalf("outcome %s", res.Outcome)
 	}
@@ -34,7 +33,7 @@ func TestRestorePutsBackAFolderMadeTheOldWay(t *testing.T) {
 func TestPurgeDeletesAFolderMadeTheOldWay(t *testing.T) {
 	t.Parallel()
 	ctx, _, _, _, dir := provisiontest.OldFolder(t, "fix/old-way")
-	res := purgetest.Purge(t, dir)
+	res := quarantinecmdtest.Purge(t, dir)
 	if res.Outcome != quarantine.OutcomePurged {
 		t.Fatalf("outcome %s", res.Outcome)
 	}

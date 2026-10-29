@@ -1,6 +1,8 @@
-// Package purge implements wt purge, which deletes a quarantined worktree
-// for good, and wt refs purge, which deletes a run of swept pins.
-package purge
+// Package quarantinecmd implements the commands that end a quarantine: wt
+// restore, which puts a quarantined worktree back, and wt purge, which
+// deletes it for good. wt remove --move-to and wt sweep --move-to, in
+// retire, quarantine worktrees; the store itself is internal/quarantine.
+package quarantinecmd
 
 import (
 	"errors"
@@ -12,10 +14,10 @@ import (
 	"strings"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
+	"github.com/anders-lindstrom/wt/internal/refpins"
 	"github.com/anders-lindstrom/wt/schema"
 )
 
@@ -28,8 +30,8 @@ var errPurgePlanChanged = errors.New("the purge plan changed since it was read (
 var errPurgeNoTerminal = errors.New("nothing was purged: there is no terminal to ask, " +
 	"and a purge deletes for good: pass --yes")
 
-// Options carries what wt purge was asked.
-type Options struct {
+// PurgeOptions carries what wt purge was asked.
+type PurgeOptions struct {
 	// DryRun prints the plan and deletes nothing.
 	DryRun bool
 	// Expect refuses the purge unless the plan made now has this token.
@@ -48,9 +50,9 @@ type Options struct {
 	QuarantineHooks *quarantine.Hooks
 }
 
-// QuarantinePurge deletes, for good, the worktree wt remove --move-to or
+// Purge deletes, for good, the worktree wt remove --move-to or
 // wt sweep --move-to moved into dir: its pins, then the folder.
-func QuarantinePurge(dir string, opts Options, w io.Writer) error {
+func Purge(dir string, opts PurgeOptions, w io.Writer) error {
 	dir, err := filepath.Abs(dir)
 	if err != nil {
 		return err
@@ -232,50 +234,50 @@ func purgeTokenOf(p quarantine.PurgePlan) *jsonout.Token {
 	return t.Str("ReachError", p.ReachError).Bool("RepoGone", p.RepoGone)
 }
 
-// PinPlan is one pin, for --json.
-type PinPlan struct {
+// PurgePinPlan is one pin, for --json.
+type PurgePinPlan struct {
 	Name string  `json:"name"`
 	Ref  string  `json:"ref"`
 	OID  *string `json:"oid"`
 }
 
-// Lost is a commit only a pin holds, for --json.
-type Lost struct {
+// PurgeLost is a commit only a pin holds, for --json.
+type PurgeLost struct {
 	Kind  string `json:"kind"`
 	OID   string `json:"oid"`
 	Count int    `json:"count"`
 }
 
-// Problem is one reason a purge refuses, for --json.
-type Problem struct {
+// PurgeProblem is one reason a purge refuses, for --json.
+type PurgeProblem struct {
 	Code string `json:"code"`
 	Text string `json:"text"`
 }
 
-// PlanOutput is the one object wt purge --dry-run --json prints.
-type PlanOutput struct {
-	Schema        int       `json:"schema"`
-	SchemaVersion string    `json:"schemaVersion"`
-	Command       string    `json:"command"`
-	Dir           string    `json:"dir"`
-	Repo          *string   `json:"repo"`
-	State         *string   `json:"state"`
-	Token         *string   `json:"token"`
-	Worktree      *string   `json:"worktree"`
-	Branch        *string   `json:"branch"`
-	CreatedAt     *string   `json:"createdAt"`
-	Entries       []string  `json:"entries"`
-	Bytes         *int64    `json:"bytes"`
-	Pins          []PinPlan `json:"pins"`
-	Unreachable   []Lost    `json:"unreachable"`
-	ReachError    *string   `json:"reachError"`
-	RepoGone      bool      `json:"repositoryGone"`
-	Problems      []Problem `json:"problems"`
-	Error         *string   `json:"error"`
+// PurgePlanOutput is the one object wt purge --dry-run --json prints.
+type PurgePlanOutput struct {
+	Schema        int            `json:"schema"`
+	SchemaVersion string         `json:"schemaVersion"`
+	Command       string         `json:"command"`
+	Dir           string         `json:"dir"`
+	Repo          *string        `json:"repo"`
+	State         *string        `json:"state"`
+	Token         *string        `json:"token"`
+	Worktree      *string        `json:"worktree"`
+	Branch        *string        `json:"branch"`
+	CreatedAt     *string        `json:"createdAt"`
+	Entries       []string       `json:"entries"`
+	Bytes         *int64         `json:"bytes"`
+	Pins          []PurgePinPlan `json:"pins"`
+	Unreachable   []PurgeLost    `json:"unreachable"`
+	ReachError    *string        `json:"reachError"`
+	RepoGone      bool           `json:"repositoryGone"`
+	Problems      []PurgeProblem `json:"problems"`
+	Error         *string        `json:"error"`
 }
 
-// PinResult is one pin and what became of it, for --json.
-type PinResult struct {
+// PurgePinResult is one pin and what became of it, for --json.
+type PurgePinResult struct {
 	Name   string  `json:"name"`
 	Ref    string  `json:"ref"`
 	OID    *string `json:"oid"`
@@ -284,36 +286,36 @@ type PinResult struct {
 
 // What became of a pin.
 const (
-	PinDeleted = "deleted"
-	PinAbsent  = "absent"
-	PinKept    = "kept"
+	PurgePinDeleted = "deleted"
+	PurgePinAbsent  = "absent"
+	PurgePinKept    = "kept"
 )
 
-// Output is the one object wt purge --yes --json prints.
-type Output struct {
-	Schema        int         `json:"schema"`
-	SchemaVersion string      `json:"schemaVersion"`
-	Command       string      `json:"command"`
-	Dir           string      `json:"dir"`
-	Repo          *string     `json:"repo"`
-	State         *string     `json:"state"`
-	Token         *string     `json:"token"`
-	Outcome       string      `json:"outcome"`
-	Error         *string     `json:"error"`
-	Problems      []Problem   `json:"problems"`
-	Pins          []PinResult `json:"pins"`
-	FolderDeleted bool        `json:"folderDeleted"`
-	Recovery      *string     `json:"recovery"`
+// PurgeOutput is the one object wt purge --yes --json prints.
+type PurgeOutput struct {
+	Schema        int              `json:"schema"`
+	SchemaVersion string           `json:"schemaVersion"`
+	Command       string           `json:"command"`
+	Dir           string           `json:"dir"`
+	Repo          *string          `json:"repo"`
+	State         *string          `json:"state"`
+	Token         *string          `json:"token"`
+	Outcome       string           `json:"outcome"`
+	Error         *string          `json:"error"`
+	Problems      []PurgeProblem   `json:"problems"`
+	Pins          []PurgePinResult `json:"pins"`
+	FolderDeleted bool             `json:"folderDeleted"`
+	Recovery      *string          `json:"recovery"`
 }
 
 // purgeCommand names wt purge in its --json output, by the spelling it had
 // when the schemas were made: a reader of schema 1 decodes that value.
 const purgeCommand = "quarantine purge"
 
-func purgePlanOutput(p quarantine.PurgePlan) PlanOutput {
-	o := PlanOutput{Schema: 1, SchemaVersion: schema.VersionOf("quarantine-purge-plan"), Command: purgeCommand,
-		Dir: p.Dir, State: jsonout.Strp(p.State), Token: purgeToken(p), Entries: []string{}, Pins: []PinPlan{},
-		Unreachable: []Lost{}, ReachError: jsonout.Strp(p.ReachError), RepoGone: p.RepoGone, Problems: purgeProblems(p)}
+func purgePlanOutput(p quarantine.PurgePlan) PurgePlanOutput {
+	o := PurgePlanOutput{Schema: 1, SchemaVersion: schema.VersionOf("quarantine-purge-plan"), Command: purgeCommand,
+		Dir: p.Dir, State: jsonout.Strp(p.State), Token: purgeToken(p), Entries: []string{}, Pins: []PurgePinPlan{},
+		Unreachable: []PurgeLost{}, ReachError: jsonout.Strp(p.ReachError), RepoGone: p.RepoGone, Problems: purgeProblems(p)}
 	o.Entries = append(o.Entries, p.Entries...)
 	if p.Bytes >= 0 {
 		n := p.Bytes
@@ -326,10 +328,10 @@ func purgePlanOutput(p quarantine.PurgePlan) PlanOutput {
 		}
 	}
 	for _, pin := range p.Pins {
-		o.Pins = append(o.Pins, PinPlan{Name: pin.Name, Ref: pin.Ref, OID: jsonout.Strp(pin.OID)})
+		o.Pins = append(o.Pins, PurgePinPlan{Name: pin.Name, Ref: pin.Ref, OID: jsonout.Strp(pin.OID)})
 	}
 	for _, l := range p.Lost {
-		o.Unreachable = append(o.Unreachable, Lost(l))
+		o.Unreachable = append(o.Unreachable, PurgeLost(l))
 	}
 	if why := purgeRefusal(p); why != "" {
 		o.Error = jsonout.Strp(why)
@@ -337,20 +339,19 @@ func purgePlanOutput(p quarantine.PurgePlan) PlanOutput {
 	return o
 }
 
-func purgeProblems(p quarantine.PurgePlan) []Problem {
-	out := []Problem{}
+func purgeProblems(p quarantine.PurgePlan) []PurgeProblem {
+	out := []PurgeProblem{}
 	for _, pr := range p.Problems {
-		out = append(out, Problem(pr))
+		out = append(out, PurgeProblem(pr))
 	}
 	return out
 }
 
-// QuarantinePurgePlanJSON writes wt purge --dry-run --json: the
-// plan, every reason it would refuse and the token that holds a purge to
-// it. It deletes nothing; the plan as wt prints it goes to progress. A plan
-// the purge would refuse is one object too, with error set, and the error
-// is returned.
-func QuarantinePurgePlanJSON(dir string, out, progress io.Writer) error {
+// PurgePlanJSON writes wt purge --dry-run --json: the plan, every reason it
+// would refuse and the token that holds a purge to it. It deletes nothing;
+// the plan as wt prints it goes to progress. A plan the purge would refuse
+// is one object too, with error set, and the error is returned.
+func PurgePlanJSON(dir string, out, progress io.Writer) error {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return err
@@ -367,11 +368,11 @@ func QuarantinePurgePlanJSON(dir string, out, progress io.Writer) error {
 	return nil
 }
 
-// QuarantinePurgeJSON is wt purge --yes --json: the purge, and
-// one object on out saying what became of each pin and of the folder —
-// when it returns, or when a signal ends it. The plan as wt prints it and
-// the progress go to progress.
-func QuarantinePurgeJSON(dir string, opts Options, out, progress io.Writer) error {
+// PurgeJSON is wt purge --yes --json: the purge, and one object on out
+// saying what became of each pin and of the folder — when it returns, or
+// when a signal ends it. The plan as wt prints it and the progress go to
+// progress.
+func PurgeJSON(dir string, opts PurgeOptions, out, progress io.Writer) error {
 	abs, err := filepath.Abs(dir)
 	if err == nil {
 		dir = abs
@@ -382,7 +383,7 @@ func QuarantinePurgeJSON(dir string, opts Options, out, progress io.Writer) erro
 	var res quarantine.PurgeResult
 	opts.Confirm, opts.NoTerminal, opts.DryRun, opts.Result, opts.Planned = nil, false, false, &res, j.planned
 	if err == nil {
-		err = QuarantinePurge(dir, opts, progress)
+		err = Purge(dir, opts, progress)
 	}
 	j.finish(res.Outcome, err)
 	return err
@@ -424,17 +425,17 @@ func (j *purgeJournal) finish(outcome string, err error) {
 	j.Finish()
 }
 
-func purgeOutput(dir string, p quarantine.PurgePlan, outcome string, err error, recovery string) Output {
+func purgeOutput(dir string, p quarantine.PurgePlan, outcome string, err error, recovery string) PurgeOutput {
 	if outcome == "" {
 		outcome = quarantine.OutcomeRefused
 	}
-	o := Output{Schema: 1, SchemaVersion: schema.VersionOf("quarantine-purge"), Command: purgeCommand,
+	o := PurgeOutput{Schema: 1, SchemaVersion: schema.VersionOf("quarantine-purge"), Command: purgeCommand,
 		Dir: dir, State: jsonout.Strp(p.State), Token: purgeToken(p), Outcome: outcome, Problems: purgeProblems(p),
-		Pins: []PinResult{}, Recovery: jsonout.Strp(recovery)}
+		Pins: []PurgePinResult{}, Recovery: jsonout.Strp(recovery)}
 	if err != nil {
 		o.Error = jsonout.Strp(err.Error())
 		if errors.Is(err, errPurgePlanChanged) || errors.Is(err, quarantine.ErrPurgeChanged) {
-			o.Problems = append(o.Problems, Problem{Code: jsonout.ProblemPlanChanged, Text: err.Error()})
+			o.Problems = append(o.Problems, PurgeProblem{Code: jsonout.ProblemPlanChanged, Text: err.Error()})
 		}
 	}
 	if p.Record != nil {
@@ -443,12 +444,12 @@ func purgeOutput(dir string, p quarantine.PurgePlan, outcome string, err error, 
 	_, serr := os.Lstat(dir)
 	o.FolderDeleted = p.Dir != "" && errors.Is(serr, os.ErrNotExist)
 	for _, pin := range p.Pins {
-		r := PinResult{Name: pin.Name, Ref: pin.Ref, OID: jsonout.Strp(pin.OID), Result: PinAbsent}
+		r := PurgePinResult{Name: pin.Name, Ref: pin.Ref, OID: jsonout.Strp(pin.OID), Result: PurgePinAbsent}
 		if pin.OID != "" && !p.RepoGone {
-			r.Result = PinKept
+			r.Result = PurgePinKept
 			// A pin that cannot be read is not known to be gone.
 			if now, err := quarantine.ReadPin(p.Record.Repo, pin.Ref); err == nil && now == "" {
-				r.Result = PinDeleted
+				r.Result = PurgePinDeleted
 			}
 		}
 		o.Pins = append(o.Pins, r)

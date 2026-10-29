@@ -1,4 +1,4 @@
-package purge
+package refs_test
 
 import (
 	"bytes"
@@ -10,7 +10,6 @@ import (
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
-	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/commands/refs"
 	"github.com/anders-lindstrom/wt/internal/commands/refs/refstest"
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
@@ -19,17 +18,18 @@ import (
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/jsonout"
+	"github.com/anders-lindstrom/wt/internal/refpins"
 )
 
 // sweptRuns is what wt refs swept --json lists.
-func sweptRuns(t *testing.T, ctx *kit.Context) []RefSweptRun {
+func sweptRuns(t *testing.T, ctx *kit.Context) []refs.RefSweptRun {
 	t.Helper()
 	var out bytes.Buffer
-	if err := RefsSwept(ctx, true, &out); err != nil {
+	if err := refs.Swept(ctx, true, &out); err != nil {
 		t.Fatal(err)
 	}
 	testkit.ValidateJSON(t, "refs-swept", out.Bytes())
-	var sw RefsSweptOutput
+	var sw refs.SweptOutput
 	if err := json.Unmarshal(out.Bytes(), &sw); err != nil {
 		t.Fatal(err)
 	}
@@ -37,12 +37,31 @@ func sweptRuns(t *testing.T, ctx *kit.Context) []RefSweptRun {
 }
 
 // sweptIDs is the ids of one run's pins.
-func sweptIDs(run RefSweptRun) []string {
+func sweptIDs(run refs.RefSweptRun) []string {
 	var ids []string
 	for _, r := range run.Refs {
 		ids = append(ids, r.ID)
 	}
 	return ids
+}
+
+// recordedVersion fails the test unless run's meta names the wt that wrote
+// it.
+func recordedVersion(t *testing.T, ctx *kit.Context, run string) {
+	t.Helper()
+	runs, err := refpins.ReadSwept(ctx.Repo.MainRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range runs {
+		if r.RunID == run {
+			if r.Meta == nil || r.Meta.WtVersion != kit.Version {
+				t.Errorf("run %s meta %+v, want wtVersion %q", run, r.Meta, kit.Version)
+			}
+			return
+		}
+	}
+	t.Errorf("no run %s", run)
 }
 
 // Every branch a sweep deletes, with its worktree or without, is moved into
@@ -83,6 +102,7 @@ func TestSweepPinsWhatItDeletesAndRefsRestoresIt(t *testing.T) {
 		!slices.Equal(sweptIDs(runs[0]), []string{"refs/heads/done-work", "refs/heads/fix_wt/login"}) {
 		t.Fatalf("swept = %+v", runs)
 	}
+	recordedVersion(t, ctx, run)
 
 	res, err := refstest.RestoreJSON(t, ctx, run, refs.RestoreRefsOptions{})
 	if err != nil || res.Outcome != jsonout.OutcomeDone {
@@ -118,6 +138,7 @@ func TestRemovePinsAMergedBranchAndRefsRestoresIt(t *testing.T) {
 	if len(runs) != 1 || runs[0].RunID != run || !slices.Equal(sweptIDs(runs[0]), []string{"refs/heads/fix_wt/pinned"}) {
 		t.Fatalf("swept = %+v", runs)
 	}
+	recordedVersion(t, ctx, run)
 	res, err := refstest.RestoreJSON(t, ctx, run, refs.RestoreRefsOptions{Only: []string{"refs/heads/fix_wt/pinned"}})
 	if err != nil || res.Outcome != jsonout.OutcomeDone {
 		t.Fatalf("%v %+v", err, res)

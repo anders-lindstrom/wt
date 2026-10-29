@@ -1,5 +1,7 @@
-// Package refpins keeps what wt refs sweep and wt remove put aside under
-// refs/wt-swept/: one folder per run, a pin per ref and the run's metadata.
+// Package refpins keeps what wt refs sweep, wt sweep and wt remove put aside
+// under refs/wt-swept/: one folder per run, a pin per ref and the run's
+// metadata. It is a store below the commands: they pass in the wt version a
+// run records and how long a network call may take.
 package refpins
 
 import (
@@ -21,7 +23,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
@@ -237,11 +238,11 @@ func ResolveEndpoint(mainRoot string) (*Endpoint, error) {
 		return nil, fmt.Errorf("%w (%d fetch and %d push URLs)", ErrRemoteAmbiguous, len(fetch), len(push))
 	}
 	u := fetch[0]
-	if kit.HasCredentials(u) {
+	if HasCredentials(u) {
 		return nil, ErrRemoteCredentials
 	}
 	sum := sha256.Sum256([]byte(u))
-	return &Endpoint{URL: kit.Redacted(u), Digest: "sha256:" + hex.EncodeToString(sum[:]), Raw: u}, nil
+	return &Endpoint{URL: Redacted(u), Digest: "sha256:" + hex.EncodeToString(sum[:]), Raw: u}, nil
 }
 
 // RunMeta is what a run writes before it moves anything, as a blob at
@@ -326,9 +327,10 @@ type RemoteRefs struct {
 	Peeled map[string]string
 }
 
-// ReadRemoteRefs asks origin, at url, for its branches and tags.
-func ReadRemoteRefs(mainRoot, url string) (RemoteRefs, error) {
-	out, err := git.RunTimeout(mainRoot, kit.NetworkTimeout, "ls-remote", url)
+// ReadRemoteRefs asks origin, at url, for its branches and tags, giving up
+// after timeout; zero is git.GitTimeout.
+func ReadRemoteRefs(mainRoot, url string, timeout time.Duration) (RemoteRefs, error) {
+	out, err := git.RunTimeout(mainRoot, timeout, "ls-remote", url)
 	if err != nil {
 		return RemoteRefs{}, fmt.Errorf("could not list origin's refs: %s", git.Reason(err))
 	}
@@ -583,14 +585,14 @@ func (d *RefDates) Created(ref string) (int64, bool) {
 
 // BeginRun writes a run's meta, the first thing a run does, so a run stopped
 // anywhere after is found by its id. Its create is a compare-and-swap: a run
-// id taken meanwhile refuses here.
-func BeginRun(mainRoot, runID string, at time.Time, endpoint *Endpoint) error {
+// id taken meanwhile refuses here. wtVersion is the wt that writes it.
+func BeginRun(mainRoot, runID string, at time.Time, endpoint *Endpoint, wtVersion string) error {
 	gitDir, err := git.Run(mainRoot, "rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil {
 		return fmt.Errorf("could not write the run's meta: %s", git.Reason(err))
 	}
 	return WriteMeta(mainRoot, RunMeta{RunID: runID, Repo: gitDir, SweptAt: at.Unix(), Endpoint: endpoint,
-		WtVersion: kit.Version})
+		WtVersion: wtVersion})
 }
 
 // AfterBranchMoved runs, when set, between MoveBranch's transaction and its
@@ -600,22 +602,22 @@ var AfterBranchMoved func(name string)
 // MoveBranch pins branch name at pin and deletes it, in one transaction and
 // only at tip, then drops its config, as git branch -D does. A branch a
 // worktree uses is refused with a repo.BranchInUseError.
-func MoveBranch(ctx *kit.Context, name, tip, pin, message string) error {
-	users, err := ctx.Repo.BranchUsers()
+func MoveBranch(r *repo.Repo, name, tip, pin, message string) error {
+	users, err := r.BranchUsers()
 	if err != nil {
 		return err
 	}
 	if use, ok := users[name]; ok {
 		return &repo.BranchInUseError{Path: use.Path, By: use.By}
 	}
-	if err := UpdateRefs(ctx.Repo.MainRoot, message, "create "+pin+" "+tip, "delete refs/heads/"+name+" "+tip); err != nil {
+	if err := UpdateRefs(r.MainRoot, message, "create "+pin+" "+tip, "delete refs/heads/"+name+" "+tip); err != nil {
 		return err
 	}
 	if AfterBranchMoved != nil {
 		AfterBranchMoved(name)
 	}
 	// A branch with no config has no section to remove; that is not a failure.
-	_, _ = git.Run(ctx.Repo.MainRoot, "config", "--remove-section", "branch."+name)
+	_, _ = git.Run(r.MainRoot, "config", "--remove-section", "branch."+name)
 	return nil
 }
 
@@ -626,6 +628,8 @@ func MoveBranch(ctx *kit.Context, name, tip, pin, message string) error {
 type BranchPins struct {
 	// Command is the reflog message the moves are made with.
 	Command string
+	// WtVersion is the wt that writes the run's meta.
+	WtVersion string
 	// Begun, when set, is told the run id before its meta is written, so a
 	// journal names the run even when a signal comes next.
 	Begun func(runID string)
@@ -634,27 +638,27 @@ type BranchPins struct {
 }
 
 // Move pins branch name and deletes it, at tip, and returns its pin.
-func (b *BranchPins) Move(ctx *kit.Context, name, tip string) (string, error) {
+func (b *BranchPins) Move(r *repo.Repo, name, tip string) (string, error) {
 	if b.err != nil {
 		return "", b.err
 	}
 	if b.RunID == "" {
-		if err := b.begin(ctx); err != nil {
+		if err := b.begin(r.MainRoot); err != nil {
 			b.err = err
 			return "", err
 		}
 	}
 	pin := PinOf(b.RunID, RefBranch, name)
-	return pin, MoveBranch(ctx, name, tip, pin, b.Command)
+	return pin, MoveBranch(r, name, tip, pin, b.Command)
 }
 
 // begin mints the run and writes its meta. An id another run holds is
 // passed over, and the run is the command's only once its meta is written,
 // so finish never drops a meta it did not write.
-func (b *BranchPins) begin(ctx *kit.Context) error {
+func (b *BranchPins) begin(mainRoot string) error {
 	for range 3 {
 		id := NewRunID(time.Now())
-		if taken, err := RunTaken(ctx.Repo.MainRoot, id); err != nil {
+		if taken, err := RunTaken(mainRoot, id); err != nil {
 			return err
 		} else if taken {
 			continue
@@ -662,7 +666,7 @@ func (b *BranchPins) begin(ctx *kit.Context) error {
 		if b.Begun != nil {
 			b.Begun(id)
 		}
-		if err := BeginRun(ctx.Repo.MainRoot, id, time.Now(), nil); err != nil {
+		if err := BeginRun(mainRoot, id, time.Now(), nil, b.WtVersion); err != nil {
 			if b.Begun != nil {
 				b.Begun("")
 			}
@@ -676,12 +680,12 @@ func (b *BranchPins) begin(ctx *kit.Context) error {
 
 // Finish drops the run's meta when the run holds no pin, and returns the run
 // left behind: "" when none was begun or none is left.
-func (b *BranchPins) Finish(ctx *kit.Context, w io.Writer) string {
+func (b *BranchPins) Finish(r *repo.Repo, w io.Writer) string {
 	if b == nil || b.RunID == "" {
 		return ""
 	}
-	DropEmptyRun(ctx.Repo.MainRoot, b.RunID, w)
-	if taken, err := RunTaken(ctx.Repo.MainRoot, b.RunID); err == nil && !taken {
+	DropEmptyRun(r.MainRoot, b.RunID, w)
+	if taken, err := RunTaken(r.MainRoot, b.RunID); err == nil && !taken {
 		return ""
 	}
 	return b.RunID

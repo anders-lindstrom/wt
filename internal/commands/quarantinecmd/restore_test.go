@@ -1,4 +1,4 @@
-package refs
+package quarantinecmd
 
 import (
 	"bytes"

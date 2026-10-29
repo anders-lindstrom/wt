@@ -17,12 +17,12 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/commands/supersetws"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
+	"github.com/anders-lindstrom/wt/internal/refpins"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -442,10 +442,10 @@ func removeWorktreeResult(ctx *kit.Context, wt repo.Worktree, opts RemoveOptions
 	}
 	opts.Journal.applying()
 	if plan.Quarantine == "" {
-		plan.pins = &refpins.BranchPins{Command: "wt remove", Begun: opts.Journal.ran}
+		plan.pins = &refpins.BranchPins{Command: "wt remove", WtVersion: kit.Version, Begun: opts.Journal.ran}
 	}
 	res, err := plan.run(ctx, w)
-	res.RunID = plan.pins.Finish(ctx, w)
+	res.RunID = plan.pins.Finish(ctx.Repo, w)
 	return res, err
 }
 
@@ -1438,7 +1438,7 @@ func (p Plan) branchStep(ctx *kit.Context) (result, msg string, err error) {
 		// under refs/wt-swept/ rather than deleted outright.
 		del := func() error { return ctx.Repo.DeleteBranchAt(p.Branch, p.Tip, p.afterRefDeleted) }
 		if p.pins != nil {
-			del = func() error { _, err := p.pins.Move(ctx, p.Branch, p.Tip); return err }
+			del = func() error { _, err := p.pins.Move(ctx.Repo, p.Branch, p.Tip); return err }
 		}
 		if err := del(); err != nil {
 			var inUse *repo.BranchInUseError

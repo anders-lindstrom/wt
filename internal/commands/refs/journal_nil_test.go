@@ -16,4 +16,8 @@ func TestNilJournalsRecordNothing(t *testing.T) {
 	restore.Fail(errors.New("x"))
 	restore.Finish()
 	restore.Interrupted("", "")
+	var purge *PurgeJournal
+	purge.Fail(errors.New("x"))
+	purge.Finish()
+	purge.Interrupted("", "")
 }

@@ -1,4 +1,4 @@
-package purge
+package refs_test
 
 import (
 	"bytes"
@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/commands/refs"
 	"github.com/anders-lindstrom/wt/internal/commands/refs/refstest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/refpins"
 )
 
 // wt refs swept lists the runs; purge deletes a run's pins, counts what
@@ -22,55 +22,55 @@ func TestRefsSweptAndPurge(t *testing.T) {
 	r := refstest.SweepAll(t, ctx, refs.Options{})
 	run := *r.RunID
 	var out bytes.Buffer
-	if err := RefsSwept(ctx, true, &out); err != nil {
+	if err := refs.Swept(ctx, true, &out); err != nil {
 		t.Fatal(err)
 	}
 	testkit.ValidateJSON(t, "refs-swept", out.Bytes())
-	var sw RefsSweptOutput
+	var sw refs.SweptOutput
 	_ = json.Unmarshal(out.Bytes(), &sw)
 	if len(sw.Runs) != 1 || sw.Runs[0].RunID != run || len(sw.Runs[0].Refs) != 3 || sw.Runs[0].SweptAt == 0 {
 		t.Fatalf("swept = %+v", sw)
 	}
 
 	var plan bytes.Buffer
-	if err := RefsPurgePlanJSON(ctx, RefsPurgeOptions{OlderThan: "1d"}, &plan, &bytes.Buffer{}); err != nil {
+	if err := refs.PurgePlanJSON(ctx, refs.PurgeOptions{OlderThan: "1d"}, &plan, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
 	testkit.ValidateJSON(t, "refs-purge-plan", plan.Bytes())
-	var pp RefsPurgePlanOutput
+	var pp refs.PurgePlanOutput
 	_ = json.Unmarshal(plan.Bytes(), &pp)
 	if len(pp.Runs) != 0 || pp.Token != nil {
 		t.Errorf("a run from today is not older than a day: %+v", pp)
 	}
 	plan.Reset()
-	if err := RefsPurgePlanJSON(ctx, RefsPurgeOptions{RunIDs: []string{run}}, &plan, &bytes.Buffer{}); err != nil {
+	if err := refs.PurgePlanJSON(ctx, refs.PurgeOptions{RunIDs: []string{run}}, &plan, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
 	testkit.ValidateJSON(t, "refs-purge-plan", plan.Bytes())
-	pp = RefsPurgePlanOutput{}
+	pp = refs.PurgePlanOutput{}
 	_ = json.Unmarshal(plan.Bytes(), &pp)
 	if len(pp.Runs) != 1 || len(pp.Runs[0].Refs) != 3 || pp.Token == nil ||
-		!slices.Equal(pp.Runs[0].Unreachable, []RefLost{{ID: "refs/heads/backup/old", Count: 1}}) {
+		!slices.Equal(pp.Runs[0].Unreachable, []refs.RefLost{{ID: "refs/heads/backup/old", Count: 1}}) {
 		t.Fatalf("purge plan = %+v", pp)
 	}
 
 	var res bytes.Buffer
-	j := NewRefsPurgeJournal(&res)
-	err := RefsPurge(ctx, RefsPurgeOptions{RunIDs: []string{run}, Yes: true, Expect: *pp.Token, Journal: j},
+	j := refs.NewRefsPurgeJournal(&res)
+	err := refs.Purge(ctx, refs.PurgeOptions{RunIDs: []string{run}, Yes: true, Expect: *pp.Token, Journal: j},
 		&bytes.Buffer{})
 	testkit.ValidateJSON(t, "refs-purge", res.Bytes())
-	var pr RefsPurgeResult
+	var pr refs.PurgeResult
 	_ = json.Unmarshal(res.Bytes(), &pr)
-	if err != nil || pr.Outcome != OutcomePurged || pr.Runs[0].Refs[0].Result != PinDeleted {
+	if err != nil || pr.Outcome != refs.OutcomePurged || pr.Runs[0].Refs[0].Result != refs.RefPurgeDeleted {
 		t.Fatalf("%v %+v", err, pr)
 	}
 	if left := testkit.GitOut(t, main, "for-each-ref", refpins.SweptPrefix); left != "" {
 		t.Errorf("pins left: %s", left)
 	}
-	if err := RefsPurge(ctx, RefsPurgeOptions{RunIDs: []string{run}, Yes: true}, &bytes.Buffer{}); err == nil {
+	if err := refs.Purge(ctx, refs.PurgeOptions{RunIDs: []string{run}, Yes: true}, &bytes.Buffer{}); err == nil {
 		t.Error("purging a run that is gone must be an error")
 	}
-	if err := RefsPurge(ctx, RefsPurgeOptions{OlderThan: "1d"}, &bytes.Buffer{}); err != nil {
+	if err := refs.Purge(ctx, refs.PurgeOptions{OlderThan: "1d"}, &bytes.Buffer{}); err != nil {
 		t.Errorf("nothing older than a day is not an error: %v", err)
 	}
 }
@@ -82,10 +82,10 @@ func TestRefsRestoreRemoteNeedsTheSameOrigin(t *testing.T) {
 	t.Parallel()
 	ctx, main, origin, run := refstest.RemoteBackups(t)
 	var out bytes.Buffer
-	if err := RefsSwept(ctx, true, &out); err != nil {
+	if err := refs.Swept(ctx, true, &out); err != nil {
 		t.Fatal(err)
 	}
-	var sw RefsSweptOutput
+	var sw refs.SweptOutput
 	_ = json.Unmarshal(out.Bytes(), &sw)
 	if len(sw.Runs) != 1 || sw.Runs[0].Endpoint == nil || sw.Runs[0].Endpoint.URL != origin {
 		t.Fatalf("swept = %+v", sw)
@@ -126,19 +126,19 @@ func TestRefsPurgeDeletesTheMetaLast(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	_ = RefsSwept(ctx, true, &out)
-	var sw RefsSweptOutput
+	_ = refs.Swept(ctx, true, &out)
+	var sw refs.SweptOutput
 	_ = json.Unmarshal(out.Bytes(), &sw)
 	if len(sw.Runs) != 1 || sw.Runs[0].RunID != id || len(sw.Runs[0].Refs) != 0 || sw.Runs[0].SweptAt != 1767225600 {
 		t.Fatalf("swept = %+v", sw)
 	}
 	r := refstest.SweepAll(t, ctx, refs.Options{})
 	var res bytes.Buffer
-	err := RefsPurge(ctx, RefsPurgeOptions{OlderThan: "1d", Yes: true, Journal: NewRefsPurgeJournal(&res)}, &bytes.Buffer{})
+	err := refs.Purge(ctx, refs.PurgeOptions{OlderThan: "1d", Yes: true, Journal: refs.NewRefsPurgeJournal(&res)}, &bytes.Buffer{})
 	testkit.ValidateJSON(t, "refs-purge", res.Bytes())
-	var pr RefsPurgeResult
+	var pr refs.PurgeResult
 	_ = json.Unmarshal(res.Bytes(), &pr)
-	if err != nil || pr.Outcome != OutcomePurged || len(pr.Runs) != 1 || !pr.Runs[0].MetaDeleted {
+	if err != nil || pr.Outcome != refs.OutcomePurged || len(pr.Runs) != 1 || !pr.Runs[0].MetaDeleted {
 		t.Fatalf("%v %+v", err, pr)
 	}
 	if left := testkit.GitOut(t, main, "for-each-ref", "--format=%(refname)", refpins.SweptPrefix); !strings.HasPrefix(left, refpins.SweptPrefix+*r.RunID) {

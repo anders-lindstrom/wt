@@ -1,4 +1,4 @@
-package purge
+package quarantinecmd
 
 import (
 	"bytes"
@@ -12,14 +12,23 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
-	"github.com/anders-lindstrom/wt/internal/commands/refs"
-	"github.com/anders-lindstrom/wt/internal/commands/refs/refstest"
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 )
+
+// restored runs wt restore on the quarantine dir and fails the test when it
+// fails: quarantinecmdtest.Restore, which a test inside the package cannot
+// import.
+func restored(t *testing.T, ctx *kit.Context, dir string) {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := Restore(ctx, dir, RestoreOptions{}, &buf); err != nil {
+		t.Fatalf("Restore: %v\n%s", err, buf.String())
+	}
+}
 
 // PurgeRefused runs a purge that must not happen, checks it names code, and
 // that it deleted nothing: every file under dir and every pin is still
@@ -29,7 +38,7 @@ func PurgeRefused(t *testing.T, ctx *kit.Context, dir, code string) {
 	before, pins := testkit.TreeOf(t, dir), testkit.PinsOf(t, ctx)
 	var plan quarantine.PurgePlan
 	var buf bytes.Buffer
-	err := QuarantinePurge(dir, Options{Planned: func(p quarantine.PurgePlan) { plan = p }}, &buf)
+	err := Purge(dir, PurgeOptions{Planned: func(p quarantine.PurgePlan) { plan = p }}, &buf)
 	if err == nil {
 		t.Fatalf("want a refusal (%s):\n%s", code, buf.String())
 	}
@@ -127,7 +136,7 @@ func TestPurgeRefuses(t *testing.T) {
 	t.Run("restore stopped", func(t *testing.T) {
 		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/r-restore", false)
 		var buf bytes.Buffer
-		if err := refs.Restore(ctx, dir, refs.RestoreOptions{QuarantineHooks: testkit.CrashAt("restore.moveAdmin:done")}, &buf); !errors.Is(err, testkit.ErrCrash) {
+		if err := Restore(ctx, dir, RestoreOptions{QuarantineHooks: testkit.CrashAt("restore.moveAdmin:done")}, &buf); !errors.Is(err, testkit.ErrCrash) {
 			t.Fatalf("the restore: err %v, want the injected crash", err)
 		}
 		PurgeRefused(t, ctx, dir, quarantine.ProblemUnsettled)
@@ -139,7 +148,7 @@ func TestPurgeRefuses(t *testing.T) {
 	})
 	t.Run("worktree locked for it", func(t *testing.T) {
 		ctx, path, _, _, dir := retiretest.Quarantined(t, "fix/r-locked", false)
-		refstest.Restore(t, ctx, dir)
+		restored(t, ctx, dir)
 		testkit.GitIn(t, ctx.Repo.MainRoot, "worktree", "lock", "--reason", quarantine.LockReason(dir), path)
 		PurgeRefused(t, ctx, dir, quarantine.ProblemLocked)
 	})
@@ -162,10 +171,10 @@ func TestPurgeExpectHoldsItToThePlan(t *testing.T) {
 	t.Parallel()
 	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/expect", false)
 	var plan bytes.Buffer
-	if err := QuarantinePurgePlanJSON(dir, &plan, &bytes.Buffer{}); err != nil {
+	if err := PurgePlanJSON(dir, &plan, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
-	var p PlanOutput
+	var p PurgePlanOutput
 	if err := json.Unmarshal(plan.Bytes(), &p); err != nil || p.Token == nil {
 		t.Fatalf("plan %s", plan.String())
 	}
@@ -173,10 +182,10 @@ func TestPurgeExpectHoldsItToThePlan(t *testing.T) {
 	head := strings.TrimSpace(testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", *r.Pins.Head))
 	testkit.GitIn(t, ctx.Repo.MainRoot, "update-ref", "-d", *r.Pins.Head)
 	var out bytes.Buffer
-	if err := QuarantinePurgeJSON(dir, Options{Expect: *p.Token}, &out, &bytes.Buffer{}); err == nil {
+	if err := PurgeJSON(dir, PurgeOptions{Expect: *p.Token}, &out, &bytes.Buffer{}); err == nil {
 		t.Fatal("a plan that changed must refuse")
 	}
-	var o Output
+	var o PurgeOutput
 	_ = json.Unmarshal(out.Bytes(), &o)
 	if o.Outcome != quarantine.OutcomeRefused || len(o.Problems) != 1 || o.Problems[0].Code != jsonout.ProblemPlanChanged {
 		t.Errorf("result %s", out.String())
@@ -186,7 +195,7 @@ func TestPurgeExpectHoldsItToThePlan(t *testing.T) {
 	}
 	testkit.GitIn(t, ctx.Repo.MainRoot, "update-ref", *r.Pins.Head, head)
 	out.Reset()
-	if err := QuarantinePurgeJSON(dir, Options{Expect: *p.Token}, &out, &bytes.Buffer{}); err != nil {
+	if err := PurgeJSON(dir, PurgeOptions{Expect: *p.Token}, &out, &bytes.Buffer{}); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
 	testkit.AssertPurged(t, ctx, dir)
@@ -200,20 +209,20 @@ func TestPurgeAsksAndRefusesWithNobodyToAsk(t *testing.T) {
 	var buf bytes.Buffer
 	asked := 0
 	no := func(string) bool { asked++; return false }
-	if err := QuarantinePurge(dir, Options{Confirm: no}, &buf); err != nil || asked != 1 {
+	if err := Purge(dir, PurgeOptions{Confirm: no}, &buf); err != nil || asked != 1 {
 		t.Fatalf("%v, asked %d\n%s", err, asked, buf.String())
 	}
 	if !testkit.Exists(dir) {
 		t.Fatal("no must delete nothing")
 	}
-	if err := QuarantinePurge(dir, Options{NoTerminal: true}, &buf); err == nil {
+	if err := Purge(dir, PurgeOptions{NoTerminal: true}, &buf); err == nil {
 		t.Fatal("with nobody to ask it must refuse")
 	}
-	if err := QuarantinePurge(dir, Options{DryRun: true}, &buf); err != nil || !testkit.Exists(dir) {
+	if err := Purge(dir, PurgeOptions{DryRun: true}, &buf); err != nil || !testkit.Exists(dir) {
 		t.Fatalf("--dry-run: %v", err)
 	}
 	yes := func(string) bool { return true }
-	if err := QuarantinePurge(dir, Options{Confirm: yes}, &buf); err != nil {
+	if err := Purge(dir, PurgeOptions{Confirm: yes}, &buf); err != nil {
 		t.Fatalf("%v\n%s", err, buf.String())
 	}
 	testkit.AssertPurged(t, ctx, dir)
@@ -230,7 +239,7 @@ func TestPurgeReadsThePlanAgainAfterTheQuestion(t *testing.T) {
 		return true
 	}
 	var buf bytes.Buffer
-	if err := QuarantinePurge(dir, Options{Confirm: yes}, &buf); err == nil {
+	if err := Purge(dir, PurgeOptions{Confirm: yes}, &buf); err == nil {
 		t.Fatal("a plan that changed under the question must refuse")
 	}
 	if !testkit.Exists(filepath.Join(dir, "checkout")) {
@@ -242,12 +251,12 @@ func TestPurgeJSONMatchesItsSchemas(t *testing.T) {
 	t.Parallel()
 	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/purge-json", false)
 	var plan bytes.Buffer
-	if err := QuarantinePurgePlanJSON(dir, &plan, &bytes.Buffer{}); err != nil {
+	if err := PurgePlanJSON(dir, &plan, &bytes.Buffer{}); err != nil {
 		t.Fatalf("%v\n%s", err, plan.String())
 	}
 	testkit.ValidateJSON(t, "quarantine-purge-plan", plan.Bytes())
 
-	if err := QuarantinePurge(dir, Options{QuarantineHooks: testkit.CrashAt("purge.begin")}, &bytes.Buffer{}); !errors.Is(err, testkit.ErrCrash) {
+	if err := Purge(dir, PurgeOptions{QuarantineHooks: testkit.CrashAt("purge.begin")}, &bytes.Buffer{}); !errors.Is(err, testkit.ErrCrash) {
 		t.Fatalf("the purge: err %v, want the injected crash", err)
 	}
 	if testkit.Exists(filepath.Join(dir, quarantine.FileName)) {
@@ -255,32 +264,32 @@ func TestPurgeJSONMatchesItsSchemas(t *testing.T) {
 	}
 	testkit.ValidateJSON(t, "recovery", []byte(testkit.MustRead(t, filepath.Join(dir, quarantine.PurgingName))))
 	var restorePlan bytes.Buffer
-	_ = refs.RestoreJSON(ctx, dir, refs.RestoreOptions{DryRun: true}, &restorePlan, &bytes.Buffer{})
+	_ = RestoreJSON(ctx, dir, RestoreOptions{DryRun: true}, &restorePlan, &bytes.Buffer{})
 	testkit.ValidateJSON(t, "restore-plan", restorePlan.Bytes())
 
 	var out bytes.Buffer
-	if err := QuarantinePurgeJSON(dir, Options{}, &out, &bytes.Buffer{}); err != nil {
+	if err := PurgeJSON(dir, PurgeOptions{}, &out, &bytes.Buffer{}); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
 	testkit.ValidateJSON(t, "quarantine-purge", out.Bytes())
-	var o Output
+	var o PurgeOutput
 	_ = json.Unmarshal(out.Bytes(), &o)
 	if o.Outcome != quarantine.OutcomePurged || !o.FolderDeleted || o.State == nil || *o.State != quarantine.StatePurging {
 		t.Errorf("result %s", out.String())
 	}
 	for _, pin := range o.Pins {
-		if pin.Result != PinDeleted {
+		if pin.Result != PurgePinDeleted {
 			t.Errorf("pin %+v", pin)
 		}
 	}
 
 	var refused bytes.Buffer
-	if err := QuarantinePurgePlanJSON(dir, &refused, &bytes.Buffer{}); err == nil {
+	if err := PurgePlanJSON(dir, &refused, &bytes.Buffer{}); err == nil {
 		t.Error("want an error for a folder that is not there")
 	}
 	testkit.ValidateJSON(t, "quarantine-purge-plan", refused.Bytes())
 	refused.Reset()
-	if err := QuarantinePurgeJSON(dir, Options{}, &refused, &bytes.Buffer{}); err == nil {
+	if err := PurgeJSON(dir, PurgeOptions{}, &refused, &bytes.Buffer{}); err == nil {
 		t.Error("want an error for a folder that is not there")
 	}
 	testkit.ValidateJSON(t, "quarantine-purge", refused.Bytes())
@@ -297,7 +306,7 @@ func TestPurgeJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 	j.Interrupted("", "interrupted")
 	j.finish(quarantine.OutcomePurged, nil)
 	testkit.ValidateJSON(t, "quarantine-purge", out.Bytes())
-	var o Output
+	var o PurgeOutput
 	if err := json.Unmarshal(out.Bytes(), &o); err != nil {
 		t.Fatalf("one object: %v\n%s", err, out.String())
 	}
@@ -305,7 +314,7 @@ func TestPurgeJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 		t.Errorf("result %s", out.String())
 	}
 	for _, pin := range o.Pins {
-		if pin.Result != PinKept {
+		if pin.Result != PurgePinKept {
 			t.Errorf("pin %+v", pin)
 		}
 	}
@@ -332,7 +341,7 @@ func TestPurgeStaysInTheFolderItOpened(t *testing.T) {
 		return nil
 	}}
 	var buf bytes.Buffer
-	if err := QuarantinePurge(dir, Options{QuarantineHooks: h}, &buf); err == nil {
+	if err := Purge(dir, PurgeOptions{QuarantineHooks: h}, &buf); err == nil {
 		t.Fatalf("the swapped path must not be removed as the folder\n%s", buf.String())
 	}
 	for _, f := range []string{"checkout", "admin"} {
@@ -370,7 +379,7 @@ func TestPurgeGoesByThePlanItWasGiven(t *testing.T) {
 			return nil
 		}}
 		var buf bytes.Buffer
-		if err := QuarantinePurge(dir, Options{QuarantineHooks: h}, &buf); err == nil {
+		if err := Purge(dir, PurgeOptions{QuarantineHooks: h}, &buf); err == nil {
 			t.Fatal("a worktree registered inside must stop the purge")
 		}
 		if !testkit.Exists(filepath.Join(nested, ".git")) {
@@ -432,7 +441,7 @@ func TestPurgeRefusesAPinItCannotRead(t *testing.T) {
 func TestQuarantineRefusesAFolderInsideAQuarantine(t *testing.T) {
 	t.Parallel()
 	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/host", false)
-	refstest.Restore(t, ctx, dir)
+	restored(t, ctx, dir)
 	_, path := provisiontest.SafetyWorktreeIn(t, ctx, "fix/guest")
 	var buf bytes.Buffer
 	err := retire.RemoveAt(ctx, path, retire.RemoveOptions{Quarantine: filepath.Join(dir, "inner")}, &buf)
@@ -476,7 +485,7 @@ func TestPurgeAfterTheRepositoryIsGone(t *testing.T) {
 		t.Errorf("the plan must say the repository is gone:\n%s", buf.String())
 	}
 	var out bytes.Buffer
-	if err := QuarantinePurgeJSON(dir, Options{}, &out, &bytes.Buffer{}); err != nil {
+	if err := PurgeJSON(dir, PurgeOptions{}, &out, &bytes.Buffer{}); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
 	testkit.ValidateJSON(t, "quarantine-purge", out.Bytes())
