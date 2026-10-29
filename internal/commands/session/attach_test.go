@@ -44,6 +44,7 @@ func forShell(pattern string) AttachOptions {
 func attachPlan(id string) string { return "attach\n" + id + "\n\nend\n" }
 
 func TestAttachOpensTheOneBackgroundSession(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	testkit.ClaudeLists(ctx, testkit.Background("fix the crash", "3f9a1c20", "blocked", wt))
 
@@ -61,6 +62,7 @@ func TestAttachOpensTheOneBackgroundSession(t *testing.T) {
 
 // Without the shell layer the binary starts nothing: it names what to run.
 func TestAttachWithoutTheShellLayerPrintsTheCommand(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	testkit.ClaudeLists(ctx, testkit.Background("fix the crash", "3f9a1c20", "working", wt))
 
@@ -79,6 +81,7 @@ func TestAttachWithoutTheShellLayerPrintsTheCommand(t *testing.T) {
 }
 
 func TestAttachAsksWhichOfSeveral(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	first := testkit.Background("asks-you", "aaaaaaaa", "blocked", wt)
 	second := testkit.Background("second look", "bbbbbbbb", "working", wt)
@@ -106,6 +109,7 @@ func TestAttachAsksWhichOfSeveral(t *testing.T) {
 }
 
 func TestAttachListsAndStopsWithNobodyToAsk(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	testkit.ClaudeLists(ctx, testkit.Background("one", "aaaaaaaa", "working", wt), testkit.Background("two", "bbbbbbbb", "working", wt))
 
@@ -125,6 +129,7 @@ func TestAttachListsAndStopsWithNobodyToAsk(t *testing.T) {
 }
 
 func TestAttachNamesSessionsItCannotOpen(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	testkit.ClaudeLists(ctx, testkit.InTerminal("typing", "busy", wt, 4242))
 
@@ -138,6 +143,7 @@ func TestAttachNamesSessionsItCannotOpen(t *testing.T) {
 }
 
 func TestAttachWithNoSessionNamesResume(t *testing.T) {
+	t.Parallel()
 	ctx, _, _ := attachFixture(t)
 	testkit.ClaudeLists(ctx)
 
@@ -151,6 +157,7 @@ func TestAttachWithNoSessionNamesResume(t *testing.T) {
 // <session> picks without the question: an id, the start of the full
 // session id, or part of the name. An id given whole wins over a name.
 func TestAttachPicksTheSessionNamed(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	review := testkit.Background("review of bbbbbbbb", "aaaaaaaa", "working", wt)
 	build := testkit.Background("build", "bbbbbbbb", "working", wt)
@@ -191,6 +198,7 @@ func TestAttachPicksTheSessionNamed(t *testing.T) {
 // A session's id works with no worktree named. Text that is both an id and
 // a worktree opens neither.
 func TestAttachTakesASessionIdAlone(t *testing.T) {
+	t.Parallel()
 	ctx, main, _ := attachFixture(t)
 	elsewhere := testkit.Background("far away", "3f9a1c20", "working", t.TempDir())
 	testkit.ClaudeLists(ctx, elsewhere)
@@ -220,6 +228,7 @@ func TestAttachTakesASessionIdAlone(t *testing.T) {
 // With no pattern: the worktree you are in, and from the main checkout
 // every session in the repository's worktrees.
 func TestAttachWithNoPatternLooksWhereYouStand(t *testing.T) {
+	// Not parallel: swaps kit.MachineAgents for the context it opens where it stands.
 	ctx, main, wt := attachFixture(t)
 	other := filepath.Join(filepath.Dir(main), "demo_wt", "feat_wt", "other")
 	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/other", other)
@@ -252,6 +261,7 @@ func TestAttachWithNoPatternLooksWhereYouStand(t *testing.T) {
 }
 
 func TestAttachAsksWhichWorktreeOnATie(t *testing.T) {
+	t.Parallel()
 	ctx, main, wt := attachFixture(t)
 	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/thing-two", filepath.Join(filepath.Dir(main), "demo_wt", "feat_wt", "thing-two"))
 	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/thing-one", filepath.Join(filepath.Dir(main), "demo_wt", "feat_wt", "thing-one"))
@@ -269,6 +279,7 @@ func TestAttachAsksWhichWorktreeOnATie(t *testing.T) {
 // --resume continues a conversation in the worktree, and never one claude
 // still lists as a session.
 func TestAttachResume(t *testing.T) {
+	t.Parallel()
 	ctx, main, wt := attachFixture(t)
 	testkit.ClaudeLists(ctx)
 
@@ -303,6 +314,7 @@ func TestAttachResume(t *testing.T) {
 }
 
 func TestAttachResumeRefusesAListedConversation(t *testing.T) {
+	t.Parallel()
 	ctx, main, wt := attachFixture(t)
 	live := testkit.Background("fix the crash", "3f9a1c20", "done", wt)
 	testkit.ClaudeLists(ctx, live, testkit.InTerminal("typing", "idle", main, 4242))
@@ -337,6 +349,7 @@ func TestAttachResumeRefusesAListedConversation(t *testing.T) {
 
 // What goes onto the shell's command line is an id, never free text.
 func TestAttachRefusesAnIdThatIsNotOne(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	for _, id := range []string{"--dangerously-skip-permissions", "a b", "$(reboot)", "a;b", "x\ny"} {
 		testkit.ClaudeLists(ctx, testkit.Background("odd", id, "working", wt))
@@ -348,6 +361,7 @@ func TestAttachRefusesAnIdThatIsNotOne(t *testing.T) {
 }
 
 func TestAttachNeedsClaude(t *testing.T) {
+	t.Parallel()
 	ctx, _, _ := attachFixture(t)
 	if _, _, err := attach(t, ctx, forShell("thing"), ""); err == nil || !strings.Contains(err.Error(), "claude is not on the PATH") {
 		t.Errorf("want to be told claude is missing, got %v", err)
@@ -356,6 +370,7 @@ func TestAttachNeedsClaude(t *testing.T) {
 
 // The session wt runs under is listed and cannot be chosen.
 func TestAttachDoesNotOpenItsOwnSession(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	own := testkit.Background("me", "aaaaaaaa", "working", wt)
 	own.Own = true
@@ -370,6 +385,7 @@ func TestAttachDoesNotOpenItsOwnSession(t *testing.T) {
 // A background session resumed in a terminal is one row, the terminal's,
 // and its attach id still names it: the refusal says where it is.
 func TestAttachByTheIdOfASessionResumedInATerminal(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	resumed := testkit.InTerminal("resumed", "idle", wt, 4242)
 	resumed.ID, resumed.SessionID = "bbbb2222", "bbbb2222-1111-4222-8333-444455556666"
@@ -385,6 +401,7 @@ func TestAttachByTheIdOfASessionResumedInATerminal(t *testing.T) {
 
 // A line a person may paste carries only an id that looks like one.
 func TestAttachNeverPrintsACommandWithAnOddId(t *testing.T) {
+	t.Parallel()
 	ctx, main, wt := attachFixture(t)
 	odd := testkit.Background("odd", "x; touch /p", "working", wt)
 	odd.SessionID = "0dd00000-1111-4222-8333-444455556666"
@@ -423,6 +440,7 @@ func TestAttachNeverPrintsACommandWithAnOddId(t *testing.T) {
 // --resume <id> refuses the listed conversation however the id is cased,
 // and says what it knows when the text is only the start of a listed id.
 func TestAttachResumeMatchesIdsWhateverTheirCase(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	live := testkit.Background("fix the crash", "3f9a1c20", "working", wt)
 	testkit.ClaudeLists(ctx, live)
@@ -446,6 +464,7 @@ func TestAttachResumeMatchesIdsWhateverTheirCase(t *testing.T) {
 // From the main checkout one session is opened without a question, and wt
 // says which worktree it is in.
 func TestAttachFromTheMainCheckoutSaysWhereTheSessionIs(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	testkit.ClaudeLists(ctx, testkit.Background("fix the crash", "3f9a1c20", "working", wt))
 
@@ -460,6 +479,7 @@ func TestAttachFromTheMainCheckoutSaysWhereTheSessionIs(t *testing.T) {
 
 // The hint under a refused --resume is true of the session that refused it.
 func TestAttachResumeHintFitsTheSession(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	own := testkit.Background("me", "aaaaaaaa", "working", wt)
 	own.Own = true

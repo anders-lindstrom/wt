@@ -131,7 +131,6 @@ internal/repo, internal/github and internal/superset are parallel: each
 builds its own repositories under `t.TempDir()`. HOME and XDG_CONFIG_HOME
 are set once per test binary and shared, so a parallel test does not write
 under them; `testkit.UserConfigIn` makes a test serial.
-internal/commands/session has no parallel tests.
 
 A test stays serial when it touches what the whole test binary shares,
 and its first line says which, as `// Not parallel: <why>`:
@@ -177,6 +176,11 @@ A test's own fakes go with the call, not into a package variable:
   in `ctx.Machine` (`kit.Machine`), and the `--all` commands of wt sync
   keep take the machine they open each repository on: a zero field is
   the machine's own, so no test sets HOME or PATH for them.
+- the roots `kit.Find` scans go in `ctx.Roots`, so `wt attach` finds a
+  test's own fixture without WT_ROOTS; a command across repositories
+  (`--all`) still reads WT_ROOTS, and its test is serial;
+- the claude `wt session stop` runs goes in the session env's `claude`
+  (`fakeClaudeStop`), not on the PATH;
 - a keeper pass turns commit signing off with `git.NeverSign`, on the
   gits it starts rather than in the process environment; it is only ever
   turned on, and no test depends on a signed commit, so keeper passes run

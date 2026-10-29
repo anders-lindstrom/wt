@@ -127,6 +127,7 @@ func nothingArrived(t *testing.T, got <-chan string) {
 }
 
 func TestSessionListFindsInboxesAndSaysWhyNot(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	r.inbox(4001, sidA)
@@ -195,6 +196,7 @@ func TestSessionListFindsInboxesAndSaysWhyNot(t *testing.T) {
 }
 
 func TestSessionListRefusesASocketThatIsNotTheUsersToTrust(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	r.inbox(4001, sidA)
@@ -220,6 +222,7 @@ func TestSessionListRefusesASocketThatIsNotTheUsersToTrust(t *testing.T) {
 }
 
 func TestSessionSendWritesOneFrameToTheSessionAsked(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	gotA := r.inbox(4001, sidA)
@@ -265,6 +268,7 @@ func TestSessionSendWritesOneFrameToTheSessionAsked(t *testing.T) {
 }
 
 func TestSessionSendWithoutAReplyAddressHasNoFromAndNamesWt(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	got := r.inbox(4001, sidA)
@@ -280,6 +284,7 @@ func TestSessionSendWithoutAReplyAddressHasNoFromAndNamesWt(t *testing.T) {
 }
 
 func TestSessionSendRefusesToGuessAmongSeveral(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	gotA, gotB := r.inbox(4001, sidA), r.inbox(4002, sidB)
@@ -297,6 +302,7 @@ func TestSessionSendRefusesToGuessAmongSeveral(t *testing.T) {
 }
 
 func TestSessionSendHoldsToTheSessionExpected(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	got := r.inbox(4001, sidA)
@@ -325,6 +331,7 @@ func TestSessionSendHoldsToTheSessionExpected(t *testing.T) {
 }
 
 func TestSessionSendNeverWritesToAParkedOrOwnSession(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	got := r.inbox(4001, sidA)
@@ -349,6 +356,7 @@ func TestSessionSendNeverWritesToAParkedOrOwnSession(t *testing.T) {
 }
 
 func TestSessionSendCapsTheMessageAndItsFrame(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	got := r.inbox(4001, sidA)
@@ -377,6 +385,7 @@ func TestSessionSendCapsTheMessageAndItsFrame(t *testing.T) {
 }
 
 func TestSessionSendRefusesEmptyAndSendsNothingOnDryRun(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	got := r.inbox(4001, sidA)
@@ -394,6 +403,7 @@ func TestSessionSendRefusesEmptyAndSendsNothingOnDryRun(t *testing.T) {
 }
 
 func TestSessionSendChecksTheReplyAddressAndName(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	got := r.inbox(4001, sidA)
@@ -419,6 +429,7 @@ func TestSessionSendChecksTheReplyAddressAndName(t *testing.T) {
 }
 
 func TestSessionSendKeepsTheMessageFromClosingItsWrapper(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	got := r.inbox(4001, sidA)
@@ -439,6 +450,7 @@ func TestSessionSendKeepsTheMessageFromClosingItsWrapper(t *testing.T) {
 }
 
 func TestSessionSendReportsAnInboxThatResetsTheConnection(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	path := filepath.Join(r.socks, "4001.sock")
@@ -479,6 +491,7 @@ func TestSessionSendReportsAnInboxThatResetsTheConnection(t *testing.T) {
 }
 
 func TestSessionSendDoesNotTrustWhatTheRegistryPointsAt(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	got := r.inbox(4001, sidA)
@@ -505,6 +518,7 @@ func TestSessionSendDoesNotTrustWhatTheRegistryPointsAt(t *testing.T) {
 }
 
 func TestSessionSendFallsBackToTheDefaultSocketAndStillNamesTheSession(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	got := r.inbox(4001, sidA)
@@ -521,6 +535,7 @@ func TestSessionSendFallsBackToTheDefaultSocketAndStillNamesTheSession(t *testin
 }
 
 func TestSessionSendNeedsTheWorktreeNamedExactlyOrTheSessionExpected(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	got := r.inbox(4001, sidA)
@@ -537,6 +552,7 @@ func TestSessionSendNeedsTheWorktreeNamedExactlyOrTheSessionExpected(t *testing.
 }
 
 func TestSessionSendIgnoresTheCallersOwnSessionWhenChoosing(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	got := r.inbox(4001, sidA)
@@ -551,6 +567,7 @@ func TestSessionSendIgnoresTheCallersOwnSessionWhenChoosing(t *testing.T) {
 }
 
 func TestSessionActivityWords(t *testing.T) {
+	t.Parallel()
 	cases := map[string]ClaudeSession{
 		"done":       {agents.Agent{Kind: "background", State: "done"}},
 		"parked":     {agents.Agent{Kind: "background", State: "blocked"}},
@@ -566,6 +583,7 @@ func TestSessionActivityWords(t *testing.T) {
 }
 
 func TestSessionListDatesActivityByTheTranscriptsMtime(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	dir := filepath.Join(r.env.configDir, "projects", "-some-cwd")
@@ -592,6 +610,7 @@ func TestSessionListDatesActivityByTheTranscriptsMtime(t *testing.T) {
 }
 
 func TestSessionListNoInboxCheckTakesTheInboxFromTheRegistry(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	// A socket file nobody listens on: a session that died with its file.
@@ -706,6 +725,7 @@ func codeOf(r Stop) string {
 }
 
 func TestSessionStopStopsTheBackgroundSessionByItsAttachID(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	calls := fakeClaudeStop(t, r, "Stopped aaaaaaaa", 0)
@@ -723,6 +743,7 @@ func TestSessionStopStopsTheBackgroundSessionByItsAttachID(t *testing.T) {
 }
 
 func TestSessionStopAParkedSessionIsAlreadyStopped(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	calls := fakeClaudeStop(t, r, "", 0)
@@ -737,6 +758,7 @@ func TestSessionStopAParkedSessionIsAlreadyStopped(t *testing.T) {
 }
 
 func TestSessionStopRefusesATerminalAndACodexSession(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	calls := fakeClaudeStop(t, r, "", 0)
@@ -787,6 +809,7 @@ func readOf(listed ...agents.Agent) *ClaudeSessions {
 }
 
 func TestSessionStopHoldsToTheSessionExpected(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	calls := fakeClaudeStop(t, r, "Stopped", 0)
@@ -810,6 +833,7 @@ func TestSessionStopHoldsToTheSessionExpected(t *testing.T) {
 }
 
 func TestSessionStopRefusesToGuessAmongSeveral(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	calls := fakeClaudeStop(t, r, "", 0)
@@ -833,6 +857,7 @@ func TestSessionStopRefusesToGuessAmongSeveral(t *testing.T) {
 }
 
 func TestSessionStopReportsWhatClaudeSaidWhenItFails(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	calls := fakeClaudeStop(t, r, "no such session", 1)
@@ -847,6 +872,7 @@ func TestSessionStopReportsWhatClaudeSaidWhenItFails(t *testing.T) {
 }
 
 func TestSessionStopDryRunStopsNothing(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	calls := fakeClaudeStop(t, r, "Stopped", 0)
@@ -861,6 +887,7 @@ func TestSessionStopDryRunStopsNothing(t *testing.T) {
 }
 
 func TestSessionStopRefusesWhenItCannotTellWhoseSessionItIs(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	calls := fakeClaudeStop(t, r, "Stopped", 0)
@@ -882,6 +909,7 @@ func TestSessionStopRefusesWhenItCannotTellWhoseSessionItIs(t *testing.T) {
 }
 
 func TestSessionStopRefusesAFuzzyWorktreeName(t *testing.T) {
+	t.Parallel()
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
 	calls := fakeClaudeStop(t, r, "Stopped", 0)
