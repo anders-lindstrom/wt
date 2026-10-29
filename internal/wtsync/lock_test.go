@@ -2,6 +2,7 @@ package wtsync
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -211,5 +212,72 @@ func TestAKeptLockSurvivesRelease(t *testing.T) {
 	}
 	if cur.PID != l.PID {
 		t.Fatalf("lock %+v is not the one that was kept", cur)
+	}
+}
+
+// Two contenders read the same expired lock. One renames it aside and links
+// its fresh lock; the other, arriving at its own rename only then, must find
+// that fresh lock and respect it, not move it aside and hold the worktree
+// too. afterExpiredRead stands the first contender, another process, in
+// between this one's read and its rename.
+func TestAcquireNeverDisplacesAFreshLockAnotherContenderTookOverWith(t *testing.T) {
+	// Not parallel: sets afterExpiredRead for the package.
+	dir := t.TempDir()
+	path := filepath.Join(dir, LockName)
+	now := time.Unix(1_700_000_000, 0)
+	writeLock := func(name string, pid int, start time.Time) {
+		t.Helper()
+		body := fmt.Sprintf("pid=%d\nstart=%d\nowner=other\n", pid, start.Unix())
+		if err := os.WriteFile(name, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeLock(path, 4242, now.Add(-LockExpiry-time.Minute))
+	const otherPID = 4343
+	afterExpiredRead = func() {
+		afterExpiredRead = nil
+		// The other contender, as it went: the expired lock aside and gone,
+		// its own linked into place.
+		if err := os.Rename(path, path+".stale.4343"); err != nil {
+			t.Fatal(err)
+		}
+		_ = os.Remove(path + ".stale.4343")
+		writeLock(path+".4343", otherPID, now)
+		if err := os.Link(path+".4343", path); err != nil {
+			t.Fatal(err)
+		}
+		_ = os.Remove(path + ".4343")
+	}
+	t.Cleanup(func() { afterExpiredRead = nil })
+	l, err := Acquire(dir, now)
+	var busy *LockHeld
+	if !errors.As(err, &busy) || busy.PID != otherPID {
+		if l != nil {
+			_ = l.Release()
+		}
+		t.Fatalf("Acquire = %+v, %v; want the other contender's fresh lock held", l, err)
+	}
+	if got, ok, _ := ReadLock(dir); !ok || got.PID != otherPID {
+		t.Fatalf("the other contender's lock was displaced: %+v ok=%v", got, ok)
+	}
+}
+
+// A removal can take the worktree's git dir, lock and all, before the run's
+// deferred release: there is nothing left to release then.
+func TestReleaseAfterTheGitDirIsGoneIsANoOp(t *testing.T) {
+	t.Parallel()
+	dir := filepath.Join(t.TempDir(), "gitdir")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	l, err := Acquire(dir, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Release(); err != nil {
+		t.Fatalf("Release: %v", err)
 	}
 }
