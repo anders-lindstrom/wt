@@ -1,4 +1,4 @@
-package refs_test
+package quarantinecmd_test
 
 import (
 	"path/filepath"
@@ -7,7 +7,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
-	"github.com/anders-lindstrom/wt/internal/commands/refs/refstest"
+	"github.com/anders-lindstrom/wt/internal/commands/quarantinecmd/quarantinecmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
@@ -52,7 +52,7 @@ func TestSweepQuarantinesEachWorktreeInItsOwnFolder(t *testing.T) {
 		t.Error("both worktrees should be gone from their places")
 	}
 	for sub := range subs {
-		refstest.Restore(t, ctx, sub)
+		quarantinecmdtest.Restore(t, ctx, sub)
 	}
 	if !testkit.Exists(one) || !testkit.Exists(two) {
 		t.Error("wt restore puts each back")

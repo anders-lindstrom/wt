@@ -1,10 +1,10 @@
-package purgetest
+package quarantinecmdtest
 
 import (
 	"bytes"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/purge"
+	"github.com/anders-lindstrom/wt/internal/commands/quarantinecmd"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 )
 
@@ -19,7 +19,7 @@ func PurgeWith(t *testing.T, dir string, h *quarantine.Hooks) quarantine.PurgeRe
 	t.Helper()
 	var res quarantine.PurgeResult
 	var buf bytes.Buffer
-	if err := purge.QuarantinePurge(dir, purge.Options{Result: &res, QuarantineHooks: h}, &buf); err != nil {
+	if err := quarantinecmd.QuarantinePurge(dir, quarantinecmd.Options{Result: &res, QuarantineHooks: h}, &buf); err != nil {
 		t.Fatalf("QuarantinePurge: %v\n%s", err, buf.String())
 	}
 	return res

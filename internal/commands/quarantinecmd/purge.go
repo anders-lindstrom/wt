@@ -1,6 +1,8 @@
-// Package purge implements wt purge, which deletes a quarantined worktree
-// for good.
-package purge
+// Package quarantinecmd implements the commands that end a quarantine: wt
+// restore, which puts a quarantined worktree back, and wt purge, which
+// deletes it for good. wt remove and wt sweep, in retire, make them; the
+// store itself is internal/quarantine.
+package quarantinecmd
 
 import (
 	"errors"

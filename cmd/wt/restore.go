@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands/refs"
+	"github.com/anders-lindstrom/wt/internal/commands/quarantinecmd"
 )
 
 func newRestoreCmd() *cobra.Command {
@@ -58,11 +58,11 @@ func newRestoreCmd() *cobra.Command {
 			if err != nil {
 				ctx = nil
 			}
-			opts := refs.RestoreOptions{DryRun: dryRun}
+			opts := quarantinecmd.RestoreOptions{DryRun: dryRun}
 			if asJSON {
-				return refs.RestoreJSON(ctx, args[0], opts, cmd.OutOrStdout(), cmd.ErrOrStderr())
+				return quarantinecmd.RestoreJSON(ctx, args[0], opts, cmd.OutOrStdout(), cmd.ErrOrStderr())
 			}
-			return refs.Restore(ctx, args[0], opts, cmd.OutOrStdout())
+			return quarantinecmd.Restore(ctx, args[0], opts, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "say what it would do and change nothing")

@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands/purge"
+	"github.com/anders-lindstrom/wt/internal/commands/quarantinecmd"
 )
 
 func newPurgeCmd() *cobra.Command {
@@ -68,11 +68,11 @@ func newPurgeCmd() *cobra.Command {
 			if asJSON {
 				out, progress := cmd.OutOrStdout(), cmd.ErrOrStderr()
 				if !yes {
-					return purge.QuarantinePurgePlanJSON(args[0], out, progress)
+					return quarantinecmd.QuarantinePurgePlanJSON(args[0], out, progress)
 				}
-				return purge.QuarantinePurgeJSON(args[0], purge.Options{Expect: expect}, out, progress)
+				return quarantinecmd.QuarantinePurgeJSON(args[0], quarantinecmd.Options{Expect: expect}, out, progress)
 			}
-			opts := purge.Options{DryRun: dryRun}
+			opts := quarantinecmd.Options{DryRun: dryRun}
 			if !yes && !dryRun {
 				if canAsk(cmd) {
 					p := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
@@ -81,7 +81,7 @@ func newPurgeCmd() *cobra.Command {
 					opts.NoTerminal = true
 				}
 			}
-			return purge.QuarantinePurge(args[0], opts, cmd.OutOrStdout())
+			return quarantinecmd.QuarantinePurge(args[0], opts, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask for confirmation")

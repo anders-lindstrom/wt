@@ -1,4 +1,4 @@
-package purge
+package quarantinecmd
 
 import (
 	"bytes"
@@ -12,14 +12,23 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
-	"github.com/anders-lindstrom/wt/internal/commands/refs"
-	"github.com/anders-lindstrom/wt/internal/commands/refs/refstest"
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 )
+
+// restored runs wt restore on the quarantine dir and fails the test when it
+// fails: quarantinecmdtest.Restore, which a test inside the package cannot
+// import.
+func restored(t *testing.T, ctx *kit.Context, dir string) {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := Restore(ctx, dir, RestoreOptions{}, &buf); err != nil {
+		t.Fatalf("Restore: %v\n%s", err, buf.String())
+	}
+}
 
 // PurgeRefused runs a purge that must not happen, checks it names code, and
 // that it deleted nothing: every file under dir and every pin is still
@@ -127,7 +136,7 @@ func TestPurgeRefuses(t *testing.T) {
 	t.Run("restore stopped", func(t *testing.T) {
 		ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/r-restore", false)
 		var buf bytes.Buffer
-		if err := refs.Restore(ctx, dir, refs.RestoreOptions{QuarantineHooks: testkit.CrashAt("restore.moveAdmin:done")}, &buf); !errors.Is(err, testkit.ErrCrash) {
+		if err := Restore(ctx, dir, RestoreOptions{QuarantineHooks: testkit.CrashAt("restore.moveAdmin:done")}, &buf); !errors.Is(err, testkit.ErrCrash) {
 			t.Fatalf("the restore: err %v, want the injected crash", err)
 		}
 		PurgeRefused(t, ctx, dir, quarantine.ProblemUnsettled)
@@ -139,7 +148,7 @@ func TestPurgeRefuses(t *testing.T) {
 	})
 	t.Run("worktree locked for it", func(t *testing.T) {
 		ctx, path, _, _, dir := retiretest.Quarantined(t, "fix/r-locked", false)
-		refstest.Restore(t, ctx, dir)
+		restored(t, ctx, dir)
 		testkit.GitIn(t, ctx.Repo.MainRoot, "worktree", "lock", "--reason", quarantine.LockReason(dir), path)
 		PurgeRefused(t, ctx, dir, quarantine.ProblemLocked)
 	})
@@ -255,7 +264,7 @@ func TestPurgeJSONMatchesItsSchemas(t *testing.T) {
 	}
 	testkit.ValidateJSON(t, "recovery", []byte(testkit.MustRead(t, filepath.Join(dir, quarantine.PurgingName))))
 	var restorePlan bytes.Buffer
-	_ = refs.RestoreJSON(ctx, dir, refs.RestoreOptions{DryRun: true}, &restorePlan, &bytes.Buffer{})
+	_ = RestoreJSON(ctx, dir, RestoreOptions{DryRun: true}, &restorePlan, &bytes.Buffer{})
 	testkit.ValidateJSON(t, "restore-plan", restorePlan.Bytes())
 
 	var out bytes.Buffer
@@ -432,7 +441,7 @@ func TestPurgeRefusesAPinItCannotRead(t *testing.T) {
 func TestQuarantineRefusesAFolderInsideAQuarantine(t *testing.T) {
 	t.Parallel()
 	ctx, _, _, _, dir := retiretest.Quarantined(t, "fix/host", false)
-	refstest.Restore(t, ctx, dir)
+	restored(t, ctx, dir)
 	_, path := provisiontest.SafetyWorktreeIn(t, ctx, "fix/guest")
 	var buf bytes.Buffer
 	err := retire.RemoveAt(ctx, path, retire.RemoveOptions{Quarantine: filepath.Join(dir, "inner")}, &buf)

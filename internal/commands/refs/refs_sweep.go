@@ -1,6 +1,8 @@
-// Package refs implements wt refs, which sweeps old branches and tags into
-// pins, lists the runs, puts them back and purges them, and wt restore,
-// which puts back a quarantined worktree.
+// Package refs implements wt refs, the commands of the ref-pin store under
+// refs/wt-swept/: sweep, which pins old branches and tags and deletes them,
+// swept, which lists the runs, restore, which puts them back, and purge,
+// which deletes a run for good. wt remove and wt sweep, in retire, pin the
+// branches they delete there too; the store itself is refpins.
 package refs
 
 import (

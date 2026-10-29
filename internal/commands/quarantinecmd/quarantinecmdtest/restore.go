@@ -1,11 +1,11 @@
-package refstest
+package quarantinecmdtest
 
 import (
 	"bytes"
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/refs"
+	"github.com/anders-lindstrom/wt/internal/commands/quarantinecmd"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 )
 
@@ -21,7 +21,7 @@ func RestoreWith(t *testing.T, ctx *kit.Context, dir string, h *quarantine.Hooks
 	t.Helper()
 	var res quarantine.RestoreResult
 	var buf bytes.Buffer
-	if err := refs.Restore(ctx, dir, refs.RestoreOptions{Result: &res, QuarantineHooks: h}, &buf); err != nil {
+	if err := quarantinecmd.Restore(ctx, dir, quarantinecmd.RestoreOptions{Result: &res, QuarantineHooks: h}, &buf); err != nil {
 		t.Fatalf("Restore: %v\n%s", err, buf.String())
 	}
 	return res
