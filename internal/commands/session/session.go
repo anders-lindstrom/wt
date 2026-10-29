@@ -60,6 +60,9 @@ type sessionEnv struct {
 	noProbe bool
 	// projects is the directories of claude's projects/, read once.
 	projects *projectDirs
+	// claude is the claude `wt session stop` runs; "" is the one on the
+	// PATH.
+	claude string
 }
 
 // projectDirs is the directories under claude's projects/, listed once for
@@ -1134,7 +1137,7 @@ func StopRun(ctx *kit.Context, o StopOptions) error {
 		}
 		return finish(nil)
 	}
-	msg, err := runClaudeStop(pick.s.ID)
+	msg, err := runClaudeStop(env.claude, pick.s.ID)
 	if msg != "" {
 		out.Message = jsonout.Strp(msg)
 	}
@@ -1156,11 +1159,14 @@ func StopRun(ctx *kit.Context, o StopOptions) error {
 	return finish(nil)
 }
 
-// runClaudeStop runs `claude stop <id>` and returns what it printed.
-func runClaudeStop(id string) (string, error) {
-	exe, err := exec.LookPath("claude")
-	if err != nil {
-		return "", errors.New("claude is not on the PATH")
+// runClaudeStop runs `claude stop <id>` with exe, or the claude on the PATH
+// when exe is "", and returns what it printed.
+func runClaudeStop(exe, id string) (string, error) {
+	if exe == "" {
+		var err error
+		if exe, err = exec.LookPath("claude"); err != nil {
+			return "", errors.New("claude is not on the PATH")
+		}
 	}
 	cmd := exec.Command(exe, "stop", id)
 	cmd.Env = git.Environ("NO_COLOR=1")

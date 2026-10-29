@@ -655,15 +655,15 @@ func TestSessionListAllPlacesSessionsByRepositoryFromOneRead(t *testing.T) {
 	}
 }
 
-// fakeClaudeStop puts a claude on the PATH that records its arguments, one
+// fakeClaudeStop gives the rig a claude that records its arguments, one
 // call a line, and prints out; it exits with code.
-func fakeClaudeStop(t *testing.T, out string, code int) (calls func() []string) {
+func fakeClaudeStop(t *testing.T, r *sessionRig, out string, code int) (calls func() []string) {
 	t.Helper()
 	dir := t.TempDir()
 	log := filepath.Join(dir, "calls")
 	script := "#!/bin/sh\necho \"$@\" >> " + log + "\necho '" + out + "'\nexit " + strconv.Itoa(code) + "\n"
-	gittest.WriteExecutable(t, filepath.Join(dir, "claude"), script)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	r.env.claude = filepath.Join(dir, "claude")
+	gittest.WriteExecutable(t, r.env.claude, script)
 	return func() []string {
 		data, _ := os.ReadFile(log)
 		if len(bytes.TrimSpace(data)) == 0 {
@@ -708,7 +708,7 @@ func codeOf(r Stop) string {
 func TestSessionStopStopsTheBackgroundSessionByItsAttachID(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
-	calls := fakeClaudeStop(t, "Stopped aaaaaaaa", 0)
+	calls := fakeClaudeStop(t, r, "Stopped aaaaaaaa", 0)
 	testkit.ClaudeLists(ctx, running("works", "aaaaaaaa", wt, 4001), testkit.Background("parked", "dddddddd", "blocked", wt))
 	res, _, err := stopSession(t, ctx, r, StopOptions{})
 	if err != nil {
@@ -725,7 +725,7 @@ func TestSessionStopStopsTheBackgroundSessionByItsAttachID(t *testing.T) {
 func TestSessionStopAParkedSessionIsAlreadyStopped(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
-	calls := fakeClaudeStop(t, "", 0)
+	calls := fakeClaudeStop(t, r, "", 0)
 	testkit.ClaudeLists(ctx, testkit.Background("parked", "dddddddd", "blocked", wt))
 	res, _, err := stopSession(t, ctx, r, StopOptions{})
 	if err != nil || res.Outcome != "already-stopped" || codeOf(res) != "noProcess" {
@@ -739,7 +739,7 @@ func TestSessionStopAParkedSessionIsAlreadyStopped(t *testing.T) {
 func TestSessionStopRefusesATerminalAndACodexSession(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
-	calls := fakeClaudeStop(t, "", 0)
+	calls := fakeClaudeStop(t, r, "", 0)
 	testkit.ClaudeLists(ctx, liveSession("mine", sidA, wt, 4001))
 	res, _, err := stopSession(t, ctx, r, StopOptions{Session: "mine"})
 	if err == nil || res.Outcome != "refused" || codeOf(res) != "interactive" || res.Session == nil {
@@ -789,7 +789,7 @@ func readOf(listed ...agents.Agent) *ClaudeSessions {
 func TestSessionStopHoldsToTheSessionExpected(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
-	calls := fakeClaudeStop(t, "Stopped", 0)
+	calls := fakeClaudeStop(t, r, "Stopped", 0)
 	testkit.ClaudeLists(ctx, running("works", "aaaaaaaa", wt, 4001))
 	res, _, err := stopSession(t, ctx, r, StopOptions{Session: "works", ExpectSession: sidB})
 	if err == nil || res.Outcome != "refused" || codeOf(res) != "changed" {
@@ -812,7 +812,7 @@ func TestSessionStopHoldsToTheSessionExpected(t *testing.T) {
 func TestSessionStopRefusesToGuessAmongSeveral(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
-	calls := fakeClaudeStop(t, "", 0)
+	calls := fakeClaudeStop(t, r, "", 0)
 	testkit.ClaudeLists(ctx, running("first", "aaaaaaaa", wt, 4001), running("second", "bbbbbbbb", wt, 4002))
 	res, _, err := stopSession(t, ctx, r, StopOptions{})
 	var usage UsageError
@@ -835,7 +835,7 @@ func TestSessionStopRefusesToGuessAmongSeveral(t *testing.T) {
 func TestSessionStopReportsWhatClaudeSaidWhenItFails(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
-	calls := fakeClaudeStop(t, "no such session", 1)
+	calls := fakeClaudeStop(t, r, "no such session", 1)
 	testkit.ClaudeLists(ctx, running("works", "aaaaaaaa", wt, 4001))
 	res, _, err := stopSession(t, ctx, r, StopOptions{})
 	if err == nil || res.Outcome != "failed" || codeOf(res) != "stopFailed" || res.Message == nil || *res.Message != "no such session" {
@@ -849,7 +849,7 @@ func TestSessionStopReportsWhatClaudeSaidWhenItFails(t *testing.T) {
 func TestSessionStopDryRunStopsNothing(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
-	calls := fakeClaudeStop(t, "Stopped", 0)
+	calls := fakeClaudeStop(t, r, "Stopped", 0)
 	testkit.ClaudeLists(ctx, running("works", "aaaaaaaa", wt, 4001))
 	res, _, err := stopSession(t, ctx, r, StopOptions{DryRun: true})
 	if err != nil || res.Outcome != "would-stop" || !res.DryRun || res.Session == nil {
@@ -863,7 +863,7 @@ func TestSessionStopDryRunStopsNothing(t *testing.T) {
 func TestSessionStopRefusesWhenItCannotTellWhoseSessionItIs(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
-	calls := fakeClaudeStop(t, "Stopped", 0)
+	calls := fakeClaudeStop(t, r, "Stopped", 0)
 	testkit.ClaudeLists(ctx, running("works", "aaaaaaaa", wt, 4001))
 	testkit.AgentsOf(ctx).Ancestors = func() (map[int]bool, error) { return nil, errors.New("ps failed") }
 	res, _, err := stopSession(t, ctx, r, StopOptions{})
@@ -884,7 +884,7 @@ func TestSessionStopRefusesWhenItCannotTellWhoseSessionItIs(t *testing.T) {
 func TestSessionStopRefusesAFuzzyWorktreeName(t *testing.T) {
 	ctx, _, wt := attachFixture(t)
 	r := newSessionRig(t)
-	calls := fakeClaudeStop(t, "Stopped", 0)
+	calls := fakeClaudeStop(t, r, "Stopped", 0)
 	testkit.ClaudeLists(ctx, running("works", "aaaaaaaa", wt, 4001))
 	res, _, err := stopSession(t, ctx, r, StopOptions{Pattern: "thin"})
 	if err == nil || res.Outcome != "refused" || codeOf(res) != "notExact" {
