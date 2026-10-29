@@ -16,6 +16,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/reposel"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
@@ -136,7 +137,7 @@ type OverviewFile struct {
 func SyncJSON(ctx *kit.Context, opts SyncOptions, w io.Writer) error {
 	defer syncrun.WatchSignals(os.Stderr, nil)()
 	o := OverviewOf(ctx, opts)
-	if err := kit.WriteJSON(w, o); err != nil {
+	if err := jsonout.WriteJSON(w, o); err != nil {
 		return err
 	}
 	if o.Error != nil {
@@ -164,13 +165,13 @@ func SyncAllJSON(u *config.User, sel reposel.Selection, opts SyncOptions, w io.W
 			t.Problem = err.Error()
 		}
 		o := newOverview(t.Name, t.Path)
-		o.Error = kit.Strp(t.Problem)
+		o.Error = jsonout.Strp(t.Problem)
 		return o
 	})
 	if out == nil {
 		out = []SyncOverview{}
 	}
-	if err := kit.WriteJSON(w, out); err != nil {
+	if err := jsonout.WriteJSON(w, out); err != nil {
 		return err
 	}
 	var failed []string
@@ -194,11 +195,11 @@ func newOverview(name, mainRoot string) SyncOverview {
 func OverviewOf(ctx *kit.Context, opts SyncOptions) SyncOverview {
 	o := newOverview(ctx.Repo.Name, ctx.Repo.MainRoot)
 	if err := ctx.NoTrunk(); err != nil {
-		o.Error = kit.Strp(err.Error())
+		o.Error = jsonout.Strp(err.Error())
 		return o
 	}
 	trunk := ctx.Config.MainBranch
-	o.Trunk, o.TrunkRef, o.TrunkSource = kit.Strp(trunk), kit.Strp("origin/"+trunk), ctx.TrunkSource()
+	o.Trunk, o.TrunkRef, o.TrunkSource = jsonout.Strp(trunk), jsonout.Strp("origin/"+trunk), ctx.TrunkSource()
 	// Trunk, and with it the own remote of every worktree's branch. One
 	// that could not be fetched is as last fetched, which its
 	// ownRemote.fetched says, and its row says why.
@@ -212,7 +213,7 @@ func OverviewOf(ctx *kit.Context, opts SyncOptions) SyncOverview {
 		}
 		var err error
 		if own, err = syncrun.FetchRemotes(ctx, syncFetchTimeout, branches); err != nil {
-			o.FetchError = kit.Strp(kit.FetchReason(err))
+			o.FetchError = jsonout.Strp(kit.FetchReason(err))
 		} else {
 			o.Fetched = true
 		}
@@ -221,7 +222,7 @@ func OverviewOf(ctx *kit.Context, opts SyncOptions) SyncOverview {
 	// too, as a run reads it: a fetch landing meanwhile cannot mix two.
 	_, sha, err := TrunkTip(ctx)
 	if err != nil {
-		o.Error = kit.Strp(err.Error())
+		o.Error = jsonout.Strp(err.Error())
 		return o
 	}
 	cfg, err := wtsync.LoadFromRef(ctx.Repo.MainRoot, sha)
@@ -229,22 +230,22 @@ func OverviewOf(ctx *kit.Context, opts SyncOptions) SyncOverview {
 	case errors.Is(err, wtsync.ErrUndeclared):
 		cfg = nil
 	case err != nil:
-		o.Error = kit.Strp(err.Error())
+		o.Error = jsonout.Strp(err.Error())
 		return o
 	}
-	o.Onto, o.Declared = kit.Strp(sha), cfg != nil
+	o.Onto, o.Declared = jsonout.Strp(sha), cfg != nil
 	listed, err := ctx.ListAgents()
 	if err != nil {
-		o.SessionsError = kit.Strp(err.Error())
+		o.SessionsError = jsonout.Strp(err.Error())
 	}
 	sv, err := SurveyRepo(ctx, sha, cfg, listed, own)
 	if err != nil {
-		o.Error = kit.Strp(err.Error())
+		o.Error = jsonout.Strp(err.Error())
 		return o
 	}
 	o.Worktrees = sv.Rows
 	if o.Token, err = sv.Token(ctx, trunk, sha); err != nil {
-		o.Error = kit.Strp(err.Error())
+		o.Error = jsonout.Strp(err.Error())
 	}
 	return o
 }
@@ -313,15 +314,15 @@ func SurveyRepo(ctx *kit.Context, trunkSHA string, cfg *wtsync.Config, listed []
 func (r *RunPlan) overviewRow(wt repo.Worktree, a wtsync.Assessment, byBranch map[string]repo.Worktree) OverviewWorktree {
 	ctx := r.ctx
 	row := OverviewWorktree{
-		Work: kit.WorktreeName(ctx, wt.Branch, wt.Path), Branch: kit.Strp(wt.Branch), Path: wt.Path,
+		Work: kit.WorktreeName(ctx, wt.Branch, wt.Path), Branch: jsonout.Strp(wt.Branch), Path: wt.Path,
 		Class: a.Class.String(), Verified: !a.Unverified,
-		Behind: a.Behind, Ahead: a.Ahead, Dirty: a.Dirty, HandedOver: a.Paused, PlanFile: kit.Strp(a.PlanFile),
+		Behind: a.Behind, Ahead: a.Ahead, Dirty: a.Dirty, HandedOver: a.Paused, PlanFile: jsonout.Strp(a.PlanFile),
 		Sessions: []PlanSession{}, Stack: []PlanStackMember{}, Stops: []OverviewStop{},
 		Strategies: []string{}, Notes: append([]string{}, a.Notes...),
 		OwnRemote: syncrun.OwnRemoteOf(a.Own),
 	}
 	if a.Err != nil {
-		row.Error = kit.Strp(a.Err.Error())
+		row.Error = jsonout.Strp(a.Err.Error())
 	}
 	switch {
 	case syncrun.OnTrunk(a):
@@ -333,12 +334,12 @@ func (r *RunPlan) overviewRow(wt repo.Worktree, a wtsync.Assessment, byBranch ma
 	row.Verdict = [...]string{VerdictProceed, VerdictSkip, VerdictRefuse}[verdict]
 	switch {
 	case verdict != wtsync.Proceed:
-		row.Reason = kit.Strp(why)
+		row.Reason = jsonout.Strp(why)
 	case !r.ready(a):
-		row.Reason = kit.Strp(notReadyReason(a))
+		row.Reason = jsonout.Strp(notReadyReason(a))
 	default:
 		if hold := r.stackHold(wt.Branch); hold != "" {
-			row.Reason = kit.Strp(hold)
+			row.Reason = jsonout.Strp(hold)
 		} else {
 			row.Runnable = true
 		}
@@ -361,10 +362,10 @@ func (r *RunPlan) overviewRow(wt repo.Worktree, a wtsync.Assessment, byBranch ma
 		if yours {
 			files = a.Files
 		}
-		st := OverviewStop{Index: stop.Index, Total: stop.Total, Commit: kit.Strp(stop.Commit), Subject: stop.Subject,
+		st := OverviewStop{Index: stop.Index, Total: stop.Total, Commit: jsonout.Strp(stop.Commit), Subject: stop.Subject,
 			Resolved: stop.Resolved, Yours: yours, Files: []OverviewFile{}}
 		for _, f := range files {
-			st.Files = append(st.Files, OverviewFile{Path: f.Path, Resolved: f.Resolved, Strategy: kit.Strp(f.Strategy), Note: kit.Strp(f.Note)})
+			st.Files = append(st.Files, OverviewFile{Path: f.Path, Resolved: f.Resolved, Strategy: jsonout.Strp(f.Strategy), Note: jsonout.Strp(f.Note)})
 			if f.Resolved && f.Strategy != "" && !slices.Contains(row.Strategies, f.Strategy) {
 				row.Strategies = append(row.Strategies, f.Strategy)
 			}
@@ -384,7 +385,7 @@ func (r *RunPlan) overviewRow(wt repo.Worktree, a wtsync.Assessment, byBranch ma
 // remote's commit, and a run allowed over the divergence its caller was
 // shown is refused over one that moved since. Nil when a run would start on
 // nothing. With nothing diverged it is the token an older wt gives, which
-// docs/json.md promises: so it is built by hand, not with kit.Token. A
+// docs/json.md promises: so it is built by hand, not with jsonout.Token. A
 // declaration git could not look for is an error, not a token: hashed as
 // none, it would match a later read that found one.
 func (sv Survey) Token(ctx *kit.Context, trunk, trunkSHA string) (*string, error) {
@@ -424,5 +425,5 @@ func (sv Survey) Token(ctx *kit.Context, trunk, trunkSHA string) (*string, error
 	if eligible+covered == 0 {
 		return nil, nil
 	}
-	return kit.Strp("1:" + hex.EncodeToString(h.Sum(nil))[:32]), nil
+	return jsonout.Strp("1:" + hex.EncodeToString(h.Sum(nil))[:32]), nil
 }

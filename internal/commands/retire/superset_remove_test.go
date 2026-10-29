@@ -12,6 +12,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/supersetws"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/superset"
 )
 
@@ -66,11 +67,11 @@ func TestRemoveSurvivesEverySupersetState(t *testing.T) {
 		result     string
 		line       string
 	}{
-		"not installed":  {&superset.Status{}, testkit.Deleted, kit.StepSkipped, ""},
-		"host stopped":   {&superset.Status{Exe: "/nope/superset"}, testkit.Deleted, kit.StepSkipped, "- Superset's host service is not running; its workspace, if any, was left"},
-		"status broken":  {&superset.Status{Exe: "/nope/superset", Err: testkit.ErrBoom}, testkit.Deleted, kit.StepFailed, "! boom; its Superset workspace, if any, was left"},
-		"list fails":     {&superset.Status{Exe: "/nope/superset", Running: true}, testkit.Deleted, kit.StepFailed, "! superset ws list --local --json failed"},
-		"delete fails":   {nil, `echo 'Error: nope' >&2; exit 1`, kit.StepFailed, "! superset ws delete --local w1 --json failed: nope; its Superset workspace was left"},
+		"not installed":  {&superset.Status{}, testkit.Deleted, jsonout.StepSkipped, ""},
+		"host stopped":   {&superset.Status{Exe: "/nope/superset"}, testkit.Deleted, jsonout.StepSkipped, "- Superset's host service is not running; its workspace, if any, was left"},
+		"status broken":  {&superset.Status{Exe: "/nope/superset", Err: testkit.ErrBoom}, testkit.Deleted, jsonout.StepFailed, "! boom; its Superset workspace, if any, was left"},
+		"list fails":     {&superset.Status{Exe: "/nope/superset", Running: true}, testkit.Deleted, jsonout.StepFailed, "! superset ws list --local --json failed"},
+		"delete fails":   {nil, `echo 'Error: nope' >&2; exit 1`, jsonout.StepFailed, "! superset ws delete --local w1 --json failed: nope; its Superset workspace was left"},
 		"delete warns":   {nil, `echo '{"deleted":["w1"],"warnings":["teardown failed"]}'`, supersetws.StepDeregistered, "✓ deleted its Superset workspace; Superset warned: teardown failed"},
 		"not registered": {nil, testkit.Deleted, supersetws.StepNotRegistered, ""},
 		"warns on lines": {nil, `printf '%s\n' '{"deleted":["w1"],"warnings":["teardown failed\nat line 3"]}'`, supersetws.StepDeregistered, "✓ deleted its Superset workspace; Superset warned: teardown failed at line 3"},
@@ -135,7 +136,7 @@ func TestRemoveLeavesSupersetAloneWhenTheIntegrationIsOff(t *testing.T) {
 			if got := testkit.ArgvOf(t, log); got != nil {
 				t.Errorf("superset was run: %q", got)
 			}
-			if res.Superset != kit.StepSkipped {
+			if res.Superset != jsonout.StepSkipped {
 				t.Errorf("superset = %q", res.Superset)
 			}
 			if lines := testkit.SupersetLines(out.String()); len(lines) != 0 {

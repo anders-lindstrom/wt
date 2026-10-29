@@ -194,3 +194,16 @@ func CurrentInterruptJournal() Interruptible {
 	}
 	return interruptJournals[len(interruptJournals)-1].j
 }
+
+// WatchJournal makes a handled SIGINT or SIGTERM, until the returned function
+// is called, stop every git and script still running with its process group,
+// have j write its object with the step in flight caught, and exit
+// 128+signal.
+func WatchJournal(j Interruptible, w io.Writer) func() {
+	unset := SetInterruptJournal(j)
+	stop := WatchSignals(w, nil)
+	return func() {
+		stop()
+		unset()
+	}
+}

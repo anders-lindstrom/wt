@@ -17,6 +17,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 )
 
@@ -177,7 +178,7 @@ func TestPurgeExpectHoldsItToThePlan(t *testing.T) {
 	}
 	var o Output
 	_ = json.Unmarshal(out.Bytes(), &o)
-	if o.Outcome != quarantine.OutcomeRefused || len(o.Problems) != 1 || o.Problems[0].Code != kit.ProblemPlanChanged {
+	if o.Outcome != quarantine.OutcomeRefused || len(o.Problems) != 1 || o.Problems[0].Code != jsonout.ProblemPlanChanged {
 		t.Errorf("result %s", out.String())
 	}
 	if !testkit.Exists(dir) {
@@ -300,7 +301,7 @@ func TestPurgeJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &o); err != nil {
 		t.Fatalf("one object: %v\n%s", err, out.String())
 	}
-	if o.Outcome != kit.OutcomeInterrupted || o.FolderDeleted {
+	if o.Outcome != jsonout.OutcomeInterrupted || o.FolderDeleted {
 		t.Errorf("result %s", out.String())
 	}
 	for _, pin := range o.Pins {

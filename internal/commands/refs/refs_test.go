@@ -17,6 +17,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 )
 
 func RefsPlanJSON(t *testing.T, ctx *kit.Context, opts Options) (PlanOutput, error) {
@@ -67,26 +68,26 @@ func TestRefsPlanSortsTheBackups(t *testing.T) {
 		t.Errorf("the plan wrote to the repository:\nbefore %s\nafter %s", before, after)
 	}
 	if p.Command != "refs sweep" || p.Token == nil || !strings.HasPrefix(*p.Token, "rs1-") || p.RunID != nil ||
-		kit.Deref(p.Trunk) != "main" || kit.Deref(p.Age) != "14d" || len(p.Patterns) != 9 {
+		jsonout.Deref(p.Trunk) != "main" || jsonout.Deref(p.Age) != "14d" || len(p.Patterns) != 9 {
 		t.Fatalf("plan = %+v", p)
 	}
 	it := RefPlanItem(t, p, "refs/heads/backup/contained")
-	if it.Category != RefBackupContained || !it.Selected || kit.Deref(it.ContainedIn) != "refs/heads/main" ||
-		it.UniqueCommits != nil || it.Pattern != "backup/*" || kit.Deref(it.DateSource) != DateReflog || it.Annotated != nil {
+	if it.Category != RefBackupContained || !it.Selected || jsonout.Deref(it.ContainedIn) != "refs/heads/main" ||
+		it.UniqueCommits != nil || it.Pattern != "backup/*" || jsonout.Deref(it.DateSource) != DateReflog || it.Annotated != nil {
 		t.Errorf("contained = %+v", it)
 	}
 	it = RefPlanItem(t, p, "refs/heads/backup/old")
 	if it.Category != RefBackupOld || !it.Selected || it.ContainedIn != nil || it.UniqueCommits == nil ||
-		*it.UniqueCommits != 1 || kit.Deref(it.Subject) != "old work" {
+		*it.UniqueCommits != 1 || jsonout.Deref(it.Subject) != "old work" {
 		t.Errorf("old = %+v", it)
 	}
 	it = RefPlanItem(t, p, "refs/heads/backup/rebased")
-	if it.Category != RefBackupYoung || it.Selected || kit.Deref(it.DateSource) != DateReflog {
+	if it.Category != RefBackupYoung || it.Selected || jsonout.Deref(it.DateSource) != DateReflog {
 		t.Errorf("a backup made today of an old branch must be young: %+v", it)
 	}
 	it = RefPlanItem(t, p, "refs/tags/safe-tag")
-	if it.Category != RefBackupContained || it.Annotated == nil || !*it.Annotated || kit.Deref(it.DateSource) != DateTagger ||
-		it.Object == kit.Deref(it.Tip) || kit.Deref(it.ContainedIn) != "refs/heads/main" {
+	if it.Category != RefBackupContained || it.Annotated == nil || !*it.Annotated || jsonout.Deref(it.DateSource) != DateTagger ||
+		it.Object == jsonout.Deref(it.Tip) || jsonout.Deref(it.ContainedIn) != "refs/heads/main" {
 		t.Errorf("tag = %+v", it)
 	}
 	if it := RefPlanItem(t, p, "refs/heads/backup/checked"); it.Category != RefKept || it.Selected ||
@@ -129,7 +130,7 @@ func TestRefsSweepKeepsARefThatMoved(t *testing.T) {
 	if it.Result != RefResultKept || it.Pinned || it.Deleted || !ctx.Repo.BranchExists("backup/old") {
 		t.Errorf("moved = %+v", it)
 	}
-	if r.Outcome != kit.OutcomePartial {
+	if r.Outcome != jsonout.OutcomePartial {
 		t.Errorf("outcome = %s", r.Outcome)
 	}
 }
@@ -190,8 +191,8 @@ func TestRefsJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 	if dec.More() {
 		t.Error("a second object was written")
 	}
-	if r.Outcome != kit.OutcomeInterrupted || RefResultOf(t, r, "refs/heads/backup/old").Result != RefInterrupted ||
-		kit.Deref(r.Recovery) != "interrupted" {
+	if r.Outcome != jsonout.OutcomeInterrupted || RefResultOf(t, r, "refs/heads/backup/old").Result != RefInterrupted ||
+		jsonout.Deref(r.Recovery) != "interrupted" {
 		t.Errorf("%+v", r)
 	}
 }
@@ -286,7 +287,7 @@ func TestRefsRemoteEndpoint(t *testing.T) {
 		testkit.GitIn(t, main, "remote", "set-url", "origin", url)
 		p, err := RefsPlanJSON(t, ctx, Options{Remote: true, NoFetch: true, OpenPRs: testkit.NoPRs})
 		if err == nil || len(p.Problems) != 1 || p.Problems[0].Code != ProblemRemoteCredentials ||
-			strings.Contains(kit.Deref(p.Error), "example.com") {
+			strings.Contains(jsonout.Deref(p.Error), "example.com") {
 			t.Errorf("%s: %v %+v", url, err, p.Problems)
 		}
 	}
@@ -338,7 +339,7 @@ func TestRefsSweepRemoteGuards(t *testing.T) {
 	if testkit.GitOut(t, origin, "for-each-ref", "--format=%(refname)", "refs/heads/backup/") == "" {
 		t.Error("origin must keep both")
 	}
-	if r.Outcome != kit.OutcomeRefused {
+	if r.Outcome != jsonout.OutcomeRefused {
 		t.Errorf("outcome = %s", r.Outcome)
 	}
 	if left := testkit.GitOut(t, main, "for-each-ref", refpins.SweptPrefix); left != "" {

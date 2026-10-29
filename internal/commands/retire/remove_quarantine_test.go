@@ -10,6 +10,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 )
 
@@ -52,7 +53,7 @@ func TestQuarantineMovesTheWorktreeInsteadOfDeletingIt(t *testing.T) {
 			t.Errorf("step %s is %s", s.Name, s.State)
 		}
 	}
-	if r.Branch == nil || r.Branch.Tip != tip || kit.Deref(r.Branch.Result) != quarantine.BranchDeleted ||
+	if r.Branch == nil || r.Branch.Tip != tip || jsonout.Deref(r.Branch.Result) != quarantine.BranchDeleted ||
 		len(r.Branch.Config) != 1 || r.Branch.Config[0].Value != "mine" {
 		t.Errorf("branch record %+v", r.Branch)
 	}
@@ -174,7 +175,7 @@ func TestRemoveReportsABranchFailureAfterTheFolderIsGoneAsPartial(t *testing.T) 
 			if !strings.Contains(buf.String(), "partly done") {
 				t.Errorf("it must say it is partly done:\n%s", buf.String())
 			}
-			if q && kit.Deref(testkit.LoadRecord(t, opts.Quarantine).Branch.Result) != quarantine.BranchFailed {
+			if q && jsonout.Deref(testkit.LoadRecord(t, opts.Quarantine).Branch.Result) != quarantine.BranchFailed {
 				t.Error("recovery.json must say the branch step failed")
 			}
 		})

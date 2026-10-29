@@ -9,6 +9,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 )
 
 // RemoteFixture is a repository with remotes configured and remote-tracking
@@ -144,8 +145,8 @@ func TestCheckoutRecordsTheBranchBeforeAddingTheWorktree(t *testing.T) {
 	if err := CheckoutAdd(ctx, path, target, j, &bytes.Buffer{})(); err != nil {
 		t.Fatal(err)
 	}
-	b := j.step(kit.StepBranch)
-	if b.Result != kit.StepCreated || b.Commit == nil || *b.Commit != target.Commit {
+	b := j.step(jsonout.StepBranch)
+	if b.Result != jsonout.StepCreated || b.Commit == nil || *b.Commit != target.Commit {
 		t.Errorf("branch step %+v before the worktree was read back", *b)
 	}
 	if j.co.Upstream == nil || *j.co.Upstream != "refs/remotes/origin/topic" {

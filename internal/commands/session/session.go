@@ -25,6 +25,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/reposel"
 	"github.com/anders-lindstrom/wt/schema"
@@ -394,7 +395,7 @@ func ListRun(ctx *kit.Context, o ListOptions) error {
 	<-read.done
 	codex := <-codexDone
 	if codex.err != nil {
-		out.CodexError = kit.Strp(kit.OneLine(codex.err.Error()))
+		out.CodexError = jsonout.Strp(kit.OneLine(codex.err.Error()))
 	}
 	merged := read.with(codex.agents)
 	if o.Selection.Any() {
@@ -414,12 +415,12 @@ func ListRun(ctx *kit.Context, o ListOptions) error {
 	}
 	switch {
 	case err != nil:
-		out.Error = kit.Strp(kit.OneLine(err.Error()))
+		out.Error = jsonout.Strp(kit.OneLine(err.Error()))
 	case sessionsErr != nil:
-		out.SessionsError = kit.Strp(kit.OneLine(sessionsErr.Error()))
+		out.SessionsError = jsonout.Strp(kit.OneLine(sessionsErr.Error()))
 	}
 	if o.JSON {
-		if werr := kit.WriteJSON(o.Out, out); werr != nil {
+		if werr := jsonout.WriteJSON(o.Out, out); werr != nil {
 			return werr
 		}
 		if err != nil {
@@ -502,18 +503,18 @@ func describeSession(s ClaudeSession, repo, work, path string, env sessionEnv) I
 		info.PID = &pid
 	}
 	if s.StartedAt > 0 {
-		info.StartedAt = kit.Strp(time.UnixMilli(s.StartedAt).UTC().Format(time.RFC3339))
+		info.StartedAt = jsonout.Strp(time.UnixMilli(s.StartedAt).UTC().Format(time.RFC3339))
 	}
 	info.Background = s.ID != "" && !codex
 	info.Activity = sessionActivity(s)
 	if codex {
-		info.InboxUnavailable = kit.Strp("codex")
+		info.InboxUnavailable = jsonout.Strp("codex")
 		return info
 	}
 	if sessionIDShape.MatchString(s.SessionID) {
 		if path, mtime, ok := env.transcriptOf(s.SessionID); ok {
 			info.Transcript = &path
-			info.LastActivityAt = kit.Strp(mtime.UTC().Format(time.RFC3339))
+			info.LastActivityAt = jsonout.Strp(mtime.UTC().Format(time.RFC3339))
 		}
 	}
 	var reg registryEntry
@@ -521,11 +522,11 @@ func describeSession(s ClaudeSession, repo, work, path string, env sessionEnv) I
 	if s.PID > 1 && s.SessionID != "" {
 		reg, regState = readRegistry(s, env)
 		if regState == registryOK && reg.statusUpdated > 0 {
-			info.StateSince = kit.Strp(time.UnixMilli(reg.statusUpdated).UTC().Format(time.RFC3339))
+			info.StateSince = jsonout.Strp(time.UnixMilli(reg.statusUpdated).UTC().Format(time.RFC3339))
 		}
 	}
 	if s.Own {
-		info.InboxUnavailable = kit.Strp("own")
+		info.InboxUnavailable = jsonout.Strp("own")
 		return info
 	}
 	info.Inbox, info.InboxUnavailable = findInbox(s, env, reg, regState)
@@ -677,9 +678,9 @@ func SendRun(ctx *kit.Context, o SendOptions) error {
 	fail := func(f refusal) error {
 		out.Sent = false
 		out.MsgID = nil
-		out.Error, out.ErrorCode = kit.Strp(f.msg), kit.Strp(string(f.code))
+		out.Error, out.ErrorCode = jsonout.Strp(f.msg), jsonout.Strp(string(f.code))
 		if o.JSON {
-			if err := kit.WriteJSON(o.Out, out); err != nil {
+			if err := jsonout.WriteJSON(o.Out, out); err != nil {
 				return err
 			}
 		}
@@ -756,7 +757,7 @@ func SendRun(ctx *kit.Context, o SendOptions) error {
 
 func finishSend(o SendOptions, out Send, target *Info, sent bool) error {
 	if o.JSON {
-		return kit.WriteJSON(o.Out, out)
+		return jsonout.WriteJSON(o.Out, out)
 	}
 	name := "the session"
 	if target.Name != nil {
@@ -1079,7 +1080,7 @@ func StopRun(ctx *kit.Context, o StopOptions) error {
 	env.noProbe = true
 	finish := func(err error) error {
 		if o.JSON {
-			if werr := kit.WriteJSON(o.Out, out); werr != nil {
+			if werr := jsonout.WriteJSON(o.Out, out); werr != nil {
 				return werr
 			}
 		}
@@ -1090,7 +1091,7 @@ func StopRun(ctx *kit.Context, o StopOptions) error {
 		if r.failed {
 			out.Outcome = "failed"
 		}
-		out.Reason, out.ReasonCode = kit.Strp(r.msg), kit.Strp(string(r.code))
+		out.Reason, out.ReasonCode = jsonout.Strp(r.msg), jsonout.Strp(string(r.code))
 		err := errors.New(r.msg)
 		if r.usage {
 			err = UsageError{err}
@@ -1112,7 +1113,7 @@ func StopRun(ctx *kit.Context, o StopOptions) error {
 	}
 	if pick.info.PID == nil {
 		out.Outcome = "already-stopped"
-		out.Reason, out.ReasonCode = kit.Strp(name+" has no process: there is nothing to stop"), kit.Strp(string(codeNoProcess))
+		out.Reason, out.ReasonCode = jsonout.Strp(name+" has no process: there is nothing to stop"), jsonout.Strp(string(codeNoProcess))
 		if !o.JSON {
 			fmt.Fprintf(o.Out, "%s has no process: already stopped. `claude attach %s` resumes it\n", name, pick.s.ID)
 		}
@@ -1135,7 +1136,7 @@ func StopRun(ctx *kit.Context, o StopOptions) error {
 	}
 	msg, err := runClaudeStop(pick.s.ID)
 	if msg != "" {
-		out.Message = kit.Strp(msg)
+		out.Message = jsonout.Strp(msg)
 	}
 	if err != nil {
 		reason := err.Error()

@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/supersetws"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 )
 
 // The guard itself: while the directory is at its path, or git still lists
@@ -36,7 +36,7 @@ func TestDeregisterNeverRunsWhileTheWorktreeIsThere(t *testing.T) {
 					t.Fatalf("delete was called with the worktree still there: %q", testkit.ArgvOf(t, log))
 				}
 			}
-			if result != kit.StepSkipped || !strings.Contains(reason, "still") {
+			if result != jsonout.StepSkipped || !strings.Contains(reason, "still") {
 				t.Errorf("result = %q (%q)", result, reason)
 			}
 			if lines := testkit.SupersetLines(out.String()); len(lines) != 1 {

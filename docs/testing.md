@@ -37,7 +37,7 @@ in it: their tests build real git repositories.
 |---|---|
 | a comment, docs, whats-new, wording only | nothing, or `go vet ./...` |
 | one test or one function | `go test ./internal/<pkg> -run 'TestName$' -count=1` |
-| internal/config, find, naming, about, quarantine, superset, github, git, repo, reposel or gittest | `go test ./internal/<pkg>/...`; each is under 50 s, most under 5 s |
+| internal/config, find, naming, about, quarantine, superset, github, git, repo, reposel, jsonout or gittest | `go test ./internal/<pkg>/...`; each is under 50 s, most under 5 s |
 | internal/wtsync | `go test ./internal/wtsync -run '<Area>'` first, then the whole package once (about 110 s) |
 | internal/agents | `go test ./internal/agents` (a few seconds); some of its tests read the real process table |
 | internal/commands/syncrun | `go test ./internal/commands/syncfix ./internal/commands/synccmd -run 'Push\|OwnRemote\|FastForward\|Finish'`: syncrun's behaviour is tested from those two packages, so `go test ./internal/commands/syncrun` alone covers almost nothing |
@@ -55,7 +55,7 @@ The command packages, and what each holds:
 | package | holds |
 |---|---|
 | `internal/commands` | wt list and wt status, and the tests that cross packages |
-| `internal/commands/kit` | `Context`, Open/Locate, runs across repositories (`Bulk`, `AcrossRepos`) and the one question they ask, GitHub glue and its cache, tables, the `--json` vocabulary, the signal watch |
+| `internal/commands/kit` | `Context`, Open/Locate, runs across repositories (`Bulk`, `AcrossRepos`) and the one question they ask, GitHub glue and its cache, tables, the signal watch |
 | `internal/commands/testkit` | fixtures and fakes the tests share; `testkit.Main` is the TestMain of every command package but kit |
 | `internal/commands/refpins` | the `refs/wt-swept/` pin store |
 | `internal/commands/session` | wt session, wt attach |

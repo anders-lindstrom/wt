@@ -12,6 +12,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -649,9 +650,9 @@ func (r *RunPlan) triage() (proceed bool, err error) {
 			switch {
 			case !refused || !own.Refuses():
 			case own.FetchFailed != "":
-				jp.OwnRemoteSync.SkippedReason = kit.Strp(syncrun.OwnSkipFetchFailed)
+				jp.OwnRemoteSync.SkippedReason = jsonout.Strp(syncrun.OwnSkipFetchFailed)
 			default:
-				jp.OwnRemoteSync.SkippedReason = kit.Strp(own.Blocks)
+				jp.OwnRemoteSync.SkippedReason = jsonout.Strp(own.Blocks)
 			}
 		})
 	}
@@ -868,7 +869,7 @@ func (r *RunPlan) passOver(b string, p *participant) bool {
 		fmt.Fprintf(w, "  ✗ refused: %s\n", p.refused)
 		r.settle("refused", "✗ "+p.work+"  refused: "+p.refused, p.work)
 		j.Set(b, func(jp *syncrun.UpParticipant) {
-			jp.Result, jp.Reason = syncrun.ResultRefused, kit.Strp(p.refused)
+			jp.Result, jp.Reason = syncrun.ResultRefused, jsonout.Strp(p.refused)
 			if p.notRun {
 				jp.Result = syncrun.ResultNotRun
 			}
@@ -878,7 +879,7 @@ func (r *RunPlan) passOver(b string, p *participant) bool {
 	if p.verdict == wtsync.SkipRun {
 		fmt.Fprintf(w, "  ⏭ skipped: %s\n", p.reason)
 		r.settle("skipped", "", "")
-		j.Set(b, func(jp *syncrun.UpParticipant) { jp.Result, jp.Reason = syncrun.ResultSkipped, kit.Strp(p.reason) })
+		j.Set(b, func(jp *syncrun.UpParticipant) { jp.Result, jp.Reason = syncrun.ResultSkipped, jsonout.Strp(p.reason) })
 		return true
 	}
 	return false
@@ -965,8 +966,8 @@ func (r *RunPlan) handOver(b string, p *participant, req wtsync.Request, res wts
 		way := wtsync.WayOut(wtsync.Way{Work: p.work, Path: p.wt.Path, Rebasing: true})
 		fmt.Fprintf(w, "  ⚠ %s is left mid-rebase with no plan: %s\n", p.work, way)
 		j.SetSync(b, func(jp *syncrun.SyncParticipant) {
-			jp.Result, jp.Reason, jp.Recovery = syncrun.ResultNeedsRecovery, kit.Strp(herr.Error()), kit.Strp(way)
-			jp.SafetyRef = kit.Strp(res.Safety.Ref)
+			jp.Result, jp.Reason, jp.Recovery = syncrun.ResultNeedsRecovery, jsonout.Strp(herr.Error()), jsonout.Strp(way)
+			jp.SafetyRef = jsonout.Strp(res.Safety.Ref)
 		})
 		r.settle("failed", "✗ "+p.work+"  left mid-rebase with no plan: "+way, p.work+" (failed)")
 		r.refuseAbove(b, p.work+" failed")
@@ -977,9 +978,9 @@ func (r *RunPlan) handOver(b string, p *participant, req wtsync.Request, res wts
 	p.lock = nil
 	j.SetSync(b, func(jp *syncrun.SyncParticipant) {
 		jp.Result = syncrun.ResultHandedOver
-		jp.Reason = kit.Strp("stopped at a conflict that is yours")
-		jp.Recovery = kit.Strp(wtsync.WayOut(wtsync.Way{Work: p.work, Plan: true, Rebasing: true, OwesAdd: true}))
-		jp.SafetyRef, jp.UndoCommand, jp.PlanFile = kit.Strp(res.Safety.Ref), syncrun.UndoCommand(p.work), syncrun.PlanFileOf(p.wt.Path)
+		jp.Reason = jsonout.Strp("stopped at a conflict that is yours")
+		jp.Recovery = jsonout.Strp(wtsync.WayOut(wtsync.Way{Work: p.work, Plan: true, Rebasing: true, OwesAdd: true}))
+		jp.SafetyRef, jp.UndoCommand, jp.PlanFile = jsonout.Strp(res.Safety.Ref), syncrun.UndoCommand(p.work), syncrun.PlanFileOf(p.wt.Path)
 	})
 	r.settle("needs you", "⚠ "+p.work+"  needs you: "+wtsync.WayOut(wtsync.Way{Work: p.work, Plan: true, Rebasing: true, OwesAdd: true}), p.work+" (needs you)")
 	r.refuseAbove(b, p.work+" is waiting for you")
@@ -999,8 +1000,8 @@ func (r *RunPlan) settleRestored(b string, p *participant, res wtsync.Result) {
 	syncrun.ClearHandover(r.w, p.wt.Path)
 	r.dropFastForward(b, p)
 	r.opts.Journal.SetSync(b, func(jp *syncrun.SyncParticipant) {
-		jp.Result, jp.Reason, jp.SafetyRef = syncrun.ResultRestored, kit.Strp(restored), kit.Strp(res.Safety.Ref)
-		jp.After = kit.Strp(p.foundTip(res))
+		jp.Result, jp.Reason, jp.SafetyRef = syncrun.ResultRestored, jsonout.Strp(restored), jsonout.Strp(res.Safety.Ref)
+		jp.After = jsonout.Strp(p.foundTip(res))
 	})
 	r.settle("restored", "✗ "+p.work+"  "+restored, p.work+" (restored)")
 	r.refuseAbove(b, p.work+" was restored")
@@ -1034,12 +1035,12 @@ func (r *RunPlan) finishRebase(b string, p *participant, res wtsync.Result, onto
 	// The journal's record: a tip git cannot read is recorded as none.
 	after, _, _ := ctx.Repo.ResolveRef("refs/heads/" + b)
 	j.SetSync(b, func(jp *syncrun.SyncParticipant) {
-		jp.SafetyRef, jp.UndoCommand, jp.Deferred = kit.Strp(res.Safety.Ref), syncrun.UndoCommand(p.work), syncrun.DeferredSteps(ran)
+		jp.SafetyRef, jp.UndoCommand, jp.Deferred = jsonout.Strp(res.Safety.Ref), syncrun.UndoCommand(p.work), syncrun.DeferredSteps(ran)
 	})
 	if derr != nil {
 		fmt.Fprintf(w, "  ✗ failed: %v\n", derr)
 		j.Set(b, func(jp *syncrun.UpParticipant) {
-			jp.Result, jp.After = syncrun.ResultRebasedStepFailed, kit.Strp(after)
+			jp.Result, jp.After = syncrun.ResultRebasedStepFailed, jsonout.Strp(after)
 			jp.FailedSteps = append(jp.FailedSteps, "finish: "+derr.Error())
 		})
 		r.settle("failed", fmt.Sprintf("✗ %s  failed: %v", p.work, derr), p.work+" (failed)")
@@ -1050,7 +1051,7 @@ func (r *RunPlan) finishRebase(b string, p *participant, res wtsync.Result, onto
 	if len(owed) > 0 {
 		r.settle("rebased", "✗ "+p.work+"  owed: "+strings.Join(owed, ", ")+"; run it by hand, then push", "")
 		j.Set(b, func(jp *syncrun.UpParticipant) {
-			jp.Result, jp.After = syncrun.ResultRebasedStepFailed, kit.Strp(after)
+			jp.Result, jp.After = syncrun.ResultRebasedStepFailed, jsonout.Strp(after)
 			jp.FailedSteps = append(jp.FailedSteps, owed...)
 		})
 		return
@@ -1059,7 +1060,7 @@ func (r *RunPlan) finishRebase(b string, p *participant, res wtsync.Result, onto
 	t := syncrun.PushTarget{Work: p.work, Branch: b, Path: p.wt.Path}
 	r.Pushable = append(r.Pushable, t)
 	j.Set(b, func(jp *syncrun.UpParticipant) {
-		jp.Result, jp.After = syncrun.ResultRebased, kit.Strp(after)
+		jp.Result, jp.After = syncrun.ResultRebased, jsonout.Strp(after)
 		jp.PushCommand, jp.NoPushReason, jp.FixCommand = syncrun.PushJSON(t, syncrun.PushOf(ctx, t))
 	})
 }
@@ -1082,8 +1083,8 @@ func (r *RunPlan) fastForward(b string, p *participant, done string) (safety wts
 		fmt.Fprintf(w, "  ✗ refused: %s\n", why)
 		r.settle("refused", "✗ "+p.work+"  refused: "+why, p.work)
 		r.opts.Journal.Set(b, func(jp *syncrun.UpParticipant) {
-			jp.Result, jp.Reason = syncrun.ResultRefused, kit.Strp(why)
-			jp.OwnRemoteSync.SkippedReason = kit.Strp(syncrun.OwnSkipFailed)
+			jp.Result, jp.Reason = syncrun.ResultRefused, jsonout.Strp(why)
+			jp.OwnRemoteSync.SkippedReason = jsonout.Strp(syncrun.OwnSkipFailed)
 		})
 		r.refuseAbove(b, p.work+" could not be fast-forwarded")
 		return wtsync.Safety{}, false
@@ -1135,7 +1136,7 @@ func (r *RunPlan) fastForward(b string, p *participant, done string) (safety wts
 	// Where the branch stands from here, whatever the rebase comes to: a
 	// rebase that is put back says so itself.
 	r.opts.Journal.Set(b, func(jp *syncrun.UpParticipant) {
-		jp.OwnRemoteSync.FastForwarded, jp.After = true, kit.Strp(own.Commit)
+		jp.OwnRemoteSync.FastForwarded, jp.After = true, jsonout.Strp(own.Commit)
 	})
 	return safety, true
 }
@@ -1170,7 +1171,7 @@ func (r *RunPlan) fastForwardOnly(b string, p *participant) {
 	r.Forwarded = append(r.Forwarded, p.work)
 	r.opts.Journal.SetSync(b, func(jp *syncrun.SyncParticipant) {
 		jp.Result = syncrun.ResultFastForwarded
-		jp.SafetyRef, jp.UndoCommand = kit.Strp(safety.Ref), syncrun.UndoCommand(p.work)
+		jp.SafetyRef, jp.UndoCommand = jsonout.Strp(safety.Ref), syncrun.UndoCommand(p.work)
 	})
 }
 
@@ -1220,13 +1221,13 @@ func (r *RunPlan) recordFailed(b string, p *participant, why, oldTip, safety str
 		r.dropFastForward(b, p)
 	}
 	r.opts.Journal.SetSync(b, func(jp *syncrun.SyncParticipant) {
-		jp.Reason, jp.After, jp.SafetyRef = kit.Strp(why), kit.Strp(now), kit.Strp(safety)
+		jp.Reason, jp.After, jp.SafetyRef = jsonout.Strp(why), jsonout.Strp(now), jsonout.Strp(safety)
 		if restored {
 			jp.Result = syncrun.ResultRestored
 			return
 		}
 		jp.Result, jp.UndoCommand = syncrun.ResultNeedsRecovery, nil
-		jp.Recovery = kit.Strp(wtsync.WayOut(wtsync.Way{Work: p.work, Path: p.wt.Path, Rebasing: busy,
+		jp.Recovery = jsonout.Strp(wtsync.WayOut(wtsync.Way{Work: p.work, Path: p.wt.Path, Rebasing: busy,
 			Safety: wtsync.SafetyRef(b, r.epoch)}))
 	})
 }

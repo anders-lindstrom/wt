@@ -1,4 +1,4 @@
-package kit
+package jsonout
 
 import (
 	"crypto/sha256"

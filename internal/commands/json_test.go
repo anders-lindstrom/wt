@@ -15,6 +15,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 )
 
 // The plan names the stack wt up would move, parents first, with a token, and
@@ -108,7 +109,7 @@ func TestUpExpectHoldsTheRunToThePlan(t *testing.T) {
 	opts := synccmdtest.NoAgents()
 	opts.Expect = token
 	r, err := synccmdtest.UpJSON(t, ctx, "bump", opts)
-	if err == nil || r.Outcome != kit.OutcomeRefused || r.Error == nil || len(r.Worktrees) != 0 {
+	if err == nil || r.Outcome != jsonout.OutcomeRefused || r.Error == nil || len(r.Worktrees) != 0 {
 		t.Fatalf("a grown stack is refused before any participant: %v %+v", err, r)
 	}
 	if testkit.GitOut(t, bump, "rev-parse", "HEAD") != old {
@@ -116,7 +117,7 @@ func TestUpExpectHoldsTheRunToThePlan(t *testing.T) {
 	}
 
 	opts.Expect = *synccmdtest.PlanOfWork(t, ctx, "bump").Token
-	if r, err = synccmdtest.UpJSON(t, ctx, "bump", opts); err != nil || r.Outcome != kit.OutcomeDone {
+	if r, err = synccmdtest.UpJSON(t, ctx, "bump", opts); err != nil || r.Outcome != jsonout.OutcomeDone {
 		t.Fatalf("the plan as read runs: %v %+v", err, r)
 	}
 }
@@ -128,7 +129,7 @@ func TestUpJSONReportsARebasedStack(t *testing.T) {
 	ctx, _ := provisiontest.RunFixture(t, false)
 	provisiontest.StackFixture(t, ctx)
 	r, err := synccmdtest.UpJSON(t, ctx, "bump", synccmdtest.NoAgents())
-	if err != nil || r.Outcome != kit.OutcomeDone || r.Onto == nil || len(r.Worktrees) != 2 {
+	if err != nil || r.Outcome != jsonout.OutcomeDone || r.Onto == nil || len(r.Worktrees) != 2 {
 		t.Fatalf("%v %+v", err, r)
 	}
 	for _, p := range r.Worktrees {
@@ -150,7 +151,7 @@ func TestUpJSONReportsARefusedParentAndTheChildNotRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	r, err := synccmdtest.UpJSON(t, ctx, "bump", synccmdtest.NoAgents())
-	if err == nil || r.Outcome != kit.OutcomeRefused || r.Error != nil || len(r.Worktrees) != 2 {
+	if err == nil || r.Outcome != jsonout.OutcomeRefused || r.Error != nil || len(r.Worktrees) != 2 {
 		t.Fatalf("%v %+v", err, r)
 	}
 	if r.Worktrees[0].Result != syncrun.ResultRefused || r.Worktrees[1].Result != syncrun.ResultNotRun || r.Worktrees[1].Reason == nil {
@@ -172,7 +173,7 @@ func TestUpJSONReportsAFailedDeferredStep(t *testing.T) {
 	testkit.GitIn(t, main, "commit", "-q", "-am", "a failing deferred step")
 	testkit.GitIn(t, main, "fetch", "-q", "origin")
 	r, _ := synccmdtest.UpJSON(t, ctx, "bump", synccmdtest.NoAgents())
-	if r.Outcome != kit.OutcomePartial || len(r.Worktrees) != 1 {
+	if r.Outcome != jsonout.OutcomePartial || len(r.Worktrees) != 1 {
 		t.Fatalf("%+v", r)
 	}
 	if p := r.Worktrees[0]; p.Result != syncrun.ResultRebasedStepFailed || len(p.FailedSteps) == 0 || *p.Before == *p.After {
@@ -185,7 +186,7 @@ func TestUpJSONReportsAnErrorBeforeAnyParticipant(t *testing.T) {
 	t.Parallel()
 	ctx, _ := provisiontest.RunFixture(t, false)
 	r, err := synccmdtest.UpJSON(t, ctx, "/", synccmdtest.NoAgents())
-	if err == nil || r.Outcome != kit.OutcomeRefused || r.Error == nil || !strings.Contains(*r.Error, "main checkout") {
+	if err == nil || r.Outcome != jsonout.OutcomeRefused || r.Error == nil || !strings.Contains(*r.Error, "main checkout") {
 		t.Errorf("%v %+v", err, r)
 	}
 }
@@ -196,7 +197,7 @@ func TestJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 	t.Parallel()
 	var out bytes.Buffer
 	j := syncrun.NewRunJournal(&out)
-	j.Trunk("main", kit.Strp("conventional"), "origin/main", strings.Repeat("a", 40), true)
+	j.Trunk("main", jsonout.Strp("conventional"), "origin/main", strings.Repeat("a", 40), true)
 	j.Join("one", "feat_wt/one", "/w/one", strings.Repeat("1", 40), &syncrun.OwnRemoteSync{State: "none"})
 	j.Join("two", "feat_wt/two", "/w/two", strings.Repeat("2", 40), &syncrun.OwnRemoteSync{State: "none"})
 	j.Set("feat_wt/one", func(p *syncrun.UpParticipant) { p.Result = syncrun.ResultRebased })
@@ -211,7 +212,7 @@ func TestJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 	if dec.More() {
 		t.Error("a second object was written")
 	}
-	if r.Outcome != kit.OutcomeInterrupted || r.Worktrees[1].Result != syncrun.ResultInterrupted || r.Recovery == nil {
+	if r.Outcome != jsonout.OutcomeInterrupted || r.Worktrees[1].Result != syncrun.ResultInterrupted || r.Recovery == nil {
 		t.Errorf("%+v", r)
 	}
 	if r.TrunkSource == nil || *r.TrunkSource != "conventional" {
@@ -234,17 +235,17 @@ func TestOutcomeRules(t *testing.T) {
 		early bool
 		want  string
 	}{
-		{ps(syncrun.ResultRebased, syncrun.ResultSkipped), false, kit.OutcomeDone},
-		{ps(syncrun.ResultSkipped), false, kit.OutcomeDone},
-		{ps(syncrun.ResultRefused, syncrun.ResultNotRun), false, kit.OutcomeRefused},
-		{ps(syncrun.ResultRestored), false, kit.OutcomeRefused},
-		{nil, true, kit.OutcomeRefused},
-		{ps(syncrun.ResultRebased, syncrun.ResultRefused), false, kit.OutcomePartial},
-		{ps(syncrun.ResultRebasedStepFailed), false, kit.OutcomePartial},
-		{ps(syncrun.ResultNeedsRecovery), false, kit.OutcomePartial},
-		{ps(syncrun.ResultHandedOver, syncrun.ResultNotRun), false, kit.OutcomePartial},
-		{ps(syncrun.ResultUndone, syncrun.ResultSkipped), false, kit.OutcomeDone},
-		{ps(syncrun.ResultUndone), true, kit.OutcomePartial},
+		{ps(syncrun.ResultRebased, syncrun.ResultSkipped), false, jsonout.OutcomeDone},
+		{ps(syncrun.ResultSkipped), false, jsonout.OutcomeDone},
+		{ps(syncrun.ResultRefused, syncrun.ResultNotRun), false, jsonout.OutcomeRefused},
+		{ps(syncrun.ResultRestored), false, jsonout.OutcomeRefused},
+		{nil, true, jsonout.OutcomeRefused},
+		{ps(syncrun.ResultRebased, syncrun.ResultRefused), false, jsonout.OutcomePartial},
+		{ps(syncrun.ResultRebasedStepFailed), false, jsonout.OutcomePartial},
+		{ps(syncrun.ResultNeedsRecovery), false, jsonout.OutcomePartial},
+		{ps(syncrun.ResultHandedOver, syncrun.ResultNotRun), false, jsonout.OutcomePartial},
+		{ps(syncrun.ResultUndone, syncrun.ResultSkipped), false, jsonout.OutcomeDone},
+		{ps(syncrun.ResultUndone), true, jsonout.OutcomePartial},
 	} {
 		if got := syncrun.OutcomeOf(tc.ps, tc.early); got != tc.want {
 			t.Errorf("%v early=%v: got %s, want %s", tc.ps, tc.early, got, tc.want)

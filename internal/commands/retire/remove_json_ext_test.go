@@ -15,6 +15,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 )
 
@@ -31,16 +32,16 @@ func TestRemoveJSONRemovesWithTheToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v %+v", err, r)
 	}
-	if r.Outcome != retire.RemoveRemoved || kit.Deref(r.Token) != *p.Token || r.Error != nil {
+	if r.Outcome != retire.RemoveRemoved || jsonout.Deref(r.Token) != *p.Token || r.Error != nil {
 		t.Errorf("%+v", r)
 	}
-	if s := retiretest.Step(t, r, kit.StepWorktree); s.Result != retire.WorktreeRemoved {
+	if s := retiretest.Step(t, r, jsonout.StepWorktree); s.Result != retire.WorktreeRemoved {
 		t.Errorf("worktree %+v", s)
 	}
-	if s := retiretest.Step(t, r, kit.StepBranch); s.Result != quarantine.BranchDeleted || kit.Deref(s.Commit) != tip {
+	if s := retiretest.Step(t, r, jsonout.StepBranch); s.Result != quarantine.BranchDeleted || jsonout.Deref(s.Commit) != tip {
 		t.Errorf("branch %+v", s)
 	}
-	if s := retiretest.Step(t, r, kit.StepSuperset); s.Result == kit.StepNotRun {
+	if s := retiretest.Step(t, r, jsonout.StepSuperset); s.Result == jsonout.StepNotRun {
 		t.Errorf("superset %+v", s)
 	}
 	// The branch is moved into a pin of its own run, which restore puts back.
@@ -48,7 +49,7 @@ func TestRemoveJSONRemovesWithTheToken(t *testing.T) {
 		t.Fatalf("a removal that deletes its branch names the run it pinned it in: %+v", r)
 	}
 	pin := refpins.PinOf(*r.RunID, refpins.RefBranch, "fix_wt/json-gone")
-	if s := retiretest.Step(t, r, kit.StepBranch); kit.Deref(s.Pin) != pin || testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", pin) != tip {
+	if s := retiretest.Step(t, r, jsonout.StepBranch); jsonout.Deref(s.Pin) != pin || testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", pin) != tip {
 		t.Errorf("branch pin %v, want %s at %s", s.Pin, pin, tip)
 	}
 	want := []string{"wt", "refs", "restore", *r.RunID, "--only", "refs/heads/fix_wt/json-gone", "--yes"}
@@ -69,7 +70,7 @@ func TestRemoveJSONQuarantine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v %+v", err, r)
 	}
-	if r.Outcome != retire.RemoveRemoved || retiretest.Step(t, r, kit.StepWorktree).Result != retire.WorktreeQuarantined {
+	if r.Outcome != retire.RemoveRemoved || retiretest.Step(t, r, jsonout.StepWorktree).Result != retire.WorktreeQuarantined {
 		t.Errorf("%+v", r)
 	}
 	q := r.Quarantine
@@ -100,7 +101,7 @@ func TestRemoveJSONRefusedTouchesNothing(t *testing.T) {
 		t.Errorf("problems %+v", r.Problems)
 	}
 	for _, s := range r.Steps {
-		if s.Result != kit.StepNotRun {
+		if s.Result != jsonout.StepNotRun {
 			t.Errorf("step %+v", s)
 		}
 	}
@@ -200,7 +201,7 @@ func TestRemoveExpectRefusesEveryChangeTouchingNothing(t *testing.T) {
 			if err == nil || r.Outcome != retire.RemoveRefused {
 				t.Fatalf("want a refusal: %v %+v", err, r)
 			}
-			if !slices.Contains(retire.ProblemCodes(r.Problems), kit.ProblemPlanChanged) {
+			if !slices.Contains(retire.ProblemCodes(r.Problems), jsonout.ProblemPlanChanged) {
 				t.Errorf("problems %+v", r.Problems)
 			}
 			if !testkit.Exists(path) {
@@ -235,13 +236,13 @@ func TestRemoveJSONInterruptedBetweenTheMovesWritesOneObject(t *testing.T) {
 	var out, progress bytes.Buffer
 	_ = retire.RemoveJSON(ctx, retire.RemoveTarget{Path: path}, retire.RemoveOptions{Quarantine: dir, QuarantineHooks: h}, &out, &progress)
 	r := retiretest.DecodeRemoveOutput(t, out.Bytes())
-	if r.Outcome != kit.OutcomeInterrupted || kit.Deref(r.Recovery) != "interrupted" {
+	if r.Outcome != jsonout.OutcomeInterrupted || jsonout.Deref(r.Recovery) != "interrupted" {
 		t.Errorf("%+v", r)
 	}
-	if s := retiretest.Step(t, r, kit.StepWorktree); s.Result != retire.WorktreePartlyMoved {
+	if s := retiretest.Step(t, r, jsonout.StepWorktree); s.Result != retire.WorktreePartlyMoved {
 		t.Errorf("worktree %+v", s)
 	}
-	if s := retiretest.Step(t, r, kit.StepBranch); s.Result != kit.StepNotRun {
+	if s := retiretest.Step(t, r, jsonout.StepBranch); s.Result != jsonout.StepNotRun {
 		t.Errorf("branch %+v", s)
 	}
 	if q := r.Quarantine; q == nil || !q.CheckoutMoved || q.AdminMoved {
@@ -264,10 +265,10 @@ func TestRemoveJSONBranchFailureAfterTheMovesIsPartial(t *testing.T) {
 	if err == nil || r.Outcome != retire.RemovePartial || r.Error == nil {
 		t.Fatalf("%v %+v", err, r)
 	}
-	if s := retiretest.Step(t, r, kit.StepWorktree); s.Result != retire.WorktreeQuarantined {
+	if s := retiretest.Step(t, r, jsonout.StepWorktree); s.Result != retire.WorktreeQuarantined {
 		t.Errorf("worktree %+v", s)
 	}
-	if s := retiretest.Step(t, r, kit.StepBranch); s.Result != quarantine.BranchFailed || s.Reason == nil {
+	if s := retiretest.Step(t, r, jsonout.StepBranch); s.Result != quarantine.BranchFailed || s.Reason == nil {
 		t.Errorf("branch %+v", s)
 	}
 	if q := r.Quarantine; q == nil || !q.CheckoutMoved || !q.AdminMoved {
@@ -316,7 +317,7 @@ func TestRemoveJSONSaysHowTrunkWasFound(t *testing.T) {
 	if err != nil || p.TrunkSource == nil || *p.TrunkSource != string(ctx.Config.TrunkSource) || *p.TrunkSource == "" {
 		t.Fatalf("plan trunkSource = %v (%v)", p.TrunkSource, err)
 	}
-	r, err := retiretest.RemoveJSON(t, ctx, path, retire.RemoveOptions{Agents: []agents.Agent{}, Expect: kit.Deref(p.Token)})
+	r, err := retiretest.RemoveJSON(t, ctx, path, retire.RemoveOptions{Agents: []agents.Agent{}, Expect: jsonout.Deref(p.Token)})
 	if err != nil || r.TrunkSource == nil || *r.TrunkSource != *p.TrunkSource {
 		t.Fatalf("result trunkSource = %v (%v)", r.TrunkSource, err)
 	}

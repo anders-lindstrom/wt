@@ -20,6 +20,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
 	"github.com/anders-lindstrom/wt/internal/commands/supersetws"
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 	"github.com/anders-lindstrom/wt/internal/repo"
@@ -108,7 +109,7 @@ type RemoveResult struct {
 	RunID string
 	// Superset is what came of deleting the worktree's Superset workspace
 	// — supersetws.StepDeregistered, supersetws.StepNotRegistered,
-	// kit.StepSkipped or kit.StepFailed —
+	// jsonout.StepSkipped or jsonout.StepFailed —
 	// and "" when no worktree was removed. SupersetReason says why for a
 	// skip or a failure.
 	Superset       string
@@ -375,8 +376,8 @@ func removeWorktreeResult(ctx *kit.Context, wt repo.Worktree, opts RemoveOptions
 	plan.Render(w)
 	if opts.Expect != "" || opts.Journal != nil {
 		token := removeToken(ctx, plan)
-		opts.Journal.planned(ctx, plan, kit.Deref(token))
-		if opts.Expect != "" && kit.Deref(token) != opts.Expect {
+		opts.Journal.planned(ctx, plan, jsonout.Deref(token))
+		if opts.Expect != "" && jsonout.Deref(token) != opts.Expect {
 			return res, errRemovePlanChanged
 		}
 	}
@@ -1505,7 +1506,7 @@ func (p Plan) quarantine(ctx *kit.Context, w io.Writer, res *RemoveResult) (*qua
 			Device: checkoutID.Device, Inode: checkoutID.Inode},
 		Admin: quarantine.Place{Path: admin, Quarantined: filepath.Join(dir, "admin"),
 			Device: adminID.Device, Inode: adminID.Inode},
-		Head: kit.Strp(p.Head)}
+		Head: jsonout.Strp(p.Head)}
 	if p.Branch != "" && p.Tip != "" {
 		plan := quarantine.BranchPlanNone
 		switch p.Outcome {
@@ -1514,7 +1515,7 @@ func (p Plan) quarantine(ctx *kit.Context, w io.Writer, res *RemoveResult) (*qua
 		case BranchKept:
 			plan = quarantine.BranchPlanKeep
 		}
-		rec.Branch = &quarantine.Branch{Name: p.Branch, Tip: p.Tip, Plan: plan, KeepAs: kit.Strp(p.KeepAs)}
+		rec.Branch = &quarantine.Branch{Name: p.Branch, Tip: p.Tip, Plan: plan, KeepAs: jsonout.Strp(p.KeepAs)}
 	}
 	r, err := quarantine.Begin(dir, rec, p.quarantineHooks)
 	if err != nil {

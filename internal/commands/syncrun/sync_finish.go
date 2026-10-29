@@ -9,6 +9,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -223,11 +224,11 @@ func DeferredSteps(ran []wtsync.DeferredResult) []DeferredStep {
 		s := DeferredStep{Step: d.Step.Run, Result: DeferredDone}
 		switch {
 		case !d.Ran:
-			s.Result, s.Reason = DeferredSkipped, kit.Strp(d.Why)
+			s.Result, s.Reason = DeferredSkipped, jsonout.Strp(d.Why)
 		case d.Err != nil:
-			s.Result, s.Reason = DeferredFailed, kit.Strp(kit.OneLine(d.Err.Error()))
+			s.Result, s.Reason = DeferredFailed, jsonout.Strp(kit.OneLine(d.Err.Error()))
 		case d.Commit != "":
-			s.Result, s.Commit = DeferredCommitted, kit.Strp(d.Commit)
+			s.Result, s.Commit = DeferredCommitted, jsonout.Strp(d.Commit)
 		}
 		steps = append(steps, s)
 	}
@@ -247,7 +248,7 @@ func PlanFileOf(path string) *string {
 	if err != nil {
 		return nil
 	}
-	return kit.Strp(wtsync.PlanPath(gitDir))
+	return jsonout.Strp(wtsync.PlanPath(gitDir))
 }
 
 // OwedBy names a finish's owed steps the way the closing error names them.

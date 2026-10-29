@@ -17,6 +17,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/purge"
 	"github.com/anders-lindstrom/wt/internal/commands/refs"
 	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 )
 
 // sigtermRepo is a repository with three backups, backup/a to backup/c,
@@ -126,7 +127,7 @@ func TestRefsSweepSIGTERMWritesTheObject(t *testing.T) {
 	arm(t, mark)
 	var r refs.Result
 	oneObject(t, sigtermRun(t, main, mark, "refs", "sweep", "--yes", "--json", "--no-fetch"), &r)
-	if r.Outcome != kit.OutcomeInterrupted || r.RunID == nil || r.Recovery == nil {
+	if r.Outcome != jsonout.OutcomeInterrupted || r.RunID == nil || r.Recovery == nil {
 		t.Fatalf("result = %+v", r)
 	}
 	want := map[string]string{"refs/heads/backup/a": refs.RefSwept, "refs/heads/backup/b": refs.RefInterrupted,
@@ -150,7 +151,7 @@ func TestRefsRestoreSIGTERMWritesTheObject(t *testing.T) {
 	arm(t, mark)
 	var r refs.RestoreRefsResult
 	oneObject(t, sigtermRun(t, main, mark, "refs", "restore", run, "--yes", "--json"), &r)
-	if r.Outcome != kit.OutcomeInterrupted || r.Recovery == nil {
+	if r.Outcome != jsonout.OutcomeInterrupted || r.Recovery == nil {
 		t.Fatalf("result = %+v", r)
 	}
 	want := map[string]string{"refs/heads/backup/a": refs.RefRestored, "refs/heads/backup/b": refs.RefInterrupted,
@@ -174,7 +175,7 @@ func TestRefsPurgeSIGTERMWritesTheObject(t *testing.T) {
 	arm(t, mark)
 	var r purge.RefsPurgeResult
 	oneObject(t, sigtermRun(t, main, mark, "refs", "purge", run, "--yes", "--json"), &r)
-	if r.Outcome != kit.OutcomeInterrupted || r.Recovery == nil || len(r.Runs) != 1 {
+	if r.Outcome != jsonout.OutcomeInterrupted || r.Recovery == nil || len(r.Runs) != 1 {
 		t.Fatalf("result = %+v", r)
 	}
 	want := map[string]string{"refs/heads/backup/a": purge.PinDeleted, "refs/heads/backup/b": refs.RefInterrupted,

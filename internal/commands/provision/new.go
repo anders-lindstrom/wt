@@ -11,6 +11,7 @@ import (
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/supersetws"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 )
 
 // NewOptions controls worktree creation.
@@ -87,10 +88,10 @@ func AddAndProvision(ctx *kit.Context, path string, add func() error, opts NewOp
 		ctx.Warnf(kit.WarnDetected, "no config file here; on detected defaults (trunk %s) — `wt init` writes one",
 			ctx.Config.MainBranch)
 	}
-	j.start(kit.StepWorktree)
+	j.start(jsonout.StepWorktree)
 	if _, err := os.Stat(path); err == nil {
 		err := fmt.Errorf("%s already exists", path)
-		j.finish(kit.StepWorktree, kit.StepFailed, err.Error(), "")
+		j.finish(jsonout.StepWorktree, jsonout.StepFailed, err.Error(), "")
 		return "", err
 	}
 	if err := add(); err != nil {
@@ -106,11 +107,11 @@ func AddAndProvision(ctx *kit.Context, path string, add func() error, opts NewOp
 	}
 	err := setup(ctx, path, SetupOptions{SkipBuild: opts.SkipBuild, NoCache: opts.NoCache}, w, j)
 	if opts.NoSuperset {
-		j.finish(kit.StepSuperset, kit.StepSkipped, "--no-superset", "")
+		j.finish(jsonout.StepSuperset, jsonout.StepSkipped, "--no-superset", "")
 		return path, err
 	}
-	j.start(kit.StepSuperset)
+	j.start(jsonout.StepSuperset)
 	result, reason := supersetws.Register(ctx, path, w)
-	j.finish(kit.StepSuperset, result, reason, "")
+	j.finish(jsonout.StepSuperset, result, reason, "")
 	return path, err
 }

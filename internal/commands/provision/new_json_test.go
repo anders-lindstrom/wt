@@ -12,6 +12,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 )
 
 func RunNewJSON(t *testing.T, ctx *kit.Context, spec string, opts NewOptions, expect string) (CreateResult, string, error) {
@@ -53,10 +54,10 @@ func TestNewJSONReportsAFailedProvision(t *testing.T) {
 	if err == nil || r.Outcome != CreateCreatedWithProblems {
 		t.Errorf("err %v outcome %s", err, r.Outcome)
 	}
-	if s := StepOf(r, "provision"); s.Result != kit.StepFailed || s.Reason == nil {
+	if s := StepOf(r, "provision"); s.Result != jsonout.StepFailed || s.Reason == nil {
 		t.Errorf("provision %+v", s)
 	}
-	if s := StepOf(r, "build"); s.Result != kit.StepDone {
+	if s := StepOf(r, "build"); s.Result != jsonout.StepDone {
 		t.Errorf("build %+v", s)
 	}
 }
@@ -71,11 +72,11 @@ func TestNewJSONReportsAFailedBuildAndSubmodules(t *testing.T) {
 		t.Errorf("err %v outcome %s", err, r.Outcome)
 	}
 	for _, name := range []string{"build", "submodules"} {
-		if s := StepOf(r, name); s.Result != kit.StepFailed || s.Reason == nil {
+		if s := StepOf(r, name); s.Result != jsonout.StepFailed || s.Reason == nil {
 			t.Errorf("%s %+v", name, s)
 		}
 	}
-	if s := StepOf(r, "provision"); s.Result != kit.StepSkipped {
+	if s := StepOf(r, "provision"); s.Result != jsonout.StepSkipped {
 		t.Errorf("no provision.sh: %+v", s)
 	}
 }
@@ -102,16 +103,16 @@ func TestCreateJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 	t.Parallel()
 	var out bytes.Buffer
 	j := NewCreateJournal(&out, "new")
-	j.start(kit.StepWorktree)
-	j.finish(kit.StepWorktree, kit.StepCreated, "", "")
-	j.start(kit.StepProvision)
+	j.start(jsonout.StepWorktree)
+	j.finish(jsonout.StepWorktree, jsonout.StepCreated, "", "")
+	j.start(jsonout.StepProvision)
 	j.Interrupted("", "interrupted")
 	// Finish would park for good now, as the run does once a signal owns
 	// it; the write it would make must not happen a second time.
 	j.Journal.Finish()
 	r := decodeCreate(t, "new", out.Bytes())
-	if r.Outcome != CreateInterrupted || StepOf(r, "provision").Result != kit.StepInterrupted ||
-		StepOf(r, "build").Result != kit.StepNotRun {
+	if r.Outcome != CreateInterrupted || StepOf(r, "provision").Result != jsonout.StepInterrupted ||
+		StepOf(r, "build").Result != jsonout.StepNotRun {
 		t.Errorf("%+v", r)
 	}
 }
@@ -128,10 +129,10 @@ func TestNewJSONReportsAWorktreeAFailingHookLeftBehind(t *testing.T) {
 	if err == nil || r.Outcome != CreateCreatedWithProblems || r.Commit == nil {
 		t.Errorf("err %v result %+v", err, r)
 	}
-	if s := StepOf(r, "worktree"); s.Result != kit.StepCreated || s.Reason == nil {
+	if s := StepOf(r, "worktree"); s.Result != jsonout.StepCreated || s.Reason == nil {
 		t.Errorf("worktree step %+v", s)
 	}
-	if s := StepOf(r, "config"); s.Result != kit.StepNotRun {
+	if s := StepOf(r, "config"); s.Result != jsonout.StepNotRun {
 		t.Errorf("config step %+v", s)
 	}
 }

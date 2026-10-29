@@ -20,6 +20,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/git"
 	"github.com/anders-lindstrom/wt/internal/github"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/quarantine"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
@@ -768,11 +769,11 @@ func (p *Plan) applyOnly(only []string) error {
 // swept.
 func refsToken(p Plan) *string { return refsTokenOf(p).Strp() }
 
-func refsTokenOf(p Plan) *kit.Token {
+func refsTokenOf(p Plan) *jsonout.Token {
 	if !p.selectable() {
 		return nil
 	}
-	t := kit.NewToken("rs1-", "wt-refs-sweep").Str("Repo", p.Repo).Str("Trunk", p.Trunk).Bool("Remote", p.Remote).
+	t := jsonout.NewToken("rs1-", "wt-refs-sweep").Str("Repo", p.Repo).Str("Trunk", p.Trunk).Bool("Remote", p.Remote).
 		List("Patterns", p.Patterns...).Str("Age", p.Age)
 	if p.Endpoint != nil {
 		t.Str("Endpoint", p.Endpoint.Digest)
@@ -825,8 +826,8 @@ func Sweep(ctx *kit.Context, opts Options, w io.Writer) (err error) {
 	}
 	token := refsToken(plan)
 	j.planned(plan, token)
-	if opts.Expect != "" && kit.Deref(token) != opts.Expect {
-		j.problem(kit.ProblemPlanChanged, ErrRefsPlanChanged)
+	if opts.Expect != "" && jsonout.Deref(token) != opts.Expect {
+		j.problem(jsonout.ProblemPlanChanged, ErrRefsPlanChanged)
 		return ErrRefsPlanChanged
 	}
 	if err := plan.applyOnly(opts.Only); err != nil {
@@ -859,8 +860,8 @@ func Sweep(ctx *kit.Context, opts Options, w io.Writer) (err error) {
 		if err := fresh.applyOnly(opts.Only); err != nil {
 			return err
 		}
-		if kit.Deref(refsToken(fresh)) != kit.Deref(token) {
-			j.problem(kit.ProblemPlanChanged, ErrRefsPlanChanged)
+		if jsonout.Deref(refsToken(fresh)) != jsonout.Deref(token) {
+			j.problem(jsonout.ProblemPlanChanged, ErrRefsPlanChanged)
 			return ErrRefsPlanChanged
 		}
 	default:

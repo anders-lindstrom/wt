@@ -9,6 +9,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 )
 
 // --json names, for each problem, the category that goes past it, and the
@@ -42,7 +43,7 @@ func TestRemoveJSONNamesTheForceCategories(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts.Expect = kit.Deref(plan.Token)
+	opts.Expect = jsonout.Deref(plan.Token)
 	r, err := retiretest.RemoveJSON(t, ctx, path, opts)
 	if err != nil || r.Outcome != retire.RemoveRemoved {
 		t.Fatalf("%v %+v", err, r)

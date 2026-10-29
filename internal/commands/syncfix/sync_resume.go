@@ -15,6 +15,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -129,7 +130,7 @@ func (r *resume) joinJournal() {
 	found, _, _ := r.ctx.Repo.ResolveRef("refs/heads/" + st.Branch)
 	r.j.Join(r.name, st.Branch, r.target.Path, found, nil)
 	r.j.SetSync(st.Branch, func(p *syncrun.SyncParticipant) {
-		p.SafetyRef, p.PlanFile = kit.Strp(st.Safety), syncrun.PlanFileOf(r.target.Path)
+		p.SafetyRef, p.PlanFile = jsonout.Strp(st.Safety), syncrun.PlanFileOf(r.target.Path)
 	})
 }
 
@@ -138,9 +139,9 @@ func (r *resume) joinJournal() {
 func (r *resume) recordEnd(err error) {
 	after, _, _ := r.ctx.Repo.ResolveRef("refs/heads/" + r.st.Branch) // recorded as none when unreadable
 	r.j.SetSync(r.st.Branch, func(p *syncrun.SyncParticipant) {
-		p.After = kit.Strp(after)
+		p.After = jsonout.Strp(after)
 		if p.Result == syncrun.ResultNotRun && err != nil {
-			p.Result, p.Reason = syncrun.ResultRefused, kit.Strp(err.Error())
+			p.Result, p.Reason = syncrun.ResultRefused, jsonout.Strp(err.Error())
 		}
 	})
 }
@@ -227,7 +228,7 @@ func (r *resume) askSessions() (ok bool, err error) {
 	}
 	if !ok {
 		r.j.Set(st.Branch, func(p *syncrun.UpParticipant) {
-			p.Result, p.Reason = syncrun.ResultRefused, kit.Strp("not confirmed: "+syncrun.ResumedNothing.Line)
+			p.Result, p.Reason = syncrun.ResultRefused, jsonout.Strp("not confirmed: "+syncrun.ResumedNothing.Line)
 		})
 		r.j.FailWith(errors.New("not confirmed: " + syncrun.ResumedNothing.Line))
 	}
@@ -331,14 +332,14 @@ func (r *resume) handOverAgain(res wtsync.Result) error {
 		way := wtsync.WayOut(wtsync.Way{Work: name, Path: r.target.Path, Rebasing: true})
 		fmt.Fprintf(w, "  ⚠ %s is left mid-rebase with no plan: %s\n", name, way)
 		r.j.SetSync(st.Branch, func(p *syncrun.SyncParticipant) {
-			p.Result, p.Reason, p.Recovery, p.PlanFile = syncrun.ResultNeedsRecovery, kit.Strp(herr.Error()), kit.Strp(way), nil
+			p.Result, p.Reason, p.Recovery, p.PlanFile = syncrun.ResultNeedsRecovery, jsonout.Strp(herr.Error()), jsonout.Strp(way), nil
 		})
 		return fmt.Errorf("not completed: %s (failed)", name)
 	}
 	r.lock = nil // kept on purpose
 	r.j.SetSync(st.Branch, func(p *syncrun.SyncParticipant) {
-		p.Result, p.Reason = syncrun.ResultHandedOver, kit.Strp("stopped again at a conflict that is yours")
-		p.Recovery = kit.Strp(wtsync.WayOut(wtsync.Way{Work: name, Plan: true, Rebasing: true, OwesAdd: true}))
+		p.Result, p.Reason = syncrun.ResultHandedOver, jsonout.Strp("stopped again at a conflict that is yours")
+		p.Recovery = jsonout.Strp(wtsync.WayOut(wtsync.Way{Work: name, Plan: true, Rebasing: true, OwesAdd: true}))
 		p.UndoCommand = syncrun.UndoCommand(name)
 	})
 	return fmt.Errorf("not completed: %s (needs you)", name)
@@ -411,14 +412,14 @@ func recordResumeFailed(j *syncrun.RunJournal, st wtsync.State, path string, rer
 	gitDir, _ := wtsync.GitDir(path)
 	_, planned, _ := wtsync.ReadState(gitDir)
 	j.SetSync(st.Branch, func(p *syncrun.SyncParticipant) {
-		p.Reason = kit.Strp(rerr.Error())
+		p.Reason = jsonout.Strp(rerr.Error())
 		if busy && planned {
 			p.Result, p.UndoCommand = syncrun.ResultHandedOver, syncrun.UndoCommand(st.Work)
-			p.Recovery = kit.Strp(wtsync.WayOut(wtsync.Way{Work: st.Work, Plan: true, Rebasing: true}))
+			p.Recovery = jsonout.Strp(wtsync.WayOut(wtsync.Way{Work: st.Work, Plan: true, Rebasing: true}))
 			return
 		}
 		p.Result, p.PlanFile = syncrun.ResultNeedsRecovery, nil
-		p.Recovery = kit.Strp(wtsync.WayOut(wtsync.Way{Work: st.Work, Path: path, Rebasing: busy, Safety: st.Safety}))
+		p.Recovery = jsonout.Strp(wtsync.WayOut(wtsync.Way{Work: st.Work, Path: path, Rebasing: busy, Safety: st.Safety}))
 	})
 }
 

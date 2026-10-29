@@ -3,13 +3,13 @@ package retire_test
 import (
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
 	"github.com/anders-lindstrom/wt/internal/commands/retire"
 	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
 	"github.com/anders-lindstrom/wt/internal/commands/supersetws"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/github"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 )
 
 // wt sweep deletes the workspace of each worktree it removes, and its --json
@@ -31,7 +31,7 @@ func TestSweepDeregistersEachRemovedWorktree(t *testing.T) {
 				opts.Quarantine = testkit.TrashFor(t, ctx)
 			}
 			r, human, err := retiretest.SweepJSON(t, ctx, opts)
-			if err != nil || r.Outcome != kit.OutcomeDone {
+			if err != nil || r.Outcome != jsonout.OutcomeDone {
 				t.Fatalf("%v %+v\n%s", err, r, human)
 			}
 			it := retiretest.ResultItem(t, r, "fix_wt/one")
@@ -78,14 +78,14 @@ func TestRemoveJSONKeepSupersetIsInThePlanAndTheToken(t *testing.T) {
 	if plain.KeepSuperset || !kept.KeepSuperset {
 		t.Errorf("keepSuperset = %v / %v", plain.KeepSuperset, kept.KeepSuperset)
 	}
-	if kit.Deref(plain.Token) == kit.Deref(kept.Token) {
+	if jsonout.Deref(plain.Token) == jsonout.Deref(kept.Token) {
 		t.Error("the token must change with --keep-superset")
 	}
-	r, err := retiretest.RemoveJSON(t, ctx, path, retire.RemoveOptions{Agents: retire.NoClaude, KeepSuperset: true, Expect: kit.Deref(kept.Token)})
+	r, err := retiretest.RemoveJSON(t, ctx, path, retire.RemoveOptions{Agents: retire.NoClaude, KeepSuperset: true, Expect: jsonout.Deref(kept.Token)})
 	if err != nil {
 		t.Fatalf("%v %+v", err, r)
 	}
-	if s := retiretest.Step(t, r, kit.StepSuperset); s.Result != supersetws.StepOptedOut || s.Reason == nil {
+	if s := retiretest.Step(t, r, jsonout.StepSuperset); s.Result != supersetws.StepOptedOut || s.Reason == nil {
 		t.Errorf("superset step = %+v", s)
 	}
 	if got := testkit.ArgvOf(t, log); got != nil {
@@ -112,12 +112,12 @@ func TestSweepKeepSupersetAsksSupersetNothing(t *testing.T) {
 	if plain.KeepSuperset || !kept.KeepSuperset {
 		t.Errorf("keepSuperset = %v / %v", plain.KeepSuperset, kept.KeepSuperset)
 	}
-	if kit.Deref(plain.Token) == kit.Deref(kept.Token) {
+	if jsonout.Deref(plain.Token) == jsonout.Deref(kept.Token) {
 		t.Error("the token must change with --keep-superset")
 	}
-	opts.Yes, opts.Expect = true, kit.Deref(kept.Token)
+	opts.Yes, opts.Expect = true, jsonout.Deref(kept.Token)
 	r, human, err := retiretest.SweepJSON(t, ctx, opts)
-	if err != nil || r.Outcome != kit.OutcomeDone {
+	if err != nil || r.Outcome != jsonout.OutcomeDone {
 		t.Fatalf("%v %+v\n%s", err, r, human)
 	}
 	it := retiretest.ResultItem(t, r, "fix_wt/one")

@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/refpins"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 )
 
 // Every field of a plan is in its token or left out on purpose, with why:
@@ -17,13 +17,13 @@ func TestRefsTokenCoversEveryPlanField(t *testing.T) {
 		Endpoint: &refpins.Endpoint{Digest: "sha256:x"},
 		Rows:     []RefRow{{ID: "refs/heads/backup/a", Category: RefBackupOld, Unique: &one, Kept: []string{"x"}}}}
 	tok := refsTokenOf(p)
-	gaps := kit.TokenGaps(tok, Plan{}, "", map[string]string{
+	gaps := jsonout.TokenGaps(tok, Plan{}, "", map[string]string{
 		"TrunkSource": "how trunk was found; trunk itself is in it",
 		"Fetched":     "what the fetch brought is in the rows",
 		"Now":         "each row's date, and the category its age gives it, are in it",
 		"Problems":    "a plan with a problem stops before it has a token",
 	})
-	gaps = append(gaps, kit.TokenGaps(tok, RefRow{}, "Rows.", map[string]string{
+	gaps = append(gaps, jsonout.TokenGaps(tok, RefRow{}, "Rows.", map[string]string{
 		"Rows.Kind":      "the row's ID names it",
 		"Rows.Name":      "the row's ID names it",
 		"Rows.Ref":       "the row's ID names it",
@@ -40,8 +40,8 @@ func TestRestoreTokenCoversEveryPlanField(t *testing.T) {
 	t.Parallel()
 	p := RestoreRefsPlan{Repo: "/r", RunID: "run", Rows: []restoreRow{{Action: RestoreCreate}}}
 	tok := restoreTokenOf(p)
-	gaps := kit.TokenGaps(tok, RestoreRefsPlan{}, "", nil)
-	gaps = append(gaps, kit.TokenGaps(tok, restoreRow{}, "Rows.", map[string]string{
+	gaps := jsonout.TokenGaps(tok, RestoreRefsPlan{}, "", nil)
+	gaps = append(gaps, jsonout.TokenGaps(tok, restoreRow{}, "Rows.", map[string]string{
 		"Rows.RunID":    "every row is of the plan's run, which is in it",
 		"Rows.Selected": "the selection is not in it: --only picks from the plan a token names",
 	})...)
@@ -62,8 +62,8 @@ func TestRestoreTokenCoversTheEndpoint(t *testing.T) {
 				{SweptRef: refpins.SweptRef{Kind: refpins.RefBranch, Name: "a"}, Action: RestoreCreate},
 				{SweptRef: refpins.SweptRef{Kind: refpins.RefRemoteBranch, Name: "b"}, Action: remote}}}
 		}
-		return kit.Deref(restoreToken(plan(nil))), kit.Deref(restoreToken(plan(&refpins.Endpoint{Digest: "sha256:a"}))),
-			kit.Deref(restoreToken(plan(&refpins.Endpoint{Digest: "sha256:b"})))
+		return jsonout.Deref(restoreToken(plan(nil))), jsonout.Deref(restoreToken(plan(&refpins.Endpoint{Digest: "sha256:a"}))),
+			jsonout.Deref(restoreToken(plan(&refpins.Endpoint{Digest: "sha256:b"})))
 	}
 	if none, a, b := tokens(RestoreCreate); none == a || a == b {
 		t.Errorf("a remote ref can go back, and a different origin has the same token: none %s, a %s, b %s", none, a, b)

@@ -15,6 +15,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/config"
 	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/superset"
 )
 
@@ -163,7 +164,7 @@ func TestNewExpectRefusesAMovedBase(t *testing.T) {
 	if _, err := os.Stat(*p.Path); err == nil {
 		t.Error("a refused run created the worktree")
 	}
-	if s := provision.StepOf(r, "worktree"); s.Result != kit.StepNotRun {
+	if s := provision.StepOf(r, "worktree"); s.Result != jsonout.StepNotRun {
 		t.Errorf("worktree step %+v", s)
 	}
 }
@@ -201,11 +202,11 @@ func TestCheckoutExpectRefusesAMovedBranch(t *testing.T) {
 	if err != nil || r.Outcome != provision.CreateCreated {
 		t.Fatalf("err %v result %+v", err, r)
 	}
-	if b := provision.StepOf(r.CreateResult, "branch"); b.Result != kit.StepUntouched || *b.Commit != *p.BranchCommit {
+	if b := provision.StepOf(r.CreateResult, "branch"); b.Result != jsonout.StepUntouched || *b.Commit != *p.BranchCommit {
 		t.Errorf("branch step %+v", b)
 	}
 	for _, name := range []string{"config", "cache", "provision", "submodules", "build", "superset"} {
-		if s := provision.StepOf(r.CreateResult, name); s.Result != kit.StepSkipped {
+		if s := provision.StepOf(r.CreateResult, name); s.Result != jsonout.StepSkipped {
 			t.Errorf("--no-setup: %s is %s", name, s.Result)
 		}
 	}
@@ -234,7 +235,7 @@ func TestNewJSONReportsSuperset(t *testing.T) {
 	testkit.OptIn(ctx)
 	provisiontest.FakeSuperset(t, ctx, ctx.Repo.MainRoot, true)
 	r, _, err := provision.RunNewJSON(t, ctx, "fix/one", provision.NewOptions{}, "")
-	if s := provision.StepOf(r, "superset"); err != nil || s.Result != kit.StepRegistered {
+	if s := provision.StepOf(r, "superset"); err != nil || s.Result != jsonout.StepRegistered {
 		t.Errorf("err %v superset %+v", err, s)
 	}
 	if p := provisiontest.NewPlanOf(t, ctx, "fix/two", provision.NewOptions{}); !p.Superset {
@@ -243,12 +244,12 @@ func TestNewJSONReportsSuperset(t *testing.T) {
 
 	provisiontest.Stub(ctx, superset.Status{Exe: "/nope/superset"})
 	r, _, _ = provision.RunNewJSON(t, ctx, "fix/two", provision.NewOptions{}, "")
-	if s := provision.StepOf(r, "superset"); s.Result != kit.StepSkipped || s.Reason == nil || r.Outcome != provision.CreateCreated {
+	if s := provision.StepOf(r, "superset"); s.Result != jsonout.StepSkipped || s.Reason == nil || r.Outcome != provision.CreateCreated {
 		t.Errorf("auto, host stopped: %+v %s", s, r.Outcome)
 	}
 	ctx.Config.SupersetRegister = config.SupersetOn
 	r, _, _ = provision.RunNewJSON(t, ctx, "fix/three", provision.NewOptions{}, "")
-	if s := provision.StepOf(r, "superset"); s.Result != kit.StepFailed || r.Outcome != provision.CreateCreatedWithProblems {
+	if s := provision.StepOf(r, "superset"); s.Result != jsonout.StepFailed || r.Outcome != provision.CreateCreatedWithProblems {
 		t.Errorf("on, host stopped: %+v %s", s, r.Outcome)
 	}
 }

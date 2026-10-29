@@ -17,6 +17,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
 
@@ -99,7 +100,7 @@ func TestUpRefusesABranchThatDivergedFromItsRemote(t *testing.T) {
 	}
 	w := r.Worktrees[0]
 	o := w.OwnRemoteSync
-	if w.Result != syncrun.ResultRefused || r.Outcome != kit.OutcomeRefused || !strings.Contains(testkit.Str(w.Reason), "origin/feat_wt/x has 1 commit this branch never had") {
+	if w.Result != syncrun.ResultRefused || r.Outcome != jsonout.OutcomeRefused || !strings.Contains(testkit.Str(w.Reason), "origin/feat_wt/x has 1 commit this branch never had") {
 		t.Fatalf("participant %+v", w)
 	}
 	if o.State != "diverged" || testkit.Str(o.Remote) != theirs || *o.LocalAhead != 1 || *o.RemoteAhead != 1 ||

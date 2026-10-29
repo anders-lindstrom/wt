@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 
 	"github.com/anders-lindstrom/wt/internal/config"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/naming"
 	"github.com/anders-lindstrom/wt/internal/repo"
 )
@@ -175,7 +176,7 @@ func (c *Context) Configured() bool {
 
 // TrunkSource is how the configured trunk was found, as --json prints it.
 func (c *Context) TrunkSource() *string {
-	return Strp(string(c.Config.TrunkSource))
+	return jsonout.Strp(string(c.Config.TrunkSource))
 }
 
 // NoTrunk is why c has no trunk to work against — no MAIN_BRANCH, and none

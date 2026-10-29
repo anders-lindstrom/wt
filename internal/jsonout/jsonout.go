@@ -1,12 +1,12 @@
-package kit
+// Package jsonout is the vocabulary every --json output shares: how it is
+// written, its optional strings, the problems, steps and outcomes it names,
+// the journal a run that changes things writes its one object through, and
+// the plan token --expect holds a run to.
+package jsonout
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"io"
-	"os"
-	"path/filepath"
-	"strings"
 )
 
 // Why wt new or wt checkout would not create a worktree, or what is wrong
@@ -59,13 +59,6 @@ const (
 	StepInterrupted = "interrupted"
 )
 
-// OneLine flattens a note fragment to fit one line of the overview: an
-// embedded newline, carriage return or tab would break the layout of every
-// line printed after it.
-func OneLine(s string) string {
-	return strings.Join(strings.Fields(s), " ")
-}
-
 // WriteJSON writes v as indented JSON, the way every --json output is.
 func WriteJSON(w io.Writer, v any) error {
 	enc := json.NewEncoder(w)
@@ -100,18 +93,4 @@ func Deref(s *string) string {
 		return ""
 	}
 	return *s
-}
-
-// ConfigFingerprint is the bytes of the configuration file ctx read, the
-// worktree's own or else the main checkout's, the way loadFor finds it.
-func ConfigFingerprint(ctx *Context) []byte {
-	for _, root := range []string{ctx.Repo.Root, ctx.Repo.MainRoot} {
-		for _, name := range []string{"worktree.toml", "worktree.conf"} {
-			if data, err := os.ReadFile(filepath.Join(root, "bin", "worktree", name)); err == nil {
-				sum := sha256.Sum256(data)
-				return sum[:]
-			}
-		}
-	}
-	return nil
 }

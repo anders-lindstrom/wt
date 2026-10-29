@@ -12,6 +12,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
 	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 )
 
 // cacheFixture is a repository declaring two cache dirs, both present in the
@@ -50,7 +51,7 @@ func TestSetupClonesCacheDirsCopyOnWrite(t *testing.T) {
 		}
 		t.Skipf("this filesystem cannot clone: %s", buf.String())
 	}
-	if result != kit.StepDone || reason != "" {
+	if result != jsonout.StepDone || reason != "" {
 		t.Fatalf("result %s %q\n%s", result, reason, buf.String())
 	}
 	if got := testkit.MustRead(t, filepath.Join(target, "node_modules", "left-pad", "index.js")); got != "module.exports = 1" {
@@ -79,7 +80,7 @@ func TestSetupSkipsCachesTheFilesystemCannotClone(t *testing.T) {
 	WithCloner(t, func(_, _ string) error { return errCloneUnsupported{"the source is on another volume"} })
 	var buf bytes.Buffer
 	result, reason := cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf)
-	if result != kit.StepSkipped || !strings.Contains(reason, "node_modules: the source is on another volume") {
+	if result != jsonout.StepSkipped || !strings.Contains(reason, "node_modules: the source is on another volume") {
 		t.Errorf("result %s %q", result, reason)
 	}
 	if !strings.Contains(buf.String(), " - node_modules not cloned: the source is on another volume; skipped rather than copied\n") {
@@ -102,7 +103,7 @@ func TestSetupCacheStepNamesWhatItCouldNotClone(t *testing.T) {
 	})
 	var buf bytes.Buffer
 	result, reason := cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf)
-	if result != kit.StepDone || reason != "web/.gradle: this filesystem cannot clone" {
+	if result != jsonout.StepDone || reason != "web/.gradle: this filesystem cannot clone" {
 		t.Errorf("result %s %q", result, reason)
 	}
 }
@@ -114,7 +115,7 @@ func TestSetupCacheCloneErrorFails(t *testing.T) {
 	WithCloner(t, func(_, _ string) error { return errors.New("permission denied") })
 	var buf bytes.Buffer
 	result, reason := cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf)
-	if result != kit.StepFailed || !strings.Contains(reason, "node_modules: permission denied") {
+	if result != jsonout.StepFailed || !strings.Contains(reason, "node_modules: permission denied") {
 		t.Errorf("result %s %q", result, reason)
 	}
 	if !strings.Contains(buf.String(), " ! failed to clone node_modules: permission denied") {
@@ -133,7 +134,7 @@ func TestSetupKeepsAnExistingCacheDir(t *testing.T) {
 		return os.Mkdir(to, 0o755)
 	})
 	var buf bytes.Buffer
-	if result, reason := cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf); result != kit.StepDone {
+	if result, reason := cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf); result != jsonout.StepDone {
 		t.Errorf("result %s %q", result, reason)
 	}
 	if cloned["node_modules"] || !cloned[".gradle"] {
@@ -173,7 +174,7 @@ func TestSetupWithoutCacheDirsSaysNothing(t *testing.T) {
 	ctx, _ := kit.Open(main, io.Discard)
 	var buf bytes.Buffer
 	result, reason := cloneCacheDirs(ctx, main, t.TempDir(), SetupOptions{NoCache: true}, &buf)
-	if result != kit.StepSkipped || reason != "no WORKTREE_CACHE_DIRS" || buf.Len() != 0 {
+	if result != jsonout.StepSkipped || reason != "no WORKTREE_CACHE_DIRS" || buf.Len() != 0 {
 		t.Errorf("result %s %q, printed %q", result, reason, buf.String())
 	}
 }
@@ -189,7 +190,7 @@ func TestSetupRefusesCacheDirsThatEscapeTheWorktree(t *testing.T) {
 	})
 	var buf bytes.Buffer
 	result, _ := cloneCacheDirs(ctx, main, t.TempDir(), SetupOptions{}, &buf)
-	if result != kit.StepFailed || !strings.Contains(buf.String(), "escapes the worktree") {
+	if result != jsonout.StepFailed || !strings.Contains(buf.String(), "escapes the worktree") {
 		t.Errorf("result %s\n%s", result, buf.String())
 	}
 }
@@ -226,7 +227,7 @@ func TestSetupRefusesCacheDirsBehindAnEscapingSymlink(t *testing.T) {
 	})
 	var buf bytes.Buffer
 	result, reason := cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf)
-	if result != kit.StepFailed || !strings.Contains(reason, "web/.gradle escapes the worktree") {
+	if result != jsonout.StepFailed || !strings.Contains(reason, "web/.gradle escapes the worktree") {
 		t.Errorf("result %s %q\n%s", result, reason, buf.String())
 	}
 	if cloned[".gradle"] || !cloned["node_modules"] {
@@ -247,7 +248,7 @@ func TestSetupClonesBehindASymlinkWithinTheWorktree(t *testing.T) {
 	}
 	WithCloner(t, func(_, to string) error { return os.Mkdir(to, 0o755) })
 	var buf bytes.Buffer
-	if result, reason := cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf); result != kit.StepDone {
+	if result, reason := cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf); result != jsonout.StepDone {
 		t.Errorf("result %s %q\n%s", result, reason, buf.String())
 	}
 	if _, err := os.Stat(filepath.Join(target, "real", ".gradle")); err != nil {
@@ -261,7 +262,7 @@ func TestSetupCacheWithNoSourceCheckoutIsSkipped(t *testing.T) {
 	gone := filepath.Join(main, "no-such-checkout")
 	var buf bytes.Buffer
 	result, reason := cloneCacheDirs(ctx, gone, target, SetupOptions{}, &buf)
-	if result != kit.StepSkipped || reason != "source "+gone+" not found" {
+	if result != jsonout.StepSkipped || reason != "source "+gone+" not found" {
 		t.Errorf("result %s %q", result, reason)
 	}
 }
@@ -289,7 +290,7 @@ func TestSetupCacheSourceEntryThatIsNotADirectory(t *testing.T) {
 	})
 	var buf bytes.Buffer
 	result, reason := cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf)
-	if result != kit.StepDone || reason != "" {
+	if result != jsonout.StepDone || reason != "" {
 		t.Errorf("result %s %q", result, reason)
 	}
 	for _, want := range []string{
@@ -317,7 +318,7 @@ func TestSetupCacheSourceLookupErrorFails(t *testing.T) {
 	WithCloner(t, func(_, to string) error { return os.Mkdir(to, 0o755) })
 	var buf bytes.Buffer
 	result, reason := cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf)
-	if result != kit.StepFailed || !strings.Contains(reason, "web/.gradle") {
+	if result != jsonout.StepFailed || !strings.Contains(reason, "web/.gradle") {
 		t.Errorf("result %s %q\n%s", result, reason, buf.String())
 	}
 	if strings.Contains(buf.String(), "not in source") {
@@ -339,7 +340,7 @@ func TestSetupCacheFailureAndUnclonableTogether(t *testing.T) {
 	var buf bytes.Buffer
 	result, reason := cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf)
 	want := "node_modules: disk on fire; web/.gradle: this filesystem cannot clone"
-	if result != kit.StepFailed || reason != want {
+	if result != jsonout.StepFailed || reason != want {
 		t.Errorf("result %s %q; want %q", result, reason, want)
 	}
 }
@@ -356,7 +357,7 @@ func TestSetupCacheNothingToCloneIsDone(t *testing.T) {
 	testkit.MustMkdir(t, filepath.Join(target, "node_modules"))
 	testkit.MustMkdir(t, filepath.Join(target, "web", ".gradle"))
 	var buf bytes.Buffer
-	if result, reason := cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf); result != kit.StepDone || reason != "" {
+	if result, reason := cloneCacheDirs(ctx, main, target, SetupOptions{}, &buf); result != jsonout.StepDone || reason != "" {
 		t.Errorf("all present: %s %q", result, reason)
 	}
 	if err := os.RemoveAll(filepath.Join(main, "node_modules")); err != nil {
@@ -365,7 +366,7 @@ func TestSetupCacheNothingToCloneIsDone(t *testing.T) {
 	if err := os.RemoveAll(filepath.Join(main, "web")); err != nil {
 		t.Fatal(err)
 	}
-	if result, reason := cloneCacheDirs(ctx, main, t.TempDir(), SetupOptions{}, &buf); result != kit.StepDone || reason != "" {
+	if result, reason := cloneCacheDirs(ctx, main, t.TempDir(), SetupOptions{}, &buf); result != jsonout.StepDone || reason != "" {
 		t.Errorf("all missing: %s %q", result, reason)
 	}
 }
