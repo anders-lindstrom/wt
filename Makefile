@@ -3,7 +3,7 @@ BIN := bin/wt
 # not say dev.
 LDFLAGS := $(shell scripts/ldflags.sh)
 
-.PHONY: build test test-fast test-unit lint bats check clean
+.PHONY: build test test-fast test-unit test-mod lint bats check clean
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/wt
@@ -23,6 +23,11 @@ UNIT := ./internal/config ./internal/find ./internal/naming ./internal/about \
 test-unit:
 	go test -short -timeout 5m $(UNIT)
 
+# The wt mod's own suite (mods/wt/tests), run by claude. Its fixtures are held
+# to the schemas by go test, in internal/commands/testkit.
+test-mod:
+	claude plugin test mods/wt
+
 # scripts/bats.sh kills a hung run after 10 minutes; BATS_DEADLINE changes it.
 bats: build
 	scripts/bats.sh test/
@@ -30,7 +35,7 @@ bats: build
 lint:
 	golangci-lint run
 
-check: lint test bats
+check: lint test bats test-mod
 
 clean:
 	rm -rf bin

@@ -1,72 +1,34 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-const PATH = '/repos/app_wt/feat_wt/login'
-const TOKEN = '1:0123abcd'
+// wt's --json as the mod reads it, one file per schema, each `export default`
+// and the JSON: internal/commands/testkit holds them to the current schemas.
+import STATUS from './fixtures/status.ts'
+import SYNC_RUN from './fixtures/sync-run.ts'
+import UP from './fixtures/up.ts'
 
-// A member of the stack as status lists it: status 1.7.0 names the deferred
-// steps trunk declares, which the mod does not read.
+const PATH = STATUS.worktree.path
+const TOKEN = STATUS.token
+
+// A member of the stack as status lists it.
 const member = (work: string, path: string): Record<string, unknown> => ({
+  ...STATUS.stack[0],
   work,
   branch: `feat_wt/${work}`,
   path,
-  ownRemote: { ref: `origin/feat_wt/${work}`, state: 'inSync', commit: 'c', ahead: 0, behind: 0, fetched: false, blocks: null },
-  deferredDeclared: [],
+  ownRemote: { ...STATUS.stack[0].ownRemote, ref: `origin/feat_wt/${work}` },
 })
 
-// `wt status --json` for a worktree 4 behind trunk, as wt 946b3c3 prints it.
+// `wt status --json` for a worktree 4 behind trunk.
 const status = (over: Record<string, unknown> = {}, worktree: Record<string, unknown> = {}): string =>
   JSON.stringify({
-    schema: 1,
-    schemaVersion: '1.7.0',
-    command: 'status',
-    token: TOKEN,
-    trunk: 'main',
-    trunkRef: 'origin/main',
-    trunkRefUpdatedAt: '2026-10-07T08:00:00Z',
-    trunkSync: { local: 'a', remote: 'a', localAhead: 0, remoteAhead: 0, fastForwarded: false, skippedReason: null },
-    worktree: {
-      work: 'login',
-      branch: 'feat_wt/login',
-      path: PATH,
-      isMain: false,
-      state: 'clean',
-      behind: 4,
-      ahead: 2,
-      ownRemote: { ref: 'origin/feat_wt/login', state: 'inSync', commit: 'c', ahead: 0, behind: 0, fetched: false, blocks: null },
-      ...worktree,
-    },
-    upEligible: true,
-    upIneligibleCode: null,
-    upIneligibleReason: null,
+    ...STATUS,
+    worktree: { ...STATUS.worktree, ...worktree },
     stack: [member('login', PATH)],
-    sessions: [],
-    sessionsError: null,
     ...over,
   })
 
-const UP_RESULT = JSON.stringify({
-  schema: 1,
-  command: 'up',
-  trunkRef: 'origin/main',
-  outcome: 'done',
-  error: null,
-  worktrees: [
-    {
-      work: 'login',
-      branch: 'feat_wt/login',
-      path: PATH,
-      result: 'rebased',
-      reason: null,
-      before: '1111111aaaa',
-      after: '2222222bbbb',
-      pushCommand: ['git', '-C', PATH, 'push', '--force-with-lease', '--force-if-includes', 'origin', 'refs/heads/feat_wt/login:refs/heads/feat_wt/login'],
-      pushed: false,
-      ownRemoteSync: { ref: 'origin/feat_wt/login', state: 'inSync', fastForwarded: false },
-      recovery: null,
-    },
-  ],
-})
+const UP_RESULT = JSON.stringify(UP)
 
 const BAND = {
   plugin: 'wt',
@@ -93,20 +55,14 @@ const START = Date.parse('2026-10-07T09:00:00Z')
 
 // A run's result as wt prints it, for the participants given.
 const result = (command: string, outcome: string, error: string | null, worktrees: Record<string, unknown>[]): string =>
-  JSON.stringify({ schema: 1, command, trunkRef: 'origin/main', outcome, error, worktrees })
+  JSON.stringify({ ...(command === 'up' ? UP : { ...SYNC_RUN, command }), outcome, error, worktrees })
 
+// A participant as wt sync undo, resume or up lists it.
 const participant = (over: Record<string, unknown>): Record<string, unknown> => ({
-  work: 'login',
-  branch: 'feat_wt/login',
-  path: PATH,
+  ...SYNC_RUN.worktrees[0],
   result: 'rebased',
-  reason: null,
-  before: '1111111aaaa',
-  after: '2222222bbbb',
-  pushCommand: null,
-  pushed: false,
-  ownRemoteSync: null,
-  recovery: null,
+  before: UP.worktrees[0].before,
+  after: UP.worktrees[0].after,
   ...over,
 })
 
