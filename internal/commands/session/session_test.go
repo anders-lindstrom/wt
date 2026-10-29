@@ -628,7 +628,9 @@ func TestSessionListNoInboxCheckTakesTheInboxFromTheRegistry(t *testing.T) {
 }
 
 func TestSessionListAllPlacesSessionsByRepositoryFromOneRead(t *testing.T) {
+	// Not parallel: --all finds the repository through WT_ROOTS, set for the whole test binary, and swaps kit.MachineAgents.
 	_, main, wt := attachFixture(t)
+	t.Setenv("WT_ROOTS", filepath.Dir(main))
 	r := newSessionRig(t)
 	r.inbox(4001, sidA)
 	elsewhere := t.TempDir()

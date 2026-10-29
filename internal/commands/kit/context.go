@@ -53,6 +53,9 @@ type Context struct {
 	// Machine is the platform, home and launchctl this context sees; zero
 	// is the machine's own.
 	Machine Machine
+	// Roots, when set, are the directories Find scans for other
+	// repositories in place of Roots'; nil but in tests.
+	Roots []string
 }
 
 // The warning topics. One line per topic per invocation, so a command that

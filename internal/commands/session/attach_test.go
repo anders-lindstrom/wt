@@ -17,7 +17,7 @@ import (
 func attachFixture(t *testing.T) (ctx *kit.Context, main, wt string) {
 	t.Helper()
 	ctx, main, wt = testkit.CanonicalWorktree(t)
-	t.Setenv("WT_ROOTS", filepath.Dir(main))
+	ctx.Roots = []string{filepath.Dir(main)}
 	return ctx, main, wt
 }
 
