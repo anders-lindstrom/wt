@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,7 +26,7 @@ import (
 // A configuration file that names MAIN_BRANCH is the trunk's source.
 func TestTrunkSourceIsTheConfigWhenItNamesTrunk(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +42,7 @@ func TestDetectedTrunkIsNotTheCheckedOutFeatureBranch(t *testing.T) {
 	main := testkit.UnconfiguredRepo(t)
 	withOriginNoHead(t, main)
 	testkit.GitIn(t, main, "checkout", "-q", "-b", "feat/stage-6")
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +56,7 @@ func TestConfigWithoutMainBranchDetectsTrunk(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, "BUILD_INIT_ENABLED=false\n")
 	testkit.GitIn(t, main, "checkout", "-q", "-b", "feat/x")
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +69,7 @@ func TestConfigWithoutMainBranchDetectsTrunk(t *testing.T) {
 // is ErrNoConfig too, which --json reports as noConfiguration.
 func TestOpenFailsWhenNothingNamesTrunk(t *testing.T) {
 	t.Parallel()
-	_, err := kit.Open(testkit.NoTrunkRepo(t))
+	_, err := kit.Open(testkit.NoTrunkRepo(t), io.Discard)
 	if !errors.Is(err, repo.ErrNoTrunk) || !errors.Is(err, config.ErrNoConfig) {
 		t.Fatalf("Open = %v, want ErrNoTrunk and ErrNoConfig", err)
 	}
@@ -81,7 +82,7 @@ func TestOpenFailsWhenNothingNamesTrunk(t *testing.T) {
 func TestConfigWithoutMainBranchFailsWhenNothingNamesTrunk(t *testing.T) {
 	t.Parallel()
 	main := committedNoTrunkRepo(t)
-	if _, err := kit.Open(main); !errors.Is(err, repo.ErrNoTrunk) {
+	if _, err := kit.Open(main, io.Discard); !errors.Is(err, repo.ErrNoTrunk) {
 		t.Fatalf("Open = %v, want ErrNoTrunk", err)
 	}
 	ctx := kit.OpenLenient(main, &bytes.Buffer{})

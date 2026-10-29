@@ -174,13 +174,12 @@ func newSweepCmd() *cobra.Command {
 // repository is still that one object.
 func sweepJSON(cmd *cobra.Command, opts retire.SweepOptions) error {
 	out, progress := cmd.OutOrStdout(), cmd.ErrOrStderr()
-	ctx, err := openContext()
+	ctx, err := openContext(progress)
 	if !opts.Yes {
 		if err != nil {
 			retire.SweepPlanFailed(out, err)
 			return err
 		}
-		ctx.WarnTo(progress)
 		return retire.SweepPlanJSON(ctx, opts, out, progress)
 	}
 	journal := retire.NewSweepJournal(out)
@@ -188,7 +187,6 @@ func sweepJSON(cmd *cobra.Command, opts retire.SweepOptions) error {
 		journal.Fail(err)
 		return err
 	}
-	ctx.WarnTo(progress)
 	opts.Journal = journal
 	return retire.Sweep(ctx, opts, progress)
 }

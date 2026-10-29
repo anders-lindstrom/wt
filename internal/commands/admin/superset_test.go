@@ -3,6 +3,7 @@ package admin
 import (
 	"bytes"
 	"errors"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -49,7 +50,7 @@ func TestDoctorReportsSupersetState(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+			ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -75,7 +76,7 @@ func TestDoctorReportsSupersetState(t *testing.T) {
 // The full report, when Superset is running and knows this repository.
 func TestDoctorReportsAUsableSuperset(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +111,7 @@ func TestDoctorReportsAUsableSuperset(t *testing.T) {
 // already up. It is no problem even for a repository that asked for Superset.
 func TestDoctorSaysStatusIsWrongAboutARunningHost(t *testing.T) {
 	// Not parallel: swaps supersetws.Probe; sets environment variables for the whole test binary.
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +176,7 @@ func TestDoctorSaysWhenTheStaleWorkaroundCanGo(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+			ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -217,7 +218,7 @@ func TestDoctorAlwaysNamesAMissingSupersetProject(t *testing.T) {
 		"on":   config.SupersetOn,
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+			ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -244,7 +245,7 @@ func TestDoctorAlwaysNamesAMissingSupersetProject(t *testing.T) {
 // tail: its worktree is registered too.
 func TestPRCheckoutRegistersWithSuperset(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

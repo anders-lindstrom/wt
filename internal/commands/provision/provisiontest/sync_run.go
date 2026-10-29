@@ -2,6 +2,7 @@ package provisiontest
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -35,7 +36,7 @@ func RunFixture(t *testing.T, withDefer bool) (ctx *kit.Context, bump string) {
 	write("a.txt", "a\n")
 	testkit.GitIn(t, main, "add", "-A")
 	testkit.GitIn(t, main, "commit", "-q", "-m", "declare")
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

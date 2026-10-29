@@ -177,7 +177,7 @@ func planRepoRun(t kit.RepoTarget, opts RunOptions) *repoRun {
 		rr.err = fmt.Errorf("%s: %s", t.Path, t.Problem)
 		return rr
 	}
-	ctx, err := kit.Open(t.Path)
+	ctx, err := kit.Open(t.Path, io.Discard)
 	if err != nil {
 		rr.err = err
 		return rr

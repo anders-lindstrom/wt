@@ -2,6 +2,7 @@ package provision
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,7 +15,7 @@ import (
 // locatable builds a repo with one worktree per spec and returns the context.
 func locatable(t *testing.T, specs ...string) *kit.Context {
 	t.Helper()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

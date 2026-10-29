@@ -3,6 +3,7 @@ package synccmd_test
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -147,7 +148,7 @@ func TestSyncRunRefusesWhenTrunkDeclaresNothing(t *testing.T) {
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	testkit.GitIn(t, main, "remote", "add", "origin", main)
 	testkit.GitIn(t, main, "fetch", "-q", "origin")
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

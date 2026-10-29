@@ -3,6 +3,7 @@ package provision
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -83,7 +84,7 @@ func TestNewJSONReportsAFailedBuildAndSubmodules(t *testing.T) {
 // from that commit and gives it no upstream.
 func TestNewFromAnOIDSetsNoUpstream(t *testing.T) {
 	t.Parallel()
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	main := ctx.Repo.MainRoot
 	testkit.GitIn(t, main, "remote", "add", "origin", main)
 	testkit.GitIn(t, main, "fetch", "-q", "origin")
@@ -120,7 +121,7 @@ func TestCreateJournalWritesOneObjectWhenInterrupted(t *testing.T) {
 // failure that hides it.
 func TestNewJSONReportsAWorktreeAFailingHookLeftBehind(t *testing.T) {
 	t.Parallel()
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	hook := filepath.Join(ctx.Repo.MainRoot, ".git", "hooks", "post-checkout")
 	gittest.WriteExecutable(t, hook, "#!/bin/sh\necho 'hook says no' >&2\nexit 1\n")
 	r, _, err := RunNewJSON(t, ctx, "fix/x", NewOptions{}, "")

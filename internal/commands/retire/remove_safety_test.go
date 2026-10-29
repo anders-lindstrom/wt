@@ -3,6 +3,7 @@ package retire
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -80,7 +81,7 @@ func TestRemoveRefusesDuringEachOperation(t *testing.T) {
 func TestRemoveRefusesADetachedHeadWithCommitsNothingElseHas(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	dst := filepath.Join(ctx.Repo.Parent, "detached")
 	testkit.GitIn(t, main, "worktree", "add", "-q", "--detach", dst)
 	testkit.GitIn(t, dst, "commit", "-q", "--allow-empty", "-m", "only here")
@@ -318,7 +319,7 @@ func TestApplyReadsASubmoduleWorktreeAgainBeforeDeleting(t *testing.T) {
 func TestApplyRefusesAHeadThatMovedAfterThePlan(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	dst := filepath.Join(ctx.Repo.Parent, "detached-late")
 	testkit.GitIn(t, main, "worktree", "add", "-q", "--detach", dst)
 	plan := planFor(ctx, worktreeRecord(ctx, dst), RemoveOptions{})

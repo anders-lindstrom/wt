@@ -1,6 +1,7 @@
 package synccmd
 
 import (
+	"io"
 	"reflect"
 	"slices"
 	"strings"
@@ -16,7 +17,7 @@ import (
 func tokenRepo(t *testing.T) (*kit.Context, string) {
 	t.Helper()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

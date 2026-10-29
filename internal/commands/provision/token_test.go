@@ -1,6 +1,7 @@
 package provision
 
 import (
+	"io"
 	"strings"
 	"testing"
 
@@ -41,7 +42,7 @@ func withSkips(extra map[string]string) map[string]string {
 // a field added to the plan fails here until someone decides.
 func TestNewTokenCoversEveryPlanField(t *testing.T) {
 	t.Parallel()
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	p := NewPlan{CreatePlan: CreatePlan{Command: "new", Branch: kit.Strp("b"), Path: kit.Strp("/w")}, BaseCommit: kit.Strp("c")}
 	gaps := kit.TokenGaps(newTokenOf(ctx, p), NewPlan{}, "", withSkips(map[string]string{
 		"Base": "BaseCommit, what it resolves to, is in it",
@@ -53,7 +54,7 @@ func TestNewTokenCoversEveryPlanField(t *testing.T) {
 
 func TestCheckoutTokenCoversEveryPlanField(t *testing.T) {
 	t.Parallel()
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	p := CheckoutPlan{CreatePlan: CreatePlan{Command: "checkout", Branch: kit.Strp("b"), Path: kit.Strp("/w")}}
 	tok := checkoutTokenOf(ctx, p)
 	p.Source = kit.Strp(SourceRemote)

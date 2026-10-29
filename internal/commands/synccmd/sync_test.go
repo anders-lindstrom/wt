@@ -3,6 +3,7 @@ package synccmd
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -433,7 +434,7 @@ func TestSyncSaysWhenTrunkDeclaresNothing(t *testing.T) {
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	testkit.GitIn(t, main, "remote", "add", "origin", main)
 	testkit.GitIn(t, main, "fetch", "-q", "origin")
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	var buf bytes.Buffer
 	if err := Sync(ctx, SyncOptions{NoFetch: true}, &buf); err != nil {
 		t.Fatalf("Sync: %v", err)

@@ -2,6 +2,7 @@ package retire_test
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -19,7 +20,7 @@ import (
 // refuses the removal, with nothing removed.
 func TestRemoveJSONReportsReapedAndRefusesOnOneThatWillNotStop(t *testing.T) {
 	// Not parallel: signals real processes.
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	retire.RealProcesses(ctx)
 	var buf bytes.Buffer
 	path, err := provision.New(ctx, "fix/served", provision.NewOptions{NoSetup: true}, &buf)

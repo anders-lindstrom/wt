@@ -3,6 +3,7 @@ package commands
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -23,7 +24,7 @@ import (
 func TestOpenRunsOnDetectedDefaultsWithoutAConfigFile(t *testing.T) {
 	t.Parallel()
 	main := testkit.UnconfiguredRepo(t)
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -44,14 +45,14 @@ func TestOpenRunsOnDetectedDefaultsWithoutAConfigFile(t *testing.T) {
 func TestDetectedDefaultsAreWhatInitWrites(t *testing.T) {
 	t.Parallel()
 	main := testkit.UnconfiguredRepo(t)
-	detected, err := kit.Open(main)
+	detected, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 	if err := provision.Init(detected.Repo, provision.InitOptions{}, &bytes.Buffer{}); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	written, err := kit.Open(main)
+	written, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatalf("Open after init: %v", err)
 	}
@@ -71,7 +72,7 @@ func TestOpenWithoutConfigOrTrunkKeepsTheError(t *testing.T) {
 	t.Parallel()
 	parent := t.TempDir()
 	testkit.GitIn(t, parent, "init", "-q", "-b", "main", "demo")
-	_, err := kit.Open(filepath.Join(parent, "demo"))
+	_, err := kit.Open(filepath.Join(parent, "demo"), io.Discard)
 	if !errors.Is(err, config.ErrNoConfig) {
 		t.Fatalf("err = %v, want ErrNoConfig", err)
 	}
@@ -86,7 +87,7 @@ func TestOpenWithoutConfigOrTrunkKeepsTheError(t *testing.T) {
 // file, and the detection is the main checkout's.
 func TestOpenInsideAWorktreeOfAnUnconfiguredRepo(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.UnconfiguredRepo(t))
+	ctx, err := kit.Open(testkit.UnconfiguredRepo(t), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +95,7 @@ func TestOpenInsideAWorktreeOfAnUnconfiguredRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	in, err := kit.Open(path)
+	in, err := kit.Open(path, io.Discard)
 	if err != nil {
 		t.Fatalf("Open in the worktree: %v", err)
 	}
@@ -107,7 +108,7 @@ func TestOpenInsideAWorktreeOfAnUnconfiguredRepo(t *testing.T) {
 // trunk it took; the log and the path are what they always are.
 func TestNewOnDetectedDefaultsSaysSoOnce(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.UnconfiguredRepo(t))
+	ctx, err := kit.Open(testkit.UnconfiguredRepo(t), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +133,7 @@ func TestNewOnDetectedDefaultsSaysSoOnce(t *testing.T) {
 // A configured repository hears nothing about detection.
 func TestNewWithAConfigFileSaysNothingAboutDetection(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +151,7 @@ func TestNewWithAConfigFileSaysNothingAboutDetection(t *testing.T) {
 // work in: the harness makes its worktree there and cannot run `wt init`.
 func TestClaudeHooksInAnUnconfiguredRepo(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.UnconfiguredRepo(t))
+	ctx, err := kit.Open(testkit.UnconfiguredRepo(t), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +177,7 @@ func TestClaudeHooksInAnUnconfiguredRepo(t *testing.T) {
 // wt config names where its values came from when no file did.
 func TestConfigSaysTheValuesAreDetected(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.UnconfiguredRepo(t))
+	ctx, err := kit.Open(testkit.UnconfiguredRepo(t), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +189,7 @@ func TestConfigSaysTheValuesAreDetected(t *testing.T) {
 		t.Errorf("wt config does not say its values are detected:\n%s", buf.String())
 	}
 
-	ctx, _ = kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ = kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	buf.Reset()
 	if err := provision.Config(ctx, false, &buf); err != nil {
 		t.Fatal(err)

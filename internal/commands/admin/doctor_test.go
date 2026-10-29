@@ -17,7 +17,7 @@ import (
 func TestDoctorAcceptsSupersetsLayout(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	superset := filepath.Join(ctx.Repo.Parent, "demo_wt", "demo", "feat_wt", "thing")
 	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/thing", superset)
 
@@ -40,7 +40,7 @@ func TestDoctorAcceptsSupersetsLayout(t *testing.T) {
 func TestDoctorAcceptsT3sLayout(t *testing.T) {
 	// Not parallel: sets environment variables for the whole test binary.
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	data := t.TempDir()
 	t.Setenv("T3CODE_HOME", data)
 	renamed := filepath.Join(data, "worktrees", "demo", "t3-0aedd242")
@@ -66,7 +66,7 @@ func TestDoctorAcceptsT3sLayout(t *testing.T) {
 func TestDoctorStillReportsAForeignLayout(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/thing",
 		filepath.Join(ctx.Repo.Parent, "demo-thing"))
 

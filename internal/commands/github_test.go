@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -17,7 +18,7 @@ import (
 // head gets its number and state, and everything else gets a dash.
 func TestListShowsThePullRequestColumn(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +57,7 @@ func TestListShowsThePullRequestColumn(t *testing.T) {
 // would pass without gh having been reached at all.
 func TestListIsUnchangedWhenGitHubIsNotInPlay(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +121,7 @@ func TestListIsUnchangedWhenGitHubIsNotInPlay(t *testing.T) {
 // the listing is what it was.
 func TestListSaysHowOldACachedColumnIs(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +177,7 @@ func backdatePRCache(t *testing.T, ctx *kit.Context, r github.Remote, by time.Du
 // GitHub answers. One bounded call, restricted to that branch.
 func TestStatusWorktreeCarriesThePullRequest(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +203,7 @@ func TestStatusWorktreeCarriesThePullRequest(t *testing.T) {
 // leave wt status with no pr line at all.
 func TestStatusWorktreeIsSilentWithoutOne(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +236,7 @@ func TestStatusWorktreeIsSilentWithoutOne(t *testing.T) {
 // against 0.02s for the rest of the listing.
 func TestListNoPRAsksGitHubNothing(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +262,7 @@ func TestListNoPRAsksGitHubNothing(t *testing.T) {
 // once the answer is a minute old; --no-pr leaves it out and asks nothing.
 func TestStatusShowsThePullRequestColumn(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,7 +319,7 @@ func TestStatusShowsThePullRequestColumn(t *testing.T) {
 // GitHub past the cache, the other asks nothing and prints no pr line.
 func TestStatusWorktreeRefreshAndNoPR(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

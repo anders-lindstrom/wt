@@ -54,11 +54,9 @@ func newRestoreCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// A repository is only needed for a folder with no record; one
 			// with a record names its own.
-			ctx, err := openContext()
+			ctx, err := openContext(cmd.ErrOrStderr())
 			if err != nil {
 				ctx = nil
-			} else {
-				ctx.WarnTo(cmd.ErrOrStderr())
 			}
 			opts := refs.RestoreOptions{DryRun: dryRun}
 			if asJSON {

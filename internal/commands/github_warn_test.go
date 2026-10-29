@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
 
@@ -16,7 +17,7 @@ import (
 // supposed to work and did not says so on stderr, with stdout unchanged.
 func TestListWarnsOnlyWhenGitHubWasSupposedToWork(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +90,7 @@ func TestListWarnsOnlyWhenGitHubWasSupposedToWork(t *testing.T) {
 // A command that asks GitHub twice complains once.
 func TestGitHubWarnsOncePerInvocation(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

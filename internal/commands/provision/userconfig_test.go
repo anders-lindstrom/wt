@@ -17,7 +17,7 @@ import (
 func TestConfigPrintsTheUserSettings(t *testing.T) {
 	// Not parallel: sets environment variables for the whole test binary.
 	testkit.UserConfigIn(t)
-	ctx, err := kit.Open(testkit.FixtureRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.FixtureRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestConfigNamesTheFileThatDecidedSuperset(t *testing.T) {
 		"repo set it":        {testkit.MinimalConf + "SUPERSET_REGISTER=on\n", "superset mode: on (repo file)"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx, err := kit.Open(testkit.FixtureRepo(t, tc.conf))
+			ctx, err := kit.Open(testkit.FixtureRepo(t, tc.conf), io.Discard)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -68,7 +68,7 @@ func TestConfigNamesTheFileThatDecidedSuperset(t *testing.T) {
 func TestConfigShellSaysNothingAboutTheUserSettings(t *testing.T) {
 	// Not parallel: sets environment variables for the whole test binary.
 	testkit.UserConfigIn(t)
-	ctx, err := kit.Open(testkit.FixtureRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.FixtureRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestUserGetStillRefusesAnUnknownKey(t *testing.T) {
 func TestConfigSaysTheFileCouldNotBeRead(t *testing.T) {
 	// Not parallel: sets environment variables for the whole test binary.
 	path := testkit.WriteUserConfig(t, "github = \n")
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

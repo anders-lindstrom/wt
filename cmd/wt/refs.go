@@ -98,13 +98,12 @@ func newRefsSweepCmd() *cobra.Command {
 				opts.Only = append([]string{}, only...)
 			}
 			out, progress := cmd.OutOrStdout(), cmd.ErrOrStderr()
-			ctx, err := openContext()
+			ctx, err := openContext(progress)
 			if asJSON && !yes {
 				if err != nil {
 					refs.SweepPlanFailed(out, err)
 					return err
 				}
-				ctx.WarnTo(progress)
 				return refs.SweepPlanJSON(ctx, opts, out, progress)
 			}
 			if asJSON {
@@ -113,13 +112,11 @@ func newRefsSweepCmd() *cobra.Command {
 					opts.Journal.Fail(err)
 					return err
 				}
-				ctx.WarnTo(progress)
 				return refs.Sweep(ctx, opts, progress)
 			}
 			if err != nil {
 				return err
 			}
-			ctx.WarnTo(progress)
 			if !yes && !dryRun && canAsk(cmd) {
 				p := newPrompter(cmd.InOrStdin(), out)
 				opts.Confirm = func(refs.Plan) bool { return p.yesNo("Sweep these refs?", false) }
@@ -152,12 +149,9 @@ func newRefsSweptCmd() *cobra.Command {
 			"  wt refs swept --json  # the same, for a tool",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx, err := openContext()
+			ctx, err := openContext(cmd.ErrOrStderr())
 			if err != nil && !asJSON {
 				return err
-			}
-			if ctx != nil {
-				ctx.WarnTo(cmd.ErrOrStderr())
 			}
 			return purge.RefsSwept(ctx, asJSON, cmd.OutOrStdout())
 		},
@@ -203,12 +197,10 @@ func newRefsRestoreCmd() *cobra.Command {
 				opts.Only = append([]string{}, only...)
 			}
 			out, progress := cmd.OutOrStdout(), cmd.ErrOrStderr()
-			ctx, err := openContext()
+			ctx, err := openContext(progress)
 			if asJSON && !yes {
 				if err != nil {
 					ctx = nil
-				} else {
-					ctx.WarnTo(progress)
 				}
 				return refs.RestoreRefsPlanJSON(ctx, args[0], opts.Only, out, progress)
 			}
@@ -218,13 +210,11 @@ func newRefsRestoreCmd() *cobra.Command {
 					opts.Journal.Fail(err)
 					return err
 				}
-				ctx.WarnTo(progress)
 				return refs.RestoreRefs(ctx, args[0], opts, progress)
 			}
 			if err != nil {
 				return err
 			}
-			ctx.WarnTo(progress)
 			if !yes && !dryRun && canAsk(cmd) {
 				p := newPrompter(cmd.InOrStdin(), out)
 				opts.Confirm = func(refs.RestoreRefsPlan) bool { return p.yesNo("Restore these refs?", false) }
@@ -271,12 +261,10 @@ func newRefsPurgeCmd() *cobra.Command {
 			}
 			opts := purge.RefsPurgeOptions{RunIDs: args, OlderThan: olderThan, DryRun: dryRun, Yes: yes, Expect: expect}
 			out, progress := cmd.OutOrStdout(), cmd.ErrOrStderr()
-			ctx, err := openContext()
+			ctx, err := openContext(progress)
 			if asJSON && !yes {
 				if err != nil {
 					ctx = nil
-				} else {
-					ctx.WarnTo(progress)
 				}
 				return purge.RefsPurgePlanJSON(ctx, opts, out, progress)
 			}
@@ -286,13 +274,11 @@ func newRefsPurgeCmd() *cobra.Command {
 					opts.Journal.Fail(err)
 					return err
 				}
-				ctx.WarnTo(progress)
 				return purge.RefsPurge(ctx, opts, progress)
 			}
 			if err != nil {
 				return err
 			}
-			ctx.WarnTo(progress)
 			if !yes && !dryRun {
 				if canAsk(cmd) {
 					p := newPrompter(cmd.InOrStdin(), out)

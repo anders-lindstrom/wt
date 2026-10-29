@@ -74,14 +74,13 @@ func newRemoveCmd() *cobra.Command {
 			if err != nil {
 				return usageError{err}
 			}
-			ctx, err := openContext()
+			ctx, err := openContext(cmd.ErrOrStderr())
 			if err != nil {
 				if asJSON {
 					retire.RemoveFailedJSON(cmd.OutOrStdout(), !yes, err)
 				}
 				return err
 			}
-			ctx.WarnTo(cmd.ErrOrStderr())
 			opts := retire.RemoveOptions{Force: forced, DryRun: dryRun, Expect: expect, KeepSuperset: keepSuperset,
 				Reap: reap}
 			if moveTo != "" {

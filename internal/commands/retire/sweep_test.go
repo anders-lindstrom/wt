@@ -3,6 +3,7 @@ package retire
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -711,7 +712,7 @@ func TestSweepPlanProtectsTheConfiguredTrunkAndOriginHead(t *testing.T) {
 	testkit.GitIn(t, main, "remote", "add", "origin", origin)
 	testkit.GitIn(t, main, "fetch", "-q", "origin")
 	testkit.GitIn(t, main, "remote", "set-head", "origin", "integration")
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -759,7 +760,7 @@ func TestSweepPlanReportsAGoneBranchThatStillHasWork(t *testing.T) {
 func TestSweepPlanWithNoOriginComparesWithLocalTrunk(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -817,7 +818,7 @@ func TestSweepRefusesOutsideTheMainCheckout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	inWorktree, err := kit.Open(path)
+	inWorktree, err := kit.Open(path, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -839,7 +840,7 @@ func TestSweepRunsFromASubdirectoryOfTheMainCheckout(t *testing.T) {
 	ctx, main, _ := testkit.SweepRepo(t)
 	testkit.BranchWithWork(t, main, "done-work", 0)
 	testkit.MustWrite(t, filepath.Join(main, "sub", "notes.txt"), "scratch")
-	inSub, err := kit.Open(filepath.Join(main, "sub"))
+	inSub, err := kit.Open(filepath.Join(main, "sub"), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -878,7 +879,7 @@ func TestSweepRefusesABareRepository(t *testing.T) {
 func TestSweepRefusesWhenTrunkIsOnlyAGuess(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, "BUILD_INIT_ENABLED=false\n")
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1146,7 +1147,7 @@ func TestSweepFetchCannotPruneLocalBranchesOrTags(t *testing.T) {
 func TestSweepWithNoOriginComparesWithLocalBranchesOnly(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

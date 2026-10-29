@@ -730,12 +730,11 @@ func withVerbContext(cmd *cobra.Command, args []string, command string, asJSON b
 	}
 	journal := syncrun.NewSyncRunJournal(cmd.OutOrStdout(), command)
 	cmd.SetOut(cmd.ErrOrStderr())
-	ctx, err := openContext()
+	ctx, err := openContext(cmd.ErrOrStderr())
 	if err != nil {
 		journal.Fail(err)
 		return err
 	}
-	ctx.WarnTo(cmd.ErrOrStderr())
 	return fn(ctx, journal)
 }
 

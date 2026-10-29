@@ -3,6 +3,7 @@ package synckeep
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -28,7 +29,7 @@ func keepFleet(t *testing.T) (u *config.User, kept, fresh, undeclared *kit.Conte
 	plain := testkit.CommittedRepo(t, testkit.MinimalConf)
 	testkit.GitIn(t, plain, "remote", "add", "origin", plain)
 	testkit.GitIn(t, plain, "fetch", "-q", "origin")
-	undeclared, err := kit.Open(plain)
+	undeclared, err := kit.Open(plain, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

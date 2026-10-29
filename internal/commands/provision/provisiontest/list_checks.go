@@ -2,6 +2,7 @@ package provisiontest
 
 import (
 	"bytes"
+	"io"
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
@@ -21,7 +22,7 @@ func WithChecks(pr github.PR, state string) github.PR {
 // pull requests: checks passing, failing, running, and none at all.
 func FourWorktreesWithChecks(t *testing.T) (*kit.Context, string) {
 	t.Helper()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

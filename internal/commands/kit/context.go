@@ -59,11 +59,15 @@ const (
 	WarnDetected   = "detected config"
 )
 
-// WarnTo gives the context somewhere to put its warnings, and says at once
-// what it already knows went wrong with the user file: that wt could not read
-// it at all, and every integration is off for this run, or which part of it
-// wt is ignoring.
+// WarnTo gives the context somewhere to put its warnings, as Open does, and
+// says at once what it already knows went wrong with the user file: that wt
+// could not read it at all, and every integration is off for this run, or
+// which part of it wt is ignoring. io.Discard is no writer at all, so that a
+// warning it swallowed is still said to a writer given later.
 func (c *Context) WarnTo(w io.Writer) {
+	if w == io.Discard {
+		w = nil
+	}
 	c.Warn = w
 	switch {
 	case c.UserError == nil:
@@ -88,7 +92,9 @@ func (c *Context) Warnf(topic, format string, args ...any) {
 }
 
 // Open discovers the repository containing cwd and loads its configuration.
-func Open(cwd string) (*Context, error) {
+// warn is where its warnings go (WarnTo): stderr for a command, io.Discard
+// where nothing may be said, as in shell completion.
+func Open(cwd string, warn io.Writer) (*Context, error) {
 	r, err := repo.Discover(cwd)
 	if err != nil {
 		return nil, err
@@ -104,7 +110,9 @@ func Open(cwd string) (*Context, error) {
 	// keys. WarnTo says which it was, once, on stderr, and `wt doctor` counts
 	// it as a problem.
 	u, userErr := config.LoadUser()
-	return &Context{Repo: r, Config: c, User: u, UserError: userErr, Cwd: cwd}, nil
+	ctx := &Context{Repo: r, Config: c, User: u, UserError: userErr, Cwd: cwd}
+	ctx.WarnTo(warn)
+	return ctx, nil
 }
 
 // Scheme is how this repository spells its worktrees: the directory they sit

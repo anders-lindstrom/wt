@@ -156,7 +156,7 @@ func SyncAllJSON(u *config.User, sel kit.Selection, opts SyncOptions, w io.Write
 	defer syncrun.WatchSignals(os.Stderr, nil)()
 	out := kit.EachRepo(set.Repos, kit.RepoParallelism, func(t kit.RepoTarget) SyncOverview {
 		if t.Problem == "" {
-			ctx, err := kit.Open(t.Path)
+			ctx, err := kit.Open(t.Path, io.Discard)
 			if err == nil {
 				return OverviewOf(ctx, opts)
 			}

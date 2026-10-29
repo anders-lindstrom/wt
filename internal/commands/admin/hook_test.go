@@ -2,6 +2,7 @@ package admin
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
 
@@ -11,7 +12,7 @@ import (
 
 func TestHookCreatePrintsPathOnStdoutOnly(t *testing.T) {
 	t.Parallel()
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	var out, logw bytes.Buffer
 	in := strings.NewReader(`{"name":"hooked","cwd":"/x","hook_event_name":"WorktreeCreate"}`)
 	if err := HookCreate(ctx, in, &out, &logw); err != nil {
@@ -28,7 +29,7 @@ func TestHookCreatePrintsPathOnStdoutOnly(t *testing.T) {
 
 func TestHookCreateRejectsMissingName(t *testing.T) {
 	t.Parallel()
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	var out, logw bytes.Buffer
 	if err := HookCreate(ctx, strings.NewReader(`{"cwd":"/x"}`), &out, &logw); err == nil {
 		t.Error("want an error when name is absent")
@@ -37,7 +38,7 @@ func TestHookCreateRejectsMissingName(t *testing.T) {
 
 func TestHookRemoveIsMergeChecked(t *testing.T) {
 	t.Parallel()
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	var out, logw bytes.Buffer
 	if err := HookCreate(ctx, strings.NewReader(`{"name":"gone"}`), &out, &logw); err != nil {
 		t.Fatal(err)
@@ -55,7 +56,7 @@ func TestHookRemoveIsMergeChecked(t *testing.T) {
 // Unknown fields must not break the hook when the harness adds one.
 func TestHookToleratesUnknownFields(t *testing.T) {
 	t.Parallel()
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	var out, logw bytes.Buffer
 	in := strings.NewReader(`{"name":"tol","brand_new_field":42,"nested":{"a":1}}`)
 	if err := HookCreate(ctx, in, &out, &logw); err != nil {

@@ -1,6 +1,7 @@
 package synccmdtest
 
 import (
+	"io"
 	"path/filepath"
 	"testing"
 
@@ -30,7 +31,7 @@ func NewTrunkFixture(t *testing.T) *TrunkFixture {
 	testkit.GitIn(t, filepath.Dir(other), "clone", "-q", origin, other)
 	testkit.GitIn(t, other, "config", "user.email", "t@example.com")
 	testkit.GitIn(t, other, "config", "user.name", "T")
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

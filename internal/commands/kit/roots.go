@@ -330,7 +330,7 @@ func AcrossRepos(u *config.User, sel Selection, w io.Writer, fn func(*Context, i
 			r.err = fmt.Errorf("%s: %s", t.Path, t.Problem)
 			return r
 		}
-		ctx, err := Open(t.Path)
+		ctx, err := Open(t.Path, io.Discard)
 		if err != nil {
 			r.err = err
 			return r

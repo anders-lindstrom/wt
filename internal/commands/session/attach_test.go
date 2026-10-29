@@ -2,6 +2,7 @@ package session
 
 import (
 	"bytes"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -224,7 +225,7 @@ func TestAttachWithNoPatternLooksWhereYouStand(t *testing.T) {
 	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/other", other)
 	testkit.MachineClaudeLists(t, testkit.Background("in thing", "aaaaaaaa", "working", wt), testkit.Background("in other", "bbbbbbbb", "working", other))
 
-	here, err := kit.Open(wt)
+	here, err := kit.Open(wt, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

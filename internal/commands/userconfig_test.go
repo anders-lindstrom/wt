@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,7 +25,7 @@ func TestOpenWarnsAboutABrokenUserConfigAndCarriesOn(t *testing.T) {
 	if err := os.WriteFile(path, []byte("github = \"yes\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ctx, err := kit.Open(testkit.FixtureRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.FixtureRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatalf("a broken user config stopped the command: %v", err)
 	}
@@ -59,7 +60,7 @@ func TestOpenWarnsAboutABrokenUserConfigAndCarriesOn(t *testing.T) {
 func TestAUserFileThatDoesNotParseTurnsEveryIntegrationOff(t *testing.T) {
 	// Not parallel: sets environment variables for the whole test binary.
 	path := testkit.WriteUserConfig(t, "github = false\nsuperset = \n")
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatalf("a user file that does not parse stopped the command: %v", err)
 	}

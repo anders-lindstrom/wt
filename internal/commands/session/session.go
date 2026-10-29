@@ -342,7 +342,7 @@ func acrossRepos(u *config.User, sel kit.Selection, read *ClaudeSessions, env se
 				mine = append(mine, s)
 			}
 		}
-		ctx, err := kit.Open(t.Path)
+		ctx, err := kit.Open(t.Path, io.Discard)
 		if err != nil {
 			return repoResult{err: fmt.Errorf("%s: %w", t.Path, err)}
 		}

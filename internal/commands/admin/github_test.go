@@ -3,6 +3,7 @@ package admin
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,7 +48,7 @@ func TestGitHubGateNamesTheGateThatFailed(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+			ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -68,7 +69,7 @@ func TestGitHubGateNamesTheGateThatFailed(t *testing.T) {
 // pull request, and gh is the one that puts it on the branch.
 func TestPRCheckoutMakesAWorktreeOnThePullRequestsBranch(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +100,7 @@ func TestPRCheckoutMakesAWorktreeOnThePullRequestsBranch(t *testing.T) {
 // own name, so a branch wt made lands where `wt new` would have put it.
 func TestPRCheckoutKeepsAWtBranchsOwnName(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +120,7 @@ func TestPRCheckoutKeepsAWtBranchsOwnName(t *testing.T) {
 // made, and the exit is a success so `cd "$(wt pr checkout 7)"` still works.
 func TestPRCheckoutOnABranchAlreadyCheckedOutSaysWhere(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +158,7 @@ func TestPRCheckoutLeavesNothingBehindWhenGhFails(t *testing.T) {
 	}
 	testkit.GitIn(t, main, "add", "README.md")
 	testkit.GitIn(t, main, "commit", "-qm", "readme")
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +192,7 @@ func TestPRCheckoutLeavesNothingBehindWhenGhFails(t *testing.T) {
 // picker, and what it picks is what gets checked out.
 func TestPRCheckoutWithoutANumberAsks(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +225,7 @@ func TestPRCheckoutWithoutANumberAsks(t *testing.T) {
 // With nobody to ask, `wt pr checkout` says so rather than choosing.
 func TestPRCheckoutWithoutANumberOrAPickerRefuses(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,7 +279,7 @@ func TestDoctorReportsGitHubState(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+			ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -301,7 +302,7 @@ func TestDoctorReportsGitHubState(t *testing.T) {
 // wt pr list is the same facts read from the pull request's end.
 func TestPRListNamesTheWorktreeOnEachPullRequest(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,7 +337,7 @@ func TestPRListNamesTheWorktreeOnEachPullRequest(t *testing.T) {
 
 func TestPRListSaysWhenThereAreNone(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -355,7 +356,7 @@ func TestPRListSaysWhenThereAreNone(t *testing.T) {
 // branch suggests, cut to something a person can type.
 func TestPRWorkName(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -413,7 +414,7 @@ func TestPRCheckoutOfAMergedPullRequestUsesThePullRef(t *testing.T) {
 	// GitHub keeps it once the branch is gone.
 	testkit.GitIn(t, main, "remote", "add", "origin", main)
 	testkit.GitIn(t, main, "update-ref", "refs/pull/34/head", "HEAD")
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -440,7 +441,7 @@ func TestPRCheckoutOfAMergedPullRequestUsesThePullRef(t *testing.T) {
 // business.
 func TestPROpenAsksGhToOpenThePullRequest(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -472,7 +473,7 @@ func TestPROpenAsksGhToOpenThePullRequest(t *testing.T) {
 // browser window.
 func TestPROpenSaysSoWhenThereIsNone(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -500,7 +501,7 @@ func TestPROpenSaysSoWhenThereIsNone(t *testing.T) {
 func TestPROpenDefaultsToTheWorktreeYouAreIn(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -510,7 +511,7 @@ func TestPROpenDefaultsToTheWorktreeYouAreIn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	inside, err := kit.Open(path)
+	inside, err := kit.Open(path, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -532,7 +533,7 @@ func TestPRCheckoutOfAMergedPullRequestWithNoPullRefFails(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	testkit.GitIn(t, main, "remote", "add", "origin", main)
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -567,7 +568,7 @@ func TestPRCheckoutOfAMergedPullRequestWithNoPullRefFails(t *testing.T) {
 // and nothing else says so. doctor does — as a remark, not a problem.
 func TestDoctorReportsAPRCacheItCannotWrite(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -601,7 +602,7 @@ func TestDoctorReportsAPRCacheItCannotWrite(t *testing.T) {
 // With a cache it can write, doctor says where it is.
 func TestDoctorNamesTheCacheItCanWrite(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -655,7 +656,7 @@ func TestPRCheckoutRefusesALocalBranchThatDiverged(t *testing.T) {
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
 	head := prHead(t, main, 12, "HEAD")
 	tip := localCommits(t, main, "residential_fixes", "HEAD", 2)
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -714,7 +715,7 @@ func TestPRCheckoutLeavesAFastForwardToGh(t *testing.T) {
 			main := testkit.CommittedRepo(t, testkit.MinimalConf)
 			head := prHead(t, main, 12, "HEAD")
 			local(t, main, head)
-			ctx, err := kit.Open(main)
+			ctx, err := kit.Open(main, io.Discard)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -754,7 +755,7 @@ func TestPRCheckoutDoesNotSecondGuessWhatItCannotKnow(t *testing.T) {
 			main := testkit.CommittedRepo(t, testkit.MinimalConf)
 			head := prHead(t, main, 12, "HEAD")
 			localCommits(t, main, "residential_fixes", "HEAD", 2)
-			ctx, err := kit.Open(main)
+			ctx, err := kit.Open(main, io.Discard)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -780,7 +781,7 @@ func TestPRCheckoutDoesNotSecondGuessWhatItCannotKnow(t *testing.T) {
 // to remove on one --force.
 func TestPRCheckoutSaysWhenTheHalfMadeWorktreeIsStillThere(t *testing.T) {
 	t.Parallel()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

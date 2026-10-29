@@ -1,6 +1,7 @@
 package provision
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,7 +35,7 @@ func committedRepoIn(t *testing.T, parent, name, conf string) string {
 func TestFindStrongLocalHitWins(t *testing.T) {
 	// Not parallel: sets environment variables for the whole test binary.
 	t.Setenv("WT_ROOTS", t.TempDir())
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if _, err := New(ctx, "feat/opensearch_ism", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
 	}
@@ -58,12 +59,12 @@ func TestFindWeakLocalHitStillScansRoots(t *testing.T) {
 	t.Setenv("WT_ROOTS", root)
 
 	local := committedRepoIn(t, root, "local", testkit.MinimalConf)
-	lctx, _ := kit.Open(local)
+	lctx, _ := kit.Open(local, io.Discard)
 	if _, err := New(lctx, "feat/opensearch", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
 	}
 	other := committedRepoIn(t, root, "other", testkit.MinimalConf)
-	octx, _ := kit.Open(other)
+	octx, _ := kit.Open(other, io.Discard)
 	if _, err := New(octx, "feat/arch", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +90,7 @@ func TestFindRepoAndWorkBeatsTheStartOfATypedName(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("WT_ROOTS", root)
-	ctx, _ := kit.Open(committedRepoIn(t, root, "feat", testkit.MinimalConf))
+	ctx, _ := kit.Open(committedRepoIn(t, root, "feat", testkit.MinimalConf), io.Discard)
 	for _, spec := range []string{"fix/arch", "feat/archive"} {
 		if _, err := New(ctx, spec, NewOptions{NoSetup: true}, os.Stderr); err != nil {
 			t.Fatal(err)
@@ -128,11 +129,11 @@ func TestFindTheStartOfATypedNameYieldsToAnyOtherMatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("WT_ROOTS", root)
-	lctx, _ := kit.Open(committedRepoIn(t, root, "demo", testkit.MinimalConf))
+	lctx, _ := kit.Open(committedRepoIn(t, root, "demo", testkit.MinimalConf), io.Discard)
 	if _, err := New(lctx, "feat/archive", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
 	}
-	octx, _ := kit.Open(committedRepoIn(t, root, "feat", testkit.MinimalConf))
+	octx, _ := kit.Open(committedRepoIn(t, root, "feat", testkit.MinimalConf), io.Discard)
 	if _, err := New(octx, "fix/a-r-c", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +155,7 @@ func TestFindReportsEveryTiedCandidate(t *testing.T) {
 	t.Setenv("WT_ROOTS", root)
 	for _, name := range []string{"one", "two"} {
 		r := committedRepoIn(t, root, name, testkit.MinimalConf)
-		c, _ := kit.Open(r)
+		c, _ := kit.Open(r, io.Discard)
 		if _, err := New(c, "feat/arch", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 			t.Fatal(err)
 		}
@@ -179,13 +180,13 @@ func TestFindKeepsRepoFirstWithInvalidLocalConfig(t *testing.T) {
 	t.Setenv("WT_ROOTS", root)
 
 	other := committedRepoIn(t, root, "other", testkit.MinimalConf)
-	octx, _ := kit.Open(other)
+	octx, _ := kit.Open(other, io.Discard)
 	if _, err := New(octx, "feat/login", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
 	}
 
 	local := committedRepoIn(t, root, "local", testkit.MinimalConf)
-	lctx, _ := kit.Open(local)
+	lctx, _ := kit.Open(local, io.Discard)
 	if _, err := New(lctx, "feat/login-crash", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
 	}
@@ -213,13 +214,13 @@ func TestFindRootResolvesToTheMainCheckout(t *testing.T) {
 	// Not parallel: sets environment variables for the whole test binary.
 	t.Setenv("WT_ROOTS", t.TempDir())
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	if _, err := New(ctx, "feat/somewhere", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
 	}
 
 	// From inside a linked worktree, "/" must still mean the main checkout.
-	inner, err := kit.Open(filepath.Join(ctx.Repo.Parent, "demo_wt", "feat_wt", "somewhere"))
+	inner, err := kit.Open(filepath.Join(ctx.Repo.Parent, "demo_wt", "feat_wt", "somewhere"), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +242,7 @@ func TestFindDotResolvesToTheWorktreeYouStandIn(t *testing.T) {
 	// Not parallel: sets environment variables for the whole test binary.
 	t.Setenv("WT_ROOTS", t.TempDir())
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	if _, err := New(ctx, "feat/somewhere", NewOptions{NoSetup: true}, os.Stderr); err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +258,7 @@ func TestFindDotResolvesToTheWorktreeYouStandIn(t *testing.T) {
 		main:                             main,
 		filepath.Join(main, "bin"):       main,
 	} {
-		ctx, err := kit.Open(cwd)
+		ctx, err := kit.Open(cwd, io.Discard)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -271,7 +272,7 @@ func TestFindDotResolvesToTheWorktreeYouStandIn(t *testing.T) {
 			}
 		}
 	}
-	inner, _ := kit.Open(wt)
+	inner, _ := kit.Open(wt, io.Discard)
 	if got, _ := kit.Find(inner, "."); len(got) != 1 || got[0].Work != "somewhere" {
 		t.Errorf("want the worktree's own work name, got %+v", got)
 	}

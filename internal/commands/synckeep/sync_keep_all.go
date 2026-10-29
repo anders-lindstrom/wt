@@ -65,7 +65,7 @@ func keepRowsOf(repos []kit.RepoTarget, fn func(*keepRow)) []*keepRow {
 			r.failed, r.verdict = true, t.Problem
 			continue
 		}
-		ctx, err := kit.Open(t.Path)
+		ctx, err := kit.Open(t.Path, io.Discard)
 		if err != nil {
 			r.failed, r.verdict = true, err.Error()
 			continue

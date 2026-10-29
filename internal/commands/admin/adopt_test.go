@@ -16,7 +16,7 @@ import (
 func TestAdoptProvisionsAnExternallyCreatedWorktree(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	// A worktree made the way Superset makes them: outside the canonical path.
 	external := filepath.Join(ctx.Repo.Parent, "demo_wt", "demo", "feat_wt", "outside")
 	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/outside", external)
@@ -34,7 +34,7 @@ func TestAdoptProvisionsAnExternallyCreatedWorktree(t *testing.T) {
 func TestAdoptRelocates(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	external := filepath.Join(ctx.Repo.Parent, "elsewhere")
 	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/moved", external)
 
@@ -51,7 +51,7 @@ func TestAdoptRelocates(t *testing.T) {
 
 func TestAdoptRefusesAPathThatIsNotAWorktree(t *testing.T) {
 	t.Parallel()
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	var buf bytes.Buffer
 	if _, err := Adopt(ctx, t.TempDir(), false, provision.SetupOptions{}, &buf); err == nil {
 		t.Error("want an error adopting a directory that is not a worktree of this repo")
@@ -61,7 +61,7 @@ func TestAdoptRefusesAPathThatIsNotAWorktree(t *testing.T) {
 func TestDoctorReportsNestedWorktree(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	nested := filepath.Join(main, "inside_wt", "feat_wt", "oops")
 	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/oops", nested)
 
@@ -80,7 +80,7 @@ func TestDoctorReportsNestedWorktree(t *testing.T) {
 
 func TestDoctorIsQuietOnAHealthyRepo(t *testing.T) {
 	t.Parallel()
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	var buf bytes.Buffer
 	problems, err := Doctor(ctx, &buf)
 	if err != nil {
@@ -94,7 +94,7 @@ func TestDoctorIsQuietOnAHealthyRepo(t *testing.T) {
 func TestDoctorReportsMissingRequiredBin(t *testing.T) {
 	t.Parallel()
 	ctx, _ := kit.Open(testkit.CommittedRepo(t,
-		"MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\nREQUIRED_BINS=\"definitely-not-a-real-binary-xyz\"\n"))
+		"MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\nREQUIRED_BINS=\"definitely-not-a-real-binary-xyz\"\n"), io.Discard)
 	var buf bytes.Buffer
 	problems, err := Doctor(ctx, &buf)
 	if err != nil {
@@ -111,7 +111,7 @@ func TestDoctorReportsMissingRequiredBin(t *testing.T) {
 func TestDoctorReportsConfigProblemsInsteadOfRefusing(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=false\nAWS_SETUP_ENABLED=true\n")
-	if _, err := kit.Open(main); err == nil {
+	if _, err := kit.Open(main, io.Discard); err == nil {
 		t.Fatal("fixture is supposed to have an invalid config")
 	}
 
@@ -181,7 +181,7 @@ func TestDoctorOrdersTheWorkWhenConfigIsBroken(t *testing.T) {
 func TestAdoptAcceptsAPathThroughASymlink(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	external := filepath.Join(ctx.Repo.Parent, "demo-spare")
 	testkit.GitIn(t, main, "worktree", "add", "-q", "-b", "feat_wt/spare", external)
 	link := filepath.Join(t.TempDir(), "link")

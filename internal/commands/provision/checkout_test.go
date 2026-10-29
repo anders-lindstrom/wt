@@ -2,6 +2,7 @@ package provision
 
 import (
 	"bytes"
+	"io"
 	"path/filepath"
 	"testing"
 
@@ -26,7 +27,7 @@ func TestWorkNameFromBranch(t *testing.T) {
 
 func TestCheckoutPutsAWorktreeOnAnExistingBranch(t *testing.T) {
 	t.Parallel()
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "feature/pr-123")
 
 	var buf bytes.Buffer
@@ -45,7 +46,7 @@ func TestCheckoutPutsAWorktreeOnAnExistingBranch(t *testing.T) {
 
 func TestCheckoutHonoursAnExplicitWorkName(t *testing.T) {
 	t.Parallel()
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "feature/pr-123")
 
 	var buf bytes.Buffer
@@ -61,7 +62,7 @@ func TestCheckoutHonoursAnExplicitWorkName(t *testing.T) {
 // Checkout must never create a branch: it exists to work on one that is there.
 func TestCheckoutRefusesAMissingBranch(t *testing.T) {
 	t.Parallel()
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	var buf bytes.Buffer
 	if _, err := Checkout(ctx, "no-such-branch", "", NewOptions{NoSetup: true}, &buf); err == nil {
 		t.Fatal("want a refusal for a branch that does not exist")
@@ -73,7 +74,7 @@ func TestCheckoutRefusesAMissingBranch(t *testing.T) {
 
 func TestCheckoutRefusesAnOccupiedPath(t *testing.T) {
 	t.Parallel()
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	testkit.GitIn(t, ctx.Repo.MainRoot, "branch", "dup")
 	var buf bytes.Buffer
 	if _, err := Checkout(ctx, "dup", "", NewOptions{NoSetup: true}, &buf); err != nil {

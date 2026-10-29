@@ -2,6 +2,7 @@ package provision
 
 import (
 	"bytes"
+	"io"
 	"strconv"
 	"strings"
 	"testing"
@@ -15,7 +16,7 @@ import (
 // entry of refs is "<remote>/<branch>", pointed at a commit of its own.
 func RemoteFixture(t *testing.T, remotes []string, refs ...string) *kit.Context {
 	t.Helper()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

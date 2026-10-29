@@ -108,7 +108,7 @@ func oneObject(t *testing.T, out []byte, v any) {
 // is armed.
 func sweptRun(t *testing.T, main, run string) {
 	t.Helper()
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

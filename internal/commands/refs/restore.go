@@ -79,7 +79,7 @@ func Restore(ctx *kit.Context, dir string, opts RestoreOptions, w io.Writer) err
 // in; the person's settings, and the Superset it sees, are the ones this
 // run read.
 func registerRestored(ctx *kit.Context, path string, w io.Writer) {
-	rctx, err := kit.Open(path)
+	rctx, err := kit.Open(path, io.Discard)
 	if err != nil {
 		return
 	}

@@ -2,6 +2,7 @@ package provision
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,7 +16,7 @@ import (
 func TestConfigShellEmitsLegacyNames(t *testing.T) {
 	t.Parallel()
 	main := testkit.FixtureRepo(t, testkit.MinimalConf)
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -45,7 +46,7 @@ func TestConfigShellReportsProvisionScript(t *testing.T) {
 	main := testkit.FixtureRepo(t, testkit.MinimalConf)
 	p := filepath.Join(main, "bin", "worktree", "provision.sh")
 	gittest.WriteExecutable(t, p, "#!/bin/sh\n")
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	var buf bytes.Buffer
 	if err := Config(ctx, true, &buf); err != nil {
 		t.Fatal(err)
@@ -58,7 +59,7 @@ func TestConfigShellReportsProvisionScript(t *testing.T) {
 func TestConfigShowsCacheDirs(t *testing.T) {
 	t.Parallel()
 	main := testkit.FixtureRepo(t, testkit.MinimalConf+"WORKTREE_CACHE_DIRS=(node_modules .gradle)\n")
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -80,7 +81,7 @@ func TestConfigShowsCacheDirs(t *testing.T) {
 func TestConfigShellQuotesSafely(t *testing.T) {
 	t.Parallel()
 	main := testkit.FixtureRepo(t, "MAIN_BRANCH=\"main\"\nBUILD_INIT_ENABLED=true\nBUILD_INIT_COMMAND=\"echo it's fine\"\n")
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -110,7 +111,7 @@ func TestOpenReadsConfigFromTheCurrentWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx, err := kit.Open(linked)
+	ctx, err := kit.Open(linked, io.Discard)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

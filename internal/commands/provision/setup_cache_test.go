@@ -3,6 +3,7 @@ package provision
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,7 +21,7 @@ func cacheFixture(t *testing.T) (ctx *kit.Context, main, target string) {
 	main = testkit.FixtureRepo(t, testkit.MinimalConf+"WORKTREE_CACHE_DIRS=(node_modules web/.gradle)\n")
 	testkit.MustWrite(t, filepath.Join(main, "node_modules", "left-pad", "index.js"), "module.exports = 1")
 	testkit.MustWrite(t, filepath.Join(main, "web", ".gradle", "cache.bin"), "gradle")
-	ctx, err := kit.Open(main)
+	ctx, err := kit.Open(main, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +170,7 @@ func TestSetupNoCacheClonesNothing(t *testing.T) {
 func TestSetupWithoutCacheDirsSaysNothing(t *testing.T) {
 	t.Parallel()
 	main := testkit.FixtureRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	var buf bytes.Buffer
 	result, reason := cloneCacheDirs(ctx, main, t.TempDir(), SetupOptions{NoCache: true}, &buf)
 	if result != kit.StepSkipped || reason != "no WORKTREE_CACHE_DIRS" || buf.Len() != 0 {
@@ -181,7 +182,7 @@ func TestSetupRefusesCacheDirsThatEscapeTheWorktree(t *testing.T) {
 	// Not parallel: swaps cloneDir.
 	main := testkit.FixtureRepo(t, testkit.MinimalConf+"WORKTREE_CACHE_DIRS=(../outside)\n")
 	testkit.MustMkdir(t, filepath.Join(filepath.Dir(main), "outside"))
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	WithCloner(t, func(_, _ string) error {
 		t.Error("cloned an entry outside the worktree")
 		return nil

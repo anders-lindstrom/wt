@@ -1,6 +1,7 @@
 package retire
 
 import (
+	"io"
 	"strings"
 	"testing"
 
@@ -13,7 +14,7 @@ import (
 // a field added to the plan fails here until someone decides.
 func TestRemoveTokenCoversEveryPlanField(t *testing.T) {
 	t.Parallel()
-	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, _ := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	p := Plan{Path: "/w", Branch: "b", Tip: "t", KeepAs: "k", Force: kit.ForceAll, Reap: true,
 		Processes:   []agents.Process{{PID: 1, Argv: []string{"x"}}},
 		Unreachable: []Lost{{Kind: LostHead, OID: "o", Count: 1}}}

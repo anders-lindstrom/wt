@@ -2,6 +2,7 @@ package provisiontest
 
 import (
 	"bytes"
+	"io"
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
@@ -14,7 +15,7 @@ import (
 // which needs input.
 func OwnShape(t *testing.T) *kit.Context {
 	t.Helper()
-	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf))
+	ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

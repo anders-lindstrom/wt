@@ -3,6 +3,7 @@ package admin
 import (
 	"bytes"
 	"errors"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -17,7 +18,7 @@ import (
 func TestMigrateRefusesWhenTheSessionsCannotBeListed(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	from := testkit.WorktreeAt(t, main, "fix/moving", filepath.Join(ctx.Repo.Parent, "elsewhere"))
 
 	var buf bytes.Buffer
@@ -39,7 +40,7 @@ func TestMigrateRefusesWhenTheSessionsCannotBeListed(t *testing.T) {
 func TestMigrateDoesNotCountTheSessionRunningIt(t *testing.T) {
 	// Not parallel: puts a fake claude on the PATH of the whole test binary.
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	from := testkit.WorktreeAt(t, main, "fix/self", filepath.Join(ctx.Repo.Parent, "elsewhere"))
 	resolved, _ := filepath.EvalSymlinks(from)
 	testkit.FakeClaude(t, ctx, []agents.Agent{ownSession(resolved)})
@@ -54,7 +55,7 @@ func TestMigrateDoesNotCountTheSessionRunningIt(t *testing.T) {
 func TestMigrateCountsEverySessionInIt(t *testing.T) {
 	t.Parallel()
 	main := testkit.CommittedRepo(t, testkit.MinimalConf)
-	ctx, _ := kit.Open(main)
+	ctx, _ := kit.Open(main, io.Discard)
 	from := testkit.WorktreeAt(t, main, "fix/crowded", filepath.Join(ctx.Repo.Parent, "elsewhere"))
 	resolved, _ := filepath.EvalSymlinks(from)
 	opts := MigrateOptions{Agents: []agents.Agent{

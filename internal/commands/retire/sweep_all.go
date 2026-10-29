@@ -125,7 +125,7 @@ func planRepoSweep(t kit.RepoTarget, opts SweepOptions, listErr error, log io.Wr
 	if t.Problem != "" {
 		return nil, SweepPlan{}, fmt.Errorf("%s: %s", t.Path, t.Problem)
 	}
-	ctx, err := kit.Open(t.Path)
+	ctx, err := kit.Open(t.Path, io.Discard)
 	if err != nil {
 		return nil, SweepPlan{}, err
 	}
