@@ -10,11 +10,12 @@ import (
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/github"
 	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anders-lindstrom/wt/internal/timemachine"
 )
 
 // TestMain keeps this package off the machine running it: gittest.Isolate,
-// XDG_CONFIG_HOME a directory of this run's own, FindGitHub "no gh here"
-// and MachineAgents nobody, until a test asks for another state. It repeats testkit.Main, which kit
+// XDG_CONFIG_HOME a directory of this run's own, FindGitHub "no gh here",
+// FindTmutil "no tmutil here" and MachineAgents nobody, until a test asks for another state. It repeats testkit.Main, which kit
 // cannot import; keep the two in step.
 func TestMain(m *testing.M) {
 	restore := gittest.Isolate()
@@ -26,6 +27,7 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	FindGitHub = func() (github.CLI, bool) { return github.CLI{}, false }
+	FindTmutil = func() (timemachine.Tmutil, bool) { return timemachine.Tmutil{}, false }
 	none := func() ([]agents.Agent, error) { return nil, nil }
 	MachineAgents = Agents{List: none, Required: none, Codex: none,
 		Claude:    func(time.Duration) ([]agents.Agent, bool, error) { return nil, false, nil },
