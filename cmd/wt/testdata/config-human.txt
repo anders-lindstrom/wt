@@ -15,6 +15,7 @@ provision.sh:  true
 user config:   {{USER_CONFIG}}
   superset:      false (default)
   github:        true (default)
+  timemachine:   false (user file)
   branch_suffix: "_mine" (user file)
   type_names:    ["feat=feature", "docs=doc"] (user file)
   ff_trunk:      true (default)

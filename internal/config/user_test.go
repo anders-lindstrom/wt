@@ -55,12 +55,12 @@ func writeUser(t *testing.T, body string) string {
 
 func TestUserFileOverridesTheDefaults(t *testing.T) {
 	u, err := loadUser(writeUser(t,
-		"superset = true\ngithub = false\nbranch_suffix = \"\"\ntype_names = [\"feat=feature\"]\nff_trunk = false\n"+
+		"superset = true\ngithub = false\ntimemachine = false\nbranch_suffix = \"\"\ntype_names = [\"feat=feature\"]\nff_trunk = false\n"+
 			"ref_sweep_patterns = [\"old/*\"]\nref_sweep_age = \"3w\"\n"))
 	if err != nil {
 		t.Fatalf("loadUser: %v", err)
 	}
-	if !u.Superset || u.GitHub || u.BranchSuffix != "" || len(u.TypeNames) != 1 || u.FFTrunk ||
+	if !u.Superset || u.GitHub || u.TimeMachine || u.BranchSuffix != "" || len(u.TypeNames) != 1 || u.FFTrunk ||
 		len(u.RefSweepPatterns) != 1 || u.RefSweepAge != "3w" {
 		t.Errorf("superset = %v, github = %v, branch_suffix = %q, type_names = %q",
 			u.Superset, u.GitHub, u.BranchSuffix, u.TypeNames)
