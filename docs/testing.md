@@ -37,13 +37,13 @@ internal/reposel are not in it: their tests build real git repositories.
 |---|---|
 | a comment, docs, whats-new, wording only | nothing, or `go vet ./...` |
 | one test or one function | `go test ./internal/<pkg> -run 'TestName$' -count=1` |
-| internal/config, find, naming, about, quarantine, refpins, superset, github, git, repo, reposel, jsonout or gittest | `go test ./internal/<pkg>/...`; each is under 50 s, most under 5 s |
+| internal/config, find, naming, about, quarantine, refpins, superset, timemachine, github, git, repo, reposel, jsonout or gittest | `go test ./internal/<pkg>/...`; each is under 50 s, most under 5 s |
 | internal/wtsync | `go test ./internal/wtsync -run '<Area>'` first, then the whole package once (about 110 s) |
 | internal/agents | `go test ./internal/agents` (a few seconds); some of its tests read the real process table |
 | internal/commands/syncrun | `go test ./internal/commands/syncfix ./internal/commands/synccmd -run 'Push\|OwnRemote\|FastForward\|Finish'`: syncrun's behaviour is tested from those two packages, so `go test ./internal/commands/syncrun` alone covers almost nothing |
 | goroutines, locks, signals or anything shared between them | `make test-race` once, in the background: CI runs the suite with `-race` and `make check` does not |
 | internal/commands, one command family | `go test ./internal/commands/<pkg> -run '<Family>'`, see the examples below; the whole `./internal/commands/...` once before you finish (about 120 s) |
-| a package-level hook variable or `Context` | `./internal/commands/...` once: the hooks live in kit (`FindGitHub`, `MachineAgents`), supersetws (`Probe`, `HostCommand`) and session (`SessionsDeadline`); `testkit.Main` sets kit's, every TestMain the rest, and serial tests swap them, see "Parallel tests" |
+| a package-level hook variable or `Context` | `./internal/commands/...` once: the hooks live in kit (`FindGitHub`, `FindTmutil`, `MachineAgents`), supersetws (`Probe`, `HostCommand`) and session (`SessionsDeadline`); `testkit.Main` sets kit's, every TestMain the rest, and serial tests swap them, see "Parallel tests" |
 | the `--json` shape or `schema/*.json` | the schema test and the JSON tests, see the examples below, and update docs/json.md in the same commit |
 | cmd/wt flags, help text, completion | `go test ./cmd/wt` (about 16 s) |
 | mods/wt | `make test-mod`; a change to its fixtures also `go test ./internal/commands/testkit -run Mod` |
@@ -55,7 +55,7 @@ The command packages, and what each holds:
 | package | holds |
 |---|---|
 | `internal/commands` | wt list and wt status, and the tests that cross packages |
-| `internal/commands/kit` | `Context`, Open/Locate, runs across repositories (`Bulk`, `AcrossRepos`) and the one question they ask, GitHub glue and its cache, tables, the signal watch |
+| `internal/commands/kit` | `Context`, Open/Locate, runs across repositories (`Bulk`, `AcrossRepos`) and the one question they ask, GitHub glue and its cache, the Time Machine exclusion, tables, the signal watch |
 | `internal/commands/testkit` | fixtures and fakes the tests share; `testkit.Main` is the TestMain of every command package but kit |
 | `internal/commands/session` | wt session, wt attach |
 | `internal/commands/provision` | wt new, checkout, setup, init, config, port |
@@ -115,9 +115,9 @@ the fixture up to the new schema in the same commit.
 `gittest.Isolate` does for the Go tests: HOME, XDG_CONFIG_HOME and git's
 global config are the run's own (with an identity to commit as), git reads
 no system config and no GIT_ variable from the environment, WT_ROOTS and
-CODEX_HOME are unset, and no claude is on the PATH. Go's caches stay where
-they were. Every `test/*.bats` loads it; a test that wants a claude puts its
-own fake first on the PATH, and one that wants its own git config sets
+CODEX_HOME are unset, and no claude and no tmutil are on the PATH. Go's
+caches stay where they were. Every `test/*.bats` loads it; a test that wants
+a claude or a tmutil puts its own fake first on the PATH, and one that wants its own git config sets
 GIT_CONFIG_GLOBAL in its setup. CI runs bats through `scripts/bats.sh`, under
 the same deadline as `make bats`.
 
@@ -135,7 +135,7 @@ A test stays serial when it touches what the whole test binary shares,
 and its first line says which, as `// Not parallel: <why>`:
 
 - `t.Setenv` or `t.Chdir`, which Go refuses in a parallel test: a fake
-  `git`, `claude` or `superset` on the PATH, HOME, XDG_CONFIG_HOME,
+  `git`, `claude`, `superset` or `tmutil` on the PATH, HOME, XDG_CONFIG_HOME,
   CODEX_HOME, TMPDIR;
 - a package-level variable that other tests read, for example
   `kit.MachineAgents`, `retire`'s `vanishWait`, `refpins.AfterBranchMoved`,
@@ -185,12 +185,15 @@ A test's own fakes go with the call, not into a package variable:
   turned on, and no test depends on a signed commit, so keeper passes run
   side by side.
 
-The package variables behind them (`kit.FindGitHub`,
+The package variables behind them (`kit.FindGitHub`, `kit.FindTmutil`,
 `kit.MachineAgents`, `supersetws.Probe`) are set once, in each
-package's TestMain: `testkit.Main` sets kit's two, to no gh, no session and
-no process, and kit's own TestMain repeats it. Only serial tests swap
+package's TestMain: `testkit.Main` sets kit's three, to no gh, no tmutil, no
+session and no process, and kit's own TestMain repeats it. No test runs the
+real tmutil. Only serial tests swap
 them, as `provisiontest.SupersetSaying` and `StaleSuperset` swap
-`supersetws.Probe`, and parallel tests only read them. A command that opens a
+`supersetws.Probe`, and `testkit.FakeTmutil` puts a fake tmutil first on the
+PATH, the real lookup back in `kit.FindTmutil` and `darwin` in the
+context's `Machine`, and parallel tests only read them. A command that opens a
 context of its own, as `--all` does for each repository, does not see the
 fakes on the test's context; `testkit.MachineClaudeLists` swaps
 `kit.MachineAgents`' claude for such a test, which is then serial.

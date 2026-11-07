@@ -17,7 +17,9 @@ func newAdoptCmd() *cobra.Command {
 			"agent's own checkout, or one from before this repository used wt. It\n" +
 			"has to be a worktree of this repository already; wt only provisions it.\n\n" +
 			"It is left where it is unless --relocate is given, because a path\n" +
-			"another tool stored is a path that tool still expects to find.",
+			"another tool stored is a path that tool still expects to find.\n\n" +
+			"On macOS its folder is excluded from Time Machine as wt new does: the\n" +
+			"<repo>_wt folder when it is inside it, its own folder when it is not.",
 		Example: "  wt adopt ../myrepo-login-crash             # provision it where it is\n" +
 			"  wt adopt ../myrepo-login-crash --relocate  # and move it into place\n" +
 			"  wt adopt . --no-build                      # this one, without a build\n" +

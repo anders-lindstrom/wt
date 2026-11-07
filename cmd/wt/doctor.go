@@ -24,6 +24,10 @@ func newDoctorCmd() *cobra.Command {
 			"would get here and where it would stop. Neither counts as a problem on\n" +
 			"its own — a machine without gh is an ordinary machine — except where a\n" +
 			"repository asked for Superset with SUPERSET_REGISTER=on.\n\n" +
+			"A Time Machine section says whether wt excludes the worktree folders\n" +
+			"it makes (on, off, not macOS, or no tmutil) and whether this\n" +
+			"repository's <repo>_wt folder is excluded. Only a missing tmutil where\n" +
+			"your own config switched timemachine on counts as a problem.\n\n" +
 			"It also checks your roots and profiles, and outside any repository that\n" +
 			"is all it checks. --all, --roots or --profile check every repository\n" +
 			"they name instead: this doctor in each, and wt sync doctor where trunk\n" +

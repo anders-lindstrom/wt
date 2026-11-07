@@ -10,6 +10,13 @@ would want read out to them; the full story is in git history.
 including developer config files and directories, the main checkout, and your
 branch naming overrides. `wt schema config` prints its versioned schema.
 
+## 2026-11-07 10:40 — Worktree folders stay out of Time Machine on macOS
+
+`wt new`, `checkout`, `pr checkout`, `adopt`, `setup`, `migrate` and
+`restore` now exclude the `<repo>_wt` folder (or a worktree elsewhere by
+itself) from Time Machine; the main checkout never. `wt config set
+timemachine false` turns it off, and `wt doctor` shows the state.
+
 ## 2026-10-29 08:22 — `wt up --json` says when your user file or GitHub is not working
 
 `wt up --json` ran in silence when the user config could not be read or

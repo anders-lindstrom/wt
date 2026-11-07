@@ -32,6 +32,10 @@ func newNewCmd() *cobra.Command {
 			"skips that once; SUPERSET_REGISTER=off skips it for the repository;\n" +
 			"and `--no-setup` skips it too, because registering a new workspace\n" +
 			"makes Superset run the project's setup step.\n\n" +
+			"On macOS the <repo>_wt folder is excluded from Time Machine, which\n" +
+			"covers every worktree in it; `wt config set timemachine false` stops\n" +
+			"that. wt checkout, wt pr checkout, wt adopt, wt setup, wt migrate and\n" +
+			"wt restore do the same for the worktree they leave somewhere.\n\n" +
 			"--dry-run says what would be created, or why not, and creates nothing.\n" +
 			"For a tool driving wt, --dry-run --json prints that plan as one JSON\n" +
 			"object with a token; --json prints one result object on stdout, every\n" +
