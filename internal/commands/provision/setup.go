@@ -35,6 +35,7 @@ type SetupOptions struct {
 // because every agent that provisions a worktree would otherwise start failing
 // on a transient dependency problem.
 func Setup(ctx *kit.Context, target string, opts SetupOptions, w io.Writer) error {
+	kit.ExcludeFromTimeMachine(ctx, target, w)
 	return setup(ctx, target, opts, w, nil)
 }
 

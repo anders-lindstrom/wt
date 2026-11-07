@@ -76,6 +76,9 @@ func newAdd(ctx *kit.Context, path, branch, base string, w io.Writer) func() err
 // Setup is left to default SourceDir to the main checkout, which is what these
 // callers each passed it by hand.
 //
+// The folder is excluded from Time Machine as soon as the worktree is there,
+// --no-setup or not: a checkout is rebuildable however far it was set up.
+//
 // Superset registration runs after Setup, and runs even when Setup reported a
 // problem: the worktree is on disk and on its branch either way, which is all
 // Superset is told. It cannot change what this returns.
@@ -99,6 +102,7 @@ func AddAndProvision(ctx *kit.Context, path string, add func() error, opts NewOp
 		return "", err
 	}
 	j.created(ctx, path)
+	kit.ExcludeFromTimeMachine(ctx, path, w)
 	// --no-setup is "the checkout, nothing else", and Superset is one of the
 	// else: it answers a new workspace by running the project's setup script.
 	if opts.NoSetup {

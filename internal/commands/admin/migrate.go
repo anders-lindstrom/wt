@@ -361,6 +361,7 @@ func (p MigratePlan) apply(ctx *kit.Context, w io.Writer) (string, error) {
 		return actual, fmt.Errorf("asked git to move to %s but it landed at %s", p.To, actual)
 	}
 	fmt.Fprintf(w, "✓ %s is now at %s\n", p.Work, p.To)
+	kit.ExcludeFromTimeMachine(ctx, p.To, w)
 	if husk := pruneEmptyParents(filepath.Dir(p.From), ctx.Repo.Parent); husk != "" {
 		fmt.Fprintf(w, "  and %s, left empty by the move, is gone\n", husk)
 	}

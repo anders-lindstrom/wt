@@ -58,7 +58,7 @@ func newRestoreCmd() *cobra.Command {
 			if err != nil {
 				ctx = nil
 			}
-			opts := quarantinecmd.RestoreOptions{DryRun: dryRun}
+			opts := quarantinecmd.RestoreOptions{DryRun: dryRun, Warn: cmd.ErrOrStderr()}
 			if asJSON {
 				return quarantinecmd.RestoreJSON(ctx, args[0], opts, cmd.OutOrStdout(), cmd.ErrOrStderr())
 			}
