@@ -119,3 +119,24 @@ func TestConfigSetRejectsANonBooleanValue(t *testing.T) {
 		t.Errorf("err = %v, want it to say what a value looks like", err)
 	}
 }
+
+// timemachine is a user key like the others: set, read back, listed by
+// `wt config`, and refused when it is not a boolean.
+func TestConfigHandlesTimeMachine(t *testing.T) {
+	userConfigIn(t)
+	t.Chdir(t.TempDir())
+
+	if _, err := runCmd(t, "config", "set", "timemachine", "maybe"); err == nil {
+		t.Fatal("accepted timemachine=maybe")
+	}
+	if _, err := runCmd(t, "config", "set", "timemachine", "false"); err != nil {
+		t.Fatalf("config set: %v", err)
+	}
+	out, err := runCmd(t, "config", "get", "timemachine")
+	if err != nil || strings.TrimSpace(out) != "false" {
+		t.Errorf("config get timemachine = %q, %v after setting it false", out, err)
+	}
+	if out, err = runCmd(t, "config", "set", "--help"); err != nil || !strings.Contains(out, "timemachine — ") {
+		t.Errorf("config set --help does not list timemachine: %q, %v", out, err)
+	}
+}

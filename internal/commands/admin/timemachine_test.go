@@ -1,9 +1,12 @@
 package admin
 
 import (
+	"bytes"
 	"io"
+	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/anders-lindstrom/wt/internal/agents"
@@ -96,5 +99,99 @@ func TestPRCheckoutExcludesTheWorktreeFolderFromTimeMachine(t *testing.T) {
 	}
 	if got, want := tm.Excluded(t), filepath.Join(ctx.Repo.Parent, "demo_wt"); !slices.Equal(got, []string{want}) {
 		t.Errorf("excluded %q, want %s", got, want)
+	}
+}
+
+// doctorTimeMachine is the Time Machine section of wt doctor, and the
+// problems the whole run counted.
+func doctorTimeMachine(t *testing.T, ctx *kit.Context) (section string, problems int) {
+	t.Helper()
+	var out bytes.Buffer
+	problems, err := Doctor(ctx, &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, rest, ok := strings.Cut(out.String(), "Time Machine:\n")
+	if !ok {
+		t.Fatalf("no Time Machine section in\n%s", out.String())
+	}
+	var lines []string
+	for _, l := range strings.Split(rest, "\n") {
+		if !strings.HasPrefix(l, "  ") {
+			break
+		}
+		lines = append(lines, l)
+	}
+	return strings.Join(lines, "\n"), problems
+}
+
+// wt doctor names which of the four states the machine is in.
+func TestDoctorNamesTheTimeMachineState(t *testing.T) {
+	t.Run("not macOS", func(t *testing.T) {
+		ctx, _ := tmRepo(t)
+		ctx.Machine.GOOS = "linux"
+		if got, _ := doctorTimeMachine(t, ctx); !strings.Contains(got, "not macOS") {
+			t.Errorf("section %q", got)
+		}
+	})
+	t.Run("off", func(t *testing.T) {
+		ctx, tm := tmRepo(t)
+		testkit.TimeMachineSetting(t, ctx, "false")
+		if got, _ := doctorTimeMachine(t, ctx); !strings.Contains(got, "off in your wt config") {
+			t.Errorf("section %q", got)
+		}
+		if calls := tm.Calls(t); len(calls) != 0 {
+			t.Errorf("tmutil was called %q", calls)
+		}
+	})
+	t.Run("no tmutil, by default", func(t *testing.T) {
+		ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
+		if err != nil {
+			t.Fatal(err)
+		}
+		testkit.OnMac(ctx)
+		got, problems := doctorTimeMachine(t, ctx)
+		if !strings.Contains(got, "  - no tmutil on the PATH") || problems != 0 {
+			t.Errorf("section %q, %d problems", got, problems)
+		}
+	})
+	t.Run("no tmutil, switched on in the file", func(t *testing.T) {
+		ctx, err := kit.Open(testkit.CommittedRepo(t, testkit.MinimalConf), io.Discard)
+		if err != nil {
+			t.Fatal(err)
+		}
+		testkit.OnMac(ctx)
+		testkit.TimeMachineSetting(t, ctx, "true")
+		got, problems := doctorTimeMachine(t, ctx)
+		if !strings.Contains(got, "  ! no tmutil on the PATH") || problems != 1 {
+			t.Errorf("section %q, %d problems", got, problems)
+		}
+	})
+	t.Run("on", func(t *testing.T) {
+		ctx, _ := tmRepo(t)
+		if got, _ := doctorTimeMachine(t, ctx); !strings.Contains(got, "worktree folders wt makes are excluded") {
+			t.Errorf("section %q", got)
+		}
+	})
+}
+
+// wt doctor says whether this repository's <repo>_wt folder is excluded,
+// and changes nothing either way.
+func TestDoctorSaysWhetherTheWorktreeFolderIsExcluded(t *testing.T) {
+	ctx, tm := tmRepo(t)
+	container := filepath.Join(ctx.Repo.Parent, "demo_wt")
+	if err := os.MkdirAll(container, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, problems := doctorTimeMachine(t, ctx)
+	if !strings.Contains(got, container+" is not excluded") || problems != 0 {
+		t.Errorf("section %q, %d problems", got, problems)
+	}
+	if excluded := tm.Excluded(t); len(excluded) != 0 {
+		t.Errorf("doctor excluded %q", excluded)
+	}
+	tm.AlreadyExcluded(t, container)
+	if got, _ := doctorTimeMachine(t, ctx); !strings.Contains(got, "✓ "+container+" is excluded") {
+		t.Errorf("section %q", got)
 	}
 }
