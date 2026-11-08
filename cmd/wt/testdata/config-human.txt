@@ -1,0 +1,25 @@
+repo:          demo
+main checkout: {{MAIN_ROOT}}
+trunk:         main
+branch prefix: team/
+default type:  feat
+branch suffix: "_mine" (user file); worktree paths keep "_wt"
+types:         feat fix docs
+type names:    feat=feature docs=doc (user file); worktree paths keep the type
+config dirs:   .settings config/local
+config files:  .env config/dev's.env
+cache dirs:    node_modules .cache/build
+required bins: go git
+build init:    true go build ./...
+provision.sh:  true
+user config:   {{USER_CONFIG}}
+  superset:      false (default)
+  github:        true (default)
+  branch_suffix: "_mine" (user file)
+  type_names:    ["feat=feature", "docs=doc"] (user file)
+  ff_trunk:      true (default)
+  ref_sweep_patterns: ["backup/*", "safe/*", "safety/*", "backup-*", "safe-*", "safety-*", "*-backup", "*-safe", "*-safety"] (default)
+  ref_sweep_age: "14d" (default)
+roots:         (WT_ROOTS)
+  repos:         /fixture/repos
+superset mode: off (user config)
