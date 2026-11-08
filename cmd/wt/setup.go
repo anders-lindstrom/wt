@@ -41,7 +41,7 @@ func newSetupCmd() *cobra.Command {
 			if len(args) == 1 {
 				opts.SourceDir = args[0]
 			}
-			return provision.Setup(ctx, ctx.Cwd, opts, cmd.OutOrStdout())
+			return provision.Setup(ctx, ctx.Repo.Root, opts, cmd.OutOrStdout())
 		}),
 	}
 	addProvisionFlags(cmd, &skipBuild, &noCache, nil, nil)

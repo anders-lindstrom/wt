@@ -99,6 +99,11 @@ func AddAndProvision(ctx *kit.Context, path string, add func() error, opts NewOp
 	}
 	if err := add(); err != nil {
 		j.AddFailed(ctx, path, err)
+		if all, listErr := ctx.Repo.Worktrees(); listErr == nil {
+			if _, ok := all.ByPath(path); ok {
+				kit.ExcludeFromTimeMachine(ctx, path, w)
+			}
+		}
 		return "", err
 	}
 	j.created(ctx, path)

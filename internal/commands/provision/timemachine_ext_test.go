@@ -2,6 +2,7 @@ package provision_test
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/provision"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/gittest"
 )
 
 // tmRepo is a committed repository on a Mac with a fake tmutil, its
@@ -115,5 +117,27 @@ func TestSetupExcludesAWorktreeAnotherToolMade(t *testing.T) {
 	want := []string{filepath.Join(ctx.Repo.Parent, "demo_wt"), elsewhere}
 	if got := tm.Excluded(t); !slices.Equal(got, want) {
 		t.Errorf("excluded %q, want %q", got, want)
+	}
+}
+
+func TestNewExcludesAWorktreeLeftByAFailingHook(t *testing.T) {
+	// Not parallel: fake tmutil changes PATH and FindTmutil.
+	for _, json := range []bool{false, true} {
+		t.Run(fmt.Sprint(json), func(t *testing.T) {
+			ctx, tm, _ := tmRepo(t, false)
+			gittest.WriteExecutable(t, filepath.Join(ctx.Repo.MainRoot, ".git", "hooks", "post-checkout"), "#!/bin/sh\necho 'hook says no' >&2\nexit 1\n")
+			var err error
+			if json {
+				err = provision.NewJSON(ctx, "fix/left", provision.NewOptions{}, "", provision.NewCreateJournal(io.Discard, "new"), io.Discard)
+			} else {
+				_, err = provision.New(ctx, "fix/left", provision.NewOptions{}, io.Discard)
+			}
+			if err == nil || !strings.Contains(err.Error(), "hook says no") {
+				t.Fatalf("original hook error lost: %v", err)
+			}
+			if got := tm.Excluded(t); !slices.Equal(got, []string{ctx.Scheme().Container()}) {
+				t.Error("worktree left by failing hook was not excluded")
+			}
+		})
 	}
 }

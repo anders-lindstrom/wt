@@ -95,6 +95,12 @@ func registerRestored(ctx *kit.Context, path string, opts RestoreOptions, w io.W
 	}
 	rctx, err := kit.Open(path, warn)
 	if err != nil {
+		const format = "restored %s, but did not exclude it from Time Machine or register it with Superset: %s"
+		if ctx != nil {
+			ctx.Warnf("restore integrations", format, path, kit.OneLine(err.Error()))
+		} else {
+			fmt.Fprintf(warn, "wt: "+format+"\n", path, kit.OneLine(err.Error()))
+		}
 		return
 	}
 	rctx.Machine = opts.Machine

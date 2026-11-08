@@ -258,7 +258,8 @@ out only what git can rebuild: a worktree's commits are in the main
 checkout's `.git`, which is still backed up, so only uncommitted edits in a
 worktree go unbacked. Off macOS wt never runs tmutil, whatever the file
 says; with it `false` wt runs no tmutil, and leaves alone the exclusions it
-set before. A tmutil that is not on the PATH is silence, and one that fails
+set before. To back up an already excluded folder again, run
+`tmutil removeexclusion <folder>`. A tmutil that is not on the PATH is silence, and one that fails
 is one line on stderr: the worktree is made either way. `wt doctor` names
 the state and whether this repository's `<repo>_wt/` is excluded.
 

@@ -3,6 +3,8 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -138,5 +140,49 @@ func TestConfigHandlesTimeMachine(t *testing.T) {
 	}
 	if out, err = runCmd(t, "config", "set", "--help"); err != nil || !strings.Contains(out, "timemachine — ") {
 		t.Errorf("config set --help does not list timemachine: %q, %v", out, err)
+	}
+}
+
+func TestConfigTimeMachineDefaultAndListing(t *testing.T) {
+	// Not parallel: user config and cwd are shared.
+	userConfigIn(t)
+	t.Chdir(testkit.CommittedRepo(t, testkit.MinimalConf))
+	want := strconv.FormatBool(runtime.GOOS == "darwin")
+	checkDefault := func() {
+		t.Helper()
+		if out, err := runCmd(t, "config", "get", "timemachine"); err != nil || strings.TrimSpace(out) != want {
+			t.Errorf("default timemachine = %q, %v; want %s", out, err, want)
+		}
+		out, err := runCmd(t, "config")
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, line := range strings.Split(out, "\n") {
+			fields := strings.Fields(line)
+			if len(fields) > 0 && fields[0] == "timemachine:" {
+				found = true
+				if len(fields) != 3 || fields[1] != want || fields[2] != "(default)" {
+					t.Errorf("config listing line = %q, want %s (default)", line, want)
+				}
+			}
+		}
+		if !found {
+			t.Error("config listing omits timemachine")
+		}
+	}
+	checkDefault()
+	if _, err := runCmd(t, "config", "set", "timemachine", "true"); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := runCmd(t, "config", "get", "timemachine"); err != nil || strings.TrimSpace(out) != "true" {
+		t.Errorf("explicit timemachine = %q, %v; want true on every platform", out, err)
+	}
+	if out, err := runCmd(t, "config", "unset", "timemachine"); err != nil || !strings.Contains(out, "; back to "+want) {
+		t.Errorf("unset = %q, %v; want default %s", out, err, want)
+	}
+	checkDefault()
+	if out, err := runCmd(t, "config", "unset", "timemachine"); err != nil || !strings.Contains(out, "; it is "+want) {
+		t.Errorf("unset absent = %q, %v; want default %s", out, err, want)
 	}
 }

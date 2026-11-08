@@ -37,7 +37,7 @@ func FakeTmutil(t *testing.T, ctx *kit.Context, failing bool) *Tmutil {
 	gittest.WriteExecutable(t, filepath.Join(dir, "tmutil"), "#!/bin/sh\n"+
 		`echo "$*" >> '`+f.log+"'\n"+
 		"case \"$1\" in\n"+
-		`  isexcluded) if grep -qxF "$2" '`+f.state+`' 2>/dev/null; then echo "[Excluded]    $2"; else echo "[Included]    $2"; fi ;;`+"\n"+
+		`  isexcluded) case "$WT_TEST_TMUTIL_QUERY" in fail) echo "query failed" >&2; exit 1 ;; hang) exec sleep 30 ;; esac; if grep -qxF "$2" '`+f.state+`' 2>/dev/null; then echo "[Excluded]    $2"; else echo "[Included]    $2"; fi ;;`+"\n"+
 		"  addexclusion) "+add+" ;;\n"+
 		"  *) exit 2 ;;\n"+
 		"esac\n")

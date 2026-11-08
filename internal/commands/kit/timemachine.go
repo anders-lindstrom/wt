@@ -54,14 +54,13 @@ func (c *Context) TimeMachine() (TimeMachineState, timemachine.Tmutil) {
 // TimeMachineFolder is the folder an exclusion for the worktree at path goes
 // on: <repo>_wt/ when path is inside it, so one sticky exclusion covers
 // every worktree made there later, and the worktree's own folder otherwise.
-// It is "" for the main checkout and any folder holding it, which are never
-// excluded.
+// It is "" for the main checkout, its contents and any folder holding it.
 func (c *Context) TimeMachineFolder(path string) string {
 	dir := path
-	if container := c.Scheme().Container(); repo.Inside(container, path, false) {
+	if container := c.Scheme().Container(); repo.Inside(container, path, true) {
 		dir = container
 	}
-	if repo.Inside(dir, c.Repo.MainRoot, false) {
+	if repo.Inside(dir, c.Repo.MainRoot, true) || repo.Inside(c.Repo.MainRoot, dir, true) {
 		return ""
 	}
 	return dir
@@ -76,6 +75,9 @@ func (c *Context) TimeMachineFolder(path string) string {
 // that fails is one warning line, on the context's warning stream (stderr),
 // so it is said whatever w is.
 func ExcludeFromTimeMachine(c *Context, path string, w io.Writer) {
+	if c.Warned[WarnTimeMachine] {
+		return
+	}
 	state, tm := c.TimeMachine()
 	if state != TimeMachineOn {
 		return
@@ -87,9 +89,10 @@ func ExcludeFromTimeMachine(c *Context, path string, w io.Writer) {
 	if _, err := os.Stat(dir); err != nil {
 		return
 	}
-	// An isexcluded that fails is no reason not to try: addexclusion says
-	// for itself whether tmutil works.
-	if excluded, err := tm.Excluded(dir); err == nil && excluded {
+	if excluded, err := tm.Excluded(dir); err != nil {
+		c.Warnf(WarnTimeMachine, "%s is not excluded from Time Machine: %v", dir, err)
+		return
+	} else if excluded {
 		return
 	}
 	if err := tm.Exclude(dir); err != nil {
@@ -114,6 +117,7 @@ func DoctorTimeMachine(c *Context, w io.Writer, report func(string, ...any)) {
 	case TimeMachineOff:
 		fmt.Fprintf(w, "  - off in your wt config; turn it on with `wt config set %s true`\n",
 			config.UserKeyTimeMachine)
+		fmt.Fprintln(w, "  - folders already excluded stay excluded; to back them up again, run `tmutil removeexclusion <folder>`")
 		return
 	case TimeMachineNoTmutil:
 		const why = "no tmutil on the PATH; worktree folders are not excluded from Time Machine"

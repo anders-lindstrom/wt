@@ -8,9 +8,11 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/timemachine"
 )
 
 // tmContext is a repository at <parent>/demo whose warnings go to the
@@ -145,5 +147,53 @@ func TestTimeMachineFailureIsOneWarningLine(t *testing.T) {
 	}
 	if w.Len() != 0 {
 		t.Errorf("said %q on the command's own stream", w.String())
+	}
+}
+
+func TestTimeMachineProtectsMainThroughAncestorAlias(t *testing.T) {
+	// Not parallel: fake tmutil changes PATH and FindTmutil.
+	ctx, _, _ := tmContext(t)
+	tm := testkit.FakeTmutil(t, ctx, false)
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(ctx.Repo.Parent, alias); err != nil {
+		t.Fatal(err)
+	}
+	main := filepath.Join(alias, filepath.Base(ctx.Repo.MainRoot))
+	sub := filepath.Join(main, "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{main, alias, sub} {
+		kit.ExcludeFromTimeMachine(ctx, path, io.Discard)
+	}
+	if len(tm.Calls(t)) != 0 {
+		t.Fatal("tmutil reached the main checkout through an ancestor alias")
+	}
+}
+
+func TestTimeMachineQueryFailureStopsFurtherCalls(t *testing.T) {
+	// Not parallel: fake tmutil changes PATH and FindTmutil; Deadline is shared.
+	for _, mode := range []string{"fail", "hang"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx, warned, container := tmContext(t)
+			tm := testkit.FakeTmutil(t, ctx, false)
+			t.Setenv("WT_TEST_TMUTIL_QUERY", mode)
+			old := timemachine.Deadline
+			timemachine.Deadline = 200 * time.Millisecond
+			t.Cleanup(func() { timemachine.Deadline = old })
+			var out bytes.Buffer
+			start := time.Now()
+			kit.ExcludeFromTimeMachine(ctx, filepath.Join(container, "feat_wt", "x"), &out)
+			kit.ExcludeFromTimeMachine(ctx, filepath.Join(container, "feat_wt", "y"), &out)
+			if elapsed := time.Since(start); elapsed > 5*time.Second {
+				t.Errorf("tmutil query took %s", elapsed)
+			}
+			if !slices.Equal(tm.Calls(t), []string{"isexcluded " + container}) {
+				t.Error("failed isexcluded was followed by more tmutil calls")
+			}
+			if strings.Count(warned.String(), "\n") != 1 || !strings.Contains(warned.String(), "not excluded from Time Machine") || out.Len() != 0 {
+				t.Errorf("stdout %q, warning %q; want one warning", out.String(), warned.String())
+			}
+		})
 	}
 }

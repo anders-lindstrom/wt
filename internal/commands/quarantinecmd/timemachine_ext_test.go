@@ -2,6 +2,8 @@ package quarantinecmd_test
 
 import (
 	"bytes"
+	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -12,6 +14,7 @@ import (
 	"github.com/anders-lindstrom/wt/internal/commands/quarantinecmd/quarantinecmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
 	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anders-lindstrom/wt/internal/quarantine"
 )
 
 // wt restore puts a worktree back where it was, and excludes its folder the
@@ -50,5 +53,42 @@ func TestRestoreOutsideARepositoryWarnsAboutAFailingTmutil(t *testing.T) {
 	}
 	if !strings.Contains(warned.String(), "not excluded from Time Machine") {
 		t.Errorf("warned %q", warned.String())
+	}
+}
+
+func TestRestoreWarnsWhenRestoredConfigCannotOpen(t *testing.T) {
+	t.Parallel()
+	for _, outside := range []bool{false, true} {
+		t.Run(fmt.Sprint(outside), func(t *testing.T) {
+			ctx, path, _, _, dir := retiretest.Quarantined(t, "fix/back", false)
+			record, err := quarantine.Load(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			configPath := filepath.Join(record.Checkout.Quarantined, "bin", "worktree", "worktree.toml")
+			if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(configPath, []byte("main_branch = ["), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			var warned, out bytes.Buffer
+			ctx.WarnTo(&warned)
+			if outside {
+				ctx = nil
+			}
+			if err := quarantinecmd.Restore(ctx, dir, quarantinecmd.RestoreOptions{Warn: &warned}, &out); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(path); err != nil {
+				t.Fatalf("restore did not put back checkout: %v", err)
+			}
+			if strings.Count(warned.String(), "\n") != 1 || !strings.Contains(warned.String(), "did not exclude it from Time Machine or register it with Superset") || !strings.Contains(warned.String(), "worktree.toml") {
+				t.Errorf("warning = %q; want one integration warning with the config error", warned.String())
+			}
+			if strings.Contains(out.String(), "did not exclude") {
+				t.Errorf("warning leaked to stdout: %q", out.String())
+			}
+		})
 	}
 }
