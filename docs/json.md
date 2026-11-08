@@ -1,6 +1,6 @@
 # wt's JSON output
 
-`wt status`, `wt up`, `wt sweep`, `wt sync` and its verbs, `wt new`,
+`wt config`, `wt status`, `wt up`, `wt sweep`, `wt sync` and its verbs, `wt new`,
 `wt checkout`, `wt remove`, `wt restore`, `wt purge`, `wt refs` and
 `wt session list`, `send` and `stop` print JSON on stdout when given `--json`,
 for tools that drive wt (a git client, an editor, a script). Their human output is
@@ -127,6 +127,7 @@ generating types from it:
 
 | Output | Schema | `$id` |
 |---|---|---|
+| `wt config --json` | [`schema/config.v1.json`](../schema/config.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/config.v1.json` |
 | `wt status --json` | [`schema/status.v1.json`](../schema/status.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/status.v1.json` |
 | `wt up --json` | [`schema/up.v1.json`](../schema/up.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/up.v1.json` |
 | `wt sweep --dry-run --json` | [`schema/sweep-plan.v1.json`](../schema/sweep-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sweep-plan.v1.json` |
@@ -165,6 +166,31 @@ and more strictly than a reader should: an object whose schema lists its
 properties may carry no key it does not list, so a field cannot reach the
 output without reaching its schema. The schemas themselves stay open
 (no `additionalProperties: false`), so a reader can validate older output.
+
+## `wt config --json` — resolved repository configuration
+
+Prints one object with the same resolved repository values as `wt config` and
+`wt config --shell`. It writes nothing. `--json` with `--shell` is a usage error
+(exit 2). The user's settings block is not included; branch suffix and type names
+include user overrides exactly as the other outputs do.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `schema`, `schemaVersion`, `command` | 1, string, `"config"` | schema major, full version and command |
+| `repo`, `mainRoot` | string | repository name and absolute path of its main checkout |
+| `configured` | bool | a repository configuration file parses; false for detected defaults |
+| `trunk`, `trunkSource` | string \| null | resolved trunk and [how it was found](#trunksource--how-trunk-was-found), as in status |
+| `branchPrefix`, `typeSuffix`, `branchSuffix`, `defaultType` | string \| null | resolved naming; `typeSuffix` names worktree folders, `branchSuffix` includes user overrides |
+| `types` | array of strings | available types, in configuration order |
+| `typeNames` | object | type → resolved name overrides; `{}` when none are set |
+| `developerConfigDirs`, `developerConfigFiles`, `cacheDirs` | arrays of strings | repository-relative entries exactly as configured; these entries stay relative |
+| `requiredBins` | array of strings | required executables |
+| `buildInitEnabled`, `buildInitCommand` | bool, string \| null | whether to run the build initialization and its command |
+| `provisionScript` | bool | the current checkout has an executable `bin/worktree/provision.sh` file |
+
+Empty lists are `[]`; an absent string is `null`. Within schema 1, the consumer
+fields `schema`, `command`, `mainRoot`, `developerConfigFiles` and
+`developerConfigDirs` keep their names and meanings.
 
 ## `wt status [<work>] --json` — the plan
 
@@ -2059,3 +2085,4 @@ change made it.
 | `remove-plan` 1.5.0, `remove` 1.5.0 | [`--reap`](#processes--what-still-runs-in-a-worktree): `processes` and `processesError` in the plan, `reaped` in the result, the problem `processesUnknown` |
 | `sweep-plan` 1.6.0, `sweep` 1.5.0 | [`--reap`](#processes--what-still-runs-in-a-worktree): `reap` on the plan and `processes` on each item, the `kept` codes `processes` and `processesUnknown`, `reaped` on each item of the result |
 | `session-send` 1.1.0 | `errorCode` `notExact`: `<work>` only matched a worktree and is not its name, and no `--expect-session` was given; 1.0.0 said `noSession` |
+| `config` 1.0.0 | `wt config --json`: resolved repository configuration, including developer config entries, main checkout and user naming overrides |

@@ -4,6 +4,12 @@ Newest first, each heading stamped with the local date and time of the change
 (several land per day). `wt about` prints the newest 5 entries, so keep each entry to a few lines a human
 would want read out to them; the full story is in git history.
 
+## 2026-11-08 19:50 — Read resolved configuration as JSON
+
+`wt config --json` prints the resolved repository configuration for tools,
+including developer config files and directories, the main checkout, and your
+branch naming overrides. `wt schema config` prints its versioned schema.
+
 ## 2026-10-29 08:22 — `wt up --json` says when your user file or GitHub is not working
 
 `wt up --json` ran in silence when the user config could not be read or
