@@ -1,0 +1,17 @@
+REPO_NAME='demo'
+MAIN_BRANCH='main'
+WORKTREE_BRANCH_PREFIX='team/'
+WORKTREE_TYPE_SUFFIX='_wt'
+WORKTREE_BRANCH_SUFFIX='_mine'
+WORKTREE_TYPE_NAMES=('feat=feature' 'docs=doc')
+WORKTREE_DEFAULT_TYPE='feat'
+WORKTREE_TYPES='feat fix docs'
+REQUIRED_BINS='go git'
+BUILD_INIT_ENABLED=true
+BUILD_INIT_COMMAND='go build ./...'
+TEST_COMMAND='go test ./...'
+RUN_TESTS_BEFORE_REMOVE=true
+AWS_SETUP_ENABLED=true
+DEVELOPER_CONFIG_DIRS=('.settings' 'config/local')
+DEVELOPER_CONFIG_FILES=('.env' 'config/dev'\''s.env')
+WORKTREE_CACHE_DIRS=('node_modules' '.cache/build')

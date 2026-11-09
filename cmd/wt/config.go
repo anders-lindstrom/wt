@@ -11,7 +11,7 @@ import (
 )
 
 func newConfigCmd() *cobra.Command {
-	var shell bool
+	var shell, asJSON bool
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Print the resolved configuration, and change your own settings",
@@ -27,15 +27,30 @@ func newConfigCmd() *cobra.Command {
 			"anywhere, repository or not.\n\n" +
 			"With --shell, emit eval-able assignments using the legacy variable\n" +
 			"names that the Herdr skills and plugin expect from\n" +
-			"load_worktree_config. Only the repository's values are in there.",
+			"load_worktree_config. Only the repository's values are in there.\n\n" +
+			"With --json, print the resolved repository values as a versioned\n" +
+			"JSON object. --json and --shell cannot be used together.",
 		Example: "  wt config          # the resolved configuration, typed\n" +
-			"  wt config --shell  # the same as shell assignments, for eval",
-		Args: cobra.NoArgs,
+			"  wt config --shell  # the same as shell assignments, for eval\n" +
+			"  wt config --json   # the resolved repository values, for tools",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if err := cobra.NoArgs(cmd, args); err != nil {
+				return err
+			}
+			if asJSON && shell {
+				return usagef("--json and --shell cannot be used together")
+			}
+			return nil
+		},
 		RunE: withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
+			if asJSON {
+				return provision.ConfigJSON(ctx, cmd.OutOrStdout())
+			}
 			return provision.Config(ctx, shell, cmd.OutOrStdout())
 		}),
 	}
 	cmd.Flags().BoolVar(&shell, "shell", false, "emit eval-able shell assignments")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "print the resolved repository values as JSON")
 	cmd.AddCommand(newConfigGetCmd(), newConfigSetCmd(), newConfigUnsetCmd(), newConfigPathCmd())
 	return cmd
 }

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/config.v1.json",
+  "x-version": "1.0.0",
+  "title": "wt config --json",
+  "description": "The resolved repository configuration, including branch naming resolved through user overrides. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
+  "type": "object",
+  "required": ["schema", "schemaVersion", "command", "repo", "mainRoot", "configured", "trunk", "trunkSource", "branchPrefix", "typeSuffix", "branchSuffix", "defaultType", "types", "typeNames", "developerConfigDirs", "developerConfigFiles", "cacheDirs", "requiredBins", "buildInitEnabled", "buildInitCommand", "provisionScript"],
+  "properties": {
+    "schema": { "const": 1 },
+    "schemaVersion": { "type": "string", "pattern": "^1\\.[0-9]+\\.[0-9]+$" },
+    "command": { "const": "config" },
+    "repo": { "type": "string", "description": "The repository name." },
+    "mainRoot": { "type": "string", "pattern": "^/", "description": "The absolute path of the main checkout, including when called from a linked worktree." },
+    "configured": { "type": "boolean", "description": "A repository configuration file exists and parses; false for detected defaults." },
+    "trunk": { "type": ["string", "null"], "description": "The resolved trunk branch; null when absent." },
+    "trunkSource": { "enum": ["config", "originHead", "conventional", "currentBranchGuess", null], "description": "How trunk was found, with the same meanings as status.v1.json." },
+    "branchPrefix": { "type": ["string", "null"] },
+    "typeSuffix": { "type": ["string", "null"], "description": "The suffix used in worktree directory names." },
+    "branchSuffix": { "type": ["string", "null"], "description": "The resolved branch suffix, including user overrides; null when empty." },
+    "defaultType": { "type": ["string", "null"] },
+    "types": { "type": "array", "items": { "type": "string" } },
+    "typeNames": { "type": "object", "additionalProperties": { "type": "string" }, "description": "Resolved type-to-name overrides; an empty object when none are set." },
+    "developerConfigDirs": { "type": "array", "items": { "type": "string" }, "description": "Repository-relative directory entries exactly as configured; empty is []." },
+    "developerConfigFiles": { "type": "array", "items": { "type": "string" }, "description": "Repository-relative file entries exactly as configured; empty is []." },
+    "cacheDirs": { "type": "array", "items": { "type": "string" }, "description": "Repository-relative cache entries exactly as configured; empty is []." },
+    "requiredBins": { "type": "array", "items": { "type": "string" } },
+    "buildInitEnabled": { "type": "boolean" },
+    "buildInitCommand": { "type": ["string", "null"] },
+    "provisionScript": { "type": "boolean", "description": "The current checkout has an executable bin/worktree/provision.sh file." }
+  }
+}
