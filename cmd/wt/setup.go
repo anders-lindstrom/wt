@@ -24,6 +24,8 @@ func newSetupCmd() *cobra.Command {
 			"<from-dir> is where the developer config and caches come from, and\n" +
 			"defaults to the repository's main checkout. Run this to finish a\n" +
 			"worktree whose provisioning failed, or to provision one made by hand.\n\n" +
+			"On macOS the worktree's folder is excluded from Time Machine first,\n" +
+			"as wt new does.\n\n" +
 			"--source names what ran setup: superset today, and any tool that\n" +
 			"provisions worktrees through wt tomorrow. Setup prints it and does\n" +
 			"nothing else with it yet; it is where a source's own steps before or\n" +
@@ -39,7 +41,7 @@ func newSetupCmd() *cobra.Command {
 			if len(args) == 1 {
 				opts.SourceDir = args[0]
 			}
-			return provision.Setup(ctx, ctx.Cwd, opts, cmd.OutOrStdout())
+			return provision.Setup(ctx, ctx.Repo.Root, opts, cmd.OutOrStdout())
 		}),
 	}
 	addProvisionFlags(cmd, &skipBuild, &noCache, nil, nil)

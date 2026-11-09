@@ -15,7 +15,8 @@ import (
 
 // Main runs a command package's tests off the machine running them:
 // gittest.Isolate, XDG_CONFIG_HOME a directory of this run's own,
-// kit.FindGitHub "no gh here" and kit.MachineAgents NoAgents, then fakes,
+// kit.FindGitHub "no gh here", kit.FindTmutil "no tmutil here" and
+// kit.MachineAgents NoAgents, then fakes,
 // which put the hooks the package's tests reach in a state that reaches
 // nothing real, until a test asks for another. It does not return. Keep it
 // in step with TestMain in kit, which repeats these steps because kit cannot
@@ -31,6 +32,7 @@ func Main(m *testing.M, fakes ...func()) {
 	}
 	kit.FindGitHub = func() (github.CLI, bool) { return github.CLI{}, false }
 	kit.MachineAgents = NoAgents
+	kit.FindTmutil = NoTmutil
 	// A test that reads the real process table waits a minute for ps: it
 	// answers in well under a second, but a machine running several test
 	// suites at once has taken more than the 10 s wt gives it.

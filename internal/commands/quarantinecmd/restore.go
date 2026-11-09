@@ -23,6 +23,13 @@ type RestoreOptions struct {
 	Result *quarantine.RestoreResult
 	// QuarantineHooks are the quarantine.Hooks a test runs the restore with; nil but in tests.
 	QuarantineHooks *quarantine.Hooks
+	// Warn is stderr: where the restored repository's warnings go when wt
+	// ran outside a repository, and ctx has nowhere to put them. Nil
+	// discards.
+	Warn io.Writer
+	// Machine is the platform the restored repository is on when there is
+	// no ctx to say; zero is this machine's. Set in tests.
+	Machine kit.Machine
 }
 
 // Restore puts back the worktree wt remove --move-to moved into dir.
@@ -70,24 +77,40 @@ func Restore(ctx *kit.Context, dir string, opts RestoreOptions, w io.Writer) err
 		path = plan.Record.Checkout.Path
 	}
 	fmt.Fprintf(w, "✓ restored %s%s\n", path, branchRestored(plan.Record, res))
-	registerRestored(ctx, path, w)
+	registerRestored(ctx, path, opts, w)
 	return report(nil)
 }
 
-// registerRestored registers the worktree a restore put back with Superset,
-// the way wt new registers a new one; its removal deleted the workspace.
-// The repository is the worktree's own, which need not be the one wt ran
-// in; the person's settings, and the Superset it sees, are the ones this
-// run read.
-func registerRestored(ctx *kit.Context, path string, w io.Writer) {
-	rctx, err := kit.Open(path, io.Discard)
+// registerRestored excludes the worktree a restore put back from Time
+// Machine and registers it with Superset, the way wt new does for a new one;
+// its removal deleted the workspace. The repository is the worktree's own,
+// which need not be the one wt ran in; the person's settings, the machine,
+// the Superset it sees and where its warnings go are the ones this run has.
+// With no ctx, wt ran outside a repository, and opts says where they go and
+// which machine this is.
+func registerRestored(ctx *kit.Context, path string, opts RestoreOptions, w io.Writer) {
+	warn := opts.Warn
+	if ctx != nil || warn == nil {
+		warn = io.Discard
+	}
+	rctx, err := kit.Open(path, warn)
 	if err != nil {
+		const format = "restored %s, but did not exclude it from Time Machine or register it with Superset: %s"
+		if ctx != nil {
+			ctx.Warnf("restore integrations", format, path, kit.OneLine(err.Error()))
+		} else {
+			fmt.Fprintf(warn, "wt: "+format+"\n", path, kit.OneLine(err.Error()))
+		}
 		return
 	}
+	rctx.Machine = opts.Machine
 	if ctx != nil {
 		rctx.User, rctx.UserError = ctx.User, ctx.UserError
 		rctx.SupersetFake = ctx.SupersetFake
+		rctx.Machine = ctx.Machine
+		rctx.Warn, rctx.Warned = ctx.Warn, ctx.Warned
 	}
+	kit.ExcludeFromTimeMachine(rctx, path, w)
 	supersetws.Register(rctx, path, w)
 }
 

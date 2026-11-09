@@ -120,7 +120,13 @@ func (s Scheme) Parse(branch string) (typ, work string, ok bool) {
 
 // Dir returns the canonical absolute path for a piece of work.
 func (s Scheme) Dir(typ, work string) string {
-	return filepath.Join(s.Parent, RepoDirName(s.Repo, s.dirSuffix()), typ+s.dirSuffix(), work)
+	return filepath.Join(s.Container(), typ+s.dirSuffix(), work)
+}
+
+// Container is the folder every one of this repository's worktrees goes in:
+// <Parent>/<Repo><suffix>.
+func (s Scheme) Container() string {
+	return filepath.Join(s.Parent, RepoDirName(s.Repo, s.dirSuffix()))
 }
 
 // Classify reports which layout path follows for the given piece of work.
@@ -170,7 +176,7 @@ func (s Scheme) ClassifyBranch(path, branch string) (typ, work string, l Layout,
 // segment more, so its paths do not match.
 func (s Scheme) ClassifyPath(path string) (typ, work string, ok bool) {
 	sep := string(filepath.Separator)
-	rest, found := strings.CutPrefix(filepath.Clean(path), filepath.Join(s.Parent, RepoDirName(s.Repo, s.dirSuffix()))+sep)
+	rest, found := strings.CutPrefix(filepath.Clean(path), s.Container()+sep)
 	if !found {
 		return "", "", false
 	}

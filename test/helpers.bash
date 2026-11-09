@@ -8,7 +8,9 @@
 # are this run's own, git reads no system config and none of the GIT_
 # variables the environment carries (an agent launcher's GIT_CONFIG_* and
 # GIT_SSH_COMMAND), WT_ROOTS and CODEX_HOME are unset, and the PATH finds no
-# claude; a test that wants one puts its own fake first. One directory per bats
+# claude and no tmutil, so a Mac running them neither lists its sessions nor
+# excludes a test's folders from Time Machine; a test that wants one puts its
+# own fake first. One directory per bats
 # run, inside the tree bats removes afterwards. Sourced from a script instead,
 # the script says where its own throwaway tree is: nothing here creates a
 # directory under TMPDIR that nobody ever deletes.
@@ -33,21 +35,24 @@ if [ -n "$WT_TEST_TMPDIR" ]; then
     [ -f "$GIT_CONFIG_GLOBAL" ] || printf '%s\n' '[user]' '	name = T' '	email = t@example.com' \
         '[commit]' '	gpgsign = false' '[tag]' '	gpgsign = false' '[maintenance]' '	auto = false' \
         '[init]' '	defaultBranch = main' > "$GIT_CONFIG_GLOBAL"
-    # Each PATH directory holding a claude is replaced by one that links to
-    # everything else in it, so every other tool, git among them, is still
-    # found where it was.
-    hide_claude() {
+    # Each PATH directory holding a claude or a tmutil is replaced by one
+    # that links to everything else in it, so every other tool, git among
+    # them, is still found where it was.
+    hide_tools() {
         local dirs d shadow tmp e path=
         IFS=: read -ra dirs <<< "$PATH"
         for d in "${dirs[@]}"; do
-            if [ -n "$d" ] && [ -e "$d/claude" ]; then
+            if [ -n "$d" ] && { [ -e "$d/claude" ] || [ -e "$d/tmutil" ]; }; then
                 d=$(cd "$d" && pwd)
                 shadow="$WT_TEST_TMPDIR/path-$(printf %s "$d" | cksum | cut -d' ' -f1)"
                 if [ ! -d "$shadow" ]; then
                     tmp=$(mktemp -d "$shadow.XXXXXX")
                     for e in "$d"/* "$d"/.[!.]*; do
                         [ -e "$e" ] || [ -L "$e" ] || continue
-                        [ "${e##*/}" = claude ] || ln -s "$e" "$tmp/"
+                        case "${e##*/}" in
+                            claude | tmutil) ;;
+                            *) ln -s "$e" "$tmp/" ;;
+                        esac
                     done
                     mv "$tmp" "$shadow"
                 fi
@@ -57,8 +62,8 @@ if [ -n "$WT_TEST_TMPDIR" ]; then
         done
         PATH=$path
     }
-    hide_claude
-    unset -f hide_claude
+    hide_tools
+    unset -f hide_tools
 fi
 
 # make_repo <dir>: a repository wt can work in, on main with a minimal

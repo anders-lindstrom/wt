@@ -42,7 +42,8 @@ func newRestoreCmd() *cobra.Command {
 			"unlocks it. The folder itself is left as it is, empty but for\n" +
 			"recovery.json; wt purge <dir> deletes it. With the\n" +
 			"Superset integration on, the worktree is registered there again,\n" +
-			"the way wt new registers one.\n\n" +
+			"the way wt new registers one, and on macOS its folder is excluded\n" +
+			"from Time Machine again.\n\n" +
 			"--dry-run says what it would do and changes nothing. --json prints one\n" +
 			"object on stdout: with --dry-run the plan, otherwise the result; the\n" +
 			"human output goes to stderr. wt schema restore-plan and wt schema\n" +
@@ -58,7 +59,7 @@ func newRestoreCmd() *cobra.Command {
 			if err != nil {
 				ctx = nil
 			}
-			opts := quarantinecmd.RestoreOptions{DryRun: dryRun}
+			opts := quarantinecmd.RestoreOptions{DryRun: dryRun, Warn: cmd.ErrOrStderr()}
 			if asJSON {
 				return quarantinecmd.RestoreJSON(ctx, args[0], opts, cmd.OutOrStdout(), cmd.ErrOrStderr())
 			}

@@ -202,6 +202,7 @@ The file does not have to exist. No file means the built-in defaults, and
 |---|---|---|
 | `superset` | `false` | whether wt registers worktrees it creates as Superset workspaces |
 | `github` | `true` | whether wt uses the GitHub CLI for branches and pull requests |
+| `timemachine` | `true` on macOS, `false` elsewhere | whether wt excludes the worktree folders it makes from Time Machine |
 | `branch_suffix` | `_wt` | what your branches carry, where a repository does not say |
 | `type_names` | empty | what your branches call each type, as `feat=feature` pairs |
 | `ff_trunk` | `true` | whether `wt up` and `wt sync rebase` fast-forward local trunk after fetching it, when that is safe |
@@ -236,6 +237,7 @@ that key can still decline. `wt config` shows the resolution:
 user config:   /Users/you/.config/wt/config.toml (no file yet)
   superset:      false (default)
   github:        true (default)
+  timemachine:   true (default)
   branch_suffix: "_wt" (default)
   type_names:    [] (default)
   ff_trunk:      true (default)
@@ -243,6 +245,23 @@ user config:   /Users/you/.config/wt/config.toml (no file yet)
   ref_sweep_age: "14d" (default)
 superset mode: off (user config)
 ```
+
+`timemachine` is per machine for the same reason. On macOS, every command
+that leaves a worktree somewhere — `wt new`, `wt checkout`, `wt pr checkout`,
+`wt adopt`, `wt setup`, `wt migrate` and `wt restore` — excludes its folder
+from Time Machine with `tmutil addexclusion`: the `<repo>_wt/` folder when
+the worktree is inside it, so one exclusion covers every worktree made there
+later, and the worktree's own folder when it is somewhere else. The main
+checkout is never excluded. The exclusion is tmutil's sticky one, an
+attribute on the folder that needs no sudo and moves with it, and it leaves
+out only what git can rebuild: a worktree's commits are in the main
+checkout's `.git`, which is still backed up, so only uncommitted edits in a
+worktree go unbacked. Off macOS wt never runs tmutil, whatever the file
+says; with it `false` wt runs no tmutil, and leaves alone the exclusions it
+set before. To back up an already excluded folder again, run
+`tmutil removeexclusion <folder>`. A tmutil that is not on the PATH is silence, and one that fails
+is one line on stderr: the worktree is made either way. `wt doctor` names
+the state and whether this repository's `<repo>_wt/` is excluded.
 
 A file wt cannot parse turns every integration off for that run, and a file
 with one bad key keeps its good keys; either way the command runs and says so in

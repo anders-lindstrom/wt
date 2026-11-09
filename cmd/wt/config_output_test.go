@@ -16,7 +16,7 @@ func TestConfigOutputFixtures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	userPath := testkit.WriteUserConfig(t, "branch_suffix = \"_mine\"\ntype_names = [\"feat=feature\", \"docs=doc\"]\n")
+	userPath := testkit.WriteUserConfig(t, "timemachine = false\nbranch_suffix = \"_mine\"\ntype_names = [\"feat=feature\", \"docs=doc\"]\n")
 	t.Setenv("WT_ROOTS", "/fixture/repos")
 	main := testkit.FixtureRepo(t, `MAIN_BRANCH="main"
 WORKTREE_BRANCH_PREFIX="team/"

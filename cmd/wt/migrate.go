@@ -30,7 +30,9 @@ func newMigrateCmd() *cobra.Command {
 			"matters.\n\n" +
 			"A worktree an agent session is working in, idle or busy, is not moved,\n" +
 			"nor one whose sessions cannot be listed; the session running wt migrate\n" +
-			"does not count. --force moves it anyway.",
+			"does not count. --force moves it anyway.\n\n" +
+			"On macOS the folder it lands in is excluded from Time Machine, as wt\n" +
+			"new does.",
 		Example: "  wt migrate login-crash                # fit it to the layout\n" +
 			"  wt migrate ../myrepo-login-crash      # name it by path instead\n" +
 			"  wt migrate fix/login-crash chore/tidy # rename and retype as it moves\n" +

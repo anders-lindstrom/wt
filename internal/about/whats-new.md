@@ -4,11 +4,31 @@ Newest first, each heading stamped with the local date and time of the change
 (several land per day). `wt about` prints the newest 5 entries, so keep each entry to a few lines a human
 would want read out to them; the full story is in git history.
 
+## 2026-11-08 22:53 — Safer Time Machine exclusions
+
+The main checkout stays backed up through path aliases and nested `wt setup`
+runs. A failing tmutil warns once and is not retried; a worktree left by a
+failing checkout hook is still excluded. Restore warns if it cannot load
+the worktree's configuration for its integrations.
+
+`wt config set timemachine false` stops future exclusions. Folders already
+excluded stay excluded; run `tmutil removeexclusion <folder>` to back them
+up again.
+
 ## 2026-11-08 19:50 — Read resolved configuration as JSON
 
 `wt config --json` prints the resolved repository configuration for tools,
 including developer config files and directories, the main checkout, and your
 branch naming overrides. `wt schema config` prints its versioned schema.
+
+## 2026-11-07 10:40 — Worktree folders stay out of Time Machine on macOS
+
+`wt new`, `checkout`, `pr checkout`, `adopt`, `setup`, `migrate` and
+`restore` now exclude the `<repo>_wt` folder (or a worktree elsewhere by
+itself) from Time Machine; the main checkout never. `wt config set
+timemachine false` stops future exclusions, and `wt doctor` shows the state.
+Folders already excluded stay excluded until you run
+`tmutil removeexclusion <folder>`.
 
 ## 2026-10-29 08:22 — `wt up --json` says when your user file or GitHub is not working
 

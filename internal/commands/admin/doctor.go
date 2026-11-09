@@ -97,6 +97,7 @@ func doctor(ctx *kit.Context, w io.Writer, withRepos bool) (int, error) {
 
 	doctorSuperset(ctx, w, report)
 	kit.DoctorGitHub(ctx, w)
+	kit.DoctorTimeMachine(ctx, w, report)
 
 	fmt.Fprintln(w, "Worktrees:")
 	worktrees, err := ctx.Repo.Worktrees()

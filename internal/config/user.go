@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -22,6 +23,10 @@ const (
 	UserKeySuperset = "superset"
 	// UserKeyGitHub decides whether wt uses the GitHub CLI. On by default.
 	UserKeyGitHub = "github"
+	// UserKeyTimeMachine decides whether wt excludes the worktree folders it
+	// makes from Time Machine. On by default on macOS, and nothing at all
+	// anywhere else.
+	UserKeyTimeMachine = "timemachine"
 	// UserKeyBranchSuffix is the suffix this person's branches carry, for
 	// every repository that does not insist on one of its own. Empty is a
 	// value: it asks for plain feature/login-crash branches.
@@ -60,16 +65,26 @@ const (
 	userList
 )
 
+// platform is the operating system the defaults are for. A variable so a
+// test can ask for another machine's.
+var platform = runtime.GOOS
+
+// TimeMachineDefault is timemachine on a machine that has not set it: on
+// where Time Machine exists, which is macOS alone.
+func TimeMachineDefault(goos string) bool { return goos == "darwin" }
+
 // userKey is one setting in the user file. Default is the value as the file
-// would write it, so one field covers both kinds.
+// would write it, so one field covers both kinds; defaultFor, when set, is a
+// default that depends on the machine and stands in for it.
 type userKey struct {
-	Name     string
-	Kind     userKind
-	Default  string
-	Doc      string
-	boolAt   func(*User) *bool
-	stringAt func(*User) *string
-	listAt   func(*User) *[]string
+	Name       string
+	Kind       userKind
+	Default    string
+	defaultFor func() string
+	Doc        string
+	boolAt     func(*User) *bool
+	stringAt   func(*User) *string
+	listAt     func(*User) *[]string
 	// validate, when set, checks a value as the file would spell it, both
 	// when `wt config set` writes it and when the file is read.
 	validate func(value string) error
@@ -84,6 +99,10 @@ var userKeys = []userKey{
 	{Name: UserKeyGitHub, Kind: userBool, Default: "true",
 		Doc:    "use the GitHub CLI for branches and pull requests",
 		boolAt: func(u *User) *bool { return &u.GitHub }},
+	{Name: UserKeyTimeMachine, Kind: userBool,
+		Doc:        "exclude the worktree folders wt makes from Time Machine (macOS)",
+		defaultFor: func() string { return strconv.FormatBool(TimeMachineDefault(platform)) },
+		boolAt:     func(u *User) *bool { return &u.TimeMachine }},
 	{Name: UserKeyBranchSuffix, Kind: userString, Default: DefaultTypeSuffix,
 		Doc:      `the suffix your branches carry ("" for none), where a repo does not say`,
 		stringAt: func(u *User) *string { return &u.BranchSuffix }},
@@ -146,6 +165,9 @@ func userKeyByName(name string) (userKey, bool) {
 type User struct {
 	Superset bool
 	GitHub   bool
+	// TimeMachine is the timemachine setting as this machine reads it; what
+	// wt acts on is TimeMachineOn, which answers for the platform it is given.
+	TimeMachine bool
 	// BranchSuffix is read only where the repository leaves the choice open
 	// (see Config.BranchSuffixSet), so IsSet says whether it was chosen.
 	BranchSuffix string
@@ -186,9 +208,33 @@ func DefaultUser() *User { return defaultUser("") }
 func defaultUser(path string) *User {
 	u := &User{Path: path, fromFile: map[string]bool{}}
 	for _, k := range userKeys {
-		k.put(u, k.Default)
+		k.put(u, k.defaultValue())
 	}
 	return u
+}
+
+// defaultValue is the key's default on this machine.
+func (k userKey) defaultValue() string {
+	if k.defaultFor != nil {
+		return k.defaultFor()
+	}
+	return k.Default
+}
+
+// TimeMachineOn is whether wt excludes the folders it makes from Time Machine
+// on a machine running goos: never off macOS, whatever the file says, and
+// never from a file wt could not read; otherwise the file's value, or the
+// default for goos.
+func (u *User) TimeMachineOn(goos string) bool {
+	switch {
+	case u == nil:
+		return TimeMachineDefault(goos)
+	case goos != "darwin" || u.Unusable:
+		return false
+	case u.IsSet(UserKeyTimeMachine):
+		return u.TimeMachine
+	}
+	return TimeMachineDefault(goos)
 }
 
 // put writes a value into the User, taking it as the file spells it. A bool

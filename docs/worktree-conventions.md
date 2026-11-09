@@ -37,6 +37,7 @@ One layout fixes that for both kinds of reader:
 | One `<repo>_wt/` folder per repo | A repo's worktrees sort next to it and stay out of the parent folder, which in one like `~/src/work/` can already hold dozens of entries. |
 | The path below `<repo>_wt/` is the branch name | Nothing to translate: the path gives the branch and the branch gives the path. |
 | A type: `feat`, `fix`, `research`, `spike`, … | Folder listings and `git branch` read as a list of work grouped by kind. The type is the identity every tool reasons in; `WORKTREE_TYPE_NAMES` (or a person's `type_names`) only changes the word its branches carry, and the folders keep the type. |
+| Out of Time Machine | On macOS wt excludes `<repo>_wt/` from Time Machine when it makes a worktree there, and a worktree it makes or adopts elsewhere by its own folder; never the main checkout. A worktree's commits live in the main checkout's `.git`, which stays backed up. Switched by `timemachine` in the person's own config, never by `worktree.conf`; see [Configuration](configuration.md#your-own-settings). |
 | The `_wt` suffix on the type | Marks a branch as made for a worktree. `wt remove` uses it: a merged branch is deleted (pinned under `refs/wt-swept/<run>/`, so `wt refs restore` can put it back), and an unmerged one `wt` made is renamed out of the prefix so its commits survive. |
 
 A repo that wants plain `fix/login-crash` branches sets
@@ -339,7 +340,7 @@ it does without GitHub.
 
 Anything that touches an integration follows one rule. When the integration
 cannot apply — switched off, the tool absent, this repository not on GitHub, no
-login, this repository not a Superset project — wt is **silent** and behaves
+login, this repository not a Superset project, not macOS — wt is **silent** and behaves
 exactly as it does without the integration. When the integration is set up and
 the thing it was supposed to do failed anyway, wt says so on **stderr**: stdout
 and the exit code are untouched.
@@ -350,7 +351,10 @@ failure is one `wt: <what is missing>: <gh's line>` per command per integration,
 through `Context.Warnf`. Superset is a step `wt new` carries out, so it reports
 that step's outcome where it happens, one line per worktree: `-` for a remark,
 `!` where `SUPERSET_REGISTER=on` asked for it, `✓` for a workspace that was
-made.
+made. Time Machine is a step too, but it has only two things to say: `✓` for a
+folder it excluded, and a tmutil that failed, which is one
+`wt: <folder> is not excluded from Time Machine: <tmutil's line>` on stderr
+whatever the command's own output is.
 
 ```
 $ wt list
@@ -371,7 +375,7 @@ $ wt list
 wt: every integration is off for this run: /Users/you/.config/wt/config.toml: toml: line 2 (last key "superset"): expected value but found '\n' instead
 
 $ wt list
-wt: ignoring unknown key "githb" in /Users/you/.config/wt/config.toml (wt's settings are: superset github branch_suffix type_names ff_trunk ref_sweep_patterns ref_sweep_age, and the [roots] and [profiles] tables)
+wt: ignoring unknown key "githb" in /Users/you/.config/wt/config.toml (wt's settings are: superset github timemachine branch_suffix type_names ff_trunk ref_sweep_patterns ref_sweep_age, and the [roots] and [profiles] tables)
 ```
 
 `wt config set` refuses to edit a file it cannot parse; `wt config get` answers
