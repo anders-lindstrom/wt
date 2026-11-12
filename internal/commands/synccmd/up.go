@@ -28,6 +28,11 @@ func up(ctx *kit.Context, arg string, opts RunOptions, w io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if opts.Onto != "" && opts.Expect != "" {
+		work := kit.WorktreeName(ctx, wt.Branch, wt.Path)
+		return fmt.Errorf("wt up --expect takes the token wt status --json gives, which knows no --onto: take it from "+
+			"wt sync %s --onto %s --json, and run wt sync rebase %s --onto %s --expect <token>", work, opts.Onto, work, opts.Onto)
+	}
 	opts.IfReady, opts.label, opts.undeclaredOK, opts.planExpect = true, "wt up", true, true
 	_, err = RunSync(ctx, []string{wt.Path}, opts, w)
 	return err

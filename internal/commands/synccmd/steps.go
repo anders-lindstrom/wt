@@ -1,6 +1,7 @@
 package synccmd
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"sort"
@@ -18,18 +19,18 @@ import (
 // child's commits are counted from its parent's tip, as its rebase replays
 // them. An error reading it counts as nothing due: the overview is advice,
 // and a run reads it again and refuses on an error.
-func stepsDue(onto string, cfg *wtsync.Config, parents map[string]string, wt repo.Worktree, a wtsync.Assessment) wtsync.Due {
+func stepsDue(t wtsync.Target, cfg *wtsync.Config, parents map[string]string, wt repo.Worktree, a wtsync.Assessment) wtsync.Due {
 	if cfg == nil || wt.Branch == "" || a.OnlyFastForward() {
 		return wtsync.Due{}
 	}
 	if v, _ := wtsync.Preflight(a); v != wtsync.Proceed {
 		return wtsync.Due{}
 	}
-	base := onto
+	base := cmp.Or(t.Upstream, t.Onto)
 	if parent, ok := parents[wt.Branch]; ok {
 		base = "refs/heads/" + parent
 	}
-	due, err := wtsync.StepsDue(wt.Path, cfg, base, rebasedTip(wt.Branch, a), onto, "")
+	due, err := wtsync.StepsDue(wt.Path, cfg, base, rebasedTip(wt.Branch, a), t.Onto, t.Upstream)
 	if err != nil {
 		return wtsync.Due{}
 	}

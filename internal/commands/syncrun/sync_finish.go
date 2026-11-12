@@ -45,6 +45,8 @@ type HandoverInput struct {
 	Branch   string
 	Path     string
 	TrunkRef string
+	// OntoRef is the ref --onto named, "" for a rebase onto trunk.
+	OntoRef  string
 	TrunkSHA string
 	Onto     string
 	Upstream string
