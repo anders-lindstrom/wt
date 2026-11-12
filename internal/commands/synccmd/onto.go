@@ -336,30 +336,37 @@ func (r *RunPlan) printFollowUps() {
 	if r.target == nil {
 		return
 	}
-	main := r.ctx.Repo.MainRoot
 	for _, b := range r.branches {
 		p := r.parts[b]
 		if len(wtsync.Descendants(r.stacked, b)) == 0 {
 			continue
 		}
-		if p.result == nil || p.result.Restored || p.result.Left != nil {
+		switch {
+		case p.result != nil && p.result.Left != nil:
+			fmt.Fprintf(r.w, "\n%s has worktrees stacked on it, which --onto did not move; wt sync resume %s prints the commands that move them once it finishes\n", p.work, p.work)
+		case p.result == nil || p.result.Restored:
 			fmt.Fprintf(r.w, "\n%s has worktrees stacked on it; --onto did not move them, and they follow once it is rebased\n", p.work)
-			continue
-		}
-		res := *p.result
-		lines := followUps(r.ctx, r.stacked, b, func(x string) string {
-			if x == b {
-				return p.foundTip(res)
-			}
-			tip, _ := git.Run(main, "rev-parse", "--verify", "refs/heads/"+x)
-			return tip
-		})
-		fmt.Fprintf(r.w, "\n%s has %s stacked on it, which --onto did not move; to move them onto it, run in this order:\n",
-			p.work, kit.Count(len(lines), "worktree"))
-		for _, l := range lines {
-			fmt.Fprintf(r.w, "  %s\n", l)
+		default:
+			syncrun.PrintFollowUps(r.w, p.work, r.followUpLines(b, p, *p.result))
 		}
 	}
+}
+
+// followUpLines is the command that moves each worktree stacked on b once
+// b is rebased, b's old tip being the one its safety ref pins; nil without
+// --onto or with nothing stacked on b.
+func (r *RunPlan) followUpLines(b string, p *participant, res wtsync.Result) []string {
+	if r.target == nil || len(wtsync.Descendants(r.stacked, b)) == 0 {
+		return nil
+	}
+	main := r.ctx.Repo.MainRoot
+	return followUps(r.ctx, r.stacked, b, func(x string) string {
+		if x == b {
+			return p.foundTip(res)
+		}
+		tip, _ := git.Run(main, "rev-parse", "--verify", "refs/heads/"+x)
+		return tip
+	})
 }
 
 // ontoRef is the target's ref as given, "" for trunk.

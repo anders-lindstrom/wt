@@ -1,6 +1,7 @@
 package wtsync
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -52,11 +53,14 @@ type State struct {
 	// OntoRef is the ref --onto named, as given, when the run rebased onto
 	// it rather than trunk; empty for trunk, and in a sidecar written
 	// before it existed.
-	OntoRef  string `json:"onto_ref,omitempty"`
-	Upstream string `json:"upstream"`
-	Epoch    int64  `json:"epoch"`
-	Safety   string `json:"safety"`
-	OldTip   string `json:"old_tip"`
+	OntoRef string `json:"onto_ref,omitempty"`
+	// FollowUps is the commands that move the worktrees stacked on this one
+	// once the rebase onto OntoRef finishes: printed by resume.
+	FollowUps []string `json:"follow_ups,omitempty"`
+	Upstream  string   `json:"upstream"`
+	Epoch     int64    `json:"epoch"`
+	Safety    string   `json:"safety"`
+	OldTip    string   `json:"old_tip"`
 	// Found is the tip the safety ref pins when that is not OldTip: the run
 	// fast-forwarded the branch to its own remote before the rebase, so the
 	// rebase started from OldTip and undo goes back to Found. Empty when the
@@ -301,8 +305,11 @@ type PlanInput struct {
 	MainRoot string
 	Work     string
 	Branch   string
-	TrunkRef string // origin/<trunk>, for the title
-	Trunk    string // the trunk SHA, for the per-file log
+	TrunkRef string // origin/<trunk>, or the ref --onto named, for the title
+	// OntoRef is the ref --onto named, "" for a rebase onto trunk: what
+	// HEAD is at a stop.
+	OntoRef  string
+	Trunk    string // the commit rebased onto, for the per-file log
 	Base     string // the merge base, for the per-file log
 	Landing  Landing
 	Handover Handover
@@ -392,7 +399,7 @@ func RenderPlan(in PlanInput) (string, error) {
 		if in.Handover.Subject != "" {
 			replayed += " (" + oneLinePlan(in.Handover.Subject) + ")"
 		}
-		fmt.Fprintf(&b, "<<<<<<< HEAD is trunk, >>>>>>> %s is the branch's commit being replayed\n", replayed)
+		fmt.Fprintf(&b, "<<<<<<< HEAD is %s, >>>>>>> %s is the branch's commit being replayed\n", cmp.Or(in.OntoRef, "trunk"), replayed)
 	}
 	for _, f := range left {
 		note := f.Note

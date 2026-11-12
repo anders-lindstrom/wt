@@ -1399,7 +1399,7 @@ func (r *RunPlan) handOver(b string, p *participant, req wtsync.Request, res wts
 	herr := syncrun.HandOver(r.ctx, w, syncrun.HandoverInput{
 		Work: p.work, Branch: b, Path: p.wt.Path, TrunkRef: r.onto, TrunkSHA: r.trunkSHA, OntoRef: r.ontoRef(),
 		Onto: req.Onto, Upstream: req.Upstream, Epoch: r.epoch, Cfg: r.cfg, Res: res, Lock: p.lock,
-		Found: p.found, Tracker: r.tracker,
+		Found: p.found, Tracker: r.tracker, FollowUps: r.followUpLines(b, p, res),
 	})
 	if herr != nil {
 		fmt.Fprintf(w, "  ✗ failed: %v\n", herr)
