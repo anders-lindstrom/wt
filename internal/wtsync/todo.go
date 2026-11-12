@@ -40,7 +40,8 @@ func (p todoPlan) edits() bool { return p.liftPlan.edits() || len(p.checks) > 0 
 // them; and every pick of a commit in checks is followed by a break, after
 // the edit when it has one and after the fixup and squash lines folded into
 // it, where the run checks the commit as it stays; its break comes before a
-// layer marker already in the list. With stack marks, each
+// layer marker already in the list, and a group is checked when its pick or
+// any fixup or squash folded into it is to be checked. With stack marks, each
 // layer's update-ref line goes after the last group of the layers up to it,
 // that group's check break included, and before the next group's own lines.
 // The break before a pick is what tells a pick git dropped as already
@@ -67,7 +68,7 @@ func todoEditor(w io.Writer, p todoPlan) {
 	fmt.Fprintf(w, "top=%d\n", p.stack.top)
 	fmt.Fprintf(w, "mapref=%s\n", shellQuote(p.stack.prefix))
 	fmt.Fprintf(w, "copy=%s\n", shellQuote(p.stack.copy))
-	fmt.Fprintln(w, `pend=; marked=0`)
+	fmt.Fprintln(w, `pend=; open=; marked=0`)
 	fmt.Fprintf(w, "%s\n", `close_group() { if [ -n "$pend" ]; then printf 'break\n'; pend=; fi; }`)
 	fmt.Fprintf(w, "%s\n", `flush() { while [ "$marked" -lt "$1" ]; do marked=$((marked+1)); printf 'update-ref %s%s\n' "$mapref" "$marked"; done; }`)
 	fmt.Fprintln(w, `{`)
@@ -83,8 +84,12 @@ func todoEditor(w io.Writer, p todoPlan) {
 	fmt.Fprintln(w, `        for l in $layers; do case "${l%%=*}" in "$id"*) layer=${l#*=}; break ;; esac; done`)
 	fmt.Fprintln(w, `        close_group; flush $((layer-1))`)
 	fmt.Fprintf(w, "%s\n", `        [ -z "$pre" ] || printf 'break\n'`)
-	fmt.Fprintf(w, "%s\n", `        printf '%s\n' "$out"; pend=$check`)
+	fmt.Fprintf(w, "%s\n", `        printf '%s\n' "$out"; pend=$check; open=1`)
 	fmt.Fprintln(w, `      fi ;;`)
+	fmt.Fprintln(w, `    "fixup "*|"squash "*)`)
+	fmt.Fprintln(w, `      id=${line#* }; case "$id" in -[Cc]\ *) id=${id#* } ;; esac; id=${id%% *}`)
+	fmt.Fprintln(w, `      for m in $checks; do case "$m" in "$id"*) [ -z "$open" ] || pend=1; break ;; esac; done`)
+	fmt.Fprintf(w, "%s\n", `      printf '%s\n' "$line" ;;`)
 	fmt.Fprintf(w, "%s\n", `    "update-ref "*) close_group; printf '%s\n' "$line" ;;`)
 	fmt.Fprintf(w, "%s\n", `    *) printf '%s\n' "$line" ;;`)
 	fmt.Fprintln(w, `  esac`)

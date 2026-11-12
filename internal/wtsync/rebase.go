@@ -249,6 +249,10 @@ type driver struct {
 	before string
 	// checks is the commits the each_commit steps run after, full ids.
 	checks []string
+	// checkTail is the abbreviated id of the last fixup or squash folded
+	// into the commit at a check stop, as the sequencer's done list names
+	// it; empty for a pick with none.
+	checkTail string
 	// recheck makes the first check stop run its checks whatever git
 	// recorded of the pick: a resume there may follow a person's amend.
 	recheck bool
