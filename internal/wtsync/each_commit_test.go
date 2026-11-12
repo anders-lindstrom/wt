@@ -259,3 +259,39 @@ func gittestWrite(t *testing.T, path, content string) {
 		t.Fatal(err)
 	}
 }
+
+// A fix a person adds as a commit of its own, on top of the commit whose
+// check failed, is checked on resume even when it touches no listed path:
+// the checks are the failing commit's.
+func TestResumeRechecksAfterAnAddedCommitOutsideThePaths(t *testing.T) {
+	t.Parallel()
+	dir := repoWith(t, map[string]string{"a.txt": "a\n", "src/x.txt": "x\n"},
+		[]map[string]string{{"a.txt": "a2\n"}}, []map[string]string{{"src/broken": "b\n"}})
+	logPath := filepath.Join(filepath.Dir(dir), filepath.Base(dir)+"-added.log")
+	yaml := "each_commit:\n  - run: git log -1 --format=%s >> '" + logPath + "' && { test ! -f src/broken || test -f fixed.flag; }\n    paths: [\"src/**\"]\n"
+	gittestWrite(t, filepath.Join(dir, ".wt-sync.yaml"), yaml)
+	gitIn(t, dir, "add", "-A")
+	gitIn(t, dir, "commit", "-q", "-m", "declare")
+	gitIn(t, dir, "remote", "add", "origin", dir)
+	gitIn(t, dir, "fetch", "-q", "origin")
+	cfg, err := LoadFromTrunk(dir, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt := featureWorktree(t, dir).Path
+	old := gitIn(t, wt, "rev-parse", "HEAD")
+	res, err := Rebase(dir, cfg, trunkReq(wt, 14), nil)
+	if err != nil || res.Left == nil || res.Left.Check == nil {
+		t.Fatalf("res %+v err %v", res, err)
+	}
+	gittestWrite(t, filepath.Join(wt, "fixed.flag"), "ok\n")
+	gitIn(t, wt, "add", "fixed.flag")
+	gitIn(t, wt, "commit", "-q", "-m", "fix")
+	res, err = Resume(dir, cfg, trunkReq(wt, 14), old, res.Safety, nil)
+	if err != nil || res.Left != nil {
+		t.Fatalf("resume %+v err %v", res, err)
+	}
+	if got, want := checkedSubjects(t, logPath), []string{"branch_1", "fix"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("checked at %v, want %v", got, want)
+	}
+}
