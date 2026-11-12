@@ -93,4 +93,3 @@ func TestReadLineRefusesALayerWhoseTipIsAFixup(t *testing.T) {
 		t.Fatalf("err %v, want s6 refused for its fixup tip", err)
 	}
 }
-
