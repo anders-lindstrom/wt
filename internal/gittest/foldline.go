@@ -134,7 +134,7 @@ func NewFoldLine(t testing.TB, dir, wtDir, yaml string) *FoldLine {
 	}
 	add("f1")
 	f3 := add("f3")
-	WriteFile(t, filepath.Join(f3, "docs/n.txt"), "work in progress\n")
+	WriteFile(t, filepath.Join(f3, "docs/m.txt"), "work in progress\n")
 	add(FoldTmp)
 	return s
 }

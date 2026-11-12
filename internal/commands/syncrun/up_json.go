@@ -106,7 +106,8 @@ type SyncParticipant struct {
 	CheckFailed *CheckFailed `json:"checkFailed"`
 	// Stack is the stack held on this worktree's line, for a --stack run:
 	// its layers and what came of each. Null for any other run.
-	Stack *Stack `json:"stack"`
+	Stack      *Stack          `json:"stack"`
+	LayerSteps []LayerStepJSON `json:"-"`
 }
 
 // RunResult is the one object wt sync rebase, resume and undo print with

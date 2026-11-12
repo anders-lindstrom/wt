@@ -3,6 +3,7 @@ package synccmdtest
 import (
 	"bytes"
 	"io"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -61,4 +62,33 @@ func Participant(t *testing.T, r syncrun.RunResult, branch string) *syncrun.Sync
 	}
 	t.Fatalf("no row for %s in %+v", branch, r.Worktrees)
 	return nil
+}
+
+// FoldLine is gittest's FoldLine in a repository wt opens, with yaml
+// declared on trunk.
+func FoldLine(t *testing.T, yaml string) (*kit.Context, *gittest.FoldLine) {
+	t.Helper()
+	main := testkit.CommittedRepo(t, testkit.MinimalConf)
+	testkit.GitIn(t, main, "config", "core.hooksPath", filepath.Join(main, ".git", "hooks"))
+	wtDir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := gittest.NewFoldLine(t, main, wtDir, yaml)
+	ctx, err := kit.Open(main, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ctx, s
+}
+
+// FakeDocker puts a docker on PATH that answers docker info, for a step
+// that needs docker. The test cannot run in parallel.
+func FakeDocker(t *testing.T) {
+	t.Helper()
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(filepath.ListSeparator)+os.Getenv("PATH"))
 }
