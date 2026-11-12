@@ -4,6 +4,13 @@ Newest first, each heading stamped with the local date and time of the change
 (several land per day). `wt about` prints the newest 5 entries, so keep each entry to a few lines a human
 would want read out to them; the full story is in git history.
 
+## 2026-11-12 19:50 — Rebase onto trunk with wt sync first
+
+The worktree conventions now send a rebase or restack onto trunk through
+`wt sync` in any repo whose trunk declares a `.wt-sync.yaml`, stacks
+included. Plain git is for repos without one and other bases; a gap is an
+issue on wt, not a fallback.
+
 ## 2026-11-12 19:05 — A generated file is regenerated at every layer of a stack
 
 A step in `.wt-sync.yaml` with `each: layer` runs at the end of every layer of
@@ -42,7 +49,6 @@ touches its paths, so each commit of a stack still builds. One that fails
 stops the rebase at that commit; amend the fix in and `wt sync resume` checks
 it again. `wt sync` says how many commits a run would check, and
 `docs/sync-declaration.md` describes every key of the file.
-
 
 ## 2026-11-12 10:12 — A version rule that keeps the kind of each bump
 
