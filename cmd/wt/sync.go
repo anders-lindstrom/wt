@@ -503,6 +503,11 @@ type syncVerbFlags struct {
 	json bool
 	// expect is the overview's token a run must still match.
 	expect string
+	// stack is a stack held on the named worktree's line: its layers, and
+	// with --rebase the one rebase of the line that moves them all.
+	stack      bool
+	layers     []string
+	autosquash bool
 }
 
 // verb is the one verb given, "" for the overview, or an error naming the
