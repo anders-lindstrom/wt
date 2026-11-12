@@ -222,33 +222,36 @@ func TestDoctorFlagsAnExpiredLock(t *testing.T) {
 	}
 }
 
-func TestDoctorChecksDockerOnlyWhenStepsAreDeferred(t *testing.T) {
+func TestDoctorChecksDockerOnlyWhenAStepNeedsIt(t *testing.T) {
 	t.Parallel()
 	dir, wt, _ := runRepo(t, nil, nil)
-	checks, err := Doctor(dir, "main", []repo.Worktree{{Path: wt, Branch: "feature"}}, DoctorOptions{Now: time.Now(), Keep: 30 * 24 * time.Hour, Docker: func() error { return errors.New("no docker") }})
-	if err != nil {
-		t.Fatal(err)
+	declare := func(steps string) []Check {
+		t.Helper()
+		yaml := "conflicts:\n  - paths: [v.txt]\n    strategy: owned-line\n    line: '^\\d'\n    rule: max-plus-patch\n" + steps
+		if err := os.WriteFile(filepath.Join(dir, ".wt-sync.yaml"), []byte(yaml), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		gitIn(t, dir, "add", "-A")
+		gitIn(t, dir, "commit", "-q", "--allow-empty", "-m", "declare")
+		gitIn(t, dir, "fetch", "-q", "origin")
+		checks, err := Doctor(dir, "main", []repo.Worktree{{Path: wt, Branch: "feature"}}, DoctorOptions{Now: time.Now(), Keep: 30 * 24 * time.Hour, Docker: func() error { return errors.New("no docker") }})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return checks
 	}
-	for _, c := range checks {
-		if c.Name == "docker" {
-			t.Fatalf("docker check present without any deferred step: %+v", checks)
+	for _, steps := range []string{"", "defer:\n  - run: echo hi\n", "each_commit:\n  - run: echo hi\n"} {
+		for _, c := range declare(steps) {
+			if c.Name == "docker" {
+				t.Fatalf("docker check present with no step that needs it (%q): %+v", steps, c)
+			}
 		}
 	}
-
-	yaml := "conflicts:\n  - paths: [v.txt]\n    strategy: owned-line\n    line: '^\\d'\n    rule: max-plus-patch\n  - paths: [w.txt]\n    strategy: take-trunk\ndefer:\n  - run: echo hi\n"
-	if err := os.WriteFile(filepath.Join(dir, ".wt-sync.yaml"), []byte(yaml), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	gitIn(t, dir, "add", "-A")
-	gitIn(t, dir, "commit", "-q", "-m", "add defer")
-	gitIn(t, dir, "fetch", "-q", "origin")
-	checks, err = Doctor(dir, "main", []repo.Worktree{{Path: wt, Branch: "feature"}}, DoctorOptions{Now: time.Now(), Keep: 30 * 24 * time.Hour, Docker: func() error { return errors.New("no docker") }})
-	if err != nil {
-		t.Fatal(err)
-	}
-	d := findCheck(t, checks, "docker")
-	if d.OK {
-		t.Fatal("expected docker !OK")
+	for _, steps := range []string{"defer:\n  - run: echo hi\n    needs: [docker]\n", "each_commit:\n  - run: echo hi\n    needs: [docker]\n"} {
+		d := findCheck(t, declare(steps), "docker")
+		if d.OK || !strings.Contains(d.Detail, "no docker") {
+			t.Fatalf("%q: docker check %+v", steps, d)
+		}
 	}
 }
 
