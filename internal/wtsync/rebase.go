@@ -191,6 +191,9 @@ type Handover struct {
 	Staged       map[string]string
 	Deleted      []string
 	Left         []string
+	// Check is the each_commit check that failed at this stop, when that is
+	// what stopped it: nothing is unmerged, and HEAD is the commit checked.
+	Check *CheckFailure
 }
 
 // Result is what a rebase did.
@@ -201,6 +204,11 @@ type Result struct {
 	Stops                  []StopResult
 	Restored               bool // an unresolved stop: aborted and verified back at the tip Safety pins
 	SignaturesDropped      int
+	// Checked is how many replayed commits the each_commit checks ran at.
+	Checked int
+	// CheckFailed is the check that failed, whether the stop was handed
+	// over (Left.Check) or restored.
+	CheckFailed *CheckFailure
 	// Left is the stop the run handed over to a person: the rebase is still
 	// in progress in the worktree, with every strategy's answer staged.
 	// Nil when the rebase finished or was restored.
