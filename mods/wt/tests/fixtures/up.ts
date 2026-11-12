@@ -1,11 +1,12 @@
 export default {
   "schema": 1,
-  "schemaVersion": "1.5.0",
+  "schemaVersion": "1.6.0",
   "command": "up",
   "trunk": "main",
   "trunkSource": "config",
   "trunkRef": "origin/main",
   "onto": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "target": { "ref": "origin/main", "trunk": true, "upstream": null },
   "fetched": true,
   "trunkSync": {
     "local": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

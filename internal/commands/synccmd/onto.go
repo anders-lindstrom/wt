@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
 	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anders-lindstrom/wt/internal/jsonout"
 	"github.com/anders-lindstrom/wt/internal/repo"
 	"github.com/anders-lindstrom/wt/internal/wtsync"
 )
@@ -374,4 +376,16 @@ func (r *RunPlan) targetName() string {
 		return "trunk"
 	}
 	return r.target.Ref
+}
+
+// targetJSON is the run's target for --json.
+func (r *RunPlan) targetJSON() (*syncrun.RunTarget, string) {
+	if r.target == nil {
+		return &syncrun.RunTarget{Ref: r.onto, Trunk: true}, r.trunkSHA
+	}
+	t := &syncrun.RunTarget{Ref: r.target.Ref}
+	if r.target.Upstream != "" {
+		t.Upstream = jsonout.Strp(r.target.Upstream)
+	}
+	return t, r.target.SHA
 }

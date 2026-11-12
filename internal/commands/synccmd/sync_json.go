@@ -52,12 +52,14 @@ type SyncOverview struct {
 	TrunkSource   *string `json:"trunkSource"`
 	TrunkRef      *string `json:"trunkRef"`
 	Onto          *string `json:"onto"`
-	Fetched       bool    `json:"fetched"`
-	FetchError    *string `json:"fetchError"`
-	Declared      bool    `json:"declared"`
-	Token         *string `json:"token"`
-	Error         *string `json:"error"`
-	SessionsError *string `json:"sessionsError"`
+	// Target is what onto is: trunk, or the ref --onto names.
+	Target        *syncrun.RunTarget `json:"target"`
+	Fetched       bool               `json:"fetched"`
+	FetchError    *string            `json:"fetchError"`
+	Declared      bool               `json:"declared"`
+	Token         *string            `json:"token"`
+	Error         *string            `json:"error"`
+	SessionsError *string            `json:"sessionsError"`
 	// EachCommitDeclared is the each_commit checks trunk declares.
 	EachCommitDeclared []DeclaredStep `json:"eachCommitDeclared"`
 	// Needs is every need a declared step has, and what its probe said.
@@ -263,7 +265,10 @@ func OverviewOf(ctx *kit.Context, opts SyncOptions) SyncOverview {
 		o.Error = jsonout.Strp(err.Error())
 		return o
 	}
-	o.Onto, o.Declared = jsonout.Strp(sha), cfg != nil
+	o.Declared = cfg != nil
+	if opts.Onto == "" {
+		o.Onto, o.Target = jsonout.Strp(sha), &syncrun.RunTarget{Ref: "origin/" + trunk, Trunk: true}
+	}
 	var target *OntoTarget
 	if opts.Onto != "" {
 		if src, remote, err := remoteSource(ctx, opts.Onto); remote && !opts.NoFetch {
@@ -281,7 +286,7 @@ func OverviewOf(ctx *kit.Context, opts SyncOptions) SyncOverview {
 			return o
 		}
 		target = &t
-		o.Onto = jsonout.Strp(t.SHA)
+		o.Onto, o.Target = jsonout.Strp(t.SHA), &syncrun.RunTarget{Ref: t.Ref, Upstream: jsonout.Strp(t.Upstream)}
 	}
 	listed, err := ctx.ListAgents()
 	if err != nil {
@@ -500,6 +505,10 @@ func (sv Survey) Token(ctx *kit.Context, trunk, trunkSHA string) (*string, error
 		return nil, fmt.Errorf("cannot look for %s on trunk: %w", wtsync.ConfigFile, err)
 	}
 	h.Write([]byte("\x00" + decl))
+	if o := sv.target; o != nil {
+		// Only with --onto: without it the token is what it always was.
+		h.Write([]byte("\x00onto\x01" + o.Ref + "\x01" + o.SHA + "\x01" + o.Upstream))
+	}
 	eligible, covered := 0, 0
 	for _, row := range sv.Rows {
 		if row.Branch == nil {

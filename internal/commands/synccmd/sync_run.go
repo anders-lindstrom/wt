@@ -420,7 +420,12 @@ func (r *RunPlan) declare(works []string) error {
 	r.onto, r.trunkSHA = onto, trunkSHA
 	r.tgt = wtsync.Target{Onto: trunkSHA}
 	r.opts.Journal.Repo(ctx.Repo.MainRoot)
-	r.opts.Journal.Trunk(r.trunk, ctx.TrunkSource(), onto, trunkSHA, !r.opts.NoFetch)
+	// onto is the target's commit, recorded once the target resolves.
+	recorded := trunkSHA
+	if r.opts.Onto != "" {
+		recorded = ""
+	}
+	r.opts.Journal.Trunk(r.trunk, ctx.TrunkSource(), onto, recorded, !r.opts.NoFetch)
 	label := r.opts.label
 	if label == "" && r.opts.Steps != nil {
 		label = "wt sync steps"
@@ -439,6 +444,7 @@ func (r *RunPlan) declare(works []string) error {
 	} else {
 		fmt.Fprintf(r.w, "%s  onto %s %s %s\n", label, onto, git.ShortID(trunkSHA, 7), fetched)
 	}
+	r.opts.Journal.Target(r.targetJSON())
 	cfg, err := wtsync.LoadFromRef(ctx.Repo.MainRoot, trunkSHA)
 	if errors.Is(err, wtsync.ErrUndeclared) && r.opts.undeclaredOK {
 		fmt.Fprintf(r.w, "no %s on %s: nothing is declared, so only a conflict-free rebase goes\n", wtsync.ConfigFile, onto)

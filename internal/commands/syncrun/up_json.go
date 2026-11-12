@@ -125,6 +125,7 @@ type RunResult struct {
 	Trunk         *string            `json:"trunk"`
 	TrunkRef      *string            `json:"trunkRef"`
 	Onto          *string            `json:"onto"`
+	Target        *RunTarget         `json:"target"`
 	Fetched       bool               `json:"fetched"`
 	TrunkSync     *TrunkSync         `json:"trunkSync"`
 	Outcome       string             `json:"outcome"`
@@ -144,6 +145,7 @@ type UpResult struct {
 	TrunkSource   *string          `json:"trunkSource"`
 	TrunkRef      *string          `json:"trunkRef"`
 	Onto          *string          `json:"onto"`
+	Target        *RunTarget       `json:"target"`
 	Fetched       bool             `json:"fetched"`
 	TrunkSync     *TrunkSync       `json:"trunkSync"`
 	Outcome       string           `json:"outcome"`
@@ -232,6 +234,27 @@ func (j *RunJournal) Trunk(name string, source *string, ref, onto string, fetche
 	defer j.Unlock()
 	j.Res.Trunk, j.Res.TrunkSource, j.Res.TrunkRef = jsonout.Strp(name), source, jsonout.Strp(ref)
 	j.Res.Onto, j.Res.Fetched = jsonout.Strp(onto), fetched
+}
+
+// RunTarget is what a run rebases onto: trunk, or the ref --onto names.
+type RunTarget struct {
+	// Ref is the ref as given, or origin/<trunk>.
+	Ref string `json:"ref"`
+	// Trunk says the target is trunk.
+	Trunk bool `json:"trunk"`
+	// Upstream is the commit --upstream names: only the commits above it
+	// are rebased. Null without it.
+	Upstream *string `json:"upstream"`
+}
+
+// Target records what the run rebases onto, and the commit that is: onto.
+func (j *RunJournal) Target(t *RunTarget, onto string) {
+	if j == nil {
+		return
+	}
+	j.Lock()
+	defer j.Unlock()
+	j.Res.Target, j.Res.Onto = t, jsonout.Strp(onto)
 }
 
 // TrunkSync records what the run did to local trunk after its fetch.
@@ -347,7 +370,7 @@ func (j *RunJournal) close(r *RunResult, signalled bool, recovery string) any {
 		return r
 	}
 	up := UpResult{Schema: r.Schema, SchemaVersion: r.SchemaVersion, Command: r.Command,
-		Trunk: r.Trunk, TrunkSource: r.TrunkSource, TrunkRef: r.TrunkRef, Onto: r.Onto, Fetched: r.Fetched,
+		Trunk: r.Trunk, TrunkSource: r.TrunkSource, TrunkRef: r.TrunkRef, Onto: r.Onto, Target: r.Target, Fetched: r.Fetched,
 		TrunkSync: r.TrunkSync, Outcome: r.Outcome, Error: r.Error, Worktrees: []*UpParticipant{}, Recovery: r.Recovery}
 	for _, p := range r.Worktrees {
 		up.Worktrees = append(up.Worktrees, &p.UpParticipant)
