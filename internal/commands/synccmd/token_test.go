@@ -170,6 +170,8 @@ func TestSurveyTokenCoversEveryRowField(t *testing.T) {
 		"Rows.Stops":            "what the simulation met on the way; the class it came to is in it",
 		"Rows.Strategies":       "trunk's declaration, which is in it",
 		"Rows.DeferredDeclared": "trunk's declaration, which is in it",
+		"Rows.Checks":           "what a run checks, which it reads again and which decides nothing it starts on",
+		"Rows.CheckCommits":     "what a run checks, which it reads again and which decides nothing it starts on",
 		"Rows.Notes":            "words",
 		"Rows.Error":            "the verdict it gives is in it",
 	})...)

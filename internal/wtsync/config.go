@@ -53,13 +53,28 @@ type Deferred struct {
 	// Commit is the message for the step's output, when it changes tracked
 	// files; empty means the output is never committed.
 	Commit string `yaml:"commit"`
+	// Needs names the tools the step cannot run without, from KnownNeeds:
+	// a run probes each before it moves anything.
+	Needs []string `yaml:"needs"`
+}
+
+// EachCommit is a check that runs after every replayed commit touching one
+// of its paths, at that commit. It must not change tracked files.
+type EachCommit struct {
+	Run string `yaml:"run"`
+	// Paths gate the check on what the replayed commit changes; empty means
+	// every commit.
+	Paths []string `yaml:"paths"`
+	// Needs is as on a deferred step.
+	Needs []string `yaml:"needs"`
 }
 
 // Config is one repository's .wt-sync.yaml.
 type Config struct {
-	Conflicts       []Rule     `yaml:"conflicts"`
-	Defer           []Deferred `yaml:"defer"`
-	DependencyGraph []string   `yaml:"dependency_graph"`
+	Conflicts       []Rule       `yaml:"conflicts"`
+	Defer           []Deferred   `yaml:"defer"`
+	EachCommit      []EachCommit `yaml:"each_commit"`
+	DependencyGraph []string     `yaml:"dependency_graph"`
 }
 
 // LoadFromTrunk reads the declaration from origin/<trunk>, never from a
@@ -121,6 +136,17 @@ func Parse(data []byte) (*Config, error) {
 	for i, d := range cfg.Defer {
 		if d.Run == "" {
 			return nil, fmt.Errorf("%s: defer[%d] has no run", ConfigFile, i)
+		}
+		if err := checkNeeds(d.Needs); err != nil {
+			return nil, fmt.Errorf("%s: defer[%d]: %w", ConfigFile, i, err)
+		}
+	}
+	for i, c := range cfg.EachCommit {
+		if c.Run == "" {
+			return nil, fmt.Errorf("%s: each_commit[%d] has no run", ConfigFile, i)
+		}
+		if err := checkNeeds(c.Needs); err != nil {
+			return nil, fmt.Errorf("%s: each_commit[%d]: %w", ConfigFile, i, err)
 		}
 	}
 	return &cfg, nil

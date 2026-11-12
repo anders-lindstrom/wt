@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sync-run.v1.json",
-  "x-version": "1.4.1",
+  "x-version": "1.5.0",
   "title": "wt sync rebase|resume|undo --json",
   "description": "What a wt sync rebase, resume or undo did. Printed by `wt sync rebase [<work>...] --json`, `wt sync [<work>...] --rebase --json`, `wt sync resume <work> --json` and `wt sync undo <work> --json` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends it. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
@@ -47,7 +47,7 @@
     },
     "participant": {
       "type": "object",
-      "required": ["work", "branch", "path", "result", "reason", "before", "after", "failedSteps", "recovery", "pushCommand", "pushed", "noPushReason", "fixCommand", "safetyRef", "deferred", "undoCommand", "planFile", "ownRemoteSync"],
+      "required": ["work", "branch", "path", "result", "reason", "before", "after", "failedSteps", "recovery", "pushCommand", "pushed", "noPushReason", "fixCommand", "safetyRef", "deferred", "undoCommand", "planFile", "ownRemoteSync", "checked", "checkFailed"],
       "properties": {
         "work": { "type": "string" },
         "branch": { "type": "string" },
@@ -74,15 +74,32 @@
             "required": ["step", "result", "reason", "commit"],
             "properties": {
               "step": { "type": "string", "description": "The step's run line from .wt-sync.yaml." },
-              "result": { "enum": ["done", "committed", "failed", "skipped"] },
-              "reason": { "type": ["string", "null"], "description": "Why it failed or was skipped." },
+              "result": { "enum": ["done", "committed", "failed", "skipped", "owed"], "description": "owed since 1.5.0: not run, because a need of it did not answer its probe in a run started with --allow-owed; owed like a failed step." },
+              "reason": { "type": ["string", "null"], "description": "Why it failed, was skipped or is owed." },
               "commit": { "type": ["string", "null"], "description": "For committed: the commit." }
             }
           }
         },
         "undoCommand": { "$ref": "#/$defs/argvOrNull", "description": "What puts it back where the run found it, as an argv; null when there is nothing to undo." },
         "planFile": { "type": ["string", "null"], "description": "For handedOver: the plan file saying what is yours." },
-        "ownRemoteSync": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/ownRemoteSync" }], "description": "Since 1.2.0. Always an object from wt sync rebase; always null from resume and undo, which do not check: the check ran when the run started." }
+        "ownRemoteSync": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/ownRemoteSync" }], "description": "Since 1.2.0. Always an object from wt sync rebase; always null from resume and undo, which do not check: the check ran when the run started." },
+        "checked": { "type": "integer", "minimum": 0, "description": "Since 1.5.0: how many replayed commits the each_commit checks ran at, in this run or this resume. 0 when nothing was checked." },
+        "checkFailed": {
+          "description": "Since 1.5.0: the each_commit check that stopped the rebase: handedOver at that commit, or restored for a stack parent. Null when none failed.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["step", "commit", "subject", "error"],
+              "properties": {
+                "step": { "type": "string", "description": "The check's run line from .wt-sync.yaml." },
+                "commit": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "description": "The replayed commit it failed at." },
+                "subject": { "type": "string" },
+                "error": { "type": "string", "description": "What failed: an exit status, a timeout, or the tracked files it changed." }
+              }
+            }
+          ]
+        }
       }
     },
     "ownRemoteSync": {

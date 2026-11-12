@@ -9,7 +9,7 @@ import (
 )
 
 func newUpCmd() *cobra.Command {
-	var noFetch, noFFTrunk, yes, force, allowDiverged, asJSON bool
+	var noFetch, noFFTrunk, yes, force, allowDiverged, allowOwed, asJSON bool
 	var expect string
 	var push func() syncrun.PushMode
 	cmd := &cobra.Command{
@@ -52,6 +52,9 @@ func newUpCmd() *cobra.Command {
 			"it has read would change under it. --force (-f) goes ahead anyway and\n" +
 			"names the session, so you can tell it; it lifts nothing else — dirt\n" +
 			"and a conflict that is yours still refuse.\n\n" +
+			"A step that declares needs: [docker] refuses the run before anything\n" +
+			"moves when Docker does not answer docker info, as for wt sync rebase;\n" +
+			"--allow-owed rebases anyway and owes the step, to run by hand later.\n\n" +
 			"--json prints one result object on stdout and the progress on stderr,\n" +
 			"for a tool driving wt; --expect <token> refuses the run, touching\n" +
 			"nothing, when trunk, the configuration, the stack or a remote the\n" +
@@ -71,7 +74,7 @@ func newUpCmd() *cobra.Command {
 				work = args[0]
 			}
 			f := syncVerbFlags{rebase: true, yes: yes, noFetch: noFetch, noFFTrunk: noFFTrunk, ifReady: true, force: force,
-				allowDiverged: allowDiverged, push: push()}
+				allowDiverged: allowDiverged, allowOwed: allowOwed, push: push()}
 			if !asJSON {
 				return withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
 					opts, _ := runOptions(cmd, f, false)
@@ -107,6 +110,7 @@ func newUpCmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "yes to every question, the push included (--no-push keeps it out)")
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "go ahead even with an agent session in the worktree")
 	cmd.Flags().BoolVar(&allowDiverged, "allow-diverged", false, "rebase a branch that has diverged from its own remote, as it stands")
+	cmd.Flags().BoolVar(&allowOwed, "allow-owed", false, "rebase now even when a step's need does not answer; the step is owed, to run later")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print one result object on stdout, the progress on stderr")
 	cmd.Flags().StringVar(&expect, "expect", "", "refuse unless the plan still matches this token from wt status --json")
 	push = addPushFlags(cmd, "push when it is done, without asking", "neither push nor ask; print the push command")

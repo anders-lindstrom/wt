@@ -703,6 +703,7 @@ each came to in [`deferred`](#wt-sync-rebaseresumeundo---json--the-result).
 |---|---|---|
 | `step` | string | the step's `run` line, the same string `deferred[].step` carries for it afterwards |
 | `paths` | array of string | the globs that gate it, as declared; empty when it has none |
+| `needs` | array of string | since `sync` 1.6.0 and `status` 1.10.0: what the step cannot run without, as declared (`docker`); empty when it has none. A run probes each before it moves anything ([needs](#needs--what-a-step-cannot-run-without)) |
 
 In the declared order, which is the order they run in.
 
@@ -1418,6 +1419,25 @@ refs. It changes nothing.
 | `error` | string \| null | |
 | `runs` | array | `{runId, sweptAt, endpoint, refs}`: `sweptAt` unix seconds, the meta's, else from the id; `endpoint` as the meta records it, or null; each ref `{id, kind, name, pin, object}` |
 
+### `needs` — what a step cannot run without
+
+A step under `defer:` or `each_commit:` may declare `needs: [docker]`. Before
+a run moves any branch or safety ref, it probes each need once (`docker`: `docker
+info`, under a 10-second deadline), and only when a step with it may run for a
+worktree the run goes ahead with: an `each_commit` step with a commit to check,
+or a deferred step whose `paths` match a path the rebase may change (what trunk
+changed since the branch's merge base, and what the branch's own commits
+change; which deferred steps really run is only known after). A need that does
+not answer refuses that worktree, and what sits on it in a stack, before
+anything moves: `refused`, with the step, the need and the probe's answer in
+`reason`; the members above it are `notRun`. With `--allow-owed` the run goes on:
+a deferred step that needs it is `owed` in `deferred`, an `each_commit` step is
+not run at any commit, and either is named in `failedSteps`, so the worktree is
+`rebasedStepFailed` and not pushed.
+
+`wt sync --json` reports the same probe, in its top-level `needs`, before
+anyone starts.
+
 ## `wt sync --json` — the overview
 
 What a rebase onto trunk would do to every worktree of the repository, as
@@ -1447,6 +1467,8 @@ object with `error` set and no worktrees, and the exit code is non-zero.
 | `token` | string \| null | names what a run would start on; pass it to `wt sync rebase --expect` or `wt sync --rebase --expect`. Null when a run would start on nothing and no worktree's `ownRemote.blocks` is `diverged`: a diverged one makes it non-null, also when something else (a busy session) keeps a run off it |
 | `error` | string \| null | why there is no overview: trunk not known here, the repository not readable. The exit code is then non-zero |
 | `sessionsError` | string \| null | Agent sessions could not be listed; `sessions` are then empty, not known empty |
+| `eachCommitDeclared` | array | since 1.6.0: the `each_commit` checks trunk declares, `step`, `paths` and `needs` as in [`deferredDeclared`](#deferreddeclared--the-deferred-steps-trunk-declares); each runs after every replayed commit changing a path its `paths` match (every commit when empty). `[]` when there are none |
+| `needs` | array | since 1.6.0: every need a declared step has, once each: `need` (`docker`), `probed` (a step with it would run for some worktree, so the probe ran), `ok` (it answered; false when not probed), `error` (why it did not; null otherwise). See [needs](#needs--what-a-step-cannot-run-without) |
 | `worktrees` | array | every worktree but the main checkout, in git's order |
 
 Each worktree:
@@ -1475,6 +1497,8 @@ Each worktree:
 | `stops[].yours` | bool | the first stop no strategy resolves: a run hands it to a person |
 | `stops[].files[]` | object | `path`, `resolved`, `strategy` (null when nothing claims it), `note` (why a strategy refused it, or what a lift did) |
 | `deferredDeclared` | array | since 1.4.0: the [deferred steps trunk declares](#deferreddeclared--the-deferred-steps-trunk-declares), which a run may perform once it has rebased this worktree; `[]` when there are none |
+| `checks` | int | since 1.6.0: how many of the branch's commits a run would check with the `each_commit` steps, those changing a path a step's `paths` match; nothing is run to say so. 0 for a worktree a run would not rebase. A commit whose resolution leaves no such change is not checked by the run, so this is an upper bound |
+| `checkCommits` | array | since 1.6.0: those commits, oldest first, as they are on the branch now: `commit`, `subject` |
 | `strategies` | array of string | the declared strategies that resolved something, each once |
 | `notes` | array of string | advisory; they never change the class |
 | `error` | string \| null | the assessment failed |
@@ -1553,7 +1577,9 @@ Each participant has `wt up`'s fields, and:
 | Field | Type | Meaning |
 |---|---|---|
 | `safetyRef` | string \| null | the ref pinning the branch's tip from before the run, `refs/wt-sync/<branch>/<epoch>` |
-| `deferred` | array | what each deferred step of a finished rebase came to: `step` (its `run` line), `result` (`done` \| `committed` \| `failed` \| `skipped`), `reason` (why failed or skipped), `commit` (for committed) |
+| `deferred` | array | what each deferred step of a finished rebase came to: `step` (its `run` line), `result` (`done` \| `committed` \| `failed` \| `skipped` \| `owed`), `reason` (why failed, skipped or owed), `commit` (for committed). `owed` since 1.5.0: not run, because a [need](#needs--what-a-step-cannot-run-without) of it did not answer in a run started with `--allow-owed` |
+| `checked` | int | since 1.5.0: how many replayed commits the `each_commit` checks ran at, in this run or this resume |
+| `checkFailed` | object \| null | since 1.5.0: the `each_commit` check that stopped the rebase: `step`, `commit` (the replayed commit it failed at), `subject`, `error` (an exit status, a timeout, or the tracked files it changed). The participant is `handedOver` at that commit, HEAD the commit, nothing unmerged, and `wt sync resume` runs the check again there once the fix is amended in or committed; a stack parent is `restored` instead, and its children `notRun`. Null when no check failed |
 | `undoCommand` | array of string \| null | what puts it back where the run found it, as an argv (`["wt", "sync", "undo", work]`); null when nothing is there to undo |
 | `planFile` | string \| null | for `handedOver`: the plan saying what is yours |
 | `ownRemoteSync` | object \| null | since 1.2.0: [`ownRemoteSync`](#ownremotesync--what-a-run-did-about-it), an object from `wt sync rebase`; always null from resume and undo |
@@ -2086,3 +2112,4 @@ change made it.
 | `sweep-plan` 1.6.0, `sweep` 1.5.0 | [`--reap`](#processes--what-still-runs-in-a-worktree): `reap` on the plan and `processes` on each item, the `kept` codes `processes` and `processesUnknown`, `reaped` on each item of the result |
 | `session-send` 1.1.0 | `errorCode` `notExact`: `<work>` only matched a worktree and is not its name, and no `--expect-session` was given; 1.0.0 said `noSession` |
 | `config` 1.0.0 | `wt config --json`: resolved repository configuration, including developer config entries, main checkout and user naming overrides |
+| `sync` 1.6.0, `sync-run` 1.5.0, `status` 1.10.0 | [`each_commit` checks and `needs`](#needs--what-a-step-cannot-run-without): `eachCommitDeclared`, `needs`, and `checks` and `checkCommits` on each worktree of `sync`; `needs` on every declared step of `sync` and `status`; `checked` and `checkFailed` on each participant of `sync-run`, and the `deferred` result `owed` |

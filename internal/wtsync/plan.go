@@ -78,6 +78,18 @@ type State struct {
 	// across every earlier handover of the same run.
 	Stopped []string `json:"stopped"`
 	Lock    LeftLock `json:"lock"`
+	// Check is the each_commit check that failed at the stop, when that is
+	// what the handover is: nothing unmerged, HEAD the commit that failed,
+	// and resume runs the check again there before it goes on.
+	Check *CheckStop `json:"check,omitempty"`
+}
+
+// CheckStop is a failed check as the handover records it.
+type CheckStop struct {
+	Step    string `json:"step"`
+	Commit  string `json:"commit"`
+	Subject string `json:"subject"`
+	Err     string `json:"error"`
 }
 
 // ResolvedPaths is the paths the strategies staged at the handover, sorted:
@@ -297,6 +309,9 @@ type PlanInput struct {
 // section removes a specific expense; none of it costs a model anything to
 // produce.
 func RenderPlan(in PlanInput) (string, error) {
+	if in.Handover.Check != nil {
+		return renderCheckPlan(in), nil
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "# rebase %s onto %s\n", in.Work, in.TrunkRef)
 	scopes := in.Landing.ScopeLine()

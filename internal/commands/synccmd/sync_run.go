@@ -64,6 +64,7 @@ type RunOptions struct {
 	Own *wtsync.Own
 	syncrun.VerbOptions
 	syncrun.PushOptions
+	syncrun.StepOptions
 }
 
 // participant is one worktree of a run: the branch it is on, what triage
@@ -94,6 +95,9 @@ type participant struct {
 	// to its own remote's commit before rebasing: what the safety ref pins
 	// and a restore goes back to.
 	found string
+	// unavailable is the needs of its steps that did not answer, in a run
+	// told to go on with --allow-owed: those steps are owed.
+	unavailable map[string]string
 }
 
 // RunPlan is one wt sync rebase: the trunk it rebases onto, the worktrees the
@@ -661,6 +665,7 @@ func (r *RunPlan) triage() (proceed bool, err error) {
 			r.refuseStack(b, p.work+": "+p.reason)
 		}
 	}
+	r.probeNeeds()
 	if r.opts.IfReady {
 		for _, b := range r.branches {
 			p := r.parts[b]
@@ -697,6 +702,37 @@ func (r *RunPlan) triage() (proceed bool, err error) {
 		}
 	}
 	return true, nil
+}
+
+// probeNeeds probes, once each, the needs of the steps that may run for a
+// worktree the run goes ahead with, before anything moves. A worktree whose
+// step needs something that did not answer is refused, and what sits on it
+// with it; with --allow-owed it goes ahead, and those steps are owed.
+func (r *RunPlan) probeNeeds() {
+	prober := r.opts.Prober()
+	for _, b := range r.branches {
+		p := r.parts[b]
+		if p.verdict != wtsync.Proceed || p.refused != "" || p.a.OnlyFastForward() {
+			continue
+		}
+		base := r.trunkSHA
+		if parent, ok := r.parents[b]; ok && r.parts[parent] != nil {
+			base = "refs/heads/" + parent
+		}
+		due, err := wtsync.StepsDue(p.wt.Path, r.cfg, base, rebasedTip(b, p.a), r.trunkSHA)
+		if err != nil {
+			p.refused = p.work + ": could not tell which steps a rebase runs: " + err.Error()
+			r.refuseAbove(b, p.work+" was refused")
+			continue
+		}
+		unavailable, refusal := syncrun.NeedsFor(prober, due, r.opts.AllowOwed)
+		if refusal != "" {
+			p.refused = p.work + ": " + refusal
+			r.refuseAbove(b, p.work+" was refused")
+			continue
+		}
+		p.unavailable = unavailable
+	}
 }
 
 // lockAll locks every member of every proceeding stack before touching any,
@@ -849,6 +885,9 @@ func (r *RunPlan) rebaseOne(b string) {
 		return wtsync.Rebase(r.ctx.Repo.MainRoot, r.cfg, req, r.w)
 	})
 	p.result = &res
+	r.opts.Journal.SetSync(b, func(jp *syncrun.SyncParticipant) {
+		jp.Checked, jp.CheckFailed = res.Checked, syncrun.CheckFailedOf(res.CheckFailed)
+	})
 	switch {
 	case rerr != nil:
 		r.rebaseFailed(b, p, res, rerr)
@@ -892,7 +931,10 @@ func (r *RunPlan) passOver(b string, p *participant) bool {
 // did not go, which settled the worktree.
 func (r *RunPlan) request(b string, p *participant) (req wtsync.Request, ontoLabel string, ok bool) {
 	w, j := r.w, r.opts.Journal
-	req = wtsync.Request{Path: p.wt.Path, Branch: b, Trunk: r.trunkSHA, Onto: r.trunkSHA, Epoch: r.epoch, Work: p.work}
+	req = wtsync.Request{Path: p.wt.Path, Branch: b, Trunk: r.trunkSHA, Onto: r.trunkSHA, Epoch: r.epoch, Work: p.work, Unavailable: p.unavailable}
+	if line := syncrun.AllowedOwedLine(p.unavailable); line != "" {
+		fmt.Fprintf(w, "  %s\n", line)
+	}
 	req.Stacked = len(wtsync.Descendants(r.parents, b)) > 0
 	ontoLabel = r.onto
 	if parent, ok := r.parents[b]; ok {
@@ -979,6 +1021,9 @@ func (r *RunPlan) handOver(b string, p *participant, req wtsync.Request, res wts
 	j.SetSync(b, func(jp *syncrun.SyncParticipant) {
 		jp.Result = syncrun.ResultHandedOver
 		jp.Reason = jsonout.Strp("stopped at a conflict that is yours")
+		if res.Left.Check != nil {
+			jp.Reason = jsonout.Strp("stopped at a commit whose check failed: " + res.Left.Check.Line())
+		}
 		jp.Recovery = jsonout.Strp(wtsync.WayOut(wtsync.Way{Work: p.work, Plan: true, Rebasing: true, OwesAdd: true}))
 		jp.SafetyRef, jp.UndoCommand, jp.PlanFile = jsonout.Strp(res.Safety.Ref), syncrun.UndoCommand(p.work), syncrun.PlanFileOf(p.wt.Path)
 	})
@@ -988,14 +1033,19 @@ func (r *RunPlan) handOver(b string, p *participant, req wtsync.Request, res wts
 
 // settleRestored settles a rebase the loop put back at a stop nobody resolved.
 func (r *RunPlan) settleRestored(b string, p *participant, res wtsync.Result) {
-	last := res.Stops[len(res.Stops)-1]
-	var files []string
-	for _, f := range last.Files {
-		if !f.Resolved {
-			files = append(files, f.Path)
+	var restored string
+	if f := res.CheckFailed; f != nil {
+		restored = fmt.Sprintf("restored: %s at %d/%d; a stack parent is not left waiting: fix the commit, then run again", f.Line(), f.Index, f.Total)
+	} else {
+		last := res.Stops[len(res.Stops)-1]
+		var files []string
+		for _, f := range last.Files {
+			if !f.Resolved {
+				files = append(files, f.Path)
+			}
 		}
+		restored = fmt.Sprintf("restored: %s at %d/%d not resolved; rebase by hand", strings.Join(files, ", "), last.Index, last.Total)
 	}
-	restored := fmt.Sprintf("restored: %s at %d/%d not resolved; rebase by hand", strings.Join(files, ", "), last.Index, last.Total)
 	fmt.Fprintf(r.w, "  ✗ %s\n", restored)
 	syncrun.ClearHandover(r.w, p.wt.Path)
 	r.dropFastForward(b, p)
@@ -1025,10 +1075,12 @@ func (r *RunPlan) finishRebase(b string, p *participant, res wtsync.Result, onto
 		return syncrun.CompleteInput{
 			Branch: b, Epoch: r.epoch, Res: done,
 			Tell: append(slices.Clone(p.a.Sessions), p.forced...), TrunkName: r.trunk, Landed: p.a.Behind, Check: syncrun.PathsOnce(wtsync.StopPaths(res.Stops)),
+			Unavailable: p.unavailable,
 		}
 	})
 	p.head = head
-	owed := syncrun.OwedSteps(ran)
+	syncrun.PrintUnchecked(w, res.Unchecked)
+	owed := append(syncrun.OwedChecks(res.Unchecked), syncrun.OwedSteps(ran)...)
 	r.failures = append(r.failures, syncrun.OwedBy(p.work, owed)...)
 	// The rebase itself stands; only this branch and what sits on it
 	// lose their footing, so the rest of the run carries on.

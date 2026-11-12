@@ -3,9 +3,7 @@ package wtsync
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -68,7 +66,7 @@ func Doctor(mainRoot, trunk string, worktrees []repo.Worktree, opts DoctorOption
 	checks = append(checks, hooksCheck(mainRoot))
 	checks = append(checks, treeFileCheck(mainRoot, onto, state, ".gitmodules", "submodules", "submodules are not handled by run"))
 	checks = append(checks, lfsCheck(mainRoot, onto, state))
-	if cfg != nil && len(cfg.Defer) > 0 {
+	if cfg.DeclaresNeed(NeedDocker) {
 		checks = append(checks, dockerCheck(opts.Docker))
 	}
 
@@ -392,21 +390,15 @@ func lfsCheck(mainRoot, onto string, st ontoState) Check {
 	return Check{Name: "lfs", OK: false, Detail: "LFS paths are not handled by run: " + strings.Join(files, ", ")}
 }
 
-// dockerCheck runs probe (or `docker info` under a deadline, by default) and
-// reports whether it succeeded. Only called when the declaration has
-// deferred steps: nothing else in run touches Docker.
+// dockerCheck runs probe (or the docker need's own probe, by default) and
+// reports whether it succeeded. Only called when a step declares
+// needs: [docker]: nothing else in run touches Docker.
 func dockerCheck(probe func() error) Check {
 	if probe == nil {
-		probe = func() error {
-			cmd := exec.Command("docker", "info")
-			cmd.Stdout = io.Discard
-			cmd.Stderr = io.Discard
-			_, _, err := git.RunBounded(dockerDeadline, cmd)
-			return err
-		}
+		probe = probeDocker
 	}
 	if err := probe(); err != nil {
-		return Check{Name: "docker", OK: false, Detail: "deferred steps that need Docker will be owed: " + err.Error()}
+		return Check{Name: "docker", OK: false, Detail: "a run refuses the worktrees whose steps need Docker, or owes those steps with --allow-owed: " + err.Error()}
 	}
 	return Check{Name: "docker", OK: true}
 }
@@ -442,6 +434,21 @@ func safetyCheck(mainRoot string, opts DoctorOptions) (Check, error) {
 	return Check{Name: "safety-refs", OK: false, Prune: true, Detail: detail, Fix: fix}, nil
 }
 
+// readLockHeld is ReadLock under the git dir's flock, which every move or
+// removal of a lock takes: what doctor reports is a lock as it stood, not
+// one half-way through being broken. A git dir that is gone has no lock.
+func readLockHeld(gitDir string) (*Lock, bool, error) {
+	unlock, err := lockGitDir(gitDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	defer unlock()
+	return ReadLock(gitDir)
+}
+
 // locksCheck flags every wt-sync.lock found in any worktree's git dir: an
 // expired one (older than LockExpiry) gets a Fix that removes it; a live one
 // is only named, since it belongs to a run that may still be in progress.
@@ -455,7 +462,7 @@ func locksCheck(worktrees []repo.Worktree, gitDirs map[string]string, now time.T
 	var found []held
 	for _, wt := range worktrees {
 		gitDir := gitDirs[wt.Path]
-		lock, ok, err := ReadLock(gitDir)
+		lock, ok, err := readLockHeld(gitDir)
 		if err != nil {
 			return Check{}, err
 		}

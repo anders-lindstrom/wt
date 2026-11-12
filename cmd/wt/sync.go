@@ -124,7 +124,14 @@ func newSyncCmd() *cobra.Command {
 			"for its person; a verb names it, asks first, and ends with a wt: line to\n" +
 			"pass on to it. +N counts the other sessions there. The session wt itself\n" +
 			"runs under is not counted. The lines under a row are advisory and never\n" +
-			"change the class.\n" +
+			"change the class. A row whose run would check commits with the\n" +
+			"each_commit steps says how many; wt sync <work> lists them. Nothing is\n" +
+			"run to say so. A need a step that would run declares (needs: [docker])\n" +
+			"is probed, and one that does not answer is named under the table.\n" +
+			"\n" +
+			".wt-sync.yaml on trunk declares all of this: the strategies, the\n" +
+			"deferred and each_commit steps, their needs. docs/sync-declaration.md\n" +
+			"describes every key.\n" +
 			"\n" +
 			"A branch is also compared with its own remote, the ref a push of it would\n" +
 			"replace: what is recorded for it, else its own name on the remote git\n" +
@@ -135,8 +142,9 @@ func newSyncCmd() *cobra.Command {
 			"\n" +
 			"--json prints the overview as one object on stdout, for a tool driving\n" +
 			"wt: every worktree with its group, class, stack and stops, current ones\n" +
-			"included, the deferred steps trunk declares, which a run may perform,\n" +
-			"and a token for --rebase --expect. With --all, --roots or\n" +
+			"included, the deferred and each_commit steps trunk declares, which a run\n" +
+			"may perform, the commits a run would check, what each need's probe\n" +
+			"answered, and a token for --rebase --expect. With --all, --roots or\n" +
 			"--profile it is an array, one object per repository. With a verb it is\n" +
 			"that verb's result instead (wt sync rebase --help). wt schema sync and\n" +
 			"wt schema sync-run print their JSON Schemas; docs/json.md explains them.",
@@ -147,14 +155,14 @@ func newSyncCmd() *cobra.Command {
 			"  wt sync --profile api         # the overview of a profile's repositories",
 		ValidArgsFunction: completeWork,
 	}
-	var rebase, resume, undo, yes, force, ifReady, allowDiverged, asJSON bool
+	var rebase, resume, undo, yes, force, ifReady, allowDiverged, allowOwed, asJSON bool
 	var expect string
 	var sel selectionFlags
 	var push func() syncrun.PushMode
 	flags := func() syncVerbFlags {
 		return syncVerbFlags{rebase: rebase, resume: resume, undo: undo,
 			yes: yes, force: force, noFetch: noFetch, noFFTrunk: noFFTrunk, ifReady: ifReady, push: push(),
-			allowDiverged: allowDiverged, json: asJSON, expect: expect}
+			allowDiverged: allowDiverged, allowOwed: allowOwed, json: asJSON, expect: expect}
 	}
 	// The count rule is the verb's own. Two verbs at once is a flag mistake,
 	// which RunE reports the way --push with --no-push is reported.
@@ -184,7 +192,7 @@ func newSyncCmd() *cobra.Command {
 			})
 		case "resume":
 			return withVerbContext(cmd, args, "sync resume", f.json, func(ctx *kit.Context, j *syncrun.RunJournal) error {
-				return syncResume(cmd, args[0], ctx, f.yes, f.push, j)
+				return syncResume(cmd, args[0], ctx, f.yes, f.allowOwed, f.push, j)
 			})
 		case "undo":
 			return withVerbContext(cmd, args, "sync undo", f.json, func(ctx *kit.Context, j *syncrun.RunJournal) error {
@@ -219,11 +227,12 @@ func newSyncCmd() *cobra.Command {
 	sync.Flags().StringVar(&expect, "expect", "", "with --rebase: refuse unless the overview still matches this token from wt sync --json")
 	sync.Flags().BoolVar(&noFFTrunk, "no-ff-trunk", false, "with --rebase: leave local <trunk> where it is after the fetch")
 	sync.Flags().BoolVar(&allowDiverged, "allow-diverged", false, "with --rebase: rebase a branch that has diverged from its own remote")
+	sync.Flags().BoolVar(&allowOwed, "allow-owed", false, "with --rebase or --resume: rebase now even when a step's need does not answer; the step is owed")
 	sel.add(sync, true)
 	// The verbs spelled as flags, and their own flags, work on this line but
 	// belong to the verbs: their help is wt sync rebase, resume and undo --help,
 	// and the table here keeps to what the overview itself takes.
-	for _, name := range []string{"rebase", "resume", "undo", "yes", "push", "no-push", "force", "if-ready", "expect", "no-ff-trunk", "allow-diverged"} {
+	for _, name := range []string{"rebase", "resume", "undo", "yes", "push", "no-push", "force", "if-ready", "expect", "no-ff-trunk", "allow-diverged", "allow-owed"} {
 		_ = sync.Flags().MarkHidden(name)
 	}
 	sync.AddCommand(newSyncRebaseCmd(), newSyncResumeCmd(), newSyncUndoCmd(), newSyncPushToCmd(), newSyncDoctorCmd(), newSyncKeepCmd())
@@ -486,7 +495,10 @@ type syncVerbFlags struct {
 	ifReady, noFFTrunk   bool
 	// allowDiverged rebases a branch that has diverged from its own remote.
 	allowDiverged bool
-	push          syncrun.PushMode
+	// allowOwed rebases even when a step's need does not answer its probe:
+	// that step is owed.
+	allowOwed bool
+	push      syncrun.PushMode
 	// json prints one object on stdout: the overview, or the verb's result.
 	json bool
 	// expect is the overview's token a run must still match.
@@ -541,6 +553,8 @@ func (f syncVerbFlags) check() error {
 		return usagef("--no-ff-trunk needs --rebase")
 	case f.allowDiverged && verb != "rebase":
 		return usagef("--allow-diverged needs --rebase")
+	case f.allowOwed && !rebases:
+		return usagef("--allow-owed needs --rebase or --resume")
 	}
 	return nil
 }
@@ -579,7 +593,7 @@ func syncArgs(verb string) cobra.PositionalArgs {
 }
 
 func newSyncRebaseCmd() *cobra.Command {
-	var noFetch, noFFTrunk, yes, ifReady, force, allowDiverged, asJSON bool
+	var noFetch, noFFTrunk, yes, ifReady, force, allowDiverged, allowOwed, asJSON bool
 	var expect string
 	var sel selectionFlags
 	var push func() syncrun.PushMode
@@ -597,6 +611,21 @@ func newSyncRebaseCmd() *cobra.Command {
 			"finish. A branch with a stack above it in the same run is put back instead,\n" +
 			"so a stack is never half-applied. A failed deferred step is reported as\n" +
 			"owed and never undoes the rebase.\n\n" +
+			"A step under each_commit: in .wt-sync.yaml runs after every replayed\n" +
+			"commit that changes one of its paths, at that commit once it is final,\n" +
+			"each under its own 30-minute limit, with a line per commit. One that\n" +
+			"fails, or changes a tracked file, stops the rebase there: HEAD is the\n" +
+			"commit, nothing is unmerged, and a plan file names the check. Amend the\n" +
+			"fix into the commit, or add one, and wt sync resume runs the check again\n" +
+			"before it goes on. A stack parent is put back instead.\n\n" +
+			"A step that declares needs: [docker] needs Docker. Before anything moves,\n" +
+			"the run asks docker info once, when a step that needs it may run: an\n" +
+			"each_commit step with a commit to check, or a deferred step whose paths\n" +
+			"the rebase may change. A worktree whose step needs something that did\n" +
+			"not answer is refused, with what sits on it in a stack. --allow-owed\n" +
+			"rebases it now anyway: the step is not run and is owed, to run by hand\n" +
+			"later, and the worktree is not pushed. docs/sync-declaration.md\n" +
+			"describes every key of .wt-sync.yaml.\n\n" +
 			"After the fetch, local <trunk> is fast-forwarded to origin/<trunk>\n" +
 			"when that is safe: checked out nowhere, or in a clean checkout with\n" +
 			"nothing in progress and no session busy in it. Otherwise it is left,\n" +
@@ -684,7 +713,7 @@ func newSyncRebaseCmd() *cobra.Command {
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			f := syncVerbFlags{rebase: true, yes: yes, noFetch: noFetch, noFFTrunk: noFFTrunk, ifReady: ifReady, force: force,
-				allowDiverged: allowDiverged, push: push(), json: asJSON, expect: expect}
+				allowDiverged: allowDiverged, allowOwed: allowOwed, push: push(), json: asJSON, expect: expect}
 			if sel.selection().Any() {
 				return syncAcross(cmd, args, "rebase", sel.selection(), f)
 			}
@@ -699,6 +728,7 @@ func newSyncRebaseCmd() *cobra.Command {
 	rebase.Flags().BoolVar(&ifReady, "if-ready", false, "rebase only what will go through without needing you, and fail on the rest")
 	rebase.Flags().BoolVarP(&force, "force", "f", false, "rebase a named worktree even with an agent session in it")
 	rebase.Flags().BoolVar(&allowDiverged, "allow-diverged", false, "rebase a branch that has diverged from its own remote, as it stands")
+	rebase.Flags().BoolVar(&allowOwed, "allow-owed", false, "rebase now even when a step's need does not answer; the step is owed, to run later")
 	rebase.Flags().BoolVar(&asJSON, "json", false, "print one result object on stdout, the progress on stderr")
 	rebase.Flags().StringVar(&expect, "expect", "", "refuse unless the overview still matches this token from wt sync --json")
 	sel.add(rebase, true)
@@ -751,6 +781,7 @@ func withVerbContext(cmd *cobra.Command, args []string, command string, asJSON b
 func runOptions(cmd *cobra.Command, f syncVerbFlags, bulk bool) (synccmd.RunOptions, *prompter) {
 	opts := synccmd.RunOptions{NoFetch: f.noFetch, NoFFTrunk: f.noFFTrunk, IfReady: f.ifReady, Force: f.force,
 		AllowDiverged: f.allowDiverged}
+	opts.AllowOwed = f.allowOwed
 	opts.Push = f.push
 	switch {
 	case f.yes:
@@ -810,7 +841,7 @@ func syncAcross(cmd *cobra.Command, args []string, verb string, sel reposel.Sele
 }
 
 func newSyncResumeCmd() *cobra.Command {
-	var yes, asJSON bool
+	var yes, allowOwed, asJSON bool
 	var push func() syncrun.PushMode
 	resume := &cobra.Command{
 		Use:   "resume <work>",
@@ -834,6 +865,12 @@ func newSyncResumeCmd() *cobra.Command {
 			"to pass on to it. The session wt itself runs under is not counted.\n" +
 			"--yes answers yes to both, that session and the push (--no-push keeps\n" +
 			"the push out).\n\n" +
+			"A rebase handed over at an each_commit check that failed waits at that\n" +
+			"commit with nothing unmerged: amend the fix in (git commit --amend), or\n" +
+			"add a commit, leaving nothing uncommitted, and this runs the check\n" +
+			"again at HEAD, going on only when it passes. A step that needs\n" +
+			"something that does not answer refuses the resume before it moves\n" +
+			"anything, as for wt sync rebase; --allow-owed goes on and owes it.\n\n" +
 			"Carrying on yourself with git rebase --continue is fine: a later stop you\n" +
 			"left it at goes through the strategies, and a rebase you finished runs\n" +
 			"only what comes after it, naming the strategy-resolved files it could not\n" +
@@ -852,20 +889,22 @@ func newSyncResumeCmd() *cobra.Command {
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withVerbContext(cmd, args, "sync resume", asJSON, func(ctx *kit.Context, j *syncrun.RunJournal) error {
-				return syncResume(cmd, args[0], ctx, yes, push(), j)
+				return syncResume(cmd, args[0], ctx, yes, allowOwed, push(), j)
 			})
 		},
 	}
 	push = addPushFlags(resume, "push when done, without asking",
 		"neither push nor ask; print the push command")
 	resume.Flags().BoolVarP(&yes, "yes", "y", false, "yes to every question: an idle session, and the push")
+	resume.Flags().BoolVar(&allowOwed, "allow-owed", false, "resume even when a step's need does not answer; the step is owed, to run later")
 	resume.Flags().BoolVar(&asJSON, "json", false, "print one result object on stdout, the rest on stderr")
 	return resume
 }
 
 // syncResume is wt sync resume, whichever way it was spelled.
-func syncResume(cmd *cobra.Command, work string, ctx *kit.Context, yes bool, push syncrun.PushMode, j *syncrun.RunJournal) error {
+func syncResume(cmd *cobra.Command, work string, ctx *kit.Context, yes, allowOwed bool, push syncrun.PushMode, j *syncrun.RunJournal) error {
 	opts := syncfix.ResumeOptions{Journal: j}
+	opts.AllowOwed = allowOwed
 	opts.Push = push
 	// --yes answers yes to every question, the push included, unless
 	// --no-push says otherwise.
@@ -1000,7 +1039,7 @@ func newSyncDoctorCmd() *cobra.Command {
 			"after anything changes: origin/<trunk> is fetched, .wt-sync.yaml parses,\n" +
 			"every script strategy's run exists and is executable on trunk, no\n" +
 			"pre-rebase or post-rewrite hook is active, no submodules or LFS paths\n" +
-			"are declared, Docker answers when a deferred step needs it, and nothing\n" +
+			"are declared, Docker answers when a step declares needs: [docker], and nothing\n" +
 			"is left behind by an earlier run: no stale safety ref, no expired lock,\n" +
 			"no worktree stopped mid-rebase. A worktree a run handed over is not a\n" +
 			"leftover: the plan row names it, with wt sync resume and wt sync undo.\n" +
@@ -1009,7 +1048,7 @@ func newSyncDoctorCmd() *cobra.Command {
 			"removes expired locks; --prune deletes safety refs old runs no longer\n" +
 			"need. A finding that would make a run refuse outright (a missing\n" +
 			"trunk, declaration or script) makes this command exit non-zero; the\n" +
-			"rest is advisory.",
+			"rest is advisory. docs/sync-declaration.md describes .wt-sync.yaml.",
 		Example: "  wt sync doctor          # what a run needs; changes nothing\n" +
 			"  wt sync doctor --fix    # turn on rerere, remove expired locks\n" +
 			"  wt sync doctor --prune  # delete safety refs no run needs now",

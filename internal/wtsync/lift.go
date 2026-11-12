@@ -491,36 +491,6 @@ func touchesAny(patterns, paths []string) bool {
 	return false
 }
 
-// sequenceEditor writes the script a run hands git as its sequence editor:
-// every pick of a commit in marks is preceded by a break and made an edit,
-// so the run sees HEAD before the pick is applied and stops after it, and
-// every pick of a commit in drops is taken out, which is what git itself
-// does with a commit trunk already carries when the list is not asked to
-// keep them. The break is what tells a pick git dropped as already upstream
-// from one it committed: at the edit stop HEAD either moved or did not. The
-// list names each commit by the abbreviation the repository is configured
-// for, so a pick is matched by its id being a prefix of the full one; the
-// abbreviations of a list are unique in the repository, and so is the
-// match. Every other line is left as git wrote it. POSIX sh only, since git
-// runs it through the shell wherever the run is.
-func sequenceEditor(w io.Writer, marks, drops []string) {
-	fmt.Fprintln(w, "#!/bin/sh")
-	fmt.Fprintln(w, "# wt sync: stop before and after the picks that may need a version lift,")
-	fmt.Fprintln(w, "# and leave out the picks trunk already carries")
-	fmt.Fprintf(w, "marks='%s'\n", strings.Join(marks, " "))
-	fmt.Fprintf(w, "drops='%s'\n", strings.Join(drops, " "))
-	fmt.Fprintln(w, `while IFS= read -r line || [ -n "$line" ]; do`)
-	fmt.Fprintln(w, `  case "$line" in`)
-	fmt.Fprintln(w, `    "pick "*)`)
-	fmt.Fprintln(w, `      id=${line#pick }; id=${id%% *}; out=$line`)
-	fmt.Fprintln(w, `      for m in $marks; do case "$m" in "$id"*) printf 'break\n'; out="edit ${line#pick }"; break ;; esac; done`)
-	fmt.Fprintln(w, `      for m in $drops; do case "$m" in "$id"*) out=""; break ;; esac; done`)
-	fmt.Fprintf(w, "%s\n", `      [ -n "$out" ] && printf '%s\n' "$out" ;;`)
-	fmt.Fprintf(w, "%s\n", `    *) printf '%s\n' "$line" ;;`)
-	fmt.Fprintln(w, `  esac`)
-	fmt.Fprintln(w, `done < "$1" > "$1.wt" && mv "$1.wt" "$1"`)
-}
-
 // plainEditor writes the sequence editor that takes a run's stops out of the
 // list again: every break dropped, every edit a pick. A run's list holds no
 // edit or break of anybody else's, so nothing else is touched.
