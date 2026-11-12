@@ -290,4 +290,3 @@ func StackAfterRebase(ctx *kit.Context, rec *wtsync.StackRecord, res wtsync.Resu
 	rec.Plans = res.Layers
 	return wtsync.WriteStackRecord(ctx.Repo.MainRoot, rec)
 }
-

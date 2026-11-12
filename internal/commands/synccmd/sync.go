@@ -182,6 +182,13 @@ func SyncWorktree(ctx *kit.Context, arg string, opts SyncOptions, w io.Writer) e
 	}
 	a := wtsync.AssessOwn(ctx.Repo.MainRoot, onto, cfg, wt, listed, syncrun.OwnStateOf(own, wt.Branch))
 	printDetail(w, kit.WorktreeName(ctx, wt.Branch, wt.Path), a)
+	if opts.Stack != nil {
+		s, err := stackLook(ctx, onto, &StackLook{Work: arg, Layers: opts.Stack.Layers}, listed)
+		if err != nil {
+			return err
+		}
+		syncrun.PrintLayers(w, s)
+	}
 	if len(cfg.EachCommitOrNeeds()) > 0 {
 		due := stepsDue(onto, cfg, parentsOf(ctx, onto), wt, a)
 		printChecks(w, due)

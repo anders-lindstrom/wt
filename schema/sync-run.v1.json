@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sync-run.v1.json",
-  "x-version": "1.5.0",
+  "x-version": "1.6.0",
   "title": "wt sync rebase|resume|undo --json",
   "description": "What a wt sync rebase, resume or undo did. Printed by `wt sync rebase [<work>...] --json`, `wt sync [<work>...] --rebase --json`, `wt sync resume <work> --json` and `wt sync undo <work> --json` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends it. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
@@ -47,7 +47,7 @@
     },
     "participant": {
       "type": "object",
-      "required": ["work", "branch", "path", "result", "reason", "before", "after", "failedSteps", "recovery", "pushCommand", "pushed", "noPushReason", "fixCommand", "safetyRef", "deferred", "undoCommand", "planFile", "ownRemoteSync", "checked", "checkFailed"],
+      "required": ["work", "branch", "path", "result", "reason", "before", "after", "failedSteps", "recovery", "pushCommand", "pushed", "noPushReason", "fixCommand", "safetyRef", "deferred", "undoCommand", "planFile", "ownRemoteSync", "checked", "checkFailed", "stack"],
       "properties": {
         "work": { "type": "string" },
         "branch": { "type": "string" },
@@ -99,7 +99,8 @@
               }
             }
           ]
-        }
+        },
+        "stack": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/stack" }], "description": "Since 1.6.0: for a --stack run, the stack held on this worktree's line: its layers and what came of each. Null for any other run." }
       }
     },
     "ownRemoteSync": {
@@ -119,6 +120,57 @@
           "oneOf": [{ "type": "null" }, { "enum": ["diverged", "operation", "dirty", "session", "failed", "fetchFailed"] }],
           "description": "Why the own remote refuses the participant; null when it does not. diverged: --allow-diverged goes on. operation, dirty, session: behind, and it cannot be fast-forwarded. failed: the fast-forward itself did not go through; nothing of this participant was touched. fetchFailed: the branch's own remote could not be fetched, so the run could not look; trunk's fetch failing is the run's error instead."
         }
+      }
+    },
+    "stack": {
+      "type": "object",
+      "description": "Since 1.6.0: a stack held on one line, for --stack: the line from where it leaves trunk (base) to its tip (head), and its layer branches, bottom first. See docs/json.md.",
+      "required": ["branch", "base", "head", "autosquash", "layers", "skipped", "refusal"],
+      "properties": {
+        "branch": { "type": "string", "description": "The line's own branch: the worktree named." },
+        "base": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "description": "Where the line leaves trunk: the merge base." },
+        "head": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "description": "The line's tip before the run." },
+        "autosquash": { "type": "boolean", "description": "A fold of the line's fixups onto its own base (--autosquash), not a rebase onto trunk." },
+        "layers": { "type": "array", "items": { "$ref": "#/$defs/stackLayer" } },
+        "skipped": { "type": "array", "items": { "$ref": "#/$defs/stackSkipped" } },
+        "refusal": { "type": ["string", "null"], "description": "The run's: why no layer moved: a new tip failed its check, or the fold changed the line's content. Null in the look, and when each layer was moved or held." }
+      }
+    },
+    "stackLayer": {
+      "type": "object",
+      "description": "Since 1.6.0: one layer of a stack held on one line. The look fills what it sees; a run also fills what came of the layer, and those fields are null in the look.",
+      "required": ["branch", "oldTip", "commits", "subject", "foundBy", "worktree", "state", "stateDetail", "newTip", "commitsAfter", "mapped", "patch", "patchWhy", "result", "how", "held", "moveCommand", "pushCommand", "noPushReason", "note"],
+      "properties": {
+        "branch": { "type": "string", "description": "The layer branch." },
+        "oldTip": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "description": "Its tip before the run." },
+        "commits": { "type": "integer", "minimum": 1, "description": "Its commits from the line's base, its tip included." },
+        "subject": { "type": "string", "description": "Its tip's subject." },
+        "foundBy": { "enum": ["tipOnLine", "named"], "description": "tipOnLine: a local branch whose tip is a commit of the line. named: named with --layer." },
+        "worktree": { "type": ["string", "null"], "description": "The worktree the branch is checked out in; null when it is in none." },
+        "state": { "enum": ["none", "clean", "dirty", "rebasing", "bisecting", "busy", "idle", "process", "unknown"], "description": "What holds the layer's worktree: none (in no worktree), clean (nothing), dirty (tracked changes), rebasing (a rebase in progress, there or in another worktree that will move it), bisecting (a bisect in another worktree started from it), busy or idle (an agent session), process (a process whose working directory is inside the worktree), unknown (it could not be read, which holds the layer). In a run, as read when the layer was moved." },
+        "stateDetail": { "type": ["string", "null"], "description": "Who or what holds it: the session, the process, or why it could not be read." },
+        "newTip": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40,64}$", "description": "The run's: the layer's new tip, read from the rebase and checked. Null in the look, and when the run moved no layer." },
+        "commitsAfter": { "type": ["integer", "null"], "minimum": 0, "description": "The run's: commits of the new tip from the new base, as the check compared them with the plan." },
+        "mapped": { "oneOf": [{ "type": "null" }, { "enum": ["tip", "tipDropped", "emptied"] }], "description": "The run's: tip (the new tip is its own tip rebased), tipDropped (trunk already carries its tip; the new tip is its last commit left), emptied (trunk carries every commit of it; it ends where the layer below does)." },
+        "patch": { "oneOf": [{ "type": "null" }, { "enum": ["same", "changed", "unknown"] }], "description": "The run's: whether what the layer brings to the line is the same patch as before, by git's stable patch-id. Never a refusal." },
+        "patchWhy": { "type": ["string", "null"], "description": "The run's: why the patch changed." },
+        "result": { "oneOf": [{ "type": "null" }, { "enum": ["moved", "held", "unchanged", "planned", "moving", "needsRecovery"] }], "description": "The run's: moved (the branch is at newTip, its worktree reset with it), held (left where it was; held says why and moveCommand moves it by hand), unchanged (its new tip is its old one), planned (recorded and not moved: the moves stopped before it), moving (its move was under way when the moves stopped: undo puts its ref back), needsRecovery (a move that went part way and could not be put back: held says what to look at, the layer keeps its pins, and wt sync undo puts it back)." },
+        "how": { "oneOf": [{ "type": "null" }, { "enum": ["ref", "worktree"] }], "description": "The run's: ref (a branch in no worktree, moved with update-ref guarded by its old tip), worktree (reset --keep in its worktree, under that worktree's lock)." },
+        "held": { "type": ["string", "null"], "description": "The run's: why the layer was held, or for needsRecovery what to look at." },
+        "moveCommand": { "type": ["string", "null"], "description": "The run's: what moves a held layer by hand." },
+        "pushCommand": { "oneOf": [{ "type": "null" }, { "type": "array", "items": { "type": "string" }, "minItems": 1 }], "description": "The run's: for a moved layer, its push to its own remote as an argv, with a lease on the commit wt last fetched there. A run does not push layers. Null otherwise." },
+        "noPushReason": { "type": ["string", "null"], "description": "The run's: for a moved layer with no safe push command, why: no remote branch of its own yet, or the remote has commits the branch never had." },
+        "note": { "type": ["string", "null"], "description": "The run's: what else happened to a moved layer, such as a checkout of it that landed during its move, at its new tip." }
+      }
+    },
+    "stackSkipped": {
+      "type": "object",
+      "description": "Since 1.6.0: a branch on the line not taken as a layer: a backup name (wt refs sweep's patterns), which --layer takes.",
+      "required": ["branch", "tip", "reason"],
+      "properties": {
+        "branch": { "type": "string" },
+        "tip": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
+        "reason": { "type": "string" }
       }
     }
   }
