@@ -202,6 +202,15 @@ func (d *driver) atCheck(sha string, edited bool, p Progress, forced bool) (*Che
 	if err != nil {
 		return nil, err
 	}
+	if forced {
+		// A resume after a person's fix: HEAD may be a commit they added on
+		// top of the one that failed, so the checks of that one run too.
+		own, err := d.git("diff-tree", "--no-commit-id", "--name-only", "-r", "-z", "--root", sha)
+		if err != nil {
+			return nil, err
+		}
+		paths += "\x00" + own
+	}
 	var changed []string
 	for _, p := range strings.Split(paths, "\x00") {
 		if p != "" {
