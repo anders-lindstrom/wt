@@ -1231,7 +1231,7 @@ func (r *RunPlan) stackRecord(b string, p *participant, req wtsync.Request) (*wt
 	if st == nil {
 		return nil, nil
 	}
-	rec := &wtsync.StackRecord{Epoch: r.epoch, Work: p.work, Branch: b, Path: p.wt.Path, Onto: req.Onto,
+	rec := &wtsync.StackRecord{Epoch: r.epoch, Work: p.work, Branch: b, Path: p.wt.Path, Onto: req.Onto, OntoRef: r.ontoRef(), Upstream: req.Upstream,
 		Autosquash: st.Autosquash, InPlace: r.opts.Steps != nil, Force: r.opts.Force, Line: r.line}
 	return rec, wtsync.WriteStackRecord(r.ctx.Repo.MainRoot, rec)
 }

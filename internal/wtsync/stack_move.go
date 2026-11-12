@@ -151,11 +151,18 @@ type LayerMove struct {
 // list, and each layer move, recorded before it is made and again once it
 // is.
 type StackRecord struct {
-	Epoch      int64  `json:"epoch"`
-	Work       string `json:"work"`
-	Branch     string `json:"branch"`
-	Path       string `json:"path"`
-	Onto       string `json:"onto"`
+	Epoch  int64  `json:"epoch"`
+	Work   string `json:"work"`
+	Branch string `json:"branch"`
+	Path   string `json:"path"`
+	Onto   string `json:"onto"`
+	// OntoRef is the ref --onto named, "" for a rebase onto trunk: what a
+	// layer it already carries is said to be on.
+	OntoRef string `json:"ontoRef,omitempty"`
+	// Upstream is where the line's replayed commits start, above which git
+	// keeps the picks the target carries and empties them: the layers are
+	// then reconciled with what the rebase dropped (ReconcileDropped).
+	Upstream   string `json:"upstream,omitempty"`
 	Autosquash bool   `json:"autosquash"`
 	// InPlace is a run onto the line's own base that is not a fold of its
 	// fixups: wt sync steps.
