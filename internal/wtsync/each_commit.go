@@ -234,12 +234,7 @@ func (d *driver) atCheck(sha string, edited bool, p Progress, forced bool) (*Che
 // unavailable is why a step with needs cannot run in this run: the probe
 // answer of the first need the run was told is missing, "" when none is.
 func (d *driver) unavailable(needs []string) string {
-	for _, n := range needs {
-		if why, ok := d.req.Unavailable[n]; ok {
-			return n + " did not answer: " + why
-		}
-	}
-	return ""
+	return unavailableWhy(needs, d.req.Unavailable)
 }
 
 // uncheck records a check the run did not run, once per step.

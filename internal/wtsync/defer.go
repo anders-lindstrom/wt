@@ -14,7 +14,19 @@ import (
 	"github.com/anders-lindstrom/wt/internal/git"
 )
 
-// DeferredResult is what one deferred step did.
+// unavailableWhy is why a step with needs cannot run: the first of them
+// unavailable names, with its probe's answer; "" when none.
+func unavailableWhy(needs []string, unavailable map[string]string) string {
+	for _, n := range needs {
+		if why, ok := unavailable[n]; ok {
+			return n + " did not answer: " + why
+		}
+	}
+	return ""
+}
+
+// DeferredResult is what one deferred step did. A step not run whose Err is
+// set is owed without having run: a need of it did not answer.
 type DeferredResult struct {
 	Step                         Deferred
 	Ran                          bool
@@ -60,6 +72,10 @@ func RunDeferred(wtPath string, steps []Deferred, oldTip, newTip string, log io.
 }
 
 func runDeferredWithTimeout(wtPath string, steps []Deferred, oldTip, newTip string, log io.Writer, timeout time.Duration) ([]DeferredResult, error) {
+	return runDeferred(wtPath, steps, oldTip, newTip, log, timeout, nil)
+}
+
+func runDeferred(wtPath string, steps []Deferred, oldTip, newTip string, log io.Writer, timeout time.Duration, unavailable map[string]string) ([]DeferredResult, error) {
 	changed, err := ChangedPaths(wtPath, oldTip, newTip)
 	if err != nil {
 		return nil, err
@@ -75,6 +91,12 @@ func runDeferredWithTimeout(wtPath string, steps []Deferred, oldTip, newTip stri
 			continue
 		case len(step.Paths) > 0 && !anyMatches(step.Paths, changed):
 			r.Why = "no listed path changed"
+			results = append(results, r)
+			continue
+		}
+		if why := unavailableWhy(step.Needs, unavailable); why != "" {
+			r.Why = "not run: " + why
+			r.Err = errors.New(r.Why)
 			results = append(results, r)
 			continue
 		}
@@ -182,6 +204,8 @@ func anyMatches(patterns, paths []string) bool {
 
 // RunDeferredWith is RunDeferred in a run where the needs unavailable names
 // did not answer their probe.
+// A step that needs one of them is not run and is owed; it leaves nothing
+// half-written, so the steps after it still run.
 func RunDeferredWith(wtPath string, steps []Deferred, oldTip, newTip string, log io.Writer, unavailable map[string]string) ([]DeferredResult, error) {
-	return RunDeferred(wtPath, steps, oldTip, newTip, log)
+	return runDeferred(wtPath, steps, oldTip, newTip, log, DeferTimeout, unavailable)
 }

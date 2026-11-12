@@ -57,5 +57,50 @@ func checkNeeds(needs []string) error {
 // ProbeNeedsWith probes each of needs once with probes, and returns each
 // probe's answer: nil for one that answered.
 func ProbeNeedsWith(probes map[string]func() error, needs []string) map[string]error {
-	return nil
+	got := map[string]error{}
+	for _, n := range needs {
+		if _, done := got[n]; done {
+			continue
+		}
+		probe, ok := probes[n]
+		if !ok {
+			got[n] = fmt.Errorf("no probe for %q", n)
+			continue
+		}
+		got[n] = probe()
+	}
+	return got
+}
+
+// ProbeNeeds is ProbeNeedsWith over KnownNeeds.
+func ProbeNeeds(needs []string) map[string]error {
+	return ProbeNeedsWith(KnownNeeds, needs)
+}
+
+// hasNeed reports whether any of needs is in want.
+func hasNeed(needs []string, want string) bool {
+	for _, n := range needs {
+		if n == want {
+			return true
+		}
+	}
+	return false
+}
+
+// DeclaresNeed reports whether any step of the declaration needs n.
+func (c *Config) DeclaresNeed(n string) bool {
+	if c == nil {
+		return false
+	}
+	for _, d := range c.Defer {
+		if hasNeed(d.Needs, n) {
+			return true
+		}
+	}
+	for _, e := range c.EachCommit {
+		if hasNeed(e.Needs, n) {
+			return true
+		}
+	}
+	return false
 }
