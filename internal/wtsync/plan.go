@@ -49,6 +49,10 @@ type State struct {
 	Trunk    string `json:"trunk"`
 	TrunkRef string `json:"trunk_ref"`
 	Onto     string `json:"onto"`
+	// OntoRef is the ref --onto named, as given, when the run rebased onto
+	// it rather than trunk; empty for trunk, and in a sidecar written
+	// before it existed.
+	OntoRef  string `json:"onto_ref,omitempty"`
 	Upstream string `json:"upstream"`
 	Epoch    int64  `json:"epoch"`
 	Safety   string `json:"safety"`
