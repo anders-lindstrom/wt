@@ -176,6 +176,11 @@ type RunPlan struct {
 	// notReady is the work name of every worktree selectReady left behind
 	// trunk, for a run that must say so: IfReady fails on them.
 	notReady []string
+	// line is the stack held on the named worktree's line, for --stack.
+	line wtsync.Line
+	// stackBroken is why the layers of a finished --stack rebase are not
+	// moved: their plan could not be recorded.
+	stackBroken string
 }
 
 // SyncRebase rebases the named worktrees (and the stacks they belong to) onto
@@ -212,6 +217,9 @@ func (r *RunPlan) run(works []string) error {
 	}
 	if len(works) == 0 && opts.Force {
 		return errors.New("--force takes a run past the sessions in a worktree you name; name it")
+	}
+	if opts.Stack != nil && len(works) != 1 {
+		return errors.New("--stack rebases the line of one worktree: name the one at its top")
 	}
 	if len(works) == 0 && opts.AllowDiverged {
 		return errors.New("--allow-diverged rebases a worktree you name over commits its remote has; name it")
@@ -255,6 +263,9 @@ func (r *RunPlan) run(works []string) error {
 		// The journal's record: a tip git cannot read is recorded as none.
 		before, _, _ := r.ctx.Repo.ResolveRef("refs/heads/" + b)
 		opts.Journal.Join(p.work, b, p.wt.Path, before, syncrun.OwnRemoteSyncOf(syncrun.OwnStateOf(r.own, b)))
+	}
+	if err := r.readStack(); err != nil {
+		return err
 	}
 	if proceed, err := r.triage(); err != nil || !proceed {
 		if err == nil {
@@ -610,6 +621,11 @@ func (r *RunPlan) selectBranches(works []string) error {
 			return err
 		}
 	}
+	if r.opts.Stack != nil {
+		// The line is one worktree: its layers are moved by this run, not
+		// rebased again as members of a stack of worktrees.
+		r.parents, r.ambiguous = map[string]string{}, map[string][]string{}
+	}
 	parents, ambiguous := r.parents, r.ambiguous
 	for _, b := range named {
 		if anc, ok := ambiguous[b]; ok {
@@ -672,6 +688,16 @@ func (r *RunPlan) triage() (proceed bool, err error) {
 		}
 		p.a = r.allow(p.a)
 		p.verdict, p.reason = wtsync.Preflight(p.a)
+		if st := r.opts.Stack; st != nil {
+			switch {
+			case st.Autosquash && p.verdict == wtsync.SkipRun:
+				// A fold is onto the line's own base: trunk being there
+				// already is no reason to skip it.
+				p.verdict, p.reason = wtsync.Proceed, ""
+			case p.verdict == wtsync.Proceed && p.a.Own.FastForwards():
+				p.verdict, p.reason = wtsync.RefuseRun, "behind its own remote ("+p.a.Own.Ref+"): the layers were read from the line as it is here; bring it up to date first"
+			}
+		}
 		own, refused := p.a.Own, p.verdict == wtsync.RefuseRun
 		r.opts.Journal.Set(b, func(jp *syncrun.UpParticipant) {
 			jp.OwnRemoteSync = syncrun.OwnRemoteSyncOf(own)
@@ -905,6 +931,29 @@ func (r *RunPlan) rebaseOne(b string) {
 	if !ok {
 		return
 	}
+	rec, rerr := r.stackRecord(b, p, req)
+	if r.opts.Stack != nil {
+		if hook := r.opts.Stack.BeforeRebase; hook != nil {
+			hook()
+		}
+		// Under the lock, just before the rebase: the line and its layers
+		// must still be what was read, or every marker would be planned
+		// against commits that are not there.
+		why := r.lineMoved(b, p.wt.Path)
+		if rerr != nil {
+			why = "the stack's record could not be written: " + rerr.Error() + "; nothing is rebased"
+		}
+		if why != "" {
+			if err := wtsync.ForgetStack(r.ctx.Repo.MainRoot, r.epoch); err != nil {
+				// Nothing pins this run yet for undo to find it by: the
+				// record is named so it can go by hand.
+				why += fmt.Sprintf("; the stack's record could not be removed (%v): delete it by hand", err)
+			}
+			p.refused = p.work + ": " + why
+			r.passOver(b, p)
+			return
+		}
+	}
 	res, rerr := syncrun.TrackedRebase(r.tracker, &syncrun.RebaseInFlight{Work: p.work, Path: p.wt.Path, Safety: wtsync.SafetyRef(b, r.epoch)}, func() (wtsync.Result, error) {
 		return wtsync.Rebase(r.ctx.Repo.MainRoot, r.cfg, req, r.w)
 	})
@@ -912,15 +961,181 @@ func (r *RunPlan) rebaseOne(b string) {
 	r.opts.Journal.SetSync(b, func(jp *syncrun.SyncParticipant) {
 		jp.Checked, jp.CheckFailed = res.Checked, syncrun.CheckFailedOf(res.CheckFailed)
 	})
+	if rec != nil {
+		if err := syncrun.StackAfterRebase(r.ctx, rec, res); err != nil {
+			why := "the plan of its layers could not be recorded: " + err.Error()
+			switch {
+			case rerr != nil || res.Restored:
+			case res.Left != nil:
+				r.putBackStack(b, p, res, why)
+				return
+			default:
+				r.stackBroken = why
+			}
+		}
+		if rerr != nil || res.Restored {
+			if err := wtsync.ForgetStack(r.ctx.Repo.MainRoot, r.epoch); err != nil {
+				fmt.Fprintf(r.w, "  note: %v\n", err)
+			}
+		}
+	}
 	switch {
 	case rerr != nil:
 		r.rebaseFailed(b, p, res, rerr)
 	case res.Left != nil:
 		r.handOver(b, p, req, res)
+		if rec != nil {
+			fmt.Fprintf(r.w, "  the layers move once wt sync resume %s finishes the rebase\n", p.work)
+		}
 	case res.Restored:
 		r.settleRestored(b, p, res)
 	default:
 		r.finishRebase(b, p, res, ontoLabel)
+	}
+}
+
+// readStack reads the stack held on the named worktree's line, for --stack,
+// before anything is fetched further or moved: a line that cannot be one is
+// refused here. It lists the layers and what holds each.
+func (r *RunPlan) readStack() error {
+	if r.opts.Stack == nil {
+		return nil
+	}
+	b := r.branches[0]
+	line, err := readLine(r.ctx, b, r.trunkSHA, r.opts.Stack.Layers)
+	if err != nil {
+		return err
+	}
+	if len(line.Layers) == 0 {
+		return fmt.Errorf("no layer branch is on the line of %s: nothing for --stack to move; wt sync rebase %s rebases it alone", r.parts[b].work, r.parts[b].work)
+	}
+	r.line = line
+	listed, err := r.listAgents()
+	if err != nil {
+		return err
+	}
+	holders, err := syncrun.ReadHolders(r.ctx, line, listed)
+	if err != nil {
+		return err
+	}
+	s := syncrun.StackOf(line, r.opts.Stack.Autosquash, holders)
+	syncrun.PrintLayers(r.w, s)
+	r.opts.Journal.SetSync(b, func(jp *syncrun.SyncParticipant) { jp.Stack = s })
+	return nil
+}
+
+// lineMoved is why the line or a layer is no longer what readStack read,
+// or the worktree at path is no longer on the line's branch at its tip; ""
+// when everything is as read.
+func (r *RunPlan) lineMoved(b, path string) string {
+	main := r.ctx.Repo.MainRoot
+	// The rebase moves whatever the worktree has checked out: it must still
+	// be the line's branch, at the line's tip.
+	if ref, err := git.Run(path, "symbolic-ref", "--quiet", "HEAD"); err != nil || ref != "refs/heads/"+b {
+		return fmt.Sprintf("the worktree is no longer on %s (HEAD is %q); nothing is rebased: run it again", b, ref)
+	}
+	if head, err := git.Run(path, "rev-parse", "--verify", "HEAD"); err != nil || head != r.line.Head {
+		return fmt.Sprintf("the line moved since it was read (%s then, %s now); nothing is rebased: run it again", git.ShortID(r.line.Head, 7), git.ShortID(head, 7))
+	}
+	if tip, err := git.Run(main, "rev-parse", "--verify", "refs/heads/"+b); err != nil || tip != r.line.Head {
+		return fmt.Sprintf("the line moved since it was read (%s then, %s now); nothing is rebased: run it again", git.ShortID(r.line.Head, 7), git.ShortID(tip, 7))
+	}
+	for _, l := range r.line.Layers {
+		if tip, err := git.Run(main, "rev-parse", "--verify", "refs/heads/"+l.Branch); err != nil || tip != l.Tip {
+			return fmt.Sprintf("layer %s moved since it was read (%s then, %s now); nothing is rebased: run it again", l.Branch, git.ShortID(l.Tip, 7), git.ShortID(tip, 7))
+		}
+	}
+	return ""
+}
+
+// putBackStack puts back a --stack rebase that stopped at a stop a person
+// owns when its plan could not be recorded: a handover with no plan would
+// leave a resume nothing to check the layers against.
+func (r *RunPlan) putBackStack(b string, p *participant, res wtsync.Result, why string) {
+	main := r.ctx.Repo.MainRoot
+	_, aerr := git.Run(p.wt.Path, "rebase", "--abort")
+	busy, _ := wtsync.RebaseInProgress(p.wt.Path)
+	head, _ := git.Run(p.wt.Path, "rev-parse", "HEAD")
+	_ = wtsync.DropStackMap(main, res.Layers)
+	ferr := wtsync.ForgetStack(main, r.epoch)
+	if aerr != nil || busy || head != res.OldTip {
+		r.rebaseFailed(b, p, res, fmt.Errorf("%s, and the rebase could not be put back", why))
+		return
+	}
+	restored := why + "; the rebase is put back"
+	if ferr != nil {
+		// The safety ref stays: it is how undo finds this run, and with it
+		// the record to remove.
+		restored += fmt.Sprintf("; the stack's record could not be removed (%v): wt sync undo %s removes it", ferr, p.work)
+	} else if err := wtsync.DeleteSafety(main, res.Safety); err != nil {
+		fmt.Fprintf(r.w, "  note: %v\n", err)
+	}
+	fmt.Fprintf(r.w, "  ✗ restored: %s\n", restored)
+	r.opts.Journal.SetSync(b, func(jp *syncrun.SyncParticipant) {
+		jp.Result, jp.Reason, jp.After = syncrun.ResultRestored, jsonout.Strp(restored), jsonout.Strp(res.OldTip)
+	})
+	r.settle("restored", "✗ "+p.work+"  "+restored, p.work+" (restored)")
+}
+
+// stackRecord writes the record of a --stack run before its rebase starts,
+// so a resume or an undo knows the line and its layers however the run
+// ends; nil for any other run. A record that cannot be written refuses the
+// run.
+func (r *RunPlan) stackRecord(b string, p *participant, req wtsync.Request) (*wtsync.StackRecord, error) {
+	st := r.opts.Stack
+	if st == nil {
+		return nil, nil
+	}
+	rec := &wtsync.StackRecord{Epoch: r.epoch, Work: p.work, Branch: b, Path: p.wt.Path, Onto: req.Onto,
+		Autosquash: st.Autosquash, Force: r.opts.Force, Line: r.line}
+	return rec, wtsync.WriteStackRecord(r.ctx.Repo.MainRoot, rec)
+}
+
+// finishStack checks and moves the layers once the line's rebase has
+// finished, and records what came of them.
+func (r *RunPlan) finishStack(b string, p *participant, res wtsync.Result) {
+	st := r.opts.Stack
+	if st == nil {
+		return
+	}
+	if r.stackBroken != "" {
+		fmt.Fprintf(r.w, "  ✗ no layer moved: %s; the line is rebased, wt sync undo %s puts it back\n", r.stackBroken, p.work)
+		if err := wtsync.DropStackMap(r.ctx.Repo.MainRoot, res.Layers); err != nil {
+			fmt.Fprintf(r.w, "  note: %v\n", err)
+		}
+		if err := wtsync.ForgetStack(r.ctx.Repo.MainRoot, r.epoch); err != nil {
+			fmt.Fprintf(r.w, "  ✗ the stack's record could not be removed (%v): wt sync undo %s removes it\n", err, p.work)
+		}
+		r.failures = append(r.failures, p.work+" (no layer moved)")
+		return
+	}
+	rec, ok, err := wtsync.ReadStackRecord(r.ctx.Repo.MainRoot, r.epoch)
+	if err != nil || !ok {
+		why := "the stack's record is gone"
+		if err != nil {
+			why = err.Error()
+		}
+		fmt.Fprintf(r.w, "  ✗ no layer moved: %s\n", why)
+		r.failures = append(r.failures, p.work+" (no layer moved)")
+		return
+	}
+	if st.BeforeCheck != nil {
+		st.BeforeCheck(rec)
+	}
+	// Listed again: a session may have started, or turned busy, in a
+	// layer's worktree while the line was rebased. One that cannot be
+	// listed holds every layer in a worktree.
+	listed, lerr := r.opts.SessionsAgain(r.ctx, syncrun.RebasedNothing)
+	s, failure, ferr := syncrun.FinishStack(r.ctx, r.w, syncrun.StackFinish{Record: rec, OldTip: res.OldTip, NewTip: res.NewTip,
+		Onto: rec.Onto, Own: r.own, Listed: listed, ListErr: lerr, Force: rec.Force, Now: r.opts.Clock(), AfterMove: st.AfterMove, Between: st.Between})
+	r.opts.Journal.SetSync(b, func(jp *syncrun.SyncParticipant) { jp.Stack = s })
+	if ferr != nil {
+		fmt.Fprintf(r.w, "  ✗ the layer moves stopped: %v; wt sync undo %s puts back the line and every layer moved\n", ferr, p.work)
+		r.failures = append(r.failures, p.work+" (layer moves stopped)")
+		return
+	}
+	if failure != "" {
+		r.failures = append(r.failures, p.work+" ("+failure+")")
 	}
 }
 
@@ -961,6 +1176,12 @@ func (r *RunPlan) request(b string, p *participant) (req wtsync.Request, ontoLab
 	}
 	req.Stacked = len(wtsync.Descendants(r.parents, b)) > 0
 	ontoLabel = r.onto
+	if st := r.opts.Stack; st != nil {
+		req.Stack = &wtsync.StackRequest{Line: r.line, Autosquash: st.Autosquash}
+		if st.Autosquash {
+			req.Onto, ontoLabel = r.line.Base, "its own base "+git.ShortID(r.line.Base, 7)
+		}
+	}
 	if parent, ok := r.parents[b]; ok {
 		if pp := r.parts[parent]; pp != nil && pp.result != nil && !pp.result.Restored && pp.head != "" {
 			req.Onto, req.Upstream, ontoLabel = pp.head, pp.result.OldTip, pp.work
@@ -1103,6 +1324,7 @@ func (r *RunPlan) finishRebase(b string, p *participant, res wtsync.Result, onto
 		}
 	})
 	p.head = head
+	r.finishStack(b, p, res)
 	syncrun.PrintUnchecked(w, res.Unchecked)
 	owed := append(syncrun.OwedChecks(res.Unchecked), syncrun.OwedSteps(ran)...)
 	r.failures = append(r.failures, syncrun.OwedBy(p.work, owed)...)

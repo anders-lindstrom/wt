@@ -3,6 +3,7 @@ package syncrun
 import (
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/agents"
@@ -43,6 +44,9 @@ type StackLayer struct {
 	MoveCommand  *string  `json:"moveCommand"`
 	PushCommand  []string `json:"pushCommand"`
 	NoPushReason *string  `json:"noPushReason"`
+	// Note is what else happened to a moved layer: a checkout of it that
+	// landed during its move.
+	Note *string `json:"note"`
 }
 
 // StackSkipped is a branch on the line the run does not take as a layer.
@@ -144,10 +148,15 @@ type StackFinish struct {
 	Onto   string
 	Own    *wtsync.Own
 	Listed []agents.Agent
-	Force  bool
-	Now    time.Time
-	// AfterMove is a test's hook into the moves; nil in a real run.
+	// ListErr is why the sessions could not be listed: every layer in a
+	// worktree is then held, since who is in it is not known.
+	ListErr error
+	Force   bool
+	Now     time.Time
+	// AfterMove and Between are a test's hooks into the moves; nil in a
+	// real run.
 	AfterMove func(wtsync.LayerMove) error
+	Between   func(stage string, m wtsync.LayerMove) error
 }
 
 // FinishStack checks every layer's new tip and moves the layers, once the
@@ -167,7 +176,7 @@ func FinishStack(ctx *kit.Context, w io.Writer, in StackFinish) (s *Stack, failu
 		fmt.Fprintf(w, "  ✗ no layer moved: %s\n", why)
 		s.Refusal = jsonout.Strp(why)
 		if ferr := wtsync.ForgetStack(main, rec.Epoch); ferr != nil {
-			fmt.Fprintf(w, "  note: %v\n", ferr)
+			fmt.Fprintf(w, "  ✗ the stack's record could not be removed (%v): wt sync undo %s removes it\n", ferr, rec.Work)
 		}
 		return s, "no layer moved", nil
 	}
@@ -184,12 +193,14 @@ func FinishStack(ctx *kit.Context, w io.Writer, in StackFinish) (s *Stack, failu
 		return refuse(cerr.Error())
 	}
 	scan, scanErr := agents.ScanHolders(in.Listed)
-	merr := wtsync.MoveLayers(main, rec, tips, wtsync.MoveOptions{Listed: in.Listed, Scan: scan, ScanErr: scanErr,
-		Force: in.Force, Now: in.Now, AfterMove: in.AfterMove})
-	if merr != nil {
-		return s, "", merr
+	if in.ListErr != nil {
+		scanErr = in.ListErr
 	}
-	held := 0
+	merr := wtsync.MoveLayers(main, rec, tips, wtsync.MoveOptions{Listed: in.Listed, Scan: scan, ScanErr: scanErr,
+		Force: in.Force, Now: in.Now, AfterMove: in.AfterMove, Between: in.Between})
+	// A move that stopped, or needs recovery, still reports every layer:
+	// what moved, what did not, and what to look at.
+	held, moved := 0, 0
 	oldBase, newBase := rec.Line.Base, in.Onto
 	for i, t := range tips {
 		m := rec.Moves[i]
@@ -230,10 +241,14 @@ func FinishStack(ctx *kit.Context, w io.Writer, in StackFinish) (s *Stack, failu
 				how = "worktree reset"
 			}
 			fmt.Fprintf(w, "  ✓ %s  %s → %s  %s%s; %s\n", m.Branch, git.ShortID(m.Old, 7), git.ShortID(m.New, 7), kit.Count(t.Expect, "commit"), mapped, how)
+			moved++
 			push, noPush := layerPush(in.Own, m.Branch, m.Path, main)
 			l.PushCommand = push
 			if noPush != "" {
 				l.NoPushReason = jsonout.Strp(noPush)
+				fmt.Fprintf(w, "      not pushed by this run, and no safe push: %s\n", noPush)
+			} else {
+				fmt.Fprintf(w, "      push: %s\n", strings.Join(push, " "))
 			}
 		case wtsync.MoveUnchanged:
 			fmt.Fprintf(w, "  = %s  %s unchanged%s\n", m.Branch, git.ShortID(m.Old, 7), mapped)
@@ -241,11 +256,27 @@ func FinishStack(ctx *kit.Context, w io.Writer, in StackFinish) (s *Stack, failu
 			held++
 			fmt.Fprintf(w, "  ⏸ %s held: %s; to move it later: %s\n", m.Branch, m.Held, m.Command)
 			l.Held, l.MoveCommand = jsonout.Strp(m.Held), jsonout.Strp(m.Command)
+		case wtsync.MoveRecovery:
+			fmt.Fprintf(w, "  ✗ %s needs recovery: %s\n", m.Branch, m.Held)
+			l.Held = jsonout.Strp(m.Held)
+		case wtsync.MovePlanned, wtsync.MoveMoving:
+			fmt.Fprintf(w, "  · %s not moved: the moves stopped before it\n", m.Branch)
+		}
+		if m.Note != "" {
+			fmt.Fprintf(w, "      note: %s\n", m.Note)
+			l.Note = jsonout.Strp(m.Note)
 		}
 		oldBase, newBase = t.Old, t.New
 	}
+	if merr != nil {
+		// The record stays: it says what moved, and undo reads it.
+		return s, "", merr
+	}
 	if ferr := wtsync.ForgetStack(main, rec.Epoch); ferr != nil {
-		fmt.Fprintf(w, "  note: %v\n", ferr)
+		fmt.Fprintf(w, "  ✗ the stack's record could not be removed (%v): wt sync undo %s removes it\n", ferr, rec.Work)
+	}
+	if moved > 0 {
+		fmt.Fprintf(w, "  ↩ wt sync undo %s puts back the line and the %s it moved\n", rec.Work, kit.Count(moved, "layer"))
 	}
 	if held > 0 {
 		return s, kit.Count(held, "layer") + " held", nil
