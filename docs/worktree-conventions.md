@@ -87,16 +87,22 @@ carry are shims that call `wt`.
    worktree. `--force` is for when you know that session is finished with it.
 7. **Ask before `wt init`.** A repo without `bin/worktree/worktree.conf` is not set up
    for `wt`. `wt init` adds that file to the repo, which is the owner's decision.
-8. **`wt sync` and `wt up` are opt-in.** An ordinary rebase onto trunk is plain git
-   (`git fetch && git rebase origin/<trunk>`); reach for `wt sync` when asked, or to
-   finish a run that stopped. `wt sync` alone shows what would happen and changes
-   nothing; `wt sync rebase <work>` does it, `wt sync --rebase` does every worktree the
-   table calls ready except `recipe?`, and `wt sync undo <work>` puts a run back. Without a
-   terminal, a run with nothing named rebases nothing unless `--yes` says so, and
-   nothing is pushed without `--push` or `--yes`. Each verb is
-   also a flag on the line you just recalled: `wt sync <work> --rebase`,
-   `--resume`, `--undo`. `wt sync keep start` does the ready ones on a timer,
-   leaving alone any worktree a session is in, and the table says when it last did.
+8. **Rebase onto trunk with `wt sync` first.** In a repo whose trunk has a
+   `.wt-sync.yaml`, a rebase or restack onto trunk goes through `wt sync`:
+   `wt sync <work>` shows what would happen and changes nothing, `wt sync rebase <work>`
+   does it, and `wt sync undo <work>` puts a run back. `wt up` is the same for the
+   worktree you are in, only when it goes through without you. A stack held on one
+   line is `wt sync rebase <work> --stack`, with `--autosquash` to fold its fixups in
+   place, and `wt sync steps <work>` runs the steps a run left owed. `wt sync --rebase`
+   does every worktree the table calls ready except `recipe?`. Without a terminal, a
+   run with nothing named rebases nothing unless `--yes` says so, and nothing is pushed
+   without `--push` or `--yes`. Each verb is also a flag on the line you just recalled:
+   `wt sync <work> --rebase`, `--resume`, `--undo`. `wt sync keep start` does the ready
+   ones on a timer, leaving alone any worktree a session is in, and the table says when
+   it last did. A repo without the file, and any rebase onto something other than
+   `origin/<trunk>` (an integration branch, another feature branch), is plain git. When
+   `wt sync` cannot do what the case needs, that is an issue on anders-lindstrom/wt,
+   not a quiet fallback to git.
 9. **Clean up merged branches and their worktrees with `wt sweep`.** From the main
    checkout, `wt sweep` fetches origin, lists the local branches trunk already
    contains, and deletes them after one question (`--yes` for scripts; without a
