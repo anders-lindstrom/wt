@@ -149,6 +149,11 @@ and the end of its output. Fix it, amend the fix in with `git commit --amend`
 and goes on only when it passes. A branch with a stack above it in the run is
 put back instead, and the stack is not rebased.
 
+In `wt sync rebase <work> --stack --autosquash`, which folds a line's
+`fixup!` commits into their targets, a check runs at a target once its
+fixups are folded in. `.wt-sync.yaml` has no key for `--stack`: a stack
+held on one line is rebased with the same declaration as any branch.
+
 `wt sync` says how many commits a run would check, and `wt sync <work>` which,
 without running anything. After the last commit, `defer` is still the place
 for work that runs once.
