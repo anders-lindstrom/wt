@@ -56,7 +56,18 @@ type Deferred struct {
 	// Needs names the tools the step cannot run without, from KnownNeeds:
 	// a run probes each before it moves anything.
 	Needs []string `yaml:"needs"`
+	Each  string   `yaml:"each"`
+	Fold  string   `yaml:"fold"`
 }
+
+const (
+	EachLayer = "layer"
+	FoldOwner = "owner"
+)
+
+func (d Deferred) PerLayer() bool { return false }
+
+func (c *Config) LayerSteps() []Deferred { return nil }
 
 // EachCommit is a check that runs after every replayed commit touching one
 // of its paths, at that commit. It must not change tracked files.
