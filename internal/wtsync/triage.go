@@ -53,7 +53,7 @@ type FileOutcome struct {
 // path: the strategy, or for a lift the strategy and what it did, "owned-line
 // lifted the version to 1.2.4: trunk took 1.2.3".
 func (f FileOutcome) By() string {
-	if f.Lifted && f.Resolved {
+	if (f.Lifted || f.Strategy == StrategyEachLayer) && f.Resolved {
 		return f.Strategy + " " + f.Note
 	}
 	return f.Strategy

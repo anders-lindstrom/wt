@@ -104,31 +104,7 @@ func runDeferred(wtPath string, steps []Deferred, oldTip, newTip string, log io.
 		if log != nil {
 			fmt.Fprintf(log, "  ▸ %s\n", step.Run)
 		}
-		start := time.Now()
-		cmd := exec.Command("sh", "-c", step.Run)
-		cmd.Dir = wtPath
-		cmd.Env = git.Environ(append([]string{"NO_COLOR=1"}, rebaseEnv...)...)
-		var out bytes.Buffer
-		cmd.Stdout, cmd.Stderr = &out, &out
-		// timedOut wins over ErrWaitDelay: a step that finished cleanly but
-		// left a child detached in its own process group holding stdio open
-		// past the wait delay looks like success, yet ran past its deadline.
-		timedOut, code, runErr := git.RunBounded(timeout, cmd)
-		r.Elapsed = time.Since(start)
-		r.Output = strings.TrimSpace(out.String())
-		var exit *exec.ExitError
-		switch {
-		case timedOut:
-			r.Err = fmt.Errorf("timed out after %s", timeout)
-		case errors.Is(runErr, exec.ErrWaitDelay):
-			// The step itself exited zero; only a background child it left
-			// running kept stdio open past the wait delay. That is not a
-			// failure of the step.
-		case errors.As(runErr, &exit):
-			r.Err = fmt.Errorf("exit %d", code)
-		case runErr != nil:
-			r.Err = runErr
-		}
+		r.Output, r.Elapsed, r.Err = runStep(wtPath, step.Run, timeout)
 		if r.Err != nil {
 			failed = true
 			results = append(results, r)
@@ -161,6 +137,37 @@ func runDeferred(wtPath string, steps []Deferred, oldTip, newTip string, log io.
 		results = append(results, r)
 	}
 	return results, nil
+}
+
+// runStep runs one step in the worktree under timeout: its output, how
+// long it took, and why it failed (nil for a pass).
+func runStep(wtPath, run string, timeout time.Duration) (output string, elapsed time.Duration, failed error) {
+	start := time.Now()
+	cmd := exec.Command("sh", "-c", run)
+	cmd.Dir = wtPath
+	cmd.Env = git.Environ(append([]string{"NO_COLOR=1"}, rebaseEnv...)...)
+	var out bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &out
+	// timedOut wins over ErrWaitDelay: a step that finished cleanly but
+	// left a child detached in its own process group holding stdio open
+	// past the wait delay looks like success, yet ran past its deadline.
+	timedOut, code, runErr := git.RunBounded(timeout, cmd)
+	elapsed = time.Since(start)
+	output = strings.TrimSpace(out.String())
+	var exit *exec.ExitError
+	switch {
+	case timedOut:
+		failed = fmt.Errorf("timed out after %s", timeout)
+	case errors.Is(runErr, exec.ErrWaitDelay):
+		// The step itself exited zero; only a background child it left
+		// running kept stdio open past the wait delay. That is not a
+		// failure of the step.
+	case errors.As(runErr, &exit):
+		failed = fmt.Errorf("exit %d", code)
+	case runErr != nil:
+		failed = runErr
+	}
+	return output, elapsed, failed
 }
 
 // commitOutput stages what the step changed and commits it. Hooks run: a
@@ -209,31 +216,3 @@ func anyMatches(patterns, paths []string) bool {
 func RunDeferredWith(wtPath string, steps []Deferred, oldTip, newTip string, log io.Writer, unavailable map[string]string) ([]DeferredResult, error) {
 	return runDeferred(wtPath, steps, oldTip, newTip, log, DeferTimeout, unavailable)
 }
-
-// LayerStep is what one per-layer step came to at one layer's end.
-type LayerStep struct {
-	Layer, Layers int
-	Branch        string
-	Step          Deferred
-	Ran           bool
-	Why           string
-	Result        string
-	Owner         string
-	OwnerSubject  string
-	Commit        string
-	Proof         string
-	Err           error
-	Output        string
-	Elapsed       time.Duration
-}
-
-// What a per-layer step came to.
-const (
-	LayerUnchanged = "unchanged"
-	LayerFolded    = "folded"
-	LayerCommitted = "committed"
-	LayerSkipped   = "skipped"
-	LayerOwed      = "owed"
-	LayerFailed    = "failed"
-	ProofHeld      = "held"
-)

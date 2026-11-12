@@ -19,6 +19,36 @@ type Resolution struct {
 // built, a script that cannot run — as opposed to a refusal, which is a
 // normal outcome carried in the Note.
 func resolveConflict(mainRoot, onto string, cfg *Config, c Conflict, wtPath string) (Resolution, error) {
+	r, err := resolveDeclared(mainRoot, onto, cfg, c, wtPath)
+	if err != nil || r.Outcome.Resolved || c.Incomplete != "" {
+		return r, err
+	}
+	return regeneratedLater(cfg, c, r), nil
+}
+
+// regeneratedLater settles a conflict the declared strategy left on a file a
+// per-layer step writes: the replayed commit's side is taken, since the
+// step regenerates the file at the end of the commit's layer. r is what the
+// strategy answered; it is returned unchanged for any other file.
+func regeneratedLater(cfg *Config, c Conflict, r Resolution) Resolution {
+	if cfg == nil {
+		return r
+	}
+	for _, s := range cfg.LayerSteps() {
+		if len(s.Paths) == 0 || !matchesAny(s.Paths, c.Path) {
+			continue
+		}
+		why := "unclaimed"
+		if r.Outcome.Strategy != "" {
+			why = r.Outcome.Strategy + " refused: " + r.Outcome.Note
+		}
+		note := "took the commit's side (" + why + "); " + s.Run + " writes it again at the end of the layer"
+		return Resolution{Outcome: FileOutcome{Path: c.Path, Strategy: StrategyEachLayer, Resolved: true, Note: note}, Content: c.Branch}
+	}
+	return r
+}
+
+func resolveDeclared(mainRoot, onto string, cfg *Config, c Conflict, wtPath string) (Resolution, error) {
 	r := Resolution{Outcome: FileOutcome{Path: c.Path, Note: "unclaimed"}}
 	if c.Incomplete != "" {
 		r.Outcome.Note = c.Incomplete
