@@ -69,6 +69,9 @@ func syncResume(ctx *kit.Context, work string, opts ResumeOptions, w io.Writer) 
 	if err := r.verify(); err != nil {
 		return err
 	}
+	if err := r.checkStack(); err != nil {
+		return err
+	}
 	// Released however the resume ends, the refusal after the take-over
 	// included, unless a fresh handover keeps it.
 	defer func() {
@@ -401,6 +404,7 @@ func (r *resume) complete(res wtsync.Result) error {
 			Unavailable: r.unavailable,
 		}
 	})
+	stackFailure := r.finishStack(res)
 	syncrun.PrintUnchecked(r.w, res.Unchecked)
 	owed := append(syncrun.OwedChecks(res.Unchecked), syncrun.OwedSteps(ran)...)
 	r.j.SetSync(st.Branch, func(p *syncrun.SyncParticipant) {
@@ -415,10 +419,60 @@ func (r *resume) complete(res wtsync.Result) error {
 	if cerr != nil {
 		return cerr
 	}
-	if len(owed) > 0 {
-		return fmt.Errorf("not completed: %s", strings.Join(syncrun.OwedBy(name, owed), ", "))
+	failures := syncrun.OwedBy(name, owed)
+	if stackFailure != "" {
+		failures = append(failures, name+" ("+stackFailure+")")
+	}
+	if len(failures) > 0 {
+		return fmt.Errorf("not completed: %s", strings.Join(failures, ", "))
 	}
 	return nil
+}
+
+// checkStack refuses, before anything moves, a handover of a --stack run
+// whose record has no plan of its layers: the layers could be neither
+// checked nor moved once the rebase finished.
+func (r *resume) checkStack() error {
+	rec, ok, err := wtsync.ReadStackRecord(r.ctx.Repo.MainRoot, r.st.Epoch)
+	undo := "wt sync undo " + r.name + " puts back the line"
+	switch {
+	case err != nil:
+		return fmt.Errorf("the stack's record cannot be read (%w); nothing is resumed: %s", err, undo)
+	case ok && len(rec.Plans) == 0 && len(rec.Line.Layers) > 0:
+		// Either way undo puts it back: it aborts a rebase still in
+		// progress, and accepts one finished by hand as the run's own.
+		undo = "wt sync undo " + r.name + " aborts the rebase and puts back the line"
+		if !r.busy {
+			undo = "the rebase was finished by hand, and wt sync undo " + r.name + " puts back the line"
+		}
+		return fmt.Errorf("the stack's record has no plan of its layers, so they could not be checked or moved; nothing is resumed: %s", undo)
+	}
+	return nil
+}
+
+// finishStack checks and moves the layers of a stack held on the line, when
+// the run that handed this rebase over was one, exactly as the run would
+// have once its rebase finished. It returns the failure the resume ends with.
+func (r *resume) finishStack(res wtsync.Result) string {
+	main := r.ctx.Repo.MainRoot
+	rec, ok, err := wtsync.ReadStackRecord(main, r.st.Epoch)
+	switch {
+	case err != nil:
+		fmt.Fprintf(r.w, "  ✗ no layer moved: the stack's record: %v\n", err)
+		return "no layer moved"
+	case !ok:
+		return ""
+	}
+	listed, lerr := r.opts.SessionsAgain(r.ctx, syncrun.RebasedNothing)
+	s, failure, ferr := syncrun.FinishStack(r.ctx, r.w, syncrun.StackFinish{Record: rec, OldTip: r.st.OldTip, NewTip: res.NewTip,
+		Onto: rec.Onto, Own: wtsync.ReadOwnOrUnknown(main, r.ctx.Config.MainBranch), Listed: listed, ListErr: lerr,
+		Force: rec.Force, Now: r.opts.Clock()})
+	r.j.SetSync(r.st.Branch, func(p *syncrun.SyncParticipant) { p.Stack = s })
+	if ferr != nil {
+		fmt.Fprintf(r.w, "  ✗ the layer moves stopped: %v; wt sync undo %s puts back the line and every layer moved\n", ferr, r.name)
+		return "layer moves stopped"
+	}
+	return failure
 }
 
 // push offers the rebased branch's push, as a run does.

@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/anders-lindstrom/wt/internal/agents"
@@ -50,13 +51,14 @@ func Undo(mainRoot string, worktrees []repo.Worktree, listed []agents.Agent, bra
 	if err != nil {
 		return nil, err
 	}
-	// A layer move a --stack run left under way, ref moved and files not,
-	// is put back first: its worktree would otherwise read as dirty.
-	if err := settleMoving(mainRoot, run[0].Epoch); err != nil {
-		return nil, err
-	}
 	u := newUndo(mainRoot, run, worktrees, now)
 	defer u.release()
+	// A layer move a --stack run left under way, ref moved and files not,
+	// is only recognised here; its ref is put back with the resets, once
+	// every branch has passed every check under its lock.
+	if err := u.readMoving(); err != nil {
+		return nil, err
+	}
 	if err := u.lockCheckouts(listed, now, force); err != nil {
 		return nil, err
 	}
@@ -80,7 +82,13 @@ func Undo(mainRoot string, worktrees []repo.Worktree, listed []agents.Agent, bra
 	if err != nil {
 		return out, err
 	}
-	return out, u.disown()
+	derr := u.disown()
+	// A run of a stack held on one line leaves its markers and its record
+	// when it stopped part way: undone, they describe nothing.
+	if ferr := ForgetStack(mainRoot, run[0].Epoch); ferr != nil {
+		derr = errors.Join(derr, fmt.Errorf("everything is back, but the stack's markers or record are left: %w", ferr))
+	}
+	return out, derr
 }
 
 // undo is one Undo under way: the run it puts back, and what each phase
@@ -88,6 +96,7 @@ func Undo(mainRoot string, worktrees []repo.Worktree, listed []agents.Agent, bra
 type undo struct {
 	mainRoot string
 	run      []Safety
+	all      []repo.Worktree
 	byBranch map[string]repo.Worktree
 	// Each worktree's git dir, read once and reused: an undo asks for the
 	// same one at three points — to take the lock over, to remove an aborted
@@ -124,12 +133,19 @@ type undo struct {
 	// "already at" and the run it was meant to supersede would be out of
 	// reach.
 	moved map[string]bool
+	// moving is the layer moves of a --stack run that an interrupt left
+	// under way, by branch; settling is those checked, under their locks,
+	// to be at the new tip over the old tip's index and files, whose ref
+	// the resets put back.
+	moving   map[string]LayerMove
+	settling map[string]bool
 }
 
 func newUndo(mainRoot string, run []Safety, worktrees []repo.Worktree, now time.Time) *undo {
-	u := &undo{mainRoot: mainRoot, run: run, byBranch: map[string]repo.Worktree{}, gitDirs: map[string]string{},
+	u := &undo{mainRoot: mainRoot, run: run, all: worktrees, byBranch: map[string]repo.Worktree{}, gitDirs: map[string]string{},
 		aborting: map[string]bool{}, insideHead: map[string]string{}, states: map[string]State{},
-		tips: map[string]string{}, forceEpoch: now.UnixNano(), aborted: map[string]bool{}, moved: map[string]bool{}}
+		tips: map[string]string{}, forceEpoch: now.UnixNano(), aborted: map[string]bool{}, moved: map[string]bool{},
+		moving: map[string]LayerMove{}, settling: map[string]bool{}}
 	for _, wt := range worktrees {
 		if wt.Branch != "" && !wt.Detached {
 			u.byBranch[wt.Branch] = wt
@@ -205,6 +221,16 @@ func (u *undo) lockCheckouts(listed []agents.Agent, now time.Time, force bool) e
 				return err
 			}
 			continue
+		}
+		if m, ok := u.moving[s.Branch]; ok {
+			settle, err := u.checkMoving(m, wt)
+			if err != nil {
+				return err
+			}
+			if settle {
+				u.settling[s.Branch] = true
+				continue
+			}
 		}
 		if stand.Dirty {
 			return fmt.Errorf("%s has tracked changes; nothing undone", s.Branch)
@@ -305,6 +331,14 @@ func (u *undo) checkBranches(all []Safety, force bool) error {
 			if h := u.insideHead[s.Branch]; h != "" {
 				u.pins = append(u.pins, Pin{Branch: s.Branch, Safety: h, Result: s.Tip})
 			}
+			continue
+		}
+		if u.noPlanFinished(s) {
+			// The run's own rebase, finished by hand, and with no plan resume
+			// cannot finish it. Its count cannot prove that nobody committed
+			// inside it (a folded fixup makes room for a commit), so the tip
+			// it discards is kept, as a forced undo keeps it.
+			u.pins = append(u.pins, Pin{Branch: s.Branch, Safety: tip, Result: s.Tip})
 			continue
 		}
 		if !force {
@@ -420,7 +454,15 @@ func (u *undo) resetBranches() ([]Restored, error) {
 		}
 		if wt, ok := u.byBranch[s.Branch]; ok {
 			r.Path = wt.Path
-			if from != s.Tip {
+			if from != s.Tip && u.settling[s.Branch] {
+				// The worktree's index and files are the old tip's already:
+				// only the ref goes back, guarded by the tip it moved to.
+				if _, err := gitEnv(u.mainRoot, nil, nil, "update-ref", "-m", "wt sync undo", "refs/heads/"+s.Branch, s.Tip, from); err != nil {
+					rows, err := u.stopped(u.run[i:], err)
+					return append(out, rows...), err
+				}
+				u.moved[s.Branch] = true
+			} else if from != s.Tip {
 				if _, err := gitEnv(wt.Path, rebaseEnv, nil, "reset", "--hard", s.Tip); err != nil {
 					rows, err := u.stopped(u.run[i:], err)
 					return append(out, rows...), err
@@ -592,44 +634,91 @@ func UndoBranches(mainRoot, branch string) ([]string, error) {
 	return branches, nil
 }
 
-// settleMoving puts back the ref of every layer move the run of epoch
-// recorded as under way and was interrupted in: the branch at its new tip
-// while its worktree's index and files are still the old tip's. The ref
-// goes back to the old tip, guarded by the new one, which leaves that
-// worktree clean at the tip undo then finds it at; nothing is reset. A move
-// whose worktree holds anything else is left for undo's own checks, which
-// refuse it.
-func settleMoving(mainRoot string, epoch int64) error {
-	rec, ok, err := ReadStackRecord(mainRoot, epoch)
+// readMoving reads, from the run's record, the layer moves an interrupt
+// left under way in a worktree. It changes nothing.
+func (u *undo) readMoving() error {
+	rec, ok, err := ReadStackRecord(u.mainRoot, u.run[0].Epoch)
 	if err != nil || !ok {
 		return err
 	}
-	changed := false
-	for i := range rec.Moves {
-		m := &rec.Moves[i]
-		if m.Result != MoveMoving || m.How != MoveByWorktree || m.Path == "" {
-			continue
+	for _, m := range rec.Moves {
+		if m.Result == MoveMoving && m.How == MoveByWorktree && m.Path != "" {
+			u.moving[m.Branch] = m
 		}
-		tip, err := gitEnv(mainRoot, nil, nil, "rev-parse", "--verify", "refs/heads/"+m.Branch)
-		if err != nil {
-			return err
-		}
-		switch {
-		case tip == m.Old:
-		case tip != m.New || indexAt(m.Path, m.Old) != m.Old:
-			continue
-		default:
-			if _, _, err := gitEnvAllow(m.Path, nil, nil, 0, "diff", "--quiet"); err != nil {
-				continue // files changed beyond the index: undo refuses it
-			}
-			if _, err := gitEnv(mainRoot, nil, nil, "update-ref", "-m", "wt sync undo", "refs/heads/"+m.Branch, m.Old, m.New); err != nil {
-				return fmt.Errorf("%s: the interrupted move could not be put back: %w", m.Branch, err)
-			}
-		}
-		m.Result, changed = MovePlanned, true
 	}
-	if !changed {
-		return nil
+	return nil
+}
+
+// checkMoving checks, under the lock of wt, the worktree the branch of an
+// interrupted move m is checked out in now: it must be the one the record
+// names and only that one, on the branch, which is at its new tip or back
+// at its old one, with the index and files of the old tip. settle is a ref
+// to put back; false with no error is a branch already at its old tip,
+// which undo's own checks take from here. Anything else refuses the undo,
+// changing nothing and keeping the pins.
+func (u *undo) checkMoving(m LayerMove, wt repo.Worktree) (settle bool, err error) {
+	refuse := func(why string) (bool, error) {
+		return false, fmt.Errorf("%s: its move was interrupted, and %s; nothing undone, and its pins are kept", m.Branch, why)
 	}
-	return WriteStackRecord(mainRoot, rec)
+	use, inUse := repo.Worktrees(u.listed()).Users()[m.Branch]
+	switch {
+	case !inUse:
+		return refuse("it is not checked out in " + m.Path + ", where the record says")
+	case use.By != "":
+		return refuse("a " + use.By + " in " + use.Path + " holds it")
+	case !samePath(use.Path, m.Path) || !samePath(wt.Path, m.Path):
+		return refuse("it is checked out in " + use.Path + ", not in " + m.Path + " where the record says: look at " + use.Path)
+	}
+	if ref, err := gitEnv(m.Path, nil, nil, "symbolic-ref", "--quiet", "HEAD"); err != nil || ref != "refs/heads/"+m.Branch {
+		return refuse(m.Path + " is not on it")
+	}
+	tip, err := gitEnv(u.mainRoot, nil, nil, "rev-parse", "--verify", "refs/heads/"+m.Branch)
+	if err != nil {
+		return false, err
+	}
+	switch {
+	case tip == m.Old:
+		return false, nil
+	case tip != m.New:
+		return refuse(fmt.Sprintf("it is at %s, neither its old nor its new tip", git.ShortID(tip, 7)))
+	case indexAt(m.Path, m.Old) != m.Old:
+		return refuse("the index in " + m.Path + " is not its old tip's: look at " + m.Path)
+	}
+	if _, _, err := gitEnvAllow(m.Path, nil, nil, 0, "diff", "--quiet"); err != nil {
+		return refuse("files in " + m.Path + " are changed: look at " + m.Path)
+	}
+	return true, nil
+}
+
+// listed is the worktrees undo was handed.
+func (u *undo) listed() []repo.Worktree {
+	return u.all
+}
+
+// samePath compares two worktree paths with their symlinks resolved.
+func samePath(a, b string) bool {
+	if ra, err := filepath.EvalSymlinks(a); err == nil {
+		a = ra
+	}
+	if rb, err := filepath.EvalSymlinks(b); err == nil {
+		b = rb
+	}
+	return a == b
+}
+
+// noPlanFinished is a --stack run's line handed over and finished by hand
+// with git, whose record has no plan of its layers: resume refuses it, so
+// undo is its way back. The rebase is proved to be the run's own, as resume
+// would prove it.
+func (u *undo) noPlanFinished(s Safety) bool {
+	rec, ok, err := ReadStackRecord(u.mainRoot, s.Epoch)
+	if err != nil || !ok || rec.Branch != s.Branch || len(rec.Plans) > 0 {
+		return false
+	}
+	st, stateOK := u.states[s.Branch]
+	wt, wtOK := u.byBranch[s.Branch]
+	if !stateOK || !wtOK || u.aborting[s.Branch] {
+		return false
+	}
+	return VerifyFinished(wt.Path, s.Branch, cmp.Or(st.Work, s.Branch), st.Onto, st.OldTip, st.Total) == nil
 }
