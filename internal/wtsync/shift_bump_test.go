@@ -123,17 +123,86 @@ func TestOwnedLineShiftBumpLiftNotesEveryLine(t *testing.T) {
 }
 
 // The server's stack adds an API of its own, a version line trunk does not
-// have, in a pick that bumps the main API while trunk bumped it too. The
-// lines no longer pair up by position, and the lift refuses the file as it
-// does under max-plus-patch: a person decides that pick.
-func TestOwnedLineShiftBumpLiftRefusesAPickThatAddsAVersionLine(t *testing.T) {
+// have, in a pick that bumps the main API while trunk bumped it too. Lines
+// pair by their place in the file, so the added one is the branch's alone
+// and stays as it is, and the main API's bump is decided as ever.
+func TestOwnedLineLiftLeavesAVersionLineThePickAddedAlone(t *testing.T) {
+	t.Parallel()
+	for rule, want := range map[string]string{"shift-bump": "2.48.0", "max-plus-patch": "2.47.1"} {
+		r, err := RuleNamed(rule)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := OwnedLine{Line: regexp.MustCompile(`^    version:`), Rule: r}
+		lift, err := s.Lift("app.yaml", []byte(openapiBlock("2.46.0")), []byte(openapiBlock("2.47.0")),
+			[]byte(openapiBlock("2.47.0", "mobile")), []byte(openapiBlock("2.47.0", "mobile")))
+		if err != nil || lift == nil || string(lift.Content) != openapiBlock(want, "mobile") || !reflect.DeepEqual(lift.To, []string{want}) {
+			t.Errorf("%s: lift = %+v, %v; want main at %s and mobile kept", rule, lift, err, want)
+		}
+	}
+}
+
+// openapiBlock is the shape of the server's openapi: block: the header that
+// names each API, then main and remote, and the APIs a stack adds, each at
+// 0.1.0, under the same parent; a build version at six spaces follows that
+// the four-space owned line does not claim.
+func openapiBlock(main string, added ...string) string {
+	var head, apis strings.Builder
+	for _, a := range added {
+		head.WriteString("#   " + a + " -> spec openapi_" + a + "_v1.json\n")
+		apis.WriteString("  " + a + ":\n    name: " + a + " API\n    # 0.1.0 until launch\n    version: 0.1.0\n")
+	}
+	return "server:\n  port: 8080\n\n# The APIs:\n#   main   -> spec openapi_v3.json\n" + head.String() +
+		"openapi:\n  main:\n    name: Backend API\n    # update to a newer version whenever we change the openapi spec in any significant way\n    version: " + main +
+		"\n    public-only: false\n  remote:\n    name: Remote Device API\n    # update to a newer version whenever we change the openapi spec in any significant way\n    version: 1.5.1\n" +
+		apis.String() + "\nspringdoc:\n  api-docs:\n    enabled: true\n\ninfo:\n  static:\n    build:\n      version: ${git.build.version}\n"
+}
+
+// A version line one side removed is refused, as it is when lines pair by
+// position: nothing says the removal and the other side's bump agree.
+func TestOwnedLineLiftRefusesAVersionLineOneSideRemoved(t *testing.T) {
 	t.Parallel()
 	s := OwnedLine{Line: regexp.MustCompile(`^    version:`), Rule: shiftRule(t)}
-	mobile := "  mobile:\n    name: Mobile API\n    version: 0.1.0\n"
-	lift, err := s.Lift("app.yaml", []byte(appYAML("2.46.0", "1.5.1")), []byte(appYAML("2.47.0", "1.5.1")),
-		[]byte(appYAML("2.47.0", "1.5.1")+mobile), []byte(appYAML("2.47.0", "1.5.1")+mobile))
+	lift, err := s.Lift("app.yaml", []byte(openapiBlock("2.46.0", "mobile")), []byte(openapiBlock("2.47.0", "mobile")),
+		[]byte(openapiBlock("2.47.0")), []byte(openapiBlock("2.47.0")))
 	if lift != nil || !IsRefusal(err) || err.Error() != "app.yaml: the sides differ in the number of owned lines" {
 		t.Fatalf("lift = %+v, %v; want the shape refusal", lift, err)
+	}
+}
+
+// Lines with no place of their own — a flat file of version lines — pair by
+// position, and a side with another one is refused, as before.
+func TestOwnedLineLiftPairsLinesWithoutAPlaceByPosition(t *testing.T) {
+	t.Parallel()
+	s := OwnedLine{Line: regexp.MustCompile(`^version:`), Rule: shiftRule(t)}
+	flat := func(vs ...string) []byte { return []byte("version: " + strings.Join(vs, "\nversion: ") + "\n") }
+	lift, err := s.Lift("v.txt", flat("2.46.0", "1.5.1"), flat("2.47.0", "1.5.1"), flat("2.47.0", "1.5.1", "0.1.0"), flat("2.47.0", "1.5.1", "0.1.0"))
+	if lift != nil || !IsRefusal(err) || err.Error() != "v.txt: the sides differ in the number of owned lines" {
+		t.Fatalf("lift = %+v, %v; want the shape refusal", lift, err)
+	}
+	lift, err = s.Lift("v.txt", flat("2.46.0", "1.5.1"), flat("2.47.0", "1.5.1"), flat("2.47.0", "1.5.1"), flat("2.47.0", "1.5.1"))
+	if err != nil || lift == nil || string(lift.Content) != string(flat("2.48.0", "1.5.1")) {
+		t.Fatalf("lift = %+v, %v; want 2.48.0 by position", lift, err)
+	}
+}
+
+// At a conflict too: trunk bumped the remote API and the pick added the
+// mobile API right below it, in one block. The remote line, which the
+// branch did not change, is trunk's; the added line is the branch's.
+func TestOwnedLineResolvesABlockWhereThePickAddedAVersionLine(t *testing.T) {
+	t.Parallel()
+	remote := func(v string) string {
+		return strings.Replace(openapiBlock("2.47.0"), "version: 1.5.1", "version: "+v, 1)
+	}
+	branch := strings.Replace(openapiBlock("2.47.0", "mobile"), "#   mobile -> spec openapi_mobile_v1.json\n", "", 1)
+	for _, rule := range []string{"shift-bump", "max-plus-patch"} {
+		r, _ := RuleNamed(rule)
+		s := OwnedLine{Line: regexp.MustCompile(`^    version:`), Rule: r}
+		out, err := s.Resolve(Conflict{Path: "app.yaml", Base: []byte(remote("1.5.1")), Trunk: []byte(remote("1.5.2")), Branch: []byte(branch)})
+		want := strings.Replace(branch, "version: 1.5.1", "version: 1.5.2", 1)
+		if err != nil || string(out) != want {
+			t.Errorf("%s: Resolve = %q, %v; want %q", rule, out, err, want)
+		}
 	}
 }
 
@@ -320,5 +389,76 @@ func TestCollapseOwnedShiftBumpNeedsOneOwnedLineInTheBase(t *testing.T) {
 		if out, err := collapseOwned(b, line, mpp, "f.txt"); err != nil || len(out) != 1 || out[0] != "version: 2.47.1" {
 			t.Errorf("%s: max-plus-patch = %q, %v; it ignores the base", name, out, err)
 		}
+	}
+}
+
+// The server's stack, shaped like its openapi: block: the first pick bumps
+// main 2.46.0 → 2.47.0 and adds the mobile API, a later one adds webaccess,
+// and the rest bump main on as in the six-bump table. Trunk took 2.47.0.
+func TestRebaseCarriesAStackThatAddsVersionLines(t *testing.T) {
+	t.Parallel()
+	for rule, want := range map[string][]string{
+		"shift-bump":     {"2.48.0", "2.49.0", "2.50.0", "2.50.1", "2.50.2", "2.50.3"},
+		"max-plus-patch": {"2.47.1", "2.48.0", "2.49.0", "2.49.1", "2.49.2", "2.49.3"},
+	} {
+		t.Run(rule, func(t *testing.T) {
+			t.Parallel()
+			pick := func(v, extra string, apis ...string) map[string]string {
+				return map[string]string{"app.yaml": openapiBlock(v, apis...), "b.txt": extra}
+			}
+			dir := repoWith(t, map[string]string{"a.txt": "a\n", "b.txt": "b\n", "app.yaml": openapiBlock("2.46.0")},
+				[]map[string]string{{"app.yaml": openapiBlock("2.47.0"), "a.txt": "trunk\n"}},
+				[]map[string]string{
+					pick("2.47.0", "b1\n", "mobile"),
+					{"c.txt": "between\n"},
+					pick("2.48.0", "b2\n", "mobile", "webaccess"),
+					pick("2.49.0", "b3\n", "mobile", "webaccess"),
+					{"c.txt": "between again\n"},
+					pick("2.49.1", "b4\n", "mobile", "webaccess"),
+					pick("2.49.2", "b5\n", "mobile", "webaccess"),
+					pick("2.49.3", "b6\n", "mobile", "webaccess"),
+				})
+			decl := "conflicts:\n  - paths: [app.yaml]\n    strategy: owned-line\n    line: '^    version:'\n    rule: " + rule + "\n"
+			if err := os.WriteFile(filepath.Join(dir, ".wt-sync.yaml"), []byte(decl), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			gitIn(t, dir, "add", "-A")
+			gitIn(t, dir, "commit", "-q", "-m", "declare")
+			gitIn(t, dir, "remote", "add", "origin", dir)
+			gitIn(t, dir, "fetch", "-q", "origin")
+			gitIn(t, dir, "config", "core.hooksPath", filepath.Join(dir, ".git", "hooks"))
+			cfg, err := LoadFromTrunk(dir, "main")
+			if err != nil {
+				t.Fatal(err)
+			}
+			wt := featureWorktree(t, dir).Path
+			sim, err := SimulateRebase(dir, "origin/main", "feature", cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if sim.Stop != nil || sim.Err != nil {
+				t.Fatalf("simulation stopped: %+v, %v", sim.Stop, sim.Err)
+			}
+			res, err := Rebase(dir, cfg, trunkReq(wt, 1), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if res.Left != nil || res.Restored || res.Replayed != 8 {
+				t.Fatalf("result %+v", res)
+			}
+			apis := [][]string{{"mobile"}, {"mobile", "webaccess"}, {"mobile", "webaccess"}, {"mobile", "webaccess"}, {"mobile", "webaccess"}, {"mobile", "webaccess"}}
+			for i, back := range []string{"~7", "~5", "~4", "~2", "~1", ""} {
+				if got := gitIn(t, wt, "show", "HEAD"+back+":app.yaml"); got != strings.TrimRight(openapiBlock(want[i], apis[i]...), "\n") {
+					t.Errorf("HEAD%s:app.yaml = %q, want main at %s beside %v at 0.1.0", back, got, want[i], apis[i])
+				}
+			}
+			last := strings.TrimRight(openapiBlock(want[len(want)-1], "mobile", "webaccess"), "\n")
+			if got := gitIn(t, dir, "show", sim.Tree+":app.yaml"); got != last {
+				t.Errorf("the simulation ends on %q", got)
+			}
+			if got, want := runStopFiles(res.Stops), stopFiles(sim.Stops); !reflect.DeepEqual(got, want) {
+				t.Errorf("the run's stops\n%+v\ndiffer from the simulation's\n%+v", got, want)
+			}
+		})
 	}
 }

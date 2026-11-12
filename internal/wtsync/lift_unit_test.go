@@ -46,25 +46,23 @@ func TestOwnedLineLiftRefusesWithTheStrategysOwnWording(t *testing.T) {
 	}
 }
 
-func TestOwnedLineLiftRefusesAFileWhoseShapeChanged(t *testing.T) {
+func TestOwnedLineLiftPairsLinesByTheirPlace(t *testing.T) {
 	t.Parallel()
-	// The branch added a third owned line: the lines no longer pair up by
-	// position across the sides, so nothing is guessed. Refused rather than
-	// left alone, as the strategy refuses a block it cannot pair: a lift
-	// that may be due is not skipped in silence.
+	// The branch added a third owned line, under a parent of its own: it is
+	// the branch's alone, and the bump both sides made to main is lifted.
 	s := ownedVersion(t)
 	three := []byte(appYAML("1.2.3", "1.5.1") + "  third:\n    version: 0.1.0\n")
 	lift, err := s.Lift("app.yaml", []byte(appYAML("1.2.2", "1.5.1")), []byte(appYAML("1.2.3", "1.5.1")), three, three)
-	if lift != nil || !IsRefusal(err) || err.Error() != "app.yaml: the sides differ in the number of owned lines" {
-		t.Fatalf("lift = %+v, %v; want a refusal", lift, err)
+	if err != nil || lift == nil || string(lift.Content) != appYAML("1.2.4", "1.5.1")+"  third:\n    version: 0.1.0\n" {
+		t.Fatalf("lift = %+v, %v; want main at 1.2.4 and the third line kept", lift, err)
 	}
 	// The reviewers' case: trunk bumped, the branch only added a version
-	// line of its own ten lines away and bumped nothing. Refused the same
-	// way: nothing here says which line the branch meant.
+	// line of its own ten lines away and bumped nothing. Nothing to lift:
+	// trunk's bump stays, the added line is the branch's.
 	far := "\n\n\n\n\n\n\n\n\n\nextra:\n  version: 2.0.0\n"
 	lift, err = s.Lift("app.yaml", []byte(appYAML("1.2.2", "1.5.1")), []byte(appYAML("1.2.3", "1.5.1")), []byte(appYAML("1.2.2", "1.5.1")+far), []byte(appYAML("1.2.3", "1.5.1")+far))
-	if lift != nil || !IsRefusal(err) || err.Error() != "app.yaml: the sides differ in the number of owned lines" {
-		t.Fatalf("added line: lift = %+v, %v; want the shape refusal", lift, err)
+	if lift != nil || err != nil {
+		t.Fatalf("added line: lift = %+v, %v; want nothing to lift", lift, err)
 	}
 	// A line the regex claims that carries no version number, such as a
 	// build placeholder, is not paired at all: the branch adding one changes
