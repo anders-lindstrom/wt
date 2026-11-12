@@ -39,7 +39,10 @@ func newSyncCmd() *cobra.Command {
 			"                                    first, and what holds each\n" +
 			"          wt sync <work>            one worktree in full: every stop,\n" +
 			"                                    file and key\n" +
-			"  act     wt sync rebase <work>...  sync them by rebasing onto trunk:\n" +
+			"          wt sync <work> --onto <ref>\n" +
+			"                                    the same against <ref>, not trunk\n" +
+			"  act     wt sync rebase <work>...  sync them by rebasing onto trunk,\n" +
+			"                                    or the ref --onto names:\n" +
 			"                                    safety ref, strategies at each stop,\n" +
 			"                                    deferred steps; asks once when more\n" +
 			"                                    than one worktree is involved or a\n" +
@@ -87,6 +90,16 @@ func newSyncCmd() *cobra.Command {
 			"a few repositories at a time, asked once for all of them, then rebased\n" +
 			"one repository after another. A repository whose trunk declares no\n" +
 			".wt-sync.yaml is listed, not failed.\n" + selectionHelp + "\n" +
+			"\n" +
+			"--onto <ref> looks at the worktree named against <ref> instead of\n" +
+			"trunk, and with --rebase rebases it onto <ref>: an integration branch,\n" +
+			"origin/<branch>, a tag or a commit. A remote-tracking ref is fetched\n" +
+			"with trunk (--no-fetch takes it as last fetched); anything else is\n" +
+			"used as it stands. --upstream <ref> with it takes only the commits\n" +
+			"above that ref, git's rebase --onto <onto> <upstream>: a layer moved\n" +
+			"off one branch onto another. The declaration is still read from trunk.\n" +
+			"A target is chosen per piece of work, so --onto needs a worktree named\n" +
+			"and takes no --all, --roots or --profile (wt sync rebase --help).\n" +
 			"\n" +
 			"Groups:\n" +
 			"  ready      conflict-free or recipe, with nothing in the way: wt sync\n" +
@@ -155,6 +168,7 @@ func newSyncCmd() *cobra.Command {
 		Example: "  wt sync --no-fetch --json     # every worktree as JSON, trunk as last fetched\n" +
 			"  wt sync login-crash           # that worktree in full\n" +
 			"  wt sync . --rebase --if-ready # rebase it only if it needs nothing from you\n" +
+			"  wt sync login-crash --onto test_wt/integration  # against another branch\n" +
 			"  wt sync --all --rebase --if-ready  # every ready worktree, every repository\n" +
 			"  wt sync --profile api         # the overview of a profile's repositories",
 		ValidArgsFunction: completeWork,
@@ -675,8 +689,9 @@ func newSyncRebaseCmd() *cobra.Command {
 	var push func() syncrun.PushMode
 	rebase := &cobra.Command{
 		Use:   "rebase [<work>...]",
-		Short: "Rebase named worktrees onto trunk with the declared strategies",
-		Long: "Sync the named worktrees with trunk, by rebasing them onto it.\n\n" +
+		Short: "Rebase named worktrees onto trunk, or the ref --onto names",
+		Long: "Sync the named worktrees with trunk, by rebasing them onto it, or onto\n" +
+			"the ref --onto names.\n\n" +
 			"Fetch trunk once, then for each named worktree (and the rest of any\n" +
 			"stack it belongs to, parents first): pin the old tip under\n" +
 			"refs/wt-sync/<branch>/<epoch>, rebase with --no-update-refs --no-gpg-sign,\n" +
@@ -779,6 +794,25 @@ func newSyncRebaseCmd() *cobra.Command {
 			"--allow-diverged it goes ahead only over the divergence that overview\n" +
 			"showed: a remote that moved since is refused as changed. wt schema\n" +
 			"sync-run prints its JSON Schema; docs/json.md explains it.\n\n" +
+			"--onto <ref> rebases the worktrees named onto <ref> instead of trunk:\n" +
+			"an integration branch, origin/<branch>, a tag or a commit, with\n" +
+			"everything a run onto trunk has. A remote-tracking ref is fetched with\n" +
+			"trunk, from the branch its remote's fetch refspec maps to it (--no-fetch\n" +
+			"takes it as last fetched); a local branch, tag or\n" +
+			"commit is used as it stands, never fetched or moved. The commits\n" +
+			"replayed are the branch's that <ref> does not have; --upstream <ref2>\n" +
+			"replays only those above <ref2>, git's rebase --onto <ref> <ref2>, which\n" +
+			"moves a layer off one branch onto another. The declaration and its\n" +
+			"scripts are read from trunk, local trunk is fast-forwarded as ever, and\n" +
+			"a branch is classed against <ref>: one <ref> already has is skipped.\n" +
+			"With --onto a run moves exactly the worktrees named, none of their\n" +
+			"stack: each worktree stacked above one it moved is listed, bottom first,\n" +
+			"with the wt sync rebase --onto --upstream line that moves it next.\n" +
+			"--stack --onto rebases a line onto <ref>; --autosquash folds in place\n" +
+			"and takes no --onto: fold first, then rebase. A target is chosen per piece\n" +
+			"of work: --onto needs a worktree named, and takes no --all, --roots or\n" +
+			"--profile. --expect with --onto takes the token of\n" +
+			"wt sync <work> --onto <ref> --json, which covers the target.\n\n" +
 			"--stack rebases a stack held on one line: <work> is the worktree whose\n" +
 			"branch is the top of the line (a tmp branch at the top, or the top layer\n" +
 			"itself), and the line is every commit from where it leaves trunk to its\n" +
@@ -824,6 +858,8 @@ func newSyncRebaseCmd() *cobra.Command {
 			"  wt sync rebase tmp/stack --stack   # the whole line once, then every layer\n" +
 			"  wt sync rebase tmp/stack --stack --autosquash  # fold review fixes in place\n" +
 			"  wt sync rebase login-crash --force --allow-diverged  # past session, origin\n" +
+			"  wt sync rebase login-crash --onto test_wt/integration  # onto that branch\n" +
+			"  wt sync rebase ui --onto origin/main --upstream feat_wt/api  # move a layer\n" +
 			"  wt sync rebase --all --no-fetch --push  # every ready one, everywhere, pushed\n" +
 			"  wt sync rebase --profile api --if-ready --no-ff-trunk  # trunk left as it is\n" +
 			"  wt sync --roots work --rebase --no-push  # spelled on wt sync; print pushes",

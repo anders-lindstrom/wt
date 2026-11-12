@@ -1,6 +1,7 @@
 # .wt-sync.yaml — what wt sync is told about a repository
 
-`wt sync` rebases worktrees onto trunk. `.wt-sync.yaml`, at the root of the
+`wt sync` rebases worktrees onto trunk, or onto the ref `--onto` names.
+`.wt-sync.yaml`, at the root of the
 repository, tells it the shapes of the conflicts it may resolve and the work
 that runs around a rebase. A repository without the file is shown by `wt sync`
 and never rebased (`wt up` still takes a conflict-free rebase there).
@@ -8,8 +9,16 @@ and never rebased (`wt up` still takes a conflict-free rebase there).
 The file is read from trunk, never from the branch being rebased: every entry
 names something wt runs, and a branch must not be able to change that. A
 branch that edits the file changes nothing until the edit is on trunk. A run
-reads it from the one trunk commit it rebases onto. A resume reads it from the
-commit the run it continues rebased onto.
+reads it from the one trunk commit it fetched. A resume reads it from the trunk
+commit the run it continues read it from.
+
+A rebase onto another ref (`wt sync rebase <work> --onto <ref>`, or `wt up
+--onto <ref>`) reads the file from trunk too, never from the target: an
+integration or release branch is rebased onto, its declaration is not taken.
+The strategies resolve against the target's side of each conflict (an
+`owned-line` version comes out above the target's), the scripts are trunk's, and
+a repository whose trunk has no file refuses `wt sync rebase --onto` as it
+refuses `wt sync rebase`, while `wt up --onto` still takes a conflict-free rebase.
 
 A key wt does not know is an error, and so is a mistake in a key it does know:
 the run refuses and says which entry. `wt sync doctor` checks the file before
