@@ -148,13 +148,42 @@ func (d *driver) checkAt() (sha string, edited bool, err error) {
 	if len(cmds) < 2 || cmds[len(cmds)-1][0] != "break" {
 		return "", false, nil
 	}
-	prev := cmds[len(cmds)-2]
+	// In a fold the break follows the group's fixup and squash lines: the
+	// commit checked is the pick they were folded into, and git's record of
+	// what it rewrote ends at the last of them.
+	i := len(cmds) - 2
+	d.checkTail = ""
+	var members []string
+	for ; i > 0 && (cmds[i][0] == "fixup" || cmds[i][0] == "squash"); i-- {
+		id := cmds[i][1]
+		if len(cmds[i]) >= 3 && strings.HasPrefix(id, "-") {
+			id = cmds[i][2]
+		}
+		if d.checkTail == "" {
+			d.checkTail = id
+		}
+		members = append(members, id)
+	}
+	prev := cmds[i]
 	if (prev[0] != "pick" && prev[0] != "edit") || len(prev) < 2 {
 		return "", false, nil
 	}
 	for _, c := range d.checks {
 		if strings.HasPrefix(c, prev[1]) {
 			return c, prev[0] == "edit", nil
+		}
+	}
+	// A group is checked when a fixup or squash folded into its pick is to
+	// be checked: the commit checked is still the pick, with them folded in.
+	for _, m := range members {
+		for _, c := range d.checks {
+			if strings.HasPrefix(c, m) {
+				sha, err := d.git("rev-parse", "--verify", prev[1]+"^{commit}")
+				if err != nil {
+					return "", false, err
+				}
+				return sha, prev[0] == "edit", nil
+			}
 		}
 	}
 	return "", false, nil
@@ -182,7 +211,10 @@ func (d *driver) pickCommitted(sha, head string, edited bool) (bool, error) {
 	}
 	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
 	f := strings.Fields(lines[len(lines)-1])
-	return len(f) >= 2 && f[0] == sha && f[1] == head, nil
+	if len(f) < 2 || f[1] != head {
+		return false, nil
+	}
+	return f[0] == sha || (d.checkTail != "" && strings.HasPrefix(f[0], d.checkTail)), nil
 }
 
 // atCheck runs the each_commit steps at the check stop for sha. failed is

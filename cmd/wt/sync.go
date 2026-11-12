@@ -35,6 +35,8 @@ func newSyncCmd() *cobra.Command {
 			"onto trunk, and the one method there is.\n" +
 			"  look    wt sync                   every worktree, grouped; changes\n" +
 			"                                    nothing of yours\n" +
+			"          wt sync <work> --stack    the layer branches on its line, bottom\n" +
+			"                                    first, and what holds each\n" +
 			"          wt sync <work>            one worktree in full: every stop,\n" +
 			"                                    file and key\n" +
 			"  act     wt sync rebase <work>...  sync them by rebasing onto trunk:\n" +
@@ -155,14 +157,16 @@ func newSyncCmd() *cobra.Command {
 			"  wt sync --profile api         # the overview of a profile's repositories",
 		ValidArgsFunction: completeWork,
 	}
-	var rebase, resume, undo, yes, force, ifReady, allowDiverged, allowOwed, asJSON bool
+	var rebase, resume, undo, yes, force, ifReady, allowDiverged, allowOwed, asJSON, stack, autosquash bool
 	var expect string
+	var layers []string
 	var sel selectionFlags
 	var push func() syncrun.PushMode
 	flags := func() syncVerbFlags {
 		return syncVerbFlags{rebase: rebase, resume: resume, undo: undo,
 			yes: yes, force: force, noFetch: noFetch, noFFTrunk: noFFTrunk, ifReady: ifReady, push: push(),
-			allowDiverged: allowDiverged, allowOwed: allowOwed, json: asJSON, expect: expect}
+			allowDiverged: allowDiverged, allowOwed: allowOwed, json: asJSON, expect: expect,
+			stack: stack, layers: layers, autosquash: autosquash}
 	}
 	// The count rule is the verb's own. Two verbs at once is a flag mistake,
 	// which RunE reports the way --push with --no-push is reported.
@@ -179,6 +183,9 @@ func newSyncCmd() *cobra.Command {
 			return err
 		}
 		verb, _ := f.verb()
+		if f.stack && (sel.selection().Any() || len(args) != 1) {
+			return usagef("--stack reads the line of one worktree: name the one at its top (wt sync <work> --stack)")
+		}
 		if f.json && verb == "" {
 			return syncOverviewJSON(cmd, args, sel.selection(), f)
 		}
@@ -209,6 +216,9 @@ func newSyncCmd() *cobra.Command {
 			return kit.ErrNotInRepo
 		}
 		opts := synccmd.SyncOptions{NoFetch: noFetch}
+		if f.stack {
+			opts.Stack = &synccmd.StackLook{Work: args[0], Layers: layers}
+		}
 		if len(args) == 1 {
 			return synccmd.SyncWorktree(ctx, args[0], opts, cmd.OutOrStdout())
 		}
@@ -228,11 +238,14 @@ func newSyncCmd() *cobra.Command {
 	sync.Flags().BoolVar(&noFFTrunk, "no-ff-trunk", false, "with --rebase: leave local <trunk> where it is after the fetch")
 	sync.Flags().BoolVar(&allowDiverged, "allow-diverged", false, "with --rebase: rebase a branch that has diverged from its own remote")
 	sync.Flags().BoolVar(&allowOwed, "allow-owed", false, "with --rebase or --resume: rebase now even when a step's need does not answer; the step is owed")
+	sync.Flags().BoolVar(&stack, "stack", false, "list the layer branches on the line of the worktree named, and what holds each")
+	sync.Flags().StringArrayVar(&layers, "layer", nil, "with --stack: take this branch as a layer (repeatable); none takes every branch on the line")
+	sync.Flags().BoolVar(&autosquash, "autosquash", false, "with --rebase --stack: fold the line's fixups in place")
 	sel.add(sync, true)
 	// The verbs spelled as flags, and their own flags, work on this line but
 	// belong to the verbs: their help is wt sync rebase, resume and undo --help,
 	// and the table here keeps to what the overview itself takes.
-	for _, name := range []string{"rebase", "resume", "undo", "yes", "push", "no-push", "force", "if-ready", "expect", "no-ff-trunk", "allow-diverged", "allow-owed"} {
+	for _, name := range []string{"rebase", "resume", "undo", "yes", "push", "no-push", "force", "if-ready", "expect", "no-ff-trunk", "allow-diverged", "allow-owed", "autosquash"} {
 		_ = sync.Flags().MarkHidden(name)
 	}
 	sync.AddCommand(newSyncRebaseCmd(), newSyncResumeCmd(), newSyncUndoCmd(), newSyncPushToCmd(), newSyncDoctorCmd(), newSyncKeepCmd())
@@ -503,6 +516,11 @@ type syncVerbFlags struct {
 	json bool
 	// expect is the overview's token a run must still match.
 	expect string
+	// stack is a stack held on the named worktree's line: its layers, and
+	// with --rebase the one rebase of the line that moves them all.
+	stack      bool
+	layers     []string
+	autosquash bool
 }
 
 // verb is the one verb given, "" for the overview, or an error naming the
@@ -555,16 +573,35 @@ func (f syncVerbFlags) check() error {
 		return usagef("--allow-diverged needs --rebase")
 	case f.allowOwed && !rebases:
 		return usagef("--allow-owed needs --rebase or --resume")
+	case f.stack && verb != "" && verb != "rebase":
+		return usagef("--stack needs --rebase, or no verb")
+	case len(f.layers) > 0 && !f.stack:
+		return usagef("--layer needs --stack")
+	case f.autosquash && !f.stack:
+		return usagef("--autosquash needs --stack")
+	case f.autosquash && verb != "rebase":
+		return usagef("--autosquash needs --rebase")
 	}
 	return nil
+}
+
+// stackOptions is the --stack run the flags ask for, nil for any other.
+func (f syncVerbFlags) stackOptions() *synccmd.StackOptions {
+	if !f.stack {
+		return nil
+	}
+	return &synccmd.StackOptions{Layers: f.layers, Autosquash: f.autosquash}
 }
 
 // syncOverviewJSON is wt sync --json: the overview as one object, or with
 // --all, --roots or --profile an array of one per repository.
 func syncOverviewJSON(cmd *cobra.Command, args []string, sel reposel.Selection, f syncVerbFlags) error {
 	opts := synccmd.SyncOptions{NoFetch: f.noFetch}
+	if f.stack {
+		opts.Stack = &synccmd.StackLook{Work: args[0], Layers: f.layers}
+	}
 	switch {
-	case len(args) > 0:
+	case len(args) > 0 && !f.stack:
 		return usagef("--json prints the overview of every worktree; name none, or add the verb whose result you want")
 	case sel.Any():
 		return synccmd.SyncAllJSON(loadUserWarn(cmd.ErrOrStderr()), sel, opts, cmd.OutOrStdout())
@@ -593,8 +630,9 @@ func syncArgs(verb string) cobra.PositionalArgs {
 }
 
 func newSyncRebaseCmd() *cobra.Command {
-	var noFetch, noFFTrunk, yes, ifReady, force, allowDiverged, allowOwed, asJSON bool
+	var noFetch, noFFTrunk, yes, ifReady, force, allowDiverged, allowOwed, asJSON, stack, autosquash bool
 	var expect string
+	var layers []string
 	var sel selectionFlags
 	var push func() syncrun.PushMode
 	rebase := &cobra.Command{
@@ -703,8 +741,41 @@ func newSyncRebaseCmd() *cobra.Command {
 			"--allow-diverged it goes ahead only over the divergence that overview\n" +
 			"showed: a remote that moved since is refused as changed. wt schema\n" +
 			"sync-run prints its JSON Schema; docs/json.md explains it.\n\n" +
+			"--stack rebases a stack held on one line: <work> is the worktree whose\n" +
+			"branch is the top of the line (a tmp branch at the top, or the top layer\n" +
+			"itself), and the line is every commit from where it leaves trunk to its\n" +
+			"tip. The layers are the local branches whose tips are on the line, bottom\n" +
+			"first, or the ones --layer names (repeatable); a branch with a backup\n" +
+			"name (wt refs sweep's patterns) is listed and taken only by --layer. wt\n" +
+			"sync <work> --stack lists them first, with what holds each worktree,\n" +
+			"and moves nothing. The line is rebased once, with everything a run does:\n" +
+			"the safety ref, the strategies, the checks, the deferred steps, the\n" +
+			"handover and wt sync resume. git writes each layer's new tip as the\n" +
+			"rebase passes it; every new tip is checked (its count from the new base\n" +
+			"and its subject) before any layer moves, and one that fails moves none.\n" +
+			"A layer whose tip trunk already carries ends at its last commit left; one\n" +
+			"trunk carries whole ends where the layer below does; both are said.\n" +
+			"Then each layer moves with update-ref, guarded by its old tip. One in a\n" +
+			"worktree moves under that worktree's lock, its files following with\n" +
+			"read-tree, only while it is clean, on its old tip, and nothing works in it: no\n" +
+			"session, no process whose working directory is inside it (a dev server in\n" +
+			"a terminal tab holds it). A held layer is named with the command that\n" +
+			"moves it later, and the run fails saying how many were held. --force\n" +
+			"also moves a layer only an idle session or a process holds, never a dirty\n" +
+			"one. wt sync undo <work> puts back the line and every layer it moved.\n" +
+			"The line's branch is pushed as any other; each moved layer gets its push\n" +
+			"command, with a lease on the commit last fetched for it, and is not\n" +
+			"pushed. A line with a merge commit is refused before anything moves.\n\n" +
+			"--stack --autosquash folds the line's fixup!, squash! and amend! commits\n" +
+			"into their targets in place, onto the line's own base, and re-points every\n" +
+			"layer: the way to fold review fixes into a stack without rebasing it. A\n" +
+			"check runs at each target with its fixups folded in. The line's content\n" +
+			"must come out the same, or no layer moves. Rebasing onto trunk is then a\n" +
+			"second run, with --stack alone.\n\n" +
 			"Also spelled wt sync <work>... --rebase, with the same flags.",
 		Example: "  wt sync rebase login-crash api-tidy --yes --json --expect 1:0123abcd # a tool\n" +
+			"  wt sync rebase tmp/stack --stack   # the whole line once, then every layer\n" +
+			"  wt sync rebase tmp/stack --stack --autosquash  # fold review fixes in place\n" +
 			"  wt sync rebase login-crash --force --allow-diverged  # past session, origin\n" +
 			"  wt sync rebase --all --no-fetch --push  # every ready one, everywhere, pushed\n" +
 			"  wt sync rebase --profile api --if-ready --no-ff-trunk  # trunk left as it is\n" +
@@ -713,7 +784,14 @@ func newSyncRebaseCmd() *cobra.Command {
 		ValidArgsFunction: completeWork,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			f := syncVerbFlags{rebase: true, yes: yes, noFetch: noFetch, noFFTrunk: noFFTrunk, ifReady: ifReady, force: force,
-				allowDiverged: allowDiverged, allowOwed: allowOwed, push: push(), json: asJSON, expect: expect}
+				allowDiverged: allowDiverged, allowOwed: allowOwed, push: push(), json: asJSON, expect: expect,
+				stack: stack, layers: layers, autosquash: autosquash}
+			if err := f.check(); err != nil {
+				return err
+			}
+			if f.stack && (sel.selection().Any() || len(args) != 1) {
+				return usagef("--stack rebases the line of one worktree: name the one at its top")
+			}
 			if sel.selection().Any() {
 				return syncAcross(cmd, args, "rebase", sel.selection(), f)
 			}
@@ -731,6 +809,9 @@ func newSyncRebaseCmd() *cobra.Command {
 	rebase.Flags().BoolVar(&allowOwed, "allow-owed", false, "rebase now even when a step's need does not answer; the step is owed, to run later")
 	rebase.Flags().BoolVar(&asJSON, "json", false, "print one result object on stdout, the progress on stderr")
 	rebase.Flags().StringVar(&expect, "expect", "", "refuse unless the overview still matches this token from wt sync --json")
+	rebase.Flags().BoolVar(&stack, "stack", false, "rebase the line of the worktree named once, and move every layer branch on it")
+	rebase.Flags().StringArrayVar(&layers, "layer", nil, "with --stack: take this branch as a layer (repeatable); none takes every branch on the line")
+	rebase.Flags().BoolVar(&autosquash, "autosquash", false, "with --stack: fold the line's fixups onto its own base, in place; no trunk")
 	sel.add(rebase, true)
 	push = addPushFlags(rebase, "push the worktrees that finish, without asking",
 		"neither push nor ask; print the push command")
@@ -741,7 +822,7 @@ func newSyncRebaseCmd() *cobra.Command {
 // gets its result for --json.
 func syncRebase(cmd *cobra.Command, works []string, ctx *kit.Context, f syncVerbFlags, j *syncrun.RunJournal) error {
 	opts, _ := runOptions(cmd, f, len(works) == 0)
-	opts.Journal, opts.Expect = j, f.expect
+	opts.Journal, opts.Expect, opts.Stack = j, f.expect, f.stackOptions()
 	return synccmd.SyncRebase(ctx, works, opts, cmd.OutOrStdout())
 }
 
@@ -877,6 +958,8 @@ func newSyncResumeCmd() *cobra.Command {
 			"re-check. Ctrl-C leaves the rebase and its plan as they are; run this\n" +
 			"again. wt sync undo <work> aborts a handed-over rebase and puts the branch\n" +
 			"back instead.\n\n" +
+			"A --stack run handed over moves its layers here, once the rebase is\n" +
+			"finished, exactly as the run would have.\n\n" +
 			"--json prints one result object on stdout and the rest on stderr, as\n" +
 			"wt sync rebase --json does.\n\n" +
 			"Also spelled wt sync <work> --resume, with the same flags.",
@@ -927,7 +1010,10 @@ func newSyncUndoCmd() *cobra.Command {
 		Long: "Find the newest run that touched this worktree's branch and reset every\n" +
 			"branch that run rewrote back to its safety ref, restoring a stack as a\n" +
 			"whole rather than one branch at a time. A rebase wt sync rebase handed over\n" +
-			"is aborted and its plan file removed, which puts that branch back.\n\n" +
+			"is aborted and its plan file removed, which puts that branch back. After\n" +
+			"wt sync rebase --stack it puts back the line and every layer the run\n" +
+			"moved, with the worktrees that moved with them; a layer the run held is\n" +
+			"not part of it, whatever its worktree holds now.\n\n" +
 			"Refused, and nothing undone: a checkout involved is dirty, has a busy\n" +
 			"agent session in it, or is mid-rebase with no handover from wt sync rebase; a\n" +
 			"branch that has moved since the run, whose commits the reset would\n" +

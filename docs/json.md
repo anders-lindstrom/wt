@@ -1444,7 +1444,9 @@ What a rebase onto trunk would do to every worktree of the repository, as
 `wt sync` prints it grouped. It fetches trunk first (`--no-fetch` compares with
 trunk as last fetched; a fetch that fails is `fetchError`, and the overview goes
 on), then simulates each rebase in the object store: it writes loose objects and
-moves no ref. `wt sync <work> --json` is refused; the overview covers them all.
+moves no ref. `wt sync <work> --json` is refused; the overview covers them all,
+except with `--stack`: `wt sync <work> --stack --json` is the overview with
+`stack` filled for that worktree's line.
 
 With `--all`, `--roots` or `--profile` stdout is an **array** of these objects,
 one per repository, in the selection's order; `wt status --json` takes none of
@@ -1470,6 +1472,7 @@ object with `error` set and no worktrees, and the exit code is non-zero.
 | `eachCommitDeclared` | array | since 1.6.0: the `each_commit` checks trunk declares, `step`, `paths` and `needs` as in [`deferredDeclared`](#deferreddeclared--the-deferred-steps-trunk-declares); each runs after every replayed commit changing a path its `paths` match (every commit when empty). `[]` when there are none |
 | `needs` | array | since 1.6.0: every need a declared step has, once each: `need` (`docker`), `probed` (a step with it would run for some worktree, so the probe ran), `ok` (it answered; false when not probed), `error` (why it did not; null otherwise). See [needs](#needs--what-a-step-cannot-run-without) |
 | `worktrees` | array | every worktree but the main checkout, in git's order |
+| `stack` | object \| null | since 1.7.0: the [stack held on one line](#stack--a-stack-held-on-one-line) of the worktree `--stack` names, its layers and what holds each; null without `--stack` |
 
 Each worktree:
 
@@ -1583,6 +1586,7 @@ Each participant has `wt up`'s fields, and:
 | `undoCommand` | array of string \| null | what puts it back where the run found it, as an argv (`["wt", "sync", "undo", work]`); null when nothing is there to undo |
 | `planFile` | string \| null | for `handedOver`: the plan saying what is yours |
 | `ownRemoteSync` | object \| null | since 1.2.0: [`ownRemoteSync`](#ownremotesync--what-a-run-did-about-it), an object from `wt sync rebase`; always null from resume and undo |
+| `stack` | object \| null | since 1.6.0: for `wt sync rebase <work> --stack`, and the resume of one it handed over, the [stack held on this worktree's line](#stack--a-stack-held-on-one-line) and what came of each layer; null for any other run, and from undo |
 
 `result` has `wt up`'s values and one more, `undone`: `wt sync undo` put the
 branch back at its safety ref, or aborted its handed-over rebase. A branch undo
@@ -1592,6 +1596,50 @@ is `needsRecovery`. `outcome` follows the same rules, with `undone` counting as
 back, each `notRun` until it is reported; a signal partway marks `interrupted`
 each of those whose tip, or the rebase it was waiting in, changed. The exit code
 keeps its meaning; read `outcome`.
+
+### `stack` — a stack held on one line
+
+A stack of layer branches whose commits all sit on one first-parent line:
+`branch` is the worktree's branch at the top of it (a tmp branch at the top,
+or the top layer itself). The look (`wt sync <work> --stack --json`) fills
+what it sees; a run (`wt sync rebase <work> --stack --json`) fills the rest.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `branch` | string | the line's branch |
+| `base` | string | where the line leaves trunk, the merge base |
+| `head` | string | the line's tip before the run |
+| `autosquash` | bool | a fold of the line's fixups onto its own base (`--autosquash`), not a rebase onto trunk |
+| `layers` | array | the layer branches, bottom first (below) |
+| `skipped` | array | branches on the line not taken: `branch`, `tip`, `reason` (a backup name; `--layer` takes it) |
+| `refusal` | string \| null | the run's: why no layer moved, a new tip that failed its check, or a fold that changed the line's content; the line itself is left rebased, and `wt sync undo` puts it back. Null in the look, and when each layer was moved or held |
+
+Each layer:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `branch` | string | |
+| `oldTip` | string | its tip before the run |
+| `commits` | int | its commits from the line's base, its tip included |
+| `subject` | string | its tip's subject |
+| `foundBy` | `tipOnLine` \| `named` | a local branch whose tip is on the line, or one `--layer` named |
+| `worktree` | string \| null | where it is checked out; null for none |
+| `state` | `none` \| `clean` \| `dirty` \| `rebasing` \| `bisecting` \| `busy` \| `idle` \| `process` \| `unknown` | what holds that worktree: nothing, tracked changes, a rebase (there, or a stopped one in another worktree that will move the branch), a bisect in another worktree started from the branch, an agent session busy or idle, a process whose working directory is inside it (any process, a dev server in a terminal tab included), or `unknown` when it could not be read, which holds the layer |
+| `stateDetail` | string \| null | the session, the process (`pid 123 npm run dev`), or why it could not be read |
+| `newTip` | string \| null | the run's: its new tip, which git wrote as the rebase passed it, checked before any layer moved |
+| `commitsAfter` | int \| null | the run's: the new tip's commits from the new base: the layer's commits up to it, less those trunk already carries and the fixups folded into an earlier commit |
+| `mapped` | `tip` \| `tipDropped` \| `emptied` \| null | the run's: its own tip rebased; its tip already on trunk, so the new tip is its last commit left; every commit already on trunk, so it ends where the layer below does |
+| `patch`, `patchWhy` | `same` \| `changed` \| `unknown`, string \| null | the run's: whether the change the layer brings is the same patch (git's stable patch-id), and why not; never a refusal |
+| `result` | `moved` \| `held` \| `unchanged` \| `planned` \| `moving` \| `needsRecovery` \| null | the run's: at `newTip` (its worktree with it); left where it was; its new tip is its old one; recorded but not reached, because the moves stopped; under way when the moves stopped (undo puts its ref back); a move that went part way and could not be put back, so `held` says what to look at, the layer keeps its pins, the run fails and `wt sync undo <line>` puts it back |
+| `how` | `ref` \| `worktree` \| null | the run's: `update-ref` guarded by its old tip, for a branch in no worktree; the same `update-ref`, then `read-tree -m -u <old> <new>`, under that worktree's lock |
+| `held`, `moveCommand` | string \| null | the run's: why it was held (tracked changes, a rebase, a session, a process, a tip that moved during the run, a lock), and the command that moves it by hand |
+| `pushCommand` | array of string \| null | the run's: for a moved layer, its push to its own remote as an argv, with `--force-with-lease` on the commit wt last fetched there. The run pushes the line's branch only |
+| `noPushReason` | string \| null | the run's: for a moved layer with no safe push, why: no remote branch of its own yet, or the remote has commits the branch never had |
+| `note` | string \| null | the run's: what else happened to a moved layer, such as a checkout of it that landed during its move, at its new tip |
+
+A moved layer has a safety ref and a result ref under the run's epoch, so
+`wt sync undo <line>` puts it back with the line; a held one has none and is no
+part of that undo.
 
 ## `wt new <type>/<work> [--base <ref>] --dry-run --json` — the plan
 
@@ -2113,3 +2161,4 @@ change made it.
 | `session-send` 1.1.0 | `errorCode` `notExact`: `<work>` only matched a worktree and is not its name, and no `--expect-session` was given; 1.0.0 said `noSession` |
 | `config` 1.0.0 | `wt config --json`: resolved repository configuration, including developer config entries, main checkout and user naming overrides |
 | `sync` 1.6.0, `sync-run` 1.5.0, `status` 1.10.0 | [`each_commit` checks and `needs`](#needs--what-a-step-cannot-run-without): `eachCommitDeclared`, `needs`, and `checks` and `checkCommits` on each worktree of `sync`; `needs` on every declared step of `sync` and `status`; `checked` and `checkFailed` on each participant of `sync-run`, and the `deferred` result `owed` |
+| `sync` 1.7.0, `sync-run` 1.6.0 | `stack`: the stack held on one line, on the overview (`--stack`) and on a `--stack` run's participant, with each layer and what came of it |

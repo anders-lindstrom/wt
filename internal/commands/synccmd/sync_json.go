@@ -63,6 +63,9 @@ type SyncOverview struct {
 	// Needs is every need a declared step has, and what its probe said.
 	Needs     []NeedProbe        `json:"needs"`
 	Worktrees []OverviewWorktree `json:"worktrees"`
+	// Stack is the stack held on the line of the worktree --stack named,
+	// null without --stack.
+	Stack *syncrun.Stack `json:"stack"`
 }
 
 // NeedProbe is one need and its probe's answer: probed only when a step
@@ -211,7 +214,7 @@ func SyncAllJSON(u *config.User, sel reposel.Selection, opts SyncOptions, w io.W
 
 func newOverview(name, mainRoot string) SyncOverview {
 	return SyncOverview{Schema: 1, SchemaVersion: schema.VersionOf("sync"), Command: "sync",
-		Repo: mainRoot, Name: name, EachCommitDeclared: []DeclaredStep{}, Needs: []NeedProbe{}, Worktrees: []OverviewWorktree{}}
+		Repo: mainRoot, Name: name, EachCommitDeclared: []DeclaredStep{}, Needs: []NeedProbe{}, Worktrees: []OverviewWorktree{}, Stack: nil}
 }
 
 // OverviewOf is what wt sync would print for ctx's repository, as data.
@@ -271,6 +274,11 @@ func OverviewOf(ctx *kit.Context, opts SyncOptions) SyncOverview {
 	o.Needs = needProbes(cfg, sv.dues, syncrun.StepOptions{Probes: opts.Probes}.Prober())
 	if o.Token, err = sv.Token(ctx, trunk, sha); err != nil {
 		o.Error = jsonout.Strp(err.Error())
+	}
+	if opts.Stack != nil {
+		if o.Stack, err = stackLook(ctx, sha, opts.Stack, listed); err != nil {
+			o.Error = jsonout.Strp(err.Error())
+		}
 	}
 	return o
 }

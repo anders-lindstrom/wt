@@ -4,6 +4,14 @@ Newest first, each heading stamped with the local date and time of the change
 (several land per day). `wt about` prints the newest 5 entries, so keep each entry to a few lines a human
 would want read out to them; the full story is in git history.
 
+## 2026-11-12 12:04 — A stack on one line is rebased once
+
+`wt sync rebase <work> --stack` rebases the line under a tmp branch once and
+moves every layer branch on it to its new tip, checked first; a worktree
+that is dirty or that a process or session works in is held with the
+command that moves it. `--autosquash` folds review fixups in place.
+`wt sync <work> --stack` lists the layers first; `wt sync undo` puts it all back.
+
 ## 2026-11-12 10:32 — Steps that need Docker say so
 
 A step in `.wt-sync.yaml` can declare `needs: [docker]`. A run probes Docker
