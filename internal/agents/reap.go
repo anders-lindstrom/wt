@@ -36,11 +36,40 @@ type ProcessScan struct {
 // Codex session's), and so is anything that discovery would take for an
 // agent, so a session the listing left out is still not ended.
 func ScanProcesses(agents []Agent) (*ProcessScan, error) {
+	return scan(agents, sparedPIDs)
+}
+
+// ScanHolders reads the process table for what holds a worktree rather than
+// what may be ended in it: every process of this user, a terminal's and
+// wt's own children included, except wt itself, its ancestors and the
+// agents' own processes, which a session listing names already. A dev
+// server started in a terminal tab is found.
+func ScanHolders(agents []Agent) (*ProcessScan, error) {
+	return scan(agents, func(procs []Process, agents []Agent) map[int]bool {
+		spared := ancestorsOf(procs)
+		self, uid := os.Getpid(), os.Getuid()
+		spared[self] = true
+		for _, a := range agents {
+			spared[a.PID] = true
+			for _, pid := range a.pids {
+				spared[pid] = true
+			}
+		}
+		for _, p := range procs {
+			if p.PID <= 1 || p.UID != uid || agentProcess(p) {
+				spared[p.PID] = true
+			}
+		}
+		return spared
+	})
+}
+
+func scan(agents []Agent, spare func([]Process, []Agent) map[int]bool) (*ProcessScan, error) {
 	procs, err := listProcesses()
 	if err != nil {
 		return nil, err
 	}
-	spared := sparedPIDs(procs, agents)
+	spared := spare(procs, agents)
 	var pids []int
 	byPID := map[int]Process{}
 	for _, p := range procs {
