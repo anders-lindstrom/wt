@@ -151,6 +151,10 @@ type Request struct {
 	// that finds the rebase finished by hand: more on the branch than that
 	// were committed inside it. Zero, as a run passes, is not checked.
 	Total int
+	// Unavailable is the needs whose probe failed in a run told to go on
+	// anyway, each with the probe's answer: a check that needs one is not
+	// run, and is owed (Result.Unchecked).
+	Unavailable map[string]string
 	// Safety is the safety ref the run already pinned for this branch: at
 	// the tip it found, before fast-forwarding the branch to its own remote.
 	// Rebase then pins nothing itself, and a restore goes back to that tip
@@ -209,6 +213,9 @@ type Result struct {
 	// CheckFailed is the check that failed, whether the stop was handed
 	// over (Left.Check) or restored.
 	CheckFailed *CheckFailure
+	// Unchecked is the checks not run for a need Request.Unavailable
+	// names: owed, once each for the branch.
+	Unchecked []Unchecked
 	// Left is the stop the run handed over to a person: the rebase is still
 	// in progress in the worktree, with every strategy's answer staged.
 	// Nil when the rebase finished or was restored.
@@ -235,6 +242,11 @@ type driver struct {
 	// sequencer past such a pick reads it back from the marker the break
 	// wrote in the sequencer's own directory.
 	before string
+	// checks is the commits the each_commit steps run after, full ids.
+	checks []string
+	// recheck makes the first check stop run its checks whatever git
+	// recorded of the pick: a resume there may follow a person's amend.
+	recheck bool
 }
 
 func (d *driver) git(args ...string) (string, error) {
@@ -379,14 +391,20 @@ func Rebase(mainRoot string, cfg *Config, req Request, log io.Writer) (Result, e
 	// it, and the editor takes out the other such commits itself. A branch
 	// with nothing to lift gets the same list a plain rebase would,
 	// untouched.
-	plan, err := planLift(req.Path, cfg, req.base(), req.Branch)
+	lift, err := planLift(req.Path, cfg, req.base(), req.Branch)
 	if err != nil {
 		return early(err)
 	}
+	// The commits to check get a break after their pick, whether or not
+	// anything is lifted: the editor goes in for either.
+	if err := d.planChecks(); err != nil {
+		return early(err)
+	}
+	plan := todoPlan{liftPlan: lift, checks: d.checks}
 	env := rebaseEnv
 	if plan.edits() {
 		var b strings.Builder
-		sequenceEditor(&b, plan.marks, plan.drops)
+		todoEditor(&b, plan)
 		script, cleanup, err := writeScript(b.String())
 		if err != nil {
 			return early(err)
@@ -514,14 +532,15 @@ func Resume(mainRoot string, cfg *Config, req Request, old string, safety Safety
 	atPick := false
 	switch {
 	case p.Command == "break":
+		// The loop takes the break as a run would: a lift's break before a
+		// pick, or a check stop, whose checks run again at HEAD — a check
+		// that failed and was handed over, which a person has amended or
+		// added to since, or one an interrupt cut short.
 		if err := d.markTodo(); err != nil {
 			return d.fail(err)
 		}
-		moved, err := d.atBreak()
-		if err != nil {
-			return d.fail(err)
-		}
-		return d.drive(moved)
+		d.recheck = true
+		return d.drive(nil)
 	case p.Command == "edit" && p.Applied:
 		before, ok, err := readBefore(req.Path)
 		if err != nil {
@@ -605,15 +624,23 @@ func forgetBefore(wtPath string) error {
 
 // markTodo rewrites the rest of the sequencer's list through git's own
 // --edit-todo: a break before and an edit in place of every pick that may
-// need a version lift, and the picks trunk already carries taken out. A
-// list with nothing to mark or drop is left alone.
+// need a version lift, the picks trunk already carries taken out, and a
+// break after every pick to check. A list with nothing to mark, drop or
+// check is left alone.
 func (d *driver) markTodo() error {
-	plan, err := planLift(d.req.Path, d.cfg, d.req.base(), d.req.Branch)
-	if err != nil || !plan.edits() {
+	lift, err := planLift(d.req.Path, d.cfg, d.req.base(), d.req.Branch)
+	if err != nil {
 		return err
 	}
+	if err := d.planChecks(); err != nil {
+		return err
+	}
+	plan := todoPlan{liftPlan: lift, checks: d.checks}
+	if !plan.edits() {
+		return nil
+	}
 	var b strings.Builder
-	sequenceEditor(&b, plan.marks, plan.drops)
+	todoEditor(&b, plan)
 	return editTodo(d.req.Path, b.String())
 }
 
@@ -866,7 +893,8 @@ func commitOf(dir, rev string) (string, error) {
 // rebase moving returned; a rebase no longer in progress with err nil is
 // finished. A rebase still in progress with err nil is at a stop the run
 // asked for: the break before a pick that may need a version lift, which
-// exits clean, or the edit after it.
+// exits clean, the edit after it, or the break after a pick to check, where
+// the each_commit steps run at the commit as it stays.
 func (d *driver) drive(err error) (Result, error) {
 	lastIndex, lastUnmerged := -1, ""
 	stops, limit := 0, 0
@@ -892,14 +920,31 @@ func (d *driver) drive(err error) (Result, error) {
 		// sequencer reports no total.
 		stops++
 		if limit == 0 {
-			if limit = 3*p.Total + 2; p.Total == 0 {
+			if limit = 4*p.Total + 2; p.Total == 0 {
 				limit = 64
 			}
 		}
 		if stops > limit {
 			return d.fail(fmt.Errorf("rebase did not converge after %d stops", limit))
 		}
+		recheck := d.recheck
+		d.recheck = false
 		if p.Command == "break" {
+			sha, edited, cerr := d.checkAt()
+			if cerr != nil {
+				return d.fail(cerr)
+			}
+			if sha != "" {
+				f, cerr := d.atCheck(sha, edited, p, recheck)
+				if cerr != nil {
+					return d.fail(cerr)
+				}
+				if f != nil {
+					return d.failCheck(f)
+				}
+				_, err = d.git("rebase", "--continue")
+				continue
+			}
 			var berr error
 			if err, berr = d.atBreak(); berr != nil {
 				return d.fail(berr)

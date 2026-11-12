@@ -115,6 +115,7 @@ func HandOver(ctx *kit.Context, w io.Writer, in HandoverInput) error {
 		Resolved: in.Res.Left.Staged, Strategy: map[string]string{}, Lifted: map[string]string{},
 		Deleted: in.Res.Left.Deleted, Left: in.Res.Left.Left,
 		Stopped: PathsOnce(in.Earlier, wtsync.StopPaths(in.Res.Stops)),
+		Check:   wtsync.CheckStopOf(in.Res.Left.Check),
 	}
 	if in.Found != "" && in.Found != in.Res.OldTip {
 		st.Found = in.Found
@@ -137,7 +138,11 @@ func HandOver(ctx *kit.Context, w io.Writer, in HandoverInput) error {
 	if in.Lock != nil {
 		in.Lock.Keep()
 	}
-	fmt.Fprintf(w, "  ⚠ %s\n", wtsync.NeedsYouLine(in.Work, in.Res.Left.Left))
+	if c := in.Res.Left.Check; c != nil {
+		fmt.Fprintf(w, "  ⚠ %s\n", wtsync.CheckFailedLine(in.Work, *c))
+	} else {
+		fmt.Fprintf(w, "  ⚠ %s\n", wtsync.NeedsYouLine(in.Work, in.Res.Left.Left))
+	}
 	fmt.Fprintf(w, "    plan %s\n", wtsync.PlanPath(gitDir))
 	return nil
 }
