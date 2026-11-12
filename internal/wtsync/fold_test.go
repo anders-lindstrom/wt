@@ -1,0 +1,130 @@
+package wtsync
+
+import (
+	"bytes"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/anders-lindstrom/wt/internal/gittest"
+)
+
+func foldLine(t *testing.T, yaml string) *gittest.FoldLine {
+	t.Helper()
+	parent, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := gittest.NewRepo(t, parent, "repo")
+	gitIn(t, dir, "config", "core.hooksPath", filepath.Join(dir, ".git", "hooks"))
+	return gittest.NewFoldLine(t, dir, parent, yaml)
+}
+
+// regenerates reports whether the generator, run at tip, leaves gen/ as tip
+// has it: the check CI runs on the layer's PR.
+func regenerates(t *testing.T, dir, tip string) bool {
+	t.Helper()
+	scratch := t.TempDir()
+	archive := exec.Command("sh", "-c", "git archive "+tip+" | tar -x -C "+scratch)
+	archive.Dir = dir
+	if out, err := archive.CombinedOutput(); err != nil {
+		t.Fatalf("archive %s: %v\n%s", tip, err, out)
+	}
+	gittest.RunGen(t, scratch)
+	got, err := os.ReadFile(filepath.Join(scratch, "gen", "spec.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(got) == gitIn(t, dir, "show", tip+":gen/spec.json")+"\n"
+}
+
+// commitBySubject is the commit on the line ending at tip whose subject is
+// subject.
+func commitBySubject(t *testing.T, dir, tip, subject string) string {
+	t.Helper()
+	for _, l := range strings.Split(gitIn(t, dir, "log", "--format=%H %s", tip), "\n") {
+		if sha, s, _ := strings.Cut(l, " "); s == subject {
+			return sha
+		}
+	}
+	t.Fatalf("no commit %q under %s", subject, tip)
+	return ""
+}
+
+func stepsByBranch(steps []LayerStep) map[string]LayerStep {
+	out := map[string]LayerStep{}
+	for _, s := range steps {
+		out[s.Branch] = s
+	}
+	return out
+}
+
+// One rebase of the line runs the generator at every layer tip, bottom
+// first: a layer with a commit that owns the spec has the output folded into
+// that commit, and the commits after it carry it too; a layer with drift and
+// no owner gets the step's commit; a layer with no drift gets nothing. Every
+// layer tip then regenerates to itself and the markers land on the folded
+// tips. The line's own commits above its top layer are one more layer.
+func TestRebaseOfALineFoldsEachLayersOutputIntoItsOwner(t *testing.T) {
+	t.Parallel()
+	s := foldLine(t, gittest.FoldYAML("max-plus-patch"))
+	tmp := s.Paths[gittest.FoldTmp]
+	cfg, err := LoadFromTrunk(s.Dir, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, err := ReadLine(s.Dir, gittest.FoldTmp, "origin/main", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := Request{Path: tmp, Branch: gittest.FoldTmp, Trunk: "origin/main", Onto: "origin/main", Epoch: 31,
+		Stack: &StackRequest{Line: line}}
+	var log bytes.Buffer
+	res, err := Rebase(s.Dir, cfg, req, &log)
+	if err != nil || res.Left != nil || res.Restored {
+		t.Fatalf("err %v left %+v restored %v\n%s", err, res.Left, res.Restored, log.String())
+	}
+	if !strings.Contains(log.String(), "▸ step ./gen.sh layer 1/6") || !strings.Contains(log.String(), "▸ step ./gen.sh layer 6/6") {
+		t.Errorf("no progress line per layer:\n%s", log.String())
+	}
+	tips, err := CheckLayers(s.Dir, res.NewTip, "origin/main", res.Layers)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, log.String())
+	}
+	for _, l := range tips {
+		if !regenerates(t, s.Dir, l.New) {
+			t.Errorf("%s's new tip %s does not regenerate to itself", l.Branch, l.New[:7])
+		}
+	}
+	steps := stepsByBranch(res.LayerSteps)
+	for b, want := range map[string]string{"f1": LayerFolded, "f2": LayerUnchanged, "f3": LayerFolded, "f4": LayerUnchanged, "f5": LayerCommitted, gittest.FoldTmp: LayerUnchanged} {
+		if got := steps[b]; got.Result != want || !got.Ran {
+			t.Errorf("%s: %+v, want %s", b, got, want)
+		}
+	}
+	for b, subject := range s.Owners {
+		st := steps[b]
+		if st.OwnerSubject != subject || st.Proof != ProofHeld {
+			t.Errorf("%s folded into %q (proof %q), want %q", b, st.OwnerSubject, st.Proof, subject)
+		}
+		tip := tips[map[string]int{"f1": 0, "f3": 2}[b]].New
+		owner := commitBySubject(t, s.Dir, tip, subject)
+		if st.Owner != owner {
+			t.Errorf("%s: owner %s, want %s", b, st.Owner, owner)
+		}
+		if gitIn(t, s.Dir, "show", owner+":gen/spec.json") == gitIn(t, s.Dir, "show", s.Tips[b]+":gen/spec.json") {
+			t.Errorf("%s's owner holds the spec it had before the rebase", b)
+		}
+		// The bump after the owner changes v.txt and the spec it drifts,
+		// nothing else.
+		bump := tip
+		if got := gitIn(t, s.Dir, "diff", "--name-only", owner, bump); got != "v.txt" {
+			t.Errorf("%s: owner to tip changes %q, want v.txt alone", b, got)
+		}
+	}
+	if subj := gitIn(t, s.Dir, "log", "-1", "--format=%s", tips[4].New); subj != "chore: regenerate the spec" {
+		t.Errorf("f5's tip is %q, want the step's commit", subj)
+	}
+}

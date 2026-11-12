@@ -209,3 +209,31 @@ func anyMatches(patterns, paths []string) bool {
 func RunDeferredWith(wtPath string, steps []Deferred, oldTip, newTip string, log io.Writer, unavailable map[string]string) ([]DeferredResult, error) {
 	return runDeferred(wtPath, steps, oldTip, newTip, log, DeferTimeout, unavailable)
 }
+
+// LayerStep is what one per-layer step came to at one layer's end.
+type LayerStep struct {
+	Layer, Layers int
+	Branch        string
+	Step          Deferred
+	Ran           bool
+	Why           string
+	Result        string
+	Owner         string
+	OwnerSubject  string
+	Commit        string
+	Proof         string
+	Err           error
+	Output        string
+	Elapsed       time.Duration
+}
+
+// What a per-layer step came to.
+const (
+	LayerUnchanged = "unchanged"
+	LayerFolded    = "folded"
+	LayerCommitted = "committed"
+	LayerSkipped   = "skipped"
+	LayerOwed      = "owed"
+	LayerFailed    = "failed"
+	ProofHeld      = "held"
+)

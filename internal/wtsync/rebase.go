@@ -220,7 +220,8 @@ type Result struct {
 	Unchecked []Unchecked
 	// Layers is what the rebase planned for each layer of a stack held on
 	// the line, read from the list as git started it; nil for any other.
-	Layers []LayerPlan
+	Layers     []LayerPlan
+	LayerSteps []LayerStep
 	// Left is the stop the run handed over to a person: the rebase is still
 	// in progress in the worktree, with every strategy's answer staged.
 	// Nil when the rebase finished or was restored.
