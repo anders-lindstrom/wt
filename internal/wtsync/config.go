@@ -45,7 +45,8 @@ type Rule struct {
 	value ValueRule
 }
 
-// Deferred is work that runs once after the last commit is replayed.
+// Deferred is work that runs once after the last commit is replayed, or,
+// with each or fold, at the end of every layer inside the rebase.
 type Deferred struct {
 	Run string `yaml:"run"`
 	// Paths gate the step on what the rebase changed; empty means always.
@@ -56,18 +57,54 @@ type Deferred struct {
 	// Needs names the tools the step cannot run without, from KnownNeeds:
 	// a run probes each before it moves anything.
 	Needs []string `yaml:"needs"`
-	Each  string   `yaml:"each"`
-	Fold  string   `yaml:"fold"`
+	// Each is "layer" for a step that runs at every layer tip of a stack,
+	// bottom first, inside the rebase; empty runs it once, after the rebase.
+	Each string `yaml:"each"`
+	// Fold is "owner" for a step whose output is folded into the last
+	// commit of the layer that changed one of Paths; needs Paths. Empty
+	// commits the output on top, as Commit says.
+	Fold string `yaml:"fold"`
 }
 
+// The values of a deferred step's each and fold.
 const (
 	EachLayer = "layer"
 	FoldOwner = "owner"
 )
 
-func (d Deferred) PerLayer() bool { return false }
+// PerLayer is whether the step runs inside the rebase, at the end of a
+// layer, rather than once after it: each: layer, or fold: owner, which
+// without each: layer takes everything the rebase replayed as one layer.
+func (d Deferred) PerLayer() bool { return d.Each == EachLayer || d.Fold == FoldOwner }
 
-func (c *Config) LayerSteps() []Deferred { return nil }
+// LayerSteps is the deferred steps that run at the end of a layer, in the
+// order declared.
+func (c *Config) LayerSteps() []Deferred {
+	var out []Deferred
+	if c == nil {
+		return nil
+	}
+	for _, d := range c.Defer {
+		if d.PerLayer() {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// AfterSteps is the deferred steps that run once after the rebase.
+func (c *Config) AfterSteps() []Deferred {
+	var out []Deferred
+	if c == nil {
+		return nil
+	}
+	for _, d := range c.Defer {
+		if !d.PerLayer() {
+			out = append(out, d)
+		}
+	}
+	return out
+}
 
 // EachCommit is a check that runs after every replayed commit touching one
 // of its paths, at that commit. It must not change tracked files.
@@ -150,6 +187,14 @@ func Parse(data []byte) (*Config, error) {
 		}
 		if err := checkNeeds(d.Needs); err != nil {
 			return nil, fmt.Errorf("%s: defer[%d]: %w", ConfigFile, i, err)
+		}
+		switch {
+		case d.Each != "" && d.Each != EachLayer:
+			return nil, fmt.Errorf("%s: defer[%d]: unknown each %q: the one there is is %q", ConfigFile, i, d.Each, EachLayer)
+		case d.Fold != "" && d.Fold != FoldOwner:
+			return nil, fmt.Errorf("%s: defer[%d]: unknown fold %q: the one there is is %q", ConfigFile, i, d.Fold, FoldOwner)
+		case d.Fold == FoldOwner && len(d.Paths) == 0:
+			return nil, fmt.Errorf("%s: defer[%d]: fold: owner needs paths: they name the files the step writes and the commit that owns them", ConfigFile, i)
 		}
 	}
 	for i, c := range cfg.EachCommit {
