@@ -194,6 +194,9 @@ type LayerPlan struct {
 	// LeftOut is how many commits of the layer's own commits are not in the
 	// list: trunk already carries them, patch for patch.
 	LeftOut int
+	// Picks is the layer's own picks in the list, in order: what
+	// ReconcileDropped matches the rebased line against.
+	Picks []string `json:",omitempty"`
 }
 
 // LayerTip is one layer's new tip, read back from its marker and checked.
@@ -272,6 +275,7 @@ func planLayers(dir string, epoch int64, line Line, todo string) ([]LayerPlan, e
 				last, lastAmend = j, ""
 				if pos[e.sha] > prev {
 					own++
+					p.Picks = append(p.Picks, e.sha)
 				}
 			}
 		}
@@ -447,4 +451,109 @@ func SamePatch(dir, oldBase, old, newBase, tip string) (bool, error) {
 	}
 	is, err := id(newBase, tip)
 	return was == is, err
+}
+
+// ReconcileDropped brings plans in line with a finished rebase of a stack
+// held on the line above an upstream, where git keeps in its list the picks
+// the target already has and drops each as it comes out empty. It reads
+// what was dropped from the rebase itself: walking each layer's stretch of
+// the rebased line, from the marker of the layer below (or onto) to its
+// own, against the layer's planned picks in order. A rebased commit is its
+// pick's when it carries the pick's author, author date and subject, which a rebase
+// keeps; a commit that is no pick's is one a step or a person added. A pick
+// with no commit was dropped. A layer that lost picks expects the commits
+// its stretch now has, a layer whose planned tip was dropped ends at the
+// last pick left (and its subject is that one's), and one that lost every
+// pick and gained nothing ends where the layer below does, as when trunk
+// carries them. Anything that will not line up so (a marker missing, off
+// the line, or a pick of another layer in a stretch) leaves the plans as
+// they were, for CheckLayers to refuse. With nothing dropped they are
+// returned as they are.
+func ReconcileDropped(dir, onto string, plans []LayerPlan) ([]LayerPlan, error) {
+	var picks []string
+	for _, p := range plans {
+		picks = append(picks, p.Picks...)
+	}
+	if len(picks) == 0 {
+		return plans, nil
+	}
+	keyOf := map[string]string{}
+	// A pick is known on the rebased line by its author, author date and
+	// subject, which a rebase keeps: author and second alone are shared by
+	// commits made in quick succession.
+	out, err := gitEnv(dir, nil, nil, append([]string{"log", "--no-walk=unsorted", "--format=%H %ae %at %s"}, picks...)...)
+	if err != nil {
+		return nil, err
+	}
+	owner := map[string]int{}
+	for _, l := range strings.Split(out, "\n") {
+		if sha, key, ok := strings.Cut(l, " "); ok {
+			keyOf[sha] = key
+		}
+	}
+	for i, p := range plans {
+		for _, c := range p.Picks {
+			owner[keyOf[c]] = i + 1
+		}
+	}
+	got := slices.Clone(plans)
+	from, droppedBelow := onto, 0
+	for i, p := range plans {
+		tip, ok, err := refTip(dir, p.Ref)
+		if err != nil || !ok {
+			return plans, err
+		}
+		stretch, err := gitEnv(dir, nil, nil, "log", "--reverse", "--format=%ae %at %s", from+".."+tip, "--")
+		if err != nil {
+			return plans, nil //nolint:nilerr // a stretch git cannot read is CheckLayers' to refuse
+		}
+		j, kept, added, lastKept := 0, 0, 0, -1
+		for _, key := range strings.Split(stretch, "\n") {
+			if key == "" {
+				continue
+			}
+			k := j
+			for k < len(p.Picks) && keyOf[p.Picks[k]] != key {
+				k++
+			}
+			switch {
+			case k < len(p.Picks):
+				kept, lastKept, j = kept+1, k, k+1
+			case owner[key] != 0:
+				return plans, nil
+			default:
+				added++
+			}
+		}
+		dropped := len(p.Picks) - kept
+		droppedBelow += dropped
+		if droppedBelow > 0 {
+			got[i].Expect = p.Expect - droppedBelow
+			if n, err := gitEnv(dir, nil, nil, "rev-list", "--count", onto+".."+tip); err == nil {
+				got[i].Expect, _ = strconv.Atoi(n)
+			}
+		}
+		if dropped > 0 {
+			got[i].LeftOut += dropped
+			tipDropped := len(p.Picks) > 0 && lastKept != len(p.Picks)-1 && p.After == p.Picks[len(p.Picks)-1]
+			switch {
+			case kept == 0 && added == 0:
+				got[i].Mapped = MappedEmptied
+			case tipDropped && added == 0 && p.Mapped == MappedTip:
+				got[i].Mapped = MappedTipDropped
+			}
+			if tipDropped && added == 0 {
+				subject, err := gitEnv(dir, nil, nil, "log", "-1", "--format=%s", tip)
+				if err != nil {
+					return nil, err
+				}
+				got[i].Subject = subject
+				if kept == 0 && i > 0 {
+					got[i].After = got[i-1].After
+				}
+			}
+		}
+		from = tip
+	}
+	return got, nil
 }

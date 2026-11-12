@@ -69,7 +69,7 @@ func TestStepsDueWithACutoffChecksOnlyTheCommitsAboveIt(t *testing.T) {
 	if len(due.Deferred) != 1 {
 		t.Fatalf("deferred %+v", due.Deferred)
 	}
-	// What the cutoff leaves out may still change: the rebase drops it.
+	// b.txt, the commit above the cutoff, is replayed.
 	due, err = StepsDue(dir, mustParse(t, "defer:\n  - run: \"true\"\n    paths: [b.txt]\n"), cutoff, "feature", "main", cutoff)
 	if err != nil || len(due.Deferred) != 1 {
 		t.Fatalf("deferred on b.txt %+v %v", due.Deferred, err)

@@ -173,7 +173,14 @@ func Assess(mainRoot, onto string, cfg *Config, wt repo.Worktree, listed []agent
 // in, is assessed at the remote's commit: a run moves it there before it
 // rebases, so that is what the class has to be true of.
 func AssessOwn(mainRoot, onto string, cfg *Config, wt repo.Worktree, listed []agents.Agent, own OwnRemote) Assessment {
-	a := Assessment{Path: wt.Path, Branch: wt.Branch, NoConfig: cfg == nil, Sessions: agents.SessionsAt(listed, wt.Path), Own: own}
+	return AssessTo(mainRoot, Target{Onto: onto}, cfg, wt, listed, own)
+}
+
+// AssessTo is AssessOwn against t: classified by what a rebase onto t.Onto
+// of the commits above t's cutoff would do, with the scripts read from t's
+// trunk.
+func AssessTo(mainRoot string, t Target, cfg *Config, wt repo.Worktree, listed []agents.Agent, own OwnRemote) Assessment {
+	a := Assessment{Path: wt.Path, Branch: wt.Branch, NoConfig: cfg == nil, Sessions: agents.SessionsAt(listed, wt.Path), Own: own, Target: t.Name}
 	if wt.Detached || wt.Branch == "" {
 		a.Class = Detached
 		return a
@@ -238,7 +245,7 @@ func AssessOwn(mainRoot, onto string, cfg *Config, wt repo.Worktree, listed []ag
 	if a.Own.FastForwards() {
 		tip = a.Own.Commit
 	}
-	behind, ahead, err := BehindAhead(mainRoot, onto, tip)
+	behind, ahead, err := t.behindAhead(mainRoot, tip)
 	if err != nil {
 		a.Err = err
 		return a
@@ -251,11 +258,9 @@ func AssessOwn(mainRoot, onto string, cfg *Config, wt repo.Worktree, listed []ag
 		a.Class = Contested
 		return a
 	}
-	switch {
-	case behind == 0:
-		a.Class = Current
-	case ahead == 0:
-		a.Class = Stale
+	if a.Class, err = t.settled(mainRoot, tip, behind, ahead); err != nil {
+		a.Err = err
+		return a
 	}
 	if a.Class == Current || a.Class == Stale {
 		// Nothing a run would rebase, so nothing it would push over its
@@ -266,7 +271,7 @@ func AssessOwn(mainRoot, onto string, cfg *Config, wt repo.Worktree, listed []ag
 		return a
 	}
 
-	a.Replay, err = SimulateRebase(mainRoot, onto, tip, cfg)
+	a.Replay, err = SimulateRebaseTo(mainRoot, t, tip, cfg)
 	if err != nil {
 		a.Err = err
 		return a
@@ -290,7 +295,7 @@ func AssessOwn(mainRoot, onto string, cfg *Config, wt repo.Worktree, listed []ag
 		a.Class = Clean
 	}
 
-	collisions, graph, err := divergence(mainRoot, onto, cfg, tip)
+	collisions, graph, err := divergence(mainRoot, t, cfg, tip)
 	a.Err = errors.Join(a.Err, err)
 	a.Divergent = collisions
 	a.Graph = graph
@@ -325,16 +330,17 @@ func AssessOwn(mainRoot, onto string, cfg *Config, wt repo.Worktree, listed []ag
 // that no longer merges; the strategy's other refusals — a section guard, a
 // missing section, a malformed document, a non-semver version — are ordinary
 // conflicts.
-func divergence(mainRoot, onto string, cfg *Config, branch string) (collisions []Collision, graph *GraphOverlap, err error) {
+func divergence(mainRoot string, t Target, cfg *Config, branch string) (collisions []Collision, graph *GraphOverlap, err error) {
 	if cfg == nil {
 		return nil, nil, nil
 	}
-	conflicts, err := Endpoint(mainRoot, onto, branch)
+	onto := t.Onto
+	conflicts, err := endpointFrom(mainRoot, t.Upstream, onto, branch)
 	if err != nil {
 		return nil, nil, fmt.Errorf("endpoint: %w", err)
 	}
 	for _, c := range conflicts {
-		f, ferr := tryStrategy(mainRoot, onto, cfg, c)
+		f, ferr := tryStrategy(mainRoot, t.scripts(), cfg, c)
 		err = errors.Join(err, ferr)
 		if f.Strategy == StrategyOpenAPI && !f.Resolved && len(f.Keys) > 0 {
 			collisions = append(collisions, Collision{Path: c.Path, Groups: f.Groups})
@@ -343,7 +349,7 @@ func divergence(mainRoot, onto string, cfg *Config, branch string) (collisions [
 	if len(cfg.DependencyGraph) == 0 {
 		return collisions, nil, err
 	}
-	base, berr := gitEnv(mainRoot, nil, nil, "merge-base", onto, branch, "--")
+	base, berr := t.base(mainRoot, branch)
 	if berr != nil {
 		return collisions, nil, errors.Join(err, fmt.Errorf("merge-base: %w", berr))
 	}
