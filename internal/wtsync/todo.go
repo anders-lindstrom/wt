@@ -12,6 +12,21 @@ import (
 type todoPlan struct {
 	liftPlan
 	checks []string
+	stack  stackMarks
+}
+
+// stackMarks is where a run rebasing a stack held on one line puts each
+// layer's marker: an update-ref line for prefix plus the layer's number,
+// after the last line of the layers up to it. layerOf numbers every commit
+// of the line by its layer, 1 the bottom, top+1 the line's own commits
+// above every layer. The zero value marks nothing.
+type stackMarks struct {
+	prefix  string
+	top     int
+	layerOf map[string]int
+	// copy is where the editor leaves a copy of the list it wrote, for the
+	// run to read the plan from; empty leaves none.
+	copy string
 }
 
 func (p todoPlan) edits() bool { return p.liftPlan.edits() || len(p.checks) > 0 }
