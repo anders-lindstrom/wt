@@ -153,6 +153,9 @@ type StackFinish struct {
 	ListErr error
 	Force   bool
 	Now     time.Time
+	// Folds is the paths of the per-layer steps that folded their output
+	// into the line: a fold in place may change them, and nothing else.
+	Folds []string
 	// AfterMove and Between are a test's hooks into the moves; nil in a
 	// real run.
 	AfterMove func(wtsync.LayerMove) error
@@ -180,12 +183,9 @@ func FinishStack(ctx *kit.Context, w io.Writer, in StackFinish) (s *Stack, failu
 		}
 		return s, "no layer moved", nil
 	}
-	if rec.Autosquash {
-		was, err1 := git.Run(main, "rev-parse", in.OldTip+"^{tree}")
-		is, err2 := git.Run(main, "rev-parse", in.NewTip+"^{tree}")
-		if err1 != nil || err2 != nil || was != is {
-			return refuse(fmt.Sprintf("the fold changed the line's content (tree %s before, %s after); the line is folded, wt sync undo %s puts it back",
-				git.ShortID(was, 7), git.ShortID(is, 7), rec.Work))
+	if rec.Autosquash || rec.InPlace {
+		if why := foldChanged(main, in.OldTip, in.NewTip, in.Folds); why != "" {
+			return refuse(fmt.Sprintf("the fold changed the line's content (%s); the line is folded, wt sync undo %s puts it back", why, rec.Work))
 		}
 	}
 	tips, cerr := wtsync.CheckLayers(main, in.NewTip, in.Onto, rec.Plans)
@@ -282,6 +282,40 @@ func FinishStack(ctx *kit.Context, w io.Writer, in StackFinish) (s *Stack, failu
 		return s, kit.Count(held, "layer") + " held", nil
 	}
 	return s, "", nil
+}
+
+// foldChanged is how a fold in place changed the line's content, outside
+// the per-layer steps' paths (folds), which their output may change; "" for
+// not at all.
+func foldChanged(main, oldTip, newTip string, folds []string) string {
+	was, err1 := git.Run(main, "rev-parse", oldTip+"^{tree}")
+	is, err2 := git.Run(main, "rev-parse", newTip+"^{tree}")
+	if err1 == nil && err2 == nil && was == is {
+		return ""
+	}
+	tree := fmt.Sprintf("tree %s before, %s after", git.ShortID(was, 7), git.ShortID(is, 7))
+	if err1 != nil || err2 != nil || len(folds) == 0 {
+		return tree
+	}
+	paths, err := wtsync.ChangedPaths(main, oldTip, newTip)
+	if err != nil {
+		return tree + ": " + err.Error()
+	}
+	for _, p := range paths {
+		if !matchesAnyGlob(folds, p) {
+			return tree + ", " + p + " among them"
+		}
+	}
+	return ""
+}
+
+func matchesAnyGlob(patterns []string, path string) bool {
+	for _, g := range patterns {
+		if wtsync.MatchGlob(g, path) {
+			return true
+		}
+	}
+	return false
 }
 
 // layerPush is the push of a moved layer: to the branch's own remote, with a

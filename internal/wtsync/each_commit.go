@@ -369,6 +369,7 @@ func (d *driver) failCheck(f *CheckFailure) (Result, error) {
 		return d.res, rerr
 	}
 	h := &Handover{Index: f.Index, Total: f.Total, Commit: f.Commit, Subject: f.Subject, Staged: map[string]string{}, Check: f}
+	d.res.LayerState = d.layerState()
 	if err := StripMarks(d.req.Path); err != nil {
 		return d.fail(err)
 	}

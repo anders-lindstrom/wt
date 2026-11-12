@@ -57,6 +57,8 @@ func newSyncCmd() *cobra.Command {
 			"                                    asked first as for rebase\n" +
 			"          wt sync <work> --resume\n" +
 			"          wt sync undo <work>       put back every ref that run moved\n" +
+			"          wt sync steps <work>      run the steps a run left owed, in\n" +
+			"                                    place, without rebasing onto trunk\n" +
 			"          wt sync <work> --undo\n" +
 			"          wt sync doctor            what a run needs, and --fix / --prune\n" +
 			"  keep    wt sync keep start        a launchd job that runs wt sync keep\n" +
@@ -248,7 +250,7 @@ func newSyncCmd() *cobra.Command {
 	for _, name := range []string{"rebase", "resume", "undo", "yes", "push", "no-push", "force", "if-ready", "expect", "no-ff-trunk", "allow-diverged", "allow-owed", "autosquash"} {
 		_ = sync.Flags().MarkHidden(name)
 	}
-	sync.AddCommand(newSyncRebaseCmd(), newSyncResumeCmd(), newSyncUndoCmd(), newSyncPushToCmd(), newSyncDoctorCmd(), newSyncKeepCmd())
+	sync.AddCommand(newSyncRebaseCmd(), newSyncResumeCmd(), newSyncUndoCmd(), newSyncStepsCmd(), newSyncPushToCmd(), newSyncDoctorCmd(), newSyncKeepCmd())
 	return sync
 }
 
@@ -766,11 +768,20 @@ func newSyncRebaseCmd() *cobra.Command {
 			"The line's branch is pushed as any other; each moved layer gets its push\n" +
 			"command, with a lease on the commit last fetched for it, and is not\n" +
 			"pushed. A line with a merge commit is refused before anything moves.\n\n" +
+			"A deferred step with each: layer runs inside the rebase at the end of\n" +
+			"every layer instead, bottom first: each layer branch of a --stack line,\n" +
+			"the line's own commits above them, or the one branch of any other run.\n" +
+			"With fold: owner its output goes into the layer's last commit that\n" +
+			"changed the step's paths, proved to change nothing else, and the layers\n" +
+			"above are replayed onto it; a layer with no such commit gets the step's\n" +
+			"commit at its tip. A later pick that conflicts on such a file takes its\n" +
+			"own side, for the layer's step to write again. A step that fails there\n" +
+			"is owed from that layer up; wt sync steps <work> runs it later.\n\n" +
 			"--stack --autosquash folds the line's fixup!, squash! and amend! commits\n" +
 			"into their targets in place, onto the line's own base, and re-points every\n" +
 			"layer: the way to fold review fixes into a stack without rebasing it. A\n" +
 			"check runs at each target with its fixups folded in. The line's content\n" +
-			"must come out the same, or no layer moves. Rebasing onto trunk is then a\n" +
+			"must come out the same outside the per-layer steps' paths, or no layer moves. Rebasing onto trunk is then a\n" +
 			"second run, with --stack alone.\n\n" +
 			"Also spelled wt sync <work>... --rebase, with the same flags.",
 		Example: "  wt sync rebase login-crash api-tidy --yes --json --expect 1:0123abcd # a tool\n" +
@@ -919,6 +930,64 @@ func syncAcross(cmd *cobra.Command, args []string, verb string, sel reposel.Sele
 		}
 	}
 	return synccmd.SyncRebaseAll(u, sel, all, cmd.OutOrStdout())
+}
+
+func newSyncStepsCmd() *cobra.Command {
+	var yes, all, allowOwed, asJSON, stack bool
+	var layers []string
+	var push func() syncrun.PushMode
+	steps := &cobra.Command{
+		Use:   "steps <work>",
+		Short: "Run the deferred steps a run left owed, without rebasing onto trunk",
+		Long: "Run the deferred steps of .wt-sync.yaml on a worktree as it stands, the\n" +
+			"way a run would have, without rebasing it onto trunk: what an agent runs\n" +
+			"once Docker answers again, or after fixing something by hand.\n\n" +
+			"By default it runs what the last run of the worktree left owed: a step\n" +
+			"whose need did not answer, or that failed. Each run records that for the\n" +
+			"branch, and this clears what it settles. --all runs every declared step.\n" +
+			"Nothing owed and no --all is a refusal that moves nothing.\n\n" +
+			"The branch is rebased in place, onto its own base on trunk, with\n" +
+			"everything a run does: the safety ref, the each_commit checks, the steps\n" +
+			"and wt sync undo. It replays nothing new, so nothing moves but what the\n" +
+			"steps write. A step runs at every layer whatever changed there. A step\n" +
+			"with each: layer or fold: owner runs at the end of each layer and folds\n" +
+			"its output into the commit that owns it, as in wt sync rebase --help; a\n" +
+			"step without them runs once at the end and commits its output.\n\n" +
+			"--stack takes the line of <work> as wt sync rebase --stack does: the\n" +
+			"steps run at every layer tip, bottom first, the line's content must come\n" +
+			"out the same outside the steps' paths, and the layers move after. Without\n" +
+			"--stack it covers the one branch, whatever stack of worktrees it is in.\n\n" +
+			"The push and the questions are as for wt sync rebase (--push, --no-push,\n" +
+			"--yes); a step still owed keeps the branch from being pushed. --json\n" +
+			"prints one result object on stdout, as wt sync rebase --json does, with\n" +
+			"command sync steps.",
+		Example: "  wt sync steps tmp/stack --stack    # what the last run owed, at every layer\n" +
+			"  wt sync steps login-crash --all    # every declared step, on one branch\n" +
+			"  wt sync steps tmp/stack --stack --json --no-push  # a tool, nothing pushed",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeWork,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			f := syncVerbFlags{rebase: true, yes: yes, noFetch: true, allowOwed: allowOwed, push: push(), json: asJSON,
+				stack: stack, layers: layers}
+			if err := f.check(); err != nil {
+				return err
+			}
+			return withVerbContext(cmd, args, "sync steps", asJSON, func(ctx *kit.Context, j *syncrun.RunJournal) error {
+				opts, _ := runOptions(cmd, f, false)
+				opts.Journal, opts.Stack = j, f.stackOptions()
+				opts.Steps = &synccmd.StepsOptions{All: all}
+				return synccmd.SyncRebase(ctx, args, opts, cmd.OutOrStdout())
+			})
+		},
+	}
+	push = addPushFlags(steps, "push when done, without asking", "neither push nor ask; print the push command")
+	steps.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask first; push too, unless --no-push")
+	steps.Flags().BoolVar(&all, "all", false, "run every declared step, not only what the last run left owed")
+	steps.Flags().BoolVar(&stack, "stack", false, "run them at every layer tip of the line of <work>, and move the layers")
+	steps.Flags().StringArrayVar(&layers, "layer", nil, "with --stack: take this branch as a layer (repeatable); none takes every branch on the line")
+	steps.Flags().BoolVar(&allowOwed, "allow-owed", false, "run even when a step's need does not answer; that step stays owed")
+	steps.Flags().BoolVar(&asJSON, "json", false, "print one result object on stdout, the rest on stderr")
+	return steps
 }
 
 func newSyncResumeCmd() *cobra.Command {

@@ -104,9 +104,15 @@ type SyncParticipant struct {
 	Checked int `json:"checked"`
 	// CheckFailed is the check that stopped the rebase; nil when none did.
 	CheckFailed *CheckFailed `json:"checkFailed"`
+	// Rechecked is how many commits the each_commit checks ran at again
+	// once a per-layer step had folded into them or committed.
+	Rechecked int `json:"rechecked"`
 	// Stack is the stack held on this worktree's line, for a --stack run:
 	// its layers and what came of each. Null for any other run.
 	Stack *Stack `json:"stack"`
+	// LayerSteps is what each per-layer step came to at each layer's end,
+	// bottom first; empty when none ran or was due.
+	LayerSteps []LayerStepJSON `json:"layerSteps"`
 }
 
 // RunResult is the one object wt sync rebase, resume and undo print with
@@ -248,7 +254,7 @@ func (j *RunJournal) Join(work, branch, path, before string, own *OwnRemoteSync)
 	j.Lock()
 	defer j.Unlock()
 	p := &SyncParticipant{UpParticipant: UpParticipant{Work: work, Branch: branch, Path: path, Result: ResultNotRun,
-		Before: jsonout.Strp(before), After: jsonout.Strp(before), FailedSteps: []string{}, OwnRemoteSync: own}, Deferred: []DeferredStep{}}
+		Before: jsonout.Strp(before), After: jsonout.Strp(before), FailedSteps: []string{}, OwnRemoteSync: own}, Deferred: []DeferredStep{}, LayerSteps: []LayerStepJSON{}}
 	j.Res.Worktrees = append(j.Res.Worktrees, p)
 	j.byBr[branch] = p
 }

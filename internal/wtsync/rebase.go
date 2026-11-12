@@ -163,6 +163,15 @@ type Request struct {
 	Safety Safety
 	// Stack is a rebase of a stack held on the line: nil for any other.
 	Stack *StackRequest
+	// Steps names the per-layer steps to run, by their run; nil runs every
+	// one declared.
+	Steps map[string]bool
+	// ForceSteps runs the per-layer steps at every layer whatever changed:
+	// wt sync steps, which replays nothing.
+	ForceSteps bool
+	// Resumed is what the layer stops did before the handover a resume
+	// goes on from; nil for a run.
+	Resumed *LayerState
 }
 
 // base is what the rebase replays from: the parent's old tip for a stack
@@ -221,6 +230,15 @@ type Result struct {
 	// Layers is what the rebase planned for each layer of a stack held on
 	// the line, read from the list as git started it; nil for any other.
 	Layers []LayerPlan
+	// LayerSteps is what each per-layer step came to at each layer's end,
+	// bottom first.
+	LayerSteps []LayerStep
+	// Rechecked is how many folded commits the each_commit checks ran at
+	// again, because the fold changed what they read.
+	Rechecked int
+	// LayerState is the per-layer state at a handover, for the resume to
+	// go on from; nil otherwise.
+	LayerState *LayerState
 	// Left is the stop the run handed over to a person: the rebase is still
 	// in progress in the worktree, with every strategy's answer staged.
 	// Nil when the rebase finished or was restored.
@@ -256,6 +274,17 @@ type driver struct {
 	// recheck makes the first check stop run its checks whatever git
 	// recorded of the pick: a resume there may follow a person's amend.
 	recheck bool
+	// stepFailed is the layer each per-layer step failed or was owed at:
+	// it is owed for every layer above, and not run there.
+	stepFailed map[string]int
+	// made is the commits the per-layer steps committed.
+	made map[string]bool
+	// planned is each layer's count from the new base as the list planned
+	// it, before any stop changed the plan.
+	planned []int
+	// subjectMoved says the last layer stop moved its layer's planned tip
+	// subject, which a layer above with no commit of its own follows.
+	subjectMoved bool
 }
 
 func (d *driver) git(args ...string) (string, error) {
@@ -364,12 +393,16 @@ func (d *driver) fail(err error) (Result, error) {
 // children. An error is a git failure, after a restore to the safety ref,
 // or a restore that could not be verified.
 func Rebase(mainRoot string, cfg *Config, req Request, log io.Writer) (Result, error) {
-	d := &driver{mainRoot: mainRoot, cfg: cfg, req: req, log: log, res: Result{Branch: req.Branch}}
+	d := &driver{mainRoot: mainRoot, cfg: cfg, req: req, log: log, res: Result{Branch: req.Branch},
+		stepFailed: map[string]int{}, made: map[string]bool{}}
 	old, err := d.git("rev-parse", "--verify", req.Branch)
 	if err != nil {
 		return d.res, err
 	}
 	d.old, d.res.OldTip = old, old
+	if why := cfg.StackFoldRefusal(); req.Stack != nil && why != "" {
+		return d.res, errors.New(why)
+	}
 	if req.Safety.Ref != "" {
 		d.res.Safety = req.Safety
 	} else if d.res.Safety, err = WriteSafety(mainRoot, req.Branch, old, req.Epoch); err != nil {
@@ -410,6 +443,7 @@ func Rebase(mainRoot string, cfg *Config, req Request, log io.Writer) (Result, e
 		return early(err)
 	}
 	plan := todoPlan{liftPlan: lift, checks: d.checks}
+	plan.stops, plan.tail = d.layerStops()
 	if req.Stack != nil {
 		if plan.stack, err = stackMarksFor(req); err != nil {
 			return early(err)
@@ -548,7 +582,8 @@ func shellQuote(s string) string {
 // made.
 func Resume(mainRoot string, cfg *Config, req Request, old string, safety Safety, log io.Writer) (Result, error) {
 	d := &driver{mainRoot: mainRoot, cfg: cfg, req: req, log: log, old: old, keep: true,
-		res: Result{Branch: req.Branch, OldTip: old, Safety: safety}}
+		res: Result{Branch: req.Branch, OldTip: old, Safety: safety}, stepFailed: map[string]int{}, made: map[string]bool{}}
+	d.restoreLayers(req.Resumed)
 	var err error
 	if d.res.SignaturesDropped, err = signedCount(req.Path, req.base(), old); err != nil {
 		return d.res, err
@@ -683,6 +718,7 @@ func (d *driver) markTodo() error {
 		return err
 	}
 	plan := todoPlan{liftPlan: lift, checks: d.checks}
+	plan.stops, plan.tail = d.layerStops()
 	if !plan.edits() {
 		return nil
 	}
@@ -963,11 +999,12 @@ func (d *driver) drive(err error) (Result, error) {
 		// The guard below compares one stop with the one before it, which an
 		// alternating unmerged set would walk straight past; this cap bounds
 		// the loop whatever the sequencer does. Three stops per commit (a
-		// break, a conflict, an edit) plus slack, or a flat 64 when the
+		// break, a conflict, an edit) plus one for the end of its layer and
+		// slack, or a flat 64 when the
 		// sequencer reports no total.
 		stops++
 		if limit == 0 {
-			if limit = 4*p.Total + 2; p.Total == 0 {
+			if limit = 5*p.Total + 2; p.Total == 0 {
 				limit = 64
 			}
 		}
@@ -989,6 +1026,17 @@ func (d *driver) drive(err error) (Result, error) {
 				if f != nil {
 					return d.failCheck(f)
 				}
+			}
+			n, end, lerr := d.layerAt()
+			if lerr != nil {
+				return d.fail(lerr)
+			}
+			if end {
+				if lerr := d.atLayerEnd(n); lerr != nil {
+					return d.fail(lerr)
+				}
+			}
+			if sha != "" || end {
 				_, err = d.git("rebase", "--continue")
 				continue
 			}
@@ -1204,6 +1252,7 @@ func (d *driver) handover(stop StopResult, conflicts []Conflict) (*Handover, err
 		Index: stop.Index, Total: stop.Total, Commit: stop.Commit, Subject: stop.Subject,
 		Conflicts: conflicts, Files: stop.Files, Staged: map[string]string{},
 	}
+	d.res.LayerState = d.layerState()
 	for _, f := range stop.Files {
 		if !f.Resolved {
 			h.Left = append(h.Left, f.Path)

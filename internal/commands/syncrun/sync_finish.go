@@ -116,6 +116,7 @@ func HandOver(ctx *kit.Context, w io.Writer, in HandoverInput) error {
 		Deleted: in.Res.Left.Deleted, Left: in.Res.Left.Left,
 		Stopped: PathsOnce(in.Earlier, wtsync.StopPaths(in.Res.Stops)),
 		Check:   wtsync.CheckStopOf(in.Res.Left.Check),
+		Layers:  in.Res.LayerState,
 	}
 	if in.Found != "" && in.Found != in.Res.OldTip {
 		st.Found = in.Found
@@ -165,6 +166,10 @@ type CompleteInput struct {
 	// Unavailable is the needs that did not answer in a run told to go on:
 	// the deferred steps that need one are owed, not run.
 	Unavailable map[string]string
+	// Steps names the deferred steps to run, nil every one; ForceSteps
+	// runs them whatever the rebase changed: wt sync steps.
+	Steps      map[string]bool
+	ForceSteps bool
 }
 
 // CompleteRun is what run and resume both do once a rebase has finished: the
@@ -189,7 +194,13 @@ func CompleteRun(ctx *kit.Context, w io.Writer, cfg *wtsync.Config, t *RebaseTra
 	defer TellIdle(w, in.Tell, wtsync.RebasedLine(work, in.TrunkName, in.Landed, in.Check))
 	// w, not nil: RunDeferred announces each step as it starts, so a long
 	// one is not silence until printDeferred reports the result.
-	ran, err = wtsync.RunDeferredWith(path, cfg.Defer, in.Res.OldTip, in.Res.NewTip, w, in.Unavailable)
+	var steps []wtsync.Deferred
+	for _, s := range cfg.AfterSteps() {
+		if in.Steps == nil || in.Steps[s.Run] {
+			steps = append(steps, s)
+		}
+	}
+	ran, err = wtsync.RunAfterSteps(path, steps, in.Res.OldTip, in.Res.NewTip, w, in.Unavailable, in.ForceSteps)
 	if err != nil {
 		return "", nil, err
 	}

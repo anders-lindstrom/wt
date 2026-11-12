@@ -11,3 +11,6 @@ bin/*
 
 # goreleaser output
 dist/
+
+# go build ./cmd/wt at the root
+/wt

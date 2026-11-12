@@ -61,6 +61,9 @@ type RunOptions struct {
 	// Stack rebases the one worktree named as a stack held on its line,
 	// and moves every layer branch on that line to its new tip.
 	Stack *StackOptions
+	// Steps runs the declared steps without rebasing onto trunk: wt sync
+	// steps. Nil for a rebase.
+	Steps *StepsOptions
 	// Own is the remotes as a caller that already fetched read them: the
 	// keeper, and a run across repositories, which fetch before the run
 	// they then start with NoFetch.
@@ -68,6 +71,14 @@ type RunOptions struct {
 	syncrun.VerbOptions
 	syncrun.PushOptions
 	syncrun.StepOptions
+}
+
+// StepsOptions is wt sync steps: the line, or the branch, rebased in place
+// onto its own base, with the steps run at every layer whatever changed.
+type StepsOptions struct {
+	// All runs every declared step; otherwise only what the last run left
+	// owed.
+	All bool
 }
 
 // StackOptions is a run of a stack held on one line (--stack).
@@ -181,6 +192,9 @@ type RunPlan struct {
 	// stackBroken is why the layers of a finished --stack rebase are not
 	// moved: their plan could not be recorded.
 	stackBroken string
+	// stepSet is the steps wt sync steps runs, by their run line: what the
+	// last run left owed, or nil for every one (--all).
+	stepSet map[string]bool
 }
 
 // SyncRebase rebases the named worktrees (and the stacks they belong to) onto
@@ -220,6 +234,9 @@ func (r *RunPlan) run(works []string) error {
 	}
 	if opts.Stack != nil && len(works) != 1 {
 		return errors.New("--stack rebases the line of one worktree: name the one at its top")
+	}
+	if opts.Steps != nil && len(works) != 1 {
+		return errors.New("wt sync steps runs the steps of one worktree: name it")
 	}
 	if len(works) == 0 && opts.AllowDiverged {
 		return errors.New("--allow-diverged rebases a worktree you name over commits its remote has; name it")
@@ -265,6 +282,9 @@ func (r *RunPlan) run(works []string) error {
 		opts.Journal.Join(p.work, b, p.wt.Path, before, syncrun.OwnRemoteSyncOf(syncrun.OwnStateOf(r.own, b)))
 	}
 	if err := r.readStack(); err != nil {
+		return err
+	}
+	if err := r.readOwed(); err != nil {
 		return err
 	}
 	if proceed, err := r.triage(); err != nil || !proceed {
@@ -364,6 +384,9 @@ func (r *RunPlan) declare(works []string) error {
 	r.opts.Journal.Repo(ctx.Repo.MainRoot)
 	r.opts.Journal.Trunk(r.trunk, ctx.TrunkSource(), onto, trunkSHA, !r.opts.NoFetch)
 	label := r.opts.label
+	if label == "" && r.opts.Steps != nil {
+		label = "wt sync steps"
+	}
 	if label == "" {
 		label = "wt sync rebase"
 	}
@@ -621,9 +644,10 @@ func (r *RunPlan) selectBranches(works []string) error {
 			return err
 		}
 	}
-	if r.opts.Stack != nil {
+	if r.opts.Stack != nil || r.opts.Steps != nil {
 		// The line is one worktree: its layers are moved by this run, not
-		// rebased again as members of a stack of worktrees.
+		// rebased again as members of a stack of worktrees. wt sync steps
+		// covers the one branch named.
 		r.parents, r.ambiguous = map[string]string{}, map[string][]string{}
 	}
 	parents, ambiguous := r.parents, r.ambiguous
@@ -688,6 +712,11 @@ func (r *RunPlan) triage() (proceed bool, err error) {
 		}
 		p.a = r.allow(p.a)
 		p.verdict, p.reason = wtsync.Preflight(p.a)
+		if r.opts.Steps != nil && p.verdict == wtsync.SkipRun {
+			// In place, onto its own base: trunk being there already is no
+			// reason to skip it.
+			p.verdict, p.reason = wtsync.Proceed, ""
+		}
 		if st := r.opts.Stack; st != nil {
 			switch {
 			case st.Autosquash && p.verdict == wtsync.SkipRun:
@@ -923,7 +952,9 @@ func (r *RunPlan) rebaseOne(b string) {
 	if r.passOver(b, p) {
 		return
 	}
-	if p.a.OnlyFastForward() {
+	// wt sync steps works on the branch as it is here: it never takes in
+	// its own remote's commits.
+	if p.a.OnlyFastForward() && r.opts.Steps == nil {
 		r.fastForwardOnly(b, p)
 		return
 	}
@@ -959,7 +990,7 @@ func (r *RunPlan) rebaseOne(b string) {
 	})
 	p.result = &res
 	r.opts.Journal.SetSync(b, func(jp *syncrun.SyncParticipant) {
-		jp.Checked, jp.CheckFailed = res.Checked, syncrun.CheckFailedOf(res.CheckFailed)
+		jp.Checked, jp.CheckFailed, jp.Rechecked = res.Checked, syncrun.CheckFailedOf(res.CheckFailed), res.Rechecked
 	})
 	if rec != nil {
 		if err := syncrun.StackAfterRebase(r.ctx, rec, res); err != nil {
@@ -994,12 +1025,40 @@ func (r *RunPlan) rebaseOne(b string) {
 	}
 }
 
+// readOwed reads, for wt sync steps, what the last run of the one branch
+// named left owed. Nothing owed is a refusal, unless --all asks for every
+// step.
+func (r *RunPlan) readOwed() error {
+	if r.opts.Steps == nil || len(r.branches) != 1 {
+		return nil
+	}
+	b := r.branches[0]
+	if len(r.cfg.Defer) == 0 {
+		return fmt.Errorf("%s declares no deferred step: nothing for wt sync steps to run", wtsync.ConfigFile)
+	}
+	if r.opts.Steps.All {
+		return nil
+	}
+	owed, err := wtsync.ReadOwed(r.ctx.Repo.MainRoot, b)
+	if err != nil {
+		return fmt.Errorf("what the last run left owed could not be read: %w", err)
+	}
+	if owed == nil {
+		return fmt.Errorf("nothing is owed for %s: the last run ran every step it had to; --all runs every step declared", r.parts[b].work)
+	}
+	r.stepSet = owed.StepSet()
+	return nil
+}
+
 // readStack reads the stack held on the named worktree's line, for --stack,
 // before anything is fetched further or moved: a line that cannot be one is
 // refused here. It lists the layers and what holds each.
 func (r *RunPlan) readStack() error {
 	if r.opts.Stack == nil {
 		return nil
+	}
+	if why := r.cfg.StackFoldRefusal(); why != "" {
+		return errors.New(why)
 	}
 	b := r.branches[0]
 	line, err := readLine(r.ctx, b, r.trunkSHA, r.opts.Stack.Layers)
@@ -1087,7 +1146,7 @@ func (r *RunPlan) stackRecord(b string, p *participant, req wtsync.Request) (*wt
 		return nil, nil
 	}
 	rec := &wtsync.StackRecord{Epoch: r.epoch, Work: p.work, Branch: b, Path: p.wt.Path, Onto: req.Onto,
-		Autosquash: st.Autosquash, Force: r.opts.Force, Line: r.line}
+		Autosquash: st.Autosquash, InPlace: r.opts.Steps != nil, Force: r.opts.Force, Line: r.line}
 	return rec, wtsync.WriteStackRecord(r.ctx.Repo.MainRoot, rec)
 }
 
@@ -1127,7 +1186,8 @@ func (r *RunPlan) finishStack(b string, p *participant, res wtsync.Result) {
 	// listed holds every layer in a worktree.
 	listed, lerr := r.opts.SessionsAgain(r.ctx, syncrun.RebasedNothing)
 	s, failure, ferr := syncrun.FinishStack(r.ctx, r.w, syncrun.StackFinish{Record: rec, OldTip: res.OldTip, NewTip: res.NewTip,
-		Onto: rec.Onto, Own: r.own, Listed: listed, ListErr: lerr, Force: rec.Force, Now: r.opts.Clock(), AfterMove: st.AfterMove, Between: st.Between})
+		Onto: rec.Onto, Own: r.own, Listed: listed, ListErr: lerr, Force: rec.Force, Now: r.opts.Clock(), AfterMove: st.AfterMove, Between: st.Between,
+		Folds: syncrun.FoldPaths(r.cfg)})
 	r.opts.Journal.SetSync(b, func(jp *syncrun.SyncParticipant) { jp.Stack = s })
 	if ferr != nil {
 		fmt.Fprintf(r.w, "  ✗ the layer moves stopped: %v; wt sync undo %s puts back the line and every layer moved\n", ferr, p.work)
@@ -1178,8 +1238,20 @@ func (r *RunPlan) request(b string, p *participant) (req wtsync.Request, ontoLab
 	ontoLabel = r.onto
 	if st := r.opts.Stack; st != nil {
 		req.Stack = &wtsync.StackRequest{Line: r.line, Autosquash: st.Autosquash}
-		if st.Autosquash {
+		if st.Autosquash || r.opts.Steps != nil {
 			req.Onto, ontoLabel = r.line.Base, "its own base "+git.ShortID(r.line.Base, 7)
+		}
+	}
+	if r.opts.Steps != nil {
+		req.ForceSteps, req.Steps = true, r.stepSet
+		if r.opts.Stack == nil {
+			base, err := git.Run(r.ctx.Repo.MainRoot, "merge-base", r.trunkSHA, "refs/heads/"+b)
+			if err != nil {
+				p.refused = p.work + ": its base on trunk could not be read: " + err.Error()
+				r.passOver(b, p)
+				return req, ontoLabel, false
+			}
+			req.Onto, ontoLabel = base, "its own base "+git.ShortID(base, 7)
 		}
 	}
 	if parent, ok := r.parents[b]; ok {
@@ -1206,6 +1278,8 @@ func (r *RunPlan) request(b string, p *participant) (req wtsync.Request, ontoLab
 		// Only now: the flag given to a run that refused the worktree for
 		// something else went over nothing.
 		j.Set(b, func(jp *syncrun.UpParticipant) { jp.OwnRemoteSync.Allowed = true })
+	case own.FastForwards() && r.opts.Steps != nil:
+		fmt.Fprintf(w, "  ⚠ %s has %s this branch does not; wt sync steps leaves them there\n", own.Ref, kit.Count(own.Behind, "commit"))
 	case own.FastForwards():
 		safety, ok := r.fastForward(b, p, "")
 		if !ok {
@@ -1320,13 +1394,17 @@ func (r *RunPlan) finishRebase(b string, p *participant, res wtsync.Result, onto
 		return syncrun.CompleteInput{
 			Branch: b, Epoch: r.epoch, Res: done,
 			Tell: append(slices.Clone(p.a.Sessions), p.forced...), TrunkName: r.trunk, Landed: p.a.Behind, Check: syncrun.PathsOnce(wtsync.StopPaths(res.Stops)),
-			Unavailable: p.unavailable,
+			Unavailable: p.unavailable, Steps: r.stepSet, ForceSteps: r.opts.Steps != nil,
 		}
 	})
 	p.head = head
+	if err := syncrun.RecordOwed(ctx.Repo.MainRoot, b, r.epoch, res, ran); err != nil {
+		fmt.Fprintf(w, "  note: what is owed could not be recorded for wt sync steps: %v\n", err)
+	}
 	r.finishStack(b, p, res)
 	syncrun.PrintUnchecked(w, res.Unchecked)
-	owed := append(syncrun.OwedChecks(res.Unchecked), syncrun.OwedSteps(ran)...)
+	owed := append(syncrun.OwedChecks(res.Unchecked), syncrun.OwedLayerSteps(res.LayerSteps)...)
+	owed = append(owed, syncrun.OwedSteps(ran)...)
 	r.failures = append(r.failures, syncrun.OwedBy(p.work, owed)...)
 	// The rebase itself stands; only this branch and what sits on it
 	// lose their footing, so the rest of the run carries on.
@@ -1334,6 +1412,7 @@ func (r *RunPlan) finishRebase(b string, p *participant, res wtsync.Result, onto
 	after, _, _ := ctx.Repo.ResolveRef("refs/heads/" + b)
 	j.SetSync(b, func(jp *syncrun.SyncParticipant) {
 		jp.SafetyRef, jp.UndoCommand, jp.Deferred = jsonout.Strp(res.Safety.Ref), syncrun.UndoCommand(p.work), syncrun.DeferredSteps(ran)
+		jp.LayerSteps = syncrun.LayerStepsOf(res.LayerSteps)
 	})
 	if derr != nil {
 		fmt.Fprintf(w, "  ✗ failed: %v\n", derr)

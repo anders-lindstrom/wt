@@ -166,7 +166,8 @@ each_commit:
 
 ## `defer` — work after the rebase
 
-Steps that run once, after the last commit is replayed, in the order declared.
+Steps that run once, after the last commit is replayed, in the order declared;
+or, with `each` or `fold`, at the end of every layer inside the rebase.
 
 | key | meaning |
 |---|---|
@@ -174,12 +175,14 @@ Steps that run once, after the last commit is replayed, in the order declared.
 | `paths` | the step runs when the rebase changed a path these match, comparing the branch before and after; empty or left out, after every rebase |
 | `commit` | the message to commit the step's output with, when it changes tracked files |
 | `needs` | what the step cannot run without (below) |
+| `each` | `layer`: the step runs at the end of every layer, inside the rebase (below) |
+| `fold` | `owner`: the step's output is folded into the commit that owns it (below); needs `paths` |
 
 Each step has 30 minutes. A step that changes tracked files and declares no
 `commit` has failed. A step that fails is owed: the rebase stands, the steps
 after it do not run, and a worktree with anything owed is not pushed. Run the
-step by hand, then push. A stack parent's owed step does not stop the run from
-rebasing its children.
+step by hand, then push, or run `wt sync steps <work>`. A stack parent's owed
+step does not stop the run from rebasing its children.
 
 ```yaml
 defer:
@@ -187,6 +190,73 @@ defer:
     paths: [package.json]
     commit: "chore: refresh the lockfile after rebase"
 ```
+
+### `each: layer` and `fold: owner` — a step at every layer tip
+
+A generated file that CI checks on every pull request (run the generator, then
+`git diff --exit-code`) has to be right at every layer of a stack, and belongs
+in the commit that changed it, not in a commit of its own on top.
+
+```yaml
+defer:
+  - run: ./gradlew api:generateOpenApi
+    paths: [etc/openapi/**]
+    each: layer
+    fold: owner
+    commit: "chore(api): regenerate the openapi specs"
+    needs: [docker]
+```
+
+With `each: layer` the step runs inside the rebase, at the end of every layer,
+bottom first: in `wt sync rebase <work> --stack` each layer branch, and the
+line's own commits above its top layer as one more; in any other run the
+branch is the one layer, so a stack of worktrees gets the step at the end of
+each branch's own rebase. At a layer's end HEAD is that layer's new tip, and
+the step runs when its `paths` match a path that differs between the layer's
+old and new tip, or that a commit of the layer changes. A line says which
+layer it is at (`▸ step <run> layer 3/6 <branch>`).
+
+What the step changes under its `paths` is its output. With `fold: owner` it
+goes into the owner, the last commit of the layer that changed one of those
+paths: that commit and every commit of the layer after it are rewritten with
+those files taken from the step's output, and nothing else changes. Before the
+rebase goes on, wt proves that the rewritten tip holds exactly the step's
+output and that no rewritten commit differs from the one it replaces outside
+the step's `paths`. The layers above are then replayed onto the folded tip,
+in the same rebase. A layer where no commit changed those paths gets the step's
+output as a commit of its own at its tip, with the `commit` message; with no
+`commit` declared the step has failed there. Without `fold: owner`, an
+`each: layer` step commits its output that way at every layer. `fold: owner`
+without `each: layer` takes everything the rebase replayed as one layer; a
+`--stack` run refuses it before anything moves, since it would rewrite
+commits under the layers' markers.
+
+A step that fails at a layer, changes a tracked file outside its `paths`, or
+whose fold is not proved is owed at that layer and every layer above, where
+it does not run again; the layers below stay folded and proved, the rebase goes
+on to the end, and nothing owed is pushed. A rename or copy the step stages counts at both
+ends: either one outside its `paths` is output outside them. A rebase handed
+over to you keeps what its layer stops did, and `wt sync resume` goes on from
+there: the same steps, the plan as they changed it, and what is owed.
+
+Above a fold, a replayed commit that changes the same generated file can
+conflict with the folded output. When the declared strategy refuses it, or
+nothing claims the file, the replayed commit's side is taken and said
+(`each: layer took the commit's side`): the stop at the end of that layer
+writes the file again. Such a conflict is never handed to a person.
+
+An `each_commit` check runs after each pick as before, so before the fold;
+one whose `paths` take in a file the step wrote is run again at every commit
+the fold rewrote, and at the step's own commit. `--autosquash` and
+`wt sync steps --stack` move nothing onto trunk, and the line's content must
+come out the same outside the per-layer steps' `paths`.
+
+`wt sync steps <work>` runs what the last run left owed, without rebasing
+onto trunk: each run records what it owes for the branch, and this clears
+what it settles. `--all` runs every declared step, `--stack` at every layer
+tip of the line. The JSON says, per layer and step, whether it ran and why,
+the commit it folded into, its commit, what is owed, and the proof
+(`layerSteps`, docs/json.md).
 
 ## `needs` — what a step cannot run without
 

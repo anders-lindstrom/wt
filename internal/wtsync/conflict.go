@@ -67,3 +67,7 @@ func refusalOf(err error) *Refusal {
 func IsRefusal(err error) bool {
 	return refusalOf(err) != nil
 }
+
+// StrategyEachLayer is what a report names as having settled a conflict on
+// a file a per-layer step writes.
+const StrategyEachLayer = "each: layer"

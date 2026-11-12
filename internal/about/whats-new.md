@@ -4,6 +4,14 @@ Newest first, each heading stamped with the local date and time of the change
 (several land per day). `wt about` prints the newest 5 entries, so keep each entry to a few lines a human
 would want read out to them; the full story is in git history.
 
+## 2026-11-12 19:05 — A generated file is regenerated at every layer of a stack
+
+A step in `.wt-sync.yaml` with `each: layer` runs at the end of every layer of
+a rebase, and with `fold: owner` its output is folded into the commit of that
+layer that owns the file, proved before the rebase goes on; every layer's PR
+then passes its generator check. `wt sync steps <work>` runs what a run left
+owed, once Docker answers again, without rebasing onto trunk.
+
 ## 2026-11-12 12:04 — A stack on one line is rebased once
 
 `wt sync rebase <work> --stack` rebases the line under a tmp branch once and

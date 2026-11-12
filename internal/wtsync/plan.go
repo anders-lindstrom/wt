@@ -82,6 +82,9 @@ type State struct {
 	// what the handover is: nothing unmerged, HEAD the commit that failed,
 	// and resume runs the check again there before it goes on.
 	Check *CheckStop `json:"check,omitempty"`
+	// Layers is what the per-layer steps did at the layer stops before the
+	// handover, for resume to go on from; absent when none is declared.
+	Layers *LayerState `json:"layers,omitempty"`
 }
 
 // CheckStop is a failed check as the handover records it.
