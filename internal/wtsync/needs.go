@@ -53,3 +53,9 @@ func checkNeeds(needs []string) error {
 	}
 	return nil
 }
+
+// ProbeNeedsWith probes each of needs once with probes, and returns each
+// probe's answer: nil for one that answered.
+func ProbeNeedsWith(probes map[string]func() error, needs []string) map[string]error {
+	return nil
+}

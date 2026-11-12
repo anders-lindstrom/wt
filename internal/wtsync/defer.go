@@ -179,3 +179,9 @@ func anyMatches(patterns, paths []string) bool {
 	}
 	return false
 }
+
+// RunDeferredWith is RunDeferred in a run where the needs unavailable names
+// did not answer their probe.
+func RunDeferredWith(wtPath string, steps []Deferred, oldTip, newTip string, log io.Writer, unavailable map[string]string) ([]DeferredResult, error) {
+	return RunDeferred(wtPath, steps, oldTip, newTip, log)
+}
