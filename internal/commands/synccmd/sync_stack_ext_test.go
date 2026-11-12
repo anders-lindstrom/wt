@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
 	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
 	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
@@ -195,5 +196,248 @@ func TestSyncRebaseStackMovesNoLayerWhenACheckFails(t *testing.T) {
 	}
 	if testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", gittest.StackTmp) == s.Tips[gittest.StackTmp] {
 		t.Error("the line was not left rebased")
+	}
+}
+
+// --autosquash folds two fixups at the top of the line, whose targets are in
+// layers 2 and 4, onto the line's own base: the line's content is the same,
+// the targets carry the fixes, every layer is re-pointed with its count
+// unchanged, and nothing is rebased onto trunk.
+func TestSyncRebaseStackAutosquashFoldsInPlace(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("integration: a stack over real repositories and worktrees")
+	}
+	ctx, s := synccmdtest.StackLine(t, "")
+	tmp := s.Paths[gittest.StackTmp]
+	for _, f := range []struct{ file, target string }{{"b1.txt", "feat(s2): b1.txt"}, {"d1.txt", "feat(s4): d1.txt"}} {
+		if err := os.WriteFile(filepath.Join(tmp, f.file), []byte("fixed\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		testkit.GitIn(t, tmp, "commit", "-q", "--no-verify", "-am", "fixup! "+f.target)
+	}
+	tree := testkit.GitOut(t, tmp, "rev-parse", "HEAD^{tree}")
+	opts := synccmdtest.NoAgents()
+	opts.Stack = &synccmd.StackOptions{Autosquash: true}
+	res, human, err := synccmdtest.StackRun(t, ctx, gittest.StackTmp, opts)
+	if err == nil || !strings.Contains(err.Error(), "2 layers held") {
+		t.Fatalf("err %v\n%s", err, human)
+	}
+	if got := testkit.GitOut(t, tmp, "rev-parse", "HEAD^{tree}"); got != tree {
+		t.Fatal("the fold changed the line's content")
+	}
+	main := ctx.Repo.MainRoot
+	if n := testkit.GitOut(t, main, "rev-list", "--count", s.Base+".."+gittest.StackTmp); n != "12" {
+		t.Errorf("the line has %s commits from its base, want 12: both fixups folded, nothing from trunk", n)
+	}
+	p := synccmdtest.Participant(t, res, gittest.StackTmp)
+	if p.Stack == nil || !p.Stack.Autosquash {
+		t.Fatalf("stack %+v", p.Stack)
+	}
+	layers := layersOf(p.Stack)
+	for b, count := range map[string]int{"s1": 2, "s2": 5, "s3": 7, "s4": 9, "s5": 12} {
+		l := layers[b]
+		if l.CommitsAfter == nil || *l.CommitsAfter != count {
+			t.Errorf("%s: %+v, want %d commits", b, l.CommitsAfter, count)
+		}
+	}
+	for b, file := range map[string]string{"s2": "b1.txt", "s4": "d1.txt"} {
+		if got := testkit.GitOut(t, main, "show", str(layers[b].NewTip)+":"+file); got != "fixed" {
+			t.Errorf("%s's new tip has %s %q", b, file, got)
+		}
+		if testkit.GitOut(t, main, "rev-parse", b) != str(layers[b].NewTip) {
+			t.Errorf("%s not re-pointed", b)
+		}
+	}
+	if str(layers["s1"].Result) != wtsync.MoveUnchanged {
+		t.Errorf("s1 %s, want unchanged: nothing below it changed", str(layers["s1"].Result))
+	}
+}
+
+// A layer that gains a commit after the look and before its move is held,
+// not reset.
+func TestSyncRebaseStackHoldsALayerThatMovedDuringTheRun(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("integration: a stack over real repositories and worktrees")
+	}
+	ctx, s := synccmdtest.StackLine(t, "")
+	s1 := s.Paths["s1"]
+	opts := synccmdtest.NoAgents()
+	opts.Stack = &synccmd.StackOptions{BeforeCheck: func(*wtsync.StackRecord) {
+		if err := os.WriteFile(filepath.Join(s1, "late.txt"), []byte("late\n"), 0o644); err != nil {
+			t.Error(err)
+		}
+		testkit.GitIn(t, s1, "add", "-A")
+		testkit.GitIn(t, s1, "commit", "-q", "--no-verify", "-m", "late")
+	}}
+	res, human, err := synccmdtest.StackRun(t, ctx, gittest.StackTmp, opts)
+	if err == nil || !strings.Contains(err.Error(), "3 layers held") {
+		t.Fatalf("err %v\n%s", err, human)
+	}
+	l := layersOf(synccmdtest.Participant(t, res, gittest.StackTmp).Stack)["s1"]
+	if str(l.Result) != wtsync.MoveHeld || !strings.Contains(str(l.Held), "moved during the run") {
+		t.Fatalf("s1 %+v", l)
+	}
+	if testkit.GitOut(t, s1, "log", "-1", "--format=%s") != "late" {
+		t.Error("s1 was reset over its new commit")
+	}
+}
+
+// A line whose tip moves after the run read it is refused under the lock,
+// before its rebase: nothing is pinned and no layer moves.
+func TestSyncRebaseStackRefusesALineThatMovedAfterItWasRead(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("integration: a stack over real repositories and worktrees")
+	}
+	ctx, s := synccmdtest.StackLine(t, "")
+	tmp := s.Paths[gittest.StackTmp]
+	opts := synccmdtest.NoAgents()
+	opts.Stack = &synccmd.StackOptions{BeforeRebase: func() {
+		if err := os.WriteFile(filepath.Join(tmp, "late.txt"), []byte("late\n"), 0o644); err != nil {
+			t.Error(err)
+		}
+		testkit.GitIn(t, tmp, "add", "-A")
+		testkit.GitIn(t, tmp, "commit", "-q", "--no-verify", "-m", "late")
+	}}
+	_, human, err := synccmdtest.StackRun(t, ctx, gittest.StackTmp, opts)
+	if err == nil || !strings.Contains(human, "moved since") {
+		t.Fatalf("err %v\n%s", err, human)
+	}
+	main := ctx.Repo.MainRoot
+	if testkit.GitOut(t, tmp, "log", "-1", "--format=%s") != "late" {
+		t.Error("the line was rebased")
+	}
+	for _, b := range s.Layers {
+		if testkit.GitOut(t, main, "rev-parse", b) != s.Tips[b] {
+			t.Errorf("%s moved", b)
+		}
+	}
+	if refs := testkit.GitOut(t, main, "for-each-ref", "refs/wt-sync/"); refs != "" {
+		t.Errorf("a safety ref was written: %s", refs)
+	}
+}
+
+// A session that became busy in a layer's worktree during the run holds the
+// layer: the sessions are listed again before the moves.
+func TestSyncRebaseStackListsTheSessionsAgainBeforeTheMoves(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("integration: a stack over real repositories and worktrees")
+	}
+	ctx, s := synccmdtest.StackLine(t, "")
+	opts := synccmdtest.NoAgents()
+	opts.Relist = func() ([]agents.Agent, error) {
+		return []agents.Agent{testkit.CodexSession(s.Paths["s1"], "busy")}, nil
+	}
+	res, human, err := synccmdtest.StackRun(t, ctx, gittest.StackTmp, opts)
+	if err == nil {
+		t.Fatalf("nothing held:\n%s", human)
+	}
+	l := layersOf(synccmdtest.Participant(t, res, gittest.StackTmp).Stack)["s1"]
+	if str(l.Result) != wtsync.MoveHeld || !strings.Contains(str(l.Held), "busy") {
+		t.Fatalf("s1 %+v\n%s", l, human)
+	}
+	if testkit.GitOut(t, ctx.Repo.MainRoot, "rev-parse", "s1") != s.Tips["s1"] {
+		t.Error("s1 moved under a busy session")
+	}
+}
+
+// A plan that cannot be recorded stops the run: the stop that would have
+// been handed over is put back, so no handover is left with no plan.
+func TestSyncRebaseStackStopsWhenItsPlanCannotBeRecorded(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("integration: a stack over real repositories and worktrees")
+	}
+	ctx, s := synccmdtest.StackLine(t, "conflicts: []\n")
+	dir := filepath.Join(ctx.Repo.MainRoot, ".git", "wt-sync-stack")
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	opts := synccmdtest.NoAgents()
+	opts.Stack = &synccmd.StackOptions{BeforeRebase: func() {
+		if err := os.Chmod(dir, 0o500); err != nil {
+			t.Error(err)
+		}
+	}}
+	_, human, err := synccmdtest.StackRun(t, ctx, gittest.StackTmp, opts)
+	if err == nil {
+		t.Fatalf("the run went on:\n%s", human)
+	}
+	tmp := s.Paths[gittest.StackTmp]
+	if busy, _ := wtsync.RebaseInProgress(tmp); busy {
+		t.Fatalf("the line was left mid-rebase:\n%s", human)
+	}
+	if testkit.GitOut(t, tmp, "rev-parse", "HEAD") != s.Tips[gittest.StackTmp] {
+		t.Error("the line was not put back")
+	}
+	// The record could not be removed either: it is said, and the safety
+	// ref that lets undo find and remove it stays.
+	if !strings.Contains(human, "could not be removed") {
+		t.Errorf("the left record is not named:\n%s", human)
+	}
+	if refs := testkit.GitOut(t, ctx.Repo.MainRoot, "for-each-ref", "refs/wt-sync/"); refs == "" {
+		t.Error("the safety ref undo needs to find the record is gone")
+	}
+}
+
+// A target worktree switched to another branch after the line was read is
+// refused under the lock: the other branch is not rebased.
+func TestSyncRebaseStackRefusesAWorktreeSwitchedOffTheLine(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("integration: a stack over real repositories and worktrees")
+	}
+	ctx, s := synccmdtest.StackLine(t, "")
+	tmp := s.Paths[gittest.StackTmp]
+	opts := synccmdtest.NoAgents()
+	opts.Stack = &synccmd.StackOptions{BeforeRebase: func() { testkit.GitIn(t, tmp, "switch", "-q", "-c", "other") }}
+	_, human, err := synccmdtest.StackRun(t, ctx, gittest.StackTmp, opts)
+	if err == nil || !strings.Contains(human, "no longer on") {
+		t.Fatalf("err %v\n%s", err, human)
+	}
+	main := ctx.Repo.MainRoot
+	if testkit.GitOut(t, main, "rev-parse", "other") != s.Tips[gittest.StackTmp] {
+		t.Error("the other branch was rebased")
+	}
+	if refs := testkit.GitOut(t, main, "for-each-ref", "refs/wt-sync/"); refs != "" {
+		t.Errorf("a safety ref was written: %s", refs)
+	}
+}
+
+// A move whose put-back fails is a layer that needs recovery: the run fails
+// naming wt sync undo, and the layer keeps its pins.
+func TestSyncRebaseStackReportsALayerWhosePutBackFailed(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("integration: a stack over real repositories and worktrees")
+	}
+	ctx, s := synccmdtest.StackLine(t, "")
+	main := ctx.Repo.MainRoot
+	late := main + "-late-s2"
+	opts := synccmdtest.NoAgents()
+	opts.Stack = &synccmd.StackOptions{Between: func(stage string, m wtsync.LayerMove) error {
+		if m.Branch != "s2" {
+			return nil
+		}
+		switch stage {
+		case wtsync.StageBeforeMove:
+			testkit.GitIn(t, main, "worktree", "add", "-q", late, "s2")
+		case wtsync.StageAfterRef:
+			// Somebody moves it again before the run can put it back.
+			testkit.GitIn(t, main, "update-ref", "refs/heads/s2", s.Tips["s1"])
+		}
+		return nil
+	}}
+	res, human, err := synccmdtest.StackRun(t, ctx, gittest.StackTmp, opts)
+	if err == nil || !strings.Contains(human, "wt sync undo "+gittest.StackTmp) {
+		t.Fatalf("err %v\n%s", err, human)
+	}
+	l := layersOf(synccmdtest.Participant(t, res, gittest.StackTmp).Stack)["s2"]
+	if str(l.Result) != wtsync.MoveRecovery {
+		t.Fatalf("s2 %+v, want needsRecovery\n%s", l, human)
+	}
+	if refs := testkit.GitOut(t, main, "for-each-ref", "refs/wt-sync/s2/"); refs == "" {
+		t.Error("the layer lost its pin")
 	}
 }
