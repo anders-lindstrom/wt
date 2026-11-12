@@ -44,7 +44,11 @@ func StackLine(t *testing.T, yaml string) (*kit.Context, *gittest.StackLine) {
 func StackRun(t *testing.T, ctx *kit.Context, work string, opts synccmd.RunOptions) (syncrun.RunResult, string, error) {
 	t.Helper()
 	var out, human bytes.Buffer
-	opts.Journal = syncrun.NewSyncRunJournal(&out, "sync rebase")
+	command := "sync rebase"
+	if opts.Steps != nil {
+		command = "sync steps"
+	}
+	opts.Journal = syncrun.NewSyncRunJournal(&out, command)
 	if opts.Stack == nil {
 		opts.Stack = &synccmd.StackOptions{}
 	}

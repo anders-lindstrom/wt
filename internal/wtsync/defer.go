@@ -28,12 +28,15 @@ func unavailableWhy(needs []string, unavailable map[string]string) string {
 // DeferredResult is what one deferred step did. A step not run whose Err is
 // set is owed without having run: a need of it did not answer.
 type DeferredResult struct {
-	Step                         Deferred
-	Ran                          bool
-	Why                          string
-	Output                       string
-	Err                          error
-	Commit                       string
+	Step   Deferred
+	Ran    bool
+	Why    string
+	Output string
+	Err    error
+	Commit string
+	// Blocked is the earlier step whose failure kept this one from
+	// running: owed as well.
+	Blocked                      string
 	Files, Insertions, Deletions int
 	Elapsed                      time.Duration
 }
@@ -72,25 +75,27 @@ func RunDeferred(wtPath string, steps []Deferred, oldTip, newTip string, log io.
 }
 
 func runDeferredWithTimeout(wtPath string, steps []Deferred, oldTip, newTip string, log io.Writer, timeout time.Duration) ([]DeferredResult, error) {
-	return runDeferred(wtPath, steps, oldTip, newTip, log, timeout, nil)
+	return runDeferred(wtPath, steps, oldTip, newTip, log, timeout, nil, false)
 }
 
-func runDeferred(wtPath string, steps []Deferred, oldTip, newTip string, log io.Writer, timeout time.Duration, unavailable map[string]string) ([]DeferredResult, error) {
+func runDeferred(wtPath string, steps []Deferred, oldTip, newTip string, log io.Writer, timeout time.Duration, unavailable map[string]string, force bool) ([]DeferredResult, error) {
 	changed, err := ChangedPaths(wtPath, oldTip, newTip)
 	if err != nil {
 		return nil, err
 	}
 	var results []DeferredResult
-	failed := false
+	failed := ""
 	for _, step := range steps {
 		r := DeferredResult{Step: step}
+		// The gate first: a step that is not due is skipped, and only one
+		// that is due is owed behind an earlier failure.
 		switch {
-		case failed:
-			r.Why = "not run: an earlier step failed"
+		case !force && len(step.Paths) > 0 && !anyMatches(step.Paths, changed):
+			r.Why = "no listed path changed"
 			results = append(results, r)
 			continue
-		case len(step.Paths) > 0 && !anyMatches(step.Paths, changed):
-			r.Why = "no listed path changed"
+		case failed != "":
+			r.Why, r.Blocked = "not run: an earlier step failed: "+failed, failed
 			results = append(results, r)
 			continue
 		}
@@ -106,7 +111,7 @@ func runDeferred(wtPath string, steps []Deferred, oldTip, newTip string, log io.
 		}
 		r.Output, r.Elapsed, r.Err = runStep(wtPath, step.Run, timeout)
 		if r.Err != nil {
-			failed = true
+			failed = step.Run
 			results = append(results, r)
 			continue
 		}
@@ -114,11 +119,11 @@ func runDeferred(wtPath string, steps []Deferred, oldTip, newTip string, log io.
 		switch {
 		case serr != nil:
 			r.Err = fmt.Errorf("status could not be read: %w", serr)
-			failed = true
+			failed = step.Run
 		case status == "":
 		case step.Commit == "":
 			r.Err = errors.New("left tracked changes but declares no commit")
-			failed = true
+			failed = step.Run
 		default:
 			if cerr := commitOutput(wtPath, step.Commit); cerr != nil {
 				// A hook refused, most likely. Unstage so the step's
@@ -126,12 +131,12 @@ func runDeferred(wtPath string, steps []Deferred, oldTip, newTip string, log io.
 				// written: the step is owed, and the rebase stands.
 				_, _ = gitEnv(wtPath, rebaseEnv, nil, "reset", "-q")
 				r.Err = fmt.Errorf("commit failed: %w", cerr)
-				failed = true
+				failed = step.Run
 				break
 			}
 			if merr := commitStat(wtPath, &r); merr != nil {
 				r.Err = merr
-				failed = true
+				failed = step.Run
 			}
 		}
 		results = append(results, r)
@@ -214,5 +219,11 @@ func anyMatches(patterns, paths []string) bool {
 // A step that needs one of them is not run and is owed; it leaves nothing
 // half-written, so the steps after it still run.
 func RunDeferredWith(wtPath string, steps []Deferred, oldTip, newTip string, log io.Writer, unavailable map[string]string) ([]DeferredResult, error) {
-	return runDeferred(wtPath, steps, oldTip, newTip, log, DeferTimeout, unavailable)
+	return runDeferred(wtPath, steps, oldTip, newTip, log, DeferTimeout, unavailable, false)
+}
+
+// RunAfterSteps is RunDeferredWith that, with force, runs every step
+// whatever the rebase changed: wt sync steps, which replays nothing.
+func RunAfterSteps(wtPath string, steps []Deferred, oldTip, newTip string, log io.Writer, unavailable map[string]string, force bool) ([]DeferredResult, error) {
+	return runDeferred(wtPath, steps, oldTip, newTip, log, DeferTimeout, unavailable, force)
 }

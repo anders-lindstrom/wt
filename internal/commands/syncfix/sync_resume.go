@@ -332,6 +332,18 @@ func (r *resume) rebase() (wtsync.Result, error) {
 		Onto: st.Onto, Upstream: st.Upstream, Epoch: st.Epoch, Work: name, Total: st.Total,
 		Unavailable: r.unavailable,
 	}
+	// A run with per-layer steps goes on as it was: the same layers, the
+	// same steps, and what its stops did before the handover.
+	if l := st.Layers; l != nil {
+		req.Resumed, req.Steps, req.ForceSteps = l, l.StepSelection(), l.ForceSteps
+		rec, ok, err := wtsync.ReadStackRecord(r.ctx.Repo.MainRoot, st.Epoch)
+		if err != nil {
+			return wtsync.Result{}, fmt.Errorf("%s: the stack's record: %w", name, err)
+		}
+		if ok {
+			req.Stack = &wtsync.StackRequest{Line: rec.Line, Autosquash: rec.Autosquash}
+		}
+	}
 	safety := wtsync.Safety{Branch: st.Branch, Epoch: st.Epoch, Ref: st.Safety, Tip: r.pinned}
 	if r.busy {
 		fmt.Fprintf(r.w, "%s  %s  resuming at %d/%d\n", name, st.Branch, st.Stop, st.Total)
@@ -402,8 +414,14 @@ func (r *resume) complete(res wtsync.Result) error {
 			Tell: r.sessions, TrunkName: strings.TrimPrefix(st.TrunkRef, "origin/"), Landed: r.landed,
 			Check:       syncrun.PathsOnce(st.Stopped, st.Left, st.ResolvedPaths(), st.Deleted, wtsync.StopPaths(res.Stops)),
 			Unavailable: r.unavailable,
+			// A wt sync steps run handed over goes on as it was: its
+			// selection, run whatever the rebase changed.
+			Steps: st.Layers.StepSelection(), ForceSteps: st.Layers != nil && st.Layers.ForceSteps,
 		}
 	})
+	if err := syncrun.RecordOwed(r.ctx.Repo.MainRoot, st.Branch, st.Epoch, res, ran); err != nil {
+		fmt.Fprintf(r.w, "  note: what is owed could not be recorded for wt sync steps: %v\n", err)
+	}
 	stackFailure := r.finishStack(res)
 	syncrun.PrintUnchecked(r.w, res.Unchecked)
 	owed := append(syncrun.OwedChecks(res.Unchecked), syncrun.OwedLayerSteps(res.LayerSteps)...)
@@ -464,6 +482,11 @@ func (r *resume) finishStack(res wtsync.Result) string {
 		return "no layer moved"
 	case !ok:
 		return ""
+	}
+	if res.Layers != nil {
+		// The plan as the layer stops changed it, before and after the
+		// handover.
+		rec.Plans = res.Layers
 	}
 	listed, lerr := r.opts.SessionsAgain(r.ctx, syncrun.RebasedNothing)
 	s, failure, ferr := syncrun.FinishStack(r.ctx, r.w, syncrun.StackFinish{Record: rec, OldTip: r.st.OldTip, NewTip: res.NewTip,

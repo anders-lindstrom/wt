@@ -183,7 +183,7 @@ func FinishStack(ctx *kit.Context, w io.Writer, in StackFinish) (s *Stack, failu
 		}
 		return s, "no layer moved", nil
 	}
-	if rec.Autosquash {
+	if rec.Autosquash || rec.InPlace {
 		if why := foldChanged(main, in.OldTip, in.NewTip, in.Folds); why != "" {
 			return refuse(fmt.Sprintf("the fold changed the line's content (%s); the line is folded, wt sync undo %s puts it back", why, rec.Work))
 		}

@@ -66,3 +66,23 @@ func FoldPaths(cfg *wtsync.Config) []string {
 	}
 	return paths
 }
+
+// RecordOwed records, for wt sync steps, what a finished rebase of branch
+// left owed of its deferred steps; nothing owed removes the record.
+func RecordOwed(mainRoot, branch string, epoch int64, res wtsync.Result, ran []wtsync.DeferredResult) error {
+	o := &wtsync.Owed{Branch: branch, Epoch: epoch}
+	for _, s := range res.LayerSteps {
+		if s.Owed() {
+			o.Steps = append(o.Steps, wtsync.OwedStep{Step: s.Step.Run, Layer: s.Branch, Why: kit.OneLine(s.Why)})
+		}
+	}
+	for _, d := range ran {
+		switch {
+		case d.Err != nil:
+			o.Steps = append(o.Steps, wtsync.OwedStep{Step: d.Step.Run, Why: kit.OneLine(d.Err.Error())})
+		case d.Blocked != "":
+			o.Steps = append(o.Steps, wtsync.OwedStep{Step: d.Step.Run, Why: d.Why})
+		}
+	}
+	return wtsync.WriteOwed(mainRoot, o)
+}

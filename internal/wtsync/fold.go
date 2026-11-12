@@ -694,3 +694,100 @@ func lastOutputLines(s string, n int) []string {
 	}
 	return strings.Split(tailLines(s, n), "\n")
 }
+
+// LayerState is what a rebase with per-layer steps has done at the layer
+// stops so far, kept in the handover so that wt sync resume goes on from
+// it: which steps the run takes and whether it gates them, the plan of each
+// layer as the stops changed it, what each step came to at each layer, the
+// layer each owed step failed at, and the commits the steps made.
+type LayerState struct {
+	Only         bool              `json:"only,omitempty"`
+	Steps        []string          `json:"steps,omitempty"`
+	ForceSteps   bool              `json:"forceSteps,omitempty"`
+	Plans        []LayerPlan       `json:"plans,omitempty"`
+	Planned      []int             `json:"planned,omitempty"`
+	Results      []LayerStepRecord `json:"results,omitempty"`
+	Failed       map[string]int    `json:"failed,omitempty"`
+	Made         []string          `json:"made,omitempty"`
+	SubjectMoved bool              `json:"subjectMoved,omitempty"`
+}
+
+// LayerStepRecord is a LayerStep as the handover keeps it.
+type LayerStepRecord struct {
+	Layer, Layers                            int
+	Branch                                   string
+	Step                                     Deferred
+	Ran                                      bool
+	Why, Result, Owner, OwnerSubject, Commit string
+	Proof, Err, Output                       string
+	Elapsed                                  time.Duration
+}
+
+// layerState is the driver's per-layer state, for a handover; nil when the
+// rebase has no per-layer step and runs every step as a rebase does. The
+// step selection and ForceSteps are kept for the steps after the rebase too.
+func (d *driver) layerState() *LayerState {
+	if stops, _ := d.layerStops(); !stops && d.req.Steps == nil && !d.req.ForceSteps {
+		return nil
+	}
+	st := &LayerState{ForceSteps: d.req.ForceSteps, Plans: d.res.Layers, Planned: d.planned, Failed: d.stepFailed,
+		SubjectMoved: d.subjectMoved}
+	if d.req.Steps != nil {
+		st.Only = true
+		for s := range d.req.Steps {
+			st.Steps = append(st.Steps, s)
+		}
+		slices.Sort(st.Steps)
+	}
+	for sha := range d.made {
+		st.Made = append(st.Made, sha)
+	}
+	slices.Sort(st.Made)
+	for _, r := range d.res.LayerSteps {
+		rec := LayerStepRecord{Layer: r.Layer, Layers: r.Layers, Branch: r.Branch, Step: r.Step, Ran: r.Ran, Why: r.Why,
+			Result: r.Result, Owner: r.Owner, OwnerSubject: r.OwnerSubject, Commit: r.Commit, Proof: r.Proof, Output: r.Output, Elapsed: r.Elapsed}
+		if r.Err != nil {
+			rec.Err = r.Err.Error()
+		}
+		st.Results = append(st.Results, rec)
+	}
+	return st
+}
+
+// StepSelection is the steps a resumed run takes, as Request.Steps names
+// them: nil for every one.
+func (s *LayerState) StepSelection() map[string]bool {
+	if s == nil || !s.Only {
+		return nil
+	}
+	set := map[string]bool{}
+	for _, r := range s.Steps {
+		set[r] = true
+	}
+	return set
+}
+
+// restoreLayers puts back what the stops before a handover did.
+func (d *driver) restoreLayers(st *LayerState) {
+	if st == nil {
+		return
+	}
+	if st.Plans != nil {
+		d.res.Layers = st.Plans
+	}
+	d.planned, d.subjectMoved = st.Planned, st.SubjectMoved
+	for k, v := range st.Failed {
+		d.stepFailed[k] = v
+	}
+	for _, sha := range st.Made {
+		d.made[sha] = true
+	}
+	for _, r := range st.Results {
+		s := LayerStep{Layer: r.Layer, Layers: r.Layers, Branch: r.Branch, Step: r.Step, Ran: r.Ran, Why: r.Why, Result: r.Result,
+			Owner: r.Owner, OwnerSubject: r.OwnerSubject, Commit: r.Commit, Proof: r.Proof, Output: r.Output, Elapsed: r.Elapsed}
+		if r.Err != "" {
+			s.Err = errors.New(r.Err)
+		}
+		d.res.LayerSteps = append(d.res.LayerSteps, s)
+	}
+}

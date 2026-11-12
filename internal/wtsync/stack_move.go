@@ -151,16 +151,19 @@ type LayerMove struct {
 // list, and each layer move, recorded before it is made and again once it
 // is.
 type StackRecord struct {
-	Epoch      int64       `json:"epoch"`
-	Work       string      `json:"work"`
-	Branch     string      `json:"branch"`
-	Path       string      `json:"path"`
-	Onto       string      `json:"onto"`
-	Autosquash bool        `json:"autosquash"`
-	Force      bool        `json:"force"`
-	Line       Line        `json:"line"`
-	Plans      []LayerPlan `json:"plans"`
-	Moves      []LayerMove `json:"moves"`
+	Epoch      int64  `json:"epoch"`
+	Work       string `json:"work"`
+	Branch     string `json:"branch"`
+	Path       string `json:"path"`
+	Onto       string `json:"onto"`
+	Autosquash bool   `json:"autosquash"`
+	// InPlace is a run onto the line's own base that is not a fold of its
+	// fixups: wt sync steps.
+	InPlace bool        `json:"inPlace,omitempty"`
+	Force   bool        `json:"force"`
+	Line    Line        `json:"line"`
+	Plans   []LayerPlan `json:"plans"`
+	Moves   []LayerMove `json:"moves"`
 }
 
 func stackRecordPath(mainRoot string, epoch int64) (string, error) {

@@ -169,6 +169,9 @@ type Request struct {
 	// ForceSteps runs the per-layer steps at every layer whatever changed:
 	// wt sync steps, which replays nothing.
 	ForceSteps bool
+	// Resumed is what the layer stops did before the handover a resume
+	// goes on from; nil for a run.
+	Resumed *LayerState
 }
 
 // base is what the rebase replays from: the parent's old tip for a stack
@@ -233,6 +236,9 @@ type Result struct {
 	// Rechecked is how many folded commits the each_commit checks ran at
 	// again, because the fold changed what they read.
 	Rechecked int
+	// LayerState is the per-layer state at a handover, for the resume to
+	// go on from; nil otherwise.
+	LayerState *LayerState
 	// Left is the stop the run handed over to a person: the rebase is still
 	// in progress in the worktree, with every strategy's answer staged.
 	// Nil when the rebase finished or was restored.
@@ -577,6 +583,7 @@ func shellQuote(s string) string {
 func Resume(mainRoot string, cfg *Config, req Request, old string, safety Safety, log io.Writer) (Result, error) {
 	d := &driver{mainRoot: mainRoot, cfg: cfg, req: req, log: log, old: old, keep: true,
 		res: Result{Branch: req.Branch, OldTip: old, Safety: safety}, stepFailed: map[string]int{}, made: map[string]bool{}}
+	d.restoreLayers(req.Resumed)
 	var err error
 	if d.res.SignaturesDropped, err = signedCount(req.Path, req.base(), old); err != nil {
 		return d.res, err
@@ -1245,6 +1252,7 @@ func (d *driver) handover(stop StopResult, conflicts []Conflict) (*Handover, err
 		Index: stop.Index, Total: stop.Total, Commit: stop.Commit, Subject: stop.Subject,
 		Conflicts: conflicts, Files: stop.Files, Staged: map[string]string{},
 	}
+	d.res.LayerState = d.layerState()
 	for _, f := range stop.Files {
 		if !f.Resolved {
 			h.Left = append(h.Left, f.Path)
