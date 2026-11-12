@@ -62,3 +62,26 @@ func TestProbeNeedsAsksEachNeedOnce(t *testing.T) {
 		t.Fatal("the failed probe is not reported")
 	}
 }
+
+// The docker probe is docker info, the one on PATH: a fake that fails is
+// reported with what it said, and asked once however many steps need it.
+func TestProbeNeedsRunsDockerInfoOnce(t *testing.T) {
+	bin := t.TempDir()
+	calls := filepath.Join(t.TempDir(), "calls")
+	fake := "#!/bin/sh\necho \"$@\" >> '" + calls + "'\necho 'Cannot connect to the Docker daemon' >&2\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	got := ProbeNeeds([]string{NeedDocker, NeedDocker})
+	if got[NeedDocker] == nil || !strings.Contains(got[NeedDocker].Error(), "docker info") {
+		t.Fatalf("answer %v", got[NeedDocker])
+	}
+	b, err := os.ReadFile(calls)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != "info\n" {
+		t.Fatalf("docker was called %q, want info once", b)
+	}
+}
