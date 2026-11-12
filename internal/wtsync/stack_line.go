@@ -148,3 +148,29 @@ func backup(name string, patterns []string) bool {
 	}
 	return false
 }
+
+// StackRequest is a rebase of a stack held on the line: every layer of Line
+// gets a marker in the sequencer's list. Autosquash folds the line's
+// fixup!, squash! and amend! commits onto its own base instead of rebasing
+// it onto trunk.
+type StackRequest struct {
+	Line       Line
+	Autosquash bool
+}
+
+// LayerPlan is what a rebase of the line planned for one layer.
+type LayerPlan struct {
+	Branch string
+	Ref    string
+}
+
+// LayerTip is one layer's new tip, read back and checked.
+type LayerTip struct {
+	Branch, Old, New string
+	Mapped           string
+}
+
+// CheckLayers reads and checks each layer's marker.
+func CheckLayers(dir, head, onto string, plans []LayerPlan) ([]LayerTip, error) {
+	return nil, fmt.Errorf("not yet")
+}

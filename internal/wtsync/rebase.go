@@ -161,6 +161,8 @@ type Request struct {
 	// rather than to the one the rebase started from. Zero has Rebase pin
 	// the tip it starts from.
 	Safety Safety
+	// Stack is a rebase of a stack held on the line: nil for any other.
+	Stack *StackRequest
 }
 
 // base is what the rebase replays from: the parent's old tip for a stack
@@ -216,6 +218,9 @@ type Result struct {
 	// Unchecked is the checks not run for a need Request.Unavailable
 	// names: owed, once each for the branch.
 	Unchecked []Unchecked
+	// Layers is what the rebase planned for each layer of a stack held on
+	// the line, read from the list as git started it; nil for any other.
+	Layers []LayerPlan
 	// Left is the stop the run handed over to a person: the rebase is still
 	// in progress in the worktree, with every strategy's answer staged.
 	// Nil when the rebase finished or was restored.
