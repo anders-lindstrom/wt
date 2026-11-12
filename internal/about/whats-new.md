@@ -20,6 +20,13 @@ that is dirty or that a process or session works in is held with the
 command that moves it. `--autosquash` folds review fixups in place.
 `wt sync <work> --stack` lists the layers first; `wt sync undo` puts it all back.
 
+## 2026-11-12 10:51 — Version lines a branch adds no longer stop a rebase
+
+`owned-line` pairs version lines by where they sit in the file (the
+lines they nest under), not by their order. A pick that adds an API's
+version beside one trunk bumped keeps its new line, and the bump is
+decided as before. A removed version line is still refused.
+
 ## 2026-11-12 10:32 — Steps that need Docker say so
 
 A step in `.wt-sync.yaml` can declare `needs: [docker]`. A run probes Docker
@@ -35,6 +42,7 @@ touches its paths, so each commit of a stack still builds. One that fails
 stops the rebase at that commit; amend the fix in and `wt sync resume` checks
 it again. `wt sync` says how many commits a run would check, and
 `docs/sync-declaration.md` describes every key of the file.
+
 
 ## 2026-11-12 10:12 — A version rule that keeps the kind of each bump
 

@@ -81,6 +81,13 @@ version both sides bump. Every other change must merge clean. Needs `line` and
     rule: max-plus-patch
 ```
 
+Version lines pair across the sides by where they sit: the lines they nest
+under by indentation, and the part of the line `line` matches. A version line
+one side added is that side's and stays; one a side removed is refused. In a
+file where several owned lines sit in the same place, such as a flat list of
+`version:` lines, they pair by order, and a side with a different number of
+them is refused.
+
 ### `openapi`
 
 A generated OpenAPI document (JSON). Its paths, schemas and tags are merged key

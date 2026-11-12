@@ -462,3 +462,22 @@ func TestRebaseCarriesAStackThatAddsVersionLines(t *testing.T) {
 		})
 	}
 }
+
+// A block whose branch and trunk change one owned line in the same place,
+// while its base shows the line of another place: shift-bump would shift
+// from the wrong ancestor, so it decides by place and refuses, where
+// max-plus-patch, which ignores the base, decides the block as before.
+func TestCollapseByPlaceShiftBumpNeedsTheBasesLineInThatPlace(t *testing.T) {
+	t.Parallel()
+	line := regexp.MustCompile(`^\s*version:`)
+	before := [3][]string{{"b:"}, {"a:"}, {"a:"}}
+	b := Block{Base: []string{"  version: 2.40.0"}, Branch: []string{"  version: 2.47.0"}, Trunk: []string{"  version: 2.47.0"}}
+	out, ok, err := collapseByPlace(b, before, line, shiftRule(t), "f.txt")
+	if !ok || !IsRefusal(err) {
+		t.Errorf("shift-bump: out = %q, ok = %v, err = %v; want a refusal", out, ok, err)
+	}
+	mpp, _ := RuleNamed("max-plus-patch")
+	if _, ok, _ := collapseByPlace(b, before, line, mpp, "f.txt"); ok {
+		t.Error("max-plus-patch: decided by place, want collapseOwned's path")
+	}
+}

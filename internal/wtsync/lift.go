@@ -98,49 +98,40 @@ const shapeRefusal = "the sides differ in the number of owned lines"
 var versionValueRE = regexp.MustCompile(`\d+\.\d+`)
 
 // Lift rewrites each owned line both sides changed to the rule's answer over
-// the merged line and trunk's. Lines are paired by position among the owned
-// lines carrying a version: the file's shape is the same on every side when
-// git merged it clean and both sides only bumped. A side with a different
-// number of them is not that shape — one side added or removed a version
-// line — and is refused, as the strategy refuses a block it cannot pair,
-// rather than left to land on whatever git merged.
+// the merged line and trunk's. Lines carrying a version are paired by their
+// place in the file (ownedPlace) when every side's places are unique: a line
+// only one side has was added there and is left as git merged it, and a
+// line one side removed is refused. Lines without places of their own, as
+// in a flat file of versions, are paired by position, and a side with a
+// different number of them is refused, rather than left to land on whatever
+// git merged.
 func (s OwnedLine) Lift(path string, base, trunk, branch, merged []byte) (*Lift, error) {
 	_, shift := s.Rule.(shiftBump)
 	if _, ok := s.Rule.(maxPlusPatch); !ok && !shift {
 		return nil, nil
 	}
-	baseLines, trunkLines, branchLines := s.owned(base), s.owned(trunk), s.owned(branch)
 	lines := strings.SplitAfter(string(merged), "\n")
-	var mergedAt []int
-	for i, l := range lines {
-		if s.versioned(l) {
-			mergedAt = append(mergedAt, i)
-		}
-	}
-	n := len(mergedAt)
-	if len(baseLines) != n || len(trunkLines) != n || len(branchLines) != n {
-		return nil, Refuse(path, shapeRefusal)
-	}
-	if n == 0 {
-		return nil, nil
+	pairs, err := s.pair(path, base, trunk, branch, lines)
+	if err != nil {
+		return nil, err
 	}
 	var lift Lift
-	for i, at := range mergedAt {
-		if ownedValue(baseLines[i]) == ownedValue(branchLines[i]) || ownedValue(baseLines[i]) == ownedValue(trunkLines[i]) {
+	for _, p := range pairs {
+		if ownedValue(p.base) == ownedValue(p.branch) || ownedValue(p.base) == ownedValue(p.trunk) {
 			continue
 		}
-		out, err := s.Rule.Apply(baseLines[i], lines[at], trunkLines[i])
+		out, err := s.Rule.Apply(p.base, lines[p.at], p.trunk)
 		if err != nil {
 			return nil, Refuse(path, "%v", err)
 		}
-		if out == lines[at] {
+		if out == lines[p.at] {
 			continue
 		}
-		lines[at] = out
-		lift.From = append(lift.From, findSemver(trunkLines[i]))
+		lines[p.at] = out
+		lift.From = append(lift.From, findSemver(p.trunk))
 		lift.To = append(lift.To, findSemver(out))
 		if shift {
-			lift.Bumps = append(lift.Bumps, bumpKind(findSemver(baseLines[i]), findSemver(branchLines[i])))
+			lift.Bumps = append(lift.Bumps, bumpKind(findSemver(p.base), findSemver(p.branch)))
 		}
 	}
 	if len(lift.To) == 0 {
@@ -150,14 +141,82 @@ func (s OwnedLine) Lift(path string, base, trunk, branch, merged []byte) (*Lift,
 	return &lift, nil
 }
 
-// owned is the lines of data matching the owned-line regex and carrying a
-// version, in order.
-func (s OwnedLine) owned(data []byte) []string {
-	var out []string
-	for _, l := range strings.SplitAfter(string(data), "\n") {
-		if s.versioned(l) {
-			out = append(out, l)
+// ownedPair is one owned line of the merged file, at line at, with the line
+// in the same place on base, trunk and branch.
+type ownedPair struct {
+	at                  int
+	base, trunk, branch string
+}
+
+// pair matches the merged file's owned lines with every side's, by place
+// when all places are unique, otherwise by position. Lines that are not on
+// all three sides were added by one side, and have no pair.
+func (s OwnedLine) pair(path string, base, trunk, branch []byte, merged []string) ([]ownedPair, error) {
+	sides := [3][]string{strings.SplitAfter(string(base), "\n"), strings.SplitAfter(string(trunk), "\n"), strings.SplitAfter(string(branch), "\n")}
+	var at [3][]int
+	var places [3]map[string]string
+	unique := true
+	for i, lines := range sides {
+		at[i] = s.versionedAt(lines)
+		places[i] = s.places(lines, at[i])
+		if places[i] == nil {
+			unique = false
 		}
+	}
+	mergedAt := s.versionedAt(merged)
+	mergedPlaces := s.places(merged, mergedAt)
+	if !unique || mergedPlaces == nil {
+		n := len(mergedAt)
+		if len(at[0]) != n || len(at[1]) != n || len(at[2]) != n {
+			return nil, Refuse(path, shapeRefusal)
+		}
+		pairs := make([]ownedPair, n)
+		for i, m := range mergedAt {
+			pairs[i] = ownedPair{at: m, base: sides[0][at[0][i]], trunk: sides[1][at[1][i]], branch: sides[2][at[2][i]]}
+		}
+		return pairs, nil
+	}
+	for k := range places[0] {
+		if _, ok := places[1][k]; !ok {
+			return nil, Refuse(path, shapeRefusal)
+		}
+		if _, ok := places[2][k]; !ok {
+			return nil, Refuse(path, shapeRefusal)
+		}
+	}
+	var pairs []ownedPair
+	for _, m := range mergedAt {
+		k := ownedPlace(merged, m, s.Line)
+		b, inBase := places[0][k]
+		if !inBase {
+			continue
+		}
+		pairs = append(pairs, ownedPair{at: m, base: b, trunk: places[1][k], branch: places[2][k]})
+	}
+	return pairs, nil
+}
+
+// versionedAt is the indexes of the owned lines carrying a version.
+func (s OwnedLine) versionedAt(lines []string) []int {
+	var at []int
+	for i, l := range lines {
+		if s.versioned(l) {
+			at = append(at, i)
+		}
+	}
+	return at
+}
+
+// places maps the place of each line at to the line, or is nil when two
+// share a place.
+func (s OwnedLine) places(lines []string, at []int) map[string]string {
+	out := map[string]string{}
+	for _, i := range at {
+		k := ownedPlace(lines, i, s.Line)
+		if _, dup := out[k]; dup {
+			return nil
+		}
+		out[k] = lines[i]
 	}
 	return out
 }
