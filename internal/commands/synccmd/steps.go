@@ -29,7 +29,7 @@ func stepsDue(onto string, cfg *wtsync.Config, parents map[string]string, wt rep
 	if parent, ok := parents[wt.Branch]; ok {
 		base = "refs/heads/" + parent
 	}
-	due, err := wtsync.StepsDue(wt.Path, cfg, base, rebasedTip(wt.Branch, a), onto)
+	due, err := wtsync.StepsDue(wt.Path, cfg, base, rebasedTip(wt.Branch, a), onto, "")
 	if err != nil {
 		return wtsync.Due{}
 	}

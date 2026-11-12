@@ -281,7 +281,7 @@ func (r *resume) verify() error {
 func (r *resume) probeNeeds() error {
 	st := r.st
 	base := cmp.Or(st.Upstream, st.Onto)
-	due, err := wtsync.StepsDue(r.target.Path, r.cfg, base, st.OldTip, st.Trunk)
+	due, err := wtsync.StepsDue(r.target.Path, r.cfg, base, st.OldTip, st.Trunk, "")
 	if err != nil {
 		return fmt.Errorf("%s: could not tell which steps the rest of the rebase runs: %w; nothing is resumed", r.name, err)
 	}

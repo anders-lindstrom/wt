@@ -798,7 +798,7 @@ func (r *RunPlan) probeNeeds() {
 		if parent, ok := r.parents[b]; ok && r.parts[parent] != nil {
 			base = "refs/heads/" + parent
 		}
-		due, err := wtsync.StepsDue(p.wt.Path, r.cfg, base, rebasedTip(b, p.a), r.trunkSHA)
+		due, err := wtsync.StepsDue(p.wt.Path, r.cfg, base, rebasedTip(b, p.a), r.trunkSHA, "")
 		if err != nil {
 			p.refused = p.work + ": could not tell which steps a rebase runs: " + err.Error()
 			r.refuseAbove(b, p.work+" was refused")

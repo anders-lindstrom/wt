@@ -140,7 +140,9 @@ type Assessment struct {
 	// off. For a branch a run fast-forwards first, the class, the counts and
 	// the replay are those of the remote's commit: what the run rebases.
 	Own OwnRemote
-	Err error
+	// Target names what it was assessed against when that is not trunk.
+	Target string
+	Err    error
 }
 
 // Way is where a paused worktree's handover stands, for WayOut: waiting at

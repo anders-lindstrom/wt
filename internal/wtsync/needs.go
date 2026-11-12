@@ -155,7 +155,7 @@ func (d Due) Needing(n string) []string {
 // StepsDue is what may run when branch is rebased: base is what its
 // commits are counted from (trunk, or a stack parent's tip), trunk the
 // commit the run rebases onto.
-func StepsDue(wtPath string, cfg *Config, base, branch, trunk string) (Due, error) {
+func StepsDue(wtPath string, cfg *Config, base, branch, trunk, upstream string) (Due, error) {
 	var due Due
 	if cfg == nil || (len(cfg.EachCommit) == 0 && len(cfg.Defer) == 0) {
 		return due, nil
