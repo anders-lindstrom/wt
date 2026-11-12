@@ -100,6 +100,10 @@ type SyncParticipant struct {
 	Deferred    []DeferredStep `json:"deferred"`
 	UndoCommand []string       `json:"undoCommand"`
 	PlanFile    *string        `json:"planFile"`
+	// Checked is how many replayed commits the each_commit checks ran at.
+	Checked int `json:"checked"`
+	// CheckFailed is the check that stopped the rebase; nil when none did.
+	CheckFailed *CheckFailed `json:"checkFailed"`
 }
 
 // RunResult is the one object wt sync rebase, resume and undo print with

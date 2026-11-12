@@ -28,6 +28,7 @@ type ResumeOptions struct {
 	Journal *syncrun.RunJournal
 	syncrun.VerbOptions
 	syncrun.PushOptions
+	syncrun.StepOptions
 }
 
 // SyncResume continues the rebase a run left at a stop a person owned. It

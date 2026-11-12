@@ -36,3 +36,18 @@ func OverviewRow(t *testing.T, o synccmd.SyncOverview, work string) synccmd.Over
 	t.Fatalf("no row for %s in %+v", work, o.Worktrees)
 	return synccmd.OverviewWorktree{}
 }
+
+// OverviewJSONWith is OverviewJSON with the caller's options.
+func OverviewJSONWith(t *testing.T, ctx *kit.Context, opts synccmd.SyncOptions) synccmd.SyncOverview {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := synccmd.SyncJSON(ctx, opts, &buf); err != nil {
+		t.Fatalf("%v\n%s", err, buf.String())
+	}
+	testkit.ValidateJSON(t, "sync", buf.Bytes())
+	var o synccmd.SyncOverview
+	if err := json.Unmarshal(buf.Bytes(), &o); err != nil {
+		t.Fatalf("%v\n%s", err, buf.String())
+	}
+	return o
+}

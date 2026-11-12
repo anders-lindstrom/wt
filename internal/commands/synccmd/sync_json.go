@@ -43,22 +43,41 @@ const (
 // SyncOverview is the one object wt sync --json prints for a repository:
 // every worktree, filed as the overview files it.
 type SyncOverview struct {
-	Schema        int                `json:"schema"`
-	SchemaVersion string             `json:"schemaVersion"`
-	Command       string             `json:"command"`
-	Repo          string             `json:"repo"`
-	Name          string             `json:"name"`
-	Trunk         *string            `json:"trunk"`
-	TrunkSource   *string            `json:"trunkSource"`
-	TrunkRef      *string            `json:"trunkRef"`
-	Onto          *string            `json:"onto"`
-	Fetched       bool               `json:"fetched"`
-	FetchError    *string            `json:"fetchError"`
-	Declared      bool               `json:"declared"`
-	Token         *string            `json:"token"`
-	Error         *string            `json:"error"`
-	SessionsError *string            `json:"sessionsError"`
-	Worktrees     []OverviewWorktree `json:"worktrees"`
+	Schema        int     `json:"schema"`
+	SchemaVersion string  `json:"schemaVersion"`
+	Command       string  `json:"command"`
+	Repo          string  `json:"repo"`
+	Name          string  `json:"name"`
+	Trunk         *string `json:"trunk"`
+	TrunkSource   *string `json:"trunkSource"`
+	TrunkRef      *string `json:"trunkRef"`
+	Onto          *string `json:"onto"`
+	Fetched       bool    `json:"fetched"`
+	FetchError    *string `json:"fetchError"`
+	Declared      bool    `json:"declared"`
+	Token         *string `json:"token"`
+	Error         *string `json:"error"`
+	SessionsError *string `json:"sessionsError"`
+	// EachCommitDeclared is the each_commit checks trunk declares.
+	EachCommitDeclared []DeclaredStep `json:"eachCommitDeclared"`
+	// Needs is every need a declared step has, and what its probe said.
+	Needs     []NeedProbe        `json:"needs"`
+	Worktrees []OverviewWorktree `json:"worktrees"`
+}
+
+// NeedProbe is one need and its probe's answer: probed only when a step
+// with the need would run for some worktree of the overview.
+type NeedProbe struct {
+	Need   string  `json:"need"`
+	Probed bool    `json:"probed"`
+	OK     bool    `json:"ok"`
+	Error  *string `json:"error"`
+}
+
+// CheckCommit is one commit a run would check.
+type CheckCommit struct {
+	Commit  string `json:"commit"`
+	Subject string `json:"subject"`
 }
 
 // OverviewWorktree is one worktree of the overview.
@@ -82,10 +101,13 @@ type OverviewWorktree struct {
 	Stops      []OverviewStop    `json:"stops"`
 	Strategies []string          `json:"strategies"`
 	// DeferredDeclared is the repository's, the same on every worktree.
-	DeferredDeclared []DeclaredStep    `json:"deferredDeclared"`
-	Notes            []string          `json:"notes"`
-	Error            *string           `json:"error"`
-	OwnRemote        syncrun.OwnRemote `json:"ownRemote"`
+	DeferredDeclared []DeclaredStep `json:"deferredDeclared"`
+	// Checks is how many commits a run would check, CheckCommits which.
+	Checks       int               `json:"checks"`
+	CheckCommits []CheckCommit     `json:"checkCommits"`
+	Notes        []string          `json:"notes"`
+	Error        *string           `json:"error"`
+	OwnRemote    syncrun.OwnRemote `json:"ownRemote"`
 }
 
 // DeclaredStep is one deferred step .wt-sync.yaml on trunk declares, as a
@@ -96,6 +118,7 @@ type OverviewWorktree struct {
 type DeclaredStep struct {
 	Step  string   `json:"step"`
 	Paths []string `json:"paths"`
+	Needs []string `json:"needs"`
 }
 
 // declaredSteps is cfg's deferred steps for --json, in the declared order;

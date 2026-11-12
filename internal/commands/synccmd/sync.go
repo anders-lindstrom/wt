@@ -37,6 +37,8 @@ type SyncOptions struct {
 	// NoFetch compares with origin/<trunk> as last fetched, without reaching
 	// the network.
 	NoFetch bool
+	// Probes replaces the probe of each need; nil probes for real.
+	Probes map[string]func() error
 }
 
 // shownFiles is how many files a stop names in the overview before it counts

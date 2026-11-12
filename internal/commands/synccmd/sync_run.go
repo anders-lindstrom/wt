@@ -64,6 +64,7 @@ type RunOptions struct {
 	Own *wtsync.Own
 	syncrun.VerbOptions
 	syncrun.PushOptions
+	syncrun.StepOptions
 }
 
 // participant is one worktree of a run: the branch it is on, what triage
