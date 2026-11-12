@@ -27,14 +27,17 @@ func findSemver(line string) string {
 
 // ValueRule decides which line the branch keeps when both sides changed the
 // one line a strategy owns. It sees whole lines so that indentation and
-// punctuation around the value survive.
+// punctuation around the value survive: base is the line in the pick's
+// parent, "" when that side has none, branch the pick's and trunk the line
+// the pick is applied on.
 type ValueRule interface {
-	Apply(branch, trunk string) (string, error)
+	Apply(base, branch, trunk string) (string, error)
 }
 
 // The value rules a declaration may name.
 const (
 	RuleMaxPlusPatch = "max-plus-patch"
+	RuleShiftBump    = "shift-bump"
 	RuleKeepBranch   = "keep-branch"
 	RuleKeepTrunk    = "keep-trunk"
 )
@@ -44,6 +47,8 @@ func RuleNamed(name string) (ValueRule, error) {
 	switch name {
 	case RuleMaxPlusPatch:
 		return maxPlusPatch{}, nil
+	case RuleShiftBump:
+		return shiftBump{}, nil
 	case RuleKeepBranch:
 		return keepBranch{}, nil
 	case RuleKeepTrunk:
@@ -55,9 +60,10 @@ func RuleNamed(name string) (ValueRule, error) {
 type keepBranch struct{}
 type keepTrunk struct{}
 type maxPlusPatch struct{}
+type shiftBump struct{}
 
-func (keepBranch) Apply(branch, _ string) (string, error) { return branch, nil }
-func (keepTrunk) Apply(_, trunk string) (string, error)   { return trunk, nil }
+func (keepBranch) Apply(_, branch, _ string) (string, error) { return branch, nil }
+func (keepTrunk) Apply(_, _, trunk string) (string, error)   { return trunk, nil }
 
 // Apply rewrites the version inside the branch's line to MaxPlusPatch of the
 // two versions, keeping everything else on the line as the branch wrote it.
@@ -65,7 +71,7 @@ func (keepTrunk) Apply(_, trunk string) (string, error)   { return trunk, nil }
 // string replace of the version text: a line like "pin 1.2.3.4 to 1.2.3"
 // contains the target version "1.2.3" as a substring of "1.2.3.4" too, and a
 // plain replace would corrupt the wrong occurrence.
-func (maxPlusPatch) Apply(branch, trunk string) (string, error) {
+func (maxPlusPatch) Apply(_, branch, trunk string) (string, error) {
 	loc := semverRE.FindStringSubmatchIndex(branch)
 	tv := findSemver(trunk)
 	if loc == nil || tv == "" {
@@ -85,6 +91,65 @@ func MaxPlusPatch(branchV, trunkV string) string {
 	}
 	major, minor, patch := parseSemver(trunkV)
 	return fmt.Sprintf("%d.%d.%d", major, minor, patch+1)
+}
+
+// Apply rewrites the version inside the branch's line to ShiftBump of the
+// three versions, keeping everything else on the line as the branch wrote it.
+func (shiftBump) Apply(base, branch, trunk string) (string, error) {
+	loc := semverRE.FindStringSubmatchIndex(branch)
+	bv, tv := findSemver(base), findSemver(trunk)
+	if loc == nil || bv == "" || tv == "" {
+		return "", fmt.Errorf("shift-bump needs an X.Y.Z version on every side, got %q, %q and %q",
+			strings.TrimSpace(base), strings.TrimSpace(branch), strings.TrimSpace(trunk))
+	}
+	v, err := ShiftBump(bv, branch[loc[2]:loc[3]], tv)
+	if err != nil {
+		return "", err
+	}
+	return branch[:loc[2]] + v + branch[loc[3]:], nil
+}
+
+// ShiftBump is the version a pick keeps when it is applied on under instead
+// of base: the pick's own bump, of the same kind and size, made on under.
+// The kind is the highest component where branch differs from base; that
+// component is under's raised by the same difference, the ones above it are
+// under's and the ones below it the branch's. A pick that did not bump keeps
+// under, and one that lowered the version is refused.
+func ShiftBump(base, branch, under string) (string, error) {
+	if branch == base {
+		return under, nil
+	}
+	if compareSemver(branch, base) < 0 {
+		return "", fmt.Errorf("the branch lowered the version from %s to %s", base, branch)
+	}
+	b, p, u := semverParts(base), semverParts(branch), semverParts(under)
+	k := bumpComponent(b, p)
+	out := p
+	copy(out[:k], u[:k])
+	out[k] = u[k] + p[k] - b[k]
+	return fmt.Sprintf("%d.%d.%d", out[0], out[1], out[2]), nil
+}
+
+// bumpKind names the bump from base to branch for a note: "a minor on
+// 2.46.0".
+func bumpKind(base, branch string) string {
+	kinds := [...]string{"a major", "a minor", "a patch"}
+	return kinds[bumpComponent(semverParts(base), semverParts(branch))] + " on " + base
+}
+
+// bumpComponent is the index of the highest component where two versions
+// differ, 2 when none does.
+func bumpComponent(a, b [3]int) int {
+	k := 0
+	for k < 2 && a[k] == b[k] {
+		k++
+	}
+	return k
+}
+
+func semverParts(v string) [3]int {
+	major, minor, patch := parseSemver(v)
+	return [3]int{major, minor, patch}
 }
 
 func parseSemver(v string) (major, minor, patch int) {

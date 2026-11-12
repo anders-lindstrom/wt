@@ -31,7 +31,7 @@ type Rule struct {
 	// (list-union).
 	Line string `yaml:"line"`
 	// Rule decides the value of an owned line or an OpenAPI version:
-	// max-plus-patch, keep-branch or keep-trunk.
+	// max-plus-patch, shift-bump, keep-branch or keep-trunk.
 	Rule string `yaml:"rule"`
 	// Delimiter separates list-union items; "," when omitted.
 	Delimiter string `yaml:"delimiter"`

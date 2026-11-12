@@ -16,7 +16,8 @@ import (
 // emits paths and schemas in registration order, so this cannot reproduce the
 // generator byte for byte; it exists to let the replay continue.
 type OpenAPI struct {
-	// Rule decides info.version: max-plus-patch, keep-branch or keep-trunk.
+	// Rule decides info.version: max-plus-patch, shift-bump, keep-branch or
+	// keep-trunk.
 	Rule string
 }
 
@@ -77,7 +78,7 @@ func (s OpenAPI) Resolve(c Conflict) ([]byte, error) {
 		return nil, &Refusal{Path: c.Path, Reason: fmt.Sprintf("both sides changed %s", strings.Join(bad, "; ")), Keys: keys, Groups: groups}
 	}
 
-	version, err := s.version(c.Path, branch.version(), trunk.version())
+	version, err := s.version(c.Path, base.version(), branch.version(), trunk.version())
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +131,7 @@ func loadSections(path string, base, trunk, branch doc) (merged, error) {
 	return m, nil
 }
 
-func (s OpenAPI) version(path, branchV, trunkV string) (string, error) {
+func (s OpenAPI) version(path, baseV, branchV, trunkV string) (string, error) {
 	switch s.Rule {
 	case RuleKeepBranch:
 		if branchV == "" {
@@ -147,6 +148,15 @@ func (s OpenAPI) version(path, branchV, trunkV string) (string, error) {
 			return "", Refuse(path, "info.version is not X.Y.Z on both sides (%q, %q)", branchV, trunkV)
 		}
 		return MaxPlusPatch(branchV, trunkV), nil
+	case RuleShiftBump:
+		if !exactSemverRE.MatchString(baseV) || !exactSemverRE.MatchString(branchV) || !exactSemverRE.MatchString(trunkV) {
+			return "", Refuse(path, "info.version is not X.Y.Z on every side (%q, %q, %q)", baseV, branchV, trunkV)
+		}
+		v, err := ShiftBump(baseV, branchV, trunkV)
+		if err != nil {
+			return "", Refuse(path, "%v", err)
+		}
+		return v, nil
 	}
 	return "", fmt.Errorf("unknown rule %q", s.Rule)
 }
