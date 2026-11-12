@@ -50,6 +50,11 @@ func Undo(mainRoot string, worktrees []repo.Worktree, listed []agents.Agent, bra
 	if err != nil {
 		return nil, err
 	}
+	// A layer move a --stack run left under way, ref moved and files not,
+	// is put back first: its worktree would otherwise read as dirty.
+	if err := settleMoving(mainRoot, run[0].Epoch); err != nil {
+		return nil, err
+	}
 	u := newUndo(mainRoot, run, worktrees, now)
 	defer u.release()
 	if err := u.lockCheckouts(listed, now, force); err != nil {
@@ -585,4 +590,46 @@ func UndoBranches(mainRoot, branch string) ([]string, error) {
 		branches[i] = s.Branch
 	}
 	return branches, nil
+}
+
+// settleMoving puts back the ref of every layer move the run of epoch
+// recorded as under way and was interrupted in: the branch at its new tip
+// while its worktree's index and files are still the old tip's. The ref
+// goes back to the old tip, guarded by the new one, which leaves that
+// worktree clean at the tip undo then finds it at; nothing is reset. A move
+// whose worktree holds anything else is left for undo's own checks, which
+// refuse it.
+func settleMoving(mainRoot string, epoch int64) error {
+	rec, ok, err := ReadStackRecord(mainRoot, epoch)
+	if err != nil || !ok {
+		return err
+	}
+	changed := false
+	for i := range rec.Moves {
+		m := &rec.Moves[i]
+		if m.Result != MoveMoving || m.How != MoveByWorktree || m.Path == "" {
+			continue
+		}
+		tip, err := gitEnv(mainRoot, nil, nil, "rev-parse", "--verify", "refs/heads/"+m.Branch)
+		if err != nil {
+			return err
+		}
+		switch {
+		case tip == m.Old:
+		case tip != m.New || indexAt(m.Path, m.Old) != m.Old:
+			continue
+		default:
+			if _, _, err := gitEnvAllow(m.Path, nil, nil, 0, "diff", "--quiet"); err != nil {
+				continue // files changed beyond the index: undo refuses it
+			}
+			if _, err := gitEnv(mainRoot, nil, nil, "update-ref", "-m", "wt sync undo", "refs/heads/"+m.Branch, m.Old, m.New); err != nil {
+				return fmt.Errorf("%s: the interrupted move could not be put back: %w", m.Branch, err)
+			}
+		}
+		m.Result, changed = MovePlanned, true
+	}
+	if !changed {
+		return nil
+	}
+	return WriteStackRecord(mainRoot, rec)
 }
