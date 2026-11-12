@@ -162,6 +162,9 @@ type CompleteInput struct {
 	TrunkName string
 	Landed    int
 	Check     []string
+	// Unavailable is the needs that did not answer in a run told to go on:
+	// the deferred steps that need one are owed, not run.
+	Unavailable map[string]string
 }
 
 // CompleteRun is what run and resume both do once a rebase has finished: the
@@ -186,7 +189,7 @@ func CompleteRun(ctx *kit.Context, w io.Writer, cfg *wtsync.Config, t *RebaseTra
 	defer TellIdle(w, in.Tell, wtsync.RebasedLine(work, in.TrunkName, in.Landed, in.Check))
 	// w, not nil: RunDeferred announces each step as it starts, so a long
 	// one is not silence until printDeferred reports the result.
-	ran, err = wtsync.RunDeferred(path, cfg.Defer, in.Res.OldTip, in.Res.NewTip, w)
+	ran, err = wtsync.RunDeferredWith(path, cfg.Defer, in.Res.OldTip, in.Res.NewTip, w, in.Unavailable)
 	if err != nil {
 		return "", nil, err
 	}
@@ -228,6 +231,8 @@ func DeferredSteps(ran []wtsync.DeferredResult) []DeferredStep {
 	for _, d := range ran {
 		s := DeferredStep{Step: d.Step.Run, Result: DeferredDone}
 		switch {
+		case !d.Ran && d.Err != nil:
+			s.Result, s.Reason = DeferredOwed, jsonout.Strp(d.Why)
 		case !d.Ran:
 			s.Result, s.Reason = DeferredSkipped, jsonout.Strp(d.Why)
 		case d.Err != nil:
@@ -280,6 +285,8 @@ func ClearHandover(w io.Writer, path string) {
 
 func printDeferred(w io.Writer, d wtsync.DeferredResult) {
 	switch {
+	case !d.Ran && d.Err != nil:
+		fmt.Fprintf(w, "  ✗ %s  owed: %s\n", d.Step.Run, d.Why)
 	case !d.Ran:
 		fmt.Fprintf(w, "  ⏭ %s  %s\n", d.Step.Run, d.Why)
 	case d.Err != nil:

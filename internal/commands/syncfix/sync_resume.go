@@ -118,6 +118,9 @@ type resume struct {
 	// lock is the handover's lock, taken over; nil once a fresh handover
 	// keeps it.
 	lock *wtsync.Lock
+	// unavailable is the needs that did not answer, in a resume told to go
+	// on with --allow-owed: the steps that need one are owed.
+	unavailable map[string]string
 }
 
 // joinJournal records the run's repository and trunk, and the branch as
@@ -250,6 +253,9 @@ func (r *resume) verify() error {
 	if r.busy, err = wtsync.RebaseInProgress(r.target.Path); err != nil {
 		return err
 	}
+	if err := r.probeNeeds(); err != nil {
+		return err
+	}
 	if r.busy {
 		if err := wtsync.VerifyLeft(r.target.Path, st); err != nil {
 			return fmt.Errorf("%s: %w; nothing is resumed", name, err)
@@ -262,6 +268,31 @@ func (r *resume) verify() error {
 	fmt.Fprintf(r.w, "%s  the rebase is already finished; running what is left\n", name)
 	if len(st.Resolved)+len(st.Deleted) > 0 {
 		noteNotRechecked(r.w, fmt.Sprintf("it was finished by hand from the %d/%d the plan describes", st.Stop, st.Total), st)
+	}
+	return nil
+}
+
+// probeNeeds probes the needs of the steps the rest of the rebase may run,
+// before anything moves, as a run does: a resume whose step needs one that
+// does not answer is refused, unless told to go on, when the step is owed.
+func (r *resume) probeNeeds() error {
+	st := r.st
+	base := cmp.Or(st.Upstream, st.Onto)
+	due, err := wtsync.StepsDue(r.target.Path, r.cfg, base, st.OldTip, st.Trunk)
+	if err != nil {
+		return fmt.Errorf("%s: could not tell which steps the rest of the rebase runs: %w; nothing is resumed", r.name, err)
+	}
+	if !r.busy {
+		// Finished by hand: only the deferred steps are left.
+		due.Checks, due.CheckCommits = nil, nil
+	}
+	unavailable, refusal := syncrun.NeedsFor(r.opts.Prober(), due, r.opts.AllowOwed)
+	if refusal != "" {
+		return fmt.Errorf("%s: %s; nothing is resumed", r.name, refusal)
+	}
+	r.unavailable = unavailable
+	if line := syncrun.AllowedOwedLine(unavailable); line != "" {
+		fmt.Fprintf(r.w, "  %s\n", line)
 	}
 	return nil
 }
@@ -296,6 +327,7 @@ func (r *resume) rebase() (wtsync.Result, error) {
 	req := wtsync.Request{
 		Path: r.target.Path, Branch: st.Branch, Trunk: st.Trunk,
 		Onto: st.Onto, Upstream: st.Upstream, Epoch: st.Epoch, Work: name, Total: st.Total,
+		Unavailable: r.unavailable,
 	}
 	safety := wtsync.Safety{Branch: st.Branch, Epoch: st.Epoch, Ref: st.Safety, Tip: r.pinned}
 	if r.busy {
@@ -305,6 +337,9 @@ func (r *resume) rebase() (wtsync.Result, error) {
 	// the abort that is right for a run would discard a person's resolution.
 	res, rerr := syncrun.TrackedRebase(r.tracker, &syncrun.RebaseInFlight{Work: name, Path: r.target.Path, Safety: st.Safety, Resuming: true}, func() (wtsync.Result, error) {
 		return wtsync.Resume(r.ctx.Repo.MainRoot, r.cfg, req, st.OldTip, safety, r.w)
+	})
+	r.j.SetSync(st.Branch, func(p *syncrun.SyncParticipant) {
+		p.Checked, p.CheckFailed = res.Checked, syncrun.CheckFailedOf(res.CheckFailed)
 	})
 	if rerr != nil {
 		recordResumeFailed(r.j, st, r.target.Path, rerr)
@@ -340,6 +375,9 @@ func (r *resume) handOverAgain(res wtsync.Result) error {
 	r.lock = nil // kept on purpose
 	r.j.SetSync(st.Branch, func(p *syncrun.SyncParticipant) {
 		p.Result, p.Reason = syncrun.ResultHandedOver, jsonout.Strp("stopped again at a conflict that is yours")
+		if c := res.Left.Check; c != nil {
+			p.Reason = jsonout.Strp("stopped again at a commit whose check failed: " + c.Line())
+		}
 		p.Recovery = jsonout.Strp(wtsync.WayOut(wtsync.Way{Work: name, Plan: true, Rebasing: true, OwesAdd: true}))
 		p.UndoCommand = syncrun.UndoCommand(name)
 	})
@@ -359,10 +397,12 @@ func (r *resume) complete(res wtsync.Result) error {
 		return syncrun.CompleteInput{
 			Branch: st.Branch, Epoch: st.Epoch, Res: done,
 			Tell: r.sessions, TrunkName: strings.TrimPrefix(st.TrunkRef, "origin/"), Landed: r.landed,
-			Check: syncrun.PathsOnce(st.Stopped, st.Left, st.ResolvedPaths(), st.Deleted, wtsync.StopPaths(res.Stops)),
+			Check:       syncrun.PathsOnce(st.Stopped, st.Left, st.ResolvedPaths(), st.Deleted, wtsync.StopPaths(res.Stops)),
+			Unavailable: r.unavailable,
 		}
 	})
-	owed := syncrun.OwedSteps(ran)
+	syncrun.PrintUnchecked(r.w, res.Unchecked)
+	owed := append(syncrun.OwedChecks(res.Unchecked), syncrun.OwedSteps(ran)...)
 	r.j.SetSync(st.Branch, func(p *syncrun.SyncParticipant) {
 		p.Result, p.PlanFile, p.UndoCommand, p.Deferred = syncrun.ResultRebased, nil, syncrun.UndoCommand(name), syncrun.DeferredSteps(ran)
 		switch {
@@ -450,6 +490,17 @@ func verifyHandover(wtPath string, st wtsync.State, w io.Writer) error {
 	dirty, err := git.Run(wtPath, "--no-optional-locks", "status", "--porcelain", "--untracked-files=no")
 	if err != nil {
 		return err
+	}
+	if st.Check != nil {
+		// A failed check: HEAD is the commit, and resume runs the check
+		// there again. Nothing a strategy staged is waiting, so there is
+		// nothing to compare; what must hold is that the fix is committed,
+		// since the check runs on the worktree and judges the commit.
+		if strings.TrimSpace(dirty) != "" {
+			return fmt.Errorf("the check that failed at %s runs on what is committed, and the worktree has changes that are not: amend them into the commit (git commit --amend) or commit them, then wt sync resume %s",
+				git.ShortID(st.Check.Commit, 7), st.Work)
+		}
+		return nil
 	}
 	var unstaged []string
 	for _, line := range strings.Split(dirty, "\n") {

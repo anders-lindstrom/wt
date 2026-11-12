@@ -68,10 +68,22 @@ func Sync(ctx *kit.Context, opts SyncOptions, w io.Writer) error {
 	}
 	assessments := assessAll(ctx.Repo.MainRoot, onto, cfg, worktrees, listed, own, assessWorkers)
 	entries := make([]syncEntry, 0, len(worktrees))
+	var parents map[string]string
+	if len(cfg.EachCommitOrNeeds()) > 0 {
+		parents = parentsOf(ctx, onto)
+	}
+	var dues []wtsync.Due
 	for i, wt := range worktrees {
-		entries = append(entries, syncEntry{work: kit.WorktreeName(ctx, wt.Branch, wt.Path), a: assessments[i]})
+		e := syncEntry{work: kit.WorktreeName(ctx, wt.Branch, wt.Path), a: assessments[i]}
+		if len(cfg.EachCommitOrNeeds()) > 0 {
+			due := stepsDue(onto, cfg, parents, wt, assessments[i])
+			e.checks = len(due.CheckCommits)
+			dues = append(dues, due)
+		}
+		entries = append(entries, e)
 	}
 	printOverview(w, cfg != nil, entries)
+	printNeeds(w, needProbes(cfg, dues, syncrun.StepOptions{Probes: opts.Probes}.Prober()))
 	return nil
 }
 
@@ -138,6 +150,9 @@ func printOverview(w io.Writer, declared bool, entries []syncEntry) {
 			for _, line := range SummaryLines(e.a) {
 				fmt.Fprintf(w, "    %s\n", line)
 			}
+			if e.checks > 0 {
+				fmt.Fprintf(w, "    %s\n", checksLine(e.checks))
+			}
 		}
 	}
 }
@@ -158,6 +173,11 @@ func SyncWorktree(ctx *kit.Context, arg string, opts SyncOptions, w io.Writer) e
 	}
 	a := wtsync.AssessOwn(ctx.Repo.MainRoot, onto, cfg, wt, listed, syncrun.OwnStateOf(own, wt.Branch))
 	printDetail(w, kit.WorktreeName(ctx, wt.Branch, wt.Path), a)
+	if len(cfg.EachCommitOrNeeds()) > 0 {
+		due := stepsDue(onto, cfg, parentsOf(ctx, onto), wt, a)
+		printChecks(w, due)
+		printNeeds(w, needProbes(cfg, []wtsync.Due{due}, syncrun.StepOptions{Probes: opts.Probes}.Prober()))
+	}
 	return nil
 }
 
@@ -370,6 +390,8 @@ func SectionHeading(s Section, declared bool) string {
 type syncEntry struct {
 	work string
 	a    wtsync.Assessment
+	// checks is how many commits a run would check.
+	checks int
 }
 
 // syncColumns is the width of each column of the one-line rows, measured

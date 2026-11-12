@@ -129,7 +129,7 @@ func declaredSteps(cfg *wtsync.Config) []DeclaredStep {
 		return steps
 	}
 	for _, d := range cfg.Defer {
-		steps = append(steps, DeclaredStep{Step: d.Run, Paths: append([]string{}, d.Paths...)})
+		steps = append(steps, DeclaredStep{Step: d.Run, Paths: append([]string{}, d.Paths...), Needs: append([]string{}, d.Needs...)})
 	}
 	return steps
 }
@@ -211,7 +211,7 @@ func SyncAllJSON(u *config.User, sel reposel.Selection, opts SyncOptions, w io.W
 
 func newOverview(name, mainRoot string) SyncOverview {
 	return SyncOverview{Schema: 1, SchemaVersion: schema.VersionOf("sync"), Command: "sync",
-		Repo: mainRoot, Name: name, Worktrees: []OverviewWorktree{}}
+		Repo: mainRoot, Name: name, EachCommitDeclared: []DeclaredStep{}, Needs: []NeedProbe{}, Worktrees: []OverviewWorktree{}}
 }
 
 // OverviewOf is what wt sync would print for ctx's repository, as data.
@@ -267,6 +267,8 @@ func OverviewOf(ctx *kit.Context, opts SyncOptions) SyncOverview {
 		return o
 	}
 	o.Worktrees = sv.Rows
+	o.EachCommitDeclared = eachCommitSteps(cfg)
+	o.Needs = needProbes(cfg, sv.dues, syncrun.StepOptions{Probes: opts.Probes}.Prober())
 	if o.Token, err = sv.Token(ctx, trunk, sha); err != nil {
 		o.Error = jsonout.Strp(err.Error())
 	}
@@ -282,7 +284,9 @@ type Survey struct {
 	parents     map[string]string
 	ambiguous   map[string][]string
 	assessed    map[string]wtsync.Assessment
-	Rows        []OverviewWorktree
+	// dues is what of the declared steps may run for each row.
+	dues []wtsync.Due
+	Rows []OverviewWorktree
 	// divergedOnly is the branches a run refuses for nothing but having
 	// diverged from their own remote: --allow-diverged starts on them.
 	divergedOnly map[string]bool
@@ -328,6 +332,11 @@ func SurveyRepo(ctx *kit.Context, trunkSHA string, cfg *wtsync.Config, listed []
 	for i, wt := range worktrees {
 		row := r.overviewRow(wt, assessments[i], byBranch)
 		row.DeferredDeclared = declared
+		if len(cfg.EachCommitOrNeeds()) > 0 {
+			due := stepsDue(trunkSHA, cfg, r.parents, wt, assessments[i])
+			row.Checks, row.CheckCommits = len(due.CheckCommits), checkCommits(due)
+			sv.dues = append(sv.dues, due)
+		}
 		sv.Rows = append(sv.Rows, row)
 	}
 	return sv, nil
@@ -341,7 +350,7 @@ func (r *RunPlan) overviewRow(wt repo.Worktree, a wtsync.Assessment, byBranch ma
 		Class: a.Class.String(), Verified: !a.Unverified,
 		Behind: a.Behind, Ahead: a.Ahead, Dirty: a.Dirty, HandedOver: a.Paused, PlanFile: jsonout.Strp(a.PlanFile),
 		Sessions: []PlanSession{}, Stack: []PlanStackMember{}, Stops: []OverviewStop{},
-		Strategies: []string{}, Notes: append([]string{}, a.Notes...),
+		Strategies: []string{}, Notes: append([]string{}, a.Notes...), CheckCommits: []CheckCommit{},
 		OwnRemote: syncrun.OwnRemoteOf(a.Own),
 	}
 	if a.Err != nil {

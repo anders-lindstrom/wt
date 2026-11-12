@@ -200,3 +200,21 @@ func mayChange(wtPath, branch, trunk string) ([]string, error) {
 	}
 	return paths, nil
 }
+
+// EachCommitOrNeeds is what of the declaration the overview has to read
+// the branches for: its each_commit steps, and its steps with needs.
+func (c *Config) EachCommitOrNeeds() []string {
+	if c == nil {
+		return nil
+	}
+	var steps []string
+	for _, e := range c.EachCommit {
+		steps = append(steps, e.Run)
+	}
+	for _, d := range c.Defer {
+		if len(d.Needs) > 0 {
+			steps = append(steps, d.Run)
+		}
+	}
+	return steps
+}
