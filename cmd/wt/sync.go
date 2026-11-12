@@ -160,7 +160,7 @@ func newSyncCmd() *cobra.Command {
 		ValidArgsFunction: completeWork,
 	}
 	var rebase, resume, undo, yes, force, ifReady, allowDiverged, allowOwed, asJSON, stack, autosquash bool
-	var expect string
+	var expect, onto, upstream string
 	var layers []string
 	var sel selectionFlags
 	var push func() syncrun.PushMode
@@ -168,7 +168,7 @@ func newSyncCmd() *cobra.Command {
 		return syncVerbFlags{rebase: rebase, resume: resume, undo: undo,
 			yes: yes, force: force, noFetch: noFetch, noFFTrunk: noFFTrunk, ifReady: ifReady, push: push(),
 			allowDiverged: allowDiverged, allowOwed: allowOwed, json: asJSON, expect: expect,
-			stack: stack, layers: layers, autosquash: autosquash}
+			stack: stack, layers: layers, autosquash: autosquash, onto: onto, upstream: upstream}
 	}
 	// The count rule is the verb's own. Two verbs at once is a flag mistake,
 	// which RunE reports the way --push with --no-push is reported.
@@ -185,6 +185,9 @@ func newSyncCmd() *cobra.Command {
 			return err
 		}
 		verb, _ := f.verb()
+		if err := f.checkOnto(args, sel.selection()); err != nil {
+			return err
+		}
 		if f.stack && (sel.selection().Any() || len(args) != 1) {
 			return usagef("--stack reads the line of one worktree: name the one at its top (wt sync <work> --stack)")
 		}
@@ -217,7 +220,7 @@ func newSyncCmd() *cobra.Command {
 		if ctx == nil {
 			return kit.ErrNotInRepo
 		}
-		opts := synccmd.SyncOptions{NoFetch: noFetch}
+		opts := synccmd.SyncOptions{NoFetch: noFetch, Onto: onto, Upstream: upstream}
 		if f.stack {
 			opts.Stack = &synccmd.StackLook{Work: args[0], Layers: layers}
 		}
@@ -243,6 +246,7 @@ func newSyncCmd() *cobra.Command {
 	sync.Flags().BoolVar(&stack, "stack", false, "list the layer branches on the line of the worktree named, and what holds each")
 	sync.Flags().StringArrayVar(&layers, "layer", nil, "with --stack: take this branch as a layer (repeatable); none takes every branch on the line")
 	sync.Flags().BoolVar(&autosquash, "autosquash", false, "with --rebase --stack: fold the line's fixups in place")
+	addOntoFlags(sync, &onto, &upstream, "look at the worktree named against <ref> instead of trunk; with --rebase, rebase onto it")
 	sel.add(sync, true)
 	// The verbs spelled as flags, and their own flags, work on this line but
 	// belong to the verbs: their help is wt sync rebase, resume and undo --help,
@@ -523,6 +527,9 @@ type syncVerbFlags struct {
 	stack      bool
 	layers     []string
 	autosquash bool
+	// onto is the ref the named worktrees are looked at against, or
+	// rebased onto, instead of trunk; upstream where their commits start.
+	onto, upstream string
 }
 
 // verb is the one verb given, "" for the overview, or an error naming the
@@ -583,8 +590,34 @@ func (f syncVerbFlags) check() error {
 		return usagef("--autosquash needs --stack")
 	case f.autosquash && verb != "rebase":
 		return usagef("--autosquash needs --rebase")
+	case f.upstream != "" && f.onto == "":
+		return usagef("--upstream needs --onto: it says where the commits rebased onto --onto's ref start")
+	case f.onto != "" && verb != "" && verb != "rebase":
+		return usagef("--onto needs --rebase, or no verb")
+	case f.onto != "" && f.autosquash:
+		return usagef("--autosquash folds in place, onto the line's own base; rebase onto <ref> with a second run, --stack --onto <ref>")
 	}
 	return nil
+}
+
+// checkOnto refuses --onto where it has no piece of work to go with: a
+// target is chosen per piece of work.
+func (f syncVerbFlags) checkOnto(args []string, sel reposel.Selection) error {
+	switch {
+	case f.onto == "":
+		return nil
+	case sel.Any():
+		return usagef("--onto is chosen per piece of work; leave out --all, --roots and --profile, and name the worktree")
+	case len(args) == 0:
+		return usagef("--onto takes the worktree to rebase onto it: name it (wt sync <work> --onto <ref>)")
+	}
+	return nil
+}
+
+// addOntoFlags adds --onto and --upstream to cmd.
+func addOntoFlags(cmd *cobra.Command, onto, upstream *string, ontoUsage string) {
+	cmd.Flags().StringVar(onto, "onto", "", ontoUsage)
+	cmd.Flags().StringVar(upstream, "upstream", "", "with --onto: only the commits above <ref> on the branch, git's rebase --onto <onto> <upstream>")
 }
 
 // stackOptions is the --stack run the flags ask for, nil for any other.
@@ -598,12 +631,15 @@ func (f syncVerbFlags) stackOptions() *synccmd.StackOptions {
 // syncOverviewJSON is wt sync --json: the overview as one object, or with
 // --all, --roots or --profile an array of one per repository.
 func syncOverviewJSON(cmd *cobra.Command, args []string, sel reposel.Selection, f syncVerbFlags) error {
-	opts := synccmd.SyncOptions{NoFetch: f.noFetch}
+	opts := synccmd.SyncOptions{NoFetch: f.noFetch, Onto: f.onto, Upstream: f.upstream}
 	if f.stack {
 		opts.Stack = &synccmd.StackLook{Work: args[0], Layers: f.layers}
 	}
+	if f.onto != "" {
+		opts.Work = args[0]
+	}
 	switch {
-	case len(args) > 0 && !f.stack:
+	case len(args) > 0 && !f.stack && f.onto == "":
 		return usagef("--json prints the overview of every worktree; name none, or add the verb whose result you want")
 	case sel.Any():
 		return synccmd.SyncAllJSON(loadUserWarn(cmd.ErrOrStderr()), sel, opts, cmd.OutOrStdout())
@@ -633,7 +669,7 @@ func syncArgs(verb string) cobra.PositionalArgs {
 
 func newSyncRebaseCmd() *cobra.Command {
 	var noFetch, noFFTrunk, yes, ifReady, force, allowDiverged, allowOwed, asJSON, stack, autosquash bool
-	var expect string
+	var expect, onto, upstream string
 	var layers []string
 	var sel selectionFlags
 	var push func() syncrun.PushMode
@@ -796,8 +832,11 @@ func newSyncRebaseCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			f := syncVerbFlags{rebase: true, yes: yes, noFetch: noFetch, noFFTrunk: noFFTrunk, ifReady: ifReady, force: force,
 				allowDiverged: allowDiverged, allowOwed: allowOwed, push: push(), json: asJSON, expect: expect,
-				stack: stack, layers: layers, autosquash: autosquash}
+				stack: stack, layers: layers, autosquash: autosquash, onto: onto, upstream: upstream}
 			if err := f.check(); err != nil {
+				return err
+			}
+			if err := f.checkOnto(args, sel.selection()); err != nil {
 				return err
 			}
 			if f.stack && (sel.selection().Any() || len(args) != 1) {
@@ -823,6 +862,7 @@ func newSyncRebaseCmd() *cobra.Command {
 	rebase.Flags().BoolVar(&stack, "stack", false, "rebase the line of the worktree named once, and move every layer branch on it")
 	rebase.Flags().StringArrayVar(&layers, "layer", nil, "with --stack: take this branch as a layer (repeatable); none takes every branch on the line")
 	rebase.Flags().BoolVar(&autosquash, "autosquash", false, "with --stack: fold the line's fixups onto its own base, in place; no trunk")
+	addOntoFlags(rebase, &onto, &upstream, "rebase the worktrees named onto <ref> instead of trunk: a branch, origin/<branch>, a tag or a commit")
 	sel.add(rebase, true)
 	push = addPushFlags(rebase, "push the worktrees that finish, without asking",
 		"neither push nor ask; print the push command")
@@ -872,7 +912,7 @@ func withVerbContext(cmd *cobra.Command, args []string, command string, asJSON b
 // confirmed does not move. A worktree named on the line goes ahead.
 func runOptions(cmd *cobra.Command, f syncVerbFlags, bulk bool) (synccmd.RunOptions, *prompter) {
 	opts := synccmd.RunOptions{NoFetch: f.noFetch, NoFFTrunk: f.noFFTrunk, IfReady: f.ifReady, Force: f.force,
-		AllowDiverged: f.allowDiverged}
+		AllowDiverged: f.allowDiverged, Onto: f.onto, Upstream: f.upstream}
 	opts.AllowOwed = f.allowOwed
 	opts.Push = f.push
 	switch {

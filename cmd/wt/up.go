@@ -10,7 +10,7 @@ import (
 
 func newUpCmd() *cobra.Command {
 	var noFetch, noFFTrunk, yes, force, allowDiverged, allowOwed, asJSON bool
-	var expect string
+	var expect, onto, upstream string
 	var push func() syncrun.PushMode
 	cmd := &cobra.Command{
 		Use:   "up [<work>]",
@@ -74,7 +74,14 @@ func newUpCmd() *cobra.Command {
 				work = args[0]
 			}
 			f := syncVerbFlags{rebase: true, yes: yes, noFetch: noFetch, noFFTrunk: noFFTrunk, ifReady: true, force: force,
-				allowDiverged: allowDiverged, allowOwed: allowOwed, push: push()}
+				allowDiverged: allowDiverged, allowOwed: allowOwed, push: push(), onto: onto, upstream: upstream}
+			switch {
+			case upstream != "" && onto == "":
+				return usagef("--upstream needs --onto: it says where the commits rebased onto --onto's ref start")
+			case onto != "" && expect != "":
+				return usagef("wt up --expect takes the token of wt status --json, which knows no --onto: take it from " +
+					"wt sync <work> --onto <ref> --json, and run wt sync rebase <work> --onto <ref> --expect <token>")
+			}
 			if !asJSON {
 				return withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
 					opts, _ := runOptions(cmd, f, false)
@@ -113,6 +120,7 @@ func newUpCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&allowOwed, "allow-owed", false, "rebase now even when a step's need does not answer; the step is owed, to run later")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print one result object on stdout, the progress on stderr")
 	cmd.Flags().StringVar(&expect, "expect", "", "refuse unless the plan still matches this token from wt status --json")
+	addOntoFlags(cmd, &onto, &upstream, "rebase onto <ref> instead of trunk: a branch, origin/<branch>, a tag or a commit")
 	push = addPushFlags(cmd, "push when it is done, without asking", "neither push nor ask; print the push command")
 	return cmd
 }
