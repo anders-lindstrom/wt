@@ -42,9 +42,9 @@ func collapseOwned(b Block, line *regexp.Regexp, rule ValueRule, path string) ([
 	if !ok {
 		return nil, Refuse(path, "no owned line on one side, or more than one")
 	}
-	_, baseRest, _ := splitOwned(b.Base, line)
+	baseLine, baseRest, _ := splitOwned(b.Base, line)
 
-	resolved, err := rule.Apply(branchLine, trunkLine)
+	resolved, err := rule.Apply(baseLine, branchLine, trunkLine)
 	if err != nil {
 		return nil, Refuse(path, "%v", err)
 	}

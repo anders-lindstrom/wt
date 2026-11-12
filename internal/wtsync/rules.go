@@ -27,9 +27,11 @@ func findSemver(line string) string {
 
 // ValueRule decides which line the branch keeps when both sides changed the
 // one line a strategy owns. It sees whole lines so that indentation and
-// punctuation around the value survive.
+// punctuation around the value survive: base is the line in the pick's
+// parent, "" when that side has none, branch the pick's and trunk the line
+// the pick is applied on.
 type ValueRule interface {
-	Apply(branch, trunk string) (string, error)
+	Apply(base, branch, trunk string) (string, error)
 }
 
 // The value rules a declaration may name.
@@ -56,8 +58,8 @@ type keepBranch struct{}
 type keepTrunk struct{}
 type maxPlusPatch struct{}
 
-func (keepBranch) Apply(branch, _ string) (string, error) { return branch, nil }
-func (keepTrunk) Apply(_, trunk string) (string, error)   { return trunk, nil }
+func (keepBranch) Apply(_, branch, _ string) (string, error) { return branch, nil }
+func (keepTrunk) Apply(_, _, trunk string) (string, error)   { return trunk, nil }
 
 // Apply rewrites the version inside the branch's line to MaxPlusPatch of the
 // two versions, keeping everything else on the line as the branch wrote it.
@@ -65,7 +67,7 @@ func (keepTrunk) Apply(_, trunk string) (string, error)   { return trunk, nil }
 // string replace of the version text: a line like "pin 1.2.3.4 to 1.2.3"
 // contains the target version "1.2.3" as a substring of "1.2.3.4" too, and a
 // plain replace would corrupt the wrong occurrence.
-func (maxPlusPatch) Apply(branch, trunk string) (string, error) {
+func (maxPlusPatch) Apply(_, branch, trunk string) (string, error) {
 	loc := semverRE.FindStringSubmatchIndex(branch)
 	tv := findSemver(trunk)
 	if loc == nil || tv == "" {

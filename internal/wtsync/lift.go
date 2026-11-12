@@ -120,7 +120,7 @@ func (s OwnedLine) Lift(path string, base, trunk, branch, merged []byte) (*Lift,
 		if ownedValue(baseLines[i]) == ownedValue(branchLines[i]) || ownedValue(baseLines[i]) == ownedValue(trunkLines[i]) {
 			continue
 		}
-		out, err := s.Rule.Apply(lines[at], trunkLines[i])
+		out, err := s.Rule.Apply(baseLines[i], lines[at], trunkLines[i])
 		if err != nil {
 			return nil, Refuse(path, "%v", err)
 		}
@@ -186,7 +186,7 @@ func (s OpenAPI) Lift(path string, base, trunk, branch, merged []byte) (*Lift, e
 	if baseV == branchV || baseV == trunkV {
 		return nil, nil
 	}
-	version, err := s.version(path, mergedV, trunkV)
+	version, err := s.version(path, baseV, mergedV, trunkV)
 	if err != nil {
 		return nil, err
 	}

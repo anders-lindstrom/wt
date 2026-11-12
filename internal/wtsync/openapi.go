@@ -77,7 +77,7 @@ func (s OpenAPI) Resolve(c Conflict) ([]byte, error) {
 		return nil, &Refusal{Path: c.Path, Reason: fmt.Sprintf("both sides changed %s", strings.Join(bad, "; ")), Keys: keys, Groups: groups}
 	}
 
-	version, err := s.version(c.Path, branch.version(), trunk.version())
+	version, err := s.version(c.Path, base.version(), branch.version(), trunk.version())
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +130,7 @@ func loadSections(path string, base, trunk, branch doc) (merged, error) {
 	return m, nil
 }
 
-func (s OpenAPI) version(path, branchV, trunkV string) (string, error) {
+func (s OpenAPI) version(path, baseV, branchV, trunkV string) (string, error) {
 	switch s.Rule {
 	case RuleKeepBranch:
 		if branchV == "" {
