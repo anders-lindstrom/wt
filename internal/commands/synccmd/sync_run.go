@@ -61,6 +61,9 @@ type RunOptions struct {
 	// Stack rebases the one worktree named as a stack held on its line,
 	// and moves every layer branch on that line to its new tip.
 	Stack *StackOptions
+	// Steps runs the declared steps without rebasing onto trunk: wt sync
+	// steps. Nil for a rebase.
+	Steps *StepsOptions
 	// Own is the remotes as a caller that already fetched read them: the
 	// keeper, and a run across repositories, which fetch before the run
 	// they then start with NoFetch.
@@ -68,6 +71,14 @@ type RunOptions struct {
 	syncrun.VerbOptions
 	syncrun.PushOptions
 	syncrun.StepOptions
+}
+
+// StepsOptions is wt sync steps: the line, or the branch, rebased in place
+// onto its own base, with the steps run at every layer whatever changed.
+type StepsOptions struct {
+	// All runs every declared step; otherwise only what the last run left
+	// owed.
+	All bool
 }
 
 // StackOptions is a run of a stack held on one line (--stack).
