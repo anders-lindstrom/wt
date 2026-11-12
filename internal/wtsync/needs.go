@@ -104,3 +104,99 @@ func (c *Config) DeclaresNeed(n string) bool {
 	}
 	return false
 }
+
+// Due is what of a declaration's steps may run for one branch's rebase,
+// known before it starts: the each_commit steps with a commit to check, the
+// commits they check, and the deferred steps whose paths match a path the
+// rebase may change. The deferred gate is a superset: what trunk changed
+// since the branch's merge base, and what the branch's own commits change.
+// Which deferred steps really run is only known after the rebase.
+type Due struct {
+	Checks       []EachCommit
+	CheckCommits []Commit
+	Deferred     []Deferred
+}
+
+// Needs is every need of a due step, each once, in the order declared.
+func (d Due) Needs() []string {
+	var needs []string
+	add := func(ns []string) {
+		for _, n := range ns {
+			if !hasNeed(needs, n) {
+				needs = append(needs, n)
+			}
+		}
+	}
+	for _, s := range d.Checks {
+		add(s.Needs)
+	}
+	for _, s := range d.Deferred {
+		add(s.Needs)
+	}
+	return needs
+}
+
+// Needing is the run line of every due step that needs n.
+func (d Due) Needing(n string) []string {
+	var steps []string
+	for _, s := range d.Checks {
+		if hasNeed(s.Needs, n) {
+			steps = append(steps, s.Run)
+		}
+	}
+	for _, s := range d.Deferred {
+		if hasNeed(s.Needs, n) {
+			steps = append(steps, s.Run)
+		}
+	}
+	return steps
+}
+
+// StepsDue is what may run when branch is rebased: base is what its
+// commits are counted from (trunk, or a stack parent's tip), trunk the
+// commit the run rebases onto.
+func StepsDue(wtPath string, cfg *Config, base, branch, trunk string) (Due, error) {
+	var due Due
+	if cfg == nil || (len(cfg.EachCommit) == 0 && len(cfg.Defer) == 0) {
+		return due, nil
+	}
+	var err error
+	if due.CheckCommits, due.Checks, err = checksDue(wtPath, cfg, base, branch); err != nil {
+		return due, err
+	}
+	if len(cfg.Defer) == 0 {
+		return due, nil
+	}
+	paths, err := mayChange(wtPath, branch, trunk)
+	if err != nil {
+		return due, err
+	}
+	for _, s := range cfg.Defer {
+		if len(s.Paths) == 0 || anyMatches(s.Paths, paths) {
+			due.Deferred = append(due.Deferred, s)
+		}
+	}
+	return due, nil
+}
+
+// mayChange is every path a rebase of branch onto trunk may change: what
+// trunk changed since their merge base, and what the branch's own commits
+// change.
+func mayChange(wtPath, branch, trunk string) ([]string, error) {
+	mb, err := gitEnv(wtPath, nil, nil, "merge-base", trunk, branch)
+	if err != nil {
+		return nil, err
+	}
+	paths, err := ChangedPaths(wtPath, mb, trunk)
+	if err != nil {
+		return nil, err
+	}
+	commits, err := logWithPaths(wtPath, "--right-only", "--no-merges", trunk+"..."+branch, "--")
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range commits {
+		paths = append(paths, c.Paths...)
+	}
+	return paths, nil
+}

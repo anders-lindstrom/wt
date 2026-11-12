@@ -55,25 +55,45 @@ func (u Unchecked) Owed() string { return u.Step + " (not checked: " + u.Why + "
 // left out, since the rebase drops it, unless a lifting rule claims a file
 // it changes, which the run replays and lifts.
 func PlanChecks(wtPath string, cfg *Config, base, branch string) ([]Commit, error) {
+	commits, _, err := checksDue(wtPath, cfg, base, branch)
+	return commits, err
+}
+
+// checksDue is PlanChecks with the each_commit steps that run at one of
+// the commits at least, in the order declared.
+func checksDue(wtPath string, cfg *Config, base, branch string) ([]Commit, []EachCommit, error) {
 	if cfg == nil || len(cfg.EachCommit) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	commits, err := logWithPaths(wtPath, "--right-only", "--no-merges", base+"..."+branch, "--")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	lift := cfg.liftPatterns()
+	ran := make([]bool, len(cfg.EachCommit))
 	var out []Commit
 	for i := len(commits) - 1; i >= 0; i-- {
 		c := commits[i]
 		if c.OnTrunk && !touchesAny(lift, c.Paths) {
 			continue
 		}
-		if len(cfg.checksFor(c.Paths)) > 0 {
+		checked := false
+		for j, s := range cfg.EachCommit {
+			if len(s.Paths) == 0 || touchesAny(s.Paths, c.Paths) {
+				ran[j], checked = true, true
+			}
+		}
+		if checked {
 			out = append(out, Commit{SHA: c.SHA, Subject: c.Subject})
 		}
 	}
-	return out, nil
+	var steps []EachCommit
+	for j, s := range cfg.EachCommit {
+		if ran[j] {
+			steps = append(steps, s)
+		}
+	}
+	return out, steps, nil
 }
 
 // checksFor is the each_commit steps a commit changing paths runs.
