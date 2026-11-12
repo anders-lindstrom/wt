@@ -176,3 +176,58 @@ func TestRebaseTakesTheCommitsSideOfAFileALayerStepWrites(t *testing.T) {
 		t.Errorf("the stop does not say what it took:\n%s", log)
 	}
 }
+
+// A step that fails at a layer leaves the layers below it folded and
+// proved, and is owed at that layer and every one above, where it does not
+// run again; the rebase goes on to the end and every marker lands.
+func TestALayerStepThatFailsIsOwedFromThatLayerUp(t *testing.T) {
+	t.Parallel()
+	yaml := strings.Replace(gittest.FoldYAML("max-plus-patch"), "run: ./gen.sh", "run: test ! -e src/c.txt && ./gen.sh", 1)
+	s := foldLine(t, yaml)
+	res, log := foldRebase(t, s, 33)
+	if res.Left != nil || res.Restored {
+		t.Fatalf("left %+v restored %v\n%s", res.Left, res.Restored, log)
+	}
+	if _, err := CheckLayers(s.Dir, res.NewTip, "origin/main", res.Layers); err != nil {
+		t.Fatalf("%v\n%s", err, log)
+	}
+	got := map[string]string{}
+	ran := map[string]bool{}
+	for _, st := range res.LayerSteps {
+		got[st.Branch], ran[st.Branch] = st.Result, st.Ran
+	}
+	want := map[string]string{"f1": LayerFolded, "f2": LayerUnchanged, "f3": LayerFailed, "f4": LayerOwed, "f5": LayerOwed, gittest.FoldTmp: LayerOwed}
+	for b, w := range want {
+		if got[b] != w {
+			t.Errorf("%s: %s, want %s\n%s", b, got[b], w, log)
+		}
+	}
+	if ran["f4"] || ran["f5"] {
+		t.Errorf("the step ran again above the layer it failed at")
+	}
+	if !regenerates(t, s.Dir, res.Layers[0].Ref) {
+		t.Error("f1 is not folded")
+	}
+	if regenerates(t, s.Dir, res.Layers[2].Ref) {
+		t.Error("f3 regenerates, yet the step failed there")
+	}
+}
+
+// Output that changes a tracked file outside the step's paths is never
+// folded: the step fails at that layer and the worktree is put back.
+func TestALayerStepThatChangesFilesOutsideItsPathsIsNotFolded(t *testing.T) {
+	t.Parallel()
+	yaml := strings.Replace(gittest.FoldYAML("max-plus-patch"), "run: ./gen.sh", "run: ./gen.sh && echo touched >> src/core.txt", 1)
+	s := foldLine(t, yaml)
+	res, log := foldRebase(t, s, 34)
+	if res.Left != nil || res.Restored || len(res.LayerSteps) == 0 {
+		t.Fatalf("left %+v restored %v steps %+v\n%s", res.Left, res.Restored, res.LayerSteps, log)
+	}
+	first := res.LayerSteps[0]
+	if first.Result != LayerFailed || !strings.Contains(first.Why, "outside its paths: src/core.txt") {
+		t.Fatalf("f1: %+v", first)
+	}
+	if strings.Contains(gitIn(t, s.Dir, "show", res.NewTip+":src/core.txt"), "touched") {
+		t.Error("the change outside the step's paths was kept")
+	}
+}
