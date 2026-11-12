@@ -57,6 +57,8 @@ func newSyncCmd() *cobra.Command {
 			"                                    asked first as for rebase\n" +
 			"          wt sync <work> --resume\n" +
 			"          wt sync undo <work>       put back every ref that run moved\n" +
+			"          wt sync steps <work>      run the steps a run left owed, in\n" +
+			"                                    place, without rebasing onto trunk\n" +
 			"          wt sync <work> --undo\n" +
 			"          wt sync doctor            what a run needs, and --fix / --prune\n" +
 			"  keep    wt sync keep start        a launchd job that runs wt sync keep\n" +
@@ -766,11 +768,20 @@ func newSyncRebaseCmd() *cobra.Command {
 			"The line's branch is pushed as any other; each moved layer gets its push\n" +
 			"command, with a lease on the commit last fetched for it, and is not\n" +
 			"pushed. A line with a merge commit is refused before anything moves.\n\n" +
+			"A deferred step with each: layer runs inside the rebase at the end of\n" +
+			"every layer instead, bottom first: each layer branch of a --stack line,\n" +
+			"the line's own commits above them, or the one branch of any other run.\n" +
+			"With fold: owner its output goes into the layer's last commit that\n" +
+			"changed the step's paths, proved to change nothing else, and the layers\n" +
+			"above are replayed onto it; a layer with no such commit gets the step's\n" +
+			"commit at its tip. A later pick that conflicts on such a file takes its\n" +
+			"own side, for the layer's step to write again. A step that fails there\n" +
+			"is owed from that layer up; wt sync steps <work> runs it later.\n\n" +
 			"--stack --autosquash folds the line's fixup!, squash! and amend! commits\n" +
 			"into their targets in place, onto the line's own base, and re-points every\n" +
 			"layer: the way to fold review fixes into a stack without rebasing it. A\n" +
 			"check runs at each target with its fixups folded in. The line's content\n" +
-			"must come out the same, or no layer moves. Rebasing onto trunk is then a\n" +
+			"must come out the same outside the per-layer steps' paths, or no layer moves. Rebasing onto trunk is then a\n" +
 			"second run, with --stack alone.\n\n" +
 			"Also spelled wt sync <work>... --rebase, with the same flags.",
 		Example: "  wt sync rebase login-crash api-tidy --yes --json --expect 1:0123abcd # a tool\n" +
