@@ -42,7 +42,12 @@ func collapseOwned(b Block, line *regexp.Regexp, rule ValueRule, path string) ([
 	if !ok {
 		return nil, Refuse(path, "no owned line on one side, or more than one")
 	}
-	baseLine, baseRest, _ := splitOwned(b.Base, line)
+	baseLine, baseRest, ok := splitOwned(b.Base, line)
+	if _, shift := rule.(shiftBump); shift && !ok {
+		// shift-bump shifts from the base: another version line in a diff3
+		// base would be the wrong ancestor. The other rules ignore the base.
+		return nil, Refuse(path, "no owned line in the base, or more than one")
+	}
 
 	resolved, err := rule.Apply(baseLine, branchLine, trunkLine)
 	if err != nil {

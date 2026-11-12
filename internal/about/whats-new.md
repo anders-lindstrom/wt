@@ -36,6 +36,14 @@ stops the rebase at that commit; amend the fix in and `wt sync resume` checks
 it again. `wt sync` says how many commits a run would check, and
 `docs/sync-declaration.md` describes every key of the file.
 
+## 2026-11-12 10:12 — A version rule that keeps the kind of each bump
+
+`rule: shift-bump` in `.wt-sync.yaml`, for `owned-line` and `openapi`,
+makes each pick's bump again on top of trunk: a minor stays a minor, a
+patch a patch. A stack that bumped 2.46.0 → 2.47.0 → … → 2.49.3 lands
+on 2.48.0 … 2.50.3 after trunk took 2.47.0. `max-plus-patch` is unchanged.
+
+
 ## 2026-11-08 22:53 — Safer Time Machine exclusions
 
 The main checkout stays backed up through path aliases and nested `wt setup`

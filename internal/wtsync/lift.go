@@ -21,7 +21,8 @@ import (
 // merged value is not above trunk's, rewrites the merged file to trunk's
 // value plus one patch, exactly as the strategy would have answered a
 // conflict. The rewrite rides in the pick, in the simulation and the run
-// alike.
+// alike. shift-bump lifts the same way, to the pick's own bump made on what
+// the pick is applied on, whenever that differs from what git merged.
 
 // lifter is a strategy whose rule may lift a version on a file git merged
 // clean. Lift answers nil when the file needs nothing: the branch did not
@@ -38,6 +39,9 @@ type Lift struct {
 	Content []byte
 	From    []string
 	To      []string
+	// Bumps is what the branch bumped on each line, "a minor on 2.46.0",
+	// when the rule shifted the bump rather than lifted the number.
+	Bumps []string
 }
 
 // note is what a lift says beside its path: "lifted the version to 1.2.4:
@@ -48,19 +52,23 @@ func (l Lift) note() string {
 	if len(l.To) > 1 {
 		noun = "versions"
 	}
+	if len(l.Bumps) > 0 {
+		return fmt.Sprintf("shifted the %s to %s: the branch bumped %s, trunk took %s", noun, strings.Join(l.To, " and "), strings.Join(l.Bumps, " and "), strings.Join(l.From, " and "))
+	}
 	return fmt.Sprintf("lifted the %s to %s: trunk took %s", noun, strings.Join(l.To, " and "), strings.Join(l.From, " and "))
 }
 
-// lifts reports whether a declaration's rule lifts: max-plus-patch on the
-// line owned-line owns, or on info.version of an openapi document. keep-branch
+// lifts reports whether a declaration's rule lifts: max-plus-patch or
+// shift-bump on the line owned-line owns, or on info.version of an openapi
+// document. keep-branch
 // and keep-trunk decide a conflict and never move a number, so a clean merge
 // under them is left as git made it.
 func (r Rule) lifts() bool {
 	switch r.Strategy {
 	case StrategyOwnedLine:
-		return r.Rule == RuleMaxPlusPatch
+		return r.Rule == RuleMaxPlusPatch || r.Rule == RuleShiftBump
 	case StrategyOpenAPI:
-		return r.Rule == "" || r.Rule == RuleMaxPlusPatch
+		return r.Rule == "" || r.Rule == RuleMaxPlusPatch || r.Rule == RuleShiftBump
 	}
 	return false
 }
@@ -97,7 +105,8 @@ var versionValueRE = regexp.MustCompile(`\d+\.\d+`)
 // line — and is refused, as the strategy refuses a block it cannot pair,
 // rather than left to land on whatever git merged.
 func (s OwnedLine) Lift(path string, base, trunk, branch, merged []byte) (*Lift, error) {
-	if _, ok := s.Rule.(maxPlusPatch); !ok {
+	_, shift := s.Rule.(shiftBump)
+	if _, ok := s.Rule.(maxPlusPatch); !ok && !shift {
 		return nil, nil
 	}
 	baseLines, trunkLines, branchLines := s.owned(base), s.owned(trunk), s.owned(branch)
@@ -130,6 +139,9 @@ func (s OwnedLine) Lift(path string, base, trunk, branch, merged []byte) (*Lift,
 		lines[at] = out
 		lift.From = append(lift.From, findSemver(trunkLines[i]))
 		lift.To = append(lift.To, findSemver(out))
+		if shift {
+			lift.Bumps = append(lift.Bumps, bumpKind(findSemver(baseLines[i]), findSemver(branchLines[i])))
+		}
 	}
 	if len(lift.To) == 0 {
 		return nil, nil
@@ -169,7 +181,7 @@ func ownedValue(line string) string {
 // document: the generated file is left exactly as the merge made it but for
 // the one value.
 func (s OpenAPI) Lift(path string, base, trunk, branch, merged []byte) (*Lift, error) {
-	if s.Rule != "" && s.Rule != RuleMaxPlusPatch {
+	if s.Rule != "" && s.Rule != RuleMaxPlusPatch && s.Rule != RuleShiftBump {
 		return nil, nil
 	}
 	// A side whose info.version cannot be read as one plain literal is
@@ -197,7 +209,11 @@ func (s OpenAPI) Lift(path string, base, trunk, branch, merged []byte) (*Lift, e
 	out = append(out, merged[:at]...)
 	out = append(out, mustRaw(version)...)
 	out = append(out, merged[at+len(mustRaw(mergedV)):]...)
-	return &Lift{Content: out, From: []string{trunkV}, To: []string{version}}, nil
+	lift := &Lift{Content: out, From: []string{trunkV}, To: []string{version}}
+	if s.Rule == RuleShiftBump {
+		lift.Bumps = []string{bumpKind(baseV, branchV)}
+	}
+	return lift, nil
 }
 
 // infoVersion finds info.version in a document and where its literal starts.

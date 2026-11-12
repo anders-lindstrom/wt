@@ -16,7 +16,8 @@ import (
 // emits paths and schemas in registration order, so this cannot reproduce the
 // generator byte for byte; it exists to let the replay continue.
 type OpenAPI struct {
-	// Rule decides info.version: max-plus-patch, keep-branch or keep-trunk.
+	// Rule decides info.version: max-plus-patch, shift-bump, keep-branch or
+	// keep-trunk.
 	Rule string
 }
 
@@ -147,6 +148,15 @@ func (s OpenAPI) version(path, baseV, branchV, trunkV string) (string, error) {
 			return "", Refuse(path, "info.version is not X.Y.Z on both sides (%q, %q)", branchV, trunkV)
 		}
 		return MaxPlusPatch(branchV, trunkV), nil
+	case RuleShiftBump:
+		if !exactSemverRE.MatchString(baseV) || !exactSemverRE.MatchString(branchV) || !exactSemverRE.MatchString(trunkV) {
+			return "", Refuse(path, "info.version is not X.Y.Z on every side (%q, %q, %q)", baseV, branchV, trunkV)
+		}
+		v, err := ShiftBump(baseV, branchV, trunkV)
+		if err != nil {
+			return "", Refuse(path, "%v", err)
+		}
+		return v, nil
 	}
 	return "", fmt.Errorf("unknown rule %q", s.Rule)
 }

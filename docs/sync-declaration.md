@@ -118,12 +118,14 @@ file of `recipe?`.
 | rule | the version the branch keeps |
 |---|---|
 | `max-plus-patch` | the higher of the two; when trunk's is higher, one patch above trunk's, so the branch keeps a version of its own |
+| `shift-bump` | the pick's own bump made again on trunk's version, keeping its kind and size: a minor stays a minor, a patch a patch. The highest component the branch raised over the pick's parent is raised by the same amount on trunk's version; the components above it come from trunk, the ones below it from the branch. A pick that did not bump keeps trunk's version; one that lowered the version, or a version that is not X.Y.Z, is refused |
 | `keep-branch` | the branch's |
 | `keep-trunk` | trunk's |
 
-A rule with `max-plus-patch` also lifts: a commit that changes a claimed file
-which git merges without a conflict, while trunk bumped the same version, has
-the version lifted too, at that commit.
+A rule with `max-plus-patch` or `shift-bump` also lifts: a commit that changes
+a claimed file which git merges without a conflict, while trunk bumped the same
+version, has the version lifted too, at that commit, and the stop's note says
+what it shifted.
 
 ## `each_commit` — a check after every replayed commit
 
