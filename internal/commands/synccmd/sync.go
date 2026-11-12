@@ -42,6 +42,9 @@ type SyncOptions struct {
 	// Stack reads the stack held on the line of the worktree Work names:
 	// its layers and what holds each (--stack).
 	Stack *StackLook
+	// Onto is the ref a look at one worktree assesses it against instead
+	// of trunk (--onto), Upstream where its replayed commits start.
+	Onto, Upstream string
 }
 
 // StackLook is the look at one line's stack.

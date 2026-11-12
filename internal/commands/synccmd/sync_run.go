@@ -64,6 +64,10 @@ type RunOptions struct {
 	// Steps runs the declared steps without rebasing onto trunk: wt sync
 	// steps. Nil for a rebase.
 	Steps *StepsOptions
+	// Onto is the ref the named worktrees are rebased onto instead of
+	// trunk (--onto); empty is trunk. Upstream, with it, replays only the
+	// commits above that ref (--upstream).
+	Onto, Upstream string
 	// Own is the remotes as a caller that already fetched read them: the
 	// keeper, and a run across repositories, which fetch before the run
 	// they then start with NoFetch.
