@@ -4,6 +4,22 @@ Newest first, each heading stamped with the local date and time of the change
 (several land per day). `wt about` prints the newest 5 entries, so keep each entry to a few lines a human
 would want read out to them; the full story is in git history.
 
+## 2026-11-12 10:32 — Steps that need Docker say so
+
+A step in `.wt-sync.yaml` can declare `needs: [docker]`. A run probes Docker
+once before anything moves and refuses the worktrees whose steps need it when
+it does not answer; `--allow-owed` rebases anyway and owes the step.
+`wt sync doctor` now checks Docker only for a step that declares it: add
+`needs: [docker]` to the steps that need it.
+
+## 2026-11-12 10:31 — A check after every replayed commit
+
+`each_commit:` in `.wt-sync.yaml` runs a step at every replayed commit that
+touches its paths, so each commit of a stack still builds. One that fails
+stops the rebase at that commit; amend the fix in and `wt sync resume` checks
+it again. `wt sync` says how many commits a run would check, and
+`docs/sync-declaration.md` describes every key of the file.
+
 ## 2026-11-08 22:53 — Safer Time Machine exclusions
 
 The main checkout stays backed up through path aliases and nested `wt setup`
