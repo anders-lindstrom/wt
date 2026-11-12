@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sync-run.v1.json",
-  "x-version": "1.6.0",
+  "x-version": "1.7.0",
   "title": "wt sync rebase|resume|undo --json",
   "description": "What a wt sync rebase, resume or undo did. Printed by `wt sync rebase [<work>...] --json`, `wt sync [<work>...] --rebase --json`, `wt sync resume <work> --json` and `wt sync undo <work> --json` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends it. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
@@ -47,7 +47,7 @@
     },
     "participant": {
       "type": "object",
-      "required": ["work", "branch", "path", "result", "reason", "before", "after", "failedSteps", "recovery", "pushCommand", "pushed", "noPushReason", "fixCommand", "safetyRef", "deferred", "undoCommand", "planFile", "ownRemoteSync", "checked", "checkFailed", "stack"],
+      "required": ["work", "branch", "path", "result", "reason", "before", "after", "failedSteps", "recovery", "pushCommand", "pushed", "noPushReason", "fixCommand", "safetyRef", "deferred", "undoCommand", "planFile", "ownRemoteSync", "checked", "checkFailed", "rechecked", "stack", "layerSteps"],
       "properties": {
         "work": { "type": "string" },
         "branch": { "type": "string" },
@@ -84,6 +84,7 @@
         "planFile": { "type": ["string", "null"], "description": "For handedOver: the plan file saying what is yours." },
         "ownRemoteSync": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/ownRemoteSync" }], "description": "Since 1.2.0. Always an object from wt sync rebase; always null from resume and undo, which do not check: the check ran when the run started." },
         "checked": { "type": "integer", "minimum": 0, "description": "Since 1.5.0: how many replayed commits the each_commit checks ran at, in this run or this resume. 0 when nothing was checked." },
+        "rechecked": { "type": "integer", "minimum": 0, "description": "Since 1.7.0: how many commits the each_commit checks that read a per-layer step's files ran at again, once the step had folded its output into them or committed it. 0 when none." },
         "checkFailed": {
           "description": "Since 1.5.0: the each_commit check that stopped the rebase: handedOver at that commit, or restored for a stack parent. Null when none failed.",
           "oneOf": [
@@ -100,7 +101,8 @@
             }
           ]
         },
-        "stack": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/stack" }], "description": "Since 1.6.0: for a --stack run, the stack held on this worktree's line: its layers and what came of each. Null for any other run." }
+        "stack": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/stack" }], "description": "Since 1.6.0: for a --stack run, the stack held on this worktree's line: its layers and what came of each. Null for any other run." },
+        "layerSteps": { "type": "array", "items": { "$ref": "#/$defs/layerStep" }, "description": "Since 1.7.0: what each per-layer step (each: layer or fold: owner) came to at the end of each layer, bottom first, steps in the order declared. Empty when the declaration has none or the rebase did not finish." }
       }
     },
     "ownRemoteSync": {
@@ -161,6 +163,27 @@
         "pushCommand": { "oneOf": [{ "type": "null" }, { "type": "array", "items": { "type": "string" }, "minItems": 1 }], "description": "The run's: for a moved layer, its push to its own remote as an argv, with a lease on the commit wt last fetched there. A run does not push layers. Null otherwise." },
         "noPushReason": { "type": ["string", "null"], "description": "The run's: for a moved layer with no safe push command, why: no remote branch of its own yet, or the remote has commits the branch never had." },
         "note": { "type": ["string", "null"], "description": "The run's: what else happened to a moved layer, such as a checkout of it that landed during its move, at its new tip." }
+      }
+    },
+    "layerStep": {
+      "type": "object",
+      "required": ["layer", "layers", "branch", "step", "ran", "result", "reason", "owner", "ownerSubject", "commit", "proof"],
+      "additionalProperties": false,
+      "properties": {
+        "layer": { "type": "integer", "minimum": 1, "description": "The layer, from 1 at the bottom. In a --stack run the line's own commits above its top layer are one more layer; a rebase of one branch is one layer." },
+        "layers": { "type": "integer", "minimum": 1, "description": "How many layers the run stopped at." },
+        "branch": { "type": "string", "description": "The layer's branch: a layer branch, or the line's own for the commits above every layer." },
+        "step": { "type": "string", "description": "The step's run line from .wt-sync.yaml." },
+        "ran": { "type": "boolean", "description": "Whether the step ran at this layer." },
+        "result": {
+          "enum": ["unchanged", "folded", "committed", "skipped", "owed", "failed"],
+          "description": "unchanged: ran and changed nothing. folded: its output was folded into owner. committed: no commit of the layer changed its paths, and its output is the step's own commit at the layer's tip. skipped: no listed path changed in the layer. owed: not run, because a need did not answer or it failed at a layer below. failed: ran and failed, changed files outside its paths, or its fold was not proved; owed, and owed at every layer above."
+        },
+        "reason": { "type": ["string", "null"], "description": "Why it ran, or why not, or why it failed." },
+        "owner": { "$ref": "#/$defs/shaOrNull", "description": "For folded, the commit its output was folded into, as rewritten: the last commit of the layer that changed one of its paths." },
+        "ownerSubject": { "type": ["string", "null"], "description": "The owner's subject." },
+        "commit": { "$ref": "#/$defs/shaOrNull", "description": "For committed, the step's commit." },
+        "proof": { "type": ["string", "null"], "description": "For a fold: held when the rewritten tip's tree is the step's output and every rewritten commit is unchanged outside the step's paths; otherwise what did not hold. Null when nothing was folded." }
       }
     },
     "stackSkipped": {

@@ -959,7 +959,7 @@ func (r *RunPlan) rebaseOne(b string) {
 	})
 	p.result = &res
 	r.opts.Journal.SetSync(b, func(jp *syncrun.SyncParticipant) {
-		jp.Checked, jp.CheckFailed = res.Checked, syncrun.CheckFailedOf(res.CheckFailed)
+		jp.Checked, jp.CheckFailed, jp.Rechecked = res.Checked, syncrun.CheckFailedOf(res.CheckFailed), res.Rechecked
 	})
 	if rec != nil {
 		if err := syncrun.StackAfterRebase(r.ctx, rec, res); err != nil {
@@ -1000,6 +1000,9 @@ func (r *RunPlan) rebaseOne(b string) {
 func (r *RunPlan) readStack() error {
 	if r.opts.Stack == nil {
 		return nil
+	}
+	if why := r.cfg.StackFoldRefusal(); why != "" {
+		return errors.New(why)
 	}
 	b := r.branches[0]
 	line, err := readLine(r.ctx, b, r.trunkSHA, r.opts.Stack.Layers)
@@ -1127,7 +1130,8 @@ func (r *RunPlan) finishStack(b string, p *participant, res wtsync.Result) {
 	// listed holds every layer in a worktree.
 	listed, lerr := r.opts.SessionsAgain(r.ctx, syncrun.RebasedNothing)
 	s, failure, ferr := syncrun.FinishStack(r.ctx, r.w, syncrun.StackFinish{Record: rec, OldTip: res.OldTip, NewTip: res.NewTip,
-		Onto: rec.Onto, Own: r.own, Listed: listed, ListErr: lerr, Force: rec.Force, Now: r.opts.Clock(), AfterMove: st.AfterMove, Between: st.Between})
+		Onto: rec.Onto, Own: r.own, Listed: listed, ListErr: lerr, Force: rec.Force, Now: r.opts.Clock(), AfterMove: st.AfterMove, Between: st.Between,
+		Folds: syncrun.FoldPaths(r.cfg)})
 	r.opts.Journal.SetSync(b, func(jp *syncrun.SyncParticipant) { jp.Stack = s })
 	if ferr != nil {
 		fmt.Fprintf(r.w, "  ✗ the layer moves stopped: %v; wt sync undo %s puts back the line and every layer moved\n", ferr, p.work)
@@ -1326,7 +1330,8 @@ func (r *RunPlan) finishRebase(b string, p *participant, res wtsync.Result, onto
 	p.head = head
 	r.finishStack(b, p, res)
 	syncrun.PrintUnchecked(w, res.Unchecked)
-	owed := append(syncrun.OwedChecks(res.Unchecked), syncrun.OwedSteps(ran)...)
+	owed := append(syncrun.OwedChecks(res.Unchecked), syncrun.OwedLayerSteps(res.LayerSteps)...)
+	owed = append(owed, syncrun.OwedSteps(ran)...)
 	r.failures = append(r.failures, syncrun.OwedBy(p.work, owed)...)
 	// The rebase itself stands; only this branch and what sits on it
 	// lose their footing, so the rest of the run carries on.
@@ -1334,6 +1339,7 @@ func (r *RunPlan) finishRebase(b string, p *participant, res wtsync.Result, onto
 	after, _, _ := ctx.Repo.ResolveRef("refs/heads/" + b)
 	j.SetSync(b, func(jp *syncrun.SyncParticipant) {
 		jp.SafetyRef, jp.UndoCommand, jp.Deferred = jsonout.Strp(res.Safety.Ref), syncrun.UndoCommand(p.work), syncrun.DeferredSteps(ran)
+		jp.LayerSteps = syncrun.LayerStepsOf(res.LayerSteps)
 	})
 	if derr != nil {
 		fmt.Fprintf(w, "  ✗ failed: %v\n", derr)

@@ -342,7 +342,7 @@ func (r *resume) rebase() (wtsync.Result, error) {
 		return wtsync.Resume(r.ctx.Repo.MainRoot, r.cfg, req, st.OldTip, safety, r.w)
 	})
 	r.j.SetSync(st.Branch, func(p *syncrun.SyncParticipant) {
-		p.Checked, p.CheckFailed = res.Checked, syncrun.CheckFailedOf(res.CheckFailed)
+		p.Checked, p.CheckFailed, p.Rechecked = res.Checked, syncrun.CheckFailedOf(res.CheckFailed), res.Rechecked
 	})
 	if rerr != nil {
 		recordResumeFailed(r.j, st, r.target.Path, rerr)
@@ -406,9 +406,11 @@ func (r *resume) complete(res wtsync.Result) error {
 	})
 	stackFailure := r.finishStack(res)
 	syncrun.PrintUnchecked(r.w, res.Unchecked)
-	owed := append(syncrun.OwedChecks(res.Unchecked), syncrun.OwedSteps(ran)...)
+	owed := append(syncrun.OwedChecks(res.Unchecked), syncrun.OwedLayerSteps(res.LayerSteps)...)
+	owed = append(owed, syncrun.OwedSteps(ran)...)
 	r.j.SetSync(st.Branch, func(p *syncrun.SyncParticipant) {
 		p.Result, p.PlanFile, p.UndoCommand, p.Deferred = syncrun.ResultRebased, nil, syncrun.UndoCommand(name), syncrun.DeferredSteps(ran)
+		p.LayerSteps = syncrun.LayerStepsOf(res.LayerSteps)
 		switch {
 		case cerr != nil:
 			p.Result, p.FailedSteps = syncrun.ResultRebasedStepFailed, append(p.FailedSteps, "finish: "+cerr.Error())
@@ -466,7 +468,7 @@ func (r *resume) finishStack(res wtsync.Result) string {
 	listed, lerr := r.opts.SessionsAgain(r.ctx, syncrun.RebasedNothing)
 	s, failure, ferr := syncrun.FinishStack(r.ctx, r.w, syncrun.StackFinish{Record: rec, OldTip: r.st.OldTip, NewTip: res.NewTip,
 		Onto: rec.Onto, Own: wtsync.ReadOwnOrUnknown(main, r.ctx.Config.MainBranch), Listed: listed, ListErr: lerr,
-		Force: rec.Force, Now: r.opts.Clock()})
+		Force: rec.Force, Now: r.opts.Clock(), Folds: syncrun.FoldPaths(r.cfg)})
 	r.j.SetSync(r.st.Branch, func(p *syncrun.SyncParticipant) { p.Stack = s })
 	if ferr != nil {
 		fmt.Fprintf(r.w, "  ✗ the layer moves stopped: %v; wt sync undo %s puts back the line and every layer moved\n", ferr, r.name)

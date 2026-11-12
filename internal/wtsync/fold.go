@@ -192,24 +192,41 @@ func (d *driver) atLayerEnd(n int) error {
 	if err != nil {
 		return err
 	}
-	var commits []string
-	if out, err := d.git("rev-list", "--reverse", start+"..HEAD"); err != nil {
+	// The layer's commits are read again before each step: a fold rewrites
+	// them, and the next step folds into them as rewritten.
+	touched := map[string][]string{}
+	layerCommits := func() ([]string, error) {
+		out, err := d.git("rev-list", "--reverse", start+"..HEAD")
+		if err != nil || out == "" {
+			return nil, err
+		}
+		commits := strings.Fields(out)
+		for _, c := range commits {
+			if _, ok := touched[c]; ok {
+				continue
+			}
+			paths, err := pathsOfCommit(d.req.Path, c)
+			if err != nil {
+				return nil, err
+			}
+			touched[c] = paths
+		}
+		return commits, nil
+	}
+	commits, err := layerCommits()
+	if err != nil {
 		return err
-	} else if out != "" {
-		commits = strings.Fields(out)
 	}
 	changed, err := ChangedPaths(d.req.Path, old, head)
 	if err != nil {
 		return err
 	}
-	touched := map[string][]string{}
 	for _, c := range commits {
-		paths, err := pathsOfCommit(d.req.Path, c)
-		if err != nil {
-			return err
-		}
-		touched[c] = paths
-		changed = append(changed, paths...)
+		changed = append(changed, touched[c]...)
+	}
+	dropped, err := d.planEmptied(n, commits)
+	if err != nil {
+		return err
 	}
 	final := n == total
 	for _, step := range d.layerSteps() {
@@ -217,24 +234,6 @@ func (d *driver) atLayerEnd(n int) error {
 			continue
 		}
 		r := LayerStep{Layer: n, Layers: total, Branch: branch, Step: step}
-		stepCommits := commits
-		if step.Each != EachLayer {
-			// Without each: layer, everything the rebase replayed is one
-			// layer, ending here.
-			if all, err := d.git("rev-list", "--reverse", d.req.Onto+"..HEAD"); err == nil && all != "" {
-				stepCommits = strings.Fields(all)
-				for _, c := range stepCommits {
-					if _, ok := touched[c]; !ok {
-						paths, err := pathsOfCommit(d.req.Path, c)
-						if err != nil {
-							return err
-						}
-						touched[c] = paths
-						changed = append(changed, paths...)
-					}
-				}
-			}
-		}
 		switch below, failed := d.stepFailed[step.Run]; {
 		case failed:
 			r.Result, r.Why = LayerOwed, fmt.Sprintf("not run: it failed at layer %d (%s)", below, d.layerName(below))
@@ -243,7 +242,11 @@ func (d *driver) atLayerEnd(n int) error {
 		case d.unavailable(step.Needs) != "":
 			r.Result, r.Why = LayerOwed, "not run: "+d.unavailable(step.Needs)
 		default:
-			if err := d.runLayerStep(&r, stepCommits, touched); err != nil {
+			now, err := layerCommits()
+			if err != nil {
+				return err
+			}
+			if err := d.runLayerStep(&r, now, touched); err != nil {
 				return err
 			}
 		}
@@ -260,14 +263,87 @@ func (d *driver) atLayerEnd(n int) error {
 	if err != nil {
 		return err
 	}
-	if d.made[tip] && n <= len(d.res.Layers) {
+	// Where the layer's tip is not the commit the plan named, the plan
+	// follows it: the step committed there, the planned tip was left empty
+	// by a fold below, or the layer has no commit of its own and ends on a
+	// tip the layer below moved.
+	moved := d.made[tip] || dropped > 0 || (len(commits) == 0 && d.subjectMoved)
+	if moved && n <= len(d.res.Layers) {
 		subject, err := d.git("log", "-1", "--format=%s", tip)
 		if err != nil {
 			return err
 		}
 		d.res.Layers[n-1].Subject = subject
 	}
+	d.subjectMoved = moved
 	return d.noteLayerStart(n+1, tip)
+}
+
+// planEmptied takes out of the plan of layer n, and of every layer above,
+// the picks of layer n that git dropped as empty because a fold below
+// already carries them: as many as the layer's own commits that changed
+// nothing but per-layer steps' paths. Any other shortfall is left for
+// CheckLayers to refuse.
+func (d *driver) planEmptied(n int, commits []string) (int, error) {
+	if d.req.Stack == nil || n > len(d.res.Layers) {
+		return 0, nil
+	}
+	if d.planned == nil {
+		for _, p := range d.res.Layers {
+			d.planned = append(d.planned, p.Expect)
+		}
+	}
+	want := d.planned[n-1]
+	if n > 1 {
+		want -= d.planned[n-2]
+	}
+	dropped := want - len(commits)
+	if dropped <= 0 {
+		return 0, nil
+	}
+	l := d.req.Stack.Line
+	from := 0
+	if n > 1 {
+		from = l.Layers[n-2].Count
+	}
+	var paths []string
+	for _, s := range d.layerSteps() {
+		paths = append(paths, s.Paths...)
+	}
+	only := 0
+	for _, c := range l.Commits[from:l.Layers[n-1].Count] {
+		touched, err := pathsOfCommit(d.req.Path, c)
+		if err != nil {
+			return 0, err
+		}
+		mine := len(touched) > 0
+		for _, p := range touched {
+			if !matchesAny(paths, p) {
+				mine = false
+			}
+		}
+		if mine {
+			only++
+		}
+	}
+	if only < dropped {
+		return 0, nil
+	}
+	for i := n - 1; i < len(d.res.Layers); i++ {
+		d.res.Layers[i].Expect -= dropped
+	}
+	if d.log != nil {
+		fmt.Fprintf(d.log, "  · layer %d/%d %s: %s left empty: the folds below carry %s\n", n, d.segments(), d.layerName(n),
+			plural(dropped, "commit"), map[bool]string{true: "it", false: "them"}[dropped == 1])
+	}
+	return dropped, nil
+}
+
+func plural(n int, what string) string {
+	if n == 1 {
+		return "1 " + what
+	}
+	return strconv.Itoa(n) + " " + what + "s"
 }
 
 func cmpErr(err error, why string) error {
@@ -345,6 +421,11 @@ func (d *driver) runLayerStep(r *LayerStep, commits []string, touched map[string
 		sha, err := d.git("rev-parse", "HEAD")
 		if err != nil {
 			return err
+		}
+		if f, err := d.recheckFold([]string{sha}, files); err != nil {
+			return err
+		} else if f != nil {
+			return refuse(fmt.Sprintf("the check %q failed at the step's commit: %s", f.Step, f.Err))
 		}
 		d.made[sha] = true
 		r.Result, r.Commit = LayerCommitted, sha

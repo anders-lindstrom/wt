@@ -1587,6 +1587,8 @@ Each participant has `wt up`'s fields, and:
 | `planFile` | string \| null | for `handedOver`: the plan saying what is yours |
 | `ownRemoteSync` | object \| null | since 1.2.0: [`ownRemoteSync`](#ownremotesync--what-a-run-did-about-it), an object from `wt sync rebase`; always null from resume and undo |
 | `stack` | object \| null | since 1.6.0: for `wt sync rebase <work> --stack`, and the resume of one it handed over, the [stack held on this worktree's line](#stack--a-stack-held-on-one-line) and what came of each layer; null for any other run, and from undo |
+| `rechecked` | int | since 1.7.0: how many commits the `each_commit` checks that read a per-layer step's files ran at again, once the step folded its output into them or committed it |
+| `layerSteps` | array | since 1.7.0: what each [per-layer step](#layersteps--a-step-at-every-layer-tip) came to at the end of each layer, bottom first; empty when none is declared or the rebase did not finish |
 
 `result` has `wt up`'s values and one more, `undone`: `wt sync undo` put the
 branch back at its safety ref, or aborted its handed-over rebase. A branch undo
@@ -1640,6 +1642,25 @@ Each layer:
 A moved layer has a safety ref and a result ref under the run's epoch, so
 `wt sync undo <line>` puts it back with the line; a held one has none and is no
 part of that undo.
+
+### `layerSteps` — a step at every layer tip
+
+A deferred step with `each: layer` or `fold: owner` runs inside the rebase, at
+the end of each layer: in a `--stack` run every layer branch, bottom first, and
+the line's own commits above the top layer as one more; in any other run the
+branch is the one layer. One entry per layer and step:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `layer`, `layers` | int | the layer, from 1 at the bottom, of how many the run stopped at |
+| `branch` | string | the layer's branch |
+| `step` | string | the step's `run` line |
+| `ran` | bool | whether it ran at this layer |
+| `result` | `unchanged` \| `folded` \| `committed` \| `skipped` \| `owed` \| `failed` | ran and changed nothing; its output folded into `owner`; no commit of the layer changed its paths, so its output is its own commit, `commit`, at the layer's tip; no listed path changed in the layer; not run, because a need did not answer or it failed at a layer below; ran and failed, changed a tracked file outside its `paths`, or its fold was not proved, and it is owed here and at every layer above |
+| `reason` | string \| null | why it ran, why not, or why it failed |
+| `owner`, `ownerSubject` | string \| null | for `folded`: the commit it folded into, as rewritten (the layer's last commit that changed one of its paths), and its subject |
+| `commit` | string \| null | for `committed`: the step's commit |
+| `proof` | string \| null | for a fold: `held` when the folded tip's tree is the step's output and no rewritten commit changed outside the step's `paths`; otherwise what did not hold, and nothing was folded. Null when nothing was folded |
 
 ## `wt new <type>/<work> [--base <ref>] --dry-run --json` — the plan
 
@@ -2162,3 +2183,4 @@ change made it.
 | `config` 1.0.0 | `wt config --json`: resolved repository configuration, including developer config entries, main checkout and user naming overrides |
 | `sync` 1.6.0, `sync-run` 1.5.0, `status` 1.10.0 | [`each_commit` checks and `needs`](#needs--what-a-step-cannot-run-without): `eachCommitDeclared`, `needs`, and `checks` and `checkCommits` on each worktree of `sync`; `needs` on every declared step of `sync` and `status`; `checked` and `checkFailed` on each participant of `sync-run`, and the `deferred` result `owed` |
 | `sync` 1.7.0, `sync-run` 1.6.0 | `stack`: the stack held on one line, on the overview (`--stack`) and on a `--stack` run's participant, with each layer and what came of it |
+| `sync-run` 1.7.0 | [`layerSteps`](#layersteps--a-step-at-every-layer-tip) and `rechecked` on each participant: what a step with `each: layer` or `fold: owner` came to at each layer |

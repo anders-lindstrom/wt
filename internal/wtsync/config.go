@@ -92,6 +92,23 @@ func (c *Config) LayerSteps() []Deferred {
 	return out
 }
 
+// StackFoldRefusal is why a rebase of a stack held on one line cannot take
+// this declaration, "" when it can: a step with fold: owner and no each:
+// layer folds into everything the rebase replayed as one layer, which on a
+// line would rewrite commits below the layers' markers.
+func (c *Config) StackFoldRefusal() string {
+	if c == nil {
+		return ""
+	}
+	for _, d := range c.Defer {
+		if d.Fold == FoldOwner && d.Each != EachLayer {
+			return fmt.Sprintf("the step %q has fold: owner without each: layer, which folds into the whole rebase as one layer; "+
+				"on a stack held on one line that would rewrite commits under the layers' markers, so --stack refuses it: add each: layer to it", d.Run)
+		}
+	}
+	return ""
+}
+
 // AfterSteps is the deferred steps that run once after the rebase.
 func (c *Config) AfterSteps() []Deferred {
 	var out []Deferred

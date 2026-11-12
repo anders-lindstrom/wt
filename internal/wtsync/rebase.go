@@ -273,6 +273,12 @@ type driver struct {
 	stepFailed map[string]int
 	// made is the commits the per-layer steps committed.
 	made map[string]bool
+	// planned is each layer's count from the new base as the list planned
+	// it, before any stop changed the plan.
+	planned []int
+	// subjectMoved says the last layer stop moved its layer's planned tip
+	// subject, which a layer above with no commit of its own follows.
+	subjectMoved bool
 }
 
 func (d *driver) git(args ...string) (string, error) {
@@ -388,6 +394,9 @@ func Rebase(mainRoot string, cfg *Config, req Request, log io.Writer) (Result, e
 		return d.res, err
 	}
 	d.old, d.res.OldTip = old, old
+	if why := cfg.StackFoldRefusal(); req.Stack != nil && why != "" {
+		return d.res, errors.New(why)
+	}
 	if req.Safety.Ref != "" {
 		d.res.Safety = req.Safety
 	} else if d.res.Safety, err = WriteSafety(mainRoot, req.Branch, old, req.Epoch); err != nil {

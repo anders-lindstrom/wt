@@ -80,7 +80,13 @@ func runAt(nanos int64, stack *synccmd.StackOptions) synccmd.RunOptions {
 // generator leaves gen/ as it is), each owner holds its layer's output, the
 // versions are as rule says, every replayed commit was checked, and the
 // layers moved, the dirty one held with the command that moves it.
-func foldEndToEnd(t *testing.T, rule string, versions map[string]string) {
+//
+// f5's "chore: regenerate the spec", made by the fold in place, depends on
+// the rule on trunk: under max-plus-patch the folds below already carry it,
+// it is left empty and the step commits again (f5Folded false); under
+// shift-bump its versions differ from theirs, it survives as f5's owner and
+// the step folds into it (f5Folded true).
+func foldEndToEnd(t *testing.T, rule string, versions map[string]string, f5Folded bool) {
 	if testing.Short() {
 		t.Skip("integration: a stack over real repositories and worktrees")
 	}
@@ -152,12 +158,18 @@ func foldEndToEnd(t *testing.T, rule string, versions map[string]string) {
 	layers := layersOfStack(p.Stack)
 	steps = layerStepsOf(p)
 	for b, want := range map[string]string{"f1": wtsync.LayerFolded, "f2": wtsync.LayerUnchanged, "f3": wtsync.LayerFolded,
-		"f4": wtsync.LayerUnchanged, "f5": wtsync.LayerFolded} {
+		"f4": wtsync.LayerUnchanged, "f5": map[bool]string{true: wtsync.LayerFolded, false: wtsync.LayerCommitted}[f5Folded]} {
 		if got := steps[b]; got.Result != want {
 			t.Errorf("rebase: %s's step %+v, want %s", b, got, want)
 		}
 	}
-	owners := map[string]string{"f1": "feat(f1): a", "f3": "feat(f3): c", "f5": "chore: regenerate the spec"}
+	// f5's commit from the fold in place: left empty on trunk and made
+	// again by the step, or f5's owner (see f5Folded).
+	owners := map[string]string{"f1": "feat(f1): a", "f3": "feat(f3): c"}
+	made := 1
+	if f5Folded {
+		owners["f5"], made = "chore: regenerate the spec", 0
+	}
 	for _, b := range s.Layers {
 		l := layers[b]
 		tip := deref(l.NewTip)
@@ -199,9 +211,14 @@ func foldEndToEnd(t *testing.T, rule string, versions map[string]string) {
 	if head := testkit.GitOut(t, s.Paths["f1"], "rev-parse", "HEAD"); head != deref(layers["f1"].NewTip) {
 		t.Error("rebase: f1's clean worktree was not reset with its branch")
 	}
+	// Every replayed commit was checked as it was picked, and the folded
+	// ones and the step's own commit again as they stay.
 	replayed := testkit.GitOut(t, main, "rev-list", "--count", "origin/main.."+newLine)
-	if got := p.Checked; strconv.Itoa(got) != replayed {
-		t.Errorf("rebase: %d commits checked, want every one of the %s replayed", got, replayed)
+	if got := p.Checked + made; strconv.Itoa(got) != replayed {
+		t.Errorf("rebase: %d commits checked, want every one of the %s replayed but the step's own", p.Checked, replayed)
+	}
+	if p.Rechecked != 5 {
+		t.Errorf("rebase: %d folded commits checked again, want f1's two, f3's two and f5's commit", p.Rechecked)
 	}
 
 	// 4. wt sync undo tmp/fold: back to where the fold left the stack.
@@ -223,7 +240,7 @@ func layersOfStack(s *syncrun.Stack) map[string]syncrun.StackLayer { return stac
 
 // The case with the version rule wt has today.
 func TestFoldOfAStackEndToEnd(t *testing.T) {
-	foldEndToEnd(t, "max-plus-patch", map[string]string{"f1": "1.1.1", "f3": "1.1.2", "f5": "1.1.3"})
+	foldEndToEnd(t, "max-plus-patch", map[string]string{"f1": "1.1.1", "f3": "1.1.2", "f5": "1.1.3"}, false)
 }
 
 // The case under shift-bump, which keeps each bump's kind: it runs where wt
@@ -232,5 +249,5 @@ func TestFoldOfAStackEndToEndShiftBump(t *testing.T) {
 	if _, err := wtsync.Parse([]byte(gittest.FoldYAML("shift-bump"))); err != nil {
 		t.Skipf("this wt does not know shift-bump: %v", err)
 	}
-	foldEndToEnd(t, "shift-bump", map[string]string{"f1": "1.2.0", "f3": "1.2.1", "f5": "1.2.2"})
+	foldEndToEnd(t, "shift-bump", map[string]string{"f1": "1.2.0", "f3": "1.2.1", "f5": "1.2.2"}, true)
 }

@@ -1,6 +1,6 @@
 export default {
   "schema": 1,
-  "schemaVersion": "1.6.0",
+  "schemaVersion": "1.7.0",
   "command": "sync undo",
   "repo": "/repos/app",
   "trunk": "main",
@@ -32,7 +32,9 @@ export default {
       "ownRemoteSync": null,
       "checked": 0,
       "checkFailed": null,
-      "stack": null
+      "rechecked": 0,
+      "stack": null,
+      "layerSteps": []
     }
   ],
   "recovery": null

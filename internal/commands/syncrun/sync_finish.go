@@ -189,7 +189,7 @@ func CompleteRun(ctx *kit.Context, w io.Writer, cfg *wtsync.Config, t *RebaseTra
 	defer TellIdle(w, in.Tell, wtsync.RebasedLine(work, in.TrunkName, in.Landed, in.Check))
 	// w, not nil: RunDeferred announces each step as it starts, so a long
 	// one is not silence until printDeferred reports the result.
-	ran, err = wtsync.RunDeferredWith(path, cfg.Defer, in.Res.OldTip, in.Res.NewTip, w, in.Unavailable)
+	ran, err = wtsync.RunDeferredWith(path, cfg.AfterSteps(), in.Res.OldTip, in.Res.NewTip, w, in.Unavailable)
 	if err != nil {
 		return "", nil, err
 	}
