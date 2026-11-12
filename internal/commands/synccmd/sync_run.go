@@ -58,6 +58,9 @@ type RunOptions struct {
 	// nothing declared: no strategies, no deferred steps. With IfReady that
 	// takes a conflict-free rebase and nothing else, which is all wt up asks.
 	undeclaredOK bool
+	// Stack rebases the one worktree named as a stack held on its line,
+	// and moves every layer branch on that line to its new tip.
+	Stack *StackOptions
 	// Own is the remotes as a caller that already fetched read them: the
 	// keeper, and a run across repositories, which fetch before the run
 	// they then start with NoFetch.
@@ -65,6 +68,27 @@ type RunOptions struct {
 	syncrun.VerbOptions
 	syncrun.PushOptions
 	syncrun.StepOptions
+}
+
+// StackOptions is a run of a stack held on one line (--stack).
+type StackOptions struct {
+	// Layers names the layer branches; empty takes every local branch
+	// whose tip is on the line, but backups.
+	Layers []string
+	// Autosquash folds the line's fixups onto its own base, in place.
+	Autosquash bool
+	// AfterMove is a test's hook into the layer moves: an error stops them
+	// there, as an interrupt would. Nil in a real run.
+	AfterMove func(wtsync.LayerMove) error
+	// BeforeCheck is a test's hook between the rebase and the check of the
+	// new tips. Nil in a real run.
+	BeforeCheck func(*wtsync.StackRecord)
+	// BeforeRebase is a test's hook between the read of the line and its
+	// rebase, with the worktree locked. Nil in a real run.
+	BeforeRebase func()
+	// Between is a test's hook into each stage of one layer move
+	// (wtsync.MoveOptions.Between). Nil in a real run.
+	Between func(stage string, m wtsync.LayerMove) error
 }
 
 // participant is one worktree of a run: the branch it is on, what triage

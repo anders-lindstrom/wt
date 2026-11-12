@@ -39,6 +39,15 @@ type SyncOptions struct {
 	NoFetch bool
 	// Probes replaces the probe of each need; nil probes for real.
 	Probes map[string]func() error
+	// Stack reads the stack held on the line of the worktree Work names:
+	// its layers and what holds each (--stack).
+	Stack *StackLook
+}
+
+// StackLook is the look at one line's stack.
+type StackLook struct {
+	Work   string
+	Layers []string
 }
 
 // shownFiles is how many files a stop names in the overview before it counts

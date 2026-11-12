@@ -63,6 +63,9 @@ type SyncOverview struct {
 	// Needs is every need a declared step has, and what its probe said.
 	Needs     []NeedProbe        `json:"needs"`
 	Worktrees []OverviewWorktree `json:"worktrees"`
+	// Stack is the stack held on the line of the worktree --stack named,
+	// null without --stack.
+	Stack *syncrun.Stack `json:"stack"`
 }
 
 // NeedProbe is one need and its probe's answer: probed only when a step

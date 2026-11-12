@@ -427,3 +427,24 @@ func (l Line) layerOf() map[string]int {
 	}
 	return out
 }
+
+// SamePatch is whether the change from oldBase to old is the same, by git's
+// stable patch-id, as the change from newBase to tip: what a layer brings
+// to the line, before and after the rebase.
+func SamePatch(dir, oldBase, old, newBase, tip string) (bool, error) {
+	id := func(a, b string) (string, error) {
+		diff, err := gitEnv(dir, nil, nil, "diff", "--no-color", "--no-ext-diff", a, b)
+		if err != nil || diff == "" {
+			return "", err
+		}
+		out, err := gitEnv(dir, nil, strings.NewReader(diff+"\n"), "patch-id", "--stable")
+		id, _, _ := strings.Cut(out, " ")
+		return id, err
+	}
+	was, err := id(oldBase, old)
+	if err != nil {
+		return false, err
+	}
+	is, err := id(newBase, tip)
+	return was == is, err
+}

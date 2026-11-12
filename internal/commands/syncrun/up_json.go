@@ -104,6 +104,9 @@ type SyncParticipant struct {
 	Checked int `json:"checked"`
 	// CheckFailed is the check that stopped the rebase; nil when none did.
 	CheckFailed *CheckFailed `json:"checkFailed"`
+	// Stack is the stack held on this worktree's line, for a --stack run:
+	// its layers and what came of each. Null for any other run.
+	Stack *Stack `json:"stack"`
 }
 
 // RunResult is the one object wt sync rebase, resume and undo print with
