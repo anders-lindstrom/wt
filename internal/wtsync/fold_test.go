@@ -128,3 +128,51 @@ func TestRebaseOfALineFoldsEachLayersOutputIntoItsOwner(t *testing.T) {
 		t.Errorf("f5's tip is %q, want the step's commit", subj)
 	}
 }
+
+// foldRebase rebases s's line onto origin/main with its layers marked.
+func foldRebase(t *testing.T, s *gittest.FoldLine, epoch int64) (Result, string) {
+	t.Helper()
+	cfg, err := LoadFromTrunk(s.Dir, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, err := ReadLine(s.Dir, gittest.FoldTmp, "origin/main", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := Request{Path: s.Paths[gittest.FoldTmp], Branch: gittest.FoldTmp, Trunk: "origin/main", Onto: "origin/main", Epoch: epoch,
+		Stack: &StackRequest{Line: line}}
+	var log bytes.Buffer
+	res, err := Rebase(s.Dir, cfg, req, &log)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, log.String())
+	}
+	return res, log.String()
+}
+
+// A pick above a fold that changes the generated file conflicts with the
+// folded output. Nothing claims the file, so the commit's side is taken and
+// said, and the stop at the end of its layer writes it again: nothing is
+// handed to a person and nothing is restored.
+func TestRebaseTakesTheCommitsSideOfAFileALayerStepWrites(t *testing.T) {
+	t.Parallel()
+	s := foldLine(t, gittest.FoldYAML("max-plus-patch"))
+	res, log := foldRebase(t, s, 32)
+	if res.Left != nil || res.Restored {
+		t.Fatalf("left %+v restored %v\n%s", res.Left, res.Restored, log)
+	}
+	var settled []string
+	for _, st := range res.Stops {
+		for _, f := range st.Files {
+			if f.Path == "gen/spec.json" && f.Resolved && f.Strategy == StrategyEachLayer {
+				settled = append(settled, st.Subject)
+			}
+		}
+	}
+	if strings.Join(settled, ",") != "feat(f3): c" {
+		t.Fatalf("settled for the layer's stop at %v, want feat(f3): c\n%s", settled, log)
+	}
+	if !strings.Contains(log, "took the commit's side (unclaimed); ./gen.sh writes it again at the end of the layer") {
+		t.Errorf("the stop does not say what it took:\n%s", log)
+	}
+}
