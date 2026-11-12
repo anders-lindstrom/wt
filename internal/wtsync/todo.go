@@ -30,7 +30,7 @@ type stackMarks struct {
 	copy string
 }
 
-func (p todoPlan) edits() bool { return p.liftPlan.edits() || len(p.checks) > 0 }
+func (p todoPlan) edits() bool { return p.liftPlan.edits() || len(p.checks) > 0 || p.stack.top > 0 }
 
 // todoEditor writes the script a run hands git as its sequence editor:
 // every pick of a commit in marks is preceded by a break and made an edit,

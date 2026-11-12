@@ -1,9 +1,11 @@
 package wtsync
 
 import (
+	"errors"
 	"fmt"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/anders-lindstrom/wt/internal/git"
@@ -158,19 +160,270 @@ type StackRequest struct {
 	Autosquash bool
 }
 
-// LayerPlan is what a rebase of the line planned for one layer.
+// StackMapPrefix is where a rebase of a stack held on one line has git
+// write each layer's new tip: refs/wt-stack-map/<epoch>/<n>, n from 1 at the
+// bottom. Not under refs/wt-sync/, where any ref ending in a number is read
+// as a safety record.
+const StackMapPrefix = "refs/wt-stack-map/"
+
+// StackMapRef names the marker of layer n (from 1) in the run of epoch.
+func StackMapRef(epoch int64, n int) string {
+	return StackMapPrefix + strconv.FormatInt(epoch, 10) + "/" + strconv.Itoa(n)
+}
+
+// The ways a layer's marker can land, as LayerPlan.Mapped says it.
+const (
+	MappedTip        = "tip"        // after the layer's own tip
+	MappedTipDropped = "tipDropped" // its tip was left out; after its last commit left
+	MappedEmptied    = "emptied"    // none of its commits is left; where the layer below ends
+)
+
+// LayerPlan is what a rebase of the line planned for one layer, read from
+// the list git started it with: the marker, the commit the marker follows
+// (empty when it is the rebase's base itself), the count of commits from
+// the new base the layer must have, and the subject its new tip must carry.
 type LayerPlan struct {
-	Branch string
-	Ref    string
-}
-
-// LayerTip is one layer's new tip, read back and checked.
-type LayerTip struct {
-	Branch, Old, New string
+	Branch, Old, Ref string
+	After            string
+	Expect           int
+	Subject          string
 	Mapped           string
+	// Folded is how many fixup!, squash! and amend! commits of the
+	// layer's own prefix were folded into an earlier commit.
+	Folded int
+	// LeftOut is how many commits of the layer's own commits are not in the
+	// list: trunk already carries them, patch for patch.
+	LeftOut int
 }
 
-// CheckLayers reads and checks each layer's marker.
+// LayerTip is one layer's new tip, read back from its marker and checked.
+type LayerTip struct {
+	LayerPlan
+	New string
+}
+
+// todoEntry is one command of a sequencer list that names a commit.
+type todoEntry struct {
+	start bool // pick or edit: starts a group
+	amend bool // fixup -C or -c: the group takes this commit's message
+	sha   string
+}
+
+// readStackTodo reads the commands of a list that name a commit of the line,
+// resolving each abbreviated id among the line's commits.
+func readStackTodo(todo string, commits []string) []todoEntry {
+	var out []todoEntry
+	for _, line := range strings.Split(todo, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 2 {
+			continue
+		}
+		e := todoEntry{}
+		id := f[1]
+		switch f[0] {
+		case "pick", "edit":
+			e.start = true
+		case "fixup", "squash":
+			if f[1] == "-C" || f[1] == "-c" {
+				if len(f) < 3 {
+					continue
+				}
+				e.amend, id = true, f[2]
+			}
+		default:
+			continue
+		}
+		for _, c := range commits {
+			if strings.HasPrefix(c, id) {
+				e.sha = c
+				break
+			}
+		}
+		if e.sha != "" {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// planLayers reads, from the list a rebase of the line started with, what
+// each layer's marker will follow and what its new tip must be.
+func planLayers(dir string, epoch int64, line Line, todo string) ([]LayerPlan, error) {
+	pos := map[string]int{}
+	for i, c := range line.Commits {
+		pos[c] = i + 1
+	}
+	entries := readStackTodo(todo, line.Commits)
+	inTodo := map[string]bool{}
+	for _, e := range entries {
+		inTodo[e.sha] = true
+	}
+	plans := make([]LayerPlan, len(line.Layers))
+	prev := 0
+	for i, l := range line.Layers {
+		p := LayerPlan{Branch: l.Branch, Old: l.Tip, Ref: StackMapRef(epoch, i+1), Mapped: MappedTip}
+		last, lastAmend, own := -1, "", 0
+		for j, e := range entries {
+			if !e.start {
+				continue
+			}
+			if pos[e.sha] <= l.Count {
+				p.Expect++
+				last, lastAmend = j, ""
+				if pos[e.sha] > prev {
+					own++
+				}
+			}
+		}
+		if last >= 0 {
+			p.After = entries[last].sha
+			for _, e := range entries[last+1:] {
+				if e.start {
+					break
+				}
+				if e.amend {
+					lastAmend = e.sha
+				}
+			}
+		}
+		for _, c := range line.Commits[prev:l.Count] {
+			if !inTodo[c] {
+				p.LeftOut++
+			}
+		}
+		for _, e := range entries {
+			if !e.start && pos[e.sha] <= l.Count {
+				p.Folded++
+			}
+		}
+		switch {
+		case own == 0 && l.Count > prev:
+			p.Mapped = MappedEmptied
+		case own == 0:
+			// At the same commit as the layer below: it ends where that one does.
+		case !isStart(entries, l.Tip):
+			p.Mapped = MappedTipDropped
+		}
+		if p.After != "" {
+			subject, err := plannedSubject(dir, p.After, lastAmend)
+			if err != nil {
+				return nil, err
+			}
+			p.Subject = subject
+		}
+		plans[i] = p
+		prev = l.Count
+	}
+	return plans, nil
+}
+
+func isStart(entries []todoEntry, sha string) bool {
+	for _, e := range entries {
+		if e.start && e.sha == sha {
+			return true
+		}
+	}
+	return false
+}
+
+// plannedSubject is the subject the commit a marker follows will carry: its
+// own, or, when an amend! commit is folded into it, the subject of the
+// message the amend! carries.
+func plannedSubject(dir, sha, amend string) (string, error) {
+	if amend == "" {
+		return gitEnv(dir, nil, nil, "log", "-1", "--format=%s", sha)
+	}
+	body, err := gitEnv(dir, nil, nil, "log", "-1", "--format=%b", amend)
+	if err != nil {
+		return "", err
+	}
+	for _, l := range strings.Split(body, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			return l, nil
+		}
+	}
+	return "", nil
+}
+
+// CheckLayers reads each layer's marker once the rebase of the line has
+// finished and checks it against the plan before any branch moves: the
+// marker is there, it is on the rebased line (an ancestor of head), it has
+// as many commits from onto as the plan expects, and its subject is the
+// planned one. Any failure is an error naming the layer, and nothing is
+// returned to move.
 func CheckLayers(dir, head, onto string, plans []LayerPlan) ([]LayerTip, error) {
-	return nil, fmt.Errorf("not yet")
+	tips := make([]LayerTip, 0, len(plans))
+	for _, p := range plans {
+		bad := func(why string) ([]LayerTip, error) {
+			return nil, fmt.Errorf("layer %s: %s; no layer moved, the line itself is rebased", p.Branch, why)
+		}
+		tip, ok, err := refTip(dir, p.Ref)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return bad("the rebase did not write its marker " + p.Ref)
+		}
+		if _, code, err := gitEnvAllow(dir, nil, nil, 1, "merge-base", "--is-ancestor", tip, head); err != nil {
+			return nil, err
+		} else if code == 1 {
+			return bad(fmt.Sprintf("its marker %s is not on the rebased line", git.ShortID(tip, 7)))
+		}
+		out, err := gitEnv(dir, nil, nil, "rev-list", "--count", onto+".."+tip)
+		if err != nil {
+			return nil, err
+		}
+		if n, _ := strconv.Atoi(out); n != p.Expect {
+			return bad(fmt.Sprintf("its new tip %s has %d commits from the new base, and the plan expects %d", git.ShortID(tip, 7), n, p.Expect))
+		}
+		if p.After != "" {
+			subject, err := gitEnv(dir, nil, nil, "log", "-1", "--format=%s", tip)
+			if err != nil {
+				return nil, err
+			}
+			if subject != p.Subject {
+				return bad(fmt.Sprintf("its new tip %s is %q, and the plan expects %q", git.ShortID(tip, 7), subject, p.Subject))
+			}
+		}
+		tips = append(tips, LayerTip{LayerPlan: p, New: tip})
+	}
+	return tips, nil
+}
+
+// DropStackMap deletes the markers of plans that are there, each only while
+// it is still at the commit it was read at, so a ref written by something
+// else is left alone.
+func DropStackMap(dir string, plans []LayerPlan) error {
+	var errs []error
+	for _, p := range plans {
+		tip, ok, err := refTip(dir, p.Ref)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if !ok {
+			continue
+		}
+		if _, err := gitEnv(dir, nil, nil, "update-ref", "-d", p.Ref, tip); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// layerOf numbers every commit of the line by the layer it belongs to, 1
+// the bottom; a commit above every layer gets len(Layers)+1.
+func (l Line) layerOf() map[string]int {
+	out := map[string]int{}
+	for i, c := range l.Commits {
+		n := len(l.Layers) + 1
+		for j, layer := range l.Layers {
+			if layer.Count >= i+1 {
+				n = j + 1
+				break
+			}
+		}
+		out[c] = n
+	}
+	return out
 }

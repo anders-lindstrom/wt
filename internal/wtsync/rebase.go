@@ -406,6 +406,11 @@ func Rebase(mainRoot string, cfg *Config, req Request, log io.Writer) (Result, e
 		return early(err)
 	}
 	plan := todoPlan{liftPlan: lift, checks: d.checks}
+	if req.Stack != nil {
+		if plan.stack, err = stackMarksFor(req); err != nil {
+			return early(err)
+		}
+	}
 	env := rebaseEnv
 	if plan.edits() {
 		var b strings.Builder
@@ -421,6 +426,9 @@ func Rebase(mainRoot string, cfg *Config, req Request, log io.Writer) (Result, e
 	if plan.reapply {
 		args = append(args, "--reapply-cherry-picks")
 	}
+	if req.Stack != nil && req.Stack.Autosquash {
+		args = append(args, "--autosquash")
+	}
 	args = append(args, "--no-update-refs", "--no-gpg-sign")
 	if req.Upstream != "" {
 		args = append(args, "--onto", req.Onto, req.Upstream)
@@ -431,7 +439,37 @@ func Rebase(mainRoot string, cfg *Config, req Request, log io.Writer) (Result, e
 		fmt.Fprintf(d.log, "  $ git %s\n", strings.Join(args, " "))
 	}
 	_, err = gitEnv(req.Path, env, nil, args...)
+	if req.Stack != nil {
+		// The editor has run by now, whatever the rebase came to after it:
+		// what it wrote is the plan every layer is checked against.
+		todo, rerr := os.ReadFile(plan.stack.copy)
+		_ = os.Remove(plan.stack.copy)
+		if rerr != nil && err == nil {
+			return d.fail(fmt.Errorf("the rebase's list could not be read back: %w", rerr))
+		}
+		if rerr == nil {
+			if d.res.Layers, rerr = planLayers(req.Path, req.Epoch, req.Stack.Line, string(todo)); rerr != nil {
+				return d.fail(rerr)
+			}
+		}
+	}
 	return d.drive(err)
+}
+
+// stackMarksFor is the markers a rebase of a stack held on the line puts in
+// its list, and where the editor leaves a copy of that list.
+func stackMarksFor(req Request) (stackMarks, error) {
+	gitDir, err := GitDir(req.Path)
+	if err != nil {
+		return stackMarks{}, err
+	}
+	copyPath := filepath.Join(gitDir, "wt-sync-stack-todo")
+	if err := os.Remove(copyPath); err != nil && !os.IsNotExist(err) {
+		return stackMarks{}, err
+	}
+	line := req.Stack.Line
+	return stackMarks{prefix: StackMapPrefix + strconv.FormatInt(req.Epoch, 10) + "/", top: len(line.Layers),
+		layerOf: line.layerOf(), copy: copyPath}, nil
 }
 
 // liftPlan is what the run does to the sequencer's list: marks is the picks
