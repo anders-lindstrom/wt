@@ -39,7 +39,10 @@ func newSyncCmd() *cobra.Command {
 			"                                    first, and what holds each\n" +
 			"          wt sync <work>            one worktree in full: every stop,\n" +
 			"                                    file and key\n" +
-			"  act     wt sync rebase <work>...  sync them by rebasing onto trunk:\n" +
+			"          wt sync <work> --onto <ref>\n" +
+			"                                    the same against <ref>, not trunk\n" +
+			"  act     wt sync rebase <work>...  sync them by rebasing onto trunk,\n" +
+			"                                    or the ref --onto names:\n" +
 			"                                    safety ref, strategies at each stop,\n" +
 			"                                    deferred steps; asks once when more\n" +
 			"                                    than one worktree is involved or a\n" +
@@ -87,6 +90,16 @@ func newSyncCmd() *cobra.Command {
 			"a few repositories at a time, asked once for all of them, then rebased\n" +
 			"one repository after another. A repository whose trunk declares no\n" +
 			".wt-sync.yaml is listed, not failed.\n" + selectionHelp + "\n" +
+			"\n" +
+			"--onto <ref> looks at the worktree named against <ref> instead of\n" +
+			"trunk, and with --rebase rebases it onto <ref>: an integration branch,\n" +
+			"origin/<branch>, a tag or a commit. A remote-tracking ref is fetched\n" +
+			"with trunk (--no-fetch takes it as last fetched); anything else is\n" +
+			"used as it stands. --upstream <ref> with it takes only the commits\n" +
+			"above that ref, git's rebase --onto <onto> <upstream>: a layer moved\n" +
+			"off one branch onto another. The declaration is still read from trunk.\n" +
+			"A target is chosen per piece of work, so --onto needs a worktree named\n" +
+			"and takes no --all, --roots or --profile (wt sync rebase --help).\n" +
 			"\n" +
 			"Groups:\n" +
 			"  ready      conflict-free or recipe, with nothing in the way: wt sync\n" +
@@ -155,12 +168,13 @@ func newSyncCmd() *cobra.Command {
 		Example: "  wt sync --no-fetch --json     # every worktree as JSON, trunk as last fetched\n" +
 			"  wt sync login-crash           # that worktree in full\n" +
 			"  wt sync . --rebase --if-ready # rebase it only if it needs nothing from you\n" +
+			"  wt sync login-crash --onto test_wt/integration  # against another branch\n" +
 			"  wt sync --all --rebase --if-ready  # every ready worktree, every repository\n" +
 			"  wt sync --profile api         # the overview of a profile's repositories",
 		ValidArgsFunction: completeWork,
 	}
 	var rebase, resume, undo, yes, force, ifReady, allowDiverged, allowOwed, asJSON, stack, autosquash bool
-	var expect string
+	var expect, onto, upstream string
 	var layers []string
 	var sel selectionFlags
 	var push func() syncrun.PushMode
@@ -168,7 +182,7 @@ func newSyncCmd() *cobra.Command {
 		return syncVerbFlags{rebase: rebase, resume: resume, undo: undo,
 			yes: yes, force: force, noFetch: noFetch, noFFTrunk: noFFTrunk, ifReady: ifReady, push: push(),
 			allowDiverged: allowDiverged, allowOwed: allowOwed, json: asJSON, expect: expect,
-			stack: stack, layers: layers, autosquash: autosquash}
+			stack: stack, layers: layers, autosquash: autosquash, onto: onto, upstream: upstream}
 	}
 	// The count rule is the verb's own. Two verbs at once is a flag mistake,
 	// which RunE reports the way --push with --no-push is reported.
@@ -185,6 +199,9 @@ func newSyncCmd() *cobra.Command {
 			return err
 		}
 		verb, _ := f.verb()
+		if err := f.checkOnto(args, sel.selection()); err != nil {
+			return err
+		}
 		if f.stack && (sel.selection().Any() || len(args) != 1) {
 			return usagef("--stack reads the line of one worktree: name the one at its top (wt sync <work> --stack)")
 		}
@@ -217,7 +234,7 @@ func newSyncCmd() *cobra.Command {
 		if ctx == nil {
 			return kit.ErrNotInRepo
 		}
-		opts := synccmd.SyncOptions{NoFetch: noFetch}
+		opts := synccmd.SyncOptions{NoFetch: noFetch, Onto: onto, Upstream: upstream}
 		if f.stack {
 			opts.Stack = &synccmd.StackLook{Work: args[0], Layers: layers}
 		}
@@ -243,6 +260,7 @@ func newSyncCmd() *cobra.Command {
 	sync.Flags().BoolVar(&stack, "stack", false, "list the layer branches on the line of the worktree named, and what holds each")
 	sync.Flags().StringArrayVar(&layers, "layer", nil, "with --stack: take this branch as a layer (repeatable); none takes every branch on the line")
 	sync.Flags().BoolVar(&autosquash, "autosquash", false, "with --rebase --stack: fold the line's fixups in place")
+	addOntoFlags(sync, &onto, &upstream, "look at the worktree named against <ref> instead of trunk; with --rebase, rebase onto it")
 	sel.add(sync, true)
 	// The verbs spelled as flags, and their own flags, work on this line but
 	// belong to the verbs: their help is wt sync rebase, resume and undo --help,
@@ -523,6 +541,9 @@ type syncVerbFlags struct {
 	stack      bool
 	layers     []string
 	autosquash bool
+	// onto is the ref the named worktrees are looked at against, or
+	// rebased onto, instead of trunk; upstream where their commits start.
+	onto, upstream string
 }
 
 // verb is the one verb given, "" for the overview, or an error naming the
@@ -583,8 +604,34 @@ func (f syncVerbFlags) check() error {
 		return usagef("--autosquash needs --stack")
 	case f.autosquash && verb != "rebase":
 		return usagef("--autosquash needs --rebase")
+	case f.upstream != "" && f.onto == "":
+		return usagef("--upstream needs --onto: it says where the commits rebased onto --onto's ref start")
+	case f.onto != "" && verb != "" && verb != "rebase":
+		return usagef("--onto needs --rebase, or no verb")
+	case f.onto != "" && f.autosquash:
+		return usagef("--autosquash folds in place, onto the line's own base; rebase onto <ref> with a second run, --stack --onto <ref>")
 	}
 	return nil
+}
+
+// checkOnto refuses --onto where it has no piece of work to go with: a
+// target is chosen per piece of work.
+func (f syncVerbFlags) checkOnto(args []string, sel reposel.Selection) error {
+	switch {
+	case f.onto == "":
+		return nil
+	case sel.Any():
+		return usagef("--onto is chosen per piece of work; leave out --all, --roots and --profile, and name the worktree")
+	case len(args) == 0:
+		return usagef("--onto takes the worktree to rebase onto it: name it (wt sync <work> --onto <ref>)")
+	}
+	return nil
+}
+
+// addOntoFlags adds --onto and --upstream to cmd.
+func addOntoFlags(cmd *cobra.Command, onto, upstream *string, ontoUsage string) {
+	cmd.Flags().StringVar(onto, "onto", "", ontoUsage)
+	cmd.Flags().StringVar(upstream, "upstream", "", "with --onto: only the commits above <ref> on the branch, git's rebase --onto <onto> <upstream>")
 }
 
 // stackOptions is the --stack run the flags ask for, nil for any other.
@@ -598,12 +645,15 @@ func (f syncVerbFlags) stackOptions() *synccmd.StackOptions {
 // syncOverviewJSON is wt sync --json: the overview as one object, or with
 // --all, --roots or --profile an array of one per repository.
 func syncOverviewJSON(cmd *cobra.Command, args []string, sel reposel.Selection, f syncVerbFlags) error {
-	opts := synccmd.SyncOptions{NoFetch: f.noFetch}
+	opts := synccmd.SyncOptions{NoFetch: f.noFetch, Onto: f.onto, Upstream: f.upstream}
 	if f.stack {
 		opts.Stack = &synccmd.StackLook{Work: args[0], Layers: f.layers}
 	}
+	if f.onto != "" {
+		opts.Work = args[0]
+	}
 	switch {
-	case len(args) > 0 && !f.stack:
+	case len(args) > 0 && !f.stack && f.onto == "":
 		return usagef("--json prints the overview of every worktree; name none, or add the verb whose result you want")
 	case sel.Any():
 		return synccmd.SyncAllJSON(loadUserWarn(cmd.ErrOrStderr()), sel, opts, cmd.OutOrStdout())
@@ -633,14 +683,15 @@ func syncArgs(verb string) cobra.PositionalArgs {
 
 func newSyncRebaseCmd() *cobra.Command {
 	var noFetch, noFFTrunk, yes, ifReady, force, allowDiverged, allowOwed, asJSON, stack, autosquash bool
-	var expect string
+	var expect, onto, upstream string
 	var layers []string
 	var sel selectionFlags
 	var push func() syncrun.PushMode
 	rebase := &cobra.Command{
 		Use:   "rebase [<work>...]",
-		Short: "Rebase named worktrees onto trunk with the declared strategies",
-		Long: "Sync the named worktrees with trunk, by rebasing them onto it.\n\n" +
+		Short: "Rebase named worktrees onto trunk, or the ref --onto names",
+		Long: "Sync the named worktrees with trunk, by rebasing them onto it, or onto\n" +
+			"the ref --onto names.\n\n" +
 			"Fetch trunk once, then for each named worktree (and the rest of any\n" +
 			"stack it belongs to, parents first): pin the old tip under\n" +
 			"refs/wt-sync/<branch>/<epoch>, rebase with --no-update-refs --no-gpg-sign,\n" +
@@ -743,6 +794,25 @@ func newSyncRebaseCmd() *cobra.Command {
 			"--allow-diverged it goes ahead only over the divergence that overview\n" +
 			"showed: a remote that moved since is refused as changed. wt schema\n" +
 			"sync-run prints its JSON Schema; docs/json.md explains it.\n\n" +
+			"--onto <ref> rebases the worktrees named onto <ref> instead of trunk:\n" +
+			"an integration branch, origin/<branch>, a tag or a commit, with\n" +
+			"everything a run onto trunk has. A remote-tracking ref is fetched with\n" +
+			"trunk, from the branch its remote's fetch refspec maps to it (--no-fetch\n" +
+			"takes it as last fetched); a local branch, tag or\n" +
+			"commit is used as it stands, never fetched or moved. The commits\n" +
+			"replayed are the branch's that <ref> does not have; --upstream <ref2>\n" +
+			"replays only those above <ref2>, git's rebase --onto <ref> <ref2>, which\n" +
+			"moves a layer off one branch onto another. The declaration and its\n" +
+			"scripts are read from trunk, local trunk is fast-forwarded as ever, and\n" +
+			"a branch is classed against <ref>: one <ref> already has is skipped.\n" +
+			"With --onto a run moves exactly the worktrees named, none of their\n" +
+			"stack: each worktree stacked above one it moved is listed, bottom first,\n" +
+			"with the wt sync rebase --onto --upstream line that moves it next.\n" +
+			"--stack --onto rebases a line onto <ref>; --autosquash folds in place\n" +
+			"and takes no --onto: fold first, then rebase. A target is chosen per piece\n" +
+			"of work: --onto needs a worktree named, and takes no --all, --roots or\n" +
+			"--profile. --expect with --onto takes the token of\n" +
+			"wt sync <work> --onto <ref> --json, which covers the target.\n\n" +
 			"--stack rebases a stack held on one line: <work> is the worktree whose\n" +
 			"branch is the top of the line (a tmp branch at the top, or the top layer\n" +
 			"itself), and the line is every commit from where it leaves trunk to its\n" +
@@ -788,6 +858,8 @@ func newSyncRebaseCmd() *cobra.Command {
 			"  wt sync rebase tmp/stack --stack   # the whole line once, then every layer\n" +
 			"  wt sync rebase tmp/stack --stack --autosquash  # fold review fixes in place\n" +
 			"  wt sync rebase login-crash --force --allow-diverged  # past session, origin\n" +
+			"  wt sync rebase login-crash --onto test_wt/integration  # onto that branch\n" +
+			"  wt sync rebase ui --onto origin/main --upstream feat_wt/api  # move a layer\n" +
 			"  wt sync rebase --all --no-fetch --push  # every ready one, everywhere, pushed\n" +
 			"  wt sync rebase --profile api --if-ready --no-ff-trunk  # trunk left as it is\n" +
 			"  wt sync --roots work --rebase --no-push  # spelled on wt sync; print pushes",
@@ -796,8 +868,11 @@ func newSyncRebaseCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			f := syncVerbFlags{rebase: true, yes: yes, noFetch: noFetch, noFFTrunk: noFFTrunk, ifReady: ifReady, force: force,
 				allowDiverged: allowDiverged, allowOwed: allowOwed, push: push(), json: asJSON, expect: expect,
-				stack: stack, layers: layers, autosquash: autosquash}
+				stack: stack, layers: layers, autosquash: autosquash, onto: onto, upstream: upstream}
 			if err := f.check(); err != nil {
+				return err
+			}
+			if err := f.checkOnto(args, sel.selection()); err != nil {
 				return err
 			}
 			if f.stack && (sel.selection().Any() || len(args) != 1) {
@@ -823,6 +898,7 @@ func newSyncRebaseCmd() *cobra.Command {
 	rebase.Flags().BoolVar(&stack, "stack", false, "rebase the line of the worktree named once, and move every layer branch on it")
 	rebase.Flags().StringArrayVar(&layers, "layer", nil, "with --stack: take this branch as a layer (repeatable); none takes every branch on the line")
 	rebase.Flags().BoolVar(&autosquash, "autosquash", false, "with --stack: fold the line's fixups onto its own base, in place; no trunk")
+	addOntoFlags(rebase, &onto, &upstream, "rebase the worktrees named onto <ref> instead of trunk: a branch, origin/<branch>, a tag or a commit")
 	sel.add(rebase, true)
 	push = addPushFlags(rebase, "push the worktrees that finish, without asking",
 		"neither push nor ask; print the push command")
@@ -872,7 +948,7 @@ func withVerbContext(cmd *cobra.Command, args []string, command string, asJSON b
 // confirmed does not move. A worktree named on the line goes ahead.
 func runOptions(cmd *cobra.Command, f syncVerbFlags, bulk bool) (synccmd.RunOptions, *prompter) {
 	opts := synccmd.RunOptions{NoFetch: f.noFetch, NoFFTrunk: f.noFFTrunk, IfReady: f.ifReady, Force: f.force,
-		AllowDiverged: f.allowDiverged}
+		AllowDiverged: f.allowDiverged, Onto: f.onto, Upstream: f.upstream}
 	opts.AllowOwed = f.allowOwed
 	opts.Push = f.push
 	switch {

@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sync-run.v1.json",
-  "x-version": "1.7.0",
+  "x-version": "1.8.0",
   "title": "wt sync rebase|resume|undo --json",
   "description": "What a wt sync rebase, resume or undo did. Printed by `wt sync rebase [<work>...] --json`, `wt sync [<work>...] --rebase --json`, `wt sync resume <work> --json` and `wt sync undo <work> --json` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends it. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
-  "required": ["schema", "schemaVersion", "command", "repo", "trunk", "trunkRef", "onto", "fetched", "trunkSync", "outcome", "error", "worktrees", "recovery"],
+  "required": ["schema", "schemaVersion", "command", "repo", "trunk", "trunkRef", "onto", "target", "fetched", "trunkSync", "outcome", "error", "worktrees", "recovery"],
   "properties": {
     "schema": { "const": 1, "description": "The major version: a new one only for a change that breaks readers." },
     "schemaVersion": { "type": "string", "pattern": "^1\\.[0-9]+\\.[0-9]+$", "description": "The full semantic version of this schema that the output follows." },
@@ -13,7 +13,8 @@
     "repo": { "type": ["string", "null"], "description": "The main checkout, as wt sweep --json names the repository; null when the verb stopped before reading it." },
     "trunk": { "type": ["string", "null"] },
     "trunkRef": { "type": ["string", "null"] },
-    "onto": { "$ref": "#/$defs/shaOrNull", "description": "The trunk commit rebased onto: after the run's fetch, or the one the handed-over run recorded. Null for undo." },
+    "onto": { "$ref": "#/$defs/shaOrNull", "description": "The commit assessed against, or rebased onto: trunk, or --onto's target (since 1.8.0). Null when it was never determined." },
+    "target": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/target" }], "description": "What onto is: trunk, or the ref --onto names (since 1.8.0). Null when it was never determined, and for undo." },
     "fetched": { "type": "boolean" },
     "trunkSync": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/trunkSync" }], "description": "What the run did to local trunk after its fetch, as for wt up. Null when it did not fetch, and always for resume and undo." },
     "outcome": {
@@ -25,6 +26,17 @@
     "recovery": { "type": ["string", "null"], "description": "For interrupted: the way back wt printed." }
   },
   "$defs": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "trunk", "upstream"],
+      "description": "What is assessed against or rebased onto (since 1.8.0): trunk, or the ref --onto names.",
+      "properties": {
+        "ref": { "type": "string", "description": "The ref as given to --onto, or origin/<trunk>." },
+        "trunk": { "type": "boolean", "description": "The target is trunk: no --onto was given." },
+        "upstream": { "$ref": "#/$defs/shaOrNull", "description": "The commit --upstream names: only the commits above it are replayed. Null without it." }
+      }
+    },
     "trunkSync": {
       "type": "object",
       "description": "Local trunk against origin/<trunk>, and what was done about it. See docs/json.md.",

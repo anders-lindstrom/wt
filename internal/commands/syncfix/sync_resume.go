@@ -133,6 +133,12 @@ func (r *resume) joinJournal() {
 	st := r.st
 	r.j.Repo(r.ctx.Repo.MainRoot)
 	r.j.Trunk(strings.TrimPrefix(st.TrunkRef, "origin/"), nil, st.TrunkRef, st.Trunk, false)
+	if st.OntoRef != "" {
+		t := &syncrun.RunTarget{Ref: st.OntoRef, Upstream: jsonout.Strp(st.Upstream)}
+		r.j.Target(t, st.Onto)
+	} else {
+		r.j.Target(&syncrun.RunTarget{Ref: st.TrunkRef, Trunk: true}, st.Trunk)
+	}
 	// The journal's record: a tip git cannot read is recorded as none.
 	found, _, _ := r.ctx.Repo.ResolveRef("refs/heads/" + st.Branch)
 	r.j.Join(r.name, st.Branch, r.target.Path, found, nil)
@@ -222,7 +228,11 @@ func (r *resume) askSessions() (ok bool, err error) {
 	if len(r.sessions) == 0 {
 		return true, nil
 	}
-	behind, _, err := wtsync.BehindAhead(ctx.Repo.MainRoot, st.Trunk, st.OldTip)
+	landedOn := st.Trunk
+	if st.OntoRef != "" {
+		landedOn = st.Onto
+	}
+	behind, _, err := wtsync.BehindAhead(ctx.Repo.MainRoot, landedOn, st.OldTip)
 	if err != nil {
 		return false, fmt.Errorf("%s: counting what landed: %w; nothing is resumed", name, err)
 	}
@@ -281,7 +291,7 @@ func (r *resume) verify() error {
 func (r *resume) probeNeeds() error {
 	st := r.st
 	base := cmp.Or(st.Upstream, st.Onto)
-	due, err := wtsync.StepsDue(r.target.Path, r.cfg, base, st.OldTip, st.Trunk)
+	due, err := wtsync.StepsDue(r.target.Path, r.cfg, base, st.OldTip, st.Onto, st.Upstream)
 	if err != nil {
 		return fmt.Errorf("%s: could not tell which steps the rest of the rebase runs: %w; nothing is resumed", r.name, err)
 	}
@@ -369,9 +379,9 @@ func (r *resume) handOverAgain(res wtsync.Result) error {
 	st, name, w := r.st, r.name, r.w
 	fmt.Fprintf(w, "  ⚠ stopped again at %d/%d\n", res.Left.Index, res.Left.Total)
 	herr := syncrun.HandOver(r.ctx, w, syncrun.HandoverInput{
-		Work: name, Branch: st.Branch, Path: r.target.Path, TrunkRef: st.TrunkRef, TrunkSHA: st.Trunk,
+		Work: name, Branch: st.Branch, Path: r.target.Path, TrunkRef: st.TrunkRef, TrunkSHA: st.Trunk, OntoRef: st.OntoRef,
 		Onto: st.Onto, Upstream: st.Upstream, Epoch: st.Epoch, Cfg: r.cfg, Res: res, Lock: r.lock,
-		Found: st.Found, Earlier: st.Stopped, Tracker: r.tracker,
+		Found: st.Found, Earlier: st.Stopped, Tracker: r.tracker, FollowUps: st.FollowUps,
 	})
 	if herr != nil {
 		fmt.Fprintf(w, "  ✗ failed: %v\n", herr)
@@ -403,7 +413,11 @@ func (r *resume) handOverAgain(res wtsync.Result) error {
 // steps, the result ref, the handover's removal.
 func (r *resume) complete(res wtsync.Result) error {
 	st, name := r.st, r.name
-	fmt.Fprintf(r.w, "  ✓ rebased %s\n", kit.Count(res.Replayed, "commit"))
+	line := "  ✓ rebased " + kit.Count(res.Replayed, "commit")
+	if st.OntoRef != "" {
+		line += " onto " + st.OntoRef
+	}
+	fmt.Fprintln(r.w, line)
 	_, ran, cerr := syncrun.CompleteRun(r.ctx, r.w, r.cfg, r.tracker, name, r.target.Path, func() syncrun.CompleteInput {
 		// As a run does: the tip the run found is what the deferred steps
 		// compare with and what the undo line names.
@@ -411,7 +425,7 @@ func (r *resume) complete(res wtsync.Result) error {
 		done.OldTip = r.pinned
 		return syncrun.CompleteInput{
 			Branch: st.Branch, Epoch: st.Epoch, Res: done,
-			Tell: r.sessions, TrunkName: strings.TrimPrefix(st.TrunkRef, "origin/"), Landed: r.landed,
+			Tell: r.sessions, TrunkName: cmp.Or(st.OntoRef, strings.TrimPrefix(st.TrunkRef, "origin/")), Landed: r.landed,
 			Check:       syncrun.PathsOnce(st.Stopped, st.Left, st.ResolvedPaths(), st.Deleted, wtsync.StopPaths(res.Stops)),
 			Unavailable: r.unavailable,
 			// A wt sync steps run handed over goes on as it was: its
@@ -439,6 +453,7 @@ func (r *resume) complete(res wtsync.Result) error {
 	if cerr != nil {
 		return cerr
 	}
+	syncrun.PrintFollowUps(r.w, name, st.FollowUps)
 	failures := syncrun.OwedBy(name, owed)
 	if stackFailure != "" {
 		failures = append(failures, name+" ("+stackFailure+")")

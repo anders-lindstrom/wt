@@ -1,6 +1,8 @@
 package synccmd
 
 import (
+	"errors"
+
 	"github.com/anders-lindstrom/wt/internal/agents"
 	"github.com/anders-lindstrom/wt/internal/commands/kit"
 	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
@@ -13,16 +15,23 @@ func readLine(ctx *kit.Context, branch, trunkSHA string, layers []string) (wtsyn
 	return wtsync.ReadLine(ctx.Repo.MainRoot, branch, trunkSHA, layers, ctx.UserConfig().RefSweepPatterns)
 }
 
-// stackLook is the look at the stack held on the line of the worktree look
-// names: its layers, bottom first, and what holds each.
-func stackLook(ctx *kit.Context, trunkSHA string, look *StackLook, listed []agents.Agent) (*syncrun.Stack, error) {
+// stackLookAt is the look at the stack held on the line of the worktree
+// look names, read from base (trunk, or where a rebase onto target starts):
+// its layers, bottom first, and what holds each. A target on the line is
+// refused.
+func stackLookAt(ctx *kit.Context, base, trunkSHA string, target *OntoTarget, look *StackLook, listed []agents.Agent) (*syncrun.Stack, error) {
 	wt, err := kit.Locate(ctx, look.Work)
 	if err != nil {
 		return nil, err
 	}
-	line, err := readLine(ctx, wt.Branch, trunkSHA, look.Layers)
+	line, err := readLine(ctx, wt.Branch, base, look.Layers)
 	if err != nil {
 		return nil, err
+	}
+	if target != nil {
+		if why := target.onLine(ctx, line, trunkSHA, kit.WorktreeName(ctx, wt.Branch, wt.Path)); why != "" {
+			return nil, errors.New(why)
+		}
 	}
 	holders, err := syncrun.ReadHolders(ctx, line, listed)
 	if err != nil {

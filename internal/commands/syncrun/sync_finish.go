@@ -45,13 +45,18 @@ type HandoverInput struct {
 	Branch   string
 	Path     string
 	TrunkRef string
-	TrunkSHA string
-	Onto     string
-	Upstream string
-	Epoch    int64
-	Cfg      *wtsync.Config
-	Res      wtsync.Result
-	Lock     *wtsync.Lock
+	// OntoRef is the ref --onto named, "" for a rebase onto trunk.
+	OntoRef string
+	// FollowUps is the commands that move the worktrees stacked on this one
+	// once its rebase onto OntoRef finishes, for resume to print.
+	FollowUps []string
+	TrunkSHA  string
+	Onto      string
+	Upstream  string
+	Epoch     int64
+	Cfg       *wtsync.Config
+	Res       wtsync.Result
+	Lock      *wtsync.Lock
 	// Found is the tip the run found the branch at, when it fast-forwarded
 	// the branch before the rebase: what the safety ref pins. Empty
 	// otherwise.
@@ -61,6 +66,19 @@ type HandoverInput struct {
 	// Tracker is the verb's, still set to the rebase being handed over; it
 	// is cleared once the handover is written or has failed.
 	Tracker *RebaseTracker
+}
+
+// PrintFollowUps prints the commands that move the worktrees stacked on
+// work after a rebase onto an --onto target, bottom first; nothing for none.
+func PrintFollowUps(w io.Writer, work string, lines []string) {
+	if len(lines) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "\n%s has %s stacked on it, which --onto did not move; to move them onto it, run in this order:\n",
+		work, kit.Count(len(lines), "worktree"))
+	for _, l := range lines {
+		fmt.Fprintf(w, "  %s\n", l)
+	}
 }
 
 // HandOver leaves the worktree mid-rebase for a person: the brief, the
@@ -82,17 +100,27 @@ func HandOver(ctx *kit.Context, w io.Writer, in HandoverInput) error {
 	if err != nil {
 		return err
 	}
-	base, err := git.Run(ctx.Repo.MainRoot, "merge-base", in.TrunkSHA, in.Res.OldTip)
-	if err != nil {
-		return fmt.Errorf("merge-base: %w", err)
+	// What landed, and what the per-file log reads, is the target's: trunk,
+	// or the ref --onto named, from where the replayed commits start.
+	landOn, title := in.TrunkSHA, in.TrunkRef
+	if in.OntoRef != "" {
+		landOn, title = in.Onto, in.OntoRef
 	}
-	landing, err := wtsync.LandingList(ctx.Repo.MainRoot, base, in.TrunkSHA)
+	base := in.Upstream
+	if in.OntoRef == "" || base == "" {
+		b, err := git.Run(ctx.Repo.MainRoot, "merge-base", landOn, in.Res.OldTip)
+		if err != nil {
+			return fmt.Errorf("merge-base: %w", err)
+		}
+		base = b
+	}
+	landing, err := wtsync.LandingList(ctx.Repo.MainRoot, base, landOn)
 	if err != nil {
 		return err
 	}
 	plan, err := wtsync.RenderPlan(wtsync.PlanInput{
-		MainRoot: ctx.Repo.MainRoot, Work: in.Work, Branch: in.Branch, TrunkRef: in.TrunkRef,
-		Trunk: in.TrunkSHA, Base: base, Landing: landing, Handover: *in.Res.Left, Config: in.Cfg,
+		MainRoot: ctx.Repo.MainRoot, Work: in.Work, Branch: in.Branch, TrunkRef: title, OntoRef: in.OntoRef,
+		Trunk: landOn, Base: base, Landing: landing, Handover: *in.Res.Left, Config: in.Cfg,
 	})
 	if err != nil {
 		return err
@@ -109,7 +137,7 @@ func HandOver(ctx *kit.Context, w io.Writer, in HandoverInput) error {
 	}
 	st := wtsync.State{
 		Branch: in.Branch, Work: in.Work, Trunk: in.TrunkSHA, TrunkRef: in.TrunkRef,
-		Onto: in.Onto, Upstream: in.Upstream, Epoch: in.Epoch,
+		Onto: in.Onto, OntoRef: in.OntoRef, FollowUps: in.FollowUps, Upstream: in.Upstream, Epoch: in.Epoch,
 		Safety: in.Res.Safety.Ref, OldTip: in.Res.OldTip, Head: head,
 		Stop: in.Res.Left.Index, Total: in.Res.Left.Total,
 		Resolved: in.Res.Left.Staged, Strategy: map[string]string{}, Lifted: map[string]string{},

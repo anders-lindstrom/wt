@@ -55,17 +55,17 @@ func (u Unchecked) Owed() string { return u.Step + " (not checked: " + u.Why + "
 // left out, since the rebase drops it, unless a lifting rule claims a file
 // it changes, which the run replays and lifts.
 func PlanChecks(wtPath string, cfg *Config, base, branch string) ([]Commit, error) {
-	commits, _, err := checksDue(wtPath, cfg, base, branch)
+	commits, _, err := checksDue(wtPath, cfg, Target{Onto: base}, branch)
 	return commits, err
 }
 
 // checksDue is PlanChecks with the each_commit steps that run at one of
 // the commits at least, in the order declared.
-func checksDue(wtPath string, cfg *Config, base, branch string) ([]Commit, []EachCommit, error) {
+func checksDue(wtPath string, cfg *Config, t Target, branch string) ([]Commit, []EachCommit, error) {
 	if cfg == nil || len(cfg.EachCommit) == 0 {
 		return nil, nil, nil
 	}
-	commits, err := logWithPaths(wtPath, "--right-only", "--no-merges", base+"..."+branch, "--")
+	commits, err := t.commits(wtPath, branch, "--right-only", "--no-merges")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -109,7 +109,7 @@ func (c *Config) checksFor(paths []string) []EachCommit {
 
 // planChecks fills in the driver's list of commits to check.
 func (d *driver) planChecks() error {
-	commits, err := PlanChecks(d.req.Path, d.cfg, d.req.base(), d.req.Branch)
+	commits, _, err := checksDue(d.req.Path, d.cfg, d.req.target(), d.req.Branch)
 	if err != nil {
 		return err
 	}

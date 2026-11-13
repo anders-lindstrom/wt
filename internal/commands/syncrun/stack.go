@@ -1,6 +1,7 @@
 package syncrun
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"strings"
@@ -170,6 +171,8 @@ type StackFinish struct {
 // disk then says what moved.
 func FinishStack(ctx *kit.Context, w io.Writer, in StackFinish) (s *Stack, failure string, err error) {
 	rec, main := in.Record, ctx.Repo.MainRoot
+	// What the line was rebased onto, as a layer it carries is said to be on.
+	carrier := cmp.Or(rec.OntoRef, "trunk")
 	holders := make([]wtsync.LayerHolder, len(rec.Line.Layers))
 	for i, l := range rec.Line.Layers {
 		holders[i] = wtsync.LayerHolder{Branch: l.Branch, State: wtsync.HolderNone}
@@ -188,7 +191,16 @@ func FinishStack(ctx *kit.Context, w io.Writer, in StackFinish) (s *Stack, failu
 			return refuse(fmt.Sprintf("the fold changed the line's content (%s); the line is folded, wt sync undo %s puts it back", why, rec.Work))
 		}
 	}
-	tips, cerr := wtsync.CheckLayers(main, in.NewTip, in.Onto, rec.Plans)
+	plans := rec.Plans
+	if rec.Upstream != "" {
+		// Above an upstream git empties the picks the target already has:
+		// the plan follows what the finished rebase dropped.
+		var rerr error
+		if plans, rerr = wtsync.ReconcileDropped(main, in.Onto, plans); rerr != nil {
+			return refuse(rerr.Error())
+		}
+	}
+	tips, cerr := wtsync.CheckLayers(main, in.NewTip, in.Onto, plans)
 	if cerr != nil {
 		return refuse(cerr.Error())
 	}
@@ -220,20 +232,20 @@ func FinishStack(ctx *kit.Context, w io.Writer, in StackFinish) (s *Stack, failu
 			patch, why = "unknown", perr.Error()
 		case same:
 		case t.Mapped == wtsync.MappedEmptied:
-			patch, why = "changed", "trunk already carries all of its commits"
+			patch, why = "changed", carrier+" already carries all of its commits"
 		case t.LeftOut > 0:
-			patch, why = "changed", fmt.Sprintf("trunk already carries %s of it", kit.Count(t.LeftOut, "commit"))
+			patch, why = "changed", fmt.Sprintf("%s already carries %s of it", carrier, kit.Count(t.LeftOut, "commit"))
 		case rec.Autosquash:
 			patch, why = "changed", "a fixup was folded into it"
 		default:
-			patch, why = "changed", "the rebase changed it: a stop resolved, a version lifted, or trunk's changes around it"
+			patch, why = "changed", "the rebase changed it: a stop resolved, a version lifted, or "+carrier+"'s changes around it"
 		}
 		l.Patch = jsonout.Strp(patch)
 		if why != "" {
 			l.PatchWhy = jsonout.Strp(why)
 		}
-		mapped := map[string]string{wtsync.MappedTip: "", wtsync.MappedTipDropped: ", tip dropped: trunk carries it",
-			wtsync.MappedEmptied: ", emptied: trunk carries every commit of it"}[t.Mapped]
+		mapped := map[string]string{wtsync.MappedTip: "", wtsync.MappedTipDropped: ", tip dropped: " + carrier + " carries it",
+			wtsync.MappedEmptied: ", emptied: " + carrier + " carries every commit of it"}[t.Mapped]
 		switch m.Result {
 		case wtsync.MoveMoved:
 			how := "branch moved"

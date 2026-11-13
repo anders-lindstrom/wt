@@ -10,7 +10,7 @@ import (
 
 func newUpCmd() *cobra.Command {
 	var noFetch, noFFTrunk, yes, force, allowDiverged, allowOwed, asJSON bool
-	var expect string
+	var expect, onto, upstream string
 	var push func() syncrun.PushMode
 	cmd := &cobra.Command{
 		Use:   "up [<work>]",
@@ -22,8 +22,11 @@ func newUpCmd() *cobra.Command {
 			"reason is printed, and it exits non-zero: wt sync . shows the detail.\n\n" +
 			"It is the short form of wt sync rebase . --if-ready, for the moment you\n" +
 			"arrive in a worktree: the same fetch, safety ref, strategies, deferred\n" +
-			"steps, push and wt sync undo. It differs in one place: a repository\n" +
-			"whose trunk declares no .wt-sync.yaml works here, where wt sync rebase\n" +
+			"steps, push and wt sync undo, and the same --onto <ref> to rebase onto\n" +
+			"a ref other than trunk, with --upstream <ref> to replay only the\n" +
+			"commits above it (wt sync rebase --help); the declaration is still\n" +
+			"read from trunk. It differs in one place: a repository whose trunk\n" +
+			"declares no .wt-sync.yaml works here, where wt sync rebase\n" +
 			"refuses it. Nothing is declared there, so only a conflict-free rebase\n" +
 			"goes, with no strategies and no deferred steps. For a tool, its --json\n" +
 			"result and the token --expect takes are its own too (below).\n\n" +
@@ -59,12 +62,16 @@ func newUpCmd() *cobra.Command {
 			"for a tool driving wt; --expect <token> refuses the run, touching\n" +
 			"nothing, when trunk, the configuration, the stack or a remote the\n" +
 			"stack has diverged from is no longer what wt status --json reported.\n" +
+			"That token knows no --onto, so --onto with --expect is refused: take\n" +
+			"the token from wt sync <work> --onto <ref> --json and run\n" +
+			"wt sync rebase <work> --onto <ref> --expect <token>.\n" +
 			"wt schema up prints its JSON Schema; docs/json.md explains it.",
 		Example: "  wt up                  # the worktree you are in, if it syncs cleanly\n" +
 			"  wt up --push --no-ff-trunk  # and push it; local trunk stays put\n" +
 			"  wt up -y --force --no-fetch  # yes to all, past a busy session, no fetch\n" +
 
 			"  wt up --yes --no-push --json  # for a tool: one JSON object on stdout\n" +
+			"  wt up --onto test_wt/integration  # onto an integration branch, not trunk\n" +
 			"  wt up --json --expect 1:0123abcd --allow-diverged  # only as the plan showed",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeWork,
@@ -74,7 +81,14 @@ func newUpCmd() *cobra.Command {
 				work = args[0]
 			}
 			f := syncVerbFlags{rebase: true, yes: yes, noFetch: noFetch, noFFTrunk: noFFTrunk, ifReady: true, force: force,
-				allowDiverged: allowDiverged, allowOwed: allowOwed, push: push()}
+				allowDiverged: allowDiverged, allowOwed: allowOwed, push: push(), onto: onto, upstream: upstream}
+			switch {
+			case upstream != "" && onto == "":
+				return usagef("--upstream needs --onto: it says where the commits rebased onto --onto's ref start")
+			case onto != "" && expect != "":
+				return usagef("wt up --expect takes the token of wt status --json, which knows no --onto: take it from " +
+					"wt sync <work> --onto <ref> --json, and run wt sync rebase <work> --onto <ref> --expect <token>")
+			}
 			if !asJSON {
 				return withContext(func(cmd *cobra.Command, _ []string, ctx *kit.Context) error {
 					opts, _ := runOptions(cmd, f, false)
@@ -113,6 +127,7 @@ func newUpCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&allowOwed, "allow-owed", false, "rebase now even when a step's need does not answer; the step is owed, to run later")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print one result object on stdout, the progress on stderr")
 	cmd.Flags().StringVar(&expect, "expect", "", "refuse unless the plan still matches this token from wt status --json")
+	addOntoFlags(cmd, &onto, &upstream, "rebase onto <ref> instead of trunk: a branch, origin/<branch>, a tag or a commit")
 	push = addPushFlags(cmd, "push when it is done, without asking", "neither push nor ask; print the push command")
 	return cmd
 }

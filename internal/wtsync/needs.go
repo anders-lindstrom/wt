@@ -154,20 +154,21 @@ func (d Due) Needing(n string) []string {
 
 // StepsDue is what may run when branch is rebased: base is what its
 // commits are counted from (trunk, or a stack parent's tip), trunk the
-// commit the run rebases onto.
-func StepsDue(wtPath string, cfg *Config, base, branch, trunk string) (Due, error) {
+// commit the run rebases onto, and upstream, when it is not empty, where the
+// replayed range starts (rebase --onto trunk upstream).
+func StepsDue(wtPath string, cfg *Config, base, branch, trunk, upstream string) (Due, error) {
 	var due Due
 	if cfg == nil || (len(cfg.EachCommit) == 0 && len(cfg.Defer) == 0) {
 		return due, nil
 	}
 	var err error
-	if due.CheckCommits, due.Checks, err = checksDue(wtPath, cfg, base, branch); err != nil {
+	if due.CheckCommits, due.Checks, err = checksDue(wtPath, cfg, Target{Onto: base}, branch); err != nil {
 		return due, err
 	}
 	if len(cfg.Defer) == 0 {
 		return due, nil
 	}
-	paths, err := mayChange(wtPath, branch, trunk)
+	paths, err := mayChange(wtPath, branch, Target{Onto: trunk, Upstream: upstream})
 	if err != nil {
 		return due, err
 	}
@@ -179,19 +180,19 @@ func StepsDue(wtPath string, cfg *Config, base, branch, trunk string) (Due, erro
 	return due, nil
 }
 
-// mayChange is every path a rebase of branch onto trunk may change: what
-// trunk changed since their merge base, and what the branch's own commits
-// change.
-func mayChange(wtPath, branch, trunk string) ([]string, error) {
-	mb, err := gitEnv(wtPath, nil, nil, "merge-base", trunk, branch)
+// mayChange is every path a rebase of branch onto t may change: what t's
+// target changed since the cutoff (the merge base, or the upstream), and
+// what the commits replayed change.
+func mayChange(wtPath, branch string, t Target) ([]string, error) {
+	mb, err := t.base(wtPath, branch)
 	if err != nil {
 		return nil, err
 	}
-	paths, err := ChangedPaths(wtPath, mb, trunk)
+	paths, err := ChangedPaths(wtPath, mb, t.Onto)
 	if err != nil {
 		return nil, err
 	}
-	commits, err := logWithPaths(wtPath, "--right-only", "--no-merges", trunk+"..."+branch, "--")
+	commits, err := logWithPaths(wtPath, "--right-only", "--no-merges", t.cutoff()+"..."+branch, "--")
 	if err != nil {
 		return nil, err
 	}

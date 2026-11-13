@@ -1,11 +1,12 @@
 export default {
   "schema": 1,
-  "schemaVersion": "1.7.0",
+  "schemaVersion": "1.8.0",
   "command": "sync undo",
   "repo": "/repos/app",
   "trunk": "main",
   "trunkRef": "origin/main",
   "onto": null,
+  "target": null,
   "fetched": false,
   "trunkSync": null,
   "outcome": "done",

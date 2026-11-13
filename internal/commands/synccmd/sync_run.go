@@ -64,6 +64,10 @@ type RunOptions struct {
 	// Steps runs the declared steps without rebasing onto trunk: wt sync
 	// steps. Nil for a rebase.
 	Steps *StepsOptions
+	// Onto is the ref the named worktrees are rebased onto instead of
+	// trunk (--onto); empty is trunk. Upstream, with it, replays only the
+	// commits above that ref (--upstream).
+	Onto, Upstream string
 	// Own is the remotes as a caller that already fetched read them: the
 	// keeper, and a run across repositories, which fetch before the run
 	// they then start with NoFetch.
@@ -151,6 +155,16 @@ type RunPlan struct {
 	cfg      *wtsync.Config
 	// own is every branch against its own remote, read after the fetch.
 	own *wtsync.Own
+	// target is what --onto names, nil for a run onto trunk; tgt is what
+	// every worktree of the run is assessed against and rebased onto:
+	// trunk, or the target.
+	target *OntoTarget
+	tgt    wtsync.Target
+	// stacked is the stack parents of the worktrees a run with --onto
+	// leaves where they are, for the commands that follow them.
+	stacked map[string]string
+	// expectWork is the worktree a token read with --onto is of.
+	expectWork string
 
 	parents   map[string]string
 	ambiguous map[string][]string // branches that merge two ancestors; not handled
@@ -221,10 +235,25 @@ func (r *RunPlan) run(works []string) error {
 	w, opts := r.w, r.opts
 	defer syncrun.WatchSignals(w, r.tracker)()
 
+	if err := ontoUsage(works, opts.Onto, opts.Upstream); err != nil {
+		return err
+	}
+	if opts.Onto != "" && opts.Steps != nil {
+		return errors.New("wt sync steps runs the steps in place and takes no --onto")
+	}
+	if opts.Onto != "" && opts.Stack != nil && opts.Stack.Autosquash {
+		return errors.New("--autosquash folds in place, onto the line's own base; rebase onto <ref> with a second run, --stack --onto <ref>")
+	}
 	if err := r.declare(works); err != nil {
 		return err
 	}
 	if opts.Expect != "" && !opts.planExpect {
+		if r.target != nil {
+			if len(works) != 1 {
+				return errors.New("--expect with --onto takes the one worktree wt sync <work> --onto <ref> --json read the token for; name it alone")
+			}
+			r.expectWork = works[0]
+		}
 		if err := r.expectOverview(); err != nil {
 			return err
 		}
@@ -240,6 +269,12 @@ func (r *RunPlan) run(works []string) error {
 	}
 	if len(works) == 0 && opts.AllowDiverged {
 		return errors.New("--allow-diverged rebases a worktree you name over commits its remote has; name it")
+	}
+	// Every refusal --onto has comes before local trunk is touched.
+	if r.target != nil {
+		if err := r.ontoPrecheck(works); err != nil {
+			return err
+		}
 	}
 	// wt up's token names the stack, which is only known further down.
 	if opts.Expect == "" || !opts.planExpect {
@@ -307,6 +342,7 @@ func (r *RunPlan) run(works []string) error {
 	for _, b := range r.branches {
 		r.rebaseOne(b)
 	}
+	r.printFollowUps()
 	if len(r.branches) > 1 {
 		var counts []string
 		for _, outcome := range []string{"rebased", "fast-forwarded", "skipped", "needs you", "refused", "restored", "failed"} {
@@ -347,6 +383,7 @@ func (r *RunPlan) run(works []string) error {
 // remote cannot is refused by itself, at triage.
 func (r *RunPlan) declare(works []string) error {
 	ctx := r.ctx
+	named := works
 	var fetched string
 	if r.opts.NoFetch {
 		fetched = LastFetchedParen(ctx.Repo.MainRoot, r.opts.Clock())
@@ -381,8 +418,14 @@ func (r *RunPlan) declare(works []string) error {
 		return err
 	}
 	r.onto, r.trunkSHA = onto, trunkSHA
+	r.tgt = wtsync.Target{Onto: trunkSHA}
 	r.opts.Journal.Repo(ctx.Repo.MainRoot)
-	r.opts.Journal.Trunk(r.trunk, ctx.TrunkSource(), onto, trunkSHA, !r.opts.NoFetch)
+	// onto is the target's commit, recorded once the target resolves.
+	recorded := trunkSHA
+	if r.opts.Onto != "" {
+		recorded = ""
+	}
+	r.opts.Journal.Trunk(r.trunk, ctx.TrunkSource(), onto, recorded, !r.opts.NoFetch)
 	label := r.opts.label
 	if label == "" && r.opts.Steps != nil {
 		label = "wt sync steps"
@@ -390,7 +433,18 @@ func (r *RunPlan) declare(works []string) error {
 	if label == "" {
 		label = "wt sync rebase"
 	}
-	fmt.Fprintf(r.w, "%s  onto %s %s %s\n", label, onto, git.ShortID(trunkSHA, 7), fetched)
+	if r.opts.Onto != "" {
+		target, how, err := r.resolveTarget()
+		if err != nil {
+			return err
+		}
+		r.target, r.tgt = &target, target.Target(trunkSHA)
+		fmt.Fprintf(r.w, "%s  onto %s %s\n", label, target.Short(), how)
+		fmt.Fprintf(r.w, "the declaration and its scripts are read from trunk, %s %s %s\n", onto, git.ShortID(trunkSHA, 7), fetched)
+	} else {
+		fmt.Fprintf(r.w, "%s  onto %s %s %s\n", label, onto, git.ShortID(trunkSHA, 7), fetched)
+	}
+	r.opts.Journal.Target(r.targetJSON())
 	cfg, err := wtsync.LoadFromRef(ctx.Repo.MainRoot, trunkSHA)
 	if errors.Is(err, wtsync.ErrUndeclared) && r.opts.undeclaredOK {
 		fmt.Fprintf(r.w, "no %s on %s: nothing is declared, so only a conflict-free rebase goes\n", wtsync.ConfigFile, onto)
@@ -399,7 +453,13 @@ func (r *RunPlan) declare(works []string) error {
 	}
 	if errors.Is(err, wtsync.ErrUndeclared) {
 		// Nothing to rebase, but trunk was fetched: local trunk follows,
-		// unless an --expect is waiting to refuse the run anyway.
+		// unless an --expect is waiting to refuse the run anyway, or --onto
+		// is: its refusals come before anything moves.
+		if r.target != nil {
+			if err := r.ontoPrecheck(named); err != nil {
+				return err
+			}
+		}
 		if r.opts.Expect == "" {
 			r.syncTrunk()
 		}
@@ -476,7 +536,12 @@ func (r *RunPlan) expectOverview() error {
 	if err != nil {
 		return err
 	}
-	sv, err := SurveyRepo(r.ctx, r.trunkSHA, r.cfg, listed, r.own)
+	var sv Survey
+	if r.target != nil {
+		sv, err = SurveyOnto(r.ctx, r.expectWork, *r.target, r.trunkSHA, r.cfg, listed, r.own)
+	} else {
+		sv, err = SurveyRepo(r.ctx, r.trunkSHA, r.cfg, listed, r.own)
+	}
 	if err != nil {
 		return err
 	}
@@ -486,6 +551,10 @@ func (r *RunPlan) expectOverview() error {
 		return err
 	}
 	if now == nil || *now != r.opts.Expect {
+		if r.target != nil {
+			return fmt.Errorf("the look changed since it was read (%s, or what a run onto it would start on, is "+
+				"not what wt sync %s --onto %s --json saw); nothing is rebased: look again", r.target.Short(), r.expectWork, r.target.Ref)
+		}
 		return fmt.Errorf("the overview changed since it was read (what a run on trunk %s would start on is "+
 			"not what wt sync --json saw); nothing is rebased: read the overview again", r.trunk)
 	}
@@ -644,7 +713,12 @@ func (r *RunPlan) selectBranches(works []string) error {
 			return err
 		}
 	}
-	if r.opts.Stack != nil || r.opts.Steps != nil {
+	if r.target != nil {
+		if err := r.ontoBranches(named, worktrees); err != nil {
+			return err
+		}
+	}
+	if r.opts.Stack != nil || r.opts.Steps != nil || r.target != nil {
 		// The line is one worktree: its layers are moved by this run, not
 		// rebased again as members of a stack of worktrees. wt sync steps
 		// covers the one branch named.
@@ -696,7 +770,7 @@ func (r *RunPlan) triage() (proceed bool, err error) {
 		if a, ok := r.assessed[b]; ok {
 			p.a = a
 		} else {
-			p.a = wtsync.AssessOwn(r.ctx.Repo.MainRoot, r.trunkSHA, r.cfg, p.wt, listed, syncrun.OwnStateOf(r.own, b))
+			p.a = wtsync.AssessTo(r.ctx.Repo.MainRoot, r.tgt, r.cfg, p.wt, listed, syncrun.OwnStateOf(r.own, b))
 		}
 		if r.opts.Force && len(p.a.Sessions) > 0 {
 			p.forced = p.a.Sessions
@@ -704,7 +778,7 @@ func (r *RunPlan) triage() (proceed bool, err error) {
 				// The session was all that kept the branch from its remote's
 				// commit, so that commit is what the run rebases: assessed
 				// again there, with nobody in the way.
-				p.a = wtsync.AssessOwn(r.ctx.Repo.MainRoot, r.trunkSHA, r.cfg, p.wt, nil, syncrun.OwnStateOf(r.own, b))
+				p.a = wtsync.AssessTo(r.ctx.Repo.MainRoot, r.tgt, r.cfg, p.wt, nil, syncrun.OwnStateOf(r.own, b))
 			}
 			p.a.Sessions = nil
 			fmt.Fprintf(r.w, "⚠ %s: --force takes the run past %s; the files it has read will change\n",
@@ -795,10 +869,13 @@ func (r *RunPlan) probeNeeds() {
 			continue
 		}
 		base := r.trunkSHA
+		if r.target != nil {
+			base = r.target.cutoff()
+		}
 		if parent, ok := r.parents[b]; ok && r.parts[parent] != nil {
 			base = "refs/heads/" + parent
 		}
-		due, err := wtsync.StepsDue(p.wt.Path, r.cfg, base, rebasedTip(b, p.a), r.trunkSHA)
+		due, err := wtsync.StepsDue(p.wt.Path, r.cfg, base, rebasedTip(b, p.a), r.tgt.Onto, r.tgt.Upstream)
 		if err != nil {
 			p.refused = p.work + ": could not tell which steps a rebase runs: " + err.Error()
 			r.refuseAbove(b, p.work+" was refused")
@@ -1061,9 +1138,18 @@ func (r *RunPlan) readStack() error {
 		return errors.New(why)
 	}
 	b := r.branches[0]
-	line, err := readLine(r.ctx, b, r.trunkSHA, r.opts.Stack.Layers)
+	base := r.trunkSHA
+	if r.target != nil {
+		base = r.target.cutoff()
+	}
+	line, err := readLine(r.ctx, b, base, r.opts.Stack.Layers)
 	if err != nil {
 		return err
+	}
+	if r.target != nil {
+		if why := r.target.onLine(r.ctx, line, r.trunkSHA, r.parts[b].work); why != "" {
+			return errors.New(why + "; nothing is rebased")
+		}
 	}
 	if len(line.Layers) == 0 {
 		return fmt.Errorf("no layer branch is on the line of %s: nothing for --stack to move; wt sync rebase %s rebases it alone", r.parts[b].work, r.parts[b].work)
@@ -1145,7 +1231,7 @@ func (r *RunPlan) stackRecord(b string, p *participant, req wtsync.Request) (*wt
 	if st == nil {
 		return nil, nil
 	}
-	rec := &wtsync.StackRecord{Epoch: r.epoch, Work: p.work, Branch: b, Path: p.wt.Path, Onto: req.Onto,
+	rec := &wtsync.StackRecord{Epoch: r.epoch, Work: p.work, Branch: b, Path: p.wt.Path, Onto: req.Onto, OntoRef: r.ontoRef(), Upstream: req.Upstream,
 		Autosquash: st.Autosquash, InPlace: r.opts.Steps != nil, Force: r.opts.Force, Line: r.line}
 	return rec, wtsync.WriteStackRecord(r.ctx.Repo.MainRoot, rec)
 }
@@ -1230,12 +1316,15 @@ func (r *RunPlan) passOver(b string, p *participant) bool {
 // did not go, which settled the worktree.
 func (r *RunPlan) request(b string, p *participant) (req wtsync.Request, ontoLabel string, ok bool) {
 	w, j := r.w, r.opts.Journal
-	req = wtsync.Request{Path: p.wt.Path, Branch: b, Trunk: r.trunkSHA, Onto: r.trunkSHA, Epoch: r.epoch, Work: p.work, Unavailable: p.unavailable}
+	req = wtsync.Request{Path: p.wt.Path, Branch: b, Trunk: r.trunkSHA, Onto: r.tgt.Onto, Upstream: r.tgt.Upstream, Epoch: r.epoch, Work: p.work, Unavailable: p.unavailable}
 	if line := syncrun.AllowedOwedLine(p.unavailable); line != "" {
 		fmt.Fprintf(w, "  %s\n", line)
 	}
 	req.Stacked = len(wtsync.Descendants(r.parents, b)) > 0
 	ontoLabel = r.onto
+	if r.target != nil {
+		ontoLabel = r.target.Ref
+	}
 	if st := r.opts.Stack; st != nil {
 		req.Stack = &wtsync.StackRequest{Line: r.line, Autosquash: st.Autosquash}
 		if st.Autosquash || r.opts.Steps != nil {
@@ -1308,9 +1397,9 @@ func (r *RunPlan) rebaseFailed(b string, p *participant, res wtsync.Result, rerr
 func (r *RunPlan) handOver(b string, p *participant, req wtsync.Request, res wtsync.Result) {
 	w, j := r.w, r.opts.Journal
 	herr := syncrun.HandOver(r.ctx, w, syncrun.HandoverInput{
-		Work: p.work, Branch: b, Path: p.wt.Path, TrunkRef: r.onto, TrunkSHA: r.trunkSHA,
+		Work: p.work, Branch: b, Path: p.wt.Path, TrunkRef: r.onto, TrunkSHA: r.trunkSHA, OntoRef: r.ontoRef(),
 		Onto: req.Onto, Upstream: req.Upstream, Epoch: r.epoch, Cfg: r.cfg, Res: res, Lock: p.lock,
-		Found: p.found, Tracker: r.tracker,
+		Found: p.found, Tracker: r.tracker, FollowUps: r.followUpLines(b, p, res),
 	})
 	if herr != nil {
 		fmt.Fprintf(w, "  ✗ failed: %v\n", herr)
@@ -1393,7 +1482,7 @@ func (r *RunPlan) finishRebase(b string, p *participant, res wtsync.Result, onto
 		done.OldTip = p.foundTip(res)
 		return syncrun.CompleteInput{
 			Branch: b, Epoch: r.epoch, Res: done,
-			Tell: append(slices.Clone(p.a.Sessions), p.forced...), TrunkName: r.trunk, Landed: p.a.Behind, Check: syncrun.PathsOnce(wtsync.StopPaths(res.Stops)),
+			Tell: append(slices.Clone(p.a.Sessions), p.forced...), TrunkName: cmp.Or(r.ontoRef(), r.trunk), Landed: p.a.Behind, Check: syncrun.PathsOnce(wtsync.StopPaths(res.Stops)),
 			Unavailable: p.unavailable, Steps: r.stepSet, ForceSteps: r.opts.Steps != nil,
 		}
 	})
@@ -1526,9 +1615,9 @@ func (r *RunPlan) fastForward(b string, p *participant, done string) (safety wts
 // run is rebased onto where it now is.
 func (r *RunPlan) fastForwardOnly(b string, p *participant) {
 	w, own := r.w, p.a.Own
-	why := "; already on trunk, nothing to rebase"
+	why := "; already on " + r.targetName() + ", nothing to rebase"
 	if p.a.Class == wtsync.Stale {
-		why = "; nothing ahead of trunk, nothing to rebase"
+		why = "; nothing ahead of " + r.targetName() + ", nothing to rebase"
 	}
 	safety, ok := r.fastForward(b, p, why)
 	if !ok {

@@ -283,7 +283,8 @@ treat a missing object as unknown.
 | `command` | `"up"` | |
 | `trunk`, `trunkRef` | string \| null | null when the run stopped before resolving them |
 | `trunkSource` | string \| null | since 1.3.0: how `trunk` was found ([`trunkSource`](#trunksource--how-trunk-was-found)); null with `trunk` |
-| `onto` | string \| null | the trunk commit the run rebased onto, after its fetch; null when never determined |
+| `onto` | string \| null | the commit the run rebased onto: trunk's after its fetch, or since 1.6.0 the target `--onto` names; null when never determined |
+| `target` | object \| null | since 1.6.0: [what `onto` is](#target--trunk-or---onto), trunk or the ref `--onto` names; null when never determined |
 | `fetched` | bool | trunk was fetched (false with `--no-fetch`, or when the run stopped first) |
 | `trunkSync` | object \| null | what the run did to local `<trunk>` after its fetch (see [`trunkSync`](#trunksync--local-trunk)); null when it did not fetch |
 | `outcome` | see below | |
@@ -393,6 +394,26 @@ fast-forward was otherwise possible.
 | `session` | an agent session is busy in the checkout it is on (idle ones, and the session running wt, do not count), or the sessions could not be listed |
 | `notFastForward` | it moved, or was checked out or switched away from, while wt was updating it |
 | `failed` | git refused the update (an ignored file it would overwrite), or it is not safe to try: trunk checked out in more than one worktree |
+
+### `target` — trunk, or `--onto`
+
+What `onto` is, on `wt sync --json` (since `sync` 1.8.0), `wt sync rebase|resume
+--json` (`sync-run` 1.8.0) and `wt up --json` (`up` 1.6.0). Without `--onto` it
+is trunk, and `onto` is trunk's commit as it always was; the declaration and its
+scripts are read from trunk either way.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `ref` | string | the ref as `--onto` was given (`integ`, `origin/release`), or `origin/<trunk>` |
+| `trunk` | bool | true for trunk: no `--onto` was given |
+| `upstream` | string \| null | the commit `--upstream` names: only the commits above it were assessed or rebased (`git rebase --onto <ref> <upstream>`); null without it |
+
+The overview's `token` covers the target's ref and commit and the upstream,
+only when `--onto` is given: without it the token is byte for byte what it was.
+So `wt sync rebase <work> --onto <ref> --expect <token>` refuses a target that
+moved since `wt sync <work> --onto <ref> --json` read it. `wt up --expect` takes
+the token of `wt status --json`, which knows no target, so `wt up --onto
+--expect` is refused.
 
 ### `ownRemote` — a branch against its own remote
 
@@ -1446,7 +1467,9 @@ trunk as last fetched; a fetch that fails is `fetchError`, and the overview goes
 on), then simulates each rebase in the object store: it writes loose objects and
 moves no ref. `wt sync <work> --json` is refused; the overview covers them all,
 except with `--stack`: `wt sync <work> --stack --json` is the overview with
-`stack` filled for that worktree's line.
+`stack` filled for that worktree's line, and with `--onto` (since 1.8.0):
+`wt sync <work> --onto <ref> --json` is the overview of that one worktree
+against the ref, which `onto`, `target` and `token` name.
 
 With `--all`, `--roots` or `--profile` stdout is an **array** of these objects,
 one per repository, in the selection's order; `wt status --json` takes none of
@@ -1462,7 +1485,8 @@ object with `error` set and no worktrees, and the exit code is non-zero.
 | `name` | string | the repository's name: the main checkout's directory name |
 | `trunk`, `trunkRef` | string \| null | `main`, `origin/main`; null when nothing names trunk, and `error` says so |
 | `trunkSource` | string \| null | since 1.1.0: how `trunk` was found ([`trunkSource`](#trunksource--how-trunk-was-found)) |
-| `onto` | string \| null | the trunk commit assessed against; null when trunk is not known |
+| `onto` | string \| null | the commit assessed against: trunk's, or since 1.8.0 the target `--onto` names; null when trunk is not known |
+| `target` | object \| null | since 1.8.0: [what `onto` is](#target--trunk-or---onto), trunk or the ref `--onto` names; null when trunk is not known |
 | `fetched` | bool | trunk was fetched first |
 | `fetchError` | string \| null | the fetch failed; the overview is against trunk as last fetched |
 | `declared` | bool | trunk declares `.wt-sync.yaml`; without it nothing is rebased |
@@ -1573,7 +1597,8 @@ value for results saved before that), and:
 | Field | Type | Meaning |
 |---|---|---|
 | `repo` | string \| null | the main checkout, as in `wt sweep --json`; null when the verb stopped before reading it |
-| `onto` | string \| null | for resume, the trunk commit the handed-over run recorded; null for undo |
+| `onto` | string \| null | the commit rebased onto: trunk's, or since 1.8.0 the target `--onto` names; for resume, the one the handed-over run recorded; null for undo |
+| `target` | object \| null | since 1.8.0: [what `onto` is](#target--trunk-or---onto); for resume, what the handed-over run rebased onto; null for undo |
 | `trunkSync` | object \| null | as for `wt up`; always null for resume and undo, which do not fetch |
 | `error` | string \| null | as for `wt up`; also a question answered no (or nobody there to answer it), and for undo, why it stopped after putting some back |
 
@@ -2186,3 +2211,4 @@ change made it.
 | `sync` 1.6.0, `sync-run` 1.5.0, `status` 1.10.0 | [`each_commit` checks and `needs`](#needs--what-a-step-cannot-run-without): `eachCommitDeclared`, `needs`, and `checks` and `checkCommits` on each worktree of `sync`; `needs` on every declared step of `sync` and `status`; `checked` and `checkFailed` on each participant of `sync-run`, and the `deferred` result `owed` |
 | `sync` 1.7.0, `sync-run` 1.6.0 | `stack`: the stack held on one line, on the overview (`--stack`) and on a `--stack` run's participant, with each layer and what came of it |
 | `sync-run` 1.7.0 | [`layerSteps`](#layersteps--a-step-at-every-layer-tip) and `rechecked` on each participant: what a step with `each: layer` or `fold: owner` came to at each layer; `command` `sync steps` for `wt sync steps` |
+| `sync` 1.8.0, `sync-run` 1.8.0, `up` 1.6.0 | [`target`](#target--trunk-or---onto): what `onto` is, trunk or the ref `--onto` names, with `--upstream`'s commit; `onto` is that target's commit. `wt sync <work> --onto <ref> --json` is the overview of that one worktree, and its `token` covers the target |

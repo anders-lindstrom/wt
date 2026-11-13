@@ -93,9 +93,9 @@ func Preflight(a Assessment) (Verdict, string) {
 		// moves it there and is done.
 		return Proceed, ""
 	case a.Class == Current:
-		return SkipRun, "already on trunk"
+		return SkipRun, "already on " + Target{Name: a.Target}.name()
 	case a.Class == Stale:
-		return SkipRun, "nothing ahead of trunk"
+		return SkipRun, "nothing ahead of " + Target{Name: a.Target}.name()
 	}
 	// Below the skips: a branch a run does not rebase is not pushed over
 	// its remote either.
@@ -173,6 +173,9 @@ type Request struct {
 	// goes on from; nil for a run.
 	Resumed *LayerState
 }
+
+// target is the request as wtsync assesses it: onto, above the upstream.
+func (r Request) target() Target { return Target{Onto: r.Onto, Upstream: r.Upstream, Trunk: r.Trunk} }
 
 // base is what the rebase replays from: the parent's old tip for a stack
 // child, and the rebase target itself otherwise.
@@ -433,7 +436,7 @@ func Rebase(mainRoot string, cfg *Config, req Request, log io.Writer) (Result, e
 	// it, and the editor takes out the other such commits itself. A branch
 	// with nothing to lift gets the same list a plain rebase would,
 	// untouched.
-	lift, err := planLift(req.Path, cfg, req.base(), req.Branch)
+	lift, err := planLift(req.Path, cfg, req.target(), req.Branch)
 	if err != nil {
 		return early(err)
 	}
@@ -524,13 +527,13 @@ func (p liftPlan) edits() bool { return len(p.marks) > 0 || len(p.drops) > 0 }
 
 // planLift reads the commits of base...branch the way the rebase selects
 // them — the right side, merges left out — and sorts them into the plan.
-func planLift(wtPath string, cfg *Config, base, branch string) (liftPlan, error) {
+func planLift(wtPath string, cfg *Config, t Target, branch string) (liftPlan, error) {
 	var plan liftPlan
 	patterns := cfg.liftPatterns()
 	if len(patterns) == 0 {
 		return plan, nil
 	}
-	commits, err := logWithPaths(wtPath, "--right-only", "--no-merges", base+"..."+branch, "--")
+	commits, err := t.commits(wtPath, branch, "--right-only", "--no-merges")
 	if err != nil {
 		return plan, err
 	}
@@ -710,7 +713,7 @@ func forgetBefore(wtPath string) error {
 // break after every pick to check. A list with nothing to mark, drop or
 // check is left alone.
 func (d *driver) markTodo() error {
-	lift, err := planLift(d.req.Path, d.cfg, d.req.base(), d.req.Branch)
+	lift, err := planLift(d.req.Path, d.cfg, d.req.target(), d.req.Branch)
 	if err != nil {
 		return err
 	}

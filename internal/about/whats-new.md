@@ -4,6 +4,14 @@ Newest first, each heading stamped with the local date and time of the change
 (several land per day). `wt about` prints the newest 5 entries, so keep each entry to a few lines a human
 would want read out to them; the full story is in git history.
 
+## 2026-11-12 23:09 — wt sync rebases onto any ref with --onto
+
+`wt sync <work> --onto <ref>`, `wt sync rebase <work> --onto <ref>` and
+`wt up --onto <ref>` look at and rebase onto an integration branch, a release
+branch or another feature branch, with everything a run onto trunk has; the
+declaration still comes from trunk. `--upstream <ref>` moves a layer off one
+branch onto another. `--json` gains `target`.
+
 ## 2026-11-12 19:50 — Rebase onto trunk with wt sync first
 
 The worktree conventions now send a rebase or restack onto trunk through

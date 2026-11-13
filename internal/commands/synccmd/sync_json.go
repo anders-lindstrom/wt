@@ -52,12 +52,14 @@ type SyncOverview struct {
 	TrunkSource   *string `json:"trunkSource"`
 	TrunkRef      *string `json:"trunkRef"`
 	Onto          *string `json:"onto"`
-	Fetched       bool    `json:"fetched"`
-	FetchError    *string `json:"fetchError"`
-	Declared      bool    `json:"declared"`
-	Token         *string `json:"token"`
-	Error         *string `json:"error"`
-	SessionsError *string `json:"sessionsError"`
+	// Target is what onto is: trunk, or the ref --onto names.
+	Target        *syncrun.RunTarget `json:"target"`
+	Fetched       bool               `json:"fetched"`
+	FetchError    *string            `json:"fetchError"`
+	Declared      bool               `json:"declared"`
+	Token         *string            `json:"token"`
+	Error         *string            `json:"error"`
+	SessionsError *string            `json:"sessionsError"`
 	// EachCommitDeclared is the each_commit checks trunk declares.
 	EachCommitDeclared []DeclaredStep `json:"eachCommitDeclared"`
 	// Needs is every need a declared step has, and what its probe said.
@@ -226,6 +228,10 @@ func OverviewOf(ctx *kit.Context, opts SyncOptions) SyncOverview {
 	}
 	trunk := ctx.Config.MainBranch
 	o.Trunk, o.TrunkRef, o.TrunkSource = jsonout.Strp(trunk), jsonout.Strp("origin/"+trunk), ctx.TrunkSource()
+	if opts.Upstream != "" && opts.Onto == "" {
+		o.Error = jsonout.Strp("--upstream needs --onto: it says where the commits rebased onto --onto's ref start")
+		return o
+	}
 	// Trunk, and with it the own remote of every worktree's branch. One
 	// that could not be fetched is as last fetched, which its
 	// ownRemote.fetched says, and its row says why.
@@ -259,12 +265,39 @@ func OverviewOf(ctx *kit.Context, opts SyncOptions) SyncOverview {
 		o.Error = jsonout.Strp(err.Error())
 		return o
 	}
-	o.Onto, o.Declared = jsonout.Strp(sha), cfg != nil
+	o.Declared = cfg != nil
+	if opts.Onto == "" {
+		o.Onto, o.Target = jsonout.Strp(sha), &syncrun.RunTarget{Ref: "origin/" + trunk, Trunk: true}
+	}
+	var target *OntoTarget
+	if opts.Onto != "" {
+		if src, remote, err := remoteSource(ctx, opts.Onto); remote && !opts.NoFetch {
+			if err != nil {
+				o.Error = jsonout.Strp(err.Error())
+				return o
+			}
+			if err := fetchOnto(ctx, src, syncFetchTimeout); err != nil {
+				o.FetchError, o.Fetched = jsonout.Strp(kit.FetchReason(err)), false
+			}
+		}
+		t, err := resolveOnto(ctx, opts.Onto, opts.Upstream)
+		if err != nil {
+			o.Error = jsonout.Strp(err.Error())
+			return o
+		}
+		target = &t
+		o.Onto, o.Target = jsonout.Strp(t.SHA), &syncrun.RunTarget{Ref: t.Ref, Upstream: jsonout.Strp(t.Upstream)}
+	}
 	listed, err := ctx.ListAgents()
 	if err != nil {
 		o.SessionsError = jsonout.Strp(err.Error())
 	}
-	sv, err := SurveyRepo(ctx, sha, cfg, listed, own)
+	var sv Survey
+	if target != nil {
+		sv, err = SurveyOnto(ctx, opts.Work, *target, sha, cfg, listed, own)
+	} else {
+		sv, err = SurveyRepo(ctx, sha, cfg, listed, own)
+	}
 	if err != nil {
 		o.Error = jsonout.Strp(err.Error())
 		return o
@@ -276,7 +309,11 @@ func OverviewOf(ctx *kit.Context, opts SyncOptions) SyncOverview {
 		o.Error = jsonout.Strp(err.Error())
 	}
 	if opts.Stack != nil {
-		if o.Stack, err = stackLook(ctx, sha, opts.Stack, listed); err != nil {
+		base := sha
+		if target != nil {
+			base = target.cutoff()
+		}
+		if o.Stack, err = stackLookAt(ctx, base, sha, target, opts.Stack, listed); err != nil {
 			o.Error = jsonout.Strp(err.Error())
 		}
 	}
@@ -298,22 +335,52 @@ type Survey struct {
 	// divergedOnly is the branches a run refuses for nothing but having
 	// diverged from their own remote: --allow-diverged starts on them.
 	divergedOnly map[string]bool
+	// target is what --onto names, for a survey of one worktree against it;
+	// nil for one against trunk.
+	target *OntoTarget
 }
 
 // SurveyRepo assesses every worktree but the main checkout against trunkSHA
 // and files each as the overview does. own is every branch against its own
 // remote; nil checks none.
 func SurveyRepo(ctx *kit.Context, trunkSHA string, cfg *wtsync.Config, listed []agents.Agent, own *wtsync.Own) (Survey, error) {
+	return survey(ctx, wtsync.Target{Onto: trunkSHA}, nil, nil, cfg, listed, own)
+}
+
+// SurveyOnto is the survey of the one worktree work names against the
+// target --onto names, with the declaration's scripts read from trunkSHA.
+// A run with --onto moves the worktree alone, so it has no stack.
+func SurveyOnto(ctx *kit.Context, work string, target OntoTarget, trunkSHA string, cfg *wtsync.Config, listed []agents.Agent, own *wtsync.Own) (Survey, error) {
+	wt, err := kit.Locate(ctx, work)
+	if err != nil {
+		return Survey{}, err
+	}
+	if why := target.refuseFor(ctx, kit.WorktreeName(ctx, wt.Branch, wt.Path), wt.Branch); why != "" {
+		return Survey{}, errors.New(why)
+	}
+	return survey(ctx, target.Target(trunkSHA), &target, &wt, cfg, listed, own)
+}
+
+// survey assesses every worktree but the main checkout against t, or the
+// one only names, and files each as the overview does.
+func survey(ctx *kit.Context, t wtsync.Target, target *OntoTarget, only *repo.Worktree, cfg *wtsync.Config, listed []agents.Agent, own *wtsync.Own) (Survey, error) {
 	all, err := ctx.Repo.Worktrees()
 	if err != nil {
 		return Survey{}, err
 	}
 	worktrees := slices.DeleteFunc(slices.Clone(all), func(wt repo.Worktree) bool { return wt.IsMain })
-	assessments := assessAll(ctx.Repo.MainRoot, trunkSHA, cfg, worktrees, listed, own, assessWorkers)
 	r := &RunPlan{ctx: ctx, assessed: map[string]wtsync.Assessment{}}
-	r.parents, r.ambiguous, err = wtsync.Parents(ctx.Repo.MainRoot, trunkSHA, all)
-	if err != nil {
-		return Survey{}, err
+	var assessments []wtsync.Assessment
+	if only != nil {
+		worktrees = []repo.Worktree{*only}
+		assessments = []wtsync.Assessment{wtsync.AssessTo(ctx.Repo.MainRoot, t, cfg, *only, listed, syncrun.OwnStateOf(own, only.Branch))}
+		r.parents, r.ambiguous = map[string]string{}, map[string][]string{}
+	} else {
+		assessments = assessAll(ctx.Repo.MainRoot, t.Onto, cfg, worktrees, listed, own, assessWorkers)
+		r.parents, r.ambiguous, err = wtsync.Parents(ctx.Repo.MainRoot, t.Onto, all)
+		if err != nil {
+			return Survey{}, err
+		}
 	}
 	for i, wt := range worktrees {
 		if wt.Branch != "" {
@@ -321,7 +388,7 @@ func SurveyRepo(ctx *kit.Context, trunkSHA string, cfg *wtsync.Config, listed []
 		}
 	}
 	sv := Survey{worktrees: worktrees, assessments: assessments, parents: r.parents, ambiguous: r.ambiguous,
-		assessed: r.assessed, Rows: make([]OverviewWorktree, 0, len(worktrees)), divergedOnly: map[string]bool{}}
+		assessed: r.assessed, Rows: make([]OverviewWorktree, 0, len(worktrees)), divergedOnly: map[string]bool{}, target: target}
 	for i, wt := range worktrees {
 		if a := assessments[i]; wt.Branch != "" && a.Own.State == wtsync.OwnDiverged {
 			a.Own.Allowed = true
@@ -341,7 +408,7 @@ func SurveyRepo(ctx *kit.Context, trunkSHA string, cfg *wtsync.Config, listed []
 		row := r.overviewRow(wt, assessments[i], byBranch)
 		row.DeferredDeclared = declared
 		if len(cfg.EachCommitOrNeeds()) > 0 {
-			due := stepsDue(trunkSHA, cfg, r.parents, wt, assessments[i])
+			due := stepsDue(t, cfg, r.parents, wt, assessments[i])
 			row.Checks, row.CheckCommits = len(due.CheckCommits), checkCommits(due)
 			sv.dues = append(sv.dues, due)
 		}
@@ -438,6 +505,10 @@ func (sv Survey) Token(ctx *kit.Context, trunk, trunkSHA string) (*string, error
 		return nil, fmt.Errorf("cannot look for %s on trunk: %w", wtsync.ConfigFile, err)
 	}
 	h.Write([]byte("\x00" + decl))
+	if o := sv.target; o != nil {
+		// Only with --onto: without it the token is what it always was.
+		h.Write([]byte("\x00onto\x01" + o.Ref + "\x01" + o.SHA + "\x01" + o.Upstream))
+	}
 	eligible, covered := 0, 0
 	for _, row := range sv.Rows {
 		if row.Branch == nil {

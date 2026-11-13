@@ -82,6 +82,13 @@ var simEnv = []string{
 // tree is touched; the only objects created are unreachable blobs, trees and
 // commits. A nil cfg claims nothing, so the first stop is the last.
 func SimulateRebase(mainRoot, onto, branch string, cfg *Config) (Replay, error) {
+	return SimulateRebaseTo(mainRoot, Target{Onto: onto}, branch, cfg)
+}
+
+// SimulateRebaseTo is SimulateRebase against t: the commits above t's
+// cutoff replayed onto t.Onto, with the scripts read from t's trunk.
+func SimulateRebaseTo(mainRoot string, t Target, branch string, cfg *Config) (Replay, error) {
+	onto, scripts := t.Onto, t.scripts()
 	var rep Replay
 	// The same selection and order the run's rebase uses: right side only,
 	// merges flattened, topological, and a commit trunk already carries
@@ -93,7 +100,7 @@ func SimulateRebase(mainRoot, onto, branch string, cfg *Config) (Replay, error) 
 	// commit come back with the list: a stop needs the subject, the lift
 	// needs the paths, and asking at each stop is one more git process per
 	// stop.
-	all, err := logWithPaths(mainRoot, "--reverse", "--topo-order", "--right-only", "--no-merges", onto+"..."+branch, "--")
+	all, err := t.commits(mainRoot, branch, "--reverse", "--topo-order", "--right-only", "--no-merges")
 	if err != nil {
 		return rep, err
 	}
@@ -139,7 +146,7 @@ func SimulateRebase(mainRoot, onto, branch string, cfg *Config) (Replay, error) 
 		conflicted := map[string]bool{}
 		for _, cf := range conflicts {
 			conflicted[cf.Path] = true
-			r, rerr := resolveConflict(mainRoot, onto, cfg, cf, "")
+			r, rerr := resolveConflict(mainRoot, scripts, cfg, cf, "")
 			rep.Err = errors.Join(rep.Err, rerr)
 			stop.Files = append(stop.Files, r.Outcome)
 			if !r.Outcome.Resolved {
@@ -166,7 +173,7 @@ func SimulateRebase(mainRoot, onto, branch string, cfg *Config) (Replay, error) 
 		// sides bumped is lifted there, in the merged tree, before anything
 		// decides whether the pick still changes something.
 		if touchesAny(lifting, cp.Paths) {
-			lifts, lerr := liftAt(mainRoot, cfg, liftSides{base: c + "^", trunk: base, branch: c, merged: tree + ":"}, conflicted, mainRoot, onto)
+			lifts, lerr := liftAt(mainRoot, cfg, liftSides{base: c + "^", trunk: base, branch: c, merged: tree + ":"}, conflicted, mainRoot, scripts)
 			rep.Err = errors.Join(rep.Err, lerr)
 			var refused []string
 			for _, l := range lifts {
@@ -228,7 +235,13 @@ func SimulateRebase(mainRoot, onto, branch string, cfg *Config) (Replay, error) 
 // back as one Conflict with Incomplete set and the message as its path
 // description.
 func Endpoint(mainRoot, onto, branch string) ([]Conflict, error) {
-	_, clean, conflicts, messages, err := mergeTree(mainRoot, "", onto, branch)
+	return endpointFrom(mainRoot, "", onto, branch)
+}
+
+// endpointFrom is Endpoint with the merge base given: the cutoff of a
+// rebase that replays only the commits above it. Empty lets git find it.
+func endpointFrom(mainRoot, base, onto, branch string) ([]Conflict, error) {
+	_, clean, conflicts, messages, err := mergeTree(mainRoot, base, onto, branch)
 	if err != nil {
 		return nil, err
 	}

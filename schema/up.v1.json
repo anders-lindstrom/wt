@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/up.v1.json",
-  "x-version": "1.5.0",
+  "x-version": "1.6.0",
   "title": "wt up --json",
   "description": "What a wt up run did. Printed by `wt up [<work>] --json` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends the run. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",
   "type": "object",
-  "required": ["schema", "schemaVersion", "command", "trunk", "trunkSource", "trunkRef", "onto", "fetched", "trunkSync", "outcome", "error", "worktrees", "recovery"],
+  "required": ["schema", "schemaVersion", "command", "trunk", "trunkSource", "trunkRef", "onto", "target", "fetched", "trunkSync", "outcome", "error", "worktrees", "recovery"],
   "properties": {
     "schema": { "const": 1, "description": "The major version: a new one only for a change that breaks readers." },
     "schemaVersion": { "type": "string", "pattern": "^1\\.[0-9]+\\.[0-9]+$", "description": "The full semantic version of this schema that the output follows: minor for an added field or enumeration value, patch for wording." },
@@ -13,7 +13,8 @@
     "trunk": { "type": ["string", "null"] },
     "trunkSource": { "enum": ["config", "originHead", "conventional", "currentBranchGuess", null], "description": "How trunk was determined, first match wins, from local refs alone (since 1.3.0): config — MAIN_BRANCH in the wt configuration file; originHead — refs/remotes/origin/HEAD; conventional — the first of development, main, master that exists locally or on origin (since 1.3.1; before, main, master, trunk, development, develop, ranked by where each exists); currentBranchGuess — no longer produced since 1.3.1: when nothing names trunk, detection fails and the repository reports noConfiguration. Null when trunk is." },
     "trunkRef": { "type": ["string", "null"] },
-    "onto": { "$ref": "#/$defs/shaOrNull", "description": "The trunk commit the run rebased onto, after its fetch; null when never determined." },
+    "onto": { "$ref": "#/$defs/shaOrNull", "description": "The commit assessed against, or rebased onto: trunk, or --onto's target (since 1.6.0). Null when it was never determined." },
+    "target": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/target" }], "description": "What onto is: trunk, or the ref --onto names (since 1.6.0). Null when it was never determined." },
     "fetched": { "type": "boolean" },
     "trunkSync": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/trunkSync" }], "description": "What the run did to local trunk after its fetch: fast-forwarded to origin/<trunk> when safe, or why not. Null when it did not fetch." },
     "outcome": {
@@ -25,6 +26,17 @@
     "recovery": { "type": ["string", "null"], "description": "For interrupted: the way back wt printed." }
   },
   "$defs": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "trunk", "upstream"],
+      "description": "What is assessed against or rebased onto (since 1.6.0): trunk, or the ref --onto names.",
+      "properties": {
+        "ref": { "type": "string", "description": "The ref as given to --onto, or origin/<trunk>." },
+        "trunk": { "type": "boolean", "description": "The target is trunk: no --onto was given." },
+        "upstream": { "$ref": "#/$defs/shaOrNull", "description": "The commit --upstream names: only the commits above it are replayed. Null without it." }
+      }
+    },
     "trunkSync": {
       "type": "object",
       "description": "Local trunk against origin/<trunk>, and what was done about it. See docs/json.md.",
