@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/gittest"
 )
 
 // OwnBareOrigin makes origin a bare repository of its own that holds trunk and

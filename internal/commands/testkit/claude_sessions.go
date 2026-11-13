@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/agents"
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/agents"
+	"github.com/anlindstrom/wt/internal/commands/kit"
 )
 
 // Background is a background claude session in cwd.

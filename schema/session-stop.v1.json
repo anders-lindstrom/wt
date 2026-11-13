@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/session-stop.v1.json",
+  "$id": "https://raw.githubusercontent.com/anlindstrom/wt/main/schema/session-stop.v1.json",
   "x-version": "1.0.0",
   "title": "wt session stop --json",
   "description": "The outcome of stopping one background Claude session. Printed by `wt session stop <work> [<session>] --json` as the only thing on stdout, also on failure and with --dry-run. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",

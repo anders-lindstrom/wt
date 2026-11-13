@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anlindstrom/wt/internal/gittest"
 )
 
 // fakeTmutil is a tmutil that keeps its exclusions in a file beside itself,

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anlindstrom/wt/internal/gittest"
 )
 
 // fake writes a shell script as `superset` in its own directory and returns

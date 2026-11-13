@@ -3,10 +3,10 @@ package synccmd
 import (
 	"errors"
 
-	"github.com/anders-lindstrom/wt/internal/agents"
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
+	"github.com/anlindstrom/wt/internal/agents"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/syncrun"
+	"github.com/anlindstrom/wt/internal/wtsync"
 )
 
 // readLine reads the stack held on the line of branch against trunk: the

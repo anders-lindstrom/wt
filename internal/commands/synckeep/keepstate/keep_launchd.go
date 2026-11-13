@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/kit"
 )
 
 // HasLaunchd says whether m runs launchd, which the keeper's

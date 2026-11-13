@@ -5,11 +5,11 @@ import (
 	"io"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/provision"
-	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
-	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/config"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/provision"
+	"github.com/anlindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anlindstrom/wt/internal/commands/testkit"
+	"github.com/anlindstrom/wt/internal/config"
 )
 
 // With superset off, SUPERSET_REGISTER=on still gets nothing: no subprocess,

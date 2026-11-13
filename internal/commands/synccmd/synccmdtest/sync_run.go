@@ -3,9 +3,9 @@ package synccmdtest
 import (
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/agents"
-	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
-	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
+	"github.com/anlindstrom/wt/internal/agents"
+	"github.com/anlindstrom/wt/internal/commands/synccmd"
+	"github.com/anlindstrom/wt/internal/commands/syncrun"
 )
 
 // NoAgents is run options with no session anywhere, no fetch and a fixed

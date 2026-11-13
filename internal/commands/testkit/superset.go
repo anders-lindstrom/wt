@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/kit"
 )
 
 // OptIn is `wt config set superset true`. Every test that expects wt to reach

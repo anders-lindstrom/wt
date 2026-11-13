@@ -3,8 +3,8 @@ package synckeep
 import (
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/synckeep/keepstate"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/synckeep/keepstate"
 )
 
 // onMachine gives ctx a machine of the test's own: the platform the

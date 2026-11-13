@@ -5,9 +5,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/provision"
-	"github.com/anders-lindstrom/wt/internal/config"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/provision"
+	"github.com/anlindstrom/wt/internal/config"
 )
 
 func newConfigCmd() *cobra.Command {

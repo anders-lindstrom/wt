@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/config"
-	"github.com/anders-lindstrom/wt/internal/reposel"
+	"github.com/anlindstrom/wt/internal/config"
+	"github.com/anlindstrom/wt/internal/reposel"
 )
 
 // selectionFlags are the flags that turn a command on one repository into one

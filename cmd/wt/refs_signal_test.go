@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/refs"
-	"github.com/anders-lindstrom/wt/internal/gittest"
-	"github.com/anders-lindstrom/wt/internal/jsonout"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/refs"
+	"github.com/anlindstrom/wt/internal/gittest"
+	"github.com/anlindstrom/wt/internal/jsonout"
 )
 
 // sigtermRepo is a repository with three backups, backup/a to backup/c,

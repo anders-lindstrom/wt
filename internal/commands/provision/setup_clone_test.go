@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anlindstrom/wt/internal/commands/testkit"
 )
 
 // A clone that fails for an ordinary reason, here a missing parent, is an

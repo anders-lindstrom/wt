@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
+	"github.com/anlindstrom/wt/internal/commands/syncrun"
 )
 
 // An interrupt between the fast-forward and the rebase has no rebase to

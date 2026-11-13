@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
-	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
-	"github.com/anders-lindstrom/wt/internal/commands/synccmd/synccmdtest"
-	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
+	"github.com/anlindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anlindstrom/wt/internal/commands/synccmd"
+	"github.com/anlindstrom/wt/internal/commands/synccmd/synccmdtest"
+	"github.com/anlindstrom/wt/internal/commands/testkit"
+	"github.com/anlindstrom/wt/internal/wtsync"
 )
 
 // A check that fails hands the commit over with a plan; resume after a fix

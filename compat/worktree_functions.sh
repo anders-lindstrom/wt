@@ -8,7 +8,7 @@
 
 _wt_compat_require() {
     command -v wt >/dev/null 2>&1 && return 0
-    echo "worktree tooling requires 'wt' on PATH — see https://github.com/anders-lindstrom/wt" >&2
+    echo "worktree tooling requires 'wt' on PATH — see https://github.com/anlindstrom/wt" >&2
     return 1
 }
 

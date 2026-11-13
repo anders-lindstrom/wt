@@ -9,11 +9,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/config"
-	"github.com/anders-lindstrom/wt/internal/repo"
-	"github.com/anders-lindstrom/wt/internal/reposel"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/config"
+	"github.com/anlindstrom/wt/internal/repo"
+	"github.com/anlindstrom/wt/internal/reposel"
+	"github.com/anlindstrom/wt/internal/wtsync"
 )
 
 // ReposOptions is how `wt repos` prints: a table, or paths alone for a script.

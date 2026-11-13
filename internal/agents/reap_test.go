@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anlindstrom/wt/internal/gittest"
 )
 
 // scanWorld is a process table and the directories of its processes, put

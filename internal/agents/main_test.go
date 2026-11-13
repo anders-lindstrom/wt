@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anlindstrom/wt/internal/gittest"
 )
 
 // TestMain keeps these tests off the machine running them: gittest.Isolate.

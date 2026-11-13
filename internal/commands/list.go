@@ -10,14 +10,14 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/anders-lindstrom/wt/internal/agents"
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/session"
-	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
-	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
-	"github.com/anders-lindstrom/wt/internal/naming"
-	"github.com/anders-lindstrom/wt/internal/repo"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
+	"github.com/anlindstrom/wt/internal/agents"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/session"
+	"github.com/anlindstrom/wt/internal/commands/synccmd"
+	"github.com/anlindstrom/wt/internal/commands/syncrun"
+	"github.com/anlindstrom/wt/internal/naming"
+	"github.com/anlindstrom/wt/internal/repo"
+	"github.com/anlindstrom/wt/internal/wtsync"
 )
 
 // ListOptions tunes List.

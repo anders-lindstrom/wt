@@ -5,14 +5,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/agents"
-	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
-	"github.com/anders-lindstrom/wt/internal/commands/quarantinecmd/quarantinecmdtest"
-	"github.com/anders-lindstrom/wt/internal/commands/retire"
-	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
-	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/github"
-	"github.com/anders-lindstrom/wt/internal/jsonout"
+	"github.com/anlindstrom/wt/internal/agents"
+	"github.com/anlindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anlindstrom/wt/internal/commands/quarantinecmd/quarantinecmdtest"
+	"github.com/anlindstrom/wt/internal/commands/retire"
+	"github.com/anlindstrom/wt/internal/commands/retire/retiretest"
+	"github.com/anlindstrom/wt/internal/commands/testkit"
+	"github.com/anlindstrom/wt/internal/github"
+	"github.com/anlindstrom/wt/internal/jsonout"
 )
 
 // Each worktree a sweep removes goes into its own folder in the quarantine,

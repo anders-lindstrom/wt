@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/find"
-	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/find"
+	"github.com/anlindstrom/wt/internal/repo"
 )
 
 // SourceShellLayer is the line that loads wt's shell layer.

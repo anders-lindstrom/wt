@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/compat"
-	"github.com/anders-lindstrom/wt/shell"
+	"github.com/anlindstrom/wt/compat"
+	"github.com/anlindstrom/wt/shell"
 )
 
 func newShellLayerCmd() *cobra.Command {

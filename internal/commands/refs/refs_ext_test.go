@@ -11,12 +11,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/commands/refs"
-	"github.com/anders-lindstrom/wt/internal/commands/refs/refstest"
-	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/gittest"
-	"github.com/anders-lindstrom/wt/internal/jsonout"
-	"github.com/anders-lindstrom/wt/internal/refpins"
+	"github.com/anlindstrom/wt/internal/commands/refs"
+	"github.com/anlindstrom/wt/internal/commands/refs/refstest"
+	"github.com/anlindstrom/wt/internal/commands/testkit"
+	"github.com/anlindstrom/wt/internal/gittest"
+	"github.com/anlindstrom/wt/internal/jsonout"
+	"github.com/anlindstrom/wt/internal/refpins"
 )
 
 // A sweep pins each selected ref and deletes it in one step, drops a

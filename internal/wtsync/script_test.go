@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/git"
-	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anlindstrom/wt/internal/git"
+	"github.com/anlindstrom/wt/internal/gittest"
 )
 
 // fakeScript commits an executable to origin's main that answers the

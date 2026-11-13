@@ -3,9 +3,9 @@ package provision
 import (
 	"io"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/jsonout"
-	"github.com/anders-lindstrom/wt/schema"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/jsonout"
+	"github.com/anlindstrom/wt/schema"
 )
 
 type configResult struct {

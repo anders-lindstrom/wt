@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anlindstrom/wt/internal/gittest"
 )
 
 func foldLine(t *testing.T, yaml string) *gittest.FoldLine {

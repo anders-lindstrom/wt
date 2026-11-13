@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anlindstrom/wt/internal/gittest"
 )
 
 func TestClassifyCodexTellsSessionsFromEverythingElse(t *testing.T) {

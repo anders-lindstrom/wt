@@ -5,8 +5,8 @@ import (
 	"io"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/config"
-	"github.com/anders-lindstrom/wt/internal/github"
+	"github.com/anlindstrom/wt/internal/config"
+	"github.com/anlindstrom/wt/internal/github"
 )
 
 // How these commands reach the GitHub CLI. Variables so a test binary can

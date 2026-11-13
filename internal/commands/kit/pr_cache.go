@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/github"
+	"github.com/anlindstrom/wt/internal/github"
 )
 
 // prCacheName is where the cached answers live: the main checkout's git dir,

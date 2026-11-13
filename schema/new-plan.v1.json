@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/new-plan.v1.json",
+  "$id": "https://raw.githubusercontent.com/anlindstrom/wt/main/schema/new-plan.v1.json",
   "x-version": "1.2.1",
   "title": "wt new --dry-run --json",
   "description": "What `wt new` would create, from local state alone; it writes nothing. Printed by `wt new <type>/<work> [--base <ref>] --dry-run --json` as the only thing on stdout. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",

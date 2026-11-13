@@ -3,7 +3,7 @@ package github
 import (
 	"strings"
 
-	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anlindstrom/wt/internal/git"
 )
 
 // Remote is a GitHub repository some checkout points at.

@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/jsonout"
-	"github.com/anders-lindstrom/wt/internal/quarantine"
+	"github.com/anlindstrom/wt/internal/jsonout"
+	"github.com/anlindstrom/wt/internal/quarantine"
 )
 
 // Every field of a plan is in its token or left out on purpose, with why:

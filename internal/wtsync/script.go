@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anlindstrom/wt/internal/git"
 )
 
 // ScriptTimeout is the deadline a script gets when its rule sets no Timeout,

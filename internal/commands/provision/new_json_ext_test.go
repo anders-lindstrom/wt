@@ -9,14 +9,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/provision"
-	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
-	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/config"
-	"github.com/anders-lindstrom/wt/internal/gittest"
-	"github.com/anders-lindstrom/wt/internal/jsonout"
-	"github.com/anders-lindstrom/wt/internal/superset"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/provision"
+	"github.com/anlindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anlindstrom/wt/internal/commands/testkit"
+	"github.com/anlindstrom/wt/internal/config"
+	"github.com/anlindstrom/wt/internal/gittest"
+	"github.com/anlindstrom/wt/internal/jsonout"
+	"github.com/anlindstrom/wt/internal/superset"
 )
 
 func checkoutJSON(t *testing.T, ctx *kit.Context, branch, work string, opts provision.NewOptions, expect string) (provision.CheckoutResult, error) {

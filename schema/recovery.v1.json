@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/recovery.v1.json",
+  "$id": "https://raw.githubusercontent.com/anlindstrom/wt/main/schema/recovery.v1.json",
   "x-version": "1.2.1",
   "title": "<dir>/recovery.json",
   "description": "The journal of a worktree moved into quarantine by `wt remove --move-to <dir>` or `wt sweep --move-to <dir>`, and of its restore by `wt restore <dir>` or its purge by `wt purge <dir>`. Written durably (temp file, fsync, rename, folder fsync) before and after every step, the first time before anything changes, so a run that stops anywhere is resolved from it and the two places each directory can be. Schema 1: fields may be added; nothing is renamed or removed. The step lists and step states are closed: wt refuses a record whose steps are not exactly these, so another step or state is a new major (recovery.v2.json), never a minor. See docs/json.md.",

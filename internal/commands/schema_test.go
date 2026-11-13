@@ -6,7 +6,7 @@ import (
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
-	"github.com/anders-lindstrom/wt/schema"
+	"github.com/anlindstrom/wt/schema"
 )
 
 // Every schema wt ships compiles, and names its command.

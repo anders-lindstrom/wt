@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands/admin"
+	"github.com/anlindstrom/wt/internal/commands/admin"
 )
 
 func newReposCmd() *cobra.Command {

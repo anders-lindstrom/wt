@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/kit"
 )
 
 func newFindCmd() *cobra.Command {

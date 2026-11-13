@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anlindstrom/wt/internal/gittest"
 )
 
 // stackLine builds gittest's StackLine in a fresh directory, declaring yaml

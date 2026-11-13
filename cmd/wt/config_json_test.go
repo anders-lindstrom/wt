@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/gittest"
-	"github.com/anders-lindstrom/wt/schema"
+	"github.com/anlindstrom/wt/internal/commands/testkit"
+	"github.com/anlindstrom/wt/internal/gittest"
+	"github.com/anlindstrom/wt/schema"
 )
 
 func configJSON(t *testing.T) map[string]any {

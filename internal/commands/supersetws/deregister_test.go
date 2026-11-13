@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
-	"github.com/anders-lindstrom/wt/internal/commands/supersetws"
-	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/jsonout"
+	"github.com/anlindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anlindstrom/wt/internal/commands/supersetws"
+	"github.com/anlindstrom/wt/internal/commands/testkit"
+	"github.com/anlindstrom/wt/internal/jsonout"
 )
 
 // The guard itself: while the directory is at its path, or git still lists

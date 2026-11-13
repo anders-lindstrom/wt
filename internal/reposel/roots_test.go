@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/config"
+	"github.com/anlindstrom/wt/internal/config"
 )
 
 // WT_ROOTS wins over the file, which wins over the defaults, and a root from

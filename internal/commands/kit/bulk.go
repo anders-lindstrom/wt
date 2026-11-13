@@ -5,8 +5,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/anders-lindstrom/wt/internal/config"
-	"github.com/anders-lindstrom/wt/internal/reposel"
+	"github.com/anlindstrom/wt/internal/config"
+	"github.com/anlindstrom/wt/internal/reposel"
 )
 
 // Ask puts a yes-or-no question to the person running wt and says what they

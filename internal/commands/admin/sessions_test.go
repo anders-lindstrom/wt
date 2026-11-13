@@ -3,7 +3,7 @@ package admin
 import (
 	"os"
 
-	"github.com/anders-lindstrom/wt/internal/agents"
+	"github.com/anlindstrom/wt/internal/agents"
 )
 
 // ownSession is a session wt runs under: its pid is an ancestor of this

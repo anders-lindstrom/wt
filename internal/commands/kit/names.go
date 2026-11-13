@@ -1,9 +1,9 @@
 package kit
 
 import (
-	"github.com/anders-lindstrom/wt/internal/agents"
-	"github.com/anders-lindstrom/wt/internal/git"
-	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anlindstrom/wt/internal/agents"
+	"github.com/anlindstrom/wt/internal/git"
+	"github.com/anlindstrom/wt/internal/repo"
 )
 
 // SessionLabel is what a session is called in a line: its name, else its

@@ -10,13 +10,13 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/provision"
-	"github.com/anders-lindstrom/wt/internal/commands/supersetws"
-	"github.com/anders-lindstrom/wt/internal/config"
-	"github.com/anders-lindstrom/wt/internal/naming"
-	"github.com/anders-lindstrom/wt/internal/repo"
-	"github.com/anders-lindstrom/wt/internal/superset"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/provision"
+	"github.com/anlindstrom/wt/internal/commands/supersetws"
+	"github.com/anlindstrom/wt/internal/config"
+	"github.com/anlindstrom/wt/internal/naming"
+	"github.com/anlindstrom/wt/internal/repo"
+	"github.com/anlindstrom/wt/internal/superset"
 )
 
 // Doctor reports configuration and worktree health, returning the number of

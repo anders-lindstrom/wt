@@ -9,12 +9,12 @@ import (
 	"slices"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/config"
-	"github.com/anders-lindstrom/wt/internal/git"
-	"github.com/anders-lindstrom/wt/internal/jsonout"
-	"github.com/anders-lindstrom/wt/internal/refpins"
-	"github.com/anders-lindstrom/wt/schema"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/config"
+	"github.com/anlindstrom/wt/internal/git"
+	"github.com/anlindstrom/wt/internal/jsonout"
+	"github.com/anlindstrom/wt/internal/refpins"
+	"github.com/anlindstrom/wt/schema"
 )
 
 // RefLost is a pin whose commits nothing outside the purge reaches.

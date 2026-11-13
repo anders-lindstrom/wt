@@ -13,7 +13,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anlindstrom/wt/internal/git"
 )
 
 // ConfigFile is the declaration at the top of a repository.

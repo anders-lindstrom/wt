@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/admin"
-	"github.com/anders-lindstrom/wt/internal/github"
+	"github.com/anlindstrom/wt/internal/commands/admin"
+	"github.com/anlindstrom/wt/internal/github"
 )
 
 func rows() []admin.PRChoice {

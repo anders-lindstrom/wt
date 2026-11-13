@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/schema"
+	"github.com/anlindstrom/wt/schema"
 	jsonschema "github.com/santhosh-tekuri/jsonschema/v6"
 )
 

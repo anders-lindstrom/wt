@@ -4,12 +4,12 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/agents"
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
-	"github.com/anders-lindstrom/wt/internal/commands/retire"
-	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
-	"github.com/anders-lindstrom/wt/internal/jsonout"
+	"github.com/anlindstrom/wt/internal/agents"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anlindstrom/wt/internal/commands/retire"
+	"github.com/anlindstrom/wt/internal/commands/retire/retiretest"
+	"github.com/anlindstrom/wt/internal/jsonout"
 )
 
 // --json names, for each problem, the category that goes past it, and the

@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/schema"
+	"github.com/anlindstrom/wt/schema"
 )
 
 // TestRefusalCodesAreTheSchemasEnums holds the codes send and stop can

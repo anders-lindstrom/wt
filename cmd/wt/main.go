@@ -4,7 +4,7 @@ package main
 import (
 	"os"
 
-	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anlindstrom/wt/internal/git"
 )
 
 func main() {

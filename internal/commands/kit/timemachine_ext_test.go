@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/timemachine"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/testkit"
+	"github.com/anlindstrom/wt/internal/timemachine"
 )
 
 // tmContext is a repository at <parent>/demo whose warnings go to the

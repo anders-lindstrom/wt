@@ -13,8 +13,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/git"
-	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anlindstrom/wt/internal/git"
+	"github.com/anlindstrom/wt/internal/repo"
 )
 
 // PurgingName is the journal of a purge. It replaces recovery.json before

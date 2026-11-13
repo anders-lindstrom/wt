@@ -10,7 +10,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/anders-lindstrom/wt/internal/github"
+	"github.com/anlindstrom/wt/internal/github"
 )
 
 // ListPadding is the gap tabwriter leaves after every column but the last.

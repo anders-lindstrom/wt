@@ -13,8 +13,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/git"
-	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anlindstrom/wt/internal/git"
+	"github.com/anlindstrom/wt/internal/repo"
 )
 
 // ProcessScan is the processes wt may end, each with its working directory:

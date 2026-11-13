@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/kit"
 )
 
 // BareOrigin gives the fixture an origin of its own in place of the main

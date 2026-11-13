@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/github"
-	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/github"
+	"github.com/anlindstrom/wt/internal/gittest"
 )
 
 // GhRepo is the remote every test in this file pretends the fixture has.

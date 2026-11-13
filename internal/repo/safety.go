@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anlindstrom/wt/internal/git"
 )
 
 // statusDeadline bounds each status a removal reads. A status that has not

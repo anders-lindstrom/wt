@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/provision"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/provision"
 )
 
 // SafetyWorktreeIn is a wt worktree for work in ctx's repository.

@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
+	"github.com/anlindstrom/wt/internal/commands/syncrun"
 )
 
 func TestConfirmPushDefaultsToNo(t *testing.T) {

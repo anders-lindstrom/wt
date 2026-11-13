@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/config"
-	"github.com/anders-lindstrom/wt/internal/git"
-	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/config"
+	"github.com/anlindstrom/wt/internal/git"
+	"github.com/anlindstrom/wt/internal/repo"
 )
 
 // InitOptions controls how Init writes a repository's first configuration.
@@ -157,7 +157,7 @@ func render(repoName string, a kit.Answers, c *config.Config) string {
 	p("#")
 	p("# The commented keys are at their defaults, so uncommenting one as it")
 	p("# stands changes nothing; edit it to change how this repository works.")
-	p("# Reference: https://github.com/anders-lindstrom/wt")
+	p("# Reference: https://github.com/anlindstrom/wt")
 	p("")
 	p("# The branch worktrees are cut from, and merged into.")
 	p("MAIN_BRANCH=%s", c.MainBranch)

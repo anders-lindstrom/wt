@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anlindstrom/wt/internal/gittest"
 )
 
 // linearRepo builds: base -> main moves on (trunk edits) ; feature branches

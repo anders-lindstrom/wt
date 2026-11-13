@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/status.v1.json",
+  "$id": "https://raw.githubusercontent.com/anlindstrom/wt/main/schema/status.v1.json",
   "x-version": "1.10.0",
   "title": "wt status --json",
   "description": "What wt up would start on, from local state alone. Printed by `wt status [<work>] --json`, which writes nothing to any repository. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",

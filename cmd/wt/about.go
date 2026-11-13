@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/about"
+	"github.com/anlindstrom/wt/internal/about"
 )
 
 // buildDate and commitDate are set by scripts/ldflags.sh, like version, which

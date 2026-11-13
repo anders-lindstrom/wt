@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/agents"
-	"github.com/anders-lindstrom/wt/internal/gittest"
-	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anlindstrom/wt/internal/agents"
+	"github.com/anlindstrom/wt/internal/gittest"
+	"github.com/anlindstrom/wt/internal/repo"
 )
 
 // rebasedLine rebases s's line onto trunk, pins the line's result as a run

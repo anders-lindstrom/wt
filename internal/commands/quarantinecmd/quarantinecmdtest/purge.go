@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/quarantinecmd"
-	"github.com/anders-lindstrom/wt/internal/quarantine"
+	"github.com/anlindstrom/wt/internal/commands/quarantinecmd"
+	"github.com/anlindstrom/wt/internal/quarantine"
 )
 
 // Purge runs wt purge on the quarantine dir and fails the test when it fails.

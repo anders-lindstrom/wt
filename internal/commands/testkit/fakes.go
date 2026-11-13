@@ -4,9 +4,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/agents"
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/superset"
+	"github.com/anlindstrom/wt/internal/agents"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/superset"
 )
 
 // NoSuperset is a Superset probe answering "no Superset here".

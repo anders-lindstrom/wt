@@ -16,7 +16,7 @@ if [ "$1" = version ]; then exec "$WT_INSTALL_REAL_GO" "$@"; fi
 while [ "$#" -gt 0 ]; do
     if [ "$1" = -o ]; then
         shift
-        printf '#!/bin/sh\n# github.com/anders-lindstrom/wt\necho %s\n' "${WT_TEST_BUILD_TEXT:-test-build}" > "$1"
+        printf '#!/bin/sh\n# github.com/anlindstrom/wt\necho %s\n' "${WT_TEST_BUILD_TEXT:-test-build}" > "$1"
         exit 0
     fi
     shift
@@ -72,6 +72,15 @@ GO
     cp "$ROOT/compat/worktree_functions.sh" "$PREFIX/share/wt/worktree_functions.sh"
     run bash "$ROOT/install.sh" "$PREFIX"
     [ "$status" -eq 0 ]
+}
+
+@test "a wt built before the move to anlindstrom is upgraded in place" {
+    mkdir -p "$PREFIX/bin"
+    printf '#!/bin/sh\n# github.com/anders-lindstrom/wt\necho old\n' > "$PREFIX/bin/wt"
+    run bash "$ROOT/install.sh" "$PREFIX"; echo "# $output" >&3
+    run bash "$ROOT/install.sh" "$PREFIX"
+    [ "$status" -eq 0 ]
+    [ "$("$PREFIX/bin/wt")" = test-build ]
 }
 
 @test "symlink targets are never overwritten or uninstalled" {

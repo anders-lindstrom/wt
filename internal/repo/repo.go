@@ -13,8 +13,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/anders-lindstrom/wt/internal/config"
-	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anlindstrom/wt/internal/config"
+	"github.com/anlindstrom/wt/internal/git"
 )
 
 // Worktree is one entry of `git worktree list --porcelain`.

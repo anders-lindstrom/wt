@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
-	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
-	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anlindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anlindstrom/wt/internal/commands/retire/retiretest"
+	"github.com/anlindstrom/wt/internal/commands/testkit"
 )
 
 // wt restore registers the worktree it put back, the way wt new does.

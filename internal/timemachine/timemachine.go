@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anlindstrom/wt/internal/git"
 )
 
 // Deadline bounds one tmutil call. tmutil answers in milliseconds; one that

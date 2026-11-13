@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/about"
-	"github.com/anders-lindstrom/wt/internal/commands/synckeep"
+	"github.com/anlindstrom/wt/internal/about"
+	"github.com/anlindstrom/wt/internal/commands/synckeep"
 )
 
 func runCmd(t *testing.T, args ...string) (string, error) {

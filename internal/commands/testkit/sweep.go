@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/kit"
 )
 
 // SweepRepoWith is a main checkout on main with a bare origin beside it,

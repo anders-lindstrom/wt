@@ -27,13 +27,13 @@ Why the layout has this shape, and the rules a tool building on it follows:
 A release, with [mise](https://mise.jdx.dev):
 
 ```sh
-mise use -g github:anders-lindstrom/wt   # the newest release, kept on the PATH
+mise use -g github:anlindstrom/wt   # the newest release, kept on the PATH
 ```
 
 Or built from a checkout:
 
 ```sh
-git clone git@github.com:anders-lindstrom/wt.git && cd wt
+git clone git@github.com:anlindstrom/wt.git && cd wt
 ./install.sh                 # builds to ~/.local/bin, installs to ~/.local/share/wt
 ```
 

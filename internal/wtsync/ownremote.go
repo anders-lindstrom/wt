@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/agents"
-	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anlindstrom/wt/internal/agents"
+	"github.com/anlindstrom/wt/internal/repo"
 )
 
 // OwnState is how a branch stands against its own remote: the

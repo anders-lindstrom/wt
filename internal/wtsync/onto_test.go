@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anlindstrom/wt/internal/gittest"
 )
 
 // cutoffRepo is a branch whose first commit bumps v.txt against trunk's own

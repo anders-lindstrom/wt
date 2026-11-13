@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/anders-lindstrom/wt/internal/textwrap"
+	"github.com/anlindstrom/wt/internal/textwrap"
 )
 
 // maxHelpWidth is the widest a help line gets, however wide the terminal is.

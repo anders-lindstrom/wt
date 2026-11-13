@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anlindstrom/wt/internal/git"
 )
 
 // LayerStep is what one per-layer step came to at the end of one layer: why

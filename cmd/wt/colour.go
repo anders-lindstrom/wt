@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/anders-lindstrom/wt/internal/colour"
+	"github.com/anlindstrom/wt/internal/colour"
 )
 
 // colorValue is the value of --color: auto, always or never. It refuses

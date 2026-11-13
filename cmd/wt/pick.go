@@ -10,8 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands/admin"
-	"github.com/anders-lindstrom/wt/internal/github"
+	"github.com/anlindstrom/wt/internal/commands/admin"
+	"github.com/anlindstrom/wt/internal/github"
 )
 
 // pickTitleWidth truncates a title so the marker beside it still fits.

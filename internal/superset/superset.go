@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anlindstrom/wt/internal/git"
 )
 
 // The deadlines bounding the CLI. The read-only calls answer from a local

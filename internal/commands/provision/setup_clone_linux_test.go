@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anlindstrom/wt/internal/commands/testkit"
 )
 
 // withFileCloner stands in for the FICLONE of one file: a byte copy, which is

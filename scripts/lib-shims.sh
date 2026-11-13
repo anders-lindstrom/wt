@@ -46,7 +46,7 @@ EOF
 # Worktree tooling
 
 The scripts in this directory are **shims**. The implementation lives in
-[`wt`](https://github.com/anders-lindstrom/wt) — one copy, shared by every repo,
+[`wt`](https://github.com/anlindstrom/wt) — one copy, shared by every repo,
 so a fix lands once instead of being copied into seven.
 
 ```sh
@@ -78,7 +78,7 @@ here — those run in your shell rather than in a child process.
 ## Install
 
 ```sh
-git clone git@github.com:anders-lindstrom/wt.git && cd wt && ./install.sh
+git clone git@github.com:anlindstrom/wt.git && cd wt && ./install.sh
 ```
 
 Then run `wt doctor` in this repo if something looks wrong.

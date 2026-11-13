@@ -5,8 +5,8 @@ import (
 	"io"
 	"sync"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/wtsync"
 )
 
 // RebaseInFlight is the worktree a run is in the middle of rebasing: what an

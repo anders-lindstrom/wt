@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/anders-lindstrom/wt/internal/commands/session"
+	"github.com/anlindstrom/wt/internal/commands/session"
 )
 
 // resumeFlag is --resume: a switch that also notes how many words stood

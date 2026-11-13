@@ -7,7 +7,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anlindstrom/wt/internal/gittest"
 )
 
 // sweepGit runs git in dir and returns trimmed stdout, failing the test on error.
