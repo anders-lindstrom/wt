@@ -127,34 +127,34 @@ generating types from it:
 
 | Output | Schema | `$id` |
 |---|---|---|
-| `wt config --json` | [`schema/config.v1.json`](../schema/config.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/config.v1.json` |
-| `wt status --json` | [`schema/status.v1.json`](../schema/status.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/status.v1.json` |
-| `wt up --json` | [`schema/up.v1.json`](../schema/up.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/up.v1.json` |
-| `wt sweep --dry-run --json` | [`schema/sweep-plan.v1.json`](../schema/sweep-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sweep-plan.v1.json` |
-| `wt sweep --yes --json` | [`schema/sweep.v1.json`](../schema/sweep.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sweep.v1.json` |
-| `wt sync --json` | [`schema/sync.v1.json`](../schema/sync.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sync.v1.json` |
-| `wt sync rebase\|resume\|undo\|steps --json` | [`schema/sync-run.v1.json`](../schema/sync-run.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sync-run.v1.json` |
-| `wt new --dry-run --json` | [`schema/new-plan.v1.json`](../schema/new-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/new-plan.v1.json` |
-| `wt new --json` | [`schema/new.v1.json`](../schema/new.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/new.v1.json` |
-| `wt checkout --dry-run --json` | [`schema/checkout-plan.v1.json`](../schema/checkout-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/checkout-plan.v1.json` |
-| `wt checkout --json` | [`schema/checkout.v1.json`](../schema/checkout.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/checkout.v1.json` |
-| `<dir>/recovery.json` | [`schema/recovery.v1.json`](../schema/recovery.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/recovery.v1.json` |
-| `wt restore --dry-run --json` | [`schema/restore-plan.v1.json`](../schema/restore-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/restore-plan.v1.json` |
-| `wt restore --json` | [`schema/restore.v1.json`](../schema/restore.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/restore.v1.json` |
-| `wt remove --dry-run --json` | [`schema/remove-plan.v1.json`](../schema/remove-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/remove-plan.v1.json` |
-| `wt remove --yes --json` | [`schema/remove.v1.json`](../schema/remove.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/remove.v1.json` |
-| `wt purge --dry-run --json` | [`schema/quarantine-purge-plan.v1.json`](../schema/quarantine-purge-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/quarantine-purge-plan.v1.json` |
-| `wt purge --yes --json` | [`schema/quarantine-purge.v1.json`](../schema/quarantine-purge.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/quarantine-purge.v1.json` |
-| `wt refs sweep --dry-run --json` | [`schema/refs-sweep-plan.v1.json`](../schema/refs-sweep-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/refs-sweep-plan.v1.json` |
-| `wt refs sweep --yes --json` | [`schema/refs-sweep.v1.json`](../schema/refs-sweep.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/refs-sweep.v1.json` |
-| `wt refs restore --dry-run --json` | [`schema/refs-restore-plan.v1.json`](../schema/refs-restore-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/refs-restore-plan.v1.json` |
-| `wt refs restore --yes --json` | [`schema/refs-restore.v1.json`](../schema/refs-restore.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/refs-restore.v1.json` |
-| `wt refs purge --dry-run --json` | [`schema/refs-purge-plan.v1.json`](../schema/refs-purge-plan.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/refs-purge-plan.v1.json` |
-| `wt refs purge --yes --json` | [`schema/refs-purge.v1.json`](../schema/refs-purge.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/refs-purge.v1.json` |
-| `wt refs swept --json` | [`schema/refs-swept.v1.json`](../schema/refs-swept.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/refs-swept.v1.json` |
-| `wt session list --json` | [`schema/session-list.v1.json`](../schema/session-list.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/session-list.v1.json` |
-| `wt session send --json` | [`schema/session-send.v1.json`](../schema/session-send.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/session-send.v1.json` |
-| `wt session stop --json` | [`schema/session-stop.v1.json`](../schema/session-stop.v1.json) | `https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/session-stop.v1.json` |
+| `wt config --json` | [`schema/config.v1.json`](../schema/config.v1.json) | `https://raw.githubusercontent.com/anlindstrom/wt/main/schema/config.v1.json` |
+| `wt status --json` | [`schema/status.v1.json`](../schema/status.v1.json) | `https://raw.githubusercontent.com/anlindstrom/wt/main/schema/status.v1.json` |
+| `wt up --json` | [`schema/up.v1.json`](../schema/up.v1.json) | `https://raw.githubusercontent.com/anlindstrom/wt/main/schema/up.v1.json` |
+| `wt sweep --dry-run --json` | [`schema/sweep-plan.v1.json`](../schema/sweep-plan.v1.json) | `https://raw.githubusercontent.com/anlindstrom/wt/main/schema/sweep-plan.v1.json` |
+| `wt sweep --yes --json` | [`schema/sweep.v1.json`](../schema/sweep.v1.json) | `https://raw.githubusercontent.com/anlindstrom/wt/main/schema/sweep.v1.json` |
+| `wt sync --json` | [`schema/sync.v1.json`](../schema/sync.v1.json) | `https://raw.githubusercontent.com/anlindstrom/wt/main/schema/sync.v1.json` |
+| `wt sync rebase\|resume\|undo\|steps --json` | [`schema/sync-run.v1.json`](../schema/sync-run.v1.json) | `https://raw.githubusercontent.com/anlindstrom/wt/main/schema/sync-run.v1.json` |
+| `wt new --dry-run --json` | [`schema/new-plan.v1.json`](../schema/new-plan.v1.json) | `https://raw.githubusercontent.com/anlindstrom/wt/main/schema/new-plan.v1.json` |
+| `wt new --json` | [`schema/new.v1.json`](../schema/new.v1.json) | `https://raw.githubusercontent.com/anlindstrom/wt/main/schema/new.v1.json` |
+| `wt checkout --dry-run --json` | [`schema/checkout-plan.v1.json`](../schema/checkout-plan.v1.json) | `https://raw.githubusercontent.com/anlindstrom/wt/main/schema/checkout-plan.v1.json` |
+| `wt checkout --json` | [`schema/checkout.v1.json`](../schema/checkout.v1.json) | `https://raw.githubusercontent.com/anlindstrom/wt/main/schema/checkout.v1.json` |
+| `<dir>/recovery.json` | [`schema/recovery.v1.json`](../schema/recovery.v1.json) | `https://raw.githubusercontent.com/anlindstrom/wt/main/schema/recovery.v1.json` |
+| `wt restore --dry-run --json` | [`schema/restore-plan.v1.json`](../schema/restore-plan.v1.json) | `https://raw.githubusercontent.com/anlindstrom/wt/main/schema/restore-plan.v1.json` |
+| `wt restore --json` | [`schema/restore.v1.json`](../schema/restore.v1.json) | `https://raw.githubusercontent.com/anlindstrom/wt/main/schema/restore.v1.json` |
+| `wt remove --dry-run --json` | [`schema/remove-plan.v1.json`](../schema/remove-plan.v1.json) | `https://raw.githubusercontent.com/anlindstrom/wt/main/schema/remove-plan.v1.json` |
+| `wt remove --yes --json` | [`schema/remove.v1.json`](../schema/remove.v1.json) | `https://raw.githubusercontent.com/anlindstrom/wt/main/schema/remove.v1.json` |
+| `wt purge --dry-run --json` | [`schema/quarantine-purge-plan.v1.json`](../schema/quarantine-purge-plan.v1.json) | `https://raw.githubusercontent.com/anlindstrom/wt/main/schema/quarantine-purge-plan.v1.json` |
+| `wt purge --yes --json` | [`schema/quarantine-purge.v1.json`](../schema/quarantine-purge.v1.json) | `https://raw.githubusercontent.com/anlindstrom/wt/main/schema/quarantine-purge.v1.json` |
+| `wt refs sweep --dry-run --json` | [`schema/refs-sweep-plan.v1.json`](../schema/refs-sweep-plan.v1.json) | `https://raw.githubusercontent.com/anlindstrom/wt/main/schema/refs-sweep-plan.v1.json` |
+| `wt refs sweep --yes --json` | [`schema/refs-sweep.v1.json`](../schema/refs-sweep.v1.json) | `https://raw.githubusercontent.com/anlindstrom/wt/main/schema/refs-sweep.v1.json` |
+| `wt refs restore --dry-run --json` | [`schema/refs-restore-plan.v1.json`](../schema/refs-restore-plan.v1.json) | `https://raw.githubusercontent.com/anlindstrom/wt/main/schema/refs-restore-plan.v1.json` |
+| `wt refs restore --yes --json` | [`schema/refs-restore.v1.json`](../schema/refs-restore.v1.json) | `https://raw.githubusercontent.com/anlindstrom/wt/main/schema/refs-restore.v1.json` |
+| `wt refs purge --dry-run --json` | [`schema/refs-purge-plan.v1.json`](../schema/refs-purge-plan.v1.json) | `https://raw.githubusercontent.com/anlindstrom/wt/main/schema/refs-purge-plan.v1.json` |
+| `wt refs purge --yes --json` | [`schema/refs-purge.v1.json`](../schema/refs-purge.v1.json) | `https://raw.githubusercontent.com/anlindstrom/wt/main/schema/refs-purge.v1.json` |
+| `wt refs swept --json` | [`schema/refs-swept.v1.json`](../schema/refs-swept.v1.json) | `https://raw.githubusercontent.com/anlindstrom/wt/main/schema/refs-swept.v1.json` |
+| `wt session list --json` | [`schema/session-list.v1.json`](../schema/session-list.v1.json) | `https://raw.githubusercontent.com/anlindstrom/wt/main/schema/session-list.v1.json` |
+| `wt session send --json` | [`schema/session-send.v1.json`](../schema/session-send.v1.json) | `https://raw.githubusercontent.com/anlindstrom/wt/main/schema/session-send.v1.json` |
+| `wt session stop --json` | [`schema/session-stop.v1.json`](../schema/session-stop.v1.json) | `https://raw.githubusercontent.com/anlindstrom/wt/main/schema/session-stop.v1.json` |
 
 They are built into the binary: `wt schema` lists them and `wt schema up` prints
 one, so the schema you read is the one for the wt you run. Validate against that

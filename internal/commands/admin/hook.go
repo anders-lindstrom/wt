@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/provision"
-	"github.com/anders-lindstrom/wt/internal/commands/retire"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/provision"
+	"github.com/anlindstrom/wt/internal/commands/retire"
 )
 
 // hookInput is the JSON Claude Code sends on stdin. Unknown fields are ignored

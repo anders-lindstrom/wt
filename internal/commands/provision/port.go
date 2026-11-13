@@ -4,8 +4,8 @@ import (
 	"hash/fnv"
 	"strconv"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/repo"
 )
 
 // The ports wt port hands out: above the ports dev servers default to (3000,

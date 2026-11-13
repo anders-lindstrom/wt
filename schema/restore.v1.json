@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/restore.v1.json",
+  "$id": "https://raw.githubusercontent.com/anlindstrom/wt/main/schema/restore.v1.json",
   "x-version": "1.0.0",
   "title": "wt restore <dir> --json",
   "description": "What `wt restore <dir>` did. Printed by `wt restore <dir> --json` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends the run. Locations, the branch and the steps are read from the quarantine when the object is written. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",

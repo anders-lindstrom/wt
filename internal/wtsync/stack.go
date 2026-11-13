@@ -3,7 +3,7 @@ package wtsync
 import (
 	"sort"
 
-	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anlindstrom/wt/internal/repo"
 )
 
 // Parents computes the stack relation across branch-attached worktrees: for

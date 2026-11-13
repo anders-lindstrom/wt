@@ -3,7 +3,7 @@
 A release is a `v*` tag pushed to GitHub. The release workflow,
 `.github/workflows/release.yml`, builds darwin and linux binaries for amd64 and
 arm64 with GoReleaser and attaches them to the GitHub release, which is what
-`mise use -g github:anders-lindstrom/wt` installs.
+`mise use -g github:anlindstrom/wt` installs.
 
 ```sh
 scripts/release.sh patch|minor|major

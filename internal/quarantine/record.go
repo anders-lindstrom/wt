@@ -18,8 +18,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/repo"
-	"github.com/anders-lindstrom/wt/schema"
+	"github.com/anlindstrom/wt/internal/repo"
+	"github.com/anlindstrom/wt/schema"
 )
 
 // FileName is the journal inside a quarantine folder.

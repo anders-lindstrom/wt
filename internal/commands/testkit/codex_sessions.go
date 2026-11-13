@@ -3,7 +3,7 @@ package testkit
 import (
 	"path/filepath"
 
-	"github.com/anders-lindstrom/wt/internal/agents"
+	"github.com/anlindstrom/wt/internal/agents"
 )
 
 // CodexSession is a codex session in cwd.

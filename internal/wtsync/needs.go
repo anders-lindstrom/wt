@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anlindstrom/wt/internal/git"
 )
 
 // NeedDocker is the need of a step that cannot run without a Docker daemon.

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anlindstrom/wt/internal/git"
 )
 
 // unavailableWhy is why a step with needs cannot run: the first of them

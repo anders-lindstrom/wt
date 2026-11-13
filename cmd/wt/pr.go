@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands/admin"
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/admin"
+	"github.com/anlindstrom/wt/internal/commands/kit"
 )
 
 func newPrCmd() *cobra.Command {

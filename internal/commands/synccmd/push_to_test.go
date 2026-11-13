@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
-	"github.com/anders-lindstrom/wt/internal/commands/quarantinecmd/quarantinecmdtest"
-	"github.com/anders-lindstrom/wt/internal/commands/retire"
-	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anlindstrom/wt/internal/commands/quarantinecmd/quarantinecmdtest"
+	"github.com/anlindstrom/wt/internal/commands/retire"
+	"github.com/anlindstrom/wt/internal/commands/testkit"
 )
 
 // TracksTheirs puts a branch theirs on the remote, at the commit bump was

@@ -5,8 +5,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/anders-lindstrom/wt/internal/naming"
-	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anlindstrom/wt/internal/naming"
+	"github.com/anlindstrom/wt/internal/repo"
 )
 
 // ParseWork reads a work spec into the type, the work name and the branch the

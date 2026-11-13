@@ -5,8 +5,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/gittest"
-	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anlindstrom/wt/internal/gittest"
+	"github.com/anlindstrom/wt/internal/repo"
 )
 
 // stackRepo: main; p (1 commit on main); c (1 more on p); d (1 more on c); lone (1 on main).

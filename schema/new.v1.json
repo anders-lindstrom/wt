@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/new.v1.json",
+  "$id": "https://raw.githubusercontent.com/anlindstrom/wt/main/schema/new.v1.json",
   "x-version": "1.1.0",
   "title": "wt new --json",
   "description": "What a `wt new` run did, side effect by side effect. Printed by `wt new --json` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends the run. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/refs-purge-plan.v1.json",
+  "$id": "https://raw.githubusercontent.com/anlindstrom/wt/main/schema/refs-purge-plan.v1.json",
   "x-version": "1.0.0",
   "title": "wt refs purge --dry-run --json",
   "description": "What `wt refs purge` would delete: the pins of the runs named, or of every run older than --older-than. Printed by `wt refs purge --json` without --yes as the only thing on stdout; it deletes nothing. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",

@@ -10,7 +10,7 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anlindstrom/wt/internal/git"
 )
 
 // InterruptStatus is what a shell expects from a command a signal ended.

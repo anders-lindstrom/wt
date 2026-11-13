@@ -3,7 +3,7 @@ package repo
 import (
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anlindstrom/wt/internal/gittest"
 )
 
 // pushedRepo is a repository with a bare origin and a branch old, pushed

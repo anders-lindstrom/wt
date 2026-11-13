@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anlindstrom/wt/internal/gittest"
 )
 
 // linked adds a worktree on a new branch and returns its path.

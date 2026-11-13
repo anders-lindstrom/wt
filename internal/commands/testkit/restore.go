@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/kit"
 )
 
 // AssertBack checks the worktree is registered at path, unlocked, clean,

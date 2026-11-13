@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/anders-lindstrom/wt/internal/config"
-	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anlindstrom/wt/internal/config"
+	"github.com/anlindstrom/wt/internal/repo"
 )
 
 // Answers are the three keys a repository actually varies. Everything else is

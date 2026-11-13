@@ -7,10 +7,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands"
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/session"
-	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
+	"github.com/anlindstrom/wt/internal/commands"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/session"
+	"github.com/anlindstrom/wt/internal/commands/synccmd"
 )
 
 // pathWidthHelp ends the help of the commands that print a path column.

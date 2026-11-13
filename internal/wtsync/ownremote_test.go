@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/agents"
-	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anlindstrom/wt/internal/agents"
+	"github.com/anlindstrom/wt/internal/gittest"
 )
 
 // ownFixture is a repository on main with a bare origin, a branch feat one

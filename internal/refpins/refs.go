@@ -23,8 +23,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/git"
-	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anlindstrom/wt/internal/git"
+	"github.com/anlindstrom/wt/internal/repo"
 )
 
 // SweptPrefix is where wt refs sweep pins what it sweeps, one folder per

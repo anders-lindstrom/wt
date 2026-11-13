@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/kit"
 )
 
 // gitAt runs git in dir as if at when: commits and reflog entries carry that

@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands/quarantinecmd"
+	"github.com/anlindstrom/wt/internal/commands/quarantinecmd"
 )
 
 func newPurgeCmd() *cobra.Command {

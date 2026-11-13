@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anlindstrom/wt/internal/gittest"
 )
 
 // stoppedRebase starts a real rebase of feature onto main in a worktree and

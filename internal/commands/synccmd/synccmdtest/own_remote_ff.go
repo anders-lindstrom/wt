@@ -3,8 +3,8 @@ package synccmdtest
 import (
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
-	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anlindstrom/wt/internal/commands/synccmd"
+	"github.com/anlindstrom/wt/internal/commands/testkit"
 )
 
 // NothingToRebase is a TrunkFixture whose trunk declares a sync

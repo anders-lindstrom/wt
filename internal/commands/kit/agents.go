@@ -3,7 +3,7 @@ package kit
 import (
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/agents"
+	"github.com/anlindstrom/wt/internal/agents"
 )
 
 // Agents is how a context learns who is in a worktree: the agent sessions

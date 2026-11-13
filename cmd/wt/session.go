@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands/session"
+	"github.com/anlindstrom/wt/internal/commands/session"
 )
 
 func newSessionCmd() *cobra.Command {

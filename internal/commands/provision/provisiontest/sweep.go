@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/provision"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/provision"
 )
 
 // MergedWorktree is a worktree wt new made on a branch cut from trunk and

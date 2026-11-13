@@ -11,8 +11,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/anders-lindstrom/wt/internal/config"
-	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anlindstrom/wt/internal/config"
+	"github.com/anlindstrom/wt/internal/repo"
 )
 
 // defaultRoots is where repositories live on this machine when WT_ROOTS says

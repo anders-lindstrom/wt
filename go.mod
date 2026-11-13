@@ -1,4 +1,4 @@
-module github.com/anders-lindstrom/wt
+module github.com/anlindstrom/wt
 
 go 1.26
 

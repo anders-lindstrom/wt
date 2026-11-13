@@ -1,6 +1,6 @@
 package wtsync
 
-import "github.com/anders-lindstrom/wt/internal/agents"
+import "github.com/anlindstrom/wt/internal/agents"
 
 // Standing is where a worktree stands under a verb's lock: what a run reads
 // again once it holds the lock, so that what triage saw still holds, and

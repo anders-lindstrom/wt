@@ -9,9 +9,9 @@ import (
 	"io"
 	"os"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/supersetws"
-	"github.com/anders-lindstrom/wt/internal/jsonout"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/supersetws"
+	"github.com/anlindstrom/wt/internal/jsonout"
 )
 
 // NewOptions controls worktree creation.

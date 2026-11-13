@@ -9,10 +9,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/session"
-	"github.com/anders-lindstrom/wt/internal/commands/synckeep"
-	"github.com/anders-lindstrom/wt/internal/config"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/session"
+	"github.com/anlindstrom/wt/internal/commands/synckeep"
+	"github.com/anlindstrom/wt/internal/config"
 )
 
 var version = "dev"

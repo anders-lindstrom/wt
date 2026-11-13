@@ -5,9 +5,9 @@ import (
 	"io"
 	"os"
 
-	"github.com/anders-lindstrom/wt/internal/config"
-	"github.com/anders-lindstrom/wt/internal/repo"
-	"github.com/anders-lindstrom/wt/internal/timemachine"
+	"github.com/anlindstrom/wt/internal/config"
+	"github.com/anlindstrom/wt/internal/repo"
+	"github.com/anlindstrom/wt/internal/timemachine"
 )
 
 // FindTmutil is how wt finds tmutil. A variable so a test binary's TestMain

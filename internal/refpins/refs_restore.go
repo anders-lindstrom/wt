@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anlindstrom/wt/internal/git"
 )
 
 // DropEmptyRun deletes a run's meta once it has no pin left, so a run

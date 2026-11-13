@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/kit"
 )
 
 var detected = kit.Answers{MainBranch: "main", BranchPrefix: "feat_wt"}

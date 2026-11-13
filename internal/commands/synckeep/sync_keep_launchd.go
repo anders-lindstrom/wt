@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/synckeep/keepstate"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/synckeep/keepstate"
 )
 
 // keepEnvNames is what start captures from the shell it runs in. PATH finds

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/agents"
+	"github.com/anlindstrom/wt/internal/agents"
 )
 
 func TestRecheckOfACleanWorktreeAnswersNothing(t *testing.T) {

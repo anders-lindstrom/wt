@@ -4,6 +4,14 @@ Newest first, each heading stamped with the local date and time of the change
 (several land per day). `wt about` prints the newest 5 entries, so keep each entry to a few lines a human
 would want read out to them; the full story is in git history.
 
+## 2026-11-13 20:32 — wt lives at github.com/anlindstrom/wt
+
+The repository moved to the anlindstrom organisation. Install with
+`mise use -g github:anlindstrom/wt`, then remove the old
+`github:anders-lindstrom/wt` entry; the old address still redirects. The
+schema `$id` URLs point at the new home, and `install.sh` still upgrades a wt
+built before the move.
+
 ## 2026-11-12 23:09 — wt sync rebases onto any ref with --onto
 
 `wt sync <work> --onto <ref>`, `wt sync rebase <work> --onto <ref>` and
@@ -182,7 +190,7 @@ publishing with --dry-run.
   itself, so it always matches the wt you run. `wt shell --compat` prints
   worktree_functions.sh. The old `source ~/.local/share/wt/wt.sh` still works.
 - A `v*` tag now publishes darwin and linux binaries, stamped like a local
-  build, so `mise use -g github:anders-lindstrom/wt` installs wt.
+  build, so `mise use -g github:anlindstrom/wt` installs wt.
 
 ## 2026-10-16 15:17 — wt port: a dev-server port per worktree
 

@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/schema"
+	"github.com/anlindstrom/wt/schema"
 )
 
 func newSchemaCmd() *cobra.Command {

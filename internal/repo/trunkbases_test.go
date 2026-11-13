@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/gittest"
+	"github.com/anlindstrom/wt/internal/gittest"
 )
 
 // origin's trunk comes before the local one, each at its own tip; with

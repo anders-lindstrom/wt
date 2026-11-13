@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/wtsync"
 )
 
 // StepOptions is what a sync verb is told about the steps a declaration

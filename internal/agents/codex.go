@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anlindstrom/wt/internal/repo"
 )
 
 // What a session is a session of, as --json's kind names it.

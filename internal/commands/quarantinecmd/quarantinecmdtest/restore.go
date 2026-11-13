@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/quarantinecmd"
-	"github.com/anders-lindstrom/wt/internal/quarantine"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/quarantinecmd"
+	"github.com/anlindstrom/wt/internal/quarantine"
 )
 
 // Restore runs wt restore on the quarantine dir and fails the test when it

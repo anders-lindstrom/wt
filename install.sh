@@ -31,7 +31,8 @@ ours() {
     local file=$1
     [ -f "$PREFIX/$file" ] && [ ! -L "$PREFIX/$file" ] || return 1
     case "$file" in
-        bin/wt) grep -aqF 'github.com/anders-lindstrom/wt' "$PREFIX/$file" ;;
+        # A wt built before the move to anlindstrom carries the old module path.
+        bin/wt) grep -aqF -e 'github.com/anlindstrom/wt' -e 'github.com/anders-lindstrom/wt' "$PREFIX/$file" ;;
         share/wt/wt.sh) [ "$(head -n 1 "$PREFIX/$file")" = "# Shell layer for wt." ] ;;
         share/wt/worktree_functions.sh)
             head -n 1 "$PREFIX/$file" | grep -q '^# Compatibility layer: the function contract' ;;

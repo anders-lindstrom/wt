@@ -104,7 +104,7 @@ carry are shims that call `wt`.
    does the ready ones on a timer, leaving alone any worktree a session is in, and
    the table says when it last did. In a repo without the file, `wt up` still
    rebases what goes through conflict-free, and the rest is plain git. When
-   `wt sync` cannot do what the case needs, that is an issue on anders-lindstrom/wt,
+   `wt sync` cannot do what the case needs, that is an issue on anlindstrom/wt,
    not a quiet fallback to git.
 9. **Clean up merged branches and their worktrees with `wt sweep`.** From the main
    checkout, `wt sweep` fetches origin, lists the local branches trunk already

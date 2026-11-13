@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anlindstrom/wt/internal/repo"
 )
 
 // PlanName is the brief a run leaves in a worktree's own git dir when it

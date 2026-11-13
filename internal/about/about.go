@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/anders-lindstrom/wt/internal/textwrap"
+	"github.com/anlindstrom/wt/internal/textwrap"
 )
 
 //go:embed whats-new.md

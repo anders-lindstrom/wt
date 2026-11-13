@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Release wt: tag the next v* version on HEAD and push the tag. The push is
 # the release: .github/workflows/release.yml publishes the binaries, and mise
-# installs them (github:anders-lindstrom/wt).
+# installs them (github:anlindstrom/wt).
 #
 #   scripts/release.sh patch|minor|major
 #

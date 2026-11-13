@@ -8,13 +8,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/synccmd"
-	"github.com/anders-lindstrom/wt/internal/commands/syncfix"
-	"github.com/anders-lindstrom/wt/internal/commands/synckeep"
-	"github.com/anders-lindstrom/wt/internal/commands/synckeep/keepstate"
-	"github.com/anders-lindstrom/wt/internal/commands/syncrun"
-	"github.com/anders-lindstrom/wt/internal/reposel"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/synccmd"
+	"github.com/anlindstrom/wt/internal/commands/syncfix"
+	"github.com/anlindstrom/wt/internal/commands/synckeep"
+	"github.com/anlindstrom/wt/internal/commands/synckeep/keepstate"
+	"github.com/anlindstrom/wt/internal/commands/syncrun"
+	"github.com/anlindstrom/wt/internal/reposel"
 )
 
 func newSyncCmd() *cobra.Command {

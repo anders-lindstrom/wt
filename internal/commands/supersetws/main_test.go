@@ -3,7 +3,7 @@ package supersetws
 import (
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/testkit"
+	"github.com/anlindstrom/wt/internal/commands/testkit"
 )
 
 // TestMain runs the tests off the machine: testkit.Main's fakes, and no

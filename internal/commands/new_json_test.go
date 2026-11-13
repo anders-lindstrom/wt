@@ -1,8 +1,8 @@
 package commands
 
 import (
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/provision"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/provision"
 )
 
 // A signal writes the one object: the step in flight interrupted, and

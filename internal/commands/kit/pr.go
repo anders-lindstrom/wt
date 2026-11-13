@@ -5,7 +5,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/github"
+	"github.com/anlindstrom/wt/internal/github"
 )
 
 // PRLabel is a pull request in a column: its number and state, and for one

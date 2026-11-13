@@ -52,7 +52,7 @@ claude plugin marketplace add ~/path/to/wt
 claude plugin install wt@wt
 ```
 
-or from GitHub: `/plugin install wt --marketplace anders-lindstrom/wt`.
+or from GitHub: `/plugin install wt --marketplace anlindstrom/wt`.
 
 ## Options
 

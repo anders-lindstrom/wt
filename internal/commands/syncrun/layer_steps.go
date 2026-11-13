@@ -3,9 +3,9 @@ package syncrun
 import (
 	"fmt"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/jsonout"
-	"github.com/anders-lindstrom/wt/internal/wtsync"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/jsonout"
+	"github.com/anlindstrom/wt/internal/wtsync"
 )
 
 // LayerStepJSON is what one per-layer step came to at one layer, for --json.

@@ -3,7 +3,7 @@ package session
 import (
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/agents"
+	"github.com/anlindstrom/wt/internal/agents"
 )
 
 // A state this build has never seen is printed as claude spells it.

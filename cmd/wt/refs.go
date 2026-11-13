@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/anders-lindstrom/wt/internal/commands/refs"
+	"github.com/anlindstrom/wt/internal/commands/refs"
 )
 
 func newRefsCmd() *cobra.Command {

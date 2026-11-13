@@ -9,15 +9,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
-	"github.com/anders-lindstrom/wt/internal/commands/provision/provisiontest"
-	"github.com/anders-lindstrom/wt/internal/commands/quarantinecmd"
-	"github.com/anders-lindstrom/wt/internal/commands/quarantinecmd/quarantinecmdtest"
-	"github.com/anders-lindstrom/wt/internal/commands/retire"
-	"github.com/anders-lindstrom/wt/internal/commands/retire/retiretest"
-	"github.com/anders-lindstrom/wt/internal/commands/testkit"
-	"github.com/anders-lindstrom/wt/internal/gittest"
-	"github.com/anders-lindstrom/wt/internal/quarantine"
+	"github.com/anlindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/provision/provisiontest"
+	"github.com/anlindstrom/wt/internal/commands/quarantinecmd"
+	"github.com/anlindstrom/wt/internal/commands/quarantinecmd/quarantinecmdtest"
+	"github.com/anlindstrom/wt/internal/commands/retire"
+	"github.com/anlindstrom/wt/internal/commands/retire/retiretest"
+	"github.com/anlindstrom/wt/internal/commands/testkit"
+	"github.com/anlindstrom/wt/internal/gittest"
+	"github.com/anlindstrom/wt/internal/quarantine"
 )
 
 func branchTip(t *testing.T, ctx *kit.Context, name string) string {

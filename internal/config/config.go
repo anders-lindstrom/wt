@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/anders-lindstrom/wt/internal/naming"
+	"github.com/anlindstrom/wt/internal/naming"
 )
 
 // Config is a repository's validated worktree configuration.

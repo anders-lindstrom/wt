@@ -5,7 +5,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/anders-lindstrom/wt/internal/commands/kit"
+	"github.com/anlindstrom/wt/internal/commands/kit"
 )
 
 // PROpen opens a worktree's pull request in the browser. arg names the worktree

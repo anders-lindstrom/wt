@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anlindstrom/wt/internal/git"
 )
 
 // Process is one row of the machine's process table. Argv is the command

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/wtsync"
+	"github.com/anlindstrom/wt/internal/wtsync"
 )
 
 func TestOnInterruptReleasesEveryLockItHolds(t *testing.T) {

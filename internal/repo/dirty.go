@@ -3,7 +3,7 @@ package repo
 import (
 	"strings"
 
-	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anlindstrom/wt/internal/git"
 )
 
 // Dirty reports whether the checkout at path has uncommitted changes.

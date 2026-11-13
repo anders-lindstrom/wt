@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/anders-lindstrom/wt/main/schema/sweep.v1.json",
+  "$id": "https://raw.githubusercontent.com/anlindstrom/wt/main/schema/sweep.v1.json",
   "x-version": "1.5.0",
   "title": "wt sweep --yes --json",
   "description": "What a wt sweep did, item by item. Printed by `wt sweep --yes --json [--expect <token>]` as the only thing on stdout, also when a handled SIGINT or SIGTERM ends the run. Schema 1: fields may be added and enumerations may gain values; nothing is renamed or removed. See docs/json.md.",

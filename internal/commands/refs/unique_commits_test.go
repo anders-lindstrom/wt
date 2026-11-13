@@ -4,8 +4,8 @@ import (
 	"maps"
 	"testing"
 
-	"github.com/anders-lindstrom/wt/internal/gittest"
-	"github.com/anders-lindstrom/wt/internal/refpins"
+	"github.com/anlindstrom/wt/internal/gittest"
+	"github.com/anlindstrom/wt/internal/refpins"
 )
 
 // UniqueCommits is what refs sweep reads to tell a contained ref, which it

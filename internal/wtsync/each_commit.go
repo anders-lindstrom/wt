@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anders-lindstrom/wt/internal/git"
+	"github.com/anlindstrom/wt/internal/git"
 )
 
 // EachCommitTimeout bounds one each_commit check at one commit. The run's

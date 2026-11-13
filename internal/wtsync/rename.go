@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/anders-lindstrom/wt/internal/repo"
+	"github.com/anlindstrom/wt/internal/repo"
 )
 
 // RenameKeepingPush renames a branch and keeps its pushes where they went.
